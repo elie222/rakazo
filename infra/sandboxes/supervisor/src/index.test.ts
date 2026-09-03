@@ -242,6 +242,9 @@ describe("sandbox supervisor input containment", () => {
     expect(containerActionStep({ kind: "launch", application: "xterm" }, ":3")).toEqual({
       argv: ["env", "DISPLAY=:3", "xterm"],
     });
+    expect(containerActionStep({ kind: "launch", application: "pcmanfm" }, ":3")).toEqual({
+      argv: ["env", "DISPLAY=:3", "pcmanfm"],
+    });
     expect(containerActionStep({ kind: "open", path: "https://example.com" }, ":3")).toEqual({
       argv: ["env", "DISPLAY=:3", "xdg-open", "https://example.com"],
     });
@@ -427,6 +430,7 @@ describe("sandbox supervisor input containment", () => {
     expect(ensureScreenCommand(0)).toContain("-display :1");
     expect(ensureScreenCommand(0)).toContain("seq 1 100");
     expect(ensureScreenCommand(1)).toContain("Xvfb :2");
+    expect(ensureScreenCommand(1)).toContain("rakazo-desktop-panel");
     expect(ensureScreenCommand(1)).toContain("rfbport 5902");
     expect(ensureScreenCommand(1)).toContain("0.0.0.0:6082");
     expect(() => nextScreenIndex(assigned, "overflow", undefined, 1)).toThrow(

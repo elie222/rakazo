@@ -96,6 +96,73 @@ describe("account preferences", () => {
   });
 });
 
+describe("external conversation policy", () => {
+  it("persists room policy through the scoped repository", async () => {
+    const updateMany = vi.fn().mockResolvedValue({ count: 1 });
+    const prisma = {
+      externalConversation: { updateMany },
+    } as unknown as PrismaClient;
+    const deps = {
+      prisma,
+      env: {
+        defaultProvider: "fake",
+        defaultModel: "fake-model",
+        webOrigin: "http://127.0.0.1:5173",
+        screenProxySecret: "fake-test-secret",
+        sandboxProvider: "fake",
+      },
+      dataDir: "/tmp/rakazo-router-test",
+    } as unknown as RouterDeps;
+    const actor = {
+      spaceId: "space-1",
+      userId: "user-1",
+      email: "owner@example.test",
+      isDeploymentOwner: true,
+    } satisfies Actor;
+    const handler = new RPCHandler(createRouter(deps));
+
+    const { matched, response } = await handler.handle(
+      new Request("http://127.0.0.1/rpc/externalConversations/updatePolicy", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          json: {
+            externalConversationId: "external-1",
+            teamChatAmbientEnabled: true,
+            teamChatRules: "Engage when an owner or committed date changes.",
+            automatedSenderPolicies: {
+              "B-GITHUB": { name: "GitHub", mode: "action" },
+            },
+          },
+        }),
+      }),
+      { prefix: "/rpc", context: { actor } },
+    );
+
+    expect(matched).toBe(true);
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      json: {
+        teamChatAmbientEnabled: true,
+        teamChatRules: "Engage when an owner or committed date changes.",
+        automatedSenderPolicies: {
+          "B-GITHUB": { name: "GitHub", mode: "action" },
+        },
+      },
+    });
+    expect(updateMany).toHaveBeenCalledWith({
+      where: { id: "external-1", spaceId: "space-1", userId: "user-1" },
+      data: {
+        teamChatAmbientEnabled: true,
+        teamChatRules: "Engage when an owner or committed date changes.",
+        automatedSenderPolicies: {
+          "B-GITHUB": { name: "GitHub", mode: "action" },
+        },
+      },
+    });
+  });
+});
+
 describe("thread answer delivery", () => {
   it("accepts a durable answer when the immediate worker wake fails", async () => {
     const answerRunInput = vi.fn().mockResolvedValue(true);

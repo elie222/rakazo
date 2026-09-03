@@ -1,3 +1,4 @@
+import { BOT_MESSAGE_MAX_HOPS } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -198,7 +199,13 @@ describe("messaging another bot", () => {
   it("stops a chain that has volleyed too many times", async () => {
     const harness = deps({
       hopBlocks: [
-        { kind: "bot_message_received", fromBotId: "b", fromBotName: "B", text: "hi", hop: 6 },
+        {
+          kind: "bot_message_received",
+          fromBotId: "b",
+          fromBotName: "B",
+          text: "hi",
+          hop: BOT_MESSAGE_MAX_HOPS,
+        },
       ],
     });
     const sent = await messageBot(
@@ -207,7 +214,11 @@ describe("messaging another bot", () => {
       sender,
       { bot_id: "bot-target", message: "again" },
     );
-    expect(sent.ok).toBe(false);
+    expect(sent).toEqual({
+      ok: false,
+      error:
+        "The 20-hop agent collaboration limit has been reached. Ask the user whether to continue for up to 20 more hops. Continue only if the user explicitly agrees; that user message starts a new chain.",
+    });
     expect(harness.tx.run.create).not.toHaveBeenCalled();
   });
 
@@ -219,7 +230,7 @@ describe("messaging another bot", () => {
           fromBotId: "bot-target",
           fromBotName: "Analyst",
           text: "please finish",
-          hop: 6,
+          hop: BOT_MESSAGE_MAX_HOPS,
           intent: "request",
           returnToMessageId: "message-request",
         },
@@ -312,7 +323,7 @@ describe("messaging another bot", () => {
           fromBotId: "bot-target",
           fromBotName: "Analyst",
           text: "finished",
-          hop: 6,
+          hop: BOT_MESSAGE_MAX_HOPS,
           intent: "result",
         },
       ],
@@ -340,7 +351,7 @@ describe("messaging another bot", () => {
           fromBotId: "bot-target",
           fromBotName: "Coordinator",
           text: "please finish",
-          hop: 6,
+          hop: BOT_MESSAGE_MAX_HOPS,
           intent: "request",
         },
       ],
@@ -363,7 +374,7 @@ describe("messaging another bot", () => {
           fromBotId: "bot-target",
           fromBotName: "Coordinator",
           text: "please finish",
-          hop: 6,
+          hop: BOT_MESSAGE_MAX_HOPS,
           intent: "request",
         },
       ],

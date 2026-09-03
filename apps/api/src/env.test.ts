@@ -189,4 +189,36 @@ describe("loadEnv", () => {
     ).toBe(false);
     expect(loadEnv({ ...base, NODE_ENV: "development" }).nodeEnv).toBe("development");
   });
+
+  it("loads Slack only when both private tokens are configured", () => {
+    expect(loadEnv(base).slack).toBeNull();
+    expect(() => loadEnv({ ...base, SLACK_APP_TOKEN: "xapp-test" })).toThrow(/SLACK_BOT_TOKEN/);
+    expect(
+      loadEnv({
+        ...base,
+        SLACK_APP_TOKEN: "xapp-test",
+        SLACK_BOT_TOKEN: "xoxb-test",
+        SLACK_RAKAZO_BOT_ID: "bot-arthur",
+      }),
+    ).toMatchObject({
+      slack: { appToken: "xapp-test", botToken: "xoxb-test" },
+      slackBotId: "bot-arthur",
+    });
+  });
+
+  it("accepts only a complete team chat judge override", () => {
+    expect(() => loadEnv({ ...base, TEAM_CHAT_JUDGE_MODEL: "gpt-5-mini" })).toThrow(
+      /TEAM_CHAT_JUDGE_PROVIDER/,
+    );
+    expect(
+      loadEnv({
+        ...base,
+        TEAM_CHAT_JUDGE_PROVIDER: "openai",
+        TEAM_CHAT_JUDGE_MODEL: "gpt-5-mini",
+      }),
+    ).toMatchObject({
+      teamChatJudgeProvider: "openai",
+      teamChatJudgeModel: "gpt-5-mini",
+    });
+  });
 });

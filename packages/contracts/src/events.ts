@@ -262,6 +262,7 @@ export const ThreadMessageSchema = z.object({
   seq: z.number().int().nonnegative(),
   role: MessageRole,
   blocks: z.array(MessageBlock),
+  speakerName: z.string().optional(),
   botId: Id.optional(),
   replyToMessageId: Id.optional(),
   runId: Id.optional(),

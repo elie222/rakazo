@@ -72,7 +72,7 @@ describe("computer home ownership", () => {
     );
   });
 
-  it("rejects an owner-owned file that is not writable by that owner", async () => {
+  it("accepts owner-owned read-only files such as Git objects", async () => {
     const parent = await mkdtemp(path.join(tmpdir(), "rakazo-home-owner-mode-"));
     roots.push(parent);
     const home = path.join(parent, "home");
@@ -82,7 +82,7 @@ describe("computer home ownership", () => {
     await chmod(file, 0o400);
 
     const stat = await lstat(file);
-    await expect(assertComputerHomeWritable(home, stat.uid, stat.gid)).rejects.toThrow(/chown -R/);
+    await expect(assertComputerHomeWritable(home, stat.uid, stat.gid)).resolves.toBeUndefined();
   });
 
   it("does not follow symlinks while checking host-run compatibility", async () => {

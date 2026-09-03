@@ -1,4 +1,5 @@
 import type { AdapterContext, MessagingSurface } from "@rakazo/adapter-kit";
+import { BOT_MESSAGE_MAX_HOPS } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -807,7 +808,10 @@ describe("deliverMessagingOutbound channel runs", () => {
   });
 
   it("does not wake anyone when the hop budget is exhausted", async () => {
-    const deps = createChannelDeps({ text: "@Helper again?", sourceHop: 6 });
+    const deps = createChannelDeps({
+      text: "@Helper again?",
+      sourceHop: BOT_MESSAGE_MAX_HOPS,
+    });
     await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
 
     expect(deps.sendUserMessage).not.toHaveBeenCalled();

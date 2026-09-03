@@ -28,6 +28,7 @@ model User {
   actionApprovalRules         ActionApprovalRule[]
   actionAutoReviewPreferences ActionAutoReviewPreference[]
   createdSpaces               Space[]                      @relation("SpaceCreator")
+  agentSecretsCreated         AgentSecret[]
 
   @@unique([email])
   @@map("user")
@@ -178,10 +179,12 @@ model Space {
   mcpOAuthSessions            McpOAuthSession[]
   botMcpServers               BotMcpServer[]
   messagingIdentities         MessagingIdentity[]
+  externalConversations       ExternalConversation[]
   actionApprovalRules         ActionApprovalRule[]
   actionAutoReviewPreferences ActionAutoReviewPreference[]
   memoryConfig                SpaceMemoryConfig?
   secrets                     Secret[]
+  agentSecrets                AgentSecret[]
   chatGroups                  ChatGroup[]
 
   @@unique([id, organizationId])
@@ -310,51 +313,54 @@ model SpaceVoicePreference {
 }
 
 model Bot {
-  id                String            @id @default(cuid())
-  spaceId           String
-  space             Space             @relation(fields: [spaceId], references: [id], onDelete: Cascade)
-  userId            String
-  name              String
-  title             String            @default("")
-  description       String            @default("")
-  instructions      String            @default("")
-  color             String
-  notifyOnFinish    Boolean           @default(true)
-  pinned            Boolean           @default(false)
-  position          Int               @default(0)
-  sectionId         String?
-  section           BotSection?       @relation(fields: [sectionId], references: [id], onDelete: SetNull)
-  archivedAt        DateTime?
-  parentBotId       String?
-  spawnKey          String?
-  memoryScope       String?
-  parent            Bot?              @relation("BotChildren", fields: [parentBotId], references: [id], onDelete: SetNull)
-  children          Bot[]             @relation("BotChildren")
-  createdAt         DateTime          @default(now())
-  updatedAt         DateTime          @updatedAt
-  thread            Thread?
-  computerId        String?
-  computer          Computer?         @relation(fields: [computerId], references: [id], onDelete: SetNull)
-  computerSwitching Boolean           @default(false)
-  voiceId           String?
-  autoSpeak         Boolean           @default(false)
-  modelProvider     String?
-  modelId           String?
-  thinkingLevel     String?
-  webhookSecretId   String?
-  routines          Routine[]
-  scratchpadItems   ScratchpadItem[]
-  taughtSkills      TaughtSkill[]
-  memoryDocuments   MemoryDocument[]
-  agentHome         AgentHome?
-  browserProfile    BrowserProfile?
-  artifacts         Artifact[]
-  usageRecords      UsageRecord[]
-  tasks             Task[]
-  runs              Run[]
-  steeringMessages  SteeringMessage[]
-  mcpServers        BotMcpServer[]
-  groupMembers      ChatGroupMember[]
+  id                     String                 @id @default(cuid())
+  spaceId                String
+  space                  Space                  @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  userId                 String
+  name                   String
+  title                  String                 @default("")
+  description            String                 @default("")
+  instructions           String                 @default("")
+  color                  String
+  notifyOnFinish         Boolean                @default(true)
+  pinned                 Boolean                @default(false)
+  position               Int                    @default(0)
+  sectionId              String?
+  section                BotSection?            @relation(fields: [sectionId], references: [id], onDelete: SetNull)
+  archivedAt             DateTime?
+  parentBotId            String?
+  spawnKey               String?
+  memoryScope            String?
+  parent                 Bot?                   @relation("BotChildren", fields: [parentBotId], references: [id], onDelete: SetNull)
+  children               Bot[]                  @relation("BotChildren")
+  createdAt              DateTime               @default(now())
+  updatedAt              DateTime               @updatedAt
+  thread                 Thread?
+  computerId             String?
+  computer               Computer?              @relation(fields: [computerId], references: [id], onDelete: SetNull)
+  computerSwitching      Boolean                @default(false)
+  voiceId                String?
+  autoSpeak              Boolean                @default(false)
+  modelProvider          String?
+  modelId                String?
+  thinkingLevel          String?
+  webhookSecretId        String?
+  routines               Routine[]
+  scratchpadItems        ScratchpadItem[]
+  taughtSkills           TaughtSkill[]
+  memoryDocuments        MemoryDocument[]
+  agentHome              AgentHome?
+  browserProfile         BrowserProfile?
+  artifacts              Artifact[]
+  usageRecords           UsageRecord[]
+  tasks                  Task[]
+  runs                   Run[]
+  steeringMessages       SteeringMessage[]
+  mcpServers             BotMcpServer[]
+  groupMembers           ChatGroupMember[]
+  teamChatAmbientEnabled Boolean                @default(false)
+  teamChatRules          String                 @default("") @db.Text
+  externalConversations  ExternalConversation[]
 
   @@unique([spaceId, spawnKey])
   @@index([spaceId, userId, archivedAt, pinned, updatedAt])
@@ -430,48 +436,51 @@ model ChatGroupMember {
 }
 
 model Thread {
-  id                          String     @id @default(cuid())
+  id                          String                @id @default(cuid())
   spaceId                     String
-  space                       Space      @relation(fields: [spaceId], references: [id], onDelete: Cascade)
-  botId                       String?    @unique
-  bot                         Bot?       @relation(fields: [botId], references: [id], onDelete: Cascade)
-  groupId                     String?    @unique
-  group                       ChatGroup? @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  space                       Space                 @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  botId                       String?               @unique
+  bot                         Bot?                  @relation(fields: [botId], references: [id], onDelete: Cascade)
+  groupId                     String?               @unique
+  group                       ChatGroup?            @relation(fields: [groupId], references: [id], onDelete: Cascade)
   userId                      String
-  createdAt                   DateTime   @default(now())
-  nextEventSeq                Int        @default(0)
-  nextMessageSeq              Int        @default(0)
+  createdAt                   DateTime              @default(now())
+  nextEventSeq                Int                   @default(0)
+  nextMessageSeq              Int                   @default(0)
   historyCompactedUpToSeq     Int?
-  historyCompactionSummary    String?    @db.Text
-  historyCompactionGeneration Int        @default(0)
-  unread                      Boolean    @default(false)
+  historyCompactionSummary    String?               @db.Text
+  historyCompactionGeneration Int                   @default(0)
+  unread                      Boolean               @default(false)
   messages                    Message[]
   events                      Event[]
   tasks                       Task[]
   runs                        Run[]
   routines                    Routine[]
+  externalConversationId      String?               @unique
+  externalConversation        ExternalConversation? @relation(fields: [externalConversationId], references: [id], onDelete: Cascade)
 
   @@index([spaceId])
   @@map("threads")
 }
 
 model Message {
-  id               String    @id @default(cuid())
-  threadId         String
-  thread           Thread    @relation(fields: [threadId], references: [id], onDelete: Cascade)
-  seq              Int
-  role             String
-  blocks           Json
-  botId            String?
-  replyToMessageId String?
-  replyTo          Message?  @relation("MessageReplies", fields: [replyToMessageId], references: [id], onDelete: SetNull)
-  replies          Message[] @relation("MessageReplies")
-  runId            String?
-  clientNonce      String?
-  thumbsUp         Boolean   @default(false)
-  sourceRuns       Run[]     @relation("RunSourceMessage")
-  steeringMessages SteeringMessage[]
-  createdAt        DateTime  @default(now())
+  id                        String            @id @default(cuid())
+  threadId                  String
+  thread                    Thread            @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  seq                       Int
+  role                      String
+  blocks                    Json
+  botId                     String?
+  replyToMessageId          String?
+  replyTo                   Message?          @relation("MessageReplies", fields: [replyToMessageId], references: [id], onDelete: SetNull)
+  replies                   Message[]         @relation("MessageReplies")
+  runId                     String?
+  clientNonce               String?
+  thumbsUp                  Boolean           @default(false)
+  sourceRuns                Run[]             @relation("RunSourceMessage")
+  steeringMessages          SteeringMessage[]
+  externalTranscriptMessage ExternalMessage?  @relation("ExternalTranscriptMessage")
+  createdAt                 DateTime          @default(now())
 
   @@unique([threadId, seq])
   @@unique([threadId, clientNonce])
@@ -520,15 +529,15 @@ model Task {
 }
 
 model Run {
-  id                   String           @id @default(cuid())
+  id                   String            @id @default(cuid())
   spaceId              String
-  space                Space            @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  space                Space             @relation(fields: [spaceId], references: [id], onDelete: Cascade)
   botId                String
-  bot                  Bot              @relation(fields: [botId], references: [id], onDelete: Cascade)
+  bot                  Bot               @relation(fields: [botId], references: [id], onDelete: Cascade)
   threadId             String
-  thread               Thread           @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  thread               Thread            @relation(fields: [threadId], references: [id], onDelete: Cascade)
   taskId               String
-  task                 Task             @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  task                 Task              @relation(fields: [taskId], references: [id], onDelete: Cascade)
   userId               String
   status               String
   trigger              String
@@ -536,30 +545,33 @@ model Run {
   modelId              String?
   error                String?
   leaseOwner           String?
-  leaseFence           Int              @default(0)
+  leaseFence           Int               @default(0)
   leaseExpiresAt       DateTime?
   checkpoint           String?
   clientNonce          String?
   sourceMessageId      String?
-  sourceMessage        Message?         @relation("RunSourceMessage", fields: [sourceMessageId], references: [id], onDelete: SetNull)
+  sourceMessage        Message?          @relation("RunSourceMessage", fields: [sourceMessageId], references: [id], onDelete: SetNull)
   routineId            String?
-  routine              Routine?         @relation(fields: [routineId], references: [id], onDelete: SetNull)
+  routine              Routine?          @relation(fields: [routineId], references: [id], onDelete: SetNull)
   startedAt            DateTime?
   completedAt          DateTime?
   botOutcomeReturnedAt DateTime?
   messagingMirroredAt  DateTime?
-  createdAt            DateTime         @default(now())
-  updatedAt            DateTime         @updatedAt
+  teamChatMirroredAt   DateTime?
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
   attempts             Attempt[]
   effects              ExternalEffect[]
   usageRecords         UsageRecord[]
   steeringMessages     SteeringMessage[]
+  externalMessage      ExternalMessage?
 
   @@unique([spaceId, clientNonce])
   @@index([status, leaseExpiresAt])
   @@index([status, updatedAt, id])
   @@index([botOutcomeReturnedAt, status])
   @@index([trigger, status, messagingMirroredAt, updatedAt])
+  @@index([trigger, status, teamChatMirroredAt, updatedAt])
   @@index([spaceId, botId])
   @@index([sourceMessageId])
   @@index([threadId, status, createdAt])
@@ -568,21 +580,79 @@ model Run {
 }
 
 model SteeringMessage {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
   messageId String
-  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  message   Message   @relation(fields: [messageId], references: [id], onDelete: Cascade)
   botId     String
-  bot       Bot      @relation(fields: [botId], references: [id], onDelete: Cascade)
+  bot       Bot       @relation(fields: [botId], references: [id], onDelete: Cascade)
   userId    String
   runId     String?
-  run       Run?     @relation(fields: [runId], references: [id], onDelete: SetNull)
+  run       Run?      @relation(fields: [runId], references: [id], onDelete: SetNull)
   claimedAt DateTime?
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
 
   @@unique([messageId, botId])
   @@index([botId, runId, createdAt])
   @@index([runId])
   @@map("steering_messages")
+}
+
+model ExternalConversation {
+  id               String            @id @default(cuid())
+  provider         String
+  workspaceId      String
+  externalKey      String
+  conversationId   String
+  displayName      String?
+  participantNames String[]          @default([])
+  teamChatAmbientEnabled Boolean?
+  teamChatRules          String?     @db.Text
+  automatedSenderPolicies Json       @default("{}")
+  spaceId          String
+  space            Space             @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  botId            String
+  bot              Bot               @relation(fields: [botId], references: [id], onDelete: Cascade)
+  userId           String
+  thread           Thread?
+  messages         ExternalMessage[]
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  @@unique([provider, workspaceId, externalKey])
+  @@index([spaceId, botId])
+  @@map("external_conversations")
+}
+
+model ExternalMessage {
+  id                     String               @id @default(cuid())
+  externalConversationId String
+  externalConversation   ExternalConversation @relation(fields: [externalConversationId], references: [id], onDelete: Cascade)
+  providerEventId        String
+  kind                   String               @default("direct")
+  senderId               String
+  senderName             String
+  senderIsBot            Boolean              @default(false)
+  content                String               @db.Text
+  threadMessageId        String?              @unique
+  threadMessage          Message?             @relation("ExternalTranscriptMessage", fields: [threadMessageId], references: [id], onDelete: SetNull)
+  replyThreadId          String?
+  batchContext           String?              @db.Text
+  engagementReason       String?
+  judgedAt               DateTime?
+  status                 String               @default("received")
+  runId                  String?              @unique
+  run                    Run?                 @relation(fields: [runId], references: [id], onDelete: SetNull)
+  attempts               Int                  @default(0)
+  nextAttemptAt          DateTime?
+  lastError              String?
+  providerReplyHandle    String?
+  deliveredAt            DateTime?
+  createdAt              DateTime             @default(now())
+  updatedAt              DateTime             @updatedAt
+
+  @@unique([externalConversationId, providerEventId])
+  @@index([status, nextAttemptAt])
+  @@map("external_messages")
 }
 
 model Attempt {
@@ -941,9 +1011,27 @@ model Secret {
   createdAt         DateTime           @default(now())
   mcpServers        McpServer[]
   spaceMemoryConfig SpaceMemoryConfig?
+  agentSecret       AgentSecret?
 
   @@index([userId, spaceId])
   @@map("secrets")
+}
+
+model AgentSecret {
+  id              String   @id @default(cuid())
+  spaceId         String
+  space           Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  createdByUserId String
+  createdByUser   User     @relation(fields: [createdByUserId], references: [id], onDelete: Cascade)
+  name            String
+  secretId        String   @unique
+  secret          Secret   @relation(fields: [secretId], references: [id], onDelete: Cascade)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([spaceId, name])
+  @@index([spaceId, updatedAt])
+  @@map("agent_secrets")
 }
 
 model McpServer {
@@ -1033,28 +1121,28 @@ model MessagingIdentity {
 }
 
 model MessagingChannel {
-  id            String              @id @default(cuid())
+  id            String                   @id @default(cuid())
   provider      String
   /// Opaque provider thread id of the group conversation.
-  threadId      String              @unique
+  threadId      String                   @unique
   name          String?
   introPostedAt DateTime?
-  createdAt     DateTime            @default(now())
-  updatedAt     DateTime            @updatedAt
+  createdAt     DateTime                 @default(now())
+  updatedAt     DateTime                 @updatedAt
   members       MessagingChannelMember[]
 
   @@map("messaging_channels")
 }
 
 model MessagingChannelMember {
-  id         String      @id @default(cuid())
+  id         String           @id @default(cuid())
   channelId  String
   channel    MessagingChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
   address    String
   identityId String?
   status     String
-  createdAt  DateTime    @default(now())
-  updatedAt  DateTime    @updatedAt
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
 
   @@unique([channelId, address])
   @@index([identityId])

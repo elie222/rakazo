@@ -3,6 +3,7 @@ import { messagingDeliverJob, runContinueJob } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
 import {
   botMessageHopExhausted,
+  botMessageHopLimitError,
   buildBotMessageWakePrompt,
   clampBotMessage,
   nextBotMessageHop,
@@ -242,8 +243,7 @@ export async function messageConnectedAgent(
   if (botMessageHopExhausted(hop)) {
     return {
       ok: false,
-      error:
-        "bot-to-bot message limit reached for this chain; report back to the user instead of messaging another bot",
+      error: botMessageHopLimitError(),
     };
   }
 

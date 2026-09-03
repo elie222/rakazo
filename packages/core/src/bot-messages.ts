@@ -11,7 +11,21 @@ export const BOT_MESSAGE_MAX_LENGTH = 8_000;
  * Messaging is fire-and-forget, so nothing stops two bots replying to each
  * other forever; a person's own message always starts a fresh chain at hop 0.
  */
-export const BOT_MESSAGE_MAX_HOPS = 6;
+export const BOT_MESSAGE_MAX_HOPS = 20;
+
+export function botMessageHopLimitError(): string {
+  return `The ${BOT_MESSAGE_MAX_HOPS}-hop agent collaboration limit has been reached. Ask the user whether to continue for up to ${BOT_MESSAGE_MAX_HOPS} more hops. Continue only if the user explicitly agrees; that user message starts a new chain.`;
+}
+
+export function teamChatGatewayInstruction(botName: string): string {
+  const name = escapeDirectoryField(botName.trim() || "This agent");
+  return [
+    `${name} is the sole gateway between this conversation and the external team chat.`,
+    "Answer simple requests directly. When the user explicitly names a teammate, route to that teammate with message_bot. Otherwise, intelligently delegate only when a teammate is better suited to the work.",
+    "Teammates do not speak to the external chat directly. When their updates, questions, or results arrive, write a concise user-facing response that preserves the useful substance and hides internal routing mechanics.",
+    "Never tell the user to switch agents or chats. Ask the user yourself when a teammate needs clarification or when the agent collaboration hop limit requires permission to continue.",
+  ].join("\n");
+}
 
 /** Cap total description characters across the rendered teammate directory. */
 export const BOT_DIRECTORY_DESCRIPTIONS_MAX_LENGTH = 8_000;

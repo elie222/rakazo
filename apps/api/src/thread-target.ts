@@ -34,7 +34,7 @@ import {
 } from "./artifacts.js";
 import { resolveBusyBotName, toComputerStatus } from "./computer-status.js";
 import { withSerializableRetry } from "./serializable-retry.js";
-import { loadMessagePage } from "./thread-message-pages.js";
+import { decorateExternalMessagePage, loadMessagePage } from "./thread-message-pages.js";
 
 export type ThreadTarget =
   | {
@@ -50,7 +50,18 @@ export type ThreadTarget =
       groupName: string;
       members: GroupMember[];
       memberBotIds: string[];
+    }
+  | {
+      kind: "external";
+      externalConversationId: string;
+      threadId: string;
+      botId: string;
+      provider: string;
+      displayName: string | null;
+      participantNames: string[];
     };
+
+export type WritableThreadTarget = Exclude<ThreadTarget, { kind: "external" }>;
 
 const THREAD_MESSAGE_PAGE_SIZE = 100;
 const RUNS_NEEDING_CONTINUE = new Set(["queued"]);
@@ -258,7 +269,7 @@ async function lockAndLoadGroupMembers(
 export async function resolveThreadTarget(
   prisma: PrismaClient,
   actor: Actor,
-  input: { botId?: string; groupId?: string },
+  input: { botId?: string; groupId?: string; externalConversationId?: string },
 ): Promise<ThreadTarget> {
   const repos = createRepos(prisma);
   const groupRepos = createGroupRepos(prisma);
@@ -290,7 +301,45 @@ export async function resolveThreadTarget(
       memberBotIds: members.map((member) => member.botId),
     };
   }
+  if (input.externalConversationId) {
+    const conversation = await prisma.externalConversation.findFirst({
+      where: {
+        id: input.externalConversationId,
+        spaceId: actor.spaceId,
+        userId: actor.userId,
+        bot: { archivedAt: null },
+      },
+      select: {
+        id: true,
+        botId: true,
+        provider: true,
+        displayName: true,
+        participantNames: true,
+        thread: { select: { id: true } },
+      },
+    });
+    if (!conversation?.thread) throw new IsolationError();
+    return {
+      kind: "external",
+      externalConversationId: conversation.id,
+      threadId: conversation.thread.id,
+      botId: conversation.botId,
+      provider: conversation.provider,
+      displayName: conversation.displayName,
+      participantNames: conversation.participantNames,
+    };
+  }
   throw new IsolationError();
+}
+
+export async function resolveWritableThreadTarget(
+  prisma: PrismaClient,
+  actor: Actor,
+  input: { botId?: string; groupId?: string },
+): Promise<WritableThreadTarget> {
+  const target = await resolveThreadTarget(prisma, actor, input);
+  if (target.kind === "external") throw new IsolationError();
+  return target;
 }
 
 export async function threadHead(prisma: PrismaClient, target: ThreadTarget) {
@@ -419,7 +468,9 @@ export async function threadSnapshot(
             where: {
               threadId: target.threadId,
               runId: { in: activeRuns.map((run) => run.id) },
-              type: { in: ["thread.progress", "thread.subagent", "agent.tool.called"] },
+              type: {
+                in: ["thread.progress", "thread.subagent", "agent.tool.called"],
+              },
             },
             orderBy: { seq: "asc" },
           })
@@ -432,14 +483,33 @@ export async function threadSnapshot(
       liveEvents,
     };
   });
+  const identity =
+    target.kind === "group"
+      ? {
+          groupId: target.groupId,
+          groupName: target.groupName,
+          members: target.members,
+        }
+      : {
+          externalConversationId: target.externalConversationId,
+          externalProvider: target.provider,
+          externalDisplayName: target.displayName,
+          externalParticipantNames: target.participantNames,
+        };
+  const messagePage =
+    target.kind === "external"
+      ? await decorateExternalMessagePage(
+          deps.prisma,
+          target.externalConversationId,
+          core.messagePage,
+        )
+      : core.messagePage;
   return {
-    groupId: target.groupId,
-    groupName: target.groupName,
-    members: target.members,
+    ...identity,
     threadId: target.threadId,
     cursor: core.last?.seq ?? -1,
-    messages: messagesWithLiveEvents(core.messagePage.messages, core.liveEvents),
-    olderCursor: core.messagePage.olderCursor,
+    messages: messagesWithLiveEvents(messagePage.messages, core.liveEvents),
+    olderCursor: messagePage.olderCursor,
     // Match the live reducer: a failed latest terminal stays in run even while siblings are
     // still active or start late. A newer completed/cancelled terminal clears it.
     run:
@@ -538,6 +608,7 @@ export async function sendThreadMessage(
     clientNonce?: string;
   },
 ) {
+  if (target.kind === "external") throw new IsolationError("External conversations are read-only");
   const existing = await replayExistingSend(deps, target.threadId, input.clientNonce);
   if (existing) return existing;
 
@@ -628,7 +699,10 @@ export async function sendThreadMessage(
             sourceMessageId: message.id,
           },
         });
-        await tx.message.update({ where: { id: message.id }, data: { runId: run.id } });
+        await tx.message.update({
+          where: { id: message.id },
+          data: { runId: run.id },
+        });
         await cancelSupersededQueuedRuns(tx, {
           threadId: target.threadId,
           botIds: [target.botId],
@@ -656,7 +730,10 @@ export async function sendThreadMessage(
       const mentionTargets = splitMentionTargets(input.mentions);
       const targetBotIds = resolveGroupTargetBotIds({
         text: input.text ?? "",
-        members: members.map((member) => ({ id: member.botId, name: member.name })),
+        members: members.map((member) => ({
+          id: member.botId,
+          name: member.name,
+        })),
         explicitMentions: mentionTargets.botMentionIds,
       });
       const { blocks: attachmentBlocks, artifacts } = await resolveGroupSendAttachments(
@@ -787,7 +864,7 @@ export async function reactToThreadMessage(
     }
 
     await tx.message.update({ where: { id: message.id }, data: { thumbsUp } });
-    const botId = target.kind === "bot" ? target.botId : target.memberBotIds[0];
+    const botId = target.kind === "group" ? target.memberBotIds[0] : target.botId;
     if (!botId) throw new IsolationError();
 
     let run: { id: string; status: string } | null = null;
@@ -859,7 +936,7 @@ export async function stopThreadRuns(
     });
     await tx.steeringMessage.deleteMany({
       where: {
-        botId: { in: target.kind === "bot" ? [target.botId] : target.memberBotIds },
+        botId: { in: target.kind === "group" ? target.memberBotIds : [target.botId] },
         message: { threadId: target.threadId },
       },
     });

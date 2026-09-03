@@ -4,6 +4,60 @@ import type { Prisma, PrismaClient } from "@rakazo/db";
 
 type MessageDb = PrismaClient | Prisma.TransactionClient;
 
+export async function decorateExternalMessagePage(
+  prisma: MessageDb,
+  externalConversationId: string,
+  page: ThreadMessagePage,
+): Promise<ThreadMessagePage> {
+  const messageIds = page.messages.map((message) => message.id);
+  if (messageIds.length === 0) return page;
+
+  const externalMessages = await prisma.externalMessage.findMany({
+    where: {
+      externalConversationId,
+      OR: [
+        { threadMessageId: { in: messageIds } },
+        { run: { is: { sourceMessageId: { in: messageIds } } } },
+      ],
+    },
+    select: {
+      senderName: true,
+      content: true,
+      threadMessageId: true,
+      run: { select: { sourceMessageId: true } },
+    },
+  });
+  const visibleByMessageId = new Map(
+    externalMessages.flatMap((message) =>
+      message.threadMessageId ? [[message.threadMessageId, message] as const] : [],
+    ),
+  );
+  const hiddenMessageIds = new Set(
+    externalMessages.flatMap((message) => {
+      const sourceMessageId = message.run?.sourceMessageId;
+      return sourceMessageId && sourceMessageId !== message.threadMessageId
+        ? [sourceMessageId]
+        : [];
+    }),
+  );
+
+  return {
+    ...page,
+    messages: page.messages.flatMap((message) => {
+      if (hiddenMessageIds.has(message.id)) return [];
+      const externalMessage = visibleByMessageId.get(message.id);
+      if (!externalMessage) return [message];
+      return [
+        {
+          ...message,
+          speakerName: externalMessage.senderName,
+          blocks: [{ kind: "text" as const, text: externalMessage.content }],
+        },
+      ];
+    }),
+  };
+}
+
 export async function loadMessagePage(
   prisma: MessageDb,
   threadId: string,
@@ -33,7 +87,9 @@ export async function loadMessagePage(
       });
       const first = rows[0];
       const hasOlder = first
-        ? (await prisma.message.count({ where: { threadId, seq: { lt: first.seq } } })) > 0
+        ? (await prisma.message.count({
+            where: { threadId, seq: { lt: first.seq } },
+          })) > 0
         : false;
       // Peer text/activity stays out of the normal transcript (including the
       // around target). Receipts remain via withoutPeerRunMessages; full peer

@@ -10,8 +10,10 @@ import type {
   ComputerStatus,
   Connection,
   ConnectionCatalogItem,
+  ExternalConversation,
   Group,
   Me,
+  MessageBlock,
   ProductEvent,
   Routine,
   SearchHit,
@@ -79,10 +81,12 @@ import {
   Copy,
   Cpu,
   Gauge,
+  KeyRound,
   Lock,
   LogOut,
   Maximize2,
   Menu,
+  MessageSquare,
   Mic,
   Monitor,
   Paperclip,
@@ -98,6 +102,7 @@ import {
 } from "lucide-react";
 import {
   type DragEvent,
+  Fragment,
   lazy,
   type MutableRefObject,
   memo,
@@ -208,6 +213,11 @@ const MessagingSettingsOverlay = lazy(() =>
     default: module.MessagingSettingsOverlay,
   })),
 );
+const AgentSecretsOverlay = lazy(() =>
+  import("./AgentSecretsOverlay").then((module) => ({
+    default: module.AgentSecretsOverlay,
+  })),
+);
 const ModelSettingsOverlay = lazy(() =>
   import("./ModelSettingsOverlay").then((module) => ({ default: module.ModelSettingsOverlay })),
 );
@@ -229,6 +239,11 @@ const VoiceSettingsOverlay = lazy(() =>
   import("./VoiceSettingsOverlay").then((module) => ({ default: module.VoiceSettingsOverlay })),
 );
 const CallView = lazy(() => import("./CallView").then((module) => ({ default: module.CallView })));
+const ExternalConversationSettings = lazy(() =>
+  import("./ExternalConversationSettings").then((module) => ({
+    default: module.ExternalConversationSettings,
+  })),
+);
 
 type Panel =
   | "computer"
@@ -237,6 +252,7 @@ type Panel =
   | "create"
   | "create-group"
   | "group-settings"
+  | "external-settings"
   | null;
 
 type PendingAttachment = {
@@ -283,7 +299,7 @@ function readCollapsedSidebarSections(userId: string | null | undefined): Set<st
 
 export function ShellPage() {
   const { t } = useLingui();
-  const { botId, groupId } = useParams();
+  const { botId, groupId, externalConversationId } = useParams();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   // Mirrors searchParams for effects that only need to read it once on run,
@@ -294,6 +310,7 @@ export function ShellPage() {
   const session = authClient.useSession();
   const userId = session.data?.user.id;
   const [groups, setGroups] = useState<Group[]>([]);
+  const [externalConversations, setExternalConversations] = useState<ExternalConversation[]>([]);
   const [bots, setBots] = useState<Bot[]>([]);
   const botsRef = useRef(bots);
   botsRef.current = bots;
@@ -393,6 +410,7 @@ export function ShellPage() {
   const [accountSettingsOpen, setAccountSettingsOpen] = useState(false);
   const [messagingSettingsOpen, setMessagingSettingsOpen] = useState(false);
   const [messagingSurfaceEnabled, setMessagingSurfaceEnabled] = useState(false);
+  const [agentSecretsOpen, setAgentSecretsOpen] = useState(false);
   const [accountSettingsFocusUsage, setAccountSettingsFocusUsage] = useState(false);
   const [modelsOpen, setModelsOpen] = useState(false);
   const [memorySettingsOpen, setMemorySettingsOpen] = useState(false);
@@ -496,6 +514,7 @@ export function ShellPage() {
   const pinnedAroundRef = useRef<{
     botId?: string;
     groupId?: string;
+    externalConversationId?: string;
     messageId: string;
     threadId: string;
     messages: ThreadMessage[];
@@ -511,7 +530,20 @@ export function ShellPage() {
   const autoSpokenBotId = useRef<string | null>(null);
 
   const inGroup = Boolean(groupId);
-  const active = inGroup ? undefined : (bots.find((b) => b.id === botId) ?? bots[0]);
+  const inExternalConversation = Boolean(externalConversationId);
+  const activeExternalConversation = externalConversations.find(
+    (conversation) => conversation.id === externalConversationId,
+  );
+  const activeExternalParticipantNames =
+    activeExternalConversation?.participantNames.join(", ") ?? "";
+  useEffect(() => {
+    if (!inExternalConversation && panel === "external-settings") setPanel(null);
+  }, [inExternalConversation, panel]);
+  const active = inGroup
+    ? undefined
+    : (bots.find((bot) =>
+        inExternalConversation ? bot.id === activeExternalConversation?.botId : bot.id === botId,
+      ) ?? bots[0]);
   const activeGroup = groups.find((group) => group.id === groupId);
   const activePendingAttachments = useMemo(
     () => attachmentsForThread(pendingAttachments, inGroup ? groupId : active?.id),
@@ -524,10 +556,16 @@ export function ShellPage() {
   routeBotId.current = botId;
   const routeGroupId = useRef<string | undefined>(groupId);
   routeGroupId.current = groupId;
-  const activeBotId = useRef<string | undefined>(inGroup ? undefined : active?.id);
-  activeBotId.current = inGroup ? undefined : active?.id;
+  const routeExternalConversationId = useRef<string | undefined>(externalConversationId);
+  routeExternalConversationId.current = externalConversationId;
+  const activeBotId = useRef<string | undefined>(
+    inGroup || inExternalConversation ? undefined : active?.id,
+  );
+  activeBotId.current = inGroup || inExternalConversation ? undefined : active?.id;
   const activeGroupId = useRef<string | undefined>(groupId);
   activeGroupId.current = groupId;
+  const activeExternalConversationId = useRef<string | undefined>(externalConversationId);
+  activeExternalConversationId.current = externalConversationId;
   const screenRequest = useRef(0);
   const contextBot =
     botMenu?.kind === "bot" ? bots.find((bot) => bot.id === botMenu.id) : undefined;
@@ -656,7 +694,12 @@ export function ShellPage() {
           includeArchived ? rpc.bots.listArchived() : Promise.resolve(null),
           includeArchived ? rpc.groups.listArchived() : Promise.resolve(null),
         ]);
-        const { bots: list, botSections: sections, groups: groupList } = navigation.current;
+        const {
+          bots: list,
+          botSections: sections,
+          groups: groupList,
+          externalConversations: externalConversationList,
+        } = navigation.current;
         markOnce("rk:renderer:bots-response");
         const botsFresh = request === botsRefreshEpoch.current;
         const archivedFresh =
@@ -676,6 +719,7 @@ export function ShellPage() {
         }
         setBotSections(sections);
         setGroups(groupList);
+        setExternalConversations(externalConversationList);
         setSpaces(navigation.spaces);
         setInitialBotsLoaded(true);
         botsRefreshApplied.current = request;
@@ -692,6 +736,17 @@ export function ShellPage() {
         const currentGroupId = routeGroupId.current;
         if (currentGroupId) {
           if (!groupList.some((group) => group.id === currentGroupId)) {
+            navigate(firstThreadRoute(list, groupList), { replace: true });
+          }
+          return;
+        }
+        const currentExternalConversationId = routeExternalConversationId.current;
+        if (currentExternalConversationId) {
+          if (
+            !externalConversationList.some(
+              (conversation) => conversation.id === currentExternalConversationId,
+            )
+          ) {
             navigate(firstThreadRoute(list, groupList), { replace: true });
           }
           return;
@@ -738,6 +793,36 @@ export function ShellPage() {
     setRoutines([]);
     setRoutinesBotId(null);
     // Keep the search-jump viewport; expandedHistoryThread merge still accepts live messages.
+    if (
+      stickToEnd &&
+      (!scrollElement || transcriptIsNearEnd(scrollElement)) &&
+      expandedHistoryThread.current !== snap.threadId
+    ) {
+      snapTranscriptToEndAfterFrame();
+    }
+    return snap;
+  }
+
+  async function refreshExternalConversationThread(id: string, signal?: AbortSignal) {
+    const scrollElement = messageScroll.current;
+    const stickToEnd = !scrollElement || transcriptIsNearEnd(scrollElement);
+    markOnce("rk:renderer:thread-request-start");
+    const snap = await rpc.threads.get(
+      { externalConversationId: id },
+      signal ? { signal } : undefined,
+    );
+    markOnce("rk:renderer:thread-response");
+    if (activeExternalConversationId.current !== id) return snap;
+    const reconciled = reconcileRefreshedThread(
+      snapshotRef.current,
+      snap,
+      computerRef.current,
+      expandedHistoryThread.current === snap.threadId,
+    );
+    commitSnapshot(reconciled.snapshot);
+    commitComputer(null);
+    setRoutines([]);
+    setRoutinesBotId(null);
     if (
       stickToEnd &&
       (!scrollElement || transcriptIsNearEnd(scrollElement)) &&
@@ -822,13 +907,18 @@ export function ShellPage() {
   }
 
   async function loadOlderMessages() {
-    const targetBotId = inGroup ? undefined : active?.id;
+    const targetExternalConversationId = inExternalConversation
+      ? externalConversationId
+      : undefined;
+    const targetBotId = inGroup || inExternalConversation ? undefined : active?.id;
     const targetGroupId = inGroup ? groupId : undefined;
-    const snapshotMatchesTarget = targetGroupId
-      ? snapshot?.groupId === targetGroupId
-      : snapshot?.botId === targetBotId;
+    const snapshotMatchesTarget = targetExternalConversationId
+      ? snapshot?.externalConversationId === targetExternalConversationId
+      : targetGroupId
+        ? snapshot?.groupId === targetGroupId
+        : snapshot?.botId === targetBotId;
     if (
-      (!targetBotId && !targetGroupId) ||
+      (!targetBotId && !targetGroupId && !targetExternalConversationId) ||
       !snapshotMatchesTarget ||
       snapshot?.olderCursor == null ||
       loadingOlder
@@ -842,13 +932,18 @@ export function ShellPage() {
     setLoadingOlder(true);
     try {
       const page = await rpc.threads.messages({
-        ...(targetGroupId ? { groupId: targetGroupId } : { botId: targetBotId! }),
+        ...(targetExternalConversationId
+          ? { externalConversationId: targetExternalConversationId }
+          : targetGroupId
+            ? { groupId: targetGroupId }
+            : { botId: targetBotId! }),
         before,
       });
       if (
         epoch !== historyEpoch.current ||
         activeBotId.current !== targetBotId ||
-        activeGroupId.current !== targetGroupId
+        activeGroupId.current !== targetGroupId ||
+        activeExternalConversationId.current !== targetExternalConversationId
       )
         return;
       expandedHistoryThread.current = page.threadId;
@@ -892,10 +987,11 @@ export function ShellPage() {
           setArchivedBots(bootstrap.archivedBots);
           setArchivedGroups(bootstrap.archivedGroups);
           setGroups(groupList);
+          setExternalConversations(bootstrap.externalConversations);
           setSpaces(bootstrap.spaces);
           setInitialBotsLoaded(true);
         }
-        if (!groupId && bootstrap.thread) {
+        if (!groupId && !externalConversationId && bootstrap.thread) {
           bootstrappedThread.current = bootstrap.thread;
           commitSnapshot(bootstrap.thread);
           commitComputer(bootstrap.thread.computer ?? null);
@@ -917,6 +1013,18 @@ export function ShellPage() {
         if (groupId) {
           if (!groupList.some((group) => group.id === groupId)) {
             navigate(firstThreadRoute(bootstrap.bots, groupList), { replace: true });
+          }
+          return;
+        }
+        if (externalConversationId) {
+          if (
+            !bootstrap.externalConversations.some(
+              (conversation) => conversation.id === externalConversationId,
+            )
+          ) {
+            navigate(firstThreadRoute(bootstrap.bots, groupList), {
+              replace: true,
+            });
           }
           return;
         }
@@ -1022,7 +1130,7 @@ export function ShellPage() {
   ]);
 
   useEffect(() => {
-    if (!active) return;
+    if (!active || inExternalConversation) return;
     // Opening a bot clears the manual unread flag so it can auto-read again.
     manuallyUnread.current.delete(active.id);
     const markVisibleBotRead = () => {
@@ -1035,10 +1143,10 @@ export function ShellPage() {
       window.removeEventListener("focus", markVisibleBotRead);
       document.removeEventListener("visibilitychange", markVisibleBotRead);
     };
-  }, [active?.id, markBotReadIfVisible]);
+  }, [active?.id, inExternalConversation, markBotReadIfVisible]);
 
   useEffect(() => {
-    if (!active) return;
+    if (!active || inExternalConversation) return;
     const pendingJump = searchParamsRef.current.get("m");
     if (!pendingJump) {
       pinnedAroundRef.current = null;
@@ -1191,7 +1299,7 @@ export function ShellPage() {
     return () => {
       abort.abort();
     };
-  }, [active?.id, markBotReadIfVisible, notifyBrowserForEvent]);
+  }, [active?.id, inExternalConversation, markBotReadIfVisible, notifyBrowserForEvent]);
 
   useEffect(() => {
     if (!groupId || !activeGroup) return;
@@ -1338,12 +1446,102 @@ export function ShellPage() {
     };
   }, [activeGroup?.id, groupId, notifyBrowserForEvent]);
 
+  useEffect(() => {
+    if (!externalConversationId || !activeExternalConversation) return;
+    pinnedAroundRef.current = null;
+    expandedHistoryThread.current = null;
+    historyEpoch.current += 1;
+    const abort = new AbortController();
+    void (async () => {
+      const snap = await refreshExternalConversationThread(
+        externalConversationId,
+        threadSnapshotSignal(abort.signal),
+      ).catch(() => null);
+      if (abort.signal.aborted) return;
+      let subscribedThreadId = snap?.threadId;
+      let cursor = snap?.cursor ?? -1;
+      if (!subscribedThreadId) {
+        const head = await rpc.threads
+          .head({ externalConversationId }, { signal: threadSnapshotSignal(abort.signal) })
+          .catch(() => null);
+        subscribedThreadId = head?.threadId;
+        cursor = head?.cursor ?? -1;
+      }
+      if (!subscribedThreadId || abort.signal.aborted) return;
+      let snapshotReady = snapshotRef.current?.threadId === subscribedThreadId;
+      const pendingSnapshotEvents: ProductEvent[] = [];
+      if (!snapshotReady) {
+        void (async () => {
+          let snapshotRetryMs = 250;
+          while (!snapshotReady && !abort.signal.aborted) {
+            try {
+              await abortableDelay(snapshotRetryMs, abort.signal);
+            } catch {
+              return;
+            }
+            await refreshExternalConversationThread(
+              externalConversationId,
+              threadSnapshotSignal(abort.signal),
+            ).catch(() => null);
+            if (abort.signal.aborted) return;
+            const committed = snapshotRef.current;
+            if (committed?.threadId === subscribedThreadId) {
+              snapshotReady = true;
+              const pending = pendingSnapshotEvents.splice(0);
+              for (const event of pending) {
+                if (event.seq > committed.cursor) {
+                  applyThreadEvent(event, commitSnapshot, commitComputer, snapshotRef, computerRef);
+                }
+              }
+              return;
+            }
+            snapshotRetryMs = Math.min(snapshotRetryMs * 2, 5_000);
+          }
+        })();
+      }
+      let retryMs = 250;
+      while (!abort.signal.aborted) {
+        try {
+          const events = await rpc.threads.subscribe(
+            { externalConversationId, cursor },
+            { signal: abort.signal },
+          );
+          for await (const event of events) {
+            if (abort.signal.aborted) break;
+            cursor = Math.max(cursor, event.seq);
+            retryMs = 250;
+            if (snapshotReady && snapshotRef.current?.threadId === event.threadId) {
+              applyThreadEvent(event, commitSnapshot, commitComputer, snapshotRef, computerRef);
+            } else {
+              pendingSnapshotEvents.push(event);
+            }
+            if (event.type === "run.started" || isRunTerminalEvent(event)) {
+              void refreshBots().catch(() => undefined);
+            }
+          }
+        } catch {
+          // reconnect safely
+        }
+        if (abort.signal.aborted) break;
+        await refreshExternalConversationThread(
+          externalConversationId,
+          threadSnapshotSignal(abort.signal),
+        ).catch(() => null);
+        await abortableDelay(retryMs, abort.signal).catch(() => undefined);
+        retryMs = Math.min(retryMs * 2, 5_000);
+      }
+    })();
+    return () => abort.abort();
+  }, [activeExternalConversation?.id, externalConversationId]);
+
   const sidebarGroups = useMemo(() => {
     const needle = query.toLowerCase();
     const sidebarSpaces =
       spaces.length > 0
         ? spaces.map((space) =>
-            space.id === bootstrapMe?.spaceId ? { ...space, bots, groups, botSections } : space,
+            space.id === bootstrapMe?.spaceId
+              ? { ...space, bots, groups, externalConversations, botSections }
+              : space,
           )
         : bootstrapMe
           ? [
@@ -1353,15 +1551,26 @@ export function ShellPage() {
                 isDefault: true,
                 bots,
                 groups,
+                externalConversations,
                 botSections,
               },
             ]
           : [];
     const showSpaceNames = sidebarSpaces.length > 1;
     return sidebarSpaces.flatMap((space) => {
-      const visibleBots = space.bots.filter((bot) =>
-        `${bot.name} ${bot.title ?? ""} ${bot.preview ?? ""}`.toLowerCase().includes(needle),
-      );
+      const visibleBots = space.bots.filter((bot) => {
+        const conversations = space.externalConversations.filter(
+          (conversation) => conversation.botId === bot.id,
+        );
+        return `${bot.name} ${bot.title ?? ""} ${bot.preview ?? ""} ${conversations
+          .map(
+            (conversation) =>
+              `${conversation.displayName ?? ""} ${conversation.participantNames.join(" ")} ${conversation.preview}`,
+          )
+          .join(" ")}`
+          .toLowerCase()
+          .includes(needle);
+      });
       const visibleGroups = space.groups.filter((group) =>
         `${group.name} ${group.preview}`.toLowerCase().includes(needle),
       );
@@ -1369,7 +1578,17 @@ export function ShellPage() {
         [
           ...visibleBots.map((chat) => ({ kind: "bot" as const, chat })),
           ...visibleGroups.map((chat) => ({ kind: "group" as const, chat })),
-        ].map((item) => ({ ...item, pinned: item.chat.pinned, sectionId: item.chat.sectionId })),
+        ].map((item) => ({
+          ...item,
+          pinned: item.chat.pinned,
+          sectionId: item.chat.sectionId,
+          externalConversations:
+            item.kind === "bot"
+              ? space.externalConversations.filter(
+                  (conversation) => conversation.botId === item.chat.id,
+                )
+              : [],
+        })),
         space.botSections,
       ).map((group) => ({
         ...group,
@@ -1396,7 +1615,7 @@ export function ShellPage() {
         },
       ];
     });
-  }, [bootstrapMe, botSections, bots, groups, spaces, query]);
+  }, [bootstrapMe, botSections, bots, externalConversations, groups, spaces, query]);
 
   const openSpaceChat = useCallback(
     (spaceId: string, path: string) => {
@@ -1597,6 +1816,7 @@ export function ShellPage() {
       });
       return;
     }
+    if (inExternalConversation) return;
     if (!active) return;
     if (routineId && routinesBotId === active.id) {
       const routine = routines.find((item) => item.id === routineId);
@@ -1619,20 +1839,35 @@ export function ShellPage() {
         setSearchParams(next, { replace: true });
       });
     }
-  }, [active?.id, groupId, inGroup, routines, routinesBotId, searchParams, setSearchParams]);
-  const activeSnapshot = inGroup
-    ? snapshot?.groupId === groupId
+  }, [
+    active?.id,
+    groupId,
+    inExternalConversation,
+    inGroup,
+    routines,
+    routinesBotId,
+    searchParams,
+    setSearchParams,
+  ]);
+  const activeSnapshot = inExternalConversation
+    ? snapshot?.externalConversationId === externalConversationId
       ? snapshot
       : null
-    : snapshot?.botId === active?.id
-      ? snapshot
-      : null;
+    : inGroup
+      ? snapshot?.groupId === groupId
+        ? snapshot
+        : null
+      : snapshot?.botId === active?.id
+        ? snapshot
+        : null;
   const activeReplyTarget =
     replyTarget && activeSnapshot?.messages.some((message) => message.id === replyTarget.id)
       ? replyTarget
       : null;
   const currentRuns = activeThreadRuns(activeSnapshot);
-  const answerableAskMessageId = latestAnswerableAskMessageId(activeSnapshot);
+  const answerableAskMessageId = inExternalConversation
+    ? null
+    : latestAnswerableAskMessageId(activeSnapshot);
   const workingRuns = currentRuns.filter((run) =>
     ["running", "queued", "leased"].includes(run.status),
   );
@@ -1649,8 +1884,13 @@ export function ShellPage() {
     [activeSnapshot?.messages],
   );
   const transcriptArtifactTarget = useMemo<ArtifactTarget>(
-    () => (inGroup ? { groupId: groupId ?? "" } : { botId: active?.id ?? "" }),
-    [active?.id, groupId, inGroup],
+    () =>
+      inExternalConversation
+        ? { botId: active?.id ?? "" }
+        : inGroup
+          ? { groupId: groupId ?? "" }
+          : { botId: active?.id ?? "" },
+    [active?.id, groupId, inExternalConversation, inGroup],
   );
   const transcriptMembers = activeSnapshot?.members ?? activeGroup?.members;
   const resolveTranscriptBot = useCallback(
@@ -1700,13 +1940,17 @@ export function ShellPage() {
   );
   const shellReady =
     initialBotsLoaded &&
-    (inGroup
-      ? Boolean(activeGroup && activeSnapshot)
-      : bots.length === 0 || Boolean(active && activeSnapshot));
+    (inExternalConversation
+      ? Boolean(activeExternalConversation && activeSnapshot)
+      : inGroup
+        ? Boolean(activeGroup && activeSnapshot)
+        : bots.length === 0 || Boolean(active && activeSnapshot));
   const refreshThreadRef = useRef(refreshThread);
   refreshThreadRef.current = refreshThread;
   const refreshGroupThreadRef = useRef(refreshGroupThread);
   refreshGroupThreadRef.current = refreshGroupThread;
+  const refreshExternalConversationThreadRef = useRef(refreshExternalConversationThread);
+  refreshExternalConversationThreadRef.current = refreshExternalConversationThread;
   const loadOlderMessagesRef = useRef(loadOlderMessages);
   loadOlderMessagesRef.current = loadOlderMessages;
   const jumpToMessageRef = useRef(jumpToMessage);
@@ -1789,7 +2033,10 @@ export function ShellPage() {
       markOnce("rk:renderer:bots-committed");
       markAfterPaint("rk:renderer:bots-painted");
     }
-    if (active && snapshot?.botId === active.id) {
+    if (
+      (active && snapshot?.botId === active.id) ||
+      (externalConversationId && snapshot?.externalConversationId === externalConversationId)
+    ) {
       markOnce("rk:renderer:thread-committed");
       markAfterPaint("rk:renderer:thread-painted");
     }
@@ -1797,11 +2044,28 @@ export function ShellPage() {
       markOnce("rk:renderer:shell-ready");
       markAfterPaint("rk:renderer:shell-painted");
     }
-  }, [active, initialBotsLoaded, shellReady, snapshot?.botId]);
+  }, [
+    active,
+    externalConversationId,
+    initialBotsLoaded,
+    shellReady,
+    snapshot?.botId,
+    snapshot?.externalConversationId,
+  ]);
 
   useLayoutEffect(() => {
     const pin = pinnedAroundRef.current;
-    if (inGroup) {
+    if (inExternalConversation) {
+      if (
+        !externalConversationId ||
+        !snapshot ||
+        snapshot.externalConversationId !== externalConversationId
+      )
+        return;
+      if (initiallyScrolledThread.current === snapshot.threadId) return;
+      if (expandedHistoryThread.current === snapshot.threadId) return;
+      if (pin?.externalConversationId === externalConversationId) return;
+    } else if (inGroup) {
       if (!groupId || !snapshot || snapshot.groupId !== groupId) return;
       if (initiallyScrolledThread.current === snapshot.threadId) return;
       if (expandedHistoryThread.current === snapshot.threadId) return;
@@ -1816,7 +2080,17 @@ export function ShellPage() {
     if (!element) return;
     element.scrollTop = element.scrollHeight;
     initiallyScrolledThread.current = snapshot.threadId;
-  }, [active, groupId, inGroup, snapshot?.botId, snapshot?.groupId, snapshot?.threadId]);
+  }, [
+    active,
+    externalConversationId,
+    groupId,
+    inExternalConversation,
+    inGroup,
+    snapshot?.botId,
+    snapshot?.externalConversationId,
+    snapshot?.groupId,
+    snapshot?.threadId,
+  ]);
 
   const openBot = useCallback((id: string) => navigate(`/app/${id}`), [navigate]);
   const loadOlder = useCallback(() => loadOlderMessagesRef.current(), []);
@@ -2119,6 +2393,11 @@ export function ShellPage() {
     const groupId = activeGroupId.current;
     if (groupId) {
       await refreshGroupThreadRef.current(groupId);
+      return;
+    }
+    const externalConversationId = activeExternalConversationId.current;
+    if (externalConversationId) {
+      await refreshExternalConversationThreadRef.current(externalConversationId);
       return;
     }
     const id = activeBotId.current;
@@ -2518,128 +2797,154 @@ export function ShellPage() {
                     ) : null}
                     {!collapsed &&
                       group.bots.map((item) => (
-                        <button
-                          key={`${item.kind}:${item.chat.id}`}
-                          type="button"
-                          draggable={item.kind === "bot"}
-                          data-roster-bot-id={item.kind === "bot" ? item.chat.id : undefined}
-                          aria-keyshortcuts={
-                            item.kind === "bot" ? "Alt+ArrowUp Alt+ArrowDown" : undefined
-                          }
-                          onDragStart={(event) => {
-                            if (item.kind !== "bot") return;
-                            setDraggedBotId(item.chat.id);
-                            event.dataTransfer.effectAllowed = "move";
-                            event.dataTransfer.setData("text/plain", item.chat.id);
-                          }}
-                          onDragOver={(event) => {
-                            if (
-                              item.kind === "bot" &&
-                              draggedBotId &&
-                              groupBotIds.includes(draggedBotId)
-                            ) {
-                              event.preventDefault();
-                              event.dataTransfer.dropEffect = "move";
+                        <Fragment key={`${item.kind}:${item.chat.id}`}>
+                          <button
+                            type="button"
+                            draggable={item.kind === "bot"}
+                            data-roster-bot-id={item.kind === "bot" ? item.chat.id : undefined}
+                            aria-keyshortcuts={
+                              item.kind === "bot" ? "Alt+ArrowUp Alt+ArrowDown" : undefined
                             }
-                          }}
-                          onDrop={(event) => {
-                            if (item.kind !== "bot" || !draggedBotId) return;
-                            event.preventDefault();
-                            reorderRosterBot(draggedBotId, item.chat.id, groupBotIds);
-                            setDraggedBotId(null);
-                          }}
-                          onDragEnd={() => setDraggedBotId(null)}
-                          onKeyDown={(event) => {
-                            if (
-                              item.kind !== "bot" ||
-                              !event.altKey ||
-                              (event.key !== "ArrowUp" && event.key !== "ArrowDown")
-                            )
-                              return;
-                            const index = groupBotIds.indexOf(item.chat.id);
-                            const target = groupBotIds[index + (event.key === "ArrowUp" ? -1 : 1)];
-                            if (!target) return;
-                            event.preventDefault();
-                            reorderRosterBot(item.chat.id, target, groupBotIds);
-                          }}
-                          onClick={() => {
-                            openSpaceChat(
-                              item.chat.spaceId,
-                              item.kind === "bot"
-                                ? `/app/${item.chat.id}`
-                                : `/app/g/${item.chat.id}`,
-                            );
-                          }}
-                          onContextMenu={(event) => {
-                            if (item.chat.spaceId !== bootstrapMe?.spaceId) return;
-                            event.preventDefault();
-                            botMenuAnchor.current = event.currentTarget;
-                            setBotMenu({
-                              kind: item.kind,
-                              id: item.chat.id,
-                              position: { x: event.clientX, y: event.clientY },
-                            });
-                          }}
-                          className={`flex w-full gap-3 rounded-xl px-2.5 py-[11px] text-start ${
-                            item.kind === "bot" ? "cursor-grab active:cursor-grabbing" : ""
-                          } ${
-                            (item.kind === "bot" && !inGroup && active?.id === item.chat.id) ||
-                            (item.kind === "group" && inGroup && activeGroup?.id === item.chat.id)
-                              ? "bg-card"
-                              : "hover:bg-background"
-                          }`}
-                          style={{
-                            opacity:
-                              item.kind === "bot" && draggedBotId === item.chat.id ? 0.55 : 1,
-                          }}
-                        >
-                          {item.kind === "bot" ? (
-                            <BotAvatar
-                              color={item.chat.color}
-                              identity={item.chat.id}
-                              size={38}
-                              status={item.chat.status}
-                            />
-                          ) : (
-                            <GroupAvatar
-                              members={
-                                item.chat.id === activeSnapshot?.groupId
-                                  ? (activeSnapshot.members ?? item.chat.members)
-                                  : item.chat.members
+                            onDragStart={(event) => {
+                              if (item.kind !== "bot") return;
+                              setDraggedBotId(item.chat.id);
+                              event.dataTransfer.effectAllowed = "move";
+                              event.dataTransfer.setData("text/plain", item.chat.id);
+                            }}
+                            onDragOver={(event) => {
+                              if (
+                                item.kind === "bot" &&
+                                draggedBotId &&
+                                groupBotIds.includes(draggedBotId)
+                              ) {
+                                event.preventDefault();
+                                event.dataTransfer.dropEffect = "move";
                               }
-                              size={38}
-                            />
-                          )}
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-baseline justify-between gap-2">
-                              <span
-                                dir="auto"
-                                data-roster-bot-name={item.kind === "bot" ? "" : undefined}
-                                className={`truncate text-[15px] text-foreground ${
-                                  item.chat.unread ? "font-semibold" : "font-medium"
-                                }`}
-                              >
-                                {item.chat.name}
-                                {item.chat.unread ? (
-                                  <span className="sr-only">
-                                    <Trans> (unread)</Trans>
-                                  </span>
-                                ) : null}
-                              </span>
-                              <span className="flex shrink-0 items-center gap-1.5 text-[12.5px] text-muted-foreground/80">
-                                {item.kind === "bot" && item.chat.status !== "idle"
-                                  ? item.chat.status
-                                  : ""}
-                                {item.chat.unread ? (
-                                  <span
-                                    aria-hidden="true"
-                                    className="inline-block h-2 w-2 rounded-full bg-foreground"
-                                  />
-                                ) : null}
-                              </span>
-                            </div>
-                            {item.kind === "bot" && item.chat.title ? (
-                              <>
+                            }}
+                            onDrop={(event) => {
+                              if (item.kind !== "bot" || !draggedBotId) return;
+                              event.preventDefault();
+                              reorderRosterBot(draggedBotId, item.chat.id, groupBotIds);
+                              setDraggedBotId(null);
+                            }}
+                            onDragEnd={() => setDraggedBotId(null)}
+                            onKeyDown={(event) => {
+                              if (
+                                item.kind !== "bot" ||
+                                !event.altKey ||
+                                (event.key !== "ArrowUp" && event.key !== "ArrowDown")
+                              )
+                                return;
+                              const index = groupBotIds.indexOf(item.chat.id);
+                              const target =
+                                groupBotIds[index + (event.key === "ArrowUp" ? -1 : 1)];
+                              if (!target) return;
+                              event.preventDefault();
+                              reorderRosterBot(item.chat.id, target, groupBotIds);
+                            }}
+                            onClick={() => {
+                              openSpaceChat(
+                                item.chat.spaceId,
+                                item.kind === "bot"
+                                  ? `/app/${item.chat.id}`
+                                  : `/app/g/${item.chat.id}`,
+                              );
+                            }}
+                            onContextMenu={(event) => {
+                              if (item.chat.spaceId !== bootstrapMe?.spaceId) return;
+                              event.preventDefault();
+                              botMenuAnchor.current = event.currentTarget;
+                              setBotMenu({
+                                kind: item.kind,
+                                id: item.chat.id,
+                                position: { x: event.clientX, y: event.clientY },
+                              });
+                            }}
+                            className={`flex w-full gap-3 rounded-xl px-2.5 py-[11px] text-start ${
+                              item.kind === "bot" ? "cursor-grab active:cursor-grabbing" : ""
+                            } ${
+                              (
+                                item.kind === "bot" &&
+                                  !inGroup &&
+                                  !inExternalConversation &&
+                                  active?.id === item.chat.id
+                              ) ||
+                              (item.kind === "group" && inGroup && activeGroup?.id === item.chat.id)
+                                ? "bg-card"
+                                : "hover:bg-background"
+                            }`}
+                            style={{
+                              opacity:
+                                item.kind === "bot" && draggedBotId === item.chat.id ? 0.55 : 1,
+                            }}
+                          >
+                            {item.kind === "bot" ? (
+                              <BotAvatar
+                                color={item.chat.color}
+                                identity={item.chat.id}
+                                size={38}
+                                status={item.chat.status}
+                              />
+                            ) : (
+                              <GroupAvatar
+                                members={
+                                  item.chat.id === activeSnapshot?.groupId
+                                    ? (activeSnapshot.members ?? item.chat.members)
+                                    : item.chat.members
+                                }
+                                size={38}
+                              />
+                            )}
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-baseline justify-between gap-2">
+                                <span
+                                  dir="auto"
+                                  data-roster-bot-name={item.kind === "bot" ? "" : undefined}
+                                  className={`truncate text-[15px] text-foreground ${
+                                    item.chat.unread ? "font-semibold" : "font-medium"
+                                  }`}
+                                >
+                                  {item.chat.name}
+                                  {item.chat.unread ? (
+                                    <span className="sr-only">
+                                      <Trans> (unread)</Trans>
+                                    </span>
+                                  ) : null}
+                                </span>
+                                <span className="flex shrink-0 items-center gap-1.5 text-[12.5px] text-muted-foreground/80">
+                                  {item.kind === "bot" && item.chat.status !== "idle"
+                                    ? item.chat.status
+                                    : ""}
+                                  {item.chat.unread ? (
+                                    <span
+                                      aria-hidden="true"
+                                      className="inline-block h-2 w-2 rounded-full bg-foreground"
+                                    />
+                                  ) : null}
+                                </span>
+                              </div>
+                              {item.kind === "bot" && item.chat.title ? (
+                                <>
+                                  <div
+                                    dir="auto"
+                                    className={`mt-0.5 truncate text-[13.5px] ${
+                                      item.chat.unread
+                                        ? "font-medium text-foreground/75"
+                                        : "text-muted-foreground"
+                                    }`}
+                                  >
+                                    {item.chat.title}
+                                  </div>
+                                  {item.chat.preview ? (
+                                    <div
+                                      dir="auto"
+                                      className="truncate text-[12.5px] text-muted-foreground/80"
+                                    >
+                                      {item.chat.preview}
+                                    </div>
+                                  ) : null}
+                                </>
+                              ) : (
                                 <div
                                   dir="auto"
                                   className={`mt-0.5 truncate text-[13.5px] ${
@@ -2648,34 +2953,59 @@ export function ShellPage() {
                                       : "text-muted-foreground"
                                   }`}
                                 >
-                                  {item.chat.title}
+                                  {item.kind === "bot"
+                                    ? item.chat.preview
+                                    : item.chat.preview ||
+                                      item.chat.members.map((member) => member.name).join(", ")}
                                 </div>
-                                {item.chat.preview ? (
-                                  <div
+                              )}
+                            </div>
+                          </button>
+                          {item.externalConversations.map((conversation) => (
+                            <button
+                              key={conversation.id}
+                              type="button"
+                              data-external-conversation-id={conversation.id}
+                              onClick={() =>
+                                openSpaceChat(conversation.spaceId, `/app/x/${conversation.id}`)
+                              }
+                              className={`ms-10 flex w-[calc(100%_-_2.5rem)] items-center gap-2 rounded-lg px-2.5 py-2 text-start ${
+                                externalConversationId === conversation.id
+                                  ? "bg-card"
+                                  : "hover:bg-background"
+                              }`}
+                            >
+                              <span className="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-muted text-muted-foreground">
+                                <MessageSquare size={14} strokeWidth={1.8} aria-hidden="true" />
+                              </span>
+                              <span className="min-w-0 flex-1">
+                                <span
+                                  className="block truncate text-[13.5px] font-medium text-foreground/80"
+                                  dir="auto"
+                                >
+                                  {conversation.displayName?.trim() ||
+                                    conversation.participantNames.join(", ") ||
+                                    t`Slack conversation`}
+                                </span>
+                                {conversation.participantNames.length > 0 ? (
+                                  <span
+                                    className="block truncate text-[12px] text-muted-foreground/80"
                                     dir="auto"
-                                    className="truncate text-[12.5px] text-muted-foreground/80"
                                   >
-                                    {item.chat.preview}
-                                  </div>
+                                    {conversation.participantNames.join(", ")}
+                                  </span>
+                                ) : conversation.preview ? (
+                                  <span
+                                    className="block truncate text-[12px] text-muted-foreground/80"
+                                    dir="auto"
+                                  >
+                                    {conversation.preview}
+                                  </span>
                                 ) : null}
-                              </>
-                            ) : (
-                              <div
-                                dir="auto"
-                                className={`mt-0.5 truncate text-[13.5px] ${
-                                  item.chat.unread
-                                    ? "font-medium text-foreground/75"
-                                    : "text-muted-foreground"
-                                }`}
-                              >
-                                {item.kind === "bot"
-                                  ? item.chat.preview
-                                  : item.chat.preview ||
-                                    item.chat.members.map((member) => member.name).join(", ")}
-                              </div>
-                            )}
-                          </div>
-                        </button>
+                              </span>
+                            </button>
+                          ))}
+                        </Fragment>
                       ))}
                   </div>
                 );
@@ -2824,6 +3154,17 @@ export function ShellPage() {
                 className="w-full justify-start font-normal"
                 onClick={() => {
                   setMenuOpen(false);
+                  setAgentSecretsOpen(true);
+                }}
+              >
+                <KeyRound size={16} strokeWidth={1.7} className="text-muted-foreground" />
+                <Trans>Secrets</Trans>
+              </Button>
+              <Button
+                variant="ghost"
+                className="w-full justify-start font-normal"
+                onClick={() => {
+                  setMenuOpen(false);
                   setMemorySettingsOpen(true);
                 }}
               >
@@ -2891,36 +3232,73 @@ export function ShellPage() {
             >
               <Menu size={19} strokeWidth={1.7} />
             </button>
-            <button
-              type="button"
-              data-testid="bot-settings-trigger"
-              onClick={() => setPanel(inGroup ? "group-settings" : "settings")}
-              className="app-no-drag flex min-w-0 items-center gap-3"
-            >
-              {inGroup ? (
-                <GroupAvatar
-                  members={activeSnapshot?.members ?? activeGroup?.members ?? []}
-                  size={26}
-                />
-              ) : active ? (
-                <BotAvatar
-                  color={active.color}
-                  identity={active.id}
-                  size={26}
-                  status={active.status}
-                />
-              ) : null}
-              <span className="min-w-0">
-                <span className="block truncate text-[16px] font-medium text-foreground" dir="auto">
-                  {inGroup
-                    ? (activeGroup?.name ?? activeSnapshot?.groupName ?? t`Group`)
-                    : (active?.name ?? t`Select a bot`)}
+            {inExternalConversation ? (
+              <button
+                type="button"
+                data-testid="conversation-settings-trigger"
+                title={t`Conversation settings`}
+                aria-label={t`Conversation settings`}
+                onClick={() => setPanel(panel === "external-settings" ? null : "external-settings")}
+                className="app-no-drag flex min-w-0 items-center gap-3"
+              >
+                <span className="grid h-[26px] w-[26px] shrink-0 place-items-center rounded-md bg-muted text-muted-foreground">
+                  <MessageSquare size={14} strokeWidth={1.8} aria-hidden="true" />
                 </span>
-              </span>
-            </button>
+                <span className="min-w-0">
+                  <span
+                    className="block truncate text-[16px] font-medium text-foreground"
+                    dir="auto"
+                  >
+                    {activeExternalConversation?.displayName?.trim() ||
+                      activeExternalParticipantNames ||
+                      t`Slack conversation`}
+                  </span>
+                  <span className="block truncate text-[12px] text-muted-foreground/80">
+                    {activeExternalParticipantNames || `Slack · ${active?.name ?? ""}`}
+                  </span>
+                </span>
+                <Settings
+                  size={15}
+                  strokeWidth={1.7}
+                  className="shrink-0 text-muted-foreground"
+                  aria-hidden="true"
+                />
+              </button>
+            ) : (
+              <button
+                type="button"
+                data-testid="bot-settings-trigger"
+                onClick={() => setPanel(inGroup ? "group-settings" : "settings")}
+                className="app-no-drag flex min-w-0 items-center gap-3"
+              >
+                {inGroup ? (
+                  <GroupAvatar
+                    members={activeSnapshot?.members ?? activeGroup?.members ?? []}
+                    size={26}
+                  />
+                ) : active ? (
+                  <BotAvatar
+                    color={active.color}
+                    identity={active.id}
+                    size={26}
+                    status={active.status}
+                  />
+                ) : null}
+                <span className="min-w-0">
+                  <span
+                    className="block truncate text-[16px] font-medium text-foreground"
+                    dir="auto"
+                  >
+                    {inGroup
+                      ? (activeGroup?.name ?? activeSnapshot?.groupName ?? t`Group`)
+                      : (active?.name ?? t`Select a bot`)}
+                  </span>
+                </span>
+              </button>
+            )}
           </div>
           <div className="flex items-center gap-1">
-            {!inGroup && active ? (
+            {!inGroup && !inExternalConversation && active ? (
               <button
                 type="button"
                 title={voiceStatus?.ready ? t`Call` : t`Set up voice to call`}
@@ -2938,7 +3316,7 @@ export function ShellPage() {
                 <Phone size={16} strokeWidth={1.6} className="text-foreground/75" />
               </button>
             ) : null}
-            {!inGroup ? (
+            {!inGroup && !inExternalConversation ? (
               <button
                 type="button"
                 title={t`Agent computer`}
@@ -2985,67 +3363,70 @@ export function ShellPage() {
           voiceReady={Boolean(voiceStatus?.ready)}
           speakingMessageId={speakingMessageId}
           onSpeak={speakMessage}
+          readOnly={inExternalConversation}
         />
-        {recordingSkill ? (
+        {recordingSkill && !inExternalConversation ? (
           <div className="px-6 pb-2 text-center text-[13px] text-destructive">
             <Trans>Teaching in progress — stop teaching before sending a new message.</Trans>
           </div>
         ) : null}
-        <Composer
-          key={inGroup ? `group:${groupId}` : `bot:${active?.id}`}
-          activeName={inGroup ? (activeGroup?.name ?? activeSnapshot?.groupName) : active?.name}
-          running={composerRunning}
-          disabled={Boolean(recordingSkill)}
-          pendingAttachments={activePendingAttachments}
-          attachmentNotice={attachmentNotice}
-          sendError={sendError}
-          dictationError={dictationError}
-          runError={displayedRunError}
-          runErrorId={displayedRunErrorId}
-          onRunErrorPresented={handleRunErrorPresented}
-          onDismissError={dismissComposerError}
-          sending={sending}
-          fileInputRef={fileInputRef}
-          onAttachmentPick={onAttachmentPick}
-          onRemoveAttachment={removeAttachment}
-          onSend={sendMessage}
-          onStop={stopRun}
-          replyTarget={activeReplyTarget}
-          replyTargetName={replyTargetName}
-          onClearReply={() => setReplyTarget(null)}
-          mentionTargets={composerMentionTargets}
-          agentSkills={agentSkills}
-          onSlashOpen={refreshAgentSkills}
-          onSlashAction={(action) => {
-            if (action === "chat-settings") {
-              setPanel(inGroup ? "group-settings" : "settings");
-              return;
-            }
-            if (action === "settings-general") {
-              setAccountSettingsFocusUsage(false);
-              setAccountSettingsOpen(true);
-              return;
-            }
-            if (action === "settings-usage") {
-              setAccountSettingsFocusUsage(true);
-              setAccountSettingsOpen(true);
-              void rpc.usage
-                .summary()
-                .then(setUsage)
-                .catch(() => undefined);
-            }
-          }}
-          dictating={dictating}
-          transcribe={Boolean(voiceStatus?.transcribe)}
-          onDictateStart={(onFinal) => {
-            void dictation.listen({
-              mode: "hold",
-              transcribe: Boolean(voiceStatus?.transcribe),
-              onFinal,
-            });
-          }}
-          onDictateStop={() => dictation.submitHold()}
-        />
+        {inExternalConversation ? null : (
+          <Composer
+            key={inGroup ? `group:${groupId}` : `bot:${active?.id}`}
+            activeName={inGroup ? (activeGroup?.name ?? activeSnapshot?.groupName) : active?.name}
+            running={composerRunning}
+            disabled={Boolean(recordingSkill)}
+            pendingAttachments={activePendingAttachments}
+            attachmentNotice={attachmentNotice}
+            sendError={sendError}
+            dictationError={dictationError}
+            runError={displayedRunError}
+            runErrorId={displayedRunErrorId}
+            onRunErrorPresented={handleRunErrorPresented}
+            onDismissError={dismissComposerError}
+            sending={sending}
+            fileInputRef={fileInputRef}
+            onAttachmentPick={onAttachmentPick}
+            onRemoveAttachment={removeAttachment}
+            onSend={sendMessage}
+            onStop={stopRun}
+            replyTarget={activeReplyTarget}
+            replyTargetName={replyTargetName}
+            onClearReply={() => setReplyTarget(null)}
+            mentionTargets={composerMentionTargets}
+            agentSkills={agentSkills}
+            onSlashOpen={refreshAgentSkills}
+            onSlashAction={(action) => {
+              if (action === "chat-settings") {
+                setPanel(inGroup ? "group-settings" : "settings");
+                return;
+              }
+              if (action === "settings-general") {
+                setAccountSettingsFocusUsage(false);
+                setAccountSettingsOpen(true);
+                return;
+              }
+              if (action === "settings-usage") {
+                setAccountSettingsFocusUsage(true);
+                setAccountSettingsOpen(true);
+                void rpc.usage
+                  .summary()
+                  .then(setUsage)
+                  .catch(() => undefined);
+              }
+            }}
+            dictating={dictating}
+            transcribe={Boolean(voiceStatus?.transcribe)}
+            onDictateStart={(onFinal) => {
+              void dictation.listen({
+                mode: "hold",
+                transcribe: Boolean(voiceStatus?.transcribe),
+                onFinal,
+              });
+            }}
+            onDictateStop={() => dictation.submitHold()}
+          />
+        )}
       </main>
 
       <aside
@@ -3067,6 +3448,8 @@ export function ShellPage() {
                 <span className="text-[13.5px] text-muted-foreground">
                   {panel === "settings" ? (
                     <Trans>Settings</Trans>
+                  ) : panel === "external-settings" ? (
+                    <Trans>Conversation settings</Trans>
                   ) : active ? (
                     (computer?.state ?? active.status)
                   ) : (
@@ -3074,7 +3457,7 @@ export function ShellPage() {
                   )}
                 </span>
                 <div className="flex gap-1">
-                  {active ? (
+                  {active && panel !== "external-settings" ? (
                     <Button
                       variant="ghost"
                       size="icon-sm"
@@ -3210,6 +3593,26 @@ export function ShellPage() {
                   setPanel(null);
                   navigate(firstThreadRoute(bots, remainingGroups), { replace: true });
                   await refreshBots().catch(() => undefined);
+                }}
+              />
+            ) : null}
+            {panel === "external-settings" && activeExternalConversation && active ? (
+              <ExternalConversationSettings
+                key={activeExternalConversation.id}
+                conversation={activeExternalConversation}
+                bot={active}
+                onSave={async (policy) => {
+                  const saved = await rpc.externalConversations.updatePolicy({
+                    externalConversationId: activeExternalConversation.id,
+                    ...policy,
+                  });
+                  setExternalConversations((current) =>
+                    current.map((conversation) =>
+                      conversation.id === activeExternalConversation.id
+                        ? { ...conversation, ...saved }
+                        : conversation,
+                    ),
+                  );
                 }}
               />
             ) : null}
@@ -3647,6 +4050,9 @@ export function ShellPage() {
           />
         ) : null}
         {modelsOpen ? <ModelSettingsOverlay onClose={() => setModelsOpen(false)} /> : null}
+        {agentSecretsOpen ? (
+          <AgentSecretsOverlay onClose={() => setAgentSecretsOpen(false)} />
+        ) : null}
         {peerConversation && active ? (
           <PeerMessagesOverlay
             botId={active.id}
@@ -3870,6 +4276,7 @@ const Transcript = memo(function Transcript({
   voiceReady,
   speakingMessageId,
   onSpeak,
+  readOnly,
 }: {
   scrollRef: RefObject<HTMLDivElement | null>;
   artifactTarget: ArtifactTarget;
@@ -3894,6 +4301,7 @@ const Transcript = memo(function Transcript({
   voiceReady: boolean;
   speakingMessageId: string | null;
   onSpeak: (message: ThreadMessage) => void;
+  readOnly: boolean;
 }) {
   const { t } = useLingui();
   const [atEnd, setAtEnd] = useState(true);
@@ -4030,43 +4438,62 @@ const Transcript = memo(function Transcript({
         ) : null}
         {messages.map((message) => {
           const peerReceipt = isPeerReceiptBlocks(message.blocks);
+          const externalSpeaker =
+            message.role === "user" &&
+            Boolean(message.speakerName) &&
+            message.blocks.every((block) => block.kind === "text");
           return (
             <div
               key={message.id}
               data-message-id={message.id}
-              className={peerReceipt ? "relative py-0.5" : "group/message relative pt-9 hover:z-20"}
+              className={
+                peerReceipt
+                  ? "relative py-0.5"
+                  : externalSpeaker
+                    ? "group/message relative py-1 hover:z-20"
+                    : "group/message relative pt-9 hover:z-20"
+              }
             >
               {peerReceipt ? null : (
-                <MessageHoverActions message={message} onReply={onReply} onReact={onReact} />
+                <MessageHoverActions
+                  message={message}
+                  onReply={onReply}
+                  onReact={onReact}
+                  readOnly={readOnly}
+                />
               )}
-              <MessageView
-                artifactTarget={artifactTarget}
-                message={message}
-                canAnswer={message.id === answerableAskMessageId}
-                onOpenBot={onOpenBot}
-                onOpenPeerMessages={onOpenPeerMessages}
-                onAnswer={onAnswer}
-                speakerName={
-                  peerReceipt
-                    ? undefined
-                    : message.role === "bot"
-                      ? memberName?.(message.botId)
-                      : undefined
-                }
-                memberName={memberName}
-                peerBot={peerBot}
-                replyPreview={
-                  message.replyToMessageId ? messageById.get(message.replyToMessageId) : undefined
-                }
-                replyToMessageId={message.replyToMessageId}
-                onJumpToMessage={onJumpToMessage}
-                onRefresh={onRefresh}
-                onBotChanged={onBotChanged}
-                onAddRoutine={onAddRoutine}
-                voiceReady={voiceReady}
-                speaking={speakingMessageId === message.id}
-                onSpeak={() => onSpeak(message)}
-              />
+              {externalSpeaker ? (
+                <ExternalSpeakerMessage message={message} />
+              ) : (
+                <MessageView
+                  artifactTarget={artifactTarget}
+                  message={message}
+                  canAnswer={message.id === answerableAskMessageId}
+                  onOpenBot={onOpenBot}
+                  onOpenPeerMessages={onOpenPeerMessages}
+                  onAnswer={onAnswer}
+                  speakerName={
+                    peerReceipt
+                      ? undefined
+                      : message.role === "bot"
+                        ? memberName?.(message.botId)
+                        : undefined
+                  }
+                  memberName={memberName}
+                  peerBot={peerBot}
+                  replyPreview={
+                    message.replyToMessageId ? messageById.get(message.replyToMessageId) : undefined
+                  }
+                  replyToMessageId={message.replyToMessageId}
+                  onJumpToMessage={onJumpToMessage}
+                  onRefresh={onRefresh}
+                  onBotChanged={onBotChanged}
+                  onAddRoutine={onAddRoutine}
+                  voiceReady={voiceReady}
+                  speaking={speakingMessageId === message.id}
+                  onSpeak={() => onSpeak(message)}
+                />
+              )}
               {!peerReceipt && message.thumbsUp ? (
                 <button
                   type="button"
@@ -4840,10 +5267,12 @@ function MessageHoverActions({
   message,
   onReply,
   onReact,
+  readOnly,
 }: {
   message: ThreadMessage;
   onReply: (message: ThreadMessage) => void;
   onReact: (message: ThreadMessage) => Promise<void>;
+  readOnly: boolean;
 }) {
   const { t } = useLingui();
   // Streaming progress bubbles keep hover free for selection / stop clicks.
@@ -4861,15 +5290,17 @@ function MessageHoverActions({
         data-testid="message-hover-actions"
         className="flex items-center gap-0.5 rounded-full bg-accent p-0.5 shadow-sm"
       >
-        <button
-          type="button"
-          aria-label={t`Reply`}
-          onClick={() => onReply(message)}
-          className="grid h-7 w-7 place-items-center rounded-full text-foreground/75 hover:bg-accent hover:text-foreground"
-        >
-          <Reply size={14} strokeWidth={1.8} />
-        </button>
-        {canReactToThreadMessage(message) ? (
+        {!readOnly ? (
+          <button
+            type="button"
+            aria-label={t`Reply`}
+            onClick={() => onReply(message)}
+            className="grid h-7 w-7 place-items-center rounded-full text-foreground/75 hover:bg-accent hover:text-foreground"
+          >
+            <Reply size={14} strokeWidth={1.8} />
+          </button>
+        ) : null}
+        {!readOnly && canReactToThreadMessage(message) ? (
           <button
             type="button"
             aria-label={message.thumbsUp ? t`Remove thumbs-up` : t`Add thumbs-up`}
@@ -4943,6 +5374,24 @@ function ComputerReleaseActions({
       <Button type="button" size="sm" onClick={() => void onRelease("done")}>
         <Trans>I’m done</Trans>
       </Button>
+    </div>
+  );
+}
+
+function ExternalSpeakerMessage({ message }: { message: ThreadMessage }) {
+  const text = message.blocks
+    .filter((block): block is Extract<MessageBlock, { kind: "text" }> => block.kind === "text")
+    .map((block) => block.text)
+    .join("");
+  return (
+    <div
+      data-testid="external-speaker-message"
+      data-speaker-name={message.speakerName}
+      className="max-w-[90%] whitespace-pre-wrap break-words px-1 pr-10 text-[15px] leading-6 text-foreground/85"
+      dir="auto"
+    >
+      <span className="font-medium text-foreground/75">@{message.speakerName}: </span>
+      {text}
     </div>
   );
 }

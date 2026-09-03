@@ -4,6 +4,8 @@ import { ATTACHMENT_MAX_BASE64_LENGTH, ATTACHMENT_MAX_COUNT } from "./attachment
 import {
   ActionApprovalRuleSchema,
   ActionAutoReviewSettingsSchema,
+  AgentSecretInputSchema,
+  AgentSecretSchema,
   AgentSkillCatalogEntrySchema,
   AgentSkillSchema,
   AppBootstrapSchema,
@@ -26,6 +28,7 @@ import {
   CreateScratchpadItemInput,
   DeploymentSettingsSchema,
   ExportManifestSchema,
+  ExternalConversationPolicySchema,
   GroupDetailSchema,
   GroupSchema,
   McpServerConfigInput,
@@ -59,6 +62,7 @@ import {
   ThreadSnapshotSchema,
   UpdateAgentSkillInput,
   UpdateBotInput,
+  UpdateExternalConversationPolicyInput,
   UpdateGroupInput,
   UsageRecordSchema,
   VoiceCatalogEntrySchema,
@@ -86,6 +90,25 @@ const threadTarget = z
       ctx.addIssue({
         code: "custom",
         message: "Provide exactly one of botId or groupId",
+        path: ["botId"],
+      });
+    }
+  });
+
+const threadReadTarget = z
+  .object({
+    botId: Id.optional(),
+    groupId: Id.optional(),
+    externalConversationId: Id.optional(),
+  })
+  .superRefine((input, ctx) => {
+    const targetCount = [input.botId, input.groupId, input.externalConversationId].filter(
+      Boolean,
+    ).length;
+    if (targetCount !== 1) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Provide exactly one thread target",
         path: ["botId"],
       });
     }
@@ -132,6 +155,11 @@ export const appContract = {
     list: oc.output(SpaceNavigationSchema),
     create: oc.input(z.object({ name: z.string().trim().min(1).max(60) })).output(SpaceSchema),
   },
+  externalConversations: {
+    updatePolicy: oc
+      .input(UpdateExternalConversationPolicyInput)
+      .output(ExternalConversationPolicySchema),
+  },
   bootstrap: oc.input(z.object({ botId: Id.optional() })).output(AppBootstrapSchema),
   deployment: {
     get: oc.output(DeploymentSettingsSchema),
@@ -155,6 +183,11 @@ export const appContract = {
     check: oc.input(ServerUpdateRequestSchema).output(ServerUpdateCheckSchema),
     apply: oc.input(ServerUpdateRequestSchema).output(ServerUpdateRunSchema),
   },
+  agentSecrets: {
+    list: oc.output(z.array(AgentSecretSchema)),
+    put: oc.input(AgentSecretInputSchema).output(AgentSecretSchema),
+    remove: oc.input(z.object({ id: Id })).output(z.object({ ok: z.literal(true) })),
+  },
   models: {
     list: oc.output(z.array(ModelCatalogEntrySchema)),
     credentials: oc.output(z.array(ModelCredentialSchema)),
@@ -177,7 +210,12 @@ export const appContract = {
       )
       .output(ModelOAuthBeginSchema),
     submitOAuthCode: oc
-      .input(z.object({ loginId: z.string(), code: z.string().trim().min(1).max(8_192) }))
+      .input(
+        z.object({
+          loginId: z.string(),
+          code: z.string().trim().min(1).max(8_192),
+        }),
+      )
       .output(z.object({ ok: z.literal(true) })),
     completeOAuth: oc
       .input(z.object({ loginId: z.string() }))
@@ -236,16 +274,16 @@ export const appContract = {
       .output(BotSectionSchema),
   },
   threads: {
-    head: oc.input(threadTarget).output(
+    head: oc.input(threadReadTarget).output(
       z.object({
         threadId: Id,
         cursor: z.number().int().min(-1),
       }),
     ),
-    get: oc.input(threadTarget).output(ThreadSnapshotSchema),
+    get: oc.input(threadReadTarget).output(ThreadSnapshotSchema),
     messages: oc
       .input(
-        threadTarget.safeExtend({
+        threadReadTarget.safeExtend({
           before: z.number().int().nonnegative().optional(),
           includePeerRuns: z.boolean().optional(),
           includePeerReceipts: z.boolean().optional(),
@@ -259,7 +297,7 @@ export const appContract = {
       )
       .output(ThreadMessagePageSchema),
     subscribe: oc
-      .input(threadTarget.safeExtend({ cursor: z.number().int().min(-1) }))
+      .input(threadReadTarget.safeExtend({ cursor: z.number().int().min(-1) }))
       .output(eventIterator(ProductEventSchema)),
     send: oc.input(threadSendInput).output(
       z.object({
@@ -319,11 +357,15 @@ export const appContract = {
         }),
       )
       .output(z.object({ ok: z.literal(true) })),
-    files: oc
-      .input(z.object({ botId: Id, path: z.string().default("/") }))
-      .output(
-        z.array(z.object({ path: z.string(), kind: z.enum(["file", "dir"]), size: z.number() })),
+    files: oc.input(z.object({ botId: Id, path: z.string().default("/") })).output(
+      z.array(
+        z.object({
+          path: z.string(),
+          kind: z.enum(["file", "dir"]),
+          size: z.number(),
+        }),
       ),
+    ),
     readFile: oc
       .input(z.object({ botId: Id, path: z.string() }))
       .output(z.object({ path: z.string(), content: z.string() })),
@@ -332,7 +374,12 @@ export const appContract = {
   },
   memory: {
     list: oc
-      .input(z.object({ botId: Id.optional(), scope: z.enum(["bot", "user"]).optional() }))
+      .input(
+        z.object({
+          botId: Id.optional(),
+          scope: z.enum(["bot", "user"]).optional(),
+        }),
+      )
       .output(z.array(MemoryDocumentSchema)),
     update: oc
       .input(z.object({ documentId: Id, content: z.string() }))
@@ -450,7 +497,10 @@ export const appContract = {
     get: oc
       .input(
         z
-          .object({ skillId: Id.optional(), name: z.string().min(1).max(80).optional() })
+          .object({
+            skillId: Id.optional(),
+            name: z.string().min(1).max(80).optional(),
+          })
           .superRefine((input, ctx) => {
             if (!input.skillId && !input.name?.trim()) {
               ctx.addIssue({
@@ -521,7 +571,13 @@ export const appContract = {
         ]),
       ),
       complete: oc
-        .input(z.object({ sessionId: Id, code: z.string().min(1), state: z.string().min(1) }))
+        .input(
+          z.object({
+            sessionId: Id,
+            code: z.string().min(1),
+            state: z.string().min(1),
+          }),
+        )
         .output(z.object({ ok: z.literal(true) })),
       disconnect: oc.input(z.object({ serverId: Id })).output(z.object({ ok: z.literal(true) })),
     },
@@ -540,7 +596,12 @@ export const appContract = {
   },
   connections: {
     catalog: oc
-      .input(z.object({ query: z.string().optional(), connectorId: z.string().optional() }))
+      .input(
+        z.object({
+          query: z.string().optional(),
+          connectorId: z.string().optional(),
+        }),
+      )
       .output(z.array(ConnectionCatalogItemSchema)),
     list: oc.output(z.array(ConnectionSchema)),
     begin: oc
@@ -660,7 +721,12 @@ export const appContract = {
       )
       .output(VoiceCredentialSchema),
     setVoice: oc
-      .input(z.object({ voiceId: z.string().min(1).max(120), provider: z.string().optional() }))
+      .input(
+        z.object({
+          voiceId: z.string().min(1).max(120),
+          provider: z.string().optional(),
+        }),
+      )
       .output(VoiceStatusSchema),
     voices: oc
       .input(z.object({ provider: z.string().optional() }))

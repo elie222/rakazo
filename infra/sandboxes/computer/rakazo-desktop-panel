@@ -1,0 +1,5 @@
+#!/bin/sh
+set -eu
+
+xsetroot -solid "rgb:11/11/13"
+exec tint2 -c /etc/rakazo/tint2rc

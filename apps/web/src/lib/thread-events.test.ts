@@ -22,6 +22,43 @@ import {
 } from "./thread-events.js";
 
 describe("thread event reduction", () => {
+  it("adds attributed external messages and advances past hidden execution prompts", () => {
+    const initial = snapshot([]);
+    const visible = reduceThreadSnapshot(
+      initial,
+      event({
+        type: "thread.message.created",
+        seq: 4,
+        payload: {
+          messageId: "external-visible",
+          role: "user",
+          blocks: [{ kind: "text", text: "Launch moved." }],
+          speakerName: "Pat",
+        },
+      }),
+    );
+    const hidden = reduceThreadSnapshot(
+      visible,
+      event({
+        type: "thread.message.created",
+        seq: 5,
+        payload: {
+          messageId: "external-prompt",
+          role: "user",
+          blocks: [{ kind: "text", text: "Slack message from Pat" }],
+          hiddenInTranscript: true,
+        },
+      }),
+    );
+
+    expect(visible?.messages[0]).toMatchObject({
+      id: "external-visible",
+      speakerName: "Pat",
+    });
+    expect(hidden?.messages.map((message) => message.id)).toEqual(["external-visible"]);
+    expect(hidden?.cursor).toBe(5);
+  });
+
   it("applies a persisted thumbs-up event to its message", () => {
     const initial = snapshot([message("message-1", [{ kind: "text", text: "Done" }], 1)]);
 
@@ -100,11 +137,21 @@ describe("thread event reduction", () => {
 
     const first = reduceThreadSnapshot(
       initial,
-      event({ type: "thread.progress", seq: 4, runId: "run-1", payload: { delta: "Hel" } }),
+      event({
+        type: "thread.progress",
+        seq: 4,
+        runId: "run-1",
+        payload: { delta: "Hel" },
+      }),
     );
     const second = reduceThreadSnapshot(
       first,
-      event({ type: "thread.progress", seq: 5, runId: "run-1", payload: { delta: "lo" } }),
+      event({
+        type: "thread.progress",
+        seq: 5,
+        runId: "run-1",
+        payload: { delta: "lo" },
+      }),
     );
 
     expect(second?.cursor).toBe(5);
@@ -200,7 +247,11 @@ describe("thread event reduction", () => {
         id: "event-message",
         type: "thread.message.created",
         seq: 9,
-        payload: { messageId: "durable", role: "bot", blocks: [completedBlock] },
+        payload: {
+          messageId: "durable",
+          role: "bot",
+          blocks: [completedBlock],
+        },
       }),
     );
 
@@ -225,7 +276,11 @@ describe("thread event reduction", () => {
       event({
         type: "thread.message.created",
         seq: 9,
-        payload: { messageId: "peer-message", role: "user", blocks: [peerBlock] },
+        payload: {
+          messageId: "peer-message",
+          role: "user",
+          blocks: [peerBlock],
+        },
       }),
     );
 
@@ -261,7 +316,12 @@ describe("thread event reduction", () => {
       event({ type: "thread.cleared", seq: 12, runId: undefined }),
     );
 
-    expect(next).toMatchObject({ cursor: 12, messages: [], olderCursor: null, run: null });
+    expect(next).toMatchObject({
+      cursor: 12,
+      messages: [],
+      olderCursor: null,
+      run: null,
+    });
   });
 
   it("routes clear and terminal events through the snapshot reducer", () => {
@@ -406,7 +466,11 @@ describe("thread event reduction", () => {
       ...snapshot([]),
       cursor: 9,
       run,
-      computer: computer({ state: "running", controlHolder: "bot", busyBotName: "Chief" }),
+      computer: computer({
+        state: "running",
+        controlHolder: "bot",
+        busyBotName: "Chief",
+      }),
     };
 
     const reconciled = reconcileRefreshedThread(
@@ -425,12 +489,20 @@ describe("thread event reduction", () => {
       ...message("progress:run-1", [{ kind: "progress" as const, text: "Still working" }]),
       runId: run.id,
     };
-    const newer: ThreadSnapshot = { ...snapshot([liveProgress]), cursor: 12, run: null };
+    const newer: ThreadSnapshot = {
+      ...snapshot([liveProgress]),
+      cursor: 12,
+      run: null,
+    };
     const older: ThreadSnapshot = {
       ...snapshot([]),
       cursor: 11,
       run,
-      computer: computer({ state: "running", controlHolder: "bot", busyBotName: "Chief" }),
+      computer: computer({
+        state: "running",
+        controlHolder: "bot",
+        busyBotName: "Chief",
+      }),
     };
 
     const reconciled = reconcileRefreshedThread(newer, older, computer());
@@ -518,7 +590,14 @@ describe("thread event reduction", () => {
       ...snapshot([]),
       botId: undefined,
       groupId: "group-1",
-      members: [{ botId: "bot-member", name: "Member", color: "#8B5CF6", status: "idle" }],
+      members: [
+        {
+          botId: "bot-member",
+          name: "Member",
+          color: "#8B5CF6",
+          status: "idle",
+        },
+      ],
     };
 
     const started = reduceThreadSnapshot(
@@ -543,7 +622,12 @@ describe("thread event reduction", () => {
 
     const completed = reduceThreadSnapshot(
       waiting,
-      event({ type: "run.completed", seq: 6, botId: "bot-member", runId: run.id }),
+      event({
+        type: "run.completed",
+        seq: 6,
+        botId: "bot-member",
+        runId: run.id,
+      }),
     );
     expect(completed?.members?.[0]?.status).toBe("idle");
   });
@@ -580,7 +664,10 @@ describe("thread event reduction", () => {
     const failing = threadRun("run-a");
     const initial: ThreadSnapshot = {
       ...snapshot([
-        { ...message("progress:run-a", [{ kind: "progress", text: "A" }]), runId: failing.id },
+        {
+          ...message("progress:run-a", [{ kind: "progress", text: "A" }]),
+          runId: failing.id,
+        },
       ]),
       run: failing,
     };
@@ -627,7 +714,11 @@ describe("thread event reduction", () => {
     );
 
     expect(next?.activeRuns).toEqual([runA]);
-    expect(next?.run).toMatchObject({ id: runB.id, status: "failed", error: "member exploded" });
+    expect(next?.run).toMatchObject({
+      id: runB.id,
+      status: "failed",
+      error: "member exploded",
+    });
     expect(threadRunError(next)).toBe("member exploded");
   });
 
@@ -655,10 +746,18 @@ describe("thread event reduction", () => {
       }),
     );
 
-    expect(next?.run).toMatchObject({ id: failed.id, status: "failed", error: "member exploded" });
+    expect(next?.run).toMatchObject({
+      id: failed.id,
+      status: "failed",
+      error: "member exploded",
+    });
     expect(next?.activeRuns).toEqual([
       runA,
-      expect.objectContaining({ id: "run-c", botId: "bot-c", status: "running" }),
+      expect.objectContaining({
+        id: "run-c",
+        botId: "bot-c",
+        status: "running",
+      }),
     ]);
     expect(threadRunError(next)).toBe("member exploded");
   });
@@ -673,7 +772,12 @@ describe("thread event reduction", () => {
     );
     const blank = reduceThreadSnapshot(
       initial,
-      event({ type: "run.failed", seq: 12, runId: finishing.id, payload: { error: "  " } }),
+      event({
+        type: "run.failed",
+        seq: 12,
+        runId: finishing.id,
+        payload: { error: "  " },
+      }),
     );
 
     expect(completed?.run).toBeNull();
@@ -837,7 +941,10 @@ describe("thread event reduction", () => {
         id: "progress:run-1",
         blocks: [
           { kind: "text", text: "Let me check Slack for a broad search." },
-          { kind: "steps", steps: [{ label: "Slack find channels", count: 1 }] },
+          {
+            kind: "steps",
+            steps: [{ label: "Slack find channels", count: 1 }],
+          },
         ],
       }),
     ]);
@@ -886,7 +993,10 @@ describe("thread event reduction", () => {
         id: "progress:run-1",
         blocks: [
           { kind: "text", text: "Let me check Done." },
-          { kind: "steps", steps: [{ label: "Slack find channels", count: 1 }] },
+          {
+            kind: "steps",
+            steps: [{ label: "Slack find channels", count: 1 }],
+          },
         ],
       }),
     ]);
@@ -982,7 +1092,12 @@ describe("thread event reduction", () => {
     );
     const next = reduceThreadSnapshot(
       cleared,
-      event({ type: "thread.progress", seq: 8, runId: "run-1", payload: { text: "Fresh." } }),
+      event({
+        type: "thread.progress",
+        seq: 8,
+        runId: "run-1",
+        payload: { text: "Fresh." },
+      }),
     );
 
     expect(next?.messages[0]?.blocks).toEqual([{ kind: "progress", text: "Fresh." }]);
@@ -1042,7 +1157,11 @@ describe("thread event reduction", () => {
 
     const next = reduceThreadSnapshot(
       initial,
-      event({ type: "thread.progress", runId: "run-new", payload: { text: "New work" } }),
+      event({
+        type: "thread.progress",
+        runId: "run-new",
+        payload: { text: "New work" },
+      }),
     );
 
     expect(next?.messages.map((item) => item.id)).toEqual([
@@ -1073,7 +1192,12 @@ describe("thread event reduction", () => {
       event({
         type: "thread.subagent",
         runId: "run-active",
-        payload: { agentId: "research", name: "Research", task: "Check", status: "running" },
+        payload: {
+          agentId: "research",
+          name: "Research",
+          task: "Check",
+          status: "running",
+        },
       }),
     );
 
@@ -1096,7 +1220,11 @@ describe("thread event reduction", () => {
       event({
         type: "thread.message.created",
         seq: 9,
-        payload: { messageId: "final", role: "bot", blocks: [{ kind: "text", text: "Done" }] },
+        payload: {
+          messageId: "final",
+          role: "bot",
+          blocks: [{ kind: "text", text: "Done" }],
+        },
       }),
     );
 
@@ -1119,7 +1247,12 @@ describe("thread event reduction", () => {
       completedAt: null,
       createdAt: "2026-08-16T00:00:00.000Z",
     };
-    const waitingRun = { ...newerRun, id: "run-waiting", botId: "bot-b", taskId: "task-b" };
+    const waitingRun = {
+      ...newerRun,
+      id: "run-waiting",
+      botId: "bot-b",
+      taskId: "task-b",
+    };
     const initial: ThreadSnapshot = {
       ...snapshot([]),
       run: newerRun,
@@ -1167,7 +1300,10 @@ describe("thread event reduction", () => {
     );
 
     expect(next?.messages).toHaveLength(1);
-    expect(next?.messages[0]?.blocks[0]).toMatchObject({ status: "answered", answer: "Paris" });
+    expect(next?.messages[0]?.blocks[0]).toMatchObject({
+      status: "answered",
+      answer: "Paris",
+    });
   });
 
   it("preserves botId on durable bot messages", () => {
@@ -1210,7 +1346,10 @@ describe("computer event reduction", () => {
   it("grants user control without overwriting the lifecycle state", () => {
     const granted = reduceComputerStatus(
       computer({ state: "suspended", controlHolder: "bot" }),
-      event({ type: "computer.takeover.granted", payload: { takeoverRequested: true } }),
+      event({
+        type: "computer.takeover.granted",
+        payload: { takeoverRequested: true },
+      }),
     );
     expect(granted).toMatchObject({
       state: "suspended",
@@ -1221,7 +1360,10 @@ describe("computer event reduction", () => {
     expect(
       reduceComputerStatus(
         granted,
-        event({ type: "computer.takeover.granted", payload: { takeoverRequested: true } }),
+        event({
+          type: "computer.takeover.granted",
+          payload: { takeoverRequested: true },
+        }),
       ),
     ).toBe(granted);
   });
@@ -1294,7 +1436,10 @@ describe("computer event reduction", () => {
     expect(
       reduceComputerStatus(
         busy,
-        event({ type: "computer.takeover.granted", payload: { takeoverRequested: true } }),
+        event({
+          type: "computer.takeover.granted",
+          payload: { takeoverRequested: true },
+        }),
       ),
     ).toMatchObject({
       controlHolder: "user",

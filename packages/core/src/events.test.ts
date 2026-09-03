@@ -8,6 +8,7 @@ import {
   humanizeToolName,
   isRunTerminalEvent,
   projectMessages,
+  redactSecrets,
   runFailureError,
   sanitizeJsonValue,
   sanitizeUtf16ForJson,
@@ -44,6 +45,14 @@ describe("runFailureError", () => {
     const long = runFailureError({ type: "run.failed", payload: { error: "x".repeat(400) } });
     expect(long).toHaveLength(301);
     expect(long?.endsWith("…")).toBe(true);
+  });
+});
+
+describe("redactSecrets", () => {
+  it("redacts overlapping secrets longest-first", () => {
+    expect(redactSecrets("token=private-value", ["private", "private-value"])).toBe(
+      "token=[redacted]",
+    );
   });
 });
 

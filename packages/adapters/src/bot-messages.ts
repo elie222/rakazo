@@ -4,6 +4,7 @@ import {
   BOT_MESSAGE_MAX_LENGTH,
   botMessageContext,
   botMessageHopExhausted,
+  botMessageHopLimitError,
   buildBotMessageWakePrompt,
   clampBotMessage,
   nextBotMessageHop,
@@ -113,8 +114,7 @@ export async function messageBot(
   if (botMessageHopExhausted(hop) && !returnsToSender) {
     return {
       ok: false as const,
-      error:
-        "bot-to-bot message limit reached for this chain; report back to the user instead of messaging another bot",
+      error: botMessageHopLimitError(),
     };
   }
 
