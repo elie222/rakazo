@@ -177,6 +177,65 @@ describe("computer provisioning", () => {
     },
   );
 
+  it("does not stop a pre-existing computer when reconnect setup fails", async () => {
+    const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-reconnect-unowned-"));
+    const failure = new Error("prepare failed");
+    const original = {
+      id: "computer-1",
+      homeKey: "bot-1",
+      providerRef: "provider-1",
+      kind: "box",
+      scope: "dedicated",
+      state: "running",
+      controlLeaseId: null,
+    };
+    const ref = {
+      id: "provider-2",
+      botId: "bot-1",
+      kind: "e2b" as const,
+      providerRef: "provider-2",
+      fresh: false,
+    };
+    const prisma = {
+      computer: {
+        findUniqueOrThrow: vi.fn().mockResolvedValue(original),
+        update: vi.fn(),
+        updateMany: vi.fn(),
+      },
+    } as unknown as PrismaClient;
+    const sandbox = {
+      provision: vi.fn().mockResolvedValue(ref),
+      prepare: vi.fn().mockRejectedValue(failure),
+      importWorkspace: vi.fn(),
+      releaseScreen: vi.fn().mockResolvedValue(undefined),
+      destroy: vi.fn(),
+      stop: vi.fn(),
+    } as unknown as SandboxProvider;
+
+    try {
+      await expect(
+        provisionComputer(
+          {
+            prisma,
+            sandbox,
+            home: new LocalAgentHomeStore(dataDir),
+            jobs: {} as JobPublisher,
+            events: {} as ThreadEvents,
+            dataDir,
+          },
+          "computer-1",
+          context,
+        ),
+      ).rejects.toBe(failure);
+      expect(sandbox.stop).not.toHaveBeenCalled();
+      expect(sandbox.destroy).not.toHaveBeenCalled();
+      expect(prisma.computer.update).not.toHaveBeenCalled();
+      expect(prisma.computer.updateMany).not.toHaveBeenCalled();
+    } finally {
+      await rm(dataDir, { recursive: true, force: true });
+    }
+  });
+
   it.each([
     { kind: "e2b" as const, providerRef: "provider-2", fresh: true },
     { kind: "box" as const, providerRef: "provider-2", fresh: false },

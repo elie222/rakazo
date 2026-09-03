@@ -335,14 +335,6 @@ export function extraDisplayInputCommand(layout: ExtraDisplayLayout, input: Comp
   return `DISPLAY=${layout.display} xdotool mousemove ${input.x} ${input.y} click ${button}`;
 }
 
-export function primaryStreamCleanupCommand(primaryViewPort = 6080): string {
-  return [
-    "pkill -f '(^|/)x11vnc .* -R viewonly' || true",
-    `pkill -f '${noVncProxyProcessPattern(primaryViewPort)}' || true`,
-    `pkill -f '${websockifyProcessPattern(primaryViewPort)}' || true`,
-  ].join("; ");
-}
-
 export function screenControlKey(sandboxId: string, screenKey: string): string {
   return `${sandboxId}:${screenKey}`;
 }

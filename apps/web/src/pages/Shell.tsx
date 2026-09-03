@@ -2337,7 +2337,7 @@ export function ShellPage() {
 
   const embeddedScreenUrl = embeddableScreenUrl(screenUrl);
   const hasControl = userHoldsComputerControl(computer, active?.id);
-  const computerScreenError = computerError ? (
+  const computerScreenError = computerError && !embeddedScreenUrl ? (
     <div role="alert" className="flex flex-col items-center gap-3 px-6 text-center text-sm">
       <p className="text-destructive">{computerError}</p>
       <Button
@@ -3162,7 +3162,7 @@ export function ShellPage() {
                         ))}
                     </div>
                   )}
-                  {!computerError ? (
+                  {!computerScreenError ? (
                     <button
                       type="button"
                       data-testid="computer-preview-open"

@@ -190,10 +190,11 @@ async function reconnectComputer(
     context,
   );
   const changedProvider = ref.providerRef !== computer.providerRef || ref.kind !== computer.kind;
-  const replacement = ref.fresh === true || changedProvider;
+  const needsWorkspaceRestore = ref.fresh === true || changedProvider;
+  const ownsRef = ref.fresh === true;
   try {
     await deps.sandbox.prepare(ref, context);
-    if (replacement) {
+    if (needsWorkspaceRestore) {
       await restoreComputerWorkspace(deps.home, deps.sandbox, computer.homeKey, ref, context);
     }
     await ensureComputerWorkspaceLayout(
@@ -213,8 +214,9 @@ async function reconnectComputer(
       });
     }
   } catch (error) {
-    // A failed replacement must not overwrite or tear down the original computer.
-    const rollbackError = replacement
+    // Only tear down a sandbox this reconnect created. A pre-existing ref
+    // (fresh: false) may belong to the user even when providerRef changed.
+    const rollbackError = ownsRef
       ? await rollbackProvisionedComputer(deps.sandbox, ref, context, error)
       : undefined;
     if (rollbackError) {
