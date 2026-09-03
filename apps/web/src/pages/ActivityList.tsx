@@ -5,12 +5,12 @@ import type { RunActivityRow } from "@rakazo/contracts";
 import { useEffect, useState } from "react";
 import { rpc } from "../lib/rpc";
 
-function statusColor(status: RunActivityRow["status"]): string {
-  if (status === "failed") return "#EF4444";
-  if (status === "cancelled") return "#85858A";
-  if (status === "completed") return "#4ECB71";
-  if (status === "waiting_input" || status === "waiting_takeover") return "#F5A03C";
-  return "#8B5CF6";
+function statusTone(status: RunActivityRow["status"]): string {
+  if (status === "failed") return "text-destructive";
+  if (status === "cancelled") return "text-muted-foreground";
+  if (status === "completed") return "text-success";
+  if (status === "waiting_input" || status === "waiting_takeover") return "text-warning";
+  return "text-foreground";
 }
 
 type ActivityListProps = {
@@ -95,22 +95,22 @@ function ActivityRow({ run, onOpen }: { run: RunActivityRow; onOpen: () => void 
   const title = run.groupName ? `${run.botName} · ${run.groupName}` : run.botName;
   const label = statusLabel(run.status);
   const activityLabel = t`${title}, ${label}`;
+  const tone = statusTone(run.status);
   return (
     <button
       type="button"
       aria-label={activityLabel}
       onClick={onOpen}
-      className="flex w-full gap-3 rounded-xl px-2.5 py-[9px] text-left hover:bg-background"
+      className="flex w-full gap-3 rounded-xl px-2.5 py-[9px] text-left hover:bg-accent"
     >
       <span
-        className="mt-1.5 h-2 w-2 shrink-0 rounded-full"
-        style={{ backgroundColor: statusColor(run.status) }}
+        className={`mt-1.5 size-2 shrink-0 rounded-full bg-current ${tone}`}
         aria-hidden="true"
       />
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline justify-between gap-2">
-          <span className="truncate text-[14px] font-medium text-foreground">{title}</span>
-          <span className="shrink-0 text-[12px] text-muted-foreground/80">
+          <span className="truncate text-sm font-medium text-foreground">{title}</span>
+          <span className="shrink-0 text-xs text-muted-foreground/80">
             {formatRelativeTime(run.updatedAt)}
           </span>
         </div>
@@ -120,9 +120,7 @@ function ActivityRow({ run, onOpen }: { run: RunActivityRow; onOpen: () => void 
               {run.promptSnippet}
             </span>
           ) : null}
-          <span className="ms-auto shrink-0 text-[12px]" style={{ color: statusColor(run.status) }}>
-            {label}
-          </span>
+          <span className={`ms-auto shrink-0 text-xs ${tone}`}>{label}</span>
         </div>
       </div>
     </button>

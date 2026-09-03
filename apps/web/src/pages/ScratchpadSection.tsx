@@ -1,6 +1,7 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { ScratchpadItem } from "@rakazo/contracts";
-import { Button } from "@rakazo/ui-web";
+import { Button, Checkbox, Input } from "@rakazo/ui-web";
+import { X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { rpc } from "../lib/rpc";
@@ -112,17 +113,15 @@ export function ScratchpadSection({ botId }: { botId: string }) {
         items.map((item) => (
           <div
             key={item.id}
-            className="flex w-full items-start gap-2 rounded-[11px] px-2.5 py-2.5 hover:bg-card"
+            className="flex w-full items-start gap-2 rounded-xl px-2.5 py-2.5 hover:bg-accent"
           >
-            <button
-              type="button"
+            <Checkbox
               aria-label={item.status === "done" ? t`Reopen` : t`Complete`}
+              checked={item.status === "done"}
               disabled={busy}
-              onClick={() => void setStatus(item, item.status === "done" ? "open" : "done")}
-              className="mt-0.5 h-4 w-4 shrink-0 rounded border border-border text-[10px] leading-none text-[#E65707]"
-            >
-              {item.status === "done" ? "✓" : ""}
-            </button>
+              onCheckedChange={(checked) => void setStatus(item, checked ? "done" : "open")}
+              className="mt-0.5"
+            />
             <div className="min-w-0 flex-1">
               <div
                 className={`text-start text-[14.5px] ${item.status === "done" ? "text-muted-foreground/80 line-through" : "text-foreground"}`}
@@ -138,35 +137,38 @@ export function ScratchpadSection({ botId }: { botId: string }) {
             </div>
             <span className="shrink-0 text-[12px] text-muted-foreground/80">{item.status}</span>
             {item.status === "open" ? (
-              <button
-                type="button"
+              <Button
+                variant="ghost"
+                size="xs"
                 aria-label={t`Park`}
                 disabled={busy}
                 onClick={() => void setStatus(item, "parked")}
-                className="shrink-0 text-[12px] text-muted-foreground/70"
+                className="shrink-0 text-muted-foreground/70"
               >
                 <Trans>Park</Trans>
-              </button>
+              </Button>
             ) : item.status === "parked" ? (
-              <button
-                type="button"
+              <Button
+                variant="ghost"
+                size="xs"
                 aria-label={t`Reopen`}
                 disabled={busy}
                 onClick={() => void setStatus(item, "open")}
-                className="shrink-0 text-[12px] text-muted-foreground/70"
+                className="shrink-0 text-muted-foreground/70"
               >
                 <Trans>Open</Trans>
-              </button>
+              </Button>
             ) : null}
-            <button
-              type="button"
+            <Button
+              variant="ghost"
+              size="icon-xs"
               aria-label={t`Remove`}
               disabled={busy}
               onClick={() => void removeItem(item)}
-              className="shrink-0 text-[12px] text-muted-foreground/70"
+              className="shrink-0 text-muted-foreground/70"
             >
-              ✕
-            </button>
+              <X />
+            </Button>
           </div>
         ))
       )}
@@ -177,13 +179,13 @@ export function ScratchpadSection({ botId }: { botId: string }) {
           void addItem();
         }}
       >
-        <input
+        <Input
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
           placeholder={t`Add item`}
           aria-label={t`New open-work item`}
           maxLength={200}
-          className="min-w-0 flex-1 rounded-[11px] border border-border bg-transparent px-3 py-2 text-[14px] text-foreground placeholder:text-[#55555A]"
+          className="min-w-0 flex-1"
         />
         <Button
           variant="secondary"
@@ -194,7 +196,7 @@ export function ScratchpadSection({ botId }: { botId: string }) {
           <Trans>Add</Trans>
         </Button>
       </form>
-      {error ? <div className="mt-2 px-2.5 text-[13px] text-[#C45C5C]">{error}</div> : null}
+      {error ? <div className="mt-2 px-2.5 text-[13px] text-destructive">{error}</div> : null}
     </div>
   );
 }
