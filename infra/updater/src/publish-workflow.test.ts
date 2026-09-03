@@ -15,13 +15,15 @@ interface WorkflowJob {
 }
 
 const workflow = parse(workflowText) as {
-  jobs: { validate: WorkflowJob; build: WorkflowJob; publish: WorkflowJob };
+  jobs: Record<string, WorkflowJob>;
 };
 
 describe("server image publish workflow", () => {
   it("builds every architecture natively instead of emulating arm64", () => {
     expect(workflowText).not.toContain("setup-qemu-action");
     const build = workflow.jobs.build;
+    expect(build).toBeDefined();
+    if (!build) throw new Error("expected build job");
     expect(build["runs-on"]).toContain("matrix.runner");
     expect(build.strategy?.matrix?.arch).toEqual(["amd64", "arm64"]);
     const runners = Object.fromEntries(
@@ -33,7 +35,10 @@ describe("server image publish workflow", () => {
   });
 
   it("publishes one verified multi-arch manifest per image after both builds", () => {
-    expect(workflow.jobs.publish.needs).toBe("build");
+    const publish = workflow.jobs.publish;
+    expect(publish).toBeDefined();
+    if (!publish) throw new Error("expected publish job");
+    expect(publish.needs).toBe("build");
     expect(workflowText).toContain("push-by-digest=true");
     expect(workflowText).toContain("docker buildx imagetools create");
     expect(workflowText).toContain("for want in linux/amd64 linux/arm64");
@@ -41,9 +46,16 @@ describe("server image publish workflow", () => {
   });
 
   it("keeps pull requests read-only and every action pinned to a commit", () => {
-    expect(workflow.jobs.validate.if).toBe("github.event_name == 'pull_request'");
-    expect(workflow.jobs.build.if).toBe("github.event_name != 'pull_request'");
-    expect(workflow.jobs.publish.if).toBe("github.event_name != 'pull_request'");
+    const validate = workflow.jobs.validate;
+    const build = workflow.jobs.build;
+    const publish = workflow.jobs.publish;
+    expect(validate).toBeDefined();
+    expect(build).toBeDefined();
+    expect(publish).toBeDefined();
+    if (!validate || !build || !publish) throw new Error("expected validate, build, and publish jobs");
+    expect(validate.if).toBe("github.event_name == 'pull_request'");
+    expect(build.if).toBe("github.event_name != 'pull_request'");
+    expect(publish.if).toBe("github.event_name != 'pull_request'");
     expect(workflowText).toContain("push: false");
     for (const match of workflowText.matchAll(/uses:\s+([^\s#]+)/g)) {
       expect(match[1], match[1]).toMatch(/@[0-9a-f]{40}$/);
