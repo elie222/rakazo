@@ -197,14 +197,20 @@ test("switching to Existing instance while the stack starts keeps that choice", 
 
   await setup.getByRole("button", { name: "Continue" }).click();
   await expect(setup.locator("#stack-phase")).toHaveText("Downloading Rakazo images…");
-  await setup.getByRole("radio", { name: /Existing instance/ }).check();
 
-  // The stack still finishes (the fake pull sleeps 2 s) but nothing is saved or opened.
-  await expect(setup.locator("#stack-phase")).toHaveText("Rakazo is running.", { timeout: 10_000 });
+  // Fake docker sleeps during pull; leave This computer before ready so followStack must not save.
+  await setup.getByRole("radio", { name: /Existing instance/ }).check();
+  await expect(setup.locator("#panel-existing")).toBeVisible();
+  await expect(setup.getByRole("button", { name: "Continue" })).toBeEnabled();
+  await expect(setup.getByRole("button", { name: "Check connection" })).toBeVisible();
+
+  // Main process still finishes the install; setup.json must stay untouched.
+  await expect.poll(async () => (await readLog()).some((line) => line.includes(" up -d"))).toBe(true);
+  await new Promise((resolve) => setTimeout(resolve, 2500));
   expect(await savedSetup()).toBeNull();
   expect(app.windows()).toHaveLength(1);
 
-  // Back on This computer, Continue opens the stack that is already running.
+  // Back on This computer, Continue starts (or re-follows) and opens the app.
   await setup.getByRole("radio", { name: /This computer/ }).check();
   const appWindowPromise = app.waitForEvent("window");
   await setup.getByRole("button", { name: "Continue" }).click();

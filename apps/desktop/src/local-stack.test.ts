@@ -471,14 +471,28 @@ describe("LocalStackController", () => {
 
   it("reports a stop that docker refused instead of pretending the stack is down", async () => {
     const stack = controller({}, (args) =>
-      args[5] === "stop" ? { code: 1, stderr: "Cannot connect to the Docker daemon" } : ok(args),
+      args[5] === "stop"
+        ? { code: 1, stderr: "/Users/me/secret-path: Cannot connect to the Docker daemon" }
+        : ok(args),
     );
     await stack.start();
+    expect(stack.state().phase).toBe("ready");
     const state = await stack.stop();
     expect(state).toMatchObject({
       phase: "failed",
       message: "Could not stop the local stack. Check that Docker is running, then try again.",
+      imageTag: "v1.2.3",
     });
+    expect(state.message).not.toContain("/Users/me");
+    expect(state).not.toEqual(initialStackState("v1.2.3"));
+    expect(calls.at(-1)?.args.slice(5)).toEqual(["stop"]);
+  });
+
+  it("returns the current state when stop finds no docker binary", async () => {
+    const stack = controller({ exists: () => false });
+    const state = await stack.stop();
+    expect(state).toEqual(initialStackState("v1.2.3"));
+    expect(calls).toEqual([]);
   });
 
   it("surfaces a broken resource bundle instead of hanging", async () => {

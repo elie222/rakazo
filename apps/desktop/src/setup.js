@@ -106,16 +106,24 @@
   }
 
   /** Follows a start already in flight in the main process until it settles. */
+  /**
+   * Follows a start already in flight until it settles.
+   * Abandons the follow (and never auto-saves) if the person leaves "This computer".
+   */
   async function followStack() {
     if (stackPolling) return;
     stackPolling = true;
     try {
       while (true) {
+        // Mode can change while pull/up runs; do not keep following or force local save.
+        if (selectedMode() !== "new") {
+          setBusy(false);
+          return;
+        }
         const stack = await bridge.stack.state();
         if (stack === null) throw new Error("Setup is not active");
         renderStack(stack);
         if (TERMINAL_PHASES.has(stack.phase)) {
-          // Someone who switched to Existing instance meanwhile keeps that choice.
           if (stack.phase === "ready" && selectedMode() === "new") {
             await save("new", defaultLocalUrl);
           }
@@ -171,7 +179,11 @@
   }
 
   form.addEventListener("change", (event) => {
-    if (event.target instanceof HTMLInputElement && event.target.name === "mode") syncPanels();
+    if (event.target instanceof HTMLInputElement && event.target.name === "mode") {
+      syncPanels();
+      // Unlock Continue/Check immediately; followStack exits on its next poll.
+      if (selectedMode() !== "new") setBusy(false);
+    }
   });
 
   checkButton.addEventListener("click", () => {
