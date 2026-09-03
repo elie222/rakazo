@@ -188,7 +188,9 @@ warn_arm64_edge_tags() {
     computer_tag="$(printf '%s\n' "$compose_env" | awk -F= '$1 == "RAKAZO_COMPUTER_IMAGE_TAG" { print substr($0, index($0, "=") + 1); exit }')"
   else
     # Older Compose without `config --environment`: shell env overrides .env
-    # (same precedence as `docker compose pull`), then trivial ${NAME:-default}.
+    # (same precedence as `docker compose pull`), then ${NAME:-default} /
+    # ${NAME-default}. ${name+x} treats empty as set (unlike ${name:-}).
+    # ${NAME:-def} defaults unset-or-empty; ${NAME-def} defaults only unset.
     normalize_env_tag() {
       local v="$1"
       v="${v%%#*}"
@@ -201,38 +203,43 @@ warn_arm64_edge_tags() {
       printf '%s' "$v"
     }
     resolve_env_default() {
-      local v name def cur
+      local v name op def cur env_raw
       v="$(normalize_env_tag "$1")"
       if [[ "$v" =~ ^\$\{([A-Za-z_][A-Za-z0-9_]*)(:?-)([^}]*)\}$ ]]; then
         name="${BASH_REMATCH[1]}"
+        op="${BASH_REMATCH[2]}"
         def="${BASH_REMATCH[3]}"
-        if [[ -n "${!name:-}" ]]; then
-          printf '%s' "${!name}"
-          return 0
-        fi
-        cur="$(awk -F= -v k="$name" '
+        if [[ -n "${!name+x}" ]]; then
+          cur="${!name}"
+        elif env_raw="$(awk -F= -v k="$name" '
           $0 ~ "^[[:space:]]*" k "=" {
             sub(/^[^=]*=/, "")
             print
+            found=1
             exit
           }
-        ' "$ENV_FILE" 2>/dev/null || true)"
-        cur="$(normalize_env_tag "$cur")"
-        if [[ -n "$cur" ]]; then
-          printf '%s' "$cur"
+          END { if (!found) exit 2 }
+        ' "$ENV_FILE" 2>/dev/null)"; then
+          cur="$(normalize_env_tag "$env_raw")"
         else
           printf '%s' "$def"
+          return 0
+        fi
+        if [[ "$op" == ":-" && -z "$cur" ]]; then
+          printf '%s' "$def"
+        else
+          printf '%s' "$cur"
         fi
         return 0
       fi
       printf '%s' "$v"
     }
-    if [[ -n "${RAKAZO_IMAGE_TAG:-}" ]]; then
+    if [[ -n "${RAKAZO_IMAGE_TAG+x}" ]]; then
       app_tag="$RAKAZO_IMAGE_TAG"
     else
       app_tag="$(awk -F= '/^[[:space:]]*RAKAZO_IMAGE_TAG=/{ sub(/^[^=]*=/, ""); print; exit }' "$ENV_FILE" 2>/dev/null || true)"
     fi
-    if [[ -n "${RAKAZO_COMPUTER_IMAGE_TAG:-}" ]]; then
+    if [[ -n "${RAKAZO_COMPUTER_IMAGE_TAG+x}" ]]; then
       computer_tag="$RAKAZO_COMPUTER_IMAGE_TAG"
     else
       computer_tag="$(awk -F= '/^[[:space:]]*RAKAZO_COMPUTER_IMAGE_TAG=/{ sub(/^[^=]*=/, ""); print; exit }' "$ENV_FILE" 2>/dev/null || true)"
