@@ -89,11 +89,8 @@ Signup and local Docker computers work without an E2B account. Optional remote p
 
 Optional: set `OPENROUTER_API_KEY` or connect a model in the UI after signup.
 
-The example defaults to `edge` (main builds, `linux/amd64` only). On arm64 hosts, set both
-`RAKAZO_IMAGE_TAG` and `RAKAZO_COMPUTER_IMAGE_TAG` to the same published multi-arch release tag
-when one exists (see [Published images and tags](#published-images-and-tags)). Changing only
-`RAKAZO_IMAGE_TAG` leaves the computer service on amd64-only `edge`. Do not assume `latest` is
-published.
+The example defaults to `edge` (main builds). Every publish is multi-arch (`amd64` + `arm64`), so
+arm64 hosts need no special tag. Do not assume `latest` is present until a stable release exists.
 
 Open [http://127.0.0.1:5173](http://127.0.0.1:5173). The first registered user becomes the
 deployment owner. Put TLS in front of `:5173` for a public host and set the three public origins to
@@ -449,10 +446,8 @@ your CI cannot publish into someone else's.
 | `sha-<full-commit>` | every push and manual run | source-addressed; used by the updater sidecar |
 | `edge` | pushes to main | yes, to the newest main build |
 
-`edge` from everyday main merges is `linux/amd64` only. Release tags (`v*`) and manual
-`workflow_dispatch` publishes are multi-arch (`amd64` + `arm64`). On arm64 hosts, set both
-`RAKAZO_IMAGE_TAG` and `RAKAZO_COMPUTER_IMAGE_TAG` to the same published release tag rather than
-`edge`. Changing only `RAKAZO_IMAGE_TAG` leaves the computer service on amd64-only `edge`. Until a
+Every publish, including `edge` from main merges, is multi-arch (`amd64` + `arm64`): each
+architecture builds natively on its own runner and one manifest is assembled per image. Until a
 stable `vX.Y.Z` has been published, GHCR may only have `edge` and `sha-*` tags; do not pin
 `latest` unless that tag exists in the registry.
 

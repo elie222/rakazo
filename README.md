@@ -56,7 +56,7 @@ Open [http://127.0.0.1:5173](http://127.0.0.1:5173), create an account, and conn
 Local Docker computers are on by default. Optional remote providers: `e2b`, `daytona`, or `box`
 with the matching API key.
 
-Default image tag is `edge` (main builds, `linux/amd64`). Details and tags:
+Default image tag is `edge` (main builds, `linux/amd64` + `linux/arm64`). Details and tags:
 [self-hosting guide](./docs/self-host.md#published-images-no-checkout).
 
 On restricted networks, override the installer download base (`RAKAZO_DOWNLOAD_BASE`), skip

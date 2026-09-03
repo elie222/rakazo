@@ -3,8 +3,8 @@
 #   docker compose --env-file .env -f docker-compose.images.yml up -d
 #
 # Tag contract matches docs/self-host.md (edge from main; release tags when published).
-# Default is edge because that tag is published on every main build (linux/amd64 only).
-# Pin a published release tag (vX.Y.Z or latest, when present) for multi-arch and fixed versions.
+# Default is edge because that tag is published on every main build (linux/amd64 + linux/arm64).
+# Pin a published release tag (vX.Y.Z or latest, when present) for a fixed version.
 # Default SANDBOX_PROVIDER=docker boots a local computer via the in-stack supervisor (no E2B key).
 # Optional: set e2b / daytona / box plus the matching API key for remote computers.
 name: rakazo
