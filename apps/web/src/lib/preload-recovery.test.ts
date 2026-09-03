@@ -23,10 +23,12 @@ describe("preload recovery", () => {
 
     installPreloadRecovery(target as unknown as Window);
     const first = new Event("vite:preloadError", { cancelable: true });
+    const second = new Event("vite:preloadError", { cancelable: true });
     listener?.(first);
-    listener?.(new Event("vite:preloadError", { cancelable: true }));
+    listener?.(second);
 
     expect(first.defaultPrevented).toBe(true);
+    expect(second.defaultPrevented).toBe(false);
     expect(reload).toHaveBeenCalledOnce();
   });
 });

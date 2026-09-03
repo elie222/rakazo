@@ -21,8 +21,8 @@ export function installPreloadRecovery(target: PreloadRecoveryWindow = window): 
     PRELOAD_RECOVERY_COOLDOWN_MS,
   );
   const onPreloadError = (event: Event) => {
-    event.preventDefault();
     if (target.sessionStorage.getItem(PRELOAD_RECOVERY_KEY)) return;
+    event.preventDefault();
     target.sessionStorage.setItem(PRELOAD_RECOVERY_KEY, "1");
     target.location.reload();
   };
