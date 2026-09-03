@@ -84,6 +84,7 @@ function fromMainWindow(event: Electron.IpcMainInvokeEvent) {
   return mainWindow !== null && windowFrom(event) === mainWindow;
 }
 
+/** Dock/taskbar icon for unpackaged launches; packaged builds get theirs from electron-builder. */
 function developmentIcon() {
   if (app.isPackaged) return undefined;
   const icon = path.join(app.getAppPath(), "assets", developmentIconFile(process.platform));
