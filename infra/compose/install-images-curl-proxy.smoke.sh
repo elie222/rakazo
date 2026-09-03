@@ -34,4 +34,16 @@ http_proxy='http://already:1'
 HTTP_PROXY='http://upper:1'
 sync_curl_proxy_env
 [[ "$http_proxy" == 'http://already:1' ]] || fail "clobbered existing http_proxy"
+# exported-but-empty lowercase means no proxy; do not overwrite from uppercase
+unset http_proxy https_proxy no_proxy HTTP_PROXY HTTPS_PROXY NO_PROXY || true
+export http_proxy=""
+export https_proxy=""
+export no_proxy=""
+HTTP_PROXY='http://upper:1'
+HTTPS_PROXY='http://upper:2'
+NO_PROXY='upper.example'
+sync_curl_proxy_env
+[[ -n "${http_proxy+x}" && -z "$http_proxy" ]] || fail "empty http_proxy overwritten"
+[[ -n "${https_proxy+x}" && -z "$https_proxy" ]] || fail "empty https_proxy overwritten"
+[[ -n "${no_proxy+x}" && -z "$no_proxy" ]] || fail "empty no_proxy overwritten"
 echo "ok"
