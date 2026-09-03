@@ -31,13 +31,14 @@ import {
   signUp,
   usesCustomApiBase,
 } from "../lib/api";
+import { type AuthMode, initialAuthMode } from "../lib/auth-routing";
 import { useI18n } from "../lib/i18n";
 
 export default function SignIn() {
   const { t } = useI18n();
   const router = useRouter();
-  const { mode: requestedMode } = useLocalSearchParams<{ mode?: string }>();
-  const [mode, setMode] = useState<"in" | "up" | "forgot">(requestedMode === "in" ? "in" : "up");
+  const { mode: requestedMode } = useLocalSearchParams<{ mode?: string | string[] }>();
+  const [mode, setMode] = useState<AuthMode>(() => initialAuthMode(requestedMode));
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");

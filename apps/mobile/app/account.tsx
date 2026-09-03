@@ -32,6 +32,7 @@ import {
   setAppearancePreference,
   subscribeAppearance,
 } from "../lib/appearance";
+import { explicitSignInRoute } from "../lib/auth-routing";
 import { confirmDeleteBot } from "../lib/bot-lifecycle";
 import { setUiLocale, useI18n } from "../lib/i18n";
 import {
@@ -148,7 +149,7 @@ export default function Account() {
     try {
       await signOut();
       router.dismissAll();
-      router.replace({ pathname: "/sign-in", params: { mode: "in" } });
+      router.replace(explicitSignInRoute);
     } catch (err) {
       setError(err instanceof Error ? err.message : t("Could not sign out"));
       setPending(false);
