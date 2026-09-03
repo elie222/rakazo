@@ -119,4 +119,5 @@ test("connects an MCP server through the OAuth popup callback", async ({ page },
     channel.close();
   }, MCP_OAUTH_CHANNEL);
   await expect(page.getByText("OAuth expired", { exact: true })).toBeVisible();
+  await captureScreenshot(page, testInfo, "mcp-oauth-expired");
 });
