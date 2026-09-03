@@ -20,6 +20,7 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.55.0",
+    "@rakazo/ui-tokens": "workspace:*",
     "electron": "^43.4.0",
     "electron-builder": "^26.0.12",
     "typescript": "^5.9.2",

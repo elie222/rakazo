@@ -436,6 +436,13 @@ export function ShellPage() {
     id: string;
     position: ContextMenuPosition;
   } | null>(null);
+  // The context menu anchors to the pointer, so return focus to the row that opened it.
+  const botMenuAnchor = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    if (botMenu || !botMenuAnchor.current) return;
+    botMenuAnchor.current.focus();
+    botMenuAnchor.current = null;
+  }, [botMenu]);
   const [deleteTarget, setDeleteTarget] = useState<Bot | null>(null);
   const [deleteGroupTarget, setDeleteGroupTarget] = useState<Group | null>(null);
   const [clearTarget, setClearTarget] = useState<
@@ -2389,43 +2396,46 @@ export function ShellPage() {
               >
                 +
               </PopoverTrigger>
-              <PopoverContent
-                align="end"
-                className="app-no-drag w-auto min-w-[160px] gap-0 p-1 data-closed:animate-none"
-              >
-                <Button
-                  variant="ghost"
-                  className="w-full justify-start font-normal"
-                  onClick={() => {
-                    setCreateMenuOpen(false);
-                    setPanel("create");
-                  }}
+              {/* Unmount with the state change so the panel it opens never coexists with the menu. */}
+              {createMenuOpen ? (
+                <PopoverContent
+                  align="end"
+                  className="app-no-drag w-auto min-w-[160px] gap-0 p-1 data-closed:animate-none"
                 >
-                  <Trans>New bot</Trans>
-                </Button>
-                <Button
-                  variant="ghost"
-                  className="w-full justify-start font-normal"
-                  onClick={() => {
-                    setCreateMenuOpen(false);
-                    setPanel("create-group");
-                  }}
-                >
-                  <Trans>New group</Trans>
-                </Button>
-                <Separator className="my-1" />
-                <Button
-                  variant="ghost"
-                  className="w-full justify-start font-normal"
-                  onClick={() => {
-                    setCreateMenuOpen(false);
-                    setNewSpaceOpen(true);
-                  }}
-                >
-                  <Lock size={14} strokeWidth={1.8} aria-hidden="true" />
-                  <Trans>New space</Trans>
-                </Button>
-              </PopoverContent>
+                  <Button
+                    variant="ghost"
+                    className="w-full justify-start font-normal"
+                    onClick={() => {
+                      setCreateMenuOpen(false);
+                      setPanel("create");
+                    }}
+                  >
+                    <Trans>New bot</Trans>
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    className="w-full justify-start font-normal"
+                    onClick={() => {
+                      setCreateMenuOpen(false);
+                      setPanel("create-group");
+                    }}
+                  >
+                    <Trans>New group</Trans>
+                  </Button>
+                  <Separator className="my-1" />
+                  <Button
+                    variant="ghost"
+                    className="w-full justify-start font-normal"
+                    onClick={() => {
+                      setCreateMenuOpen(false);
+                      setNewSpaceOpen(true);
+                    }}
+                  >
+                    <Lock size={14} strokeWidth={1.8} aria-hidden="true" />
+                    <Trans>New space</Trans>
+                  </Button>
+                </PopoverContent>
+              ) : null}
             </Popover>
           </div>
         </div>
@@ -2563,6 +2573,7 @@ export function ShellPage() {
                           onContextMenu={(event) => {
                             if (item.chat.spaceId !== bootstrapMe?.spaceId) return;
                             event.preventDefault();
+                            botMenuAnchor.current = event.currentTarget;
                             setBotMenu({
                               kind: item.kind,
                               id: item.chat.id,
@@ -2778,88 +2789,90 @@ export function ShellPage() {
             </span>
             <span className="text-[14.5px] text-foreground/90">{userName}</span>
           </PopoverTrigger>
-          <PopoverContent
-            side="top"
-            align="start"
-            className="w-[calc(316px-1.5rem)] max-w-[calc(100vw-3rem)] gap-0 p-1 data-closed:animate-none"
-          >
-            <Button
-              variant="ghost"
-              className="w-full justify-start font-normal"
-              aria-label={t`Settings`}
-              onClick={() => {
-                setMenuOpen(false);
-                setAccountSettingsFocusUsage(false);
-                setAccountSettingsOpen(true);
-              }}
+          {menuOpen ? (
+            <PopoverContent
+              side="top"
+              align="start"
+              className="w-[calc(316px-1.5rem)] max-w-[calc(100vw-3rem)] gap-0 p-1 data-closed:animate-none"
             >
-              <span className="text-muted-foreground">⚙</span>
-              <Trans>Settings</Trans>
-            </Button>
-            <Button
-              variant="ghost"
-              className="w-full justify-start font-normal"
-              onClick={() => {
-                setMenuOpen(false);
-                setModelsOpen(true);
-              }}
-            >
-              <Cpu size={16} strokeWidth={1.7} className="text-muted-foreground" />
-              <Trans>Models</Trans>
-            </Button>
-            <Button
-              variant="ghost"
-              className="w-full justify-start font-normal"
-              onClick={() => {
-                setMenuOpen(false);
-                setMemorySettingsOpen(true);
-              }}
-            >
-              <span className="text-muted-foreground">◇</span>
-              <Trans>Memory</Trans>
-            </Button>
-            <Button
-              variant="ghost"
-              className="w-full justify-start font-normal"
-              onClick={() => {
-                setMenuOpen(false);
-                setVoiceOpen(true);
-              }}
-            >
-              <Volume2 size={16} strokeWidth={1.7} className="text-muted-foreground" />
-              <Trans>Voice</Trans>
-            </Button>
-            <Button
-              variant="ghost"
-              className="w-full justify-start font-normal"
-              onClick={async () => {
-                setUsage(await rpc.usage.summary());
-              }}
-            >
-              <Gauge size={16} strokeWidth={1.7} className="text-muted-foreground" />
-              <Trans>Usage</Trans>
-            </Button>
-            {usage ? (
-              <p className="px-2.5 pb-2 text-[12.5px] text-muted-foreground">
-                <Trans>
-                  {usage.runs} runs · {usage.inputTokens + usage.outputTokens} tokens
-                </Trans>
-              </p>
-            ) : null}
-            <Button
-              variant="ghost"
-              className="w-full justify-start font-normal"
-              onClick={() =>
-                void authClient.signOut().then(() => {
-                  clearSpaceSelection();
-                  navigate("/");
-                })
-              }
-            >
-              <LogOut size={16} strokeWidth={1.7} className="text-muted-foreground" />
-              <Trans>Log out</Trans>
-            </Button>
-          </PopoverContent>
+              <Button
+                variant="ghost"
+                className="w-full justify-start font-normal"
+                aria-label={t`Settings`}
+                onClick={() => {
+                  setMenuOpen(false);
+                  setAccountSettingsFocusUsage(false);
+                  setAccountSettingsOpen(true);
+                }}
+              >
+                <span className="text-muted-foreground">⚙</span>
+                <Trans>Settings</Trans>
+              </Button>
+              <Button
+                variant="ghost"
+                className="w-full justify-start font-normal"
+                onClick={() => {
+                  setMenuOpen(false);
+                  setModelsOpen(true);
+                }}
+              >
+                <Cpu size={16} strokeWidth={1.7} className="text-muted-foreground" />
+                <Trans>Models</Trans>
+              </Button>
+              <Button
+                variant="ghost"
+                className="w-full justify-start font-normal"
+                onClick={() => {
+                  setMenuOpen(false);
+                  setMemorySettingsOpen(true);
+                }}
+              >
+                <span className="text-muted-foreground">◇</span>
+                <Trans>Memory</Trans>
+              </Button>
+              <Button
+                variant="ghost"
+                className="w-full justify-start font-normal"
+                onClick={() => {
+                  setMenuOpen(false);
+                  setVoiceOpen(true);
+                }}
+              >
+                <Volume2 size={16} strokeWidth={1.7} className="text-muted-foreground" />
+                <Trans>Voice</Trans>
+              </Button>
+              <Button
+                variant="ghost"
+                className="w-full justify-start font-normal"
+                onClick={async () => {
+                  setUsage(await rpc.usage.summary());
+                }}
+              >
+                <Gauge size={16} strokeWidth={1.7} className="text-muted-foreground" />
+                <Trans>Usage</Trans>
+              </Button>
+              {usage ? (
+                <p className="px-2.5 pb-2 text-[12.5px] text-muted-foreground">
+                  <Trans>
+                    {usage.runs} runs · {usage.inputTokens + usage.outputTokens} tokens
+                  </Trans>
+                </p>
+              ) : null}
+              <Button
+                variant="ghost"
+                className="w-full justify-start font-normal"
+                onClick={() =>
+                  void authClient.signOut().then(() => {
+                    clearSpaceSelection();
+                    navigate("/");
+                  })
+                }
+              >
+                <LogOut size={16} strokeWidth={1.7} className="text-muted-foreground" />
+                <Trans>Log out</Trans>
+              </Button>
+            </PopoverContent>
+          ) : null}
         </Popover>
       </aside>
 

@@ -5,16 +5,15 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@rakazo/ui-web";
 import {
   Archive,
+  ArrowLeft,
   Bell,
   BellDot,
   Check,
+  ChevronRight,
   Copy,
   Eraser,
   Folder,
@@ -23,6 +22,7 @@ import {
   Pin,
   Trash2,
 } from "lucide-react";
+import { useState } from "react";
 
 export type ContextMenuPosition = { x: number; y: number };
 
@@ -58,6 +58,9 @@ export function BotContextMenu({
   onDelete: () => void;
 }) {
   const { t } = useLingui();
+  // "Move to" swaps the menu's contents in place instead of opening a hover
+  // submenu, so the section list is reachable with a single click or tap.
+  const [view, setView] = useState<"actions" | "move">("actions");
 
   return (
     <DropdownMenu
@@ -79,24 +82,18 @@ export function BotContextMenu({
         }
       />
       <DropdownMenuContent
-        aria-label={t`Actions for ${bot.name}`}
+        aria-label={view === "move" ? t`Move ${bot.name} to section` : t`Actions for ${bot.name}`}
         align="start"
         sideOffset={0}
-        className="w-[264px]"
+        className="max-h-[min(420px,calc(100vh-16px))] w-[264px] overflow-y-auto"
       >
-        <DropdownMenuItem onClick={onTogglePinned}>
-          <Pin />
-          {bot.pinned ? t`Unpin` : t`Pin`}
-        </DropdownMenuItem>
-        <DropdownMenuSub>
-          <DropdownMenuSubTrigger>
-            <Folder />
-            {t`Move to`}
-          </DropdownMenuSubTrigger>
-          <DropdownMenuSubContent
-            aria-label={t`Move ${bot.name} to section`}
-            className="max-h-[min(420px,calc(100vh-16px))] w-[264px] overflow-y-auto"
-          >
+        {view === "move" ? (
+          <>
+            <DropdownMenuItem closeOnClick={false} onClick={() => setView("actions")}>
+              <ArrowLeft />
+              {t`Back`}
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
             {sections.map((section) => (
               <DropdownMenuItem key={section.id} onClick={() => onMoveToSection(section.id)}>
                 <Folder />
@@ -114,34 +111,46 @@ export function BotContextMenu({
               <FolderPlus />
               {t`New section`}
             </DropdownMenuItem>
-          </DropdownMenuSubContent>
-        </DropdownMenuSub>
-        <DropdownMenuItem onClick={onToggleUnread}>
-          {bot.unread ? <BellDot /> : <Bell />}
-          {bot.unread ? t`Mark as Read` : t`Mark as Unread`}
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={onEdit}>
-          <Pencil />
-          {t`Edit Profile`}
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={onDuplicate}>
-          <Copy />
-          {t`Duplicate`}
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={onClear}>
-          <Eraser />
-          {t`Clear conversation`}
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={onArchive}>
-          <Archive />
-          {t`Archive`}
-        </DropdownMenuItem>
-        <DropdownMenuItem variant="destructive" onClick={onDelete}>
-          <Trash2 />
-          {t`Delete`}
-        </DropdownMenuItem>
+          </>
+        ) : (
+          <>
+            <DropdownMenuItem onClick={onTogglePinned}>
+              <Pin />
+              {bot.pinned ? t`Unpin` : t`Pin`}
+            </DropdownMenuItem>
+            <DropdownMenuItem closeOnClick={false} onClick={() => setView("move")}>
+              <Folder />
+              {t`Move to`}
+              <ChevronRight className="ms-auto" />
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={onToggleUnread}>
+              {bot.unread ? <BellDot /> : <Bell />}
+              {bot.unread ? t`Mark as Read` : t`Mark as Unread`}
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={onEdit}>
+              <Pencil />
+              {t`Edit Profile`}
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={onDuplicate}>
+              <Copy />
+              {t`Duplicate`}
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={onClear}>
+              <Eraser />
+              {t`Clear conversation`}
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={onArchive}>
+              <Archive />
+              {t`Archive`}
+            </DropdownMenuItem>
+            <DropdownMenuItem variant="destructive" onClick={onDelete}>
+              <Trash2 />
+              {t`Delete`}
+            </DropdownMenuItem>
+          </>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );

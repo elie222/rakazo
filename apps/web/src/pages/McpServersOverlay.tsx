@@ -26,7 +26,7 @@ import {
   TabsList,
   TabsTrigger,
 } from "@rakazo/ui-web";
-import { X } from "lucide-react";
+import { Check, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { connectMcpOauth, MCP_OAUTH_CHANNEL } from "../lib/mcp-connect";
 import { rpc } from "../lib/rpc";
@@ -271,7 +271,10 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
           </DialogClose>
         </DialogHeader>
         {error ? (
-          <p className="mx-8 mt-5 rounded-xl border border-destructive/40 bg-destructive/10 p-3 text-xs text-destructive">
+          <p
+            role="alert"
+            className="mx-8 mt-5 rounded-xl border border-destructive/40 bg-destructive/10 p-3 text-xs text-destructive"
+          >
             {error}
           </p>
         ) : null}
@@ -406,6 +409,7 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
                     className="cursor-pointer gap-3 rounded-xl border border-border px-3 py-3 font-normal"
                   >
                     <Checkbox
+                      aria-label={bot.name}
                       checked={selectedBotIds.includes(bot.id)}
                       onCheckedChange={() => toggleBot(bot.id)}
                     />
@@ -462,9 +466,10 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
                                 variant={assigned ? "default" : "outline"}
                                 size="xs"
                                 className="rounded-full"
+                                aria-pressed={assigned}
                                 onClick={() => void toggleAssignment(server, bot.id)}
                               >
-                                {assigned ? "✓ " : ""}
+                                {assigned ? <Check aria-hidden="true" /> : null}
                                 {bot.name}
                               </Button>
                             );
