@@ -188,6 +188,56 @@ describe("inbound webhook HTTP route", () => {
     expect(deps.enqueue).toHaveBeenCalled();
   });
 
+  it("accepts a webhook secret rotated by another member of the same space", async () => {
+    const deps = createDeps({
+      secret: {
+        ciphertext: "cipher",
+        kind: WEBHOOK_SECRET_KIND,
+        userId: "user-2",
+        spaceId: "ws-1",
+      },
+    });
+    const app = mount(deps);
+
+    const res = await app.request("/api/v1/bots/bot-1/webhook", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${SECRET}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ text: "shared member event" }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(deps.sendUserMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ spaceId: "ws-1", userId: "user-1" }),
+    );
+  });
+
+  it("rejects a webhook secret from another space", async () => {
+    const deps = createDeps({
+      secret: {
+        ciphertext: "cipher",
+        kind: WEBHOOK_SECRET_KIND,
+        userId: "user-1",
+        spaceId: "ws-2",
+      },
+    });
+    const app = mount(deps);
+
+    const res = await app.request("/api/v1/bots/bot-1/webhook", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${SECRET}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ text: "foreign event" }),
+    });
+
+    expect(res.status).toBe(401);
+    expect(deps.sendUserMessage).not.toHaveBeenCalled();
+  });
+
   it("accepts a plain text payload", async () => {
     const deps = createDeps();
     const app = mount(deps);

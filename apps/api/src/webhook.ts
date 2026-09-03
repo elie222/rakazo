@@ -124,7 +124,7 @@ export function mountWebhookHttpRoutes(app: Hono, deps: WebhookDeps) {
     if (!secret || secret.kind !== WEBHOOK_SECRET_KIND) {
       return unauthorized();
     }
-    if (secret.userId !== bot.userId || secret.spaceId !== bot.spaceId) {
+    if (secret.spaceId !== bot.spaceId) {
       return unauthorized();
     }
 

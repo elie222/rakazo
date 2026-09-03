@@ -63,7 +63,6 @@ describe("external conversations", () => {
       expect.objectContaining({
         where: {
           spaceId: { in: ["space-1"] },
-          userId: "user-1",
           bot: { archivedAt: null },
           thread: { isNot: null },
         },
@@ -92,7 +91,7 @@ describe("external conversations", () => {
 
     await expect(repos.updatePolicy(actor, "external-1", policy)).resolves.toEqual(policy);
     expect(updateMany).toHaveBeenCalledWith({
-      where: { id: "external-1", spaceId: "space-1", userId: "user-1" },
+      where: { id: "external-1", spaceId: "space-1" },
       data: policy,
     });
   });

@@ -246,7 +246,6 @@ async function lockAndLoadGroupMembers(
     where: {
       id: target.groupId,
       spaceId: actor.spaceId,
-      userId: actor.userId,
       archivedAt: null,
       thread: { id: target.threadId },
     },
@@ -306,7 +305,6 @@ export async function resolveThreadTarget(
       where: {
         id: input.externalConversationId,
         spaceId: actor.spaceId,
-        userId: actor.userId,
         bot: { archivedAt: null },
       },
       select: {
@@ -1011,7 +1009,6 @@ export async function setThreadUnreadState(
     where: {
       id: target.threadId,
       spaceId: actor.spaceId,
-      userId: actor.userId,
       unread: { not: unread },
     },
     data: { unread },

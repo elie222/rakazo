@@ -10,12 +10,11 @@ import { previewFromBlocks } from "./thread-listing.js";
 
 export function createExternalConversationRepos(prisma: PrismaClient) {
   return {
-    async listForSpaces(actor: Actor, spaceIds: string[]): Promise<ExternalConversation[]> {
+    async listForSpaces(_actor: Actor, spaceIds: string[]): Promise<ExternalConversation[]> {
       if (spaceIds.length === 0) return [];
       const conversations = await prisma.externalConversation.findMany({
         where: {
           spaceId: { in: spaceIds },
-          userId: actor.userId,
           bot: { archivedAt: null },
           thread: { isNot: null },
         },
@@ -89,7 +88,6 @@ export function createExternalConversationRepos(prisma: PrismaClient) {
         where: {
           id: externalConversationId,
           spaceId: actor.spaceId,
-          userId: actor.userId,
         },
         data: policy,
       });

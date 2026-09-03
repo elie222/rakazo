@@ -92,7 +92,7 @@ function hasMinimumActiveMembers(members: readonly unknown[]) {
   return members.length >= GROUP_MEMBER_MIN;
 }
 
-async function assertOwnedBots(
+async function assertSpaceBots(
   prisma: PrismaClient,
   actor: Actor,
   botIds: string[],
@@ -107,7 +107,6 @@ async function assertOwnedBots(
     where: {
       id: { in: unique },
       spaceId: actor.spaceId,
-      userId: actor.userId,
       archivedAt: null,
     },
     select: { id: true, name: true, color: true },
@@ -162,12 +161,14 @@ const groupTargetInclude = {
 } as const;
 
 export function createGroupRepos(prisma: PrismaClient) {
-  async function listSpaceGroupsForSpaces(actor: Actor, spaceIds: string[]): Promise<SpaceGroup[]> {
+  async function listSpaceGroupsForSpaces(
+    _actor: Actor,
+    spaceIds: string[],
+  ): Promise<SpaceGroup[]> {
     if (spaceIds.length === 0) return [];
     const groups = await prisma.chatGroup.findMany({
       where: {
         spaceId: { in: spaceIds },
-        userId: actor.userId,
         archivedAt: null,
       },
       select: {
@@ -201,7 +202,6 @@ export function createGroupRepos(prisma: PrismaClient) {
       const groups = await prisma.chatGroup.findMany({
         where: {
           spaceId: actor.spaceId,
-          userId: actor.userId,
           archivedAt: options.archived ? { not: null } : null,
         },
         include: groupInclude,
@@ -219,7 +219,6 @@ export function createGroupRepos(prisma: PrismaClient) {
         where: {
           id: groupId,
           spaceId: actor.spaceId,
-          userId: actor.userId,
           ...(options.includeArchived ? {} : { archivedAt: null }),
         },
         include: groupInclude,
@@ -233,7 +232,6 @@ export function createGroupRepos(prisma: PrismaClient) {
         where: {
           id: groupId,
           spaceId: actor.spaceId,
-          userId: actor.userId,
           archivedAt: null,
         },
         include: groupTargetInclude,
@@ -243,7 +241,7 @@ export function createGroupRepos(prisma: PrismaClient) {
     },
 
     async createGroup(actor: Actor, input: { name: string; botIds: string[] }): Promise<Group> {
-      const members = await assertOwnedBots(prisma, actor, input.botIds);
+      const members = await assertSpaceBots(prisma, actor, input.botIds);
       const created = await prisma.$transaction(async (tx) => {
         const group = await tx.chatGroup.create({
           data: {
@@ -280,14 +278,13 @@ export function createGroupRepos(prisma: PrismaClient) {
         sectionId?: string | null;
       },
     ): Promise<{ group: Group; cancelledRunIds: string[] }> {
-      const members = input.botIds ? await assertOwnedBots(prisma, actor, input.botIds) : undefined;
+      const members = input.botIds ? await assertSpaceBots(prisma, actor, input.botIds) : undefined;
       const updated = await prisma.$transaction(async (tx) => {
         await lockOwnedGroup(tx, actor, input.groupId);
         const current = await tx.chatGroup.findFirst({
           where: {
             id: input.groupId,
             spaceId: actor.spaceId,
-            userId: actor.userId,
             archivedAt: null,
           },
           include: {
@@ -383,7 +380,6 @@ export function createGroupRepos(prisma: PrismaClient) {
           where: {
             id: groupId,
             spaceId: actor.spaceId,
-            userId: actor.userId,
             archivedAt: null,
           },
           select: { thread: { select: { id: true } } },
@@ -467,7 +463,7 @@ export function createGroupRepos(prisma: PrismaClient) {
 
     async restoreGroup(actor: Actor, groupId: string) {
       const restored = await prisma.chatGroup.updateMany({
-        where: { id: groupId, spaceId: actor.spaceId, userId: actor.userId },
+        where: { id: groupId, spaceId: actor.spaceId },
         data: { archivedAt: null },
       });
       if (restored.count !== 1) throw new IsolationError();
@@ -507,7 +503,6 @@ export async function lockOwnedGroup(
     FROM chat_groups
     WHERE id = ${groupId}
       AND "spaceId" = ${actor.spaceId}
-      AND "userId" = ${actor.userId}
     FOR UPDATE
   `;
   if (locked.length !== 1) throw new IsolationError();

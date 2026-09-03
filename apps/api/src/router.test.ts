@@ -151,7 +151,7 @@ describe("external conversation policy", () => {
       },
     });
     expect(updateMany).toHaveBeenCalledWith({
-      where: { id: "external-1", spaceId: "space-1", userId: "user-1" },
+      where: { id: "external-1", spaceId: "space-1" },
       data: {
         teamChatAmbientEnabled: true,
         teamChatRules: "Engage when an owner or committed date changes.",

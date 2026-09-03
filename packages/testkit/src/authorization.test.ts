@@ -499,6 +499,72 @@ describeWithDatabase("API authorization and resource isolation", () => {
     ).not.toBeNull();
   });
 
+  it("lets organization space members use the same agents and chats", async () => {
+    const owner = await signup(app, `shared-owner-${stamp}@rakazo.test`, "Shared Owner");
+    const member = await signup(app, `shared-member-${stamp}@rakazo.test`, "Shared Member");
+    const ownerActor = await rpc<Actor>(app, owner, "me");
+    const memberActor = await rpc<Actor>(app, member, "me");
+    const ownerBot = await rpc<Bot>(app, owner, "bots/create", botInput("Shared Agent"));
+    const ownerBot2 = await rpc<Bot>(app, owner, "bots/create", botInput("Shared Agent Two"));
+    const ownerGroup = await rpc<{ id: string }>(app, owner, "groups/create", {
+      name: "Shared Group",
+      botIds: [ownerBot.id, ownerBot2.id],
+    });
+    const ownerArtifact = await rpc<{ id: string }>(app, owner, "artifacts/create", {
+      botId: ownerBot.id,
+      name: "shared-note.txt",
+      mimeType: "text/plain",
+      contentBase64: Buffer.from("shared context").toString("base64"),
+    });
+
+    await handles.prisma.member.deleteMany({ where: { userId: memberActor.userId } });
+    await handles.prisma.member.create({
+      data: {
+        id: `shared-member-${stamp}`,
+        organizationId: ownerActor.spaceId,
+        userId: memberActor.userId,
+        role: "member",
+        createdAt: new Date(),
+      },
+    });
+
+    const sharedMe = await rpc<Actor>(app, member, "me");
+    expect(sharedMe.spaceId).toBe(ownerActor.spaceId);
+    await expect(rpc<Array<{ id: string }>>(app, member, "bots/list")).resolves.toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: ownerBot.id })]),
+    );
+    await expect(rpc<Array<{ id: string }>>(app, member, "groups/list")).resolves.toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: ownerGroup.id })]),
+    );
+    await expect(
+      rpc<{ threadId: string }>(app, member, "threads/get", { botId: ownerBot.id }),
+    ).resolves.toEqual(expect.objectContaining({ threadId: expect.any(String) }));
+    await expect(
+      rpc<{ threadId: string }>(app, member, "threads/get", { groupId: ownerGroup.id }),
+    ).resolves.toEqual(expect.objectContaining({ threadId: expect.any(String) }));
+    await expect(
+      rpc(app, member, "threads/send", {
+        botId: ownerBot.id,
+        text: "Can you use this shared file?",
+        artifactIds: [ownerArtifact.id],
+      }),
+    ).resolves.toEqual(expect.objectContaining({ runId: expect.any(String) }));
+    await expect(
+      rpc(app, member, "threads/send", {
+        groupId: ownerGroup.id,
+        text: "Shared group update",
+      }),
+    ).resolves.toEqual(expect.objectContaining({ runIds: expect.any(Array) }));
+    await expect(
+      rpc<{ contentBase64: string }>(app, member, "artifacts/get", {
+        botId: ownerBot.id,
+        artifactId: ownerArtifact.id,
+      }),
+    ).resolves.toEqual(
+      expect.objectContaining({ contentBase64: Buffer.from("shared context").toString("base64") }),
+    );
+  });
+
   it("keeps space data and computers behind the selected space boundary", async () => {
     const cookie = await signup(app, `spaces-${stamp}@rakazo.test`, "Space Owner");
     const original = await rpc<Actor>(app, cookie, "me");

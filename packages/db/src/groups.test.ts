@@ -55,6 +55,13 @@ describe("listSpaceGroupsForSpaces", () => {
       },
     ]);
     const query = findMany.mock.calls[0]![0];
+    expect(query.where).toEqual(
+      expect.objectContaining({
+        spaceId: { in: ["workspace-2"] },
+        archivedAt: null,
+      }),
+    );
+    expect(query.where).not.toHaveProperty("userId");
     expect(query.select).not.toHaveProperty("userId");
     expect(query.select).not.toHaveProperty("archivedAt");
     expect(query.select).not.toHaveProperty("createdAt");

@@ -13,7 +13,7 @@ import {
 } from "./thread-target.js";
 
 describe("external thread target", () => {
-  it("resolves only an external conversation owned by the actor", async () => {
+  it("resolves an external conversation in the actor's current space", async () => {
     const findFirst = vi.fn().mockResolvedValue({
       id: "external-1",
       botId: "bot-1",
@@ -45,7 +45,6 @@ describe("external thread target", () => {
         where: {
           id: "external-1",
           spaceId: "space-1",
-          userId: "user-1",
           bot: { archivedAt: null },
         },
       }),
