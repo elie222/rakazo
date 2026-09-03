@@ -15,6 +15,7 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
+COPY patches patches
 COPY packages/contracts packages/contracts
 COPY packages/core packages/core
 COPY infra/updater infra/updater
