@@ -44,9 +44,9 @@ export function McpOAuthCallbackPage() {
   }, [navigate, params, t]);
   const showReturn = Boolean(error) && window.name !== POPUP_NAME;
   return (
-    <div className="grid min-h-screen place-items-center bg-[var(--rk-page)] p-6 text-center">
+    <div className="grid min-h-screen place-items-center bg-background p-6 text-center">
       <div>
-        <div className="text-lg text-[var(--rk-ink-strong)]">
+        <div className="text-lg text-foreground">
           {error ? (
             <Trans>OAuth connection failed</Trans>
           ) : done ? (
@@ -60,7 +60,7 @@ export function McpOAuthCallbackPage() {
           <button
             type="button"
             onClick={() => navigate("/app")}
-            className="mt-5 rounded-xl bg-[#7785FF] px-4 py-2 text-sm font-semibold text-[#090A12]"
+            className="mt-5 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground"
           >
             <Trans>Return to Rakazo</Trans>
           </button>

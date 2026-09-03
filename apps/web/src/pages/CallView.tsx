@@ -224,16 +224,16 @@ export function CallView({
   }, [snapshot]);
 
   return (
-    <div className="absolute inset-0 z-40 grid place-items-center bg-[rgba(4,4,5,.82)] px-5">
+    <div className="absolute inset-0 z-40 grid place-items-center bg-overlay px-5">
       <div
         data-testid="call-view"
-        className="w-full max-w-[420px] rounded-[24px] border border-[var(--rk-scroll)] bg-[var(--rk-surface)] p-6 text-center shadow-[0_30px_80px_rgba(0,0,0,.55)]"
+        className="w-full max-w-[420px] rounded-[24px] border border-border bg-card p-6 text-center shadow-2xl"
       >
-        <div className="text-[13px] uppercase tracking-[0.12em] text-[var(--rk-muted-2)]">
+        <div className="text-[13px] uppercase tracking-[0.12em] text-muted-foreground/80">
           <Trans>Call</Trans>
         </div>
-        <div className="mt-2 text-[22px] font-medium text-[var(--rk-ink-strong)]">{botName}</div>
-        <div className="mt-5 text-[15px] text-[var(--rk-soft)]">
+        <div className="mt-2 text-[22px] font-medium text-foreground">{botName}</div>
+        <div className="mt-5 text-[15px] text-foreground/75">
           {phase === "listening" ? (
             <Trans>Listening…</Trans>
           ) : phase === "speaking" ? (
@@ -242,27 +242,27 @@ export function CallView({
             <Trans>Working…</Trans>
           )}
         </div>
-        <p className="mt-3 min-h-[3.2em] text-[14.5px] leading-[1.5] text-[var(--rk-muted)]">
+        <p className="mt-3 min-h-[3.2em] text-[14.5px] leading-[1.5] text-muted-foreground">
           {phase === "listening" ? heard || t`Say something. Silence sends it.` : caption}
         </p>
-        {error ? <p className="mt-2 text-[13px] text-[var(--rk-danger)]">{error}</p> : null}
+        {error ? <p className="mt-2 text-[13px] text-destructive">{error}</p> : null}
         <div className="mt-6 flex justify-center gap-3">
           <button
             type="button"
             onClick={interrupt}
-            className="rounded-full border border-[var(--rk-scroll)] px-4 py-2 text-[14px] text-[var(--rk-soft)]"
+            className="rounded-full border border-border px-4 py-2 text-[14px] text-foreground/75"
           >
             <Trans>Interrupt</Trans>
           </button>
           <button
             type="button"
             onClick={hangUp}
-            className="rounded-full bg-[var(--rk-danger-strong)] px-4 py-2 text-[14px] font-medium text-white"
+            className="rounded-full bg-destructive px-4 py-2 text-[14px] font-medium text-white"
           >
             <Trans>Hang up</Trans>
           </button>
         </div>
-        <p className="mt-4 text-[12px] text-[var(--rk-muted-2)]">
+        <p className="mt-4 text-[12px] text-muted-foreground/80">
           <Trans>Space interrupts · Esc hangs up</Trans>
         </p>
       </div>

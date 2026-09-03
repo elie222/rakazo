@@ -179,9 +179,9 @@ export function TeachComputerOverlayControl({
       {goalOpen ? (
         <div
           data-testid="teach-chrome-popover"
-          className="absolute end-0 top-full z-20 mt-2 w-[min(360px,calc(100vw-2rem))] rounded-[12px] border border-[var(--rk-border)] bg-[var(--rk-inset)] px-3 py-3 shadow-[0_12px_40px_rgba(0,0,0,.45)]"
+          className="absolute end-0 top-full z-20 mt-2 w-[min(360px,calc(100vw-2rem))] rounded-[12px] border border-border bg-card px-3 py-3 shadow-lg"
         >
-          <label htmlFor="teach-goal-input" className="text-[13px] text-[var(--rk-muted)]">
+          <label htmlFor="teach-goal-input" className="text-[13px] text-muted-foreground">
             <Trans>What result will you demonstrate?</Trans>
           </label>
           <textarea
@@ -190,11 +190,11 @@ export function TeachComputerOverlayControl({
             value={goal}
             onChange={(event) => setGoal(event.target.value)}
             rows={3}
-            className="mt-2 w-full rounded-[10px] border border-[var(--rk-border)] bg-[var(--rk-panel)] px-3 py-2 text-[14px] text-[var(--rk-ink)] outline-none"
+            className="mt-2 w-full rounded-[10px] border border-border bg-background px-3 py-2 text-[14px] text-foreground outline-none"
             placeholder={t`Export this week's list from the CRM and drop it in the shared folder`}
           />
           {error ? (
-            <div role="alert" className="mt-2 text-[13px] text-[var(--rk-danger-soft)]">
+            <div role="alert" className="mt-2 text-[13px] text-destructive">
               {error}
             </div>
           ) : null}
@@ -203,7 +203,7 @@ export function TeachComputerOverlayControl({
               type="button"
               disabled={busy || startLocked || !goal.trim()}
               onClick={() => void startTeaching()}
-              className="rounded-[11px] bg-[var(--rk-cream)] px-4 py-2 text-[14px] text-[var(--rk-cream-ink)] disabled:opacity-40"
+              className="rounded-[11px] bg-primary px-4 py-2 text-[14px] text-primary-foreground disabled:opacity-40"
             >
               {busy || syncingRecording ? <Trans>Starting…</Trans> : <Trans>Start recording</Trans>}
             </button>
@@ -213,7 +213,7 @@ export function TeachComputerOverlayControl({
                 setGoalOpen(false);
                 setError(null);
               }}
-              className="rounded-[11px] border border-[var(--rk-border)] px-4 py-2 text-[14px] text-[var(--rk-ink)]"
+              className="rounded-[11px] border border-border px-4 py-2 text-[14px] text-foreground"
             >
               <Trans>Cancel</Trans>
             </button>
@@ -223,14 +223,14 @@ export function TeachComputerOverlayControl({
       {!goalOpen && needsRefresh && recoveryOpen ? (
         <div
           data-testid="teach-refresh-recovery"
-          className="absolute end-0 top-full z-20 mt-2 w-[min(320px,calc(100vw-2rem))] rounded-[12px] border border-[var(--rk-border)] bg-[var(--rk-inset)] px-3 py-3 shadow-[0_12px_40px_rgba(0,0,0,.45)]"
+          className="absolute end-0 top-full z-20 mt-2 w-[min(320px,calc(100vw-2rem))] rounded-[12px] border border-border bg-card px-3 py-3 shadow-lg"
         >
           {error ? (
-            <div role="alert" className="text-[13px] text-[var(--rk-danger-soft)]">
+            <div role="alert" className="text-[13px] text-destructive">
               {error}
             </div>
           ) : (
-            <p className="text-[13px] text-[var(--rk-muted)]">
+            <p className="text-[13px] text-muted-foreground">
               <Trans>Recording started. Refresh the view to continue.</Trans>
             </p>
           )}
@@ -239,14 +239,14 @@ export function TeachComputerOverlayControl({
               type="button"
               disabled={busy}
               onClick={() => void refreshView()}
-              className="rounded-[11px] bg-[var(--rk-cream)] px-4 py-2 text-[14px] text-[var(--rk-cream-ink)] disabled:opacity-40"
+              className="rounded-[11px] bg-primary px-4 py-2 text-[14px] text-primary-foreground disabled:opacity-40"
             >
               {busy ? <Trans>Refreshing…</Trans> : <Trans>Refresh view</Trans>}
             </button>
             <button
               type="button"
               onClick={() => setRecoveryOpen(false)}
-              className="rounded-[11px] border border-[var(--rk-border)] px-4 py-2 text-[14px] text-[var(--rk-ink)]"
+              className="rounded-[11px] border border-border px-4 py-2 text-[14px] text-foreground"
             >
               <Trans>Dismiss</Trans>
             </button>
@@ -269,11 +269,11 @@ export function TeachComputerOverlayControl({
           setError(null);
           setGoalOpen((open) => !open);
         }}
-        className="flex items-center gap-2 rounded-[10px] border border-[var(--rk-scroll)] bg-[var(--rk-surface)] px-3 py-1.5 text-[13px] text-[var(--rk-ink)] hover:bg-[var(--rk-surface-2)] disabled:opacity-40"
+        className="flex items-center gap-2 rounded-[10px] border border-border bg-card px-3 py-1.5 text-[13px] text-foreground hover:bg-muted disabled:opacity-40"
       >
         <span
           aria-hidden
-          className="inline-block h-2 w-2 shrink-0 rounded-full border border-[var(--rk-ink)]"
+          className="inline-block h-2 w-2 shrink-0 rounded-full border border-foreground"
         />
         <Trans>Teach a task</Trans>
       </button>

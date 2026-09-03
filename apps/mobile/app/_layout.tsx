@@ -1,3 +1,4 @@
+import { lightTokens } from "@rakazo/ui-tokens";
 import { DarkTheme, Stack, ThemeProvider } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useMemo, useState } from "react";
@@ -21,12 +22,12 @@ const lightTheme = {
   dark: false,
   colors: {
     ...DarkTheme.colors,
-    primary: "#1A1A1A",
-    background: "#F4F4F2",
-    card: "#F4F4F2",
-    text: "#1A1A1A",
-    border: "#D0D0CC",
-    notification: "#2A9E86",
+    primary: lightTokens.primary,
+    background: lightTokens.background,
+    card: lightTokens.background,
+    text: lightTokens.foreground,
+    border: lightTokens.border,
+    notification: lightTokens.foreground,
   },
 };
 

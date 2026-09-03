@@ -106,10 +106,10 @@ export function ApprovalRulesSettings() {
 
   return (
     <div data-testid="action-confirmation-settings" className="pt-5">
-      <h3 className="text-[15px] font-medium text-[var(--rk-ink)]">
+      <h3 className="text-[15px] font-medium text-foreground">
         <Trans>Action confirmations</Trans>
       </h3>
-      <p className="mt-2 text-[13.5px] leading-[1.5] text-[var(--rk-muted)]">
+      <p className="mt-2 text-[13.5px] leading-[1.5] text-muted-foreground">
         <Trans>
           Bots act without asking by default. Add an exception only when you want to review a type
           of action first. These preferences apply across all your bots.
@@ -120,7 +120,7 @@ export function ApprovalRulesSettings() {
           type="button"
           disabled={loading || savingPreset !== null}
           onClick={() => void setPreset("email")}
-          className="rounded-[11px] border border-[var(--rk-border)] px-[17px] py-2 text-[14px] text-[var(--rk-soft)] disabled:opacity-50"
+          className="rounded-[11px] border border-border px-[17px] py-2 text-[14px] text-foreground/75 disabled:opacity-50"
         >
           <Trans>Ask before sending external email</Trans>
         </button>
@@ -128,7 +128,7 @@ export function ApprovalRulesSettings() {
           type="button"
           disabled={loading || savingPreset !== null}
           onClick={() => void setPreset("purchase")}
-          className="rounded-[11px] border border-[var(--rk-border)] px-[17px] py-2 text-[14px] text-[var(--rk-soft)] disabled:opacity-50"
+          className="rounded-[11px] border border-border px-[17px] py-2 text-[14px] text-foreground/75 disabled:opacity-50"
         >
           <Trans>Ask before purchases</Trans>
         </button>
@@ -143,23 +143,23 @@ export function ApprovalRulesSettings() {
           onChange={(event) => void toggleAutoReview(event.target.checked)}
         />
         <span>
-          <span className="block text-[14px] text-[var(--rk-soft)]">
+          <span className="block text-[14px] text-foreground/75">
             <Trans>Flag unexpected actions</Trans>
           </span>
           {autoReview?.enabled && !autoReview.checkerAvailable ? (
-            <span className="mt-1 block text-[13px] text-[var(--rk-muted)]">
+            <span className="mt-1 block text-[13px] text-muted-foreground">
               <Trans>Add a model in Settings to use this.</Trans>
             </span>
           ) : null}
         </span>
       </label>
-      {error ? <p className="mt-3 text-[13px] text-[var(--rk-danger)]">{error}</p> : null}
+      {error ? <p className="mt-3 text-[13px] text-destructive">{error}</p> : null}
       {loading ? (
-        <p className="mt-4 text-[13px] text-[var(--rk-muted)]">
+        <p className="mt-4 text-[13px] text-muted-foreground">
           <Trans>Loading rules…</Trans>
         </p>
       ) : rules.length === 0 ? (
-        <p className="mt-4 text-[13px] text-[var(--rk-muted)]">
+        <p className="mt-4 text-[13px] text-muted-foreground">
           <Trans>No exceptions. Actions run automatically.</Trans>
         </p>
       ) : (
@@ -167,13 +167,13 @@ export function ApprovalRulesSettings() {
           {rules.map((rule) => (
             <li
               key={rule.id}
-              className="flex items-center justify-between gap-3 rounded-[11px] border border-[var(--rk-border)] px-3.5 py-2.5"
+              className="flex items-center justify-between gap-3 rounded-[11px] border border-border px-3.5 py-2.5"
             >
-              <span className="text-[13.5px] text-[var(--rk-soft)]">{describeRule(rule)}</span>
+              <span className="text-[13.5px] text-foreground/75">{describeRule(rule)}</span>
               <button
                 type="button"
                 onClick={() => void removeRule(rule.id)}
-                className="text-[13px] text-[var(--rk-muted)]"
+                className="text-[13px] text-muted-foreground"
               >
                 <Trans>Remove</Trans>
               </button>

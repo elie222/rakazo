@@ -129,9 +129,9 @@ export function PeerMessagesOverlay({
       aria-labelledby="peer-conversation-title"
       data-testid="peer-conversation-view"
       tabIndex={-1}
-      className="absolute inset-0 z-50 flex flex-col bg-[var(--rk-page)] outline-none"
+      className="absolute inset-0 z-50 flex flex-col bg-background outline-none"
     >
-      <div className="flex items-center justify-between gap-4 border-b border-[var(--rk-hairline)] px-[18px] py-3.5">
+      <div className="flex items-center justify-between gap-4 border-b border-sidebar-border px-[18px] py-3.5">
         <div className="flex min-w-0 flex-1 items-center gap-3">
           <div className="flex items-center -space-x-2">
             <BotAvatar color={botColor} identity={botId} size={28} />
@@ -139,7 +139,7 @@ export function PeerMessagesOverlay({
           </div>
           <h1
             id="peer-conversation-title"
-            className="truncate text-[15.5px] font-medium text-[var(--rk-ink)]"
+            className="truncate text-[15.5px] font-medium text-foreground"
             dir="auto"
           >
             {title}
@@ -149,22 +149,22 @@ export function PeerMessagesOverlay({
           type="button"
           aria-label={t`Close`}
           onClick={onClose}
-          className="rounded-[9px] px-3 py-1.5 text-[13.5px] text-[var(--rk-soft)] hover:bg-[var(--rk-elevated)] hover:text-[var(--rk-ink)]"
+          className="rounded-[9px] px-3 py-1.5 text-[13.5px] text-foreground/75 hover:bg-accent hover:text-foreground"
         >
           <Trans>Close</Trans>
         </button>
       </div>
 
       {!historyReady ? (
-        <div className="grid flex-1 place-items-center px-8 text-center text-[13.5px] text-[var(--rk-muted-2)]">
+        <div className="grid flex-1 place-items-center px-8 text-center text-[13.5px] text-muted-foreground/80">
           <Trans>Loading…</Trans>
         </div>
       ) : historyFailed ? (
-        <div className="grid flex-1 place-items-center px-8 text-center text-[13.5px] text-[var(--rk-muted-2)]">
+        <div className="grid flex-1 place-items-center px-8 text-center text-[13.5px] text-muted-foreground/80">
           <Trans>Could not load this chat.</Trans>
         </div>
       ) : !conversation || conversation.messages.length === 0 ? (
-        <div className="grid flex-1 place-items-center px-8 text-center text-[13.5px] text-[var(--rk-muted-2)]">
+        <div className="grid flex-1 place-items-center px-8 text-center text-[13.5px] text-muted-foreground/80">
           <Trans>No messages with {peerBotName} yet.</Trans>
         </div>
       ) : (
@@ -181,13 +181,13 @@ export function PeerMessagesOverlay({
               >
                 <div
                   className={`max-w-[80%] rounded-[16px] px-4 py-2.5 ${
-                    sent ? "bg-[var(--rk-elevated)]" : "bg-[var(--rk-hairline)]"
+                    sent ? "bg-accent" : "bg-muted"
                   }`}
                 >
-                  <div className="mb-1 text-[12px] text-[var(--rk-faint)]" dir="auto">
+                  <div className="mb-1 text-[12px] text-muted-foreground/70" dir="auto">
                     {sent ? botName : peerBotName}
                   </div>
-                  <div className="text-[14.5px] leading-[1.5] text-[var(--rk-body)]" dir="auto">
+                  <div className="text-[14.5px] leading-[1.5] text-foreground/90" dir="auto">
                     <ChatMarkdown>{peerMessage.text}</ChatMarkdown>
                   </div>
                 </div>
@@ -197,14 +197,14 @@ export function PeerMessagesOverlay({
         </div>
       )}
 
-      <div className="flex items-center justify-between gap-4 border-t border-[var(--rk-hairline)] px-[18px] py-3.5">
-        <p className="text-[13.5px] text-[var(--rk-muted-2)]">
+      <div className="flex items-center justify-between gap-4 border-t border-sidebar-border px-[18px] py-3.5">
+        <p className="text-[13.5px] text-muted-foreground/80">
           <Trans>This chat is view-only</Trans>
         </p>
         <button
           type="button"
           onClick={onClose}
-          className="rounded-[9px] border border-[var(--rk-scroll)] bg-[var(--rk-surface)] px-3.5 py-1.5 text-[13.5px] text-[var(--rk-ink)] hover:bg-[var(--rk-elevated)]"
+          className="rounded-[9px] border border-border bg-card px-3.5 py-1.5 text-[13.5px] text-foreground hover:bg-accent"
         >
           <Trans>Close</Trans>
         </button>

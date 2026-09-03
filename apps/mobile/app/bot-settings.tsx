@@ -88,7 +88,7 @@ export default function BotSettingsScreen() {
     <>
       <Stack.Screen options={{ title: t("Chat settings") }} />
       <ScrollView
-        style={{ flex: 1, backgroundColor: tokens.page }}
+        style={{ flex: 1, backgroundColor: tokens.background }}
         contentContainerStyle={{ padding: 24 }}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"

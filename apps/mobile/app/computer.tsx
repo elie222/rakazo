@@ -320,7 +320,7 @@ export default function Computer() {
               </View>
             </SafeAreaView>
           ) : (
-            <View style={{ flex: 1, backgroundColor: tokens.page }}>
+            <View style={{ flex: 1, backgroundColor: tokens.background }}>
               <SafeAreaView
                 edges={["top", "left", "right"]}
                 style={{

@@ -70,7 +70,7 @@ export default function NewBot() {
         }}
       />
       <ScrollView
-        style={{ flex: 1, backgroundColor: tokens.page }}
+        style={{ flex: 1, backgroundColor: tokens.background }}
         contentContainerStyle={{ padding: 24 }}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"

@@ -48,14 +48,14 @@ function MemberPicker({
             type="button"
             onClick={() => toggle(bot.id)}
             className={`flex w-full items-center gap-3 rounded-xl px-2.5 py-2.5 text-start ${
-              checked ? "bg-[var(--rk-surface-2)]" : "hover:bg-[var(--rk-surface)]"
+              checked ? "bg-muted" : "hover:bg-card"
             }`}
           >
             <BotAvatar color={bot.color} identity={bot.id} size={32} status={bot.status} />
-            <span className="flex-1 text-[15px] text-[var(--rk-ink)]" dir="auto">
+            <span className="flex-1 text-[15px] text-foreground" dir="auto">
               {bot.name}
             </span>
-            <span className="text-[13px] text-[var(--rk-muted-2)]">{checked ? "✓" : ""}</span>
+            <span className="text-[13px] text-muted-foreground/80">{checked ? "✓" : ""}</span>
           </button>
         );
       })}
@@ -94,7 +94,7 @@ export function CreateGroupForm({
   return (
     <div>
       <div className="mb-4 flex items-center justify-between">
-        <span className="text-[13.5px] text-[var(--rk-muted)]">
+        <span className="text-[13.5px] text-muted-foreground">
           <Trans>New group</Trans>
         </span>
         <button type="button" aria-label={t`Cancel new group`} onClick={onCancel}>
@@ -102,20 +102,20 @@ export function CreateGroupForm({
         </button>
       </div>
       {error ? (
-        <p role="alert" className="mb-3 text-[13px] text-[var(--rk-danger)]">
+        <p role="alert" className="mb-3 text-[13px] text-destructive">
           {error}
         </p>
       ) : null}
-      <label className="block text-[14px] text-[var(--rk-muted)]">
+      <label className="block text-[14px] text-muted-foreground">
         <Trans>Name</Trans>
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder={t`Name this group`}
-          className="mt-2 w-full rounded-[11px] border border-[var(--rk-border)] bg-transparent px-3.5 py-3 text-[var(--rk-ink)]"
+          className="mt-2 w-full rounded-[11px] border border-border bg-transparent px-3.5 py-3 text-foreground"
         />
       </label>
-      <div className="mt-5 text-[14px] text-[var(--rk-muted)]">
+      <div className="mt-5 text-[14px] text-muted-foreground">
         <Trans>
           Members (pick {GROUP_MEMBER_MIN}–{GROUP_MEMBER_MAX})
         </Trans>
@@ -188,24 +188,24 @@ export function GroupSettings({
   return (
     <div>
       <div className="mb-4 flex items-center justify-between">
-        <span className="text-[13.5px] text-[var(--rk-muted)]">
+        <span className="text-[13.5px] text-muted-foreground">
           <Trans>Group settings</Trans>
         </span>
       </div>
       {error ? (
-        <p role="alert" className="mb-3 text-[13px] text-[var(--rk-danger)]">
+        <p role="alert" className="mb-3 text-[13px] text-destructive">
           {error}
         </p>
       ) : null}
-      <label className="block text-[14px] text-[var(--rk-muted)]">
+      <label className="block text-[14px] text-muted-foreground">
         <Trans>Name</Trans>
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}
-          className="mt-2 w-full rounded-[11px] border border-[var(--rk-border)] bg-transparent px-3.5 py-3 text-[var(--rk-ink)]"
+          className="mt-2 w-full rounded-[11px] border border-border bg-transparent px-3.5 py-3 text-foreground"
         />
       </label>
-      <div className="mt-5 text-[14px] text-[var(--rk-muted)]">
+      <div className="mt-5 text-[14px] text-muted-foreground">
         <Trans>
           Members ({GROUP_MEMBER_MIN}–{GROUP_MEMBER_MAX})
         </Trans>

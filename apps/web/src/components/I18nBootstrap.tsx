@@ -21,7 +21,7 @@ export function I18nBootstrap({ children }: { children: ReactNode }) {
   if (!ready) {
     return (
       <div
-        className="grid h-full place-items-center text-[var(--rk-muted-2)]"
+        className="grid h-full place-items-center text-muted-foreground/80"
         data-rakazo-app-state="i18n-pending"
       />
     );

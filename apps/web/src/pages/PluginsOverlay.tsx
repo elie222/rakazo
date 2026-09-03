@@ -230,17 +230,17 @@ export function PluginsOverlay({
   }
 
   return (
-    <div className="absolute inset-0 z-30 flex items-center justify-center bg-[rgba(4,4,5,.62)] p-10">
-      <div className="flex h-[760px] w-[1080px] max-w-full flex-col overflow-hidden rounded-[26px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-surface)] shadow-[0_40px_90px_rgba(0,0,0,.55)]">
+    <div className="absolute inset-0 z-30 flex items-center justify-center bg-overlay p-10">
+      <div className="flex h-[760px] w-[1080px] max-w-full flex-col overflow-hidden rounded-[26px] border border-border bg-card shadow-2xl">
         <div className="flex items-start justify-between px-8 pt-7">
-          <div className="text-2xl font-medium text-[var(--rk-ink-strong)]">
+          <div className="text-2xl font-medium text-foreground">
             <Trans>Integrations</Trans>
           </div>
           <button
             type="button"
             aria-label={t`Close integrations`}
             onClick={onClose}
-            className="text-[var(--rk-muted)]"
+            className="text-muted-foreground"
           >
             ✕
           </button>
@@ -252,16 +252,14 @@ export function PluginsOverlay({
             onChange={(event) => setQuery(event.target.value)}
             aria-label={t`Search apps`}
             placeholder={t`Search apps`}
-            className="w-full rounded-[13px] border border-[var(--rk-border)] bg-[var(--rk-inset)] px-4 py-3 text-[15px] text-[var(--rk-ink)] outline-none"
+            className="w-full rounded-[13px] border border-border bg-card px-4 py-3 text-[15px] text-foreground outline-none"
           />
         </div>
 
         <div id="integration-list" className="rk-scroll flex-1 overflow-y-auto px-8 py-6">
-          {catalogError ? (
-            <p className="mb-4 text-sm text-[var(--rk-danger)]">{catalogError}</p>
-          ) : null}
+          {catalogError ? <p className="mb-4 text-sm text-destructive">{catalogError}</p> : null}
           {loading ? (
-            <p className="text-[var(--rk-muted-2)]">
+            <p className="text-muted-foreground/80">
               <Trans>Loading integrations…</Trans>
             </p>
           ) : null}
@@ -269,7 +267,7 @@ export function PluginsOverlay({
           {showFeatured ? (
             <div className="mb-6" data-testid="featured-connectors">
               {!loading && catalog.length === 0 ? (
-                <p className="text-[13.5px] leading-6 text-[var(--rk-muted-2)]">
+                <p className="text-[13.5px] leading-6 text-muted-foreground/80">
                   {EMPTY_PLUGIN_CATALOG_MESSAGE}
                 </p>
               ) : (
@@ -290,15 +288,15 @@ export function PluginsOverlay({
                           <img
                             src={item.logo}
                             alt=""
-                            className="h-9 w-9 shrink-0 rounded-xl bg-[var(--rk-scroll)] object-contain"
+                            className="h-9 w-9 shrink-0 rounded-xl bg-accent object-contain"
                           />
                         ) : (
-                          <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[var(--rk-scroll)] text-sm font-semibold text-[var(--rk-ink)]">
+                          <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-accent text-sm font-semibold text-foreground">
                             {tile.label[0]}
                           </div>
                         )}
                         <div className="min-w-0 flex-1">
-                          <div className="truncate text-[15px] font-medium text-[var(--rk-ink)]">
+                          <div className="truncate text-[15px] font-medium text-foreground">
                             {tile.label}
                           </div>
                           {disabled ? (
@@ -310,7 +308,8 @@ export function PluginsOverlay({
                         {item && !tile.missing ? (
                           <Button
                             type="button"
-                            variant="pill"
+                            variant="secondary"
+                            className="rounded-full"
                             size="sm"
                             disabled={pending === key}
                             onClick={() => void (connected ? revoke(item) : connect(item))}
@@ -337,12 +336,12 @@ export function PluginsOverlay({
           ) : null}
 
           {!loading && catalog.length === 0 && !showFeatured ? (
-            <p className="text-[var(--rk-muted-2)]">
+            <p className="text-muted-foreground/80">
               <Trans>No managed app catalog is configured on this deployment.</Trans>
             </p>
           ) : null}
           {!loading && catalog.length > 0 && visible.length === 0 && !showFeatured ? (
-            <p className="text-[var(--rk-muted-2)]">
+            <p className="text-muted-foreground/80">
               <Trans>No apps match your search.</Trans>
             </p>
           ) : null}
@@ -359,21 +358,22 @@ export function PluginsOverlay({
                       <img
                         src={item.logo}
                         alt=""
-                        className="h-9 w-9 shrink-0 rounded-xl bg-[var(--rk-scroll)] object-contain"
+                        className="h-9 w-9 shrink-0 rounded-xl bg-accent object-contain"
                       />
                     ) : (
-                      <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[var(--rk-scroll)] text-sm font-semibold text-[var(--rk-ink)]">
+                      <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-accent text-sm font-semibold text-foreground">
                         {item.name[0]}
                       </div>
                     )}
                     <div className="min-w-0 flex-1">
-                      <div className="truncate text-[15px] font-medium text-[var(--rk-ink)]">
+                      <div className="truncate text-[15px] font-medium text-foreground">
                         {item.name}
                       </div>
                     </div>
                     <Button
                       type="button"
-                      variant="pill"
+                      variant="secondary"
+                      className="rounded-full"
                       size="sm"
                       disabled={pending === key}
                       onClick={() => void (item.connected ? revoke(item) : connect(item))}
@@ -411,8 +411,8 @@ export function PluginsOverlay({
               }
             }}
           >
-            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-[14px] text-[var(--rk-muted)]">
-              <span className="text-[var(--rk-muted)]">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-[14px] text-muted-foreground">
+              <span className="text-muted-foreground">
                 <Trans>Advanced</Trans>
               </span>
               <span aria-hidden="true" className="transition-transform group-open:rotate-90">
@@ -425,31 +425,47 @@ export function PluginsOverlay({
                 <button
                   type="button"
                   onClick={onOpenMcp}
-                  className="rounded-full border border-[var(--rk-border)] px-3 py-1.5 text-xs text-[var(--rk-soft)] hover:bg-[var(--rk-hairline-strong)]"
+                  className="rounded-full border border-border px-3 py-1.5 text-xs text-foreground/75 hover:bg-accent"
                 >
                   <Trans>MCP servers</Trans>
                 </button>
               ) : null}
 
               <div className="flex flex-wrap gap-2">
-                <Button type="button" variant="pill" size="sm" onClick={() => beginSource("mcp")}>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="rounded-full"
+                  size="sm"
+                  onClick={() => beginSource("mcp")}
+                >
                   <Trans>Add MCP server</Trans>
                 </Button>
-                <Button type="button" variant="pill" size="sm" onClick={() => beginSource("api")}>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="rounded-full"
+                  size="sm"
+                  onClick={() => beginSource("api")}
+                >
                   <Trans>Add OpenAPI</Trans>
                 </Button>
-                <Button type="button" variant="pill" size="sm" onClick={() => beginSource("treg")}>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="rounded-full"
+                  size="sm"
+                  onClick={() => beginSource("treg")}
+                >
                   <Trans>Add Treg</Trans>
                 </Button>
               </div>
 
-              {sourceError ? (
-                <p className="text-sm text-[var(--rk-danger)]">{sourceError}</p>
-              ) : null}
+              {sourceError ? <p className="text-sm text-destructive">{sourceError}</p> : null}
 
               {sourceKind ? (
-                <div className="space-y-3 rounded-[16px] border border-[var(--rk-scroll)] bg-[var(--rk-inset)] p-5">
-                  <div className="text-base font-medium text-[var(--rk-ink)]">
+                <div className="space-y-3 rounded-[16px] border border-border bg-card p-5">
+                  <div className="text-base font-medium text-foreground">
                     {sourceKind === "treg" ? (
                       <Trans>Connect Treg</Trans>
                     ) : sourceKind === "mcp" ? (
@@ -462,7 +478,7 @@ export function PluginsOverlay({
                     value={sourceName}
                     onChange={(event) => setSourceName(event.target.value)}
                     placeholder={t`Display name`}
-                    className="w-full rounded-xl border border-[var(--rk-scroll)] bg-[var(--rk-hairline)] px-3 py-2.5 text-sm text-[var(--rk-ink)] outline-none"
+                    className="w-full rounded-xl border border-border bg-muted px-3 py-2.5 text-sm text-foreground outline-none"
                   />
                   {sourceKind !== "treg" ? (
                     <input
@@ -473,14 +489,14 @@ export function PluginsOverlay({
                           ? "https://example.com/mcp"
                           : "https://example.com/openapi.json"
                       }
-                      className="w-full rounded-xl border border-[var(--rk-scroll)] bg-[var(--rk-hairline)] px-3 py-2.5 text-sm text-[var(--rk-ink)] outline-none"
+                      className="w-full rounded-xl border border-border bg-muted px-3 py-2.5 text-sm text-foreground outline-none"
                     />
                   ) : null}
                   {sourceKind !== "treg" ? (
                     <select
                       value={authType}
                       onChange={(event) => setAuthType(event.target.value as typeof authType)}
-                      className="w-full rounded-xl border border-[var(--rk-scroll)] bg-[var(--rk-hairline)] px-3 py-2.5 text-sm text-[var(--rk-ink)] outline-none"
+                      className="w-full rounded-xl border border-border bg-muted px-3 py-2.5 text-sm text-foreground outline-none"
                     >
                       <option value="none">
                         <Trans>No authentication</Trans>
@@ -498,7 +514,7 @@ export function PluginsOverlay({
                       value={authName}
                       onChange={(event) => setAuthName(event.target.value)}
                       placeholder={t`Header name`}
-                      className="w-full rounded-xl border border-[var(--rk-scroll)] bg-[var(--rk-hairline)] px-3 py-2.5 text-sm text-[var(--rk-ink)] outline-none"
+                      className="w-full rounded-xl border border-border bg-muted px-3 py-2.5 text-sm text-foreground outline-none"
                     />
                   ) : null}
                   {sourceKind === "treg" || authType !== "none" ? (
@@ -508,7 +524,7 @@ export function PluginsOverlay({
                       value={credential}
                       onChange={(event) => setCredential(event.target.value)}
                       placeholder={sourceKind === "treg" ? t`Treg token` : t`Credential`}
-                      className="w-full rounded-xl border border-[var(--rk-scroll)] bg-[var(--rk-hairline)] px-3 py-2.5 text-sm text-[var(--rk-ink)] outline-none"
+                      className="w-full rounded-xl border border-border bg-muted px-3 py-2.5 text-sm text-foreground outline-none"
                     />
                   ) : null}
                   <p className="text-xs leading-5 text-[#707077]">
@@ -520,7 +536,8 @@ export function PluginsOverlay({
                   <div className="flex gap-2">
                     <Button
                       type="button"
-                      variant="pill"
+                      variant="secondary"
+                      className="rounded-full"
                       size="sm"
                       disabled={pending === "install-source"}
                       onClick={() => void installSource()}
@@ -533,7 +550,8 @@ export function PluginsOverlay({
                     </Button>
                     <Button
                       type="button"
-                      variant="pill"
+                      variant="secondary"
+                      className="rounded-full"
                       size="sm"
                       onClick={() => setSourceKind(null)}
                     >
@@ -544,11 +562,11 @@ export function PluginsOverlay({
               ) : null}
 
               <div>
-                <div className="mb-3 text-sm font-medium text-[var(--rk-soft)]">
+                <div className="mb-3 text-sm font-medium text-foreground/75">
                   <Trans>Tool sources</Trans>
                 </div>
                 {sources.length === 0 && !sourceKind ? (
-                  <p className="text-[var(--rk-muted-2)]">
+                  <p className="text-muted-foreground/80">
                     <Trans>No MCP or API tool sources installed yet.</Trans>
                   </p>
                 ) : null}
@@ -557,14 +575,12 @@ export function PluginsOverlay({
                     key={source.id}
                     className="flex items-center gap-4 rounded-[13px] px-3 py-2.5"
                   >
-                    <div className="grid h-[42px] w-[42px] place-items-center rounded-xl bg-[var(--rk-scroll)] font-semibold uppercase text-[var(--rk-ink)]">
+                    <div className="grid h-[42px] w-[42px] place-items-center rounded-xl bg-accent font-semibold uppercase text-foreground">
                       {source.kind === "mcp" ? "M" : "A"}
                     </div>
                     <div className="min-w-0 flex-1">
-                      <div className="text-[15.5px] font-medium text-[var(--rk-ink)]">
-                        {source.name}
-                      </div>
-                      <div className="truncate text-[13.5px] text-[var(--rk-faint)]">
+                      <div className="text-[15.5px] font-medium text-foreground">{source.name}</div>
+                      <div className="truncate text-[13.5px] text-muted-foreground/70">
                         {source.kind.toUpperCase()} · {source.source} ·{" "}
                         {source.secretConfigured ? (
                           <Trans>credential saved</Trans>
@@ -575,7 +591,8 @@ export function PluginsOverlay({
                     </div>
                     <Button
                       type="button"
-                      variant="pill"
+                      variant="secondary"
+                      className="rounded-full"
                       size="sm"
                       disabled={pending === source.id}
                       onClick={() => void removeSource(source)}

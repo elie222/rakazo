@@ -73,17 +73,17 @@ export function AskCard({
   }
 
   return (
-    <div className="max-w-[74%] rounded-[20px] border border-[var(--rk-border)] bg-[var(--rk-surface)] px-5 py-[17px]">
-      <div className="text-[15.5px] leading-[1.5] text-[var(--rk-ink)]">
+    <div className="max-w-[74%] rounded-[20px] border border-border bg-card px-5 py-[17px]">
+      <div className="text-[15.5px] leading-[1.5] text-foreground">
         <ChatMarkdown>{block.text}</ChatMarkdown>
       </div>
       {block.detail ? (
-        <pre className="mt-3 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-xl bg-[var(--rk-panel)] px-3.5 py-3 font-mono text-[12.5px] leading-[1.7] text-[var(--rk-muted)]">
+        <pre className="mt-3 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-xl bg-background px-3.5 py-3 font-mono text-[12.5px] leading-[1.7] text-muted-foreground">
           {block.detail}
         </pre>
       ) : null}
       {block.status === "answered" ? (
-        <div className="mt-3.5 text-[13.5px] font-medium text-[var(--rk-success-soft)]">
+        <div className="mt-3.5 text-[13.5px] font-medium text-success">
           {formatAnsweredState(
             block.answer,
             Boolean(approvalActions),
@@ -93,7 +93,7 @@ export function AskCard({
           )}
         </div>
       ) : !canAnswer ? (
-        <div className="mt-3.5 text-[13.5px] font-medium text-[var(--rk-muted)]">
+        <div className="mt-3.5 text-[13.5px] font-medium text-muted-foreground">
           <Trans>No longer active</Trans>
         </div>
       ) : askActions?.length ? (
@@ -106,8 +106,8 @@ export function AskCard({
               onClick={() => void submitAnswer(action.id)}
               className={
                 approvalActions && action.id === "allow"
-                  ? "rounded-[11px] bg-[var(--rk-cream)] px-[17px] py-2 text-[14.5px] font-medium text-[var(--rk-cream-ink)] disabled:opacity-50"
-                  : "rounded-[11px] border border-[var(--rk-border)] px-[17px] py-2 text-[14.5px] text-[var(--rk-soft)] disabled:opacity-50"
+                  ? "rounded-[11px] bg-primary px-[17px] py-2 text-[14.5px] font-medium text-primary-foreground disabled:opacity-50"
+                  : "rounded-[11px] border border-border px-[17px] py-2 text-[14.5px] text-foreground/75 disabled:opacity-50"
               }
             >
               {pendingAction === action.id ? (
@@ -135,12 +135,12 @@ export function AskCard({
             value={answer}
             onChange={(event) => setAnswer(event.target.value)}
             placeholder={t`Code`}
-            className="rounded-[11px] border border-[var(--rk-scroll)] bg-[var(--rk-panel)] px-3.5 py-2.5 text-[14.5px] text-[var(--rk-ink)] outline-none focus:border-[#66666D]"
+            className="rounded-[11px] border border-border bg-background px-3.5 py-2.5 text-[14.5px] text-foreground outline-none focus:border-[#66666D]"
           />
           <button
             type="submit"
             disabled={(secretInput ? answer.length === 0 : !answer.trim()) || submitting}
-            className="self-start rounded-[11px] bg-[var(--rk-cream)] px-[17px] py-2 text-[14.5px] font-medium text-[var(--rk-cream-ink)] disabled:opacity-50"
+            className="self-start rounded-[11px] bg-primary px-[17px] py-2 text-[14.5px] font-medium text-primary-foreground disabled:opacity-50"
           >
             {submitting ? <Trans>Sending…</Trans> : <Trans>Submit</Trans>}
           </button>
@@ -158,13 +158,13 @@ export function AskCard({
             value={answer}
             onChange={(event) => setAnswer(event.target.value)}
             placeholder={t`Type your answer`}
-            className="rounded-[11px] border border-[var(--rk-scroll)] bg-[var(--rk-panel)] px-3.5 py-2.5 text-[14.5px] text-[var(--rk-ink)] outline-none focus:border-[#66666D]"
+            className="rounded-[11px] border border-border bg-background px-3.5 py-2.5 text-[14.5px] text-foreground outline-none focus:border-[#66666D]"
           />
           <div className="flex gap-2">
             <button
               type="submit"
               disabled={!answer.trim() || submitting}
-              className="rounded-[11px] bg-[var(--rk-cream)] px-[17px] py-2 text-[14.5px] font-medium text-[var(--rk-cream-ink)] disabled:opacity-50"
+              className="rounded-[11px] bg-primary px-[17px] py-2 text-[14.5px] font-medium text-primary-foreground disabled:opacity-50"
             >
               {submitting ? <Trans>Sending…</Trans> : <Trans>Send answer</Trans>}
             </button>
@@ -175,7 +175,7 @@ export function AskCard({
                 setAnswer("");
                 setEditing(false);
               }}
-              className="rounded-[11px] border border-[var(--rk-border)] px-[17px] py-2 text-[14.5px] text-[var(--rk-soft)] disabled:opacity-50"
+              className="rounded-[11px] border border-border px-[17px] py-2 text-[14.5px] text-foreground/75 disabled:opacity-50"
             >
               <Trans>Cancel</Trans>
             </button>
@@ -187,7 +187,7 @@ export function AskCard({
             type="button"
             disabled={submitting}
             onClick={() => void submitAnswer("approved")}
-            className="rounded-[11px] bg-[var(--rk-cream)] px-[17px] py-2 text-[14.5px] font-medium text-[var(--rk-cream-ink)] disabled:opacity-50"
+            className="rounded-[11px] bg-primary px-[17px] py-2 text-[14.5px] font-medium text-primary-foreground disabled:opacity-50"
           >
             {submitting ? <Trans>Sending…</Trans> : <Trans>Send it</Trans>}
           </button>
@@ -195,13 +195,13 @@ export function AskCard({
             type="button"
             disabled={submitting}
             onClick={() => setEditing(true)}
-            className="rounded-[11px] border border-[var(--rk-border)] px-[17px] py-2 text-[14.5px] text-[var(--rk-soft)] disabled:opacity-50"
+            className="rounded-[11px] border border-border px-[17px] py-2 text-[14.5px] text-foreground/75 disabled:opacity-50"
           >
             <Trans>Edit first</Trans>
           </button>
         </div>
       )}
-      {error ? <p className="mt-3 text-[13px] text-[var(--rk-danger)]">{error}</p> : null}
+      {error ? <p className="mt-3 text-[13px] text-destructive">{error}</p> : null}
     </div>
   );
 }

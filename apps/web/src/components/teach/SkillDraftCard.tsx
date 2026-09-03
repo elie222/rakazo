@@ -15,14 +15,14 @@ type SkillDraftBlock = {
 
 function fieldLabel(id: string, title: React.ReactNode) {
   return (
-    <label htmlFor={id} className="mt-3 block text-[13px] text-[var(--rk-muted)]">
+    <label htmlFor={id} className="mt-3 block text-[13px] text-muted-foreground">
       {title}
     </label>
   );
 }
 
 function fieldClassName() {
-  return "mt-1 w-full rounded-[10px] border border-[var(--rk-border)] bg-[var(--rk-panel)] px-3 py-2 text-[14px] text-[var(--rk-ink)] outline-none";
+  return "mt-1 w-full rounded-[10px] border border-border bg-background px-3 py-2 text-[14px] text-foreground outline-none";
 }
 
 export function SkillDraftCard({
@@ -73,12 +73,12 @@ export function SkillDraftCard({
   return (
     <div
       data-testid="skill-draft-card"
-      className="w-[min(520px,92%)] rounded-[20px] border border-[var(--rk-border)] bg-[var(--rk-surface)] px-[18px] py-4"
+      className="w-[min(520px,92%)] rounded-[20px] border border-border bg-card px-[18px] py-4"
     >
-      <div className="text-[15px] font-medium text-[var(--rk-ink)]">
+      <div className="text-[15px] font-medium text-foreground">
         <Trans>Draft skill</Trans>
       </div>
-      <div className="mt-1 text-[13.5px] text-[var(--rk-muted)]">{block.goal}</div>
+      <div className="mt-1 text-[13.5px] text-muted-foreground">{block.goal}</div>
       {fieldLabel("skill-draft-name", <Trans>Name</Trans>)}
       <input
         id="skill-draft-name"
@@ -157,7 +157,7 @@ export function SkillDraftCard({
           type="button"
           disabled={busy}
           onClick={() => void saveDraft()}
-          className="rounded-[11px] bg-[var(--rk-cream)] px-4 py-2 text-[14px] text-[var(--rk-cream-ink)] disabled:opacity-40"
+          className="rounded-[11px] bg-primary px-4 py-2 text-[14px] text-primary-foreground disabled:opacity-40"
         >
           {saved ? <Trans>Saved</Trans> : busy ? <Trans>Saving…</Trans> : <Trans>Save</Trans>}
         </button>
@@ -165,7 +165,7 @@ export function SkillDraftCard({
           type="button"
           disabled={busy}
           onClick={() => void testDraft()}
-          className="rounded-[11px] border border-[var(--rk-border)] px-4 py-2 text-[14px] text-[var(--rk-ink)]"
+          className="rounded-[11px] border border-border px-4 py-2 text-[14px] text-foreground"
         >
           <Trans>Test</Trans>
         </button>
@@ -173,7 +173,7 @@ export function SkillDraftCard({
           type="button"
           disabled={busy}
           onClick={() => onAddRoutine(skillName, formatSkillRunPrompt(skillName, playbook))}
-          className="rounded-[11px] border border-[var(--rk-border)] px-4 py-2 text-[14px] text-[var(--rk-ink)]"
+          className="rounded-[11px] border border-border px-4 py-2 text-[14px] text-foreground"
         >
           <Trans>Add to routine</Trans>
         </button>

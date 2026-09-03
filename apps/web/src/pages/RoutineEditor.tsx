@@ -92,7 +92,7 @@ export function RoutineListHeader({ onCreate }: { onCreate: () => void }) {
   const { t } = useLingui();
   return (
     <div className="mt-[30px] mb-3 flex items-center justify-between gap-3">
-      <div className="text-[14px] text-[var(--rk-muted)]">
+      <div className="text-[14px] text-muted-foreground">
         <Trans>Routines</Trans>
       </div>
       <button
@@ -101,7 +101,7 @@ export function RoutineListHeader({ onCreate }: { onCreate: () => void }) {
         aria-label={t`Create Routine`}
         title={t`Create Routine`}
         onClick={onCreate}
-        className="grid h-7 w-7 place-items-center rounded-[8px] bg-[var(--rk-surface-2)] text-[var(--rk-soft)] hover:bg-[var(--rk-scroll)] hover:text-[var(--rk-ink)] focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-[var(--rk-border)]"
+        className="grid h-7 w-7 place-items-center rounded-[8px] bg-muted text-foreground/75 hover:bg-accent hover:text-foreground focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-border"
       >
         <Plus size={15} strokeWidth={1.9} />
       </button>
@@ -121,7 +121,7 @@ export function RoutineListRow({
   onStop: () => void;
 }) {
   return (
-    <div className="flex w-full items-center gap-2 rounded-[11px] px-2.5 py-2.5 hover:bg-[var(--rk-inset)]">
+    <div className="flex w-full items-center gap-2 rounded-[11px] px-2.5 py-2.5 hover:bg-card">
       <button
         type="button"
         onClick={onOpen}
@@ -133,17 +133,14 @@ export function RoutineListRow({
               <ClockIcon />
             </span>
           ) : (
-            <Pause size={14} className="text-[var(--rk-muted)]" />
+            <Pause size={14} className="text-muted-foreground" />
           )}
         </span>
         <span className="min-w-0 flex-1">
-          <span
-            className="block truncate text-[14.5px] font-medium text-[var(--rk-ink)]"
-            dir="auto"
-          >
+          <span className="block truncate text-[14.5px] font-medium text-foreground" dir="auto">
             {routine.name}
           </span>
-          <span className="block truncate text-[12.5px] text-[var(--rk-muted-2)]">
+          <span className="block truncate text-[12.5px] text-muted-foreground/80">
             {routineTriggerSummary(routine)}
           </span>
         </span>
@@ -152,7 +149,7 @@ export function RoutineListRow({
         <button
           type="button"
           onClick={onStop}
-          className="shrink-0 rounded-full bg-[rgba(230,87,7,.14)] px-2.5 py-1 text-[12px] text-[#E65707]"
+          className="shrink-0 rounded-full bg-warning/15 px-2.5 py-1 text-[12px] text-[#E65707]"
         >
           <Trans>Running · Stop</Trans>
         </button>
@@ -248,18 +245,18 @@ export function RoutineEditor({
         <button
           type="button"
           onClick={onBack}
-          className="text-[var(--rk-muted)]"
+          className="text-muted-foreground"
           aria-label={t`Back`}
         >
           <ChevronLeft size={18} strokeWidth={1.8} />
         </button>
-        <div className="text-[15.5px] font-medium text-[var(--rk-ink-strong)]">
+        <div className="text-[15.5px] font-medium text-foreground">
           <Trans>Routine</Trans>
         </div>
         <button
           type="button"
           onClick={onClose}
-          className="text-[var(--rk-muted-2)]"
+          className="text-muted-foreground/80"
           aria-label={t`Close`}
         >
           <X size={16} strokeWidth={1.8} />
@@ -267,14 +264,14 @@ export function RoutineEditor({
       </div>
 
       <div className="mb-5 flex items-center justify-between gap-3">
-        <label className="flex items-center gap-2.5 text-[14px] text-[var(--rk-soft)]">
+        <label className="flex items-center gap-2.5 text-[14px] text-foreground/75">
           <button
             type="button"
             role="switch"
             aria-checked={draft.active}
             onClick={() => onChange({ ...draft, active: !draft.active })}
             className={`relative h-[22px] w-[40px] rounded-full transition-colors ${
-              draft.active ? "bg-[#3B82F6]" : "bg-[var(--rk-scroll)]"
+              draft.active ? "bg-[#3B82F6]" : "bg-accent"
             }`}
           >
             <span
@@ -290,7 +287,7 @@ export function RoutineEditor({
             type="button"
             disabled={saving || running}
             onClick={onDelete}
-            className="rounded-[11px] bg-[var(--rk-surface-2)] px-3.5 py-2 text-[13.5px] text-[var(--rk-ink)] disabled:opacity-40"
+            className="rounded-[11px] bg-muted px-3.5 py-2 text-[13.5px] text-foreground disabled:opacity-40"
           >
             <Trans>Delete</Trans>
           </button>
@@ -298,35 +295,35 @@ export function RoutineEditor({
             type="button"
             disabled={!canTest}
             onClick={onTestRun}
-            className="rounded-[11px] bg-[var(--rk-surface-2)] px-3.5 py-2 text-[13.5px] text-[var(--rk-ink)] disabled:opacity-40"
+            className="rounded-[11px] bg-muted px-3.5 py-2 text-[13.5px] text-foreground disabled:opacity-40"
           >
             {running ? t`Running…` : t`Test run`}
           </button>
         </div>
       </div>
 
-      <label className="text-[14px] text-[var(--rk-muted)]">
+      <label className="text-[14px] text-muted-foreground">
         <Trans>Name</Trans>
         <input
           value={draft.name}
           placeholder={t`Name this routine`}
           onChange={(e) => onChange({ ...draft, name: e.target.value })}
-          className="mt-2 w-full rounded-[11px] border border-[var(--rk-border)] bg-transparent px-3.5 py-3 text-[var(--rk-ink)] placeholder:text-[#5C5C62]"
+          className="mt-2 w-full rounded-[11px] border border-border bg-transparent px-3.5 py-3 text-foreground placeholder:text-[#5C5C62]"
         />
       </label>
 
-      <label className="mt-5 block text-[14px] text-[var(--rk-muted)]">
+      <label className="mt-5 block text-[14px] text-muted-foreground">
         <Trans>Instruction</Trans>
         <textarea
           value={draft.prompt}
           placeholder={t`What should this routine do each time it runs?`}
           onChange={(e) => onChange({ ...draft, prompt: e.target.value })}
           rows={4}
-          className="mt-2 w-full rounded-[11px] border border-[var(--rk-border)] bg-transparent px-3.5 py-3 text-[var(--rk-ink)] placeholder:text-[#5C5C62]"
+          className="mt-2 w-full rounded-[11px] border border-border bg-transparent px-3.5 py-3 text-foreground placeholder:text-[#5C5C62]"
         />
       </label>
 
-      <div className="mt-5 text-[14px] text-[var(--rk-muted)]">
+      <div className="mt-5 text-[14px] text-muted-foreground">
         <div className="flex items-baseline gap-2">
           <Trans>When to run</Trans>
           <span className="text-[12.5px] text-[#6E6E74]">{timezone}</span>
@@ -353,7 +350,7 @@ export function RoutineEditor({
                     schedules: draft.schedules.filter((_, i) => i !== index),
                   })
                 }
-                className="absolute top-3 right-3 text-[var(--rk-muted)] hover:text-[var(--rk-ink)]"
+                className="absolute top-3 right-3 text-muted-foreground hover:text-foreground"
               >
                 <X size={14} strokeWidth={1.8} />
               </button>
@@ -372,14 +369,14 @@ export function RoutineEditor({
           ) : null}
 
           {needsOneShotArm ? (
-            <label className="block text-[14px] text-[var(--rk-muted)]">
+            <label className="block text-[14px] text-muted-foreground">
               <Trans>Run at</Trans>
               <input
                 type="datetime-local"
                 value={draft.runAtLocal}
                 onChange={(e) => onChange({ ...draft, runAtLocal: e.target.value })}
                 aria-label={t`Run at`}
-                className="mt-2 w-full rounded-[11px] border border-[var(--rk-border)] bg-transparent px-3.5 py-3 text-[var(--rk-ink)]"
+                className="mt-2 w-full rounded-[11px] border border-border bg-transparent px-3.5 py-3 text-foreground"
               />
             </label>
           ) : null}
@@ -395,7 +392,7 @@ export function RoutineEditor({
               setMenuOpen((open) => !open);
               setScheduleOpen(false);
             }}
-            className="flex w-full items-center justify-center gap-2 rounded-[13px] border border-[var(--rk-border)] px-3.5 py-3 text-[14.5px] text-[var(--rk-ink)] hover:bg-[var(--rk-inset)]"
+            className="flex w-full items-center justify-center gap-2 rounded-[13px] border border-border px-3.5 py-3 text-[14.5px] text-foreground hover:bg-card"
           >
             <Plus size={16} strokeWidth={1.8} />
             <Trans>Add trigger</Trans>
@@ -405,7 +402,7 @@ export function RoutineEditor({
             <div
               role="menu"
               aria-labelledby={addTriggerId}
-              className="absolute right-0 bottom-full z-20 mb-2 min-w-[220px] rounded-[14px] border border-[var(--rk-scroll)] bg-[var(--rk-surface)] py-1.5 shadow-[0_12px_40px_rgba(0,0,0,.55)]"
+              className="absolute right-0 bottom-full z-20 mb-2 min-w-[220px] rounded-[14px] border border-border bg-card py-1.5 shadow-lg"
             >
               <div className="relative">
                 <button
@@ -414,18 +411,18 @@ export function RoutineEditor({
                   onMouseEnter={() => setScheduleOpen(true)}
                   onFocus={() => setScheduleOpen(true)}
                   onClick={() => setScheduleOpen((open) => !open)}
-                  className="flex w-full items-center justify-between gap-3 px-3.5 py-2.5 text-start text-[14px] text-[var(--rk-ink)] hover:bg-[var(--rk-elevated)]"
+                  className="flex w-full items-center justify-between gap-3 px-3.5 py-2.5 text-start text-[14px] text-foreground hover:bg-accent"
                 >
                   <span className="flex items-center gap-2.5">
                     <ClockIcon />
                     <Trans>On a schedule</Trans>
                   </span>
-                  <ChevronRight size={14} className="text-[var(--rk-muted)]" />
+                  <ChevronRight size={14} className="text-muted-foreground" />
                 </button>
                 {scheduleOpen ? (
                   <div
                     role="menu"
-                    className="absolute top-0 right-full mr-1.5 min-w-[170px] overflow-hidden rounded-[14px] border border-[var(--rk-scroll)] bg-[var(--rk-surface)] py-1.5 shadow-[0_12px_40px_rgba(0,0,0,.55)]"
+                    className="absolute top-0 right-full mr-1.5 min-w-[170px] overflow-hidden rounded-[14px] border border-border bg-card py-1.5 shadow-lg"
                   >
                     {SCHEDULE_PRESETS.map((freq) => (
                       <button
@@ -433,11 +430,11 @@ export function RoutineEditor({
                         type="button"
                         role="menuitem"
                         onClick={() => addSchedule(freq)}
-                        className="flex w-full items-center justify-between gap-3 px-3.5 py-2.5 text-start text-[14px] text-[var(--rk-ink)] hover:bg-[var(--rk-elevated)]"
+                        className="flex w-full items-center justify-between gap-3 px-3.5 py-2.5 text-start text-[14px] text-foreground hover:bg-accent"
                       >
                         {schedulePresetLabel(freq)}
                         {freq === "Every day" || freq === "Weekdays" ? (
-                          <ChevronRight size={14} className="text-[var(--rk-muted)]" />
+                          <ChevronRight size={14} className="text-muted-foreground" />
                         ) : null}
                       </button>
                     ))}
@@ -452,7 +449,7 @@ export function RoutineEditor({
                   role="menuitem"
                   disabled
                   title={t`Coming soon`}
-                  className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-start text-[14px] text-[var(--rk-muted-2)]"
+                  className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-start text-[14px] text-muted-foreground/80"
                 >
                   <span
                     aria-hidden
@@ -468,7 +465,7 @@ export function RoutineEditor({
                 role="menuitem"
                 disabled={draft.webhookEnabled}
                 onClick={() => void addWebhook()}
-                className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-start text-[14px] text-[var(--rk-ink)] hover:bg-[var(--rk-elevated)] disabled:text-[var(--rk-muted-2)]"
+                className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-start text-[14px] text-foreground hover:bg-accent disabled:text-muted-foreground/80"
               >
                 <GlobeIcon />
                 <Trans>Webhook</Trans>
@@ -489,7 +486,7 @@ export function RoutineEditor({
           type="button"
           disabled={saving || running || !hasTriggers}
           onClick={onSave}
-          className="rounded-[11px] bg-[var(--rk-cream)] px-4 py-2 text-[var(--rk-cream-ink)] disabled:opacity-40"
+          className="rounded-[11px] bg-primary px-4 py-2 text-primary-foreground disabled:opacity-40"
         >
           {saving ? t`Saving…` : t`Save`}
         </button>
@@ -500,9 +497,9 @@ export function RoutineEditor({
         </p>
       ) : null}
 
-      <div className="mt-8 text-[14px] text-[var(--rk-muted)]">
+      <div className="mt-8 text-[14px] text-muted-foreground">
         <Trans>Run history</Trans>
-        <p className="mt-2 text-[13.5px] text-[var(--rk-muted-2)]">
+        <p className="mt-2 text-[13.5px] text-muted-foreground/80">
           <Trans>No runs yet</Trans>
         </p>
       </div>
@@ -541,39 +538,39 @@ function WebhookTriggerCard({
         : placeholder;
 
   return (
-    <div className="rounded-[13px] border border-[var(--rk-border)] p-3">
+    <div className="rounded-[13px] border border-border p-3">
       <div className="flex items-center gap-2.5 px-0.5">
         <GlobeIcon />
-        <span className="flex-1 text-[14.5px] text-[var(--rk-ink)]">
+        <span className="flex-1 text-[14.5px] text-foreground">
           <Trans>When a webhook fires</Trans>
         </span>
         <button
           type="button"
           aria-label={t`Remove webhook`}
           onClick={onRemove}
-          className="text-[var(--rk-muted)] hover:text-[var(--rk-ink)]"
+          className="text-muted-foreground hover:text-foreground"
         >
           <X size={14} strokeWidth={1.8} />
         </button>
       </div>
-      <div className="mt-2.5 space-y-2.5 rounded-[11px] bg-[var(--rk-surface)] px-2.5 py-2.5 text-[13.5px]">
-        <div className="block text-[var(--rk-faint)]">
+      <div className="mt-2.5 space-y-2.5 rounded-[11px] bg-card px-2.5 py-2.5 text-[13.5px]">
+        <div className="block text-muted-foreground/70">
           <Trans>POST to</Trans>
-          <div className="mt-1 break-all rounded-lg bg-[var(--rk-scroll)] px-2.5 py-1.5 font-mono text-[12.5px] text-[var(--rk-soft)]">
+          <div className="mt-1 break-all rounded-lg bg-accent px-2.5 py-1.5 font-mono text-[12.5px] text-foreground/75">
             {postValue}
           </div>
         </div>
-        <div className="flex items-center gap-2 text-[var(--rk-faint)]">
+        <div className="flex items-center gap-2 text-muted-foreground/70">
           <span className="shrink-0">
             <Trans>key</Trans>
           </span>
-          <div className="min-w-0 flex-1 break-all rounded-lg bg-[var(--rk-scroll)] px-2.5 py-1.5 font-mono text-[12.5px] text-[var(--rk-soft)]">
+          <div className="min-w-0 flex-1 break-all rounded-lg bg-accent px-2.5 py-1.5 font-mono text-[12.5px] text-foreground/75">
             {keyValue}
           </div>
         </div>
-        <div className="block text-[var(--rk-faint)]">
+        <div className="block text-muted-foreground/70">
           <Trans>header</Trans>
-          <div className="mt-1 break-all rounded-lg bg-[var(--rk-scroll)] px-2.5 py-1.5 font-mono text-[12.5px] text-[var(--rk-soft)]">
+          <div className="mt-1 break-all rounded-lg bg-accent px-2.5 py-1.5 font-mono text-[12.5px] text-foreground/75">
             {headerValue}
           </div>
         </div>
@@ -581,7 +578,7 @@ function WebhookTriggerCard({
           <button
             type="button"
             onClick={onRotate}
-            className="text-[12.5px] text-[var(--rk-muted)] hover:text-[var(--rk-ink)]"
+            className="text-[12.5px] text-muted-foreground hover:text-foreground"
           >
             <Trans>Rotate key</Trans>
           </button>

@@ -60,7 +60,7 @@ export default function NewGroup() {
     <>
       <Stack.Screen options={{ title: t("New group") }} />
       <ScrollView
-        style={{ flex: 1, backgroundColor: tokens.page }}
+        style={{ flex: 1, backgroundColor: tokens.background }}
         contentContainerStyle={{ padding: 24 }}
       >
         <Text style={{ color: "#85858A", fontSize: 14 }}>{t("Name")}</Text>

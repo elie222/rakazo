@@ -113,17 +113,17 @@ export function VoiceSettingsOverlay({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className="absolute inset-0 z-30 flex items-center justify-center bg-[rgba(4,4,5,.62)] p-4 sm:p-10">
+    <div className="absolute inset-0 z-30 flex items-center justify-center bg-overlay p-4 sm:p-10">
       <div
         data-testid="voice-settings"
-        className="flex h-[min(680px,100%)] w-[920px] max-w-full flex-col overflow-hidden rounded-[26px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-surface)] shadow-[0_40px_90px_rgba(0,0,0,.55)]"
+        className="flex h-[min(680px,100%)] w-[920px] max-w-full flex-col overflow-hidden rounded-[26px] border border-border bg-card shadow-2xl"
       >
         <div className="flex items-start justify-between px-6 pt-6 sm:px-8 sm:pt-7">
           <div>
-            <div className="text-2xl font-medium text-[var(--rk-ink-strong)]">
+            <div className="text-2xl font-medium text-foreground">
               <Trans>Voice</Trans>
             </div>
-            <p className="mt-1 text-[13.5px] text-[var(--rk-faint)]">
+            <p className="mt-1 text-[13.5px] text-muted-foreground/70">
               {loading ? (
                 <Trans>Loading voice providers…</Trans>
               ) : (
@@ -138,24 +138,24 @@ export function VoiceSettingsOverlay({ onClose }: { onClose: () => void }) {
             type="button"
             aria-label={t`Close voice settings`}
             onClick={onClose}
-            className="text-[var(--rk-muted)]"
+            className="text-muted-foreground"
           >
             ✕
           </button>
         </div>
 
-        <div className="mx-6 mt-5 rounded-[14px] border border-[var(--rk-border)] bg-[var(--rk-inset)] px-4 py-3 sm:mx-8">
-          <div className="text-[12.5px] uppercase tracking-[0.08em] text-[var(--rk-muted-2)]">
+        <div className="mx-6 mt-5 rounded-[14px] border border-border bg-card px-4 py-3 sm:mx-8">
+          <div className="text-[12.5px] uppercase tracking-[0.08em] text-muted-foreground/80">
             <Trans>Active voice</Trans>
           </div>
-          <div className="mt-1 text-[16px] text-[var(--rk-ink-strong)]">
+          <div className="mt-1 text-[16px] text-foreground">
             {status?.ready
               ? voiceOptions.find((voice) => voice.id === status.voiceId)?.label || status.voiceId
               : status?.configured
                 ? t`Pick a voice`
                 : t`Not configured`}
           </div>
-          <div className="mt-1 text-[13px] text-[var(--rk-muted)]">
+          <div className="mt-1 text-[13px] text-muted-foreground">
             {selected?.name ?? status?.provider ?? (
               <Trans>Connect ElevenLabs, OpenAI, or Cartesia</Trans>
             )}
@@ -164,10 +164,10 @@ export function VoiceSettingsOverlay({ onClose }: { onClose: () => void }) {
 
         <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-hidden px-6 py-6 sm:px-8 md:flex-row">
           <div className="flex min-h-0 shrink-0 flex-col md:w-[280px]">
-            <div className="mb-3 text-[13.5px] text-[var(--rk-muted)]">
+            <div className="mb-3 text-[13.5px] text-muted-foreground">
               <Trans>Providers</Trans>
             </div>
-            <div className="rk-scroll overflow-y-auto rounded-[13px] border border-[var(--rk-border)]">
+            <div className="rk-scroll overflow-y-auto rounded-[13px] border border-border">
               {catalog.map((entry) => {
                 const connected = credentials.some((cred) => cred.provider === entry.id);
                 return (
@@ -181,17 +181,15 @@ export function VoiceSettingsOverlay({ onClose }: { onClose: () => void }) {
                       setNotice(null);
                       void refresh(entry.id);
                     }}
-                    className={`flex w-full items-center gap-3 border-b border-[var(--rk-hairline-strong)] px-3.5 py-3 text-start last:border-0 ${
-                      entry.id === provider
-                        ? "bg-[var(--rk-surface-2)]"
-                        : "hover:bg-[var(--rk-inset)]"
+                    className={`flex w-full items-center gap-3 border-b border-border px-3.5 py-3 text-start last:border-0 ${
+                      entry.id === provider ? "bg-muted" : "hover:bg-card"
                     }`}
                   >
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[15px] text-[var(--rk-ink)]">
+                      <span className="block truncate text-[15px] text-foreground">
                         {entry.name}
                       </span>
-                      <span className="mt-0.5 block text-[12px] text-[var(--rk-muted-2)]">
+                      <span className="mt-0.5 block text-[12px] text-muted-foreground/80">
                         {entry.transcribe ? (
                           <Trans>Speak + transcribe</Trans>
                         ) : (
@@ -200,7 +198,7 @@ export function VoiceSettingsOverlay({ onClose }: { onClose: () => void }) {
                       </span>
                     </span>
                     {connected ? (
-                      <span className="text-[12px] text-[var(--rk-success-soft)]">
+                      <span className="text-[12px] text-success">
                         <Trans>Connected</Trans>
                       </span>
                     ) : null}
@@ -211,32 +209,32 @@ export function VoiceSettingsOverlay({ onClose }: { onClose: () => void }) {
           </div>
 
           <div className="rk-scroll min-h-0 min-w-0 flex-1 overflow-y-auto">
-            {error ? <p className="mb-4 text-sm text-[var(--rk-danger)]">{error}</p> : null}
-            {notice ? <p className="mb-4 text-sm text-[var(--rk-success-soft)]">{notice}</p> : null}
+            {error ? <p className="mb-4 text-sm text-destructive">{error}</p> : null}
+            {notice ? <p className="mb-4 text-sm text-success">{notice}</p> : null}
             {selected ? (
               <>
-                <p className="text-[13.5px] leading-[1.5] text-[var(--rk-muted)]">
+                <p className="text-[13.5px] leading-[1.5] text-muted-foreground">
                   {selected.description}
                 </p>
-                <div className="mt-5 rounded-[13px] border border-[var(--rk-border)] px-4 py-3">
-                  <div className="text-[12.5px] uppercase tracking-[0.08em] text-[var(--rk-muted-2)]">
+                <div className="mt-5 rounded-[13px] border border-border px-4 py-3">
+                  <div className="text-[12.5px] uppercase tracking-[0.08em] text-muted-foreground/80">
                     <Trans>Personal credential</Trans>
                   </div>
-                  <div className="mt-1 text-[15px] text-[var(--rk-ink)]">
+                  <div className="mt-1 text-[15px] text-foreground">
                     {credential ? (
                       <Trans>Connected · {selected.name}</Trans>
                     ) : (
                       <Trans>Not connected</Trans>
                     )}
                   </div>
-                  <div className="mt-1 text-[13px] text-[var(--rk-muted)]">
+                  <div className="mt-1 text-[13px] text-muted-foreground">
                     <Trans>
                       Keys stay on the server. The app only learns whether a provider is configured.
                     </Trans>
                   </div>
                 </div>
 
-                <label className="mt-5 block text-[13.5px] text-[var(--rk-muted)]">
+                <label className="mt-5 block text-[13.5px] text-muted-foreground">
                   <Trans>API key</Trans>
                   <input
                     type="password"
@@ -244,7 +242,7 @@ export function VoiceSettingsOverlay({ onClose }: { onClose: () => void }) {
                     value={apiKey}
                     onChange={(event) => setApiKey(event.target.value)}
                     placeholder={credential ? t`Paste a replacement key` : t`Paste your API key`}
-                    className="mt-2 w-full rounded-[11px] border border-[var(--rk-border)] bg-[var(--rk-inset)] px-3.5 py-2.5 text-[14px] text-[var(--rk-ink)] outline-none"
+                    className="mt-2 w-full rounded-[11px] border border-border bg-card px-3.5 py-2.5 text-[14px] text-foreground outline-none"
                   />
                 </label>
                 <Button
@@ -264,12 +262,12 @@ export function VoiceSettingsOverlay({ onClose }: { onClose: () => void }) {
 
                 {credential ? (
                   <>
-                    <label className="mt-6 block text-[13.5px] text-[var(--rk-muted)]">
+                    <label className="mt-6 block text-[13.5px] text-muted-foreground">
                       <Trans>Voice</Trans>
                       <select
                         value={voiceId}
                         onChange={(event) => void chooseVoice(event.target.value)}
-                        className="mt-2 w-full rounded-[11px] border border-[var(--rk-border)] bg-[var(--rk-inset)] px-3.5 py-2.5 text-[14px] text-[var(--rk-ink)] outline-none"
+                        className="mt-2 w-full rounded-[11px] border border-border bg-card px-3.5 py-2.5 text-[14px] text-foreground outline-none"
                       >
                         {voiceOptions.map((voice) => (
                           <option key={voice.id} value={voice.id}>
@@ -283,7 +281,7 @@ export function VoiceSettingsOverlay({ onClose }: { onClose: () => void }) {
                       type="button"
                       disabled={busy || !status?.ready}
                       onClick={() => void testVoice()}
-                      className="mt-4 text-[14px] text-[var(--rk-soft)] disabled:opacity-40"
+                      className="mt-4 text-[14px] text-foreground/75 disabled:opacity-40"
                     >
                       {pending === "test" ? <Trans>Playing…</Trans> : <Trans>Hear a sample</Trans>}
                     </button>

@@ -20,7 +20,7 @@ function ScopePicker({
   onChange: (scope: "isolated" | "shared") => void;
 }) {
   return (
-    <div className="text-[13.5px] text-[var(--rk-muted)]">
+    <div className="text-[13.5px] text-muted-foreground">
       <Trans>Default scope</Trans>
       <div className="mt-2 flex gap-2">
         {(["isolated", "shared"] as const).map((option) => (
@@ -32,8 +32,8 @@ function ScopePicker({
             onClick={() => onChange(option)}
             className={`flex-1 rounded-[11px] border px-3.5 py-2.5 text-[14px] disabled:opacity-40 ${
               value === option
-                ? "border-[var(--rk-muted-2)] bg-[var(--rk-surface-2)] text-[var(--rk-ink)]"
-                : "border-[var(--rk-border)] text-[var(--rk-muted)]"
+                ? "border-foreground/40 bg-muted text-foreground"
+                : "border-border text-muted-foreground"
             }`}
           >
             {option === "isolated" ? <Trans>Isolated</Trans> : <Trans>Shared</Trans>}
@@ -126,14 +126,14 @@ export function MemorySettingsOverlay({
   }
 
   return (
-    <div className="absolute inset-0 z-30 flex items-center justify-center bg-[rgba(4,4,5,.62)] p-4 sm:p-10">
-      <div className="flex max-h-[min(760px,100%)] w-[560px] max-w-full flex-col overflow-hidden rounded-[26px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-surface)] shadow-[0_40px_90px_rgba(0,0,0,.55)]">
+    <div className="absolute inset-0 z-30 flex items-center justify-center bg-overlay p-4 sm:p-10">
+      <div className="flex max-h-[min(760px,100%)] w-[560px] max-w-full flex-col overflow-hidden rounded-[26px] border border-border bg-card shadow-2xl">
         <div className="flex items-start justify-between px-6 pt-6 sm:px-8 sm:pt-7">
           <div>
-            <div className="text-2xl font-medium text-[var(--rk-ink-strong)]">
+            <div className="text-2xl font-medium text-foreground">
               <Trans>Memory</Trans>
             </div>
-            <p className="mt-1 text-[13.5px] text-[var(--rk-faint)]">
+            <p className="mt-1 text-[13.5px] text-muted-foreground/70">
               {registration?.description ?? (
                 <Trans>Manage the Space semantic memory provider.</Trans>
               )}
@@ -144,25 +144,25 @@ export function MemorySettingsOverlay({
             aria-label={t`Close memory settings`}
             disabled={busy}
             onClick={onClose}
-            className="text-[var(--rk-muted)] disabled:opacity-40"
+            className="text-muted-foreground disabled:opacity-40"
           >
             ✕
           </button>
         </div>
 
         <div className="rk-scroll min-h-0 flex-1 overflow-y-auto px-6 py-6 sm:px-8">
-          {error ? <p className="mb-4 text-sm text-[var(--rk-danger)]">{error}</p> : null}
+          {error ? <p className="mb-4 text-sm text-destructive">{error}</p> : null}
 
           {config === undefined ? (
-            <p className="text-sm text-[var(--rk-muted)]">
+            <p className="text-sm text-muted-foreground">
               <Trans>Loading memory settings…</Trans>
             </p>
           ) : config ? (
-            <div className="rounded-[13px] border border-[var(--rk-border)] px-4 py-3">
-              <div className="text-[12.5px] uppercase tracking-[0.08em] text-[var(--rk-muted-2)]">
+            <div className="rounded-[13px] border border-border px-4 py-3">
+              <div className="text-[12.5px] uppercase tracking-[0.08em] text-muted-foreground/80">
                 <Trans>Connected</Trans>
               </div>
-              <div className="mt-1 text-[15px] text-[var(--rk-ink)]">
+              <div className="mt-1 text-[15px] text-foreground">
                 {registration?.connectedLabel(config) ?? config.provider}
               </div>
               <div className="mt-3">
@@ -190,13 +190,13 @@ export function MemorySettingsOverlay({
           ) : registration ? (
             <>
               {MEMORY_PROVIDER_SETTINGS.length > 1 ? (
-                <label className="mb-4 block text-[13.5px] text-[var(--rk-muted)]">
+                <label className="mb-4 block text-[13.5px] text-muted-foreground">
                   <Trans>Provider</Trans>
                   <select
                     value={selectedProvider}
                     disabled={busy}
                     onChange={(event) => setSelectedProvider(event.target.value)}
-                    className="mt-2 w-full rounded-[11px] border border-[var(--rk-border)] bg-[var(--rk-inset)] px-3.5 py-3 text-[var(--rk-ink)] outline-none disabled:opacity-40"
+                    className="mt-2 w-full rounded-[11px] border border-border bg-card px-3.5 py-3 text-foreground outline-none disabled:opacity-40"
                   >
                     {MEMORY_PROVIDER_SETTINGS.map((entry) => (
                       <option key={entry.id} value={entry.id}>
@@ -214,7 +214,7 @@ export function MemorySettingsOverlay({
               <registration.SettingsForm busy={busy} onConnect={connect} />
             </>
           ) : (
-            <p className="text-sm text-[var(--rk-danger)]">
+            <p className="text-sm text-destructive">
               <Trans>The selected memory provider is not available in this build.</Trans>
             </p>
           )}

@@ -88,22 +88,22 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
   }
 
   return (
-    <div className="flex min-h-full items-center justify-center bg-[var(--rk-page)] px-6 py-16 text-[var(--rk-ink)]">
+    <div className="flex min-h-full items-center justify-center bg-background px-6 py-16 text-foreground">
       <form onSubmit={submit} className="flex w-[460px] flex-col items-center">
-        <div className="flex h-[74px] w-[74px] items-center justify-center gap-[11px] rounded-full bg-[var(--rk-surface)]">
-          <span className="h-5 w-[9px] rounded-full bg-[var(--rk-cream)]" />
-          <span className="h-5 w-[9px] rounded-full bg-[var(--rk-cream)]" />
+        <div className="flex h-[74px] w-[74px] items-center justify-center gap-[11px] rounded-full bg-card">
+          <span className="h-5 w-[9px] rounded-full bg-primary" />
+          <span className="h-5 w-[9px] rounded-full bg-primary" />
         </div>
         <h1 className="mb-[38px] mt-[30px] text-[38px] tracking-[-0.02em]">{title}</h1>
         {sent ? (
           <div role="status" className="w-full text-center">
-            <p className="text-[17px] text-[var(--rk-ink)]">
+            <p className="text-[17px] text-foreground">
               <Trans>Check your email</Trans>
             </p>
             <p className="mt-3 text-[15px] leading-relaxed text-[#6E6E68]">
               <Trans>If an account exists for that address, we sent a password reset link.</Trans>
             </p>
-            <Link to="/sign-in" className="mt-6 inline-block font-medium text-[var(--rk-ink)]">
+            <Link to="/sign-in" className="mt-6 inline-block font-medium text-foreground">
               <Trans>Back to sign in</Trans>
             </Link>
           </div>
@@ -160,7 +160,7 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
                     onClick={() => setShowPassword((shown) => !shown)}
                     aria-label={showPassword ? t`Hide password` : t`Show password`}
                     aria-pressed={showPassword}
-                    className="absolute inset-y-0 right-0 flex items-center px-[18px] text-[#8C8C86] hover:text-[var(--rk-ink)]"
+                    className="absolute inset-y-0 right-0 flex items-center px-[18px] text-[#8C8C86] hover:text-foreground"
                   >
                     {showPassword ? (
                       <svg
@@ -199,7 +199,7 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
                 </div>
                 {mode === "in" && reset?.passwordReset ? (
                   <div className="mt-2 text-right text-[14px]">
-                    <Link to="/forgot-password" className="font-medium text-[var(--rk-ink)]">
+                    <Link to="/forgot-password" className="font-medium text-foreground">
                       <Trans>Forgot password?</Trans>
                     </Link>
                   </div>
@@ -214,7 +214,7 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
             <button
               type="submit"
               disabled={pending}
-              className="mt-3 w-full rounded-[13px] bg-[var(--rk-elevated)] py-[18px] text-center text-[17px] font-medium text-[var(--rk-cream)] hover:bg-[var(--rk-scroll)]"
+              className="mt-3 w-full rounded-[13px] bg-accent py-[18px] text-center text-[17px] font-medium text-primary hover:bg-accent"
             >
               {pending ? (
                 <Trans>Working…</Trans>
@@ -230,19 +230,19 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
               {mode === "in" ? (
                 <>
                   <Trans>Don’t have an account?</Trans>{" "}
-                  <Link to="/sign-up" className="font-medium text-[var(--rk-ink)]">
+                  <Link to="/sign-up" className="font-medium text-foreground">
                     <Trans>Sign up</Trans>
                   </Link>
                 </>
               ) : mode === "up" ? (
                 <>
                   <Trans>Already have an account?</Trans>{" "}
-                  <Link to="/sign-in" className="font-medium text-[var(--rk-ink)]">
+                  <Link to="/sign-in" className="font-medium text-foreground">
                     <Trans>Sign in</Trans>
                   </Link>
                 </>
               ) : (
-                <Link to="/sign-in" className="font-medium text-[var(--rk-ink)]">
+                <Link to="/sign-in" className="font-medium text-foreground">
                   <Trans>Back to sign in</Trans>
                 </Link>
               )}
@@ -290,11 +290,11 @@ export function PasswordResetPage() {
   }
 
   return (
-    <div className="flex min-h-full items-center justify-center bg-[var(--rk-page)] px-6 py-16 text-[var(--rk-ink)]">
+    <div className="flex min-h-full items-center justify-center bg-background px-6 py-16 text-foreground">
       <form onSubmit={submit} className="flex w-[460px] flex-col items-center">
-        <div className="flex h-[74px] w-[74px] items-center justify-center gap-[11px] rounded-full bg-[var(--rk-surface)]">
-          <span className="h-5 w-[9px] rounded-full bg-[var(--rk-cream)]" />
-          <span className="h-5 w-[9px] rounded-full bg-[var(--rk-cream)]" />
+        <div className="flex h-[74px] w-[74px] items-center justify-center gap-[11px] rounded-full bg-card">
+          <span className="h-5 w-[9px] rounded-full bg-primary" />
+          <span className="h-5 w-[9px] rounded-full bg-primary" />
         </div>
         <h1 className="mb-[38px] mt-[30px] text-[38px] tracking-[-0.02em]">
           <Trans>Choose a new password</Trans>
@@ -331,7 +331,7 @@ export function PasswordResetPage() {
             <button
               type="submit"
               disabled={pending || !params.get("token")}
-              className="mt-4 w-full rounded-[13px] bg-[var(--rk-elevated)] py-[18px] text-[17px] font-medium text-[var(--rk-cream)] disabled:opacity-60"
+              className="mt-4 w-full rounded-[13px] bg-accent py-[18px] text-[17px] font-medium text-primary disabled:opacity-60"
             >
               {pending ? <Trans>Working…</Trans> : <Trans>Reset password</Trans>}
             </button>

@@ -48,7 +48,7 @@ export default function RoutineDetail() {
 
   return (
     <ScrollView
-      style={{ flex: 1, backgroundColor: tokens.page }}
+      style={{ flex: 1, backgroundColor: tokens.background }}
       contentContainerStyle={{ padding: 24, gap: 18 }}
     >
       <Stack.Screen options={{ title: routine?.name ?? t("Routine") }} />

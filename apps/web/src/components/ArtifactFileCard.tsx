@@ -46,10 +46,10 @@ export function ArtifactFileCard(props: ArtifactFileCardProps) {
         <button
           type="button"
           onClick={() => void startDownload()}
-          className="rounded-[20px] border border-[var(--rk-border)] bg-[var(--rk-hairline)] px-4 py-3 text-left text-[14px] text-[var(--rk-body)] hover:bg-[var(--rk-elevated)]"
+          className="rounded-[20px] border border-border bg-muted px-4 py-3 text-left text-[14px] text-foreground/90 hover:bg-accent"
         >
           <div className="font-medium">{props.name}</div>
-          <div className="mt-1 text-[var(--rk-muted)]">
+          <div className="mt-1 text-muted-foreground">
             {props.mimeType} · {formatBytes(props.size)}
           </div>
         </button>
@@ -61,20 +61,20 @@ export function ArtifactFileCard(props: ArtifactFileCardProps) {
   return (
     <>
       <div>
-        <div className="flex min-w-[280px] overflow-hidden rounded-[20px] border border-[var(--rk-border)] bg-[var(--rk-elevated)] text-left text-[var(--rk-body)]">
+        <div className="flex min-w-[280px] overflow-hidden rounded-[20px] border border-border bg-accent text-left text-foreground/90">
           <button
             ref={previewButton}
             type="button"
             aria-label={t`Preview ${props.name}`}
             onClick={() => setPreviewOpen(true)}
-            className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3 text-left hover:bg-[var(--rk-scroll)]"
+            className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3 text-left hover:bg-accent"
           >
             <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[10px] bg-[#24344A] text-[#68A7FF]">
               <FileText size={21} strokeWidth={1.8} />
             </span>
             <span className="min-w-0">
               <span className="block truncate text-[14px] font-medium">{props.name}</span>
-              <span className="mt-0.5 block text-[13px] text-[var(--rk-muted)]">
+              <span className="mt-0.5 block text-[13px] text-muted-foreground">
                 {formatBytes(props.size)}
               </span>
             </span>
@@ -84,7 +84,7 @@ export function ArtifactFileCard(props: ArtifactFileCardProps) {
             aria-label={t`Download ${props.name}`}
             title={t`Download ${props.name}`}
             onClick={() => void startDownload()}
-            className="grid w-14 shrink-0 place-items-center border-l border-[var(--rk-elevated)] text-[var(--rk-muted)] hover:bg-[var(--rk-scroll)] hover:text-[var(--rk-ink)]"
+            className="grid w-14 shrink-0 place-items-center border-l border-border text-muted-foreground hover:bg-accent hover:text-foreground"
           >
             <Download size={19} strokeWidth={1.8} />
           </button>
@@ -212,7 +212,7 @@ function MarkdownPreview({
                 }
               })()
             }
-            className="grid h-9 w-9 place-items-center rounded-full text-[#929298] hover:bg-[var(--rk-elevated)] hover:text-[var(--rk-ink)]"
+            className="grid h-9 w-9 place-items-center rounded-full text-[#929298] hover:bg-accent hover:text-foreground"
           >
             <Download size={18} strokeWidth={1.8} />
           </button>
@@ -221,7 +221,7 @@ function MarkdownPreview({
             type="button"
             aria-label={t`Close preview`}
             onClick={onClose}
-            className="grid h-9 w-9 place-items-center rounded-full text-[#929298] hover:bg-[var(--rk-elevated)] hover:text-[var(--rk-ink)]"
+            className="grid h-9 w-9 place-items-center rounded-full text-[#929298] hover:bg-accent hover:text-foreground"
           >
             <X size={19} strokeWidth={1.8} />
           </button>
@@ -234,11 +234,11 @@ function MarkdownPreview({
         <div className="min-h-0 flex-1 overflow-y-auto">
           <article className="mx-auto w-full max-w-[760px] px-8 py-10 text-[16px] leading-7 text-[#D5D5D8] sm:px-12 sm:py-12">
             {state.status === "loading" ? (
-              <div className="text-[var(--rk-muted)]">
+              <div className="text-muted-foreground">
                 <Trans>Loading preview…</Trans>
               </div>
             ) : state.status === "error" ? (
-              <div className="rounded-[14px] border border-[#5A2A2A] bg-[#2A1717] px-4 py-3 text-[var(--rk-danger-soft)]">
+              <div className="rounded-[14px] border border-destructive/40 bg-destructive/10 px-4 py-3 text-destructive">
                 {state.message}
               </div>
             ) : (
@@ -253,7 +253,7 @@ function MarkdownPreview({
 
 function DownloadError({ message }: { message: string }) {
   return (
-    <div role="alert" className="mt-2 text-left text-[13px] text-[var(--rk-danger)]">
+    <div role="alert" className="mt-2 text-left text-[13px] text-destructive">
       {message}
     </div>
   );

@@ -1444,7 +1444,7 @@ function Thread() {
               ios="arrow.down"
               android="arrow-down"
               size={18}
-              color={mobileTokens().ink}
+              color={mobileTokens().foreground}
             />
             {threadScrollState.unread ? (
               <View

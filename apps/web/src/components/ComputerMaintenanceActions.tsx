@@ -1,9 +1,10 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { ComputerStatus } from "@rakazo/contracts";
+import { Button } from "@rakazo/ui-web";
 import { MoreHorizontal } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { rpc } from "../lib/rpc";
-import { BuiButton, BuiCard } from "./beautiful-ui/primitives";
+import { BuiCard } from "./ai/primitives";
 
 type Action = "recover" | "reset" | "update";
 
@@ -86,30 +87,38 @@ export function ComputerMaintenanceActions({
 
   const resetDialog = confirmReset ? (
     <div
-      className="fixed inset-0 z-50 grid place-items-center bg-[rgba(4,4,5,.72)] px-6"
+      className="fixed inset-0 z-50 grid place-items-center bg-overlay px-6"
       role="alertdialog"
       aria-modal="true"
       aria-labelledby="reset-computer-title"
       aria-describedby="reset-computer-description"
     >
-      <BuiCard className="w-full max-w-[420px] border border-[var(--rk-hairline-strong)] p-5">
-        <div id="reset-computer-title" className="text-[16px] font-medium text-[var(--rk-ink)]">
+      <BuiCard className="w-full max-w-[420px] border border-border p-5">
+        <div id="reset-computer-title" className="text-[16px] font-medium text-foreground">
           <Trans>Reset computer?</Trans>
         </div>
         <p
           id="reset-computer-description"
-          className="mt-2 text-[14px] leading-[1.5] text-[var(--rk-muted)]"
+          className="mt-2 text-[14px] leading-[1.5] text-muted-foreground"
         >
           <Trans>Restore the last saved workspace. Unsaved work on the computer is lost.</Trans>
         </p>
-        {error ? <p className="mt-2 text-[13px] text-[var(--rk-danger)]">{error}</p> : null}
+        {error ? <p className="mt-2 text-[13px] text-destructive">{error}</p> : null}
         <div className="mt-4 flex justify-end gap-2">
-          <BuiButton onClick={() => setConfirmReset(false)}>
+          <Button
+            variant="secondary"
+            className="rounded-full"
+            onClick={() => setConfirmReset(false)}
+          >
             <Trans>Cancel</Trans>
-          </BuiButton>
-          <BuiButton tone="accent" disabled={pending !== null} onClick={() => void run("reset")}>
+          </Button>
+          <Button
+            className="rounded-full"
+            disabled={pending !== null}
+            onClick={() => void run("reset")}
+          >
             {pending === "reset" ? <Trans>Resetting…</Trans> : <Trans>Reset</Trans>}
-          </BuiButton>
+          </Button>
         </div>
       </BuiCard>
     </div>
@@ -130,7 +139,7 @@ export function ComputerMaintenanceActions({
             setError(null);
             setMenuOpen((open) => !open);
           }}
-          className="grid h-8 w-8 place-items-center rounded-[10px] text-[var(--rk-muted)] hover:bg-[var(--rk-elevated)] hover:text-[var(--rk-ink)] disabled:opacity-40"
+          className="grid h-8 w-8 place-items-center rounded-[10px] text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40"
         >
           <MoreHorizontal size={16} strokeWidth={1.8} />
         </button>
@@ -139,7 +148,7 @@ export function ComputerMaintenanceActions({
             role="menu"
             aria-labelledby={menuId}
             data-testid="computer-more-menu"
-            className="absolute end-0 top-full z-20 mt-1.5 min-w-[180px] rounded-[12px] border border-[var(--rk-scroll)] bg-[var(--rk-surface)] py-1.5 shadow-[0_12px_40px_rgba(0,0,0,.55)]"
+            className="absolute end-0 top-full z-20 mt-1.5 min-w-[180px] rounded-[12px] border border-border bg-card py-1.5 shadow-lg"
           >
             {showRecover ? (
               <button
@@ -147,7 +156,7 @@ export function ComputerMaintenanceActions({
                 role="menuitem"
                 disabled={busy || pending !== null}
                 onClick={() => void run("recover")}
-                className="flex w-full px-3.5 py-2.5 text-start text-[14px] text-[var(--rk-ink)] hover:bg-[var(--rk-elevated)] disabled:opacity-40"
+                className="flex w-full px-3.5 py-2.5 text-start text-[14px] text-foreground hover:bg-accent disabled:opacity-40"
               >
                 {pending === "recover" ? (
                   <Trans>Recovering…</Trans>
@@ -166,7 +175,7 @@ export function ComputerMaintenanceActions({
                   setMenuOpen(false);
                   setConfirmReset(true);
                 }}
-                className="flex w-full px-3.5 py-2.5 text-start text-[14px] text-[var(--rk-ink)] hover:bg-[var(--rk-elevated)] disabled:opacity-40"
+                className="flex w-full px-3.5 py-2.5 text-start text-[14px] text-foreground hover:bg-accent disabled:opacity-40"
               >
                 {pending === "reset" ? <Trans>Resetting…</Trans> : <Trans>Reset computer</Trans>}
               </button>
@@ -177,14 +186,12 @@ export function ComputerMaintenanceActions({
                 role="menuitem"
                 disabled={busy || pending !== null}
                 onClick={() => void run("update")}
-                className="flex w-full px-3.5 py-2.5 text-start text-[14px] text-[var(--rk-ink)] hover:bg-[var(--rk-elevated)] disabled:opacity-40"
+                className="flex w-full px-3.5 py-2.5 text-start text-[14px] text-foreground hover:bg-accent disabled:opacity-40"
               >
                 {pending === "update" ? <Trans>Updating…</Trans> : <Trans>Update computer</Trans>}
               </button>
             ) : null}
-            {error ? (
-              <p className="px-3.5 py-2 text-[12.5px] text-[var(--rk-danger)]">{error}</p>
-            ) : null}
+            {error ? <p className="px-3.5 py-2 text-[12.5px] text-destructive">{error}</p> : null}
           </div>
         ) : null}
         {resetDialog}
@@ -196,12 +203,19 @@ export function ComputerMaintenanceActions({
     <div className={compact ? "flex flex-col items-start gap-2" : "mt-4 flex flex-col gap-3"}>
       <div className={compact ? "flex flex-wrap gap-2" : "flex flex-col gap-2"}>
         {showRecover ? (
-          <BuiButton disabled={busy || pending !== null} onClick={() => void run("recover")}>
+          <Button
+            variant="secondary"
+            className="rounded-full"
+            disabled={busy || pending !== null}
+            onClick={() => void run("recover")}
+          >
             {pending === "recover" ? <Trans>Recovering…</Trans> : <Trans>Recover computer</Trans>}
-          </BuiButton>
+          </Button>
         ) : null}
         {showReset ? (
-          <BuiButton
+          <Button
+            variant="secondary"
+            className="rounded-full"
             disabled={busy || pending !== null}
             onClick={() => {
               setError(null);
@@ -209,16 +223,21 @@ export function ComputerMaintenanceActions({
             }}
           >
             {pending === "reset" ? <Trans>Resetting…</Trans> : <Trans>Reset computer</Trans>}
-          </BuiButton>
+          </Button>
         ) : null}
         {showUpdate ? (
-          <BuiButton disabled={busy || pending !== null} onClick={() => void run("update")}>
+          <Button
+            variant="secondary"
+            className="rounded-full"
+            disabled={busy || pending !== null}
+            onClick={() => void run("update")}
+          >
             {pending === "update" ? <Trans>Updating…</Trans> : <Trans>Update computer</Trans>}
-          </BuiButton>
+          </Button>
         ) : null}
       </div>
       {!compact ? (
-        <p className="text-[13px] leading-[1.45] text-[var(--rk-muted-2)]">
+        <p className="text-[13px] leading-[1.45] text-muted-foreground/80">
           <Trans>
             Recover replaces an unreachable computer and keeps files in the saved workspace. Reset
             restores the last saved workspace and loses unsaved work. Update rebuilds with the
@@ -226,9 +245,7 @@ export function ComputerMaintenanceActions({
           </Trans>
         </p>
       ) : null}
-      {error && !confirmReset ? (
-        <p className="text-[13px] text-[var(--rk-danger)]">{error}</p>
-      ) : null}
+      {error && !confirmReset ? <p className="text-[13px] text-destructive">{error}</p> : null}
       {resetDialog}
     </div>
   );

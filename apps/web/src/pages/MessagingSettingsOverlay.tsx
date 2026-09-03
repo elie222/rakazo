@@ -5,8 +5,9 @@ import type {
   MessagingChannelMembership,
   MessagingStatus,
 } from "@rakazo/contracts";
+import { Button } from "@rakazo/ui-web";
 import { useEffect, useRef, useState } from "react";
-import { BuiButton } from "../components/beautiful-ui/primitives";
+
 import { providerLabel } from "../lib/messaging";
 import { rpc } from "../lib/rpc";
 
@@ -78,7 +79,7 @@ export function MessagingSettingsOverlay({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className="absolute inset-0 z-30 flex items-center justify-center bg-[rgba(4,4,5,.62)] p-4 sm:p-10">
+    <div className="absolute inset-0 z-30 flex items-center justify-center bg-overlay p-4 sm:p-10">
       <div
         ref={panelRef}
         data-testid="messaging-settings"
@@ -86,20 +87,17 @@ export function MessagingSettingsOverlay({ onClose }: { onClose: () => void }) {
         aria-modal="true"
         aria-labelledby="messaging-settings-title"
         tabIndex={-1}
-        className="rk-scroll max-h-full w-[640px] max-w-full overflow-y-auto rounded-[26px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-surface)] p-6 shadow-[0_40px_90px_rgba(0,0,0,.55)] sm:p-8"
+        className="rk-scroll max-h-full w-[640px] max-w-full overflow-y-auto rounded-[26px] border border-border bg-card p-6 shadow-2xl sm:p-8"
       >
         <div className="flex items-start justify-between gap-6">
-          <h2
-            id="messaging-settings-title"
-            className="text-2xl font-medium text-[var(--rk-ink-strong)]"
-          >
+          <h2 id="messaging-settings-title" className="text-2xl font-medium text-foreground">
             <Trans>Messaging</Trans>
           </h2>
           <button
             type="button"
             aria-label={t`Close messaging settings`}
             onClick={onClose}
-            className="text-[var(--rk-muted)]"
+            className="text-muted-foreground"
           >
             ✕
           </button>
@@ -107,12 +105,12 @@ export function MessagingSettingsOverlay({ onClose }: { onClose: () => void }) {
 
         {error ? <p className="mt-4 text-[13px] text-[#E88B8B]">{error}</p> : null}
 
-        <section className="mt-8 rounded-[14px] border border-[var(--rk-border)] bg-[var(--rk-inset)] px-4 py-4">
-          <h3 className="text-[15px] font-medium text-[var(--rk-ink)]">
+        <section className="mt-8 rounded-[14px] border border-border bg-card px-4 py-4">
+          <h3 className="text-[15px] font-medium text-foreground">
             <Trans>Chat apps</Trans>
           </h3>
           {status ? (
-            <p className="mt-3 text-[13px] text-[var(--rk-faint)]">
+            <p className="mt-3 text-[13px] text-muted-foreground/70">
               {status.providers.map(providerLabel).join(" · ")}
             </p>
           ) : null}
@@ -121,24 +119,28 @@ export function MessagingSettingsOverlay({ onClose }: { onClose: () => void }) {
               {status.identities.map((identity) => (
                 <li
                   key={identity.id}
-                  className="flex items-center justify-between gap-3 text-[14px] text-[var(--rk-soft)]"
+                  className="flex items-center justify-between gap-3 text-[14px] text-foreground/75"
                 >
                   <span>
                     {providerLabel(identity.provider)} · {identity.address}{" "}
-                    <span className="text-[12px] text-[var(--rk-faint)]">→ {identity.botName}</span>
+                    <span className="text-[12px] text-muted-foreground/70">
+                      → {identity.botName}
+                    </span>
                   </span>
-                  <BuiButton
+                  <Button
+                    variant="secondary"
+                    className="rounded-full"
                     onClick={() =>
                       void act(() => rpc.messaging.identities.unlink({ identityId: identity.id }))
                     }
                   >
                     <Trans>Unlink</Trans>
-                  </BuiButton>
+                  </Button>
                 </li>
               ))}
             </ul>
           ) : (
-            <p className="mt-3 text-[14px] text-[var(--rk-soft)]">
+            <p className="mt-3 text-[14px] text-foreground/75">
               <Trans>No chat apps linked yet.</Trans>
             </p>
           )}
@@ -150,7 +152,7 @@ export function MessagingSettingsOverlay({ onClose }: { onClose: () => void }) {
                 setLinkBotId(event.target.value);
                 setLinkCode(null);
               }}
-              className="rounded-[10px] border border-[var(--rk-scroll)] bg-[var(--rk-surface)] px-3 py-2 text-[13.5px] text-[var(--rk-ink)]"
+              className="rounded-[10px] border border-border bg-card px-3 py-2 text-[13.5px] text-foreground"
             >
               <option value="">{t`Choose a bot…`}</option>
               {bots.map((bot) => (
@@ -159,8 +161,8 @@ export function MessagingSettingsOverlay({ onClose }: { onClose: () => void }) {
                 </option>
               ))}
             </select>
-            <BuiButton
-              tone="accent"
+            <Button
+              className="rounded-full"
               disabled={!linkBotId}
               onClick={() =>
                 void act(async () => {
@@ -170,25 +172,24 @@ export function MessagingSettingsOverlay({ onClose }: { onClose: () => void }) {
               }
             >
               <Trans>Link a chat app</Trans>
-            </BuiButton>
+            </Button>
           </div>
           {linkCode ? (
-            <p className="mt-3 text-[14px] text-[var(--rk-soft)]" data-testid="messaging-link-code">
+            <p className="mt-3 text-[14px] text-foreground/75" data-testid="messaging-link-code">
               <Trans>
-                Send <span className="font-mono text-[var(--rk-ink-strong)]">{linkCode}</span> to
-                the line from your chat app within 10 minutes. You'll get a confirmation reply once
-                linked.
+                Send <span className="font-mono text-foreground">{linkCode}</span> to the line from
+                your chat app within 10 minutes. You'll get a confirmation reply once linked.
               </Trans>
             </p>
           ) : null}
         </section>
 
-        <section className="mt-5 rounded-[14px] border border-[var(--rk-border)] bg-[var(--rk-inset)] px-4 py-4">
-          <h3 className="text-[15px] font-medium text-[var(--rk-ink)]">
+        <section className="mt-5 rounded-[14px] border border-border bg-card px-4 py-4">
+          <h3 className="text-[15px] font-medium text-foreground">
             <Trans>Channels</Trans>
           </h3>
           {channels.length === 0 ? (
-            <p className="mt-3 text-[13px] text-[var(--rk-faint)]">
+            <p className="mt-3 text-[13px] text-muted-foreground/70">
               <Trans>No group chats yet.</Trans>
             </p>
           ) : (
@@ -196,19 +197,19 @@ export function MessagingSettingsOverlay({ onClose }: { onClose: () => void }) {
               {channels.map((channel) => (
                 <li
                   key={channel.id}
-                  className="flex items-center justify-between gap-3 text-[14px] text-[var(--rk-soft)]"
+                  className="flex items-center justify-between gap-3 text-[14px] text-foreground/75"
                 >
                   <span>
                     {channel.name ?? t`Group`}{" "}
-                    <span className="text-[12px] text-[var(--rk-faint)]">
+                    <span className="text-[12px] text-muted-foreground/70">
                       {channelMeta(channel)}
                     </span>
                   </span>
                   <span className="flex gap-2">
                     {channel.status === "invited" ? (
                       <>
-                        <BuiButton
-                          tone="accent"
+                        <Button
+                          className="rounded-full"
                           onClick={() =>
                             void act(() =>
                               rpc.messaging.channels.respond({
@@ -219,8 +220,10 @@ export function MessagingSettingsOverlay({ onClose }: { onClose: () => void }) {
                           }
                         >
                           <Trans>Approve</Trans>
-                        </BuiButton>
-                        <BuiButton
+                        </Button>
+                        <Button
+                          variant="secondary"
+                          className="rounded-full"
                           onClick={() =>
                             void act(() =>
                               rpc.messaging.channels.respond({
@@ -231,17 +234,19 @@ export function MessagingSettingsOverlay({ onClose }: { onClose: () => void }) {
                           }
                         >
                           <Trans>Decline</Trans>
-                        </BuiButton>
+                        </Button>
                       </>
                     ) : null}
                     {channel.status === "approved" ? (
-                      <BuiButton
+                      <Button
+                        variant="secondary"
+                        className="rounded-full"
                         onClick={() =>
                           void act(() => rpc.messaging.channels.leave({ membershipId: channel.id }))
                         }
                       >
                         <Trans>Leave</Trans>
-                      </BuiButton>
+                      </Button>
                     ) : null}
                   </span>
                 </li>
@@ -250,12 +255,12 @@ export function MessagingSettingsOverlay({ onClose }: { onClose: () => void }) {
           )}
         </section>
 
-        <section className="mt-5 rounded-[14px] border border-[var(--rk-border)] bg-[var(--rk-inset)] px-4 py-4">
-          <h3 className="text-[15px] font-medium text-[var(--rk-ink)]">
+        <section className="mt-5 rounded-[14px] border border-border bg-card px-4 py-4">
+          <h3 className="text-[15px] font-medium text-foreground">
             <Trans>Agent connections</Trans>
           </h3>
           {connections.length === 0 ? (
-            <p className="mt-3 text-[13px] text-[var(--rk-faint)]">
+            <p className="mt-3 text-[13px] text-muted-foreground/70">
               <Trans>No agent connections yet.</Trans>
             </p>
           ) : (
@@ -263,19 +268,21 @@ export function MessagingSettingsOverlay({ onClose }: { onClose: () => void }) {
               {connections.map((connection) => (
                 <li
                   key={connection.id}
-                  className="flex items-center justify-between gap-3 text-[14px] text-[var(--rk-soft)]"
+                  className="flex items-center justify-between gap-3 text-[14px] text-foreground/75"
                 >
                   <span>
                     {connection.peerOwnerLabel}
                     {"'s "}
                     {connection.peerBotName}{" "}
-                    <span className="text-[12px] text-[var(--rk-faint)]">{connection.status}</span>
+                    <span className="text-[12px] text-muted-foreground/70">
+                      {connection.status}
+                    </span>
                   </span>
                   <span className="flex gap-2">
                     {connection.status === "pending" && connection.incoming ? (
                       <>
-                        <BuiButton
-                          tone="accent"
+                        <Button
+                          className="rounded-full"
                           onClick={() =>
                             void act(() =>
                               rpc.messaging.connections.respond({
@@ -286,8 +293,10 @@ export function MessagingSettingsOverlay({ onClose }: { onClose: () => void }) {
                           }
                         >
                           <Trans>Approve</Trans>
-                        </BuiButton>
-                        <BuiButton
+                        </Button>
+                        <Button
+                          variant="secondary"
+                          className="rounded-full"
                           onClick={() =>
                             void act(() =>
                               rpc.messaging.connections.respond({
@@ -298,11 +307,13 @@ export function MessagingSettingsOverlay({ onClose }: { onClose: () => void }) {
                           }
                         >
                           <Trans>Decline</Trans>
-                        </BuiButton>
+                        </Button>
                       </>
                     ) : null}
                     {connection.status === "approved" ? (
-                      <BuiButton
+                      <Button
+                        variant="secondary"
+                        className="rounded-full"
                         onClick={() =>
                           void act(() =>
                             rpc.messaging.connections.revoke({ connectionId: connection.id }),
@@ -310,7 +321,7 @@ export function MessagingSettingsOverlay({ onClose }: { onClose: () => void }) {
                         }
                       >
                         <Trans>Revoke</Trans>
-                      </BuiButton>
+                      </Button>
                     ) : null}
                   </span>
                 </li>

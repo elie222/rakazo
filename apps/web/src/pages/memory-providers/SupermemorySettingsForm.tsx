@@ -34,8 +34,8 @@ export function SupermemorySettingsForm({ busy, onConnect }: MemoryProviderSetti
             onClick={() => setMode(option)}
             className={`flex-1 rounded-[11px] border px-3.5 py-2.5 text-[14px] disabled:opacity-40 ${
               mode === option
-                ? "border-[var(--rk-muted-2)] bg-[var(--rk-surface-2)] text-[var(--rk-ink)]"
-                : "border-[var(--rk-border)] text-[var(--rk-muted)]"
+                ? "border-foreground/40 bg-muted text-foreground"
+                : "border-border text-muted-foreground"
             }`}
           >
             {option === "cloud" ? <Trans>Cloud</Trans> : <Trans>Local</Trans>}
@@ -44,19 +44,19 @@ export function SupermemorySettingsForm({ busy, onConnect }: MemoryProviderSetti
       </div>
 
       {mode === "local" ? (
-        <label className="mt-4 block text-[13.5px] text-[var(--rk-muted)]">
+        <label className="mt-4 block text-[13.5px] text-muted-foreground">
           <Trans>Base URL</Trans>
           <input
             value={baseUrl}
             disabled={busy}
             onChange={(event) => setBaseUrl(event.target.value)}
             placeholder={DEFAULT_LOCAL_BASE_URL}
-            className="mt-2 w-full rounded-[11px] border border-[var(--rk-border)] bg-[var(--rk-inset)] px-3.5 py-3 text-[var(--rk-ink)] outline-none disabled:opacity-40"
+            className="mt-2 w-full rounded-[11px] border border-border bg-card px-3.5 py-3 text-foreground outline-none disabled:opacity-40"
           />
         </label>
       ) : null}
 
-      <label className="mt-4 block text-[13.5px] text-[var(--rk-muted)]">
+      <label className="mt-4 block text-[13.5px] text-muted-foreground">
         {mode === "cloud" ? <Trans>Organization API key</Trans> : <Trans>Instance API key</Trans>}
         <input
           value={apiKey}
@@ -65,17 +65,17 @@ export function SupermemorySettingsForm({ busy, onConnect }: MemoryProviderSetti
           placeholder="sm_…"
           type="password"
           autoComplete="new-password"
-          className="mt-2 w-full rounded-[11px] border border-[var(--rk-border)] bg-[var(--rk-inset)] px-3.5 py-3 text-[var(--rk-ink)] outline-none disabled:opacity-40"
+          className="mt-2 w-full rounded-[11px] border border-border bg-card px-3.5 py-3 text-foreground outline-none disabled:opacity-40"
         />
       </label>
 
       <Button
         type="button"
-        variant="pill"
+        variant="secondary"
+        className="mt-5 rounded-full"
         size="sm"
         disabled={busy || apiKey.trim().length < 8 || (mode === "local" && !baseUrl.trim())}
         onClick={() => void connect()}
-        className="mt-5"
       >
         {busy ? <Trans>Connecting…</Trans> : <Trans>Connect</Trans>}
       </Button>
