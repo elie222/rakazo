@@ -265,14 +265,14 @@ const STEERING_ATTACHMENT_UNAVAILABLE = TURN_ATTACHMENT_UNAVAILABLE;
 const BUILTIN_AGENT_TOOL_NAMES = new Set(builtinAgentTools.map((tool) => tool.name));
 
 /** Avoid an expensive remote workspace export when a turn never touched the computer. */
-export function createRunWorkspaceCheckpoint(
-  checkpoint: () => Promise<unknown>,
-  initiallyDirty = false,
-) {
-  let dirty = initiallyDirty;
+export function createRunWorkspaceCheckpoint(checkpoint: () => Promise<unknown>) {
+  let dirty = false;
   return {
     markDirty() {
       dirty = true;
+    },
+    markFiles(files: readonly unknown[]) {
+      if (files.length > 0) dirty = true;
     },
     async flush() {
       if (!dirty) return false;
@@ -1145,10 +1145,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
               { context, computer, computerMode },
             )
           : [];
-        const workspaceCheckpoint = createRunWorkspaceCheckpoint(
-          () => checkpointAndRecordComputerWorkspace(deps, storedComputer, computer, context),
-          currentTurnFiles.length > 0,
+        const workspaceCheckpoint = createRunWorkspaceCheckpoint(() =>
+          checkpointAndRecordComputerWorkspace(deps, storedComputer, computer, context),
         );
+        workspaceCheckpoint.markFiles(currentTurnFiles);
         const attachedFilesPrompt = currentTurnFilesInstruction(currentTurnFiles);
         const graphical =
           computer.kind !== "desktop" && deps.sandbox.describe().capabilities.graphical;
@@ -2929,6 +2929,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                             item.blocks,
                             context.signal,
                           );
+                        workspaceCheckpoint.markFiles(files);
                         const filesInstruction = currentTurnFilesInstruction(files);
                         return {
                           id: item.id,

@@ -25,12 +25,23 @@ describe("run workspace checkpoint", () => {
     expect(persist).toHaveBeenCalledOnce();
   });
 
+  it("marks materialized steering files for checkpointing", async () => {
+    const persist = vi.fn(async () => undefined);
+    const checkpoint = createRunWorkspaceCheckpoint(persist);
+
+    checkpoint.markFiles([]);
+    await expect(checkpoint.flush()).resolves.toBe(false);
+    checkpoint.markFiles([{ path: "attachments/result.txt" }]);
+    await expect(checkpoint.flush()).resolves.toBe(true);
+  });
+
   it("keeps a failed checkpoint dirty for retry", async () => {
     const persist = vi
       .fn<() => Promise<void>>()
       .mockRejectedValueOnce(new Error("checkpoint failed"))
       .mockResolvedValueOnce(undefined);
-    const checkpoint = createRunWorkspaceCheckpoint(persist, true);
+    const checkpoint = createRunWorkspaceCheckpoint(persist);
+    checkpoint.markDirty();
 
     await expect(checkpoint.flush()).rejects.toThrow("checkpoint failed");
     await expect(checkpoint.flush()).resolves.toBe(true);
