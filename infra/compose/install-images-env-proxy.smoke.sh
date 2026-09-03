@@ -53,4 +53,18 @@ printf '%s\n' 'HTTP_PROXY=http://fromenv-upper:1' >"$ENV_FILE"
 prepare_proxy_env
 [[ "$http_proxy" == "http://shell-lower:9" ]] || fail "shell http_proxy should win over .env HTTP_PROXY"
 [[ -z "${HTTP_PROXY+x}" ]] || fail "must not import .env HTTP_PROXY when http_proxy is set"
+
+# Quoted # in the value must survive comment stripping.
+unset HTTP_PROXY HTTPS_PROXY NO_PROXY http_proxy https_proxy no_proxy || true
+printf '%s\n' 'HTTP_PROXY="http://proxy.example/#frag"' 'HTTPS_PROXY='"'"'http://proxy.example/#s'"'"' # trail' >"$ENV_FILE"
+prepare_proxy_env
+[[ "$HTTP_PROXY" == "http://proxy.example/#frag" ]] || fail "quoted # in double-quoted HTTP_PROXY"
+[[ "$HTTPS_PROXY" == "http://proxy.example/#s" ]] || fail "quoted # in single-quoted HTTPS_PROXY"
+
+# Later .env assignments for a family win (same key and cross-case).
+unset HTTP_PROXY HTTPS_PROXY NO_PROXY http_proxy https_proxy no_proxy || true
+printf '%s\n' 'HTTP_PROXY=http://first:1' 'HTTP_PROXY=http://second:2' 'http_proxy=http://third:3' >"$ENV_FILE"
+prepare_proxy_env
+[[ -z "${HTTP_PROXY+x}" ]] || fail "cross-case last win should clear HTTP_PROXY"
+[[ "$http_proxy" == "http://third:3" ]] || fail "last .env family assignment should win"
 echo "ok"

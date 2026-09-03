@@ -62,12 +62,36 @@ docker compose version >/dev/null 2>&1 || fail "the Docker Compose plugin is req
 # Optional proxy knobs from an existing .env (operators often set them there for
 # containers). Do not override values already present in the shell. Treat each
 # HTTP/HTTPS/NO_PROXY pair as one family so either case in the shell wins.
+# Within .env, later assignments for a family win (shell presence is snapshotted
+# before the file is read). Comment stripping is quote-aware so `#` inside
+# matching quotes is kept; this is not a full dotenv parser.
 load_proxy_vars_from_env_file() {
   local file="$1"
   local line key value
+  local i c quote out
+  local shell_http=0 shell_https=0 shell_no=0
   [[ -f "$file" ]] || return 0
+  [[ -n "${HTTP_PROXY+x}" || -n "${http_proxy+x}" ]] && shell_http=1
+  [[ -n "${HTTPS_PROXY+x}" || -n "${https_proxy+x}" ]] && shell_https=1
+  [[ -n "${NO_PROXY+x}" || -n "${no_proxy+x}" ]] && shell_no=1
   while IFS= read -r line || [[ -n "$line" ]]; do
-    line="${line%%#*}"
+    out=""
+    quote=""
+    for ((i = 0; i < ${#line}; i++)); do
+      c="${line:i:1}"
+      if [[ -n "$quote" ]]; then
+        out+="$c"
+        [[ "$c" == "$quote" ]] && quote=""
+      elif [[ "$c" == "'" || "$c" == '"' ]]; then
+        quote="$c"
+        out+="$c"
+      elif [[ "$c" == "#" ]]; then
+        break
+      else
+        out+="$c"
+      fi
+    done
+    line="$out"
     [[ "$line" =~ ^[[:space:]]*(HTTP_PROXY|HTTPS_PROXY|NO_PROXY|http_proxy|https_proxy|no_proxy)=(.*)$ ]] || continue
     key="${BASH_REMATCH[1]}"
     value="${BASH_REMATCH[2]}"
@@ -80,19 +104,22 @@ load_proxy_vars_from_env_file() {
     fi
     case "$key" in
       HTTP_PROXY|http_proxy)
-        if [[ -n "${HTTP_PROXY+x}" || -n "${http_proxy+x}" ]]; then
+        if ((shell_http)); then
           continue
         fi
+        unset -v HTTP_PROXY http_proxy
         ;;
       HTTPS_PROXY|https_proxy)
-        if [[ -n "${HTTPS_PROXY+x}" || -n "${https_proxy+x}" ]]; then
+        if ((shell_https)); then
           continue
         fi
+        unset -v HTTPS_PROXY https_proxy
         ;;
       NO_PROXY|no_proxy)
-        if [[ -n "${NO_PROXY+x}" || -n "${no_proxy+x}" ]]; then
+        if ((shell_no)); then
           continue
         fi
+        unset -v NO_PROXY no_proxy
         ;;
     esac
     export "${key}=${value}"
