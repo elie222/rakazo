@@ -13,6 +13,11 @@ on:
           - daytona
           - box
         default: fake
+      upload_artifacts:
+        description: Retain the Playwright report and screenshots
+        required: false
+        type: boolean
+        default: true
   workflow_call:
     inputs:
       sandbox_provider:

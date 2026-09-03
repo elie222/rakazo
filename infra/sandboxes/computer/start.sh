@@ -48,6 +48,7 @@ exec fluxbox -rc /tmp/fluxbox-home/.fluxbox/init
 EOF
 chmod +x /tmp/fluxbox-home/.fluxbox/startup
 HOME=/tmp/fluxbox-home /tmp/fluxbox-home/.fluxbox/startup >/tmp/rakazo/fluxbox.log 2>&1 &
+HOME="$AGENT_HOME" /usr/local/bin/rakazo-desktop-panel >/tmp/rakazo/panel.log 2>&1 &
 
 register_browser_handler() {
   local mime="$1"
@@ -60,8 +61,12 @@ register_browser_handler() {
 register_browser_handler x-scheme-handler/http
 register_browser_handler x-scheme-handler/https
 register_browser_handler text/html
-if ! xdg-settings set default-web-browser rakazo-browser.desktop >/dev/null 2>&1 \
-  || [[ "$(xdg-settings get default-web-browser 2>/dev/null || true)" != "rakazo-browser.desktop" ]]; then
+if [[ -z "${BROWSER:-}" ]] \
+  && ! xdg-settings set default-web-browser rakazo-browser.desktop >/dev/null 2>&1; then
+  echo "failed to set default web browser to rakazo-browser" >&2
+  exit 1
+fi
+if [[ "$(xdg-settings get default-web-browser 2>/dev/null || true)" != "rakazo-browser.desktop" ]]; then
   echo "failed to set default web browser to rakazo-browser" >&2
   exit 1
 fi

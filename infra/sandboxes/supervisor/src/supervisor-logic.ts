@@ -314,6 +314,7 @@ export function ensureScreenCommand(index: number) {
     `cp /etc/rakazo/fluxbox/apps ${fluxHome}/.fluxbox/apps 2>/dev/null || true`,
     `cp /etc/rakazo/fluxbox/menu ${fluxHome}/.fluxbox/menu 2>/dev/null || true`,
     `HOME=${fluxHome} DISPLAY=${layout.display} fluxbox -rc ${fluxHome}/.fluxbox/init >${log}-fluxbox.log 2>&1 &`,
+    `HOME=/home/rakazo DISPLAY=${layout.display} /usr/local/bin/rakazo-desktop-panel >${log}-panel.log 2>&1 &`,
     `if [ -d /home/rakazo/.browser-profiles/chromium ]; then cp -a /home/rakazo/.browser-profiles/chromium/. ${profile}/; rm -f ${profile}/SingletonLock ${profile}/SingletonCookie ${profile}/SingletonSocket; fi`,
     `DISPLAY=${layout.display} HOME=/home/rakazo rakazo-browser --user-data-dir=${profile} >${log}-browser.log 2>&1 &`,
     `x11vnc -display ${layout.display} -forever -shared -viewonly -nopw -listen 127.0.0.1 -rfbport ${layout.viewVncPort} -xkb -ncache 0 >${log}-x11vnc.log 2>&1 &`,

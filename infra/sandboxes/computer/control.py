@@ -19,6 +19,7 @@ MAX_ARG_LEN = 16_384
 KNOWN_LAUNCH = frozenset(
     {
         "rakazo-browser",
+        "pcmanfm",
         "xterm",
     }
 )

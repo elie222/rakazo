@@ -1,3 +1,4 @@
+import { BOT_MESSAGE_MAX_HOPS } from "@rakazo/core";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -389,7 +390,7 @@ describe("messageConnectedAgent", () => {
   it("refuses when the hop budget is exhausted", async () => {
     const deps = createDeps({
       connection: { id: "ac-1", requesterBotId: "bot-1", targetBotId: "bot-2", status: "approved" },
-      sourceHop: 6,
+      sourceHop: BOT_MESSAGE_MAX_HOPS,
     });
     const result = await messageConnectedAgent(
       deps,
@@ -397,9 +398,11 @@ describe("messageConnectedAgent", () => {
       sender,
       { address: "+15552222222", message: "again" },
     );
-    expect(result).toEqual(
-      expect.objectContaining({ ok: false, error: expect.stringMatching(/limit/i) }),
-    );
+    expect(result).toEqual({
+      ok: false,
+      error:
+        "The 20-hop agent collaboration limit has been reached. Ask the user whether to continue for up to 20 more hops. Continue only if the user explicitly agrees; that user message starts a new chain.",
+    });
   });
 });
 

@@ -183,8 +183,16 @@ export interface SendUserMessageInput {
   userId: string;
   blocks: MessageBlock[];
   prompt: string;
-  trigger: "user" | "follow_up" | "webhook" | "messaging";
+  trigger: "user" | "follow_up" | "webhook" | "messaging" | "phone" | "external_message";
   clientNonce?: string;
+  /** Persist and publish the message without starting an agent run. */
+  createRun?: boolean;
+  /** Human attribution for external transcript messages. */
+  speakerName?: string;
+  /** Advance the event cursor without rendering the internal agent prompt. */
+  hiddenInTranscript?: boolean;
+  /** External bridges may need one reply-correlated run per provider event. */
+  allowParallelRun?: boolean;
   linkMessageToRun?: boolean;
 }
 
@@ -247,7 +255,9 @@ export async function clearThread(
         spaceId: input.spaceId,
         threadId: input.threadId,
         ...(input.groupId ? {} : { botId: input.botId }),
-        status: { in: ["queued", "leased", "running", "waiting_input", "waiting_takeover"] },
+        status: {
+          in: ["queued", "leased", "running", "waiting_input", "waiting_takeover"],
+        },
       },
       select: { id: true, taskId: true },
     });
@@ -308,7 +318,10 @@ export async function clearThread(
       });
     }
     if (input.groupId) {
-      await tx.chatGroup.update({ where: { id: input.groupId }, data: { updatedAt: now } });
+      await tx.chatGroup.update({
+        where: { id: input.groupId },
+        data: { updatedAt: now },
+      });
     } else {
       await tx.bot.update({
         where: { id: input.botId, spaceId: input.spaceId },
@@ -378,17 +391,22 @@ export async function sendUserMessage(
         blocks: input.blocks,
         clientNonce: input.clientNonce,
       });
-      const busy = await tx.run.findFirst({
-        where: {
-          threadId: input.threadId,
-          botId: input.botId,
-          status: { in: ["running", "queued", "leased", "waiting_input", "waiting_takeover"] },
-        },
-        select: { id: true, taskId: true },
-      });
+      const busy =
+        input.createRun !== false && !input.allowParallelRun
+          ? await tx.run.findFirst({
+              where: {
+                threadId: input.threadId,
+                botId: input.botId,
+                status: {
+                  in: ["running", "queued", "leased", "waiting_input", "waiting_takeover"],
+                },
+              },
+              select: { id: true, taskId: true },
+            })
+          : null;
       let task = null;
       let run = null;
-      if (!busy) {
+      if (!busy && input.createRun !== false) {
         task = await tx.task.create({
           data: {
             spaceId: input.spaceId,
@@ -413,9 +431,12 @@ export async function sendUserMessage(
           },
         });
         if (input.linkMessageToRun) {
-          await tx.message.update({ where: { id: message.id }, data: { runId: run.id } });
+          await tx.message.update({
+            where: { id: message.id },
+            data: { runId: run.id },
+          });
         }
-      } else {
+      } else if (busy) {
         await tx.steeringMessage.create({
           data: {
             messageId: message.id,
@@ -432,7 +453,13 @@ export async function sendUserMessage(
         botId: input.botId,
         type: "thread.message.created",
         runId: run?.id ?? busy?.id,
-        payload: { messageId: message.id, role: "user", blocks: input.blocks },
+        payload: {
+          messageId: message.id,
+          role: "user",
+          blocks: input.blocks,
+          ...(input.speakerName ? { speakerName: input.speakerName } : {}),
+          ...(input.hiddenInTranscript ? { hiddenInTranscript: true } : {}),
+        },
       });
       return { message, task, run, busy, event };
     });
@@ -721,7 +748,9 @@ export async function pauseRunForInput(
       runId: input.runId,
       payload: {},
     });
-    await tx.event.deleteMany({ where: { runId: input.runId, type: "thread.progress" } });
+    await tx.event.deleteMany({
+      where: { runId: input.runId, type: "thread.progress" },
+    });
     return { threadId: waitingEvent.threadId, seq: waitingEvent.seq };
   });
 
@@ -775,7 +804,9 @@ export async function pauseRunForTakeover(
       runId: input.runId,
       payload: { reason: input.reason },
     });
-    await tx.event.deleteMany({ where: { runId: input.runId, type: "thread.progress" } });
+    await tx.event.deleteMany({
+      where: { runId: input.runId, type: "thread.progress" },
+    });
     return { threadId: waitingEvent.threadId, seq: waitingEvent.seq };
   });
 

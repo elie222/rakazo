@@ -9,6 +9,10 @@ function hasPermissions(stat: Stats, uid: number, gid: number, required: number)
   return ((stat.mode >> shift) & required) === required;
 }
 
+function isWritableOrOwnedBy(stat: Stats, uid: number, gid: number): boolean {
+  return stat.uid === uid || hasPermissions(stat, uid, gid, 0b010);
+}
+
 function isMissingOrNotDirectory(error: unknown): boolean {
   const code = (error as NodeJS.ErrnoException).code;
   return code === "ENOENT" || code === "ELOOP" || code === "ENOTDIR";
@@ -66,8 +70,10 @@ async function assertWritableEntry(
     throw new Error(`computer home ${root} must be a directory`);
   }
 
-  const required = stat.isDirectory() ? 0b111 : 0b010;
-  if (!hasPermissions(stat, uid, gid, required)) {
+  const compatible = stat.isDirectory()
+    ? hasPermissions(stat, uid, gid, 0b111)
+    : isWritableOrOwnedBy(stat, uid, gid);
+  if (!compatible) {
     throw writabilityError(target, root, uid, gid);
   }
   if (!stat.isDirectory()) return;
@@ -123,7 +129,7 @@ async function assertWritableDirectory(
     if (childStat.isDirectory()) {
       throw new Error(`computer home ${root} changed during validation; retry the request`);
     }
-    if (!hasPermissions(childStat, uid, gid, 0b010)) {
+    if (!isWritableOrOwnedBy(childStat, uid, gid)) {
       throw writabilityError(path.join(displayPath, entry.name), root, uid, gid);
     }
   }

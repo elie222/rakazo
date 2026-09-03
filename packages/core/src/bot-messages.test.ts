@@ -13,6 +13,7 @@ import {
   renderBotDirectory,
   renderGroupMembersContext,
   resolveBotAddress,
+  teamChatGatewayInstruction,
 } from "./bot-messages.js";
 
 const bots = [
@@ -40,6 +41,10 @@ describe("bot message silence", () => {
 });
 
 describe("hop bounding", () => {
+  it("allows twenty bot-to-bot deliveries per user-started chain", () => {
+    expect(BOT_MESSAGE_MAX_HOPS).toBe(20);
+  });
+
   it("starts a chain at 1 when a person's message woke the sender", () => {
     expect(nextBotMessageHop(undefined)).toBe(1);
     expect(nextBotMessageHop(0)).toBe(1);
@@ -63,6 +68,17 @@ describe("hop bounding", () => {
       hop = nextBotMessageHop(hop);
     }
     expect(delivered).toBe(BOT_MESSAGE_MAX_HOPS);
+  });
+});
+
+describe("team chat gateway", () => {
+  it("keeps one external identity while routing work to teammates", () => {
+    const instruction = teamChatGatewayInstruction("Arthur");
+
+    expect(instruction).toContain("Arthur is the sole gateway");
+    expect(instruction).toContain("explicitly names a teammate");
+    expect(instruction).toContain("message_bot");
+    expect(instruction).toContain("user-facing");
   });
 });
 

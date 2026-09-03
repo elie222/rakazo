@@ -1323,6 +1323,58 @@ describe("sendUserMessage", () => {
       data: { messageId: "message-1", botId: "bot-1", userId: "user-1", runId: "run-0" },
     });
   });
+
+  it("records a speaker-attributed transcript message without creating a run", async () => {
+    const tx = {
+      thread: {
+        update: vi
+          .fn()
+          .mockResolvedValueOnce({ nextMessageSeq: 5 })
+          .mockResolvedValueOnce({ nextEventSeq: 9 }),
+      },
+      message: {
+        create: vi.fn().mockResolvedValue({ id: "message-1", seq: 4 }),
+        update: vi.fn(),
+      },
+      steeringMessage: { create: vi.fn() },
+      task: { create: vi.fn() },
+      run: { findFirst: vi.fn(), create: vi.fn() },
+      event: {
+        create: vi.fn(async ({ data }: { data: { seq: number; type: string } }) => ({
+          ...event(data.seq),
+          type: data.type,
+        })),
+      },
+    };
+    const prisma = {
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+    } as unknown as PrismaClient;
+
+    await expect(
+      sendUserMessage(prisma, {
+        spaceId: "workspace-1",
+        threadId: "thread-1",
+        botId: "bot-1",
+        userId: "user-1",
+        blocks: [{ kind: "text", text: "hello" }],
+        prompt: "hello",
+        trigger: "external_message",
+        createRun: false,
+        speakerName: "Pat",
+      }),
+    ).resolves.toEqual({ messageId: "message-1", seq: 4, taskId: null, runId: null });
+
+    expect(tx.task.create).not.toHaveBeenCalled();
+    expect(tx.run.create).not.toHaveBeenCalled();
+    expect(tx.message.update).not.toHaveBeenCalled();
+    expect(tx.event.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          payload: expect.objectContaining({ speakerName: "Pat" }),
+        }),
+      }),
+    );
+  });
 });
 
 describe("claimSteering", () => {

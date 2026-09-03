@@ -1,12 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
+  AgentSecretInputSchema,
+  AgentSecretSchema,
   appContract,
   BOT_DESCRIPTION_MAX_LENGTH,
   BOT_INSTRUCTIONS_MAX_LENGTH,
+  BOT_TEAM_CHAT_RULES_MAX_LENGTH,
   BOT_TITLE_MAX_LENGTH,
   CreateBotInput,
   CreateGroupInput,
   canReactToThreadMessage,
+  ExternalConversationSchema,
   McpServerConfigInput,
   MessageBlock,
   ModelOAuthBeginSchema,
@@ -16,6 +20,7 @@ import {
   RunActivityRowSchema,
   RunSchema,
   UpdateBotInput,
+  UpdateExternalConversationPolicyInput,
   UpdateGroupInput,
 } from "./index.js";
 
@@ -105,6 +110,76 @@ describe("contracts", () => {
     ).toBe(true);
   });
 
+  it("validates team chat engagement settings", () => {
+    expect(
+      UpdateBotInput.safeParse({
+        botId: "bot-1",
+        teamChatAmbientEnabled: true,
+        teamChatRules: "Engage when a launch deadline changes.",
+      }).success,
+    ).toBe(true);
+    expect(
+      UpdateBotInput.safeParse({
+        botId: "bot-1",
+        teamChatRules: "R".repeat(BOT_TEAM_CHAT_RULES_MAX_LENGTH + 1),
+      }).success,
+    ).toBe(false);
+  });
+
+  it("validates room-level team chat policies", () => {
+    expect(
+      UpdateExternalConversationPolicyInput.safeParse({
+        externalConversationId: "external-1",
+        teamChatAmbientEnabled: null,
+        teamChatRules: "Only engage when an owner or committed date changes.",
+        automatedSenderPolicies: {
+          "B-GITHUB": { name: "GitHub", mode: "action" },
+          "B-LINEAR": { name: "Linear", mode: "rollup", rollupHours: 6 },
+        },
+      }).success,
+    ).toBe(true);
+    expect(
+      UpdateExternalConversationPolicyInput.safeParse({
+        externalConversationId: "external-1",
+        teamChatRules: "R".repeat(BOT_TEAM_CHAT_RULES_MAX_LENGTH + 1),
+        automatedSenderPolicies: {},
+      }).success,
+    ).toBe(false);
+    expect(
+      UpdateExternalConversationPolicyInput.safeParse({
+        externalConversationId: "external-1",
+        automatedSenderPolicies: {
+          "B-LINEAR": { name: "Linear", mode: "rollup", rollupHours: 0 },
+        },
+      }).success,
+    ).toBe(false);
+  });
+
+  it("exposes inherited room policy and discovered automated senders", () => {
+    const parsed = ExternalConversationSchema.parse({
+      id: "external-1",
+      spaceId: "space-1",
+      botId: "bot-1",
+      provider: "slack",
+      displayName: "Team operations",
+      participantNames: ["William", "Liz", "Arthur"],
+      threadId: "thread-1",
+      preview: "Morning",
+      unread: false,
+      teamChatAmbientEnabled: null,
+      teamChatRules: null,
+      automatedSenderPolicies: { "B-GITHUB": { name: "GitHub", mode: "ignore" } },
+      automatedSenders: [{ id: "B-GITHUB", name: "GitHub" }],
+      updatedAt: "2026-09-03T12:00:00.000Z",
+    });
+
+    expect(parsed.automatedSenderPolicies["B-GITHUB"]).toEqual({
+      name: "GitHub",
+      mode: "ignore",
+    });
+    expect(appContract.externalConversations.updatePolicy).toBeTruthy();
+  });
+
   it("normalizes group names and rejects duplicate members", () => {
     expect(CreateGroupInput.parse({ name: "  Draft team  ", botIds: ["bot-1", "bot-2"] })).toEqual({
       name: "Draft team",
@@ -141,6 +216,9 @@ describe("contracts", () => {
   });
 
   it("exposes the product rpc surface", () => {
+    expect(appContract.agentSecrets.list).toBeTruthy();
+    expect(appContract.agentSecrets.put).toBeTruthy();
+    expect(appContract.agentSecrets.remove).toBeTruthy();
     expect(appContract.models.beginOAuth).toBeTruthy();
     expect(appContract.bootstrap).toBeTruthy();
     expect(appContract.models.completeOAuth).toBeTruthy();
@@ -159,6 +237,29 @@ describe("contracts", () => {
     expect(ProductEventType.options).toContain("thread.cleared");
     expect(ProductEventType.options).toContain("thread.subagent");
     expect(ProductEventType.options).toContain("bot.spawned");
+  });
+
+  it("accepts only shell-safe managed secret names and bounded values", () => {
+    expect(AgentSecretInputSchema.parse({ name: "AUDIENTI_API_KEY", value: "test-value" })).toEqual(
+      { name: "AUDIENTI_API_KEY", value: "test-value" },
+    );
+    expect(AgentSecretInputSchema.safeParse({ name: "lowercase", value: "x" }).success).toBe(false);
+    expect(AgentSecretInputSchema.safeParse({ name: "1TOKEN", value: "x" }).success).toBe(false);
+    expect(AgentSecretInputSchema.safeParse({ name: "TOKEN", value: "" }).success).toBe(false);
+    expect(
+      AgentSecretInputSchema.safeParse({ name: "TOKEN", value: "x".repeat(16_385) }).success,
+    ).toBe(false);
+  });
+
+  it("keeps managed secret responses metadata-only", () => {
+    const parsed = AgentSecretSchema.parse({
+      id: "secret-link-1",
+      name: "AUDIENTI_API_KEY",
+      createdAt: "2026-09-02T12:00:00.000Z",
+      updatedAt: "2026-09-02T12:00:00.000Z",
+    });
+    expect(parsed).not.toHaveProperty("value");
+    expect(parsed).not.toHaveProperty("ciphertext");
   });
 
   it("requires a distinct, non-empty bot order", () => {

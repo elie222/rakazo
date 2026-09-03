@@ -8,6 +8,7 @@ import type {
   MessagingSurface,
   RealtimeFanout,
   SandboxProvider,
+  TeamChatProvider,
   TransactionalEmailProvider,
 } from "@rakazo/adapter-kit";
 import {
@@ -48,6 +49,7 @@ import {
   pushTokenPath,
   type RemoteConnectorDependencies,
   ScriptedAgentRuntime,
+  SlackTeamChatProvider,
   SmtpEmailProvider,
   SpaceMemoryProviderResolver,
 } from "@rakazo/adapters";
@@ -67,6 +69,8 @@ import { type AppEnv, loadEnv } from "./env.js";
 import { createMessagingInboundHandler } from "./messaging-inbound.js";
 import { mountMessagingWebhookRoutes } from "./messaging-webhook.js";
 import { createRouter } from "./router.js";
+import { TeamChatBridge } from "./team-chat-bridge.js";
+import { ModelTeamChatEngagementJudge } from "./team-chat-judge.js";
 import { mountVoiceHttpRoutes } from "./voice.js";
 import { mountWebhookHttpRoutes } from "./webhook.js";
 
@@ -80,6 +84,7 @@ export interface AppHandles {
   connectors: ConnectorRegistry;
   messaging?: MessagingSurface;
   email?: TransactionalEmailProvider;
+  teamChat?: TeamChatProvider;
   executor: ReturnType<typeof createRunExecutor>;
   stop: () => Promise<void>;
 }
@@ -92,6 +97,7 @@ export async function createApp(
     pipedream?: ManagedConnectorProvider;
     messaging?: MessagingSurface;
     email?: TransactionalEmailProvider;
+    teamChat?: TeamChatProvider;
     remoteConnectors?: RemoteConnectorDependencies;
   } = {},
 ): Promise<AppHandles> {
@@ -102,6 +108,7 @@ export async function createApp(
     pipedream: pipedreamOverride,
     messaging: messagingOverride,
     email: emailOverride,
+    teamChat: teamChatOverride,
     remoteConnectors,
     ...envOverrides
   } = overrides;
@@ -206,6 +213,11 @@ export async function createApp(
     (env.smtpUrl
       ? new SmtpEmailProvider({ url: env.smtpUrl, from: env.emailFrom ?? "" })
       : localEmailEmulator);
+  const teamChat =
+    teamChatOverride ?? (env.slack ? new SlackTeamChatProvider(env.slack) : undefined);
+  if (teamChat && !env.slackBotId) {
+    throw new Error("SLACK_RAKAZO_BOT_ID is required when team chat is enabled");
+  }
   const installed = new InstalledConnectorProvider(prisma, secrets, remoteConnectors);
   const stack = createConnectorStack(isComposioEnabled(env.composioApiKey), composioOverride, [
     installed,
@@ -430,6 +442,39 @@ export async function createApp(
     mountMessagingWebhookRoutes(app, { messaging });
   }
 
+  const teamChatBridge =
+    teamChat && env.slackBotId
+      ? new TeamChatBridge({
+          prisma,
+          events,
+          jobs,
+          provider: teamChat,
+          botId: env.slackBotId,
+          judge: new ModelTeamChatEngagementJudge({
+            prisma,
+            runtime,
+            secrets,
+            deploymentProvider: env.defaultProvider,
+            deploymentModel: env.defaultModel,
+            deploymentModelKey: env.deploymentModelKey,
+            providerOverride: env.teamChatJudgeProvider,
+            modelOverride: env.teamChatJudgeModel,
+          }),
+        })
+      : undefined;
+  let teamChatStarted = false;
+  if (teamChatBridge) {
+    try {
+      await teamChatBridge.start();
+      teamChatStarted = true;
+    } catch (error) {
+      console.error(
+        "team chat bridge failed to start",
+        error instanceof Error ? error.message : error,
+      );
+    }
+  }
+
   app.get("/health", (c) =>
     c.json({
       ok: true,
@@ -439,6 +484,7 @@ export async function createApp(
       pipedream: Boolean(pipedream),
       messaging: Boolean(messaging),
       email: email?.describe().id ?? null,
+      teamChat: teamChatStarted ? (teamChat?.id ?? null) : null,
       jobs: jobKind,
       realtime: realtime.describe().id,
       revision: env.gitSha ?? null,
@@ -455,10 +501,12 @@ export async function createApp(
     connectors: stack.connector,
     messaging,
     email,
+    teamChat,
     executor,
     stop: async () => {
       oauthLogins.abortAll();
       await email?.drain?.();
+      await teamChatBridge?.stop();
       await reconciler?.stop();
       await jobs.close();
       await realtime.close();

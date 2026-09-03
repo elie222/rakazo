@@ -1,0 +1,69 @@
+# Panel background
+rounded = 0
+border_width = 1
+border_sides = T
+background_color = #18181b 100
+border_color = #303036 100
+
+# Active task background
+rounded = 4
+border_width = 0
+background_color = #34343a 100
+border_color = #000000 0
+
+panel_items = LT
+panel_size = 100% 54
+panel_margin = 0 0
+panel_padding = 12 6 8
+panel_position = bottom center horizontal
+panel_layer = top
+panel_monitor = all
+panel_dock = 0
+panel_background_id = 1
+wm_menu = 0
+disable_transparency = 1
+strut_policy = follow_size
+mouse_effects = 1
+
+launcher_padding = 4 0 6
+launcher_background_id = 0
+launcher_icon_background_id = 0
+launcher_icon_size = 34
+launcher_icon_theme = Adwaita
+launcher_icon_theme_override = 1
+launcher_tooltip = 1
+launcher_item_app = /usr/share/applications/rakazo-browser.desktop
+launcher_item_app = /usr/share/applications/rakazo-files.desktop
+launcher_item_app = /usr/share/applications/rakazo-terminal.desktop
+startup_notifications = 0
+
+taskbar_mode = single_desktop
+taskbar_padding = 6 0 4
+taskbar_background_id = 0
+taskbar_active_background_id = 0
+taskbar_name = 0
+taskbar_hide_inactive_tasks = 0
+taskbar_hide_different_monitor = 0
+taskbar_distribute_size = 0
+task_align = left
+
+task_maximum_size = 48 40
+task_padding = 7 3 4
+task_background_id = 0
+task_active_background_id = 2
+task_icon = 1
+task_text = 0
+task_centered = 1
+task_iconified_icon_asb = 70 -100 -15
+
+mouse_left = toggle_iconify
+mouse_middle = close
+mouse_right = none
+mouse_scroll_up = toggle
+mouse_scroll_down = iconify
+
+tooltip_show_timeout = 0.25
+tooltip_hide_timeout = 0.1
+tooltip_padding = 8 5
+tooltip_background_id = 2
+tooltip_font_color = #f0f0f2 100

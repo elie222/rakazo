@@ -1,4 +1,5 @@
 [begin] (Rakazo)
   [exec] (Browser) {rakazo-browser}
-  [exec] (Terminal) {xterm -bg #111113 -fg #E8E8EA -cr #E8E8EA -title Terminal}
+  [exec] (Files) {pcmanfm /home/rakazo}
+  [exec] (Terminal) {xterm -bg rgb:11/11/13 -fg rgb:e8/e8/ea -cr rgb:e8/e8/ea -title Terminal}
 [end]

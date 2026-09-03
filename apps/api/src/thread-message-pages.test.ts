@@ -1,8 +1,66 @@
+import type { ThreadMessage } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
-import { isPeerRun, loadAllMessages, loadMessagePage } from "./thread-message-pages.js";
+import {
+  decorateExternalMessagePage,
+  isPeerRun,
+  loadAllMessages,
+  loadMessagePage,
+} from "./thread-message-pages.js";
+
+function messageRow(input: {
+  id: string;
+  seq: number;
+  role: ThreadMessage["role"];
+  text: string;
+}): ThreadMessage {
+  return {
+    id: input.id,
+    threadId: "thread-1",
+    seq: input.seq,
+    role: input.role,
+    blocks: [{ kind: "text", text: input.text }],
+    createdAt: `2026-09-01T12:00:0${input.seq}.000Z`,
+  };
+}
 
 describe("thread message pages", () => {
+  it("projects raw external messages with their speaker and hides the internal run prompt", async () => {
+    const page = {
+      threadId: "thread-1",
+      messages: [
+        messageRow({ id: "message-visible", seq: 1, role: "user", text: "internal placeholder" }),
+        messageRow({ id: "message-prompt", seq: 2, role: "user", text: "agent prompt" }),
+        messageRow({ id: "message-reply", seq: 3, role: "bot", text: "I can help." }),
+      ],
+      olderCursor: null,
+    };
+    const prisma = {
+      externalMessage: {
+        findMany: vi.fn(async () => [
+          {
+            senderName: "Pat",
+            content: "The launch date moved.",
+            threadMessageId: "message-visible",
+            run: { sourceMessageId: "message-prompt" },
+          },
+        ]),
+      },
+    } as unknown as PrismaClient;
+
+    await expect(decorateExternalMessagePage(prisma, "external-1", page)).resolves.toEqual({
+      ...page,
+      messages: [
+        {
+          ...page.messages[0],
+          speakerName: "Pat",
+          blocks: [{ kind: "text", text: "The launch date moved." }],
+        },
+        page.messages[2],
+      ],
+    });
+  });
+
   it("caches peer-run classification for live events", async () => {
     const findUnique = vi.fn(async () => ({ trigger: "bot_message" }));
     const prisma = { run: { findUnique } } as unknown as PrismaClient;

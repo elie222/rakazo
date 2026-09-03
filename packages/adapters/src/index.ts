@@ -72,6 +72,7 @@ export * from "./scripted-voice.js";
 export * from "./secrets.js";
 export * from "./sendblue-emulator.js";
 export * from "./skill-tools.js";
+export * from "./slack-team-chat.js";
 export * from "./smtp-email.js";
 export { SupermemoryMemoryProvider } from "./supermemory-memory-provider.js";
 export * from "./teaching-session.js";

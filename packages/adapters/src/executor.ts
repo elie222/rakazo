@@ -57,6 +57,7 @@ import {
   resolveActionApprovalDetail,
   sandboxCommandTimeoutMs,
   type ToolCallStreak,
+  teamChatGatewayInstruction,
   toolRequiresApproval,
   toolRequiresExplicitApproval,
   userTurnBlocksForRun,
@@ -83,6 +84,11 @@ import {
   messageConnectedAgent,
   respondAgentConnection,
 } from "./agent-connections.js";
+import {
+  decryptAgentEnvironment,
+  formatAgentEnvironmentInstruction,
+  redactAgentCommandResult,
+} from "./agent-environment.js";
 import { buildApprovalAskBlock } from "./approval-ask.js";
 import {
   approvalPausedToolResult,
@@ -834,6 +840,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           configuredMemory,
           savedSkills,
           agentSkills,
+          agentSecretRows,
         ] = await Promise.all([
           deps.prisma.bot.findUniqueOrThrow({
             where: { id: run.botId },
@@ -871,7 +878,17 @@ export function createRunExecutor(deps: ExecutorDeps) {
             spaceId: run.spaceId,
             userId: run.userId,
           }),
+          deps.prisma.agentSecret.findMany({
+            where: { spaceId: run.spaceId },
+            select: {
+              name: true,
+              secret: { select: { id: true, ciphertext: true } },
+            },
+          }),
         ]);
+        const agentEnvironment = decryptAgentEnvironment(agentSecretRows, deps.secretStore);
+        runSecrets.push(...Object.values(agentEnvironment));
+        const agentEnvironmentInstruction = formatAgentEnvironmentInstruction(agentEnvironment);
         const hasModelOverride = Boolean(bot.modelProvider && bot.modelId);
         const overrideCredential =
           hasModelOverride && bot.modelProvider
@@ -1963,9 +1980,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 command,
               ],
               cwd,
+              agentEnvironment,
               context,
             );
-            return finish(result);
+            return finish(redactAgentCommandResult(result, runSecrets));
           }
           if (name === "open_path") {
             const requestedPath = String(args.path ?? "");
@@ -2779,11 +2797,13 @@ export function createRunExecutor(deps: ExecutorDeps) {
                   : undefined,
                 `${computerInstruction} Use web_search and web_fetch to look something up or read a page without a computer. Use remember for durable facts. Use scratchpad_add / scratchpad_update / scratchpad_complete for open work that should outlive this turn (not reminders — those are schedule_*). Use request_takeover when the user must provide protected input or human judgment. Use destination_write only for connected destination records.`,
                 workspaceInstruction,
+                agentEnvironmentInstruction,
                 "A bot and a subagent are different. Never use both for the same request.",
                 "create_space proposes a new privacy boundary inside the current organization. Use it when the user asks to create a space or separate data between teams or projects. It always pauses for explicit user approval; never claim the space exists before the tool succeeds.",
                 "spawn_bot creates a lasting regular bot (own chat, computer, memory) that appears in the user's bot list. If the user asked to create a bot, call spawn_bot once and stop. Do not run_subagent to demo it.",
                 "run_subagent is a short helper inside this turn only. It is not a bot, has no thread, and does not show in the list. Use it for parallel work you will summarize here.",
                 botDirectory,
+                thread.externalConversationId ? teamChatGatewayInstruction(bot.name) : undefined,
                 "archive_bot safely archives a bot this bot created, and only that bot. Use it when the user asks to remove that bot or when it is finished and unused. The user can restore it or permanently delete it later. confirm_name must exactly match its name.",
                 pluginLine,
                 agentSkillsLine,
@@ -3688,6 +3708,7 @@ async function runSandboxCommand(
   computer: ComputerRef,
   argv: string[],
   cwd: string | undefined,
+  env: Record<string, string>,
   context: {
     operationId: string;
     traceId: string;
@@ -3703,7 +3724,12 @@ async function runSandboxCommand(
   let code = 0;
   for await (const event of sandbox.execute(
     computer,
-    { argv, cwd, timeoutMs: sandboxCommandTimeoutMs() },
+    {
+      argv,
+      cwd,
+      env: Object.keys(env).length > 0 ? env : undefined,
+      timeoutMs: sandboxCommandTimeoutMs(),
+    },
     context,
   )) {
     if (event.type === "stdout") stdout += event.data;

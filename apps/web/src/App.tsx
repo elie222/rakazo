@@ -20,7 +20,9 @@ const PasswordResetPage = lazy(() =>
   import("./pages/Auth").then((module) => ({ default: module.PasswordResetPage })),
 );
 const OnboardingPage = lazy(() =>
-  import("./pages/Onboarding").then((module) => ({ default: module.OnboardingPage })),
+  import("./pages/Onboarding").then((module) => ({
+    default: module.OnboardingPage,
+  })),
 );
 const WelcomePage = lazy(() =>
   import("./pages/Welcome").then((module) => ({ default: module.WelcomePage })),
@@ -87,6 +89,10 @@ export function App() {
           <Route path="/app" element={user ? <ShellPage /> : <Navigate to="/sign-in" replace />} />
           <Route
             path="/app/g/:groupId"
+            element={user ? <ShellPage /> : <Navigate to="/sign-in" replace />}
+          />
+          <Route
+            path="/app/x/:externalConversationId"
             element={user ? <ShellPage /> : <Navigate to="/sign-in" replace />}
           />
           <Route

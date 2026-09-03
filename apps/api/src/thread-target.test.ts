@@ -5,11 +5,78 @@ import { describe, expect, it, vi } from "vitest";
 import {
   cancelSupersededQueuedRuns,
   reactToThreadMessage,
+  resolveThreadTarget,
   stopThreadRuns,
   type ThreadTarget,
   threadHead,
   threadSnapshot,
 } from "./thread-target.js";
+
+describe("external thread target", () => {
+  it("resolves only an external conversation owned by the actor", async () => {
+    const findFirst = vi.fn().mockResolvedValue({
+      id: "external-1",
+      botId: "bot-1",
+      provider: "slack",
+      displayName: "Morgan, Pat, Chief",
+      participantNames: ["Morgan", "Pat", "Chief"],
+      thread: { id: "thread-1" },
+    });
+    const prisma = {
+      externalConversation: { findFirst },
+    } as unknown as PrismaClient;
+    const actor = { spaceId: "space-1", userId: "user-1" } as Actor;
+
+    await expect(
+      resolveThreadTarget(prisma, actor, {
+        externalConversationId: "external-1",
+      }),
+    ).resolves.toEqual({
+      kind: "external",
+      externalConversationId: "external-1",
+      threadId: "thread-1",
+      botId: "bot-1",
+      provider: "slack",
+      displayName: "Morgan, Pat, Chief",
+      participantNames: ["Morgan", "Pat", "Chief"],
+    });
+    expect(findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          id: "external-1",
+          spaceId: "space-1",
+          userId: "user-1",
+          bot: { archivedAt: null },
+        },
+      }),
+    );
+  });
+
+  it("returns external identity with the shared transcript snapshot", async () => {
+    const snapshot = await threadSnapshot(
+      { prisma: groupPrisma(groupRunFindMany({})) },
+      {
+        kind: "external",
+        externalConversationId: "external-1",
+        threadId: "thread-1",
+        botId: "bot-1",
+        provider: "slack",
+        displayName: null,
+        participantNames: ["Morgan", "Pat", "Chief"],
+      },
+    );
+
+    expect(snapshot).toMatchObject({
+      externalConversationId: "external-1",
+      externalProvider: "slack",
+      externalDisplayName: null,
+      externalParticipantNames: ["Morgan", "Pat", "Chief"],
+      threadId: "thread-1",
+    });
+    expect(snapshot).not.toHaveProperty("botId");
+    expect(snapshot).not.toHaveProperty("groupId");
+  });
+});
 
 describe("threadHead", () => {
   it("returns the durable cursor without loading a snapshot", async () => {
@@ -67,7 +134,12 @@ describe("message thumbs-up", () => {
     let eventSeq = 0;
     const tx = {
       $queryRaw: vi.fn(async () => [
-        { id: "message-1", role: "bot", blocks: [{ kind: "text", text: "Done" }], thumbsUp },
+        {
+          id: "message-1",
+          role: "bot",
+          blocks: [{ kind: "text", text: "Done" }],
+          thumbsUp,
+        },
       ]),
       message: {
         update: vi.fn(async ({ data }: { data: { thumbsUp: boolean } }) => {
@@ -127,7 +199,10 @@ describe("message thumbs-up", () => {
     expect(String(tx.$queryRaw.mock.calls[1]?.[0])).toContain("FOR UPDATE");
     expect(tx.run.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ sourceMessageId: "message-1", trigger: "reaction" }),
+        data: expect.objectContaining({
+          sourceMessageId: "message-1",
+          trigger: "reaction",
+        }),
       }),
     );
     expect(tx.event.create).toHaveBeenCalledTimes(3);
@@ -196,7 +271,9 @@ describe("threadSnapshot", () => {
     expect(findManyEvents).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
-          type: { in: ["thread.progress", "thread.subagent", "agent.tool.called"] },
+          type: {
+            in: ["thread.progress", "thread.subagent", "agent.tool.called"],
+          },
         }),
       }),
     );
@@ -402,12 +479,18 @@ describe("threadSnapshot", () => {
         where: {
           threadId: "thread-1",
           trigger: { not: "bot_message" },
-          status: { in: ["queued", "leased", "running", "waiting_input", "waiting_takeover"] },
+          status: {
+            in: ["queued", "leased", "running", "waiting_input", "waiting_takeover"],
+          },
         },
       }),
     );
     expect(snapshot.run).toEqual(
-      expect.objectContaining({ id: "run-failed", status: "failed", error: "member exploded" }),
+      expect.objectContaining({
+        id: "run-failed",
+        status: "failed",
+        error: "member exploded",
+      }),
     );
     expect(snapshot.activeRuns).toEqual([]);
   });
@@ -453,7 +536,9 @@ describe("threadSnapshot", () => {
       expect.objectContaining({
         where: expect.objectContaining({
           trigger: { not: "bot_message" },
-          status: { in: ["queued", "leased", "running", "waiting_input", "waiting_takeover"] },
+          status: {
+            in: ["queued", "leased", "running", "waiting_input", "waiting_takeover"],
+          },
         }),
       }),
     );
@@ -497,7 +582,9 @@ describe("threadSnapshot", () => {
       createdAt: new Date("2026-08-23T00:00:02.000Z"),
     };
     const snapshot = await threadSnapshot(
-      { prisma: groupPrisma(groupRunFindMany({ terminals: [completed, failed] })) },
+      {
+        prisma: groupPrisma(groupRunFindMany({ terminals: [completed, failed] })),
+      },
       groupTarget(),
     );
 
@@ -535,7 +622,9 @@ describe("threadSnapshot", () => {
       createdAt: new Date("2026-08-23T00:00:03.000Z"),
     };
     const snapshot = await threadSnapshot(
-      { prisma: groupPrisma(groupRunFindMany({ terminals: [cancelled, failed] })) },
+      {
+        prisma: groupPrisma(groupRunFindMany({ terminals: [cancelled, failed] })),
+      },
       groupTarget(),
     );
 
@@ -572,7 +661,9 @@ describe("threadSnapshot", () => {
       createdAt: new Date("2026-08-23T00:00:02.000Z"),
     };
     const snapshot = await threadSnapshot(
-      { prisma: groupPrisma(groupRunFindMany({ terminals: [failed, completed] })) },
+      {
+        prisma: groupPrisma(groupRunFindMany({ terminals: [failed, completed] })),
+      },
       groupTarget(),
     );
 
@@ -639,12 +730,18 @@ describe("threadSnapshot", () => {
       createdAt: new Date("2026-08-23T00:00:01.000Z"),
     };
     const snapshot = await threadSnapshot(
-      { prisma: groupPrisma(groupRunFindMany({ active: [active], terminals: [failed] })) },
+      {
+        prisma: groupPrisma(groupRunFindMany({ active: [active], terminals: [failed] })),
+      },
       groupTarget(),
     );
 
     expect(snapshot.run).toEqual(
-      expect.objectContaining({ id: "run-failed", status: "failed", error: "member exploded" }),
+      expect.objectContaining({
+        id: "run-failed",
+        status: "failed",
+        error: "member exploded",
+      }),
     );
     expect(snapshot.activeRuns).toEqual([
       expect.objectContaining({ id: "run-active", status: "running" }),
@@ -688,7 +785,11 @@ describe("threadSnapshot", () => {
     );
 
     expect(snapshot.run).toEqual(
-      expect.objectContaining({ id: "run-failed", status: "failed", error: "member exploded" }),
+      expect.objectContaining({
+        id: "run-failed",
+        status: "failed",
+        error: "member exploded",
+      }),
     );
     expect(snapshot.activeRuns).toEqual([
       expect.objectContaining({ id: "run-late", status: "running" }),
@@ -849,7 +950,9 @@ describe("stopThreadRuns", () => {
       where: { runId: { in: ["run-a", "run-b"] } },
     });
     expect(prisma.computer.updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { executionRunId: { in: ["run-a", "run-b"] } } }),
+      expect.objectContaining({
+        where: { executionRunId: { in: ["run-a", "run-b"] } },
+      }),
     );
   });
 });

@@ -510,6 +510,42 @@ export interface MessagingSendResult {
   handle: string;
 }
 
+export interface MessagingGroup {
+  id: string;
+  name: string | null;
+  participants: string[];
+}
+
+/** Provider-neutral message received from a team chat system such as Slack or Teams. */
+export interface TeamChatInboundMessage {
+  eventId: string;
+  workspaceId: string;
+  kind: "direct" | "mention" | "ambient";
+  conversationType?: "im" | "channel" | "group" | "mpim";
+  /** Stable within the provider workspace and used to isolate agent history. */
+  conversationKey: string;
+  conversationId: string;
+  conversationName?: string;
+  /** Human-readable members supplied by the provider; never provider IDs. */
+  participantNames?: string[];
+  replyThreadId: string | null;
+  senderId: string;
+  senderName: string;
+  /** True when the provider identifies the sender as an automated app or bot. */
+  senderIsBot?: boolean;
+  content: string;
+}
+
+export interface TeamChatSendRequest {
+  conversationId: string;
+  replyThreadId: string | null;
+  content: string;
+}
+
+export interface TeamChatSendResult {
+  handle: string;
+}
+
 /** Provider-neutral inbound message after platform webhook parsing. */
 export interface MessagingInboundMessage {
   type: "message";

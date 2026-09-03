@@ -217,6 +217,10 @@ msgstr "添加 MCP 服务器"
 msgid "Add OpenAPI"
 msgstr "添加 OpenAPI"
 
+#: src/pages/AgentSecretsOverlay.tsx:115
+msgid "Add or replace"
+msgstr ""
+
 #: src/pages/PluginsOverlay.tsx:452
 msgid "Add remote MCP server"
 msgstr "添加远程 MCP 服务器"
@@ -544,7 +548,7 @@ msgstr "使用你自己的密钥。提供方可更换，Bot 的朗读和通话�
 msgid "Call"
 msgstr "通话"
 
-#: src/App.tsx:135
+#: src/App.tsx:141
 msgid "Can't reach the server."
 msgstr "无法连接服务器。"
 
@@ -585,6 +589,10 @@ msgstr "修改密码"
 #: src/pages/AccountSettingsOverlay.tsx:358
 msgid "Changing…"
 msgstr "正在修改…"
+
+#: src/pages/Shell.tsx:6181
+msgid "Channel rules"
+msgstr ""
 
 #: src/pages/MessagingSettingsOverlay.tsx:184
 msgid "Channels"
@@ -665,6 +673,7 @@ msgstr "清空对话"
 msgid "Clearing…"
 msgstr "正在清空…"
 
+#: src/pages/AgentSecretsOverlay.tsx:102
 #: src/pages/BotContextMenu.tsx:67
 #: src/pages/PeerMessagesOverlay.tsx:150
 #: src/pages/PeerMessagesOverlay.tsx:154
@@ -781,6 +790,10 @@ msgstr "电脑"
 #: src/components/ComputersUnavailableHint.tsx:7
 msgid "Computers are off. Set SANDBOX_PROVIDER=docker with SANDBOX_SUPERVISOR_TOKEN, or set SANDBOX_PROVIDER to e2b, daytona, or box with its API key. Recreate the stack after changing .env."
 msgstr "电脑未开启。请设置 SANDBOX_PROVIDER=docker 并提供 SANDBOX_SUPERVISOR_TOKEN，或将 SANDBOX_PROVIDER 设为 e2b、daytona 或 box 并提供对应 API 密钥。更改 .env 后请重建环境。"
+
+#: src/pages/AgentSecretsOverlay.tsx:172
+msgid "Configured"
+msgstr ""
 
 #: src/pages/ModelSettingsOverlay.tsx:333
 msgid "Configured by deployment"
@@ -985,6 +998,10 @@ msgstr "无法删除 MCP 服务器"
 msgid "Could not delete routine"
 msgstr "无法删除例行任务"
 
+#: src/pages/AgentSecretsOverlay.tsx:77
+msgid "Could not delete secret"
+msgstr ""
+
 #: src/pages/MemorySettingsOverlay.tsx:108
 msgid "Could not disconnect memory provider"
 msgstr "无法断开记忆提供方"
@@ -1021,6 +1038,10 @@ msgstr "无法加载 MCP 服务器"
 #: src/pages/ModelSettingsOverlay.tsx:107
 msgid "Could not load model settings"
 msgstr "无法加载模型设置"
+
+#: src/pages/AgentSecretsOverlay.tsx:26
+msgid "Could not load secrets"
+msgstr ""
 
 #: src/pages/PeerMessagesOverlay.tsx:164
 msgid "Could not load this chat."
@@ -1108,6 +1129,10 @@ msgstr "无法保存例行任务"
 #: src/components/ApprovalRulesSettings.tsx:78
 msgid "Could not save rule"
 msgstr "无法保存规则"
+
+#: src/pages/AgentSecretsOverlay.tsx:59
+msgid "Could not save secret"
+msgstr ""
 
 #: src/pages/HostComputerPrompt.tsx:39
 msgid "Could not save that choice"
@@ -1428,6 +1453,14 @@ msgstr "邮箱"
 msgid "Encrypted static credential saved"
 msgstr "已保存加密的静态凭据"
 
+#: src/pages/Shell.tsx:6186
+msgid "Engage when… Ignore…"
+msgstr ""
+
+#: src/pages/AgentSecretsOverlay.tsx:41
+msgid "Enter a secret value."
+msgstr ""
+
 #. placeholder {0}: oauth.verificationUri.replace(/^https:\/\//, "")
 #: src/pages/ModelSettingsOverlay.tsx:586
 #: src/pages/Onboarding.tsx:413
@@ -1743,6 +1776,10 @@ msgstr "Linear 工单"
 msgid "Link a chat app"
 msgstr "关联聊天应用"
 
+#: src/pages/Shell.tsx:6178
+msgid "Listen in Slack channels"
+msgstr ""
+
 #: src/pages/CallView.tsx:238
 msgid "Listening…"
 msgstr "正在听…"
@@ -1780,7 +1817,8 @@ msgstr "正在加载规则…"
 msgid "Loading voice providers…"
 msgstr "正在加载语音提供方…"
 
-#: src/App.tsx:53
+#: src/App.tsx:55
+#: src/pages/AgentSecretsOverlay.tsx:176
 #: src/pages/Onboarding.tsx:214
 #: src/pages/PeerMessagesOverlay.tsx:160
 #: src/pages/Shell.tsx:4001
@@ -1965,6 +2003,7 @@ msgid "Move to"
 msgstr "移动到"
 
 #: src/components/teach/SkillDraftCard.tsx:82
+#: src/pages/AgentSecretsOverlay.tsx:119
 #: src/pages/Auth.tsx:114
 #: src/pages/GroupPanel.tsx:110
 #: src/pages/GroupPanel.tsx:201
@@ -2104,6 +2143,10 @@ msgstr "无结果"
 msgid "No runs yet"
 msgstr "还没有运行记录"
 
+#: src/pages/AgentSecretsOverlay.tsx:180
+msgid "No secrets configured."
+msgstr ""
+
 #: src/pages/RoutineEditor.tsx:88
 msgid "No trigger"
 msgstr "无触发器"
@@ -2195,7 +2238,7 @@ msgstr "OpenAI 兼容服务器 URL"
 msgid "Opened its thread."
 msgstr "已打开其对话。"
 
-#: src/App.tsx:176
+#: src/App.tsx:182
 msgid "Opening your Space…"
 msgstr "正在打开工作区…"
 
@@ -2338,7 +2381,7 @@ msgstr "最近"
 msgid "Reconnect OAuth"
 msgstr "重新连接 OAuth"
 
-#: src/App.tsx:133
+#: src/App.tsx:139
 msgid "Reconnecting"
 msgstr "正在重新连接"
 
@@ -2496,7 +2539,7 @@ msgstr "恢复"
 msgid "Restore the last saved workspace. Unsaved work on the computer is lost."
 msgstr "还原上次保存的工作区。电脑上未保存的工作会丢失。"
 
-#: src/App.tsx:145
+#: src/App.tsx:151
 msgid "Retry now"
 msgstr "立即重试"
 
@@ -2559,7 +2602,12 @@ msgstr "正在运行…"
 msgid "Save"
 msgstr "保存"
 
+#: src/pages/AgentSecretsOverlay.tsx:159
+msgid "Save secret"
+msgstr ""
+
 #: src/components/teach/SkillDraftCard.tsx:162
+#: src/pages/AgentSecretsOverlay.tsx:161
 msgid "Saved"
 msgstr "已保存"
 
@@ -2577,6 +2625,7 @@ msgid "Saved. Rotate to reveal."
 msgstr "已保存。轮换后可查看。"
 
 #: src/components/teach/SkillDraftCard.tsx:162
+#: src/pages/AgentSecretsOverlay.tsx:159
 #: src/pages/GroupPanel.tsx:224
 #: src/pages/ModelSettingsOverlay.tsx:673
 #: src/pages/RoutineEditor.tsx:481
@@ -2707,6 +2756,11 @@ msgstr "显示密码"
 msgid "Show settings"
 msgstr "显示设置"
 
+#: src/pages/AgentSecretsOverlay.tsx:142
+#: src/pages/AgentSecretsOverlay.tsx:143
+msgid "Show value"
+msgstr ""
+
 #: src/lib/localized-provider-hint.ts:7
 #: src/pages/Auth.tsx:241
 #: src/pages/Auth.tsx:308
@@ -2748,6 +2802,11 @@ msgstr "跳过或使用部署密钥"
 #: src/pages/Shell.tsx:1891
 msgid "Skipped {0}"
 msgstr "已跳过 {0}"
+
+#: src/pages/Shell.tsx:2949
+#: src/pages/Shell.tsx:3218
+msgid "Slack conversation"
+msgstr ""
 
 #: src/pages/RoutineEditor.tsx:44
 msgid "Slack message"
@@ -3063,6 +3122,10 @@ msgstr "使用 {hostLabel}"
 msgid "Use a found model"
 msgstr "使用找到的模型"
 
+#: src/pages/AgentSecretsOverlay.tsx:36
+msgid "Use capital letters, numbers, and underscores; start with a letter or underscore."
+msgstr ""
+
 #: src/pages/ModelSettingsOverlay.tsx:706
 msgid "Use this model"
 msgstr "使用此模型"
@@ -3185,3 +3248,67 @@ msgstr "你的名字"
 #: src/pages/Welcome.tsx:21
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "你的一支随时在线的 Agent 团队<0/>可以交给它们真正的工作。"
+
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Always act"
+msgstr "Always act"
+
+#: src/pages/ExternalConversationSettings.tsx
+msgid "{0} default"
+msgstr "{0} default"
+
+#: src/pages/ExternalConversationSettings.tsx
+msgid "{0} will still respond to direct mentions."
+msgstr "{0} will still respond to direct mentions."
+
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Automated senders"
+msgstr "Automated senders"
+
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Automated senders will appear after they post here."
+msgstr "Automated senders will appear after they post here."
+
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Conversation settings"
+msgstr "Conversation settings"
+
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Default channel guidance"
+msgstr "Default channel guidance"
+
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Default Slack listening"
+msgstr "Default Slack listening"
+
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Group updates"
+msgstr "Group updates"
+
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Ignore"
+msgstr "Ignore"
+
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Listen"
+msgstr "Listen"
+
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Listening"
+msgstr "Listening"
+
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Mentions only"
+msgstr "Mentions only"
+
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Room guidance"
+msgstr "Room guidance"
+
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Treat like a person"
+msgstr "Treat like a person"
+
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Use default guidance"
+msgstr "Use default guidance"

@@ -1,6 +1,11 @@
 import { runContinueJob } from "@rakazo/adapter-kit";
 import { MessageBlock } from "@rakazo/contracts";
-import { botMessageHopExhausted, nextBotMessageHop, renderGroupMembersContext } from "@rakazo/core";
+import {
+  botMessageHopExhausted,
+  botMessageHopLimitError,
+  nextBotMessageHop,
+  renderGroupMembersContext,
+} from "@rakazo/core";
 import {
   appendEventInTransaction,
   createThreadMessageInTransaction,
@@ -111,10 +116,7 @@ export async function handoffToGroupBot(
     }
     const hop = nextBotMessageHop(sourceHandoff?.hop);
     if (botMessageHopExhausted(hop)) {
-      return {
-        error:
-          "group handoff limit reached for this chain; finish the current stage in the shared thread instead",
-      } as const;
+      return { error: botMessageHopLimitError() } as const;
     }
 
     const handoffBlock: MessageBlock = {

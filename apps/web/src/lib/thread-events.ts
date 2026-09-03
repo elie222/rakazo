@@ -29,6 +29,8 @@ const runTriggers = new Set<Run["trigger"]>([
   "bot_message",
   "webhook",
   "messaging",
+  "phone",
+  "external_message",
 ]);
 
 function runFromStartedEvent(event: ProductEvent, previous: Run | undefined): Run {
@@ -390,7 +392,11 @@ export function reduceThreadSnapshot(
         without.push(message);
       }
     }
-    return { ...prev, cursor: event.seq, messages: [...without, next, ...kept] };
+    return {
+      ...prev,
+      cursor: event.seq,
+      messages: [...without, next, ...kept],
+    };
   }
   if (event.type === "thread.message.reaction") {
     const messageId = String(event.payload.messageId ?? "");
@@ -405,6 +411,9 @@ export function reduceThreadSnapshot(
     };
   }
   if (event.type === "thread.message.created" || event.type === "thread.message.updated") {
+    if (event.payload.hiddenInTranscript === true) {
+      return { ...prev, cursor: event.seq };
+    }
     const role = (event.payload.role as ThreadMessage["role"]) ?? "bot";
     const blocks = (event.payload.blocks as ThreadMessage["blocks"]) ?? [];
     const next: ThreadMessage = {
@@ -413,6 +422,8 @@ export function reduceThreadSnapshot(
       seq: event.seq,
       role,
       blocks,
+      speakerName:
+        typeof event.payload.speakerName === "string" ? event.payload.speakerName : undefined,
       botId: event.botId,
       runId: event.runId,
       thumbsUp: event.payload.thumbsUp === true,
@@ -424,7 +435,11 @@ export function reduceThreadSnapshot(
     const liveId = progressMessageId(event);
     const { remaining } = takeLiveMessage(prev.messages, liveId);
     const without = remaining.filter((message) => !replacedSubagent(message, replacedSubagentIds));
-    return { ...prev, cursor: event.seq, messages: upsertMessageById(without, next) };
+    return {
+      ...prev,
+      cursor: event.seq,
+      messages: upsertMessageById(without, next),
+    };
   }
   return prev;
 }

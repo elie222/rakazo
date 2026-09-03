@@ -1,6 +1,5 @@
 session.menuFile: /tmp/fluxbox-home/.fluxbox/menu
-session.screen0.rootCommand: xsetroot -solid #111113
-session.screen0.toolbar.visible: true
+session.screen0.toolbar.visible: false
 session.screen0.toolbar.height: 28
 session.screen0.toolbar.placement: BottomCenter
 session.screen0.toolbar.widthPercent: 100

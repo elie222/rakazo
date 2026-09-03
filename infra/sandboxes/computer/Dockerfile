@@ -30,6 +30,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     procps \
     bash \
     chromium \
+    pcmanfm \
+    tint2 \
     fonts-liberation \
     fonts-dejavu-core \
     dbus-x11 \
@@ -50,15 +52,20 @@ COPY --chmod=755 start.sh /usr/local/bin/rakazo-computer
 COPY --chmod=755 control.py /usr/local/bin/rakazo-computer-control
 COPY --from=capture-builder /build/librakazo-xcapture.so /usr/local/lib/librakazo-xcapture.so
 COPY --chmod=755 rakazo-browser /usr/local/bin/rakazo-browser
+COPY --chmod=755 rakazo-desktop-panel /usr/local/bin/rakazo-desktop-panel
 COPY --chmod=644 rakazo-browser.desktop /usr/share/applications/rakazo-browser.desktop
+COPY --chmod=644 rakazo-files.desktop /usr/share/applications/rakazo-files.desktop
+COPY --chmod=644 rakazo-terminal.desktop /usr/share/applications/rakazo-terminal.desktop
 COPY --chmod=644 fluxbox.init /etc/rakazo/fluxbox/init
 COPY --chmod=644 fluxbox.apps /etc/rakazo/fluxbox/apps
 COPY --chmod=644 fluxbox.menu /etc/rakazo/fluxbox/menu
+COPY --chmod=644 tint2rc /etc/rakazo/tint2rc
 COPY --chmod=644 embed.html /usr/share/novnc/embed.html
 COPY --chmod=644 clipboard-bridge.js /usr/share/novnc/clipboard-bridge.js
 # Strip CR so shebangs work even if the build context came from a CRLF checkout.
 RUN ldconfig \
   && sed -i 's/\r$//' /usr/local/bin/rakazo-computer /usr/local/bin/rakazo-computer-control /usr/local/bin/rakazo-browser \
+    /usr/local/bin/rakazo-desktop-panel \
     /etc/rakazo/fluxbox/init /etc/rakazo/fluxbox/apps /etc/rakazo/fluxbox/menu
 EXPOSE 7070 6080 6081 6082 6083 6084 6085 6086 6087 6088 6089 6090 6091 6092 6093 6094 6095
 USER 1000:1000

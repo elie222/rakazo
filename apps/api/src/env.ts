@@ -1,4 +1,9 @@
-import { resolveDeploymentModel, resolveSandboxProvider } from "@rakazo/adapters";
+import {
+  resolveDeploymentModel,
+  resolveSandboxProvider,
+  type SlackTeamChatConfig,
+  slackTeamChatConfigFromEnv,
+} from "@rakazo/adapters";
 import {
   resolveAuthSecret,
   resolveEncryptionKey,
@@ -55,6 +60,10 @@ export interface AppEnv {
   telegramWebhookSecret: string | undefined;
   /** Unknown chat senders auto-provision their own accounts when true. */
   messagingOpenSignup: boolean;
+  slack: SlackTeamChatConfig | null;
+  slackBotId: string | undefined;
+  teamChatJudgeProvider: string | undefined;
+  teamChatJudgeModel: string | undefined;
   defaultProvider: string;
   defaultModel: string;
   wakeupDriver: string;
@@ -76,6 +85,13 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
   const deploymentModel = resolveDeploymentModel(source);
   const updaterUrl = optional(source.RAKAZO_UPDATER_URL);
   const updaterToken = optional(source.RAKAZO_UPDATER_TOKEN);
+  const teamChatJudgeProvider = optional(source.TEAM_CHAT_JUDGE_PROVIDER);
+  const teamChatJudgeModel = optional(source.TEAM_CHAT_JUDGE_MODEL);
+  if (Boolean(teamChatJudgeProvider) !== Boolean(teamChatJudgeModel)) {
+    throw new Error(
+      "TEAM_CHAT_JUDGE_PROVIDER and TEAM_CHAT_JUDGE_MODEL must be configured together",
+    );
+  }
   return {
     nodeEnv: source.NODE_ENV ?? "",
     databaseUrl: required(source, "DATABASE_URL"),
@@ -125,6 +141,10 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     telegramBotToken: optional(source.TELEGRAM_BOT_TOKEN),
     telegramWebhookSecret: optional(source.TELEGRAM_WEBHOOK_SECRET_TOKEN),
     messagingOpenSignup: source.MESSAGING_OPEN_SIGNUP === "true",
+    slack: slackTeamChatConfigFromEnv(source),
+    slackBotId: optional(source.SLACK_RAKAZO_BOT_ID),
+    teamChatJudgeProvider,
+    teamChatJudgeModel,
     defaultProvider: deploymentModel.provider,
     defaultModel: deploymentModel.model,
     wakeupDriver: source.WAKEUP_DRIVER ?? "graphile",

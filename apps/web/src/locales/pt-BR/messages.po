@@ -217,6 +217,10 @@ msgstr "Adicionar servidor MCP"
 msgid "Add OpenAPI"
 msgstr "Adicionar OpenAPI"
 
+#: src/pages/AgentSecretsOverlay.tsx:115
+msgid "Add or replace"
+msgstr ""
+
 #: src/pages/PluginsOverlay.tsx:452
 msgid "Add remote MCP server"
 msgstr "Adicionar servidor MCP remoto"
@@ -665,6 +669,7 @@ msgstr "Limpar conversa"
 msgid "Clearing…"
 msgstr "Limpeza"
 
+#: src/pages/AgentSecretsOverlay.tsx:102
 #: src/pages/BotContextMenu.tsx:67
 #: src/pages/PeerMessagesOverlay.tsx:150
 #: src/pages/PeerMessagesOverlay.tsx:154
@@ -781,6 +786,10 @@ msgstr "Computadores"
 #: src/components/ComputersUnavailableHint.tsx:7
 msgid "Computers are off. Set SANDBOX_PROVIDER=docker with SANDBOX_SUPERVISOR_TOKEN, or set SANDBOX_PROVIDER to e2b, daytona, or box with its API key. Recreate the stack after changing .env."
 msgstr "Computadores estão desligados. Defina SANDBOX_PROVIDER=docker com SANDBOX_SUPERVISOR_TOKEN, ou SANDBOX_PROVIDER como e2b, daytona ou box com a chave de API. Recrie o stack após alterar o .env."
+
+#: src/pages/AgentSecretsOverlay.tsx:172
+msgid "Configured"
+msgstr ""
 
 #: src/pages/ModelSettingsOverlay.tsx:333
 msgid "Configured by deployment"
@@ -985,6 +994,10 @@ msgstr "Não foi possível excluir o servidor MCP"
 msgid "Could not delete routine"
 msgstr "Não foi possível excluir a rotina"
 
+#: src/pages/AgentSecretsOverlay.tsx:77
+msgid "Could not delete secret"
+msgstr ""
+
 #: src/pages/MemorySettingsOverlay.tsx:108
 msgid "Could not disconnect memory provider"
 msgstr "Não foi possível desconectar o provedor de memória"
@@ -1021,6 +1034,10 @@ msgstr "Não foi possível carregar os servidores MCP"
 #: src/pages/ModelSettingsOverlay.tsx:107
 msgid "Could not load model settings"
 msgstr "Não foi possível carregar as configurações do modelo"
+
+#: src/pages/AgentSecretsOverlay.tsx:26
+msgid "Could not load secrets"
+msgstr ""
 
 #: src/pages/PeerMessagesOverlay.tsx:164
 msgid "Could not load this chat."
@@ -1108,6 +1125,10 @@ msgstr "Não foi possível salvar a rotina"
 #: src/components/ApprovalRulesSettings.tsx:78
 msgid "Could not save rule"
 msgstr "Não foi possível salvar"
+
+#: src/pages/AgentSecretsOverlay.tsx:59
+msgid "Could not save secret"
+msgstr ""
 
 #: src/pages/HostComputerPrompt.tsx:39
 msgid "Could not save that choice"
@@ -1428,6 +1449,14 @@ msgstr "E-mail"
 msgid "Encrypted static credential saved"
 msgstr "Credencial estática criptografada salva"
 
+#: src/pages/Shell.tsx:6186
+msgid "Engage when… Ignore…"
+msgstr ""
+
+#: src/pages/AgentSecretsOverlay.tsx:41
+msgid "Enter a secret value."
+msgstr ""
+
 #. placeholder {0}: oauth.verificationUri.replace(/^https:\/\//, "")
 #: src/pages/ModelSettingsOverlay.tsx:586
 #: src/pages/Onboarding.tsx:413
@@ -1741,6 +1770,10 @@ msgstr ""
 
 #: src/pages/MessagingSettingsOverlay.tsx:169
 msgid "Link a chat app"
+msgstr ""
+
+#: src/pages/Shell.tsx:6178
+msgid "Listen in Slack channels"
 msgstr ""
 
 #: src/pages/CallView.tsx:238
@@ -2102,6 +2135,10 @@ msgstr "Nenhum resultado"
 
 #: src/pages/RoutineEditor.tsx:493
 msgid "No runs yet"
+msgstr ""
+
+#: src/pages/AgentSecretsOverlay.tsx:180
+msgid "No secrets configured."
 msgstr ""
 
 #: src/pages/RoutineEditor.tsx:88
@@ -2559,7 +2596,12 @@ msgstr "Executando..."
 msgid "Save"
 msgstr "Salvar"
 
+#: src/pages/AgentSecretsOverlay.tsx:159
+msgid "Save secret"
+msgstr ""
+
 #: src/components/teach/SkillDraftCard.tsx:162
+#: src/pages/AgentSecretsOverlay.tsx:161
 msgid "Saved"
 msgstr "Salva"
 
@@ -2577,6 +2619,7 @@ msgid "Saved. Rotate to reveal."
 msgstr ""
 
 #: src/components/teach/SkillDraftCard.tsx:162
+#: src/pages/AgentSecretsOverlay.tsx:159
 #: src/pages/GroupPanel.tsx:224
 #: src/pages/ModelSettingsOverlay.tsx:673
 #: src/pages/RoutineEditor.tsx:481
@@ -2707,6 +2750,11 @@ msgstr ""
 msgid "Show settings"
 msgstr "Mostrar configurações"
 
+#: src/pages/AgentSecretsOverlay.tsx:142
+#: src/pages/AgentSecretsOverlay.tsx:143
+msgid "Show value"
+msgstr ""
+
 #: src/lib/localized-provider-hint.ts:7
 #: src/pages/Auth.tsx:241
 #: src/pages/Auth.tsx:308
@@ -2748,6 +2796,11 @@ msgstr "Ignorar ou implantar chave"
 #: src/pages/Shell.tsx:1891
 msgid "Skipped {0}"
 msgstr "{0} ignorado"
+
+#: src/pages/Shell.tsx:2949
+#: src/pages/Shell.tsx:3218
+msgid "Slack conversation"
+msgstr ""
 
 #: src/pages/RoutineEditor.tsx:44
 msgid "Slack message"
@@ -3063,6 +3116,10 @@ msgstr "Usar {hostLabel}"
 msgid "Use a found model"
 msgstr "Usar um modelo encontrado"
 
+#: src/pages/AgentSecretsOverlay.tsx:36
+msgid "Use capital letters, numbers, and underscores; start with a letter or underscore."
+msgstr ""
+
 #: src/pages/ModelSettingsOverlay.tsx:706
 msgid "Use this model"
 msgstr "Use este modelo"
@@ -3185,3 +3242,67 @@ msgstr "O seu nome"
 #: src/pages/Welcome.tsx:21
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "Sua equipe de agentes sempre ativos<0/>, a quem você pode dar trabalho de verdade."
+
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Always act"
+msgstr "Always act"
+
+#: src/pages/ExternalConversationSettings.tsx
+msgid "{0} default"
+msgstr "{0} default"
+
+#: src/pages/ExternalConversationSettings.tsx
+msgid "{0} will still respond to direct mentions."
+msgstr "{0} will still respond to direct mentions."
+
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Automated senders"
+msgstr "Automated senders"
+
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Automated senders will appear after they post here."
+msgstr "Automated senders will appear after they post here."
+
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Conversation settings"
+msgstr "Conversation settings"
+
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Default channel guidance"
+msgstr "Default channel guidance"
+
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Default Slack listening"
+msgstr "Default Slack listening"
+
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Group updates"
+msgstr "Group updates"
+
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Ignore"
+msgstr "Ignore"
+
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Listen"
+msgstr "Listen"
+
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Listening"
+msgstr "Listening"
+
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Mentions only"
+msgstr "Mentions only"
+
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Room guidance"
+msgstr "Room guidance"
+
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Treat like a person"
+msgstr "Treat like a person"
+
+#: src/pages/ExternalConversationSettings.tsx
+msgid "Use default guidance"
+msgstr "Use default guidance"

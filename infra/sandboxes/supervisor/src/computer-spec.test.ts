@@ -118,18 +118,30 @@ describe("graphical computer spec", () => {
     expect(legacyNetworkOwnedSolelyBy("ab", [undefined, undefined])).toBe(false);
   });
 
-  it("ships a browser desktop, not a fullscreen terminal", () => {
+  it("ships a browser desktop with one-click app launchers", () => {
     const root = path.resolve(import.meta.dirname, "../../computer");
     const dockerfile = readFileSync(path.join(root, "Dockerfile"), "utf8");
     const start = readFileSync(path.join(root, "start.sh"), "utf8");
     const browser = readFileSync(path.join(root, "rakazo-browser"), "utf8");
     const desktop = readFileSync(path.join(root, "rakazo-browser.desktop"), "utf8");
+    const terminalDesktop = readFileSync(path.join(root, "rakazo-terminal.desktop"), "utf8");
+    const filesDesktop = readFileSync(path.join(root, "rakazo-files.desktop"), "utf8");
+    const panelLauncher = readFileSync(path.join(root, "rakazo-desktop-panel"), "utf8");
+    const fluxbox = readFileSync(path.join(root, "fluxbox.init"), "utf8");
+    const panel = readFileSync(path.join(root, "tint2rc"), "utf8");
+    const menu = readFileSync(path.join(root, "fluxbox.menu"), "utf8");
     expect(dockerfile).toMatch(/chromium/);
+    expect(dockerfile).toMatch(/pcmanfm/);
+    expect(dockerfile).toMatch(/tint2/);
     expect(dockerfile).toMatch(/rakazo-browser\.desktop/);
+    expect(dockerfile).toMatch(/rakazo-terminal\.desktop/);
+    expect(dockerfile).toMatch(/rakazo-files\.desktop/);
+    expect(dockerfile).toMatch(/tint2rc/);
     expect(dockerfile).toMatch(/control.py/);
     expect(dockerfile).toMatch(/USER 1000:1000/);
     expect(start).toMatch(/rakazo-computer-control/);
     expect(start).toMatch(/rakazo-browser/);
+    expect(dockerfile).toMatch(/rakazo-desktop-panel/);
     expect(start).toMatch(/SingletonLock/);
     expect(start).toMatch(/xdg-mime default rakazo-browser\.desktop/);
     expect(start).toMatch(/register_browser_handler x-scheme-handler\/http/);
@@ -138,6 +150,7 @@ describe("graphical computer spec", () => {
     expect(start).toMatch(/xdg-mime query default/);
     expect(start).toMatch(/failed to register rakazo-browser/);
     expect(start).toMatch(/failed to set default web browser/);
+    expect(start).toMatch(/-z "\$\{BROWSER:-\}"/);
     expect(start).toMatch(/xdg-settings set default-web-browser rakazo-browser\.desktop/);
     expect(start).not.toMatch(/xdg-mime default rakazo-browser\.desktop .*\|\| true/);
     expect(start).toMatch(/x11vnc .* -viewonly /);
@@ -145,8 +158,19 @@ describe("graphical computer spec", () => {
     expect(browser).toMatch(/chromium-screen-\$\{DISPLAY/);
     expect(browser).toMatch(/USER_DATA_DIR_SET/);
     expect(desktop).toMatch(/Exec=\/usr\/local\/bin\/rakazo-browser %U/);
+    expect(desktop).toMatch(/Icon=\/usr\/share\/icons\/hicolor\/128x128\/apps\/chromium\.png/);
     expect(desktop).toMatch(/x-scheme-handler\/http/);
     expect(desktop).toMatch(/x-scheme-handler\/https/);
+    expect(terminalDesktop).toMatch(/Exec=xterm .*rgb:11\/11\/13/);
+    expect(filesDesktop).toMatch(/Exec=pcmanfm/);
+    expect(panelLauncher).toMatch(/tint2 -c \/etc\/rakazo\/tint2rc/);
+    expect(start).toMatch(/rakazo-desktop-panel/);
+    expect(fluxbox).not.toMatch(/rootCommand/);
+    expect(panel).toMatch(/panel_items = LT/);
+    expect(panel).toMatch(/rakazo-browser\.desktop/);
+    expect(panel).toMatch(/rakazo-files\.desktop/);
+    expect(panel).toMatch(/rakazo-terminal\.desktop/);
+    expect(menu).not.toMatch(/xterm -bg #/);
     expect(start).not.toMatch(/windowsize 1280 800/);
   });
 
@@ -407,9 +431,11 @@ describe("graphical computer spec", () => {
           "assert allow(['env', 'DISPLAY=:1', 'rakazo-browser'], ':1')",
           "assert allow(['env', 'DISPLAY=:2', 'rakazo-browser', 'https://example.com'], ':2')",
           "assert allow(['env', 'DISPLAY=:1', 'xterm'], ':1')",
+          "assert allow(['env', 'DISPLAY=:1', 'pcmanfm'], ':1')",
           "assert long_lived(['env', 'DISPLAY=:1', 'rakazo-browser'])",
           "assert long_lived(['env', 'DISPLAY=:1', 'rakazo-browser', 'https://example.com'])",
           "assert long_lived(['env', 'DISPLAY=:1', 'xterm'])",
+          "assert long_lived(['env', 'DISPLAY=:1', 'pcmanfm'])",
           "assert long_lived(['env', 'DISPLAY=:1', 'xdg-open', 'https://example.com'])",
           "assert not long_lived(['env', 'DISPLAY=:1', 'xdotool', 'key', '--clearmodifiers', 'a'])",
           "assert not allow(['env', 'DISPLAY=:1', 'chromium', 'https://example.com'], ':1')",

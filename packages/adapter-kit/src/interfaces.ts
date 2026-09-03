@@ -47,6 +47,9 @@ import type {
   SemanticMemorySaveRequest,
   SnapshotRef,
   SpeechClip,
+  TeamChatInboundMessage,
+  TeamChatSendRequest,
+  TeamChatSendResult,
   TransactionalEmail,
   VoiceCapabilities,
   VoiceInfo,
@@ -323,6 +326,14 @@ export interface MessagingSurface {
    * message delivery, and silently no-ops on platforms without support.
    */
   sendTyping(threadId: string, context: AdapterContext): Promise<void>;
+}
+
+/** Optional team-chat boundary. Vendor SDKs and payloads stay behind this interface. */
+export interface TeamChatProvider {
+  readonly id: string;
+  start(handle: (message: TeamChatInboundMessage) => Promise<void>): Promise<void>;
+  stop(): Promise<void>;
+  send(request: TeamChatSendRequest): Promise<TeamChatSendResult>;
 }
 
 /**
