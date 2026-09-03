@@ -5,8 +5,8 @@ root="$(cd "$(dirname "$0")" && pwd)"
 shopt -s nullglob
 scripts=("$root"/*.smoke.sh)
 if ((${#scripts[@]} == 0)); then
-  echo "No compose installer smoke scripts found."
-  exit 0
+  echo "No compose installer smoke scripts found." >&2
+  exit 1
 fi
 for script in "${scripts[@]}"; do
   echo "==> ${script}"
