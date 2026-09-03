@@ -11,11 +11,13 @@ docs as recommended endpoints.
 
 ## Reality check
 
-Rakazo is not a fully air-gapped appliance. Published-images install can be
-made to **bootstrap and start** with zero public GitHub/GHCR/Hub reachability
-*if* you pre-place files and images. Day-2 product use (models, optional
-catalogs, remote sandboxes, email, ACME) usually still needs outbound HTTPS
-unless you deliberately disable those features.
+Rakazo is not a fully air-gapped appliance. On supported image architectures
+(default `edge` tags are linux/amd64 only; arm64 needs a multi-arch release
+tag or matching pre-staged images), published-images install can be made to
+**bootstrap and start** with zero public GitHub/GHCR/Hub reachability *if* you
+pre-place files and images. Day-2 product use (models, optional catalogs,
+remote sandboxes, email, ACME) usually still needs outbound HTTPS unless you
+deliberately disable those features.
 
 Treat “offline install” and “offline operation” as separate goals.
 
@@ -42,8 +44,12 @@ bash install-images.sh --local --prepare-only
 With images already loaded (or pointed at an internal registry you can reach),
 start Compose yourself instead of re-running the installer. Compose defaults
 Postgres to a digest pin; if you loaded a digest-less tag (for example
-`postgres:16`), set `POSTGRES_IMAGE` (and `BUSYBOX_IMAGE` / `RAKAZO_*` as
-needed) in `.env` to those exact local refs so `up` does not try to pull.
+`postgres:16`), set `POSTGRES_IMAGE=postgres:16` (and `BUSYBOX_IMAGE` as
+needed). App/computer refs are split: set repository and tag separately
+(`RAKAZO_IMAGE` + `RAKAZO_IMAGE_TAG`, `RAKAZO_COMPUTER_IMAGE` +
+`RAKAZO_COMPUTER_IMAGE_TAG`). Do not put `repo:tag` into the repository
+variable; Compose appends `:${RAKAZO_IMAGE_TAG}` and a combined value becomes
+`repo:tag:tag`.
 
 ```bash
 docker compose --env-file .env -f docker-compose.images.yml up -d --pull never
@@ -59,8 +65,9 @@ slashes are trimmed.
 Safe to vend into the air-gap **before** cutover:
 
 1. `install-images.sh`, `docker-compose.images.yml`, `.env.images.example`
-2. OCI images for app, computer, Postgres, busybox (and prod: Caddy / updater
-   if you use that path): `docker load` or a private registry
+2. OCI images for app, computer, Postgres, busybox: `docker load` or a private
+   registry (this checklist is the published-images Compose path; production
+   Compose with Caddy/updater is a separate staging set)
 3. Operator-written `.env` with locally generated secrets (`openssl`)
 4. Optional: host TLS certs / Caddyfile if you terminate TLS yourself (skip
    public ACME)
@@ -91,10 +98,11 @@ containers may themselves lack egress; that is a separate network policy.
 1. On a connected machine: save installer + Compose + env example; `docker pull`
    (or build) the four image refs you will pin; `docker save` → tape/USB.
 2. On the air-gapped host: `docker load`; place Compose files; set
-   `RAKAZO_*_IMAGE*` / `POSTGRES_IMAGE` / `BUSYBOX_IMAGE` to the exact local
-   tags you loaded (digest-less Hub tags if that is what you saved) or to an
-   internal registry; `bash install-images.sh --local --prepare-only`; fill
-   secrets; then
+   `RAKAZO_IMAGE` / `RAKAZO_IMAGE_TAG` and `RAKAZO_COMPUTER_IMAGE` /
+   `RAKAZO_COMPUTER_IMAGE_TAG` to the repository and tag you loaded (separate
+   vars), plus `POSTGRES_IMAGE` / `BUSYBOX_IMAGE` to full digest-less refs if
+   that is what you saved (or point all of them at an internal registry);
+   `bash install-images.sh --local --prepare-only`; fill secrets; then
    `docker compose --env-file .env -f docker-compose.images.yml up -d --pull never`
    (add `--wait --wait-timeout 300` when Compose supports it). Do not re-run
    the installer for bring-up; it always runs `docker compose pull`.
