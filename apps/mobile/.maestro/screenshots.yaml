@@ -9,15 +9,12 @@ tags:
       notifications: deny
 
 - extendedWaitUntil:
-    visible: "Sign in to Rakazo"
+    visible: "Sign up for Rakazo"
     timeout: 30000
-- takeScreenshot: "screenshots/01-sign-in"
-
-- tapOn: "Sign up"
-- assertVisible: "Sign up for Rakazo"
 - takeScreenshot: "screenshots/02-sign-up"
 - tapOn: "Sign in"
 - assertVisible: "Sign in to Rakazo"
+- takeScreenshot: "screenshots/01-sign-in"
 
 - tapOn: "Use a custom server"
 - assertVisible: "Server"
