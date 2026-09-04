@@ -1277,6 +1277,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         // still knows progress was already published (skip hollow finals; status outcome).
         let publishedMidTurnUserMessage = false;
         const midTurnUserTexts: string[] = [];
+        const midTurnRawTexts: string[] = [];
         let midTurnProgressCount = 0;
         {
           const priorProgress = await deps.prisma.message.findMany({
@@ -1296,6 +1297,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               .trim();
             if (!text) continue;
             midTurnUserTexts.push(text);
+            midTurnRawTexts.push(text);
             publishedMidTurnUserMessage = true;
             midTurnProgressCount += 1;
           }
@@ -1347,7 +1349,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
         };
         const publishMidTurnNarration = async () => {
           const extracted = extractNarrationText(messageSegments, currentTextSegment);
-          const narration = clampUserProgressMessage(redactSecrets(extracted.text, runSecrets));
+          const rawNarration = redactSecrets(extracted.text, runSecrets).trim();
+          const narration = clampUserProgressMessage(rawNarration);
           messageSegments = extracted.remaining;
           currentTextSegment = "";
           if (!narration) return;
@@ -1363,6 +1366,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             userProgressClientNonce(run.id, midTurnProgressCount++),
           );
           midTurnUserTexts.push(narration);
+          midTurnRawTexts.push(rawNarration || narration);
           publishedMidTurnUserMessage = true;
         };
         const formatObservation = (
@@ -2692,9 +2696,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
             return spawned;
           }
           if (name === "message_user") {
-            const text = clampUserProgressMessage(
-              redactSecrets(String(args.message ?? ""), runSecrets),
-            );
+            const rawText = redactSecrets(String(args.message ?? ""), runSecrets);
+            const text = clampUserProgressMessage(rawText);
             if (!text) return finish({ error: "message is required" });
             await flushProgress();
             await publishMidTurnNarration();
@@ -2707,6 +2710,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               userProgressClientNonce(run.id, midTurnProgressCount++),
             );
             midTurnUserTexts.push(text);
+            midTurnRawTexts.push(rawText || text);
             publishedMidTurnUserMessage = true;
             return finish({ ok: true });
           }
@@ -3141,7 +3145,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
               // does not treat pre-takeover text as the delegated final result.
               await publishMidTurnNarration();
               if (assembled.trim()) {
-                const narration = clampUserProgressMessage(redactSecrets(assembled, runSecrets));
+                const rawNarration = redactSecrets(assembled, runSecrets).trim();
+                const narration = clampUserProgressMessage(rawNarration);
                 if (narration) {
                   await publishMessage(
                     deps,
@@ -3152,6 +3157,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                     userProgressClientNonce(run.id, midTurnProgressCount++),
                   );
                   midTurnUserTexts.push(narration);
+                  midTurnRawTexts.push(rawNarration || narration);
                   publishedMidTurnUserMessage = true;
                 }
                 assembled = "";
@@ -3316,12 +3322,12 @@ export function createRunExecutor(deps: ExecutorDeps) {
               });
             } else if (event.type === "done") {
               if (!assembled && event.text) {
-                if (publishedMidTurnUserMessage && midTurnUserTexts.length > 0) {
+                if (publishedMidTurnUserMessage && midTurnRawTexts.length > 0) {
                   // done.text is often the full cumulative assistant stream, including
-                  // narration already published as mid-turn progress. Strip those beats
-                  // so we do not republish them as a final result.
+                  // narration already published as mid-turn progress. Strip using the
+                  // unclamped originals so a 500-char clamp ellipsis still matches.
                   let remainder = event.text;
-                  for (const part of midTurnUserTexts) {
+                  for (const part of midTurnRawTexts) {
                     const index = remainder.indexOf(part);
                     if (index >= 0) {
                       remainder = `${remainder.slice(0, index)}${remainder.slice(index + part.length)}`;
