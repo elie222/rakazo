@@ -92,7 +92,7 @@ describe("web SSRF policy", () => {
     expect(result.body).toContain("hello");
   });
 
-  it("drops sensitive custom headers on cross-origin redirects", async () => {
+  it("drops caller-provided headers on cross-origin redirects", async () => {
     let finalHeaders = new Headers();
     const fetchMock: typeof fetch = async (input, init) => {
       const url = new URL(String(input));
@@ -118,7 +118,7 @@ describe("web SSRF policy", () => {
 
     expect(finalHeaders.get("authorization")).toBeNull();
     expect(finalHeaders.get("x-api-key")).toBeNull();
-    expect(finalHeaders.get("x-trace-id")).toBe("trace-1");
+    expect(finalHeaders.get("x-trace-id")).toBeNull();
   });
 
   it("rejects oversized Content-Length before reading", async () => {
