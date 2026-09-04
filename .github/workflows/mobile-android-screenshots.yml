@@ -76,11 +76,17 @@ jobs:
           set -euo pipefail
           maestro_tmp=$(mktemp -d)
           trap 'rm -rf "$maestro_tmp"' EXIT
+          base_url=https://github.com/mobile-dev-inc/maestro/releases/download/cli-2.6.1
           curl --fail --silent --show-error --location \
-            https://github.com/mobile-dev-inc/maestro/releases/download/cli-2.6.1/maestro.zip \
+            "$base_url/maestro.zip" \
             --output "$maestro_tmp/maestro.zip"
-          echo "3440825f514f537c6a96bcf5de995780c2a4a7f83a43208fdc95d4f1fecfad3b  $maestro_tmp/maestro.zip" |
-            sha256sum --check
+          curl --fail --silent --show-error --location \
+            "$base_url/checksums_sha256.txt" \
+            --output "$maestro_tmp/checksums_sha256.txt"
+          # Pin the expected digest in-repo so a swapped checksums file alone cannot pass.
+          echo "3440825f514f537c6a96bcf5de995780c2a4a7f83a43208fdc95d4f1fecfad3b  maestro.zip" |
+            (cd "$maestro_tmp" && sha256sum --check --strict -)
+          (cd "$maestro_tmp" && sha256sum --check --strict checksums_sha256.txt)
           unzip -q "$maestro_tmp/maestro.zip" -d "$maestro_tmp"
           mkdir -p "$HOME/.maestro"
           cp -R "$maestro_tmp/maestro/." "$HOME/.maestro/"
