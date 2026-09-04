@@ -75,7 +75,7 @@ import {
 import { mobileTokens } from "../lib/appearance";
 import { type MobileArtifactTarget, openMobileArtifact } from "../lib/artifact-open";
 import { confirmDeleteBot } from "../lib/bot-lifecycle";
-import { cancelFocusPrompt } from "../lib/focus-prompt";
+import { cancelFocusPrompt, focusPromptThreadActive } from "../lib/focus-prompt";
 import { t, useI18n } from "../lib/i18n";
 import { saveLastBotId } from "../lib/last-bot";
 import {
@@ -703,7 +703,10 @@ function Thread() {
   // Covers returning from a pushed screen; the AppState listener covers returning from background.
   useFocusEffect(
     useCallback(() => {
-      if (botId) void saveLastBotId(botId).catch(() => undefined);
+      if (botId) {
+        focusPromptThreadActive(botId);
+        void saveLastBotId(botId).catch(() => undefined);
+      }
       if (AppState.currentState === "active" && notificationThreadId) {
         void setOpenNotificationThread({
           botId,
