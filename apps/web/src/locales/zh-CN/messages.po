@@ -108,7 +108,11 @@ msgstr "{size} B"
 msgid "{title}, {label}"
 msgstr "{title}，{label}"
 
-#: src/pages/Shell.tsx:3996
+#: src/pages/PluginsOverlay.tsx:563
+msgid "{toolCount} tools"
+msgstr ""
+
+#: src/pages/Shell.tsx:3950
 msgid "{workingBotName} is working"
 msgstr "{workingBotName} 正在工作"
 
@@ -129,8 +133,12 @@ msgstr "账户"
 msgid "Account default"
 msgstr "账户默认"
 
-#: src/pages/PluginsOverlay.tsx:345
+#: src/pages/PluginsOverlay.tsx:515
 msgid "Account label"
+msgstr ""
+
+#: src/pages/PluginsOverlay.tsx:507
+msgid "Accounts"
 msgstr ""
 
 #: src/components/ApprovalRulesSettings.tsx:112
@@ -159,7 +167,7 @@ msgstr "当前语音"
 msgid "Activity"
 msgstr "动态"
 
-#: src/pages/PluginsOverlay.tsx:335
+#: src/pages/PluginsOverlay.tsx:401
 #: src/pages/ScratchpadSection.tsx:196
 msgid "Add"
 msgstr "添加"
@@ -192,7 +200,7 @@ msgstr "请填写 stdio 命令。"
 msgid "Add an HTTPS server URL."
 msgstr "请填写 HTTPS 服务器 URL。"
 
-#: src/pages/PluginsOverlay.tsx:313
+#: src/pages/PluginsOverlay.tsx:547
 msgid "Add another"
 msgstr ""
 
@@ -200,15 +208,15 @@ msgstr ""
 msgid "Add item"
 msgstr "添加项目"
 
-#: src/pages/PluginsOverlay.tsx:568
+#: src/pages/PluginsOverlay.tsx:770
 msgid "Add MCP server"
 msgstr "添加 MCP 服务器"
 
-#: src/pages/PluginsOverlay.tsx:577
+#: src/pages/PluginsOverlay.tsx:779
 msgid "Add OpenAPI"
 msgstr "添加 OpenAPI"
 
-#: src/pages/PluginsOverlay.tsx:599
+#: src/pages/PluginsOverlay.tsx:801
 msgid "Add remote MCP server"
 msgstr "添加远程 MCP 服务器"
 
@@ -225,7 +233,7 @@ msgstr "点赞"
 msgid "Add to routine"
 msgstr "加入例行任务"
 
-#: src/pages/PluginsOverlay.tsx:586
+#: src/pages/PluginsOverlay.tsx:788
 msgid "Add Treg"
 msgstr "添加 Treg"
 
@@ -233,15 +241,20 @@ msgstr "添加 Treg"
 msgid "Add trigger"
 msgstr "添加触发器"
 
+#: src/pages/PluginsOverlay.tsx:385
+msgid "Added"
+msgstr ""
+
 #: src/pages/McpServersOverlay.tsx:415
-#: src/pages/PluginsOverlay.tsx:313
-#: src/pages/PluginsOverlay.tsx:335
+#: src/pages/PluginsOverlay.tsx:385
+#: src/pages/PluginsOverlay.tsx:401
+#: src/pages/PluginsOverlay.tsx:547
 msgid "Adding…"
 msgstr "正在添加…"
 
 #: src/pages/AccountSettingsOverlay.tsx:241
 #: src/pages/McpServersOverlay.tsx:342
-#: src/pages/PluginsOverlay.tsx:540
+#: src/pages/PluginsOverlay.tsx:742
 #: src/pages/RoutineSchedule.tsx:43
 #: src/pages/shell/bot-panel.tsx:321
 msgid "Advanced"
@@ -339,7 +352,7 @@ msgstr "API 已恢复，但更新未完成。请查看宿主日志。"
 msgid "API key"
 msgstr "API 密钥"
 
-#: src/pages/PluginsOverlay.tsx:635
+#: src/pages/PluginsOverlay.tsx:837
 msgid "API key header"
 msgstr "API 密钥请求头"
 
@@ -454,6 +467,7 @@ msgstr "保存例行任务后可用"
 msgid "Avatars"
 msgstr "头像"
 
+#: src/pages/PluginsOverlay.tsx:472
 #: src/pages/RoutineEditor.tsx:231
 msgid "Back"
 msgstr "返回"
@@ -468,7 +482,7 @@ msgstr "返回登录"
 msgid "Base URL"
 msgstr "Base URL"
 
-#: src/pages/PluginsOverlay.tsx:632
+#: src/pages/PluginsOverlay.tsx:834
 msgid "Bearer token"
 msgstr "Bearer token"
 
@@ -534,7 +548,7 @@ msgstr "无法连接服务器。"
 #: src/components/AskCard.tsx:169
 #: src/components/ComputerMaintenanceActions.tsx:96
 #: src/components/teach/TeachComputerOverlay.tsx:254
-#: src/pages/PluginsOverlay.tsx:683
+#: src/pages/PluginsOverlay.tsx:885
 #: src/pages/shell/dialogs.tsx:88
 #: src/pages/shell/dialogs.tsx:152
 #: src/pages/shell/dialogs.tsx:194
@@ -663,7 +677,7 @@ msgstr "关闭电脑"
 msgid "Close image preview"
 msgstr "关闭图片预览"
 
-#: src/pages/PluginsOverlay.tsx:391
+#: src/pages/PluginsOverlay.tsx:614
 msgid "Close integrations"
 msgstr "关闭集成"
 
@@ -814,7 +828,7 @@ msgstr "连接 OAuth"
 msgid "Connect this provider to use it as your personal model."
 msgstr "连接此提供方，作为你的个人模型。"
 
-#: src/pages/PluginsOverlay.tsx:597
+#: src/pages/PluginsOverlay.tsx:799
 msgid "Connect Treg"
 msgstr "连接 Treg"
 
@@ -857,7 +871,7 @@ msgid "Connecting…"
 msgstr "正在连接…"
 
 #. placeholder {0}: item.name
-#: src/pages/PluginsOverlay.tsx:177
+#: src/pages/PluginsOverlay.tsx:238
 msgid "Connection to {0} is still pending. You can close this and check again."
 msgstr "与 {0} 的连接仍在等待。可以关闭此窗口稍后再看。"
 
@@ -910,7 +924,7 @@ msgstr "无法清空对话"
 msgid "Could not complete OAuth"
 msgstr "无法完成 OAuth"
 
-#: src/pages/PluginsOverlay.tsx:182
+#: src/pages/PluginsOverlay.tsx:243
 msgid "Could not connect"
 msgstr "无法连接"
 
@@ -988,7 +1002,7 @@ msgstr "无法下载 {0}。请重试。"
 msgid "Could not download {name}. Try again."
 msgstr "无法下载 {name}。请重试。"
 
-#: src/pages/PluginsOverlay.tsx:275
+#: src/pages/PluginsOverlay.tsx:349
 msgid "Could not install connector"
 msgstr "无法安装连接器"
 
@@ -996,7 +1010,7 @@ msgstr "无法安装连接器"
 msgid "Could not load approval rules"
 msgstr "无法加载审批规则"
 
-#: src/pages/PluginsOverlay.tsx:113
+#: src/pages/PluginsOverlay.tsx:121
 msgid "Could not load integrations"
 msgstr "无法加载集成"
 
@@ -1043,7 +1057,7 @@ msgstr "无法访问此模型服务器"
 msgid "Could not remove"
 msgstr "无法移除"
 
-#: src/pages/PluginsOverlay.tsx:288
+#: src/pages/PluginsOverlay.tsx:362
 msgid "Could not remove connector"
 msgstr "无法移除连接器"
 
@@ -1055,7 +1069,7 @@ msgstr "无法移除群组"
 msgid "Could not remove rule"
 msgstr "无法移除规则"
 
-#: src/pages/PluginsOverlay.tsx:234
+#: src/pages/PluginsOverlay.tsx:308
 msgid "Could not rename connection"
 msgstr ""
 
@@ -1067,7 +1081,8 @@ msgstr "无法渲染图表"
 msgid "Could not reset password"
 msgstr "无法重置密码"
 
-#: src/pages/PluginsOverlay.tsx:202
+#: src/pages/PluginsOverlay.tsx:264
+#: src/pages/PluginsOverlay.tsx:287
 msgid "Could not revoke connection"
 msgstr "无法撤销连接"
 
@@ -1215,12 +1230,12 @@ msgstr "已创建"
 msgid "Creating…"
 msgstr "正在创建…"
 
-#: src/pages/PluginsOverlay.tsx:652
+#: src/pages/PluginsOverlay.tsx:854
 msgid "Credential"
 msgstr "凭据"
 
 #: src/pages/McpServersOverlay.tsx:34
-#: src/pages/PluginsOverlay.tsx:709
+#: src/pages/PluginsOverlay.tsx:916
 msgid "credential saved"
 msgstr "凭据已保存"
 
@@ -1355,7 +1370,7 @@ msgstr "关闭错误"
 msgid "Dismissed. Reconnect anytime from MCP settings."
 msgstr "已关闭，可随时在 MCP 设置中重新连接。"
 
-#: src/pages/PluginsOverlay.tsx:609
+#: src/pages/PluginsOverlay.tsx:811
 msgid "Display name"
 msgstr "显示名称"
 
@@ -1573,7 +1588,7 @@ msgid "header"
 msgstr "请求头"
 
 #: src/pages/McpServersOverlay.tsx:367
-#: src/pages/PluginsOverlay.tsx:643
+#: src/pages/PluginsOverlay.tsx:845
 msgid "Header name"
 msgstr "请求头名称"
 
@@ -1629,7 +1644,7 @@ msgstr "我做完了"
 msgid "If you heard that, voice is ready."
 msgstr "如果听到了，说明语音已就绪。"
 
-#: src/pages/PluginsOverlay.tsx:601
+#: src/pages/PluginsOverlay.tsx:803
 msgid "Import OpenAPI JSON"
 msgstr "导入 OpenAPI JSON"
 
@@ -1738,7 +1753,7 @@ msgstr "加载更早的消息"
 msgid "Loading activity…"
 msgstr "正在加载动态…"
 
-#: src/pages/PluginsOverlay.tsx:414
+#: src/pages/PluginsOverlay.tsx:644
 msgid "Loading integrations…"
 msgstr "正在加载集成…"
 
@@ -1758,6 +1773,10 @@ msgstr "正在加载预览…"
 #: src/components/ApprovalRulesSettings.tsx:159
 msgid "Loading rules…"
 msgstr "正在加载规则…"
+
+#: src/pages/PluginsOverlay.tsx:576
+msgid "Loading tools…"
+msgstr ""
 
 #: src/pages/VoiceSettingsOverlay.tsx:149
 msgid "Loading voice providers…"
@@ -1807,7 +1826,7 @@ msgid "Max"
 msgstr "最大"
 
 #: src/pages/McpServersOverlay.tsx:255
-#: src/pages/PluginsOverlay.tsx:556
+#: src/pages/PluginsOverlay.tsx:758
 msgid "MCP servers"
 msgstr "MCP 服务器"
 
@@ -2016,15 +2035,15 @@ msgstr "新建工作区"
 msgid "No agent connections yet."
 msgstr "还没有 Agent 连接。"
 
-#: src/pages/PluginsOverlay.tsx:476
+#: src/pages/PluginsOverlay.tsx:698
 msgid "No apps match your search."
 msgstr "没有匹配的应用。"
 
-#: src/pages/PluginsOverlay.tsx:711
+#: src/pages/PluginsOverlay.tsx:918
 msgid "no auth"
 msgstr "无认证"
 
-#: src/pages/PluginsOverlay.tsx:629
+#: src/pages/PluginsOverlay.tsx:831
 msgid "No authentication"
 msgstr "无认证"
 
@@ -2035,11 +2054,6 @@ msgstr ""
 #: src/pages/MessagingSettingsOverlay.tsx:140
 msgid "No chat apps linked yet."
 msgstr "还没有关联聊天应用。"
-
-#. placeholder {0}: item.name
-#: src/pages/PluginsOverlay.tsx:214
-msgid "No connection record found for {0}."
-msgstr "找不到 {0} 的连接记录。"
 
 #: src/components/ApprovalRulesSettings.tsx:163
 msgid "No exceptions. Actions run automatically."
@@ -2053,13 +2067,17 @@ msgstr "还没有群聊。"
 msgid "No longer active"
 msgstr "已停用"
 
-#: src/pages/PluginsOverlay.tsx:471
+#: src/pages/PluginsOverlay.tsx:693
 msgid "No managed app catalog is configured on this deployment."
 msgstr "此部署未配置托管应用目录。"
 
 #: src/pages/ModelSettingsOverlay.tsx:996
 msgid "No matching models"
 msgstr "没有匹配的模型"
+
+#: src/pages/PluginsOverlay.tsx:898
+msgid "No MCP or API tool sources installed yet."
+msgstr "还没有安装 MCP 或 API 工具源。"
 
 #: src/pages/McpServersOverlay.tsx:426
 msgid "No MCP servers yet."
@@ -2089,6 +2107,10 @@ msgstr "无结果"
 msgid "No runs yet"
 msgstr "还没有运行记录"
 
+#: src/pages/PluginsOverlay.tsx:580
+msgid "No tools available."
+msgstr ""
+
 #: src/pages/RoutineEditor.tsx:100
 msgid "No trigger"
 msgstr "无触发器"
@@ -2106,7 +2128,7 @@ msgstr "未配置"
 msgid "Not connected"
 msgstr "未连接"
 
-#: src/pages/PluginsOverlay.tsx:456
+#: src/pages/PluginsOverlay.tsx:679
 msgid "Not in the plugin catalog"
 msgstr "不在插件目录中"
 
@@ -2308,7 +2330,7 @@ msgstr "提供方"
 msgid "Queued"
 msgstr "排队中"
 
-#: src/pages/PluginsOverlay.tsx:656
+#: src/pages/PluginsOverlay.tsx:858
 msgid "Rakazo verifies the source before saving it. Credentials are encrypted and are never returned to clients or exposed to the model."
 msgstr "Rakazo 会在保存前校验来源。凭据已加密，不会返回给客户端，也不会暴露给模型。"
 
@@ -2365,9 +2387,8 @@ msgid "Release"
 msgstr "释放"
 
 #: src/components/ApprovalRulesSettings.tsx:179
-#: src/pages/PluginsOverlay.tsx:323
-#: src/pages/PluginsOverlay.tsx:365
-#: src/pages/PluginsOverlay.tsx:723
+#: src/pages/PluginsOverlay.tsx:535
+#: src/pages/PluginsOverlay.tsx:933
 #: src/pages/ScratchpadSection.tsx:165
 msgid "Remove"
 msgstr "移除"
@@ -2408,9 +2429,9 @@ msgstr "已连同对话、电脑和记忆一起移除。"
 msgid "Removed, but list refresh failed"
 msgstr "已移除，但列表刷新失败"
 
-#: src/pages/PluginsOverlay.tsx:323
-#: src/pages/PluginsOverlay.tsx:365
-#: src/pages/PluginsOverlay.tsx:723
+#: src/pages/PluginsOverlay.tsx:500
+#: src/pages/PluginsOverlay.tsx:535
+#: src/pages/PluginsOverlay.tsx:931
 msgid "Removing…"
 msgstr "正在移除…"
 
@@ -2576,8 +2597,8 @@ msgstr "回答是或否，或一句话说明。"
 msgid "Search"
 msgstr "搜索"
 
-#: src/pages/PluginsOverlay.tsx:404
-#: src/pages/PluginsOverlay.tsx:405
+#: src/pages/PluginsOverlay.tsx:628
+#: src/pages/PluginsOverlay.tsx:629
 msgid "Search apps"
 msgstr "搜索应用"
 
@@ -2690,7 +2711,7 @@ msgstr ""
 msgid "Show computer"
 msgstr "显示电脑"
 
-#: src/pages/PluginsOverlay.tsx:518
+#: src/pages/PluginsOverlay.tsx:720
 msgid "Show more"
 msgstr "显示更多"
 
@@ -2979,11 +3000,15 @@ msgstr "时间"
 msgid "Title"
 msgstr "标题"
 
-#: src/pages/PluginsOverlay.tsx:692
+#: src/pages/PluginsOverlay.tsx:894
 msgid "Tool sources"
 msgstr "工具源"
 
-#: src/pages/PluginsOverlay.tsx:652
+#: src/pages/PluginsOverlay.tsx:561
+msgid "Tools"
+msgstr ""
+
+#: src/pages/PluginsOverlay.tsx:854
 msgid "Treg token"
 msgstr "Treg token"
 
@@ -2998,6 +3023,10 @@ msgstr "未分配"
 #: src/components/SoftwareUpdateSection.tsx:272
 msgid "Unavailable"
 msgstr "不可用"
+
+#: src/pages/PluginsOverlay.tsx:500
+msgid "Uninstall"
+msgstr ""
 
 #: src/pages/MessagingSettingsOverlay.tsx:133
 msgid "Unlink"
@@ -3065,11 +3094,11 @@ msgstr "使用找到的模型"
 msgid "Use this model"
 msgstr "使用此模型"
 
-#: src/pages/PluginsOverlay.tsx:673
+#: src/pages/PluginsOverlay.tsx:875
 msgid "Verify and add"
 msgstr "校验并添加"
 
-#: src/pages/PluginsOverlay.tsx:671
+#: src/pages/PluginsOverlay.tsx:873
 msgid "Verifying…"
 msgstr "正在校验…"
 

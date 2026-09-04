@@ -108,7 +108,11 @@ msgstr "{size} B"
 msgid "{title}, {label}"
 msgstr "{title}, {label}"
 
-#: src/pages/Shell.tsx:3996
+#: src/pages/PluginsOverlay.tsx:563
+msgid "{toolCount} tools"
+msgstr ""
+
+#: src/pages/Shell.tsx:3950
 msgid "{workingBotName} is working"
 msgstr "{workingBotName} 작업 중"
 
@@ -129,8 +133,12 @@ msgstr "계정"
 msgid "Account default"
 msgstr "계정 기본값"
 
-#: src/pages/PluginsOverlay.tsx:345
+#: src/pages/PluginsOverlay.tsx:515
 msgid "Account label"
+msgstr ""
+
+#: src/pages/PluginsOverlay.tsx:507
+msgid "Accounts"
 msgstr ""
 
 #: src/components/ApprovalRulesSettings.tsx:112
@@ -159,7 +167,7 @@ msgstr "현재 목소리"
 msgid "Activity"
 msgstr "활동"
 
-#: src/pages/PluginsOverlay.tsx:335
+#: src/pages/PluginsOverlay.tsx:401
 #: src/pages/ScratchpadSection.tsx:196
 msgid "Add"
 msgstr "추가"
@@ -192,7 +200,7 @@ msgstr "stdio 명령을 입력하세요."
 msgid "Add an HTTPS server URL."
 msgstr "HTTPS 서버 URL을 입력하세요."
 
-#: src/pages/PluginsOverlay.tsx:313
+#: src/pages/PluginsOverlay.tsx:547
 msgid "Add another"
 msgstr ""
 
@@ -200,15 +208,15 @@ msgstr ""
 msgid "Add item"
 msgstr "항목 추가"
 
-#: src/pages/PluginsOverlay.tsx:568
+#: src/pages/PluginsOverlay.tsx:770
 msgid "Add MCP server"
 msgstr "MCP 서버 추가"
 
-#: src/pages/PluginsOverlay.tsx:577
+#: src/pages/PluginsOverlay.tsx:779
 msgid "Add OpenAPI"
 msgstr "OpenAPI 추가"
 
-#: src/pages/PluginsOverlay.tsx:599
+#: src/pages/PluginsOverlay.tsx:801
 msgid "Add remote MCP server"
 msgstr "원격 MCP 서버 추가"
 
@@ -225,7 +233,7 @@ msgstr "좋아요 추가"
 msgid "Add to routine"
 msgstr "자동 실행에 추가"
 
-#: src/pages/PluginsOverlay.tsx:586
+#: src/pages/PluginsOverlay.tsx:788
 msgid "Add Treg"
 msgstr "Treg 추가"
 
@@ -233,15 +241,20 @@ msgstr "Treg 추가"
 msgid "Add trigger"
 msgstr "트리거 추가"
 
+#: src/pages/PluginsOverlay.tsx:385
+msgid "Added"
+msgstr ""
+
 #: src/pages/McpServersOverlay.tsx:415
-#: src/pages/PluginsOverlay.tsx:313
-#: src/pages/PluginsOverlay.tsx:335
+#: src/pages/PluginsOverlay.tsx:385
+#: src/pages/PluginsOverlay.tsx:401
+#: src/pages/PluginsOverlay.tsx:547
 msgid "Adding…"
 msgstr "추가 중…"
 
 #: src/pages/AccountSettingsOverlay.tsx:241
 #: src/pages/McpServersOverlay.tsx:342
-#: src/pages/PluginsOverlay.tsx:540
+#: src/pages/PluginsOverlay.tsx:742
 #: src/pages/RoutineSchedule.tsx:43
 #: src/pages/shell/bot-panel.tsx:321
 msgid "Advanced"
@@ -339,7 +352,7 @@ msgstr "API가 다시 작동하지만 업데이트가 완료되지 않았습니�
 msgid "API key"
 msgstr "API 키"
 
-#: src/pages/PluginsOverlay.tsx:635
+#: src/pages/PluginsOverlay.tsx:837
 msgid "API key header"
 msgstr "API 키 헤더"
 
@@ -454,6 +467,7 @@ msgstr "루틴을 저장한 후 사용할 수 있습니다"
 msgid "Avatars"
 msgstr "아바타"
 
+#: src/pages/PluginsOverlay.tsx:472
 #: src/pages/RoutineEditor.tsx:231
 msgid "Back"
 msgstr "뒤로"
@@ -468,7 +482,7 @@ msgstr "로그인으로 돌아가기"
 msgid "Base URL"
 msgstr "서버 주소"
 
-#: src/pages/PluginsOverlay.tsx:632
+#: src/pages/PluginsOverlay.tsx:834
 msgid "Bearer token"
 msgstr "Bearer 토큰"
 
@@ -534,7 +548,7 @@ msgstr "서버에 연결할 수 없습니다."
 #: src/components/AskCard.tsx:169
 #: src/components/ComputerMaintenanceActions.tsx:96
 #: src/components/teach/TeachComputerOverlay.tsx:254
-#: src/pages/PluginsOverlay.tsx:683
+#: src/pages/PluginsOverlay.tsx:885
 #: src/pages/shell/dialogs.tsx:88
 #: src/pages/shell/dialogs.tsx:152
 #: src/pages/shell/dialogs.tsx:194
@@ -663,7 +677,7 @@ msgstr "컴퓨터 닫기"
 msgid "Close image preview"
 msgstr "이미지 미리보기 닫기"
 
-#: src/pages/PluginsOverlay.tsx:391
+#: src/pages/PluginsOverlay.tsx:614
 msgid "Close integrations"
 msgstr "앱·도구 연동 닫기"
 
@@ -814,7 +828,7 @@ msgstr "OAuth 연결"
 msgid "Connect this provider to use it as your personal model."
 msgstr "이 AI 서비스를 연결하면 내 기본 모델로 사용할 수 있습니다."
 
-#: src/pages/PluginsOverlay.tsx:597
+#: src/pages/PluginsOverlay.tsx:799
 msgid "Connect Treg"
 msgstr "Treg 연결"
 
@@ -857,7 +871,7 @@ msgid "Connecting…"
 msgstr "연결 중…"
 
 #. placeholder {0}: item.name
-#: src/pages/PluginsOverlay.tsx:177
+#: src/pages/PluginsOverlay.tsx:238
 msgid "Connection to {0} is still pending. You can close this and check again."
 msgstr "{0} 연결이 아직 진행 중입니다. 이 창을 닫고 나중에 다시 확인할 수 있습니다."
 
@@ -910,7 +924,7 @@ msgstr "대화 내용을 비우지 못했습니다."
 msgid "Could not complete OAuth"
 msgstr "OAuth 인증을 완료하지 못했습니다."
 
-#: src/pages/PluginsOverlay.tsx:182
+#: src/pages/PluginsOverlay.tsx:243
 msgid "Could not connect"
 msgstr "연결하지 못했습니다."
 
@@ -988,7 +1002,7 @@ msgstr "{0}을 다운로드하지 못했습니다. 다시 시도해 주세요."
 msgid "Could not download {name}. Try again."
 msgstr "{name}을 다운로드하지 못했습니다. 다시 시도해 주세요."
 
-#: src/pages/PluginsOverlay.tsx:275
+#: src/pages/PluginsOverlay.tsx:349
 msgid "Could not install connector"
 msgstr "도구 연결을 추가하지 못했습니다."
 
@@ -996,7 +1010,7 @@ msgstr "도구 연결을 추가하지 못했습니다."
 msgid "Could not load approval rules"
 msgstr "확인 규칙을 불러오지 못했습니다."
 
-#: src/pages/PluginsOverlay.tsx:113
+#: src/pages/PluginsOverlay.tsx:121
 msgid "Could not load integrations"
 msgstr "연동 목록을 불러오지 못했습니다."
 
@@ -1043,7 +1057,7 @@ msgstr "모델 서버에 연결하지 못했습니다."
 msgid "Could not remove"
 msgstr "삭제하지 못했습니다."
 
-#: src/pages/PluginsOverlay.tsx:288
+#: src/pages/PluginsOverlay.tsx:362
 msgid "Could not remove connector"
 msgstr "도구 연결을 삭제하지 못했습니다."
 
@@ -1055,7 +1069,7 @@ msgstr "그룹을 삭제하지 못했습니다."
 msgid "Could not remove rule"
 msgstr "확인 규칙을 삭제하지 못했습니다."
 
-#: src/pages/PluginsOverlay.tsx:234
+#: src/pages/PluginsOverlay.tsx:308
 msgid "Could not rename connection"
 msgstr ""
 
@@ -1067,7 +1081,8 @@ msgstr "차트를 만들지 못했습니다."
 msgid "Could not reset password"
 msgstr "비밀번호를 재설정할 수 없습니다"
 
-#: src/pages/PluginsOverlay.tsx:202
+#: src/pages/PluginsOverlay.tsx:264
+#: src/pages/PluginsOverlay.tsx:287
 msgid "Could not revoke connection"
 msgstr "연결을 해제하지 못했습니다."
 
@@ -1215,12 +1230,12 @@ msgstr "생성됨"
 msgid "Creating…"
 msgstr "만드는 중…"
 
-#: src/pages/PluginsOverlay.tsx:652
+#: src/pages/PluginsOverlay.tsx:854
 msgid "Credential"
 msgstr "인증 정보"
 
 #: src/pages/McpServersOverlay.tsx:34
-#: src/pages/PluginsOverlay.tsx:709
+#: src/pages/PluginsOverlay.tsx:916
 msgid "credential saved"
 msgstr "인증 정보 저장됨"
 
@@ -1355,7 +1370,7 @@ msgstr "오류 닫기"
 msgid "Dismissed. Reconnect anytime from MCP settings."
 msgstr "지금은 연결하지 않았습니다. MCP 설정에서 언제든 다시 연결할 수 있습니다."
 
-#: src/pages/PluginsOverlay.tsx:609
+#: src/pages/PluginsOverlay.tsx:811
 msgid "Display name"
 msgstr "표시 이름"
 
@@ -1573,7 +1588,7 @@ msgid "header"
 msgstr "header"
 
 #: src/pages/McpServersOverlay.tsx:367
-#: src/pages/PluginsOverlay.tsx:643
+#: src/pages/PluginsOverlay.tsx:845
 msgid "Header name"
 msgstr "헤더 이름"
 
@@ -1629,7 +1644,7 @@ msgstr "조작 끝내기"
 msgid "If you heard that, voice is ready."
 msgstr "샘플이 들렸다면 음성 설정이 완료되었습니다."
 
-#: src/pages/PluginsOverlay.tsx:601
+#: src/pages/PluginsOverlay.tsx:803
 msgid "Import OpenAPI JSON"
 msgstr "OpenAPI JSON 가져오기"
 
@@ -1738,7 +1753,7 @@ msgstr "이전 메시지 불러오기"
 msgid "Loading activity…"
 msgstr "활동을 불러오는 중…"
 
-#: src/pages/PluginsOverlay.tsx:414
+#: src/pages/PluginsOverlay.tsx:644
 msgid "Loading integrations…"
 msgstr "연동 목록을 불러오는 중…"
 
@@ -1758,6 +1773,10 @@ msgstr "미리보기를 불러오는 중…"
 #: src/components/ApprovalRulesSettings.tsx:159
 msgid "Loading rules…"
 msgstr "확인 규칙을 불러오는 중…"
+
+#: src/pages/PluginsOverlay.tsx:576
+msgid "Loading tools…"
+msgstr ""
 
 #: src/pages/VoiceSettingsOverlay.tsx:149
 msgid "Loading voice providers…"
@@ -1807,7 +1826,7 @@ msgid "Max"
 msgstr "최대"
 
 #: src/pages/McpServersOverlay.tsx:255
-#: src/pages/PluginsOverlay.tsx:556
+#: src/pages/PluginsOverlay.tsx:758
 msgid "MCP servers"
 msgstr "MCP 서버"
 
@@ -2016,15 +2035,15 @@ msgstr "새 스페이스"
 msgid "No agent connections yet."
 msgstr "아직 Agent 연결이 없습니다."
 
-#: src/pages/PluginsOverlay.tsx:476
+#: src/pages/PluginsOverlay.tsx:698
 msgid "No apps match your search."
 msgstr "검색 결과가 없습니다."
 
-#: src/pages/PluginsOverlay.tsx:711
+#: src/pages/PluginsOverlay.tsx:918
 msgid "no auth"
 msgstr "인증 없음"
 
-#: src/pages/PluginsOverlay.tsx:629
+#: src/pages/PluginsOverlay.tsx:831
 msgid "No authentication"
 msgstr "인증 없음"
 
@@ -2035,11 +2054,6 @@ msgstr ""
 #: src/pages/MessagingSettingsOverlay.tsx:140
 msgid "No chat apps linked yet."
 msgstr "아직 연결된 채팅 앱이 없습니다."
-
-#. placeholder {0}: item.name
-#: src/pages/PluginsOverlay.tsx:214
-msgid "No connection record found for {0}."
-msgstr "{0}의 연결 정보를 찾지 못했습니다."
 
 #: src/components/ApprovalRulesSettings.tsx:163
 msgid "No exceptions. Actions run automatically."
@@ -2053,13 +2067,17 @@ msgstr "아직 그룹 채팅이 없습니다."
 msgid "No longer active"
 msgstr "이미 종료된 요청입니다"
 
-#: src/pages/PluginsOverlay.tsx:471
+#: src/pages/PluginsOverlay.tsx:693
 msgid "No managed app catalog is configured on this deployment."
 msgstr "이 서버에는 관리형 앱 목록이 설정되지 않았습니다."
 
 #: src/pages/ModelSettingsOverlay.tsx:996
 msgid "No matching models"
 msgstr "일치하는 모델 없음"
+
+#: src/pages/PluginsOverlay.tsx:898
+msgid "No MCP or API tool sources installed yet."
+msgstr "아직 추가된 MCP 또는 API 도구가 없습니다."
 
 #: src/pages/McpServersOverlay.tsx:426
 msgid "No MCP servers yet."
@@ -2089,6 +2107,10 @@ msgstr "검색 결과가 없습니다"
 msgid "No runs yet"
 msgstr "아직 실행 기록이 없습니다"
 
+#: src/pages/PluginsOverlay.tsx:580
+msgid "No tools available."
+msgstr ""
+
 #: src/pages/RoutineEditor.tsx:100
 msgid "No trigger"
 msgstr "트리거 없음"
@@ -2106,7 +2128,7 @@ msgstr "설정되지 않음"
 msgid "Not connected"
 msgstr "연결되지 않음"
 
-#: src/pages/PluginsOverlay.tsx:456
+#: src/pages/PluginsOverlay.tsx:679
 msgid "Not in the plugin catalog"
 msgstr "플러그인 카탈로그에 없음"
 
@@ -2308,7 +2330,7 @@ msgstr "서비스"
 msgid "Queued"
 msgstr "대기 중"
 
-#: src/pages/PluginsOverlay.tsx:656
+#: src/pages/PluginsOverlay.tsx:858
 msgid "Rakazo verifies the source before saving it. Credentials are encrypted and are never returned to clients or exposed to the model."
 msgstr "Rakazo는 저장하기 전에 연결 상태를 확인합니다. 인증 정보는 암호화되며 앱이나 AI 모델에 노출되지 않습니다."
 
@@ -2365,9 +2387,8 @@ msgid "Release"
 msgstr "제어권 돌려주기"
 
 #: src/components/ApprovalRulesSettings.tsx:179
-#: src/pages/PluginsOverlay.tsx:323
-#: src/pages/PluginsOverlay.tsx:365
-#: src/pages/PluginsOverlay.tsx:723
+#: src/pages/PluginsOverlay.tsx:535
+#: src/pages/PluginsOverlay.tsx:933
 #: src/pages/ScratchpadSection.tsx:165
 msgid "Remove"
 msgstr "삭제"
@@ -2408,9 +2429,9 @@ msgstr "대화, 컴퓨터, 기억과 함께 삭제되었습니다."
 msgid "Removed, but list refresh failed"
 msgstr "삭제했지만 목록을 새로고침하지 못했습니다."
 
-#: src/pages/PluginsOverlay.tsx:323
-#: src/pages/PluginsOverlay.tsx:365
-#: src/pages/PluginsOverlay.tsx:723
+#: src/pages/PluginsOverlay.tsx:500
+#: src/pages/PluginsOverlay.tsx:535
+#: src/pages/PluginsOverlay.tsx:931
 msgid "Removing…"
 msgstr "삭제 중…"
 
@@ -2576,8 +2597,8 @@ msgstr "예 또는 아니요로 답하거나 문장으로 답해 주세요."
 msgid "Search"
 msgstr "검색"
 
-#: src/pages/PluginsOverlay.tsx:404
-#: src/pages/PluginsOverlay.tsx:405
+#: src/pages/PluginsOverlay.tsx:628
+#: src/pages/PluginsOverlay.tsx:629
 msgid "Search apps"
 msgstr "앱 검색"
 
@@ -2690,7 +2711,7 @@ msgstr ""
 msgid "Show computer"
 msgstr "컴퓨터 보기"
 
-#: src/pages/PluginsOverlay.tsx:518
+#: src/pages/PluginsOverlay.tsx:720
 msgid "Show more"
 msgstr "더 보기"
 
@@ -2979,11 +3000,15 @@ msgstr "실행 시각"
 msgid "Title"
 msgstr "역할"
 
-#: src/pages/PluginsOverlay.tsx:692
+#: src/pages/PluginsOverlay.tsx:894
 msgid "Tool sources"
 msgstr "도구 소스"
 
-#: src/pages/PluginsOverlay.tsx:652
+#: src/pages/PluginsOverlay.tsx:561
+msgid "Tools"
+msgstr ""
+
+#: src/pages/PluginsOverlay.tsx:854
 msgid "Treg token"
 msgstr "Treg 토큰"
 
@@ -2998,6 +3023,10 @@ msgstr "섹션 없음"
 #: src/components/SoftwareUpdateSection.tsx:272
 msgid "Unavailable"
 msgstr "사용할 수 없음"
+
+#: src/pages/PluginsOverlay.tsx:500
+msgid "Uninstall"
+msgstr ""
 
 #: src/pages/MessagingSettingsOverlay.tsx:133
 msgid "Unlink"
@@ -3065,11 +3094,11 @@ msgstr "찾은 모델 중에서 선택"
 msgid "Use this model"
 msgstr "이 모델 사용"
 
-#: src/pages/PluginsOverlay.tsx:673
+#: src/pages/PluginsOverlay.tsx:875
 msgid "Verify and add"
 msgstr "확인 후 추가"
 
-#: src/pages/PluginsOverlay.tsx:671
+#: src/pages/PluginsOverlay.tsx:873
 msgid "Verifying…"
 msgstr "확인 중…"
 
