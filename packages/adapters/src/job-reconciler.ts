@@ -250,18 +250,10 @@ export function createJobReconciler(
         });
         await Promise.all(
           outcomes.map(async (run) => {
-            const message =
-              run.status === "completed"
-                ? await deps.prisma.message.findFirst({
-                    where: { runId: run.id, role: "bot" },
-                    orderBy: { seq: "desc" },
-                    select: { blocks: true },
-                  })
-                : null;
             const text =
               run.status === "failed"
                 ? `Could not complete the delegated request: ${run.error ?? "unknown error"}`
-                : messageText(message?.blocks) ||
+                : (await botRunOutcomeText(deps.prisma, run.id)) ||
                   "The delegated bot completed its turn without a written summary.";
             const returned = await returnBotMessageOutcome(
               { prisma: deps.prisma, jobs: deps.jobs, events },
@@ -346,6 +338,30 @@ export function createJobReconciler(
       await deps.leadership?.release();
     },
   };
+}
+
+/** Prefer the full bot transcript for a run so interim progress is not mistaken for the sole result. */
+async function botRunOutcomeText(
+  prisma: {
+    message: {
+      findMany: (args: {
+        where: { runId: string; role: "bot" };
+        orderBy: { seq: "asc" };
+        select: { blocks: true };
+      }) => Promise<Array<{ blocks: unknown }>>;
+    };
+  },
+  runId: string,
+): Promise<string> {
+  const messages = await prisma.message.findMany({
+    where: { runId, role: "bot" },
+    orderBy: { seq: "asc" },
+    select: { blocks: true },
+  });
+  return messages
+    .map((message) => messageText(message.blocks))
+    .filter(Boolean)
+    .join("\n\n");
 }
 
 function messageText(blocks: unknown): string {
