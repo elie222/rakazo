@@ -246,6 +246,7 @@ import {
   clampUserProgressMessage,
   extractNarrationText,
   finalBlocksAfterMidTurnProgress,
+  isUserProgressClientNonce,
   userProgressClientNonce,
 } from "./user-progress.js";
 import { createWebProvider } from "./web-provider-factory.js";
@@ -1272,11 +1273,33 @@ export function createRunExecutor(deps: ExecutorDeps) {
         // an empty-run "done." completion afterward.
         let publishedTerminalSubagent = false;
         // Durable chat messages posted mid-turn (message_user / promoted narration).
+        // Rehydrate from this run's prior progress rows so a resume after ask/takeover
+        // still knows progress was already published (skip hollow finals; status outcome).
         let publishedMidTurnUserMessage = false;
-        // Texts already published mid-turn; used if a bot_message run ends without a final reply
-        // so reconciliation does not treat the last progress bubble as the delegated result.
         const midTurnUserTexts: string[] = [];
         let midTurnProgressCount = 0;
+        {
+          const priorProgress = await deps.prisma.message.findMany({
+            where: { runId: run.id, role: "bot" },
+            orderBy: { seq: "asc" },
+            select: { blocks: true, clientNonce: true },
+          });
+          for (const message of priorProgress) {
+            if (!isUserProgressClientNonce(message.clientNonce)) continue;
+            const blocks = Array.isArray(message.blocks) ? (message.blocks as MessageBlock[]) : [];
+            const text = blocks
+              .filter(
+                (block): block is Extract<MessageBlock, { kind: "text" }> => block.kind === "text",
+              )
+              .map((block) => block.text)
+              .join("")
+              .trim();
+            if (!text) continue;
+            midTurnUserTexts.push(text);
+            publishedMidTurnUserMessage = true;
+            midTurnProgressCount += 1;
+          }
+        }
         // Tool calls that land mid-sentence wait here until the narration catches up to a
         // sentence boundary, so the step chips never render in the middle of a clause.
         let pendingToolNames: string[] = [];
