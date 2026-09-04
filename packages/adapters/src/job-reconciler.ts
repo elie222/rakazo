@@ -8,6 +8,7 @@ import type { MessageBlock } from "@rakazo/contracts";
 import type { Pool, PrismaClient, ThreadEvents } from "@rakazo/db";
 import type { PoolClient } from "pg";
 import { returnBotMessageOutcome } from "./bot-messages.js";
+import { isUserProgressClientNonce } from "./user-progress.js";
 import { scheduleComputerControlExpiry } from "./computer-control.js";
 
 const DEFAULT_INTERVAL_MS = 30_000;
@@ -251,16 +252,21 @@ export function createJobReconciler(
         await Promise.all(
           outcomes.map(async (run) => {
             const transcript =
-              run.status === "failed" ? "" : await botRunOutcomeText(deps.prisma, run.id);
+              run.status === "failed"
+                ? { text: "", progressOnly: false }
+                : await botRunOutcomeText(deps.prisma, run.id);
             const text =
               run.status === "failed"
                 ? `Could not complete the delegated request: ${run.error ?? "unknown error"}`
-                : transcript || "The delegated bot completed its turn without a written summary.";
+                : transcript.text ||
+                  "The delegated bot completed its turn without a written summary.";
             // Same stable delivery key as the executor path (auto-outcome:<runId>), so a
             // concurrent or earlier return is replayed instead of double-posted. Progress-only
-            // recoveries use status; a non-empty transcript is treated as the result summary.
+            // transcripts (all mid-turn user-progress messages) return as status.
             const intent =
-              run.status === "failed" || !transcript.trim() ? "status" : ("result" as const);
+              run.status === "failed" || !transcript.text.trim() || transcript.progressOnly
+                ? "status"
+                : ("result" as const);
             const returned = await returnBotMessageOutcome(
               { prisma: deps.prisma, jobs: deps.jobs, events },
               run,
@@ -353,21 +359,28 @@ async function botRunOutcomeText(
       findMany: (args: {
         where: { runId: string; role: "bot" };
         orderBy: { seq: "asc" };
-        select: { blocks: true };
-      }) => Promise<Array<{ blocks: unknown }>>;
+        select: { blocks: true; clientNonce: true };
+      }) => Promise<Array<{ blocks: unknown; clientNonce: string | null }>>;
     };
   },
   runId: string,
-): Promise<string> {
+): Promise<{ text: string; progressOnly: boolean }> {
   const messages = await prisma.message.findMany({
     where: { runId, role: "bot" },
     orderBy: { seq: "asc" },
-    select: { blocks: true },
+    select: { blocks: true, clientNonce: true },
   });
-  return messages
-    .map((message) => messageText(message.blocks))
-    .filter(Boolean)
-    .join("\n\n");
+  const parts: string[] = [];
+  let sawText = false;
+  let progressOnly = true;
+  for (const message of messages) {
+    const text = messageText(message.blocks);
+    if (!text) continue;
+    sawText = true;
+    parts.push(text);
+    if (!isUserProgressClientNonce(message.clientNonce)) progressOnly = false;
+  }
+  return { text: parts.join("\n\n"), progressOnly: sawText && progressOnly };
 }
 
 function messageText(blocks: unknown): string {
@@ -375,5 +388,6 @@ function messageText(blocks: unknown): string {
   return (blocks as MessageBlock[])
     .filter((block): block is Extract<MessageBlock, { kind: "text" }> => block.kind === "text")
     .map((block) => block.text)
-    .join("");
+    .join("")
+    .trim();
 }

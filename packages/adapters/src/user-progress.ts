@@ -15,6 +15,18 @@ export function clampUserProgressMessage(text: string): string {
  * Pull narration text out of the in-progress turn segments so it can be posted
  * as a durable mid-turn message. Tool/step blocks stay for the final publish.
  */
+
+/** clientNonce prefix for mid-turn progress messages (reconciler uses this). */
+export const USER_PROGRESS_CLIENT_NONCE_PREFIX = "user-progress:";
+
+export function userProgressClientNonce(runId: string, index: number): string {
+  return `${USER_PROGRESS_CLIENT_NONCE_PREFIX}${runId}:${index}`;
+}
+
+export function isUserProgressClientNonce(clientNonce: string | null | undefined): boolean {
+  return Boolean(clientNonce?.startsWith(USER_PROGRESS_CLIENT_NONCE_PREFIX));
+}
+
 export function extractNarrationText(
   segments: readonly MessageBlock[],
   currentText: string,

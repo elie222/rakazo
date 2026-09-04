@@ -18,6 +18,9 @@ test("chat shows mid-turn progress without Working…", async ({ page }, testInf
       await expect(page.getByTestId("progress-message")).toBeVisible();
       await expect(page.getByTestId("progress-message")).toHaveText("Checking your calendars…");
       await expect(page.getByTestId("response")).toBeVisible();
+      await expect(page.getByTestId("response")).toHaveText(
+        state.live ? "Still finding a free slot…" : "Tuesday afternoon is free.",
+      );
       await expect(page.getByTestId("tool-activity")).toHaveCount(0);
       await expect(page.getByText("Working…")).toHaveCount(0);
       await expect(page.getByText("Done")).toHaveCount(0);

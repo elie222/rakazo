@@ -6,7 +6,9 @@ import {
   clampUserProgressMessage,
   extractNarrationText,
   finalBlocksAfterMidTurnProgress,
+  isUserProgressClientNonce,
   USER_PROGRESS_MESSAGE_MAX_LENGTH,
+  userProgressClientNonce,
 } from "./user-progress.js";
 
 describe("clampUserProgressMessage", () => {
@@ -73,5 +75,15 @@ describe("botMessageOutcomeFromMidTurn", () => {
 
   it("returns null when nothing was posted", () => {
     expect(botMessageOutcomeFromMidTurn("  ", [])).toBeNull();
+  });
+});
+
+describe("userProgressClientNonce", () => {
+  it("tags mid-turn progress messages for reconciler detection", () => {
+    const nonce = userProgressClientNonce("run-1", 0);
+    expect(nonce).toBe("user-progress:run-1:0");
+    expect(isUserProgressClientNonce(nonce)).toBe(true);
+    expect(isUserProgressClientNonce(null)).toBe(false);
+    expect(isUserProgressClientNonce("other")).toBe(false);
   });
 });

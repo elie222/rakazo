@@ -246,6 +246,7 @@ import {
   clampUserProgressMessage,
   extractNarrationText,
   finalBlocksAfterMidTurnProgress,
+  userProgressClientNonce,
 } from "./user-progress.js";
 import { createWebProvider } from "./web-provider-factory.js";
 import { webFetchFromTool, webSearchFromTool } from "./web-tools.js";
@@ -1275,6 +1276,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         // Texts already published mid-turn; used if a bot_message run ends without a final reply
         // so reconciliation does not treat the last progress bubble as the delegated result.
         const midTurnUserTexts: string[] = [];
+        let midTurnProgressCount = 0;
         // Tool calls that land mid-sentence wait here until the narration catches up to a
         // sentence boundary, so the step chips never render in the middle of a clause.
         let pendingToolNames: string[] = [];
@@ -1322,14 +1324,14 @@ export function createRunExecutor(deps: ExecutorDeps) {
         };
         const publishMidTurnNarration = async () => {
           const extracted = extractNarrationText(messageSegments, currentTextSegment);
-          const narration = redactSecrets(extracted.text, runSecrets).trim();
+          const narration = clampUserProgressMessage(redactSecrets(extracted.text, runSecrets));
           messageSegments = extracted.remaining;
           currentTextSegment = "";
           if (!narration) return;
           assembled = "";
           hasStreamedText = false;
           pendingProgress = "";
-          await publishMessage(deps, run, "bot", [{ kind: "text", text: narration }]);
+          await publishMessage(deps, run, "bot", [{ kind: "text", text: narration }], undefined, userProgressClientNonce(run.id, midTurnProgressCount++));
           midTurnUserTexts.push(narration);
           publishedMidTurnUserMessage = true;
         };
@@ -2666,7 +2668,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             if (!text) return finish({ error: "message is required" });
             await flushProgress();
             await publishMidTurnNarration();
-            await publishMessage(deps, run, "bot", [{ kind: "text", text }]);
+            await publishMessage(deps, run, "bot", [{ kind: "text", text }], undefined, userProgressClientNonce(run.id, midTurnProgressCount++));
             midTurnUserTexts.push(text);
             publishedMidTurnUserMessage = true;
             return finish({ ok: true });
@@ -3749,9 +3751,10 @@ async function publishMessage(
   role: "user" | "bot" | "system",
   blocks: MessageBlock[],
   markUnread?: boolean,
+  clientNonce?: string,
 ) {
   const committed = await deps.prisma.$transaction((tx) =>
-    persistMessageInTransaction(tx, run, role, blocks, markUnread),
+    persistMessageInTransaction(tx, run, role, blocks, markUnread, clientNonce),
   );
   await deps.events.notify(run.threadId, committed.eventSeq).catch((error) => {
     console.error("thread message realtime notification", error);
@@ -3765,6 +3768,7 @@ async function persistMessageInTransaction(
   role: "user" | "bot" | "system",
   blocks: MessageBlock[],
   markUnread?: boolean,
+  clientNonce?: string,
 ) {
   const message = await createThreadMessageInTransaction(tx, {
     threadId: run.threadId,
@@ -3773,6 +3777,7 @@ async function persistMessageInTransaction(
     botId: run.botId,
     runId: run.id,
     markUnread,
+    clientNonce,
   });
   const event = await appendEventInTransaction(tx, {
     spaceId: run.spaceId,
