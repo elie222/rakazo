@@ -94,13 +94,15 @@ async function mirrorRun(deps: MessagingDeliveryDeps, runId: string): Promise<vo
   // carries the delegating bot's own reply to the human: a message_bot
   // wake tells the delegate to answer the user inside that same peer run
   // (see message-visibility.ts's parallel fix for the in-app render side
-  // of this same shape of bug). Only mirror it out to the vendor when it
-  // landed on this bot's actual linked DM thread — a `text` block on any
-  // other thread is inter-bot chatter on a private peer thread and must
-  // never reach the vendor. extractText below only ever pulls `kind:
-  // "text"` blocks (never bot_message_sent/received), so this cannot leak
-  // internal delegation traffic even on the DM thread.
-  if (run.trigger !== "messaging" && run.threadId !== identity.dmThreadId) return;
+  // of this same shape of bug). There's no thread-identity check gating
+  // this: identity.dmThreadId is the vendor's own opaque chat/thread id
+  // (learned on inbound), not comparable to Rakazo's internal
+  // run.threadId, and a check isn't needed anyway — each Bot has at most
+  // one Thread (Thread.botId is @unique), so every run against this bot
+  // necessarily belongs to its one linked DM thread already. extractText
+  // below only ever pulls `kind: "text"` blocks (never
+  // bot_message_sent/received), so inter-bot delegation chatter can never
+  // leak to the vendor no matter which trigger produced the run.
 
   const messages = await deps.prisma.message.findMany({
     where: { runId: run.id, role: "bot" },
