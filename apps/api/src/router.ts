@@ -2977,22 +2977,33 @@ export function createRouter(deps: RouterDeps) {
             existing.provider,
           );
           if (ready) {
+            // Keep a unique authorize/account ref from begin. Only fill a missing
+            // or provider-slug placeholder via slug lookup — never replace a
+            // second-account ref with the first matching remote account.
             let providerRef = existing.providerRef;
-            const resolveAccountId = (
-              connector as {
-                connectedAccountId?: (userId: string, slug: string) => Promise<string | undefined>;
+            const needsAccountId =
+              !providerRef ||
+              providerRef.trim().toLowerCase() === existing.provider.trim().toLowerCase();
+            if (needsAccountId) {
+              const resolveAccountId = (
+                connector as {
+                  connectedAccountId?: (
+                    userId: string,
+                    slug: string,
+                  ) => Promise<string | undefined>;
+                }
+              ).connectedAccountId;
+              if (resolveAccountId) {
+                const accountId = await resolveAccountId(
+                  context.actor.userId,
+                  existing.provider,
+                ).catch(() => undefined);
+                if (accountId) providerRef = accountId;
               }
-            ).connectedAccountId;
-            if (resolveAccountId) {
-              const accountId = await resolveAccountId(
-                context.actor.userId,
-                existing.provider,
-              ).catch(() => undefined);
-              if (accountId) providerRef = accountId;
             }
             row = await deps.prisma.connection.update({
               where: { id: existing.id },
-              data: { status: "connected", providerRef },
+              data: { status: "connected", ...(providerRef ? { providerRef } : {}) },
             });
           }
         }
@@ -3038,8 +3049,12 @@ export function createRouter(deps: RouterDeps) {
               userId: context.actor.userId,
             },
           });
-          if (!row)
-            return { remote: null as null | { connectorId: string; connectionRef: string } };
+          if (!row) {
+            return {
+              remote: null as null | { connectorId: string; connectionRef: string },
+              previousStatus: null as string | null,
+            };
+          }
 
           // Serialize same-provider removals so two "last account" revokes cannot
           // both observe a sibling and skip the remote disconnect.
@@ -3063,7 +3078,10 @@ export function createRouter(deps: RouterDeps) {
             data: { status: "revoked" },
           });
           if (updated.count === 0) {
-            return { remote: null as null | { connectorId: string; connectionRef: string } };
+            return {
+              remote: null as null | { connectorId: string; connectionRef: string },
+              previousStatus: null as string | null,
+            };
           }
 
           const remaining = await tx.connection.count({
@@ -3081,13 +3099,17 @@ export function createRouter(deps: RouterDeps) {
           // siblings remain. Slug-only legacy rows must wait until they are last,
           // or a provider-wide revoke would drop every account for that app.
           if (!accountSpecific && remaining > 0) {
-            return { remote: null as null | { connectorId: string; connectionRef: string } };
+            return {
+              remote: null as null | { connectorId: string; connectionRef: string },
+              previousStatus: null as string | null,
+            };
           }
           return {
             remote: {
               connectorId: row.connectorId,
               connectionRef,
             },
+            previousStatus: row.status,
           };
         });
 
@@ -3104,6 +3126,19 @@ export function createRouter(deps: RouterDeps) {
               connectionContext(context.actor, "connections.revoke", context.signal),
             );
           } catch (error) {
+            // Local row was marked revoked inside the transaction; restore it so a
+            // failed remote disconnect remains retryable instead of orphaned.
+            if (outcome.previousStatus) {
+              await deps.prisma.connection.updateMany({
+                where: {
+                  id: input.connectionId,
+                  spaceId: context.actor.spaceId,
+                  userId: context.actor.userId,
+                  status: "revoked",
+                },
+                data: { status: outcome.previousStatus },
+              });
+            }
             throw new ORPCError("BAD_REQUEST", { message: sanitizeComposioError(error) });
           }
         }

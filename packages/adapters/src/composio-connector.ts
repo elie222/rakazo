@@ -345,10 +345,14 @@ export class ComposioConnector implements ComposioProvider {
         callbackUrl: request.redirectUrl,
       });
       if (!connectionRequest.redirectUrl) {
-        await connectionRequest.waitForConnection(20_000).catch(() => undefined);
+        const account = await connectionRequest.waitForConnection(20_000).catch(() => undefined);
+        return {
+          authorizationUrl: null,
+          state: account?.id || connectionRequest.id || request.provider,
+        };
       }
       return {
-        authorizationUrl: connectionRequest.redirectUrl ?? null,
+        authorizationUrl: connectionRequest.redirectUrl,
         state: connectionRequest.id || request.provider,
       };
     } catch (error) {
