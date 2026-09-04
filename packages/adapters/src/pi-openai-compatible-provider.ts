@@ -260,6 +260,10 @@ export type OpenAiCompatibleModelsResponse = {
   models?: Array<{ id?: string }>;
 };
 
+/** Shared suffix: /models probe is optional when the user already knows a model id. */
+const OPENAI_COMPAT_PROBE_HAND_FILL_HINT =
+  "You can still enter an explicit model id and Connect without a successful /models probe.";
+
 function probeModelIds(body: OpenAiCompatibleModelsResponse): string[] {
   const entries = Array.isArray(body.data)
     ? body.data
@@ -267,7 +271,9 @@ function probeModelIds(body: OpenAiCompatibleModelsResponse): string[] {
       ? body.models
       : null;
   if (!entries) {
-    throw new Error("Model server response did not include a models list");
+    throw new Error(
+      `Model server response did not include a models list. ${OPENAI_COMPAT_PROBE_HAND_FILL_HINT}`,
+    );
   }
   const ids: string[] = [];
   for (const entry of entries) {
@@ -303,7 +309,11 @@ async function readBoundedJson(response: Response): Promise<OpenAiCompatibleMode
     text += decoder.decode(value, { stream: true });
   }
   text += decoder.decode();
-  return JSON.parse(text) as OpenAiCompatibleModelsResponse;
+  try {
+    return JSON.parse(text) as OpenAiCompatibleModelsResponse;
+  } catch {
+    throw new Error(`Model server returned invalid JSON. ${OPENAI_COMPAT_PROBE_HAND_FILL_HINT}`);
+  }
 }
 
 export async function probeOpenAiCompatibleModels(
@@ -331,7 +341,9 @@ export async function probeOpenAiCompatibleModels(
     }
     if (!response.ok) {
       await response.body?.cancel().catch(() => undefined);
-      throw new Error(`Model server returned ${response.status}`);
+      throw new Error(
+        `Model server returned ${response.status}. ${OPENAI_COMPAT_PROBE_HAND_FILL_HINT}`,
+      );
     }
     const body = await readBoundedJson(response);
     return probeModelIds(body);

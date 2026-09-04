@@ -202,6 +202,29 @@ describe("openai-compatible provider", () => {
     ).rejects.toThrow(/redirect/i);
   });
 
+  it("clarifies non-2xx probe failures with status and hand-fill hint", async () => {
+    const fetchImpl = async () => new Response("nope", { status: 404 });
+    await expect(
+      probeOpenAiCompatibleModels({ baseUrl: "http://127.0.0.1:8000/v1" }, fetchImpl),
+    ).rejects.toThrow(
+      /returned 404.*explicit model id.*Connect without a successful \/models probe/s,
+    );
+  });
+
+  it("clarifies missing models list with hand-fill hint", async () => {
+    const fetchImpl = async () => new Response(JSON.stringify({ object: "list" }), { status: 200 });
+    await expect(
+      probeOpenAiCompatibleModels({ baseUrl: "http://127.0.0.1:8000/v1" }, fetchImpl),
+    ).rejects.toThrow(/did not include a models list.*explicit model id/s);
+  });
+
+  it("clarifies invalid JSON probe bodies with hand-fill hint", async () => {
+    const fetchImpl = async () => new Response("{not-json", { status: 200 });
+    await expect(
+      probeOpenAiCompatibleModels({ baseUrl: "http://127.0.0.1:8000/v1" }, fetchImpl),
+    ).rejects.toThrow(/invalid JSON.*explicit model id/s);
+  });
+
   it("rejects oversized model lists", async () => {
     const fetchImpl = async () => new Response("x".repeat(64 * 1024 + 1));
     await expect(
