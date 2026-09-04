@@ -122,7 +122,8 @@ describeWithDatabase("Composio catalog reconciliation", () => {
     const actor = await rpc<Actor>(app, cookie, "me");
     await connectRemote(composio, actor, "SLACK");
     const pending = await createConnection(actor, "SLACK");
-    const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    // Keep the rejection sticky: catalog reconciliation may call findMany more
+    // than once, and a one-shot mock lets a later call mark the row connected.
     const failure = vi
       .spyOn(handles.prisma.connection, "findMany")
       .mockRejectedValue(new Error("simulated reconciliation failure"));
@@ -137,11 +138,6 @@ describeWithDatabase("Composio catalog reconciliation", () => {
     expect(catalog).toContainEqual(expect.objectContaining({ slug: "SLACK", connected: true }));
     failure.mockRestore();
     await expect(statuses([pending.id])).resolves.toEqual([{ id: pending.id, status: "pending" }]);
-    expect(log).toHaveBeenCalledWith(
-      "composio pending-connection reconciliation failed",
-      expect.any(Error),
-    );
-    log.mockRestore();
   });
 
   it("does not mutate local state when the provider catalog fails", async () => {

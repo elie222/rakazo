@@ -3060,9 +3060,7 @@ export function ShellPage() {
           const rtl =
             typeof document !== "undefined" &&
             document.documentElement.getAttribute("dir") === "rtl";
-          const delta = rtl
-            ? drag.startX - event.clientX
-            : event.clientX - drag.startX;
+          const delta = rtl ? drag.startX - event.clientX : event.clientX - drag.startX;
           if (drag.mode === "expand" && delta >= BOTS_SIDEBAR_EDGE_DRAG_PX) {
             botsSidebarEdgeDragRef.current = null;
             setBotsSidebarCollapsedPref(false);
