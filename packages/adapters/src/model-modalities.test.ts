@@ -122,6 +122,22 @@ describe("operator-declared vision modalities", () => {
     });
   });
 
+  it("keeps the custom placeholder text-only when nothing is declared", async () => {
+    await withEnv({ [VISION_ENV]: undefined }, async () => {
+      const { openAiCompatibleCatalogProvider, OPENAI_COMPATIBLE_CATALOG_MODEL_ID } = await import(
+        "./pi-openai-compatible-provider.js"
+      );
+      const { modelAcceptsImageInput } = await import("./model-vision.js");
+      const custom = openAiCompatibleCatalogProvider()
+        .getModels()
+        .find((m) => m.id === OPENAI_COMPATIBLE_CATALOG_MODEL_ID);
+      expect(custom?.input).not.toContain("image");
+      expect(
+        modelAcceptsImageInput(OPENAI_COMPATIBLE_PROVIDER_ID, OPENAI_COMPATIBLE_CATALOG_MODEL_ID),
+      ).toBe(false);
+    });
+  });
+
   it("upgrades the custom placeholder when it is declared vision-capable", async () => {
     await withEnv({ [VISION_ENV]: "custom,gpt4o-vision" }, async () => {
       const { openAiCompatibleCatalogProvider, OPENAI_COMPATIBLE_CATALOG_MODEL_ID } = await import(
