@@ -29,6 +29,7 @@ import {
   desktopStackImageTag,
   isRakazoHealth,
   managedLocalOpenUrl,
+  maySendDesktopStackToken,
   normalizeServerUrl,
   parseSetupInput,
   probeFailureMessage,
@@ -686,7 +687,8 @@ async function probeManagedStack(
   signal?: AbortSignal,
 ): Promise<string | null> {
   const url = normalizeServerUrl(rawUrl);
-  if (url === null) return null;
+  // Never put the private stack token on a cleartext LAN or .local hop.
+  if (url === null || !maySendDesktopStackToken(url)) return null;
   const timeout = AbortSignal.timeout(PROBE_TIMEOUT_MS);
   try {
     const response = await net.fetch(`${url}${DESKTOP_STACK_PROBE_PATH}`, {

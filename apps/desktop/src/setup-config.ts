@@ -60,6 +60,22 @@ export function managedLocalOpenUrl(
   return managed;
 }
 
+/**
+ * The private managed-stack token may travel over HTTPS anywhere, or over HTTP
+ * only to loopback. Private-network and .local HTTP stay cleartext on a LAN, so
+ * they must not receive the token.
+ */
+export function maySendDesktopStackToken(serverUrl: string): boolean {
+  try {
+    const url = new URL(serverUrl);
+    if (url.protocol === "https:") return true;
+    if (url.protocol === "http:") return isLoopbackHost(url.hostname);
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 /** Validates an untrusted value (saved file or IPC payload) into a usable setup. */
 export function parseSetupInput(value: unknown): DesktopSetup | null {
   if (typeof value !== "object" || value === null) return null;

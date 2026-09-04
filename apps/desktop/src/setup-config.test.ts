@@ -4,6 +4,7 @@ import {
   desktopStackImageTag,
   isRakazoHealth,
   managedLocalOpenUrl,
+  maySendDesktopStackToken,
   normalizeServerUrl,
   parseSetupInput,
   parseStoredSetup,
@@ -78,6 +79,16 @@ describe("managed local open URL", () => {
     expect(managedLocalOpenUrl("http://127.0.0.1:5199", DEFAULT_LOCAL_WEB_URL)).toBeNull();
     expect(managedLocalOpenUrl("http://localhost:5173", DEFAULT_LOCAL_WEB_URL)).toBeNull();
     expect(managedLocalOpenUrl("https://rakazo.example.com", DEFAULT_LOCAL_WEB_URL)).toBeNull();
+  });
+});
+
+describe("desktop stack token transport", () => {
+  it("allows HTTPS and loopback HTTP only", () => {
+    expect(maySendDesktopStackToken("https://rakazo.example.com")).toBe(true);
+    expect(maySendDesktopStackToken("http://127.0.0.1:5173")).toBe(true);
+    expect(maySendDesktopStackToken("http://localhost:5173")).toBe(true);
+    expect(maySendDesktopStackToken("http://10.0.0.8:5173")).toBe(false);
+    expect(maySendDesktopStackToken("http://rakazo.local:5173")).toBe(false);
   });
 });
 
