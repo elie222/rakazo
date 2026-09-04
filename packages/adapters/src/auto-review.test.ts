@@ -122,6 +122,29 @@ describe("redactToolArgsForReview", () => {
       body: "[redacted] hello",
     });
   });
+
+  it("redacts sensitive keys recursively before sending args to the checker", () => {
+    expect(
+      redactToolArgsForReview(
+        {
+          credential: "top-level-credential",
+          config: {
+            label: "keep me",
+            password: "nested-password",
+            accounts: [{ token: "nested-token", name: "primary" }],
+          },
+        },
+        [],
+      ),
+    ).toEqual({
+      credential: "[redacted]",
+      config: {
+        label: "keep me",
+        password: "[redacted]",
+        accounts: [{ token: "[redacted]", name: "primary" }],
+      },
+    });
+  });
 });
 
 describe("buildAutoReviewPrompt", () => {

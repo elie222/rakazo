@@ -9,6 +9,8 @@ const MAX_TASK_CHARS = 400;
 const MAX_BOT_CHARS = 240;
 const MAX_ARGS_CHARS = 1_200;
 const MAX_REASON_CHARS = 160;
+const SENSITIVE_REVIEW_ARG_KEY =
+  /password|secret|token|api[_-]?key|authorization|cookie|credential/i;
 
 export type AutoReviewChecker = {
   provider: string;
@@ -96,7 +98,7 @@ export function redactToolArgsForReview(
 ): Record<string, unknown> {
   const redacted: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(args)) {
-    if (/password|secret|token|api[_-]?key|authorization|cookie/i.test(key)) {
+    if (SENSITIVE_REVIEW_ARG_KEY.test(key)) {
       redacted[key] = "[redacted]";
       continue;
     }
@@ -109,7 +111,14 @@ export function redactToolArgsForReview(
       continue;
     }
     try {
-      redacted[key] = JSON.parse(redactSecrets(JSON.stringify(value), secrets));
+      redacted[key] = JSON.parse(
+        JSON.stringify(value, (nestedKey, nestedValue) => {
+          if (nestedKey && SENSITIVE_REVIEW_ARG_KEY.test(nestedKey)) return "[redacted]";
+          return typeof nestedValue === "string"
+            ? redactSecrets(nestedValue, secrets)
+            : nestedValue;
+        }),
+      );
     } catch {
       redacted[key] = "[unserializable]";
     }
