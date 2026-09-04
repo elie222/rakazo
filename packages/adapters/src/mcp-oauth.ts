@@ -104,7 +104,15 @@ export class StoredMcpOAuthProvider implements OAuthClientProvider {
     await this.persist();
   }
   async redirectToAuthorization(url: URL): Promise<void> {
-    const authorizationUrl = validateUrl(url, { allowHttpLocalhost: true });
+    let authorizationUrl: URL;
+    try {
+      authorizationUrl = validateUrl(url, { allowHttpLocalhost: true });
+    } catch (error) {
+      if (!this.options.onAuthorization) {
+        await this.invalidateCredentials("tokens");
+      }
+      throw error;
+    }
     this.authorizationUrl = authorizationUrl;
     if (this.options.onAuthorization) {
       this.options.onAuthorization(authorizationUrl);

@@ -23,9 +23,12 @@ function oauthSessionStore() {
 describe("MCP OAuth", () => {
   it("rejects unsafe browser authorization URLs", async () => {
     const onAuthorization = vi.fn();
-    const provider = new StoredMcpOAuthProvider("server-1", {}, async () => undefined, {
-      onAuthorization,
-    });
+    const provider = new StoredMcpOAuthProvider(
+      "server-1",
+      { oauth: { tokens: { access_token: "working", token_type: "bearer" } } },
+      async () => undefined,
+      { onAuthorization },
+    );
 
     await expect(
       provider.redirectToAuthorization(new URL("http://auth.example.test/authorize")),
@@ -33,6 +36,7 @@ describe("MCP OAuth", () => {
 
     expect(provider.authorizationUrl).toBeUndefined();
     expect(onAuthorization).not.toHaveBeenCalled();
+    expect(provider.tokens()).toMatchObject({ access_token: "working" });
   });
 
   it("allows localhost HTTP browser authorization URLs", async () => {
@@ -46,6 +50,24 @@ describe("MCP OAuth", () => {
 
     expect(provider.authorizationUrl).toEqual(authorizationUrl);
     expect(onAuthorization).toHaveBeenCalledWith(authorizationUrl);
+  });
+
+  it("clears stale tokens when runtime authorization URL validation fails", async () => {
+    const persisted: { oauth?: { tokens?: unknown } }[] = [];
+    const provider = new StoredMcpOAuthProvider(
+      "server-1",
+      { oauth: { tokens: { access_token: "revoked", token_type: "bearer" } } },
+      async (material) => {
+        persisted.push(structuredClone(material));
+      },
+    );
+
+    await expect(
+      provider.redirectToAuthorization(new URL("http://auth.example.test/authorize")),
+    ).rejects.toThrow(/HTTPS/i);
+
+    expect(provider.tokens()).toBeUndefined();
+    expect(persisted.at(-1)?.oauth?.tokens).toBeUndefined();
   });
 
   it("persists SDK credentials and invalidates only the requested scope", async () => {
