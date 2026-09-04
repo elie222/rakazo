@@ -1063,8 +1063,9 @@ describe("mobile thread event reduction", () => {
   });
 
   it("applies computer takeover requests as waiting_takeover", () => {
+    const progress = mobileMessage("progress:run-1", [{ kind: "progress", text: "working…" }], 1);
     const initial: MobileSnapshot = {
-      ...snapshot(),
+      ...snapshot([progress]),
       run: { id: "run-1", status: "running" },
       activeRuns: [{ id: "run-1", status: "running" }],
     };
@@ -1076,6 +1077,7 @@ describe("mobile thread event reduction", () => {
 
     expect(waiting?.run?.status).toBe("waiting_takeover");
     expect(waiting?.activeRuns?.[0]?.status).toBe("waiting_takeover");
+    expect(waiting?.messages.some((message) => message.id.startsWith("progress:"))).toBe(false);
     expect(waiting?.cursor).toBe(10);
   });
 

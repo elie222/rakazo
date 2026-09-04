@@ -655,11 +655,9 @@ export function applyMobileThreadEvent(
   if (event.type === "run.waiting_input" || event.type === "computer.takeover.requested") {
     const status = event.type === "run.waiting_input" ? "waiting_input" : "waiting_takeover";
     const progressId = progressMessageId(event);
-    // Waiting-input pauses drop live progress server-side; clear a leftover bubble.
-    const messages =
-      event.type === "run.waiting_input"
-        ? prev.messages.filter((message) => message.id !== progressId)
-        : prev.messages;
+    // Waiting pauses drop live progress server-side; clear a leftover bubble so
+    // the waiting footer is not hidden behind a stale "Working…" row.
+    const messages = prev.messages.filter((message) => message.id !== progressId);
     const progressCleared = messages.length !== prev.messages.length;
     const runChanged = Boolean(
       prev.run && prev.run.id === event.runId && prev.run.status !== status,
