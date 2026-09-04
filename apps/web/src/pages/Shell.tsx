@@ -85,6 +85,7 @@ import {
   Menu,
   Mic,
   Monitor,
+  PanelLeftClose,
   Paperclip,
   Phone,
   Plus,
@@ -141,6 +142,12 @@ import { copyableMessageText } from "../lib/message-text";
 import { providerLabel } from "../lib/messaging";
 import { isFileDrag, revokePendingAttachmentPreviews } from "../lib/pending-attachments";
 import { markAfterPaint, markOnce } from "../lib/performance";
+import {
+  BOTS_SIDEBAR_EDGE_DRAG_PX,
+  readBotsSidebarCollapsed,
+  writeBotsSidebarCollapsed,
+} from "../lib/bots-sidebar-pref";
+import { scheduleFocusPrompt } from "../lib/focus-prompt";
 import { clearSpaceSelection, rpc, selectedSpaceId, selectSpace } from "../lib/rpc";
 import { readSeenRunErrorIds, rememberSeenRunErrorId } from "../lib/run-error-storage";
 import {
@@ -181,6 +188,7 @@ import {
 } from "./RoutineEditor";
 import { SpaceSearchResults } from "./SpaceSearch";
 import { BotSettings, CreateBotForm } from "./shell/bot-panel";
+import { BotCreatePicker } from "./shell/bot-picker";
 import { CommandPalette, isCommandPaletteHotkey } from "./shell/command-palette";
 import {
   ClearConversationDialog,
@@ -313,6 +321,9 @@ export function ShellPage() {
   useEffect(() => {
     setCollapsedSidebarSections(readCollapsedSidebarSections(userId));
   }, [userId]);
+  useEffect(() => {
+    setBotsSidebarCollapsed(readBotsSidebarCollapsed(userId));
+  }, [userId]);
   const [query, setQuery] = useState("");
   const [searchHits, setSearchHits] = useState<SearchHit[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
@@ -418,6 +429,12 @@ export function ShellPage() {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [draggedBotId, setDraggedBotId] = useState<string | null>(null);
   const [createMenuOpen, setCreateMenuOpen] = useState(false);
+  const [botsSidebarCollapsed, setBotsSidebarCollapsed] = useState(false);
+  const focusPromptAbortRef = useRef<AbortController | null>(null);
+  const focusPromptBotIdRef = useRef<string | null>(null);
+  const botsSidebarEdgeDragRef = useRef<{ startX: number; mode: "expand" | "collapse" } | null>(
+    null,
+  );
   const [newSpaceOpen, setNewSpaceOpen] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
 
@@ -1959,6 +1976,9 @@ export function ShellPage() {
       const trimmed = plan.trimmed;
       setSending(true);
       setSendError(null);
+      if (botTarget && focusPromptBotIdRef.current === botTarget) {
+        cancelFocusPrompt();
+      }
       try {
         if (plan.shouldRunRoutines) {
           const sendNonce = newClientNonce();
@@ -2198,12 +2218,44 @@ export function ShellPage() {
     await refreshBots().catch(() => undefined);
   }
 
+  function cancelFocusPrompt() {
+    focusPromptAbortRef.current?.abort();
+    focusPromptAbortRef.current = null;
+    focusPromptBotIdRef.current = null;
+  }
+
+  function beginFocusPrompt(botId: string, immediate: boolean) {
+    cancelFocusPrompt();
+    const controller = new AbortController();
+    focusPromptAbortRef.current = controller;
+    focusPromptBotIdRef.current = botId;
+    void scheduleFocusPrompt({
+      immediate,
+      signal: controller.signal,
+      prompt: async () => {
+        if (focusPromptBotIdRef.current !== botId) return;
+        await rpc.onboarding.promptFocus({ botId }).catch(() => undefined);
+      },
+    }).finally(() => {
+      if (focusPromptAbortRef.current === controller) {
+        focusPromptAbortRef.current = null;
+        focusPromptBotIdRef.current = null;
+      }
+    });
+  }
+
+  function setBotsSidebarCollapsedPref(collapsed: boolean) {
+    setBotsSidebarCollapsed(collapsed);
+    writeBotsSidebarCollapsed(userId, collapsed);
+  }
+
   async function createBot(input: {
     name: string;
     title: string;
     description: string;
     computerMode: ComputerMode;
   }) {
+    const isFirstBot = botsRef.current.length === 0;
     const bot = await rpc.bots.create({
       ...normalizeCreateBotProfile(input),
       notifyOnFinish: true,
@@ -2214,7 +2266,22 @@ export function ShellPage() {
     );
     navigate(`/app/${bot.id}`);
     setPanel(null);
+    await rpc.onboarding.start({ botId: bot.id }).catch(() => undefined);
+    beginFocusPrompt(bot.id, isFirstBot);
     await refreshBots().catch(() => undefined);
+  }
+
+  async function createBotQuick() {
+    try {
+      await createBot({
+        name: "New Bot",
+        title: "",
+        description: "",
+        computerMode: "team",
+      });
+    } catch {
+      // Keep the current chat open when create fails.
+    }
   }
 
   async function bootComputer({
@@ -2283,6 +2350,12 @@ export function ShellPage() {
     setComputerOpen(false);
     setComputerError(null);
     setComputerErrorFromScreen(false);
+  }, [active?.id]);
+
+  useEffect(() => {
+    if (focusPromptBotIdRef.current && focusPromptBotIdRef.current !== active?.id) {
+      cancelFocusPrompt();
+    }
   }, [active?.id]);
 
   useEffect(() => {
@@ -2425,8 +2498,14 @@ export function ShellPage() {
         />
       ) : null}
       <aside
-        className={`absolute inset-y-0 start-0 z-40 flex w-[calc(100%-48px)] max-w-[316px] shrink-0 flex-col border-e border-sidebar-border bg-sidebar transition-transform md:static md:z-auto md:w-[316px] md:translate-x-0 ${
+        data-testid="bots-sidebar"
+        data-collapsed={botsSidebarCollapsed ? "true" : "false"}
+        className={`absolute inset-y-0 start-0 z-40 flex w-[calc(100%-48px)] max-w-[316px] shrink-0 flex-col border-e border-sidebar-border bg-sidebar transition-[transform,width,opacity] md:static md:z-auto md:translate-x-0 ${
           mobileSidebarOpen ? "translate-x-0" : "-translate-x-full rtl:translate-x-full"
+        } ${
+          botsSidebarCollapsed
+            ? "md:w-0 md:max-w-0 md:overflow-hidden md:border-e-0 md:opacity-0 md:pointer-events-none"
+            : "md:w-[316px]"
         }`}
       >
         <div className="app-drag flex items-center justify-between px-[18px] pb-3 pt-4">
@@ -2452,10 +2531,21 @@ export function ShellPage() {
                 aria-hidden="true"
               />
             </button>
+            <button
+              type="button"
+              className="app-no-drag hidden h-7 w-7 items-center justify-center rounded-full text-muted-foreground/70 hover:text-foreground/75 md:inline-flex"
+              aria-label={t`Minimize bots`}
+              title={t`Minimize bots`}
+              data-testid="minimize-bots-sidebar"
+              onClick={() => setBotsSidebarCollapsedPref(true)}
+            >
+              <PanelLeftClose size={15} strokeWidth={1.8} aria-hidden="true" />
+            </button>
             <Popover open={createMenuOpen} onOpenChange={setCreateMenuOpen}>
               <PopoverTrigger
                 className="app-no-drag text-[21px] text-muted-foreground/70 hover:text-foreground/75"
                 title={t`Create`}
+                data-testid="create-menu-trigger"
               >
                 +
               </PopoverTrigger>
@@ -2463,40 +2553,28 @@ export function ShellPage() {
               {createMenuOpen ? (
                 <PopoverContent
                   align="end"
-                  className="app-no-drag w-auto min-w-[160px] gap-0 p-1 data-closed:animate-none"
+                  className="app-no-drag w-auto gap-0 overflow-hidden p-0 data-closed:animate-none"
                 >
-                  <Button
-                    variant="ghost"
-                    className="w-full justify-start font-normal"
-                    onClick={() => {
+                  <BotCreatePicker
+                    bots={bots}
+                    onCreateBot={() => {
                       setCreateMenuOpen(false);
-                      setPanel("create");
+                      void createBotQuick();
                     }}
-                  >
-                    <Trans>New bot</Trans>
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    className="w-full justify-start font-normal"
-                    onClick={() => {
+                    onOpenBot={(id) => {
+                      setCreateMenuOpen(false);
+                      setMobileSidebarOpen(false);
+                      navigate(`/app/${id}`);
+                    }}
+                    onCreateGroup={() => {
                       setCreateMenuOpen(false);
                       setPanel("create-group");
                     }}
-                  >
-                    <Trans>New group</Trans>
-                  </Button>
-                  <Separator className="my-1" />
-                  <Button
-                    variant="ghost"
-                    className="w-full justify-start font-normal"
-                    onClick={() => {
+                    onCreateSpace={() => {
                       setCreateMenuOpen(false);
                       setNewSpaceOpen(true);
                     }}
-                  >
-                    <Lock size={14} strokeWidth={1.8} aria-hidden="true" />
-                    <Trans>New space</Trans>
-                  </Button>
+                  />
                 </PopoverContent>
               ) : null}
             </Popover>
@@ -2938,6 +3016,43 @@ export function ShellPage() {
           ) : null}
         </Popover>
       </aside>
+
+      <div
+        data-testid="bots-sidebar-edge"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label={botsSidebarCollapsed ? t`Show bots` : t`Hide bots`}
+        aria-valuenow={botsSidebarCollapsed ? 0 : 1}
+        className={`absolute inset-y-0 z-50 hidden w-2 cursor-ew-resize touch-none md:block ${
+          botsSidebarCollapsed ? "start-0" : "start-[308px]"
+        }`}
+        onPointerDown={(event) => {
+          event.currentTarget.setPointerCapture(event.pointerId);
+          botsSidebarEdgeDragRef.current = {
+            startX: event.clientX,
+            mode: botsSidebarCollapsed ? "expand" : "collapse",
+          };
+        }}
+        onPointerMove={(event) => {
+          const drag = botsSidebarEdgeDragRef.current;
+          if (!drag) return;
+          const delta = event.clientX - drag.startX;
+          if (drag.mode === "expand" && delta >= BOTS_SIDEBAR_EDGE_DRAG_PX) {
+            botsSidebarEdgeDragRef.current = null;
+            setBotsSidebarCollapsedPref(false);
+          } else if (drag.mode === "collapse" && delta <= -BOTS_SIDEBAR_EDGE_DRAG_PX) {
+            botsSidebarEdgeDragRef.current = null;
+            setBotsSidebarCollapsedPref(true);
+          }
+        }}
+        onPointerUp={() => {
+          botsSidebarEdgeDragRef.current = null;
+        }}
+        onPointerCancel={() => {
+          botsSidebarEdgeDragRef.current = null;
+        }}
+        onDoubleClick={() => setBotsSidebarCollapsedPref(!botsSidebarCollapsed)}
+      />
 
       <main
         aria-hidden={mobileSidebarOpen || undefined}

@@ -1,16 +1,8 @@
 import { expect, test } from "@playwright/test";
-import { activeBotId, captureScreenshot, completeOnboarding, openNewBot, signup } from "./helpers";
+import { captureScreenshot, completeOnboarding, createNamedBot, signup } from "./helpers";
 
 async function createBot(page: import("@playwright/test").Page, name: string) {
-  const botList = page.locator("aside").first();
-  await openNewBot(page);
-  await expect(page.getByText("New bot", { exact: true })).toBeVisible();
-  await page.locator("label:has-text('Name') input").fill(name);
-  await page.getByRole("button", { name: "Create", exact: true }).click();
-  await expect(botList.getByRole("button", { name: new RegExp(`^${name}`) })).toBeVisible();
-  await expect(page.getByRole("combobox", { name: `Message ${name}` })).toBeVisible();
-  await page.waitForURL(/\/app\/[^/]+$/);
-  return activeBotId(page);
+  return createNamedBot(page, name);
 }
 
 test("mention picker completes with Enter and Tab", async ({ page }, testInfo) => {

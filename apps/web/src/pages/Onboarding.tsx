@@ -223,9 +223,10 @@ export function OnboardingPage() {
         instructions: description,
         notifyOnFinish: true,
       });
-      // Onboarding continues conversationally in the thread: greeting, focus
-      // choice, and Composio authorize cards.
+      // Onboarding continues conversationally in the thread: greeting first,
+      // then the focus choice (immediate for the first bot).
       await rpc.onboarding.start({ botId: bot.id }).catch(() => undefined);
+      await rpc.onboarding.promptFocus({ botId: bot.id }).catch(() => undefined);
       navigate(`/app/${bot.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : t`Could not create your bot`);

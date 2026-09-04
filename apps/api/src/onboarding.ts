@@ -122,6 +122,9 @@ async function updateBlocks(
   });
 }
 
+/** Sentinel answerId for a focus card the user dismissed without choosing. */
+export const FOCUS_DISMISSED_ANSWER_ID = "_dismissed";
+
 export async function startOnboarding(
   deps: OnboardingDeps,
   actor: Actor,
@@ -136,9 +139,35 @@ export async function startOnboarding(
   });
   const firstName = (user?.name ?? "there").split(/\s+/)[0];
   const target = { spaceId: actor.spaceId, botId: bot.id, threadId: thread.id };
+  // Greeting only. The focus card is posted later via promptFocus so non-first
+  // bots can wait ~10s for free typing, or skip if the user already engaged.
   await post(deps, target, [
     { kind: "text", text: `Hey ${firstName}. Fresh start on my side, so I’ll keep this short.` },
   ]);
+}
+
+function messageHasChoice(blocks: MessageBlock[]): boolean {
+  return blocks.some((block) => block.kind === "choice");
+}
+
+function messageHasPendingChoice(blocks: MessageBlock[]): boolean {
+  return blocks.some((block) => block.kind === "choice" && !block.answerId);
+}
+
+export async function promptFocus(
+  deps: OnboardingDeps,
+  actor: Actor,
+  botId: string,
+): Promise<void> {
+  const { bot, thread } = await requireBotThread(deps, actor, botId);
+  const recent = await deps.prisma.message.findMany({
+    where: { threadId: thread.id },
+    select: { role: true, blocks: true },
+    orderBy: { createdAt: "asc" },
+  });
+  if (recent.some((message) => message.role === "user")) return;
+  if (recent.some((message) => messageHasChoice(message.blocks as MessageBlock[]))) return;
+  const target = { spaceId: actor.spaceId, botId: bot.id, threadId: thread.id };
   await post(deps, target, [
     {
       kind: "choice",
@@ -146,6 +175,29 @@ export async function startOnboarding(
       options: FOCUS_OPTIONS.map(({ id, letter, label }) => ({ id, letter, label })),
     },
   ]);
+}
+
+export async function dismissFocus(
+  deps: OnboardingDeps,
+  actor: Actor,
+  botId: string,
+): Promise<void> {
+  const { bot, thread } = await requireBotThread(deps, actor, botId);
+  const target = { spaceId: actor.spaceId, botId: bot.id, threadId: thread.id };
+  const recent = await deps.prisma.message.findMany({
+    where: { threadId: thread.id },
+    orderBy: { createdAt: "asc" },
+  });
+  const pending = recent.find((message) =>
+    messageHasPendingChoice(message.blocks as MessageBlock[]),
+  );
+  if (!pending) return;
+  const blocks = (pending.blocks as MessageBlock[]).map((block) =>
+    block.kind === "choice" && !block.answerId
+      ? { ...block, answerId: FOCUS_DISMISSED_ANSWER_ID }
+      : block,
+  );
+  await updateBlocks(deps, target, pending.id, blocks);
 }
 
 export async function chooseFocus(
@@ -164,7 +216,7 @@ export async function chooseFocus(
     orderBy: { createdAt: "asc" },
   });
   const pending = recent.find((message) =>
-    (message.blocks as MessageBlock[]).some((block) => block.kind === "choice" && !block.answerId),
+    messageHasPendingChoice(message.blocks as MessageBlock[]),
   );
   if (!pending) return;
   const blocks = (pending.blocks as MessageBlock[]).map((block) =>

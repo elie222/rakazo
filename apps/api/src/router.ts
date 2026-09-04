@@ -127,7 +127,13 @@ import {
   toComputerStatus,
 } from "./computer-status.js";
 import { buildMcpUpdateMaterial } from "./mcp-material.js";
-import { chooseFocus, markAppConnected, startOnboarding } from "./onboarding.js";
+import {
+  chooseFocus,
+  dismissFocus,
+  markAppConnected,
+  promptFocus,
+  startOnboarding,
+} from "./onboarding.js";
 import { listSpaceRuns } from "./runs.js";
 import { addScreenProxyCapability } from "./screen-proxy.js";
 import { querySpaceSearch } from "./search.js";
@@ -2744,12 +2750,28 @@ export function createRouter(deps: RouterDeps) {
         );
         return { ok: true as const };
       }),
+      promptFocus: authed.onboarding.promptFocus.handler(async ({ context, input }) => {
+        await promptFocus(
+          { prisma: deps.prisma, events: deps.events, composio: deps.composio },
+          context.actor,
+          input.botId,
+        );
+        return { ok: true as const };
+      }),
       choose: authed.onboarding.choose.handler(async ({ context, input }) => {
         await chooseFocus(
           { prisma: deps.prisma, events: deps.events, composio: deps.composio },
           context.actor,
           input.botId,
           input.optionId,
+        );
+        return { ok: true as const };
+      }),
+      dismissFocus: authed.onboarding.dismissFocus.handler(async ({ context, input }) => {
+        await dismissFocus(
+          { prisma: deps.prisma, events: deps.events, composio: deps.composio },
+          context.actor,
+          input.botId,
         );
         return { ok: true as const };
       }),

@@ -1,4 +1,10 @@
-import type { RunActivityRow, SearchHit, SpaceBot, SpaceGroup } from "@rakazo/contracts";
+import {
+  normalizeCreateBotProfile,
+  type RunActivityRow,
+  type SearchHit,
+  type SpaceBot,
+  type SpaceGroup,
+} from "@rakazo/contracts";
 import { groupBotsForSidebar } from "@rakazo/core";
 import { Redirect, useFocusEffect, useRouter } from "expo-router";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -136,6 +142,29 @@ export default function Home() {
       setRefreshing(false);
     }
   }, [loadBots]);
+
+  const createQuickBot = useCallback(async () => {
+    const isFirstBot = bots.length === 0;
+    try {
+      const bot = await rpc<MobileBot>("bots/create", {
+        ...normalizeCreateBotProfile({ name: "New Bot", title: "", description: "" }),
+        notifyOnFinish: true,
+        computerMode: "team",
+      });
+      await rpc("onboarding/start", { botId: bot.id }).catch(() => undefined);
+      if (isFirstBot) {
+        await rpc("onboarding/promptFocus", { botId: bot.id }).catch(() => undefined);
+      } else {
+        setTimeout(() => {
+          void rpc("onboarding/promptFocus", { botId: bot.id }).catch(() => undefined);
+        }, 10_000);
+      }
+      await refreshBots().catch(() => undefined);
+      router.replace({ pathname: "/thread", params: { botId: bot.id, name: bot.name } });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t("Could not create bot"));
+    }
+  }, [bots.length, refreshBots, router, t]);
 
   useEffect(() => {
     void loadSessionToken().then((token) => {
@@ -347,7 +376,7 @@ export default function Home() {
             accessibilityLabel={t("Create")}
             onPress={() =>
               Alert.alert(t("Create"), undefined, [
-                { text: t("New bot"), onPress: () => router.push("/new") },
+                { text: t("New bot"), onPress: () => void createQuickBot() },
                 { text: t("New group"), onPress: () => router.push("/new-group") },
                 { text: t("New space"), onPress: () => router.push("/new-space") },
                 { text: t("Cancel"), style: "cancel" },

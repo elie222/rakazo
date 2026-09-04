@@ -45,6 +45,8 @@ export default function NewBot() {
         notifyOnFinish: true,
         computerMode,
       });
+      await rpc("onboarding/start", { botId: bot.id }).catch(() => undefined);
+      await rpc("onboarding/promptFocus", { botId: bot.id }).catch(() => undefined);
       router.replace({ pathname: "/thread", params: { botId: bot.id, name: bot.name } });
     } catch (err) {
       setError(err instanceof Error ? err.message : t("Could not create bot"));
