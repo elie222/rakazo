@@ -65,11 +65,14 @@ jobs:
           echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
 
       - name: Generate Android project
-        run: pnpm --filter @rakazo/mobile exec expo prebuild --platform android --no-install
+        run: |
+          pnpm --filter @rakazo/mobile exec expo prebuild --platform android --no-install
+          sed -i 's/<application /<application android:usesCleartextTraffic="true" /' \
+            apps/mobile/android/app/src/main/AndroidManifest.xml
 
-      - name: Build debug APK
+      - name: Build screenshot APK
         working-directory: apps/mobile/android
-        run: ./gradlew app:assembleDebug -PreactNativeArchitectures=x86_64 --no-daemon
+        run: ./gradlew app:assembleRelease -PreactNativeArchitectures=x86_64 --no-daemon
 
       - name: Enable KVM
         run: |
