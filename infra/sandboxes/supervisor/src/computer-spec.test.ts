@@ -577,6 +577,15 @@ describe("computer resource limits", () => {
     expect(() => containerCreateOptions(createInput)).toThrow(/RAKAZO_COMPUTER_CPUS/);
   });
 
+  it("rejects a CPU count that leaves the safe-integer NanoCpus range", () => {
+    // 1e300 is finite, but Math.floor(1e300 * 1e9) is Infinity. 1e7 CPUs yields a non-safe
+    // integer. Both must fail closed rather than reach HostConfig.NanoCpus.
+    for (const value of ["1e300", "10000000"]) {
+      process.env.RAKAZO_COMPUTER_CPUS = value;
+      expect(() => containerCreateOptions(createInput)).toThrow(/RAKAZO_COMPUTER_CPUS/);
+    }
+  });
+
   it("parses byte counts without a unit suffix", () => {
     expect(parseMemoryBytes("X", "1073741824")).toBe(1024 ** 3);
   });

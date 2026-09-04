@@ -67,10 +67,10 @@ export function parseMemoryBytes(name: string, raw: string): number {
 export function parseNanoCpus(name: string, raw: string): number {
   if (isUnlimited(raw)) return 0;
   const value = Number(raw.trim());
-  // A positive value below 1e-9 floors to 0 nanocpus, which Docker reads as *unlimited*. Checking
-  // the converted number, not just the input, keeps a cap from silently becoming no cap.
+  // Tiny positives floor to 0 nanocpus (Docker reads as unlimited). Huge values leave the
+  // safe-integer range or become Infinity. Validate the converted number either way.
   const nanoCpus = Math.floor(value * 1e9);
-  if (!Number.isFinite(value) || value <= 0 || nanoCpus <= 0) {
+  if (!Number.isSafeInteger(nanoCpus) || nanoCpus <= 0) {
     throw new Error(`${name} must be a positive number of CPUs, received "${raw}"`);
   }
   return nanoCpus;
