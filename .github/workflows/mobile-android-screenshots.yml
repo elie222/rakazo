@@ -69,7 +69,7 @@ jobs:
 
       - name: Build debug APK
         working-directory: apps/mobile/android
-        run: ./gradlew assembleDebug --no-daemon
+        run: ./gradlew app:assembleDebug -PreactNativeArchitectures=x86_64 --no-daemon
 
       - name: Enable KVM
         run: |
