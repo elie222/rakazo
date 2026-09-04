@@ -13,6 +13,7 @@ cleanup() {
   if [[ -n "$metro_pid" ]]; then
     kill "$metro_pid" 2>/dev/null || true
   fi
+  adb logcat -d -t 1000 > "$report_dir/android.log" 2>/dev/null || true
   cp "$run_log" "$report_dir/run.log" 2>/dev/null || true
   cp "$metro_log" "$report_dir/metro.log" 2>/dev/null || true
 }
@@ -20,7 +21,8 @@ trap cleanup EXIT
 
 adb install -r apps/mobile/android/app/build/outputs/apk/debug/app-debug.apk
 adb reverse tcp:8081 tcp:8081
-pnpm --filter @rakazo/mobile exec expo start --port 8081 > "$metro_log" 2>&1 &
+EXPO_UNSTABLE_HEADLESS=1 pnpm --filter @rakazo/mobile exec expo start --port 8081 \
+  > "$metro_log" 2>&1 &
 metro_pid=$!
 
 for attempt in {1..60}; do
