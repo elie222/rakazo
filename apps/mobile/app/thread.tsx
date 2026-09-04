@@ -691,6 +691,15 @@ function Thread() {
     void dismissThreadNotifications({ threadId: notificationThreadId }).catch(() => undefined);
   }, [botId, navigation, notificationThreadId]);
 
+  // Cancel delayed setup only when leaving this bot's thread (unmount or botId
+  // change). Blur alone is not leave — settings/computer push must keep the timer.
+  useEffect(() => {
+    if (!botId) return;
+    return () => {
+      cancelFocusPrompt(botId);
+    };
+  }, [botId]);
+
   // Covers returning from a pushed screen; the AppState listener covers returning from background.
   useFocusEffect(
     useCallback(() => {
@@ -703,7 +712,6 @@ function Thread() {
       }
       markReadIfVisible();
       return () => {
-        if (botId) cancelFocusPrompt(botId);
         void setOpenNotificationThread(null).catch(() => undefined);
       };
     }, [botId, markReadIfVisible, notificationThreadId]),

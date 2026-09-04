@@ -26,7 +26,8 @@ export function cancelFocusPrompt(botId?: string): void {
  * Schedule posting the focus choice card. Survives leaving the home screen so
  * navigating into the new bot's thread does not cancel the delay. Call
  * `allowFocusPrompt` before navigating, and `cancelFocusPrompt` when leaving
- * that bot's thread so a late `onboarding/start` cannot schedule after departure.
+ * that bot's thread (unmount / bot switch — not blur onto settings) so a late
+ * `onboarding/start` cannot schedule after departure.
  */
 export function scheduleFocusPrompt(botId: string, immediate: boolean): void {
   if (cancelledBotIds.has(botId)) return;
