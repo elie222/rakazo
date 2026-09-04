@@ -339,9 +339,9 @@ export class PipedreamConnector implements ManagedConnectorProvider {
       },
       signal: requestAbort,
     });
+    if (response.status === 401) this.accessToken = undefined;
     const body = await readPipedreamBody(response, requestAbort);
     if (!response.ok) {
-      if (response.status === 401) this.accessToken = undefined;
       throw new Error(
         sanitizeConnectorError(`Pipedream returned HTTP ${response.status}: ${body}`, [token]),
       );

@@ -134,6 +134,54 @@ describe("PipedreamConnector", () => {
     ).rejects.toThrow("Pipedream response is too large.");
   });
 
+  it("clears a rejected token before reading an oversized 401 response", async () => {
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(Response.json({ access_token: "rejected-token", expires_in: 3_600 }))
+      .mockResolvedValueOnce(
+        new Response("oversized", {
+          status: 401,
+          headers: { "content-length": String(MAX_PIPEDREAM_RESPONSE_BYTES + 1) },
+        }),
+      )
+      .mockResolvedValueOnce(
+        Response.json({ access_token: "replacement-token", expires_in: 3_600 }),
+      )
+      .mockResolvedValueOnce(
+        Response.json({ connect_link_url: "https://pipedream.example.test/connect" }),
+      );
+    const connector = new PipedreamConnector(
+      {
+        clientId: "fake-client-id",
+        clientSecret: "fake-client-secret",
+        projectId: "fake-project-id",
+        environment: "development",
+        identitySecret: "fake-identity-secret",
+      },
+      { fetch },
+    );
+
+    await expect(
+      connector.begin(
+        { provider: "gmail", redirectUrl: "https://rakazo.example.test/app" },
+        context,
+      ),
+    ).rejects.toThrow("Pipedream response is too large.");
+    await expect(
+      connector.begin(
+        { provider: "gmail", redirectUrl: "https://rakazo.example.test/app" },
+        context,
+      ),
+    ).resolves.toEqual({
+      authorizationUrl: "https://pipedream.example.test/connect?app=gmail",
+      state: "gmail",
+    });
+    expect(fetch).toHaveBeenCalledTimes(4);
+    expect(fetch.mock.calls[3]?.[1]?.headers).toEqual(
+      expect.objectContaining({ authorization: "Bearer replacement-token" }),
+    );
+  });
+
   it("uses one opaque external identity across the app catalog and account flow", async () => {
     const requests: Array<{ url: string; init?: RequestInit }> = [];
     vi.stubGlobal(
