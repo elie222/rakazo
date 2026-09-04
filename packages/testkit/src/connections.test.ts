@@ -172,6 +172,15 @@ describeWithDatabase("Composio catalog reconciliation", () => {
         expect.objectContaining({ id: second.connectionId, status: "connected" }),
       ]),
     );
+
+    // Uninstall the remaining account: catalog must flip off Added (slug-only
+    // emulator refs used to skip remote revoke and leave Gmail stuck connected).
+    await rpc(app, cookie, "connections/revoke", { connectionId: second.connectionId });
+    await expect(
+      rpc<Array<{ slug: string; connected: boolean }>>(app, cookie, "connections/catalog", {
+        connectorId: "composio",
+      }),
+    ).resolves.toContainEqual(expect.objectContaining({ slug: "GMAIL", connected: false }));
   });
 
   it("returns the remote catalog when local reconciliation fails", async () => {
