@@ -242,7 +242,15 @@ export class PipedreamConnector implements ManagedConnectorProvider {
     excludeIds: string[] = [],
     spaceId?: string,
   ): Promise<string | undefined> {
-    if (!spaceId) return currentRef && currentRef !== slug ? currentRef : undefined;
+    const excluded = new Set(excludeIds.filter(Boolean));
+    const current = currentRef?.trim() || undefined;
+    if (!spaceId) {
+      return current && current !== slug && !excluded.has(current) ? current : undefined;
+    }
+    // Concrete account ids are already authoritative; do not reassign them.
+    if (current && current !== slug) {
+      return excluded.has(current) ? undefined : current;
+    }
     const context = {
       userId,
       spaceId,
@@ -253,9 +261,6 @@ export class PipedreamConnector implements ManagedConnectorProvider {
       .filter((account) => account.healthy !== false && account.dead !== true)
       .map((account) => account.id)
       .filter(Boolean);
-    const excluded = new Set(excludeIds.filter(Boolean));
-    const current = currentRef?.trim() || undefined;
-    if (current && ids.includes(current) && !excluded.has(current)) return current;
     return ids.find((id) => !excluded.has(id));
   }
 

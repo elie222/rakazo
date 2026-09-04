@@ -431,16 +431,15 @@ export class ComposioConnector implements ComposioProvider {
     if (current && composioSlugKey(current) !== slugKey) {
       try {
         const account = await this.sdk().connectedAccounts.waitForConnection(current, 20_000);
-        if (account?.id) return account.id;
+        if (account?.id && !excluded.has(account.id)) return account.id;
       } catch {
-        // Request id may already be finalized or unknown; list below.
+        // Request id could not be resolved. Do not fall back to another connected
+        // account — that can attach a sibling's remote identity to this row.
       }
+      return undefined;
     }
 
     const ids = await this.listConnectedAccountIds(userId, slug);
-    // Only keep current when it is already a real connected-account id. A
-    // leftover connection-request id must not fall through to a sibling's
-    // account when waitForConnection fails.
     if (current && ids.includes(current) && !excluded.has(current)) return current;
     return ids.find((id) => !excluded.has(id));
   }

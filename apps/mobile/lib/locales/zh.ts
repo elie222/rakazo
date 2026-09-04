@@ -27,11 +27,9 @@ export const ZH_MESSAGES: Record<string, string> = {
   Activity: "动态",
   "Active model": "当前模型",
   "Add {name}": "添加 {name}",
-<<<<<<< HEAD
   "Add Executor": "添加 Executor",
-=======
   "Account label": "账户标签",
->>>>>>> 8682f021 (fix(integrations): label accounts on mobile and resolve Pipedream account ids)
+  "Could not rename connection": "无法重命名连接",
   "Add another": "再添加一个",
   "Add another {name}": "再添加一个 {name}",
   "Add MCP server": "添加 MCP 服务器",

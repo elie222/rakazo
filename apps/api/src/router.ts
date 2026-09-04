@@ -3154,7 +3154,6 @@ export function createRouter(deps: RouterDeps) {
               data: { status: outcome.previousStatus },
             });
           };
-          let remoteAttempted = false;
           try {
             const connector = deps.connectors.managed(outcome.remote.connectorId);
             if (!connector) {
@@ -3162,25 +3161,15 @@ export function createRouter(deps: RouterDeps) {
                 message: `Connector ${outcome.remote.connectorId} is not configured`,
               });
             }
-            remoteAttempted = true;
             await connector.revoke(
               outcome.remote.connectionRef,
               connectionContext(context.actor, "connections.revoke", context.signal),
             );
           } catch (error) {
-            // Restore when the provider was never reached, or when it clearly
-            // rejected the delete. Skip restore only for uncertain transport
-            // failures after the revoke call — those may have already removed
-            // the remote authorization.
-            const uncertain =
-              remoteAttempted &&
-              error instanceof Error &&
-              (error.name === "AbortError" ||
-                error.name === "TimeoutError" ||
-                /timeout|timed out|network|ECONNRESET|ECONNREFUSED|fetch failed|aborted|socket/i.test(
-                  error.message,
-                ));
-            if (!uncertain) await restoreLocalStatus();
+            // Always restore on failure so lookup/network errors before DELETE keep
+            // a retryable local row. A rare timeout after a successful remote delete
+            // may leave a dangling provider auth; reconnect/live sync can clear it.
+            await restoreLocalStatus();
             if (error instanceof ORPCError) throw error;
             throw new ORPCError("BAD_REQUEST", { message: sanitizeComposioError(error) });
           }
