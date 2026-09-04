@@ -128,7 +128,9 @@ describe("assertHttpsForKeyedOpenAiCompatibleUrl", () => {
   it("rejects public http when an API key is set", () => {
     process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC = "1";
     const url = assertAllowedOpenAiCompatibleUrl("http://api.example.com/v1");
-    expect(() => assertHttpsForKeyedOpenAiCompatibleUrl(url, "secret-key")).toThrow(/must use HTTPS/);
+    expect(() => assertHttpsForKeyedOpenAiCompatibleUrl(url, "secret-key")).toThrow(
+      /must use HTTPS/,
+    );
   });
 
   it("allows public https when an API key is set", () => {

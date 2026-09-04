@@ -112,17 +112,15 @@ export function createOpenAiCompatibleLookup(
   });
 }
 
-
-function requestCarriesAuthorization(
-  input: RequestInfo | URL,
-  init?: RequestInit,
-): boolean {
+function requestCarriesAuthorization(input: RequestInfo | URL, init?: RequestInit): boolean {
   if (input instanceof Request && input.headers.get("authorization")) return true;
   const headers = init?.headers;
   if (!headers) return false;
   if (headers instanceof Headers) return Boolean(headers.get("authorization"));
   if (Array.isArray(headers)) {
-    return headers.some(([name, value]) => name.toLowerCase() === "authorization" && Boolean(value));
+    return headers.some(
+      ([name, value]) => name.toLowerCase() === "authorization" && Boolean(value),
+    );
   }
   return Object.entries(headers).some(
     ([name, value]) => name.toLowerCase() === "authorization" && Boolean(value),
