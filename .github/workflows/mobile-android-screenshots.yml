@@ -51,6 +51,8 @@ jobs:
           distribution: temurin
           java-version: 17
       - uses: gradle/actions/setup-gradle@48b5f213c81028ace310571dc5ec0fbbca0b2947 # v4.4.3
+        with:
+          cache-read-only: false
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
