@@ -250,17 +250,23 @@ export function createJobReconciler(
         });
         await Promise.all(
           outcomes.map(async (run) => {
+            const transcript =
+              run.status === "failed" ? "" : await botRunOutcomeText(deps.prisma, run.id);
             const text =
               run.status === "failed"
                 ? `Could not complete the delegated request: ${run.error ?? "unknown error"}`
-                : (await botRunOutcomeText(deps.prisma, run.id)) ||
-                  "The delegated bot completed its turn without a written summary.";
+                : transcript || "The delegated bot completed its turn without a written summary.";
+            // Same stable delivery key as the executor path (auto-outcome:<runId>), so a
+            // concurrent or earlier return is replayed instead of double-posted. Progress-only
+            // recoveries use status; a non-empty transcript is treated as the result summary.
+            const intent =
+              run.status === "failed" || !transcript.trim() ? "status" : ("result" as const);
             const returned = await returnBotMessageOutcome(
               { prisma: deps.prisma, jobs: deps.jobs, events },
               run,
               { id: run.botId, name: run.bot.name },
               text,
-              run.status === "failed" ? "status" : "result",
+              intent,
             ).catch((error) => {
               console.error("bot message outcome reconciliation", error);
               return false;

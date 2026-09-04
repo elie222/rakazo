@@ -363,7 +363,8 @@ export async function returnBotMessageOutcome(
       bot_id: source.fromBotId,
       message: clampBotMessage(text),
       intent,
-      deliveryKey: `auto-${intent}:${run.id}`,
+      // One key per run so status vs result (executor vs reconciler) cannot double-deliver.
+      deliveryKey: `auto-outcome:${run.id}`,
     },
     { allowTerminalSource: true },
   );

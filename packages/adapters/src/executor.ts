@@ -3312,6 +3312,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
 
           flushPendingTools();
           if (!assembled) {
+            // Mid-turn progress already posted durable chat messages; skip the empty
+            // "…" fallback so we do not add a junk final bubble. Delegated bot_message
+            // runs still return an explicit outcome via botMessageOutcomeFromMidTurn.
             messageSegments = completionMessageSegments(messageSegments, {
               allowSilentEmpty:
                 allowSilentPeerMessage || messagingChannelRun || publishedMidTurnUserMessage,
@@ -3349,8 +3352,6 @@ export function createRunExecutor(deps: ExecutorDeps) {
             outcome: "completed",
             blocks,
             markUnread: completionMarksUnread(run.trigger, text),
-            // Reserve before the reconciler can see the completed run, then deliver below.
-            ...(botMessageOutcome ? { reserveBotOutcome: true } : {}),
           });
           if (!completed) return;
           if (completed.continuationRunId) {
@@ -3360,26 +3361,16 @@ export function createRunExecutor(deps: ExecutorDeps) {
           }
           if (botMessageOutcome) {
             // Prefer the final reply. If the turn only posted mid-turn progress, return that
-            // text explicitly (as status). reserveBotOutcome already closed the reconciler race;
-            // release the reservation if delivery did not succeed so reconciliation can retry.
-            const returned = await returnBotMessageOutcome(
+            // text explicitly as status. Delivery uses a stable auto-outcome key; mark
+            // botOutcomeReturnedAt only after a successful (or intentionally skipped) return
+            // so a crash or failed delivery stays visible to the reconciler.
+            await returnBotMessageOutcome(
               deps,
               { ...run, sourceMessageId: run.sourceMessageId },
               { id: bot.id, name: bot.name },
               botMessageOutcome.text,
               botMessageOutcome.intent,
-            ).catch((error) => {
-              console.error("bot message result return", error);
-              return false;
-            });
-            if (!returned) {
-              await deps.prisma.run
-                .updateMany({
-                  where: { id: runId, botOutcomeReturnedAt: { not: null } },
-                  data: { botOutcomeReturnedAt: null },
-                })
-                .catch((error) => console.error("bot outcome reservation release", error));
-            }
+            ).catch((error) => console.error("bot message result return", error));
           }
           if (text && !completed.continuationRunId) {
             await notifyRun(deps, run, {

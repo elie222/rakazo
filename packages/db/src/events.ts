@@ -113,8 +113,6 @@ export type FinalizeRunInput = FinalizeRunBase &
         outcome: "completed";
         blocks: MessageBlock[];
         markUnread?: boolean;
-        /** Reserve the bot_message outcome slot in the same transaction as completion. */
-        reserveBotOutcome?: boolean;
       }
     | { outcome: "failed"; error: string }
   );
@@ -933,9 +931,6 @@ async function finalizeRunOnce(
         completedAt: now,
         leaseOwner: null,
         leaseExpiresAt: null,
-        ...(input.outcome === "completed" && input.reserveBotOutcome
-          ? { botOutcomeReturnedAt: now }
-          : {}),
       },
     });
     if (terminal.count !== 1) return null;
