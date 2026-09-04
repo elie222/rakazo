@@ -145,6 +145,25 @@ describe("redactToolArgsForReview", () => {
       },
     });
   });
+
+  it("redacts known secrets used as property names", () => {
+    expect(
+      redactToolArgsForReview(
+        {
+          "sk-live-123": "keep the top-level value",
+          metadata: {
+            "key-live-456": "keep the nested value",
+          },
+        },
+        ["sk-live-123", "key-live-456"],
+      ),
+    ).toEqual({
+      "[redacted]": "keep the top-level value",
+      metadata: {
+        "[redacted]": "keep the nested value",
+      },
+    });
+  });
 });
 
 describe("buildAutoReviewPrompt", () => {
