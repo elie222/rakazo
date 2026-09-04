@@ -83,6 +83,10 @@ async function mirrorRun(deps: MessagingDeliveryDeps, runId: string): Promise<vo
       await mirrorChannelRun(deps, run, channelBlock);
       return;
     }
+  } else if (run.trigger !== "bot_message") {
+    // Mirror inbound messaging runs and delegated bot_message replies only.
+    // Do not push in-app user/routine runs out to the linked chat.
+    return;
   }
 
   const identity = await deps.prisma.messagingIdentity.findUnique({
@@ -90,19 +94,8 @@ async function mirrorRun(deps: MessagingDeliveryDeps, runId: string): Promise<vo
   });
   if (!identity) return;
 
-  // A delegated run (trigger "bot_message") can still be the one that
-  // carries the delegating bot's own reply to the human: a message_bot
-  // wake tells the delegate to answer the user inside that same peer run
-  // (see message-visibility.ts's parallel fix for the in-app render side
-  // of this same shape of bug). There's no thread-identity check gating
-  // this: identity.dmThreadId is the vendor's own opaque chat/thread id
-  // (learned on inbound), not comparable to Rakazo's internal
-  // run.threadId, and a check isn't needed anyway — each Bot has at most
-  // one Thread (Thread.botId is @unique), so every run against this bot
-  // necessarily belongs to its one linked DM thread already. extractText
-  // below only ever pulls `kind: "text"` blocks (never
-  // bot_message_sent/received), so inter-bot delegation chatter can never
-  // leak to the vendor no matter which trigger produced the run.
+  // bot_message runs can carry the bot's user-facing reply after a delegate wake.
+  // extractText only keeps kind:"text", so inter-bot chatter blocks never leak out.
 
   const messages = await deps.prisma.message.findMany({
     where: { runId: run.id, role: "bot" },

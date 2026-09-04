@@ -33,28 +33,35 @@ const peerExchange = [
 ];
 
 describe("user-visible messages", () => {
-  it("keeps bot-to-bot exchanges out of the user transcript", () => {
-    expect(userVisibleMessages(peerExchange).map((item) => item.id)).toEqual(["user", "answer"]);
+  it("hides peer activity but keeps the bot's text reply to the user", () => {
+    expect(userVisibleMessages(peerExchange).map((item) => item.id)).toEqual([
+      "user",
+      "reply",
+      "answer",
+    ]);
   });
 
   it("keeps compact peer receipts when includePeerReceipts is set", () => {
     expect(
       userVisibleMessages(peerExchange, { includePeerReceipts: true }).map((item) => item.id),
-    ).toEqual(["user", "sent", "received", "answer"]);
+    ).toEqual(["user", "sent", "received", "reply", "answer"]);
   });
 
   it("uses authoritative peer run ids when the receipt is outside the loaded page", () => {
     const messages = [
+      message("activity", "run-peer", [
+        { kind: "steps", steps: [{ label: "Echoed peer reply", count: 1 }] },
+      ]),
       message("reply", "run-peer", [{ kind: "text", text: "Echoed peer reply" }]),
       message("answer", "run-user", [{ kind: "text", text: "Visible answer" }]),
     ];
 
     expect(
       userVisibleMessages(messages, { knownPeerRunIds: ["run-peer"] }).map((item) => item.id),
-    ).toEqual(["answer"]);
+    ).toEqual(["reply", "answer"]);
   });
 
-  it("keeps a peer-run ask card visible while hiding other peer activity", () => {
+  it("keeps a peer-run ask card and text reply while hiding other peer activity", () => {
     const messages = [
       message("ask", "run-peer", [
         {
@@ -71,6 +78,6 @@ describe("user-visible messages", () => {
 
     expect(
       userVisibleMessages(messages, { knownPeerRunIds: ["run-peer"] }).map((item) => item.id),
-    ).toEqual(["ask", "answer"]);
+    ).toEqual(["ask", "reply", "answer"]);
   });
 });

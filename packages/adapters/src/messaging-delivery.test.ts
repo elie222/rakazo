@@ -250,7 +250,7 @@ describe("deliverMessagingOutbound", () => {
     expect(deps.sendToThread).not.toHaveBeenCalled();
   });
 
-  it("ignores non-messaging runs and runs without a messaging identity", async () => {
+  it("ignores in-app runs and runs without a messaging identity", async () => {
     const notMessaging = createDeps({ run: { ...messagingRun, trigger: "user" } });
     await deliverMessagingOutbound(notMessaging, { runId: "run-1" }, context);
     expect(notMessaging.sendToThread).not.toHaveBeenCalled();
@@ -258,6 +258,12 @@ describe("deliverMessagingOutbound", () => {
     const noIdentity = createDeps({ identity: null });
     await deliverMessagingOutbound(noIdentity, { runId: "run-1" }, context);
     expect(noIdentity.sendToThread).not.toHaveBeenCalled();
+  });
+
+  it("mirrors delegated bot_message replies to the linked DM", async () => {
+    const deps = createDeps({ run: { ...messagingRun, trigger: "bot_message" } });
+    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+    expect(deps.sendToThread).toHaveBeenCalled();
   });
 
   it("holds sendblue DM sends at the consecutive-outbound cap", async () => {
