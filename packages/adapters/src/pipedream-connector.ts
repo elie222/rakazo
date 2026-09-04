@@ -80,6 +80,19 @@ export function isPipedreamEnabled(config: Partial<PipedreamConnectorConfig>): b
   );
 }
 
+function securePipedreamConnectUrl(value: string): URL {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error("Pipedream did not return a secure HTTPS connect URL");
+  }
+  if (url.protocol !== "https:" || url.username || url.password) {
+    throw new Error("Pipedream did not return a secure HTTPS connect URL");
+  }
+  return url;
+}
+
 export class PipedreamConnector implements ManagedConnectorProvider {
   private accessToken?: { value: string; expiresAt: number };
   private accessTokenRequest?: Promise<string>;
@@ -206,7 +219,7 @@ export class PipedreamConnector implements ManagedConnectorProvider {
       },
       context.signal,
     );
-    const url = new URL(response.connect_link_url);
+    const url = securePipedreamConnectUrl(response.connect_link_url);
     url.searchParams.set("app", request.provider);
     return { authorizationUrl: url.toString(), state: request.provider };
   }

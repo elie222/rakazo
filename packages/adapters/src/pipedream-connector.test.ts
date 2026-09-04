@@ -52,6 +52,36 @@ describe("pipedreamConfigFromEnv", () => {
 describe("PipedreamConnector", () => {
   afterEach(() => vi.unstubAllGlobals());
 
+  it.each([
+    "javascript:alert(document.domain)",
+    "http://pipedream.example.test/connect",
+    "https://user:password@pipedream.example.test/connect",
+  ])("rejects an unsafe provider connect URL: %s", async (connectUrl) => {
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        Response.json({ access_token: "fake-access-token", expires_in: 3_600 }),
+      )
+      .mockResolvedValueOnce(Response.json({ connect_link_url: connectUrl }));
+    const connector = new PipedreamConnector(
+      {
+        clientId: "fake-client-id",
+        clientSecret: "fake-client-secret",
+        projectId: "fake-project-id",
+        environment: "development",
+        identitySecret: "fake-identity-secret",
+      },
+      { fetch },
+    );
+
+    await expect(
+      connector.begin(
+        { provider: "gmail", redirectUrl: "https://rakazo.example.test/app" },
+        context,
+      ),
+    ).rejects.toThrow("secure HTTPS connect URL");
+  });
+
   it("uses one opaque external identity across the app catalog and account flow", async () => {
     const requests: Array<{ url: string; init?: RequestInit }> = [];
     vi.stubGlobal(
@@ -143,7 +173,10 @@ describe("PipedreamConnector", () => {
         { provider: "linear", redirectUrl: "https://rakazo.example.test/app" },
         context,
       ),
-    ).resolves.toEqual({ authorizationUrl: "about:blank?app=linear", state: "linear" });
+    ).resolves.toEqual({
+      authorizationUrl: "https://pipedream.example.test/connect?app=linear",
+      state: "linear",
+    });
     await expect(connector.connectionReady(context, "linear")).resolves.toBe(true);
 
     const connectedContext = {
