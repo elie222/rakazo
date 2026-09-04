@@ -1277,7 +1277,6 @@ export function createRunExecutor(deps: ExecutorDeps) {
         // still knows progress was already published (skip hollow finals; status outcome).
         let publishedMidTurnUserMessage = false;
         const midTurnUserTexts: string[] = [];
-        const midTurnRawTexts: string[] = [];
         let midTurnProgressCount = 0;
         {
           const priorProgress = await deps.prisma.message.findMany({
@@ -1297,7 +1296,6 @@ export function createRunExecutor(deps: ExecutorDeps) {
               .trim();
             if (!text) continue;
             midTurnUserTexts.push(text);
-            midTurnRawTexts.push(text);
             publishedMidTurnUserMessage = true;
             midTurnProgressCount += 1;
           }
@@ -1349,8 +1347,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         };
         const publishMidTurnNarration = async () => {
           const extracted = extractNarrationText(messageSegments, currentTextSegment);
-          const rawNarration = redactSecrets(extracted.text, runSecrets).trim();
-          const narration = clampUserProgressMessage(rawNarration);
+          const narration = clampUserProgressMessage(redactSecrets(extracted.text, runSecrets));
           messageSegments = extracted.remaining;
           currentTextSegment = "";
           if (!narration) return;
@@ -1366,7 +1363,6 @@ export function createRunExecutor(deps: ExecutorDeps) {
             userProgressClientNonce(run.id, midTurnProgressCount++),
           );
           midTurnUserTexts.push(narration);
-          midTurnRawTexts.push(rawNarration || narration);
           publishedMidTurnUserMessage = true;
         };
         const formatObservation = (
@@ -2696,8 +2692,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
             return spawned;
           }
           if (name === "message_user") {
-            const rawText = redactSecrets(String(args.message ?? ""), runSecrets);
-            const text = clampUserProgressMessage(rawText);
+            const text = clampUserProgressMessage(
+              redactSecrets(String(args.message ?? ""), runSecrets),
+            );
             if (!text) return finish({ error: "message is required" });
             await flushProgress();
             await publishMidTurnNarration();
@@ -2710,7 +2707,6 @@ export function createRunExecutor(deps: ExecutorDeps) {
               userProgressClientNonce(run.id, midTurnProgressCount++),
             );
             midTurnUserTexts.push(text);
-            midTurnRawTexts.push(rawText || text);
             publishedMidTurnUserMessage = true;
             return finish({ ok: true });
           }
@@ -3145,8 +3141,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               // does not treat pre-takeover text as the delegated final result.
               await publishMidTurnNarration();
               if (assembled.trim()) {
-                const rawNarration = redactSecrets(assembled, runSecrets).trim();
-                const narration = clampUserProgressMessage(rawNarration);
+                const narration = clampUserProgressMessage(redactSecrets(assembled, runSecrets));
                 if (narration) {
                   await publishMessage(
                     deps,
@@ -3157,7 +3152,6 @@ export function createRunExecutor(deps: ExecutorDeps) {
                     userProgressClientNonce(run.id, midTurnProgressCount++),
                   );
                   midTurnUserTexts.push(narration);
-                  midTurnRawTexts.push(rawNarration || narration);
                   publishedMidTurnUserMessage = true;
                 }
                 assembled = "";
