@@ -68,15 +68,22 @@ jobs:
         uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
         with:
           path: ~/.maestro
-          key: maestro-${{ runner.os }}-2.6.1
+          key: maestro-${{ runner.os }}-2.6.1-3440825f
 
       - name: Install pinned Maestro CLI
         if: steps.maestro-cache.outputs.cache-hit != 'true'
-        env:
-          MAESTRO_VERSION: 2.6.1
         run: |
           set -euo pipefail
-          curl --fail --silent --show-error --location https://get.maestro.mobile.dev | bash
+          maestro_tmp=$(mktemp -d)
+          trap 'rm -rf "$maestro_tmp"' EXIT
+          curl --fail --silent --show-error --location \
+            https://github.com/mobile-dev-inc/maestro/releases/download/cli-2.6.1/maestro.zip \
+            --output "$maestro_tmp/maestro.zip"
+          echo "3440825f514f537c6a96bcf5de995780c2a4a7f83a43208fdc95d4f1fecfad3b  $maestro_tmp/maestro.zip" |
+            sha256sum --check
+          unzip -q "$maestro_tmp/maestro.zip" -d "$maestro_tmp"
+          mkdir -p "$HOME/.maestro"
+          cp -R "$maestro_tmp/maestro/." "$HOME/.maestro/"
 
       - name: Configure Maestro CLI
         run: |
