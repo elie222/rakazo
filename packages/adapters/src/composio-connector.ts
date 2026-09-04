@@ -183,7 +183,11 @@ export function planLiveConnectionSync(
     .filter((row) => {
       if (row.status !== "pending" && row.status !== "error") return false;
       if (connectIdSet.has(row.id)) return false;
-      if (previouslyConnected.has(composioSlugKey(row.provider))) return false;
+      // Keep only in-flight additional-account pendings; clear abandoned errors
+      // so live sync does not keep re-listing forever after a failed attempt.
+      if (row.status === "pending" && previouslyConnected.has(composioSlugKey(row.provider))) {
+        return false;
+      }
       return true;
     })
     .map((row) => row.id);
@@ -371,8 +375,10 @@ export class ComposioConnector implements ComposioProvider {
   }
 
   async revoke(connectionRef: string, context: AdapterContext): Promise<void> {
-    const accountId = await this.connectedAccountId(context.userId, connectionRef);
-    if (accountId) await this.sdk().connectedAccounts.delete(accountId);
+    // Prefer toolkit-slug lookup; otherwise treat connectionRef as a connected-account id.
+    const accountId =
+      (await this.connectedAccountId(context.userId, connectionRef)) ?? connectionRef;
+    await this.sdk().connectedAccounts.delete(accountId);
   }
 
   async connectedAccountId(userId: string, slug: string): Promise<string | undefined> {

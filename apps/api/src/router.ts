@@ -2977,9 +2977,22 @@ export function createRouter(deps: RouterDeps) {
             existing.provider,
           );
           if (ready) {
+            let providerRef = existing.providerRef;
+            const resolveAccountId = (
+              connector as {
+                connectedAccountId?: (userId: string, slug: string) => Promise<string | undefined>;
+              }
+            ).connectedAccountId;
+            if (resolveAccountId) {
+              const accountId = await resolveAccountId(
+                context.actor.userId,
+                existing.provider,
+              ).catch(() => undefined);
+              if (accountId) providerRef = accountId;
+            }
             row = await deps.prisma.connection.update({
               where: { id: existing.id },
-              data: { status: "connected" },
+              data: { status: "connected", providerRef },
             });
           }
         }
@@ -3017,50 +3030,83 @@ export function createRouter(deps: RouterDeps) {
         };
       }),
       revoke: authed.connections.revoke.handler(async ({ context, input }) => {
-        const row = await deps.prisma.connection.findFirst({
-          where: {
-            id: input.connectionId,
-            spaceId: context.actor.spaceId,
-            userId: context.actor.userId,
-          },
-        });
-        if (row) {
-          const connector = deps.connectors.managed(row.connectorId);
-          if (!connector) {
-            throw new ORPCError("BAD_REQUEST", {
-              message: `Connector ${row.connectorId} is not configured`,
-            });
+        const outcome = await deps.prisma.$transaction(async (tx) => {
+          const row = await tx.connection.findFirst({
+            where: {
+              id: input.connectionId,
+              spaceId: context.actor.spaceId,
+              userId: context.actor.userId,
+            },
+          });
+          if (!row)
+            return { remote: null as null | { connectorId: string; connectionRef: string } };
+
+          // Serialize same-provider removals so two "last account" revokes cannot
+          // both observe a sibling and skip the remote disconnect.
+          await tx.$queryRaw`
+            SELECT id
+            FROM connections
+            WHERE "spaceId" = ${context.actor.spaceId}
+              AND "userId" = ${context.actor.userId}
+              AND "connectorId" = ${row.connectorId}
+              AND provider = ${row.provider}
+              AND status IN ('connected', 'pending', 'error')
+            FOR UPDATE`;
+
+          const updated = await tx.connection.updateMany({
+            where: {
+              id: row.id,
+              spaceId: context.actor.spaceId,
+              userId: context.actor.userId,
+              status: { in: ["connected", "pending", "error"] },
+            },
+            data: { status: "revoked" },
+          });
+          if (updated.count === 0) {
+            return { remote: null as null | { connectorId: string; connectionRef: string } };
           }
-          const siblings = await deps.prisma.connection.count({
+
+          const remaining = await tx.connection.count({
             where: {
               spaceId: context.actor.spaceId,
               userId: context.actor.userId,
               connectorId: row.connectorId,
               provider: row.provider,
               status: { in: ["connected", "pending"] },
-              id: { not: row.id },
             },
           });
-          // Only drop the remote provider link when this is the last local account.
-          if (siblings === 0) {
-            try {
-              await connector.revoke(
-                row.provider,
-                connectionContext(context.actor, "connections.revoke", context.signal),
-              );
-            } catch (error) {
-              throw new ORPCError("BAD_REQUEST", { message: sanitizeComposioError(error) });
-            }
+          const connectionRef = row.providerRef || row.provider;
+          const accountSpecific = Boolean(row.providerRef && row.providerRef !== row.provider);
+          // Account-scoped refs can disconnect one remote authorization while
+          // siblings remain. Slug-only legacy rows must wait until they are last,
+          // or a provider-wide revoke would drop every account for that app.
+          if (!accountSpecific && remaining > 0) {
+            return { remote: null as null | { connectorId: string; connectionRef: string } };
+          }
+          return {
+            remote: {
+              connectorId: row.connectorId,
+              connectionRef,
+            },
+          };
+        });
+
+        if (outcome.remote) {
+          const connector = deps.connectors.managed(outcome.remote.connectorId);
+          if (!connector) {
+            throw new ORPCError("BAD_REQUEST", {
+              message: `Connector ${outcome.remote.connectorId} is not configured`,
+            });
+          }
+          try {
+            await connector.revoke(
+              outcome.remote.connectionRef,
+              connectionContext(context.actor, "connections.revoke", context.signal),
+            );
+          } catch (error) {
+            throw new ORPCError("BAD_REQUEST", { message: sanitizeComposioError(error) });
           }
         }
-        await deps.prisma.connection.updateMany({
-          where: {
-            id: input.connectionId,
-            spaceId: context.actor.spaceId,
-            userId: context.actor.userId,
-          },
-          data: { status: "revoked" },
-        });
         return { ok: true as const };
       }),
     },

@@ -435,6 +435,23 @@ describe("composio tool mapping", () => {
     });
   });
 
+  it("clears failed additional-account error rows while keeping in-flight pendings", () => {
+    expect(
+      planLiveConnectionSync(
+        [
+          { id: "row-gmail", provider: "gmail", status: "connected", displayName: "Personal" },
+          { id: "row-work", provider: "gmail", status: "pending", displayName: "Work" },
+          { id: "row-fail", provider: "gmail", status: "error", displayName: "Gmail" },
+          { id: "row-err", provider: "slack", status: "error", displayName: "Slack" },
+        ],
+        ["gmail"],
+      ),
+    ).toEqual({
+      connectIds: [],
+      revokeIds: ["row-fail", "row-err"],
+    });
+  });
+
   it("keeps an in-flight additional account when the provider is already connected", () => {
     expect(
       planLiveConnectionSync(

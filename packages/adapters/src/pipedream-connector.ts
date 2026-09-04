@@ -239,17 +239,18 @@ export class PipedreamConnector implements ManagedConnectorProvider {
   }
 
   async revoke(externalId: string, context: AdapterContext): Promise<void> {
-    const accounts = await this.accounts(context, externalId);
+    const accounts = await this.accounts(context);
+    const targets = accounts.filter(
+      (account) => account.id === externalId || account.app?.name_slug === externalId,
+    );
     await Promise.all(
-      accounts
-        .filter((account) => account.app?.name_slug === externalId)
-        .map((account) =>
-          this.request(
-            `/v1/connect/${encodeURIComponent(this.config.projectId)}/accounts/${encodeURIComponent(account.id)}`,
-            { method: "DELETE" },
-            context.signal,
-          ),
+      targets.map((account) =>
+        this.request(
+          `/v1/connect/${encodeURIComponent(this.config.projectId)}/accounts/${encodeURIComponent(account.id)}`,
+          { method: "DELETE" },
+          context.signal,
         ),
+      ),
     );
   }
 
