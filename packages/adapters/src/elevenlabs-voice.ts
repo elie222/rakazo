@@ -10,6 +10,7 @@ import type {
   VoiceVerifyResult,
 } from "@rakazo/adapter-kit";
 import {
+  readVoiceAudio,
   readVoiceJson,
   requireOk,
   speechUploadName,
@@ -77,6 +78,7 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
   }
 
   async synthesize(request: VoiceSynthesizeRequest, context: AdapterContext): Promise<SpeechClip> {
+    const signal = voiceDeadline(request.signal ?? context.signal, 60_000);
     const res = await fetch(
       `${API}/text-to-speech/${encodeURIComponent(request.voiceId)}?output_format=${FORMAT}`,
       {
@@ -87,11 +89,11 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
           accept: "audio/mpeg",
         },
         body: JSON.stringify({ text: request.text, model_id: MODEL }),
-        signal: voiceDeadline(request.signal ?? context.signal, 60_000),
+        signal,
       },
     );
     await requireOk(res, "ElevenLabs", "speaking");
-    return { bytes: new Uint8Array(await res.arrayBuffer()), mimeType: "audio/mpeg" };
+    return { bytes: await readVoiceAudio(res, signal), mimeType: "audio/mpeg" };
   }
 
   async transcribe(

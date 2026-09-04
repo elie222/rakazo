@@ -1,6 +1,36 @@
+import { readBodyCapped } from "./web-ssrf.js";
+
+/** A 2,000-character utterance should stay far below this, even at high MP3 bitrates. */
+export const MAX_SYNTHESIZED_AUDIO_BYTES = 16 * 1024 * 1024;
+export const MAX_VOICE_JSON_BYTES = 1024 * 1024;
+
 /** Client disconnect plus a hard deadline — `context.signal` is always set. */
 export function voiceDeadline(signal: AbortSignal, ms: number): AbortSignal {
   return AbortSignal.any([signal, AbortSignal.timeout(ms)]);
+}
+
+export async function readVoiceAudio(res: Response, signal?: AbortSignal): Promise<Uint8Array> {
+  return readVoiceBytes(res, MAX_SYNTHESIZED_AUDIO_BYTES, signal);
+}
+
+async function readVoiceBytes(
+  res: Response,
+  maxBytes: number,
+  signal?: AbortSignal,
+): Promise<Uint8Array> {
+  const declared = Number(res.headers?.get("content-length") ?? 0);
+  if (Number.isFinite(declared) && declared > maxBytes) {
+    await res.body?.cancel().catch(() => undefined);
+    throw new Error("Voice response is too large.");
+  }
+  try {
+    return await readBodyCapped(res, maxBytes, signal);
+  } catch (error) {
+    if (error instanceof Error && error.message === "Response is too large") {
+      throw new Error("Voice response is too large.");
+    }
+    throw error;
+  }
 }
 
 export function speechUploadName(mimeType?: string): string {
@@ -14,8 +44,15 @@ export function speechUploadName(mimeType?: string): string {
 }
 
 export async function readVoiceJson(res: Response): Promise<unknown> {
+  let bytes: Uint8Array;
   try {
-    return await res.json();
+    bytes = await readVoiceBytes(res, MAX_VOICE_JSON_BYTES);
+  } catch (error) {
+    if (error instanceof Error && error.message === "Voice response is too large.") throw error;
+    return null;
+  }
+  try {
+    return JSON.parse(new TextDecoder().decode(bytes));
   } catch {
     return null;
   }

@@ -1,5 +1,10 @@
-import { describe, expect, it } from "vitest";
-import { speechUploadName, voiceDeadline } from "./voice-http.js";
+import { describe, expect, it, vi } from "vitest";
+import {
+  MAX_VOICE_JSON_BYTES,
+  readVoiceJson,
+  speechUploadName,
+  voiceDeadline,
+} from "./voice-http.js";
 
 describe("voiceDeadline", () => {
   it("aborts when the client signal aborts", () => {
@@ -34,5 +39,17 @@ describe("speechUploadName", () => {
 
   it("maps Firefox ogg capture to an ogg filename", () => {
     expect(speechUploadName("audio/ogg; codecs=opus")).toBe("speech.ogg");
+  });
+});
+
+describe("readVoiceJson", () => {
+  it("rejects an oversized provider response before buffering it", async () => {
+    const response = new Response("oversized", {
+      headers: { "content-length": String(MAX_VOICE_JSON_BYTES + 1) },
+    });
+    const cancel = vi.spyOn(response.body!, "cancel");
+
+    await expect(readVoiceJson(response)).rejects.toThrow("Voice response is too large.");
+    expect(cancel).toHaveBeenCalledOnce();
   });
 });
