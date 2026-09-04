@@ -3195,9 +3195,14 @@ export function createRouter(deps: RouterDeps) {
                 });
               }
               try {
+                // Abort before the 60s Prisma transaction timeout so a late remote
+                // delete cannot succeed after local status has already rolled back.
+                const signals = [AbortSignal.timeout(45_000)];
+                if (context.signal) signals.unshift(context.signal);
+                const revokeSignal = signals.length === 1 ? signals[0]! : AbortSignal.any(signals);
                 await connector.revoke(
                   connectionRef,
-                  connectionContext(context.actor, "connections.revoke", context.signal),
+                  connectionContext(context.actor, "connections.revoke", revokeSignal),
                 );
               } catch (error) {
                 if (error instanceof ORPCError) throw error;
