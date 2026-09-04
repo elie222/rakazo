@@ -3333,6 +3333,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
             throw new Error("refusing to persist a secret in the thread");
           }
           if (!(await renewRunLease(deps, runId, workerId, fence))) return;
+          const botMessageOutcome =
+            run.trigger === "bot_message"
+              ? botMessageOutcomeFromMidTurn(text, midTurnUserTexts)
+              : null;
           const completed = await deps.events.finalizeRun({
             spaceId: run.spaceId,
             threadId: thread.id,
@@ -3345,6 +3349,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
             outcome: "completed",
             blocks,
             markUnread: completionMarksUnread(run.trigger, text),
+            // Reserve before the reconciler can see the completed run, then deliver below.
+            ...(botMessageOutcome ? { reserveBotOutcome: true } : {}),
           });
           if (!completed) return;
           if (completed.continuationRunId) {
@@ -3352,20 +3358,16 @@ export function createRunExecutor(deps: ExecutorDeps) {
               .enqueue(runContinueJob(completed.continuationRunId))
               .catch((error) => console.error("steering continuation enqueue", error));
           }
-          if (run.trigger === "bot_message") {
+          if (botMessageOutcome) {
             // Prefer the final reply. If the turn only posted mid-turn progress, return that
-            // text explicitly (as status) so the job reconciler does not treat the latest
-            // progress bubble as the delegated result by scanning the thread.
-            const outcome = botMessageOutcomeFromMidTurn(text, midTurnUserTexts);
-            if (outcome) {
-              await returnBotMessageOutcome(
-                deps,
-                { ...run, sourceMessageId: run.sourceMessageId },
-                { id: bot.id, name: bot.name },
-                outcome.text,
-                outcome.intent,
-              ).catch((error) => console.error("bot message result return", error));
-            }
+            // text explicitly (as status). reserveBotOutcome already closed the reconciler race.
+            await returnBotMessageOutcome(
+              deps,
+              { ...run, sourceMessageId: run.sourceMessageId },
+              { id: bot.id, name: bot.name },
+              botMessageOutcome.text,
+              botMessageOutcome.intent,
+            ).catch((error) => console.error("bot message result return", error));
           }
           if (text && !completed.continuationRunId) {
             await notifyRun(deps, run, {
