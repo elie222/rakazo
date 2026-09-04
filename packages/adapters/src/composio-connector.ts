@@ -382,9 +382,14 @@ export class ComposioConnector implements ComposioProvider {
     // Legacy rows may store a toolkit slug. Only resolve through the account list
     // when that lookup returns hits for this ref; otherwise delete connectionRef
     // as a concrete connected-account id from begin/complete.
-    const listed = await this.listConnectedAccountIds(context.userId, connectionRef);
+    const requestOptions = { signal: context.signal };
+    const listed = await this.listConnectedAccountIds(
+      context.userId,
+      connectionRef,
+      requestOptions,
+    );
     const accountId = listed[0] ?? connectionRef;
-    await this.sdk().connectedAccounts.delete(accountId);
+    await this.sdk().connectedAccounts.delete(accountId, requestOptions);
   }
 
   async connectedAccountId(userId: string, slug: string): Promise<string | undefined> {
@@ -392,19 +397,31 @@ export class ComposioConnector implements ComposioProvider {
     return ids[0];
   }
 
-  async listConnectedAccountIds(userId: string, slug: string): Promise<string[]> {
+  async listConnectedAccountIds(
+    userId: string,
+    slug: string,
+    requestOptions?: { signal?: AbortSignal },
+  ): Promise<string[]> {
     try {
-      const listed = await this.sdk().connectedAccounts.list({
-        userIds: [userId],
-        toolkitSlugs: [slug],
-        statuses: ["ACTIVE"],
-      });
+      const listed = await this.sdk().connectedAccounts.list(
+        {
+          userIds: [userId],
+          toolkitSlugs: [slug],
+          statuses: ["ACTIVE"],
+        },
+        requestOptions,
+      );
       const ids = (listed.items ?? [])
         .map((item) => item.id)
         .filter((id): id is string => Boolean(id));
       if (ids.length > 0) return ids;
     } catch {
       // List may be unavailable; fall through to toolkit metadata.
+    }
+    if (requestOptions?.signal?.aborted) {
+      throw requestOptions.signal.reason instanceof Error
+        ? requestOptions.signal.reason
+        : new Error("Aborted");
     }
     const session = await this.sessionFor(userId);
     const toolkits = await session.toolkits({ isConnected: true });

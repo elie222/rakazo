@@ -2987,22 +2987,36 @@ export function createRouter(deps: RouterDeps) {
                 }
               ).revokeUnreferencedAccounts;
               if (revokeUnreferenced) {
-                const kept = await deps.prisma.connection.findMany({
-                  where: {
-                    spaceId: context.actor.spaceId,
-                    userId: context.actor.userId,
-                    connectorId: input.connectorId,
-                    provider: input.provider,
-                    status: { in: ["connected", "pending", "error"] },
+                // Hold the provider lock across the keep-id snapshot and remote
+                // cleanup so a concurrent complete cannot persist a providerRef
+                // that this cleanup then deletes as unreferenced.
+                await deps.prisma.$transaction(
+                  async (tx) => {
+                    await lockProviderConnectionScope(
+                      tx,
+                      context.actor,
+                      input.connectorId,
+                      input.provider,
+                    );
+                    const kept = await tx.connection.findMany({
+                      where: {
+                        spaceId: context.actor.spaceId,
+                        userId: context.actor.userId,
+                        connectorId: input.connectorId,
+                        provider: input.provider,
+                        status: { in: ["connected", "pending", "error"] },
+                      },
+                      select: { providerRef: true },
+                    });
+                    const keepIds = kept
+                      .map((entry) => entry.providerRef)
+                      .filter(
+                        (value): value is string => Boolean(value && value !== input.provider),
+                      );
+                    await revokeUnreferenced(input.provider, keepIds, adapterContext);
                   },
-                  select: { providerRef: true },
-                });
-                const keepIds = kept
-                  .map((entry) => entry.providerRef)
-                  .filter((value): value is string => Boolean(value && value !== input.provider));
-                await revokeUnreferenced(input.provider, keepIds, adapterContext).catch(
-                  () => undefined,
-                );
+                  { timeout: 60_000 },
+                ).catch(() => undefined);
               }
             }
             throw new IsolationError();
@@ -3039,74 +3053,12 @@ export function createRouter(deps: RouterDeps) {
         }
         let row = existing;
         if (existing.status !== "connected") {
-          if (input.code) {
-            const state = existing.providerRef ?? existing.provider;
-            try {
-              await connector.complete(
-                { state, code: input.code },
-                connectionContext(context.actor, "connections.complete", context.signal),
-              );
-            } catch (error) {
-              throw new ORPCError("BAD_REQUEST", { message: sanitizeComposioError(error) });
-            }
-          }
-          const ready = await connector.connectionReady(
-            connectionContext(context.actor, "connections.complete", context.signal),
-            existing.provider,
-          );
-          if (ready) {
-            // Browser OAuth stores a connection-request id in providerRef from
-            // begin. Resolve it to the connected-account id so revoke deletes the
-            // right remote authorization. Prefer an account id not already used
-            // by a sibling row for the same provider.
-            const resolveAccountId = (
-              connector as {
-                resolveConnectedAccountId?: (
-                  userId: string,
-                  slug: string,
-                  currentRef: string | null | undefined,
-                  excludeIds?: string[],
-                  spaceId?: string,
-                ) => Promise<string | undefined>;
-                connectedAccountId?: (userId: string, slug: string) => Promise<string | undefined>;
-              }
-            ).resolveConnectedAccountId;
-            const fallbackAccountId = (
-              connector as {
-                connectedAccountId?: (userId: string, slug: string) => Promise<string | undefined>;
-              }
-            ).connectedAccountId;
-            let resolvedAccountId: string | undefined;
-            if (resolveAccountId || fallbackAccountId) {
-              const siblings = await deps.prisma.connection.findMany({
-                where: {
-                  spaceId: context.actor.spaceId,
-                  userId: context.actor.userId,
-                  connectorId: existing.connectorId,
-                  provider: existing.provider,
-                  id: { not: existing.id },
-                  status: { in: ["connected", "pending", "error"] },
-                },
-                select: { providerRef: true },
-              });
-              const excludeIds = siblings
-                .map((sibling) => sibling.providerRef)
-                .filter((value): value is string => Boolean(value));
-              resolvedAccountId = resolveAccountId
-                ? await resolveAccountId(
-                    context.actor.userId,
-                    existing.provider,
-                    existing.providerRef,
-                    excludeIds,
-                    context.actor.spaceId,
-                  ).catch(() => undefined)
-                : await fallbackAccountId!(context.actor.userId, existing.provider).catch(
-                    () => undefined,
-                  );
-            }
-            // Reserve providerRef under the provider lock so two concurrent
-            // completes cannot persist the same remote account id.
-            row = await deps.prisma.$transaction(async (tx) => {
+          // Hold the provider lock across remote completion, account-id resolution,
+          // providerRef persistence, and any overlapping revokeUnreferenced cleanup
+          // so a concurrent begin-loss cleanup cannot delete the account we are about
+          // to persist.
+          row = await deps.prisma.$transaction(
+            async (tx) => {
               await lockProviderConnectionScope(
                 tx,
                 context.actor,
@@ -3123,6 +3075,72 @@ export function createRouter(deps: RouterDeps) {
               if (!current) throw new IsolationError();
               if (current.status === "connected") return current;
               if (current.status === "revoked") throw new IsolationError();
+
+              const adapterContext = connectionContext(
+                context.actor,
+                "connections.complete",
+                context.signal,
+              );
+              if (input.code) {
+                const state = current.providerRef ?? current.provider;
+                try {
+                  await connector.complete({ state, code: input.code }, adapterContext);
+                } catch (error) {
+                  throw new ORPCError("BAD_REQUEST", { message: sanitizeComposioError(error) });
+                }
+              }
+              const ready = await connector.connectionReady(adapterContext, current.provider);
+              if (!ready) return current;
+
+              // Browser OAuth stores a connection-request id in providerRef from
+              // begin. Resolve it to the connected-account id so revoke deletes the
+              // right remote authorization. Prefer an account id not already used
+              // by a sibling row for the same provider.
+              const resolveAccountId = (
+                connector as {
+                  resolveConnectedAccountId?: (
+                    userId: string,
+                    slug: string,
+                    currentRef: string | null | undefined,
+                    excludeIds?: string[],
+                    spaceId?: string,
+                  ) => Promise<string | undefined>;
+                  connectedAccountId?: (userId: string, slug: string) => Promise<string | undefined>;
+                }
+              ).resolveConnectedAccountId;
+              const fallbackAccountId = (
+                connector as {
+                  connectedAccountId?: (userId: string, slug: string) => Promise<string | undefined>;
+                }
+              ).connectedAccountId;
+              let resolvedAccountId: string | undefined;
+              if (resolveAccountId || fallbackAccountId) {
+                const siblings = await tx.connection.findMany({
+                  where: {
+                    spaceId: context.actor.spaceId,
+                    userId: context.actor.userId,
+                    connectorId: existing.connectorId,
+                    provider: existing.provider,
+                    id: { not: existing.id },
+                    status: { in: ["connected", "pending", "error"] },
+                  },
+                  select: { providerRef: true },
+                });
+                const excludeIds = siblings
+                  .map((sibling) => sibling.providerRef)
+                  .filter((value): value is string => Boolean(value));
+                resolvedAccountId = resolveAccountId
+                  ? await resolveAccountId(
+                      context.actor.userId,
+                      existing.provider,
+                      current.providerRef,
+                      excludeIds,
+                      context.actor.spaceId,
+                    ).catch(() => undefined)
+                  : await fallbackAccountId!(context.actor.userId, existing.provider).catch(
+                      () => undefined,
+                    );
+              }
 
               const providerRef = resolvedAccountId ?? current.providerRef;
               if (providerRef) {
@@ -3151,8 +3169,9 @@ export function createRouter(deps: RouterDeps) {
                   ...(providerRef ? { providerRef } : {}),
                 },
               });
-            });
-          }
+            },
+            { timeout: 60_000 },
+          );
         }
         return {
           id: row.id,
@@ -3163,8 +3182,7 @@ export function createRouter(deps: RouterDeps) {
           capabilities: [],
           createdAt: row.createdAt.toISOString(),
         };
-      }),
-      rename: authed.connections.rename.handler(async ({ context, input }) => {
+      }),      rename: authed.connections.rename.handler(async ({ context, input }) => {
         const existing = await deps.prisma.connection.findFirst({
           where: {
             id: input.connectionId,

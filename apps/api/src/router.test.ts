@@ -376,6 +376,7 @@ describe("connections.complete", () => {
           $executeRaw: vi.fn().mockResolvedValue(undefined),
           connection: {
             findFirst: vi.fn().mockResolvedValueOnce(row).mockResolvedValueOnce(null),
+            findMany: vi.fn().mockResolvedValue([]),
             update: vi
               .fn()
               .mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({
