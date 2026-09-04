@@ -3124,7 +3124,7 @@ export function createRouter(deps: RouterDeps) {
               if (current.status === "connected") return current;
               if (current.status === "revoked") throw new IsolationError();
 
-              let providerRef = resolvedAccountId ?? current.providerRef;
+              const providerRef = resolvedAccountId ?? current.providerRef;
               if (providerRef) {
                 const taken = await tx.connection.findFirst({
                   where: {
@@ -3139,9 +3139,9 @@ export function createRouter(deps: RouterDeps) {
                   select: { id: true },
                 });
                 if (taken) {
-                  // Keep the request-scoped ref rather than sharing a sibling's
-                  // remote identity; live sync / next complete can re-resolve.
-                  providerRef = current.providerRef;
+                  // Do not mark connected with a request-scoped or shared ref —
+                  // leave pending so a later complete can re-resolve an unused id.
+                  return current;
                 }
               }
               return tx.connection.update({

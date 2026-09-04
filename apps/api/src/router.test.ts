@@ -359,8 +359,33 @@ describe("connections.complete", () => {
           status: "pending",
           createdAt: new Date("2026-08-26T00:00:00.000Z"),
         }),
+        findMany: vi.fn().mockResolvedValue([]),
         update,
       },
+      $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => {
+        const row = {
+          id: "conn-1",
+          connectorId: "composio",
+          provider: "gmail",
+          displayName: "Gmail",
+          providerRef: "gmail-state",
+          status: "pending",
+          createdAt: new Date("2026-08-26T00:00:00.000Z"),
+        };
+        const tx = {
+          $executeRaw: vi.fn().mockResolvedValue(undefined),
+          connection: {
+            findFirst: vi.fn().mockResolvedValueOnce(row).mockResolvedValueOnce(null),
+            update: vi
+              .fn()
+              .mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({
+                ...row,
+                ...data,
+              })),
+          },
+        };
+        return fn(tx);
+      }),
     } as unknown as PrismaClient;
     const deps = {
       prisma,
