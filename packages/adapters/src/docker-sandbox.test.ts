@@ -1,6 +1,10 @@
 import type { ProcessEvent } from "@rakazo/adapter-kit";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DockerSandboxProvider, MAX_SANDBOX_ERROR_RESPONSE_BYTES } from "./docker-sandbox.js";
+import {
+  DockerSandboxProvider,
+  MAX_SANDBOX_ERROR_RESPONSE_BYTES,
+  SCREEN_RELEASE_TIMEOUT_MS,
+} from "./docker-sandbox.js";
 
 const context = {
   operationId: "docker-test",
@@ -13,7 +17,10 @@ const context = {
 };
 
 describe("Docker sandbox", () => {
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
 
   it("sends the bounded timeout to the supervisor and preserves its honest result", async () => {
     const fetchMock = vi.fn(async (_input: string | URL | Request, _init?: RequestInit) =>
@@ -94,7 +101,28 @@ describe("Docker sandbox", () => {
     ).resolves.toBeUndefined();
 
     expect(fetchMock).toHaveBeenCalledOnce();
-    expect(fetchMock.mock.calls[0]?.[1]).not.toHaveProperty("signal");
+    expect(fetchMock.mock.calls[0]?.[1]?.signal).not.toBe(abort.signal);
+    expect(fetchMock.mock.calls[0]?.[1]?.signal?.aborted).toBe(false);
+  });
+
+  it("bounds screen release even when fetch ignores cancellation", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn(
+      async (_input: string | URL | Request, _init?: RequestInit) =>
+        new Promise<Response>(() => undefined),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
+
+    const pending = provider.releaseScreen(
+      { id: "computer", botId: "home-bot", kind: "docker", providerRef: "computer" },
+      context,
+    );
+    const rejected = expect(pending).rejects.toThrow("sandbox screen release timed out");
+    await vi.advanceTimersByTimeAsync(SCREEN_RELEASE_TIMEOUT_MS);
+
+    await rejected;
+    expect(fetchMock.mock.calls[0]?.[1]?.signal?.aborted).toBe(true);
   });
 
   it("surfaces a supervisor failure from stop and destroy instead of swallowing it", async () => {

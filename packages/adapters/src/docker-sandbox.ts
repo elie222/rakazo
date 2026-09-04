@@ -22,9 +22,10 @@ import {
   computerObservation,
   normalizeWorkspacePath,
 } from "./computer-support.js";
-import { readBodyCapped } from "./web-ssrf.js";
+import { readBodyCapped, withAbort } from "./web-ssrf.js";
 
 export const MAX_SANDBOX_ERROR_RESPONSE_BYTES = 8 * 1024;
+export const SCREEN_RELEASE_TIMEOUT_MS = 8_000;
 const SANDBOX_ERROR_RESPONSE_TIMEOUT_MS = 1_000;
 
 async function safeBody(res: Response, signal?: AbortSignal): Promise<string> {
@@ -358,12 +359,22 @@ export class DockerSandboxProvider implements SandboxProvider {
 
   async releaseScreen(computer: ComputerRef, context: AdapterContext): Promise<void> {
     if (!context.botId) return;
-    const res = await fetch(this.url(`/computers/${computer.id}/screen`), {
-      method: "DELETE",
-      headers: this.headers(context, computer.botId),
-    });
-    if (!res.ok && res.status !== 404) {
-      throw new Error(`sandbox screen release failed: ${res.status}`);
+    // Run cancellation must not skip cleanup, but cleanup still needs its own deadline.
+    const deadline = requestDeadline(SCREEN_RELEASE_TIMEOUT_MS, "sandbox screen release timed out");
+    try {
+      const res = await withAbort(
+        fetch(this.url(`/computers/${computer.id}/screen`), {
+          method: "DELETE",
+          headers: this.headers(context, computer.botId),
+          signal: deadline.signal,
+        }),
+        deadline.signal,
+      );
+      if (!res.ok && res.status !== 404) {
+        throw new Error(`sandbox screen release failed: ${res.status}`);
+      }
+    } finally {
+      deadline.dispose();
     }
   }
 
@@ -422,6 +433,17 @@ export class DockerSandboxProvider implements SandboxProvider {
       for (const file of batch) yield file;
     }
   }
+}
+
+function requestDeadline(timeoutMs: number, message: string) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(new Error(message)), timeoutMs);
+  return {
+    signal: controller.signal,
+    dispose() {
+      clearTimeout(timer);
+    },
+  };
 }
 
 function dockerCwd(cwd: string | undefined) {
