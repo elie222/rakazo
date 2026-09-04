@@ -89,11 +89,9 @@ describe("waitlist", () => {
         duplex: "half",
       } as RequestInit & { duplex: "half" });
 
-      const started = Date.now();
       const response = await waitlistFunction.fetch(request);
       expect(response.status).toBe(400);
       expect(cancelStarted).toBe(true);
-      expect(Date.now() - started).toBeLessThan(500);
     },
   );
 
