@@ -26,7 +26,11 @@ export function redactConnectorPayload(value: unknown, secrets: string[]): unkno
 function redactPayloadValue(value: unknown, secrets: string[]): unknown {
   if (typeof value === "string") return redactSecrets(value, secrets);
   if (Array.isArray(value)) return value.map((item) => redactPayloadValue(item, secrets));
-  if (!value || typeof value !== "object") return value;
+  if (value === null || typeof value === "number" || typeof value === "boolean") {
+    const serialized = String(value);
+    return redactSecrets(serialized, secrets) === serialized ? value : "[redacted]";
+  }
+  if (typeof value !== "object") return value;
   return Object.fromEntries(
     Object.entries(value).map(([key, item]) => [
       redactSecrets(key, secrets),

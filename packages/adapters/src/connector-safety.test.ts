@@ -25,4 +25,10 @@ describe("redactConnectorPayload", () => {
 
     expect(redactConnectorPayload(circular, ["secret"])).toEqual({ ok: true });
   });
+
+  it("redacts secrets represented by non-string JSON leaves", () => {
+    expect(
+      redactConnectorPayload({ number: 123, boolean: true, empty: null }, ["123", "true", "null"]),
+    ).toEqual({ number: "[redacted]", boolean: "[redacted]", empty: "[redacted]" });
+  });
 });
