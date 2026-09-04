@@ -371,10 +371,13 @@ export async function returnBotMessageOutcome(
 }
 
 async function markBotOutcomeReturned(prisma: PrismaClient, runId: string) {
+  // Allow "running" so callers can return the outcome before finalizeRun and close the
+  // race where reconciliation would otherwise treat the latest mid-turn progress bubble
+  // as the delegated result.
   await prisma.run.updateMany({
     where: {
       id: runId,
-      status: { in: ["completed", "failed"] },
+      status: { in: ["running", "completed", "failed"] },
       botOutcomeReturnedAt: null,
     },
     data: { botOutcomeReturnedAt: new Date() },

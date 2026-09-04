@@ -3332,6 +3332,21 @@ export function createRunExecutor(deps: ExecutorDeps) {
           if (containsSecret(text, runSecrets)) {
             throw new Error("refusing to persist a secret in the thread");
           }
+          if (run.trigger === "bot_message") {
+            // Return before finalizeRun so botOutcomeReturnedAt is set while the race window
+            // for reconciliation is still closed. Prefer the final reply; if the turn only
+            // posted mid-turn progress, return that text as status.
+            const outcome = botMessageOutcomeFromMidTurn(text, midTurnUserTexts);
+            if (outcome) {
+              await returnBotMessageOutcome(
+                deps,
+                { ...run, sourceMessageId: run.sourceMessageId },
+                { id: bot.id, name: bot.name },
+                outcome.text,
+                outcome.intent,
+              ).catch((error) => console.error("bot message result return", error));
+            }
+          }
           if (!(await renewRunLease(deps, runId, workerId, fence))) return;
           const completed = await deps.events.finalizeRun({
             spaceId: run.spaceId,
@@ -3351,21 +3366,6 @@ export function createRunExecutor(deps: ExecutorDeps) {
             await deps.jobs
               .enqueue(runContinueJob(completed.continuationRunId))
               .catch((error) => console.error("steering continuation enqueue", error));
-          }
-          if (run.trigger === "bot_message") {
-            // Prefer the final reply. If the turn only posted mid-turn progress, return that
-            // text explicitly (as status) so the job reconciler does not treat the latest
-            // progress bubble as the delegated result by scanning the thread.
-            const outcome = botMessageOutcomeFromMidTurn(text, midTurnUserTexts);
-            if (outcome) {
-              await returnBotMessageOutcome(
-                deps,
-                { ...run, sourceMessageId: run.sourceMessageId },
-                { id: bot.id, name: bot.name },
-                outcome.text,
-                outcome.intent,
-              ).catch((error) => console.error("bot message result return", error));
-            }
           }
           if (text && !completed.continuationRunId) {
             await notifyRun(deps, run, {

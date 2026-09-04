@@ -564,7 +564,7 @@ describe("automatic outcome return", () => {
     expect(harness.deps.prisma.run.updateMany).toHaveBeenCalledWith({
       where: {
         id: run.id,
-        status: { in: ["completed", "failed"] },
+        status: { in: ["running", "completed", "failed"] },
         botOutcomeReturnedAt: null,
       },
       data: { botOutcomeReturnedAt: expect.any(Date) },
