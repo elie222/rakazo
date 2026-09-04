@@ -212,6 +212,8 @@ RAKAZO_LOCAL_MODELS=qwen3:4b,llama3.1:8b
 RAKAZO_LOCAL_MODELS_URL=http://127.0.0.1:11434/v1
 RAKAZO_LOCAL_CONTEXT_WINDOW=32768
 RAKAZO_LOCAL_MAX_TOKENS=4096
+# Optional: model ids on this endpoint that accept images (screenshot computer tools).
+RAKAZO_LOCAL_VISION_MODELS=qwen3-vl
 ```
 
 The loopback default is suitable when running Rakazo from a source checkout. In Docker Compose,
@@ -226,7 +228,8 @@ the exact model id from that server, and an optional API key. By default Rakazo 
 loopback, RFC1918, and `host.docker.internal` targets. To permit public hostnames, set
 `RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC=1` in the deployment environment. Public hostnames must resolve
 only to public addresses; redirects and DNS answers that reach private or link-local networks are
-rejected.
+rejected. To mark user-connected openai-compatible model ids as vision-capable (so screenshot
+computer tools stay available), set `RAKAZO_OPENAI_COMPATIBLE_VISION_MODELS=gpt4o-vision,llava`.
 
 Do not commit `.env`. Never put `COMPOSIO_API_KEY`, OpenRouter keys, or provider tokens in git, logs, or chat.
 

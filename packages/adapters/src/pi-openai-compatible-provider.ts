@@ -228,12 +228,23 @@ export function openAiCompatibleCatalogProvider(): Provider {
   // The vision gate resolves against this catalog rather than the per-run
   // registry, so a model only declared at runtime would still read as
   // text-only. Register the operator's declared vision models here too.
-  const visionModels = [...openAiCompatibleVisionModelIds()].map((id) =>
-    openAiCompatibleModel(id, OPENAI_COMPAT_BASE, true),
-  );
+  //
+  // If the reserved placeholder id ("custom") is itself declared vision-
+  // capable, upgrade the placeholder entry rather than appending a second
+  // model with the same id — Models.getModel returns the first match, so a
+  // duplicate would leave the gate reading the text-only placeholder.
+  const visionIds = openAiCompatibleVisionModelIds();
+  const placeholderAcceptsImages = visionIds.has(OPENAI_COMPATIBLE_CATALOG_MODEL_ID);
+  const visionModels = [...visionIds]
+    .filter((id) => id !== OPENAI_COMPATIBLE_CATALOG_MODEL_ID)
+    .map((id) => openAiCompatibleModel(id, OPENAI_COMPAT_BASE, true));
   return openAiCompatibleProvider([
     {
-      ...openAiCompatibleModel(OPENAI_COMPATIBLE_CATALOG_MODEL_ID, OPENAI_COMPAT_BASE),
+      ...openAiCompatibleModel(
+        OPENAI_COMPATIBLE_CATALOG_MODEL_ID,
+        OPENAI_COMPAT_BASE,
+        placeholderAcceptsImages,
+      ),
       name: "Custom model id",
     },
     ...visionModels,
