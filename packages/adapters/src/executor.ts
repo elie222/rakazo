@@ -3137,10 +3137,26 @@ export function createRunExecutor(deps: ExecutorDeps) {
             } else if (event.type === "takeover") {
               if (!(await renewRunLease(deps, runId, workerId, fence))) return;
               const safeReason = redactSecrets(event.reason, runSecrets);
+              // Publish pending narration as tagged mid-turn progress so reconciliation
+              // does not treat pre-takeover text as the delegated final result.
+              await publishMidTurnNarration();
               if (assembled.trim()) {
-                await publishMessage(deps, run, "bot", [
-                  { kind: "text", text: redactSecrets(assembled, runSecrets) },
-                ]);
+                const narration = clampUserProgressMessage(redactSecrets(assembled, runSecrets));
+                if (narration) {
+                  await publishMessage(
+                    deps,
+                    run,
+                    "bot",
+                    [{ kind: "text", text: narration }],
+                    undefined,
+                    userProgressClientNonce(run.id, midTurnProgressCount++),
+                  );
+                  midTurnUserTexts.push(narration);
+                  publishedMidTurnUserMessage = true;
+                }
+                assembled = "";
+                hasStreamedText = false;
+                pendingProgress = "";
               }
               await publishMessage(deps, run, "bot", [
                 { kind: "computer", state: "Ready", text: safeReason },
