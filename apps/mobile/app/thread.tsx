@@ -75,6 +75,7 @@ import {
 import { mobileTokens } from "../lib/appearance";
 import { type MobileArtifactTarget, openMobileArtifact } from "../lib/artifact-open";
 import { confirmDeleteBot } from "../lib/bot-lifecycle";
+import { cancelFocusPrompt } from "../lib/focus-prompt";
 import { t, useI18n } from "../lib/i18n";
 import { saveLastBotId } from "../lib/last-bot";
 import {
@@ -702,6 +703,7 @@ function Thread() {
       }
       markReadIfVisible();
       return () => {
+        if (botId) cancelFocusPrompt(botId);
         void setOpenNotificationThread(null).catch(() => undefined);
       };
     }, [botId, markReadIfVisible, notificationThreadId]),

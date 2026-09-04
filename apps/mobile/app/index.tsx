@@ -45,6 +45,7 @@ import {
   selectInitialSpace,
   selectSpace,
 } from "../lib/api";
+import { scheduleFocusPrompt } from "../lib/focus-prompt";
 import { t, useI18n } from "../lib/i18n";
 import { botTag, filterBots, formatThreadTime, userInitials } from "../lib/inbox";
 import { dismissThreadNotifications, resumeLiveNotifications } from "../lib/live-notifications";
@@ -97,19 +98,11 @@ export default function Home() {
   });
   const activityRequestId = useRef(0);
   const inboxRequestId = useRef(0);
-  const focusPromptTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const creatingBotRef = useRef(false);
 
   useEffect(() => {
     void loadActivityMode().then(setActivityMode);
   }, []);
-
-  useEffect(
-    () => () => {
-      if (focusPromptTimerRef.current) clearTimeout(focusPromptTimerRef.current);
-    },
-    [],
-  );
 
   const toggleActivityMode = useCallback(() => {
     setActivityMode((on) => {
@@ -320,9 +313,10 @@ export default function Home() {
   const createQuickBot = useCallback(async () => {
     if (creatingBotRef.current) return;
     creatingBotRef.current = true;
-    // Prefer the loaded roster so a slow bots fetch does not treat later bots as first.
-    const isFirstBot = bots.length === 0;
     try {
+      // Authoritative roster so a slow home fetch does not treat later bots as first.
+      const existing = await rpc<MobileBot[]>("bots/list").catch(() => bots);
+      const isFirstBot = existing.length === 0;
       const bot = await rpc<MobileBot>("bots/create", {
         ...normalizeCreateBotProfile({ name: "New Bot", title: "", description: "" }),
         notifyOnFinish: true,
@@ -335,23 +329,14 @@ export default function Home() {
           .then(() => true)
           .catch(() => false);
         if (!started) return;
-        if (focusPromptTimerRef.current) clearTimeout(focusPromptTimerRef.current);
-        focusPromptTimerRef.current = null;
-        if (isFirstBot) {
-          await rpc("onboarding/promptFocus", { botId: bot.id }).catch(() => undefined);
-          return;
-        }
-        focusPromptTimerRef.current = setTimeout(() => {
-          focusPromptTimerRef.current = null;
-          void rpc("onboarding/promptFocus", { botId: bot.id }).catch(() => undefined);
-        }, 10_000);
+        scheduleFocusPrompt(bot.id, isFirstBot);
       })();
     } catch (err) {
       setError(err instanceof Error ? err.message : t("Could not create bot"));
     } finally {
       creatingBotRef.current = false;
     }
-  }, [bots.length, refreshBots, router, t]);
+  }, [bots, refreshBots, router, t]);
 
   if (!ready) {
     return (

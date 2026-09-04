@@ -53,13 +53,7 @@ export default function NewBot() {
           .then(() => true)
           .catch(() => false);
         if (!started) return;
-        if (isFirstBot) {
-          await rpc("onboarding/promptFocus", { botId: bot.id }).catch(() => undefined);
-          return;
-        }
-        setTimeout(() => {
-          void rpc("onboarding/promptFocus", { botId: bot.id }).catch(() => undefined);
-        }, 10_000);
+        scheduleFocusPrompt(bot.id, isFirstBot);
       })();
     } catch (err) {
       setError(err instanceof Error ? err.message : t("Could not create bot"));
