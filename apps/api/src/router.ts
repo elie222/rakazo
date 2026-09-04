@@ -3114,31 +3114,34 @@ export function createRouter(deps: RouterDeps) {
         });
 
         if (outcome.remote) {
-          const connector = deps.connectors.managed(outcome.remote.connectorId);
-          if (!connector) {
-            throw new ORPCError("BAD_REQUEST", {
-              message: `Connector ${outcome.remote.connectorId} is not configured`,
+          const restoreLocalStatus = async () => {
+            // Local row was marked revoked inside the transaction; restore it so a
+            // failed remote disconnect remains retryable instead of orphaned.
+            if (!outcome.previousStatus) return;
+            await deps.prisma.connection.updateMany({
+              where: {
+                id: input.connectionId,
+                spaceId: context.actor.spaceId,
+                userId: context.actor.userId,
+                status: "revoked",
+              },
+              data: { status: outcome.previousStatus },
             });
-          }
+          };
           try {
+            const connector = deps.connectors.managed(outcome.remote.connectorId);
+            if (!connector) {
+              throw new ORPCError("BAD_REQUEST", {
+                message: `Connector ${outcome.remote.connectorId} is not configured`,
+              });
+            }
             await connector.revoke(
               outcome.remote.connectionRef,
               connectionContext(context.actor, "connections.revoke", context.signal),
             );
           } catch (error) {
-            // Local row was marked revoked inside the transaction; restore it so a
-            // failed remote disconnect remains retryable instead of orphaned.
-            if (outcome.previousStatus) {
-              await deps.prisma.connection.updateMany({
-                where: {
-                  id: input.connectionId,
-                  spaceId: context.actor.spaceId,
-                  userId: context.actor.userId,
-                  status: "revoked",
-                },
-                data: { status: outcome.previousStatus },
-              });
-            }
+            await restoreLocalStatus();
+            if (error instanceof ORPCError) throw error;
             throw new ORPCError("BAD_REQUEST", { message: sanitizeComposioError(error) });
           }
         }

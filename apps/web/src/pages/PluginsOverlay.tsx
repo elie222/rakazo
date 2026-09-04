@@ -329,16 +329,21 @@ export function PluginsOverlay({
               >
                 {connecting ? <Trans>Adding…</Trans> : <Trans>Add another</Trans>}
               </Button>
-              <Button
-                type="button"
-                variant="secondary"
-                className="rounded-full"
-                size="sm"
-                disabled={connecting || removing || accounts.length === 0}
-                onClick={() => void revoke(item)}
-              >
-                {removing ? <Trans>Removing…</Trans> : <Trans>Remove</Trans>}
-              </Button>
+              {/* Per-account Remove rows cover disconnect when accounts are listed.
+                  Keep a single top Remove only for connected catalog state with no
+                  local rows yet (e.g. optimistic connect before refresh). */}
+              {accounts.length === 0 ? (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="rounded-full"
+                  size="sm"
+                  disabled={connecting || removing}
+                  onClick={() => void revoke(item)}
+                >
+                  {removing ? <Trans>Removing…</Trans> : <Trans>Remove</Trans>}
+                </Button>
+              ) : null}
             </>
           ) : (
             <Button

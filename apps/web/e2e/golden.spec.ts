@@ -157,8 +157,8 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
     .getByText("Gmail", { exact: true })
     .locator("xpath=ancestor::*[.//button][1]");
   await gmailRow.getByRole("button", { name: "Add", exact: true }).click();
-  await expect(gmailRow.getByRole("button", { name: "Remove", exact: true })).toBeVisible();
   await expect(gmailRow.getByRole("button", { name: "Add another", exact: true })).toBeVisible();
+  await expect(gmailRow.getByRole("button", { name: "Remove", exact: true })).toHaveCount(1);
   await captureScreenshot(page, testInfo, "11a-connected-plugins");
 
   await gmailRow.getByRole("button", { name: "Add another", exact: true }).click();
@@ -170,7 +170,7 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
 
   await gmailRow.getByRole("button", { name: "Remove", exact: true }).last().click();
   await expect(gmailRow.getByLabel("Account label")).toHaveCount(1);
-  await gmailRow.getByRole("button", { name: "Remove", exact: true }).last().click();
+  await gmailRow.getByRole("button", { name: "Remove", exact: true }).click();
   await expect(gmailRow.getByRole("button", { name: "Add", exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "11b-connected-plugins-empty");
 
@@ -181,7 +181,7 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await linearRow.getByRole("button", { name: "Add", exact: true }).click();
   const popup = await connectPopup;
   await popup.close();
-  await expect(linearRow.getByRole("button", { name: "Remove", exact: true })).toBeVisible();
+  await expect(linearRow.getByRole("button", { name: "Remove", exact: true })).toHaveCount(1);
   await linearRow.getByRole("button", { name: "Remove", exact: true }).click();
   await expect(linearRow.getByRole("button", { name: "Add", exact: true })).toBeVisible();
 

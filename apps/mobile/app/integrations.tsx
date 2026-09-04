@@ -318,20 +318,27 @@ export default function Integrations() {
                               </Text>
                             </Pressable>
                           ) : null}
-                          <Pressable
-                            accessibilityRole="button"
-                            accessibilityLabel={
-                              connected
-                                ? t("Remove {name}", { name: tile.label })
-                                : t("Add {name}", { name: tile.label })
-                            }
-                            disabled={pending === key}
-                            onPress={() => void (connected ? revoke(item) : connect(item))}
-                          >
-                            <Text style={styles.link}>
-                              {pending === key ? t("Working…") : connected ? t("Remove") : t("Add")}
-                            </Text>
-                          </Pressable>
+                          {/* Per-account Remove covers disconnect when rows are listed. */}
+                          {!connected || accountsFor(item).length === 0 ? (
+                            <Pressable
+                              accessibilityRole="button"
+                              accessibilityLabel={
+                                connected
+                                  ? t("Remove {name}", { name: tile.label })
+                                  : t("Add {name}", { name: tile.label })
+                              }
+                              disabled={pending === key}
+                              onPress={() => void (connected ? revoke(item) : connect(item))}
+                            >
+                              <Text style={styles.link}>
+                                {pending === key
+                                  ? t("Working…")
+                                  : connected
+                                    ? t("Remove")
+                                    : t("Add")}
+                              </Text>
+                            </Pressable>
+                          ) : null}
                         </View>
                       )}
                       {item && accountsFor(item).length > 0 ? (
@@ -385,20 +392,26 @@ export default function Integrations() {
                         </Text>
                       </Pressable>
                     ) : null}
-                    <Pressable
-                      accessibilityRole="button"
-                      accessibilityLabel={
-                        item.connected
-                          ? t("Remove {name}", { name: item.name })
-                          : t("Add {name}", { name: item.name })
-                      }
-                      disabled={pending === key}
-                      onPress={() => void (item.connected ? revoke(item) : connect(item))}
-                    >
-                      <Text style={styles.link}>
-                        {pending === key ? t("Working…") : item.connected ? t("Remove") : t("Add")}
-                      </Text>
-                    </Pressable>
+                    {!item.connected || accountsFor(item).length === 0 ? (
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={
+                          item.connected
+                            ? t("Remove {name}", { name: item.name })
+                            : t("Add {name}", { name: item.name })
+                        }
+                        disabled={pending === key}
+                        onPress={() => void (item.connected ? revoke(item) : connect(item))}
+                      >
+                        <Text style={styles.link}>
+                          {pending === key
+                            ? t("Working…")
+                            : item.connected
+                              ? t("Remove")
+                              : t("Add")}
+                        </Text>
+                      </Pressable>
+                    ) : null}
                   </View>
                   {accountsFor(item).length > 0 ? (
                     <View style={styles.accountList}>
