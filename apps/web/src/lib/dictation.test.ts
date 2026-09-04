@@ -230,6 +230,52 @@ describe("Dictation recorder fallback", () => {
     expect(dictation.state.error).toBe("Transcription request timed out.");
   });
 
+  it("surfaces timeout when fetch rejects with AbortError", async () => {
+    // Browsers reject aborted fetch with DOMException AbortError. Matching token
+    // means the deadline fired (stop() bumps token first), so this must not stay
+    // stuck on "transcribing".
+    const fetchMock = vi.fn(async () => {
+      throw new DOMException("The operation was aborted.", "AbortError");
+    });
+    stubRecorderFallback(fetchMock);
+    const dictation = new Dictation();
+
+    await dictation.listen({ mode: "hold", transcribe: true, onFinal: () => undefined });
+    dictation.submitHold();
+
+    await vi.waitFor(() => expect(dictation.state.error).toBe("Transcription request timed out."));
+    expect(dictation.state.status).toBe("idle");
+  });
+
+  it("stays silent when stop cancels an in-flight transcription", async () => {
+    const fetchMock = vi.fn(
+      (_url: string, init?: { signal?: AbortSignal }) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener(
+            "abort",
+            () => {
+              reject(new DOMException("The operation was aborted.", "AbortError"));
+            },
+            { once: true },
+          );
+        }),
+    );
+    stubRecorderFallback(fetchMock);
+    const dictation = new Dictation();
+
+    await dictation.listen({ mode: "hold", transcribe: true, onFinal: () => undefined });
+    dictation.submitHold();
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    expect(dictation.state.status).toBe("transcribing");
+
+    dictation.stop("cancel");
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(dictation.state.status).toBe("idle");
+    expect(dictation.state.error).toBeUndefined();
+  });
+
   it("ignores leftover audio from a replaced recorder", async () => {
     const track = { stop: vi.fn() };
     vi.stubGlobal("navigator", {

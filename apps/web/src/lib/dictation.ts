@@ -316,7 +316,10 @@ export class Dictation {
         }),
         abort.signal,
       );
-      if (this.token !== mine) return;
+      if (this.token !== mine) {
+        cancelResponse(res);
+        return;
+      }
       const body = await readTranscriptionBody(res, abort.signal);
       if (this.token !== mine) return;
       if (!res.ok) {
@@ -325,8 +328,18 @@ export class Dictation {
       }
       this.finish(body.text ?? "", mine);
     } catch (error) {
+      // User cancel bumps token in stop() before aborting, so a matching token
+      // means the deadline timer fired. Browsers may reject fetch as AbortError
+      // instead of signal.reason; surface the timeout either way.
       if (this.token !== mine) return;
-      if (error instanceof Error && error.name === "AbortError") return;
+      const timedOut =
+        (abort.signal.reason instanceof Error &&
+          abort.signal.reason.message === "Transcription request timed out.") ||
+        (error instanceof Error && error.message === "Transcription request timed out.");
+      if (timedOut || (error instanceof Error && error.name === "AbortError")) {
+        this.set({ ...IDLE, error: "Transcription request timed out." });
+        return;
+      }
       this.set({
         ...IDLE,
         error: error instanceof Error ? error.message : "Could not transcribe that recording.",
@@ -437,7 +450,8 @@ function withAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
       },
       (error: unknown) => {
         signal.removeEventListener("abort", onAbort);
-        reject(error);
+        // Prefer abort reason over a bare AbortError from fetch/read.
+        reject(signal.aborted ? (signal.reason ?? error) : error);
       },
     );
   });
