@@ -172,6 +172,7 @@ describe("builtin tools", () => {
         "remember",
         "request_takeover",
         "ask_user",
+        "message_user",
         "request_secret",
         "run_subagent",
         "create_space",

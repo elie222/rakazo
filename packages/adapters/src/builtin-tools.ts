@@ -160,6 +160,22 @@ export const builtinAgentTools: ConnectorTool[] = [
     },
   },
   {
+    name: "message_user",
+    description:
+      "Post a short progress update to the user in this chat immediately. Does not end your turn. Use sparingly during long work for high-signal beats (what you are checking, then a result). Do not dump tool logs, thinking, or a play-by-play of every call. Put the final answer in your normal reply.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        message: {
+          type: "string",
+          maxLength: 500,
+          description: "Short user-visible update.",
+        },
+      },
+      required: ["message"],
+    },
+  },
+  {
     name: "request_secret",
     description:
       "Collect a one-shot OTP, password, or API key in a masked field that never reaches the chat transcript or model. For website logins, CAPTCHA, passkeys, or anything that needs the live desktop, call request_takeover instead.",
