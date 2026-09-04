@@ -183,7 +183,11 @@ export async function createApp(
   const pipedream =
     pipedreamOverride ??
     (isPipedreamEnabled(pipedreamConfig) ? new PipedreamConnector(pipedreamConfig) : undefined);
-  const messagingPlatforms = messagingPlatformsFromEnv(env);
+  // This process registers the inbound sink (messaging.onInbound below),
+  // so it's the one that must hold Telegram's live getUpdates connection —
+  // see messagingPlatformsFromEnv's docstring for why a second poller
+  // elsewhere (e.g. the worker) would actively break this.
+  const messagingPlatforms = messagingPlatformsFromEnv(env, { pollInboundMessages: true });
   const messaging =
     messagingOverride ??
     (isMessagingSurfaceEnabled(messagingPlatforms, {

@@ -51,8 +51,26 @@ export function messagingEnvFromProcess(
  * Build the platform list for every fully configured provider. Group
  * conversations stay sendblue-only until channel semantics are mapped for
  * the other platforms, so their capabilities say so instead of half-working.
+ *
+ * `pollInboundMessages` must be true only in the one process that also
+ * registers the inbound sink (messaging.onInbound — apps/api/src/app.ts).
+ * Telegram's "auto" mode starts a long-poll the moment anything calls
+ * chat.initialize() when no webhook is registered — and that includes a
+ * process that only ever meant to *send*: outbound delivery
+ * (sendToThread) lazily initializes too. A second process polling with no
+ * inbound sink attached doesn't just do nothing — it actively steals
+ * Telegram's single getUpdates slot away from the process that IS
+ * listening, so both sides spend every cycle losing a 409 Conflict to the
+ * other and messages stop arriving at all. Any caller that only sends
+ * (e.g. apps/worker/src/index.ts, for messaging.deliver jobs) must leave
+ * this false so Telegram mode resolves to "webhook" (passive — resolves
+ * bot identity for outbound calls, never polls, and no webhook route is
+ * mounted there for it to receive on anyway).
  */
-export function messagingPlatformsFromEnv(env: MessagingEnvironmentValues): MessagingPlatform[] {
+export function messagingPlatformsFromEnv(
+  env: MessagingEnvironmentValues,
+  options: { pollInboundMessages?: boolean } = {},
+): MessagingPlatform[] {
   const platforms: MessagingPlatform[] = [];
 
   if (
@@ -136,7 +154,7 @@ export function messagingPlatformsFromEnv(env: MessagingEnvironmentValues): Mess
       adapter: createTelegramAdapter({
         botToken: env.telegramBotToken,
         secretToken: env.telegramWebhookSecret,
-        mode: "auto",
+        mode: options.pollInboundMessages ? "auto" : "webhook",
       }),
     });
   }
