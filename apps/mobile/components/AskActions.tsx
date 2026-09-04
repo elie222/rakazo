@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Alert, Pressable, Text, View } from "react-native";
+import { mobileTokens } from "../lib/appearance";
 import { useI18n } from "../lib/i18n";
 
 type AskAction = { id: string; label: string };
@@ -20,6 +21,7 @@ export function AskActions({
   onAnswer: (answer: string) => Promise<void>;
 }) {
   const { t } = useI18n();
+  const tokens = mobileTokens();
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const submitting = pendingAction !== null;
 
@@ -39,38 +41,41 @@ export function AskActions({
   }
 
   return (
-    <View style={{ marginTop: 12, flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-      {actions.map((action) => (
-        <Pressable
-          key={action.id}
-          disabled={disabled || submitting}
-          onPress={() => void submit(action.id)}
-          style={{
-            borderRadius: 11,
-            paddingHorizontal: 14,
-            paddingVertical: 8,
-            backgroundColor:
-              action.id === "allow" || action.id === "always" ? "#F1F1EF" : "transparent",
-            borderWidth: action.id === "deny" ? 1 : 0,
-            borderColor: "#26262A",
-            opacity: disabled || submitting ? 0.5 : 1,
-          }}
-        >
-          <Text
+    <View style={{ marginTop: 12, gap: 6 }}>
+      {actions.map((action) => {
+        const emphasized = action.id === "allow" || action.id === "always";
+        return (
+          <Pressable
+            key={action.id}
+            disabled={disabled || submitting}
+            onPress={() => void submit(action.id)}
             style={{
-              color: action.id === "allow" || action.id === "always" ? "#17171A" : "#C9C9CE",
-              fontSize: 14,
-              fontWeight: action.id === "allow" || action.id === "always" ? "600" : "400",
+              alignSelf: "stretch",
+              borderRadius: 12,
+              paddingHorizontal: 14,
+              paddingVertical: 12,
+              backgroundColor: emphasized ? tokens.muted : "transparent",
+              borderWidth: 1,
+              borderColor: tokens.border,
+              opacity: disabled || submitting ? 0.5 : 1,
             }}
           >
-            {pendingAction === action.id
-              ? t("Sending…")
-              : Object.hasOwn(KNOWN_ASK_ACTION_LABELS, action.id)
-                ? t(KNOWN_ASK_ACTION_LABELS[action.id]!)
-                : action.label}
-          </Text>
-        </Pressable>
-      ))}
+            <Text
+              style={{
+                color: tokens.foreground,
+                fontSize: 15,
+                fontWeight: emphasized ? "600" : "400",
+              }}
+            >
+              {pendingAction === action.id
+                ? t("Sending…")
+                : Object.hasOwn(KNOWN_ASK_ACTION_LABELS, action.id)
+                  ? t(KNOWN_ASK_ACTION_LABELS[action.id]!)
+                  : action.label}
+            </Text>
+          </Pressable>
+        );
+      })}
     </View>
   );
 }
