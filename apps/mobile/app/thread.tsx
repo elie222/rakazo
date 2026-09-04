@@ -937,6 +937,9 @@ function Thread() {
     const groupTarget = plan.rerouteGroupId ?? initialGroupTarget;
     const botTarget = reroutedToGroup ? undefined : initialBotTarget;
     const trimmed = plan.trimmed;
+    // Sending (including group-mention reroute) is engagement — drop delayed setup
+    // even when the bot thread stays mounted under a pushed group screen.
+    if (initialBotTarget) cancelFocusPrompt(initialBotTarget);
     setSending(true);
     setError(null);
     try {
