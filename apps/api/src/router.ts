@@ -3023,33 +3023,35 @@ export function createRouter(deps: RouterDeps) {
                 // Hold the provider lock across the keep-id snapshot and remote
                 // cleanup so a concurrent complete cannot persist a providerRef
                 // that this cleanup then deletes as unreferenced.
-                await deps.prisma.$transaction(
-                  async (tx) => {
-                    await lockProviderConnectionScope(
-                      tx,
-                      context.actor,
-                      input.connectorId,
-                      input.provider,
-                    );
-                    const kept = await tx.connection.findMany({
-                      where: {
-                        spaceId: context.actor.spaceId,
-                        userId: context.actor.userId,
-                        connectorId: input.connectorId,
-                        provider: input.provider,
-                        status: { in: ["connected", "pending", "error"] },
-                      },
-                      select: { providerRef: true },
-                    });
-                    const keepIds = kept
-                      .map((entry) => entry.providerRef)
-                      .filter(
-                        (value): value is string => Boolean(value && value !== input.provider),
+                await deps.prisma
+                  .$transaction(
+                    async (tx) => {
+                      await lockProviderConnectionScope(
+                        tx,
+                        context.actor,
+                        input.connectorId,
+                        input.provider,
                       );
-                    await revokeUnreferenced(input.provider, keepIds, adapterContext);
-                  },
-                  { timeout: 60_000 },
-                ).catch(() => undefined);
+                      const kept = await tx.connection.findMany({
+                        where: {
+                          spaceId: context.actor.spaceId,
+                          userId: context.actor.userId,
+                          connectorId: input.connectorId,
+                          provider: input.provider,
+                          status: { in: ["connected", "pending", "error"] },
+                        },
+                        select: { providerRef: true },
+                      });
+                      const keepIds = kept
+                        .map((entry) => entry.providerRef)
+                        .filter((value): value is string =>
+                          Boolean(value && value !== input.provider),
+                        );
+                      await revokeUnreferenced(input.provider, keepIds, adapterContext);
+                    },
+                    { timeout: 60_000 },
+                  )
+                  .catch(() => undefined);
               }
             }
             throw new IsolationError();
@@ -3138,12 +3140,18 @@ export function createRouter(deps: RouterDeps) {
                     excludeIds?: string[],
                     spaceId?: string,
                   ) => Promise<string | undefined>;
-                  connectedAccountId?: (userId: string, slug: string) => Promise<string | undefined>;
+                  connectedAccountId?: (
+                    userId: string,
+                    slug: string,
+                  ) => Promise<string | undefined>;
                 }
               ).resolveConnectedAccountId;
               const fallbackAccountId = (
                 connector as {
-                  connectedAccountId?: (userId: string, slug: string) => Promise<string | undefined>;
+                  connectedAccountId?: (
+                    userId: string,
+                    slug: string,
+                  ) => Promise<string | undefined>;
                 }
               ).connectedAccountId;
               let resolvedAccountId: string | undefined;
@@ -3227,7 +3235,8 @@ export function createRouter(deps: RouterDeps) {
           capabilities: [],
           createdAt: row.createdAt.toISOString(),
         };
-      }),      rename: authed.connections.rename.handler(async ({ context, input }) => {
+      }),
+      rename: authed.connections.rename.handler(async ({ context, input }) => {
         const existing = await deps.prisma.connection.findFirst({
           where: {
             id: input.connectionId,

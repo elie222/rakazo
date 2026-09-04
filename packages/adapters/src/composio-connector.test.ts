@@ -362,7 +362,6 @@ describe("composio tool mapping", () => {
     expect(deleted).toEqual(["ca-from-req-oauth-1"]);
   });
 
-
   it("uses Composio slug casing when the toolkit directory is unavailable", async () => {
     composioSdkState.created.length = 0;
     composioSdkState.sessions.clear();

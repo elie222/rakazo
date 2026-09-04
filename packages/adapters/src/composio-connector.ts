@@ -391,10 +391,7 @@ export class ComposioConnector implements ComposioProvider {
     let accountId = listed[0];
     if (!accountId) {
       try {
-        const account = await this.sdk().connectedAccounts.waitForConnection(
-          connectionRef,
-          20_000,
-        );
+        const account = await this.sdk().connectedAccounts.waitForConnection(connectionRef, 20_000);
         accountId = account?.id;
       } catch {
         // Not a resolvable request id; fall through to treat ref as an account id.
