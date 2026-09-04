@@ -44,7 +44,7 @@ jobs:
         uses: actions/cache/restore@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
         with:
           path: apps/mobile/android/app/build/outputs/apk/release/app-release.apk
-          key: mobile-android-apk-v2-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml', 'package.json', 'pnpm-workspace.yaml', 'turbo.json', 'tsconfig*.json', 'apps/mobile/package.json', 'apps/mobile/app.json', 'apps/mobile/app.config.ts', 'apps/mobile/metro.config.js', 'apps/mobile/metro-resolver.js', 'apps/mobile/assets/**', 'apps/mobile/app/**', 'apps/mobile/components/**', 'apps/mobile/lib/**', 'apps/mobile/modules/**', 'apps/mobile/plugins/**', 'packages/chat-ui/**', 'packages/contracts/**', 'packages/core/**', 'packages/ui-tokens/**') }}
+          key: mobile-android-apk-v2-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml', 'package.json', 'pnpm-workspace.yaml', 'turbo.json', 'tsconfig*.json', '.github/workflows/mobile-android-screenshots.yml', 'apps/mobile/package.json', 'apps/mobile/app.json', 'apps/mobile/app.config.ts', 'apps/mobile/metro.config.js', 'apps/mobile/metro-resolver.js', 'apps/mobile/assets/**', 'apps/mobile/app/**', 'apps/mobile/components/**', 'apps/mobile/lib/**', 'apps/mobile/modules/**', 'apps/mobile/plugins/**', 'packages/chat-ui/**', 'packages/contracts/**', 'packages/core/**', 'packages/ui-tokens/**') }}
 
       - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
