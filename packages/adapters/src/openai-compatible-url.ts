@@ -111,7 +111,7 @@ export function assertAllowedOpenAiCompatibleRequestUrl(
   if (isPrivateOpenAiCompatibleHostname(hostname)) return url;
   if (!allowPublic) {
     throw new Error(
-      "Public model endpoints are blocked. Set RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC=1 to allow them.",
+      "Public model endpoints are blocked. Set RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC=1 to allow them. A private reverse proxy on localhost or an RFC1918 address does not need that gate.",
     );
   }
   return url;

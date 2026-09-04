@@ -114,7 +114,7 @@ describe("openai-compatible URL policy", () => {
     delete process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC;
     expect(openAiCompatAllowPublicHosts()).toBe(false);
     expect(() => assertAllowedOpenAiCompatibleUrl("https://api.example.com/v1")).toThrow(
-      /Public model endpoints are blocked/,
+      /Public model endpoints are blocked.*private reverse proxy.*RFC1918/s,
     );
 
     process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC = "1";
