@@ -400,6 +400,8 @@ export async function createApp(
     );
   });
   mountWebhookHttpRoutes(app, { prisma, secrets, events, jobs });
+  // Shared with stop so a shutdown during retry delays does not restart polling.
+  let messagingStopped = false;
   // Messaging webhooks only exist when the surface is enabled.
   if (messaging) {
     const inbound = createMessagingInboundHandler({
@@ -440,9 +442,29 @@ export async function createApp(
     // holding the live connection — a second poller elsewhere (e.g. the
     // worker) would only fight this one for Telegram's single getUpdates
     // slot without ever seeing the messages itself.
-    void messaging.initialize?.().catch((error) => {
-      console.error("messaging surface initialize failed", error);
-    });
+    // Bounded retries cover transient Telegram startup failures; polling-only
+    // bots otherwise stay dark until an unrelated outbound send re-inits.
+    void (async () => {
+      const delayMs = [0, 2_000, 10_000];
+      for (let attempt = 0; attempt < delayMs.length; attempt += 1) {
+        if (messagingStopped) return;
+        if (delayMs[attempt]! > 0) {
+          await new Promise((resolve) => setTimeout(resolve, delayMs[attempt]));
+        }
+        if (messagingStopped) return;
+        try {
+          await messaging.initialize?.();
+          return;
+        } catch (error) {
+          console.error(
+            attempt === delayMs.length - 1
+              ? "messaging surface initialize failed"
+              : "messaging surface initialize failed; retrying",
+            error,
+          );
+        }
+      }
+    })();
   }
 
   app.get("/health", (c) =>
@@ -473,6 +495,7 @@ export async function createApp(
     executor,
     stop: async () => {
       oauthLogins.abortAll();
+      messagingStopped = true;
       await messaging?.shutdown?.();
       await email?.drain?.();
       await reconciler?.stop();

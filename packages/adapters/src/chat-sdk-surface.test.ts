@@ -389,10 +389,12 @@ describe("ChatSdkMessagingSurface shape", () => {
     } as Partial<Adapter>);
 
     await expect(surface.initialize()).rejects.toThrow(/telegram unavailable/);
+    // Partial multi-adapter init can leave Telegram polling; clear it on failure.
+    expect(stopPolling).toHaveBeenCalledTimes(1);
     await expect(surface.initialize()).resolves.toBeUndefined();
     expect(adapter.initialize).toHaveBeenCalledTimes(2);
 
     await surface.shutdown();
-    expect(stopPolling).toHaveBeenCalledTimes(1);
+    expect(stopPolling).toHaveBeenCalledTimes(2);
   });
 });

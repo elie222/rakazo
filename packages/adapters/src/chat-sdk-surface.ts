@@ -174,10 +174,7 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
     const pending = this.initialized;
     this.initialized = undefined;
     if (pending) await pending.catch(() => undefined);
-    for (const platform of this.byProvider.values()) {
-      const adapter = platform.adapter as { stopPolling?: () => Promise<void> };
-      await adapter.stopPolling?.().catch(() => undefined);
-    }
+    await this.stopPollingAdapters();
     const chat = this.chat as { shutdown?: () => Promise<void> };
     await chat.shutdown?.().catch(() => undefined);
   }
@@ -189,6 +186,9 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
     if (!this.initialized) {
       this.initialized = this.chat.initialize().catch(async (error) => {
         try {
+          // Telegram may already be polling if Promise.all failed on another
+          // adapter after Telegram's initialize started getUpdates.
+          await this.stopPollingAdapters();
           await (this.chat as { shutdown?: () => Promise<void> }).shutdown?.();
         } catch {
           // Best-effort reset of Chat's cached init failure.
@@ -199,6 +199,13 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
       });
     }
     return this.initialized;
+  }
+
+  private async stopPollingAdapters(): Promise<void> {
+    for (const platform of this.byProvider.values()) {
+      const adapter = platform.adapter as { stopPolling?: () => Promise<void> };
+      await adapter.stopPolling?.().catch(() => undefined);
+    }
   }
 
   private async dispatchWebhook(platform: MessagingPlatform, request: Request): Promise<Response> {
