@@ -43,11 +43,11 @@ describe("speechUploadName", () => {
 });
 
 describe("readVoiceJson", () => {
-  it("rejects an oversized provider response before buffering it", async () => {
-    const response = new Response("oversized", {
+  it("rejects an oversized provider response without waiting for cancellation", async () => {
+    const cancel = vi.fn(() => new Promise<void>(() => undefined));
+    const response = new Response(new ReadableStream({ cancel }), {
       headers: { "content-length": String(MAX_VOICE_JSON_BYTES + 1) },
     });
-    const cancel = vi.spyOn(response.body!, "cancel");
 
     await expect(readVoiceJson(response)).rejects.toThrow("Voice response is too large.");
     expect(cancel).toHaveBeenCalledOnce();

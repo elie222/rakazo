@@ -20,7 +20,7 @@ async function readVoiceBytes(
 ): Promise<Uint8Array> {
   const declared = Number(res.headers?.get("content-length") ?? 0);
   if (Number.isFinite(declared) && declared > maxBytes) {
-    await res.body?.cancel().catch(() => undefined);
+    cancelResponseBody(res);
     throw new Error("Voice response is too large.");
   }
   try {
@@ -30,6 +30,14 @@ async function readVoiceBytes(
       throw new Error("Voice response is too large.");
     }
     throw error;
+  }
+}
+
+function cancelResponseBody(res: Response): void {
+  try {
+    void Promise.resolve(res.body?.cancel()).catch(() => undefined);
+  } catch {
+    // Provider response cleanup is best-effort and must not delay the size error.
   }
 }
 
