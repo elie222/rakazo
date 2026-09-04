@@ -3330,7 +3330,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
           if (!assembled) {
             // Mid-turn progress already posted durable chat messages; skip the empty
             // "…" fallback so we do not add a junk final bubble. Delegated bot_message
-            // runs still return an explicit outcome via botMessageOutcomeFromMidTurn.
+            // runs still return via botMessageOutcomeFromMidTurn below (status when
+            // only progress was posted, result when a final reply exists).
             messageSegments = completionMessageSegments(messageSegments, {
               allowSilentEmpty:
                 allowSilentPeerMessage || messagingChannelRun || publishedMidTurnUserMessage,

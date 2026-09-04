@@ -378,9 +378,11 @@ async function botRunOutcomeText(
     if (isUserProgressClientNonce(message.clientNonce)) progressParts.push(text);
     else finalParts.push(text);
   }
-  // Prefer the final reply when present; progress-only turns keep progress as status.
+  // Prefer the latest non-progress reply when present so earlier untagged mid-run
+  // publishes (for example pre-takeover narration) do not contaminate the result.
+  // Progress-only turns still join progress beats as status.
   if (finalParts.length > 0) {
-    return { text: finalParts.join("\n\n"), progressOnly: false };
+    return { text: finalParts[finalParts.length - 1]!, progressOnly: false };
   }
   return { text: progressParts.join("\n\n"), progressOnly: progressParts.length > 0 };
 }
