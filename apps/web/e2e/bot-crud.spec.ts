@@ -18,12 +18,14 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   await expect(botList.getByRole("button", { name: /^Chief/ })).toBeVisible();
 
   let createFailed = false;
+  let resolveCreateAborted!: () => void;
   const createAborted = new Promise<void>((resolve) => {
-    void page.route("**/rpc/bots/create", async (route) => {
-      createFailed = true;
-      await route.abort("failed");
-      resolve();
-    });
+    resolveCreateAborted = resolve;
+  });
+  await page.route("**/rpc/bots/create", async (route) => {
+    createFailed = true;
+    await route.abort("failed");
+    resolveCreateAborted();
   });
   await openNewBot(page);
   await createAborted;

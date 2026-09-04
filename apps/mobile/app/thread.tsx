@@ -706,6 +706,9 @@ function Thread() {
       if (botId) {
         focusPromptThreadActive(botId);
         void saveLastBotId(botId).catch(() => undefined);
+      } else {
+        // Group thread focus: prior bot screen may stay mounted, so clear any delayed setup.
+        cancelFocusPrompt();
       }
       if (AppState.currentState === "active" && notificationThreadId) {
         void setOpenNotificationThread({
