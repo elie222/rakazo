@@ -559,6 +559,24 @@ describe("computer resource limits", () => {
     expect(() => containerCreateOptions(createInput)).toThrow(/RAKAZO_COMPUTER_PIDS_LIMIT/);
   });
 
+  it("rejects a memory limit below Docker's 6 MiB minimum", () => {
+    // The daemon refuses these at container creation, so accepting them here would turn a typo
+    // into a 500 on the first bot rather than a startup failure naming the variable.
+    for (const value of ["1", "1m", "5m", "5242880"]) {
+      process.env.RAKAZO_COMPUTER_MEMORY = value;
+      expect(() => containerCreateOptions(createInput)).toThrow(/RAKAZO_COMPUTER_MEMORY/);
+    }
+    process.env.RAKAZO_COMPUTER_MEMORY = "6m";
+    expect(containerCreateOptions(createInput).HostConfig.Memory).toBe(6 * 1024 ** 2);
+  });
+
+  it("rejects a CPU count that would floor to Docker's unlimited", () => {
+    // Math.floor(1e-10 * 1e9) is 0, and 0 NanoCpus means uncapped. An accepted value must never
+    // turn a ceiling into no ceiling.
+    process.env.RAKAZO_COMPUTER_CPUS = "0.0000000001";
+    expect(() => containerCreateOptions(createInput)).toThrow(/RAKAZO_COMPUTER_CPUS/);
+  });
+
   it("parses byte counts without a unit suffix", () => {
     expect(parseMemoryBytes("X", "1073741824")).toBe(1024 ** 3);
   });

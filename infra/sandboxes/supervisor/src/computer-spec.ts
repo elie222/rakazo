@@ -28,6 +28,8 @@ export type ScreenNetworkMode = "published" | "internal" | "isolated";
 const DEFAULT_COMPUTER_MEMORY = "2g";
 const DEFAULT_COMPUTER_CPUS = "2";
 const DEFAULT_COMPUTER_PIDS_LIMIT = "2048";
+/** The daemon refuses HostConfig.Memory below this at container creation. */
+const MIN_DOCKER_MEMORY_BYTES = 6 * 1024 ** 2;
 
 const MEMORY_UNITS: Record<string, number> = {
   b: 1,
@@ -53,6 +55,11 @@ export function parseMemoryBytes(name: string, raw: string): number {
   if (!Number.isSafeInteger(bytes) || bytes <= 0) {
     throw new Error(`${name} must resolve to a positive byte count, received "${raw}"`);
   }
+  // The daemon rejects a limit under 6 MiB at container creation. Catching it here turns a
+  // per-bot 500 at the first `POST /computers` into a startup failure that names the variable.
+  if (bytes < MIN_DOCKER_MEMORY_BYTES) {
+    throw new Error(`${name} must be at least 6m, Docker's minimum, received "${raw}"`);
+  }
   return bytes;
 }
 
@@ -60,10 +67,13 @@ export function parseMemoryBytes(name: string, raw: string): number {
 export function parseNanoCpus(name: string, raw: string): number {
   if (isUnlimited(raw)) return 0;
   const value = Number(raw.trim());
-  if (!Number.isFinite(value) || value <= 0) {
+  // A positive value below 1e-9 floors to 0 nanocpus, which Docker reads as *unlimited*. Checking
+  // the converted number, not just the input, keeps a cap from silently becoming no cap.
+  const nanoCpus = Math.floor(value * 1e9);
+  if (!Number.isFinite(value) || value <= 0 || nanoCpus <= 0) {
     throw new Error(`${name} must be a positive number of CPUs, received "${raw}"`);
   }
-  return Math.floor(value * 1e9);
+  return nanoCpus;
 }
 
 function parsePidsLimit(name: string, raw: string): number {
