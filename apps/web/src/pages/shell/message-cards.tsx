@@ -22,7 +22,8 @@ export function ChoiceCard({
   const { t } = useLingui();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const dismissed = block.answerId === "_dismissed";
+  const [locallyDismissed, setLocallyDismissed] = useState(false);
+  const dismissed = locallyDismissed || block.answerId === "_dismissed";
 
   async function choose(optionId: string) {
     setPending(true);
@@ -41,7 +42,8 @@ export function ChoiceCard({
     setError(null);
     try {
       await rpc.onboarding.dismissFocus({ botId });
-      await onBotChanged().catch(() => undefined);
+      setLocallyDismissed(true);
+      void onBotChanged().catch(() => undefined);
     } catch (err) {
       setError(err instanceof Error ? err.message : t`Could not dismiss`);
       setPending(false);

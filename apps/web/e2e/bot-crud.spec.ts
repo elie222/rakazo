@@ -54,7 +54,7 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   const normalizedLongTitle = longTitle.trim();
   expect(longTitle.length).toBeGreaterThan(160);
   await nameInput.fill("Researcher");
-  await titleInput.fill(normalizedLongTitle);
+  await titleInput.fill(longTitle);
   await descriptionInput.fill("Finds reliable sources and turns them into concise briefs.");
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(botList.getByRole("button", { name: /^Researcher/ })).toBeVisible();

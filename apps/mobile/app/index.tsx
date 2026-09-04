@@ -98,6 +98,7 @@ export default function Home() {
   const activityRequestId = useRef(0);
   const inboxRequestId = useRef(0);
   const focusPromptTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const creatingBotRef = useRef(false);
 
   useEffect(() => {
     void loadActivityMode().then(setActivityMode);
@@ -317,6 +318,9 @@ export default function Home() {
   const router = useRouter();
 
   const createQuickBot = useCallback(async () => {
+    if (creatingBotRef.current) return;
+    creatingBotRef.current = true;
+    // Prefer the loaded roster so a slow bots fetch does not treat later bots as first.
     const isFirstBot = bots.length === 0;
     try {
       const bot = await rpc<MobileBot>("bots/create", {
@@ -324,21 +328,28 @@ export default function Home() {
         notifyOnFinish: true,
         computerMode: "team",
       });
-      await rpc("onboarding/start", { botId: bot.id }).catch(() => undefined);
-      if (focusPromptTimerRef.current) clearTimeout(focusPromptTimerRef.current);
-      focusPromptTimerRef.current = null;
-      if (isFirstBot) {
-        await rpc("onboarding/promptFocus", { botId: bot.id }).catch(() => undefined);
-      } else {
+      void refreshBots().catch(() => undefined);
+      router.replace({ pathname: "/thread", params: { botId: bot.id, name: bot.name } });
+      void (async () => {
+        const started = await rpc("onboarding/start", { botId: bot.id })
+          .then(() => true)
+          .catch(() => false);
+        if (!started) return;
+        if (focusPromptTimerRef.current) clearTimeout(focusPromptTimerRef.current);
+        focusPromptTimerRef.current = null;
+        if (isFirstBot) {
+          await rpc("onboarding/promptFocus", { botId: bot.id }).catch(() => undefined);
+          return;
+        }
         focusPromptTimerRef.current = setTimeout(() => {
           focusPromptTimerRef.current = null;
           void rpc("onboarding/promptFocus", { botId: bot.id }).catch(() => undefined);
         }, 10_000);
-      }
-      await refreshBots().catch(() => undefined);
-      router.replace({ pathname: "/thread", params: { botId: bot.id, name: bot.name } });
+      })();
     } catch (err) {
       setError(err instanceof Error ? err.message : t("Could not create bot"));
+    } finally {
+      creatingBotRef.current = false;
     }
   }, [bots.length, refreshBots, router, t]);
 

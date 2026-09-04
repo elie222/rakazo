@@ -431,6 +431,7 @@ export function ShellPage() {
   const [botsSidebarCollapsed, setBotsSidebarCollapsed] = useState(false);
   const focusPromptAbortRef = useRef<AbortController | null>(null);
   const focusPromptBotIdRef = useRef<string | null>(null);
+  const creatingBotRef = useRef(false);
   const botsSidebarEdgeDragRef = useRef<{ startX: number; mode: "expand" | "collapse" } | null>(
     null,
   );
@@ -2265,12 +2266,17 @@ export function ShellPage() {
     );
     navigate(`/app/${bot.id}`);
     setPanel(null);
-    await rpc.onboarding.start({ botId: bot.id }).catch(() => undefined);
-    beginFocusPrompt(bot.id, isFirstBot);
+    const started = await rpc.onboarding
+      .start({ botId: bot.id })
+      .then(() => true)
+      .catch(() => false);
+    if (started) beginFocusPrompt(bot.id, isFirstBot);
     await refreshBots().catch(() => undefined);
   }
 
   async function createBotQuick() {
+    if (creatingBotRef.current) return;
+    creatingBotRef.current = true;
     try {
       await createBot({
         name: "New Bot",
@@ -2278,8 +2284,11 @@ export function ShellPage() {
         description: "",
         computerMode: "team",
       });
-    } catch {
-      // Keep the current chat open when create fails.
+    } catch (error) {
+      // Keep the current chat open when create fails, but surface the error.
+      setSendError(error instanceof Error ? error.message : t`Could not create bot`);
+    } finally {
+      creatingBotRef.current = false;
     }
   }
 
@@ -2501,6 +2510,7 @@ export function ShellPage() {
       <aside
         data-testid="bots-sidebar"
         data-collapsed={botsSidebarCollapsed ? "true" : "false"}
+        inert={botsSidebarCollapsed && !mobileSidebarOpen ? true : undefined}
         className={`absolute inset-y-0 start-0 z-40 flex w-[calc(100%-48px)] max-w-[316px] shrink-0 flex-col border-e border-sidebar-border bg-sidebar transition-[transform,width,opacity] md:static md:z-auto md:translate-x-0 ${
           mobileSidebarOpen ? "translate-x-0" : "-translate-x-full rtl:translate-x-full"
         } ${

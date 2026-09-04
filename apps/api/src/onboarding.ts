@@ -5,6 +5,7 @@ import {
   createThreadMessage,
   createThreadMessageInTransaction,
   IsolationError,
+  type Prisma,
   type PrismaClient,
   type ThreadEvents,
 } from "@rakazo/db";
@@ -171,7 +172,7 @@ export async function promptFocus(
   ];
   // Check + insert in one transaction so concurrent promptFocus calls cannot
   // both pass the no-choice gate and post duplicate focus cards.
-  const message = await deps.prisma.$transaction(async (tx) => {
+  const message = await deps.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     // Serialize concurrent promptFocus callers on this thread before the gate check.
     await tx.$executeRaw`SELECT id FROM threads WHERE id = ${thread.id} FOR UPDATE`;
     const recent = await tx.message.findMany({
@@ -204,20 +205,32 @@ export async function dismissFocus(
 ): Promise<void> {
   const { bot, thread } = await requireBotThread(deps, actor, botId);
   const target = { spaceId: actor.spaceId, botId: bot.id, threadId: thread.id };
-  const recent = await deps.prisma.message.findMany({
-    where: { threadId: thread.id },
-    orderBy: { createdAt: "asc" },
+  const claimed = await deps.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    await tx.$executeRaw`SELECT id FROM threads WHERE id = ${thread.id} FOR UPDATE`;
+    const recent = await tx.message.findMany({
+      where: { threadId: thread.id },
+      orderBy: { createdAt: "asc" },
+    });
+    const pending = recent.find((message) =>
+      messageHasPendingChoice(message.blocks as MessageBlock[]),
+    );
+    if (!pending) return null;
+    const blocks = (pending.blocks as MessageBlock[]).map((block) =>
+      block.kind === "choice" && !block.answerId
+        ? { ...block, answerId: FOCUS_DISMISSED_ANSWER_ID }
+        : block,
+    );
+    await tx.message.update({ where: { id: pending.id }, data: { blocks } });
+    return { messageId: pending.id, blocks };
   });
-  const pending = recent.find((message) =>
-    messageHasPendingChoice(message.blocks as MessageBlock[]),
-  );
-  if (!pending) return;
-  const blocks = (pending.blocks as MessageBlock[]).map((block) =>
-    block.kind === "choice" && !block.answerId
-      ? { ...block, answerId: FOCUS_DISMISSED_ANSWER_ID }
-      : block,
-  );
-  await updateBlocks(deps, target, pending.id, blocks);
+  if (!claimed) return;
+  await deps.events.append({
+    spaceId: target.spaceId,
+    threadId: target.threadId,
+    botId: target.botId,
+    type: "thread.message.updated",
+    payload: { messageId: claimed.messageId, role: "bot", blocks: claimed.blocks },
+  });
 }
 
 export async function chooseFocus(
@@ -231,18 +244,30 @@ export async function chooseFocus(
   const { bot, thread } = await requireBotThread(deps, actor, botId);
   const target = { spaceId: actor.spaceId, botId: bot.id, threadId: thread.id };
 
-  const recent = await deps.prisma.message.findMany({
-    where: { threadId: thread.id },
-    orderBy: { createdAt: "asc" },
+  const claimed = await deps.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    await tx.$executeRaw`SELECT id FROM threads WHERE id = ${thread.id} FOR UPDATE`;
+    const recent = await tx.message.findMany({
+      where: { threadId: thread.id },
+      orderBy: { createdAt: "asc" },
+    });
+    const pending = recent.find((message) =>
+      messageHasPendingChoice(message.blocks as MessageBlock[]),
+    );
+    if (!pending) return null;
+    const blocks = (pending.blocks as MessageBlock[]).map((block) =>
+      block.kind === "choice" ? { ...block, answerId: option.id } : block,
+    );
+    await tx.message.update({ where: { id: pending.id }, data: { blocks } });
+    return { messageId: pending.id, blocks };
   });
-  const pending = recent.find((message) =>
-    messageHasPendingChoice(message.blocks as MessageBlock[]),
-  );
-  if (!pending) return;
-  const blocks = (pending.blocks as MessageBlock[]).map((block) =>
-    block.kind === "choice" ? { ...block, answerId: option.id } : block,
-  );
-  await updateBlocks(deps, target, pending.id, blocks);
+  if (!claimed) return;
+  await deps.events.append({
+    spaceId: target.spaceId,
+    threadId: target.threadId,
+    botId: target.botId,
+    type: "thread.message.updated",
+    payload: { messageId: claimed.messageId, role: "bot", blocks: claimed.blocks },
+  });
 
   // Keep the name and title the user chose when creating the bot; the focus
   // step only suggests apps, it must not rename the bot.

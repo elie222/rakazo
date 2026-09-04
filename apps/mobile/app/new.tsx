@@ -40,14 +40,27 @@ export default function NewBot() {
     setPending(true);
     setError(null);
     try {
+      const existing = await rpc<MobileBot[]>("bots/list").catch(() => []);
+      const isFirstBot = existing.length === 0;
       const bot = await rpc<MobileBot>("bots/create", {
         ...normalizeCreateBotProfile({ name, title, description }),
         notifyOnFinish: true,
         computerMode,
       });
-      await rpc("onboarding/start", { botId: bot.id }).catch(() => undefined);
-      await rpc("onboarding/promptFocus", { botId: bot.id }).catch(() => undefined);
       router.replace({ pathname: "/thread", params: { botId: bot.id, name: bot.name } });
+      void (async () => {
+        const started = await rpc("onboarding/start", { botId: bot.id })
+          .then(() => true)
+          .catch(() => false);
+        if (!started) return;
+        if (isFirstBot) {
+          await rpc("onboarding/promptFocus", { botId: bot.id }).catch(() => undefined);
+          return;
+        }
+        setTimeout(() => {
+          void rpc("onboarding/promptFocus", { botId: bot.id }).catch(() => undefined);
+        }, 10_000);
+      })();
     } catch (err) {
       setError(err instanceof Error ? err.message : t("Could not create bot"));
     } finally {
