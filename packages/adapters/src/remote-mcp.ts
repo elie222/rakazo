@@ -7,6 +7,7 @@ import { Agent } from "undici";
 import { combineSignals } from "./connector-safety.js";
 import {
   createAddressCheckedLookup,
+  isCloudMetadataAddress,
   isPrivateAddress,
   type ResolvedAddress,
   type ResolveHostname,
@@ -197,6 +198,7 @@ function assertPublicAddresses(addresses: ResolvedAddress[], hostname?: string):
   const magicDns = hostname != null && isTailscaleMagicDnsHostname(hostname);
   if (
     addresses.some((entry) => {
+      if (isCloudMetadataAddress(entry.address)) return true;
       if (!isPrivateAddress(entry.address)) return false;
       // Allow only Tailscale CGNAT for MagicDNS; keep other private ranges blocked.
       return !(magicDns && isTailscaleCgnatAddress(entry.address));

@@ -76,6 +76,11 @@ describe("remote MCP URL policy", () => {
         { address: "169.254.169.254", family: 4 as const },
       ]),
     ).rejects.toThrow("private address");
+    await expect(
+      assertSafeRemoteUrl("https://box.tail12345.ts.net/openapi.json", async () => [
+        { address: "100.100.100.200", family: 4 as const },
+      ]),
+    ).rejects.toThrow("private address");
   });
 
   it("rejects private addresses in the lookup used by the network connection", async () => {
