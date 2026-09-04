@@ -81,8 +81,9 @@ describe("botMessageOutcomeFromMidTurn", () => {
 describe("userProgressClientNonce", () => {
   it("tags mid-turn progress messages for reconciler detection", () => {
     const nonce = userProgressClientNonce("run-1", 0);
-    expect(nonce).toBe("user-progress:run-1:0");
+    expect(nonce.startsWith("user-progress:run-1:0:")).toBe(true);
     expect(isUserProgressClientNonce(nonce)).toBe(true);
+    expect(userProgressClientNonce("run-1", 0)).not.toBe(nonce);
     expect(isUserProgressClientNonce(null)).toBe(false);
     expect(isUserProgressClientNonce("other")).toBe(false);
   });

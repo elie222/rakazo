@@ -19,8 +19,10 @@ export function clampUserProgressMessage(text: string): string {
 /** clientNonce prefix for mid-turn progress messages (reconciler uses this). */
 export const USER_PROGRESS_CLIENT_NONCE_PREFIX = "user-progress:";
 
-export function userProgressClientNonce(runId: string, index: number): string {
-  return `${USER_PROGRESS_CLIENT_NONCE_PREFIX}${runId}:${index}`;
+export function userProgressClientNonce(runId: string, index = 0): string {
+  // Include entropy so a resumed executor turn cannot reuse an earlier nonce
+  // (threadId + clientNonce is unique).
+  return `${USER_PROGRESS_CLIENT_NONCE_PREFIX}${runId}:${index}:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 10)}`;
 }
 
 export function isUserProgressClientNonce(clientNonce: string | null | undefined): boolean {
