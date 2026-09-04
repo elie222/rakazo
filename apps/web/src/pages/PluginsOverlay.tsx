@@ -1,4 +1,4 @@
-import { Trans, useLingui } from "@lingui/react/macro";
+import { Plural, Trans, useLingui } from "@lingui/react/macro";
 import type { CapabilityInstall, Connection, ConnectionCatalogItem } from "@rakazo/contracts";
 import {
   abortableDelay,
@@ -180,8 +180,7 @@ export function PluginsOverlay({
 
   function itemConnected(item: ConnectionCatalogItem) {
     return (
-      item.connected ||
-      activeAccounts(connections, item).some((row) => row.status === "connected")
+      item.connected || activeAccounts(connections, item).some((row) => row.status === "connected")
     );
   }
 
@@ -428,43 +427,45 @@ export function PluginsOverlay({
   ) {
     const connected = itemConnected(item);
     const tileTestId = opts?.tileTestId !== false && connected;
+    const icon = logo ? (
+      <img
+        src={logo}
+        alt=""
+        loading="lazy"
+        decoding="async"
+        className="h-9 w-9 shrink-0 rounded-xl bg-accent object-contain"
+      />
+    ) : (
+      <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-accent text-sm font-semibold text-foreground">
+        {label[0]}
+      </div>
+    );
+    const title = (
+      <div className="min-w-0 flex-1 text-start">
+        <div className="truncate text-[15px] font-medium text-foreground">{label}</div>
+      </div>
+    );
     return (
       <div
         key={itemKey(item)}
         data-testid={tileTestId ? `connection-tile-${item.slug}` : undefined}
-        className={`flex min-w-0 items-center gap-3 rounded-xl px-2.5 py-2 ${
-          connected ? "cursor-pointer hover:bg-accent/60" : ""
-        }`}
-        onClick={connected ? () => openDetail(item) : undefined}
-        onKeyDown={
-          connected
-            ? (event) => {
-                if (event.key === "Enter" || event.key === " ") {
-                  event.preventDefault();
-                  openDetail(item);
-                }
-              }
-            : undefined
-        }
-        role={connected ? "button" : undefined}
-        tabIndex={connected ? 0 : undefined}
+        className="flex min-w-0 items-center gap-3 rounded-xl px-2.5 py-2"
       >
-        {logo ? (
-          <img
-            src={logo}
-            alt=""
-            loading="lazy"
-            decoding="async"
-            className="h-9 w-9 shrink-0 rounded-xl bg-accent object-contain"
-          />
+        {connected ? (
+          <button
+            type="button"
+            className="flex min-w-0 flex-1 items-center gap-3 rounded-xl text-start hover:bg-accent/60"
+            onClick={() => openDetail(item)}
+          >
+            {icon}
+            {title}
+          </button>
         ) : (
-          <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-accent text-sm font-semibold text-foreground">
-            {label[0]}
-          </div>
+          <>
+            {icon}
+            {title}
+          </>
         )}
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-[15px] font-medium text-foreground">{label}</div>
-        </div>
         {renderCatalogActions(item)}
       </div>
     );
@@ -577,7 +578,7 @@ export function PluginsOverlay({
               {toolsLoading ? (
                 <Trans>Tools</Trans>
               ) : (
-                <Trans>{toolCount} tools</Trans>
+                <Plural value={toolCount} one="# tool" other="# tools" />
               )}
             </span>
             {toolsOpen ? (
@@ -976,11 +977,7 @@ export function PluginsOverlay({
                           disabled={pending === source.id}
                           onClick={() => void removeSource(source)}
                         >
-                          {pending === source.id ? (
-                            <Trans>Removing…</Trans>
-                          ) : (
-                            <Trans>Remove</Trans>
-                          )}
+                          {pending === source.id ? <Trans>Removing…</Trans> : <Trans>Remove</Trans>}
                         </Button>
                       </div>
                     ))}
