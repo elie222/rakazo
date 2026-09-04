@@ -436,6 +436,29 @@ describe("MCP transport seam", () => {
     expect(seen["x-api-key"]).toBeUndefined();
   });
 
+  it("does not forward configured credential values under another header name", async () => {
+    let seen: Record<string, string> = {};
+    const safeFetch = secureFetch(
+      new URL("https://mcp.example.test/mcp"),
+      {},
+      { headers: { "X-Api-Key": "stored-key" } },
+      {
+        resolveHostname: TEST_NETWORK.resolveHostname,
+        fetch: vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+          const request = input instanceof Request ? input : new Request(input, init);
+          seen = Object.fromEntries(request.headers.entries());
+          return Response.json({ ok: true });
+        }),
+      },
+    );
+
+    await safeFetch("https://auth.example.test/token", {
+      headers: { Authorization: "stored-key" },
+    });
+
+    expect(seen.authorization).toBeUndefined();
+  });
+
   it("never retries a failed write against the endpoint origin", async () => {
     const inner = vi.fn(async () => {
       throw new TypeError("fetch failed");

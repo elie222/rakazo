@@ -110,6 +110,7 @@ export function secureFetch(
   const configuredValues = new Map(
     configured.map(([name, value]) => [name.toLowerCase(), value] as const),
   );
+  const configuredCredentialValues = new Set(configuredValues.values());
   const configuredNames = new Set(configuredValues.keys());
   const localCredentialHeaders = new Set([
     ...configuredNames,
@@ -128,8 +129,7 @@ export function secureFetch(
     for (const [name, value] of source.headers) {
       const normalized = name.toLowerCase();
       if (!allowed.has(normalized)) continue;
-      const configuredValue = configuredValues.get(normalized);
-      if (url.origin !== resourceUrl.origin && configuredValue === value) continue;
+      if (url.origin !== resourceUrl.origin && configuredCredentialValues.has(value)) continue;
       headers.set(name, value);
     }
     const localHttp = url.protocol === "http:" && isLocalMcpHost(url.hostname);
