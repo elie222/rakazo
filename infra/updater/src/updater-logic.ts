@@ -6,18 +6,25 @@ import {
   isValidImageTag,
   OFFICIAL_SERVER_IMAGE,
   PREVIOUS_IMAGE_TAG_ENV,
+  RECREATED_SERVICES,
   resolveComposeProjectName,
   resolveUpdaterToken,
 } from "@rakazo/core";
 
 export const DEFAULT_UPDATER_PORT = 7092;
 export const DEFAULT_COMPOSE_FILE = "infra/compose/docker-compose.prod.yml";
+/** Compose's own convention for a multi-file list, matching COMPOSE_FILE. */
+export const DEFAULT_COMPOSE_PATH_SEPARATOR = ":";
+const SERVICE_NAME = /^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/;
 export const MAX_STEP_OUTPUT = 8_000;
 
 export interface UpdaterConfig {
   /** Bind-mounted at the same absolute path it has on the host, so Compose resolves identically. */
   deployDir: string;
-  composeFile: string;
+  /** Overlay order, absolute. Each becomes its own `--file`. */
+  composeFiles: readonly string[];
+  /** Services the update pulls, recreates and rolls back. */
+  updateServices: readonly string[];
   envFile: string;
   /** Passed as `docker compose -p`. Compose injects this into running services. */
   projectName: string;
@@ -41,17 +48,46 @@ export function resolveUpdaterConfig(env: NodeJS.ProcessEnv): UpdaterConfig {
   const image = env.RAKAZO_IMAGE?.trim() || OFFICIAL_SERVER_IMAGE;
   if (!isValidImageName(image))
     throw new Error(`RAKAZO_IMAGE is not a usable image name: ${image}`);
-  const composeFile = env.RAKAZO_COMPOSE_FILE?.trim() || DEFAULT_COMPOSE_FILE;
-  if (path.posix.isAbsolute(composeFile) || composeFile.split("/").includes("..")) {
-    throw new Error("RAKAZO_COMPOSE_FILE must be a path inside the deployment directory.");
+  // Compose itself takes a list here (COMPOSE_FILE with COMPOSE_PATH_SEPARATOR), and a deployment
+  // that layers an overlay must be reconciled with the same list the operator runs by hand. Every
+  // entry is validated separately: one bad path in a list is still a path escape.
+  const separator = env.COMPOSE_PATH_SEPARATOR?.trim() || DEFAULT_COMPOSE_PATH_SEPARATOR;
+  const composeFiles = (env.RAKAZO_COMPOSE_FILE?.trim() || DEFAULT_COMPOSE_FILE)
+    .split(separator)
+    .map((entry) => entry.trim())
+    .filter((entry) => entry !== "");
+  if (composeFiles.length === 0) {
+    throw new Error("RAKAZO_COMPOSE_FILE must name at least one Compose file.");
   }
+  for (const composeFile of composeFiles) {
+    if (path.posix.isAbsolute(composeFile) || composeFile.split("/").includes("..")) {
+      throw new Error("RAKAZO_COMPOSE_FILE must list paths inside the deployment directory.");
+    }
+  }
+  // An overlay that adds a service built from the application image has to be recreated with the
+  // rest, or an update leaves it running the old code. These are appended to the built-in set
+  // rather than replacing it, so a typo cannot drop `api` from an update.
+  const extraServices = (env.RAKAZO_UPDATE_SERVICES ?? "")
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter((entry) => entry !== "");
+  for (const service of extraServices) {
+    if (!SERVICE_NAME.test(service)) {
+      throw new Error(`RAKAZO_UPDATE_SERVICES contains an unusable service name: ${service}`);
+    }
+  }
+  const updateServices = [
+    ...RECREATED_SERVICES,
+    ...extraServices.filter((service) => !RECREATED_SERVICES.includes(service as never)),
+  ];
   const port = Number(env.RAKAZO_UPDATER_PORT ?? DEFAULT_UPDATER_PORT);
   if (!Number.isInteger(port) || port <= 0 || port > 65_535) {
     throw new Error("RAKAZO_UPDATER_PORT is not a port number.");
   }
   return {
     deployDir,
-    composeFile: path.posix.join(deployDir, composeFile),
+    composeFiles: composeFiles.map((composeFile) => path.posix.join(deployDir, composeFile)),
+    updateServices,
     envFile: path.posix.join(deployDir, ".env"),
     projectName: resolveComposeProjectName(env),
     image,

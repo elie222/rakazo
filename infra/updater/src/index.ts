@@ -152,9 +152,10 @@ export function createUpdaterApp(
   app.use("*", requestLogging(options.logger));
   const run = options.run ?? runCommand;
   const composeTarget = {
-    composeFile: config.composeFile,
+    composeFiles: config.composeFiles,
     envFiles: [config.envFile],
     projectName: config.projectName,
+    services: config.updateServices,
   };
   let running = false;
   let planInFlight: Promise<unknown> | null = null;
@@ -180,7 +181,7 @@ export function createUpdaterApp(
       const checkout = await readCheckout();
       return c.json({
         deployDir: config.deployDir,
-        composeFile: config.composeFile,
+        composeFiles: config.composeFiles,
         image: config.image,
         imageRef: imageRef(config.image, tags.currentTag),
         running,

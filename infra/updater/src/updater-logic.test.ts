@@ -19,7 +19,8 @@ describe("resolveUpdaterConfig", () => {
     const config = resolveUpdaterConfig({ ...base });
     expect(config).toMatchObject({
       deployDir: "/srv/rakazo",
-      composeFile: `/srv/rakazo/${DEFAULT_COMPOSE_FILE}`,
+      composeFiles: [`/srv/rakazo/${DEFAULT_COMPOSE_FILE}`],
+      updateServices: ["api", "worker", "web"],
       envFile: "/srv/rakazo/.env",
       projectName: DEFAULT_COMPOSE_PROJECT_NAME,
       token: base.RAKAZO_UPDATER_TOKEN,
@@ -59,6 +60,68 @@ describe("resolveUpdaterConfig", () => {
       expect(() => resolveUpdaterConfig({ ...base, RAKAZO_COMPOSE_FILE: composeFile })).toThrow(
         /RAKAZO_COMPOSE_FILE/,
       );
+    }
+  });
+
+  it("resolves a Compose file list in order, against the deployment directory", () => {
+    expect(
+      resolveUpdaterConfig({
+        ...base,
+        RAKAZO_COMPOSE_FILE: "infra/compose/docker-compose.prod.yml:ops/overlay.yml",
+      }).composeFiles,
+    ).toEqual(["/srv/rakazo/infra/compose/docker-compose.prod.yml", "/srv/rakazo/ops/overlay.yml"]);
+  });
+
+  it("honours COMPOSE_PATH_SEPARATOR the way Compose does", () => {
+    expect(
+      resolveUpdaterConfig({
+        ...base,
+        COMPOSE_PATH_SEPARATOR: ",",
+        RAKAZO_COMPOSE_FILE: "a.yml,b.yml",
+      }).composeFiles,
+    ).toEqual(["/srv/rakazo/a.yml", "/srv/rakazo/b.yml"]);
+  });
+
+  it("checks every entry in a list, not just the first", () => {
+    expect(() =>
+      resolveUpdaterConfig({
+        ...base,
+        RAKAZO_COMPOSE_FILE: "infra/compose/docker-compose.prod.yml:../../etc/compose.yml",
+      }),
+    ).toThrow(/RAKAZO_COMPOSE_FILE/);
+    expect(() =>
+      resolveUpdaterConfig({
+        ...base,
+        RAKAZO_COMPOSE_FILE: "infra/compose/docker-compose.prod.yml:/etc/compose.yml",
+      }),
+    ).toThrow(/RAKAZO_COMPOSE_FILE/);
+  });
+
+  it("refuses a Compose file list that names nothing", () => {
+    expect(() => resolveUpdaterConfig({ ...base, RAKAZO_COMPOSE_FILE: ":  :" })).toThrow(
+      /RAKAZO_COMPOSE_FILE/,
+    );
+  });
+
+  it("appends the deployment's extra services to the built-in set", () => {
+    expect(
+      resolveUpdaterConfig({ ...base, RAKAZO_UPDATE_SERVICES: "supervisor, caddy" }).updateServices,
+    ).toEqual(["api", "worker", "web", "supervisor", "caddy"]);
+  });
+
+  it("cannot drop a built-in service, however RAKAZO_UPDATE_SERVICES is written", () => {
+    const services = resolveUpdaterConfig({
+      ...base,
+      RAKAZO_UPDATE_SERVICES: "web,supervisor",
+    }).updateServices;
+    expect(services).toEqual(["api", "worker", "web", "supervisor"]);
+  });
+
+  it("refuses a service name it would not hand to compose as one argument", () => {
+    for (const service of ["--build", "a b", "-f", "api;rm"]) {
+      expect(() =>
+        resolveUpdaterConfig({ ...base, RAKAZO_UPDATE_SERVICES: `supervisor,${service}` }),
+      ).toThrow(/RAKAZO_UPDATE_SERVICES/);
     }
   });
 
