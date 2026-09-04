@@ -402,6 +402,8 @@ export async function createApp(
   mountWebhookHttpRoutes(app, { prisma, secrets, events, jobs });
   // Shared with stop so a shutdown during retry delays does not restart polling.
   let messagingStopped = false;
+  let clearMessagingRetryDelay: (() => void) | undefined;
+  let messagingInitTask: Promise<void> | undefined;
   // Messaging webhooks only exist when the surface is enabled.
   if (messaging) {
     const inbound = createMessagingInboundHandler({
@@ -444,12 +446,20 @@ export async function createApp(
     // slot without ever seeing the messages itself.
     // Bounded retries cover transient Telegram startup failures; polling-only
     // bots otherwise stay dark until an unrelated outbound send re-inits.
-    void (async () => {
+    messagingInitTask = (async () => {
       const delayMs = [0, 2_000, 10_000];
       for (let attempt = 0; attempt < delayMs.length; attempt += 1) {
         if (messagingStopped) return;
         if (delayMs[attempt]! > 0) {
-          await new Promise((resolve) => setTimeout(resolve, delayMs[attempt]));
+          await new Promise<void>((resolve) => {
+            const timer = setTimeout(resolve, delayMs[attempt]);
+            clearMessagingRetryDelay = () => {
+              clearTimeout(timer);
+              clearMessagingRetryDelay = undefined;
+              resolve();
+            };
+          });
+          clearMessagingRetryDelay = undefined;
         }
         if (messagingStopped) return;
         try {
@@ -496,6 +506,8 @@ export async function createApp(
     stop: async () => {
       oauthLogins.abortAll();
       messagingStopped = true;
+      clearMessagingRetryDelay?.();
+      await messagingInitTask?.catch(() => undefined);
       await messaging?.shutdown?.();
       await email?.drain?.();
       await reconciler?.stop();
