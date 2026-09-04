@@ -71,21 +71,36 @@ async function mirrorRun(deps: MessagingDeliveryDeps, runId: string): Promise<vo
     where: { id: runId },
     include: { sourceMessage: true },
   });
-  if (run?.trigger !== "messaging") return;
-  const sourceBlocks = (run.sourceMessage?.blocks ?? []) as MessageBlock[];
-  const channelBlock = sourceBlocks.find(
-    (block): block is Extract<MessageBlock, { kind: "channel_message" }> =>
-      block.kind === "channel_message",
-  );
-  if (channelBlock) {
-    await mirrorChannelRun(deps, run, channelBlock);
-    return;
+  if (!run) return;
+
+  if (run.trigger === "messaging") {
+    const sourceBlocks = (run.sourceMessage?.blocks ?? []) as MessageBlock[];
+    const channelBlock = sourceBlocks.find(
+      (block): block is Extract<MessageBlock, { kind: "channel_message" }> =>
+        block.kind === "channel_message",
+    );
+    if (channelBlock) {
+      await mirrorChannelRun(deps, run, channelBlock);
+      return;
+    }
   }
 
   const identity = await deps.prisma.messagingIdentity.findUnique({
     where: { botId: run.botId },
   });
   if (!identity) return;
+
+  // A delegated run (trigger "bot_message") can still be the one that
+  // carries the delegating bot's own reply to the human: a message_bot
+  // wake tells the delegate to answer the user inside that same peer run
+  // (see message-visibility.ts's parallel fix for the in-app render side
+  // of this same shape of bug). Only mirror it out to the vendor when it
+  // landed on this bot's actual linked DM thread — a `text` block on any
+  // other thread is inter-bot chatter on a private peer thread and must
+  // never reach the vendor. extractText below only ever pulls `kind:
+  // "text"` blocks (never bot_message_sent/received), so this cannot leak
+  // internal delegation traffic even on the DM thread.
+  if (run.trigger !== "messaging" && run.threadId !== identity.dmThreadId) return;
 
   const messages = await deps.prisma.message.findMany({
     where: { runId: run.id, role: "bot" },
