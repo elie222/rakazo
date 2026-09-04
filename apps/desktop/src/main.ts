@@ -897,12 +897,13 @@ app.whenReady().then(async () => {
       resourcesPath: process.resourcesPath,
       appPath: app.getAppPath(),
     }),
+    localWebUrl: LOCAL_WEB_URL,
     imageTag: resolveImageTag({
       version: app.getVersion(),
       packaged: app.isPackaged,
       override: process.env.RAKAZO_IMAGE_TAG,
     }),
-    probe: (signal, token) => probeManagedStack(LOCAL_WEB_URL, token, signal),
+    probe: (url, signal, token) => probeManagedStack(url, token, signal),
     randomHex: (bytes) => randomBytes(bytes).toString("hex"),
   });
   currentSetup = await readSetup(userDataDir);
@@ -1000,7 +1001,7 @@ app.whenReady().then(async () => {
         };
       }
 
-      if (setup.mode === "new" && !(await localStack.matchesDesiredStack())) {
+      if (setup.mode === "new" && !(await localStack.matchesDesiredStack(setup.serverUrl))) {
         return {
           ok: false,
           error: "The app-managed Rakazo services are not ready. Retry setup.",
@@ -1104,7 +1105,7 @@ app.whenReady().then(async () => {
     showSetupWindow();
   } else if (target.source === "saved") {
     const managedStackReady =
-      currentSetup?.mode === "new" ? await localStack.matchesDesiredStack() : null;
+      currentSetup?.mode === "new" ? await localStack.matchesDesiredStack(target.url) : null;
     const reachability = managedStackReady === null ? await probeServer(target.url) : null;
     if (managedStackReady === true || reachability?.ok === true) {
       if (await openApp(target.url)) {

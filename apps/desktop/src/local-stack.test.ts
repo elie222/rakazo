@@ -271,6 +271,7 @@ describe("LocalStackController", () => {
       exists: (file) => file === "/usr/bin/docker",
       stackDir: path.join(root, "stack"),
       resourceDir: COMPOSE_DIR,
+      localWebUrl: "http://127.0.0.1:5173",
       imageTag: "v1.2.3",
       randomHex: fakeHex,
       sleep: async () => undefined,
@@ -281,9 +282,9 @@ describe("LocalStackController", () => {
         phases.push(stack.state().phase);
         return run(binary, args, options);
       },
-      probe: (signal, token) => {
+      probe: (url, signal, token) => {
         phases.push(stack.state().phase);
-        return probe(signal, token);
+        return probe(url, signal, token);
       },
     };
     const stack = new LocalStackController(deps);
@@ -346,11 +347,16 @@ describe("LocalStackController", () => {
     const stackPath = path.join(root, "stack");
     await mkdir(stackPath, { recursive: true });
     const token = await ensureStackToken(stackPath, fakeHex);
+    const probedUrls: string[] = [];
     const stack = controller({
-      probe: async (_signal, supplied) => (supplied === token ? "v1.2.3" : null),
+      probe: async (url, _signal, supplied) => {
+        probedUrls.push(url);
+        return supplied === token ? "v1.2.3" : null;
+      },
     });
 
-    await expect(stack.matchesDesiredStack()).resolves.toBe(true);
+    await expect(stack.matchesDesiredStack("http://127.0.0.1:5199")).resolves.toBe(true);
+    expect(probedUrls).toEqual(["http://127.0.0.1:5199"]);
     expect(calls).toEqual([]);
   });
 
@@ -588,7 +594,7 @@ describe("LocalStackController", () => {
     });
     const stack = controller(
       {
-        probe: (signal) => {
+        probe: (_url, signal) => {
           probes += 1;
           if (probes > 1) return Promise.resolve("v1.2.3");
           markProbeStarted();
@@ -637,7 +643,7 @@ describe("LocalStackController", () => {
 
   it("does not wait out a slow health probe when stopped", async () => {
     const stack = controller({
-      probe: (signal) =>
+      probe: (_url, signal) =>
         signal.aborted
           ? Promise.resolve(null)
           : new Promise((resolve) => signal.addEventListener("abort", () => resolve(null))),

@@ -232,10 +232,10 @@ export interface LocalStackDeps {
   run: RunDocker;
   stackDir: string;
   resourceDir: string;
+  localWebUrl: string;
   imageTag: string;
-  /** Answers whether the web app is reachable; the final readiness gate. */
   /** Returns the authenticated running image tag, or null for any other listener. */
-  probe: (signal: AbortSignal, token: string) => Promise<string | null>;
+  probe: (url: string, signal: AbortSignal, token: string) => Promise<string | null>;
   randomHex: (bytes: number) => string;
   sleep?: (ms: number, signal: AbortSignal) => Promise<void>;
   healthTimeoutMs?: number;
@@ -277,13 +277,13 @@ export class LocalStackController {
   }
 
   /** Fast path for launch: only a stack with our private token and desired image may be reused. */
-  async matchesDesiredStack(): Promise<boolean> {
+  async matchesDesiredStack(url = this.deps.localWebUrl): Promise<boolean> {
     const token = await readStackToken(this.deps.stackDir);
     if (token === null) return false;
     this.currentStackToken = token;
     try {
       return (
-        (await this.deps.probe(AbortSignal.timeout(HEALTH_POLL_INTERVAL_MS), token)) ===
+        (await this.deps.probe(url, AbortSignal.timeout(HEALTH_POLL_INTERVAL_MS), token)) ===
         this.deps.imageTag
       );
     } catch {
@@ -445,7 +445,9 @@ export class LocalStackController {
     const sleep = this.deps.sleep ?? defaultSleep;
     const deadline = Date.now() + (this.deps.healthTimeoutMs ?? STACK_HEALTH_TIMEOUT_MS);
     while (!signal.aborted) {
-      if ((await this.deps.probe(signal, stackToken)) === this.deps.imageTag) {
+      if (
+        (await this.deps.probe(this.deps.localWebUrl, signal, stackToken)) === this.deps.imageTag
+      ) {
         this.push({ type: "ready" });
         return;
       }

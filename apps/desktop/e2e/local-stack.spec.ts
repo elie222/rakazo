@@ -317,6 +317,50 @@ test("a saved local stack is reused only after its private identity matches", as
   expect(await readLog()).toEqual([]);
 });
 
+test("a saved local target is the exact origin authenticated before reuse", async () => {
+  const uncheckedServer = createServer((request, response) => {
+    if (request.url === "/rpc/health" && request.method === "POST") {
+      response.writeHead(200, { "content-type": "application/json; charset=utf-8" });
+      response.end(JSON.stringify({ json: { ok: true, version: "0.1.0" } }));
+      return;
+    }
+    response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+    response.end("<!doctype html><html><body>Unchecked listener</body></html>");
+  });
+  await new Promise<void>((resolve) => uncheckedServer.listen(0, "127.0.0.1", resolve));
+  try {
+    const address = uncheckedServer.address();
+    if (address === null || typeof address === "string") {
+      throw new Error("unchecked server has no port");
+    }
+    const stackDir = path.join(userData, "stack");
+    await mkdir(stackDir, { recursive: true });
+    await writeFile(path.join(stackDir, ".desktop-stack-token"), `${"ab".repeat(32)}\n`, {
+      encoding: "utf8",
+      mode: 0o600,
+    });
+    await writeFile(
+      path.join(userData, "setup.json"),
+      `${JSON.stringify(
+        { mode: "new", serverUrl: `http://127.0.0.1:${address.port}` },
+        null,
+        2,
+      )}\n`,
+      { encoding: "utf8", mode: 0o600 },
+    );
+
+    app = await launch("ok");
+    const setup = await app.firstWindow();
+    await expect(setup.getByRole("radio", { name: /This computer/ })).toBeChecked();
+    await expect(setup.locator("#stack")).toBeVisible();
+    await expect(setup.getByText("Unchecked listener")).toHaveCount(0);
+  } finally {
+    await new Promise<void>((resolve, reject) => {
+      uncheckedServer.close((error) => (error ? reject(error) : resolve()));
+    });
+  }
+});
+
 test("an existing stack .env is never rewritten", async () => {
   const stackDir = path.join(userData, "stack");
   await mkdir(stackDir, { recursive: true });
