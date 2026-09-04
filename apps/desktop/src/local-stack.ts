@@ -92,7 +92,7 @@ export function renderStackEnv(template: string, randomHex: (bytes: number) => s
   return rendered.join("\n");
 }
 
-/** Never overwrites an existing `.env`: it holds the database password and auth secrets. */
+/** Keeps an existing regular `.env`, but replaces a final symlink instead of trusting its target. */
 export async function ensureStackEnv(
   dir: string,
   template: string,
