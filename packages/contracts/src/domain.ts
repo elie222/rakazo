@@ -211,9 +211,9 @@ export const UpdateBotInput = z
   .object({
     botId: Id,
     name: z.string().trim().min(1).max(BOT_NAME_MAX_LENGTH).optional(),
-    title: z.string().max(BOT_TITLE_MAX_LENGTH).optional(),
-    description: z.string().max(BOT_DESCRIPTION_MAX_LENGTH).optional(),
-    instructions: z.string().max(BOT_INSTRUCTIONS_MAX_LENGTH).optional(),
+    title: z.string().trim().max(BOT_TITLE_MAX_LENGTH).optional(),
+    description: z.string().trim().max(BOT_DESCRIPTION_MAX_LENGTH).optional(),
+    instructions: z.string().trim().max(BOT_INSTRUCTIONS_MAX_LENGTH).optional(),
     notifyOnFinish: z.boolean().optional(),
     color: z.string().optional(),
     pinned: z.boolean().optional(),
