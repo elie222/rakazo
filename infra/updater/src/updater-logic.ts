@@ -16,6 +16,8 @@ export const DEFAULT_COMPOSE_FILE = "infra/compose/docker-compose.prod.yml";
 /** Compose's own convention for a multi-file list, matching COMPOSE_FILE. */
 export const DEFAULT_COMPOSE_PATH_SEPARATOR = ":";
 const SERVICE_NAME = /^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/;
+/** The sidecar itself, which must never appear in the set of services an update recreates. */
+const UPDATER_SERVICE = "updater";
 export const MAX_STEP_OUTPUT = 8_000;
 
 export interface UpdaterConfig {
@@ -74,6 +76,14 @@ export function resolveUpdaterConfig(env: NodeJS.ProcessEnv): UpdaterConfig {
   for (const service of extraServices) {
     if (!SERVICE_NAME.test(service)) {
       throw new Error(`RAKAZO_UPDATE_SERVICES contains an unusable service name: ${service}`);
+    }
+    // The sidecar is the process running the update. Recreating it would kill the request
+    // mid-flight, so there would be nothing left to finish the run, report it, or recover from a
+    // failed step. RECREATED_SERVICES already excludes it on purpose; this keeps that true.
+    if (service === UPDATER_SERVICE) {
+      throw new Error(
+        "RAKAZO_UPDATE_SERVICES must not contain the updater: it cannot recreate itself mid-update.",
+      );
     }
   }
   const updateServices = [

@@ -117,6 +117,12 @@ describe("resolveUpdaterConfig", () => {
     expect(services).toEqual(["api", "worker", "web", "supervisor"]);
   });
 
+  it("refuses to recreate the updater, which would kill the run mid-flight", () => {
+    expect(() =>
+      resolveUpdaterConfig({ ...base, RAKAZO_UPDATE_SERVICES: "supervisor,updater" }),
+    ).toThrow(/updater/);
+  });
+
   it("refuses a service name it would not hand to compose as one argument", () => {
     for (const service of ["--build", "a b", "-f", "api;rm"]) {
       expect(() =>
