@@ -2944,18 +2944,52 @@ export function createRouter(deps: RouterDeps) {
             { provider: input.provider, redirectUrl: `${deps.env.webOrigin}/app` },
             connectionContext(context.actor, "connections.begin", context.signal),
           );
-          await deps.prisma.connection.update({
-            where: { id: row.id },
-            data: {
-              status: auth.authorizationUrl ? "pending" : "connected",
-              providerRef: auth.state || null,
-              metadata: { state: auth.state },
-            },
+          // Re-take the provider lock and only advance still-pending rows so a
+          // concurrent revoke cannot be overwritten back to pending/connected.
+          const applied = await deps.prisma.$transaction(async (tx) => {
+            await lockProviderConnectionScope(
+              tx,
+              context.actor,
+              input.connectorId,
+              input.provider,
+            );
+            const updated = await tx.connection.updateMany({
+              where: {
+                id: row.id,
+                spaceId: context.actor.spaceId,
+                userId: context.actor.userId,
+                status: "pending",
+              },
+              data: {
+                status: auth.authorizationUrl ? "pending" : "connected",
+                providerRef: auth.state || null,
+                metadata: { state: auth.state },
+              },
+            });
+            return updated.count > 0;
           });
+          if (!applied) {
+            // Revoke won the race; drop any remote auth begin just opened.
+            if (auth.state) {
+              await connector
+                .revoke(
+                  auth.state,
+                  connectionContext(context.actor, "connections.begin", context.signal),
+                )
+                .catch(() => undefined);
+            }
+            throw new IsolationError();
+          }
           return { connectionId: row.id, authorizationUrl: auth.authorizationUrl };
         } catch (error) {
-          await deps.prisma.connection.update({
-            where: { id: row.id },
+          if (error instanceof IsolationError) throw error;
+          await deps.prisma.connection.updateMany({
+            where: {
+              id: row.id,
+              spaceId: context.actor.spaceId,
+              userId: context.actor.userId,
+              status: "pending",
+            },
             data: { status: "error" },
           });
           throw new ORPCError("BAD_REQUEST", { message: sanitizeComposioError(error) });
