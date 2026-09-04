@@ -1,6 +1,6 @@
 import type { ProcessEvent } from "@rakazo/adapter-kit";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DockerSandboxProvider } from "./docker-sandbox.js";
+import { DockerSandboxProvider, MAX_SANDBOX_ERROR_RESPONSE_BYTES } from "./docker-sandbox.js";
 
 const context = {
   operationId: "docker-test",
@@ -120,6 +120,51 @@ describe("Docker sandbox", () => {
     await expect(provider.destroy(computer, context)).rejects.toThrow(
       "sandbox destroy failed: 500 boom",
     );
+  });
+
+  it("does not buffer an oversized supervisor error body", async () => {
+    const cancel = vi.fn();
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(new ReadableStream({ cancel }), {
+          status: 500,
+          headers: { "content-length": String(MAX_SANDBOX_ERROR_RESPONSE_BYTES + 1) },
+        }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
+    const computer = {
+      id: "computer",
+      botId: "bot",
+      kind: "docker",
+      providerRef: "computer",
+    } as const;
+
+    await expect(provider.stop(computer, context)).rejects.toThrow("sandbox stop failed: 500");
+    await vi.waitFor(() => expect(cancel).toHaveBeenCalledOnce());
+  });
+
+  it("stops reading a streamed supervisor error at the byte limit", async () => {
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              controller.enqueue(new Uint8Array(MAX_SANDBOX_ERROR_RESPONSE_BYTES + 1));
+            },
+          }),
+          { status: 500 },
+        ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
+
+    await expect(
+      provider.stop(
+        { id: "computer", botId: "bot", kind: "docker", providerRef: "computer" },
+        context,
+      ),
+    ).rejects.toThrow("sandbox stop failed: 500");
   });
 
   it("treats a computer the supervisor no longer knows as already stopped and destroyed", async () => {
