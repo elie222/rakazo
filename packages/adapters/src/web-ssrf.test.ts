@@ -92,6 +92,35 @@ describe("web SSRF policy", () => {
     expect(result.body).toContain("hello");
   });
 
+  it("drops sensitive custom headers on cross-origin redirects", async () => {
+    let finalHeaders = new Headers();
+    const fetchMock: typeof fetch = async (input, init) => {
+      const url = new URL(String(input));
+      if (url.origin === "https://example.test") {
+        return new Response(null, {
+          status: 302,
+          headers: { location: "https://other.example.test/final" },
+        });
+      }
+      finalHeaders = new Headers(init?.headers);
+      return new Response("ok", { status: 200 });
+    };
+
+    await fetchSafeWebText("https://example.test/start", {
+      fetch: fetchMock,
+      resolveHostname: publicResolver,
+      headers: {
+        Authorization: "Bearer stored",
+        "X-Api-Key": "stored-key",
+        "X-Trace-Id": "trace-1",
+      },
+    });
+
+    expect(finalHeaders.get("authorization")).toBeNull();
+    expect(finalHeaders.get("x-api-key")).toBeNull();
+    expect(finalHeaders.get("x-trace-id")).toBe("trace-1");
+  });
+
   it("rejects oversized Content-Length before reading", async () => {
     const fetchMock: typeof fetch = async () =>
       new Response("ignored", {

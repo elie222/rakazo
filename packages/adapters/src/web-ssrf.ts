@@ -11,6 +11,7 @@ import {
 const DEFAULT_TIMEOUT_MS = 15_000;
 const DEFAULT_MAX_BYTES = 5 * 1024 * 1024;
 const MAX_REDIRECTS = 5;
+const SENSITIVE_HEADER = /authorization|cookie|credential|api[-_]?key|token|secret/i;
 
 export type { ResolveHostname } from "./network-address.js";
 
@@ -171,11 +172,18 @@ async function followRedirects(
       await cancelResponseBody(response, state.signal);
       throw new Error("Redirect missing Location header");
     }
-    const next = new URL(location, validated.href).href;
+    const next = new URL(location, validated.href);
+    const headers =
+      next.origin === validated.origin
+        ? state.headers
+        : Object.fromEntries(
+            Object.entries(state.headers ?? {}).filter(([name]) => !SENSITIVE_HEADER.test(name)),
+          );
     // Release this hop before following — do not leave the body open across recursion.
     await cancelResponseBody(response, state.signal);
-    return followRedirects(next, {
+    return followRedirects(next.href, {
       ...state,
+      headers,
       redirectsRemaining: state.redirectsRemaining - 1,
     });
   }
