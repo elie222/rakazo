@@ -290,7 +290,7 @@ async function readBoundedJson(response: Response): Promise<OpenAiCompatibleMode
   const declaredSize = Number(response.headers.get("content-length") ?? 0);
   if (declaredSize > MAX_MODELS_RESPONSE_BYTES) {
     await response.body?.cancel().catch(() => undefined);
-    throw new Error("Model server response is too large");
+    throw new Error(`Model server response is too large. ${OPENAI_COMPAT_PROBE_HAND_FILL_HINT}`);
   }
   if (!response.body) throw new Error("Model server returned an empty response");
   const reader = response.body.getReader();
@@ -303,7 +303,7 @@ async function readBoundedJson(response: Response): Promise<OpenAiCompatibleMode
     bytes += value.byteLength;
     if (bytes > MAX_MODELS_RESPONSE_BYTES) {
       await reader.cancel().catch(() => undefined);
-      throw new Error("Model server response is too large");
+      throw new Error(`Model server response is too large. ${OPENAI_COMPAT_PROBE_HAND_FILL_HINT}`);
     }
     text += decoder.decode(value, { stream: true });
   }
@@ -336,7 +336,7 @@ export async function probeOpenAiCompatibleModels(
     });
     if (response.type === "opaqueredirect" || (response.status >= 300 && response.status < 400)) {
       await response.body?.cancel().catch(() => undefined);
-      throw new Error("Model server redirects are not allowed");
+      throw new Error(`Model server redirects are not allowed. ${OPENAI_COMPAT_PROBE_HAND_FILL_HINT}`);
     }
     if (!response.ok) {
       await response.body?.cancel().catch(() => undefined);
@@ -346,6 +346,18 @@ export async function probeOpenAiCompatibleModels(
     }
     const body = await readBoundedJson(response);
     return probeModelIds(body);
+  } catch (error) {
+    const aborted =
+      (error instanceof Error && error.name === "AbortError") ||
+      (typeof DOMException !== "undefined" &&
+        error instanceof DOMException &&
+        error.name === "AbortError");
+    if (aborted) {
+      // Caller-cancelled probes keep the original AbortError; the 5s probe budget gets a hint.
+      if (signal?.aborted) throw error;
+      throw new Error(`Model server probe timed out. ${OPENAI_COMPAT_PROBE_HAND_FILL_HINT}`);
+    }
+    throw error;
   } finally {
     clearTimeout(timeout);
   }
