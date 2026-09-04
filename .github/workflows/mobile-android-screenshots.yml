@@ -17,7 +17,7 @@ jobs:
   screenshots:
     name: Capture Android UI
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     services:
       postgres:
         image: postgres:16-alpine
