@@ -2964,17 +2964,46 @@ export function createRouter(deps: RouterDeps) {
             return updated.count > 0;
           });
           if (!applied) {
-            // Revoke won the race. Only clean up account-scoped remote refs —
-            // Pipedream stores the app slug as state, and revoking by slug would
-            // delete every sibling account for that provider.
+            // Revoke won the race. Clean up without a provider-wide slug delete.
             const state = auth.state?.trim();
+            const adapterContext = connectionContext(
+              context.actor,
+              "connections.begin",
+              context.signal,
+            );
             if (state && state !== input.provider) {
-              await connector
-                .revoke(
-                  state,
-                  connectionContext(context.actor, "connections.begin", context.signal),
-                )
-                .catch(() => undefined);
+              await connector.revoke(state, adapterContext).catch(() => undefined);
+            } else if (state === input.provider) {
+              // Pipedream begin only returns the app slug. Drop remotes that no
+              // remaining local row still references so a lost race cannot leave
+              // an orphan authorization, without wiping sibling accounts.
+              const revokeUnreferenced = (
+                connector as {
+                  revokeUnreferencedAccounts?: (
+                    slug: string,
+                    keepAccountIds: string[],
+                    context: ReturnType<typeof connectionContext>,
+                  ) => Promise<void>;
+                }
+              ).revokeUnreferencedAccounts;
+              if (revokeUnreferenced) {
+                const kept = await deps.prisma.connection.findMany({
+                  where: {
+                    spaceId: context.actor.spaceId,
+                    userId: context.actor.userId,
+                    connectorId: input.connectorId,
+                    provider: input.provider,
+                    status: { in: ["connected", "pending", "error"] },
+                  },
+                  select: { providerRef: true },
+                });
+                const keepIds = kept
+                  .map((entry) => entry.providerRef)
+                  .filter((value): value is string => Boolean(value && value !== input.provider));
+                await revokeUnreferenced(input.provider, keepIds, adapterContext).catch(
+                  () => undefined,
+                );
+              }
             }
             throw new IsolationError();
           }
@@ -3030,7 +3059,6 @@ export function createRouter(deps: RouterDeps) {
             // begin. Resolve it to the connected-account id so revoke deletes the
             // right remote authorization. Prefer an account id not already used
             // by a sibling row for the same provider.
-            let providerRef = existing.providerRef;
             const resolveAccountId = (
               connector as {
                 resolveConnectedAccountId?: (
@@ -3048,6 +3076,7 @@ export function createRouter(deps: RouterDeps) {
                 connectedAccountId?: (userId: string, slug: string) => Promise<string | undefined>;
               }
             ).connectedAccountId;
+            let resolvedAccountId: string | undefined;
             if (resolveAccountId || fallbackAccountId) {
               const siblings = await deps.prisma.connection.findMany({
                 where: {
@@ -3063,7 +3092,7 @@ export function createRouter(deps: RouterDeps) {
               const excludeIds = siblings
                 .map((sibling) => sibling.providerRef)
                 .filter((value): value is string => Boolean(value));
-              const accountId = resolveAccountId
+              resolvedAccountId = resolveAccountId
                 ? await resolveAccountId(
                     context.actor.userId,
                     existing.provider,
@@ -3074,11 +3103,54 @@ export function createRouter(deps: RouterDeps) {
                 : await fallbackAccountId!(context.actor.userId, existing.provider).catch(
                     () => undefined,
                   );
-              if (accountId) providerRef = accountId;
             }
-            row = await deps.prisma.connection.update({
-              where: { id: existing.id },
-              data: { status: "connected", ...(providerRef ? { providerRef } : {}) },
+            // Reserve providerRef under the provider lock so two concurrent
+            // completes cannot persist the same remote account id.
+            row = await deps.prisma.$transaction(async (tx) => {
+              await lockProviderConnectionScope(
+                tx,
+                context.actor,
+                existing.connectorId,
+                existing.provider,
+              );
+              const current = await tx.connection.findFirst({
+                where: {
+                  id: existing.id,
+                  spaceId: context.actor.spaceId,
+                  userId: context.actor.userId,
+                },
+              });
+              if (!current) throw new IsolationError();
+              if (current.status === "connected") return current;
+              if (current.status === "revoked") throw new IsolationError();
+
+              let providerRef = resolvedAccountId ?? current.providerRef;
+              if (providerRef) {
+                const taken = await tx.connection.findFirst({
+                  where: {
+                    spaceId: context.actor.spaceId,
+                    userId: context.actor.userId,
+                    connectorId: existing.connectorId,
+                    provider: existing.provider,
+                    id: { not: existing.id },
+                    status: { in: ["connected", "pending", "error"] },
+                    providerRef,
+                  },
+                  select: { id: true },
+                });
+                if (taken) {
+                  // Keep the request-scoped ref rather than sharing a sibling's
+                  // remote identity; live sync / next complete can re-resolve.
+                  providerRef = current.providerRef;
+                }
+              }
+              return tx.connection.update({
+                where: { id: current.id },
+                data: {
+                  status: "connected",
+                  ...(providerRef ? { providerRef } : {}),
+                },
+              });
             });
           }
         }

@@ -288,6 +288,36 @@ export class PipedreamConnector implements ManagedConnectorProvider {
     );
   }
 
+  /**
+   * Delete remote accounts for `slug` that no local row still references. Used when a
+   * begin loses a race to revoke and only the app slug is available — never revoke by
+   * slug alone, or every sibling authorization would be deleted.
+   */
+  async revokeUnreferencedAccounts(
+    slug: string,
+    keepAccountIds: string[],
+    context: AdapterContext,
+  ): Promise<void> {
+    const keep = new Set(keepAccountIds.filter(Boolean));
+    const accounts = await this.accounts(context, slug);
+    const orphans = accounts.filter(
+      (account) =>
+        account.app?.name_slug === slug &&
+        account.healthy !== false &&
+        account.dead !== true &&
+        !keep.has(account.id),
+    );
+    await Promise.all(
+      orphans.map((account) =>
+        this.request(
+          `/v1/connect/${encodeURIComponent(this.config.projectId)}/accounts/${encodeURIComponent(account.id)}`,
+          { method: "DELETE" },
+          context.signal,
+        ),
+      ),
+    );
+  }
+
   private externalUserId(context: AdapterContext): string {
     return `rkz_${createHmac("sha256", this.config.identitySecret)
       .update(`${context.spaceId}:${context.userId}`)
