@@ -75,7 +75,9 @@ describe("operator-declared vision modalities", () => {
       );
       const tools = [{ name: "computer_observe" }, { name: "bash" }];
       const accepts = modelAcceptsImageInput(OPENAI_COMPATIBLE_PROVIDER_ID, "gpt4o-vision");
-      expect(filterImageReturningComputerTools(tools, accepts).map((t) => t.name)).toEqual(["bash"]);
+      expect(filterImageReturningComputerTools(tools, accepts).map((t) => t.name)).toEqual([
+        "bash",
+      ]);
     });
   });
 
@@ -89,9 +91,9 @@ describe("operator-declared vision modalities", () => {
         modelId: "gpt4o-vision",
         baseUrl: "http://127.0.0.1:4000/v1",
       });
-      expect(
-        models.getModel(OPENAI_COMPATIBLE_PROVIDER_ID, "gpt4o-vision")?.input,
-      ).toContain("image");
+      expect(models.getModel(OPENAI_COMPATIBLE_PROVIDER_ID, "gpt4o-vision")?.input).toContain(
+        "image",
+      );
     });
   });
 
@@ -110,8 +112,9 @@ describe("operator-declared vision modalities", () => {
   it("dedupes a repeated id in the comma-separated vision env", async () => {
     await withEnv({ [VISION_ENV]: "gpt4o-vision, gpt4o-vision ,gpt4o-vision" }, async () => {
       const { declaredVisionModelIds } = await import("./model-modalities.js");
-      const { openAiCompatibleCatalogProvider, OPENAI_COMPATIBLE_VISION_MODELS_ENV } =
-        await import("./pi-openai-compatible-provider.js");
+      const { openAiCompatibleCatalogProvider, OPENAI_COMPATIBLE_VISION_MODELS_ENV } = await import(
+        "./pi-openai-compatible-provider.js"
+      );
       const ids = declaredVisionModelIds(OPENAI_COMPATIBLE_VISION_MODELS_ENV);
       expect([...ids]).toEqual(["gpt4o-vision"]);
       const catalogIds = openAiCompatibleCatalogProvider()

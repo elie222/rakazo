@@ -9,6 +9,7 @@ import {
 } from "@earendil-works/pi-ai";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
 import { Agent } from "undici";
+import { declaredVisionModelIds, inputModalities } from "./model-modalities.js";
 import {
   createAddressCheckedLookup,
   isCloudMetadataAddress,
@@ -25,10 +26,6 @@ import {
   OPENAI_COMPATIBLE_PROVIDER_ID,
 } from "./openai-compatible-url.js";
 
-import {
-  declaredVisionModelIds,
-  inputModalities,
-} from "./model-modalities.js";
 export { OPENAI_COMPATIBLE_PROVIDER_ID };
 
 /** Placeholder catalog model id; users enter the real id when connecting. */
