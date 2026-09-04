@@ -172,10 +172,20 @@ export function planLiveConnectionSync(
     connectedProviders.add(slug);
   }
   const connectIdSet = new Set(connectIds);
+  // Providers that already have a connected row before this sync. Extra pending
+  // rows for those providers are additional-account attempts, not abandoned
+  // first connects — keep them. Concurrent pendings with no connected row yet
+  // still collapse to one connect + revoke the rest.
+  const previouslyConnected = new Set(
+    rows.filter((row) => row.status === "connected").map((row) => composioSlugKey(row.provider)),
+  );
   const revokeIds = rows
-    .filter(
-      (row) => (row.status === "pending" || row.status === "error") && !connectIdSet.has(row.id),
-    )
+    .filter((row) => {
+      if (row.status !== "pending" && row.status !== "error") return false;
+      if (connectIdSet.has(row.id)) return false;
+      if (previouslyConnected.has(composioSlugKey(row.provider))) return false;
+      return true;
+    })
     .map((row) => row.id);
   return { connectIds, revokeIds };
 }

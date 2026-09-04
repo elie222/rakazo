@@ -129,6 +129,10 @@ msgstr "Hesap"
 msgid "Account default"
 msgstr "Hesap varsayılanı"
 
+#: src/pages/PluginsOverlay.tsx:345
+msgid "Account label"
+msgstr ""
+
 #: src/components/ApprovalRulesSettings.tsx:112
 msgid "Action confirmations"
 msgstr "İşlem onayları"
@@ -155,8 +159,7 @@ msgstr "Etkin ses"
 msgid "Activity"
 msgstr "Etkinlik"
 
-#: src/pages/PluginsOverlay.tsx:338
-#: src/pages/PluginsOverlay.tsx:401
+#: src/pages/PluginsOverlay.tsx:335
 #: src/pages/ScratchpadSection.tsx:196
 msgid "Add"
 msgstr "Ekle"
@@ -189,19 +192,23 @@ msgstr "Bir stdio komutu gir."
 msgid "Add an HTTPS server URL."
 msgstr "Bir HTTPS sunucu URL'si gir."
 
+#: src/pages/PluginsOverlay.tsx:313
+msgid "Add another"
+msgstr ""
+
 #: src/pages/ScratchpadSection.tsx:185
 msgid "Add item"
 msgstr "Öğe ekle"
 
-#: src/pages/PluginsOverlay.tsx:468
+#: src/pages/PluginsOverlay.tsx:568
 msgid "Add MCP server"
 msgstr "MCP sunucusu ekle"
 
-#: src/pages/PluginsOverlay.tsx:477
+#: src/pages/PluginsOverlay.tsx:577
 msgid "Add OpenAPI"
 msgstr "OpenAPI ekle"
 
-#: src/pages/PluginsOverlay.tsx:499
+#: src/pages/PluginsOverlay.tsx:599
 msgid "Add remote MCP server"
 msgstr "Uzak MCP sunucusu ekle"
 
@@ -218,7 +225,7 @@ msgstr ""
 msgid "Add to routine"
 msgstr "Rutine ekle"
 
-#: src/pages/PluginsOverlay.tsx:486
+#: src/pages/PluginsOverlay.tsx:586
 msgid "Add Treg"
 msgstr "Treg ekle"
 
@@ -227,14 +234,14 @@ msgid "Add trigger"
 msgstr ""
 
 #: src/pages/McpServersOverlay.tsx:415
-#: src/pages/PluginsOverlay.tsx:333
-#: src/pages/PluginsOverlay.tsx:396
+#: src/pages/PluginsOverlay.tsx:313
+#: src/pages/PluginsOverlay.tsx:335
 msgid "Adding…"
 msgstr "Ekleniyor…"
 
 #: src/pages/AccountSettingsOverlay.tsx:241
 #: src/pages/McpServersOverlay.tsx:342
-#: src/pages/PluginsOverlay.tsx:440
+#: src/pages/PluginsOverlay.tsx:540
 #: src/pages/RoutineSchedule.tsx:43
 #: src/pages/shell/bot-panel.tsx:321
 msgid "Advanced"
@@ -332,7 +339,7 @@ msgstr ""
 msgid "API key"
 msgstr "API anahtarı"
 
-#: src/pages/PluginsOverlay.tsx:535
+#: src/pages/PluginsOverlay.tsx:635
 msgid "API key header"
 msgstr "API anahtarı üstbilgisi"
 
@@ -461,7 +468,7 @@ msgstr "Oturum açmaya geri dön"
 msgid "Base URL"
 msgstr "Temel URL"
 
-#: src/pages/PluginsOverlay.tsx:532
+#: src/pages/PluginsOverlay.tsx:632
 msgid "Bearer token"
 msgstr "Bearer token"
 
@@ -527,7 +534,7 @@ msgstr "Sunucuya ulaşılamıyor."
 #: src/components/AskCard.tsx:169
 #: src/components/ComputerMaintenanceActions.tsx:96
 #: src/components/teach/TeachComputerOverlay.tsx:254
-#: src/pages/PluginsOverlay.tsx:583
+#: src/pages/PluginsOverlay.tsx:683
 #: src/pages/shell/dialogs.tsx:88
 #: src/pages/shell/dialogs.tsx:152
 #: src/pages/shell/dialogs.tsx:194
@@ -656,7 +663,7 @@ msgstr "Bilgisayarı kapat"
 msgid "Close image preview"
 msgstr "Görsel önizlemesini kapat"
 
-#: src/pages/PluginsOverlay.tsx:250
+#: src/pages/PluginsOverlay.tsx:391
 msgid "Close integrations"
 msgstr "Entegrasyonları kapat"
 
@@ -807,7 +814,7 @@ msgstr "OAuth ile bağlan"
 msgid "Connect this provider to use it as your personal model."
 msgstr "Kişisel modelin olarak kullanmak için bu sağlayıcıyı bağla."
 
-#: src/pages/PluginsOverlay.tsx:497
+#: src/pages/PluginsOverlay.tsx:597
 msgid "Connect Treg"
 msgstr "Treg'i bağla"
 
@@ -850,7 +857,7 @@ msgid "Connecting…"
 msgstr "Bağlanıyor…"
 
 #. placeholder {0}: item.name
-#: src/pages/PluginsOverlay.tsx:144
+#: src/pages/PluginsOverlay.tsx:177
 msgid "Connection to {0} is still pending. You can close this and check again."
 msgstr "{0} bağlantısı hâlâ beklemede. Bunu kapatıp daha sonra tekrar kontrol edebilirsin."
 
@@ -903,7 +910,7 @@ msgstr "Sohbet temizlenemedi"
 msgid "Could not complete OAuth"
 msgstr "OAuth tamamlanamadı"
 
-#: src/pages/PluginsOverlay.tsx:148
+#: src/pages/PluginsOverlay.tsx:182
 msgid "Could not connect"
 msgstr "Bağlanılamadı"
 
@@ -981,7 +988,7 @@ msgstr "{0} indirilemedi. Tekrar dene."
 msgid "Could not download {name}. Try again."
 msgstr "{name} indirilemedi. Tekrar dene."
 
-#: src/pages/PluginsOverlay.tsx:215
+#: src/pages/PluginsOverlay.tsx:275
 msgid "Could not install connector"
 msgstr "Bağlayıcı kurulamadı"
 
@@ -989,7 +996,7 @@ msgstr "Bağlayıcı kurulamadı"
 msgid "Could not load approval rules"
 msgstr "Onay kuralları yüklenemedi"
 
-#: src/pages/PluginsOverlay.tsx:85
+#: src/pages/PluginsOverlay.tsx:113
 msgid "Could not load integrations"
 msgstr "Entegrasyonlar yüklenemedi"
 
@@ -1036,7 +1043,7 @@ msgstr "Bu model sunucusuna ulaşılamadı"
 msgid "Could not remove"
 msgstr "Kaldırılamadı"
 
-#: src/pages/PluginsOverlay.tsx:228
+#: src/pages/PluginsOverlay.tsx:288
 msgid "Could not remove connector"
 msgstr "Bağlayıcı kaldırılamadı"
 
@@ -1048,6 +1055,10 @@ msgstr "Grup kaldırılamadı"
 msgid "Could not remove rule"
 msgstr "Kural kaldırılamadı"
 
+#: src/pages/PluginsOverlay.tsx:234
+msgid "Could not rename connection"
+msgstr ""
+
 #: src/pages/shell/message-cards.tsx:218
 msgid "Could not render chart"
 msgstr "Grafik çizilemedi"
@@ -1056,7 +1067,7 @@ msgstr "Grafik çizilemedi"
 msgid "Could not reset password"
 msgstr "Parola sıfırlanamadı"
 
-#: src/pages/PluginsOverlay.tsx:174
+#: src/pages/PluginsOverlay.tsx:202
 msgid "Could not revoke connection"
 msgstr "Bağlantı iptal edilemedi"
 
@@ -1204,12 +1215,12 @@ msgstr ""
 msgid "Creating…"
 msgstr "Oluşturuluyor…"
 
-#: src/pages/PluginsOverlay.tsx:552
+#: src/pages/PluginsOverlay.tsx:652
 msgid "Credential"
 msgstr "Kimlik bilgisi"
 
 #: src/pages/McpServersOverlay.tsx:34
-#: src/pages/PluginsOverlay.tsx:609
+#: src/pages/PluginsOverlay.tsx:709
 msgid "credential saved"
 msgstr "kimlik bilgisi kaydedildi"
 
@@ -1344,7 +1355,7 @@ msgstr ""
 msgid "Dismissed. Reconnect anytime from MCP settings."
 msgstr "Kapatıldı. MCP ayarlarından istediğin zaman yeniden bağlanabilirsin."
 
-#: src/pages/PluginsOverlay.tsx:509
+#: src/pages/PluginsOverlay.tsx:609
 msgid "Display name"
 msgstr "Görünen ad"
 
@@ -1562,7 +1573,7 @@ msgid "header"
 msgstr ""
 
 #: src/pages/McpServersOverlay.tsx:367
-#: src/pages/PluginsOverlay.tsx:543
+#: src/pages/PluginsOverlay.tsx:643
 msgid "Header name"
 msgstr "Üstbilgi adı"
 
@@ -1618,7 +1629,7 @@ msgstr "Bitirdim"
 msgid "If you heard that, voice is ready."
 msgstr "Bunu duyduysan ses hazır."
 
-#: src/pages/PluginsOverlay.tsx:501
+#: src/pages/PluginsOverlay.tsx:601
 msgid "Import OpenAPI JSON"
 msgstr "OpenAPI JSON içe aktar"
 
@@ -1727,7 +1738,7 @@ msgstr "Önceki mesajları yükle"
 msgid "Loading activity…"
 msgstr "Etkinlik yükleniyor…"
 
-#: src/pages/PluginsOverlay.tsx:273
+#: src/pages/PluginsOverlay.tsx:414
 msgid "Loading integrations…"
 msgstr "Entegrasyonlar yükleniyor…"
 
@@ -1796,7 +1807,7 @@ msgid "Max"
 msgstr "Maksimum"
 
 #: src/pages/McpServersOverlay.tsx:255
-#: src/pages/PluginsOverlay.tsx:456
+#: src/pages/PluginsOverlay.tsx:556
 msgid "MCP servers"
 msgstr "MCP sunucuları"
 
@@ -2005,15 +2016,15 @@ msgstr ""
 msgid "No agent connections yet."
 msgstr ""
 
-#: src/pages/PluginsOverlay.tsx:357
+#: src/pages/PluginsOverlay.tsx:476
 msgid "No apps match your search."
 msgstr "Aramanla eşleşen uygulama yok."
 
-#: src/pages/PluginsOverlay.tsx:611
+#: src/pages/PluginsOverlay.tsx:711
 msgid "no auth"
 msgstr "kimlik doğrulamasız"
 
-#: src/pages/PluginsOverlay.tsx:529
+#: src/pages/PluginsOverlay.tsx:629
 msgid "No authentication"
 msgstr "Kimlik doğrulaması yok"
 
@@ -2026,7 +2037,7 @@ msgid "No chat apps linked yet."
 msgstr ""
 
 #. placeholder {0}: item.name
-#: src/pages/PluginsOverlay.tsx:170
+#: src/pages/PluginsOverlay.tsx:214
 msgid "No connection record found for {0}."
 msgstr "{0} için bağlantı kaydı bulunamadı."
 
@@ -2042,7 +2053,7 @@ msgstr ""
 msgid "No longer active"
 msgstr "Artık etkin değil"
 
-#: src/pages/PluginsOverlay.tsx:352
+#: src/pages/PluginsOverlay.tsx:471
 msgid "No managed app catalog is configured on this deployment."
 msgstr ""
 
@@ -2095,7 +2106,7 @@ msgstr "Yapılandırılmadı"
 msgid "Not connected"
 msgstr "Bağlı değil"
 
-#: src/pages/PluginsOverlay.tsx:316
+#: src/pages/PluginsOverlay.tsx:456
 msgid "Not in the plugin catalog"
 msgstr ""
 
@@ -2297,7 +2308,7 @@ msgstr "Sağlayıcılar"
 msgid "Queued"
 msgstr "Kuyrukta"
 
-#: src/pages/PluginsOverlay.tsx:556
+#: src/pages/PluginsOverlay.tsx:656
 msgid "Rakazo verifies the source before saving it. Credentials are encrypted and are never returned to clients or exposed to the model."
 msgstr "Rakazo kaynağı kaydetmeden önce doğrular. Kimlik bilgileri şifrelenir; istemcilere asla geri gönderilmez ve modele gösterilmez."
 
@@ -2354,9 +2365,9 @@ msgid "Release"
 msgstr "Bırak"
 
 #: src/components/ApprovalRulesSettings.tsx:179
-#: src/pages/PluginsOverlay.tsx:336
-#: src/pages/PluginsOverlay.tsx:399
-#: src/pages/PluginsOverlay.tsx:623
+#: src/pages/PluginsOverlay.tsx:323
+#: src/pages/PluginsOverlay.tsx:365
+#: src/pages/PluginsOverlay.tsx:723
 #: src/pages/ScratchpadSection.tsx:165
 msgid "Remove"
 msgstr "Kaldır"
@@ -2397,9 +2408,9 @@ msgstr "Sohbeti, bilgisayarı ve hafızasıyla birlikte kaldırıldı."
 msgid "Removed, but list refresh failed"
 msgstr "Kaldırıldı ama liste yenilenemedi"
 
-#: src/pages/PluginsOverlay.tsx:331
-#: src/pages/PluginsOverlay.tsx:394
-#: src/pages/PluginsOverlay.tsx:623
+#: src/pages/PluginsOverlay.tsx:323
+#: src/pages/PluginsOverlay.tsx:365
+#: src/pages/PluginsOverlay.tsx:723
 msgid "Removing…"
 msgstr "Kaldırılıyor…"
 
@@ -2565,8 +2576,8 @@ msgstr "Evet ya da hayır de veya bir cümleyle yanıtla."
 msgid "Search"
 msgstr "Ara"
 
-#: src/pages/PluginsOverlay.tsx:263
-#: src/pages/PluginsOverlay.tsx:264
+#: src/pages/PluginsOverlay.tsx:404
+#: src/pages/PluginsOverlay.tsx:405
 msgid "Search apps"
 msgstr "Uygulama ara"
 
@@ -2679,7 +2690,7 @@ msgstr ""
 msgid "Show computer"
 msgstr "Bilgisayarı göster"
 
-#: src/pages/PluginsOverlay.tsx:418
+#: src/pages/PluginsOverlay.tsx:518
 msgid "Show more"
 msgstr "Daha fazla göster"
 
@@ -2968,11 +2979,11 @@ msgstr "Günün saati"
 msgid "Title"
 msgstr "Başlık"
 
-#: src/pages/PluginsOverlay.tsx:592
+#: src/pages/PluginsOverlay.tsx:692
 msgid "Tool sources"
 msgstr "Araç kaynakları"
 
-#: src/pages/PluginsOverlay.tsx:552
+#: src/pages/PluginsOverlay.tsx:652
 msgid "Treg token"
 msgstr "Treg token'ı"
 
@@ -3054,11 +3065,11 @@ msgstr "Bulunan bir modeli kullan"
 msgid "Use this model"
 msgstr "Bu modeli kullan"
 
-#: src/pages/PluginsOverlay.tsx:573
+#: src/pages/PluginsOverlay.tsx:673
 msgid "Verify and add"
 msgstr "Doğrula ve ekle"
 
-#: src/pages/PluginsOverlay.tsx:571
+#: src/pages/PluginsOverlay.tsx:671
 msgid "Verifying…"
 msgstr "Doğrulanıyor…"
 

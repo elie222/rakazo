@@ -158,9 +158,19 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
     .locator("xpath=ancestor::*[.//button][1]");
   await gmailRow.getByRole("button", { name: "Add", exact: true }).click();
   await expect(gmailRow.getByRole("button", { name: "Remove", exact: true })).toBeVisible();
+  await expect(gmailRow.getByRole("button", { name: "Add another", exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "11a-connected-plugins");
 
-  await gmailRow.getByRole("button", { name: "Remove", exact: true }).click();
+  await gmailRow.getByRole("button", { name: "Add another", exact: true }).click();
+  await expect(gmailRow.getByLabel("Account label")).toHaveCount(2);
+  await gmailRow.getByLabel("Account label").nth(1).fill("Work");
+  await gmailRow.getByLabel("Account label").nth(1).blur();
+  await expect(gmailRow.getByLabel("Account label").nth(1)).toHaveValue("Work");
+  await captureScreenshot(page, testInfo, "11a2-multi-account-plugins");
+
+  await gmailRow.getByRole("button", { name: "Remove", exact: true }).last().click();
+  await expect(gmailRow.getByLabel("Account label")).toHaveCount(1);
+  await gmailRow.getByRole("button", { name: "Remove", exact: true }).last().click();
   await expect(gmailRow.getByRole("button", { name: "Add", exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "11b-connected-plugins-empty");
 

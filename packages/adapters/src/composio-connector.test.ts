@@ -435,6 +435,22 @@ describe("composio tool mapping", () => {
     });
   });
 
+  it("keeps an in-flight additional account when the provider is already connected", () => {
+    expect(
+      planLiveConnectionSync(
+        [
+          { id: "row-gmail", provider: "gmail", status: "connected", displayName: "Personal" },
+          { id: "row-work", provider: "gmail", status: "pending", displayName: "Work" },
+          { id: "row-err", provider: "slack", status: "error", displayName: "Slack" },
+        ],
+        ["gmail"],
+      ),
+    ).toEqual({
+      connectIds: [],
+      revokeIds: ["row-err"],
+    });
+  });
+
   it("filters the catalog by name or slug", () => {
     const items = [
       { slug: "github", name: "GitHub", logo: null, connected: false, noAuth: false },

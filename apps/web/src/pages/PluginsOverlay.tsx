@@ -1,5 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { CapabilityInstall, ConnectionCatalogItem } from "@rakazo/contracts";
+import type { CapabilityInstall, Connection, ConnectionCatalogItem } from "@rakazo/contracts";
 import {
   abortableDelay,
   buildFeaturedConnectorTiles,
@@ -43,6 +43,21 @@ function markConnected(
   );
 }
 
+function activeAccounts(
+  connections: Connection[],
+  item: Pick<ConnectionCatalogItem, "connectorId" | "slug">,
+) {
+  return connections.filter(
+    (row) =>
+      row.connectorId === item.connectorId &&
+      row.provider === item.slug &&
+      (row.status === "connected" || row.status === "pending"),
+  );
+}
+
+function nextAccountLabel(itemName: string, existingCount: number) {
+  return existingCount <= 0 ? itemName : `${itemName} ${existingCount + 1}`;
+}
 export function PluginsOverlay({
   onClose,
   onOpenMcp,
@@ -56,6 +71,8 @@ export function PluginsOverlay({
   const [query, setQuery] = useState("");
   const [visibleCount, setVisibleCount] = useState(CONNECTION_CATALOG_PAGE_SIZE);
   const [catalog, setCatalog] = useState<ConnectionCatalogItem[]>([]);
+  const [connections, setConnections] = useState<Connection[]>([]);
+  const [labelDrafts, setLabelDrafts] = useState<Record<string, string>>({});
   const [sources, setSources] = useState<CapabilityInstall[]>([]);
   const [sourceKind, setSourceKind] = useState<SourceKind | null>(null);
   const [sourceName, setSourceName] = useState("");
@@ -70,11 +87,22 @@ export function PluginsOverlay({
   const connectionAttempt = useRef<AbortController | null>(null);
 
   async function refresh() {
-    const [items, installs] = await Promise.all([
+    const [items, installs, rows] = await Promise.all([
       rpc.connections.catalog({}),
       rpc.capabilities.list(),
+      rpc.connections.list(),
     ]);
     setCatalog(items);
+    setConnections(rows);
+    setLabelDrafts((current) => {
+      const next: Record<string, string> = {};
+      for (const row of rows) {
+        if (row.status === "connected" || row.status === "pending") {
+          next[row.id] = current[row.id] ?? row.displayName;
+        }
+      }
+      return next;
+    });
     setSources(
       installs.filter(
         (install) => install.kind === "mcp" || install.kind === "api" || install.kind === "graphql",
@@ -117,10 +145,13 @@ export function PluginsOverlay({
     const key = itemKey(item);
     setPending(key);
     try {
+      const existing = activeAccounts(connections, item).filter(
+        (row) => row.status === "connected",
+      );
       const started = await rpc.connections.begin({
         connectorId: item.connectorId,
         provider: item.slug,
-        displayName: item.name,
+        displayName: nextAccountLabel(item.name, existing.length),
       });
       if (started.authorizationUrl)
         window.open(started.authorizationUrl, "rakazo-plugin-connect", "noopener,noreferrer");
@@ -128,6 +159,7 @@ export function PluginsOverlay({
         if (controller.signal.aborted) return;
         setItemConnected(item, true);
         void notifyAppConnected(item);
+        await refresh().catch(() => undefined);
         return;
       }
       for (let i = 0; i < 45; i += 1) {
@@ -139,6 +171,7 @@ export function PluginsOverlay({
           if (controller.signal.aborted) return;
           setItemConnected(item, true);
           void notifyAppConnected(item);
+          await refresh().catch(() => undefined);
           return;
         }
         await abortableDelay(2_000, controller.signal);
@@ -147,6 +180,7 @@ export function PluginsOverlay({
       setCatalogError(
         t`Connection to ${item.name} is still pending. You can close this and check again.`,
       );
+      await refresh().catch(() => undefined);
     } catch (err) {
       if (controller.signal.aborted) return;
       setCatalogError(err instanceof Error ? err.message : t`Could not connect`);
@@ -158,24 +192,50 @@ export function PluginsOverlay({
     }
   }
 
-  async function revoke(item: ConnectionCatalogItem) {
+  async function revokeAccount(row: Connection, item: ConnectionCatalogItem) {
     setCatalogError(null);
-    const key = itemKey(item);
-    setPending(key);
+    setPending(row.id);
     try {
-      const rows = await rpc.connections.list();
-      const matches = rows.filter(
-        (entry) => entry.connectorId === item.connectorId && entry.provider === item.slug,
-      );
-      const row =
-        matches.find((entry) => entry.status === "connected") ??
-        matches.find((entry) => entry.status === "pending") ??
-        matches.find((entry) => entry.status === "error");
-      if (!row) throw new Error(t`No connection record found for ${item.name}.`);
       await rpc.connections.revoke({ connectionId: row.id });
-      setItemConnected(item, false);
+      const remaining = activeAccounts(connections, item).filter((entry) => entry.id !== row.id);
+      if (remaining.every((entry) => entry.status !== "connected")) {
+        setItemConnected(item, false);
+      }
+      await refresh().catch(() => undefined);
     } catch (err) {
       setCatalogError(err instanceof Error ? err.message : t`Could not revoke connection`);
+    } finally {
+      setPending(null);
+    }
+  }
+
+  async function revoke(item: ConnectionCatalogItem) {
+    const matches = activeAccounts(connections, item);
+    const row =
+      matches.find((entry) => entry.status === "connected") ??
+      matches.find((entry) => entry.status === "pending");
+    if (!row) {
+      setCatalogError(t`No connection record found for ${item.name}.`);
+      return;
+    }
+    await revokeAccount(row, item);
+  }
+
+  async function renameAccount(row: Connection) {
+    const displayName = (labelDrafts[row.id] ?? row.displayName).trim();
+    if (!displayName || displayName === row.displayName) return;
+    setPending(`rename:${row.id}`);
+    setCatalogError(null);
+    try {
+      const updated = await rpc.connections.rename({ connectionId: row.id, displayName });
+      setConnections((current) =>
+        current.map((entry) =>
+          entry.id === row.id ? { ...entry, displayName: updated.displayName } : entry,
+        ),
+      );
+      setLabelDrafts((current) => ({ ...current, [row.id]: updated.displayName }));
+    } catch (err) {
+      setCatalogError(err instanceof Error ? err.message : t`Could not rename connection`);
     } finally {
       setPending(null);
     }
@@ -248,6 +308,87 @@ export function PluginsOverlay({
     }
   }
 
+  function renderCatalogActions(item: ConnectionCatalogItem) {
+    const key = itemKey(item);
+    const accounts = activeAccounts(connections, item);
+    const connected = item.connected || accounts.some((row) => row.status === "connected");
+    const connecting = pending === key;
+    const removing = accounts.some((row) => pending === row.id);
+    return (
+      <div className="flex shrink-0 flex-col items-end gap-1.5">
+        <div className="flex items-center gap-1.5">
+          {connected ? (
+            <>
+              <Button
+                type="button"
+                variant="secondary"
+                className="rounded-full"
+                size="sm"
+                disabled={connecting || removing}
+                onClick={() => void connect(item)}
+              >
+                {connecting ? <Trans>Adding…</Trans> : <Trans>Add another</Trans>}
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                className="rounded-full"
+                size="sm"
+                disabled={connecting || removing || accounts.length === 0}
+                onClick={() => void revoke(item)}
+              >
+                {removing ? <Trans>Removing…</Trans> : <Trans>Remove</Trans>}
+              </Button>
+            </>
+          ) : (
+            <Button
+              type="button"
+              variant="secondary"
+              className="rounded-full"
+              size="sm"
+              disabled={connecting}
+              onClick={() => void connect(item)}
+            >
+              {connecting ? <Trans>Adding…</Trans> : <Trans>Add</Trans>}
+            </Button>
+          )}
+        </div>
+        {accounts.length > 0 ? (
+          <div className="flex w-[220px] max-w-full flex-col gap-1">
+            {accounts.map((row) => (
+              <div key={row.id} className="flex items-center gap-1">
+                <Input
+                  value={labelDrafts[row.id] ?? row.displayName}
+                  aria-label={t`Account label`}
+                  className="h-8 rounded-lg px-2 text-[12.5px]"
+                  onChange={(event) =>
+                    setLabelDrafts((current) => ({ ...current, [row.id]: event.target.value }))
+                  }
+                  onBlur={() => void renameAccount(row)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.currentTarget.blur();
+                    }
+                  }}
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="h-8 shrink-0 rounded-full px-2 text-[12px]"
+                  size="sm"
+                  disabled={pending === row.id}
+                  onClick={() => void revokeAccount(row, item)}
+                >
+                  {pending === row.id ? <Trans>Removing…</Trans> : <Trans>Remove</Trans>}
+                </Button>
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
   return (
     <Dialog
       open
@@ -303,7 +444,6 @@ export function PluginsOverlay({
                     const item = tile.item;
                     const key = item ? itemKey(item) : tile.id;
                     const disabled = tile.missing || !item;
-                    const connected = item?.connected ?? false;
                     return (
                       <div
                         key={key}
@@ -334,28 +474,7 @@ export function PluginsOverlay({
                             </div>
                           ) : null}
                         </div>
-                        {item && !tile.missing ? (
-                          <Button
-                            type="button"
-                            variant="secondary"
-                            className="rounded-full"
-                            size="sm"
-                            disabled={pending === key}
-                            onClick={() => void (connected ? revoke(item) : connect(item))}
-                          >
-                            {pending === key ? (
-                              connected ? (
-                                <Trans>Removing…</Trans>
-                              ) : (
-                                <Trans>Adding…</Trans>
-                              )
-                            ) : connected ? (
-                              <Trans>Remove</Trans>
-                            ) : (
-                              <Trans>Add</Trans>
-                            )}
-                          </Button>
-                        ) : null}
+                        {item && !tile.missing ? renderCatalogActions(item) : null}
                       </div>
                     );
                   })}
@@ -398,26 +517,7 @@ export function PluginsOverlay({
                         {item.name}
                       </div>
                     </div>
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      className="rounded-full"
-                      size="sm"
-                      disabled={pending === key}
-                      onClick={() => void (item.connected ? revoke(item) : connect(item))}
-                    >
-                      {pending === key ? (
-                        item.connected ? (
-                          <Trans>Removing…</Trans>
-                        ) : (
-                          <Trans>Adding…</Trans>
-                        )
-                      ) : item.connected ? (
-                        <Trans>Remove</Trans>
-                      ) : (
-                        <Trans>Add</Trans>
-                      )}
-                    </Button>
+                    {renderCatalogActions(item)}
                   </div>
                 );
               })}

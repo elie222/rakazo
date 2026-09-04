@@ -117,6 +117,63 @@ describeWithDatabase("Composio catalog reconciliation", () => {
     ]);
   });
 
+  it("keeps a second connected account for the same provider and renames it", async () => {
+    const cookie = await signup(app, `multi-account-${stamp}@rakazo.test`, "Multi Account");
+    const first = await rpc<{ connectionId: string }>(app, cookie, "connections/begin", {
+      connectorId: "composio",
+      provider: "GMAIL",
+      displayName: "Personal",
+    });
+    const second = await rpc<{ connectionId: string }>(app, cookie, "connections/begin", {
+      connectorId: "composio",
+      provider: "GMAIL",
+      displayName: "Work",
+    });
+    await expect(
+      rpc<Array<{ id: string; displayName: string; status: string }>>(
+        app,
+        cookie,
+        "connections/list",
+      ),
+    ).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: first.connectionId,
+          displayName: "Personal",
+          status: "connected",
+        }),
+        expect.objectContaining({
+          id: second.connectionId,
+          displayName: "Work",
+          status: "connected",
+        }),
+      ]),
+    );
+
+    await expect(
+      rpc<{ displayName: string }>(app, cookie, "connections/rename", {
+        connectionId: second.connectionId,
+        displayName: "Work inbox",
+      }),
+    ).resolves.toMatchObject({ displayName: "Work inbox" });
+
+    await rpc(app, cookie, "connections/catalog");
+    await expect(statuses([first.connectionId, second.connectionId])).resolves.toEqual([
+      { id: first.connectionId, status: "connected" },
+      { id: second.connectionId, status: "connected" },
+    ]);
+
+    await rpc(app, cookie, "connections/revoke", { connectionId: first.connectionId });
+    await expect(
+      rpc<Array<{ id: string; status: string }>>(app, cookie, "connections/list"),
+    ).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: first.connectionId, status: "revoked" }),
+        expect.objectContaining({ id: second.connectionId, status: "connected" }),
+      ]),
+    );
+  });
+
   it("returns the remote catalog when local reconciliation fails", async () => {
     const cookie = await signup(app, `db-failure-connections-${stamp}@rakazo.test`, "DB Failure");
     const actor = await rpc<Actor>(app, cookie, "me");

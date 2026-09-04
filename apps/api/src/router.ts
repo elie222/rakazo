@@ -2993,6 +2993,29 @@ export function createRouter(deps: RouterDeps) {
           createdAt: row.createdAt.toISOString(),
         };
       }),
+      rename: authed.connections.rename.handler(async ({ context, input }) => {
+        const existing = await deps.prisma.connection.findFirst({
+          where: {
+            id: input.connectionId,
+            spaceId: context.actor.spaceId,
+            userId: context.actor.userId,
+          },
+        });
+        if (!existing) throw new IsolationError();
+        const row = await deps.prisma.connection.update({
+          where: { id: existing.id },
+          data: { displayName: input.displayName },
+        });
+        return {
+          id: row.id,
+          connectorId: row.connectorId,
+          provider: row.provider,
+          displayName: row.displayName,
+          status: row.status as "pending" | "connected" | "revoked" | "error",
+          capabilities: [],
+          createdAt: row.createdAt.toISOString(),
+        };
+      }),
       revoke: authed.connections.revoke.handler(async ({ context, input }) => {
         const row = await deps.prisma.connection.findFirst({
           where: {
@@ -3008,13 +3031,26 @@ export function createRouter(deps: RouterDeps) {
               message: `Connector ${row.connectorId} is not configured`,
             });
           }
-          try {
-            await connector.revoke(
-              row.provider,
-              connectionContext(context.actor, "connections.revoke", context.signal),
-            );
-          } catch (error) {
-            throw new ORPCError("BAD_REQUEST", { message: sanitizeComposioError(error) });
+          const siblings = await deps.prisma.connection.count({
+            where: {
+              spaceId: context.actor.spaceId,
+              userId: context.actor.userId,
+              connectorId: row.connectorId,
+              provider: row.provider,
+              status: { in: ["connected", "pending"] },
+              id: { not: row.id },
+            },
+          });
+          // Only drop the remote provider link when this is the last local account.
+          if (siblings === 0) {
+            try {
+              await connector.revoke(
+                row.provider,
+                connectionContext(context.actor, "connections.revoke", context.signal),
+              );
+            } catch (error) {
+              throw new ORPCError("BAD_REQUEST", { message: sanitizeComposioError(error) });
+            }
           }
         }
         await deps.prisma.connection.updateMany({
