@@ -53,6 +53,10 @@ test("renders tappable choice buttons and submits the offered action id", async 
   expect(torontoBox!.y).toBeGreaterThan(seoulBox!.y + seoulBox!.height - 2);
   expect(Math.abs(berlinBox!.x - seoulBox!.x)).toBeLessThan(2);
   expect(Math.abs(berlinBox!.width - seoulBox!.width)).toBeLessThan(2);
+  const optionList = berlin.locator("xpath=ancestor::div[contains(@class,'space-y-1.5')][1]");
+  const listBox = await optionList.boundingBox();
+  expect(listBox).toBeTruthy();
+  expect(Math.abs(berlinBox!.width - listBox!.width)).toBeLessThan(2);
   await captureScreenshot(page, testInfo, "choice-card");
 
   await page.setViewportSize({ width: 390, height: 844 });

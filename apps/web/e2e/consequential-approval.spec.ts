@@ -59,6 +59,10 @@ test("actions run by default while optional confirmations live in advanced user 
   expect(alwaysBox!.y).toBeGreaterThan(allowBox!.y + allowBox!.height - 2);
   expect(denyBox!.y).toBeGreaterThan(alwaysBox!.y + alwaysBox!.height - 2);
   expect(Math.abs(allowBox!.x - alwaysBox!.x)).toBeLessThan(2);
+  const optionList = allowOnce.locator("xpath=ancestor::div[contains(@class,'space-y-1.5')][1]");
+  const listBox = await optionList.boundingBox();
+  expect(listBox).toBeTruthy();
+  expect(Math.abs(allowBox!.width - listBox!.width)).toBeLessThan(2);
   await captureScreenshot(page, testInfo, "53-action-confirmation-pending");
 
   await page.getByRole("button", { name: "Deny", exact: true }).click();
