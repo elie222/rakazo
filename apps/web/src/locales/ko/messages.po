@@ -133,10 +133,6 @@ msgstr "계정 기본값"
 msgid "Action confirmations"
 msgstr "작업 실행 전 확인"
 
-#: src/pages/shell/command-palette.tsx:119
-msgid "Actions"
-msgstr ""
-
 #. placeholder {0}: bot.name
 #: src/pages/BotContextMenu.tsx:82
 msgid "Actions for {0}"
@@ -260,10 +256,6 @@ msgstr "Agent 연결"
 #: src/pages/McpServersOverlay.tsx:452
 msgid "Agents:"
 msgstr "사용 Bot:"
-
-#: src/pages/shell/command-palette.tsx:112
-msgid "All"
-msgstr ""
 
 #. placeholder {0}: rule.matchValue
 #: src/components/ApprovalRulesSettings.tsx:21
@@ -509,10 +501,6 @@ msgstr "Bot 화면 미리보기"
 msgid "Bot to link"
 msgstr "연결할 Bot"
 
-#: src/pages/shell/command-palette.tsx:114
-msgid "Bots"
-msgstr ""
-
 #: src/components/ApprovalRulesSettings.tsx:115
 msgid "Bots act without asking by default. Add an exception only when you want to review a type of action first."
 msgstr "Bot은 기본적으로 묻지 않고 작업합니다. 먼저 확인하고 싶은 작업만 예외로 추가하세요."
@@ -723,7 +711,6 @@ msgid "Collapse {0}"
 msgstr "{0} 접기"
 
 #: src/pages/RoutineEditor.tsx:387
-#: src/pages/shell/command-palette.tsx:224
 msgid "Coming soon"
 msgstr "준비 중"
 
@@ -1492,10 +1479,6 @@ msgstr "실패했습니다."
 msgid "Failure handling"
 msgstr "실패했을 때 처리"
 
-#: src/pages/shell/command-palette.tsx:116
-msgid "Files"
-msgstr ""
-
 #: src/pages/ModelSettingsOverlay.tsx:444
 #: src/pages/Onboarding.tsx:372
 msgid "Find models"
@@ -1550,10 +1533,6 @@ msgstr "그룹"
 #: src/pages/GroupPanel.tsx:203
 msgid "Group settings"
 msgstr "그룹 설정"
-
-#: src/pages/shell/command-palette.tsx:115
-msgid "Groups"
-msgstr ""
 
 #: src/pages/CallView.tsx:263
 msgid "Hang up"
@@ -1726,10 +1705,6 @@ msgstr "Linear 이슈"
 msgid "Link a chat app"
 msgstr "채팅 앱 연결"
 
-#: src/pages/shell/command-palette.tsx:117
-msgid "Links"
-msgstr ""
-
 #: src/pages/CallView.tsx:247
 msgid "Listening…"
 msgstr "듣는 중…"
@@ -1870,10 +1845,6 @@ msgstr "메시지를 입력하세요"
 #: src/pages/Shell.tsx:5166
 msgid "Messaged {peer}"
 msgstr "{peer}에게 메시지 보냄"
-
-#: src/pages/shell/command-palette.tsx:113
-msgid "Messages"
-msgstr ""
 
 #: src/pages/AccountSettingsOverlay.tsx:137
 #: src/pages/MessagingSettingsOverlay.tsx:92
@@ -2036,7 +2007,7 @@ msgstr "인증 없음"
 msgid "No authentication"
 msgstr "인증 없음"
 
-#: src/pages/shell/command-palette.tsx:165
+#: src/pages/shell/command-palette.tsx:107
 msgid "No bots"
 msgstr ""
 
@@ -2513,7 +2484,6 @@ msgid "Routine"
 msgstr "자동 실행"
 
 #: src/pages/RoutineEditor.tsx:108
-#: src/pages/shell/command-palette.tsx:118
 msgid "Routines"
 msgstr "자동 실행"
 
@@ -2585,7 +2555,7 @@ msgstr "예 또는 아니요로 답하거나 문장으로 답해 주세요."
 
 #: src/pages/ModelSettingsOverlay.tsx:957
 #: src/pages/Shell.tsx:2512
-#: src/pages/shell/command-palette.tsx:138
+#: src/pages/shell/command-palette.tsx:102
 msgid "Search"
 msgstr "검색"
 
@@ -2594,7 +2564,7 @@ msgstr "검색"
 msgid "Search apps"
 msgstr "앱 검색"
 
-#: src/pages/shell/command-palette.tsx:127
+#: src/pages/shell/command-palette.tsx:91
 msgid "Search bots and switch conversations"
 msgstr ""
 
@@ -2860,7 +2830,7 @@ msgstr "확인"
 msgid "Submitted"
 msgstr "제출됨"
 
-#: src/pages/shell/command-palette.tsx:126
+#: src/pages/shell/command-palette.tsx:90
 msgid "Switch bot"
 msgstr ""
 

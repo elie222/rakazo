@@ -133,10 +133,6 @@ msgstr "Kontostandard"
 msgid "Action confirmations"
 msgstr "Aktionsbestätigungen"
 
-#: src/pages/shell/command-palette.tsx:119
-msgid "Actions"
-msgstr ""
-
 #. placeholder {0}: bot.name
 #: src/pages/BotContextMenu.tsx:82
 msgid "Actions for {0}"
@@ -260,10 +256,6 @@ msgstr ""
 #: src/pages/McpServersOverlay.tsx:452
 msgid "Agents:"
 msgstr "Agents:"
-
-#: src/pages/shell/command-palette.tsx:112
-msgid "All"
-msgstr ""
 
 #. placeholder {0}: rule.matchValue
 #: src/components/ApprovalRulesSettings.tsx:21
@@ -509,10 +501,6 @@ msgstr "Bot-Bildschirmvorschau"
 msgid "Bot to link"
 msgstr ""
 
-#: src/pages/shell/command-palette.tsx:114
-msgid "Bots"
-msgstr ""
-
 #: src/components/ApprovalRulesSettings.tsx:115
 msgid "Bots act without asking by default. Add an exception only when you want to review a type of action first."
 msgstr "Bots handeln standardmäßig ohne Nachfrage. Füge nur dann eine Ausnahme hinzu, wenn du eine Aktionsart zuerst prüfen möchtest."
@@ -723,7 +711,6 @@ msgid "Collapse {0}"
 msgstr ""
 
 #: src/pages/RoutineEditor.tsx:387
-#: src/pages/shell/command-palette.tsx:224
 msgid "Coming soon"
 msgstr ""
 
@@ -1492,10 +1479,6 @@ msgstr "Fehlgeschlagen."
 msgid "Failure handling"
 msgstr "Fehlerbehandlung"
 
-#: src/pages/shell/command-palette.tsx:116
-msgid "Files"
-msgstr ""
-
 #: src/pages/ModelSettingsOverlay.tsx:444
 #: src/pages/Onboarding.tsx:372
 msgid "Find models"
@@ -1550,10 +1533,6 @@ msgstr "Gruppe"
 #: src/pages/GroupPanel.tsx:203
 msgid "Group settings"
 msgstr "Gruppeneinstellungen"
-
-#: src/pages/shell/command-palette.tsx:115
-msgid "Groups"
-msgstr ""
 
 #: src/pages/CallView.tsx:263
 msgid "Hang up"
@@ -1726,10 +1705,6 @@ msgstr ""
 msgid "Link a chat app"
 msgstr ""
 
-#: src/pages/shell/command-palette.tsx:117
-msgid "Links"
-msgstr ""
-
 #: src/pages/CallView.tsx:247
 msgid "Listening…"
 msgstr "Hört zu…"
@@ -1870,10 +1845,6 @@ msgstr "Nachricht…"
 #: src/pages/Shell.tsx:5166
 msgid "Messaged {peer}"
 msgstr "Nachricht an {peer} gesendet"
-
-#: src/pages/shell/command-palette.tsx:113
-msgid "Messages"
-msgstr ""
 
 #: src/pages/AccountSettingsOverlay.tsx:137
 #: src/pages/MessagingSettingsOverlay.tsx:92
@@ -2036,7 +2007,7 @@ msgstr "keine Authentifizierung"
 msgid "No authentication"
 msgstr "Keine Authentifizierung"
 
-#: src/pages/shell/command-palette.tsx:165
+#: src/pages/shell/command-palette.tsx:107
 msgid "No bots"
 msgstr ""
 
@@ -2513,7 +2484,6 @@ msgid "Routine"
 msgstr "Routine"
 
 #: src/pages/RoutineEditor.tsx:108
-#: src/pages/shell/command-palette.tsx:118
 msgid "Routines"
 msgstr "Routinen"
 
@@ -2585,7 +2555,7 @@ msgstr "Antworte mit Ja oder Nein oder in einem Satz."
 
 #: src/pages/ModelSettingsOverlay.tsx:957
 #: src/pages/Shell.tsx:2512
-#: src/pages/shell/command-palette.tsx:138
+#: src/pages/shell/command-palette.tsx:102
 msgid "Search"
 msgstr "Suchen"
 
@@ -2594,7 +2564,7 @@ msgstr "Suchen"
 msgid "Search apps"
 msgstr "Apps suchen"
 
-#: src/pages/shell/command-palette.tsx:127
+#: src/pages/shell/command-palette.tsx:91
 msgid "Search bots and switch conversations"
 msgstr ""
 
@@ -2860,7 +2830,7 @@ msgstr "Absenden"
 msgid "Submitted"
 msgstr ""
 
-#: src/pages/shell/command-palette.tsx:126
+#: src/pages/shell/command-palette.tsx:90
 msgid "Switch bot"
 msgstr ""
 

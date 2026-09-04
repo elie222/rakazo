@@ -133,10 +133,6 @@ msgstr "Account default"
 msgid "Action confirmations"
 msgstr "Action confirmations"
 
-#: src/pages/shell/command-palette.tsx:119
-msgid "Actions"
-msgstr "Actions"
-
 #. placeholder {0}: bot.name
 #: src/pages/BotContextMenu.tsx:82
 msgid "Actions for {0}"
@@ -260,10 +256,6 @@ msgstr "Agent connections"
 #: src/pages/McpServersOverlay.tsx:452
 msgid "Agents:"
 msgstr "Agents:"
-
-#: src/pages/shell/command-palette.tsx:112
-msgid "All"
-msgstr "All"
 
 #. placeholder {0}: rule.matchValue
 #: src/components/ApprovalRulesSettings.tsx:21
@@ -509,10 +501,6 @@ msgstr "Bot screen preview"
 msgid "Bot to link"
 msgstr "Bot to link"
 
-#: src/pages/shell/command-palette.tsx:114
-msgid "Bots"
-msgstr "Bots"
-
 #: src/components/ApprovalRulesSettings.tsx:115
 msgid "Bots act without asking by default. Add an exception only when you want to review a type of action first."
 msgstr "Bots act without asking by default. Add an exception only when you want to review a type of action first."
@@ -723,7 +711,6 @@ msgid "Collapse {0}"
 msgstr "Collapse {0}"
 
 #: src/pages/RoutineEditor.tsx:387
-#: src/pages/shell/command-palette.tsx:224
 msgid "Coming soon"
 msgstr "Coming soon"
 
@@ -1492,10 +1479,6 @@ msgstr "Failed."
 msgid "Failure handling"
 msgstr "Failure handling"
 
-#: src/pages/shell/command-palette.tsx:116
-msgid "Files"
-msgstr "Files"
-
 #: src/pages/ModelSettingsOverlay.tsx:444
 #: src/pages/Onboarding.tsx:372
 msgid "Find models"
@@ -1550,10 +1533,6 @@ msgstr "Group"
 #: src/pages/GroupPanel.tsx:203
 msgid "Group settings"
 msgstr "Group settings"
-
-#: src/pages/shell/command-palette.tsx:115
-msgid "Groups"
-msgstr "Groups"
 
 #: src/pages/CallView.tsx:263
 msgid "Hang up"
@@ -1726,10 +1705,6 @@ msgstr "Linear issue"
 msgid "Link a chat app"
 msgstr "Link a chat app"
 
-#: src/pages/shell/command-palette.tsx:117
-msgid "Links"
-msgstr "Links"
-
 #: src/pages/CallView.tsx:247
 msgid "Listening…"
 msgstr "Listening…"
@@ -1870,10 +1845,6 @@ msgstr "Message…"
 #: src/pages/Shell.tsx:5166
 msgid "Messaged {peer}"
 msgstr "Messaged {peer}"
-
-#: src/pages/shell/command-palette.tsx:113
-msgid "Messages"
-msgstr "Messages"
 
 #: src/pages/AccountSettingsOverlay.tsx:137
 #: src/pages/MessagingSettingsOverlay.tsx:92
@@ -2036,7 +2007,7 @@ msgstr "no auth"
 msgid "No authentication"
 msgstr "No authentication"
 
-#: src/pages/shell/command-palette.tsx:165
+#: src/pages/shell/command-palette.tsx:107
 msgid "No bots"
 msgstr "No bots"
 
@@ -2513,7 +2484,6 @@ msgid "Routine"
 msgstr "Routine"
 
 #: src/pages/RoutineEditor.tsx:108
-#: src/pages/shell/command-palette.tsx:118
 msgid "Routines"
 msgstr "Routines"
 
@@ -2585,7 +2555,7 @@ msgstr "Say yes or no, or answer in a sentence."
 
 #: src/pages/ModelSettingsOverlay.tsx:957
 #: src/pages/Shell.tsx:2512
-#: src/pages/shell/command-palette.tsx:138
+#: src/pages/shell/command-palette.tsx:102
 msgid "Search"
 msgstr "Search"
 
@@ -2594,7 +2564,7 @@ msgstr "Search"
 msgid "Search apps"
 msgstr "Search apps"
 
-#: src/pages/shell/command-palette.tsx:127
+#: src/pages/shell/command-palette.tsx:91
 msgid "Search bots and switch conversations"
 msgstr "Search bots and switch conversations"
 
@@ -2860,7 +2830,7 @@ msgstr "Submit"
 msgid "Submitted"
 msgstr "Submitted"
 
-#: src/pages/shell/command-palette.tsx:126
+#: src/pages/shell/command-palette.tsx:90
 msgid "Switch bot"
 msgstr "Switch bot"
 

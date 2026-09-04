@@ -33,16 +33,11 @@ test("command palette opens with keyboard, filters, and switches bots", async ({
   const dialog = page.getByRole("dialog", { name: "Switch bot" });
   await expect(dialog).toBeVisible();
   await expect(palette).toBeVisible();
-  await expect(page.getByRole("tab", { name: "Bots", selected: true })).toBeVisible();
+  await expect(page.getByRole("tab")).toHaveCount(0);
   await expect(page.getByRole("option", { name: /Chief/ })).toBeVisible();
   await expect(page.getByRole("option", { name: /Researcher/ })).toBeVisible();
   await captureScreenshot(page, testInfo, "command-palette-bots");
 
-  await page.getByRole("tab", { name: "Messages" }).click();
-  await expect(page.getByText("Coming soon")).toBeVisible();
-  await expect(page.getByRole("option", { name: /Researcher/ })).toHaveCount(0);
-
-  await page.getByRole("tab", { name: "Bots" }).click();
   const search = page.getByTestId("command-palette-search");
   await search.fill("Research");
   await expect(page.getByRole("option", { name: /Researcher/ })).toBeVisible();
