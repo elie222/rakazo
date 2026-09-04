@@ -1,9 +1,9 @@
 import { Hono } from "hono";
 import { describe, expect, it, vi } from "vitest";
+import { readBoundedBody } from "./http-body.js";
 import {
   formatWebhookPrompt,
   mountWebhookHttpRoutes,
-  readBoundedBody,
   WEBHOOK_MAX_BODY_BYTES,
   WEBHOOK_SECRET_KIND,
   type WebhookDeps,
