@@ -18,6 +18,7 @@ import {
   listRemoteMcpTools,
   type RemoteTransportDependencies,
 } from "./remote-mcp.js";
+import { isVitestRuntime } from "./test-runtime.js";
 
 const API_BASE = "https://api.pipedream.com";
 const MCP_ENDPOINT = "https://remote.mcp.pipedream.net/v3";
@@ -75,7 +76,7 @@ export function isPipedreamEnabled(config: Partial<PipedreamConnectorConfig>): b
       config.projectId &&
       config.environment &&
       config.identitySecret &&
-      !process.env.VITEST,
+      !isVitestRuntime(),
   );
 }
 

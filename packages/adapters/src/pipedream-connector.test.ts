@@ -1,6 +1,10 @@
 import type { AdapterContext } from "@rakazo/adapter-kit";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { PipedreamConnector, pipedreamConfigFromEnv } from "./pipedream-connector.js";
+import {
+  isPipedreamEnabled,
+  PipedreamConnector,
+  pipedreamConfigFromEnv,
+} from "./pipedream-connector.js";
 import { ThirdPartyConnectorEmulator } from "./third-party-connector-emulator.js";
 
 const context: AdapterContext = {
@@ -28,6 +32,20 @@ describe("pipedreamConfigFromEnv", () => {
       environment: "development",
       identitySecret: "identity-secret",
     });
+  });
+
+  it.each(["0", "false"])("does not treat VITEST=%s as an active test runner", (value) => {
+    vi.stubEnv("VITEST", value);
+    expect(
+      isPipedreamEnabled({
+        clientId: "client-id",
+        clientSecret: "client-secret",
+        projectId: "project-id",
+        environment: "production",
+        identitySecret: "identity-secret",
+      }),
+    ).toBe(true);
+    vi.unstubAllEnvs();
   });
 });
 
