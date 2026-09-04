@@ -30,7 +30,7 @@ Platform-specific code is reserved for native navigation, storage, permissions, 
 
 A computer is persistent working state even when its underlying process, container, or virtual machine is suspended or replaced.
 A Team Computer shares files, installed tools, and a canonical browser identity among bots inside the same trust boundary.
-Each concurrently active Team bot receives an isolated live desktop and browser process so bots can use the same machine without controlling one another's screen.
+Rakazo gives each concurrently active Team bot a separate live desktop and browser process when the provider supports it, and unsupported providers expose the limitation instead of silently coupling control.
 Browser sign-ins are checkpointed into the shared identity and become available to desktops opened or restarted after that checkpoint.
 Concurrent Chromium processes do not write directly to one profile directory, and generation fencing prevents older desktops from overwriting newer shared state.
 A Private Computer remains the explicit choice when files, browser identity, or working state must not be shared with other bots.
@@ -57,7 +57,7 @@ Important effects are verified independently, recovery preserves known-good user
 
 This file records current product truth rather than an append-only decision log, and Git history preserves decisions that are later replaced.
 One bot has one continuous visible thread because continuity is part of its identity, while internal runs and attempts remain implementation detail.
-Team Computers share a persisted browser identity but isolate simultaneous live desktops because shared login state and safe concurrency are both required.
+Team Computers share a persisted browser identity and isolate simultaneous live desktops when supported because shared login state and safe concurrency are both required.
 Private Computers isolate the entire working home because some trust boundaries must be stronger than collaboration convenience.
 Connections belong to the user or space rather than requiring repetitive per-bot setup because bots differ through role and state, not account plumbing.
 
