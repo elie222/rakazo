@@ -89,26 +89,7 @@ jobs:
           ram-size: 4096M
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
-          script: |
-            set -eu
-            mkdir -p test-report/mobile-screenshots
-            adb install -r apps/mobile/android/app/build/outputs/apk/debug/app-debug.apk
-            adb reverse tcp:8081 tcp:8081
-            metro_log="$RUNNER_TEMP/rakazo-mobile-metro.log"
-            pnpm --filter @rakazo/mobile exec expo start --port 8081 > "$metro_log" 2>&1 &
-            metro_pid=$!
-            trap 'kill "$metro_pid" 2>/dev/null || true; mkdir -p test-report/mobile-screenshots; cp "$metro_log" test-report/mobile-screenshots/metro.log 2>/dev/null || true' EXIT
-            for attempt in $(seq 1 60); do
-              if curl --fail --silent http://127.0.0.1:8081/status | grep -q running; then
-                break
-              fi
-              if [ "$attempt" -eq 60 ]; then
-                echo "Metro did not become ready." >&2
-                exit 1
-              fi
-              sleep 1
-            done
-            pnpm test:mobile-screenshots
+          script: bash .github/scripts/capture-mobile-android-screenshots.sh
 
       - name: Upload screenshots and diagnostics
         if: always()
