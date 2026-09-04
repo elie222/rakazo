@@ -9,7 +9,7 @@ import {
   PipedreamConnector,
   ThirdPartyConnectorEmulator,
 } from "@rakazo/adapters";
-import { createThreadMessage, type PrismaClient } from "@rakazo/db";
+import type { PrismaClient } from "@rakazo/db";
 import { runProcess } from "./process.js";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
@@ -22,6 +22,7 @@ const API_PORT = 3110;
 const HOST_API_URL = `http://127.0.0.1:${API_PORT}`;
 
 type App = { request: (input: string, init?: RequestInit) => Response | Promise<Response> };
+type CreateThreadMessage = typeof import("@rakazo/db")["createThreadMessage"];
 
 async function main() {
   process.chdir(ROOT);
@@ -41,6 +42,7 @@ async function main() {
     env: process.env,
     stdio: "inherit",
   });
+  const { createThreadMessage } = await import("@rakazo/db");
 
   const thirdParties = new ThirdPartyConnectorEmulator();
   const pipedream = new PipedreamConnector(
@@ -68,7 +70,7 @@ async function main() {
     },
   });
 
-  const fixture = await seedFixture(handles.app, handles.prisma);
+  const fixture = await seedFixture(handles.app, handles.prisma, createThreadMessage);
   const server = serve({
     fetch: handles.app.fetch,
     hostname: "0.0.0.0",
@@ -141,7 +143,11 @@ function configureEnvironment() {
   });
 }
 
-async function seedFixture(app: App, prisma: PrismaClient) {
+async function seedFixture(
+  app: App,
+  prisma: PrismaClient,
+  createThreadMessage: CreateThreadMessage,
+) {
   const cookie = await signup(app);
   const researcher = await rpc<{ id: string }>(app, cookie, "bots/create", {
     name: "Researcher",

@@ -3,15 +3,17 @@ set -euo pipefail
 
 report_dir="test-report/mobile-screenshots"
 metro_log="${RUNNER_TEMP:?}/rakazo-mobile-metro.log"
+run_log="${RUNNER_TEMP:?}/rakazo-mobile-screenshots.log"
 metro_pid=""
 
 mkdir -p "$report_dir"
-exec > >(tee "$report_dir/run.log") 2>&1
+exec > >(tee "$run_log") 2>&1
 
 cleanup() {
   if [[ -n "$metro_pid" ]]; then
     kill "$metro_pid" 2>/dev/null || true
   fi
+  cp "$run_log" "$report_dir/run.log" 2>/dev/null || true
   cp "$metro_log" "$report_dir/metro.log" 2>/dev/null || true
 }
 trap cleanup EXIT
