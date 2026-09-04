@@ -2,6 +2,7 @@ import type { AdapterContext } from "@rakazo/adapter-kit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   isPipedreamEnabled,
+  MAX_PIPEDREAM_RESPONSE_BYTES,
   PipedreamConnector,
   pipedreamConfigFromEnv,
 } from "./pipedream-connector.js";
@@ -80,6 +81,57 @@ describe("PipedreamConnector", () => {
         context,
       ),
     ).rejects.toThrow("secure HTTPS connect URL");
+  });
+
+  it("rejects an oversized token response before buffering it", async () => {
+    const response = new Response("oversized", {
+      headers: { "content-length": String(MAX_PIPEDREAM_RESPONSE_BYTES + 1) },
+    });
+    const cancel = vi.spyOn(response.body!, "cancel");
+    const connector = new PipedreamConnector(
+      {
+        clientId: "fake-client-id",
+        clientSecret: "fake-client-secret",
+        projectId: "fake-project-id",
+        environment: "development",
+        identitySecret: "fake-identity-secret",
+      },
+      { fetch: vi.fn().mockResolvedValue(response) },
+    );
+
+    await expect(
+      connector.begin(
+        { provider: "gmail", redirectUrl: "https://rakazo.example.test/app" },
+        context,
+      ),
+    ).rejects.toThrow("Pipedream response is too large.");
+    expect(cancel).toHaveBeenCalledOnce();
+  });
+
+  it("caps a chunked API response without a content length", async () => {
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        Response.json({ access_token: "fake-access-token", expires_in: 3_600 }),
+      )
+      .mockResolvedValueOnce(new Response(new Uint8Array(MAX_PIPEDREAM_RESPONSE_BYTES + 1)));
+    const connector = new PipedreamConnector(
+      {
+        clientId: "fake-client-id",
+        clientSecret: "fake-client-secret",
+        projectId: "fake-project-id",
+        environment: "development",
+        identitySecret: "fake-identity-secret",
+      },
+      { fetch },
+    );
+
+    await expect(
+      connector.begin(
+        { provider: "gmail", redirectUrl: "https://rakazo.example.test/app" },
+        context,
+      ),
+    ).rejects.toThrow("Pipedream response is too large.");
   });
 
   it("uses one opaque external identity across the app catalog and account flow", async () => {

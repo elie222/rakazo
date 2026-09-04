@@ -19,11 +19,13 @@ import {
   type RemoteTransportDependencies,
 } from "./remote-mcp.js";
 import { isVitestRuntime } from "./test-runtime.js";
+import { readBodyCapped } from "./web-ssrf.js";
 
 const API_BASE = "https://api.pipedream.com";
 const MCP_ENDPOINT = "https://remote.mcp.pipedream.net/v3";
 const DIRECTORY_TTL_MS = 10 * 60_000;
 const REQUEST_TIMEOUT_MS = 30_000;
+export const MAX_PIPEDREAM_RESPONSE_BYTES = 2 * 1024 * 1024;
 
 export interface PipedreamConnectorConfig {
   clientId: string;
@@ -326,6 +328,7 @@ export class PipedreamConnector implements ManagedConnectorProvider {
     signal?: AbortSignal,
   ): Promise<T> {
     const token = await this.token();
+    const requestAbort = combineSignals(signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS));
     const response = await (this.dependencies.fetch ?? globalThis.fetch)(`${API_BASE}${path}`, {
       ...init,
       headers: {
@@ -334,9 +337,9 @@ export class PipedreamConnector implements ManagedConnectorProvider {
         "x-pd-environment": this.config.environment,
         ...init.headers,
       },
-      signal: combineSignals(signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)),
+      signal: requestAbort,
     });
-    const body = await response.text();
+    const body = await readPipedreamBody(response, requestAbort);
     if (!response.ok) {
       if (response.status === 401) this.accessToken = undefined;
       throw new Error(
@@ -360,6 +363,7 @@ export class PipedreamConnector implements ManagedConnectorProvider {
   }
 
   private async fetchToken(): Promise<string> {
+    const requestAbort = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
     const response = await (this.dependencies.fetch ?? globalThis.fetch)(
       `${API_BASE}/v1/oauth/token`,
       {
@@ -371,10 +375,10 @@ export class PipedreamConnector implements ManagedConnectorProvider {
           client_secret: this.config.clientSecret,
           scope: "connect:*",
         }),
-        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+        signal: requestAbort,
       },
     );
-    const body = (await response.json()) as {
+    const body = JSON.parse(await readPipedreamBody(response, requestAbort)) as {
       access_token?: string;
       expires_in?: number;
       error?: string;
@@ -387,5 +391,22 @@ export class PipedreamConnector implements ManagedConnectorProvider {
       expiresAt: Date.now() + (body.expires_in ?? 3_600) * 1_000,
     };
     return body.access_token;
+  }
+}
+
+async function readPipedreamBody(response: Response, signal: AbortSignal): Promise<string> {
+  const declared = Number(response.headers.get("content-length") ?? 0);
+  if (Number.isFinite(declared) && declared > MAX_PIPEDREAM_RESPONSE_BYTES) {
+    await response.body?.cancel().catch(() => undefined);
+    throw new Error("Pipedream response is too large.");
+  }
+  try {
+    const bytes = await readBodyCapped(response, MAX_PIPEDREAM_RESPONSE_BYTES, signal);
+    return new TextDecoder().decode(bytes);
+  } catch (error) {
+    if (error instanceof Error && error.message === "Response is too large") {
+      throw new Error("Pipedream response is too large.");
+    }
+    throw error;
   }
 }
