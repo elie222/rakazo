@@ -41,8 +41,9 @@ export default function NewBot() {
     setPending(true);
     setError(null);
     try {
-      const existing = await rpc<MobileBot[]>("bots/list").catch(() => []);
-      const isFirstBot = existing.length === 0;
+      // Failed list is unknown — delay focus rather than treating the bot as first.
+      const existing = await rpc<MobileBot[]>("bots/list").catch(() => null);
+      const isFirstBot = existing !== null && existing.length === 0;
       const bot = await rpc<MobileBot>("bots/create", {
         ...normalizeCreateBotProfile({ name, title, description }),
         notifyOnFinish: true,

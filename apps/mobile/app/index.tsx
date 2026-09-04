@@ -315,8 +315,9 @@ export default function Home() {
     creatingBotRef.current = true;
     try {
       // Authoritative roster so a slow home fetch does not treat later bots as first.
-      const existing = await rpc<MobileBot[]>("bots/list").catch(() => bots);
-      const isFirstBot = existing.length === 0;
+      // A failed list is unknown — use the delayed path rather than assuming first.
+      const existing = await rpc<MobileBot[]>("bots/list").catch(() => null);
+      const isFirstBot = existing !== null && existing.length === 0;
       const bot = await rpc<MobileBot>("bots/create", {
         ...normalizeCreateBotProfile({ name: "New Bot", title: "", description: "" }),
         notifyOnFinish: true,
@@ -337,7 +338,7 @@ export default function Home() {
     } finally {
       creatingBotRef.current = false;
     }
-  }, [bots, refreshBots, router, t]);
+  }, [refreshBots, router, t]);
 
   if (!ready) {
     return (
