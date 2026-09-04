@@ -223,6 +223,13 @@ describe("openai-compatible provider", () => {
     ).rejects.toThrow(/invalid JSON.*explicit model id/s);
   });
 
+  it("clarifies empty probe responses with hand-fill hint", async () => {
+    const fetchImpl = async () => new Response(null, { status: 200 });
+    await expect(
+      probeOpenAiCompatibleModels({ baseUrl: "http://127.0.0.1:8000/v1" }, fetchImpl),
+    ).rejects.toThrow(/empty response.*explicit model id/s);
+  });
+
   it("rejects oversized model lists", async () => {
     const fetchImpl = async () => new Response("x".repeat(64 * 1024 + 1));
     await expect(

@@ -292,7 +292,11 @@ async function readBoundedJson(response: Response): Promise<OpenAiCompatibleMode
     await response.body?.cancel().catch(() => undefined);
     throw new Error("Model server response is too large");
   }
-  if (!response.body) throw new Error("Model server returned an empty response");
+  if (!response.body) {
+    throw new Error(
+      `Model server returned an empty response. ${OPENAI_COMPAT_PROBE_HAND_FILL_HINT}`,
+    );
+  }
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let bytes = 0;
