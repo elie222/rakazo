@@ -43,17 +43,22 @@ export function speechUploadName(mimeType?: string): string {
   return "speech.webm";
 }
 
-export async function readVoiceJson(res: Response): Promise<unknown> {
+export async function readVoiceJson(
+  res: Response,
+  options: { requireValid?: boolean } = {},
+): Promise<unknown> {
   let bytes: Uint8Array;
   try {
     bytes = await readVoiceBytes(res, MAX_VOICE_JSON_BYTES);
   } catch (error) {
     if (error instanceof Error && error.message === "Voice response is too large.") throw error;
+    if (options.requireValid) throw new Error("Voice provider response could not be read.");
     return null;
   }
   try {
     return JSON.parse(new TextDecoder().decode(bytes));
   } catch {
+    if (options.requireValid) throw new Error("Voice provider returned invalid JSON.");
     return null;
   }
 }

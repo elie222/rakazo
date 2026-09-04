@@ -111,7 +111,7 @@ export class OpenAIVoiceProvider implements VoiceProvider {
       body: form,
       signal: voiceDeadline(request.signal ?? context.signal, 60_000),
     });
-    const body = await readVoiceJson(res);
+    const body = await readVoiceJson(res, { requireValid: res.ok });
     if (!res.ok) throw new Error(voiceHttpError(res.status, "OpenAI", "transcribing", body));
     return { text: String((body as { text?: unknown } | null)?.text ?? "").trim() };
   }

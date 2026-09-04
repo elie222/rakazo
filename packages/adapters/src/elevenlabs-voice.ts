@@ -62,7 +62,7 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
       headers: { "xi-api-key": apiKey },
       signal: voiceDeadline(context.signal, 20_000),
     });
-    const body = await readVoiceJson(res);
+    const body = await readVoiceJson(res, { requireValid: res.ok });
     if (!res.ok) throw new Error(voiceHttpError(res.status, "ElevenLabs", "listing voices", body));
     const voices = (body as { voices?: Array<Record<string, unknown>> } | null)?.voices ?? [];
     return voices
@@ -113,7 +113,7 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
       body: form,
       signal: voiceDeadline(request.signal ?? context.signal, 60_000),
     });
-    const body = await readVoiceJson(res);
+    const body = await readVoiceJson(res, { requireValid: res.ok });
     if (!res.ok) throw new Error(voiceHttpError(res.status, "ElevenLabs", "transcribing", body));
     const text = String((body as { text?: unknown } | null)?.text ?? "").trim();
     return { text };

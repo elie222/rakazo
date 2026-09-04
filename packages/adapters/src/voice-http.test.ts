@@ -52,4 +52,14 @@ describe("readVoiceJson", () => {
     await expect(readVoiceJson(response)).rejects.toThrow("Voice response is too large.");
     expect(cancel).toHaveBeenCalledOnce();
   });
+
+  it("rejects malformed successful JSON when the caller requires a payload", async () => {
+    await expect(readVoiceJson(new Response("not json"), { requireValid: true })).rejects.toThrow(
+      "Voice provider returned invalid JSON.",
+    );
+  });
+
+  it("keeps malformed error bodies optional", async () => {
+    await expect(readVoiceJson(new Response("not json"))).resolves.toBeNull();
+  });
 });

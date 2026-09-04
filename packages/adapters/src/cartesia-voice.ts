@@ -59,7 +59,7 @@ export class CartesiaVoiceProvider implements VoiceProvider {
       headers: cartesiaHeaders(apiKey),
       signal: voiceDeadline(context.signal, 20_000),
     });
-    const body = await readVoiceJson(res);
+    const body = await readVoiceJson(res, { requireValid: res.ok });
     if (!res.ok) throw new Error(voiceHttpError(res.status, "Cartesia", "listing voices", body));
     const voices = voicesFrom(body);
     return voices
