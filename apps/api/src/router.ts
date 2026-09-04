@@ -2947,12 +2947,7 @@ export function createRouter(deps: RouterDeps) {
           // Re-take the provider lock and only advance still-pending rows so a
           // concurrent revoke cannot be overwritten back to pending/connected.
           const applied = await deps.prisma.$transaction(async (tx) => {
-            await lockProviderConnectionScope(
-              tx,
-              context.actor,
-              input.connectorId,
-              input.provider,
-            );
+            await lockProviderConnectionScope(tx, context.actor, input.connectorId, input.provider);
             const updated = await tx.connection.updateMany({
               where: {
                 id: row.id,
