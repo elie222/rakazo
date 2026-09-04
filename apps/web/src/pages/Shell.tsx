@@ -1976,9 +1976,12 @@ export function ShellPage() {
       const trimmed = plan.trimmed;
       setSending(true);
       setSendError(null);
-      if (botTarget && focusPromptBotIdRef.current === botTarget) {
-        cancelFocusPrompt();
-      }
+      const dropDelayedSetup = () => {
+        // Only after successful engagement so a failed upload/send keeps the setup card.
+        if (initialBotTarget && focusPromptBotIdRef.current === initialBotTarget) {
+          cancelFocusPrompt();
+        }
+      };
       try {
         if (plan.shouldRunRoutines) {
           const sendNonce = newClientNonce();
@@ -1992,6 +1995,7 @@ export function ShellPage() {
           );
         }
         if (!plan.shouldSend) {
+          dropDelayedSetup();
           setReplyTarget(null);
           revokePendingAttachmentPreviews(attachments);
           setPendingAttachments((current) =>
@@ -2056,6 +2060,7 @@ export function ShellPage() {
             );
           }
         }
+        dropDelayedSetup();
         setReplyTarget(null);
         revokePendingAttachmentPreviews(attachments);
         setPendingAttachments((current) =>
