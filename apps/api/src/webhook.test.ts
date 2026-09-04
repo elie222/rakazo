@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   formatWebhookPrompt,
   mountWebhookHttpRoutes,
+  readBoundedBody,
   WEBHOOK_MAX_BODY_BYTES,
   WEBHOOK_SECRET_KIND,
   type WebhookDeps,
@@ -246,4 +247,34 @@ describe("inbound webhook HTTP route", () => {
     expect(res.status).toBe(413);
     expect(deps.sendUserMessage).not.toHaveBeenCalled();
   });
+
+  it.each(["declared", "streamed"] as const)(
+    "does not wait on a hanging body cancel for %s oversize",
+    async (kind) => {
+      let cancelStarted = false;
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new Uint8Array(WEBHOOK_MAX_BODY_BYTES + 1));
+        },
+        cancel() {
+          cancelStarted = true;
+          return new Promise(() => undefined);
+        },
+      });
+      const request = new Request("https://rakazo.example.test/webhook", {
+        method: "POST",
+        headers:
+          kind === "declared"
+            ? { "content-length": String(WEBHOOK_MAX_BODY_BYTES + 1) }
+            : undefined,
+        body,
+        duplex: "half",
+      } as RequestInit & { duplex: "half" });
+
+      const started = Date.now();
+      await expect(readBoundedBody(request, WEBHOOK_MAX_BODY_BYTES)).resolves.toBeNull();
+      expect(cancelStarted).toBe(true);
+      expect(Date.now() - started).toBeLessThan(500);
+    },
+  );
 });

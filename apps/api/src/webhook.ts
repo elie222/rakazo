@@ -47,6 +47,7 @@ export async function readBoundedBody(request: Request, maxBytes: number): Promi
   if (contentLengthHeader !== null) {
     const contentLength = Number(contentLengthHeader);
     if (!Number.isFinite(contentLength) || contentLength < 0 || contentLength > maxBytes) {
+      cancelBody(request.body);
       return null;
     }
   }
@@ -63,7 +64,7 @@ export async function readBoundedBody(request: Request, maxBytes: number): Promi
       if (done) break;
       bytes += value.byteLength;
       if (bytes > maxBytes) {
-        await reader.cancel();
+        cancelBody(reader);
         return null;
       }
       body += decoder.decode(value, { stream: true });
@@ -71,6 +72,14 @@ export async function readBoundedBody(request: Request, maxBytes: number): Promi
     return body + decoder.decode();
   } finally {
     reader.releaseLock();
+  }
+}
+
+function cancelBody(body: { cancel(): Promise<void> } | null): void {
+  try {
+    void body?.cancel().catch(() => undefined);
+  } catch {
+    // Best-effort cleanup must not delay the 413 response.
   }
 }
 
