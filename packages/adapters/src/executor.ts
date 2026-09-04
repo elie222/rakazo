@@ -3316,8 +3316,26 @@ export function createRunExecutor(deps: ExecutorDeps) {
               });
             } else if (event.type === "done") {
               if (!assembled && event.text) {
-                assembled = event.text;
-                currentTextSegment += event.text;
+                if (publishedMidTurnUserMessage && midTurnUserTexts.length > 0) {
+                  // done.text is often the full cumulative assistant stream, including
+                  // narration already published as mid-turn progress. Strip those beats
+                  // so we do not republish them as a final result.
+                  let remainder = event.text;
+                  for (const part of midTurnUserTexts) {
+                    const index = remainder.indexOf(part);
+                    if (index >= 0) {
+                      remainder = `${remainder.slice(0, index)}${remainder.slice(index + part.length)}`;
+                    }
+                  }
+                  remainder = remainder.trim();
+                  if (remainder) {
+                    assembled = remainder;
+                    currentTextSegment += remainder;
+                  }
+                } else {
+                  assembled = event.text;
+                  currentTextSegment += event.text;
+                }
               }
             }
           }
