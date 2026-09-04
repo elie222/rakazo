@@ -28,6 +28,7 @@ import {
   DEFAULT_LOCAL_WEB_URL,
   desktopStackImageTag,
   isRakazoHealth,
+  managedLocalOpenUrl,
   normalizeServerUrl,
   parseSetupInput,
   probeFailureMessage,
@@ -1001,19 +1002,25 @@ app.whenReady().then(async () => {
         };
       }
 
-      if (setup.mode === "new" && !(await localStack.matchesDesiredStack(setup.serverUrl))) {
-        return {
-          ok: false,
-          error: "The app-managed Rakazo services are not ready. Retry setup.",
-        };
+      // Managed stacks authenticate LOCAL_WEB_URL only; never open a different loopback.
+      let openSetup = setup;
+      if (setup.mode === "new") {
+        const managedUrl = managedLocalOpenUrl(setup.serverUrl, LOCAL_WEB_URL);
+        if (managedUrl === null || !(await localStack.matchesDesiredStack())) {
+          return {
+            ok: false,
+            error: "The app-managed Rakazo services are not ready. Retry setup.",
+          };
+        }
+        openSetup = { mode: "new", serverUrl: managedUrl };
       }
 
-      const reachability = await probeServer(setup.serverUrl);
+      const reachability = await probeServer(openSetup.serverUrl);
       if (!reachability.ok) return { ok: false, error: reachability.error };
 
       // Open before persisting so a failed renderer load keeps the last working setup.
-      currentSetup = setup;
-      const opened = await openApp(setup.serverUrl);
+      currentSetup = openSetup;
+      const opened = await openApp(openSetup.serverUrl);
       if (!opened) {
         currentSetup = previousSetup;
         return {
@@ -1028,7 +1035,7 @@ app.whenReady().then(async () => {
           ? watchRendererUntilCommitted(appWindow)
           : null;
       try {
-        await writeSetup(userDataDir, setup);
+        await writeSetup(userDataDir, openSetup);
         if (rendererWatch?.crashed()) {
           const message = await recoverFromCrashedSave(userDataDir, previousSetup, previousUrl);
           return { ok: false, error: message };
@@ -1104,21 +1111,31 @@ app.whenReady().then(async () => {
   if (target.kind === "setup") {
     showSetupWindow();
   } else if (target.source === "saved") {
-    const managedStackReady =
-      currentSetup?.mode === "new" ? await localStack.matchesDesiredStack(target.url) : null;
-    const reachability = managedStackReady === null ? await probeServer(target.url) : null;
-    if (managedStackReady === true || reachability?.ok === true) {
-      if (await openApp(target.url)) {
-        commitPendingAppSwitch();
-        destroySetupWindow();
+    if (currentSetup?.mode === "new") {
+      const managedUrl = managedLocalOpenUrl(target.url, LOCAL_WEB_URL);
+      const managedStackReady =
+        managedUrl !== null ? await localStack.matchesDesiredStack() : false;
+      if (managedStackReady && managedUrl !== null) {
+        if (await openApp(managedUrl)) {
+          commitPendingAppSwitch();
+          destroySetupWindow();
+        }
+      } else {
+        // Missing, stale, foreign, or owned by another process: reconcile the
+        // app-managed stack before any API or computer traffic is allowed.
+        void localStack.start();
+        showSetupWindow();
       }
-    } else if (managedStackReady === false) {
-      // Missing, stale, or owned by another process: reconcile the app-managed stack
-      // before any API or computer traffic is allowed through this fixed origin.
-      void localStack.start();
-      showSetupWindow();
     } else {
-      showSetupWindow(`Could not reconnect to the saved server. ${reachability?.error}`);
+      const reachability = await probeServer(target.url);
+      if (reachability.ok) {
+        if (await openApp(target.url)) {
+          commitPendingAppSwitch();
+          destroySetupWindow();
+        }
+      } else {
+        showSetupWindow(`Could not reconnect to the saved server. ${reachability.error}`);
+      }
     }
   } else {
     if (await openApp(target.url)) {

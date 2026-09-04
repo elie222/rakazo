@@ -3,6 +3,7 @@ import {
   DEFAULT_LOCAL_WEB_URL,
   desktopStackImageTag,
   isRakazoHealth,
+  managedLocalOpenUrl,
   normalizeServerUrl,
   parseSetupInput,
   parseStoredSetup,
@@ -60,6 +61,23 @@ describe("server address normalization", () => {
 
   it("rejects embedded credentials rather than writing them to disk", () => {
     expect(normalizeServerUrl("https://user:secret@rakazo.example.com")).toBeNull();
+  });
+});
+
+describe("managed local open URL", () => {
+  it("returns the authenticated managed origin when the request matches", () => {
+    expect(managedLocalOpenUrl("http://127.0.0.1:5173/", DEFAULT_LOCAL_WEB_URL)).toBe(
+      "http://127.0.0.1:5173",
+    );
+    expect(
+      managedLocalOpenUrl("http://127.0.0.1:5199", "http://127.0.0.1:5199/path?x=1"),
+    ).toBe("http://127.0.0.1:5199");
+  });
+
+  it("rejects a different loopback origin even when both are local", () => {
+    expect(managedLocalOpenUrl("http://127.0.0.1:5199", DEFAULT_LOCAL_WEB_URL)).toBeNull();
+    expect(managedLocalOpenUrl("http://localhost:5173", DEFAULT_LOCAL_WEB_URL)).toBeNull();
+    expect(managedLocalOpenUrl("https://rakazo.example.com", DEFAULT_LOCAL_WEB_URL)).toBeNull();
   });
 });
 

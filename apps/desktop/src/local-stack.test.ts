@@ -355,8 +355,10 @@ describe("LocalStackController", () => {
       },
     });
 
+    await expect(stack.matchesDesiredStack()).resolves.toBe(true);
+    expect(probedUrls).toEqual(["http://127.0.0.1:5173"]);
     await expect(stack.matchesDesiredStack("http://127.0.0.1:5199")).resolves.toBe(true);
-    expect(probedUrls).toEqual(["http://127.0.0.1:5199"]);
+    expect(probedUrls).toEqual(["http://127.0.0.1:5173", "http://127.0.0.1:5199"]);
     expect(calls).toEqual([]);
   });
 
