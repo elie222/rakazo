@@ -15,6 +15,7 @@ const SECRET_KEY = /password|secret|token|authorization|cookie|credential|apikey
 
 function redactValue(value: unknown, seen = new WeakSet<object>()): unknown {
   if (value === null || value === undefined) return value;
+  if (typeof value === "string") return redactSensitiveText(value);
   if (typeof value !== "object") return value;
   if (seen.has(value)) return "[Circular]";
   seen.add(value);

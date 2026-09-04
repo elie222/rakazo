@@ -62,6 +62,18 @@ describe("redaction", () => {
     expect(JSON.stringify(redacted.detail)).not.toContain("cause-secret");
   });
 
+  it("redacts secrets embedded in string binding values", () => {
+    const redacted = redactBindings({
+      detail: "token=binding-secret",
+      nested: { note: "Bearer nested-secret" },
+    });
+
+    expect(redacted).toEqual({
+      detail: "token=[Redacted]",
+      nested: { note: "Bearer [Redacted]" },
+    });
+  });
+
   it("redacts secrets embedded in free text", () => {
     const redacted = redactSensitiveText(
       "user person@example.com used Bearer supersecret and token=abc123",
