@@ -231,6 +231,17 @@ async function reconcilePendingConnections(
   if (updates.length > 0) await prisma.$transaction(updates);
 }
 
+/** Serialize begin/revoke for one user+provider so slug-wide remote deletes cannot race a new connect. */
+async function lockProviderConnectionScope(
+  tx: Prisma.TransactionClient,
+  owner: Pick<Actor, "spaceId" | "userId">,
+  connectorId: string,
+  provider: string,
+): Promise<void> {
+  const scope = `${owner.spaceId}\0${owner.userId}\0${connectorId}\0${provider}`;
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('connection-provider'), hashtext(${scope}))`;
+}
+
 function computerContext(actor: Actor, botId: string, operationId: string): AdapterContext {
   return {
     operationId,
@@ -2912,15 +2923,20 @@ export function createRouter(deps: RouterDeps) {
             message: `Connector ${input.connectorId} is not configured`,
           });
         }
-        const row = await deps.prisma.connection.create({
-          data: {
-            spaceId: context.actor.spaceId,
-            userId: context.actor.userId,
-            connectorId: input.connectorId,
-            provider: input.provider,
-            displayName: input.displayName,
-            status: "pending",
-          },
+        // Share the revoke scope lock so a slug-wide remote delete cannot miss a
+        // row that is inserted after SELECT FOR UPDATE and before remote revoke.
+        const row = await deps.prisma.$transaction(async (tx) => {
+          await lockProviderConnectionScope(tx, context.actor, input.connectorId, input.provider);
+          return tx.connection.create({
+            data: {
+              spaceId: context.actor.spaceId,
+              userId: context.actor.userId,
+              connectorId: input.connectorId,
+              provider: input.provider,
+              displayName: input.displayName,
+              status: "pending",
+            },
+          });
         });
         try {
           const auth = await connector.begin(
@@ -3067,77 +3083,113 @@ export function createRouter(deps: RouterDeps) {
         };
       }),
       revoke: authed.connections.revoke.handler(async ({ context, input }) => {
-        const outcome = await deps.prisma.$transaction(async (tx) => {
-          const row = await tx.connection.findFirst({
-            where: {
-              id: input.connectionId,
-              spaceId: context.actor.spaceId,
-              userId: context.actor.userId,
-            },
-          });
-          if (!row) {
-            return {
-              remote: null as null | { connectorId: string; connectionRef: string },
-              previousStatus: null as string | null,
-            };
-          }
+        type RemoteRevoke = {
+          connectorId: string;
+          connectionRef: string;
+          accountSpecific: boolean;
+        };
+        const outcome = await deps.prisma.$transaction(
+          async (tx) => {
+            const row = await tx.connection.findFirst({
+              where: {
+                id: input.connectionId,
+                spaceId: context.actor.spaceId,
+                userId: context.actor.userId,
+              },
+            });
+            if (!row) {
+              return {
+                remote: null as null | RemoteRevoke,
+                previousStatus: null as string | null,
+              };
+            }
 
-          // Serialize same-provider removals so two "last account" revokes cannot
-          // both observe a sibling and skip the remote disconnect.
-          await tx.$queryRaw`
-            SELECT id
-            FROM connections
-            WHERE "spaceId" = ${context.actor.spaceId}
-              AND "userId" = ${context.actor.userId}
-              AND "connectorId" = ${row.connectorId}
-              AND provider = ${row.provider}
-              AND status IN ('connected', 'pending', 'error')
-            FOR UPDATE`;
+            // Advisory lock covers inserts as well as existing rows. SELECT FOR UPDATE
+            // alone misses a concurrent begin that inserts after the lock query.
+            await lockProviderConnectionScope(tx, context.actor, row.connectorId, row.provider);
+            await tx.$queryRaw`
+              SELECT id
+              FROM connections
+              WHERE "spaceId" = ${context.actor.spaceId}
+                AND "userId" = ${context.actor.userId}
+                AND "connectorId" = ${row.connectorId}
+                AND provider = ${row.provider}
+                AND status IN ('connected', 'pending', 'error')
+              FOR UPDATE`;
 
-          const updated = await tx.connection.updateMany({
-            where: {
-              id: row.id,
-              spaceId: context.actor.spaceId,
-              userId: context.actor.userId,
-              status: { in: ["connected", "pending", "error"] },
-            },
-            data: { status: "revoked" },
-          });
-          if (updated.count === 0) {
-            return {
-              remote: null as null | { connectorId: string; connectionRef: string },
-              previousStatus: null as string | null,
-            };
-          }
+            const updated = await tx.connection.updateMany({
+              where: {
+                id: row.id,
+                spaceId: context.actor.spaceId,
+                userId: context.actor.userId,
+                status: { in: ["connected", "pending", "error"] },
+              },
+              data: { status: "revoked" },
+            });
+            if (updated.count === 0) {
+              return {
+                remote: null as null | RemoteRevoke,
+                previousStatus: null as string | null,
+              };
+            }
 
-          const remaining = await tx.connection.count({
-            where: {
-              spaceId: context.actor.spaceId,
-              userId: context.actor.userId,
-              connectorId: row.connectorId,
-              provider: row.provider,
-              status: { in: ["connected", "pending"] },
-            },
-          });
-          const connectionRef = row.providerRef || row.provider;
-          const accountSpecific = Boolean(row.providerRef && row.providerRef !== row.provider);
-          // Account-scoped refs can disconnect one remote authorization while
-          // siblings remain. Slug-only legacy rows must wait until they are last,
-          // or a provider-wide revoke would drop every account for that app.
-          if (!accountSpecific && remaining > 0) {
+            const remaining = await tx.connection.count({
+              where: {
+                spaceId: context.actor.spaceId,
+                userId: context.actor.userId,
+                connectorId: row.connectorId,
+                provider: row.provider,
+                status: { in: ["connected", "pending"] },
+              },
+            });
+            const connectionRef = row.providerRef || row.provider;
+            const accountSpecific = Boolean(row.providerRef && row.providerRef !== row.provider);
+            // Account-scoped refs can disconnect one remote authorization while
+            // siblings remain. Slug-only legacy rows must wait until they are last,
+            // or a provider-wide revoke would drop every account for that app.
+            if (!accountSpecific && remaining > 0) {
+              return {
+                remote: null as null | RemoteRevoke,
+                previousStatus: null as string | null,
+              };
+            }
+
+            // Slug-only remote delete is provider-wide. Run it before commit while
+            // still holding the begin/revoke lock so a new authorization cannot be
+            // created and then wiped by Pipedream's slug-scoped DELETE.
+            if (!accountSpecific) {
+              const connector = deps.connectors.managed(row.connectorId);
+              if (!connector) {
+                throw new ORPCError("BAD_REQUEST", {
+                  message: `Connector ${row.connectorId} is not configured`,
+                });
+              }
+              try {
+                await connector.revoke(
+                  connectionRef,
+                  connectionContext(context.actor, "connections.revoke", context.signal),
+                );
+              } catch (error) {
+                if (error instanceof ORPCError) throw error;
+                throw new ORPCError("BAD_REQUEST", { message: sanitizeComposioError(error) });
+              }
+              return {
+                remote: null as null | RemoteRevoke,
+                previousStatus: null as string | null,
+              };
+            }
+
             return {
-              remote: null as null | { connectorId: string; connectionRef: string },
-              previousStatus: null as string | null,
+              remote: {
+                connectorId: row.connectorId,
+                connectionRef,
+                accountSpecific,
+              },
+              previousStatus: row.status,
             };
-          }
-          return {
-            remote: {
-              connectorId: row.connectorId,
-              connectionRef,
-            },
-            previousStatus: row.status,
-          };
-        });
+          },
+          { timeout: 60_000 },
+        );
 
         if (outcome.remote) {
           const restoreLocalStatus = async () => {

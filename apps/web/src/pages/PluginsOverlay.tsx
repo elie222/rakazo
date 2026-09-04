@@ -448,7 +448,7 @@ export function PluginsOverlay({
     return (
       <div
         key={itemKey(item)}
-        data-testid={tileTestId ? `connection-tile-${item.slug}` : undefined}
+        data-testid={tileTestId ? `connection-tile-${item.slug.toLowerCase()}` : undefined}
         className="flex min-w-0 items-center gap-3 rounded-xl px-2.5 py-2"
       >
         {connected ? (
