@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { captureApiRequestContext, currentApiBase, rpc } from "./api";
-import { speakText } from "./voice";
+import {
+  MAX_VOICE_AUDIO_BYTES,
+  speakText,
+  speakUtterance,
+  VOICE_RESPONSE_TIMEOUT_MS,
+} from "./voice";
 
 vi.mock("expo-file-system", () => ({ File: class {}, Paths: {} }));
 vi.mock("./api", () => ({
@@ -43,6 +48,7 @@ describe("mobile speech", () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
@@ -69,5 +75,46 @@ describe("mobile speech", () => {
       expect(url).toBe("https://support.example/api/voice/speak");
       expect(init?.headers).toMatchObject(requestContext.headers);
     }
+  });
+
+  it("rejects oversized audio without waiting for response cancellation", async () => {
+    const cancel = vi.fn(() => new Promise<void>(() => undefined));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(new ReadableStream({ cancel }), {
+            headers: { "content-length": String(MAX_VOICE_AUDIO_BYTES + 1) },
+          }),
+      ),
+    );
+
+    await expect(
+      speakUtterance("Hello.", { requestContext: await captureApiRequestContext() }),
+    ).rejects.toThrow("Voice response is too large.");
+    expect(cancel).toHaveBeenCalledOnce();
+  });
+
+  it("times out while a voice response body is stalled", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            new ReadableStream({
+              pull: () => new Promise<void>(() => undefined),
+            }),
+          ),
+      ),
+    );
+
+    const pending = speakUtterance("Hello.", {
+      requestContext: await captureApiRequestContext(),
+    });
+    const rejected = expect(pending).rejects.toThrow("Voice request timed out.");
+    await vi.advanceTimersByTimeAsync(VOICE_RESPONSE_TIMEOUT_MS);
+
+    await rejected;
   });
 });
