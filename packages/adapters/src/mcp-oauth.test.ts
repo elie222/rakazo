@@ -21,6 +21,33 @@ function oauthSessionStore() {
 }
 
 describe("MCP OAuth", () => {
+  it("rejects unsafe browser authorization URLs", async () => {
+    const onAuthorization = vi.fn();
+    const provider = new StoredMcpOAuthProvider("server-1", {}, async () => undefined, {
+      onAuthorization,
+    });
+
+    await expect(
+      provider.redirectToAuthorization(new URL("http://auth.example.test/authorize")),
+    ).rejects.toThrow(/HTTPS/i);
+
+    expect(provider.authorizationUrl).toBeUndefined();
+    expect(onAuthorization).not.toHaveBeenCalled();
+  });
+
+  it("allows localhost HTTP browser authorization URLs", async () => {
+    const onAuthorization = vi.fn();
+    const provider = new StoredMcpOAuthProvider("server-1", {}, async () => undefined, {
+      onAuthorization,
+    });
+    const authorizationUrl = new URL("http://127.0.0.1:5173/authorize");
+
+    await provider.redirectToAuthorization(authorizationUrl);
+
+    expect(provider.authorizationUrl).toEqual(authorizationUrl);
+    expect(onAuthorization).toHaveBeenCalledWith(authorizationUrl);
+  });
+
   it("persists SDK credentials and invalidates only the requested scope", async () => {
     const persisted: unknown[] = [];
     const provider = new StoredMcpOAuthProvider(

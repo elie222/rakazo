@@ -104,9 +104,10 @@ export class StoredMcpOAuthProvider implements OAuthClientProvider {
     await this.persist();
   }
   async redirectToAuthorization(url: URL): Promise<void> {
-    this.authorizationUrl = url;
+    const authorizationUrl = validateUrl(url, { allowHttpLocalhost: true });
+    this.authorizationUrl = authorizationUrl;
     if (this.options.onAuthorization) {
-      this.options.onAuthorization(url);
+      this.options.onAuthorization(authorizationUrl);
       return;
     }
     // Runtime re-auth needs the user; drop the dead tokens so status reads "reconnect".
