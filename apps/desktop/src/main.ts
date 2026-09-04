@@ -33,6 +33,7 @@ import {
   normalizeServerUrl,
   parseSetupInput,
   probeFailureMessage,
+  readProbeJson,
   resolveStartupTarget,
   safeExternalUrl,
   servesBundledRenderer,
@@ -51,7 +52,6 @@ const PERFORMANCE_USER_DATA = process.env.RAKAZO_PERFORMANCE_USER_DATA;
 /** Test hook: where the app-managed stack answers. Mode `new` still requires loopback. */
 const LOCAL_WEB_URL = process.env.RAKAZO_LOCAL_WEB_URL?.trim() || DEFAULT_LOCAL_WEB_URL;
 const PROBE_TIMEOUT_MS = 8_000;
-const PROBE_RESPONSE_LIMIT_BYTES = 64 * 1024;
 const DESKTOP_STACK_PROBE_PATH = "/.well-known/rakazo-desktop-stack";
 const DESKTOP_STACK_TOKEN_HEADER = "x-rakazo-desktop-stack-token";
 let mainWindow: BrowserWindow | null = null;
@@ -669,7 +669,7 @@ async function probeServer(rawUrl: string, signal?: AbortSignal): Promise<Deskto
         error: `The server answered with HTTP ${response.status}.`,
       };
     }
-    const health = await limitedJson(response);
+    const health = await readProbeJson(response);
     if (!isRakazoHealth(health)) {
       return {
         ok: false,
@@ -708,35 +708,7 @@ async function probeManagedStack(
       signal: signal ? AbortSignal.any([timeout, signal]) : timeout,
     });
     if (!response.ok) return null;
-    return desktopStackImageTag(await limitedJson(response));
-  } catch {
-    return null;
-  }
-}
-
-async function limitedJson(response: Response): Promise<unknown> {
-  if (response.body === null) return null;
-  const reader = response.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let size = 0;
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    size += value.byteLength;
-    if (size > PROBE_RESPONSE_LIMIT_BYTES) {
-      await reader.cancel();
-      return null;
-    }
-    chunks.push(value);
-  }
-  const body = new Uint8Array(size);
-  let offset = 0;
-  for (const chunk of chunks) {
-    body.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  try {
-    return JSON.parse(new TextDecoder().decode(body));
+    return desktopStackImageTag(await readProbeJson(response));
   } catch {
     return null;
   }
