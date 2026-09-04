@@ -31,8 +31,7 @@ export function BotCreatePicker({
   const matched = useMemo(() => {
     if (!needle) return bots;
     return bots.filter(
-      (bot) =>
-        bot.name.toLowerCase().includes(needle) || bot.title.toLowerCase().includes(needle),
+      (bot) => bot.name.toLowerCase().includes(needle) || bot.title.toLowerCase().includes(needle),
     );
   }, [bots, needle]);
   const showCreate =
@@ -52,7 +51,6 @@ export function BotCreatePicker({
           placeholder={t`Search or create Bots`}
           aria-label={t`Search or create Bots`}
           className="min-w-0 flex-1 bg-transparent text-[14px] text-foreground outline-none placeholder:text-muted-foreground"
-          autoFocus
         />
       </label>
       <Command shouldFilter={false} className="rounded-none border-0 bg-transparent p-0">

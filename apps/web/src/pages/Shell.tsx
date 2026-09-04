@@ -67,7 +67,6 @@ import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-  Separator,
 } from "@rakazo/ui-web";
 import {
   ArrowDown,
@@ -131,23 +130,23 @@ import type { ArtifactTarget } from "../lib/artifact-open";
 import { authClient } from "../lib/auth";
 import { takeInitialBootstrap } from "../lib/bootstrap";
 import {
+  BOTS_SIDEBAR_EDGE_DRAG_PX,
+  readBotsSidebarCollapsed,
+  writeBotsSidebarCollapsed,
+} from "../lib/bots-sidebar-pref";
+import {
   deliverBrowserNotification as deliverNativeBrowserNotification,
   requestBrowserNotificationPermission,
   shouldNotifyBrowser,
 } from "../lib/browser-notifications";
 import { loadComputerScreen } from "../lib/computer-screen";
 import { dictation } from "../lib/dictation";
+import { scheduleFocusPrompt } from "../lib/focus-prompt";
 import { localTimezone } from "../lib/local-timezone";
 import { copyableMessageText } from "../lib/message-text";
 import { providerLabel } from "../lib/messaging";
 import { isFileDrag, revokePendingAttachmentPreviews } from "../lib/pending-attachments";
 import { markAfterPaint, markOnce } from "../lib/performance";
-import {
-  BOTS_SIDEBAR_EDGE_DRAG_PX,
-  readBotsSidebarCollapsed,
-  writeBotsSidebarCollapsed,
-} from "../lib/bots-sidebar-pref";
-import { scheduleFocusPrompt } from "../lib/focus-prompt";
 import { clearSpaceSelection, rpc, selectedSpaceId, selectSpace } from "../lib/rpc";
 import { readSeenRunErrorIds, rememberSeenRunErrorId } from "../lib/run-error-storage";
 import {
@@ -3017,13 +3016,12 @@ export function ShellPage() {
         </Popover>
       </aside>
 
-      <div
+      <button
+        type="button"
         data-testid="bots-sidebar-edge"
-        role="separator"
-        aria-orientation="vertical"
         aria-label={botsSidebarCollapsed ? t`Show bots` : t`Hide bots`}
-        aria-valuenow={botsSidebarCollapsed ? 0 : 1}
-        className={`absolute inset-y-0 z-50 hidden w-2 cursor-ew-resize touch-none md:block ${
+        aria-pressed={!botsSidebarCollapsed}
+        className={`absolute inset-y-0 z-50 hidden w-2 cursor-ew-resize touch-none border-0 bg-transparent p-0 md:block ${
           botsSidebarCollapsed ? "start-0" : "start-[308px]"
         }`}
         onPointerDown={(event) => {
@@ -3045,13 +3043,17 @@ export function ShellPage() {
             setBotsSidebarCollapsedPref(true);
           }
         }}
-        onPointerUp={() => {
+        onPointerUp={(event) => {
+          const drag = botsSidebarEdgeDragRef.current;
           botsSidebarEdgeDragRef.current = null;
+          if (!drag) return;
+          if (Math.abs(event.clientX - drag.startX) < BOTS_SIDEBAR_EDGE_DRAG_PX) {
+            setBotsSidebarCollapsedPref(!botsSidebarCollapsed);
+          }
         }}
         onPointerCancel={() => {
           botsSidebarEdgeDragRef.current = null;
         }}
-        onDoubleClick={() => setBotsSidebarCollapsedPref(!botsSidebarCollapsed)}
       />
 
       <main

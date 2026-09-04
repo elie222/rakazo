@@ -143,29 +143,6 @@ export default function Home() {
     }
   }, [loadBots]);
 
-  const createQuickBot = useCallback(async () => {
-    const isFirstBot = bots.length === 0;
-    try {
-      const bot = await rpc<MobileBot>("bots/create", {
-        ...normalizeCreateBotProfile({ name: "New Bot", title: "", description: "" }),
-        notifyOnFinish: true,
-        computerMode: "team",
-      });
-      await rpc("onboarding/start", { botId: bot.id }).catch(() => undefined);
-      if (isFirstBot) {
-        await rpc("onboarding/promptFocus", { botId: bot.id }).catch(() => undefined);
-      } else {
-        setTimeout(() => {
-          void rpc("onboarding/promptFocus", { botId: bot.id }).catch(() => undefined);
-        }, 10_000);
-      }
-      await refreshBots().catch(() => undefined);
-      router.replace({ pathname: "/thread", params: { botId: bot.id, name: bot.name } });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : t("Could not create bot"));
-    }
-  }, [bots.length, refreshBots, router, t]);
-
   useEffect(() => {
     void loadSessionToken().then((token) => {
       setHasSession(Boolean(token));
@@ -330,6 +307,29 @@ export default function Home() {
     : null;
   const insets = useSafeAreaInsets();
   const router = useRouter();
+
+  const createQuickBot = useCallback(async () => {
+    const isFirstBot = bots.length === 0;
+    try {
+      const bot = await rpc<MobileBot>("bots/create", {
+        ...normalizeCreateBotProfile({ name: "New Bot", title: "", description: "" }),
+        notifyOnFinish: true,
+        computerMode: "team",
+      });
+      await rpc("onboarding/start", { botId: bot.id }).catch(() => undefined);
+      if (isFirstBot) {
+        await rpc("onboarding/promptFocus", { botId: bot.id }).catch(() => undefined);
+      } else {
+        setTimeout(() => {
+          void rpc("onboarding/promptFocus", { botId: bot.id }).catch(() => undefined);
+        }, 10_000);
+      }
+      await refreshBots().catch(() => undefined);
+      router.replace({ pathname: "/thread", params: { botId: bot.id, name: bot.name } });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t("Could not create bot"));
+    }
+  }, [bots.length, refreshBots, router, t]);
 
   if (!ready) {
     return (
