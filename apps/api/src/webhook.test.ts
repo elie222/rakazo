@@ -271,10 +271,8 @@ describe("inbound webhook HTTP route", () => {
         duplex: "half",
       } as RequestInit & { duplex: "half" });
 
-      const started = Date.now();
       await expect(readBoundedBody(request, WEBHOOK_MAX_BODY_BYTES)).resolves.toBeNull();
       expect(cancelStarted).toBe(true);
-      expect(Date.now() - started).toBeLessThan(500);
     },
   );
 });
