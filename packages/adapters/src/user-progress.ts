@@ -44,3 +44,15 @@ export function finalBlocksAfterMidTurnProgress(
   if (blocks.every((block) => isToolActivityBlock(block))) return [];
   return blocks;
 }
+
+/** Outcome to return for a bot_message run after mid-turn progress posts. */
+export function botMessageOutcomeFromMidTurn(
+  finalText: string,
+  midTurnTexts: readonly string[],
+): { text: string; intent: "result" | "status" } | null {
+  const trimmed = finalText.trim();
+  if (trimmed) return { text: trimmed, intent: "result" };
+  const midTurn = midTurnTexts.map((part) => part.trim()).filter(Boolean);
+  if (midTurn.length === 0) return null;
+  return { text: midTurn.join("\n\n"), intent: "status" };
+}

@@ -242,6 +242,7 @@ import {
 import { advanceToolCallLoopGuard } from "./tool-loop.js";
 import { textContentArg } from "./tool-text.js";
 import {
+  botMessageOutcomeFromMidTurn,
   clampUserProgressMessage,
   extractNarrationText,
   finalBlocksAfterMidTurnProgress,
@@ -1271,6 +1272,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
         let publishedTerminalSubagent = false;
         // Durable chat messages posted mid-turn (message_user / promoted narration).
         let publishedMidTurnUserMessage = false;
+        // Texts already published mid-turn; used if a bot_message run ends without a final reply
+        // so reconciliation does not treat the last progress bubble as the delegated result.
+        const midTurnUserTexts: string[] = [];
         // Tool calls that land mid-sentence wait here until the narration catches up to a
         // sentence boundary, so the step chips never render in the middle of a clause.
         let pendingToolNames: string[] = [];
@@ -1326,6 +1330,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           hasStreamedText = false;
           pendingProgress = "";
           await publishMessage(deps, run, "bot", [{ kind: "text", text: narration }]);
+          midTurnUserTexts.push(narration);
           publishedMidTurnUserMessage = true;
         };
         const formatObservation = (
@@ -2662,6 +2667,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             await flushProgress();
             await publishMidTurnNarration();
             await publishMessage(deps, run, "bot", [{ kind: "text", text }]);
+            midTurnUserTexts.push(text);
             publishedMidTurnUserMessage = true;
             return finish({ ok: true });
           }
@@ -3346,13 +3352,20 @@ export function createRunExecutor(deps: ExecutorDeps) {
               .enqueue(runContinueJob(completed.continuationRunId))
               .catch((error) => console.error("steering continuation enqueue", error));
           }
-          if (run.trigger === "bot_message" && text) {
-            await returnBotMessageOutcome(
-              deps,
-              { ...run, sourceMessageId: run.sourceMessageId },
-              { id: bot.id, name: bot.name },
-              text,
-            ).catch((error) => console.error("bot message result return", error));
+          if (run.trigger === "bot_message") {
+            // Prefer the final reply. If the turn only posted mid-turn progress, return that
+            // text explicitly (as status) so the job reconciler does not treat the latest
+            // progress bubble as the delegated result by scanning the thread.
+            const outcome = botMessageOutcomeFromMidTurn(text, midTurnUserTexts);
+            if (outcome) {
+              await returnBotMessageOutcome(
+                deps,
+                { ...run, sourceMessageId: run.sourceMessageId },
+                { id: bot.id, name: bot.name },
+                outcome.text,
+                outcome.intent,
+              ).catch((error) => console.error("bot message result return", error));
+            }
           }
           if (text && !completed.continuationRunId) {
             await notifyRun(deps, run, {
