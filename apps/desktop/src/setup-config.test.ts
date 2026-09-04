@@ -70,9 +70,9 @@ describe("managed local open URL", () => {
     expect(managedLocalOpenUrl("http://127.0.0.1:5173/", DEFAULT_LOCAL_WEB_URL)).toBe(
       "http://127.0.0.1:5173",
     );
-    expect(
-      managedLocalOpenUrl("http://127.0.0.1:5199", "http://127.0.0.1:5199/path?x=1"),
-    ).toBe("http://127.0.0.1:5199");
+    expect(managedLocalOpenUrl("http://127.0.0.1:5199", "http://127.0.0.1:5199/path?x=1")).toBe(
+      "http://127.0.0.1:5199",
+    );
   });
 
   it("rejects a different loopback origin even when both are local", () => {

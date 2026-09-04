@@ -50,10 +50,7 @@ export function normalizeServerUrl(input: string): string | null {
  * Managed ("new") setups may only open the configured local stack origin.
  * A saved or IPC URL that normalizes to a different loopback host/port is rejected.
  */
-export function managedLocalOpenUrl(
-  requestedUrl: string,
-  localWebUrl: string,
-): string | null {
+export function managedLocalOpenUrl(requestedUrl: string, localWebUrl: string): string | null {
   const managed = normalizeServerUrl(localWebUrl);
   const requested = normalizeServerUrl(requestedUrl);
   if (managed === null || requested === null || requested !== managed) return null;
