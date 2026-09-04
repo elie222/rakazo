@@ -379,16 +379,28 @@ export class ComposioConnector implements ComposioProvider {
   }
 
   async revoke(connectionRef: string, context: AdapterContext): Promise<void> {
-    // Legacy rows may store a toolkit slug. Only resolve through the account list
-    // when that lookup returns hits for this ref; otherwise delete connectionRef
-    // as a concrete connected-account id from begin/complete.
+    // Legacy rows may store a toolkit slug. Begin's browser OAuth state may be a
+    // connection-request id. Resolve either to a concrete connected-account id
+    // before delete — never pass a raw request id to connectedAccounts.delete.
     const requestOptions = { signal: context.signal };
     const listed = await this.listConnectedAccountIds(
       context.userId,
       connectionRef,
       requestOptions,
     );
-    const accountId = listed[0] ?? connectionRef;
+    let accountId = listed[0];
+    if (!accountId) {
+      try {
+        const account = await this.sdk().connectedAccounts.waitForConnection(
+          connectionRef,
+          20_000,
+        );
+        accountId = account?.id;
+      } catch {
+        // Not a resolvable request id; fall through to treat ref as an account id.
+      }
+    }
+    accountId = accountId ?? connectionRef;
     await this.sdk().connectedAccounts.delete(accountId, requestOptions);
   }
 

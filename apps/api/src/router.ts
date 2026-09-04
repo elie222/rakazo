@@ -2972,7 +2972,40 @@ export function createRouter(deps: RouterDeps) {
               context.signal,
             );
             if (state && state !== input.provider) {
-              await connector.revoke(state, adapterContext).catch(() => undefined);
+              // Composio browser OAuth stores an authorization-request id in
+              // auth.state. Resolve it to the connected-account id before revoke —
+              // passing the request id through would miss the real remote account.
+              const resolveAccountId = (
+                connector as {
+                  resolveConnectedAccountId?: (
+                    userId: string,
+                    slug: string,
+                    currentRef: string | null | undefined,
+                    excludeIds?: string[],
+                    spaceId?: string,
+                  ) => Promise<string | undefined>;
+                }
+              ).resolveConnectedAccountId;
+              let revokeRef = state;
+              if (resolveAccountId) {
+                const resolved = await resolveAccountId(
+                  context.actor.userId,
+                  input.provider,
+                  state,
+                  [],
+                  context.actor.spaceId,
+                ).catch(() => undefined);
+                if (!resolved) {
+                  // Request id did not resolve; skip a wrong revoke rather than
+                  // deleting by request id or wiping every account for the slug.
+                  revokeRef = "";
+                } else {
+                  revokeRef = resolved;
+                }
+              }
+              if (revokeRef) {
+                await connector.revoke(revokeRef, adapterContext).catch(() => undefined);
+              }
             } else if (state === input.provider) {
               // Pipedream begin only returns the app slug. Drop remotes that no
               // remaining local row still references so a lost race cannot leave
@@ -3140,6 +3173,18 @@ export function createRouter(deps: RouterDeps) {
                   : await fallbackAccountId!(context.actor.userId, existing.provider).catch(
                       () => undefined,
                     );
+              }
+
+              // When a resolver exists and providerRef is still a request-scoped
+              // id (not the provider slug), require a concrete account id before
+              // marking connected — otherwise revoke would delete the wrong ref.
+              if (
+                resolveAccountId &&
+                current.providerRef &&
+                current.providerRef !== current.provider &&
+                !resolvedAccountId
+              ) {
+                return current;
               }
 
               const providerRef = resolvedAccountId ?? current.providerRef;

@@ -339,6 +339,30 @@ describe("composio tool mapping", () => {
     ).resolves.toBeUndefined();
   });
 
+  it("resolves authorization-request ids before deleting on revoke", async () => {
+    const deleted: string[] = [];
+    const waited: string[] = [];
+    composioSdkState.connectedAccounts.list = async () => ({ items: [] });
+    composioSdkState.connectedAccounts.waitForConnection = async (id: string) => {
+      waited.push(id);
+      return { id: `ca-from-${id}` };
+    };
+    composioSdkState.connectedAccounts.delete = async (id: string) => {
+      deleted.push(id);
+    };
+    const connector = new ComposioConnector();
+    await connector.revoke("req-oauth-1", {
+      operationId: "test",
+      traceId: "test",
+      spaceId: "workspace",
+      userId: "user-1",
+      signal: new AbortController().signal,
+    });
+    expect(waited).toEqual(["req-oauth-1"]);
+    expect(deleted).toEqual(["ca-from-req-oauth-1"]);
+  });
+
+
   it("uses Composio slug casing when the toolkit directory is unavailable", async () => {
     composioSdkState.created.length = 0;
     composioSdkState.sessions.clear();
