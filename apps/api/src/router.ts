@@ -3176,6 +3176,42 @@ export function createRouter(deps: RouterDeps) {
         }
         return { ok: true as const };
       }),
+      tools: authed.connections.tools.handler(async ({ context, input }) => {
+        const connector = deps.connectors.managed(input.connectorId);
+        if (!connector) return [];
+        const row = await deps.prisma.connection.findFirst({
+          where: {
+            spaceId: context.actor.spaceId,
+            userId: context.actor.userId,
+            connectorId: input.connectorId,
+            provider: input.provider,
+            status: "connected",
+          },
+        });
+        if (!row) return [];
+        try {
+          const tools = await connector.discoverTools({
+            ...connectionContext(context.actor, "connections.tools", context.signal),
+            connectedConnections: [
+              {
+                id: row.id,
+                connectorId: input.connectorId,
+                externalId: input.provider,
+                displayName: row.displayName,
+                providerRef: row.providerRef ?? undefined,
+              },
+            ],
+            connectedProviders: [input.provider],
+          });
+          return tools.map((tool) => ({
+            name: tool.name,
+            description: tool.description,
+          }));
+        } catch (error) {
+          console.error("connections.tools failed", input.connectorId, input.provider, error);
+          return [];
+        }
+      }),
     },
     messaging: {
       status: authed.messaging.status.handler(async ({ context }) => {
