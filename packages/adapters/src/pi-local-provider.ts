@@ -6,10 +6,7 @@ import {
 } from "@earendil-works/pi-ai";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
 
-import {
-  declaredVisionModelIds,
-  inputModalities,
-} from "./model-modalities.js";
+import { declaredVisionModelIds, inputModalities } from "./model-modalities.js";
 /**
  * Local OpenAI-compatible model server (Ollama, LM Studio, llama.cpp, MLX).
  *
