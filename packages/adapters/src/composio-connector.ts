@@ -379,10 +379,11 @@ export class ComposioConnector implements ComposioProvider {
   }
 
   async revoke(connectionRef: string, context: AdapterContext): Promise<void> {
-    // Prefer toolkit-slug lookup for legacy rows; otherwise treat connectionRef as
-    // a connected-account id from begin/complete.
-    const accountId =
-      (await this.connectedAccountId(context.userId, connectionRef)) ?? connectionRef;
+    // Legacy rows may store a toolkit slug. Only resolve through the account list
+    // when that lookup returns hits for this ref; otherwise delete connectionRef
+    // as a concrete connected-account id from begin/complete.
+    const listed = await this.listConnectedAccountIds(context.userId, connectionRef);
+    const accountId = listed[0] ?? connectionRef;
     await this.sdk().connectedAccounts.delete(accountId);
   }
 
