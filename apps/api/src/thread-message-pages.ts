@@ -143,6 +143,38 @@ export async function isPeerRun(
   return peerRun;
 }
 
+/** Peer-run SSE events that must still reach an open thread (terminals, waits, receipts, asks). */
+export function shouldForwardPeerThreadEvent(event: {
+  type: string;
+  payload: { blocks?: unknown };
+}): boolean {
+  if (
+    event.type === "run.completed" ||
+    event.type === "run.failed" ||
+    event.type === "run.cancelled" ||
+    event.type === "run.waiting_input" ||
+    event.type === "computer.takeover.requested"
+  ) {
+    return true;
+  }
+  if (event.type !== "thread.message.created" && event.type !== "thread.message.updated") {
+    return false;
+  }
+  const blocks = event.payload.blocks;
+  return (
+    Array.isArray(blocks) &&
+    blocks.some(
+      (block) =>
+        !!block &&
+        typeof block === "object" &&
+        "kind" in block &&
+        (block.kind === "bot_message_received" ||
+          block.kind === "bot_message_sent" ||
+          block.kind === "ask"),
+    )
+  );
+}
+
 function toThreadMessage(row: {
   id: string;
   threadId: string;
