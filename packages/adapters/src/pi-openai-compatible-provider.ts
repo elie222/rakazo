@@ -18,6 +18,7 @@ import {
 import {
   assertAllowedOpenAiCompatibleRequestUrl,
   assertAllowedOpenAiCompatibleUrl,
+  assertHttpsForKeyedOpenAiCompatibleUrl,
   isPrivateOpenAiCompatibleHostname,
   normalizeOpenAiCompatibleBaseUrl,
   OPENAI_COMPATIBLE_PROVIDER_ID,
@@ -111,6 +112,24 @@ export function createOpenAiCompatibleLookup(
   });
 }
 
+function headersCarryAuthorization(headers: HeadersInit): boolean {
+  if (headers instanceof Headers) return Boolean(headers.get("authorization"));
+  if (Array.isArray(headers)) {
+    return headers.some(
+      ([name, value]) => name.toLowerCase() === "authorization" && Boolean(value),
+    );
+  }
+  return Object.entries(headers).some(
+    ([name, value]) => name.toLowerCase() === "authorization" && Boolean(value),
+  );
+}
+
+/** Matches fetch: when init.headers is set it replaces Request headers entirely. */
+function requestCarriesAuthorization(input: RequestInfo | URL, init?: RequestInit): boolean {
+  if (init?.headers !== undefined) return headersCarryAuthorization(init.headers);
+  return input instanceof Request ? Boolean(input.headers.get("authorization")) : false;
+}
+
 export function createOpenAiCompatibleFetch(
   baseFetch: typeof globalThis.fetch = globalThis.fetch,
   resolve: ResolveHostname = resolveHostname,
@@ -118,6 +137,9 @@ export function createOpenAiCompatibleFetch(
   return async (input, init) => {
     const rawUrl = input instanceof Request ? input.url : String(input);
     const url = assertAllowedOpenAiCompatibleRequestUrl(rawUrl);
+    if (requestCarriesAuthorization(input, init)) {
+      assertHttpsForKeyedOpenAiCompatibleUrl(url, "present");
+    }
     const hostname = url.hostname.replace(/^\[|\]$/g, "");
     const dispatcher =
       isIP(hostname) === 0
@@ -225,8 +247,10 @@ export function prepareOpenAiCompatibleConnect(input: OpenAiCompatibleConnectInp
   const modelId = input.modelId?.trim();
   if (!baseUrl) throw new Error("Base URL is required for OpenAI-compatible models");
   if (!modelId) throw new Error("Model id is required for OpenAI-compatible models");
-  const normalized = assertAllowedOpenAiCompatibleUrl(baseUrl).href;
+  const allowed = assertAllowedOpenAiCompatibleUrl(baseUrl);
   const apiKey = input.apiKey?.trim();
+  assertHttpsForKeyedOpenAiCompatibleUrl(allowed, apiKey);
+  const normalized = allowed.href;
   return apiKey ? { baseUrl: normalized, modelId, apiKey } : { baseUrl: normalized, modelId };
 }
 
@@ -236,6 +260,9 @@ export type OpenAiCompatibleModelsResponse = {
   models?: Array<{ id?: string }>;
 };
 
+/** Shared suffix: /models probe is optional when the user already knows a model id. */
+const OPENAI_COMPAT_PROBE_HAND_FILL_HINT = "You can still Connect with an explicit model id.";
+
 function probeModelIds(body: OpenAiCompatibleModelsResponse): string[] {
   const entries = Array.isArray(body.data)
     ? body.data
@@ -243,7 +270,9 @@ function probeModelIds(body: OpenAiCompatibleModelsResponse): string[] {
       ? body.models
       : null;
   if (!entries) {
-    throw new Error("Model server response did not include a models list");
+    throw new Error(
+      `Model server response did not include a models list. ${OPENAI_COMPAT_PROBE_HAND_FILL_HINT}`,
+    );
   }
   const ids: string[] = [];
   for (const entry of entries) {
@@ -279,7 +308,11 @@ async function readBoundedJson(response: Response): Promise<OpenAiCompatibleMode
     text += decoder.decode(value, { stream: true });
   }
   text += decoder.decode();
-  return JSON.parse(text) as OpenAiCompatibleModelsResponse;
+  try {
+    return JSON.parse(text) as OpenAiCompatibleModelsResponse;
+  } catch {
+    throw new Error(`Model server returned invalid JSON. ${OPENAI_COMPAT_PROBE_HAND_FILL_HINT}`);
+  }
 }
 
 export async function probeOpenAiCompatibleModels(
@@ -288,6 +321,7 @@ export async function probeOpenAiCompatibleModels(
   signal?: AbortSignal,
 ): Promise<string[]> {
   const baseUrl = assertAllowedOpenAiCompatibleUrl(input.baseUrl);
+  assertHttpsForKeyedOpenAiCompatibleUrl(baseUrl, input.apiKey);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 5_000);
   const merged = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
@@ -306,7 +340,9 @@ export async function probeOpenAiCompatibleModels(
     }
     if (!response.ok) {
       await response.body?.cancel().catch(() => undefined);
-      throw new Error(`Model server returned ${response.status}`);
+      throw new Error(
+        `Model server returned ${response.status}. ${OPENAI_COMPAT_PROBE_HAND_FILL_HINT}`,
+      );
     }
     const body = await readBoundedJson(response);
     return probeModelIds(body);

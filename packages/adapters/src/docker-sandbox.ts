@@ -15,6 +15,7 @@ import type {
   ScreenSession,
 } from "@rakazo/adapter-kit";
 import { boundedSandboxCommandTimeoutMs, resolveSupervisorToken } from "@rakazo/core";
+import { outgoingCorrelationHeaders } from "@rakazo/logging";
 import {
   boundedComputerActions,
   clampRounded,
@@ -75,6 +76,7 @@ export class DockerSandboxProvider implements SandboxProvider {
     return {
       authorization: `Bearer ${this.supervisorToken}`,
       "x-rakazo-space-id": context.spaceId,
+      ...outgoingCorrelationHeaders(),
       ...(botId ? { "x-rakazo-bot-id": botId } : {}),
       ...(context.screenLeaseId ? { "x-rakazo-screen-lease-id": context.screenLeaseId } : {}),
       ...(context.cancelRunWork ? { "x-rakazo-cancel-run-work": "1" } : {}),

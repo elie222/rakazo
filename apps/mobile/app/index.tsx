@@ -1,4 +1,10 @@
-import type { RunActivityRow, SearchHit, SpaceBot, SpaceGroup } from "@rakazo/contracts";
+import {
+  normalizeCreateBotProfile,
+  type RunActivityRow,
+  type SearchHit,
+  type SpaceBot,
+  type SpaceGroup,
+} from "@rakazo/contracts";
 import { groupBotsForSidebar } from "@rakazo/core";
 import { Redirect, useFocusEffect, useRouter } from "expo-router";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -39,6 +45,7 @@ import {
   selectInitialSpace,
   selectSpace,
 } from "../lib/api";
+import { allowFocusPrompt, scheduleFocusPrompt } from "../lib/focus-prompt";
 import { t, useI18n } from "../lib/i18n";
 import { botTag, filterBots, formatThreadTime, userInitials } from "../lib/inbox";
 import { dismissThreadNotifications, resumeLiveNotifications } from "../lib/live-notifications";
@@ -91,6 +98,7 @@ export default function Home() {
   });
   const activityRequestId = useRef(0);
   const inboxRequestId = useRef(0);
+  const creatingBotRef = useRef(false);
 
   useEffect(() => {
     void loadActivityMode().then(setActivityMode);
@@ -302,6 +310,36 @@ export default function Home() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
 
+  const createQuickBot = useCallback(async () => {
+    if (creatingBotRef.current) return;
+    creatingBotRef.current = true;
+    try {
+      // Authoritative roster so a slow home fetch does not treat later bots as first.
+      // A failed list is unknown — use the delayed path rather than assuming first.
+      const existing = await rpc<MobileBot[]>("bots/list").catch(() => null);
+      const isFirstBot = existing !== null && existing.length === 0;
+      const bot = await rpc<MobileBot>("bots/create", {
+        ...normalizeCreateBotProfile({ name: "New Bot", title: "", description: "" }),
+        notifyOnFinish: true,
+        computerMode: "team",
+      });
+      void refreshBots().catch(() => undefined);
+      allowFocusPrompt(bot.id);
+      router.replace({ pathname: "/thread", params: { botId: bot.id, name: bot.name } });
+      void (async () => {
+        const started = await rpc("onboarding/start", { botId: bot.id })
+          .then(() => true)
+          .catch(() => false);
+        if (!started) return;
+        scheduleFocusPrompt(bot.id, isFirstBot);
+      })();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t("Could not create bot"));
+    } finally {
+      creatingBotRef.current = false;
+    }
+  }, [refreshBots, router, t]);
+
   if (!ready) {
     return (
       <View style={[styles.screen, styles.centered]}>
@@ -347,7 +385,7 @@ export default function Home() {
             accessibilityLabel={t("Create")}
             onPress={() =>
               Alert.alert(t("Create"), undefined, [
-                { text: t("New bot"), onPress: () => router.push("/new") },
+                { text: t("New bot"), onPress: () => void createQuickBot() },
                 { text: t("New group"), onPress: () => router.push("/new-group") },
                 { text: t("New space"), onPress: () => router.push("/new-space") },
                 { text: t("Cancel"), style: "cancel" },

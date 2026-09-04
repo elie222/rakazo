@@ -69,6 +69,24 @@ export function assertAllowedOpenAiCompatibleUrl(
   return assertAllowedOpenAiCompatibleRequestUrl(normalized, opts);
 }
 
+/**
+ * When an API key will be sent, refuse public http:// endpoints so the Bearer
+ * token is not cleartext on the public internet. Private / loopback http stays
+ * allowed (local model servers). https:// is always fine for this check.
+ */
+export function assertHttpsForKeyedOpenAiCompatibleUrl(
+  url: URL,
+  apiKey: string | undefined | null,
+): void {
+  if (!apiKey?.trim()) return;
+  if (url.protocol === "https:") return;
+  const hostname = normalizeHostname(url.hostname);
+  if (isPrivateOpenAiCompatibleHostname(hostname)) return;
+  throw new Error(
+    "OpenAI-compatible endpoints that send an API key must use HTTPS. Use an https:// URL, or omit the API key on a private HTTP endpoint.",
+  );
+}
+
 export function assertAllowedOpenAiCompatibleRequestUrl(
   raw: string,
   opts?: { allowPublic?: boolean },

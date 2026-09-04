@@ -1007,7 +1007,7 @@ describe("stopThreadRuns", () => {
           { computerId: "computer-db-a", runId: "run-a", fence: 2 },
           { computerId: "computer-db-b", runId: "run-b", fence: 4 },
         ]),
-        deleteMany: vi.fn().mockResolvedValue({ count: 2 }),
+        updateMany: vi.fn().mockResolvedValue({ count: 2 }),
       },
       event: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
     } as unknown as PrismaClient;
@@ -1061,8 +1061,9 @@ describe("stopThreadRuns", () => {
         screenLeaseId: "run-b:4",
       }),
     );
-    expect(prisma.computerExecutionLease.deleteMany).toHaveBeenCalledWith({
+    expect(prisma.computerExecutionLease.updateMany).toHaveBeenCalledWith({
       where: { runId: { in: ["run-a", "run-b"] } },
+      data: { expiresAt: new Date(0) },
     });
     expect(prisma.computer.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: { executionRunId: { in: ["run-a", "run-b"] } } }),

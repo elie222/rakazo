@@ -41,6 +41,7 @@ services:
       DOCKER_SOCKET: /var/run/docker.sock
       RAKAZO_COMPUTER_IMAGE: ${TOPOLOGY_COMPUTER_IMAGE:-rakazo/computer:topology}
       SANDBOX_SCREEN_NETWORK: isolated
+      LOG_LEVEL: info
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - appdata:/data

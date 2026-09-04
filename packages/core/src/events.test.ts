@@ -8,6 +8,7 @@ import {
   humanizeToolName,
   isRunTerminalEvent,
   projectMessages,
+  reduceLiveMessageBlocks,
   runFailureError,
   sanitizeJsonValue,
   sanitizeUtf16ForJson,
@@ -21,6 +22,28 @@ describe("isRunTerminalEvent", () => {
     expect(isRunTerminalEvent({ type: "run.failed" })).toBe(true);
     expect(isRunTerminalEvent({ type: "run.cancelled" })).toBe(true);
     expect(isRunTerminalEvent({ type: "run.waiting_input" })).toBe(false);
+  });
+});
+
+describe("reduceLiveMessageBlocks", () => {
+  it("preserves structured live activity markers", () => {
+    expect(
+      reduceLiveMessageBlocks([], {
+        type: "progress",
+        payload: { text: "Using browser", activity: true },
+      }),
+    ).toEqual([{ kind: "progress", text: "Using browser", activity: true }]);
+  });
+
+  it("replaces punctuated activity text with its tool step", () => {
+    const activity = reduceLiveMessageBlocks([], {
+      type: "progress",
+      payload: { text: "Running: echo done.", activity: true },
+    });
+
+    expect(reduceLiveMessageBlocks(activity, { type: "tool", name: "shell" })).toEqual([
+      { kind: "steps", steps: [{ label: "Shell", count: 1 }] },
+    ]);
   });
 });
 

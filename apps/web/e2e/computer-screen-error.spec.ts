@@ -20,16 +20,17 @@ test("screen connection failures stay visible and can be retried", async ({ page
   );
   await page.route("**/rpc/computer/screenUrl", (route) =>
     route.fulfill({
-      status: failScreen ? 500 : 200,
+      status: failScreen ? 409 : 200,
       contentType: "application/json",
       body: JSON.stringify(
         failScreen
           ? {
               json: {
                 defined: false,
-                code: "INTERNAL_SERVER_ERROR",
-                status: 500,
-                message: "Computer screen could not connect",
+                code: "CONFLICT",
+                status: 409,
+                message:
+                  "The computer screen is temporarily busy. Retry in a moment. File and shell tools still work.",
               },
             }
           : { json: { url: screenUrl } },
@@ -39,7 +40,7 @@ test("screen connection failures stay visible and can be retried", async ({ page
 
   await page.getByTitle("Agent computer").click();
   const preview = page.getByTestId("computer-preview");
-  await expect(preview.getByRole("alert")).toContainText("Computer screen could not connect");
+  await expect(preview.getByRole("alert")).toContainText("temporarily busy");
   await expect(preview.getByTestId("computer-preview-open")).toHaveCount(0);
   await captureScreenshot(page, testInfo, "computer-screen-connection-error");
 
@@ -52,7 +53,7 @@ test("screen connection failures stay visible and can be retried", async ({ page
   await preview.hover();
   await preview.getByTestId("computer-preview-open").click();
   await expect(page.getByRole("button", { name: "Close computer" })).toBeVisible();
-  await expect(page.getByRole("alert")).toContainText("Computer screen could not connect");
+  await expect(page.getByRole("alert")).toContainText("temporarily busy");
   await captureScreenshot(page, testInfo, "computer-full-screen-connection-error");
 
   failScreen = false;

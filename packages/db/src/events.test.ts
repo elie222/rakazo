@@ -1421,7 +1421,7 @@ describe("clearThread", () => {
       },
       attempt: { updateMany: vi.fn() },
       task: { updateMany: vi.fn() },
-      computerExecutionLease: { deleteMany: vi.fn() },
+      computerExecutionLease: { updateMany: vi.fn() },
       computer: { updateMany: vi.fn() },
       message: { deleteMany: vi.fn() },
       event: {
@@ -1443,8 +1443,9 @@ describe("clearThread", () => {
       event: { type: "thread.cleared" },
       cancelledRunIds: ["run-1"],
     });
-    expect(tx.computerExecutionLease.deleteMany).toHaveBeenCalledWith({
+    expect(tx.computerExecutionLease.updateMany).toHaveBeenCalledWith({
       where: { runId: { in: ["run-1"] } },
+      data: { expiresAt: new Date(0) },
     });
     expect(tx.computer.updateMany).toHaveBeenCalledWith({
       where: { executionRunId: { in: ["run-1"] } },
@@ -1484,7 +1485,7 @@ describe("clearThread", () => {
       },
       attempt: { updateMany: vi.fn() },
       task: { updateMany: vi.fn() },
-      computerExecutionLease: { deleteMany: vi.fn() },
+      computerExecutionLease: { updateMany: vi.fn() },
       computer: { updateMany: vi.fn() },
       message: { deleteMany: vi.fn() },
       event: {
@@ -1521,8 +1522,9 @@ describe("clearThread", () => {
         }),
       }),
     );
-    expect(tx.computerExecutionLease.deleteMany).toHaveBeenCalledWith({
+    expect(tx.computerExecutionLease.updateMany).toHaveBeenCalledWith({
       where: { runId: { in: ["group-run-1", "group-run-2"] } },
+      data: { expiresAt: new Date(0) },
     });
     expect(tx.computer.updateMany).toHaveBeenCalledWith({
       where: { executionRunId: { in: ["group-run-1", "group-run-2"] } },
@@ -1532,7 +1534,7 @@ describe("clearThread", () => {
         executionLeaseExpiresAt: null,
       },
     });
-    expect(tx.computerExecutionLease.deleteMany).not.toHaveBeenCalledWith(
+    expect(tx.computerExecutionLease.updateMany).not.toHaveBeenCalledWith(
       expect.objectContaining({ where: expect.objectContaining({ botId: expect.anything() }) }),
     );
   });

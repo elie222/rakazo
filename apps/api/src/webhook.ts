@@ -4,6 +4,7 @@ import { runContinueJob } from "@rakazo/adapter-kit";
 import type { EncryptedSecretStore } from "@rakazo/adapters";
 import { hasValidBearerToken } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
 import type { Hono } from "hono";
 
 export const WEBHOOK_MAX_BODY_BYTES = 64 * 1024;
@@ -193,7 +194,7 @@ export function mountWebhookHttpRoutes(app: Hono, deps: WebhookDeps) {
 
     if (sent.runId) {
       await deps.jobs.enqueue(runContinueJob(sent.runId)).catch((error) => {
-        console.error("webhook run enqueue error", error);
+        getLogger().error("webhook run enqueue error", error);
       });
     }
 

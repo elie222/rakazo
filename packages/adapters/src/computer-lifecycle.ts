@@ -7,7 +7,12 @@ import type {
   SandboxProvider,
 } from "@rakazo/adapter-kit";
 import { ACTIVE_RUN_STATUSES, screenLeaseId } from "@rakazo/core";
-import { type PrismaClient, parseComputerMode, type ThreadEvents } from "@rakazo/db";
+import {
+  expireComputerExecutionLeases,
+  type PrismaClient,
+  parseComputerMode,
+  type ThreadEvents,
+} from "@rakazo/db";
 import {
   clearInactiveUserComputerControl,
   expireComputerControl,
@@ -23,6 +28,7 @@ import { isUnrecoverableSandboxError } from "./e2b-sandbox.js";
 import { resolveAgentHomePath } from "./home.js";
 
 const EXECUTION_LEASE_MS = 5 * 60_000;
+const RELEASED_EXECUTION_LEASE_AT = new Date(0);
 const BOOT_WAIT_ATTEMPTS = 40;
 const BOOT_WAIT_MS = 250;
 
@@ -190,10 +196,11 @@ async function reconnectComputer(
     context,
   );
   const changedProvider = ref.providerRef !== computer.providerRef || ref.kind !== computer.kind;
-  const replacement = ref.fresh === true || changedProvider;
+  const needsWorkspaceRestore = ref.fresh === true || changedProvider;
+  const ownsRef = ref.fresh === true;
   try {
     await deps.sandbox.prepare(ref, context);
-    if (replacement) {
+    if (needsWorkspaceRestore) {
       await restoreComputerWorkspace(deps.home, deps.sandbox, computer.homeKey, ref, context);
     }
     await ensureComputerWorkspaceLayout(
@@ -213,8 +220,9 @@ async function reconnectComputer(
       });
     }
   } catch (error) {
-    // A failed replacement must not overwrite or tear down the original computer.
-    const rollbackError = replacement
+    // Only tear down a sandbox this reconnect created. A pre-existing ref
+    // (fresh: false) may belong to the user even when providerRef changed.
+    const rollbackError = ownsRef
       ? await rollbackProvisionedComputer(deps.sandbox, ref, context, error)
       : undefined;
     if (rollbackError) {
@@ -367,6 +375,7 @@ export async function renewComputerExecutionLease(
       botId: lease.botId,
       runId: lease.runId,
       fence: lease.fence,
+      expiresAt: { gt: RELEASED_EXECUTION_LEASE_AT },
     },
     data: { expiresAt: new Date(Date.now() + EXECUTION_LEASE_MS) },
   });
@@ -384,6 +393,7 @@ export async function holdComputerExecutionLeaseForTakeover(
       botId: lease.botId,
       runId: lease.runId,
       fence: lease.fence,
+      expiresAt: { gt: RELEASED_EXECUTION_LEASE_AT },
     },
     data: { expiresAt: new Date(Date.now() + 24 * 60 * 60_000) },
   });
@@ -395,13 +405,14 @@ export async function releaseComputerExecutionLease(
   lease: ComputerExecutionLease | null,
 ): Promise<void> {
   if (!lease) return;
-  await prisma.computerExecutionLease.deleteMany({
-    where: {
-      computerId: lease.computerId,
-      botId: lease.botId,
-      runId: lease.runId,
-      fence: lease.fence,
-    },
+  // Keep the row as an expired tombstone so the next run for this bot increments
+  // its fence. Deleting it resets the fence to 1, which lets a still-open screen
+  // session from the previous run reject the new run as stale.
+  await expireComputerExecutionLeases(prisma, {
+    computerId: lease.computerId,
+    botId: lease.botId,
+    runId: lease.runId,
+    fence: lease.fence,
   });
 }
 

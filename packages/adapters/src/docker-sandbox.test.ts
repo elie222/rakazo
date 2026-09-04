@@ -46,6 +46,10 @@ describe("Docker sandbox", () => {
       { type: "exit", code: 124 },
     ]);
     expect(fetchMock.mock.calls[0]?.[1]?.headers).not.toHaveProperty("x-rakazo-screen-id");
+    expect(fetchMock.mock.calls[0]?.[1]?.headers).toMatchObject({
+      "x-request-id": expect.any(String),
+      traceparent: expect.stringMatching(/^00-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$/),
+    });
   });
 
   it("releases this bot's screen assignment through the supervisor", async () => {

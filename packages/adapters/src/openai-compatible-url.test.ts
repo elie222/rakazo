@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   assertAllowedOpenAiCompatibleRequestUrl,
   assertAllowedOpenAiCompatibleUrl,
+  assertHttpsForKeyedOpenAiCompatibleUrl,
   normalizeOpenAiCompatibleBaseUrl,
   openAiCompatAllowPublicHosts,
 } from "./openai-compatible-url.js";
@@ -120,5 +121,35 @@ describe("openai-compatible URL policy", () => {
     expect(assertAllowedOpenAiCompatibleUrl("https://api.example.com/v1").href).toBe(
       "https://api.example.com/v1",
     );
+  });
+});
+
+describe("assertHttpsForKeyedOpenAiCompatibleUrl", () => {
+  it("rejects public http when an API key is set", () => {
+    process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC = "1";
+    const url = assertAllowedOpenAiCompatibleUrl("http://api.example.com/v1");
+    expect(() => assertHttpsForKeyedOpenAiCompatibleUrl(url, "secret-key")).toThrow(
+      /must use HTTPS/,
+    );
+  });
+
+  it("allows public https when an API key is set", () => {
+    process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC = "1";
+    const url = assertAllowedOpenAiCompatibleUrl("https://api.example.com/v1");
+    expect(() => assertHttpsForKeyedOpenAiCompatibleUrl(url, "secret-key")).not.toThrow();
+  });
+
+  it("allows private http when an API key is set", () => {
+    const url = assertAllowedOpenAiCompatibleUrl("http://127.0.0.1:8000/v1");
+    expect(() => assertHttpsForKeyedOpenAiCompatibleUrl(url, "local-secret")).not.toThrow();
+    const lan = assertAllowedOpenAiCompatibleUrl("http://192.168.1.20:8080/v1");
+    expect(() => assertHttpsForKeyedOpenAiCompatibleUrl(lan, "local-secret")).not.toThrow();
+  });
+
+  it("skips the HTTPS check when no API key is set", () => {
+    process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC = "1";
+    const url = assertAllowedOpenAiCompatibleUrl("http://api.example.com/v1");
+    expect(() => assertHttpsForKeyedOpenAiCompatibleUrl(url, undefined)).not.toThrow();
+    expect(() => assertHttpsForKeyedOpenAiCompatibleUrl(url, "  ")).not.toThrow();
   });
 });

@@ -5,6 +5,7 @@ import type {
   NotificationMessage,
   NotificationProvider,
 } from "@rakazo/adapter-kit";
+import { getLogger } from "@rakazo/logging";
 
 export function pushTokenPath(dataDir: string, userId: string) {
   return path.join(dataDir, "push-tokens", `${userId}.txt`);
@@ -93,13 +94,13 @@ export class ExpoPushProvider implements NotificationProvider {
         }),
       });
     } catch (error) {
-      console.error("expo push request failed", error);
+      getLogger().error("expo push request failed", error);
       throw error;
     }
     const body = await response.json().catch(() => undefined);
     const failure = expoPushErrorMessage(body, response.status);
     if (!failure) return;
-    console.error(failure);
+    getLogger().error(failure);
     throw new Error(failure);
   }
 }

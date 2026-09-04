@@ -54,12 +54,12 @@
   --accent-foreground: #1a1a1a;
   --destructive: #dc2626;
   --destructive-foreground: #ffffff;
-  --border: #e3e3df;
-  --input: #d6d6d2;
+  --border: #f0f0ed;
+  --input: #eaeae6;
   --ring: #6c6c70;
   --sidebar: #ecece9;
   --sidebar-foreground: #1a1a1a;
-  --sidebar-border: #e4e4e0;
+  --sidebar-border: #e8e8e4;
   --sidebar-accent: #ffffff;
   --sidebar-accent-foreground: #1a1a1a;
   --link: #2563eb;

@@ -75,7 +75,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Confirm password": "确认密码",
   "Computer failed to boot": "电脑启动失败",
   "Computer is asleep": "电脑已休眠",
-  "Computer is asleep — take control to wake it": "电脑已休眠，接管控制即可唤醒",
+  "Computer is asleep. Take control to wake it.": "电脑已休眠。接管控制即可唤醒。",
   "Computer is stopped": "电脑已停止",
   "Configured by deployment": "由部署配置",
   Connect: "连接",
@@ -272,7 +272,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Photo library": "相册",
   Pin: "置顶",
   "Please try again.": "请重试。",
-  "Point this app at your self-hosted Rakazo origin — the same HTTPS URL you open in a browser.":
+  "Point this app at your self-hosted Rakazo origin, the same HTTPS URL you open in a browser.":
     "将此应用指向你自托管的 Rakazo 源站，地址与你在浏览器中打开的 HTTPS URL 相同。",
   Private: "私有",
   Providers: "提供商",

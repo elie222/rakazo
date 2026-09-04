@@ -18,6 +18,7 @@ import type {
   AgentToolExecutionResult,
   ConnectorTool,
 } from "@rakazo/adapter-kit";
+import { getLogger } from "@rakazo/logging";
 import { isToolPauseResult } from "./approval-effect.js";
 import { builtinAgentTools, DELEGATION_TOOL_NAMES } from "./builtin-tools.js";
 import { PiRuntimeCredentialStore, toOAuthCredential } from "./pi-credentials.js";
@@ -219,6 +220,7 @@ export class PiAgentRuntime implements AgentRuntime {
             queue.push({
               type: "progress",
               text: describeToolActivity(event.toolName, event.args),
+              activity: true,
             });
           }
           if (
@@ -230,7 +232,7 @@ export class PiAgentRuntime implements AgentRuntime {
               if (toolActivityShowing) {
                 // Real text replaces the activity line instead of appending to it.
                 toolActivityShowing = false;
-                queue.push({ type: "progress", text: "" });
+                queue.push({ type: "progress", text: "", activity: true });
               }
               streamed += delta;
               queue.push({ type: "text", text: delta });
@@ -872,7 +874,7 @@ function safeJsonSchemaParameters(tool: ConnectorTool) {
   try {
     return jsonSchemaParameters(tool.inputSchema);
   } catch (error) {
-    console.error(`unsupported input schema for tool ${tool.name}`, error);
+    getLogger().error(`unsupported input schema for tool ${tool.name}`, error);
     return Type.Object({});
   }
 }

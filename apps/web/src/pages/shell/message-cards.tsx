@@ -22,6 +22,8 @@ export function ChoiceCard({
   const { t } = useLingui();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [locallyDismissed, setLocallyDismissed] = useState(false);
+  const dismissed = locallyDismissed || block.answerId === "_dismissed";
 
   async function choose(optionId: string) {
     setPending(true);
@@ -35,10 +37,37 @@ export function ChoiceCard({
     }
   }
 
+  async function dismiss() {
+    setPending(true);
+    setError(null);
+    try {
+      await rpc.onboarding.dismissFocus({ botId });
+      setLocallyDismissed(true);
+      void onBotChanged().catch(() => undefined);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t`Could not dismiss`);
+      setPending(false);
+    }
+  }
+
+  if (dismissed) return null;
+
   return (
     <div className="flex justify-start">
-      <div className="w-[min(420px,80%)] rounded-[20px] border border-border bg-card px-[18px] py-[14px]">
-        <div className="text-[15.5px] text-foreground/90">{block.question}</div>
+      <div className="relative w-[min(420px,80%)] rounded-[20px] border border-border bg-card px-[18px] py-[14px]">
+        {!block.answerId ? (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label={t`Dismiss`}
+            disabled={pending}
+            onClick={() => void dismiss()}
+            className="absolute end-2 top-2 text-muted-foreground"
+          >
+            <X size={16} strokeWidth={1.8} />
+          </Button>
+        ) : null}
+        <div className="pe-8 text-[15.5px] text-foreground/90">{block.question}</div>
         {block.subtitle ? (
           <div className="mt-0.5 text-[13px] text-foreground/75">{block.subtitle}</div>
         ) : null}
@@ -317,7 +346,7 @@ export function McpApprovalCard({
         <>
           <p className="mt-2 text-[13px] leading-[1.5] text-foreground/75">
             {needsOAuth
-              ? t`This server uses browser sign-in. Authorize it to let your agents use its tools — a popup will open.`
+              ? t`This server uses browser sign-in. Authorize it to let your agents use its tools. A popup will open.`
               : t`Approve this server to let your agent use its tools.`}
           </p>
           {error ? <p className="mt-2 text-xs text-destructive">{error}</p> : null}
@@ -341,12 +370,12 @@ export function McpApprovalCard({
       ) : null}
       {state === "connected" ? (
         <div className="mt-3">
-          <SuccessPop label={t`Connected — its tools are available from your next message.`} />
+          <SuccessPop label={t`Connected. Its tools are available from your next message.`} />
         </div>
       ) : null}
       {state === "dismissed" ? (
         <p className="mt-2 text-[13px] text-muted-foreground">
-          <Trans>Dismissed — reconnect anytime from MCP settings.</Trans>
+          <Trans>Dismissed. Reconnect anytime from MCP settings.</Trans>
         </p>
       ) : null}
     </BuiCard>

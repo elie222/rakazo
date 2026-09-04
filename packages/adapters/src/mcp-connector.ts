@@ -7,6 +7,7 @@ import type {
 } from "@rakazo/adapter-kit";
 import { isLocalMcpHost } from "@rakazo/contracts";
 import type { McpServer, PrismaClient } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
 import { sanitizeConnectorError } from "./connector-safety.js";
 import {
   CATALOG_EXECUTE,
@@ -53,7 +54,7 @@ function reportAllowlistDrift(
   if (assignment.allowAllTools) return;
   const drift = allowlistDrift(assignment.allowedTools, offered);
   if (drift.missing.length === 0) return;
-  console.warn(
+  getLogger().warn(
     `mcp allowlist drift on ${assignment.server.slug}: ${drift.missing.length}/${drift.stringAllowedCount} allowed tools are not offered (server offers ${drift.offered})`,
     {
       spaceId: context.spaceId,
@@ -139,7 +140,7 @@ export class McpConnector implements ConnectorProvider {
             }));
         } catch (error) {
           // A single unavailable server must not hide tools from other connectors.
-          console.error(
+          getLogger().error(
             `mcp discovery failed for server ${assignment.server.slug}:`,
             sanitizeConnectorError(error),
           );

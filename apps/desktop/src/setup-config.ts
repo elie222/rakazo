@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { isIP } from "node:net";
-import type { DesktopSetup } from "@rakazo/contracts";
+import type { DesktopSetup, DesktopStackProbeResponse } from "@rakazo/contracts";
 
 /** Where `pnpm dev` serves the Rakazo web app on this machine. */
 export const DEFAULT_LOCAL_WEB_URL = "http://127.0.0.1:5173";
@@ -44,6 +44,33 @@ export function normalizeServerUrl(input: string): string | null {
   // Rakazo serves its renderer, RPC, and auth routes from one origin. Keeping a
   // user-supplied path would make the setup probe and the loaded app disagree.
   return url.origin;
+}
+
+/**
+ * Managed ("new") setups may only open the configured local stack origin.
+ * A saved or IPC URL that normalizes to a different loopback host/port is rejected.
+ */
+export function managedLocalOpenUrl(requestedUrl: string, localWebUrl: string): string | null {
+  const managed = normalizeServerUrl(localWebUrl);
+  const requested = normalizeServerUrl(requestedUrl);
+  if (managed === null || requested === null || requested !== managed) return null;
+  return managed;
+}
+
+/**
+ * The private managed-stack token may travel over HTTPS anywhere, or over HTTP
+ * only to loopback. Private-network and .local HTTP stay cleartext on a LAN, so
+ * they must not receive the token.
+ */
+export function maySendDesktopStackToken(serverUrl: string): boolean {
+  try {
+    const url = new URL(serverUrl);
+    if (url.protocol === "https:") return true;
+    if (url.protocol === "http:") return isLoopbackHost(url.hostname);
+    return false;
+  } catch {
+    return false;
+  }
 }
 
 /** Validates an untrusted value (saved file or IPC payload) into a usable setup. */
@@ -151,6 +178,12 @@ export function isRakazoHealth(value: unknown): boolean {
     (json as { ok?: unknown }).ok === true &&
     typeof (json as { version?: unknown }).version === "string"
   );
+}
+
+export function desktopStackImageTag(value: unknown): string | null {
+  if (typeof value !== "object" || value === null) return null;
+  const { ok, imageTag } = value as Partial<DesktopStackProbeResponse>;
+  return ok === true && typeof imageTag === "string" && imageTag !== "" ? imageTag : null;
 }
 
 function isLoopbackHost(hostname: string) {

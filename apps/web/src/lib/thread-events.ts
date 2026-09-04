@@ -86,6 +86,49 @@ export function activeThreadRuns(
   return snapshot?.activeRuns ?? (snapshot?.run ? [snapshot.run] : []);
 }
 
+/**
+ * Reflect a committed direct-message send before its follow-up snapshot arrives.
+ *
+ * threads.send returns only after the message and run are durable. Keeping that
+ * receipt prevents a transient snapshot/SSE interruption from showing a stored
+ * user bubble with no working state. A matching live run always wins, and the
+ * next durable event or refresh still supplies the authoritative status.
+ */
+export function applyThreadSendReceipt(
+  snapshot: ThreadSnapshot | null,
+  receipt: { botId: string; runId: string; taskId: string; createdAt?: string },
+  terminalRunIds: ReadonlySet<string> = new Set(),
+): ThreadSnapshot | null {
+  if (
+    !snapshot ||
+    snapshot.groupId ||
+    snapshot.botId !== receipt.botId ||
+    snapshot.run?.id === receipt.runId ||
+    terminalRunIds.has(receipt.runId)
+  ) {
+    return snapshot;
+  }
+  const currentRuns = activeThreadRuns(snapshot);
+  if (currentRuns.some((run) => isActive(run.status as RunStatus))) return snapshot;
+  const createdAt = receipt.createdAt ?? new Date().toISOString();
+  const run: Run = {
+    id: receipt.runId,
+    botId: receipt.botId,
+    threadId: snapshot.threadId,
+    taskId: receipt.taskId,
+    status: "queued",
+    trigger: "user",
+    routineId: null,
+    modelProvider: null,
+    modelId: null,
+    error: null,
+    startedAt: null,
+    completedAt: null,
+    createdAt,
+  };
+  return { ...snapshot, run, activeRuns: [run] };
+}
+
 /** Reason the newest run stopped, until the reader dismisses that run's failure. */
 export function threadRunError(
   snapshot: ThreadSnapshot | null,

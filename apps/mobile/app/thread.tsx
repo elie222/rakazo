@@ -75,6 +75,7 @@ import {
 import { mobileTokens } from "../lib/appearance";
 import { type MobileArtifactTarget, openMobileArtifact } from "../lib/artifact-open";
 import { confirmDeleteBot } from "../lib/bot-lifecycle";
+import { cancelFocusPrompt, focusPromptThreadActive } from "../lib/focus-prompt";
 import { t, useI18n } from "../lib/i18n";
 import { saveLastBotId } from "../lib/last-bot";
 import {
@@ -86,7 +87,6 @@ import {
   hasVisibleMessagePresentation,
   isCenteredAgentEvent,
   messagePresentationSegments,
-  toolOwnerId,
 } from "../lib/message-presentation";
 import { native, useResolvedAppearance } from "../lib/native";
 import {
@@ -691,10 +691,25 @@ function Thread() {
     void dismissThreadNotifications({ threadId: notificationThreadId }).catch(() => undefined);
   }, [botId, navigation, notificationThreadId]);
 
+  // Cancel delayed setup only when leaving this bot's thread (unmount or botId
+  // change). Blur alone is not leave — settings/computer push must keep the timer.
+  useEffect(() => {
+    if (!botId) return;
+    return () => {
+      cancelFocusPrompt(botId);
+    };
+  }, [botId]);
+
   // Covers returning from a pushed screen; the AppState listener covers returning from background.
   useFocusEffect(
     useCallback(() => {
-      if (botId) void saveLastBotId(botId).catch(() => undefined);
+      if (botId) {
+        focusPromptThreadActive(botId);
+        void saveLastBotId(botId).catch(() => undefined);
+      } else {
+        // Group thread focus: prior bot screen may stay mounted, so clear any delayed setup.
+        cancelFocusPrompt();
+      }
       if (AppState.currentState === "active" && notificationThreadId) {
         void setOpenNotificationThread({
           botId,
@@ -926,6 +941,11 @@ function Thread() {
     const groupTarget = plan.rerouteGroupId ?? initialGroupTarget;
     const botTarget = reroutedToGroup ? undefined : initialBotTarget;
     const trimmed = plan.trimmed;
+    const dropDelayedSetup = () => {
+      // Only after successful engagement so a failed upload/send keeps the setup card.
+      // Covers group-mention reroute while the bot thread stays mounted underneath.
+      if (initialBotTarget) cancelFocusPrompt(initialBotTarget);
+    };
     setSending(true);
     setError(null);
     try {
@@ -953,6 +973,7 @@ function Thread() {
         setAttachmentNotice(null);
       };
       if (!plan.shouldSend) {
+        dropDelayedSetup();
         clearOriginComposer();
         if (reroutedToGroup && groupTarget) {
           router.push({
@@ -1000,6 +1021,7 @@ function Thread() {
               replyToMessageId: replyTarget?.id,
             },
       );
+      dropDelayedSetup();
       void loadSessionToken()
         .then((token) => resumeLiveNotifications(currentApiBase(), token, selectedSpaceId() ?? ""))
         .catch(() => undefined);
@@ -1176,12 +1198,10 @@ function Thread() {
   }
 
   function renderMessageRow(message: MobileMessage, options?: { enableJump?: boolean }) {
-    const ownerId = toolOwnerId(message, inGroup);
     const activityBotId =
-      ownerId ??
-      (!inGroup && message.role === "bot" && message.id.startsWith("progress:")
+      !inGroup && message.role === "bot" && message.id.startsWith("progress:")
         ? (message.botId ?? botId)
-        : undefined);
+        : undefined;
     const activityBot = activityBotId
       ? (snap?.members?.find((member) => member.botId === activityBotId) ??
         (currentBot?.id === activityBotId ? currentBot : undefined))
@@ -2411,23 +2431,15 @@ const MessageBubble = memo(function MessageBubble({
   );
   return (
     <View style={{ gap: 8, width: "100%" }}>
-      {segments.map((segment, index) =>
-        segment.kind === "tool" ? (
-          <ExpandableToolBlock
-            key={`${message.id}-${message.id.startsWith("progress:") ? "working" : "actions"}-${index}`}
-            block={segment.block}
-            live={message.id.startsWith("progress:")}
-          />
-        ) : (
-          <MessageTextCard
-            key={`${message.id}-content-${index}`}
-            message={{ ...message, blocks: segment.blocks }}
-            speaker={index === firstContent ? speaker : undefined}
-            replyPreview={index === firstContent ? replyPreview : undefined}
-            onSpeak={index === lastContent && onSpeak ? () => onSpeak(message) : undefined}
-          />
-        ),
-      )}
+      {segments.map((segment, index) => (
+        <MessageTextCard
+          key={`${message.id}-content-${index}`}
+          message={{ ...message, blocks: segment.blocks }}
+          speaker={index === firstContent ? speaker : undefined}
+          replyPreview={index === firstContent ? replyPreview : undefined}
+          onSpeak={index === lastContent && onSpeak ? () => onSpeak(message) : undefined}
+        />
+      ))}
       {appConnectBlocks.map((block, index) => (
         <AppConnectCard key={`${block.provider}-${index}`} botId={cardBotId} block={block} />
       ))}
@@ -2529,80 +2541,6 @@ function AgentEventLabel({
         </View>
       ) : null}
     </Pressable>
-  );
-}
-
-function ExpandableToolBlock({
-  block,
-  live,
-}: {
-  block: Extract<MessageBlock, { kind: "progress" | "steps" }>;
-  live: boolean;
-}) {
-  const { t } = useI18n();
-  const [expanded, setExpanded] = useState(false);
-  const provider =
-    block.kind === "progress" ? /^Using\s+([^:]+)/i.exec(block.text)?.[1] : undefined;
-  const tools =
-    block.kind === "steps"
-      ? block.steps.map((step) => `${step.label}${step.count > 1 ? ` ×${step.count}` : ""}`)
-      : [
-          ...(provider && block.text.includes(":")
-            ? [block.text.split(":").slice(1).join(":").trim()]
-            : []),
-          ...(block.pendingToolNames ?? []),
-        ].filter(Boolean);
-  const title = live ? t("Working…") : t("Done");
-
-  return (
-    <View
-      style={{
-        alignSelf: "flex-start",
-        maxWidth: "100%",
-      }}
-    >
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={
-          expanded ? t("Hide {label}", { label: title }) : t("Show {label}", { label: title })
-        }
-        accessibilityState={{ expanded }}
-        hitSlop={10}
-        onPress={() => setExpanded((current) => !current)}
-        style={{
-          flexDirection: "row",
-          alignItems: "center",
-          gap: 5,
-          paddingVertical: 2,
-        }}
-      >
-        <Text style={{ color: live ? "#C9C9CE" : "#85858A", fontSize: 12.5, fontWeight: "600" }}>
-          {title}
-        </Text>
-        <Text style={{ color: "#6C6C70", fontSize: 12 }}>{expanded ? "⌃" : "⌄"}</Text>
-      </Pressable>
-      {expanded ? (
-        <View
-          style={{
-            marginTop: 4,
-            gap: 3,
-          }}
-        >
-          {tools.map((tool) => (
-            <Text
-              key={tool}
-              style={{
-                color: "#77777D",
-                fontSize: 11.5,
-                fontFamily: "monospace",
-              }}
-            >
-              {tool.split("__").at(-1)?.replaceAll("_", " ")}
-            </Text>
-          ))}
-        </View>
-      ) : null}
-    </View>
   );
 }
 

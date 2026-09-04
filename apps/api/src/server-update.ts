@@ -17,6 +17,7 @@ import {
   resolveInstallKind,
   restartSupervisorAdvice,
 } from "@rakazo/core";
+import { outgoingCorrelationHeaders } from "@rakazo/logging";
 
 const PRODUCT_VERSION = "0.1.0";
 const STATE_TIMEOUT_MS = 15_000;
@@ -64,13 +65,14 @@ async function probeSidecar(config: UpdaterProxyConfig, fetchImpl: typeof fetch)
   try {
     const response = await fetchImpl(new URL("/health", ensureTrailingSlash(config.url)), {
       method: "GET",
+      headers: outgoingCorrelationHeaders(),
       signal: AbortSignal.timeout(5_000),
     });
     if (!response.ok) return false;
     // Confirm the bearer works: /health is open, so a wrong token would still look "up".
     const state = await fetchImpl(new URL("/state", ensureTrailingSlash(config.url)), {
       method: "GET",
-      headers: { authorization: `Bearer ${config.token}` },
+      headers: { authorization: `Bearer ${config.token}`, ...outgoingCorrelationHeaders() },
       signal: AbortSignal.timeout(5_000),
     });
     return state.ok;
@@ -317,6 +319,7 @@ async function sidecarJson<T>(
       method,
       headers: {
         authorization: `Bearer ${config.token}`,
+        ...outgoingCorrelationHeaders(),
         ...(body === undefined ? {} : { "content-type": "application/json" }),
       },
       body: body === undefined ? undefined : JSON.stringify(body),

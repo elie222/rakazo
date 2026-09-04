@@ -268,7 +268,7 @@ describe("BoxSandboxProvider", () => {
     ).toBe(true);
 
     await expect(provider.observe(computer, { ...context, botId: "bot-b" })).rejects.toThrow(
-      /multiple screens/i,
+      /temporarily busy/i,
     );
     expect(provider.describe().capabilities.multiScreen).toBe(false);
   });

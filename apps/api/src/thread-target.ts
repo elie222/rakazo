@@ -20,6 +20,7 @@ import {
   createGroupRepos,
   createRepos,
   createThreadMessageInTransaction,
+  expireComputerExecutionLeases,
   IsolationError,
   lockOwnedGroup,
   type Prisma,
@@ -27,6 +28,7 @@ import {
   type ThreadEvents,
   touchGroupUpdatedAt,
 } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
 import {
   buildSendPrompt,
   buildUserMessageBlocks,
@@ -122,7 +124,7 @@ async function enqueueRunsNeedingContinue(
       .map((run) =>
         jobs.enqueue(runContinueJob(run.id)).catch((error) => {
           // The queued run is durable; the reconciler repairs a missed immediate wake.
-          console.error("thread send enqueue", error);
+          getLogger().error("thread send enqueue", error);
         }),
       ),
   );
@@ -179,7 +181,7 @@ async function replayExistingSend(
   if (latestEvent) {
     await deps.events.notify(threadId, latestEvent.seq).catch((error) => {
       // Subscribers catch up from the durable event cursor after a missed realtime wake.
-      console.error("thread send realtime notification", error);
+      getLogger().error("thread send realtime notification", error);
     });
   }
   return sendResult(message, runs);
@@ -795,7 +797,7 @@ export async function sendThreadMessage(
   if ("replay" in committed) return committed.replay;
   await deps.events.notify(target.threadId, committed.eventSeq).catch((error) => {
     // Subscribers catch up from the durable event cursor after a missed realtime wake.
-    console.error("thread send realtime notification", error);
+    getLogger().error("thread send realtime notification", error);
   });
   await enqueueRunsNeedingContinue(deps.jobs, committed.runs);
   return sendResult(committed.message, committed.runs);
@@ -939,7 +941,7 @@ export async function stopThreadRuns(
       await deps.sandbox.releaseScreen?.(ref, context).catch(() => undefined);
     }),
   );
-  await deps.prisma.computerExecutionLease.deleteMany({ where: { runId: { in: runIds } } });
+  await expireComputerExecutionLeases(deps.prisma, { runId: { in: runIds } });
   await deps.prisma.computer.updateMany({
     where: { executionRunId: { in: runIds } },
     data: {

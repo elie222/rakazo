@@ -41,6 +41,7 @@ import {
   isActive,
   isPeerReceiptBlocks,
   isRunTerminalEvent,
+  isToolActivityBlock,
   latestAnswerableAskMessageId,
   mentionChipKey,
   reorderBotTo,
@@ -66,7 +67,6 @@ import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-  Separator,
 } from "@rakazo/ui-web";
 import {
   ArrowDown,
@@ -84,6 +84,7 @@ import {
   Menu,
   Mic,
   Monitor,
+  PanelLeftClose,
   Paperclip,
   Phone,
   Plus,
@@ -120,7 +121,6 @@ import {
   computersAreUnavailable,
 } from "../components/ComputersUnavailableHint";
 import { MessageHoverMetadata } from "../components/MessageHoverMetadata";
-import { ToolActivityDisclosure, ToolSteps } from "../components/ToolActivityDisclosure";
 import { SkillDraftCard } from "../components/teach/SkillDraftCard";
 import { TeachCaptureOverlay } from "../components/teach/TeachCaptureOverlay";
 import { TeachComputerOverlayControl } from "../components/teach/TeachComputerOverlay";
@@ -130,12 +130,18 @@ import type { ArtifactTarget } from "../lib/artifact-open";
 import { authClient } from "../lib/auth";
 import { takeInitialBootstrap } from "../lib/bootstrap";
 import {
+  BOTS_SIDEBAR_EDGE_DRAG_PX,
+  readBotsSidebarCollapsed,
+  writeBotsSidebarCollapsed,
+} from "../lib/bots-sidebar-pref";
+import {
   deliverBrowserNotification as deliverNativeBrowserNotification,
   requestBrowserNotificationPermission,
   shouldNotifyBrowser,
 } from "../lib/browser-notifications";
 import { loadComputerScreen } from "../lib/computer-screen";
 import { dictation } from "../lib/dictation";
+import { scheduleFocusPrompt } from "../lib/focus-prompt";
 import { localTimezone } from "../lib/local-timezone";
 import { copyableMessageText } from "../lib/message-text";
 import { providerLabel } from "../lib/messaging";
@@ -145,6 +151,7 @@ import { clearSpaceSelection, rpc, selectedSpaceId, selectSpace } from "../lib/r
 import { readSeenRunErrorIds, rememberSeenRunErrorId } from "../lib/run-error-storage";
 import {
   activeThreadRuns,
+  applyThreadSendReceipt,
   clearActiveThreadRuns,
   computerPanelAutoBoot,
   computerPanelAutoUsesBoot,
@@ -180,6 +187,8 @@ import {
 } from "./RoutineEditor";
 import { SpaceSearchResults } from "./SpaceSearch";
 import { BotSettings, CreateBotForm } from "./shell/bot-panel";
+import { BotCreatePicker } from "./shell/bot-picker";
+import { CommandPalette, isCommandPaletteHotkey } from "./shell/command-palette";
 import {
   ClearConversationDialog,
   DeleteBotDialog,
@@ -311,6 +320,9 @@ export function ShellPage() {
   useEffect(() => {
     setCollapsedSidebarSections(readCollapsedSidebarSections(userId));
   }, [userId]);
+  useEffect(() => {
+    setBotsSidebarCollapsed(readBotsSidebarCollapsed(userId));
+  }, [userId]);
   const [query, setQuery] = useState("");
   const [searchHits, setSearchHits] = useState<SearchHit[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
@@ -350,6 +362,9 @@ export function ShellPage() {
   const botsRefreshApplied = useRef(0);
   const archivedBotsRefreshEpoch = useRef(0);
   const botsRefreshInFlight = useRef(0);
+  // A very fast run can finish over SSE while its threads.send response is still
+  // returning. Do not let that late receipt resurrect terminal work as queued.
+  const terminalRunReceipts = useRef(new Set<string>());
   // Last-known computer/screen per bot, so switching back to an already-seen
   // bot paints its computer pane instantly instead of blanking it while the
   // thread + screen RPCs round-trip again (see refreshThread / refreshComputerScreen).
@@ -413,7 +428,15 @@ export function ShellPage() {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [draggedBotId, setDraggedBotId] = useState<string | null>(null);
   const [createMenuOpen, setCreateMenuOpen] = useState(false);
+  const [botsSidebarCollapsed, setBotsSidebarCollapsed] = useState(false);
+  const focusPromptAbortRef = useRef<AbortController | null>(null);
+  const focusPromptBotIdRef = useRef<string | null>(null);
+  const creatingBotRef = useRef(false);
+  const botsSidebarEdgeDragRef = useRef<{ startX: number; mode: "expand" | "collapse" } | null>(
+    null,
+  );
   const [newSpaceOpen, setNewSpaceOpen] = useState(false);
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
 
   useEffect(() => {
     const desktop = window.matchMedia("(min-width: 768px)");
@@ -466,6 +489,9 @@ export function ShellPage() {
   const [screenUrl, setScreenUrl] = useState<string | null>(null);
   const [computerOpen, setComputerOpen] = useState(false);
   const [computerError, setComputerError] = useState<string | null>(null);
+  // Screen-load failures can sit beside a still-valid embed URL; boot and
+  // takeover failures must stay visible even when a URL remains.
+  const [computerErrorFromScreen, setComputerErrorFromScreen] = useState(false);
   useEffect(() => {
     if (!session.data?.user) return;
     let cancelled = false;
@@ -816,6 +842,7 @@ export function ShellPage() {
       commit: (screen) => {
         setScreenUrl(screen.url);
         setComputerError(screen.error);
+        setComputerErrorFromScreen(Boolean(screen.error));
         cacheComputerFor(id, { screenUrl: screen.url });
       },
       fallbackError: t`Could not connect to the computer screen`,
@@ -1046,6 +1073,7 @@ export function ShellPage() {
     }
     screenRequest.current += 1;
     setComputerError(null);
+    setComputerErrorFromScreen(false);
     const cached = computerCacheRef.current.get(active.id);
     if (cached) {
       // Paint the last-known computer instantly; refreshThread/refreshComputerScreen
@@ -1132,6 +1160,13 @@ export function ShellPage() {
             if (abort.signal.aborted) break;
             cursor = Math.max(cursor, event.seq);
             retryMs = 250;
+            if (isRunTerminalEvent(event) && event.runId) {
+              terminalRunReceipts.current.add(event.runId);
+              if (terminalRunReceipts.current.size > 100) {
+                const oldest = terminalRunReceipts.current.values().next().value;
+                if (oldest !== undefined) terminalRunReceipts.current.delete(oldest);
+              }
+            }
             if (snapshotReady && snapshotRef.current?.threadId === event.threadId) {
               applyThreadEvent(event, commitSnapshot, commitComputer, snapshotRef, computerRef);
             } else {
@@ -1941,6 +1976,12 @@ export function ShellPage() {
       const trimmed = plan.trimmed;
       setSending(true);
       setSendError(null);
+      const dropDelayedSetup = () => {
+        // Only after successful engagement so a failed upload/send keeps the setup card.
+        if (initialBotTarget && focusPromptBotIdRef.current === initialBotTarget) {
+          cancelFocusPrompt();
+        }
+      };
       try {
         if (plan.shouldRunRoutines) {
           const sendNonce = newClientNonce();
@@ -1954,6 +1995,7 @@ export function ShellPage() {
           );
         }
         if (!plan.shouldSend) {
+          dropDelayedSetup();
           setReplyTarget(null);
           revokePendingAttachmentPreviews(attachments);
           setPendingAttachments((current) =>
@@ -1996,7 +2038,7 @@ export function ShellPage() {
             replyToMessageId: reroutedToGroup ? undefined : activeReplyTarget?.id,
           });
         } else if (botTarget) {
-          await rpc.threads.send({
+          const sent = await rpc.threads.send({
             botId: botTarget,
             clientNonce,
             text: trimmed || undefined,
@@ -2004,7 +2046,21 @@ export function ShellPage() {
             artifactIds: artifactIds.length ? artifactIds : undefined,
             replyToMessageId: activeReplyTarget?.id,
           });
+          if (activeBotId.current === botTarget) {
+            updateSnapshot((current) =>
+              applyThreadSendReceipt(
+                current,
+                {
+                  botId: botTarget,
+                  runId: sent.runId,
+                  taskId: sent.taskId,
+                },
+                terminalRunReceipts.current,
+              ),
+            );
+          }
         }
+        dropDelayedSetup();
         setReplyTarget(null);
         revokePendingAttachmentPreviews(attachments);
         setPendingAttachments((current) =>
@@ -2167,12 +2223,24 @@ export function ShellPage() {
     await refreshBots().catch(() => undefined);
   }
 
+  function cancelFocusPrompt() {
+    focusPromptAbortRef.current?.abort();
+    focusPromptAbortRef.current = null;
+    focusPromptBotIdRef.current = null;
+  }
+
+  function setBotsSidebarCollapsedPref(collapsed: boolean) {
+    setBotsSidebarCollapsed(collapsed);
+    writeBotsSidebarCollapsed(userId, collapsed);
+  }
+
   async function createBot(input: {
     name: string;
     title: string;
     description: string;
     computerMode: ComputerMode;
   }) {
+    const isFirstBot = botsRef.current.length === 0;
     const bot = await rpc.bots.create({
       ...normalizeCreateBotProfile(input),
       notifyOnFinish: true,
@@ -2183,7 +2251,56 @@ export function ShellPage() {
     );
     navigate(`/app/${bot.id}`);
     setPanel(null);
+    // Register cancellation before awaiting start so leaving the bot during
+    // startup cannot miss the abort and still schedule a late focus card.
+    cancelFocusPrompt();
+    const controller = new AbortController();
+    focusPromptAbortRef.current = controller;
+    focusPromptBotIdRef.current = bot.id;
+    const started = await rpc.onboarding
+      .start({ botId: bot.id })
+      .then(() => true)
+      .catch(() => false);
+    if (!started || controller.signal.aborted || focusPromptBotIdRef.current !== bot.id) {
+      if (focusPromptAbortRef.current === controller) {
+        focusPromptAbortRef.current = null;
+        focusPromptBotIdRef.current = null;
+      }
+      await refreshBots().catch(() => undefined);
+      return;
+    }
+    void scheduleFocusPrompt({
+      immediate: isFirstBot,
+      signal: controller.signal,
+      prompt: async () => {
+        if (focusPromptBotIdRef.current !== bot.id || activeBotId.current !== bot.id) return;
+        await rpc.onboarding.promptFocus({ botId: bot.id }).catch(() => undefined);
+      },
+    }).finally(() => {
+      if (focusPromptAbortRef.current === controller) {
+        focusPromptAbortRef.current = null;
+        focusPromptBotIdRef.current = null;
+      }
+    });
     await refreshBots().catch(() => undefined);
+  }
+
+  async function createBotQuick() {
+    if (creatingBotRef.current) return;
+    creatingBotRef.current = true;
+    try {
+      await createBot({
+        name: "New Bot",
+        title: "",
+        description: "",
+        computerMode: "team",
+      });
+    } catch (error) {
+      // Keep the current chat open when create fails, but surface the error.
+      setSendError(error instanceof Error ? error.message : t`Could not create bot`);
+    } finally {
+      creatingBotRef.current = false;
+    }
   }
 
   async function bootComputer({
@@ -2199,12 +2316,14 @@ export function ShellPage() {
     const needsBoot = force || computer?.state !== "running" || !screenUrl;
     if (overlay && needsBoot) setBooting(true);
     setComputerError(null);
+    setComputerErrorFromScreen(false);
     try {
       if (needsBoot) await rpc.computer.boot({ botId: active.id });
       if (takeControl) await rpc.computer.takeover({ botId: active.id });
       await refreshThread(active.id);
     } catch (error) {
       setComputerError(error instanceof Error ? error.message : t`Could not take control`);
+      setComputerErrorFromScreen(false);
       throw error;
     } finally {
       setBooting(false);
@@ -2249,10 +2368,22 @@ export function ShellPage() {
   useEffect(() => {
     setComputerOpen(false);
     setComputerError(null);
+    setComputerErrorFromScreen(false);
   }, [active?.id]);
 
   useEffect(() => {
-    if (!computer?.busyBotName) setComputerError(null);
+    if (focusPromptBotIdRef.current && focusPromptBotIdRef.current !== active?.id) {
+      cancelFocusPrompt();
+    }
+  }, [active?.id]);
+
+  useEffect(() => () => cancelFocusPrompt(), []);
+
+  useEffect(() => {
+    if (!computer?.busyBotName) {
+      setComputerError(null);
+      setComputerErrorFromScreen(false);
+    }
   }, [computer?.busyBotName]);
 
   useEffect(() => {
@@ -2291,6 +2422,16 @@ export function ShellPage() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [computerOpen]);
+
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      if (!isCommandPaletteHotkey(event)) return;
+      event.preventDefault();
+      setCommandPaletteOpen((open) => !open);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   useEffect(() => {
     if ((panel !== "computer" && !computerOpen) || !active || computer?.state !== "running") return;
@@ -2337,18 +2478,20 @@ export function ShellPage() {
 
   const embeddedScreenUrl = embeddableScreenUrl(screenUrl);
   const hasControl = userHoldsComputerControl(computer, active?.id);
-  const computerScreenError = computerError ? (
-    <div role="alert" className="flex flex-col items-center gap-3 px-6 text-center text-sm">
-      <p className="text-destructive">{computerError}</p>
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={() => active && void refreshComputerScreen(active.id)}
-      >
-        <Trans>Retry screen</Trans>
-      </Button>
-    </div>
-  ) : null;
+  const hideScreenLoadError = computerErrorFromScreen && Boolean(embeddedScreenUrl);
+  const computerScreenError =
+    computerError && !hideScreenLoadError ? (
+      <div role="alert" className="flex flex-col items-center gap-3 px-6 text-center text-sm">
+        <p className="text-destructive">{computerError}</p>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => active && void refreshComputerScreen(active.id)}
+        >
+          <Trans>Retry screen</Trans>
+        </Button>
+      </div>
+    ) : null;
 
   const userName = session.data?.user.name ?? t`You`;
   const initials = userName
@@ -2376,8 +2519,15 @@ export function ShellPage() {
         />
       ) : null}
       <aside
-        className={`absolute inset-y-0 start-0 z-40 flex w-[calc(100%-48px)] max-w-[316px] shrink-0 flex-col border-e border-sidebar-border bg-sidebar transition-transform md:static md:z-auto md:w-[316px] md:translate-x-0 ${
+        data-testid="bots-sidebar"
+        data-collapsed={botsSidebarCollapsed ? "true" : "false"}
+        inert={botsSidebarCollapsed && !mobileSidebarOpen ? true : undefined}
+        className={`absolute inset-y-0 start-0 z-40 flex w-[calc(100%-48px)] max-w-[316px] shrink-0 flex-col border-e border-sidebar-border bg-sidebar transition-[transform,width,opacity] md:static md:z-auto md:translate-x-0 ${
           mobileSidebarOpen ? "translate-x-0" : "-translate-x-full rtl:translate-x-full"
+        } ${
+          botsSidebarCollapsed
+            ? "md:w-0 md:max-w-0 md:overflow-hidden md:border-e-0 md:opacity-0 md:pointer-events-none"
+            : "md:w-[316px]"
         }`}
       >
         <div className="app-drag flex items-center justify-between px-[18px] pb-3 pt-4">
@@ -2403,10 +2553,21 @@ export function ShellPage() {
                 aria-hidden="true"
               />
             </button>
+            <button
+              type="button"
+              className="app-no-drag hidden h-7 w-7 items-center justify-center rounded-full text-muted-foreground/70 hover:text-foreground/75 md:inline-flex"
+              aria-label={t`Minimize bots`}
+              title={t`Minimize bots`}
+              data-testid="minimize-bots-sidebar"
+              onClick={() => setBotsSidebarCollapsedPref(true)}
+            >
+              <PanelLeftClose size={15} strokeWidth={1.8} aria-hidden="true" />
+            </button>
             <Popover open={createMenuOpen} onOpenChange={setCreateMenuOpen}>
               <PopoverTrigger
                 className="app-no-drag text-[21px] text-muted-foreground/70 hover:text-foreground/75"
                 title={t`Create`}
+                data-testid="create-menu-trigger"
               >
                 +
               </PopoverTrigger>
@@ -2414,40 +2575,28 @@ export function ShellPage() {
               {createMenuOpen ? (
                 <PopoverContent
                   align="end"
-                  className="app-no-drag w-auto min-w-[160px] gap-0 p-1 data-closed:animate-none"
+                  className="app-no-drag w-auto gap-0 overflow-hidden p-0 data-closed:animate-none"
                 >
-                  <Button
-                    variant="ghost"
-                    className="w-full justify-start font-normal"
-                    onClick={() => {
+                  <BotCreatePicker
+                    bots={bots}
+                    onCreateBot={() => {
                       setCreateMenuOpen(false);
-                      setPanel("create");
+                      void createBotQuick();
                     }}
-                  >
-                    <Trans>New bot</Trans>
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    className="w-full justify-start font-normal"
-                    onClick={() => {
+                    onOpenBot={(id) => {
+                      setCreateMenuOpen(false);
+                      setMobileSidebarOpen(false);
+                      navigate(`/app/${id}`);
+                    }}
+                    onCreateGroup={() => {
                       setCreateMenuOpen(false);
                       setPanel("create-group");
                     }}
-                  >
-                    <Trans>New group</Trans>
-                  </Button>
-                  <Separator className="my-1" />
-                  <Button
-                    variant="ghost"
-                    className="w-full justify-start font-normal"
-                    onClick={() => {
+                    onCreateSpace={() => {
                       setCreateMenuOpen(false);
                       setNewSpaceOpen(true);
                     }}
-                  >
-                    <Lock size={14} strokeWidth={1.8} aria-hidden="true" />
-                    <Trans>New space</Trans>
-                  </Button>
+                  />
                 </PopoverContent>
               ) : null}
             </Popover>
@@ -2890,6 +3039,49 @@ export function ShellPage() {
         </Popover>
       </aside>
 
+      <button
+        type="button"
+        data-testid="bots-sidebar-edge"
+        aria-label={botsSidebarCollapsed ? t`Show bots` : t`Hide bots`}
+        aria-pressed={!botsSidebarCollapsed}
+        className={`absolute inset-y-0 z-50 hidden w-2 cursor-ew-resize touch-none border-0 bg-transparent p-0 md:block ${
+          botsSidebarCollapsed ? "start-0" : "start-[308px]"
+        }`}
+        onPointerDown={(event) => {
+          event.currentTarget.setPointerCapture(event.pointerId);
+          botsSidebarEdgeDragRef.current = {
+            startX: event.clientX,
+            mode: botsSidebarCollapsed ? "expand" : "collapse",
+          };
+        }}
+        onPointerMove={(event) => {
+          const drag = botsSidebarEdgeDragRef.current;
+          if (!drag) return;
+          const rtl =
+            typeof document !== "undefined" &&
+            document.documentElement.getAttribute("dir") === "rtl";
+          const delta = rtl ? drag.startX - event.clientX : event.clientX - drag.startX;
+          if (drag.mode === "expand" && delta >= BOTS_SIDEBAR_EDGE_DRAG_PX) {
+            botsSidebarEdgeDragRef.current = null;
+            setBotsSidebarCollapsedPref(false);
+          } else if (drag.mode === "collapse" && delta <= -BOTS_SIDEBAR_EDGE_DRAG_PX) {
+            botsSidebarEdgeDragRef.current = null;
+            setBotsSidebarCollapsedPref(true);
+          }
+        }}
+        onPointerUp={(event) => {
+          const drag = botsSidebarEdgeDragRef.current;
+          botsSidebarEdgeDragRef.current = null;
+          if (!drag) return;
+          if (Math.abs(event.clientX - drag.startX) < BOTS_SIDEBAR_EDGE_DRAG_PX) {
+            setBotsSidebarCollapsedPref(!botsSidebarCollapsed);
+          }
+        }}
+        onPointerCancel={() => {
+          botsSidebarEdgeDragRef.current = null;
+        }}
+      />
+
       <main
         aria-hidden={mobileSidebarOpen || undefined}
         inert={mobileSidebarOpen}
@@ -3002,7 +3194,7 @@ export function ShellPage() {
         />
         {recordingSkill ? (
           <div className="px-6 pb-2 text-center text-[13px] text-destructive">
-            <Trans>Teaching in progress — stop teaching before sending a new message.</Trans>
+            <Trans>Teaching in progress. Stop teaching before sending a new message.</Trans>
           </div>
         ) : null}
         <Composer
@@ -3139,7 +3331,7 @@ export function ShellPage() {
                         your home folder.
                       </Trans>
                     </div>
-                  ) : computer?.state === "running" && embeddedScreenUrl ? (
+                  ) : computer?.state === "running" && embeddedScreenUrl && !computerScreenError ? (
                     <iframe
                       title={t`Bot screen preview`}
                       src={embeddedScreenUrl}
@@ -3162,7 +3354,7 @@ export function ShellPage() {
                         ))}
                     </div>
                   )}
-                  {!computerError ? (
+                  {!computerScreenError ? (
                     <button
                       type="button"
                       data-testid="computer-preview-open"
@@ -3571,6 +3763,16 @@ export function ShellPage() {
           />
         ) : null}
 
+        <CommandPalette
+          open={commandPaletteOpen}
+          onOpenChange={setCommandPaletteOpen}
+          bots={bots}
+          onSelectBot={(id) => {
+            setMobileSidebarOpen(false);
+            navigate(`/app/${id}`);
+          }}
+        />
+
         {newSpaceOpen ? (
           <NewSpaceDialog
             onCancel={() => setNewSpaceOpen(false)}
@@ -3830,7 +4032,7 @@ export function ShellPage() {
                   the shell; working directories under your home folder are allowed.
                 </Trans>
               </div>
-            ) : computer?.state === "running" && embeddedScreenUrl ? (
+            ) : computer?.state === "running" && embeddedScreenUrl && !computerScreenError ? (
               <>
                 <iframe
                   title={t`Bot screen`}
@@ -4054,6 +4256,7 @@ const Transcript = memo(function Transcript({
           </button>
         ) : null}
         {messages.map((message) => {
+          if (!message.blocks.some((block) => !isToolActivityBlock(block))) return null;
           const peerReceipt = isPeerReceiptBlocks(message.blocks);
           return (
             <div
@@ -4111,8 +4314,10 @@ const Transcript = memo(function Transcript({
         !messages.some(
           (message) =>
             message.id.startsWith("progress:") &&
-            message.blocks[0]?.kind === "progress" &&
-            message.blocks[0].text,
+            message.blocks.some(
+              (block) =>
+                block.kind === "progress" && !isToolActivityBlock(block) && Boolean(block.text),
+            ),
         ) ? (
           <ActiveBotGlyph bots={workingBots} label={workingLabel} />
         ) : null}
@@ -4755,7 +4960,7 @@ const Composer = memo(function Composer({
             autoComplete="off"
             dir="auto"
             rows={1}
-            className="max-h-32 min-h-[24px] min-w-[8rem] flex-1 resize-none overflow-y-auto bg-transparent py-0.5 text-[15.5px] leading-6 text-foreground outline-none placeholder:text-foreground/90 disabled:opacity-40"
+            className="max-h-32 min-h-[24px] min-w-[8rem] flex-1 resize-none overflow-y-auto bg-transparent py-0.5 text-[15.5px] leading-6 text-foreground outline-none placeholder:text-muted-foreground disabled:opacity-40"
           />
         </div>
         {running ? (
@@ -5019,6 +5224,7 @@ const MessageView = memo(function MessageView({
       (block) => block.kind === "text" || block.kind === "progress" || block.kind === "steps",
     );
   const isLive = message.id.startsWith("progress:");
+  const visibleNarrationBlocks = message.blocks.filter((block) => !isToolActivityBlock(block));
   const parentJumpId = replyPreview?.id ?? replyToMessageId;
   const messageContext = (
     <>
@@ -5042,6 +5248,7 @@ const MessageView = memo(function MessageView({
     </>
   );
   if (isNarration) {
+    if (visibleNarrationBlocks.length === 0) return null;
     return (
       <>
         {messageContext}
@@ -5050,22 +5257,7 @@ const MessageView = memo(function MessageView({
             className="max-w-[74%] space-y-2.5 rounded-[20px] bg-muted px-[18px] py-3 text-[15.5px] leading-[1.5] text-foreground/90"
             dir="auto"
           >
-            {message.blocks.map((block, i) => {
-              if (block.kind === "steps") {
-                const isCurrentBlock = isLive && i === message.blocks.length - 1;
-                return (
-                  <ToolActivityDisclosure
-                    key={i}
-                    live={isLive}
-                    label={isLive ? t`Working…` : t`Done`}
-                  >
-                    <ToolSteps
-                      steps={block.steps}
-                      currentIndex={isCurrentBlock ? block.steps.length - 1 : undefined}
-                    />
-                  </ToolActivityDisclosure>
-                );
-              }
+            {visibleNarrationBlocks.map((block, i) => {
               if (block.kind === "text" || block.kind === "progress") {
                 return (
                   <div key={i}>
@@ -5094,6 +5286,7 @@ const MessageView = memo(function MessageView({
     <>
       {messageContext}
       {message.blocks.map((block, i) => {
+        if (isToolActivityBlock(block)) return null;
         if (block.kind === "handoff") {
           const from = memberName?.(block.fromBotId) ?? t`bot`;
           const to = memberName?.(block.toBotId) ?? t`bot`;
@@ -5156,23 +5349,6 @@ const MessageView = memo(function MessageView({
                 dir="auto"
               >
                 <ChatMarkdown streaming>{block.text}</ChatMarkdown>
-              </div>
-            </div>
-          );
-        }
-        if (block.kind === "steps") {
-          return (
-            <div key={i} className="flex justify-start">
-              <div
-                className="max-w-[74%] space-y-1.5 rounded-[20px] bg-muted px-[18px] py-3"
-                dir="ltr"
-              >
-                <ToolActivityDisclosure live={isLive} label={isLive ? t`Working…` : t`Done`}>
-                  <ToolSteps
-                    steps={block.steps}
-                    currentIndex={isLive ? block.steps.length - 1 : undefined}
-                  />
-                </ToolActivityDisclosure>
               </div>
             </div>
           );

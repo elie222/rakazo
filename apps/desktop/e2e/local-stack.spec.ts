@@ -6,6 +6,8 @@ import { type ElectronApplication, _electron as electron, expect, test } from "@
 
 const APP_MARKER = "Local Rakazo stack ready";
 const IMAGE_TAG = "v9.9.9";
+const STACK_PROBE_PATH = "/.well-known/rakazo-desktop-stack";
+const STACK_TOKEN_HEADER = "x-rakazo-desktop-stack-token";
 const COMPOSE_DIR = path.resolve(import.meta.dirname, "..", "..", "..", "infra", "compose");
 
 type FakeDockerMode = "ok" | "daemon-down" | "pull-fails";
@@ -19,7 +21,19 @@ let app: ElectronApplication | undefined;
 test.skip(process.platform === "win32", "fake docker needs a POSIX shell");
 
 test.beforeAll(async () => {
-  server = createServer((request, response) => {
+  server = createServer(async (request, response) => {
+    if (request.url === STACK_PROBE_PATH && request.method === "GET") {
+      const expected = await readFile(path.join(userData, "stack", ".desktop-stack-token"), "utf8")
+        .then((value) => value.trim())
+        .catch(() => null);
+      if (expected === null || request.headers[STACK_TOKEN_HEADER] !== expected) {
+        response.writeHead(404).end("Not found");
+        return;
+      }
+      response.writeHead(200, { "content-type": "application/json; charset=utf-8" });
+      response.end(JSON.stringify({ ok: true, imageTag: IMAGE_TAG }));
+      return;
+    }
     if (request.url === "/rpc/health" && request.method === "POST") {
       response.writeHead(200, { "content-type": "application/json; charset=utf-8" });
       response.end(JSON.stringify({ json: { ok: true, version: "0.1.0" } }));
@@ -149,7 +163,10 @@ test("This computer installs and starts the stack, then opens the app", async ()
 
   const stackDir = path.join(userData, "stack");
   const envFile = path.join(stackDir, ".env");
+  const tokenFile = path.join(stackDir, ".desktop-stack-token");
   expect((await stat(envFile)).mode & 0o777).toBe(0o600);
+  expect((await stat(tokenFile)).mode & 0o777).toBe(0o600);
+  expect(await readFile(tokenFile, "utf8")).toMatch(/^[0-9a-f]{64}\n$/);
   const env = await readFile(envFile, "utf8");
   expect(env).toMatch(/^POSTGRES_PASSWORD=[0-9a-f]{32}$/m);
   expect(env).toMatch(/^BETTER_AUTH_SECRET=[0-9a-f]{64}$/m);
@@ -279,6 +296,69 @@ test("a saved local stack that is down is started again without asking", async (
   await expect(appWindow.getByText(APP_MARKER)).toBeVisible();
   await expect.poll(savedSetup).toEqual({ mode: "new", serverUrl });
   expect((await readLog()).some((line) => line.includes(" pull"))).toBe(true);
+});
+
+test("a saved local stack is reused only after its private identity matches", async () => {
+  const stackDir = path.join(userData, "stack");
+  await mkdir(stackDir, { recursive: true });
+  await writeFile(path.join(stackDir, ".desktop-stack-token"), `${"ab".repeat(32)}\n`, {
+    encoding: "utf8",
+    mode: 0o600,
+  });
+  await writeFile(
+    path.join(userData, "setup.json"),
+    `${JSON.stringify({ mode: "new", serverUrl }, null, 2)}\n`,
+    { encoding: "utf8", mode: 0o600 },
+  );
+
+  app = await launch("ok");
+  const appWindow = await app.firstWindow();
+  await expect(appWindow.getByText(APP_MARKER)).toBeVisible();
+  expect(await readLog()).toEqual([]);
+});
+
+test("a saved local target is the exact origin authenticated before reuse", async () => {
+  const uncheckedServer = createServer((request, response) => {
+    if (request.url === "/rpc/health" && request.method === "POST") {
+      response.writeHead(200, { "content-type": "application/json; charset=utf-8" });
+      response.end(JSON.stringify({ json: { ok: true, version: "0.1.0" } }));
+      return;
+    }
+    response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+    response.end("<!doctype html><html><body>Unchecked listener</body></html>");
+  });
+  await new Promise<void>((resolve) => uncheckedServer.listen(0, "127.0.0.1", resolve));
+  try {
+    const address = uncheckedServer.address();
+    if (address === null || typeof address === "string") {
+      throw new Error("unchecked server has no port");
+    }
+    const stackDir = path.join(userData, "stack");
+    await mkdir(stackDir, { recursive: true });
+    await writeFile(path.join(stackDir, ".desktop-stack-token"), `${"ab".repeat(32)}\n`, {
+      encoding: "utf8",
+      mode: 0o600,
+    });
+    await writeFile(
+      path.join(userData, "setup.json"),
+      `${JSON.stringify(
+        { mode: "new", serverUrl: `http://127.0.0.1:${address.port}` },
+        null,
+        2,
+      )}\n`,
+      { encoding: "utf8", mode: 0o600 },
+    );
+
+    app = await launch("ok");
+    const setup = await app.firstWindow();
+    await expect(setup.getByRole("radio", { name: /This computer/ })).toBeChecked();
+    await expect(setup.locator("#stack")).toBeVisible();
+    await expect(setup.getByText("Unchecked listener")).toHaveCount(0);
+  } finally {
+    await new Promise<void>((resolve, reject) => {
+      uncheckedServer.close((error) => (error ? reject(error) : resolve()));
+    });
+  }
 });
 
 test("an existing stack .env is never rewritten", async () => {

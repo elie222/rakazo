@@ -98,11 +98,12 @@ export function AskCard({
           <Trans>No longer active</Trans>
         </div>
       ) : askActions?.length ? (
-        <div className="mt-3.5 flex flex-wrap gap-2">
+        <div className="mt-3.5 space-y-1.5">
           {askActions.map((action) => (
             <Button
               key={action.id}
               variant={approvalActions && action.id === "allow" ? "default" : "outline"}
+              className="h-auto w-full justify-start whitespace-normal px-3.5 py-3 text-start font-normal"
               disabled={submitting}
               onClick={() => void submitAnswer(action.id)}
             >

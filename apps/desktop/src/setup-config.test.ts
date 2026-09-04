@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_LOCAL_WEB_URL,
+  desktopStackImageTag,
   isRakazoHealth,
+  managedLocalOpenUrl,
+  maySendDesktopStackToken,
   normalizeServerUrl,
   parseSetupInput,
   parseStoredSetup,
@@ -59,6 +62,33 @@ describe("server address normalization", () => {
 
   it("rejects embedded credentials rather than writing them to disk", () => {
     expect(normalizeServerUrl("https://user:secret@rakazo.example.com")).toBeNull();
+  });
+});
+
+describe("managed local open URL", () => {
+  it("returns the authenticated managed origin when the request matches", () => {
+    expect(managedLocalOpenUrl("http://127.0.0.1:5173/", DEFAULT_LOCAL_WEB_URL)).toBe(
+      "http://127.0.0.1:5173",
+    );
+    expect(managedLocalOpenUrl("http://127.0.0.1:5199", "http://127.0.0.1:5199/path?x=1")).toBe(
+      "http://127.0.0.1:5199",
+    );
+  });
+
+  it("rejects a different loopback origin even when both are local", () => {
+    expect(managedLocalOpenUrl("http://127.0.0.1:5199", DEFAULT_LOCAL_WEB_URL)).toBeNull();
+    expect(managedLocalOpenUrl("http://localhost:5173", DEFAULT_LOCAL_WEB_URL)).toBeNull();
+    expect(managedLocalOpenUrl("https://rakazo.example.com", DEFAULT_LOCAL_WEB_URL)).toBeNull();
+  });
+});
+
+describe("desktop stack token transport", () => {
+  it("allows HTTPS and loopback HTTP only", () => {
+    expect(maySendDesktopStackToken("https://rakazo.example.com")).toBe(true);
+    expect(maySendDesktopStackToken("http://127.0.0.1:5173")).toBe(true);
+    expect(maySendDesktopStackToken("http://localhost:5173")).toBe(true);
+    expect(maySendDesktopStackToken("http://10.0.0.8:5173")).toBe(false);
+    expect(maySendDesktopStackToken("http://rakazo.local:5173")).toBe(false);
   });
 });
 
@@ -174,6 +204,15 @@ describe("Rakazo health response", () => {
     expect(isRakazoHealth({ json: { ok: true, version: "0.1.0" } })).toBe(true);
     expect(isRakazoHealth({ json: { ok: true } })).toBe(false);
     expect(isRakazoHealth({ ok: true, version: "0.1.0" })).toBe(false);
+  });
+});
+
+describe("managed stack response", () => {
+  it("returns only a non-empty authenticated image tag", () => {
+    expect(desktopStackImageTag({ ok: true, imageTag: "v0.2.0" })).toBe("v0.2.0");
+    expect(desktopStackImageTag({ ok: true, imageTag: "" })).toBeNull();
+    expect(desktopStackImageTag({ ok: false, imageTag: "v0.2.0" })).toBeNull();
+    expect(desktopStackImageTag({ json: { ok: true, imageTag: "v0.2.0" } })).toBeNull();
   });
 });
 

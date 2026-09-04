@@ -1,4 +1,3 @@
-import console from "node:console";
 import { Composio } from "@composio/core";
 import type {
   AdapterContext,
@@ -9,6 +8,7 @@ import type {
   ConnectorTool,
   ManagedConnectorProvider,
 } from "@rakazo/adapter-kit";
+import { getLogger } from "@rakazo/logging";
 import {
   composioToolkitDirectory,
   mergeCatalogWithConnected,
@@ -418,7 +418,9 @@ export class ConnectorRegistry implements ConnectorProvider {
         try {
           return [connectorId, await provider.discoverTools(context)] as const;
         } catch (error) {
-          console.error("connector discovery failed", connectorId, sanitizeComposioError(error));
+          getLogger().error("connector discovery failed", sanitizeComposioError(error), {
+            "connector.id": connectorId,
+          });
           return [connectorId, []] as const;
         }
       }),

@@ -371,7 +371,12 @@ export interface ScriptedTurn {
 
 export type AgentRuntimeEvent =
   | { type: "text"; text: string }
-  | { type: "progress"; text: string }
+  | {
+      type: "progress";
+      text: string;
+      /** Provider-generated tool status rather than assistant-authored narration. */
+      activity?: true;
+    }
   | { type: "tool"; name: string; args: Record<string, unknown>; executionId: string }
   | {
       type: "ask";

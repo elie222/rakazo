@@ -1,23 +1,15 @@
 import { expect, test } from "@playwright/test";
 import {
-  activeBotId,
   captureScreenshot,
   completeOnboarding,
-  openNewBot,
+  createNamedBot,
+  openNewGroup,
   rpc,
   signup,
 } from "./helpers";
 
 async function createBot(page: import("@playwright/test").Page, name: string) {
-  const botList = page.locator("aside").first();
-  await openNewBot(page);
-  await expect(page.getByText("New bot", { exact: true })).toBeVisible();
-  await page.locator("label:has-text('Name') input").fill(name);
-  await page.getByRole("button", { name: "Create", exact: true }).click();
-  await expect(botList.getByRole("button", { name: new RegExp(`^${name}`) })).toBeVisible();
-  await expect(page.getByRole("combobox", { name: `Message ${name}` })).toBeVisible();
-  await page.waitForURL(/\/app\/[^/]+$/);
-  return activeBotId(page);
+  return createNamedBot(page, name);
 }
 
 test("create group from + and see two bots in one transcript", async ({ page }, testInfo) => {
@@ -30,8 +22,7 @@ test("create group from + and see two bots in one transcript", async ({ page }, 
   const researcherId = await createBot(page, "Researcher");
   const writerId = await createBot(page, "Research Writer");
 
-  await page.getByTitle("Create", { exact: true }).click();
-  await page.getByRole("button", { name: "New group" }).click();
+  await openNewGroup(page);
   await page.locator("label:has-text('Name') input").fill("Draft team");
   const panel = page.getByTestId("side-panel");
   await panel.getByRole("button", { name: "Researcher" }).click();

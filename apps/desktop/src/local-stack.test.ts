@@ -6,9 +6,11 @@ import type { RunDocker, RunDockerResult } from "./docker-cli.js";
 import {
   COMPOSE_WAIT_TIMEOUT_S,
   ensureStackEnv,
+  ensureStackToken,
   initialStackState,
   LocalStackController,
   type LocalStackDeps,
+  readStackToken,
   reduceStackState,
   renderStackEnv,
   resolveImageTag,
@@ -16,6 +18,7 @@ import {
   STACK_ENV_FILE,
   STACK_ENV_TEMPLATE,
   STACK_OUTPUT_LINES,
+  STACK_TOKEN_FILE,
   stackDir,
   stackFailureMessage,
   stackResourceDir,
@@ -108,6 +111,30 @@ describe("ensureStackEnv", () => {
     await writeFile(path.join(dir, STACK_ENV_FILE), "sentinel\n", "utf8");
     await expect(ensureStackEnv(dir, "POSTGRES_PASSWORD=\n", fakeHex)).resolves.toBe("kept");
     await expect(readFile(path.join(dir, STACK_ENV_FILE), "utf8")).resolves.toBe("sentinel\n");
+  });
+});
+
+describe("stack identity", () => {
+  let dir: string;
+  beforeEach(async () => {
+    dir = await mkdtemp(path.join(tmpdir(), "rakazo-stack-token-"));
+  });
+  afterEach(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("creates one private token and reuses it", async () => {
+    const token = await ensureStackToken(dir, fakeHex);
+    await expect(ensureStackToken(dir, () => "cd".repeat(32))).resolves.toBe(token);
+    await expect(readStackToken(dir)).resolves.toBe(token);
+    if (process.platform !== "win32") {
+      expect((await stat(path.join(dir, STACK_TOKEN_FILE))).mode & 0o777).toBe(0o600);
+    }
+  });
+
+  it("replaces an invalid legacy token", async () => {
+    await writeFile(path.join(dir, STACK_TOKEN_FILE), "not-a-token\n", "utf8");
+    await expect(ensureStackToken(dir, fakeHex)).resolves.toBe("ab".repeat(32));
   });
 });
 
@@ -237,13 +264,14 @@ describe("LocalStackController", () => {
 
   function controller(overrides: Partial<LocalStackDeps> = {}, script: Script = ok) {
     const run = fakeRun(calls, script);
-    const probe = overrides.probe ?? (async () => true);
+    const probe = overrides.probe ?? (async () => "v1.2.3");
     const deps: LocalStackDeps = {
       platform: "linux",
       env: { PATH: "/usr/bin", HOME: "/home/me", OPENROUTER_API_KEY: "sk-secret" },
       exists: (file) => file === "/usr/bin/docker",
       stackDir: path.join(root, "stack"),
       resourceDir: COMPOSE_DIR,
+      localWebUrl: "http://127.0.0.1:5173",
       imageTag: "v1.2.3",
       randomHex: fakeHex,
       sleep: async () => undefined,
@@ -254,9 +282,9 @@ describe("LocalStackController", () => {
         phases.push(stack.state().phase);
         return run(binary, args, options);
       },
-      probe: (signal) => {
+      probe: (url, signal, token) => {
         phases.push(stack.state().phase);
-        return probe(signal);
+        return probe(url, signal, token);
       },
     };
     const stack = new LocalStackController(deps);
@@ -301,6 +329,7 @@ describe("LocalStackController", () => {
       });
       expect(call.env).not.toHaveProperty("OPENROUTER_API_KEY");
     }
+    expect(calls.at(-1)?.env.RAKAZO_DESKTOP_STACK_TOKEN).toBe("ab".repeat(32));
 
     await expect(readFile(path.join(stackPath, STACK_COMPOSE_FILE), "utf8")).resolves.toBe(
       await readFile(path.join(COMPOSE_DIR, STACK_COMPOSE_FILE), "utf8"),
@@ -312,6 +341,38 @@ describe("LocalStackController", () => {
       expect((await stat(path.join(stackPath, STACK_ENV_FILE))).mode & 0o777).toBe(0o600);
       expect((await stat(stackPath)).mode & 0o777).toBe(0o700);
     }
+  });
+
+  it("reuses only the privately identified stack on the desired image", async () => {
+    const stackPath = path.join(root, "stack");
+    await mkdir(stackPath, { recursive: true });
+    const token = await ensureStackToken(stackPath, fakeHex);
+    const probedUrls: string[] = [];
+    const stack = controller({
+      probe: async (url, _signal, supplied) => {
+        probedUrls.push(url);
+        return supplied === token ? "v1.2.3" : null;
+      },
+    });
+
+    await expect(stack.matchesDesiredStack()).resolves.toBe(true);
+    expect(probedUrls).toEqual(["http://127.0.0.1:5173"]);
+    await expect(stack.matchesDesiredStack("http://127.0.0.1:5199")).resolves.toBe(true);
+    expect(probedUrls).toEqual(["http://127.0.0.1:5173", "http://127.0.0.1:5199"]);
+    expect(calls).toEqual([]);
+  });
+
+  it("rejects another listener and a managed stack from an older release", async () => {
+    const stackPath = path.join(root, "stack");
+    await mkdir(stackPath, { recursive: true });
+    await ensureStackToken(stackPath, fakeHex);
+
+    await expect(controller({ probe: async () => null }).matchesDesiredStack()).resolves.toBe(
+      false,
+    );
+    await expect(controller({ probe: async () => "v1.2.2" }).matchesDesiredStack()).resolves.toBe(
+      false,
+    );
   });
 
   it("uses a plain up -d for Compose plugins older than 2.17", async () => {
@@ -425,7 +486,7 @@ describe("LocalStackController", () => {
     const stack = controller({
       probe: async () => {
         probes += 1;
-        return false;
+        return null;
       },
     });
     const state = await stack.start();
@@ -529,18 +590,24 @@ describe("LocalStackController", () => {
       releaseStop = resolve;
     });
     let probes = 0;
+    let markProbeStarted: () => void = () => undefined;
+    const probeStarted = new Promise<void>((resolve) => {
+      markProbeStarted = resolve;
+    });
     const stack = controller(
       {
-        probe: (signal) => {
+        probe: (_url, signal) => {
           probes += 1;
-          if (probes > 1) return Promise.resolve(true);
-          return new Promise((resolve) => signal.addEventListener("abort", () => resolve(false)));
+          if (probes > 1) return Promise.resolve("v1.2.3");
+          markProbeStarted();
+          if (signal.aborted) return Promise.resolve(null);
+          return new Promise((resolve) => signal.addEventListener("abort", () => resolve(null)));
         },
       },
       (args) => (args[5] === "stop" ? { wait: stopGate } : ok(args)),
     );
     const first = stack.start();
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    await probeStarted;
     const stopping = stack.stop();
     const second = stack.start();
     expect(second).not.toBe(first);
@@ -578,8 +645,10 @@ describe("LocalStackController", () => {
 
   it("does not wait out a slow health probe when stopped", async () => {
     const stack = controller({
-      probe: (signal) =>
-        new Promise((resolve) => signal.addEventListener("abort", () => resolve(false))),
+      probe: (_url, signal) =>
+        signal.aborted
+          ? Promise.resolve(null)
+          : new Promise((resolve) => signal.addEventListener("abort", () => resolve(null))),
     });
     const started = stack.start();
     await new Promise((resolve) => setTimeout(resolve, 10));

@@ -34,11 +34,11 @@ export class ScriptedAgentRuntime implements AgentRuntime {
         throw new Error("Scripted run failure");
       }
       if (shouldHang(request.prompt)) {
-        yield { type: "progress", text: "still working…" };
+        yield { type: "progress", text: "still working…", activity: true };
         while (!controller.signal.aborted && !signal.aborted) {
           await abortableDelay(50, controller.signal);
           if (controller.signal.aborted || signal.aborted) break;
-          yield { type: "progress", text: "still working…" };
+          yield { type: "progress", text: "still working…", activity: true };
         }
         yield { type: "done", text: "stopped" };
         return;
@@ -53,7 +53,7 @@ export class ScriptedAgentRuntime implements AgentRuntime {
           return;
         }
         if (turn.assistant) {
-          yield { type: "progress", text: "working…" };
+          yield { type: "progress", text: "working…", activity: true };
           yield { type: "text", text: turn.assistant };
         }
         for (const call of turn.toolCalls ?? []) {

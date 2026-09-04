@@ -81,6 +81,11 @@ export interface DesktopReachability {
   error?: string;
 }
 
+export interface DesktopStackProbeResponse {
+  ok: true;
+  imageTag: string;
+}
+
 /**
  * Lifecycle of the Docker Compose stack the desktop app manages for mode `new`.
  * `docker-missing` and `docker-not-running` wait for the person to act; `ready` and

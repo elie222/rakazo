@@ -7,6 +7,9 @@ import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
 import { boundedSandboxCommandTimeoutMs, resolveSupervisorToken } from "@rakazo/core";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
+import { SERVICE_NAMES } from "@rakazo/logging";
+import { createRootLogger } from "@rakazo/logging/axiom";
+import { requestLogging } from "@rakazo/logging/hono";
 import Docker from "dockerode";
 import { Hono } from "hono";
 import { z } from "zod";
@@ -77,6 +80,8 @@ const computerScreens = new Map<string, Map<string, ScreenAssignment>>();
 const app = new Hono();
 
 export { app as supervisorApp };
+
+app.use("*", requestLogging());
 
 export function resolveDockerSocketPath(
   env: NodeJS.ProcessEnv = process.env,
@@ -595,10 +600,32 @@ app.delete("/computers/:id", async (c) => {
 });
 
 function startSupervisor() {
+  const logger = createRootLogger(SERVICE_NAMES.supervisor);
   const port = Number(process.env.SUPERVISOR_PORT ?? 7091);
   const hostname = process.env.SUPERVISOR_HOST ?? "127.0.0.1";
-  return serve({ fetch: app.fetch, hostname, port }, () => {
-    console.log(`sandbox supervisor on http://${hostname}:${port}`);
+  const server = serve({ fetch: app.fetch, hostname, port }, () => {
+    logger.info("supervisor listening", { "http.host": hostname, "http.port": port });
+  });
+  let stopping = false;
+  const shutdown = async () => {
+    if (stopping) return;
+    stopping = true;
+    await closeListeningServer(server);
+    await logger.flush({ timeoutMs: 2_000 });
+    process.exit(0);
+  };
+  process.once("SIGTERM", () => void shutdown());
+  process.once("SIGINT", () => void shutdown());
+  return server;
+}
+
+function closeListeningServer(server: {
+  close(callback?: (err?: Error) => void): void;
+  closeIdleConnections?: () => void;
+}): Promise<void> {
+  server.closeIdleConnections?.();
+  return new Promise((resolve) => {
+    server.close(() => resolve());
   });
 }
 

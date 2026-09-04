@@ -416,6 +416,8 @@ describe("child process environment", () => {
         HTTPS_PROXY: "http://proxy.invalid",
         BETTER_AUTH_SECRET: "fake-secret-that-must-not-leak",
         DATABASE_URL: "postgres://fake.invalid/db",
+        AXIOM_TOKEN: "fake-axiom-token",
+        LOG_LEVEL: "debug",
       },
       { RAKAZO_IMAGE_TAG: "sha-123" },
     );
@@ -427,6 +429,8 @@ describe("child process environment", () => {
     });
     expect(env.BETTER_AUTH_SECRET).toBeUndefined();
     expect(env.DATABASE_URL).toBeUndefined();
+    expect(env.AXIOM_TOKEN).toBeUndefined();
+    expect(env.LOG_LEVEL).toBeUndefined();
   });
 
   it("restores detached checkouts without attaching to a branch tip", () => {

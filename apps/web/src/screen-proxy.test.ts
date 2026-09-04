@@ -114,9 +114,23 @@ describe("noVNC proxy authorization", () => {
     ).toEqual({ upgrade: "websocket", "sec-websocket-key": "key" });
   });
 
+  it("does not forward HTTP/2 pseudo-headers to the HTTP/1 upstream", () => {
+    expect(
+      safeProxyHeaders({
+        ":method": "GET",
+        ":path": "/novnc/embed.html",
+        ":authority": "localhost:5173",
+        ":scheme": "https",
+        upgrade: "websocket",
+        "sec-websocket-key": "key",
+      }),
+    ).toEqual({ upgrade: "websocket", "sec-websocket-key": "key" });
+  });
+
   it("does not accept cookie or site-data mutations from a bot computer", () => {
     expect(
       safeProxyResponseHeaders({
+        ":status": "200",
         "content-type": "text/html",
         "set-cookie": ["session=attacker"],
         "clear-site-data": '"cookies"',

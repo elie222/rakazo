@@ -775,7 +775,7 @@ describe("E2B computer backend", () => {
       });
     }
     await expect(provider.observe(computer, { ...context, botId: "bot-9" })).rejects.toThrow(
-      /does not support multiple screens/,
+      /temporarily busy/,
     );
   });
 });
