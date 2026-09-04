@@ -11,6 +11,7 @@ import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completio
 import { Agent } from "undici";
 import {
   createAddressCheckedLookup,
+  isCloudMetadataAddress,
   isLinkLocalAddress,
   isPrivateAddress,
   type ResolveHostname,
@@ -93,6 +94,9 @@ export function createOpenAiCompatibleLookup(
   const privateHostname = isPrivateOpenAiCompatibleHostname(hostname);
   return createAddressCheckedLookup(resolve, (addresses) => {
     if (addresses.length === 0) throw new Error("Model server did not resolve to an address");
+    if (addresses.some((entry) => isCloudMetadataAddress(entry.address))) {
+      throw new Error("Model server hostname resolved to a blocked metadata address");
+    }
     if (privateHostname) {
       if (
         addresses.some(
