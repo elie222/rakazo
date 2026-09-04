@@ -759,6 +759,52 @@ export function applyMobileThreadEvent(
       messages: [...prev.messages.filter((message) => message.id !== streaming.id), streaming],
     };
   }
+  if (event.type === "thread.cloud_agent") {
+    const agentId = String(event.payload?.agentId ?? "");
+    const messageId = String(event.payload?.messageId ?? "");
+    const rawStatus = String(event.payload?.status ?? "running");
+    const status =
+      rawStatus === "finished" || rawStatus === "failed" || rawStatus === "cancelled"
+        ? rawStatus
+        : ("running" as const);
+    const block: Extract<MessageBlock, { kind: "cloud_agent" }> = {
+      kind: "cloud_agent",
+      agentId,
+      title: String(event.payload?.title ?? "Cloud agent"),
+      status,
+      url: String(event.payload?.url ?? ""),
+      ...(event.payload?.branch ? { branch: String(event.payload.branch) } : {}),
+      ...(event.payload?.prUrl ? { prUrl: String(event.payload.prUrl) } : {}),
+      ...(event.payload?.latestRunId ? { latestRunId: String(event.payload.latestRunId) } : {}),
+    };
+    return {
+      ...prev,
+      cursor: event.seq ?? prev.cursor,
+      messages: prev.messages.map((message) => {
+        if (messageId && message.id === messageId) {
+          return {
+            ...message,
+            blocks: message.blocks.map((existing) =>
+              existing.kind === "cloud_agent" && existing.agentId === agentId ? block : existing,
+            ),
+          };
+        }
+        if (
+          message.blocks.some(
+            (existing) => existing.kind === "cloud_agent" && existing.agentId === agentId,
+          )
+        ) {
+          return {
+            ...message,
+            blocks: message.blocks.map((existing) =>
+              existing.kind === "cloud_agent" && existing.agentId === agentId ? block : existing,
+            ),
+          };
+        }
+        return message;
+      }),
+    };
+  }
   if (event.type === "thread.message.reaction") {
     const messageId = String(event.payload?.messageId ?? "");
     return {

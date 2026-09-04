@@ -6,6 +6,7 @@ loadRootEnv();
 import {
   ChatSdkMessagingSurface,
   createBackgroundJobHandlers,
+  createCloudAgentProvider,
   createConnectorStack,
   createJobReconciler,
   createMessagingContextLoader,
@@ -115,6 +116,8 @@ async function main() {
   const inMemoryJobs = process.env.WAKEUP_DRIVER === "memory" ? new InMemoryJobQueue() : undefined;
   const jobs: JobPublisher = inMemoryJobs ?? new GraphileJobPublisher(databaseUrl);
   const jobHost: JobWorkerHost = inMemoryJobs ?? new GraphileJobWorkerHost(databaseUrl);
+  // One provider instance so emulator launches and polls share the same Map.
+  const cloudAgent = createCloudAgentProvider();
   const executor = createRunExecutor({
     prisma,
     runtime,
@@ -135,6 +138,7 @@ async function main() {
     events,
     messaging: messaging ? createMessagingContextLoader(prisma) : undefined,
     web: createWebProvider(),
+    cloudAgent,
   });
 
   const jobHandlers = createBackgroundJobHandlers({
@@ -150,6 +154,7 @@ async function main() {
     memoryProviders,
     deploymentModelKey,
     messaging,
+    cloudAgent,
   });
   await jobHost.start(jobHandlers);
   const reconciler = createJobReconciler({

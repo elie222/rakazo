@@ -260,6 +260,16 @@ const ATTACHMENT_ACCEPT = ATTACHMENT_ALLOWED_MIME_TYPES.join(",");
 const FALLBACK_BOT_COLOR = "#85858A";
 const THREAD_SNAPSHOT_TIMEOUT_MS = 2_000;
 
+function httpsOnlyUrl(value: string | undefined | null): string | undefined {
+  if (!value) return undefined;
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "https:" ? value : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function threadSnapshotSignal(parent: AbortSignal): AbortSignal {
   return AbortSignal.any([parent, AbortSignal.timeout(THREAD_SNAPSHOT_TIMEOUT_MS)]);
 }
@@ -5387,6 +5397,50 @@ const MessageView = memo(function MessageView({
               canAnswer={canAnswer}
               onAnswer={(text) => onAnswer(message, text)}
             />
+          );
+        }
+        if (block.kind === "cloud_agent") {
+          const running = block.status === "running";
+          const failed = block.status === "failed" || block.status === "cancelled";
+          const prHref = httpsOnlyUrl(block.prUrl);
+          const href = prHref ?? httpsOnlyUrl(block.url);
+          const Card = href ? "a" : "div";
+          return (
+            <Card
+              key={i}
+              {...(href ? { href, target: "_blank", rel: "noreferrer" } : {})}
+              data-testid="cloud-agent-card"
+              className="block w-[min(340px,90%)] rounded-[18px] border border-[#232326] bg-[#17171A] px-[18px] py-4 text-start no-underline"
+            >
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-[15px] font-medium text-[#ECECEE]" dir="auto">
+                  {block.title}
+                </span>
+                <span
+                  className="rounded-full px-[11px] py-1 text-[13px]"
+                  style={{
+                    background: failed
+                      ? "rgba(230,87,7,.14)"
+                      : running
+                        ? "rgba(245,160,60,.14)"
+                        : "rgba(48,162,75,.14)",
+                    color: failed ? "#E65707" : running ? "#F5A03C" : "#4ECB71",
+                    animation: running ? "rkPulse 1.2s ease-in-out infinite" : undefined,
+                  }}
+                >
+                  {running ? <Trans>running</Trans> : block.status}
+                </span>
+              </div>
+              {prHref ? (
+                <div className="mt-2 text-[14.5px] leading-[1.5] text-[#A8A8AD]">
+                  <Trans>Pull request</Trans>
+                </div>
+              ) : block.branch ? (
+                <div className="mt-2 text-[13.5px] text-[#85858A]" dir="auto">
+                  {block.branch}
+                </div>
+              ) : null}
+            </Card>
           );
         }
         if (block.kind === "skill_draft") {

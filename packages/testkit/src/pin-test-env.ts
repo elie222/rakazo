@@ -5,6 +5,8 @@
 if (!process.env.VERIFY_PROVIDERS) {
   process.env.AGENT_RUNTIME = "scripted";
   process.env.SANDBOX_PROVIDER = "fake";
+  process.env.CLOUD_AGENT_PROVIDER = "emulator";
+  delete process.env.CURSOR_API_KEY;
   process.env.WAKEUP_DRIVER = "memory";
   delete process.env.COMPOSIO_API_KEY;
   if (!process.env.VERIFY_DATABASE) {

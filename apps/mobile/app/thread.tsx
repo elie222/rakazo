@@ -34,6 +34,7 @@ import {
   AppState,
   FlatList,
   Image,
+  Linking,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
   Pressable,
@@ -763,6 +764,7 @@ function Thread() {
                 event.type === "thread.message.updated" ||
                 event.type === "thread.message.reaction" ||
                 event.type === "thread.subagent" ||
+                event.type === "thread.cloud_agent" ||
                 event.type === "thread.cleared" ||
                 event.type === "run.waiting_input" ||
                 isRunTerminalEvent(event)
@@ -1973,6 +1975,16 @@ async function speakMessage(botId: string, message: MobileMessage) {
   }
 }
 
+function httpsOnlyUrl(value: string | undefined | null): string | undefined {
+  if (!value) return undefined;
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "https:" ? value : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 const MessageBubble = memo(function MessageBubble({
   botId,
   botName,
@@ -2093,7 +2105,8 @@ const MessageBubble = memo(function MessageBubble({
     );
   }
   const special = message.blocks.find(
-    (block) => block.kind === "subagent" || block.kind === "child_bot",
+    (block) =>
+      block.kind === "subagent" || block.kind === "child_bot" || block.kind === "cloud_agent",
   );
   if (special?.kind === "subagent") {
     const running = special.status === "running";
@@ -2146,6 +2159,48 @@ const MessageBubble = memo(function MessageBubble({
           </View>
         ) : null}
       </View>
+    );
+  }
+  if (special?.kind === "cloud_agent") {
+    const running = special.status === "running";
+    const failed = special.status === "failed" || special.status === "cancelled";
+    const prHref = httpsOnlyUrl(special.prUrl);
+    const href = prHref ?? httpsOnlyUrl(special.url);
+    return (
+      <Pressable
+        onPress={() => {
+          if (href) Linking.openURL(href).catch(() => undefined);
+        }}
+        testID="cloud-agent-card"
+        style={{
+          width: "90%",
+          borderRadius: 18,
+          borderWidth: 1,
+          borderColor: "#232326",
+          backgroundColor: "#17171A",
+          paddingHorizontal: 16,
+          paddingVertical: 14,
+        }}
+      >
+        <View style={{ flexDirection: "row", justifyContent: "space-between", gap: 8 }}>
+          <Text style={{ color: "#ECECEE", fontSize: 15, fontWeight: "600" }}>
+            {special.title || "Cloud agent"}
+          </Text>
+          <Text
+            style={{
+              color: failed ? "#E65707" : running ? "#F5A03C" : "#4ECB71",
+              fontSize: 13,
+            }}
+          >
+            {running ? "running" : special.status}
+          </Text>
+        </View>
+        {prHref ? (
+          <Text style={{ color: "#A8A8AD", marginTop: 8, fontSize: 14.5 }}>Pull request</Text>
+        ) : special.branch ? (
+          <Text style={{ color: "#85858A", marginTop: 8, fontSize: 13.5 }}>{special.branch}</Text>
+        ) : null}
+      </Pressable>
     );
   }
   if (special?.kind === "child_bot") {

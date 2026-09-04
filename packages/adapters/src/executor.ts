@@ -6,6 +6,7 @@ import type {
   AgentRunRequest,
   AgentRuntime,
   ArtifactStore,
+  CloudAgentProvider,
   ComputerRef,
   ConnectorCall,
   ConnectorProvider,
@@ -19,6 +20,7 @@ import type {
   WebProvider,
 } from "@rakazo/adapter-kit";
 import {
+  cloudAgentPollJob,
   historyCompactJob,
   routineJobKey,
   routineWakeupJob,
@@ -123,6 +125,14 @@ import {
 import { loadBotMessageContext, messageBot, returnBotMessageOutcome } from "./bot-messages.js";
 import { agentConnectionTools, builtinAgentTools } from "./builtin-tools.js";
 import { archiveSpawnedBot, spawnBot } from "./child-bots.js";
+import { createCloudAgentProvider } from "./cloud-agent-factory.js";
+import {
+  cloudAgentCancelFromTool,
+  cloudAgentLaunchFromTool,
+  cloudAgentReplyFromTool,
+  cloudAgentStatusFromTool,
+} from "./cloud-agent-tools.js";
+import { selectCloudAgentTools } from "./cloud-agent-tools-select.js";
 import {
   collectLogIds,
   mergeConnectedPlugins,
@@ -257,6 +267,7 @@ const READ_ONLY_AGENT_TOOLS = new Set([
   "skill_read",
   "web_search",
   "web_fetch",
+  "cloud_agent_status",
 ]);
 const MAX_MODEL_FILE_BYTES = 250_000;
 const TURN_ATTACHMENT_UNAVAILABLE =
@@ -424,6 +435,8 @@ export interface ExecutorDeps {
   listConnectedPluginSlugs?: (userId: string) => Promise<string[]>;
   /** Builtin web_search / web_fetch. Defaults to keyless HTTP when omitted. */
   web?: WebProvider;
+  /** Remote cloud coding agents. Null/omit means tools stay uninjected. */
+  cloudAgent?: CloudAgentProvider | null;
 }
 
 export async function deferFutureRoutine(
@@ -551,6 +564,7 @@ export function buildApprovalContinuation(
 
 export function createRunExecutor(deps: ExecutorDeps) {
   const web = deps.web ?? createWebProvider();
+  const cloudAgent = deps.cloudAgent === undefined ? createCloudAgentProvider() : deps.cloudAgent;
   return {
     async resolveModel(scope: {
       userId: string;
@@ -1197,6 +1211,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             groupId: thread.groupId,
             trigger: run.trigger,
             semanticMemoryEnabled,
+            cloudAgentEnabled: Boolean(cloudAgent),
           }),
           // Cross-owner agent connections only exist for chat-linked bots.
           ...(hasMessagingIdentity ? agentConnectionTools : []),
@@ -2126,6 +2141,110 @@ export function createRunExecutor(deps: ExecutorDeps) {
           }
           if (name === "web_fetch") {
             return finish(await webFetchFromTool(web, context, args));
+          }
+
+          if (name === "cloud_agent_launch") {
+            if (!cloudAgent) return finish({ error: "Cloud agents are not configured." });
+            const launched = await cloudAgentLaunchFromTool(cloudAgent, context, args);
+            if ("error" in launched) return finish(launched);
+            let messageId: string | undefined;
+            try {
+              const message = await publishMessage(deps, run, "bot", [
+                {
+                  kind: "cloud_agent",
+                  agentId: launched.id,
+                  title: launched.title,
+                  status: launched.status,
+                  url: launched.url,
+                  latestRunId: launched.latestRunId,
+                },
+              ]);
+              messageId = message.id;
+            } catch (error) {
+              console.error("cloud agent launch card", error);
+              try {
+                await cloudAgentCancelFromTool(cloudAgent, context, { id: launched.id });
+              } catch (cancelError) {
+                console.error("cloud agent launch cancel after card failure", cancelError);
+              }
+              return finish({
+                error:
+                  "Cloud agent launched but the status card could not be posted; the remote agent was cancelled.",
+              });
+            }
+            const pollPayload = {
+              agentId: launched.id,
+              messageId,
+              spaceId: run.spaceId,
+              threadId: run.threadId,
+              botId: bot.id,
+              userId: run.userId,
+            };
+            try {
+              await deps.jobs.enqueue(cloudAgentPollJob(pollPayload));
+            } catch (error) {
+              console.error("cloud agent poll enqueue", error);
+              try {
+                await deps.jobs.enqueue(
+                  cloudAgentPollJob(pollPayload, new Date(Date.now() + 5_000)),
+                );
+              } catch (retryError) {
+                console.error("cloud agent poll enqueue retry", retryError);
+                await syncCloudAgentCard(
+                  deps,
+                  run,
+                  { ...launched, status: "failed" },
+                  { userId: run.userId },
+                ).catch((syncError) => {
+                  console.error("cloud agent launch fail card", syncError);
+                });
+                return finish({
+                  ...launched,
+                  error: "Cloud agent launched but status polling could not be scheduled.",
+                });
+              }
+            }
+            return finish(launched);
+          }
+          if (name === "cloud_agent_status") {
+            if (!cloudAgent) return finish({ error: "Cloud agents are not configured." });
+            const owned = await requireOwnedCloudAgent(deps, run.spaceId, String(args.id ?? ""));
+            if (owned) return finish(owned);
+            return finish(await cloudAgentStatusFromTool(cloudAgent, context, args));
+          }
+          if (name === "cloud_agent_reply") {
+            if (!cloudAgent) return finish({ error: "Cloud agents are not configured." });
+            const owned = await requireOwnedCloudAgent(deps, run.spaceId, String(args.id ?? ""));
+            if (owned) return finish(owned);
+            const replied = await cloudAgentReplyFromTool(cloudAgent, context, args);
+            if ("error" in replied) return finish(replied);
+            try {
+              await syncCloudAgentCard(deps, run, replied, {
+                requeuePoll: true,
+                userId: run.userId,
+              });
+            } catch (error) {
+              console.error("cloud agent reply card", error);
+              return finish({
+                ...replied,
+                error: "Reply sent but status polling could not be re-scheduled.",
+              });
+            }
+            return finish(replied);
+          }
+          if (name === "cloud_agent_cancel") {
+            if (!cloudAgent) return finish({ error: "Cloud agents are not configured." });
+            const owned = await requireOwnedCloudAgent(deps, run.spaceId, String(args.id ?? ""));
+            if (owned) return finish(owned);
+            const cancelled = await cloudAgentCancelFromTool(cloudAgent, context, args);
+            if (!("error" in cancelled)) {
+              try {
+                await syncCloudAgentCard(deps, run, cancelled, { userId: run.userId });
+              } catch (error) {
+                console.error("cloud agent cancel card", error);
+              }
+            }
+            return finish(cancelled);
           }
           if (name === "scratchpad_list") {
             return listScratchpadItemsFromTool(deps, {
@@ -3529,16 +3648,20 @@ export function selectBuiltinToolsForRun(options: {
   groupId: string | null;
   trigger: string;
   semanticMemoryEnabled: boolean;
+  cloudAgentEnabled?: boolean;
 }) {
-  return selectMemoryTools(
-    filterBuiltinToolsForRun(
-      filterBuiltinToolsForThread(
-        filterImageReturningComputerTools(builtinAgentTools, options.graphicalToolsAllowed),
-        options.groupId,
+  return selectCloudAgentTools(
+    selectMemoryTools(
+      filterBuiltinToolsForRun(
+        filterBuiltinToolsForThread(
+          filterImageReturningComputerTools(builtinAgentTools, options.graphicalToolsAllowed),
+          options.groupId,
+        ),
+        options.trigger,
       ),
-      options.trigger,
+      options.semanticMemoryEnabled,
     ),
-    options.semanticMemoryEnabled,
+    Boolean(options.cloudAgentEnabled),
   );
 }
 
@@ -3681,6 +3804,108 @@ function redactBlocks(blocks: MessageBlock[], secrets: string[]): MessageBlock[]
     }
     return block;
   });
+}
+
+async function requireOwnedCloudAgent(
+  deps: ExecutorDeps,
+  spaceId: string,
+  agentId: string,
+): Promise<{ error: string } | null> {
+  const id = agentId.trim();
+  if (!id) return { error: "id is required" };
+  // JSON containment: match a cloud_agent block by agentId without a recency window.
+  const owned = await deps.prisma.message.findFirst({
+    where: {
+      thread: { spaceId },
+      blocks: { array_contains: [{ kind: "cloud_agent", agentId: id }] },
+    },
+    select: { id: true },
+  });
+  return owned ? null : { error: "Unknown cloud agent." };
+}
+
+async function syncCloudAgentCard(
+  deps: ExecutorDeps,
+  run: { id: string; spaceId: string; threadId: string; botId: string },
+  snapshot: {
+    id: string;
+    title: string;
+    status: string;
+    url: string;
+    branch?: string;
+    prUrl?: string;
+    latestRunId?: string;
+  },
+  options: { requeuePoll?: boolean; userId: string },
+) {
+  const target = await deps.prisma.message.findFirst({
+    where: {
+      threadId: run.threadId,
+      blocks: { array_contains: [{ kind: "cloud_agent", agentId: snapshot.id }] },
+    },
+    select: { id: true, blocks: true },
+  });
+  if (!target) return;
+
+  const blocks = (target.blocks as MessageBlock[]).map((block) => {
+    if (block.kind !== "cloud_agent" || block.agentId !== snapshot.id) return block;
+    return {
+      ...block,
+      title: snapshot.title || block.title,
+      status: snapshot.status as Extract<MessageBlock, { kind: "cloud_agent" }>["status"],
+      url: snapshot.url || block.url,
+      ...(snapshot.branch ? { branch: snapshot.branch } : {}),
+      ...(snapshot.prUrl ? { prUrl: snapshot.prUrl } : {}),
+      ...(snapshot.latestRunId ? { latestRunId: snapshot.latestRunId } : {}),
+    } satisfies MessageBlock;
+  });
+  const merged = blocks.find(
+    (block): block is Extract<MessageBlock, { kind: "cloud_agent" }> =>
+      block.kind === "cloud_agent" && block.agentId === snapshot.id,
+  );
+
+  const committed = await deps.prisma.$transaction(async (tx) => {
+    await tx.message.update({ where: { id: target.id }, data: { blocks } });
+    return appendEventInTransaction(tx, {
+      spaceId: run.spaceId,
+      threadId: run.threadId,
+      botId: run.botId,
+      type: "thread.cloud_agent",
+      runId: run.id,
+      payload: {
+        messageId: target.id,
+        agentId: snapshot.id,
+        title: merged?.title ?? snapshot.title,
+        status: merged?.status ?? snapshot.status,
+        url: merged?.url ?? snapshot.url,
+        branch: merged?.branch,
+        prUrl: merged?.prUrl,
+        latestRunId: merged?.latestRunId,
+      },
+    });
+  });
+  await deps.events.notify(run.threadId, committed.seq).catch((error) => {
+    console.error("cloud agent card realtime notification", error);
+  });
+
+  if (options.requeuePoll) {
+    const pollPayload = {
+      agentId: snapshot.id,
+      messageId: target.id,
+      spaceId: run.spaceId,
+      threadId: run.threadId,
+      botId: run.botId,
+      userId: options.userId,
+      attempt: 0,
+      errorAttempt: 0,
+    };
+    try {
+      await deps.jobs.enqueue(cloudAgentPollJob(pollPayload));
+    } catch (error) {
+      console.error("cloud agent poll requeue", error);
+      await deps.jobs.enqueue(cloudAgentPollJob(pollPayload, new Date(Date.now() + 5_000)));
+    }
+  }
 }
 
 async function publishMessage(

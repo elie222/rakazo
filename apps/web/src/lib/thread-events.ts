@@ -258,6 +258,7 @@ export function isThreadSnapshotEvent(event: ProductEvent): boolean {
     event.type === "thread.cleared" ||
     event.type === "thread.progress" ||
     event.type === "thread.subagent" ||
+    event.type === "thread.cloud_agent" ||
     event.type === "agent.tool.called" ||
     event.type === "thread.message.created" ||
     event.type === "thread.message.updated" ||
@@ -434,6 +435,53 @@ export function reduceThreadSnapshot(
       }
     }
     return { ...prev, cursor: event.seq, messages: [...without, next, ...kept] };
+  }
+
+  if (event.type === "thread.cloud_agent") {
+    const agentId = String(event.payload.agentId ?? "");
+    const messageId = String(event.payload.messageId ?? "");
+    const rawStatus = String(event.payload.status ?? "running");
+    const status: "running" | "finished" | "failed" | "cancelled" =
+      rawStatus === "finished" || rawStatus === "failed" || rawStatus === "cancelled"
+        ? rawStatus
+        : "running";
+    const block = {
+      kind: "cloud_agent" as const,
+      agentId,
+      title: String(event.payload.title ?? "Cloud agent"),
+      status,
+      url: String(event.payload.url ?? ""),
+      branch: event.payload.branch ? String(event.payload.branch) : undefined,
+      prUrl: event.payload.prUrl ? String(event.payload.prUrl) : undefined,
+      latestRunId: event.payload.latestRunId ? String(event.payload.latestRunId) : undefined,
+    };
+    return {
+      ...prev,
+      cursor: event.seq,
+      messages: prev.messages.map((message) => {
+        if (messageId && message.id === messageId) {
+          return {
+            ...message,
+            blocks: message.blocks.map((existing) =>
+              existing.kind === "cloud_agent" && existing.agentId === agentId ? block : existing,
+            ),
+          };
+        }
+        if (
+          message.blocks.some(
+            (existing) => existing.kind === "cloud_agent" && existing.agentId === agentId,
+          )
+        ) {
+          return {
+            ...message,
+            blocks: message.blocks.map((existing) =>
+              existing.kind === "cloud_agent" && existing.agentId === agentId ? block : existing,
+            ),
+          };
+        }
+        return message;
+      }),
+    };
   }
   if (event.type === "thread.message.reaction") {
     const messageId = String(event.payload.messageId ?? "");

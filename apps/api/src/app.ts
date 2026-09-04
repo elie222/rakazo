@@ -16,6 +16,7 @@ import {
   type ComposioProvider,
   type ConnectorRegistry,
   createBackgroundJobHandlers,
+  createCloudAgentProvider,
   createConnectorStack,
   createJobReconciler,
   createMessagingContextLoader,
@@ -261,6 +262,8 @@ export async function createApp(
       await rm(pushTokenPath(env.dataDir, userId), { force: true }).catch(() => undefined);
     },
   });
+  // One provider instance so emulator launches and polls share the same Map.
+  const cloudAgent = createCloudAgentProvider();
   const executor = createRunExecutor({
     prisma,
     runtime,
@@ -281,6 +284,7 @@ export async function createApp(
     events,
     messaging: messaging ? createMessagingContextLoader(prisma) : undefined,
     web: createWebProvider(),
+    cloudAgent,
   });
 
   const jobHandlers = createBackgroundJobHandlers({
@@ -296,6 +300,7 @@ export async function createApp(
     memoryProviders,
     deploymentModelKey: env.deploymentModelKey,
     messaging,
+    cloudAgent,
   });
   if (inMemoryJobs) {
     await inMemoryJobs.start(jobHandlers);
