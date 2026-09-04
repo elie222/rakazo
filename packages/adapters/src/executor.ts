@@ -121,11 +121,6 @@ import {
   runAutoReviewJudge,
 } from "./auto-review.js";
 import { loadBotMessageContext, messageBot, returnBotMessageOutcome } from "./bot-messages.js";
-import {
-  clampUserProgressMessage,
-  extractNarrationText,
-  finalBlocksAfterMidTurnProgress,
-} from "./user-progress.js";
 import { agentConnectionTools, builtinAgentTools } from "./builtin-tools.js";
 import { archiveSpawnedBot, spawnBot } from "./child-bots.js";
 import {
@@ -246,6 +241,11 @@ import {
 } from "./thread-artifacts.js";
 import { advanceToolCallLoopGuard } from "./tool-loop.js";
 import { textContentArg } from "./tool-text.js";
+import {
+  clampUserProgressMessage,
+  extractNarrationText,
+  finalBlocksAfterMidTurnProgress,
+} from "./user-progress.js";
 import { createWebProvider } from "./web-provider-factory.js";
 import { webFetchFromTool, webSearchFromTool } from "./web-tools.js";
 
@@ -3307,7 +3307,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
           flushPendingTools();
           if (!assembled) {
             messageSegments = completionMessageSegments(messageSegments, {
-              allowSilentEmpty: allowSilentPeerMessage || messagingChannelRun || publishedMidTurnUserMessage,
+              allowSilentEmpty:
+                allowSilentPeerMessage || messagingChannelRun || publishedMidTurnUserMessage,
               emptyResponseText,
               suppressOutput: handedOff,
               skipEmptyFallback: publishedTerminalSubagent || publishedMidTurnUserMessage,
