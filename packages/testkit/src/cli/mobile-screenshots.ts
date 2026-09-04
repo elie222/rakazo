@@ -9,7 +9,7 @@ import {
   PipedreamConnector,
   ThirdPartyConnectorEmulator,
 } from "@rakazo/adapters";
-import type { PrismaClient } from "@rakazo/db";
+import { createThreadMessage, type PrismaClient } from "@rakazo/db";
 import { runProcess } from "./process.js";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
@@ -22,7 +22,6 @@ const API_PORT = 3110;
 const HOST_API_URL = `http://127.0.0.1:${API_PORT}`;
 
 type App = { request: (input: string, init?: RequestInit) => Response | Promise<Response> };
-type CreateThreadMessage = typeof import("@rakazo/db")["createThreadMessage"];
 
 async function main() {
   process.chdir(ROOT);
@@ -32,18 +31,11 @@ async function main() {
   await mkdir(REPORT_DIR, { recursive: true });
   await mkdir(DATA_DIR, { recursive: true });
 
-  execFileSync("pnpm", ["--filter", "@rakazo/db", "generate"], {
-    cwd: ROOT,
-    env: process.env,
-    stdio: "inherit",
-  });
   execFileSync("pnpm", ["--filter", "@rakazo/db", "exec", "prisma", "migrate", "deploy"], {
     cwd: path.join(ROOT, "packages", "db"),
     env: process.env,
     stdio: "inherit",
   });
-  const { createThreadMessage } = await import("@rakazo/db");
-
   const thirdParties = new ThirdPartyConnectorEmulator();
   const pipedream = new PipedreamConnector(
     {
@@ -70,7 +62,7 @@ async function main() {
     },
   });
 
-  const fixture = await seedFixture(handles.app, handles.prisma, createThreadMessage);
+  const fixture = await seedFixture(handles.app, handles.prisma);
   const server = serve({
     fetch: handles.app.fetch,
     hostname: "0.0.0.0",
@@ -143,11 +135,7 @@ function configureEnvironment() {
   });
 }
 
-async function seedFixture(
-  app: App,
-  prisma: PrismaClient,
-  createThreadMessage: CreateThreadMessage,
-) {
+async function seedFixture(app: App, prisma: PrismaClient) {
   const cookie = await signup(app);
   const researcher = await rpc<{ id: string }>(app, cookie, "bots/create", {
     name: "Researcher",

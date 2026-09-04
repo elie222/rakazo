@@ -20,7 +20,7 @@
     "test": "vitest run",
     "test:integration": "tsx packages/testkit/src/cli/harness.ts --integration",
     "test:e2e": "tsx packages/testkit/src/cli/harness.ts --e2e",
-    "test:mobile-screenshots": "tsx packages/testkit/src/cli/mobile-screenshots.ts",
+    "test:mobile-screenshots": "pnpm --filter @rakazo/db generate && tsx packages/testkit/src/cli/mobile-screenshots.ts",
     "test:topology": "tsx packages/testkit/src/cli/topology.ts",
     "test:canary": "tsx packages/testkit/src/cli/canary.ts",
     "test:computer": "tsx packages/testkit/src/cli/computer.ts",
