@@ -118,10 +118,18 @@ function isAllowedTargetName(hostname: string) {
   );
 }
 
+function isHttp2PseudoHeader(key: string) {
+  return key.startsWith(":");
+}
+
 export function safeProxyHeaders(headers: IncomingHttpHeaders) {
   return Object.fromEntries(
     Object.entries(headers).filter(([key, value]) => {
-      return value != null && !SENSITIVE_FORWARD_HEADERS.has(key.toLowerCase());
+      return (
+        value != null &&
+        !isHttp2PseudoHeader(key) &&
+        !SENSITIVE_FORWARD_HEADERS.has(key.toLowerCase())
+      );
     }),
   );
 }
@@ -129,7 +137,11 @@ export function safeProxyHeaders(headers: IncomingHttpHeaders) {
 export function safeProxyResponseHeaders(headers: IncomingHttpHeaders) {
   return Object.fromEntries(
     Object.entries(headers).filter(([key, value]) => {
-      return value != null && !SENSITIVE_RESPONSE_HEADERS.has(key.toLowerCase());
+      return (
+        value != null &&
+        !isHttp2PseudoHeader(key) &&
+        !SENSITIVE_RESPONSE_HEADERS.has(key.toLowerCase())
+      );
     }),
   );
 }
