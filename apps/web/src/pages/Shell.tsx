@@ -2268,7 +2268,7 @@ export function ShellPage() {
       immediate: isFirstBot,
       signal: controller.signal,
       prompt: async () => {
-        if (focusPromptBotIdRef.current !== bot.id) return;
+        if (focusPromptBotIdRef.current !== bot.id || activeBotId.current !== bot.id) return;
         await rpc.onboarding.promptFocus({ botId: bot.id }).catch(() => undefined);
       },
     }).finally(() => {

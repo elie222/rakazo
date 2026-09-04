@@ -17,11 +17,20 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   const botList = page.locator("aside").first();
   await expect(botList.getByRole("button", { name: /^Chief/ })).toBeVisible();
 
-  await page.route("**/rpc/bots/create", async (route) => route.abort("failed"));
+  let createFailed = false;
+  const createAborted = new Promise<void>((resolve) => {
+    void page.route("**/rpc/bots/create", async (route) => {
+      createFailed = true;
+      await route.abort("failed");
+      resolve();
+    });
+  });
   await openNewBot(page);
+  await createAborted;
   // Instant create stays in chat; failed create leaves the current bot open.
   await expect(page.getByPlaceholder("Message Chief")).toBeVisible();
   await expect(page.getByTestId("side-panel")).toHaveAttribute("data-panel", "closed");
+  expect(createFailed).toBe(true);
   await page.unroute("**/rpc/bots/create");
 
   let failedPostCreateRefresh = false;
