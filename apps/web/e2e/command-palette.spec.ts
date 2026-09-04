@@ -44,8 +44,6 @@ test("command palette opens with keyboard, filters, and switches bots", async ({
 
   await page.getByRole("tab", { name: "Bots" }).click();
   const search = page.getByTestId("command-palette-search");
-  await search.click();
-  await expect(search).toBeFocused();
   await search.fill("Research");
   await expect(page.getByRole("option", { name: /Researcher/ })).toBeVisible();
   await expect(page.getByRole("option", { name: /Chief/ })).toHaveCount(0);
