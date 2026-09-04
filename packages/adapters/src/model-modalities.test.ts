@@ -106,4 +106,37 @@ describe("operator-declared vision modalities", () => {
       },
     );
   });
+
+  it("dedupes a repeated id in the comma-separated vision env", async () => {
+    await withEnv({ [VISION_ENV]: "gpt4o-vision, gpt4o-vision ,gpt4o-vision" }, async () => {
+      const { declaredVisionModelIds } = await import("./model-modalities.js");
+      const { openAiCompatibleCatalogProvider, OPENAI_COMPATIBLE_VISION_MODELS_ENV } =
+        await import("./pi-openai-compatible-provider.js");
+      const ids = declaredVisionModelIds(OPENAI_COMPATIBLE_VISION_MODELS_ENV);
+      expect([...ids]).toEqual(["gpt4o-vision"]);
+      const catalogIds = openAiCompatibleCatalogProvider()
+        .getModels()
+        .map((m) => m.id)
+        .filter((id) => id === "gpt4o-vision");
+      expect(catalogIds).toEqual(["gpt4o-vision"]);
+    });
+  });
+
+  it("upgrades the custom placeholder when it is declared vision-capable", async () => {
+    await withEnv({ [VISION_ENV]: "custom,gpt4o-vision" }, async () => {
+      const { openAiCompatibleCatalogProvider, OPENAI_COMPATIBLE_CATALOG_MODEL_ID } = await import(
+        "./pi-openai-compatible-provider.js"
+      );
+      const { modelAcceptsImageInput } = await import("./model-vision.js");
+      const models = openAiCompatibleCatalogProvider().getModels();
+      const customEntries = models.filter((m) => m.id === OPENAI_COMPATIBLE_CATALOG_MODEL_ID);
+      expect(customEntries).toHaveLength(1);
+      expect(customEntries[0]?.input).toContain("image");
+      expect(models.filter((m) => m.id === "gpt4o-vision")).toHaveLength(1);
+      expect(
+        modelAcceptsImageInput(OPENAI_COMPATIBLE_PROVIDER_ID, OPENAI_COMPATIBLE_CATALOG_MODEL_ID),
+      ).toBe(true);
+      expect(modelAcceptsImageInput(OPENAI_COMPATIBLE_PROVIDER_ID, "gpt4o-vision")).toBe(true);
+    });
+  });
 });

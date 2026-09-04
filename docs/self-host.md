@@ -183,6 +183,8 @@ RAKAZO_LOCAL_MODELS=qwen3:4b,llama3.1:8b
 RAKAZO_LOCAL_MODELS_URL=http://127.0.0.1:11434/v1
 RAKAZO_LOCAL_CONTEXT_WINDOW=32768
 RAKAZO_LOCAL_MAX_TOKENS=4096
+# Optional: model ids on this endpoint that accept images (screenshot computer tools).
+RAKAZO_LOCAL_VISION_MODELS=qwen3-vl
 ```
 
 The loopback default is suitable when running Rakazo from a source checkout. From containers,
@@ -195,7 +197,9 @@ Each user can also connect their own OpenAI-compatible endpoint from **Connect a
 **Settings → Models** on web and mobile. Choose **OpenAI-compatible**, enter the server base URL
 (for example `http://127.0.0.1:8000/v1`), the exact model id, and an optional API key.
 Public hosts and ordinary hostnames need `RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC=1`. Literal private
-IP, loopback, and `host.docker.internal` targets do not.
+IP, loopback, and `host.docker.internal` targets do not. To mark user-connected openai-compatible
+model ids as vision-capable (so screenshot computer tools stay available), set
+`RAKAZO_OPENAI_COMPATIBLE_VISION_MODELS=gpt4o-vision,llava`.
 
 For servers that accept standard `reasoning_effort`, enable **Supports thinking** under
 **Advanced** when connecting. The setting is saved on the connection (no env var or restart).
