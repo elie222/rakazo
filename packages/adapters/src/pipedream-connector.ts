@@ -19,7 +19,7 @@ import {
   type RemoteTransportDependencies,
 } from "./remote-mcp.js";
 import { isVitestRuntime } from "./test-runtime.js";
-import { readBodyCapped } from "./web-ssrf.js";
+import { readBodyCapped, withAbort } from "./web-ssrf.js";
 
 const API_BASE = "https://api.pipedream.com";
 const MCP_ENDPOINT = "https://remote.mcp.pipedream.net/v3";
@@ -397,7 +397,12 @@ export class PipedreamConnector implements ManagedConnectorProvider {
 async function readPipedreamBody(response: Response, signal: AbortSignal): Promise<string> {
   const declared = Number(response.headers.get("content-length") ?? 0);
   if (Number.isFinite(declared) && declared > MAX_PIPEDREAM_RESPONSE_BYTES) {
-    await response.body?.cancel().catch(() => undefined);
+    const cancel = response.body?.cancel() ?? Promise.resolve();
+    // A hanging cancel must not outlive the shared deadline.
+    await withAbort(
+      cancel.catch(() => undefined),
+      signal,
+    ).catch(() => undefined);
     throw new Error("Pipedream response is too large.");
   }
   try {

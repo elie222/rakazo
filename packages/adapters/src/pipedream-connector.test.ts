@@ -108,6 +108,53 @@ describe("PipedreamConnector", () => {
     expect(cancel).toHaveBeenCalledOnce();
   });
 
+  it("rejects oversized Content-Length without waiting on a hanging body cancel", async () => {
+    let cancelStarted = false;
+    const hangingBody = new ReadableStream<Uint8Array>({
+      start() {
+        // never enqueues or closes
+      },
+      cancel() {
+        cancelStarted = true;
+        return new Promise(() => {
+          // never settles
+        });
+      },
+    });
+    const abort = new AbortController();
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        Response.json({ access_token: "fake-access-token", expires_in: 3_600 }),
+      )
+      .mockImplementationOnce(async () => {
+        setTimeout(() => abort.abort(), 20);
+        return new Response(hangingBody, {
+          headers: { "content-length": String(MAX_PIPEDREAM_RESPONSE_BYTES + 1) },
+        });
+      });
+    const connector = new PipedreamConnector(
+      {
+        clientId: "fake-client-id",
+        clientSecret: "fake-client-secret",
+        projectId: "fake-project-id",
+        environment: "development",
+        identitySecret: "fake-identity-secret",
+      },
+      { fetch },
+    );
+
+    const started = Date.now();
+    await expect(
+      connector.begin(
+        { provider: "gmail", redirectUrl: "https://rakazo.example.test/app" },
+        { ...context, signal: abort.signal },
+      ),
+    ).rejects.toThrow("Pipedream response is too large.");
+    expect(cancelStarted).toBe(true);
+    expect(Date.now() - started).toBeLessThan(500);
+  });
+
   it("caps a chunked API response without a content length", async () => {
     const fetch = vi
       .fn()
