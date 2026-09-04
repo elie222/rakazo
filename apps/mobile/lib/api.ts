@@ -457,6 +457,7 @@ export type MobileMessage = {
   botId?: string;
   replyToMessageId?: string;
   thumbsUp?: boolean;
+  createdAt?: string;
   blocks: MessageBlock[];
 };
 

@@ -26,6 +26,7 @@
     "@react-native-vector-icons/material-design-icons": "13.1.2",
     "expo": "~57.0.19",
     "expo-audio": "~57.0.4",
+    "expo-clipboard": "^57.0.1",
     "expo-constants": "~57.0.17",
     "expo-document-picker": "~57.0.1",
     "expo-file-system": "~57.0.6",

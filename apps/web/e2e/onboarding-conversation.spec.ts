@@ -16,8 +16,12 @@ test("focus choice suggests apps and preserves a completed connection", async ({
     page.getByText("Hey Robin. Fresh start on my side, so I’ll keep this short."),
   ).toBeVisible();
   await expect(page.getByText("What do you want me on first?", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Day-to-day work/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Research & writing/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /A bit of everything/ })).toBeVisible();
   await page.mouse.move(1, 1);
   await captureScreenshot(page, testInfo, "01-focus-choice");
+  await captureScreenshot(page, testInfo, "choice-card-onboarding");
 
   await page.getByRole("button", { name: /Day-to-day work/ }).click();
   // The focus step suggests apps but must not rename the bot: the name the

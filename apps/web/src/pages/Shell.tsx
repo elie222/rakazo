@@ -1,3 +1,4 @@
+import { i18n } from "@lingui/core";
 import { t } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
 import { ChatMarkdown } from "@rakazo/chat-ui/web";
@@ -84,14 +85,15 @@ import {
   Menu,
   Mic,
   Monitor,
+  MoreHorizontal,
   Paperclip,
   Phone,
   Plus,
   Puzzle,
   Reply,
   Settings,
+  Smile,
   Square,
-  ThumbsUp,
   Volume2,
   X,
 } from "lucide-react";
@@ -4072,39 +4074,65 @@ const Transcript = memo(function Transcript({
             <div
               key={message.id}
               data-message-id={message.id}
-              className={peerReceipt ? "relative py-0.5" : "group/message relative pt-9 hover:z-20"}
+              className={peerReceipt ? "relative py-0.5" : "group/message relative hover:z-20"}
             >
-              {peerReceipt ? null : (
-                <MessageHoverActions message={message} onReply={onReply} onReact={onReact} />
-              )}
-              <MessageView
-                artifactTarget={artifactTarget}
-                message={message}
-                canAnswer={message.id === answerableAskMessageId}
-                onOpenBot={onOpenBot}
-                onOpenPeerMessages={onOpenPeerMessages}
-                onAnswer={onAnswer}
-                speakerName={
+              <div
+                className={
                   peerReceipt
                     ? undefined
-                    : message.role === "bot"
-                      ? memberName?.(message.botId)
-                      : undefined
+                    : `relative flex ${message.role === "user" ? "justify-end" : "justify-start"}`
                 }
-                memberName={memberName}
-                peerBot={peerBot}
-                replyPreview={
-                  message.replyToMessageId ? messageById.get(message.replyToMessageId) : undefined
-                }
-                replyToMessageId={message.replyToMessageId}
-                onJumpToMessage={onJumpToMessage}
-                onRefresh={onRefresh}
-                onBotChanged={onBotChanged}
-                onAddRoutine={onAddRoutine}
-                voiceReady={voiceReady}
-                speaking={speakingMessageId === message.id}
-                onSpeak={() => onSpeak(message)}
-              />
+              >
+                <div
+                  data-testid={peerReceipt ? undefined : "message-bubble-frame"}
+                  className={
+                    peerReceipt
+                      ? undefined
+                      : `relative w-fit min-w-0 ${
+                          message.role === "user" ? "max-w-[70%]" : "max-w-[74%]"
+                        }`
+                  }
+                >
+                  {peerReceipt ? null : (
+                    <MessageHoverActions
+                      message={message}
+                      side={message.role === "user" ? "start" : "end"}
+                      onReply={onReply}
+                      onReact={onReact}
+                    />
+                  )}
+                  <MessageView
+                    artifactTarget={artifactTarget}
+                    message={message}
+                    canAnswer={message.id === answerableAskMessageId}
+                    onOpenBot={onOpenBot}
+                    onOpenPeerMessages={onOpenPeerMessages}
+                    onAnswer={onAnswer}
+                    speakerName={
+                      peerReceipt
+                        ? undefined
+                        : message.role === "bot"
+                          ? memberName?.(message.botId)
+                          : undefined
+                    }
+                    memberName={memberName}
+                    peerBot={peerBot}
+                    replyPreview={
+                      message.replyToMessageId
+                        ? messageById.get(message.replyToMessageId)
+                        : undefined
+                    }
+                    replyToMessageId={message.replyToMessageId}
+                    onJumpToMessage={onJumpToMessage}
+                    onRefresh={onRefresh}
+                    onBotChanged={onBotChanged}
+                    onAddRoutine={onAddRoutine}
+                    voiceReady={voiceReady}
+                    speaking={speakingMessageId === message.id}
+                    onSpeak={() => onSpeak(message)}
+                  />
+                </div>
+              </div>
               {!peerReceipt && message.thumbsUp ? (
                 <button
                   type="button"
@@ -4876,14 +4904,48 @@ function previewMessageText(message: ThreadMessage): string {
 
 function MessageHoverActions({
   message,
+  side,
   onReply,
   onReact,
 }: {
   message: ThreadMessage;
+  side: "start" | "end";
   onReply: (message: ThreadMessage) => void;
   onReact: (message: ThreadMessage) => Promise<void>;
 }) {
   const { t } = useLingui();
+  const morePanelId = useId();
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreRef = useRef<HTMLDivElement>(null);
+  const moreButtonRef = useRef<HTMLButtonElement>(null);
+
+  function closeMore({ restoreFocus }: { restoreFocus: boolean }) {
+    setMoreOpen(false);
+    if (restoreFocus) {
+      queueMicrotask(() => moreButtonRef.current?.focus());
+    }
+  }
+
+  useEffect(() => {
+    if (!moreOpen) return;
+    function onPointerDown(event: PointerEvent) {
+      if (moreRef.current?.contains(event.target as Node)) return;
+      closeMore({ restoreFocus: false });
+    }
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeMore({ restoreFocus: true });
+      }
+    }
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [moreOpen]);
+
   // Streaming progress bubbles keep hover free for selection / stop clicks.
   if (message.id.startsWith("progress:")) return null;
 
@@ -4891,43 +4953,77 @@ function MessageHoverActions({
     const text = copyableMessageText(message);
     if (!text || !navigator.clipboard) return;
     void navigator.clipboard.writeText(text).catch(() => undefined);
+    closeMore({ restoreFocus: true });
   }
 
+  const iconButtonClass =
+    "grid h-7 w-7 place-items-center text-muted-foreground transition-colors hover:text-foreground";
+
   return (
-    <MessageHoverMetadata createdAt={message.createdAt}>
+    <MessageHoverMetadata pinned={moreOpen} side={side}>
       <div
         data-testid="message-hover-actions"
-        className="flex items-center gap-0.5 rounded-full bg-accent p-0.5 shadow-sm"
+        className={`flex items-center gap-0.5 ${moreOpen ? "pointer-events-auto opacity-100" : ""}`}
       >
-        <button
-          type="button"
-          aria-label={t`Reply`}
-          onClick={() => onReply(message)}
-          className="grid h-7 w-7 place-items-center rounded-full text-foreground/75 hover:bg-accent hover:text-foreground"
-        >
-          <Reply size={14} strokeWidth={1.8} />
-        </button>
         {canReactToThreadMessage(message) ? (
           <button
             type="button"
             aria-label={message.thumbsUp ? t`Remove thumbs-up` : t`Add thumbs-up`}
             aria-pressed={Boolean(message.thumbsUp)}
             onClick={() => void onReact(message)}
-            className={`grid h-7 w-7 place-items-center rounded-full hover:bg-accent hover:text-foreground ${
-              message.thumbsUp ? "text-warning" : "text-foreground/75"
-            }`}
+            className={`${iconButtonClass} ${message.thumbsUp ? "text-foreground" : ""}`}
           >
-            <ThumbsUp size={14} strokeWidth={1.8} />
+            <Smile size={15} strokeWidth={1.7} />
           </button>
         ) : null}
         <button
           type="button"
-          aria-label={t`Copy`}
-          onClick={copyMessage}
-          className="grid h-7 w-7 place-items-center rounded-full text-foreground/75 hover:bg-accent hover:text-foreground"
+          aria-label={t`Reply`}
+          onClick={() => onReply(message)}
+          className={iconButtonClass}
         >
-          <Copy size={14} strokeWidth={1.8} />
+          <Reply size={15} strokeWidth={1.7} />
         </button>
+        <div ref={moreRef} className="relative">
+          <button
+            ref={moreButtonRef}
+            type="button"
+            aria-label={t`More`}
+            aria-expanded={moreOpen}
+            aria-controls={moreOpen ? morePanelId : undefined}
+            onClick={() => setMoreOpen((open) => !open)}
+            className={iconButtonClass}
+          >
+            <MoreHorizontal size={15} strokeWidth={1.7} />
+          </button>
+          {moreOpen ? (
+            <div
+              id={morePanelId}
+              className={`absolute top-full z-20 mt-1 min-w-[7.5rem] rounded-lg border border-border bg-popover py-1 shadow-md ${
+                side === "end" ? "start-0" : "end-0"
+              }`}
+            >
+              <button
+                type="button"
+                aria-label={t`Copy`}
+                onClick={copyMessage}
+                className="flex w-full items-center gap-2 px-3 py-1.5 text-start text-[13px] text-muted-foreground hover:bg-accent hover:text-foreground"
+              >
+                <Copy size={14} strokeWidth={1.7} />
+                <Trans>Copy</Trans>
+              </button>
+              <div
+                data-testid="message-hover-time"
+                className="px-3 py-1.5 text-[12px] tabular-nums text-muted-foreground"
+              >
+                {new Date(message.createdAt).toLocaleTimeString(i18n.locale || "en", {
+                  hour: "numeric",
+                  minute: "2-digit",
+                })}
+              </div>
+            </div>
+          ) : null}
+        </div>
       </div>
     </MessageHoverMetadata>
   );
@@ -5333,9 +5429,10 @@ const MessageView = memo(function MessageView({
         }
         if (block.kind === "text" && message.role === "user") {
           return (
-            <div key={i} className="flex justify-end">
+            <div key={i} className="flex w-fit max-w-full justify-end">
               <div
-                className="max-w-[70%] whitespace-pre-wrap rounded-[20px] bg-primary px-[18px] py-3 text-[15.5px] leading-[1.45] text-primary-foreground"
+                data-testid="message-user-bubble"
+                className="max-w-full whitespace-pre-wrap rounded-[20px] bg-secondary px-[18px] py-3 text-[15.5px] leading-[1.45] text-secondary-foreground"
                 dir="auto"
               >
                 {block.text}

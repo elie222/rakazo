@@ -1,11 +1,84 @@
 import { expect, test } from "@playwright/test";
 import { captureScreenshot, completeOnboarding, signup } from "./helpers";
 
-test("message hover shows Reply and Copy; reply links to parent", async ({ page }, testInfo) => {
+async function revealHoverRail(
+  row: import("@playwright/test").Locator,
+): Promise<import("@playwright/test").Locator> {
+  await row.hover();
+  const rail = row.getByTestId("message-hover-rail");
+  await expect(rail).toBeVisible();
+  // Full-page shots can drop :hover; pin the rail so geometry stays visible.
+  await rail.evaluate((el) => {
+    const node = el as HTMLElement;
+    node.style.opacity = "1";
+    node.style.pointerEvents = "auto";
+  });
+  return rail;
+}
+
+async function clearHoverRail(rail: import("@playwright/test").Locator) {
+  await rail.evaluate((el) => el.removeAttribute("style"));
+}
+
+/** Park the pointer outside the message and blur focus so the rail returns to opacity-0. */
+async function expectRailAtRest(
+  page: import("@playwright/test").Page,
+  row: import("@playwright/test").Locator,
+) {
+  const rail = row.getByTestId("message-hover-rail");
+  await clearHoverRail(rail);
+  const box = await row.boundingBox();
+  if (box) {
+    // (0,0) can still sit on the first transcript row; leave below the row instead.
+    await page.mouse.move(Math.max(0, box.x) + 8, box.y + box.height + 32);
+  }
+  // More keeps focus after Escape; blur so focus-within does not leave the rail visible.
+  await page.evaluate(() => {
+    (document.activeElement as HTMLElement | null)?.blur();
+  });
+  await expect(rail).toHaveCSS("opacity", "0");
+}
+
+test("message hover shows beside-bubble actions; reply links to parent", async ({
+  page,
+}, testInfo) => {
   const stamp = Date.now();
   await signup(page, `hover-actions-${stamp}@rakazo.test`, "password12", "Hover Actions");
   await completeOnboarding(page);
   await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+
+  const transcript = page.getByTestId("transcript");
+
+  // Bot welcome (left bubble): rail hidden at rest, then beside on hover.
+  const botRow = transcript.locator(`[data-message-id]`).first();
+  await expect(botRow).toBeVisible();
+  await expectRailAtRest(page, botRow);
+  await captureScreenshot(page, testInfo, "message-actions-rest-desktop");
+
+  const botRail = await revealHoverRail(botRow);
+  const botToolbar = botRow.getByTestId("message-hover-actions");
+  await expect(botToolbar.getByRole("button", { name: "Reply" })).toBeVisible();
+  await expect(botToolbar.getByRole("button", { name: "More" })).toBeVisible();
+  // Measure against the bubble frame (rail offset parent), not an inner markdown
+  // div — padding inside the rounded bubble made the old locator look >8px away.
+  const botFrame = botRow.getByTestId("message-bubble-frame");
+  await expect
+    .poll(async () => {
+      const railBox = await botRail.boundingBox();
+      const frameBox = await botFrame.boundingBox();
+      if (!railBox || !frameBox) return null;
+      const railMid = railBox.y + railBox.height / 2;
+      const frameMid = frameBox.y + frameBox.height / 2;
+      return {
+        beside: railBox.x >= frameBox.x + frameBox.width - 2,
+        flush: railBox.x - (frameBox.x + frameBox.width) < 8,
+        centered: Math.abs(railMid - frameMid) <= 12,
+        notBelow: railBox.y + railBox.height <= frameBox.y + frameBox.height + 12,
+      };
+    })
+    .toEqual({ beside: true, flush: true, centered: true, notBelow: true });
+  await captureScreenshot(page, testInfo, "message-bot-actions-desktop");
+  await expectRailAtRest(page, botRow);
 
   const parentText = `hover-parent-${stamp}`;
   const replyText = `hover-reply-${stamp}`;
@@ -14,47 +87,102 @@ test("message hover shows Reply and Copy; reply links to parent", async ({ page 
   await composer.fill(parentText);
   await composer.press("Enter");
 
-  const transcript = page.getByTestId("transcript");
   const parentRow = transcript.locator(`[data-message-id]`).filter({ hasText: parentText }).first();
   await expect(parentRow).toBeVisible({ timeout: 20_000 });
 
-  await parentRow.hover();
+  const rail = await revealHoverRail(parentRow);
   const toolbar = parentRow.getByTestId("message-hover-actions");
-  await expect(toolbar).toBeVisible();
   await expect(toolbar.getByRole("button", { name: "Reply" })).toBeVisible();
-  await expect(toolbar.getByRole("button", { name: "Copy" })).toBeVisible();
+  await expect(toolbar.getByRole("button", { name: "More" })).toBeVisible();
   const thumbsUp = toolbar.getByRole("button", { name: "Add thumbs-up" });
   await expect(thumbsUp).toBeVisible();
-
-  // Pill must float above the bubble text, not cover the first line.
-  const bubble = parentRow.locator("div").filter({ hasText: parentText }).last();
+  // Default reaction matches Reply/More: muted control color, not yellow.
   await expect
     .poll(async () => {
-      const toolbarBox = await toolbar.boundingBox();
-      const bubbleBox = await bubble.boundingBox();
-      if (!toolbarBox || !bubbleBox) return null;
-      return toolbarBox.y + toolbarBox.height <= bubbleBox.y + 1;
+      const mutedColor = await toolbar
+        .getByRole("button", { name: "More" })
+        .evaluate((el) => getComputedStyle(el).color);
+      const reactionColor = await thumbsUp.evaluate((el) => getComputedStyle(el).color);
+      return reactionColor === mutedColor;
     })
     .toBe(true);
 
-  // Keep the pill visible for the artifact (full-page shots can drop :hover).
-  await toolbar.evaluate((el) => {
-    const node = el as HTMLElement;
-    node.style.opacity = "1";
-    node.style.pointerEvents = "auto";
-  });
-  const toolbarBox = await toolbar.boundingBox();
-  const bubbleBox = await bubble.boundingBox();
-  if (!toolbarBox || !bubbleBox) throw new Error("missing hover toolbar geometry");
+  // User bubble (right): icons sit to the left, vertically centered — not under the bubble.
+  const frame = parentRow.getByTestId("message-bubble-frame");
+  await expect
+    .poll(async () => {
+      const railBox = await rail.boundingBox();
+      const frameBox = await frame.boundingBox();
+      if (!railBox || !frameBox) return null;
+      const railMid = railBox.y + railBox.height / 2;
+      const frameMid = frameBox.y + frameBox.height / 2;
+      return {
+        beside: railBox.x + railBox.width <= frameBox.x + 2,
+        flush: frameBox.x - (railBox.x + railBox.width) < 8,
+        centered: Math.abs(railMid - frameMid) <= 12,
+        notBelow: railBox.y >= frameBox.y - 12,
+      };
+    })
+    .toEqual({ beside: true, flush: true, centered: true, notBelow: true });
+
+  // User bubble is a muted elevated surface (not cream invert / bright pill).
+  const userSurface = parentRow.getByTestId("message-user-bubble");
+  await expect(userSurface).toBeVisible();
+  await expect
+    .poll(async () => userSurface.evaluate((el) => getComputedStyle(el).backgroundColor))
+    .not.toMatch(/^rgb\(241,\s*241,\s*239\)$/); // not cream primary foreground
+
+  // Long user bubble: rail stays ~6px beside the bubble edge, not the full row width.
+  const longText = `hover-long-${stamp}-${"x".repeat(220)}`;
+  await composer.fill(longText);
+  await composer.press("Enter");
+  const longRow = transcript
+    .locator(`[data-message-id]`)
+    .filter({ hasText: longText.slice(0, 40) })
+    .first();
+  await expect(longRow).toBeVisible({ timeout: 20_000 });
+  const longRail = await revealHoverRail(longRow);
+  const longFrame = longRow.getByTestId("message-bubble-frame");
+  await expect
+    .poll(async () => {
+      const railBox = await longRail.boundingBox();
+      const frameBox = await longFrame.boundingBox();
+      if (!railBox || !frameBox) return null;
+      return Math.abs(frameBox.x - (railBox.x + railBox.width));
+    })
+    .toBeLessThan(8);
+  await clearHoverRail(longRail);
+
+  // No transcript timestamp under the bubble (Grok Bot). Time lives in More.
+  await expect(parentRow.getByTestId("message-hover-time")).toHaveCount(0);
+  await revealHoverRail(parentRow);
+  await toolbar.getByRole("button", { name: "More" }).click();
+  const moreTime = parentRow.getByTestId("message-hover-time");
+  await expect(moreTime).toBeVisible();
+  await expect(moreTime).toHaveText(/\d/);
+  // Escape closes More and restores focus to the trigger so the rail stays up.
+  await page.keyboard.press("Escape");
+  await expect(toolbar.getByRole("button", { name: "More" })).toBeFocused();
+  await captureScreenshot(page, testInfo, "message-user-actions-hover-desktop");
+  // Default transcript shot: rail at rest (no hover pin, mouse clear).
+  await expectRailAtRest(page, parentRow);
+  await captureScreenshot(page, testInfo, "message-user-bubble-desktop");
+
+  // Clip shot of bubble + rail for gallery geometry.
+  await revealHoverRail(parentRow);
+  const railBox = await rail.boundingBox();
+  const frameBox = await frame.boundingBox();
+  if (!railBox || !frameBox) throw new Error("missing hover toolbar geometry");
   const pad = 16;
+  const top = Math.min(railBox.y, frameBox.y);
   const clip = {
-    x: Math.max(0, Math.min(toolbarBox.x, bubbleBox.x) - pad),
-    y: Math.max(0, toolbarBox.y - pad),
+    x: Math.max(0, Math.min(railBox.x, frameBox.x) - pad),
+    y: Math.max(0, top - pad),
     width:
-      Math.max(toolbarBox.x + toolbarBox.width, bubbleBox.x + bubbleBox.width) -
-      Math.min(toolbarBox.x, bubbleBox.x) +
+      Math.max(railBox.x + railBox.width, frameBox.x + frameBox.width) -
+      Math.min(railBox.x, frameBox.x) +
       pad * 2,
-    height: bubbleBox.y + bubbleBox.height - toolbarBox.y + pad * 2,
+    height: Math.max(railBox.y + railBox.height, frameBox.y + frameBox.height) - top + pad * 2,
   };
   const hoverPath = testInfo.outputPath("message-hover-toolbar.png");
   await page.screenshot({
@@ -73,10 +201,12 @@ test("message hover shows Reply and Copy; reply links to parent", async ({ page 
   await captureScreenshot(page, testInfo, "message-thumbs-up");
 
   await parentRow.hover();
+  await toolbar.getByRole("button", { name: "More" }).click();
   await toolbar.getByRole("button", { name: "Copy" }).click();
   await expect
     .poll(async () => page.evaluate(() => navigator.clipboard.readText()))
     .toBe(parentText);
+  await expect(toolbar.getByRole("button", { name: "More" })).toBeFocused();
 
   await parentRow.hover();
   await toolbar.getByRole("button", { name: "Reply" }).click();
@@ -97,6 +227,16 @@ test("message hover shows Reply and Copy; reply links to parent", async ({ page 
 
   await parentPreview.click();
   await expect(parentRow).toBeInViewport();
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await botRow.scrollIntoViewIfNeeded();
+  const botRailMobile = await revealHoverRail(botRow);
+  await captureScreenshot(page, testInfo, "message-bot-actions-mobile");
+  await clearHoverRail(botRailMobile);
+  await parentRow.scrollIntoViewIfNeeded();
+  const userRailMobile = await revealHoverRail(parentRow);
+  await captureScreenshot(page, testInfo, "message-user-actions-mobile");
+  await clearHoverRail(userRailMobile);
 });
 
 test("reply preview jumps to parent outside the loaded page", async ({ page }) => {
