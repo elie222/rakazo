@@ -332,6 +332,11 @@ export interface MessagingSurface {
    * initialize the adapter first.
    */
   initialize?(): Promise<void>;
+  /**
+   * Release long-lived inbound resources (Telegram getUpdates polling) so a
+   * replacement process can claim them. No-op when the surface never started.
+   */
+  shutdown?(): Promise<void>;
 }
 
 /**

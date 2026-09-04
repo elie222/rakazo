@@ -376,4 +376,23 @@ describe("ChatSdkMessagingSurface shape", () => {
     expect(surface.describe().capabilities).toEqual({ providers: ["mock"] });
     expect(providerOfThreadId("mock:C1:9")).toBe("mock");
   });
+
+  it("retries initialize after a failure and stops polling on shutdown", async () => {
+    let attempts = 0;
+    const stopPolling = vi.fn(async () => undefined);
+    const { surface, adapter } = createSurface({}, {
+      initialize: vi.fn(async () => {
+        attempts += 1;
+        if (attempts === 1) throw new Error("telegram unavailable");
+      }),
+      stopPolling,
+    } as Partial<Adapter>);
+
+    await expect(surface.initialize()).rejects.toThrow(/telegram unavailable/);
+    await expect(surface.initialize()).resolves.toBeUndefined();
+    expect(adapter.initialize).toHaveBeenCalledTimes(2);
+
+    await surface.shutdown();
+    expect(stopPolling).toHaveBeenCalledTimes(1);
+  });
 });

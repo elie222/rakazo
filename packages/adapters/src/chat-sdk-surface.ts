@@ -166,10 +166,38 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
     await this.ensureInitialized();
   }
 
+  /**
+   * Stop Telegram getUpdates before exit. Chat.shutdown() only calls
+   * adapter.disconnect(), which Telegram does not implement.
+   */
+  async shutdown(): Promise<void> {
+    const pending = this.initialized;
+    this.initialized = undefined;
+    if (pending) await pending.catch(() => undefined);
+    for (const platform of this.byProvider.values()) {
+      const adapter = platform.adapter as { stopPolling?: () => Promise<void> };
+      await adapter.stopPolling?.().catch(() => undefined);
+    }
+    const chat = this.chat as { shutdown?: () => Promise<void> };
+    await chat.shutdown?.().catch(() => undefined);
+  }
+
   private ensureInitialized(): Promise<void> {
     // Webhook handling initializes lazily inside the Chat SDK; proactive
-    // sends from job runners need the explicit call.
-    this.initialized ??= this.chat.initialize();
+    // sends from job runners need the explicit call. Chat keeps a rejected
+    // initPromise until shutdown(), so clear that before allowing a retry.
+    if (!this.initialized) {
+      this.initialized = this.chat.initialize().catch(async (error) => {
+        try {
+          await (this.chat as { shutdown?: () => Promise<void> }).shutdown?.();
+        } catch {
+          // Best-effort reset of Chat's cached init failure.
+        } finally {
+          this.initialized = undefined;
+        }
+        throw error;
+      });
+    }
     return this.initialized;
   }
 

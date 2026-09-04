@@ -473,6 +473,7 @@ export async function createApp(
     executor,
     stop: async () => {
       oauthLogins.abortAll();
+      await messaging?.shutdown?.();
       await email?.drain?.();
       await reconciler?.stop();
       await jobs.close();
