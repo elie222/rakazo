@@ -407,9 +407,8 @@ export class ComposioConnector implements ComposioProvider {
     }
     const session = await this.sessionFor(userId);
     const toolkits = await session.toolkits({ isConnected: true });
-    const id = toolkits.items.find(
-      (item) => composioSlugKey(item.slug) === composioSlugKey(slug),
-    )?.connection?.connectedAccount?.id;
+    const id = toolkits.items.find((item) => composioSlugKey(item.slug) === composioSlugKey(slug))
+      ?.connection?.connectedAccount?.id;
     return id ? [id] : [];
   }
 
@@ -438,8 +437,11 @@ export class ComposioConnector implements ComposioProvider {
     }
 
     const ids = await this.listConnectedAccountIds(userId, slug);
-    if (current && ids.includes(current)) return current;
-    return ids.find((id) => !excluded.has(id)) ?? ids[0];
+    // Only keep current when it is already a real connected-account id. A
+    // leftover connection-request id must not fall through to a sibling's
+    // account when waitForConnection fails.
+    if (current && ids.includes(current) && !excluded.has(current)) return current;
+    return ids.find((id) => !excluded.has(id));
   }
 
   private sdk(): Composio {

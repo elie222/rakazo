@@ -2990,18 +2990,12 @@ export function createRouter(deps: RouterDeps) {
                   currentRef: string | null | undefined,
                   excludeIds?: string[],
                 ) => Promise<string | undefined>;
-                connectedAccountId?: (
-                  userId: string,
-                  slug: string,
-                ) => Promise<string | undefined>;
+                connectedAccountId?: (userId: string, slug: string) => Promise<string | undefined>;
               }
             ).resolveConnectedAccountId;
             const fallbackAccountId = (
               connector as {
-                connectedAccountId?: (
-                  userId: string,
-                  slug: string,
-                ) => Promise<string | undefined>;
+                connectedAccountId?: (userId: string, slug: string) => Promise<string | undefined>;
               }
             ).connectedAccountId;
             if (resolveAccountId || fallbackAccountId) {
@@ -3172,10 +3166,19 @@ export function createRouter(deps: RouterDeps) {
               connectionContext(context.actor, "connections.revoke", context.signal),
             );
           } catch (error) {
-            // Only roll back when the provider was never contacted. Restoring after
-            // an uncertain transport failure can resurrect a row whose remote auth
-            // was already deleted.
-            if (!remoteAttempted) await restoreLocalStatus();
+            // Restore when the provider was never reached, or when it clearly
+            // rejected the delete. Skip restore only for uncertain transport
+            // failures after the revoke call — those may have already removed
+            // the remote authorization.
+            const uncertain =
+              remoteAttempted &&
+              error instanceof Error &&
+              (error.name === "AbortError" ||
+                error.name === "TimeoutError" ||
+                /timeout|timed out|network|ECONNRESET|ECONNREFUSED|fetch failed|aborted|socket/i.test(
+                  error.message,
+                ));
+            if (!uncertain) await restoreLocalStatus();
             if (error instanceof ORPCError) throw error;
             throw new ORPCError("BAD_REQUEST", { message: sanitizeComposioError(error) });
           }

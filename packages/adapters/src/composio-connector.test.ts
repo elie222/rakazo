@@ -318,9 +318,11 @@ describe("composio tool mapping", () => {
     composioSdkState.connectedAccounts.list = async () => ({
       items: [{ id: "ca-personal" }, { id: "ca-work" }],
     });
-    composioSdkState.connectedAccounts.waitForConnection = async (id: string) => ({
-      id: id === "req-work" ? "ca-work" : `resolved-${id}`,
-    });
+    composioSdkState.connectedAccounts.waitForConnection = async (id: string) => {
+      if (id === "req-work") return { id: "ca-work" };
+      if (id === "req-missing") throw new Error("timeout");
+      return { id: `resolved-${id}` };
+    };
 
     const connector = new ComposioConnector();
     await expect(
@@ -329,6 +331,12 @@ describe("composio tool mapping", () => {
     await expect(
       connector.resolveConnectedAccountId("user-1", "gmail", "gmail", ["ca-personal"]),
     ).resolves.toBe("ca-work");
+    await expect(
+      connector.resolveConnectedAccountId("user-1", "gmail", "req-missing", [
+        "ca-personal",
+        "ca-work",
+      ]),
+    ).resolves.toBeUndefined();
   });
 
   it("uses Composio slug casing when the toolkit directory is unavailable", async () => {
