@@ -1,5 +1,11 @@
 import { expect, test } from "@playwright/test";
-import { captureScreenshot, completeOnboarding, createNamedBot, signup } from "./helpers";
+import {
+  captureScreenshot,
+  completeOnboarding,
+  createNamedBot,
+  openNewGroup,
+  signup,
+} from "./helpers";
 
 async function createBot(page: import("@playwright/test").Page, name: string) {
   return createNamedBot(page, name);
@@ -17,8 +23,7 @@ test("mention picker completes with Enter and Tab", async ({ page }, testInfo) =
   expect(researcherId).toBeTruthy();
   expect(writerId).toBeTruthy();
 
-  await page.getByTitle("Create", { exact: true }).click();
-  await page.getByRole("button", { name: "New group" }).click();
+  await openNewGroup(page);
   await page.locator("label:has-text('Name') input").fill("Mention keys team");
   const panel = page.getByTestId("side-panel");
   await panel.getByRole("button", { name: "Researcher" }).click();

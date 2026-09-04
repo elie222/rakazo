@@ -95,6 +95,16 @@ export async function openNewBot(page: Page) {
   await page.getByTestId("create-new-bot").click();
 }
 
+export async function openNewGroup(page: Page) {
+  await page.getByTestId("create-menu-trigger").click();
+  await page.getByTestId("create-new-group").click();
+}
+
+export async function openNewSpace(page: Page) {
+  await page.getByTestId("create-menu-trigger").click();
+  await page.getByTestId("create-new-space").click();
+}
+
 /** Instant-create a bot from the + picker and wait for its chat (side panel closed). */
 export async function createBotFromPicker(page: Page) {
   await openNewBot(page);

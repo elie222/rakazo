@@ -85,10 +85,19 @@ export function BotCreatePicker({
           </CommandGroup>
           <CommandSeparator />
           <CommandGroup>
-            <CommandItem value="create-group" onSelect={() => onCreateGroup()}>
+            <CommandItem
+              value="create-group"
+              data-testid="create-new-group"
+              onSelect={() => onCreateGroup()}
+            >
               <Trans>New group</Trans>
             </CommandItem>
-            <CommandItem value="create-space" onSelect={() => onCreateSpace()} className="gap-2">
+            <CommandItem
+              value="create-space"
+              data-testid="create-new-space"
+              onSelect={() => onCreateSpace()}
+              className="gap-2"
+            >
               <Lock size={14} strokeWidth={1.8} aria-hidden="true" />
               <Trans>New space</Trans>
             </CommandItem>
