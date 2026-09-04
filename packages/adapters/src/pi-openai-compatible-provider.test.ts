@@ -206,9 +206,7 @@ describe("openai-compatible provider", () => {
     const fetchImpl = async () => new Response("nope", { status: 404 });
     await expect(
       probeOpenAiCompatibleModels({ baseUrl: "http://127.0.0.1:8000/v1" }, fetchImpl),
-    ).rejects.toThrow(
-      /returned 404.*explicit model id.*Connect without a successful \/models probe/s,
-    );
+    ).rejects.toThrow(/returned 404.*You can still Connect with an explicit model id/s);
   });
 
   it("clarifies missing models list with hand-fill hint", async () => {

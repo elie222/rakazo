@@ -261,8 +261,7 @@ export type OpenAiCompatibleModelsResponse = {
 };
 
 /** Shared suffix: /models probe is optional when the user already knows a model id. */
-const OPENAI_COMPAT_PROBE_HAND_FILL_HINT =
-  "You can still enter an explicit model id and Connect without a successful /models probe.";
+const OPENAI_COMPAT_PROBE_HAND_FILL_HINT = "You can still Connect with an explicit model id.";
 
 function probeModelIds(body: OpenAiCompatibleModelsResponse): string[] {
   const entries = Array.isArray(body.data)
