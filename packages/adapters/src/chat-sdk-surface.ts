@@ -154,6 +154,18 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
     await raceWithSignal(platform.adapter.startTyping(threadId), context.signal);
   }
 
+  /**
+   * Proactively start the underlying Chat SDK instance. Webhook handling
+   * and outbound sends already trigger this lazily (see ensureInitialized
+   * below), but a polling-mode adapter (Telegram in "auto" mode with no
+   * public webhook URL registered) needs its pull loop running before the
+   * first inbound message can ever arrive, so long-running hosts call this
+   * explicitly at startup instead of waiting on the first send.
+   */
+  async initialize(): Promise<void> {
+    await this.ensureInitialized();
+  }
+
   private ensureInitialized(): Promise<void> {
     // Webhook handling initializes lazily inside the Chat SDK; proactive
     // sends from job runners need the explicit call.

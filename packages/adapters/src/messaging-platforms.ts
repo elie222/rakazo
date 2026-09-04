@@ -122,12 +122,21 @@ export function messagingPlatformsFromEnv(env: MessagingEnvironmentValues): Mess
     platforms.push({
       provider: "telegram",
       capabilities: { direct: true, groups: false, typing: false },
-      // Webhook-only: auto mode can long-poll getUpdates from the worker on
-      // initialize() and consume updates so the HTTP webhook never sees them.
+      // Auto mode: uses the webhook route when Telegram has one registered
+      // (checked via getWebhookInfo), and otherwise falls back to
+      // long-polling getUpdates. Self-hosted/local deployments typically
+      // have no public HTTPS endpoint for Telegram to push to, so the API
+      // process calls initialize() at startup (apps/api/src/app.ts) to
+      // start that polling loop immediately rather than waiting for the
+      // first inbound webhook or outbound send. It must be the API
+      // process specifically: that's where the inbound sink is registered,
+      // and Telegram allows only one live getUpdates connection per bot —
+      // a second poller elsewhere would just steal that slot and drop
+      // every message into the void.
       adapter: createTelegramAdapter({
         botToken: env.telegramBotToken,
         secretToken: env.telegramWebhookSecret,
-        mode: "webhook",
+        mode: "auto",
       }),
     });
   }

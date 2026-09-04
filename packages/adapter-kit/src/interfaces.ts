@@ -323,6 +323,15 @@ export interface MessagingSurface {
    * message delivery, and silently no-ops on platforms without support.
    */
   sendTyping(threadId: string, context: AdapterContext): Promise<void>;
+  /**
+   * Start the surface eagerly instead of waiting for the first inbound
+   * webhook or outbound send to touch it. Needed for adapters that pull
+   * updates themselves (e.g. Telegram in "auto"/"polling" mode, used when
+   * no public webhook URL is reachable): without an explicit call here,
+   * nothing kicks off that pull loop until something else happens to
+   * initialize the adapter first.
+   */
+  initialize?(): Promise<void>;
 }
 
 /**

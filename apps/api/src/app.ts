@@ -429,6 +429,16 @@ export async function createApp(
       else await applyMessagingOutboundStatus(prisma, event);
     });
     mountMessagingWebhookRoutes(app, { messaging });
+    // Start polling-mode adapters (e.g. Telegram with no public webhook URL
+    // registered) immediately rather than waiting for the first webhook
+    // POST or outbound send to lazily trigger it. This is the process that
+    // owns the inbound sink registered just above, so it must be the one
+    // holding the live connection — a second poller elsewhere (e.g. the
+    // worker) would only fight this one for Telegram's single getUpdates
+    // slot without ever seeing the messages itself.
+    void messaging.initialize?.().catch((error) => {
+      console.error("messaging surface initialize failed", error);
+    });
   }
 
   app.get("/health", (c) =>
