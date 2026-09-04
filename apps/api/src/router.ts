@@ -2964,11 +2964,14 @@ export function createRouter(deps: RouterDeps) {
             return updated.count > 0;
           });
           if (!applied) {
-            // Revoke won the race; drop any remote auth begin just opened.
-            if (auth.state) {
+            // Revoke won the race. Only clean up account-scoped remote refs —
+            // Pipedream stores the app slug as state, and revoking by slug would
+            // delete every sibling account for that provider.
+            const state = auth.state?.trim();
+            if (state && state !== input.provider) {
               await connector
                 .revoke(
-                  auth.state,
+                  state,
                   connectionContext(context.actor, "connections.begin", context.signal),
                 )
                 .catch(() => undefined);
