@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:16
+    image: ${POSTGRES_IMAGE:-postgres:16}
     environment:
       POSTGRES_USER: rakazo
       POSTGRES_PASSWORD: rakazo
@@ -49,7 +49,7 @@ services:
     restart: "no"
 
   data-init:
-    image: busybox:1
+    image: ${BUSYBOX_IMAGE:-busybox:1}
     command: ["chown", "-R", "1000:1000", "/data"]
     restart: "no"
     volumes:
