@@ -18,6 +18,7 @@ import {
 import {
   assertAllowedOpenAiCompatibleRequestUrl,
   assertAllowedOpenAiCompatibleUrl,
+  assertHttpsForKeyedOpenAiCompatibleUrl,
   isPrivateOpenAiCompatibleHostname,
   normalizeOpenAiCompatibleBaseUrl,
   OPENAI_COMPATIBLE_PROVIDER_ID,
@@ -111,6 +112,23 @@ export function createOpenAiCompatibleLookup(
   });
 }
 
+
+function requestCarriesAuthorization(
+  input: RequestInfo | URL,
+  init?: RequestInit,
+): boolean {
+  if (input instanceof Request && input.headers.get("authorization")) return true;
+  const headers = init?.headers;
+  if (!headers) return false;
+  if (headers instanceof Headers) return Boolean(headers.get("authorization"));
+  if (Array.isArray(headers)) {
+    return headers.some(([name, value]) => name.toLowerCase() === "authorization" && Boolean(value));
+  }
+  return Object.entries(headers).some(
+    ([name, value]) => name.toLowerCase() === "authorization" && Boolean(value),
+  );
+}
+
 export function createOpenAiCompatibleFetch(
   baseFetch: typeof globalThis.fetch = globalThis.fetch,
   resolve: ResolveHostname = resolveHostname,
@@ -118,6 +136,9 @@ export function createOpenAiCompatibleFetch(
   return async (input, init) => {
     const rawUrl = input instanceof Request ? input.url : String(input);
     const url = assertAllowedOpenAiCompatibleRequestUrl(rawUrl);
+    if (requestCarriesAuthorization(input, init)) {
+      assertHttpsForKeyedOpenAiCompatibleUrl(url, "present");
+    }
     const hostname = url.hostname.replace(/^\[|\]$/g, "");
     const dispatcher =
       isIP(hostname) === 0
@@ -225,8 +246,10 @@ export function prepareOpenAiCompatibleConnect(input: OpenAiCompatibleConnectInp
   const modelId = input.modelId?.trim();
   if (!baseUrl) throw new Error("Base URL is required for OpenAI-compatible models");
   if (!modelId) throw new Error("Model id is required for OpenAI-compatible models");
-  const normalized = assertAllowedOpenAiCompatibleUrl(baseUrl).href;
+  const allowed = assertAllowedOpenAiCompatibleUrl(baseUrl);
   const apiKey = input.apiKey?.trim();
+  assertHttpsForKeyedOpenAiCompatibleUrl(allowed, apiKey);
+  const normalized = allowed.href;
   return apiKey ? { baseUrl: normalized, modelId, apiKey } : { baseUrl: normalized, modelId };
 }
 
@@ -288,6 +311,7 @@ export async function probeOpenAiCompatibleModels(
   signal?: AbortSignal,
 ): Promise<string[]> {
   const baseUrl = assertAllowedOpenAiCompatibleUrl(input.baseUrl);
+  assertHttpsForKeyedOpenAiCompatibleUrl(baseUrl, input.apiKey);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 5_000);
   const merged = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;

@@ -8,6 +8,7 @@ import {
   createOpenAiCompatibleLookup,
   OPENAI_COMPATIBLE_CATALOG_MODEL_ID,
   openAiCompatibleCatalogProvider,
+  prepareOpenAiCompatibleConnect,
   probeOpenAiCompatibleModels,
   registerOpenAiCompatibleRuntime,
 } from "./pi-openai-compatible-provider.js";
@@ -42,6 +43,67 @@ describe("model connect", () => {
     const parsed = parseModelSecret(serializeModelSecret(secret));
     expect(parsed).toEqual(secret);
     expect(secretValuesToRedact(parsed)).toEqual(["local-secret"]);
+  });
+
+  it("keeps private http openai-compatible connects when an API key is set", () => {
+    const plaintext = buildModelConnectPlaintext({
+      provider: OPENAI_COMPATIBLE_PROVIDER_ID,
+      baseUrl: "http://127.0.0.1:8000",
+      modelId: "local-model",
+      apiKey: "local-secret",
+    });
+    expect(parseModelSecret(plaintext)).toEqual({
+      kind: "openai_compatible",
+      baseUrl: "http://127.0.0.1:8000/v1",
+      apiKey: "local-secret",
+    });
+  });
+
+  it("rejects public http openai-compatible connects when an API key is set", () => {
+    const previous = process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC;
+    process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC = "1";
+    try {
+      expect(() =>
+        prepareOpenAiCompatibleConnect({
+          provider: OPENAI_COMPATIBLE_PROVIDER_ID,
+          baseUrl: "http://api.example.com/v1",
+          modelId: "my-model-id",
+          apiKey: "secret-key",
+        }),
+      ).toThrow(/must use HTTPS/);
+      expect(() =>
+        buildModelConnectPlaintext({
+          provider: OPENAI_COMPATIBLE_PROVIDER_ID,
+          baseUrl: "http://api.example.com/v1",
+          modelId: "my-model-id",
+          apiKey: "secret-key",
+        }),
+      ).toThrow(/must use HTTPS/);
+    } finally {
+      if (previous === undefined) delete process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC;
+      else process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC = previous;
+    }
+  });
+
+  it("allows public https openai-compatible connects when an API key is set", () => {
+    const previous = process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC;
+    process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC = "1";
+    try {
+      const prepared = prepareOpenAiCompatibleConnect({
+        provider: OPENAI_COMPATIBLE_PROVIDER_ID,
+        baseUrl: "https://api.example.com/v1",
+        modelId: "my-model-id",
+        apiKey: "secret-key",
+      });
+      expect(prepared).toEqual({
+        baseUrl: "https://api.example.com/v1",
+        modelId: "my-model-id",
+        apiKey: "secret-key",
+      });
+    } finally {
+      if (previous === undefined) delete process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC;
+      else process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC = previous;
+    }
   });
 });
 
