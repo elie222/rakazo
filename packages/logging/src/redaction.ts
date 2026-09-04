@@ -21,7 +21,17 @@ function redactValue(value: unknown, seen = new WeakSet<object>()): unknown {
   if (Array.isArray(value)) {
     return value.map((item) => redactValue(item, seen));
   }
-  if (value instanceof Error) return value;
+  if (value instanceof Error) {
+    const output: Record<string, unknown> = {
+      name: value.name || "Error",
+      message: redactSensitiveText(value.message),
+    };
+    if (typeof value.stack === "string" && value.stack.length > 0) {
+      output.stack = redactSensitiveText(value.stack);
+    }
+    if (value.cause !== undefined) output.cause = redactValue(value.cause, seen);
+    return output;
+  }
   if (value instanceof Date) return value;
   const output: Record<string, unknown> = {};
   for (const [key, nested] of Object.entries(value)) {
