@@ -317,7 +317,7 @@ export function McpApprovalCard({
         <>
           <p className="mt-2 text-[13px] leading-[1.5] text-foreground/75">
             {needsOAuth
-              ? t`This server uses browser sign-in. Authorize it to let your agents use its tools — a popup will open.`
+              ? t`This server uses browser sign-in. Authorize it to let your agents use its tools. A popup will open.`
               : t`Approve this server to let your agent use its tools.`}
           </p>
           {error ? <p className="mt-2 text-xs text-destructive">{error}</p> : null}
@@ -341,12 +341,12 @@ export function McpApprovalCard({
       ) : null}
       {state === "connected" ? (
         <div className="mt-3">
-          <SuccessPop label={t`Connected — its tools are available from your next message.`} />
+          <SuccessPop label={t`Connected. Its tools are available from your next message.`} />
         </div>
       ) : null}
       {state === "dismissed" ? (
         <p className="mt-2 text-[13px] text-muted-foreground">
-          <Trans>Dismissed — reconnect anytime from MCP settings.</Trans>
+          <Trans>Dismissed. Reconnect anytime from MCP settings.</Trans>
         </p>
       ) : null}
     </BuiCard>

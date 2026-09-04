@@ -17,14 +17,6 @@ msgstr ""
 msgid " (unread)"
 msgstr " (अपठित)"
 
-#: src/pages/HostComputerPrompt.tsx:64
-msgid " macOS will not ask for extra permission if you let bots run on this Mac — they run as you."
-msgstr " यदि आप बॉट्स को इस Mac पर चलने देते हैं तो macOS अतिरिक्त अनुमति नहीं मांगेगा — वे आपके रूप में ही चलते हैं।"
-
-#: src/pages/HostComputerPrompt.tsx:70
-msgid " Your OS will not ask for extra permission if you let bots run on {hostLabel} — they run as you."
-msgstr " यदि आप बॉट्स को {hostLabel} पर चलने देते हैं तो आपका OS अतिरिक्त अनुमति नहीं मांगेगा — वे आपके रूप में ही चलते हैं।"
-
 #. placeholder {0}: group.entries.length
 #: src/pages/ModelSettingsOverlay.tsx:387
 msgid "{0, plural, one {# model} other {# models}}"
@@ -141,7 +133,7 @@ msgstr "खाता डिफ़ॉल्ट"
 msgid "Action confirmations"
 msgstr "कार्रवाई की पुष्टि"
 
-#: src/pages/shell/command-palette.tsx:118
+#: src/pages/shell/command-palette.tsx:119
 msgid "Actions"
 msgstr ""
 
@@ -269,7 +261,7 @@ msgstr ""
 msgid "Agents:"
 msgstr "एजेंट:"
 
-#: src/pages/shell/command-palette.tsx:111
+#: src/pages/shell/command-palette.tsx:112
 msgid "All"
 msgstr ""
 
@@ -503,7 +495,7 @@ msgstr "बॉट"
 #. js-lingui-explicit-id
 #: src/lib/browser-notifications.ts:71
 msgid "Bot"
-msgstr ""
+msgstr "बॉट"
 
 #: src/pages/Shell.tsx:3895
 msgid "Bot screen"
@@ -517,13 +509,13 @@ msgstr "बॉट स्क्रीन प्रीव्यू"
 msgid "Bot to link"
 msgstr ""
 
-#: src/pages/shell/command-palette.tsx:113
+#: src/pages/shell/command-palette.tsx:114
 msgid "Bots"
 msgstr ""
 
 #: src/components/ApprovalRulesSettings.tsx:115
-msgid "Bots act without asking by default. Add an exception only when you want to review a type of action first. These preferences apply across all your bots."
-msgstr "बॉट डिफ़ॉल्ट रूप से बिना पूछे कार्रवाई करते हैं। अपवाद तभी जोड़ें जब आप किसी प्रकार की कार्रवाई की पहले समीक्षा करना चाहते हों। ये प्राथमिकताएं आपके सभी बॉट्स पर लागू होती हैं।"
+msgid "Bots act without asking by default. Add an exception only when you want to review a type of action first."
+msgstr "बॉट डिफ़ॉल्ट रूप से बिना पूछे कार्रवाई करते हैं। अपवाद तभी जोड़ें जब आप किसी प्रकार की कार्रवाई की पहले समीक्षा करना चाहते हों।"
 
 #: src/pages/Shell.tsx:3997
 msgid "Bots are working"
@@ -731,7 +723,7 @@ msgid "Collapse {0}"
 msgstr ""
 
 #: src/pages/RoutineEditor.tsx:387
-#: src/pages/shell/command-palette.tsx:223
+#: src/pages/shell/command-palette.tsx:224
 msgid "Coming soon"
 msgstr ""
 
@@ -830,10 +822,6 @@ msgstr "Treg कनेक्ट करें"
 msgid "Connected"
 msgstr "कनेक्टेड"
 
-#: src/pages/shell/message-cards.tsx:344
-msgid "Connected — its tools are available from your next message."
-msgstr "कनेक्टेड — इसके टूल आपके अगले संदेश से उपलब्ध हैं।"
-
 #. placeholder {0}: credential.label
 #. placeholder {0}: selected.name
 #: src/pages/ModelSettingsOverlay.tsx:532
@@ -852,6 +840,10 @@ msgstr "{0} कनेक्ट किया गया।"
 #: src/pages/ModelSettingsOverlay.tsx:286
 msgid "Connected and using {0}."
 msgstr "{0} कनेक्ट किया गया और उपयोग में है।"
+
+#: src/pages/shell/message-cards.tsx:344
+msgid "Connected. Its tools are available from your next message."
+msgstr "कनेक्टेड। इसके टूल आपके अगले संदेश से उपलब्ध हैं।"
 
 #: src/pages/McpServersOverlay.tsx:38
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx:82
@@ -1352,8 +1344,8 @@ msgid "Dismiss error"
 msgstr ""
 
 #: src/pages/shell/message-cards.tsx:349
-msgid "Dismissed — reconnect anytime from MCP settings."
-msgstr "खारिज किया गया — MCP सेटिंग्स से कभी भी पुनः कनेक्ट करें।"
+msgid "Dismissed. Reconnect anytime from MCP settings."
+msgstr "खारिज किया गया। MCP सेटिंग्स से कभी भी पुनः कनेक्ट करें।"
 
 #: src/pages/PluginsOverlay.tsx:509
 msgid "Display name"
@@ -1364,7 +1356,7 @@ msgstr "प्रदर्शित नाम"
 msgid "Do not type passwords into the demo. Use Take control for credentials."
 msgstr "डेमो में पासवर्ड टाइप न करें। क्रेडेंशियल्स के लिए 'टेक कंट्रोल' (Take control) का इस्तेमाल करें।"
 
-#: src/pages/HostComputerPrompt.tsx:81
+#: src/pages/HostComputerPrompt.tsx:79
 msgid "Docker (recommended)"
 msgstr "Docker (अनुशंसित)"
 
@@ -1500,7 +1492,7 @@ msgstr "विफल।"
 msgid "Failure handling"
 msgstr "विफलता प्रबंधन"
 
-#: src/pages/shell/command-palette.tsx:115
+#: src/pages/shell/command-palette.tsx:116
 msgid "Files"
 msgstr ""
 
@@ -1559,7 +1551,7 @@ msgstr "समूह"
 msgid "Group settings"
 msgstr "समूह सेटिंग्स"
 
-#: src/pages/shell/command-palette.tsx:114
+#: src/pages/shell/command-palette.tsx:115
 msgid "Groups"
 msgstr ""
 
@@ -1734,7 +1726,7 @@ msgstr ""
 msgid "Link a chat app"
 msgstr ""
 
-#: src/pages/shell/command-palette.tsx:116
+#: src/pages/shell/command-palette.tsx:117
 msgid "Links"
 msgstr ""
 
@@ -1794,6 +1786,10 @@ msgstr "लॉग आउट"
 msgid "Low"
 msgstr "निम्न"
 
+#: src/pages/HostComputerPrompt.tsx:64
+msgid "macOS will not ask for extra permission if you let bots run on this Mac. They run as you."
+msgstr "यदि आप बॉट्स को इस Mac पर चलने देते हैं तो macOS अतिरिक्त अनुमति नहीं मांगेगा। वे आपके रूप में ही चलते हैं।"
+
 #: src/pages/AccountSettingsOverlay.tsx:143
 msgid "Manage messaging settings"
 msgstr ""
@@ -1852,7 +1848,7 @@ msgstr "संदेश"
 #. js-lingui-explicit-id
 #: src/lib/browser-notifications.ts:83
 msgid "Message"
-msgstr ""
+msgstr "संदेश"
 
 #: src/pages/Shell.tsx:4805
 #: src/pages/Shell.tsx:4809
@@ -1875,7 +1871,7 @@ msgstr "संदेश…"
 msgid "Messaged {peer}"
 msgstr "{peer} को संदेश भेजा"
 
-#: src/pages/shell/command-palette.tsx:112
+#: src/pages/shell/command-palette.tsx:113
 msgid "Messages"
 msgstr ""
 
@@ -2040,7 +2036,7 @@ msgstr "कोई प्रमाणीकरण नहीं"
 msgid "No authentication"
 msgstr "कोई प्रमाणीकरण नहीं"
 
-#: src/pages/shell/command-palette.tsx:164
+#: src/pages/shell/command-palette.tsx:165
 msgid "No bots"
 msgstr ""
 
@@ -2517,7 +2513,7 @@ msgid "Routine"
 msgstr "रूटीन"
 
 #: src/pages/RoutineEditor.tsx:108
-#: src/pages/shell/command-palette.tsx:117
+#: src/pages/shell/command-palette.tsx:118
 msgid "Routines"
 msgstr "रूटीन्स"
 
@@ -2589,7 +2585,7 @@ msgstr "हां या ना कहें, या एक वाक्य म�
 
 #: src/pages/ModelSettingsOverlay.tsx:957
 #: src/pages/Shell.tsx:2512
-#: src/pages/shell/command-palette.tsx:137
+#: src/pages/shell/command-palette.tsx:138
 msgid "Search"
 msgstr "खोजें"
 
@@ -2598,7 +2594,7 @@ msgstr "खोजें"
 msgid "Search apps"
 msgstr "ऐप खोजें"
 
-#: src/pages/shell/command-palette.tsx:126
+#: src/pages/shell/command-palette.tsx:127
 msgid "Search bots and switch conversations"
 msgstr ""
 
@@ -2864,7 +2860,7 @@ msgstr "सबमिट करें"
 msgid "Submitted"
 msgstr ""
 
-#: src/pages/shell/command-palette.tsx:125
+#: src/pages/shell/command-palette.tsx:126
 msgid "Switch bot"
 msgstr ""
 
@@ -2882,8 +2878,8 @@ msgid "Teach a task"
 msgstr "कोई कार्य सिखाएं"
 
 #: src/pages/Shell.tsx:3054
-msgid "Teaching in progress — stop teaching before sending a new message."
-msgstr "सिखाना जारी है — नया संदेश भेजने से पहले सिखाना रोकें।"
+msgid "Teaching in progress. Stop teaching before sending a new message."
+msgstr "सिखाना जारी है। नया संदेश भेजने से पहले सिखाना रोकें।"
 
 #: src/pages/shell/bot-panel.tsx:60
 msgid "Team"
@@ -2938,7 +2934,7 @@ msgstr "यह चैट केवल देखने के लिए है"
 msgid "this computer"
 msgstr "यह कंप्यूटर"
 
-#: src/pages/HostComputerPrompt.tsx:99
+#: src/pages/HostComputerPrompt.tsx:97
 msgid "This computer runs shell commands with your account, including files in your home folder. Do not turn it on for a shared or public server."
 msgstr "यह कंप्यूटर आपके खाते से शेल कमांड चलाता है, जिसमें आपके होम फ़ोल्डर की फ़ाइलें भी शामिल हैं। इसे किसी साझा या सार्वजनिक सर्वर पर चालू न करें।"
 
@@ -2950,7 +2946,7 @@ msgstr "यह फ़ाइल मान्य UTF-8 Markdown नहीं ह�
 msgid "this Mac"
 msgstr "यह Mac"
 
-#: src/pages/HostComputerPrompt.tsx:94
+#: src/pages/HostComputerPrompt.tsx:92
 msgid "This Mac runs shell commands with your account, including files in your home folder. Do not turn it on for a shared or public server."
 msgstr "यह Mac आपके खाते से शेल कमांड चलाता है, जिसमें आपके होम फ़ोल्डर की फ़ाइलें भी शामिल हैं। इसे किसी साझा या सार्वजनिक सर्वर पर चालू न करें।"
 
@@ -2979,8 +2975,8 @@ msgid "This server is already connected. Disconnect it first to authorize again.
 msgstr "यह सर्वर पहले से कनेक्टेड है। पुनः ऑथराइज़ करने के लिए पहले इसे डिस्कनेक्ट करें।"
 
 #: src/pages/shell/message-cards.tsx:320
-msgid "This server uses browser sign-in. Authorize it to let your agents use its tools — a popup will open."
-msgstr "यह सर्वर ब्राउज़र साइन-इन का उपयोग करता है। अपने एजेंट को इसके टूल उपयोग करने देने के लिए इसे ऑथराइज़ करें — एक पॉपअप खुलेगा।"
+msgid "This server uses browser sign-in. Authorize it to let your agents use its tools. A popup will open."
+msgstr "यह सर्वर ब्राउज़र साइन-इन का उपयोग करता है। अपने एजेंट को इसके टूल उपयोग करने देने के लिए इसे ऑथराइज़ करें। एक पॉपअप खुलेगा।"
 
 #: src/pages/ModelSettingsOverlay.tsx:701
 msgid "This subscription sign-in is not available in Rakazo yet. Use a deployment credential or choose another provider."
@@ -3069,7 +3065,7 @@ msgstr "अपडेट हो रहा है…"
 msgid "Usage"
 msgstr "उपयोग"
 
-#: src/pages/HostComputerPrompt.tsx:89
+#: src/pages/HostComputerPrompt.tsx:87
 msgid "Use {hostLabel}"
 msgstr "{hostLabel} का उपयोग करें"
 
@@ -3194,6 +3190,10 @@ msgstr "आपकी कुंजी या सब्सक्रिप्शन
 #: src/pages/Auth.tsx:118
 msgid "Your name"
 msgstr "आपका नाम"
+
+#: src/pages/HostComputerPrompt.tsx:69
+msgid "Your OS will not ask for extra permission if you let bots run on {hostLabel}. They run as you."
+msgstr "यदि आप बॉट्स को {hostLabel} पर चलने देते हैं तो आपका OS अतिरिक्त अनुमति नहीं मांगेगा। वे आपके रूप में ही चलते हैं।"
 
 #: src/pages/Welcome.tsx:21
 msgid "Your team of always-on agents<0/>that you can give real work to."

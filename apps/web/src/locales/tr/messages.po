@@ -17,14 +17,6 @@ msgstr ""
 msgid " (unread)"
 msgstr " (okunmadı)"
 
-#: src/pages/HostComputerPrompt.tsx:64
-msgid " macOS will not ask for extra permission if you let bots run on this Mac — they run as you."
-msgstr " Botların bu Mac'te çalışmasına izin verirsen macOS ek izin istemez — botlar senin adına çalışır."
-
-#: src/pages/HostComputerPrompt.tsx:70
-msgid " Your OS will not ask for extra permission if you let bots run on {hostLabel} — they run as you."
-msgstr " Botların {hostLabel} üzerinde çalışmasına izin verirsen işletim sistemin ek izin istemez — botlar senin adına çalışır."
-
 #. placeholder {0}: group.entries.length
 #: src/pages/ModelSettingsOverlay.tsx:387
 msgid "{0, plural, one {# model} other {# models}}"
@@ -141,7 +133,7 @@ msgstr "Hesap varsayılanı"
 msgid "Action confirmations"
 msgstr "İşlem onayları"
 
-#: src/pages/shell/command-palette.tsx:118
+#: src/pages/shell/command-palette.tsx:119
 msgid "Actions"
 msgstr ""
 
@@ -269,7 +261,7 @@ msgstr ""
 msgid "Agents:"
 msgstr "Agent'lar:"
 
-#: src/pages/shell/command-palette.tsx:111
+#: src/pages/shell/command-palette.tsx:112
 msgid "All"
 msgstr ""
 
@@ -503,7 +495,7 @@ msgstr "Bot"
 #. js-lingui-explicit-id
 #: src/lib/browser-notifications.ts:71
 msgid "Bot"
-msgstr ""
+msgstr "Bot"
 
 #: src/pages/Shell.tsx:3895
 msgid "Bot screen"
@@ -517,13 +509,13 @@ msgstr "Bot ekranı önizlemesi"
 msgid "Bot to link"
 msgstr ""
 
-#: src/pages/shell/command-palette.tsx:113
+#: src/pages/shell/command-palette.tsx:114
 msgid "Bots"
 msgstr ""
 
 #: src/components/ApprovalRulesSettings.tsx:115
-msgid "Bots act without asking by default. Add an exception only when you want to review a type of action first. These preferences apply across all your bots."
-msgstr "Botlar varsayılan olarak sormadan hareket eder. Yalnızca belirli bir işlem türünü önce incelemek istediğinde istisna ekle. Bu tercihler tüm botlarında geçerlidir."
+msgid "Bots act without asking by default. Add an exception only when you want to review a type of action first."
+msgstr "Botlar varsayılan olarak sormadan hareket eder. Yalnızca belirli bir işlem türünü önce incelemek istediğinde istisna ekle."
 
 #: src/pages/Shell.tsx:3997
 msgid "Bots are working"
@@ -731,7 +723,7 @@ msgid "Collapse {0}"
 msgstr ""
 
 #: src/pages/RoutineEditor.tsx:387
-#: src/pages/shell/command-palette.tsx:223
+#: src/pages/shell/command-palette.tsx:224
 msgid "Coming soon"
 msgstr ""
 
@@ -830,10 +822,6 @@ msgstr "Treg'i bağla"
 msgid "Connected"
 msgstr "Bağlandı"
 
-#: src/pages/shell/message-cards.tsx:344
-msgid "Connected — its tools are available from your next message."
-msgstr "Bağlandı — araçları bir sonraki mesajından itibaren kullanılabilir."
-
 #. placeholder {0}: credential.label
 #. placeholder {0}: selected.name
 #: src/pages/ModelSettingsOverlay.tsx:532
@@ -852,6 +840,10 @@ msgstr "{0} bağlandı."
 #: src/pages/ModelSettingsOverlay.tsx:286
 msgid "Connected and using {0}."
 msgstr "Bağlandı, {0} kullanılıyor."
+
+#: src/pages/shell/message-cards.tsx:344
+msgid "Connected. Its tools are available from your next message."
+msgstr "Bağlandı. Araçları bir sonraki mesajından itibaren kullanılabilir."
 
 #: src/pages/McpServersOverlay.tsx:38
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx:82
@@ -1352,8 +1344,8 @@ msgid "Dismiss error"
 msgstr ""
 
 #: src/pages/shell/message-cards.tsx:349
-msgid "Dismissed — reconnect anytime from MCP settings."
-msgstr "Kapatıldı — MCP ayarlarından istediğin zaman yeniden bağlanabilirsin."
+msgid "Dismissed. Reconnect anytime from MCP settings."
+msgstr "Kapatıldı. MCP ayarlarından istediğin zaman yeniden bağlanabilirsin."
 
 #: src/pages/PluginsOverlay.tsx:509
 msgid "Display name"
@@ -1364,7 +1356,7 @@ msgstr "Görünen ad"
 msgid "Do not type passwords into the demo. Use Take control for credentials."
 msgstr "Demoya parola yazma. Kimlik bilgileri için Kontrolü al'ı kullan."
 
-#: src/pages/HostComputerPrompt.tsx:81
+#: src/pages/HostComputerPrompt.tsx:79
 msgid "Docker (recommended)"
 msgstr "Docker (önerilen)"
 
@@ -1500,7 +1492,7 @@ msgstr "Başarısız oldu."
 msgid "Failure handling"
 msgstr "Hata yönetimi"
 
-#: src/pages/shell/command-palette.tsx:115
+#: src/pages/shell/command-palette.tsx:116
 msgid "Files"
 msgstr ""
 
@@ -1559,7 +1551,7 @@ msgstr "Grup"
 msgid "Group settings"
 msgstr "Grup ayarları"
 
-#: src/pages/shell/command-palette.tsx:114
+#: src/pages/shell/command-palette.tsx:115
 msgid "Groups"
 msgstr ""
 
@@ -1734,7 +1726,7 @@ msgstr ""
 msgid "Link a chat app"
 msgstr ""
 
-#: src/pages/shell/command-palette.tsx:116
+#: src/pages/shell/command-palette.tsx:117
 msgid "Links"
 msgstr ""
 
@@ -1794,6 +1786,10 @@ msgstr "Çıkış yap"
 msgid "Low"
 msgstr "Düşük"
 
+#: src/pages/HostComputerPrompt.tsx:64
+msgid "macOS will not ask for extra permission if you let bots run on this Mac. They run as you."
+msgstr "Botların bu Mac'te çalışmasına izin verirsen macOS ek izin istemez. Botlar senin adına çalışır."
+
 #: src/pages/AccountSettingsOverlay.tsx:143
 msgid "Manage messaging settings"
 msgstr ""
@@ -1852,7 +1848,7 @@ msgstr "Mesaj"
 #. js-lingui-explicit-id
 #: src/lib/browser-notifications.ts:83
 msgid "Message"
-msgstr ""
+msgstr "Mesaj"
 
 #: src/pages/Shell.tsx:4805
 #: src/pages/Shell.tsx:4809
@@ -1875,7 +1871,7 @@ msgstr "Mesaj…"
 msgid "Messaged {peer}"
 msgstr "{peer} botuna mesaj gönderildi"
 
-#: src/pages/shell/command-palette.tsx:112
+#: src/pages/shell/command-palette.tsx:113
 msgid "Messages"
 msgstr ""
 
@@ -2040,7 +2036,7 @@ msgstr "kimlik doğrulamasız"
 msgid "No authentication"
 msgstr "Kimlik doğrulaması yok"
 
-#: src/pages/shell/command-palette.tsx:164
+#: src/pages/shell/command-palette.tsx:165
 msgid "No bots"
 msgstr ""
 
@@ -2500,7 +2496,7 @@ msgstr "Rakazo'ya dön"
 
 #: src/pages/MessagingSettingsOverlay.tsx:318
 msgid "Revoke"
-msgstr ""
+msgstr "İptal et"
 
 #: src/pages/AccountSettingsOverlay.tsx:188
 msgid "Robot"
@@ -2517,7 +2513,7 @@ msgid "Routine"
 msgstr "Rutin"
 
 #: src/pages/RoutineEditor.tsx:108
-#: src/pages/shell/command-palette.tsx:117
+#: src/pages/shell/command-palette.tsx:118
 msgid "Routines"
 msgstr "Rutinler"
 
@@ -2589,7 +2585,7 @@ msgstr "Evet ya da hayır de veya bir cümleyle yanıtla."
 
 #: src/pages/ModelSettingsOverlay.tsx:957
 #: src/pages/Shell.tsx:2512
-#: src/pages/shell/command-palette.tsx:137
+#: src/pages/shell/command-palette.tsx:138
 msgid "Search"
 msgstr "Ara"
 
@@ -2598,7 +2594,7 @@ msgstr "Ara"
 msgid "Search apps"
 msgstr "Uygulama ara"
 
-#: src/pages/shell/command-palette.tsx:126
+#: src/pages/shell/command-palette.tsx:127
 msgid "Search bots and switch conversations"
 msgstr ""
 
@@ -2864,7 +2860,7 @@ msgstr "Gönder"
 msgid "Submitted"
 msgstr ""
 
-#: src/pages/shell/command-palette.tsx:125
+#: src/pages/shell/command-palette.tsx:126
 msgid "Switch bot"
 msgstr ""
 
@@ -2882,8 +2878,8 @@ msgid "Teach a task"
 msgstr "Görev öğret"
 
 #: src/pages/Shell.tsx:3054
-msgid "Teaching in progress — stop teaching before sending a new message."
-msgstr "Öğretme sürüyor — yeni mesaj göndermeden önce öğretmeyi durdur."
+msgid "Teaching in progress. Stop teaching before sending a new message."
+msgstr "Öğretme sürüyor. Yeni mesaj göndermeden önce öğretmeyi durdur."
 
 #: src/pages/shell/bot-panel.tsx:60
 msgid "Team"
@@ -2938,7 +2934,7 @@ msgstr "Bu sohbet yalnızca görüntülenebilir"
 msgid "this computer"
 msgstr "bu bilgisayar"
 
-#: src/pages/HostComputerPrompt.tsx:99
+#: src/pages/HostComputerPrompt.tsx:97
 msgid "This computer runs shell commands with your account, including files in your home folder. Do not turn it on for a shared or public server."
 msgstr "Bu bilgisayar kabuk komutlarını senin hesabınla çalıştırır; kullanıcı klasöründeki dosyalar buna dahildir. Ortak veya herkese açık bir sunucuda etkinleştirme."
 
@@ -2950,7 +2946,7 @@ msgstr "Bu dosya geçerli bir UTF-8 Markdown değil."
 msgid "this Mac"
 msgstr "bu Mac"
 
-#: src/pages/HostComputerPrompt.tsx:94
+#: src/pages/HostComputerPrompt.tsx:92
 msgid "This Mac runs shell commands with your account, including files in your home folder. Do not turn it on for a shared or public server."
 msgstr "Bu Mac kabuk komutlarını senin hesabınla çalıştırır; kullanıcı klasöründeki dosyalar buna dahildir. Ortak veya herkese açık bir sunucuda etkinleştirme."
 
@@ -2979,8 +2975,8 @@ msgid "This server is already connected. Disconnect it first to authorize again.
 msgstr "Bu sunucu zaten bağlı. Yeniden yetkilendirmek için önce bağlantısını kes."
 
 #: src/pages/shell/message-cards.tsx:320
-msgid "This server uses browser sign-in. Authorize it to let your agents use its tools — a popup will open."
-msgstr "Bu sunucu tarayıcıyla oturum açar. Agent'larının araçlarını kullanabilmesi için yetkilendir — bir açılır pencere açılacak."
+msgid "This server uses browser sign-in. Authorize it to let your agents use its tools. A popup will open."
+msgstr "Bu sunucu tarayıcıyla oturum açar. Agent'larının araçlarını kullanabilmesi için yetkilendir. Bir açılır pencere açılacak."
 
 #: src/pages/ModelSettingsOverlay.tsx:701
 msgid "This subscription sign-in is not available in Rakazo yet. Use a deployment credential or choose another provider."
@@ -3069,7 +3065,7 @@ msgstr ""
 msgid "Usage"
 msgstr "Kullanım"
 
-#: src/pages/HostComputerPrompt.tsx:89
+#: src/pages/HostComputerPrompt.tsx:87
 msgid "Use {hostLabel}"
 msgstr "{hostLabel} kullan"
 
@@ -3194,6 +3190,10 @@ msgstr "Anahtarın veya abonelik token'ın güvenle saklanır ve burada asla gö
 #: src/pages/Auth.tsx:118
 msgid "Your name"
 msgstr "Adın"
+
+#: src/pages/HostComputerPrompt.tsx:69
+msgid "Your OS will not ask for extra permission if you let bots run on {hostLabel}. They run as you."
+msgstr "Botların {hostLabel} üzerinde çalışmasına izin verirsen işletim sistemin ek izin istemez. Botlar senin adına çalışır."
 
 #: src/pages/Welcome.tsx:21
 msgid "Your team of always-on agents<0/>that you can give real work to."

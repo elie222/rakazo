@@ -17,14 +17,6 @@ msgstr ""
 msgid " (unread)"
 msgstr " (não lido)"
 
-#: src/pages/HostComputerPrompt.tsx:64
-msgid " macOS will not ask for extra permission if you let bots run on this Mac — they run as you."
-msgstr "o macOS não pedirá permissão extra se você permitir que os bots sejam executados neste Mac — eles são executados como você."
-
-#: src/pages/HostComputerPrompt.tsx:70
-msgid " Your OS will not ask for extra permission if you let bots run on {hostLabel} — they run as you."
-msgstr "Seu sistema operacional não pedirá permissão extra se você permitir que os bots sejam executados no {hostLabel} — eles são executados como você."
-
 #. placeholder {0}: group.entries.length
 #: src/pages/ModelSettingsOverlay.tsx:387
 msgid "{0, plural, one {# model} other {# models}}"
@@ -141,7 +133,7 @@ msgstr "Padrão da conta"
 msgid "Action confirmations"
 msgstr "Confirmações de ação"
 
-#: src/pages/shell/command-palette.tsx:118
+#: src/pages/shell/command-palette.tsx:119
 msgid "Actions"
 msgstr ""
 
@@ -269,7 +261,7 @@ msgstr ""
 msgid "Agents:"
 msgstr "Agentes:"
 
-#: src/pages/shell/command-palette.tsx:111
+#: src/pages/shell/command-palette.tsx:112
 msgid "All"
 msgstr ""
 
@@ -503,7 +495,7 @@ msgstr "Bot"
 #. js-lingui-explicit-id
 #: src/lib/browser-notifications.ts:71
 msgid "Bot"
-msgstr ""
+msgstr "Bot"
 
 #: src/pages/Shell.tsx:3895
 msgid "Bot screen"
@@ -517,13 +509,13 @@ msgstr "Pré-visualização da tela"
 msgid "Bot to link"
 msgstr ""
 
-#: src/pages/shell/command-palette.tsx:113
+#: src/pages/shell/command-palette.tsx:114
 msgid "Bots"
 msgstr ""
 
 #: src/components/ApprovalRulesSettings.tsx:115
-msgid "Bots act without asking by default. Add an exception only when you want to review a type of action first. These preferences apply across all your bots."
-msgstr "Os bots agem sem perguntar por padrão. Adicione uma exceção apenas quando quiser analisar um tipo de ação primeiro. Essas preferências se aplicam a todos os seus bots."
+msgid "Bots act without asking by default. Add an exception only when you want to review a type of action first."
+msgstr "Os bots agem sem perguntar por padrão. Adicione uma exceção apenas quando quiser analisar um tipo de ação primeiro."
 
 #: src/pages/Shell.tsx:3997
 msgid "Bots are working"
@@ -731,7 +723,7 @@ msgid "Collapse {0}"
 msgstr ""
 
 #: src/pages/RoutineEditor.tsx:387
-#: src/pages/shell/command-palette.tsx:223
+#: src/pages/shell/command-palette.tsx:224
 msgid "Coming soon"
 msgstr ""
 
@@ -830,10 +822,6 @@ msgstr "Conectar Treg"
 msgid "Connected"
 msgstr "Conectado"
 
-#: src/pages/shell/message-cards.tsx:344
-msgid "Connected — its tools are available from your next message."
-msgstr "Conectado — suas ferramentas estão disponíveis na sua próxima mensagem."
-
 #. placeholder {0}: credential.label
 #. placeholder {0}: selected.name
 #: src/pages/ModelSettingsOverlay.tsx:532
@@ -852,6 +840,10 @@ msgstr "Conectado {0}."
 #: src/pages/ModelSettingsOverlay.tsx:286
 msgid "Connected and using {0}."
 msgstr "Conectado e usando {0}."
+
+#: src/pages/shell/message-cards.tsx:344
+msgid "Connected. Its tools are available from your next message."
+msgstr "Conectado. Suas ferramentas estão disponíveis na sua próxima mensagem."
 
 #: src/pages/McpServersOverlay.tsx:38
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx:82
@@ -1352,8 +1344,8 @@ msgid "Dismiss error"
 msgstr ""
 
 #: src/pages/shell/message-cards.tsx:349
-msgid "Dismissed — reconnect anytime from MCP settings."
-msgstr "Dispensado — reconecte a qualquer momento a partir das configurações do MCP."
+msgid "Dismissed. Reconnect anytime from MCP settings."
+msgstr "Dispensado. Reconecte a qualquer momento a partir das configurações do MCP."
 
 #: src/pages/PluginsOverlay.tsx:509
 msgid "Display name"
@@ -1364,7 +1356,7 @@ msgstr "Nome de exibição"
 msgid "Do not type passwords into the demo. Use Take control for credentials."
 msgstr "Não digite senhas na demonstração. Use Assuma o controle das credenciais."
 
-#: src/pages/HostComputerPrompt.tsx:81
+#: src/pages/HostComputerPrompt.tsx:79
 msgid "Docker (recommended)"
 msgstr "Docker (recomendado)"
 
@@ -1500,7 +1492,7 @@ msgstr "Falhou."
 msgid "Failure handling"
 msgstr "Tratamento de falhas"
 
-#: src/pages/shell/command-palette.tsx:115
+#: src/pages/shell/command-palette.tsx:116
 msgid "Files"
 msgstr ""
 
@@ -1559,7 +1551,7 @@ msgstr "Grupo"
 msgid "Group settings"
 msgstr "Configuração do grupo"
 
-#: src/pages/shell/command-palette.tsx:114
+#: src/pages/shell/command-palette.tsx:115
 msgid "Groups"
 msgstr ""
 
@@ -1734,7 +1726,7 @@ msgstr ""
 msgid "Link a chat app"
 msgstr ""
 
-#: src/pages/shell/command-palette.tsx:116
+#: src/pages/shell/command-palette.tsx:117
 msgid "Links"
 msgstr ""
 
@@ -1794,6 +1786,10 @@ msgstr "Sair"
 msgid "Low"
 msgstr "Baixo"
 
+#: src/pages/HostComputerPrompt.tsx:64
+msgid "macOS will not ask for extra permission if you let bots run on this Mac. They run as you."
+msgstr "O macOS não pedirá permissão extra se você permitir que os bots sejam executados neste Mac. Eles são executados como você."
+
 #: src/pages/AccountSettingsOverlay.tsx:143
 msgid "Manage messaging settings"
 msgstr ""
@@ -1852,7 +1848,7 @@ msgstr "Mensagem"
 #. js-lingui-explicit-id
 #: src/lib/browser-notifications.ts:83
 msgid "Message"
-msgstr ""
+msgstr "Mensagem"
 
 #: src/pages/Shell.tsx:4805
 #: src/pages/Shell.tsx:4809
@@ -1875,7 +1871,7 @@ msgstr "Mensagem…"
 msgid "Messaged {peer}"
 msgstr "Enviou mensagem para {peer}"
 
-#: src/pages/shell/command-palette.tsx:112
+#: src/pages/shell/command-palette.tsx:113
 msgid "Messages"
 msgstr ""
 
@@ -2040,7 +2036,7 @@ msgstr "sem autenticação"
 msgid "No authentication"
 msgstr "Sem autenticação"
 
-#: src/pages/shell/command-palette.tsx:164
+#: src/pages/shell/command-palette.tsx:165
 msgid "No bots"
 msgstr ""
 
@@ -2517,7 +2513,7 @@ msgid "Routine"
 msgstr "Rotina"
 
 #: src/pages/RoutineEditor.tsx:108
-#: src/pages/shell/command-palette.tsx:117
+#: src/pages/shell/command-palette.tsx:118
 msgid "Routines"
 msgstr "Rotinas"
 
@@ -2589,7 +2585,7 @@ msgstr "Diga sim ou não, ou responda em uma frase."
 
 #: src/pages/ModelSettingsOverlay.tsx:957
 #: src/pages/Shell.tsx:2512
-#: src/pages/shell/command-palette.tsx:137
+#: src/pages/shell/command-palette.tsx:138
 msgid "Search"
 msgstr "Pesquisar"
 
@@ -2598,7 +2594,7 @@ msgstr "Pesquisar"
 msgid "Search apps"
 msgstr "Pesquisar apps"
 
-#: src/pages/shell/command-palette.tsx:126
+#: src/pages/shell/command-palette.tsx:127
 msgid "Search bots and switch conversations"
 msgstr ""
 
@@ -2864,7 +2860,7 @@ msgstr "Enviar"
 msgid "Submitted"
 msgstr ""
 
-#: src/pages/shell/command-palette.tsx:125
+#: src/pages/shell/command-palette.tsx:126
 msgid "Switch bot"
 msgstr ""
 
@@ -2882,8 +2878,8 @@ msgid "Teach a task"
 msgstr "Ensinar uma tarefa"
 
 #: src/pages/Shell.tsx:3054
-msgid "Teaching in progress — stop teaching before sending a new message."
-msgstr "Ensino em andamento — pare de ensinar antes de enviar uma nova mensagem."
+msgid "Teaching in progress. Stop teaching before sending a new message."
+msgstr "Ensino em andamento. Pare de ensinar antes de enviar uma nova mensagem."
 
 #: src/pages/shell/bot-panel.tsx:60
 msgid "Team"
@@ -2938,7 +2934,7 @@ msgstr "Este chat é somente leitura"
 msgid "this computer"
 msgstr "Este computador"
 
-#: src/pages/HostComputerPrompt.tsx:99
+#: src/pages/HostComputerPrompt.tsx:97
 msgid "This computer runs shell commands with your account, including files in your home folder. Do not turn it on for a shared or public server."
 msgstr "Este computador executa comandos shell com sua conta, incluindo arquivos em sua pasta inicial. Não o ligue para um servidor compartilhado ou público."
 
@@ -2950,7 +2946,7 @@ msgstr "Este arquivo não é válido UTF-8 Markdown."
 msgid "this Mac"
 msgstr "esse Mac"
 
-#: src/pages/HostComputerPrompt.tsx:94
+#: src/pages/HostComputerPrompt.tsx:92
 msgid "This Mac runs shell commands with your account, including files in your home folder. Do not turn it on for a shared or public server."
 msgstr "Este Mac executa comandos do shell com sua conta, incluindo arquivos em sua pasta inicial. Não o ligue para um servidor compartilhado ou público."
 
@@ -2979,8 +2975,8 @@ msgid "This server is already connected. Disconnect it first to authorize again.
 msgstr "Este servidor já está conectado. Desconecte-o primeiro para autorizar novamente."
 
 #: src/pages/shell/message-cards.tsx:320
-msgid "This server uses browser sign-in. Authorize it to let your agents use its tools — a popup will open."
-msgstr "Este servidor usa o login do navegador. Autorize-o a permitir que seus agentes usem suas ferramentas — um pop-up será aberto."
+msgid "This server uses browser sign-in. Authorize it to let your agents use its tools. A popup will open."
+msgstr "Este servidor usa o login do navegador. Autorize-o a permitir que seus agentes usem suas ferramentas. Um pop-up será aberto."
 
 #: src/pages/ModelSettingsOverlay.tsx:701
 msgid "This subscription sign-in is not available in Rakazo yet. Use a deployment credential or choose another provider."
@@ -3069,7 +3065,7 @@ msgstr "Atualizando…"
 msgid "Usage"
 msgstr "Uso"
 
-#: src/pages/HostComputerPrompt.tsx:89
+#: src/pages/HostComputerPrompt.tsx:87
 msgid "Use {hostLabel}"
 msgstr "Usar {hostLabel}"
 
@@ -3194,6 +3190,10 @@ msgstr "Sua chave ou token de assinatura é armazenado com segurança e nunca é
 #: src/pages/Auth.tsx:118
 msgid "Your name"
 msgstr "O seu nome"
+
+#: src/pages/HostComputerPrompt.tsx:69
+msgid "Your OS will not ask for extra permission if you let bots run on {hostLabel}. They run as you."
+msgstr "Seu sistema operacional não pedirá permissão extra se você permitir que os bots sejam executados no {hostLabel}. Eles são executados como você."
 
 #: src/pages/Welcome.tsx:21
 msgid "Your team of always-on agents<0/>that you can give real work to."

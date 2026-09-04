@@ -17,14 +17,6 @@ msgstr ""
 msgid " (unread)"
 msgstr " (읽지 않음)"
 
-#: src/pages/HostComputerPrompt.tsx:64
-msgid " macOS will not ask for extra permission if you let bots run on this Mac — they run as you."
-msgstr " 이 Mac에서 실행하면 Bot이 내 계정 권한으로 동작하며 macOS가 작업마다 별도 승인을 묻지 않습니다."
-
-#: src/pages/HostComputerPrompt.tsx:70
-msgid " Your OS will not ask for extra permission if you let bots run on {hostLabel} — they run as you."
-msgstr " {hostLabel}에서 실행하면 Bot이 내 계정 권한으로 동작하며 운영체제가 작업마다 별도 승인을 묻지 않습니다."
-
 #. placeholder {0}: group.entries.length
 #: src/pages/ModelSettingsOverlay.tsx:387
 msgid "{0, plural, one {# model} other {# models}}"
@@ -141,7 +133,7 @@ msgstr "계정 기본값"
 msgid "Action confirmations"
 msgstr "작업 실행 전 확인"
 
-#: src/pages/shell/command-palette.tsx:118
+#: src/pages/shell/command-palette.tsx:119
 msgid "Actions"
 msgstr ""
 
@@ -269,7 +261,7 @@ msgstr "Agent 연결"
 msgid "Agents:"
 msgstr "사용 Bot:"
 
-#: src/pages/shell/command-palette.tsx:111
+#: src/pages/shell/command-palette.tsx:112
 msgid "All"
 msgstr ""
 
@@ -517,13 +509,13 @@ msgstr "Bot 화면 미리보기"
 msgid "Bot to link"
 msgstr "연결할 Bot"
 
-#: src/pages/shell/command-palette.tsx:113
+#: src/pages/shell/command-palette.tsx:114
 msgid "Bots"
 msgstr ""
 
 #: src/components/ApprovalRulesSettings.tsx:115
-msgid "Bots act without asking by default. Add an exception only when you want to review a type of action first. These preferences apply across all your bots."
-msgstr "Bot은 기본적으로 묻지 않고 작업합니다. 먼저 확인하고 싶은 작업만 예외로 추가하세요. 이 설정은 모든 Bot에 적용됩니다."
+msgid "Bots act without asking by default. Add an exception only when you want to review a type of action first."
+msgstr "Bot은 기본적으로 묻지 않고 작업합니다. 먼저 확인하고 싶은 작업만 예외로 추가하세요."
 
 #: src/pages/Shell.tsx:3997
 msgid "Bots are working"
@@ -731,7 +723,7 @@ msgid "Collapse {0}"
 msgstr "{0} 접기"
 
 #: src/pages/RoutineEditor.tsx:387
-#: src/pages/shell/command-palette.tsx:223
+#: src/pages/shell/command-palette.tsx:224
 msgid "Coming soon"
 msgstr "준비 중"
 
@@ -830,10 +822,6 @@ msgstr "Treg 연결"
 msgid "Connected"
 msgstr "연결됨"
 
-#: src/pages/shell/message-cards.tsx:344
-msgid "Connected — its tools are available from your next message."
-msgstr "연결되었습니다. 다음 메시지부터 이 도구를 사용할 수 있습니다."
-
 #. placeholder {0}: credential.label
 #. placeholder {0}: selected.name
 #: src/pages/ModelSettingsOverlay.tsx:532
@@ -852,6 +840,10 @@ msgstr "{0}에 연결했습니다."
 #: src/pages/ModelSettingsOverlay.tsx:286
 msgid "Connected and using {0}."
 msgstr "{0}에 연결하고 기본 모델로 설정했습니다."
+
+#: src/pages/shell/message-cards.tsx:344
+msgid "Connected. Its tools are available from your next message."
+msgstr "연결되었습니다. 다음 메시지부터 이 도구를 사용할 수 있습니다."
 
 #: src/pages/McpServersOverlay.tsx:38
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx:82
@@ -1352,7 +1344,7 @@ msgid "Dismiss error"
 msgstr "오류 닫기"
 
 #: src/pages/shell/message-cards.tsx:349
-msgid "Dismissed — reconnect anytime from MCP settings."
+msgid "Dismissed. Reconnect anytime from MCP settings."
 msgstr "지금은 연결하지 않았습니다. MCP 설정에서 언제든 다시 연결할 수 있습니다."
 
 #: src/pages/PluginsOverlay.tsx:509
@@ -1364,7 +1356,7 @@ msgstr "표시 이름"
 msgid "Do not type passwords into the demo. Use Take control for credentials."
 msgstr "시연 중에는 비밀번호를 입력하지 마세요. 인증이 필요하면 직접 조작을 사용하세요."
 
-#: src/pages/HostComputerPrompt.tsx:81
+#: src/pages/HostComputerPrompt.tsx:79
 msgid "Docker (recommended)"
 msgstr "Docker에서 실행(권장)"
 
@@ -1500,7 +1492,7 @@ msgstr "실패했습니다."
 msgid "Failure handling"
 msgstr "실패했을 때 처리"
 
-#: src/pages/shell/command-palette.tsx:115
+#: src/pages/shell/command-palette.tsx:116
 msgid "Files"
 msgstr ""
 
@@ -1559,7 +1551,7 @@ msgstr "그룹"
 msgid "Group settings"
 msgstr "그룹 설정"
 
-#: src/pages/shell/command-palette.tsx:114
+#: src/pages/shell/command-palette.tsx:115
 msgid "Groups"
 msgstr ""
 
@@ -1734,7 +1726,7 @@ msgstr "Linear 이슈"
 msgid "Link a chat app"
 msgstr "채팅 앱 연결"
 
-#: src/pages/shell/command-palette.tsx:116
+#: src/pages/shell/command-palette.tsx:117
 msgid "Links"
 msgstr ""
 
@@ -1793,6 +1785,10 @@ msgstr "로그아웃"
 #: src/pages/shell/bot-panel.tsx:492
 msgid "Low"
 msgstr "낮음"
+
+#: src/pages/HostComputerPrompt.tsx:64
+msgid "macOS will not ask for extra permission if you let bots run on this Mac. They run as you."
+msgstr "이 Mac에서 실행하면 Bot이 내 계정 권한으로 동작하며 macOS가 작업마다 별도 승인을 묻지 않습니다."
 
 #: src/pages/AccountSettingsOverlay.tsx:143
 msgid "Manage messaging settings"
@@ -1875,7 +1871,7 @@ msgstr "메시지를 입력하세요"
 msgid "Messaged {peer}"
 msgstr "{peer}에게 메시지 보냄"
 
-#: src/pages/shell/command-palette.tsx:112
+#: src/pages/shell/command-palette.tsx:113
 msgid "Messages"
 msgstr ""
 
@@ -2040,7 +2036,7 @@ msgstr "인증 없음"
 msgid "No authentication"
 msgstr "인증 없음"
 
-#: src/pages/shell/command-palette.tsx:164
+#: src/pages/shell/command-palette.tsx:165
 msgid "No bots"
 msgstr ""
 
@@ -2500,7 +2496,7 @@ msgstr "Rakazo로 돌아가기"
 
 #: src/pages/MessagingSettingsOverlay.tsx:318
 msgid "Revoke"
-msgstr "해제"
+msgstr "연결 해제"
 
 #: src/pages/AccountSettingsOverlay.tsx:188
 msgid "Robot"
@@ -2517,7 +2513,7 @@ msgid "Routine"
 msgstr "자동 실행"
 
 #: src/pages/RoutineEditor.tsx:108
-#: src/pages/shell/command-palette.tsx:117
+#: src/pages/shell/command-palette.tsx:118
 msgid "Routines"
 msgstr "자동 실행"
 
@@ -2589,7 +2585,7 @@ msgstr "예 또는 아니요로 답하거나 문장으로 답해 주세요."
 
 #: src/pages/ModelSettingsOverlay.tsx:957
 #: src/pages/Shell.tsx:2512
-#: src/pages/shell/command-palette.tsx:137
+#: src/pages/shell/command-palette.tsx:138
 msgid "Search"
 msgstr "검색"
 
@@ -2598,7 +2594,7 @@ msgstr "검색"
 msgid "Search apps"
 msgstr "앱 검색"
 
-#: src/pages/shell/command-palette.tsx:126
+#: src/pages/shell/command-palette.tsx:127
 msgid "Search bots and switch conversations"
 msgstr ""
 
@@ -2864,7 +2860,7 @@ msgstr "확인"
 msgid "Submitted"
 msgstr "제출됨"
 
-#: src/pages/shell/command-palette.tsx:125
+#: src/pages/shell/command-palette.tsx:126
 msgid "Switch bot"
 msgstr ""
 
@@ -2882,7 +2878,7 @@ msgid "Teach a task"
 msgstr "작업 가르치기"
 
 #: src/pages/Shell.tsx:3054
-msgid "Teaching in progress — stop teaching before sending a new message."
+msgid "Teaching in progress. Stop teaching before sending a new message."
 msgstr "작업을 가르치는 중입니다. 새 메시지를 보내려면 먼저 가르치기를 종료하세요."
 
 #: src/pages/shell/bot-panel.tsx:60
@@ -2938,7 +2934,7 @@ msgstr "이 채팅은 읽기 전용입니다"
 msgid "this computer"
 msgstr "이 컴퓨터"
 
-#: src/pages/HostComputerPrompt.tsx:99
+#: src/pages/HostComputerPrompt.tsx:97
 msgid "This computer runs shell commands with your account, including files in your home folder. Do not turn it on for a shared or public server."
 msgstr "이 컴퓨터에서는 홈 폴더의 파일을 포함해 내 계정 권한으로 터미널 명령을 실행합니다. 여러 사람이 쓰거나 공개된 서버에서는 사용하지 마세요."
 
@@ -2950,7 +2946,7 @@ msgstr "이 파일은 올바른 UTF-8 Markdown 형식이 아닙니다."
 msgid "this Mac"
 msgstr "이 Mac"
 
-#: src/pages/HostComputerPrompt.tsx:94
+#: src/pages/HostComputerPrompt.tsx:92
 msgid "This Mac runs shell commands with your account, including files in your home folder. Do not turn it on for a shared or public server."
 msgstr "이 Mac에서는 홈 폴더의 파일을 포함해 내 계정 권한으로 터미널 명령을 실행합니다. 여러 사람이 쓰거나 공개된 서버에서는 사용하지 마세요."
 
@@ -2979,7 +2975,7 @@ msgid "This server is already connected. Disconnect it first to authorize again.
 msgstr "이 서버는 이미 연결되어 있습니다. 다시 인증하려면 먼저 연결을 해제하세요."
 
 #: src/pages/shell/message-cards.tsx:320
-msgid "This server uses browser sign-in. Authorize it to let your agents use its tools — a popup will open."
+msgid "This server uses browser sign-in. Authorize it to let your agents use its tools. A popup will open."
 msgstr "이 서버는 브라우저 로그인이 필요합니다. 인증을 누르면 새 창이 열리고, 완료 후 Bot이 도구를 사용할 수 있습니다."
 
 #: src/pages/ModelSettingsOverlay.tsx:701
@@ -3069,7 +3065,7 @@ msgstr "업데이트 중…"
 msgid "Usage"
 msgstr "사용량"
 
-#: src/pages/HostComputerPrompt.tsx:89
+#: src/pages/HostComputerPrompt.tsx:87
 msgid "Use {hostLabel}"
 msgstr "{hostLabel} 사용"
 
@@ -3194,6 +3190,10 @@ msgstr "API 키 또는 구독 토큰은 서버에 안전하게 저장되며 이 
 #: src/pages/Auth.tsx:118
 msgid "Your name"
 msgstr "이름"
+
+#: src/pages/HostComputerPrompt.tsx:69
+msgid "Your OS will not ask for extra permission if you let bots run on {hostLabel}. They run as you."
+msgstr "{hostLabel}에서 실행하면 Bot이 내 계정 권한으로 동작하며 운영체제가 작업마다 별도 승인을 묻지 않습니다."
 
 #: src/pages/Welcome.tsx:21
 msgid "Your team of always-on agents<0/>that you can give real work to."
