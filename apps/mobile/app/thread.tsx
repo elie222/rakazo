@@ -937,9 +937,11 @@ function Thread() {
     const groupTarget = plan.rerouteGroupId ?? initialGroupTarget;
     const botTarget = reroutedToGroup ? undefined : initialBotTarget;
     const trimmed = plan.trimmed;
-    // Sending (including group-mention reroute) is engagement — drop delayed setup
-    // even when the bot thread stays mounted under a pushed group screen.
-    if (initialBotTarget) cancelFocusPrompt(initialBotTarget);
+    const dropDelayedSetup = () => {
+      // Only after successful engagement so a failed upload/send keeps the setup card.
+      // Covers group-mention reroute while the bot thread stays mounted underneath.
+      if (initialBotTarget) cancelFocusPrompt(initialBotTarget);
+    };
     setSending(true);
     setError(null);
     try {
@@ -967,6 +969,7 @@ function Thread() {
         setAttachmentNotice(null);
       };
       if (!plan.shouldSend) {
+        dropDelayedSetup();
         clearOriginComposer();
         if (reroutedToGroup && groupTarget) {
           router.push({
@@ -1014,6 +1017,7 @@ function Thread() {
               replyToMessageId: replyTarget?.id,
             },
       );
+      dropDelayedSetup();
       void loadSessionToken()
         .then((token) => resumeLiveNotifications(currentApiBase(), token, selectedSpaceId() ?? ""))
         .catch(() => undefined);
