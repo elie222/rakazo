@@ -350,6 +350,36 @@ describe("thread event reduction", () => {
     expect(waiting?.activeRuns?.[0]?.status).toBe("waiting_takeover");
   });
 
+  it("inserts a peer takeover run that was absent from the open snapshot", () => {
+    const userRun = threadRun("run-user");
+    const initial: ThreadSnapshot = {
+      ...snapshot([]),
+      run: userRun,
+      activeRuns: [userRun],
+    };
+
+    const waiting = reduceThreadSnapshot(
+      initial,
+      event({
+        type: "computer.takeover.requested",
+        seq: 12,
+        runId: "run-peer",
+        botId: "bot-peer",
+      }),
+    );
+
+    expect(waiting?.run).toMatchObject({
+      id: "run-peer",
+      botId: "bot-peer",
+      status: "waiting_takeover",
+      trigger: "bot_message",
+    });
+    expect(waiting?.activeRuns?.map((run) => ({ id: run.id, status: run.status }))).toEqual([
+      { id: "run-user", status: "running" },
+      { id: "run-peer", status: "waiting_takeover" },
+    ]);
+  });
+
   it("keeps event-sourced waiting_takeover when a stale refresh still shows the bot busy", () => {
     const run = threadRun("run-1");
     const waitingLocal: ThreadSnapshot = {
