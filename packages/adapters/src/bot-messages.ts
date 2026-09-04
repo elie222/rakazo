@@ -331,12 +331,13 @@ export async function returnBotMessageOutcome(
   const source = await loadBotMessageContext(deps.prisma, run.sourceMessageId);
   if (!source) {
     await markBotOutcomeReturned(deps.prisma, run.id);
-    return false;
+    // Handled: nothing to deliver. Return true so callers do not release a reservation.
+    return true;
   }
   const sourceIntent = source.intent ?? "request";
   if (sourceIntent !== "request" && sourceIntent !== "question") {
     await markBotOutcomeReturned(deps.prisma, run.id);
-    return false;
+    return true;
   }
   const sent = await deps.prisma.message.findMany({
     where: { threadId: run.threadId, runId: run.id },
@@ -347,12 +348,12 @@ export async function returnBotMessageOutcome(
       (block) =>
         block.kind === "bot_message_sent" &&
         block.toBotId === source.fromBotId &&
-        block.intent === "result",
+        (block.intent === "result" || block.intent === "status"),
     ),
   );
   if (alreadyReturned) {
     await markBotOutcomeReturned(deps.prisma, run.id);
-    return false;
+    return true;
   }
   const outcome = await messageBot(
     deps,

@@ -3360,14 +3360,26 @@ export function createRunExecutor(deps: ExecutorDeps) {
           }
           if (botMessageOutcome) {
             // Prefer the final reply. If the turn only posted mid-turn progress, return that
-            // text explicitly (as status). reserveBotOutcome already closed the reconciler race.
-            await returnBotMessageOutcome(
+            // text explicitly (as status). reserveBotOutcome already closed the reconciler race;
+            // release the reservation if delivery did not succeed so reconciliation can retry.
+            const returned = await returnBotMessageOutcome(
               deps,
               { ...run, sourceMessageId: run.sourceMessageId },
               { id: bot.id, name: bot.name },
               botMessageOutcome.text,
               botMessageOutcome.intent,
-            ).catch((error) => console.error("bot message result return", error));
+            ).catch((error) => {
+              console.error("bot message result return", error);
+              return false;
+            });
+            if (!returned) {
+              await deps.prisma.run
+                .updateMany({
+                  where: { id: runId, botOutcomeReturnedAt: { not: null } },
+                  data: { botOutcomeReturnedAt: null },
+                })
+                .catch((error) => console.error("bot outcome reservation release", error));
+            }
           }
           if (text && !completed.continuationRunId) {
             await notifyRun(deps, run, {
