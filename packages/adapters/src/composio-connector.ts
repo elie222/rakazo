@@ -379,17 +379,67 @@ export class ComposioConnector implements ComposioProvider {
   }
 
   async revoke(connectionRef: string, context: AdapterContext): Promise<void> {
-    // Prefer toolkit-slug lookup; otherwise treat connectionRef as a connected-account id.
+    // Prefer toolkit-slug lookup for legacy rows; otherwise treat connectionRef as
+    // a connected-account id from begin/complete.
     const accountId =
       (await this.connectedAccountId(context.userId, connectionRef)) ?? connectionRef;
     await this.sdk().connectedAccounts.delete(accountId);
   }
 
   async connectedAccountId(userId: string, slug: string): Promise<string | undefined> {
+    const ids = await this.listConnectedAccountIds(userId, slug);
+    return ids[0];
+  }
+
+  async listConnectedAccountIds(userId: string, slug: string): Promise<string[]> {
+    try {
+      const listed = await this.sdk().connectedAccounts.list({
+        userIds: [userId],
+        toolkitSlugs: [slug],
+        statuses: ["ACTIVE"],
+      });
+      const ids = (listed.items ?? [])
+        .map((item) => item.id)
+        .filter((id): id is string => Boolean(id));
+      if (ids.length > 0) return ids;
+    } catch {
+      // List may be unavailable; fall through to toolkit metadata.
+    }
     const session = await this.sessionFor(userId);
     const toolkits = await session.toolkits({ isConnected: true });
-    return toolkits.items.find((item) => composioSlugKey(item.slug) === composioSlugKey(slug))
-      ?.connection?.connectedAccount?.id;
+    const id = toolkits.items.find(
+      (item) => composioSlugKey(item.slug) === composioSlugKey(slug),
+    )?.connection?.connectedAccount?.id;
+    return id ? [id] : [];
+  }
+
+  /**
+   * Map a begin() state (connection-request id, account id, or provider slug) to
+   * the connected-account id revoke must delete. Prefer unused remotes so a
+   * second Gmail connect does not reuse the first account's id.
+   */
+  async resolveConnectedAccountId(
+    userId: string,
+    slug: string,
+    currentRef: string | null | undefined,
+    excludeIds: string[] = [],
+  ): Promise<string | undefined> {
+    const excluded = new Set(excludeIds.filter(Boolean));
+    const current = currentRef?.trim() || undefined;
+    const slugKey = composioSlugKey(slug);
+
+    if (current && composioSlugKey(current) !== slugKey) {
+      try {
+        const account = await this.sdk().connectedAccounts.waitForConnection(current, 20_000);
+        if (account?.id) return account.id;
+      } catch {
+        // Request id may already be finalized or unknown; list below.
+      }
+    }
+
+    const ids = await this.listConnectedAccountIds(userId, slug);
+    if (current && ids.includes(current)) return current;
+    return ids.find((id) => !excluded.has(id)) ?? ids[0];
   }
 
   private sdk(): Composio {

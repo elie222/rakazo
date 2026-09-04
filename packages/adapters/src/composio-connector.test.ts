@@ -23,6 +23,11 @@ const composioSdkState = vi.hoisted(() => ({
   created: [] as Array<{ userId: string; config: Record<string, unknown> }>,
   directoryFails: false,
   executions: [] as Array<{ tool: string; args: Record<string, unknown> }>,
+  connectedAccounts: {
+    list: async (_query?: Record<string, unknown>) => ({ items: [] as Array<{ id: string }> }),
+    waitForConnection: async (id: string, _timeout?: number) => ({ id: `resolved-${id}` }),
+    delete: async (_id: string) => undefined,
+  },
   sessions: new Map<
     string,
     {
@@ -58,6 +63,13 @@ vi.mock("@composio/core", () => ({
         if (!session) throw new Error(`unknown session ${sessionId}`);
         return session;
       },
+    };
+
+    readonly connectedAccounts = {
+      list: (query?: Record<string, unknown>) => composioSdkState.connectedAccounts.list(query),
+      waitForConnection: (id: string, timeout?: number) =>
+        composioSdkState.connectedAccounts.waitForConnection(id, timeout),
+      delete: (id: string) => composioSdkState.connectedAccounts.delete(id),
     };
 
     async create(userId: string, config: Record<string, unknown>) {
@@ -297,6 +309,26 @@ describe("composio tool mapping", () => {
     ]);
     await expect(connector.connectionReady(context, "github")).resolves.toBe(true);
     await expect(connector.connectedAccountId("user-1", "github")).resolves.toBe("ca-github");
+  });
+
+  it("resolves connection-request ids to connected-account ids and skips sibling refs", async () => {
+    composioSdkState.created.length = 0;
+    composioSdkState.sessions.clear();
+    composioToolkitDirectory.invalidate();
+    composioSdkState.connectedAccounts.list = async () => ({
+      items: [{ id: "ca-personal" }, { id: "ca-work" }],
+    });
+    composioSdkState.connectedAccounts.waitForConnection = async (id: string) => ({
+      id: id === "req-work" ? "ca-work" : `resolved-${id}`,
+    });
+
+    const connector = new ComposioConnector();
+    await expect(
+      connector.resolveConnectedAccountId("user-1", "gmail", "req-work", ["ca-personal"]),
+    ).resolves.toBe("ca-work");
+    await expect(
+      connector.resolveConnectedAccountId("user-1", "gmail", "gmail", ["ca-personal"]),
+    ).resolves.toBe("ca-work");
   });
 
   it("uses Composio slug casing when the toolkit directory is unavailable", async () => {

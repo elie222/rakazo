@@ -2977,29 +2977,59 @@ export function createRouter(deps: RouterDeps) {
             existing.provider,
           );
           if (ready) {
-            // Keep a unique authorize/account ref from begin. Only fill a missing
-            // or provider-slug placeholder via slug lookup — never replace a
-            // second-account ref with the first matching remote account.
+            // Browser OAuth stores a connection-request id in providerRef from
+            // begin. Resolve it to the connected-account id so revoke deletes the
+            // right remote authorization. Prefer an account id not already used
+            // by a sibling row for the same provider.
             let providerRef = existing.providerRef;
-            const needsAccountId =
-              !providerRef ||
-              providerRef.trim().toLowerCase() === existing.provider.trim().toLowerCase();
-            if (needsAccountId) {
-              const resolveAccountId = (
-                connector as {
-                  connectedAccountId?: (
-                    userId: string,
-                    slug: string,
-                  ) => Promise<string | undefined>;
-                }
-              ).connectedAccountId;
-              if (resolveAccountId) {
-                const accountId = await resolveAccountId(
-                  context.actor.userId,
-                  existing.provider,
-                ).catch(() => undefined);
-                if (accountId) providerRef = accountId;
+            const resolveAccountId = (
+              connector as {
+                resolveConnectedAccountId?: (
+                  userId: string,
+                  slug: string,
+                  currentRef: string | null | undefined,
+                  excludeIds?: string[],
+                ) => Promise<string | undefined>;
+                connectedAccountId?: (
+                  userId: string,
+                  slug: string,
+                ) => Promise<string | undefined>;
               }
+            ).resolveConnectedAccountId;
+            const fallbackAccountId = (
+              connector as {
+                connectedAccountId?: (
+                  userId: string,
+                  slug: string,
+                ) => Promise<string | undefined>;
+              }
+            ).connectedAccountId;
+            if (resolveAccountId || fallbackAccountId) {
+              const siblings = await deps.prisma.connection.findMany({
+                where: {
+                  spaceId: context.actor.spaceId,
+                  userId: context.actor.userId,
+                  connectorId: existing.connectorId,
+                  provider: existing.provider,
+                  id: { not: existing.id },
+                  status: { in: ["connected", "pending", "error"] },
+                },
+                select: { providerRef: true },
+              });
+              const excludeIds = siblings
+                .map((sibling) => sibling.providerRef)
+                .filter((value): value is string => Boolean(value));
+              const accountId = resolveAccountId
+                ? await resolveAccountId(
+                    context.actor.userId,
+                    existing.provider,
+                    existing.providerRef,
+                    excludeIds,
+                  ).catch(() => undefined)
+                : await fallbackAccountId!(context.actor.userId, existing.provider).catch(
+                    () => undefined,
+                  );
+              if (accountId) providerRef = accountId;
             }
             row = await deps.prisma.connection.update({
               where: { id: existing.id },
@@ -3128,6 +3158,7 @@ export function createRouter(deps: RouterDeps) {
               data: { status: outcome.previousStatus },
             });
           };
+          let remoteAttempted = false;
           try {
             const connector = deps.connectors.managed(outcome.remote.connectorId);
             if (!connector) {
@@ -3135,12 +3166,16 @@ export function createRouter(deps: RouterDeps) {
                 message: `Connector ${outcome.remote.connectorId} is not configured`,
               });
             }
+            remoteAttempted = true;
             await connector.revoke(
               outcome.remote.connectionRef,
               connectionContext(context.actor, "connections.revoke", context.signal),
             );
           } catch (error) {
-            await restoreLocalStatus();
+            // Only roll back when the provider was never contacted. Restoring after
+            // an uncertain transport failure can resurrect a row whose remote auth
+            // was already deleted.
+            if (!remoteAttempted) await restoreLocalStatus();
             if (error instanceof ORPCError) throw error;
             throw new ORPCError("BAD_REQUEST", { message: sanitizeComposioError(error) });
           }
