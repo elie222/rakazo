@@ -66,7 +66,15 @@ jobs:
           "$HOME/.maestro/bin/maestro" --version
           echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
 
+      - name: Restore screenshot APK
+        id: screenshot-apk
+        uses: actions/cache/restore@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        with:
+          path: apps/mobile/android/app/build/outputs/apk/release/app-release.apk
+          key: mobile-android-apk-v1-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml', 'package.json', 'pnpm-workspace.yaml', 'turbo.json', 'tsconfig*.json', 'apps/mobile/package.json', 'apps/mobile/app.json', 'apps/mobile/assets/**', 'apps/mobile/app/**', 'apps/mobile/components/**', 'apps/mobile/lib/**', 'apps/mobile/modules/**', 'apps/mobile/plugins/**', 'packages/**') }}
+
       - name: Generate Android project
+        if: steps.screenshot-apk.outputs.cache-hit != 'true'
         run: |
           pnpm --filter @rakazo/mobile exec expo prebuild --platform android --no-install
           sed -i 's/<application /<application android:usesCleartextTraffic="true" /' \
@@ -75,8 +83,16 @@ jobs:
             apps/mobile/android/gradle.properties
 
       - name: Build screenshot APK
+        if: steps.screenshot-apk.outputs.cache-hit != 'true'
         working-directory: apps/mobile/android
         run: ./gradlew app:packageRelease -PreactNativeArchitectures=x86_64 --no-daemon
+
+      - name: Save screenshot APK
+        if: steps.screenshot-apk.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        with:
+          path: apps/mobile/android/app/build/outputs/apk/release/app-release.apk
+          key: ${{ steps.screenshot-apk.outputs.cache-primary-key }}
 
       - name: Enable KVM
         run: |
