@@ -29,7 +29,12 @@ function redactValue(value: unknown, seen = new WeakSet<object>()): unknown {
     if (typeof value.stack === "string" && value.stack.length > 0) {
       output.stack = redactSensitiveText(value.stack);
     }
-    if (value.cause !== undefined) output.cause = redactValue(value.cause, seen);
+    if (value.cause !== undefined) {
+      output.cause =
+        typeof value.cause === "string"
+          ? redactSensitiveText(value.cause)
+          : redactValue(value.cause, seen);
+    }
     return output;
   }
   if (value instanceof Date) return value;
