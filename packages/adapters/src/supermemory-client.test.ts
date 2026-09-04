@@ -3,6 +3,7 @@ import {
   deleteSupermemoryContainer,
   MAX_MEMORY_CONTENT_CHARS,
   MAX_RECALLED_MEMORIES,
+  MAX_SUPERMEMORY_RESPONSE_BYTES,
   probeSupermemory,
   saveSupermemoryMemory,
   saveSupermemoryMemoryToContainers,
@@ -92,6 +93,57 @@ describe("searchSupermemory", () => {
     const result = await searchSupermemory("anything", "rakazo:bot-123", config);
 
     expect(result).toEqual({ ok: true, results: [{ memory: "kept", similarity: 0 }] });
+    vi.unstubAllGlobals();
+  });
+
+  it("bounds each recalled memory to the provider content limit", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response(JSON.stringify({ results: [{ memory: `kept${"x".repeat(20_000)}` }] })),
+        ),
+    );
+
+    const result = await searchSupermemory("anything", "rakazo:bot-123", config);
+
+    expect(result.ok && result.results[0]?.memory).toHaveLength(MAX_MEMORY_CONTENT_CHARS);
+    vi.unstubAllGlobals();
+  });
+
+  it("rejects an oversized search response before buffering it", async () => {
+    const cancel = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        headers: new Headers({
+          "content-length": String(MAX_SUPERMEMORY_RESPONSE_BYTES + 1),
+        }),
+        body: { cancel },
+      }),
+    );
+
+    const result = await searchSupermemory("anything", "rakazo:bot-123", config);
+
+    expect(result).toEqual({
+      ok: false,
+      error: expect.stringContaining("response is too large"),
+    });
+    expect(cancel).toHaveBeenCalledOnce();
+    vi.unstubAllGlobals();
+  });
+
+  it("caps a chunked search response without a content length", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response(new Uint8Array(MAX_SUPERMEMORY_RESPONSE_BYTES + 1))),
+    );
+
+    const result = await searchSupermemory("anything", "rakazo:bot-123", config);
+
+    expect(result).toEqual({ ok: false, error: "Supermemory response is too large." });
     vi.unstubAllGlobals();
   });
 });
