@@ -1,4 +1,5 @@
-import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
+import { constants } from "node:fs";
+import { mkdir, open, unlink } from "node:fs/promises";
 import path from "node:path";
 import type {
   AdapterContext,
@@ -7,22 +8,40 @@ import type {
 } from "@rakazo/adapter-kit";
 import { getLogger } from "@rakazo/logging";
 
+const O_NOFOLLOW = constants.O_NOFOLLOW ?? 0;
+
 export function pushTokenPath(dataDir: string, userId: string) {
   return path.join(dataDir, "push-tokens", `${userId}.txt`);
 }
 
 export async function loadPushToken(dataDir: string, userId: string): Promise<string | undefined> {
   try {
-    const token = (await readFile(pushTokenPath(dataDir, userId), "utf8")).trim();
-    return token || undefined;
+    const handle = await open(pushTokenPath(dataDir, userId), constants.O_RDONLY | O_NOFOLLOW);
+    try {
+      const token = (await handle.readFile("utf8")).trim();
+      return token || undefined;
+    } finally {
+      await handle.close();
+    }
   } catch {
     return undefined;
   }
 }
 
 export async function savePushToken(dataDir: string, userId: string, token: string): Promise<void> {
-  await mkdir(path.dirname(pushTokenPath(dataDir, userId)), { recursive: true });
-  await writeFile(pushTokenPath(dataDir, userId), token.trim(), "utf8");
+  const file = pushTokenPath(dataDir, userId);
+  await mkdir(path.dirname(file), { recursive: true });
+  const handle = await open(
+    file,
+    constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | O_NOFOLLOW,
+    0o600,
+  );
+  try {
+    await handle.chmod(0o600);
+    await handle.writeFile(token.trim(), "utf8");
+  } finally {
+    await handle.close();
+  }
 }
 
 export async function deletePushToken(dataDir: string, userId: string): Promise<void> {

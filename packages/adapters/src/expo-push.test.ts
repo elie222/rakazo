@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -53,6 +53,34 @@ describe("expo push tickets", () => {
 });
 
 describe("expo push", () => {
+  it("keeps refreshed push tokens owner-only", async () => {
+    const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-push-"));
+    dirs.push(dataDir);
+    const tokenFile = path.join(dataDir, "push-tokens", "user-1.txt");
+    await savePushToken(dataDir, "user-1", "ExponentPushToken[old]");
+    await chmod(tokenFile, 0o644);
+
+    await savePushToken(dataDir, "user-1", "ExponentPushToken[new]");
+
+    expect((await stat(tokenFile)).mode & 0o777).toBe(0o600);
+  });
+
+  it("does not follow a token-file symlink for reads or writes", async () => {
+    const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-push-"));
+    dirs.push(dataDir);
+    const tokenDir = path.join(dataDir, "push-tokens");
+    const tokenFile = path.join(tokenDir, "user-1.txt");
+    const target = path.join(dataDir, "outside.txt");
+    await savePushToken(dataDir, "user-1", "ExponentPushToken[old]");
+    await writeFile(target, "not-a-push-token");
+    await rm(tokenFile);
+    await symlink(target, tokenFile);
+
+    await expect(loadPushToken(dataDir, "user-1")).resolves.toBeUndefined();
+    await expect(savePushToken(dataDir, "user-1", "ExponentPushToken[new]")).rejects.toThrow();
+    await expect(readFile(target, "utf8")).resolves.toBe("not-a-push-token");
+  });
+
   it("removes a registered token", async () => {
     const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-push-"));
     dirs.push(dataDir);
