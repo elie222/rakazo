@@ -94,7 +94,7 @@ Do not ask me to invent `BETTER_AUTH_SECRET` or `ENCRYPTION_KEY`; generate stron
 Preflight:
 
 - Verify Git, Node.js, pnpm, Docker, and Docker Compose.
-- Use Node.js 22 LTS (at least 22.12) and the repository-declared pnpm 9.15.0. Do not silently use pnpm 10 or 11: newer pnpm versions can reject this lockfile or rewrite it. Prefer Corepack; if Corepack is unavailable, use `npx --yes pnpm@9.15.0` for repo commands rather than globally installing a different version. Show the effective versions.
+- Use a Node.js version allowed by `package.json`: `^22.22.2`, `^24.0.0`, or `>=26.0.0`, plus the repository-declared pnpm 9.15.0. Do not silently use pnpm 10 or 11: newer pnpm versions can reject this lockfile or rewrite it. Prefer Corepack; if Corepack is unavailable, use `npx --yes pnpm@9.15.0` for repo commands rather than globally installing a different version. Show the effective versions.
 - Verify the Docker daemon is running.
 - Check whether `127.0.0.1` ports 5433, 3100, 5173, and 7091 are available. Resolve conflicts without touching unrelated workloads.
 
