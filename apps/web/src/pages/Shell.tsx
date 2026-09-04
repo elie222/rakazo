@@ -2224,26 +2224,6 @@ export function ShellPage() {
     focusPromptBotIdRef.current = null;
   }
 
-  function beginFocusPrompt(botId: string, immediate: boolean) {
-    cancelFocusPrompt();
-    const controller = new AbortController();
-    focusPromptAbortRef.current = controller;
-    focusPromptBotIdRef.current = botId;
-    void scheduleFocusPrompt({
-      immediate,
-      signal: controller.signal,
-      prompt: async () => {
-        if (focusPromptBotIdRef.current !== botId) return;
-        await rpc.onboarding.promptFocus({ botId }).catch(() => undefined);
-      },
-    }).finally(() => {
-      if (focusPromptAbortRef.current === controller) {
-        focusPromptAbortRef.current = null;
-        focusPromptBotIdRef.current = null;
-      }
-    });
-  }
-
   function setBotsSidebarCollapsedPref(collapsed: boolean) {
     setBotsSidebarCollapsed(collapsed);
     writeBotsSidebarCollapsed(userId, collapsed);
@@ -2266,11 +2246,37 @@ export function ShellPage() {
     );
     navigate(`/app/${bot.id}`);
     setPanel(null);
+    // Register cancellation before awaiting start so leaving the bot during
+    // startup cannot miss the abort and still schedule a late focus card.
+    cancelFocusPrompt();
+    const controller = new AbortController();
+    focusPromptAbortRef.current = controller;
+    focusPromptBotIdRef.current = bot.id;
     const started = await rpc.onboarding
       .start({ botId: bot.id })
       .then(() => true)
       .catch(() => false);
-    if (started) beginFocusPrompt(bot.id, isFirstBot);
+    if (!started || controller.signal.aborted || focusPromptBotIdRef.current !== bot.id) {
+      if (focusPromptAbortRef.current === controller) {
+        focusPromptAbortRef.current = null;
+        focusPromptBotIdRef.current = null;
+      }
+      await refreshBots().catch(() => undefined);
+      return;
+    }
+    void scheduleFocusPrompt({
+      immediate: isFirstBot,
+      signal: controller.signal,
+      prompt: async () => {
+        if (focusPromptBotIdRef.current !== bot.id) return;
+        await rpc.onboarding.promptFocus({ botId: bot.id }).catch(() => undefined);
+      },
+    }).finally(() => {
+      if (focusPromptAbortRef.current === controller) {
+        focusPromptAbortRef.current = null;
+        focusPromptBotIdRef.current = null;
+      }
+    });
     await refreshBots().catch(() => undefined);
   }
 

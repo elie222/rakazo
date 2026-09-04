@@ -47,6 +47,7 @@ export default function NewBot() {
         notifyOnFinish: true,
         computerMode,
       });
+      allowFocusPrompt(bot.id);
       router.replace({ pathname: "/thread", params: { botId: bot.id, name: bot.name } });
       void (async () => {
         const started = await rpc("onboarding/start", { botId: bot.id })

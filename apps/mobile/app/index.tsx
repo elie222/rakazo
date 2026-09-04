@@ -45,7 +45,7 @@ import {
   selectInitialSpace,
   selectSpace,
 } from "../lib/api";
-import { scheduleFocusPrompt } from "../lib/focus-prompt";
+import { allowFocusPrompt, scheduleFocusPrompt } from "../lib/focus-prompt";
 import { t, useI18n } from "../lib/i18n";
 import { botTag, filterBots, formatThreadTime, userInitials } from "../lib/inbox";
 import { dismissThreadNotifications, resumeLiveNotifications } from "../lib/live-notifications";
@@ -323,6 +323,7 @@ export default function Home() {
         computerMode: "team",
       });
       void refreshBots().catch(() => undefined);
+      allowFocusPrompt(bot.id);
       router.replace({ pathname: "/thread", params: { botId: bot.id, name: bot.name } });
       void (async () => {
         const started = await rpc("onboarding/start", { botId: bot.id })
