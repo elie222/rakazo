@@ -7,6 +7,7 @@ import {
   assertNoGitApplyPath,
   checkServerUpdate,
   isUpdaterConfigured,
+  MAX_UPDATER_RESPONSE_BYTES,
   readServerUpdateStatus,
   type UpdaterProxyConfig,
   UpdaterProxyError,
@@ -269,6 +270,60 @@ describe("sidecar proxy auth and no-git-apply", () => {
     });
     await expect(applyServerUpdate(config)).rejects.not.toMatchObject({
       message: expect.stringContaining(TOKEN),
+    });
+  });
+
+  it("rejects an oversized declared sidecar response without waiting for cancellation", async () => {
+    const cancel = vi.fn();
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+      const href = String(input);
+      if (href.endsWith("/health")) return Response.json({ ok: true });
+      if (href.endsWith("/state")) return Response.json({ running: false });
+      return new Response(new ReadableStream({ cancel }), {
+        status: 200,
+        headers: { "content-length": String(MAX_UPDATER_RESPONSE_BYTES + 1) },
+      });
+    });
+
+    await expect(
+      applyServerUpdate({
+        url: URL,
+        token: TOKEN,
+        gitSha: undefined,
+        fetch: fetchImpl as unknown as typeof fetch,
+      }),
+    ).rejects.toMatchObject({
+      message: "The updater sidecar response is too large.",
+      status: 502,
+    });
+    await vi.waitFor(() => expect(cancel).toHaveBeenCalledOnce());
+  });
+
+  it("rejects a streamed sidecar response once it crosses the byte limit", async () => {
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+      const href = String(input);
+      if (href.endsWith("/health")) return Response.json({ ok: true });
+      if (href.endsWith("/state")) return Response.json({ running: false });
+      return new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.enqueue(new Uint8Array(MAX_UPDATER_RESPONSE_BYTES + 1));
+          },
+        }),
+        { status: 200 },
+      );
+    });
+
+    await expect(
+      applyServerUpdate({
+        url: URL,
+        token: TOKEN,
+        gitSha: undefined,
+        fetch: fetchImpl as unknown as typeof fetch,
+      }),
+    ).rejects.toMatchObject({
+      message: "The updater sidecar response is too large.",
+      status: 502,
     });
   });
 });
