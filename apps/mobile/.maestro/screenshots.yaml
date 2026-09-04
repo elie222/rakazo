@@ -1,0 +1,131 @@
+appId: com.rakazo.app
+name: Rakazo mobile screenshots
+tags:
+  - screenshots
+---
+- launchApp:
+    clearState: true
+    permissions:
+      notifications: deny
+
+- extendedWaitUntil:
+    visible: "Sign in to Rakazo"
+    timeout: 30000
+- takeScreenshot: "screenshots/01-sign-in"
+
+- tapOn: "Sign up"
+- assertVisible: "Sign up for Rakazo"
+- takeScreenshot: "screenshots/02-sign-up"
+- tapOn: "Sign in"
+- assertVisible: "Sign in to Rakazo"
+
+- tapOn: "Use a custom server"
+- assertVisible: "Server"
+- takeScreenshot: "screenshots/03-server"
+- tapOn: "Cancel"
+
+- tapOn: "Email"
+- inputText: ${RAKAZO_SCREENSHOT_EMAIL}
+- tapOn: "Password"
+- inputText: ${RAKAZO_SCREENSHOT_PASSWORD}
+- hideKeyboard
+- tapOn: "Sign in"
+
+- extendedWaitUntil:
+    visible: "Researcher"
+    timeout: 30000
+- takeScreenshot: "screenshots/04-inbox"
+
+- tapOn: "Activity"
+- extendedWaitUntil:
+    visible: "Recent"
+    timeout: 10000
+- takeScreenshot: "screenshots/05-activity"
+
+- tapOn: "Search"
+- inputText: "fixture"
+- hideKeyboard
+- extendedWaitUntil:
+    visible: "Weekly fixture review"
+    timeout: 10000
+- takeScreenshot: "screenshots/06-search-results"
+
+- openLink: "rakazo:///new"
+- assertVisible: "Name this bot"
+- takeScreenshot: "screenshots/07-new-bot"
+
+- openLink: "rakazo:///new-group"
+- assertVisible: "Name this group"
+- takeScreenshot: "screenshots/08-new-group"
+
+- openLink: "rakazo:///new-space"
+- assertVisible: "Customer support"
+- takeScreenshot: "screenshots/09-new-space"
+
+- openLink: "rakazo:///account"
+- extendedWaitUntil:
+    visible: "Password"
+    timeout: 10000
+- takeScreenshot: "screenshots/10-account"
+
+- openLink: "rakazo:///models"
+- extendedWaitUntil:
+    visible: "Active model"
+    timeout: 10000
+- takeScreenshot: "screenshots/11-models"
+
+- openLink: "rakazo:///voice"
+- extendedWaitUntil:
+    visible: "Scripted"
+    timeout: 10000
+- takeScreenshot: "screenshots/12-voice"
+
+- openLink: "rakazo:///integrations"
+- extendedWaitUntil:
+    visible: "Search apps"
+    timeout: 10000
+- takeScreenshot: "screenshots/13-integrations"
+- tapOn:
+    id: "integrations-advanced"
+- assertVisible: "Add MCP server"
+- takeScreenshot: "screenshots/14-integrations-advanced"
+
+- openLink: "rakazo:///thread?botId=${RAKAZO_SCREENSHOT_BOT_ID}&name=Researcher"
+- extendedWaitUntil:
+    visible: "The fixture workspace is ready."
+    timeout: 10000
+- takeScreenshot: "screenshots/15-thread"
+- tapOn: "Bot actions"
+- assertVisible: "Clear conversation"
+- takeScreenshot: "screenshots/16-bot-actions"
+- tapOn: "Cancel"
+
+- openLink: "rakazo:///bot-settings?botId=${RAKAZO_SCREENSHOT_BOT_ID}"
+- extendedWaitUntil:
+    visible: "Researcher"
+    timeout: 10000
+- takeScreenshot: "screenshots/17-bot-settings"
+
+- openLink: "rakazo:///computer?botId=${RAKAZO_SCREENSHOT_BOT_ID}&name=Researcher"
+- extendedWaitUntil:
+    visible: "Take control"
+    timeout: 10000
+- takeScreenshot: "screenshots/18-computer"
+
+- openLink: "rakazo:///group-thread?groupId=${RAKAZO_SCREENSHOT_GROUP_ID}&name=Launch%20team"
+- extendedWaitUntil:
+    visible: "The fixture launch plan is ready."
+    timeout: 10000
+- takeScreenshot: "screenshots/19-group-thread"
+
+- openLink: "rakazo:///group-settings?groupId=${RAKAZO_SCREENSHOT_GROUP_ID}"
+- extendedWaitUntil:
+    visible: "Delete group"
+    timeout: 10000
+- takeScreenshot: "screenshots/20-group-settings"
+
+- openLink: "rakazo:///routine?botId=${RAKAZO_SCREENSHOT_BOT_ID}&botName=Researcher&routineId=${RAKAZO_SCREENSHOT_ROUTINE_ID}"
+- extendedWaitUntil:
+    visible: "Weekly fixture review"
+    timeout: 10000
+- takeScreenshot: "screenshots/21-routine"

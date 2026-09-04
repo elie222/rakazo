@@ -1,0 +1,120 @@
+name: mobile Android screenshots
+
+on:
+  push:
+    branches:
+      - mobile-screenshot-workflow
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-android-screenshots
+  cancel-in-progress: true
+
+jobs:
+  screenshots:
+    name: Capture Android UI
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: rakazo
+          POSTGRES_PASSWORD: rakazo
+          POSTGRES_DB: rakazo
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U rakazo"
+          --health-interval 3s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      CI: "1"
+      DATABASE_URL: postgres://rakazo:rakazo@127.0.0.1:5433/rakazo
+      EXPO_PUBLIC_API_URL: http://10.0.2.2:3110
+
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@48b5f213c81028ace310571dc5ec0fbbca0b2947 # v4.4.3
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install pinned Maestro CLI
+        env:
+          MAESTRO_VERSION: 2.6.1
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location https://get.maestro.mobile.dev | bash
+          "$HOME/.maestro/bin/maestro" --version
+          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+
+      - name: Generate Android project
+        run: pnpm --filter @rakazo/mobile exec expo prebuild --platform android --no-install
+
+      - name: Build debug APK
+        working-directory: apps/mobile/android
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm",GROUP="kvm",MODE="0666",OPTIONS+="static_node=kvm"' |
+            sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Capture screenshots
+        uses: reactivecircus/android-emulator-runner@c9c93e6ba9c4194322e114c40970d5983d9a07cc # v2.38.0
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          cores: 2
+          ram-size: 4096M
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          script: |
+            set -euo pipefail
+            mkdir -p test-report/mobile-screenshots
+            adb install -r apps/mobile/android/app/build/outputs/apk/debug/app-debug.apk
+            adb reverse tcp:8081 tcp:8081
+            metro_log="$RUNNER_TEMP/rakazo-mobile-metro.log"
+            pnpm --filter @rakazo/mobile exec expo start --port 8081 > "$metro_log" 2>&1 &
+            metro_pid=$!
+            trap 'kill "$metro_pid" 2>/dev/null || true; mkdir -p test-report/mobile-screenshots; cp "$metro_log" test-report/mobile-screenshots/metro.log 2>/dev/null || true' EXIT
+            for attempt in {1..60}; do
+              if curl --fail --silent http://127.0.0.1:8081/status | grep -q running; then
+                break
+              fi
+              if [[ "$attempt" == 60 ]]; then
+                echo "Metro did not become ready." >&2
+                exit 1
+              fi
+              sleep 1
+            done
+            pnpm test:mobile-screenshots
+
+      - name: Upload screenshots and diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: mobile-android-screenshots-${{ github.run_id }}-${{ github.run_attempt }}
+          path: test-report/mobile-screenshots
+          if-no-files-found: error
+          retention-days: 7
