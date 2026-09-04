@@ -166,7 +166,6 @@ function defaultSessionProfileExists() {
 
 /** Page storage in the default session means a pre-partition install for this origin. */
 async function defaultSessionHasOriginData(origin: string): Promise<boolean> {
-  liveProbeWindows++;
   const probe = new BrowserWindow({
     show: false,
     width: 1,
@@ -177,6 +176,9 @@ async function defaultSessionHasOriginData(origin: string): Promise<boolean> {
       sandbox: true,
     },
   });
+  // Increment only after construction succeeds so a throw cannot leave the
+  // counter stuck > 0 and permanently block quit on Windows/Linux.
+  liveProbeWindows++;
   try {
     await probe.loadURL(origin);
     return (await probe.webContents.executeJavaScript(`(async () => {
