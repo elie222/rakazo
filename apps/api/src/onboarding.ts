@@ -3,6 +3,7 @@ import type { Actor, MessageBlock } from "@rakazo/contracts";
 import { featuredConnectorProvidersMatch } from "@rakazo/core";
 import {
   createThreadMessage,
+  createThreadMessageInTransaction,
   IsolationError,
   type PrismaClient,
   type ThreadEvents,
@@ -160,21 +161,40 @@ export async function promptFocus(
   botId: string,
 ): Promise<void> {
   const { bot, thread } = await requireBotThread(deps, actor, botId);
-  const recent = await deps.prisma.message.findMany({
-    where: { threadId: thread.id },
-    select: { role: true, blocks: true },
-    orderBy: { createdAt: "asc" },
-  });
-  if (recent.some((message) => message.role === "user")) return;
-  if (recent.some((message) => messageHasChoice(message.blocks as MessageBlock[]))) return;
   const target = { spaceId: actor.spaceId, botId: bot.id, threadId: thread.id };
-  await post(deps, target, [
+  const blocks: MessageBlock[] = [
     {
       kind: "choice",
       question: "What do you want me on first?",
       options: FOCUS_OPTIONS.map(({ id, letter, label }) => ({ id, letter, label })),
     },
-  ]);
+  ];
+  // Check + insert in one transaction so concurrent promptFocus calls cannot
+  // both pass the no-choice gate and post duplicate focus cards.
+  const message = await deps.prisma.$transaction(async (tx) => {
+    // Serialize concurrent promptFocus callers on this thread before the gate check.
+    await tx.$executeRaw`SELECT id FROM threads WHERE id = ${thread.id} FOR UPDATE`;
+    const recent = await tx.message.findMany({
+      where: { threadId: thread.id },
+      select: { role: true, blocks: true },
+      orderBy: { createdAt: "asc" },
+    });
+    if (recent.some((message) => message.role === "user")) return null;
+    if (recent.some((message) => messageHasChoice(message.blocks as MessageBlock[]))) return null;
+    return createThreadMessageInTransaction(tx, {
+      threadId: target.threadId,
+      role: "bot",
+      blocks,
+    });
+  });
+  if (!message) return;
+  await deps.events.append({
+    spaceId: target.spaceId,
+    threadId: target.threadId,
+    botId: target.botId,
+    type: "thread.message.created",
+    payload: { messageId: message.id, role: "bot", blocks },
+  });
 }
 
 export async function dismissFocus(

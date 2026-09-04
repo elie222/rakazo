@@ -97,10 +97,18 @@ export default function Home() {
   });
   const activityRequestId = useRef(0);
   const inboxRequestId = useRef(0);
+  const focusPromptTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     void loadActivityMode().then(setActivityMode);
   }, []);
+
+  useEffect(
+    () => () => {
+      if (focusPromptTimerRef.current) clearTimeout(focusPromptTimerRef.current);
+    },
+    [],
+  );
 
   const toggleActivityMode = useCallback(() => {
     setActivityMode((on) => {
@@ -317,10 +325,13 @@ export default function Home() {
         computerMode: "team",
       });
       await rpc("onboarding/start", { botId: bot.id }).catch(() => undefined);
+      if (focusPromptTimerRef.current) clearTimeout(focusPromptTimerRef.current);
+      focusPromptTimerRef.current = null;
       if (isFirstBot) {
         await rpc("onboarding/promptFocus", { botId: bot.id }).catch(() => undefined);
       } else {
-        setTimeout(() => {
+        focusPromptTimerRef.current = setTimeout(() => {
+          focusPromptTimerRef.current = null;
           void rpc("onboarding/promptFocus", { botId: bot.id }).catch(() => undefined);
         }, 10_000);
       }

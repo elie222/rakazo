@@ -2357,6 +2357,8 @@ export function ShellPage() {
     }
   }, [active?.id]);
 
+  useEffect(() => () => cancelFocusPrompt(), []);
+
   useEffect(() => {
     if (!computer?.busyBotName) {
       setComputerError(null);
