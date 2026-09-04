@@ -196,6 +196,7 @@ COMPUTER_E2E_MODEL=<vision-capable-openrouter-model-id> pnpm test:computer
 ```
 
 - [Self-hosting](./docs/self-host.md)
+- [Self-host secrets](./docs/self-host-secrets.md)
 - [Computer runtime and isolation](./docs/computer-runtime.md)
 - [Desktop releases](./docs/desktop-release.md)
 - [Mobile releases](./docs/mobile-release.md)
