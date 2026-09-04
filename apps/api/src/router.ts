@@ -90,6 +90,7 @@ import {
   hasMixedOneShotSchedule,
   isOneShotRoutineCrons,
   nextCronDateAcrossStrict,
+  screenLeaseId,
 } from "@rakazo/core";
 import {
   appendEventInTransaction,
@@ -1750,6 +1751,28 @@ export function createRouter(deps: RouterDeps) {
             { proxyExternal: bot.computer.kind === "box" },
           ),
         };
+      }),
+      screenClose: authed.computer.screenClose.handler(async ({ context, input }) => {
+        const bot = await repos.getBot(context.actor, input.botId);
+        const computer = bot.computer;
+        if (
+          !computer?.providerRef ||
+          (computer.state !== "running" && computer.state !== "booting")
+        ) {
+          return { ok: true as const };
+        }
+        await deps.sandbox.releaseScreen?.(toComputerRef(computer), {
+          ...computerContext(context.actor, bot.id, "screen.close"),
+          // A viewer lease can release an idle viewer allocation, but cannot
+          // release a newer fenced run that claimed this bot's screen.
+          screenLeaseId: screenViewerLeaseId(bot.id),
+          // Closing a user-controlled view keeps the lease, but its quiesced
+          // browser state is still authoritative for shared sign-ins.
+          authoritativeBrowserState:
+            computer.controlHolder === "user" && computer.controlBotId === bot.id,
+        });
+        scheduleComputerSleep(deps.jobs, computer.id);
+        return { ok: true as const };
       }),
       heartbeat: authed.computer.heartbeat.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
@@ -3804,8 +3827,14 @@ async function computerScreenContext(
     where: { computerId_botId: { computerId, botId } },
     select: { runId: true, fence: true, expiresAt: true },
   });
-  if (!lease || lease.expiresAt.getTime() <= Date.now()) return context;
+  if (!lease || lease.expiresAt.getTime() <= Date.now()) {
+    return { ...context, screenLeaseId: screenViewerLeaseId(botId) };
+  }
   return { ...context, screenLeaseId: screenLeaseIdForRun(lease, lease.runId) };
+}
+
+function screenViewerLeaseId(botId: string): string {
+  return screenLeaseId(`screen-view-${botId}`, 0);
 }
 
 async function deploymentDto(prisma: PrismaClient, sandboxProvider: string) {

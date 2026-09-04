@@ -607,4 +607,110 @@ describe("computer screen url", () => {
     });
     expect(updateMany).not.toHaveBeenCalled();
   });
+
+  it("fences an idle viewer so its later close cannot release a newer run", async () => {
+    const connectScreen = vi.fn().mockResolvedValue({
+      url: "http://screen.test",
+      mimeType: "text/html",
+      close: async () => undefined,
+    });
+    const { response } = await callScreenUrl(connectScreen);
+
+    expect(response.status).toBe(200);
+    expect(connectScreen.mock.calls[0]?.[2]).toMatchObject({
+      botId: "bot-1",
+      screenLeaseId: "screen-view-bot-1:0",
+    });
+  });
+
+  it("releases an idle viewer allocation when the screen closes", async () => {
+    const releaseScreen = vi.fn().mockResolvedValue(undefined);
+    const enqueue = vi.fn().mockResolvedValue(undefined);
+    const prisma = {
+      bot: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "bot-1",
+          thread: { id: "thread-1" },
+          computer: computerRow,
+        }),
+      },
+    } as unknown as PrismaClient;
+    const deps = {
+      prisma,
+      sandbox: { releaseScreen },
+      jobs: { enqueue },
+      env: {
+        defaultProvider: "fake",
+        defaultModel: "fake-model",
+        webOrigin: "http://127.0.0.1:5173",
+        screenProxySecret: "fake-test-secret",
+        sandboxProvider: "e2b",
+      },
+      dataDir: "/tmp/rakazo-router-test",
+    } as unknown as RouterDeps;
+    const handler = new RPCHandler(createRouter(deps));
+    const { response } = await handler.handle(
+      new Request("http://127.0.0.1/rpc/computer/screenClose", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ json: { botId: "bot-1" } }),
+      }),
+      { prefix: "/rpc", context: { actor } },
+    );
+
+    expect(response.status).toBe(200);
+    expect(releaseScreen.mock.calls[0]?.[1]).toMatchObject({
+      botId: "bot-1",
+      operationId: "screen.close",
+      screenLeaseId: "screen-view-bot-1:0",
+    });
+    expect(enqueue).toHaveBeenCalled();
+  });
+
+  it("checkpoints a booting user-controlled browser when its viewer closes", async () => {
+    const releaseScreen = vi.fn().mockResolvedValue(undefined);
+    const prisma = {
+      bot: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "bot-1",
+          thread: { id: "thread-1" },
+          computer: {
+            ...computerRow,
+            state: "booting",
+            controlHolder: "user",
+            controlBotId: "bot-1",
+            controlLeaseId: "lease-1",
+          },
+        }),
+      },
+    } as unknown as PrismaClient;
+    const deps = {
+      prisma,
+      sandbox: { releaseScreen },
+      jobs: { enqueue: vi.fn().mockResolvedValue(undefined) },
+      env: {
+        defaultProvider: "fake",
+        defaultModel: "fake-model",
+        webOrigin: "http://127.0.0.1:5173",
+        screenProxySecret: "fake-test-secret",
+        sandboxProvider: "e2b",
+      },
+      dataDir: "/tmp/rakazo-router-test",
+    } as unknown as RouterDeps;
+    const handler = new RPCHandler(createRouter(deps));
+    const { response } = await handler.handle(
+      new Request("http://127.0.0.1/rpc/computer/screenClose", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ json: { botId: "bot-1" } }),
+      }),
+      { prefix: "/rpc", context: { actor } },
+    );
+
+    expect(response.status).toBe(200);
+    expect(releaseScreen.mock.calls[0]?.[1]).toMatchObject({
+      authoritativeBrowserState: true,
+      screenLeaseId: "screen-view-bot-1:0",
+    });
+  });
 });

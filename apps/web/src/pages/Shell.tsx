@@ -2318,22 +2318,20 @@ export function ShellPage() {
     setSendError(null);
   }, [active?.id, groupId, inGroup]);
 
+  const computerScreenVisible = panel === "computer" || computerOpen;
   useEffect(() => {
-    if (!computerOpen) return;
-    function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") setComputerOpen(false);
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [computerOpen]);
-
-  useEffect(() => {
-    if ((panel !== "computer" && !computerOpen) || !active || computer?.state !== "running") return;
-    const ping = () => void rpc.computer.heartbeat({ botId: active.id }).catch(() => undefined);
+    if (!computerScreenVisible || !active || computer?.state !== "running") return;
+    const botId = active.id;
+    const ping = () => void rpc.computer.heartbeat({ botId }).catch(() => undefined);
     ping();
     const timer = window.setInterval(ping, 60_000);
-    return () => window.clearInterval(timer);
-  }, [panel, computerOpen, active?.id, computer?.state]);
+    return () => {
+      window.clearInterval(timer);
+      cacheComputerFor(botId, { screenUrl: null });
+      if (activeBotId.current === botId) setScreenUrl(null);
+      void rpc.computer.screenClose({ botId }).catch(() => undefined);
+    };
+  }, [computerScreenVisible, active?.id, computer?.state]);
 
   async function openComputer() {
     if (!active) return;
@@ -2351,12 +2349,30 @@ export function ShellPage() {
     }
   }
 
-  async function releaseComputer(reason?: ComputerReleaseReason) {
-    if (!active) return;
-    setComputerOpen(false);
-    await rpc.computer.release({ botId: active.id, reason }).catch(() => undefined);
-    await refreshThread(active.id);
-  }
+  const releaseComputer = useCallback(
+    async (reason?: ComputerReleaseReason) => {
+      const botId = activeBotId.current;
+      if (!botId) return;
+      try {
+        await rpc.computer.release({ botId, reason });
+        setComputerOpen(false);
+        await refreshThreadRef.current(botId);
+      } catch {
+        setComputerError(t`Could not continue`);
+        setComputerErrorFromScreen(false);
+      }
+    },
+    [t],
+  );
+
+  useEffect(() => {
+    if (!computerOpen) return;
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") setComputerOpen(false);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [computerOpen]);
 
   function dismissComposerError() {
     // The strip shows one message at a time, so only dismiss the run failure when it is the

@@ -11,6 +11,8 @@ export interface AdapterContext {
   screenLeaseId?: string;
   /** When releasing a screen after cancel, also stop orphaned browser work on that screen. */
   cancelRunWork?: boolean;
+  /** Prefer this quiesced browser state when checkpointing a shared computer profile. */
+  authoritativeBrowserState?: boolean;
   signal: AbortSignal;
   /** Connected external accounts available to this run, including their owning connector. */
   connectedConnections?: ConnectedConnector[];

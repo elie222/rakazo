@@ -22,12 +22,20 @@ import {
   resolveComputerControlEndpoint,
   resolveScreenNetworkMode,
   resolveScreenPublishTarget,
+  resolveTeamScreenLimit,
   screenPorts,
   screenUrlFor,
   xdotoolCommand,
 } from "./computer-spec.js";
 
 describe("graphical computer spec", () => {
+  it("allows operators to lower but not exceed the eight-screen capacity", () => {
+    expect(resolveTeamScreenLimit(undefined)).toBe(8);
+    expect(resolveTeamScreenLimit("4")).toBe(4);
+    expect(() => resolveTeamScreenLimit("0")).toThrow(/integer from 1 to 8/);
+    expect(() => resolveTeamScreenLimit("9")).toThrow(/integer from 1 to 8/);
+  });
+
   it("creates a VNC desktop, not an alpine sleep fallback", () => {
     const options = containerCreateOptions({
       name: "rakazo-bot-abc",
@@ -130,7 +138,7 @@ describe("graphical computer spec", () => {
     expect(dockerfile).toMatch(/USER 1000:1000/);
     expect(start).toMatch(/rakazo-computer-control/);
     expect(start).toMatch(/rakazo-browser/);
-    expect(start).toMatch(/SingletonLock/);
+    expect(start).not.toMatch(/browser\.log/);
     expect(start).toMatch(/xdg-mime default rakazo-browser\.desktop/);
     expect(start).toMatch(/register_browser_handler x-scheme-handler\/http/);
     expect(start).toMatch(/register_browser_handler x-scheme-handler\/https/);
@@ -144,6 +152,7 @@ describe("graphical computer spec", () => {
     expect(browser).toMatch(/\.browser-profiles\/chromium/);
     expect(browser).toMatch(/chromium-screen-\$\{DISPLAY/);
     expect(browser).toMatch(/USER_DATA_DIR_SET/);
+    expect(browser).toMatch(/RAKAZO_BROWSER_PROFILE/);
     expect(desktop).toMatch(/Exec=\/usr\/local\/bin\/rakazo-browser %U/);
     expect(desktop).toMatch(/x-scheme-handler\/http/);
     expect(desktop).toMatch(/x-scheme-handler\/https/);

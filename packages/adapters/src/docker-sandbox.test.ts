@@ -45,7 +45,10 @@ describe("Docker sandbox", () => {
       { type: "stderr", data: "command timed out after 75 ms\n" },
       { type: "exit", code: 124 },
     ]);
-    expect(fetchMock.mock.calls[0]?.[1]?.headers).not.toHaveProperty("x-rakazo-screen-id");
+    expect(fetchMock.mock.calls[0]?.[1]?.headers).toMatchObject({
+      "x-rakazo-bot-id": "bot",
+      "x-rakazo-screen-id": "bot",
+    });
   });
 
   it("releases this bot's screen assignment through the supervisor", async () => {
@@ -65,6 +68,7 @@ describe("Docker sandbox", () => {
         headers: expect.objectContaining({
           authorization: "Bearer test-token",
           "x-rakazo-bot-id": "home-bot",
+          "x-rakazo-screen-id": "bot",
           "x-rakazo-screen-lease-id": "run-1:1",
           "x-rakazo-space-id": "workspace",
         }),
@@ -148,6 +152,22 @@ describe("Docker sandbox", () => {
       expect.objectContaining({
         method: "DELETE",
         headers: expect.objectContaining({ "x-rakazo-cancel-run-work": "1" }),
+      }),
+    );
+  });
+
+  it("marks a user-controlled viewer profile as authoritative on release", async () => {
+    const fetchMock = vi.fn(async () => Response.json({ ok: true }));
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
+    await provider.releaseScreen(
+      { id: "computer-1", botId: "bot", kind: "docker", providerRef: "computer-1" },
+      { ...context, authoritativeBrowserState: true },
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://supervisor.test/computers/computer-1/screen",
+      expect.objectContaining({
+        headers: expect.objectContaining({ "x-rakazo-authoritative-browser-state": "1" }),
       }),
     );
   });

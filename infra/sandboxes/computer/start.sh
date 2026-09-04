@@ -66,29 +66,6 @@ if ! xdg-settings set default-web-browser rakazo-browser.desktop >/dev/null 2>&1
   exit 1
 fi
 
-rm -f "$AGENT_HOME/.browser-profiles/chromium/SingletonLock" \
-  "$AGENT_HOME/.browser-profiles/chromium/SingletonCookie" \
-  "$AGENT_HOME/.browser-profiles/chromium/SingletonSocket"
-
-HOME="$AGENT_HOME" rakazo-browser >/tmp/rakazo/browser.log 2>&1 &
-browser_up=0
-for _ in $(seq 1 40); do
-  if xdotool search --onlyvisible --class chromium >/dev/null 2>&1; then
-    browser_up=1
-    break
-  fi
-  if xdotool search --onlyvisible --class Chromium >/dev/null 2>&1; then
-    browser_up=1
-    break
-  fi
-  sleep 0.25
-done
-if [[ "$browser_up" -ne 1 ]]; then
-  echo "browser failed to start" >&2
-  cat /tmp/rakazo/browser.log >&2 || true
-  xterm -geometry 100x28+48+48 -bg "#111113" -fg "#E8E8EA" -cr "#E8E8EA" -title "Terminal" >/tmp/rakazo/xterm.log 2>&1 &
-fi
-
 x11vnc -display :1 -forever -shared -viewonly -nopw -listen 127.0.0.1 -rfbport 5900 -xkb -ncache 0 >/tmp/rakazo/x11vnc.log 2>&1 &
 
 NOVNC_ROOT=/usr/share/novnc

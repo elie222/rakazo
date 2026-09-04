@@ -121,7 +121,10 @@ export default function Computer() {
     const ping = () => void rpc("computer/heartbeat", { botId }).catch(() => undefined);
     ping();
     const timer = setInterval(ping, COMPUTER_HEARTBEAT_MS);
-    return () => clearInterval(timer);
+    return () => {
+      clearInterval(timer);
+      void rpc("computer/screenClose", { botId }).catch(() => undefined);
+    };
   }, [botId, computer?.state]);
 
   async function openComputer() {
@@ -142,9 +145,13 @@ export default function Computer() {
 
   async function releaseComputer(reason?: ComputerReleaseReason) {
     if (!botId) return;
-    await rpc("computer/release", { botId, reason }).catch(() => undefined);
-    setComputerOpen(false);
-    await refresh().catch(() => undefined);
+    try {
+      await rpc("computer/release", { botId, reason });
+      setComputerOpen(false);
+      await refresh().catch(() => undefined);
+    } catch {
+      setScreenError(t("Could not continue"));
+    }
   }
 
   async function setComputerMode(mode: ComputerMode) {

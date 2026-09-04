@@ -9,6 +9,15 @@ export const COMPUTER_CONTROL_PORT = 7070;
 export const SCREEN_HOST = process.env.SANDBOX_SCREEN_HOST ?? "127.0.0.1";
 export type ScreenNetworkMode = "published" | "internal" | "isolated";
 
+export function resolveTeamScreenLimit(value = process.env.SANDBOX_TEAM_SCREEN_LIMIT): number {
+  if (value === undefined || value.trim() === "") return TEAM_SCREEN_LIMIT;
+  const limit = Number(value);
+  if (!Number.isInteger(limit) || limit < 1 || limit > TEAM_SCREEN_LIMIT) {
+    throw new Error(`SANDBOX_TEAM_SCREEN_LIMIT must be an integer from 1 to ${TEAM_SCREEN_LIMIT}`);
+  }
+  return limit;
+}
+
 export function resolveScreenNetworkMode(value: string | undefined): ScreenNetworkMode {
   if (!value || value === "published") return "published";
   if (value === "internal" || value === "isolated") return value;

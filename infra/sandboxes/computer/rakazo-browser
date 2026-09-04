@@ -1,10 +1,14 @@
 #!/bin/sh
 set -eu
 RAKAZO_HOME="${HOME:-/home/rakazo}"
-case "${DISPLAY:-:1}" in
-  :[2-9]|:[1-9][0-9]*) PROFILE="$RAKAZO_HOME/.browser-profiles/chromium-screen-${DISPLAY#:}" ;;
-  *) PROFILE="$RAKAZO_HOME/.browser-profiles/chromium" ;;
-esac
+if [ -n "${RAKAZO_BROWSER_PROFILE:-}" ]; then
+  PROFILE="$RAKAZO_BROWSER_PROFILE"
+else
+  case "${DISPLAY:-:1}" in
+    :[2-9]|:[1-9][0-9]*) PROFILE="$RAKAZO_HOME/.browser-profiles/chromium-screen-${DISPLAY#:}" ;;
+    *) PROFILE="$RAKAZO_HOME/.browser-profiles/chromium" ;;
+  esac
+fi
 mkdir -p "$PROFILE"
 BIN="$(command -v chromium || command -v chromium-browser || true)"
 if [ -z "$BIN" ]; then
