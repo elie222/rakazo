@@ -112,10 +112,7 @@ export function createOpenAiCompatibleLookup(
   });
 }
 
-function requestCarriesAuthorization(input: RequestInfo | URL, init?: RequestInit): boolean {
-  if (input instanceof Request && input.headers.get("authorization")) return true;
-  const headers = init?.headers;
-  if (!headers) return false;
+function headersCarryAuthorization(headers: HeadersInit): boolean {
   if (headers instanceof Headers) return Boolean(headers.get("authorization"));
   if (Array.isArray(headers)) {
     return headers.some(
@@ -125,6 +122,12 @@ function requestCarriesAuthorization(input: RequestInfo | URL, init?: RequestIni
   return Object.entries(headers).some(
     ([name, value]) => name.toLowerCase() === "authorization" && Boolean(value),
   );
+}
+
+/** Matches fetch: when init.headers is set it replaces Request headers entirely. */
+function requestCarriesAuthorization(input: RequestInfo | URL, init?: RequestInit): boolean {
+  if (init?.headers !== undefined) return headersCarryAuthorization(init.headers);
+  return input instanceof Request ? Boolean(input.headers.get("authorization")) : false;
 }
 
 export function createOpenAiCompatibleFetch(

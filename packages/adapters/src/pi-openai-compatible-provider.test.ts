@@ -5,6 +5,7 @@ import { buildModelConnectPlaintext } from "./model-connect.js";
 import { listPiCatalog } from "./pi-models.js";
 import { parseModelSecret, secretValuesToRedact, serializeModelSecret } from "./pi-oauth.js";
 import {
+  createOpenAiCompatibleFetch,
   createOpenAiCompatibleLookup,
   OPENAI_COMPATIBLE_CATALOG_MODEL_ID,
   openAiCompatibleCatalogProvider,
@@ -108,6 +109,25 @@ describe("model connect", () => {
 });
 
 describe("openai-compatible provider", () => {
+  it("does not treat replaced Request Authorization as keyed for public http", async () => {
+    const previous = process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC;
+    process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC = "1";
+    try {
+      const request = new Request("http://api.example.com/v1/models", {
+        headers: { Authorization: "Bearer secret" },
+      });
+      const safeFetch = createOpenAiCompatibleFetch(
+        async () => new Response("{}", { status: 200 }),
+      );
+      await expect(
+        safeFetch(request, { headers: { Accept: "application/json" } }),
+      ).resolves.toMatchObject({ status: 200 });
+    } finally {
+      if (previous === undefined) delete process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC;
+      else process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC = previous;
+    }
+  });
+
   it("rejects public hostnames that resolve to private addresses", async () => {
     const lookup = createOpenAiCompatibleLookup(
       new URL("https://models.example.test/v1"),
