@@ -3322,22 +3322,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
               });
             } else if (event.type === "done") {
               if (!assembled && event.text) {
-                if (publishedMidTurnUserMessage && midTurnRawTexts.length > 0) {
-                  // done.text is often the full cumulative assistant stream, including
-                  // narration already published as mid-turn progress. Strip using the
-                  // unclamped originals so a 500-char clamp ellipsis still matches.
-                  let remainder = event.text;
-                  for (const part of midTurnRawTexts) {
-                    const index = remainder.indexOf(part);
-                    if (index >= 0) {
-                      remainder = `${remainder.slice(0, index)}${remainder.slice(index + part.length)}`;
-                    }
-                  }
-                  remainder = remainder.trim();
-                  if (remainder) {
-                    assembled = remainder;
-                    currentTextSegment += remainder;
-                  }
+                if (publishedMidTurnUserMessage) {
+                  // Mid-turn progress already published the streamed narration.
+                  // Post-tool finals are streamed into assembled; do not restore
+                  // cumulative done.text (clamp/redaction make substring stripping brittle).
                 } else {
                   assembled = event.text;
                   currentTextSegment += event.text;
