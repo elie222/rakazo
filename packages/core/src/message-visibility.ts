@@ -41,6 +41,13 @@ export function userVisibleMessages<T extends PresentableMessage>(
     // answer (approval, secret, or multiple-choice ask) partway through. That ask
     // card has nowhere else to render, so it must survive this filter even though
     // the rest of that peer run's activity stays hidden from the transcript.
-    return message.blocks.some((block) => block.kind === "ask");
+    //
+    // The same run also ends its turn by writing the bot's own reply to the human
+    // (the delegate wake prompt tells it to "summarize this result to the user
+    // now"). That reply is a plain `text` block in the same run/thread as the
+    // `bot_message_received` row, so without this it was caught by the same
+    // blanket hide and silently dropped: the delegating bot looked like it never
+    // answered, even though it did and the message was saved correctly.
+    return message.blocks.some((block) => block.kind === "ask" || block.kind === "text");
   });
 }

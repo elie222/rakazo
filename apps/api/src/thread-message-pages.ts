@@ -111,12 +111,18 @@ async function withoutPeerRunMessages<T extends { runId: string | null; blocks: 
     // secret, or choice) and has nowhere else to render. Hiding it here left bots that
     // were delegated a task by another bot (the normal way work gets assigned) stuck in
     // waiting_input forever with no visible way to unblock them.
+    //
+    // Also keep plain `text` replies: the same peer-triggered run is how the delegating
+    // bot writes its own answer back to the human (the delegate wake prompt tells it to
+    // summarize the result "to the user now"), and that reply was being caught by this
+    // same filter and silently dropped even though it saved correctly.
     const blocks = row.blocks as MessageBlock[];
     return blocks.some(
       (block) =>
         block.kind === "bot_message_sent" ||
         block.kind === "bot_message_received" ||
-        block.kind === "ask",
+        block.kind === "ask" ||
+        block.kind === "text",
     );
   });
 }
