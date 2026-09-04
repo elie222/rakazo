@@ -242,17 +242,26 @@ describeWithDatabase("Composio catalog reconciliation", () => {
         },
       ],
     };
-    const tool = (await handles.connectors.discoverTools(context)).find(
+    const tools = (await handles.connectors.discoverTools(context)).filter(
       (candidate) => candidate.route?.connectorId === "composio",
     );
-    expect(tool).toMatchObject({ name: "GMAIL_EMULATED_ACTION" });
+    expect(tools.map((tool) => tool.name)).toEqual([
+      "GMAIL_FETCH_EMAILS",
+      "GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID",
+      "GMAIL_FETCH_MESSAGE_BY_THREAD_ID",
+      "GMAIL_SEND_EMAIL",
+      "GMAIL_CREATE_EMAIL_DRAFT",
+      "GMAIL_LIST_LABELS",
+    ]);
+    const fetchTool = tools.find((tool) => tool.name === "GMAIL_FETCH_EMAILS");
+    expect(fetchTool).toBeDefined();
     const events = [];
     for await (const event of handles.connectors.execute(
       {
-        tool: tool!.name,
-        args: { value: "composio-product-ok" },
+        tool: fetchTool!.name,
+        args: { query: "from:teammate", max_results: 5 },
         executionId: "composio-product-execution",
-        route: tool!.route,
+        route: fetchTool!.route,
       },
       context,
     )) {
@@ -261,11 +270,26 @@ describeWithDatabase("Composio catalog reconciliation", () => {
     expect(events).toContainEqual(
       expect.objectContaining({
         type: "result",
-        data: expect.objectContaining({ ok: true, tool: "GMAIL_EMULATED_ACTION" }),
+        data: expect.objectContaining({
+          successful: true,
+          data: expect.objectContaining({
+            messages: [
+              expect.objectContaining({
+                messageId: "18c5f5d1a2b3c4d6",
+                subject: "Quarterly planning notes",
+              }),
+            ],
+            resultSizeEstimate: 1,
+          }),
+        }),
       }),
     );
     expect(composio.executions).toContainEqual(
-      expect.objectContaining({ userId: actor.userId, tool: "GMAIL_EMULATED_ACTION" }),
+      expect.objectContaining({
+        userId: actor.userId,
+        tool: "GMAIL_FETCH_EMAILS",
+        args: { query: "from:teammate", max_results: 5 },
+      }),
     );
   });
 
