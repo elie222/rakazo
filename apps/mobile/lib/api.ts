@@ -652,24 +652,29 @@ export function applyMobileThreadEvent(
       activeRuns: [],
     };
   }
-  if (event.type === "run.waiting_input") {
+  if (event.type === "run.waiting_input" || event.type === "computer.takeover.requested") {
+    const status = event.type === "run.waiting_input" ? "waiting_input" : "waiting_takeover";
     const progressId = progressMessageId(event);
-    const messages = prev.messages.filter((message) => message.id !== progressId);
+    // Waiting-input pauses drop live progress server-side; clear a leftover bubble.
+    const messages =
+      event.type === "run.waiting_input"
+        ? prev.messages.filter((message) => message.id !== progressId)
+        : prev.messages;
     const progressCleared = messages.length !== prev.messages.length;
     const runChanged = Boolean(
-      prev.run && prev.run.id === event.runId && prev.run.status !== "waiting_input",
+      prev.run && prev.run.id === event.runId && prev.run.status !== status,
     );
     const activeRunChanged = prev.activeRuns?.some(
-      (candidate) => candidate.id === event.runId && candidate.status !== "waiting_input",
+      (candidate) => candidate.id === event.runId && candidate.status !== status,
     );
     const cursor = event.seq ?? prev.cursor;
     if (!runChanged && !activeRunChanged && !progressCleared) {
       return cursor === prev.cursor ? prev : { ...prev, cursor };
     }
-    const run = runChanged && prev.run ? { ...prev.run, status: "waiting_input" } : prev.run;
+    const run = runChanged && prev.run ? { ...prev.run, status } : prev.run;
     const activeRuns = activeRunChanged
       ? prev.activeRuns?.map((candidate) =>
-          candidate.id === event.runId ? { ...candidate, status: "waiting_input" } : candidate,
+          candidate.id === event.runId ? { ...candidate, status } : candidate,
         )
       : prev.activeRuns;
     return { ...prev, cursor, run, activeRuns, messages };

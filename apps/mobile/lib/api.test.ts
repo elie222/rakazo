@@ -1062,6 +1062,23 @@ describe("mobile thread event reduction", () => {
     expect(repeated?.run).toBe(waiting?.run);
   });
 
+  it("applies computer takeover requests as waiting_takeover", () => {
+    const initial: MobileSnapshot = {
+      ...snapshot(),
+      run: { id: "run-1", status: "running" },
+      activeRuns: [{ id: "run-1", status: "running" }],
+    };
+    const waiting = applyMobileThreadEvent(initial, {
+      type: "computer.takeover.requested",
+      runId: "run-1",
+      seq: 10,
+    });
+
+    expect(waiting?.run?.status).toBe("waiting_takeover");
+    expect(waiting?.activeRuns?.[0]?.status).toBe("waiting_takeover");
+    expect(waiting?.cursor).toBe(10);
+  });
+
   it("advances the cursor for durable message events", () => {
     const next = applyMobileThreadEvent(snapshot(), {
       type: "thread.message.created",
