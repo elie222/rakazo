@@ -10,6 +10,7 @@ import {
   ThirdPartyConnectorEmulator,
 } from "@rakazo/adapters";
 import { createThreadMessage, type PrismaClient } from "@rakazo/db";
+import { sessionCookieHeader } from "../index.js";
 import { runProcess } from "./process.js";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
@@ -20,6 +21,7 @@ const EMAIL = "mobile-screenshots@example.test";
 const PASSWORD = "test-password-123";
 const API_PORT = 3110;
 const HOST_API_URL = `http://127.0.0.1:${API_PORT}`;
+const WEB_ORIGIN = "http://127.0.0.1:5180";
 
 type App = { request: (input: string, init?: RequestInit) => Response | Promise<Response> };
 
@@ -127,7 +129,7 @@ function configureEnvironment() {
     ENCRYPTION_KEY: "mobile-screenshot-encryption-key-32chars",
     SCREEN_PROXY_SECRET: "mobile-screenshot-screen-secret-32chars",
     BETTER_AUTH_URL: HOST_API_URL,
-    WEB_ORIGIN: "http://127.0.0.1:5180",
+    WEB_ORIGIN,
     API_HOST: "0.0.0.0",
     API_PORT: String(API_PORT),
     API_URL: HOST_API_URL,
@@ -242,15 +244,11 @@ async function seedFixture(app: App, prisma: PrismaClient) {
 async function signup(app: App) {
   const response = await app.request("/api/auth/sign-up/email", {
     method: "POST",
-    headers: { "content-type": "application/json", origin: "http://127.0.0.1:5180" },
+    headers: { "content-type": "application/json", origin: WEB_ORIGIN },
     body: JSON.stringify({ email: EMAIL, password: PASSWORD, name: "Screenshot User" }),
   });
   if (!response.ok) throw new Error(`Fixture signup failed with ${response.status}`);
-  const cookies = response.headers.getSetCookie?.() ?? [];
-  const cookie =
-    cookies.map((value) => value.split(";")[0]).join("; ") ||
-    response.headers.get("set-cookie")?.split(",")[0]?.split(";")[0] ||
-    "";
+  const cookie = sessionCookieHeader(response);
   if (!cookie) throw new Error("Fixture signup did not return a session cookie");
   return cookie;
 }
@@ -261,7 +259,7 @@ async function rpc<T>(app: App, cookie: string, procedure: string, body: unknown
     headers: {
       "content-type": "application/json",
       cookie,
-      origin: "http://127.0.0.1:5180",
+      origin: WEB_ORIGIN,
     },
     body: JSON.stringify({ json: body }),
   });

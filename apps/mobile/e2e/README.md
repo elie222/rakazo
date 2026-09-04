@@ -39,6 +39,3 @@ local session and endpoint data; it does not delete server-side bots.
 Run **Actions → mobile Android screenshots → Run workflow** to build the app, seed an isolated fake
 workspace, capture 21 Android emulator views, and upload the screenshots and Maestro report for
 seven days. It uses no repository secrets or hosted providers.
-
-The local equivalent is `pnpm test:mobile-screenshots`; it expects Postgres, an installed debug app,
-an Android emulator, and Metro on port 8081.
