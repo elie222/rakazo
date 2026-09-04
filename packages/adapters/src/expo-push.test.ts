@@ -7,6 +7,7 @@ import {
   ExpoPushProvider,
   expoPushErrorMessage,
   loadPushToken,
+  MAX_EXPO_PUSH_RESPONSE_BYTES,
   savePushToken,
 } from "./expo-push.js";
 
@@ -26,11 +27,7 @@ const notifyContext = {
 };
 
 function jsonResponse(body: unknown, status = 200) {
-  return {
-    ok: status >= 200 && status < 300,
-    status,
-    json: async () => body,
-  };
+  return Response.json(body, { status });
 }
 
 describe("expo push tickets", () => {
@@ -153,6 +150,110 @@ describe("expo push", () => {
         notifyContext,
       ),
     ).rejects.toThrow("boom");
+  });
+
+  it("rejects and cancels a declared oversized response", async () => {
+    const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-push-"));
+    dirs.push(dataDir);
+    await savePushToken(dataDir, "user-1", "ExponentPushToken[test]");
+    const response = new Response("oversized", {
+      headers: { "content-length": String(MAX_EXPO_PUSH_RESPONSE_BYTES + 1) },
+    });
+    const cancel = vi.spyOn(response.body!, "cancel");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response));
+
+    await expect(
+      new ExpoPushProvider(dataDir).send(
+        { kind: "completion", title: "done", body: "ok", botId: "b", threadId: "t" },
+        notifyContext,
+      ),
+    ).rejects.toThrow("Expo push response is too large.");
+    expect(cancel).toHaveBeenCalledOnce();
+  });
+
+  it("does not wait past cancellation when an oversized body cancel hangs", async () => {
+    const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-push-"));
+    dirs.push(dataDir);
+    await savePushToken(dataDir, "user-1", "ExponentPushToken[test]");
+    let cancelStarted = false;
+    const hangingBody = new ReadableStream<Uint8Array>({
+      cancel() {
+        cancelStarted = true;
+        return new Promise(() => undefined);
+      },
+    });
+    const abort = new AbortController();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        setTimeout(() => abort.abort(), 20);
+        return new Response(hangingBody, {
+          headers: { "content-length": String(MAX_EXPO_PUSH_RESPONSE_BYTES + 1) },
+        });
+      }),
+    );
+
+    const started = Date.now();
+    await expect(
+      new ExpoPushProvider(dataDir).send(
+        { kind: "completion", title: "done", body: "ok", botId: "b", threadId: "t" },
+        { ...notifyContext, signal: abort.signal },
+      ),
+    ).rejects.toThrow("Expo push response is too large.");
+    expect(cancelStarted).toBe(true);
+    expect(Date.now() - started).toBeLessThan(500);
+  });
+
+  it("caps a streamed response without a content length", async () => {
+    const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-push-"));
+    dirs.push(dataDir);
+    await savePushToken(dataDir, "user-1", "ExponentPushToken[test]");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response(new Uint8Array(MAX_EXPO_PUSH_RESPONSE_BYTES + 1))),
+    );
+
+    await expect(
+      new ExpoPushProvider(dataDir).send(
+        { kind: "completion", title: "done", body: "ok", botId: "b", threadId: "t" },
+        notifyContext,
+      ),
+    ).rejects.toThrow("Expo push response is too large.");
+  });
+
+  it("rejects malformed successful responses", async () => {
+    const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-push-"));
+    dirs.push(dataDir);
+    await savePushToken(dataDir, "user-1", "ExponentPushToken[test]");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("not json")));
+
+    await expect(
+      new ExpoPushProvider(dataDir).send(
+        { kind: "completion", title: "done", body: "ok", botId: "b", threadId: "t" },
+        notifyContext,
+      ),
+    ).rejects.toThrow("Expo push returned an invalid response.");
+  });
+
+  it("passes caller cancellation to the Expo request", async () => {
+    const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-push-"));
+    dirs.push(dataDir);
+    await savePushToken(dataDir, "user-1", "ExponentPushToken[test]");
+    const controller = new AbortController();
+    controller.abort(new Error("notification cancelled"));
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      expect(init?.signal?.aborted).toBe(true);
+      throw init?.signal?.reason;
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      new ExpoPushProvider(dataDir).send(
+        { kind: "completion", title: "done", body: "ok", botId: "b", threadId: "t" },
+        { ...notifyContext, signal: controller.signal },
+      ),
+    ).rejects.toThrow("notification cancelled");
+    expect(fetchMock).toHaveBeenCalledOnce();
   });
 
   it("throws when the Expo request never reaches the network", async () => {

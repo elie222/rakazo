@@ -7,8 +7,12 @@ import type {
   NotificationProvider,
 } from "@rakazo/adapter-kit";
 import { getLogger } from "@rakazo/logging";
+import { combineSignals } from "./connector-safety.js";
+import { readBodyCapped, withAbort } from "./web-ssrf.js";
 
 const O_NOFOLLOW = constants.O_NOFOLLOW ?? 0;
+const EXPO_PUSH_TIMEOUT_MS = 15_000;
+export const MAX_EXPO_PUSH_RESPONSE_BYTES = 64 * 1024;
 
 export function pushTokenPath(dataDir: string, userId: string) {
   return path.join(dataDir, "push-tokens", `${userId}.txt`);
@@ -98,6 +102,7 @@ export class ExpoPushProvider implements NotificationProvider {
   async send(message: NotificationMessage, context: AdapterContext): Promise<void> {
     const token = await loadPushToken(this.dataDir, context.userId);
     if (!token) return;
+    const signal = combineSignals(context.signal, AbortSignal.timeout(EXPO_PUSH_TIMEOUT_MS));
     let response: Response;
     try {
       response = await fetch("https://exp.host/--/api/v2/push/send", {
@@ -111,15 +116,42 @@ export class ExpoPushProvider implements NotificationProvider {
           tag: message.threadId,
           data: { kind: message.kind, botId: message.botId, threadId: message.threadId },
         }),
+        signal,
       });
     } catch (error) {
       getLogger().error("expo push request failed", error);
       throw error;
     }
-    const body = await response.json().catch(() => undefined);
+    const body = await readExpoPushBody(response, signal);
+    if (response.ok && body === undefined) {
+      throw new Error("Expo push returned an invalid response.");
+    }
     const failure = expoPushErrorMessage(body, response.status);
     if (!failure) return;
     getLogger().error(failure);
     throw new Error(failure);
+  }
+}
+
+async function readExpoPushBody(response: Response, signal: AbortSignal): Promise<unknown> {
+  const declared = Number(response.headers.get("content-length") ?? 0);
+  if (Number.isFinite(declared) && declared > MAX_EXPO_PUSH_RESPONSE_BYTES) {
+    const cancel = response.body?.cancel() ?? Promise.resolve();
+    await withAbort(
+      cancel.catch(() => undefined),
+      signal,
+    ).catch(() => undefined);
+    throw new Error("Expo push response is too large.");
+  }
+  try {
+    const bytes = await readBodyCapped(response, MAX_EXPO_PUSH_RESPONSE_BYTES, signal);
+    if (bytes.byteLength === 0) return undefined;
+    return JSON.parse(new TextDecoder().decode(bytes)) as unknown;
+  } catch (error) {
+    if (error instanceof Error && error.message === "Response is too large") {
+      throw new Error("Expo push response is too large.");
+    }
+    if (error instanceof SyntaxError) return undefined;
+    throw error;
   }
 }
