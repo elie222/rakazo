@@ -263,7 +263,10 @@ describe("deliverMessagingOutbound", () => {
   it("mirrors delegated bot_message replies to the linked DM", async () => {
     const deps = createDeps({ run: { ...messagingRun, trigger: "bot_message" } });
     await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
-    expect(deps.sendToThread).toHaveBeenCalled();
+    expect(deps.sendToThread).toHaveBeenCalledWith(
+      { threadId: "sendblue:dm-1", body: "Hello from your bot" },
+      context,
+    );
   });
 
   it("holds sendblue DM sends at the consecutive-outbound cap", async () => {
