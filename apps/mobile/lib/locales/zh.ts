@@ -34,6 +34,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Could not rename connection": "无法重命名连接",
   "Add another": "再添加一个",
   "Add another {name}": "再添加一个 {name}",
+  "1 tool": "1 个工具",
   "{count} tools": "{count} 个工具",
   "Add MCP server": "添加 MCP 服务器",
   "Add GraphQL": "添加 GraphQL",

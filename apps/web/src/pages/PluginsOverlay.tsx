@@ -676,7 +676,10 @@ export function PluginsOverlay({
                         const key = item ? itemKey(item) : tile.id;
                         const disabled = tile.missing || !item;
                         if (item && !tile.missing) {
-                          return renderCatalogTile(item, tile.label, item.logo);
+                          // Featured is the stable hit target for connection-tile-* in E2E.
+                          return renderCatalogTile(item, tile.label, item.logo, {
+                            tileTestId: true,
+                          });
                         }
                         return (
                           <div

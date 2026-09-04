@@ -238,7 +238,8 @@ async function lockProviderConnectionScope(
   connectorId: string,
   provider: string,
 ): Promise<void> {
-  const scope = `${owner.spaceId}\0${owner.userId}\0${connectorId}\0${provider}`;
+  // Avoid NUL separators in the lock key; text params may truncate at a zero byte and break begin.
+  const scope = `space:${owner.spaceId}|user:${owner.userId}|connector:${connectorId}|provider:${provider}`;
   await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('connection-provider'), hashtext(${scope}))`;
 }
 

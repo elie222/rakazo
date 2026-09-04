@@ -492,7 +492,11 @@ export default function Integrations() {
             style={styles.toolsToggle}
           >
             <Text style={styles.title}>
-              {toolsLoading ? t("Tools") : t("{count} tools", { count: toolCount })}
+              {toolsLoading
+                ? t("Tools")
+                : toolCount === 1
+                  ? t("1 tool")
+                  : t("{count} tools", { count: toolCount })}
             </Text>
             <Text style={styles.chevron}>{toolsOpen ? "˅" : "›"}</Text>
           </Pressable>
