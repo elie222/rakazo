@@ -97,12 +97,30 @@ export function commandEnvironment(
     const value = source[key];
     if (value !== undefined) env[key] = value;
   }
+  // The sidecar runs as root against a bind-mounted checkout that a non-root deploy user owns,
+  // which is the layout docs/self-host.md tells operators to use. Git refuses that with "detected
+  // dubious ownership" and exits 128, so every git call fails before it can read the current sha.
+  //
+  // Declaring the one directory safe here rather than in the Compose file is deliberate: this
+  // allowlist rebuilds the child environment from scratch, so anything set on the service is
+  // dropped before git ever runs. The value is the deployment directory the sidecar already
+  // trusts, and it is applied after `overrides` so a caller cannot widen it.
+  const deployDir = source.RAKAZO_DEPLOY_DIR?.trim();
+  const gitOwnership =
+    deployDir === undefined || deployDir === ""
+      ? {}
+      : {
+          GIT_CONFIG_COUNT: "1",
+          GIT_CONFIG_KEY_0: "safe.directory",
+          GIT_CONFIG_VALUE_0: deployDir,
+        };
   return {
     ...env,
     ...overrides,
     GIT_TERMINAL_PROMPT: "0",
     GIT_ASKPASS: "true",
     CI: "1",
+    ...gitOwnership,
   };
 }
 
