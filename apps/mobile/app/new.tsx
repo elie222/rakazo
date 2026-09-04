@@ -10,6 +10,7 @@ import { useState } from "react";
 import { Pressable, ScrollView, Text, TextInput } from "react-native";
 import { ComputerModePicker } from "../components/computer-mode-picker";
 import { type MobileBot, rpc } from "../lib/api";
+import { allowFocusPrompt, scheduleFocusPrompt } from "../lib/focus-prompt";
 import { useI18n } from "../lib/i18n";
 import { tokens } from "../lib/theme";
 
