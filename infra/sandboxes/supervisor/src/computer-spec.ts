@@ -9,6 +9,96 @@ export const COMPUTER_CONTROL_PORT = 7070;
 export const SCREEN_HOST = process.env.SANDBOX_SCREEN_HOST ?? "127.0.0.1";
 export type ScreenNetworkMode = "published" | "internal" | "isolated";
 
+/**
+ * Resource ceilings for a bot computer.
+ *
+ * A computer runs Xvfb, a window manager and a full Chromium on behalf of an
+ * agent that decides for itself what to open. #343 gave these containers a
+ * pids ceiling, but Memory and NanoCpus are still unset, so one runaway page is
+ * a host-wide memory and CPU event that takes every other bot and the Rakazo
+ * services down with it. Every service in docker-compose.prod.yml already
+ * carries mem_limit; this applies the same discipline to the containers that
+ * actually run untrusted page content.
+ *
+ * Defaults are generous enough for real browsing and small enough that a single
+ * computer cannot exhaust the 8 GB host docs/self-host.md documents for the
+ * Docker computer topology. The pids default is #343's existing 2048, unchanged.
+ * Set any of these to "0", "none" or "unlimited" to opt out.
+ */
+const DEFAULT_COMPUTER_MEMORY = "2g";
+const DEFAULT_COMPUTER_CPUS = "2";
+const DEFAULT_COMPUTER_PIDS_LIMIT = "2048";
+
+const MEMORY_UNITS: Record<string, number> = {
+  b: 1,
+  k: 1024,
+  m: 1024 ** 2,
+  g: 1024 ** 3,
+};
+
+function isUnlimited(raw: string): boolean {
+  const value = raw.trim().toLowerCase();
+  return value === "0" || value === "unlimited" || value === "none";
+}
+
+/** Bytes from a docker-style size string ("2g", "1536m", "1073741824"). */
+export function parseMemoryBytes(name: string, raw: string): number {
+  if (isUnlimited(raw)) return 0;
+  const match = /^(\d+(?:\.\d+)?)\s*([bkmg])?b?$/i.exec(raw.trim());
+  if (!match) {
+    throw new Error(`${name} must be a size like "2g", "1536m" or a byte count, received "${raw}"`);
+  }
+  const scale = MEMORY_UNITS[(match[2] ?? "b").toLowerCase()] ?? 1;
+  const bytes = Math.floor(Number(match[1]) * scale);
+  if (!Number.isSafeInteger(bytes) || bytes <= 0) {
+    throw new Error(`${name} must resolve to a positive byte count, received "${raw}"`);
+  }
+  return bytes;
+}
+
+/** Docker NanoCpus (1e9 per core) from a CPU count like "1.5". */
+export function parseNanoCpus(name: string, raw: string): number {
+  if (isUnlimited(raw)) return 0;
+  const value = Number(raw.trim());
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new Error(`${name} must be a positive number of CPUs, received "${raw}"`);
+  }
+  return Math.floor(value * 1e9);
+}
+
+function parsePidsLimit(name: string, raw: string): number {
+  if (isUnlimited(raw)) return 0;
+  const value = Number(raw.trim());
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    throw new Error(`${name} must be a positive integer, received "${raw}"`);
+  }
+  return value;
+}
+
+/** The host resource ceilings applied to every bot computer. */
+export function computerResourceLimits() {
+  const memoryBytes = parseMemoryBytes(
+    "RAKAZO_COMPUTER_MEMORY",
+    process.env.RAKAZO_COMPUTER_MEMORY ?? DEFAULT_COMPUTER_MEMORY,
+  );
+  const nanoCpus = parseNanoCpus(
+    "RAKAZO_COMPUTER_CPUS",
+    process.env.RAKAZO_COMPUTER_CPUS ?? DEFAULT_COMPUTER_CPUS,
+  );
+  const pidsLimit = parsePidsLimit(
+    "RAKAZO_COMPUTER_PIDS_LIMIT",
+    process.env.RAKAZO_COMPUTER_PIDS_LIMIT ?? DEFAULT_COMPUTER_PIDS_LIMIT,
+  );
+  return {
+    // Memory and MemorySwap are set together: leaving MemorySwap unset lets the
+    // container swap to twice Memory, so the ceiling would not hold.
+    Memory: memoryBytes,
+    MemorySwap: memoryBytes,
+    NanoCpus: nanoCpus,
+    PidsLimit: pidsLimit,
+  };
+}
+
 export function resolveScreenNetworkMode(value: string | undefined): ScreenNetworkMode {
   if (!value || value === "published") return "published";
   if (value === "internal" || value === "isolated") return value;
@@ -107,7 +197,7 @@ export function containerCreateOptions(input: ComputerCreateInput) {
       ShmSize: 256 * 1024 * 1024,
       CapDrop: ["ALL"],
       SecurityOpt: ["no-new-privileges:true"],
-      PidsLimit: 2048,
+      ...computerResourceLimits(),
       ReadonlyPaths: ["/usr/share/novnc"],
       AutoRemove: false,
       NetworkMode: input.networkMode ?? "bridge",
