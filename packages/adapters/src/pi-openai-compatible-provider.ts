@@ -336,7 +336,9 @@ export async function probeOpenAiCompatibleModels(
     });
     if (response.type === "opaqueredirect" || (response.status >= 300 && response.status < 400)) {
       await response.body?.cancel().catch(() => undefined);
-      throw new Error(`Model server redirects are not allowed. ${OPENAI_COMPAT_PROBE_HAND_FILL_HINT}`);
+      throw new Error(
+        `Model server redirects are not allowed. ${OPENAI_COMPAT_PROBE_HAND_FILL_HINT}`,
+      );
     }
     if (!response.ok) {
       await response.body?.cancel().catch(() => undefined);

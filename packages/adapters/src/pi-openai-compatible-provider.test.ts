@@ -266,7 +266,11 @@ describe("openai-compatible provider", () => {
       throw new DOMException("The operation was aborted.", "AbortError");
     };
     await expect(
-      probeOpenAiCompatibleModels({ baseUrl: "http://127.0.0.1:8000/v1" }, fetchImpl, caller.signal),
+      probeOpenAiCompatibleModels(
+        { baseUrl: "http://127.0.0.1:8000/v1" },
+        fetchImpl,
+        caller.signal,
+      ),
     ).rejects.toMatchObject({ name: "AbortError" });
   });
 
