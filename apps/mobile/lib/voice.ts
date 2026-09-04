@@ -70,10 +70,27 @@ async function playWithHtmlAudio(AudioCtor: typeof Audio, bytes: Uint8Array): Pr
   const url = URL.createObjectURL(blob);
   try {
     const audio = new AudioCtor(url);
-    await audio.play();
     await new Promise<void>((resolve, reject) => {
-      audio.onended = () => resolve();
-      audio.onerror = () => reject(new Error(t("Could not play that clip.")));
+      let settled = false;
+      const finish = (error?: Error) => {
+        if (settled) return;
+        settled = true;
+        audio.onended = null;
+        audio.onerror = null;
+        if (error) reject(error);
+        else resolve();
+      };
+      audio.onended = () => finish();
+      audio.onerror = () => finish(new Error(t("Could not play that clip.")));
+      try {
+        void audio
+          .play()
+          .catch((error: unknown) =>
+            finish(error instanceof Error ? error : new Error(t("Could not play that clip."))),
+          );
+      } catch (error) {
+        finish(error instanceof Error ? error : new Error(t("Could not play that clip.")));
+      }
     });
   } finally {
     URL.revokeObjectURL(url);

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { captureApiRequestContext, currentApiBase, rpc } from "./api";
 import {
   MAX_VOICE_AUDIO_BYTES,
+  playMpeg,
   speakText,
   speakUtterance,
   VOICE_RESPONSE_TIMEOUT_MS,
@@ -75,6 +76,21 @@ describe("mobile speech", () => {
       expect(url).toBe("https://support.example/api/voice/speak");
       expect(init?.headers).toMatchObject(requestContext.headers);
     }
+  });
+
+  it("listens for an HTML audio clip ending before playback starts", async () => {
+    class ImmediateAudio {
+      onended: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+
+      async play() {
+        expect(this.onended).toBeTypeOf("function");
+        this.onended?.();
+      }
+    }
+    vi.stubGlobal("Audio", ImmediateAudio);
+
+    await expect(playMpeg(new Uint8Array([1, 2, 3]))).resolves.toBeUndefined();
   });
 
   it("rejects oversized audio without waiting for response cancellation", async () => {
