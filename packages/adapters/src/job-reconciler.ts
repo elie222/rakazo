@@ -8,8 +8,8 @@ import type { MessageBlock } from "@rakazo/contracts";
 import type { Pool, PrismaClient, ThreadEvents } from "@rakazo/db";
 import type { PoolClient } from "pg";
 import { returnBotMessageOutcome } from "./bot-messages.js";
-import { isUserProgressClientNonce } from "./user-progress.js";
 import { scheduleComputerControlExpiry } from "./computer-control.js";
+import { isUserProgressClientNonce } from "./user-progress.js";
 
 const DEFAULT_INTERVAL_MS = 30_000;
 const DEFAULT_BATCH_SIZE = 100;

@@ -367,7 +367,9 @@ describe("createJobReconciler", () => {
       computer: { findMany: vi.fn(async () => []) },
       messagingOutbound: { findFirst: vi.fn(async () => null) },
       message: {
-        findMany: vi.fn(async () => [{ blocks: [{ kind: "text", text: "Finished." }], clientNonce: null }]),
+        findMany: vi.fn(async () => [
+          { blocks: [{ kind: "text", text: "Finished." }], clientNonce: null },
+        ]),
       },
     } as unknown as PrismaClient;
     const { jobs } = publisher();

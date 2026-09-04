@@ -1331,7 +1331,14 @@ export function createRunExecutor(deps: ExecutorDeps) {
           assembled = "";
           hasStreamedText = false;
           pendingProgress = "";
-          await publishMessage(deps, run, "bot", [{ kind: "text", text: narration }], undefined, userProgressClientNonce(run.id, midTurnProgressCount++));
+          await publishMessage(
+            deps,
+            run,
+            "bot",
+            [{ kind: "text", text: narration }],
+            undefined,
+            userProgressClientNonce(run.id, midTurnProgressCount++),
+          );
           midTurnUserTexts.push(narration);
           publishedMidTurnUserMessage = true;
         };
@@ -2668,7 +2675,14 @@ export function createRunExecutor(deps: ExecutorDeps) {
             if (!text) return finish({ error: "message is required" });
             await flushProgress();
             await publishMidTurnNarration();
-            await publishMessage(deps, run, "bot", [{ kind: "text", text }], undefined, userProgressClientNonce(run.id, midTurnProgressCount++));
+            await publishMessage(
+              deps,
+              run,
+              "bot",
+              [{ kind: "text", text }],
+              undefined,
+              userProgressClientNonce(run.id, midTurnProgressCount++),
+            );
             midTurnUserTexts.push(text);
             publishedMidTurnUserMessage = true;
             return finish({ ok: true });
