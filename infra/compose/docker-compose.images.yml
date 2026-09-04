@@ -204,6 +204,10 @@ services:
       NODE_ENV: production
       API_PROXY_TARGET: http://api:3100
       RAKAZO_HOST: ${RAKAZO_HOST:-localhost}
+      # Set only by the packaged desktop app. Its authenticated probe prevents a
+      # source dev server on the same host port from impersonating this stack.
+      RAKAZO_DESKTOP_STACK_TOKEN: ${RAKAZO_DESKTOP_STACK_TOKEN:-}
+      RAKAZO_IMAGE_TAG: ${RAKAZO_IMAGE_TAG:-edge}
       SCREEN_PROXY_SECRET: ${SCREEN_PROXY_SECRET:?Set SCREEN_PROXY_SECRET in .env}
     ports:
       - "127.0.0.1:5173:5173"

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_LOCAL_WEB_URL,
+  desktopStackImageTag,
   isRakazoHealth,
   normalizeServerUrl,
   parseSetupInput,
@@ -174,6 +175,15 @@ describe("Rakazo health response", () => {
     expect(isRakazoHealth({ json: { ok: true, version: "0.1.0" } })).toBe(true);
     expect(isRakazoHealth({ json: { ok: true } })).toBe(false);
     expect(isRakazoHealth({ ok: true, version: "0.1.0" })).toBe(false);
+  });
+});
+
+describe("managed stack response", () => {
+  it("returns only a non-empty authenticated image tag", () => {
+    expect(desktopStackImageTag({ ok: true, imageTag: "v0.2.0" })).toBe("v0.2.0");
+    expect(desktopStackImageTag({ ok: true, imageTag: "" })).toBeNull();
+    expect(desktopStackImageTag({ ok: false, imageTag: "v0.2.0" })).toBeNull();
+    expect(desktopStackImageTag({ json: { ok: true, imageTag: "v0.2.0" } })).toBeNull();
   });
 });
 

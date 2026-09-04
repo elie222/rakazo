@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { isIP } from "node:net";
-import type { DesktopSetup } from "@rakazo/contracts";
+import type { DesktopSetup, DesktopStackProbeResponse } from "@rakazo/contracts";
 
 /** Where `pnpm dev` serves the Rakazo web app on this machine. */
 export const DEFAULT_LOCAL_WEB_URL = "http://127.0.0.1:5173";
@@ -151,6 +151,12 @@ export function isRakazoHealth(value: unknown): boolean {
     (json as { ok?: unknown }).ok === true &&
     typeof (json as { version?: unknown }).version === "string"
   );
+}
+
+export function desktopStackImageTag(value: unknown): string | null {
+  if (typeof value !== "object" || value === null) return null;
+  const { ok, imageTag } = value as Partial<DesktopStackProbeResponse>;
+  return ok === true && typeof imageTag === "string" && imageTag !== "" ? imageTag : null;
 }
 
 function isLoopbackHost(hostname: string) {
