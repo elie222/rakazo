@@ -422,6 +422,7 @@ export class ComposioConnector implements ComposioProvider {
     slug: string,
     currentRef: string | null | undefined,
     excludeIds: string[] = [],
+    _spaceId?: string,
   ): Promise<string | undefined> {
     const excluded = new Set(excludeIds.filter(Boolean));
     const current = currentRef?.trim() || undefined;

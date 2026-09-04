@@ -50,6 +50,7 @@ export default function Integrations() {
   const [sourceError, setSourceError] = useState<string | null>(null);
   const [lastBotId, setLastBotId] = useState("");
   const [catalogReady, setCatalogReady] = useState(false);
+  const [labelDrafts, setLabelDrafts] = useState<Record<string, string>>({});
   const connectionAttempt = useRef<AbortController | null>(null);
 
   const featuredTiles = useMemo(() => buildFeaturedConnectorTiles(catalog), [catalog]);
@@ -64,8 +65,18 @@ export default function Integrations() {
     try {
       const rows = await rpc<Connection[]>("connections/list");
       setConnections(rows);
+      setLabelDrafts((current) => {
+        const next: Record<string, string> = {};
+        for (const row of rows) {
+          if (row.status === "connected" || row.status === "pending") {
+            next[row.id] = current[row.id] ?? row.displayName;
+          }
+        }
+        return next;
+      });
     } catch {
       setConnections([]);
+      setLabelDrafts({});
     }
     try {
       const installs = await rpc<CapabilityInstall[]>("capabilities/list");
@@ -171,6 +182,29 @@ export default function Integrations() {
       await refresh();
     } catch (reason) {
       setCatalogError(reason instanceof Error ? reason.message : t("Could not revoke connection"));
+    } finally {
+      setPending(null);
+    }
+  }
+
+  async function renameAccount(row: Connection) {
+    const displayName = (labelDrafts[row.id] ?? row.displayName).trim();
+    if (!displayName || displayName === row.displayName) return;
+    setPending(row.id);
+    setCatalogError(null);
+    try {
+      const updated = await rpc<Connection>("connections/rename", {
+        connectionId: row.id,
+        displayName,
+      });
+      setConnections((current) =>
+        current.map((entry) =>
+          entry.id === row.id ? { ...entry, displayName: updated.displayName } : entry,
+        ),
+      );
+      setLabelDrafts((current) => ({ ...current, [row.id]: updated.displayName }));
+    } catch (reason) {
+      setCatalogError(reason instanceof Error ? reason.message : t("Could not rename connection"));
     } finally {
       setPending(null);
     }
@@ -345,9 +379,15 @@ export default function Integrations() {
                         <View style={styles.accountList}>
                           {accountsFor(item).map((row) => (
                             <View key={row.id} style={styles.accountRow}>
-                              <Text numberOfLines={1} style={styles.secondary}>
-                                {row.displayName}
-                              </Text>
+                              <TextInput
+                                value={labelDrafts[row.id] ?? row.displayName}
+                                onChangeText={(value) =>
+                                  setLabelDrafts((current) => ({ ...current, [row.id]: value }))
+                                }
+                                onEndEditing={() => void renameAccount(row)}
+                                accessibilityLabel={t("Account label")}
+                                style={styles.accountLabel}
+                              />
                               <Pressable
                                 accessibilityRole="button"
                                 accessibilityLabel={t("Remove {name}", { name: row.displayName })}
@@ -417,9 +457,15 @@ export default function Integrations() {
                     <View style={styles.accountList}>
                       {accountsFor(item).map((row) => (
                         <View key={row.id} style={styles.accountRow}>
-                          <Text numberOfLines={1} style={styles.secondary}>
-                            {row.displayName}
-                          </Text>
+                          <TextInput
+                            value={labelDrafts[row.id] ?? row.displayName}
+                            onChangeText={(value) =>
+                              setLabelDrafts((current) => ({ ...current, [row.id]: value }))
+                            }
+                            onEndEditing={() => void renameAccount(row)}
+                            accessibilityLabel={t("Account label")}
+                            style={styles.accountLabel}
+                          />
                           <Pressable
                             accessibilityRole="button"
                             accessibilityLabel={t("Remove {name}", { name: row.displayName })}
@@ -669,6 +715,15 @@ function createIntegrationsStyles() {
       alignItems: "center",
       justifyContent: "space-between",
       gap: 8,
+    },
+    accountLabel: {
+      flex: 1,
+      minHeight: 36,
+      borderRadius: 10,
+      backgroundColor: native.fillPressed,
+      color: native.label,
+      paddingHorizontal: 10,
+      fontSize: 13,
     },
     link: { color: native.label, fontSize: 14, fontWeight: "600" },
     remove: { color: tokens.destructive, fontSize: 14, fontWeight: "600" },

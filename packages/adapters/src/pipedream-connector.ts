@@ -230,6 +230,35 @@ export class PipedreamConnector implements ManagedConnectorProvider {
     return { connectionRef: request.state };
   }
 
+  /**
+   * Prefer a concrete Pipedream account id over the app slug so multi-account
+   * revoke can target one authorization. spaceId is required for the hashed
+   * external user id Pipedream uses to scope accounts.
+   */
+  async resolveConnectedAccountId(
+    userId: string,
+    slug: string,
+    currentRef: string | null | undefined,
+    excludeIds: string[] = [],
+    spaceId?: string,
+  ): Promise<string | undefined> {
+    if (!spaceId) return currentRef && currentRef !== slug ? currentRef : undefined;
+    const context = {
+      userId,
+      spaceId,
+      signal: AbortSignal.timeout(30_000),
+    } as AdapterContext;
+    const accounts = await this.accounts(context, slug);
+    const ids = accounts
+      .filter((account) => account.healthy !== false && account.dead !== true)
+      .map((account) => account.id)
+      .filter(Boolean);
+    const excluded = new Set(excludeIds.filter(Boolean));
+    const current = currentRef?.trim() || undefined;
+    if (current && ids.includes(current) && !excluded.has(current)) return current;
+    return ids.find((id) => !excluded.has(id));
+  }
+
   async connectionReady(context: AdapterContext, externalId: string): Promise<boolean> {
     const accounts = await this.accounts(context, externalId);
     return accounts.some(

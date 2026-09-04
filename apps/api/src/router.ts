@@ -2989,6 +2989,7 @@ export function createRouter(deps: RouterDeps) {
                   slug: string,
                   currentRef: string | null | undefined,
                   excludeIds?: string[],
+                  spaceId?: string,
                 ) => Promise<string | undefined>;
                 connectedAccountId?: (userId: string, slug: string) => Promise<string | undefined>;
               }
@@ -3019,6 +3020,7 @@ export function createRouter(deps: RouterDeps) {
                     existing.provider,
                     existing.providerRef,
                     excludeIds,
+                    context.actor.spaceId,
                   ).catch(() => undefined)
                 : await fallbackAccountId!(context.actor.userId, existing.provider).catch(
                     () => undefined,
