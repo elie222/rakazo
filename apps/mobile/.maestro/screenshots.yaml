@@ -27,6 +27,9 @@ tags:
 - inputText: ${RAKAZO_SCREENSHOT_PASSWORD}
 - hideKeyboard
 - tapOn: "Sign in"
+- tapOn:
+    text: "Don’t allow"
+    optional: true
 
 - extendedWaitUntil:
     visible: "Researcher"
