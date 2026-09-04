@@ -343,12 +343,14 @@ export async function returnBotMessageOutcome(
     where: { threadId: run.threadId, runId: run.id },
     select: { blocks: true },
   });
+  // Only an explicit result counts as a terminal outcome. Interim message_bot
+  // status updates must not suppress the automatic final return.
   const alreadyReturned = sent.some((message) =>
     (Array.isArray(message.blocks) ? (message.blocks as MessageBlock[]) : []).some(
       (block) =>
         block.kind === "bot_message_sent" &&
         block.toBotId === source.fromBotId &&
-        (block.intent === "result" || block.intent === "status"),
+        block.intent === "result",
     ),
   );
   if (alreadyReturned) {

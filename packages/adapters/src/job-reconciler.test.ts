@@ -409,6 +409,57 @@ describe("createJobReconciler", () => {
     expect(returnBotMessageOutcome).toHaveBeenCalledTimes(2);
   });
 
+  it("prefers the final reply over progress when reconciling", async () => {
+    const terminalRun = {
+      id: "run-mixed",
+      spaceId: "workspace-1",
+      threadId: "thread-1",
+      botId: "bot-1",
+      userId: "user-1",
+      sourceMessageId: "message-1",
+      status: "completed",
+      error: null,
+      bot: { name: "Researcher" },
+    };
+    const runFindMany = vi.fn(async (args: { where?: Record<string, unknown> } = {}) => {
+      if (args.where?.messagingMirroredAt === null) return [];
+      if (args.where?.trigger === "bot_message") return [terminalRun];
+      return [];
+    });
+    const prisma = {
+      run: { findMany: runFindMany, updateMany: vi.fn(async () => ({ count: 1 })) },
+      routine: { findMany: vi.fn(async () => []) },
+      computer: { findMany: vi.fn(async () => []) },
+      messagingOutbound: { findFirst: vi.fn(async () => null) },
+      message: {
+        findMany: vi.fn(async () => [
+          {
+            blocks: [{ kind: "text", text: "Checking calendars…" }],
+            clientNonce: "user-progress:run-mixed:0",
+          },
+          {
+            blocks: [{ kind: "text", text: "Tuesday afternoon works." }],
+            clientNonce: null,
+          },
+        ]),
+      },
+    } as unknown as PrismaClient;
+    const { jobs } = publisher();
+    const events = { notify: vi.fn() } as unknown as ThreadEvents;
+    vi.mocked(returnBotMessageOutcome).mockResolvedValue(true);
+
+    const reconciler = createJobReconciler({ prisma, jobs, events }, { batchSize: 1 });
+    await reconciler.reconcileOnce();
+
+    expect(returnBotMessageOutcome).toHaveBeenCalledWith(
+      { prisma, jobs, events },
+      terminalRun,
+      { id: "bot-1", name: "Researcher" },
+      "Tuesday afternoon works.",
+      "result",
+    );
+  });
+
   it("returns progress-only transcripts as status", async () => {
     const terminalRun = {
       id: "run-progress",

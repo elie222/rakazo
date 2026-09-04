@@ -370,17 +370,19 @@ async function botRunOutcomeText(
     orderBy: { seq: "asc" },
     select: { blocks: true, clientNonce: true },
   });
-  const parts: string[] = [];
-  let sawText = false;
-  let progressOnly = true;
+  const progressParts: string[] = [];
+  const finalParts: string[] = [];
   for (const message of messages) {
     const text = messageText(message.blocks);
     if (!text) continue;
-    sawText = true;
-    parts.push(text);
-    if (!isUserProgressClientNonce(message.clientNonce)) progressOnly = false;
+    if (isUserProgressClientNonce(message.clientNonce)) progressParts.push(text);
+    else finalParts.push(text);
   }
-  return { text: parts.join("\n\n"), progressOnly: sawText && progressOnly };
+  // Prefer the final reply when present; progress-only turns keep progress as status.
+  if (finalParts.length > 0) {
+    return { text: finalParts.join("\n\n"), progressOnly: false };
+  }
+  return { text: progressParts.join("\n\n"), progressOnly: progressParts.length > 0 };
 }
 
 function messageText(blocks: unknown): string {
