@@ -2973,38 +2973,51 @@ export function createRouter(deps: RouterDeps) {
             );
             if (state && state !== input.provider) {
               // Composio browser OAuth stores an authorization-request id in
-              // auth.state. Resolve it to the connected-account id before revoke —
-              // passing the request id through would miss the real remote account.
-              const resolveAccountId = (
+              // auth.state. Prefer canceling that pending request by id so the
+              // authorization URL cannot later create an untracked remote. The
+              // request id is the connected-account nanoid (INITIATED until OAuth
+              // finishes). Fall back to resolving an ACTIVE account id only when
+              // cancel is unavailable.
+              const cancelAuthorizationRequest = (
                 connector as {
-                  resolveConnectedAccountId?: (
-                    userId: string,
-                    slug: string,
-                    currentRef: string | null | undefined,
-                    excludeIds?: string[],
-                    spaceId?: string,
-                  ) => Promise<string | undefined>;
+                  cancelAuthorizationRequest?: (
+                    requestId: string,
+                    context: typeof adapterContext,
+                  ) => Promise<void>;
                 }
-              ).resolveConnectedAccountId;
-              let revokeRef = state;
-              if (resolveAccountId) {
-                const resolved = await resolveAccountId(
-                  context.actor.userId,
-                  input.provider,
-                  state,
-                  [],
-                  context.actor.spaceId,
-                ).catch(() => undefined);
-                if (!resolved) {
-                  // Request id did not resolve; skip a wrong revoke rather than
-                  // deleting by request id or wiping every account for the slug.
-                  revokeRef = "";
-                } else {
-                  revokeRef = resolved;
+              ).cancelAuthorizationRequest;
+              if (cancelAuthorizationRequest) {
+                await cancelAuthorizationRequest(state, adapterContext).catch(() => undefined);
+              } else {
+                const resolveAccountId = (
+                  connector as {
+                    resolveConnectedAccountId?: (
+                      userId: string,
+                      slug: string,
+                      currentRef: string | null | undefined,
+                      excludeIds?: string[],
+                      spaceId?: string,
+                    ) => Promise<string | undefined>;
+                  }
+                ).resolveConnectedAccountId;
+                let revokeRef = state;
+                if (resolveAccountId) {
+                  const resolved = await resolveAccountId(
+                    context.actor.userId,
+                    input.provider,
+                    state,
+                    [],
+                    context.actor.spaceId,
+                  ).catch(() => undefined);
+                  if (!resolved) {
+                    revokeRef = "";
+                  } else {
+                    revokeRef = resolved;
+                  }
                 }
-              }
-              if (revokeRef) {
-                await connector.revoke(revokeRef, adapterContext).catch(() => undefined);
+                if (revokeRef) {
+                  await connector.revoke(revokeRef, adapterContext).catch(() => undefined);
+                }
               }
             } else if (state === input.provider) {
               // Pipedream begin only returns the app slug. Drop remotes that no
@@ -3109,7 +3122,89 @@ export function createRouter(deps: RouterDeps) {
               });
               if (!current) throw new IsolationError();
               if (current.status === "connected") return current;
-              if (current.status === "revoked") throw new IsolationError();
+              if (current.status === "revoked") {
+                // Authorization URLs from a revoke-win begin can still finish
+                // remotely. Cancel leftover Composio request ids / drop Pipedream
+                // remotes no active local row still references before rejecting.
+                const revokedContext = connectionContext(
+                  context.actor,
+                  "connections.complete",
+                  context.signal,
+                );
+                const pendingRef = current.providerRef?.trim();
+                if (pendingRef && pendingRef !== current.provider) {
+                  const cancelAuthorizationRequest = (
+                    connector as {
+                      cancelAuthorizationRequest?: (
+                        requestId: string,
+                        context: typeof revokedContext,
+                      ) => Promise<void>;
+                    }
+                  ).cancelAuthorizationRequest;
+                  if (cancelAuthorizationRequest) {
+                    await cancelAuthorizationRequest(pendingRef, revokedContext).catch(
+                      () => undefined,
+                    );
+                  } else {
+                    const resolveAccountId = (
+                      connector as {
+                        resolveConnectedAccountId?: (
+                          userId: string,
+                          slug: string,
+                          currentRef: string | null | undefined,
+                          excludeIds?: string[],
+                          spaceId?: string,
+                        ) => Promise<string | undefined>;
+                      }
+                    ).resolveConnectedAccountId;
+                    let revokeRef = pendingRef;
+                    if (resolveAccountId) {
+                      const resolved = await resolveAccountId(
+                        context.actor.userId,
+                        current.provider,
+                        pendingRef,
+                        [],
+                        context.actor.spaceId,
+                      ).catch(() => undefined);
+                      revokeRef = resolved ?? "";
+                    }
+                    if (revokeRef) {
+                      await connector.revoke(revokeRef, revokedContext).catch(() => undefined);
+                    }
+                  }
+                } else {
+                  const revokeUnreferenced = (
+                    connector as {
+                      revokeUnreferencedAccounts?: (
+                        slug: string,
+                        keepAccountIds: string[],
+                        context: typeof revokedContext,
+                      ) => Promise<void>;
+                    }
+                  ).revokeUnreferencedAccounts;
+                  if (revokeUnreferenced) {
+                    const kept = await tx.connection.findMany({
+                      where: {
+                        spaceId: context.actor.spaceId,
+                        userId: context.actor.userId,
+                        connectorId: existing.connectorId,
+                        provider: existing.provider,
+                        status: { in: ["connected", "pending", "error"] },
+                      },
+                      select: { providerRef: true },
+                    });
+                    const keepIds = kept
+                      .map((entry) => entry.providerRef)
+                      .filter((value): value is string =>
+                        Boolean(value && value !== existing.provider),
+                      );
+                    await revokeUnreferenced(existing.provider, keepIds, revokedContext).catch(
+                      () => undefined,
+                    );
+                  }
+                }
+                throw new IsolationError();
+              }
 
               const adapterContext = connectionContext(
                 context.actor,

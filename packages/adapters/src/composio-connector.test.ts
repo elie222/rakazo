@@ -26,6 +26,7 @@ const composioSdkState = vi.hoisted(() => ({
   connectedAccounts: {
     list: async (_query?: Record<string, unknown>) => ({ items: [] as Array<{ id: string }> }),
     waitForConnection: async (id: string, _timeout?: number) => ({ id: `resolved-${id}` }),
+    get: async (id: string) => ({ id, userId: "user-1" }),
     delete: async (_id: string) => undefined,
   },
   sessions: new Map<
@@ -69,6 +70,7 @@ vi.mock("@composio/core", () => ({
       list: (query?: Record<string, unknown>) => composioSdkState.connectedAccounts.list(query),
       waitForConnection: (id: string, timeout?: number) =>
         composioSdkState.connectedAccounts.waitForConnection(id, timeout),
+      get: (id: string) => composioSdkState.connectedAccounts.get(id),
       delete: (id: string) => composioSdkState.connectedAccounts.delete(id),
     };
 
@@ -337,6 +339,28 @@ describe("composio tool mapping", () => {
         "ca-work",
       ]),
     ).resolves.toBeUndefined();
+  });
+
+  it("cancels pending authorization requests by request id without waiting", async () => {
+    const deleted: string[] = [];
+    const waited: string[] = [];
+    composioSdkState.connectedAccounts.waitForConnection = async (id: string) => {
+      waited.push(id);
+      throw new Error(`should not wait for ${id}`);
+    };
+    composioSdkState.connectedAccounts.delete = async (id: string) => {
+      deleted.push(id);
+    };
+    const connector = new ComposioConnector();
+    await connector.cancelAuthorizationRequest("req-pending-1", {
+      operationId: "test",
+      traceId: "test",
+      spaceId: "workspace",
+      userId: "user-1",
+      signal: new AbortController().signal,
+    });
+    expect(waited).toEqual([]);
+    expect(deleted).toEqual(["req-pending-1"]);
   });
 
   it("resolves authorization-request ids before deleting on revoke", async () => {

@@ -440,6 +440,23 @@ export class ComposioConnector implements ComposioProvider {
   }
 
   /**
+   * Cancel an in-flight browser OAuth authorization by its connection-request id.
+   * Composio uses the connected-account nanoid as the request id (INITIATED until
+   * OAuth finishes); deleting it invalidates the authorization URL so a revoke-win
+   * cannot leave an untracked remote after the user completes the orphaned link.
+   */
+  async cancelAuthorizationRequest(requestId: string, context: AdapterContext): Promise<void> {
+    const id = requestId.trim();
+    if (!id) return;
+    // Connection-request ids are connected-account nanoids. Delete directly so a
+    // revoke-win begin does not wait for OAuth to finish, and the authorization
+    // URL cannot later create an untracked remote. Ignore missing ids.
+    await this.sdk()
+      .connectedAccounts.delete(id, { signal: context.signal })
+      .catch(() => undefined);
+  }
+
+  /**
    * Map a begin() state (connection-request id, account id, or provider slug) to
    * the connected-account id revoke must delete. Prefer unused remotes so a
    * second Gmail connect does not reuse the first account's id.
