@@ -5,8 +5,19 @@ import {
   openAiCompatibleConnectReady,
   openAiCompatibleProbeSuccessMessage,
 } from "@rakazo/contracts";
-import { Button } from "@rakazo/ui-web";
-import { ChevronDown } from "lucide-react";
+import {
+  Button,
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  Input,
+  NativeSelect,
+  NativeSelectOption,
+} from "@rakazo/ui-web";
+import { ChevronDown, X } from "lucide-react";
 import {
   type KeyboardEvent as ReactKeyboardEvent,
   type RefObject,
@@ -296,39 +307,44 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className="absolute inset-0 z-30 flex items-center justify-center bg-[rgba(4,4,5,.62)] p-4 sm:p-10">
-      <div className="flex h-[min(760px,100%)] w-[1080px] max-w-full flex-col overflow-hidden rounded-[26px] border border-[#232326] bg-[#141416] shadow-[0_40px_90px_rgba(0,0,0,.55)]">
-        <div className="flex items-start justify-between px-6 pt-6 sm:px-8 sm:pt-7">
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) handleClose();
+      }}
+    >
+      <DialogContent
+        showCloseButton={false}
+        className="flex h-[760px] max-h-[calc(100%-2rem)] w-[1080px] max-w-[calc(100%-2rem)] flex-col gap-0 overflow-hidden rounded-2xl bg-card p-0 sm:max-w-[1080px]"
+      >
+        <DialogHeader className="flex-row items-start justify-between px-6 pt-6 sm:px-8 sm:pt-7">
           <div>
-            <div className="text-2xl font-medium text-[#F1F1F2]">
+            <DialogTitle className="text-2xl text-foreground">
               <Trans>Models</Trans>
-            </div>
-            <p className="mt-1 text-[13.5px] text-[#7A7A80]">
+            </DialogTitle>
+            <DialogDescription className="mt-1 text-[13.5px] text-muted-foreground/70">
               {loading ? (
                 <Trans>Loading model catalog…</Trans>
               ) : (
                 <Trans>Choose which connected model Rakazo uses.</Trans>
               )}
-            </p>
+            </DialogDescription>
           </div>
-          <button
-            type="button"
-            aria-label={t`Close model settings`}
-            onClick={handleClose}
-            className="text-[#85858A]"
+          <DialogClose
+            render={<Button variant="ghost" size="icon-sm" aria-label={t`Close model settings`} />}
           >
-            ✕
-          </button>
-        </div>
+            <X />
+          </DialogClose>
+        </DialogHeader>
 
-        <div className="mx-6 mt-5 rounded-[14px] border border-[#26262A] bg-[#101012] px-4 py-3 sm:mx-8">
-          <div className="text-[12.5px] uppercase tracking-[0.08em] text-[#6C6C70]">
+        <div className="mx-6 mt-5 rounded-xl border border-border px-4 py-3 sm:mx-8">
+          <div className="text-[12.5px] uppercase tracking-[0.08em] text-muted-foreground/80">
             <Trans>Active model</Trans>
           </div>
-          <div className="mt-1 text-[16px] text-[#F1F1F2]">
+          <div className="mt-1 text-[16px] text-foreground">
             {currentEntry?.label ?? me?.defaultModel ?? t`Deployment default`}
           </div>
-          <div className="mt-1 text-[13px] text-[#85858A]">
+          <div className="mt-1 text-[13px] text-muted-foreground">
             {currentEntry?.providerName ?? me?.defaultProvider ?? (
               <Trans>Configured by deployment</Trans>
             )}
@@ -337,20 +353,20 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
 
         <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-hidden px-6 py-6 sm:px-8 md:flex-row">
           <div className="flex min-h-0 shrink-0 flex-col md:w-[310px]">
-            <div className="mb-3 text-[13.5px] text-[#85858A]">
+            <div className="mb-3 text-[13.5px] text-muted-foreground">
               <Trans>Providers</Trans>
             </div>
             <label className="sr-only" htmlFor="model-provider-search">
               <Trans>Search providers</Trans>
             </label>
-            <input
+            <Input
               id="model-provider-search"
               value={providerQuery}
               onChange={(event) => setProviderQuery(event.target.value)}
               placeholder={t`Search providers`}
-              className="w-full rounded-[11px] border border-[#26262A] bg-[#101012] px-3.5 py-2.5 text-[14px] text-[#ECECEE] outline-none placeholder:text-[#6C6C70] focus:border-[#4A4A50]"
+              className="h-10 rounded-xl px-3.5"
             />
-            <div className="rk-scroll mt-3 max-h-[240px] overflow-y-auto rounded-[13px] border border-[#26262A] md:min-h-0 md:max-h-none md:flex-1">
+            <div className="rk-scroll mt-3 max-h-[240px] overflow-y-auto rounded-xl border border-border md:min-h-0 md:max-h-none md:flex-1">
               {filteredGroups.length ? (
                 filteredGroups.map((group) => {
                   const connected = credentials.some((entry) => entry.provider === group.id);
@@ -359,22 +375,22 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                       key={group.id}
                       type="button"
                       onClick={() => chooseProvider(group.id)}
-                      className={`flex w-full items-center gap-3 border-b border-[#202023] px-3.5 py-3 text-start last:border-0 ${
-                        group.id === provider ? "bg-[#1A1A1D]" : "hover:bg-[#161618]"
+                      className={`flex w-full items-center gap-3 border-b border-border px-3.5 py-3 text-start last:border-0 ${
+                        group.id === provider ? "bg-muted" : "hover:bg-accent"
                       }`}
                     >
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-[15px] text-[#ECECEE]">
+                        <span className="block truncate text-[15px] text-foreground">
                           {group.name}
                         </span>
-                        <span className="mt-0.5 block text-[12px] text-[#6C6C70]">
+                        <span className="mt-0.5 block text-[12px] text-muted-foreground/80">
                           <Plural value={group.entries.length} one="# model" other="# models" />
                           {" · "}
                           {localizedProviderHint(group.entries[0]!)}
                         </span>
                       </span>
                       {connected ? (
-                        <span className="text-[12px] text-[#4ECB71]">
+                        <span className="text-[12px] text-success">
                           <Trans>Connected</Trans>
                         </span>
                       ) : null}
@@ -382,7 +398,7 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                   );
                 })
               ) : (
-                <p className="px-3.5 py-4 text-[13px] text-[#85858A]">
+                <p className="px-3.5 py-4 text-[13px] text-muted-foreground">
                   <Trans>No providers found.</Trans>
                 </p>
               )}
@@ -390,25 +406,26 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
           </div>
 
           <div ref={detailScrollRef} className="rk-scroll min-h-0 min-w-0 flex-1 overflow-y-auto">
-            {error ? <p className="mb-4 text-sm text-[#C94244]">{error}</p> : null}
-            {notice ? <p className="mb-4 text-sm text-[#4ECB71]">{notice}</p> : null}
+            {error ? <p className="mb-4 text-sm text-destructive">{error}</p> : null}
+            {notice ? <p className="mb-4 text-sm text-success">{notice}</p> : null}
             {selected ? (
               <>
-                <div className="block text-[13.5px] text-[#85858A]">
+                <div className="block text-[13.5px] text-muted-foreground">
                   {isOpenAiCompatible ? (
                     <>
-                      <label className="block">
+                      <label className="block" htmlFor="model-base-url">
                         <Trans>Server URL</Trans>
-                        <input
+                        <Input
+                          id="model-base-url"
                           value={baseUrl}
                           onChange={(event) => updateBaseUrl(event.target.value)}
                           aria-label={t`OpenAI-compatible server URL`}
                           placeholder="http://127.0.0.1:8000/v1"
                           autoComplete="off"
-                          className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-[#101012] px-3.5 py-3 text-[#ECECEE] outline-none"
+                          className="mt-2 h-10 text-foreground"
                         />
                       </label>
-                      <details className="mt-2 text-[13px] leading-[1.5] text-[#85858A]">
+                      <details className="mt-2 text-[13px] leading-[1.5] text-muted-foreground">
                         <summary className="w-fit cursor-pointer select-none">
                           <Trans>Setup help</Trans>
                         </summary>
@@ -432,37 +449,29 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                           <Trans>Model</Trans>
                         </span>
                         {probeModels.length && probeModels.includes(modelId) ? (
-                          <div className="relative mt-2">
-                            <select
-                              value={modelId}
-                              onChange={(event) => {
-                                cancelOAuthAttempt();
-                                selectionRevisionRef.current += 1;
-                                setModelId(event.target.value);
-                                setError(null);
-                                setNotice(null);
-                              }}
-                              aria-label={t`Models from server`}
-                              className="w-full appearance-none rounded-[11px] border border-[#26262A] bg-[#101012] py-3 pl-3.5 pr-11 text-sm text-[#ECECEE]"
-                            >
-                              {probeModels.map((id) => (
-                                <option key={id} value={id}>
-                                  {id}
-                                </option>
-                              ))}
-                              <option value="">
-                                <Trans>Other model…</Trans>
-                              </option>
-                            </select>
-                            <span
-                              aria-hidden="true"
-                              className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-[#85858A]"
-                            >
-                              <ChevronDown size={16} strokeWidth={1.8} />
-                            </span>
-                          </div>
+                          <NativeSelect
+                            className="mt-2 w-full text-foreground"
+                            value={modelId}
+                            onChange={(event) => {
+                              cancelOAuthAttempt();
+                              selectionRevisionRef.current += 1;
+                              setModelId(event.target.value);
+                              setError(null);
+                              setNotice(null);
+                            }}
+                            aria-label={t`Models from server`}
+                          >
+                            {probeModels.map((id) => (
+                              <NativeSelectOption key={id} value={id}>
+                                {id}
+                              </NativeSelectOption>
+                            ))}
+                            <NativeSelectOption value="">
+                              <Trans>Other model…</Trans>
+                            </NativeSelectOption>
+                          </NativeSelect>
                         ) : (
-                          <input
+                          <Input
                             value={modelId}
                             onChange={(event) => {
                               cancelOAuthAttempt();
@@ -473,17 +482,18 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                             }}
                             aria-label={t`Model id`}
                             placeholder="exact-model-id"
-                            className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-[#101012] px-3.5 py-3 text-[#ECECEE] outline-none"
+                            className="mt-2 h-10 text-foreground"
                           />
                         )}
                         {probeModels.length && !probeModels.includes(modelId) ? (
-                          <button
+                          <Button
                             type="button"
-                            className="mt-2 text-[13px] text-[#85858A] underline"
+                            variant="link"
+                            className="mt-2 h-auto px-0 text-[13px] text-muted-foreground underline"
                             onClick={() => setModelId(probeModels[0] ?? "")}
                           >
                             <Trans>Use a found model</Trans>
-                          </button>
+                          </Button>
                         ) : null}
                       </div>
                     </>
@@ -506,25 +516,25 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                     </>
                   )}
                 </div>
-                {!isOpenAiCompatible ? (
-                  <p className="mt-2 text-[13px] leading-[1.5] text-[#85858A]">
+                {!isOpenAiCompatible && selected.billing ? (
+                  <p className="mt-2 text-[13px] leading-[1.5] text-muted-foreground">
                     {selected.billing}
                   </p>
                 ) : null}
 
                 {!isOpenAiCompatible ? (
-                  <div className="mt-5 rounded-[13px] border border-[#26262A] px-4 py-3">
-                    <div className="text-[12.5px] uppercase tracking-[0.08em] text-[#6C6C70]">
+                  <div className="mt-5 rounded-xl border border-border px-4 py-3">
+                    <div className="text-[12.5px] uppercase tracking-[0.08em] text-muted-foreground/80">
                       <Trans>Personal credential</Trans>
                     </div>
-                    <div className="mt-1 text-[15px] text-[#ECECEE]">
+                    <div className="mt-1 text-[15px] text-foreground">
                       {credential ? (
                         <Trans>Connected · {credential.label}</Trans>
                       ) : (
                         <Trans>Not connected</Trans>
                       )}
                     </div>
-                    <div className="mt-1 text-[13px] text-[#85858A]">
+                    <div className="mt-1 text-[13px] text-muted-foreground">
                       {credential ? (
                         <Trans>
                           Your key or subscription token is stored securely and is never shown here.
@@ -539,17 +549,17 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                 {subscriptionSignIn ? (
                   <div className="mt-5">
                     {oauth ? (
-                      <div className="rounded-[13px] border border-[#26262A] px-4 py-3">
+                      <div className="rounded-xl border border-border px-4 py-3">
                         {oauth.mode === "auth-url" ? (
                           <>
-                            <p className="text-sm leading-[1.5] text-[#85858A]">
+                            <p className="text-sm leading-[1.5] text-muted-foreground">
                               <Trans>
                                 Finish signing in at{" "}
                                 <a
                                   href={oauth.verificationUri}
                                   target="_blank"
                                   rel="noreferrer"
-                                  className="text-[#ECECEE] underline"
+                                  className="text-foreground underline"
                                 >
                                   {new URL(oauth.verificationUri).hostname}
                                 </a>
@@ -557,14 +567,14 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                               </Trans>
                             </p>
                             <div className="mt-3 flex items-center gap-2">
-                              <input
+                              <Input
                                 value={pasteCode}
                                 onChange={(e) => setPasteCode(e.target.value)}
                                 aria-label={t`Authorization code or callback URL`}
                                 autoComplete="off"
                                 spellCheck={false}
                                 placeholder="http://localhost:53692/callback?code=…"
-                                className="w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-2.5 text-[13px] text-[#ECECEE]"
+                                className="text-foreground md:text-[13px]"
                               />
                               <Button
                                 type="button"
@@ -576,29 +586,29 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                                 <Trans>Submit</Trans>
                               </Button>
                             </div>
-                            <p className="mt-2 text-sm text-[#85858A]">
+                            <p className="mt-2 text-sm text-muted-foreground">
                               <Trans>Waiting for sign-in…</Trans>
                             </p>
                           </>
                         ) : (
                           <>
-                            <p className="text-sm leading-[1.5] text-[#85858A]">
+                            <p className="text-sm leading-[1.5] text-muted-foreground">
                               <Trans>
                                 Enter this code at{" "}
                                 <a
                                   href={oauth.verificationUri}
                                   target="_blank"
                                   rel="noreferrer"
-                                  className="text-[#ECECEE] underline"
+                                  className="text-foreground underline"
                                 >
                                   {oauth.verificationUri.replace(/^https:\/\//, "")}
                                 </a>
                               </Trans>
                             </p>
-                            <p className="mt-2 font-mono text-[22px] tracking-[0.2em] text-[#F1F1F2]">
+                            <p className="mt-2 font-mono text-[22px] tracking-[0.2em] text-foreground">
                               {oauth.userCode}
                             </p>
-                            <p className="mt-2 text-sm text-[#85858A]">
+                            <p className="mt-2 text-sm text-muted-foreground">
                               <Trans>Waiting for sign-in…</Trans>
                             </p>
                           </>
@@ -625,22 +635,25 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                 {acceptsKey ? (
                   <div className="mt-5">
                     {isOpenAiCompatible ? (
-                      <details className="text-[13.5px] text-[#85858A]">
+                      <details className="text-[13.5px] text-muted-foreground">
                         <summary className="w-fit cursor-pointer select-none">
                           <Trans>API key</Trans>
                         </summary>
-                        <input
+                        <Input
                           aria-label={t`API key`}
                           value={apiKey}
                           onChange={(event) => updateApiKey(event.target.value)}
                           placeholder={t`Optional`}
                           type="password"
                           autoComplete="new-password"
-                          className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-[#101012] px-3.5 py-3 text-[#ECECEE] outline-none"
+                          className="mt-2 h-10 text-foreground"
                         />
                       </details>
                     ) : (
-                      <label className="block text-[13.5px] text-[#85858A]">
+                      <label
+                        className="block text-[13.5px] text-muted-foreground"
+                        htmlFor="model-api-key"
+                      >
                         {credential ? (
                           <Trans>Replace API key</Trans>
                         ) : subscriptionSignIn ? (
@@ -648,26 +661,27 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                         ) : (
                           <Trans>API key</Trans>
                         )}
-                        <input
+                        <Input
+                          id="model-api-key"
                           value={apiKey}
                           onChange={(event) => updateApiKey(event.target.value)}
                           placeholder="sk-…"
                           type="password"
                           autoComplete="new-password"
-                          className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-[#101012] px-3.5 py-3 text-[#ECECEE] outline-none"
+                          className="mt-2 h-10 text-foreground"
                         />
                       </label>
                     )}
                     <Button
                       type="button"
-                      variant="pill"
+                      variant="secondary"
+                      className="mt-3 rounded-full"
                       size="sm"
                       disabled={
                         busy ||
                         (isOpenAiCompatible ? !openAiCompatibleReady : apiKey.trim().length < 8)
                       }
                       onClick={() => void connectKey()}
-                      className="mt-3"
                     >
                       {pending === "connect" ? (
                         <Trans>Saving…</Trans>
@@ -683,7 +697,7 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                 ) : null}
 
                 {selected.auth === "oauth" && !subscriptionSignIn ? (
-                  <p className="mt-5 text-sm leading-[1.5] text-[#85858A]">
+                  <p className="mt-5 text-sm leading-[1.5] text-muted-foreground">
                     <Trans>
                       This subscription sign-in is not available in Rakazo yet. Use a deployment
                       credential or choose another provider.
@@ -695,7 +709,8 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                   <div className="mt-6">
                     <Button
                       type="button"
-                      variant="pill"
+                      variant="secondary"
+                      className="rounded-full"
                       size="sm"
                       disabled={busy || (isOpenAiCompatible && !modelId.trim())}
                       onClick={() => void setModelDefault()}
@@ -710,18 +725,18 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                 ) : null}
               </>
             ) : loading ? (
-              <p className="text-[#85858A]">
+              <p className="text-muted-foreground">
                 <Trans>Loading model catalog…</Trans>
               </p>
             ) : (
-              <p className="text-[#85858A]">
+              <p className="text-muted-foreground">
                 <Trans>No model catalog is available.</Trans>
               </p>
             )}
           </div>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -859,6 +874,7 @@ function ModelPicker({
       choose(activeOptionIndex());
     } else if (event.key === "Escape") {
       event.preventDefault();
+      event.stopPropagation();
       setOpen(false);
       triggerRef.current?.focus();
     }
@@ -867,6 +883,7 @@ function ModelPicker({
   function onTriggerKeyDown(event: ReactKeyboardEvent<HTMLButtonElement>) {
     if (event.key === "Escape" && open) {
       event.preventDefault();
+      event.stopPropagation();
       setOpen(false);
       return;
     }
@@ -900,6 +917,7 @@ function ModelPicker({
       choose(index);
     } else if (event.key === "Escape") {
       event.preventDefault();
+      event.stopPropagation();
       setOpen(false);
       triggerRef.current?.focus();
     }
@@ -915,17 +933,17 @@ function ModelPicker({
         aria-controls={listboxId}
         aria-expanded={open}
         aria-haspopup="listbox"
-        className="flex w-full items-center justify-between rounded-[11px] border border-[#26262A] bg-[#101012] px-3.5 py-3 text-start text-[#ECECEE] outline-none focus-visible:border-[#4A4A50]"
+        className="flex h-10 w-full items-center justify-between rounded-lg border border-input bg-transparent px-3 text-start text-sm text-foreground outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
         onClick={() => setOpen((current) => !current)}
         onKeyDown={onTriggerKeyDown}
       >
         <span className="min-w-0 truncate">{options[selectedIndex]?.label}</span>
-        <span className="ml-3 shrink-0 text-[#85858A]" aria-hidden="true">
+        <span className="ml-3 shrink-0 text-muted-foreground" aria-hidden="true">
           <ChevronDown size={16} strokeWidth={1.8} />
         </span>
       </button>
       {open ? (
-        <div className="absolute left-0 right-0 top-full z-20 mt-2 overflow-hidden rounded-[11px] border border-[#26262A] bg-[#101012] shadow-[0_20px_45px_rgba(0,0,0,.55)]">
+        <div className="absolute left-0 right-0 top-full z-20 mt-2 overflow-hidden rounded-lg bg-popover text-popover-foreground shadow-md ring-1 ring-foreground/10">
           <input
             ref={searchRef}
             type="text"
@@ -942,7 +960,7 @@ function ModelPicker({
               setHighlightedIndex(0);
             }}
             onKeyDown={onSearchKeyDown}
-            className="w-full border-b border-[#26262A] bg-transparent px-3 py-2.5 text-[13.5px] text-[#ECECEE] outline-none placeholder:text-[#6C6C70]"
+            className="w-full border-b border-border bg-transparent px-3 py-2.5 text-[13.5px] text-foreground outline-none placeholder:text-muted-foreground/80"
           />
           <div
             id={listboxId}
@@ -952,7 +970,7 @@ function ModelPicker({
           >
             {groupRanges.map((group) => (
               <div key={group.name}>
-                <p className="px-3 pb-1 pt-2 text-[11px] font-medium uppercase tracking-[0.08em] text-[#6C6C70]">
+                <p className="px-3 pb-1 pt-2 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground/80">
                   {group.name}
                 </p>
                 {group.entries.map((option, groupIndex) => {
@@ -974,7 +992,7 @@ function ModelPicker({
               </div>
             ))}
             {filteredOptions.length === 0 ? (
-              <p className="px-3 py-2 text-[13px] text-[#85858A]">
+              <p className="px-3 py-2 text-[13px] text-muted-foreground">
                 <Trans>No matching models</Trans>
               </p>
             ) : null}
@@ -1015,15 +1033,15 @@ function ModelOption({
       role="option"
       aria-selected={option.id === value}
       tabIndex={highlighted ? 0 : -1}
-      className={`flex w-full items-center justify-between gap-3 px-3 py-2 text-start text-[13.5px] text-[#ECECEE] outline-none hover:bg-[#1A1A1D] focus-visible:bg-[#1A1A1D] ${
-        highlighted || option.id === value ? "bg-[#1A1A1D]" : ""
+      className={`flex w-full items-center justify-between gap-3 px-3 py-2 text-start text-[13.5px] text-foreground outline-none hover:bg-accent focus-visible:bg-accent ${
+        highlighted || option.id === value ? "bg-accent" : ""
       }`}
       onClick={() => choose(index)}
       onKeyDown={(event) => onOptionKeyDown(event, index)}
     >
       <span className="min-w-0 truncate">{option.label}</span>
       {option.billing.toLowerCase().includes("free") ? (
-        <span className="shrink-0 text-[12px] text-[#85858A]">{t`Free`}</span>
+        <span className="shrink-0 text-[12px] text-muted-foreground">{t`Free`}</span>
       ) : null}
     </button>
   );

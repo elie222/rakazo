@@ -17,6 +17,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -30,6 +32,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -47,6 +51,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -60,12 +66,21 @@ jobs:
           ENCRYPTION_KEY: ci-build-encryption-key-at-least-32-characters
       - name: Electron smoke
         run: xvfb-run --auto-servernum pnpm --filter @rakazo/desktop exec playwright test --config e2e/playwright.config.ts
+      - name: Upload desktop setup screenshots
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: desktop-e2e-screenshots
+          path: apps/desktop/e2e/screenshots
+          if-no-files-found: ignore
 
   test:
     name: Unit tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -83,6 +98,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -96,6 +113,157 @@ jobs:
     uses: ./.github/workflows/playwright.yml
     with:
       upload_artifacts: true
+
+  publish-mobile-update:
+    name: Publish compatible mobile update
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [lint, check, build, test, test-integration, test-e2e]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    concurrency:
+      group: mobile-production-update
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check whether the change is safe for OTA
+        id: ota
+        shell: bash
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          base="$BEFORE_SHA"
+          if [[ -z "$base" || "$base" =~ ^0+$ ]] || ! git cat-file -e "${base}^{commit}"; then
+            {
+              echo "### Mobile OTA skipped"
+              echo
+              echo "Could not resolve \`github.event.before\` for the full push range, so this job will not publish a partial-range update."
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          mapfile -t files < <(
+            git diff --name-only "$base" "$GITHUB_SHA" -- \
+              .github/workflows/ci.yml \
+              apps/mobile \
+              package.json \
+              packages/chat-ui \
+              packages/contracts \
+              packages/core \
+              pnpm-lock.yaml
+          )
+
+          publish=false
+          blocked=false
+          for file in "${files[@]}"; do
+            case "$file" in
+              *.test.ts|*.test.tsx|*.d.ts)
+                continue
+                ;;
+            esac
+
+            eligible=false
+            case "$file" in
+              apps/mobile/app/*|apps/mobile/components/*|apps/mobile/lib/*)
+                case "$file" in
+                  *.ts|*.tsx) eligible=true ;;
+                esac
+                ;;
+              packages/chat-ui/src/*)
+                case "$file" in
+                  *.ts|*.tsx|*.css) eligible=true ;;
+                esac
+                ;;
+              packages/contracts/src/*|packages/core/src/*)
+                case "$file" in
+                  *.ts|*.tsx) eligible=true ;;
+                esac
+                ;;
+            esac
+
+            if [[ "$eligible" == true ]]; then
+              publish=true
+            else
+              blocked=true
+            fi
+          done
+
+          if [[ "$blocked" == true ]]; then
+            publish=false
+            {
+              echo "### Mobile OTA skipped"
+              echo
+              echo "This revision changes native-sensitive mobile configuration, dependencies, modules, assets, or workflow files. Create new iOS and Android builds instead of publishing it to an older native runtime."
+            } >> "$GITHUB_STEP_SUMMARY"
+          elif [[ "$publish" == true ]]; then
+            {
+              echo "### Mobile OTA eligible"
+              echo
+              echo "The revision only changes JavaScript, TypeScript, or bundled CSS used by the mobile client."
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            {
+              echo "### No mobile OTA needed"
+              echo
+              echo "This revision does not change the shipped mobile bundle."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo "publish=$publish" >> "$GITHUB_OUTPUT"
+
+      - name: Require Expo automation token
+        if: steps.ota.outputs.publish == 'true'
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          if [[ -z "$EXPO_TOKEN" ]]; then
+            echo "Add an EXPO_TOKEN repository secret with access to the inbox-zero/rakazo Expo project." >&2
+            exit 1
+          fi
+
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+        if: steps.ota.outputs.publish == 'true'
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        if: steps.ota.outputs.publish == 'true'
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Set up Expo
+        if: steps.ota.outputs.publish == 'true'
+        uses: expo/expo-github-action@eab7a230208c952974db8c3245cfd78402c7b385 # v9
+        with:
+          eas-version: latest
+          packager: pnpm
+          token: ${{ secrets.EXPO_TOKEN }}
+      - name: Install dependencies
+        if: steps.ota.outputs.publish == 'true'
+        run: pnpm install --frozen-lockfile
+      - name: Verify mobile project
+        if: steps.ota.outputs.publish == 'true'
+        run: pnpm --filter @rakazo/mobile check
+      - name: Publish production update
+        if: steps.ota.outputs.publish == 'true'
+        working-directory: apps/mobile
+        run: |
+          set -euo pipefail
+          head="$(git ls-remote origin refs/heads/main | awk '{print $1}')"
+          if [[ -z "$head" ]]; then
+            echo "Could not resolve the current main head before publishing." >&2
+            exit 1
+          fi
+          if [[ "$GITHUB_SHA" != "$head" ]]; then
+            {
+              echo "### Mobile OTA skipped"
+              echo
+              echo "This run is for \`$GITHUB_SHA\`, but \`main\` is now \`$head\`. Skipping so an older revision cannot overwrite a newer production update."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          eas update --platform all --channel production --environment production --message "$GITHUB_SHA" --non-interactive
 
   deploy-production:
     if: >-

@@ -19,7 +19,7 @@ const payloadSchemas = {
   }),
   "skill.teaching-expire": z.object({ skillId: z.string().min(1) }),
   "history.compact": z.object({ threadId: z.string().min(1) }),
-  "phone.deliver": z.object({ runId: z.string().min(1).optional() }),
+  "messaging.deliver": z.object({ runId: z.string().min(1).optional() }),
 } satisfies { [Name in BackgroundJobName]: z.ZodType<BackgroundJobPayloads[Name]> };
 
 export function parseBackgroundJob(name: string, payload: unknown): BackgroundJob {
@@ -113,11 +113,11 @@ export function historyCompactJobKey(threadId: string): string {
   return `history.compact:${threadId}`;
 }
 
-export function phoneDeliverJob(runId?: string, availableAt?: Date): BackgroundJob {
+export function messagingDeliverJob(runId?: string, availableAt?: Date): BackgroundJob {
   return {
-    name: "phone.deliver",
+    name: "messaging.deliver",
     payload: runId ? { runId } : {},
-    replaceKey: `phone.deliver:${runId ?? "drain"}`,
+    replaceKey: `messaging.deliver:${runId ?? "drain"}`,
     ...(availableAt ? { availableAt } : {}),
   };
 }

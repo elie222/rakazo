@@ -13,6 +13,7 @@ on:
       - ".github/workflows/publish-server-image.yml"
       - "apps/**"
       - "infra/compose/**"
+      - "infra/sandboxes/computer/**"
       - "infra/updater/**"
       - "packages/**"
       - "package.json"
@@ -45,8 +46,13 @@ jobs:
         include:
           - name: app
             dockerfile: infra/compose/Dockerfile
+            context: .
           - name: updater
             dockerfile: infra/updater/Dockerfile
+            context: .
+          - name: computer
+            dockerfile: infra/sandboxes/computer/Dockerfile
+            context: infra/sandboxes/computer
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
@@ -59,24 +65,101 @@ jobs:
           tags: type=sha,prefix=sha-
       - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
-          context: .
+          context: ${{ matrix.context }}
           file: ${{ matrix.dockerfile }}
           push: false
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          build-args: GIT_SHA=${{ github.sha }}
+          build-args: ${{ matrix.name == 'app' && format('GIT_SHA={0}', github.sha) || '' }}
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=pr-${{ github.event.pull_request.number }}-${{ matrix.name }}
           provenance: false
           sbom: false
 
+  build:
+    name: Build ${{ matrix.name }} ${{ matrix.arch }}
+    if: github.event_name != 'pull_request'
+    # Each architecture builds natively on its own runner and pushes by digest only.
+    # No QEMU: GitHub hosts native arm64 runners, and emulated arm64 took hours for the
+    # desktop-sized computer image. See docs/self-host.md (Published images and tags).
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        name: [app, updater, computer]
+        arch: [amd64, arm64]
+        include:
+          # Only the updater image contains the Docker CLI; the application image stays unprivileged.
+          # The supervisor is not a separate published image: it runs from `app` on the internal network.
+          - name: app
+            dockerfile: infra/compose/Dockerfile
+            context: .
+          - name: updater
+            dockerfile: infra/updater/Dockerfile
+            context: .
+          - name: computer
+            dockerfile: infra/sandboxes/computer/Dockerfile
+            context: infra/sandboxes/computer
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+      - name: Log in to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
+        with:
+          # Labels only; the tagged manifest is assembled in the publish job.
+          images: ghcr.io/${{ github.repository }}/${{ matrix.name }}
+          tags: type=sha,prefix=sha-
+      - id: build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/${{ matrix.arch }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # A fork can publish only to its own namespace; no credential can redirect this value.
+          outputs: type=image,name=ghcr.io/${{ github.repository }}/${{ matrix.name }},push-by-digest=true,name-canonical=true,push=true
+          # GET /health can report the exact source commit without a deployment-supplied override.
+          build-args: ${{ matrix.name == 'app' && format('GIT_SHA={0}', github.sha) || '' }}
+          cache-from: type=gha,scope=${{ matrix.name }}-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}-${{ matrix.arch }}
+          provenance: mode=max
+          sbom: true
+      - name: Record the architecture digest
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/digests
+          touch "/tmp/digests/${DIGEST#sha256:}"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: digest-${{ matrix.name }}-${{ matrix.arch }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
   publish:
     name: Publish ${{ matrix.name }} image
     if: github.event_name != 'pull_request'
+    needs: build
     runs-on: ubuntu-latest
-    # QEMU arm64 is slow; keep everyday main→edge publishes at 90m. Multi-arch
-    # (v* tags + workflow_dispatch) needs the longer budget.
-    timeout-minutes: ${{ (github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')) && 180 || 90 }}
+    timeout-minutes: 15
     permissions:
       contents: read
       packages: write
@@ -86,18 +169,15 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Only the updater image contains the Docker CLI; the application image stays unprivileged.
           - name: app
-            dockerfile: infra/compose/Dockerfile
           - name: updater
-            dockerfile: infra/updater/Dockerfile
+          - name: computer
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          persist-credentials: false
-      # Emulated arm64 only for releases and manual runs — not the ~10x/day main merge train.
-      - if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
-        uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
+          pattern: digest-${{ matrix.name }}-*
+          path: /tmp/digests
+          merge-multiple: true
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
       - name: Log in to GHCR
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
@@ -117,25 +197,38 @@ jobs:
             type=raw,value=edge,enable=${{ github.ref == 'refs/heads/main' }}
             # Stable releases only: a hyphen marks a prerelease (v1.0.0-rc.1) that must not move latest.
             type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, '-') }}
-      - id: build
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
-        with:
-          context: .
-          file: ${{ matrix.dockerfile }}
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          # Main→edge stays native amd64. Tags and workflow_dispatch publish amd64+arm64.
-          platforms: ${{ (github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')) && 'linux/amd64,linux/arm64' || 'linux/amd64' }}
-          # GET /health can report the exact source commit without a deployment-supplied override.
-          build-args: GIT_SHA=${{ github.sha }}
-          cache-from: type=gha,scope=${{ matrix.name }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
-          provenance: mode=max
-          sbom: true
+      - name: Assemble and verify the multi-arch manifest
+        id: manifest
+        working-directory: /tmp/digests
+        env:
+          IMAGE: ghcr.io/${{ github.repository }}/${{ matrix.name }}
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          set -euo pipefail
+          tag_args=()
+          while IFS= read -r tag; do
+            [[ -n "$tag" ]] && tag_args+=(-t "$tag")
+          done <<< "$TAGS"
+          sources=()
+          for digest in *; do
+            sources+=("${IMAGE}@sha256:${digest}")
+          done
+          if [[ "${#sources[@]}" -ne 2 ]]; then
+            echo "Expected one digest per architecture, found ${#sources[@]}." >&2
+            exit 1
+          fi
+          docker buildx imagetools create "${tag_args[@]}" "${sources[@]}"
+
+          first_tag="$(head -n 1 <<< "$TAGS")"
+          platforms="$(docker buildx imagetools inspect "$first_tag" \
+            --format '{{range .Manifest.Manifests}}{{.Platform.OS}}/{{.Platform.Architecture}}{{"\n"}}{{end}}')"
+          for want in linux/amd64 linux/arm64; do
+            grep -Fqx "$want" <<< "$platforms" || { echo "$first_tag is missing $want" >&2; exit 1; }
+          done
+          echo "digest=$(docker buildx imagetools inspect "$first_tag" --format '{{.Manifest.Digest}}')" >> "$GITHUB_OUTPUT"
       - name: Attest the published image
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-name: ghcr.io/${{ github.repository }}/${{ matrix.name }}
-          subject-digest: ${{ steps.build.outputs.digest }}
+          subject-digest: ${{ steps.manifest.outputs.digest }}
           push-to-registry: true

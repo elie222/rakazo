@@ -141,6 +141,41 @@ export const builtinAgentTools: ConnectorTool[] = [
     },
   },
   {
+    name: "ask_user",
+    description:
+      "Ask the user one short multiple-choice question with tappable options, then wait for their selection. Use this instead of asking them to type when two to four concise choices are enough.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        question: { type: "string", maxLength: 240 },
+        options: {
+          type: "array",
+          items: { type: "string", minLength: 1, maxLength: 80 },
+          minItems: 2,
+          maxItems: 4,
+          uniqueItems: true,
+        },
+      },
+      required: ["question", "options"],
+    },
+  },
+  {
+    name: "message_user",
+    description:
+      "Post a short progress update to the user in this chat immediately. Does not end your turn. Use sparingly during long work for high-signal beats (what you are checking, then a result). Do not dump tool logs, thinking, or a play-by-play of every call. Put the final answer in your normal reply.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        message: {
+          type: "string",
+          maxLength: 500,
+          description: "Short user-visible update.",
+        },
+      },
+      required: ["message"],
+    },
+  },
+  {
     name: "request_secret",
     description:
       "Collect a one-shot OTP, password, or API key in a masked field that never reaches the chat transcript or model. For website logins, CAPTCHA, passkeys, or anything that needs the live desktop, call request_takeover instead.",
@@ -393,7 +428,8 @@ export const builtinAgentTools: ConnectorTool[] = [
         name: { type: "string", description: "Short label shown in Routines." },
         prompt: {
           type: "string",
-          description: "What the bot should do when the schedule fires.",
+          description:
+            "Concrete steps for when the schedule fires: name the connected plugin tools to call (e.g. GITHUB_LIST_RELEASES for owner/repo), what to extract, and how to report. Prefer plugin tools over computer browser or web search for app data.",
         },
         cron: { type: "string", description: "5-field cron for repeating schedules." },
         every: { type: "number", description: "Repeat interval amount for repeating schedules." },
@@ -612,21 +648,22 @@ export const builtinAgentTools: ConnectorTool[] = [
   },
 ];
 
-/** Agent-connection tools, exposed only when the phone surface is enabled. */
+/** Agent-connection tools, exposed only when the messaging surface is enabled. */
 export const agentConnectionTools: ConnectorTool[] = [
   {
     name: "connect_agent",
     description:
-      "Request a standing connection to another person's agent by their phone number. The other owner must approve before either agent can message the other. Only for agents whose owner texted the deployment's phone line.",
+      "Request a standing connection to another person's agent by their owner's chat address. The other owner must approve before either agent can message the other. Only for agents whose owner messaged the deployment's chat line.",
     inputSchema: {
       type: "object",
       properties: {
-        phone: {
+        address: {
           type: "string",
-          description: "E.164 phone number of the agent's owner, e.g. +15551234567.",
+          description:
+            "The owner's address on the chat surface: an E.164 phone number (e.g. +15551234567) or platform user id.",
         },
       },
-      required: ["phone"],
+      required: ["address"],
     },
   },
   {
@@ -648,13 +685,14 @@ export const agentConnectionTools: ConnectorTool[] = [
     inputSchema: {
       type: "object",
       properties: {
-        phone: {
+        address: {
           type: "string",
-          description: "E.164 phone number of the connected agent's owner.",
+          description:
+            "Chat address (phone number or platform user id) of the connected agent's owner.",
         },
         message: { type: "string", description: "What to send." },
       },
-      required: ["phone", "message"],
+      required: ["address", "message"],
     },
   },
 ];

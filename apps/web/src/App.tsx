@@ -1,7 +1,8 @@
 import { Trans, useLingui } from "@lingui/react/macro";
+import { Button, Skeleton } from "@rakazo/ui-web";
 import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
-import { BuiButton, LoadingState } from "./components/beautiful-ui/primitives";
+import { LoadingState } from "./components/ai/primitives";
 import { authClient } from "./lib/auth";
 import { markAfterPaint, markOnce } from "./lib/performance";
 import {
@@ -15,6 +16,9 @@ import { ShellPage } from "./pages/Shell";
 
 const AuthPage = lazy(() =>
   import("./pages/Auth").then((module) => ({ default: module.AuthPage })),
+);
+const PasswordResetPage = lazy(() =>
+  import("./pages/Auth").then((module) => ({ default: module.PasswordResetPage })),
 );
 const OnboardingPage = lazy(() =>
   import("./pages/Onboarding").then((module) => ({ default: module.OnboardingPage })),
@@ -44,7 +48,7 @@ export function App() {
       <ShellSkeleton />
     ) : (
       <div
-        className="grid h-full place-items-center text-[#6C6C70]"
+        className="grid h-full place-items-center text-muted-foreground/80"
         data-rakazo-app-state="session-pending"
       >
         <Trans>Loading…</Trans>
@@ -55,7 +59,7 @@ export function App() {
   const user = session.data?.user;
   return (
     <div className="h-full" data-rakazo-app-state="ready">
-      <Suspense fallback={<div className="h-full bg-[#050506]" />}>
+      <Suspense fallback={<div className="h-full bg-background" />}>
         <Routes>
           <Route path="/" element={user ? <Navigate to="/app" replace /> : <WelcomePage />} />
           <Route
@@ -66,6 +70,13 @@ export function App() {
             path="/sign-up"
             element={user ? <Navigate to="/onboarding" replace /> : <AuthPage key="up" mode="up" />}
           />
+          <Route
+            path="/forgot-password"
+            element={
+              user ? <Navigate to="/app" replace /> : <AuthPage key="forgot" mode="forgot" />
+            }
+          />
+          <Route path="/reset-password" element={<PasswordResetPage />} />
           <Route
             path="/onboarding"
             element={user ? <OnboardingPage /> : <Navigate to="/sign-in" replace />}
@@ -118,14 +129,16 @@ function SessionUnavailable({ refetch }: { refetch: () => Promise<void> }) {
   }, [attempt, retryKey]);
 
   return (
-    <div className="grid h-full place-items-center bg-[#050506] px-6 text-center">
+    <div className="grid h-full place-items-center bg-background px-6 text-center">
       <div className="flex flex-col items-center">
         <LoadingState label={t`Reconnecting`} />
-        <p className="mt-3 text-[13.5px] text-[#6C6C70]">
+        <p className="mt-3 text-[13.5px] text-muted-foreground/80">
           <Trans>Can&apos;t reach the server.</Trans>
         </p>
         <div className="mt-4">
-          <BuiButton
+          <Button
+            variant="secondary"
+            className="rounded-full"
             onClick={() => {
               retryImmediately.current = true;
               setAttempt(0);
@@ -133,7 +146,7 @@ function SessionUnavailable({ refetch }: { refetch: () => Promise<void> }) {
             }}
           >
             <Trans>Retry now</Trans>
-          </BuiButton>
+          </Button>
         </div>
       </div>
     </div>
@@ -143,29 +156,29 @@ function SessionUnavailable({ refetch }: { refetch: () => Promise<void> }) {
 function ShellSkeleton() {
   return (
     <div
-      className="flex h-full overflow-hidden bg-[#050506]"
+      className="flex h-full overflow-hidden bg-background"
       data-rakazo-app-state="session-pending"
     >
-      <aside className="hidden w-[316px] shrink-0 border-e border-[#171719] bg-[#0B0B0C] px-3.5 pt-16 md:block">
-        <div className="h-10 rounded-xl bg-[#141416]" />
+      <aside className="hidden w-[316px] shrink-0 border-e border-sidebar-border bg-sidebar px-3.5 pt-16 md:block">
+        <Skeleton className="h-10 rounded-xl" />
         <div className="mt-5 space-y-2 px-1">
           {[0, 1, 2, 3].map((row) => (
             <div key={row} className="flex items-center gap-3 rounded-xl px-2 py-2.5">
-              <div className="h-9 w-9 rounded-full bg-[#18181B]" />
+              <Skeleton className="size-9 rounded-full" />
               <div className="flex-1 space-y-2">
-                <div className="h-3 w-2/5 rounded bg-[#202024]" />
-                <div className="h-2.5 w-4/5 rounded bg-[#151518]" />
+                <Skeleton className="h-3 w-2/5" />
+                <Skeleton className="h-2.5 w-4/5" />
               </div>
             </div>
           ))}
         </div>
       </aside>
       <main className="flex flex-1 flex-col">
-        <div className="h-[74px] border-b border-[#141416]" />
-        <div className="flex flex-1 items-center justify-center text-[14px] text-[#55555A]">
+        <div className="h-[74px] border-b border-sidebar-border" />
+        <div className="flex flex-1 items-center justify-center text-[14px] text-muted-foreground">
           <Trans>Opening your Space…</Trans>
         </div>
-        <div className="mx-6 mb-6 h-[54px] rounded-full border border-[#202023] bg-[#131315]" />
+        <div className="mx-6 mb-6 h-[54px] rounded-full border border-border bg-background" />
       </main>
     </div>
   );

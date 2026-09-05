@@ -65,8 +65,8 @@ describe("ScriptedAgentRuntime executionIds", () => {
       script: [
         {
           toolCalls: [
-            { name: "message_agent", args: { phone: "+15551111111", message: "one" } },
-            { name: "message_agent", args: { phone: "+15551111111", message: "two" } },
+            { name: "message_agent", args: { address: "+15551111111", message: "one" } },
+            { name: "message_agent", args: { address: "+15551111111", message: "two" } },
           ],
           complete: true,
         },

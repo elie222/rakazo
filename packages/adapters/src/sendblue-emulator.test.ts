@@ -1,8 +1,9 @@
+import type { AdapterContext, MessagingInboundEvent } from "@rakazo/adapter-kit";
 import { describe, expect, it } from "vitest";
-import { parseSendBlueInbound, SendBlueMessagingProvider } from "./sendblue.js";
-import { SendBlueEmulator } from "./sendblue-emulator.js";
+import { ChatSdkMessagingSurface } from "./chat-sdk-surface.js";
+import { createEmulatedSendbluePlatform, SendBlueEmulator } from "./sendblue-emulator.js";
 
-const context = {
+const context: AdapterContext = {
   operationId: "op-1",
   traceId: "trace-1",
   spaceId: "ws-1",
@@ -10,107 +11,164 @@ const context = {
   signal: new AbortController().signal,
 };
 
-describe("SendBlueEmulator", () => {
-  it("serves the provider over fetch and records sends", async () => {
-    const emulator = new SendBlueEmulator();
-    const provider = new SendBlueMessagingProvider(
-      {
-        apiKeyId: "key-id",
-        apiSecret: "secret",
-        signingSecret: emulator.signingSecret,
-        phoneNumber: emulator.phoneNumber,
-      },
-      { fetch: emulator.fetch },
+/** The production sendblue pipeline (Chat SDK + official SDK) over the emulator. */
+function createHarness() {
+  const emulator = new SendBlueEmulator();
+  const surface = new ChatSdkMessagingSurface([createEmulatedSendbluePlatform(emulator)]);
+  const events: MessagingInboundEvent[] = [];
+  surface.onInbound(async (event) => {
+    events.push(event);
+  });
+  return { emulator, surface, events };
+}
+
+describe("emulated sendblue platform inbound", () => {
+  it("normalizes a DM webhook into a direct inbound message", async () => {
+    const { emulator, surface, events } = createHarness();
+    const response = await surface.handleWebhook(
+      "sendblue",
+      emulator.buildInboundRequest({
+        fromNumber: "+15551234567",
+        content: "hi there",
+        handle: "handle-dm-1",
+      }),
     );
 
-    const dm = await provider.sendDirect({ to: "+15551234567", body: "hello" }, context);
-    expect(dm.handle).toBeTruthy();
-    const group = await provider.sendGroup({ groupId: "grp-1", body: "hi all" }, context);
-    expect(group.handle).toBeTruthy();
+    expect(response?.status).toBe(200);
+    // handleWebhook drains waitUntil, so the sink has finished by ACK.
+    expect(events).toHaveLength(1);
+    expect(events[0]).toEqual({
+      type: "message",
+      provider: "sendblue",
+      handle: "handle-dm-1",
+      threadId: expect.stringMatching(/^sendblue:/),
+      isDirect: true,
+      from: "+15551234567",
+      fromLabel: null,
+      channelName: null,
+      participants: [],
+      content: "hi there",
+      mediaUrl: null,
+    });
+    // The DM thread id matches what outbound resolution would open.
+    const dmThreadId = await surface.openDirectThread("sendblue", "+15551234567", context);
+    expect((events[0] as { threadId: string }).threadId).toBe(dmThreadId);
+  });
 
+  it("normalizes a group webhook with roster and display name", async () => {
+    const { emulator, surface, events } = createHarness();
+    const response = await surface.handleWebhook(
+      "sendblue",
+      emulator.buildInboundRequest({
+        fromNumber: "+15551111111",
+        content: "hello group",
+        groupId: "grp-1",
+        groupName: "Family",
+        participants: ["+15551111111", "+15552222222", emulator.phoneNumber],
+      }),
+    );
+
+    expect(response?.status).toBe(200);
+    expect(events).toHaveLength(1);
+    expect(events[0]).toEqual(
+      expect.objectContaining({
+        type: "message",
+        provider: "sendblue",
+        threadId: expect.stringMatching(/^sendblue:/),
+        isDirect: false,
+        from: "+15551111111",
+        channelName: "Family",
+        // The deployment's own line number never appears in the roster.
+        participants: ["+15551111111", "+15552222222"],
+        content: "hello group",
+      }),
+    );
+  });
+});
+
+describe("emulated sendblue platform outbound", () => {
+  it("sends a DM through openDirectThread + sendToThread", async () => {
+    const { emulator, surface } = createHarness();
+    const threadId = await surface.openDirectThread("sendblue", "+15557654321", context);
+    const sent = await surface.sendToThread({ threadId, body: "hello you" }, context);
+
+    expect(sent.handle).toMatch(/^emulated-handle-/);
     expect(emulator.sent).toEqual([
-      { kind: "dm", to: "+15551234567", body: "hello", handle: dm.handle },
-      { kind: "group", groupId: "grp-1", body: "hi all", handle: group.handle },
+      { kind: "dm", to: "+15557654321", body: "hello you", handle: sent.handle },
     ]);
   });
 
-  it("records typing indicators", async () => {
-    const emulator = new SendBlueEmulator();
-    const provider = new SendBlueMessagingProvider(
-      {
-        apiKeyId: "key-id",
-        apiSecret: "secret",
-        signingSecret: emulator.signingSecret,
-        phoneNumber: emulator.phoneNumber,
-      },
-      { fetch: emulator.fetch },
+  it("posts to a group via the thread id captured from an inbound group event", async () => {
+    const { emulator, surface, events } = createHarness();
+    await surface.handleWebhook(
+      "sendblue",
+      emulator.buildInboundRequest({
+        fromNumber: "+15551111111",
+        content: "hello group",
+        groupId: "grp-1",
+        participants: ["+15551111111", emulator.phoneNumber],
+      }),
     );
+    expect(events).toHaveLength(1);
+    const threadId = (events[0] as { threadId: string }).threadId;
 
-    await provider.sendTypingIndicator({ to: "+15551234567" }, context);
-    expect(emulator.typingIndicators).toEqual(["+15551234567"]);
+    const sent = await surface.sendToThread({ threadId, body: "hi all" }, context);
+
+    expect(emulator.sent).toEqual([
+      { kind: "group", groupId: "grp-1", body: "hi all", handle: sent.handle },
+    ]);
   });
 
-  it("rejects a typing indicator with no recipient so empty sends cannot pass silently", async () => {
-    const emulator = new SendBlueEmulator();
-    const response = await emulator.fetch("https://api.sendblue.com/api/send-typing-indicator", {
+  it("rejects the send when the vendor API fails", async () => {
+    const { emulator, surface } = createHarness();
+    const threadId = await surface.openDirectThread("sendblue", "+15557654321", context);
+    // The official SDK retries 5xx twice before surfacing the failure.
+    emulator.failNextSends(3);
+
+    await expect(surface.sendToThread({ threadId, body: "will fail" }, context)).rejects.toThrow();
+    expect(emulator.sent).toHaveLength(0);
+  });
+});
+
+describe("emulated sendblue platform delivery status", () => {
+  it("surfaces a signed status webhook to the sink", async () => {
+    const { emulator, surface, events } = createHarness();
+    const response = await surface.handleWebhook(
+      "sendblue",
+      emulator.buildStatusRequest({ handle: "handle-9", status: "DELIVERED" }),
+    );
+
+    expect(response?.status).toBe(200);
+    expect(events).toEqual([
+      { type: "status", provider: "sendblue", handle: "handle-9", status: "DELIVERED" },
+    ]);
+  });
+
+  it("rejects a wrong signing secret with 401 and no sink event", async () => {
+    const { emulator, surface, events } = createHarness();
+    const good = emulator.buildStatusRequest({ handle: "handle-9", status: "DELIVERED" });
+    const forged = new Request(good.url, {
       method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({}),
-    });
-    expect(response.status).toBe(400);
-    expect(emulator.typingIndicators).toEqual([]);
-  });
-
-  it("returns registered group participants", async () => {
-    const emulator = new SendBlueEmulator();
-    emulator.registerGroup("grp-1", {
-      name: "Family",
-      participants: ["+15551111111", "+15552222222"],
-    });
-    const provider = new SendBlueMessagingProvider(
-      {
-        apiKeyId: "key-id",
-        apiSecret: "secret",
-        signingSecret: emulator.signingSecret,
-        phoneNumber: emulator.phoneNumber,
+      headers: {
+        "content-type": "application/json",
+        "sb-signing-secret": "not-the-secret",
       },
-      { fetch: emulator.fetch },
-    );
-
-    await expect(provider.getGroup("grp-1", context)).resolves.toEqual({
-      id: "grp-1",
-      name: "Family",
-      participants: ["+15551111111", "+15552222222"],
+      body: await good.text(),
     });
+
+    const response = await surface.handleWebhook("sendblue", forged);
+
+    expect(response?.status).toBe(401);
+    expect(events).toHaveLength(0);
   });
+});
 
-  it("throws on unexpected URLs", async () => {
-    const emulator = new SendBlueEmulator();
-    await expect(emulator.fetch("https://example.com/nope")).rejects.toThrow(/unexpected/i);
-  });
+describe("emulated sendblue platform typing", () => {
+  it("records DM typing indicators", async () => {
+    const { emulator, surface } = createHarness();
+    const threadId = await surface.openDirectThread("sendblue", "+15557654321", context);
+    await surface.sendTyping(threadId, context);
 
-  it("builds signed inbound requests that round-trip through the parser", async () => {
-    const emulator = new SendBlueEmulator();
-    const request = emulator.buildInboundRequest({
-      fromNumber: "+15551234567",
-      content: "YES",
-      groupId: "grp-1",
-      participants: ["+15551234567", emulator.phoneNumber],
-      handle: "handle-xyz",
-    });
-
-    expect(request.method).toBe("POST");
-    expect(request.headers.get("sb-signing-secret")).toBe(emulator.signingSecret);
-    const parsed = parseSendBlueInbound(await request.json());
-    expect(parsed).toEqual({
-      type: "message",
-      handle: "handle-xyz",
-      fromNumber: "+15551234567",
-      groupId: "grp-1",
-      groupName: null,
-      participants: ["+15551234567", emulator.phoneNumber],
-      content: "YES",
-      mediaUrl: null,
-    });
+    expect(emulator.typingIndicators).toEqual(["+15557654321"]);
   });
 });

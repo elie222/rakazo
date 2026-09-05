@@ -15,6 +15,7 @@
     "test": "vitest run --root ../.. packages/auth/src"
   },
   "dependencies": {
+    "@rakazo/adapter-kit": "workspace:*",
     "@rakazo/core": "workspace:*",
     "@rakazo/db": "workspace:*",
     "better-auth": "^1.6.27"

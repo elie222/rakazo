@@ -72,4 +72,32 @@ describe("mobile ui direction", () => {
     await Promise.resolve();
     expect(reloadAppAsync).not.toHaveBeenCalled();
   });
+
+  it("defaults to LTR English so a no-arg call cannot fight zh/en UI locale bootstrap", async () => {
+    const resolvedOptions = vi.fn().mockReturnValue({ locale: "ar-SA" });
+    vi.stubGlobal("Intl", {
+      ...Intl,
+      DateTimeFormat: vi.fn().mockImplementation(() => ({ resolvedOptions })),
+    });
+    const { I18nManager } = await import("react-native");
+    const { reloadAppAsync } = await import("expo");
+    (I18nManager as { isRTL: boolean }).isRTL = true;
+    const { applyMobileUiDirection } = await import("./ui-direction");
+
+    expect(applyMobileUiDirection()).toBe(false);
+    expect(I18nManager.forceRTL).toHaveBeenCalledWith(false);
+    await Promise.resolve();
+    expect(reloadAppAsync).toHaveBeenCalledWith("ui-direction");
+  });
+
+  it("keeps root layout from applying device-locale direction before i18n bootstrap", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { dirname, join } = await import("node:path");
+    const { fileURLToPath } = await import("node:url");
+    const layout = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), "../app/_layout.tsx"),
+      "utf8",
+    );
+    expect(layout).not.toMatch(/applyMobileUiDirection\s*\(/);
+  });
 });

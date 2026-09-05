@@ -1,10 +1,10 @@
 import { isIP } from "node:net";
 import { OPENAI_COMPATIBLE_PROVIDER_ID } from "@rakazo/contracts";
-import { isLinkLocalAddress, isPrivateAddress } from "./network-address.js";
+import { isCloudMetadataAddress, isLinkLocalAddress, isPrivateAddress } from "./network-address.js";
 
 export { OPENAI_COMPATIBLE_PROVIDER_ID };
 
-const METADATA_HOSTS = new Set(["metadata.google.internal", "metadata.goog", "169.254.169.254"]);
+const METADATA_HOSTS = new Set(["metadata.google.internal", "metadata.goog"]);
 
 export function openAiCompatAllowPublicHosts(): boolean {
   return process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC === "1";
@@ -25,7 +25,8 @@ export function normalizeOpenAiCompatibleBaseUrl(raw: string): string {
     throw new Error("Base URL must not contain credentials");
   }
   let path = url.pathname.replace(/\/+$/, "") || "";
-  if (!path.endsWith("/v1")) {
+  const VERSIONED_API_ROOT = /\/v\d+$/;
+  if (!VERSIONED_API_ROOT.test(path)) {
     path = path ? `${path}/v1` : "/v1";
   }
   return `${url.origin}${path}`;
@@ -56,7 +57,9 @@ export function isPrivateOpenAiCompatibleHostname(hostname: string): boolean {
 function isBlockedHostname(hostname: string): boolean {
   const normalized = normalizeHostname(hostname);
   return (
-    METADATA_HOSTS.has(normalized) || (isIP(normalized) !== 0 && isLinkLocalAddress(normalized))
+    METADATA_HOSTS.has(normalized) ||
+    (isIP(normalized) !== 0 &&
+      (isCloudMetadataAddress(normalized) || isLinkLocalAddress(normalized)))
   );
 }
 
@@ -66,6 +69,24 @@ export function assertAllowedOpenAiCompatibleUrl(
 ): URL {
   const normalized = normalizeOpenAiCompatibleBaseUrl(raw);
   return assertAllowedOpenAiCompatibleRequestUrl(normalized, opts);
+}
+
+/**
+ * When an API key will be sent, refuse public http:// endpoints so the Bearer
+ * token is not cleartext on the public internet. Private / loopback http stays
+ * allowed (local model servers). https:// is always fine for this check.
+ */
+export function assertHttpsForKeyedOpenAiCompatibleUrl(
+  url: URL,
+  apiKey: string | undefined | null,
+): void {
+  if (!apiKey?.trim()) return;
+  if (url.protocol === "https:") return;
+  const hostname = normalizeHostname(url.hostname);
+  if (isPrivateOpenAiCompatibleHostname(hostname)) return;
+  throw new Error(
+    "OpenAI-compatible endpoints that send an API key must use HTTPS. Use an https:// URL, or omit the API key on a private HTTP endpoint.",
+  );
 }
 
 export function assertAllowedOpenAiCompatibleRequestUrl(
@@ -92,7 +113,7 @@ export function assertAllowedOpenAiCompatibleRequestUrl(
   if (isPrivateOpenAiCompatibleHostname(hostname)) return url;
   if (!allowPublic) {
     throw new Error(
-      "Public model endpoints are blocked. Set RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC=1 to allow them.",
+      "Public model endpoints are blocked. Set RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC=1 to allow them. A private reverse proxy on localhost or an RFC1918 address does not need that gate.",
     );
   }
   return url;

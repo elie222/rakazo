@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { listPiCatalog, scriptedCatalogEntry } from "./pi-models.js";
+import { catalogModelLabel, listPiCatalog, scriptedCatalogEntry } from "./pi-models.js";
 
 describe("Pi model catalog", () => {
   afterEach(() => {
@@ -30,6 +30,7 @@ describe("Pi model catalog", () => {
       signIn: "auth-url",
       authHint: "Claude Pro/Max / key",
       oauthLabel: "Sign in with Claude Pro/Max",
+      billing: "",
     });
     expect(scriptedCatalogEntry.provider).toBe("scripted");
   });
@@ -62,6 +63,19 @@ describe("Pi model catalog", () => {
     });
   });
 
+  it("normalizes a PI_DEFAULT_MODEL id that ends in -latest", async () => {
+    vi.stubEnv("PI_DEFAULT_PROVIDER", "openrouter");
+    vi.stubEnv("PI_DEFAULT_MODEL", "foo-latest");
+    vi.resetModules();
+
+    const { listPiCatalog: listConfiguredCatalog } = await import("./pi-models.js");
+    expect(listConfiguredCatalog()[0]).toMatchObject({
+      provider: "openrouter",
+      id: "foo-latest",
+      label: "foo (auto-updates)",
+    });
+  });
+
   it("does not advertise a synthetic model for providers the runtime cannot synthesize", async () => {
     vi.stubEnv("PI_DEFAULT_PROVIDER", "anthropic");
     vi.stubEnv("PI_DEFAULT_MODEL", "future/unknown-model");
@@ -73,5 +87,48 @@ describe("Pi model catalog", () => {
         (entry) => entry.provider === "anthropic" && entry.id === "future/unknown-model",
       ),
     ).toBe(false);
+  });
+
+  it('never labels an older model "latest" and keeps aliases distinct from snapshots', () => {
+    const catalog = listPiCatalog();
+    const label = (id: string) =>
+      catalog.find((entry) => entry.provider === "anthropic" && entry.id === id)?.label;
+    expect(label("claude-opus-5")).toBeDefined();
+    expect(label("claude-opus-4-5")).toBe("Claude Opus 4.5 (auto-updates)");
+    expect(label("claude-haiku-4-5")).toBe("Claude Haiku 4.5 (auto-updates)");
+    expect(label("claude-haiku-4-5-20251001")).toBe("Claude Haiku 4.5");
+    expect(catalog.some((entry) => /\blatest\b/i.test(entry.label))).toBe(false);
+  });
+});
+
+describe("catalogModelLabel", () => {
+  const providerModelIds = [
+    "claude-opus-4-5",
+    "claude-opus-4-5-20251101",
+    "mistral-medium",
+    "mistral-medium-2508",
+    "mistral-small",
+    "mistral-small-260401",
+    "foo",
+    "foo-preview",
+  ];
+
+  it.each([
+    // Alias: the id ends in `latest`, or a dated sibling proves the undated id floats.
+    ["claude-opus-4-5", "Claude Opus 4.5 (latest)", "Claude Opus 4.5 (auto-updates)"],
+    ["mistral-medium", "Mistral Medium Latest", "Mistral Medium (auto-updates)"],
+    ["mistral-small", "Mistral Small Latest", "Mistral Small (auto-updates)"],
+    ["gemini-flash-latest", "Gemini Flash Latest", "Gemini Flash (auto-updates)"],
+    ["foo-latest", "foo-latest", "foo (auto-updates)"],
+    ["foo/latest", "foo/latest", "foo (auto-updates)"],
+    // Pinned: `-preview` is its own model and a dated id is already a snapshot, so promise nothing.
+    ["foo", "Foo Latest", "Foo"],
+    ["claude-opus-4-5-20251101", "Claude Opus 4.5 (latest)", "Claude Opus 4.5"],
+    // Untouched: no marker, no name, or nothing left once the marker goes.
+    ["claude-opus-5", "Claude Opus 5", "Claude Opus 5"],
+    ["some-model", undefined, "some-model"],
+    ["latest", "latest", "latest"],
+  ])("labels %s / %s as %s", (id, name, expected) => {
+    expect(catalogModelLabel(id, name, providerModelIds)).toBe(expected);
   });
 });

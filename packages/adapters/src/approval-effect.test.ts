@@ -2,6 +2,13 @@ import { approvalEffectKey } from "@rakazo/core/node/approval-effect-key";
 import { describe, expect, it, vi } from "vitest";
 import {
   approvalPausedToolResult,
+  approvalReplayPathError,
+  approvalReplayResourceError,
+  approvedCatalogReplay,
+  approvedReplayArgs,
+  boundDirectApprovalRequest,
+  catalogApprovalDetails,
+  catalogApprovalRequest,
   claimApprovedEffect,
   claimIntendedEffect,
   completeExternalEffect,
@@ -48,6 +55,197 @@ describe("approved effect replay", () => {
     expect(queue.nextToolName()).toBe("first.write");
     expect(queue.take("first.write")).toEqual({ sequence: 1 });
     expect(queue.nextToolName()).toBe("second.write");
+  });
+
+  it("does not treat a direct-tool arg named like the catalog marker as a catalog replay", () => {
+    const marker = "__rakazoCatalogTool";
+    const approved = {
+      id: "row-1",
+      arguments: { mode: "strict" },
+      text: "approved exactly",
+      [marker]: "looks-like-a-wrapper-but-is-an-arg",
+    };
+    const reconstructed = {
+      id: "row-1",
+      arguments: { mode: "model-changed" },
+      text: "model reconstructed",
+      [marker]: "looks-like-a-wrapper-but-is-an-arg",
+    };
+    expect(catalogApprovalDetails(approved, marker)).toBeUndefined();
+
+    const queue = createApprovedEffectReplayQueue([{ kind: "notes.write", request: approved }]);
+    expect(approvedCatalogReplay(queue, "notes.write", marker)).toEqual({});
+    expect(approvedReplayArgs(queue.take("notes.write")!, reconstructed, marker)).toEqual(approved);
+    expect(queue.assertDrained).not.toThrow();
+  });
+
+  it("still recognizes the full catalog envelope as a catalog replay", () => {
+    const marker = "__rakazoCatalogTool";
+    const approved = catalogApprovalRequest(
+      "installed_execute_tool",
+      { id: "install-A:notes.write", arguments: { text: "approved" } },
+      marker,
+    );
+    expect(catalogApprovalDetails(approved, marker)).toEqual({
+      toolName: "installed_execute_tool",
+      args: { id: "install-A:notes.write", arguments: { text: "approved" } },
+    });
+    expect(approvedReplayArgs(approved, { text: "approved", mode: "fast" }, marker)).toEqual({
+      text: "approved",
+      mode: "fast",
+    });
+  });
+
+  it("does not inject catalog envelope args onto a non-wrapper tool call", () => {
+    const marker = "__rakazoCatalogTool";
+    const catalog = catalogApprovalRequest(
+      "installed_execute_tool",
+      { id: "install-A:installed_execute_tool", arguments: { text: "approved" } },
+      marker,
+    );
+    const queue = createApprovedEffectReplayQueue([
+      { kind: "installed_execute_tool", request: catalog },
+    ]);
+
+    // Direct invocation must not receive the wrapper {id,arguments} envelope.
+    expect(approvedCatalogReplay(queue, "installed_execute_tool", marker, false)).toEqual({});
+    expect(approvedCatalogReplay(queue, "installed_execute_tool", marker, true)).toEqual({
+      args: { id: "install-A:installed_execute_tool", arguments: { text: "approved" } },
+    });
+  });
+
+  it("rejects cross-path replay when a catalog approval is invoked as a direct tool", () => {
+    const marker = "__rakazoCatalogTool";
+    const direct = boundDirectApprovalRequest(
+      { connectorId: "installed", resourceId: "install-A", toolName: "notes.write" },
+      { text: "approved exactly" },
+      marker,
+    );
+    const catalog = catalogApprovalRequest(
+      "installed_execute_tool",
+      { id: "install-A:notes.write", arguments: { text: "catalog" } },
+      marker,
+    );
+    const matching = {
+      connectorId: "installed",
+      resourceId: "install-A",
+      toolName: "notes.write",
+    };
+    const other = {
+      connectorId: "installed",
+      resourceId: "install-B",
+      toolName: "notes.write",
+    };
+
+    expect(approvalReplayPathError("notes.write", false, catalog, marker)).toMatch(
+      /must be replayed via its catalog execute tool/,
+    );
+    expect(approvalReplayPathError("notes.write", false, catalog, marker, other)).toMatch(
+      /must be replayed via its catalog execute tool/,
+    );
+    expect(
+      approvalReplayPathError("notes.write", false, catalog, marker, matching),
+    ).toBeUndefined();
+    expect(
+      approvalReplayPathError("notes.write", false, catalog, marker, {
+        ...matching,
+        resourceRevision: 2,
+      }),
+    ).toMatch(/must be replayed via its catalog execute tool/);
+    const boundCatalog = catalogApprovalRequest(
+      "installed_execute_tool",
+      { id: "install-A:notes.write", arguments: { text: "catalog" } },
+      marker,
+      {
+        connectorId: "installed",
+        resourceId: "install-A",
+        resourceRevision: 1,
+        toolName: "notes.write",
+      },
+    );
+    expect(
+      approvalReplayPathError("notes.write", false, boundCatalog, marker, {
+        ...matching,
+        resourceRevision: 1,
+      }),
+    ).toBeUndefined();
+    expect(
+      approvalReplayPathError("notes.write", false, boundCatalog, marker, {
+        ...matching,
+        resourceRevision: 2,
+      }),
+    ).toMatch(/must be replayed via its catalog execute tool/);
+    expect(approvalReplayPathError("notes.write", true, direct, marker)).toBeUndefined();
+    expect(approvalReplayPathError("notes.write", false, direct, marker)).toBeUndefined();
+    expect(approvalReplayPathError("notes.write", true, catalog, marker)).toBeUndefined();
+  });
+
+  it("replays a bound direct approval through catalog only on the same resource", () => {
+    const marker = "__rakazoCatalogTool";
+    const approved = boundDirectApprovalRequest(
+      {
+        connectorId: "installed",
+        resourceId: "install-A",
+        resourceRevision: 1,
+        toolName: "notes.write",
+      },
+      { text: "approved exactly", mode: "fast" },
+      marker,
+    );
+    const same = {
+      connectorId: "installed",
+      resourceId: "install-A",
+      resourceRevision: 1,
+      toolName: "notes.write",
+    };
+    const other = {
+      connectorId: "installed",
+      resourceId: "install-B",
+      resourceRevision: 1,
+      toolName: "notes.write",
+    };
+    // Quiet token refresh keeps revision; OAuth reauth increments it.
+    const quietRefresh = {
+      connectorId: "installed",
+      resourceId: "install-A",
+      resourceRevision: 1,
+      toolName: "notes.write",
+    };
+    const reauthorized = {
+      connectorId: "installed",
+      resourceId: "install-A",
+      resourceRevision: 2,
+      toolName: "notes.write",
+    };
+
+    expect(
+      approvalReplayResourceError("notes.write", true, approved, same, marker),
+    ).toBeUndefined();
+    expect(
+      approvalReplayResourceError("notes.write", false, approved, same, marker),
+    ).toBeUndefined();
+    expect(approvalReplayResourceError("notes.write", true, approved, other, marker)).toMatch(
+      /different connector resource/,
+    );
+    expect(approvalReplayResourceError("notes.write", false, approved, other, marker)).toMatch(
+      /different connector resource/,
+    );
+    expect(
+      approvalReplayResourceError("notes.write", false, approved, quietRefresh, marker),
+    ).toBeUndefined();
+    expect(
+      approvalReplayResourceError("notes.write", false, approved, reauthorized, marker),
+    ).toMatch(/different connector resource/);
+    expect(
+      approvalReplayResourceError("notes.write", true, { text: "legacy" }, same, marker),
+    ).toMatch(/must be replayed as a direct tool call/);
+    expect(
+      approvalReplayResourceError("notes.write", false, { text: "legacy" }, same, marker),
+    ).toBeUndefined();
+    expect(approvedReplayArgs(approved, { text: "model" }, marker)).toEqual({
+      text: "approved exactly",
+      mode: "fast",
+    });
   });
 });
 

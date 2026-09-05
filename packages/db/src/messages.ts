@@ -26,7 +26,7 @@ export async function createThreadMessageInTransaction(
     where: { id: input.threadId },
     data: {
       nextMessageSeq: { increment: 1 },
-      unread: input.role === "bot" || input.markUnread ? true : undefined,
+      unread: (input.markUnread ?? input.role === "bot") ? true : undefined,
     },
     select: { nextMessageSeq: true },
   });
@@ -55,13 +55,14 @@ export class RunHistoryWriteError extends Error {
 export async function assertRunCanWriteHistory(
   tx: Prisma.TransactionClient,
   runId?: string,
-): Promise<void> {
+): Promise<{ status: string; startedAt: Date | null } | undefined> {
   if (!runId) return;
   const run = await tx.run.findUnique({
     where: { id: runId },
-    select: { status: true },
+    select: { status: true, startedAt: true },
   });
   if (!run || run.status === "cancelled") {
     throw new RunHistoryWriteError();
   }
+  return run;
 }

@@ -49,13 +49,15 @@ function buildPiCatalog(): PiCatalogEntry[] {
       apiKey,
       oauth,
     });
-    for (const model of provider.getModels()) {
+    const providerModels = provider.getModels();
+    const modelIds = providerModels.map((model) => model.id);
+    for (const model of providerModels) {
       const thinkingLevels = getSupportedThinkingLevels(model) as ThinkingLevel[];
       entries.push({
         provider: provider.id,
         providerName: provider.name,
         id: model.id,
-        label: model.name || model.id,
+        label: catalogModelLabel(model.id, model.name, modelIds),
         billing,
         auth,
         oauthLabel,
@@ -81,7 +83,7 @@ function buildPiCatalog(): PiCatalogEntry[] {
       provider: "openrouter",
       providerName: "OpenRouter",
       id: envDefaultModel,
-      label: envDefaultModel,
+      label: catalogModelLabel(envDefaultModel),
       billing: `Configured via PI_DEFAULT_MODEL (${envDefaultModel}).`,
       auth: "api-key",
       subscription: false,
@@ -91,6 +93,39 @@ function buildPiCatalog(): PiCatalogEntry[] {
   }
 
   return entries;
+}
+
+/** Trailing upstream "latest" marker: "Claude Opus 4.5 (latest)", "Gemini Flash Latest", "foo-latest". */
+const LATEST_MARKER = /[\s(/-]*\blatest\b\s*\)?\s*$/i;
+
+/**
+ * Upstream marks auto-updating alias ids with a trailing "latest". That is an alias marker, not a
+ * recency claim, so it lands on families like Claude Opus 4.5 while the actually newest models
+ * (Claude Opus 5, Claude Fable 5) carry no marker at all. Read straight off a picker it says the
+ * opposite of the truth, so state what the id really does instead.
+ */
+export function catalogModelLabel(
+  id: string,
+  name?: string,
+  providerModelIds: readonly string[] = [],
+): string {
+  const label = name || id;
+  if (!LATEST_MARKER.test(label)) return label;
+  const base = label.replace(LATEST_MARKER, "").trim();
+  if (!base) return label;
+  return isAliasModelId(id, providerModelIds) ? `${base} (auto-updates)` : base;
+}
+
+/**
+ * An alias id either ends in `latest` or is the undated prefix of a dated sibling. The suffix has
+ * to be a bare date of 4-8 digits (`-2508`, `-260401`, `-20251001`). A variant like `-preview` or
+ * `-fast` is its own pinned model, not a snapshot of this one.
+ */
+function isAliasModelId(id: string, providerModelIds: readonly string[]): boolean {
+  if (/[-/]latest$/i.test(id)) return true;
+  return providerModelIds.some(
+    (other) => other.startsWith(`${id}-`) && /^\d{4,8}$/.test(other.slice(id.length + 1)),
+  );
 }
 
 function catalogBilling(

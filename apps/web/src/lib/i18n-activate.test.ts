@@ -49,6 +49,8 @@ describe("activateUiLocale", () => {
       tr: async () => ({ messages: { Settings: "Ayarlar" } }),
       hi: async () => ({ messages: { Settings: "सेटिंग्स" } }),
       "pt-BR": async () => ({ messages: { Settings: "Configurações" } }),
+      "zh-CN": async () => ({ messages: { Settings: "设置" } }),
+      es: async () => ({ messages: { Settings: "Configuración" } }),
     });
 
     const locale = await activateUiLocale("de");
@@ -78,6 +80,12 @@ describe("activateUiLocale", () => {
       "pt-BR": async () => {
         throw new Error("pt-BR missing");
       },
+      "zh-CN": async () => {
+        throw new Error("zh-CN missing");
+      },
+      es: async () => {
+        throw new Error("es missing");
+      },
     });
 
     const locale = await activateUiLocale("ko");
@@ -98,6 +106,8 @@ describe("activateUiLocale", () => {
       tr: async () => ({ messages: { Settings: "Ayarlar" } }),
       hi: async () => ({ messages: { Settings: "सेटिंग्स" } }),
       "pt-BR": async () => ({ messages: { Settings: "Configurações" } }),
+      "zh-CN": async () => ({ messages: { Settings: "设置" } }),
+      es: async () => ({ messages: { Settings: "Configuración" } }),
     });
 
     const first = activateUiLocale("de");
@@ -123,6 +133,8 @@ describe("activateUiLocale", () => {
       tr: async () => ({ messages: { Settings: "Ayarlar" } }),
       hi: async () => ({ messages: { Settings: "सेटिंग्स" } }),
       "pt-BR": async () => ({ messages: { Settings: "Configurações" } }),
+      "zh-CN": async () => ({ messages: { Settings: "设置" } }),
+      es: async () => ({ messages: { Settings: "Configuración" } }),
     });
 
     await activateUiLocale("en");
@@ -153,6 +165,8 @@ describe("activateUiLocale", () => {
       tr: async () => ({ messages: { Settings: "Ayarlar" } }),
       hi: async () => ({ messages: { Settings: "सेटिंग्स" } }),
       "pt-BR": async () => ({ messages: { Settings: "Configurações" } }),
+      "zh-CN": async () => ({ messages: { Settings: "设置" } }),
+      es: async () => ({ messages: { Settings: "Configuración" } }),
     });
 
     await activateUiLocale("en");

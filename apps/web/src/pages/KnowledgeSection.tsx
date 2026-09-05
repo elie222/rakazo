@@ -1,59 +1,60 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { AgentSkill, AgentSkillCatalogEntry, MemoryDocument } from "@rakazo/contracts";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import {
+  Button,
+  Skeleton,
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+  Textarea,
+} from "@rakazo/ui-web";
+import { useEffect, useRef, useState } from "react";
+import { downloadArtifactBytes } from "../lib/artifact-open";
 import { rpc } from "../lib/rpc";
 
-const fieldClass =
-  "mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 font-mono text-[13px] leading-relaxed text-[#ECECEE]";
+const fieldClass = "mt-2 w-full font-mono text-[13px] leading-relaxed";
 
 function rowClass(open: boolean): string {
-  return `w-full rounded-[11px] px-2.5 py-2.5 text-start ${open ? "bg-[#121214]" : "hover:bg-[#121214]"}`;
+  return `h-auto w-full justify-start whitespace-normal px-2.5 py-2.5 text-start ${open ? "bg-muted" : ""}`;
 }
 
 /**
- * What the agent knows, editable: its own memory document and the space's
- * agent skills. Space-wide memory lives in the Memory settings overlay.
- * Rides entirely on the existing memory.* and agentSkills.* RPCs.
+ * Bot memory and the current user's skills in this space.
+ * User-scoped memory shared across bots lives in the Memory settings overlay.
  */
-export function KnowledgeSection({ botId }: { botId: string }) {
-  const [tab, setTab] = useState<"memory" | "skills">("memory");
+export function KnowledgeSection({
+  botId,
+  onSkillsChange,
+}: {
+  botId: string;
+  onSkillsChange: (skills: AgentSkillCatalogEntry[]) => void;
+}) {
+  const { t } = useLingui();
   return (
-    <div className="mt-6" data-testid="bot-knowledge">
-      <div className="mb-3 text-[14px] text-[#85858A]">
-        <Trans>Knowledge</Trans>
-      </div>
-      <div className="mb-3 flex items-center gap-2 text-[14px]">
-        {(
-          [
-            { value: "memory" as const, label: <Trans>Memory</Trans> },
-            { value: "skills" as const, label: <Trans>Skills</Trans> },
-          ] satisfies Array<{ value: "memory" | "skills"; label: ReactNode }>
-        ).map((option) => (
-          <button
-            key={option.value}
-            type="button"
-            aria-pressed={tab === option.value}
-            onClick={() => setTab(option.value)}
-            className={`rounded-lg px-2.5 py-1 ${
-              tab === option.value ? "bg-[#1B1B1E] text-[#ECECEE]" : "text-[#85858A]"
-            }`}
-          >
-            {option.label}
-          </button>
-        ))}
-      </div>
-      {tab === "memory" ? (
-        <MemoryDocumentList
-          key={botId}
-          load={() => rpc.memory.list({ botId, scope: "bot" })}
-          exportFilename="memory.md"
-          emptyLabel={<Trans>Nothing remembered yet</Trans>}
-          testId="bot-knowledge-memory"
-        />
-      ) : (
-        <AgentSkills />
-      )}
-    </div>
+    <section className="mt-6" data-testid="bot-knowledge">
+      <Tabs defaultValue="memory">
+        <TabsList aria-label={t`Knowledge`}>
+          <TabsTrigger value="memory">
+            <Trans>Memory</Trans>
+          </TabsTrigger>
+          <TabsTrigger value="skills">
+            <Trans>Skills</Trans>
+          </TabsTrigger>
+        </TabsList>
+        <TabsContent value="memory">
+          <MemoryDocumentList
+            key={botId}
+            load={() => rpc.memory.list({ botId, scope: "bot" })}
+            exportFilename="memory.md"
+            testId="bot-knowledge-memory"
+          />
+        </TabsContent>
+        <TabsContent value="skills">
+          <AgentSkills onSkillsChange={onSkillsChange} />
+        </TabsContent>
+      </Tabs>
+    </section>
   );
 }
 
@@ -61,13 +62,12 @@ export function KnowledgeSection({ botId }: { botId: string }) {
 export function SpaceMemorySection() {
   return (
     <div className="mt-6" data-testid="space-memory-documents">
-      <div className="mb-2 text-[12.5px] uppercase tracking-[0.08em] text-[#6C6C70]">
+      <div className="mb-2 text-[12.5px] uppercase tracking-[0.08em] text-muted-foreground">
         <Trans>Shared documents</Trans>
       </div>
       <MemoryDocumentList
         load={() => rpc.memory.list({ scope: "user" })}
         exportFilename="space-memory.md"
-        emptyLabel={<Trans>Nothing remembered yet</Trans>}
         testId="space-memory-list"
       />
     </div>
@@ -77,15 +77,14 @@ export function SpaceMemorySection() {
 function MemoryDocumentList({
   load,
   exportFilename,
-  emptyLabel,
   testId,
 }: {
   load: () => Promise<MemoryDocument[]>;
   exportFilename: string;
-  emptyLabel: ReactNode;
   testId: string;
 }) {
   const { t } = useLingui();
+  const [loading, setLoading] = useState(true);
   const [docs, setDocs] = useState<MemoryDocument[]>([]);
   const [openId, setOpenId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
@@ -102,10 +101,12 @@ function MemoryDocumentList({
       .then((list) => {
         if (current !== generation.current) return;
         setDocs(list);
+        setLoading(false);
       })
       .catch(() => {
         if (current !== generation.current) return;
         setDocs([]);
+        setLoading(false);
         setError(t`Could not load`);
       });
     return () => {
@@ -145,12 +146,7 @@ function MemoryDocumentList({
       generation.current += 1;
       setDocs(fresh);
       const markdown = fresh.map((doc) => `# ${doc.path}\n\n${doc.content}`).join("\n\n");
-      const url = URL.createObjectURL(new Blob([markdown], { type: "text/markdown" }));
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = exportFilename;
-      link.click();
-      URL.revokeObjectURL(url);
+      downloadArtifactBytes(exportFilename, "text/markdown", new TextEncoder().encode(markdown));
     } catch {
       setError(t`Could not load`);
     } finally {
@@ -160,29 +156,36 @@ function MemoryDocumentList({
 
   return (
     <div data-testid={testId}>
-      {error ? <div className="px-2.5 pb-2 text-[13px] text-[#E65707]">{error}</div> : null}
-      {docs.length === 0 && !error ? (
-        <div className="px-2.5 py-1 text-[13.5px] text-[#6C6C70]">{emptyLabel}</div>
+      {error ? <div className="px-2.5 pb-2 text-[13px] text-destructive">{error}</div> : null}
+      {loading ? <Skeleton className="h-10 w-full" /> : null}
+      {!loading && docs.length === 0 && !error ? (
+        <div className="px-2.5 py-1 text-[13.5px] text-muted-foreground">
+          <Trans>Nothing remembered yet</Trans>
+        </div>
       ) : null}
       {docs.map((doc) => (
         <div key={doc.id}>
-          <button
+          <Button
+            variant="ghost"
             type="button"
+            disabled={busy}
             onClick={() => (openId === doc.id ? setOpenId(null) : openDoc(doc))}
             className={rowClass(openId === doc.id)}
           >
-            <span className="flex items-baseline justify-between gap-3">
-              <span className="min-w-0 truncate text-[14px] text-[#ECECEE]" dir="auto">
+            <span className="flex w-full items-baseline justify-between gap-3">
+              <span className="min-w-0 truncate text-[14px] text-foreground" dir="auto">
                 {doc.path}
               </span>
-              <span className="shrink-0 text-[12px] text-[#6C6C70]">
+              <span className="shrink-0 text-[12px] text-muted-foreground">
                 <Trans>rev {doc.revision}</Trans>
               </span>
             </span>
-          </button>
+          </Button>
           {openId === doc.id ? (
             <div className="px-2.5 pb-2">
-              <textarea
+              <Textarea
+                aria-label={doc.path}
+                disabled={busy}
                 value={draft}
                 onChange={(event) => setDraft(event.target.value)}
                 rows={Math.min(16, Math.max(4, draft.split("\n").length + 1))}
@@ -190,35 +193,39 @@ function MemoryDocumentList({
                 dir="auto"
               />
               <div className="mt-2 flex gap-2">
-                <button
+                <Button
+                  variant="ghost"
                   type="button"
                   disabled={busy || draft === doc.content}
                   onClick={() => void save(doc)}
-                  className="rounded-lg bg-[#1B1B1E] px-3 py-1.5 text-[13px] text-[#ECECEE] disabled:opacity-50"
+                  className="rounded-lg bg-muted px-3 py-1.5 text-[13px] text-foreground disabled:opacity-50"
                 >
                   <Trans>Save</Trans>
-                </button>
-                <button
+                </Button>
+                <Button
+                  variant="ghost"
                   type="button"
+                  disabled={busy}
                   onClick={() => setOpenId(null)}
-                  className="rounded-lg px-3 py-1.5 text-[13px] text-[#85858A]"
+                  className="rounded-lg px-3 py-1.5 text-[13px] text-muted-foreground"
                 >
                   <Trans>Cancel</Trans>
-                </button>
+                </Button>
               </div>
             </div>
           ) : null}
         </div>
       ))}
       {docs.length ? (
-        <button
+        <Button
+          variant="ghost"
           type="button"
           disabled={busy}
           onClick={() => void exportMarkdown()}
-          className="mt-2 px-2.5 text-[13px] text-[#7A7A80] hover:text-[#C9C9CE]"
+          className="mt-2 px-2.5 text-[13px] text-muted-foreground hover:text-foreground"
         >
           <Trans>Download as markdown</Trans>
-        </button>
+        </Button>
       ) : null}
     </div>
   );
@@ -232,8 +239,13 @@ description: What this skill does and when the agent should use it.
 Steps the agent should follow.
 `;
 
-function AgentSkills() {
+function AgentSkills({
+  onSkillsChange,
+}: {
+  onSkillsChange: (skills: AgentSkillCatalogEntry[]) => void;
+}) {
   const { t } = useLingui();
+  const [loading, setLoading] = useState(true);
   const [skills, setSkills] = useState<AgentSkillCatalogEntry[]>([]);
   const [open, setOpen] = useState<AgentSkill | null>(null);
   const [creating, setCreating] = useState(false);
@@ -249,6 +261,7 @@ function AgentSkills() {
     const list = await rpc.agentSkills.list();
     if (current !== generation.current) return;
     setSkills(list);
+    onSkillsChange(list);
   }
 
   useEffect(() => {
@@ -258,14 +271,17 @@ function AgentSkills() {
       .then((list) => {
         if (current !== generation.current) return;
         setSkills(list);
+        setLoading(false);
       })
       .catch(() => {
         if (current !== generation.current) return;
         setSkills([]);
+        setLoading(false);
         setError(t`Could not load`);
       });
     return () => {
       generation.current += 1;
+      selection.current += 1;
     };
   }, [t]);
 
@@ -342,44 +358,51 @@ function AgentSkills() {
   const editorOpen = creating || open;
   return (
     <div data-testid="bot-knowledge-skills">
-      {error ? <div className="px-2.5 pb-2 text-[13px] text-[#E65707]">{error}</div> : null}
-      {skills.length === 0 && !editorOpen && !error ? (
-        <div className="px-2.5 py-1 text-[13.5px] text-[#6C6C70]">
+      {error ? <div className="px-2.5 pb-2 text-[13px] text-destructive">{error}</div> : null}
+      {loading ? <Skeleton className="h-10 w-full" /> : null}
+      {!loading && skills.length === 0 && !editorOpen && !error ? (
+        <div className="px-2.5 py-1 text-[13.5px] text-muted-foreground">
           <Trans>No skills yet</Trans>
         </div>
       ) : null}
       {!editorOpen
         ? skills.map((entry) => (
-            <button
+            <Button
+              variant="ghost"
               key={entry.id}
               type="button"
               onClick={() => void openSkill(entry)}
-              className={rowClass(false)}
+              className={`${rowClass(false)} block`}
             >
-              <span className="flex items-baseline justify-between gap-3">
-                <span className="min-w-0 truncate text-[14px] text-[#ECECEE]" dir="auto">
+              <span className="flex w-full items-baseline justify-between gap-3">
+                <span className="min-w-0 truncate text-[14px] text-foreground" dir="auto">
                   {entry.name}
                 </span>
                 {entry.readOnly ? (
-                  <span className="shrink-0 text-[12px] text-[#6C6C70]">
+                  <span className="shrink-0 text-[12px] text-muted-foreground">
                     <Trans>read-only</Trans>
                   </span>
                 ) : null}
               </span>
-              <span className="mt-0.5 block truncate text-[12.5px] text-[#6C6C70]" dir="auto">
+              <span
+                className="mt-0.5 block truncate text-[12.5px] text-muted-foreground"
+                dir="auto"
+              >
                 {entry.description}
               </span>
-            </button>
+            </Button>
           ))
         : null}
       {editorOpen ? (
         <div className="px-2.5 pb-2">
           {open ? (
-            <div className="pb-1 text-[14px] text-[#ECECEE]" dir="auto">
+            <div className="pb-1 text-[14px] text-foreground" dir="auto">
               {open.name}
             </div>
           ) : null}
-          <textarea
+          <Textarea
+            aria-label="SKILL.md"
+            disabled={busy}
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
             rows={Math.min(20, Math.max(8, draft.split("\n").length + 1))}
@@ -389,43 +412,48 @@ function AgentSkills() {
           />
           <div className="mt-2 flex items-center gap-2">
             {!open?.readOnly ? (
-              <button
+              <Button
+                variant="ghost"
                 type="button"
                 disabled={busy || !draft.trim() || (!creating && draft === open?.content)}
                 onClick={() => void save()}
-                className="rounded-lg bg-[#1B1B1E] px-3 py-1.5 text-[13px] text-[#ECECEE] disabled:opacity-50"
+                className="rounded-lg bg-muted px-3 py-1.5 text-[13px] text-foreground disabled:opacity-50"
               >
                 <Trans>Save</Trans>
-              </button>
+              </Button>
             ) : null}
-            <button
+            <Button
+              variant="ghost"
               type="button"
+              disabled={busy}
               onClick={() => {
                 selection.current += 1;
                 setOpen(null);
                 setCreating(false);
                 setConfirmingDelete(false);
               }}
-              className="rounded-lg px-3 py-1.5 text-[13px] text-[#85858A]"
+              className="rounded-lg px-3 py-1.5 text-[13px] text-muted-foreground"
             >
               {open?.readOnly ? <Trans>Close</Trans> : <Trans>Cancel</Trans>}
-            </button>
+            </Button>
             {open && !open.readOnly ? (
-              <button
+              <Button
+                variant="ghost"
                 type="button"
                 disabled={busy}
                 onClick={() => void remove(open)}
                 className={`ms-auto rounded-lg px-3 py-1.5 text-[13px] ${
-                  confirmingDelete ? "bg-[#3A1A20] text-[#F3A2AA]" : "text-[#E65707]"
+                  confirmingDelete ? "bg-destructive/10 text-destructive" : "text-destructive"
                 }`}
               >
                 {confirmingDelete ? <Trans>Confirm delete</Trans> : <Trans>Delete</Trans>}
-              </button>
+              </Button>
             ) : null}
           </div>
         </div>
       ) : (
-        <button
+        <Button
+          variant="ghost"
           type="button"
           disabled={busy}
           onClick={() => {
@@ -436,10 +464,10 @@ function AgentSkills() {
             setDraft(NEW_SKILL_TEMPLATE);
             setError(null);
           }}
-          className="mt-2 px-2.5 text-[13px] text-[#7A7A80] hover:text-[#C9C9CE]"
+          className="mt-2 px-2.5 text-[13px] text-muted-foreground hover:text-foreground"
         >
           <Trans>New skill</Trans>
-        </button>
+        </Button>
       )}
     </div>
   );

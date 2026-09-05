@@ -19,14 +19,15 @@ describe("copyableMessageText", () => {
     ).toBe("first\nworking\nquestion?");
   });
 
-  it("includes phone channel messages with their iMessage attribution", () => {
+  it("includes channel messages with their chat attribution", () => {
     expect(
       copyableMessageText(
         message([
           {
-            kind: "phone_channel_message",
+            kind: "channel_message",
+            provider: "sendblue",
             channelId: "ch-1",
-            fromNumber: "+15551234567",
+            fromAddress: "+15551234567",
             fromLabel: "Alice",
             text: "dinner at 7?",
             hop: 0,

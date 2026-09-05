@@ -20,7 +20,26 @@ import {
 } from "./index.js";
 
 describe("contracts", () => {
-  it("limits reactions to persisted non-phone messages", () => {
+  it("accepts structured live activity progress", () => {
+    expect(MessageBlock.parse({ kind: "progress", text: "Using browser", activity: true })).toEqual(
+      { kind: "progress", text: "Using browser", activity: true },
+    );
+  });
+
+  it("accepts optional persisted duration only on valid steps blocks", () => {
+    expect(
+      MessageBlock.parse({
+        kind: "steps",
+        steps: [{ label: "Run tests", count: 1 }],
+        durationMs: 103_000,
+      }),
+    ).toMatchObject({ durationMs: 103_000 });
+    expect(MessageBlock.safeParse({ kind: "steps", steps: [], durationMs: -1 }).success).toBe(
+      false,
+    );
+  });
+
+  it("limits reactions to persisted non-channel messages", () => {
     expect(
       canReactToThreadMessage({ id: "message-1", blocks: [{ kind: "text", text: "hi" }] }),
     ).toBe(true);
@@ -32,9 +51,10 @@ describe("contracts", () => {
         id: "message-2",
         blocks: [
           {
-            kind: "phone_channel_message",
+            kind: "channel_message",
+            provider: "sendblue",
             channelId: "channel-1",
-            fromNumber: "+15555550100",
+            fromAddress: "+15555550100",
             fromLabel: "Pat",
             text: "hi",
           },
@@ -72,6 +92,12 @@ describe("contracts", () => {
   it("normalizes bot names and rejects whitespace-only values at the contract boundary", () => {
     expect(CreateBotInput.parse({ name: "  Chief  " }).name).toBe("Chief");
     expect(UpdateBotInput.parse({ botId: "bot-1", name: "  Atlas  " }).name).toBe("Atlas");
+    expect(UpdateBotInput.parse({ botId: "bot-1", title: "  Lead researcher  " }).title).toBe(
+      "Lead researcher",
+    );
+    expect(
+      UpdateBotInput.parse({ botId: "bot-1", description: "  Concise briefs.  " }).description,
+    ).toBe("Concise briefs.");
     expect(CreateBotInput.safeParse({ name: "   " }).success).toBe(false);
     expect(UpdateBotInput.safeParse({ botId: "bot-1", name: "   " }).success).toBe(false);
   });

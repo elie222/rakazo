@@ -21,7 +21,7 @@ describe("MessageHoverMetadata", () => {
     );
 
     expect(html).toContain(
-      `<time dateTime="${createdAt}" class="text-[11px] tabular-nums text-[#85858A]">6:14 PM</time>`,
+      `<time dateTime="${createdAt}" class="text-[11px] tabular-nums text-muted-foreground">6:14 PM</time>`,
     );
     expect(html.indexOf("<time")).toBeLessThan(html.indexOf('data-testid="message-actions-pill"'));
     expect(html).toContain("group-hover/message:opacity-100");

@@ -9,7 +9,9 @@ const fakeAgentState = vi.hoisted(() => ({
     contextWindow?: number;
     maxTokens?: number;
   }>,
+  sessionIds: [] as Array<string | undefined>,
   failPrompt: false,
+  abortCalls: 0,
 }));
 
 type FakeAgentTool = {
@@ -23,6 +25,7 @@ vi.mock("@earendil-works/pi-agent-core", () => ({
     private readonly tools: FakeAgentTool[];
 
     constructor(options: {
+      sessionId?: string;
       initialState: {
         thinkingLevel: string;
         tools: FakeAgentTool[];
@@ -30,6 +33,7 @@ vi.mock("@earendil-works/pi-agent-core", () => ({
       };
     }) {
       this.tools = options.initialState.tools;
+      fakeAgentState.sessionIds.push(options.sessionId);
       fakeAgentState.thinkingLevels.push(options.initialState.thinkingLevel);
       fakeAgentState.models.push(options.initialState.model);
     }
@@ -41,7 +45,9 @@ vi.mock("@earendil-works/pi-agent-core", () => ({
       await runSubagent?.execute("subagent-call", { name: "helper", task: "help" });
     }
     async waitForIdle() {}
-    abort() {}
+    abort() {
+      fakeAgentState.abortCalls += 1;
+    }
   },
 }));
 
@@ -122,6 +128,7 @@ describe("Pi agent thinking level", () => {
   beforeEach(() => {
     fakeAgentState.thinkingLevels = [];
     fakeAgentState.models = [];
+    fakeAgentState.sessionIds = [];
     fakeAgentState.failPrompt = false;
     vi.unstubAllEnvs();
   });
@@ -132,6 +139,12 @@ describe("Pi agent thinking level", () => {
     const levels = await runWithModel("reasoning-model");
     expect(levels).toEqual(["medium", "medium"]);
     expect(levels.every((level) => level !== "off")).toBe(true);
+  });
+
+  it("uses a stable provider session for each bot thread", async () => {
+    await runWithModel("plain-model");
+
+    expect(fakeAgentState.sessionIds[0]).toBe("t:b");
   });
 
   it("honors a per-bot thinking level on reasoning models", async () => {
@@ -172,13 +185,14 @@ describe("Pi agent thinking level", () => {
 
   it("removes the abort listener when prompting fails", async () => {
     const controller = new AbortController();
-    const removeEventListener = vi.spyOn(controller.signal, "removeEventListener");
+    fakeAgentState.abortCalls = 0;
     fakeAgentState.failPrompt = true;
 
     await expect(runWithModel("plain-model", "test", controller.signal)).rejects.toThrow(
       "prompt failed",
     );
 
-    expect(removeEventListener).toHaveBeenCalledWith("abort", expect.any(Function));
+    controller.abort();
+    expect(fakeAgentState.abortCalls).toBe(0);
   });
 });

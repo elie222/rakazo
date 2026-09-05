@@ -4,10 +4,11 @@ import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 loadRootEnv();
 
 import {
+  ChatSdkMessagingSurface,
   createBackgroundJobHandlers,
   createConnectorStack,
   createJobReconciler,
-  createPhoneContextLoader,
+  createMessagingContextLoader,
   createPostgresReconciliationLeadership,
   createRunExecutor,
   createRunSandbox,
@@ -20,12 +21,14 @@ import {
   InMemoryJobQueue,
   InstalledConnectorProvider,
   isComposioEnabled,
-  isPhoneSurfaceEnabled,
+  isMessagingSurfaceEnabled,
   isPipedreamEnabled,
   LocalAgentHomeStore,
   LocalArtifactStore,
   McpConnector,
   McpOAuthBroker,
+  messagingEnvFromProcess,
+  messagingPlatformsFromEnv,
   PiAgentRuntime,
   PipedreamConnector,
   PostgresRealtimeFanout,
@@ -33,13 +36,15 @@ import {
   resolveDeploymentModel,
   resolveSandboxProvider,
   ScriptedAgentRuntime,
-  SendBlueMessagingProvider,
   SpaceMemoryProviderResolver,
-  sendBlueConfigFromEnv,
 } from "@rakazo/adapters";
 import { resolveEncryptionKey, resolveSupervisorToken } from "@rakazo/core";
 import { createDb, createThreadEvents } from "@rakazo/db";
+import { SERVICE_NAMES } from "@rakazo/logging";
+import { createRootLogger } from "@rakazo/logging/axiom";
 import { MarkdownMemoryStore } from "@rakazo/memory";
+
+const logger = createRootLogger(SERVICE_NAMES.worker);
 
 async function main() {
   const databaseUrl = process.env.DATABASE_URL;
@@ -94,14 +99,12 @@ async function main() {
   const pipedream = isPipedreamEnabled(pipedreamConfig)
     ? new PipedreamConnector(pipedreamConfig)
     : undefined;
-  const sendBlueConfig = sendBlueConfigFromEnv({
-    sendblueApiKeyId: process.env.SENDBLUE_API_KEY_ID,
-    sendblueApiSecret: process.env.SENDBLUE_API_SECRET,
-    sendblueSigningSecret: process.env.SENDBLUE_SIGNING_SECRET,
-    sendbluePhoneNumber: process.env.SENDBLUE_PHONE_NUMBER,
-  });
-  const messaging = isPhoneSurfaceEnabled(sendBlueConfig, deploymentModelKey)
-    ? new SendBlueMessagingProvider(sendBlueConfig)
+  const messagingPlatforms = messagingPlatformsFromEnv(messagingEnvFromProcess(process.env));
+  const messaging = isMessagingSurfaceEnabled(messagingPlatforms, {
+    deploymentModelKey,
+    openSignup: process.env.MESSAGING_OPEN_SIGNUP === "true",
+  })
+    ? new ChatSdkMessagingSurface(messagingPlatforms)
     : undefined;
   const stack = createConnectorStack(isComposioEnabled(process.env.COMPOSIO_API_KEY), undefined, [
     new InstalledConnectorProvider(prisma, secrets),
@@ -134,7 +137,7 @@ async function main() {
     notifications: new ExpoPushProvider(dataDir),
     jobs,
     events,
-    phone: messaging ? createPhoneContextLoader(prisma) : undefined,
+    messaging: messaging ? createMessagingContextLoader(prisma) : undefined,
     web: createWebProvider(),
   });
 
@@ -165,22 +168,27 @@ async function main() {
   const stop = async () => {
     if (stopping) return;
     stopping = true;
-    await reconciler.stop();
-    await jobHost.stop();
-    await jobs.close();
-    await realtime.close();
-    await connector.stop();
-    await mcp.close();
-    await prisma.$disconnect().catch(() => undefined);
-    await pool.end().catch(() => undefined);
+    try {
+      await reconciler.stop();
+      await jobHost.stop();
+      await jobs.close();
+      await realtime.close();
+      await connector.stop();
+      await mcp.close();
+      await prisma.$disconnect().catch(() => undefined);
+      await pool.end().catch(() => undefined);
+    } finally {
+      await logger.flush({ timeoutMs: 2_000 });
+    }
   };
   process.once("SIGTERM", () => void stop());
   process.once("SIGINT", () => void stop());
 
-  console.log("rakazo worker ready");
+  logger.info("worker ready");
 }
 
-main().catch((error) => {
-  console.error(error);
+main().catch(async (error) => {
+  logger.error("worker startup failed", error);
+  await logger.flush({ timeoutMs: 2_000 });
   process.exit(1);
 });

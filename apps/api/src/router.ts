@@ -8,7 +8,7 @@ import {
   computerControlExpireJobKey,
   type JobPublisher,
   type MemoryStore,
-  phoneDeliverJob,
+  messagingDeliverJob,
   routineJobKey,
   routineWakeupJob,
   runContinueJob,
@@ -25,7 +25,9 @@ import {
   ComputerBusyError,
   type ComputerExecutionLease,
   type ConnectorRegistry,
+  cancelComputerRunWork,
   checkpointAndRecordComputerWorkspace,
+  clearInactiveUserComputerControl,
   computerSupportsUpdate,
   createVoiceProvider,
   deletePushToken,
@@ -37,6 +39,7 @@ import {
   expireComputerControl,
   hasActiveComputerControl,
   isAutoReviewCheckerConfigured,
+  isComputerScreenUnavailable,
   isSandboxGoneError,
   isScratchpadStatus,
   listPiCatalog,
@@ -44,6 +47,7 @@ import {
   McpOAuthBroker,
   type MemoryProviderResolver,
   mapScratchpadItem,
+  memoryProviderRequiresDeploymentOwner,
   modelCredentialDto,
   type PiOAuthLogins,
   planLiveConnectionSync,
@@ -99,8 +103,10 @@ import {
   findDefaultVoiceCredential,
   findModelCredential,
   findSpaceMemoryConfig,
+  formatMessagingLinkCode,
   InvalidSpaceNameError,
   IsolationError,
+  issueMessagingLinkCode,
   lockOwnedGroup,
   newestModelCredentialOrder,
   newestVoiceCredentialOrder,
@@ -113,6 +119,7 @@ import {
   type ThreadEvents,
   touchGroupUpdatedAt,
 } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
 import { createAgentSkillsService } from "./agent-skills.js";
 import { createOwnedArtifact, getOwnedArtifact, getSpaceArtifact } from "./artifacts.js";
 import {
@@ -121,7 +128,13 @@ import {
   toComputerStatus,
 } from "./computer-status.js";
 import { buildMcpUpdateMaterial } from "./mcp-material.js";
-import { chooseFocus, markAppConnected, startOnboarding } from "./onboarding.js";
+import {
+  chooseFocus,
+  dismissFocus,
+  markAppConnected,
+  promptFocus,
+  startOnboarding,
+} from "./onboarding.js";
 import { listSpaceRuns } from "./runs.js";
 import { addScreenProxyCapability } from "./screen-proxy.js";
 import { querySpaceSearch } from "./search.js";
@@ -329,9 +342,10 @@ export interface RouterDeps {
   remoteConnectors?: RemoteConnectorDependencies;
   artifacts: ArtifactStore;
   dataDir: string;
-  /** Present when the phone messaging surface is enabled. */
-  phone?: { enabled: boolean };
+  /** Present when the external messaging surface is enabled. */
+  messaging?: { enabled: boolean; providers: string[]; openSignup: boolean };
   env: {
+    agentRuntime: string;
     defaultProvider: string;
     defaultModel: string;
     deploymentModelKey?: string;
@@ -958,17 +972,32 @@ export function createRouter(deps: RouterDeps) {
         );
         await Promise.all(
           archived.computers.map(async (computer) => {
-            if (!computer.providerRef || !computer.executionBotId) return;
-            await deps.sandbox
-              .releaseScreen?.(toComputerRef(computer), {
-                operationId: "stop",
-                traceId: "stop",
-                spaceId: context.actor.spaceId,
-                userId: context.actor.userId,
-                botId: computer.executionBotId,
-                signal: new AbortController().signal,
-              })
-              .catch(() => undefined);
+            if (!computer.providerRef || !computer.executionBotId || !computer.executionRunId) {
+              return;
+            }
+            const adapterContext = {
+              operationId: "stop",
+              traceId: "stop",
+              spaceId: context.actor.spaceId,
+              userId: context.actor.userId,
+              botId: computer.executionBotId,
+              runId: computer.executionRunId,
+              screenLeaseId: screenLeaseIdForRun(
+                { runId: computer.executionRunId, fence: computer.executionFence },
+                computer.executionRunId,
+              ),
+              cancelRunWork: true,
+              signal: new AbortController().signal,
+            };
+            const ref = toComputerRef(computer);
+            await cancelComputerRunWork(
+              deps.sandbox,
+              ref,
+              computer.id,
+              computer.executionRunId,
+              adapterContext,
+            );
+            await deps.sandbox.releaseScreen?.(ref, adapterContext).catch(() => undefined);
           }),
         );
         return { ok: true as const };
@@ -988,7 +1017,8 @@ export function createRouter(deps: RouterDeps) {
           ),
         );
         for (const result of cleanup) {
-          if (result.status === "rejected") console.error("group artifact cleanup", result.reason);
+          if (result.status === "rejected")
+            getLogger().error("group artifact cleanup", result.reason);
         }
         return { ok: true as const };
       }),
@@ -1055,6 +1085,9 @@ export function createRouter(deps: RouterDeps) {
         }
       }),
       send: authed.threads.send.handler(async ({ context, input }) => {
+        if ((await modelSetup(deps, context.actor)).needsModel) {
+          throw new ORPCError("BAD_REQUEST", { message: "Connect a model to start a run." });
+        }
         const target = await resolveThreadTarget(deps.prisma, context.actor, input);
         if (target.kind === "bot") {
           await assertTeachingSendAllowed(deps.prisma, context.actor.spaceId, target.botId);
@@ -1072,12 +1105,12 @@ export function createRouter(deps: RouterDeps) {
         );
         if (result.eventSeq != null) {
           await deps.events.notify(target.threadId, result.eventSeq).catch((error) => {
-            console.error("thread reaction realtime notification", error);
+            getLogger().error("thread reaction realtime notification", error);
           });
         }
         if (result.runId) {
           await deps.jobs.enqueue(runContinueJob(result.runId)).catch((error) => {
-            console.error("thread reaction enqueue", error);
+            getLogger().error("thread reaction enqueue", error);
           });
         }
         return { ok: true as const };
@@ -1100,7 +1133,7 @@ export function createRouter(deps: RouterDeps) {
         const [configuredMemory] = await Promise.all([
           target.kind === "bot"
             ? deps.memoryProviders.resolve(context.actor.spaceId).catch((error) => {
-                console.error("semantic memory resolution after thread clear failed", error);
+                getLogger().error("semantic memory resolution after thread clear failed", error);
                 return null;
               })
             : Promise.resolve(null),
@@ -1128,10 +1161,10 @@ export function createRouter(deps: RouterDeps) {
               computerContext(context.actor, target.botId, `thread-clear:${target.threadId}`),
             );
             if (!purged.ok) {
-              console.error("semantic memory purge after thread clear failed", purged.error);
+              getLogger().error("semantic memory purge after thread clear failed", purged.error);
             }
           } catch (error) {
-            console.error("semantic memory purge after thread clear failed", error);
+            getLogger().error("semantic memory purge after thread clear failed", error);
           }
         }
         return { ok: true as const };
@@ -1148,11 +1181,10 @@ export function createRouter(deps: RouterDeps) {
             blocks: [{ kind: "text", text: input.text }],
             prompt: input.text,
             trigger: "follow_up",
-            onlyIfIdle: true,
           });
-          if (sent.runId) {
+          if (sent.taskId && sent.runId) {
             await deps.jobs.enqueue(runContinueJob(sent.runId)).catch((error) => {
-              console.error("follow-up enqueue", error);
+              getLogger().error("follow-up enqueue", error);
             });
           }
           return { ok: true as const };
@@ -1178,7 +1210,8 @@ export function createRouter(deps: RouterDeps) {
           const active = await tx.run.findFirst({
             where: {
               threadId: target.threadId,
-              status: { in: ["running", "queued", "leased"] },
+              botId,
+              status: { in: [...ACTIVE_RUN_STATUSES] },
             },
             select: { id: true },
           });
@@ -1208,24 +1241,34 @@ export function createRouter(deps: RouterDeps) {
               select: { id: true },
             });
             await tx.message.update({ where: { id: message.id }, data: { runId: run.id } });
+          } else {
+            await tx.steeringMessage.create({
+              data: {
+                messageId: message.id,
+                botId,
+                userId: context.actor.userId,
+                runId: active.id,
+              },
+            });
+            await tx.message.update({ where: { id: message.id }, data: { runId: active.id } });
           }
           const event = await appendEventInTransaction(tx, {
             spaceId: context.actor.spaceId,
             threadId: target.threadId,
             botId,
             type: "thread.message.created",
-            runId: run?.id,
+            runId: run?.id ?? active?.id,
             payload: { messageId: message.id, role: "user", blocks },
           });
           await touchGroupUpdatedAt(tx, target.groupId);
           return { runId: run?.id, eventSeq: event.seq };
         });
         await deps.events.notify(target.threadId, committed.eventSeq).catch((error) => {
-          console.error("group follow-up realtime notification", error);
+          getLogger().error("group follow-up realtime notification", error);
         });
         if (committed.runId) {
           await deps.jobs.enqueue(runContinueJob(committed.runId)).catch((error) => {
-            console.error("group follow-up enqueue", error);
+            getLogger().error("group follow-up enqueue", error);
           });
         }
         return { ok: true as const };
@@ -1247,7 +1290,7 @@ export function createRouter(deps: RouterDeps) {
         }
         await deps.jobs.enqueue(runContinueJob(input.runId)).catch((error) => {
           // The answer and queued run are durable; the reconciler repairs a missed immediate wake.
-          console.error("thread answer enqueue", error);
+          getLogger().error("thread answer enqueue", error);
         });
         return { ok: true as const };
       }),
@@ -1386,6 +1429,14 @@ export function createRouter(deps: RouterDeps) {
           throw new ORPCError("BAD_REQUEST", { message: "computer must be running" });
         }
         if (hasActiveComputerControl(bot.computer) && bot.computer.controlBotId === bot.id) {
+          await bindWaitingTakeoverToControl(deps, {
+            spaceId: context.actor.spaceId,
+            threadId: bot.thread?.id,
+            botId: bot.id,
+            computerId: bot.computer.id,
+            controlLeaseId: bot.computer.controlLeaseId!,
+            controlRunId: bot.computer.controlRunId,
+          });
           await scheduleComputerControlExpiry(
             deps.jobs,
             bot.computer.id,
@@ -1444,17 +1495,8 @@ export function createRouter(deps: RouterDeps) {
         ) {
           throw new ORPCError("CONFLICT", { message: "Stop the bot first" });
         }
-        const executionLeaseActive = Boolean(
-          executionLease && executionLease.expiresAt.getTime() > Date.now(),
-        );
-        const executionRunActive = Boolean(
-          executionRun && ACTIVE_RUN_STATUSES.some((status) => status === executionRun.status),
-        );
-        if (executionLease && !executionLeaseActive && !executionRunActive) {
-          await deps.prisma.computerExecutionLease.deleteMany({
-            where: { id: executionLease.id },
-          });
-        }
+        // Keep an inactive lease as a fencing tombstone. The next run reclaims it
+        // with a higher fence, even if this user's screen remains connected.
 
         const leaseId = randomUUID();
         const expiresAt = new Date(Date.now() + takeoverLeaseMs());
@@ -1478,7 +1520,17 @@ export function createRouter(deps: RouterDeps) {
           const current = await deps.prisma.computer.findUniqueOrThrow({
             where: { id: bot.computer.id },
           });
-          if (!hasActiveComputerControl(current)) throw new ORPCError("CONFLICT");
+          if (!hasActiveComputerControl(current) || current.controlBotId !== bot.id) {
+            throw new ORPCError("CONFLICT", { message: "Computer control changed; try again" });
+          }
+          await bindWaitingTakeoverToControl(deps, {
+            spaceId: context.actor.spaceId,
+            threadId: bot.thread?.id,
+            botId: bot.id,
+            computerId: current.id,
+            controlLeaseId: current.controlLeaseId!,
+            controlRunId: current.controlRunId,
+          });
           await scheduleComputerControlExpiry(
             deps.jobs,
             current.id,
@@ -1522,13 +1574,19 @@ export function createRouter(deps: RouterDeps) {
         if (!bot.computer) throw new IsolationError();
         const controlBotId = bot.computer.controlBotId;
         const controlLeaseId = bot.computer.controlLeaseId;
-        if (
-          !hasActiveComputerControl(bot.computer) ||
-          bot.computer.controlHolder !== "user" ||
-          !controlBotId ||
-          !controlLeaseId ||
-          controlBotId !== bot.id
-        ) {
+        if (bot.computer.controlHolder !== "user" || !controlBotId || controlBotId !== bot.id) {
+          return { ok: true as const };
+        }
+        if (!hasActiveComputerControl(bot.computer) || !controlLeaseId) {
+          // Stale controlHolder=user. Prefer expiry (revokes provider control). If a lease id
+          // remains after a failed revoke, keep it so reconciliation can retry.
+          if (controlLeaseId) {
+            await expireComputerControl(deps, bot.computer.id, controlLeaseId).catch(
+              () => undefined,
+            );
+          } else {
+            await clearInactiveUserComputerControl(deps.prisma, bot.computer.id);
+          }
           return { ok: true as const };
         }
         if (bot.computer.providerRef) {
@@ -1556,7 +1614,7 @@ export function createRouter(deps: RouterDeps) {
           .catch((error) => {
             // The expired job is harmless after the lease is cleared, so do not report a
             // failed release after the transaction has committed.
-            console.error("computer control expiry cancellation", error);
+            getLogger().error("computer control expiry cancellation", error);
           });
 
         await enqueueTakeoverContinuation(deps.jobs, released.runId);
@@ -1689,12 +1747,18 @@ export function createRouter(deps: RouterDeps) {
             await computerScreenContext(deps.prisma, context.actor, computer.id, bot.id, "screen"),
           )
           .catch(async (error: unknown) => {
+            if (isComputerScreenUnavailable(error)) {
+              throw new ORPCError("CONFLICT", { message: error.message });
+            }
             if (!isSandboxGoneError(error)) throw error;
             // The provider killed this sandbox (idle timeout) while the row still says
             // running. Clear the dead ref so the UI offers a boot instead of 500ing.
             // Leave any active control lease alone — expireComputerControl owns that
             // release (provider screen-control, events, takeover continuation).
-            console.error(`computer ${computer.id} sandbox ${computer.providerRef} is gone`, error);
+            getLogger().error(
+              `computer ${computer.id} sandbox ${computer.providerRef} is gone`,
+              error,
+            );
             await deps.prisma.computer.updateMany({
               where: { id: computer.id, providerRef: computer.providerRef },
               data: { state: "stopped", providerRef: null },
@@ -2067,7 +2131,7 @@ export function createRouter(deps: RouterDeps) {
         // Keep enqueue outside the nonce-collision catch. The queued run is durable;
         // log enqueue failures and still return success — the reconciler repairs a missed wake.
         await deps.jobs.enqueue(runContinueJob(run.id)).catch((error) => {
-          console.error("routine testRun enqueue", error);
+          getLogger().error("routine testRun enqueue", error);
         });
         return { runId: run.id };
       }),
@@ -2705,12 +2769,28 @@ export function createRouter(deps: RouterDeps) {
         );
         return { ok: true as const };
       }),
+      promptFocus: authed.onboarding.promptFocus.handler(async ({ context, input }) => {
+        await promptFocus(
+          { prisma: deps.prisma, events: deps.events, composio: deps.composio },
+          context.actor,
+          input.botId,
+        );
+        return { ok: true as const };
+      }),
       choose: authed.onboarding.choose.handler(async ({ context, input }) => {
         await chooseFocus(
           { prisma: deps.prisma, events: deps.events, composio: deps.composio },
           context.actor,
           input.botId,
           input.optionId,
+        );
+        return { ok: true as const };
+      }),
+      dismissFocus: authed.onboarding.dismissFocus.handler(async ({ context, input }) => {
+        await dismissFocus(
+          { prisma: deps.prisma, events: deps.events, composio: deps.composio },
+          context.actor,
+          input.botId,
         );
         return { ok: true as const };
       }),
@@ -2748,7 +2828,7 @@ export function createRouter(deps: RouterDeps) {
                   provider.describe().id,
                   nowConnected,
                 ).catch((error) => {
-                  console.error(
+                  getLogger().error(
                     `${provider.describe().id} pending-connection reconciliation failed`,
                     error,
                   );
@@ -2899,41 +2979,123 @@ export function createRouter(deps: RouterDeps) {
         return { ok: true as const };
       }),
     },
-    phone: {
-      status: authed.phone.status.handler(async ({ context }) => {
-        const identity = await deps.prisma.phoneIdentity.findFirst({
+    messaging: {
+      status: authed.messaging.status.handler(async ({ context }) => {
+        const identities = await deps.prisma.messagingIdentity.findMany({
           where: { userId: context.actor.userId },
+          orderBy: { createdAt: "asc" },
         });
         return {
-          enabled: deps.phone?.enabled ?? false,
-          linked: Boolean(identity),
-          phoneE164: identity?.phoneE164 ?? null,
-          botId: identity?.botId ?? null,
+          enabled: deps.messaging?.enabled ?? false,
+          providers: deps.messaging?.providers ?? [],
+          openSignup: deps.messaging?.openSignup ?? false,
+          identities: await Promise.all(
+            identities.map((identity) => messagingIdentityDto(deps.prisma, identity)),
+          ),
         };
       }),
+      link: {
+        start: authed.messaging.link.start.handler(async ({ context, input }) => {
+          const bot = await deps.prisma.bot.findFirst({
+            where: {
+              id: input.botId,
+              spaceId: context.actor.spaceId,
+              userId: context.actor.userId,
+              archivedAt: null,
+            },
+            select: { id: true },
+          });
+          if (!bot) throw new ORPCError("NOT_FOUND");
+          // One chat identity per bot: delivery mirrors a bot's replies to
+          // exactly one conversation.
+          const linked = await deps.prisma.messagingIdentity.findUnique({
+            where: { botId: bot.id },
+            select: { id: true },
+          });
+          if (linked) {
+            throw new ORPCError("BAD_REQUEST", {
+              message: "That bot is already linked to a chat app; unlink it first.",
+            });
+          }
+          const issued = await issueMessagingLinkCode(deps.prisma, {
+            userId: context.actor.userId,
+            spaceId: context.actor.spaceId,
+            botId: bot.id,
+          });
+          return {
+            code: formatMessagingLinkCode(issued.code),
+            expiresAt: issued.expiresAt.toISOString(),
+          };
+        }),
+      },
+      identities: {
+        setBot: authed.messaging.identities.setBot.handler(async ({ context, input }) => {
+          const identity = await deps.prisma.messagingIdentity.findFirst({
+            where: { id: input.identityId, userId: context.actor.userId },
+          });
+          if (!identity) throw new ORPCError("NOT_FOUND");
+          const bot = await deps.prisma.bot.findFirst({
+            where: {
+              id: input.botId,
+              spaceId: context.actor.spaceId,
+              userId: context.actor.userId,
+              archivedAt: null,
+            },
+            select: { id: true },
+          });
+          if (!bot) throw new ORPCError("NOT_FOUND");
+          try {
+            const updated = await deps.prisma.messagingIdentity.update({
+              where: { id: identity.id },
+              // The identity must live in the bot's space: runs resolve
+              // credentials, memory, and approval rules from run.spaceId.
+              data: { botId: bot.id, spaceId: context.actor.spaceId },
+            });
+            return messagingIdentityDto(deps.prisma, updated);
+          } catch (error) {
+            // botId is unique: the target bot is already linked elsewhere.
+            if (isUniqueViolation(error)) {
+              throw new ORPCError("BAD_REQUEST", {
+                message: "That bot is already linked to a chat app.",
+              });
+            }
+            throw error;
+          }
+        }),
+        unlink: authed.messaging.identities.unlink.handler(async ({ context, input }) => {
+          const { count } = await deps.prisma.messagingIdentity.deleteMany({
+            where: { id: input.identityId, userId: context.actor.userId },
+          });
+          if (count === 0) throw new ORPCError("NOT_FOUND");
+          return { ok: true as const };
+        }),
+      },
       channels: {
-        list: authed.phone.channels.list.handler(async ({ context }) => {
-          const identity = await phoneIdentityFor(deps.prisma, context.actor.userId);
-          if (!identity) return [];
-          const memberships = await deps.prisma.phoneChannelMember.findMany({
-            where: { identityId: identity.id },
+        list: authed.messaging.channels.list.handler(async ({ context }) => {
+          const identities = await messagingIdentitiesFor(deps.prisma, context.actor.userId);
+          if (identities.length === 0) return [];
+          const memberships = await deps.prisma.messagingChannelMember.findMany({
+            where: { identityId: { in: identities.map((identity) => identity.id) } },
             include: { channel: { include: { members: ACTIVE_CHANNEL_MEMBERS } } },
             orderBy: { updatedAt: "desc" },
           });
-          return memberships.map((membership) => phoneChannelDto(membership));
+          return memberships.map((membership) => messagingChannelDto(membership));
         }),
-        respond: authed.phone.channels.respond.handler(async ({ context, input }) => {
-          const identity = await phoneIdentityFor(deps.prisma, context.actor.userId);
-          const membership = identity
-            ? await deps.prisma.phoneChannelMember.findFirst({
-                where: { channelId: input.channelId, identityId: identity.id },
+        respond: authed.messaging.channels.respond.handler(async ({ context, input }) => {
+          const identities = await messagingIdentitiesFor(deps.prisma, context.actor.userId);
+          const membership = identities.length
+            ? await deps.prisma.messagingChannelMember.findFirst({
+                where: {
+                  id: input.membershipId,
+                  identityId: { in: identities.map((identity) => identity.id) },
+                },
                 include: { channel: { include: { members: ACTIVE_CHANNEL_MEMBERS } } },
               })
             : null;
           if (membership?.status !== "invited") {
             throw new ORPCError("NOT_FOUND");
           }
-          const { count } = await deps.prisma.phoneChannelMember.updateMany({
+          const { count } = await deps.prisma.messagingChannelMember.updateMany({
             where: { id: membership.id, status: "invited" },
             data: { status: input.accept ? "approved" : "declined" },
           });
@@ -2942,21 +3104,24 @@ export function createRouter(deps: RouterDeps) {
             // departed member.
             throw new ORPCError("NOT_FOUND");
           }
-          const updated = await deps.prisma.phoneChannelMember.findUniqueOrThrow({
+          const updated = await deps.prisma.messagingChannelMember.findUniqueOrThrow({
             where: { id: membership.id },
             include: { channel: { include: { members: ACTIVE_CHANNEL_MEMBERS } } },
           });
-          return phoneChannelDto(updated);
+          return messagingChannelDto(updated);
         }),
-        leave: authed.phone.channels.leave.handler(async ({ context, input }) => {
-          const identity = await phoneIdentityFor(deps.prisma, context.actor.userId);
-          const membership = identity
-            ? await deps.prisma.phoneChannelMember.findFirst({
-                where: { channelId: input.channelId, identityId: identity.id },
+        leave: authed.messaging.channels.leave.handler(async ({ context, input }) => {
+          const identities = await messagingIdentitiesFor(deps.prisma, context.actor.userId);
+          const membership = identities.length
+            ? await deps.prisma.messagingChannelMember.findFirst({
+                where: {
+                  id: input.membershipId,
+                  identityId: { in: identities.map((identity) => identity.id) },
+                },
               })
             : null;
           if (!membership) throw new ORPCError("NOT_FOUND");
-          await deps.prisma.phoneChannelMember.update({
+          await deps.prisma.messagingChannelMember.update({
             where: { id: membership.id },
             data: { status: "left" },
           });
@@ -2964,27 +3129,36 @@ export function createRouter(deps: RouterDeps) {
         }),
       },
       connections: {
-        list: authed.phone.connections.list.handler(async ({ context }) => {
-          const identity = await phoneIdentityFor(deps.prisma, context.actor.userId);
-          if (!identity) return [];
+        list: authed.messaging.connections.list.handler(async ({ context }) => {
+          const identities = await messagingIdentitiesFor(deps.prisma, context.actor.userId);
+          if (identities.length === 0) return [];
+          const botIds = identities.map((identity) => identity.botId);
           const connections = await deps.prisma.agentConnection.findMany({
             where: {
-              OR: [{ requesterBotId: identity.botId }, { targetBotId: identity.botId }],
+              OR: [{ requesterBotId: { in: botIds } }, { targetBotId: { in: botIds } }],
             },
             orderBy: { updatedAt: "desc" },
           });
+          const myBotIds = new Set(botIds);
           return Promise.all(
-            connections.map((connection) => phoneConnectionDto(deps.prisma, identity, connection)),
+            connections.map((connection) =>
+              messagingConnectionDto(deps.prisma, myBotIds, connection),
+            ),
           );
         }),
-        respond: authed.phone.connections.respond.handler(async ({ context, input }) => {
-          const identity = await phoneIdentityFor(deps.prisma, context.actor.userId);
-          const connection = identity
+        respond: authed.messaging.connections.respond.handler(async ({ context, input }) => {
+          const identities = await messagingIdentitiesFor(deps.prisma, context.actor.userId);
+          const myBotIds = new Set(identities.map((identity) => identity.botId));
+          const connection = identities.length
             ? await deps.prisma.agentConnection.findFirst({
-                where: { id: input.connectionId, targetBotId: identity.botId, status: "pending" },
+                where: {
+                  id: input.connectionId,
+                  targetBotId: { in: [...myBotIds] },
+                  status: "pending",
+                },
               })
             : null;
-          if (!identity || !connection) throw new ORPCError("NOT_FOUND");
+          if (!connection) throw new ORPCError("NOT_FOUND");
           const { updated, notifyRequester } = await deps.prisma.$transaction(async (tx) => {
             // The claim holds the connection row lock through commit, so a
             // revoke either beats it or waits — it can never interleave with
@@ -3002,21 +3176,21 @@ export function createRouter(deps: RouterDeps) {
             });
             if (!input.accept) return { updated: row, notifyRequester: false };
             // Parity with the text-command path: the requester hears about it.
-            const requesterIdentity = await tx.phoneIdentity.findUnique({
+            const requesterIdentity = await tx.messagingIdentity.findUnique({
               where: { botId: connection.requesterBotId },
             });
             if (!requesterIdentity) return { updated: row, notifyRequester: false };
             const key = `command:connected:${connection.id}`;
             // A re-approved pair starts a fresh cycle; clear the stale row or
             // skipDuplicates would swallow the new confirmation.
-            await tx.phoneOutbound.deleteMany({ where: { idempotencyKey: key } });
-            await tx.phoneOutbound.createMany({
+            await tx.messagingOutbound.deleteMany({ where: { idempotencyKey: key } });
+            await tx.messagingOutbound.createMany({
               data: [
                 {
                   idempotencyKey: key,
                   kind: "dm",
-                  toNumber: requesterIdentity.phoneE164,
-                  body: "Your connection request was accepted — your agents can now message each other.",
+                  identityId: requesterIdentity.id,
+                  body: "Your connection request was accepted. Your agents can now message each other.",
                 },
               ],
               skipDuplicates: true,
@@ -3024,19 +3198,20 @@ export function createRouter(deps: RouterDeps) {
             return { updated: row, notifyRequester: true };
           });
           if (notifyRequester) {
-            await deps.jobs.enqueue(phoneDeliverJob()).catch((error) => {
-              console.error("phone connection confirmation enqueue error", error);
+            await deps.jobs.enqueue(messagingDeliverJob()).catch((error) => {
+              getLogger().error("messaging connection confirmation enqueue error", error);
             });
           }
-          return phoneConnectionDto(deps.prisma, identity, updated);
+          return messagingConnectionDto(deps.prisma, myBotIds, updated);
         }),
-        revoke: authed.phone.connections.revoke.handler(async ({ context, input }) => {
-          const identity = await phoneIdentityFor(deps.prisma, context.actor.userId);
-          const connection = identity
+        revoke: authed.messaging.connections.revoke.handler(async ({ context, input }) => {
+          const identities = await messagingIdentitiesFor(deps.prisma, context.actor.userId);
+          const botIds = identities.map((identity) => identity.botId);
+          const connection = identities.length
             ? await deps.prisma.agentConnection.findFirst({
                 where: {
                   id: input.connectionId,
-                  OR: [{ requesterBotId: identity.botId }, { targetBotId: identity.botId }],
+                  OR: [{ requesterBotId: { in: botIds } }, { targetBotId: { in: botIds } }],
                 },
               })
             : null;
@@ -3058,7 +3233,7 @@ export function createRouter(deps: RouterDeps) {
             // delivery holds this connection row FOR UPDATE through
             // sendDirect, so revoke either waits until the DM is sent or
             // deletes the claim before send starts.
-            await tx.phoneOutbound.deleteMany({
+            await tx.messagingOutbound.deleteMany({
               where: {
                 idempotencyKey: `connect:${connection.requesterBotId}:${connection.targetBotId}`,
                 OR: [{ status: "pending" }, { status: "sent", providerHandle: null }],
@@ -3541,27 +3716,40 @@ async function loadAutoReviewSettings(deps: RouterDeps, actor: Actor) {
 }
 
 async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
-  const [user, cred, settings] = await Promise.all([
+  const [user, setup] = await Promise.all([
     deps.prisma.user.findUniqueOrThrow({ where: { id: actor.userId } }),
-    findDefaultModelCredential(deps.prisma, actor),
-    deps.prisma.deploymentSettings.findUnique({ where: { id: "default" } }),
+    modelSetup(deps, actor),
   ]);
-  const hasDeployment = Boolean(
-    settings?.deploymentModelCredentialCipher || deps.env.deploymentModelKey,
-  );
   return {
     userId: actor.userId,
     email: user.email,
     name: user.name,
     spaceId: actor.spaceId,
     isDeploymentOwner: actor.isDeploymentOwner,
-    needsModel: !cred && !hasDeployment,
-    defaultProvider: cred?.provider ?? settings?.defaultModelProvider ?? deps.env.defaultProvider,
-    defaultModel: cred?.defaultModel ?? settings?.defaultModelId ?? deps.env.defaultModel,
-    computerHost: computerHostFor(settings?.computerHost, deps.env.sandboxProvider),
+    needsModel: setup.needsModel,
+    defaultProvider:
+      setup.credential?.provider ??
+      setup.settings?.defaultModelProvider ??
+      deps.env.defaultProvider,
+    defaultModel:
+      setup.credential?.defaultModel ?? setup.settings?.defaultModelId ?? deps.env.defaultModel,
+    computerHost: computerHostFor(setup.settings?.computerHost, deps.env.sandboxProvider),
     canChooseHostComputer: actor.isDeploymentOwner && deps.env.sandboxProvider === "docker",
     sandboxProvider: deps.env.sandboxProvider,
     avatarStyle: user.avatarStyle === "organic" ? "organic" : "robot",
+  };
+}
+
+async function modelSetup(deps: RouterDeps, actor: Actor) {
+  const [credential, settings] = await Promise.all([
+    findDefaultModelCredential(deps.prisma, actor),
+    deps.prisma.deploymentSettings.findUnique({ where: { id: "default" } }),
+  ]);
+  const hasDeployment = Boolean(deps.env.deploymentModelKey);
+  return {
+    credential,
+    settings,
+    needsModel: deps.env.agentRuntime !== "scripted" && !credential && !hasDeployment,
   };
 }
 
@@ -3632,14 +3820,84 @@ async function runComputerReplace(
 async function expireStaleComputerControl(
   deps: RouterDeps,
   computer:
-    | (NonNullable<Parameters<typeof hasActiveComputerControl>[0]> & { id: string })
+    | (NonNullable<Parameters<typeof hasActiveComputerControl>[0]> & {
+        id: string;
+        controlHolder?: string;
+      })
     | null
     | undefined,
 ): Promise<boolean> {
-  const leaseId = computer?.controlLeaseId;
-  if (!leaseId || hasActiveComputerControl(computer)) return false;
-  await expireComputerControl(deps, computer.id, leaseId).catch(() => undefined);
-  return true;
+  if (!computer || hasActiveComputerControl(computer)) return false;
+  if (computer.controlHolder !== "user") return false;
+  const leaseId = computer.controlLeaseId;
+  // Keep a failed revoke's lease id so reconciliation can retry provider shutdown.
+  if (leaseId) {
+    await expireComputerControl(deps, computer.id, leaseId).catch(() => undefined);
+    return true;
+  }
+  return clearInactiveUserComputerControl(deps.prisma, computer.id).catch(() => false);
+}
+
+/** When the user already holds control during waiting_takeover, bind controlRunId so
+ * takeoverRequested becomes true and release can resume the waiting run. */
+async function bindWaitingTakeoverToControl(
+  deps: RouterDeps,
+  input: {
+    spaceId: string;
+    threadId: string | null | undefined;
+    botId: string;
+    computerId: string;
+    controlLeaseId: string;
+    controlRunId: string | null;
+  },
+): Promise<void> {
+  await deps.prisma.$transaction(async (tx) => {
+    // Lock the execution lease so a reclaimed fence/run cannot be bound by a stale read.
+    const locked = await tx.$queryRaw<Array<{ runId: string; fence: number }>>`
+      SELECT "runId", fence FROM computer_execution_leases
+      WHERE "computerId" = ${input.computerId} AND "botId" = ${input.botId}
+      FOR UPDATE`;
+    const executionLease = locked[0];
+    if (!executionLease) return;
+
+    const executionRun = await tx.run.findUnique({
+      where: { id: executionLease.runId },
+      select: { botId: true, status: true },
+    });
+    const waitingForTakeover =
+      executionRun?.botId === input.botId && executionRun.status === "waiting_takeover";
+    if (!waitingForTakeover) return;
+    if (input.controlRunId === executionLease.runId) return;
+
+    // Confirm the locked lease row still matches before writing controlRunId.
+    const leaseStillCurrent = await tx.computerExecutionLease.count({
+      where: {
+        computerId: input.computerId,
+        botId: input.botId,
+        runId: executionLease.runId,
+        fence: executionLease.fence,
+      },
+    });
+    if (leaseStillCurrent !== 1) return;
+
+    const bound = await tx.computer.updateMany({
+      where: {
+        id: input.computerId,
+        controlLeaseId: input.controlLeaseId,
+        controlBotId: input.botId,
+      },
+      data: { controlRunId: executionLease.runId },
+    });
+    if (bound.count !== 1 || !input.threadId) return;
+
+    await deps.events.append({
+      spaceId: input.spaceId,
+      threadId: input.threadId,
+      botId: input.botId,
+      type: "computer.takeover.granted",
+      payload: { leaseId: input.controlLeaseId, takeoverRequested: true },
+    });
+  });
 }
 
 async function computerScreenContext(
@@ -3780,11 +4038,21 @@ export async function persistMemoryProviderConfig(
   },
 ) {
   await requireSpaceOwner(deps.prisma, actor);
-  const prepared = await prepareMemoryProviderConnection(input).catch((error: unknown) => {
+  let prepared: Awaited<ReturnType<typeof prepareMemoryProviderConnection>>;
+  try {
+    if (
+      memoryProviderRequiresDeploymentOwner(input.provider, input.settings) &&
+      !actor.isDeploymentOwner
+    ) {
+      throw new ORPCError("FORBIDDEN");
+    }
+    prepared = await prepareMemoryProviderConnection(input);
+  } catch (error) {
+    if (error instanceof ORPCError) throw error;
     throw new ORPCError("BAD_REQUEST", {
       message: error instanceof Error ? error.message : "Memory provider connection failed",
     });
-  });
+  }
   const stored = await deps.secrets.put(JSON.stringify(prepared.credentials), {
     operationId: "memory-provider-config",
     traceId: "memory-provider-config",
@@ -3935,38 +4203,67 @@ const ACTIVE_CHANNEL_MEMBERS = {
   select: { id: true },
 };
 
-type PhoneIdentityRecord = {
+type MessagingIdentityRecord = {
   id: string;
   botId: string;
 };
 
-async function phoneIdentityFor(
+/** Every linked chat app counts: channels and connections span identities. */
+async function messagingIdentitiesFor(
   prisma: PrismaClient,
   userId: string,
-): Promise<PhoneIdentityRecord | null> {
-  return prisma.phoneIdentity.findFirst({
+): Promise<MessagingIdentityRecord[]> {
+  return prisma.messagingIdentity.findMany({
     where: { userId },
     orderBy: { createdAt: "asc" },
     select: { id: true, botId: true },
   });
 }
 
-function phoneChannelDto(membership: {
+async function messagingIdentityDto(
+  prisma: PrismaClient,
+  identity: { id: string; provider: string; address: string; botId: string },
+) {
+  const bot = await prisma.bot.findUnique({
+    where: { id: identity.botId },
+    select: { name: true },
+  });
+  return {
+    id: identity.id,
+    provider: identity.provider,
+    address: identity.address,
+    botId: identity.botId,
+    botName: bot?.name ?? "Assistant",
+  };
+}
+
+function isUniqueViolation(error: unknown): boolean {
+  return Boolean(error && typeof error === "object" && "code" in error && error.code === "P2002");
+}
+
+function messagingChannelDto(membership: {
+  id: string;
   channelId: string;
+  // Never null here: every membership reaching this DTO was matched by one of
+  // the caller's identity ids.
+  identityId: string | null;
   status: string;
-  channel: { name: string | null; members: Array<{ id: string }> };
+  channel: { provider: string; name: string | null; members: Array<{ id: string }> };
 }) {
   return {
+    id: membership.id,
     channelId: membership.channelId,
+    identityId: membership.identityId!,
+    provider: membership.channel.provider,
     name: membership.channel.name,
     status: membership.status as "invited" | "approved" | "declined" | "left",
     memberCount: membership.channel.members.length,
   };
 }
 
-async function phoneConnectionDto(
+async function messagingConnectionDto(
   prisma: PrismaClient,
-  identity: PhoneIdentityRecord,
+  myBotIds: ReadonlySet<string>,
   connection: {
     id: string;
     requesterBotId: string;
@@ -3974,7 +4271,7 @@ async function phoneConnectionDto(
     status: string;
   },
 ) {
-  const incoming = connection.targetBotId === identity.botId;
+  const incoming = myBotIds.has(connection.targetBotId);
   // The target's identity stays opaque until they approve (mirrors connect_agent).
   if (!incoming && connection.status !== "approved") {
     return {
@@ -3990,7 +4287,7 @@ async function phoneConnectionDto(
     where: { id: peerBotId },
     select: { name: true },
   });
-  const peerIdentity = await prisma.phoneIdentity.findUnique({
+  const peerIdentity = await prisma.messagingIdentity.findUnique({
     where: { botId: peerBotId },
     select: { userId: true },
   });

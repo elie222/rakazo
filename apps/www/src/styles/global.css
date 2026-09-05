@@ -773,50 +773,13 @@ button {
   color: var(--ink);
 }
 
-.selfhost-install {
-  margin-top: 36px;
-  max-width: 760px;
-}
-
-.selfhost-install h3 {
-  margin: 0;
-  color: var(--ink);
-  font-size: 20px;
-  font-weight: 600;
-}
-
-.selfhost-install > p {
-  margin: 10px 0 0;
-  color: var(--muted);
-  font-size: 15px;
-  line-height: 1.5;
-}
-
-.selfhost-install__code {
-  margin: 18px 0 0;
-  overflow-x: auto;
-  padding: 18px 20px;
-  border: 1px solid var(--line-2);
-  border-radius: 16px;
-  background: #141416;
-  color: #f4f4f5;
-  font: 500 13px/1.55 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  white-space: pre;
-}
-
-.selfhost-install__note {
-  margin-top: 14px;
-  color: var(--muted-2);
-  font-size: 14px;
-  line-height: 1.5;
-}
-
-.selfhost-install__actions {
+.selfhost-cta {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
-  margin-top: 18px;
+  margin-top: 28px;
 }
+
 
 .get-started-dialog__success-mark {
   display: flex;

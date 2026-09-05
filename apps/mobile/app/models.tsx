@@ -3,8 +3,8 @@ import {
   OPENAI_COMPATIBLE_BASE_URL_HINT,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   openAiCompatibleConnectReady,
-  openAiCompatibleProbeSuccessMessage,
 } from "@rakazo/contracts";
+import { featuredModelProviders } from "@rakazo/core";
 import { useFocusEffect } from "expo-router";
 import { useCallback, useMemo, useRef, useState } from "react";
 import {
@@ -19,12 +19,14 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { type MobileMe, type MobileModel, type MobileModelCredential, rpc } from "../lib/api";
+import { mobileTokens } from "../lib/appearance";
+import { useI18n } from "../lib/i18n";
 import {
   cancelModelOAuthAttempt,
   finishModelOAuthAttempt,
   waitForModelOAuth,
 } from "../lib/model-auth";
-import { native } from "../lib/native";
+import { native, useThemedStyles } from "../lib/native";
 
 type ModelSelection = {
   provider?: string;
@@ -32,10 +34,13 @@ type ModelSelection = {
 };
 
 export default function Models() {
+  const styles = useThemedStyles(createModelsStyles);
+  const { t } = useI18n();
   const [catalog, setCatalog] = useState<MobileModel[]>([]);
   const [credentials, setCredentials] = useState<MobileModelCredential[]>([]);
   const [me, setMe] = useState<MobileMe | null>(null);
   const [provider, setProvider] = useState("");
+  const [showAllProviders, setShowAllProviders] = useState(false);
   const [modelId, setModelId] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
@@ -112,7 +117,7 @@ export default function Models() {
     useCallback(() => {
       void load()
         .catch((err: unknown) =>
-          setError(err instanceof Error ? err.message : "Could not load model settings"),
+          setError(err instanceof Error ? err.message : t("Could not load model settings")),
         )
         .finally(() => setLoading(false));
       return () => {
@@ -135,6 +140,19 @@ export default function Models() {
       entries,
     }));
   }, [catalog]);
+  const featuredProviders = useMemo(
+    () =>
+      featuredModelProviders(
+        groups.map((group) => group.entries[0]!),
+        provider,
+      ),
+    [groups, provider],
+  );
+  const visibleGroups = useMemo(() => {
+    if (showAllProviders) return groups;
+    const byId = new Map(groups.map((group) => [group.id, group]));
+    return featuredProviders.map((entry) => byId.get(entry.provider)!);
+  }, [groups, featuredProviders, showAllProviders]);
   const modelsForProvider = catalog.filter((entry) => entry.provider === provider);
   const selected = modelsForProvider.find((entry) => entry.id === modelId) ?? modelsForProvider[0];
   const isOpenAiCompatible = provider === OPENAI_COMPATIBLE_PROVIDER_ID;
@@ -211,10 +229,16 @@ export default function Models() {
       setProbeModels(result.models);
       setProbedBaseUrl(trimmedBaseUrl);
       setModelId((current) => current.trim() || result.models[0] || "");
-      setNotice(openAiCompatibleProbeSuccessMessage(result.models.length));
+      setNotice(
+        result.models.length === 0
+          ? t("Server found. Enter a model name.")
+          : result.models.length === 1
+            ? t("Found {count} model.", { count: 1 })
+            : t("Found {count} models.", { count: result.models.length }),
+      );
     } catch (err) {
       if (requestId !== probeRequestIdRef.current) return;
-      setError(err instanceof Error ? err.message : "Could not reach this model server");
+      setError(err instanceof Error ? err.message : t("Could not reach this model server"));
     } finally {
       if (requestId === probeRequestIdRef.current) setProbing(false);
     }
@@ -230,9 +254,13 @@ export default function Models() {
     try {
       await rpc("models/setDefault", { provider: selected.provider, modelId: activeModelId });
       await load({ provider, modelId: activeModelId });
-      setNotice(isOpenAiCompatible ? "Model updated." : `Now using ${selected.label}.`);
+      setNotice(
+        isOpenAiCompatible
+          ? t("Model updated.")
+          : t("Now using {label}.", { label: selected.label }),
+      );
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not change the default model");
+      setError(err instanceof Error ? err.message : t("Could not change the default model"));
     } finally {
       setPending(null);
     }
@@ -268,9 +296,13 @@ export default function Models() {
       );
       setApiKey("");
       await load({ provider, modelId });
-      setNotice(isOpenAiCompatible ? "Saved." : `Connected and using ${selected.label}.`);
+      setNotice(
+        isOpenAiCompatible
+          ? t("Saved.")
+          : t("Connected and using {label}.", { label: selected.label }),
+      );
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not connect this provider");
+      setError(err instanceof Error ? err.message : t("Could not connect this provider"));
     } finally {
       setPending(null);
     }
@@ -285,7 +317,7 @@ export default function Models() {
     setOauth(null);
     await load({ provider, modelId });
     if (controller.signal.aborted) return;
-    setNotice(`Connected and using ${selected?.label ?? "this model"}.`);
+    setNotice(t("Connected and using {label}.", { label: selected?.label ?? t("this model") }));
   }
 
   async function startSubscriptionSignIn() {
@@ -318,7 +350,7 @@ export default function Models() {
       const loginId = oauthLoginIdRef.current;
       oauthLoginIdRef.current = null;
       if (loginId) void rpc("models/cancelOAuth", { loginId }).catch(() => undefined);
-      setError(err instanceof Error ? err.message : "Could not start sign-in");
+      setError(err instanceof Error ? err.message : t("Could not start sign-in"));
       setOauth(null);
     } finally {
       if (!waitingForCode) {
@@ -357,7 +389,7 @@ export default function Models() {
         retryable = true;
         setPasteCode(code);
       }
-      setError(err instanceof Error ? err.message : "Could not finish sign-in");
+      setError(err instanceof Error ? err.message : t("Could not finish sign-in"));
     } finally {
       oauthCodeSubmittingRef.current = false;
       if (!retryable) {
@@ -378,26 +410,27 @@ export default function Models() {
     <SafeAreaView edges={["bottom"]} style={styles.screen}>
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <View style={styles.activeCard}>
-          <Text style={styles.eyebrow}>Active model</Text>
+          <Text style={styles.eyebrow}>{t("Active model")}</Text>
           <Text style={styles.activeModel}>
-            {currentEntry?.label ?? me?.defaultModel ?? "Deployment default"}
+            {currentEntry?.label ?? me?.defaultModel ?? t("Deployment default")}
           </Text>
           <Text style={styles.secondary}>
-            {currentEntry?.providerName ?? me?.defaultProvider ?? "Configured by deployment"}
+            {currentEntry?.providerName ?? me?.defaultProvider ?? t("Configured by deployment")}
           </Text>
         </View>
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
         {notice ? <Text style={styles.notice}>{notice}</Text> : null}
 
-        <Text style={styles.sectionTitle}>Providers</Text>
+        <Text style={styles.sectionTitle}>{t("Providers")}</Text>
         <View style={styles.card}>
-          {groups.map((group) => {
+          {visibleGroups.map((group) => {
             const connected = credentials.some((entry) => entry.provider === group.id);
             return (
               <Pressable
                 key={group.id}
                 accessibilityRole="button"
+                accessibilityState={{ selected: group.id === provider }}
                 onPress={() => chooseProvider(group.id)}
                 style={({ pressed }) => [
                   styles.providerRow,
@@ -408,28 +441,42 @@ export default function Models() {
                 <View style={styles.providerCopy}>
                   <Text style={styles.providerName}>{group.name}</Text>
                   <Text style={styles.secondary}>
-                    {group.entries.length} model{group.entries.length === 1 ? "" : "s"}
+                    {t(group.entries.length === 1 ? "{count} model" : "{count} models", {
+                      count: group.entries.length,
+                    })}
                   </Text>
                 </View>
-                {connected ? <Text style={styles.connected}>Connected</Text> : null}
+                {connected ? <Text style={styles.connected}>{t("Connected")}</Text> : null}
               </Pressable>
             );
           })}
+          {groups.length > featuredProviders.length ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityState={{ expanded: showAllProviders }}
+              onPress={() => setShowAllProviders((value) => !value)}
+              style={styles.providerRow}
+            >
+              <Text style={styles.providerName}>
+                {showAllProviders ? t("Show less") : t("Show more")}
+              </Text>
+            </Pressable>
+          ) : null}
         </View>
 
         {selected ? (
           <>
-            {!isOpenAiCompatible ? <Text style={styles.sectionTitle}>Model</Text> : null}
+            {!isOpenAiCompatible ? <Text style={styles.sectionTitle}>{t("Model")}</Text> : null}
             {isOpenAiCompatible ? (
               <>
-                <Text style={styles.sectionTitle}>Server URL</Text>
+                <Text style={styles.sectionTitle}>{t("Server URL")}</Text>
                 <TextInput
-                  accessibilityLabel="OpenAI-compatible server URL"
+                  accessibilityLabel={t("OpenAI-compatible server URL")}
                   autoCapitalize="none"
                   autoCorrect={false}
                   editable={!busy}
                   onChangeText={updateBaseUrl}
-                  placeholder="http://127.0.0.1:8000/v1"
+                  placeholder={t("http://127.0.0.1:8000/v1")}
                   placeholderTextColor={native.tertiaryLabel}
                   style={styles.keyInput}
                   value={baseUrl}
@@ -439,10 +486,10 @@ export default function Models() {
                   accessibilityState={{ expanded: showEndpointHelp }}
                   onPress={() => setShowEndpointHelp((visible) => !visible)}
                 >
-                  <Text style={styles.helpLabel}>Setup help</Text>
+                  <Text style={styles.helpLabel}>{t("Setup help")}</Text>
                 </Pressable>
                 {showEndpointHelp ? (
-                  <Text style={styles.hint}>{OPENAI_COMPATIBLE_BASE_URL_HINT}</Text>
+                  <Text style={styles.hint}>{t(OPENAI_COMPATIBLE_BASE_URL_HINT)}</Text>
                 ) : null}
                 <Pressable
                   accessibilityRole="button"
@@ -454,9 +501,11 @@ export default function Models() {
                     pressed && styles.pressed,
                   ]}
                 >
-                  <Text style={styles.outlineLabel}>{probing ? "Finding…" : "Find models"}</Text>
+                  <Text style={styles.outlineLabel}>
+                    {probing ? t("Finding…") : t("Find models")}
+                  </Text>
                 </Pressable>
-                <Text style={[styles.sectionTitle, { marginTop: 12 }]}>Model</Text>
+                <Text style={[styles.sectionTitle, { marginTop: 12 }]}>{t("Model")}</Text>
                 {probeModels.length && probeModels.includes(modelId) ? (
                   <View style={styles.card}>
                     {probeModels.map((entry) => (
@@ -491,18 +540,18 @@ export default function Models() {
                       ]}
                     >
                       <View style={styles.radio} />
-                      <Text style={styles.modelLabel}>Other model…</Text>
+                      <Text style={styles.modelLabel}>{t("Other model…")}</Text>
                     </Pressable>
                   </View>
                 ) : (
                   <>
                     <TextInput
-                      accessibilityLabel="Model id"
+                      accessibilityLabel={t("Model id")}
                       autoCapitalize="none"
                       autoCorrect={false}
                       editable={!busy && !probing}
                       onChangeText={setModelId}
-                      placeholder="exact-model-id"
+                      placeholder={t("exact-model-id")}
                       placeholderTextColor={native.tertiaryLabel}
                       style={styles.keyInput}
                       value={modelId}
@@ -512,7 +561,7 @@ export default function Models() {
                         accessibilityRole="button"
                         onPress={() => setModelId(probeModels[0] ?? "")}
                       >
-                        <Text style={styles.helpLabel}>Use a found model</Text>
+                        <Text style={styles.helpLabel}>{t("Use a found model")}</Text>
                       </Pressable>
                     ) : null}
                   </>
@@ -545,18 +594,24 @@ export default function Models() {
                 ))}
               </View>
             )}
-            {!isOpenAiCompatible ? <Text style={styles.billing}>{selected.billing}</Text> : null}
+            {!isOpenAiCompatible && selected.billing ? (
+              <Text style={styles.billing}>{selected.billing}</Text>
+            ) : null}
 
             {!isOpenAiCompatible ? (
               <View style={styles.credentialCard}>
-                <Text style={styles.eyebrow}>Personal credential</Text>
+                <Text style={styles.eyebrow}>{t("Personal credential")}</Text>
                 <Text style={styles.credentialTitle}>
-                  {credential ? `Connected · ${credential.label}` : "Not connected"}
+                  {credential
+                    ? t("Connected · {label}", { label: credential.label })
+                    : t("Not connected")}
                 </Text>
                 <Text style={styles.secondary}>
                   {credential
-                    ? "Your key or subscription token is stored securely and is never shown here."
-                    : "Connect this provider to use it as your personal model."}
+                    ? t(
+                        "Your key or subscription token is stored securely and is never shown here.",
+                      )
+                    : t("Connect this provider to use it as your personal model.")}
                 </Text>
               </View>
             ) : null}
@@ -566,20 +621,22 @@ export default function Models() {
                 <View style={styles.oauthCard}>
                   {oauth.mode === "auth-url" ? (
                     <>
-                      <Text style={styles.secondary}>Finish signing in in your browser:</Text>
+                      <Text style={styles.secondary}>
+                        {t("Finish signing in in your browser:")}
+                      </Text>
                       <Pressable onPress={() => void Linking.openURL(oauth.verificationUri)}>
                         <Text style={styles.link}>{oauth.verificationUri}</Text>
                       </Pressable>
                       <Text style={styles.secondary}>
-                        The final page may not load. Paste its URL or code here.
+                        {t("The final page may not load. Paste its URL or code here.")}
                       </Text>
                       <TextInput
-                        accessibilityLabel="Authorization code"
+                        accessibilityLabel={t("Authorization code")}
                         value={pasteCode}
                         onChangeText={setPasteCode}
                         autoCapitalize="none"
                         autoCorrect={false}
-                        placeholder="http://localhost:53692/callback?code=…"
+                        placeholder={t("http://localhost:53692/callback?code=…")}
                         placeholderTextColor={native.secondaryLabel}
                         style={styles.keyInput}
                       />
@@ -593,18 +650,18 @@ export default function Models() {
                           !pasteCode.trim() && styles.disabled,
                         ]}
                       >
-                        <Text style={styles.outlineLabel}>Submit</Text>
+                        <Text style={styles.outlineLabel}>{t("Submit")}</Text>
                       </Pressable>
-                      <Text style={styles.secondary}>Waiting for sign-in…</Text>
+                      <Text style={styles.secondary}>{t("Waiting for sign-in…")}</Text>
                     </>
                   ) : (
                     <>
-                      <Text style={styles.secondary}>Enter this code in your browser:</Text>
+                      <Text style={styles.secondary}>{t("Enter this code in your browser:")}</Text>
                       <Pressable onPress={() => void Linking.openURL(oauth.verificationUri)}>
                         <Text style={styles.link}>{oauth.verificationUri}</Text>
                       </Pressable>
                       <Text style={styles.code}>{oauth.userCode}</Text>
-                      <Text style={styles.secondary}>Waiting for sign-in…</Text>
+                      <Text style={styles.secondary}>{t("Waiting for sign-in…")}</Text>
                     </>
                   )}
                 </View>
@@ -620,7 +677,7 @@ export default function Models() {
                   ]}
                 >
                   <Text style={styles.outlineLabel}>
-                    {oauthPending ? "Starting…" : (selected.oauthLabel ?? "Sign in")}
+                    {oauthPending ? t("Starting…") : (selected.oauthLabel ?? t("Sign in"))}
                   </Text>
                 </Pressable>
               )
@@ -635,18 +692,18 @@ export default function Models() {
                       accessibilityState={{ expanded: showApiKey }}
                       onPress={() => setShowApiKey((visible) => !visible)}
                     >
-                      <Text style={styles.helpLabel}>API key</Text>
+                      <Text style={styles.helpLabel}>{t("API key")}</Text>
                     </Pressable>
                     {showApiKey ? (
                       <TextInput
-                        accessibilityLabel="API key"
+                        accessibilityLabel={t("API key")}
                         autoCapitalize="none"
                         autoCorrect={false}
                         autoComplete="off"
                         editable={!busy}
                         importantForAutofill="no"
                         onChangeText={updateApiKey}
-                        placeholder="Optional"
+                        placeholder={t("Optional")}
                         placeholderTextColor={native.tertiaryLabel}
                         secureTextEntry
                         style={styles.keyInput}
@@ -659,20 +716,20 @@ export default function Models() {
                   <>
                     <Text style={styles.sectionTitle}>
                       {credential
-                        ? "Replace API key"
+                        ? t("Replace API key")
                         : subscriptionSignIn
-                          ? "Or connect an API key"
-                          : "API key"}
+                          ? t("Or connect an API key")
+                          : t("API key")}
                     </Text>
                     <TextInput
-                      accessibilityLabel="API key"
+                      accessibilityLabel={t("API key")}
                       autoCapitalize="none"
                       autoCorrect={false}
                       autoComplete="off"
                       editable={!busy}
                       importantForAutofill="no"
                       onChangeText={updateApiKey}
-                      placeholder="sk-…"
+                      placeholder={t("sk-…")}
                       placeholderTextColor={native.tertiaryLabel}
                       secureTextEntry
                       style={styles.keyInput}
@@ -697,12 +754,12 @@ export default function Models() {
                 >
                   <Text style={styles.primaryLabel}>
                     {pending === "connect"
-                      ? "Saving…"
+                      ? t("Saving…")
                       : isOpenAiCompatible
-                        ? "Save"
+                        ? t("Save")
                         : credential
-                          ? "Replace API key"
-                          : "Connect API key"}
+                          ? t("Replace API key")
+                          : t("Connect API key")}
                   </Text>
                 </Pressable>
               </View>
@@ -710,8 +767,9 @@ export default function Models() {
 
             {selected.auth === "oauth" && !subscriptionSignIn ? (
               <Text style={styles.secondary}>
-                This subscription sign-in is not available in Rakazo yet. Use a deployment
-                credential or choose another provider.
+                {t(
+                  "This subscription sign-in is not available in Rakazo yet. Use a deployment credential or choose another provider.",
+                )}
               </Text>
             ) : null}
 
@@ -727,7 +785,7 @@ export default function Models() {
                 ]}
               >
                 <Text style={styles.primaryLabel}>
-                  {pending === "default" ? "Switching…" : "Use this model"}
+                  {pending === "default" ? t("Switching…") : t("Use this model")}
                 </Text>
               </Pressable>
             ) : null}
@@ -738,216 +796,219 @@ export default function Models() {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: native.page,
-  },
-  centered: {
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  content: {
-    padding: 20,
-    gap: 12,
-    paddingBottom: 40,
-  },
-  activeCard: {
-    borderRadius: 16,
-    backgroundColor: native.fill,
-    padding: 18,
-    marginBottom: 8,
-  },
-  eyebrow: {
-    color: native.tertiaryLabel,
-    fontSize: 12,
-    textTransform: "uppercase",
-    letterSpacing: 1,
-  },
-  activeModel: {
-    color: native.label,
-    fontSize: 19,
-    fontWeight: "600",
-    marginTop: 6,
-  },
-  secondary: {
-    color: native.secondaryLabel,
-    fontSize: 14,
-    lineHeight: 20,
-    marginTop: 4,
-  },
-  sectionTitle: {
-    color: native.secondaryLabel,
-    fontSize: 14,
-    marginTop: 8,
-    marginBottom: 2,
-  },
-  card: {
-    borderRadius: 14,
-    backgroundColor: native.fill,
-    overflow: "hidden",
-  },
-  providerRow: {
-    minHeight: 62,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: native.fillPressed,
-  },
-  providerCopy: {
-    flex: 1,
-  },
-  providerName: {
-    color: native.label,
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  connected: {
-    color: "#4ECB71",
-    fontSize: 13,
-  },
-  modelRow: {
-    minHeight: 54,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: native.fillPressed,
-  },
-  radio: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: native.secondaryLabel,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  radioDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: native.label,
-  },
-  modelLabel: {
-    flex: 1,
-    color: native.label,
-    fontSize: 15,
-  },
-  selectedRow: {
-    backgroundColor: "#222225",
-  },
-  billing: {
-    color: native.secondaryLabel,
-    fontSize: 13,
-    lineHeight: 19,
-    marginTop: 2,
-  },
-  hint: {
-    color: native.secondaryLabel,
-    fontSize: 13,
-    lineHeight: 19,
-    marginTop: 4,
-  },
-  helpLabel: {
-    color: native.secondaryLabel,
-    fontSize: 13,
-    marginTop: 8,
-    textDecorationLine: "underline",
-  },
-  credentialCard: {
-    borderRadius: 14,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: native.fillPressed,
-    padding: 16,
-    marginTop: 8,
-  },
-  credentialTitle: {
-    color: native.label,
-    fontSize: 16,
-    marginTop: 6,
-  },
-  oauthCard: {
-    borderRadius: 14,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: native.fillPressed,
-    padding: 16,
-    marginTop: 8,
-  },
-  link: {
-    color: native.label,
-    fontSize: 14,
-    textDecorationLine: "underline",
-    marginTop: 6,
-  },
-  code: {
-    color: native.label,
-    fontFamily: "monospace",
-    fontSize: 24,
-    letterSpacing: 3,
-    marginTop: 10,
-    marginBottom: 2,
-  },
-  keySection: {
-    marginTop: 4,
-  },
-  keyInput: {
-    height: 48,
-    borderRadius: 12,
-    backgroundColor: native.fill,
-    color: native.label,
-    paddingHorizontal: 14,
-    marginTop: 4,
-    fontSize: 16,
-  },
-  primaryButton: {
-    minHeight: 48,
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: native.label,
-    marginTop: 12,
-    paddingHorizontal: 16,
-  },
-  primaryLabel: {
-    color: native.page,
-    fontSize: 16,
-    fontWeight: "700",
-  },
-  outlineButton: {
-    minHeight: 48,
-    borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: native.fillPressed,
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 12,
-    paddingHorizontal: 16,
-  },
-  outlineLabel: {
-    color: native.label,
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  error: {
-    color: "#FF6961",
-    fontSize: 14,
-    marginTop: 4,
-  },
-  notice: {
-    color: "#4ECB71",
-    fontSize: 14,
-    marginTop: 4,
-  },
-  disabled: {
-    opacity: 0.45,
-  },
-  pressed: {
-    opacity: 0.7,
-  },
-});
+function createModelsStyles() {
+  const tokens = mobileTokens();
+  return StyleSheet.create({
+    screen: {
+      flex: 1,
+      backgroundColor: native.page,
+    },
+    centered: {
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    content: {
+      padding: 20,
+      gap: 12,
+      paddingBottom: 40,
+    },
+    activeCard: {
+      borderRadius: 16,
+      backgroundColor: native.fill,
+      padding: 18,
+      marginBottom: 8,
+    },
+    eyebrow: {
+      color: native.tertiaryLabel,
+      fontSize: 12,
+      textTransform: "uppercase",
+      letterSpacing: 1,
+    },
+    activeModel: {
+      color: native.label,
+      fontSize: 19,
+      fontWeight: "600",
+      marginTop: 6,
+    },
+    secondary: {
+      color: native.secondaryLabel,
+      fontSize: 14,
+      lineHeight: 20,
+      marginTop: 4,
+    },
+    sectionTitle: {
+      color: native.secondaryLabel,
+      fontSize: 14,
+      marginTop: 8,
+      marginBottom: 2,
+    },
+    card: {
+      borderRadius: 14,
+      backgroundColor: native.fill,
+      overflow: "hidden",
+    },
+    providerRow: {
+      minHeight: 62,
+      paddingHorizontal: 16,
+      paddingVertical: 10,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 12,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: native.fillPressed,
+    },
+    providerCopy: {
+      flex: 1,
+    },
+    providerName: {
+      color: native.label,
+      fontSize: 16,
+      fontWeight: "600",
+    },
+    connected: {
+      color: tokens.success,
+      fontSize: 13,
+    },
+    modelRow: {
+      minHeight: 54,
+      paddingHorizontal: 16,
+      paddingVertical: 10,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 12,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: native.fillPressed,
+    },
+    radio: {
+      width: 20,
+      height: 20,
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: native.secondaryLabel,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    radioDot: {
+      width: 10,
+      height: 10,
+      borderRadius: 5,
+      backgroundColor: native.label,
+    },
+    modelLabel: {
+      flex: 1,
+      color: native.label,
+      fontSize: 15,
+    },
+    selectedRow: {
+      backgroundColor: tokens.accent,
+    },
+    billing: {
+      color: native.secondaryLabel,
+      fontSize: 13,
+      lineHeight: 19,
+      marginTop: 2,
+    },
+    hint: {
+      color: native.secondaryLabel,
+      fontSize: 13,
+      lineHeight: 19,
+      marginTop: 4,
+    },
+    helpLabel: {
+      color: native.secondaryLabel,
+      fontSize: 13,
+      marginTop: 8,
+      textDecorationLine: "underline",
+    },
+    credentialCard: {
+      borderRadius: 14,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: native.fillPressed,
+      padding: 16,
+      marginTop: 8,
+    },
+    credentialTitle: {
+      color: native.label,
+      fontSize: 16,
+      marginTop: 6,
+    },
+    oauthCard: {
+      borderRadius: 14,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: native.fillPressed,
+      padding: 16,
+      marginTop: 8,
+    },
+    link: {
+      color: native.label,
+      fontSize: 14,
+      textDecorationLine: "underline",
+      marginTop: 6,
+    },
+    code: {
+      color: native.label,
+      fontFamily: "monospace",
+      fontSize: 24,
+      letterSpacing: 3,
+      marginTop: 10,
+      marginBottom: 2,
+    },
+    keySection: {
+      marginTop: 4,
+    },
+    keyInput: {
+      height: 48,
+      borderRadius: 12,
+      backgroundColor: native.fill,
+      color: native.label,
+      paddingHorizontal: 14,
+      marginTop: 4,
+      fontSize: 16,
+    },
+    primaryButton: {
+      minHeight: 48,
+      borderRadius: 12,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: native.label,
+      marginTop: 12,
+      paddingHorizontal: 16,
+    },
+    primaryLabel: {
+      color: native.page,
+      fontSize: 16,
+      fontWeight: "700",
+    },
+    outlineButton: {
+      minHeight: 48,
+      borderRadius: 12,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: native.fillPressed,
+      alignItems: "center",
+      justifyContent: "center",
+      marginTop: 12,
+      paddingHorizontal: 16,
+    },
+    outlineLabel: {
+      color: native.label,
+      fontSize: 16,
+      fontWeight: "600",
+    },
+    error: {
+      color: tokens.destructive,
+      fontSize: 14,
+      marginTop: 4,
+    },
+    notice: {
+      color: tokens.success,
+      fontSize: 14,
+      marginTop: 4,
+    },
+    disabled: {
+      opacity: 0.45,
+    },
+    pressed: {
+      opacity: 0.7,
+    },
+  });
+}

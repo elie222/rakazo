@@ -17,11 +17,13 @@ import {
   progressMessageId,
   reduceLiveMessageBlocks,
   runFailureError,
+  signupRequiresEmailVerification,
   type ThreadHistory,
   upsertMessageById,
 } from "@rakazo/core";
 import * as SecureStore from "expo-secure-store";
 import { defaultApiBase, type EndpointResult, normalizeApiBase } from "./endpoint";
+import { t } from "./i18n";
 import { resumeLiveNotifications } from "./live-notifications";
 import {
   clearSessionToken,
@@ -47,7 +49,9 @@ function responseErrorMessage(body: unknown, fallback: string): string {
 }
 
 export function currentApiBase() {
-  return cachedApiBase ?? defaultApiBase();
+  const parsed = normalizeApiBase(cachedApiBase ?? defaultApiBase());
+  if (!parsed.ok) throw new Error(parsed.error);
+  return parsed.url;
 }
 
 export async function loadApiBase() {
@@ -137,7 +141,7 @@ async function clearCredentialsForEndpointChange(): Promise<
   if (!previousToken.ok || !previousSpace.ok) {
     return {
       ok: false,
-      result: { ok: false, error: "Could not clear the previous server session" },
+      result: { ok: false, error: t("Could not clear the previous server session") },
     };
   }
   const rollbackReady = previousSpace.value
@@ -146,7 +150,7 @@ async function clearCredentialsForEndpointChange(): Promise<
   if (!rollbackReady) {
     return {
       ok: false,
-      result: { ok: false, error: "Could not clear the previous server session" },
+      result: { ok: false, error: t("Could not clear the previous server session") },
     };
   }
   const sessionCleared = await clearSessionToken();
@@ -157,7 +161,10 @@ async function clearCredentialsForEndpointChange(): Promise<
   }
 
   await restoreCredentials(previousToken.value, previousSpace.value);
-  return { ok: false, result: { ok: false, error: "Could not clear the previous server session" } };
+  return {
+    ok: false,
+    result: { ok: false, error: t("Could not clear the previous server session") },
+  };
 }
 
 async function restoreCredentials(previousToken: string, previousSpace: string) {
@@ -233,7 +240,7 @@ export async function saveApiBase(input: string): Promise<EndpointResult> {
     await SecureStore.setItemAsync(ENDPOINT_KEY, parsed.url);
   } catch {
     if (cleared) await restoreCredentials(cleared.previousToken, cleared.previousSpace);
-    return { ok: false, error: "Could not save the server URL" };
+    return { ok: false, error: t("Could not save the server URL") };
   }
   cachedApiBase = parsed.url;
   await clearStoredValue(SPACE_ROLLBACK_KEY);
@@ -254,7 +261,7 @@ export async function resetApiBase(): Promise<EndpointResult> {
   } catch {
     if (cleared) {
       await restoreCredentials(cleared.previousToken, cleared.previousSpace);
-      return { ok: false, error: "Could not clear the custom server URL" };
+      return { ok: false, error: t("Could not clear the custom server URL") };
     }
   }
   cachedApiBase = url;
@@ -281,7 +288,7 @@ export async function captureApiRequestContext(): Promise<ApiRequestContext> {
   const apiBase = currentApiBase();
   const headers = await authHeaders(selectedSpaceId());
   if (apiBase !== currentApiBase()) {
-    throw new Error("The server changed while starting the request");
+    throw new Error(t("The server changed while starting the request"));
   }
   return { apiBase, headers };
 }
@@ -300,10 +307,19 @@ async function authenticateWithEmail(
     throw new Error(responseErrorMessage(body, `Could not ${action.replace("-", " ")}`));
   }
   const token = tokenFromAuthResponse(res, body);
+  if (action === "sign-up" && signupRequiresEmailVerification(body))
+    return { verificationRequired: true };
   if (!token)
-    throw new Error(`${action === "sign-in" ? "Sign-in" : "Sign-up"} did not return a session`);
-  if (!(await clearSpace())) throw new Error("Could not clear the previous space");
+    throw new Error(
+      t(
+        action === "sign-in"
+          ? "Sign-in did not return a session"
+          : "Sign-up did not return a session",
+      ),
+    );
+  if (!(await clearSpace())) throw new Error(t("Could not clear the previous space"));
   await saveSessionToken(token);
+  return { verificationRequired: false };
 }
 
 export function signIn(email: string, password: string) {
@@ -314,16 +330,74 @@ export function signUp(email: string, password: string, name: string) {
   return authenticateWithEmail("sign-up", { email, password, name });
 }
 
+export type PasswordResetCapabilities = { passwordReset: boolean; resetUrl: string | null };
+
+export async function passwordResetCapabilities(): Promise<PasswordResetCapabilities> {
+  const response = await fetch(`${currentApiBase()}/api/auth/capabilities`, {
+    headers: { origin: "rakazo://" },
+  });
+  if (!response.ok) throw new Error("Could not load password recovery settings");
+  return (await response.json()) as PasswordResetCapabilities;
+}
+
+export async function requestPasswordReset(email: string, redirectTo: string): Promise<void> {
+  const response = await fetch(`${currentApiBase()}/api/auth/request-password-reset`, {
+    method: "POST",
+    headers: { "content-type": "application/json", origin: "rakazo://" },
+    body: JSON.stringify({ email, redirectTo }),
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(responseErrorMessage(body, t("Could not send reset email")));
+}
+
+export async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
+  const response = await fetch(`${currentApiBase()}/api/auth/change-password`, {
+    method: "POST",
+    headers: { "content-type": "application/json", origin: "rakazo://", ...(await authHeaders()) },
+    body: JSON.stringify({ currentPassword, newPassword, revokeOtherSessions: true }),
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(responseErrorMessage(body, t("Could not change password")));
+}
+
 export async function signOut() {
   await rpc("notifications/unregisterPush").catch(() => undefined);
   const headers = await authHeaders();
-  await fetch(`${currentApiBase()}/api/auth/sign-out`, {
-    method: "POST",
-    headers: { "content-type": "application/json", origin: "rakazo://", ...headers },
-  }).catch(() => undefined);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), RPC_TIMEOUT_MS);
+  try {
+    await withAbort(
+      fetch(`${currentApiBase()}/api/auth/sign-out`, {
+        method: "POST",
+        headers: { "content-type": "application/json", origin: "rakazo://", ...headers },
+        signal: controller.signal,
+      }),
+      controller.signal,
+    ).catch(() => undefined);
+  } finally {
+    clearTimeout(timer);
+  }
   const sessionCleared = await clearSessionToken();
   const spaceCleared = await clearSpace();
-  if (!sessionCleared || !spaceCleared) throw new Error("Could not clear the local session");
+  if (!sessionCleared || !spaceCleared) throw new Error(t("Could not clear the local session"));
+}
+
+function withAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) return Promise.reject(signal.reason ?? new Error("Request timed out"));
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(signal.reason ?? new Error("Request timed out"));
+    signal.addEventListener("abort", onAbort, { once: true });
+    promise.then(
+      (value) => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(value);
+      },
+      (error: unknown) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(error);
+      },
+    );
+  });
 }
 
 export async function deleteAccount(password: string) {
@@ -335,7 +409,7 @@ export async function deleteAccount(password: string) {
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new Error(responseErrorMessage(body, "Could not delete account"));
+    throw new Error(responseErrorMessage(body, t("Could not delete account")));
   }
   await clearSessionToken();
   await clearSpace();
@@ -487,11 +561,22 @@ export function prependMobileMessagePage(
   return prependThreadHistoryPage(prev, page);
 }
 
+const MESSAGING_PROVIDER_LABELS: Record<string, string> = {
+  sendblue: "iMessage",
+  slack: "Slack",
+  whatsapp: "WhatsApp",
+  telegram: "Telegram",
+};
+
+export function messagingProviderLabel(provider: string): string {
+  return MESSAGING_PROVIDER_LABELS[provider] ?? provider;
+}
+
 export function blockText(message: MobileMessage) {
   return message.blocks
     .map((block) => {
-      if (block.kind === "phone_channel_message") {
-        return `iMessage · ${block.fromLabel}: ${block.text}`;
+      if (block.kind === "channel_message") {
+        return `${messagingProviderLabel(block.provider)} · ${block.fromLabel}: ${block.text}`;
       }
       if (block.kind === "subagent") {
         return `${block.name ?? "subagent"}: ${block.result || block.progress || block.task || ""}`;

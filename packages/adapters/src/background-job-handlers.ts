@@ -3,17 +3,18 @@ import type {
   AgentRuntime,
   BackgroundJobHandlers,
   JobPublisher,
-  MessagingProvider,
+  MessagingSurface,
   SandboxProvider,
 } from "@rakazo/adapter-kit";
-import { phoneDeliverJob } from "@rakazo/adapter-kit";
+import { messagingDeliverJob } from "@rakazo/adapter-kit";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
 import { expireComputerControl } from "./computer-control.js";
 import { scheduleComputerSleep, sleepComputerIfIdle } from "./computer-idle.js";
 import type { createRunExecutor } from "./executor.js";
 import { compactHistory } from "./history-compaction.js";
 import type { MemoryProviderResolver } from "./memory-provider-factory.js";
-import { deliverPhoneOutbound } from "./phone-delivery.js";
+import { deliverMessagingOutbound, mirrorMessagingOutbound } from "./messaging-delivery.js";
 import type { EncryptedSecretStore } from "./secrets.js";
 import { expireTaughtSkillTeaching } from "./teaching-session.js";
 
@@ -29,32 +30,41 @@ export function createBackgroundJobHandlers(deps: {
   secretStore: EncryptedSecretStore;
   memoryProviders: MemoryProviderResolver;
   deploymentModelKey?: string;
-  messaging?: MessagingProvider;
+  messaging?: MessagingSurface;
 }): BackgroundJobHandlers {
+  const deliverMessaging = async (runId?: string) => {
+    if (!deps.messaging) return;
+    await deliverMessagingOutbound(
+      { prisma: deps.prisma, messaging: deps.messaging, events: deps.events, jobs: deps.jobs },
+      { runId },
+      {
+        operationId: `messaging.deliver:${runId ?? "drain"}`,
+        traceId: `messaging.deliver:${runId ?? "drain"}`,
+        spaceId: "",
+        userId: "",
+        signal: new AbortController().signal,
+      },
+    );
+  };
+
   return {
     "run.continue": async (payload) => {
       await deps.executor.continueRun(payload.runId, deps.workerId);
-      // Automatic phone mirror: once the run's bot messages are durable,
+      // Automatic messaging mirror: once the run's bot messages are durable,
       // copy them into the outbox. Never let mirror failures fail the run.
       if (deps.messaging) {
-        await deps.jobs.enqueue(phoneDeliverJob(payload.runId)).catch((error) => {
-          console.error("phone.deliver enqueue error", error);
+        await mirrorMessagingOutbound(
+          { prisma: deps.prisma, messaging: deps.messaging, events: deps.events, jobs: deps.jobs },
+          payload.runId,
+        );
+        await deps.jobs.enqueue(messagingDeliverJob()).catch(async (error) => {
+          getLogger().error("messaging.deliver enqueue error", error);
+          await deliverMessaging();
         });
       }
     },
-    "phone.deliver": async (payload) => {
-      if (!deps.messaging) return;
-      await deliverPhoneOutbound(
-        { prisma: deps.prisma, messaging: deps.messaging, events: deps.events, jobs: deps.jobs },
-        payload,
-        {
-          operationId: `phone.deliver:${payload.runId ?? "drain"}`,
-          traceId: `phone.deliver:${payload.runId ?? "drain"}`,
-          spaceId: "",
-          userId: "",
-          signal: new AbortController().signal,
-        },
-      );
+    "messaging.deliver": async (payload) => {
+      await deliverMessaging(payload.runId);
     },
     "routine.wakeup": async (payload) => {
       await deps.executor.wakeRoutine(payload.routineId, payload.scheduledFor);

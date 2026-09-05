@@ -28,12 +28,10 @@ import type {
   MemorySearchRequest,
   MemorySearchResult,
   MemorySnapshot,
-  MessagingCapabilities,
-  MessagingDirectRequest,
-  MessagingGroup,
-  MessagingGroupRequest,
+  MessagingInboundEvent,
+  MessagingPlatformDescriptor,
+  MessagingSendRequest,
   MessagingSendResult,
-  MessagingTypingRequest,
   NotificationMessage,
   PortableFile,
   ProcessEvent,
@@ -49,6 +47,7 @@ import type {
   SemanticMemorySaveRequest,
   SnapshotRef,
   SpeechClip,
+  TransactionalEmail,
   VoiceCapabilities,
   VoiceInfo,
   VoiceSynthesizeRequest,
@@ -138,6 +137,11 @@ export interface SandboxProvider {
 export interface ConnectorProvider {
   describe(): AdapterDescriptor<ConnectorCapabilities>;
   discoverTools(context: AdapterContext): Promise<ConnectorTool[]>;
+  /** Resolve a lazy catalog call to its authoritative authorized tool before approval. */
+  resolveCall?(
+    call: ConnectorCall,
+    context: AdapterContext,
+  ): Promise<{ call: ConnectorCall; tool: ConnectorTool } | undefined>;
   execute(call: ConnectorCall, context: AdapterContext): AsyncIterable<ConnectorEvent>;
 }
 
@@ -268,6 +272,14 @@ export interface NotificationProvider {
   send(message: NotificationMessage, context: AdapterContext): Promise<void>;
 }
 
+/** Outbound account and security email. Product code owns content; adapters own delivery. */
+export interface TransactionalEmailProvider {
+  describe(): AdapterDescriptor<{ transactional: boolean }>;
+  send(message: TransactionalEmail): Promise<void>;
+  /** Wait for accepted in-flight deliveries before a graceful shutdown completes. */
+  drain?(): Promise<void>;
+}
+
 export interface ExecutionRunner {
   describe(): AdapterDescriptor<{ cloud: boolean; selfHosted: boolean; desktop: boolean }>;
   dispatch(runId: string, target: "cloud" | "self-hosted" | "desktop"): Promise<void>;
@@ -282,24 +294,35 @@ export interface VoiceProvider {
 }
 
 /**
- * Deployment-wide text messaging surface (one phone line for the whole
- * deployment). Webhook parsing/verification stays an exported pure function
- * on the vendor module — that is HTTP shape, not transport.
+ * Deployment-wide external chat surface: one bot presence across messaging
+ * platforms (iMessage/SMS, Slack, WhatsApp, …). Conversations are addressed
+ * by opaque provider-prefixed thread ids ("sendblue:…", "slack:C1:…"), so
+ * orchestration never sees platform wire formats. Webhook verification and
+ * payload translation live behind handleWebhook, per platform.
  */
-export interface MessagingProvider {
-  describe(): AdapterDescriptor<MessagingCapabilities>;
-  sendDirect(
-    request: MessagingDirectRequest,
+export interface MessagingSurface {
+  describe(): AdapterDescriptor<{ providers: string[] }>;
+  /** Enabled platforms and what each supports. */
+  platforms(): MessagingPlatformDescriptor[];
+  /**
+   * Verify and process one platform webhook request. Parsed events reach the
+   * sink registered via onInbound before the returned response resolves.
+   * Returns null for a provider this surface does not host.
+   */
+  handleWebhook(provider: string, request: Request): Promise<Response> | null;
+  /** Register the single downstream consumer of inbound events. */
+  onInbound(sink: (event: MessagingInboundEvent) => Promise<void>): void;
+  sendToThread(
+    request: MessagingSendRequest,
     context: AdapterContext,
   ): Promise<MessagingSendResult>;
-  sendGroup(request: MessagingGroupRequest, context: AdapterContext): Promise<MessagingSendResult>;
-  getGroup(groupId: string, context: AdapterContext): Promise<MessagingGroup>;
+  /** Resolve (or create) the 1:1 thread for a provider address. */
+  openDirectThread(provider: string, address: string, context: AdapterContext): Promise<string>;
   /**
-   * Best-effort "…" typing bubbles for 1:1 chats. Optional because vendors
-   * may not support it in groups; it is cosmetic and must never gate message
-   * delivery.
+   * Best-effort "…" typing bubbles for 1:1 chats. Cosmetic: never gates
+   * message delivery, and silently no-ops on platforms without support.
    */
-  sendTypingIndicator?(request: MessagingTypingRequest, context: AdapterContext): Promise<void>;
+  sendTyping(threadId: string, context: AdapterContext): Promise<void>;
 }
 
 /**

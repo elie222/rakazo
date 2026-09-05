@@ -4,7 +4,7 @@ The signed-in product is a long-running API, a Graphile Worker, Postgres, and a 
 
 ## Local (source checkout)
 
-Same as the README quick start: `.env` from `.env.example`, Postgres via Compose, `pnpm sandbox:build`, `pnpm dev`, then [http://127.0.0.1:5173](http://127.0.0.1:5173). Electron: `pnpm --filter @rakazo/desktop dev` while that stack is up.
+Same as the README quick start: `.env` from `.env.example`, Postgres via Compose, `pnpm sandbox:build`, `pnpm dev`, then [http://127.0.0.1:5173](http://127.0.0.1:5173). Electron: `pnpm --filter @rakazo/desktop dev` while that stack is up, choosing **Existing instance** with that address. The desktop app's **This computer** option instead installs and runs the published images itself with Docker Compose (see [Published images](#published-images-no-checkout)), which clashes with `pnpm dev` on port 5173.
 
 ## Published images (no checkout)
 
@@ -21,6 +21,65 @@ The installer downloads `docker-compose.images.yml` and `.env.images.example`, c
 random secrets, then pulls and starts the images. It preserves an existing `.env` when rerun. To
 customize the public URL, image tag, or optional providers before startup, run
 `bash install-images.sh --prepare-only`, edit `.env`, then run `bash install-images.sh`.
+Flags may be combined in either order: `--prepare-only`, `--local`.
+
+### Restricted networks / mirror downloads
+
+Stage B of the installer (Compose YAML and `.env.images.example`) downloads from
+`DOWNLOAD_BASE`. Override it with a generic HTTPS mirror of `infra/compose` — do not rely on
+vendor-specific CDN defaults:
+
+```bash
+export RAKAZO_DOWNLOAD_BASE=https://example.com/mirror/rakazo/infra/compose
+bash install-images.sh
+```
+
+Trailing slashes on `RAKAZO_DOWNLOAD_BASE` are trimmed; non-HTTPS bases are rejected. Downloads
+use finite curl retries (`--retry 3 --retry-delay 2 --retry-all-errors` when supported).
+
+To reuse files already present in the working directory (skip curl when the target exists), set
+`RAKAZO_DOWNLOAD_SKIP_EXISTING=1` and/or pass `--local`:
+
+```bash
+# after placing docker-compose.images.yml and .env.images.example locally
+bash install-images.sh --local --prepare-only
+# or
+RAKAZO_DOWNLOAD_SKIP_EXISTING=1 bash install-images.sh --prepare-only
+```
+
+If skip mode is on and a required file is missing, the installer still downloads it (or fails with
+the URL in the error).
+
+Stage A (fetching `install-images.sh` itself) is separate. When raw GitHub is unreachable, point the
+bootstrap curl at your mirror of the installer script, for example:
+
+```bash
+export RAKAZO_INSTALLER_URL=https://example.com/mirror/rakazo/infra/compose/install-images.sh
+mkdir -p rakazo && cd rakazo &&
+curl -fsSLO "${RAKAZO_INSTALLER_URL}" &&
+bash install-images.sh
+```
+
+Stage C (`docker compose pull`) uses `RAKAZO_IMAGE`, `RAKAZO_IMAGE_TAG`,
+`RAKAZO_COMPUTER_IMAGE`, and `RAKAZO_COMPUTER_IMAGE_TAG` (defaults
+`ghcr.io/elie222/rakazo/{app,computer}`). When GHCR is unreachable, override those
+four in `.env` to a registry you control — keep app and computer on the same
+mirror. Do not rely on vendor-specific CDN defaults:
+
+```env
+RAKAZO_IMAGE=registry.example.com/mirror/elie222/rakazo/app
+RAKAZO_IMAGE_TAG=edge
+RAKAZO_COMPUTER_IMAGE=registry.example.com/mirror/elie222/rakazo/computer
+RAKAZO_COMPUTER_IMAGE_TAG=edge
+```
+
+After `--prepare-only`, edit `.env` then rerun `bash install-images.sh` (or
+`docker compose --env-file .env -f docker-compose.images.yml pull`). Arm64 tag
+pairing is unchanged — set both tags to the same published multi-arch release
+(see [Published images and tags](#published-images-and-tags)).
+
+`postgres:16` and `busybox:1` still pull from Docker Hub. Stage C does not cover
+them; configure the Docker daemon `registry-mirrors` or vendor those images.
 
 `SANDBOX_PROVIDER` defaults to `docker`. The images Compose file runs a sandbox supervisor
 (from the app image, on the internal network only) and pulls `ghcr.io/elie222/rakazo/computer`.
@@ -30,17 +89,28 @@ Signup and local Docker computers work without an E2B account. Optional remote p
 
 Optional: set `OPENROUTER_API_KEY` or connect a model in the UI after signup.
 
-The example defaults to `edge` (main builds, `linux/amd64` only). On arm64 hosts, set both
-`RAKAZO_IMAGE_TAG` and `RAKAZO_COMPUTER_IMAGE_TAG` to the same published multi-arch release tag
-when one exists (see [Published images and tags](#published-images-and-tags)). Changing only
-`RAKAZO_IMAGE_TAG` leaves the computer service on amd64-only `edge`. Do not assume `latest` is
-published.
+The example defaults to `edge` (main builds). Every publish is multi-arch (`amd64` + `arm64`), so
+arm64 hosts need no special tag. Do not assume `latest` is present until a stable release exists.
 
 Open [http://127.0.0.1:5173](http://127.0.0.1:5173). The first registered user becomes the
 deployment owner. Put TLS in front of `:5173` for a public host and set the three public origins to
-that HTTPS URL. Open **Agent computer** on a bot, or send a message that uses the desktop, to see
-the local Docker computer. For automatic HTTPS via Caddy and remote E2B computers, use the
-production Compose path below.
+that HTTPS URL.
+
+Images Compose binds web to loopback (`127.0.0.1:5173`). Terminate TLS on the host and proxy
+there. Vite preview same-origin-proxies `/api` and `/rpc`, so do not expose `:3100`. Set
+`BETTER_AUTH_URL`, `WEB_ORIGIN`, and `API_URL` to that same HTTPS origin, and set
+`RAKAZO_HOST` to its hostname (for example, `app.example.com`).
+
+```Caddyfile
+app.example.com {
+	reverse_proxy 127.0.0.1:5173
+}
+```
+
+Open **Agent computer** on a bot, or send a message that uses the desktop, to see
+the local Docker computer. For in-stack Caddy plus remote E2B computers, use the
+[production Compose](#public-single-vm-deployment) path and `infra/compose/Caddyfile.prod`
+instead of this host proxy.
 
 ## Docker Compose (single machine)
 
@@ -73,6 +143,56 @@ API_URL=https://app.example.com
 ```
 
 Cookies and CORS follow those origins. `SIGNUPS_ENABLED` / `SIGNUP_ALLOWLIST` seed the initial deployment settings. After initialization, the deployment owner's Settings values are the effective signup policy.
+
+With a nonempty signup allowlist, users—including existing accounts—must verify their email to sign
+in. Configure SMTP below before enabling an allowlist or upgrading an allowlisted deployment.
+
+To set up without email, leave the allowlist empty, register the owner locally, then disable
+registration in Settings before exposing the server to the network.
+
+### Verification and password recovery email
+
+Password changes for signed-in users require no email configuration. Forgotten-password recovery
+appears on sign-in only when a transactional email provider is available. Rakazo uses a
+provider-neutral contract and ships an SMTP adapter, so Amazon SES, Resend, and self-hosted SMTP
+servers use the same configuration:
+
+```env
+SMTP_URL=smtps://smtp-user:replace-with-password@smtp.example.com:465
+EMAIL_FROM=Rakazo <no-reply@example.com>
+```
+
+For Resend, use `smtp.resend.com`, username `resend`, and an API key as the password. For Amazon
+SES, use the regional SMTP endpoint and SES SMTP credentials; these are different from ordinary AWS
+access keys. Verify the sender/domain with the provider before testing delivery. Keep credentials in
+`.env`, never in tracked files. `smtps://` uses implicit TLS; `smtp://` is also supported but requires
+STARTTLS. Rakazo rejects configuration that disables TLS or certificate verification.
+
+Local source development can use the offline email emulator instead. It captures email without
+contacting a provider:
+
+```env
+EMAIL_EMULATOR=true
+```
+
+The emulator is forcibly disabled when `NODE_ENV=production` and requires the API to bind to a
+loopback host. In `NODE_ENV=development`, captured messages are available from
+`http://127.0.0.1:3100/api/dev/emails` with cache disabled; the API logs only delivery
+metadata, never reset tokens. The inbox route is not registered in test, staging, or production.
+
+### Logging
+
+Backend services write structured logs to stdout. `LOG_LEVEL` is `debug`, `info`, `warn`, `error`,
+or `off` (default `info`). Production defaults to `LOG_FORMAT=json`; development defaults to pretty
+unless you set `json` or `pretty`.
+
+Axiom is optional. Set both `AXIOM_TOKEN` and `AXIOM_DATASET` for ingest to one shared dataset.
+Services set `service.name` (`rakazo-api`, `rakazo-worker`, `rakazo-sandbox-supervisor`,
+`rakazo-updater`). A partial Axiom config logs a one-time warning and stays off. `AXIOM_EDGE` is a
+regional hostname; `AXIOM_EDGE_URL` must be https and wins when both are set.
+
+Compose passes these into the API, worker, supervisor, and updater. Computer containers and updater
+child commands do not receive them.
 
 Optional:
 
@@ -150,7 +270,9 @@ The Electron desktop app is a client of the same API. Docker and E2B still apply
 ./scripts/backup.sh
 ```
 
-This dumps Postgres (`pg_dump`) and archives `data/` into `backups/<stamp>/`.
+This dumps Postgres (`pg_dump`) and archives `data/` into `backups/<stamp>/`. A missing
+`data/` produces an empty archive; database or archive errors fail the backup. Discard the
+output directory of any failed run.
 
 ## Public single-VM deployment
 
@@ -179,7 +301,7 @@ container logs, default no-new-privileges, and the kernel NAT path instead of Do
    whenever Cloudflare publishes a change. A Cloudflare Tunnel can replace the public web listeners.
 2. Clone the repository on the VM and create a root `.env` with production-only values. At minimum set
    `POSTGRES_PASSWORD`, `BETTER_AUTH_SECRET`, `ENCRYPTION_KEY`, `SCREEN_PROXY_SECRET`,
-   `E2B_API_KEY`, `OPENROUTER_API_KEY`,
+   `OPENROUTER_API_KEY`, the API key for your selected sandbox provider,
    `RAKAZO_HOST`, and the three public origins. Set `RAKAZO_DEPLOY_DIR` when the checkout is not at
    the supported Linux default, `/srv/rakazo`. Use URL-safe random values for database credentials.
    If you enable the `updater` profile, also set a dedicated `RAKAZO_UPDATER_TOKEN` (at least 32
@@ -197,6 +319,7 @@ WEB_ORIGIN=https://app.example.com
 API_URL=https://app.example.com
 SIGNUPS_ENABLED=true
 SIGNUP_ALLOWLIST=owner@example.com,reviewer@example.com
+# e2b, daytona, or box
 SANDBOX_PROVIDER=e2b
 AGENT_RUNTIME=pi
 WAKEUP_DRIVER=graphile
@@ -249,7 +372,21 @@ Postgres custom-format dump plus an application-data archive under `/var/backups
 `0600` and seven-day rotation. These local snapshots help with operator mistakes but are not a
 substitute for an encrypted off-host backup or provider snapshot.
 
+The scheduled backup uses `/srv/rakazo` by default. For another deployment directory, set
+`RAKAZO_DEPLOY_DIR=/absolute/path/to/checkout` in a root-owned `/etc/rakazo/backup.env`
+(mode `0600`). The service reads this optional file on each run; the script uses the selected
+checkout's `.env` and production Compose file. If the stack was started with a custom `-p`,
+set the same `COMPOSE_PROJECT_NAME` in that file. For a manual run, export these variables instead.
+When updating an existing backup installation, reinstall both the script and service unit,
+then run `systemctl daemon-reload`.
+
 ## Restore
+
+For backups created by `scripts/backup.sh`, use an empty `rakazo` database in the development
+Compose stack, with application services stopped. The SQL import runs in one transaction and
+stops on the first error, including conflicts with existing tables. Files are restored and
+application services started only after the import succeeds. This script does not consume the
+production snapshot's custom-format `rakazo.dump` or `appdata.tgz`.
 
 ```bash
 ./scripts/restore.sh backups/<stamp>
@@ -346,12 +483,17 @@ your CI cannot publish into someone else's.
 | `sha-<full-commit>` | every push and manual run | source-addressed; used by the updater sidecar |
 | `edge` | pushes to main | yes, to the newest main build |
 
-`edge` from everyday main merges is `linux/amd64` only. Release tags (`v*`) and manual
-`workflow_dispatch` publishes are multi-arch (`amd64` + `arm64`). On arm64 hosts, set both
-`RAKAZO_IMAGE_TAG` and `RAKAZO_COMPUTER_IMAGE_TAG` to the same published release tag rather than
-`edge`. Changing only `RAKAZO_IMAGE_TAG` leaves the computer service on amd64-only `edge`. Until a
+Every publish, including `edge` from main merges, is multi-arch (`amd64` + `arm64`): each
+architecture builds natively on its own runner and one manifest is assembled per image. Until a
 stable `vX.Y.Z` has been published, GHCR may only have `edge` and `sha-*` tags; do not pin
 `latest` unless that tag exists in the registry.
+
+Building the images yourself does not need QEMU. `docker compose up --build` builds for the host's
+own architecture, and a fork publishing multi-arch images should do what `publish-server-image.yml`
+does: build each architecture on a native runner (GitHub Actions provides `ubuntu-24.04-arm` for
+public repositories) and merge the digests into one manifest. QEMU emulation
+(`docker/setup-qemu-action`, `binfmt`) still works if you have no native arm64 machine, but it is
+many times slower, hours rather than minutes for the `computer` image.
 
 The updater resolves the newest stable `vX.Y.Z` source tag but deploys its `sha-<full-commit>` image,
 not `latest` or a moving minor tag. A registry tag is not an OCI digest and GHCR package writers can
@@ -471,7 +613,7 @@ To run a hosted product (same codebase):
 
 1. Push `main` (this checkout may be ahead of GitHub).
 2. Provision managed Postgres 16 and run `pnpm db:migrate`.
-3. Run **API** and **worker** as always-on Node 22 services (Fly machines, a VM, ECS, k8s). Not lambda-style request handlers.
+3. Run **API** and **worker** as always-on services using Node.js 22.22.2 or newer in the 22.x line, Node.js 24.x, or Node.js 26+ (Fly machines, a VM, ECS, k8s). Node.js 23.x and 25.x are not supported. Not lambda-style request handlers.
 4. Persist and back up `DATA_DIR` (bot homes, browser profiles, artifacts). Today the concrete store is a local filesystem (`LocalAgentHomeStore`), so attach a Rakazo-owned durable volume shared by API and worker processes. The storage contract is separate from the computer-provider contract, but an object-storage implementation is not wired yet.
 5. Choose computers: **`SANDBOX_PROVIDER=e2b`**, `daytona`, or `box` with the matching provider key for a public or multi-user production service. Each Team or Private Computer reconnects to its sandbox id (`providerRef`), while workspace state is checkpointed outside the provider at run completion, explicit stop, and idle suspension. If that sandbox is gone—or the deployment changes providers—the replacement is hydrated from Rakazo's copy. Idle computers pause after `SANDBOX_IDLE_MS` (default 10 minutes) and resume on the next message or Take control. Docker remains the local and trusted single-machine default.
 6. A Hetzner CX22 (2 vCPU / 4 GB) is enough for API + worker + Postgres when E2B owns the desktops. 2 GB works for a quiet box; 8 GB is only needed if you also run Docker computers on that same machine.

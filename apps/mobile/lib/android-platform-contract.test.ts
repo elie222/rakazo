@@ -157,6 +157,32 @@ describe("Android mobile platform contract", () => {
     expect(thread).toContain("agents working");
   });
 
+  it("keeps send and stop separate while steering active work", () => {
+    const thread = readFileSync(resolve(mobileRoot, "app/thread.tsx"), "utf8");
+    const stopStart = thread.indexOf("async function stop()");
+    const stopSource = thread.slice(stopStart, thread.indexOf("const answerMessage", stopStart));
+    expect(stopStart).toBeGreaterThan(-1);
+    expect(thread).toContain('accessibilityLabel={t("Send")}');
+    expect(thread).toContain('accessibilityLabel={t("Stop")}');
+    expect(thread).not.toContain("Messages sent now guide the next turn.");
+    expect(thread).not.toContain("Steer ");
+    expect(thread).not.toContain("steering message");
+    expect(thread).toContain('t("Message {name}"');
+    expect(thread).toContain("const clientNonce = newClientNonce()");
+    expect(thread).toContain("Work stopped, but the thread could not refresh");
+    expect(stopSource).toContain("const targetBotId = botId;");
+    expect(stopSource).toContain("const targetGroupId = groupId;");
+    expect(stopSource).toContain(
+      "targetGroupId ? { groupId: targetGroupId } : { botId: targetBotId! },",
+    );
+    expect(stopSource).toMatch(
+      /if \(isCurrentTarget\(targetBotId, targetGroupId\)\) \{\s*setError\(err instanceof Error \? err\.message : t\("Failed to stop work"\)\);/,
+    );
+    expect(stopSource).toMatch(
+      /if \(isCurrentTarget\(targetBotId, targetGroupId\)\) \{\s*(?:const detail = [^\n]+;\s*)?setError\(t\("Work stopped, but the thread could not refresh: \{detail\}", \{ detail \}\)\);/,
+    );
+  });
+
   it("shows agent notification silence in the menu, inbox avatar, and DM header only", () => {
     const index = readFileSync(resolve(mobileRoot, "app/index.tsx"), "utf8");
     const thread = readFileSync(resolve(mobileRoot, "app/thread.tsx"), "utf8");
@@ -166,7 +192,7 @@ describe("Android mobile platform contract", () => {
     expect(menu).toContain("Resume notifications");
     expect(index).toContain("muted={!bot.notifyOnFinish}");
     expect(thread).toContain("muted={!currentBot.notifyOnFinish}");
-    expect(avatar).toContain('accessibilityLabel="Notifications silenced"');
+    expect(avatar).toContain('accessibilityLabel={t("Notifications silenced")}');
     expect(avatar).toContain('android="notifications-off"');
     expect(thread.match(/muted=\{/g)).toHaveLength(1);
   });

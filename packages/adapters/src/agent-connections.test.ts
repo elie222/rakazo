@@ -7,16 +7,20 @@ import {
 } from "./agent-connections.js";
 
 const requesterIdentity = {
-  id: "pi-1",
-  phoneE164: "+15551111111",
+  id: "mi-1",
+  provider: "sendblue",
+  address: "+15551111111",
+  dmThreadId: "sendblue:dm-1",
   userId: "user-1",
   spaceId: "ws-1",
   botId: "bot-1",
   outboundSinceInbound: 0,
 };
 const targetIdentity = {
-  id: "pi-2",
-  phoneE164: "+15552222222",
+  id: "mi-2",
+  provider: "sendblue",
+  address: "+15552222222",
+  dmThreadId: "sendblue:dm-2",
   userId: "user-2",
   spaceId: "ws-2",
   botId: "bot-2",
@@ -81,13 +85,27 @@ function createDeps(
   };
   const connection = overrides.connection === undefined ? null : overrides.connection;
   const prisma = {
-    phoneIdentity: {
+    messagingIdentity: {
       findUnique: vi.fn(
-        async ({ where }: { where: { phoneE164?: string; botId?: string; id?: string } }) => {
-          if (where.phoneE164 === "+15552222222" || where.botId === "bot-2" || where.id === "pi-2")
-            return targetIdentity;
-          if (where.phoneE164 === "+15551111111" || where.botId === "bot-1" || where.id === "pi-1")
-            return requesterIdentity;
+        async ({
+          where,
+        }: {
+          where: {
+            botId?: string;
+            id?: string;
+            provider_address?: { provider: string; address: string };
+          };
+        }) => {
+          // Target lookups are provider-scoped: addresses are only unique
+          // within a platform.
+          if (where.provider_address) {
+            if (where.provider_address.provider !== "sendblue") return null;
+            if (where.provider_address.address === "+15552222222") return targetIdentity;
+            if (where.provider_address.address === "+15551111111") return requesterIdentity;
+            return null;
+          }
+          if (where.botId === "bot-2" || where.id === "mi-2") return targetIdentity;
+          if (where.botId === "bot-1" || where.id === "mi-1") return requesterIdentity;
           return null;
         },
       ),
@@ -127,7 +145,7 @@ function createDeps(
       })),
       updateMany: vi.fn(async () => ({ count: 1 })),
     },
-    phoneOutbound: {
+    messagingOutbound: {
       createMany: vi.fn(async ({ data }: { data: Array<Record<string, unknown>> }) => {
         outboundRows.push(...data);
         return { count: data.length };
@@ -155,7 +173,7 @@ function createDeps(
   // connectAgent claim+invite runs on the transaction client.
   Object.assign(txMock, {
     agentConnection: prisma.agentConnection,
-    phoneOutbound: prisma.phoneOutbound,
+    messagingOutbound: prisma.messagingOutbound,
   });
   const sendUserMessage = vi.fn(async () => ({ messageId: "m", runId: "r", seq: 1 }));
   const notify = vi.fn(async () => undefined);
@@ -185,9 +203,9 @@ const run = {
 const sender = { id: "bot-1", name: "Assistant" };
 
 describe("connectAgent", () => {
-  it("creates a pending connection and texts the target owner for approval", async () => {
+  it("creates a pending connection and messages the target owner for approval", async () => {
     const deps = createDeps();
-    const result = await connectAgent(deps, run, sender, { phone: "+15552222222" });
+    const result = await connectAgent(deps, run, sender, { address: "+15552222222" });
 
     expect(result).toEqual({ ok: true, status: "pending" });
     expect(deps.prisma.agentConnection.create).toHaveBeenCalledWith({
@@ -196,7 +214,7 @@ describe("connectAgent", () => {
     expect(deps.outboundRows).toEqual([
       expect.objectContaining({
         kind: "dm",
-        toNumber: "+15552222222",
+        identityId: "mi-2",
         body: expect.stringMatching(/YES/),
       }),
     ]);
@@ -215,41 +233,41 @@ describe("connectAgent", () => {
       status: "pending",
     }) as unknown as typeof deps.prisma.agentConnection.findUnique;
 
-    const result = await connectAgent(deps, run, sender, { phone: "+15552222222" });
+    const result = await connectAgent(deps, run, sender, { address: "+15552222222" });
 
     expect(result).toEqual({ ok: true, status: "pending" });
     // Winner owns the invite write; the loser must not double-queue.
     expect(deps.outboundRows).toHaveLength(0);
   });
 
-  it("rejects unknown numbers, self-connections, and repeat requests", async () => {
+  it("rejects unknown addresses, self-connections, and repeat requests", async () => {
     const unknown = createDeps();
-    expect(await connectAgent(unknown, run, sender, { phone: "+15559999999" })).toEqual(
+    expect(await connectAgent(unknown, run, sender, { address: "+15559999999" })).toEqual(
       expect.objectContaining({ ok: false }),
     );
 
     const self = createDeps();
-    expect(await connectAgent(self, run, sender, { phone: "+15551111111" })).toEqual(
+    expect(await connectAgent(self, run, sender, { address: "+15551111111" })).toEqual(
       expect.objectContaining({ ok: false, error: expect.stringMatching(/itself|self/i) }),
     );
 
     const declined = createDeps({
       connection: { id: "ac-1", requesterBotId: "bot-1", targetBotId: "bot-2", status: "declined" },
     });
-    const reinvite = await connectAgent(declined, run, sender, { phone: "+15552222222" });
+    const reinvite = await connectAgent(declined, run, sender, { address: "+15552222222" });
     expect(reinvite).toEqual(expect.objectContaining({ ok: true, status: "pending" }));
     expect(declined.prisma.agentConnection.update).toHaveBeenCalledWith({
       where: { id: "ac-1" },
       data: { status: "pending" },
     });
     expect(declined.outboundRows).toEqual([
-      expect.objectContaining({ kind: "dm", toNumber: "+15552222222" }),
+      expect.objectContaining({ kind: "dm", identityId: "mi-2" }),
     ]);
 
     const approved = createDeps({
       connection: { id: "ac-1", requesterBotId: "bot-1", targetBotId: "bot-2", status: "approved" },
     });
-    const result = await connectAgent(approved, run, sender, { phone: "+15552222222" });
+    const result = await connectAgent(approved, run, sender, { address: "+15552222222" });
     expect(result).toEqual({ ok: true, status: "approved" });
     expect(approved.prisma.agentConnection.create).not.toHaveBeenCalled();
   });
@@ -260,7 +278,7 @@ describe("connectAgent", () => {
       connectionRevokedInsideTx: true,
     });
 
-    const result = await connectAgent(deps, run, sender, { phone: "+15552222222" });
+    const result = await connectAgent(deps, run, sender, { address: "+15552222222" });
 
     expect(result).toEqual({ ok: false, error: "connection changed; try again" });
     expect(deps.outboundRows).toHaveLength(0);
@@ -300,7 +318,7 @@ describe("messageConnectedAgent", () => {
       connection: { id: "ac-1", requesterBotId: "bot-1", targetBotId: "bot-2", status: "approved" },
     });
     const result = await messageConnectedAgent(deps, run, sender, {
-      phone: "+15552222222",
+      address: "+15552222222",
       message: "results are in",
       deliveryKey: "exec-9",
     });
@@ -335,12 +353,12 @@ describe("messageConnectedAgent", () => {
       connection: { id: "ac-1", requesterBotId: "bot-1", targetBotId: "bot-2", status: "approved" },
     });
     const first = await messageConnectedAgent(deps, run, sender, {
-      phone: "+15552222222",
+      address: "+15552222222",
       message: "one",
       deliveryKey: "run-1:message_agent:0",
     });
     const second = await messageConnectedAgent(deps, run, sender, {
-      phone: "+15552222222",
+      address: "+15552222222",
       message: "two",
       deliveryKey: "run-1:message_agent:1",
     });
@@ -359,7 +377,7 @@ describe("messageConnectedAgent", () => {
   it("refuses without an approved connection", async () => {
     const deps = createDeps();
     const result = await messageConnectedAgent(deps, run, sender, {
-      phone: "+15552222222",
+      address: "+15552222222",
       message: "hello?",
     });
     expect(result).toEqual(
@@ -377,7 +395,7 @@ describe("messageConnectedAgent", () => {
       deps,
       { ...run, sourceMessageId: "msg-src" },
       sender,
-      { phone: "+15552222222", message: "again" },
+      { address: "+15552222222", message: "again" },
     );
     expect(result).toEqual(
       expect.objectContaining({ ok: false, error: expect.stringMatching(/limit/i) }),
@@ -423,7 +441,7 @@ describe("agent connection status races", () => {
       connectionRevokedInsideTx: true,
     });
     const result = await messageConnectedAgent(deps, run, sender, {
-      phone: "+15552222222",
+      address: "+15552222222",
       message: "still there?",
     });
 
@@ -438,33 +456,33 @@ describe("agent connection status races", () => {
 });
 
 describe("agent connection enumeration and sender gating", () => {
-  it("gives one generic answer for unregistered and unconnected numbers", async () => {
+  it("gives one generic answer for unregistered and unconnected addresses", async () => {
     const unregistered = await messageConnectedAgent(createDeps(), run, sender, {
-      phone: "+15550000000",
+      address: "+15550000000",
       message: "hi",
     });
     const unconnected = await messageConnectedAgent(createDeps(), run, sender, {
-      phone: "+15552222222",
+      address: "+15552222222",
       message: "hi",
     });
 
     expect(unregistered.ok).toBe(false);
     expect(unconnected.ok).toBe(false);
-    // A registered-but-unconnected number must be indistinguishable from an
+    // A registered-but-unconnected address must be indistinguishable from an
     // unregistered one (mirrors connect_agent's anti-enumeration contract).
     expect((unregistered as { error: string }).error).toBe(
       (unconnected as { error: string }).error,
     );
   });
 
-  it("refuses connection requests from bots without a phone identity", async () => {
+  it("refuses connection requests from bots without a messaging identity", async () => {
     const deps = createDeps();
     const result = await connectAgent(
       deps,
       run,
       { id: "bot-3", name: "Rogue" },
       {
-        phone: "+15552222222",
+        address: "+15552222222",
       },
     );
 
@@ -473,7 +491,7 @@ describe("agent connection enumeration and sender gating", () => {
     expect(deps.prisma.agentConnection.create).not.toHaveBeenCalled();
   });
 
-  it("refuses connected messages from bots without a phone identity", async () => {
+  it("refuses connected messages from bots without a messaging identity", async () => {
     const deps = createDeps({
       connection: { id: "ac-1", requesterBotId: "bot-3", targetBotId: "bot-2", status: "approved" },
     });
@@ -481,7 +499,7 @@ describe("agent connection enumeration and sender gating", () => {
       deps,
       { ...run, botId: "bot-3" },
       { id: "bot-3", name: "Rogue" },
-      { phone: "+15552222222", message: "hi" },
+      { address: "+15552222222", message: "hi" },
     );
 
     expect(result).toEqual(expect.objectContaining({ ok: false }));
@@ -496,7 +514,7 @@ describe("messageConnectedAgent revocation locking", () => {
       connectionRevokedAfterReadInsideTx: true,
     });
     const result = await messageConnectedAgent(deps, run, sender, {
-      phone: "+15552222222",
+      address: "+15552222222",
       message: "still there?",
     });
 

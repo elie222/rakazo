@@ -4,13 +4,16 @@ import {
   applyMobileThreadEvent,
   authHeaders,
   blockText,
+  changePassword,
   currentApiBase,
   deleteAccount,
   loadApiBase,
   type MobileMessage,
   type MobileSnapshot,
   mergeMobileSnapshot,
+  passwordResetCapabilities,
   prependMobileMessagePage,
+  requestPasswordReset,
   resetApiBase,
   rpc,
   saveApiBase,
@@ -95,6 +98,78 @@ describe("mobile API authentication", () => {
     expect(SecureStore.setItemAsync).toHaveBeenCalledWith("rakazo.session_token", "signup-token");
   });
 
+  it("loads password recovery capability and requests a server-approved redirect", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse({ passwordReset: true, resetUrl: "https://rakazo.test/reset-password" }),
+      )
+      .mockResolvedValueOnce(jsonResponse({ status: true }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(passwordResetCapabilities()).resolves.toEqual({
+      passwordReset: true,
+      resetUrl: "https://rakazo.test/reset-password",
+    });
+    await requestPasswordReset("ada@example.test", "https://rakazo.test/reset-password");
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "http://127.0.0.1:3100/api/auth/request-password-reset",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          email: "ada@example.test",
+          redirectTo: "https://rakazo.test/reset-password",
+        }),
+      }),
+    );
+  });
+
+  it("changes a password with the bearer session and revokes other sessions", async () => {
+    vi.mocked(SecureStore.getItemAsync).mockResolvedValue("session-token");
+    const fetchMock = vi.fn(async () => jsonResponse({ status: true }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await changePassword("old-password", "new-password");
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://127.0.0.1:3100/api/auth/change-password",
+      expect.objectContaining({
+        headers: expect.objectContaining({ authorization: "Bearer session-token" }),
+        body: JSON.stringify({
+          currentPassword: "old-password",
+          newPassword: "new-password",
+          revokeOtherSessions: true,
+        }),
+      }),
+    );
+  });
+
+  it("does not send a password or bearer token to a persisted public HTTP server", async () => {
+    vi.mocked(SecureStore.getItemAsync).mockImplementation(async (key) => {
+      if (key === "rakazo.api_base") return "http://app.example.test";
+      if (key === "rakazo.session_token") return "session-token";
+      return null;
+    });
+    const fetchMock = vi.fn(async () => jsonResponse({ status: true }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await loadApiBase();
+    await changePassword("old-password", "new-password");
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://127.0.0.1:3100/api/auth/change-password",
+      expect.objectContaining({
+        headers: expect.objectContaining({ authorization: "Bearer session-token" }),
+      }),
+    );
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      expect.stringMatching(/^http:\/\/app\.example\.test/),
+      expect.anything(),
+    );
+  });
+
   it("starts notifications only after the inbox selects the default space", async () => {
     vi.mocked(SecureStore.getItemAsync).mockImplementation(async (key) =>
       key === "rakazo.session_token" ? "session-token" : null,
@@ -172,6 +247,23 @@ describe("mobile API authentication", () => {
       "http://127.0.0.1:3100/api/auth/sign-out",
     ]);
     expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith("rakazo.session_token");
+  });
+
+  it("clears the local session when the sign-out request stalls", async () => {
+    vi.useFakeTimers();
+    vi.mocked(SecureStore.getItemAsync).mockResolvedValue("session-token");
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ json: null }))
+      .mockImplementationOnce(() => new Promise<Response>(() => undefined));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const pending = signOut();
+    await vi.advanceTimersByTimeAsync(8_000);
+    await pending;
+
+    expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith("rakazo.session_token");
+    expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith("rakazo.space_id");
   });
 
   it("unregisters push delivery before deleting the account", async () => {
@@ -866,20 +958,35 @@ describe("mobile thread event reduction", () => {
     );
   });
 
-  it("formats phone channel messages with iMessage attribution", () => {
+  it("formats channel messages with their platform attribution", () => {
     expect(
       blockText(
-        mobileMessage("phone-1", [
+        mobileMessage("channel-1", [
           {
-            kind: "phone_channel_message",
+            kind: "channel_message",
+            provider: "sendblue",
             channelId: "ch-1",
-            fromNumber: "+15551234567",
+            fromAddress: "+15551234567",
             fromLabel: "Alex",
             text: "Hello from the group",
           },
         ]),
       ),
     ).toBe("iMessage · Alex: Hello from the group");
+    expect(
+      blockText(
+        mobileMessage("channel-2", [
+          {
+            kind: "channel_message",
+            provider: "slack",
+            channelId: "ch-2",
+            fromAddress: "U123456",
+            fromLabel: "Alex",
+            text: "Hello from the group",
+          },
+        ]),
+      ),
+    ).toBe("Slack · Alex: Hello from the group");
   });
 
   it("deduplicates durable messages and replaces matching transient subagent state", () => {

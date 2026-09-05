@@ -10,6 +10,7 @@ export type HomeCopy = {
   skipToContent: string;
   starFallback: string;
   nav: {
+    home: string;
     primary: string;
     menu: string;
     product: string;
@@ -34,9 +35,6 @@ export type HomeCopy = {
     eyebrow: string;
     heading: string;
     copy: string;
-    installTitle: string;
-    installHint: string;
-    computersNote: string;
     features: Array<{ title: string; body: string }>;
   };
   roster: {
@@ -96,6 +94,13 @@ export type HomeCopy = {
   footer: {
     navLabel: string;
     languagesLabel: string;
+    links: {
+      docs: string;
+      changelog: string;
+      about: string;
+      support: string;
+      privacy: string;
+    };
   };
 };
 
@@ -203,16 +208,68 @@ const KO_ROSTER: RosterBot[] = [
   },
 ];
 
+const ZH_ROSTER: RosterBot[] = [
+  {
+    name: "Sales Outbound",
+    color: "#F5A03C",
+    slug: "rakazo/sales-outbound",
+    desc: "夜间调研客户、评估意向，用你的语气起草跟进，并留下待审清单。",
+  },
+  {
+    name: "Inbox Manager",
+    color: "#6A6BF5",
+    slug: "rakazo/inbox-manager",
+    desc: "归档杂音、回复例行邮件，把需要你过目的草稿先搁置起来。",
+  },
+  {
+    name: "Talent Scout",
+    color: "#3B82F6",
+    slug: "rakazo/talent-scout",
+    desc: "通读每份简历，按你的标准筛出候选名单，并写好介绍邮件。",
+  },
+  {
+    name: "Expense Manager",
+    color: "#F2622A",
+    slug: "rakazo/expense-manager",
+    desc: "核对票据与账目、提交报销，拿不准时先问而不是猜。",
+  },
+  {
+    name: "Bug Triage",
+    color: "#D9508A",
+    slug: "rakazo/bug-triage",
+    desc: "在真实浏览器里复现报告，并把复现步骤附到工单上。",
+  },
+  {
+    name: "Account Manager",
+    color: "#9B5CF6",
+    slug: "rakazo/account-manager",
+    desc: "掌握续约背景，回答常见问题，其余的自动升级给你。",
+  },
+  {
+    name: "Paid Media",
+    color: "#3EC5A8",
+    slug: "rakazo/paid-media",
+    desc: "每天盯投放，暂停没有转化的广告，并汇报发生了什么变化。",
+  },
+  {
+    name: "Chief of Staff",
+    color: "#8B93A8",
+    slug: "rakazo/chief-of-staff",
+    desc: "统筹整周：准备简报、安排日程，并协调其他 Bot 之间的交接。",
+  },
+];
+
 const HOME_COPY: Record<Locale, HomeCopy> = {
   en: {
     title: "Rakazo | Open source Grok Bot alternative",
     description: SITE_DESCRIPTION,
     ogImageAlt:
-      "Rakazo — AI teammates you actually own. Your keys, your model, your machine.",
+      "Rakazo. AI teammates you actually own. Your keys, your model, your machine.",
     availableLanguage: "English",
     skipToContent: "Skip to content",
     starFallback: "Star",
     nav: {
+      home: "Rakazo home",
       primary: "Primary",
       menu: "Menu",
       product: "Product",
@@ -231,20 +288,16 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       viewOnGithub: "View on GitHub",
       setupWithAgent: "Set up with your agent",
       copiedForAgent: "Copied for your agent",
-      copyFailed: "Copy failed — try again",
+      copyFailed: "Copy failed. Try again.",
     },
     selfHost: {
       eyebrow: "Self-hosted",
       heading: "The computer is yours",
-      copy: "Run Rakazo on your machine with published images. Local Docker computers work without an E2B account.",
-      installTitle: "Install with Docker",
-      installHint: "Docker Engine and the Compose plugin required. Default tag is edge (amd64).",
-      computersNote:
-        "Default is Docker computers on this host. E2B, Daytona, and Box are optional remote providers.",
+      copy: "Run Rakazo on your machine. Your keys, your model, your data.",
       features: [
         {
           title: "Any model, your key",
-          body: "Point a bot at Claude, GPT, Grok, or a local model. Swap per bot — the cheap one triages, the smart one writes.",
+          body: "Point a bot at Claude, GPT, Grok, or a local model. Swap per bot: the cheap one triages, the smart one writes.",
         },
         {
           title: "Readable routines",
@@ -259,7 +312,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     roster: {
       eyebrow: "Bot Templates",
       heading: "Give each bot a job",
-      copy: "Start a new bot and it interviews you — a few questions about the work, how you write, and where it lives. Then it gets going.",
+      copy: "Start a new bot and it interviews you. A few questions about the work, how you write, and where it lives. Then it gets going.",
       bots: EN_ROSTER,
     },
     openSource: {
@@ -305,9 +358,9 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       closeLabel: "Close get started dialog",
       eyebrow: "Get started",
       title: "How do you want to start?",
-      copy: "Self-host now with Docker, or join the Cloud waitlist.",
+      copy: "Self-host on your machine, or join the Cloud waitlist.",
       selfHostNow: "Self-host now",
-      selfHostHint: "Published images. UI in minutes. No E2B key required to sign up.",
+      selfHostHint: "Install steps are in the docs.",
       cloudWaitlist: "Cloud waitlist",
       cloudHint: "Hosted Rakazo is coming. Leave your email.",
       back: "Back",
@@ -329,6 +382,13 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     footer: {
       navLabel: "Footer",
       languagesLabel: "Language",
+      links: {
+        docs: "Docs",
+        changelog: "Changelog",
+        about: "About",
+        support: "Support",
+        privacy: "Privacy",
+      },
     },
   },
   de: {
@@ -336,11 +396,12 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     description:
       "Rakazo ist eine Open-Source-Alternative zu Grok Bot für persistente KI-Teamkollegen, die echte Arbeit erledigen. Deine Keys, dein Modell, deine Maschine.",
     ogImageAlt:
-      "Rakazo — KI-Teamkollegen, die dir wirklich gehören. Deine Keys, dein Modell, deine Maschine.",
+      "Rakazo. KI-Teamkollegen, die dir wirklich gehören. Deine Keys, dein Modell, deine Maschine.",
     availableLanguage: "German",
     skipToContent: "Zum Inhalt springen",
     starFallback: "Star",
     nav: {
+      home: "Rakazo-Startseite",
       primary: "Hauptnavigation",
       menu: "Menü",
       product: "Produkt",
@@ -359,24 +420,20 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       viewOnGithub: "Auf GitHub ansehen",
       setupWithAgent: "Mit deinem Agenten einrichten",
       copiedForAgent: "Für deinen Agenten kopiert",
-      copyFailed: "Kopieren fehlgeschlagen — erneut versuchen",
+      copyFailed: "Kopieren fehlgeschlagen. Erneut versuchen.",
     },
     selfHost: {
       eyebrow: "Self-hosted",
       heading: "Der Computer gehört dir",
-      copy: "Starte Rakazo mit veröffentlichten Images. Lokale Docker-Computer laufen ohne E2B-Account.",
-      installTitle: "Mit Docker installieren",
-      installHint: "Docker Engine und Compose-Plugin nötig. Default-Tag ist edge (amd64).",
-      computersNote:
-        "Standard sind Docker-Computer auf diesem Host. E2B, Daytona und Box sind optionale Remote-Anbieter.",
+      copy: "Betreibe Rakazo auf deiner Maschine. Deine Keys, dein Modell, deine Daten.",
       features: [
         {
           title: "Beliebiges Modell, dein Key",
-          body: "Richte einen Bot auf Claude, GPT, Grok oder ein lokales Modell aus. Pro Bot wechselbar — der günstige triagiert, der smarte schreibt.",
+          body: "Richte einen Bot auf Claude, GPT, Grok oder ein lokales Modell aus. Pro Bot wechselbar: der günstige triagiert, der smarte schreibt.",
         },
         {
           title: "Lesbare Routinen",
-          body: "Zeig einem Bot einmal einen Workflow — er speichert eine Routine als Markdown, das du lesen, editieren und committen kannst.",
+          body: "Zeig einem Bot einmal einen Workflow. Er speichert eine Routine als Markdown, das du lesen, editieren und committen kannst.",
         },
         {
           title: "Freigaben, die greifen",
@@ -387,7 +444,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     roster: {
       eyebrow: "Bot-Vorlagen",
       heading: "Gib jedem Bot eine Aufgabe",
-      copy: "Starte einen neuen Bot und er interviewt dich — ein paar Fragen zur Arbeit, zu deinem Schreibstil und wo sie lebt. Dann legt er los.",
+      copy: "Starte einen neuen Bot und er interviewt dich. Ein paar Fragen zur Arbeit, zu deinem Schreibstil und wo sie lebt. Dann legt er los.",
       bots: DE_ROSTER,
     },
     openSource: {
@@ -433,9 +490,9 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       closeLabel: "Loslegen-Dialog schließen",
       eyebrow: "Loslegen",
       title: "Wie willst du starten?",
-      copy: "Jetzt self-hosten mit Docker, oder auf die Cloud-Warteliste.",
+      copy: "Self-host auf deiner Maschine, oder auf die Cloud-Warteliste.",
       selfHostNow: "Jetzt self-hosten",
-      selfHostHint: "Veröffentlichte Images. UI in Minuten. Kein E2B-Key für Signup nötig.",
+      selfHostHint: "Installationsschritte stehen in den Docs.",
       cloudWaitlist: "Cloud-Warteliste",
       cloudHint: "Gehostetes Rakazo kommt. Hinterlasse deine E-Mail.",
       back: "Zurück",
@@ -457,17 +514,25 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     footer: {
       navLabel: "Fußzeile",
       languagesLabel: "Sprache",
+      links: {
+        docs: "Dokumentation",
+        changelog: "Änderungsprotokoll",
+        about: "Über uns",
+        support: "Support",
+        privacy: "Datenschutz",
+      },
     },
   },
   ko: {
     title: "Rakazo | 오픈소스 Grok Bot 대안",
     description:
-      "Rakazo는 실제 업무를 수행하는 지속형 AI 팀원을 위한 오픈소스 Grok Bot 대안입니다. 키, 모델, 머신 — 모두 당신 것.",
-    ogImageAlt: "Rakazo — 진짜로 내 것인 AI 팀원. 키, 모델, 머신 — 모두 당신 것.",
+      "Rakazo는 실제 업무를 수행하는 지속형 AI 팀원을 위한 오픈소스 Grok Bot 대안입니다. 키, 모델, 머신, 모두 당신 것.",
+    ogImageAlt: "Rakazo. 진짜로 내 것인 AI 팀원. 키, 모델, 머신, 모두 당신 것.",
     availableLanguage: "Korean",
     skipToContent: "본문으로 건너뛰기",
     starFallback: "Star",
     nav: {
+      home: "Rakazo 홈",
       primary: "주 메뉴",
       menu: "메뉴",
       product: "제품",
@@ -486,20 +551,16 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       viewOnGithub: "GitHub에서 보기",
       setupWithAgent: "에이전트로 설정하기",
       copiedForAgent: "에이전트용으로 복사됨",
-      copyFailed: "복사 실패 — 다시 시도",
+      copyFailed: "복사 실패. 다시 시도하세요.",
     },
     selfHost: {
       eyebrow: "셀프 호스트",
       heading: "컴퓨터는 당신 것",
-      copy: "게시된 이미지로 Rakazo를 실행하세요. 로컬 Docker 컴퓨터는 E2B 계정 없이 동작합니다.",
-      installTitle: "Docker로 설치",
-      installHint: "Docker Engine과 Compose 플러그인이 필요합니다. 기본 태그는 edge(amd64)입니다.",
-      computersNote:
-        "기본값은 이 호스트의 Docker 컴퓨터입니다. E2B, Daytona, Box는 선택적 원격 제공자입니다.",
+      copy: "당신 머신에서 Rakazo를 실행하세요. 키, 모델, 데이터는 모두 당신 것.",
       features: [
         {
           title: "어떤 모델이든, 키는 당신 것",
-          body: "봇을 Claude, GPT, Grok 또는 로컬 모델에 연결하세요. 봇마다 바꿀 수 있습니다 — 저렴한 모델은 분류하고, 똑똑한 모델은 작성합니다.",
+          body: "봇을 Claude, GPT, Grok 또는 로컬 모델에 연결하세요. 봇마다 바꿀 수 있습니다. 저렴한 모델은 분류하고, 똑똑한 모델은 작성합니다.",
         },
         {
           title: "읽을 수 있는 루틴",
@@ -514,7 +575,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     roster: {
       eyebrow: "봇 템플릿",
       heading: "봇마다 역할을 주세요",
-      copy: "새 봇을 시작하면 인터뷰합니다 — 업무, 글쓰기 방식, 작업이 어디에 있는지 몇 가지 질문. 그다음 바로 시작합니다.",
+      copy: "새 봇을 시작하면 인터뷰합니다. 업무, 글쓰기 방식, 작업이 어디에 있는지 몇 가지 질문. 그다음 바로 시작합니다.",
       bots: KO_ROSTER,
     },
     openSource: {
@@ -560,9 +621,9 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       closeLabel: "시작하기 대화상자 닫기",
       eyebrow: "시작하기",
       title: "어떻게 시작할까요?",
-      copy: "Docker로 지금 셀프 호스트하거나, Cloud 대기열에 등록하세요.",
+      copy: "당신 머신에서 셀프 호스트하거나, Cloud 대기열에 등록하세요.",
       selfHostNow: "지금 셀프 호스트",
-      selfHostHint: "게시된 이미지. 몇 분 안에 UI. 가입에 E2B 키 불필요.",
+      selfHostHint: "설치 단계는 문서에 있습니다.",
       cloudWaitlist: "Cloud 대기열",
       cloudHint: "호스팅 Rakazo가 곧 옵니다. 이메일을 남겨 주세요.",
       back: "뒤로",
@@ -584,6 +645,144 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     footer: {
       navLabel: "푸터",
       languagesLabel: "언어",
+      links: {
+        docs: "문서",
+        changelog: "변경 내역",
+        about: "소개",
+        support: "지원",
+        privacy: "개인정보 처리방침",
+      },
+    },
+  },
+  zh: {
+    title: "Rakazo | 开源 Grok Bot 替代品",
+    description:
+      "Rakazo 是一个开源 Grok Bot 替代品，用于运行真正干活的持久化 AI 队友。密钥、模型、机器，都归你所有。",
+    ogImageAlt: "Rakazo：真正属于你的 AI 队友。密钥、模型、机器，都归你所有。",
+    availableLanguage: "Chinese",
+    skipToContent: "跳到主要内容",
+    starFallback: "加星",
+    nav: {
+      home: "Rakazo 首页",
+      primary: "主导航",
+      menu: "菜单",
+      product: "产品",
+      bots: "Bot",
+      selfHost: "自托管",
+      openSource: "开源",
+      docs: "文档",
+      viewOnGithub: "在 GitHub 上查看",
+    },
+    hero: {
+      badge: "Apache-2.0",
+      pill: "自托管",
+      heading: "真正属于你的 AI 队友",
+      lead: "Rakazo 是一个开源 Grok Bot 替代品。把真正的工作交给 Bot：它会登录你的工具，像你一样使用它们，并在需要你时回来询问。",
+      getStarted: "开始使用",
+      viewOnGithub: "在 GitHub 上查看",
+      setupWithAgent: "用你的智能体安装",
+      copiedForAgent: "已为你的智能体复制",
+      copyFailed: "复制失败。请重试。",
+    },
+    selfHost: {
+      eyebrow: "自托管",
+      heading: "电脑归你所有",
+      copy: "在你自己的机器上运行 Rakazo。密钥、模型、数据，都归你所有。",
+      features: [
+        {
+          title: "任意模型，密钥归你",
+          body: "让 Bot 使用 Claude、GPT、Grok 或本地模型。可按 Bot 切换：用便宜的模型做分流，用聪明的模型写作。",
+        },
+        {
+          title: "可读的例行任务",
+          body: "给 Bot 演示一次工作流程，它就会把例行任务保存为纯 Markdown，你可以阅读、编辑并提交到版本库。",
+        },
+        {
+          title: "可靠的审批",
+          body: "设定 Bot 可以独立做什么、什么必须先请示。每个操作都会写入归你所有的审计日志。",
+        },
+      ],
+    },
+    roster: {
+      eyebrow: "Bot 模板",
+      heading: "给每个 Bot 分配一份工作",
+      copy: "新建一个 Bot，它会先面试你：几个关于工作内容、写作风格和运行位置的问题。然后它就开始干活。",
+      bots: ZH_ROSTER,
+    },
+    openSource: {
+      eyebrow: "开源",
+      heading: "没有定价页，只有代码仓库。",
+      copy: "Rakazo 采用 Apache-2.0 许可证，在你自己的机器上用你自己的模型密钥运行。没有功能墙，也不会偷偷外联。",
+      selfHostTitle: "自托管",
+      selfHostMeta: "现已可用",
+      selfHostItems: [
+        "Docker 运行器和沙箱浏览器",
+        "自带模型密钥",
+        "例行任务、记忆和审计日志",
+        "Bot 数量不限，无席位、无额度限制",
+        "GitHub 社区支持",
+      ],
+      starOnGithub: "在 GitHub 上点星",
+      readTheDocs: "阅读文档",
+      cloudTitle: "云端",
+      cloudBadge: "即将推出",
+      cloudMeta: "密钥归你，电脑由我们运行",
+      cloudItems: [
+        "托管沙箱，始终在线",
+        "密钥归你，模型费用归你",
+        "同样的 Bot 和例行任务，无需迁移",
+      ],
+      getStarted: "开始使用",
+    },
+    cta: {
+      heading: "认识你的第一个 Bot",
+      copy: "把一件你一直拖延的事交给 Rakazo，让它负责跟进到底。",
+      getStarted: "开始使用",
+      viewOnGithub: "在 GitHub 上查看",
+      openSourceValue: "开源",
+      selfHostValue: "自托管",
+      stats: [
+        { value: "stars", label: "GitHub 星标" },
+        { value: "license", label: "许可证" },
+        { value: "openSource", label: "无席位、无门槛" },
+        { value: "selfHost", label: "你的机器" },
+      ],
+    },
+    getStartedDialog: {
+      closeLabel: "关闭开始使用对话框",
+      eyebrow: "开始使用",
+      title: "你想如何开始？",
+      copy: "在你的机器上自托管，或加入云端候补名单。",
+      selfHostNow: "立即自托管",
+      selfHostHint: "安装步骤见文档。",
+      cloudWaitlist: "云端候补名单",
+      cloudHint: "托管版 Rakazo 即将推出。留下你的邮箱。",
+      back: "返回",
+      successTitle: "登记成功。",
+      successCopy:
+        "托管版 Rakazo 就绪时我们会邮件通知你。想今天就上手？跳到本页的自托管部分。",
+      done: "完成",
+      viewOnGithub: "在 GitHub 上查看",
+    },
+    waitlist: {
+      emailLabel: "邮箱地址",
+      placeholder: "you@company.com",
+      submit: "继续",
+      joining: "正在登记…",
+      success: "登记成功。",
+      added: "已添加",
+      error: "未能添加你，请重试。",
+    },
+    footer: {
+      navLabel: "页脚",
+      languagesLabel: "语言",
+      links: {
+        docs: "文档",
+        changelog: "更新日志",
+        about: "关于",
+        support: "支持",
+        privacy: "隐私",
+      },
     },
   },
 };

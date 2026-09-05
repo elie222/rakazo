@@ -1,12 +1,13 @@
 ---
 type Props = {
   href?: string;
+  label?: string;
 };
 
-const { href = "/" } = Astro.props as Props;
+const { href = "/", label = "Rakazo home" } = Astro.props as Props;
 ---
 
-<a class="brand-lockup" href={href} aria-label="Rakazo home">
+<a class="brand-lockup" href={href} aria-label={label}>
   <img
     class="brand-lockup__mark"
     src="/brand/rakazo-mark.svg"

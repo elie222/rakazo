@@ -41,8 +41,8 @@ export const SUBSCRIPTION_SIGN_IN_PROVIDERS: Record<
     mode: "auth-url",
     loginLabel: "Sign in with Claude Pro/Max",
     hint: "Claude Pro/Max / key",
-    billing:
-      "Sign in with Claude Pro or Max, or paste an Anthropic API key. Uses your Anthropic subscription. Rakazo does not pay.",
+    // Button + "Or paste an API key" already explain the choices; no extra paragraph.
+    billing: "",
   },
 };
 

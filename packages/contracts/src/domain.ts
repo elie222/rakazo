@@ -211,9 +211,9 @@ export const UpdateBotInput = z
   .object({
     botId: Id,
     name: z.string().trim().min(1).max(BOT_NAME_MAX_LENGTH).optional(),
-    title: z.string().max(BOT_TITLE_MAX_LENGTH).optional(),
-    description: z.string().max(BOT_DESCRIPTION_MAX_LENGTH).optional(),
-    instructions: z.string().max(BOT_INSTRUCTIONS_MAX_LENGTH).optional(),
+    title: z.string().trim().max(BOT_TITLE_MAX_LENGTH).optional(),
+    description: z.string().trim().max(BOT_DESCRIPTION_MAX_LENGTH).optional(),
+    instructions: z.string().trim().max(BOT_INSTRUCTIONS_MAX_LENGTH).optional(),
     notifyOnFinish: z.boolean().optional(),
     color: z.string().optional(),
     pinned: z.boolean().optional(),
@@ -610,23 +610,40 @@ export type ComputerStatus = z.infer<typeof ComputerStatusSchema>;
 export const ComputerReleaseReasonSchema = z.enum(["done", "skipped"]);
 export type ComputerReleaseReason = z.infer<typeof ComputerReleaseReasonSchema>;
 
-export const PhoneStatusSchema = z.object({
-  enabled: z.boolean(),
-  linked: z.boolean(),
-  phoneE164: z.string().nullable(),
-  botId: Id.nullable(),
+export const MessagingLinkedIdentitySchema = z.object({
+  id: Id,
+  provider: z.string(),
+  address: z.string(),
+  botId: Id,
+  botName: z.string(),
 });
-export type PhoneStatus = z.infer<typeof PhoneStatusSchema>;
+export type MessagingLinkedIdentity = z.infer<typeof MessagingLinkedIdentitySchema>;
 
-export const PhoneChannelMembershipSchema = z.object({
+export const MessagingStatusSchema = z.object({
+  enabled: z.boolean(),
+  /** Messaging platforms mounted on this deployment (sendblue, slack, …). */
+  providers: z.array(z.string()),
+  /** True when unknown senders auto-provision their own accounts. */
+  openSignup: z.boolean(),
+  /** The caller's linked chat apps, one entry per (provider, address). */
+  identities: z.array(MessagingLinkedIdentitySchema),
+});
+export type MessagingStatus = z.infer<typeof MessagingStatusSchema>;
+
+export const MessagingChannelMembershipSchema = z.object({
+  /** One row per linked identity: the same group can hold two of the caller's. */
+  id: Id,
   channelId: Id,
+  /** Which of the caller's linked chat apps this membership belongs to. */
+  identityId: Id,
+  provider: z.string(),
   name: z.string().nullable(),
   status: z.enum(["invited", "approved", "declined", "left"]),
   memberCount: z.number().int().nonnegative(),
 });
-export type PhoneChannelMembership = z.infer<typeof PhoneChannelMembershipSchema>;
+export type MessagingChannelMembership = z.infer<typeof MessagingChannelMembershipSchema>;
 
-export const PhoneAgentConnectionSchema = z.object({
+export const MessagingAgentConnectionSchema = z.object({
   id: Id,
   peerBotName: z.string(),
   peerOwnerLabel: z.string(),
@@ -634,7 +651,7 @@ export const PhoneAgentConnectionSchema = z.object({
   /** true when the caller's bot is the target (only the target can respond). */
   incoming: z.boolean(),
 });
-export type PhoneAgentConnection = z.infer<typeof PhoneAgentConnectionSchema>;
+export type MessagingAgentConnection = z.infer<typeof MessagingAgentConnectionSchema>;
 
 export const RunSchema = z.object({
   id: Id,
@@ -652,7 +669,7 @@ export const RunSchema = z.object({
     "skill",
     "bot_message",
     "webhook",
-    "phone",
+    "messaging",
   ]),
   routineId: Id.nullable(),
   modelProvider: z.string().nullable(),

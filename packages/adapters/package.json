@@ -12,6 +12,10 @@
   },
   "dependencies": {
     "@asciidev/box-sdk": "^0.0.28",
+    "@chat-adapter/slack": "4.39.0",
+    "@chat-adapter/state-memory": "4.39.0",
+    "@chat-adapter/telegram": "4.39.0",
+    "@chat-adapter/whatsapp": "4.39.0",
     "@composio/core": "0.16.0",
     "@daytona/sdk": "^0.204.1",
     "@e2b/desktop": "^2.3.1",
@@ -24,19 +28,26 @@
     "@rakazo/contracts": "workspace:*",
     "@rakazo/core": "workspace:*",
     "@rakazo/db": "workspace:*",
+    "@rakazo/logging": "workspace:*",
+    "chat": "4.39.0",
+    "chat-adapter-sendblue": "0.2.0",
     "d3-dsv": "^3.0.1",
     "graphile-worker": "^0.17.3",
     "jsdom": "^30.0.1",
     "koffi": "^2.9.0",
+    "nodemailer": "^7.0.11",
     "pg": "^8.16.3",
+    "sendblue": "3.16.1",
     "sharp": "^0.35.3",
     "shell-quote": "1.10.0",
     "undici": "^7.22.0",
-    "zod": "^4.1.5"
+    "zod": "^4.2.0"
   },
   "devDependencies": {
+    "@chat-adapter/tests": "4.39.0",
     "@types/d3-dsv": "^3.0.7",
     "@types/jsdom": "^30.0.0",
+    "@types/nodemailer": "^7.0.11",
     "@types/pg": "^8.15.5",
     "typescript": "^5.9.2",
     "vitest": "^4.1.10"

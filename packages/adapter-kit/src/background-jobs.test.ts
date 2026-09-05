@@ -3,8 +3,8 @@ import {
   dispatchBackgroundJob,
   historyCompactJob,
   historyCompactJobKey,
+  messagingDeliverJob,
   parseBackgroundJob,
-  phoneDeliverJob,
 } from "./background-jobs.js";
 import type { BackgroundJobHandlers } from "./types.js";
 
@@ -16,24 +16,24 @@ function handlers(): BackgroundJobHandlers {
     "computer.control-expire": vi.fn(async () => undefined),
     "skill.teaching-expire": vi.fn(async () => undefined),
     "history.compact": vi.fn(async () => undefined),
-    "phone.deliver": vi.fn(async () => undefined),
+    "messaging.deliver": vi.fn(async () => undefined),
   };
 }
 
 describe("background job contracts", () => {
-  it("validates and dispatches phone.deliver", async () => {
+  it("validates and dispatches messaging.deliver", async () => {
     const target = handlers();
-    await dispatchBackgroundJob(target, "phone.deliver", { runId: "run-1" });
-    expect(target["phone.deliver"]).toHaveBeenCalledWith({ runId: "run-1" });
-    expect(phoneDeliverJob("run-1")).toEqual({
-      name: "phone.deliver",
+    await dispatchBackgroundJob(target, "messaging.deliver", { runId: "run-1" });
+    expect(target["messaging.deliver"]).toHaveBeenCalledWith({ runId: "run-1" });
+    expect(messagingDeliverJob("run-1")).toEqual({
+      name: "messaging.deliver",
       payload: { runId: "run-1" },
-      replaceKey: "phone.deliver:run-1",
+      replaceKey: "messaging.deliver:run-1",
     });
-    expect(phoneDeliverJob()).toEqual({
-      name: "phone.deliver",
+    expect(messagingDeliverJob()).toEqual({
+      name: "messaging.deliver",
       payload: {},
-      replaceKey: "phone.deliver:drain",
+      replaceKey: "messaging.deliver:drain",
     });
   });
 

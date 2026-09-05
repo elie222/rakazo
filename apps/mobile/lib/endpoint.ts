@@ -1,5 +1,8 @@
+import { t } from "./i18n";
+
 const LOCAL_API = "http://127.0.0.1:3100";
 const DEFAULT_API = process.env.EXPO_PUBLIC_API_URL ?? LOCAL_API;
+export const API_PROBE_TIMEOUT_MS = 8_000;
 
 export type EndpointResult = { ok: true; url: string } | { ok: false; error: string };
 
@@ -9,18 +12,21 @@ export function defaultApiBase() {
 
 export function normalizeApiBase(input: string): EndpointResult {
   const trimmed = input.trim();
-  if (!trimmed) return { ok: false, error: "Enter a server URL" };
+  if (!trimmed) return { ok: false, error: t("Enter a server URL") };
   const withScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
   let parsed: URL;
   try {
     parsed = new URL(withScheme);
   } catch {
-    return { ok: false, error: "That doesn’t look like a URL" };
+    return { ok: false, error: t("That doesn’t look like a URL") };
   }
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-    return { ok: false, error: "Use an http or https URL" };
+    return { ok: false, error: t("Use an http or https URL") };
   }
-  if (!parsed.hostname) return { ok: false, error: "That URL is missing a host" };
+  if (!parsed.hostname) return { ok: false, error: t("That URL is missing a host") };
+  if (parsed.protocol === "http:" && !isLanOrLocalHost(parsed.hostname)) {
+    return { ok: false, error: "Public servers need https://" };
+  }
   const url = `${parsed.protocol}//${parsed.host}`;
   return { ok: true, url };
 }
@@ -42,7 +48,7 @@ export function apiBaseWarning(url: string): string | null {
   try {
     const parsed = new URL(url);
     if (parsed.protocol === "http:" && !isLanOrLocalHost(parsed.hostname)) {
-      return "Public servers need https://. HTTP only works on your local network.";
+      return t("Public servers need https://. HTTP only works on your local network.");
     }
   } catch {
     return null;
@@ -57,37 +63,68 @@ export async function probeApiBase(
   const parsed = normalizeApiBase(input);
   if (!parsed.ok) return parsed;
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 8_000);
+  const timer = setTimeout(() => controller.abort(), API_PROBE_TIMEOUT_MS);
   try {
-    const res = await fetchImpl(`${parsed.url}/rpc/health`, {
-      method: "POST",
-      headers: { "content-type": "application/json", origin: "rakazo://" },
-      body: JSON.stringify({ json: {} }),
-      signal: controller.signal,
-    });
-    const body = (await res.json().catch(() => ({}))) as {
+    const res = await withAbort(
+      fetchImpl(`${parsed.url}/rpc/health`, {
+        method: "POST",
+        headers: { "content-type": "application/json", origin: "rakazo://" },
+        body: JSON.stringify({ json: {} }),
+        signal: controller.signal,
+      }),
+      controller.signal,
+    );
+    if (!res.ok) {
+      cancelResponseBody(res);
+      return { ok: false, error: t("That URL did not look like a Rakazo server") };
+    }
+    const body = (await withAbort(
+      res.json().catch(() => ({})),
+      controller.signal,
+    )) as {
       json?: { ok?: boolean };
       error?: { message?: string };
     };
-    if (!res.ok || body.error || body.json?.ok !== true) {
-      return { ok: false, error: "That URL did not look like a Rakazo server" };
+    if (body.error || body.json?.ok !== true) {
+      return { ok: false, error: t("That URL did not look like a Rakazo server") };
     }
     return parsed;
   } catch {
-    return { ok: false, error: "Could not reach that server" };
+    return { ok: false, error: t("Could not reach that server") };
   } finally {
     clearTimeout(timer);
   }
 }
 
-function originOnly(value: string) {
+function cancelResponseBody(response: Response): void {
   try {
-    const parsed = new URL(value);
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
-    return `${parsed.protocol}//${parsed.host}`;
+    void Promise.resolve(response.body?.cancel()).catch(() => undefined);
   } catch {
-    return null;
+    // Probe cleanup is best-effort and must not delay the fallback result.
   }
+}
+
+function withAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) return Promise.reject(signal.reason ?? new Error("Request timed out"));
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(signal.reason ?? new Error("Request timed out"));
+    signal.addEventListener("abort", onAbort, { once: true });
+    promise.then(
+      (value) => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(value);
+      },
+      (error: unknown) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(error);
+      },
+    );
+  });
+}
+
+function originOnly(value: string) {
+  const parsed = normalizeApiBase(value);
+  return parsed.ok ? parsed.url : null;
 }
 
 function isLanOrLocalHost(hostname: string) {

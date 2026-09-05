@@ -1,15 +1,16 @@
 import type { JobPublisher } from "@rakazo/adapter-kit";
-import { phoneDeliverJob, runContinueJob } from "@rakazo/adapter-kit";
+import { messagingDeliverJob, runContinueJob } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
 import {
   botMessageHopExhausted,
   buildBotMessageWakePrompt,
   clampBotMessage,
   nextBotMessageHop,
-  sanitizePhoneLabel,
+  sanitizeMessagingLabel,
 } from "@rakazo/core";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { appendEventInTransaction, createThreadMessageInTransaction } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
 import { currentBotMessageHop } from "./bot-messages.js";
 
 export interface AgentConnectionDeps {
@@ -41,25 +42,28 @@ export async function connectAgent(
   deps: AgentConnectionDeps,
   _run: ConnectionRun,
   sender: { id: string; name: string },
-  input: { phone?: string },
+  input: { address?: string },
 ): Promise<Result> {
-  const phone = input.phone?.trim();
-  if (!phone) return { ok: false, error: "phone is required" };
-  const requesterIdentity = await deps.prisma.phoneIdentity.findUnique({
+  const address = input.address?.trim();
+  if (!address) return { ok: false, error: "address is required" };
+  const requesterIdentity = await deps.prisma.messagingIdentity.findUnique({
     where: { botId: sender.id },
   });
-  // Connection invites are a phone-surface feature; a bot whose owner never
-  // texted the line cannot open them.
+  // Connection invites are a messaging-surface feature; a bot whose owner
+  // never messaged the deployment cannot open them.
   if (!requesterIdentity) {
-    return { ok: false, error: "only phone-linked agents can use agent connections" };
+    return { ok: false, error: "only chat-linked agents can use agent connections" };
   }
-  const targetIdentity = await deps.prisma.phoneIdentity.findUnique({
-    where: { phoneE164: phone },
+  // Scoped to the requester's own platform: addresses are only unique per
+  // provider, and a cross-provider match could route the invite to a
+  // different person who happens to share the address string.
+  const targetIdentity = await deps.prisma.messagingIdentity.findUnique({
+    where: { provider_address: { provider: requesterIdentity.provider, address } },
   });
-  // One generic answer for unknown and unavailable numbers: the tool is
+  // One generic answer for unknown and unavailable addresses: the tool is
   // reachable by every bot on the deployment, so it must not enumerate
-  // which numbers are registered.
-  if (!targetIdentity) return { ok: false, error: "no agent can be reached at that number" };
+  // which addresses are registered.
+  if (!targetIdentity) return { ok: false, error: "no agent can be reached at that address" };
   if (targetIdentity.botId === sender.id) {
     return { ok: false, error: "a bot cannot connect to itself" };
   }
@@ -68,7 +72,7 @@ export async function connectAgent(
     select: { id: true, name: true, archivedAt: true },
   });
   if (!target || target.archivedAt) {
-    return { ok: false, error: "no agent can be reached at that number" };
+    return { ok: false, error: "no agent can be reached at that address" };
   }
 
   const existing = await deps.prisma.agentConnection.findUnique({
@@ -89,12 +93,12 @@ export async function connectAgent(
         select: { name: true },
       })
     : null;
-  const requesterFirst = sanitizePhoneLabel(
+  const requesterFirst = sanitizeMessagingLabel(
     requesterOwner?.name.trim().split(/\s+/)[0] || "Someone",
   );
 
   const inviteKey = `connect:${sender.id}:${target.id}`;
-  const inviteBody = `${requesterFirst}'s agent (${sanitizePhoneLabel(sender.name)}) wants to connect with your agent. Reply YES to allow, NO to decline.`;
+  const inviteBody = `${requesterFirst}'s agent (${sanitizeMessagingLabel(sender.name)}) wants to connect with your agent. Reply YES to allow, NO to decline.`;
 
   // Claim + invite in one locked transaction so a concurrent revoke cannot
   // leave a pending invite after the connection is already revoked.
@@ -133,13 +137,13 @@ export async function connectAgent(
       }
       // Fresh approval cycle: clear the old invite row or skipDuplicates would
       // silently swallow the new request.
-      await tx.phoneOutbound.deleteMany({ where: { idempotencyKey: inviteKey } });
-      await tx.phoneOutbound.createMany({
+      await tx.messagingOutbound.deleteMany({ where: { idempotencyKey: inviteKey } });
+      await tx.messagingOutbound.createMany({
         data: [
           {
             idempotencyKey: inviteKey,
             kind: "dm",
-            toNumber: targetIdentity.phoneE164,
+            identityId: targetIdentity.id,
             body: inviteBody,
           },
         ],
@@ -166,8 +170,8 @@ export async function connectAgent(
   if (!claimed.ok) return claimed;
   if (claimed.status !== "pending") return { ok: true, status: claimed.status };
 
-  await deps.jobs.enqueue(phoneDeliverJob()).catch((error) => {
-    console.error("agent connection invite enqueue error", error);
+  await deps.jobs.enqueue(messagingDeliverJob()).catch((error) => {
+    getLogger().error("agent connection invite enqueue error", error);
   });
   return { ok: true, status: "pending" };
 }
@@ -202,33 +206,35 @@ export async function messageConnectedAgent(
   deps: AgentConnectionDeps,
   run: ConnectionRun,
   sender: { id: string; name: string },
-  input: { phone?: string; message: string; deliveryKey?: string },
+  input: { address?: string; message: string; deliveryKey?: string },
 ): Promise<Result> {
   const message = clampBotMessage(String(input.message ?? ""));
   if (!message) return { ok: false, error: "message is required" };
-  const phone = input.phone?.trim();
-  if (!phone) return { ok: false, error: "phone is required" };
+  const address = input.address?.trim();
+  if (!address) return { ok: false, error: "address is required" };
 
-  const senderIdentity = await deps.prisma.phoneIdentity.findUnique({
+  const senderIdentity = await deps.prisma.messagingIdentity.findUnique({
     where: { botId: sender.id },
   });
   if (!senderIdentity) {
-    return { ok: false, error: "only phone-linked agents can use agent connections" };
+    return { ok: false, error: "only chat-linked agents can use agent connections" };
   }
 
-  const targetIdentity = await deps.prisma.phoneIdentity.findUnique({
-    where: { phoneE164: phone },
+  // Provider-scoped for the same reason as connect_agent: an address match
+  // on another platform could belong to someone else entirely.
+  const targetIdentity = await deps.prisma.messagingIdentity.findUnique({
+    where: { provider_address: { provider: senderIdentity.provider, address } },
   });
-  // One generic answer for unknown and unconnected numbers, mirroring
-  // connect_agent: the tool must not enumerate registered numbers.
-  if (!targetIdentity) return { ok: false, error: "no agent can be reached at that number" };
+  // One generic answer for unknown and unconnected addresses, mirroring
+  // connect_agent: the tool must not enumerate registered addresses.
+  if (!targetIdentity) return { ok: false, error: "no agent can be reached at that address" };
   if (targetIdentity.botId === sender.id) {
     return { ok: false, error: "a bot cannot message itself" };
   }
 
   const connection = await approvedConnectionBetween(deps.prisma, sender.id, targetIdentity.botId);
   if (!connection) {
-    return { ok: false, error: "no agent can be reached at that number" };
+    return { ok: false, error: "no agent can be reached at that address" };
   }
 
   const hop = nextBotMessageHop(
@@ -388,7 +394,7 @@ export async function messageConnectedAgent(
   await deps.events.notify(targetThreadId, committed.targetEventSeq).catch(() => undefined);
   await deps.events.notify(run.threadId, committed.senderEventSeq).catch(() => undefined);
   await deps.jobs.enqueue(runContinueJob(committed.runId)).catch((error) => {
-    console.error("agent connection message enqueue", error);
+    getLogger().error("agent connection message enqueue", error);
   });
   return {
     ok: true,
