@@ -80,6 +80,9 @@ services:
       SIGNUPS_ENABLED: "true"
       WAKEUP_DRIVER: graphile
       SANDBOX_PROVIDER: docker
+      CLOUD_AGENT_PROVIDER: ${CLOUD_AGENT_PROVIDER:-none}
+      CLOUD_AGENT_SPACE_ID: ${CLOUD_AGENT_SPACE_ID:-}
+      CURSOR_API_KEY: ${CURSOR_API_KEY:-}
       AGENT_RUNTIME: scripted
       # Optional egress proxy (Mainland / corporate). Empty = unset; either case works.
       HTTP_PROXY: ${HTTP_PROXY:-${http_proxy:-}}

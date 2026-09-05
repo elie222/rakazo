@@ -3169,6 +3169,26 @@ msgstr "Botların {hostLabel} üzerinde çalışmasına izin verirsen işletim s
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "Gerçek işler verebileceğin,<0/>her zaman açık agent takımın."
 
+#: src/components/CloudAgentCard.tsx:36
+msgid "cancelled"
+msgstr "iptal edildi"
+
+#: src/components/CloudAgentCard.tsx:38
+msgid "failed"
+msgstr "başarısız"
+
+#: src/components/CloudAgentCard.tsx:34
+msgid "finished"
+msgstr "tamamlandı"
+
+#: src/components/CloudAgentCard.tsx:44
+msgid "Pull request"
+msgstr "Çekme isteği"
+
+#: src/components/CloudAgentCard.tsx:32
+msgid "running"
+msgstr "çalışıyor"
+
 #: src/pages/KnowledgeSection.tsx:334
 msgid "Could not delete skill"
 msgstr "Beceri silinemedi"

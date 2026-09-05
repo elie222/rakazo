@@ -69,6 +69,9 @@ services:
       SANDBOX_SUPERVISOR_URL: http://supervisor:7091
       WAKEUP_DRIVER: graphile
       SANDBOX_PROVIDER: docker
+      CLOUD_AGENT_PROVIDER: ${CLOUD_AGENT_PROVIDER:-none}
+      CLOUD_AGENT_SPACE_ID: ${CLOUD_AGENT_SPACE_ID:-}
+      CURSOR_API_KEY: ${CURSOR_API_KEY:-}
       AGENT_RUNTIME: pi
       # Optional egress proxy (Mainland / corporate). Empty = unset; either case works.
       HTTP_PROXY: ${HTTP_PROXY:-${http_proxy:-}}
@@ -101,6 +104,9 @@ services:
       SANDBOX_SUPERVISOR_URL: http://supervisor:7091
       WAKEUP_DRIVER: graphile
       SANDBOX_PROVIDER: docker
+      CLOUD_AGENT_PROVIDER: ${CLOUD_AGENT_PROVIDER:-none}
+      CLOUD_AGENT_SPACE_ID: ${CLOUD_AGENT_SPACE_ID:-}
+      CURSOR_API_KEY: ${CURSOR_API_KEY:-}
       SCREEN_PROXY_SECRET: ""
       AGENT_RUNTIME: pi
       # Optional egress proxy (Mainland / corporate). Empty = unset; either case works.

@@ -3169,6 +3169,26 @@ msgstr "Tu sistema operativo no pedirá permisos extra si dejas que los bots se 
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "Tu equipo de agentes siempre activos<0/>a los que puedes dar trabajo real."
 
+#: src/components/CloudAgentCard.tsx:36
+msgid "cancelled"
+msgstr "cancelado"
+
+#: src/components/CloudAgentCard.tsx:38
+msgid "failed"
+msgstr "fallido"
+
+#: src/components/CloudAgentCard.tsx:34
+msgid "finished"
+msgstr "finalizado"
+
+#: src/components/CloudAgentCard.tsx:44
+msgid "Pull request"
+msgstr "Solicitud de incorporación"
+
+#: src/components/CloudAgentCard.tsx:32
+msgid "running"
+msgstr "en ejecución"
+
 #: src/pages/KnowledgeSection.tsx:334
 msgid "Could not delete skill"
 msgstr "No se pudo eliminar la habilidad"

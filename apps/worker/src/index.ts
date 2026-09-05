@@ -6,6 +6,7 @@ loadRootEnv();
 import {
   ChatSdkMessagingSurface,
   createBackgroundJobHandlers,
+  createCloudAgentConnection,
   createConnectorStack,
   createJobReconciler,
   createMessagingContextLoader,
@@ -33,6 +34,7 @@ import {
   PipedreamConnector,
   PostgresRealtimeFanout,
   pipedreamConfigFromEnv,
+  reconcileCloudAgents,
   resolveDeploymentModel,
   resolveSandboxProvider,
   ScriptedAgentRuntime,
@@ -119,6 +121,8 @@ async function main() {
   const inMemoryJobs = process.env.WAKEUP_DRIVER === "memory" ? new InMemoryJobQueue() : undefined;
   const jobs: JobPublisher = inMemoryJobs ?? new GraphileJobPublisher(databaseUrl);
   const jobHost: JobWorkerHost = inMemoryJobs ?? new GraphileJobWorkerHost(databaseUrl);
+  // One provider instance so emulator launches and polls share the same Map.
+  const cloudAgent = createCloudAgentConnection();
   const executor = createRunExecutor({
     prisma,
     runtime,
@@ -130,7 +134,11 @@ async function main() {
     connector: stack.connector,
     connectors: stack.connector,
     listConnectedPluginSlugs: stack.composio?.listConnectedSlugs.bind(stack.composio),
-    secrets: [deploymentModelKey ?? "", process.env.COMPOSIO_API_KEY ?? ""].filter(Boolean),
+    secrets: [
+      deploymentModelKey ?? "",
+      process.env.COMPOSIO_API_KEY ?? "",
+      process.env.CURSOR_API_KEY ?? "",
+    ].filter(Boolean),
     secretStore: secrets,
     deploymentModelKey,
     dataDir,
@@ -139,6 +147,7 @@ async function main() {
     events,
     messaging: messaging ? createMessagingContextLoader(prisma) : undefined,
     web: createWebProvider(),
+    cloudAgent,
   });
 
   const jobHandlers = createBackgroundJobHandlers({
@@ -154,6 +163,7 @@ async function main() {
     memoryProviders,
     deploymentModelKey,
     messaging,
+    cloudAgent,
   });
   await jobHost.start(jobHandlers);
   const reconciler = createJobReconciler({
@@ -161,6 +171,7 @@ async function main() {
     jobs,
     events,
     leadership: createPostgresReconciliationLeadership(pool),
+    reconcileCloudAgents: () => reconcileCloudAgents({ prisma, jobs, cloudAgent }),
   });
   reconciler.start();
 

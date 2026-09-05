@@ -599,6 +599,43 @@ model Attempt {
   @@map("attempts")
 }
 
+// Deliberately independent of chat/user cascades: the worker must still be able
+// to cancel remote work after its originating chat or account is deleted.
+model CloudAgent {
+  id                  String   @id @default(uuid())
+  operationKey        String   @unique
+  providerKey         String
+  spaceId             String
+  userId              String
+  botId               String
+  threadId            String
+  messageId           String?
+  remoteId            String?
+  latestRunId         String?
+  title               String
+  status              String   @default("running")
+  url                 String   @default("")
+  branch              String?
+  prUrl               String?
+  launchRequest       Json
+  launchDispatched    Boolean  @default(false)
+  followup            Json?
+  followupDispatching Boolean  @default(false)
+  cancelRequested     Boolean  @default(false)
+  generation          Int      @default(0)
+  wakeGeneration      Int      @default(-1)
+  version             Int      @default(0)
+  leaseToken          String?
+  leaseExpiresAt      DateTime?
+  nextPollAt          DateTime? @default(now())
+  errorCount          Int      @default(0)
+  createdAt           DateTime @default(now())
+
+  @@index([providerKey, nextPollAt])
+  @@index([spaceId, userId, id])
+  @@map("cloud_agents")
+}
+
 model ExternalEffect {
   id             String   @id @default(cuid())
   spaceId        String

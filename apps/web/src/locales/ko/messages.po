@@ -3169,6 +3169,26 @@ msgstr "{hostLabel}에서 실행하면 Bot이 내 계정 권한으로 동작하�
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "언제든 실제 작업을 맡길 수 있는<0/>나만의 Agent 팀"
 
+#: src/components/CloudAgentCard.tsx:36
+msgid "cancelled"
+msgstr "취소됨"
+
+#: src/components/CloudAgentCard.tsx:38
+msgid "failed"
+msgstr "실패"
+
+#: src/components/CloudAgentCard.tsx:34
+msgid "finished"
+msgstr "완료"
+
+#: src/components/CloudAgentCard.tsx:44
+msgid "Pull request"
+msgstr "풀 리퀘스트"
+
+#: src/components/CloudAgentCard.tsx:32
+msgid "running"
+msgstr "실행 중"
+
 #: src/pages/KnowledgeSection.tsx:334
 msgid "Could not delete skill"
 msgstr "스킬을 삭제하지 못했습니다"

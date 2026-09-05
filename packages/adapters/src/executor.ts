@@ -126,6 +126,10 @@ import {
 import { loadBotMessageContext, messageBot, returnBotMessageOutcome } from "./bot-messages.js";
 import { agentConnectionTools, builtinAgentTools } from "./builtin-tools.js";
 import { archiveSpawnedBot, spawnBot } from "./child-bots.js";
+import { type CloudAgentConnection, cloudAgentsEnabled } from "./cloud-agent-factory.js";
+import { executeCloudAgentTool } from "./cloud-agent-service.js";
+import { validCloudAgentArgs } from "./cloud-agent-tools.js";
+import { selectCloudAgentTools } from "./cloud-agent-tools-select.js";
 import {
   collectLogIds,
   mergeConnectedPlugins,
@@ -270,6 +274,7 @@ const READ_ONLY_AGENT_TOOLS = new Set([
   "skill_read",
   "web_search",
   "web_fetch",
+  "cloud_agent_status",
 ]);
 const MAX_MODEL_FILE_BYTES = 250_000;
 const TURN_ATTACHMENT_UNAVAILABLE =
@@ -437,6 +442,8 @@ export interface ExecutorDeps {
   listConnectedPluginSlugs?: (userId: string) => Promise<string[]>;
   /** Builtin web_search / web_fetch. Defaults to keyless HTTP when omitted. */
   web?: WebProvider;
+  /** Remote cloud coding agents. Null/omit means tools stay uninjected. */
+  cloudAgent?: CloudAgentConnection | null;
 }
 
 export async function deferFutureRoutine(
@@ -564,6 +571,7 @@ export function buildApprovalContinuation(
 
 export function createRunExecutor(deps: ExecutorDeps) {
   const web = deps.web ?? createWebProvider();
+  const cloudAgent = deps.cloudAgent;
   return {
     async resolveModel(scope: {
       userId: string;
@@ -1213,6 +1221,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             groupId: thread.groupId,
             trigger: run.trigger,
             semanticMemoryEnabled,
+            cloudAgentEnabled: cloudAgentsEnabled(cloudAgent, run.spaceId),
             messagingChannelRun,
           }),
           // Cross-owner agent connections only exist for chat-linked bots.
@@ -1423,6 +1432,11 @@ export function createRunExecutor(deps: ExecutorDeps) {
           if (approvedReplay.args) connectorCall.args = approvedReplay.args;
           let catalogRemapped = false;
           let resolvedToolSchema: Record<string, unknown> | undefined;
+          if (name.startsWith("cloud_agent_") && !validCloudAgentArgs(name, args)) {
+            return {
+              error: "Invalid cloud agent arguments. Raw environment variables are not supported.",
+            };
+          }
           let effectRequest: unknown = args;
           if (connectorCall.route && deps.connector?.resolveCall) {
             try {
@@ -2191,6 +2205,18 @@ export function createRunExecutor(deps: ExecutorDeps) {
           }
           if (name === "web_fetch") {
             return finish(await webFetchFromTool(web, context, args));
+          }
+
+          if (name.startsWith("cloud_agent_")) {
+            return finish(
+              await executeCloudAgentTool(
+                { ...deps, cloudAgent },
+                { ...context, operationId: effectKey, botId: bot.id },
+                run,
+                name,
+                args,
+              ),
+            );
           }
           if (name === "scratchpad_list") {
             return listScratchpadItemsFromTool(deps, {
@@ -3654,17 +3680,21 @@ export function selectBuiltinToolsForRun(options: {
   groupId: string | null;
   trigger: string;
   semanticMemoryEnabled: boolean;
+  cloudAgentEnabled?: boolean;
   messagingChannelRun: boolean;
 }) {
-  return selectMemoryTools(
-    filterBuiltinToolsForRun(
-      filterBuiltinToolsForThread(
-        filterImageReturningComputerTools(builtinAgentTools, options.graphicalToolsAllowed),
-        options.groupId,
+  return selectCloudAgentTools(
+    selectMemoryTools(
+      filterBuiltinToolsForRun(
+        filterBuiltinToolsForThread(
+          filterImageReturningComputerTools(builtinAgentTools, options.graphicalToolsAllowed),
+          options.groupId,
+        ),
+        options.trigger,
       ),
-      options.trigger,
+      options.semanticMemoryEnabled,
     ),
-    options.semanticMemoryEnabled,
+    Boolean(options.cloudAgentEnabled),
   ).filter(
     (tool) =>
       !options.messagingChannelRun ||
