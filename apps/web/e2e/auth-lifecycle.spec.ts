@@ -11,7 +11,7 @@ test("restricted signup waits for mailbox verification", async ({ page }, testIn
   await page.getByLabel("Name").fill("Pending User");
   await page.getByLabel("Email").fill("pending@example.test");
   await page.getByLabel("Password", { exact: true }).fill("password12");
-  await page.getByRole("button", { name: "Continue with email" }).click();
+  await page.getByRole("button", { name: "Create account", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Check your email" })).toBeVisible();
   await expect(page).toHaveURL(/\/sign-up$/);
   await captureScreenshot(page, testInfo, "signup-verification-required");
