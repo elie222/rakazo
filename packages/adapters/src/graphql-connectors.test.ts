@@ -358,6 +358,70 @@ describe("GraphQL connector import", () => {
     expect(sentQuery).toContain("... on Person { name }");
     expect(sentQuery).toContain("... on Repository { stars }");
   });
+
+  it("keeps a broad nested union inside the persisted selection budget", () => {
+    const scalarFields = Array.from({ length: 300 }, (_, index) => ({
+      name: `field_${index.toString().padStart(4, "0")}`,
+      args: [],
+      type: { kind: "SCALAR", name: "String", ofType: null },
+    }));
+    const unionMembers = Array.from({ length: 150 }, (_, index) => ({
+      kind: "OBJECT",
+      name: `Result${index}`,
+    }));
+    const operations = importGraphqlSchema({
+      data: {
+        __schema: {
+          queryType: { name: "Query" },
+          mutationType: null,
+          types: [
+            {
+              kind: "OBJECT",
+              name: "Query",
+              fields: [
+                {
+                  name: "viewer",
+                  args: [],
+                  type: { kind: "OBJECT", name: "Envelope", ofType: null },
+                },
+              ],
+            },
+            {
+              kind: "OBJECT",
+              name: "Envelope",
+              fields: [
+                ...scalarFields,
+                {
+                  name: "result",
+                  args: [],
+                  type: { kind: "UNION", name: "SearchResult", ofType: null },
+                },
+              ],
+            },
+            {
+              kind: "UNION",
+              name: "SearchResult",
+              possibleTypes: unionMembers,
+            },
+            ...unionMembers.map((member) => ({
+              ...member,
+              fields: [
+                {
+                  name: "value",
+                  args: [],
+                  type: { kind: "SCALAR", name: "String", ofType: null },
+                },
+              ],
+            })),
+            { kind: "SCALAR", name: "String" },
+          ],
+        },
+      },
+    });
+
+    expect(operations[0]!.selection.length).toBeLessThanOrEqual(6_000);
+    expect(operations[0]!.selection).not.toContain("result {");
+  });
 });
 
 describe("GraphQL execution failures", () => {
