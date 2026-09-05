@@ -3850,35 +3850,52 @@ async function bindWaitingTakeoverToControl(
     controlRunId: string | null;
   },
 ): Promise<void> {
-  const executionLease = await deps.prisma.computerExecutionLease.findUnique({
-    where: { computerId_botId: { computerId: input.computerId, botId: input.botId } },
-  });
-  if (!executionLease) return;
-  const executionRun = await deps.prisma.run.findUnique({
-    where: { id: executionLease.runId },
-    select: { botId: true, status: true },
-  });
-  const waitingForTakeover =
-    executionRun?.botId === input.botId && executionRun.status === "waiting_takeover";
-  if (!waitingForTakeover) return;
-  if (input.controlRunId === executionLease.runId) return;
+  await deps.prisma.$transaction(async (tx) => {
+    // Lock the execution lease so a reclaimed fence/run cannot be bound by a stale read.
+    const locked = await tx.$queryRaw<Array<{ runId: string; fence: number }>>`
+      SELECT "runId", fence FROM computer_execution_leases
+      WHERE "computerId" = ${input.computerId} AND "botId" = ${input.botId}
+      FOR UPDATE`;
+    const executionLease = locked[0];
+    if (!executionLease) return;
 
-  const bound = await deps.prisma.computer.updateMany({
-    where: {
-      id: input.computerId,
-      controlLeaseId: input.controlLeaseId,
-      controlBotId: input.botId,
-    },
-    data: { controlRunId: executionLease.runId },
-  });
-  if (bound.count !== 1 || !input.threadId) return;
+    const executionRun = await tx.run.findUnique({
+      where: { id: executionLease.runId },
+      select: { botId: true, status: true },
+    });
+    const waitingForTakeover =
+      executionRun?.botId === input.botId && executionRun.status === "waiting_takeover";
+    if (!waitingForTakeover) return;
+    if (input.controlRunId === executionLease.runId) return;
 
-  await deps.events.append({
-    spaceId: input.spaceId,
-    threadId: input.threadId,
-    botId: input.botId,
-    type: "computer.takeover.granted",
-    payload: { leaseId: input.controlLeaseId, takeoverRequested: true },
+    // Confirm the locked lease row still matches before writing controlRunId.
+    const leaseStillCurrent = await tx.computerExecutionLease.count({
+      where: {
+        computerId: input.computerId,
+        botId: input.botId,
+        runId: executionLease.runId,
+        fence: executionLease.fence,
+      },
+    });
+    if (leaseStillCurrent !== 1) return;
+
+    const bound = await tx.computer.updateMany({
+      where: {
+        id: input.computerId,
+        controlLeaseId: input.controlLeaseId,
+        controlBotId: input.botId,
+      },
+      data: { controlRunId: executionLease.runId },
+    });
+    if (bound.count !== 1 || !input.threadId) return;
+
+    await deps.events.append({
+      spaceId: input.spaceId,
+      threadId: input.threadId,
+      botId: input.botId,
+      type: "computer.takeover.granted",
+      payload: { leaseId: input.controlLeaseId, takeoverRequested: true },
+    });
   });
 }
 

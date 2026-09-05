@@ -579,6 +579,64 @@ describe("pauseRunForTakeover", () => {
       }),
     );
   });
+
+  it("preserves another bot's active user lease and only binds controlRunId", async () => {
+    const expiresAt = new Date(Date.now() + 60_000);
+    const tx = {
+      $queryRaw: vi.fn().mockResolvedValue([{ id: "computer-1" }]),
+      run: {
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+        findUnique: vi.fn().mockResolvedValue({ status: "waiting_takeover" }),
+      },
+      attempt: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      computer: {
+        findFirst: vi.fn().mockResolvedValue({
+          controlHolder: "user",
+          controlBotId: "other-bot",
+          controlLeaseId: "lease-other",
+          controlLeaseExpiresAt: expiresAt,
+        }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      thread: { update: vi.fn().mockResolvedValue({ nextEventSeq: 8 }) },
+      event: {
+        create: vi.fn(async ({ data }: { data: { seq: number; type: string } }) => ({
+          ...event(data.seq),
+          type: data.type,
+        })),
+        deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+    };
+    const prisma = {
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+    } as unknown as PrismaClient;
+
+    await expect(
+      pauseRunForTakeover(prisma, {
+        spaceId: "workspace-1",
+        threadId: "thread-1",
+        botId: "bot-1",
+        runId: "run-1",
+        attemptId: "attempt-1",
+        leaseOwner: "worker-1",
+        leaseFence: 3,
+        reason: "Sign in",
+        computerId: "computer-1",
+      }),
+    ).resolves.toBe(true);
+
+    expect(tx.computer.updateMany).toHaveBeenCalledWith({
+      where: { id: "computer-1", spaceId: "workspace-1" },
+      data: { state: "running", controlRunId: "run-1" },
+    });
+    expect(tx.event.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          payload: expect.objectContaining({ retainedControl: false, takeoverRequested: true }),
+        }),
+      }),
+    );
+  });
 });
 
 describe("answerRunInput", () => {

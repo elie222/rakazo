@@ -775,6 +775,9 @@ export async function pauseRunForTakeover(
     if (attempt.count !== 1) throw new Error("Active run attempt was not available to pause");
 
     const now = new Date();
+    // Serialize with concurrent computer/takeover grants that mutate the same row.
+    await tx.$queryRaw`
+      SELECT id FROM computers WHERE id = ${input.computerId} AND "spaceId" = ${input.spaceId} FOR UPDATE`;
     const computer = await tx.computer.findFirst({
       where: { id: input.computerId, spaceId: input.spaceId },
       select: {
@@ -784,27 +787,32 @@ export async function pauseRunForTakeover(
         controlLeaseExpiresAt: true,
       },
     });
-    // Keep an active user lease so Skip / I'm done appear immediately; otherwise clear
-    // stale control but always bind controlRunId so takeoverRequested is true.
-    const retainControl = Boolean(
+    const activeUserLease = Boolean(
       computer?.controlHolder === "user" &&
-        computer.controlBotId === input.botId &&
         computer.controlLeaseId &&
         computer.controlLeaseExpiresAt &&
         computer.controlLeaseExpiresAt.getTime() > now.getTime(),
     );
+    // Keep an active same-bot user lease so Skip / I'm done appear immediately.
+    // Preserve another bot's active lease — computer/takeover owns revocation.
+    // Otherwise clear stale control, but always bind controlRunId so takeoverRequested is true.
+    const retainControl = Boolean(activeUserLease && computer?.controlBotId === input.botId);
+    const preserveForeignLease = Boolean(
+      activeUserLease && computer?.controlBotId && computer.controlBotId !== input.botId,
+    );
     const marked = await tx.computer.updateMany({
       where: { id: input.computerId, spaceId: input.spaceId },
-      data: retainControl
-        ? { state: "running", controlRunId: input.runId }
-        : {
-            state: "running",
-            controlHolder: "none",
-            controlLeaseId: null,
-            controlLeaseExpiresAt: null,
-            controlBotId: null,
-            controlRunId: input.runId,
-          },
+      data:
+        retainControl || preserveForeignLease
+          ? { state: "running", controlRunId: input.runId }
+          : {
+              state: "running",
+              controlHolder: "none",
+              controlLeaseId: null,
+              controlLeaseExpiresAt: null,
+              controlBotId: null,
+              controlRunId: input.runId,
+            },
     });
     if (marked.count !== 1) throw new Error("Computer was not available to mark for takeover");
 
