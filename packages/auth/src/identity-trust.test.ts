@@ -163,8 +163,12 @@ describe("identity trust through auth endpoints", () => {
 
   it("gates existing unverified sessions and auth mutations when the live allowlist is enabled", async () => {
     const f = fixture();
-    const { token } = (await (await f.signup()).json()) as { token: string };
+    const signedUp = await f.signup();
+    const cookie = signedUp.headers.get("set-cookie")!.split(";")[0]!;
+    const { token } = (await signedUp.json()) as { token: string };
+    expect(await f.auth.api.getSession({ headers: new Headers({ cookie }) })).not.toBeNull();
     f.policy.signupAllowlist = "@example.test";
+    expect(await f.auth.api.getSession({ headers: new Headers({ cookie }) })).toBeNull();
     expect(await (await f.request("/get-session", undefined, token)).json()).toBeNull();
     expect(
       await f.auth.api.getSession({ headers: new Headers({ authorization: `Bearer ${token}` }) }),
