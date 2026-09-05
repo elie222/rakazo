@@ -3246,3 +3246,8 @@ msgstr "साझा दस्तावेज़"
 #: src/pages/KnowledgeSection.tsx:25
 msgid "Skills"
 msgstr "स्किल्स"
+
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/Onboarding.tsx
+msgid "Supports thinking"
+msgstr "सोचने की क्षमता का समर्थन करता है"

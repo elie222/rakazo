@@ -3246,3 +3246,8 @@ msgstr "공유 문서"
 #: src/pages/KnowledgeSection.tsx:25
 msgid "Skills"
 msgstr "스킬"
+
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/Onboarding.tsx
+msgid "Supports thinking"
+msgstr "사고 모드 지원"

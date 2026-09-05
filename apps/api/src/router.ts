@@ -552,7 +552,23 @@ export function createRouter(deps: RouterDeps) {
       connect: authed.models.connect.handler(async ({ context, input }) => {
         let plaintext: string;
         try {
-          plaintext = buildModelConnectPlaintext(input);
+          let previousPlaintext: string | undefined;
+          if (input.provider === OPENAI_COMPATIBLE_PROVIDER_ID && input.apiKey === undefined) {
+            const credential = await findModelCredential(
+              deps.prisma,
+              context.actor,
+              input.provider,
+            );
+            if (credential) {
+              const secret = await deps.prisma.secret.findFirst({
+                where: { id: credential.secretId, userId: context.actor.userId, spaceId: null },
+                select: { ciphertext: true },
+              });
+              if (secret)
+                previousPlaintext = deps.secrets.load(secret.ciphertext, credential.secretId);
+            }
+          }
+          plaintext = buildModelConnectPlaintext(input, previousPlaintext);
         } catch (error) {
           throw new ORPCError("BAD_REQUEST", {
             message: error instanceof Error ? error.message : "Invalid model connection",

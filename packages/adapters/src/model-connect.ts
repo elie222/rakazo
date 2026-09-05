@@ -8,9 +8,24 @@ import {
   prepareOpenAiCompatibleConnect,
 } from "./pi-openai-compatible-provider.js";
 
-export function buildModelConnectPlaintext(input: ModelConnectInput): string {
+export function buildModelConnectPlaintext(
+  input: ModelConnectInput,
+  previousPlaintext?: string,
+): string {
   if (input.provider === OPENAI_COMPATIBLE_PROVIDER_ID) {
     const prepared = prepareOpenAiCompatibleConnect(input);
+    const previous = previousPlaintext ? parseModelSecret(previousPlaintext) : undefined;
+    if (
+      input.apiKey === undefined &&
+      previous?.kind === "openai_compatible" &&
+      previous.baseUrl === prepared.baseUrl
+    ) {
+      // Revalidate the inherited key too: public endpoints must still use HTTPS.
+      prepared.apiKey = prepareOpenAiCompatibleConnect({
+        ...input,
+        apiKey: previous.apiKey,
+      }).apiKey;
+    }
     const secret: StoredModelSecret = {
       kind: "openai_compatible",
       baseUrl: prepared.baseUrl,
