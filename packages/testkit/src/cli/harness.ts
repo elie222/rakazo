@@ -92,6 +92,7 @@ async function main() {
           "packages/testkit/src/executor-lifecycle.test.ts",
           "packages/testkit/src/connections.test.ts",
           "packages/db/src/space-membership.postgres.test.ts",
+          "packages/memory/src/commit.postgres.test.ts",
           "packages/adapters/src/wakeup.postgres.test.ts",
           "packages/adapters/src/realtime.postgres.test.ts",
           "packages/adapters/src/job-reconciler.postgres.test.ts",
