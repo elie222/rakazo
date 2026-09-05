@@ -8,7 +8,7 @@ permissions:
 
 concurrency:
   group: mobile-android-screenshots
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   screenshots:
