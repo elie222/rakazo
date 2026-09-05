@@ -585,3 +585,71 @@ export interface WebFetchResult {
   text: string;
   truncated: boolean;
 }
+
+/** Page-level browser on the bot computer (DOM refs), not a hosted browser vendor. */
+export interface BrowserCapabilities {
+  page: boolean;
+  /** True when element refs from snapshot can be clicked or filled. */
+  refs: boolean;
+  /** True when the adapter runs without a hosted browser vendor or API key. */
+  keyless?: boolean;
+}
+
+export interface BrowserNavigateRequest {
+  url: string;
+  signal?: AbortSignal;
+}
+
+export interface BrowserNavigateResult {
+  url: string;
+  title: string;
+  /** When set, the page tool could not operate; use computer_act instead. */
+  fallback?: "computer_act";
+  error?: string;
+}
+
+export interface BrowserSnapshotRequest {
+  signal?: AbortSignal;
+}
+
+export interface BrowserSnapshotNode {
+  /** Stable element ref for browser_act (e.g. e12). */
+  ref: string;
+  role: string;
+  name: string;
+  value?: string;
+  tag?: string;
+}
+
+export interface BrowserSnapshotResult {
+  url: string;
+  title: string;
+  /** Compact accessibility-style tree for the model. */
+  tree: string;
+  elements: BrowserSnapshotNode[];
+  fallback?: "computer_act";
+  error?: string;
+}
+
+export type BrowserActKind = "click" | "fill" | "type";
+
+export type BrowserActStep =
+  | { kind: "click"; ref: string }
+  | { kind: "fill" | "type"; ref: string; text: string };
+
+export interface BrowserActRequest {
+  actions: BrowserActStep[];
+  signal?: AbortSignal;
+}
+
+export interface BrowserActResult {
+  ok: boolean;
+  completed: number;
+  url: string;
+  title: string;
+  /** Snapshot after the actions when available. */
+  tree?: string;
+  elements?: BrowserSnapshotNode[];
+  fallback?: "computer_act";
+  error?: string;
+}

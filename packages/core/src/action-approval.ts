@@ -3,6 +3,9 @@ import type { ActionApprovalRule as StoredActionApprovalRule } from "@rakazo/con
 const APPROVAL_EXEMPT_TOOLS = new Set([
   "computer_observe",
   "computer_act",
+  "browser_navigate",
+  "browser_snapshot",
+  "browser_act",
   "list_files",
   "read_file",
   "write_file",

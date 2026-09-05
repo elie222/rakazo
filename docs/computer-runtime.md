@@ -25,7 +25,7 @@ Each workspace gets one Team Computer by default, so bots share its browser sess
 - execution: commands inside the machine;
 - files: list/read/write plus complete workspace import/export.
 
-The model gets `computer_observe`, batched `computer_act`, `open_path`, `launch_app`, `shell`, and file tools. An action can settle and return the resulting screenshot in one call. Identical consecutive frames keep their metadata but omit duplicate image bytes from model context.
+The model gets page-level `browser_navigate`, `browser_snapshot`, and `browser_act` (element refs) for web pages, plus `computer_observe`, batched `computer_act`, `open_path`, `launch_app`, `shell`, and file tools. Prefer the page browser for sites; keep `computer_act` when the page tool cannot operate or the task needs the desktop itself. The default `computer` browser provider drives the live Chrome already on the bot computer over CDP. Fake computers and `BROWSER_PROVIDER=fake|emulator` keep the in-process page session for offline tests. If the live page path cannot operate, tools return `computer_act` fallback instead of claiming success against a detached DOM. An action can settle and return the resulting screenshot in one call. Identical consecutive frames keep their metadata but omit duplicate image bytes from model context.
 
 Human input and agent input may coexist on distinct Team screens. “Take control” grants the user an exclusive control lease on that bot’s screen so the embedded viewer accepts input. For a Team bot, takeover is refused with HTTP 409 (“Stop the bot first”) while that bot holds a live computer execution lease or an active run, unless the run is `waiting_takeover` (the bot asked for protected input). Stop the bot first, then take control; after release, the agent may continue. `request_takeover` remains available when the model explicitly needs protected input or human judgment.
 
@@ -57,7 +57,7 @@ The disposable OS image is not a portable disk snapshot. System packages install
 
 ## Verification
 
-Offline tests cover tool-result images, action parsing, provider conformance, workspace checkpoint/restore, provider SDK translation, lifecycle integration, and the Box single-screen emulator. They never call a model or live sandbox.
+Offline tests cover tool-result images, action parsing, provider conformance (including the page-browser adapter and computer_act fallback), workspace checkpoint/restore, provider SDK translation, lifecycle integration, and the Box single-screen emulator. They never call a model or live sandbox.
 
 The explicit acceptance test requires Docker (for temporary Postgres), `E2B_API_KEY`, `OPENROUTER_API_KEY`, and a vision-capable OpenRouter model id:
 

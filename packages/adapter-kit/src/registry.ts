@@ -34,4 +34,5 @@ export const slots = {
   runner: "runner",
   voice: "voice",
   web: "web",
+  browser: "browser",
 } as const;

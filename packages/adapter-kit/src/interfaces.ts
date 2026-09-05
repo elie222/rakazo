@@ -7,6 +7,13 @@ import type {
   ArtifactPut,
   BackgroundJob,
   BackgroundJobHandlers,
+  BrowserActRequest,
+  BrowserActResult,
+  BrowserCapabilities,
+  BrowserNavigateRequest,
+  BrowserNavigateResult,
+  BrowserSnapshotRequest,
+  BrowserSnapshotResult,
   CommandRequest,
   ComputerActionRequest,
   ComputerActionResult,
@@ -347,4 +354,30 @@ export interface WebFetchProvider {
 /** Convenience when one adapter owns both search and fetch. */
 export interface WebProvider extends WebSearchProvider, WebFetchProvider {
   describe(): AdapterDescriptor<WebSearchCapabilities & WebFetchCapabilities>;
+}
+
+/**
+ * Provider-neutral page browser on the bot computer. Builtin browser_* tools
+ * route here so backends (in-process page session, CDP against the computer's
+ * Chrome, future adapters) can swap without changing tool names. Not a second
+ * hosted browser product. Prefer this for web pages; use computer_act when the
+ * page tool cannot operate or the task needs the desktop itself.
+ */
+export interface BrowserProvider {
+  describe(): AdapterDescriptor<BrowserCapabilities>;
+  navigate(
+    computer: ComputerRef,
+    request: BrowserNavigateRequest,
+    context: AdapterContext,
+  ): Promise<BrowserNavigateResult>;
+  snapshot(
+    computer: ComputerRef,
+    request: BrowserSnapshotRequest,
+    context: AdapterContext,
+  ): Promise<BrowserSnapshotResult>;
+  act(
+    computer: ComputerRef,
+    request: BrowserActRequest,
+    context: AdapterContext,
+  ): Promise<BrowserActResult>;
 }

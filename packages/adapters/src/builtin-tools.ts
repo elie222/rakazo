@@ -52,6 +52,49 @@ export const builtinAgentTools: ConnectorTool[] = [
       required: ["actions"],
     },
   },
+
+  {
+    name: "browser_navigate",
+    description:
+      'Open a URL in the page browser on this bot\'s computer and return the document title. Prefer this over pixel clicks for web pages. If the result includes fallback:"computer_act", use computer_act on the desktop browser instead.',
+    inputSchema: {
+      type: "object",
+      properties: {
+        url: { type: "string", description: "http(s) URL to open." },
+      },
+      required: ["url"],
+    },
+  },
+  {
+    name: "browser_snapshot",
+    description:
+      "Capture an accessibility-style snapshot of the current page with element refs (e1, e2, …). Use refs with browser_act. Prefer this over computer_observe for web pages. If fallback is computer_act, use the desktop tools instead.",
+    inputSchema: { type: "object", properties: {} },
+    readOnly: true,
+  },
+  {
+    name: "browser_act",
+    description:
+      'Click or fill page elements by ref from browser_snapshot (kinds: click, fill, type). Prefer this over computer_act for web pages. If the result includes fallback:"computer_act", use computer_act instead.',
+    inputSchema: {
+      type: "object",
+      properties: {
+        actions: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              kind: { type: "string", enum: ["click", "fill", "type"] },
+              ref: { type: "string", description: "Element ref from browser_snapshot." },
+              text: { type: "string", description: "Text for fill or type." },
+            },
+            required: ["kind", "ref"],
+          },
+        },
+      },
+      required: ["actions"],
+    },
+  },
   {
     name: "list_files",
     description:

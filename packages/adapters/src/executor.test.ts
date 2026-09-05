@@ -50,13 +50,38 @@ describe("run workspace checkpoint", () => {
 });
 
 describe("run tool selection", () => {
-  const toolNames = (trigger: string, groupId: string | null = null) =>
+  const toolNames = (
+    trigger: string,
+    groupId: string | null = null,
+    options?: { graphicalToolsAllowed?: boolean; pageBrowserAllowed?: boolean },
+  ) =>
     selectBuiltinToolsForRun({
-      graphicalToolsAllowed: true,
+      graphicalToolsAllowed: options?.graphicalToolsAllowed ?? true,
+      pageBrowserAllowed: options?.pageBrowserAllowed ?? true,
       groupId,
       trigger,
       semanticMemoryEnabled: false,
     }).map((tool) => tool.name);
+
+  it("keeps page browser tools without vision, and hides them without a graphical computer", () => {
+    const withPage = toolNames("message", null, {
+      graphicalToolsAllowed: false,
+      pageBrowserAllowed: true,
+    });
+    expect(withPage).toEqual(
+      expect.arrayContaining(["browser_navigate", "browser_snapshot", "browser_act"]),
+    );
+    expect(withPage).not.toEqual(expect.arrayContaining(["computer_observe", "computer_act"]));
+
+    const withoutPage = toolNames("message", null, {
+      graphicalToolsAllowed: true,
+      pageBrowserAllowed: false,
+    });
+    expect(withoutPage).not.toEqual(
+      expect.arrayContaining(["browser_navigate", "browser_snapshot", "browser_act"]),
+    );
+    expect(withoutPage).toEqual(expect.arrayContaining(["computer_observe", "computer_act"]));
+  });
 
   it("withholds schedule creation only from routine-triggered runs", () => {
     expect(toolNames("routine")).not.toContain("schedule_create");
