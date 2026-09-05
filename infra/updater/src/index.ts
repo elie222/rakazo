@@ -477,6 +477,11 @@ export function createUpdaterApp(
           "The deployment checkout has changed or untracked source files, or its state could not be verified. Commit, stash, clean, or fix it before updating.",
         );
       }
+      if (checkout.commit === null || !isGitCommit(checkout.commit)) {
+        throw new UpdateRefused(
+          "The deployment checkout's current commit could not be verified. Fix it before updating.",
+        );
+      }
     }
 
     let targetTag: string | null = null;
@@ -603,16 +608,32 @@ export function createUpdaterApp(
       [IMAGE_TAG_ENV]: input.fromTag,
       [PREVIOUS_IMAGE_TAG_ENV]: input.originalPreviousTag ?? input.fromTag,
     };
-    // Build updates may switch branches and/or fast-forward before recreate. Mark the checkout
-    // touched as soon as either mutates so a mid-plan failure still restores branch + commit.
-    let checkoutTouched = false;
+    // A failed Git command can still change files. Restore once before Compose recovery, or in
+    // finally for failures that never reached Compose.
+    let checkoutNeedsRestore = false;
+    async function restoreCheckout() {
+      if (!checkoutNeedsRestore) return true;
+      checkoutNeedsRestore = false;
+      if (input.fromCommit === null || !isGitCommit(input.fromCommit)) return false;
+      return runStep(
+        record,
+        {
+          id: "restore-checkout",
+          label: "Restore the previous checkout",
+          command: "git",
+          args: restoreCheckoutArgv(input.fromBranch, input.fromCommit),
+        },
+        undefined,
+        false,
+      );
+    }
     try {
       const gitSteps = input.steps.filter((step) => step.command === "git");
       const composeSteps = input.steps.filter((step) => step.command !== "git");
 
       for (const step of gitSteps) {
+        if (step.id === "checkout" || step.id === "merge") checkoutNeedsRestore = true;
         if (!(await runStep(record, step))) return record;
-        if (step.id === "checkout" || step.id === "merge") checkoutTouched = true;
       }
 
       // The build path only knows its tag after the fast-forward, because the tag is the commit.
@@ -649,27 +670,32 @@ export function createUpdaterApp(
       for (const step of composeSteps) {
         if (!(await runStep(record, step, composeEnv))) {
           const primaryError = record.error ?? `${step.label} failed.`;
+          // The failed revision may have changed Compose or files it references. The old image
+          // must be recreated from the old checkout, using the same configured Compose target.
+          const checkoutRestored = await restoreCheckout();
           const envRestored = await writeEnvAssignments(revertAssignments).then(
             () => true,
             () => false,
           );
           if (step.id === "recreate") {
             const previous = composeUpArgv(composeTarget);
-            const recovered = await runStep(
-              record,
-              {
-                id: "recover",
-                label: `Restore the previously running ${input.fromTag} image`,
-                command: previous.command,
-                args: previous.args,
-              },
-              { [IMAGE_TAG_ENV]: input.fromTag },
-              false,
-            );
+            const recovered =
+              checkoutRestored &&
+              (await runStep(
+                record,
+                {
+                  id: "recover",
+                  label: `Restore the previously running ${input.fromTag} image`,
+                  command: previous.command,
+                  args: previous.args,
+                },
+                { [IMAGE_TAG_ENV]: input.fromTag },
+                false,
+              ));
             record.restart = recovered ? "not-required" : "manual";
             record.restartAdvice = recovered
               ? `${primaryError} The updater restored the previously running ${input.fromTag} image${envRestored ? " and its environment pin" : ", but could not restore the environment pin"}. Read the failed step output before retrying.`
-              : `${primaryError} Automatic recovery to ${input.fromTag} also failed${envRestored ? "" : ", and the environment pin could not be restored"}. The runtime may contain a mix of versions; use the recorded commands to recover it manually.`;
+              : `${primaryError} Automatic recovery to ${input.fromTag} ${checkoutRestored ? "also failed" : "was skipped because the previous checkout could not be restored"}${envRestored ? "" : ", and the environment pin could not be restored"}. The runtime may contain a mix of versions; use the recorded commands to recover it manually.`;
           } else {
             record.restartAdvice = `${primaryError} No service was recreated${envRestored ? ", and the prior environment pin was restored" : ", but the prior environment pin could not be restored"}. Read the failed step output before retrying.`;
           }
@@ -681,26 +707,8 @@ export function createUpdaterApp(
       record.restart = "recreated";
       return record;
     } finally {
-      if (
-        !record.ok &&
-        checkoutTouched &&
-        input.fromCommit !== null &&
-        isGitCommit(input.fromCommit)
-      ) {
-        const restored = await runStep(
-          record,
-          {
-            id: "restore-checkout",
-            label: "Restore the previous checkout",
-            command: "git",
-            args: restoreCheckoutArgv(input.fromBranch, input.fromCommit),
-          },
-          undefined,
-          false,
-        );
-        if (!restored) {
-          record.restartAdvice = `${record.restartAdvice} The previous checkout also could not be restored; fix it before retrying.`;
-        }
+      if (!record.ok && checkoutNeedsRestore && !(await restoreCheckout())) {
+        record.restartAdvice = `${record.restartAdvice} The previous checkout also could not be restored; fix it before retrying.`;
       }
       if (!record.ok && input.restoreRemoteUrl !== null) {
         const restored = await runStep(

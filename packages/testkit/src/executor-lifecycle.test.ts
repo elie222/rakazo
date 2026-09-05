@@ -333,8 +333,14 @@ describeIntegration("run executor lifecycle", () => {
     expect(userMessages[0]!.seq).toBeLessThan(userMessages[1]!.seq);
   });
 
-  it("requeues steering claimed by a failed attempt without duplicating it", async () => {
-    const seeded = await seedRun("steering-failure", "start the analysis", {
+  it.each([
+    { claim: false, fresh: false, outcome: "failed" as const },
+    { claim: true, fresh: false, outcome: "failed" as const },
+    { claim: false, fresh: true, outcome: "failed" as const },
+    { claim: true, fresh: true, outcome: "failed" as const },
+    { claim: true, fresh: false, outcome: "completed" as const },
+  ])("bounds steering recovery ($claim, $fresh, $outcome)", async ({ claim, fresh, outcome }) => {
+    const seeded = await seedRun(`steering-${claim}-${fresh}-${outcome}`, "start the analysis", {
       status: "running",
       leaseOwner: "failure-worker",
       leaseFence: 4,
@@ -393,6 +399,78 @@ describeIntegration("run executor lifecycle", () => {
     await expect(
       handles.prisma.steeringMessage.findFirstOrThrow({ where: { botId: seeded.bot.id } }),
     ).resolves.toMatchObject({ runId: continuationRunId, claimedAt: null });
+
+    const lease = { leaseOwner: "failure-worker", leaseFence: 1 };
+    async function startContinuation(runId: string) {
+      const run = await handles.prisma.run.update({
+        where: { id: runId },
+        data: { status: "running", ...lease },
+      });
+      const attempt = await handles.prisma.attempt.create({
+        data: { runId, fence: lease.leaseFence, status: "running" },
+      });
+      return {
+        spaceId: run.spaceId,
+        botId: run.botId,
+        threadId: run.threadId,
+        taskId: run.taskId,
+        runId,
+        attemptId: attempt.id,
+        ...lease,
+      };
+    }
+
+    const continuation = await startContinuation(continuationRunId!);
+    if (claim) {
+      await expect(events.claimSteering({ ...continuation, seenIds: [] })).resolves.toHaveLength(1);
+    }
+    // A failure before claimSteering (such as missing model configuration) must also stop.
+    const freshMessage = fresh
+      ? await events.sendUserMessage({
+          spaceId: seeded.me.spaceId,
+          threadId: seeded.thread.id,
+          botId: seeded.bot.id,
+          userId: seeded.me.userId,
+          blocks: [{ kind: "text", text: "Try this new instruction." }],
+          prompt: "Try this new instruction.",
+          trigger: "follow_up",
+        })
+      : null;
+    const recovered = await events.finalizeRun({
+      ...continuation,
+      ...(outcome === "completed"
+        ? { outcome, blocks: [] }
+        : { outcome, error: "provider failed" }),
+    });
+    if (!recovered) throw new Error("Expected the continuation to finalize");
+    if (freshMessage) {
+      expect(recovered.continuationRunId).toEqual(expect.any(String));
+      const next = await startContinuation(recovered.continuationRunId!);
+      await expect(events.claimSteering({ ...next, seenIds: [] })).resolves.toEqual([
+        expect.objectContaining({ messageId: freshMessage.messageId }),
+      ]);
+      await expect(
+        events.finalizeRun({ ...next, outcome: "failed", error: "provider failed" }),
+      ).resolves.toEqual({ continuationRunId: null });
+    } else {
+      expect(recovered.continuationRunId).toBeNull();
+    }
+    expect(await handles.prisma.run.count({ where: { botId: seeded.bot.id } })).toBe(fresh ? 3 : 2);
+    expect(
+      await handles.prisma.run.count({ where: { botId: seeded.bot.id, status: "queued" } }),
+    ).toBe(0);
+    // Settled steering cannot be reclaimed by unrelated future runs; chat history is retained.
+    expect(
+      await handles.prisma.steeringMessage.count({ where: { botId: seeded.bot.id, runId: null } }),
+    ).toBe(0);
+    expect(
+      await handles.prisma.message.count({ where: { threadId: seeded.thread.id, role: "user" } }),
+    ).toBe(fresh ? 2 : 1);
+    if (outcome === "completed") {
+      expect(await handles.prisma.steeringMessage.count({ where: { botId: seeded.bot.id } })).toBe(
+        0,
+      );
+    }
   });
 
   it("discards pending steering when the user stops active work", async () => {

@@ -210,6 +210,7 @@ import {
   secretPausedToolResult,
   tryCompleteConnectionWithCode,
 } from "./run-secret.js";
+import { withRuntimeCleanup } from "./runtime-stream.js";
 import {
   cancelScheduleFromTool,
   createScheduleFromTool,
@@ -1216,9 +1217,6 @@ export function createRunExecutor(deps: ExecutorDeps) {
         const connectorSchemas = new Map(
           exposedConnectorTools.map((tool) => [tool.name, tool.inputSchema] as const),
         );
-        const readOnlyConnectorTools = new Set(
-          exposedConnectorTools.filter((tool) => tool.readOnly).map((tool) => tool.name),
-        );
         let approvalRulesPromise: Promise<ActionApprovalRule[]> | undefined;
         const loadApprovalRules = () => {
           approvalRulesPromise ??= deps.prisma.actionApprovalRule
@@ -1385,6 +1383,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           args: Record<string, unknown>,
           executionId: string,
         ) => {
+          context.signal.throwIfAborted();
           if (handedOff) {
             return { error: "This stage was handed off. End the turn without more tool calls." };
           }
@@ -1413,7 +1412,6 @@ export function createRunExecutor(deps: ExecutorDeps) {
           let catalogRemapped = false;
           let resolvedToolSchema: Record<string, unknown> | undefined;
           let effectRequest: unknown = args;
-          let connectorReadOnly = readOnlyConnectorTools.has(name);
           if (connectorCall.route && deps.connector?.resolveCall) {
             try {
               const resolved = await deps.connector.resolveCall(connectorCall, context);
@@ -1441,7 +1439,6 @@ export function createRunExecutor(deps: ExecutorDeps) {
                     : undefined,
                 );
                 connectorCall = resolved.call;
-                connectorReadOnly = resolved.tool.readOnly === true;
               }
             } catch (error) {
               return { error: sanitizeConnectorError(error) };
@@ -1603,14 +1600,18 @@ export function createRunExecutor(deps: ExecutorDeps) {
           let reviewReason: string | undefined;
           let gateDecision: "ask" | "allow" = plan === "ask" ? "ask" : "allow";
           const needsApprovalEarly = plan === "ask" || plan === "judge";
+          // A resumed approval keeps its key even if "Always allow" changed the policy.
           const effectKey =
-            name === "request_secret" || needsApprovalEarly || requiresApprovalByDefault
+            nextApprovedTool ||
+            name === "request_secret" ||
+            needsApprovalEarly ||
+            requiresApprovalByDefault
               ? approvalEffectKey(runId, replayEffectToolName, args)
               : executionId;
-          const applied =
-            READ_ONLY_AGENT_TOOLS.has(name) || connectorReadOnly
-              ? undefined
-              : await recordEffect(deps, run, replayEffectToolName, effectKey, effectRequest);
+          // Connector read-only hints must not bypass approval, review, or replay decisions.
+          const applied = READ_ONLY_AGENT_TOOLS.has(name)
+            ? undefined
+            : await recordEffect(deps, run, replayEffectToolName, effectKey, effectRequest);
 
           const runAutoReview = async () => {
             if (!checker) return;
@@ -2925,7 +2926,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             );
 
         try {
-          for await (const event of deps.runtime.run(
+          const runtimeEvents = deps.runtime.run(
             {
               botId: bot.id,
               threadId: thread.id,
@@ -3032,7 +3033,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
                   },
             },
             context,
-          )) {
+          );
+          for await (const event of withRuntimeCleanup(runtimeEvents, runAbortController)) {
             if (approvalPausePending) return;
             if (!leaseValid) return;
             const now = Date.now();
@@ -3314,7 +3316,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             }
           }
 
-          if (approvalPausePending) return;
+          if (approvalPausePending || !leaseValid) return;
           approvedEffectReplays.assertDrained();
           pendingProgress += progressRedactor.finish();
           await flushProgress();

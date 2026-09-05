@@ -24,6 +24,7 @@ import {
   immutableRendererAsset,
   isRendererAssetMiss,
 } from "./renderer-assets.js";
+import { installSessionPermissions } from "./session-permissions.js";
 import {
   DEFAULT_LOCAL_WEB_URL,
   desktopStackImageTag,
@@ -55,6 +56,7 @@ const PROBE_TIMEOUT_MS = 8_000;
 const DESKTOP_STACK_PROBE_PATH = "/.well-known/rakazo-desktop-stack";
 const DESKTOP_STACK_TOKEN_HEADER = "x-rakazo-desktop-stack-token";
 let mainWindow: BrowserWindow | null = null;
+const appWindowTargets = new WeakMap<BrowserWindow, string>();
 let setupWindow: BrowserWindow | null = null;
 const bundledRendererInstallations = new Set<string>();
 let currentSetup: DesktopSetup | null = null;
@@ -91,6 +93,14 @@ if (PERFORMANCE_USER_DATA) {
 }
 app.once("will-finish-launching", () => markOnce("rk:main:will-finish-launching"));
 app.once("ready", () => markOnce("rk:main:ready"));
+// Includes fresh partitions and popup-created sessions, before they load remote content.
+app.on("session-created", (value) => installSessionPermissions(value, permissionTarget));
+
+function permissionTarget() {
+  if (mainWindow === null || mainWindow.isDestroyed()) return null;
+  const url = appWindowTargets.get(mainWindow);
+  return url === undefined ? null : { webContents: mainWindow.webContents, url };
+}
 
 function markOnce(name: string) {
   if (performance.getEntriesByName(name).length === 0) performance.mark(name);
@@ -225,6 +235,7 @@ function createWindow(url: string, partition: string | null) {
     },
   });
   mainWindow = win;
+  appWindowTargets.set(win, url);
   const targetOrigin = safeOrigin(url);
   // Intentional OAuth flows open the provider's authorize page via a named
   // window; give those and same-origin popups a normal frame. Everything else
@@ -871,6 +882,7 @@ function safeOrigin(targetUrl: string) {
 }
 
 app.whenReady().then(async () => {
+  installSessionPermissions(session.defaultSession, permissionTarget);
   const userDataDir = app.getPath("userData");
   localStack = new LocalStackController({
     platform: process.platform,
