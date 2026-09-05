@@ -88,7 +88,7 @@ describe("Docker sandbox", () => {
           new Response(
             new ReadableStream({
               start(controller) {
-                controller.enqueue(new Uint8Array(1027));
+                controller.enqueue(new Uint8Array(1029));
               },
               cancel,
             }),
@@ -104,8 +104,32 @@ describe("Docker sandbox", () => {
         context,
         { maxBytes: 1 },
       ),
-    ).rejects.toThrow("sandbox response exceeds 1026 bytes");
+    ).rejects.toThrow("sandbox response exceeds 1028 bytes");
     await vi.waitFor(() => expect(cancel).toHaveBeenCalledOnce());
+  });
+
+  it("accepts a valid encoded envelope above the generic response cap", async () => {
+    const maxBytes = 13 * 1024 * 1024;
+    const encodedLimit = Math.ceil(maxBytes / 3) * 4 + 1024;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response('{"content":""}', {
+            headers: { "content-length": String(encodedLimit) },
+          }),
+      ),
+    );
+    const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
+
+    await expect(
+      provider.readFile(
+        { id: "computer", botId: "bot", kind: "docker", providerRef: "computer" },
+        "large.bin",
+        context,
+        { maxBytes },
+      ),
+    ).resolves.toEqual(new Uint8Array());
   });
 
   it("releases this bot's screen assignment through the supervisor", async () => {

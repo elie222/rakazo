@@ -83,7 +83,10 @@ async function readSandboxJson<T>(
 
 function encodedFileResponseLimit(maxBytes: number | undefined): number {
   if (maxBytes === undefined) return MAX_SANDBOX_SUCCESS_RESPONSE_BYTES;
-  return Math.min(MAX_SANDBOX_SUCCESS_RESPONSE_BYTES, Math.ceil((maxBytes * 4) / 3) + 1024);
+  // An explicit file limit is already the caller's memory-safety contract.
+  // Account for base64 expansion plus the small JSON envelope without applying
+  // the generic response cap, which would reject valid files above ~12 MiB.
+  return Math.ceil(maxBytes / 3) * 4 + 1024;
 }
 
 export class DockerSandboxProvider implements SandboxProvider {
