@@ -101,8 +101,21 @@ describe("computer provisioning", () => {
     }
   });
 
-  it("fences booting reclaim on live leases even without screenLeaseId", async () => {
-    const updateMany = vi.fn().mockResolvedValue({ count: 0 });
+  it("does not claim when screenLeaseId is missing and a live foreign lease exists", async () => {
+    // Live foreign lease present: Prisma matches the booting branch only when the where
+    // requires no live leases (heldByNobodyElse(null)). Returning {} there would match
+    // any booting row and wrongly claim (count 1 below).
+    const updateMany = vi.fn().mockImplementation(async (args: { where: { OR?: unknown[] } }) => {
+      const booting = (args.where.OR ?? []).find(
+        (clause): clause is { state: string; executionLeases?: { none?: { expiresAt?: unknown } } } =>
+          typeof clause === "object" &&
+          clause !== null &&
+          "state" in clause &&
+          (clause as { state?: string }).state === "booting",
+      );
+      const none = booting?.executionLeases?.none;
+      return { count: none?.expiresAt != null ? 0 : 1 };
+    });
     const prisma = {
       computer: {
         findUniqueOrThrow: vi.fn().mockResolvedValue({
