@@ -215,6 +215,21 @@ describe("skill tools", () => {
     expect(await skillDeleteFromTool(prisma as never, owner, { name: "Plugin recipe" })).toEqual({
       error: "Builtin and plugin skills are read-only.",
     });
+    expect(await skillReadFromTool(prisma as never, owner, { name: "Interrogate" })).toMatchObject({
+      name: "Interrogate",
+      source: "builtin",
+      readOnly: true,
+      content: expect.stringContaining("review-only adversarial analysis"),
+    });
+    expect(
+      await skillUpdateFromTool(prisma as never, owner, {
+        name: "Interrogate",
+        description: "hijack",
+      }),
+    ).toEqual({ error: "Builtin and plugin skills are read-only." });
+    expect(await skillDeleteFromTool(prisma as never, owner, { name: "Interrogate" })).toEqual({
+      error: "Builtin and plugin skills are read-only.",
+    });
   });
 
   it("rejects oversized skill content", async () => {
