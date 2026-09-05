@@ -710,6 +710,16 @@ msgstr ""
 msgid "Collapse {0}"
 msgstr ""
 
+#: src/pages/shell/bot-panel.tsx:327
+#: src/pages/shell/bot-panel.tsx:328
+msgid "Color"
+msgstr "Cor"
+
+#. placeholder {0}: index + 1
+#: src/pages/shell/bot-panel.tsx:337
+msgid "Color {0}"
+msgstr "Cor {0}"
+
 #: src/pages/RoutineEditor.tsx:387
 msgid "Coming soon"
 msgstr ""

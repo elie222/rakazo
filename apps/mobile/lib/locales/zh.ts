@@ -70,6 +70,8 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Close computer": "关闭电脑",
   "Close preview": "关闭预览",
   Code: "验证码",
+  Color: "颜色",
+  "Color {number}": "颜色 {number}",
   Completed: "已完成",
   Computer: "电脑",
   "Confirm password": "确认密码",

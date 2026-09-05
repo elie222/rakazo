@@ -710,6 +710,16 @@ msgstr "Code"
 msgid "Collapse {0}"
 msgstr "{0} 접기"
 
+#: src/pages/shell/bot-panel.tsx:327
+#: src/pages/shell/bot-panel.tsx:328
+msgid "Color"
+msgstr "색상"
+
+#. placeholder {0}: index + 1
+#: src/pages/shell/bot-panel.tsx:337
+msgid "Color {0}"
+msgstr "색상 {0}"
+
 #: src/pages/RoutineEditor.tsx:387
 msgid "Coming soon"
 msgstr "준비 중"
