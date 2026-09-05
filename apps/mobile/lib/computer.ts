@@ -48,13 +48,14 @@ export function embeddableScreenUrl(url: string | null, apiBase: string): string
   if (!url) return null;
   try {
     const parsed = new URL(url);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
     const api = new URL(apiBase);
     if (isLocalHostname(parsed.hostname) && !isLocalHostname(api.hostname)) {
       parsed.hostname = api.hostname;
     }
     return parsed.toString();
   } catch {
-    return url;
+    return null;
   }
 }
 
