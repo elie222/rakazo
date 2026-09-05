@@ -1,4 +1,5 @@
-import { type Sandbox, TimeoutError } from "@e2b/desktop";
+import { createServer } from "node:http";
+import { Sandbox, TimeoutError } from "@e2b/desktop";
 import { describe, expect, it, vi } from "vitest";
 import { ComputerScreenUnavailableError } from "./computer-screens.js";
 import { shouldSkipPortableWorkspaceFile } from "./computer-workspace.js";
@@ -189,6 +190,49 @@ describe("E2B computer backend", () => {
     ).resolves.toMatchObject({ providerRef: "replacement", fresh: true });
     expect(sdk.create).toHaveBeenCalledOnce();
   });
+
+  it.each([404, 503])(
+    "uses SDK deletion semantics for a cached handle receiving %s",
+    async (status) => {
+      const requests: string[] = [];
+      const server = createServer((request, response) => {
+        requests.push(`${request.method} ${request.url}`);
+        response.writeHead(status, { "content-type": "application/json" });
+        response.end(JSON.stringify({ code: status, message: "sandbox unavailable" }));
+      });
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+      try {
+        const address = server.address();
+        if (!address || typeof address === "string") throw new Error("Missing test server address");
+        const desktop = new Sandbox({
+          sandboxId: "expired",
+          envdVersion: "0.1.0",
+          apiKey: "test-key",
+          validateApiKey: false,
+          debug: false,
+          proxy: "",
+          apiUrl: `http://127.0.0.1:${address.port}`,
+        });
+        const sdk: E2BSandboxSdk = {
+          create: vi.fn().mockResolvedValue(desktop),
+          connect: vi.fn(),
+          pause: vi.fn(),
+        };
+        const provider = new E2BSandboxProvider("test-key", sdk);
+        const computer = await provider.provision({ botId: "bot", homePath: "/unused" }, context);
+        if (status === 404) {
+          await expect(provider.destroy(computer, context)).resolves.toBeUndefined();
+        } else {
+          await expect(provider.destroy(computer, context)).rejects.toThrow();
+        }
+        expect(requests).toEqual(["DELETE /sandboxes/expired"]);
+        expect(sdk.connect).not.toHaveBeenCalled();
+      } finally {
+        server.closeAllConnections();
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+      }
+    },
+  );
 
   it("gives screen setup commands a real timeout and surfaces a failed one as unavailable", async () => {
     const run = vi.fn(async (_command: string, opts?: { timeoutMs?: number }) => {

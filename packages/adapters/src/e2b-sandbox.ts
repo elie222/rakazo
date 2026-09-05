@@ -645,6 +645,7 @@ export class E2BSandboxProvider implements SandboxProvider {
     ]);
     this.forget(id);
     await settleForTeardown(pending);
+    // The SDK returns false when the sandbox is already gone; teardown is complete.
     await desktop?.kill();
   }
 
