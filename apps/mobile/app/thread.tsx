@@ -2449,13 +2449,6 @@ const MessageBubble = memo(function MessageBubble({
     return (
       <View style={{ gap: 8, width: "100%" }}>
         <View
-          accessible={!askBlock.text && !askBlock.detail}
-          accessibilityActions={
-            !askBlock.text && !askBlock.detail ? actionProps.accessibilityActions : undefined
-          }
-          onAccessibilityAction={
-            !askBlock.text && !askBlock.detail ? actionProps.onAccessibilityAction : undefined
-          }
           style={{
             width: "90%",
             borderRadius: 18,
@@ -2490,6 +2483,7 @@ const MessageBubble = memo(function MessageBubble({
           ) : null}
           {askBlock.status === "answered" ? (
             <Text
+              {...actionProps}
               style={{
                 color: tokens.success,
                 marginTop: 12,
@@ -2506,10 +2500,15 @@ const MessageBubble = memo(function MessageBubble({
           ) : canAnswer && onAnswer ? (
             <AskActions
               actions={askBlock.actions}
+              accessibilityActions={actionProps.accessibilityActions}
+              onAccessibilityAction={actionProps.onAccessibilityAction}
               onAnswer={(answer) => onAnswer(message, answer)}
             />
           ) : (
-            <Text style={{ color: tokens.mutedForeground, marginTop: 12, fontSize: 13.5 }}>
+            <Text
+              {...actionProps}
+              style={{ color: tokens.mutedForeground, marginTop: 12, fontSize: 13.5 }}
+            >
               {t("No longer active")}
             </Text>
           )}
