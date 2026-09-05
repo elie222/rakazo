@@ -79,6 +79,16 @@ test("live page helper preserves identity, masks passwords, and reports partial 
       await command("act", { actions: [{ kind: "click", ref: ref(refreshed, "Replacement") }] }),
     ).toMatchObject({ ok: false, completed: 0 });
     expect(await command("navigate", { url: "file:///tmp/fixture" })).toMatchObject({ ok: false });
+    await page.route("http://insecure.test/", (route) =>
+      route.fulfill({
+        contentType: "text/html",
+        body: "<title>Insecure fixture</title><button>HTTP action</button>",
+      }),
+    );
+    await page.goto("http://insecure.test/");
+    expect(await page.evaluate(() => window.isSecureContext)).toBe(false);
+    expect(await command("snapshot")).toMatchObject({ ok: true, title: "Insecure fixture" });
+    await page.goto(`http://127.0.0.1:${address.port}`);
     const other = await context.newPage();
     await other.setContent("<title>Other tab</title><button>Other action</button>");
     await page.bringToFront();

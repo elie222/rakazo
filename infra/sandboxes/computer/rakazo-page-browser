@@ -286,7 +286,9 @@ EVAL_HELPERS = r"""
   if (window.__rakazoPageBrowser) return true;
   const refMap = new Map();
   // New snapshots/documents never recycle references. Retain exact nodes, not selectors.
-  function newRef() { return `e${crypto.randomUUID()}`; }
+  function newRef() {
+    return `e${Array.from(crypto.getRandomValues(new Uint32Array(4)), n => n.toString(16).padStart(8, "0")).join("")}`;
+  }
   function visible(el) {
     if (!(el instanceof Element)) return false;
     const style = window.getComputedStyle(el);
