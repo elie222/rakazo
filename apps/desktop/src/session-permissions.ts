@@ -1,4 +1,5 @@
 import type { Session, WebContents } from "electron";
+import { isLoopbackHost } from "./setup-config.js";
 
 type AppPermissionTarget = {
   webContents: WebContents;
@@ -9,7 +10,10 @@ function httpOrigin(value: string | undefined): string | null {
   if (!value) return null;
   try {
     const url = new URL(value);
-    return url.protocol === "http:" || url.protocol === "https:" ? url.origin : null;
+    // LAN HTTP remains a supported server target, but cannot safely receive host permissions.
+    return url.protocol === "https:" || (url.protocol === "http:" && isLoopbackHost(url.hostname))
+      ? url.origin
+      : null;
   } catch {
     return null;
   }
