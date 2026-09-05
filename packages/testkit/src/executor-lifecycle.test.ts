@@ -534,6 +534,61 @@ describeIntegration("run executor lifecycle", () => {
     expect(await handles.prisma.run.count({ where: { threadId: thread.id } })).toBe(2);
   });
 
+  it("recovers a computer a crashed worker left booting", async () => {
+    const seeded = await seedRun("stale-boot", "write a file that says recovered");
+    const bot = await handles.prisma.bot.findUniqueOrThrow({ where: { id: seeded.bot.id } });
+    const computerId = bot.computerId!;
+    expect(computerId).toBeTruthy();
+
+    // A worker killed between the boot claim and its own failure handler: the row keeps
+    // "booting" and its execution lease is gone. Nothing used to clear that, so every run
+    // on this bot retried forever.
+    await handles.prisma.computerExecutionLease.deleteMany({ where: { computerId } });
+    await handles.prisma.computer.update({
+      where: { id: computerId },
+      data: { state: "booting", providerRef: "" },
+    });
+
+    await handles.executor.continueRun(seeded.run.id, "worker-stale-boot");
+
+    const computer = await handles.prisma.computer.findUniqueOrThrow({
+      where: { id: computerId },
+    });
+    expect(computer.state).toBe("running");
+    const run = await handles.prisma.run.findUniqueOrThrow({ where: { id: seeded.run.id } });
+    expect(run.status).toBe("completed");
+  });
+
+  it("leaves a booting computer alone while its worker still holds the lease", async () => {
+    const seeded = await seedRun("live-boot", "write a file that says waited");
+    const bot = await handles.prisma.bot.findUniqueOrThrow({ where: { id: seeded.bot.id } });
+    const computerId = bot.computerId!;
+
+    await handles.prisma.computerExecutionLease.deleteMany({ where: { computerId } });
+    await handles.prisma.computerExecutionLease.create({
+      data: {
+        computerId,
+        botId: "another-bot",
+        runId: "run-still-booting",
+        fence: 1,
+        expiresAt: new Date(Date.now() + 5 * 60_000),
+      },
+    });
+    await handles.prisma.computer.update({
+      where: { id: computerId },
+      data: { state: "booting", providerRef: "" },
+    });
+
+    await handles.executor.continueRun(seeded.run.id, "worker-live-boot");
+
+    const computer = await handles.prisma.computer.findUniqueOrThrow({
+      where: { id: computerId },
+    });
+    expect(computer.state).toBe("booting");
+    const run = await handles.prisma.run.findUniqueOrThrow({ where: { id: seeded.run.id } });
+    expect(run.status).not.toBe("completed");
+  });
+
   async function seedRun(
     label: string,
     prompt: string,

@@ -6,7 +6,7 @@ import type {
   JobPublisher,
   SandboxProvider,
 } from "@rakazo/adapter-kit";
-import { ACTIVE_RUN_STATUSES, screenLeaseId } from "@rakazo/core";
+import { ACTIVE_RUN_STATUSES, parseScreenLeaseId, screenLeaseId } from "@rakazo/core";
 import {
   expireComputerExecutionLeases,
   type PrismaClient,
@@ -31,6 +31,54 @@ const EXECUTION_LEASE_MS = 5 * 60_000;
 const RELEASED_EXECUTION_LEASE_AT = new Date(0);
 const BOOT_WAIT_ATTEMPTS = 40;
 const BOOT_WAIT_MS = 250;
+
+/**
+ * "Nobody but us holds this computer."
+ *
+ * Whoever moves a computer to "booting" holds its execution lease for the whole provision,
+ * renewed on the run heartbeat, so a booting row whose only live lease is our own belongs to
+ * a worker that died between the claim and its own failure handler. Before this nothing
+ * cleared that state -- the claim took only stopped/suspended/error rows and replaceComputer
+ * refused a booting one -- so the computer stayed wedged for good and every run on its bot
+ * retried forever.
+ *
+ * The same predicate guards the writes that end a boot. Reclaiming means two workers can
+ * briefly believe they own one row: ours, and one merely paused past its lease. Writing
+ * unconditionally would let the late one overwrite the winner's providerRef and leak its box,
+ * which is how the orphaned sandboxes that exhaust a Docker host pile up. A lease that merely
+ * expired without being taken still passes, so a slow manual boot that never heartbeats keeps
+ * working.
+ */
+function heldByNobodyElse(lease: { ownerId: string; fence: number } | null) {
+  if (!lease) return {};
+  return {
+    executionLeases: {
+      none: {
+        expiresAt: { gt: new Date() },
+        NOT: { runId: lease.ownerId, fence: lease.fence },
+      },
+    },
+  };
+}
+
+/**
+ * A live execution lease held by some OTHER bot on this computer.
+ *
+ * runComputerReplace already holds the lease for its own bot, so "any live lease" would
+ * always be true there; a shared Team Computer mid-boot for a different bot must still be
+ * refused.
+ */
+async function hasForeignExecutionLease(
+  prisma: PrismaClient,
+  computerId: string,
+  botId: string,
+): Promise<boolean> {
+  const live = await prisma.computerExecutionLease.findFirst({
+    where: { computerId, botId: { not: botId }, expiresAt: { gt: new Date() } },
+    select: { id: true },
+  });
+  return live !== null;
+}
 
 export class ComputerBusyError extends Error {
   constructor() {
@@ -76,10 +124,15 @@ export async function provisionComputer(
     existing = await deps.prisma.computer.findUniqueOrThrow({ where: { id: computerId } });
   }
 
+  // The execution lease this caller already holds, as it stamped it into the context.
+  const bootLease = context.screenLeaseId ? parseScreenLeaseId(context.screenLeaseId) : null;
   const claimed = await deps.prisma.computer.updateMany({
     where: {
       id: computerId,
-      state: { in: ["stopped", "suspended", "error"] },
+      OR: [
+        { state: { in: ["stopped", "suspended", "error"] } },
+        { state: "booting", ...heldByNobodyElse(bootLease) },
+      ],
       ...(context.botId ? { bots: { some: { id: context.botId, archivedAt: null } } } : {}),
     },
     data: { state: "booting" },
@@ -118,6 +171,7 @@ export async function provisionComputer(
       where: {
         id: computerId,
         state: "booting",
+        ...heldByNobodyElse(bootLease),
         ...(context.botId ? { bots: { some: { id: context.botId, archivedAt: null } } } : {}),
       },
       data: {
@@ -145,7 +199,7 @@ export async function provisionComputer(
       : undefined;
     try {
       await deps.prisma.computer.updateMany({
-        where: { id: computerId, state: "booting" },
+        where: { id: computerId, state: "booting", ...heldByNobodyElse(bootLease) },
         data: {
           state: "error",
           ...(rollbackError && provisioned
@@ -466,7 +520,17 @@ export async function replaceComputer(
   if (hasActiveComputerControl(existing)) {
     throw new ComputerBusyError();
   }
-  if (existing.state === "booting" || existing.state === "suspending") {
+  if (existing.state === "suspending") {
+    throw new ComputerBusyError();
+  }
+  // "booting" is reachable here only through runComputerReplace, which already holds this
+  // computer's execution lease -- and it could only take that once the booting worker's own
+  // lease expired. Refusing it left Reset answering "Computer is busy" forever, with no way
+  // back short of editing the row by hand. The claim below still fences on the state we read.
+  if (
+    existing.state === "booting" &&
+    (await hasForeignExecutionLease(deps.prisma, computerId, botId))
+  ) {
     throw new ComputerBusyError();
   }
 

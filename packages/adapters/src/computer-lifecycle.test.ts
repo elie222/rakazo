@@ -1051,6 +1051,84 @@ describe("computer replacement", () => {
     ).rejects.toBeInstanceOf(ComputerBusyError);
   });
 
+  it("resets a computer a crashed worker left booting", async () => {
+    // No live lease from anyone else: the worker that set "booting" is gone, so Reset must
+    // reach the claim instead of answering "Computer is busy" for good.
+    const updateMany = vi.fn().mockResolvedValue({ count: 0 });
+    const prisma = {
+      computer: {
+        findUniqueOrThrow: vi.fn().mockResolvedValue({
+          id: "computer-1",
+          homeKey: "bot-1",
+          providerRef: "",
+          kind: "fake",
+          scope: "dedicated",
+          state: "booting",
+          controlLeaseId: null,
+        }),
+        updateMany,
+      },
+      computerExecutionLease: { findFirst: vi.fn().mockResolvedValue(null) },
+      run: { findFirst: vi.fn().mockResolvedValue(null) },
+    } as unknown as PrismaClient;
+
+    await expect(
+      replaceComputer(
+        {
+          prisma,
+          sandbox: new FakeSandboxProvider(),
+          home: {} as AgentHomeStore,
+          jobs: {} as JobPublisher,
+          events: {} as ThreadEvents,
+        },
+        "computer-1",
+        "reset",
+        context,
+      ),
+    ).rejects.toBeInstanceOf(ComputerBusyError);
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ state: "booting" }) }),
+    );
+  });
+
+  it("refuses a booting computer another bot is still holding", async () => {
+    const updateMany = vi.fn().mockResolvedValue({ count: 1 });
+    const prisma = {
+      computer: {
+        findUniqueOrThrow: vi.fn().mockResolvedValue({
+          id: "computer-1",
+          homeKey: "bot-1",
+          providerRef: "",
+          kind: "fake",
+          scope: "team",
+          state: "booting",
+          controlLeaseId: null,
+        }),
+        updateMany,
+      },
+      computerExecutionLease: {
+        findFirst: vi.fn().mockResolvedValue({ id: "lease-other-bot" }),
+      },
+      run: { findFirst: vi.fn().mockResolvedValue(null) },
+    } as unknown as PrismaClient;
+
+    await expect(
+      replaceComputer(
+        {
+          prisma,
+          sandbox: new FakeSandboxProvider(),
+          home: {} as AgentHomeStore,
+          jobs: {} as JobPublisher,
+          events: {} as ThreadEvents,
+        },
+        "computer-1",
+        "reset",
+        context,
+      ),
+    ).rejects.toBeInstanceOf(ComputerBusyError);
+    expect(updateMany).not.toHaveBeenCalled();
+  });
+
   it("rejects replacement while the target bot has an active run", async () => {
     const prisma = {
       computer: {
