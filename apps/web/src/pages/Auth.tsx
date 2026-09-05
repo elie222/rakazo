@@ -1,4 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
+import { signupRequiresEmailVerification } from "@rakazo/core";
 import { Button, Input, Label } from "@rakazo/ui-web";
 import { Eye, EyeOff } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -15,25 +16,27 @@ const submitClass = "mt-3 h-12 w-full rounded-xl text-base";
 export function AuthPage({ mode }: { mode: AuthMode }) {
   const { t } = useLingui();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
-  const [sent, setSent] = useState(false);
+  const [resetSent, setResetSent] = useState(false);
+  // Signup triggers a session refresh that remounts the anonymous auth page.
+  const sent = resetSent || searchParams.get("verify") === "email";
   const [reset, setReset] = useState<PasswordResetCapabilities | null>(null);
   const passwordFieldId = mode === "in" ? "current-password" : "new-password";
-  const title =
-    mode === "in" ? (
-      <Trans>Sign in to Rakazo</Trans>
-    ) : mode === "up" ? (
-      <Trans>Create your Rakazo</Trans>
-    ) : sent ? (
-      <Trans>Check your email</Trans>
-    ) : (
-      <Trans>Reset your password</Trans>
-    );
+  const title = sent ? (
+    <Trans>Check your email</Trans>
+  ) : mode === "in" ? (
+    <Trans>Sign in to Rakazo</Trans>
+  ) : mode === "up" ? (
+    <Trans>Create your Rakazo</Trans>
+  ) : (
+    <Trans>Reset your password</Trans>
+  );
 
   useEffect(() => {
     if (mode === "up") return;
@@ -70,7 +73,7 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
           setError(result.error.message ?? t`Could not send reset email`);
           return;
         }
-        setSent(true);
+        setResetSent(true);
         return;
       }
       const result =
@@ -83,6 +86,10 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
           : await authClient.signIn.email({ email, password });
       if (result.error) {
         setError(result.error.message ?? t`Could not continue`);
+        return;
+      }
+      if (mode === "up" && signupRequiresEmailVerification(result.data)) {
+        setSearchParams({ verify: "email" });
         return;
       }
       clearSpaceSelection();

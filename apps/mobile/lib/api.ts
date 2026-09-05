@@ -17,6 +17,7 @@ import {
   progressMessageId,
   reduceLiveMessageBlocks,
   runFailureError,
+  signupRequiresEmailVerification,
   type ThreadHistory,
   upsertMessageById,
 } from "@rakazo/core";
@@ -306,6 +307,8 @@ async function authenticateWithEmail(
     throw new Error(responseErrorMessage(body, `Could not ${action.replace("-", " ")}`));
   }
   const token = tokenFromAuthResponse(res, body);
+  if (action === "sign-up" && signupRequiresEmailVerification(body))
+    return { verificationRequired: true };
   if (!token)
     throw new Error(
       t(
@@ -316,6 +319,7 @@ async function authenticateWithEmail(
     );
   if (!(await clearSpace())) throw new Error(t("Could not clear the previous space"));
   await saveSessionToken(token);
+  return { verificationRequired: false };
 }
 
 export function signIn(email: string, password: string) {
