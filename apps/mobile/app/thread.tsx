@@ -1359,7 +1359,7 @@ function Thread() {
             flexShrink: 1,
           }}
         >
-          <Pressable accessible={false} {...actionProps}>
+          <Pressable accessible={false} onLongPress={actionProps.onLongPress}>
             <MessageBubble
               botId={botId ?? snap?.members?.[0]?.botId ?? ""}
               groupId={groupId}
