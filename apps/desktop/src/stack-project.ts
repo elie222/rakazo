@@ -17,6 +17,7 @@ export class StackOwnershipError extends Error {
 
 type InspectDocker = (args: string[]) => Promise<RunDockerResult>;
 
+/** Distinguish a missing identity from an existing file that the private reader rejected. */
 async function exists(file: string): Promise<boolean> {
   try {
     await lstat(file);
@@ -28,12 +29,12 @@ async function exists(file: string): Promise<boolean> {
 }
 
 /** Inspect stopped containers too; a healthy web listener proves nothing about its neighbours. */
-export async function assertStackProjectOwnership(
+async function inspectStackProjectContainers(
   project: string,
   dir: string,
   composeFile: string,
   inspect: InspectDocker,
-): Promise<void> {
+): Promise<number> {
   const listed = await inspect([
     "container",
     "ls",
@@ -45,12 +46,7 @@ export async function assertStackProjectOwnership(
   ]);
   if (listed.code !== 0) throw new StackOwnershipError();
   const ids = listed.stdout.trim().split(/\s+/).filter(Boolean);
-  if (ids.length === 0) {
-    // Old volumes have no directory labels. Never adopt an orphaned legacy volume
-    // or silently replace an existing installation with a fresh, empty database.
-    if (project === LEGACY_PROJECT) throw new StackOwnershipError();
-    return;
-  }
+  if (ids.length === 0) return 0;
   if (!ids.every((id) => /^[a-f0-9]{12,64}$/.test(id))) throw new StackOwnershipError();
   const inspected = await inspect([
     "container",
@@ -85,6 +81,19 @@ export async function assertStackProjectOwnership(
   } catch {
     throw new StackOwnershipError();
   }
+  return ids.length;
+}
+
+/** A saved legacy identity still needs live provenance; empty new projects may be resumed. */
+export async function assertStackProjectOwnership(
+  project: string,
+  dir: string,
+  composeFile: string,
+  inspect: InspectDocker,
+): Promise<void> {
+  const count = await inspectStackProjectContainers(project, dir, composeFile, inspect);
+  // Persisted legacy identities never authorize adopting orphaned volumes.
+  if (count === 0 && project === LEGACY_PROJECT) throw new StackOwnershipError();
 }
 
 /** Persist before creating .env so an interrupted first start can safely resume. */
@@ -103,12 +112,31 @@ export async function resolveStackProject(input: {
     return saved;
   }
   if (await exists(file)) throw new StackOwnershipError();
-  let project: string;
+  let project: string | null = null;
   if (await exists(path.join(input.dir, input.envFile))) {
     // Releases before project isolation used this name, including releases before
     // the private web token. Compose's directory labels are the compatibility proof.
-    project = LEGACY_PROJECT;
-  } else {
+    const count = await inspectStackProjectContainers(
+      LEGACY_PROJECT,
+      input.dir,
+      input.composeFile,
+      input.inspect,
+    );
+    if (count > 0) project = LEGACY_PROJECT;
+    else {
+      // A failed first pull left .env before any Docker resources were created.
+      // Only resume with a new project if there is no legacy data to strand. List
+      // names rather than trusting labels: old or restored volumes may lack them.
+      const volumes = await input.inspect(["volume", "ls", "--format", "{{.Name}}"]);
+      if (
+        volumes.code !== 0 ||
+        volumes.stdout.split(/\s+/).some((name) => name.startsWith(`${LEGACY_PROJECT}_`))
+      ) {
+        throw new StackOwnershipError();
+      }
+    }
+  }
+  if (project === null) {
     if (!input.create) return null;
     project = `rakazo-desktop-${input.randomHex(16)}`;
     if (!DESKTOP_PROJECT.test(project)) throw new StackOwnershipError();

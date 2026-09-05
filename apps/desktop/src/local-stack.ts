@@ -337,6 +337,7 @@ export class LocalStackController {
     return stopping;
   }
 
+  /** Resolve the saved identity even when this process has never started the stack. */
   private async runStop(): Promise<DesktopLocalStackState> {
     const binary = resolveDockerBinary(this.deps.platform, this.deps.env, this.deps.exists);
     try {
@@ -360,6 +361,7 @@ export class LocalStackController {
     this.current = reduceStackState(this.current, event);
   }
 
+  /** Translate failed ownership or preparation into recoverable setup state. */
   private async run(): Promise<DesktopLocalStackState> {
     const controller = new AbortController();
     this.inFlight = controller;
@@ -484,6 +486,7 @@ export class LocalStackController {
     });
   }
 
+  /** Ownership probes never enter the setup progress output. */
   private resolveProject(binary: string, create: boolean, signal?: AbortSignal) {
     return resolveStackProject({
       dir: this.deps.stackDir,
@@ -495,6 +498,7 @@ export class LocalStackController {
     });
   }
 
+  /** Supply only launch-owned settings and Docker's allowlisted environment. */
   private docker(
     binary: string,
     args: string[],
@@ -518,6 +522,7 @@ export class LocalStackController {
     });
   }
 
+  /** Recheck provenance after any intervening work, such as a long image pull. */
   private async compose(binary: string, args: string[], timeoutMs: number, signal?: AbortSignal) {
     if (this.currentProject === null) throw new StackOwnershipError();
     await assertStackProjectOwnership(

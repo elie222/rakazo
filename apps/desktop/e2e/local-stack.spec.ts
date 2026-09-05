@@ -10,7 +10,7 @@ const STACK_PROBE_PATH = "/.well-known/rakazo-desktop-stack";
 const STACK_TOKEN_HEADER = "x-rakazo-desktop-stack-token";
 const COMPOSE_DIR = path.resolve(import.meta.dirname, "..", "..", "..", "infra", "compose");
 
-type FakeDockerMode = "ok" | "daemon-down" | "pull-fails";
+type FakeDockerMode = "ok" | "daemon-down" | "pull-fails" | "orphaned-volume";
 
 let server: Server;
 let serverUrl: string;
@@ -83,6 +83,9 @@ async function writeFakeDocker(mode: FakeDockerMode) {
     `printf '%s | %s | %s\\n' "$PWD" "$RAKAZO_IMAGE_TAG" "$*" >> '${fakeDockerLog()}'`,
     'case "$1 $2" in',
     '  "compose version") echo "2.29.0"; exit 0 ;;',
+    mode === "orphaned-volume"
+      ? '  "volume ls") echo "rakazo_pgdata"; exit 0 ;;'
+      : '  "volume ls") exit 0 ;;',
     '  "info --format")',
     mode === "daemon-down"
       ? '    echo "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?" >&2; exit 1 ;;'
@@ -390,7 +393,7 @@ test("unproven legacy ownership blocks setup without issuing Compose mutations",
   await writeFile(path.join(stackDir, ".env"), "POSTGRES_PASSWORD=fake-preserved\n", {
     mode: 0o600,
   });
-  app = await launch("ok");
+  app = await launch("orphaned-volume");
   const setup = await app.firstWindow();
   await setup.getByRole("button", { name: "Continue" }).click();
   await expect(setup.locator("#stack-phase")).toHaveText(

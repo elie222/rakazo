@@ -10,6 +10,8 @@ New desktop installations use a separate `rakazo-desktop-…` Compose project, s
 
 Existing desktop installations retain the legacy `rakazo` project and its volumes only when every container in that project, including stopped containers, has Compose directory and configuration labels matching the app's stack directory. These labels also support desktop releases from before the private web token. The app rechecks ownership before each Compose command and blocks automatic management when labels are missing, mixed, or foreign, or when an older installation has only orphaned volumes. It does not delete containers or volumes to resolve a conflict.
 
+An older first setup that failed after creating `.env` but before creating containers can resume under a new desktop project only if Docker also confirms there are no legacy `rakazo_…` data volumes. The existing `.env` is preserved. A saved legacy project identity is never replaced automatically.
+
 If ownership verification fails, preserve the stack directory (including `.env`, `.desktop-stack-token`, and `.desktop-stack-project`, when present) and the Docker volumes. Inspect the project's containers and Compose labels with Docker before attempting recovery. Restore the original desktop containers from the original configuration if they were removed; do not assign old volumes to a new project or delete the identity file merely to bypass the check. For a standalone deployment, manage it with its own original Compose configuration and connect through **Existing instance**.
 
 ## Published images (no checkout)

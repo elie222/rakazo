@@ -410,7 +410,10 @@ describe("LocalStackController", () => {
       await mkdir(standalone);
       const directories =
         kind === "foreign" ? [standalone] : kind === "mixed" ? [dir, standalone] : [];
-      const stack = controller({}, projectContainers("rakazo", directories));
+      const containers = projectContainers("rakazo", directories);
+      const stack = controller({}, (args) =>
+        args[0] === "volume" ? { stdout: "rakazo_pgdata\nrakazo_appdata\n" } : containers(args),
+      );
       for (const state of [await stack.start(), await stack.start(), await stack.stop()]) {
         expect(state).toMatchObject({ phase: "failed", message: STACK_OWNERSHIP_FAILED });
       }
@@ -455,6 +458,33 @@ describe("LocalStackController", () => {
     for (const call of composeCalls(calls)) {
       expect(call.args[6]).toBe(`rakazo-desktop-${fakeHex(16)}`);
     }
+  });
+
+  it("resumes an old first install that failed before creating containers or data volumes", async () => {
+    const dir = await legacyFiles();
+    expect((await controller().start()).phase).toBe("ready");
+    expect(calls.some((call) => call.args[0] === "volume" && call.args[1] === "ls")).toBe(true);
+    for (const call of composeCalls(calls)) {
+      expect(call.args[6]).toBe(`rakazo-desktop-${fakeHex(16)}`);
+    }
+    await expect(readFile(path.join(dir, STACK_ENV_FILE), "utf8")).resolves.toBe(
+      "POSTGRES_PASSWORD=fake-preserved\n",
+    );
+  });
+
+  it("does not select a new project when the old data-volume check fails", async () => {
+    const dir = await legacyFiles();
+    const stack = controller({}, (args) => (args[0] === "volume" ? { code: 1 } : ok(args)));
+    expect((await stack.start()).message).toBe(STACK_OWNERSHIP_FAILED);
+    expect(composeCalls(calls)).toEqual([]);
+    await expect(readFile(path.join(dir, STACK_PROJECT_FILE))).rejects.toThrow();
+  });
+
+  it("does not abandon a persisted legacy identity after its containers are removed", async () => {
+    const dir = await legacyFiles();
+    await writeFile(path.join(dir, STACK_PROJECT_FILE), "rakazo\n");
+    expect((await controller().start()).message).toBe(STACK_OWNERSHIP_FAILED);
+    expect(composeCalls(calls)).toEqual([]);
   });
 
   it("does not read failure logs after ownership changes during a failed up", async () => {
@@ -502,7 +532,7 @@ describe("LocalStackController", () => {
   );
 
   it.each(["other-project", "", "a".repeat(129)])(
-    "does not replace an invalid saved project",
+    "does not replace an invalid saved project: %s",
     async (saved) => {
       const dir = await legacyFiles();
       await writeFile(path.join(dir, STACK_PROJECT_FILE), saved);
