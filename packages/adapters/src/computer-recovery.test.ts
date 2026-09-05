@@ -213,4 +213,25 @@ describe("computer recovery preserves live work", () => {
       expect(await deps.home.readFile("bot", "notes.txt", context)).toBe("live work");
     },
   );
+
+  it("resets a missing computer after idempotent provider teardown", async () => {
+    const { deps, row, first } = await fixture();
+    await deps.sandbox.destroy(first, context);
+    const updated = await replaceComputer(deps, row.id, "reset", context);
+    expect(updated.fresh).toBe(true);
+    expect(row).toMatchObject({ state: "running", providerRef: updated.providerRef });
+    expect(
+      new TextDecoder().decode(await deps.sandbox.readFile(updated, "notes.txt", context)),
+    ).toBe("checkpoint");
+  });
+
+  it("preserves the reference when reset teardown fails ambiguously", async () => {
+    const { deps, row, first } = await fixture();
+    const failure = new Error("404: configuration file not found");
+    vi.spyOn(deps.sandbox, "destroy").mockRejectedValue(failure);
+    const provision = vi.spyOn(deps.sandbox, "provision");
+    await expect(replaceComputer(deps, row.id, "reset", context)).rejects.toBe(failure);
+    expect(provision).not.toHaveBeenCalled();
+    expect(row.providerRef).toBe(first.providerRef);
+  });
 });
