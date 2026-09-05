@@ -173,7 +173,18 @@ describeIntegration("reusable credential lifecycle", () => {
         // An invalid value rolls back the run transition and leaves the card pending.
         const pending = await handles.prisma.message.findFirstOrThrow({
           where: { runId: seeded.run.id, role: "bot" },
+          orderBy: { seq: "desc" },
         });
+        expect(pending.blocks).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              kind: "ask",
+              input: "secret",
+              status: "pending",
+              credential: destination,
+            }),
+          ]),
+        );
         for (const invalid of ["x".repeat(16_385), "key\r\nX-Evil: injected", "key "]) {
           await expect(
             rpc(seeded.cookie, "threads/answer", {
