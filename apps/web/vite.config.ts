@@ -6,16 +6,15 @@ import path from "node:path";
 import tls from "node:tls";
 import { lingui } from "@lingui/vite-plugin";
 import type { DesktopStackProbeResponse } from "@rakazo/contracts";
+import {
+  safeScreenProxyResponseHeaders,
+  stripSensitiveHandshakeHeaders,
+} from "@rakazo/core/node/screen-proxy-response";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig, loadEnv, type PreviewServer, type ViteDevServer } from "vite";
 import { resolveScreenProxySecret } from "../../packages/core/src/secrets-guard.ts";
-import {
-  resolveNovncTarget,
-  safeProxyHeaders,
-  safeProxyResponseHeaders,
-  stripSensitiveHandshakeHeaders,
-} from "./src/screen-proxy.js";
+import { resolveNovncTarget, safeProxyHeaders } from "./src/screen-proxy.js";
 
 const webPort = Number(process.env.WEB_PORT ?? 5173);
 const DESKTOP_STACK_PROBE_PATH = "/.well-known/rakazo-desktop-stack";
@@ -81,10 +80,7 @@ function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string)
         ...(target.protocol === "https:" ? { servername: target.hostname } : {}),
       },
       (incoming) => {
-        res.writeHead(incoming.statusCode ?? 502, {
-          ...safeProxyResponseHeaders(incoming.headers),
-          "access-control-allow-origin": "*",
-        });
+        res.writeHead(incoming.statusCode ?? 502, safeScreenProxyResponseHeaders(incoming.headers));
         incoming.pipe(res);
       },
     );
