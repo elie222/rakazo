@@ -3168,3 +3168,15 @@ msgstr "若让 Bot 在 {hostLabel} 上运行，它们会使用你的账户权限
 #: src/pages/Welcome.tsx:21
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "你的一支随时在线的 Agent 团队<0/>可以交给它们真正的工作。"
+
+#: src/pages/PluginsOverlay.tsx:468
+msgid "Add Executor"
+msgstr "添加 Executor"
+
+#: src/pages/PluginsOverlay.tsx:508
+msgid "Connect Executor"
+msgstr "连接 Executor"
+
+#: src/pages/PluginsOverlay.tsx:569
+msgid "Executor token"
+msgstr "Executor 令牌"

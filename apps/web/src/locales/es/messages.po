@@ -3168,3 +3168,15 @@ msgstr "Tu sistema operativo no pedirá permisos extra si dejas que los bots se 
 #: src/pages/Welcome.tsx:21
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "Tu equipo de agentes siempre activos<0/>a los que puedes dar trabajo real."
+
+#: src/pages/PluginsOverlay.tsx:468
+msgid "Add Executor"
+msgstr "Agregar Executor"
+
+#: src/pages/PluginsOverlay.tsx:508
+msgid "Connect Executor"
+msgstr "Conectar Executor"
+
+#: src/pages/PluginsOverlay.tsx:569
+msgid "Executor token"
+msgstr "Token de Executor"
