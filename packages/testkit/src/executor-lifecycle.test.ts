@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { approvalEffectKey } from "@rakazo/core/node/approval-effect-key";
-import { createThreadEvents } from "@rakazo/db";
+import { createThreadEvents, createThreadMessage, loadRunHistoryMessages } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 process.env.WAKEUP_DRIVER = "memory";
@@ -610,6 +610,125 @@ describeIntegration("run executor lifecycle", () => {
     expect(first.runIds).toHaveLength(2);
     expect(replay.runIds).toEqual(first.runIds);
     expect(await handles.prisma.run.count({ where: { threadId: thread.id } })).toBe(2);
+  });
+
+  it("leaves private steering for a private continuation and excludes it from group recovery", async () => {
+    const seeded = await seedRun("channel-steering", "Group request", {
+      status: "running",
+      leaseOwner: "channel-worker",
+      leaseFence: 1,
+      leaseExpiresAt: new Date(Date.now() + 60_000),
+      startedAt: new Date(),
+    });
+    const scope = { ...seeded.me, threadId: seeded.thread.id, botId: seeded.bot.id };
+    const events = createThreadEvents(handles.prisma);
+    await createThreadMessage(handles.prisma, {
+      threadId: seeded.thread.id,
+      role: "user",
+      blocks: [{ kind: "text", text: "Older private detail" }],
+    });
+    const channel = {
+      kind: "channel_message" as const,
+      provider: "fake",
+      channelId: "fake-group",
+      fromAddress: "sender",
+      fromLabel: "Sender",
+      text: "Group request",
+      hop: 0,
+    };
+    const source = await createThreadMessage(handles.prisma, {
+      threadId: seeded.thread.id,
+      role: "user",
+      blocks: [channel],
+    });
+    await handles.prisma.run.update({
+      where: { id: seeded.run.id },
+      data: { trigger: "messaging", sourceMessageId: source.id },
+    });
+    await createThreadMessage(handles.prisma, {
+      threadId: seeded.thread.id,
+      role: "user",
+      blocks: [{ ...channel, channelId: "other-group", text: "Other group detail" }],
+    });
+    const privateDm = await events.sendUserMessage({
+      ...scope,
+      trigger: "messaging",
+      blocks: [{ kind: "text", text: "Private DM detail" }],
+      prompt: "Private DM detail",
+    });
+    const privateSend = await rpc<{ runId: string }>(seeded.cookie, "threads/send", {
+      botId: seeded.bot.id,
+      text: "New private detail",
+      clientNonce: `private-channel-${stamp}`,
+    });
+    expect(privateSend.runId).toBe(seeded.run.id);
+    const privateMessage = await handles.prisma.message.findUniqueOrThrow({
+      where: {
+        threadId_clientNonce: {
+          threadId: seeded.thread.id,
+          clientNonce: `private-channel-${stamp}`,
+        },
+      },
+    });
+    const publicSend = await events.sendUserMessage({
+      ...scope,
+      trigger: "messaging",
+      blocks: [{ ...channel, text: "Group follow-up" }],
+      prompt: "Group follow-up",
+    });
+    const fence = { ...scope, runId: seeded.run.id, leaseOwner: "channel-worker", leaseFence: 1 };
+    const claimed = await events.claimSteering({ ...fence, seenIds: [] });
+    expect(claimed.map((item) => item.messageId)).toEqual([publicSend.messageId]);
+    const history = await loadRunHistoryMessages(
+      handles.prisma,
+      seeded.run,
+      100,
+      channel.channelId,
+    );
+    expect(history.map((message) => message.id).sort()).toEqual(
+      [source.id, publicSend.messageId].sort(),
+    );
+    const attempt = await handles.prisma.attempt.create({
+      data: { runId: seeded.run.id, fence: 1, status: "running" },
+    });
+    const result = await events.finalizeRun({
+      ...fence,
+      taskId: seeded.task.id,
+      attemptId: attempt.id,
+      outcome: "completed",
+      blocks: [{ kind: "text", text: "Public reply" }],
+    });
+    if (result === false || !result.continuationRunId)
+      throw new Error("Missing private continuation");
+    const continuation = await handles.prisma.run.findUniqueOrThrow({
+      where: { id: result.continuationRunId },
+    });
+    expect(continuation).toMatchObject({
+      trigger: "follow_up",
+      sourceMessageId: privateMessage.id,
+    });
+    const steering = await handles.prisma.steeringMessage.findUniqueOrThrow({
+      where: { messageId_botId: { messageId: privateMessage.id, botId: seeded.bot.id } },
+    });
+    expect(steering).toMatchObject({ runId: continuation.id, claimedAt: null });
+    expect(
+      await handles.prisma.steeringMessage.findUniqueOrThrow({
+        where: { messageId_botId: { messageId: privateDm.messageId, botId: seeded.bot.id } },
+      }),
+    ).toMatchObject({ runId: continuation.id, claimedAt: null });
+    // A later group run gets channel inputs, without either run's private context or bot answers.
+    expect(
+      (
+        await loadRunHistoryMessages(
+          handles.prisma,
+          { ...seeded.run, id: "next-group-run" },
+          100,
+          channel.channelId,
+        )
+      )
+        .map((message) => message.id)
+        .sort(),
+    ).toEqual([source.id, publicSend.messageId].sort());
   });
 
   async function seedRun(

@@ -8,6 +8,7 @@ import {
   blocksToAgentHistoryText,
   isApprovalAskBlock,
   isSecretAskBlock,
+  messagingChannelId,
   sanitizeJsonValue,
 } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
@@ -476,15 +477,25 @@ export async function claimSteering(
         leaseOwner: input.leaseOwner,
         leaseFence: input.leaseFence,
       },
-      select: { id: true },
+      select: { id: true, trigger: true, sourceMessage: { select: { blocks: true } } },
     });
     if (!run) return [];
+    const channelId =
+      run.trigger === "messaging"
+        ? messagingChannelId(run.sourceMessage?.blocks as MessageBlock[] | undefined)
+        : undefined;
     const steering = await tx.steeringMessage.findMany({
       where: {
         botId: input.botId,
         id: input.seenIds.length ? { notIn: input.seenIds } : undefined,
         OR: [{ runId: null }, { runId: input.runId }],
-        message: { threadId: input.threadId },
+        message: {
+          threadId: input.threadId,
+          // Private follow-ups remain unclaimed for the existing private continuation.
+          ...(channelId
+            ? { blocks: { array_contains: [{ kind: "channel_message", channelId }] } }
+            : {}),
+        },
       },
       include: { message: { select: { blocks: true, seq: true } } },
       orderBy: [{ message: { seq: "asc" } }, { id: "asc" }],
