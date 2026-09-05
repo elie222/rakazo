@@ -105,7 +105,9 @@ describe("host-aware sandbox", () => {
     const sandbox = new HostAwareSandbox(isolated, host, async () => false);
     const computer = await sandbox.provision({ botId: "page", homePath: "/tmp/page" }, ctx);
     expect(typeof sandbox.pageBrowser).toBe("function");
-    await expect(sandbox.pageBrowser!(computer, { command: "snapshot" }, ctx)).resolves.toMatchObject({
+    await expect(
+      sandbox.pageBrowser!(computer, { command: "snapshot" }, ctx),
+    ).resolves.toMatchObject({
       ok: true,
       url: "https://example.test",
     });
