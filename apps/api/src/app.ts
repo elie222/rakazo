@@ -196,7 +196,11 @@ export async function createApp(
   const pipedream =
     pipedreamOverride ??
     (isPipedreamEnabled(pipedreamConfig) ? new PipedreamConnector(pipedreamConfig) : undefined);
-  const messagingPlatforms = messagingPlatformsFromEnv(env);
+  // This process registers the inbound sink (messaging.onInbound below),
+  // so it's the one that must hold Telegram's live getUpdates connection —
+  // see messagingPlatformsFromEnv's docstring for why a second poller
+  // elsewhere (e.g. the worker) would actively break this.
+  const messagingPlatforms = messagingPlatformsFromEnv(env, { pollInboundMessages: true });
   const messaging =
     messagingOverride ??
     (isMessagingSurfaceEnabled(messagingPlatforms, {
@@ -419,6 +423,10 @@ export async function createApp(
     return actor;
   });
   mountWebhookHttpRoutes(app, { prisma, secrets, events, jobs });
+  // Shared with stop so a shutdown during retry delays does not restart polling.
+  let messagingStopped = false;
+  let clearMessagingRetryDelay: (() => void) | undefined;
+  let messagingInitTask: Promise<void> | undefined;
   // Messaging webhooks only exist when the surface is enabled.
   if (messaging) {
     const inbound = createMessagingInboundHandler({
@@ -452,6 +460,44 @@ export async function createApp(
       else await applyMessagingOutboundStatus(prisma, event);
     });
     mountMessagingWebhookRoutes(app, { messaging });
+    // Start polling-mode adapters (e.g. Telegram with no public webhook URL
+    // registered) immediately rather than waiting for the first webhook
+    // POST or outbound send to lazily trigger it. This is the process that
+    // owns the inbound sink registered just above, so it must be the one
+    // holding the live connection — a second poller elsewhere (e.g. the
+    // worker) would only fight this one for Telegram's single getUpdates
+    // slot without ever seeing the messages itself.
+    // Bounded retries cover transient Telegram startup failures; polling-only
+    // bots otherwise stay dark until an unrelated outbound send re-inits.
+    messagingInitTask = (async () => {
+      const delayMs = [0, 2_000, 10_000];
+      for (let attempt = 0; attempt < delayMs.length; attempt += 1) {
+        if (messagingStopped) return;
+        if (delayMs[attempt]! > 0) {
+          await new Promise<void>((resolve) => {
+            const timer = setTimeout(resolve, delayMs[attempt]);
+            clearMessagingRetryDelay = () => {
+              clearTimeout(timer);
+              clearMessagingRetryDelay = undefined;
+              resolve();
+            };
+          });
+          clearMessagingRetryDelay = undefined;
+        }
+        if (messagingStopped) return;
+        try {
+          await messaging.initialize?.();
+          return;
+        } catch (error) {
+          console.error(
+            attempt === delayMs.length - 1
+              ? "messaging surface initialize failed"
+              : "messaging surface initialize failed; retrying",
+            error,
+          );
+        }
+      }
+    })();
   }
 
   app.get("/health", (c) =>
@@ -482,6 +528,10 @@ export async function createApp(
     executor,
     stop: async () => {
       oauthLogins.abortAll();
+      messagingStopped = true;
+      clearMessagingRetryDelay?.();
+      await messagingInitTask?.catch(() => undefined);
+      await messaging?.shutdown?.();
       await email?.drain?.();
       await reconciler?.stop();
       await jobs.close();

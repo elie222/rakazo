@@ -72,14 +72,21 @@ async function mirrorRun(deps: MessagingDeliveryDeps, runId: string): Promise<vo
     where: { id: runId },
     include: { sourceMessage: true },
   });
-  if (run?.trigger !== "messaging") return;
-  const sourceBlocks = (run.sourceMessage?.blocks ?? []) as MessageBlock[];
-  const channelBlock = sourceBlocks.find(
-    (block): block is Extract<MessageBlock, { kind: "channel_message" }> =>
-      block.kind === "channel_message",
-  );
-  if (channelBlock) {
-    await mirrorChannelRun(deps, run, channelBlock);
+  if (!run) return;
+
+  if (run.trigger === "messaging") {
+    const sourceBlocks = (run.sourceMessage?.blocks ?? []) as MessageBlock[];
+    const channelBlock = sourceBlocks.find(
+      (block): block is Extract<MessageBlock, { kind: "channel_message" }> =>
+        block.kind === "channel_message",
+    );
+    if (channelBlock) {
+      await mirrorChannelRun(deps, run, channelBlock);
+      return;
+    }
+  } else if (run.trigger !== "bot_message") {
+    // Mirror inbound messaging runs and delegated bot_message replies only.
+    // Do not push in-app user/routine runs out to the linked chat.
     return;
   }
 
@@ -87,6 +94,9 @@ async function mirrorRun(deps: MessagingDeliveryDeps, runId: string): Promise<vo
     where: { botId: run.botId },
   });
   if (!identity) return;
+
+  // bot_message runs can carry the bot's user-facing reply after a delegate wake.
+  // extractText only keeps kind:"text", so inter-bot chatter blocks never leak out.
 
   const messages = await deps.prisma.message.findMany({
     where: { runId: run.id, role: "bot" },

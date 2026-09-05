@@ -52,8 +52,26 @@ export function messagingEnvFromProcess(
  * Build the platform list for every fully configured provider. Group
  * conversations stay sendblue-only until channel semantics are mapped for
  * the other platforms, so their capabilities say so instead of half-working.
+ *
+ * `pollInboundMessages` must be true only in the one process that also
+ * registers the inbound sink (messaging.onInbound — apps/api/src/app.ts).
+ * Telegram's "auto" mode starts a long-poll the moment anything calls
+ * chat.initialize() when no webhook is registered — and that includes a
+ * process that only ever meant to *send*: outbound delivery
+ * (sendToThread) lazily initializes too. A second process polling with no
+ * inbound sink attached doesn't just do nothing — it actively steals
+ * Telegram's single getUpdates slot away from the process that IS
+ * listening, so both sides spend every cycle losing a 409 Conflict to the
+ * other and messages stop arriving at all. Any caller that only sends
+ * (e.g. apps/worker/src/index.ts, for messaging.deliver jobs) must leave
+ * this false so Telegram mode resolves to "webhook" (passive — resolves
+ * bot identity for outbound calls, never polls, and no webhook route is
+ * mounted there for it to receive on anyway).
  */
-export function messagingPlatformsFromEnv(env: MessagingEnvironmentValues): MessagingPlatform[] {
+export function messagingPlatformsFromEnv(
+  env: MessagingEnvironmentValues,
+  options: { pollInboundMessages?: boolean } = {},
+): MessagingPlatform[] {
   const platforms: MessagingPlatform[] = [];
 
   if (
@@ -123,12 +141,21 @@ export function messagingPlatformsFromEnv(env: MessagingEnvironmentValues): Mess
     platforms.push({
       provider: "telegram",
       capabilities: { direct: true, groups: false, typing: false },
-      // Webhook-only: auto mode can long-poll getUpdates from the worker on
-      // initialize() and consume updates so the HTTP webhook never sees them.
+      // Auto mode: uses the webhook route when Telegram has one registered
+      // (checked via getWebhookInfo), and otherwise falls back to
+      // long-polling getUpdates. Self-hosted/local deployments typically
+      // have no public HTTPS endpoint for Telegram to push to, so the API
+      // process calls initialize() at startup (apps/api/src/app.ts) to
+      // start that polling loop immediately rather than waiting for the
+      // first inbound webhook or outbound send. It must be the API
+      // process specifically: that's where the inbound sink is registered,
+      // and Telegram allows only one live getUpdates connection per bot —
+      // a second poller elsewhere would just steal that slot and drop
+      // every message into the void.
       adapter: createTelegramAdapter({
         botToken: env.telegramBotToken,
         secretToken: env.telegramWebhookSecret,
-        mode: "webhook",
+        mode: options.pollInboundMessages ? "auto" : "webhook",
       }),
     });
   }
