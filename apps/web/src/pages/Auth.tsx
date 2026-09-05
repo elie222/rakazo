@@ -24,16 +24,15 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
   const [sent, setSent] = useState(false);
   const [reset, setReset] = useState<PasswordResetCapabilities | null>(null);
   const passwordFieldId = mode === "in" ? "current-password" : "new-password";
-  const title =
-    mode === "in" ? (
-      <Trans>Sign in to Rakazo</Trans>
-    ) : mode === "up" ? (
-      <Trans>Create your Rakazo</Trans>
-    ) : sent ? (
-      <Trans>Check your email</Trans>
-    ) : (
-      <Trans>Reset your password</Trans>
-    );
+  const title = sent ? (
+    <Trans>Check your email</Trans>
+  ) : mode === "in" ? (
+    <Trans>Sign in to Rakazo</Trans>
+  ) : mode === "up" ? (
+    <Trans>Create your Rakazo</Trans>
+  ) : (
+    <Trans>Reset your password</Trans>
+  );
 
   useEffect(() => {
     if (mode === "up") return;
@@ -83,6 +82,10 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
           : await authClient.signIn.email({ email, password });
       if (result.error) {
         setError(result.error.message ?? t`Could not continue`);
+        return;
+      }
+      if (mode === "up" && !result.data.token) {
+        setSent(true);
         return;
       }
       clearSpaceSelection();

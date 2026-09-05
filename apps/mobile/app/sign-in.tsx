@@ -108,7 +108,15 @@ export default function SignIn() {
       }
       if (mode === "up") {
         const trimmedEmail = email.trim();
-        await signUp(trimmedEmail, password, name.trim() || trimmedEmail.split("@")[0] || "User");
+        const result = await signUp(
+          trimmedEmail,
+          password,
+          name.trim() || trimmedEmail.split("@")[0] || "User",
+        );
+        if (result.verificationRequired) {
+          setResetSent(true);
+          return;
+        }
       } else {
         await signIn(email.trim(), password);
       }
@@ -149,12 +157,12 @@ export default function SignIn() {
                   textAlign: "center",
                 }}
               >
-                {mode === "in"
-                  ? t("Sign in to Rakazo")
-                  : mode === "up"
-                    ? t("Sign up for Rakazo")
-                    : resetSent
-                      ? t("Check your email")
+                {resetSent
+                  ? t("Check your email")
+                  : mode === "in"
+                    ? t("Sign in to Rakazo")
+                    : mode === "up"
+                      ? t("Sign up for Rakazo")
                       : t("Reset your password")}
               </Text>
               {resetSent ? (

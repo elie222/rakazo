@@ -1,6 +1,24 @@
 import { expect, test } from "@playwright/test";
 import { captureScreenshot, completeOnboarding, signup } from "./helpers";
 
+test("restricted signup waits for mailbox verification", async ({ page }, testInfo) => {
+  await page.route("**/api/auth/sign-up/email", (route) =>
+    route.fulfill({
+      json: { token: null, user: { id: "pending-user", emailVerified: false } },
+    }),
+  );
+  await page.goto("/sign-up");
+  await page.getByLabel("Name").fill("Pending User");
+  await page.getByLabel("Email").fill("pending@example.test");
+  await page.getByLabel("Password", { exact: true }).fill("password12");
+  await page.getByRole("button", { name: "Continue with email" }).click();
+  await expect(page.getByRole("heading", { name: "Check your email" })).toBeVisible();
+  await expect(page).toHaveURL(/\/sign-up$/);
+  await captureScreenshot(page, testInfo, "signup-verification-required");
+  await page.getByRole("link", { name: "Back to sign in" }).click();
+  await expect(page.getByRole("heading", { name: "Sign in to Rakazo" })).toBeVisible();
+});
+
 test("logout protects bot deep links and sign-in restores the session", async ({
   page,
 }, testInfo) => {
