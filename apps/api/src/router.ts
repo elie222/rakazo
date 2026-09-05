@@ -1519,17 +1519,17 @@ export function createRouter(deps: RouterDeps) {
           const current = await deps.prisma.computer.findUniqueOrThrow({
             where: { id: bot.computer.id },
           });
-          if (!hasActiveComputerControl(current)) throw new ORPCError("CONFLICT");
-          if (current.controlBotId === bot.id) {
-            await bindWaitingTakeoverToControl(deps, {
-              spaceId: context.actor.spaceId,
-              threadId: bot.thread?.id,
-              botId: bot.id,
-              computerId: current.id,
-              controlLeaseId: current.controlLeaseId!,
-              controlRunId: current.controlRunId,
-            });
+          if (!hasActiveComputerControl(current) || current.controlBotId !== bot.id) {
+            throw new ORPCError("CONFLICT", { message: "Computer control changed; try again" });
           }
+          await bindWaitingTakeoverToControl(deps, {
+            spaceId: context.actor.spaceId,
+            threadId: bot.thread?.id,
+            botId: bot.id,
+            computerId: current.id,
+            controlLeaseId: current.controlLeaseId!,
+            controlRunId: current.controlRunId,
+          });
           await scheduleComputerControlExpiry(
             deps.jobs,
             current.id,
