@@ -51,6 +51,29 @@ describe("Supermemory request URLs", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it("rejects public HTTP base URLs before every transport call when an API key is present", async () => {
+    const fetchMock = vi.fn().mockImplementation(async () => Response.json({ results: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+    for (const { request } of operations) {
+      expect(await request({ ...config, baseUrl: "http://example.com" })).toMatchObject({
+        ok: false,
+        error: expect.stringContaining("must use HTTPS"),
+      });
+    }
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it.each(["http://192.168.1.20:6767", "https://api.example.com"])(
+    "allows private HTTP and public HTTPS base URLs: %s",
+    async (baseUrl) => {
+      const fetchMock = vi.fn().mockImplementation(async () => Response.json({ results: [] }));
+      vi.stubGlobal("fetch", fetchMock);
+      expect(await probeSupermemory({ ...config, baseUrl })).toMatchObject({ ok: true });
+      expect(fetchMock).toHaveBeenCalledOnce();
+      expect(fetchMock.mock.calls[0]![0]).toBe(`${baseUrl}/v3/container-tags/list`);
+    },
+  );
+
   it.each(["", "/", "/memory", "/memory/"])(
     "preserves the base prefix and provider route for every method: %s",
     async (prefix) => {

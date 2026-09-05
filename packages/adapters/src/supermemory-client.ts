@@ -1,3 +1,4 @@
+import { isPrivateOpenAiCompatibleHostname } from "./openai-compatible-url.js";
 import { readBodyCapped } from "./web-ssrf.js";
 
 const SUPERMEMORY_TIMEOUT_MS = 15_000;
@@ -47,8 +48,23 @@ export function parseSupermemoryBaseUrl(baseUrl: string): URL {
   return url;
 }
 
-function requestUrl(baseUrl: string, path: string): string {
-  const url = parseSupermemoryBaseUrl(baseUrl);
+/**
+ * When an API key will be sent, refuse public http:// endpoints so the Bearer
+ * token is not cleartext on the public internet. Private / loopback http stays
+ * allowed (local Supermemory). https:// is always fine for this check.
+ */
+export function assertHttpsForKeyedSupermemoryUrl(url: URL, apiKey: string): void {
+  if (!apiKey.trim()) return;
+  if (url.protocol === "https:") return;
+  if (isPrivateOpenAiCompatibleHostname(url.hostname)) return;
+  throw new Error(
+    "Supermemory endpoints that send an API key must use HTTPS. Use an https:// URL, or a private HTTP endpoint.",
+  );
+}
+
+function requestUrl(config: SupermemoryConnectionConfig, path: string): string {
+  const url = parseSupermemoryBaseUrl(config.baseUrl);
+  assertHttpsForKeyedSupermemoryUrl(url, config.apiKey);
   url.pathname = `${url.pathname.replace(/\/+$/, "")}${path}`;
   return url.href;
 }
@@ -105,7 +121,7 @@ export async function searchSupermemory(
 ): Promise<SupermemorySearchResponse> {
   try {
     const requestAbort = requestSignal(signal);
-    const response = await fetch(requestUrl(config.baseUrl, "/v4/search"), {
+    const response = await fetch(requestUrl(config, "/v4/search"), {
       method: "POST",
       headers: authHeaders(config),
       body: JSON.stringify({
@@ -198,7 +214,7 @@ export async function deleteSupermemoryContainer(
 ): Promise<SupermemorySaveResponse> {
   try {
     const response = await fetch(
-      requestUrl(config.baseUrl, `/v3/container-tags/${encodeURIComponent(containerTag)}`),
+      requestUrl(config, `/v3/container-tags/${encodeURIComponent(containerTag)}`),
       {
         method: "DELETE",
         headers: { Authorization: `Bearer ${config.apiKey}` },
@@ -226,7 +242,7 @@ export async function saveSupermemoryMemory(
     return { ok: false, error: "Supermemory save skipped: memory content is empty." };
   }
   try {
-    const response = await fetch(requestUrl(config.baseUrl, "/v4/memories"), {
+    const response = await fetch(requestUrl(config, "/v4/memories"), {
       method: "POST",
       headers: authHeaders(config),
       body: JSON.stringify({ containerTag, memories: [{ content: memory, isStatic: false }] }),
@@ -272,7 +288,7 @@ export async function probeSupermemory(
   config: SupermemoryConnectionConfig,
 ): Promise<SupermemoryProbeResponse> {
   try {
-    const response = await fetch(requestUrl(config.baseUrl, "/v3/container-tags/list"), {
+    const response = await fetch(requestUrl(config, "/v3/container-tags/list"), {
       method: "GET",
       headers: authHeaders(config),
       redirect: "error",
