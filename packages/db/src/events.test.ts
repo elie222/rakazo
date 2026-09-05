@@ -580,7 +580,7 @@ describe("pauseRunForTakeover", () => {
     );
   });
 
-  it("preserves another bot's active user lease and only binds controlRunId", async () => {
+  it("preserves another bot's active user lease without binding this run to it", async () => {
     const expiresAt = new Date(Date.now() + 60_000);
     const tx = {
       $queryRaw: vi.fn().mockResolvedValue([{ id: "computer-1" }]),
@@ -627,7 +627,7 @@ describe("pauseRunForTakeover", () => {
 
     expect(tx.computer.updateMany).toHaveBeenCalledWith({
       where: { id: "computer-1", spaceId: "workspace-1" },
-      data: { state: "running", controlRunId: "run-1" },
+      data: { state: "running" },
     });
     expect(tx.event.create).toHaveBeenCalledWith(
       expect.objectContaining({
