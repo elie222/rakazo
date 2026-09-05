@@ -83,7 +83,7 @@ the `https://` address.
 
 ## Local development (source checkout)
 
-You need Node.js 22+, pnpm 9, and Docker.
+You need Node.js matching `^22.22.2 || ^24.0.0 || >=26.0.0`, plus pnpm 9 and Docker.
 
 ```bash
 git clone https://github.com/elie222/rakazo.git
