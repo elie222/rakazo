@@ -45,7 +45,10 @@ export function createToolkitDirectoryCache(opts?: { ttlMs?: number; now?: () =>
     async get(loader: () => Promise<ToolkitDirectoryEntry[]>): Promise<ToolkitDirectoryEntry[]> {
       if (!entry) return load(loader);
       if (now() - entry.fetchedAt < ttlMs) return entry.items;
-      if (!inflight) void load(loader);
+      if (!inflight) {
+        // Keep stale items on failure; load clears inflight so a later read can retry.
+        void load(loader).catch(() => undefined);
+      }
       return entry.items;
     },
     invalidate() {
