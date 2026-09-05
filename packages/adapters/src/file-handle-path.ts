@@ -1,8 +1,9 @@
 import { readlink } from "node:fs/promises";
 import koffi from "koffi";
-import { pathFromDirectoryFd } from "./desktop-sandbox-win32-path.js";
+import { pathFromWindowsHandle } from "./desktop-sandbox-win32-path.js";
 
 let getPath: koffi.KoffiFunction | undefined;
+let getNodeHandle: koffi.KoffiFunction | undefined;
 
 /** Resolve the opened object, never the pathname that was used to open it. */
 export async function fileHandlePath(fd: number): Promise<string> {
@@ -11,7 +12,12 @@ export async function fileHandlePath(fd: number): Promise<string> {
     // replaced. realpath would follow the replacement and lose that guarantee.
     return readlink(`/proc/self/fd/${fd}`);
   }
-  if (process.platform === "win32") return pathFromDirectoryFd(fd);
+  if (process.platform === "win32") {
+    // Node descriptors belong to its own CRT. Looking them up in msvcrt.dll
+    // can return an invalid or unrelated handle from a different descriptor table.
+    getNodeHandle ??= koffi.load(null).func("intptr_t __cdecl uv_get_osfhandle(int fd)");
+    return pathFromWindowsHandle(getNodeHandle(fd) as number | bigint);
+  }
   if (process.platform === "darwin") {
     getPath ??= koffi.load("/usr/lib/libSystem.B.dylib").func("int fcntl(int fd, int cmd, ...)");
     const buffer = Buffer.alloc(1024); // Darwin MAXPATHLEN
