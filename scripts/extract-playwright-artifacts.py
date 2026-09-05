@@ -1,4 +1,4 @@
-"""Extract untrusted report data without allowing archive paths or links to escape."""
+"""ZIP ingestion for the trusted Playwright publisher."""
 
 import shutil
 import stat
@@ -8,6 +8,7 @@ from pathlib import Path, PurePosixPath
 
 
 def extract(archive_path: str, destination: str) -> None:
+    """Validate every entry, then extract regular files into a new data directory."""
     root = Path(destination)
     with zipfile.ZipFile(archive_path) as archive:
         # Validate the entire archive before writing any entry. GitHub uploads do

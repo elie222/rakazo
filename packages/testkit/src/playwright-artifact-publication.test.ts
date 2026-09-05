@@ -33,34 +33,41 @@ afterEach(() => {
   }
 });
 
+/** Allocate a fixture directory that afterEach removes, including failed test runs. */
 function temporaryDirectory() {
   const directory = mkdtempSync(path.join(os.tmpdir(), "playwright-publication-"));
   temporaryDirectories.push(directory);
   return directory;
 }
 
+/** Write a fixture file, creating its parent directories as needed. */
 function write(file: string, content: string | Buffer) {
   mkdirSync(path.dirname(file), { recursive: true });
   writeFileSync(file, content);
 }
 
-function makeArchive(root: string, entries: Record<string, string | Buffer>, mode?: number) {
+/** Create an offline ZIP fixture with optional file types keyed by entry name. */
+function makeArchive(
+  root: string,
+  entries: Record<string, string | Buffer>,
+  modes: Record<string, number> = {},
+) {
   const archive = path.join(root, "artifact.zip");
   execFileSync(
     "python3",
     [
       "-c",
       `import base64, json, sys, zipfile
+modes = json.loads(sys.argv[2])
 with zipfile.ZipFile(sys.argv[1], "w") as archive:
     for name, data in json.load(sys.stdin).items():
         entry = zipfile.ZipInfo(name)
         entry.create_system = 3
-        entry.external_attr = (int(sys.argv[2]) if name == sys.argv[3] else 0o100644) << 16
+        entry.external_attr = modes.get(name, 0o100644) << 16
         archive.writestr(entry, base64.b64decode(data))
 `,
       archive,
-      String(mode ?? 0o100644),
-      Object.keys(entries).at(-1) ?? "",
+      JSON.stringify(modes),
     ],
     {
       input: JSON.stringify(
@@ -108,7 +115,7 @@ describe("Playwright artifact publication boundary", () => {
     const archive = makeArchive(
       root,
       { "playwright-report/index.html": "valid", [name]: "unsafe" },
-      mode,
+      { [name]: mode },
     );
     const destination = path.join(root, "artifacts");
     expect(() =>
