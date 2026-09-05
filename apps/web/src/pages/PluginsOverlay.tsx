@@ -539,12 +539,6 @@ export function PluginsOverlay({
                         {catalogFeedPending ? <Trans>Searching…</Trans> : <Trans>Search</Trans>}
                       </Button>
                     </form>
-                    <p className="text-xs leading-5 text-muted-foreground">
-                      <Trans>
-                        This optional feed suggests public integration surfaces. Rakazo still
-                        verifies a source before saving it.
-                      </Trans>
-                    </p>
                     {catalogFeedError ? (
                       <p className="text-sm text-destructive">{catalogFeedError}</p>
                     ) : null}
