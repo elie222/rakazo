@@ -22,7 +22,7 @@ import { getLogger } from "@rakazo/logging";
 import { isToolPauseResult } from "./approval-effect.js";
 import { builtinAgentTools, DELEGATION_TOOL_NAMES } from "./builtin-tools.js";
 import { PiRuntimeCredentialStore, toOAuthCredential } from "./pi-credentials.js";
-import { registerLocalProvider } from "./pi-local-provider.js";
+import { registerLocalMlxProvider, registerLocalProvider } from "./pi-local-provider.js";
 import {
   OPENAI_COMPATIBLE_PROVIDER_ID,
   registerOpenAiCompatibleCatalog,
@@ -36,7 +36,9 @@ const running = new Map<string, AbortController>();
 // would run before .env is loaded and miss the local provider entirely.
 let catalogModelsCache: Models | undefined;
 function catalogModels(): Models {
-  catalogModelsCache ??= registerOpenAiCompatibleCatalog(registerLocalProvider(builtinModels()));
+  catalogModelsCache ??= registerOpenAiCompatibleCatalog(
+    registerLocalMlxProvider(registerLocalProvider(builtinModels())),
+  );
   return catalogModelsCache;
 }
 const MAX_PARALLEL_SUBAGENTS = 4;

@@ -1,7 +1,12 @@
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import type { ModelOAuthSignInMode, ThinkingLevel } from "@rakazo/contracts";
-import { LOCAL_PROVIDER_ID, registerLocalProvider } from "./pi-local-provider.js";
+import {
+  LOCAL_MLX_PROVIDER_ID,
+  LOCAL_PROVIDER_ID,
+  registerLocalMlxProvider,
+  registerLocalProvider,
+} from "./pi-local-provider.js";
 import { SUBSCRIPTION_SIGN_IN_PROVIDERS } from "./pi-oauth.js";
 import {
   OPENAI_COMPATIBLE_CATALOG_MODEL_ID,
@@ -35,7 +40,9 @@ export function listPiCatalog(): PiCatalogEntry[] {
 let cachedCatalog: PiCatalogEntry[] | undefined;
 
 function buildPiCatalog(): PiCatalogEntry[] {
-  const models = registerOpenAiCompatibleCatalog(registerLocalProvider(builtinModels()));
+  const models = registerOpenAiCompatibleCatalog(
+    registerLocalMlxProvider(registerLocalProvider(builtinModels())),
+  );
   const entries: PiCatalogEntry[] = [];
   for (const provider of models.getProviders()) {
     const apiKey = Boolean(provider.auth.apiKey);
@@ -137,6 +144,9 @@ function catalogBilling(
   if (signInMeta) return signInMeta.billing;
   if (providerId === LOCAL_PROVIDER_ID) {
     return "Runs on infrastructure configured by the deployment owner. No model charges from Rakazo.";
+  }
+  if (providerId === LOCAL_MLX_PROVIDER_ID) {
+    return "Runs on an MLX server configured by the deployment owner. No model charges from Rakazo.";
   }
   if (providerId === OPENAI_COMPATIBLE_PROVIDER_ID) {
     return "Runs on a URL you control. Rakazo does not pay for model usage.";
