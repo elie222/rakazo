@@ -279,6 +279,85 @@ describe("GraphQL connector import", () => {
     expect(operations.some((operation) => operation.id === "mutation_doThing")).toBe(true);
     expect(operations.some((operation) => operation.operationType === "query")).toBe(true);
   });
+
+  it("selects bounded payload fields from union return types", async () => {
+    const operations = importGraphqlSchema({
+      data: {
+        __schema: {
+          queryType: { name: "Query" },
+          mutationType: null,
+          types: [
+            {
+              kind: "OBJECT",
+              name: "Query",
+              fields: [
+                {
+                  name: "search",
+                  args: [],
+                  type: { kind: "UNION", name: "SearchResult", ofType: null },
+                },
+              ],
+            },
+            {
+              kind: "UNION",
+              name: "SearchResult",
+              possibleTypes: [
+                { kind: "OBJECT", name: "Person" },
+                { kind: "OBJECT", name: "Repository" },
+              ],
+            },
+            {
+              kind: "OBJECT",
+              name: "Person",
+              fields: [
+                {
+                  name: "name",
+                  args: [],
+                  type: { kind: "SCALAR", name: "String", ofType: null },
+                },
+              ],
+            },
+            {
+              kind: "OBJECT",
+              name: "Repository",
+              fields: [
+                {
+                  name: "stars",
+                  args: [],
+                  type: { kind: "SCALAR", name: "Int", ofType: null },
+                },
+              ],
+            },
+            { kind: "SCALAR", name: "String" },
+            { kind: "SCALAR", name: "Int" },
+          ],
+        },
+      },
+    });
+    const search = operations[0]!;
+    expect(search.selection).toBe("__typename ... on Person { name } ... on Repository { stars }");
+
+    let sentQuery = "";
+    await executeGraphqlOperation(
+      "https://graphql.example.test/graphql",
+      { auth: { type: "none" }, headers: {}, operations: [search] },
+      search,
+      {},
+      undefined,
+      new AbortController().signal,
+      {
+        fetch: async (_input, init) => {
+          sentQuery = String(JSON.parse(String(init?.body)).query);
+          return Response.json({
+            data: { search: { __typename: "Person", name: "Ada" } },
+          });
+        },
+        resolveHostname: async () => [{ address: "203.0.113.10", family: 4 as const }],
+      },
+    );
+    expect(sentQuery).toContain("... on Person { name }");
+    expect(sentQuery).toContain("... on Repository { stars }");
+  });
 });
 
 describe("GraphQL execution failures", () => {

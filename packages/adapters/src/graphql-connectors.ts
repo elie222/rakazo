@@ -89,6 +89,7 @@ const INTROSPECTION_QUERY = `query RakazoIntrospection {
         defaultValue
       }
       enumValues(includeDeprecated: true) { name }
+      possibleTypes { kind name }
     }
   }
 }
@@ -148,6 +149,7 @@ type GqlType = {
   fields?: GqlField[] | null;
   inputFields?: GqlArg[] | null;
   enumValues?: Array<{ name?: string }> | null;
+  possibleTypes?: GqlTypeRef[] | null;
 };
 
 /** Introspect a GraphQL HTTP endpoint and persist query/mutation fields as tools. */
@@ -391,6 +393,17 @@ function buildSelection(
   if (named.kind === "SCALAR" || named.kind === "ENUM") return "";
   if (depth >= 2) return "__typename";
   const resolved = typeMap.get(named.name);
+  if (named.kind === "UNION") {
+    const parts = ["__typename"];
+    for (const possible of resolved?.possibleTypes ?? []) {
+      if (!possible.name || possible.kind !== "OBJECT") continue;
+      const selection = buildSelection(possible, typeMap, depth);
+      const candidate = `... on ${possible.name} { ${selection || "__typename"} }`;
+      if ([...parts, candidate].join(" ").length > 6_000) break;
+      parts.push(candidate);
+    }
+    return parts.join(" ");
+  }
   if (!resolved?.fields?.length) return "__typename";
 
   const parts: string[] = [];
@@ -405,7 +418,12 @@ function buildSelection(
       parts.push(field.name);
       continue;
     }
-    if (depth === 0 && (fieldNamed.kind === "OBJECT" || fieldNamed.kind === "INTERFACE")) {
+    if (
+      depth === 0 &&
+      (fieldNamed.kind === "OBJECT" ||
+        fieldNamed.kind === "INTERFACE" ||
+        fieldNamed.kind === "UNION")
+    ) {
       const nested = buildSelection(field.type, typeMap, depth + 1);
       if (nested) parts.push(`${field.name} { ${nested} }`);
     }
