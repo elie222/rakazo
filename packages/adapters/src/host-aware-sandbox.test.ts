@@ -1,10 +1,14 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
+import type { ComputerRef } from "@rakazo/adapter-kit";
+import type { PrismaClient } from "@rakazo/db";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
+import { ComputerBrowserProvider } from "./computer-browser.js";
 import { DesktopSandboxProvider } from "./desktop-sandbox.js";
+import { DockerSandboxProvider } from "./docker-sandbox.js";
 import { FakeSandboxProvider } from "./fake-sandbox.js";
-import { HostAwareSandbox, sandboxKindForBot } from "./host-aware-sandbox.js";
+import { createRunSandbox, HostAwareSandbox, sandboxKindForBot } from "./host-aware-sandbox.js";
 
 const ctx = {
   operationId: "1",
@@ -19,6 +23,51 @@ describe("host-aware sandbox", () => {
 
   afterAll(() => {
     rmSync(hostRoot, { recursive: true, force: true });
+  });
+
+  afterEach(() => vi.restoreAllMocks());
+
+  it("exposes and routes page commands through the production Docker wrapper", async () => {
+    const result = {
+      ok: true,
+      url: "https://example.test",
+      title: "Page",
+      tree: "Page",
+      elements: [],
+    };
+    const pageBrowser = vi
+      .spyOn(DockerSandboxProvider.prototype, "pageBrowser")
+      .mockResolvedValue(result);
+    const sandbox = createRunSandbox("docker", {
+      prisma: { deploymentSettings: { findUnique: vi.fn() } } as unknown as PrismaClient,
+    });
+    const browser = new ComputerBrowserProvider({ sandbox });
+    const computer: ComputerRef = {
+      id: "computer",
+      providerRef: "computer",
+      botId: "home",
+      kind: "docker",
+    };
+    expect(browser.describe().capabilities.page).toBe(true);
+    expect(await browser.snapshot(computer, {}, ctx)).toMatchObject({
+      title: "Page",
+      tree: "Page",
+    });
+    expect(pageBrowser).toHaveBeenCalledWith(computer, { command: "snapshot" }, ctx);
+
+    pageBrowser.mockClear();
+    const hostResult = await browser.snapshot({ ...computer, kind: "desktop" }, {}, ctx);
+    expect(hostResult.fallback).toBe("computer_act");
+    expect(pageBrowser).not.toHaveBeenCalled();
+  });
+
+  it("does not expose page commands when neither provider supports them", () => {
+    const sandbox = new HostAwareSandbox(
+      new FakeSandboxProvider(),
+      new DesktopSandboxProvider(),
+      async () => false,
+    );
+    expect(sandbox.pageBrowser).toBeUndefined();
   });
 
   it("lets this-mac cwd run under a host root", async () => {
