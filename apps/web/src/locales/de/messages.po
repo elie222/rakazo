@@ -3169,6 +3169,26 @@ msgstr "Auf {hostLabel} fragt dein Betriebssystem nicht nach zusätzlichen Berec
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "Dein Team aus jederzeit verfügbaren Agents<0/>für echte Aufgaben."
 
+#: src/components/CloudAgentCard.tsx:36
+msgid "cancelled"
+msgstr "abgebrochen"
+
+#: src/components/CloudAgentCard.tsx:38
+msgid "failed"
+msgstr "fehlgeschlagen"
+
+#: src/components/CloudAgentCard.tsx:34
+msgid "finished"
+msgstr "abgeschlossen"
+
+#: src/components/CloudAgentCard.tsx:44
+msgid "Pull request"
+msgstr "Pull Request"
+
+#: src/components/CloudAgentCard.tsx:32
+msgid "running"
+msgstr "läuft"
+
 #: src/pages/KnowledgeSection.tsx:334
 msgid "Could not delete skill"
 msgstr "Skill konnte nicht gelöscht werden"

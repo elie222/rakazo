@@ -1,4 +1,11 @@
 export const ZH_MESSAGES: Record<string, string> = {
+  "Cloud agent": "云端智能体",
+  "Pull request": "拉取请求",
+  running: "运行中",
+  finished: "已完成",
+  failed: "失败",
+  cancelled: "已取消",
+
   Saved: "已保存",
   " (unread)": "（未读）",
   Appearance: "外观",

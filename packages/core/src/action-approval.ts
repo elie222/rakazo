@@ -25,6 +25,9 @@ const APPROVAL_REQUIRED_BUILTIN_TOOLS = new Set([
   "archive_bot",
   "secret_request",
   "forget_secret",
+  "cloud_agent_launch",
+  "cloud_agent_reply",
+  "cloud_agent_cancel",
 ]);
 const EXPLICIT_APPROVAL_BUILTIN_TOOLS = new Set(["create_space"]);
 

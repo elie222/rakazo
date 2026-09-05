@@ -11,6 +11,7 @@ import type {
   SpaceNavigation,
 } from "@rakazo/contracts";
 import {
+  cloudAgentBlockFromPayload,
   isRunTerminalEvent,
   mergeThreadHistory,
   prependThreadHistoryPage,
@@ -578,6 +579,8 @@ export function blockText(message: MobileMessage) {
       if (block.kind === "channel_message") {
         return `${messagingProviderLabel(block.provider)} · ${block.fromLabel}: ${block.text}`;
       }
+      if (block.kind === "cloud_agent")
+        return `${block.title}: ${block.status}${block.prUrl ? ` ${block.prUrl}` : ""}`;
       if (block.kind === "subagent") {
         return `${block.name ?? "subagent"}: ${block.result || block.progress || block.task || ""}`;
       }
@@ -789,6 +792,38 @@ export function applyMobileThreadEvent(
       ...prev,
       cursor: event.seq ?? prev.cursor,
       messages: [...prev.messages.filter((message) => message.id !== streaming.id), streaming],
+    };
+  }
+  if (event.type === "thread.cloud_agent") {
+    const agentId = String(event.payload?.agentId ?? "");
+    const messageId = String(event.payload?.messageId ?? "");
+    const block = cloudAgentBlockFromPayload(event.payload ?? {});
+    return {
+      ...prev,
+      cursor: event.seq ?? prev.cursor,
+      messages: prev.messages.map((message) => {
+        if (messageId && message.id === messageId) {
+          return {
+            ...message,
+            blocks: message.blocks.map((existing) =>
+              existing.kind === "cloud_agent" && existing.agentId === agentId ? block : existing,
+            ),
+          };
+        }
+        if (
+          message.blocks.some(
+            (existing) => existing.kind === "cloud_agent" && existing.agentId === agentId,
+          )
+        ) {
+          return {
+            ...message,
+            blocks: message.blocks.map((existing) =>
+              existing.kind === "cloud_agent" && existing.agentId === agentId ? block : existing,
+            ),
+          };
+        }
+        return message;
+      }),
     };
   }
   if (event.type === "thread.message.reaction") {

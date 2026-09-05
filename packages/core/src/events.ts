@@ -1,4 +1,5 @@
 import type { MessageBlock, ThreadMessage } from "@rakazo/contracts";
+import { cloudAgentBlockFromPayload } from "./cloud-agent.js";
 
 export function projectMessages(
   events: Array<{
@@ -73,6 +74,16 @@ export function projectMessages(
         runId: event.runId ?? undefined,
         createdAt,
       });
+      continue;
+    }
+    if (event.type === "thread.cloud_agent") {
+      const block = cloudAgentBlockFromPayload(payload);
+      for (const message of messages) {
+        if (message.id === payload.messageId)
+          message.blocks = message.blocks.map((old) =>
+            old.kind === "cloud_agent" && old.agentId === block.agentId ? block : old,
+          );
+      }
       continue;
     }
     if (event.type === "thread.progress") {
