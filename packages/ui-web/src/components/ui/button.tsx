@@ -46,10 +46,7 @@ function Button({
   return (
     <ButtonPrimitive
       data-slot="button"
-      className={cn(
-        buttonVariants({ variant, size, className }),
-        "rounded-full",
-      )}
+      className={cn(buttonVariants({ variant, size, className }), "rounded-full")}
       {...props}
     />
   );
