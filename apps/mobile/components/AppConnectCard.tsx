@@ -1,7 +1,7 @@
 import type { MessageBlock } from "@rakazo/contracts";
 import { abortableDelay } from "@rakazo/core";
 import { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Linking, Pressable, Text, View } from "react-native";
+import { ActivityIndicator, Linking, Pressable, Text, View, type ViewProps } from "react-native";
 import { rpc } from "../lib/api";
 import { appConnectPresentation } from "../lib/app-connect";
 import { useI18n } from "../lib/i18n";
@@ -10,9 +10,13 @@ import { native, useMobileTokens } from "../lib/native";
 export function AppConnectCard({
   botId,
   block,
+  accessibilityActions,
+  onAccessibilityAction,
 }: {
   botId: string;
   block: Extract<MessageBlock, { kind: "app_connect" }>;
+  accessibilityActions?: ViewProps["accessibilityActions"];
+  onAccessibilityAction?: ViewProps["onAccessibilityAction"];
 }) {
   const { t } = useI18n();
   const tokens = useMobileTokens();
@@ -101,7 +105,11 @@ export function AppConnectCard({
           </Text>
         </View>
         <View style={{ flex: 1, gap: 2 }}>
-          <Text style={{ color: tokens.foreground, fontSize: 15, fontWeight: "600" }}>
+          <Text
+            accessibilityActions={accessibilityActions}
+            onAccessibilityAction={onAccessibilityAction}
+            style={{ color: tokens.foreground, fontSize: 15, fontWeight: "600" }}
+          >
             {view.title}
           </Text>
           <Text style={{ color: tokens.mutedForeground, fontSize: 13.5 }} numberOfLines={2}>

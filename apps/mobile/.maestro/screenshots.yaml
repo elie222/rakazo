@@ -106,7 +106,31 @@ tags:
 - extendedWaitUntil:
     visible: "The fixture workspace is ready."
     timeout: 10000
+- assertNotVisible: "Add thumbs-up"
+- assertNotVisible: "Remove thumbs-up"
+- assertNotVisible: "Reply"
 - takeScreenshot: "15-thread"
+- longPressOn: "The fixture workspace is ready."
+- assertVisible: "Add thumbs-up"
+- assertVisible: "Reply"
+- assertVisible: "Speak message"
+- takeScreenshot: "15b-message-actions"
+- tapOn: "Add thumbs-up"
+- extendedWaitUntil:
+    visible: "Remove thumbs-up"
+    timeout: 10000
+- assertNotVisible: "Reply"
+- takeScreenshot: "15c-message-reaction"
+- tapOn: "Remove thumbs-up"
+- extendedWaitUntil:
+    notVisible: "Remove thumbs-up"
+    timeout: 10000
+- longPressOn: "Summarize the fixture launch checklist."
+- assertVisible: "Add thumbs-up"
+- assertNotVisible: "Speak message"
+- tapOn: "Reply"
+- assertVisible: "Replying to"
+- tapOn: "Cancel reply"
 - tapOn: "Bot actions"
 - assertVisible: "Clear conversation"
 - takeScreenshot: "16-bot-actions"
@@ -128,7 +152,19 @@ tags:
 - extendedWaitUntil:
     visible: "The fixture launch plan is ready."
     timeout: 10000
+- assertNotVisible: "Add thumbs-up"
+- assertNotVisible: "Reply"
 - takeScreenshot: "19-group-thread"
+- longPressOn: "The fixture launch plan is ready."
+- assertVisible: "Add thumbs-up"
+- tapOn: "Add thumbs-up"
+- extendedWaitUntil:
+    visible: "Remove thumbs-up"
+    timeout: 10000
+- tapOn: "Remove thumbs-up"
+- extendedWaitUntil:
+    notVisible: "Remove thumbs-up"
+    timeout: 10000
 
 - openLink: "rakazo:///group-settings?groupId=${RAKAZO_SCREENSHOT_GROUP_ID}"
 - extendedWaitUntil:
