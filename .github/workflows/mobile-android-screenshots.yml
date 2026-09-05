@@ -1,0 +1,147 @@
+name: mobile Android screenshots
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-android-screenshots
+  cancel-in-progress: true
+
+jobs:
+  screenshots:
+    name: Capture Android UI
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: rakazo
+          POSTGRES_PASSWORD: rakazo
+          POSTGRES_DB: rakazo
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U rakazo"
+          --health-interval 3s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      CI: "1"
+      DATABASE_URL: postgres://rakazo:rakazo@127.0.0.1:5433/rakazo
+      EXPO_PUBLIC_API_URL: http://10.0.2.2:3110
+
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+
+      - name: Restore screenshot APK
+        id: screenshot-apk
+        uses: actions/cache/restore@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        with:
+          path: apps/mobile/android/app/build/outputs/apk/release/app-release.apk
+          key: mobile-android-apk-v2-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml', 'package.json', 'pnpm-workspace.yaml', 'turbo.json', 'tsconfig*.json', '.github/workflows/mobile-android-screenshots.yml', 'apps/mobile/package.json', 'apps/mobile/app.json', 'apps/mobile/app.config.ts', 'apps/mobile/metro.config.js', 'apps/mobile/metro-resolver.js', 'apps/mobile/assets/**', 'apps/mobile/app/**', 'apps/mobile/components/**', 'apps/mobile/lib/**', 'apps/mobile/modules/**', 'apps/mobile/plugins/**', 'packages/chat-ui/**', 'packages/contracts/**', 'packages/core/**', 'packages/ui-tokens/**') }}
+
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@48b5f213c81028ace310571dc5ec0fbbca0b2947 # v4.4.3
+        if: steps.screenshot-apk.outputs.cache-hit != 'true'
+        with:
+          cache-read-only: false
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Restore Maestro CLI
+        id: maestro-cache
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        with:
+          path: ~/.maestro
+          key: maestro-${{ runner.os }}-2.6.1-3440825f
+
+      - name: Install pinned Maestro CLI
+        if: steps.maestro-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          maestro_tmp=$(mktemp -d)
+          trap 'rm -rf "$maestro_tmp"' EXIT
+          base_url=https://github.com/mobile-dev-inc/maestro/releases/download/cli-2.6.1
+          curl --fail --silent --show-error --location \
+            "$base_url/maestro.zip" \
+            --output "$maestro_tmp/maestro.zip"
+          curl --fail --silent --show-error --location \
+            "$base_url/checksums_sha256.txt" \
+            --output "$maestro_tmp/checksums_sha256.txt"
+          # Pin the expected digest in-repo so a swapped checksums file alone cannot pass.
+          echo "3440825f514f537c6a96bcf5de995780c2a4a7f83a43208fdc95d4f1fecfad3b  maestro.zip" |
+            (cd "$maestro_tmp" && sha256sum --check --strict -)
+          (cd "$maestro_tmp" && sha256sum --check --strict checksums_sha256.txt)
+          unzip -q "$maestro_tmp/maestro.zip" -d "$maestro_tmp"
+          mkdir -p "$HOME/.maestro"
+          cp -R "$maestro_tmp/maestro/." "$HOME/.maestro/"
+
+      - name: Configure Maestro CLI
+        run: |
+          "$HOME/.maestro/bin/maestro" --version
+          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+
+      - name: Generate Android project
+        if: steps.screenshot-apk.outputs.cache-hit != 'true'
+        run: |
+          pnpm --filter @rakazo/mobile exec expo prebuild --platform android --no-install
+          sed -i 's/<application /<application android:usesCleartextTraffic="true" /' \
+            apps/mobile/android/app/src/main/AndroidManifest.xml
+          sed -i 's/MaxMetaspaceSize=512m/MaxMetaspaceSize=1g/' \
+            apps/mobile/android/gradle.properties
+
+      - name: Build screenshot APK
+        if: steps.screenshot-apk.outputs.cache-hit != 'true'
+        working-directory: apps/mobile/android
+        run: ./gradlew app:packageRelease -PreactNativeArchitectures=x86_64 --no-daemon
+
+      - name: Save screenshot APK
+        if: steps.screenshot-apk.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        with:
+          path: apps/mobile/android/app/build/outputs/apk/release/app-release.apk
+          key: ${{ steps.screenshot-apk.outputs.cache-primary-key }}
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm",GROUP="kvm",MODE="0666",OPTIONS+="static_node=kvm"' |
+            sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Capture screenshots
+        uses: reactivecircus/android-emulator-runner@c9c93e6ba9c4194322e114c40970d5983d9a07cc # v2.38.0
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          cores: 2
+          ram-size: 4096M
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          script: bash .github/scripts/capture-mobile-android-screenshots.sh
+
+      - name: Upload screenshots and diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: mobile-android-screenshots-${{ github.run_id }}-${{ github.run_attempt }}
+          path: test-report/mobile-screenshots
+          if-no-files-found: error
+          retention-days: 7

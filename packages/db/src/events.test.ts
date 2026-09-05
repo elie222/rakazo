@@ -432,7 +432,7 @@ describe("pauseRunForInput", () => {
 });
 
 describe("pauseRunForTakeover", () => {
-  it("stores the paused run, attempt, and takeover event in one transaction", async () => {
+  it("stores the paused run, attempt, computer takeover mark, and event in one transaction", async () => {
     const fanout = new TestFanout();
     const publish = vi.spyOn(fanout, "publish");
     const tx = {
@@ -442,6 +442,15 @@ describe("pauseRunForTakeover", () => {
         findUnique: vi.fn().mockResolvedValue({ status: "waiting_takeover" }),
       },
       attempt: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      computer: {
+        findFirst: vi.fn().mockResolvedValue({
+          controlHolder: "none",
+          controlBotId: null,
+          controlLeaseId: null,
+          controlLeaseExpiresAt: null,
+        }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
       thread: { update: vi.fn().mockResolvedValue({ nextEventSeq: 8 }) },
       event: {
         create: vi.fn(async ({ data }: { data: { seq: number; type: string } }) => ({
@@ -467,6 +476,7 @@ describe("pauseRunForTakeover", () => {
           leaseOwner: "worker-1",
           leaseFence: 3,
           reason: "Sign in",
+          computerId: "computer-1",
         },
         fanout,
       ),
@@ -486,15 +496,146 @@ describe("pauseRunForTakeover", () => {
     expect(tx.attempt.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ status: "waiting_takeover" }) }),
     );
+    expect(tx.computer.updateMany).toHaveBeenCalledWith({
+      where: { id: "computer-1", spaceId: "workspace-1" },
+      data: {
+        state: "running",
+        controlHolder: "none",
+        controlLeaseId: null,
+        controlLeaseExpiresAt: null,
+        controlBotId: null,
+        controlRunId: "run-1",
+      },
+    });
     expect(tx.event.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
           type: "computer.takeover.requested",
-          payload: { reason: "Sign in" },
+          payload: {
+            reason: "Sign in",
+            takeoverRequested: true,
+            retainedControl: false,
+          },
         }),
       }),
     );
     expect(publish).toHaveBeenCalledWith("thread:thread-1", JSON.stringify({ cursor: 7 }));
+  });
+
+  it("keeps an active user control lease and only binds controlRunId", async () => {
+    const expiresAt = new Date(Date.now() + 60_000);
+    const tx = {
+      $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
+      run: {
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+        findUnique: vi.fn().mockResolvedValue({ status: "waiting_takeover" }),
+      },
+      attempt: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      computer: {
+        findFirst: vi.fn().mockResolvedValue({
+          controlHolder: "user",
+          controlBotId: "bot-1",
+          controlLeaseId: "lease-1",
+          controlLeaseExpiresAt: expiresAt,
+        }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      thread: { update: vi.fn().mockResolvedValue({ nextEventSeq: 8 }) },
+      event: {
+        create: vi.fn(async ({ data }: { data: { seq: number; type: string } }) => ({
+          ...event(data.seq),
+          type: data.type,
+        })),
+        deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+    };
+    const prisma = {
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+    } as unknown as PrismaClient;
+
+    await expect(
+      pauseRunForTakeover(prisma, {
+        spaceId: "workspace-1",
+        threadId: "thread-1",
+        botId: "bot-1",
+        runId: "run-1",
+        attemptId: "attempt-1",
+        leaseOwner: "worker-1",
+        leaseFence: 3,
+        reason: "Sign in",
+        computerId: "computer-1",
+      }),
+    ).resolves.toBe(true);
+
+    expect(tx.computer.updateMany).toHaveBeenCalledWith({
+      where: { id: "computer-1", spaceId: "workspace-1" },
+      data: { state: "running", controlRunId: "run-1" },
+    });
+    expect(tx.event.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          payload: expect.objectContaining({ retainedControl: true, takeoverRequested: true }),
+        }),
+      }),
+    );
+  });
+
+  it("preserves another bot's active user lease without binding this run to it", async () => {
+    const expiresAt = new Date(Date.now() + 60_000);
+    const tx = {
+      $queryRaw: vi.fn().mockResolvedValue([{ id: "computer-1" }]),
+      run: {
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+        findUnique: vi.fn().mockResolvedValue({ status: "waiting_takeover" }),
+      },
+      attempt: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      computer: {
+        findFirst: vi.fn().mockResolvedValue({
+          controlHolder: "user",
+          controlBotId: "other-bot",
+          controlLeaseId: "lease-other",
+          controlLeaseExpiresAt: expiresAt,
+        }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      thread: { update: vi.fn().mockResolvedValue({ nextEventSeq: 8 }) },
+      event: {
+        create: vi.fn(async ({ data }: { data: { seq: number; type: string } }) => ({
+          ...event(data.seq),
+          type: data.type,
+        })),
+        deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+    };
+    const prisma = {
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+    } as unknown as PrismaClient;
+
+    await expect(
+      pauseRunForTakeover(prisma, {
+        spaceId: "workspace-1",
+        threadId: "thread-1",
+        botId: "bot-1",
+        runId: "run-1",
+        attemptId: "attempt-1",
+        leaseOwner: "worker-1",
+        leaseFence: 3,
+        reason: "Sign in",
+        computerId: "computer-1",
+      }),
+    ).resolves.toBe(true);
+
+    expect(tx.computer.updateMany).toHaveBeenCalledWith({
+      where: { id: "computer-1", spaceId: "workspace-1" },
+      data: { state: "running" },
+    });
+    expect(tx.event.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          payload: expect.objectContaining({ retainedControl: false, takeoverRequested: true }),
+        }),
+      }),
+    );
   });
 });
 

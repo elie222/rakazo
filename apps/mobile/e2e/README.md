@@ -33,3 +33,9 @@ pnpm --filter @rakazo/mobile test:e2e -- \
 
 Use a new bot name for each run if the backing database is persistent. `clearState` resets the app's
 local session and endpoint data; it does not delete server-side bots.
+
+## Screenshot catalog
+
+Run **Actions → mobile Android screenshots → Run workflow** to build the app, seed an isolated fake
+workspace, capture light and dark Android emulator views, and upload the screenshots and Maestro report for
+seven days. It uses no repository secrets or hosted providers.

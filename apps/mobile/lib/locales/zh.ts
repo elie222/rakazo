@@ -220,6 +220,8 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Loading…": "正在加载…",
   "Long press to pin or move to a section": "长按可置顶或移动到分组",
   "Long press to pin, move, or silence notifications": "长按可置顶、移动或静音通知",
+  "Enter your Rakazo server address.": "输入你的 Rakazo 服务器地址。",
+  "Show less": "收起",
   Members: "成员",
   "Members ({min}–{max})": "成员（{min}–{max}）",
   "Message…": "发消息…",

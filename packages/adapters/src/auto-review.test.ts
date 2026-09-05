@@ -122,6 +122,48 @@ describe("redactToolArgsForReview", () => {
       body: "[redacted] hello",
     });
   });
+
+  it("redacts sensitive keys recursively before sending args to the checker", () => {
+    expect(
+      redactToolArgsForReview(
+        {
+          credential: "top-level-credential",
+          config: {
+            label: "keep me",
+            password: "nested-password",
+            accounts: [{ token: "nested-token", name: "primary" }],
+          },
+        },
+        [],
+      ),
+    ).toEqual({
+      credential: "[redacted]",
+      config: {
+        label: "keep me",
+        password: "[redacted]",
+        accounts: [{ token: "[redacted]", name: "primary" }],
+      },
+    });
+  });
+
+  it("redacts known secrets used as property names", () => {
+    expect(
+      redactToolArgsForReview(
+        {
+          "sk-live-123": "keep the top-level value",
+          metadata: {
+            "key-live-456": "keep the nested value",
+          },
+        },
+        ["sk-live-123", "key-live-456"],
+      ),
+    ).toEqual({
+      "[redacted]": "keep the top-level value",
+      metadata: {
+        "[redacted]": "keep the nested value",
+      },
+    });
+  });
 });
 
 describe("buildAutoReviewPrompt", () => {

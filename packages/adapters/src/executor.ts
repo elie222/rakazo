@@ -3160,19 +3160,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 pendingProgress = "";
               }
               await publishMessage(deps, run, "bot", [
-                { kind: "computer", state: "Ready", text: safeReason },
+                { kind: "computer", state: "Needs you", text: safeReason },
               ]);
-              await deps.prisma.computer.updateMany({
-                where: { id: storedComputer.id },
-                data: {
-                  state: "running",
-                  controlHolder: "none",
-                  controlLeaseId: null,
-                  controlLeaseExpiresAt: null,
-                  controlBotId: null,
-                  controlRunId: null,
-                },
-              });
               await workspaceCheckpoint.flush();
               if (!(await holdComputerExecutionLeaseForTakeover(deps.prisma, computerLease))) {
                 throw new Error("Computer lease expired before takeover");
@@ -3186,6 +3175,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 leaseOwner: workerId,
                 leaseFence: fence,
                 reason: safeReason,
+                computerId: storedComputer.id,
               });
               if (!paused) return;
               retainComputerLease = true;

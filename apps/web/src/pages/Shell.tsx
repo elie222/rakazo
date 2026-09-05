@@ -3960,9 +3960,15 @@ export function ShellPage() {
                 </span>
               )}
               {!recordingSkill && hasControl ? (
-                <span className="rounded-full bg-success/15 px-[11px] py-1 text-[13px] text-success">
-                  <Trans>You have control</Trans>
-                </span>
+                computer?.takeoverRequested ? (
+                  <span className="rounded-full bg-warning/15 px-[11px] py-1 text-[13px] text-warning">
+                    <Trans>Needs you</Trans>
+                  </span>
+                ) : (
+                  <span className="rounded-full bg-success/15 px-[11px] py-1 text-[13px] text-success">
+                    <Trans>You have control</Trans>
+                  </span>
+                )
               ) : null}
             </div>
             <div className="flex items-center gap-3">
@@ -5571,7 +5577,13 @@ const MessageView = memo(function MessageView({
                 <span className="text-[15px] font-medium text-foreground">
                   <Trans>Computer</Trans>
                 </span>
-                <span className="rounded-full bg-success/15 px-[11px] py-1 text-[13px] text-success">
+                <span
+                  className={
+                    block.state === "Needs you"
+                      ? "rounded-full bg-warning/15 px-[11px] py-1 text-[13px] text-warning"
+                      : "rounded-full bg-success/15 px-[11px] py-1 text-[13px] text-success"
+                  }
+                >
                   {block.state}
                 </span>
               </div>

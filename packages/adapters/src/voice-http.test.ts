@@ -1,5 +1,10 @@
-import { describe, expect, it } from "vitest";
-import { speechUploadName, voiceDeadline } from "./voice-http.js";
+import { describe, expect, it, vi } from "vitest";
+import {
+  MAX_VOICE_JSON_BYTES,
+  readVoiceJson,
+  speechUploadName,
+  voiceDeadline,
+} from "./voice-http.js";
 
 describe("voiceDeadline", () => {
   it("aborts when the client signal aborts", () => {
@@ -34,5 +39,27 @@ describe("speechUploadName", () => {
 
   it("maps Firefox ogg capture to an ogg filename", () => {
     expect(speechUploadName("audio/ogg; codecs=opus")).toBe("speech.ogg");
+  });
+});
+
+describe("readVoiceJson", () => {
+  it("rejects an oversized provider response without waiting for cancellation", async () => {
+    const cancel = vi.fn(() => new Promise<void>(() => undefined));
+    const response = new Response(new ReadableStream({ cancel }), {
+      headers: { "content-length": String(MAX_VOICE_JSON_BYTES + 1) },
+    });
+
+    await expect(readVoiceJson(response)).rejects.toThrow("Voice response is too large.");
+    expect(cancel).toHaveBeenCalledOnce();
+  });
+
+  it("rejects malformed successful JSON when the caller requires a payload", async () => {
+    await expect(readVoiceJson(new Response("not json"), { requireValid: true })).rejects.toThrow(
+      "Voice provider returned invalid JSON.",
+    );
+  });
+
+  it("keeps malformed error bodies optional", async () => {
+    await expect(readVoiceJson(new Response("not json"))).resolves.toBeNull();
   });
 });

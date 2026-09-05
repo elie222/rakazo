@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -112,6 +112,21 @@ describe("ensureStackEnv", () => {
     await expect(ensureStackEnv(dir, "POSTGRES_PASSWORD=\n", fakeHex)).resolves.toBe("kept");
     await expect(readFile(path.join(dir, STACK_ENV_FILE), "utf8")).resolves.toBe("sentinel\n");
   });
+
+  it.runIf(process.platform !== "win32")(
+    "replaces a symlinked .env without touching its target",
+    async () => {
+      const target = path.join(dir, "outside.env");
+      await writeFile(target, "sentinel\n", "utf8");
+      await symlink(target, path.join(dir, STACK_ENV_FILE));
+
+      await expect(ensureStackEnv(dir, "POSTGRES_PASSWORD=\n", fakeHex)).resolves.toBe("created");
+      await expect(readFile(path.join(dir, STACK_ENV_FILE), "utf8")).resolves.toBe(
+        `POSTGRES_PASSWORD=${"ab".repeat(16)}\n`,
+      );
+      await expect(readFile(target, "utf8")).resolves.toBe("sentinel\n");
+    },
+  );
 });
 
 describe("stack identity", () => {
@@ -136,6 +151,24 @@ describe("stack identity", () => {
     await writeFile(path.join(dir, STACK_TOKEN_FILE), "not-a-token\n", "utf8");
     await expect(ensureStackToken(dir, fakeHex)).resolves.toBe("ab".repeat(32));
   });
+
+  it("does not buffer an oversized stack token", async () => {
+    await writeFile(path.join(dir, STACK_TOKEN_FILE), "a".repeat(1025), "utf8");
+    await expect(readStackToken(dir)).resolves.toBeNull();
+  });
+
+  it.runIf(process.platform !== "win32")(
+    "does not reuse a stack token through a final symlink",
+    async () => {
+      const target = path.join(dir, "outside-token");
+      await writeFile(target, `${"cd".repeat(32)}\n`, "utf8");
+      await symlink(target, path.join(dir, STACK_TOKEN_FILE));
+
+      await expect(readStackToken(dir)).resolves.toBeNull();
+      await expect(ensureStackToken(dir, fakeHex)).resolves.toBe("ab".repeat(32));
+      await expect(readFile(target, "utf8")).resolves.toBe(`${"cd".repeat(32)}\n`);
+    },
+  );
 });
 
 describe("reduceStackState", () => {

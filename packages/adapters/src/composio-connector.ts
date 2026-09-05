@@ -15,11 +15,12 @@ import {
   type ToolkitDirectoryEntry,
 } from "./composio-catalog-cache.js";
 import { DestinationEmulator } from "./destination-emulator.js";
+import { isVitestRuntime } from "./test-runtime.js";
 
 type ComposioSession = Awaited<ReturnType<Composio["create"]>>;
 
 export function isComposioEnabled(apiKey: string | undefined): boolean {
-  return Boolean(apiKey) && !process.env.VITEST;
+  return Boolean(apiKey) && !isVitestRuntime();
 }
 
 export function asConnectorTools(input: unknown): ConnectorTool[] {

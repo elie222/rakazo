@@ -11,13 +11,14 @@ import { Pressable, ScrollView, Text, TextInput } from "react-native";
 import { ComputerModePicker } from "../components/computer-mode-picker";
 import { type MobileBot, rpc } from "../lib/api";
 import { useI18n } from "../lib/i18n";
-import { tokens } from "../lib/theme";
+import { useMobileTokens } from "../lib/native";
 
 type BotSettingsRecord = MobileBot & {
   description?: string;
 };
 
 export default function BotSettingsScreen() {
+  const tokens = useMobileTokens();
   const { t } = useI18n();
   const router = useRouter();
   const { botId } = useLocalSearchParams<{ botId: string }>();
@@ -86,69 +87,73 @@ export default function BotSettingsScreen() {
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
       >
-        <Text style={{ color: "#85858A", fontSize: 14 }}>{t("Name")}</Text>
+        <Text style={{ color: tokens.mutedForeground, fontSize: 14 }}>{t("Name")}</Text>
         <TextInput
           value={name}
           maxLength={BOT_NAME_MAX_LENGTH}
           onChangeText={setName}
           placeholder={t("Name this bot")}
-          placeholderTextColor="#6C6C70"
+          placeholderTextColor={tokens.mutedForeground}
           style={{
             marginTop: 8,
-            backgroundColor: "#1A1A1D",
+            backgroundColor: tokens.muted,
             borderRadius: 11,
             padding: 16,
-            color: "#ECECEE",
+            color: tokens.foreground,
           }}
         />
-        <Text style={{ color: "#85858A", marginTop: 16, fontSize: 14 }}>{t("Title")}</Text>
+        <Text style={{ color: tokens.mutedForeground, marginTop: 16, fontSize: 14 }}>
+          {t("Title")}
+        </Text>
         <TextInput
           value={title}
           maxLength={BOT_TITLE_MAX_LENGTH}
           onChangeText={setTitle}
           placeholder={t("Describe what this bot does")}
-          placeholderTextColor="#6C6C70"
+          placeholderTextColor={tokens.mutedForeground}
           style={{
             marginTop: 8,
-            backgroundColor: "#1A1A1D",
+            backgroundColor: tokens.muted,
             borderRadius: 11,
             padding: 16,
-            color: "#ECECEE",
+            color: tokens.foreground,
           }}
         />
-        <Text style={{ color: "#85858A", marginTop: 16, fontSize: 14 }}>{t("Description")}</Text>
+        <Text style={{ color: tokens.mutedForeground, marginTop: 16, fontSize: 14 }}>
+          {t("Description")}
+        </Text>
         <TextInput
           value={description}
           maxLength={BOT_DESCRIPTION_MAX_LENGTH}
           onChangeText={setDescription}
           placeholder={t("What this bot is for")}
-          placeholderTextColor="#6C6C70"
+          placeholderTextColor={tokens.mutedForeground}
           multiline
           style={{
             marginTop: 8,
-            backgroundColor: "#1A1A1D",
+            backgroundColor: tokens.muted,
             borderRadius: 11,
             padding: 16,
-            color: "#ECECEE",
+            color: tokens.foreground,
             minHeight: 120,
             textAlignVertical: "top",
           }}
         />
         <ComputerModePicker value={computerMode} onChange={setComputerMode} />
-        {error ? <Text style={{ color: "#EF4444", marginTop: 16 }}>{error}</Text> : null}
+        {error ? <Text style={{ color: tokens.destructive, marginTop: 16 }}>{error}</Text> : null}
         <Pressable
           onPress={() => void save()}
           disabled={!name.trim() || pending || !bot}
           style={{
             marginTop: 24,
-            backgroundColor: "#F1F1EF",
+            backgroundColor: tokens.primary,
             borderRadius: 11,
             padding: 16,
             alignItems: "center",
             opacity: !name.trim() || pending || !bot ? 0.4 : 1,
           }}
         >
-          <Text style={{ color: "#17171A", fontSize: 16 }}>
+          <Text style={{ color: tokens.primaryForeground, fontSize: 16 }}>
             {pending ? t("Saving…") : t("Save")}
           </Text>
         </Pressable>

@@ -4,6 +4,7 @@ import {
   OPENAI_COMPATIBLE_PROVIDER_ID,
   openAiCompatibleConnectReady,
 } from "@rakazo/contracts";
+import { featuredModelProviders } from "@rakazo/core";
 import { useFocusEffect } from "expo-router";
 import { useCallback, useMemo, useRef, useState } from "react";
 import {
@@ -18,6 +19,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { type MobileMe, type MobileModel, type MobileModelCredential, rpc } from "../lib/api";
+import { mobileTokens } from "../lib/appearance";
 import { useI18n } from "../lib/i18n";
 import {
   cancelModelOAuthAttempt,
@@ -38,6 +40,7 @@ export default function Models() {
   const [credentials, setCredentials] = useState<MobileModelCredential[]>([]);
   const [me, setMe] = useState<MobileMe | null>(null);
   const [provider, setProvider] = useState("");
+  const [showAllProviders, setShowAllProviders] = useState(false);
   const [modelId, setModelId] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
@@ -137,6 +140,19 @@ export default function Models() {
       entries,
     }));
   }, [catalog]);
+  const featuredProviders = useMemo(
+    () =>
+      featuredModelProviders(
+        groups.map((group) => group.entries[0]!),
+        provider,
+      ),
+    [groups, provider],
+  );
+  const visibleGroups = useMemo(() => {
+    if (showAllProviders) return groups;
+    const byId = new Map(groups.map((group) => [group.id, group]));
+    return featuredProviders.map((entry) => byId.get(entry.provider)!);
+  }, [groups, featuredProviders, showAllProviders]);
   const modelsForProvider = catalog.filter((entry) => entry.provider === provider);
   const selected = modelsForProvider.find((entry) => entry.id === modelId) ?? modelsForProvider[0];
   const isOpenAiCompatible = provider === OPENAI_COMPATIBLE_PROVIDER_ID;
@@ -408,12 +424,13 @@ export default function Models() {
 
         <Text style={styles.sectionTitle}>{t("Providers")}</Text>
         <View style={styles.card}>
-          {groups.map((group) => {
+          {visibleGroups.map((group) => {
             const connected = credentials.some((entry) => entry.provider === group.id);
             return (
               <Pressable
                 key={group.id}
                 accessibilityRole="button"
+                accessibilityState={{ selected: group.id === provider }}
                 onPress={() => chooseProvider(group.id)}
                 style={({ pressed }) => [
                   styles.providerRow,
@@ -433,6 +450,18 @@ export default function Models() {
               </Pressable>
             );
           })}
+          {groups.length > featuredProviders.length ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityState={{ expanded: showAllProviders }}
+              onPress={() => setShowAllProviders((value) => !value)}
+              style={styles.providerRow}
+            >
+              <Text style={styles.providerName}>
+                {showAllProviders ? t("Show less") : t("Show more")}
+              </Text>
+            </Pressable>
+          ) : null}
         </View>
 
         {selected ? (
@@ -768,6 +797,7 @@ export default function Models() {
 }
 
 function createModelsStyles() {
+  const tokens = mobileTokens();
   return StyleSheet.create({
     screen: {
       flex: 1,
@@ -836,7 +866,7 @@ function createModelsStyles() {
       fontWeight: "600",
     },
     connected: {
-      color: "#4ECB71",
+      color: tokens.success,
       fontSize: 13,
     },
     modelRow: {
@@ -870,7 +900,7 @@ function createModelsStyles() {
       fontSize: 15,
     },
     selectedRow: {
-      backgroundColor: "#222225",
+      backgroundColor: tokens.accent,
     },
     billing: {
       color: native.secondaryLabel,
@@ -965,12 +995,12 @@ function createModelsStyles() {
       fontWeight: "600",
     },
     error: {
-      color: "#FF6961",
+      color: tokens.destructive,
       fontSize: 14,
       marginTop: 4,
     },
     notice: {
-      color: "#4ECB71",
+      color: tokens.success,
       fontSize: 14,
       marginTop: 4,
     },

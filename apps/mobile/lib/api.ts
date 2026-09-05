@@ -359,13 +359,41 @@ export async function changePassword(currentPassword: string, newPassword: strin
 export async function signOut() {
   await rpc("notifications/unregisterPush").catch(() => undefined);
   const headers = await authHeaders();
-  await fetch(`${currentApiBase()}/api/auth/sign-out`, {
-    method: "POST",
-    headers: { "content-type": "application/json", origin: "rakazo://", ...headers },
-  }).catch(() => undefined);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), RPC_TIMEOUT_MS);
+  try {
+    await withAbort(
+      fetch(`${currentApiBase()}/api/auth/sign-out`, {
+        method: "POST",
+        headers: { "content-type": "application/json", origin: "rakazo://", ...headers },
+        signal: controller.signal,
+      }),
+      controller.signal,
+    ).catch(() => undefined);
+  } finally {
+    clearTimeout(timer);
+  }
   const sessionCleared = await clearSessionToken();
   const spaceCleared = await clearSpace();
   if (!sessionCleared || !spaceCleared) throw new Error(t("Could not clear the local session"));
+}
+
+function withAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) return Promise.reject(signal.reason ?? new Error("Request timed out"));
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(signal.reason ?? new Error("Request timed out"));
+    signal.addEventListener("abort", onAbort, { once: true });
+    promise.then(
+      (value) => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(value);
+      },
+      (error: unknown) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(error);
+      },
+    );
+  });
 }
 
 export async function deleteAccount(password: string) {
