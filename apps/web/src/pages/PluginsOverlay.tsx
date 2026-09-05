@@ -1,5 +1,10 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { CapabilityInstall, ConnectionCatalogItem } from "@rakazo/contracts";
+import type {
+  CapabilityInstall,
+  ConnectionCatalogItem,
+  IntegrationCatalogResult,
+  IntegrationCatalogSurface,
+} from "@rakazo/contracts";
 import {
   abortableDelay,
   buildFeaturedConnectorTiles,
@@ -66,16 +71,25 @@ export function PluginsOverlay({
   const [pending, setPending] = useState<string | null>(null);
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const [sourceError, setSourceError] = useState<string | null>(null);
+  const [sourceHint, setSourceHint] = useState<string | null>(null);
+  const [catalogFeedEnabled, setCatalogFeedEnabled] = useState(false);
+  const [catalogFeedQuery, setCatalogFeedQuery] = useState("");
+  const [catalogFeedResults, setCatalogFeedResults] = useState<IntegrationCatalogResult[]>([]);
+  const [catalogFeedError, setCatalogFeedError] = useState<string | null>(null);
+  const [catalogFeedPending, setCatalogFeedPending] = useState(false);
+  const [catalogFeedSearched, setCatalogFeedSearched] = useState(false);
   const [loading, setLoading] = useState(true);
   const connectionAttempt = useRef<AbortController | null>(null);
 
   async function refresh() {
-    const [items, installs] = await Promise.all([
+    const [items, installs, catalogFeed] = await Promise.all([
       rpc.connections.catalog({}),
       rpc.capabilities.list(),
+      rpc.capabilities.catalogSearch({ query: "" }),
     ]);
     setCatalog(items);
     setSources(installs.filter((install) => install.kind === "mcp" || install.kind === "api"));
+    setCatalogFeedEnabled(catalogFeed.enabled);
     return items;
   }
 
@@ -180,11 +194,43 @@ export function PluginsOverlay({
   function beginSource(kind: SourceKind) {
     setSourceKind(kind);
     setSourceError(null);
+    setSourceHint(null);
     setSourceName(kind === "treg" ? "Treg" : "");
     setSourceUrl(kind === "treg" ? "https://treg.to/mcp/" : "");
     setCredential("");
     setAuthType(kind === "treg" ? "bearer" : "none");
     setAuthName("x-api-key");
+  }
+
+  async function searchCatalogFeed() {
+    setCatalogFeedError(null);
+    setCatalogFeedPending(true);
+    setCatalogFeedSearched(false);
+    setCatalogFeedResults([]);
+    try {
+      const response = await rpc.capabilities.catalogSearch({ query: catalogFeedQuery });
+      setCatalogFeedResults(response.results);
+      setCatalogFeedSearched(true);
+    } catch (err) {
+      setCatalogFeedError(err instanceof Error ? err.message : t`Could not search catalog`);
+    } finally {
+      setCatalogFeedPending(false);
+    }
+  }
+
+  function beginCatalogSurface(
+    result: IntegrationCatalogResult,
+    surface: IntegrationCatalogSurface,
+  ) {
+    if (!surface.source || (surface.kind !== "mcp" && surface.kind !== "openapi")) return;
+    setSourceKind(surface.kind === "mcp" ? "mcp" : "api");
+    setSourceName(result.name);
+    setSourceUrl(surface.source);
+    setCredential("");
+    setAuthType(surface.auth?.type ?? "none");
+    setAuthName(surface.auth?.headerName ?? "x-api-key");
+    setSourceHint(surface.auth?.note ?? null);
+    setSourceError(null);
   }
 
   async function installSource() {
@@ -427,6 +473,7 @@ export function PluginsOverlay({
               if (!(event.currentTarget as HTMLDetailsElement).open) {
                 setSourceKind(null);
                 setSourceError(null);
+                setSourceHint(null);
                 setSourceName("");
                 setSourceUrl("");
                 setCredential("");
@@ -455,6 +502,109 @@ export function PluginsOverlay({
                 >
                   <Trans>MCP servers</Trans>
                 </Button>
+              ) : null}
+
+              {catalogFeedEnabled ? (
+                <Card data-testid="integrations-catalog-feed">
+                  <CardHeader>
+                    <CardTitle>
+                      <Trans>Find a tool source by domain</Trans>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <form
+                      className="flex gap-2"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        void searchCatalogFeed();
+                      }}
+                    >
+                      <Input
+                        value={catalogFeedQuery}
+                        disabled={catalogFeedPending}
+                        onChange={(event) => {
+                          setCatalogFeedQuery(event.target.value);
+                          setCatalogFeedSearched(false);
+                        }}
+                        placeholder="github.com"
+                        aria-label={t`Integration domain`}
+                      />
+                      <Button
+                        type="submit"
+                        variant="secondary"
+                        className="rounded-full"
+                        size="sm"
+                        disabled={!catalogFeedQuery.trim() || catalogFeedPending}
+                      >
+                        {catalogFeedPending ? <Trans>Searching…</Trans> : <Trans>Search</Trans>}
+                      </Button>
+                    </form>
+                    <p className="text-xs leading-5 text-muted-foreground">
+                      <Trans>
+                        This optional feed suggests public integration surfaces. Rakazo still
+                        verifies a source before saving it.
+                      </Trans>
+                    </p>
+                    {catalogFeedError ? (
+                      <p className="text-sm text-destructive">{catalogFeedError}</p>
+                    ) : null}
+                    {catalogFeedSearched &&
+                    !catalogFeedPending &&
+                    catalogFeedResults.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">
+                        <Trans>No results</Trans>
+                      </p>
+                    ) : null}
+                    {catalogFeedResults.map((result) => (
+                      <div
+                        key={`${result.domain}:${result.name}:${result.pageUrl ?? ""}`}
+                        className="rounded-xl border border-border/70 p-3"
+                      >
+                        <div className="font-medium text-foreground">
+                          {result.pageUrl ? (
+                            <a
+                              href={result.pageUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="hover:underline"
+                            >
+                              {result.name}
+                            </a>
+                          ) : (
+                            result.name
+                          )}
+                        </div>
+                        <div className="text-xs text-muted-foreground">{result.domain}</div>
+                        {result.description ? (
+                          <p className="mt-2 text-sm leading-5 text-muted-foreground">
+                            {result.description}
+                          </p>
+                        ) : null}
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {result.surfaces.map((surface) => {
+                            const canAdd =
+                              Boolean(surface.source) &&
+                              (surface.kind === "mcp" || surface.kind === "openapi");
+                            return (
+                              <Button
+                                key={`${result.domain}:${surface.slug}`}
+                                type="button"
+                                variant="secondary"
+                                className="rounded-full"
+                                size="sm"
+                                disabled={!canAdd}
+                                title={canAdd ? undefined : t`Manual setup required`}
+                                onClick={() => beginCatalogSurface(result, surface)}
+                              >
+                                {surface.kind.toUpperCase()} · {canAdd ? t`Add` : t`Manual`}
+                              </Button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
               ) : null}
 
               <div className="flex flex-wrap gap-2">
@@ -558,6 +708,9 @@ export function PluginsOverlay({
                         are never returned to clients or exposed to the model.
                       </Trans>
                     </p>
+                    {sourceHint ? (
+                      <p className="text-xs leading-5 text-muted-foreground">{sourceHint}</p>
+                    ) : null}
                     <div className="flex gap-2">
                       <Button
                         type="button"

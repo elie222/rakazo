@@ -182,12 +182,32 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await expect(page.getByRole("button", { name: "Add OpenAPI", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Add Treg", exact: true })).toBeVisible();
   await expect(page.getByText("Tool sources", { exact: true })).toBeVisible();
-  // MCP → OpenAPI → Treg order inside Advanced.
+  await expect(page.getByTestId("integrations-catalog-feed")).toBeVisible();
+  // Catalog search remains optional and manual MCP → OpenAPI → Treg stays available.
   const advancedActions = advanced.locator("button");
   await expect(advancedActions.nth(0)).toHaveText("MCP servers");
-  await expect(advancedActions.nth(1)).toHaveText("Add MCP server");
-  await expect(advancedActions.nth(2)).toHaveText("Add OpenAPI");
-  await expect(advancedActions.nth(3)).toHaveText("Add Treg");
+  await expect(advancedActions.nth(1)).toHaveText("Search");
+  await expect(advancedActions.nth(2)).toHaveText("Add MCP server");
+  await expect(advancedActions.nth(3)).toHaveText("Add OpenAPI");
+  await expect(advancedActions.nth(4)).toHaveText("Add Treg");
+
+  await page.getByRole("textbox", { name: "Integration domain" }).fill("github.com");
+  await page.getByRole("button", { name: "Search", exact: true }).click();
+  const feed = page.getByTestId("integrations-catalog-feed");
+  await expect(feed.getByText("GitHub", { exact: true })).toBeVisible();
+  await expect(feed.getByRole("button", { name: "MCP · Add", exact: true })).toBeVisible();
+  await expect(feed.getByRole("button", { name: "OPENAPI · Add", exact: true })).toBeVisible();
+  await expect(feed.getByRole("button", { name: "GRAPHQL · Manual", exact: true })).toBeDisabled();
+  await expect(feed.getByRole("button", { name: "CLI · Manual", exact: true })).toBeDisabled();
+  await captureScreenshot(page, testInfo, "11c-catalog-feed");
+
+  await feed.getByRole("button", { name: "MCP · Add", exact: true }).click();
+  await expect(page.getByPlaceholder("Display name")).toHaveValue("GitHub");
+  await expect(page.getByPlaceholder("https://example.com/mcp")).toHaveValue(
+    "https://mcp.example.test/mcp",
+  );
+  await expect(page.locator("select")).toHaveValue("bearer");
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
 
   await page.getByRole("button", { name: "Add Treg", exact: true }).click();
   await page.getByPlaceholder("Treg token").fill("fake-treg-browser-credential");
@@ -211,7 +231,7 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await expect(
     page.getByText(/API · https:\/\/api\.example\.test\/v1 · credential saved/),
   ).toBeVisible();
-  await captureScreenshot(page, testInfo, "11c-provider-emulators");
+  await captureScreenshot(page, testInfo, "11d-provider-emulators");
 
   await page.getByRole("button", { name: "Close integrations" }).click();
 

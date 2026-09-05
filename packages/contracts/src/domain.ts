@@ -490,6 +490,29 @@ export const CapabilityInstallSchema = z.object({
 });
 export type CapabilityInstall = z.infer<typeof CapabilityInstallSchema>;
 
+export const IntegrationCatalogSurfaceSchema = z.object({
+  kind: z.enum(["mcp", "openapi", "graphql", "cli"]),
+  slug: z.string(),
+  source: z.string().nullable(),
+  auth: z
+    .object({
+      type: z.enum(["none", "bearer", "header"]),
+      headerName: z.string().nullable(),
+      note: z.string().nullable(),
+    })
+    .nullable(),
+});
+export type IntegrationCatalogSurface = z.infer<typeof IntegrationCatalogSurfaceSchema>;
+
+export const IntegrationCatalogResultSchema = z.object({
+  domain: z.string(),
+  name: z.string(),
+  description: z.string(),
+  pageUrl: z.string().nullable(),
+  surfaces: z.array(IntegrationCatalogSurfaceSchema),
+});
+export type IntegrationCatalogResult = z.infer<typeof IntegrationCatalogResultSchema>;
+
 export type { McpTransport } from "./mcp.js";
 
 const McpServerBaseInput = z.object({
