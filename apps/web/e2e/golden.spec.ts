@@ -141,6 +141,7 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
     /Gmail[\s\S]*Google Calendar[\s\S]*Google Drive[\s\S]*Slack[\s\S]*Notion/,
   );
   await expect(page.getByText("GitHub", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add Executor", exact: true })).toBeHidden();
   await expect(page.getByRole("button", { name: "Add Treg", exact: true })).toBeHidden();
   await expect(page.getByRole("button", { name: "Add MCP server", exact: true })).toBeHidden();
   await expect(page.getByRole("button", { name: "Add OpenAPI", exact: true })).toBeHidden();
@@ -179,6 +180,7 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
     (element as HTMLDetailsElement).open = true;
   });
   await expect(page.getByRole("button", { name: "MCP servers", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add Executor", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Add MCP server", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Add OpenAPI", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Add GraphQL", exact: true })).toBeVisible();
@@ -189,6 +191,16 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await page.getByPlaceholder("Treg token").fill("fake-treg-browser-credential");
   await page.getByRole("button", { name: "Verify and add", exact: true }).click();
   await expect(page.getByText(/MCP · https:\/\/treg\.to\/mcp\/ · credential saved/)).toBeVisible();
+
+  await page.getByRole("button", { name: "Add Executor", exact: true }).click();
+  await page
+    .getByPlaceholder("https://executor.example/mcp")
+    .fill("https://executor.example.test/mcp");
+  await page.getByPlaceholder("Executor token").fill("fake-executor-browser-credential");
+  await page.getByRole("button", { name: "Verify and add", exact: true }).click();
+  await expect(
+    page.getByText(/MCP · https:\/\/executor\.example\.test\/mcp · credential saved/),
+  ).toBeVisible();
 
   await page.getByRole("button", { name: "Add MCP server", exact: true }).click();
   await page.getByPlaceholder("Display name").fill("Browser MCP");

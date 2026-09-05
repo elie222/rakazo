@@ -26,7 +26,7 @@ import { X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { rpc } from "../lib/rpc";
 
-type SourceKind = "treg" | "mcp" | "api" | "graphql";
+type SourceKind = "treg" | "executor" | "mcp" | "api" | "graphql";
 
 function itemKey(item: Pick<ConnectionCatalogItem, "connectorId" | "slug">) {
   return `${item.connectorId}:${item.slug}`;
@@ -184,10 +184,10 @@ export function PluginsOverlay({
   function beginSource(kind: SourceKind) {
     setSourceKind(kind);
     setSourceError(null);
-    setSourceName(kind === "treg" ? "Treg" : "");
+    setSourceName(kind === "treg" ? "Treg" : kind === "executor" ? "Executor" : "");
     setSourceUrl(kind === "treg" ? "https://treg.to/mcp/" : "");
     setCredential("");
-    setAuthType(kind === "treg" ? "bearer" : "none");
+    setAuthType(kind === "treg" || kind === "executor" ? "bearer" : "none");
     setAuthName("x-api-key");
   }
 
@@ -201,14 +201,16 @@ export function PluginsOverlay({
         ...(authType === "header" ? { name: authName.trim() } : {}),
       };
       await rpc.capabilities.install({
-        kind: sourceKind === "treg" ? "mcp" : sourceKind,
+        kind: sourceKind === "treg" || sourceKind === "executor" ? "mcp" : sourceKind,
         name:
           sourceName.trim() ||
           (sourceKind === "treg"
             ? "Treg"
-            : sourceKind === "graphql"
-              ? "GraphQL"
-              : "Custom connector"),
+            : sourceKind === "executor"
+              ? "Executor"
+              : sourceKind === "graphql"
+                ? "GraphQL"
+                : "Custom connector"),
         source: sourceUrl.trim(),
         credential: credential.trim() || undefined,
         config:
@@ -475,6 +477,15 @@ export function PluginsOverlay({
                   variant="secondary"
                   className="rounded-full"
                   size="sm"
+                  onClick={() => beginSource("executor")}
+                >
+                  <Trans>Add Executor</Trans>
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="rounded-full"
+                  size="sm"
                   onClick={() => beginSource("mcp")}
                 >
                   <Trans>Add MCP server</Trans>
@@ -502,6 +513,15 @@ export function PluginsOverlay({
                   variant="secondary"
                   className="rounded-full"
                   size="sm"
+                  onClick={() => beginSource("executor")}
+                >
+                  <Trans>Add Executor</Trans>
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="rounded-full"
+                  size="sm"
                   onClick={() => beginSource("treg")}
                 >
                   <Trans>Add Treg</Trans>
@@ -516,6 +536,8 @@ export function PluginsOverlay({
                     <CardTitle>
                       {sourceKind === "treg" ? (
                         <Trans>Connect Treg</Trans>
+                      ) : sourceKind === "executor" ? (
+                        <Trans>Connect Executor</Trans>
                       ) : sourceKind === "mcp" ? (
                         <Trans>Add remote MCP server</Trans>
                       ) : sourceKind === "graphql" ? (
@@ -538,9 +560,11 @@ export function PluginsOverlay({
                         placeholder={
                           sourceKind === "mcp"
                             ? "https://example.com/mcp"
-                            : sourceKind === "graphql"
-                              ? "https://example.com/graphql"
-                              : "https://example.com/openapi.json"
+                            : sourceKind === "executor"
+                              ? "https://executor.example/mcp"
+                              : sourceKind === "graphql"
+                                ? "https://example.com/graphql"
+                                : "https://example.com/openapi.json"
                         }
                       />
                     ) : null}
@@ -574,7 +598,13 @@ export function PluginsOverlay({
                         autoComplete="new-password"
                         value={credential}
                         onChange={(event) => setCredential(event.target.value)}
-                        placeholder={sourceKind === "treg" ? t`Treg token` : t`Credential`}
+                        placeholder={
+                          sourceKind === "treg"
+                            ? t`Treg token`
+                            : sourceKind === "executor"
+                              ? t`Executor token`
+                              : t`Credential`
+                        }
                       />
                     ) : null}
                     <p className="text-xs leading-5 text-muted-foreground">
