@@ -3246,3 +3246,8 @@ msgstr "共享文档"
 #: src/pages/KnowledgeSection.tsx:25
 msgid "Skills"
 msgstr "技能"
+
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/Onboarding.tsx
+msgid "Supports thinking"
+msgstr "支持思考"

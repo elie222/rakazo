@@ -552,7 +552,23 @@ export function createRouter(deps: RouterDeps) {
       connect: authed.models.connect.handler(async ({ context, input }) => {
         let plaintext: string;
         try {
-          plaintext = buildModelConnectPlaintext(input);
+          let previousPlaintext: string | undefined;
+          if (input.provider === OPENAI_COMPATIBLE_PROVIDER_ID && input.apiKey === undefined) {
+            const credential = await findModelCredential(
+              deps.prisma,
+              context.actor,
+              input.provider,
+            );
+            if (credential) {
+              const secret = await deps.prisma.secret.findFirst({
+                where: { id: credential.secretId, userId: context.actor.userId, spaceId: null },
+                select: { ciphertext: true },
+              });
+              if (secret)
+                previousPlaintext = deps.secrets.load(secret.ciphertext, credential.secretId);
+            }
+          }
+          plaintext = buildModelConnectPlaintext(input, previousPlaintext);
         } catch (error) {
           throw new ORPCError("BAD_REQUEST", {
             message: error instanceof Error ? error.message : "Invalid model connection",
@@ -740,7 +756,32 @@ export function createRouter(deps: RouterDeps) {
             const entry = listPiCatalog().find(
               (item) => item.provider === effectiveProvider && item.id === effectiveModelId,
             );
-            const allowed = entry?.thinkingLevels;
+            let allowed = entry?.thinkingLevels;
+            if (effectiveProvider === OPENAI_COMPATIBLE_PROVIDER_ID) {
+              allowed = ["off"];
+              const credential = await findModelCredential(
+                deps.prisma,
+                context.actor,
+                effectiveProvider,
+              );
+              if (credential && credential.defaultModel === effectiveModelId) {
+                const secret = await deps.prisma.secret.findFirst({
+                  where: { id: credential.secretId, userId: context.actor.userId, spaceId: null },
+                  select: { ciphertext: true },
+                });
+                if (secret) {
+                  try {
+                    allowed =
+                      modelCredentialDto(
+                        credential,
+                        deps.secrets.load(secret.ciphertext, credential.secretId),
+                      ).thinkingLevels ?? allowed;
+                  } catch {
+                    // Unreadable connections must not advertise reasoning support.
+                  }
+                }
+              }
+            }
             if (allowed && !allowed.includes(input.thinkingLevel)) {
               throw new ORPCError("BAD_REQUEST", {
                 message: `Thinking level must be one of: ${allowed.join(", ")}`,

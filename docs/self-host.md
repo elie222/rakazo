@@ -234,25 +234,16 @@ loopback, RFC1918, and `host.docker.internal` targets. To permit public hostname
 only to public addresses; redirects and DNS answers that reach private or link-local networks are
 rejected.
 
-For models whose server uses Qwen chat-template thinking, opt in by exact server model ID:
+For servers that accept standard `reasoning_effort`, enable **Supports thinking** under
+**Advanced** when connecting. The setting is saved on the connection (no env var or restart).
+Existing connections default to disabled. Reconnect former Qwen-list or deployment-local models
+via **Settings → Models** and turn it on; the old environment list is no longer read.
 
-```env
-RAKAZO_OPENAI_COMPAT_QWEN_MODELS=qwen3:4b,my-qwen-model
-```
-
-Set this on both the API and worker and restart them. It applies to the existing `local` and
-`openai-compatible` providers, across all endpoints using those IDs; it does not connect an
-endpoint or choose a default model. Use the normal URL, model ID, and optional-key connection
-flow above. Unlisted models keep their existing reasoning behavior.
-
-Opted-in models default to medium thinking. Web and desktop expose the existing **Thinking**
-control in a bot's advanced settings; mobile runs inherit the same backend policy. Rakazo sends
-`enable_thinking`, `preserve_thinking`, and the requested `reasoning_effort` inside
-`chat_template_kwargs`. Minimal/low map to `low`, medium to `medium`, and high to `xhigh` for
-Qwen effort templates. Off sends `enable_thinking: false` and omits the effort. Older Qwen
-templates may use only the on/off flag. The server must have its model's reasoning and tool-call
-parsers enabled; this setting does not install or configure the server. Existing token limits
-still apply, and an effort level is not a separate reasoning-token budget.
+Enabled connections default to medium thinking. Web and desktop expose **Thinking** in a bot's
+advanced settings; mobile inherits the same backend policy. Rakazo sends standard
+`reasoning_effort` (`minimal`, `low`, `medium`, `high`, or `none` when off); the server owns
+model-specific translation. Leave **Supports thinking** off when the server lacks standard effort
+support. Existing token limits still apply; effort is not a separate reasoning-token budget.
 
 Do not commit `.env`. Never put `COMPOSIO_API_KEY`, OpenRouter keys, or provider tokens in git, logs, or chat.
 

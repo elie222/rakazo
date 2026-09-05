@@ -1,36 +1,15 @@
 import { type Model, Type } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildModelConnectPlaintext } from "./model-connect.js";
-import { openAiCompatibleThinking, qwenModelIds } from "./openai-compatible-thinking.js";
-import { registerLocalProvider } from "./pi-local-provider.js";
 import { registerOpenAiCompatibleRuntime } from "./pi-openai-compatible-provider.js";
 
-const modelId = "test-qwen";
+const modelId = "arbitrary-model";
 const baseUrl = "http://127.0.0.1:8090/v1";
 
-beforeEach(() => {
-  vi.stubEnv("RAKAZO_OPENAI_COMPAT_QWEN_MODELS", modelId);
-  vi.stubEnv("RAKAZO_LOCAL_MODELS", modelId);
-  vi.stubEnv("RAKAZO_LOCAL_MODELS_URL", baseUrl);
-  vi.stubEnv("RAKAZO_LOCAL_CONTEXT_WINDOW", "32768");
-  vi.stubEnv("RAKAZO_LOCAL_MAX_TOKENS", "4096");
-});
 afterEach(() => {
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
-});
-
-it("requires an exact opt-in and trims and deduplicates configured IDs", () => {
-  vi.stubEnv("RAKAZO_OPENAI_COMPAT_QWEN_MODELS", " test-qwen, ,test-qwen,other ");
-  expect(qwenModelIds()).toEqual([modelId, "other"]);
-  expect(openAiCompatibleThinking("test-qwen-extra").reasoning).toBe(false);
-  expect(openAiCompatibleThinking("Test-qwen").reasoning).toBe(false);
-  vi.stubEnv("RAKAZO_OPENAI_COMPAT_QWEN_MODELS", "");
-  expect(openAiCompatibleThinking(modelId)).toEqual({
-    reasoning: false,
-    compat: { supportsDeveloperRole: false, supportsReasoningEffort: false },
-  });
 });
 
 it("keeps the existing keyless connection format", () => {
@@ -79,8 +58,12 @@ function fixtureResponse(): Response {
   );
 }
 
-describe.each(["local", "openai-compatible"] as const)("%s thinking transport", (provider) => {
-  async function capture(reasoning?: "minimal" | "low" | "medium" | "high") {
+describe("OpenAI-compatible standard thinking transport", () => {
+  const provider = "openai-compatible";
+  async function capture(
+    reasoning?: "minimal" | "low" | "medium" | "high",
+    supportsThinking = true,
+  ) {
     let payload: Payload | undefined;
     const mockFetch = vi.fn<typeof fetch>(async (input, init) => {
       expect(String(input)).toBe(`${baseUrl}/chat/completions`);
@@ -88,10 +71,11 @@ describe.each(["local", "openai-compatible"] as const)("%s thinking transport", 
       return fixtureResponse();
     });
     vi.stubGlobal("fetch", mockFetch);
-    const models =
-      provider === "local"
-        ? registerLocalProvider(builtinModels())
-        : registerOpenAiCompatibleRuntime(builtinModels(), { modelId, baseUrl });
+    const models = registerOpenAiCompatibleRuntime(builtinModels(), {
+      modelId,
+      baseUrl,
+      reasoning: supportsThinking,
+    });
     const model = models.getModel(provider, modelId) as Model<"openai-completions">;
     const stream = models.streamSimple(
       model,
@@ -116,34 +100,26 @@ describe.each(["local", "openai-compatible"] as const)("%s thinking transport", 
     return { payload: payload!, result, events };
   }
 
-  it.each([
-    ["minimal", "low"],
-    ["low", "low"],
-    ["medium", "medium"],
-    ["high", "xhigh"],
-  ] as const)("sends %s as explicit Qwen effort %s", async (level, effort) => {
-    const { payload } = await capture(level);
-    expect(payload.chat_template_kwargs).toEqual({
-      enable_thinking: true,
-      reasoning_effort: effort,
-      preserve_thinking: true,
-    });
-    expect(payload.reasoning_effort).toBeUndefined();
-  });
+  it.each(["minimal", "low", "medium", "high"] as const)(
+    "sends standard effort %s unchanged",
+    async (level) => {
+      const { payload } = await capture(level);
+      expect(payload.reasoning_effort).toBe(level);
+      expect(payload.chat_template_kwargs).toBeUndefined();
+    },
+  );
 
-  it("turns thinking off explicitly without sending an effort", async () => {
+  it("sends none when thinking is off", async () => {
     const { payload } = await capture();
-    expect(payload.chat_template_kwargs).toEqual({
-      enable_thinking: false,
-      preserve_thinking: true,
-    });
+    expect(payload.reasoning_effort).toBe("none");
+    expect(payload.chat_template_kwargs).toBeUndefined();
   });
 
-  it("leaves unconfigured models free of Qwen-specific request fields", async () => {
-    vi.stubEnv("RAKAZO_OPENAI_COMPAT_QWEN_MODELS", "");
-    const { payload } = await capture("high");
-    expect(payload.chat_template_kwargs).toBeUndefined();
+  it("does not send reasoning fields on a connection without support, even for the same model ID", async () => {
+    await capture("high");
+    const { payload } = await capture("high", false);
     expect(payload.reasoning_effort).toBeUndefined();
+    expect(payload.chat_template_kwargs).toBeUndefined();
   });
 
   it("streams system-role requests, reasoning, text and fragmented tool arguments", async () => {

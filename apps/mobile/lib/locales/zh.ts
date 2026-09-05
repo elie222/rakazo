@@ -411,6 +411,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   Add: "添加",
   "Add a voice provider in Voice settings.": "请先在语音设置中添加语音提供商。",
   Advanced: "高级",
+  "Supports thinking": "支持思考",
   Agent: "智能体",
   archived: "已归档",
   Attachment: "附件",

@@ -625,6 +625,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         id,
         apiKey: resolved.oauth ? undefined : resolved.apiKey,
         baseUrl: resolved.baseUrl,
+        reasoning: resolved.reasoning,
         thinkingLevel,
         oauth: resolved.oauth
           ? { credential: resolved.oauth, persist: resolved.persistOAuth }
@@ -1647,6 +1648,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 checker,
                 apiKey: judgeKey.oauth ? undefined : judgeKey.apiKey,
                 baseUrl: judgeKey.baseUrl,
+                reasoning: judgeKey.reasoning,
                 oauth: judgeKey.oauth
                   ? { credential: judgeKey.oauth, persist: judgeKey.persistOAuth }
                   : undefined,
@@ -2994,6 +2996,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 id: runModelId,
                 apiKey: resolved.oauth ? undefined : resolved.apiKey,
                 baseUrl: resolved.baseUrl,
+                reasoning: resolved.reasoning,
                 thinkingLevel,
                 oauth: resolved.oauth
                   ? { credential: resolved.oauth, persist: resolved.persistOAuth }
@@ -3979,6 +3982,7 @@ async function resolveModelKey(
 ): Promise<{
   apiKey?: string;
   baseUrl?: string;
+  reasoning?: boolean;
   oauth?: AgentModelOAuthCredential;
   persistOAuth?: (credential: AgentModelOAuthCredential) => Promise<void>;
   redact: string[];
@@ -4017,6 +4021,8 @@ async function resolveModelKey(
       return {
         apiKey: resolved.apiKey,
         baseUrl,
+        reasoning:
+          resolved.secret.kind === "openai_compatible" ? resolved.secret.reasoning : undefined,
         oauth,
         persistOAuth: oauth
           ? async (next) => {

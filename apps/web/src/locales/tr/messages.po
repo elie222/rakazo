@@ -3246,3 +3246,8 @@ msgstr "Paylaşılan belgeler"
 #: src/pages/KnowledgeSection.tsx:25
 msgid "Skills"
 msgstr "Beceriler"
+
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/Onboarding.tsx
+msgid "Supports thinking"
+msgstr "Düşünmeyi destekler"
