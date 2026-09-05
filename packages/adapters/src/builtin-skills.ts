@@ -54,3 +54,13 @@ Do not produce or apply a patch as part of this skill.`,
     }),
   },
 ];
+
+/** Hide a builtin when a pre-existing user or plugin skill already owns its name. */
+export function visibleBuiltinAgentSkills(
+  persisted: readonly { name: string }[],
+): typeof BUILTIN_AGENT_SKILLS {
+  const persistedNames = new Set(persisted.map((skill) => skill.name.trim().toLowerCase()));
+  return BUILTIN_AGENT_SKILLS.filter(
+    (skill) => !persistedNames.has(skill.name.trim().toLowerCase()),
+  );
+}

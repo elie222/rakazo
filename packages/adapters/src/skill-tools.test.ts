@@ -190,6 +190,35 @@ describe("skill tools", () => {
     expect(catalog).toContain("skill_read");
   });
 
+  it("keeps a persisted skill ahead of a newly introduced builtin with the same name", async () => {
+    prisma = makePrisma([
+      {
+        id: "saved-interrogate",
+        spaceId: owner.spaceId,
+        userId: owner.userId,
+        name: "interrogate",
+        description: "My existing recipe",
+        content: buildSkillMd({
+          name: "interrogate",
+          description: "My existing recipe",
+          body: "Keep this behavior.",
+        }),
+        source: "user",
+      },
+    ]);
+
+    const records = await listAgentSkillRecords(prisma as never, owner);
+    expect(records.filter((skill) => skill.name.toLowerCase() === "interrogate")).toEqual([
+      expect.objectContaining({ id: "saved-interrogate", source: "user" }),
+    ]);
+    await expect(
+      skillReadFromTool(prisma as never, owner, { name: "Interrogate" }),
+    ).resolves.toMatchObject({
+      source: "user",
+      content: expect.stringContaining("Keep this behavior."),
+    });
+  });
+
   it("rejects update/delete for plugin and builtin skills", async () => {
     prisma = makePrisma([
       {

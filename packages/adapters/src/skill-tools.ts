@@ -7,7 +7,7 @@ import {
   type SkillSource,
 } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
-import { BUILTIN_AGENT_SKILLS } from "./builtin-skills.js";
+import { visibleBuiltinAgentSkills } from "./builtin-skills.js";
 
 export const SKILL_TOOL_NAMES = new Set([
   "skill_read",
@@ -51,8 +51,10 @@ function toRecord(row: AgentSkillRow): SkillRecord & { id: string } {
   };
 }
 
-function builtinRecords(): Array<SkillRecord & { id: string }> {
-  return BUILTIN_AGENT_SKILLS.map((skill) => ({
+function builtinRecords(
+  persisted: readonly { name: string }[],
+): Array<SkillRecord & { id: string }> {
+  return visibleBuiltinAgentSkills(persisted).map((skill) => ({
     id: `builtin:${skill.name}`,
     name: skill.name,
     description: skill.description,
@@ -89,7 +91,7 @@ export async function listAgentSkillRecords(
     where: { spaceId: owner.spaceId, userId: owner.userId },
     orderBy: [{ name: "asc" }, { id: "asc" }],
   });
-  return [...builtinRecords(), ...rows.map(toRecord)];
+  return [...builtinRecords(rows), ...rows.map(toRecord)];
 }
 
 async function findOwnedSkill(

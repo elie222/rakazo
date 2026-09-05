@@ -1,6 +1,6 @@
 import { parseSkillMd } from "@rakazo/core";
 import { describe, expect, it } from "vitest";
-import { BUILTIN_AGENT_SKILLS } from "./builtin-skills.js";
+import { BUILTIN_AGENT_SKILLS, visibleBuiltinAgentSkills } from "./builtin-skills.js";
 
 describe("built-in agent skills", () => {
   it("ships a valid review-only Interrogate recipe", () => {
@@ -30,5 +30,10 @@ describe("built-in agent skills", () => {
       expect(skill.description.length).toBeLessThanOrEqual(2_000);
       expect(skill.content.length).toBeLessThanOrEqual(100_000);
     }
+  });
+
+  it("does not shadow a persisted skill with the same case-insensitive name", () => {
+    expect(visibleBuiltinAgentSkills([{ name: "interrogate" }])).toEqual([]);
+    expect(visibleBuiltinAgentSkills([{ name: "Other skill" }])).toEqual(BUILTIN_AGENT_SKILLS);
   });
 });
