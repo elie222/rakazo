@@ -17,6 +17,9 @@ describe("toolRequiresApproval", () => {
   it("requires approval for consequential builtins and destination writes", () => {
     expect(toolRequiresApproval("destination.write", false)).toBe(true);
     expect(toolRequiresApproval("destination.write", true)).toBe(true);
+    expect(toolRequiresApproval("secret_request", false)).toBe(true);
+    expect(toolRequiresApproval("forget_secret", false)).toBe(true);
+    expect(toolRequiresApproval("list_secrets", false)).toBe(false);
     expect(toolRequiresApproval("delete_bot", false)).toBe(true);
     expect(toolRequiresApproval("archive_bot", false)).toBe(true);
     expect(toolRequiresApproval("create_space", false)).toBe(true);

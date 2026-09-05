@@ -1,4 +1,5 @@
 import * as z from "zod";
+import { BotSecretDestination } from "./bot-secrets.js";
 import { Id } from "./ids.js";
 import { McpTransportSchema } from "./mcp.js";
 
@@ -98,6 +99,7 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     input: z.enum(["text", "secret"]).optional(),
     /** Why the secret is needed; drives field label on the masked card. */
     purpose: SecretAskPurpose.optional(),
+    credential: BotSecretDestination.optional(),
     status: z.enum(["pending", "answered"]).optional(),
     answer: z.string().optional(),
     actions: z

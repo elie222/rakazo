@@ -60,6 +60,11 @@ describe("inferScript request_secret", () => {
             args: {
               label: "API key",
               purpose: "api_key",
+              credential: {
+                name: "example_api",
+                origin: "https://api.example.test",
+                auth: { type: "bearer" },
+              },
             },
           },
         ],
