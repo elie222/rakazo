@@ -65,6 +65,12 @@ describe("graphical computer spec", () => {
       "6094/tcp": {},
       "6095/tcp": {},
     });
+    // Browser debugging stays inside the computer trust boundary.
+    for (let display = 1; display <= 8; display += 1) {
+      const cdpPort = `${9221 + display}/tcp`;
+      expect(options.ExposedPorts).not.toHaveProperty(cdpPort);
+      expect(options.HostConfig.PortBindings).not.toHaveProperty(cdpPort);
+    }
     expect(options.ExposedPorts).not.toHaveProperty("7070/tcp");
     expect(options.HostConfig.PortBindings).not.toHaveProperty("7070/tcp");
     expect(options.HostConfig.PortBindings["6080/tcp"]?.[0]?.HostIp).toBe("127.0.0.1");
