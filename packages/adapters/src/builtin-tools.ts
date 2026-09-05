@@ -1,5 +1,11 @@
 import type { ConnectorTool } from "@rakazo/adapter-kit";
-import { SecretAskPurpose } from "@rakazo/contracts";
+import {
+  BotSecretDestination,
+  BotSecretName,
+  SecretAskPurpose,
+  SecretHttpRequest,
+} from "@rakazo/contracts";
+import { z } from "zod";
 
 export const DELEGATION_TOOL_NAMES = new Set([
   "run_subagent",
@@ -179,16 +185,39 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "request_secret",
     description:
-      "Collect a one-shot OTP, password, or API key in a masked field that never reaches the chat transcript or model. For website logins, CAPTCHA, passkeys, or anything that needs the live desktop, call request_takeover instead.",
+      "Collect a credential in a masked field. Supply credential to save a named API credential for this bot and user at one HTTPS origin, or connectionId for a one-use connector code. Existing named credentials are reused unless replace is true. For website logins, CAPTCHA, passkeys, or anything that needs the live desktop, call request_takeover instead.",
     inputSchema: {
       type: "object",
       properties: {
         label: { type: "string" },
         purpose: { type: "string", enum: SecretAskPurpose.options },
         connectionId: { type: "string" },
+        credential: z.toJSONSchema(BotSecretDestination),
+        replace: {
+          type: "boolean",
+          description: "Ask the user to replace an existing credential value.",
+        },
       },
       required: ["label", "purpose"],
     },
+  },
+  {
+    name: "list_secrets",
+    description:
+      "List saved credential names and destinations available to this bot and user. Values are never returned.",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "secret_request",
+    description:
+      "Make an authenticated HTTPS request using a saved credential name. The backend injects authentication only at its saved origin. Redirects are rejected; response echoes of the credential are redacted. Use normal request URLs and bodies without secret placeholders.",
+    inputSchema: z.toJSONSchema(SecretHttpRequest, { io: "input" }),
+  },
+  {
+    name: "forget_secret",
+    description:
+      "Remove a saved credential for this bot and user, preventing future requests from using it.",
+    inputSchema: z.toJSONSchema(z.object({ name: BotSecretName })),
   },
   {
     name: "render_plot",

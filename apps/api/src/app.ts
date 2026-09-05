@@ -301,6 +301,7 @@ export async function createApp(
       env.cursorApiKey ?? "",
     ].filter(Boolean),
     secretStore: secrets,
+    secretHttp: remoteConnectors,
     deploymentModelKey: env.deploymentModelKey,
     dataDir: env.dataDir,
     notifications,

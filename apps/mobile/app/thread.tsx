@@ -2938,6 +2938,11 @@ function AskBlock({
       >
         {ask.text}
       </Text>
+      {secretInput && ask.credential ? (
+        <Text style={{ color: tokens.mutedForeground, fontSize: 13.5 }}>
+          {ask.credential.origin}
+        </Text>
+      ) : null}
       {ask.detail && !secretInput ? (
         <Text style={{ color: tokens.mutedForeground, fontSize: 13.5 }}>{ask.detail}</Text>
       ) : null}

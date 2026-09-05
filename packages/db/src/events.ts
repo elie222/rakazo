@@ -1,5 +1,6 @@
 import type { RealtimeFanout } from "@rakazo/adapter-kit";
 import {
+  type BotSecretDestination,
   type MessageBlock,
   MessageBlock as MessageBlockSchema,
   type ProductEvent,
@@ -206,6 +207,8 @@ export interface SendUserMessageResult {
 
 export interface RunSecretWriter {
   store(input: {
+    botId: string;
+    credential?: BotSecretDestination;
     runId: string;
     userId: string;
     spaceId: string;
@@ -556,6 +559,7 @@ export async function answerRunInput(
       : undefined;
     if (choiceAsk && !selectedChoice) return null;
     if (secretAsk && !runSecretWriter) return null;
+    if (secretAsk && pendingAsk.credential && run.userId !== input.answeredByUserId) return null;
     let approvalEffect: { id: string; kind: string } | null = null;
     let approvalUserId: string | null = null;
 
@@ -619,6 +623,8 @@ export async function answerRunInput(
       }
     } else if (secretAsk) {
       await runSecretWriter!.store({
+        botId: run.botId,
+        credential: pendingAsk.credential,
         runId: input.runId,
         userId: run.userId,
         spaceId: input.spaceId,
@@ -632,7 +638,10 @@ export async function answerRunInput(
           kind: "request_secret",
           status: "intended",
         },
-        data: { status: "approved" },
+        data: {
+          status: "approved",
+          ...(pendingAsk.credential ? { result: { credentialSaved: pendingAsk.credential } } : {}),
+        },
       });
     } else {
       const resumeLabel = selectedChoice

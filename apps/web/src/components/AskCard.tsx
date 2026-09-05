@@ -91,6 +91,11 @@ export function AskCard({
       <div className="text-[15.5px] leading-[1.5] text-foreground">
         <ChatMarkdown>{block.text}</ChatMarkdown>
       </div>
+      {secretInput && block.credential ? (
+        <div className="mt-2 break-all text-[13px] text-muted-foreground">
+          {block.credential.origin}
+        </div>
+      ) : null}
       {block.detail && !secretInput ? (
         <pre className="mt-3 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-xl bg-muted px-3.5 py-3 font-mono text-[12.5px] leading-[1.7] text-muted-foreground">
           {block.detail}
