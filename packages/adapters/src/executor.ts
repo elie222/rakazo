@@ -47,6 +47,7 @@ import {
   isMessagingChannelRun,
   isOneShotRoutineCrons,
   isTerminal,
+  messagingChannelId,
   messagingChannelPrivacyBlock,
   messagingDmSurfaceNote,
   nextCronDateAcross,
@@ -71,6 +72,7 @@ import {
   findDefaultModelCredential,
   findModelCredential,
   InvalidSpaceNameError,
+  loadRunHistoryMessages,
   type McpServer,
   type Prisma,
   type PrismaClient,
@@ -876,6 +878,17 @@ export function createRunExecutor(deps: ExecutorDeps) {
 
       const runSecrets = [...deps.secrets];
       try {
+        const sourceBlocks =
+          run.trigger === "messaging" && run.sourceMessageId
+            ? ((
+                await deps.prisma.message.findUnique({
+                  where: { id: run.sourceMessageId },
+                  select: { blocks: true },
+                })
+              )?.blocks as MessageBlock[] | undefined)
+            : undefined;
+        const channelId = messagingChannelId(sourceBlocks);
+        const messagingChannelRun = isMessagingChannelRun(run.trigger, sourceBlocks);
         const [
           bot,
           thread,
@@ -894,12 +907,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             include: { computer: true },
           }),
           deps.prisma.thread.findUniqueOrThrow({ where: { id: run.threadId } }),
-          deps.prisma.message.findMany({
-            where: { threadId: run.threadId },
-            orderBy: { seq: "desc" },
-            take: LEGACY_HISTORY_WINDOW_SIZE,
-            select: { id: true, seq: true, role: true, runId: true, blocks: true },
-          }),
+          loadRunHistoryMessages(deps.prisma, run, LEGACY_HISTORY_WINDOW_SIZE, channelId),
           run.trigger === "bot_message"
             ? loadBotMessageContext(deps.prisma, run.sourceMessageId)
             : Promise.resolve(undefined),
@@ -994,19 +1002,23 @@ export function createRunExecutor(deps: ExecutorDeps) {
         const discoveredPromise = deps.connector
           ? deps.connector.discoverTools(context)
           : Promise.resolve([]);
-        const threadContext = threadContextForRun(run.trigger, {
-          messages: [...messages].reverse().map((m) => ({
-            id: m.id,
-            seq: m.seq,
-            role: (m.role === "user" ? "user" : m.role === "system" ? "system" : "assistant") as
-              | "user"
-              | "assistant"
-              | "system",
-            content: blocksToAgentHistoryText(m.blocks as MessageBlock[]),
-          })),
-          summary: thread.historyCompactionSummary,
-          historyCompactedUpToSeq: thread.historyCompactedUpToSeq,
-        });
+        const threadContext = threadContextForRun(
+          run.trigger,
+          {
+            messages: [...messages].reverse().map((m) => ({
+              id: m.id,
+              seq: m.seq,
+              role: (m.role === "user" ? "user" : m.role === "system" ? "system" : "assistant") as
+                | "user"
+                | "assistant"
+                | "system",
+              content: blocksToAgentHistoryText(m.blocks as MessageBlock[]),
+            })),
+            summary: thread.historyCompactionSummary,
+            historyCompactedUpToSeq: thread.historyCompactedUpToSeq,
+          },
+          messagingChannelRun,
+        );
         const compactedHistory = selectCompactedHistory({
           messages: threadContext.messages,
           summary: threadContext.summary,
@@ -1060,14 +1072,18 @@ export function createRunExecutor(deps: ExecutorDeps) {
           await Promise.all([
             discoveredPromise,
             loadCurrentTurnImages(deps, turnBlocks, context),
-            loadAgentMemoryContext(deps.memory, bot.id, context),
-            loadAgentScratchpadContext(deps, {
-              spaceId: run.spaceId,
-              botId: bot.id,
-            }),
+            messagingChannelRun
+              ? Promise.resolve("")
+              : loadAgentMemoryContext(deps.memory, bot.id, context),
+            messagingChannelRun
+              ? Promise.resolve("")
+              : loadAgentScratchpadContext(deps, {
+                  spaceId: run.spaceId,
+                  botId: bot.id,
+                }),
             recallPromise,
           ]);
-        const semanticMemoryEnabled = Boolean(semanticMemory);
+        const semanticMemoryEnabled = Boolean(semanticMemory) && !messagingChannelRun;
         let recalledMemory = "";
         let recallSucceeded = false;
         if (recalled) {
@@ -1192,17 +1208,6 @@ export function createRunExecutor(deps: ExecutorDeps) {
         const groupContext = thread.groupId
           ? await loadGroupContext(deps.prisma, thread.groupId, { id: bot.id, name: bot.name })
           : undefined;
-        // Messaging runs are rare; the source lookup only happens for them.
-        const messagingSourceBlocks =
-          run.trigger === "messaging" && run.sourceMessageId
-            ? ((
-                await deps.prisma.message.findUnique({
-                  where: { id: run.sourceMessageId },
-                  select: { blocks: true },
-                })
-              )?.blocks as MessageBlock[] | undefined)
-            : undefined;
-        const messagingChannelRun = isMessagingChannelRun(run.trigger, messagingSourceBlocks);
         const hasMessagingIdentity = deps.messaging
           ? await deps.messaging.hasIdentity(bot.id)
           : false;
@@ -1220,6 +1225,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             groupId: thread.groupId,
             trigger: run.trigger,
             semanticMemoryEnabled,
+            messagingChannelRun,
           }),
           // Cross-owner agent connections only exist for chat-linked bots.
           ...(hasMessagingIdentity ? agentConnectionTools : []),
@@ -3677,6 +3683,7 @@ export function selectBuiltinToolsForRun(options: {
   groupId: string | null;
   trigger: string;
   semanticMemoryEnabled: boolean;
+  messagingChannelRun: boolean;
 }) {
   return selectMemoryTools(
     filterBuiltinToolsForRun(
@@ -3690,6 +3697,11 @@ export function selectBuiltinToolsForRun(options: {
       options.trigger,
     ),
     options.semanticMemoryEnabled,
+  ).filter(
+    (tool) =>
+      !options.messagingChannelRun ||
+      (!["remember", "save_memory", "recall_memory"].includes(tool.name) &&
+        !tool.name.startsWith("scratchpad_")),
   );
 }
 
@@ -3714,6 +3726,7 @@ export function threadContextForRun<T>(
     summary: string | null;
     historyCompactedUpToSeq: number | null;
   },
+  messagingChannelRun: boolean,
 ) {
   return trigger === "routine"
     ? {
@@ -3722,7 +3735,9 @@ export function threadContextForRun<T>(
         historyCompactedUpToSeq: null,
         includeSemanticRecall: false,
       }
-    : { ...context, includeSemanticRecall: true };
+    : messagingChannelRun
+      ? { ...context, summary: null, historyCompactedUpToSeq: null, includeSemanticRecall: false }
+      : { ...context, includeSemanticRecall: true };
 }
 
 export function completionMessageSegments(
