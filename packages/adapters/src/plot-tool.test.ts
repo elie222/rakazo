@@ -84,7 +84,7 @@ describe("render_plot", () => {
     expectInertLinks(
       new JSDOM(svg, { contentType: "image/svg+xml" }).window.document.documentElement,
     );
-    expect(data[0].url).toBe(url);
+    expect(data).toEqual([{ x: 1, y: 2, url }]);
     expect(linkedDot.options.href).toBe("url");
   });
 
