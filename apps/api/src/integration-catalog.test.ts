@@ -3,9 +3,10 @@ import { searchIntegrationCatalog } from "./integration-catalog.js";
 
 describe("searchIntegrationCatalog", () => {
   it("normalizes an integrations.sh-compatible feed and keeps unsupported surfaces visible", async () => {
-    const fetch = vi.fn<typeof globalThis.fetch>(async (input) => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async (input, init) => {
       const url = new URL(input instanceof Request ? input.url : input.toString());
       expect(url.href).toBe("https://mirror.example/catalog/api/search?q=github.com&limit=8");
+      expect(init?.redirect).toBe("manual");
       return Response.json({
         results: [
           {
@@ -118,6 +119,62 @@ describe("searchIntegrationCatalog", () => {
           new Response("", { headers: { "content-length": String(RESPONSE_SIZE_OVER_LIMIT) } }),
       }),
     ).rejects.toThrow("too large");
+  });
+
+  it("rejects redirect responses instead of following them", async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async (_input, init) => {
+      expect(init?.redirect).toBe("manual");
+      return new Response(null, {
+        status: 302,
+        headers: { location: "http://169.254.169.254/latest/meta-data" },
+      });
+    });
+
+    await expect(
+      searchIntegrationCatalog({
+        baseUrl: "https://mirror.example/catalog",
+        query: "github.com",
+        signal: new AbortController().signal,
+        fetch,
+      }),
+    ).rejects.toThrow("redirects are not allowed");
+    expect(fetch).toHaveBeenCalledOnce();
+  });
+
+  it("allows an admin-configured private catalog base", async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async (input, init) => {
+      const url = new URL(input instanceof Request ? input.url : input.toString());
+      expect(url.href).toBe("http://10.0.0.5:8080/catalog/api/search?q=github.com&limit=8");
+      expect(init?.redirect).toBe("manual");
+      return Response.json({
+        results: [
+          {
+            domain: "github.com",
+            name: "GitHub",
+            description: "LAN mirror",
+            url: "http://10.0.0.5:8080/github.com/",
+            surfaces: [],
+          },
+        ],
+      });
+    });
+
+    await expect(
+      searchIntegrationCatalog({
+        baseUrl: "http://10.0.0.5:8080/catalog",
+        query: "github.com",
+        signal: new AbortController().signal,
+        fetch,
+      }),
+    ).resolves.toEqual([
+      {
+        domain: "github.com",
+        name: "GitHub",
+        description: "LAN mirror",
+        pageUrl: "http://10.0.0.5:8080/github.com/",
+        surfaces: [],
+      },
+    ]);
   });
 });
 

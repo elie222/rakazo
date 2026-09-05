@@ -22,10 +22,17 @@ export async function searchIntegrationCatalog(input: {
   searchUrl.searchParams.set("q", query);
   searchUrl.searchParams.set("limit", String(SEARCH_LIMIT));
 
+  // Admin-configured bases may be private (LAN mirrors). Do not reuse connector
+  // SSRF checks that block private hosts. Still refuse redirects so a mirror
+  // cannot bounce the server onto cloud metadata or another host.
   const response = await (input.fetch ?? globalThis.fetch)(searchUrl, {
     headers: { accept: "application/json" },
+    redirect: "manual",
     signal: AbortSignal.any([input.signal, AbortSignal.timeout(5_000)]),
   });
+  if (response.type === "opaqueredirect" || (response.status >= 300 && response.status < 400)) {
+    throw new Error("Integration catalog redirects are not allowed");
+  }
   if (!response.ok) throw new Error(`Integration catalog returned HTTP ${response.status}`);
   const body = await readBoundedResponse(response);
 
