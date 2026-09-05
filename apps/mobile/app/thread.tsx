@@ -40,6 +40,7 @@ import {
   type NativeSyntheticEvent,
   Platform,
   Pressable,
+  type PressableProps,
   ScrollView,
   Text,
   TextInput,
@@ -1250,7 +1251,46 @@ function Thread() {
     }
   }
 
+  function messageActionProps(message: MobileMessage): MessageActionProps {
+    const actions = [
+      { name: "reply", text: t("Reply"), onPress: () => setReplyTarget(message) },
+      ...(canReactToThreadMessage(message)
+        ? [
+            {
+              name: "react",
+              text: message.thumbsUp ? t("Remove thumbs-up") : t("Add thumbs-up"),
+              onPress: () => void reactToMessage(message),
+            },
+          ]
+        : []),
+      ...(message.role === "bot" && blockText(message)
+        ? [{ name: "speak", text: t("Speak message"), onPress: () => void speak(message) }]
+        : []),
+    ];
+    return {
+      onLongPress: () => {
+        if (Platform.OS === "ios") {
+          ActionSheetIOS.showActionSheetWithOptions(
+            {
+              options: [...actions.map((action) => action.text), t("Cancel")],
+              cancelButtonIndex: actions.length,
+              userInterfaceStyle: colorScheme,
+            },
+            (index) => actions[index]?.onPress(),
+          );
+        } else {
+          Alert.alert("", undefined, actions, { cancelable: true });
+        }
+      },
+      accessibilityActions: actions.map((action) => ({ name: action.name, label: action.text })),
+      onAccessibilityAction: (event) => {
+        actions.find((action) => action.name === event.nativeEvent.actionName)?.onPress();
+      },
+    };
+  }
+
   function renderMessageRow(message: MobileMessage, options?: { enableJump?: boolean }) {
+    const actionProps = messageActionProps(message);
     const activityBotId =
       !inGroup && message.role === "bot" && message.id.startsWith("progress:")
         ? (message.botId ?? botId)
@@ -1310,51 +1350,39 @@ function Thread() {
             flexShrink: 1,
           }}
         >
-          <View
-            style={{
-              alignSelf: message.role === "user" ? "flex-end" : "flex-start",
-              flexDirection: "row",
-              alignItems: "center",
-              gap: 12,
-              marginBottom: 4,
-            }}
-          >
-            <Pressable accessibilityLabel={t("Reply")} onPress={() => setReplyTarget(message)}>
-              <Text style={{ color: tokens.mutedForeground, fontSize: 12 }}>{t("Reply")}</Text>
+          <Pressable accessible={false} {...actionProps}>
+            <MessageBubble
+              botId={botId ?? snap?.members?.[0]?.botId ?? ""}
+              groupId={groupId}
+              message={message}
+              botName={name}
+              bots={mentionBots}
+              members={snap?.members}
+              replyPreview={
+                message.replyToMessageId ? messagesById.get(message.replyToMessageId) : undefined
+              }
+              canAnswer={message.id === answerableAskMessageId}
+              onAnswer={answerMessage}
+              onOpenBot={openBot}
+              onPreviewMarkdown={setMarkdownPreview}
+              actionProps={actionProps}
+            />
+          </Pressable>
+          {canReactToThreadMessage(message) && message.thumbsUp ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={t("Remove thumbs-up")}
+              accessibilityState={{ selected: true }}
+              onPress={() => void reactToMessage(message)}
+              hitSlop={8}
+              style={{
+                alignSelf: message.role === "user" ? "flex-end" : "flex-start",
+                marginTop: 4,
+              }}
+            >
+              <Text style={{ color: tokens.warning, fontSize: 13 }}>👍</Text>
             </Pressable>
-            {canReactToThreadMessage(message) ? (
-              <Pressable
-                accessibilityLabel={message.thumbsUp ? t("Remove thumbs-up") : t("Add thumbs-up")}
-                accessibilityState={{ selected: Boolean(message.thumbsUp) }}
-                onPress={() => void reactToMessage(message)}
-              >
-                <Text
-                  style={{
-                    color: message.thumbsUp ? tokens.warning : tokens.mutedForeground,
-                    fontSize: 13,
-                  }}
-                >
-                  👍
-                </Text>
-              </Pressable>
-            ) : null}
-          </View>
-          <MessageBubble
-            botId={botId ?? snap?.members?.[0]?.botId ?? ""}
-            groupId={groupId}
-            message={message}
-            botName={name}
-            bots={mentionBots}
-            members={snap?.members}
-            replyPreview={
-              message.replyToMessageId ? messagesById.get(message.replyToMessageId) : undefined
-            }
-            canAnswer={message.id === answerableAskMessageId}
-            onAnswer={answerMessage}
-            onOpenBot={openBot}
-            onPreviewMarkdown={setMarkdownPreview}
-            onSpeak={message.role === "bot" ? speak : undefined}
-          />
+          ) : null}
         </View>
       </View>
     );
@@ -2136,6 +2164,11 @@ async function speakMessage(botId: string, message: MobileMessage) {
   }
 }
 
+type MessageActionProps = Pick<
+  PressableProps,
+  "onLongPress" | "accessibilityActions" | "onAccessibilityAction"
+>;
+
 const MessageBubble = memo(function MessageBubble({
   botId,
   botName,
@@ -2148,7 +2181,7 @@ const MessageBubble = memo(function MessageBubble({
   onAnswer,
   onOpenBot,
   onPreviewMarkdown,
-  onSpeak,
+  actionProps,
 }: {
   botId: string;
   botName?: string;
@@ -2161,7 +2194,7 @@ const MessageBubble = memo(function MessageBubble({
   onAnswer: (message: MobileMessage, answer: string) => Promise<void>;
   onOpenBot: (botId: string, name: string) => void;
   onPreviewMarkdown: (target: MarkdownArtifactPreviewTarget) => void;
-  onSpeak?: (message: MobileMessage) => void;
+  actionProps: MessageActionProps;
 }) {
   const colorScheme = useResolvedAppearance();
   const tokens = mobileTokens();
@@ -2502,6 +2535,7 @@ const MessageBubble = memo(function MessageBubble({
         {attachments.map((attachment, index) =>
           attachment.kind === "image" ? (
             <Pressable
+              {...actionProps}
               key={`${attachment.artifactId ?? attachment.name ?? "image"}-${index}`}
               onPress={() =>
                 attachment.artifactId
@@ -2530,6 +2564,7 @@ const MessageBubble = memo(function MessageBubble({
             </Pressable>
           ) : (
             <Pressable
+              {...actionProps}
               key={`${attachment.artifactId ?? attachment.name ?? "file"}-${index}`}
               onPress={() =>
                 attachment.artifactId
@@ -2586,10 +2621,6 @@ const MessageBubble = memo(function MessageBubble({
   const speaker =
     message.role === "bot" ? (memberName(members, message.botId) ?? botName) : undefined;
   const firstContent = segments.findIndex((segment) => segment.kind === "content");
-  const lastContent = segments.reduce(
-    (last, segment, index) => (segment.kind === "content" ? index : last),
-    -1,
-  );
   return (
     <View style={{ gap: 8, width: "100%" }}>
       {segments.map((segment, index) => (
@@ -2598,7 +2629,7 @@ const MessageBubble = memo(function MessageBubble({
           message={{ ...message, blocks: segment.blocks }}
           speaker={index === firstContent ? speaker : undefined}
           replyPreview={index === firstContent ? replyPreview : undefined}
-          onSpeak={index === lastContent && onSpeak ? () => onSpeak(message) : undefined}
+          actionProps={actionProps}
         />
       ))}
       {appConnectBlocks.map((block, index) => (
@@ -2612,37 +2643,20 @@ function MessageTextCard({
   message,
   speaker,
   replyPreview,
-  onSpeak,
+  actionProps,
 }: {
   message: MobileMessage;
   speaker?: string;
   replyPreview?: MobileMessage;
-  onSpeak?: () => void;
+  actionProps: MessageActionProps;
 }) {
   const colorScheme = useResolvedAppearance();
   const tokens = mobileTokens();
-  const { t } = useI18n();
   const contentText = blockText(message);
   if (!contentText) return null;
   return (
     <Pressable
-      onLongPress={
-        onSpeak
-          ? () =>
-              Alert.alert("", undefined, [
-                { text: t("Speak message"), onPress: onSpeak },
-                { text: t("Cancel"), style: "cancel" },
-              ])
-          : undefined
-      }
-      accessibilityActions={onSpeak ? [{ name: "speak", label: t("Speak message") }] : undefined}
-      onAccessibilityAction={
-        onSpeak
-          ? (event) => {
-              if (event.nativeEvent.actionName === "speak") onSpeak();
-            }
-          : undefined
-      }
+      {...actionProps}
       style={{
         flexShrink: 1,
         minWidth: 0,

@@ -224,21 +224,6 @@ export default function SignIn() {
                       }}
                     />
                   ) : null}
-                  {mode === "in" && reset?.passwordReset && reset.resetUrl ? (
-                    <Pressable
-                      accessibilityRole="button"
-                      hitSlop={8}
-                      onPress={() => {
-                        setMode("forgot");
-                        setError(null);
-                      }}
-                      style={{ alignSelf: "flex-end", marginTop: 10 }}
-                    >
-                      <Text style={{ color: tokens.foreground, fontSize: 14, fontWeight: "600" }}>
-                        {t("Forgot password?")}
-                      </Text>
-                    </Pressable>
-                  ) : null}
                   {error ? (
                     <Text style={{ color: tokens.destructive, marginTop: 12 }}>{error}</Text>
                   ) : null}
@@ -264,6 +249,21 @@ export default function SignIn() {
                             : t("Send reset link")}
                     </Text>
                   </Pressable>
+                  {mode === "in" && reset?.passwordReset && reset.resetUrl ? (
+                    <Pressable
+                      accessibilityRole="button"
+                      hitSlop={8}
+                      onPress={() => {
+                        setMode("forgot");
+                        setError(null);
+                      }}
+                      style={{ alignSelf: "center", marginTop: 16 }}
+                    >
+                      <Text style={{ color: tokens.foreground, fontSize: 14, fontWeight: "600" }}>
+                        {t("Forgot password?")}
+                      </Text>
+                    </Pressable>
+                  ) : null}
                   <View
                     style={{
                       flexDirection: "row",
