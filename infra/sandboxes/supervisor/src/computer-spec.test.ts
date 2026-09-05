@@ -17,7 +17,7 @@ import {
   computerNetworkNamesForCleanup,
   containerCreateOptions,
   containerNameFor,
-  containerPublishesControlPort,
+  controlPortPublicationMatches,
   hostComputerUser,
   legacyNetworkOwnedSolelyBy,
   publishedLoopbackControlHostPort,
@@ -421,57 +421,59 @@ describe("graphical computer spec", () => {
     ).toBeUndefined();
   });
 
-  it("detects whether a container publishes the control port for resume", () => {
-    expect(containerPublishesControlPort(undefined)).toBe(false);
-    expect(containerPublishesControlPort({})).toBe(false);
-    expect(
-      containerPublishesControlPort({
-        "6080/tcp": [{ HostIp: "127.0.0.1", HostPort: "0" }],
-      }),
-    ).toBe(false);
-    expect(
-      containerPublishesControlPort({
-        "7070/tcp": [{ HostIp: "127.0.0.1", HostPort: "0" }],
-      }),
-    ).toBe(true);
-    expect(
-      containerPublishesControlPort({
-        "7070/tcp": [{ HostIp: "127.0.0.1", HostPort: "55101" }],
-      }),
-    ).toBe(true);
-    expect(
-      publishedLoopbackControlHostPort({
-        "7070/tcp": [{ HostIp: "127.0.0.1", HostPort: "55101" }],
-      }),
-    ).toBe("55101");
-  });
+  it.each([undefined, null, {}, { "7070/tcp": null }, { "7070/tcp": [] }])(
+    "recreates unpublished computers only when loopback control is enabled (%j)",
+    (bindings) => {
+      expect(controlPortPublicationMatches(bindings, true)).toBe(false);
+      expect(controlPortPublicationMatches(bindings, false)).toBe(true);
+      expect(publishedLoopbackControlHostPort(bindings)).toBeUndefined();
+    },
+  );
 
-  it("rejects external-only control publishes and finds loopback among mixed bindings", () => {
-    expect(
-      containerPublishesControlPort({
-        "7070/tcp": [{ HostIp: "0.0.0.0", HostPort: "55101" }],
-      }),
-    ).toBe(false);
-    expect(
-      containerPublishesControlPort({
-        "7070/tcp": [{ HostIp: "", HostPort: "55101" }],
-      }),
-    ).toBe(false);
-    expect(
-      publishedLoopbackControlHostPort({
-        "7070/tcp": [{ HostIp: "0.0.0.0", HostPort: "55101" }],
-      }),
-    ).toBeUndefined();
+  it.each(["", "0", "55101"])(
+    "accepts configured loopback ports on resume, including unassigned ports (%j)",
+    (HostPort) => {
+      const bindings = { "7070/tcp": [{ HostIp: "127.0.0.1", HostPort }] };
+      expect(controlPortPublicationMatches(bindings, true)).toBe(true);
+      // Opting out must remove existing publication on the next provision.
+      expect(controlPortPublicationMatches(bindings, false)).toBe(false);
+      expect(publishedLoopbackControlHostPort(bindings)).toBe(
+        HostPort === "55101" ? HostPort : undefined,
+      );
+    },
+  );
 
-    const mixed = {
-      "7070/tcp": [
-        { HostIp: "0.0.0.0", HostPort: "55100" },
-        { HostIp: "127.0.0.1", HostPort: "55101" },
-      ],
-    };
-    expect(containerPublishesControlPort(mixed)).toBe(true);
-    expect(publishedLoopbackControlHostPort(mixed)).toBe("55101");
-  });
+  it.each(["0.0.0.0", "", "::", "192.0.2.1", undefined])(
+    "rejects external control bindings even alongside loopback (%j)",
+    (HostIp) => {
+      const external = { HostIp, HostPort: "55100" };
+      const loopback = { HostIp: "127.0.0.1", HostPort: "55101" };
+      for (const entries of [[external], [external, loopback], [loopback, external]]) {
+        const bindings = { "7070/tcp": entries };
+        expect(controlPortPublicationMatches(bindings, true)).toBe(false);
+        expect(controlPortPublicationMatches(bindings, false)).toBe(false);
+        expect(publishedLoopbackControlHostPort(bindings)).toBeUndefined();
+      }
+    },
+  );
+
+  it.each([undefined, "-1", "65536", "abc", "55101/other", "80@192.0.2.1"])(
+    "rejects invalid configured and runtime control ports (%j)",
+    (HostPort) => {
+      const bindings = { "7070/tcp": [{ HostIp: "127.0.0.1", HostPort }] };
+      expect(controlPortPublicationMatches(bindings, true)).toBe(false);
+      expect(publishedLoopbackControlHostPort(bindings)).toBeUndefined();
+      expect(
+        resolveComputerControlEndpoint({
+          token: "test-token",
+          networkMode: "bridge",
+          networks: { bridge: { IPAddress: "192.0.2.1" } },
+          publishedHostPort: HostPort,
+          requirePublishedHostPort: true,
+        }),
+      ).toBeUndefined();
+    },
+  );
 
   it("does not fall back to the container IP when a published control port is required", () => {
     const networkMode = "rakazo_default";

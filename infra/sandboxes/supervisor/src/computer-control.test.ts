@@ -1,5 +1,9 @@
 import http from "node:http";
 import { afterEach, describe, expect, it } from "vitest";
+import {
+  publishedLoopbackControlHostPort,
+  resolveComputerControlEndpoint,
+} from "./computer-spec.js";
 import { controlDesktop } from "./index.js";
 import {
   attemptComputerControl,
@@ -67,6 +71,39 @@ describe("computer control HTTP boundary", () => {
         }),
       },
     ]);
+  });
+
+  it("sends token-authenticated actions to the inspected host mapping without a container IP", async () => {
+    const authorizations: Array<string | undefined> = [];
+    const origin = await listen((req, res) => {
+      req.resume();
+      authorizations.push(req.headers.authorization);
+      if (req.headers.authorization !== `Bearer ${token}`) {
+        res.writeHead(401).end();
+        return;
+      }
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({ completed: 1 }));
+    });
+    const publishedHostPort = publishedLoopbackControlHostPort({
+      "7070/tcp": [{ HostIp: "127.0.0.1", HostPort: new URL(origin).port }],
+    });
+    const endpoint = resolveComputerControlEndpoint({
+      token,
+      networkMode: "bridge",
+      networks: {},
+      publishedHostPort,
+      requirePublishedHostPort: true,
+    });
+    expect(endpoint).toEqual({ url: `${origin}/v1/desktop`, token });
+    if (!endpoint) throw new Error("expected a loopback endpoint");
+    await expect(controlDesktop(endpoint, actions, ":1", false, 0)).resolves.toEqual({
+      completed: 1,
+    });
+    await expect(
+      controlDesktop({ ...endpoint, token: "wrong-token" }, actions, ":1", false, 0),
+    ).rejects.toThrow();
+    expect(authorizations).toEqual([`Bearer ${token}`, "Bearer wrong-token"]);
   });
 
   describe.each([301, 302, 303, 307, 308])("HTTP %s", (status) => {

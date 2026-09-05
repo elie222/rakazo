@@ -46,10 +46,8 @@ export function computerPortBindings(publishControlPort = false) {
     PortBindings[`${ports.viewPort}/tcp`] = [{ HostIp: "127.0.0.1", HostPort: "0" }];
     PortBindings[`${ports.controlPort}/tcp`] = [{ HostIp: "127.0.0.1", HostPort: "0" }];
   }
-  // Control stays on the container network only (0.0.0.0 inside the container).
-  // Do not publish 7070 to the host, except via SANDBOX_CONTROL_VIA_LOOPBACK:
-  // a host-run supervisor on Docker Desktop (macOS/Windows) has no route to
-  // container IPs, so control must go through a token-guarded loopback mapping.
+  // Host-run Docker Desktop supervisors need an opt-in loopback mapping.
+  // Otherwise control stays unpublished on the container network.
   if (publishControlPort) {
     ExposedPorts[`${COMPUTER_CONTROL_PORT}/tcp`] = {};
     PortBindings[`${COMPUTER_CONTROL_PORT}/tcp`] = [{ HostIp: "127.0.0.1", HostPort: "0" }];
@@ -187,34 +185,43 @@ export function resolveScreenPublishTarget(input: {
   return undefined;
 }
 
-type PortBindingEntry = { HostIp?: string; HostPort?: string };
+type ControlPortBindings =
+  | Record<string, Array<{ HostIp?: string; HostPort?: string }> | null | undefined>
+  | null
+  | undefined;
 
-/**
- * HostPort from a loopback (127.0.0.1) publish of container 7070, if any.
- * Accepts HostConfig.PortBindings or NetworkSettings.Ports-shaped maps.
- * Scans all bindings so an external-first entry does not hide a loopback one.
- */
-export function publishedLoopbackControlHostPort(
-  portBindings: Record<string, Array<PortBindingEntry> | null> | null | undefined,
-): string | undefined {
+function validHostPort(port: string | undefined): port is string {
+  return !!port && /^\d{1,5}$/.test(port) && Number(port) > 0 && Number(port) <= 65535;
+}
+
+/** Resolve an assigned runtime port only when every control binding is loopback. */
+export function publishedLoopbackControlHostPort(portBindings: ControlPortBindings) {
   const bindings = portBindings?.[`${COMPUTER_CONTROL_PORT}/tcp`];
-  if (!bindings?.length) return undefined;
-  for (const binding of bindings) {
-    if (binding?.HostIp === "127.0.0.1" && binding.HostPort) {
-      return binding.HostPort;
-    }
+  if (!bindings?.length || bindings.some((binding) => binding.HostIp !== "127.0.0.1")) {
+    return undefined;
   }
-  return undefined;
+  return bindings.find((binding) => validHostPort(binding.HostPort))?.HostPort;
 }
 
 /**
- * True when the container was created with a loopback publish of 7070.
- * Prefer HostConfig.PortBindings so stopped containers still report correctly.
+ * Reuse only containers whose configured control publication matches the setting.
+ * Inspect HostConfig so stopped containers and Docker's automatic port allocation
+ * (empty or zero HostPort) work before a runtime port has been assigned.
  */
-export function containerPublishesControlPort(
-  portBindings: Record<string, Array<PortBindingEntry> | null> | null | undefined,
+export function controlPortPublicationMatches(
+  portBindings: ControlPortBindings,
+  publishControlPort: boolean,
 ): boolean {
-  return publishedLoopbackControlHostPort(portBindings) !== undefined;
+  const bindings = portBindings?.[`${COMPUTER_CONTROL_PORT}/tcp`];
+  if (!publishControlPort) return !bindings?.length;
+  return (
+    !!bindings?.length &&
+    bindings.every(
+      (binding) =>
+        binding.HostIp === "127.0.0.1" &&
+        (binding.HostPort === "" || binding.HostPort === "0" || validHostPort(binding.HostPort)),
+    )
+  );
 }
 
 /**
@@ -230,7 +237,7 @@ export function resolveComputerControlEndpoint(input: {
   requirePublishedHostPort?: boolean;
 }): { url: string; token: string } | undefined {
   if (!input.token) return undefined;
-  if (input.publishedHostPort) {
+  if (validHostPort(input.publishedHostPort)) {
     return {
       url: `http://127.0.0.1:${input.publishedHostPort}/v1/desktop`,
       token: input.token,
