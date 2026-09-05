@@ -131,10 +131,11 @@ export class GatewayObjects implements CloudObjects {
       method,
       headers: {
         Authorization: `Bearer ${this.token}`,
-        ...(bytes ? { "content-length": String(bytes.length) } : {}),
         ...(condition?.etag ? { "if-match": condition.etag } : {}),
         ...(condition?.absent ? { "if-none-match": "*" } : {}),
       },
+      // Fetch derives Content-Length from the buffer. Setting it explicitly breaks
+      // Node's bundled fetch when jsdom installs a newer Undici dispatcher.
       ...(bytes ? { body: Buffer.from(bytes) } : {}),
       redirect: "error",
       signal: AbortSignal.timeout(60000),
