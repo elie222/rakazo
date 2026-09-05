@@ -760,7 +760,7 @@ function computerControlEndpoint(info: Docker.ContainerInspectInfo) {
   });
 }
 
-async function controlDesktop(
+export async function controlDesktop(
   endpoint: { url: string; token: string },
   actions: Array<z.infer<typeof computerActionSchema>>,
   display: string,
@@ -771,6 +771,9 @@ async function controlDesktop(
   try {
     response = await fetch(endpoint.url, {
       method: "POST",
+      // The computer can replace its listener; keep requests on the inspected
+      // computer's fixed endpoint instead of following it across sandbox networks.
+      redirect: "error",
       headers: {
         authorization: `Bearer ${endpoint.token}`,
         "content-type": "application/json",
