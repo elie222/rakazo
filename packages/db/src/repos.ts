@@ -278,7 +278,7 @@ export function createRepos(prisma: PrismaClient) {
                 blocks: message.blocks as MessageBlock[],
                 runId: message.runId ?? undefined,
               })),
-              { knownPeerRunIds: peerRunIds },
+              { knownPeerRunIds: peerRunIds, includeDelegatedReplyText: false },
             );
             preview = previewFromBlocks(visible[0]?.blocks);
             if (preview || messages.length === 0 || !bot.thread || attempt === 4) break;

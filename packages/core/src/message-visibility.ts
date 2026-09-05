@@ -13,6 +13,12 @@ export type UserVisibleMessagesOptions = {
   includePeerReceipts?: boolean;
   /** Peer-run ids from `run.trigger === "bot_message"` when receipts may be out of window. */
   knownPeerRunIds?: Iterable<string>;
+  /**
+   * Surface a peer-run's own `text` reply (e.g. a delegating bot's summary to the user)
+   * alongside `ask` cards. Defaults to true for chat-thread rendering; set false for
+   * contexts like sidebar previews that should stay ask-only and never echo peer chatter.
+   */
+  includeDelegatedReplyText?: boolean;
 };
 
 export function isPeerReceiptBlocks(blocks: readonly MessageBlock[]): boolean {
@@ -37,7 +43,10 @@ export function userVisibleMessages<T extends PresentableMessage>(
   return messages.filter((message) => {
     if (isPeerReceiptBlocks(message.blocks)) return includePeerReceipts;
     if (!message.runId || !peerRunIds.has(message.runId)) return true;
-    // Keep peer-run ask cards and the bot's own text reply to the user.
-    return message.blocks.some((block) => block.kind === "ask" || block.kind === "text");
+    // Keep peer-run ask cards, and (unless the caller opts out) the bot's own text reply.
+    const includeText = options.includeDelegatedReplyText !== false;
+    return message.blocks.some(
+      (block) => block.kind === "ask" || (includeText && block.kind === "text"),
+    );
   });
 }
