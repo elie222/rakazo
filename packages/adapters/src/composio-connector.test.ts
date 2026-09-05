@@ -253,6 +253,60 @@ describe("composio tool mapping", () => {
     expect(executeSessionKey(["hackernews", "gmail", "hackernews"])).toBe("gmail,hackernews");
     expect(executeSessionKey(["github", "GITHUB"])).toBe("github");
     expect(executeSessionKey([])).toBe("");
+    expect(executeSessionKey(["GMAIL"], { GMAIL: ["ca-work", "ca-personal", "ca-work"] })).toBe(
+      "GMAIL|GMAIL:ca-personal,ca-work",
+    );
+  });
+
+  it("pins every connected account into multi-account execute sessions", async () => {
+    composioSdkState.created.length = 0;
+    composioSdkState.sessions.clear();
+    composioToolkitDirectory.invalidate();
+
+    const connector = new ComposioConnector();
+    await connector.discoverTools({
+      operationId: "composio-multi-account",
+      traceId: "composio-multi-account",
+      spaceId: "workspace",
+      userId: "user-1",
+      signal: new AbortController().signal,
+      connectedConnections: [
+        {
+          id: "connection-personal",
+          connectorId: "composio",
+          externalId: "github",
+          displayName: "Personal",
+          providerRef: "ca-personal",
+        },
+        {
+          id: "connection-work",
+          connectorId: "composio",
+          externalId: "GITHUB",
+          displayName: "Work",
+          providerRef: "ca-work",
+        },
+        {
+          id: "connection-noauth",
+          connectorId: "composio",
+          externalId: "GITHUB",
+          displayName: "Legacy",
+          providerRef: "github",
+        },
+      ],
+    });
+
+    expect(composioSdkState.created.at(-1)).toMatchObject({
+      userId: "user-1",
+      config: {
+        toolkits: ["GITHUB"],
+        connectedAccounts: { GITHUB: ["ca-personal", "ca-work"] },
+        multiAccount: {
+          enable: true,
+          maxAccountsPerToolkit: 10,
+          requireExplicitSelection: true,
+        },
+      },
+    });
   });
 
   it("uses catalog-canonical toolkit slugs without preloading every tool", async () => {
