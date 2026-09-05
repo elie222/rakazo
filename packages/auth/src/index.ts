@@ -49,7 +49,13 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
     appName: "Cadre",
     account: {
       encryptOAuthTokens: true,
-      accountLinking: { enabled: true, allowDifferentEmails: false },
+      accountLinking: {
+        enabled: true,
+        allowDifferentEmails: false,
+        // Hosted identity is verified by Company OS. Before linking, retire the
+        // old local credential and every existing session to prevent pre-hijacking.
+        requireLocalEmailVerified: !env.companyOsOAuth,
+      },
     },
     secret: env.secret,
     baseURL: env.baseURL,
@@ -186,6 +192,21 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
       },
     },
     databaseHooks: {
+      account: {
+        create: {
+          before: async (account) => {
+            if (env.companyOsOAuth && account.providerId === "company-os") {
+              await prisma.$transaction([
+                prisma.session.deleteMany({ where: { userId: account.userId } }),
+                prisma.account.deleteMany({
+                  where: { userId: account.userId, providerId: "credential" },
+                }),
+              ]);
+            }
+            return { data: account };
+          },
+        },
+      },
       user: {
         create: {
           before: async (user) => {

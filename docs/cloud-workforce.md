@@ -56,7 +56,7 @@ server-only variables on both API and worker:
 The login page uses authorization code flow with S256 PKCE, state, issuer checks,
 and same-origin return paths. A verified Company OS email is required. Existing
 Cadre accounts with matching email can link only after that identity verification;
-new hosted accounts must pass the configured signup email allowlist.
+linking retires their old password and all earlier sessions. New hosted accounts must pass the configured signup email allowlist.
 
 The selected company and permissions come from consent. The workforce uses the
 same revocable grant, refreshes credentials server-side under a database lock,
