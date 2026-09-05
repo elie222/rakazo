@@ -1,10 +1,61 @@
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { expect, test } from "@playwright/test";
-import { captureScreenshot, completeOnboarding, signup } from "./helpers";
+import type { ModelCatalogEntry } from "@rakazo/contracts";
+import { captureScreenshot, completeOnboarding, rpc, signup } from "./helpers";
 
 const LOCAL_MODEL_ID = "rakazo-e2e-local";
 const LOCAL_MODEL_REPLY = "OpenAI-compatible endpoint verified end to end.";
+
+test("custom reasoning models keep endpoint choices scoped and save thinking", async ({
+  page,
+}, testInfo) => {
+  const stamp = Date.now();
+  await signup(page, `qwen-model-${stamp}@rakazo.test`, "password12", "Qwen model");
+  await completeOnboarding(page);
+  await rpc(page, "models/connect", {
+    provider: "openai-compatible",
+    baseUrl: "http://127.0.0.1:8090/v1",
+    modelId: "test-qwen",
+  });
+  // The adapter tests verify this metadata comes from the operator's opt-in.
+  // Supply it here without changing the shared test server's environment.
+  await page.route("**/rpc/models/list", async (route) => {
+    const response = await route.fetch();
+    const body = (await response.json()) as { json: ModelCatalogEntry[] };
+    const template = body.json.find((entry) => entry.provider === "openai-compatible")!;
+    for (const id of ["test-qwen", "other-endpoint-model"]) {
+      body.json.push({
+        ...template,
+        id,
+        label: id,
+        placeholder: true,
+        reasoning: true,
+        thinkingLevels: ["off", "minimal", "low", "medium", "high"],
+      });
+    }
+    await route.fulfill({ response, json: body });
+  });
+  await page.reload();
+  await page.locator("main").getByRole("button", { name: "Chief", exact: true }).click();
+  const settings = page.getByTestId("bot-settings");
+  await settings.getByText("Advanced", { exact: true }).click();
+  const model = settings.getByLabel("Model", { exact: true });
+  await expect(model).toContainText("test-qwen");
+  await expect(model).not.toContainText("other-endpoint-model");
+  const thinking = settings.getByLabel("Thinking", { exact: true });
+  await thinking.selectOption("low");
+  await captureScreenshot(page, testInfo, "openai-compatible-qwen-thinking");
+  const saved = page.waitForResponse(
+    (response) => response.url().includes("/rpc/bots/update") && response.ok(),
+  );
+  await settings.getByRole("button", { name: "Save", exact: true }).click();
+  await saved;
+  await page.reload();
+  await page.locator("main").getByRole("button", { name: "Chief", exact: true }).click();
+  await settings.getByText("Advanced", { exact: true }).click();
+  await expect(thinking).toHaveValue("low");
+});
 
 test("connects, lists, and uses an OpenAI-compatible endpoint", async ({ page }, testInfo) => {
   const server = createServer((request, response) => {

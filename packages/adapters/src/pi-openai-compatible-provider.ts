@@ -16,6 +16,7 @@ import {
   isPrivateAddress,
   type ResolveHostname,
 } from "./network-address.js";
+import { openAiCompatibleThinking, qwenModelIds } from "./openai-compatible-thinking.js";
 import {
   assertAllowedOpenAiCompatibleRequestUrl,
   assertAllowedOpenAiCompatibleUrl,
@@ -47,15 +48,11 @@ function openAiCompatibleModel(id: string, baseUrl: string): Model<"openai-compl
     api: "openai-completions",
     provider: OPENAI_COMPATIBLE_PROVIDER_ID,
     baseUrl,
-    reasoning: false,
+    ...openAiCompatibleThinking(id),
     input: ["text"],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow: DEFAULT_CONTEXT_WINDOW,
     maxTokens: DEFAULT_MAX_TOKENS,
-    compat: {
-      supportsDeveloperRole: false,
-      supportsReasoningEffort: false,
-    },
   };
 }
 
@@ -215,6 +212,9 @@ export function openAiCompatibleCatalogProvider(): Provider {
       ...openAiCompatibleModel(OPENAI_COMPATIBLE_CATALOG_MODEL_ID, OPENAI_COMPAT_BASE),
       name: "Custom model id",
     },
+    ...qwenModelIds()
+      .filter((id) => id !== OPENAI_COMPATIBLE_CATALOG_MODEL_ID)
+      .map((id) => openAiCompatibleModel(id, OPENAI_COMPAT_BASE)),
   ]);
 }
 
