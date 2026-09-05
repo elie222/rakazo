@@ -86,6 +86,13 @@ export function PluginsOverlay({
   const [pending, setPending] = useState<string | null>(null);
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const [sourceError, setSourceError] = useState<string | null>(null);
+  const [sourceHint, setSourceHint] = useState<string | null>(null);
+  const [catalogFeedEnabled, setCatalogFeedEnabled] = useState(false);
+  const [catalogFeedQuery, setCatalogFeedQuery] = useState("");
+  const [catalogFeedResults, setCatalogFeedResults] = useState<IntegrationCatalogResult[]>([]);
+  const [catalogFeedError, setCatalogFeedError] = useState<string | null>(null);
+  const [catalogFeedPending, setCatalogFeedPending] = useState(false);
+  const [catalogFeedSearched, setCatalogFeedSearched] = useState(false);
   const [loading, setLoading] = useState(true);
   const [detailKey, setDetailKey] = useState<{ connectorId: string; slug: string } | null>(null);
   const [tools, setTools] = useState<ConnectionTool[]>([]);
@@ -116,6 +123,7 @@ export function PluginsOverlay({
         (install) => install.kind === "mcp" || install.kind === "api" || install.kind === "graphql",
       ),
     );
+    setCatalogFeedEnabled(catalogFeed.enabled);
     return items;
   }
 
@@ -317,11 +325,43 @@ export function PluginsOverlay({
   function beginSource(kind: SourceKind) {
     setSourceKind(kind);
     setSourceError(null);
+    setSourceHint(null);
     setSourceName(kind === "treg" ? "Treg" : kind === "executor" ? "Executor" : "");
     setSourceUrl(kind === "treg" ? "https://treg.to/mcp/" : "");
     setCredential("");
     setAuthType(kind === "treg" || kind === "executor" ? "bearer" : "none");
     setAuthName("x-api-key");
+  }
+
+  async function searchCatalogFeed() {
+    setCatalogFeedError(null);
+    setCatalogFeedPending(true);
+    setCatalogFeedSearched(false);
+    setCatalogFeedResults([]);
+    try {
+      const response = await rpc.capabilities.catalogSearch({ query: catalogFeedQuery });
+      setCatalogFeedResults(response.results);
+      setCatalogFeedSearched(true);
+    } catch (err) {
+      setCatalogFeedError(err instanceof Error ? err.message : t`Could not search catalog`);
+    } finally {
+      setCatalogFeedPending(false);
+    }
+  }
+
+  function beginCatalogSurface(
+    result: IntegrationCatalogResult,
+    surface: IntegrationCatalogSurface,
+  ) {
+    if (!surface.source || (surface.kind !== "mcp" && surface.kind !== "openapi")) return;
+    setSourceKind(surface.kind === "mcp" ? "mcp" : "api");
+    setSourceName(result.name);
+    setSourceUrl(surface.source);
+    setCredential("");
+    setAuthType(surface.auth?.type ?? "none");
+    setAuthName(surface.auth?.headerName ?? "x-api-key");
+    setSourceHint(surface.auth?.note ?? null);
+    setSourceError(null);
   }
 
   async function installSource() {
