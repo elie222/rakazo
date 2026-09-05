@@ -1603,8 +1603,12 @@ export function createRunExecutor(deps: ExecutorDeps) {
           let reviewReason: string | undefined;
           let gateDecision: "ask" | "allow" = plan === "ask" ? "ask" : "allow";
           const needsApprovalEarly = plan === "ask" || plan === "judge";
+          // A resumed approval keeps its key even if "Always allow" changed the policy.
           const effectKey =
-            name === "request_secret" || needsApprovalEarly || requiresApprovalByDefault
+            nextApprovedTool ||
+            name === "request_secret" ||
+            needsApprovalEarly ||
+            requiresApprovalByDefault
               ? approvalEffectKey(runId, replayEffectToolName, args)
               : executionId;
           // Connector read-only hints must not bypass approval, review, or replay decisions.

@@ -271,6 +271,24 @@ describe("connector read-only metadata and approval enforcement", () => {
       expect(f.pauseRunForInput).toHaveBeenCalledOnce();
     });
 
+    it("consumes the saved approval after the user chooses always allow", async () => {
+      const rules: ActionApprovalRule[] = [
+        { effect: "require_approval", matchKind: "tool", matchValue: "demo_get_item" },
+      ];
+      const f = fixture({ catalog, rules });
+      await f.run();
+      expect(f.effects).toHaveLength(1);
+      f.effects[0]!.status = "approved";
+      rules[0]!.effect = "always_allow";
+      f.setCalls([{ args: { id: "model-reconstructed" }, executionId: "call-2" }]);
+      await f.run();
+      expect(f.execute).toHaveBeenCalledOnce();
+      expect(f.results.at(-1)).toEqual({ item: "item-1" });
+      expect(f.effects).toHaveLength(1);
+      expect(f.effects[0]!.status).toBe("completed");
+      expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+    });
+
     it("allows ordinary reads without approval or automatic review", async () => {
       const f = fixture({ catalog, autoReview: true });
       f.setCalls([
