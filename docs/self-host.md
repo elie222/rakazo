@@ -144,30 +144,11 @@ API_URL=https://app.example.com
 
 Cookies and CORS follow those origins. `SIGNUPS_ENABLED` / `SIGNUP_ALLOWLIST` seed the initial deployment settings. After initialization, the deployment owner's Settings values are the effective signup policy.
 
-A nonempty signup allowlist requires mailbox verification before the first session, personal space,
-or deployment-owner claim. Configure SMTP below (a self-hosted server works); without email delivery,
-allowlisted registration is closed. A matching address or domain alone does not prove ownership.
-After registering, follow the verification email and sign in from the app you registered with.
-Signing in again resends verification for an unverified account.
+With a nonempty signup allowlist, users—including existing accounts—must verify their email to sign
+in. Configure SMTP below before enabling an allowlist or upgrading an allowlisted deployment.
 
-For first-owner setup without email, keep the server accessible only locally, leave the allowlist
-empty, register the owner, then turn off registration in Settings before exposing it to the network.
-Core operation and closed registration do not require email or any hosted service. The development
-email emulator below also supports verification; its inbox is suitable only for local development.
-
-On upgrade, existing unverified accounts and sessions cannot access an allowlisted deployment until
-the mailbox is verified. Configure delivery before upgrading such a deployment, including for its
-owner. Without delivery, restrict network access and use operator-controlled deployment settings to
-close registration and clear the allowlist before signing in. Audit existing users and the owner
-assignment: verification cannot retroactively establish who registered an old account. Do not mark
-unverified accounts verified in bulk.
-
-The `messaging.invalid` domain is reserved for internal chat identities. Password signup, sign-in,
-recovery, and existing app sessions cannot use it. New chat identities never reuse a user based on
-email; existing explicit messaging bindings and link codes still work. Legacy synthetic email rows
-without a binding are left untouched, rather than adopted on the next inbound message. Audit any
-previously preclaimed accounts or suspicious bindings separately; this upgrade does not erase
-historical messages, revoke external credentials, or infer who owned an old binding.
+To set up without email, leave the allowlist empty, register the owner locally, then disable
+registration in Settings before exposing the server to the network.
 
 ### Verification and password recovery email
 
