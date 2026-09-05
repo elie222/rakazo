@@ -1,0 +1,37 @@
+name: home-containment
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/home-containment.yml"
+      - "packages/adapters/src/home*.ts"
+      - "packages/adapters/src/file-handle-path*.ts"
+      - "packages/adapters/src/desktop-sandbox-win32-path.ts"
+      - "pnpm-lock.yaml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: home-containment-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Home containment (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec vitest run packages/adapters/src/home.test.ts packages/adapters/src/home-races.test.ts packages/adapters/src/file-handle-path.test.ts --maxWorkers=2
