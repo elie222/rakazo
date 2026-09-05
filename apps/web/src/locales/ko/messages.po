@@ -703,7 +703,7 @@ msgstr "클라우드"
 #: src/components/AskCard.tsx:128
 #: src/components/AskCard.tsx:133
 msgid "Code"
-msgstr "Code"
+msgstr "코드"
 
 #. placeholder {0}: group.title
 #: src/pages/Shell.tsx:2558

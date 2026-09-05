@@ -311,7 +311,7 @@ msgstr "Beantwortet"
 #. placeholder {0}: selectedAskActionLabel(answer, actions)
 #: src/components/AskCard.tsx:20
 msgid "Answered: {0}"
-msgstr ""
+msgstr "Beantwortet: {0}"
 
 #: src/components/AskCard.tsx:26
 msgid "Answered: {answer}"
