@@ -508,7 +508,7 @@ export function PluginsOverlay({
                 <Card data-testid="integrations-catalog-feed">
                   <CardHeader>
                     <CardTitle>
-                      <Trans>Find a tool source by domain</Trans>
+                      <Trans>Search by domain</Trans>
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-3">
