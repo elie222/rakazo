@@ -250,7 +250,7 @@ function cancelReader(reader: ReadableStreamDefaultReader<Uint8Array>): void {
   }
 }
 
-function isLoopbackHost(hostname: string) {
+export function isLoopbackHost(hostname: string) {
   const host = unbracketedHost(hostname);
   if (host === "localhost" || host.endsWith(".localhost")) return true;
   if (isIP(host) === 4) return host.startsWith("127.");
