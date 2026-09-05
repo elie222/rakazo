@@ -1,4 +1,4 @@
-import { Readable } from "node:stream";
+import { PassThrough, Readable } from "node:stream";
 import { resolveSupervisorToken } from "@rakazo/core";
 import { beforeEach, expect, it, vi } from "vitest";
 
@@ -63,7 +63,7 @@ it("resolves the owned display and refuses an older fence before running the hel
     ok: true,
   });
   expect(mock.exec.mock.calls.at(-1)?.[0]).toMatchObject({
-    Env: ["DISPLAY=:2", "HOME=/home/rakazo"],
+    Env: ["DISPLAY=:2", "HOME=/home/rakazo", "RAKAZO_BROWSER_WATCH_STDIN=1"],
   });
   mock.exec.mockClear();
   expect(await (await snapshot("computer-lease", "first", "run:1")).json()).toMatchObject({
@@ -98,3 +98,40 @@ it.each(["http", "https"])(
     expect(mock.inspect).not.toHaveBeenCalled();
   },
 );
+
+it("closes helper stdin when the request is cancelled", async () => {
+  const stream = new PassThrough();
+  const controller = new AbortController();
+  let started!: () => void;
+  const ready = new Promise<void>((resolve) => {
+    started = resolve;
+  });
+  const defaultExec = mock.exec.getMockImplementation()!;
+  mock.exec.mockImplementation(async (options: { Cmd: string[]; AttachStdin?: boolean }) => {
+    if (!options.Cmd.includes("/usr/local/bin/rakazo-page-browser")) return defaultExec(options);
+    expect(options.AttachStdin).toBe(true);
+    return {
+      start: async (options: { stdin: boolean }) => {
+        expect(options.stdin).toBe(true);
+        started();
+        return stream;
+      },
+      inspect: async () => ({ ExitCode: 130 }),
+    };
+  });
+  const response = supervisorApp.request("/computers/computer-cancel/browser", {
+    method: "POST",
+    signal: controller.signal,
+    headers: {
+      authorization: `Bearer ${resolveSupervisorToken(process.env)}`,
+      "content-type": "application/json",
+      "x-rakazo-bot-id": "home",
+      "x-rakazo-space-id": "space",
+    },
+    body: JSON.stringify({ command: "act", actions: [{ kind: "click", ref: "test-ref" }] }),
+  });
+  await ready;
+  controller.abort();
+  expect(await (await response).json()).toMatchObject({ ok: false, uncertain: true });
+  expect(stream.destroyed).toBe(true);
+});

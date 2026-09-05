@@ -265,6 +265,9 @@ app.post("/computers/:id/exec", async (c) => {
 });
 
 app.post("/computers/:id/browser", async (c) => {
+  // Read eagerly so the Node HTTP adapter observes disconnects during screen setup too.
+  const signal = c.req.raw.signal;
+  signal.throwIfAborted();
   const body = z
     .discriminatedUnion("command", [
       z.object({
@@ -310,8 +313,9 @@ app.post("/computers/:id/browser", async (c) => {
       container,
       ["/usr/local/bin/rakazo-page-browser", body.command, JSON.stringify(body)],
       {
-        env: [`DISPLAY=${layout.display}`, "HOME=/home/rakazo"],
+        env: [`DISPLAY=${layout.display}`, "HOME=/home/rakazo", "RAKAZO_BROWSER_WATCH_STDIN=1"],
         timeoutMs: 25_000,
+        signal,
       },
     );
     // A nonzero exit or malformed output cannot establish which mutations ran.
@@ -1093,8 +1097,9 @@ async function inspectSupervisorContainer() {
 async function runContainerCommand(
   container: Docker.Container,
   argv: string[],
-  options: { workingDir?: string; env?: string[]; timeoutMs?: number } = {},
+  options: { workingDir?: string; env?: string[]; timeoutMs?: number; signal?: AbortSignal } = {},
 ): Promise<{ stdout: string; stderr: string; code: number }> {
+  options.signal?.throwIfAborted();
   const timeoutMs = options.timeoutMs;
   const completionMarker = timeoutMs
     ? `/tmp/rakazo-command-${randomUUID()}.completed-124`
@@ -1107,16 +1112,30 @@ async function runContainerCommand(
     Cmd: command,
     AttachStdout: true,
     AttachStderr: true,
+    ...(options.signal ? { AttachStdin: true } : {}),
     WorkingDir: options.workingDir ?? "/home/rakazo",
     Env: options.env ?? ["DISPLAY=:1", "HOME=/home/rakazo"],
   });
-  const stream = await exec.start({ hijack: true, stdin: false });
+  options.signal?.throwIfAborted();
+  const stream = await exec.start({ hijack: true, stdin: Boolean(options.signal) });
   const chunks: Buffer[] = [];
-  await new Promise<void>((resolve, reject) => {
-    stream.on("data", (data: Buffer) => chunks.push(data));
-    stream.on("end", resolve);
-    stream.on("error", reject);
-  });
+  let onAbort: (() => void) | undefined;
+  try {
+    await new Promise<void>((resolve, reject) => {
+      stream.on("data", (data: Buffer) => chunks.push(data));
+      stream.on("end", resolve);
+      stream.on("error", reject);
+      onAbort = () => {
+        // The page helper watches stdin EOF and exits even inside a blocked CDP call.
+        stream.destroy();
+        reject(options.signal?.reason ?? new Error("command cancelled"));
+      };
+      options.signal?.addEventListener("abort", onAbort, { once: true });
+      if (options.signal?.aborted) onAbort();
+    });
+  } finally {
+    if (onAbort) options.signal?.removeEventListener("abort", onAbort);
+  }
   const inspect = await exec.inspect();
   const code = inspect.ExitCode ?? 0;
   const completedWithExit124 =

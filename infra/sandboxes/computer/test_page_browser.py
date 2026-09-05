@@ -3,6 +3,9 @@ import importlib.machinery
 import importlib.util
 from pathlib import Path
 import struct
+import os
+import subprocess
+import sys
 import unittest
 from unittest.mock import Mock, patch
 
@@ -13,6 +16,13 @@ loader.exec_module(helper)
 
 
 class PageBrowserTest(unittest.TestCase):
+    def test_closed_stdin_cancels_helper_without_a_browser(self):
+        with subprocess.Popen([sys.executable, str(Path(__file__).with_name("rakazo-page-browser")), "snapshot", "{}"],
+                              env={**os.environ, "RAKAZO_BROWSER_WATCH_STDIN": "1", "RAKAZO_CDP_PORT": "0"},
+                              stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE) as process:
+            process.stdin.close()
+            self.assertEqual(process.wait(timeout=3), 130)
+
     def test_closed_extended_frame_does_not_spin(self):
         for partial in (b"\x81\x7e", b"\x81\x7f", b"\x81\x80"):
             with self.subTest(partial=partial):

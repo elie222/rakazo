@@ -16,6 +16,7 @@ import socket
 import struct
 import sys
 import time
+import threading
 import urllib.request
 from urllib.parse import urlsplit
 from typing import Any
@@ -582,7 +583,18 @@ def act(client: CdpClient, session_id: str, actions: list[dict[str, Any]]) -> di
                 "error": str(exc), "fallback": "computer_act"}
 
 
+def exit_when_stdin_closes() -> None:
+    """The supervisor owns this pipe; losing it cancels this helper, not Chromium."""
+    try:
+        while os.read(0, 1024):
+            pass
+    finally:
+        os._exit(130)
+
+
 def run(argv: list[str]) -> int:
+    if os.environ.get("RAKAZO_BROWSER_WATCH_STDIN") == "1":
+        threading.Thread(target=exit_when_stdin_closes, daemon=True).start()
     if len(argv) < 2:
         print(
             json.dumps(
