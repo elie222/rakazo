@@ -209,6 +209,7 @@ import {
   secretPausedToolResult,
   tryCompleteConnectionWithCode,
 } from "./run-secret.js";
+import { withRuntimeCleanup } from "./runtime-stream.js";
 import {
   cancelScheduleFromTool,
   createScheduleFromTool,
@@ -1387,6 +1388,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           args: Record<string, unknown>,
           executionId: string,
         ) => {
+          context.signal.throwIfAborted();
           if (handedOff) {
             return { error: "This stage was handed off. End the turn without more tool calls." };
           }
@@ -2929,7 +2931,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             );
 
         try {
-          for await (const event of deps.runtime.run(
+          const runtimeEvents = deps.runtime.run(
             {
               botId: bot.id,
               threadId: thread.id,
@@ -3036,7 +3038,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
                   },
             },
             context,
-          )) {
+          );
+          for await (const event of withRuntimeCleanup(runtimeEvents, runAbortController)) {
             if (approvalPausePending) return;
             if (!leaseValid) return;
             const now = Date.now();
@@ -3318,7 +3321,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             }
           }
 
-          if (approvalPausePending) return;
+          if (approvalPausePending || !leaseValid) return;
           approvedEffectReplays.assertDrained();
           pendingProgress += progressRedactor.finish();
           await flushProgress();
