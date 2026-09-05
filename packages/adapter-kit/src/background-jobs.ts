@@ -20,16 +20,7 @@ const payloadSchemas = {
   "skill.teaching-expire": z.object({ skillId: z.string().min(1) }),
   "history.compact": z.object({ threadId: z.string().min(1) }),
   "messaging.deliver": z.object({ runId: z.string().min(1).optional() }),
-  "cloud_agent.poll": z.object({
-    agentId: z.string().min(1),
-    messageId: z.string().min(1),
-    spaceId: z.string().min(1),
-    threadId: z.string().min(1),
-    botId: z.string().min(1),
-    userId: z.string().min(1),
-    attempt: z.number().int().nonnegative().optional(),
-    errorAttempt: z.number().int().nonnegative().optional(),
-  }),
+  "cloud_agent.poll": z.object({ agentId: z.string().min(1) }),
 } satisfies { [Name in BackgroundJobName]: z.ZodType<BackgroundJobPayloads[Name]> };
 
 export function parseBackgroundJob(name: string, payload: unknown): BackgroundJob {

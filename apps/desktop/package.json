@@ -1,6 +1,7 @@
 {
   "name": "@rakazo/desktop",
-  "version": "0.1.0",
+  "productName": "Rakazo",
+  "version": "0.1.1",
   "license": "Apache-2.0",
   "type": "module",
   "main": "dist/main.js",
@@ -20,6 +21,7 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.55.0",
+    "@rakazo/ui-tokens": "workspace:*",
     "electron": "^43.4.0",
     "electron-builder": "^26.0.12",
     "typescript": "^5.9.2",
@@ -27,7 +29,6 @@
   },
   "build": {
     "appId": "dev.rakazo.desktop",
-    "productName": "Rakazo",
     "directories": {
       "output": "out",
       "buildResources": "assets"
@@ -40,6 +41,14 @@
       {
         "from": "../web/dist",
         "to": "web"
+      },
+      {
+        "from": "../../infra/compose/docker-compose.images.yml",
+        "to": "stack/docker-compose.images.yml"
+      },
+      {
+        "from": "../../infra/compose/.env.images.example",
+        "to": "stack/.env.images.example"
       }
     ],
     "extraMetadata": {
@@ -62,6 +71,7 @@
       "verifyUpdateCodeSignature": true
     },
     "linux": {
+      "executableName": "rakazo",
       "icon": "assets/icon.png",
       "target": [
         "AppImage"

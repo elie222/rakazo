@@ -1,151 +1,126 @@
-import type { AdapterContext, CloudAgentProvider } from "@rakazo/adapter-kit";
+import type { AdapterContext } from "@rakazo/adapter-kit";
 import { describe, expect, it } from "vitest";
 import { EmulatorCloudAgentProvider } from "./cloud-agent-emulator.js";
-import { createCloudAgentProvider } from "./cloud-agent-factory.js";
+import { cloudAgentsEnabled, createCloudAgentConnection } from "./cloud-agent-factory.js";
 import { resolveCloudAgentProvider } from "./cloud-agent-provider-env.js";
 import { CursorCloudAgentProvider } from "./cursor-cloud-agent.js";
+import { CursorCloudAgentEmulator } from "./testing/cursor-cloud-agent-emulator.js";
 
 const ctx: AdapterContext = {
-  operationId: "1",
-  traceId: "1",
-  spaceId: "s",
-  userId: "u",
+  operationId: "operation",
+  traceId: "trace",
+  spaceId: "test-space",
+  userId: "test-user",
   signal: new AbortController().signal,
 };
 
-async function assertOfflineConformance(provider: CloudAgentProvider) {
-  const desc = provider.describe();
-  expect(desc.capabilities.launch).toBe(true);
-  expect(desc.capabilities.reply).toBe(true);
-  expect(desc.capabilities.cancel).toBe(true);
-  expect(desc.contractVersion).toBe("1");
+const factories = {
+  emulator() {
+    const provider = new EmulatorCloudAgentProvider({ autoFinishAfterGets: null });
+    return {
+      provider,
+      complete: (id: string, failed = false) => provider.complete(id, { failed }),
+    };
+  },
+  cursor() {
+    const wire = new CursorCloudAgentEmulator();
+    const provider = new CursorCloudAgentProvider({ apiKey: "fake-key", fetch: wire.fetch });
+    return { provider, complete: (id: string, failed = false) => wire.complete(id, { failed }) };
+  },
+};
 
-  const launched = await provider.launch(
-    {
-      prompt: "Add a health check endpoint",
-      repository: "https://github.com/example/demo",
-      openPr: true,
-    },
-    ctx,
-  );
-  expect(launched.id).toBeTruthy();
-  expect(launched.url).toMatch(/^https?:\/\//);
-  expect(launched.title).toBeTruthy();
-  expect(launched.status).toBe("running");
-
-  const mid = await provider.get(launched.id, ctx);
-  expect(mid.id).toBe(launched.id);
-  expect(mid.status).toBe("running");
-
-  const replied = await provider.reply(launched.id, { prompt: "Also add tests" }, ctx);
-  expect(replied.id).toBe(launched.id);
-
-  if (provider instanceof EmulatorCloudAgentProvider) {
-    provider.complete(launched.id, {
-      branch: "emulator/health-check",
-      prUrl: "https://github.com/example/demo/pull/1",
+for (const [name, create] of Object.entries(factories)) {
+  describe(`${name} cloud agent conformance (offline)`, () => {
+    it("replays launch without duplicate agents and preserves a finished run through a follow-up", async () => {
+      const { provider, complete } = create();
+      const request = {
+        idempotencyKey: "create-1",
+        prompt: "Add a README",
+        repository: "https://github.com/example/demo",
+        openPr: true,
+      };
+      const first = await provider.launch(request, ctx);
+      expect(first.status).toBe("running");
+      expect((await provider.launch(request, ctx)).id).toBe(first.id);
+      complete(first.id);
+      const done = await provider.get(first.id, ctx);
+      expect(done).toMatchObject({ status: "finished", branch: "emulator/task" });
+      expect(done.prUrl).toContain("/pull/");
+      const followup = await provider.reply(first.id, { prompt: "Also add tests" }, ctx);
+      expect(followup.latestRunId).not.toBe(first.latestRunId);
+      expect((await provider.get(first.id, ctx, first.latestRunId)).status).toBe("finished");
+      expect((await provider.get(first.id, ctx, followup.latestRunId)).status).toBe("running");
+      expect((await provider.cancel(first.id, ctx)).status).toBe("cancelled");
+      expect((await provider.cancel(first.id, ctx)).status).toBe("cancelled");
     });
-    const done = await provider.get(launched.id, ctx);
-    expect(done.status).toBe("finished");
-    expect(done.branch).toBeTruthy();
-    expect(done.prUrl).toMatch(/^https?:\/\//);
-  }
-
-  const other = await provider.launch({ prompt: "Cancel me" }, ctx);
-  const cancelled = await provider.cancel(other.id, ctx);
-  expect(cancelled.status).toBe("cancelled");
+    it("rejects concurrent follow-ups and observes failures", async () => {
+      const { provider, complete } = create();
+      const first = await provider.launch({ idempotencyKey: "busy", prompt: "Task" }, ctx);
+      await expect(provider.reply(first.id, { prompt: "Busy" }, ctx)).rejects.toThrow();
+      complete(first.id, true);
+      expect((await provider.get(first.id, ctx)).status).toBe("failed");
+    });
+    it("honors abort and does not open a PR when disabled", async () => {
+      const { provider, complete } = create();
+      await expect(
+        provider.launch(
+          { idempotencyKey: "aborted", prompt: "Task" },
+          { ...ctx, signal: AbortSignal.abort() },
+        ),
+      ).rejects.toThrow();
+      const first = await provider.launch(
+        {
+          idempotencyKey: "no-pr",
+          prompt: "Task",
+          openPr: false,
+          repository: "https://github.com/example/demo",
+        },
+        ctx,
+      );
+      complete(first.id);
+      expect((await provider.get(first.id, ctx)).prUrl).toBeUndefined();
+    });
+  });
 }
 
-describe("cloud agent provider", () => {
-  it("resolves none by default and soft-falls cursor without a key", () => {
-    expect(resolveCloudAgentProvider({})).toBe("none");
-    expect(resolveCloudAgentProvider({ CLOUD_AGENT_PROVIDER: "" })).toBe("none");
-    expect(resolveCloudAgentProvider({ CLOUD_AGENT_PROVIDER: "cursor" })).toBe("none");
+describe("cloud agent composition", () => {
+  it("fails closed without explicit credential and Space configuration", () => {
+    for (const source of [
+      {},
+      { CLOUD_AGENT_PROVIDER: "bogus" },
+      { CLOUD_AGENT_PROVIDER: "cursor" },
+      { CLOUD_AGENT_PROVIDER: "cursor", CURSOR_API_KEY: "fake-key" },
+    ]) {
+      expect(resolveCloudAgentProvider(source)).toBe("none");
+      expect(createCloudAgentConnection(source)).toBeNull();
+    }
+    const connection = createCloudAgentConnection({
+      CLOUD_AGENT_PROVIDER: "cursor",
+      CURSOR_API_KEY: "fake-key",
+      CLOUD_AGENT_SPACE_ID: "test-space",
+    })!;
+    expect(cloudAgentsEnabled(connection, "test-space")).toBe(true);
+    expect(cloudAgentsEnabled(connection, "other-space")).toBe(false);
+    expect(connection.key).not.toContain("fake-key");
+    const rotated = createCloudAgentConnection({
+      CLOUD_AGENT_PROVIDER: "cursor",
+      CURSOR_API_KEY: "other-fake-key",
+      CLOUD_AGENT_SPACE_ID: "test-space",
+    })!;
+    expect(rotated.key).not.toBe(connection.key);
+  });
+  it("never grants an unscoped live provider access", () => {
     expect(
-      resolveCloudAgentProvider({ CLOUD_AGENT_PROVIDER: "cursor", CURSOR_API_KEY: "ck_test" }),
-    ).toBe("cursor");
-    expect(resolveCloudAgentProvider({ CLOUD_AGENT_PROVIDER: "emulator" })).toBe("emulator");
-    expect(resolveCloudAgentProvider({ CLOUD_AGENT_PROVIDER: "bogus-vendor" })).toBe("none");
-    expect(createCloudAgentProvider("bogus-vendor")).toBeNull();
-  });
-
-  it("factory returns null for none", () => {
-    expect(createCloudAgentProvider("none")).toBeNull();
-    expect(createCloudAgentProvider("cursor", { cursorApiKey: "" })).toBeNull();
-    expect(createCloudAgentProvider("emulator")).toBeInstanceOf(EmulatorCloudAgentProvider);
-  });
-
-  it("holds conformance for emulator (offline)", async () => {
-    await assertOfflineConformance(new EmulatorCloudAgentProvider());
-  });
-
-  it("maps cursor HTTP with an injected fetch (offline)", async () => {
-    let latestRunStatus = "RUNNING";
-    const provider = new CursorCloudAgentProvider({
-      apiKey: "ck_test",
-      fetch: async (input, init) => {
-        const url = String(input);
-        const method = (init?.method ?? "GET").toUpperCase();
-        if (method === "POST" && /\/v1\/agents$/.test(url)) {
-          return Response.json({
-            agent: {
-              id: "bc-1",
-              name: "Task",
-              status: "ACTIVE",
-              url: "https://cursor.com/agents/bc-1",
-              latestRunId: "run-1",
-            },
-            run: { id: "run-1", status: "CREATING" },
-          });
-        }
-        if (method === "GET" && url.endsWith("/v1/agents/bc-1")) {
-          return Response.json({
-            id: "bc-1",
-            name: "Task",
-            status:
-              latestRunStatus === "FINISHED" || latestRunStatus === "CANCELLED" ? "IDLE" : "ACTIVE",
-            url: "https://cursor.com/agents/bc-1",
-            latestRunId: "run-1",
-          });
-        }
-        if (method === "POST" && url.endsWith("/v1/agents/bc-1/runs")) {
-          return Response.json({ run: { id: "run-2", status: "CREATING" } });
-        }
-        if (method === "GET" && url.includes("/runs/")) {
-          return Response.json({
-            id: "run-1",
-            status: latestRunStatus,
-            git:
-              latestRunStatus === "FINISHED"
-                ? {
-                    branches: [
-                      {
-                        branch: "cursor/task",
-                        prUrl: "https://github.com/example/demo/pull/1",
-                      },
-                    ],
-                  }
-                : undefined,
-          });
-        }
-        if (method === "POST" && url.endsWith("/cancel")) {
-          latestRunStatus = "CANCELLED";
-          return Response.json({ id: "run-1" });
-        }
-        return new Response(`unexpected ${method} ${url}`, { status: 500 });
-      },
-    });
-
-    const launched = await provider.launch({ prompt: "Task" }, ctx);
-    expect(launched.id).toBe("bc-1");
-    expect(launched.status).toBe("running");
-    await provider.reply(launched.id, { prompt: "More" }, ctx);
-    latestRunStatus = "FINISHED";
-    const done = await provider.get(launched.id, ctx);
-    expect(done.status).toBe("finished");
-    expect(done.prUrl).toContain("/pull/1");
-    latestRunStatus = "RUNNING";
-    const cancelled = await provider.cancel(launched.id, ctx);
-    expect(cancelled.status).toBe("cancelled");
+      cloudAgentsEnabled(
+        { provider: new CursorCloudAgentProvider({ apiKey: "fake-key" }), key: "test" },
+        "test-space",
+      ),
+    ).toBe(false);
+    expect(
+      cloudAgentsEnabled(
+        createCloudAgentConnection({ CLOUD_AGENT_PROVIDER: "emulator" }),
+        "test-space",
+      ),
+    ).toBe(true);
   });
 });

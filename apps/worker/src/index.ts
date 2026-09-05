@@ -6,7 +6,7 @@ loadRootEnv();
 import {
   ChatSdkMessagingSurface,
   createBackgroundJobHandlers,
-  createCloudAgentProvider,
+  createCloudAgentConnection,
   createConnectorStack,
   createJobReconciler,
   createMessagingContextLoader,
@@ -34,6 +34,7 @@ import {
   PipedreamConnector,
   PostgresRealtimeFanout,
   pipedreamConfigFromEnv,
+  reconcileCloudAgents,
   resolveDeploymentModel,
   resolveSandboxProvider,
   ScriptedAgentRuntime,
@@ -41,7 +42,11 @@ import {
 } from "@rakazo/adapters";
 import { resolveEncryptionKey, resolveSupervisorToken } from "@rakazo/core";
 import { createDb, createThreadEvents } from "@rakazo/db";
+import { SERVICE_NAMES } from "@rakazo/logging";
+import { createRootLogger } from "@rakazo/logging/axiom";
 import { MarkdownMemoryStore } from "@rakazo/memory";
+
+const logger = createRootLogger(SERVICE_NAMES.worker);
 
 async function main() {
   const databaseUrl = process.env.DATABASE_URL;
@@ -117,7 +122,7 @@ async function main() {
   const jobs: JobPublisher = inMemoryJobs ?? new GraphileJobPublisher(databaseUrl);
   const jobHost: JobWorkerHost = inMemoryJobs ?? new GraphileJobWorkerHost(databaseUrl);
   // One provider instance so emulator launches and polls share the same Map.
-  const cloudAgent = createCloudAgentProvider();
+  const cloudAgent = createCloudAgentConnection();
   const executor = createRunExecutor({
     prisma,
     runtime,
@@ -129,7 +134,11 @@ async function main() {
     connector: stack.connector,
     connectors: stack.connector,
     listConnectedPluginSlugs: stack.composio?.listConnectedSlugs.bind(stack.composio),
-    secrets: [deploymentModelKey ?? "", process.env.COMPOSIO_API_KEY ?? ""].filter(Boolean),
+    secrets: [
+      deploymentModelKey ?? "",
+      process.env.COMPOSIO_API_KEY ?? "",
+      process.env.CURSOR_API_KEY ?? "",
+    ].filter(Boolean),
     secretStore: secrets,
     deploymentModelKey,
     dataDir,
@@ -162,6 +171,7 @@ async function main() {
     jobs,
     events,
     leadership: createPostgresReconciliationLeadership(pool),
+    reconcileCloudAgents: () => reconcileCloudAgents({ prisma, jobs, cloudAgent }),
   });
   reconciler.start();
 
@@ -169,22 +179,27 @@ async function main() {
   const stop = async () => {
     if (stopping) return;
     stopping = true;
-    await reconciler.stop();
-    await jobHost.stop();
-    await jobs.close();
-    await realtime.close();
-    await connector.stop();
-    await mcp.close();
-    await prisma.$disconnect().catch(() => undefined);
-    await pool.end().catch(() => undefined);
+    try {
+      await reconciler.stop();
+      await jobHost.stop();
+      await jobs.close();
+      await realtime.close();
+      await connector.stop();
+      await mcp.close();
+      await prisma.$disconnect().catch(() => undefined);
+      await pool.end().catch(() => undefined);
+    } finally {
+      await logger.flush({ timeoutMs: 2_000 });
+    }
   };
   process.once("SIGTERM", () => void stop());
   process.once("SIGINT", () => void stop());
 
-  console.log("rakazo worker ready");
+  logger.info("worker ready");
 }
 
-main().catch((error) => {
-  console.error(error);
+main().catch(async (error) => {
+  logger.error("worker startup failed", error);
+  await logger.flush({ timeoutMs: 2_000 });
   process.exit(1);
 });

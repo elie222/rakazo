@@ -7,6 +7,8 @@ const workflow = readFileSync(
   "utf8",
 );
 
+const expression = (inner: string) => `\${{ ${inner} }}`;
+
 describe("desktop release workflow", () => {
   it("cannot execute contributor pull-request code with release credentials", () => {
     expect(workflow).not.toMatch(/^\s*pull_request:/m);
@@ -36,6 +38,40 @@ describe("desktop release workflow", () => {
     expect(workflow).not.toContain("cache: pnpm");
     expect(workflow).toContain("apps/desktop/out/latest*.yml");
     expect(workflow).not.toContain("apps/desktop/out/*.yml");
+  });
+
+  it("notarizes macOS with a short-lived App Store Connect API key file", () => {
+    for (const secret of ["APPLE_API_KEY_ID", "APPLE_API_ISSUER", "APPLE_API_KEY_P8"]) {
+      expect(workflow).toContain(`secrets.${secret}`);
+    }
+    expect(workflow).not.toMatch(/secrets\.(?:APPLE_ID|APPLE_APP_SPECIFIC_PASSWORD)\b/);
+    // The same temp path is declared by the setup, packaging, and cleanup steps.
+    const keyFile = `APPLE_API_KEY: ${expression("runner.temp")}/apple-api-key.p8`;
+    expect(workflow.split(keyFile)).toHaveLength(4);
+    expect(workflow).toContain(`printf '%s\\n' "$APPLE_API_KEY_P8" > "$APPLE_API_KEY"`);
+    expect(workflow).toContain('chmod 600 "$APPLE_API_KEY"');
+    expect(workflow).toMatch(
+      /if: always\(\) && runner\.os == 'macOS'\n(?:.*\n){3}\s+run: rm -f "\$APPLE_API_KEY"/,
+    );
+  });
+
+  it("builds Windows only when an Authenticode certificate is configured", () => {
+    expect(workflow).toContain(
+      `WINDOWS_SIGNING: ${expression("secrets.DESKTOP_WIN_CSC_LINK != ''")}`,
+    );
+    expect(workflow).toContain(
+      `include: ${expression("fromJSON(needs.validate.outputs.platforms)")}`,
+    );
+    expect(workflow).toContain(
+      `include='[{"os":"macos-14","artifact":"macos"},{"os":"ubuntu-24.04","artifact":"linux"}]'`,
+    );
+    expect(workflow).toMatch(
+      /if \[\[ "\$WINDOWS_SIGNING" == "true" \]\]; then\n\s+include=.*\{"os":"windows-2022","artifact":"windows"\}/,
+    );
+    expect(workflow.split("windows-2022")).toHaveLength(2);
+    expect(workflow).toContain(`WINDOWS_BUILT: ${expression("needs.validate.outputs.windows")}`);
+    expect(workflow).toContain('if [[ "$WINDOWS_BUILT" == "true" ]]; then');
+    expect(workflow).toContain("feeds+=(release-artifacts/latest.yml)");
   });
 
   it("pins every platform update feed to the official GitHub owner and repo", () => {

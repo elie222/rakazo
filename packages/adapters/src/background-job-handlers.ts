@@ -8,6 +8,7 @@ import type {
 } from "@rakazo/adapter-kit";
 import { messagingDeliverJob } from "@rakazo/adapter-kit";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
 import { pollCloudAgent } from "./cloud-agent-poll.js";
 import { expireComputerControl } from "./computer-control.js";
 import { scheduleComputerSleep, sleepComputerIfIdle } from "./computer-idle.js";
@@ -31,7 +32,7 @@ export function createBackgroundJobHandlers(deps: {
   memoryProviders: MemoryProviderResolver;
   deploymentModelKey?: string;
   messaging?: MessagingSurface;
-  cloudAgent?: import("@rakazo/adapter-kit").CloudAgentProvider | null;
+  cloudAgent?: import("./cloud-agent-factory.js").CloudAgentConnection | null;
 }): BackgroundJobHandlers {
   const deliverMessaging = async (runId?: string) => {
     if (!deps.messaging) return;
@@ -59,7 +60,7 @@ export function createBackgroundJobHandlers(deps: {
           payload.runId,
         );
         await deps.jobs.enqueue(messagingDeliverJob()).catch(async (error) => {
-          console.error("messaging.deliver enqueue error", error);
+          getLogger().error("messaging.deliver enqueue error", error);
           await deliverMessaging();
         });
       }

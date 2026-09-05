@@ -26,6 +26,7 @@ import type {
   ScreenSession,
 } from "@rakazo/adapter-kit";
 import { boundedSandboxCommandTimeoutMs } from "@rakazo/core";
+import { CANCEL_PRIMARY_BROWSER_WORK } from "./computer-idle.js";
 import { ComputerScreenUnavailableError, screenSessionKey } from "./computer-screens.js";
 import {
   boundedComputerActions,
@@ -492,7 +493,12 @@ export class DaytonaSandboxProvider implements SandboxProvider {
       previews.push(preview);
     }
     await Promise.all(previews.map((preview) => this.revokeScreenPreview(sandbox, preview)));
-    if (index === 0) return;
+    if (index === 0) {
+      if (context.cancelRunWork) {
+        await sandbox.process.executeCommand(CANCEL_PRIMARY_BROWSER_WORK).catch(() => undefined);
+      }
+      return;
+    }
     // Non-primary teardown runs inside the registry lock before the slot is reusable.
   }
 
@@ -528,7 +534,12 @@ export class DaytonaSandboxProvider implements SandboxProvider {
       ),
     );
     this.forget(id);
-    await sandbox.delete(120, true);
+    try {
+      await sandbox.delete(120, true);
+    } catch (error) {
+      // Deletion is idempotent even when the sandbox disappears after lookup.
+      if (!isUnrecoverableDaytonaError(error)) throw error;
+    }
   }
 
   private ref(sandbox: Sandbox, botId: string, fresh: boolean): ComputerRef {

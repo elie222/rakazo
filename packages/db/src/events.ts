@@ -8,9 +8,12 @@ import {
   blocksToAgentHistoryText,
   isApprovalAskBlock,
   isSecretAskBlock,
+  messagingChannelId,
   sanitizeJsonValue,
 } from "@rakazo/core";
+import { getLogger } from "@rakazo/logging";
 import type { Prisma, PrismaClient } from "./client.js";
+import { expireComputerExecutionLeases } from "./computers.js";
 import {
   assertRunCanWriteHistory,
   createThreadMessageInTransaction,
@@ -108,7 +111,11 @@ interface FinalizeRunBase {
 
 export type FinalizeRunInput = FinalizeRunBase &
   (
-    | { outcome: "completed"; blocks: MessageBlock[]; markUnread?: boolean }
+    | {
+        outcome: "completed";
+        blocks: MessageBlock[];
+        markUnread?: boolean;
+      }
     | { outcome: "failed"; error: string }
   );
 
@@ -165,6 +172,8 @@ export interface PauseRunForTakeover {
   leaseOwner: string;
   leaseFence: number;
   reason: string;
+  /** Computer that should expose the pending takeover to the UI via controlRunId. */
+  computerId: string;
 }
 
 export interface AnswerRunInput {
@@ -273,9 +282,8 @@ export async function clearThread(
         data: { status: "cancelled" },
       });
     }
-    await tx.computerExecutionLease.deleteMany({
-      where: { runId: { in: runIds } },
-    });
+    // Expire as tombstones so a still-open provider screen claim cannot reset fencing to 1.
+    await expireComputerExecutionLeases(tx, { runId: { in: runIds } });
     await tx.computer.updateMany({
       where: { executionRunId: { in: runIds } },
       data: {
@@ -444,7 +452,7 @@ export async function sendUserMessage(
   if ("replay" in committed) return committed.replay;
   await notifyRealtime(realtime, input.threadId, committed.event.seq).catch((error) => {
     // The event is durable; subscribers recover it from their persisted cursor.
-    console.error("user message realtime notification", error);
+    getLogger().error("user message realtime notification", error);
   });
   return {
     messageId: committed.message.id,
@@ -469,15 +477,25 @@ export async function claimSteering(
         leaseOwner: input.leaseOwner,
         leaseFence: input.leaseFence,
       },
-      select: { id: true },
+      select: { id: true, trigger: true, sourceMessage: { select: { blocks: true } } },
     });
     if (!run) return [];
+    const channelId =
+      run.trigger === "messaging"
+        ? messagingChannelId(run.sourceMessage?.blocks as MessageBlock[] | undefined)
+        : undefined;
     const steering = await tx.steeringMessage.findMany({
       where: {
         botId: input.botId,
         id: input.seenIds.length ? { notIn: input.seenIds } : undefined,
         OR: [{ runId: null }, { runId: input.runId }],
-        message: { threadId: input.threadId },
+        message: {
+          threadId: input.threadId,
+          // Private follow-ups remain unclaimed for the existing private continuation.
+          ...(channelId
+            ? { blocks: { array_contains: [{ kind: "channel_message", channelId }] } }
+            : {}),
+        },
       },
       include: { message: { select: { blocks: true, seq: true } } },
       orderBy: [{ message: { seq: "asc" } }, { id: "asc" }],
@@ -767,13 +785,62 @@ export async function pauseRunForTakeover(
     });
     if (attempt.count !== 1) throw new Error("Active run attempt was not available to pause");
 
+    const now = new Date();
+    // Serialize with concurrent computer/takeover grants that mutate the same row.
+    await tx.$queryRaw`
+      SELECT id FROM computers WHERE id = ${input.computerId} AND "spaceId" = ${input.spaceId} FOR UPDATE`;
+    const computer = await tx.computer.findFirst({
+      where: { id: input.computerId, spaceId: input.spaceId },
+      select: {
+        controlHolder: true,
+        controlBotId: true,
+        controlLeaseId: true,
+        controlLeaseExpiresAt: true,
+      },
+    });
+    const activeUserLease = Boolean(
+      computer?.controlHolder === "user" &&
+        computer.controlLeaseId &&
+        computer.controlLeaseExpiresAt &&
+        computer.controlLeaseExpiresAt.getTime() > now.getTime(),
+    );
+    // Keep an active same-bot user lease so Skip / I'm done appear immediately.
+    // Preserve another bot's active lease — computer/takeover owns revocation. Do not attach
+    // this run to that lease: release validates controlBotId and could clear the binding without
+    // resuming the waiting run. The requesting bot's takeover flow binds it after revocation.
+    // Otherwise clear stale control, but bind controlRunId so takeoverRequested is true.
+    const retainControl = Boolean(activeUserLease && computer?.controlBotId === input.botId);
+    const preserveForeignLease = Boolean(
+      activeUserLease && computer?.controlBotId && computer.controlBotId !== input.botId,
+    );
+    const marked = await tx.computer.updateMany({
+      where: { id: input.computerId, spaceId: input.spaceId },
+      data: retainControl
+        ? { state: "running", controlRunId: input.runId }
+        : preserveForeignLease
+          ? { state: "running" }
+          : {
+              state: "running",
+              controlHolder: "none",
+              controlLeaseId: null,
+              controlLeaseExpiresAt: null,
+              controlBotId: null,
+              controlRunId: input.runId,
+            },
+    });
+    if (marked.count !== 1) throw new Error("Computer was not available to mark for takeover");
+
     const waitingEvent = await appendEventInTransaction(tx, {
       spaceId: input.spaceId,
       threadId: input.threadId,
       botId: input.botId,
       type: "computer.takeover.requested",
       runId: input.runId,
-      payload: { reason: input.reason },
+      payload: {
+        reason: input.reason,
+        takeoverRequested: true,
+        retainedControl: retainControl,
+      },
     });
     await tx.event.deleteMany({ where: { runId: input.runId, type: "thread.progress" } });
     return { threadId: waitingEvent.threadId, seq: waitingEvent.seq };
@@ -878,14 +945,33 @@ export async function finalizeRun(
   return { continuationRunId: committed.continuationRunId };
 }
 
+/** Stamps one turn-level wall-clock duration on the final tool block. */
+export function completedRunBlocks(
+  blocks: MessageBlock[],
+  startedAt: Date | null,
+  completedAt: Date,
+): MessageBlock[] {
+  if (!startedAt) return blocks;
+  const durationMs = completedAt.getTime() - startedAt.getTime();
+  if (!Number.isFinite(durationMs) || durationMs < 0) return blocks;
+  const index = blocks.findLastIndex((block) => block.kind === "steps");
+  if (index < 0) return blocks;
+  return blocks.map((block, blockIndex) =>
+    blockIndex === index && block.kind === "steps"
+      ? { ...block, durationMs: Math.round(durationMs) }
+      : block,
+  );
+}
+
 async function finalizeRunOnce(
   prisma: PrismaClient,
   input: FinalizeRunInput,
 ): Promise<{ threadId: string; seq: number; continuationRunId: string | null } | null> {
   return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     await tx.$queryRaw`SELECT id FROM threads WHERE id = ${input.threadId} FOR UPDATE`;
+    let writableRun: { startedAt: Date | null } | undefined;
     try {
-      await assertRunCanWriteHistory(tx, input.runId);
+      writableRun = await assertRunCanWriteHistory(tx, input.runId);
     } catch (error) {
       if (error instanceof RunHistoryWriteError) return null;
       throw error;
@@ -938,23 +1024,26 @@ async function finalizeRunOnce(
     });
     if (task.count !== 1) throw new Error("Run task was not available to finalize");
 
-    if (input.outcome === "completed" && input.blocks.length > 0) {
-      const message = await createThreadMessageInTransaction(tx, {
-        threadId: input.threadId,
-        role: "bot",
-        blocks: input.blocks,
-        botId: input.botId,
-        runId: input.runId,
-        markUnread: input.markUnread,
-      });
-      await appendEventInTransaction(tx, {
-        spaceId: input.spaceId,
-        threadId: input.threadId,
-        botId: input.botId,
-        type: "thread.message.created",
-        runId: input.runId,
-        payload: { messageId: message.id, role: "bot", blocks: input.blocks },
-      });
+    if (input.outcome === "completed") {
+      const completedBlocks = completedRunBlocks(input.blocks, writableRun?.startedAt ?? null, now);
+      if (completedBlocks.length > 0) {
+        const message = await createThreadMessageInTransaction(tx, {
+          threadId: input.threadId,
+          role: "bot",
+          blocks: completedBlocks,
+          botId: input.botId,
+          runId: input.runId,
+          markUnread: input.markUnread,
+        });
+        await appendEventInTransaction(tx, {
+          spaceId: input.spaceId,
+          threadId: input.threadId,
+          botId: input.botId,
+          type: "thread.message.created",
+          runId: input.runId,
+          payload: { messageId: message.id, role: "bot", blocks: completedBlocks },
+        });
+      }
     }
     const lastEvent = await appendEventInTransaction(tx, {
       spaceId: input.spaceId,
@@ -974,8 +1063,17 @@ async function finalizeRunOnce(
         data: { runId: null },
       });
     } else {
+      const { sourceMessage } = await tx.run.findUniqueOrThrow({
+        where: { id: input.runId },
+        select: { sourceMessage: { select: { seq: true } } },
+      });
+      // A continuation's source is the newest steering it was created for. Only newer
+      // messages justify another run after failure, even if setup failed before claiming.
       await tx.steeringMessage.updateMany({
-        where: { runId: input.runId },
+        where: {
+          runId: input.runId,
+          message: sourceMessage ? { seq: { gt: sourceMessage.seq } } : undefined,
+        },
         data: { runId: null },
       });
     }

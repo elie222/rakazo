@@ -27,7 +27,7 @@ async function readBody(request: Request): Promise<string | null> {
       if (done) break;
       bytes += value.byteLength;
       if (bytes > MAX_BODY_BYTES) {
-        await reader.cancel();
+        cancelBody(reader);
         return null;
       }
       body += decoder.decode(value, { stream: true });
@@ -35,6 +35,14 @@ async function readBody(request: Request): Promise<string | null> {
     return body + decoder.decode();
   } finally {
     reader.releaseLock();
+  }
+}
+
+function cancelBody(body: { cancel(): Promise<void> } | null): void {
+  try {
+    void body?.cancel().catch(() => undefined);
+  } catch {
+    // Best-effort cleanup must not delay the rejection response.
   }
 }
 
@@ -47,6 +55,7 @@ async function fetchWaitlist(request: Request) {
   if (contentLengthHeader !== null) {
     const contentLength = Number(contentLengthHeader);
     if (!Number.isFinite(contentLength) || contentLength < 0 || contentLength > MAX_BODY_BYTES) {
+      cancelBody(request.body);
       return json(400, { error: "Invalid request" });
     }
   }

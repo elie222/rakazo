@@ -362,11 +362,11 @@ export interface WebProvider extends WebSearchProvider, WebFetchProvider {
 export interface CloudAgentProvider {
   describe(): AdapterDescriptor<CloudAgentCapabilities>;
   launch(request: CloudAgentLaunchRequest, context: AdapterContext): Promise<CloudAgentHandle>;
-  get(id: string, context: AdapterContext): Promise<CloudAgentSnapshot>;
+  get(id: string, context: AdapterContext, runId?: string): Promise<CloudAgentSnapshot>;
   reply(
     id: string,
     request: CloudAgentReplyRequest,
     context: AdapterContext,
   ): Promise<CloudAgentHandle>;
-  cancel(id: string, context: AdapterContext): Promise<CloudAgentSnapshot>;
+  cancel(id: string, context: AdapterContext, runId?: string): Promise<CloudAgentSnapshot>;
 }

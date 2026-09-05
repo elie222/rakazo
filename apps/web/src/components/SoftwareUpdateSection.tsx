@@ -1,5 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { ServerUpdateCheck, ServerUpdateStatus } from "@rakazo/contracts";
+import { Button } from "@rakazo/ui-web";
 import { useEffect, useState } from "react";
 import { rpc } from "../lib/rpc";
 import {
@@ -7,7 +8,7 @@ import {
   isLikelyUpdaterRecreateDisconnect,
   recreateWaitTimeoutError,
 } from "../lib/updater-recreate";
-import { BuiButton, SuccessPop } from "./beautiful-ui/primitives";
+import { SuccessPop } from "./ai/primitives";
 
 const RECREATE_POLL_MS = 2_000;
 const RECREATE_POLL_ATTEMPTS = 90;
@@ -67,18 +68,23 @@ export function SoftwareUpdatePanel({
   return (
     <div className="mt-3 space-y-3">
       <div className="flex flex-wrap gap-2">
-        <BuiButton disabled={busy !== null} onClick={onCheck}>
+        <Button
+          variant="secondary"
+          className="rounded-full"
+          disabled={busy !== null}
+          onClick={onCheck}
+        >
           {busy === "check" ? <Trans>Checking…</Trans> : <Trans>Check for updates</Trans>}
-        </BuiButton>
+        </Button>
         {updateAvailable ? (
-          <BuiButton tone="accent" disabled={busy !== null} onClick={onApply}>
+          <Button className="rounded-full" disabled={busy !== null} onClick={onApply}>
             {busy === "apply" ? <Trans>Updating…</Trans> : <Trans>Update</Trans>}
-          </BuiButton>
+          </Button>
         ) : null}
       </div>
       {check ? <CheckSummary check={check} /> : null}
       {error ? (
-        <p role="alert" className="text-[12.5px] text-[#F1A8A8]">
+        <p role="alert" className="text-[12.5px] text-destructive">
           {error}
         </p>
       ) : null}
@@ -128,12 +134,12 @@ export function SoftwareUpdateSection({ isDeploymentOwner }: { isDeploymentOwner
     return (
       <section
         data-testid="software-update-settings"
-        className="mt-5 rounded-[14px] border border-[#26262A] bg-[#101012] px-4 py-4"
+        className="mt-5 rounded-xl border border-border bg-card px-4 py-4"
       >
-        <h3 className="text-[15px] font-medium text-[#ECECEE]">
+        <h3 className="text-[15px] font-medium text-foreground">
           <Trans>Software update</Trans>
         </h3>
-        <p role="alert" className="mt-3 text-[12.5px] text-[#F1A8A8]">
+        <p role="alert" className="mt-3 text-[12.5px] text-destructive">
           {error}
         </p>
       </section>
@@ -223,9 +229,9 @@ export function SoftwareUpdateSection({ isDeploymentOwner }: { isDeploymentOwner
   return (
     <section
       data-testid="software-update-settings"
-      className="mt-5 rounded-[14px] border border-[#26262A] bg-[#101012] px-4 py-4"
+      className="mt-5 rounded-xl border border-border bg-card px-4 py-4"
     >
-      <h3 className="text-[15px] font-medium text-[#ECECEE]">
+      <h3 className="text-[15px] font-medium text-foreground">
         <Trans>Software update</Trans>
       </h3>
       <SoftwareUpdatePanel
@@ -243,26 +249,26 @@ export function SoftwareUpdateSection({ isDeploymentOwner }: { isDeploymentOwner
 function CheckSummary({ check }: { check: ServerUpdateCheck }) {
   if (check.status === "up-to-date") {
     return (
-      <p className="text-[12.5px] text-[#6C6C70]">
+      <p className="text-[12.5px] text-muted-foreground/80">
         <Trans>Up to date</Trans>
       </p>
     );
   }
   if (check.status === "available") {
     return (
-      <p className="text-[12.5px] text-[#C9C9CE]">
+      <p className="text-[12.5px] text-foreground/75">
         <Trans>Update available</Trans>
       </p>
     );
   }
   if (check.status === "dirty") {
     return (
-      <p className="text-[12.5px] text-[#F1A8A8]">
+      <p className="text-[12.5px] text-destructive">
         <Trans>Checkout has local changes. Clean it before updating.</Trans>
       </p>
     );
   }
   return (
-    <p className="text-[12.5px] text-[#F1A8A8]">{check.reason ?? <Trans>Unavailable</Trans>}</p>
+    <p className="text-[12.5px] text-destructive">{check.reason ?? <Trans>Unavailable</Trans>}</p>
   );
 }

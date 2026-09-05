@@ -73,6 +73,36 @@ describe("secrets-guard", () => {
     ).toThrow(/SCREEN_PROXY_SECRET/);
   });
 
+  it("rejects blank and whitespace-padded placeholder secrets in production", () => {
+    expect(() => resolveAuthSecret({ NODE_ENV: "production", BETTER_AUTH_SECRET: "   " })).toThrow(
+      /BETTER_AUTH_SECRET/,
+    );
+    expect(() => resolveEncryptionKey({ NODE_ENV: "production", ENCRYPTION_KEY: "\t" })).toThrow(
+      /ENCRYPTION_KEY/,
+    );
+    expect(() =>
+      resolveAuthSecret({
+        NODE_ENV: "production",
+        BETTER_AUTH_SECRET: ` ${DEV_AUTH_SECRET_PLACEHOLDER}\n`,
+      }),
+    ).toThrow(/BETTER_AUTH_SECRET/);
+    expect(() =>
+      resolveEncryptionKey({
+        NODE_ENV: "production",
+        ENCRYPTION_KEY: `${DEV_ENCRYPTION_KEY_PLACEHOLDER} `,
+      }),
+    ).toThrow(/ENCRYPTION_KEY/);
+  });
+
+  it("does not treat disabled Vitest flags as a test environment", () => {
+    expect(() => resolveAuthSecret({ NODE_ENV: "production", VITEST: "0" })).toThrow(
+      /BETTER_AUTH_SECRET/,
+    );
+    expect(() => resolveEncryptionKey({ NODE_ENV: "production", VITEST: "false" })).toThrow(
+      /ENCRYPTION_KEY/,
+    );
+  });
+
   it("accepts real dedicated credentials in production", () => {
     expect(
       resolveSupervisorToken({

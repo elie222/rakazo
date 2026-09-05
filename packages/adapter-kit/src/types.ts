@@ -9,6 +9,8 @@ export interface AdapterContext {
   runId?: string;
   /** Opaque fence for releasing a graphical screen without tearing down its replacement. */
   screenLeaseId?: string;
+  /** When releasing a screen after cancel, also stop orphaned browser work on that screen. */
+  cancelRunWork?: boolean;
   signal: AbortSignal;
   /** Connected external accounts available to this run, including their owning connector. */
   connectedConnections?: ConnectedConnector[];
@@ -369,7 +371,12 @@ export interface ScriptedTurn {
 
 export type AgentRuntimeEvent =
   | { type: "text"; text: string }
-  | { type: "progress"; text: string }
+  | {
+      type: "progress";
+      text: string;
+      /** Provider-generated tool status rather than assistant-authored narration. */
+      activity?: true;
+    }
   | { type: "tool"; name: string; args: Record<string, unknown>; executionId: string }
   | {
       type: "ask";
@@ -442,19 +449,8 @@ export interface BackgroundJobPayloads {
   "skill.teaching-expire": { skillId: string };
   "history.compact": { threadId: string };
   "messaging.deliver": { runId?: string };
-  /** Poll a remote cloud agent until its latest run is terminal, then wake the bot. */
-  "cloud_agent.poll": {
-    agentId: string;
-    messageId: string;
-    spaceId: string;
-    threadId: string;
-    botId: string;
-    userId: string;
-    /** Successful or total poll count; used for backoff. */
-    attempt?: number;
-    /** Consecutive provider get() failures; caps error retries only. */
-    errorAttempt?: number;
-  };
+  /** Reconcile durable remote-agent intent; scope is loaded from the database. */
+  "cloud_agent.poll": { agentId: string };
 }
 
 export type BackgroundJobName = keyof BackgroundJobPayloads;
@@ -606,10 +602,11 @@ export interface CloudAgentCapabilities {
 export type CloudAgentImage = { data: string; mimeType: string } | { url: string };
 
 export interface CloudAgentLaunchRequest {
+  /** Repeated launches with this key must resolve to the same remote agent. */
+  idempotencyKey: string;
   prompt: string;
   repository?: string;
   images?: CloudAgentImage[];
-  environment?: Record<string, string>;
   openPr?: boolean;
   signal?: AbortSignal;
 }

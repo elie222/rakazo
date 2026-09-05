@@ -10,8 +10,20 @@ import {
   isOneShotRoutineCrons,
   presetFromCron,
 } from "@rakazo/core";
-import { ChevronLeft, ChevronRight, Pause, Plus, X } from "lucide-react";
-import { useEffect, useId, useRef, useState } from "react";
+import {
+  Button,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+  Input,
+  Textarea,
+} from "@rakazo/ui-web";
+import { ChevronLeft, Clock, Globe, Pause, Plus, X } from "lucide-react";
+import { useId } from "react";
 import { RoutineSchedule } from "./RoutineSchedule";
 
 function toDatetimeLocalValue(date: Date): string {
@@ -92,17 +104,19 @@ export function RoutineListHeader({ onCreate }: { onCreate: () => void }) {
   const { t } = useLingui();
   return (
     <div className="mt-[30px] mb-3 flex items-center justify-between gap-3">
-      <div className="text-[14px] text-[#85858A]">
+      <div className="text-sm text-muted-foreground">
         <Trans>Routines</Trans>
       </div>
-      <button
-        type="button"
-        aria-label={t`New routine`}
+      <Button
+        variant="secondary"
+        size="icon-sm"
+        data-testid="routine-create-button"
+        aria-label={t`Create Routine`}
+        title={t`Create Routine`}
         onClick={onCreate}
-        className="grid h-8 w-8 place-items-center rounded-[10px] border border-[#3B82F6] bg-[#2563EB] text-white"
       >
-        <Plus size={16} strokeWidth={2.2} />
-      </button>
+        <Plus strokeWidth={1.9} />
+      </Button>
     </div>
   );
 }
@@ -119,7 +133,7 @@ export function RoutineListRow({
   onStop: () => void;
 }) {
   return (
-    <div className="flex w-full items-center gap-2 rounded-[11px] px-2.5 py-2.5 hover:bg-[#121214]">
+    <div className="flex w-full items-center gap-2 rounded-xl px-2.5 py-2.5 hover:bg-accent">
       <button
         type="button"
         onClick={onOpen}
@@ -127,30 +141,28 @@ export function RoutineListRow({
       >
         <span className="grid h-5 w-5 place-items-center">
           {routine.active ? (
-            <span className="text-[#4ADE80]">
-              <ClockIcon />
-            </span>
+            <Clock size={16} strokeWidth={1.6} className="text-success" aria-hidden />
           ) : (
-            <Pause size={14} className="text-[#85858A]" />
+            <Pause size={14} className="text-muted-foreground" />
           )}
         </span>
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-[14.5px] font-medium text-[#ECECEE]" dir="auto">
+          <span className="block truncate text-[14.5px] font-medium text-foreground" dir="auto">
             {routine.name}
           </span>
-          <span className="block truncate text-[12.5px] text-[#6C6C70]">
+          <span className="block truncate text-[12.5px] text-muted-foreground/80">
             {routineTriggerSummary(routine)}
           </span>
         </span>
       </button>
       {running ? (
-        <button
-          type="button"
+        <Button
+          size="xs"
           onClick={onStop}
-          className="shrink-0 rounded-full bg-[rgba(230,87,7,.14)] px-2.5 py-1 text-[12px] text-[#E65707]"
+          className="shrink-0 rounded-full bg-warning/15 text-warning hover:bg-warning/25"
         >
           <Trans>Running · Stop</Trans>
-        </button>
+        </Button>
       ) : null}
     </div>
   );
@@ -188,50 +200,21 @@ export function RoutineEditor({
   onEnsureWebhook: () => Promise<void>;
 }) {
   const { t } = useLingui();
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [scheduleOpen, setScheduleOpen] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
-  const addTriggerId = useId();
+  const fieldId = useId();
   const hasTriggers = draft.schedules.length > 0 || draft.webhookEnabled;
   const canTest = Boolean(editing) && !saving && !running;
   const needsOneShotArm =
     editing != null && routineNeedsOneShotArm(editing, draft.schedules.map(cronFromPreset));
-
-  useEffect(() => {
-    if (!menuOpen) return;
-    function onPointerDown(event: PointerEvent) {
-      if (!menuRef.current?.contains(event.target as Node)) {
-        setMenuOpen(false);
-        setScheduleOpen(false);
-      }
-    }
-    function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        setMenuOpen(false);
-        setScheduleOpen(false);
-      }
-    }
-    document.addEventListener("pointerdown", onPointerDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("pointerdown", onPointerDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [menuOpen]);
 
   function addSchedule(freq: CronFreq) {
     const base = defaultCronPreset();
     const next: CronPreset =
       freq === "Advanced" ? { ...base, freq, cron: cronFromPreset(base) } : { ...base, freq };
     onChange({ ...draft, schedules: [...draft.schedules, next] });
-    setMenuOpen(false);
-    setScheduleOpen(false);
   }
 
   async function addWebhook() {
     onChange({ ...draft, webhookEnabled: true });
-    setMenuOpen(false);
-    setScheduleOpen(false);
     if (!webhook.configured) {
       await onEnsureWebhook().catch(() => undefined);
     }
@@ -240,81 +223,87 @@ export function RoutineEditor({
   return (
     <div>
       <div className="mb-5 flex items-center justify-between">
-        <button type="button" onClick={onBack} className="text-[#9A9AA0]" aria-label={t`Back`}>
-          <ChevronLeft size={18} strokeWidth={1.8} />
-        </button>
-        <div className="text-[15.5px] font-medium text-[#F1F1F2]">
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          onClick={onBack}
+          className="text-muted-foreground"
+          aria-label={t`Back`}
+        >
+          <ChevronLeft />
+        </Button>
+        <div className="text-[15.5px] font-medium text-foreground">
           <Trans>Routine</Trans>
         </div>
-        <button type="button" onClick={onClose} className="text-[#6C6C70]" aria-label={t`Close`}>
-          <X size={16} strokeWidth={1.8} />
-        </button>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          onClick={onClose}
+          className="text-muted-foreground"
+          aria-label={t`Close`}
+        >
+          <X />
+        </Button>
       </div>
 
       <div className="mb-5 flex items-center justify-between gap-3">
-        <label className="flex items-center gap-2.5 text-[14px] text-[#C9C9CE]">
+        <label className="flex items-center gap-2.5 text-sm text-foreground/75">
           <button
             type="button"
             role="switch"
             aria-checked={draft.active}
             onClick={() => onChange({ ...draft, active: !draft.active })}
-            className={`relative h-[22px] w-[40px] rounded-full transition-colors ${
-              draft.active ? "bg-[#3B82F6]" : "bg-[#2A2A2E]"
+            className={`relative h-[22px] w-[40px] rounded-full transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring ${
+              draft.active ? "bg-primary" : "bg-input"
             }`}
           >
             <span
-              className={`absolute top-[2px] left-0 h-[18px] w-[18px] rounded-full bg-white transition-transform ${
-                draft.active ? "translate-x-[20px]" : "translate-x-[2px]"
+              className={`absolute top-[2px] left-0 h-[18px] w-[18px] rounded-full bg-background transition-transform ${
+                draft.active
+                  ? "translate-x-[20px] dark:bg-primary-foreground"
+                  : "translate-x-[2px] dark:bg-foreground"
               }`}
             />
           </button>
           <Trans>Active</Trans>
         </label>
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            disabled={saving || running}
-            onClick={onDelete}
-            className="rounded-[11px] bg-[#1A1A1D] px-3.5 py-2 text-[13.5px] text-[#ECECEE] disabled:opacity-40"
-          >
+          <Button variant="secondary" disabled={saving || running} onClick={onDelete}>
             <Trans>Delete</Trans>
-          </button>
-          <button
-            type="button"
-            disabled={!canTest}
-            onClick={onTestRun}
-            className="rounded-[11px] bg-[#1A1A1D] px-3.5 py-2 text-[13.5px] text-[#ECECEE] disabled:opacity-40"
-          >
+          </Button>
+          <Button variant="secondary" disabled={!canTest} onClick={onTestRun}>
             {running ? t`Running…` : t`Test run`}
-          </button>
+          </Button>
         </div>
       </div>
 
-      <label className="text-[14px] text-[#85858A]">
+      <label htmlFor={`${fieldId}-name`} className="block text-sm text-muted-foreground">
         <Trans>Name</Trans>
-        <input
+        <Input
+          id={`${fieldId}-name`}
           value={draft.name}
           placeholder={t`Name this routine`}
           onChange={(e) => onChange({ ...draft, name: e.target.value })}
-          className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE] placeholder:text-[#5C5C62]"
+          className="mt-2"
         />
       </label>
 
-      <label className="mt-5 block text-[14px] text-[#85858A]">
+      <label htmlFor={`${fieldId}-prompt`} className="mt-5 block text-sm text-muted-foreground">
         <Trans>Instruction</Trans>
-        <textarea
+        <Textarea
+          id={`${fieldId}-prompt`}
           value={draft.prompt}
           placeholder={t`What should this routine do each time it runs?`}
           onChange={(e) => onChange({ ...draft, prompt: e.target.value })}
           rows={4}
-          className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE] placeholder:text-[#5C5C62]"
+          className="mt-2"
         />
       </label>
 
-      <div className="mt-5 text-[14px] text-[#85858A]">
+      <div className="mt-5 text-sm text-muted-foreground">
         <div className="flex items-baseline gap-2">
           <Trans>When to run</Trans>
-          <span className="text-[12.5px] text-[#6E6E74]">{timezone}</span>
+          <span className="text-xs text-muted-foreground/70">{timezone}</span>
         </div>
 
         <div className="mt-2 space-y-2">
@@ -329,8 +318,9 @@ export function RoutineEditor({
                   })
                 }
               />
-              <button
-                type="button"
+              <Button
+                variant="ghost"
+                size="icon-xs"
                 aria-label={t`Remove schedule`}
                 onClick={() =>
                   onChange({
@@ -338,10 +328,10 @@ export function RoutineEditor({
                     schedules: draft.schedules.filter((_, i) => i !== index),
                   })
                 }
-                className="absolute top-3 right-3 text-[#85858A] hover:text-[#ECECEE]"
+                className="absolute top-2 right-2 text-muted-foreground"
               >
-                <X size={14} strokeWidth={1.8} />
-              </button>
+                <X />
+              </Button>
             </div>
           ))}
 
@@ -357,137 +347,81 @@ export function RoutineEditor({
           ) : null}
 
           {needsOneShotArm ? (
-            <label className="block text-[14px] text-[#85858A]">
+            <label htmlFor={`${fieldId}-run-at`} className="block text-sm text-muted-foreground">
               <Trans>Run at</Trans>
-              <input
+              <Input
+                id={`${fieldId}-run-at`}
                 type="datetime-local"
                 value={draft.runAtLocal}
                 onChange={(e) => onChange({ ...draft, runAtLocal: e.target.value })}
                 aria-label={t`Run at`}
-                className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
+                className="mt-2"
               />
             </label>
           ) : null}
         </div>
 
-        <div className="relative mt-2" ref={menuRef}>
-          <button
-            type="button"
-            id={addTriggerId}
-            aria-haspopup="menu"
-            aria-expanded={menuOpen}
-            onClick={() => {
-              setMenuOpen((open) => !open);
-              setScheduleOpen(false);
-            }}
-            className="flex w-full items-center justify-center gap-2 rounded-[13px] border border-[#26262A] px-3.5 py-3 text-[14.5px] text-[#ECECEE] hover:bg-[#121214]"
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={<Button variant="outline" className="mt-2 h-auto w-full rounded-xl py-3" />}
           >
-            <Plus size={16} strokeWidth={1.8} />
+            <Plus />
             <Trans>Add trigger</Trans>
-          </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent side="top">
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger>
+                <Clock />
+                <Trans>On a schedule</Trans>
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent className="min-w-[170px]">
+                {SCHEDULE_PRESETS.map((freq) => (
+                  <DropdownMenuItem key={freq} onClick={() => addSchedule(freq)}>
+                    {schedulePresetLabel(freq)}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
 
-          {menuOpen ? (
-            <div
-              role="menu"
-              aria-labelledby={addTriggerId}
-              className="absolute right-0 bottom-full z-20 mb-2 min-w-[220px] rounded-[14px] border border-[#2A2A2E] bg-[#16161A] py-1.5 shadow-[0_12px_40px_rgba(0,0,0,.55)]"
-            >
-              <div className="relative">
-                <button
-                  type="button"
-                  role="menuitem"
-                  onMouseEnter={() => setScheduleOpen(true)}
-                  onFocus={() => setScheduleOpen(true)}
-                  onClick={() => setScheduleOpen((open) => !open)}
-                  className="flex w-full items-center justify-between gap-3 px-3.5 py-2.5 text-start text-[14px] text-[#ECECEE] hover:bg-[#1E1E22]"
-                >
-                  <span className="flex items-center gap-2.5">
-                    <ClockIcon />
-                    <Trans>On a schedule</Trans>
-                  </span>
-                  <ChevronRight size={14} className="text-[#85858A]" />
-                </button>
-                {scheduleOpen ? (
-                  <div
-                    role="menu"
-                    className="absolute top-0 right-full mr-1.5 min-w-[170px] overflow-hidden rounded-[14px] border border-[#2A2A2E] bg-[#16161A] py-1.5 shadow-[0_12px_40px_rgba(0,0,0,.55)]"
-                  >
-                    {SCHEDULE_PRESETS.map((freq) => (
-                      <button
-                        key={freq}
-                        type="button"
-                        role="menuitem"
-                        onClick={() => addSchedule(freq)}
-                        className="flex w-full items-center justify-between gap-3 px-3.5 py-2.5 text-start text-[14px] text-[#ECECEE] hover:bg-[#1E1E22]"
-                      >
-                        {schedulePresetLabel(freq)}
-                        {freq === "Every day" || freq === "Weekdays" ? (
-                          <ChevronRight size={14} className="text-[#85858A]" />
-                        ) : null}
-                      </button>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
+            {COMING_SOON.map((item) => (
+              <DropdownMenuItem key={item.id} disabled title={t`Coming soon`}>
+                <span
+                  aria-hidden
+                  className="inline-block size-3.5 rounded-[4px]"
+                  style={{ background: comingSoonColor(item.id), opacity: 0.55 }}
+                />
+                {item.label()}
+              </DropdownMenuItem>
+            ))}
 
-              {COMING_SOON.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  role="menuitem"
-                  disabled
-                  title={t`Coming soon`}
-                  className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-start text-[14px] text-[#6C6C70]"
-                >
-                  <span
-                    aria-hidden
-                    className="inline-block h-3.5 w-3.5 rounded-[4px]"
-                    style={{ background: comingSoonColor(item.id), opacity: 0.55 }}
-                  />
-                  {item.label()}
-                </button>
-              ))}
-
-              <button
-                type="button"
-                role="menuitem"
-                disabled={draft.webhookEnabled}
-                onClick={() => void addWebhook()}
-                className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-start text-[14px] text-[#ECECEE] hover:bg-[#1E1E22] disabled:text-[#6C6C70]"
-              >
-                <GlobeIcon />
-                <Trans>Webhook</Trans>
-              </button>
-            </div>
-          ) : null}
-        </div>
+            <DropdownMenuItem disabled={draft.webhookEnabled} onClick={() => void addWebhook()}>
+              <Globe />
+              <Trans>Webhook</Trans>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
 
         {!hasTriggers ? (
-          <p className="mt-2 text-[12.5px] text-[#6E6E74]">
+          <p className="mt-2 text-xs text-muted-foreground/70">
             <Trans>Add a schedule or webhook to run this routine.</Trans>
           </p>
         ) : null}
       </div>
 
       <div className="mt-5">
-        <button
-          type="button"
-          disabled={saving || running || !hasTriggers}
-          onClick={onSave}
-          className="rounded-[11px] bg-[#F1F1EF] px-4 py-2 text-[#17171A] disabled:opacity-40"
-        >
+        <Button disabled={saving || running || !hasTriggers} onClick={onSave}>
           {saving ? t`Saving…` : t`Save`}
-        </button>
+        </Button>
       </div>
       {error ? (
-        <p role="alert" className="mt-3 text-[13px] text-[#EF6461]">
+        <p role="alert" className="mt-3 text-[13px] text-destructive">
           {error}
         </p>
       ) : null}
 
-      <div className="mt-8 text-[14px] text-[#85858A]">
+      <div className="mt-8 text-sm text-muted-foreground">
         <Trans>Run history</Trans>
-        <p className="mt-2 text-[13.5px] text-[#6C6C70]">
+        <p className="mt-2 text-[13.5px] text-muted-foreground/80">
           <Trans>No runs yet</Trans>
         </p>
       </div>
@@ -524,52 +458,50 @@ function WebhookTriggerCard({
       : configured
         ? "Authorization: Bearer …"
         : placeholder;
+  const cellClass =
+    "break-all rounded-lg bg-muted px-2.5 py-1.5 font-mono text-xs text-foreground/75";
 
   return (
-    <div className="rounded-[13px] border border-[#26262A] p-3">
+    <div className="rounded-xl border border-border p-3">
       <div className="flex items-center gap-2.5 px-0.5">
-        <GlobeIcon />
-        <span className="flex-1 text-[14.5px] text-[#ECECEE]">
+        <Globe size={16} strokeWidth={1.6} className="text-muted-foreground" aria-hidden />
+        <span className="flex-1 text-[14.5px] text-foreground">
           <Trans>When a webhook fires</Trans>
         </span>
-        <button
-          type="button"
+        <Button
+          variant="ghost"
+          size="icon-xs"
           aria-label={t`Remove webhook`}
           onClick={onRemove}
-          className="text-[#85858A] hover:text-[#ECECEE]"
+          className="text-muted-foreground"
         >
-          <X size={14} strokeWidth={1.8} />
-        </button>
+          <X />
+        </Button>
       </div>
-      <div className="mt-2.5 space-y-2.5 rounded-[11px] bg-[#16161A] px-2.5 py-2.5 text-[13.5px]">
-        <div className="block text-[#7A7A80]">
+      <div className="mt-2.5 space-y-2.5 text-[13.5px]">
+        <div className="block text-muted-foreground/70">
           <Trans>POST to</Trans>
-          <div className="mt-1 break-all rounded-lg bg-[#24242A] px-2.5 py-1.5 font-mono text-[12.5px] text-[#C9C9CE]">
-            {postValue}
-          </div>
+          <div className={`mt-1 ${cellClass}`}>{postValue}</div>
         </div>
-        <div className="flex items-center gap-2 text-[#7A7A80]">
+        <div className="flex items-center gap-2 text-muted-foreground/70">
           <span className="shrink-0">
             <Trans>key</Trans>
           </span>
-          <div className="min-w-0 flex-1 break-all rounded-lg bg-[#24242A] px-2.5 py-1.5 font-mono text-[12.5px] text-[#C9C9CE]">
-            {keyValue}
-          </div>
+          <div className={`min-w-0 flex-1 ${cellClass}`}>{keyValue}</div>
         </div>
-        <div className="block text-[#7A7A80]">
+        <div className="block text-muted-foreground/70">
           <Trans>header</Trans>
-          <div className="mt-1 break-all rounded-lg bg-[#24242A] px-2.5 py-1.5 font-mono text-[12.5px] text-[#C9C9CE]">
-            {headerValue}
-          </div>
+          <div className={`mt-1 ${cellClass}`}>{headerValue}</div>
         </div>
         {saved && configured && !secret ? (
-          <button
-            type="button"
+          <Button
+            variant="link"
+            size="xs"
             onClick={onRotate}
-            className="text-[12.5px] text-[#9A9AA0] hover:text-[#ECECEE]"
+            className="px-0 text-muted-foreground"
           >
             <Trans>Rotate key</Trans>
-          </button>
+          </Button>
         ) : null}
       </div>
     </div>
@@ -612,38 +544,4 @@ function comingSoonColor(id: string): string {
     default:
       return "#06AC38";
   }
-}
-
-function ClockIcon() {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.6"
-      aria-hidden
-    >
-      <circle cx="12" cy="12" r="9" />
-      <path d="M12 7v5l3 2" />
-    </svg>
-  );
-}
-
-function GlobeIcon() {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.6"
-      aria-hidden
-    >
-      <circle cx="12" cy="12" r="9" />
-      <path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" />
-    </svg>
-  );
 }

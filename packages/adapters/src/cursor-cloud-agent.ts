@@ -1,37 +1,51 @@
+import { createHash } from "node:crypto";
 import type {
   AdapterContext,
   CloudAgentHandle,
-  CloudAgentImage,
   CloudAgentLaunchRequest,
   CloudAgentProvider,
   CloudAgentReplyRequest,
   CloudAgentSnapshot,
   CloudAgentStatus,
 } from "@rakazo/adapter-kit";
+import { CloudAgentRequestRejected } from "@rakazo/adapter-kit";
+import { z } from "zod";
+import { readBodyCapped } from "./web-ssrf.js";
 
-const DEFAULT_BASE_URL = "https://api.cursor.com";
+const agentSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().optional(),
+  status: z.string(),
+  url: z.string().optional(),
+  latestRunId: z.string().optional(),
+});
+const runSchema = z.object({
+  id: z.string().min(1),
+  status: z.enum(["CREATING", "RUNNING", "FINISHED", "ERROR", "CANCELLED", "EXPIRED"]),
+  git: z
+    .object({
+      branches: z.array(z.object({ branch: z.string().optional(), prUrl: z.string().optional() })),
+    })
+    .optional(),
+});
 
 export interface CursorCloudAgentOptions {
   apiKey: string;
-  baseUrl?: string;
   fetch?: typeof fetch;
+  timeoutMs?: number;
 }
 
-/**
- * Cursor Cloud Agents API v1 adapter. Vendor wire formats stay inside this
- * file; callers only see CloudAgentProvider.
- */
+/** Cursor v1 wire formats and credential handling stay inside this adapter. */
 export class CursorCloudAgentProvider implements CloudAgentProvider {
   private readonly apiKey: string;
-  private readonly baseUrl: string;
   private readonly fetchImpl: typeof fetch;
+  private readonly timeoutMs: number;
 
   constructor(options: CursorCloudAgentOptions) {
-    const key = options.apiKey.trim();
-    if (!key) throw new Error("CURSOR_API_KEY is required for the cursor cloud agent provider");
-    this.apiKey = key;
-    this.baseUrl = (options.baseUrl ?? DEFAULT_BASE_URL).replace(/\/$/, "");
+    this.apiKey = options.apiKey.trim();
+    if (!this.apiKey) throw new Error("CURSOR_API_KEY is required");
     this.fetchImpl = options.fetch ?? fetch;
+    this.timeoutMs = options.timeoutMs ?? 30_000;
   }
 
   describe() {
@@ -39,12 +53,7 @@ export class CursorCloudAgentProvider implements CloudAgentProvider {
       id: "cursor",
       contractVersion: "1",
       adapterVersion: "0.1.0",
-      capabilities: {
-        launch: true,
-        reply: true,
-        cancel: true,
-        offline: false,
-      },
+      capabilities: { launch: true, reply: true, cancel: true, offline: false },
     };
   }
 
@@ -52,65 +61,53 @@ export class CursorCloudAgentProvider implements CloudAgentProvider {
     request: CloudAgentLaunchRequest,
     context: AdapterContext,
   ): Promise<CloudAgentHandle> {
-    const prompt = request.prompt.trim();
-    if (!prompt) throw new Error("prompt is required");
-    const body: Record<string, unknown> = {
-      prompt: {
-        text: prompt,
-        ...(request.images?.length ? { images: mapImages(request.images) } : {}),
+    // Cursor's client-supplied id makes create replay safe after a lost response.
+    const id = cursorAgentId(request.idempotencyKey);
+    const response = await this.request(
+      "POST",
+      "/v1/agents",
+      {
+        agentId: id,
+        prompt: {
+          text: request.prompt,
+          ...(request.images?.length ? { images: request.images } : {}),
+        },
+        ...(request.repository ? { repos: [{ url: request.repository }] } : {}),
+        ...(request.openPr !== undefined ? { autoCreatePR: request.openPr } : {}),
       },
-    };
-    if (request.repository?.trim()) {
-      body.repos = [{ url: request.repository.trim() }];
+      request.signal ?? context.signal,
+      true,
+    );
+    if (response === null) {
+      // A duplicate create may precede read visibility. Failure to observe it
+      // is still ambiguous and must not terminate recovery of accepted work.
+      try {
+        return await this.get(id, context);
+      } catch {
+        throw new Error("Cloud agent create is awaiting reconciliation");
+      }
     }
-    if (request.environment && Object.keys(request.environment).length > 0) {
-      body.envVars = request.environment;
-    }
-    if (request.openPr !== undefined) {
-      body.autoCreatePR = request.openPr;
-    }
-    const json = await this.request<{
-      agent?: CursorAgent;
-      run?: CursorRun;
-    }>("POST", "/v1/agents", body, request.signal ?? context.signal);
-    const agent = json.agent;
-    if (!agent?.id) throw new Error("Cursor create agent response missing agent.id");
-    return {
-      id: agent.id,
-      url: agent.url || `${this.baseUrl.replace("api.", "")}/agents/${agent.id}`,
-      title: agent.name || titleFromPrompt(prompt),
-      status: mapRunStatus(json.run?.status) ?? mapAgentStatus(agent.status),
-      latestRunId: json.run?.id ?? agent.latestRunId,
-    };
+    const parsed = z.object({ agent: agentSchema, run: runSchema }).safeParse(response);
+    if (!parsed.success || parsed.data.agent.id !== id)
+      throw new Error("Invalid cloud agent response");
+    return this.handle(parsed.data.agent, parsed.data.run);
   }
 
-  async get(id: string, context: AdapterContext): Promise<CloudAgentSnapshot> {
-    const agent = await this.request<CursorAgent>(
-      "GET",
-      `/v1/agents/${encodeURIComponent(id)}`,
-      undefined,
-      context.signal,
-    );
-    const runId = agent.latestRunId;
-    let run: CursorRun | undefined;
-    if (runId) {
-      run = await this.request<CursorRun>(
+  async get(id: string, context: AdapterContext, runId?: string): Promise<CloudAgentSnapshot> {
+    const agent = await this.agent(id, context.signal);
+    const currentRunId = runId ?? agent.latestRunId;
+    if (!currentRunId) throw new Error("Cloud agent has no run to inspect");
+    const parsed = runSchema.safeParse(
+      await this.request(
         "GET",
-        `/v1/agents/${encodeURIComponent(id)}/runs/${encodeURIComponent(runId)}`,
+        `/v1/agents/${encodeURIComponent(id)}/runs/${encodeURIComponent(currentRunId)}`,
         undefined,
         context.signal,
-      );
-    }
-    const branch = run?.git?.branches?.[0];
-    return {
-      id: agent.id,
-      url: agent.url || `https://cursor.com/agents/${agent.id}`,
-      title: agent.name || agent.id,
-      status: mapRunStatus(run?.status) ?? mapAgentStatus(agent.status),
-      latestRunId: runId,
-      ...(branch?.branch ? { branch: branch.branch } : {}),
-      ...(branch?.prUrl ? { prUrl: branch.prUrl } : {}),
-    };
+      ),
+    );
+    if (!parsed.success || parsed.data.id !== currentRunId)
+      throw new Error("Invalid cloud agent run response");
+    return this.handle(agent, parsed.data);
   }
 
   async reply(
@@ -118,143 +115,113 @@ export class CursorCloudAgentProvider implements CloudAgentProvider {
     request: CloudAgentReplyRequest,
     context: AdapterContext,
   ): Promise<CloudAgentHandle> {
-    const prompt = request.prompt.trim();
-    if (!prompt) throw new Error("prompt is required");
-    const json = await this.request<{ run?: CursorRun }>(
-      "POST",
-      `/v1/agents/${encodeURIComponent(id)}/runs`,
-      {
-        prompt: {
-          text: prompt,
-          ...(request.images?.length ? { images: mapImages(request.images) } : {}),
+    // Read metadata first: no fallible GET after a successful mutating POST.
+    const agent = await this.agent(id, request.signal ?? context.signal);
+    const parsed = z.object({ run: runSchema }).safeParse(
+      await this.request(
+        "POST",
+        `/v1/agents/${encodeURIComponent(id)}/runs`,
+        {
+          prompt: {
+            text: request.prompt,
+            ...(request.images?.length ? { images: request.images } : {}),
+          },
         },
-      },
-      request.signal ?? context.signal,
+        request.signal ?? context.signal,
+      ),
     );
-    const agent = await this.request<CursorAgent>(
-      "GET",
-      `/v1/agents/${encodeURIComponent(id)}`,
-      undefined,
-      context.signal,
-    );
-    return {
-      id: agent.id,
-      url: agent.url || `https://cursor.com/agents/${agent.id}`,
-      title: agent.name || agent.id,
-      status: mapRunStatus(json.run?.status) ?? "running",
-      latestRunId: json.run?.id ?? agent.latestRunId,
-    };
+    if (!parsed.success) throw new Error("Invalid cloud agent follow-up response");
+    return this.handle(agent, parsed.data.run);
   }
 
-  async cancel(id: string, context: AdapterContext): Promise<CloudAgentSnapshot> {
-    const agent = await this.request<CursorAgent>(
-      "GET",
-      `/v1/agents/${encodeURIComponent(id)}`,
-      undefined,
-      context.signal,
-    );
-    const runId = agent.latestRunId;
-    if (!runId) {
-      return {
-        id: agent.id,
-        url: agent.url || `https://cursor.com/agents/${agent.id}`,
-        title: agent.name || agent.id,
-        status: mapAgentStatus(agent.status),
-      };
-    }
+  async cancel(id: string, context: AdapterContext, runId?: string): Promise<CloudAgentSnapshot> {
+    const snapshot = await this.get(id, context, runId);
+    if (snapshot.status !== "running") return snapshot;
     await this.request(
       "POST",
-      `/v1/agents/${encodeURIComponent(id)}/runs/${encodeURIComponent(runId)}/cancel`,
+      `/v1/agents/${encodeURIComponent(id)}/runs/${encodeURIComponent(snapshot.latestRunId!)}/cancel`,
       {},
       context.signal,
     );
-    return this.get(id, context);
+    // Cancellation may still be in progress. Never report success before observing it.
+    return this.get(id, context, snapshot.latestRunId);
   }
 
-  private async request<T>(
+  private async agent(id: string, signal: AbortSignal) {
+    const parsed = agentSchema.safeParse(
+      await this.request("GET", `/v1/agents/${encodeURIComponent(id)}`, undefined, signal),
+    );
+    if (!parsed.success || parsed.data.id !== id) throw new Error("Invalid cloud agent response");
+    return parsed.data;
+  }
+
+  private handle(
+    agent: z.infer<typeof agentSchema>,
+    run: z.infer<typeof runSchema>,
+  ): CloudAgentSnapshot {
+    const status: CloudAgentStatus =
+      run.status === "FINISHED"
+        ? "finished"
+        : run.status === "CANCELLED"
+          ? "cancelled"
+          : run.status === "ERROR" || run.status === "EXPIRED"
+            ? "failed"
+            : "running";
+    const branch = run.git?.branches[0];
+    return {
+      id: agent.id,
+      title: agent.name || "Cloud agent",
+      status,
+      url: agent.url || `https://cursor.com/agents/${encodeURIComponent(agent.id)}`,
+      latestRunId: run.id,
+      ...(branch?.branch ? { branch: branch.branch } : {}),
+      ...(branch?.prUrl ? { prUrl: branch.prUrl } : {}),
+    };
+  }
+
+  private async request(
     method: string,
     path: string,
-    body: unknown | undefined,
-    signal?: AbortSignal,
-  ): Promise<T> {
-    const response = await this.fetchImpl(`${this.baseUrl}${path}`, {
+    body: unknown,
+    signal: AbortSignal,
+    allowConflict = false,
+  ): Promise<unknown> {
+    const boundedSignal = AbortSignal.any([signal, AbortSignal.timeout(this.timeoutMs)]);
+    const response = await this.fetchImpl(`https://api.cursor.com${path}`, {
       method,
+      redirect: "error",
+      signal: boundedSignal,
       headers: {
         Authorization: `Bearer ${this.apiKey}`,
         Accept: "application/json",
-        ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+        ...(body === undefined ? {} : { "Content-Type": "application/json" }),
       },
-      body: body !== undefined ? JSON.stringify(body) : undefined,
-      signal,
+      body: body === undefined ? undefined : JSON.stringify(body),
     });
     if (!response.ok) {
-      const text = await response.text().catch(() => "");
-      throw new Error(`Cursor cloud agent ${method} ${path} failed (${response.status}): ${text}`);
+      void response.body?.cancel().catch(() => undefined);
+      if (allowConflict && response.status === 409) return null;
+      if ([400, 401, 403, 404, 409, 422].includes(response.status))
+        throw new CloudAgentRequestRejected();
+      throw new Error(`Cloud agent request failed (${response.status})`);
     }
-    if (response.status === 204) return {} as T;
-    return (await response.json()) as T;
+    if (response.status === 204) {
+      void response.body?.cancel().catch(() => undefined);
+      return {};
+    }
+    const bytes = await readBodyCapped(response, 1_000_000, boundedSignal);
+    try {
+      return JSON.parse(new TextDecoder().decode(bytes));
+    } catch {
+      throw new Error("Invalid cloud agent response");
+    }
   }
 }
 
-interface CursorAgent {
-  id: string;
-  name?: string;
-  status?: string;
-  url?: string;
-  latestRunId?: string;
-}
-
-interface CursorRun {
-  id?: string;
-  status?: string;
-  git?: {
-    branches?: Array<{ repoUrl?: string; branch?: string; prUrl?: string }>;
-  };
-}
-
-function mapImages(images: CloudAgentImage[]) {
-  return images.map((image) => {
-    if ("url" in image) return { url: image.url };
-    return { data: image.data, mimeType: image.mimeType };
-  });
-}
-
-function mapRunStatus(status: string | undefined): CloudAgentStatus | undefined {
-  if (!status) return undefined;
-  const normalized = status.toUpperCase();
-  if (
-    normalized === "CREATING" ||
-    normalized === "RUNNING" ||
-    normalized === "QUEUED" ||
-    normalized === "PENDING"
-  ) {
-    return "running";
-  }
-  if (normalized === "FINISHED" || normalized === "COMPLETED" || normalized === "DONE") {
-    return "finished";
-  }
-  if (normalized === "CANCELLED" || normalized === "CANCELED") return "cancelled";
-  if (
-    normalized === "ERROR" ||
-    normalized === "FAILED" ||
-    normalized === "EXPIRED" ||
-    normalized === "ERRORED"
-  ) {
-    return "failed";
-  }
-  return "running";
-}
-
-function mapAgentStatus(status: string | undefined): CloudAgentStatus {
-  if (!status) return "running";
-  const normalized = status.toUpperCase();
-  if (normalized === "ACTIVE") return "running";
-  if (normalized === "IDLE") return "finished";
-  if (normalized === "ARCHIVED") return "cancelled";
-  return "running";
-}
-
-function titleFromPrompt(prompt: string): string {
-  const line = prompt.split(/\r?\n/, 1)[0]?.trim() || "Cloud agent";
-  return line.length > 80 ? `${line.slice(0, 77)}...` : line;
+export function cursorAgentId(key: string) {
+  const bytes = createHash("sha256").update(key).digest();
+  bytes[6] = (bytes[6]! & 15) | 64;
+  bytes[8] = (bytes[8]! & 63) | 128;
+  const hex = bytes.subarray(0, 16).toString("hex");
+  return `bc-${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }

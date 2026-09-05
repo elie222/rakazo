@@ -3,10 +3,26 @@ import type { CapabilityInstall, ConnectionCatalogItem } from "@rakazo/contracts
 import {
   abortableDelay,
   buildFeaturedConnectorTiles,
+  CONNECTION_CATALOG_PAGE_SIZE,
   EMPTY_PLUGIN_CATALOG_MESSAGE,
-  matchFeaturedConnectorId,
+  filterConnectionCatalogItems,
 } from "@rakazo/core";
-import { Button } from "@rakazo/ui-web";
+import {
+  Button,
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  Input,
+  NativeSelect,
+  NativeSelectOption,
+} from "@rakazo/ui-web";
+import { X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { rpc } from "../lib/rpc";
 
@@ -38,6 +54,7 @@ export function PluginsOverlay({
 }) {
   const { t } = useLingui();
   const [query, setQuery] = useState("");
+  const [visibleCount, setVisibleCount] = useState(CONNECTION_CATALOG_PAGE_SIZE);
   const [catalog, setCatalog] = useState<ConnectionCatalogItem[]>([]);
   const [sources, setSources] = useState<CapabilityInstall[]>([]);
   const [sourceKind, setSourceKind] = useState<SourceKind | null>(null);
@@ -74,23 +91,8 @@ export function PluginsOverlay({
   const featuredTiles = useMemo(() => buildFeaturedConnectorTiles(catalog), [catalog]);
   const showFeatured = !query.trim();
 
-  const visible = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    const scoped = showFeatured
-      ? catalog.filter(
-          (item) =>
-            matchFeaturedConnectorId(item.slug) === null &&
-            matchFeaturedConnectorId(item.name) === null,
-        )
-      : catalog;
-    if (!needle) return scoped;
-    return scoped.filter(
-      (item) =>
-        item.name.toLowerCase().includes(needle) ||
-        item.slug.toLowerCase().includes(needle) ||
-        item.connectorId.toLowerCase().includes(needle),
-    );
-  }, [catalog, query, showFeatured]);
+  const visible = useMemo(() => filterConnectionCatalogItems(catalog, query), [catalog, query]);
+  const rendered = visible.slice(0, visibleCount);
 
   async function notifyAppConnected(item: ConnectionCatalogItem) {
     if (!activeBotId) return;
@@ -230,36 +232,44 @@ export function PluginsOverlay({
   }
 
   return (
-    <div className="absolute inset-0 z-30 flex items-center justify-center bg-[rgba(4,4,5,.62)] p-10">
-      <div className="flex h-[760px] w-[1080px] max-w-full flex-col overflow-hidden rounded-[26px] border border-[#232326] bg-[#141416] shadow-[0_40px_90px_rgba(0,0,0,.55)]">
-        <div className="flex items-start justify-between px-8 pt-7">
-          <div className="text-2xl font-medium text-[#F1F1F2]">
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
+      <DialogContent
+        showCloseButton={false}
+        className="flex h-[760px] max-h-[calc(100%-2rem)] w-[1080px] max-w-[calc(100%-2rem)] flex-col gap-0 overflow-hidden rounded-2xl bg-card p-0 sm:max-w-[1080px]"
+      >
+        <DialogHeader className="flex-row items-start justify-between px-8 pt-7">
+          <DialogTitle className="text-2xl text-foreground">
             <Trans>Integrations</Trans>
-          </div>
-          <button
-            type="button"
-            aria-label={t`Close integrations`}
-            onClick={onClose}
-            className="text-[#85858A]"
+          </DialogTitle>
+          <DialogClose
+            render={<Button variant="ghost" size="icon-sm" aria-label={t`Close integrations`} />}
           >
-            ✕
-          </button>
-        </div>
+            <X />
+          </DialogClose>
+        </DialogHeader>
 
         <div className="px-8 pt-4">
-          <input
+          <Input
             value={query}
-            onChange={(event) => setQuery(event.target.value)}
+            onChange={(event) => {
+              setQuery(event.target.value);
+              setVisibleCount(CONNECTION_CATALOG_PAGE_SIZE);
+            }}
             aria-label={t`Search apps`}
             placeholder={t`Search apps`}
-            className="w-full rounded-[13px] border border-[#26262A] bg-[#101012] px-4 py-3 text-[15px] text-[#ECECEE] outline-none"
+            className="h-11 rounded-xl px-4 md:text-[15px]"
           />
         </div>
 
         <div id="integration-list" className="rk-scroll flex-1 overflow-y-auto px-8 py-6">
-          {catalogError ? <p className="mb-4 text-sm text-[#C94244]">{catalogError}</p> : null}
+          {catalogError ? <p className="mb-4 text-sm text-destructive">{catalogError}</p> : null}
           {loading ? (
-            <p className="text-[#6C6C70]">
+            <p className="text-muted-foreground/80">
               <Trans>Loading integrations…</Trans>
             </p>
           ) : null}
@@ -267,7 +277,7 @@ export function PluginsOverlay({
           {showFeatured ? (
             <div className="mb-6" data-testid="featured-connectors">
               {!loading && catalog.length === 0 ? (
-                <p className="text-[13.5px] leading-6 text-[#6C6C70]">
+                <p className="text-[13.5px] leading-6 text-muted-foreground/80">
                   {EMPTY_PLUGIN_CATALOG_MESSAGE}
                 </p>
               ) : (
@@ -280,7 +290,7 @@ export function PluginsOverlay({
                     return (
                       <div
                         key={key}
-                        className={`flex min-w-0 items-center gap-3 rounded-[13px] px-2.5 py-2 ${
+                        className={`flex min-w-0 items-center gap-3 rounded-xl px-2.5 py-2 ${
                           disabled ? "opacity-70" : ""
                         }`}
                       >
@@ -288,19 +298,21 @@ export function PluginsOverlay({
                           <img
                             src={item.logo}
                             alt=""
-                            className="h-9 w-9 shrink-0 rounded-xl bg-[#2C2C30] object-contain"
+                            loading="lazy"
+                            decoding="async"
+                            className="h-9 w-9 shrink-0 rounded-xl bg-accent object-contain"
                           />
                         ) : (
-                          <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[#2C2C30] text-sm font-semibold text-[#ECECEE]">
+                          <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-accent text-sm font-semibold text-foreground">
                             {tile.label[0]}
                           </div>
                         )}
                         <div className="min-w-0 flex-1">
-                          <div className="truncate text-[15px] font-medium text-[#ECECEE]">
+                          <div className="truncate text-[15px] font-medium text-foreground">
                             {tile.label}
                           </div>
                           {disabled ? (
-                            <div className="truncate text-[12.5px] text-[#707077]">
+                            <div className="truncate text-[12.5px] text-muted-foreground">
                               <Trans>Not in the plugin catalog</Trans>
                             </div>
                           ) : null}
@@ -308,7 +320,8 @@ export function PluginsOverlay({
                         {item && !tile.missing ? (
                           <Button
                             type="button"
-                            variant="pill"
+                            variant="secondary"
+                            className="rounded-full"
                             size="sm"
                             disabled={pending === key}
                             onClick={() => void (connected ? revoke(item) : connect(item))}
@@ -335,43 +348,43 @@ export function PluginsOverlay({
           ) : null}
 
           {!loading && catalog.length === 0 && !showFeatured ? (
-            <p className="text-[#6C6C70]">
+            <p className="text-muted-foreground/80">
               <Trans>No managed app catalog is configured on this deployment.</Trans>
             </p>
           ) : null}
           {!loading && catalog.length > 0 && visible.length === 0 && !showFeatured ? (
-            <p className="text-[#6C6C70]">
+            <p className="text-muted-foreground/80">
               <Trans>No apps match your search.</Trans>
             </p>
           ) : null}
           {visible.length > 0 ? (
             <div className="grid grid-cols-2 gap-2">
-              {visible.map((item) => {
+              {rendered.map((item) => {
                 const key = itemKey(item);
                 return (
-                  <div
-                    key={key}
-                    className="flex min-w-0 items-center gap-3 rounded-[13px] px-2.5 py-2"
-                  >
+                  <div key={key} className="flex min-w-0 items-center gap-3 rounded-xl px-2.5 py-2">
                     {item.logo ? (
                       <img
                         src={item.logo}
                         alt=""
-                        className="h-9 w-9 shrink-0 rounded-xl bg-[#2C2C30] object-contain"
+                        loading="lazy"
+                        decoding="async"
+                        className="h-9 w-9 shrink-0 rounded-xl bg-accent object-contain"
                       />
                     ) : (
-                      <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[#2C2C30] text-sm font-semibold text-[#ECECEE]">
+                      <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-accent text-sm font-semibold text-foreground">
                         {item.name[0]}
                       </div>
                     )}
                     <div className="min-w-0 flex-1">
-                      <div className="truncate text-[15px] font-medium text-[#ECECEE]">
+                      <div className="truncate text-[15px] font-medium text-foreground">
                         {item.name}
                       </div>
                     </div>
                     <Button
                       type="button"
-                      variant="pill"
+                      variant="secondary"
+                      className="rounded-full"
                       size="sm"
                       disabled={pending === key}
                       onClick={() => void (item.connected ? revoke(item) : connect(item))}
@@ -393,6 +406,19 @@ export function PluginsOverlay({
               })}
             </div>
           ) : null}
+          {rendered.length < visible.length ? (
+            <div className="mt-4 flex justify-center">
+              <Button
+                type="button"
+                variant="secondary"
+                className="rounded-full"
+                size="sm"
+                onClick={() => setVisibleCount((count) => count + CONNECTION_CATALOG_PAGE_SIZE)}
+              >
+                <Trans>Show more</Trans>
+              </Button>
+            </div>
+          ) : null}
 
           <details
             data-testid="integrations-advanced"
@@ -409,8 +435,8 @@ export function PluginsOverlay({
               }
             }}
           >
-            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-[14px] text-[#85858A]">
-              <span className="text-[#85858A]">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-[14px] text-muted-foreground">
+              <span className="text-muted-foreground">
                 <Trans>Advanced</Trans>
               </span>
               <span aria-hidden="true" className="transition-transform group-open:rotate-90">
@@ -420,145 +446,164 @@ export function PluginsOverlay({
 
             <div className="mt-4 space-y-4">
               {onOpenMcp ? (
-                <button
+                <Button
                   type="button"
+                  variant="outline"
+                  className="rounded-full"
+                  size="sm"
                   onClick={onOpenMcp}
-                  className="rounded-full border border-[#383844] px-3 py-1.5 text-xs text-[#C9C9CE] hover:bg-[#232327]"
                 >
                   <Trans>MCP servers</Trans>
-                </button>
+                </Button>
               ) : null}
 
               <div className="flex flex-wrap gap-2">
-                <Button type="button" variant="pill" size="sm" onClick={() => beginSource("mcp")}>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="rounded-full"
+                  size="sm"
+                  onClick={() => beginSource("mcp")}
+                >
                   <Trans>Add MCP server</Trans>
                 </Button>
-                <Button type="button" variant="pill" size="sm" onClick={() => beginSource("api")}>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="rounded-full"
+                  size="sm"
+                  onClick={() => beginSource("api")}
+                >
                   <Trans>Add OpenAPI</Trans>
                 </Button>
-                <Button type="button" variant="pill" size="sm" onClick={() => beginSource("treg")}>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="rounded-full"
+                  size="sm"
+                  onClick={() => beginSource("treg")}
+                >
                   <Trans>Add Treg</Trans>
                 </Button>
               </div>
 
-              {sourceError ? <p className="text-sm text-[#C94244]">{sourceError}</p> : null}
+              {sourceError ? <p className="text-sm text-destructive">{sourceError}</p> : null}
 
               {sourceKind ? (
-                <div className="space-y-3 rounded-[16px] border border-[#2C2C30] bg-[#101012] p-5">
-                  <div className="text-base font-medium text-[#ECECEE]">
-                    {sourceKind === "treg" ? (
-                      <Trans>Connect Treg</Trans>
-                    ) : sourceKind === "mcp" ? (
-                      <Trans>Add remote MCP server</Trans>
-                    ) : (
-                      <Trans>Import OpenAPI JSON</Trans>
-                    )}
-                  </div>
-                  <input
-                    value={sourceName}
-                    onChange={(event) => setSourceName(event.target.value)}
-                    placeholder={t`Display name`}
-                    className="w-full rounded-xl border border-[#2C2C30] bg-[#171719] px-3 py-2.5 text-sm text-[#ECECEE] outline-none"
-                  />
-                  {sourceKind !== "treg" ? (
-                    <input
-                      value={sourceUrl}
-                      onChange={(event) => setSourceUrl(event.target.value)}
-                      placeholder={
-                        sourceKind === "mcp"
-                          ? "https://example.com/mcp"
-                          : "https://example.com/openapi.json"
-                      }
-                      className="w-full rounded-xl border border-[#2C2C30] bg-[#171719] px-3 py-2.5 text-sm text-[#ECECEE] outline-none"
-                    />
-                  ) : null}
-                  {sourceKind !== "treg" ? (
-                    <select
-                      value={authType}
-                      onChange={(event) => setAuthType(event.target.value as typeof authType)}
-                      className="w-full rounded-xl border border-[#2C2C30] bg-[#171719] px-3 py-2.5 text-sm text-[#ECECEE] outline-none"
-                    >
-                      <option value="none">
-                        <Trans>No authentication</Trans>
-                      </option>
-                      <option value="bearer">
-                        <Trans>Bearer token</Trans>
-                      </option>
-                      <option value="header">
-                        <Trans>API key header</Trans>
-                      </option>
-                    </select>
-                  ) : null}
-                  {authType === "header" && sourceKind !== "treg" ? (
-                    <input
-                      value={authName}
-                      onChange={(event) => setAuthName(event.target.value)}
-                      placeholder={t`Header name`}
-                      className="w-full rounded-xl border border-[#2C2C30] bg-[#171719] px-3 py-2.5 text-sm text-[#ECECEE] outline-none"
-                    />
-                  ) : null}
-                  {sourceKind === "treg" || authType !== "none" ? (
-                    <input
-                      type="password"
-                      autoComplete="new-password"
-                      value={credential}
-                      onChange={(event) => setCredential(event.target.value)}
-                      placeholder={sourceKind === "treg" ? t`Treg token` : t`Credential`}
-                      className="w-full rounded-xl border border-[#2C2C30] bg-[#171719] px-3 py-2.5 text-sm text-[#ECECEE] outline-none"
-                    />
-                  ) : null}
-                  <p className="text-xs leading-5 text-[#707077]">
-                    <Trans>
-                      Rakazo verifies the source before saving it. Credentials are encrypted and are
-                      never returned to clients or exposed to the model.
-                    </Trans>
-                  </p>
-                  <div className="flex gap-2">
-                    <Button
-                      type="button"
-                      variant="pill"
-                      size="sm"
-                      disabled={pending === "install-source"}
-                      onClick={() => void installSource()}
-                    >
-                      {pending === "install-source" ? (
-                        <Trans>Verifying…</Trans>
+                <Card>
+                  <CardHeader>
+                    <CardTitle>
+                      {sourceKind === "treg" ? (
+                        <Trans>Connect Treg</Trans>
+                      ) : sourceKind === "mcp" ? (
+                        <Trans>Add remote MCP server</Trans>
                       ) : (
-                        <Trans>Verify and add</Trans>
+                        <Trans>Import OpenAPI JSON</Trans>
                       )}
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="pill"
-                      size="sm"
-                      onClick={() => setSourceKind(null)}
-                    >
-                      <Trans>Cancel</Trans>
-                    </Button>
-                  </div>
-                </div>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <Input
+                      value={sourceName}
+                      onChange={(event) => setSourceName(event.target.value)}
+                      placeholder={t`Display name`}
+                    />
+                    {sourceKind !== "treg" ? (
+                      <Input
+                        value={sourceUrl}
+                        onChange={(event) => setSourceUrl(event.target.value)}
+                        placeholder={
+                          sourceKind === "mcp"
+                            ? "https://example.com/mcp"
+                            : "https://example.com/openapi.json"
+                        }
+                      />
+                    ) : null}
+                    {sourceKind !== "treg" ? (
+                      <NativeSelect
+                        className="w-full"
+                        value={authType}
+                        onChange={(event) => setAuthType(event.target.value as typeof authType)}
+                      >
+                        <NativeSelectOption value="none">
+                          <Trans>No authentication</Trans>
+                        </NativeSelectOption>
+                        <NativeSelectOption value="bearer">
+                          <Trans>Bearer token</Trans>
+                        </NativeSelectOption>
+                        <NativeSelectOption value="header">
+                          <Trans>API key header</Trans>
+                        </NativeSelectOption>
+                      </NativeSelect>
+                    ) : null}
+                    {authType === "header" && sourceKind !== "treg" ? (
+                      <Input
+                        value={authName}
+                        onChange={(event) => setAuthName(event.target.value)}
+                        placeholder={t`Header name`}
+                      />
+                    ) : null}
+                    {sourceKind === "treg" || authType !== "none" ? (
+                      <Input
+                        type="password"
+                        autoComplete="new-password"
+                        value={credential}
+                        onChange={(event) => setCredential(event.target.value)}
+                        placeholder={sourceKind === "treg" ? t`Treg token` : t`Credential`}
+                      />
+                    ) : null}
+                    <p className="text-xs leading-5 text-muted-foreground">
+                      <Trans>
+                        Rakazo verifies the source before saving it. Credentials are encrypted and
+                        are never returned to clients or exposed to the model.
+                      </Trans>
+                    </p>
+                    <div className="flex gap-2">
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        className="rounded-full"
+                        size="sm"
+                        disabled={pending === "install-source"}
+                        onClick={() => void installSource()}
+                      >
+                        {pending === "install-source" ? (
+                          <Trans>Verifying…</Trans>
+                        ) : (
+                          <Trans>Verify and add</Trans>
+                        )}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        className="rounded-full"
+                        size="sm"
+                        onClick={() => setSourceKind(null)}
+                      >
+                        <Trans>Cancel</Trans>
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
               ) : null}
 
               <div>
-                <div className="mb-3 text-sm font-medium text-[#A8A8AD]">
+                <div className="mb-3 text-sm font-medium text-foreground/75">
                   <Trans>Tool sources</Trans>
                 </div>
                 {sources.length === 0 && !sourceKind ? (
-                  <p className="text-[#6C6C70]">
+                  <p className="text-muted-foreground/80">
                     <Trans>No MCP or API tool sources installed yet.</Trans>
                   </p>
                 ) : null}
                 {sources.map((source) => (
-                  <div
-                    key={source.id}
-                    className="flex items-center gap-4 rounded-[13px] px-3 py-2.5"
-                  >
-                    <div className="grid h-[42px] w-[42px] place-items-center rounded-xl bg-[#2C2C30] font-semibold uppercase text-[#ECECEE]">
+                  <div key={source.id} className="flex items-center gap-4 rounded-xl px-3 py-2.5">
+                    <div className="grid h-[42px] w-[42px] place-items-center rounded-xl bg-accent font-semibold uppercase text-foreground">
                       {source.kind === "mcp" ? "M" : "A"}
                     </div>
                     <div className="min-w-0 flex-1">
-                      <div className="text-[15.5px] font-medium text-[#ECECEE]">{source.name}</div>
-                      <div className="truncate text-[13.5px] text-[#7A7A80]">
+                      <div className="text-[15.5px] font-medium text-foreground">{source.name}</div>
+                      <div className="truncate text-[13.5px] text-muted-foreground/70">
                         {source.kind.toUpperCase()} · {source.source} ·{" "}
                         {source.secretConfigured ? (
                           <Trans>credential saved</Trans>
@@ -569,7 +614,8 @@ export function PluginsOverlay({
                     </div>
                     <Button
                       type="button"
-                      variant="pill"
+                      variant="secondary"
+                      className="rounded-full"
                       size="sm"
                       disabled={pending === source.id}
                       onClick={() => void removeSource(source)}
@@ -582,7 +628,7 @@ export function PluginsOverlay({
             </div>
           </details>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

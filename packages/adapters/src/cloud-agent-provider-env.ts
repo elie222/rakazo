@@ -9,7 +9,9 @@ export function resolveCloudAgentProvider(source: NodeJS.ProcessEnv = process.en
   if (requested === "none" || requested === "") return "none";
   if (requested === "emulator" || requested === "fake") return "emulator";
   if (requested === "cursor") {
-    return optional(source.CURSOR_API_KEY) ? "cursor" : "none";
+    return optional(source.CURSOR_API_KEY) && optional(source.CLOUD_AGENT_SPACE_ID)
+      ? "cursor"
+      : "none";
   }
   // Soft-fall: do not throw at API boot for typos / future vendor names.
   return "none";

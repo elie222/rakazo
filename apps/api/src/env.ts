@@ -30,6 +30,7 @@ export interface AppEnv {
   screenProxySecret: string;
   sandboxProvider: string;
   cloudAgentProvider: string;
+  cloudAgentSpaceId: string | undefined;
   cursorApiKey: string | undefined;
   agentRuntime: string;
   deploymentModelKey: string | undefined;
@@ -102,6 +103,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     screenProxySecret: resolveScreenProxySecret(source),
     sandboxProvider,
     cloudAgentProvider,
+    cloudAgentSpaceId: optional(source.CLOUD_AGENT_SPACE_ID),
     cursorApiKey: optional(source.CURSOR_API_KEY),
     agentRuntime: source.AGENT_RUNTIME ?? "pi",
     // Provider, model and key resolve together: see resolveDeploymentModel.
