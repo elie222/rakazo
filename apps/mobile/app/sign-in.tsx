@@ -4,6 +4,7 @@ import {
   AccessibilityInfo,
   Keyboard,
   KeyboardAvoidingView,
+  Linking,
   Modal,
   Platform,
   Pressable,
@@ -94,7 +95,7 @@ export default function SignIn() {
   if (hasSession) return <Redirect href="/" />;
 
   async function submit() {
-    if (pending) return;
+    if (pending || reset?.provider === "convex-company-os") return;
     setPending(true);
     setError(null);
     try {
@@ -157,7 +158,26 @@ export default function SignIn() {
                       ? t("Check your email")
                       : t("Reset your password")}
               </Text>
-              {resetSent ? (
+              {reset?.provider === "convex-company-os" ? (
+                <View style={{ alignItems: "center", gap: 20, marginTop: 28 }}>
+                  <Text style={{ color: tokens.mutedForeground, textAlign: "center" }}>
+                    {t(
+                      "Company OS sign-in is available in the web app. Continue there to use your cloud workforce.",
+                    )}
+                  </Text>
+                  <Pressable
+                    accessibilityRole="link"
+                    onPress={() => {
+                      if (reset.webOrigin?.startsWith("https://"))
+                        void Linking.openURL(`${reset.webOrigin}/login`);
+                    }}
+                  >
+                    <Text style={{ color: tokens.foreground, fontSize: 16, fontWeight: "600" }}>
+                      {t("Open Cadre")}
+                    </Text>
+                  </Pressable>
+                </View>
+              ) : resetSent ? (
                 <View style={{ alignItems: "center", marginTop: 28 }}>
                   <Pressable
                     accessibilityRole="button"

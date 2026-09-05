@@ -342,6 +342,9 @@ importers:
       '@rakazo/adapters':
         specifier: workspace:*
         version: link:../../packages/adapters
+      '@rakazo/auth':
+        specifier: workspace:*
+        version: link:../../packages/auth
       '@rakazo/core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -802,6 +805,9 @@ importers:
       '@rakazo/adapters':
         specifier: workspace:*
         version: link:../adapters
+      '@rakazo/auth':
+        specifier: workspace:*
+        version: link:../auth
       '@rakazo/contracts':
         specifier: workspace:*
         version: link:../contracts
@@ -13759,9 +13765,7 @@ snapshots:
       metro-runtime: 0.84.5
     transitivePeerDependencies:
       - '@babel/core'
-      - bufferutil
       - supports-color
-      - utf-8-validate
     optional: true
 
   '@react-native/metro-config@0.86.3(@babel/core@7.29.7)':

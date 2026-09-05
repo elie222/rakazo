@@ -31,3 +31,46 @@ Agent homes use immutable, integrity-checked blobs and revision manifests with c
 The deterministic adapter tests cover tenant boundaries, missing-computer recovery, control leases, object integrity, concurrent revision updates, and symlink escape prevention. The workforce PostgreSQL test opts in with `VERIFY_DATABASE=1` and `DATABASE_URL`; its Company OS peer is mocked. The browser workforce test mocks the integration response and captures desktop/mobile light/dark states. Provider canaries are separate from these offline tests and must verify real storage, desktop streaming, cancellation, and an authorized model run before production acceptance.
 
 The native mobile app does not yet expose workforce setup. Configure the connection in the responsive web app; spawned bots and conversations use the existing shared runtime.
+
+
+## Company OS sign-in
+
+Hosted Cadre can use Company OS as its OAuth identity and workforce authority.
+Company OS owns authentication through Convex Auth. Cadre uses Better Auth as a
+server-side OAuth client and app session store; Clerk is not required. Local
+installations retain their optional email/password authentication.
+
+Register a confidential OAuth client at your Company OS `/api/oauth/register`
+with `identity_access: true`, `token_endpoint_auth_method: "client_secret_post"`,
+`grant_types: ["authorization_code", "refresh_token"]`, and an exact redirect URI
+of `https://<cadre-domain>/api/auth/oauth2/callback/company-os`. The consent screen
+must disclose the name and verified email shared with Cadre. Configure these
+server-only variables on both API and worker:
+
+- `AUTH_PROVIDER=convex-company-os`
+- `COMPANY_OS_OAUTH_ORIGIN=https://<company-os-domain>`
+- `COMPANY_OS_OAUTH_CLIENT_ID` and `COMPANY_OS_OAUTH_CLIENT_SECRET`
+- `BETTER_AUTH_URL` and `WEB_ORIGIN` set to the same canonical Cadre HTTPS origin
+- A stable `BETTER_AUTH_SECRET` for app sessions and encrypted OAuth tokens
+
+The login page uses authorization code flow with S256 PKCE, state, issuer checks,
+and same-origin return paths. A verified Company OS email is required. Existing
+Cadre accounts with matching email can link only after that identity verification;
+linking retires their old password and all earlier sessions. New hosted accounts must pass the configured signup email allowlist.
+
+The selected company and permissions come from consent. The workforce uses the
+same revocable grant, refreshes credentials server-side under a database lock,
+and starts with assignments paused. Refresh retains the Company OS key identity
+so existing installation and dispatch receipts survive rotation. Removing company
+membership, reducing the role below granted permissions, expiring or revoking the
+grant blocks access and sync. Reusing a refresh token revokes its family.
+
+OAuth access and refresh tokens are encrypted in the app database and never
+returned by the browser session/status endpoints. Workers update their encrypted
+MCP credential when a grant refreshes. Changing the authorized company requires
+reconnecting the original workforce company; it cannot silently redirect work.
+
+Hosted login is supported in the web app. The native mobile client points to the
+web login for this mode; local email/password installations keep native sign-in.
+The black icon is inverted for dark mode, the favicon follows the system theme,
+and the social sharing card lives under `/brand/cadre-social.png`.

@@ -51,3 +51,7 @@ body,
     opacity: 0.3;
   }
 }
+
+[data-theme="dark"] .cadre-mark {
+  filter: invert(1);
+}

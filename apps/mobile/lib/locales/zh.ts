@@ -1,4 +1,8 @@
 export const ZH_MESSAGES: Record<string, string> = {
+  "Company OS sign-in is available in the web app. Continue there to use your cloud workforce.":
+    "请在网页应用中通过 Company OS 登录，继续使用您的云端劳动力。",
+  "Open Cadre": "打开 Cadre",
+
   " (unread)": "（未读）",
   Appearance: "外观",
   Dark: "深色",

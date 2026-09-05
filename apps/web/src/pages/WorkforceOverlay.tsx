@@ -13,6 +13,7 @@ import {
 import { X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useAuthCapabilities } from "../lib/auth-capabilities";
 import { rpc, withSpaceHeaders } from "../lib/rpc";
 
 export function WorkforceOverlay({
@@ -23,6 +24,8 @@ export function WorkforceOverlay({
   onChanged?: () => Promise<unknown>;
 }) {
   const { t } = useLingui();
+  const capabilities = useAuthCapabilities();
+  const oauth = capabilities?.provider === "convex-company-os";
   const navigate = useNavigate();
   const [connection, setConnection] = useState<WorkforceStatus | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -85,7 +88,12 @@ export function WorkforceOverlay({
     setError("");
     try {
       setConnection(
-        await request("PUT", { endpoint, ...(key ? { key } : {}), enabled: true, workers }),
+        await request("PUT", {
+          endpoint: oauth ? `${capabilities.companyOsOrigin}/api/mcp` : endpoint,
+          ...(!oauth && key ? { key } : {}),
+          enabled: false,
+          workers,
+        }),
       );
       await onChanged?.();
       setKey("");
@@ -220,38 +228,48 @@ export function WorkforceOverlay({
               void save();
             }}
           >
-            <p className="text-sm text-muted-foreground">
-              <Trans>
-                Connect a Company OS agent key with context read and write access. Its department
-                permissions apply to every worker.
-              </Trans>
-            </p>
-            <label htmlFor="workforce-endpoint" className="block space-y-2 text-sm">
-              <span>
-                <Trans>Company OS endpoint</Trans>
-              </span>
-              <Input
-                id="workforce-endpoint"
-                value={endpoint}
-                onChange={(e) => setEndpoint(e.target.value)}
-                type="url"
-                required
-              />
-            </label>
-            <label htmlFor="workforce-key" className="block space-y-2 text-sm">
-              <span>
-                <Trans>Agent key</Trans>
-              </span>
-              <Input
-                id="workforce-key"
-                value={key}
-                onChange={(e) => setKey(e.target.value)}
-                type="password"
-                autoComplete="new-password"
-                required={!connection}
-                placeholder={connection ? t`Leave blank to keep saved key` : ""}
-              />
-            </label>
+            {oauth ? (
+              <p className="text-sm text-muted-foreground">
+                <Trans>
+                  Your Company OS connection supplies the permissions for these workers.
+                </Trans>
+              </p>
+            ) : (
+              <>
+                <p className="text-sm text-muted-foreground">
+                  <Trans>
+                    Connect a Company OS agent key with context read and write access. Its
+                    department permissions apply to every worker.
+                  </Trans>
+                </p>
+                <label htmlFor="workforce-endpoint" className="block space-y-2 text-sm">
+                  <span>
+                    <Trans>Company OS endpoint</Trans>
+                  </span>
+                  <Input
+                    id="workforce-endpoint"
+                    value={endpoint}
+                    onChange={(e) => setEndpoint(e.target.value)}
+                    type="url"
+                    required
+                  />
+                </label>
+                <label htmlFor="workforce-key" className="block space-y-2 text-sm">
+                  <span>
+                    <Trans>Agent key</Trans>
+                  </span>
+                  <Input
+                    id="workforce-key"
+                    value={key}
+                    onChange={(e) => setKey(e.target.value)}
+                    type="password"
+                    autoComplete="new-password"
+                    required={!connection}
+                    placeholder={connection ? t`Leave blank to keep saved key` : ""}
+                  />
+                </label>
+              </>
+            )}
             <datalist id="workforce-models">
               {models.map((model) => (
                 <option value={model} key={model} />

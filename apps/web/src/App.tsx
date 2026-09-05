@@ -1,9 +1,10 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import { Button, Skeleton } from "@rakazo/ui-web";
 import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { LoadingState } from "./components/ai/primitives";
 import { authClient } from "./lib/auth";
+import { useAuthCapabilities } from "./lib/auth-capabilities";
 import { markAfterPaint, markOnce } from "./lib/performance";
 import {
   holdUnreachableGate,
@@ -28,6 +29,8 @@ const WelcomePage = lazy(() =>
 );
 
 export function App() {
+  const capabilities = useAuthCapabilities();
+  const location = useLocation();
   const session = authClient.useSession();
   const gate = sessionGate(session);
   const [holdingUnreachable, setHoldingUnreachable] = useState(false);
@@ -61,7 +64,28 @@ export function App() {
     <div className="h-full" data-rakazo-app-state="ready">
       <Suspense fallback={<div className="h-full bg-background" />}>
         <Routes>
-          <Route path="/" element={user ? <Navigate to="/app" replace /> : <WelcomePage />} />
+          <Route
+            path="/"
+            element={
+              user ? (
+                <Navigate to="/app" replace />
+              ) : capabilities?.provider === "convex-company-os" ? (
+                <Navigate to="/login" replace />
+              ) : capabilities ? (
+                <WelcomePage />
+              ) : (
+                <AuthPage mode="in" />
+              )
+            }
+          />
+          <Route
+            path="/login"
+            element={user ? <Navigate to="/app" replace /> : <AuthPage key="login" mode="in" />}
+          />
+          <Route
+            path="/signup"
+            element={user ? <Navigate to="/app" replace /> : <AuthPage key="signup" mode="up" />}
+          />
           <Route
             path="/sign-in"
             element={user ? <Navigate to="/app" replace /> : <AuthPage key="in" mode="in" />}
@@ -79,20 +103,88 @@ export function App() {
           <Route path="/reset-password" element={<PasswordResetPage />} />
           <Route
             path="/onboarding"
-            element={user ? <OnboardingPage /> : <Navigate to="/sign-in" replace />}
+            element={
+              user ? (
+                <OnboardingPage />
+              ) : (
+                <Navigate
+                  to={
+                    capabilities?.provider === "convex-company-os"
+                      ? `/login?next=${encodeURIComponent(location.pathname + location.search)}`
+                      : "/sign-in"
+                  }
+                  replace
+                />
+              )
+            }
           />
           <Route
             path="/mcp/oauth/callback"
-            element={user ? <McpOAuthCallbackPage /> : <Navigate to="/sign-in" replace />}
+            element={
+              user ? (
+                <McpOAuthCallbackPage />
+              ) : (
+                <Navigate
+                  to={
+                    capabilities?.provider === "convex-company-os"
+                      ? `/login?next=${encodeURIComponent(location.pathname + location.search)}`
+                      : "/sign-in"
+                  }
+                  replace
+                />
+              )
+            }
           />
-          <Route path="/app" element={user ? <ShellPage /> : <Navigate to="/sign-in" replace />} />
+          <Route
+            path="/app"
+            element={
+              user ? (
+                <ShellPage />
+              ) : (
+                <Navigate
+                  to={
+                    capabilities?.provider === "convex-company-os"
+                      ? `/login?next=${encodeURIComponent(location.pathname + location.search)}`
+                      : "/sign-in"
+                  }
+                  replace
+                />
+              )
+            }
+          />
           <Route
             path="/app/g/:groupId"
-            element={user ? <ShellPage /> : <Navigate to="/sign-in" replace />}
+            element={
+              user ? (
+                <ShellPage />
+              ) : (
+                <Navigate
+                  to={
+                    capabilities?.provider === "convex-company-os"
+                      ? `/login?next=${encodeURIComponent(location.pathname + location.search)}`
+                      : "/sign-in"
+                  }
+                  replace
+                />
+              )
+            }
           />
           <Route
             path="/app/:botId"
-            element={user ? <ShellPage /> : <Navigate to="/sign-in" replace />}
+            element={
+              user ? (
+                <ShellPage />
+              ) : (
+                <Navigate
+                  to={
+                    capabilities?.provider === "convex-company-os"
+                      ? `/login?next=${encodeURIComponent(location.pathname + location.search)}`
+                      : "/sign-in"
+                  }
+                  replace
+                />
+              )
+            }
           />
         </Routes>
       </Suspense>

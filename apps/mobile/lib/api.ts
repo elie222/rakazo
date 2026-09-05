@@ -326,7 +326,12 @@ export function signUp(email: string, password: string, name: string) {
   return authenticateWithEmail("sign-up", { email, password, name });
 }
 
-export type PasswordResetCapabilities = { passwordReset: boolean; resetUrl: string | null };
+export type PasswordResetCapabilities = {
+  passwordReset: boolean;
+  resetUrl: string | null;
+  provider?: "local" | "convex-company-os";
+  webOrigin?: string;
+};
 
 export async function passwordResetCapabilities(): Promise<PasswordResetCapabilities> {
   const response = await fetch(`${currentApiBase()}/api/auth/capabilities`, {

@@ -18,7 +18,8 @@
     "@rakazo/core": "workspace:*",
     "@rakazo/db": "workspace:*",
     "@testcontainers/postgresql": "^11.5.1",
-    "pngjs": "7.0.0"
+    "pngjs": "7.0.0",
+    "@rakazo/auth": "workspace:*"
   },
   "devDependencies": {
     "@playwright/test": "^1.55.0",

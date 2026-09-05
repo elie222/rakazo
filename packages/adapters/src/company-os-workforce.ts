@@ -92,6 +92,9 @@ export async function connectCompanyOs(endpoint: string, key: string): Promise<W
   };
 }
 export interface WorkforceDeps {
+  oauthCredential?: (
+    userId: string,
+  ) => Promise<{ token: string; identity: { company: { slug: string }; capabilities: string[] } }>;
   prisma: PrismaClient;
   pool?: Pool;
   secrets: EncryptedSecretStore;
@@ -147,6 +150,48 @@ export function createCompanyOsWorkforce(deps: WorkforceDeps) {
       lock.release();
     }
   }
+  async function credential(row: {
+    id: string;
+    credential: string;
+    userId: string;
+    spaceId: string;
+    companySlug: string;
+    endpoint: string;
+  }) {
+    if (row.credential !== "oauth:company-os") return secrets.load(row.credential, row.id);
+    if (!deps.oauthCredential) throw new Error("Company OS OAuth is not configured");
+    const { token, identity } = await deps.oauthCredential(row.userId);
+    if (identity.company.slug !== row.companySlug)
+      throw new Error("Reconnect the original Company OS company");
+    const server = await prisma.mcpServer.findUnique({
+      where: {
+        spaceId_userId_slug: {
+          spaceId: row.spaceId,
+          userId: row.userId,
+          slug: "company-os-workforce",
+        },
+      },
+      include: { secret: true },
+    });
+    if (
+      server?.secret &&
+      secrets.load(server.secret.ciphertext, server.secret.id) !== JSON.stringify({ secret: token })
+    ) {
+      const updated = await secrets.put(
+        JSON.stringify({ secret: token }),
+        context(row),
+        server.secret.id,
+      );
+      await prisma.$transaction([
+        prisma.secret.update({
+          where: { id: server.secret.id },
+          data: { ciphertext: updated.ciphertext },
+        }),
+        prisma.mcpServer.update({ where: { id: server.id }, data: { revision: { increment: 1 } } }),
+      ]);
+    }
+    return token;
+  }
   async function configure(actor: Actor, raw: unknown) {
     const input = WorkforceConfigure.parse(raw);
     const endpoint = companyOsEndpoint(input.endpoint);
@@ -157,7 +202,9 @@ export function createCompanyOsWorkforce(deps: WorkforceDeps) {
       const id = existing?.id ?? randomUUID();
       if (existing && existing.endpoint !== endpoint)
         throw new Error("Pause and finish existing work before changing the Company OS endpoint");
-      const key = input.key ?? (existing ? secrets.load(existing.credential, id) : "");
+      const oauth =
+        !input.key && deps.oauthCredential ? await deps.oauthCredential(actor.userId) : null;
+      const key = input.key ?? oauth?.token ?? (existing ? await credential(existing) : "");
       if (!key) throw new Error("A Company OS agent key is required");
       const peer = await connect(endpoint, key);
       try {
@@ -175,6 +222,8 @@ export function createCompanyOsWorkforce(deps: WorkforceDeps) {
           workers: [],
           reports: [],
         });
+        if (oauth && oauth.identity.company.slug !== identity.company.slug)
+          throw new Error("Company identity mismatch");
         if (existing && existing.companySlug !== identity.company.slug)
           throw new Error("This key belongs to a different Company OS company");
         const allowedTools = (await peer.tools()).filter(
@@ -271,7 +320,7 @@ export function createCompanyOsWorkforce(deps: WorkforceDeps) {
           });
         const data = {
           endpoint,
-          credential: encrypted.ciphertext,
+          credential: oauth ? "oauth:company-os" : encrypted.ciphertext,
           companyName: identity.company.name,
           companySlug: identity.company.slug,
           workers,
@@ -371,7 +420,7 @@ export function createCompanyOsWorkforce(deps: WorkforceDeps) {
           where: { botId: { in: workers.map((w) => w.id) }, status: { notIn: [...terminal] } },
           select: { botId: true },
         });
-        peer = await connect(current.endpoint, secrets.load(current.credential, id));
+        peer = await connect(current.endpoint, await credential(current));
         const result = await peer.sync({
           installationId: id,
           enabled: current.enabled,

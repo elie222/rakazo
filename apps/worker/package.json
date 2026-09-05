@@ -15,7 +15,8 @@
     "@rakazo/core": "workspace:*",
     "@rakazo/db": "workspace:*",
     "@rakazo/logging": "workspace:*",
-    "@rakazo/memory": "workspace:*"
+    "@rakazo/memory": "workspace:*",
+    "@rakazo/auth": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.9.2",
