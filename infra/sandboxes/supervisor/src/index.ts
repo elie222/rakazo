@@ -20,6 +20,7 @@ import {
   COMPUTER_USER,
   computerNetworkNameFor,
   computerNetworkNamesForCleanup,
+  computerResourceLimits,
   containerCreateOptions,
   containerNameFor,
   hostComputerUser,
@@ -601,6 +602,11 @@ app.delete("/computers/:id", async (c) => {
 
 function startSupervisor() {
   const logger = createRootLogger(SERVICE_NAMES.supervisor);
+  // Resolve the ceilings before binding the port. They are otherwise parsed inside
+  // containerCreateOptions, so a malformed RAKAZO_COMPUTER_* value would let the supervisor start
+  // and pass its healthcheck, then fail the first POST /computers with a 500 that reads like a
+  // Docker problem. Failing here names the variable while the deployment is still coming up.
+  computerResourceLimits();
   const port = Number(process.env.SUPERVISOR_PORT ?? 7091);
   const hostname = process.env.SUPERVISOR_HOST ?? "127.0.0.1";
   const server = serve({ fetch: app.fetch, hostname, port }, () => {
