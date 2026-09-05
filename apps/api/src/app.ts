@@ -60,6 +60,15 @@ import {
   provisionMessagingIdentity,
   requireMembership,
 } from "@rakazo/db";
+import {
+  createServiceLogger,
+  enrichLogContext,
+  getLogger,
+  installLogger,
+  type Logger,
+  SERVICE_NAMES,
+} from "@rakazo/logging";
+import { requestLogging } from "@rakazo/logging/hono";
 import { MarkdownMemoryStore } from "@rakazo/memory";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
@@ -93,6 +102,7 @@ export async function createApp(
     messaging?: MessagingSurface;
     email?: TransactionalEmailProvider;
     remoteConnectors?: RemoteConnectorDependencies;
+    logger?: Logger;
   } = {},
 ): Promise<AppHandles> {
   const {
@@ -103,9 +113,12 @@ export async function createApp(
     messaging: messagingOverride,
     email: emailOverride,
     remoteConnectors,
+    logger: loggerOverride,
     ...envOverrides
   } = overrides;
   const env = { ...loadEnv(process.env), ...envOverrides };
+  const logger = loggerOverride ?? createServiceLogger({ service: SERVICE_NAMES.api });
+  installLogger(logger);
   const created = prismaOverride
     ? { prisma: prismaOverride, pool: undefined }
     : createDb(env.databaseUrl);
@@ -195,7 +208,9 @@ export async function createApp(
   const localEmailEmulator =
     !emailOverride && !env.smtpUrl && env.emailEmulator
       ? new EmailEmulator((message) => {
-          console.info(`[email-emulator] captured ${message.subject} to ${message.to}`);
+          getLogger().info("email emulator captured message", {
+            "email.subject": message.subject,
+          });
         })
       : undefined;
   if (localEmailEmulator && !isLoopbackHost(env.apiHost)) {
@@ -226,7 +241,7 @@ export async function createApp(
     signupsEnabled: env.signupsEnabled,
     signupAllowlist: env.signupAllowlist,
     email,
-    onEmailError: (error) => console.error("transactional email delivery failed", error),
+    onEmailError: (error) => getLogger().error("transactional email delivery failed", error),
     extraOrigins: [
       "rakazo://",
       "exp://",
@@ -343,6 +358,7 @@ export async function createApp(
     clientInterceptors: [onError((error, { path }) => logUnexpectedRpcError(error, path))],
   });
   const app = new Hono();
+  app.use("*", requestLogging(logger));
   app.use(
     "*",
     cors({
@@ -381,6 +397,9 @@ export async function createApp(
     const actor = session?.user
       ? await requireMembership(prisma, session.user.id, requestedSpaceId).catch(() => null)
       : null;
+    if (actor) {
+      enrichLogContext({ "user.id": actor.userId, "space.id": actor.spaceId });
+    }
     const { matched, response } = await rpc.handle(c.req.raw, {
       prefix: "/rpc",
       context: { actor, signal: c.req.raw.signal },
@@ -391,9 +410,13 @@ export async function createApp(
   mountVoiceHttpRoutes(app, { prisma, secrets }, async (c) => {
     const session = await auth.api.getSession({ headers: sessionHeaders(c.req.raw) });
     if (!session?.user) return null;
-    return requireMembership(prisma, session.user.id, c.req.header("x-rakazo-space-id")).catch(
-      () => null,
-    );
+    const actor = await requireMembership(
+      prisma,
+      session.user.id,
+      c.req.header("x-rakazo-space-id"),
+    ).catch(() => null);
+    if (actor) enrichLogContext({ "user.id": actor.userId, "space.id": actor.spaceId });
+    return actor;
   });
   mountWebhookHttpRoutes(app, { prisma, secrets, events, jobs });
   // Messaging webhooks only exist when the surface is enabled.
@@ -467,6 +490,7 @@ export async function createApp(
       await mcp.close();
       await prisma.$disconnect().catch(() => undefined);
       await created.pool?.end().catch(() => undefined);
+      await logger.flush({ timeoutMs: 2_000 });
     },
   };
 }
@@ -507,14 +531,5 @@ function sessionHeaders(request: Request) {
 export function logUnexpectedRpcError(error: unknown, path: readonly string[]): void {
   if (error instanceof ORPCError) return;
   const where = `rpc ${path.join("/")} failed`;
-  if (!(error instanceof Error)) {
-    console.error(where, String(error));
-    return;
-  }
-  const chain: string[] = [];
-  for (let current: unknown = error; current instanceof Error && chain.length < 4; ) {
-    chain.push(`${current.name}: ${current.message}`);
-    current = current.cause;
-  }
-  console.error(where, chain.join(" <- "), error.stack ?? "");
+  getLogger().error(where, error);
 }

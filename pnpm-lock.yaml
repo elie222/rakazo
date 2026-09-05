@@ -65,6 +65,9 @@ importers:
       '@rakazo/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@rakazo/logging':
+        specifier: workspace:*
+        version: link:../../packages/logging
       '@rakazo/memory':
         specifier: workspace:*
         version: link:../../packages/memory
@@ -345,6 +348,9 @@ importers:
       '@rakazo/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@rakazo/logging':
+        specifier: workspace:*
+        version: link:../../packages/logging
       '@rakazo/memory':
         specifier: workspace:*
         version: link:../../packages/memory
@@ -416,6 +422,9 @@ importers:
       '@rakazo/core':
         specifier: workspace:*
         version: link:../../../packages/core
+      '@rakazo/logging':
+        specifier: workspace:*
+        version: link:../../../packages/logging
       dockerode:
         specifier: ^4.0.7
         version: 4.0.12
@@ -450,6 +459,9 @@ importers:
       '@rakazo/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@rakazo/logging':
+        specifier: workspace:*
+        version: link:../../packages/logging
       hono:
         specifier: ^4.9.6
         version: 4.13.1
@@ -536,6 +548,9 @@ importers:
       '@rakazo/db':
         specifier: workspace:*
         version: link:../db
+      '@rakazo/logging':
+        specifier: workspace:*
+        version: link:../logging
       chat:
         specifier: 4.39.0
         version: 4.39.0(zod@4.4.3)
@@ -622,6 +637,9 @@ importers:
 
   packages/chat-ui:
     dependencies:
+      '@rakazo/ui-tokens':
+        specifier: workspace:*
+        version: link:../ui-tokens
       '@ronradtke/react-native-markdown-display':
         specifier: ^9.0.3
         version: 9.0.3(@expo/config-plugins@57.0.9(typescript@6.0.3))(react-native@0.86.2(@babel/core@7.29.7)(@react-native/metro-config@0.86.2(@babel/core@7.29.7))(@types/react@19.2.18)(react@19.2.3))(react@19.2.3)
@@ -712,6 +730,9 @@ importers:
       '@rakazo/core':
         specifier: workspace:*
         version: link:../core
+      '@rakazo/logging':
+        specifier: workspace:*
+        version: link:../logging
       dotenv:
         specifier: ^17.2.1
         version: 17.4.2
@@ -725,6 +746,22 @@ importers:
       prisma:
         specifier: ^7.9.1
         version: 7.9.1(@types/react-dom@19.2.4(@types/react@19.2.18))(@types/react@19.2.18)(magicast@0.5.4)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(typescript@5.9.3)
+      typescript:
+        specifier: ^5.9.2
+        version: 5.9.3
+      vitest:
+        specifier: ^4.1.10
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.3)(jsdom@30.0.1(@noble/hashes@2.3.0))(vite@8.2.1(@types/node@24.13.3)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.12)(yaml@2.9.0))
+
+  packages/logging:
+    dependencies:
+      '@axiomhq/js':
+        specifier: ^1.3.1
+        version: 1.8.0
+      hono:
+        specifier: ^4.9.6
+        version: 4.13.1
+    devDependencies:
       typescript:
         specifier: ^5.9.2
         version: 5.9.3
@@ -1093,6 +1130,10 @@ packages:
   '@aws/lambda-invoke-store@0.3.0':
     resolution: {integrity: sha512-sl4Bm6yiMNYrZKkqqDFWN0UfnWhlS8ivKxrYl+6t0gCLrqr8y3B2IqZZbFRkfaVVp7C/baApyh71P+LeE1A2sQ==}
     engines: {node: '>=18.0.0'}
+
+  '@axiomhq/js@1.8.0':
+    resolution: {integrity: sha512-VRkqV9XH+pkj8d9eRdw8TuWvXdCkVDMtDOz2rix5UAg7x5SlOeWhUz9fwc0ZgySosMSMA7WP7X0fFX8N/jBHtQ==}
+    engines: {node: '>=20'}
 
   '@babel/code-frame@7.29.7':
     resolution: {integrity: sha512-Aup7aUOfpbAUg2ROOJN6Iw5f9DMBlzu0mIkm/malLQFN/YQgO48wCj0Kxa3sEHJvPVFg7siR+qRInwXd2qhQKw==}
@@ -6205,6 +6246,9 @@ packages:
   fetch-nodeshim@0.4.10:
     resolution: {integrity: sha512-m6I8ALe4L4XpdETy7MJZWs6L1IVMbjs99bwbpIKphxX+0CTns4IKDWJY0LWfr4YsFjfg+z1TjzTMU8lKl8rG0w==}
 
+  fetch-retry@6.0.0:
+    resolution: {integrity: sha512-BUFj1aMubgib37I3v4q78fYo63Po7t4HUPTpQ6/QE6yK6cIQrP+W43FYToeTEyg5m2Y7eFUtijUuAv/PDlWuag==}
+
   fflate@0.4.9:
     resolution: {integrity: sha512-zdxgIEddhfsyCaWpJ2SdXEP8ZMrKJ6+5jl4OupODcywU0IhRk6gdXuVGcPICyfx2H97hVK7xmJtRLPjkxAX8Vw==}
 
@@ -10306,6 +10350,10 @@ snapshots:
       tslib: 2.8.1
 
   '@aws/lambda-invoke-store@0.3.0': {}
+
+  '@axiomhq/js@1.8.0':
+    dependencies:
+      fetch-retry: 6.0.0
 
   '@babel/code-frame@7.29.7':
     dependencies:
@@ -16466,6 +16514,8 @@ snapshots:
       web-streams-polyfill: 3.3.3
 
   fetch-nodeshim@0.4.10: {}
+
+  fetch-retry@6.0.0: {}
 
   fflate@0.4.9: {}
 

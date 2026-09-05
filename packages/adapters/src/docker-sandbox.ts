@@ -15,18 +15,41 @@ import type {
   ScreenSession,
 } from "@rakazo/adapter-kit";
 import { boundedSandboxCommandTimeoutMs, resolveSupervisorToken } from "@rakazo/core";
+import { outgoingCorrelationHeaders } from "@rakazo/logging";
 import {
   boundedComputerActions,
   clampRounded,
   computerObservation,
   normalizeWorkspacePath,
 } from "./computer-support.js";
+import { readBodyCapped, withAbort } from "./web-ssrf.js";
 
-async function safeBody(res: Response): Promise<string> {
+export const MAX_SANDBOX_ERROR_RESPONSE_BYTES = 8 * 1024;
+export const SCREEN_RELEASE_TIMEOUT_MS = 8_000;
+const SANDBOX_ERROR_RESPONSE_TIMEOUT_MS = 1_000;
+
+async function safeBody(res: Response, signal?: AbortSignal): Promise<string> {
+  const declared = Number(res.headers.get("content-length") ?? 0);
+  if (Number.isFinite(declared) && declared > MAX_SANDBOX_ERROR_RESPONSE_BYTES) {
+    cancelResponseBody(res);
+    return "";
+  }
   try {
-    return (await res.text()).slice(0, 200);
+    const readSignal = signal
+      ? AbortSignal.any([signal, AbortSignal.timeout(SANDBOX_ERROR_RESPONSE_TIMEOUT_MS)])
+      : AbortSignal.timeout(SANDBOX_ERROR_RESPONSE_TIMEOUT_MS);
+    const bytes = await readBodyCapped(res, MAX_SANDBOX_ERROR_RESPONSE_BYTES, readSignal);
+    return new TextDecoder().decode(bytes).slice(0, 200);
   } catch {
     return "";
+  }
+}
+
+function cancelResponseBody(res: Response): void {
+  try {
+    void Promise.resolve(res.body?.cancel()).catch(() => undefined);
+  } catch {
+    // Error diagnostics are best-effort and must not delay the operation failure.
   }
 }
 
@@ -75,6 +98,7 @@ export class DockerSandboxProvider implements SandboxProvider {
     return {
       authorization: `Bearer ${this.supervisorToken}`,
       "x-rakazo-space-id": context.spaceId,
+      ...outgoingCorrelationHeaders(),
       ...(botId ? { "x-rakazo-bot-id": botId } : {}),
       ...(context.screenLeaseId ? { "x-rakazo-screen-lease-id": context.screenLeaseId } : {}),
       ...(context.cancelRunWork ? { "x-rakazo-cancel-run-work": "1" } : {}),
@@ -96,7 +120,7 @@ export class DockerSandboxProvider implements SandboxProvider {
       signal: context.signal,
     });
     if (!res.ok) {
-      const detail = await res.text().catch(() => "");
+      const detail = await safeBody(res, context.signal);
       throw new Error(`sandbox provision failed: ${res.status} ${detail}`.trim());
     }
     const body = (await res.json()) as { id: string; resumed?: boolean };
@@ -153,7 +177,7 @@ export class DockerSandboxProvider implements SandboxProvider {
       signal: context.signal,
     });
     if (!res.ok) {
-      const detail = await res.text().catch(() => "");
+      const detail = await safeBody(res, context.signal);
       if (/cannot allocate another screen/i.test(detail)) {
         throw new Error("This Team Computer cannot allocate another screen.");
       }
@@ -195,7 +219,7 @@ export class DockerSandboxProvider implements SandboxProvider {
       signal: context.signal,
     });
     if (!res.ok) {
-      const detail = await res.text().catch(() => "");
+      const detail = await safeBody(res, context.signal);
       throw new Error(`sandbox input failed: ${res.status} ${detail}`.trim());
     }
   }
@@ -208,7 +232,7 @@ export class DockerSandboxProvider implements SandboxProvider {
     });
     if (!res.ok)
       throw new Error(
-        `sandbox observation failed: ${res.status} ${await res.text().catch(() => "")}`.trim(),
+        `sandbox observation failed: ${res.status} ${await safeBody(res, context.signal)}`.trim(),
       );
     const body = (await res.json()) as {
       image: string;
@@ -241,7 +265,7 @@ export class DockerSandboxProvider implements SandboxProvider {
     });
     if (!res.ok)
       throw new Error(
-        `sandbox action failed: ${res.status} ${await res.text().catch(() => "")}`.trim(),
+        `sandbox action failed: ${res.status} ${await safeBody(res, context.signal)}`.trim(),
       );
     const body = (await res.json()) as {
       completed: number;
@@ -296,7 +320,7 @@ export class DockerSandboxProvider implements SandboxProvider {
       { headers: this.headers(context, computer.botId), signal: context.signal },
     );
     if (!res.ok) {
-      const detail = await res.text().catch(() => "");
+      const detail = await safeBody(res, context.signal);
       throw new Error(`sandbox file read failed: ${res.status} ${detail}`.trim());
     }
     const body = (await res.json()) as { content: string };
@@ -335,12 +359,22 @@ export class DockerSandboxProvider implements SandboxProvider {
 
   async releaseScreen(computer: ComputerRef, context: AdapterContext): Promise<void> {
     if (!context.botId) return;
-    const res = await fetch(this.url(`/computers/${computer.id}/screen`), {
-      method: "DELETE",
-      headers: this.headers(context, computer.botId),
-    });
-    if (!res.ok && res.status !== 404) {
-      throw new Error(`sandbox screen release failed: ${res.status}`);
+    // Run cancellation must not skip cleanup, but cleanup still needs its own deadline.
+    const deadline = requestDeadline(SCREEN_RELEASE_TIMEOUT_MS, "sandbox screen release timed out");
+    try {
+      const res = await withAbort(
+        fetch(this.url(`/computers/${computer.id}/screen`), {
+          method: "DELETE",
+          headers: this.headers(context, computer.botId),
+          signal: deadline.signal,
+        }),
+        deadline.signal,
+      );
+      if (!res.ok && res.status !== 404) {
+        throw new Error(`sandbox screen release failed: ${res.status}`);
+      }
+    } finally {
+      deadline.dispose();
     }
   }
 
@@ -352,7 +386,9 @@ export class DockerSandboxProvider implements SandboxProvider {
     });
     // 404 means the supervisor no longer has the container, which is the state we want.
     if (!res.ok && res.status !== 404) {
-      throw new Error(`sandbox stop failed: ${res.status} ${await safeBody(res)}`.trim());
+      throw new Error(
+        `sandbox stop failed: ${res.status} ${await safeBody(res, context.signal)}`.trim(),
+      );
     }
   }
 
@@ -363,7 +399,9 @@ export class DockerSandboxProvider implements SandboxProvider {
       signal: context.signal,
     });
     if (!res.ok && res.status !== 404) {
-      throw new Error(`sandbox destroy failed: ${res.status} ${await safeBody(res)}`.trim());
+      throw new Error(
+        `sandbox destroy failed: ${res.status} ${await safeBody(res, context.signal)}`.trim(),
+      );
     }
   }
 
@@ -395,6 +433,17 @@ export class DockerSandboxProvider implements SandboxProvider {
       for (const file of batch) yield file;
     }
   }
+}
+
+function requestDeadline(timeoutMs: number, message: string) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(new Error(message)), timeoutMs);
+  return {
+    signal: controller.signal,
+    dispose() {
+      clearTimeout(timer);
+    },
+  };
 }
 
 function dockerCwd(cwd: string | undefined) {

@@ -533,7 +533,19 @@ export function reduceComputerStatus(
   if (!prev) return prev;
   if (!isComputerStatusEvent(event)) return prev;
   if (event.type === "computer.takeover.requested") {
-    return prev.busyBotName === null ? prev : { ...prev, busyBotName: null };
+    const retainedControl = event.payload.retainedControl === true;
+    const next = {
+      ...prev,
+      busyBotName: null,
+      takeoverRequested: true,
+      ...(retainedControl ? {} : { controlHolder: "none" as const, controlBotId: null }),
+    };
+    return prev.busyBotName === next.busyBotName &&
+      prev.takeoverRequested === next.takeoverRequested &&
+      prev.controlHolder === next.controlHolder &&
+      prev.controlBotId === next.controlBotId
+      ? prev
+      : next;
   }
   if (event.type === "computer.takeover.granted") {
     const takeoverRequested = event.payload.takeoverRequested === true;

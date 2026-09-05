@@ -324,8 +324,34 @@ export function redactSecrets(value: string, secrets: string[]): string {
 }
 
 export function containsSecret(value: unknown, secrets: string[]): boolean {
-  const text = JSON.stringify(value);
-  return secrets.some((secret) => secret.length > 0 && text.includes(secret));
+  const active = secrets.filter((secret) => secret.length > 0);
+  if (active.length === 0) return false;
+  const serialized = JSON.stringify(value);
+  if (serialized === undefined) return false;
+  const pending: unknown[] = [JSON.parse(serialized)];
+  while (pending.length > 0) {
+    const current = pending.pop();
+    if (typeof current === "string") {
+      if (active.some((secret) => current.includes(secret))) return true;
+      continue;
+    }
+    if (current === null || typeof current === "number" || typeof current === "boolean") {
+      const primitive = String(current);
+      if (active.some((secret) => primitive.includes(secret))) return true;
+      continue;
+    }
+    if (Array.isArray(current)) {
+      pending.push(...current);
+      continue;
+    }
+    if (current && typeof current === "object") {
+      for (const [key, nested] of Object.entries(current)) {
+        if (active.some((secret) => key.includes(secret))) return true;
+        pending.push(nested);
+      }
+    }
+  }
+  return false;
 }
 
 /** UTF-16 high surrogates (0xD800–0xDBFF) must be paired with a low surrogate for valid JSON. */

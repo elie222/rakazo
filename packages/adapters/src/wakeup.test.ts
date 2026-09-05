@@ -221,4 +221,42 @@ describe("InMemoryJobQueue", () => {
     await queue.close();
     expect(target["computer.sleep"]).toHaveBeenCalledOnce();
   });
+
+  it("unwraps correlation envelopes and restores request traces", async () => {
+    const { createLogger, createTestSink, installLogger, runWithLogContext } = await import(
+      "@rakazo/logging"
+    );
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-worker", sinks: [sink] }));
+    const queue = new InMemoryJobQueue();
+    const target = handlers();
+    await queue.start(target);
+    await runWithLogContext(
+      { "trace.id": "a".repeat(32), "span.id": "b".repeat(16), "request.id": "req-1" },
+      async () => {
+        await queue.enqueue({ name: "run.continue", payload: { runId: "run-traced" } });
+      },
+    );
+    await queue.close();
+    expect(target["run.continue"]).toHaveBeenCalledWith({ runId: "run-traced" });
+    expect(sink.events.some((event) => event.message === "job.completed")).toBe(true);
+    expect(
+      sink.events.some(
+        (event) => event["trace.id"] === "a".repeat(32) && event["run.id"] === "run-traced",
+      ),
+    ).toBe(true);
+  });
+
+  it("keeps wrapped payloads readable by workers that do not unwrap envelopes", async () => {
+    const { wrapJobPayload } = await import("@rakazo/logging");
+    const { parseBackgroundJob } = await import("@rakazo/adapter-kit");
+    const wrapped = wrapJobPayload(
+      { runId: "run-rollback" },
+      { jobId: "job-1", traceId: "a".repeat(32) },
+    );
+    expect(parseBackgroundJob("run.continue", wrapped)).toEqual({
+      name: "run.continue",
+      payload: { runId: "run-rollback" },
+    });
+  });
 });

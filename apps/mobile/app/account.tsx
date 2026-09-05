@@ -1,6 +1,6 @@
 import type { AvatarStyle } from "@rakazo/contracts";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -18,7 +18,6 @@ import { useAvatarStyle } from "../components/avatar-style";
 import { BotAvatar } from "../components/bot-avatar";
 import type { MobileBot } from "../lib/api";
 import {
-  changePassword as changeAccountPassword,
   currentApiBase,
   deleteAccount,
   loadSessionToken,
@@ -29,8 +28,8 @@ import {
 } from "../lib/api";
 import {
   getCachedAppearancePreference,
+  mobileTokens,
   setAppearancePreference,
-  subscribeAppearance,
 } from "../lib/appearance";
 import { explicitSignInRoute } from "../lib/auth-routing";
 import { confirmDeleteBot } from "../lib/bot-lifecycle";
@@ -66,11 +65,6 @@ export default function Account() {
   const [notificationPending, setNotificationPending] = useState(false);
   const [notificationError, setNotificationError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [currentPassword, setCurrentPassword] = useState("");
-  const [newPassword, setNewPassword] = useState("");
-  const [passwordConfirmation, setPasswordConfirmation] = useState("");
-  const [passwordPending, setPasswordPending] = useState(false);
-  const [passwordMessage, setPasswordMessage] = useState<string | null>(null);
   const [archivedBots, setArchivedBots] = useState<MobileBot[]>([]);
   const [usage, setUsage] = useState<{
     runs: number;
@@ -78,11 +72,7 @@ export default function Account() {
     outputTokens: number;
   } | null>(null);
   const { avatarStyle, updateAvatarStyle } = useAvatarStyle();
-  const appearance = useSyncExternalStore(
-    subscribeAppearance,
-    getCachedAppearancePreference,
-    () => "system" as const,
-  );
+  const appearance = getCachedAppearancePreference();
   const styles = useThemedStyles(createAccountStyles);
 
   useEffect(() => {
@@ -156,26 +146,6 @@ export default function Account() {
     }
   }
 
-  async function handlePasswordChange() {
-    if (newPassword !== passwordConfirmation) {
-      setPasswordMessage(t("Passwords do not match"));
-      return;
-    }
-    setPasswordPending(true);
-    setPasswordMessage(null);
-    try {
-      await changeAccountPassword(currentPassword, newPassword);
-      setCurrentPassword("");
-      setNewPassword("");
-      setPasswordConfirmation("");
-      setPasswordMessage(t("Password updated"));
-    } catch (cause) {
-      setPasswordMessage(cause instanceof Error ? cause.message : t("Could not change password"));
-    } finally {
-      setPasswordPending(false);
-    }
-  }
-
   async function updateNotifications(next: LiveNotificationSettings) {
     const previous = notifications;
     setNotifications(next);
@@ -244,44 +214,14 @@ export default function Account() {
         </View>
         {focus !== "usage" ? usageBlock : null}
 
-        <View accessibilityLabel={t("Password")} style={styles.profile}>
-          <Text style={styles.settingsTitle}>{t("Password")}</Text>
-          <AccountPasswordInput
-            label={t("Current password")}
-            value={currentPassword}
-            onChange={setCurrentPassword}
-            autoComplete="current-password"
-          />
-          <AccountPasswordInput
-            label={t("New password")}
-            value={newPassword}
-            onChange={setNewPassword}
-            autoComplete="new-password"
-          />
-          <AccountPasswordInput
-            label={t("Confirm password")}
-            value={passwordConfirmation}
-            onChange={setPasswordConfirmation}
-            autoComplete="new-password"
-          />
-          {passwordMessage ? <Text style={styles.passwordMessage}>{passwordMessage}</Text> : null}
-          <Pressable
-            accessibilityRole="button"
-            disabled={passwordPending || !currentPassword || newPassword.length < 8}
-            onPress={() => void handlePasswordChange()}
-            style={({ pressed }) => [
-              styles.changePasswordButton,
-              (passwordPending || !currentPassword || newPassword.length < 8) && styles.disabled,
-              pressed && styles.pressed,
-            ]}
-          >
-            {passwordPending ? (
-              <ActivityIndicator color={native.label} />
-            ) : (
-              <Text style={styles.changePasswordLabel}>{t("Change password")}</Text>
-            )}
-          </Pressable>
-        </View>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => router.push("/change-password")}
+          style={({ pressed }) => [styles.settingsButton, pressed && styles.pressed]}
+        >
+          <Text style={styles.settingsTitle}>{t("Change password")}</Text>
+          <Text style={styles.chevron}>›</Text>
+        </Pressable>
 
         <View accessibilityLabel={t("Appearance")} style={styles.avatarSection}>
           <Text style={styles.settingsTitle}>{t("Appearance")}</Text>
@@ -427,14 +367,16 @@ export default function Account() {
               onPress={() => void openPromotedNotificationSettings()}
               style={{ minHeight: 44, justifyContent: "center" }}
             >
-              <Text style={{ color: "#4C8DFF", fontSize: 14 }}>{t("Live update settings")}</Text>
+              <Text style={{ color: native.label, fontSize: 14 }}>{t("Live update settings")}</Text>
             </Pressable>
             <Pressable
               accessibilityRole="button"
               onPress={() => void openLiveNotificationSettings()}
               style={{ minHeight: 44, justifyContent: "center" }}
             >
-              <Text style={{ color: "#4C8DFF", fontSize: 14 }}>{t("Notification settings")}</Text>
+              <Text style={{ color: native.label, fontSize: 14 }}>
+                {t("Notification settings")}
+              </Text>
             </Pressable>
             {notificationError ? <Text style={styles.error}>{notificationError}</Text> : null}
           </View>
@@ -553,7 +495,7 @@ export default function Account() {
             ]}
           >
             {pending ? (
-              <ActivityIndicator color="#FFFFFF" />
+              <ActivityIndicator color={mobileTokens().destructiveForeground} />
             ) : (
               <Text style={styles.deleteLabel}>{t("Delete account")}</Text>
             )}
@@ -601,35 +543,8 @@ function NotificationSwitch({
   );
 }
 
-function AccountPasswordInput({
-  label,
-  value,
-  onChange,
-  autoComplete,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  autoComplete: "current-password" | "new-password";
-}) {
-  const styles = useThemedStyles(createAccountStyles);
-  return (
-    <TextInput
-      accessibilityLabel={label}
-      autoCapitalize="none"
-      autoComplete={autoComplete}
-      autoCorrect={false}
-      onChangeText={onChange}
-      placeholder={label}
-      placeholderTextColor={native.tertiaryLabel}
-      secureTextEntry
-      style={styles.accountPassword}
-      value={value}
-    />
-  );
-}
-
 function createAccountStyles() {
+  const tokens = mobileTokens();
   return StyleSheet.create({
     screen: {
       flex: 1,
@@ -694,7 +609,7 @@ function createAccountStyles() {
       fontWeight: "600",
     },
     archivedDeleteLabel: {
-      color: "#FF6961",
+      color: tokens.destructive,
       fontSize: 14,
     },
     settingsButton: {
@@ -779,32 +694,6 @@ function createAccountStyles() {
       fontSize: 13,
       marginTop: 3,
     },
-    accountPassword: {
-      minHeight: 46,
-      borderRadius: 12,
-      backgroundColor: native.fillPressed,
-      color: native.label,
-      paddingHorizontal: 14,
-      marginTop: 8,
-    },
-    passwordMessage: {
-      color: native.secondaryLabel,
-      fontSize: 13,
-      marginTop: 8,
-    },
-    changePasswordButton: {
-      minHeight: 44,
-      borderRadius: 12,
-      alignItems: "center",
-      justifyContent: "center",
-      backgroundColor: native.fillPressed,
-      marginTop: 10,
-    },
-    changePasswordLabel: {
-      color: native.label,
-      fontSize: 15,
-      fontWeight: "600",
-    },
     chevron: {
       color: native.secondaryLabel,
       fontSize: 28,
@@ -814,11 +703,11 @@ function createAccountStyles() {
       marginTop: 12,
       borderRadius: 16,
       borderWidth: StyleSheet.hairlineWidth,
-      borderColor: "#5A2426",
+      borderColor: tokens.destructive,
       padding: 18,
     },
     dangerTitle: {
-      color: "#FF6961",
+      color: tokens.destructive,
       fontSize: 17,
       fontWeight: "600",
     },
@@ -838,7 +727,7 @@ function createAccountStyles() {
       fontSize: 16,
     },
     error: {
-      color: "#FF6961",
+      color: tokens.destructive,
       fontSize: 14,
       marginTop: 10,
     },
@@ -847,11 +736,11 @@ function createAccountStyles() {
       borderRadius: 12,
       alignItems: "center",
       justifyContent: "center",
-      backgroundColor: "#C9363E",
+      backgroundColor: tokens.destructive,
       marginTop: 14,
     },
     deleteLabel: {
-      color: "#FFFFFF",
+      color: tokens.destructiveForeground,
       fontSize: 16,
       fontWeight: "700",
     },

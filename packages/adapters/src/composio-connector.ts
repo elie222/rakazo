@@ -1,4 +1,3 @@
-import console from "node:console";
 import { Composio } from "@composio/core";
 import type {
   AdapterContext,
@@ -9,17 +8,19 @@ import type {
   ConnectorTool,
   ManagedConnectorProvider,
 } from "@rakazo/adapter-kit";
+import { getLogger } from "@rakazo/logging";
 import {
   composioToolkitDirectory,
   mergeCatalogWithConnected,
   type ToolkitDirectoryEntry,
 } from "./composio-catalog-cache.js";
 import { DestinationEmulator } from "./destination-emulator.js";
+import { isVitestRuntime } from "./test-runtime.js";
 
 type ComposioSession = Awaited<ReturnType<Composio["create"]>>;
 
 export function isComposioEnabled(apiKey: string | undefined): boolean {
-  return Boolean(apiKey) && !process.env.VITEST;
+  return Boolean(apiKey) && !isVitestRuntime();
 }
 
 export function asConnectorTools(input: unknown): ConnectorTool[] {
@@ -466,6 +467,7 @@ export class ComposioConnector implements ComposioProvider {
     currentRef: string | null | undefined,
     excludeIds: string[] = [],
     _spaceId?: string,
+    timeoutMs = 20_000,
   ): Promise<string | undefined> {
     const excluded = new Set(excludeIds.filter(Boolean));
     const current = currentRef?.trim() || undefined;
@@ -473,7 +475,7 @@ export class ComposioConnector implements ComposioProvider {
 
     if (current && composioSlugKey(current) !== slugKey) {
       try {
-        const account = await this.sdk().connectedAccounts.waitForConnection(current, 20_000);
+        const account = await this.sdk().connectedAccounts.waitForConnection(current, timeoutMs);
         if (account?.id && !excluded.has(account.id)) return account.id;
       } catch {
         // Request id could not be resolved. Do not fall back to another connected
@@ -534,7 +536,9 @@ export class ConnectorRegistry implements ConnectorProvider {
         try {
           return [connectorId, await provider.discoverTools(context)] as const;
         } catch (error) {
-          console.error("connector discovery failed", connectorId, sanitizeComposioError(error));
+          getLogger().error("connector discovery failed", sanitizeComposioError(error), {
+            "connector.id": connectorId,
+          });
           return [connectorId, []] as const;
         }
       }),

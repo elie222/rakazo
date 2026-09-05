@@ -409,6 +409,32 @@ describe("updater orchestration", () => {
 });
 
 describe("child process environment", () => {
+  it("declares the deployment directory safe so git works on a non-root checkout", () => {
+    // The child environment is rebuilt from an allowlist, so GIT_CONFIG_* set on the Compose
+    // service never reaches git. Without these three, every git call exits 128 with "detected
+    // dubious ownership" on the layout docs/self-host.md recommends.
+    const env = commandEnvironment({ RAKAZO_DEPLOY_DIR: "/srv/rakazo" });
+    expect(env.GIT_CONFIG_COUNT).toBe("1");
+    expect(env.GIT_CONFIG_KEY_0).toBe("safe.directory");
+    expect(env.GIT_CONFIG_VALUE_0).toBe("/srv/rakazo");
+  });
+
+  it("keeps the exemption scoped to the deployment directory, whoever calls it", () => {
+    const env = commandEnvironment(
+      { RAKAZO_DEPLOY_DIR: "/opt/rakazo" },
+      { GIT_CONFIG_VALUE_0: "*", GIT_CONFIG_COUNT: "9" },
+    );
+    expect(env.GIT_CONFIG_VALUE_0).toBe("/opt/rakazo");
+    expect(env.GIT_CONFIG_COUNT).toBe("1");
+  });
+
+  it("sets no git ownership exemption when no deployment directory is known", () => {
+    const env = commandEnvironment({ PATH: "/usr/bin" });
+    expect(env.GIT_CONFIG_COUNT).toBeUndefined();
+    expect(env.GIT_CONFIG_KEY_0).toBeUndefined();
+    expect(env.GIT_CONFIG_VALUE_0).toBeUndefined();
+  });
+
   it("passes operational settings and explicit overrides without leaking application secrets", () => {
     const env = commandEnvironment(
       {
@@ -416,6 +442,8 @@ describe("child process environment", () => {
         HTTPS_PROXY: "http://proxy.invalid",
         BETTER_AUTH_SECRET: "fake-secret-that-must-not-leak",
         DATABASE_URL: "postgres://fake.invalid/db",
+        AXIOM_TOKEN: "fake-axiom-token",
+        LOG_LEVEL: "debug",
       },
       { RAKAZO_IMAGE_TAG: "sha-123" },
     );
@@ -427,6 +455,8 @@ describe("child process environment", () => {
     });
     expect(env.BETTER_AUTH_SECRET).toBeUndefined();
     expect(env.DATABASE_URL).toBeUndefined();
+    expect(env.AXIOM_TOKEN).toBeUndefined();
+    expect(env.LOG_LEVEL).toBeUndefined();
   });
 
   it("restores detached checkouts without attaching to a branch tip", () => {

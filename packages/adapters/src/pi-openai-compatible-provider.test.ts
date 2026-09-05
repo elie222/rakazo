@@ -155,6 +155,21 @@ describe("openai-compatible provider", () => {
     });
   });
 
+  it.each([
+    ["100.100.100.200", 4],
+    ["fd00:ec2::254", 6],
+  ])("rejects local hostnames that resolve to metadata address %s", async (address, family) => {
+    const lookup = createOpenAiCompatibleLookup(new URL("http://localhost:8000/v1"), async () => [
+      { address, family },
+    ]);
+    const error = await new Promise<Error | null>((resolve) => {
+      lookup("localhost", { family: 0, all: false }, (lookupError) => resolve(lookupError));
+    });
+    expect(error).toMatchObject({
+      message: "Model server hostname resolved to a blocked metadata address",
+    });
+  });
+
   it("always exposes a catalog provider entry", () => {
     const provider = openAiCompatibleCatalogProvider();
     expect(provider.id).toBe(OPENAI_COMPATIBLE_PROVIDER_ID);
@@ -199,7 +214,7 @@ describe("openai-compatible provider", () => {
     };
     await expect(
       probeOpenAiCompatibleModels({ baseUrl: "http://127.0.0.1:8000/v1" }, fetchImpl),
-    ).rejects.toThrow(/redirect/i);
+    ).rejects.toThrow(/redirect.*explicit model id/is);
   });
 
   it("clarifies non-2xx probe failures with status and hand-fill hint", async () => {
@@ -223,11 +238,18 @@ describe("openai-compatible provider", () => {
     ).rejects.toThrow(/invalid JSON.*explicit model id/s);
   });
 
+  it("clarifies empty probe responses with hand-fill hint", async () => {
+    const fetchImpl = async () => new Response(null, { status: 200 });
+    await expect(
+      probeOpenAiCompatibleModels({ baseUrl: "http://127.0.0.1:8000/v1" }, fetchImpl),
+    ).rejects.toThrow(/empty response.*explicit model id/s);
+  });
+
   it("rejects oversized model lists", async () => {
     const fetchImpl = async () => new Response("x".repeat(64 * 1024 + 1));
     await expect(
       probeOpenAiCompatibleModels({ baseUrl: "http://127.0.0.1:8000/v1" }, fetchImpl),
-    ).rejects.toThrow(/too large/i);
+    ).rejects.toThrow(/too large.*explicit model id/is);
   });
 
   it("cancels model responses whose declared size exceeds the limit", async () => {
@@ -243,8 +265,35 @@ describe("openai-compatible provider", () => {
       );
     await expect(
       probeOpenAiCompatibleModels({ baseUrl: "http://127.0.0.1:8000/v1" }, fetchImpl),
-    ).rejects.toThrow(/too large/i);
+    ).rejects.toThrow(/too large.*explicit model id/is);
     expect(cancelled).toBe(true);
+  });
+
+  it("clarifies probe timeouts with hand-fill hint", async () => {
+    const fetchImpl: typeof fetch = async (_input, init) =>
+      new Promise((_, reject) => {
+        init?.signal?.addEventListener("abort", () => {
+          reject(new DOMException("The operation was aborted.", "AbortError"));
+        });
+      });
+    await expect(
+      probeOpenAiCompatibleModels({ baseUrl: "http://127.0.0.1:8000/v1" }, fetchImpl),
+    ).rejects.toThrow(/timed out.*explicit model id/is);
+  });
+
+  it("preserves caller AbortError without rewriting as timeout", async () => {
+    const caller = new AbortController();
+    caller.abort();
+    const fetchImpl: typeof fetch = async () => {
+      throw new DOMException("The operation was aborted.", "AbortError");
+    };
+    await expect(
+      probeOpenAiCompatibleModels(
+        { baseUrl: "http://127.0.0.1:8000/v1" },
+        fetchImpl,
+        caller.signal,
+      ),
+    ).rejects.toMatchObject({ name: "AbortError" });
   });
 
   it("lists openai-compatible in the catalog even without RAKAZO_LOCAL_MODELS", () => {

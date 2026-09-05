@@ -91,7 +91,12 @@ export function CreateBotForm({
     setError(null);
     setSubmitting(true);
     try {
-      await onCreate({ name, title, description, computerMode });
+      await onCreate({
+        name: name.trim(),
+        title: title.trim(),
+        description: description.trim(),
+        computerMode,
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : t`Could not create bot`);
     } finally {
@@ -440,11 +445,17 @@ export function BotSettings({
             setSaving(true);
             setError(null);
             const selected = modelKey ? parseModelOptionKey(modelKey) : null;
+            const nextName = name.trim();
+            const nextTitle = title.trim();
+            const nextDescription = description.trim();
+            setName(nextName);
+            setTitle(nextTitle);
+            setDescription(nextDescription);
             void onSave({
-              name,
-              title,
-              description,
-              instructions: description,
+              name: nextName,
+              title: nextTitle,
+              description: nextDescription,
+              instructions: nextDescription,
               computerMode,
               memoryScope,
               autoSpeak,

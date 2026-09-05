@@ -108,13 +108,27 @@ describe("openai-compatible URL policy", () => {
     expect(() => assertAllowedOpenAiCompatibleUrl("http://metadata.google.internal/")).toThrow(
       /blocked metadata or link-local host/,
     );
+    expect(() =>
+      assertAllowedOpenAiCompatibleUrl("http://100.100.100.200/latest/meta-data/"),
+    ).toThrow(/blocked metadata or link-local host/);
+    expect(() =>
+      assertAllowedOpenAiCompatibleUrl("http://[::ffff:100.100.100.200]/latest/meta-data/"),
+    ).toThrow(/blocked metadata or link-local host/);
+    expect(() =>
+      assertAllowedOpenAiCompatibleUrl("http://[fd00:ec2::254]/latest/meta-data/"),
+    ).toThrow(/blocked metadata or link-local host/);
+    expect(() =>
+      assertAllowedOpenAiCompatibleUrl(
+        "http://[fd00:0ec2:0000:0000:0000:0000:0000:0254]/latest/meta-data/",
+      ),
+    ).toThrow(/blocked metadata or link-local host/);
   });
 
   it("rejects public hosts unless explicitly allowed", () => {
     delete process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC;
     expect(openAiCompatAllowPublicHosts()).toBe(false);
     expect(() => assertAllowedOpenAiCompatibleUrl("https://api.example.com/v1")).toThrow(
-      /Public model endpoints are blocked/,
+      /Public model endpoints are blocked.*private reverse proxy.*RFC1918/s,
     );
 
     process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC = "1";

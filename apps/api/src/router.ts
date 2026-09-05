@@ -47,6 +47,7 @@ import {
   McpOAuthBroker,
   type MemoryProviderResolver,
   mapScratchpadItem,
+  memoryProviderRequiresDeploymentOwner,
   modelCredentialDto,
   type PiOAuthLogins,
   planLiveConnectionSync,
@@ -118,6 +119,7 @@ import {
   type ThreadEvents,
   touchGroupUpdatedAt,
 } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
 import { createAgentSkillsService } from "./agent-skills.js";
 import { createOwnedArtifact, getOwnedArtifact, getSpaceArtifact } from "./artifacts.js";
 import {
@@ -126,7 +128,13 @@ import {
   toComputerStatus,
 } from "./computer-status.js";
 import { buildMcpUpdateMaterial } from "./mcp-material.js";
-import { chooseFocus, markAppConnected, startOnboarding } from "./onboarding.js";
+import {
+  chooseFocus,
+  dismissFocus,
+  markAppConnected,
+  promptFocus,
+  startOnboarding,
+} from "./onboarding.js";
 import { listSpaceRuns } from "./runs.js";
 import { addScreenProxyCapability } from "./screen-proxy.js";
 import { querySpaceSearch } from "./search.js";
@@ -220,6 +228,15 @@ async function reconcilePendingConnections(
 }
 
 /** Serialize begin/revoke for one user+provider so slug-wide remote deletes cannot race a new connect. */
+
+function isAmbiguousRemoteRevokeFailure(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const name = "name" in error && typeof error.name === "string" ? error.name : "";
+  if (name === "TimeoutError" || name === "AbortError") return true;
+  const message = error instanceof Error ? error.message : String(error);
+  return /timeout|timed out|aborted|network|ECONNRESET|ECONNREFUSED|fetch failed/i.test(message);
+}
+
 async function lockProviderConnectionScope(
   tx: Prisma.TransactionClient,
   owner: Pick<Actor, "spaceId" | "userId">,
@@ -1021,7 +1038,8 @@ export function createRouter(deps: RouterDeps) {
           ),
         );
         for (const result of cleanup) {
-          if (result.status === "rejected") console.error("group artifact cleanup", result.reason);
+          if (result.status === "rejected")
+            getLogger().error("group artifact cleanup", result.reason);
         }
         return { ok: true as const };
       }),
@@ -1108,12 +1126,12 @@ export function createRouter(deps: RouterDeps) {
         );
         if (result.eventSeq != null) {
           await deps.events.notify(target.threadId, result.eventSeq).catch((error) => {
-            console.error("thread reaction realtime notification", error);
+            getLogger().error("thread reaction realtime notification", error);
           });
         }
         if (result.runId) {
           await deps.jobs.enqueue(runContinueJob(result.runId)).catch((error) => {
-            console.error("thread reaction enqueue", error);
+            getLogger().error("thread reaction enqueue", error);
           });
         }
         return { ok: true as const };
@@ -1136,7 +1154,7 @@ export function createRouter(deps: RouterDeps) {
         const [configuredMemory] = await Promise.all([
           target.kind === "bot"
             ? deps.memoryProviders.resolve(context.actor.spaceId).catch((error) => {
-                console.error("semantic memory resolution after thread clear failed", error);
+                getLogger().error("semantic memory resolution after thread clear failed", error);
                 return null;
               })
             : Promise.resolve(null),
@@ -1164,10 +1182,10 @@ export function createRouter(deps: RouterDeps) {
               computerContext(context.actor, target.botId, `thread-clear:${target.threadId}`),
             );
             if (!purged.ok) {
-              console.error("semantic memory purge after thread clear failed", purged.error);
+              getLogger().error("semantic memory purge after thread clear failed", purged.error);
             }
           } catch (error) {
-            console.error("semantic memory purge after thread clear failed", error);
+            getLogger().error("semantic memory purge after thread clear failed", error);
           }
         }
         return { ok: true as const };
@@ -1187,7 +1205,7 @@ export function createRouter(deps: RouterDeps) {
           });
           if (sent.taskId && sent.runId) {
             await deps.jobs.enqueue(runContinueJob(sent.runId)).catch((error) => {
-              console.error("follow-up enqueue", error);
+              getLogger().error("follow-up enqueue", error);
             });
           }
           return { ok: true as const };
@@ -1267,11 +1285,11 @@ export function createRouter(deps: RouterDeps) {
           return { runId: run?.id, eventSeq: event.seq };
         });
         await deps.events.notify(target.threadId, committed.eventSeq).catch((error) => {
-          console.error("group follow-up realtime notification", error);
+          getLogger().error("group follow-up realtime notification", error);
         });
         if (committed.runId) {
           await deps.jobs.enqueue(runContinueJob(committed.runId)).catch((error) => {
-            console.error("group follow-up enqueue", error);
+            getLogger().error("group follow-up enqueue", error);
           });
         }
         return { ok: true as const };
@@ -1293,7 +1311,7 @@ export function createRouter(deps: RouterDeps) {
         }
         await deps.jobs.enqueue(runContinueJob(input.runId)).catch((error) => {
           // The answer and queued run are durable; the reconciler repairs a missed immediate wake.
-          console.error("thread answer enqueue", error);
+          getLogger().error("thread answer enqueue", error);
         });
         return { ok: true as const };
       }),
@@ -1432,6 +1450,14 @@ export function createRouter(deps: RouterDeps) {
           throw new ORPCError("BAD_REQUEST", { message: "computer must be running" });
         }
         if (hasActiveComputerControl(bot.computer) && bot.computer.controlBotId === bot.id) {
+          await bindWaitingTakeoverToControl(deps, {
+            spaceId: context.actor.spaceId,
+            threadId: bot.thread?.id,
+            botId: bot.id,
+            computerId: bot.computer.id,
+            controlLeaseId: bot.computer.controlLeaseId!,
+            controlRunId: bot.computer.controlRunId,
+          });
           await scheduleComputerControlExpiry(
             deps.jobs,
             bot.computer.id,
@@ -1515,7 +1541,17 @@ export function createRouter(deps: RouterDeps) {
           const current = await deps.prisma.computer.findUniqueOrThrow({
             where: { id: bot.computer.id },
           });
-          if (!hasActiveComputerControl(current)) throw new ORPCError("CONFLICT");
+          if (!hasActiveComputerControl(current) || current.controlBotId !== bot.id) {
+            throw new ORPCError("CONFLICT", { message: "Computer control changed; try again" });
+          }
+          await bindWaitingTakeoverToControl(deps, {
+            spaceId: context.actor.spaceId,
+            threadId: bot.thread?.id,
+            botId: bot.id,
+            computerId: current.id,
+            controlLeaseId: current.controlLeaseId!,
+            controlRunId: current.controlRunId,
+          });
           await scheduleComputerControlExpiry(
             deps.jobs,
             current.id,
@@ -1599,7 +1635,7 @@ export function createRouter(deps: RouterDeps) {
           .catch((error) => {
             // The expired job is harmless after the lease is cleared, so do not report a
             // failed release after the transaction has committed.
-            console.error("computer control expiry cancellation", error);
+            getLogger().error("computer control expiry cancellation", error);
           });
 
         await enqueueTakeoverContinuation(deps.jobs, released.runId);
@@ -1740,7 +1776,10 @@ export function createRouter(deps: RouterDeps) {
             // running. Clear the dead ref so the UI offers a boot instead of 500ing.
             // Leave any active control lease alone — expireComputerControl owns that
             // release (provider screen-control, events, takeover continuation).
-            console.error(`computer ${computer.id} sandbox ${computer.providerRef} is gone`, error);
+            getLogger().error(
+              `computer ${computer.id} sandbox ${computer.providerRef} is gone`,
+              error,
+            );
             await deps.prisma.computer.updateMany({
               where: { id: computer.id, providerRef: computer.providerRef },
               data: { state: "stopped", providerRef: null },
@@ -2113,7 +2152,7 @@ export function createRouter(deps: RouterDeps) {
         // Keep enqueue outside the nonce-collision catch. The queued run is durable;
         // log enqueue failures and still return success — the reconciler repairs a missed wake.
         await deps.jobs.enqueue(runContinueJob(run.id)).catch((error) => {
-          console.error("routine testRun enqueue", error);
+          getLogger().error("routine testRun enqueue", error);
         });
         return { runId: run.id };
       }),
@@ -2751,12 +2790,28 @@ export function createRouter(deps: RouterDeps) {
         );
         return { ok: true as const };
       }),
+      promptFocus: authed.onboarding.promptFocus.handler(async ({ context, input }) => {
+        await promptFocus(
+          { prisma: deps.prisma, events: deps.events, composio: deps.composio },
+          context.actor,
+          input.botId,
+        );
+        return { ok: true as const };
+      }),
       choose: authed.onboarding.choose.handler(async ({ context, input }) => {
         await chooseFocus(
           { prisma: deps.prisma, events: deps.events, composio: deps.composio },
           context.actor,
           input.botId,
           input.optionId,
+        );
+        return { ok: true as const };
+      }),
+      dismissFocus: authed.onboarding.dismissFocus.handler(async ({ context, input }) => {
+        await dismissFocus(
+          { prisma: deps.prisma, events: deps.events, composio: deps.composio },
+          context.actor,
+          input.botId,
         );
         return { ok: true as const };
       }),
@@ -2794,7 +2849,7 @@ export function createRouter(deps: RouterDeps) {
                   provider.describe().id,
                   nowConnected,
                 ).catch((error) => {
-                  console.error(
+                  getLogger().error(
                     `${provider.describe().id} pending-connection reconciliation failed`,
                     error,
                   );
@@ -2891,20 +2946,19 @@ export function createRouter(deps: RouterDeps) {
                   ) => Promise<void>;
                 }
               ).cancelAuthorizationRequest;
-              if (cancelAuthorizationRequest) {
-                await cancelAuthorizationRequest(state, adapterContext).catch(() => undefined);
-              } else {
-                const resolveAccountId = (
-                  connector as {
-                    resolveConnectedAccountId?: (
-                      userId: string,
-                      slug: string,
-                      currentRef: string | null | undefined,
-                      excludeIds?: string[],
-                      spaceId?: string,
-                    ) => Promise<string | undefined>;
-                  }
-                ).resolveConnectedAccountId;
+              const resolveAccountId = (
+                connector as {
+                  resolveConnectedAccountId?: (
+                    userId: string,
+                    slug: string,
+                    currentRef: string | null | undefined,
+                    excludeIds?: string[],
+                    spaceId?: string,
+                    timeoutMs?: number,
+                  ) => Promise<string | undefined>;
+                }
+              ).resolveConnectedAccountId;
+              const revokeResolvedAccount = async () => {
                 let revokeRef = state;
                 if (resolveAccountId) {
                   const resolved = await resolveAccountId(
@@ -2914,15 +2968,37 @@ export function createRouter(deps: RouterDeps) {
                     [],
                     context.actor.spaceId,
                   ).catch(() => undefined);
-                  if (!resolved) {
-                    revokeRef = "";
-                  } else {
-                    revokeRef = resolved;
-                  }
+                  revokeRef = resolved ?? "";
                 }
                 if (revokeRef) {
-                  await connector.revoke(revokeRef, adapterContext).catch(() => undefined);
+                  await connector.revoke(revokeRef, adapterContext);
                 }
+              };
+              if (cancelAuthorizationRequest) {
+                try {
+                  await cancelAuthorizationRequest(state, adapterContext);
+                } catch (error) {
+                  getLogger().error(
+                    "connections.begin cancelAuthorizationRequest failed after revoke-win",
+                    error,
+                    { provider: input.provider, connectorId: input.connectorId },
+                  );
+                  await revokeResolvedAccount().catch((fallbackError) => {
+                    getLogger().error(
+                      "connections.begin revoke fallback failed after revoke-win",
+                      fallbackError,
+                      { provider: input.provider, connectorId: input.connectorId },
+                    );
+                  });
+                }
+              } else {
+                await revokeResolvedAccount().catch((error) => {
+                  getLogger().error(
+                    "connections.begin revoke cleanup failed after revoke-win",
+                    error,
+                    { provider: input.provider, connectorId: input.connectorId },
+                  );
+                });
               }
             } else if (state === input.provider) {
               // Pipedream begin only returns the app slug. Drop remotes that no
@@ -2969,7 +3045,13 @@ export function createRouter(deps: RouterDeps) {
                     },
                     { timeout: 60_000 },
                   )
-                  .catch(() => undefined);
+                  .catch((error) => {
+                    getLogger().error(
+                      "connections.begin revokeUnreferencedAccounts failed after revoke-win",
+                      error,
+                      { provider: input.provider, connectorId: input.connectorId },
+                    );
+                  });
               }
             }
             throw new IsolationError();
@@ -3059,6 +3141,7 @@ export function createRouter(deps: RouterDeps) {
                           currentRef: string | null | undefined,
                           excludeIds?: string[],
                           spaceId?: string,
+                          timeoutMs?: number,
                         ) => Promise<string | undefined>;
                       }
                     ).resolveConnectedAccountId;
@@ -3139,6 +3222,7 @@ export function createRouter(deps: RouterDeps) {
                     currentRef: string | null | undefined,
                     excludeIds?: string[],
                     spaceId?: string,
+                    timeoutMs?: number,
                   ) => Promise<string | undefined>;
                   connectedAccountId?: (
                     userId: string,
@@ -3167,9 +3251,30 @@ export function createRouter(deps: RouterDeps) {
                   },
                   select: { providerRef: true },
                 });
-                const excludeIds = siblings
-                  .map((sibling) => sibling.providerRef)
-                  .filter((value): value is string => Boolean(value));
+                // Exclude concrete account ids only. A pending sibling may still
+                // store a slug or authorization-request id; passing those raw refs
+                // would not match remote account ids and can let this row adopt the
+                // sibling's account.
+                const excludeIds: string[] = [];
+                for (const sibling of siblings) {
+                  const ref = sibling.providerRef?.trim();
+                  // Slug-only refs cannot identify a concrete remote account; resolving
+                  // them would pick an arbitrary ACTIVE id and over-exclude.
+                  if (!ref || ref === existing.provider) continue;
+                  if (resolveAccountId) {
+                    const resolvedSiblingId = await resolveAccountId(
+                      context.actor.userId,
+                      existing.provider,
+                      ref,
+                      [],
+                      context.actor.spaceId,
+                      2_000,
+                    ).catch(() => undefined);
+                    excludeIds.push(resolvedSiblingId ?? ref);
+                  } else {
+                    excludeIds.push(ref);
+                  }
+                }
                 resolvedAccountId = resolveAccountId
                   ? await resolveAccountId(
                       context.actor.userId,
@@ -3400,10 +3505,21 @@ export function createRouter(deps: RouterDeps) {
               connectionContext(context.actor, "connections.revoke", context.signal),
             );
           } catch (error) {
-            // Always restore on failure so lookup/network errors before DELETE keep
-            // a retryable local row. A rare timeout after a successful remote delete
-            // may leave a dangling provider auth; reconnect/live sync can clear it.
-            await restoreLocalStatus();
+            // Restore only when the remote delete clearly did not happen. Timeouts
+            // and aborts are ambiguous (DELETE may have succeeded); leaving the row
+            // revoked avoids showing a connected integration whose auth is gone.
+            if (!isAmbiguousRemoteRevokeFailure(error)) {
+              await restoreLocalStatus();
+            } else {
+              getLogger().error(
+                "connections.revoke remote outcome uncertain; leaving local revoked",
+                error,
+                {
+                  connectionId: input.connectionId,
+                  connectorId: outcome.remote.connectorId,
+                },
+              );
+            }
             if (error instanceof ORPCError) throw error;
             throw new ORPCError("BAD_REQUEST", { message: sanitizeComposioError(error) });
           }
@@ -3442,7 +3558,10 @@ export function createRouter(deps: RouterDeps) {
             description: tool.description,
           }));
         } catch (error) {
-          console.error("connections.tools failed", input.connectorId, input.provider, error);
+          getLogger().error("connections.tools failed", error, {
+            connectorId: input.connectorId,
+            provider: input.provider,
+          });
           return [];
         }
       }),
@@ -3667,7 +3786,7 @@ export function createRouter(deps: RouterDeps) {
           });
           if (notifyRequester) {
             await deps.jobs.enqueue(messagingDeliverJob()).catch((error) => {
-              console.error("messaging connection confirmation enqueue error", error);
+              getLogger().error("messaging connection confirmation enqueue error", error);
             });
           }
           return messagingConnectionDto(deps.prisma, myBotIds, updated);
@@ -4306,6 +4425,68 @@ async function expireStaleComputerControl(
   return clearInactiveUserComputerControl(deps.prisma, computer.id).catch(() => false);
 }
 
+/** When the user already holds control during waiting_takeover, bind controlRunId so
+ * takeoverRequested becomes true and release can resume the waiting run. */
+async function bindWaitingTakeoverToControl(
+  deps: RouterDeps,
+  input: {
+    spaceId: string;
+    threadId: string | null | undefined;
+    botId: string;
+    computerId: string;
+    controlLeaseId: string;
+    controlRunId: string | null;
+  },
+): Promise<void> {
+  await deps.prisma.$transaction(async (tx) => {
+    // Lock the execution lease so a reclaimed fence/run cannot be bound by a stale read.
+    const locked = await tx.$queryRaw<Array<{ runId: string; fence: number }>>`
+      SELECT "runId", fence FROM computer_execution_leases
+      WHERE "computerId" = ${input.computerId} AND "botId" = ${input.botId}
+      FOR UPDATE`;
+    const executionLease = locked[0];
+    if (!executionLease) return;
+
+    const executionRun = await tx.run.findUnique({
+      where: { id: executionLease.runId },
+      select: { botId: true, status: true },
+    });
+    const waitingForTakeover =
+      executionRun?.botId === input.botId && executionRun.status === "waiting_takeover";
+    if (!waitingForTakeover) return;
+    if (input.controlRunId === executionLease.runId) return;
+
+    // Confirm the locked lease row still matches before writing controlRunId.
+    const leaseStillCurrent = await tx.computerExecutionLease.count({
+      where: {
+        computerId: input.computerId,
+        botId: input.botId,
+        runId: executionLease.runId,
+        fence: executionLease.fence,
+      },
+    });
+    if (leaseStillCurrent !== 1) return;
+
+    const bound = await tx.computer.updateMany({
+      where: {
+        id: input.computerId,
+        controlLeaseId: input.controlLeaseId,
+        controlBotId: input.botId,
+      },
+      data: { controlRunId: executionLease.runId },
+    });
+    if (bound.count !== 1 || !input.threadId) return;
+
+    await deps.events.append({
+      spaceId: input.spaceId,
+      threadId: input.threadId,
+      botId: input.botId,
+      type: "computer.takeover.granted",
+      payload: { leaseId: input.controlLeaseId, takeoverRequested: true },
+    });
+  });
+}
+
 async function computerScreenContext(
   prisma: PrismaClient,
   actor: Actor,
@@ -4444,11 +4625,21 @@ export async function persistMemoryProviderConfig(
   },
 ) {
   await requireSpaceOwner(deps.prisma, actor);
-  const prepared = await prepareMemoryProviderConnection(input).catch((error: unknown) => {
+  let prepared: Awaited<ReturnType<typeof prepareMemoryProviderConnection>>;
+  try {
+    if (
+      memoryProviderRequiresDeploymentOwner(input.provider, input.settings) &&
+      !actor.isDeploymentOwner
+    ) {
+      throw new ORPCError("FORBIDDEN");
+    }
+    prepared = await prepareMemoryProviderConnection(input);
+  } catch (error) {
+    if (error instanceof ORPCError) throw error;
     throw new ORPCError("BAD_REQUEST", {
       message: error instanceof Error ? error.message : "Memory provider connection failed",
     });
-  });
+  }
   const stored = await deps.secrets.put(JSON.stringify(prepared.credentials), {
     operationId: "memory-provider-config",
     traceId: "memory-provider-config",

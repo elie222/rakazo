@@ -1,4 +1,4 @@
-import { copyFile, mkdir, readFile, stat } from "node:fs/promises";
+import { copyFile, lstat, mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import type { DesktopLocalStackState } from "@rakazo/contracts";
 import {
@@ -10,7 +10,7 @@ import {
   type RunDockerResult,
   resolveDockerBinary,
 } from "./docker-cli.js";
-import { writePrivateFile } from "./setup-store.js";
+import { readPrivateFile, writePrivateFile } from "./setup-store.js";
 
 export const STACK_DIR_NAME = "stack";
 export const STACK_COMPOSE_FILE = "docker-compose.images.yml";
@@ -28,6 +28,7 @@ const PULL_TIMEOUT_MS = 30 * 60_000;
 const UP_TIMEOUT_MS = (COMPOSE_WAIT_TIMEOUT_S + 60) * 1_000;
 const LOGS_TIMEOUT_MS = 15_000;
 const STOP_TIMEOUT_MS = 90_000;
+const MAX_STACK_TOKEN_BYTES = 1024;
 
 /** The compose project lives under the app's user data, next to the `.env` it generates. */
 export function stackDir(userDataDir: string): string {
@@ -91,7 +92,7 @@ export function renderStackEnv(template: string, randomHex: (bytes: number) => s
   return rendered.join("\n");
 }
 
-/** Never overwrites an existing `.env`: it holds the database password and auth secrets. */
+/** Keeps an existing regular `.env`, but replaces a final symlink instead of trusting its target. */
 export async function ensureStackEnv(
   dir: string,
   template: string,
@@ -99,23 +100,21 @@ export async function ensureStackEnv(
 ): Promise<"kept" | "created"> {
   const destination = path.join(dir, STACK_ENV_FILE);
   try {
-    await stat(destination);
-    return "kept";
+    const info = await lstat(destination);
+    if (!info.isSymbolicLink()) return "kept";
   } catch {
-    await writePrivateFile(destination, renderStackEnv(template, randomHex));
-    return "created";
+    // Missing files are created below.
   }
+  await writePrivateFile(destination, renderStackEnv(template, randomHex));
+  return "created";
 }
 
 const STACK_TOKEN = /^[a-f0-9]{64}$/;
 
 export async function readStackToken(dir: string): Promise<string | null> {
-  try {
-    const token = (await readFile(path.join(dir, STACK_TOKEN_FILE), "utf8")).trim();
-    return STACK_TOKEN.test(token) ? token : null;
-  } catch {
-    return null;
-  }
+  const raw = await readPrivateFile(path.join(dir, STACK_TOKEN_FILE), MAX_STACK_TOKEN_BYTES);
+  const token = raw?.trim() ?? "";
+  return STACK_TOKEN.test(token) ? token : null;
 }
 
 /** Creates an app-private identity without placing it in the user-editable Compose env file. */

@@ -1,12 +1,14 @@
 import { ChatMarkdown } from "@rakazo/chat-ui/native";
 import { useEffect, useState } from "react";
 import { Alert, Modal, Pressable, SafeAreaView, ScrollView, Text, View } from "react-native";
+import { mobileTokens } from "../lib/appearance";
 import {
   type MobileArtifactTarget,
   openMobileArtifact,
   readMobileArtifactText,
 } from "../lib/artifact-open";
 import { useI18n } from "../lib/i18n";
+import { useResolvedAppearance } from "../lib/native";
 import { NativeSymbol } from "./native-symbol";
 
 export type MarkdownArtifactPreviewTarget = {
@@ -25,6 +27,8 @@ export function MarkdownArtifactPreview({
   onClose: () => void;
 }) {
   const { t } = useI18n();
+  const colorScheme = useResolvedAppearance();
+  const tokens = mobileTokens();
   const [state, setState] = useState<
     | { status: "loading" }
     | { status: "ready"; markdown: string }
@@ -55,20 +59,20 @@ export function MarkdownArtifactPreview({
 
   return (
     <Modal animationType="fade" presentationStyle="fullScreen" onRequestClose={onClose}>
-      <SafeAreaView style={{ flex: 1, backgroundColor: "#0D0D0F" }}>
+      <SafeAreaView style={{ flex: 1, backgroundColor: tokens.background }}>
         <View
           style={{
             height: 54,
             flexDirection: "row",
             alignItems: "center",
             borderBottomWidth: 1,
-            borderBottomColor: "#27272B",
+            borderBottomColor: tokens.border,
             paddingHorizontal: 12,
           }}
         >
           <Text
             numberOfLines={1}
-            style={{ flex: 1, color: "#E7E7E9", fontSize: 15, fontWeight: "500" }}
+            style={{ flex: 1, color: tokens.foreground, fontSize: 15, fontWeight: "500" }}
           >
             {target.name}
           </Text>
@@ -94,7 +98,7 @@ export function MarkdownArtifactPreview({
               ios="square.and.arrow.up"
               android="share-social-outline"
               size={19}
-              color="#A8A8AD"
+              color={tokens.mutedForeground}
             />
           </Pressable>
           <Pressable
@@ -103,26 +107,30 @@ export function MarkdownArtifactPreview({
             onPress={onClose}
             style={{ padding: 10 }}
           >
-            <NativeSymbol ios="xmark" android="close" size={19} color="#A8A8AD" />
+            <NativeSymbol ios="xmark" android="close" size={19} color={tokens.mutedForeground} />
           </Pressable>
         </View>
         <ScrollView contentContainerStyle={{ paddingHorizontal: 24, paddingVertical: 28 }}>
           {state.status === "loading" ? (
-            <Text style={{ color: "#85858A", fontSize: 15 }}>{t("Loading preview…")}</Text>
+            <Text style={{ color: tokens.mutedForeground, fontSize: 15 }}>
+              {t("Loading preview…")}
+            </Text>
           ) : state.status === "error" ? (
             <View
               style={{
                 borderRadius: 14,
                 borderWidth: 1,
-                borderColor: "#5A2A2A",
-                backgroundColor: "#2A1717",
+                borderColor: tokens.destructive,
+                backgroundColor: tokens.card,
                 padding: 14,
               }}
             >
-              <Text style={{ color: "#FCA5A5", fontSize: 15 }}>{state.message}</Text>
+              <Text style={{ color: tokens.destructive, fontSize: 15 }}>{state.message}</Text>
             </View>
           ) : (
-            <ChatMarkdown>{state.markdown}</ChatMarkdown>
+            <ChatMarkdown palette={tokens} colorScheme={colorScheme}>
+              {state.markdown}
+            </ChatMarkdown>
           )}
         </ScrollView>
       </SafeAreaView>

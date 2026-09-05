@@ -1,5 +1,4 @@
 import { Redirect, useLocalSearchParams, useRouter } from "expo-router";
-import { StatusBar } from "expo-status-bar";
 import { useEffect, useState } from "react";
 import {
   AccessibilityInfo,
@@ -34,9 +33,11 @@ import {
 } from "../lib/api";
 import { type AuthMode, initialAuthMode } from "../lib/auth-routing";
 import { useI18n } from "../lib/i18n";
+import { useMobileTokens } from "../lib/native";
 
 export default function SignIn() {
   const { t } = useI18n();
+  const tokens = useMobileTokens();
   const router = useRouter();
   const { mode: requestedMode } = useLocalSearchParams<{ mode?: string | string[] }>();
   const [mode, setMode] = useState<AuthMode>(() => initialAuthMode(requestedMode));
@@ -78,8 +79,15 @@ export default function SignIn() {
 
   if (!ready) {
     return (
-      <View style={{ flex: 1, backgroundColor: "#F7F7F4", justifyContent: "center", padding: 24 }}>
-        <Text style={{ color: "#6E6E68", textAlign: "center" }}>{t("Loading…")}</Text>
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: tokens.background,
+          justifyContent: "center",
+          padding: 24,
+        }}
+      >
+        <Text style={{ color: tokens.mutedForeground, textAlign: "center" }}>{t("Loading…")}</Text>
       </View>
     );
   }
@@ -115,8 +123,7 @@ export default function SignIn() {
   const custom = usesCustomApiBase(apiBase);
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: "#F7F7F4" }}>
-      <StatusBar style="dark" />
+    <SafeAreaView style={{ flex: 1, backgroundColor: tokens.background }}>
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
@@ -136,7 +143,7 @@ export default function SignIn() {
               <Text
                 accessibilityRole="header"
                 style={{
-                  color: "#1B1B1E",
+                  color: tokens.foreground,
                   fontSize: 32,
                   fontWeight: "500",
                   textAlign: "center",
@@ -159,7 +166,7 @@ export default function SignIn() {
                       setResetSent(false);
                     }}
                   >
-                    <Text style={{ color: "#1B1B1E", fontSize: 15, fontWeight: "600" }}>
+                    <Text style={{ color: tokens.foreground, fontSize: 15, fontWeight: "600" }}>
                       {t("Back to sign in")}
                     </Text>
                   </Pressable>
@@ -170,15 +177,15 @@ export default function SignIn() {
                     <TextInput
                       autoComplete="name"
                       placeholder={t("Name")}
-                      placeholderTextColor="#8C8C86"
+                      placeholderTextColor={tokens.mutedForeground}
                       value={name}
                       onChangeText={setName}
                       style={{
                         marginTop: 28,
-                        backgroundColor: "#F1F1ED",
+                        backgroundColor: tokens.muted,
                         borderRadius: 13,
                         padding: 16,
-                        color: "#1B1B1E",
+                        color: tokens.foreground,
                       }}
                     />
                   ) : null}
@@ -187,37 +194,22 @@ export default function SignIn() {
                     autoComplete="email"
                     keyboardType="email-address"
                     placeholder={t("Email")}
-                    placeholderTextColor="#8C8C86"
+                    placeholderTextColor={tokens.mutedForeground}
                     value={email}
                     onChangeText={setEmail}
                     style={{
                       marginTop: mode === "up" ? 12 : 28,
-                      backgroundColor: "#F1F1ED",
+                      backgroundColor: tokens.muted,
                       borderRadius: 13,
                       padding: 16,
-                      color: "#1B1B1E",
+                      color: tokens.foreground,
                     }}
                   />
-                  {mode === "in" && reset?.passwordReset && reset.resetUrl ? (
-                    <Pressable
-                      accessibilityRole="button"
-                      hitSlop={8}
-                      onPress={() => {
-                        setMode("forgot");
-                        setError(null);
-                      }}
-                      style={{ alignSelf: "flex-end", marginTop: 10 }}
-                    >
-                      <Text style={{ color: "#1B1B1E", fontSize: 14, fontWeight: "600" }}>
-                        {t("Forgot password?")}
-                      </Text>
-                    </Pressable>
-                  ) : null}
                   {mode !== "forgot" ? (
                     <TextInput
                       autoComplete={mode === "in" ? "current-password" : "new-password"}
                       placeholder={t("Password")}
-                      placeholderTextColor="#8C8C86"
+                      placeholderTextColor={tokens.mutedForeground}
                       returnKeyType="go"
                       secureTextEntry
                       value={password}
@@ -225,27 +217,29 @@ export default function SignIn() {
                       onSubmitEditing={() => void submit()}
                       style={{
                         marginTop: 12,
-                        backgroundColor: "#F1F1ED",
+                        backgroundColor: tokens.muted,
                         borderRadius: 13,
                         padding: 16,
-                        color: "#1B1B1E",
+                        color: tokens.foreground,
                       }}
                     />
                   ) : null}
-                  {error ? <Text style={{ color: "#B91C1C", marginTop: 12 }}>{error}</Text> : null}
+                  {error ? (
+                    <Text style={{ color: tokens.destructive, marginTop: 12 }}>{error}</Text>
+                  ) : null}
                   <Pressable
                     accessibilityRole="button"
                     onPress={() => void submit()}
                     disabled={pending}
                     style={{
                       marginTop: 16,
-                      backgroundColor: "#121215",
+                      backgroundColor: tokens.primary,
                       borderRadius: 13,
                       padding: 18,
                       alignItems: "center",
                     }}
                   >
-                    <Text style={{ color: "#FBFBF9", fontSize: 17 }}>
+                    <Text style={{ color: tokens.primaryForeground, fontSize: 17 }}>
                       {pending
                         ? t("Working…")
                         : mode === "in"
@@ -255,6 +249,21 @@ export default function SignIn() {
                             : t("Send reset link")}
                     </Text>
                   </Pressable>
+                  {mode === "in" && reset?.passwordReset && reset.resetUrl ? (
+                    <Pressable
+                      accessibilityRole="button"
+                      hitSlop={8}
+                      onPress={() => {
+                        setMode("forgot");
+                        setError(null);
+                      }}
+                      style={{ alignSelf: "center", marginTop: 16 }}
+                    >
+                      <Text style={{ color: tokens.foreground, fontSize: 14, fontWeight: "600" }}>
+                        {t("Forgot password?")}
+                      </Text>
+                    </Pressable>
+                  ) : null}
                   <View
                     style={{
                       flexDirection: "row",
@@ -263,7 +272,7 @@ export default function SignIn() {
                       marginTop: 24,
                     }}
                   >
-                    <Text style={{ color: "#8C8C86", fontSize: 15 }}>
+                    <Text style={{ color: tokens.mutedForeground, fontSize: 15 }}>
                       {mode === "in"
                         ? t("Don’t have an account?")
                         : mode === "up"
@@ -279,7 +288,7 @@ export default function SignIn() {
                       }}
                       style={{ marginLeft: 5 }}
                     >
-                      <Text style={{ color: "#1B1B1E", fontSize: 15, fontWeight: "600" }}>
+                      <Text style={{ color: tokens.foreground, fontSize: 15, fontWeight: "600" }}>
                         {mode === "in"
                           ? t("Sign up")
                           : mode === "up"
@@ -309,13 +318,17 @@ export default function SignIn() {
             >
               {custom ? (
                 <>
-                  <Text style={{ color: "#A8A8A2", fontSize: 12 }}>{t("Custom server")}</Text>
-                  <Text style={{ color: "#6E6E68", fontSize: 13, marginTop: 2 }}>
+                  <Text style={{ color: tokens.mutedForeground, fontSize: 12 }}>
+                    {t("Custom server")}
+                  </Text>
+                  <Text style={{ color: tokens.mutedForeground, fontSize: 13, marginTop: 2 }}>
                     {displayApiHost(apiBase)}
                   </Text>
                 </>
               ) : (
-                <Text style={{ color: "#A8A8A2", fontSize: 13 }}>{t("Use a custom server")}</Text>
+                <Text style={{ color: tokens.mutedForeground, fontSize: 13 }}>
+                  {t("Use a custom server")}
+                </Text>
               )}
             </Pressable>
           </View>
@@ -346,6 +359,7 @@ function ServerSheet({
   onSaved: (url: string) => void;
 }) {
   const { t } = useI18n();
+  const tokens = useMobileTokens();
   const [draft, setDraft] = useState(current);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -403,7 +417,7 @@ function ServerSheet({
       onRequestClose={onClose}
     >
       <KeyboardAvoidingView
-        style={{ flex: 1, backgroundColor: "#F7F7F4" }}
+        style={{ flex: 1, backgroundColor: tokens.background }}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
         <SafeAreaView style={{ flex: 1, paddingHorizontal: 24, paddingTop: 12 }}>
@@ -415,19 +429,21 @@ function ServerSheet({
             }}
           >
             <Pressable onPress={onClose} hitSlop={8}>
-              <Text style={{ color: "#6E6E68", fontSize: 17 }}>{t("Cancel")}</Text>
+              <Text style={{ color: tokens.mutedForeground, fontSize: 17 }}>{t("Cancel")}</Text>
             </Pressable>
-            <Text style={{ color: "#1B1B1E", fontSize: 17, fontWeight: "600" }}>{t("Server")}</Text>
+            <Text style={{ color: tokens.foreground, fontSize: 17, fontWeight: "600" }}>
+              {t("Server")}
+            </Text>
             <Pressable onPress={() => void save()} disabled={pending} hitSlop={8}>
-              <Text style={{ color: "#1B1B1E", fontSize: 17, fontWeight: "600" }}>
+              <Text style={{ color: tokens.foreground, fontSize: 17, fontWeight: "600" }}>
                 {pending ? t("Checking…") : t("Save")}
               </Text>
             </Pressable>
           </View>
-          <Text style={{ color: "#6E6E68", marginTop: 28, fontSize: 15, lineHeight: 22 }}>
-            {t(
-              "Point this app at your self-hosted Rakazo origin, the same HTTPS URL you open in a browser.",
-            )}
+          <Text
+            style={{ color: tokens.mutedForeground, marginTop: 28, fontSize: 15, lineHeight: 22 }}
+          >
+            {t("Enter your Rakazo server address.")}
           </Text>
           <TextInput
             autoCapitalize="none"
@@ -438,7 +454,7 @@ function ServerSheet({
             returnKeyType="go"
             onSubmitEditing={() => void save()}
             placeholder={defaultApiBase()}
-            placeholderTextColor="#8C8C86"
+            placeholderTextColor={tokens.mutedForeground}
             value={draft}
             onChangeText={(value) => {
               setDraft(value);
@@ -446,24 +462,28 @@ function ServerSheet({
             }}
             style={{
               marginTop: 20,
-              backgroundColor: "#F1F1ED",
+              backgroundColor: tokens.muted,
               borderRadius: 13,
               padding: 16,
-              color: "#1B1B1E",
+              color: tokens.foreground,
               fontSize: 16,
             }}
           />
           {warning ? (
-            <Text style={{ color: "#8C8C86", marginTop: 12, fontSize: 13 }}>{warning}</Text>
+            <Text style={{ color: tokens.mutedForeground, marginTop: 12, fontSize: 13 }}>
+              {warning}
+            </Text>
           ) : null}
-          {error ? <Text style={{ color: "#B91C1C", marginTop: 12 }}>{error}</Text> : null}
+          {error ? <Text style={{ color: tokens.destructive, marginTop: 12 }}>{error}</Text> : null}
           {usesCustomApiBase(current) || draft.trim() !== current ? (
             <Pressable
               onPress={() => void restoreDefault()}
               disabled={pending}
               style={{ marginTop: 28, alignItems: "center" }}
             >
-              <Text style={{ color: "#6E6E68", fontSize: 15 }}>{t("Use default server")}</Text>
+              <Text style={{ color: tokens.mutedForeground, fontSize: 15 }}>
+                {t("Use default server")}
+              </Text>
             </Pressable>
           ) : null}
         </SafeAreaView>

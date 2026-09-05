@@ -1,5 +1,11 @@
 import { expect, test } from "@playwright/test";
-import { captureScreenshot, completeOnboarding, openNewBot, signup } from "./helpers";
+import {
+  captureScreenshot,
+  completeOnboarding,
+  createBotFromPicker,
+  openNewBot,
+  signup,
+} from "./helpers";
 
 test("bot creation, editing, and deletion persist", async ({ page }, testInfo) => {
   const stamp = Date.now();
@@ -11,23 +17,24 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   const botList = page.locator("aside").first();
   await expect(botList.getByRole("button", { name: /^Chief/ })).toBeVisible();
 
+  let createFailed = false;
+  let resolveCreateAborted!: () => void;
+  const createAborted = new Promise<void>((resolve) => {
+    resolveCreateAborted = resolve;
+  });
+  await page.route("**/rpc/bots/create", async (route) => {
+    createFailed = true;
+    await route.abort("failed");
+    resolveCreateAborted();
+  });
   await openNewBot(page);
-  await expect(page.getByText("New bot", { exact: true })).toBeVisible();
-  await page.locator("label:has-text('Name') input").fill("Researcher");
-  const longTitle = `Market researcher ${"and source verifier ".repeat(9)}`;
-  const normalizedLongTitle = longTitle.trim();
-  expect(longTitle.length).toBeGreaterThan(160);
-  await page.locator("label:has-text('Title') input").fill(longTitle);
-  await page
-    .locator("label:has-text('Description') textarea")
-    .fill("Finds reliable sources and turns them into concise briefs.");
-  await captureScreenshot(page, testInfo, "26-new-bot-form");
-  await page.route("**/rpc/bots/create", async (route) => route.abort("failed"));
-  await page.getByRole("button", { name: "Create", exact: true }).click();
-  await expect(page.getByTestId("create-bot-error")).toHaveText("Failed to fetch");
-  await expect(page.getByRole("button", { name: "Create", exact: true })).toBeEnabled();
-  await captureScreenshot(page, testInfo, "26a-new-bot-error");
+  await createAborted;
+  // Instant create stays in chat; failed create leaves the current bot open.
+  await expect(page.getByPlaceholder("Message Chief")).toBeVisible();
+  await expect(page.getByTestId("side-panel")).toHaveAttribute("data-panel", "closed");
+  expect(createFailed).toBe(true);
   await page.unroute("**/rpc/bots/create");
+
   let failedPostCreateRefresh = false;
   await page.route("**/rpc/spaces/list", async (route) => {
     if (failedPostCreateRefresh) {
@@ -37,12 +44,11 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
     failedPostCreateRefresh = true;
     await route.abort("failed");
   });
-  await page.getByRole("button", { name: "Create", exact: true }).click();
-
-  await expect(botList.getByRole("button", { name: /^Researcher/ })).toBeVisible();
+  await createBotFromPicker(page);
+  await expect(page.getByPlaceholder("Message New Bot")).toBeVisible();
   expect(failedPostCreateRefresh).toBe(true);
   await page.unroute("**/rpc/spaces/list");
-  await expect(page.getByPlaceholder("Message Researcher")).toBeVisible();
+  await expect(botList.getByRole("button", { name: /^New Bot/ })).toBeVisible();
   await page.waitForURL(/\/app\/[^/]+$/);
   const deletedBotPath = new URL(page.url()).pathname;
   await page.evaluate(() => window.dispatchEvent(new Event("focus")));
@@ -50,11 +56,22 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   expect(new URL(page.url()).pathname).toBe(deletedBotPath);
   await captureScreenshot(page, testInfo, "27-created-bot");
 
-  await page.locator("main").getByRole("button", { name: "Researcher", exact: true }).click();
+  await page.locator("main").getByRole("button", { name: "New Bot", exact: true }).click();
   await expect(page.getByText("Settings", { exact: true })).toBeVisible();
   const nameInput = page.locator("label:has-text('Name') input");
   const titleInput = page.locator("label:has-text('Title') input");
   const descriptionInput = page.locator("label:has-text('Description') textarea");
+  const longTitle = `Market researcher ${"and source verifier ".repeat(9)}`;
+  const normalizedLongTitle = longTitle.trim();
+  expect(longTitle.length).toBeGreaterThan(160);
+  await nameInput.fill("Researcher");
+  await titleInput.fill(longTitle);
+  await descriptionInput.fill("Finds reliable sources and turns them into concise briefs.");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(botList.getByRole("button", { name: /^Researcher/ })).toBeVisible();
+  await expect(page.getByPlaceholder("Message Researcher")).toBeVisible();
+
+  await page.locator("main").getByRole("button", { name: "Researcher", exact: true }).click();
   await expect(nameInput).toHaveValue("Researcher");
   await expect(titleInput).toHaveValue(normalizedLongTitle);
   await expect(descriptionInput).toHaveValue(

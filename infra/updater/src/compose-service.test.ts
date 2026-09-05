@@ -114,4 +114,15 @@ describe("the updater compose service", () => {
     expect(compose.services.api?.volumes ?? []).not.toContain("/var/run/docker.sock");
     expect(compose.services.api?.environment?.RAKAZO_UPDATER_URL).toBe("http://updater:7092");
   });
+
+  it("passes logging configuration without using env_file", () => {
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: this is the literal Compose expression
+    expect(updater.environment?.LOG_LEVEL).toBe("${LOG_LEVEL:-info}");
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: this is the literal Compose expression
+    expect(updater.environment?.AXIOM_TOKEN).toBe("${AXIOM_TOKEN:-}");
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: this is the literal Compose expression
+    expect(updater.environment?.AXIOM_DATASET).toBe("${AXIOM_DATASET:-}");
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: this is the literal Compose expression
+    expect(updater.environment?.AXIOM_EDGE_URL).toBe("${AXIOM_EDGE_URL:-}");
+  });
 });

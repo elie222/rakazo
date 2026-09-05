@@ -527,12 +527,16 @@ export const appContract = {
     },
   },
   onboarding: {
-    /** Seed the first-run conversational onboarding into the bot's thread. */
+    /** Seed the first-run greeting into the bot's thread (focus card is separate). */
     start: oc.input(z.object({ botId: Id })).output(z.object({ ok: z.literal(true) })),
-    /** Answer the focus choice; renames the bot and posts the app cards. */
+    /** Post the focus choice card when the thread is still idle. */
+    promptFocus: oc.input(z.object({ botId: Id })).output(z.object({ ok: z.literal(true) })),
+    /** Answer the focus choice; posts the app cards. Does not rename the bot. */
     choose: oc
       .input(z.object({ botId: Id, optionId: z.string() }))
       .output(z.object({ ok: z.literal(true) })),
+    /** Dismiss the unanswered focus card without choosing an option. */
+    dismissFocus: oc.input(z.object({ botId: Id })).output(z.object({ ok: z.literal(true) })),
     /** Flip an app_connect card to connected after authorization completes. */
     appConnected: oc
       .input(z.object({ botId: Id, provider: z.string() }))

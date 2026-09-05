@@ -18,6 +18,7 @@ import type {
   AgentToolExecutionResult,
   ConnectorTool,
 } from "@rakazo/adapter-kit";
+import { getLogger } from "@rakazo/logging";
 import { isToolPauseResult } from "./approval-effect.js";
 import { builtinAgentTools, DELEGATION_TOOL_NAMES } from "./builtin-tools.js";
 import { PiRuntimeCredentialStore, toOAuthCredential } from "./pi-credentials.js";
@@ -873,7 +874,7 @@ function safeJsonSchemaParameters(tool: ConnectorTool) {
   try {
     return jsonSchemaParameters(tool.inputSchema);
   } catch (error) {
-    console.error(`unsupported input schema for tool ${tool.name}`, error);
+    getLogger().error(`unsupported input schema for tool ${tool.name}`, error);
     return Type.Object({});
   }
 }

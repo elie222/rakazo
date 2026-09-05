@@ -2,6 +2,7 @@ import { RPCHandler } from "@orpc/server/fetch";
 import { COMPUTER_SCREEN_UNAVAILABLE, ComputerScreenUnavailableError } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
+import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { describe, expect, it, vi } from "vitest";
 import { createRouter, type RouterDeps } from "./router.js";
 
@@ -217,7 +218,8 @@ describe("thread answer delivery", () => {
   it("accepts a durable answer when the immediate worker wake fails", async () => {
     const answerRunInput = vi.fn().mockResolvedValue(true);
     const enqueue = vi.fn().mockRejectedValue(new Error("job broker unavailable"));
-    const logError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
     const prisma = {
       bot: {
         findFirst: vi.fn().mockResolvedValue({
@@ -275,8 +277,8 @@ describe("thread answer delivery", () => {
       }),
     );
     expect(enqueue).toHaveBeenCalledOnce();
-    expect(logError).toHaveBeenCalledWith("thread answer enqueue", expect.any(Error));
-    logError.mockRestore();
+    expect(sink.events.some((event) => event.message === "thread answer enqueue")).toBe(true);
+    installLogger(createLogger({ service: "rakazo-api", level: "off", sinks: [] }));
   });
 });
 
@@ -593,7 +595,6 @@ describe("computer screen url", () => {
   };
 
   it("clears the row instead of 500ing when the provider says the sandbox is gone", async () => {
-    const logError = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const { response, updateMany } = await callScreenUrl(() =>
       Promise.reject(
         Object.assign(new Error("Sandbox is probably not running anymore"), {
@@ -607,17 +608,14 @@ describe("computer screen url", () => {
       where: { id: "computer-1", providerRef: "sandbox-ref-1" },
       data: { state: "stopped", providerRef: null },
     });
-    logError.mockRestore();
   });
 
   it("keeps a transport blip an error and leaves the row alone", async () => {
-    const logError = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const { response, updateMany } = await callScreenUrl(() =>
       Promise.reject(Object.assign(new Error("fetch failed"), { code: "ECONNRESET" })),
     );
     expect(response.status).toBe(500);
     expect(updateMany).not.toHaveBeenCalled();
-    logError.mockRestore();
   });
 
   it("returns a recoverable conflict when the screen is temporarily busy", async () => {

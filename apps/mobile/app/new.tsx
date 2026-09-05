@@ -10,11 +10,13 @@ import { useState } from "react";
 import { Pressable, ScrollView, Text, TextInput } from "react-native";
 import { ComputerModePicker } from "../components/computer-mode-picker";
 import { type MobileBot, rpc } from "../lib/api";
+import { allowFocusPrompt, scheduleFocusPrompt } from "../lib/focus-prompt";
 import { useI18n } from "../lib/i18n";
-import { tokens } from "../lib/theme";
+import { useMobileTokens } from "../lib/native";
 
 export default function NewBot() {
   const { t } = useI18n();
+  const tokens = useMobileTokens();
   const router = useRouter();
   const [name, setName] = useState("");
   const [title, setTitle] = useState("");
@@ -40,12 +42,23 @@ export default function NewBot() {
     setPending(true);
     setError(null);
     try {
+      // Failed list is unknown — delay focus rather than treating the bot as first.
+      const existing = await rpc<MobileBot[]>("bots/list").catch(() => null);
+      const isFirstBot = existing !== null && existing.length === 0;
       const bot = await rpc<MobileBot>("bots/create", {
         ...normalizeCreateBotProfile({ name, title, description }),
         notifyOnFinish: true,
         computerMode,
       });
+      allowFocusPrompt(bot.id);
       router.replace({ pathname: "/thread", params: { botId: bot.id, name: bot.name } });
+      void (async () => {
+        const started = await rpc("onboarding/start", { botId: bot.id })
+          .then(() => true)
+          .catch(() => false);
+        if (!started) return;
+        scheduleFocusPrompt(bot.id, isFirstBot);
+      })();
     } catch (err) {
       setError(err instanceof Error ? err.message : t("Could not create bot"));
     } finally {
@@ -60,11 +73,12 @@ export default function NewBot() {
           headerLeft: () => (
             <Pressable
               onPress={close}
-              hitSlop={12}
+              hitSlop={8}
+              style={{ paddingEnd: 20, paddingVertical: 8 }}
               accessibilityRole="button"
               accessibilityLabel={t("Cancel")}
             >
-              <Text style={{ color: "#0A84FF", fontSize: 17 }}>{t("Cancel")}</Text>
+              <Text style={{ color: tokens.foreground, fontSize: 17 }}>{t("Cancel")}</Text>
             </Pressable>
           ),
         }}
@@ -75,69 +89,73 @@ export default function NewBot() {
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
       >
-        <Text style={{ color: "#85858A", fontSize: 14 }}>{t("Name")}</Text>
+        <Text style={{ color: tokens.mutedForeground, fontSize: 14 }}>{t("Name")}</Text>
         <TextInput
           value={name}
           maxLength={BOT_NAME_MAX_LENGTH}
           onChangeText={setName}
           placeholder={t("Name this bot")}
-          placeholderTextColor="#6C6C70"
+          placeholderTextColor={tokens.mutedForeground}
           style={{
             marginTop: 8,
-            backgroundColor: "#1A1A1D",
+            backgroundColor: tokens.muted,
             borderRadius: 11,
             padding: 16,
-            color: "#ECECEE",
+            color: tokens.foreground,
           }}
         />
-        <Text style={{ color: "#85858A", marginTop: 16, fontSize: 14 }}>{t("Title")}</Text>
+        <Text style={{ color: tokens.mutedForeground, marginTop: 16, fontSize: 14 }}>
+          {t("Title")}
+        </Text>
         <TextInput
           value={title}
           maxLength={BOT_TITLE_MAX_LENGTH}
           onChangeText={setTitle}
           placeholder={t("Describe what this bot does")}
-          placeholderTextColor="#6C6C70"
+          placeholderTextColor={tokens.mutedForeground}
           style={{
             marginTop: 8,
-            backgroundColor: "#1A1A1D",
+            backgroundColor: tokens.muted,
             borderRadius: 11,
             padding: 16,
-            color: "#ECECEE",
+            color: tokens.foreground,
           }}
         />
-        <Text style={{ color: "#85858A", marginTop: 16, fontSize: 14 }}>{t("Description")}</Text>
+        <Text style={{ color: tokens.mutedForeground, marginTop: 16, fontSize: 14 }}>
+          {t("Description")}
+        </Text>
         <TextInput
           value={description}
           maxLength={BOT_DESCRIPTION_MAX_LENGTH}
           onChangeText={setDescription}
           placeholder={t("What this bot is for")}
-          placeholderTextColor="#6C6C70"
+          placeholderTextColor={tokens.mutedForeground}
           multiline
           style={{
             marginTop: 8,
-            backgroundColor: "#1A1A1D",
+            backgroundColor: tokens.muted,
             borderRadius: 11,
             padding: 16,
-            color: "#ECECEE",
+            color: tokens.foreground,
             minHeight: 120,
             textAlignVertical: "top",
           }}
         />
         <ComputerModePicker value={computerMode} onChange={setComputerMode} />
-        {error ? <Text style={{ color: "#EF4444", marginTop: 16 }}>{error}</Text> : null}
+        {error ? <Text style={{ color: tokens.destructive, marginTop: 16 }}>{error}</Text> : null}
         <Pressable
           onPress={() => void create()}
           disabled={!name.trim() || pending}
           style={{
             marginTop: 24,
-            backgroundColor: "#F1F1EF",
+            backgroundColor: tokens.primary,
             borderRadius: 11,
             padding: 16,
             alignItems: "center",
             opacity: !name.trim() || pending ? 0.4 : 1,
           }}
         >
-          <Text style={{ color: "#17171A", fontSize: 16 }}>
+          <Text style={{ color: tokens.primaryForeground, fontSize: 16 }}>
             {pending ? t("Creating…") : t("Create")}
           </Text>
         </Pressable>

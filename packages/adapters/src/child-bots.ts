@@ -18,6 +18,7 @@ import {
   type PrismaClient,
   withTransactionRetry,
 } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
 import { toComputerRef } from "./computer-support.js";
 import { checkpointAndRecordComputerWorkspace } from "./computer-workspace.js";
 import { resolveAgentHomePath } from "./home.js";
@@ -112,7 +113,7 @@ export async function spawnBot(
     });
     await deps.jobs
       .enqueue(runContinueJob(run.id))
-      .catch((error) => console.error("spawned bot enqueue", error));
+      .catch((error) => getLogger().error("spawned bot enqueue", error));
   }
 
   return {
@@ -563,7 +564,7 @@ async function removeStoredArtifacts(
     [...new Set(storageKeys)].map((storageKey) => artifacts.remove(storageKey, context)),
   );
   for (const result of results) {
-    if (result.status === "rejected") console.error("group artifact cleanup", result.reason);
+    if (result.status === "rejected") getLogger().error("group artifact cleanup", result.reason);
   }
 }
 

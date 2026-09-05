@@ -33,6 +33,9 @@ import {
   upsertEnvAssignments,
   validateUpdateRequest,
 } from "@rakazo/core";
+import { type Logger, SERVICE_NAMES } from "@rakazo/logging";
+import { createRootLogger } from "@rakazo/logging/axiom";
+import { requestLogging } from "@rakazo/logging/hono";
 import { type Context, Hono } from "hono";
 import {
   readTagState,
@@ -94,12 +97,30 @@ export function commandEnvironment(
     const value = source[key];
     if (value !== undefined) env[key] = value;
   }
+  // The sidecar runs as root against a bind-mounted checkout that a non-root deploy user owns,
+  // which is the layout docs/self-host.md tells operators to use. Git refuses that with "detected
+  // dubious ownership" and exits 128, so every git call fails before it can read the current sha.
+  //
+  // Declaring the one directory safe here rather than in the Compose file is deliberate: this
+  // allowlist rebuilds the child environment from scratch, so anything set on the service is
+  // dropped before git ever runs. The value is the deployment directory the sidecar already
+  // trusts, and it is applied after `overrides` so a caller cannot widen it.
+  const deployDir = source.RAKAZO_DEPLOY_DIR?.trim();
+  const gitOwnership =
+    deployDir === undefined || deployDir === ""
+      ? {}
+      : {
+          GIT_CONFIG_COUNT: "1",
+          GIT_CONFIG_KEY_0: "safe.directory",
+          GIT_CONFIG_VALUE_0: deployDir,
+        };
   return {
     ...env,
     ...overrides,
     GIT_TERMINAL_PROMPT: "0",
     GIT_ASKPASS: "true",
     CI: "1",
+    ...gitOwnership,
   };
 }
 
@@ -143,9 +164,10 @@ const runCommand: UpdaterCommandRunner = (
 
 export function createUpdaterApp(
   config: UpdaterConfig,
-  options: { run?: UpdaterCommandRunner } = {},
+  options: { run?: UpdaterCommandRunner; logger?: Logger } = {},
 ) {
   const app = new Hono();
+  app.use("*", requestLogging(options.logger));
   const run = options.run ?? runCommand;
   const composeTarget = {
     composeFile: config.composeFile,
@@ -749,10 +771,36 @@ export function createUpdaterApp(
 }
 
 function startUpdater() {
+  const logger = createRootLogger(SERVICE_NAMES.updater);
   const config = resolveUpdaterConfig(process.env);
-  const app = createUpdaterApp(config);
-  return serve({ fetch: app.fetch, hostname: config.host, port: config.port }, () => {
-    console.log(`rakazo updater on http://${config.host}:${config.port} for ${config.deployDir}`);
+  const app = createUpdaterApp(config, { logger });
+  const server = serve({ fetch: app.fetch, hostname: config.host, port: config.port }, () => {
+    logger.info("updater listening", {
+      "http.host": config.host,
+      "http.port": config.port,
+      "updater.deploy_dir": config.deployDir,
+    });
+  });
+  let stopping = false;
+  const shutdown = async () => {
+    if (stopping) return;
+    stopping = true;
+    await closeListeningServer(server);
+    await logger.flush({ timeoutMs: 2_000 });
+    process.exit(0);
+  };
+  process.once("SIGTERM", () => void shutdown());
+  process.once("SIGINT", () => void shutdown());
+  return server;
+}
+
+function closeListeningServer(server: {
+  close(callback?: (err?: Error) => void): void;
+  closeIdleConnections?: () => void;
+}): Promise<void> {
+  server.closeIdleConnections?.();
+  return new Promise((resolve) => {
+    server.close(() => resolve());
   });
 }
 
