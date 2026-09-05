@@ -452,6 +452,7 @@ export async function threadSnapshot(
       liveEvents,
     };
   });
+  const primaryActiveRun = pickPrimaryActiveRun(core.activeRuns);
   return {
     groupId: target.groupId,
     groupName: target.groupName,
@@ -465,11 +466,26 @@ export async function threadSnapshot(
     run:
       core.terminalRun?.status === "failed"
         ? mapRun(core.terminalRun)
-        : core.activeRuns[0]
-          ? mapRun(core.activeRuns[0])
+        : primaryActiveRun
+          ? mapRun(primaryActiveRun)
           : null,
     activeRuns: core.activeRuns.map(mapRun),
   };
+}
+
+/**
+ * Prefer a waiting ask/takeover over a merely-busy run for the group's headline
+ * `run` field, even when the busy run started more recently — createdAt-desc
+ * ordering alone would let a fresh busy run for one bot bury an older waiting
+ * card for another. `activeRuns` still carries every active run regardless of
+ * which one is picked here, so nothing is hidden from the client, only the
+ * single-run summary field.
+ */
+function pickPrimaryActiveRun<T extends { status: string }>(runs: readonly T[]): T | undefined {
+  return (
+    runs.find((run) => run.status === "waiting_input" || run.status === "waiting_takeover") ??
+    runs[0]
+  );
 }
 
 /** Latest terminal by end time (completedAt, else createdAt), then createdAt, then id. */

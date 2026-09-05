@@ -569,6 +569,48 @@ describe("threadSnapshot", () => {
     ]);
   });
 
+  it("keeps a waiting peer ask as the primary run even when a newer busy run exists", async () => {
+    // Real DB order is createdAt desc, so the newer busy run for bot-b comes
+    // first here, ahead of the older waiting peer run for bot-a.
+    const newerBusy = {
+      id: "run-newer-busy",
+      botId: "bot-b",
+      threadId: "thread-1",
+      taskId: "task-busy",
+      status: "running",
+      trigger: "user",
+      modelProvider: null,
+      modelId: null,
+      error: null,
+      startedAt: new Date("2026-08-23T00:00:10.000Z"),
+      completedAt: null,
+      createdAt: new Date("2026-08-23T00:00:10.000Z"),
+    };
+    const olderWaiting = {
+      id: "run-older-waiting",
+      botId: "bot-a",
+      threadId: "thread-1",
+      taskId: "task-peer",
+      status: "waiting_input",
+      trigger: "bot_message",
+      modelProvider: null,
+      modelId: null,
+      error: null,
+      startedAt: new Date("2026-08-23T00:00:05.000Z"),
+      completedAt: null,
+      createdAt: new Date("2026-08-23T00:00:05.000Z"),
+    };
+    const findManyRuns = groupRunFindMany({ active: [newerBusy, olderWaiting] });
+    const snapshot = await threadSnapshot({ prisma: groupPrisma(findManyRuns) }, groupTarget());
+
+    expect(snapshot.run).toEqual(expect.objectContaining({ id: "run-older-waiting" }));
+    // activeRuns is unaffected by which one is chosen as primary.
+    expect(snapshot.activeRuns.map((run) => run.id)).toEqual([
+      "run-newer-busy",
+      "run-older-waiting",
+    ]);
+  });
+
   it("does not revive an older group failure after a newer run completed", async () => {
     const failed = {
       id: "run-old-failed",
