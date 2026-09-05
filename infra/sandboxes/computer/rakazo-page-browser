@@ -69,6 +69,9 @@ def discover_ws_url(port: int) -> str:
     return ws
 
 
+WORLD_NAME = "rakazo-page-browser"
+
+
 class CdpClient:
     def __init__(self, ws_url: str) -> None:
         self._ws_url = ws_url
@@ -77,6 +80,8 @@ class CdpClient:
         self._next_id = 1
         self.context_id: int | None = None
         self._pending: dict[int, dict[str, Any] | None] = {}
+        # Worlds live in Chromium until navigation; rediscover them per CLI process.
+        self._contexts: dict[int, dict[str, Any]] = {}
 
     def connect(self) -> None:
         assert self._ws_url.startswith("ws://"), self._ws_url
@@ -209,6 +214,46 @@ class CdpClient:
             if opcode in (0x1, 0x2, 0x0):
                 return payload
 
+    def _handle_event(self, message: dict[str, Any]) -> None:
+        method = message.get("method")
+        params = message.get("params") or {}
+        session_id = message.get("sessionId")
+        if method == "Runtime.executionContextCreated":
+            context = params.get("context")
+            if not isinstance(context, dict):
+                return
+            context_id = context.get("id")
+            if not isinstance(context_id, int):
+                return
+            recorded = dict(context)
+            recorded["_sessionId"] = session_id
+            self._contexts[context_id] = recorded
+        elif method == "Runtime.executionContextDestroyed":
+            context_id = params.get("executionContextId")
+            if isinstance(context_id, int):
+                self._contexts.pop(context_id, None)
+        elif method == "Runtime.executionContextsCleared":
+            if session_id is None:
+                self._contexts.clear()
+            else:
+                self._contexts = {
+                    cid: ctx
+                    for cid, ctx in self._contexts.items()
+                    if ctx.get("_sessionId") != session_id
+                }
+
+    def find_world_context(self, world_name: str, frame_id: str, session_id: str) -> int | None:
+        for context_id, context in self._contexts.items():
+            if context.get("name") != world_name:
+                continue
+            if context.get("_sessionId") != session_id:
+                continue
+            aux = context.get("auxData") or {}
+            if not isinstance(aux, dict) or aux.get("frameId") != frame_id or aux.get("isDefault") is not False:
+                continue
+            return context_id
+        return None
+
     def call(
         self,
         method: str,
@@ -240,8 +285,13 @@ class CdpClient:
             except socket.timeout:
                 continue
             message = json.loads(frame.decode("utf-8"))
-            if isinstance(message, dict) and message.get("id") in self._pending:
+            if not isinstance(message, dict):
+                continue
+            if message.get("id") in self._pending:
                 self._pending[int(message["id"])] = message
+                continue
+            if message.get("method"):
+                self._handle_event(message)
         raise TimeoutError(f"CDP call timed out: {method}")
 
 
@@ -274,11 +324,17 @@ def attach_page(client: CdpClient) -> str:
 
 
 def ensure_world(client: CdpClient, session_id: str) -> None:
-    # Chromium's EnsureDOMWrapperWorld reuses a named world for the frame.
-    # The live E2E test exercises snapshot -> act across separate helper processes.
+    # Rediscover only an isolated context bound to this frame and CDP session.
+    # Never run helpers in a page-owned default context with the same name.
     frame = client.call("Page.getFrameTree", session_id=session_id)["frameTree"]["frame"]
+    frame_id = frame["id"]
+    client.call("Runtime.enable", session_id=session_id)
+    existing = client.find_world_context(WORLD_NAME, frame_id, session_id)
+    if existing is not None:
+        client.context_id = existing
+        return
     world = client.call("Page.createIsolatedWorld", {
-        "frameId": frame["id"], "worldName": "rakazo-page-browser",
+        "frameId": frame_id, "worldName": WORLD_NAME,
     }, session_id=session_id)
     client.context_id = world["executionContextId"]
 

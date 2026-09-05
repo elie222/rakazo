@@ -65,6 +65,61 @@ class PageBrowserTest(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "Unexpected CDP"):
                 helper.discover_ws_url(9222)
 
+    def test_ensure_world_reuses_named_isolated_context(self):
+        client = helper.CdpClient("ws://127.0.0.1:9222/test")
+        calls = []
+
+        def fake_call(method, params=None, *, session_id=None, timeout_s=30.0):
+            calls.append(method)
+            if method == "Page.getFrameTree":
+                return {"frameTree": {"frame": {"id": "frame-1"}}}
+            if method == "Runtime.enable":
+                client._handle_event({
+                    "method": "Runtime.executionContextCreated",
+                    "sessionId": session_id,
+                    "params": {
+                        "context": {
+                            "id": 42,
+                            "name": helper.WORLD_NAME,
+                            "auxData": {"frameId": "frame-1", "isDefault": False},
+                        }
+                    },
+                })
+                return {}
+            raise AssertionError(f"unexpected CDP call: {method}")
+
+        client.call = fake_call  # type: ignore[method-assign]
+        helper.ensure_world(client, "session-a")
+        self.assertEqual(client.context_id, 42)
+        self.assertNotIn("Page.createIsolatedWorld", calls)
+
+    def test_context_lookup_rejects_default_foreign_and_unbound_contexts(self):
+        client = helper.CdpClient("ws://127.0.0.1:9222/test")
+        for aux, session in (({"frameId": "frame-1", "isDefault": True}, "session-a"),
+                             ({"frameId": "other-frame", "isDefault": False}, "session-a"),
+                             ({"frameId": "frame-1", "isDefault": False}, "session-b"),
+                             ({}, "session-a")):
+            client._handle_event({"method": "Runtime.executionContextCreated", "sessionId": session,
+                                  "params": {"context": {"id": 42, "name": helper.WORLD_NAME, "auxData": aux}}})
+            self.assertIsNone(client.find_world_context(helper.WORLD_NAME, "frame-1", "session-a"))
+
+    def test_ensure_world_creates_when_missing(self):
+        client = helper.CdpClient("ws://127.0.0.1:9222/test")
+
+        def fake_call(method, params=None, *, session_id=None, timeout_s=30.0):
+            if method == "Page.getFrameTree":
+                return {"frameTree": {"frame": {"id": "frame-1"}}}
+            if method == "Runtime.enable":
+                return {}
+            if method == "Page.createIsolatedWorld":
+                self.assertEqual(params["worldName"], helper.WORLD_NAME)
+                return {"executionContextId": 7}
+            raise AssertionError(f"unexpected CDP call: {method}")
+
+        client.call = fake_call  # type: ignore[method-assign]
+        helper.ensure_world(client, "session-a")
+        self.assertEqual(client.context_id, 7)
+
 
 if __name__ == "__main__":
     unittest.main()
