@@ -1,8 +1,36 @@
 import type { MessageBlock, ThreadMessage, ThreadMessagePage } from "@rakazo/contracts";
-import { isPeerReceiptBlocks } from "@rakazo/core";
+import {
+  isPeerReceiptBlocks,
+  isPeerReportBlocks,
+  isTakeoverRequestBlocks,
+  terminalPeerSummaryIndexes,
+} from "@rakazo/core";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 
 type MessageDb = PrismaClient | Prisma.TransactionClient;
+
+export function isUserVisiblePeerRunEvent(event: {
+  type: string;
+  payload: { blocks?: unknown };
+}): boolean {
+  if (
+    event.type === "run.completed" ||
+    event.type === "run.failed" ||
+    event.type === "run.cancelled" ||
+    event.type === "computer.takeover.requested"
+  ) {
+    return true;
+  }
+  if (event.type !== "thread.message.created" && event.type !== "thread.message.updated") {
+    return false;
+  }
+  const blocks = event.payload.blocks;
+  if (!Array.isArray(blocks)) return false;
+  return (
+    isPeerReceiptBlocks(blocks as MessageBlock[]) ||
+    isTakeoverRequestBlocks(blocks as MessageBlock[])
+  );
+}
 
 export async function loadMessagePage(
   prisma: MessageDb,
@@ -35,9 +63,9 @@ export async function loadMessagePage(
       const hasOlder = first
         ? (await prisma.message.count({ where: { threadId, seq: { lt: first.seq } } })) > 0
         : false;
-      // Peer text/activity stays out of the normal transcript (including the
-      // around target). Receipts remain via withoutPeerRunMessages; full peer
-      // history belongs in the bot-messages overlay (includePeerRuns).
+      // Peer activity stays out of the normal transcript. Receipts and a
+      // coordinator's user-facing report remain; assigned workers' replies
+      // belong in the bot-messages overlay (includePeerRuns).
       const messages = includePeerRuns ? rows : await withoutPeerRunMessages(prisma, rows);
       return {
         threadId,
@@ -93,24 +121,78 @@ export async function loadAllMessages(
   return pages.reverse().flat();
 }
 
-async function withoutPeerRunMessages<T extends { runId: string | null; blocks: Prisma.JsonValue }>(
-  prisma: MessageDb,
-  rows: T[],
-): Promise<T[]> {
+async function withoutPeerRunMessages<
+  T extends {
+    id: string;
+    runId: string | null;
+    seq?: number;
+    clientNonce?: string | null;
+    blocks: Prisma.JsonValue;
+  },
+>(prisma: MessageDb, rows: T[]): Promise<T[]> {
   const runIds = [...new Set(rows.flatMap((row) => (row.runId ? [row.runId] : [])))];
   if (runIds.length === 0) return rows;
   const peerRuns = await prisma.run.findMany({
     where: { id: { in: runIds }, trigger: "bot_message" },
-    select: { id: true },
+    select: { id: true, sourceMessage: { select: { blocks: true } } },
   });
   const peerRunIds = new Set(peerRuns.map((run) => run.id));
-  return rows.filter((row) => {
-    if (!row.runId || !peerRunIds.has(row.runId)) return true;
-    // Keep compact sent/received receipts; clients render them as chips.
+  const peerReportRunIds = new Set(
+    peerRuns
+      .filter((run) =>
+        isPeerReportBlocks(
+          Array.isArray(run.sourceMessage?.blocks)
+            ? (run.sourceMessage.blocks as MessageBlock[])
+            : [],
+        ),
+      )
+      .map((run) => run.id),
+  );
+  const peerReportMessages =
+    peerReportRunIds.size > 0
+      ? await prisma.message.findMany({
+          where: { runId: { in: [...peerReportRunIds] } },
+          orderBy: { seq: "asc" },
+          select: { id: true, runId: true, seq: true, clientNonce: true, blocks: true },
+        })
+      : [];
+  const terminalSummaryIndexes = terminalPeerSummaryIndexes(
+    peerReportMessages.map((row) => ({
+      runId: row.runId ?? undefined,
+      seq: row.seq,
+      clientNonce: row.clientNonce,
+      blocks: row.blocks as MessageBlock[],
+    })),
+    peerReportRunIds,
+  );
+  const terminalSummaryIds = new Set(
+    [...terminalSummaryIndexes].flatMap((index) => {
+      const message = peerReportMessages[index];
+      return message ? [message.id] : [];
+    }),
+  );
+  return rows.flatMap((row) => {
+    if (!row.runId || !peerRunIds.has(row.runId)) return [row];
+    // Keep compact sent/received receipts. Only a coordinator woken by a
+    // result/status/fyi may publish a final report to the user; a worker woken
+    // by a request/question remains private to the peer exchange.
     const blocks = row.blocks as MessageBlock[];
-    return blocks.some(
-      (block) => block.kind === "bot_message_sent" || block.kind === "bot_message_received",
+    if (isTakeoverRequestBlocks(blocks)) return [row];
+    if (
+      blocks.some(
+        (block) => block.kind === "bot_message_sent" || block.kind === "bot_message_received",
+      )
+    ) {
+      return [row];
+    }
+    if (!peerReportRunIds.has(row.runId) || !terminalSummaryIds.has(row.id)) return [];
+
+    // A terminal peer message can also contain steps/tool activity. Only the
+    // owner-facing text belongs in the normal transcript.
+    const summaryBlocks = blocks.filter(
+      (block) => block.kind === "text" && block.text.trim().length > 0,
     );
+    return [{ ...row, blocks: summaryBlocks as Prisma.JsonValue } as T];
   });
 }
 

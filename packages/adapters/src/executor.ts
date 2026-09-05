@@ -3213,7 +3213,16 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 flushPendingTools();
                 if (!(await renewRunLease(deps, runId, workerId, fence))) return;
                 if (messageSegments.length > 0) {
-                  await publishMessage(deps, run, "bot", redactBlocks(messageSegments, runSecrets));
+                  await publishMessage(
+                    deps,
+                    run,
+                    "bot",
+                    redactBlocks(messageSegments, runSecrets),
+                    undefined,
+                    run.trigger === "bot_message"
+                      ? userProgressClientNonce(run.id, midTurnProgressCount++)
+                      : undefined,
+                  );
                 }
                 await workspaceCheckpoint.flush();
                 terminalCheckpointComplete = true;

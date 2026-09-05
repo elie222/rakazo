@@ -146,7 +146,12 @@ import {
   UpdaterProxyError,
 } from "./server-update.js";
 import { assertTeachingSendAllowed, createTaughtSkillsService } from "./taught-skills.js";
-import { isPeerRun, loadAllMessages, loadMessagePage } from "./thread-message-pages.js";
+import {
+  isPeerRun,
+  isUserVisiblePeerRunEvent,
+  loadAllMessages,
+  loadMessagePage,
+} from "./thread-message-pages.js";
 import {
   reactToThreadMessage,
   resolveThreadTarget,
@@ -1060,25 +1065,9 @@ export function createRouter(deps: RouterDeps) {
           context.signal,
         )) {
           if (await isPeerRun(deps.prisma, event.runId, peerRunCache)) {
-            // Keep terminal peer-run events so clients can clear working state.
-            // Keep compact peer receipts for mobile; drop peer activity/replies.
-            const isTerminal =
-              event.type === "run.completed" ||
-              event.type === "run.failed" ||
-              event.type === "run.cancelled";
-            const blocks = event.payload.blocks;
-            const isReceipt =
-              (event.type === "thread.message.created" ||
-                event.type === "thread.message.updated") &&
-              Array.isArray(blocks) &&
-              blocks.some(
-                (block) =>
-                  !!block &&
-                  typeof block === "object" &&
-                  "kind" in block &&
-                  (block.kind === "bot_message_received" || block.kind === "bot_message_sent"),
-              );
-            if (!isTerminal && !isReceipt) continue;
+            // Keep terminal state, compact receipts, and actionable takeover
+            // requests; drop ordinary peer activity and worker narration.
+            if (!isUserVisiblePeerRunEvent(event)) continue;
           }
           yield event;
         }

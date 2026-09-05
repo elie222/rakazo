@@ -1,8 +1,50 @@
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
-import { isPeerRun, loadAllMessages, loadMessagePage } from "./thread-message-pages.js";
+import {
+  isPeerRun,
+  isUserVisiblePeerRunEvent,
+  loadAllMessages,
+  loadMessagePage,
+} from "./thread-message-pages.js";
+
+function peerRun(intent: "request" | "result" = "result") {
+  return {
+    id: "run-peer",
+    sourceMessage: {
+      blocks: [
+        {
+          kind: "bot_message_received",
+          fromBotId: "bot-2",
+          fromBotName: "Coder",
+          text: intent === "request" ? "Check this." : "Done.",
+          intent,
+        },
+      ],
+    },
+  };
+}
 
 describe("thread message pages", () => {
+  it("keeps takeover events visible for peer-triggered runs", () => {
+    expect(
+      isUserVisiblePeerRunEvent({
+        type: "thread.message.created",
+        payload: {
+          blocks: [{ kind: "computer", state: "Ready", text: "Please complete login." }],
+        },
+      }),
+    ).toBe(true);
+    expect(isUserVisiblePeerRunEvent({ type: "computer.takeover.requested", payload: {} })).toBe(
+      true,
+    );
+    expect(
+      isUserVisiblePeerRunEvent({
+        type: "thread.message.created",
+        payload: { blocks: [{ kind: "text", text: "Private worker narration." }] },
+      }),
+    ).toBe(false);
+  });
+
   it("caches peer-run classification for live events", async () => {
     const findUnique = vi.fn(async () => ({ trigger: "bot_message" }));
     const prisma = { run: { findUnique } } as unknown as PrismaClient;
@@ -13,7 +55,7 @@ describe("thread message pages", () => {
     expect(findUnique).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps peer receipt rows when filtering peer-run output from pages", async () => {
+  it("keeps peer receipts and final owner summaries while filtering peer activity", async () => {
     const findMany = vi.fn(async () => [
       {
         id: "message-reply",
@@ -58,7 +100,7 @@ describe("thread message pages", () => {
     ]);
     const prisma = {
       message: { findMany },
-      run: { findMany: vi.fn(async () => [{ id: "run-peer" }]) },
+      run: { findMany: vi.fn(async () => [peerRun()]) },
     } as unknown as PrismaClient;
 
     const page = await loadMessagePage(prisma, "thread-1", undefined, 3);
@@ -66,10 +108,11 @@ describe("thread message pages", () => {
     expect(page.messages.map((message) => message.id)).toEqual([
       "message-user",
       "message-received",
+      "message-reply",
     ]);
   });
 
-  it("filters peer-run output when its receipt is outside the loaded page", async () => {
+  it("keeps a peer-run owner summary when its receipt is outside the loaded page", async () => {
     const findMany = vi.fn(async () => [
       {
         id: "message-peer",
@@ -96,7 +139,42 @@ describe("thread message pages", () => {
     ]);
     const prisma = {
       message: { findMany },
-      run: { findMany: vi.fn(async () => [{ id: "run-peer" }]) },
+      run: { findMany: vi.fn(async () => [peerRun()]) },
+    } as unknown as PrismaClient;
+
+    const page = await loadMessagePage(prisma, "thread-1", undefined, 2);
+
+    expect(page.messages.map((message) => message.id)).toEqual(["message-user", "message-peer"]);
+  });
+
+  it("hides an assigned worker's final reply from the normal transcript", async () => {
+    const findMany = vi.fn(async () => [
+      {
+        id: "message-worker-reply",
+        threadId: "thread-1",
+        seq: 2,
+        role: "bot",
+        blocks: [{ kind: "text", text: "The check passed." }],
+        botId: "bot-worker",
+        replyToMessageId: null,
+        runId: "run-peer",
+        createdAt: new Date("2026-08-16T00:00:02.000Z"),
+      },
+      {
+        id: "message-user",
+        threadId: "thread-1",
+        seq: 1,
+        role: "bot",
+        blocks: [{ kind: "text", text: "Older visible answer" }],
+        botId: "bot-worker",
+        replyToMessageId: null,
+        runId: "run-user",
+        createdAt: new Date("2026-08-16T00:00:01.000Z"),
+      },
+    ]);
+    const prisma = {
+      message: { findMany },
+      run: { findMany: vi.fn(async () => [peerRun("request")]) },
     } as unknown as PrismaClient;
 
     const page = await loadMessagePage(prisma, "thread-1", undefined, 2);
@@ -104,7 +182,206 @@ describe("thread message pages", () => {
     expect(page.messages.map((message) => message.id)).toEqual(["message-user"]);
   });
 
-  it("omits peer around-page targets from the normal transcript", async () => {
+  it("keeps an assigned worker's takeover request in the normal transcript", async () => {
+    const findMany = vi.fn(async () => [
+      {
+        id: "message-takeover",
+        threadId: "thread-1",
+        seq: 2,
+        role: "bot",
+        blocks: [{ kind: "computer", state: "Ready", text: "Please complete the staging login." }],
+        botId: "bot-worker",
+        replyToMessageId: null,
+        runId: "run-peer",
+        createdAt: new Date("2026-08-16T00:00:02.000Z"),
+      },
+      {
+        id: "message-user",
+        threadId: "thread-1",
+        seq: 1,
+        role: "bot",
+        blocks: [{ kind: "text", text: "Older visible answer" }],
+        botId: "bot-worker",
+        replyToMessageId: null,
+        runId: "run-user",
+        createdAt: new Date("2026-08-16T00:00:01.000Z"),
+      },
+    ]);
+    const prisma = {
+      message: { findMany },
+      run: { findMany: vi.fn(async () => [peerRun("request")]) },
+    } as unknown as PrismaClient;
+
+    const page = await loadMessagePage(prisma, "thread-1", undefined, 2);
+
+    expect(page.messages.map((message) => message.id)).toEqual([
+      "message-user",
+      "message-takeover",
+    ]);
+  });
+
+  it("filters mid-turn peer narration identified by its durable nonce", async () => {
+    const findMany = vi.fn(async () => [
+      {
+        id: "message-progress",
+        threadId: "thread-1",
+        seq: 2,
+        role: "bot",
+        blocks: [{ kind: "text", text: "Still checking." }],
+        botId: "bot-1",
+        replyToMessageId: null,
+        runId: "run-peer",
+        clientNonce: "user-progress:run-peer:0:test",
+        createdAt: new Date("2026-08-16T00:00:02.000Z"),
+      },
+      {
+        id: "message-user",
+        threadId: "thread-1",
+        seq: 1,
+        role: "bot",
+        blocks: [{ kind: "text", text: "Visible answer" }],
+        botId: "bot-1",
+        replyToMessageId: null,
+        runId: "run-user",
+        clientNonce: null,
+        createdAt: new Date("2026-08-16T00:00:01.000Z"),
+      },
+    ]);
+    const prisma = {
+      message: { findMany },
+      run: { findMany: vi.fn(async () => [peerRun()]) },
+    } as unknown as PrismaClient;
+
+    const page = await loadMessagePage(prisma, "thread-1", undefined, 2);
+
+    expect(page.messages.map((message) => message.id)).toEqual(["message-user"]);
+  });
+
+  it("keeps untagged mid-turn peer narration out when a later terminal summary exists", async () => {
+    const findMany = vi.fn(async () => [
+      {
+        id: "message-summary",
+        threadId: "thread-1",
+        seq: 3,
+        role: "bot",
+        blocks: [{ kind: "text", text: "Coder finished the review." }],
+        botId: "bot-1",
+        replyToMessageId: null,
+        runId: "run-peer",
+        clientNonce: null,
+        createdAt: new Date("2026-08-16T00:00:03.000Z"),
+      },
+      {
+        id: "message-progress",
+        threadId: "thread-1",
+        seq: 2,
+        role: "bot",
+        blocks: [{ kind: "text", text: "Still drafting the report." }],
+        botId: "bot-1",
+        replyToMessageId: null,
+        runId: "run-peer",
+        clientNonce: null,
+        createdAt: new Date("2026-08-16T00:00:02.000Z"),
+      },
+      {
+        id: "message-user",
+        threadId: "thread-1",
+        seq: 1,
+        role: "bot",
+        blocks: [{ kind: "text", text: "Visible answer" }],
+        botId: "bot-1",
+        replyToMessageId: null,
+        runId: "run-user",
+        clientNonce: null,
+        createdAt: new Date("2026-08-16T00:00:01.000Z"),
+      },
+    ]);
+    const prisma = {
+      message: { findMany },
+      run: { findMany: vi.fn(async () => [peerRun()]) },
+    } as unknown as PrismaClient;
+
+    const page = await loadMessagePage(prisma, "thread-1", undefined, 3);
+
+    expect(page.messages.map((message) => message.id)).toEqual(["message-user", "message-summary"]);
+  });
+
+  it("hides paginated peer narration when its terminal summary is on a newer page", async () => {
+    const progress = {
+      id: "message-progress",
+      threadId: "thread-1",
+      seq: 2,
+      role: "bot",
+      blocks: [{ kind: "text", text: "Still drafting the report." }],
+      botId: "bot-1",
+      replyToMessageId: null,
+      runId: "run-peer",
+      clientNonce: null,
+      createdAt: new Date("2026-08-16T00:00:02.000Z"),
+    };
+    const summary = {
+      ...progress,
+      id: "message-summary",
+      seq: 3,
+      blocks: [{ kind: "text", text: "Coder finished the review." }],
+      createdAt: new Date("2026-08-16T00:00:03.000Z"),
+    };
+    const visible = {
+      ...progress,
+      id: "message-user",
+      seq: 1,
+      blocks: [{ kind: "text", text: "Visible answer" }],
+      runId: "run-user",
+      createdAt: new Date("2026-08-16T00:00:01.000Z"),
+    };
+    const findMany = vi.fn(async (query: { where?: { runId?: unknown } }) =>
+      query.where?.runId ? [progress, summary] : [progress, visible],
+    );
+    const prisma = {
+      message: { findMany },
+      run: { findMany: vi.fn(async () => [peerRun()]) },
+    } as unknown as PrismaClient;
+
+    const page = await loadMessagePage(prisma, "thread-1", 3, 2);
+
+    expect(page.messages.map((message) => message.id)).toEqual(["message-user"]);
+    expect(findMany).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ where: { runId: { in: ["run-peer"] } } }),
+    );
+  });
+
+  it("projects mixed peer-run finals down to owner-facing text", async () => {
+    const findMany = vi.fn(async () => [
+      {
+        id: "message-peer",
+        threadId: "thread-1",
+        seq: 1,
+        role: "bot",
+        blocks: [
+          { kind: "steps", steps: [{ label: "Message bot", count: 1 }] },
+          { kind: "text", text: "Engineer finished the review." },
+        ],
+        botId: "bot-1",
+        replyToMessageId: null,
+        runId: "run-peer",
+        clientNonce: null,
+        createdAt: new Date("2026-08-16T00:00:01.000Z"),
+      },
+    ]);
+    const prisma = {
+      message: { findMany },
+      run: { findMany: vi.fn(async () => [peerRun()]) },
+    } as unknown as PrismaClient;
+
+    const page = await loadMessagePage(prisma, "thread-1", undefined, 2);
+
+    expect(page.messages[0]?.blocks).toEqual([
+      { kind: "text", text: "Engineer finished the review." },
+    ]);
+  });
+
+  it("keeps a peer summary around-page target but omits peer activity", async () => {
     const findMany = vi.fn(async () => [
       {
         id: "message-user",
@@ -141,7 +418,7 @@ describe("thread message pages", () => {
       },
     ]);
     const count = vi.fn(async () => 1);
-    const runFindMany = vi.fn(async () => [{ id: "run-peer" }]);
+    const runFindMany = vi.fn(async () => [peerRun()]);
     const prisma = {
       message: { findMany, count },
       run: { findMany: runFindMany },
@@ -152,7 +429,10 @@ describe("thread message pages", () => {
       seq: 6,
     });
 
-    expect(page.messages.map((message) => message.id)).toEqual(["message-user"]);
+    expect(page.messages.map((message) => message.id)).toEqual([
+      "message-user",
+      "message-peer-target",
+    ]);
     expect(runFindMany).toHaveBeenCalled();
   });
 
@@ -202,7 +482,7 @@ describe("thread message pages", () => {
     const count = vi.fn(async () => 0);
     const prisma = {
       message: { findMany, count },
-      run: { findMany: vi.fn(async () => [{ id: "run-peer" }]) },
+      run: { findMany: vi.fn(async () => [peerRun()]) },
     } as unknown as PrismaClient;
 
     const page = await loadMessagePage(prisma, "thread-1", undefined, 4, {
@@ -213,6 +493,7 @@ describe("thread message pages", () => {
     expect(page.messages.map((message) => message.id)).toEqual([
       "message-user",
       "message-peer-receipt",
+      "message-peer-text",
     ]);
   });
 
@@ -246,13 +527,13 @@ describe("thread message pages", () => {
     expect(page.messages.map((message) => message.id)).toEqual(["message-peer"]);
   });
 
-  it("scans past a page containing only peer-run output", async () => {
+  it("scans past a page containing only peer-run activity", async () => {
     const row = (seq: number, runId: string) => ({
       id: `message-${seq}`,
       threadId: "thread-1",
       seq,
       role: "bot",
-      blocks: [{ kind: "text", text: String(seq) }],
+      blocks: [{ kind: "steps", steps: [{ label: String(seq), count: 1 }] }],
       botId: "bot-1",
       replyToMessageId: null,
       runId,

@@ -46,6 +46,23 @@ function reposFor(memoryScope: string | null) {
   return createRepos(prisma as unknown as PrismaClient);
 }
 
+function peerRun(intent: "request" | "result" = "result") {
+  return {
+    id: "run-peer",
+    sourceMessage: {
+      blocks: [
+        {
+          kind: "bot_message_received",
+          fromBotId: "bot-2",
+          fromBotName: "Coder",
+          text: intent === "request" ? "Check this." : "Done.",
+          intent,
+        },
+      ],
+    },
+  };
+}
+
 describe("createRepos.listBots", () => {
   it("passes memoryScope through as null when unset", async () => {
     await expect(reposFor(null).listBots(actor)).resolves.toEqual([
@@ -59,7 +76,7 @@ describe("createRepos.listBots", () => {
     ]);
   });
 
-  it("keeps bot-to-bot run output out of sidebar previews", async () => {
+  it("uses a bot's final peer-work summary in sidebar previews", async () => {
     const findMany = vi.fn(async () => [
       {
         ...baseBot,
@@ -91,12 +108,12 @@ describe("createRepos.listBots", () => {
         findMany,
       },
       run: {
-        findMany: vi.fn(async () => [{ id: "run-peer" }]),
+        findMany: vi.fn(async () => [peerRun()]),
       },
     };
 
     await expect(createRepos(prisma as unknown as PrismaClient).listBots(actor)).resolves.toEqual([
-      expect.objectContaining({ preview: "Visible answer" }),
+      expect.objectContaining({ preview: "Echoed peer reply" }),
     ]);
     expect(findMany).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -111,7 +128,39 @@ describe("createRepos.listBots", () => {
     );
   });
 
-  it("skips a peer-run preview tail when the receipt is outside the window", async () => {
+  it("prefers the latest peer-report summary over earlier untagged mid-turn narration", async () => {
+    const findMany = vi.fn(async () => [
+      {
+        ...baseBot,
+        thread: {
+          ...baseBot.thread,
+          messages: [
+            {
+              seq: 3,
+              runId: "run-peer",
+              blocks: [{ kind: "text", text: "Coder finished the review." }],
+            },
+            {
+              seq: 2,
+              runId: "run-peer",
+              blocks: [{ kind: "text", text: "Still drafting the report." }],
+            },
+            { seq: 1, runId: "run-user", blocks: [{ kind: "text", text: "Visible answer" }] },
+          ],
+        },
+      },
+    ]);
+    const prisma = {
+      bot: { findMany },
+      run: { findMany: vi.fn(async () => [peerRun()]) },
+    };
+
+    await expect(createRepos(prisma as unknown as PrismaClient).listBots(actor)).resolves.toEqual([
+      expect.objectContaining({ preview: "Coder finished the review." }),
+    ]);
+  });
+
+  it("uses a peer-work summary when the receipt is outside the preview window", async () => {
     const prisma = {
       bot: {
         findMany: vi.fn(async () => [
@@ -131,7 +180,7 @@ describe("createRepos.listBots", () => {
         ]),
       },
       run: {
-        findMany: vi.fn(async () => [{ id: "run-peer" }]),
+        findMany: vi.fn(async () => [peerRun()]),
       },
       message: {
         findMany: vi.fn(async () => []),
@@ -139,7 +188,34 @@ describe("createRepos.listBots", () => {
     };
 
     await expect(createRepos(prisma as unknown as PrismaClient).listBots(actor)).resolves.toEqual([
-      expect.objectContaining({ preview: "Visible answer" }),
+      expect.objectContaining({ preview: "Echoed peer reply" }),
+    ]);
+  });
+
+  it("keeps an assigned worker's reply out of sidebar previews", async () => {
+    const prisma = {
+      bot: {
+        findMany: vi.fn(async () => [
+          {
+            ...baseBot,
+            thread: {
+              ...baseBot.thread,
+              messages: [
+                {
+                  runId: "run-peer",
+                  blocks: [{ kind: "text", text: "The check passed." }],
+                },
+                { runId: "run-user", blocks: [{ kind: "text", text: "Older visible answer" }] },
+              ],
+            },
+          },
+        ]),
+      },
+      run: { findMany: vi.fn(async () => [peerRun("request")]) },
+    };
+
+    await expect(createRepos(prisma as unknown as PrismaClient).listBots(actor)).resolves.toEqual([
+      expect.objectContaining({ preview: "Older visible answer" }),
     ]);
   });
 
@@ -158,7 +234,7 @@ describe("createRepos.listBots", () => {
                 {
                   seq: 20,
                   runId: "run-peer",
-                  blocks: [{ kind: "text", text: "Echoed peer reply" }],
+                  blocks: [{ kind: "steps", steps: [{ label: "Peer work", count: 1 }] }],
                 },
               ],
             },
@@ -180,15 +256,40 @@ describe("createRepos.listBots", () => {
       where: { threadId: "thread-1", seq: { lt: 20 } },
       orderBy: { seq: "desc" },
       take: 16,
+      select: { seq: true, blocks: true, runId: true, clientNonce: true },
     });
   });
 
   it("uses a visible message from the fourth older window for preview", async () => {
     const peerWindows = [
-      [{ seq: 80, runId: "run-peer", blocks: [{ kind: "text", text: "peer 80" }] }],
-      [{ seq: 60, runId: "run-peer", blocks: [{ kind: "text", text: "peer 60" }] }],
-      [{ seq: 40, runId: "run-peer", blocks: [{ kind: "text", text: "peer 40" }] }],
-      [{ seq: 20, runId: "run-peer", blocks: [{ kind: "text", text: "peer 20" }] }],
+      [
+        {
+          seq: 80,
+          runId: "run-peer",
+          blocks: [{ kind: "steps", steps: [{ label: "peer 80", count: 1 }] }],
+        },
+      ],
+      [
+        {
+          seq: 60,
+          runId: "run-peer",
+          blocks: [{ kind: "steps", steps: [{ label: "peer 60", count: 1 }] }],
+        },
+      ],
+      [
+        {
+          seq: 40,
+          runId: "run-peer",
+          blocks: [{ kind: "steps", steps: [{ label: "peer 40", count: 1 }] }],
+        },
+      ],
+      [
+        {
+          seq: 20,
+          runId: "run-peer",
+          blocks: [{ kind: "steps", steps: [{ label: "peer 20", count: 1 }] }],
+        },
+      ],
       [{ seq: 1, runId: "run-user", blocks: [{ kind: "text", text: "Fourth-window answer" }] }],
     ];
     let windowIndex = 0;
@@ -238,12 +339,23 @@ describe("createRepos.listSpaceBotsForSpaces", () => {
         updatedAt: new Date("2026-08-20T00:00:00.000Z"),
         thread: {
           unread: true,
-          messages: [{ blocks: [{ kind: "text", text: "Waiting for a reply" }] }],
+          messages: [
+            {
+              seq: 1,
+              runId: null,
+              clientNonce: null,
+              blocks: [{ kind: "text", text: "Waiting for a reply" }],
+            },
+          ],
         },
         runs: [{ status: "running" }],
       },
     ]);
-    const repos = createRepos({ bot: { findMany } } as unknown as PrismaClient);
+    const runFindMany = vi.fn(async () => []);
+    const repos = createRepos({
+      bot: { findMany },
+      run: { findMany: runFindMany },
+    } as unknown as PrismaClient);
 
     await expect(repos.listSpaceBotsForSpaces(actor, ["ws-2"])).resolves.toEqual([
       {
@@ -268,6 +380,152 @@ describe("createRepos.listSpaceBotsForSpaces", () => {
     expect(query.select).not.toHaveProperty("description");
     expect(query.select).not.toHaveProperty("instructions");
     expect(query.select).not.toHaveProperty("computer");
+    expect(query.select.thread).toEqual(
+      expect.objectContaining({
+        select: expect.objectContaining({
+          messages: expect.objectContaining({
+            select: { seq: true, blocks: true, runId: true, clientNonce: true },
+          }),
+        }),
+      }),
+    );
+  });
+
+  it("scans older messages when the newest cross-space window is only peer output", async () => {
+    const messageFindMany = vi.fn(async () => [
+      {
+        seq: 1,
+        runId: "run-user",
+        clientNonce: null,
+        blocks: [{ kind: "text", text: "Older visible answer" }],
+      },
+    ]);
+    const botFindMany = vi.fn(async () => [
+      {
+        id: "bot-2",
+        spaceId: "ws-2",
+        name: "Support",
+        title: "Customer support",
+        color: "#123456",
+        notifyOnFinish: false,
+        pinned: true,
+        sectionId: null,
+        updatedAt: new Date("2026-08-20T00:00:00.000Z"),
+        thread: {
+          id: "thread-2",
+          unread: true,
+          messages: [
+            {
+              seq: 20,
+              runId: "run-peer",
+              clientNonce: null,
+              blocks: [{ kind: "steps", steps: [{ label: "Peer work", count: 1 }] }],
+            },
+          ],
+        },
+        runs: [],
+      },
+    ]);
+    const repos = createRepos({
+      bot: { findMany: botFindMany },
+      run: { findMany: vi.fn(async () => [{ id: "run-peer" }]) },
+      message: { findMany: messageFindMany },
+    } as unknown as PrismaClient);
+
+    await expect(repos.listSpaceBotsForSpaces(actor, ["ws-2"])).resolves.toEqual([
+      expect.objectContaining({ preview: "Older visible answer" }),
+    ]);
+    expect(messageFindMany).toHaveBeenCalledWith({
+      where: { threadId: "thread-2", seq: { lt: 20 } },
+      orderBy: { seq: "desc" },
+      take: 16,
+      select: { seq: true, blocks: true, runId: true, clientNonce: true },
+    });
+  });
+
+  it("keeps assigned worker replies out of cross-space sidebar previews", async () => {
+    const botFindMany = vi.fn(async () => [
+      {
+        id: "bot-2",
+        spaceId: "ws-2",
+        name: "Support",
+        title: "Customer support",
+        color: "#123456",
+        notifyOnFinish: false,
+        pinned: true,
+        sectionId: null,
+        updatedAt: new Date("2026-08-20T00:00:00.000Z"),
+        thread: {
+          unread: true,
+          messages: [
+            {
+              runId: "run-peer",
+              clientNonce: null,
+              blocks: [{ kind: "text", text: "Private worker result" }],
+            },
+            {
+              runId: "run-user",
+              clientNonce: null,
+              blocks: [{ kind: "text", text: "Older visible answer" }],
+            },
+          ],
+        },
+        runs: [],
+      },
+    ]);
+    const repos = createRepos({
+      bot: { findMany: botFindMany },
+      run: { findMany: vi.fn(async () => [peerRun("request")]) },
+    } as unknown as PrismaClient);
+
+    await expect(repos.listSpaceBotsForSpaces(actor, ["ws-2"])).resolves.toEqual([
+      expect.objectContaining({ preview: "Older visible answer" }),
+    ]);
+  });
+
+  it("shows assigned worker takeover requests in cross-space sidebar previews", async () => {
+    const botFindMany = vi.fn(async () => [
+      {
+        id: "bot-2",
+        spaceId: "ws-2",
+        name: "Support",
+        title: "Customer support",
+        color: "#123456",
+        notifyOnFinish: false,
+        pinned: true,
+        sectionId: null,
+        updatedAt: new Date("2026-08-20T00:00:00.000Z"),
+        thread: {
+          unread: true,
+          messages: [
+            {
+              seq: 2,
+              runId: "run-peer",
+              clientNonce: null,
+              blocks: [
+                {
+                  kind: "computer",
+                  state: "Ready",
+                  text: "Please complete the staging login.",
+                },
+              ],
+            },
+          ],
+        },
+        runs: [{ status: "waiting_takeover" }],
+      },
+    ]);
+    const repos = createRepos({
+      bot: { findMany: botFindMany },
+      run: { findMany: vi.fn(async () => [peerRun("request")]) },
+    } as unknown as PrismaClient);
+
+    await expect(repos.listSpaceBotsForSpaces(actor, ["ws-2"])).resolves.toEqual([
+      expect.objectContaining({
+        preview: "Please complete the staging login.",
+        status: "waiting_takeover",
+      }),
+    ]);
   });
 });
 
