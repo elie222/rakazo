@@ -36,7 +36,7 @@ export function screenPorts(index: number) {
   };
 }
 
-export function computerPortBindings() {
+export function computerPortBindings(publishControlPort = false) {
   const ExposedPorts: Record<string, object> = {};
   const PortBindings: Record<string, Array<{ HostIp: string; HostPort: string }>> = {};
   for (let index = 0; index < TEAM_SCREEN_LIMIT; index += 1) {
@@ -47,7 +47,13 @@ export function computerPortBindings() {
     PortBindings[`${ports.controlPort}/tcp`] = [{ HostIp: "127.0.0.1", HostPort: "0" }];
   }
   // Control stays on the container network only (0.0.0.0 inside the container).
-  // Do not publish 7070 to the host.
+  // Do not publish 7070 to the host, except via SANDBOX_CONTROL_VIA_LOOPBACK:
+  // a host-run supervisor on Docker Desktop (macOS/Windows) has no route to
+  // container IPs, so control must go through a token-guarded loopback mapping.
+  if (publishControlPort) {
+    ExposedPorts[`${COMPUTER_CONTROL_PORT}/tcp`] = {};
+    PortBindings[`${COMPUTER_CONTROL_PORT}/tcp`] = [{ HostIp: "127.0.0.1", HostPort: "0" }];
+  }
   return { ExposedPorts, PortBindings };
 }
 
@@ -60,6 +66,7 @@ export interface ComputerCreateInput {
   user?: string;
   controlToken?: string;
   networkMode?: string;
+  publishControlPort?: boolean;
 }
 
 interface PointerInput {
@@ -76,7 +83,7 @@ export type SandboxInput =
   | { kind: "clipboard"; text: string };
 
 export function containerCreateOptions(input: ComputerCreateInput) {
-  const ports = computerPortBindings();
+  const ports = computerPortBindings(input.publishControlPort);
   return {
     Image: input.image,
     name: input.name,
@@ -180,17 +187,56 @@ export function resolveScreenPublishTarget(input: {
   return undefined;
 }
 
+type PortBindingEntry = { HostIp?: string; HostPort?: string };
+
 /**
- * Resolve the in-container control service via its Docker network IP.
- * Control is never host-published; the supervisor reaches 7070 on the
- * container network while the process binds 0.0.0.0 inside the sandbox.
+ * HostPort from a loopback (127.0.0.1) publish of container 7070, if any.
+ * Accepts HostConfig.PortBindings or NetworkSettings.Ports-shaped maps.
+ * Scans all bindings so an external-first entry does not hide a loopback one.
+ */
+export function publishedLoopbackControlHostPort(
+  portBindings: Record<string, Array<PortBindingEntry> | null> | null | undefined,
+): string | undefined {
+  const bindings = portBindings?.[`${COMPUTER_CONTROL_PORT}/tcp`];
+  if (!bindings?.length) return undefined;
+  for (const binding of bindings) {
+    if (binding?.HostIp === "127.0.0.1" && binding.HostPort) {
+      return binding.HostPort;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * True when the container was created with a loopback publish of 7070.
+ * Prefer HostConfig.PortBindings so stopped containers still report correctly.
+ */
+export function containerPublishesControlPort(
+  portBindings: Record<string, Array<PortBindingEntry> | null> | null | undefined,
+): boolean {
+  return publishedLoopbackControlHostPort(portBindings) !== undefined;
+}
+
+/**
+ * Resolve the computer control service. Prefer a published loopback HostPort
+ * when provided; otherwise use the Docker network IP. When requirePublishedHostPort
+ * is set, never fall back to the container IP (unreachable from Docker Desktop hosts).
  */
 export function resolveComputerControlEndpoint(input: {
   token: string | undefined;
   networkMode: string | null | undefined;
   networks: Record<string, { IPAddress?: string } | undefined> | null | undefined;
+  publishedHostPort?: string;
+  requirePublishedHostPort?: boolean;
 }): { url: string; token: string } | undefined {
   if (!input.token) return undefined;
+  if (input.publishedHostPort) {
+    return {
+      url: `http://127.0.0.1:${input.publishedHostPort}/v1/desktop`,
+      token: input.token,
+    };
+  }
+  if (input.requirePublishedHostPort) return undefined;
   const address =
     (input.networkMode ? input.networks?.[input.networkMode]?.IPAddress : undefined) ||
     Object.values(input.networks ?? {}).find((network) => network?.IPAddress)?.IPAddress;

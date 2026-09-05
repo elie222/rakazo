@@ -17,8 +17,10 @@ import {
   computerNetworkNamesForCleanup,
   containerCreateOptions,
   containerNameFor,
+  containerPublishesControlPort,
   hostComputerUser,
   legacyNetworkOwnedSolelyBy,
+  publishedLoopbackControlHostPort,
   resolveComputerControlEndpoint,
   resolveScreenNetworkMode,
   resolveScreenPublishTarget,
@@ -352,6 +354,21 @@ describe("graphical computer spec", () => {
     expect(JSON.stringify(options.HostConfig.PortBindings)).not.toMatch(/7070/);
   });
 
+  it("publishes the control port to loopback only when explicitly opted in", () => {
+    const options = containerCreateOptions({
+      name: "rakazo-bot-ctrl",
+      image: COMPUTER_IMAGE,
+      botId: "ctrl",
+      spaceId: "ws",
+      homePath: "/var/rakazo/homes/ctrl",
+      publishControlPort: true,
+    });
+    expect(options.ExposedPorts["7070/tcp"]).toEqual({});
+    expect(options.HostConfig.PortBindings["7070/tcp"]).toEqual([
+      { HostIp: "127.0.0.1", HostPort: "0" },
+    ]);
+  });
+
   it("resolves computer control through the container network IP, never a host mapping", () => {
     const networkMode = "rakazo_default";
     expect(
@@ -382,6 +399,99 @@ describe("graphical computer spec", () => {
         networks: {},
       }),
     ).toBeUndefined();
+  });
+
+  it("resolves computer control through a published loopback port when provided", () => {
+    const networkMode = "rakazo_default";
+    expect(
+      resolveComputerControlEndpoint({
+        token: "secret",
+        networkMode,
+        networks: { [networkMode]: { IPAddress: "172.18.0.4" } },
+        publishedHostPort: "55101",
+      }),
+    ).toEqual({ url: "http://127.0.0.1:55101/v1/desktop", token: "secret" });
+    expect(
+      resolveComputerControlEndpoint({
+        token: undefined,
+        networkMode,
+        networks: { [networkMode]: { IPAddress: "172.18.0.4" } },
+        publishedHostPort: "55101",
+      }),
+    ).toBeUndefined();
+  });
+
+  it("detects whether a container publishes the control port for resume", () => {
+    expect(containerPublishesControlPort(undefined)).toBe(false);
+    expect(containerPublishesControlPort({})).toBe(false);
+    expect(
+      containerPublishesControlPort({
+        "6080/tcp": [{ HostIp: "127.0.0.1", HostPort: "0" }],
+      }),
+    ).toBe(false);
+    expect(
+      containerPublishesControlPort({
+        "7070/tcp": [{ HostIp: "127.0.0.1", HostPort: "0" }],
+      }),
+    ).toBe(true);
+    expect(
+      containerPublishesControlPort({
+        "7070/tcp": [{ HostIp: "127.0.0.1", HostPort: "55101" }],
+      }),
+    ).toBe(true);
+    expect(
+      publishedLoopbackControlHostPort({
+        "7070/tcp": [{ HostIp: "127.0.0.1", HostPort: "55101" }],
+      }),
+    ).toBe("55101");
+  });
+
+  it("rejects external-only control publishes and finds loopback among mixed bindings", () => {
+    expect(
+      containerPublishesControlPort({
+        "7070/tcp": [{ HostIp: "0.0.0.0", HostPort: "55101" }],
+      }),
+    ).toBe(false);
+    expect(
+      containerPublishesControlPort({
+        "7070/tcp": [{ HostIp: "", HostPort: "55101" }],
+      }),
+    ).toBe(false);
+    expect(
+      publishedLoopbackControlHostPort({
+        "7070/tcp": [{ HostIp: "0.0.0.0", HostPort: "55101" }],
+      }),
+    ).toBeUndefined();
+
+    const mixed = {
+      "7070/tcp": [
+        { HostIp: "0.0.0.0", HostPort: "55100" },
+        { HostIp: "127.0.0.1", HostPort: "55101" },
+      ],
+    };
+    expect(containerPublishesControlPort(mixed)).toBe(true);
+    expect(publishedLoopbackControlHostPort(mixed)).toBe("55101");
+  });
+
+  it("does not fall back to the container IP when a published control port is required", () => {
+    const networkMode = "rakazo_default";
+    expect(
+      resolveComputerControlEndpoint({
+        token: "secret",
+        networkMode,
+        networks: { [networkMode]: { IPAddress: "172.18.0.4" } },
+        requirePublishedHostPort: true,
+      }),
+    ).toBeUndefined();
+    expect(
+      resolveComputerControlEndpoint({
+        token: "secret",
+        networkMode,
+        networks: { [networkMode]: { IPAddress: "172.18.0.4" } },
+        publishedHostPort: "55101",
+        requirePublishedHostPort: true,
+      }),
+    ).toEqual({ url: "http://127.0.0.1:55101/v1/desktop", token: "secret" });
   });
 
   it("restricts computer control argv to supervisor shapes", () => {
