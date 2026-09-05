@@ -91,6 +91,7 @@ describe("computer provisioning", () => {
           where: {
             id: "computer-1",
             state: "booting",
+            executionLeases: { none: { expiresAt: { gt: expect.any(Date) } } },
             bots: { some: { id: "bot-1", archivedAt: null } },
           },
         }),
@@ -98,6 +99,72 @@ describe("computer provisioning", () => {
     } finally {
       await rm(dataDir, { recursive: true, force: true });
     }
+  });
+
+  it("fences booting reclaim on live leases even without screenLeaseId", async () => {
+    const updateMany = vi.fn().mockResolvedValue({ count: 0 });
+    const prisma = {
+      computer: {
+        findUniqueOrThrow: vi.fn().mockResolvedValue({
+          id: "computer-1",
+          homeKey: "bot-1",
+          providerRef: null,
+          kind: "cloud",
+          scope: "dedicated",
+          state: "stopped",
+          controlLeaseId: null,
+        }),
+        updateMany,
+      },
+    } as unknown as PrismaClient;
+    const deps = {
+      prisma,
+      sandbox: {} as SandboxProvider,
+      home: {} as AgentHomeStore,
+      jobs: {} as JobPublisher,
+      events: {} as ThreadEvents,
+    };
+
+    await expect(provisionComputer(deps, "computer-1", context)).rejects.toBeInstanceOf(
+      ComputerBusyError,
+    );
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          OR: expect.arrayContaining([
+            {
+              state: "booting",
+              executionLeases: { none: { expiresAt: { gt: expect.any(Date) } } },
+            },
+          ]),
+        }),
+      }),
+    );
+
+    updateMany.mockClear();
+    await expect(
+      provisionComputer(deps, "computer-1", {
+        ...context,
+        screenLeaseId: "run-1:3",
+      }),
+    ).rejects.toBeInstanceOf(ComputerBusyError);
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          OR: expect.arrayContaining([
+            {
+              state: "booting",
+              executionLeases: {
+                none: {
+                  expiresAt: { gt: expect.any(Date) },
+                  NOT: { runId: "run-1", fence: 3 },
+                },
+              },
+            },
+          ]),
+        }),
+      }),
+    );
   });
 
   it.each([
@@ -482,7 +549,11 @@ describe("computer provisioning", () => {
         errors: [prepareError, rollbackError],
       });
       expect(updateMany).toHaveBeenLastCalledWith({
-        where: { id: "computer-1", state: "booting" },
+        where: {
+          id: "computer-1",
+          state: "booting",
+          executionLeases: { none: { expiresAt: { gt: expect.any(Date) } } },
+        },
         data: {
           state: "error",
           providerRef: "new-provider-1",
