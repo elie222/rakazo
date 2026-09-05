@@ -3168,3 +3168,122 @@ msgstr "Your OS will not ask for extra permission if you let bots run on {hostLa
 #: src/pages/Welcome.tsx:21
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "Your team of always-on agents<0/>that you can give real work to."
+
+#: src/pages/Welcome.tsx:21
+msgid "A workforce on demand<0/>for your company."
+msgstr "A workforce on demand<0/>for your company."
+
+#: src/pages/WorkforceOverlay.tsx:344
+msgid "Add worker"
+msgstr "Add worker"
+
+#: src/pages/WorkforceOverlay.tsx:243
+msgid "Agent key"
+msgstr "Agent key"
+
+#: src/pages/WorkforceOverlay.tsx:128
+msgid "Close workforce"
+msgstr "Close workforce"
+
+#: src/pages/WorkforceOverlay.tsx:179
+msgid "Company OS assignments"
+msgstr "Company OS assignments"
+
+#: src/pages/WorkforceOverlay.tsx:231
+msgid "Company OS endpoint"
+msgstr "Company OS endpoint"
+
+#: src/pages/WorkforceOverlay.tsx:224
+msgid "Connect a Company OS agent key with context read and write access. Its department permissions apply to every worker."
+msgstr "Connect a Company OS agent key with context read and write access. Its department permissions apply to every worker."
+
+#: src/pages/WorkforceOverlay.tsx:347
+msgid "Connect workforce"
+msgstr "Connect workforce"
+
+#: src/pages/WorkforceOverlay.tsx:64
+msgid "Could not load workforce"
+msgstr "Could not load workforce"
+
+#: src/pages/WorkforceOverlay.tsx:94
+msgid "Could not save workforce"
+msgstr "Could not save workforce"
+
+#: src/pages/WorkforceOverlay.tsx:106
+msgid "Could not update workforce"
+msgstr "Could not update workforce"
+
+#: src/pages/Auth.tsx:31
+msgid "Create your Cadre"
+msgstr "Create your Cadre"
+
+#: src/pages/WorkforceOverlay.tsx:153
+msgid "Dispatch enabled"
+msgstr "Dispatch enabled"
+
+#: src/pages/WorkforceOverlay.tsx:211
+msgid "Edit workforce"
+msgstr "Edit workforce"
+
+#: src/pages/WorkforceOverlay.tsx:308
+msgid "Instructions"
+msgstr "Instructions"
+
+#: src/pages/WorkforceOverlay.tsx:252
+msgid "Leave blank to keep saved key"
+msgstr "Leave blank to keep saved key"
+
+#: src/pages/WorkforceOverlay.tsx:154
+msgid "New assignments paused"
+msgstr "New assignments paused"
+
+#: src/pages/WorkforceOverlay.tsx:287
+#: src/pages/WorkforceOverlay.tsx:291
+msgid "OpenRouter model"
+msgstr "OpenRouter model"
+
+#: src/pages/WorkforceOverlay.tsx:158
+msgid "Pause"
+msgstr "Pause"
+
+#: src/pages/WorkforceOverlay.tsx:329
+msgid "Remove worker"
+msgstr "Remove worker"
+
+#: src/pages/WorkforceOverlay.tsx:198
+msgid "Requests from your Company OS work queue will appear here."
+msgstr "Requests from your Company OS work queue will appear here."
+
+#: src/pages/WorkforceOverlay.tsx:158
+msgid "Resume"
+msgstr "Resume"
+
+#: src/pages/Auth.tsx:29
+msgid "Sign in to Cadre"
+msgstr "Sign in to Cadre"
+
+#: src/pages/WorkforceOverlay.tsx:191
+msgid "Synced"
+msgstr "Synced"
+
+#: src/pages/WorkforceOverlay.tsx:151
+msgid "Waiting for first sync"
+msgstr "Waiting for first sync"
+
+#. placeholder {0}: index + 1
+#: src/pages/WorkforceOverlay.tsx:264
+msgid "Worker {0}"
+msgstr "Worker {0}"
+
+#: src/pages/WorkforceOverlay.tsx:313
+msgid "Worker instructions"
+msgstr "Worker instructions"
+
+#: src/pages/WorkforceOverlay.tsx:271
+msgid "Worker name"
+msgstr "Worker name"
+
+#: src/pages/Shell.tsx:2955
+#: src/pages/WorkforceOverlay.tsx:125
+msgid "Workforce"
+msgstr "Workforce"
