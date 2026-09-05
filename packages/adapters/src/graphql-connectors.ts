@@ -7,6 +7,7 @@ import {
 } from "./remote-mcp.js";
 
 const HeaderValue = z.string().max(2_048);
+const MAX_GRAPHQL_SELECTION_CHARS = 6_000;
 const HeaderName = z
   .string()
   .min(1)
@@ -89,6 +90,7 @@ const INTROSPECTION_QUERY = `query RakazoIntrospection {
         defaultValue
       }
       enumValues(includeDeprecated: true) { name }
+      possibleTypes { kind name }
     }
   }
 }
@@ -148,6 +150,7 @@ type GqlType = {
   fields?: GqlField[] | null;
   inputFields?: GqlArg[] | null;
   enumValues?: Array<{ name?: string }> | null;
+  possibleTypes?: GqlTypeRef[] | null;
 };
 
 /** Introspect a GraphQL HTTP endpoint and persist query/mutation fields as tools. */
@@ -391,6 +394,16 @@ function buildSelection(
   if (named.kind === "SCALAR" || named.kind === "ENUM") return "";
   if (depth >= 2) return "__typename";
   const resolved = typeMap.get(named.name);
+  if (named.kind === "UNION") {
+    const parts = ["__typename"];
+    for (const possible of resolved?.possibleTypes ?? []) {
+      if (!possible.name || possible.kind !== "OBJECT") continue;
+      const selection = buildSelection(possible, typeMap, depth);
+      const candidate = `... on ${possible.name} { ${selection || "__typename"} }`;
+      if (!appendSelectionPart(parts, candidate)) break;
+    }
+    return parts.join(" ");
+  }
   if (!resolved?.fields?.length) return "__typename";
 
   const parts: string[] = [];
@@ -402,16 +415,31 @@ function buildSelection(
     const fieldNamed = unwrapNamedType(field.type);
     if (!fieldNamed) continue;
     if (fieldNamed.kind === "SCALAR" || fieldNamed.kind === "ENUM") {
-      parts.push(field.name);
+      if (!appendSelectionPart(parts, field.name)) break;
       continue;
     }
-    if (depth === 0 && (fieldNamed.kind === "OBJECT" || fieldNamed.kind === "INTERFACE")) {
+    if (
+      depth === 0 &&
+      (fieldNamed.kind === "OBJECT" ||
+        fieldNamed.kind === "INTERFACE" ||
+        fieldNamed.kind === "UNION")
+    ) {
       const nested = buildSelection(field.type, typeMap, depth + 1);
-      if (nested) parts.push(`${field.name} { ${nested} }`);
+      if (nested && !appendSelectionPart(parts, `${field.name} { ${nested} }`)) break;
     }
-    if (parts.join(" ").length > 6_000) break;
   }
   return parts.length > 0 ? parts.join(" ") : "__typename";
+}
+
+function appendSelectionPart(parts: string[], candidate: string): boolean {
+  const separatorLength = parts.length > 0 ? 1 : 0;
+  const currentLength =
+    parts.reduce((total, part) => total + part.length, 0) + Math.max(0, parts.length - 1);
+  if (currentLength + separatorLength + candidate.length > MAX_GRAPHQL_SELECTION_CHARS) {
+    return false;
+  }
+  parts.push(candidate);
+  return true;
 }
 
 function fieldRequiresArguments(field: GqlField): boolean {
