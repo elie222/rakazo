@@ -6,7 +6,7 @@ import type {
 } from "@rakazo/adapter-kit";
 import { messagingDeliverJob, runContinueJob } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
-import { botMessageHopExhausted, nextBotMessageHop } from "@rakazo/core";
+import { botMessageHopExhausted, messagingAudience, nextBotMessageHop } from "@rakazo/core";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { appendEventInTransaction, createThreadMessageInTransaction } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -74,6 +74,9 @@ async function mirrorRun(deps: MessagingDeliveryDeps, runId: string): Promise<vo
   });
   if (run?.trigger !== "messaging") return;
   const sourceBlocks = (run.sourceMessage?.blocks ?? []) as MessageBlock[];
+  // The original source alone is not an audience boundary: old runs could
+  // absorb private steering. Only explicitly bound runs may reach an outbox.
+  if (!run.audience || messagingAudience(run.trigger, sourceBlocks) !== run.audience) return;
   const channelBlock = sourceBlocks.find(
     (block): block is Extract<MessageBlock, { kind: "channel_message" }> =>
       block.kind === "channel_message",
@@ -89,7 +92,7 @@ async function mirrorRun(deps: MessagingDeliveryDeps, runId: string): Promise<vo
   if (!identity) return;
 
   const messages = await deps.prisma.message.findMany({
-    where: { runId: run.id, role: "bot" },
+    where: { runId: run.id, role: "bot", audience: run.audience },
     orderBy: { seq: "asc" },
   });
   const rows = messages
@@ -114,7 +117,7 @@ async function mirrorRun(deps: MessagingDeliveryDeps, runId: string): Promise<vo
  */
 async function mirrorChannelRun(
   deps: MessagingDeliveryDeps,
-  run: { id: string; botId: string },
+  run: { id: string; botId: string; audience: string | null },
   channelBlock: Extract<MessageBlock, { kind: "channel_message" }>,
 ): Promise<void> {
   const identity = await deps.prisma.messagingIdentity.findUnique({
@@ -134,7 +137,7 @@ async function mirrorChannelRun(
 
   const messages = (
     await deps.prisma.message.findMany({
-      where: { runId: run.id, role: "bot" },
+      where: { runId: run.id, role: "bot", audience: run.audience },
       orderBy: { seq: "asc" },
     })
   )
@@ -218,6 +221,7 @@ async function mirrorChannelRun(
           role: "user",
           blocks: [block],
           clientNonce,
+          audience: run.audience,
         });
         return appendEventInTransaction(tx, {
           spaceId: peerIdentity.spaceId,

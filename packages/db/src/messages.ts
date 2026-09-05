@@ -1,5 +1,23 @@
 import type { MessageBlock } from "@rakazo/contracts";
+import { messagingAudienceChannelId } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "./client.js";
+
+/** Group messaging history never includes the owner's private thread context. */
+export function loadRunHistoryMessages(
+  prisma: PrismaClient,
+  run: { threadId: string; audience?: string | null },
+  limit: number,
+) {
+  return prisma.message.findMany({
+    where: {
+      threadId: run.threadId,
+      ...(messagingAudienceChannelId(run.audience) ? { audience: run.audience } : {}),
+    },
+    orderBy: { seq: "desc" },
+    take: limit,
+    select: { id: true, seq: true, role: true, runId: true, blocks: true },
+  });
+}
 
 export interface CreateThreadMessageInput {
   threadId: string;
@@ -8,6 +26,8 @@ export interface CreateThreadMessageInput {
   botId?: string;
   replyToMessageId?: string;
   runId?: string;
+  /** Set by trusted inbound routing; run output always inherits its run's audience. */
+  audience?: string | null;
   clientNonce?: string;
   markUnread?: boolean;
 }
@@ -30,7 +50,7 @@ export async function createThreadMessageInTransaction(
     },
     select: { nextMessageSeq: true },
   });
-  await assertRunCanWriteHistory(tx, input.runId);
+  const run = await assertRunCanWriteHistory(tx, input.runId);
   return tx.message.create({
     data: {
       threadId: input.threadId,
@@ -40,6 +60,7 @@ export async function createThreadMessageInTransaction(
       botId: input.botId,
       replyToMessageId: input.replyToMessageId,
       runId: input.runId,
+      audience: run ? run.audience : input.audience,
       clientNonce: input.clientNonce,
     },
   });
@@ -55,11 +76,11 @@ export class RunHistoryWriteError extends Error {
 export async function assertRunCanWriteHistory(
   tx: Prisma.TransactionClient,
   runId?: string,
-): Promise<{ status: string; startedAt: Date | null } | undefined> {
+): Promise<{ status: string; startedAt: Date | null; audience: string | null } | undefined> {
   if (!runId) return;
   const run = await tx.run.findUnique({
     where: { id: runId },
-    select: { status: true, startedAt: true },
+    select: { status: true, startedAt: true, audience: true },
   });
   if (!run || run.status === "cancelled") {
     throw new RunHistoryWriteError();

@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { approvalEffectKey } from "@rakazo/core/node/approval-effect-key";
-import { createThreadEvents } from "@rakazo/db";
+import { createThreadEvents, createThreadMessage, loadRunHistoryMessages } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 process.env.WAKEUP_DRIVER = "memory";
@@ -532,6 +532,106 @@ describeIntegration("run executor lifecycle", () => {
     expect(first.runIds).toHaveLength(2);
     expect(replay.runIds).toEqual(first.runIds);
     expect(await handles.prisma.run.count({ where: { threadId: thread.id } })).toBe(2);
+  });
+
+  it("isolates group history, private steering, and replayed private send receipts", async () => {
+    const seeded = await seedRun("audience", "Group request", {
+      status: "running",
+      leaseOwner: "audience-worker",
+      leaseFence: 1,
+      leaseExpiresAt: new Date(Date.now() + 60_000),
+      startedAt: new Date(),
+    });
+    const audience = "channel:fake-group";
+    const source = await createThreadMessage(handles.prisma, {
+      threadId: seeded.thread.id,
+      role: "user",
+      audience,
+      blocks: [
+        {
+          kind: "channel_message",
+          provider: "fake",
+          channelId: "fake-group",
+          fromAddress: "sender",
+          fromLabel: "Sender",
+          text: "Group request",
+          hop: 0,
+        },
+      ],
+    });
+    await handles.prisma.run.update({
+      where: { id: seeded.run.id },
+      data: { audience, trigger: "messaging", sourceMessageId: source.id },
+    });
+    const input = {
+      botId: seeded.bot.id,
+      text: "Private test detail",
+      clientNonce: `private-audience-${stamp}`,
+    };
+    const sent = await rpc<{ runId: string | null; taskId: string | null }>(
+      seeded.cookie,
+      "threads/send",
+      input,
+    );
+    expect(sent).toMatchObject({ runId: null, taskId: null });
+    expect(await rpc(seeded.cookie, "threads/send", input)).toEqual(sent);
+    expect(
+      await handles.prisma.message.count({
+        where: { threadId: seeded.thread.id, clientNonce: input.clientNonce },
+      }),
+    ).toBe(1);
+
+    const events = createThreadEvents(handles.prisma);
+    const scope = {
+      spaceId: seeded.me.spaceId,
+      threadId: seeded.thread.id,
+      botId: seeded.bot.id,
+      userId: seeded.me.userId,
+    };
+    const dm = await events.sendUserMessage({
+      ...scope,
+      trigger: "messaging",
+      blocks: [{ kind: "text", text: "Private DM detail" }],
+      prompt: "Private DM detail",
+    });
+    expect(dm.runId).toBeNull();
+    const fence = { ...scope, runId: seeded.run.id, leaseOwner: "audience-worker", leaseFence: 1 };
+    expect(await events.claimSteering({ ...fence, seenIds: [] })).toEqual([]);
+    const history = await loadRunHistoryMessages(
+      handles.prisma,
+      { threadId: seeded.thread.id, audience },
+      100,
+    );
+    expect(history.map((message) => message.id)).toEqual([source.id]);
+
+    const attempt = await handles.prisma.attempt.create({
+      data: { runId: seeded.run.id, fence: 1, status: "running" },
+    });
+    const finalized = await events.finalizeRun({
+      ...fence,
+      taskId: seeded.task.id,
+      attemptId: attempt.id,
+      outcome: "completed",
+      blocks: [{ kind: "text", text: "Public reply" }],
+    });
+    if (!finalized) throw new Error("Group run did not finalize");
+    if (!finalized.continuationRunId) throw new Error("Missing private continuation");
+    const continuation = await handles.prisma.run.findUniqueOrThrow({
+      where: { id: finalized.continuationRunId },
+    });
+    expect(continuation).toMatchObject({ audience: null, trigger: "follow_up" });
+    expect(
+      await handles.prisma.steeringMessage.findFirstOrThrow({ where: { messageId: dm.messageId } }),
+    ).toMatchObject({ runId: null });
+    const reply = await handles.prisma.message.findFirstOrThrow({
+      where: { runId: seeded.run.id, role: "bot" },
+    });
+    expect(reply.audience).toBe(audience);
+    expect(
+      (
+        await loadRunHistoryMessages(handles.prisma, { threadId: seeded.thread.id, audience }, 100)
+      ).map((message) => message.id),
+    ).toEqual([reply.id, source.id]);
   });
 
   async function seedRun(

@@ -263,8 +263,9 @@ export const appContract = {
       .output(eventIterator(ProductEventSchema)),
     send: oc.input(threadSendInput).output(
       z.object({
-        taskId: Id,
-        runId: Id,
+        // A persisted message can be waiting for a run with its own audience.
+        taskId: Id.nullable(),
+        runId: Id.nullable(),
         seq: z.number().int(),
         runIds: z.array(Id).optional(),
       }),

@@ -467,6 +467,7 @@ model Message {
   replyTo          Message?  @relation("MessageReplies", fields: [replyToMessageId], references: [id], onDelete: SetNull)
   replies          Message[] @relation("MessageReplies")
   runId            String?
+  audience         String?
   clientNonce      String?
   thumbsUp         Boolean   @default(false)
   sourceRuns       Run[]     @relation("RunSourceMessage")
@@ -548,6 +549,7 @@ model Run {
   completedAt          DateTime?
   botOutcomeReturnedAt DateTime?
   messagingMirroredAt  DateTime?
+  audience             String?
   createdAt            DateTime         @default(now())
   updatedAt            DateTime         @updatedAt
   attempts             Attempt[]
