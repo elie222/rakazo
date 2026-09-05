@@ -21,8 +21,12 @@ readonly ENV_FILE=".env"
 
 prepare_only=false
 skip_existing=false
+pull_never=false
 if [[ "${RAKAZO_DOWNLOAD_SKIP_EXISTING:-}" == "1" ]]; then
   skip_existing=true
+fi
+if [[ "${RAKAZO_PULL_NEVER:-}" == "1" ]]; then
+  pull_never=true
 fi
 
 for arg in "$@"; do
@@ -33,8 +37,16 @@ for arg in "$@"; do
     --local)
       skip_existing=true
       ;;
+    --pull-never)
+      pull_never=true
+      ;;
+    --offline)
+      # Air-gap bootstrap: keep local Compose/env files and do not pull images.
+      skip_existing=true
+      pull_never=true
+      ;;
     *)
-      echo "Usage: bash install-images.sh [--prepare-only] [--local]" >&2
+      echo "Usage: bash install-images.sh [--prepare-only] [--local] [--pull-never] [--offline]" >&2
       exit 2
       ;;
   esac
@@ -192,7 +204,7 @@ download() {
 
   temporary_file=$(mktemp "./${filename}.tmp.XXXXXX")
   if ! curl_download "$url" "$temporary_file"; then
-    fail "could not download ${filename} from ${url}. Set HTTP_PROXY/HTTPS_PROXY in the shell or .env (NO_PROXY for localhost), or pre-place the file and use --local."
+    fail "could not download ${filename} from ${url}. Set HTTP_PROXY/HTTPS_PROXY in the shell or .env (NO_PROXY for localhost), or pre-place the file and use --local / --offline."
   fi
   mv -- "$temporary_file" "$filename"
   temporary_file=""
@@ -288,17 +300,30 @@ if [[ "$prepare_only" == true ]]; then
 fi
 
 prepare_proxy_env
-if ! docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" pull; then
-  fail "could not pull images. Shell HTTP_PROXY often does not reach the Docker daemon. Configure daemon proxy/registry-mirrors, set image env vars to a reachable registry, or preload images then compose up with --pull never."
+if [[ "$pull_never" == true ]]; then
+  echo "Skipping image pull (--pull-never / --offline); images must already be on this Docker host."
+else
+  if ! docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" pull; then
+    fail "could not pull images. Shell HTTP_PROXY often does not reach the Docker daemon. Configure daemon proxy/registry-mirrors, set image env vars to a reachable registry, or preload images then compose up with --pull never."
+  fi
 fi
 # `--wait` without `--wait-timeout` can hang on one-shot services (Compose < 2.7)
 # or never return if a healthcheck stays red (Compose < 2.17). Prefer both flags.
 compose_up_help=$(docker compose up --help 2>/dev/null || true)
+up_pull_args=()
+if [[ "$pull_never" == true ]]; then
+  if grep -q -- '--pull' <<<"$compose_up_help"; then
+    up_pull_args=(--pull never)
+  else
+    echo "cannot enforce pull-never on this Compose version; startup fails if an image is missing locally" >&2
+  fi
+fi
+# bash 3.2 + set -u: "${arr[@]}" aborts when arr is empty.
 if grep -q -- '--wait-timeout' <<<"$compose_up_help"; then
   echo "Waiting for healthy services."
-  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d --wait --wait-timeout 300
+  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d ${up_pull_args[@]+"${up_pull_args[@]}"} --wait --wait-timeout 300
 else
-  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d
+  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d ${up_pull_args[@]+"${up_pull_args[@]}"}
 fi
 
 echo "Rakazo is starting at http://127.0.0.1:5173"
