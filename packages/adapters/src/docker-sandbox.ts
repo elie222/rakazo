@@ -25,8 +25,10 @@ import {
 import { readBodyCapped, withAbort } from "./web-ssrf.js";
 
 export const MAX_SANDBOX_ERROR_RESPONSE_BYTES = 8 * 1024;
+export const MAX_SANDBOX_SUCCESS_RESPONSE_BYTES = 16 * 1024 * 1024;
 export const SCREEN_RELEASE_TIMEOUT_MS = 8_000;
 const SANDBOX_ERROR_RESPONSE_TIMEOUT_MS = 1_000;
+const SANDBOX_SUCCESS_RESPONSE_TIMEOUT_MS = 30_000;
 
 async function safeBody(res: Response, signal?: AbortSignal): Promise<string> {
   const declared = Number(res.headers.get("content-length") ?? 0);
@@ -51,6 +53,40 @@ function cancelResponseBody(res: Response): void {
   } catch {
     // Error diagnostics are best-effort and must not delay the operation failure.
   }
+}
+
+async function readSandboxJson<T>(
+  res: Response,
+  signal: AbortSignal,
+  maxBytes = MAX_SANDBOX_SUCCESS_RESPONSE_BYTES,
+): Promise<T> {
+  const declared = Number(res.headers.get("content-length") ?? 0);
+  if (Number.isFinite(declared) && declared > maxBytes) {
+    cancelResponseBody(res);
+    throw new Error(`sandbox response exceeds ${maxBytes} bytes`);
+  }
+  const readSignal = AbortSignal.any([
+    signal,
+    AbortSignal.timeout(SANDBOX_SUCCESS_RESPONSE_TIMEOUT_MS),
+  ]);
+  let bytes: Uint8Array;
+  try {
+    bytes = await readBodyCapped(res, maxBytes, readSignal);
+  } catch (error) {
+    if (error instanceof Error && error.message === "Response is too large") {
+      throw new Error(`sandbox response exceeds ${maxBytes} bytes`, { cause: error });
+    }
+    throw error;
+  }
+  return JSON.parse(new TextDecoder().decode(bytes)) as T;
+}
+
+function encodedFileResponseLimit(maxBytes: number | undefined): number {
+  if (maxBytes === undefined) return MAX_SANDBOX_SUCCESS_RESPONSE_BYTES;
+  // An explicit file limit is already the caller's memory-safety contract.
+  // Account for base64 expansion plus the small JSON envelope without applying
+  // the generic response cap, which would reject valid files above ~12 MiB.
+  return Math.ceil(maxBytes / 3) * 4 + 1024;
 }
 
 export class DockerSandboxProvider implements SandboxProvider {
@@ -123,7 +159,7 @@ export class DockerSandboxProvider implements SandboxProvider {
       const detail = await safeBody(res, context.signal);
       throw new Error(`sandbox provision failed: ${res.status} ${detail}`.trim());
     }
-    const body = (await res.json()) as { id: string; resumed?: boolean };
+    const body = await readSandboxJson<{ id: string; resumed?: boolean }>(res, context.signal);
     return {
       id: body.id,
       botId: request.botId,
@@ -155,7 +191,10 @@ export class DockerSandboxProvider implements SandboxProvider {
       yield { type: "exit", code: 1 };
       return;
     }
-    const body = (await res.json()) as { stdout: string; stderr: string; code: number };
+    const body = await readSandboxJson<{ stdout: string; stderr: string; code: number }>(
+      res,
+      context.signal,
+    );
     if (body.stdout) yield { type: "stdout", data: body.stdout };
     if (body.stderr) yield { type: "stderr", data: body.stderr };
     yield { type: "exit", code: body.code };
@@ -183,7 +222,7 @@ export class DockerSandboxProvider implements SandboxProvider {
       }
       return { url: null, mimeType: "text/html", close: async () => undefined };
     }
-    const body = (await res.json()) as { screenUrl?: string };
+    const body = await readSandboxJson<{ screenUrl?: string }>(res, context.signal);
     return {
       url: body.screenUrl ?? this.url(`/computers/${computer.id}/screen`),
       mimeType: "text/html",
@@ -234,14 +273,14 @@ export class DockerSandboxProvider implements SandboxProvider {
       throw new Error(
         `sandbox observation failed: ${res.status} ${await safeBody(res, context.signal)}`.trim(),
       );
-    const body = (await res.json()) as {
+    const body = await readSandboxJson<{
       image: string;
       mimeType: "image/png" | "image/jpeg";
       width: number;
       height: number;
       cursor?: { x: number; y: number };
       activeWindow?: { id: string; title?: string };
-    };
+    }>(res, context.signal);
     return computerObservation(Uint8Array.from(Buffer.from(body.image, "base64")), {
       mimeType: body.mimeType,
       width: body.width,
@@ -267,7 +306,7 @@ export class DockerSandboxProvider implements SandboxProvider {
       throw new Error(
         `sandbox action failed: ${res.status} ${await safeBody(res, context.signal)}`.trim(),
       );
-    const body = (await res.json()) as {
+    const body = await readSandboxJson<{
       completed: number;
       observation?: {
         image: string;
@@ -277,7 +316,7 @@ export class DockerSandboxProvider implements SandboxProvider {
         cursor?: { x: number; y: number };
         activeWindow?: { id: string; title?: string };
       };
-    };
+    }>(res, context.signal);
     return {
       completed: body.completed,
       ...(body.observation
@@ -302,7 +341,7 @@ export class DockerSandboxProvider implements SandboxProvider {
       { headers: this.headers(context, computer.botId), signal: context.signal },
     );
     if (!res.ok) throw new Error(`sandbox file listing failed: ${res.status}`);
-    return (await res.json()) as ComputerFileEntry[];
+    return readSandboxJson<ComputerFileEntry[]>(res, context.signal);
   }
 
   async readFile(
@@ -323,7 +362,11 @@ export class DockerSandboxProvider implements SandboxProvider {
       const detail = await safeBody(res, context.signal);
       throw new Error(`sandbox file read failed: ${res.status} ${detail}`.trim());
     }
-    const body = (await res.json()) as { content: string };
+    const body = await readSandboxJson<{ content: string }>(
+      res,
+      context.signal,
+      encodedFileResponseLimit(maxBytes),
+    );
     return Uint8Array.from(Buffer.from(body.content, "base64"));
   }
 

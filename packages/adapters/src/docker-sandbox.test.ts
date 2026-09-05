@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   DockerSandboxProvider,
   MAX_SANDBOX_ERROR_RESPONSE_BYTES,
+  MAX_SANDBOX_SUCCESS_RESPONSE_BYTES,
   SCREEN_RELEASE_TIMEOUT_MS,
 } from "./docker-sandbox.js";
 
@@ -57,6 +58,78 @@ describe("Docker sandbox", () => {
       "x-request-id": expect.any(String),
       traceparent: expect.stringMatching(/^00-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$/),
     });
+  });
+
+  it("rejects a declared oversized success response without buffering it", async () => {
+    const cancel = vi.fn();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(new ReadableStream({ cancel }), {
+            headers: { "content-length": String(MAX_SANDBOX_SUCCESS_RESPONSE_BYTES + 1) },
+          }),
+      ),
+    );
+    const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
+
+    await expect(
+      provider.provision({ botId: "bot", homePath: "/tmp/bot" }, context),
+    ).rejects.toThrow(`sandbox response exceeds ${MAX_SANDBOX_SUCCESS_RESPONSE_BYTES} bytes`);
+    await vi.waitFor(() => expect(cancel).toHaveBeenCalledOnce());
+  });
+
+  it("stops a streamed file response at the caller-derived encoded limit", async () => {
+    const cancel = vi.fn();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            new ReadableStream({
+              start(controller) {
+                controller.enqueue(new Uint8Array(1029));
+              },
+              cancel,
+            }),
+          ),
+      ),
+    );
+    const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
+
+    await expect(
+      provider.readFile(
+        { id: "computer", botId: "bot", kind: "docker", providerRef: "computer" },
+        "small.txt",
+        context,
+        { maxBytes: 1 },
+      ),
+    ).rejects.toThrow("sandbox response exceeds 1028 bytes");
+    await vi.waitFor(() => expect(cancel).toHaveBeenCalledOnce());
+  });
+
+  it("accepts a valid encoded envelope above the generic response cap", async () => {
+    const maxBytes = 13 * 1024 * 1024;
+    const encodedLimit = Math.ceil(maxBytes / 3) * 4 + 1024;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response('{"content":""}', {
+            headers: { "content-length": String(encodedLimit) },
+          }),
+      ),
+    );
+    const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
+
+    await expect(
+      provider.readFile(
+        { id: "computer", botId: "bot", kind: "docker", providerRef: "computer" },
+        "large.bin",
+        context,
+        { maxBytes },
+      ),
+    ).resolves.toEqual(new Uint8Array());
   });
 
   it("releases this bot's screen assignment through the supervisor", async () => {
