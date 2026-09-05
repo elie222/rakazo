@@ -24,12 +24,6 @@ import {
 } from "./thread-events.js";
 
 describe("thread event reduction", () => {
-  it("does not invent a run for a private send waiting on another audience", () => {
-    const initial = snapshot([]);
-    expect(applyThreadSendReceipt(initial, { botId: "bot-1", runId: null, taskId: null })).toBe(
-      initial,
-    );
-  });
   it("shows a committed direct send as queued before its snapshot refresh returns", () => {
     const initial = snapshot([message("user-1", [{ kind: "text", text: "Continue" }], 4)]);
 

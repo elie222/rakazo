@@ -8,8 +8,7 @@ import {
   blocksToAgentHistoryText,
   isApprovalAskBlock,
   isSecretAskBlock,
-  messagingAudience,
-  messagingAudienceChannelId,
+  messagingChannelId,
   sanitizeJsonValue,
 } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
@@ -348,7 +347,6 @@ export async function sendUserMessage(
   input: SendUserMessageInput,
   realtime?: RealtimeFanout,
 ): Promise<SendUserMessageResult> {
-  const audience = messagingAudience(input.trigger, input.blocks);
   const replay = async (): Promise<SendUserMessageResult | null> => {
     if (!input.clientNonce) return null;
     const message = await prisma.message.findUnique({
@@ -386,7 +384,6 @@ export async function sendUserMessage(
         threadId: input.threadId,
         role: "user",
         blocks: input.blocks,
-        audience,
         clientNonce: input.clientNonce,
       });
       const busy = await tx.run.findFirst({
@@ -395,11 +392,10 @@ export async function sendUserMessage(
           botId: input.botId,
           status: { in: ["running", "queued", "leased", "waiting_input", "waiting_takeover"] },
         },
-        select: { id: true, taskId: true, audience: true },
+        select: { id: true, taskId: true },
       });
       let task = null;
       let run = null;
-      let steeringRunId: string | null = null;
       if (!busy) {
         task = await tx.task.create({
           data: {
@@ -420,7 +416,6 @@ export async function sendUserMessage(
             userId: input.userId,
             status: "queued",
             trigger: input.trigger,
-            audience,
             clientNonce: input.clientNonce ? `send:${message.id}` : undefined,
             sourceMessageId: message.id,
           },
@@ -429,23 +424,25 @@ export async function sendUserMessage(
           await tx.message.update({ where: { id: message.id }, data: { runId: run.id } });
         }
       } else {
-        steeringRunId = await queueRunSteering(tx, {
-          messageId: message.id,
-          botId: input.botId,
-          userId: input.userId,
-          audience,
-          active: busy,
+        await tx.steeringMessage.create({
+          data: {
+            messageId: message.id,
+            botId: input.botId,
+            userId: input.userId,
+            runId: busy.id,
+          },
         });
+        await tx.message.update({ where: { id: message.id }, data: { runId: busy.id } });
       }
       const event = await appendEventInTransaction(tx, {
         spaceId: input.spaceId,
         threadId: input.threadId,
         botId: input.botId,
         type: "thread.message.created",
-        runId: run?.id ?? steeringRunId ?? undefined,
+        runId: run?.id ?? busy?.id,
         payload: { messageId: message.id, role: "user", blocks: input.blocks },
       });
-      return { message, task, run, steeringRunId, event };
+      return { message, task, run, busy, event };
     });
   const committed = await commit().catch(async (error) => {
     const winner = await replay();
@@ -461,28 +458,8 @@ export async function sendUserMessage(
     messageId: committed.message.id,
     seq: committed.message.seq,
     taskId: committed.task?.id ?? null,
-    runId: committed.run?.id ?? committed.steeringRunId,
+    runId: committed.run?.id ?? committed.busy?.id ?? null,
   };
-}
-
-/** Called under the thread lock. Different audiences wait for a separate continuation. */
-export async function queueRunSteering(
-  tx: Prisma.TransactionClient,
-  input: {
-    messageId: string;
-    botId: string;
-    userId: string;
-    audience?: string | null;
-    active: { id: string; audience?: string | null };
-  },
-): Promise<string | null> {
-  const runId =
-    (input.active.audience ?? null) === (input.audience ?? null) ? input.active.id : null;
-  await tx.steeringMessage.create({
-    data: { messageId: input.messageId, botId: input.botId, userId: input.userId, runId },
-  });
-  if (runId) await tx.message.update({ where: { id: input.messageId }, data: { runId } });
-  return runId;
 }
 
 export async function claimSteering(
@@ -500,15 +477,25 @@ export async function claimSteering(
         leaseOwner: input.leaseOwner,
         leaseFence: input.leaseFence,
       },
-      select: { id: true, audience: true },
+      select: { id: true, trigger: true, sourceMessage: { select: { blocks: true } } },
     });
     if (!run) return [];
+    const channelId =
+      run.trigger === "messaging"
+        ? messagingChannelId(run.sourceMessage?.blocks as MessageBlock[] | undefined)
+        : undefined;
     const steering = await tx.steeringMessage.findMany({
       where: {
         botId: input.botId,
         id: input.seenIds.length ? { notIn: input.seenIds } : undefined,
         OR: [{ runId: null }, { runId: input.runId }],
-        message: { threadId: input.threadId, audience: run.audience ?? null },
+        message: {
+          threadId: input.threadId,
+          // Private follow-ups remain unclaimed for the existing private continuation.
+          ...(channelId
+            ? { blocks: { array_contains: [{ kind: "channel_message", channelId }] } }
+            : {}),
+        },
       },
       include: { message: { select: { blocks: true, seq: true } } },
       orderBy: [{ message: { seq: "asc" } }, { id: "asc" }],
@@ -544,10 +531,9 @@ export async function answerRunInput(
         threadId: input.threadId,
         status: "waiting_input",
       },
-      select: { botId: true, userId: true, checkpoint: true, audience: true },
+      select: { botId: true, userId: true, checkpoint: true },
     });
     if (!run) return null;
-    const resumesPrivately = Boolean(messagingAudienceChannelId(run.audience));
     const message = await tx.message.findFirst({
       where: {
         id: input.messageId,
@@ -599,9 +585,6 @@ export async function answerRunInput(
       },
       data: {
         status: "queued",
-        // Answers come from the private application. A resumed group run must
-        // never publish a response influenced by that private answer.
-        ...(resumesPrivately ? { audience: null } : {}),
         ...(choiceAsk ? { checkpoint: null } : {}),
       },
     });
@@ -675,10 +658,7 @@ export async function answerRunInput(
           }
         : block,
     );
-    await tx.message.update({
-      where: { id: message.id },
-      data: { blocks, ...(resumesPrivately ? { audience: null } : {}) },
-    });
+    await tx.message.update({ where: { id: message.id }, data: { blocks } });
     const updated = await appendEventInTransaction(tx, {
       spaceId: input.spaceId,
       threadId: input.threadId,
@@ -1116,30 +1096,23 @@ async function createSteeringContinuation(
     select: { id: true },
   });
   if (active) return null;
-  const pendingWhere = {
-    botId: input.botId,
-    runId: null,
-    message: { threadId: input.threadId },
-  };
-  const first = await tx.steeringMessage.findFirst({
-    where: pendingWhere,
-    select: { userId: true, message: { select: { audience: true } } },
+  const pending = await tx.steeringMessage.findMany({
+    where: {
+      botId: input.botId,
+      runId: null,
+      message: { threadId: input.threadId },
+    },
+    include: { message: { select: { id: true, blocks: true, seq: true } } },
     orderBy: [{ message: { seq: "asc" } }, { id: "asc" }],
   });
-  if (!first) return null;
-  const audience = first.message.audience;
-  const audienceWhere = { ...pendingWhere, message: { ...pendingWhere.message, audience } };
-  const last = await tx.steeringMessage.findFirstOrThrow({
-    where: audienceWhere,
-    select: { messageId: true },
-    orderBy: [{ message: { seq: "desc" } }, { id: "desc" }],
-  });
+  if (pending.length === 0) return null;
+  const last = pending.at(-1)!;
   const task = await tx.task.create({
     data: {
       spaceId: input.spaceId,
       botId: input.botId,
       threadId: input.threadId,
-      userId: first.userId,
+      userId: pending[0]!.userId,
       prompt: "Respond to the user's steering context.",
       status: "queued",
     },
@@ -1150,15 +1123,14 @@ async function createSteeringContinuation(
       botId: input.botId,
       threadId: input.threadId,
       taskId: task.id,
-      userId: first.userId,
+      userId: pending[0]!.userId,
       status: "queued",
-      trigger: audience ? "messaging" : "follow_up",
-      audience,
-      sourceMessageId: last.messageId,
+      trigger: "follow_up",
+      sourceMessageId: last.message.id,
     },
   });
   await tx.steeringMessage.updateMany({
-    where: audienceWhere,
+    where: { id: { in: pending.map((item) => item.id) }, runId: null },
     data: { runId: run.id, claimedAt: null },
   });
   return run.id;

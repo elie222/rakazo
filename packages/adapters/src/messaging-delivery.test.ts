@@ -32,7 +32,6 @@ const messagingRun = {
   id: "run-1",
   botId: "bot-1",
   trigger: "messaging",
-  audience: "dm",
   sourceMessage: { blocks: [{ kind: "text", text: "hi" }] },
 };
 
@@ -579,7 +578,6 @@ function createChannelDeps(
     id: "run-1",
     botId: "bot-1",
     trigger: "messaging",
-    audience: "channel:ch-1",
     sourceMessage: {
       blocks: [
         {
@@ -645,8 +643,7 @@ function createChannelDeps(
     },
     message: {
       findMany: vi.fn(
-        async (_args: { where: { audience?: string | null } }) =>
-          overrides.messages ?? [{ id: "m-1", blocks: [{ kind: "text", text }] }],
+        async () => overrides.messages ?? [{ id: "m-1", blocks: [{ kind: "text", text }] }],
       ),
       findUnique: vi.fn(async () => null),
     },
@@ -742,49 +739,36 @@ function createChannelDeps(
 }
 
 describe("deliverMessagingOutbound channel runs", () => {
-  it.each([null, "dm", "channel:another-group"])(
-    "does not mirror an unbound or mismatched audience %s",
-    async (audience) => {
-      const deps = createChannelDeps();
-      const run = await deps.prisma.run.findUnique({ where: { id: "run-1" } });
-      deps.prisma.run.findUnique.mockResolvedValue({ ...run, audience } as never);
-      await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
-      expect(deps.sendToThread).not.toHaveBeenCalled();
-      expect(deps.rows).toEqual([]);
-      expect(deps.contextMessages).toEqual([]);
-      expect(deps.sendUserMessage).not.toHaveBeenCalled();
-    },
-  );
-
-  it("excludes private replies from delivery and peer fan-out even with the same run ID", async () => {
-    const deps = createChannelDeps();
-    const messages = [
-      {
-        id: "group-reply",
-        audience: "channel:ch-1",
-        blocks: [{ kind: "text", text: "Public reply" }],
-      },
-      {
-        id: "private-reply",
-        audience: null,
-        blocks: [{ kind: "text", text: "Private test detail @Helper" }],
-      },
-    ];
-    deps.prisma.message.findMany.mockImplementation(
-      async ({ where }: { where: { audience?: string | null } }) =>
-        messages.filter(
-          (message) => where.audience === undefined || message.audience === where.audience,
-        ),
-    );
+  it("keeps privately answered runs out of the group and peer fan-out on retries", async () => {
+    const deps = createChannelDeps({
+      messages: [
+        {
+          id: "ask-1",
+          blocks: [{ kind: "ask", text: "Details?", status: "answered", answer: "Private detail" }],
+        },
+        { id: "reply-1", blocks: [{ kind: "text", text: "Reply containing private detail" }] },
+      ],
+    });
     await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
-    expect(deps.rows).toHaveLength(1);
-    expect(deps.sendToThread).toHaveBeenCalledExactlyOnceWith(
-      { threadId: "sendblue:grp-1", body: "Alice's agent: Public reply" },
+    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+    expect(deps.rows).toEqual([]);
+    expect(deps.sendToThread).not.toHaveBeenCalled();
+    expect(deps.contextMessages).toEqual([]);
+    expect(deps.sendUserMessage).not.toHaveBeenCalled();
+  });
+
+  it("can still publish a group reply alongside an unanswered ask", async () => {
+    const deps = createChannelDeps({
+      messages: [
+        { id: "ask-1", blocks: [{ kind: "ask", text: "Details?", status: "pending" }] },
+        { id: "reply-1", blocks: [{ kind: "text", text: "Public update" }] },
+      ],
+    });
+    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+    expect(deps.sendToThread).toHaveBeenCalledWith(
+      { threadId: "sendblue:grp-1", body: "Alice's agent: Public update" },
       context,
     );
-    expect(deps.contextMessages).toHaveLength(1);
-    expect(JSON.stringify(deps.contextMessages)).not.toContain("Private test detail");
-    expect(deps.sendUserMessage).not.toHaveBeenCalled();
   });
 
   it("posts the bot reply to the group with owner attribution and fans it out to peers", async () => {

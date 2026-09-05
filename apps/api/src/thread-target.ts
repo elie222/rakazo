@@ -24,7 +24,6 @@ import {
   lockOwnedGroup,
   type Prisma,
   type PrismaClient,
-  queueRunSteering,
   type ThreadEvents,
   touchGroupUpdatedAt,
 } from "@rakazo/db";
@@ -164,13 +163,12 @@ async function replayExistingSend(
   const linkedRun =
     message.sourceRuns[0] ??
     (message.runId ? await deps.prisma.run.findUnique({ where: { id: message.runId } }) : null);
+  if (!linkedRun && orderedReceiptRuns.length === 0) return null;
   const runs = orderedReceiptRuns.length
     ? orderedReceiptRuns
     : message.sourceRuns.length
       ? message.sourceRuns
-      : linkedRun
-        ? [linkedRun]
-        : [];
+      : [linkedRun!];
   await enqueueRunsNeedingContinue(deps.jobs, runs);
   const latestEvent = await deps.prisma.event.findFirst({
     where: { threadId },
@@ -194,9 +192,10 @@ function sendEventRunIds(payload: Prisma.JsonValue | undefined): string[] {
 
 function sendResult(message: { seq: number }, runs: Array<{ id: string; taskId: string }>) {
   const first = runs[0];
+  if (!first) throw new IsolationError("Send did not create a run");
   return {
-    taskId: first?.taskId ?? null,
-    runId: first?.id ?? null,
+    taskId: first.taskId,
+    runId: first.id,
     seq: message.seq,
     runIds: runs.map((run) => run.id),
   };
@@ -581,21 +580,24 @@ export async function sendThreadMessage(
             botId: target.botId,
             status: { in: [...ACTIVE_RUN_STATUSES] },
           },
-          select: { id: true, taskId: true, status: true, audience: true },
+          select: { id: true, taskId: true, status: true },
         });
         if (active) {
-          const steeringRunId = await queueRunSteering(tx, {
-            messageId: message.id,
-            botId: target.botId,
-            userId: actor.userId,
-            active,
+          await tx.steeringMessage.create({
+            data: {
+              messageId: message.id,
+              botId: target.botId,
+              userId: actor.userId,
+              runId: active.id,
+            },
           });
+          await tx.message.update({ where: { id: message.id }, data: { runId: active.id } });
           const event = await appendEventInTransaction(tx, {
             spaceId: actor.spaceId,
             threadId: target.threadId,
             botId: target.botId,
             type: "thread.message.created",
-            runId: steeringRunId ?? undefined,
+            runId: active.id,
             payload: {
               messageId: message.id,
               role: "user",
@@ -603,7 +605,7 @@ export async function sendThreadMessage(
               replyToMessageId: input.replyToMessageId,
             },
           });
-          return { message, runs: steeringRunId ? [active] : [], eventSeq: event.seq };
+          return { message, runs: [active], eventSeq: event.seq };
         }
         const task = await tx.task.create({
           data: {

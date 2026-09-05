@@ -43,9 +43,10 @@ import {
   formatSkillsCatalogInstruction,
   humanizeToolName,
   inferAttachmentMimeType,
+  isMessagingChannelRun,
   isOneShotRoutineCrons,
   isTerminal,
-  messagingAudienceChannelId,
+  messagingChannelId,
   messagingChannelPrivacyBlock,
   messagingDmSurfaceNote,
   nextCronDateAcross,
@@ -865,8 +866,18 @@ export function createRunExecutor(deps: ExecutorDeps) {
       heartbeat.unref?.();
 
       const runSecrets = [...deps.secrets];
-      const messagingChannelRun = Boolean(messagingAudienceChannelId(run.audience));
       try {
+        const sourceBlocks =
+          run.trigger === "messaging" && run.sourceMessageId
+            ? ((
+                await deps.prisma.message.findUnique({
+                  where: { id: run.sourceMessageId },
+                  select: { blocks: true },
+                })
+              )?.blocks as MessageBlock[] | undefined)
+            : undefined;
+        const channelId = messagingChannelId(sourceBlocks);
+        const messagingChannelRun = isMessagingChannelRun(run.trigger, sourceBlocks);
         const [
           bot,
           thread,
@@ -885,7 +896,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             include: { computer: true },
           }),
           deps.prisma.thread.findUniqueOrThrow({ where: { id: run.threadId } }),
-          loadRunHistoryMessages(deps.prisma, run, LEGACY_HISTORY_WINDOW_SIZE),
+          loadRunHistoryMessages(deps.prisma, run, LEGACY_HISTORY_WINDOW_SIZE, channelId),
           run.trigger === "bot_message"
             ? loadBotMessageContext(deps.prisma, run.sourceMessageId)
             : Promise.resolve(undefined),
@@ -3639,7 +3650,7 @@ export function selectBuiltinToolsForRun(options: {
   groupId: string | null;
   trigger: string;
   semanticMemoryEnabled: boolean;
-  messagingChannelRun?: boolean;
+  messagingChannelRun: boolean;
 }) {
   return selectMemoryTools(
     filterBuiltinToolsForRun(
@@ -3665,7 +3676,7 @@ export function threadContextForRun<T>(
     summary: string | null;
     historyCompactedUpToSeq: number | null;
   },
-  messagingChannelRun = false,
+  messagingChannelRun: boolean,
 ) {
   return trigger === "routine"
     ? {

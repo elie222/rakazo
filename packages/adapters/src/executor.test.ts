@@ -56,6 +56,7 @@ describe("run tool selection", () => {
       groupId,
       trigger,
       semanticMemoryEnabled: false,
+      messagingChannelRun: false,
     }).map((tool) => tool.name);
 
   it("withholds schedule creation only from routine-triggered runs", () => {
@@ -356,6 +357,7 @@ describe("createRunExecutor", () => {
     }).map((tool) => tool.name);
     expect(tools).not.toContain("recall_memory");
     expect(tools).not.toContain("remember");
+    expect(tools).not.toContain("save_memory");
     expect(tools.some((tool) => tool.startsWith("scratchpad_"))).toBe(false);
     expect(tools).toContain("web_fetch");
   });
@@ -367,13 +369,13 @@ describe("createRunExecutor", () => {
       historyCompactedUpToSeq: 4,
     };
 
-    expect(threadContextForRun("routine", threadContext)).toEqual({
+    expect(threadContextForRun("routine", threadContext, false)).toEqual({
       messages: [],
       summary: null,
       historyCompactedUpToSeq: null,
       includeSemanticRecall: false,
     });
-    expect(threadContextForRun("user", threadContext)).toEqual({
+    expect(threadContextForRun("user", threadContext, false)).toEqual({
       ...threadContext,
       includeSemanticRecall: true,
     });

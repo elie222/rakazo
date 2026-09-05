@@ -96,12 +96,10 @@ export function activeThreadRuns(
  */
 export function applyThreadSendReceipt(
   snapshot: ThreadSnapshot | null,
-  receipt: { botId: string; runId: string | null; taskId: string | null; createdAt?: string },
+  receipt: { botId: string; runId: string; taskId: string; createdAt?: string },
   terminalRunIds: ReadonlySet<string> = new Set(),
 ): ThreadSnapshot | null {
   if (
-    !receipt.runId ||
-    !receipt.taskId ||
     !snapshot ||
     snapshot.groupId ||
     snapshot.botId !== receipt.botId ||

@@ -6,7 +6,7 @@ import type {
 } from "@rakazo/adapter-kit";
 import { messagingDeliverJob, runContinueJob } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
-import { botMessageHopExhausted, messagingAudience, nextBotMessageHop } from "@rakazo/core";
+import { botMessageHopExhausted, nextBotMessageHop } from "@rakazo/core";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { appendEventInTransaction, createThreadMessageInTransaction } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -74,9 +74,6 @@ async function mirrorRun(deps: MessagingDeliveryDeps, runId: string): Promise<vo
   });
   if (run?.trigger !== "messaging") return;
   const sourceBlocks = (run.sourceMessage?.blocks ?? []) as MessageBlock[];
-  // The original source alone is not an audience boundary: old runs could
-  // absorb private steering. Only explicitly bound runs may reach an outbox.
-  if (!run.audience || messagingAudience(run.trigger, sourceBlocks) !== run.audience) return;
   const channelBlock = sourceBlocks.find(
     (block): block is Extract<MessageBlock, { kind: "channel_message" }> =>
       block.kind === "channel_message",
@@ -92,7 +89,7 @@ async function mirrorRun(deps: MessagingDeliveryDeps, runId: string): Promise<vo
   if (!identity) return;
 
   const messages = await deps.prisma.message.findMany({
-    where: { runId: run.id, role: "bot", audience: run.audience },
+    where: { runId: run.id, role: "bot" },
     orderBy: { seq: "asc" },
   });
   const rows = messages
@@ -117,7 +114,7 @@ async function mirrorRun(deps: MessagingDeliveryDeps, runId: string): Promise<vo
  */
 async function mirrorChannelRun(
   deps: MessagingDeliveryDeps,
-  run: { id: string; botId: string; audience: string | null },
+  run: { id: string; botId: string },
   channelBlock: Extract<MessageBlock, { kind: "channel_message" }>,
 ): Promise<void> {
   const identity = await deps.prisma.messagingIdentity.findUnique({
@@ -135,12 +132,22 @@ async function mirrorChannelRun(
   const firstName = owner?.name.trim().split(/\s+/)[0] || "Owner";
   const fromLabel = `${firstName}'s agent`;
 
-  const messages = (
-    await deps.prisma.message.findMany({
-      where: { runId: run.id, role: "bot", audience: run.audience },
-      orderBy: { seq: "asc" },
-    })
+  const replies = await deps.prisma.message.findMany({
+    select: { id: true, blocks: true },
+    where: { runId: run.id, role: "bot" },
+    orderBy: { seq: "asc" },
+  });
+  // Ask answers are entered privately in the app. Check the same snapshot as
+  // the replies so a resumed run cannot publish an answer-influenced response.
+  if (
+    replies.some((message) =>
+      (message.blocks as MessageBlock[]).some(
+        (block) => block.kind === "ask" && block.status === "answered",
+      ),
+    )
   )
+    return;
+  const messages = replies
     .map((message) => ({ message, text: extractText(message.blocks) }))
     .filter((entry) => entry.text);
   if (messages.length === 0) return;
@@ -221,7 +228,6 @@ async function mirrorChannelRun(
           role: "user",
           blocks: [block],
           clientNonce,
-          audience: run.audience,
         });
         return appendEventInTransaction(tx, {
           spaceId: peerIdentity.spaceId,

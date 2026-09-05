@@ -92,7 +92,7 @@ describe("finalizeRun", () => {
       thread: { update: vi.fn(async () => ({ nextEventSeq: 1 })) },
       event: { create: createEvent, deleteMany: vi.fn(async () => ({ count: 0 })) },
       steeringMessage: {
-        findFirst: vi.fn(async () => null),
+        findMany: vi.fn(async () => []),
         updateMany: vi.fn(async () => ({ count: 0 })),
       },
       bot: { update: vi.fn(async () => ({})) },

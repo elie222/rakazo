@@ -1,17 +1,27 @@
 import type { MessageBlock } from "@rakazo/contracts";
-import { messagingAudienceChannelId } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "./client.js";
 
-/** Group messaging history never includes the owner's private thread context. */
+/** Group turns use channel inputs and their own outputs, never private thread history. */
 export function loadRunHistoryMessages(
   prisma: PrismaClient,
-  run: { threadId: string; audience?: string | null },
+  run: { id: string; threadId: string },
   limit: number,
+  channelId?: string,
 ) {
   return prisma.message.findMany({
     where: {
       threadId: run.threadId,
-      ...(messagingAudienceChannelId(run.audience) ? { audience: run.audience } : {}),
+      ...(channelId
+        ? {
+            OR: [
+              {
+                role: "user",
+                blocks: { array_contains: [{ kind: "channel_message", channelId }] },
+              },
+              { role: "bot", runId: run.id },
+            ],
+          }
+        : {}),
     },
     orderBy: { seq: "desc" },
     take: limit,
@@ -26,8 +36,6 @@ export interface CreateThreadMessageInput {
   botId?: string;
   replyToMessageId?: string;
   runId?: string;
-  /** Set by trusted inbound routing; run output always inherits its run's audience. */
-  audience?: string | null;
   clientNonce?: string;
   markUnread?: boolean;
 }
@@ -50,7 +58,7 @@ export async function createThreadMessageInTransaction(
     },
     select: { nextMessageSeq: true },
   });
-  const run = await assertRunCanWriteHistory(tx, input.runId);
+  await assertRunCanWriteHistory(tx, input.runId);
   return tx.message.create({
     data: {
       threadId: input.threadId,
@@ -60,7 +68,6 @@ export async function createThreadMessageInTransaction(
       botId: input.botId,
       replyToMessageId: input.replyToMessageId,
       runId: input.runId,
-      audience: run ? run.audience : input.audience,
       clientNonce: input.clientNonce,
     },
   });
@@ -76,11 +83,11 @@ export class RunHistoryWriteError extends Error {
 export async function assertRunCanWriteHistory(
   tx: Prisma.TransactionClient,
   runId?: string,
-): Promise<{ status: string; startedAt: Date | null; audience: string | null } | undefined> {
+): Promise<{ status: string; startedAt: Date | null } | undefined> {
   if (!runId) return;
   const run = await tx.run.findUnique({
     where: { id: runId },
-    select: { status: true, startedAt: true, audience: true },
+    select: { status: true, startedAt: true },
   });
   if (!run || run.status === "cancelled") {
     throw new RunHistoryWriteError();
