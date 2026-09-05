@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { mkdtemp, readFile, rm, symlink } from "node:fs/promises";
+import { mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { AdapterContext } from "@rakazo/adapter-kit";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   CloudAgentHomeStore,
   CloudArtifactStore,
@@ -78,6 +78,28 @@ describe("cloud storage", () => {
     await expect(home.readFile("bot", "a.txt", ctx)).rejects.toThrow("integrity");
     for (const name of ["../x", "/x", "a/../b", "a\\b", "a//b"])
       expect(() => cloudHomePath(name)).toThrow();
+  });
+  it("reuses unchanged blobs and never publishes a partially uploaded checkpoint", async () => {
+    const objects = new Objects();
+    const home = new CloudAgentHomeStore(objects);
+    const dest = await mkdtemp(path.join(tmpdir(), "cloud-commit-"));
+    try {
+      await writeFile(path.join(dest, "a.txt"), "first");
+      await home.commit("bot", dest, ctx);
+      const put = vi.spyOn(objects, "put");
+      await home.commit("bot", dest, ctx);
+      expect(put.mock.calls.filter(([key]) => key.includes("/blobs/"))).toHaveLength(0);
+      const original = Objects.prototype.put.bind(objects);
+      put.mockImplementation(async (key, bytes, condition) => {
+        if (key.includes("/blobs/")) throw new Error("upload unavailable");
+        return original(key, bytes, condition);
+      });
+      await writeFile(path.join(dest, "a.txt"), "changed");
+      await expect(home.commit("bot", dest, ctx)).rejects.toThrow("upload unavailable");
+      expect(await home.readFile("bot", "a.txt", ctx)).toBe("first");
+    } finally {
+      await rm(dest, { recursive: true, force: true });
+    }
   });
   it("does not follow a symlink out of a checkout", async () => {
     const objects = new Objects();

@@ -321,25 +321,48 @@ export class ModalSandboxProvider implements SandboxProvider {
   }
   async *exportWorkspace(computer: ComputerRef, ctx: AdapterContext): AsyncIterable<PortableFile> {
     const pending = [""];
+    const files: ComputerFileEntry[] = [];
     let total = 0;
     let count = 0;
     while (pending.length) {
-      for (const entry of await this.listFiles(computer, pending.pop()!, ctx)) {
-        if (shouldSkipPortableWorkspaceFile(entry.path)) continue;
-        if (++count > 10000) throw new Error("Workspace has too many files");
-        if (entry.kind === "dir") pending.push(entry.path);
-        else {
-          total += entry.size;
-          if (total > 512 * 1024 * 1024) throw new Error("Workspace exceeds checkpoint size limit");
-          yield {
-            path: entry.path,
-            executable: entry.executable,
-            content: await this.readFile(computer, entry.path, ctx),
-          };
+      ctx.signal.throwIfAborted();
+      const listings = await Promise.all(
+        pending.splice(0, 8).map((directory) => this.listFiles(computer, directory, ctx)),
+      );
+      for (const entries of listings)
+        for (const entry of entries) {
+          if (shouldSkipPortableWorkspaceFile(entry.path)) continue;
+          if (++count > 10000) throw new Error("Workspace has too many files");
+          if (entry.kind === "dir") pending.push(entry.path);
+          else {
+            total += entry.size;
+            if (total > 512 * 1024 * 1024)
+              throw new Error("Workspace exceeds checkpoint size limit");
+            files.push(entry);
+          }
         }
+    }
+    // Bound both RPC concurrency and the bytes held before yielding to the home store.
+    while (files.length) {
+      ctx.signal.throwIfAborted();
+      const batch = [files.shift()!];
+      let bytes = batch[0]!.size;
+      while (files.length && batch.length < 8 && bytes + files[0]!.size <= 8 * 1024 * 1024) {
+        const entry = files.shift()!;
+        batch.push(entry);
+        bytes += entry.size;
       }
+      const contents = await Promise.all(
+        batch.map(async (entry) => ({
+          path: entry.path,
+          executable: entry.executable,
+          content: await this.readFile(computer, entry.path, ctx),
+        })),
+      );
+      for (const file of contents) yield file;
     }
   }
+
   async importWorkspace(
     computer: ComputerRef,
     files: AsyncIterable<PortableFile>,

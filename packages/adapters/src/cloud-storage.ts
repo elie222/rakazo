@@ -300,7 +300,18 @@ export class CloudAgentHomeStore implements AgentHomeStore {
 
   async commit(botId: string, src: string, context: AdapterContext) {
     const prefix = this.prefix(botId, context);
-    const { etag } = await this.current(prefix);
+    const { etag, manifest } = await this.current(prefix);
+    const known = new Set(Object.values(manifest.files).map((entry) => entry.hash));
+    let batch: Array<{ hash: string; content: Buffer }> = [];
+    let batchBytes = 0;
+    const flush = async () => {
+      const results = await Promise.allSettled(
+        batch.map((item) => this.objects.put(`${prefix}/blobs/${item.hash}`, item.content)),
+      );
+      batch = [];
+      batchBytes = 0;
+      for (const result of results) if (result.status === "rejected") throw result.reason;
+    };
     const files: Record<string, Entry> = Object.create(null);
     let bytes = 0;
     const walk = async (dir: string, relative = "") => {
@@ -331,12 +342,19 @@ export class CloudAgentHomeStore implements AgentHomeStore {
           )
             throw new Error("Home exceeds storage limits");
           const hash = digest(content);
-          await this.objects.put(`${prefix}/blobs/${hash}`, content);
+          if (!known.has(hash)) {
+            if (batch.length && batchBytes + content.length > 8 * 1024 * 1024) await flush();
+            batch.push({ hash, content });
+            batchBytes += content.length;
+            known.add(hash);
+            if (batch.length >= 8 || batchBytes >= 8 * 1024 * 1024) await flush();
+          }
           files[name] = { hash, size: content.length, executable };
         }
       }
     };
     await walk(src);
+    await flush();
     return this.publish(prefix, files, etag);
   }
   async restore(botId: string, revision: string, dest: string, context: AdapterContext) {
