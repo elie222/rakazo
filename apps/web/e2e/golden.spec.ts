@@ -141,6 +141,7 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
     /Gmail[\s\S]*Google Calendar[\s\S]*Google Drive[\s\S]*Slack[\s\S]*Notion/,
   );
   await expect(page.getByText("GitHub", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add Executor", exact: true })).toBeHidden();
   await expect(page.getByRole("button", { name: "Add Treg", exact: true })).toBeHidden();
   await expect(page.getByRole("button", { name: "Add MCP server", exact: true })).toBeHidden();
   await expect(page.getByRole("button", { name: "Add OpenAPI", exact: true })).toBeHidden();
@@ -180,14 +181,16 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await expect(page.getByRole("button", { name: "MCP servers", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Add MCP server", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Add OpenAPI", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add Executor", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Add Treg", exact: true })).toBeVisible();
   await expect(page.getByText("Tool sources", { exact: true })).toBeVisible();
-  // MCP → OpenAPI → Treg order inside Advanced.
+  // MCP → OpenAPI → Executor → Treg order inside Advanced.
   const advancedActions = advanced.locator("button");
   await expect(advancedActions.nth(0)).toHaveText("MCP servers");
   await expect(advancedActions.nth(1)).toHaveText("Add MCP server");
   await expect(advancedActions.nth(2)).toHaveText("Add OpenAPI");
-  await expect(advancedActions.nth(3)).toHaveText("Add Treg");
+  await expect(advancedActions.nth(3)).toHaveText("Add Executor");
+  await expect(advancedActions.nth(4)).toHaveText("Add Treg");
 
   await page.getByRole("button", { name: "Add Treg", exact: true }).click();
   await page.getByPlaceholder("Treg token").fill("fake-treg-browser-credential");
@@ -210,6 +213,17 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await page.getByRole("button", { name: "Verify and add", exact: true }).click();
   await expect(
     page.getByText(/API · https:\/\/api\.example\.test\/v1 · credential saved/),
+  ).toBeVisible();
+
+  await page.getByRole("button", { name: "Add Executor", exact: true }).click();
+  await expect(page.getByPlaceholder("Display name")).toHaveValue("Executor");
+  await page
+    .getByPlaceholder("https://executor.example/mcp")
+    .fill("https://executor.example.test/mcp");
+  await page.getByPlaceholder("Executor token").fill("fake-executor-browser-credential");
+  await page.getByRole("button", { name: "Verify and add", exact: true }).click();
+  await expect(
+    page.getByText(/MCP · https:\/\/executor\.example\.test\/mcp · credential saved/),
   ).toBeVisible();
   await captureScreenshot(page, testInfo, "11c-provider-emulators");
 

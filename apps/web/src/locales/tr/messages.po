@@ -3168,3 +3168,15 @@ msgstr "Botların {hostLabel} üzerinde çalışmasına izin verirsen işletim s
 #: src/pages/Welcome.tsx:21
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "Gerçek işler verebileceğin,<0/>her zaman açık agent takımın."
+
+#: src/pages/PluginsOverlay.tsx:468
+msgid "Add Executor"
+msgstr "Executor ekle"
+
+#: src/pages/PluginsOverlay.tsx:508
+msgid "Connect Executor"
+msgstr "Executor'a bağlan"
+
+#: src/pages/PluginsOverlay.tsx:569
+msgid "Executor token"
+msgstr "Executor belirteci"

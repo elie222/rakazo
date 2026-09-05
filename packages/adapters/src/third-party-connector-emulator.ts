@@ -25,7 +25,9 @@ export class ThirdPartyConnectorEmulator {
     if (url.hostname === "remote.mcp.pipedream.net" || url.hostname === "treg.to") {
       return this.mcp(url, init);
     }
-    if (url.hostname === "mcp.example.test") return this.mcp(url, init);
+    if (url.hostname === "mcp.example.test" || url.hostname === "executor.example.test") {
+      return this.mcp(url, init);
+    }
     if (url.hostname === "api.example.test") return this.openapi(url, init);
     throw new Error(`Third-party connector emulator received unexpected URL ${url}`);
   };

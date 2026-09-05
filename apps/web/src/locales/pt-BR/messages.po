@@ -3168,3 +3168,15 @@ msgstr "Seu sistema operacional não pedirá permissão extra se você permitir 
 #: src/pages/Welcome.tsx:21
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "Sua equipe de agentes sempre ativos<0/>, a quem você pode dar trabalho de verdade."
+
+#: src/pages/PluginsOverlay.tsx:468
+msgid "Add Executor"
+msgstr "Adicionar Executor"
+
+#: src/pages/PluginsOverlay.tsx:508
+msgid "Connect Executor"
+msgstr "Conectar Executor"
+
+#: src/pages/PluginsOverlay.tsx:569
+msgid "Executor token"
+msgstr "Token do Executor"
