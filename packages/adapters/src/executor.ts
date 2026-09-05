@@ -1841,6 +1841,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 if (current?.status === "waiting_input") {
                   return pauseForSecret();
                 }
+                // An intended secret request resumes protected entry below, including
+                // recovery after action approval but before the card was committed.
               } else if (!needsApproval) {
                 const early = await claimOrReturn("intended");
                 if (early !== undefined) return early;

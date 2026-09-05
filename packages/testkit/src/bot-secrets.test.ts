@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { AgentRuntimeEvent } from "@rakazo/adapter-kit";
 import { ScriptedAgentRuntime } from "@rakazo/adapters";
+import { answerRunInput } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 const hasDb = process.env.VERIFY_DATABASE === "1" && Boolean(process.env.DATABASE_URL);
@@ -87,7 +88,7 @@ describeIntegration("reusable credential lifecycle", () => {
           });
         }
         await handles.executor.continueRun(seeded.run.id, "test-worker");
-        const approve = async (runId: string) => {
+        const approve = async (runId: string, interruptBeforeCard = false) => {
           if (!requireApproval) return;
           const message = await handles.prisma.message.findFirstOrThrow({
             where: { runId, role: "bot" },
@@ -98,12 +99,40 @@ describeIntegration("reusable credential lifecycle", () => {
               expect.objectContaining({ approvalEffectId: expect.any(String) }),
             ]),
           );
-          await rpc(seeded.cookie, "threads/answer", {
-            botId: seeded.bot.id,
-            runId,
-            messageId: message.id,
-            answer: "allow",
-          });
+          if (interruptBeforeCard) {
+            // Reproduce a worker stopping after releasing the approved effect to intended,
+            // before the protected card transaction commits. No background job is enqueued.
+            expect(
+              await answerRunInput(handles.prisma, {
+                spaceId: seeded.me.spaceId,
+                threadId: seeded.thread.id,
+                runId,
+                messageId: message.id,
+                answeredByUserId: seeded.me.userId,
+                answer: "allow",
+              }),
+            ).toBe(true);
+            await handles.prisma.externalEffect.updateMany({
+              where: { runId, kind: "request_secret", status: "approved" },
+              data: { status: "intended" },
+            });
+            await handles.prisma.run.update({
+              where: { id: runId },
+              data: {
+                status: "running",
+                leaseOwner: "interrupted-worker",
+                leaseExpiresAt: new Date(Date.now() - 60_000),
+              },
+            });
+            await handles.executor.continueRun(runId, "recovery-worker");
+          } else {
+            await rpc(seeded.cookie, "threads/answer", {
+              botId: seeded.bot.id,
+              runId,
+              messageId: message.id,
+              answer: "allow",
+            });
+          }
           await vi.waitFor(
             async () => {
               const run = await handles.prisma.run.findUniqueOrThrow({ where: { id: runId } });
@@ -241,7 +270,7 @@ describeIntegration("reusable credential lifecycle", () => {
         expect(
           await handles.prisma.run.findUniqueOrThrow({ where: { id: rotateRun } }),
         ).toMatchObject({ status: "waiting_input" });
-        await approve(rotateRun);
+        await approve(rotateRun, true);
         expect(
           await handles.prisma.run.findUniqueOrThrow({ where: { id: rotateRun } }),
         ).toMatchObject({ status: "waiting_input" });
