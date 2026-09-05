@@ -110,7 +110,7 @@ tags:
 - tapOn: "Bot actions"
 - assertVisible: "Clear conversation"
 - takeScreenshot: "screenshots/16-bot-actions"
-- tapOn: "Cancel"
+- back
 
 - openLink: "rakazo:///bot-settings?botId=${RAKAZO_SCREENSHOT_BOT_ID}"
 - extendedWaitUntil:
