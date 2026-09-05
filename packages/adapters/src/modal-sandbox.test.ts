@@ -24,13 +24,19 @@ function fixture() {
     terminate: vi.fn(async () => {}),
     exec: vi.fn(async () => {
       let input: Record<string, unknown> = {};
+      const chunks: Buffer[] = [];
+      const write = async (value: Uint8Array) => {
+        if (value.byteLength > 20 * 1024 * 1024) throw new Error("Modal stdin message too large");
+        chunks.push(Buffer.from(value));
+      };
       return {
         stdin: {
-          writeText: async (value: string) => {
-            input = JSON.parse(value);
+          writeText: async (value: string) => write(Buffer.from(value)),
+          writeBytes: write,
+          close: async () => {
+            input = JSON.parse(Buffer.concat(chunks).toString("utf8"));
             requests.push(input);
           },
-          close: async () => {},
         },
         stdout: {
           readText: async () =>
@@ -51,6 +57,13 @@ function fixture() {
   return { provider, sandbox, client, requests };
 }
 describe("Modal sandbox boundary", () => {
+  it("restores files whose encoded content exceeds one stdin message", async () => {
+    const f = fixture();
+    const content = Buffer.alloc(16 * 1024 * 1024, 0xa5);
+    await f.provider.writeFile(computer, { path: "artifacts/恢复.bin", content }, context);
+    expect(f.requests[0]?.path).toBe("artifacts/恢复.bin");
+    expect(Buffer.from(String(f.requests[0]?.content), "base64").equals(content)).toBe(true);
+  });
   it("reconnects without creating a new computer and executes bounded non-PTY commands", async () => {
     const f = fixture();
     expect(

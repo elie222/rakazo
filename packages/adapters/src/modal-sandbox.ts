@@ -158,8 +158,16 @@ export class ModalSandboxProvider implements SandboxProvider {
       timeoutMs,
       mode: "text",
     });
-    await process.stdin.writeText(JSON.stringify(request));
-    await process.stdin.close();
+    // Modal limits each stdin message to 20 MiB. Browser profiles and other
+    // portable files can be larger, especially after base64 encoding.
+    const input = Buffer.from(JSON.stringify(request));
+    try {
+      for (let offset = 0; offset < input.length; offset += 1024 * 1024) {
+        await process.stdin.writeBytes(input.subarray(offset, offset + 1024 * 1024));
+      }
+    } finally {
+      await process.stdin.close();
+    }
     const [stdout, , code] = await Promise.all([
       process.stdout.readText(),
       process.stderr.readText(),
