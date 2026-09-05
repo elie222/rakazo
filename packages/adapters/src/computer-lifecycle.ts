@@ -6,7 +6,7 @@ import type {
   JobPublisher,
   SandboxProvider,
 } from "@rakazo/adapter-kit";
-import { ACTIVE_RUN_STATUSES, screenLeaseId } from "@rakazo/core";
+import { ACTIVE_RUN_STATUSES, parseScreenLeaseId, screenLeaseId } from "@rakazo/core";
 import {
   expireComputerExecutionLeases,
   type PrismaClient,
@@ -31,6 +31,31 @@ const EXECUTION_LEASE_MS = 5 * 60_000;
 const RELEASED_EXECUTION_LEASE_AT = new Date(0);
 const BOOT_WAIT_ATTEMPTS = 40;
 const BOOT_WAIT_MS = 250;
+
+/** No live execution lease except our own (when screenLeaseId is set). */
+function heldByNobodyElse(lease: { ownerId: string; fence: number } | null) {
+  return {
+    executionLeases: {
+      none: {
+        expiresAt: { gt: new Date() },
+        ...(lease ? { NOT: { runId: lease.ownerId, fence: lease.fence } } : {}),
+      },
+    },
+  };
+}
+
+/** True when another bot still holds a live execution lease on this computer. */
+async function hasForeignExecutionLease(
+  prisma: PrismaClient,
+  computerId: string,
+  botId: string,
+): Promise<boolean> {
+  const live = await prisma.computerExecutionLease.findFirst({
+    where: { computerId, botId: { not: botId }, expiresAt: { gt: new Date() } },
+    select: { id: true },
+  });
+  return live !== null;
+}
 
 export class ComputerBusyError extends Error {
   constructor() {
@@ -76,10 +101,15 @@ export async function provisionComputer(
     existing = await deps.prisma.computer.findUniqueOrThrow({ where: { id: computerId } });
   }
 
+  // The execution lease this caller already holds, as it stamped it into the context.
+  const bootLease = context.screenLeaseId ? parseScreenLeaseId(context.screenLeaseId) : null;
   const claimed = await deps.prisma.computer.updateMany({
     where: {
       id: computerId,
-      state: { in: ["stopped", "suspended", "error"] },
+      OR: [
+        { state: { in: ["stopped", "suspended", "error"] } },
+        { state: "booting", ...heldByNobodyElse(bootLease) },
+      ],
       ...(context.botId ? { bots: { some: { id: context.botId, archivedAt: null } } } : {}),
     },
     data: { state: "booting" },
@@ -118,6 +148,7 @@ export async function provisionComputer(
       where: {
         id: computerId,
         state: "booting",
+        ...heldByNobodyElse(bootLease),
         ...(context.botId ? { bots: { some: { id: context.botId, archivedAt: null } } } : {}),
       },
       data: {
@@ -145,7 +176,7 @@ export async function provisionComputer(
       : undefined;
     try {
       await deps.prisma.computer.updateMany({
-        where: { id: computerId, state: "booting" },
+        where: { id: computerId, state: "booting", ...heldByNobodyElse(bootLease) },
         data: {
           state: "error",
           ...(rollbackError && provisioned
@@ -466,7 +497,14 @@ export async function replaceComputer(
   if (hasActiveComputerControl(existing)) {
     throw new ComputerBusyError();
   }
-  if (existing.state === "booting" || existing.state === "suspending") {
+  if (existing.state === "suspending") {
+    throw new ComputerBusyError();
+  }
+  // Allow Reset on a stale "booting" row unless another bot still holds a live lease.
+  if (
+    existing.state === "booting" &&
+    (await hasForeignExecutionLease(deps.prisma, computerId, botId))
+  ) {
     throw new ComputerBusyError();
   }
 
