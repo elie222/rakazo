@@ -538,9 +538,7 @@ export function reduceComputerStatus(
       ...prev,
       busyBotName: null,
       takeoverRequested: true,
-      ...(retainedControl
-        ? {}
-        : { controlHolder: "none" as const, controlBotId: null }),
+      ...(retainedControl ? {} : { controlHolder: "none" as const, controlBotId: null }),
     };
     return prev.busyBotName === next.busyBotName &&
       prev.takeoverRequested === next.takeoverRequested &&
