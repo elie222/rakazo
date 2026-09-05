@@ -1279,7 +1279,12 @@ function Thread() {
             (index) => actions[index]?.onPress(),
           );
         } else {
-          Alert.alert("", undefined, actions, { cancelable: true });
+          Alert.alert(
+            "",
+            undefined,
+            [...actions, { text: t("Cancel"), style: "cancel" }],
+            { cancelable: true },
+          );
         }
       },
       accessibilityActions: actions.map((action) => ({ name: action.name, label: action.text })),
