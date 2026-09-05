@@ -28,6 +28,14 @@ describe("loadEnv", () => {
     expect(env.wakeupDriver).toBe("memory");
   });
 
+  it("loads an optional integrations catalog mirror", () => {
+    expect(loadEnv(base).integrationsCatalogUrl).toBeUndefined();
+    expect(
+      loadEnv({ ...base, INTEGRATIONS_CATALOG_URL: " https://catalog.example.test/feed " })
+        .integrationsCatalogUrl,
+    ).toBe("https://catalog.example.test/feed");
+  });
+
   it("falls back to none when a remote provider key is missing", () => {
     expect(
       loadEnv({

@@ -28,6 +28,7 @@ import {
   ExportManifestSchema,
   GroupDetailSchema,
   GroupSchema,
+  IntegrationCatalogResultSchema,
   McpServerConfigInput,
   McpServerSchema,
   MemoryDocumentSchema,
@@ -468,6 +469,12 @@ export const appContract = {
   },
   capabilities: {
     list: oc.output(z.array(CapabilityInstallSchema)),
+    catalogSearch: oc.input(z.object({ query: z.string().trim().max(253).default("") })).output(
+      z.object({
+        enabled: z.boolean(),
+        results: z.array(IntegrationCatalogResultSchema),
+      }),
+    ),
     install: oc
       .input(
         z.object({

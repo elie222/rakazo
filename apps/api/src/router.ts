@@ -126,6 +126,7 @@ import {
   resolveBusyBotName,
   toComputerStatus,
 } from "./computer-status.js";
+import { searchIntegrationCatalog } from "./integration-catalog.js";
 import { buildMcpUpdateMaterial } from "./mcp-material.js";
 import {
   chooseFocus,
@@ -355,6 +356,7 @@ export interface RouterDeps {
     updaterUrl?: string;
     updaterToken?: string;
     imageTag?: string;
+    integrationsCatalogUrl?: string;
   };
 }
 
@@ -2265,6 +2267,23 @@ export function createRouter(deps: RouterDeps) {
           config: row.config as Record<string, unknown>,
           createdAt: row.createdAt.toISOString(),
         }));
+      }),
+      catalogSearch: authed.capabilities.catalogSearch.handler(async ({ context, input }) => {
+        const baseUrl = deps.env.integrationsCatalogUrl;
+        if (!baseUrl) return { enabled: false, results: [] };
+        try {
+          const results = await searchIntegrationCatalog({
+            baseUrl,
+            query: input.query,
+            signal: context.signal ?? new AbortController().signal,
+            fetch: deps.remoteConnectors?.fetch,
+          });
+          return { enabled: true, results };
+        } catch (error) {
+          throw new ORPCError("BAD_GATEWAY", {
+            message: error instanceof Error ? error.message : "Integration catalog search failed",
+          });
+        }
       }),
       install: authed.capabilities.install.handler(async ({ context, input }) => {
         let source = input.source.trim();

@@ -2,6 +2,7 @@ import type { ResolveHostname } from "./remote-mcp.js";
 
 type EmulatorRecord =
   | { provider: "pipedream"; operation: string; app?: string }
+  | { provider: "catalog"; operation: "search"; query: string }
   | { provider: "mcp"; operation: string; host: string; args?: Record<string, unknown> }
   | { provider: "openapi"; operation: string; path: string; authenticated: boolean };
 
@@ -27,8 +28,42 @@ export class ThirdPartyConnectorEmulator {
     }
     if (url.hostname === "mcp.example.test") return this.mcp(url, init);
     if (url.hostname === "api.example.test") return this.openapi(url, init);
+    if (url.hostname === "catalog.example.test") return this.catalog(url);
     throw new Error(`Third-party connector emulator received unexpected URL ${url}`);
   };
+
+  private async catalog(url: URL): Promise<Response> {
+    if (url.pathname !== "/api/search") return new Response(null, { status: 404 });
+    const query = url.searchParams.get("q") ?? "";
+    this.records.push({ provider: "catalog", operation: "search", query });
+    if (!query.toLowerCase().includes("github")) return Response.json({ results: [] });
+    return Response.json({
+      results: [
+        {
+          domain: "github.com",
+          name: "GitHub",
+          description: "Repository automation surfaces",
+          url: "https://integrations.example.test/github.com/",
+          surfaces: [
+            {
+              kind: "mcp",
+              slug: "github-mcp",
+              url: "https://mcp.example.test/mcp",
+              auth: { kind: "token", header: "Authorization: Bearer {token}" },
+            },
+            {
+              kind: "openapi",
+              slug: "github-openapi",
+              url: "https://api.example.test/openapi.json",
+              auth: { kind: "token", header: "Authorization: Bearer {token}" },
+            },
+            { kind: "graphql", slug: "github-graphql", url: "https://api.github.test/graphql" },
+            { kind: "cli", slug: "github-cli" },
+          ],
+        },
+      ],
+    });
+  }
 
   private async pipedream(url: URL, init?: RequestInit): Promise<Response> {
     const method = init?.method ?? "GET";
