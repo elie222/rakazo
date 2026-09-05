@@ -244,7 +244,7 @@ export class ComposioConnector implements ComposioProvider {
     const canonicalByKey = new Map(
       canonicalToolkits.map((toolkit) => [composioSlugKey(toolkit), toolkit]),
     );
-    const connectedAccounts: Record<string, string[]> = {};
+    const accountIdsByToolkit = new Map<string, Set<string>>();
     for (const connection of connections) {
       const accountId = connection.providerRef?.trim();
       if (!accountId) continue;
@@ -253,9 +253,13 @@ export class ComposioConnector implements ComposioProvider {
       if (composioSlugKey(accountId) === composioSlugKey(connection.externalId)) continue;
       const toolkit = canonicalByKey.get(composioSlugKey(connection.externalId));
       if (!toolkit) continue;
-      const ids = connectedAccounts[toolkit] ?? [];
-      ids.push(accountId);
-      connectedAccounts[toolkit] = ids;
+      const ids = accountIdsByToolkit.get(toolkit) ?? new Set<string>();
+      ids.add(accountId);
+      accountIdsByToolkit.set(toolkit, ids);
+    }
+    const connectedAccounts: Record<string, string[]> = {};
+    for (const [toolkit, ids] of accountIdsByToolkit) {
+      connectedAccounts[toolkit] = [...ids].sort();
     }
     const key = executeSessionKey(canonicalToolkits, connectedAccounts);
     if (!key) return this.sessionFor(userId);
@@ -268,16 +272,24 @@ export class ComposioConnector implements ComposioProvider {
         this.executeSessions.delete(userId);
       }
     }
+    // Non-multi-account sessions cap connectedAccounts at one id per toolkit.
+    // requireExplicitSelection would also break single-account / no-auth
+    // execute paths that do not pass an account parameter.
+    const needsMultiAccount = Object.values(connectedAccounts).some((ids) => ids.length >= 2);
     const session = await composio.create(userId, {
       manageConnections: false,
       sandbox: { enable: false },
       toolkits: canonicalToolkits,
       ...(Object.keys(connectedAccounts).length > 0 ? { connectedAccounts } : {}),
-      multiAccount: {
-        enable: true,
-        maxAccountsPerToolkit: 10,
-        requireExplicitSelection: true,
-      },
+      ...(needsMultiAccount
+        ? {
+            multiAccount: {
+              enable: true,
+              maxAccountsPerToolkit: 10,
+              requireExplicitSelection: true,
+            },
+          }
+        : {}),
     });
     this.executeSessions.set(userId, { sessionId: session.sessionId, key });
     return session;

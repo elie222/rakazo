@@ -286,6 +286,13 @@ describe("composio tool mapping", () => {
           providerRef: "ca-work",
         },
         {
+          id: "connection-personal-dup",
+          connectorId: "composio",
+          externalId: "GitHub",
+          displayName: "Personal again",
+          providerRef: "ca-personal",
+        },
+        {
           id: "connection-noauth",
           connectorId: "composio",
           externalId: "GITHUB",
@@ -295,9 +302,11 @@ describe("composio tool mapping", () => {
       ],
     });
 
-    expect(composioSdkState.created.at(-1)).toMatchObject({
+    expect(composioSdkState.created.at(-1)).toEqual({
       userId: "user-1",
       config: {
+        manageConnections: false,
+        sandbox: { enable: false },
         toolkits: ["GITHUB"],
         connectedAccounts: { GITHUB: ["ca-personal", "ca-work"] },
         multiAccount: {
@@ -305,6 +314,80 @@ describe("composio tool mapping", () => {
           maxAccountsPerToolkit: 10,
           requireExplicitSelection: true,
         },
+      },
+    });
+  });
+
+  it("pins a single concrete account without enabling multi-account mode", async () => {
+    composioSdkState.created.length = 0;
+    composioSdkState.sessions.clear();
+    composioToolkitDirectory.invalidate();
+
+    const connector = new ComposioConnector();
+    await connector.discoverTools({
+      operationId: "composio-single-account",
+      traceId: "composio-single-account",
+      spaceId: "workspace",
+      userId: "user-1",
+      signal: new AbortController().signal,
+      connectedConnections: [
+        {
+          id: "connection-work",
+          connectorId: "composio",
+          externalId: "gmail",
+          displayName: "Work",
+          providerRef: "ca-work",
+        },
+      ],
+    });
+
+    expect(composioSdkState.created.at(-1)).toEqual({
+      userId: "user-1",
+      config: {
+        manageConnections: false,
+        sandbox: { enable: false },
+        toolkits: ["GMAIL"],
+        connectedAccounts: { GMAIL: ["ca-work"] },
+      },
+    });
+  });
+
+  it("omits connectedAccounts and multiAccount for legacy slug-only refs", async () => {
+    composioSdkState.created.length = 0;
+    composioSdkState.sessions.clear();
+    composioToolkitDirectory.invalidate();
+
+    const connector = new ComposioConnector();
+    await connector.discoverTools({
+      operationId: "composio-legacy-only",
+      traceId: "composio-legacy-only",
+      spaceId: "workspace",
+      userId: "user-1",
+      signal: new AbortController().signal,
+      connectedConnections: [
+        {
+          id: "connection-legacy",
+          connectorId: "composio",
+          externalId: "GITHUB",
+          displayName: "Legacy",
+          providerRef: "github",
+        },
+        {
+          id: "connection-hackernews",
+          connectorId: "composio",
+          externalId: "hackernews",
+          displayName: "Hacker News",
+          providerRef: "HACKERNEWS",
+        },
+      ],
+    });
+
+    expect(composioSdkState.created.at(-1)).toEqual({
+      userId: "user-1",
+      config: {
+        manageConnections: false,
+        sandbox: { enable: false },
+        toolkits: ["GITHUB", "HACKERNEWS"],
       },
     });
   });
