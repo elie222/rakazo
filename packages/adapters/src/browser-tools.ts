@@ -15,11 +15,13 @@ export async function browserNavigateFromTool(
   args: Record<string, unknown>,
 ) {
   const url = String(args.url ?? "").trim();
-  if (!url) return { error: "url is required", fallback: "computer_act" as const };
+  if (!/^https?:\/\//i.test(url))
+    return { error: "An HTTP(S) URL is required", fallback: "computer_act" as const };
   try {
     const result = await browser.navigate(computer, { url, signal: context.signal }, context);
     return formatBrowserResult(result);
   } catch (error) {
+    context.signal.throwIfAborted();
     return {
       error: error instanceof Error ? error.message : String(error),
       fallback: "computer_act" as const,
@@ -38,6 +40,7 @@ export async function browserSnapshotFromTool(
     const result = await browser.snapshot(computer, { signal: context.signal }, context);
     return formatBrowserResult(result);
   } catch (error) {
+    context.signal.throwIfAborted();
     return {
       error: error instanceof Error ? error.message : String(error),
       fallback: "computer_act" as const,
@@ -56,7 +59,10 @@ export async function browserActFromTool(
     const result = await browser.act(computer, { actions, signal: context.signal }, context);
     return formatBrowserResult(result);
   } catch (error) {
+    context.signal.throwIfAborted();
     return {
+      ok: false,
+      uncertain: true,
       error: error instanceof Error ? error.message : String(error),
       fallback: "computer_act" as const,
     };
@@ -82,7 +88,7 @@ export function parseBrowserActions(value: unknown): BrowserActStep[] {
     const ref = String(action.ref ?? "").trim();
     if (!ref) throw new Error(`browser_act action ${index} requires ref`);
     if (kind === "fill" || kind === "type") {
-      if (action.text === undefined || action.text === null) {
+      if (typeof action.text !== "string") {
         throw new Error(`browser_act ${kind} requires text`);
       }
       return { kind, ref, text: String(action.text) };
@@ -95,7 +101,7 @@ function formatBrowserResult<T extends { fallback?: "computer_act"; error?: stri
   if (result.fallback === "computer_act") {
     return {
       ...result,
-      note: "Page browser could not complete this step. Use computer_act on the desktop browser instead.",
+      note: "Page browser could not complete this step. Inspect the current state before continuing with computer_act if available, otherwise request_takeover. Do not replay completed or uncertain actions.",
     };
   }
   return result;

@@ -9,33 +9,21 @@ import type {
   BrowserSnapshotRequest,
   BrowserSnapshotResult,
   ComputerRef,
+  PageBrowserCommand,
+  PageBrowserResult,
   SandboxProvider,
 } from "@rakazo/adapter-kit";
-import { sandboxCommandTimeoutMs } from "@rakazo/core";
 import { FakeBrowserProvider, type FakeBrowserProviderOptions } from "./fake-browser.js";
-import { pageBrowserSessionKey } from "./page-browser-session.js";
 
 const DETACHED_MESSAGE =
   "Page browser is not attached to this computer's Chrome. Use computer_act on the desktop browser instead.";
 
-const LIVE_HELPER = "/usr/local/bin/rakazo-page-browser";
-
-type LivePayload = {
-  ok?: boolean;
-  url?: string;
-  title?: string;
-  tree?: string;
-  elements?: BrowserSnapshotNode[];
-  completed?: number;
-  error?: string;
-  fallback?: "computer_act";
-};
+type LivePayload = Partial<PageBrowserResult>;
 
 export type LivePageBrowserDriver = (
   computer: ComputerRef,
+  request: PageBrowserCommand,
   context: AdapterContext,
-  command: "navigate" | "snapshot" | "act",
-  args: Record<string, unknown>,
 ) => Promise<LivePayload>;
 
 /**
@@ -70,7 +58,9 @@ export class ComputerBrowserProvider implements BrowserProvider {
       contractVersion: "1",
       adapterVersion: "0.1.0",
       capabilities: {
-        page: true,
+        page: Boolean(
+          this.liveDriver || this.sandbox?.pageBrowser || this.sandbox?.describe().id === "fake",
+        ),
         refs: true,
         keyless: true,
       },
@@ -85,8 +75,8 @@ export class ComputerBrowserProvider implements BrowserProvider {
     if (this.canUseInProcess(computer)) {
       return this.fake.navigate(computer, request, context);
     }
-    const live = await this.runLive(computer, context, "navigate", { url: request.url });
-    if (!live || live.ok === false || live.fallback === "computer_act") {
+    const live = await this.runLive(computer, { command: "navigate", url: request.url }, context);
+    if (live?.ok !== true || live.fallback === "computer_act") {
       return {
         url: request.url,
         title: "",
@@ -108,8 +98,8 @@ export class ComputerBrowserProvider implements BrowserProvider {
     if (this.canUseInProcess(computer)) {
       return this.fake.snapshot(computer, request, context);
     }
-    const live = await this.runLive(computer, context, "snapshot", {});
-    if (!live || live.ok === false || live.fallback === "computer_act") {
+    const live = await this.runLive(computer, { command: "snapshot" }, context);
+    if (live?.ok !== true || live.fallback === "computer_act") {
       return {
         url: "",
         title: "",
@@ -136,17 +126,16 @@ export class ComputerBrowserProvider implements BrowserProvider {
     if (this.canUseInProcess(computer)) {
       return this.fake.act(computer, request, context);
     }
-    const live = await this.runLive(computer, context, "act", {
-      actions: request.actions.map((step) =>
-        step.kind === "click"
-          ? { kind: step.kind, ref: step.ref }
-          : { kind: step.kind, ref: step.ref, text: step.text },
-      ),
-    });
-    if (!live || live.ok === false || live.fallback === "computer_act") {
+    const live = await this.runLive(
+      computer,
+      { command: "act", actions: request.actions },
+      context,
+    );
+    if (live?.ok !== true || live.fallback === "computer_act") {
       return {
         ok: false,
         completed: typeof live?.completed === "number" ? live.completed : 0,
+        uncertain: live?.uncertain ?? true,
         url: typeof live?.url === "string" ? live.url : "",
         title: typeof live?.title === "string" ? live.title : "",
         fallback: "computer_act",
@@ -165,78 +154,56 @@ export class ComputerBrowserProvider implements BrowserProvider {
   }
 
   private canUseInProcess(computer: ComputerRef): boolean {
-    if (computer.kind === "fake") return true;
-    const id = this.sandbox?.describe().id;
-    return id === "fake";
+    return computer.kind === "fake";
   }
 
   private async runLive(
     computer: ComputerRef,
+    request: PageBrowserCommand,
     context: AdapterContext,
-    command: "navigate" | "snapshot" | "act",
-    args: Record<string, unknown>,
-  ): Promise<LivePayload | null> {
-    const driver = this.liveDriver ?? (this.sandbox ? sandboxLiveDriver(this.sandbox) : null);
-    if (!driver) return { ok: false, error: DETACHED_MESSAGE, fallback: "computer_act" };
+  ): Promise<LivePayload> {
+    context.signal.throwIfAborted();
     try {
-      return await driver(computer, context, command, {
-        ...args,
-        sessionKey: pageBrowserSessionKey(computer, context),
-      });
+      const result = this.liveDriver
+        ? await this.liveDriver(computer, request, context)
+        : this.sandbox?.pageBrowser
+          ? await this.sandbox.pageBrowser(computer, request, context)
+          : {
+              ok: false,
+              error: DETACHED_MESSAGE,
+              fallback: "computer_act" as const,
+              uncertain: false,
+            };
+      if (result?.ok === true) {
+        if (typeof result.url !== "string" || typeof result.title !== "string") {
+          throw new Error("Incomplete page browser response");
+        }
+        if (
+          request.command === "snapshot" &&
+          (typeof result.tree !== "string" || !Array.isArray(result.elements))
+        ) {
+          throw new Error("Incomplete page snapshot");
+        }
+        if (
+          request.command === "act" &&
+          (!Number.isInteger(result.completed) ||
+            result.completed !== request.actions.length ||
+            result.uncertain)
+        ) {
+          throw new Error("Unconfirmed page actions");
+        }
+      }
+      return result;
     } catch (error) {
+      context.signal.throwIfAborted();
       return {
+        uncertain: request.command === "act",
         ok: false,
         error: error instanceof Error ? error.message : String(error),
         fallback: "computer_act",
       };
     }
   }
-}
-
-function sandboxLiveDriver(sandbox: SandboxProvider): LivePageBrowserDriver {
-  return async (computer, context, command, args) => {
-    const payload = JSON.stringify(args);
-    let stdout = "";
-    let stderr = "";
-    let code = 1;
-    for await (const event of sandbox.execute(
-      computer,
-      {
-        argv: [LIVE_HELPER, command, payload],
-        timeoutMs: Math.min(sandboxCommandTimeoutMs(), 60_000),
-      },
-      context,
-    )) {
-      if (event.type === "stdout") stdout += event.data;
-      if (event.type === "stderr") stderr += event.data;
-      if (event.type === "exit") code = event.code;
-    }
-    const parsed = parseLiveStdout(stdout);
-    if (parsed) return parsed;
-    return {
-      ok: false,
-      fallback: "computer_act",
-      error:
-        stderr.trim() ||
-        (code === 0 ? "live page browser returned no JSON" : `live page browser exited ${code}`),
-    };
-  };
-}
-
-function parseLiveStdout(stdout: string): LivePayload | null {
-  const lines = stdout
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
-  for (let i = lines.length - 1; i >= 0; i -= 1) {
-    try {
-      const value = JSON.parse(lines[i]!) as LivePayload;
-      if (value && typeof value === "object") return value;
-    } catch {
-      // keep scanning for the last JSON object
-    }
-  }
-  return null;
 }
 
 function formatTree(elements: BrowserSnapshotNode[]): string {

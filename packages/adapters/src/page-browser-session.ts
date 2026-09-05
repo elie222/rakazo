@@ -40,6 +40,11 @@ export class PageBrowserSession {
     this.dom = new JSDOM(html, { url, contentType: "text/html", pretendToBeVisual: true });
   }
 
+  close(): void {
+    this.dom.window.close();
+    this.refs.clear();
+  }
+
   get url(): string {
     return this.dom.window.location.href;
   }
@@ -49,9 +54,9 @@ export class PageBrowserSession {
   }
 
   load(url: string, html: string): BrowserNavigateResult {
+    this.dom.window.close();
     this.dom = new JSDOM(html, { url, contentType: "text/html", pretendToBeVisual: true });
     this.refs.clear();
-    this.nextRef = 1;
     return { url: this.url, title: this.title };
   }
 
@@ -159,7 +164,6 @@ export class PageBrowserSession {
 
   private buildSnapshot(): { elements: BrowserSnapshotNode[]; tree: string } {
     this.refs.clear();
-    this.nextRef = 1;
     const win = this.dom.window;
     const elements: BrowserSnapshotNode[] = [];
     const lines: string[] = [];
@@ -250,8 +254,13 @@ export class PageBrowserSessionStore {
   }
 
   clear(sessionKey?: string): void {
-    if (sessionKey) this.sessions.delete(sessionKey);
-    else this.sessions.clear();
+    if (sessionKey) {
+      this.sessions.get(sessionKey)?.close();
+      this.sessions.delete(sessionKey);
+    } else {
+      for (const session of this.sessions.values()) session.close();
+      this.sessions.clear();
+    }
   }
 }
 

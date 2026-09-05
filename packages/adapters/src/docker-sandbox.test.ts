@@ -302,3 +302,32 @@ describe("Docker sandbox", () => {
     );
   });
 });
+
+describe("Docker page browser", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("uses the owned computer screen and lease instead of the generic exec endpoint", async () => {
+    const fetchMock = vi.fn(async () =>
+      Response.json({ ok: true, title: "Fixture", url: "https://example.test" }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
+    await provider.pageBrowser(
+      { id: "computer", botId: "team-home", kind: "docker", providerRef: "computer" },
+      { command: "snapshot" },
+      context,
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://supervisor.test/computers/computer/browser",
+      expect.objectContaining({
+        redirect: "error",
+        signal: context.signal,
+        body: JSON.stringify({ command: "snapshot" }),
+        headers: expect.objectContaining({
+          "x-rakazo-bot-id": "team-home",
+          "x-rakazo-screen-lease-id": "run-1:1",
+        }),
+      }),
+    );
+  });
+});

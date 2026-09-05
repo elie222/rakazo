@@ -645,6 +645,8 @@ export interface BrowserActRequest {
 export interface BrowserActResult {
   ok: boolean;
   completed: number;
+  /** An action may have taken effect before its response was lost. Observe before continuing. */
+  uncertain?: boolean;
   url: string;
   title: string;
   /** Snapshot after the actions when available. */
@@ -653,3 +655,11 @@ export interface BrowserActResult {
   fallback?: "computer_act";
   error?: string;
 }
+
+/** A sandbox must route these commands through its owned screen, never generic host execution. */
+export type PageBrowserCommand =
+  | { command: "navigate"; url: string }
+  | { command: "snapshot" }
+  | { command: "act"; actions: BrowserActStep[] };
+
+export type PageBrowserResult = Partial<BrowserSnapshotResult & BrowserActResult> & { ok: boolean };

@@ -264,6 +264,67 @@ app.post("/computers/:id/exec", async (c) => {
   }
 });
 
+app.post("/computers/:id/browser", async (c) => {
+  const body = z
+    .discriminatedUnion("command", [
+      z.object({
+        command: z.literal("navigate"),
+        url: z
+          .string()
+          .url()
+          .max(8192)
+          .refine((url) => /^https?:/i.test(url)),
+      }),
+      z.object({ command: z.literal("snapshot") }),
+      z.object({
+        command: z.literal("act"),
+        actions: z
+          .array(
+            z.discriminatedUnion("kind", [
+              z.object({ kind: z.literal("click"), ref: z.string().min(1).max(200) }),
+              z.object({
+                kind: z.enum(["fill", "type"]),
+                ref: z.string().min(1).max(200),
+                text: z.string().max(32_000),
+              }),
+            ]),
+          )
+          .min(1)
+          .max(24),
+      }),
+    ])
+    .parse(await c.req.json());
+  try {
+    const { container, layout } = await managedScreen(
+      c.req.param("id"),
+      c.req.header("x-rakazo-bot-id"),
+      c.req.header("x-rakazo-space-id"),
+      c.req.header("x-rakazo-screen-id"),
+      c.req.header("x-rakazo-screen-lease-id"),
+    );
+    const result = await runContainerCommand(
+      container,
+      ["/usr/local/bin/rakazo-page-browser", body.command, JSON.stringify(body)],
+      {
+        env: [`DISPLAY=${layout.display}`, "HOME=/home/rakazo"],
+        timeoutMs: 25_000,
+      },
+    );
+    // A nonzero exit or malformed output cannot establish which mutations ran.
+    if (result.code !== 0 || Buffer.byteLength(result.stdout) > 512 * 1024) {
+      throw new Error("Page browser unavailable or interrupted");
+    }
+    return c.json(JSON.parse(result.stdout));
+  } catch {
+    return c.json({
+      ok: false,
+      fallback: "computer_act",
+      uncertain: body.command === "act",
+      error: "Page browser unavailable or interrupted. Inspect the screen before continuing.",
+    });
+  }
+});
+
 app.post("/computers/:id/observe", async (c) => {
   try {
     const { container, info, layout } = await managedScreen(

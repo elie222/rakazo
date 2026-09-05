@@ -40,6 +40,8 @@ import type {
   MessagingSendRequest,
   MessagingSendResult,
   NotificationMessage,
+  PageBrowserCommand,
+  PageBrowserResult,
   PortableFile,
   ProcessEvent,
   SandboxCapabilities,
@@ -70,6 +72,12 @@ import type {
 
 export interface SandboxProvider {
   describe(): AdapterDescriptor<SandboxCapabilities>;
+  /** Optional live browser on the same leased screen as observe/act. */
+  pageBrowser?(
+    computer: ComputerRef,
+    request: PageBrowserCommand,
+    context: AdapterContext,
+  ): Promise<PageBrowserResult>;
   /** Allocate or reconnect the computer, returning its reference before fallible setup. */
   provision(
     request: {

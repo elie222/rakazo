@@ -67,9 +67,10 @@ describe("computer browser provider", () => {
   });
 
   it("drives the live page path when the CDP helper succeeds", async () => {
-    const liveDriver = vi.fn(async (_c, _ctx, command, args) => {
+    const liveDriver = vi.fn(async (_c, request, _ctx) => {
+      const { command } = request;
       if (command === "navigate") {
-        return { ok: true, url: String(args.url), title: "Live" };
+        return { ok: true, url: String(request.url), title: "Live" };
       }
       if (command === "snapshot") {
         return {
@@ -110,8 +111,9 @@ describe("computer browser provider", () => {
     expect(act.ok).toBe(true);
     expect(act.completed).toBe(1);
     expect(liveDriver).toHaveBeenCalled();
-    expect(liveDriver.mock.calls[0]?.[3]).toMatchObject({
-      sessionKey: pageBrowserSessionKey(computer, context),
+    expect(liveDriver.mock.calls[0]?.[1]).toEqual({
+      command: "navigate",
+      url: "https://example.test/live",
     });
   });
 
@@ -199,5 +201,54 @@ describe("page browser session isolation", () => {
     const snapB = await browser.snapshot(shared, {}, contextB);
     expect(snapB.url).toBe("about:blank");
     expect(snapB.elements.find((el) => el.name.includes("Secret"))).toBeUndefined();
+  });
+});
+
+describe("page browser safety", () => {
+  const computer: ComputerRef = {
+    id: "computer",
+    botId: "team-home",
+    kind: "docker",
+    providerRef: "computer",
+  };
+
+  it("does not advertise unavailable providers", () => {
+    expect(new ComputerBrowserProvider().describe().capabilities.page).toBe(false);
+  });
+
+  it.each([{}, { ok: true }])(
+    "rejects malformed live results instead of claiming success: %j",
+    async (payload) => {
+      const provider = new ComputerBrowserProvider({ liveDriver: async () => payload });
+      expect(
+        await provider.act(computer, { actions: [{ kind: "click", ref: "e1" }] }, baseContext),
+      ).toMatchObject({ ok: false, uncertain: true, completed: 0 });
+    },
+  );
+
+  it("preserves partial progress and uncertain outcomes", async () => {
+    const provider = new ComputerBrowserProvider({
+      liveDriver: async () => ({ ok: false, completed: 1, uncertain: true }),
+    });
+    expect(
+      await provider.act(
+        computer,
+        {
+          actions: [
+            { kind: "click", ref: "e1" },
+            { kind: "click", ref: "e2" },
+          ],
+        },
+        baseContext,
+      ),
+    ).toMatchObject({ ok: false, uncertain: true, completed: 1 });
+  });
+
+  it("propagates cancellation instead of suggesting another action", async () => {
+    const signal = AbortSignal.abort();
+    const driver = vi.fn(async () => ({ ok: true }));
+    const provider = new ComputerBrowserProvider({ liveDriver: driver });
+    await expect(provider.snapshot(computer, {}, { ...baseContext, signal })).rejects.toThrow();
+    expect(driver).not.toHaveBeenCalled();
   });
 });
