@@ -204,6 +204,15 @@ export function extractRoutineSkillMentions(prompt: string, knownNames?: string[
   return names;
 }
 
+/** Keep user-owned skills reachable when a later builtin claims the same name. */
+export function mergeBuiltinSkills<T extends { name: string }>(
+  builtins: readonly T[],
+  userSkills: readonly T[],
+): T[] {
+  const userNames = new Set(userSkills.map((skill) => skill.name.toLowerCase()));
+  return [...builtins.filter((skill) => !userNames.has(skill.name.toLowerCase())), ...userSkills];
+}
+
 export function findSkillByName<T extends { name: string }>(
   skills: readonly T[],
   name: string,
