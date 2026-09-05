@@ -29,6 +29,30 @@ export interface SupermemoryConnectionConfig {
   apiKey: string;
 }
 
+/** Base URLs are route prefixes, never credentials or request query/fragment state. */
+export function parseSupermemoryBaseUrl(baseUrl: string): URL {
+  const url = new URL(baseUrl);
+  if (
+    (url.protocol !== "http:" && url.protocol !== "https:") ||
+    url.username ||
+    url.password ||
+    // search/hash are empty for a bare ?/#, but those delimiters still swallow appended routes.
+    url.href.includes("?") ||
+    url.href.includes("#")
+  ) {
+    throw new Error(
+      "Memory base URL must use HTTP(S) without credentials, a query, or a fragment.",
+    );
+  }
+  return url;
+}
+
+function requestUrl(baseUrl: string, path: string): string {
+  const url = parseSupermemoryBaseUrl(baseUrl);
+  url.pathname = `${url.pathname.replace(/\/+$/, "")}${path}`;
+  return url.href;
+}
+
 function requestSignal(signal?: AbortSignal): AbortSignal {
   const timeout = AbortSignal.timeout(SUPERMEMORY_TIMEOUT_MS);
   return signal ? AbortSignal.any([signal, timeout]) : timeout;
@@ -81,7 +105,7 @@ export async function searchSupermemory(
 ): Promise<SupermemorySearchResponse> {
   try {
     const requestAbort = requestSignal(signal);
-    const response = await fetch(`${config.baseUrl}/v4/search`, {
+    const response = await fetch(requestUrl(config.baseUrl, "/v4/search"), {
       method: "POST",
       headers: authHeaders(config),
       body: JSON.stringify({
@@ -174,7 +198,7 @@ export async function deleteSupermemoryContainer(
 ): Promise<SupermemorySaveResponse> {
   try {
     const response = await fetch(
-      `${config.baseUrl}/v3/container-tags/${encodeURIComponent(containerTag)}`,
+      requestUrl(config.baseUrl, `/v3/container-tags/${encodeURIComponent(containerTag)}`),
       {
         method: "DELETE",
         headers: { Authorization: `Bearer ${config.apiKey}` },
@@ -202,7 +226,7 @@ export async function saveSupermemoryMemory(
     return { ok: false, error: "Supermemory save skipped: memory content is empty." };
   }
   try {
-    const response = await fetch(`${config.baseUrl}/v4/memories`, {
+    const response = await fetch(requestUrl(config.baseUrl, "/v4/memories"), {
       method: "POST",
       headers: authHeaders(config),
       body: JSON.stringify({ containerTag, memories: [{ content: memory, isStatic: false }] }),
@@ -248,7 +272,7 @@ export async function probeSupermemory(
   config: SupermemoryConnectionConfig,
 ): Promise<SupermemoryProbeResponse> {
   try {
-    const response = await fetch(`${config.baseUrl}/v3/container-tags/list`, {
+    const response = await fetch(requestUrl(config.baseUrl, "/v3/container-tags/list"), {
       method: "GET",
       headers: authHeaders(config),
       redirect: "error",

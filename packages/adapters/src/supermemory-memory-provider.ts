@@ -9,6 +9,7 @@ import type {
 } from "@rakazo/adapter-kit";
 import {
   deleteSupermemoryContainer,
+  parseSupermemoryBaseUrl,
   probeSupermemory,
   type SupermemoryConnectionConfig,
   saveSupermemoryMemoryToContainers,
@@ -17,6 +18,10 @@ import {
 
 export const SUPERMEMORY_PROVIDER_ID = "supermemory";
 export const SUPERMEMORY_CLOUD_BASE_URL = "https://api.supermemory.ai";
+
+export function supermemoryRequiresDeploymentOwner(settings: Record<string, string>): boolean {
+  return settings.mode === "local";
+}
 
 function isLoopbackBaseUrl(url: string): boolean {
   try {
@@ -53,6 +58,7 @@ function parseSupermemoryConnection(
   if (mode === "local" && !isLoopbackBaseUrl(baseUrl)) {
     throw new Error("Local mode requires a loopback address (localhost, 127.0.0.1, or ::1).");
   }
+  parseSupermemoryBaseUrl(baseUrl);
   return { mode, baseUrl, apiKey };
 }
 
