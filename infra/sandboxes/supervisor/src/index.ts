@@ -726,6 +726,7 @@ async function ensureComputerImage() {
             "control.py",
             "xcapture.c",
             "rakazo-browser",
+            "rakazo-page-browser",
             "rakazo-browser.desktop",
             "embed.html",
             "clipboard-bridge.js",
