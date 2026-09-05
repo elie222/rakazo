@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import type { ComputerRef } from "@rakazo/adapter-kit";
+import type { ComputerRef, SandboxProvider } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { ComputerBrowserProvider } from "./computer-browser.js";
@@ -141,5 +141,28 @@ describe("host-aware sandbox", () => {
     expect(sandboxKindForBot("docker", "docker")).toBe("docker");
     expect(sandboxKindForBot("e2b", "this-mac")).toBe("e2b");
     expect(sandboxKindForBot("fake", "this-mac")).toBe("fake");
+  });
+
+  it("forwards pageBrowser to the routed provider", async () => {
+    const isolated: SandboxProvider = new FakeSandboxProvider();
+    const calls: unknown[] = [];
+    isolated.pageBrowser = async (computer, request, context) => {
+      calls.push({ computerId: computer.id, request, aborted: context.signal.aborted });
+      return { ok: true, url: "https://example.test", title: "Example", tree: "", elements: [] };
+    };
+    const host = new DesktopSandboxProvider();
+    const sandbox = new HostAwareSandbox(isolated, host, async () => false);
+    const computer = await sandbox.provision({ botId: "page", homePath: "/tmp/page" }, ctx);
+    expect(typeof sandbox.pageBrowser).toBe("function");
+    await expect(
+      sandbox.pageBrowser!(computer, { command: "snapshot" }, ctx),
+    ).resolves.toMatchObject({
+      ok: true,
+      url: "https://example.test",
+    });
+    expect(calls).toEqual([
+      { computerId: computer.id, request: { command: "snapshot" }, aborted: false },
+    ]);
+    await sandbox.destroy(computer, ctx);
   });
 });
