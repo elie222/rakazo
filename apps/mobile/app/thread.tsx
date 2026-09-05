@@ -40,10 +40,10 @@ import {
   type NativeSyntheticEvent,
   Platform,
   Pressable,
-  type PressableProps,
   ScrollView,
   Text,
   TextInput,
+  type TextProps,
   View,
 } from "react-native";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
@@ -1279,10 +1279,14 @@ function Thread() {
             (index) => actions[index]?.onPress(),
           );
         } else {
+          // Android alerts allow at most three buttons; Back/outside tap always dismisses.
           Alert.alert(
             "",
             undefined,
-            [...actions, { text: t("Cancel"), style: "cancel" }],
+            [
+              ...actions,
+              ...(actions.length < 3 ? [{ text: t("Cancel"), style: "cancel" as const }] : []),
+            ],
             { cancelable: true },
           );
         }
@@ -2170,7 +2174,7 @@ async function speakMessage(botId: string, message: MobileMessage) {
 }
 
 type MessageActionProps = Pick<
-  PressableProps,
+  TextProps,
   "onLongPress" | "accessibilityActions" | "onAccessibilityAction"
 >;
 
@@ -2220,11 +2224,18 @@ const MessageBubble = memo(function MessageBubble({
       <View style={{ gap: 8, width: "100%" }}>
         <AskBlock
           ask={ask}
+          actionProps={actionProps}
           canAnswer={canAnswer}
           onAnswer={(answer) => onAnswer(message, answer)}
         />
         {appConnectBlocks.map((block, index) => (
-          <AppConnectCard key={`${block.provider}-${index}`} botId={cardBotId} block={block} />
+          <AppConnectCard
+            key={`${block.provider}-${index}`}
+            botId={cardBotId}
+            block={block}
+            accessibilityActions={actionProps.accessibilityActions}
+            onAccessibilityAction={actionProps.onAccessibilityAction}
+          />
         ))}
       </View>
     );
@@ -2235,6 +2246,7 @@ const MessageBubble = memo(function MessageBubble({
     const to = memberName(members, handoff.toBotId) ?? t("bot");
     return (
       <AgentEventLabel
+        actionProps={actionProps}
         label={t("{from} messaged {to}", { from, to })}
         detail={handoff.text}
         expanded={peerExpanded}
@@ -2262,7 +2274,8 @@ const MessageBubble = memo(function MessageBubble({
     // Compact receipt only: peer bodies stay out of the human thread.
     // Full view-only peer chat is web-first; mobile keeps the chip without expand.
     return (
-      <View
+      <Pressable
+        {...actionProps}
         accessible
         accessibilityLabel={label}
         style={{
@@ -2281,7 +2294,7 @@ const MessageBubble = memo(function MessageBubble({
         >
           {label}
         </Text>
-      </View>
+      </Pressable>
     );
   }
   const channelMessage = message.blocks.find(
@@ -2290,12 +2303,15 @@ const MessageBubble = memo(function MessageBubble({
   );
   if (channelMessage) {
     return (
-      <View style={{ width: "100%", paddingVertical: 4, alignItems: "center" }}>
+      <Pressable
+        {...actionProps}
+        style={{ width: "100%", paddingVertical: 4, alignItems: "center" }}
+      >
         <Text style={{ color: tokens.mutedForeground, fontSize: 13.5, textAlign: "center" }}>
           {messagingProviderLabel(channelMessage.provider)} · {channelMessage.fromLabel}:{" "}
           {channelMessage.text}
         </Text>
-      </View>
+      </Pressable>
     );
   }
   const special = message.blocks.find(
@@ -2305,7 +2321,8 @@ const MessageBubble = memo(function MessageBubble({
     const running = special.status === "running";
     const failed = special.status === "failed";
     return (
-      <View
+      <Pressable
+        {...actionProps}
         style={{
           width: "90%",
           borderRadius: 18,
@@ -2353,15 +2370,17 @@ const MessageBubble = memo(function MessageBubble({
             </ChatMarkdown>
           </View>
         ) : null}
-      </View>
+      </Pressable>
     );
   }
   if (special?.kind === "child_bot") {
     const removed = special.status === "deleted" || special.status === "archived";
     return (
       <Pressable
-        disabled={removed}
-        onPress={() => onOpenBot(special.botId ?? "", special.name ?? t("Bot"))}
+        {...actionProps}
+        onPress={
+          removed ? undefined : () => onOpenBot(special.botId ?? "", special.name ?? t("Bot"))
+        }
         style={{
           width: "90%",
           borderRadius: 18,
@@ -2412,7 +2431,13 @@ const MessageBubble = memo(function MessageBubble({
     return (
       <View style={{ gap: 8, width: "100%" }}>
         {appConnectBlocks.map((block, index) => (
-          <AppConnectCard key={`${block.provider}-${index}`} botId={cardBotId} block={block} />
+          <AppConnectCard
+            key={`${block.provider}-${index}`}
+            botId={cardBotId}
+            block={block}
+            accessibilityActions={actionProps.accessibilityActions}
+            onAccessibilityAction={actionProps.onAccessibilityAction}
+          />
         ))}
       </View>
     );
@@ -2435,7 +2460,10 @@ const MessageBubble = memo(function MessageBubble({
           }}
         >
           {askBlock.text ? (
-            <Text style={{ color: tokens.foreground, fontSize: 15.5, lineHeight: 23 }}>
+            <Text
+              {...actionProps}
+              style={{ color: tokens.foreground, fontSize: 15.5, lineHeight: 23 }}
+            >
               {askBlock.text}
             </Text>
           ) : null}
@@ -2479,7 +2507,13 @@ const MessageBubble = memo(function MessageBubble({
           )}
         </View>
         {appConnectBlocks.map((block, index) => (
-          <AppConnectCard key={`${block.provider}-${index}`} botId={cardBotId} block={block} />
+          <AppConnectCard
+            key={`${block.provider}-${index}`}
+            botId={cardBotId}
+            block={block}
+            accessibilityActions={actionProps.accessibilityActions}
+            onAccessibilityAction={actionProps.onAccessibilityAction}
+          />
         ))}
       </View>
     );
@@ -2617,7 +2651,13 @@ const MessageBubble = memo(function MessageBubble({
           ),
         )}
         {appConnectBlocks.map((block, index) => (
-          <AppConnectCard key={`${block.provider}-${index}`} botId={cardBotId} block={block} />
+          <AppConnectCard
+            key={`${block.provider}-${index}`}
+            botId={cardBotId}
+            block={block}
+            accessibilityActions={actionProps.accessibilityActions}
+            onAccessibilityAction={actionProps.onAccessibilityAction}
+          />
         ))}
       </View>
     );
@@ -2638,7 +2678,13 @@ const MessageBubble = memo(function MessageBubble({
         />
       ))}
       {appConnectBlocks.map((block, index) => (
-        <AppConnectCard key={`${block.provider}-${index}`} botId={cardBotId} block={block} />
+        <AppConnectCard
+          key={`${block.provider}-${index}`}
+          botId={cardBotId}
+          block={block}
+          accessibilityActions={actionProps.accessibilityActions}
+          onAccessibilityAction={actionProps.onAccessibilityAction}
+        />
       ))}
     </View>
   );
@@ -2717,17 +2763,20 @@ function AgentEventLabel({
   detail,
   expanded,
   onToggle,
+  actionProps,
 }: {
   label: string;
   detail?: string;
   expanded: boolean;
   onToggle: () => void;
+  actionProps: MessageActionProps;
 }) {
   const colorScheme = useResolvedAppearance();
   const tokens = mobileTokens();
   const { t } = useI18n();
   return (
     <Pressable
+      {...actionProps}
       onPress={onToggle}
       accessibilityRole="button"
       accessibilityLabel={expanded ? t("Hide {label}", { label }) : t("Show {label}", { label })}
@@ -2762,10 +2811,12 @@ function AskBlock({
   ask,
   canAnswer,
   onAnswer,
+  actionProps,
 }: {
   ask: Extract<MobileMessage["blocks"][number], { kind: "ask" }>;
   canAnswer: boolean;
   onAnswer: (answer: string) => Promise<void>;
+  actionProps: MessageActionProps;
 }) {
   const tokens = useMobileTokens();
   const { t } = useI18n();
@@ -2803,7 +2854,10 @@ function AskBlock({
         gap: 10,
       }}
     >
-      <Text style={{ color: tokens.foreground, fontSize: 15.5, fontWeight: "600" }}>
+      <Text
+        {...actionProps}
+        style={{ color: tokens.foreground, fontSize: 15.5, fontWeight: "600" }}
+      >
         {ask.text}
       </Text>
       {ask.detail ? (
