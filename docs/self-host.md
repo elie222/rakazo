@@ -493,8 +493,9 @@ and refuses the official path until a stable `vX.Y.Z` exists.
 ### Updater sidecar
 
 Compose production deployments offer an opt-in `updater` profile on a private `control` network.
-Normal deployments do not start it or require its credential. To enable it, set a dedicated
-`RAKAZO_UPDATER_TOKEN` and explicitly start the profile:
+Normal deployments do not start it or require its credential. Longer notes on the privilege
+boundary, env knobs, and network exposure live in [Self-host updater sidecar](self-host-updater.md).
+To enable it, set a dedicated `RAKAZO_UPDATER_TOKEN` and explicitly start the profile:
 
 ```bash
 docker compose --env-file .env -f infra/compose/docker-compose.prod.yml \
