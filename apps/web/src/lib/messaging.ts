@@ -3,6 +3,7 @@ const PROVIDER_LABELS: Record<string, string> = {
   slack: "Slack",
   whatsapp: "WhatsApp",
   telegram: "Telegram",
+  lark: "Feishu",
 };
 
 /** User-facing name of a messaging provider (falls back to the raw id). */
