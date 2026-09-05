@@ -20,6 +20,10 @@ export function mergeCatalogWithConnected(
   }));
 }
 
+/**
+ * Coalesces directory loads and serves stale entries during refreshes. Failed
+ * refreshes preserve stale entries for later retries; cold-load errors propagate.
+ */
 export function createToolkitDirectoryCache(opts?: { ttlMs?: number; now?: () => number }) {
   const ttlMs = opts?.ttlMs ?? COMPOSIO_DIRECTORY_TTL_MS;
   const now = opts?.now ?? Date.now;
