@@ -1,4 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
+import { signupRequiresEmailVerification } from "@rakazo/core";
 import { Button, Input, Label } from "@rakazo/ui-web";
 import { Eye, EyeOff } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -84,7 +85,7 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
         setError(result.error.message ?? t`Could not continue`);
         return;
       }
-      if (mode === "up" && !result.data.token) {
+      if (mode === "up" && signupRequiresEmailVerification(result.data)) {
         setSent(true);
         return;
       }
