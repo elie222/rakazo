@@ -25,7 +25,7 @@ import { useI18n } from "../lib/i18n";
 import { loadLastBotId } from "../lib/last-bot";
 import { native, useThemedStyles } from "../lib/native";
 
-type SourceKind = "treg" | "mcp" | "api";
+type SourceKind = "treg" | "executor" | "mcp" | "api";
 
 export default function Integrations() {
   const styles = useThemedStyles(createIntegrationsStyles);
@@ -165,10 +165,10 @@ export default function Integrations() {
   function beginSource(kind: SourceKind) {
     setSourceKind(kind);
     setSourceError(null);
-    setName(kind === "treg" ? "Treg" : "");
+    setName(kind === "treg" ? "Treg" : kind === "executor" ? "Executor" : "");
     setUrl(kind === "treg" ? "https://treg.to/mcp/" : "");
     setCredential("");
-    setRequiresAuth(kind === "treg");
+    setRequiresAuth(kind === "treg" || kind === "executor");
   }
 
   async function addSource() {
@@ -178,7 +178,9 @@ export default function Integrations() {
     try {
       await rpc("capabilities/install", {
         kind: sourceKind === "api" ? "api" : "mcp",
-        name: name.trim() || (sourceKind === "treg" ? "Treg" : t("Custom connector")),
+        name:
+          name.trim() ||
+          (sourceKind === "treg" ? "Treg" : sourceKind === "executor" ? "Executor" : t("Custom connector")),
         source: url.trim(),
         credential: credential.trim() || undefined,
         config:
@@ -186,7 +188,10 @@ export default function Integrations() {
             ? { preset: "treg", auth: { type: "bearer" } }
             : sourceKind === "api"
               ? { openApi: true, auth: { type: requiresAuth ? "bearer" : "none" } }
-              : { preset: "custom", auth: { type: requiresAuth ? "bearer" : "none" } },
+              : {
+                  preset: "custom",
+                  auth: { type: sourceKind === "executor" || requiresAuth ? "bearer" : "none" },
+                },
       });
       setCredential("");
       setSourceKind(null);
@@ -347,7 +352,7 @@ export default function Integrations() {
         {advancedOpen ? (
           <View style={styles.advancedBody}>
             <View style={styles.actions}>
-              {(["mcp", "api", "treg"] as const).map((kind) => (
+              {(["mcp", "api", "executor", "treg"] as const).map((kind) => (
                 <Pressable
                   key={kind}
                   accessibilityRole="button"
@@ -357,9 +362,11 @@ export default function Integrations() {
                   <Text style={styles.buttonLabel}>
                     {kind === "treg"
                       ? t("Add Treg")
-                      : kind === "mcp"
-                        ? t("Add MCP server")
-                        : t("Add OpenAPI")}
+                      : kind === "executor"
+                        ? t("Add Executor")
+                        : kind === "mcp"
+                          ? t("Add MCP server")
+                          : t("Add OpenAPI")}
                   </Text>
                 </Pressable>
               ))}
@@ -372,9 +379,11 @@ export default function Integrations() {
                 <Text style={styles.title}>
                   {sourceKind === "treg"
                     ? t("Connect Treg")
-                    : sourceKind === "mcp"
-                      ? t("Remote MCP server")
-                      : t("OpenAPI JSON")}
+                    : sourceKind === "executor"
+                      ? t("Connect Executor")
+                      : sourceKind === "mcp"
+                        ? t("Remote MCP server")
+                        : t("OpenAPI JSON")}
                 </Text>
                 <TextInput
                   value={name}
@@ -392,13 +401,15 @@ export default function Integrations() {
                     placeholder={
                       sourceKind === "mcp"
                         ? t("https://example.com/mcp")
-                        : t("https://example.com/openapi.json")
+                        : sourceKind === "executor"
+                          ? t("https://executor.example/mcp")
+                          : t("https://example.com/openapi.json")
                     }
                     placeholderTextColor={native.tertiaryLabel}
                     style={styles.input}
                   />
                 ) : null}
-                {sourceKind !== "treg" ? (
+                {sourceKind !== "treg" && sourceKind !== "executor" ? (
                   <Pressable
                     accessibilityRole="button"
                     onPress={() => setRequiresAuth((value) => !value)}
@@ -409,14 +420,20 @@ export default function Integrations() {
                     </Text>
                   </Pressable>
                 ) : null}
-                {sourceKind === "treg" || requiresAuth ? (
+                {sourceKind === "treg" || sourceKind === "executor" || requiresAuth ? (
                   <TextInput
                     value={credential}
                     onChangeText={setCredential}
                     secureTextEntry
                     autoCapitalize="none"
                     autoCorrect={false}
-                    placeholder={sourceKind === "treg" ? t("Treg token") : t("Bearer token")}
+                    placeholder={
+                      sourceKind === "treg"
+                        ? t("Treg token")
+                        : sourceKind === "executor"
+                          ? t("Executor token")
+                          : t("Bearer token")
+                    }
                     placeholderTextColor={native.tertiaryLabel}
                     style={styles.input}
                   />
