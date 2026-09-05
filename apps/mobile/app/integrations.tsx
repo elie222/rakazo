@@ -180,7 +180,11 @@ export default function Integrations() {
         kind: sourceKind === "api" ? "api" : "mcp",
         name:
           name.trim() ||
-          (sourceKind === "treg" ? "Treg" : sourceKind === "executor" ? "Executor" : t("Custom connector")),
+          (sourceKind === "treg"
+            ? "Treg"
+            : sourceKind === "executor"
+              ? "Executor"
+              : t("Custom connector")),
         source: url.trim(),
         credential: credential.trim() || undefined,
         config:
