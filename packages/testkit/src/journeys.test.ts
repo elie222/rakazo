@@ -876,6 +876,7 @@ describeJourneys("required product journeys", () => {
     const bothRevocationsReached = new Promise<void>((resolve) => {
       releaseRevocations = resolve;
     });
+    const barrierTimeout = setTimeout(releaseRevocations, 1_000);
     sandbox.setScreenControl = async (_computer, interactive, _context, controlToken) => {
       expect(interactive).toBe(false);
       expect(controlToken).toBe(writerLease.leaseId);
@@ -891,6 +892,8 @@ describeJourneys("required product journeys", () => {
         raw(app, cookie, "computer/takeover", { botId: analyst.id }),
       ]);
     } finally {
+      clearTimeout(barrierTimeout);
+      releaseRevocations();
       sandbox.setScreenControl = originalSetScreenControl;
     }
 
