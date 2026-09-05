@@ -2449,6 +2449,13 @@ const MessageBubble = memo(function MessageBubble({
     return (
       <View style={{ gap: 8, width: "100%" }}>
         <View
+          accessible={!askBlock.text && !askBlock.detail}
+          accessibilityActions={
+            !askBlock.text && !askBlock.detail ? actionProps.accessibilityActions : undefined
+          }
+          onAccessibilityAction={
+            !askBlock.text && !askBlock.detail ? actionProps.onAccessibilityAction : undefined
+          }
           style={{
             width: "90%",
             borderRadius: 18,
@@ -2469,9 +2476,10 @@ const MessageBubble = memo(function MessageBubble({
           ) : null}
           {askBlock.detail ? (
             <Text
+              {...(askBlock.text ? {} : actionProps)}
               style={{
                 color: tokens.mutedForeground,
-                marginTop: 8,
+                marginTop: askBlock.text ? 8 : 0,
                 fontSize: 12.5,
                 fontFamily: "Menlo",
                 lineHeight: 20,
