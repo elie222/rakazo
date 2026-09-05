@@ -552,7 +552,7 @@ describe("createRunExecutor", () => {
     );
   });
 
-  it("expands @skill mentions in the routine prompt at fire time", async () => {
+  it("does not expand @skill mentions into the stored task prompt at wake time", async () => {
     const scheduledAt = new Date(Date.now() - 1_000);
     const enqueue = vi.fn(async () => undefined);
     let createdPrompt = "";
@@ -560,13 +560,21 @@ describe("createRunExecutor", () => {
       createdPrompt = args.data.prompt;
       return { id: "task-1" };
     });
-    const skillContent = `---
+    const findManySkills = vi.fn(async () => [
+      {
+        id: "skill-1",
+        name: "Daily standup",
+        description: "Prepare standup notes",
+        content: `---
 name: Daily standup
 description: Prepare standup notes
 ---
 
 1. Summarize wins.
-`;
+`,
+        source: "user",
+      },
+    ]);
     const prisma = {
       routine: {
         findUnique: vi.fn(async () => ({
@@ -588,15 +596,7 @@ description: Prepare standup notes
         })),
       },
       agentSkill: {
-        findMany: vi.fn(async () => [
-          {
-            id: "skill-1",
-            name: "Daily standup",
-            description: "Prepare standup notes",
-            content: skillContent,
-            source: "user",
-          },
-        ]),
+        findMany: findManySkills,
       },
       $transaction: vi.fn(async (callback: (tx: unknown) => Promise<unknown>) =>
         callback({
@@ -614,9 +614,11 @@ description: Prepare standup notes
 
     await executor.wakeRoutine("routine-1", scheduledAt.toISOString());
 
-    expect(createdPrompt).toContain("Use skill: Daily standup");
-    expect(createdPrompt).toContain("Summarize wins");
-    expect(createdPrompt).not.toMatch(/@Daily standup/);
+    // Expansion belongs in continueRun after filterAttachedAgentSkills.
+    expect(findManySkills).not.toHaveBeenCalled();
+    expect(createdPrompt).toBe("Run @Daily standup, then email me");
+    expect(createdPrompt).not.toContain("Use skill:");
+    expect(createdPrompt).not.toContain("Summarize wins");
   });
 
   it("still continues the run when routine.fired append fails", async () => {

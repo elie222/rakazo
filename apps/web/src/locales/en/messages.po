@@ -3168,3 +3168,34 @@ msgstr "Your OS will not ask for extra permission if you let bots run on {hostLa
 #: src/pages/Welcome.tsx:21
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "Your team of always-on agents<0/>that you can give real work to."
+
+#. placeholder {0}: selected.size
+#. placeholder {1}: skills.length
+#: src/pages/shell/bot-panel.tsx:209
+msgid "{0} of {1} attached"
+msgstr "{0} of {1} attached"
+
+#: src/pages/shell/bot-panel.tsx:233
+msgid "Clear all"
+msgstr "Clear all"
+
+#: src/pages/shell/bot-panel.tsx:208
+msgid "No installed skills"
+msgstr "No installed skills"
+
+#: src/pages/shell/bot-panel.tsx:262
+msgid "No matching skills"
+msgstr "No matching skills"
+
+#: src/pages/shell/bot-panel.tsx:220
+#: src/pages/shell/bot-panel.tsx:221
+msgid "Search skills"
+msgstr "Search skills"
+
+#: src/pages/shell/bot-panel.tsx:230
+msgid "Select all"
+msgstr "Select all"
+
+#: src/pages/shell/bot-panel.tsx:203
+msgid "Skills"
+msgstr "Skills"

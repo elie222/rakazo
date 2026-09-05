@@ -342,6 +342,8 @@ model Bot {
   modelId           String?
   thinkingLevel     String?
   webhookSecretId   String?
+  /// Null keeps legacy all-skills behavior; an array explicitly attaches catalogue skill ids.
+  agentSkillIds     Json?
   routines          Routine[]
   scratchpadItems   ScratchpadItem[]
   taughtSkills      TaughtSkill[]

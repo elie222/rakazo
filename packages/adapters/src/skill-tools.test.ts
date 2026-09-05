@@ -123,6 +123,29 @@ describe("skill tools", () => {
     });
   });
 
+  it("refuses to read a catalogue skill that is not attached to the bot", async () => {
+    const created = await skillCreateFromTool(prisma as never, owner, {
+      name: "Private workflow",
+      description: "Only for selected agents",
+      body: "Follow the private workflow.",
+    });
+    const skillId = String(created.id);
+    expect(
+      await skillReadFromTool(
+        prisma as never,
+        { ...owner, allowedSkillIds: new Set<string>() },
+        { skillId },
+      ),
+    ).toEqual({ error: "Skill not found." });
+    expect(
+      await skillReadFromTool(
+        prisma as never,
+        { ...owner, allowedSkillIds: new Set([skillId]) },
+        { skillId },
+      ),
+    ).toMatchObject({ name: "Private workflow" });
+  });
+
   it("preserves extra frontmatter keys on update", async () => {
     const content = buildSkillMd({
       name: "Review PR",

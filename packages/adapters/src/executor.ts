@@ -39,6 +39,7 @@ import {
   createStreamingRedactor,
   endsSentence,
   expandSkillReferencesInPrompt,
+  filterAttachedAgentSkills,
   formatSkillRunPrompt,
   formatSkillsCatalogInstruction,
   humanizeToolName,
@@ -672,11 +673,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
             routine.timezone,
           );
       const previousLastRunAt = routine.lastRunAt;
-      const skillRecords = await listAgentSkillRecords(deps.prisma, {
-        spaceId: routine.spaceId,
-        userId: routine.userId,
-      });
-      const routinePrompt = expandSkillReferencesInPrompt(routine.prompt, skillRecords);
+      // Keep the raw routine prompt. continueRun filters by bot.agentSkillIds
+      // then expands skill mentions. Expanding here would bake unattached
+      // skill content into the task before that filter runs.
       const claimed = await deps.prisma.$transaction(async (tx) => {
         const updated = await tx.routine.updateMany({
           where: { id: routine.id, active: true, nextRunAt: scheduledAt },
@@ -693,7 +692,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             botId: bot.id,
             threadId: thread.id,
             userId: routine.userId,
-            prompt: routinePrompt,
+            prompt: routine.prompt,
             status: "queued",
           },
         });
@@ -875,7 +874,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           settings,
           configuredMemory,
           savedSkills,
-          agentSkills,
+          availableAgentSkills,
         ] = await Promise.all([
           deps.prisma.bot.findUniqueOrThrow({
             where: { id: run.botId },
@@ -914,6 +913,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             userId: run.userId,
           }),
         ]);
+        const agentSkills = filterAttachedAgentSkills(availableAgentSkills, bot.agentSkillIds);
         const hasModelOverride = Boolean(bot.modelProvider && bot.modelId);
         const overrideCredential =
           hasModelOverride && bot.modelProvider
@@ -2277,6 +2277,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
               {
                 spaceId: run.spaceId,
                 userId: run.userId,
+                allowedSkillIds:
+                  bot.agentSkillIds == null
+                    ? undefined
+                    : new Set(agentSkills.map((skill) => skill.id)),
               },
               {
                 name: args.name ? String(args.name) : undefined,

@@ -3444,6 +3444,7 @@ export function ShellPage() {
               <BotSettings
                 key={active.id}
                 bot={active}
+                agentSkills={agentSkills}
                 memoryProviderConfigured={memoryProviderConfig != null}
                 onSave={async ({ computerMode, ...patch }) => {
                   if (computerMode !== active.computerMode) {

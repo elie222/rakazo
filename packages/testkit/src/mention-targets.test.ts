@@ -67,6 +67,41 @@ describeWithDatabase("structured @ mention targets", () => {
     expect(run.trigger).toBe("routine");
   });
 
+  it("stores the raw routine prompt on testRun so a later skill detach still applies", async () => {
+    const cookie = await signup(app, `mention-routine-skill-${stamp}@rakazo.test`, "Skill Owner");
+    await rpc(app, cookie, "agentSkills/create", {
+      name: "Daily standup",
+      description: "Prepare standup notes",
+      body: "1. Summarize wins.",
+    });
+    const bot = await rpc<{ id: string }>(app, cookie, "bots/create", {
+      name: "Standup",
+      title: "",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+    const routine = await rpc<{ id: string }>(app, cookie, "routines/create", {
+      botId: bot.id,
+      name: "Standup digest",
+      prompt: "Run @Daily standup, then email me",
+      crons: ["0 9 * * 1"],
+      timezone: "UTC",
+      notify: false,
+      active: false,
+    });
+    const tested = await rpc<{ runId: string }>(app, cookie, "routines/testRun", {
+      routineId: routine.id,
+    });
+    const run = await prisma.run.findUniqueOrThrow({
+      where: { id: tested.runId },
+      include: { task: true },
+    });
+    // Expansion happens in continueRun after filterAttachedAgentSkills, never at queue time.
+    expect(run.task.prompt).toBe("Run @Daily standup, then email me");
+    expect(run.task.prompt).not.toContain("Summarize wins");
+  });
+
   it("replays routine testRun with the same clientNonce", async () => {
     const cookie = await signup(app, `mention-routine-replay-${stamp}@rakazo.test`, "Replay Owner");
     const bot = await rpc<{ id: string }>(app, cookie, "bots/create", {

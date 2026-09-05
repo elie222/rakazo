@@ -41,6 +41,7 @@ function mapBot(
     modelId?: string | null;
     thinkingLevel?: string | null;
     webhookSecretId?: string | null;
+    agentSkillIds?: unknown;
   },
   preview = "",
   status = "idle",
@@ -75,6 +76,9 @@ function mapBot(
     modelId: bot.modelId ?? null,
     thinkingLevel: (bot.thinkingLevel as Bot["thinkingLevel"]) ?? null,
     webhookConfigured: Boolean(bot.webhookSecretId),
+    agentSkillIds: Array.isArray(bot.agentSkillIds)
+      ? bot.agentSkillIds.filter((id): id is string => typeof id === "string")
+      : null,
   };
 }
 
@@ -327,6 +331,7 @@ export function createRepos(prisma: PrismaClient) {
         modelProvider?: string | null;
         modelId?: string | null;
         thinkingLevel?: string | null;
+        agentSkillIds?: string[] | null;
         initialMessage?: {
           role: "user" | "bot" | "system";
           blocks: MessageBlock[];
@@ -391,6 +396,7 @@ export function createRepos(prisma: PrismaClient) {
             modelProvider,
             modelId,
             thinkingLevel,
+            agentSkillIds: input.agentSkillIds ?? undefined,
           },
         });
         const thread = await tx.thread.create({

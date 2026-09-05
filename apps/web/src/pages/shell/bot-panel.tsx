@@ -1,6 +1,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
 import type {
+  AgentSkillCatalogEntry,
   Bot,
   ComputerMode,
   Me,
@@ -17,6 +18,7 @@ import {
 import {
   BotAvatar,
   Button,
+  Checkbox,
   Input,
   NativeSelect,
   NativeSelectOption,
@@ -169,14 +171,119 @@ export function CreateBotForm({
   );
 }
 
+/**
+ * Picks which catalogue skills a bot may use. `value === null` keeps the legacy
+ * "every installed skill" behaviour; an array is an explicit allowlist.
+ */
+function BotSkillsPicker({
+  skills,
+  value,
+  onChange,
+}: {
+  skills: AgentSkillCatalogEntry[];
+  value: string[] | null;
+  onChange: (skillIds: string[] | null) => void;
+}) {
+  const { t } = useLingui();
+  const ids = useId();
+  const [query, setQuery] = useState("");
+  const selectedIds = value ?? skills.map((skill) => skill.id);
+  const selected = new Set(selectedIds);
+  const needle = query.trim().toLowerCase();
+  const visibleSkills = skills.filter(
+    (skill) =>
+      !needle ||
+      skill.name.toLowerCase().includes(needle) ||
+      skill.description.toLowerCase().includes(needle),
+  );
+
+  function toggle(skillId: string) {
+    const next = new Set(selectedIds);
+    if (next.has(skillId)) next.delete(skillId);
+    else next.add(skillId);
+    onChange(skills.map((skill) => skill.id).filter((id) => next.has(id)));
+  }
+
+  return (
+    <div className="mt-4 text-[14px] text-muted-foreground">
+      <div>
+        <Trans>Skills</Trans>
+      </div>
+      <details className="group/skills mt-2" data-testid="bot-skills-picker">
+        <summary className="flex cursor-pointer list-none items-center justify-between rounded-md border border-input px-3 py-2 text-foreground">
+          <span>
+            {skills.length === 0
+              ? t`No installed skills`
+              : t`${selected.size} of ${skills.length} attached`}
+          </span>
+          <span aria-hidden="true" className="transition-transform group-open/skills:rotate-90">
+            ›
+          </span>
+        </summary>
+        <div className="mt-2 rounded-md border border-input p-3">
+          <div className="flex gap-2">
+            <Input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder={t`Search skills`}
+              aria-label={t`Search skills`}
+              className="min-w-0 flex-1"
+            />
+            <Button type="button" variant="outline" size="sm" onClick={() => onChange(null)}>
+              <Trans>Select all</Trans>
+            </Button>
+            <Button type="button" variant="outline" size="sm" onClick={() => onChange([])}>
+              <Trans>Clear all</Trans>
+            </Button>
+          </div>
+          <div className="mt-3 max-h-72 space-y-2 overflow-y-auto pr-1">
+            {visibleSkills.map((skill) => (
+              <label
+                key={skill.id}
+                htmlFor={`${ids}-${skill.id}`}
+                className="flex cursor-pointer gap-3 rounded-md border border-input p-3"
+              >
+                <Checkbox
+                  id={`${ids}-${skill.id}`}
+                  checked={selected.has(skill.id)}
+                  onCheckedChange={() => toggle(skill.id)}
+                  className="mt-1"
+                />
+                <span className="min-w-0">
+                  <span className="flex items-center gap-2 text-[13px] font-medium text-foreground">
+                    {skill.name}
+                    <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] uppercase text-muted-foreground">
+                      {skill.source}
+                    </span>
+                  </span>
+                  <span className="mt-1 block text-[12px] leading-5 text-muted-foreground">
+                    {skill.description}
+                  </span>
+                </span>
+              </label>
+            ))}
+            {visibleSkills.length === 0 ? (
+              <p className="px-2 py-4 text-center text-[12px] text-muted-foreground">
+                <Trans>No matching skills</Trans>
+              </p>
+            ) : null}
+          </div>
+        </div>
+      </details>
+    </div>
+  );
+}
+
 export function BotSettings({
   bot,
+  agentSkills,
   memoryProviderConfigured,
   onSave,
   onExport,
   onClear,
 }: {
   bot: Bot;
+  agentSkills: AgentSkillCatalogEntry[];
   memoryProviderConfigured: boolean;
   onSave: (patch: {
     name?: string;
@@ -190,6 +297,7 @@ export function BotSettings({
     modelProvider?: string | null;
     modelId?: string | null;
     thinkingLevel?: ThinkingLevel | null;
+    agentSkillIds?: string[] | null;
   }) => Promise<void>;
   onExport: () => Promise<void>;
   onClear: () => void;
@@ -199,6 +307,7 @@ export function BotSettings({
   const [name, setName] = useState(bot.name);
   const [title, setTitle] = useState(bot.title);
   const [description, setDescription] = useState(bot.description);
+  const [agentSkillIds, setAgentSkillIds] = useState<string[] | null>(bot.agentSkillIds ?? null);
   const [computerMode, setComputerMode] = useState(bot.computerMode);
   const [memoryScope, setMemoryScope] = useState(bot.memoryScope);
   const [autoSpeak, setAutoSpeak] = useState(bot.autoSpeak);
@@ -320,6 +429,7 @@ export function BotSettings({
           className="mt-2"
         />
       </label>
+      <BotSkillsPicker skills={agentSkills} value={agentSkillIds} onChange={setAgentSkillIds} />
       <details data-testid="bot-settings-advanced" className="group mt-5">
         <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-[14px] text-muted-foreground">
           <span className="text-muted-foreground">
@@ -462,6 +572,7 @@ export function BotSettings({
               voiceId: voiceId || null,
               modelProvider: selected?.provider ?? null,
               modelId: selected?.modelId ?? null,
+              agentSkillIds,
               // Only clear thinking when catalog metadata is available; otherwise
               // preserve the stored override if models.list failed or is still loading.
               ...(modelMetaReady

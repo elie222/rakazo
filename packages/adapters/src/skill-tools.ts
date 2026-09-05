@@ -24,6 +24,7 @@ const MAX_SKILL_DESCRIPTION_CHARS = 2000;
 type SkillOwner = {
   spaceId: string;
   userId: string;
+  allowedSkillIds?: ReadonlySet<string>;
 };
 
 type AgentSkillRow = {
@@ -98,10 +99,13 @@ async function findOwnedSkill(
   input: { skillId?: string; name?: string },
 ): Promise<(SkillRecord & { id: string }) | null> {
   const skills = await listAgentSkillRecords(prisma, owner);
+  const allowedSkills = owner.allowedSkillIds
+    ? skills.filter((skill) => owner.allowedSkillIds?.has(skill.id))
+    : skills;
   if (input.skillId) {
-    return skills.find((skill) => skill.id === input.skillId) ?? null;
+    return allowedSkills.find((skill) => skill.id === input.skillId) ?? null;
   }
-  if (input.name) return findSkillByName(skills, input.name) ?? null;
+  if (input.name) return findSkillByName(allowedSkills, input.name) ?? null;
   return null;
 }
 

@@ -87,7 +87,6 @@ import {
   ACTIVE_RUN_STATUSES,
   AttachmentValidationError,
   containsSecret,
-  expandSkillReferencesInPrompt,
   hasMixedOneShotSchedule,
   isOneShotRoutineCrons,
   nextCronDateAcrossStrict,
@@ -669,6 +668,9 @@ export function createRouter(deps: RouterDeps) {
           modelProvider: source.modelProvider,
           modelId: source.modelId,
           thinkingLevel: source.thinkingLevel,
+          agentSkillIds: Array.isArray(source.agentSkillIds)
+            ? source.agentSkillIds.filter((id): id is string => typeof id === "string")
+            : null,
         });
         const assignments = await deps.prisma.botMcpServer.findMany({
           where: {
@@ -725,6 +727,15 @@ export function createRouter(deps: RouterDeps) {
             throw new ORPCError("BAD_REQUEST", { message: "Unknown model for that provider" });
           }
         }
+        if (input.agentSkillIds !== undefined) {
+          const availableSkillIds = new Set(
+            (await agentSkills.list(context.actor)).map((skill) => skill.id),
+          );
+          const unknownSkillId = input.agentSkillIds?.find((id) => !availableSkillIds.has(id));
+          if (unknownSkillId) {
+            throw new ORPCError("BAD_REQUEST", { message: "Unknown skill attachment" });
+          }
+        }
         const thinkingLevel = input.thinkingLevel;
         if (input.thinkingLevel) {
           const provider =
@@ -759,6 +770,14 @@ export function createRouter(deps: RouterDeps) {
             sectionId: input.sectionId,
             voiceId: input.voiceId,
             autoSpeak: input.autoSpeak,
+            ...(input.agentSkillIds !== undefined
+              ? {
+                  agentSkillIds:
+                    input.agentSkillIds === null
+                      ? Prisma.DbNull
+                      : ([...new Set(input.agentSkillIds)] as Prisma.InputJsonValue),
+                }
+              : {}),
             ...(input.modelProvider !== undefined
               ? { modelProvider: input.modelProvider, modelId: input.modelId ?? null }
               : {}),
@@ -2080,8 +2099,10 @@ export function createRouter(deps: RouterDeps) {
           });
           if (existing) return { runId: existing.id };
         }
-        const skillRecords = await agentSkills.listWithContent(context.actor);
-        const prompt = expandSkillReferencesInPrompt(routine.prompt, skillRecords);
+        // Store the raw routine prompt. continueRun filters the catalogue by
+        // bot.agentSkillIds and expands skill mentions at execution time, so a
+        // skill detached after queueing never reaches the run.
+        const prompt = routine.prompt;
         let run: { id: string };
         try {
           // Task + run must commit together so a nonce collision cannot leave an orphan queued Task.
