@@ -4,10 +4,10 @@ import { Eye, EyeOff } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { authClient } from "../lib/auth";
+import { safeLoginReturn, useAuthCapabilities } from "../lib/auth-capabilities";
 import { clearSpaceSelection } from "../lib/rpc";
 
 type AuthMode = "in" | "up" | "forgot";
-type PasswordResetCapabilities = { passwordReset: boolean; resetUrl: string | null };
 
 const fieldClass = "mt-2 h-12 rounded-xl px-4 text-base md:text-base";
 const submitClass = "mt-3 h-12 w-full rounded-xl text-base";
@@ -15,6 +15,8 @@ const submitClass = "mt-3 h-12 w-full rounded-xl text-base";
 export function AuthPage({ mode }: { mode: AuthMode }) {
   const { t } = useLingui();
   const navigate = useNavigate();
+  const capabilities = useAuthCapabilities();
+  const [loginParams] = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
@@ -22,7 +24,8 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [sent, setSent] = useState(false);
-  const [reset, setReset] = useState<PasswordResetCapabilities | null>(null);
+  const reset = capabilities;
+  const [slow, setSlow] = useState(false);
   const passwordFieldId = mode === "in" ? "current-password" : "new-password";
   const title =
     mode === "in" ? (
@@ -36,21 +39,9 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
     );
 
   useEffect(() => {
-    if (mode === "up") return;
-    let active = true;
-    void fetch("/api/auth/capabilities")
-      .then(async (response) => {
-        if (!response.ok) throw new Error("Could not load authentication capabilities");
-        return (await response.json()) as PasswordResetCapabilities;
-      })
-      .then((capabilities) => {
-        if (active) setReset(capabilities);
-      })
-      .catch(() => undefined);
-    return () => {
-      active = false;
-    };
-  }, [mode]);
+    const timer = setTimeout(() => setSlow(true), 10000);
+    return () => clearTimeout(timer);
+  }, []);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -94,6 +85,57 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
     }
   }
 
+  if (capabilities?.provider === "convex-company-os") {
+    return (
+      <AuthFrame
+        title={title}
+        onSubmit={async (event) => {
+          event.preventDefault();
+          if (capabilities.webOrigin && capabilities.webOrigin !== window.location.origin) {
+            const destination = new URL("/login", capabilities.webOrigin);
+            destination.searchParams.set("next", safeLoginReturn(loginParams.get("next")));
+            window.location.assign(destination.href);
+            return;
+          }
+          setPending(true);
+          setError(null);
+          try {
+            const result = await authClient.signIn.oauth2({
+              providerId: "company-os",
+              callbackURL: new URL(safeLoginReturn(loginParams.get("next")), window.location.origin)
+                .href,
+              errorCallbackURL: new URL("/login?error=oauth", window.location.origin).href,
+            });
+            if (result.error) {
+              setError(t`Could not start Company OS sign-in`);
+              setPending(false);
+            }
+          } catch {
+            setError(t`Could not start Company OS sign-in`);
+            setPending(false);
+          }
+        }}
+      >
+        <Button type="submit" disabled={pending} className={submitClass}>
+          {pending ? <Trans>Opening Company OS…</Trans> : <Trans>Continue with Company OS</Trans>}
+        </Button>
+        {error || loginParams.has("error") ? (
+          <p role="alert" className="mt-4 text-sm text-destructive">
+            {error ??
+              t`Sign-in was not completed. Check your verified Company OS account and try again.`}
+          </p>
+        ) : null}
+      </AuthFrame>
+    );
+  }
+  if (!capabilities)
+    return (
+      <AuthFrame title={title} onSubmit={(event) => event.preventDefault()}>
+        <p role="status">
+          {slow ? <Trans>Could not reach sign-in. Reconnecting…</Trans> : <Trans>Loading…</Trans>}
+        </p>
+      </AuthFrame>
+    );
   return (
     <AuthFrame onSubmit={submit} title={title}>
       {sent ? (
@@ -313,10 +355,13 @@ function AuthFrame({
   return (
     <div className="flex min-h-full items-center justify-center bg-background px-6 py-16 text-foreground">
       <form onSubmit={onSubmit} className="flex w-[460px] flex-col items-center">
-        <div className="flex h-[74px] w-[74px] items-center justify-center gap-[11px] rounded-full bg-muted">
-          <span className="h-5 w-[9px] rounded-full bg-primary" />
-          <span className="h-5 w-[9px] rounded-full bg-primary" />
-        </div>
+        <img
+          src="/brand/cadre-icon.svg"
+          alt="Cadre"
+          width={74}
+          height={74}
+          className="cadre-mark"
+        />
         <h1 aria-live="polite" className="mb-9 mt-7 text-4xl font-medium tracking-tight">
           {title}
         </h1>

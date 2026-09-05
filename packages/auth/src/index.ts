@@ -4,9 +4,18 @@ import { bootstrapUserSpace, type PrismaClient } from "@rakazo/db";
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import { APIError } from "better-auth/api";
-import { bearer, organization } from "better-auth/plugins";
+import { bearer, genericOAuth, organization } from "better-auth/plugins";
+import { type CompanyOsOAuthConfig, companyOsIdentity, companyOsSubject } from "./company-os.js";
+
+export {
+  companyOsIdentity,
+  companyOsOAuthFromEnv,
+  companyOsSubject,
+  createCompanyOsCredential,
+} from "./company-os.js";
 
 export interface AuthEnv {
+  companyOsOAuth?: CompanyOsOAuthConfig;
   secret: string;
   baseURL: string;
   webOrigin: string;
@@ -37,13 +46,17 @@ export async function resolveSignupPolicy(
 
 export function createAuth(prisma: PrismaClient, env: AuthEnv) {
   return betterAuth({
-    appName: "Rakazo",
+    appName: "Cadre",
+    account: {
+      encryptOAuthTokens: true,
+      accountLinking: { enabled: true, allowDifferentEmails: false },
+    },
     secret: env.secret,
     baseURL: env.baseURL,
     trustedOrigins: [env.webOrigin, env.baseURL, ...(env.extraOrigins ?? [])],
     database: prismaAdapter(prisma, { provider: "postgresql" }),
     emailAndPassword: {
-      enabled: true,
+      enabled: !env.companyOsOAuth,
       // Signup policy is mutable deployment state, so the request hook below
       // enforces it instead of freezing an environment value at process start.
       disableSignUp: false,
@@ -95,6 +108,41 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
       },
     },
     plugins: [
+      ...(env.companyOsOAuth
+        ? [
+            genericOAuth({
+              config: [
+                {
+                  providerId: "company-os",
+                  clientId: env.companyOsOAuth.clientId,
+                  clientSecret: env.companyOsOAuth.clientSecret,
+                  authorizationUrl: `${env.companyOsOAuth.origin}/oauth/authorize`,
+                  tokenUrl: `${env.companyOsOAuth.origin}/api/oauth/token`,
+                  issuer: env.companyOsOAuth.origin,
+                  requireIssuerValidation: true,
+                  pkce: true,
+                  authentication: "post",
+                  scopes: ["context:read", "context:write", "branch:create"],
+                  authorizationUrlParams: { resource: `${env.companyOsOAuth.origin}/api/mcp` },
+                  tokenUrlParams: { resource: `${env.companyOsOAuth.origin}/api/mcp` },
+                  getUserInfo: async (tokens) => {
+                    if (!tokens.accessToken) return null;
+                    const identity = await companyOsIdentity(
+                      env.companyOsOAuth!,
+                      tokens.accessToken,
+                    );
+                    return {
+                      id: companyOsSubject(env.companyOsOAuth!, identity.sub),
+                      name: identity.name,
+                      email: identity.email.toLowerCase(),
+                      emailVerified: true,
+                    };
+                  },
+                },
+              ],
+            }),
+          ]
+        : []),
       bearer(),
       organization({
         allowUserToCreateOrganization: false,
@@ -104,6 +152,25 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
     hooks: {
       before: async (ctx) => {
         const path = String((ctx as { path?: string }).path ?? "");
+        if (env.companyOsOAuth && ctx.body && typeof ctx.body === "object") {
+          for (const field of ["callbackURL", "errorCallbackURL", "newUserCallbackURL"] as const) {
+            const value = (ctx.body as Record<string, unknown>)[field];
+            if (value === undefined) continue;
+            let allowed = false;
+            if (typeof value === "string" && !/[\\\r\n]/.test(value)) {
+              try {
+                const target = new URL(value, env.webOrigin);
+                allowed =
+                  target.origin === new URL(env.webOrigin).origin &&
+                  /^\/(?:app(?:\/|$)|login$|sign-in$|onboarding$)/.test(target.pathname);
+              } catch {
+                /* Refuse malformed redirect targets. */
+              }
+            }
+            if (!allowed)
+              throw new APIError("FORBIDDEN", { message: "Invalid sign-in destination" });
+          }
+        }
         if (!path.includes("sign-up")) return;
         const policy = await resolveSignupPolicy(prisma, env);
         if (!policy.enabled) {
@@ -121,6 +188,18 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
     databaseHooks: {
       user: {
         create: {
+          before: async (user) => {
+            if (
+              env.companyOsOAuth &&
+              (!user.emailVerified ||
+                !emailAllowed(user.email, parseAllowlist(env.signupAllowlist)))
+            ) {
+              throw new APIError("FORBIDDEN", {
+                message: "This account is not allowed to register",
+              });
+            }
+            return { data: user };
+          },
           after: async (user) => {
             await bootstrapUserSpace(prisma, user, env);
           },

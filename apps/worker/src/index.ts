@@ -39,7 +39,8 @@ import {
   ScriptedAgentRuntime,
   SpaceMemoryProviderResolver,
 } from "@rakazo/adapters";
-import { resolveEncryptionKey, resolveSupervisorToken } from "@rakazo/core";
+import { companyOsOAuthFromEnv, createAuth, createCompanyOsCredential } from "@rakazo/auth";
+import { resolveAuthSecret, resolveEncryptionKey, resolveSupervisorToken } from "@rakazo/core";
 import { createDb, createThreadEvents } from "@rakazo/db";
 import { SERVICE_NAMES } from "@rakazo/logging";
 import { createRootLogger } from "@rakazo/logging/axiom";
@@ -164,7 +165,29 @@ async function main() {
     leadership: createPostgresReconciliationLeadership(pool),
   });
   reconciler.start();
-  const workforce = createCompanyOsWorkforce({ prisma, pool, secrets, events, jobs });
+  const companyOsOAuth = companyOsOAuthFromEnv();
+  const oauthCredential = companyOsOAuth
+    ? createCompanyOsCredential(
+        createAuth(prisma, {
+          companyOsOAuth,
+          secret: resolveAuthSecret(process.env),
+          baseURL: process.env.BETTER_AUTH_URL ?? process.env.WEB_ORIGIN ?? "http://localhost:5173",
+          webOrigin: process.env.WEB_ORIGIN ?? "http://localhost:5173",
+          signupsEnabled: process.env.SIGNUPS_ENABLED,
+          signupAllowlist: process.env.SIGNUP_ALLOWLIST,
+        }),
+        companyOsOAuth,
+        pool,
+      )
+    : undefined;
+  const workforce = createCompanyOsWorkforce({
+    prisma,
+    pool,
+    secrets,
+    events,
+    jobs,
+    oauthCredential,
+  });
   workforce.start();
 
   let stopping = false;

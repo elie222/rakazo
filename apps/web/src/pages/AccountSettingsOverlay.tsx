@@ -28,6 +28,7 @@ import {
 } from "../components/ComputersUnavailableHint";
 import { SoftwareUpdateSection } from "../components/SoftwareUpdateSection";
 import { authClient } from "../lib/auth";
+import { useAuthCapabilities } from "../lib/auth-capabilities";
 import { getActiveUiLocale, setUiLocale } from "../lib/i18n";
 import {
   type AppearancePreference,
@@ -258,6 +259,7 @@ export function AccountSettingsOverlay({
 }
 
 function ChangePasswordSection() {
+  const capabilities = useAuthCapabilities();
   const { t } = useLingui();
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -296,6 +298,7 @@ function ChangePasswordSection() {
     }
   }
 
+  if (!capabilities || capabilities.provider === "convex-company-os") return null;
   return (
     <section className="mt-5 rounded-xl border border-border px-4 py-4">
       <h3 className="text-[15px] font-medium text-foreground">

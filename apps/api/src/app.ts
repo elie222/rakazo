@@ -52,7 +52,12 @@ import {
   SmtpEmailProvider,
   SpaceMemoryProviderResolver,
 } from "@rakazo/adapters";
-import { blockedAuthPaths, createAuth } from "@rakazo/auth";
+import {
+  blockedAuthPaths,
+  companyOsOAuthFromEnv,
+  createAuth,
+  createCompanyOsCredential,
+} from "@rakazo/auth";
 import { signupPolicyFromEnv } from "@rakazo/core";
 import {
   createDb,
@@ -236,7 +241,9 @@ export async function createApp(
   const runtime =
     env.agentRuntime === "scripted" ? new ScriptedAgentRuntime() : new PiAgentRuntime();
   const notifications = new ExpoPushProvider(env.dataDir);
+  const companyOsOAuth = companyOsOAuthFromEnv();
   const auth = createAuth(prisma, {
+    companyOsOAuth,
     secret: env.authSecret,
     baseURL: env.authUrl,
     webOrigin: env.webOrigin,
@@ -360,6 +367,21 @@ export async function createApp(
   const rpc = new RPCHandler(router, {
     clientInterceptors: [onError((error, { path }) => logUnexpectedRpcError(error, path))],
   });
+  if (companyOsOAuth && !created.pool) throw new Error("Company OS OAuth requires PostgreSQL");
+  const oauthCredential = companyOsOAuth
+    ? createCompanyOsCredential(auth, companyOsOAuth, created.pool!)
+    : undefined;
+  const getSession = async (headers: Headers) => {
+    const session = await auth.api.getSession({ headers });
+    if (session && oauthCredential) {
+      try {
+        await oauthCredential(session.user.id);
+      } catch {
+        return null;
+      }
+    }
+    return session;
+  };
   const app = new Hono();
   app.use("*", requestLogging(logger));
   app.use(
@@ -372,9 +394,23 @@ export async function createApp(
       credentials: true,
     }),
   );
+  app.get("/api/v1/company-os", async (c) => {
+    const session = await auth.api.getSession({ headers: sessionHeaders(c.req.raw) });
+    if (!session) return c.json({ error: "Unauthorized" }, 401);
+    if (!oauthCredential) return c.json({ connected: false });
+    try {
+      const { identity } = await oauthCredential(session.user.id);
+      return c.json({ connected: true, company: identity.company });
+    } catch {
+      return c.json({ connected: false });
+    }
+  });
   app.get("/api/auth/capabilities", (c) =>
     c.json({
-      passwordReset: Boolean(email),
+      provider: companyOsOAuth ? "convex-company-os" : "local",
+      companyOsOrigin: companyOsOAuth?.origin ?? null,
+      webOrigin: env.webOrigin,
+      passwordReset: !companyOsOAuth && Boolean(email),
       resetUrl: email ? new URL("/reset-password", env.webOrigin).href : null,
     }),
   );
@@ -388,14 +424,34 @@ export async function createApp(
     );
   }
   app.on(["GET", "POST"], "/api/auth/*", async (c) => {
-    const path = new URL(c.req.url).pathname.replace("/api/auth", "");
+    const path = new URL(c.req.url).pathname.replace("/api/auth", "").replace(/\/+$/, "");
+    if (
+      companyOsOAuth &&
+      [
+        "/get-access-token",
+        "/refresh-token",
+        "/account-info",
+        "/sign-in/email",
+        "/sign-up/email",
+        "/change-password",
+        "/set-password",
+        "/request-password-reset",
+        "/reset-password",
+      ].some((p) => path === p)
+    )
+      return c.json({ error: "Use Company OS sign-in" }, 404);
+    if (companyOsOAuth && path === "/get-session") {
+      return c.json(await getSession(sessionHeaders(c.req.raw)), 200, {
+        "Cache-Control": "no-store",
+      });
+    }
     if (blockedAuthPaths.some((blocked) => path.startsWith(blocked))) {
       return c.json({ error: "Not available in version 1" }, 404);
     }
     return auth.handler(c.req.raw);
   });
   app.use("/rpc/*", async (c, next) => {
-    const session = await auth.api.getSession({ headers: sessionHeaders(c.req.raw) });
+    const session = await getSession(sessionHeaders(c.req.raw));
     const requestedSpaceId = c.req.header("x-rakazo-space-id");
     const actor = session?.user
       ? await requireMembership(prisma, session.user.id, requestedSpaceId).catch(() => null)
@@ -411,7 +467,7 @@ export async function createApp(
     await next();
   });
   mountVoiceHttpRoutes(app, { prisma, secrets }, async (c) => {
-    const session = await auth.api.getSession({ headers: sessionHeaders(c.req.raw) });
+    const session = await getSession(sessionHeaders(c.req.raw));
     if (!session?.user) return null;
     const actor = await requireMembership(
       prisma,
@@ -423,9 +479,16 @@ export async function createApp(
   });
   mountWorkforceRoutes(
     app,
-    createCompanyOsWorkforce({ prisma, pool: created.pool, secrets, events, jobs }),
+    createCompanyOsWorkforce({
+      prisma,
+      pool: created.pool,
+      secrets,
+      events,
+      jobs,
+      oauthCredential,
+    }),
     async (c) => {
-      const session = await auth.api.getSession({ headers: sessionHeaders(c.req.raw) });
+      const session = await getSession(sessionHeaders(c.req.raw));
       if (!session?.user) return null;
       return requireMembership(prisma, session.user.id, c.req.header("x-rakazo-space-id")).catch(
         () => null,
