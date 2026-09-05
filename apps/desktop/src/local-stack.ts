@@ -11,6 +11,11 @@ import {
   resolveDockerBinary,
 } from "./docker-cli.js";
 import { readPrivateFile, writePrivateFile } from "./setup-store.js";
+import {
+  assertStackProjectOwnership,
+  resolveStackProject,
+  StackOwnershipError,
+} from "./stack-project.js";
 
 export const STACK_DIR_NAME = "stack";
 export const STACK_COMPOSE_FILE = "docker-compose.images.yml";
@@ -260,6 +265,7 @@ function defaultSleep(ms: number, signal: AbortSignal) {
 export class LocalStackController {
   private current: DesktopLocalStackState;
   private currentStackToken: string | null = null;
+  private currentProject: string | null = null;
   private running: Promise<DesktopLocalStackState> | null = null;
   private stopping: Promise<DesktopLocalStackState> | null = null;
   private inFlight: AbortController | null = null;
@@ -333,11 +339,20 @@ export class LocalStackController {
 
   private async runStop(): Promise<DesktopLocalStackState> {
     const binary = resolveDockerBinary(this.deps.platform, this.deps.env, this.deps.exists);
-    const stopped = binary === null ? null : await this.compose(binary, ["stop"], STOP_TIMEOUT_MS);
-    this.current =
-      stopped?.code === 0
-        ? initialStackState(this.deps.imageTag)
-        : { ...this.current, phase: "failed", message: STOP_FAILED };
+    try {
+      if (binary === null) throw new Error(STOP_FAILED);
+      this.currentProject = await this.resolveProject(binary, false);
+      const stopped =
+        this.currentProject === null ? null : await this.compose(binary, ["stop"], STOP_TIMEOUT_MS);
+      if (stopped !== null && stopped.code !== 0) throw new Error(STOP_FAILED);
+      this.current = initialStackState(this.deps.imageTag);
+    } catch (error) {
+      this.current = {
+        ...this.current,
+        phase: "failed",
+        message: error instanceof StackOwnershipError ? error.message : STOP_FAILED,
+      };
+    }
     return this.current;
   }
 
@@ -350,9 +365,16 @@ export class LocalStackController {
     this.inFlight = controller;
     try {
       await this.attempt(controller.signal);
-    } catch {
-      // Copying the bundled compose files failed; the path would not help the person.
-      this.push({ type: "failed", message: "Could not prepare the local stack. Retry." });
+    } catch (error) {
+      // Keep filesystem and Docker diagnostics out of the user-facing message.
+      this.push({
+        type: "failed",
+        message: controller.signal.aborted
+          ? START_INTERRUPTED
+          : error instanceof StackOwnershipError
+            ? error.message
+            : "Could not prepare the local stack. Retry.",
+      });
     } finally {
       if (this.inFlight === controller) this.inFlight = null;
     }
@@ -403,6 +425,7 @@ export class LocalStackController {
     }
 
     this.push({ type: "prepare" });
+    this.currentProject = await this.resolveProject(binary, true, signal);
     await copyFile(
       path.join(this.deps.resourceDir, STACK_COMPOSE_FILE),
       path.join(this.deps.stackDir, STACK_COMPOSE_FILE),
@@ -461,7 +484,24 @@ export class LocalStackController {
     });
   }
 
-  private docker(binary: string, args: string[], timeoutMs: number, signal?: AbortSignal) {
+  private resolveProject(binary: string, create: boolean, signal?: AbortSignal) {
+    return resolveStackProject({
+      dir: this.deps.stackDir,
+      composeFile: STACK_COMPOSE_FILE,
+      envFile: STACK_ENV_FILE,
+      create,
+      randomHex: this.deps.randomHex,
+      inspect: (args) => this.docker(binary, args, DOCKER_INFO_TIMEOUT_MS, signal, false),
+    });
+  }
+
+  private docker(
+    binary: string,
+    args: string[],
+    timeoutMs: number,
+    signal?: AbortSignal,
+    reportOutput = true,
+  ) {
     return this.deps.run(binary, args, {
       cwd: this.deps.stackDir,
       env: dockerSpawnEnv(this.deps.platform, this.deps.env, binary, {
@@ -474,14 +514,30 @@ export class LocalStackController {
       }),
       timeoutMs,
       signal,
-      onLine: (line) => this.push({ type: "output", line }),
+      onLine: reportOutput ? (line) => this.push({ type: "output", line }) : undefined,
     });
   }
 
-  private compose(binary: string, args: string[], timeoutMs: number, signal?: AbortSignal) {
+  private async compose(binary: string, args: string[], timeoutMs: number, signal?: AbortSignal) {
+    if (this.currentProject === null) throw new StackOwnershipError();
+    await assertStackProjectOwnership(
+      this.currentProject,
+      this.deps.stackDir,
+      STACK_COMPOSE_FILE,
+      (inspectArgs) => this.docker(binary, inspectArgs, DOCKER_INFO_TIMEOUT_MS, signal, false),
+    );
     return this.docker(
       binary,
-      ["compose", "--env-file", STACK_ENV_FILE, "-f", STACK_COMPOSE_FILE, ...args],
+      [
+        "compose",
+        "--env-file",
+        STACK_ENV_FILE,
+        "-f",
+        STACK_COMPOSE_FILE,
+        "--project-name",
+        this.currentProject,
+        ...args,
+      ],
       timeoutMs,
       signal,
     );

@@ -23,6 +23,7 @@ import {
   stackFailureMessage,
   stackResourceDir,
 } from "./local-stack.js";
+import { STACK_OWNERSHIP_FAILED, STACK_PROJECT_FILE } from "./stack-project.js";
 
 const COMPOSE_DIR = path.resolve(import.meta.dirname, "..", "..", "..", "infra", "compose");
 const fakeHex = (bytes: number) => "ab".repeat(bytes);
@@ -275,7 +276,7 @@ function fakeRun(calls: RecordedCall[], script: Script): RunDocker {
 const ok: Script = (args) => {
   if (args[0] === "compose" && args[1] === "version") return { stdout: "2.29.0\n" };
   if (args[0] === "info") return { stdout: "27.1.1\n" };
-  const subcommand = args[5];
+  const subcommand = args[7];
   if (subcommand === "pull") return { lines: ["app Pulled", "computer Pulled"] };
   if (subcommand === "up") return { lines: ["Container rakazo-web-1 Started"] };
   return {};
@@ -312,7 +313,7 @@ describe("LocalStackController", () => {
       ...overrides,
       // Record the phase a poller would see while each docker command and probe runs.
       run: (binary, args, options) => {
-        phases.push(stack.state().phase);
+        if (args[0] !== "container") phases.push(stack.state().phase);
         return run(binary, args, options);
       },
       probe: (url, signal, token) => {
@@ -323,6 +324,207 @@ describe("LocalStackController", () => {
     const stack = new LocalStackController(deps);
     return stack;
   }
+
+  function projectContainers(project: string, directories: string[]): Script {
+    return (args) => {
+      if (args[0] !== "container") return ok(args);
+      if (args[1] === "ls") {
+        expect(args).toContain("--all");
+        return {
+          stdout: args.includes(`label=com.docker.compose.project=${project}`)
+            ? directories.map((_, i) => String(i + 1).repeat(12)).join("\n")
+            : "",
+        };
+      }
+      return {
+        stdout: directories
+          .map((dir) =>
+            JSON.stringify({
+              "com.docker.compose.project": project,
+              "com.docker.compose.project.working_dir": dir,
+              "com.docker.compose.project.config_files": path.join(dir, STACK_COMPOSE_FILE),
+            }),
+          )
+          .join("\n"),
+      };
+    };
+  }
+
+  async function legacyFiles() {
+    const dir = path.join(root, "stack");
+    await mkdir(dir, { recursive: true });
+    await writeFile(path.join(dir, STACK_ENV_FILE), "POSTGRES_PASSWORD=fake-preserved\n");
+    await writeFile(path.join(dir, STACK_COMPOSE_FILE), "legacy-compose-fixture\n");
+    return dir;
+  }
+
+  const composeCalls = (recorded: RecordedCall[]) =>
+    recorded.filter((call) => call.args[0] === "compose" && call.args[1] !== "version");
+
+  it("isolates a fresh install from standalone resources and ignores project env overrides", async () => {
+    const standalone = path.join(root, "standalone");
+    await mkdir(standalone);
+    const script = projectContainers("rakazo", [standalone]);
+    const stack = controller({ env: { COMPOSE_PROJECT_NAME: "rakazo" } }, script);
+    expect((await stack.start()).phase).toBe("ready");
+    const project = `rakazo-desktop-${fakeHex(16)}`;
+    const dir = path.join(root, "stack");
+    await expect(readFile(path.join(dir, STACK_PROJECT_FILE), "utf8")).resolves.toBe(
+      `${project}\n`,
+    );
+    await writeFile(path.join(dir, STACK_ENV_FILE), "COMPOSE_PROJECT_NAME=rakazo\n");
+    // Stop after a process restart must load the persisted identity too.
+    expect((await controller({}, script).stop()).phase).toBe("idle");
+    for (const call of composeCalls(calls)) {
+      expect(call.args.slice(5, 7)).toEqual(["--project-name", project]);
+      expect(call.env).not.toHaveProperty("COMPOSE_PROJECT_NAME");
+      expect(call.args).not.toContain("down");
+    }
+  });
+
+  it("upgrades and stops a proven legacy desktop stack without changing its volumes or env", async () => {
+    const dir = await legacyFiles();
+    const script = projectContainers("rakazo", [dir, dir]);
+    expect((await controller({}, script).start()).phase).toBe("ready");
+    expect((await controller({}, script).stop()).phase).toBe("idle");
+    expect(
+      (await controller({ imageTag: "v2.0.0", probe: async () => "v2.0.0" }, script).start()).phase,
+    ).toBe("ready");
+    await expect(readFile(path.join(dir, STACK_ENV_FILE), "utf8")).resolves.toBe(
+      "POSTGRES_PASSWORD=fake-preserved\n",
+    );
+    await expect(readFile(path.join(dir, STACK_PROJECT_FILE), "utf8")).resolves.toBe("rakazo\n");
+    for (const call of composeCalls(calls)) {
+      expect(call.args.slice(5, 7)).toEqual(["--project-name", "rakazo"]);
+      expect(call.args).not.toContain("down");
+      expect(call.args).not.toContain("--volumes");
+    }
+    expect(composeCalls(calls).at(-1)?.env.RAKAZO_IMAGE_TAG).toBe("v2.0.0");
+  });
+
+  it.each(["foreign", "mixed", "orphaned"])(
+    "blocks %s legacy resources on start, recovery, and stop",
+    async (kind) => {
+      const dir = await legacyFiles();
+      const standalone = path.join(root, "standalone");
+      await mkdir(standalone);
+      const directories =
+        kind === "foreign" ? [standalone] : kind === "mixed" ? [dir, standalone] : [];
+      const stack = controller({}, projectContainers("rakazo", directories));
+      for (const state of [await stack.start(), await stack.start(), await stack.stop()]) {
+        expect(state).toMatchObject({ phase: "failed", message: STACK_OWNERSHIP_FAILED });
+      }
+      expect(composeCalls(calls)).toEqual([]);
+      await expect(readFile(path.join(dir, STACK_COMPOSE_FILE), "utf8")).resolves.toBe(
+        "legacy-compose-fixture\n",
+      );
+      await expect(readFile(path.join(dir, STACK_PROJECT_FILE))).rejects.toThrow();
+      await expect(readFile(path.join(dir, STACK_TOKEN_FILE))).rejects.toThrow();
+    },
+  );
+
+  it("rechecks ownership after pull and refuses a replacement project on stop", async () => {
+    const dir = await legacyFiles();
+    const directories = [dir];
+    const owned = projectContainers("rakazo", directories);
+    const stack = controller({}, (args) => {
+      if (args[7] === "pull") directories.push(path.join(root, "unrelated"));
+      return owned(args);
+    });
+    expect((await stack.start()).message).toBe(STACK_OWNERSHIP_FAILED);
+    expect((await stack.stop()).message).toBe(STACK_OWNERSHIP_FAILED);
+    expect(composeCalls(calls).map((call) => call.args[7])).toEqual(["pull"]);
+    expect(stack.state().output).not.toContain(root);
+  });
+
+  it("rejects foreign containers even under the persisted desktop project name", async () => {
+    const stack = controller();
+    expect((await stack.start()).phase).toBe("ready");
+    const before = composeCalls(calls).length;
+    const foreign = controller({}, projectContainers(`rakazo-desktop-${fakeHex(16)}`, [root]));
+    expect((await foreign.start()).message).toBe(STACK_OWNERSHIP_FAILED);
+    expect((await foreign.stop()).message).toBe(STACK_OWNERSHIP_FAILED);
+    expect(composeCalls(calls)).toHaveLength(before);
+  });
+
+  it("keeps the same new project after a failed first pull and a process restart", async () => {
+    const failed = controller({}, (args) => (args[7] === "pull" ? { code: 1 } : ok(args)));
+    expect((await failed.start()).phase).toBe("failed");
+    const resumed = controller({ randomHex: (bytes) => "cd".repeat(bytes) });
+    expect((await resumed.start()).phase).toBe("ready");
+    for (const call of composeCalls(calls)) {
+      expect(call.args[6]).toBe(`rakazo-desktop-${fakeHex(16)}`);
+    }
+  });
+
+  it("does not read failure logs after ownership changes during a failed up", async () => {
+    const dir = await legacyFiles();
+    const directories = [dir];
+    const owned = projectContainers("rakazo", directories);
+    const stack = controller({}, (args) => {
+      if (args[7] === "up") {
+        directories.push(root);
+        return { code: 1 };
+      }
+      return owned(args);
+    });
+    expect((await stack.start()).message).toBe(STACK_OWNERSHIP_FAILED);
+    expect(composeCalls(calls).map((call) => call.args[7])).toEqual(["pull", "up"]);
+  });
+
+  it.each(["ls", "inspect"])(
+    "fails closed when Docker %s cannot verify legacy ownership",
+    async (command) => {
+      const dir = await legacyFiles();
+      const owned = projectContainers("rakazo", [dir]);
+      const stack = controller({}, (args) =>
+        args[1] === command
+          ? { code: 1, stderr: "unavailable", lines: ["private fixture metadata"] }
+          : owned(args),
+      );
+      expect((await stack.start()).message).toBe(STACK_OWNERSHIP_FAILED);
+      expect(composeCalls(calls)).toEqual([]);
+      expect(stack.state().output).toEqual([]);
+    },
+  );
+
+  it.each(["{}", "null", "not-json", '{"com.docker.compose.project":"rakazo"}'])(
+    "rejects incomplete container metadata: %s",
+    async (metadata) => {
+      const dir = await legacyFiles();
+      const owned = projectContainers("rakazo", [dir]);
+      const stack = controller({}, (args) =>
+        args[1] === "inspect" ? { stdout: metadata } : owned(args),
+      );
+      expect((await stack.start()).message).toBe(STACK_OWNERSHIP_FAILED);
+      expect(composeCalls(calls)).toEqual([]);
+    },
+  );
+
+  it.each(["other-project", "", "a".repeat(129)])(
+    "does not replace an invalid saved project",
+    async (saved) => {
+      const dir = await legacyFiles();
+      await writeFile(path.join(dir, STACK_PROJECT_FILE), saved);
+      expect((await controller().start()).message).toBe(STACK_OWNERSHIP_FAILED);
+      expect(composeCalls(calls)).toEqual([]);
+      await expect(readFile(path.join(dir, STACK_PROJECT_FILE), "utf8")).resolves.toBe(saved);
+    },
+  );
+
+  it.runIf(process.platform !== "win32")("does not follow a saved project symlink", async () => {
+    const dir = await legacyFiles();
+    const target = path.join(root, "project-fixture");
+    await writeFile(target, `rakazo-desktop-${fakeHex(16)}\n`);
+    await symlink(target, path.join(dir, STACK_PROJECT_FILE));
+    expect((await controller().start()).message).toBe(STACK_OWNERSHIP_FAILED);
+    expect(composeCalls(calls)).toEqual([]);
+  });
+
+  it("does nothing when stopped before the first install", async () => {
+    expect((await controller().stop()).phase).toBe("idle");
+    expect(calls).toEqual([]);
+  });
 
   it("installs the compose project and walks every phase to ready", async () => {
     const stack = controller();
@@ -344,8 +546,16 @@ describe("LocalStackController", () => {
     ]);
 
     const stackPath = path.join(root, "stack");
-    const compose = ["compose", "--env-file", ".env", "-f", STACK_COMPOSE_FILE];
-    expect(calls.map((call) => call.args)).toEqual([
+    const compose = [
+      "compose",
+      "--env-file",
+      ".env",
+      "-f",
+      STACK_COMPOSE_FILE,
+      "--project-name",
+      `rakazo-desktop-${fakeHex(16)}`,
+    ];
+    expect(calls.filter((call) => call.args[0] !== "container").map((call) => call.args)).toEqual([
       ["compose", "version", "--short"],
       ["info", "--format", "{{.ServerVersion}}"],
       [...compose, "pull"],
@@ -413,7 +623,7 @@ describe("LocalStackController", () => {
       args[1] === "version" ? { stdout: "2.12.2\n" } : ok(args),
     );
     await stack.start();
-    expect(calls.at(-1)?.args.slice(5)).toEqual(["up", "-d"]);
+    expect(calls.at(-1)?.args.slice(7)).toEqual(["up", "-d"]);
   });
 
   it("stops at docker-missing when no binary exists and touches nothing", async () => {
@@ -466,7 +676,7 @@ describe("LocalStackController", () => {
 
   it("fails with a tag-specific message when the images are not published", async () => {
     const stack = controller({}, (args) =>
-      args[5] === "pull"
+      args[7] === "pull"
         ? {
             code: 1,
             stderr: "Error response from daemon: manifest unknown",
@@ -480,12 +690,16 @@ describe("LocalStackController", () => {
       message: "Images for v1.2.3 are not published yet. Try again in a few minutes.",
       output: ["Error response from daemon: manifest unknown"],
     });
-    expect(calls.map((call) => call.args[5] ?? call.args[0])).toEqual(["compose", "info", "pull"]);
+    expect(
+      calls
+        .filter((call) => call.args[0] !== "container")
+        .map((call) => call.args[7] ?? call.args[0]),
+    ).toEqual(["compose", "info", "pull"]);
   });
 
   it("reports interruption instead of a pull failure when docker returns 130", async () => {
     const stack = controller({}, (args) =>
-      args[5] === "pull" ? { code: 130, stderr: "got 3 SIGTERM" } : ok(args),
+      args[7] === "pull" ? { code: 130, stderr: "got 3 SIGTERM" } : ok(args),
     );
     const state = await stack.start();
     expect(state).toMatchObject({
@@ -496,10 +710,10 @@ describe("LocalStackController", () => {
 
   it("collects service logs when up fails", async () => {
     const stack = controller({}, (args) => {
-      if (args[5] === "up") {
+      if (args[7] === "up") {
         return { code: 1, stderr: "port is already allocated", lines: ["web Error"] };
       }
-      if (args[5] === "logs") return { lines: ["web-1 | EADDRINUSE"] };
+      if (args[7] === "logs") return { lines: ["web-1 | EADDRINUSE"] };
       return ok(args);
     });
     const state = await stack.start();
@@ -511,7 +725,7 @@ describe("LocalStackController", () => {
       "web Error",
       "web-1 | EADDRINUSE",
     ]);
-    expect(calls.at(-1)?.args.slice(5)).toEqual(["logs", "--tail", "30", "--no-color"]);
+    expect(calls.at(-1)?.args.slice(7)).toEqual(["logs", "--tail", "30", "--no-color"]);
   });
 
   it("fails when the web app never answers after up", async () => {
@@ -531,7 +745,7 @@ describe("LocalStackController", () => {
   it("returns the same attempt while one is in flight and restarts after failure", async () => {
     let attempts = 0;
     const stack = controller({}, (args) => {
-      if (args[5] === "pull") {
+      if (args[7] === "pull") {
         attempts += 1;
         return attempts === 1 ? { code: 1, stderr: "no such host" } : ok(args);
       }
@@ -550,7 +764,7 @@ describe("LocalStackController", () => {
 
   it("does not leak randomness or docker output into the message", async () => {
     const stack = controller({}, (args) =>
-      args[5] === "pull" ? { code: 1, stderr: "/Users/me/secret-path: boom" } : ok(args),
+      args[7] === "pull" ? { code: 1, stderr: "/Users/me/secret-path: boom" } : ok(args),
     );
     const state = await stack.start();
     expect(state.message).not.toContain("/Users/me");
@@ -561,7 +775,7 @@ describe("LocalStackController", () => {
     await stack.start();
     const state = await stack.stop();
     expect(state).toEqual(initialStackState("v1.2.3"));
-    expect(calls.at(-1)?.args.slice(5)).toEqual(["stop"]);
+    expect(calls.at(-1)?.args.slice(7)).toEqual(["stop"]);
   });
 
   it("reports a stop when docker has gone missing since the start", async () => {
@@ -574,12 +788,12 @@ describe("LocalStackController", () => {
       phase: "failed",
       message: expect.stringContaining("Could not stop"),
     });
-    expect(calls.at(-1)?.args.slice(5)).not.toEqual(["stop"]);
+    expect(calls.at(-1)?.args.slice(7)).not.toEqual(["stop"]);
   });
 
   it("reports a stop that docker refused instead of pretending the stack is down", async () => {
     const stack = controller({}, (args) =>
-      args[5] === "stop"
+      args[7] === "stop"
         ? { code: 1, stderr: "/Users/me/secret-path: Cannot connect to the Docker daemon" }
         : ok(args),
     );
@@ -593,7 +807,7 @@ describe("LocalStackController", () => {
     });
     expect(state.message).not.toContain("/Users/me");
     expect(state).not.toEqual(initialStackState("v1.2.3"));
-    expect(calls.at(-1)?.args.slice(5)).toEqual(["stop"]);
+    expect(calls.at(-1)?.args.slice(7)).toEqual(["stop"]);
   });
 
   it("queues a start behind a stop so up and stop never overlap", async () => {
@@ -602,18 +816,20 @@ describe("LocalStackController", () => {
       releaseStop = resolve;
     });
     const stack = controller({}, (args) => {
-      if (args[5] === "stop") return { wait: stopGate };
+      if (args[7] === "stop") return { wait: stopGate };
       return ok(args);
     });
     await stack.start();
     const stopping = stack.stop();
     const restarted = stack.start();
     await new Promise((resolve) => setTimeout(resolve, 10));
-    expect(calls.at(-1)?.args.slice(5)).toEqual(["stop"]);
+    expect(calls.at(-1)?.args.slice(7)).toEqual(["stop"]);
     releaseStop();
     await stopping;
     expect((await restarted).phase).toBe("ready");
-    const order = calls.map((call) => call.args[5] ?? call.args[0]);
+    const order = calls
+      .filter((call) => call.args[0] !== "container")
+      .map((call) => call.args[7] ?? call.args[0]);
     expect(order.indexOf("stop")).toBeLessThan(order.lastIndexOf("compose"));
   });
 
@@ -637,7 +853,7 @@ describe("LocalStackController", () => {
           return new Promise((resolve) => signal.addEventListener("abort", () => resolve(null)));
         },
       },
-      (args) => (args[5] === "stop" ? { wait: stopGate } : ok(args)),
+      (args) => (args[7] === "stop" ? { wait: stopGate } : ok(args)),
     );
     const first = stack.start();
     await probeStarted;
@@ -649,7 +865,9 @@ describe("LocalStackController", () => {
     await stopping;
     expect((await first).message).toBe("The start was interrupted. Retry to continue.");
     expect((await second).phase).toBe("ready");
-    const order = calls.map((call) => call.args[5] ?? call.args[0]);
+    const order = calls
+      .filter((call) => call.args[0] !== "container")
+      .map((call) => call.args[7] ?? call.args[0]);
     expect(order.indexOf("stop")).toBeLessThan(order.lastIndexOf("up"));
   });
 
@@ -660,7 +878,7 @@ describe("LocalStackController", () => {
     });
     let stops = 0;
     const stack = controller({}, (args) => {
-      if (args[5] !== "stop") return ok(args);
+      if (args[7] !== "stop") return ok(args);
       stops += 1;
       return stops === 1 ? { wait: stopGate } : {};
     });
@@ -672,7 +890,9 @@ describe("LocalStackController", () => {
     releaseStop();
     await Promise.all([firstStop, queuedStart, secondStop]);
     expect(stack.state()).toEqual(initialStackState("v1.2.3"));
-    const order = calls.map((call) => call.args[5] ?? call.args[0]);
+    const order = calls
+      .filter((call) => call.args[0] !== "container")
+      .map((call) => call.args[7] ?? call.args[0]);
     expect(order.lastIndexOf("up")).toBeLessThan(order.indexOf("stop"));
   });
 

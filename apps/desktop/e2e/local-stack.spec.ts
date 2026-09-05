@@ -88,8 +88,8 @@ async function writeFakeDocker(mode: FakeDockerMode) {
       ? '    echo "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?" >&2; exit 1 ;;'
       : '    echo "27.1.1"; exit 0 ;;',
     "esac",
-    "# compose --env-file .env -f docker-compose.images.yml <command> ...",
-    'case "$6" in',
+    "# compose --env-file .env -f docker-compose.images.yml --project-name <project> <command> ...",
+    'case "$8" in',
     "  pull)",
     mode === "pull-fails"
       ? '    echo "Error response from daemon: manifest unknown" >&2; exit 1 ;;'
@@ -176,8 +176,10 @@ test("This computer installs and starts the stack, then opens the app", async ()
     await readFile(path.join(COMPOSE_DIR, "docker-compose.images.yml"), "utf8"),
   );
 
-  const compose = "compose --env-file .env -f docker-compose.images.yml";
-  expect(await readLog()).toEqual([
+  const project = (await readFile(path.join(stackDir, ".desktop-stack-project"), "utf8")).trim();
+  expect(project).toMatch(/^rakazo-desktop-[a-f0-9]{32}$/);
+  const compose = `compose --env-file .env -f docker-compose.images.yml --project-name ${project}`;
+  expect((await readLog()).filter((line) => !line.includes(" | container "))).toEqual([
     `${stackDir} | ${IMAGE_TAG} | compose version --short`,
     `${stackDir} | ${IMAGE_TAG} | info --format {{.ServerVersion}}`,
     `${stackDir} | ${IMAGE_TAG} | ${compose} pull`,
@@ -364,6 +366,11 @@ test("a saved local target is the exact origin authenticated before reuse", asyn
 test("an existing stack .env is never rewritten", async () => {
   const stackDir = path.join(userData, "stack");
   await mkdir(stackDir, { recursive: true });
+  await writeFile(
+    path.join(stackDir, ".desktop-stack-project"),
+    `rakazo-desktop-${"ab".repeat(16)}\n`,
+    { mode: 0o600 },
+  );
   const sentinel = "POSTGRES_PASSWORD=keep-me\nSENTINEL=1\n";
   await writeFile(path.join(stackDir, ".env"), sentinel, { encoding: "utf8", mode: 0o600 });
 
@@ -375,4 +382,23 @@ test("an existing stack .env is never rewritten", async () => {
   await expect(appWindow.getByText(APP_MARKER)).toBeVisible();
 
   await expect(readFile(path.join(stackDir, ".env"), "utf8")).resolves.toBe(sentinel);
+});
+
+test("unproven legacy ownership blocks setup without issuing Compose mutations", async () => {
+  const stackDir = path.join(userData, "stack");
+  await mkdir(stackDir, { recursive: true });
+  await writeFile(path.join(stackDir, ".env"), "POSTGRES_PASSWORD=fake-preserved\n", {
+    mode: 0o600,
+  });
+  app = await launch("ok");
+  const setup = await app.firstWindow();
+  await setup.getByRole("button", { name: "Continue" }).click();
+  await expect(setup.locator("#stack-phase")).toHaveText(
+    "Could not verify local stack ownership. Check the existing Docker installation before retrying.",
+  );
+  await expect(setup.getByRole("button", { name: "Retry" })).toBeEnabled();
+  expect((await readLog()).some((line) => / (pull|up|stop|logs)( |$)/.test(line))).toBe(false);
+  await setup.screenshot({
+    path: path.join(import.meta.dirname, "screenshots", "08-setup-ownership-blocked.png"),
+  });
 });
