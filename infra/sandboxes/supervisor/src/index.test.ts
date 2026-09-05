@@ -28,6 +28,7 @@ import {
   type ScreenAssignment,
   sandboxCommandTimedOut,
   sandboxTimeoutCommand,
+  screenReleaseStopCommand,
   shouldReplayComputerActions,
   stopExtraScreenCommand,
 } from "./supervisor-logic.js";
@@ -513,6 +514,31 @@ describe("sandbox supervisor input containment", () => {
     expect(stopExtraScreenCommand(1)).toContain("websockify.*6082");
     expect(stopExtraScreenCommand(1)).not.toMatch(/Xvfb :1 /);
     expect(stopExtraScreenCommand(1)).not.toMatch(/6080/);
+  });
+
+  it("on cancel, stops primary Chromium without tearing down the desktop", () => {
+    const stop = stopExtraScreenCommand(0, { cancelRunWork: true });
+    expect(stop).toContain("--user-data-dir=/home/rakazo/.browser-profiles/chromium$");
+    expect(stop).not.toContain("Xvfb");
+    expect(stop).not.toContain("fluxbox");
+  });
+
+  it("does not stop the primary browser when a present registry rejects release", () => {
+    expect(screenReleaseStopCommand(undefined, { hasRegistry: true, cancelRunWork: true })).toBe(
+      "",
+    );
+    expect(stopExtraScreenCommand(0)).toBe("");
+  });
+
+  it("still stops the primary browser on cancel when the screen registry is missing", () => {
+    // After a supervisor restart, in-memory assignments are gone; cancel must still
+    // tear down orphaned primary Chromium without falling back on a rejected lease.
+    const orphanCancelStop = screenReleaseStopCommand(undefined, {
+      hasRegistry: false,
+      cancelRunWork: true,
+    });
+    expect(orphanCancelStop).toContain("--user-data-dir=/home/rakazo/.browser-profiles/chromium$");
+    expect(orphanCancelStop).not.toContain("Xvfb");
   });
 
   it("parses a captured frame without trusting optional desktop metadata", () => {

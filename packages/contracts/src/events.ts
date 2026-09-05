@@ -139,11 +139,14 @@ export const MessageBlock = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("progress"),
     text: z.string(),
+    /** Provider-generated tool status rather than assistant-authored narration. */
+    activity: z.literal(true).optional(),
     pendingToolNames: z.array(z.string()).optional(),
   }),
   z.object({
     kind: z.literal("steps"),
     steps: z.array(z.object({ label: z.string(), count: z.number().int().positive() })),
+    durationMs: z.number().int().nonnegative().optional(),
   }),
   z.object({
     kind: z.literal("subagent"),

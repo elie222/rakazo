@@ -6,7 +6,11 @@
     "jsx": "react-jsx",
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "module": "ESNext",
-    "moduleResolution": "bundler"
+    "moduleResolution": "bundler",
+    "baseUrl": ".",
+    "paths": {
+      "@rakazo/ui-web/*": ["./src/*"]
+    }
   },
   "include": ["src"]
 }

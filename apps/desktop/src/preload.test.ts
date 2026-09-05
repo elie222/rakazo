@@ -94,17 +94,34 @@ describe("setup preload bridge", () => {
     expect(exposeInMainWorld).toHaveBeenCalledTimes(1);
     const [globalName, bridge] = exposeInMainWorld.mock.calls[0] as [string, RakazoSetup];
     expect(globalName).toBe("rakazoSetup");
-    expect(Object.keys(bridge).sort()).toEqual(["quit", "save", "state", "test"]);
+    expect(bridge.platform).toBe("linux");
+    expect(Object.keys(bridge).sort()).toEqual([
+      "openLink",
+      "platform",
+      "quit",
+      "save",
+      "stack",
+      "state",
+      "test",
+    ]);
+    expect(Object.keys(bridge.stack).sort()).toEqual(["start", "state"]);
 
     await bridge.state();
     await bridge.test("http://127.0.0.1:5173");
     await bridge.save({ mode: "new", serverUrl: "http://127.0.0.1:5173" });
     await bridge.quit();
+    await bridge.openLink("orbstack");
+    await bridge.stack.state();
+    await bridge.stack.start();
     expect(invoke.mock.calls.map(([channel]) => channel)).toEqual([
       "desktop.setup.state",
       "desktop.setup.test",
       "desktop.setup.save",
       "desktop.setup.quit",
+      "desktop.setup.openLink",
+      "desktop.setup.stack.state",
+      "desktop.setup.stack.start",
     ]);
+    expect(invoke).toHaveBeenCalledWith("desktop.setup.openLink", "orbstack");
   });
 });

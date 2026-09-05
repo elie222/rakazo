@@ -1,11 +1,11 @@
 import type { AdapterContext } from "@rakazo/adapter-kit";
 import { canReleaseScreenLease, canTakeScreenLease } from "@rakazo/core";
 
-export const MULTI_SCREEN_UNAVAILABLE =
-  "This computer provider does not support multiple screens. Desktop tools are already in use on the shared display. File and shell tools still work.";
+export const COMPUTER_SCREEN_UNAVAILABLE =
+  "The computer screen is temporarily busy. Retry in a moment. File and shell tools still work.";
 
 export class ComputerScreenUnavailableError extends Error {
-  constructor(message = MULTI_SCREEN_UNAVAILABLE) {
+  constructor(message = COMPUTER_SCREEN_UNAVAILABLE) {
     super(message);
     this.name = "ComputerScreenUnavailableError";
   }
@@ -37,10 +37,11 @@ export class SingleScreenClaimTracker {
     });
   }
 
-  release(computerId: string, context?: AdapterContext): void {
+  /** Returns true when this call cleared the in-memory claim. */
+  release(computerId: string, context?: AdapterContext): boolean {
     if (!context) {
       this.owners.delete(computerId);
-      return;
+      return true;
     }
     const owner = this.owners.get(computerId);
     if (
@@ -48,7 +49,9 @@ export class SingleScreenClaimTracker {
       canReleaseScreenLease(owner.leaseId, context.screenLeaseId)
     ) {
       this.owners.delete(computerId);
+      return true;
     }
+    return false;
   }
 }
 

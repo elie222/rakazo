@@ -56,13 +56,20 @@ describe("embeddableScreenUrl", () => {
   it("returns null when there is no screen", () => {
     expect(embeddableScreenUrl(null, "http://127.0.0.1:3100")).toBeNull();
   });
+
+  it("does not send unsupported fixture URLs to the native WebView", () => {
+    expect(
+      embeddableScreenUrl("fake://screen/fake-team-home/researcher", "http://10.0.2.2:3100"),
+    ).toBeNull();
+    expect(embeddableScreenUrl("not a URL", "http://10.0.2.2:3100")).toBeNull();
+  });
 });
 
 describe("computer copy", () => {
   it("matches the web pane while booting, asleep, or in control", () => {
     expect(previewPlaceholder("stopped", false, "Chief")).toBe("Computer is stopped");
     expect(previewPlaceholder("suspended", false, "Chief")).toBe(
-      "Computer is asleep — take control to wake it",
+      "Computer is asleep. Take control to wake it.",
     );
     expect(previewPlaceholder("running", true, "Chief")).toBe("Booting live desktop…");
     expect(

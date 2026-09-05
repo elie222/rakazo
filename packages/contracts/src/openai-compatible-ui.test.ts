@@ -5,7 +5,14 @@ import {
 } from "./openai-compatible-ui.js";
 
 describe("openAiCompatibleConnectReady", () => {
-  it("requires a successful probe for new connections", () => {
+  it("allows a new connection with base URL and explicit model id without a probe", () => {
+    expect(
+      openAiCompatibleConnectReady({
+        baseUrl: "http://127.0.0.1:8000/v1",
+        modelId: "qwen",
+        probedBaseUrl: null,
+      }),
+    ).toBe(true);
     expect(
       openAiCompatibleConnectReady({
         baseUrl: "http://127.0.0.1:8000/v1",
@@ -13,10 +20,20 @@ describe("openAiCompatibleConnectReady", () => {
         probedBaseUrl: "http://127.0.0.1:8000/v1",
       }),
     ).toBe(true);
+  });
+
+  it("rejects empty base URL or model id", () => {
+    expect(
+      openAiCompatibleConnectReady({
+        baseUrl: "  ",
+        modelId: "qwen",
+        probedBaseUrl: null,
+      }),
+    ).toBe(false);
     expect(
       openAiCompatibleConnectReady({
         baseUrl: "http://127.0.0.1:8000/v1",
-        modelId: "qwen",
+        modelId: "",
         probedBaseUrl: null,
       }),
     ).toBe(false);

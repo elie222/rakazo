@@ -8,6 +8,11 @@
 	abort @direct_origin
 }
 
+(deploy_retry) {
+	lb_try_duration 10s
+	lb_try_interval 250ms
+}
+
 http://{$RAKAZO_HOST:app.example.com} {
 	import cloudflare_only
 	redir https://{$RAKAZO_HOST:app.example.com}{uri} 308
@@ -22,18 +27,26 @@ http://{$RAKAZO_HOST:app.example.com} {
 	encode zstd gzip
 
 	handle /health {
-		reverse_proxy api:3100
+		reverse_proxy api:3100 {
+			import deploy_retry
+		}
 	}
 
 	handle /api/* {
-		reverse_proxy api:3100
+		reverse_proxy api:3100 {
+			import deploy_retry
+		}
 	}
 
 	handle /rpc/* {
-		reverse_proxy api:3100
+		reverse_proxy api:3100 {
+			import deploy_retry
+		}
 	}
 
 	handle {
-		reverse_proxy web:5173
+		reverse_proxy web:5173 {
+			import deploy_retry
+		}
 	}
 }

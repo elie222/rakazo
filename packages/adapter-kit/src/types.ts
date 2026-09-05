@@ -9,6 +9,8 @@ export interface AdapterContext {
   runId?: string;
   /** Opaque fence for releasing a graphical screen without tearing down its replacement. */
   screenLeaseId?: string;
+  /** When releasing a screen after cancel, also stop orphaned browser work on that screen. */
+  cancelRunWork?: boolean;
   signal: AbortSignal;
   /** Connected external accounts available to this run, including their owning connector. */
   connectedConnections?: ConnectedConnector[];
@@ -369,7 +371,12 @@ export interface ScriptedTurn {
 
 export type AgentRuntimeEvent =
   | { type: "text"; text: string }
-  | { type: "progress"; text: string }
+  | {
+      type: "progress";
+      text: string;
+      /** Provider-generated tool status rather than assistant-authored narration. */
+      activity?: true;
+    }
   | { type: "tool"; name: string; args: Record<string, unknown>; executionId: string }
   | {
       type: "ask";
