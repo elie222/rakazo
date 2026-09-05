@@ -31,6 +31,13 @@ class PageBrowserTest(unittest.TestCase):
             client._read_frame()
         client._sock.recv.assert_not_called()
 
+    def test_rejects_url_credentials_before_navigation(self):
+        client = Mock()
+        for url in ("http://example:fake-password@example.test", "https://example:fake-password@example.test"):
+            with self.assertRaisesRegex(RuntimeError, "credentials"):
+                helper.navigate(client, "session", url)
+        client.call.assert_not_called()
+
     def test_rejects_navigation_error(self):
         client = Mock()
         client.call.return_value = {"errorText": "net::ERR_NAME_NOT_RESOLVED"}

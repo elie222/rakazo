@@ -40,6 +40,18 @@ describe("browser tools", () => {
     expect(() => parseBrowserActions([{ kind: "fill", ref: "e1" }])).toThrow(/text/i);
   });
 
+  it("rejects URL credentials before invoking the browser", async () => {
+    const browser = new FakeBrowserProvider();
+    browser.navigateError = new Error("must not invoke browser");
+    for (const scheme of ["http", "https"]) {
+      expect(
+        await browserNavigateFromTool(browser, computer, context, {
+          url: `${scheme}://example:fake-password@example.test`,
+        }),
+      ).toMatchObject({ error: expect.stringContaining("credentials") });
+    }
+  });
+
   it("navigates, snapshots, and acts through the tool helpers", async () => {
     const browser = new FakeBrowserProvider({
       pages: {

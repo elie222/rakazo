@@ -273,7 +273,11 @@ app.post("/computers/:id/browser", async (c) => {
           .string()
           .url()
           .max(8192)
-          .refine((url) => /^https?:/i.test(url)),
+          .refine((value) => {
+            if (!URL.canParse(value)) return false;
+            const url = new URL(value);
+            return /^https?:$/.test(url.protocol) && !url.username && !url.password;
+          }),
       }),
       z.object({ command: z.literal("snapshot") }),
       z.object({

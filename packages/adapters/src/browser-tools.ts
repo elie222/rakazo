@@ -15,9 +15,14 @@ export async function browserNavigateFromTool(
   args: Record<string, unknown>,
 ) {
   const url = String(args.url ?? "").trim();
-  if (!/^https?:\/\//i.test(url))
-    return { error: "An HTTP(S) URL is required", fallback: "computer_act" as const };
   try {
+    const parsed = new URL(url);
+    if (!/^https?:$/.test(parsed.protocol) || parsed.username || parsed.password) {
+      return {
+        error: "An HTTP(S) URL without embedded credentials is required",
+        fallback: "computer_act" as const,
+      };
+    }
     const result = await browser.navigate(computer, { url, signal: context.signal }, context);
     return formatBrowserResult(result);
   } catch (error) {

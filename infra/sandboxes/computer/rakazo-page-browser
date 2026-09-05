@@ -274,6 +274,8 @@ def attach_page(client: CdpClient) -> str:
 
 
 def ensure_world(client: CdpClient, session_id: str) -> None:
+    # Chromium's EnsureDOMWrapperWorld reuses a named world for the frame.
+    # The live E2E test exercises snapshot -> act across separate helper processes.
     frame = client.call("Page.getFrameTree", session_id=session_id)["frameTree"]["frame"]
     world = client.call("Page.createIsolatedWorld", {
         "frameId": frame["id"], "worldName": "rakazo-page-browser",
@@ -457,8 +459,9 @@ def ensure_helpers(client: CdpClient, session_id: str) -> None:
 
 
 def navigate(client: CdpClient, session_id: str, url: str) -> dict[str, Any]:
-    if urlsplit(url).scheme not in ("http", "https"):
-        raise RuntimeError("Only HTTP(S) navigation is supported")
+    parsed = urlsplit(url)
+    if parsed.scheme not in ("http", "https") or parsed.username or parsed.password:
+        raise RuntimeError("Only HTTP(S) URLs without embedded credentials are supported")
     result = client.call("Page.navigate", {"url": url}, session_id=session_id, timeout_s=15.0)
     if result.get("errorText") or result.get("isDownload"):
         raise RuntimeError(result.get("errorText") or "Navigation started a download")

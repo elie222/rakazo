@@ -15,6 +15,7 @@ import { supervisorApp } from "./index.js";
 
 beforeEach(() => {
   mock.exec.mockReset();
+  mock.inspect.mockReset();
   mock.inspect.mockResolvedValue({
     Config: {
       Labels: { "rakazo.managed": "true", "rakazo.botId": "home", "rakazo.spaceId": "space" },
@@ -77,3 +78,23 @@ it("rejects another computer identity before any command executes", async () => 
   ).toMatchObject({ ok: false });
   expect(mock.exec).not.toHaveBeenCalled();
 });
+
+it.each(["http", "https"])(
+  "rejects %s URL credentials before executing any command",
+  async (scheme) => {
+    const response = await supervisorApp.request("/computers/computer-credentials/browser", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${resolveSupervisorToken(process.env)}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        command: "navigate",
+        url: `${scheme}://example:fake-password@example.test`,
+      }),
+    });
+    expect(response.status).toBeGreaterThanOrEqual(400);
+    expect(mock.exec).not.toHaveBeenCalled();
+    expect(mock.inspect).not.toHaveBeenCalled();
+  },
+);
