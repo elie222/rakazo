@@ -248,8 +248,37 @@ export function clearComputerScreenRegistry(
   registry.delete(containerId);
 }
 
-export function stopExtraScreenCommand(index: number) {
-  if (index <= 0) return "";
+export function stopPrimaryBrowserCommand() {
+  const profile = `/home/rakazo/.browser-profiles/chromium`;
+  return [
+    `pkill -TERM -f -- '--user-data-dir=${profile}$' || true`,
+    `pkill -TERM -f -- '--user-data-dir=${profile} ' || true`,
+    "sleep 0.2",
+    `pkill -KILL -f -- '--user-data-dir=${profile}$' || true`,
+    `pkill -KILL -f -- '--user-data-dir=${profile} ' || true`,
+    `rm -f ${profile}/SingletonLock ${profile}/SingletonCookie ${profile}/SingletonSocket`,
+  ].join("; ");
+}
+
+/** Choose the stop command for DELETE /screen cancel/release.
+ * Callers must hold the per-computer screen lock across this decision and any stop. */
+export function screenReleaseStopCommand(
+  index: number | undefined,
+  options: { hasRegistry: boolean; cancelRunWork: boolean },
+): string {
+  if (index !== undefined) {
+    return stopExtraScreenCommand(index, { cancelRunWork: options.cancelRunWork });
+  }
+  // Missing registry (supervisor restart): cancel still tears down primary Chromium.
+  // Present registry + rejected release: newer fence owns the screen — do not kill.
+  if (!options.hasRegistry && options.cancelRunWork) return stopPrimaryBrowserCommand();
+  return "";
+}
+
+export function stopExtraScreenCommand(index: number, options: { cancelRunWork?: boolean } = {}) {
+  if (index <= 0) {
+    return options.cancelRunWork ? stopPrimaryBrowserCommand() : "";
+  }
   const layout = screenPorts(index);
   const fluxHome = `/tmp/fluxbox-home-${layout.displayNumber}`;
   const profile = `/home/rakazo/.browser-profiles/chromium-screen-${layout.displayNumber}`;

@@ -160,13 +160,14 @@ export function createAgentSkillsService(prisma: PrismaClient) {
         return mapAgentSkill(await owned(actor, input.skillId));
       }
       const name = input.name?.trim() ?? "";
-      const row = await prisma.agentSkill.findFirst({
+      const rows = await prisma.agentSkill.findMany({
         where: {
           spaceId: actor.spaceId,
           userId: actor.userId,
-          name: { equals: name, mode: "insensitive" },
         },
+        orderBy: [{ name: "asc" }, { id: "asc" }],
       });
+      const row = findSkillByName(rows, name);
       if (row) return mapAgentSkill(row);
       const builtin = findSkillByName(builtinCatalog(), name);
       if (!builtin) throw new IsolationError();
@@ -230,7 +231,7 @@ export function createAgentSkillsService(prisma: PrismaClient) {
         throw new ORPCError("BAD_REQUEST", { message: "Builtin and plugin skills are read-only." });
       }
       const resolved = resolveSkillContent({ ...input, prior: existing });
-      if (resolved.name.toLowerCase() !== existing.name.toLowerCase()) {
+      if (!findSkillByName([existing], resolved.name)) {
         const clash = await prisma.agentSkill.findFirst({
           where: {
             spaceId: actor.spaceId,

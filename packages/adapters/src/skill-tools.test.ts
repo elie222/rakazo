@@ -259,16 +259,16 @@ describe("skill tools", () => {
     });
   });
 
-  it("keeps a pre-existing user skill reachable when its name collides with a builtin", async () => {
+  it.each(["interrogate", " Interrogate "])("preserves a saved skill named %j", async (name) => {
     prisma = makePrisma([
       {
         id: "legacy-1",
         spaceId: owner.spaceId,
         userId: owner.userId,
-        name: "interrogate",
+        name,
         description: "my review recipe",
         content: buildSkillMd({
-          name: "interrogate",
+          name,
           description: "my review recipe",
           body: "my steps",
         }),
@@ -277,13 +277,17 @@ describe("skill tools", () => {
     ]);
 
     const records = await listAgentSkillRecords(prisma as never, owner);
-    expect(records.filter((skill) => skill.name.toLowerCase() === "interrogate")).toEqual([
+    expect(records.filter((skill) => skill.name.trim().toLowerCase() === "interrogate")).toEqual([
       expect.objectContaining({ id: "legacy-1", source: "user", readOnly: false }),
     ]);
     expect(await skillReadFromTool(prisma as never, owner, { name: "Interrogate" })).toMatchObject({
-      name: "interrogate",
+      name,
       source: "user",
       readOnly: false,
+    });
+    expect(await skillReadFromTool(prisma as never, owner, { skillId: "legacy-1" })).toMatchObject({
+      name,
+      source: "user",
     });
     expect(
       await skillUpdateFromTool(prisma as never, owner, {
@@ -293,7 +297,7 @@ describe("skill tools", () => {
     ).toMatchObject({ ok: true });
     expect(await skillDeleteFromTool(prisma as never, owner, { name: "Interrogate" })).toEqual({
       ok: true,
-      name: "interrogate",
+      name: name.trim(),
     });
   });
 

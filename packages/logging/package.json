@@ -1,0 +1,35 @@
+{
+  "name": "@rakazo/logging",
+  "version": "0.1.0",
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "development": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./hono": {
+      "types": "./src/hono.ts",
+      "development": "./src/hono.ts",
+      "default": "./src/hono.ts"
+    },
+    "./axiom": {
+      "types": "./src/axiom.ts",
+      "development": "./src/axiom.ts",
+      "default": "./src/axiom.ts"
+    }
+  },
+  "scripts": {
+    "check": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --root ../.. packages/logging/src"
+  },
+  "dependencies": {
+    "@axiomhq/js": "^1.3.1",
+    "hono": "^4.9.6"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.2",
+    "vitest": "^4.1.10"
+  }
+}

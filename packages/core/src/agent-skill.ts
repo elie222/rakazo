@@ -161,7 +161,10 @@ export function extractForcedSkillName(prompt: string): { name: string; rest: st
  */
 export function extractRoutineSkillMentions(prompt: string, knownNames?: string[]): string[] {
   if (knownNames && knownNames.length > 0) {
-    const sorted = [...knownNames].sort((a, b) => b.length - a.length);
+    const sorted = knownNames
+      .map((name) => name.trim())
+      .filter(Boolean)
+      .sort((a, b) => b.length - a.length);
     const found: string[] = [];
     const seen = new Set<string>();
     for (const name of sorted) {
@@ -209,8 +212,7 @@ export function mergeBuiltinSkills<T extends { name: string }>(
   builtins: readonly T[],
   userSkills: readonly T[],
 ): T[] {
-  const userNames = new Set(userSkills.map((skill) => skill.name.toLowerCase()));
-  return [...builtins.filter((skill) => !userNames.has(skill.name.toLowerCase())), ...userSkills];
+  return [...builtins.filter((skill) => !findSkillByName(userSkills, skill.name)), ...userSkills];
 }
 
 export function findSkillByName<T extends { name: string }>(
@@ -265,7 +267,7 @@ export function expandSkillReferencesInPrompt(
     blocks.push(formatForcedSkillPrompt(skill.name, skill.content));
     // Strip the @mention token so the agent is not confused by a dangling pointer.
     remaining = remaining.replace(
-      new RegExp(`(^|[\\s(,])@${escapeRegExp(skill.name)}(?=[\\s,.)]|$)`, "gi"),
+      new RegExp(`(^|[\\s(,])@${escapeRegExp(mention)}(?=[\\s,.)]|$)`, "gi"),
       "$1",
     );
   }

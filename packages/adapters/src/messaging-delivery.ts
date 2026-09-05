@@ -9,6 +9,7 @@ import type { MessageBlock } from "@rakazo/contracts";
 import { botMessageHopExhausted, nextBotMessageHop } from "@rakazo/core";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { appendEventInTransaction, createThreadMessageInTransaction } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
 
 /**
  * Margin under vendor consecutive-outbound caps (sendblue enforces one hard):
@@ -201,7 +202,7 @@ async function mirrorChannelRun(
         });
         if (sent.runId) {
           await deps.jobs.enqueue(runContinueJob(sent.runId)).catch((error) => {
-            console.error("messaging peer wake enqueue error", error);
+            getLogger().error("messaging peer wake enqueue error", error);
           });
         }
         continue;

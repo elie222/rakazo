@@ -2,6 +2,7 @@ import { File, Paths } from "expo-file-system";
 import * as Sharing from "expo-sharing";
 import { rpc } from "./api";
 import { artifactCacheFileName } from "./artifact-file";
+import { t } from "./i18n";
 
 export type MobileArtifactTarget = { botId: string } | { groupId: string };
 
@@ -40,5 +41,5 @@ export async function openMobileArtifact(
     await Sharing.shareAsync(file.uri, { mimeType });
     return;
   }
-  throw new Error(`Saved ${name} locally`);
+  throw new Error(t("Saved {name} locally", { name }));
 }

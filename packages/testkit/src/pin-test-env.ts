@@ -12,3 +12,8 @@ if (!process.env.VERIFY_PROVIDERS) {
     delete process.env.REALTIME_DATABASE_URL;
   }
 }
+delete process.env.AXIOM_TOKEN;
+delete process.env.AXIOM_DATASET;
+if (!process.env.VERIFY_LOGGING) {
+  process.env.LOG_LEVEL = "off";
+}

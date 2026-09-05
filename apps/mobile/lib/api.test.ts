@@ -249,6 +249,23 @@ describe("mobile API authentication", () => {
     expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith("rakazo.session_token");
   });
 
+  it("clears the local session when the sign-out request stalls", async () => {
+    vi.useFakeTimers();
+    vi.mocked(SecureStore.getItemAsync).mockResolvedValue("session-token");
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ json: null }))
+      .mockImplementationOnce(() => new Promise<Response>(() => undefined));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const pending = signOut();
+    await vi.advanceTimersByTimeAsync(8_000);
+    await pending;
+
+    expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith("rakazo.session_token");
+    expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith("rakazo.space_id");
+  });
+
   it("unregisters push delivery before deleting the account", async () => {
     vi.mocked(SecureStore.getItemAsync).mockResolvedValue("session-token");
     const fetchMock = vi

@@ -22,6 +22,8 @@ jobs:
       tag: ${{ steps.release.outputs.tag }}
       version: ${{ steps.release.outputs.version }}
       sha: ${{ steps.release.outputs.sha }}
+      platforms: ${{ steps.platforms.outputs.include }}
+      windows: ${{ steps.platforms.outputs.windows }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
@@ -83,6 +85,20 @@ jobs:
           echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "sha=$tag_sha" >> "$GITHUB_OUTPUT"
+      - name: Choose release platforms
+        id: platforms
+        env:
+          # Windows builds only when an Authenticode certificate is configured; macOS and Linux always build.
+          WINDOWS_SIGNING: ${{ secrets.DESKTOP_WIN_CSC_LINK != '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          include='[{"os":"macos-14","artifact":"macos"},{"os":"ubuntu-24.04","artifact":"linux"}]'
+          if [[ "$WINDOWS_SIGNING" == "true" ]]; then
+            include="$(jq -c '. + [{"os":"windows-2022","artifact":"windows"}]' <<<"$include")"
+          fi
+          echo "include=$include" >> "$GITHUB_OUTPUT"
+          echo "windows=$WINDOWS_SIGNING" >> "$GITHUB_OUTPUT"
 
   build:
     name: Build signed ${{ matrix.artifact }} artifacts
@@ -92,13 +108,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: macos-14
-            artifact: macos
-          - os: windows-2022
-            artifact: windows
-          - os: ubuntu-24.04
-            artifact: linux
+        include: ${{ fromJSON(needs.validate.outputs.platforms) }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
@@ -120,27 +130,37 @@ jobs:
         env:
           CSC_LINK: ${{ secrets.DESKTOP_MAC_CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.DESKTOP_MAC_CSC_KEY_PASSWORD }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+          APPLE_API_KEY: ${{ runner.temp }}/apple-api-key.p8
         run: |
           set -euo pipefail
           test -n "$CSC_LINK"
           test -n "$CSC_KEY_PASSWORD"
-          test -n "$APPLE_ID"
-          test -n "$APPLE_APP_SPECIFIC_PASSWORD"
-          test -n "$APPLE_TEAM_ID"
+          test -n "$APPLE_API_KEY_ID"
+          test -n "$APPLE_API_ISSUER"
+          test -n "$APPLE_API_KEY_P8"
+          umask 077
+          printf '%s\n' "$APPLE_API_KEY_P8" > "$APPLE_API_KEY"
+          chmod 600 "$APPLE_API_KEY"
       - name: Package signed and notarized universal macOS app
         if: runner.os == 'macOS'
         env:
           CSC_LINK: ${{ secrets.DESKTOP_MAC_CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.DESKTOP_MAC_CSC_KEY_PASSWORD }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ runner.temp }}/apple-api-key.p8
         run: >-
           pnpm --filter @rakazo/desktop exec electron-builder
           --mac --universal --publish never -c.forceCodeSigning=true
+      - name: Remove the App Store Connect API key from the runner
+        if: always() && runner.os == 'macOS'
+        shell: bash
+        env:
+          APPLE_API_KEY: ${{ runner.temp }}/apple-api-key.p8
+        run: rm -f "$APPLE_API_KEY"
       - name: Verify macOS signature, notarization ticket, and update feed
         if: runner.os == 'macOS'
         shell: bash
@@ -264,6 +284,7 @@ jobs:
           RELEASE_SHA: ${{ needs.validate.outputs.sha }}
           RELEASE_TAG: ${{ needs.validate.outputs.tag }}
           RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+          WINDOWS_BUILT: ${{ needs.validate.outputs.windows }}
         shell: bash
         run: |
           set -euo pipefail
@@ -273,18 +294,20 @@ jobs:
             exit 1
           fi
 
-          test -f release-artifacts/latest.yml
           test -f release-artifacts/latest-mac.yml
           test -f release-artifacts/latest-linux.yml
           compgen -G 'release-artifacts/*.dmg' >/dev/null
           compgen -G 'release-artifacts/*.zip' >/dev/null
-          compgen -G 'release-artifacts/*.exe' >/dev/null
           compgen -G 'release-artifacts/*.AppImage' >/dev/null
           feeds=(
-            release-artifacts/latest.yml
             release-artifacts/latest-mac.yml
             release-artifacts/latest-linux.yml
           )
+          if [[ "$WINDOWS_BUILT" == "true" ]]; then
+            test -f release-artifacts/latest.yml
+            compgen -G 'release-artifacts/*.exe' >/dev/null
+            feeds+=(release-artifacts/latest.yml)
+          fi
           for feed in "${feeds[@]}"; do
             grep -Fqx "version: $RELEASE_VERSION" "$feed"
           done

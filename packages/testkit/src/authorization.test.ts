@@ -971,6 +971,12 @@ describeWithDatabase("API authorization and resource isolation", () => {
     const other = await signup(app, `deployment-other-${stamp}@rakazo.test`, "Deployment Other");
     const ownerActor = await rpc<Actor>(app, owner, "me");
     const otherActor = await rpc<Actor>(app, other, "me");
+    // This test changes a live allowlist; the operator has already proved
+    // ownership of the mailbox. Endpoint verification has offline auth tests.
+    await handles.prisma.user.update({
+      where: { id: ownerActor.userId },
+      data: { emailVerified: true },
+    });
     await handles.prisma.deploymentSettings.update({
       where: { id: "default" },
       data: {
@@ -1025,7 +1031,17 @@ describeWithDatabase("API authorization and resource isolation", () => {
       });
       expect(disallowedSignup.status).toBe(400);
       expect(await disallowedSignup.text()).toContain("Email is not allowed to register");
-      await signup(app, approvedEmail, "Approved Signup");
+      const unverifiedSignup = await app.request("/api/auth/sign-up/email", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          email: approvedEmail,
+          password: "password123",
+          name: "Approved Signup",
+        }),
+      });
+      expect(unverifiedSignup.status).toBe(400);
+      expect(await unverifiedSignup.text()).toContain("Registration requires email delivery");
     } finally {
       await rpc(app, owner, "deployment/update", {
         signupsEnabled: true,

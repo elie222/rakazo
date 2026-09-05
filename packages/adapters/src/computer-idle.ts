@@ -1,6 +1,7 @@
 import {
   type AdapterContext,
   type AgentHomeStore,
+  type ComputerRef,
   computerSleepJob,
   type JobPublisher,
   type SandboxProvider,
@@ -16,12 +17,127 @@ const BACKGROUND_WORK_MARKER_PREFIX = "/tmp/rakazo-background-";
 const BACKGROUND_WORK_IDLE_SENTINEL = "rakazo-background-idle";
 
 export const BACKGROUND_WORK_LAUNCH = [
-  `marker="${BACKGROUND_WORK_MARKER_PREFIX}$1-$2"`,
+  `marker="${BACKGROUND_WORK_MARKER_PREFIX}$1-$2-$3"`,
   "set -o noclobber",
   'exec 9>"$marker" || exit 1',
   "set +o noclobber",
-  'exec bash -lc "$3"',
+  'exec bash -lc "$4"',
 ].join("\n");
+
+/** Terminate background shell wrappers for one cancelled run. Browser teardown stays screen-scoped. */
+export const CANCEL_COMPUTER_RUN_WORK = [
+  'computerId="$1"',
+  'runId="$2"',
+  '[ -n "$computerId" ] && [ -n "$runId" ] || exit 0',
+  `prefix="${BACKGROUND_WORK_MARKER_PREFIX}$computerId-$runId-"`,
+  // Match the timeout wrapper cmdline (still contains the launch tag after exec into the user command).
+  'pkill -TERM -f "rakazo-background-launch ${computerId} ${runId} " 2>/dev/null || true',
+  "if [ -d /proc ]; then",
+  "  for fd in /proc/[0-9]*/fd/*; do",
+  '    target="$(readlink "$fd" 2>/dev/null)" || continue',
+  '    case "$target" in',
+  '      "$prefix"*)',
+  '        pid="${fd#/proc/}"; pid="${pid%%/*}"',
+  '        if [ -n "$pid" ] && [ "$pid" -eq "$pid" ] 2>/dev/null; then',
+  // Never kill -PID (process group): sandbox work often shares the caller's PGID.
+  '          kill -TERM "$pid" 2>/dev/null || true',
+  "        fi",
+  "        ;;",
+  "    esac",
+  "  done",
+  'elif [ "$(uname -s 2>/dev/null)" = "Darwin" ] && command -v lsof >/dev/null 2>&1; then',
+  '  for marker in "$prefix"*; do',
+  '    [ -e "$marker" ] || continue',
+  '    for pid in $(lsof -t -- "$marker" 2>/dev/null); do',
+  '      kill -TERM "$pid" 2>/dev/null || true',
+  "    done",
+  "  done",
+  "fi",
+  "sleep 0.2",
+  'pkill -KILL -f "rakazo-background-launch ${computerId} ${runId} " 2>/dev/null || true',
+  "if [ -d /proc ]; then",
+  "  for fd in /proc/[0-9]*/fd/*; do",
+  '    target="$(readlink "$fd" 2>/dev/null)" || continue',
+  '    case "$target" in',
+  '      "$prefix"*)',
+  '        pid="${fd#/proc/}"; pid="${pid%%/*}"',
+  '        if [ -n "$pid" ] && [ "$pid" -eq "$pid" ] 2>/dev/null; then',
+  '          kill -KILL "$pid" 2>/dev/null || true',
+  "        fi",
+  "        ;;",
+  "    esac",
+  "  done",
+  'elif [ "$(uname -s 2>/dev/null)" = "Darwin" ] && command -v lsof >/dev/null 2>&1; then',
+  '  for marker in "$prefix"*; do',
+  '    [ -e "$marker" ] || continue',
+  '    for pid in $(lsof -t -- "$marker" 2>/dev/null); do',
+  '      kill -KILL "$pid" 2>/dev/null || true',
+  "    done",
+  "  done",
+  "fi",
+  'rm -f -- "$prefix"* 2>/dev/null || true',
+].join("\n");
+
+/**
+ * Kill the primary browser session without matching chromium-screen-* profiles.
+ * Covers Docker (--user-data-dir=.../chromium) and portable launches that only
+ * use the symlinked primary profile (E2B desktop.launch / Daytona nohup).
+ */
+export const CANCEL_PRIMARY_BROWSER_WORK = [
+  "pkill -TERM -f -- '--user-data-dir=.*/.browser-profiles/chromium$' || true",
+  "pkill -TERM -f -- '--user-data-dir=.*/.browser-profiles/chromium ' || true",
+  // Portable primary browsers often omit --user-data-dir; match argv0 only so
+  // unrelated processes (e.g. node --engine=chromium) are not killed.
+  "if [ -d /proc ]; then for pid in /proc/[0-9]*; do",
+  '  cmdline="$(tr "\\0" " " <"$pid/cmdline" 2>/dev/null)" || continue',
+  '  case "$cmdline" in *chromium-screen-*) continue ;; esac',
+  '  argv0=""; IFS= read -r -d "" argv0 <"$pid/cmdline" || true',
+  '  case "$argv0" in',
+  "    */google-chrome|*/google-chrome-*|google-chrome|google-chrome-*|*/chromium|*/chromium-*|chromium|chromium-*|*/chrome|chrome|*/firefox|*/firefox-*|firefox|firefox-*)",
+  '      kill -TERM "${pid#/proc/}" 2>/dev/null || true',
+  "      ;;",
+  "  esac",
+  "done; fi",
+  "sleep 0.2",
+  "pkill -KILL -f -- '--user-data-dir=.*/.browser-profiles/chromium$' || true",
+  "pkill -KILL -f -- '--user-data-dir=.*/.browser-profiles/chromium ' || true",
+  "if [ -d /proc ]; then for pid in /proc/[0-9]*; do",
+  '  cmdline="$(tr "\\0" " " <"$pid/cmdline" 2>/dev/null)" || continue',
+  '  case "$cmdline" in *chromium-screen-*) continue ;; esac',
+  '  argv0=""; IFS= read -r -d "" argv0 <"$pid/cmdline" || true',
+  '  case "$argv0" in',
+  "    */google-chrome|*/google-chrome-*|google-chrome|google-chrome-*|*/chromium|*/chromium-*|chromium|chromium-*|*/chrome|chrome|*/firefox|*/firefox-*|firefox|firefox-*)",
+  '      kill -KILL "${pid#/proc/}" 2>/dev/null || true',
+  "      ;;",
+  "  esac",
+  "done; fi",
+  'rm -f "$HOME/.browser-profiles/chromium/SingletonLock" "$HOME/.browser-profiles/chromium/SingletonCookie" "$HOME/.browser-profiles/chromium/SingletonSocket" 2>/dev/null || true',
+].join("; ");
+
+export function cancelComputerRunWorkArgv(computerId: string, runId: string): string[] {
+  return ["bash", "-c", CANCEL_COMPUTER_RUN_WORK, "rakazo-cancel-run-work", computerId, runId];
+}
+
+export async function cancelComputerRunWork(
+  sandbox: Pick<SandboxProvider, "execute">,
+  computer: ComputerRef,
+  computerId: string,
+  runId: string,
+  context: AdapterContext,
+): Promise<void> {
+  if (!computerId || !runId) return;
+  try {
+    for await (const _event of sandbox.execute(
+      computer,
+      { argv: cancelComputerRunWorkArgv(computerId, runId), timeoutMs: 15_000 },
+      context,
+    )) {
+      // Drain so providers can finish the exec session.
+    }
+  } catch {
+    // Best effort after the run is already cancelled.
+  }
+}
 
 export const BACKGROUND_WORK_PROBE = [
   `prefix="${BACKGROUND_WORK_MARKER_PREFIX}$1-"`,

@@ -9,6 +9,7 @@ import {
   type PlaywrightScreenshot,
   renderPlaywrightDashboard,
   renderScreenshotGallery,
+  screenshotTitleFromFileName,
   shouldPublishStableMainBaseline,
   updatePlaywrightHistory,
   validatePlaywrightScreenshotBudget,
@@ -138,7 +139,7 @@ async function collectScreenshots(
       hash: createHash("sha256").update(screenshot).digest("hex"),
       source,
       testId: testIdFromSource(source),
-      title: titleFromFileName(baseName),
+      title: screenshotTitleFromFileName(baseName),
     });
   }
   return screenshots;
@@ -177,13 +178,6 @@ async function findPngFiles(
 
 function sanitizeFileName(fileName: string): string {
   return fileName.replaceAll(/[^a-zA-Z0-9._-]/g, "-");
-}
-
-function titleFromFileName(fileName: string): string {
-  return fileName
-    .replace(/\.png$/i, "")
-    .replace(/^\d+-/, "")
-    .replaceAll(/[-_]+/g, " ");
 }
 
 function testIdFromSource(source: string): string {

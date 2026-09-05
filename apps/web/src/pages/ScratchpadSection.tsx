@@ -1,7 +1,9 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { ScratchpadItem } from "@rakazo/contracts";
+import { Button, Checkbox, Input } from "@rakazo/ui-web";
+import { X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { BuiButton } from "../components/beautiful-ui/primitives";
+
 import { rpc } from "../lib/rpc";
 
 export function ScratchpadSection({ botId }: { botId: string }) {
@@ -100,95 +102,101 @@ export function ScratchpadSection({ botId }: { botId: string }) {
 
   return (
     <div className="mt-6" data-testid="bot-scratchpad">
-      <div className="mb-3 text-[14px] text-[#85858A]">
+      <div className="mb-3 text-[14px] text-muted-foreground">
         <Trans>Open work</Trans>
       </div>
       {items.length === 0 ? (
-        <div className="px-2.5 py-1 text-[13.5px] text-[#6C6C70]">
+        <div className="py-1 text-[13.5px] text-muted-foreground/80">
           <Trans>None yet</Trans>
         </div>
       ) : (
         items.map((item) => (
           <div
             key={item.id}
-            className="flex w-full items-start gap-2 rounded-[11px] px-2.5 py-2.5 hover:bg-[#121214]"
+            className="flex w-full items-start gap-2 rounded-xl px-2.5 py-2.5 hover:bg-accent"
           >
-            <button
-              type="button"
+            <Checkbox
               aria-label={item.status === "done" ? t`Reopen` : t`Complete`}
+              checked={item.status === "done"}
               disabled={busy}
-              onClick={() => void setStatus(item, item.status === "done" ? "open" : "done")}
-              className="mt-0.5 h-4 w-4 shrink-0 rounded border border-[#3A3A40] text-[10px] leading-none text-[#E65707]"
-            >
-              {item.status === "done" ? "✓" : ""}
-            </button>
+              onCheckedChange={(checked) => void setStatus(item, checked ? "done" : "open")}
+              className="mt-0.5"
+            />
             <div className="min-w-0 flex-1">
               <div
-                className={`text-start text-[14.5px] ${item.status === "done" ? "text-[#6C6C70] line-through" : "text-[#ECECEE]"}`}
+                className={`text-start text-[14.5px] ${item.status === "done" ? "text-muted-foreground/80 line-through" : "text-foreground"}`}
                 dir="auto"
               >
                 {item.title}
               </div>
               {item.notes ? (
-                <div className="mt-0.5 text-[12.5px] text-[#6C6C70]" dir="auto">
+                <div className="mt-0.5 text-[12.5px] text-muted-foreground/80" dir="auto">
                   {item.notes}
                 </div>
               ) : null}
             </div>
-            <span className="shrink-0 text-[12px] text-[#6C6C70]">{item.status}</span>
+            <span className="shrink-0 text-[12px] text-muted-foreground/80">{item.status}</span>
             {item.status === "open" ? (
-              <button
-                type="button"
+              <Button
+                variant="ghost"
+                size="xs"
                 aria-label={t`Park`}
                 disabled={busy}
                 onClick={() => void setStatus(item, "parked")}
-                className="shrink-0 text-[12px] text-[#7A7A80]"
+                className="shrink-0 text-muted-foreground/70"
               >
                 <Trans>Park</Trans>
-              </button>
+              </Button>
             ) : item.status === "parked" ? (
-              <button
-                type="button"
+              <Button
+                variant="ghost"
+                size="xs"
                 aria-label={t`Reopen`}
                 disabled={busy}
                 onClick={() => void setStatus(item, "open")}
-                className="shrink-0 text-[12px] text-[#7A7A80]"
+                className="shrink-0 text-muted-foreground/70"
               >
                 <Trans>Open</Trans>
-              </button>
+              </Button>
             ) : null}
-            <button
-              type="button"
+            <Button
+              variant="ghost"
+              size="icon-xs"
               aria-label={t`Remove`}
               disabled={busy}
               onClick={() => void removeItem(item)}
-              className="shrink-0 text-[12px] text-[#7A7A80]"
+              className="shrink-0 text-muted-foreground/70"
             >
-              ✕
-            </button>
+              <X />
+            </Button>
           </div>
         ))
       )}
       <form
-        className="mt-2 flex items-center gap-2 px-2.5"
+        className="mt-2 flex items-center gap-2"
         onSubmit={(event) => {
           event.preventDefault();
           void addItem();
         }}
       >
-        <input
+        <Input
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
           placeholder={t`Add item`}
           aria-label={t`New open-work item`}
           maxLength={200}
-          className="min-w-0 flex-1 rounded-[11px] border border-[#26262A] bg-transparent px-3 py-2 text-[14px] text-[#ECECEE] placeholder:text-[#55555A]"
+          className="min-w-0 flex-1"
         />
-        <BuiButton disabled={busy || !draft.trim()} onClick={() => void addItem()}>
+        <Button
+          variant="secondary"
+          className="rounded-full"
+          disabled={busy || !draft.trim()}
+          onClick={() => void addItem()}
+        >
           <Trans>Add</Trans>
-        </BuiButton>
+        </Button>
       </form>
-      {error ? <div className="mt-2 px-2.5 text-[13px] text-[#C45C5C]">{error}</div> : null}
+      {error ? <div className="mt-2 text-[13px] text-destructive">{error}</div> : null}
     </div>
   );
 }

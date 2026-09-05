@@ -18,6 +18,7 @@ import type {
   AgentToolExecutionResult,
   ConnectorTool,
 } from "@rakazo/adapter-kit";
+import { getLogger } from "@rakazo/logging";
 import { isToolPauseResult } from "./approval-effect.js";
 import { builtinAgentTools, DELEGATION_TOOL_NAMES } from "./builtin-tools.js";
 import { PiRuntimeCredentialStore, toOAuthCredential } from "./pi-credentials.js";
@@ -29,7 +30,7 @@ import {
 } from "./pi-openai-compatible-provider.js";
 import { textContentArg } from "./tool-text.js";
 
-const running = new Map<string, AbortController>();
+const running = new Map<string, { controller: AbortController; work: Promise<void> }>();
 // Built on first use, not at module load: entry points call loadRootEnv() after
 // their imports, and ESM hoists those imports, so module-level env reads here
 // would run before .env is loaded and miss the local provider entirely.
@@ -78,16 +79,43 @@ export class PiAgentRuntime implements AgentRuntime {
   }
 
   async abort(runId: string): Promise<void> {
-    running.get(runId)?.abort();
+    const active = running.get(runId);
+    active?.controller.abort();
+    await active?.work;
   }
 
-  async *run(
+  run(
     request: AgentRunRequest,
     context?: Partial<AdapterContext>,
-  ): AsyncIterable<AgentRuntimeEvent> {
+  ): AsyncIterableIterator<AgentRuntimeEvent> {
     const controller = new AbortController();
-    running.set(request.runId, controller);
-    const signal = context?.signal ?? controller.signal;
+    const events = this.runEvents(request, controller, context);
+    return {
+      [Symbol.asyncIterator]() {
+        return this;
+      },
+      next: () => events.next(),
+      return: () => {
+        // An async generator queues return() behind a pending next(). Abort
+        // immediately so a quiet model request can settle that pending read.
+        controller.abort();
+        return events.return();
+      },
+      throw: (error) => {
+        controller.abort();
+        return events.throw(error);
+      },
+    };
+  }
+
+  private async *runEvents(
+    request: AgentRunRequest,
+    controller: AbortController,
+    context?: Partial<AdapterContext>,
+  ): AsyncGenerator<AgentRuntimeEvent, void> {
+    const signal = context?.signal
+      ? AbortSignal.any([controller.signal, context.signal])
+      : controller.signal;
     const queue = createQueue();
 
     const work = (async () => {
@@ -161,6 +189,7 @@ export class PiAgentRuntime implements AgentRuntime {
 
         let agent: Agent;
         agent = new Agent({
+          sessionId: `${request.threadId}:${request.botId}`,
           steeringMode: "all",
           streamFn: (m, ctx, options) =>
             models.streamSimple(m, ctx, reliableStreamOptions(m, options)),
@@ -218,6 +247,7 @@ export class PiAgentRuntime implements AgentRuntime {
             queue.push({
               type: "progress",
               text: describeToolActivity(event.toolName, event.args),
+              activity: true,
             });
           }
           if (
@@ -229,7 +259,7 @@ export class PiAgentRuntime implements AgentRuntime {
               if (toolActivityShowing) {
                 // Real text replaces the activity line instead of appending to it.
                 toolActivityShowing = false;
-                queue.push({ type: "progress", text: "" });
+                queue.push({ type: "progress", text: "", activity: true });
               }
               streamed += delta;
               queue.push({ type: "text", text: delta });
@@ -261,9 +291,12 @@ export class PiAgentRuntime implements AgentRuntime {
         ]);
         try {
           await agent.prompt(initialPrompt, images?.length ? images : undefined);
-          await agent.waitForIdle();
         } finally {
-          signal.removeEventListener("abort", onAbort);
+          try {
+            await agent.waitForIdle();
+          } finally {
+            signal.removeEventListener("abort", onAbort);
+          }
         }
 
         // Budget abort stops the agent underneath the model, which leaves
@@ -304,12 +337,15 @@ export class PiAgentRuntime implements AgentRuntime {
         queue.close();
       }
     })();
+    const active = { controller, work };
+    running.set(request.runId, active);
 
     try {
       yield* queue.iterate();
-      await work;
     } finally {
-      running.delete(request.runId);
+      controller.abort();
+      await work;
+      if (running.get(request.runId) === active) running.delete(request.runId);
     }
   }
 }
@@ -629,6 +665,7 @@ function toAgentTool(tool: ConnectorTool, host: ToolHost, exposedName: string): 
       return raw as never;
     },
     execute: async (toolCallId, params) => {
+      host.signal.throwIfAborted();
       const args = (params ?? {}) as Record<string, unknown>;
       const executionId =
         toolCallId || `${host.request.runId}:${tool.name}:${host.toolCallSeq.value++}`;
@@ -822,9 +859,15 @@ async function executeSubagent(host: ToolHost, executionId: string, args: Record
     }
     const onAbort = () => nested.abort();
     host.signal.addEventListener("abort", onAbort);
-    await nested.prompt(task || "Complete the delegated task.");
-    await nested.waitForIdle();
-    host.signal.removeEventListener("abort", onAbort);
+    try {
+      await nested.prompt(task || "Complete the delegated task.");
+    } finally {
+      try {
+        await nested.waitForIdle();
+      } finally {
+        host.signal.removeEventListener("abort", onAbort);
+      }
+    }
     // Shared-budget abort leaves errorMessage on the nested agent; surface it as a
     // completed stop rather than a failed subagent chip.
     const budgetExceeded = host.toolCallBudget.exceeded;
@@ -871,7 +914,7 @@ function safeJsonSchemaParameters(tool: ConnectorTool) {
   try {
     return jsonSchemaParameters(tool.inputSchema);
   } catch (error) {
-    console.error(`unsupported input schema for tool ${tool.name}`, error);
+    getLogger().error(`unsupported input schema for tool ${tool.name}`, error);
     return Type.Object({});
   }
 }

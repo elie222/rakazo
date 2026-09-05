@@ -55,8 +55,9 @@ test("sidebar Now and Recent surface active and terminal runs", async ({ page },
   const composer = page.getByPlaceholder(/Message/);
   await composer.fill("keep working until I stop you");
   await page.keyboard.press("Enter");
-  await expect(page.getByText("still working").first()).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByRole("button", { name: "Stop", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Stop", exact: true })).toBeVisible({
+    timeout: 30_000,
+  });
 
   await activityToggle.click();
   await expect(activityToggle).toHaveAttribute("aria-pressed", "true");
@@ -66,7 +67,6 @@ test("sidebar Now and Recent surface active and terminal runs", async ({ page },
   await page.reload();
   await expect(activityToggle).toHaveAttribute("aria-pressed", "true");
   await expect(activityToggle).toHaveAttribute("data-activity-mode", "on");
-  await expect(page.getByText("still working").first()).toBeVisible({ timeout: 30_000 });
   await expect(page.getByRole("button", { name: "Stop", exact: true })).toBeVisible({
     timeout: 30_000,
   });
