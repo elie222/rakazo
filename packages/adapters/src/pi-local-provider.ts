@@ -5,7 +5,6 @@ import {
   type Provider,
 } from "@earendil-works/pi-ai";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
-import { openAiCompatibleThinking } from "./openai-compatible-thinking.js";
 
 /**
  * Local OpenAI-compatible model server (Ollama, LM Studio, llama.cpp, MLX).
@@ -69,7 +68,8 @@ function localModel(id: string): Model<"openai-completions"> {
     api: "openai-completions",
     provider: LOCAL_PROVIDER_ID,
     baseUrl: localBaseUrl(),
-    ...openAiCompatibleThinking(id),
+    reasoning: false,
+    compat: { supportsDeveloperRole: false, supportsReasoningEffort: false },
     input: ["text"],
     // Runs on the operator's own hardware, so there is nothing to bill.
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },

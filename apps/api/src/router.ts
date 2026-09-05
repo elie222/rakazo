@@ -737,7 +737,32 @@ export function createRouter(deps: RouterDeps) {
             const entry = listPiCatalog().find(
               (item) => item.provider === effectiveProvider && item.id === effectiveModelId,
             );
-            const allowed = entry?.thinkingLevels;
+            let allowed = entry?.thinkingLevels;
+            if (effectiveProvider === OPENAI_COMPATIBLE_PROVIDER_ID) {
+              allowed = ["off"];
+              const credential = await findModelCredential(
+                deps.prisma,
+                context.actor,
+                effectiveProvider,
+              );
+              if (credential && credential.defaultModel === effectiveModelId) {
+                const secret = await deps.prisma.secret.findFirst({
+                  where: { id: credential.secretId, userId: context.actor.userId, spaceId: null },
+                  select: { ciphertext: true },
+                });
+                if (secret) {
+                  try {
+                    allowed =
+                      modelCredentialDto(
+                        credential,
+                        deps.secrets.load(secret.ciphertext, credential.secretId),
+                      ).thinkingLevels ?? allowed;
+                  } catch {
+                    // Unreadable connections must not advertise reasoning support.
+                  }
+                }
+              }
+            }
             if (allowed && !allowed.includes(input.thinkingLevel)) {
               throw new ORPCError("BAD_REQUEST", {
                 message: `Thinking level must be one of: ${allowed.join(", ")}`,

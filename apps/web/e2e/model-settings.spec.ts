@@ -1,47 +1,42 @@
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { expect, test } from "@playwright/test";
-import type { ModelCatalogEntry } from "@rakazo/contracts";
 import { captureScreenshot, completeOnboarding, rpc, signup } from "./helpers";
 
 const LOCAL_MODEL_ID = "rakazo-e2e-local";
 const LOCAL_MODEL_REPLY = "OpenAI-compatible endpoint verified end to end.";
 
-test("custom reasoning models keep endpoint choices scoped and save thinking", async ({
+test("custom connections persist reasoning support and bot thinking", async ({
   page,
 }, testInfo) => {
   const stamp = Date.now();
-  await signup(page, `qwen-model-${stamp}@rakazo.test`, "password12", "Qwen model");
+  const userName = `Reasoning ${stamp}`;
+  await signup(page, `reasoning-model-${stamp}@rakazo.test`, "password12", userName);
   await completeOnboarding(page);
-  // Inject catalog metadata before reload/settings so thinking levels are present
-  // when Advanced opens. Adapter tests cover the operator env opt-in itself.
-  await page.route("**/rpc/models/list", async (route) => {
-    const response = await route.fetch();
-    const body = (await response.json()) as { json: ModelCatalogEntry[] };
-    const template = body.json.find((entry) => entry.provider === "openai-compatible");
-    if (!template) {
-      await route.fulfill({ response });
-      return;
-    }
-    for (const id of ["test-qwen", "other-endpoint-model"]) {
-      body.json.push({
-        ...template,
-        id,
-        label: id,
-        placeholder: true,
-        reasoning: true,
-        thinkingLevels: ["off", "minimal", "low", "medium", "high"],
-      });
-    }
-    await route.fulfill({ response, json: body });
-  });
-  // Keyless connect: no live mock server required for openai-compatible credentials.
-  await rpc(page, "models/connect", {
-    provider: "openai-compatible",
-    baseUrl: "http://127.0.0.1:8090/v1",
-    modelId: "test-qwen",
-  });
+  await page.getByRole("button", { name: new RegExp(userName) }).click();
+  await page.getByRole("button", { name: "Models", exact: true }).click();
+  await page.getByPlaceholder("Search providers").fill("openai-compatible");
+  await page.getByRole("button", { name: /OpenAI-compatible/ }).click();
+  await page.getByLabel("OpenAI-compatible server URL").fill("http://127.0.0.1:8090/v1");
+  await page.getByLabel("Model id").fill("arbitrary-model");
+  await expect(page.getByRole("checkbox", { name: "Supports thinking" })).toBeHidden();
+  await page.getByText("Advanced", { exact: true }).click();
+  await page.getByRole("checkbox", { name: "Supports thinking" }).check();
+  await captureScreenshot(page, testInfo, "openai-compatible-thinking-connection");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.getByText("Saved.", { exact: true })).toBeVisible();
+  const credentials = await rpc<Array<{ modelId?: string; reasoning?: boolean }>>(
+    page,
+    "models/credentials",
+    {},
+  );
+  expect(credentials.find((entry) => entry.modelId === "arbitrary-model")?.reasoning).toBe(true);
   await page.reload();
+  await page.getByRole("button", { name: new RegExp(userName) }).click();
+  await page.getByRole("button", { name: "Models", exact: true }).click();
+  await page.getByText("Advanced", { exact: true }).click();
+  await expect(page.getByRole("checkbox", { name: "Supports thinking" })).toBeChecked();
+  await page.getByRole("button", { name: "Close model settings" }).click();
   await page.locator("main").getByRole("button", { name: "Chief", exact: true }).click();
   const settings = page.getByTestId("bot-settings");
   await expect(settings).toBeVisible();
@@ -54,15 +49,14 @@ test("custom reasoning models keep endpoint choices scoped and save thinking", a
   // combobox accessible name, matching other model E2E tests.
   const model = settings.getByRole("combobox", { name: "Model", exact: true });
   await expect(model).toBeVisible();
-  await expect(model).toContainText("test-qwen");
-  await expect(model).not.toContainText("other-endpoint-model");
-  // Value key — not a /test-qwen/ label match, which also hits "Space default (test-qwen)".
-  await model.selectOption("openai-compatible::test-qwen");
+  await expect(model).toContainText("arbitrary-model");
+  // Value key — not a /arbitrary-model/ label match, which also hits "Space default (arbitrary-model)".
+  await model.selectOption("openai-compatible::arbitrary-model");
   const thinking = settings.getByRole("combobox", { name: "Thinking", exact: true });
   await expect(thinking).toBeVisible();
   await thinking.selectOption("low");
   await thinking.scrollIntoViewIfNeeded();
-  await captureScreenshot(page, testInfo, "openai-compatible-qwen-thinking");
+  await captureScreenshot(page, testInfo, "openai-compatible-thinking");
   const saved = page.waitForResponse(
     (response) => response.url().includes("/rpc/bots/update") && response.ok(),
   );

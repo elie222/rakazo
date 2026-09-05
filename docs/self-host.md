@@ -234,25 +234,18 @@ loopback, RFC1918, and `host.docker.internal` targets. To permit public hostname
 only to public addresses; redirects and DNS answers that reach private or link-local networks are
 rejected.
 
-For models whose server uses Qwen chat-template thinking, opt in by exact server model ID:
+For a server/model that accepts standard `reasoning_effort`, enable **Supports thinking**
+under **Advanced** when connecting it. This setting is saved with the connection; it needs no
+environment variable or restart. Existing connections default to disabled. If you used the old
+Qwen model-list environment setting or deployment-local models, connect that endpoint through
+**Settings → Models** and enable thinking there; the old model-list setting is no longer read.
 
-```env
-RAKAZO_OPENAI_COMPAT_QWEN_MODELS=qwen3:4b,my-qwen-model
-```
-
-Set this on both the API and worker and restart them. It applies to the existing `local` and
-`openai-compatible` providers, across all endpoints using those IDs; it does not connect an
-endpoint or choose a default model. Use the normal URL, model ID, and optional-key connection
-flow above. Unlisted models keep their existing reasoning behavior.
-
-Opted-in models default to medium thinking. Web and desktop expose the existing **Thinking**
-control in a bot's advanced settings; mobile runs inherit the same backend policy. Rakazo sends
-`enable_thinking`, `preserve_thinking`, and the requested `reasoning_effort` inside
-`chat_template_kwargs`. Minimal/low map to `low`, medium to `medium`, and high to `xhigh` for
-Qwen effort templates. Off sends `enable_thinking: false` and omits the effort. Older Qwen
-templates may use only the on/off flag. The server must have its model's reasoning and tool-call
-parsers enabled; this setting does not install or configure the server. Existing token limits
-still apply, and an effort level is not a separate reasoning-token budget.
+Enabled connections default to medium thinking. Web and desktop expose **Thinking** in a bot's
+advanced settings; mobile runs inherit the same backend policy. Rakazo sends standard
+`reasoning_effort` values (`minimal`, `low`, `medium`, `high`, or `none` when off); the server owns
+model-specific translation. Configure the server's reasoning and tool-call parsers as needed.
+Servers without standard effort support can remain connected with **Supports thinking** disabled.
+Existing token limits still apply; effort is not a separate reasoning-token budget.
 
 Do not commit `.env`. Never put `COMPOSIO_API_KEY`, OpenRouter keys, or provider tokens in git, logs, or chat.
 

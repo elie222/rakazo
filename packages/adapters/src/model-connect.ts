@@ -1,8 +1,10 @@
-import type { ModelConnectInput, ModelCredential } from "@rakazo/contracts";
+import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
+import type { ModelConnectInput, ModelCredential, ThinkingLevel } from "@rakazo/contracts";
 import { OPENAI_COMPATIBLE_PROVIDER_ID as CONTRACT_OPENAI_COMPAT } from "@rakazo/contracts";
 import { parseModelSecret, type StoredModelSecret, serializeModelSecret } from "./pi-oauth.js";
 import {
   OPENAI_COMPATIBLE_PROVIDER_ID,
+  openAiCompatibleModel,
   prepareOpenAiCompatibleConnect,
 } from "./pi-openai-compatible-provider.js";
 
@@ -12,6 +14,7 @@ export function buildModelConnectPlaintext(input: ModelConnectInput): string {
     const secret: StoredModelSecret = {
       kind: "openai_compatible",
       baseUrl: prepared.baseUrl,
+      ...(input.reasoning !== undefined ? { reasoning: input.reasoning } : {}),
       ...(prepared.apiKey ? { apiKey: prepared.apiKey } : {}),
     };
     return serializeModelSecret(secret);
@@ -47,6 +50,10 @@ export function modelCredentialDto(
   return {
     ...credential,
     baseUrl: parsed.baseUrl,
+    reasoning: parsed.reasoning ?? false,
+    thinkingLevels: getSupportedThinkingLevels(
+      openAiCompatibleModel(row.defaultModel ?? "custom", parsed.baseUrl, parsed.reasoning),
+    ) as ThinkingLevel[],
     modelId: row.defaultModel ?? undefined,
   };
 }
