@@ -19,6 +19,11 @@
       "development": "./src/approval-effect-key.ts",
       "default": "./src/approval-effect-key.ts"
     },
+    "./node/screen-proxy-response": {
+      "types": "./src/node/screen-proxy-response.ts",
+      "development": "./src/node/screen-proxy-response.ts",
+      "default": "./src/node/screen-proxy-response.ts"
+    },
     "./plot": {
       "types": "./src/plot/plot-spec.ts",
       "development": "./src/plot/plot-spec.ts",
