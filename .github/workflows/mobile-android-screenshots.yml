@@ -7,7 +7,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: mobile-android-screenshots
+  group: mobile-android-screenshots-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
