@@ -6,6 +6,8 @@ import type {
   ComputerInput,
   ComputerRef,
   ControlLeaseRef,
+  PageBrowserCommand,
+  PageBrowserResult,
   PortableFile,
   ProcessEvent,
   SandboxProvider,
@@ -113,6 +115,18 @@ export class HostAwareSandbox implements SandboxProvider {
 
   act(computer: ComputerRef, request: ComputerActionRequest, context: AdapterContext) {
     return this.route(computer).act(computer, request, context);
+  }
+
+  pageBrowser(
+    computer: ComputerRef,
+    request: PageBrowserCommand,
+    context: AdapterContext,
+  ): Promise<PageBrowserResult> {
+    const provider = this.route(computer);
+    if (!provider.pageBrowser) {
+      return Promise.reject(new Error("Page browser is unavailable on this computer"));
+    }
+    return provider.pageBrowser(computer, request, context);
   }
 
   listFiles(computer: ComputerRef, path: string, context: AdapterContext) {

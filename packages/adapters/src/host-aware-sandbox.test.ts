@@ -93,4 +93,25 @@ describe("host-aware sandbox", () => {
     expect(sandboxKindForBot("e2b", "this-mac")).toBe("e2b");
     expect(sandboxKindForBot("fake", "this-mac")).toBe("fake");
   });
+
+  it("forwards pageBrowser to the routed provider", async () => {
+    const isolated = new FakeSandboxProvider();
+    const calls: unknown[] = [];
+    isolated.pageBrowser = async (computer, request, context) => {
+      calls.push({ computerId: computer.id, request, aborted: context.signal.aborted });
+      return { ok: true, url: "https://example.test", title: "Example", tree: "", elements: [] };
+    };
+    const host = new DesktopSandboxProvider();
+    const sandbox = new HostAwareSandbox(isolated, host, async () => false);
+    const computer = await sandbox.provision({ botId: "page", homePath: "/tmp/page" }, ctx);
+    expect(typeof sandbox.pageBrowser).toBe("function");
+    await expect(sandbox.pageBrowser!(computer, { command: "snapshot" }, ctx)).resolves.toMatchObject({
+      ok: true,
+      url: "https://example.test",
+    });
+    expect(calls).toEqual([
+      { computerId: computer.id, request: { command: "snapshot" }, aborted: false },
+    ]);
+    await sandbox.destroy(computer, ctx);
+  });
 });
