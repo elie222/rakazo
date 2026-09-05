@@ -278,7 +278,7 @@ describeWithDatabase("Composio catalog reconciliation", () => {
     );
   });
 
-  it("installs Treg and custom MCP sources, discovers tools, and routes both calls", async () => {
+  it("installs Treg, Executor, and custom MCP sources and routes their calls", async () => {
     const cookie = await signup(app, `mcp-connectors-${stamp}@rakazo.test`, "MCP Connectors");
     const actor = await rpc<Actor>(app, cookie, "me");
     const tregCredential = "fake-treg-credential-value";
@@ -305,9 +305,24 @@ describeWithDatabase("Composio catalog reconciliation", () => {
         config: { preset: "custom", auth: { type: "none" } },
       },
     );
+    const executorCredential = "fake-executor-credential-value";
+    const executor = await rpc<{ id: string; secretConfigured: boolean }>(
+      app,
+      cookie,
+      "capabilities/install",
+      {
+        kind: "mcp",
+        name: "Executor",
+        source: "https://executor.example.test/mcp",
+        credential: executorCredential,
+        config: { preset: "custom", auth: { type: "bearer" } },
+      },
+    );
     expect(treg.secretConfigured).toBe(true);
     expect(custom.secretConfigured).toBe(false);
+    expect(executor.secretConfigured).toBe(true);
     expect(JSON.stringify(treg)).not.toContain(tregCredential);
+    expect(JSON.stringify(executor)).not.toContain(executorCredential);
 
     const provider = new InstalledConnectorProvider(
       handles.prisma,
@@ -322,10 +337,10 @@ describeWithDatabase("Composio catalog reconciliation", () => {
       signal: new AbortController().signal,
     };
     const tools = await provider.discoverTools(context);
-    // Two installs expose the same MCP tool name, so approval kinds are disambiguated.
-    expect(tools.filter((tool) => tool.route?.toolName === "notes.write")).toHaveLength(2);
+    // All three installs expose the same MCP tool name, so approval kinds are disambiguated.
+    expect(tools.filter((tool) => tool.route?.toolName === "notes.write")).toHaveLength(3);
     expect(new Set(tools.map((tool) => tool.name)).size).toBe(tools.length);
-    for (const install of [treg, custom]) {
+    for (const install of [treg, executor, custom]) {
       const tool = tools.find((candidate) => candidate.route?.resourceId === install.id);
       expect(tool?.name).toBe(`installed__${install.id}__notes.write`);
       const events = [];
@@ -344,6 +359,13 @@ describeWithDatabase("Composio catalog reconciliation", () => {
     }
     expect(thirdParties.records).toContainEqual(
       expect.objectContaining({ provider: "mcp", operation: "notes.write", host: "treg.to" }),
+    );
+    expect(thirdParties.records).toContainEqual(
+      expect.objectContaining({
+        provider: "mcp",
+        operation: "notes.write",
+        host: "executor.example.test",
+      }),
     );
     expect(thirdParties.records).toContainEqual(
       expect.objectContaining({
