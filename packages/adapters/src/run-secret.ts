@@ -1,10 +1,15 @@
 import type { AdapterContext, ManagedConnectorProvider } from "@rakazo/adapter-kit";
+import { SecretAskPurpose } from "@rakazo/contracts";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 import { type ApprovalPausedToolResult, resolveDuplicateEffectGate } from "./approval-effect.js";
 import type { EncryptedSecretStore } from "./secrets.js";
 
 export function runSecretKind(runId: string): string {
   return `run-secret:${runId}`;
+}
+
+export function normalizeSecretAskPurpose(purpose: string | undefined): SecretAskPurpose {
+  return SecretAskPurpose.safeParse(purpose).data ?? "otp";
 }
 
 export function secretPausedToolResult(): ApprovalPausedToolResult {

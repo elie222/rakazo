@@ -2894,6 +2894,14 @@ function AskBlock({
   const [submitting, setSubmitting] = useState(false);
   const answered = ask.status === "answered";
   const secretInput = isSecretAskBlock(ask);
+  const secretLabel =
+    ask.purpose === "password"
+      ? t("Password")
+      : ask.purpose === "api_key"
+        ? t("API key")
+        : t("Code");
+  const submitLabel = secretInput ? t("Save") : t("Send answer");
+  const submittingLabel = secretInput ? t("Saving…") : t("Sending…");
 
   async function submit() {
     if (submitting) return;
@@ -2901,10 +2909,11 @@ function AskBlock({
     const submitValue = secretInput ? answer : answer.trim();
     setSubmitting(true);
     setError(null);
+    if (secretInput) setAnswer("");
     try {
       await onAnswer(submitValue);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : t("Could not send answer"));
+      setError(!secretInput && cause instanceof Error ? cause.message : t("Could not send answer"));
     } finally {
       setSubmitting(false);
     }
@@ -2929,25 +2938,26 @@ function AskBlock({
       >
         {ask.text}
       </Text>
-      {ask.detail ? (
+      {ask.detail && !secretInput ? (
         <Text style={{ color: tokens.mutedForeground, fontSize: 13.5 }}>{ask.detail}</Text>
       ) : null}
       {answered ? (
         <Text style={{ color: tokens.success, fontSize: 14 }}>
-          {secretInput
-            ? t("Submitted")
-            : t("Answered: {answer}", { answer: ask.answer ?? t("Done") })}
+          {secretInput ? t("Saved") : t("Answered: {answer}", { answer: ask.answer ?? t("Done") })}
         </Text>
       ) : canAnswer ? (
         <>
           <TextInput
-            accessibilityLabel={secretInput ? t("Code") : t("Answer")}
+            accessibilityLabel={secretInput ? secretLabel : t("Answer")}
             value={answer}
             onChangeText={setAnswer}
-            placeholder={secretInput ? t("Code") : t("Type your answer")}
+            placeholder={secretInput ? secretLabel : t("Type your answer")}
             placeholderTextColor={tokens.mutedForeground}
             secureTextEntry={secretInput}
             autoComplete="off"
+            autoCorrect={secretInput ? false : undefined}
+            autoCapitalize={secretInput ? "none" : "sentences"}
+            editable={!submitting}
             onSubmitEditing={() => void submit()}
             style={{
               minHeight: 42,
@@ -2961,7 +2971,7 @@ function AskBlock({
           />
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={t("Send answer")}
+            accessibilityLabel={submitLabel}
             disabled={(secretInput ? answer.length === 0 : !answer.trim()) || submitting}
             onPress={() => void submit()}
             style={{
@@ -2974,7 +2984,7 @@ function AskBlock({
             }}
           >
             <Text style={{ color: tokens.primaryForeground, fontWeight: "600" }}>
-              {submitting ? t("Sending…") : t("Send answer")}
+              {submitting ? submittingLabel : submitLabel}
             </Text>
           </Pressable>
         </>

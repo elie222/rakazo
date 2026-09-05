@@ -46,7 +46,7 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   });
   await createBotFromPicker(page);
   await expect(page.getByPlaceholder("Message New Bot")).toBeVisible();
-  expect(failedPostCreateRefresh).toBe(true);
+  await expect.poll(() => failedPostCreateRefresh).toBe(true);
   await page.unroute("**/rpc/spaces/list");
   await expect(botList.getByRole("button", { name: /^New Bot/ })).toBeVisible();
   await page.waitForURL(/\/app\/[^/]+$/);

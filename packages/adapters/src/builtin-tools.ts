@@ -1,4 +1,5 @@
 import type { ConnectorTool } from "@rakazo/adapter-kit";
+import { SecretAskPurpose } from "@rakazo/contracts";
 
 export const DELEGATION_TOOL_NAMES = new Set([
   "run_subagent",
@@ -183,7 +184,7 @@ export const builtinAgentTools: ConnectorTool[] = [
       type: "object",
       properties: {
         label: { type: "string" },
-        purpose: { type: "string", enum: ["otp", "password", "api_key"] },
+        purpose: { type: "string", enum: SecretAskPurpose.options },
         connectionId: { type: "string" },
       },
       required: ["label", "purpose"],
