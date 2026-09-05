@@ -67,6 +67,7 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   await nameInput.fill("Researcher");
   await titleInput.fill(longTitle);
   await descriptionInput.fill("Finds reliable sources and turns them into concise briefs.");
+  await page.getByRole("radio", { name: "Color 2" }).click();
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(botList.getByRole("button", { name: /^Researcher/ })).toBeVisible();
   await expect(page.getByPlaceholder("Message Researcher")).toBeVisible();
@@ -78,6 +79,7 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
     "Finds reliable sources and turns them into concise briefs.",
   );
   const settings = page.getByTestId("bot-settings");
+  await expect(settings.getByRole("radio", { name: "Color 2" })).toBeChecked();
   const modelSelect = settings.locator("label:has-text('Model') select");
   const teamComputer = settings.getByRole("button", { name: "Team" });
   const openWork = settings.getByTestId("bot-scratchpad");
