@@ -180,6 +180,7 @@ import {
 import { loadAgentMemoryContext } from "./memory-context.js";
 import type { MemoryProviderResolver } from "./memory-provider-factory.js";
 import { selectMemoryTools } from "./memory-tools.js";
+import { selectConfiguredModel } from "./model-selection.js";
 import {
   filterImageReturningComputerTools,
   IMAGE_RETURNING_COMPUTER_TOOLS,
@@ -588,21 +589,15 @@ export function createRunExecutor(deps: ExecutorDeps) {
         findDefaultModelCredential(deps.prisma, scope),
         deps.prisma.deploymentSettings.findUnique({ where: { id: "default" } }),
       ]);
-      // Keep provider/model/credential as one unit — never pair an override
-      // provider with a Space or deployment secret from another provider.
-      const useOverride = Boolean(hasOverride && overrideCredential);
-      const credential = useOverride ? overrideCredential : defaultCredential;
-      const deployment = deps.deploymentModelKey ? resolveDeploymentModel() : null;
-      let provider =
-        (useOverride ? override!.modelProvider : null) ??
-        credential?.provider ??
-        settings?.defaultModelProvider ??
-        deployment?.provider;
-      let id =
-        (useOverride ? override!.modelId : null) ??
-        credential?.defaultModel ??
-        settings?.defaultModelId ??
-        deployment?.model;
+      const selected = selectConfiguredModel({
+        bot: override,
+        overrideCredential,
+        defaultCredential,
+        settings,
+        deployment: deps.deploymentModelKey ? resolveDeploymentModel() : null,
+      });
+      const { credential, thinkingLevel } = selected;
+      let { provider, id } = selected;
       if (!provider || !id) {
         const runtimeFallback = runtimeFallbackModel(deps.runtime);
         provider ??= runtimeFallback?.provider;
@@ -622,12 +617,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         id,
         apiKey: resolved.oauth ? undefined : resolved.apiKey,
         baseUrl: resolved.baseUrl,
-        thinkingLevel:
-          // Apply bot thinking with a successful override or Space default.
-          // Drop it only when an override existed but its credential was missing.
-          hasOverride && !useOverride
-            ? null
-            : ((override?.thinkingLevel as AgentRunRequest["model"]["thinkingLevel"]) ?? null),
+        thinkingLevel,
         oauth: resolved.oauth
           ? { credential: resolved.oauth, persist: resolved.persistOAuth }
           : undefined,
@@ -929,10 +919,6 @@ export function createRunExecutor(deps: ExecutorDeps) {
           hasModelOverride && bot.modelProvider
             ? await findModelCredential(deps.prisma, run, bot.modelProvider)
             : null;
-        // Keep provider/model/credential as one unit — never use the Space
-        // default secret for a different override provider.
-        const useModelOverride = Boolean(hasModelOverride && overrideCredential);
-        const credential = useModelOverride ? overrideCredential! : defaultCredential;
         runAbortController = new AbortController();
         if (!leaseValid) runAbortController.abort();
         const composioRows = storedConnections.filter(
@@ -1095,18 +1081,16 @@ export function createRunExecutor(deps: ExecutorDeps) {
         }
         const runDeployment = deps.deploymentModelKey ? resolveDeploymentModel() : null;
         const runtimeFallback = runtimeFallbackModel(deps.runtime);
-        const runModelProvider =
-          (useModelOverride ? bot.modelProvider : null) ??
-          credential?.provider ??
-          settings?.defaultModelProvider ??
-          runDeployment?.provider ??
-          runtimeFallback?.provider;
-        const runModelId =
-          (useModelOverride ? bot.modelId : null) ??
-          credential?.defaultModel ??
-          settings?.defaultModelId ??
-          runDeployment?.model ??
-          runtimeFallback?.id;
+        const selected = selectConfiguredModel({
+          bot,
+          overrideCredential,
+          defaultCredential,
+          settings,
+          deployment: runDeployment,
+        });
+        const { credential, thinkingLevel } = selected;
+        const runModelProvider = selected.provider ?? runtimeFallback?.provider;
+        const runModelId = selected.id ?? runtimeFallback?.id;
         if (!runModelProvider || !runModelId) {
           const failed = await deps.events.finalizeRun({
             spaceId: run.spaceId,
@@ -2984,10 +2968,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 id: runModelId,
                 apiKey: resolved.oauth ? undefined : resolved.apiKey,
                 baseUrl: resolved.baseUrl,
-                thinkingLevel:
-                  hasModelOverride && !useModelOverride
-                    ? null
-                    : ((bot.thinkingLevel as AgentRunRequest["model"]["thinkingLevel"]) ?? null),
+                thinkingLevel,
                 oauth: resolved.oauth
                   ? { credential: resolved.oauth, persist: resolved.persistOAuth }
                   : undefined,
