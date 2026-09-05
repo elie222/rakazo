@@ -47,6 +47,7 @@ import {
   McpOAuthBroker,
   type MemoryProviderResolver,
   mapScratchpadItem,
+  memoryProviderRequiresDeploymentOwner,
   modelCredentialDto,
   type PiOAuthLogins,
   planLiveConnectionSync,
@@ -4037,11 +4038,21 @@ export async function persistMemoryProviderConfig(
   },
 ) {
   await requireSpaceOwner(deps.prisma, actor);
-  const prepared = await prepareMemoryProviderConnection(input).catch((error: unknown) => {
+  let prepared: Awaited<ReturnType<typeof prepareMemoryProviderConnection>>;
+  try {
+    if (
+      memoryProviderRequiresDeploymentOwner(input.provider, input.settings) &&
+      !actor.isDeploymentOwner
+    ) {
+      throw new ORPCError("FORBIDDEN");
+    }
+    prepared = await prepareMemoryProviderConnection(input);
+  } catch (error) {
+    if (error instanceof ORPCError) throw error;
     throw new ORPCError("BAD_REQUEST", {
       message: error instanceof Error ? error.message : "Memory provider connection failed",
     });
-  });
+  }
   const stored = await deps.secrets.put(JSON.stringify(prepared.credentials), {
     operationId: "memory-provider-config",
     traceId: "memory-provider-config",

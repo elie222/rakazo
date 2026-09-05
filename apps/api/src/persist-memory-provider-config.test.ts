@@ -7,6 +7,7 @@ const actor = {
   email: "a@b.com",
   isDeploymentOwner: false,
 };
+const deploymentOwner = { ...actor, isDeploymentOwner: true };
 
 function makeDeps(
   overrides: {
@@ -86,6 +87,84 @@ function connectionInput(mode: "cloud" | "local", baseUrl?: string) {
 }
 
 describe("persistMemoryProviderConfig", () => {
+  it("rejects unknown providers as bad requests without probing or writing", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const { deps, transaction } = makeDeps();
+    try {
+      await expect(
+        persistMemoryProviderConfig(deps as never, actor, {
+          ...connectionInput("cloud"),
+          provider: "unknown-provider",
+        }),
+      ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(transaction).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it.each(["#", "?action=delete", "?"])(
+    "rejects ambiguous local URLs even for the deployment owner: %s",
+    async (suffix) => {
+      const fetchMock = vi.fn();
+      vi.stubGlobal("fetch", fetchMock);
+      const { deps, transaction } = makeDeps();
+      try {
+        await expect(
+          persistMemoryProviderConfig(
+            deps as never,
+            deploymentOwner,
+            connectionInput("local", `http://127.0.0.1:8123/internal-action${suffix}`),
+          ),
+        ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+        expect(fetchMock).not.toHaveBeenCalled();
+        expect(transaction).not.toHaveBeenCalled();
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    },
+  );
+
+  it.each(["http://127.0.0.1:8123/internal-action#", "http://localhost:6767"])(
+    "rejects ordinary Space owners before any local probe or write: %s",
+    async (baseUrl) => {
+      const fetchMock = vi.fn().mockResolvedValue(new Response("[]"));
+      vi.stubGlobal("fetch", fetchMock);
+      const { deps, transaction } = makeDeps();
+      try {
+        await expect(
+          persistMemoryProviderConfig(deps as never, actor, connectionInput("local", baseUrl)),
+        ).rejects.toMatchObject({ code: "FORBIDDEN" });
+        expect(fetchMock).not.toHaveBeenCalled();
+        expect(deps.secrets.put).not.toHaveBeenCalled();
+        expect(transaction).not.toHaveBeenCalled();
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    },
+  );
+
+  it("still requires Space ownership for a deployment owner", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const { deps, transaction } = makeDeps({ spaceOwner: false });
+    try {
+      await expect(
+        persistMemoryProviderConfig(
+          deps as never,
+          deploymentOwner,
+          connectionInput("local", "http://localhost:6767"),
+        ),
+      ).rejects.toMatchObject({ code: "FORBIDDEN" });
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(transaction).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("rejects non-owners before probing or writing Space configuration", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
@@ -103,7 +182,7 @@ describe("persistMemoryProviderConfig", () => {
   it("rejects local mode without a baseUrl, without touching the database", async () => {
     const { deps, upsert } = makeDeps();
     await expect(
-      persistMemoryProviderConfig(deps as never, actor, connectionInput("local")),
+      persistMemoryProviderConfig(deps as never, deploymentOwner, connectionInput("local")),
     ).rejects.toThrow(/baseUrl/);
     expect(upsert).not.toHaveBeenCalled();
   });
@@ -115,7 +194,7 @@ describe("persistMemoryProviderConfig", () => {
     await expect(
       persistMemoryProviderConfig(
         deps as never,
-        actor,
+        deploymentOwner,
         connectionInput("local", "http://169.254.169.254/latest/meta-data/"),
       ),
     ).rejects.toThrow(/loopback/);
@@ -128,7 +207,7 @@ describe("persistMemoryProviderConfig", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("", { status: 401 })));
     const { deps, upsert } = makeDeps();
     await expect(
-      persistMemoryProviderConfig(deps as never, actor, {
+      persistMemoryProviderConfig(deps as never, deploymentOwner, {
         ...connectionInput("local", "http://localhost:6767"),
         credentials: { apiKey: "sm_bad_key" },
       }),
@@ -144,7 +223,7 @@ describe("persistMemoryProviderConfig", () => {
 
     await persistMemoryProviderConfig(
       deps as never,
-      actor,
+      deploymentOwner,
       connectionInput("local", "http://[::1]:6767"),
     );
 
