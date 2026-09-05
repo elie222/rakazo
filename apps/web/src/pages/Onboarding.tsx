@@ -4,7 +4,7 @@ import {
   openAiCompatibleConnectReady,
   openAiCompatibleProbeSuccessMessage,
 } from "@rakazo/contracts";
-import { Button, Input, NativeSelect, NativeSelectOption, Textarea } from "@rakazo/ui-web";
+import { Button, Input, NativeSelect, NativeSelectOption } from "@rakazo/ui-web";
 import { Check } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -32,9 +32,6 @@ export function OnboardingPage() {
   const [probeModels, setProbeModels] = useState<string[]>([]);
   const [probedBaseUrl, setProbedBaseUrl] = useState<string | null>(null);
   const [probing, setProbing] = useState(false);
-  const [name, setName] = useState("");
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [needsModel, setNeedsModel] = useState(false);
@@ -217,10 +214,10 @@ export function OnboardingPage() {
     setError(null);
     try {
       const bot = await rpc.bots.create({
-        name: name.trim(),
-        title,
-        description,
-        instructions: description,
+        name: "Chief",
+        title: "",
+        description: "",
+        instructions: "",
         notifyOnFinish: true,
       });
       // Onboarding continues conversationally in the thread: greeting first,
@@ -583,45 +580,8 @@ export function OnboardingPage() {
             <h1 className="text-[32px] font-medium text-foreground">
               <Trans>Create your first bot</Trans>
             </h1>
-            <label htmlFor={`${fieldId}-name`} className="mt-8 block text-sm text-muted-foreground">
-              <Trans>Name</Trans>
-              <Input
-                id={`${fieldId}-name`}
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder={t`Name this bot`}
-                className="mt-2"
-              />
-            </label>
-            <label
-              htmlFor={`${fieldId}-title`}
-              className="mt-4 block text-sm text-muted-foreground"
-            >
-              <Trans>Title</Trans>
-              <Input
-                id={`${fieldId}-title`}
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder={t`Describe what this bot does`}
-                className="mt-2"
-              />
-            </label>
-            <label
-              htmlFor={`${fieldId}-description`}
-              className="mt-4 block text-sm text-muted-foreground"
-            >
-              <Trans>Description</Trans>
-              <Textarea
-                id={`${fieldId}-description`}
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder={t`What this bot is for`}
-                rows={4}
-                className="mt-2"
-              />
-            </label>
             {error ? <p className="mt-3 text-sm text-destructive">{error}</p> : null}
-            <Button className="mt-6" disabled={!name.trim()} onClick={() => void createBot()}>
+            <Button className="mt-8" onClick={() => void createBot()}>
               <Trans>Continue</Trans>
             </Button>
           </div>
