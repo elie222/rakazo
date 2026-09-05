@@ -342,24 +342,19 @@ export function BotSettings({
         <Trans>Color</Trans>
         <div className="mt-2 flex flex-wrap gap-2" role="radiogroup" aria-label={t`Color`}>
           {BOT_COLORS.map((option, index) => (
-            <label key={option} className="cursor-pointer rounded-full">
-              <input
-                className="peer sr-only"
-                type="radio"
-                name={`${ids}-color`}
-                value={option}
-                checked={color === option}
-                aria-label={t`Color ${index + 1}`}
-                onChange={() => setColor(option)}
-              />
-              <span
-                aria-hidden="true"
-                className={`block size-8 rounded-full border-2 ring-offset-card transition-transform hover:scale-105 peer-focus-visible:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-2 ${
-                  color === option ? "border-foreground" : "border-transparent"
-                }`}
-                style={{ backgroundColor: option }}
-              />
-            </label>
+            <input
+              key={option}
+              className={`size-8 cursor-pointer appearance-none rounded-full border-2 ring-offset-card transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
+                color === option ? "border-foreground" : "border-transparent"
+              }`}
+              type="radio"
+              name={`${ids}-color`}
+              value={option}
+              checked={color === option}
+              aria-label={t`Color ${index + 1}`}
+              style={{ backgroundColor: option }}
+              onChange={() => setColor(option)}
+            />
           ))}
         </div>
       </div>
