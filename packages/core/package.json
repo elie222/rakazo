@@ -23,6 +23,11 @@
       "types": "./src/plot/plot-spec.ts",
       "development": "./src/plot/plot-spec.ts",
       "default": "./src/plot/plot-spec.ts"
+    },
+    "./node/screen-proxy": {
+      "types": "./src/node/screen-proxy.ts",
+      "development": "./src/node/screen-proxy.ts",
+      "default": "./src/node/screen-proxy.ts"
     }
   },
   "scripts": {

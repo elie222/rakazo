@@ -350,6 +350,7 @@ export interface RouterDeps {
     deploymentModelKey?: string;
     webOrigin: string;
     screenProxySecret: string;
+    screenGatewayOrigin?: string;
     sandboxProvider: string;
     gitSha?: string;
     updaterUrl?: string;
@@ -1774,9 +1775,9 @@ export function createRouter(deps: RouterDeps) {
           url: addScreenProxyCapability(
             viewUrl,
             deps.env.screenProxySecret,
-            deps.env.webOrigin,
+            deps.env.screenGatewayOrigin ?? deps.env.webOrigin,
             undefined,
-            { proxyExternal: bot.computer.kind === "box" },
+            { proxyExternal: ["box", "modal"].includes(bot.computer.kind) },
           ),
         };
       }),

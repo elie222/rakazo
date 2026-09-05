@@ -22,3 +22,14 @@ function optional(value: string | undefined): string | undefined {
   const trimmed = value?.trim();
   return trimmed || undefined;
 }
+
+export function modalOptions(source: NodeJS.ProcessEnv = process.env) {
+  if (!source.MODAL_IMAGE_ID || !source.SCREEN_PROXY_SECRET) return undefined;
+  return {
+    imageId: source.MODAL_IMAGE_ID,
+    screenSecret: source.SCREEN_PROXY_SECRET,
+    appName: source.MODAL_APP_NAME,
+    tokenId: source.MODAL_TOKEN_ID,
+    tokenSecret: source.MODAL_TOKEN_SECRET,
+  };
+}

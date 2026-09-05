@@ -15,13 +15,13 @@ export function WelcomePage() {
             <span className="h-6 w-[11px] rounded-full bg-card" />
             <span className="h-6 w-[11px] rounded-full bg-card" />
           </div>
-          <div className="text-[76px] leading-none tracking-[-0.03em] text-foreground">Rakazo</div>
+          <div className="text-[76px] leading-none tracking-[-0.03em] text-foreground">Cadre</div>
         </div>
         <p className="max-w-[600px] text-center text-[27px] leading-[1.4] text-foreground/75">
           <Trans>
-            Your team of always-on agents
+            A workforce on demand
             <br />
-            that you can give real work to.
+            for your company.
           </Trans>
         </p>
         <button

@@ -8,6 +8,7 @@ datasource db {
 }
 
 model User {
+  workforceConnections WorkforceConnection[]
   id                          String                       @id
   name                        String
   email                       String
@@ -144,6 +145,7 @@ model Member {
 }
 
 model Space {
+  workforceConnections WorkforceConnection[]
   id                          String                       @id
   organizationId              String
   organization                Organization                 @relation(fields: [organizationId], references: [id], onDelete: Cascade)
@@ -310,6 +312,7 @@ model SpaceVoicePreference {
 }
 
 model Bot {
+  workforceAssignments WorkforceAssignment[]
   id                String            @id @default(cuid())
   spaceId           String
   space             Space             @relation(fields: [spaceId], references: [id], onDelete: Cascade)
@@ -520,6 +523,7 @@ model Task {
 }
 
 model Run {
+  workforceAssignments WorkforceAssignment[]
   id                   String           @id @default(cuid())
   spaceId              String
   space                Space            @relation(fields: [spaceId], references: [id], onDelete: Cascade)
@@ -1107,4 +1111,44 @@ model AgentConnection {
   @@unique([requesterBotId, targetBotId])
   @@index([targetBotId, status])
   @@map("agent_connections")
+}
+
+// Configuration and delivery receipts contain no plaintext integration credentials.
+model WorkforceConnection {
+  space Space @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id String @id @default(cuid())
+  spaceId String
+  userId String
+  endpoint String
+  credential String
+  companyName String
+  companySlug String
+  enabled Boolean @default(false)
+  workers Json @default("[]")
+  lastSyncedAt DateTime?
+  lastError String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  assignments WorkforceAssignment[]
+  @@unique([spaceId, userId])
+  @@map("workforce_connections")
+}
+
+model WorkforceAssignment {
+  bot Bot @relation(fields: [botId], references: [id], onDelete: Cascade)
+  run Run? @relation(fields: [runId], references: [id], onDelete: SetNull)
+  id String @id @default(cuid())
+  connectionId String
+  connection WorkforceConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  dispatchId String
+  seq Int
+  botId String
+  runId String?
+  acknowledged Boolean @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@unique([connectionId, dispatchId])
+  @@index([connectionId, acknowledged])
+  @@map("workforce_assignments")
 }

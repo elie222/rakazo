@@ -1,0 +1,73 @@
+projects:
+  - name: Cadre
+    environments:
+      - name: Production
+        databases:
+          - name: cadre-cloud-db
+            plan: basic-256mb
+            region: virginia
+            postgresMajorVersion: "16"
+            ipAllowList: []
+        services:
+          - type: web
+            name: cadre-cloud-runtime
+            runtime: node
+            plan: standard
+            region: virginia
+            buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm --filter @rakazo/db generate
+            preDeployCommand: pnpm --filter @rakazo/db migrate
+            startCommand: node infra/render-start.mjs
+            healthCheckPath: /health
+            envVars:
+              - key: NODE_VERSION
+                value: 22.22.2
+              - key: NODE_ENV
+                value: production
+              - key: DATABASE_URL
+                fromDatabase:
+                  name: cadre-cloud-db
+                  property: connectionString
+              - key: BETTER_AUTH_SECRET
+                generateValue: true
+              - key: ENCRYPTION_KEY
+                generateValue: true
+              - key: SCREEN_PROXY_SECRET
+                sync: false
+              - key: WEB_ORIGIN
+                sync: false
+              - key: BETTER_AUTH_URL
+                sync: false
+              - key: API_URL
+                sync: false
+              - key: SCREEN_GATEWAY_ORIGIN
+                sync: false
+              - key: STORAGE_PROVIDER
+                value: r2-gateway
+              - key: R2_GATEWAY_URL
+                sync: false
+              - key: STORAGE_GATEWAY_TOKEN
+                sync: false
+              - key: SANDBOX_PROVIDER
+                value: modal
+              - key: MODAL_IMAGE_ID
+                sync: false
+              - key: MODAL_TOKEN_ID
+                sync: false
+              - key: MODAL_TOKEN_SECRET
+                sync: false
+              - key: AGENT_RUNTIME
+                value: pi
+              - key: PI_DEFAULT_PROVIDER
+                value: openrouter
+              - key: PI_DEFAULT_MODEL
+                sync: false
+              - key: OPENROUTER_API_KEY
+                sync: false
+              - key: WAKEUP_DRIVER
+                value: graphile
+              - key: SIGNUPS_ENABLED
+                value: "false"
+              - key: MCP_STDIO_ENABLED
+                value: "false"
+              - key: DATA_DIR
+                value: /tmp/cadre
