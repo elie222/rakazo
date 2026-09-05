@@ -133,6 +133,10 @@ import {
 } from "./browser-tools.js";
 import { agentConnectionTools, builtinAgentTools } from "./builtin-tools.js";
 import { archiveSpawnedBot, spawnBot } from "./child-bots.js";
+import { type CloudAgentConnection, cloudAgentsEnabled } from "./cloud-agent-factory.js";
+import { executeCloudAgentTool } from "./cloud-agent-service.js";
+import { validCloudAgentArgs } from "./cloud-agent-tools.js";
+import { selectCloudAgentTools } from "./cloud-agent-tools-select.js";
 import {
   collectLogIds,
   mergeConnectedPlugins,
@@ -211,6 +215,7 @@ import {
 } from "./plot-tool.js";
 import {
   commitConsumedRunSecret,
+  normalizeSecretAskPurpose,
   reconcileManagedConnection,
   resolveCompletedSecretLeftover,
   resolveMissingRunSecretAction,
@@ -277,6 +282,7 @@ const READ_ONLY_AGENT_TOOLS = new Set([
   "web_search",
   "web_fetch",
   "browser_snapshot",
+  "cloud_agent_status",
 ]);
 const MAX_MODEL_FILE_BYTES = 250_000;
 const TURN_ATTACHMENT_UNAVAILABLE =
@@ -446,6 +452,8 @@ export interface ExecutorDeps {
   web?: WebProvider;
   /** Page browser (DOM refs) on the bot computer. Defaults to the sandbox live browser when supported. */
   browser?: BrowserProvider;
+  /** Remote cloud coding agents. Null/omit means tools stay uninjected. */
+  cloudAgent?: CloudAgentConnection | null;
 }
 
 export async function deferFutureRoutine(
@@ -574,6 +582,7 @@ export function buildApprovalContinuation(
 export function createRunExecutor(deps: ExecutorDeps) {
   const web = deps.web ?? createWebProvider();
   const browser = deps.browser ?? createBrowserProvider(undefined, { sandbox: deps.sandbox });
+  const cloudAgent = deps.cloudAgent;
   return {
     async resolveModel(scope: {
       userId: string;
@@ -1225,6 +1234,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             groupId: thread.groupId,
             trigger: run.trigger,
             semanticMemoryEnabled,
+            cloudAgentEnabled: cloudAgentsEnabled(cloudAgent, run.spaceId),
             messagingChannelRun,
           }),
           // Cross-owner agent connections only exist for chat-linked bots.
@@ -1438,6 +1448,11 @@ export function createRunExecutor(deps: ExecutorDeps) {
           if (approvedReplay.args) connectorCall.args = approvedReplay.args;
           let catalogRemapped = false;
           let resolvedToolSchema: Record<string, unknown> | undefined;
+          if (name.startsWith("cloud_agent_") && !validCloudAgentArgs(name, args)) {
+            return {
+              error: "Invalid cloud agent arguments. Raw environment variables are not supported.",
+            };
+          }
           let effectRequest: unknown = args;
           if (connectorCall.route && deps.connector?.resolveCall) {
             try {
@@ -2222,6 +2237,18 @@ export function createRunExecutor(deps: ExecutorDeps) {
                   : browserActFromTool;
             return computerScreenToolResult(() => tool(browser, computer, context, args), finish);
           }
+
+          if (name.startsWith("cloud_agent_")) {
+            return finish(
+              await executeCloudAgentTool(
+                { ...deps, cloudAgent },
+                { ...context, operationId: effectKey, botId: bot.id },
+                run,
+                name,
+                args,
+              ),
+            );
+          }
           if (name === "scratchpad_list") {
             return listScratchpadItemsFromTool(deps, {
               spaceId: run.spaceId,
@@ -2652,6 +2679,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
                   kind: "ask",
                   text: String(args.label ?? "Code"),
                   input: "secret",
+                  purpose: normalizeSecretAskPurpose(
+                    args.purpose ? String(args.purpose) : undefined,
+                  ),
                   status: "pending",
                 },
               ],
@@ -3683,20 +3713,24 @@ export function selectBuiltinToolsForRun(options: {
   groupId: string | null;
   trigger: string;
   semanticMemoryEnabled: boolean;
+  cloudAgentEnabled?: boolean;
   messagingChannelRun: boolean;
 }) {
-  return selectMemoryTools(
-    filterBuiltinToolsForRun(
-      filterBuiltinToolsForThread(
-        filterPageBrowserTools(
-          filterImageReturningComputerTools(builtinAgentTools, options.graphicalToolsAllowed),
-          options.pageBrowserAllowed ?? options.graphicalToolsAllowed,
+  return selectCloudAgentTools(
+    selectMemoryTools(
+      filterBuiltinToolsForRun(
+        filterBuiltinToolsForThread(
+          filterPageBrowserTools(
+            filterImageReturningComputerTools(builtinAgentTools, options.graphicalToolsAllowed),
+            options.pageBrowserAllowed ?? options.graphicalToolsAllowed,
+          ),
+          options.groupId,
         ),
-        options.groupId,
+        options.trigger,
       ),
-      options.trigger,
+      options.semanticMemoryEnabled,
     ),
-    options.semanticMemoryEnabled,
+    Boolean(options.cloudAgentEnabled),
   ).filter(
     (tool) =>
       !options.messagingChannelRun ||

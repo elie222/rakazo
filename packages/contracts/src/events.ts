@@ -14,6 +14,7 @@ export const ProductEventType = z.enum([
   "thread.meta",
   "thread.computer",
   "thread.subagent",
+  "thread.cloud_agent",
   "run.started",
   "run.checkpointed",
   "run.waiting_input",
@@ -81,6 +82,9 @@ const ChartBlock = z
     });
   });
 
+export const SecretAskPurpose = z.enum(["otp", "password", "api_key"]);
+export type SecretAskPurpose = z.infer<typeof SecretAskPurpose>;
+
 export const MessageBlock = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("text"), text: z.string() }),
   z.object({
@@ -93,6 +97,8 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     approvalEffectId: Id.optional(),
     detail: z.string().optional(),
     input: z.enum(["text", "secret"]).optional(),
+    /** Why the secret is needed; drives field label on the masked card. */
+    purpose: SecretAskPurpose.optional(),
     status: z.enum(["pending", "answered"]).optional(),
     answer: z.string().optional(),
     actions: z
@@ -163,6 +169,17 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     name: z.string(),
     title: z.string().optional(),
     status: z.enum(["created", "archived", "deleted"]),
+  }),
+  z.object({
+    /** Compact card for a remote cloud coding agent (not the bot computer). */
+    kind: z.literal("cloud_agent"),
+    agentId: z.string(),
+    title: z.string(),
+    status: z.enum(["running", "finished", "failed", "cancelled"]),
+    url: z.string(),
+    branch: z.string().optional(),
+    prUrl: z.string().optional(),
+    latestRunId: z.string().optional(),
   }),
   z.object({
     kind: z.literal("skill_draft"),

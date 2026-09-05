@@ -50,6 +50,26 @@ describe("run workspace checkpoint", () => {
 });
 
 describe("run tool selection", () => {
+  it.each([
+    [false, false],
+    [false, true],
+    [true, false],
+    [true, true],
+  ])("gates page browsers (%s) independently of cloud agents (%s)", (page, cloud) => {
+    const names = selectBuiltinToolsForRun({
+      graphicalToolsAllowed: false,
+      pageBrowserAllowed: page,
+      cloudAgentEnabled: cloud,
+      groupId: null,
+      trigger: "message",
+      semanticMemoryEnabled: false,
+      messagingChannelRun: false,
+    }).map((tool) => tool.name);
+    expect(names.includes("browser_snapshot")).toBe(page);
+    expect(names.includes("cloud_agent_status")).toBe(cloud);
+    expect(names).not.toContain("computer_act");
+  });
+
   const toolNames = (
     trigger: string,
     groupId: string | null = null,

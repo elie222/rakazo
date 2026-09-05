@@ -1,10 +1,81 @@
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { expect, test } from "@playwright/test";
-import { captureScreenshot, completeOnboarding, signup } from "./helpers";
+import type { ModelCatalogEntry } from "@rakazo/contracts";
+import { captureScreenshot, completeOnboarding, rpc, signup } from "./helpers";
 
 const LOCAL_MODEL_ID = "rakazo-e2e-local";
 const LOCAL_MODEL_REPLY = "OpenAI-compatible endpoint verified end to end.";
+
+test("custom reasoning models keep endpoint choices scoped and save thinking", async ({
+  page,
+}, testInfo) => {
+  const stamp = Date.now();
+  await signup(page, `qwen-model-${stamp}@rakazo.test`, "password12", "Qwen model");
+  await completeOnboarding(page);
+  // Inject catalog metadata before reload/settings so thinking levels are present
+  // when Advanced opens. Adapter tests cover the operator env opt-in itself.
+  await page.route("**/rpc/models/list", async (route) => {
+    const response = await route.fetch();
+    const body = (await response.json()) as { json: ModelCatalogEntry[] };
+    const template = body.json.find((entry) => entry.provider === "openai-compatible");
+    if (!template) {
+      await route.fulfill({ response });
+      return;
+    }
+    for (const id of ["test-qwen", "other-endpoint-model"]) {
+      body.json.push({
+        ...template,
+        id,
+        label: id,
+        placeholder: true,
+        reasoning: true,
+        thinkingLevels: ["off", "minimal", "low", "medium", "high"],
+      });
+    }
+    await route.fulfill({ response, json: body });
+  });
+  // Keyless connect: no live mock server required for openai-compatible credentials.
+  await rpc(page, "models/connect", {
+    provider: "openai-compatible",
+    baseUrl: "http://127.0.0.1:8090/v1",
+    modelId: "test-qwen",
+  });
+  await page.reload();
+  await page.locator("main").getByRole("button", { name: "Chief", exact: true }).click();
+  const settings = page.getByTestId("bot-settings");
+  await expect(settings).toBeVisible();
+  const advanced = settings.getByTestId("bot-settings-advanced");
+  await advanced.evaluate((element) => {
+    (element as HTMLDetailsElement).open = true;
+  });
+  // NativeSelect sits inside a wrapping <label>, so label text includes option
+  // copy and getByLabel(..., { exact: true }) misses the control. Use the
+  // combobox accessible name, matching other model E2E tests.
+  const model = settings.getByRole("combobox", { name: "Model", exact: true });
+  await expect(model).toBeVisible();
+  await expect(model).toContainText("test-qwen");
+  await expect(model).not.toContainText("other-endpoint-model");
+  // Value key — not a /test-qwen/ label match, which also hits "Space default (test-qwen)".
+  await model.selectOption("openai-compatible::test-qwen");
+  const thinking = settings.getByRole("combobox", { name: "Thinking", exact: true });
+  await expect(thinking).toBeVisible();
+  await thinking.selectOption("low");
+  await thinking.scrollIntoViewIfNeeded();
+  await captureScreenshot(page, testInfo, "openai-compatible-qwen-thinking");
+  const saved = page.waitForResponse(
+    (response) => response.url().includes("/rpc/bots/update") && response.ok(),
+  );
+  await settings.getByRole("button", { name: "Save", exact: true }).click();
+  await saved;
+  await page.reload();
+  await page.locator("main").getByRole("button", { name: "Chief", exact: true }).click();
+  await expect(settings).toBeVisible();
+  await advanced.evaluate((element) => {
+    (element as HTMLDetailsElement).open = true;
+  });
+  await expect(thinking).toHaveValue("low");
+});
 
 test("connects, lists, and uses an OpenAI-compatible endpoint", async ({ page }, testInfo) => {
   const server = createServer((request, response) => {

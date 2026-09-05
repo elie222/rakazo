@@ -1,4 +1,5 @@
 import type { ConnectorTool } from "@rakazo/adapter-kit";
+import { SecretAskPurpose } from "@rakazo/contracts";
 
 export const DELEGATION_TOOL_NAMES = new Set([
   "run_subagent",
@@ -226,7 +227,7 @@ export const builtinAgentTools: ConnectorTool[] = [
       type: "object",
       properties: {
         label: { type: "string" },
-        purpose: { type: "string", enum: ["otp", "password", "api_key"] },
+        purpose: { type: "string", enum: SecretAskPurpose.options },
         connectionId: { type: "string" },
       },
       required: ["label", "purpose"],
@@ -367,6 +368,71 @@ export const builtinAgentTools: ConnectorTool[] = [
       required: ["url"],
     },
     readOnly: true,
+  },
+  {
+    name: "cloud_agent_launch",
+    description:
+      "Launch a remote cloud coding agent on a connected repository. Returns immediately with a tracking id and status; the agent link appears when launched. Opens a PR when openPr is true. Not the bot computer.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        prompt: { type: "string", description: "Task for the remote agent." },
+        repository: {
+          type: "string",
+          description: "Git repository URL (optional for no-repo agents).",
+        },
+        openPr: {
+          type: "boolean",
+          description: "Open a pull request when the run finishes.",
+        },
+        images: {
+          type: "array",
+          description: "Optional images (data+mimeType or url).",
+          items: { type: "object" },
+        },
+      },
+      required: ["prompt"],
+    },
+  },
+  {
+    name: "cloud_agent_status",
+    description: "Get status, branch, and PR url for a cloud coding agent.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "Cloud agent id from launch." },
+      },
+      required: ["id"],
+    },
+    readOnly: true,
+  },
+  {
+    name: "cloud_agent_reply",
+    description: "Send a follow-up prompt to an existing cloud coding agent.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "Cloud agent id." },
+        prompt: { type: "string", description: "Follow-up instruction." },
+        images: {
+          type: "array",
+          description: "Optional images (data+mimeType or url).",
+          items: { type: "object" },
+        },
+      },
+      required: ["id", "prompt"],
+    },
+  },
+  {
+    name: "cloud_agent_cancel",
+    description: "Cancel the active run on a cloud coding agent.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "Cloud agent id." },
+      },
+      required: ["id"],
+    },
   },
   // Semantic-memory tools: exposed by selectMemoryTools() only when a
   // A Space memory provider is configured (which hides `remember`).

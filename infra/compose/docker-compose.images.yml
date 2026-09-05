@@ -116,6 +116,9 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-rakazo}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-rakazo}
       DATA_DIR: /data
       SANDBOX_PROVIDER: ${SANDBOX_PROVIDER:-docker}
+      CLOUD_AGENT_PROVIDER: ${CLOUD_AGENT_PROVIDER:-none}
+      CLOUD_AGENT_SPACE_ID: ${CLOUD_AGENT_SPACE_ID:-}
+      CURSOR_API_KEY: ${CURSOR_API_KEY:-}
       SANDBOX_SUPERVISOR_URL: http://supervisor:7091
       WAKEUP_DRIVER: graphile
       AGENT_RUNTIME: pi
@@ -169,6 +172,9 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-rakazo}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-rakazo}
       DATA_DIR: /data
       SANDBOX_PROVIDER: ${SANDBOX_PROVIDER:-docker}
+      CLOUD_AGENT_PROVIDER: ${CLOUD_AGENT_PROVIDER:-none}
+      CLOUD_AGENT_SPACE_ID: ${CLOUD_AGENT_SPACE_ID:-}
+      CURSOR_API_KEY: ${CURSOR_API_KEY:-}
       SANDBOX_SUPERVISOR_URL: http://supervisor:7091
       SCREEN_PROXY_SECRET: ""
       WAKEUP_DRIVER: graphile

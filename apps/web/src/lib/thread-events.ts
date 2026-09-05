@@ -8,6 +8,7 @@ import type {
   ThreadSnapshot,
 } from "@rakazo/contracts";
 import {
+  cloudAgentBlockFromPayload,
   isActive,
   isRunTerminalEvent,
   mergeThreadHistory,
@@ -29,6 +30,7 @@ const runTriggers = new Set<Run["trigger"]>([
   "bot_message",
   "webhook",
   "messaging",
+  "cloud_agent",
 ]);
 
 function runFromStartedEvent(event: ProductEvent, previous: Run | undefined): Run {
@@ -258,6 +260,7 @@ export function isThreadSnapshotEvent(event: ProductEvent): boolean {
     event.type === "thread.cleared" ||
     event.type === "thread.progress" ||
     event.type === "thread.subagent" ||
+    event.type === "thread.cloud_agent" ||
     event.type === "agent.tool.called" ||
     event.type === "thread.message.created" ||
     event.type === "thread.message.updated" ||
@@ -434,6 +437,39 @@ export function reduceThreadSnapshot(
       }
     }
     return { ...prev, cursor: event.seq, messages: [...without, next, ...kept] };
+  }
+
+  if (event.type === "thread.cloud_agent") {
+    const agentId = String(event.payload.agentId ?? "");
+    const messageId = String(event.payload.messageId ?? "");
+    const block = cloudAgentBlockFromPayload(event.payload ?? {});
+    return {
+      ...prev,
+      cursor: event.seq,
+      messages: prev.messages.map((message) => {
+        if (messageId && message.id === messageId) {
+          return {
+            ...message,
+            blocks: message.blocks.map((existing) =>
+              existing.kind === "cloud_agent" && existing.agentId === agentId ? block : existing,
+            ),
+          };
+        }
+        if (
+          message.blocks.some(
+            (existing) => existing.kind === "cloud_agent" && existing.agentId === agentId,
+          )
+        ) {
+          return {
+            ...message,
+            blocks: message.blocks.map((existing) =>
+              existing.kind === "cloud_agent" && existing.agentId === agentId ? block : existing,
+            ),
+          };
+        }
+        return message;
+      }),
+    };
   }
   if (event.type === "thread.message.reaction") {
     const messageId = String(event.payload.messageId ?? "");
