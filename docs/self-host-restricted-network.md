@@ -32,6 +32,38 @@ For Hub pulls, prefer `POSTGRES_IMAGE` / `BUSYBOX_IMAGE` when you can vendor tho
 }
 ```
 
+## Digest-verified Hub mirror startup
+
+Treat a mirror as a transport, not as the source of truth. Obtain the expected Postgres and
+busybox digests from a trusted upstream or an out-of-band trusted workstation. Put the digest in
+each mirrored image reference, then pull, compare the local repository digests, and start without
+pulling again. Replace every example value below before running it:
+
+```bash
+export POSTGRES_IMAGE='registry.example.com/library/postgres@sha256:<trusted-postgres-digest>'
+export BUSYBOX_IMAGE='registry.example.com/library/busybox@sha256:<trusted-busybox-digest>'
+
+docker compose --env-file .env -f docker-compose.images.yml pull
+
+for image_ref in "$POSTGRES_IMAGE" "$BUSYBOX_IMAGE"; do
+  expected_digest="${image_ref##*@}"
+  docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$image_ref" |
+    awk -F@ -v expected="$expected_digest" '$2 == expected { found=1 } END { exit !found }' || {
+      echo "digest verification failed for $image_ref" >&2
+      exit 1
+    }
+done
+
+docker compose up --help | grep -q -- '--pull' || {
+  echo 'Docker Compose with up --pull is required for verified no-repull startup.' >&2
+  exit 1
+}
+docker compose --env-file .env -f docker-compose.images.yml up -d --pull never
+```
+
+This sequence fails before startup if either pulled image lacks the expected digest. Do not replace
+the digest-qualified references with mutable mirror tags between verification and startup.
+
 ## Related guides
 
 Focused `docs/self-host-*.md` satellites may land later. Until then, use these existing pages:

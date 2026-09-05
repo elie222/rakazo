@@ -48,6 +48,9 @@ Setup:
    See docs/self-host.md (Restricted networks / mirror downloads).
 4. Preserve existing values. Keep `SANDBOX_PROVIDER=docker` unless I chose a remote computer
    provider, and add only the provider or model keys I selected.
+   If I use mirrored Postgres/busybox images, require digest-qualified references and follow
+   `docs/self-host-restricted-network.md#digest-verified-hub-mirror-startup`; use that section's
+   explicit pull, digest-check, and no-repull start sequence instead of Setup step 5.
 5. Run `bash install-images.sh`. It preserves `.env`, pulls the images, and starts the stack.
 6. Wait until api, web, and supervisor are healthy. Default image tag is `edge` (amd64 + arm64). Do not pin `latest` unless that tag exists in GHCR.
 
