@@ -234,18 +234,16 @@ loopback, RFC1918, and `host.docker.internal` targets. To permit public hostname
 only to public addresses; redirects and DNS answers that reach private or link-local networks are
 rejected.
 
-For a server/model that accepts standard `reasoning_effort`, enable **Supports thinking**
-under **Advanced** when connecting it. This setting is saved with the connection; it needs no
-environment variable or restart. Existing connections default to disabled. If you used the old
-Qwen model-list environment setting or deployment-local models, connect that endpoint through
-**Settings → Models** and enable thinking there; the old model-list setting is no longer read.
+For servers that accept standard `reasoning_effort`, enable **Supports thinking** under
+**Advanced** when connecting. The setting is saved on the connection (no env var or restart).
+Existing connections default to disabled. Reconnect former Qwen-list or deployment-local models
+via **Settings → Models** and turn it on; the old environment list is no longer read.
 
 Enabled connections default to medium thinking. Web and desktop expose **Thinking** in a bot's
-advanced settings; mobile runs inherit the same backend policy. Rakazo sends standard
-`reasoning_effort` values (`minimal`, `low`, `medium`, `high`, or `none` when off); the server owns
-model-specific translation. Configure the server's reasoning and tool-call parsers as needed.
-Servers without standard effort support can remain connected with **Supports thinking** disabled.
-Existing token limits still apply; effort is not a separate reasoning-token budget.
+advanced settings; mobile inherits the same backend policy. Rakazo sends standard
+`reasoning_effort` (`minimal`, `low`, `medium`, `high`, or `none` when off); the server owns
+model-specific translation. Leave **Supports thinking** off when the server lacks standard effort
+support. Existing token limits still apply; effort is not a separate reasoning-token budget.
 
 Do not commit `.env`. Never put `COMPOSIO_API_KEY`, OpenRouter keys, or provider tokens in git, logs, or chat.
 

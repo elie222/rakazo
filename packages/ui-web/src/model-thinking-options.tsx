@@ -22,7 +22,7 @@ export function ModelThinkingOptions({
         <Checkbox
           id={id}
           checked={reasoning}
-          onCheckedChange={onReasoningChange}
+          onCheckedChange={(checked) => onReasoningChange(checked === true)}
           disabled={disabled}
         />
         {thinkingLabel}
