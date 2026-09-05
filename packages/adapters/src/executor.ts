@@ -25,7 +25,12 @@ import {
   runContinueJob,
 } from "@rakazo/adapter-kit";
 import type { MessageBlock, RunStatus } from "@rakazo/contracts";
-import { ATTACHMENT_MAX_BYTES, BotSecretName, isAttachmentImageMimeType } from "@rakazo/contracts";
+import {
+  ATTACHMENT_MAX_BYTES,
+  BotSecretName,
+  BotSecretSubmission,
+  isAttachmentImageMimeType,
+} from "@rakazo/contracts";
 import {
   type ActionApprovalRule,
   appendTextSegment,
@@ -2547,8 +2552,30 @@ export function createRunExecutor(deps: ExecutorDeps) {
                   error: "Remove the existing credential before changing its destination.",
                 });
               }
-              if (existing && (args.replace !== true || applied?.effect.status === "approved")) {
-                return finish({ saved: true, ...existing });
+              const submitted = BotSecretSubmission.safeParse(applied?.effect.result).data;
+              if (
+                submitted &&
+                sameSecretDestination(
+                  normalizeSecretDestination(submitted.credentialSaved),
+                  destination,
+                )
+              ) {
+                return finish(
+                  existing
+                    ? { saved: true, ...existing }
+                    : { error: "The saved credential is no longer available." },
+                );
+              }
+              if (existing && args.replace !== true) return finish({ saved: true, ...existing });
+              // Action approval authorizes showing the card; it is not a credential submission.
+              // Return the claim to intended so the answer transaction can approve the saved value.
+              if (claimedEffect) {
+                const released = await deps.prisma.externalEffect.updateMany({
+                  where: { id: applied!.effect.id, status: "executing" },
+                  data: { status: "intended" },
+                });
+                if (released.count !== 1) return uncertainEffectResult(name);
+                claimedEffect = false;
               }
             }
             const secretKind = runSecretKind(runId);

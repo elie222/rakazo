@@ -1292,7 +1292,10 @@ describe("answerRunInput", () => {
         kind: "request_secret",
         status: "intended",
       },
-      data: { status: "approved" },
+      data: {
+        status: "approved",
+        ...(credential ? { result: { credentialSaved: credential } } : {}),
+      },
     });
     expect(tx.message.update).toHaveBeenCalledWith({
       where: { id: "message-1" },

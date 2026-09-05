@@ -47,180 +47,231 @@ describeIntegration("reusable credential lifecycle", () => {
     rmSync(dataDir, { recursive: true, force: true });
   });
 
-  it("saves through the answer API, reuses in later runs, rotates and revokes without model-visible plaintext", async () => {
-    const seen: string[] = [];
-    let calls: Array<{ name: string; args: Record<string, unknown> }> = [
-      {
-        name: "request_secret",
-        args: { label: "API key", purpose: "api_key", credential: destination },
-      },
-    ];
-    const runtime = vi
-      .spyOn(ScriptedAgentRuntime.prototype, "run")
-      .mockImplementation(async function* (request): AsyncIterable<AgentRuntimeEvent> {
-        seen.push(
-          JSON.stringify({
-            prompt: request.prompt,
-            history: request.history,
-            tools: request.tools,
-          }),
-        );
-        for (const [index, call] of calls.entries()) {
-          yield { type: "tool", ...call, executionId: `${request.runId}:${index}` };
-        }
-        yield { type: "done", text: "Done" };
-      });
-    try {
-      const seeded = await seedRun("reusable", "Save the API credential");
-      await handles.executor.continueRun(seeded.run.id, "test-worker");
-      const answer = async (runId: string, value: string) => {
-        const message = await handles.prisma.message.findFirstOrThrow({
-          where: { runId, role: "bot" },
-          orderBy: { createdAt: "desc" },
-        });
-        expect(message.blocks).toEqual(
-          expect.arrayContaining([
-            expect.objectContaining({ input: "secret", credential: destination }),
-          ]),
-        );
-        await rpc(seeded.cookie, "threads/answer", {
-          botId: seeded.bot.id,
-          runId,
-          messageId: message.id,
-          answer: value,
-        });
-        await vi.waitFor(
-          async () => {
-            expect(
-              await handles.prisma.run.findUniqueOrThrow({ where: { id: runId } }),
-            ).toMatchObject({ status: "completed", error: null });
-          },
-          { timeout: 15_000 },
-        );
-      };
-      expect(
-        await handles.prisma.run.findUniqueOrThrow({ where: { id: seeded.run.id } }),
-      ).toMatchObject({ status: "waiting_input", error: null });
-      // An invalid value rolls back the run transition and leaves the card pending.
-      const pending = await handles.prisma.message.findFirstOrThrow({
-        where: { runId: seeded.run.id, role: "bot" },
-      });
-      for (const invalid of ["x".repeat(16_385), "key\r\nX-Evil: injected", "key "]) {
-        await expect(
-          rpc(seeded.cookie, "threads/answer", {
-            botId: seeded.bot.id,
-            runId: seeded.run.id,
-            messageId: pending.id,
-            answer: invalid,
-          }),
-        ).rejects.toThrow();
-      }
-      expect(
-        await handles.prisma.run.findUniqueOrThrow({ where: { id: seeded.run.id } }),
-      ).toMatchObject({ status: "waiting_input" });
-      expect(await handles.prisma.botSecret.count({ where: { botId: seeded.bot.id } })).toBe(0);
-      await answer(seeded.run.id, key);
-      const stored = await handles.prisma.botSecret.findFirstOrThrow({
-        where: { botId: seeded.bot.id },
-      });
-      expect(stored).toMatchObject({
-        ...destination,
-        userId: seeded.me.userId,
-        spaceId: seeded.me.spaceId,
-      });
-      expect(stored.ciphertext).toMatch(/^v2:/);
-      expect(stored.ciphertext).not.toContain(key);
-      expect(
-        await handles.prisma.secret.count({ where: { kind: `run-secret:${seeded.run.id}` } }),
-      ).toBe(0);
-
-      const nextRun = async (nextCalls: typeof calls) => {
-        calls = nextCalls;
-        const task = await handles.prisma.task.create({
-          data: {
-            userId: seeded.me.userId,
-            spaceId: seeded.me.spaceId,
-            botId: seeded.bot.id,
-            threadId: seeded.thread.id,
-            prompt: "Use the saved credential",
-            status: "queued",
-          },
-        });
-        const run = await handles.prisma.run.create({
-          data: {
-            userId: seeded.me.userId,
-            spaceId: seeded.me.spaceId,
-            botId: seeded.bot.id,
-            threadId: seeded.thread.id,
-            taskId: task.id,
-            trigger: "user",
-            status: "queued",
-          },
-        });
-        await handles.executor.continueRun(run.id, "test-worker");
-        return run.id;
-      };
-      const request = {
-        name: "secret_request",
-        args: { name: destination.name, url: `${destination.origin}/v1/items` },
-      };
-      const useRun = await nextRun([
-        { name: "list_secrets", args: {} },
+  it.each([false, true])(
+    "saves, reuses, rotates and revokes without model-visible plaintext (approval rule: %s)",
+    async (requireApproval) => {
+      fetch.mockClear();
+      const seen: string[] = [];
+      let calls: Array<{ name: string; args: Record<string, unknown> }> = [
         {
           name: "request_secret",
           args: { label: "API key", purpose: "api_key", credential: destination },
         },
-        request,
-      ]);
-      expect(await handles.prisma.run.findUniqueOrThrow({ where: { id: useRun } })).toMatchObject({
-        status: "completed",
-        error: null,
-      });
-      expect(fetch).toHaveBeenCalledTimes(1);
-      expect(
-        await handles.prisma.externalEffect.findFirstOrThrow({
-          where: { runId: useRun, kind: "secret_request" },
-        }),
-      ).toMatchObject({
-        status: "completed",
-        result: {
-          status: 200,
-          body: { authenticated: true, echo: expect.stringContaining("[redacted]") },
-        },
-      });
+      ];
+      const runtime = vi
+        .spyOn(ScriptedAgentRuntime.prototype, "run")
+        .mockImplementation(async function* (request): AsyncIterable<AgentRuntimeEvent> {
+          seen.push(
+            JSON.stringify({
+              prompt: request.prompt,
+              history: request.history,
+              tools: request.tools,
+            }),
+          );
+          for (const [index, call] of calls.entries()) {
+            yield { type: "tool", ...call, executionId: `${request.runId}:${index}` };
+          }
+          yield { type: "done", text: "Done" };
+        });
+      try {
+        const seeded = await seedRun(`reusable-${requireApproval}`, "Save the API credential");
+        if (requireApproval) {
+          await handles.prisma.actionApprovalRule.create({
+            data: {
+              spaceId: seeded.me.spaceId,
+              createdByUserId: seeded.me.userId,
+              effect: "require_approval",
+              matchKind: "tool",
+              matchValue: "request_secret",
+            },
+          });
+        }
+        await handles.executor.continueRun(seeded.run.id, "test-worker");
+        const approve = async (runId: string) => {
+          if (!requireApproval) return;
+          const message = await handles.prisma.message.findFirstOrThrow({
+            where: { runId, role: "bot" },
+            orderBy: { createdAt: "desc" },
+          });
+          expect(message.blocks).toEqual(
+            expect.arrayContaining([
+              expect.objectContaining({ approvalEffectId: expect.any(String) }),
+            ]),
+          );
+          await rpc(seeded.cookie, "threads/answer", {
+            botId: seeded.bot.id,
+            runId,
+            messageId: message.id,
+            answer: "allow",
+          });
+          await vi.waitFor(
+            async () => {
+              const run = await handles.prisma.run.findUniqueOrThrow({ where: { id: runId } });
+              expect(["completed", "waiting_input"]).toContain(run.status);
+            },
+            { timeout: 15_000 },
+          );
+        };
+        await approve(seeded.run.id);
+        const answer = async (runId: string, value: string) => {
+          const message = await handles.prisma.message.findFirstOrThrow({
+            where: { runId, role: "bot" },
+            orderBy: { createdAt: "desc" },
+          });
+          expect(message.blocks).toEqual(
+            expect.arrayContaining([
+              expect.objectContaining({ input: "secret", credential: destination }),
+            ]),
+          );
+          await rpc(seeded.cookie, "threads/answer", {
+            botId: seeded.bot.id,
+            runId,
+            messageId: message.id,
+            answer: value,
+          });
+          await vi.waitFor(
+            async () => {
+              expect(
+                await handles.prisma.run.findUniqueOrThrow({ where: { id: runId } }),
+              ).toMatchObject({ status: "completed", error: null });
+            },
+            { timeout: 15_000 },
+          );
+        };
+        expect(
+          await handles.prisma.run.findUniqueOrThrow({ where: { id: seeded.run.id } }),
+        ).toMatchObject({ status: "waiting_input", error: null });
+        // An invalid value rolls back the run transition and leaves the card pending.
+        const pending = await handles.prisma.message.findFirstOrThrow({
+          where: { runId: seeded.run.id, role: "bot" },
+        });
+        for (const invalid of ["x".repeat(16_385), "key\r\nX-Evil: injected", "key "]) {
+          await expect(
+            rpc(seeded.cookie, "threads/answer", {
+              botId: seeded.bot.id,
+              runId: seeded.run.id,
+              messageId: pending.id,
+              answer: invalid,
+            }),
+          ).rejects.toThrow();
+        }
+        expect(
+          await handles.prisma.run.findUniqueOrThrow({ where: { id: seeded.run.id } }),
+        ).toMatchObject({ status: "waiting_input" });
+        expect(await handles.prisma.botSecret.count({ where: { botId: seeded.bot.id } })).toBe(0);
+        await answer(seeded.run.id, key);
+        const stored = await handles.prisma.botSecret.findFirstOrThrow({
+          where: { botId: seeded.bot.id },
+        });
+        expect(stored).toMatchObject({
+          ...destination,
+          userId: seeded.me.userId,
+          spaceId: seeded.me.spaceId,
+        });
+        expect(stored.ciphertext).toMatch(/^v2:/);
+        expect(stored.ciphertext).not.toContain(key);
+        expect(
+          await handles.prisma.secret.count({ where: { kind: `run-secret:${seeded.run.id}` } }),
+        ).toBe(0);
 
-      const rotateRun = await nextRun([
-        {
-          name: "request_secret",
-          args: { label: "API key", purpose: "api_key", credential: destination, replace: true },
-        },
-      ]);
-      expect(
-        await handles.prisma.run.findUniqueOrThrow({ where: { id: rotateRun } }),
-      ).toMatchObject({ status: "waiting_input" });
-      await answer(rotateRun, `${key}-rotated`);
-      expect(
-        await handles.prisma.botSecret.findUniqueOrThrow({ where: { id: stored.id } }),
-      ).not.toMatchObject({ ciphertext: stored.ciphertext });
-      await nextRun([request]);
-      expect(new Headers(fetch.mock.calls.at(-1)?.[1]?.headers).get("Authorization")).toBe(
-        `Bearer ${key}-rotated`,
-      );
-      const count = fetch.mock.calls.length;
-      await nextRun([{ name: "forget_secret", args: { name: destination.name } }, request]);
-      expect(await handles.prisma.botSecret.count({ where: { botId: seeded.bot.id } })).toBe(0);
-      expect(fetch).toHaveBeenCalledTimes(count);
-      const [messages, events, effects, tasks] = await Promise.all([
-        handles.prisma.message.findMany({ where: { threadId: seeded.thread.id } }),
-        handles.prisma.event.findMany({ where: { threadId: seeded.thread.id } }),
-        handles.prisma.externalEffect.findMany({ where: { spaceId: seeded.me.spaceId } }),
-        handles.prisma.task.findMany({ where: { botId: seeded.bot.id } }),
-      ]);
-      expect(JSON.stringify({ seen, messages, events, effects, tasks })).not.toContain(key);
-    } finally {
-      runtime.mockRestore();
-    }
-  });
+        const nextRun = async (nextCalls: typeof calls) => {
+          calls = nextCalls;
+          const task = await handles.prisma.task.create({
+            data: {
+              userId: seeded.me.userId,
+              spaceId: seeded.me.spaceId,
+              botId: seeded.bot.id,
+              threadId: seeded.thread.id,
+              prompt: "Use the saved credential",
+              status: "queued",
+            },
+          });
+          const run = await handles.prisma.run.create({
+            data: {
+              userId: seeded.me.userId,
+              spaceId: seeded.me.spaceId,
+              botId: seeded.bot.id,
+              threadId: seeded.thread.id,
+              taskId: task.id,
+              trigger: "user",
+              status: "queued",
+            },
+          });
+          await handles.executor.continueRun(run.id, "test-worker");
+          return run.id;
+        };
+        const request = {
+          name: "secret_request",
+          args: { name: destination.name, url: `${destination.origin}/v1/items` },
+        };
+        const useRun = await nextRun([
+          { name: "list_secrets", args: {} },
+          {
+            name: "request_secret",
+            args: { label: "API key", purpose: "api_key", credential: destination },
+          },
+          request,
+        ]);
+        await approve(useRun);
+        expect(await handles.prisma.run.findUniqueOrThrow({ where: { id: useRun } })).toMatchObject(
+          {
+            status: "completed",
+            error: null,
+          },
+        );
+        expect(fetch).toHaveBeenCalledTimes(1);
+        expect(
+          await handles.prisma.externalEffect.findFirstOrThrow({
+            where: { runId: useRun, kind: "secret_request" },
+          }),
+        ).toMatchObject({
+          status: "completed",
+          result: {
+            status: 200,
+            body: { authenticated: true, echo: expect.stringContaining("[redacted]") },
+          },
+        });
+
+        const rotateRun = await nextRun([
+          {
+            name: "request_secret",
+            args: { label: "API key", purpose: "api_key", credential: destination, replace: true },
+          },
+        ]);
+        expect(
+          await handles.prisma.run.findUniqueOrThrow({ where: { id: rotateRun } }),
+        ).toMatchObject({ status: "waiting_input" });
+        await approve(rotateRun);
+        expect(
+          await handles.prisma.run.findUniqueOrThrow({ where: { id: rotateRun } }),
+        ).toMatchObject({ status: "waiting_input" });
+        expect(
+          await handles.prisma.botSecret.findUniqueOrThrow({ where: { id: stored.id } }),
+        ).toMatchObject({ ciphertext: stored.ciphertext });
+        await answer(rotateRun, `${key}-rotated`);
+        expect(
+          await handles.prisma.botSecret.findUniqueOrThrow({ where: { id: stored.id } }),
+        ).not.toMatchObject({ ciphertext: stored.ciphertext });
+        await nextRun([request]);
+        expect(new Headers(fetch.mock.calls.at(-1)?.[1]?.headers).get("Authorization")).toBe(
+          `Bearer ${key}-rotated`,
+        );
+        const count = fetch.mock.calls.length;
+        await nextRun([{ name: "forget_secret", args: { name: destination.name } }, request]);
+        expect(await handles.prisma.botSecret.count({ where: { botId: seeded.bot.id } })).toBe(0);
+        expect(fetch).toHaveBeenCalledTimes(count);
+        const [messages, events, effects, tasks] = await Promise.all([
+          handles.prisma.message.findMany({ where: { threadId: seeded.thread.id } }),
+          handles.prisma.event.findMany({ where: { threadId: seeded.thread.id } }),
+          handles.prisma.externalEffect.findMany({ where: { spaceId: seeded.me.spaceId } }),
+          handles.prisma.task.findMany({ where: { botId: seeded.bot.id } }),
+        ]);
+        expect(JSON.stringify({ seen, messages, events, effects, tasks })).not.toContain(key);
+      } finally {
+        runtime.mockRestore();
+      }
+    },
+  );
 
   async function seedRun(
     label: string,

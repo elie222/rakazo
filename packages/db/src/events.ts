@@ -638,7 +638,10 @@ export async function answerRunInput(
           kind: "request_secret",
           status: "intended",
         },
-        data: { status: "approved" },
+        data: {
+          status: "approved",
+          ...(pendingAsk.credential ? { result: { credentialSaved: pendingAsk.credential } } : {}),
+        },
       });
     } else {
       const resumeLabel = selectedChoice

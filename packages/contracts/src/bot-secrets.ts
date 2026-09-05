@@ -50,6 +50,9 @@ export const BotSecretDestination = z.object({
 });
 export type BotSecretDestination = z.infer<typeof BotSecretDestination>;
 
+/** Written atomically with the protected value, distinct from action approval. */
+export const BotSecretSubmission = z.object({ credentialSaved: BotSecretDestination });
+
 export const SecretHttpRequest = z
   .object({
     name: BotSecretName,
