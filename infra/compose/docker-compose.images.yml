@@ -3,15 +3,16 @@
 #   docker compose --env-file .env -f docker-compose.images.yml up -d
 #
 # Tag contract matches docs/self-host.md (edge from main; release tags when published).
-# Default is edge because that tag is published on every main build (linux/amd64 only).
-# Pin a published release tag (vX.Y.Z or latest, when present) for multi-arch and fixed versions.
+# Default is edge because that tag is published on every main build (linux/amd64 + linux/arm64).
+# Pin a published vX.Y.Z tag for a fixed version; `latest` moves to each new stable release.
 # Default SANDBOX_PROVIDER=docker boots a local computer via the in-stack supervisor (no E2B key).
 # Optional: set e2b / daytona / box plus the matching API key for remote computers.
 name: rakazo
 
 services:
   postgres:
-    image: postgres:16@sha256:e17e86066e5ef83e0952a9347f5c792b7ece00972e2aa787a6986f471b3dd3d5
+    # Optional Hub override; unset keeps the digest-pinned official image.
+    image: ${POSTGRES_IMAGE:-postgres:16@sha256:e17e86066e5ef83e0952a9347f5c792b7ece00972e2aa787a6986f471b3dd3d5}
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
@@ -38,7 +39,8 @@ services:
     restart: "no"
 
   data-init:
-    image: busybox:1
+    # Optional Hub override; unset keeps busybox:1.
+    image: ${BUSYBOX_IMAGE:-busybox:1}
     command: ["chown", "-R", "1000:1000", "/data"]
     restart: "no"
     volumes:
@@ -66,6 +68,12 @@ services:
       SANDBOX_COMMAND_TIMEOUT_MS: ${SANDBOX_COMMAND_TIMEOUT_MS:-300000}
       SANDBOX_SUPERVISOR_TOKEN: ${SANDBOX_SUPERVISOR_TOKEN:?Set SANDBOX_SUPERVISOR_TOKEN in .env}
       SANDBOX_SCREEN_NETWORK: isolated
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      LOG_FORMAT: ${LOG_FORMAT:-}
+      AXIOM_TOKEN: ${AXIOM_TOKEN:-}
+      AXIOM_DATASET: ${AXIOM_DATASET:-}
+      AXIOM_EDGE: ${AXIOM_EDGE:-}
+      AXIOM_EDGE_URL: ${AXIOM_EDGE_URL:-}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - appdata:/data
@@ -111,6 +119,13 @@ services:
       SANDBOX_SUPERVISOR_URL: http://supervisor:7091
       WAKEUP_DRIVER: graphile
       AGENT_RUNTIME: pi
+      # Optional egress proxy (Mainland / corporate). Empty = unset; either case works.
+      HTTP_PROXY: ${HTTP_PROXY:-${http_proxy:-}}
+      HTTPS_PROXY: ${HTTPS_PROXY:-${https_proxy:-}}
+      NO_PROXY: ${NO_PROXY:-${no_proxy:-}}
+      http_proxy: ${http_proxy:-${HTTP_PROXY:-}}
+      https_proxy: ${https_proxy:-${HTTPS_PROXY:-}}
+      no_proxy: ${no_proxy:-${NO_PROXY:-}}
     ports:
       - "127.0.0.1:3100:3100"
     volumes:
@@ -158,6 +173,13 @@ services:
       SCREEN_PROXY_SECRET: ""
       WAKEUP_DRIVER: graphile
       AGENT_RUNTIME: pi
+      # Optional egress proxy (Mainland / corporate). Empty = unset; either case works.
+      HTTP_PROXY: ${HTTP_PROXY:-${http_proxy:-}}
+      HTTPS_PROXY: ${HTTPS_PROXY:-${https_proxy:-}}
+      NO_PROXY: ${NO_PROXY:-${no_proxy:-}}
+      http_proxy: ${http_proxy:-${HTTP_PROXY:-}}
+      https_proxy: ${https_proxy:-${HTTPS_PROXY:-}}
+      no_proxy: ${no_proxy:-${NO_PROXY:-}}
     volumes:
       - appdata:/data
     networks:
@@ -188,6 +210,10 @@ services:
       NODE_ENV: production
       API_PROXY_TARGET: http://api:3100
       RAKAZO_HOST: ${RAKAZO_HOST:-localhost}
+      # Set only by the packaged desktop app. Its authenticated probe prevents a
+      # source dev server on the same host port from impersonating this stack.
+      RAKAZO_DESKTOP_STACK_TOKEN: ${RAKAZO_DESKTOP_STACK_TOKEN:-}
+      RAKAZO_IMAGE_TAG: ${RAKAZO_IMAGE_TAG:-edge}
       SCREEN_PROXY_SECRET: ${SCREEN_PROXY_SECRET:?Set SCREEN_PROXY_SECRET in .env}
     ports:
       - "127.0.0.1:5173:5173"

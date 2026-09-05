@@ -18,8 +18,10 @@
     "db:migrate": "pnpm --filter @rakazo/db migrate",
     "sandbox:build": "docker build -t rakazo/computer:local infra/sandboxes/computer",
     "test": "vitest run",
+    "test:compose-smoke": "bash infra/compose/run-smokes.sh",
     "test:integration": "tsx packages/testkit/src/cli/harness.ts --integration",
     "test:e2e": "tsx packages/testkit/src/cli/harness.ts --e2e",
+    "test:mobile-screenshots": "pnpm --filter @rakazo/db generate && tsx packages/testkit/src/cli/mobile-screenshots.ts",
     "test:topology": "tsx packages/testkit/src/cli/topology.ts",
     "test:canary": "tsx packages/testkit/src/cli/canary.ts",
     "test:computer": "tsx packages/testkit/src/cli/computer.ts",
@@ -41,6 +43,9 @@
     "overrides": {
       "react": "19.2.3",
       "react-dom": "19.2.3"
+    },
+    "patchedDependencies": {
+      "app-builder-lib@26.15.3": "patches/app-builder-lib@26.15.3.patch"
     }
   }
 }

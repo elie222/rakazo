@@ -5,6 +5,7 @@ import {
   type JobPublisher,
   type JobWorkerHost,
 } from "@rakazo/adapter-kit";
+import { runCorrelatedJob, unwrapJobPayload, wrapJobPayload } from "@rakazo/logging";
 import { makeWorkerUtils, type Runner, run, type WorkerUtils } from "graphile-worker";
 
 export class GraphileJobPublisher implements JobPublisher {
@@ -15,7 +16,7 @@ export class GraphileJobPublisher implements JobPublisher {
 
   async enqueue(job: BackgroundJob): Promise<void> {
     const utils = await this.getUtils();
-    await utils.addJob(job.name, job.payload, {
+    await utils.addJob(job.name, wrapJobPayload(job.payload), {
       runAt: job.availableAt,
       jobKey: job.replaceKey,
     });
@@ -58,7 +59,15 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
     const taskList = Object.fromEntries(
       Object.keys(handlers).map((name) => [
         name,
-        async (payload: unknown) => dispatchBackgroundJob(handlers, name, payload),
+        async (payload: unknown) => {
+          const unpacked = unwrapJobPayload(payload);
+          await runCorrelatedJob({
+            name,
+            payload: unpacked.payload,
+            correlation: unpacked.correlation,
+            run: () => dispatchBackgroundJob(handlers, name, unpacked.payload),
+          });
+        },
       ]),
     );
     this.runner = await run({
@@ -77,13 +86,29 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
   }
 }
 
+interface QueuedJob {
+  name: BackgroundJob["name"];
+  payload: unknown;
+  availableAt?: Date;
+  replaceKey?: string;
+}
+
+function toQueuedJob(job: BackgroundJob): QueuedJob {
+  return {
+    name: job.name,
+    payload: wrapJobPayload(job.payload),
+    availableAt: job.availableAt,
+    replaceKey: job.replaceKey,
+  };
+}
+
 export class InMemoryJobQueue implements JobPublisher, JobWorkerHost {
   private handlers: BackgroundJobHandlers | undefined;
   private readonly timers = new Set<ReturnType<typeof setTimeout>>();
-  private readonly scheduled = new Map<ReturnType<typeof setTimeout>, BackgroundJob>();
+  private readonly scheduled = new Map<ReturnType<typeof setTimeout>, QueuedJob>();
   private readonly keyed = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly active = new Set<Promise<void>>();
-  private readonly closingJobs: BackgroundJob[] = [];
+  private readonly closingJobs: QueuedJob[] = [];
   private draining: Promise<void> | undefined;
   private closed = false;
   private stopped = false;
@@ -92,35 +117,36 @@ export class InMemoryJobQueue implements JobPublisher, JobWorkerHost {
   private closeRequested = false;
 
   async enqueue(job: BackgroundJob): Promise<void> {
+    const stored = toQueuedJob(job);
     if (this.closed) throw new Error("Background job publisher is closed");
     if (this.stopped) throw new Error("Background job publisher is stopped");
     if (this.closing) {
-      this.enqueueWhileClosing(job);
+      this.enqueueWhileClosing(stored);
       return;
     }
-    if (job.replaceKey) {
-      await this.cancel(job.replaceKey);
+    if (stored.replaceKey) {
+      await this.cancel(stored.replaceKey);
       if (this.closed) throw new Error("Background job publisher is closed");
       if (this.stopped) throw new Error("Background job publisher is stopped");
       if (this.closing) {
-        this.enqueueWhileClosing(job);
+        this.enqueueWhileClosing(stored);
         return;
       }
     }
-    const delay = job.availableAt ? Math.max(0, job.availableAt.getTime() - Date.now()) : 0;
+    const delay = stored.availableAt ? Math.max(0, stored.availableAt.getTime() - Date.now()) : 0;
     const timer = setTimeout(() => {
       this.timers.delete(timer);
       this.scheduled.delete(timer);
-      if (job.replaceKey && this.keyed.get(job.replaceKey) === timer) {
-        this.keyed.delete(job.replaceKey);
+      if (stored.replaceKey && this.keyed.get(stored.replaceKey) === timer) {
+        this.keyed.delete(stored.replaceKey);
       }
       const handlers = this.handlers;
       if (!handlers) return;
-      void this.dispatch(handlers, job);
+      void this.dispatch(handlers, stored);
     }, delay);
     this.timers.add(timer);
-    this.scheduled.set(timer, job);
-    if (job.replaceKey) this.keyed.set(job.replaceKey, timer);
+    this.scheduled.set(timer, stored);
+    if (stored.replaceKey) this.keyed.set(stored.replaceKey, timer);
   }
 
   async cancel(replaceKey: string): Promise<void> {
@@ -143,10 +169,14 @@ export class InMemoryJobQueue implements JobPublisher, JobWorkerHost {
     await this.drain();
   }
 
-  private dispatch(handlers: BackgroundJobHandlers, job: BackgroundJob): Promise<void> {
-    const active = dispatchBackgroundJob(handlers, job.name, job.payload).catch((error) => {
-      console.error(job.name, error);
-    });
+  private dispatch(handlers: BackgroundJobHandlers, job: QueuedJob): Promise<void> {
+    const unpacked = unwrapJobPayload(job.payload);
+    const active = runCorrelatedJob({
+      name: job.name,
+      payload: unpacked.payload,
+      correlation: unpacked.correlation,
+      run: () => dispatchBackgroundJob(handlers, job.name, unpacked.payload),
+    }).catch(() => undefined);
     this.active.add(active);
     void active.finally(() => this.active.delete(active));
     return active;
@@ -158,7 +188,7 @@ export class InMemoryJobQueue implements JobPublisher, JobWorkerHost {
     await this.drain();
   }
 
-  private enqueueWhileClosing(job: BackgroundJob): void {
+  private enqueueWhileClosing(job: QueuedJob): void {
     if (job.replaceKey) {
       const existing = this.closingJobs.findIndex((queued) => queued.replaceKey === job.replaceKey);
       if (existing >= 0) this.closingJobs.splice(existing, 1);

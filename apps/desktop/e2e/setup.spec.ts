@@ -1,10 +1,13 @@
+import { execFile } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 import { type ElectronApplication, _electron as electron, expect, test } from "@playwright/test";
 
 const APP_MARKER = "Existing Rakazo instance ready";
+const execFileAsync = promisify(execFile);
 
 let server: Server;
 let serverUrl: string;
@@ -76,17 +79,44 @@ test("first run asks whether to use a local or existing instance", async () => {
   const setup = await app.firstWindow();
 
   await expect(setup.getByRole("heading", { name: "Welcome to Rakazo" })).toBeVisible();
+  await expect(setup.getByText("Choose which server this app should use.")).toBeVisible();
   await expect(setup.getByText("This computer")).toBeVisible();
   await expect(setup.getByText("Existing instance")).toBeVisible();
+  await expect(setup.locator(".card")).toHaveCount(0);
 
-  // A new instance is the default and points at the local development stack.
+  // A new instance is the default: the app runs the stack itself at the local address.
   await expect(setup.getByRole("radio", { name: /This computer/ })).toBeChecked();
-  await expect(setup.locator("#local-url")).toHaveValue("http://127.0.0.1:5173");
+  // The panel is empty until a start begins, so check the attribute rather than the box.
+  await expect(setup.locator("#panel-new")).toHaveJSProperty("hidden", false);
+  await expect(setup.locator("#stack")).toBeHidden();
+  await expect(setup.getByRole("button", { name: "Check connection" })).toBeHidden();
   await expect(setup.locator("#panel-existing")).toBeHidden();
 
   await setup.screenshot({
     path: path.join(import.meta.dirname, "screenshots", "01-setup-new-instance.png"),
   });
+
+  // Linux CI verifies the layout state; the macOS CI job also captures the native controls.
+  await setup.evaluate(() => {
+    document.documentElement.dataset.platform = "darwin";
+  });
+  await expect(setup.locator(".titlebar")).toHaveCSS("padding-left", "88px");
+  expect((await setup.locator(".titlebar-name").boundingBox())?.x).toBeGreaterThanOrEqual(88);
+  if (process.platform === "darwin") {
+    await app.evaluate(({ BrowserWindow }) => {
+      const window = BrowserWindow.getAllWindows()[0];
+      if (window === undefined) throw new Error("Setup window is unavailable");
+      window.setBounds({ x: 40, y: 40, width: 720, height: 700 });
+      window.show();
+      window.focus();
+    });
+    await setup.waitForTimeout(500);
+    await execFileAsync("screencapture", [
+      "-x",
+      "-R40,40,720,700",
+      path.join(import.meta.dirname, "screenshots", "08-setup-macos-native-controls.png"),
+    ]);
+  }
 });
 
 test("connecting to an existing instance verifies, saves, and opens it", async () => {

@@ -1,6 +1,11 @@
 import type { Command200Response } from "@asciidev/box-sdk";
 import { describe, expect, it, vi } from "vitest";
-import { BoxSandboxProvider, type BoxSandboxSdk, isUnrecoverableBoxError } from "./box-sandbox.js";
+import {
+  BoxSandboxProvider,
+  type BoxSandboxSdk,
+  isUnrecoverableBoxError,
+  shouldStopBoxBrowsersOnCancel,
+} from "./box-sandbox.js";
 
 const context = {
   operationId: "test",
@@ -112,6 +117,121 @@ describe("BoxSandboxProvider", () => {
     expect(replacement).toMatchObject({ providerRef: "bx_testbox2", fresh: true });
   });
 
+  it("downloads binary files over the JSON endpoint limit through the SDK artifact route", async () => {
+    const content = Buffer.alloc(6 * 1024 * 1024, 0xff);
+    content[0] = 0;
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(content, { headers: { "content-length": String(content.byteLength) } }),
+      );
+    try {
+      const provider = new BoxSandboxProvider({
+        apiKey: "test-key",
+        apiUrl: "https://box.test/api/box/v1",
+      });
+      const computer = {
+        id: "bx_testbox2",
+        providerRef: "bx_testbox2",
+        kind: "box" as const,
+        botId: "bot-a",
+      };
+      const filePath = "notes/a file & more.bin";
+      const downloaded = await provider.readFile(computer, filePath, context);
+
+      expect(Buffer.from(downloaded).equals(content)).toBe(true);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const [request, init] = fetchMock.mock.calls[0]!;
+      const url = new URL(String(request));
+      expect(url.pathname).toBe("/api/box/v1/boxes/bx_testbox2/artifacts");
+      expect(url.searchParams.get("path")).toBe(`/home/user/rakazo-home/${filePath}`);
+      expect(new Headers(init?.headers).get("Authorization")).toBe("Bearer test-key");
+      expect(init?.signal).toBe(context.signal);
+    } finally {
+      fetchMock.mockRestore();
+    }
+  });
+
+  it("exports browser profile files over 5 MiB without losing their bytes", async () => {
+    const fixture = boxFixture();
+    const content = Buffer.alloc(6 * 1024 * 1024, 0xab);
+    fixture.files.set("/home/user/rakazo-home/.browser-profiles/chrome/Default/History", content);
+    const provider = new BoxSandboxProvider({ apiKey: "test-key" }, fixture.client);
+    const computer = await provider.provision({ botId: "bot-a", homePath: "/unused" }, context);
+    const exported = [];
+    for await (const file of provider.exportWorkspace(computer, context)) exported.push(file);
+
+    expect(exported).toHaveLength(1);
+    expect(exported[0]?.path).toBe(".browser-profiles/chrome/Default/History");
+    expect(Buffer.from(exported[0]!.content).equals(content)).toBe(true);
+    expect(fixture.artifactRaw).toHaveBeenCalledWith(
+      {
+        boxId: computer.id,
+        path: "/home/user/rakazo-home/.browser-profiles/chrome/Default/History",
+      },
+      { signal: context.signal },
+    );
+  });
+
+  it.each([undefined, "1", "20"])(
+    "cancels oversized downloads with content-length %s",
+    async (contentLength) => {
+      const fixture = boxFixture();
+      const cancel = vi.fn();
+      const pull = vi.fn((controller: ReadableStreamDefaultController<Uint8Array>) => {
+        controller.enqueue(Uint8Array.from([1, 2, 3]));
+      });
+      const body = new ReadableStream({ pull, cancel }, { highWaterMark: 0 });
+      fixture.artifactRaw.mockResolvedValueOnce({
+        raw: new Response(body, {
+          headers: contentLength ? { "content-length": contentLength } : undefined,
+        }),
+      });
+      const provider = new BoxSandboxProvider({ apiKey: "test-key" }, fixture.client);
+      const computer = await provider.provision({ botId: "bot-a", homePath: "/unused" }, context);
+
+      await expect(
+        provider.readFile(computer, "large.bin", context, { maxBytes: 4 }),
+      ).rejects.toThrow("computer file exceeds 4 bytes");
+      expect(pull).toHaveBeenCalledTimes(contentLength === "20" ? 0 : 2);
+      expect(cancel).toHaveBeenCalledTimes(1);
+      expect(body.locked).toBe(false);
+    },
+  );
+
+  it("accepts empty files and files exactly at the download limit", async () => {
+    const fixture = boxFixture();
+    fixture.files.set("/home/user/rakazo-home/exact.bin", Uint8Array.from([0, 255]));
+    const provider = new BoxSandboxProvider({ apiKey: "test-key" }, fixture.client);
+    const computer = await provider.provision({ botId: "bot-a", homePath: "/unused" }, context);
+
+    expect(await provider.readFile(computer, "empty.bin", context, { maxBytes: 0 })).toHaveLength(
+      0,
+    );
+    expect(await provider.readFile(computer, "exact.bin", context, { maxBytes: 2 })).toEqual(
+      Uint8Array.from([0, 255]),
+    );
+  });
+
+  it("propagates interrupted downloads instead of returning partial files", async () => {
+    const fixture = boxFixture();
+    const aborted = new DOMException("download aborted", "AbortError");
+    let first = true;
+    const body = new ReadableStream({
+      pull(controller) {
+        if (first) controller.enqueue(Uint8Array.from([1, 2, 3]));
+        else controller.error(aborted);
+        first = false;
+      },
+    });
+    fixture.artifactRaw.mockResolvedValueOnce({ raw: new Response(body) });
+    const provider = new BoxSandboxProvider({ apiKey: "test-key" }, fixture.client);
+    const computer = await provider.provision({ botId: "bot-a", homePath: "/unused" }, context);
+
+    await expect(provider.readFile(computer, "partial.bin", context)).rejects.toBe(aborted);
+    expect(body.locked).toBe(false);
+  });
+
   it("captures the desktop, exposes a private view, and enforces one screen", async () => {
     const fixture = boxFixture();
     const provider = new BoxSandboxProvider({ apiKey: "test-key" }, fixture.client);
@@ -148,7 +268,7 @@ describe("BoxSandboxProvider", () => {
     ).toBe(true);
 
     await expect(provider.observe(computer, { ...context, botId: "bot-b" })).rejects.toThrow(
-      /multiple screens/i,
+      /temporarily busy/i,
     );
     expect(provider.describe().capabilities.multiScreen).toBe(false);
   });
@@ -264,22 +384,14 @@ function boxFixture(options: { state?: string } = {}) {
         };
       },
     ),
-    readFile: vi.fn(async ({ path }: { path: string }) => {
+    artifactRaw: vi.fn(async ({ path }: { path: string }) => {
       const content = path.startsWith("/tmp/rakazo-observe-")
         ? Uint8Array.from([137, 80, 78, 71])
         : (files.get(path) ?? new Uint8Array());
-      return {
-        ok: true,
-        type: "file.read" as const,
-        success: true,
-        path,
-        encoding: "base64" as const,
-        size: content.byteLength,
-        content: Buffer.from(content).toString("base64"),
-      };
+      return { raw: new Response(Buffer.from(content)) };
     }),
   };
-  return { ...fixture, client: fixture as unknown as BoxSandboxSdk };
+  return { ...fixture, files, client: fixture as unknown as BoxSandboxSdk };
 }
 
 function box(id: string, state: string) {
@@ -322,3 +434,49 @@ function finished(overrides: Partial<Command200Response> = {}): Command200Respon
     ...overrides,
   } as Command200Response;
 }
+
+describe("shouldStopBoxBrowsersOnCancel", () => {
+  it("keeps a newer remote fence alive even if a local claim was released", () => {
+    expect(
+      shouldStopBoxBrowsersOnCancel({
+        remoteLease: { status: "present", leaseId: "run-2:2" },
+        screenLeaseId: "run-1:1",
+      }),
+    ).toBe(false);
+  });
+
+  it("stops cross-process cancel when the remote fence matches", () => {
+    expect(
+      shouldStopBoxBrowsersOnCancel({
+        remoteLease: { status: "present", leaseId: "run-1:1" },
+        screenLeaseId: "run-1:1",
+      }),
+    ).toBe(true);
+  });
+
+  it("stops orphaned browsers when no remote fence exists", () => {
+    expect(
+      shouldStopBoxBrowsersOnCancel({
+        remoteLease: { status: "missing" },
+        screenLeaseId: "run-1:1",
+      }),
+    ).toBe(true);
+  });
+
+  it("fails closed when the remote lease cannot be read", () => {
+    expect(
+      shouldStopBoxBrowsersOnCancel({
+        remoteLease: { status: "error" },
+        screenLeaseId: "run-1:1",
+      }),
+    ).toBe(false);
+  });
+
+  it("fails closed when cancel has no screen lease id", () => {
+    expect(
+      shouldStopBoxBrowsersOnCancel({
+        remoteLease: { status: "present", leaseId: "run-1:1" },
+      }),
+    ).toBe(false);
+  });
+});

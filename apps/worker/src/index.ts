@@ -40,7 +40,11 @@ import {
 } from "@rakazo/adapters";
 import { resolveEncryptionKey, resolveSupervisorToken } from "@rakazo/core";
 import { createDb, createThreadEvents } from "@rakazo/db";
+import { SERVICE_NAMES } from "@rakazo/logging";
+import { createRootLogger } from "@rakazo/logging/axiom";
 import { MarkdownMemoryStore } from "@rakazo/memory";
+
+const logger = createRootLogger(SERVICE_NAMES.worker);
 
 async function main() {
   const databaseUrl = process.env.DATABASE_URL;
@@ -164,22 +168,27 @@ async function main() {
   const stop = async () => {
     if (stopping) return;
     stopping = true;
-    await reconciler.stop();
-    await jobHost.stop();
-    await jobs.close();
-    await realtime.close();
-    await connector.stop();
-    await mcp.close();
-    await prisma.$disconnect().catch(() => undefined);
-    await pool.end().catch(() => undefined);
+    try {
+      await reconciler.stop();
+      await jobHost.stop();
+      await jobs.close();
+      await realtime.close();
+      await connector.stop();
+      await mcp.close();
+      await prisma.$disconnect().catch(() => undefined);
+      await pool.end().catch(() => undefined);
+    } finally {
+      await logger.flush({ timeoutMs: 2_000 });
+    }
   };
   process.once("SIGTERM", () => void stop());
   process.once("SIGINT", () => void stop());
 
-  console.log("rakazo worker ready");
+  logger.info("worker ready");
 }
 
-main().catch((error) => {
-  console.error(error);
+main().catch(async (error) => {
+  logger.error("worker startup failed", error);
+  await logger.flush({ timeoutMs: 2_000 });
   process.exit(1);
 });

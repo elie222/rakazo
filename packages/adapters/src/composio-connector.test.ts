@@ -1,5 +1,5 @@
-import console from "node:console";
 import type { AdapterContext, ConnectorEvent, ConnectorTool } from "@rakazo/adapter-kit";
+import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { describe, expect, it, vi } from "vitest";
 import { composioToolkitDirectory } from "./composio-catalog-cache.js";
 import {
@@ -178,20 +178,22 @@ describe("composio tool mapping", () => {
       execute: async function* () {},
     } as never;
     const connector = new CompositeConnector(destination, [failing]);
-    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
 
     try {
       await expect(connector.discoverTools({ userId: "u" } as AdapterContext)).resolves.toEqual([
         expect.objectContaining({ name: "destination.write" }),
       ]);
-      expect(error).toHaveBeenCalledWith(
-        "connector discovery failed",
-        "failing",
-        expect.stringContaining("[redacted]"),
-      );
-      expect(error.mock.calls.flat().join(" ")).not.toContain("ak_secretvaluehere");
+      expect(sink.events[0]).toMatchObject({
+        message: "connector discovery failed",
+        "connector.id": "failing",
+      });
+      const logged = JSON.stringify(sink.events);
+      expect(logged).toContain("[redacted]");
+      expect(logged).not.toContain("ak_secretvaluehere");
     } finally {
-      error.mockRestore();
+      installLogger(createLogger({ service: "rakazo-api", level: "off", sinks: [] }));
     }
   });
 
@@ -446,5 +448,11 @@ describe("Composio during pnpm test", () => {
   it("does not construct a live Platform client under Vitest", () => {
     expect(process.env.VITEST).toBeTruthy();
     expect(isComposioEnabled("ck_must_not_call_live")).toBe(false);
+  });
+
+  it.each(["0", "false"])("does not treat VITEST=%s as an active test runner", (value) => {
+    vi.stubEnv("VITEST", value);
+    expect(isComposioEnabled("ck_configured")).toBe(true);
+    vi.unstubAllEnvs();
   });
 });

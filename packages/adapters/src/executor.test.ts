@@ -4,6 +4,7 @@ import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import {
   createRunExecutor,
+  createRunWorkspaceCheckpoint,
   loadCurrentTurnImages,
   missingTurnImagesInstruction,
   runNotificationsEnabled,
@@ -11,6 +12,42 @@ import {
   settleSteeringAttachmentLoads,
   threadContextForRun,
 } from "./executor.js";
+
+describe("run workspace checkpoint", () => {
+  it("skips clean turns and flushes once after a mutation", async () => {
+    const persist = vi.fn(async () => undefined);
+    const checkpoint = createRunWorkspaceCheckpoint(persist);
+
+    await expect(checkpoint.flush()).resolves.toBe(false);
+    checkpoint.markDirty();
+    await expect(checkpoint.flush()).resolves.toBe(true);
+    await expect(checkpoint.flush()).resolves.toBe(false);
+    expect(persist).toHaveBeenCalledOnce();
+  });
+
+  it("marks materialized steering files for checkpointing", async () => {
+    const persist = vi.fn(async () => undefined);
+    const checkpoint = createRunWorkspaceCheckpoint(persist);
+
+    checkpoint.markFiles([]);
+    await expect(checkpoint.flush()).resolves.toBe(false);
+    checkpoint.markFiles([{ path: "attachments/result.txt" }]);
+    await expect(checkpoint.flush()).resolves.toBe(true);
+  });
+
+  it("keeps a failed checkpoint dirty for retry", async () => {
+    const persist = vi
+      .fn<() => Promise<void>>()
+      .mockRejectedValueOnce(new Error("checkpoint failed"))
+      .mockResolvedValueOnce(undefined);
+    const checkpoint = createRunWorkspaceCheckpoint(persist);
+    checkpoint.markDirty();
+
+    await expect(checkpoint.flush()).rejects.toThrow("checkpoint failed");
+    await expect(checkpoint.flush()).resolves.toBe(true);
+    expect(persist).toHaveBeenCalledTimes(2);
+  });
+});
 
 describe("run tool selection", () => {
   const toolNames = (trigger: string, groupId: string | null = null) =>
@@ -771,6 +808,98 @@ description: Prepare standup notes
       }),
     );
     expect(enqueue).toHaveBeenCalledOnce();
+  });
+
+  it("fails a run clearly without calling the real runtime when no model is configured", async () => {
+    let status = "queued";
+    const runtimeRun = vi.fn();
+    const finalizeRun = vi.fn(async () => {
+      status = "failed";
+      return { continuationRunId: null };
+    });
+    const run = {
+      id: "run-1",
+      botId: "bot-1",
+      threadId: "thread-1",
+      taskId: "task-1",
+      userId: "user-1",
+      spaceId: "ws-1",
+      status: "queued",
+      trigger: "user",
+      routineId: null,
+      sourceMessageId: null,
+      checkpoint: null,
+      leaseFence: 0,
+    };
+    const botLookup = vi.fn(async (args: { select?: { computerId?: boolean } }) =>
+      args.select?.computerId
+        ? { computerId: "computer-1", computerSwitching: false }
+        : {
+            id: "bot-1",
+            name: "Assistant",
+            modelProvider: null,
+            modelId: null,
+            thinkingLevel: null,
+            memoryScope: "isolated",
+            computer: { id: "computer-1", scope: "private" },
+          },
+    );
+    const prisma = {
+      run: {
+        findUnique: vi.fn(async () => run),
+        findUniqueOrThrow: vi.fn(async () => ({ status: "leased", startedAt: null })),
+        updateMany: vi.fn(async () => ({ count: 1 })),
+      },
+      bot: { findUniqueOrThrow: botLookup },
+      computer: {
+        findUniqueOrThrow: vi.fn(async () => ({ scope: "private", state: "running" })),
+      },
+      attempt: {
+        create: vi.fn(async () => ({ id: "attempt-1" })),
+        updateMany: vi.fn(async () => ({ count: 1 })),
+      },
+      thread: {
+        findUniqueOrThrow: vi.fn(async () => ({
+          id: "thread-1",
+          groupId: null,
+          historyCompactionSummary: null,
+          historyCompactedUpToSeq: null,
+          historyCompactionGeneration: 0,
+        })),
+      },
+      message: { findMany: vi.fn(async () => []) },
+      task: { findUniqueOrThrow: vi.fn(async () => ({ id: "task-1", prompt: "hello" })) },
+      connection: { findMany: vi.fn(async () => []) },
+      spaceModelPreference: { findFirst: vi.fn(async () => null) },
+      userModelCredential: { findFirst: vi.fn(async () => null) },
+      deploymentSettings: { findUnique: vi.fn(async () => null) },
+      taughtSkill: { findMany: vi.fn(async () => []) },
+      agentSkill: { findMany: vi.fn(async () => []) },
+      scratchpadItem: { findMany: vi.fn(async () => []) },
+    } as unknown as PrismaClient;
+    const executor = createRunExecutor({
+      prisma,
+      runtime: {
+        describe: () => ({ capabilities: { scripted: false } }),
+        run: runtimeRun,
+      },
+      memoryProviders: { resolve: vi.fn(async () => null) },
+      memory: { read: vi.fn(async () => ({ documents: [] })) },
+      events: { append: vi.fn(async () => undefined), finalizeRun },
+      jobs: { enqueue: vi.fn(async () => undefined) },
+      secrets: [],
+    } as unknown as Parameters<typeof createRunExecutor>[0]);
+
+    await executor.continueRun("run-1", "worker-1");
+
+    expect(status).toBe("failed");
+    expect(finalizeRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        outcome: "failed",
+        error: "Connect a model in Settings before running bots.",
+      }),
+    );
+    expect(runtimeRun).not.toHaveBeenCalled();
   });
 
   it("resolves a per-bot model override with that provider’s credential", async () => {

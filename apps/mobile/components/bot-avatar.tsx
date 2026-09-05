@@ -14,6 +14,7 @@ import Animated, {
 } from "react-native-reanimated";
 import Svg, { G, Path, Rect } from "react-native-svg";
 import { workingAvatarDuration, workingAvatarFrame } from "../lib/avatar-motion";
+import { useI18n } from "../lib/i18n";
 import { useAvatarStyle } from "./avatar-style";
 import { NativeSymbol } from "./native-symbol";
 
@@ -34,6 +35,7 @@ export const BotAvatar = memo(function BotAvatar({
   variant?: AvatarStyle;
   muted?: boolean;
 }) {
+  const { t } = useI18n();
   const isWorking = ACTIVE_RUN_STATUSES.some((activeStatus) => activeStatus === status);
   const { avatarStyle } = useAvatarStyle();
   const visorW = Math.round(size * 0.68);
@@ -84,7 +86,7 @@ export const BotAvatar = memo(function BotAvatar({
       )}
       {isWorking ? (
         <View
-          accessibilityLabel="Working"
+          accessibilityLabel={t("Working")}
           style={{
             position: "absolute",
             right: muted ? undefined : 0,
@@ -100,7 +102,7 @@ export const BotAvatar = memo(function BotAvatar({
       {muted ? (
         <View
           accessible
-          accessibilityLabel="Notifications silenced"
+          accessibilityLabel={t("Notifications silenced")}
           style={{
             position: "absolute",
             right: -2,

@@ -8,6 +8,7 @@ import type {
 } from "@rakazo/adapter-kit";
 import { messagingDeliverJob } from "@rakazo/adapter-kit";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
 import { expireComputerControl } from "./computer-control.js";
 import { scheduleComputerSleep, sleepComputerIfIdle } from "./computer-idle.js";
 import type { createRunExecutor } from "./executor.js";
@@ -57,7 +58,7 @@ export function createBackgroundJobHandlers(deps: {
           payload.runId,
         );
         await deps.jobs.enqueue(messagingDeliverJob()).catch(async (error) => {
-          console.error("messaging.deliver enqueue error", error);
+          getLogger().error("messaging.deliver enqueue error", error);
           await deliverMessaging();
         });
       }

@@ -77,7 +77,8 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   expect(mainBox).not.toBeNull();
   expect(panelBox).not.toBeNull();
   expect((mainBox?.x ?? 0) + (mainBox?.width ?? 0)).toBeLessThanOrEqual(panelBox?.x ?? 0);
-  await page.getByRole("button", { name: "Take control" }).click();
+  await sidePanel.getByTestId("computer-preview").hover();
+  await sidePanel.getByTestId("computer-preview-open").click();
   await expect(page.getByRole("button", { name: "Close computer" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Skip", exact: true }).last()).toBeVisible();
   await expect(page.getByRole("button", { name: "I’m done", exact: true }).last()).toBeVisible();
@@ -97,16 +98,16 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
       message: "the second protected-input run must be ready for takeover",
     })
     .toBe("waiting_takeover");
-  // Agent computer toggles the panel — only open it when closed so we don't hide Take control.
-  // Opening refreshes thread/computer status so Take control can clear a stale busyBotName.
+  // Agent computer toggles the panel. Re-open when closed so Open can refresh computer status.
   if ((await sidePanel.getAttribute("data-panel")) === "computer") {
     await page.getByTitle("Agent computer").click();
   }
   await page.getByTitle("Agent computer").click();
   await expect(sidePanel).toHaveAttribute("data-panel", "computer");
-  const takeControl = sidePanel.getByRole("button", { name: "Take control" });
-  await expect(takeControl).toBeEnabled({ timeout: 30_000 });
-  await takeControl.click();
+  await sidePanel.getByTestId("computer-preview").hover();
+  const openComputer = sidePanel.getByTestId("computer-preview-open");
+  await expect(openComputer).toBeVisible({ timeout: 30_000 });
+  await openComputer.click();
   await expect(page.getByRole("button", { name: "Close computer" })).toBeVisible();
   await page.getByRole("button", { name: "Skip", exact: true }).last().click();
   await expect(page.getByRole("button", { name: "Close computer" })).toBeHidden();
@@ -115,7 +116,7 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   });
   await captureScreenshot(page, testInfo, "09a-computer-takeover-skipped");
 
-  await page.getByRole("button", { name: "New routine" }).click();
+  await page.getByRole("button", { name: "Create Routine" }).click();
   await page.locator("label:has-text('Name') input").fill("Monday briefing");
   await page
     .locator("label:has-text('Instruction') textarea")
@@ -278,13 +279,14 @@ test("sign-in, spawn, and stop work in the shell", async ({ page }, testInfo) =>
     .click();
   await composer.fill("keep working until I stop you");
   await page.keyboard.press("Enter");
-  await expect(page.getByText("still working").first()).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole("button", { name: "Stop", exact: true })).toBeVisible({
+    timeout: 30_000,
+  });
   await expect(page.getByTestId("composer-steering-status")).toHaveCount(0);
   await expect(page.getByText("Messages sent now guide the next turn.")).toHaveCount(0);
   await expect(page.getByText(/^Steer /)).toHaveCount(0);
   await expect(composer).toHaveAttribute("placeholder", "Message Chief");
   await expect(page.getByRole("button", { name: "Send", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Stop", exact: true })).toBeVisible();
   await composer.fill("Use the newer report and keep the answer short.");
   await page.keyboard.press("Tab");
   await expect(page.getByRole("button", { name: "Send", exact: true })).toBeFocused();
