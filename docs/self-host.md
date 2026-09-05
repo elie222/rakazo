@@ -215,7 +215,16 @@ RAKAZO_LOCAL_MAX_TOKENS=4096
 ```
 
 The loopback default is suitable when running Rakazo from a source checkout. In Docker Compose,
-use the model server's Compose service name or another address reachable from the containers.
+use an address the **containers** can reach that Rakazo still classifies as private:
+prefer `host.docker.internal` for a model published on the Docker host (Desktop, or Linux with a
+`host-gateway` mapping), or a **stable** host LAN RFC1918 address the containers can reach.
+Do **not** save a Compose *service* container IP from `docker inspect` / `docker network inspect`
+as a long-lived setting: the shipped network does not pin service addresses, so recreate can
+assign a different IP and probes may fail or hit another container. Do **not** use a Compose
+service DNS name alone (for example
+`http://ollama:11434/v1`): Rakazo treats bare hostnames as public, and even with
+`RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC=1` a name that resolves to a private address is rejected.
+See [OpenAI-compatible endpoints (self-host)](./self-host-openai-compatible.md).
 Only configure an endpoint you control: prompts, attachments, and tool results sent to that model
 leave Rakazo through this URL. Leave `RAKAZO_LOCAL_MODELS` blank to disable the provider.
 
@@ -226,7 +235,8 @@ the exact model id from that server, and an optional API key. By default Rakazo 
 loopback, RFC1918, and `host.docker.internal` targets. To permit public hostnames, set
 `RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC=1` in the deployment environment. Public hostnames must resolve
 only to public addresses; redirects and DNS answers that reach private or link-local networks are
-rejected.
+rejected. Longer operator notes:
+[OpenAI-compatible endpoints (self-host)](./self-host-openai-compatible.md).
 
 Do not commit `.env`. Never put `COMPOSIO_API_KEY`, OpenRouter keys, or provider tokens in git, logs, or chat.
 
