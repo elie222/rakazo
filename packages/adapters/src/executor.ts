@@ -3466,6 +3466,12 @@ export function createRunExecutor(deps: ExecutorDeps) {
             error instanceof Error ? error.message : String(error),
             runSecrets,
           );
+          getLogger().error("run.execution.failed", {
+            "run.id": runId,
+            "error.message": message,
+            "error.stack":
+              error instanceof Error ? redactSecrets(error.stack ?? "", runSecrets) : undefined,
+          });
           const failed = await deps.events.finalizeRun({
             spaceId: run.spaceId,
             threadId: thread.id,

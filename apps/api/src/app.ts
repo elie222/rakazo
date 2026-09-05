@@ -16,7 +16,9 @@ import {
   type ComposioProvider,
   type ConnectorRegistry,
   createBackgroundJobHandlers,
+  createCompanyOsWorkforce,
   createConnectorStack,
+  createDurableStorage,
   createJobReconciler,
   createMessagingContextLoader,
   createRunExecutor,
@@ -35,11 +37,10 @@ import {
   isComposioEnabled,
   isMessagingSurfaceEnabled,
   isPipedreamEnabled,
-  LocalAgentHomeStore,
-  LocalArtifactStore,
   McpConnector,
   McpOAuthBroker,
   messagingPlatformsFromEnv,
+  modalOptions,
   PiAgentRuntime,
   PiOAuthLogins,
   PipedreamConnector,
@@ -78,6 +79,7 @@ import { mountMessagingWebhookRoutes } from "./messaging-webhook.js";
 import { createRouter } from "./router.js";
 import { mountVoiceHttpRoutes } from "./voice.js";
 import { mountWebhookHttpRoutes } from "./webhook.js";
+import { mountWorkforceRoutes } from "./workforce.js";
 
 export interface AppHandles {
   app: Hono;
@@ -167,6 +169,7 @@ export async function createApp(
   const sandbox: SandboxProvider = createRunSandbox(env.sandboxProvider, {
     supervisorUrl: env.sandboxSupervisorUrl,
     supervisorToken: env.sandboxSupervisorToken,
+    modal: modalOptions(),
     e2bApiKey: env.e2bApiKey,
     daytonaApiKey: env.daytonaApiKey,
     daytonaApiUrl: env.daytonaApiUrl,
@@ -179,8 +182,7 @@ export async function createApp(
   const mcpOAuth = new McpOAuthBroker(prisma, secrets, remoteConnectors);
   const memoryProviders = new SpaceMemoryProviderResolver(prisma, secrets);
   const oauthLogins = new PiOAuthLogins();
-  const home = new LocalAgentHomeStore(env.dataDir);
-  const artifacts = new LocalArtifactStore(env.dataDir);
+  const { home, artifacts } = createDurableStorage(env.dataDir);
   const memory = new MarkdownMemoryStore(prisma);
   const mcp = new McpConnector(
     prisma,
@@ -347,6 +349,7 @@ export async function createApp(
       deploymentModelKey: env.deploymentModelKey,
       webOrigin: env.webOrigin,
       screenProxySecret: env.screenProxySecret,
+      screenGatewayOrigin: env.screenGatewayOrigin,
       sandboxProvider: env.sandboxProvider,
       gitSha: env.gitSha,
       updaterUrl: env.updaterUrl,
@@ -418,6 +421,18 @@ export async function createApp(
     if (actor) enrichLogContext({ "user.id": actor.userId, "space.id": actor.spaceId });
     return actor;
   });
+  mountWorkforceRoutes(
+    app,
+    createCompanyOsWorkforce({ prisma, pool: created.pool, secrets, events, jobs }),
+    async (c) => {
+      const session = await auth.api.getSession({ headers: sessionHeaders(c.req.raw) });
+      if (!session?.user) return null;
+      return requireMembership(prisma, session.user.id, c.req.header("x-rakazo-space-id")).catch(
+        () => null,
+      );
+    },
+    env.webOrigin,
+  );
   mountWebhookHttpRoutes(app, { prisma, secrets, events, jobs });
   // Messaging webhooks only exist when the surface is enabled.
   if (messaging) {

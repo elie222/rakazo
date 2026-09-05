@@ -24,6 +24,7 @@ export interface AppEnv {
   sandboxSupervisorUrl: string;
   sandboxSupervisorToken: string | undefined;
   screenProxySecret: string;
+  screenGatewayOrigin?: string;
   sandboxProvider: string;
   agentRuntime: string;
   deploymentModelKey: string | undefined;
@@ -93,6 +94,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     sandboxSupervisorToken:
       sandboxProvider === "docker" ? resolveSupervisorToken(source) : undefined,
     screenProxySecret: resolveScreenProxySecret(source),
+    screenGatewayOrigin: optional(source.SCREEN_GATEWAY_ORIGIN),
     sandboxProvider,
     agentRuntime: source.AGENT_RUNTIME ?? "pi",
     // Provider, model and key resolve together: see resolveDeploymentModel.

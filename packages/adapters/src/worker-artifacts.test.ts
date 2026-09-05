@@ -9,7 +9,7 @@ describe("worker artifact wiring", () => {
       path.join(path.dirname(fileURLToPath(import.meta.url)), "../../../apps/worker/src/index.ts"),
       "utf8",
     );
-    expect(source).toContain("LocalArtifactStore");
+    expect(source).toContain("createDurableStorage");
     expect(source).toContain("artifacts,");
   });
 });

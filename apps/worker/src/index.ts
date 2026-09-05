@@ -6,7 +6,9 @@ loadRootEnv();
 import {
   ChatSdkMessagingSurface,
   createBackgroundJobHandlers,
+  createCompanyOsWorkforce,
   createConnectorStack,
+  createDurableStorage,
   createJobReconciler,
   createMessagingContextLoader,
   createPostgresReconciliationLeadership,
@@ -23,12 +25,11 @@ import {
   isComposioEnabled,
   isMessagingSurfaceEnabled,
   isPipedreamEnabled,
-  LocalAgentHomeStore,
-  LocalArtifactStore,
   McpConnector,
   McpOAuthBroker,
   messagingEnvFromProcess,
   messagingPlatformsFromEnv,
+  modalOptions,
   PiAgentRuntime,
   PipedreamConnector,
   PostgresRealtimeFanout,
@@ -67,6 +68,7 @@ async function main() {
   const sandbox = createRunSandbox(sandboxProvider, {
     supervisorUrl: process.env.SANDBOX_SUPERVISOR_URL ?? "http://127.0.0.1:7091",
     supervisorToken: sandboxProvider === "docker" ? resolveSupervisorToken(process.env) : undefined,
+    modal: modalOptions(),
     e2bApiKey: process.env.E2B_API_KEY,
     daytonaApiKey: process.env.DAYTONA_API_KEY,
     daytonaApiUrl: process.env.DAYTONA_API_URL,
@@ -114,8 +116,7 @@ async function main() {
   const connector = stack.destination;
   await connector.start();
   const memoryProviders = new SpaceMemoryProviderResolver(prisma, secrets);
-  const home = new LocalAgentHomeStore(dataDir);
-  const artifacts = new LocalArtifactStore(dataDir);
+  const { home, artifacts } = createDurableStorage(dataDir);
   const inMemoryJobs = process.env.WAKEUP_DRIVER === "memory" ? new InMemoryJobQueue() : undefined;
   const jobs: JobPublisher = inMemoryJobs ?? new GraphileJobPublisher(databaseUrl);
   const jobHost: JobWorkerHost = inMemoryJobs ?? new GraphileJobWorkerHost(databaseUrl);
@@ -163,12 +164,15 @@ async function main() {
     leadership: createPostgresReconciliationLeadership(pool),
   });
   reconciler.start();
+  const workforce = createCompanyOsWorkforce({ prisma, pool, secrets, events, jobs });
+  workforce.start();
 
   let stopping = false;
   const stop = async () => {
     if (stopping) return;
     stopping = true;
     try {
+      await workforce.stop();
       await reconciler.stop();
       await jobHost.stop();
       await jobs.close();
