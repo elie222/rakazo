@@ -1,6 +1,7 @@
 import { Composio } from "@composio/core";
 import type {
   AdapterContext,
+  ConnectedConnector,
   ConnectorCall,
   ConnectorCatalogItem,
   ConnectorEvent,
@@ -106,14 +107,22 @@ function composioSlugKey(slug: string): string {
   return slug.trim().toLowerCase();
 }
 
-export function executeSessionKey(toolkits: string[]): string {
+export function executeSessionKey(
+  toolkits: string[],
+  connectedAccounts: Record<string, string[]> = {},
+): string {
   const unique = new Map<string, string>();
   for (const slug of toolkits) {
     const trimmed = slug.trim();
     const key = composioSlugKey(trimmed);
     if (key && !unique.has(key)) unique.set(key, trimmed);
   }
-  return [...unique.values()].sort().join(",");
+  const toolkitKey = [...unique.values()].sort().join(",");
+  const accountKey = Object.entries(connectedAccounts)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([toolkit, ids]) => `${toolkit}:${[...new Set(ids)].sort().join(",")}`)
+    .join(";");
+  return accountKey ? `${toolkitKey}|${accountKey}` : toolkitKey;
 }
 
 export type PluginConnectionRow = {
@@ -226,9 +235,34 @@ export class ComposioConnector implements ComposioProvider {
     return session;
   }
 
-  async sessionForExecute(userId: string, toolkits: string[]): Promise<ComposioSession> {
-    const canonicalToolkits = await this.canonicalizeToolkits(toolkits);
-    const key = executeSessionKey(canonicalToolkits);
+  async sessionForExecute(
+    userId: string,
+    connections: ReturnType<typeof connectedComposioConnections>,
+  ): Promise<ComposioSession> {
+    const canonicalToolkits = await this.canonicalizeToolkits(
+      connections.map((connection) => connection.externalId),
+    );
+    const canonicalByKey = new Map(
+      canonicalToolkits.map((toolkit) => [composioSlugKey(toolkit), toolkit]),
+    );
+    const accountIdsByToolkit = new Map<string, Set<string>>();
+    for (const connection of connections) {
+      const accountId = connection.providerRef?.trim();
+      if (!accountId) continue;
+      // No-auth and legacy rows store the toolkit slug rather than a remote
+      // connected-account id. Only concrete account ids can scope a session.
+      if (composioSlugKey(accountId) === composioSlugKey(connection.externalId)) continue;
+      const toolkit = canonicalByKey.get(composioSlugKey(connection.externalId));
+      if (!toolkit) continue;
+      const ids = accountIdsByToolkit.get(toolkit) ?? new Set<string>();
+      ids.add(accountId);
+      accountIdsByToolkit.set(toolkit, ids);
+    }
+    const connectedAccounts: Record<string, string[]> = {};
+    for (const [toolkit, ids] of accountIdsByToolkit) {
+      connectedAccounts[toolkit] = [...ids].sort();
+    }
+    const key = executeSessionKey(canonicalToolkits, connectedAccounts);
     if (!key) return this.sessionFor(userId);
     const composio = this.sdk();
     const existing = this.executeSessions.get(userId);
@@ -239,10 +273,24 @@ export class ComposioConnector implements ComposioProvider {
         this.executeSessions.delete(userId);
       }
     }
+    // Non-multi-account sessions cap connectedAccounts at one id per toolkit.
+    // requireExplicitSelection would also break single-account / no-auth
+    // execute paths that do not pass an account parameter.
+    const needsMultiAccount = Object.values(connectedAccounts).some((ids) => ids.length >= 2);
     const session = await composio.create(userId, {
       manageConnections: false,
       sandbox: { enable: false },
       toolkits: canonicalToolkits,
+      ...(Object.keys(connectedAccounts).length > 0 ? { connectedAccounts } : {}),
+      ...(needsMultiAccount
+        ? {
+            multiAccount: {
+              enable: true,
+              maxAccountsPerToolkit: 10,
+              requireExplicitSelection: true,
+            },
+          }
+        : {}),
     });
     this.executeSessions.set(userId, { sessionId: session.sessionId, key });
     return session;
@@ -304,9 +352,9 @@ export class ComposioConnector implements ComposioProvider {
   }
 
   async discoverTools(context: AdapterContext): Promise<ConnectorTool[]> {
-    const toolkits = connectedComposioExternalIds(context);
-    if (toolkits.length === 0) return [];
-    const session = await this.sessionForExecute(context.userId, toolkits);
+    const connections = connectedComposioConnections(context);
+    if (connections.length === 0) return [];
+    const session = await this.sessionForExecute(context.userId, connections);
     const raw = await session.tools();
     return asConnectorTools(raw);
   }
@@ -315,7 +363,7 @@ export class ComposioConnector implements ComposioProvider {
     try {
       const session = await this.sessionForExecute(
         context.userId,
-        connectedComposioExternalIds(context),
+        connectedComposioConnections(context),
       );
       const result = await session.execute(call.tool, call.args ?? {});
       if (result.error) {
@@ -602,13 +650,15 @@ function isManagedConnectorProvider(
   );
 }
 
-function connectedComposioExternalIds(context: AdapterContext): string[] {
+function connectedComposioConnections(context: AdapterContext): ConnectedConnector[] {
   return (
-    context.connectedConnections
-      ?.filter((connection) => connection.connectorId === "composio")
-      .map((connection) => connection.externalId) ??
-    context.connectedProviders ??
-    []
+    context.connectedConnections?.filter((connection) => connection.connectorId === "composio") ??
+    (context.connectedProviders ?? []).map((externalId) => ({
+      id: `legacy:${externalId}`,
+      connectorId: "composio",
+      externalId,
+      displayName: externalId,
+    }))
   );
 }
 
