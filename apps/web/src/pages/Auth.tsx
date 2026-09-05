@@ -16,13 +16,16 @@ const submitClass = "mt-3 h-12 w-full rounded-xl text-base";
 export function AuthPage({ mode }: { mode: AuthMode }) {
   const { t } = useLingui();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
-  const [sent, setSent] = useState(false);
+  const [resetSent, setResetSent] = useState(false);
+  // Signup triggers a session refresh that remounts the anonymous auth page.
+  const sent = resetSent || searchParams.get("verify") === "email";
   const [reset, setReset] = useState<PasswordResetCapabilities | null>(null);
   const passwordFieldId = mode === "in" ? "current-password" : "new-password";
   const title = sent ? (
@@ -70,7 +73,7 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
           setError(result.error.message ?? t`Could not send reset email`);
           return;
         }
-        setSent(true);
+        setResetSent(true);
         return;
       }
       const result =
@@ -86,7 +89,7 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
         return;
       }
       if (mode === "up" && signupRequiresEmailVerification(result.data)) {
-        setSent(true);
+        setSearchParams({ verify: "email" });
         return;
       }
       clearSpaceSelection();
