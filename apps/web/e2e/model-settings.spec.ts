@@ -40,10 +40,10 @@ test("custom reasoning models keep endpoint choices scoped and save thinking", a
   await page.locator("main").getByRole("button", { name: "Chief", exact: true }).click();
   const settings = page.getByTestId("bot-settings");
   await settings.getByText("Advanced", { exact: true }).click();
-  const model = settings.getByLabel("Model", { exact: true });
+  const model = settings.locator("label:has-text('Model') select");
   await expect(model).toContainText("test-qwen");
   await expect(model).not.toContainText("other-endpoint-model");
-  const thinking = settings.getByLabel("Thinking", { exact: true });
+  const thinking = settings.locator("label:has-text('Thinking') select");
   await thinking.selectOption("low");
   await captureScreenshot(page, testInfo, "openai-compatible-qwen-thinking");
   const saved = page.waitForResponse(
