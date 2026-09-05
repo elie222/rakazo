@@ -2,6 +2,24 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { catalogModelLabel, listPiCatalog, scriptedCatalogEntry } from "./pi-models.js";
 
 describe("Pi model catalog", () => {
+  it("exposes opted-in thinking without advertising models on every custom endpoint", async () => {
+    vi.stubEnv("RAKAZO_OPENAI_COMPAT_QWEN_MODELS", "test-qwen,test-qwen");
+    vi.stubEnv("RAKAZO_LOCAL_MODELS", "test-qwen");
+    vi.resetModules();
+    const { listPiCatalog } = await import("./pi-models.js");
+    const catalog = listPiCatalog();
+    const custom = catalog.filter((entry) => entry.provider === "openai-compatible");
+    expect(custom.map((entry) => entry.id)).toEqual(["custom", "test-qwen"]);
+    expect(custom.every((entry) => entry.placeholder)).toBe(true);
+    expect(custom[1]).toMatchObject({
+      reasoning: true,
+      thinkingLevels: ["off", "minimal", "low", "medium", "high"],
+    });
+    expect(
+      catalog.find((entry) => entry.provider === "local" && entry.id === "test-qwen"),
+    ).toMatchObject({ reasoning: true });
+  });
+
   afterEach(() => {
     vi.unstubAllEnvs();
     vi.resetModules();
