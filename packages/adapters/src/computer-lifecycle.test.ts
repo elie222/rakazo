@@ -107,7 +107,9 @@ describe("computer provisioning", () => {
     // any booting row and wrongly claim (count 1 below).
     const updateMany = vi.fn().mockImplementation(async (args: { where: { OR?: unknown[] } }) => {
       const booting = (args.where.OR ?? []).find(
-        (clause): clause is { state: string; executionLeases?: { none?: { expiresAt?: unknown } } } =>
+        (
+          clause,
+        ): clause is { state: string; executionLeases?: { none?: { expiresAt?: unknown } } } =>
           typeof clause === "object" &&
           clause !== null &&
           "state" in clause &&
