@@ -1,24 +1,20 @@
 # Self-host sandbox / computer providers
 
-How `SANDBOX_PROVIDER` chooses where each bot's **computer** runs. New file
-only; does not edit `docs/self-host.md`.
-
-`GET /health` reports the effective provider as `sandbox` (see
-`docs/self-host-health-checks.md` when present). HTTP 200 alone is not enough:
-confirm the JSON `sandbox` field matches the provider you set. A **missing**
-remote key falls back to `sandbox: "none"` while `/health` still returns 200.
-A present but **invalid** key still reports the chosen provider; `/health` will
-not catch that until provisioning fails.
+`SANDBOX_PROVIDER` selects where bot computers run. Workspace bots share a Team Computer by
+default; Private Computers are optional. See [computer runtime and isolation](./computer-runtime.md)
+for the sharing and persistence contract.
 
 ## Quick pick
 
 | Goal | Set | Also need |
 | --- | --- | --- |
-| Default self-host (local Docker desktop per bot) | `SANDBOX_PROVIDER=docker` | `SANDBOX_SUPERVISOR_TOKEN`, computer image, Docker socket for supervisor |
+| Local Docker computers | `SANDBOX_PROVIDER=docker` | `SANDBOX_SUPERVISOR_TOKEN`, computer image, Docker socket for supervisor |
 | UI only, no computers | `SANDBOX_PROVIDER=none` | No provider credential; published-images Compose still requires `SANDBOX_SUPERVISOR_TOKEN` |
 | Managed remote desktop | `e2b` / `daytona` / `box` | `SANDBOX_SUPERVISOR_TOKEN` (published-images Compose), matching API key (and optional URL knobs for Daytona/Box) |
 
-Published-images `infra/compose/.env.images.example` defaults to **`docker`**.
+Published-images [Compose](../infra/compose/docker-compose.images.yml) defaults to **`docker`**.
+It always starts the supervisor and requires `SANDBOX_SUPERVISOR_TOKEN`, including for `none`
+and remote providers. This stack credential does not replace a remote provider's API key.
 
 ## `docker` (in-stack supervisor)
 
@@ -45,11 +41,7 @@ Signup and local Docker computers work **without** an E2B (or other remote) acco
 
 ## `none`
 
-Boots API/web without computer provisioning. Use when Docker/supervisor is
-unavailable and you only need the control plane.
-
-Published-images Compose still requires `SANDBOX_SUPERVISOR_TOKEN` and starts
-the supervisor service even when `SANDBOX_PROVIDER=none`.
+Runs API/web without provisioning bot computers.
 
 ## Remote providers
 
@@ -65,10 +57,7 @@ Remote paths still need a working API/worker; they do not replace Postgres or
 the web UI. They require egress to the provider. For air-gapped hosts prefer
 `docker` with pre-loaded images, or `none`.
 
-Published-images Compose (`docker-compose.images.yml`) still requires
-`SANDBOX_SUPERVISOR_TOKEN` and always starts the supervisor service (api/worker
-depend on it). The token is a Compose stack requirement; it does not replace
-the remote API key.
+## Verify a provider change
 
 After changing provider or keys (from the published-images drop directory that
 holds `docker-compose.images.yml` and `.env`):
@@ -79,6 +68,6 @@ curl -fsS http://127.0.0.1:3100/health
 ```
 
 Confirm `sandbox` equals the intended provider (`e2b`, `daytona`, or `box`).
-HTTP 200 with `sandbox: "none"` means computers are disabled because the remote
-key is missing, not a successful remote setup. A present but invalid key still
-reports the chosen provider on `/health`; provisioning fails later.
+HTTP 200 alone does not verify a remote provider: a missing API key falls back to `sandbox: "none"`.
+A present but invalid key still reports the selected provider. Open a bot's computer to verify
+provisioning and desktop access.

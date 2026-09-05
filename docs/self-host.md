@@ -23,69 +23,11 @@ customize the public URL, image tag, or optional providers before startup, run
 `bash install-images.sh --prepare-only`, edit `.env`, then run `bash install-images.sh`.
 Flags may be combined in either order: `--prepare-only`, `--local`.
 
-### Restricted networks / mirror downloads
-
-Stage B of the installer (Compose YAML and `.env.images.example`) downloads from
-`DOWNLOAD_BASE`. Override it with a generic HTTPS mirror of `infra/compose` — do not rely on
-vendor-specific CDN defaults:
-
-```bash
-export RAKAZO_DOWNLOAD_BASE=https://example.com/mirror/rakazo/infra/compose
-bash install-images.sh
-```
-
-Trailing slashes on `RAKAZO_DOWNLOAD_BASE` are trimmed; non-HTTPS bases are rejected. Downloads
-use finite curl retries (`--retry 3 --retry-delay 2 --retry-all-errors` when supported).
-
-To reuse files already present in the working directory (skip curl when the target exists), set
-`RAKAZO_DOWNLOAD_SKIP_EXISTING=1` and/or pass `--local`:
-
-```bash
-# after placing docker-compose.images.yml and .env.images.example locally
-bash install-images.sh --local --prepare-only
-# or
-RAKAZO_DOWNLOAD_SKIP_EXISTING=1 bash install-images.sh --prepare-only
-```
-
-If skip mode is on and a required file is missing, the installer still downloads it (or fails with
-the URL in the error).
-
-Stage A (fetching `install-images.sh` itself) is separate. When raw GitHub is unreachable, point the
-bootstrap curl at your mirror of the installer script, for example:
-
-```bash
-export RAKAZO_INSTALLER_URL=https://example.com/mirror/rakazo/infra/compose/install-images.sh
-mkdir -p rakazo && cd rakazo &&
-curl -fsSLO "${RAKAZO_INSTALLER_URL}" &&
-bash install-images.sh
-```
-
-Stage C (`docker compose pull`) uses `RAKAZO_IMAGE`, `RAKAZO_IMAGE_TAG`,
-`RAKAZO_COMPUTER_IMAGE`, and `RAKAZO_COMPUTER_IMAGE_TAG` (defaults
-`ghcr.io/elie222/rakazo/{app,computer}`). When GHCR is unreachable, override those
-four in `.env` to a registry you control — keep app and computer on the same
-mirror. Do not rely on vendor-specific CDN defaults:
-
-```env
-RAKAZO_IMAGE=registry.example.com/mirror/elie222/rakazo/app
-RAKAZO_IMAGE_TAG=edge
-RAKAZO_COMPUTER_IMAGE=registry.example.com/mirror/elie222/rakazo/computer
-RAKAZO_COMPUTER_IMAGE_TAG=edge
-```
-
-After `--prepare-only`, edit `.env` then rerun `bash install-images.sh` (or
-`docker compose --env-file .env -f docker-compose.images.yml pull`). Arm64 tag
-pairing is unchanged — set both tags to the same published multi-arch release
-(see [Published images and tags](#published-images-and-tags)).
-
-`postgres:16` and `busybox:1` still pull from Docker Hub. Stage C does not cover
-them; configure the Docker daemon `registry-mirrors` or vendor those images.
-
 `SANDBOX_PROVIDER` defaults to `docker`. The images Compose file runs a sandbox supervisor
 (from the app image, on the internal network only) and pulls `ghcr.io/elie222/rakazo/computer`.
 Signup and local Docker computers work without an E2B account. Optional remote providers: set
-`SANDBOX_PROVIDER` to `e2b`, `daytona`, or `box` and add the matching API key. Compose requires
-`SANDBOX_SUPERVISOR_TOKEN` for the Docker path; leave it empty and `compose up` fails closed.
+`SANDBOX_PROVIDER` to `e2b`, `daytona`, or `box` and add the matching API key. The published-images
+Compose stack requires `SANDBOX_SUPERVISOR_TOKEN` for every provider; leave it empty and `compose up` fails closed.
 
 Optional: set `OPENROUTER_API_KEY` or connect a model in the UI after signup.
 
@@ -111,6 +53,11 @@ Open **Agent computer** on a bot, or send a message that uses the desktop, to se
 the local Docker computer. For in-stack Caddy plus remote E2B computers, use the
 [production Compose](#public-single-vm-deployment) path and `infra/compose/Caddyfile.prod`
 instead of this host proxy.
+
+### Restricted networks / mirror downloads
+
+If the installer, Compose downloads, or image pulls are blocked, use the
+[restricted-network guide](./self-host-restricted-network.md) for mirror settings and local files.
 
 ## Docker Compose (single machine)
 
@@ -264,6 +211,8 @@ The Electron desktop app is a client of the same API. Docker and E2B still apply
 - **None** boots the product without a computer host (fallback when Docker/supervisor is not
   configured, or when a remote provider is selected without its API key).
 
+For provider configuration and health checks, see the [provider setup guide](./self-host-sandbox-providers.md).
+
 ## Backup
 
 ```bash
@@ -345,9 +294,6 @@ curl --fail https://app.example.com/health
 **Build, do not pull, for a first deployment.** `RAKAZO_IMAGE_TAG` ships as `local`, a tag no
 registry serves, so the commands above build `api`, `worker`, and `web` from the checkout you just
 cloned. The opt-in command under [Updater sidecar](#updater-sidecar) builds `updater` when needed.
-Running `docker compose … pull` first — as earlier versions of this page told you to — fails outright
-with `error from registry: denied` whenever the tag you are on has not been published, and there is
-nothing to fall back to.
 
 Passing `GIT_SHA` is what makes `GET /health` report a `"revision"`; a locally built image has no
 other way to know its commit. Prebuilt images from the registry bake it in at publish time, so when
@@ -605,23 +551,18 @@ least 32 characters in production). It must differ from `BETTER_AUTH_SECRET`,
 `SANDBOX_SUPERVISOR_TOKEN`, and `SCREEN_PROXY_SECRET`. Leave the profile disabled if you would
 rather not grant the capability.
 
-## What “Rakazo Cloud” still needs
+## Other deployment layouts
 
-The product cannot be “pushed live” as a Vercel serverless app. Graphile Worker, Postgres `LISTEN`, Pi runs, and Docker computers need durable processes and a sandbox host.
+API and worker need always-on processes; serverless request handlers are not sufficient. Use a
+Node.js version supported by the root `package.json`, Postgres 16 and a persistent `DATA_DIR` volume shared by API and worker, with encrypted off-host
+backups. The current home store uses a local filesystem, so deployments on separate hosts need a
+shared filesystem; an object-storage adapter is not available yet.
 
-To run a hosted product (same codebase):
+Use the same HTTPS origin for the web app, `/api`, and `/rpc`. Preserve the authenticated screen
+proxy routes. Choose a [computer provider](#choosing-a-computer-provider) appropriate to the
+service's trust boundary, and configure registration through the deployment owner's Settings.
+The optional marketing site in `apps/www` can be hosted separately.
 
-1. Push `main` (this checkout may be ahead of GitHub).
-2. Provision managed Postgres 16 and run `pnpm db:migrate`.
-3. Run **API** and **worker** as always-on services using Node.js 22.22.2 or newer in the 22.x line, Node.js 24.x, or Node.js 26+ (Fly machines, a VM, ECS, k8s). Node.js 23.x and 25.x are not supported. Not lambda-style request handlers.
-4. Persist and back up `DATA_DIR` (bot homes, browser profiles, artifacts). Today the concrete store is a local filesystem (`LocalAgentHomeStore`), so attach a Rakazo-owned durable volume shared by API and worker processes. The storage contract is separate from the computer-provider contract, but an object-storage implementation is not wired yet.
-5. Choose computers: **`SANDBOX_PROVIDER=e2b`**, `daytona`, or `box` with the matching provider key for a public or multi-user production service. Each Team or Private Computer reconnects to its sandbox id (`providerRef`), while workspace state is checkpointed outside the provider at run completion, explicit stop, and idle suspension. If that sandbox is gone—or the deployment changes providers—the replacement is hydrated from Rakazo's copy. Idle computers pause after `SANDBOX_IDLE_MS` (default 10 minutes) and resume on the next message or Take control. Docker remains the local and trusted single-machine default.
-6. A Hetzner CX22 (2 vCPU / 4 GB) is enough for API + worker + Postgres when E2B owns the desktops. 2 GB works for a quiet box; 8 GB is only needed if you also run Docker computers on that same machine.
-7. Set public HTTPS `WEB_ORIGIN` / `BETTER_AUTH_URL` / `API_URL`, secrets, and an OpenRouter (or other Pi) deployment key if you want to skip per-user model keys.
-8. Put the web app behind the same origin as `/api` and `/rpc` (Vite preview proxy, or a reverse proxy). Docker noVNC connections use short-lived signed `/novnc/*` capabilities; do not replace that route with an unrestricted port proxy.
-9. Deploy `apps/www` to your public website and point `app.example.com` (or similar) at the product origin.
-10. Turn on `SIGNUP_ALLOWLIST` until you want open registration. There is no Rakazo-managed model billing in version 1 — users bring keys.
-
-Expo / desktop installers are clients of that origin (`EXPO_PUBLIC_API_URL`, `RAKAZO_WEB_URL`). They are not a Cloud control plane.
+## Connect mobile clients
 
 The iOS and Android app can also point at a self-hosted origin at runtime. On the sign-in screen, tap **Use a custom server** and enter the same HTTPS origin as `WEB_ORIGIN` (for example `https://app.example.com`). Store builds still default to `EXPO_PUBLIC_API_URL`; the in-app setting is an override for people running their own API. Changing the server signs the device out of any previous session.
