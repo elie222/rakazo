@@ -51,15 +51,7 @@ aws s3 cp \
   --endpoint-url "$S3_ENDPOINT" \
   --content-type "text/html" \
   --cache-control "public,max-age=31536000,immutable"
-aws s3 cp \
-  "$gallery_dir/index.html" \
-  "$bucket_uri/index.html" \
-  --endpoint-url "$S3_ENDPOINT" \
-  --content-type "text/html" \
-  --cache-control "no-store"
-
 if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
-  printf '### Android screenshots\n- [Screenshot gallery](%s)\n- [Latest gallery](%s/index.html)\n' \
-    "$gallery_url" \
-    "$public_base_url" >> "$GITHUB_STEP_SUMMARY"
+  printf '### Android screenshots\n- [Screenshot gallery](%s)\n' \
+    "$gallery_url" >> "$GITHUB_STEP_SUMMARY"
 fi
