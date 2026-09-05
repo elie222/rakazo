@@ -1,6 +1,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
 import type {
+  AgentSkillCatalogEntry,
   Bot,
   ComputerMode,
   Me,
@@ -30,6 +31,10 @@ import { rpc } from "../../lib/rpc";
 
 const ScratchpadSection = lazy(() =>
   import("../ScratchpadSection").then((module) => ({ default: module.ScratchpadSection })),
+);
+
+const KnowledgeSection = lazy(() =>
+  import("../KnowledgeSection").then((module) => ({ default: module.KnowledgeSection })),
 );
 
 const fieldLabelClass = "mt-4 block text-[14px] text-muted-foreground";
@@ -172,11 +177,13 @@ export function CreateBotForm({
 export function BotSettings({
   bot,
   memoryProviderConfigured,
+  onSkillsChange,
   onSave,
   onExport,
   onClear,
 }: {
   bot: Bot;
+  onSkillsChange: (skills: AgentSkillCatalogEntry[]) => void;
   memoryProviderConfigured: boolean;
   onSave: (patch: {
     name?: string;
@@ -195,6 +202,7 @@ export function BotSettings({
   onClear: () => void;
 }) {
   const { t } = useLingui();
+  const [advancedOpened, setAdvancedOpened] = useState(false);
   const ids = useId();
   const [name, setName] = useState(bot.name);
   const [title, setTitle] = useState(bot.title);
@@ -320,7 +328,13 @@ export function BotSettings({
           className="mt-2"
         />
       </label>
-      <details data-testid="bot-settings-advanced" className="group mt-5">
+      <details
+        data-testid="bot-settings-advanced"
+        className="group mt-5"
+        onToggle={(event) => {
+          if (event.currentTarget.open) setAdvancedOpened(true);
+        }}
+      >
         <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-[14px] text-muted-foreground">
           <span className="text-muted-foreground">
             <Trans>Advanced</Trans>
@@ -332,6 +346,9 @@ export function BotSettings({
         <ComputerModePicker value={computerMode} onChange={setComputerMode} />
         <Suspense fallback={null}>
           <ScratchpadSection botId={bot.id} />
+          {advancedOpened ? (
+            <KnowledgeSection botId={bot.id} onSkillsChange={onSkillsChange} />
+          ) : null}
         </Suspense>
         <label htmlFor={`${ids}-model`} className={fieldLabelClass}>
           <Trans>Model</Trans>

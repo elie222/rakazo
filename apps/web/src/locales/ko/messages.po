@@ -3168,3 +3168,61 @@ msgstr "{hostLabel}에서 실행하면 Bot이 내 계정 권한으로 동작하�
 #: src/pages/Welcome.tsx:21
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "언제든 실제 작업을 맡길 수 있는<0/>나만의 Agent 팀"
+
+#: src/pages/KnowledgeSection.tsx:334
+msgid "Could not delete skill"
+msgstr "스킬을 삭제하지 못했습니다"
+
+#: src/pages/KnowledgeSection.tsx:96
+#: src/pages/KnowledgeSection.tsx:142
+#: src/pages/KnowledgeSection.tsx:260
+#: src/pages/KnowledgeSection.tsx:303
+#: src/pages/KnowledgeSection.tsx:331
+msgid "Could not load"
+msgstr "불러올 수 없음"
+
+#: src/pages/KnowledgeSection.tsx:282
+msgid "Could not load skill"
+msgstr "스킬을 불러오지 못했습니다"
+
+#: src/pages/KnowledgeSection.tsx:306
+msgid "Could not save skill"
+msgstr "스킬을 저장하지 못했습니다"
+
+#: src/pages/KnowledgeSection.tsx:212
+msgid "Download as markdown"
+msgstr "마크다운으로 다운로드"
+
+#: src/pages/KnowledgeSection.tsx:23
+msgid "Knowledge"
+msgstr "지식"
+
+#: src/pages/KnowledgeSection.tsx:443
+msgid "New skill"
+msgstr "새 스킬"
+
+#: src/pages/KnowledgeSection.tsx:347
+msgid "No skills yet"
+msgstr "아직 스킬이 없습니다"
+
+#: src/pages/KnowledgeSection.tsx:32
+#: src/pages/KnowledgeSection.tsx:54
+msgid "Nothing remembered yet"
+msgstr "아직 기억한 내용이 없습니다"
+
+#: src/pages/KnowledgeSection.tsx:364
+msgid "read-only"
+msgstr "읽기 전용"
+
+#. placeholder {0}: doc.revision
+#: src/pages/KnowledgeSection.tsx:168
+msgid "rev {0}"
+msgstr "리비전 {0}"
+
+#: src/pages/KnowledgeSection.tsx:49
+msgid "Shared documents"
+msgstr "공유 문서"
+
+#: src/pages/KnowledgeSection.tsx:25
+msgid "Skills"
+msgstr "스킬"

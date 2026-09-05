@@ -3168,3 +3168,61 @@ msgstr "Tu sistema operativo no pedirá permisos extra si dejas que los bots se 
 #: src/pages/Welcome.tsx:21
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "Tu equipo de agentes siempre activos<0/>a los que puedes dar trabajo real."
+
+#: src/pages/KnowledgeSection.tsx:334
+msgid "Could not delete skill"
+msgstr "No se pudo eliminar la habilidad"
+
+#: src/pages/KnowledgeSection.tsx:96
+#: src/pages/KnowledgeSection.tsx:142
+#: src/pages/KnowledgeSection.tsx:260
+#: src/pages/KnowledgeSection.tsx:303
+#: src/pages/KnowledgeSection.tsx:331
+msgid "Could not load"
+msgstr "No se pudo cargar"
+
+#: src/pages/KnowledgeSection.tsx:282
+msgid "Could not load skill"
+msgstr "No se pudo cargar la habilidad"
+
+#: src/pages/KnowledgeSection.tsx:306
+msgid "Could not save skill"
+msgstr "No se pudo guardar la habilidad"
+
+#: src/pages/KnowledgeSection.tsx:212
+msgid "Download as markdown"
+msgstr "Descargar como Markdown"
+
+#: src/pages/KnowledgeSection.tsx:23
+msgid "Knowledge"
+msgstr "Conocimientos"
+
+#: src/pages/KnowledgeSection.tsx:443
+msgid "New skill"
+msgstr "Nueva habilidad"
+
+#: src/pages/KnowledgeSection.tsx:347
+msgid "No skills yet"
+msgstr "Aún no hay habilidades"
+
+#: src/pages/KnowledgeSection.tsx:32
+#: src/pages/KnowledgeSection.tsx:54
+msgid "Nothing remembered yet"
+msgstr "Aún no hay recuerdos"
+
+#: src/pages/KnowledgeSection.tsx:364
+msgid "read-only"
+msgstr "Solo lectura"
+
+#. placeholder {0}: doc.revision
+#: src/pages/KnowledgeSection.tsx:168
+msgid "rev {0}"
+msgstr "rev. {0}"
+
+#: src/pages/KnowledgeSection.tsx:49
+msgid "Shared documents"
+msgstr "Documentos compartidos"
+
+#: src/pages/KnowledgeSection.tsx:25
+msgid "Skills"
+msgstr "Habilidades"

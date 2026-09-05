@@ -2990,7 +2990,9 @@ export function ShellPage() {
                   setMemorySettingsOpen(true);
                 }}
               >
-                <span className="text-muted-foreground">◇</span>
+                <span aria-hidden="true" className="text-muted-foreground">
+                  ◇
+                </span>
                 <Trans>Memory</Trans>
               </Button>
               <Button
@@ -3445,6 +3447,7 @@ export function ShellPage() {
                 key={active.id}
                 bot={active}
                 memoryProviderConfigured={memoryProviderConfig != null}
+                onSkillsChange={setAgentSkills}
                 onSave={async ({ computerMode, ...patch }) => {
                   if (computerMode !== active.computerMode) {
                     await rpc.bots.setComputer({

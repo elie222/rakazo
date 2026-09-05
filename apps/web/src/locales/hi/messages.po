@@ -3168,3 +3168,61 @@ msgstr "यदि आप बॉट्स को {hostLabel} पर चलने 
 #: src/pages/Welcome.tsx:21
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "हमेशा चालू रहने वाले एजेंटों की आपकी टीम<0/>जिन्हें आप असली काम सौंप सकते हैं।"
+
+#: src/pages/KnowledgeSection.tsx:334
+msgid "Could not delete skill"
+msgstr "स्किल हटाई नहीं जा सकी"
+
+#: src/pages/KnowledgeSection.tsx:96
+#: src/pages/KnowledgeSection.tsx:142
+#: src/pages/KnowledgeSection.tsx:260
+#: src/pages/KnowledgeSection.tsx:303
+#: src/pages/KnowledgeSection.tsx:331
+msgid "Could not load"
+msgstr "लोड नहीं हो सका"
+
+#: src/pages/KnowledgeSection.tsx:282
+msgid "Could not load skill"
+msgstr "स्किल लोड नहीं हो सकी"
+
+#: src/pages/KnowledgeSection.tsx:306
+msgid "Could not save skill"
+msgstr "स्किल सहेजी नहीं जा सकी"
+
+#: src/pages/KnowledgeSection.tsx:212
+msgid "Download as markdown"
+msgstr "मार्कडाउन के रूप में डाउनलोड करें"
+
+#: src/pages/KnowledgeSection.tsx:23
+msgid "Knowledge"
+msgstr "ज्ञान"
+
+#: src/pages/KnowledgeSection.tsx:443
+msgid "New skill"
+msgstr "नई स्किल"
+
+#: src/pages/KnowledgeSection.tsx:347
+msgid "No skills yet"
+msgstr "अभी तक कोई स्किल नहीं"
+
+#: src/pages/KnowledgeSection.tsx:32
+#: src/pages/KnowledgeSection.tsx:54
+msgid "Nothing remembered yet"
+msgstr "अभी तक कुछ याद नहीं किया गया"
+
+#: src/pages/KnowledgeSection.tsx:364
+msgid "read-only"
+msgstr "केवल पढ़ने योग्य"
+
+#. placeholder {0}: doc.revision
+#: src/pages/KnowledgeSection.tsx:168
+msgid "rev {0}"
+msgstr "रिवीज़न {0}"
+
+#: src/pages/KnowledgeSection.tsx:49
+msgid "Shared documents"
+msgstr "साझा दस्तावेज़"
+
+#: src/pages/KnowledgeSection.tsx:25
+msgid "Skills"
+msgstr "स्किल्स"
