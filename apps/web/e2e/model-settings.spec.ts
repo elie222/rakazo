@@ -45,6 +45,7 @@ test("custom reasoning models keep endpoint choices scoped and save thinking", a
   await expect(model).not.toContainText("other-endpoint-model");
   const thinking = settings.locator("label:has-text('Thinking') select");
   await thinking.selectOption("low");
+  await thinking.scrollIntoViewIfNeeded();
   await captureScreenshot(page, testInfo, "openai-compatible-qwen-thinking");
   const saved = page.waitForResponse(
     (response) => response.url().includes("/rpc/bots/update") && response.ok(),
