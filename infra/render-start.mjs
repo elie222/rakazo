@@ -1,5 +1,7 @@
 import { spawn } from "node:child_process";
 
+process.env.GIT_SHA = process.env.RENDER_GIT_COMMIT ?? process.env.GIT_SHA;
+
 // One Render service can host both long-lived processes for a small deployment.
 // The same worker entrypoint can also run as an independent Render worker.
 const children = [
