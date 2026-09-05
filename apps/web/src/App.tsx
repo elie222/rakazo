@@ -73,7 +73,9 @@ export function App() {
                 <Navigate to="/login" replace />
               ) : capabilities ? (
                 <WelcomePage />
-              ) : null
+              ) : (
+                <AuthPage mode="in" />
+              )
             }
           />
           <Route
