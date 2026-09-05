@@ -89,7 +89,11 @@ export async function reconcileManagedConnection(
   const connector = connectors?.managed(row.connectorId);
   if (!connector) return "pending";
   try {
-    const ready = await connector.connectionReady(context, row.provider);
+    const ready = await connector.connectionReady(
+      context,
+      row.provider,
+      row.providerRef ?? undefined,
+    );
     if (ready) {
       await prisma.connection.update({
         where: { id: row.id },
@@ -160,7 +164,11 @@ export async function tryCompleteConnectionWithCode(
   const state = row.providerRef ?? row.provider;
   try {
     await connector.complete({ state, code }, context);
-    const ready = await connector.connectionReady(context, row.provider);
+    const ready = await connector.connectionReady(
+      context,
+      row.provider,
+      row.providerRef ?? undefined,
+    );
     if (ready) {
       await prisma.connection.update({
         where: { id: row.id },

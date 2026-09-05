@@ -1,5 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { CapabilityInstall, ConnectionCatalogItem } from "@rakazo/contracts";
+import type { CapabilityInstall, Connection, ConnectionCatalogItem } from "@rakazo/contracts";
 import {
   abortableDelay,
   buildFeaturedConnectorTiles,
@@ -32,17 +32,6 @@ function itemKey(item: Pick<ConnectionCatalogItem, "connectorId" | "slug">) {
   return `${item.connectorId}:${item.slug}`;
 }
 
-function markConnected(
-  items: ConnectionCatalogItem[],
-  connectorId: string,
-  slug: string,
-  connected: boolean,
-) {
-  return items.map((entry) =>
-    entry.connectorId === connectorId && entry.slug === slug ? { ...entry, connected } : entry,
-  );
-}
-
 export function PluginsOverlay({
   onClose,
   onOpenMcp,
@@ -56,6 +45,7 @@ export function PluginsOverlay({
   const [query, setQuery] = useState("");
   const [visibleCount, setVisibleCount] = useState(CONNECTION_CATALOG_PAGE_SIZE);
   const [catalog, setCatalog] = useState<ConnectionCatalogItem[]>([]);
+  const [connections, setConnections] = useState<Connection[]>([]);
   const [sources, setSources] = useState<CapabilityInstall[]>([]);
   const [sourceKind, setSourceKind] = useState<SourceKind | null>(null);
   const [sourceName, setSourceName] = useState("");
@@ -64,17 +54,22 @@ export function PluginsOverlay({
   const [authType, setAuthType] = useState<"none" | "bearer" | "header">("bearer");
   const [authName, setAuthName] = useState("x-api-key");
   const [pending, setPending] = useState<string | null>(null);
+  const [managing, setManaging] = useState<string | null>(null);
+  const [draftLabel, setDraftLabel] = useState("");
+  const [showConnectForm, setShowConnectForm] = useState(false);
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const [sourceError, setSourceError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const connectionAttempt = useRef<AbortController | null>(null);
 
   async function refresh() {
-    const [items, installs] = await Promise.all([
+    const [items, installs, rows] = await Promise.all([
       rpc.connections.catalog({}),
       rpc.capabilities.list(),
+      rpc.connections.list(),
     ]);
     setCatalog(items);
+    setConnections(rows);
     setSources(installs.filter((install) => install.kind === "mcp" || install.kind === "api"));
     return items;
   }
@@ -101,11 +96,9 @@ export function PluginsOverlay({
       .catch(() => undefined);
   }
 
-  function setItemConnected(item: ConnectionCatalogItem, connected: boolean) {
-    setCatalog((prev) => markConnected(prev, item.connectorId, item.slug, connected));
-  }
-
   async function connect(item: ConnectionCatalogItem) {
+    const label = draftLabel.trim();
+    if (!label) return;
     connectionAttempt.current?.abort();
     const controller = new AbortController();
     connectionAttempt.current = controller;
@@ -116,14 +109,16 @@ export function PluginsOverlay({
       const started = await rpc.connections.begin({
         connectorId: item.connectorId,
         provider: item.slug,
-        displayName: item.name,
+        displayName: label,
       });
       if (started.authorizationUrl)
         window.open(started.authorizationUrl, "rakazo-plugin-connect", "noopener,noreferrer");
       if (item.noAuth && !started.authorizationUrl) {
         if (controller.signal.aborted) return;
-        setItemConnected(item, true);
+        await refresh();
         void notifyAppConnected(item);
+        setShowConnectForm(false);
+        setDraftLabel("");
         return;
       }
       for (let i = 0; i < 45; i += 1) {
@@ -133,8 +128,10 @@ export function PluginsOverlay({
           .catch(() => undefined);
         if (row?.status === "connected") {
           if (controller.signal.aborted) return;
-          setItemConnected(item, true);
+          await refresh();
           void notifyAppConnected(item);
+          setShowConnectForm(false);
+          setDraftLabel("");
           return;
         }
         await abortableDelay(2_000, controller.signal);
@@ -154,27 +151,120 @@ export function PluginsOverlay({
     }
   }
 
-  async function revoke(item: ConnectionCatalogItem) {
+  async function revoke(row: Connection) {
     setCatalogError(null);
-    const key = itemKey(item);
-    setPending(key);
+    setPending(`connection:${row.id}`);
     try {
-      const rows = await rpc.connections.list();
-      const matches = rows.filter(
-        (entry) => entry.connectorId === item.connectorId && entry.provider === item.slug,
-      );
-      const row =
-        matches.find((entry) => entry.status === "connected") ??
-        matches.find((entry) => entry.status === "pending") ??
-        matches.find((entry) => entry.status === "error");
-      if (!row) throw new Error(t`No connection record found for ${item.name}.`);
       await rpc.connections.revoke({ connectionId: row.id });
-      setItemConnected(item, false);
+      await refresh();
     } catch (err) {
       setCatalogError(err instanceof Error ? err.message : t`Could not revoke connection`);
     } finally {
       setPending(null);
     }
+  }
+
+  function connectionRows(item: ConnectionCatalogItem) {
+    return connections.filter(
+      (row) =>
+        row.connectorId === item.connectorId &&
+        row.provider.toLowerCase() === item.slug.toLowerCase() &&
+        row.status !== "revoked",
+    );
+  }
+
+  function openManager(item: ConnectionCatalogItem) {
+    const key = itemKey(item);
+    const rows = connectionRows(item);
+    setManaging(key);
+    setShowConnectForm(rows.length === 0);
+    setDraftLabel("");
+  }
+
+  function renderConnectionManager(item: ConnectionCatalogItem) {
+    const key = itemKey(item);
+    if (managing !== key) return null;
+    const rows = connectionRows(item);
+    return (
+      <div
+        className="ml-12 mt-1 space-y-2 rounded-xl bg-muted/40 p-3"
+        data-testid={`accounts-${key}`}
+      >
+        {rows.map((row) => (
+          <div key={row.id} className="flex items-center gap-3">
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-sm text-foreground">{row.displayName}</div>
+              {row.status !== "connected" ? (
+                <div className="text-xs capitalize text-muted-foreground">{row.status}</div>
+              ) : null}
+            </div>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={pending === `connection:${row.id}`}
+              onClick={() => void revoke(row)}
+            >
+              {pending === `connection:${row.id}` ? (
+                <Trans>Removing…</Trans>
+              ) : (
+                <Trans>Remove</Trans>
+              )}
+            </Button>
+          </div>
+        ))}
+
+        {showConnectForm ? (
+          <div className="flex items-center gap-2">
+            <Input
+              autoFocus
+              value={draftLabel}
+              onChange={(event) => setDraftLabel(event.target.value)}
+              aria-label={t`Account label`}
+              placeholder={t`Account label, e.g. Personal`}
+              className="h-9"
+            />
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              disabled={!draftLabel.trim() || pending === key}
+              onClick={() => void connect(item)}
+            >
+              {pending === key ? <Trans>Connecting…</Trans> : <Trans>Connect</Trans>}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setShowConnectForm(false);
+                setDraftLabel("");
+                if (rows.length === 0) setManaging(null);
+              }}
+            >
+              <Trans>Cancel</Trans>
+            </Button>
+          </div>
+        ) : (
+          <div className="flex gap-2">
+            {item.connectorId === "composio" && !item.noAuth ? (
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() => setShowConnectForm(true)}
+              >
+                <Trans>Add another account</Trans>
+              </Button>
+            ) : null}
+            <Button type="button" variant="ghost" size="sm" onClick={() => setManaging(null)}>
+              <Trans>Done</Trans>
+            </Button>
+          </div>
+        )}
+      </div>
+    );
   }
 
   function beginSource(kind: SourceKind) {
@@ -288,57 +378,48 @@ export function PluginsOverlay({
                     const disabled = tile.missing || !item;
                     const connected = item?.connected ?? false;
                     return (
-                      <div
-                        key={key}
-                        className={`flex min-w-0 items-center gap-3 rounded-xl px-2.5 py-2 ${
-                          disabled ? "opacity-70" : ""
-                        }`}
-                      >
-                        {item?.logo ? (
-                          <img
-                            src={item.logo}
-                            alt=""
-                            loading="lazy"
-                            decoding="async"
-                            className="h-9 w-9 shrink-0 rounded-xl bg-accent object-contain"
-                          />
-                        ) : (
-                          <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-accent text-sm font-semibold text-foreground">
-                            {tile.label[0]}
-                          </div>
-                        )}
-                        <div className="min-w-0 flex-1">
-                          <div className="truncate text-[15px] font-medium text-foreground">
-                            {tile.label}
-                          </div>
-                          {disabled ? (
-                            <div className="truncate text-[12.5px] text-muted-foreground">
-                              <Trans>Not in the plugin catalog</Trans>
+                      <div key={key} className={disabled ? "opacity-70" : ""}>
+                        <div className="flex min-w-0 items-center gap-3 rounded-xl px-2.5 py-2">
+                          {item?.logo ? (
+                            <img
+                              src={item.logo}
+                              alt=""
+                              loading="lazy"
+                              decoding="async"
+                              className="h-9 w-9 shrink-0 rounded-xl bg-accent object-contain"
+                            />
+                          ) : (
+                            <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-accent text-sm font-semibold text-foreground">
+                              {tile.label[0]}
                             </div>
+                          )}
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate text-[15px] font-medium text-foreground">
+                              {tile.label}
+                            </div>
+                            {disabled ? (
+                              <div className="truncate text-[12.5px] text-muted-foreground">
+                                <Trans>Not in the plugin catalog</Trans>
+                              </div>
+                            ) : null}
+                          </div>
+                          {item && !tile.missing ? (
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              className="rounded-full"
+                              size="sm"
+                              onClick={() => openManager(item)}
+                            >
+                              {connected || connectionRows(item).length > 0 ? (
+                                <Trans>Manage</Trans>
+                              ) : (
+                                <Trans>Add</Trans>
+                              )}
+                            </Button>
                           ) : null}
                         </div>
-                        {item && !tile.missing ? (
-                          <Button
-                            type="button"
-                            variant="secondary"
-                            className="rounded-full"
-                            size="sm"
-                            disabled={pending === key}
-                            onClick={() => void (connected ? revoke(item) : connect(item))}
-                          >
-                            {pending === key ? (
-                              connected ? (
-                                <Trans>Removing…</Trans>
-                              ) : (
-                                <Trans>Adding…</Trans>
-                              )
-                            ) : connected ? (
-                              <Trans>Remove</Trans>
-                            ) : (
-                              <Trans>Add</Trans>
-                            )}
-                          </Button>
-                        ) : null}
+                        {item && !tile.missing ? renderConnectionManager(item) : null}
                       </div>
                     );
                   })}
@@ -362,45 +443,41 @@ export function PluginsOverlay({
               {rendered.map((item) => {
                 const key = itemKey(item);
                 return (
-                  <div key={key} className="flex min-w-0 items-center gap-3 rounded-xl px-2.5 py-2">
-                    {item.logo ? (
-                      <img
-                        src={item.logo}
-                        alt=""
-                        loading="lazy"
-                        decoding="async"
-                        className="h-9 w-9 shrink-0 rounded-xl bg-accent object-contain"
-                      />
-                    ) : (
-                      <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-accent text-sm font-semibold text-foreground">
-                        {item.name[0]}
-                      </div>
-                    )}
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-[15px] font-medium text-foreground">
-                        {item.name}
-                      </div>
-                    </div>
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      className="rounded-full"
-                      size="sm"
-                      disabled={pending === key}
-                      onClick={() => void (item.connected ? revoke(item) : connect(item))}
-                    >
-                      {pending === key ? (
-                        item.connected ? (
-                          <Trans>Removing…</Trans>
-                        ) : (
-                          <Trans>Adding…</Trans>
-                        )
-                      ) : item.connected ? (
-                        <Trans>Remove</Trans>
+                  <div key={key}>
+                    <div className="flex min-w-0 items-center gap-3 rounded-xl px-2.5 py-2">
+                      {item.logo ? (
+                        <img
+                          src={item.logo}
+                          alt=""
+                          loading="lazy"
+                          decoding="async"
+                          className="h-9 w-9 shrink-0 rounded-xl bg-accent object-contain"
+                        />
                       ) : (
-                        <Trans>Add</Trans>
+                        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-accent text-sm font-semibold text-foreground">
+                          {item.name[0]}
+                        </div>
                       )}
-                    </Button>
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-[15px] font-medium text-foreground">
+                          {item.name}
+                        </div>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        className="rounded-full"
+                        size="sm"
+                        onClick={() => openManager(item)}
+                      >
+                        {item.connected || connectionRows(item).length > 0 ? (
+                          <Trans>Manage</Trans>
+                        ) : (
+                          <Trans>Add</Trans>
+                        )}
+                      </Button>
+                    </div>
+                    {renderConnectionManager(item)}
                   </div>
                 );
               })}

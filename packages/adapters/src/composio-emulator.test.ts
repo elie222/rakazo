@@ -31,7 +31,14 @@ describe("ComposioEmulator", () => {
 
   it("isolates connection state by user and supports revoke", async () => {
     const emulator = new ComposioEmulator();
-    await emulator.begin({ provider: "GMAIL", redirectUrl: "http://example.test" }, context);
+    const personal = await emulator.begin(
+      { provider: "GMAIL", redirectUrl: "http://example.test", alias: "Personal" },
+      context,
+    );
+    const work = await emulator.begin(
+      { provider: "GMAIL", redirectUrl: "http://example.test", alias: "Work" },
+      context,
+    );
 
     await expect(emulator.connectionReady(context, "GMAIL")).resolves.toBe(true);
     await expect(emulator.listConnectedSlugs(context.userId)).resolves.toEqual(["GMAIL"]);
@@ -42,7 +49,9 @@ describe("ComposioEmulator", () => {
       expect.objectContaining({ slug: "GMAIL", connected: true }),
     ]);
 
-    await emulator.revoke("GMAIL", context);
+    await emulator.revoke(personal.state, context);
+    await expect(emulator.connectionReady(context, "GMAIL", work.state)).resolves.toBe(true);
+    await emulator.revoke(work.state, context);
     await expect(emulator.connectionReady(context, "GMAIL")).resolves.toBe(false);
   });
 

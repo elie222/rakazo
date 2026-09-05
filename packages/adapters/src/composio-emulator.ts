@@ -26,7 +26,8 @@ const DEFAULT_CATALOG: ReadonlyArray<Omit<ComposioCatalogItem, "connected">> = [
 
 /** Deterministic, offline Composio catalog and connection emulator for product tests. */
 export class ComposioEmulator implements ComposioProvider {
-  private readonly connectedByUser = new Map<string, Set<string>>();
+  private readonly connectedByUser = new Map<string, Map<string, Set<string>>>();
+  private connectionOrdinal = 0;
   private githubReleases: EmulatedGithubRelease[] = [...DEFAULT_RAKAZO_EMULATED_RELEASES];
   readonly executions: Array<{
     userId: string;
@@ -62,9 +63,12 @@ export class ComposioEmulator implements ComposioProvider {
   }
 
   async catalog(context: AdapterContext, query?: string) {
-    const connected = this.connectedByUser.get(context.userId) ?? new Set<string>();
+    const connected = this.connectedByUser.get(context.userId) ?? new Map<string, Set<string>>();
     return filterCatalog(
-      this.directory.map((item) => ({ ...item, connected: connected.has(item.slug) })),
+      this.directory.map((item) => ({
+        ...item,
+        connected: (connected.get(item.slug)?.size ?? 0) > 0,
+      })),
       query ?? "",
     ).map((item) => ({ ...item, connectorId: "composio" }));
   }
@@ -72,7 +76,9 @@ export class ComposioEmulator implements ComposioProvider {
   async warmDirectory(): Promise<void> {}
 
   async listConnectedSlugs(userId: string): Promise<string[]> {
-    return [...(this.connectedByUser.get(userId) ?? [])];
+    return [...(this.connectedByUser.get(userId)?.entries() ?? [])]
+      .filter(([, refs]) => refs.size > 0)
+      .map(([slug]) => slug);
   }
 
   async listConnectedExternalIds(context: AdapterContext): Promise<string[]> {
@@ -122,17 +128,26 @@ export class ComposioEmulator implements ComposioProvider {
   }
 
   async begin(
-    request: { provider: string; redirectUrl: string },
+    request: { provider: string; redirectUrl: string; alias?: string },
     context: AdapterContext,
   ): Promise<{ authorizationUrl: string | null; state: string }> {
-    const connected = this.connectedByUser.get(context.userId) ?? new Set<string>();
-    connected.add(request.provider);
+    const connected = this.connectedByUser.get(context.userId) ?? new Map<string, Set<string>>();
+    const refs = connected.get(request.provider) ?? new Set<string>();
+    this.connectionOrdinal += 1;
+    const ref = `${request.provider}:${this.connectionOrdinal}`;
+    refs.add(ref);
+    connected.set(request.provider, refs);
     this.connectedByUser.set(context.userId, connected);
-    return { authorizationUrl: null, state: request.provider };
+    return { authorizationUrl: null, state: ref };
   }
 
-  async connectionReady(context: AdapterContext, slug: string): Promise<boolean> {
-    return this.connectedByUser.get(context.userId)?.has(slug) ?? false;
+  async connectionReady(
+    context: AdapterContext,
+    slug: string,
+    connectionRef?: string,
+  ): Promise<boolean> {
+    const refs = this.connectedByUser.get(context.userId)?.get(slug);
+    return connectionRef ? (refs?.has(connectionRef) ?? false) : (refs?.size ?? 0) > 0;
   }
 
   async complete(
@@ -143,7 +158,17 @@ export class ComposioEmulator implements ComposioProvider {
   }
 
   async revoke(connectionRef: string, context: AdapterContext): Promise<void> {
-    this.connectedByUser.get(context.userId)?.delete(connectionRef);
+    const connected = this.connectedByUser.get(context.userId);
+    if (!connected) return;
+    if (connected.has(connectionRef)) {
+      connected.delete(connectionRef);
+      return;
+    }
+    for (const [slug, refs] of connected) {
+      if (!refs.delete(connectionRef)) continue;
+      if (refs.size === 0) connected.delete(slug);
+      return;
+    }
   }
 
   private executeGithub(tool: string, args: Record<string, unknown>): Record<string, unknown> {

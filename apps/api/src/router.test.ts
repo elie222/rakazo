@@ -404,7 +404,125 @@ describe("connections.complete", () => {
       { state: "gmail-state", code: "123456" },
       expect.objectContaining({ spaceId: "workspace-1", userId: "user-1" }),
     );
-    expect(connectionReady).toHaveBeenCalled();
+    expect(connectionReady).toHaveBeenCalledWith(
+      expect.objectContaining({ spaceId: "workspace-1", userId: "user-1" }),
+      "gmail",
+      "gmail-state",
+    );
+  });
+});
+
+describe("connections account identity", () => {
+  const actor = {
+    spaceId: "workspace-1",
+    userId: "user-1",
+    email: "user@rakazo.test",
+    isDeploymentOwner: true,
+  } satisfies Actor;
+
+  it("passes the user label to the provider when beginning a connection", async () => {
+    const begin = vi.fn().mockResolvedValue({
+      authorizationUrl: "https://auth.example/connect",
+      state: "ca-project-a",
+    });
+    const update = vi.fn().mockResolvedValue({});
+    const prisma = {
+      connection: {
+        create: vi.fn().mockResolvedValue({ id: "conn-1" }),
+        update,
+      },
+    } as unknown as PrismaClient;
+    const deps = {
+      prisma,
+      connectors: { managed: vi.fn(() => ({ begin })) },
+      env: {
+        defaultProvider: "fake",
+        defaultModel: "fake-model",
+        webOrigin: "https://rakazo.example",
+        screenProxySecret: "fake-test-secret",
+        sandboxProvider: "fake",
+      },
+      dataDir: "/tmp/rakazo-router-test",
+    } as unknown as RouterDeps;
+    const handler = new RPCHandler(createRouter(deps));
+
+    const { response } = await handler.handle(
+      new Request("http://127.0.0.1/rpc/connections/begin", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          json: {
+            connectorId: "composio",
+            provider: "gmail",
+            displayName: "Project A",
+          },
+        }),
+      }),
+      { prefix: "/rpc", context: { actor } },
+    );
+
+    expect(response.status).toBe(200);
+    expect(begin).toHaveBeenCalledWith(
+      {
+        provider: "gmail",
+        redirectUrl: "https://rakazo.example/app",
+        alias: "Project A",
+      },
+      expect.objectContaining({ userId: "user-1" }),
+    );
+    expect(update).toHaveBeenCalledWith({
+      where: { id: "conn-1" },
+      data: {
+        status: "pending",
+        providerRef: "ca-project-a",
+        metadata: { state: "ca-project-a" },
+      },
+    });
+  });
+
+  it("revokes only the selected provider account reference", async () => {
+    const revoke = vi.fn().mockResolvedValue(undefined);
+    const updateMany = vi.fn().mockResolvedValue({ count: 1 });
+    const prisma = {
+      connection: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "conn-work",
+          connectorId: "composio",
+          provider: "gmail",
+          providerRef: "ca-work",
+        }),
+        updateMany,
+      },
+    } as unknown as PrismaClient;
+    const deps = {
+      prisma,
+      connectors: { managed: vi.fn(() => ({ revoke })) },
+      env: {
+        defaultProvider: "fake",
+        defaultModel: "fake-model",
+        webOrigin: "https://rakazo.example",
+        screenProxySecret: "fake-test-secret",
+        sandboxProvider: "fake",
+      },
+      dataDir: "/tmp/rakazo-router-test",
+    } as unknown as RouterDeps;
+    const handler = new RPCHandler(createRouter(deps));
+
+    const { response } = await handler.handle(
+      new Request("http://127.0.0.1/rpc/connections/revoke", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ json: { connectionId: "conn-work" } }),
+      }),
+      { prefix: "/rpc", context: { actor } },
+    );
+
+    expect(response.status).toBe(200);
+    expect(revoke).toHaveBeenCalledWith("ca-work", expect.objectContaining({ userId: "user-1" }));
+    expect(updateMany).toHaveBeenCalledWith({
+      where: { id: "conn-work", spaceId: "workspace-1", userId: "user-1" },
+      data: { status: "revoked" },
+    });
   });
 });
 

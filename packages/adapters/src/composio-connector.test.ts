@@ -20,7 +20,14 @@ import {
 import { DestinationEmulator } from "./destination-emulator.js";
 
 const composioSdkState = vi.hoisted(() => ({
+  accounts: [] as Array<{
+    id: string;
+    status: string;
+    toolkit: { slug: string };
+  }>,
+  authorizations: [] as Array<{ toolkit: string; options: Record<string, unknown> }>,
   created: [] as Array<{ userId: string; config: Record<string, unknown> }>,
+  deleted: [] as string[],
   directoryFails: false,
   executions: [] as Array<{ tool: string; args: Record<string, unknown> }>,
   sessions: new Map<
@@ -38,6 +45,14 @@ const composioSdkState = vi.hoisted(() => ({
         cursor?: string;
       }>;
       tools?: () => Promise<unknown[]>;
+      authorize?: (
+        toolkit: string,
+        options: Record<string, unknown>,
+      ) => Promise<{
+        id: string;
+        redirectUrl: string;
+        waitForConnection: () => Promise<void>;
+      }>;
       execute?: (
         tool: string,
         args: Record<string, unknown>,
@@ -52,6 +67,17 @@ const composioSdkState = vi.hoisted(() => ({
 
 vi.mock("@composio/core", () => ({
   Composio: class {
+    readonly connectedAccounts = {
+      list: async () => ({
+        items: composioSdkState.accounts,
+        nextCursor: undefined,
+        totalPages: 1,
+      }),
+      delete: async (id: string) => {
+        composioSdkState.deleted.push(id);
+      },
+    };
+
     readonly sessions = {
       use: async (sessionId: string) => {
         const session = composioSdkState.sessions.get(sessionId);
@@ -66,6 +92,14 @@ vi.mock("@composio/core", () => ({
       if (toolkits.length === 0) {
         const session = {
           sessionId: "catalog-session",
+          authorize: async (toolkit: string, options: Record<string, unknown>) => {
+            composioSdkState.authorizations.push({ toolkit, options });
+            return {
+              id: "ca-new",
+              redirectUrl: "https://auth.example/connect",
+              waitForConnection: async () => undefined,
+            };
+          },
           toolkits: async () => {
             if (composioSdkState.directoryFails) throw new Error("directory unavailable");
             return {
@@ -241,6 +275,9 @@ describe("composio tool mapping", () => {
     expect(executeSessionKey(["hackernews", "gmail", "hackernews"])).toBe("gmail,hackernews");
     expect(executeSessionKey(["github", "GITHUB"])).toBe("github");
     expect(executeSessionKey([])).toBe("");
+    expect(executeSessionKey(["GMAIL"], { GMAIL: ["ca-work", "ca-personal", "ca-work"] })).toBe(
+      "GMAIL|GMAIL:ca-personal,ca-work",
+    );
   });
 
   it("uses catalog-canonical toolkit slugs without preloading every tool", async () => {
@@ -333,6 +370,106 @@ describe("composio tool mapping", () => {
     }
   });
 
+  it("pins every named account and enables explicit multi-account selection", async () => {
+    composioSdkState.created.length = 0;
+    composioSdkState.sessions.clear();
+    composioToolkitDirectory.invalidate();
+
+    const connector = new ComposioConnector();
+    const context = {
+      operationId: "composio-multi-account",
+      traceId: "composio-multi-account",
+      spaceId: "workspace",
+      userId: "user-1",
+      signal: new AbortController().signal,
+      connectedConnections: [
+        {
+          id: "connection-personal",
+          connectorId: "composio",
+          externalId: "github",
+          displayName: "Personal",
+          providerRef: "ca-personal",
+        },
+        {
+          id: "connection-work",
+          connectorId: "composio",
+          externalId: "GITHUB",
+          displayName: "Work",
+          providerRef: "ca-work",
+        },
+      ],
+    } satisfies AdapterContext;
+
+    await connector.discoverTools(context);
+
+    expect(composioSdkState.created.at(-1)).toMatchObject({
+      userId: "user-1",
+      config: {
+        toolkits: ["GITHUB"],
+        connectedAccounts: { GITHUB: ["ca-personal", "ca-work"] },
+        multiAccount: {
+          enable: true,
+          maxAccountsPerToolkit: 10,
+          requireExplicitSelection: true,
+        },
+      },
+    });
+  });
+
+  it("uses the label as the Composio account alias", async () => {
+    composioSdkState.authorizations.length = 0;
+    composioSdkState.sessions.clear();
+    composioToolkitDirectory.invalidate();
+    const connector = new ComposioConnector();
+    const context = {
+      operationId: "composio-alias",
+      traceId: "composio-alias",
+      spaceId: "workspace",
+      userId: "user-1",
+      signal: new AbortController().signal,
+    } satisfies AdapterContext;
+
+    await expect(
+      connector.begin(
+        {
+          provider: "GMAIL",
+          redirectUrl: "https://rakazo.example/app",
+          alias: "Project A",
+        },
+        context,
+      ),
+    ).resolves.toEqual({
+      authorizationUrl: "https://auth.example/connect",
+      state: "ca-new",
+    });
+    expect(composioSdkState.authorizations).toEqual([
+      {
+        toolkit: "GMAIL",
+        options: { callbackUrl: "https://rakazo.example/app", alias: "Project A" },
+      },
+    ]);
+  });
+
+  it("checks and revokes the exact account owned by the user", async () => {
+    composioSdkState.accounts = [
+      { id: "ca-personal", status: "ACTIVE", toolkit: { slug: "GMAIL" } },
+      { id: "ca-work", status: "ACTIVE", toolkit: { slug: "GMAIL" } },
+    ];
+    composioSdkState.deleted.length = 0;
+    const connector = new ComposioConnector();
+    const context = {
+      operationId: "composio-exact-account",
+      traceId: "composio-exact-account",
+      spaceId: "workspace",
+      userId: "user-1",
+      signal: new AbortController().signal,
+    } satisfies AdapterContext;
+
+    await expect(connector.connectionReady(context, "gmail", "ca-work")).resolves.toBe(true);
+    await connector.revoke("ca-work", context);
+    expect(composioSdkState.deleted).toEqual(["ca-work"]);
+  });
+
   it("merges live Composio slugs onto pending DB plugin rows", () => {
     const merged = mergeConnectedPlugins(
       [
@@ -367,6 +504,7 @@ describe("composio tool mapping", () => {
     expect(needsLivePluginSync([{ status: "connected" }, { status: "revoked" }])).toBe(false);
     expect(needsLivePluginSync([{ status: "pending" }])).toBe(true);
     expect(needsLivePluginSync([{ status: "error" }])).toBe(true);
+    expect(needsLivePluginSync([{ status: "pending", providerRef: "ca-new" }])).toBe(false);
   });
 
   it("keeps DB-connected plugins when live Composio listing is empty", () => {
@@ -433,6 +571,30 @@ describe("composio tool mapping", () => {
       connectIds: ["row-gmail"],
       revokeIds: ["row-dup", "row-err"],
     });
+  });
+
+  it("never reconciles account-scoped rows from a slug-only live listing", () => {
+    expect(
+      planLiveConnectionSync(
+        [
+          {
+            id: "row-personal",
+            provider: "gmail",
+            providerRef: "ca-personal",
+            status: "connected",
+            displayName: "Personal",
+          },
+          {
+            id: "row-work",
+            provider: "gmail",
+            providerRef: "ca-work",
+            status: "pending",
+            displayName: "Work",
+          },
+        ],
+        ["gmail"],
+      ),
+    ).toEqual({ connectIds: [], revokeIds: [] });
   });
 
   it("filters the catalog by name or slug", () => {

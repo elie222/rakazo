@@ -945,7 +945,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
         const connectedPlugins = storedConnections.filter(
           (connection) =>
             connection.status === "connected" ||
-            activeKeys.has(`${connection.connectorId}:${connection.provider}`),
+            (!connection.providerRef &&
+              activeKeys.has(`${connection.connectorId}:${connection.provider}`)),
         );
         const context = {
           operationId: runId,

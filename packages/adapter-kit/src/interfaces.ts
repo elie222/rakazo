@@ -148,7 +148,7 @@ export interface ConnectorProvider {
 export interface ConnectionAuthProvider {
   describe(): AdapterDescriptor<{ oauth: boolean }>;
   begin(
-    request: { provider: string; redirectUrl: string },
+    request: { provider: string; redirectUrl: string; alias?: string },
     context: AdapterContext,
   ): Promise<{ authorizationUrl: string | null; state: string }>;
   complete(
@@ -164,7 +164,11 @@ export interface ManagedConnectorProvider
     Omit<ConnectionAuthProvider, "describe"> {
   catalog(context: AdapterContext, query?: string): Promise<ConnectorCatalogItem[]>;
   listConnectedExternalIds(context: AdapterContext): Promise<string[]>;
-  connectionReady(context: AdapterContext, externalId: string): Promise<boolean>;
+  connectionReady(
+    context: AdapterContext,
+    externalId: string,
+    connectionRef?: string,
+  ): Promise<boolean>;
   warmDirectory?(): Promise<void>;
 }
 

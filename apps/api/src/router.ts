@@ -188,7 +188,7 @@ async function reconcilePendingConnections(
         connectorId,
         status: { in: ["pending", "connected"] },
       },
-      select: { id: true, provider: true, displayName: true, status: true },
+      select: { id: true, provider: true, providerRef: true, displayName: true, status: true },
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     })
   ).filter((row: { provider: string }) =>
@@ -2874,7 +2874,11 @@ export function createRouter(deps: RouterDeps) {
         });
         try {
           const auth = await connector.begin(
-            { provider: input.provider, redirectUrl: `${deps.env.webOrigin}/app` },
+            {
+              provider: input.provider,
+              redirectUrl: `${deps.env.webOrigin}/app`,
+              alias: input.displayName,
+            },
             connectionContext(context.actor, "connections.begin", context.signal),
           );
           await deps.prisma.connection.update({
@@ -2925,6 +2929,7 @@ export function createRouter(deps: RouterDeps) {
           const ready = await connector.connectionReady(
             connectionContext(context.actor, "connections.complete", context.signal),
             existing.provider,
+            existing.providerRef ?? undefined,
           );
           if (ready) {
             row = await deps.prisma.connection.update({
@@ -2960,7 +2965,7 @@ export function createRouter(deps: RouterDeps) {
           }
           try {
             await connector.revoke(
-              row.provider,
+              row.providerRef ?? row.provider,
               connectionContext(context.actor, "connections.revoke", context.signal),
             );
           } catch (error) {

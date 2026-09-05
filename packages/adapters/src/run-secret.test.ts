@@ -144,7 +144,7 @@ describe("reconcileManagedConnection", () => {
       ),
     ).resolves.toBe("connected");
 
-    expect(connectionReady).toHaveBeenCalled();
+    expect(connectionReady).toHaveBeenCalledWith(context, "gmail", undefined);
     expect(prisma.connection.update).toHaveBeenCalledWith({
       where: { id: "conn-1" },
       data: { status: "connected" },
@@ -200,6 +200,7 @@ describe("tryCompleteConnectionWithCode", () => {
       },
     });
     expect(complete).toHaveBeenCalledWith({ state: "gmail-state", code: "123456" }, context);
+    expect(connectionReady).toHaveBeenCalledWith(context, "gmail", "gmail-state");
     expect(prisma.connection.update).toHaveBeenCalledWith({
       where: { id: "conn-1" },
       data: { status: "connected" },
