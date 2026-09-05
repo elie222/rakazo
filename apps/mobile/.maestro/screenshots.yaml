@@ -64,15 +64,27 @@ tags:
 
 - openLink: "rakazo:///account"
 - extendedWaitUntil:
-    visible: "Password"
+    visible: "Change password"
     timeout: 10000
 - takeScreenshot: "screenshots/10-account"
+- tapOn: "Change password"
+- assertVisible: "Current password"
+- takeScreenshot: "screenshots/10b-change-password"
+- back
 
 - openLink: "rakazo:///models"
 - extendedWaitUntil:
     visible: "Active model"
     timeout: 10000
+- scrollUntilVisible:
+    element: "Show more"
+    direction: DOWN
 - takeScreenshot: "screenshots/11-models"
+- tapOn: "Show more"
+- scrollUntilVisible:
+    element: "Show less"
+    direction: DOWN
+- takeScreenshot: "screenshots/11b-all-providers"
 
 - openLink: "rakazo:///voice"
 - extendedWaitUntil:
@@ -98,7 +110,7 @@ tags:
 - tapOn: "Bot actions"
 - assertVisible: "Clear conversation"
 - takeScreenshot: "screenshots/16-bot-actions"
-- tapOn: "Cancel"
+- back
 
 - openLink: "rakazo:///bot-settings?botId=${RAKAZO_SCREENSHOT_BOT_ID}"
 - extendedWaitUntil:
@@ -129,3 +141,45 @@ tags:
     visible: "Weekly fixture review"
     timeout: 10000
 - takeScreenshot: "screenshots/21-routine"
+
+# Verify saved appearance changes on already-mounted screens and modal routes.
+- openLink: "rakazo:///account"
+- extendedWaitUntil:
+    visible: "Dark"
+    timeout: 10000
+- tapOn: "Dark"
+- takeScreenshot: "screenshots/22-account-dark"
+
+- openLink: "rakazo:///new"
+- assertVisible: "Name this bot"
+- takeScreenshot: "screenshots/23-new-bot-dark"
+
+- openLink: "rakazo:///new-group"
+- assertVisible: "Name this group"
+- takeScreenshot: "screenshots/24-new-group-dark"
+
+- openLink: "rakazo:///new-space"
+- assertVisible: "Customer support"
+- takeScreenshot: "screenshots/25-new-space-dark"
+
+- openLink: "rakazo:///thread?botId=${RAKAZO_SCREENSHOT_BOT_ID}&name=Researcher"
+- extendedWaitUntil:
+    visible: "The fixture workspace is ready."
+    timeout: 10000
+- takeScreenshot: "screenshots/26-thread-dark"
+
+- openLink: "rakazo:///group-thread?groupId=${RAKAZO_SCREENSHOT_GROUP_ID}&name=Launch%20team"
+- extendedWaitUntil:
+    visible: "The fixture launch plan is ready."
+    timeout: 10000
+- takeScreenshot: "screenshots/27-group-thread-dark"
+
+- openLink: "rakazo:///group-settings?groupId=${RAKAZO_SCREENSHOT_GROUP_ID}"
+- assertVisible: "Delete group"
+- takeScreenshot: "screenshots/28-group-settings-dark"
+
+- openLink: "rakazo:///account"
+- tapOn: "Light"
+- openLink: "rakazo:///thread?botId=${RAKAZO_SCREENSHOT_BOT_ID}&name=Researcher"
+- assertVisible: "The fixture workspace is ready."
+- takeScreenshot: "screenshots/29-thread-light-restored"

@@ -125,7 +125,6 @@ export default function VoiceSettings() {
       if (!ready) {
         throw new Error(t("Connect a voice provider first."));
       }
-      setNotice(t("If you heard that, voice is ready."));
     } catch (err) {
       setError(err instanceof Error ? err.message : t("Could not play a sample"));
     } finally {
@@ -136,14 +135,9 @@ export default function VoiceSettings() {
   return (
     <SafeAreaView edges={["bottom"]} style={styles.screen}>
       <ScrollView contentContainerStyle={styles.content}>
-        {loading ? <ActivityIndicator color="#ECECEE" /> : null}
+        {loading ? <ActivityIndicator color={native.secondaryLabel} /> : null}
         {error ? <Text style={styles.error}>{error}</Text> : null}
         {notice ? <Text style={styles.notice}>{notice}</Text> : null}
-        <Text style={styles.lede}>
-          {t(
-            "Bring your own key. ElevenLabs, OpenAI, and Cartesia all plug into the same speak buttons.",
-          )}
-        </Text>
         {catalog.map((entry) => {
           const connected = credentials.some((cred) => cred.provider === entry.id);
           return (
@@ -168,7 +162,6 @@ export default function VoiceSettings() {
         })}
         {selected ? (
           <>
-            <Text style={styles.help}>{selected.description}</Text>
             <TextInput
               accessibilityLabel={t("API key")}
               autoCapitalize="none"
@@ -178,7 +171,7 @@ export default function VoiceSettings() {
               value={apiKey}
               onChangeText={setApiKey}
               placeholder={credential ? t("Paste a replacement key") : t("Paste your API key")}
-              placeholderTextColor="#6C6C70"
+              placeholderTextColor={native.tertiaryLabel}
               secureTextEntry
               style={styles.input}
               textContentType="none"
@@ -225,7 +218,6 @@ function createVoiceStyles() {
   return StyleSheet.create({
     screen: { flex: 1, backgroundColor: native.page },
     content: { padding: 20, gap: 10 },
-    lede: { color: native.secondaryLabel, fontSize: 14, lineHeight: 20, marginBottom: 8 },
     error: { color: tokens.destructive, marginBottom: 8 },
     notice: { color: tokens.success, marginBottom: 8 },
     card: {
@@ -238,7 +230,6 @@ function createVoiceStyles() {
     cardActive: { borderColor: tokens.ring, backgroundColor: tokens.muted },
     cardTitle: { color: native.label, fontSize: 16 },
     cardMeta: { color: native.tertiaryLabel, marginTop: 4, fontSize: 12 },
-    help: { color: native.secondaryLabel, fontSize: 13.5, lineHeight: 20, marginTop: 8 },
     input: {
       marginTop: 8,
       borderRadius: 12,
