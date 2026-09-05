@@ -37,5 +37,5 @@ local session and endpoint data; it does not delete server-side bots.
 ## Screenshot catalog
 
 Run **Actions → mobile Android screenshots → Run workflow** to build the app, seed an isolated fake
-workspace, capture light and dark Android emulator views, and upload the screenshots and Maestro report for
-seven days. It uses no repository secrets or hosted providers.
+workspace, capture light and dark Android emulator views, upload diagnostics for seven days, and publish a
+persistent gallery beside the Playwright reports.
