@@ -477,15 +477,6 @@ export function PluginsOverlay({
                   variant="secondary"
                   className="rounded-full"
                   size="sm"
-                  onClick={() => beginSource("executor")}
-                >
-                  <Trans>Add Executor</Trans>
-                </Button>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  className="rounded-full"
-                  size="sm"
                   onClick={() => beginSource("mcp")}
                 >
                   <Trans>Add MCP server</Trans>
