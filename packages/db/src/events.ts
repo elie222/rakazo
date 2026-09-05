@@ -1052,8 +1052,17 @@ async function finalizeRunOnce(
         data: { runId: null },
       });
     } else {
+      const { sourceMessage } = await tx.run.findUniqueOrThrow({
+        where: { id: input.runId },
+        select: { sourceMessage: { select: { seq: true } } },
+      });
+      // A continuation's source is the newest steering it was created for. Only newer
+      // messages justify another run after failure, even if setup failed before claiming.
       await tx.steeringMessage.updateMany({
-        where: { runId: input.runId },
+        where: {
+          runId: input.runId,
+          message: sourceMessage ? { seq: { gt: sourceMessage.seq } } : undefined,
+        },
         data: { runId: null },
       });
     }
