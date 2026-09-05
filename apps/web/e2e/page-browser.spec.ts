@@ -31,7 +31,11 @@ test("live page helper preserves identity, masks passwords, and reports partial 
       headless: true,
       args: ["--remote-debugging-port=0"],
     });
-    const port = (await readFile(path.join(profile, "DevToolsActivePort"), "utf8")).split("\n")[0];
+    let port = "";
+    await expect(async () => {
+      port = (await readFile(path.join(profile, "DevToolsActivePort"), "utf8")).split("\n")[0];
+      expect(port).toMatch(/^\d+$/);
+    }).toPass({ timeout: 5_000 });
     async function command(name: string, args: Record<string, unknown> = {}) {
       const { stdout } = await execute("python3", [helper, name, JSON.stringify(args)], {
         env: { ...process.env, RAKAZO_CDP_PORT: port },
