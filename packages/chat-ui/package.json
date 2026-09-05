@@ -12,6 +12,7 @@
     "test": "vitest run --root ../.. packages/chat-ui/src"
   },
   "dependencies": {
+    "@rakazo/ui-tokens": "workspace:*",
     "@ronradtke/react-native-markdown-display": "^9.0.3",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1"

@@ -4,8 +4,6 @@ import {
   hasVisibleMessagePresentation,
   isCenteredAgentEvent,
   messagePresentationSegments,
-  toolBlocksForMessage,
-  toolOwnerId,
 } from "./message-presentation";
 
 describe("mobile message presentation", () => {
@@ -33,7 +31,7 @@ describe("mobile message presentation", () => {
     expect(isCenteredAgentEvent([{ kind: "text", text: "Hello" }])).toBe(false);
   });
 
-  it("hides message_bot tool usage when the peer-message marker already represents it", () => {
+  it("hides completed tool activity", () => {
     const blocks = [
       {
         kind: "steps",
@@ -45,8 +43,11 @@ describe("mobile message presentation", () => {
       { kind: "bot_message_sent", toBotId: "b", toBotName: "Research", text: "Go" },
     ] as MessageBlock[];
 
-    expect(toolBlocksForMessage(blocks)).toEqual([
-      { kind: "steps", steps: [{ label: "Read file", count: 1 }] },
+    expect(messagePresentationSegments(blocks)).toEqual([
+      {
+        kind: "content",
+        blocks: [{ kind: "bot_message_sent", toBotId: "b", toBotName: "Research", text: "Go" }],
+      },
     ]);
     expect(
       hasVisibleMessagePresentation([
@@ -55,19 +56,23 @@ describe("mobile message presentation", () => {
     ).toBe(false);
   });
 
-  it("attributes group tool usage to the bot that emitted the message", () => {
-    const progress: { botId: string; blocks: MessageBlock[] } = {
-      botId: "research",
-      blocks: [{ kind: "progress", text: "Using browser", pendingToolNames: ["browser"] }],
+  it("hides marked activity without treating Using narration as a tool", () => {
+    const activity = { kind: "progress", text: "Using browser", activity: true } as const;
+    const narration = { kind: "progress", text: "Using browser is optional." } as const;
+
+    expect(messagePresentationSegments([activity, narration])).toEqual([
+      { kind: "content", blocks: [narration] },
+    ]);
+
+    const mixed: Extract<MessageBlock, { kind: "progress" }> = {
+      kind: "progress",
+      text: "Let me check",
+      pendingToolNames: ["browser"],
     };
-    expect(toolOwnerId(progress, true)).toBe("research");
-    expect(toolOwnerId({ botId: "research", blocks: [{ kind: "text", text: "done" }] }, true)).toBe(
-      undefined,
-    );
-    expect(toolOwnerId(progress, false)).toBe(undefined);
+    expect(messagePresentationSegments([mixed])).toEqual([{ kind: "content", blocks: [mixed] }]);
   });
 
-  it("keeps tool usage in its original place between response content", () => {
+  it("keeps only response content around tool activity", () => {
     const tool: Extract<MessageBlock, { kind: "steps" }> = {
       kind: "steps",
       steps: [{ label: "Read file", count: 1 }],
@@ -80,9 +85,13 @@ describe("mobile message presentation", () => {
         { kind: "text", text: "Done." },
       ]),
     ).toEqual([
-      { kind: "content", blocks: [{ kind: "text", text: "Checking." }] },
-      { kind: "tool", block: tool },
-      { kind: "content", blocks: [{ kind: "text", text: "Done." }] },
+      {
+        kind: "content",
+        blocks: [
+          { kind: "text", text: "Checking." },
+          { kind: "text", text: "Done." },
+        ],
+      },
     ]);
 
     expect(

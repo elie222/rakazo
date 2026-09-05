@@ -7,6 +7,7 @@
       content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; form-action 'none'; base-uri 'none'"
     />
     <title>Set up Rakazo</title>
+    <link rel="stylesheet" href="tokens.css" />
     <link rel="stylesheet" href="setup.css" />
   </head>
   <body>
@@ -19,31 +20,31 @@
       <h1 class="heading">Welcome to Rakazo</h1>
       <p class="subheading">Choose which server this app should use.</p>
 
-      <form id="setup" class="card" novalidate>
+      <form id="setup" novalidate>
         <fieldset class="choices">
           <legend class="sr-only">Instance</legend>
 
           <label class="choice" for="mode-new">
             <input id="mode-new" type="radio" name="mode" value="new" checked />
-            <span class="choice-body">
-              <span class="choice-title">This computer</span>
-              <span class="choice-note">Local Rakazo stack.</span>
-            </span>
+            <span class="choice-title">This computer</span>
           </label>
 
           <label class="choice" for="mode-existing">
             <input id="mode-existing" type="radio" name="mode" value="existing" />
-            <span class="choice-body">
-              <span class="choice-title">Existing instance</span>
-              <span class="choice-note">A server you already run.</span>
-            </span>
+            <span class="choice-title">Existing instance</span>
           </label>
         </fieldset>
 
         <section id="panel-new" class="panel">
-          <label class="field-label" for="local-url">Local address</label>
-          <input id="local-url" class="field" type="text" spellcheck="false" autocomplete="off" />
-          <p class="hint">If it isn’t running yet, start with <code>pnpm dev</code>.</p>
+          <div id="stack" hidden>
+            <p id="stack-phase" class="stack-phase" role="status" aria-live="polite"></p>
+            <pre id="stack-output" class="stack-output" hidden></pre>
+            <div id="stack-docker-help" class="stack-help" hidden>
+              <button class="link" type="button" data-link="docker-desktop">Docker Desktop</button>
+              <button class="link" type="button" data-link="orbstack">OrbStack</button>
+              <button class="link" type="button" data-link="docker-engine">Docker Engine</button>
+            </div>
+          </div>
         </section>
 
         <section id="panel-existing" class="panel" hidden>
@@ -56,7 +57,6 @@
             autocomplete="off"
             placeholder="https://rakazo.example.com"
           />
-          <p class="hint">Same address you open in a browser.</p>
         </section>
 
         <p id="status" class="status" role="status" aria-live="polite"></p>
@@ -66,8 +66,6 @@
           <button id="continue" class="button button-primary" type="submit">Continue</button>
         </div>
       </form>
-
-      <p class="footnote">Change later from the Rakazo menu (⌘/Ctrl+Shift+K).</p>
     </main>
 
     <script src="setup.js"></script>

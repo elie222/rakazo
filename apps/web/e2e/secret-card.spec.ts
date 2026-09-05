@@ -45,6 +45,32 @@ test("renders masked secret card and saves without putting the value in chat", a
 
   await page.setViewportSize({ width: 1280, height: 720 });
   const secretValue = `sk-test-secret-${stamp}`;
+  // Clear sensitive client state before waiting for a network result, including failures.
+  let releaseFailure!: () => void;
+  const failureGate = new Promise<void>((resolve) => {
+    releaseFailure = resolve;
+  });
+  await page.route("**/rpc/threads/answer", async (route) => {
+    await failureGate;
+    await route.fulfill({
+      status: 400,
+      json: { json: { defined: false, code: "BAD_REQUEST", status: 400, message: secretValue } },
+    });
+  });
+  await secretField.fill(secretValue);
+  await card.getByRole("button", { name: "Save", exact: true }).click();
+  try {
+    await expect(secretField).toHaveValue("");
+    await expect(secretField).toBeDisabled();
+    await expect(card.getByRole("button", { name: "Saving…", exact: true })).toBeDisabled();
+  } finally {
+    releaseFailure();
+  }
+  await expect(card.getByText("Could not submit this answer", { exact: true })).toBeVisible();
+  await expect(page.getByText(secretValue)).toHaveCount(0);
+  await expect(secretField).toHaveValue("");
+  await page.unroute("**/rpc/threads/answer");
+
   await secretField.fill(secretValue);
   await card.getByRole("button", { name: "Save", exact: true }).click();
 
@@ -82,5 +108,23 @@ test("renders masked secret card and saves without putting the value in chat", a
     )
     .toBe("");
 
+  // Check again after the worker resumes, then reload to verify the durable Saved state.
+  await expect
+    .poll(
+      async () => {
+        const snapshot = await rpc<{ run?: { status: string } | null }>(page, "threads/get", {
+          botId,
+        });
+        return snapshot.run?.status ?? "completed";
+      },
+      { timeout: 30_000 },
+    )
+    .toBe("completed");
+  const history = await rpc(page, "threads/messages", { botId });
+  expect(JSON.stringify(history)).not.toContain(secretValue);
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await expect(card.getByText("Saved", { exact: true })).toBeVisible();
+  await expect(card.locator("input")).toHaveCount(0);
+  await expect(page.getByText(secretValue)).toHaveCount(0);
   await captureScreenshot(page, testInfo, "secret-card-saved");
 });

@@ -21,6 +21,8 @@ describe("normalizeSecretAskPurpose", () => {
     expect(normalizeSecretAskPurpose("api_key")).toBe("api_key");
     expect(normalizeSecretAskPurpose("password")).toBe("password");
     expect(normalizeSecretAskPurpose("other")).toBe("otp");
+    expect(normalizeSecretAskPurpose("otp")).toBe("otp");
+    expect(normalizeSecretAskPurpose(undefined)).toBe("otp");
   });
 });
 

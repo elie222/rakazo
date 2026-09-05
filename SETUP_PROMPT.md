@@ -39,12 +39,17 @@ Setup:
 1. Create the directory if needed and enter it.
 2. Download and inspect this installer (do not clone the repository):
    https://raw.githubusercontent.com/elie222/rakazo/main/infra/compose/install-images.sh
+   If that host is unreachable, use a mirror URL (e.g. set `RAKAZO_INSTALLER_URL` to
+   `https://example.com/mirror/rakazo/infra/compose/install-images.sh` and curl that instead).
 3. Run `bash install-images.sh --prepare-only`. It downloads the Compose and environment example
    files, then creates `.env` with all required random secrets when one does not already exist.
+   Optional: set `RAKAZO_DOWNLOAD_BASE` to a generic mirror of `infra/compose`, and/or use
+   `--local` / `RAKAZO_DOWNLOAD_SKIP_EXISTING=1` when Compose files are already present locally.
+   See docs/self-host.md (Restricted networks / mirror downloads).
 4. Preserve existing values. Keep `SANDBOX_PROVIDER=docker` unless I chose a remote computer
    provider, and add only the provider or model keys I selected.
 5. Run `bash install-images.sh`. It preserves `.env`, pulls the images, and starts the stack.
-6. Wait until api, web, and supervisor are healthy. Default image tag is `edge` (amd64). Do not pin `latest` unless that tag exists in GHCR.
+6. Wait until api, web, and supervisor are healthy. Default image tag is `edge` (amd64 + arm64). Do not pin `latest` unless that tag exists in GHCR.
 
 Verification:
 
@@ -89,7 +94,7 @@ Do not ask me to invent `BETTER_AUTH_SECRET` or `ENCRYPTION_KEY`; generate stron
 Preflight:
 
 - Verify Git, Node.js, pnpm, Docker, and Docker Compose.
-- Use Node.js 22 LTS (at least 22.12) and the repository-declared pnpm 9.15.0. Do not silently use pnpm 10 or 11: newer pnpm versions can reject this lockfile or rewrite it. Prefer Corepack; if Corepack is unavailable, use `npx --yes pnpm@9.15.0` for repo commands rather than globally installing a different version. Show the effective versions.
+- Use Node.js 22.22.2 or newer in the 22.x line, Node.js 24.x, or Node.js 26+; Node.js 23.x and 25.x are not supported. Use the repository-declared pnpm 9.15.0. Do not silently use pnpm 10 or 11: newer pnpm versions can reject this lockfile or rewrite it. Prefer Corepack; if Corepack is unavailable, use `npx --yes pnpm@9.15.0` for repo commands rather than globally installing a different version. Show the effective versions.
 - Verify the Docker daemon is running.
 - Check whether `127.0.0.1` ports 5433, 3100, 5173, and 7091 are available. Resolve conflicts without touching unrelated workloads.
 

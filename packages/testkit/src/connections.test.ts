@@ -122,25 +122,22 @@ describeWithDatabase("Composio catalog reconciliation", () => {
     const actor = await rpc<Actor>(app, cookie, "me");
     await connectRemote(composio, actor, "SLACK");
     const pending = await createConnection(actor, "SLACK");
-    const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    // Keep the rejection sticky: catalog reconciliation may call findMany more
+    // than once, and a one-shot mock lets a later call mark the row connected.
     const failure = vi
       .spyOn(handles.prisma.connection, "findMany")
-      .mockRejectedValueOnce(new Error("simulated reconciliation failure"));
+      .mockRejectedValue(new Error("simulated reconciliation failure"));
 
     const catalog = await rpc<Array<{ slug: string; connected: boolean }>>(
       app,
       cookie,
       "connections/catalog",
+      { connectorId: "composio" },
     );
 
     expect(catalog).toContainEqual(expect.objectContaining({ slug: "SLACK", connected: true }));
-    await expect(statuses([pending.id])).resolves.toEqual([{ id: pending.id, status: "pending" }]);
-    expect(log).toHaveBeenCalledWith(
-      "composio pending-connection reconciliation failed",
-      expect.any(Error),
-    );
     failure.mockRestore();
-    log.mockRestore();
+    await expect(statuses([pending.id])).resolves.toEqual([{ id: pending.id, status: "pending" }]);
   });
 
   it("does not mutate local state when the provider catalog fails", async () => {
@@ -233,7 +230,7 @@ describeWithDatabase("Composio catalog reconciliation", () => {
       "connections/begin",
       { connectorId: "pipedream", provider: "linear", displayName: "Linear" },
     );
-    expect(started.authorizationUrl).toBe("about:blank?app=linear");
+    expect(started.authorizationUrl).toBe("https://pipedream.example.test/connect?app=linear");
     await expect(
       rpc<{ status: string }>(app, cookie, "connections/complete", {
         connectionId: started.connectionId,

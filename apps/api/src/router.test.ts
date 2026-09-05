@@ -1,6 +1,8 @@
 import { RPCHandler } from "@orpc/server/fetch";
+import { COMPUTER_SCREEN_UNAVAILABLE, ComputerScreenUnavailableError } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
+import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { describe, expect, it, vi } from "vitest";
 import { createRouter, type RouterDeps } from "./router.js";
 
@@ -96,11 +98,128 @@ describe("account preferences", () => {
   });
 });
 
+describe("model setup gate", () => {
+  function modelGateDeps(options: {
+    agentRuntime: string;
+    deploymentModelKey?: string;
+    deploymentModelCredentialCipher?: string;
+  }) {
+    const prisma = {
+      user: {
+        findUniqueOrThrow: vi.fn().mockResolvedValue({
+          email: "user@rakazo.test",
+          name: "Test User",
+          avatarStyle: "robot",
+        }),
+      },
+      spaceModelPreference: { findFirst: vi.fn().mockResolvedValue(null) },
+      deploymentSettings: {
+        findUnique: vi
+          .fn()
+          .mockResolvedValue(
+            options.deploymentModelCredentialCipher
+              ? { deploymentModelCredentialCipher: options.deploymentModelCredentialCipher }
+              : null,
+          ),
+      },
+    } as unknown as PrismaClient;
+    const deps = {
+      prisma,
+      env: {
+        agentRuntime: options.agentRuntime,
+        defaultProvider: "openrouter",
+        defaultModel: "test-model",
+        deploymentModelKey: options.deploymentModelKey,
+        webOrigin: "http://127.0.0.1:5173",
+        screenProxySecret: "fake-test-secret",
+        sandboxProvider: "fake",
+      },
+      dataDir: "/tmp/rakazo-router-test",
+    } as unknown as RouterDeps;
+    const actor = {
+      spaceId: "workspace-1",
+      userId: "user-1",
+      email: "user@rakazo.test",
+      isDeploymentOwner: true,
+    } satisfies Actor;
+    return { actor, handler: new RPCHandler(createRouter(deps)) };
+  }
+
+  async function call(handler: RPCHandler<never>, actor: Actor, path: string, body: unknown) {
+    const { response } = await handler.handle(
+      new Request(`http://127.0.0.1/rpc/${path}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ json: body }),
+      }),
+      { prefix: "/rpc", context: { actor } },
+    );
+    return response;
+  }
+
+  it("refuses to start a run when no model is configured", async () => {
+    const { actor, handler } = modelGateDeps({ agentRuntime: "pi" });
+
+    const response = await call(handler, actor, "threads/send", {
+      botId: "bot-1",
+      text: "hello",
+    });
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      json: expect.objectContaining({
+        code: "BAD_REQUEST",
+        message: "Connect a model to start a run.",
+      }),
+    });
+  });
+
+  it("does not require a model credential for the scripted test runtime", async () => {
+    const { actor, handler } = modelGateDeps({ agentRuntime: "scripted" });
+
+    const response = await call(handler, actor, "me", null);
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      json: expect.objectContaining({ needsModel: false }),
+    });
+  });
+
+  it("accepts a deployment model key as model configuration", async () => {
+    const { actor, handler } = modelGateDeps({
+      agentRuntime: "pi",
+      deploymentModelKey: "fake-deployment-key",
+    });
+
+    const response = await call(handler, actor, "me", null);
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      json: expect.objectContaining({ needsModel: false }),
+    });
+  });
+
+  it("does not accept a stored deployment cipher the executor cannot use", async () => {
+    const { actor, handler } = modelGateDeps({
+      agentRuntime: "pi",
+      deploymentModelCredentialCipher: "legacy-ciphertext",
+    });
+
+    const response = await call(handler, actor, "me", null);
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      json: expect.objectContaining({ needsModel: true }),
+    });
+  });
+});
+
 describe("thread answer delivery", () => {
   it("accepts a durable answer when the immediate worker wake fails", async () => {
     const answerRunInput = vi.fn().mockResolvedValue(true);
     const enqueue = vi.fn().mockRejectedValue(new Error("job broker unavailable"));
-    const logError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
     const prisma = {
       bot: {
         findFirst: vi.fn().mockResolvedValue({
@@ -158,8 +277,8 @@ describe("thread answer delivery", () => {
       }),
     );
     expect(enqueue).toHaveBeenCalledOnce();
-    expect(logError).toHaveBeenCalledWith("thread answer enqueue", expect.any(Error));
-    logError.mockRestore();
+    expect(sink.events.some((event) => event.message === "thread answer enqueue")).toBe(true);
+    installLogger(createLogger({ service: "rakazo-api", level: "off", sinks: [] }));
   });
 });
 
@@ -450,7 +569,6 @@ describe("computer screen url", () => {
   };
 
   it("clears the row instead of 500ing when the provider says the sandbox is gone", async () => {
-    const logError = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const { response, updateMany } = await callScreenUrl(() =>
       Promise.reject(
         Object.assign(new Error("Sandbox is probably not running anymore"), {
@@ -464,16 +582,27 @@ describe("computer screen url", () => {
       where: { id: "computer-1", providerRef: "sandbox-ref-1" },
       data: { state: "stopped", providerRef: null },
     });
-    logError.mockRestore();
   });
 
   it("keeps a transport blip an error and leaves the row alone", async () => {
-    const logError = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const { response, updateMany } = await callScreenUrl(() =>
       Promise.reject(Object.assign(new Error("fetch failed"), { code: "ECONNRESET" })),
     );
     expect(response.status).toBe(500);
     expect(updateMany).not.toHaveBeenCalled();
-    logError.mockRestore();
+  });
+
+  it("returns a recoverable conflict when the screen is temporarily busy", async () => {
+    const { response, updateMany } = await callScreenUrl(() =>
+      Promise.reject(new ComputerScreenUnavailableError()),
+    );
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+      json: expect.objectContaining({
+        code: "CONFLICT",
+        message: COMPUTER_SCREEN_UNAVAILABLE,
+      }),
+    });
+    expect(updateMany).not.toHaveBeenCalled();
   });
 });

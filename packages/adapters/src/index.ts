@@ -60,6 +60,7 @@ export * from "./pi-openai-compatible-provider.js";
 export * from "./pi-runtime.js";
 export * from "./pipedream-connector.js";
 export * from "./realtime.js";
+export * from "./release-watch.js";
 export * from "./remote-mcp.js";
 export * from "./run-secret.js";
 export * from "./sandbox-factory.js";

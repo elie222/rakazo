@@ -81,6 +81,9 @@ const ChartBlock = z
     });
   });
 
+export const SecretAskPurpose = z.enum(["otp", "password", "api_key"]);
+export type SecretAskPurpose = z.infer<typeof SecretAskPurpose>;
+
 export const MessageBlock = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("text"), text: z.string() }),
   z.object({
@@ -94,7 +97,7 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     detail: z.string().optional(),
     input: z.enum(["text", "secret"]).optional(),
     /** Why the secret is needed; drives field label on the masked card. */
-    purpose: z.enum(["otp", "password", "api_key"]).optional(),
+    purpose: SecretAskPurpose.optional(),
     status: z.enum(["pending", "answered"]).optional(),
     answer: z.string().optional(),
     actions: z
@@ -141,11 +144,14 @@ export const MessageBlock = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("progress"),
     text: z.string(),
+    /** Provider-generated tool status rather than assistant-authored narration. */
+    activity: z.literal(true).optional(),
     pendingToolNames: z.array(z.string()).optional(),
   }),
   z.object({
     kind: z.literal("steps"),
     steps: z.array(z.object({ label: z.string(), count: z.number().int().positive() })),
+    durationMs: z.number().int().nonnegative().optional(),
   }),
   z.object({
     kind: z.literal("subagent"),

@@ -3,6 +3,7 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import { ChatMarkdown } from "@rakazo/chat-ui/web";
 import type { ThreadMessage } from "@rakazo/contracts";
 import { isApprovalAskBlock, isSecretAskBlock, selectedAskActionLabel } from "@rakazo/core";
+import { Button, Input } from "@rakazo/ui-web";
 import { useState } from "react";
 
 export type AskBlock = Extract<ThreadMessage["blocks"][number], { kind: "ask" }>;
@@ -70,11 +71,13 @@ export function AskCard({
     const submitValue = secretInput ? value : value.trim();
     setPendingAction(secretInput ? "submit" : submitValue);
     setError(null);
+    if (secretInput) setAnswer("");
     try {
       await onAnswer(submitValue);
-      if (secretInput) setAnswer("");
     } catch (err) {
-      setError(err instanceof Error ? err.message : t`Could not submit this answer`);
+      setError(
+        !secretInput && err instanceof Error ? err.message : t`Could not submit this answer`,
+      );
     } finally {
       setPendingAction(null);
     }
@@ -83,18 +86,18 @@ export function AskCard({
   return (
     <div
       data-testid={secretInput ? "secret-ask-card" : undefined}
-      className="max-w-[74%] rounded-[20px] border border-[#242428] bg-[#141417] px-5 py-[17px]"
+      className="max-w-[74%] rounded-2xl border border-border bg-card px-5 py-4"
     >
-      <div className="text-[15.5px] leading-[1.5] text-[#ECECEE]">
+      <div className="text-[15.5px] leading-[1.5] text-foreground">
         <ChatMarkdown>{block.text}</ChatMarkdown>
       </div>
       {block.detail && !secretInput ? (
-        <pre className="mt-3 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-xl bg-[#0E0E10] px-3.5 py-3 font-mono text-[12.5px] leading-[1.7] text-[#85858A]">
+        <pre className="mt-3 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-xl bg-muted px-3.5 py-3 font-mono text-[12.5px] leading-[1.7] text-muted-foreground">
           {block.detail}
         </pre>
       ) : null}
       {block.status === "answered" ? (
-        <div className="mt-3.5 text-[13.5px] font-medium text-[#4ECB71]">
+        <div className="mt-3.5 text-[13.5px] font-medium text-success">
           {formatAnsweredState(
             block.answer,
             Boolean(approvalActions),
@@ -104,22 +107,18 @@ export function AskCard({
           )}
         </div>
       ) : !canAnswer ? (
-        <div className="mt-3.5 text-[13.5px] font-medium text-[#85858A]">
+        <div className="mt-3.5 text-[13.5px] font-medium text-muted-foreground">
           <Trans>No longer active</Trans>
         </div>
       ) : askActions?.length ? (
-        <div className="mt-3.5 flex flex-wrap gap-2">
+        <div className="mt-3.5 space-y-1.5">
           {askActions.map((action) => (
-            <button
+            <Button
               key={action.id}
-              type="button"
+              variant={approvalActions && action.id === "allow" ? "default" : "outline"}
+              className="h-auto w-full justify-start whitespace-normal px-3.5 py-3 text-start font-normal"
               disabled={submitting}
               onClick={() => void submitAnswer(action.id)}
-              className={
-                approvalActions && action.id === "allow"
-                  ? "rounded-[11px] bg-[#F1F1EF] px-[17px] py-2 text-[14.5px] font-medium text-[#17171A] disabled:opacity-50"
-                  : "rounded-[11px] border border-[#26262A] px-[17px] py-2 text-[14.5px] text-[#C9C9CE] disabled:opacity-50"
-              }
             >
               {pendingAction === action.id ? (
                 <Trans>Sending…</Trans>
@@ -128,7 +127,7 @@ export function AskCard({
               ) : (
                 action.label
               )}
-            </button>
+            </Button>
           ))}
         </div>
       ) : secretInput ? (
@@ -139,22 +138,19 @@ export function AskCard({
             void submitAnswer(answer);
           }}
         >
-          <input
+          <Input
             aria-label={secretLabel}
             type="password"
             autoComplete="off"
+            spellCheck={false}
+            disabled={submitting}
             value={answer}
             onChange={(event) => setAnswer(event.target.value)}
             placeholder={secretLabel}
-            className="rounded-[11px] border border-[#303035] bg-[#0E0E10] px-3.5 py-2.5 text-[14.5px] text-[#ECECEE] outline-none focus:border-[#66666D]"
           />
-          <button
-            type="submit"
-            disabled={answer.length === 0 || submitting}
-            className="self-start rounded-[11px] bg-[#F1F1EF] px-[17px] py-2 text-[14.5px] font-medium text-[#17171A] disabled:opacity-50"
-          >
+          <Button type="submit" className="self-start" disabled={answer.length === 0 || submitting}>
             {submitting ? <Trans>Saving…</Trans> : <Trans>Save</Trans>}
-          </button>
+          </Button>
         </form>
       ) : editing ? (
         <form
@@ -164,55 +160,39 @@ export function AskCard({
             void submitAnswer(answer);
           }}
         >
-          <input
+          <Input
             aria-label={t`Answer`}
             value={answer}
             onChange={(event) => setAnswer(event.target.value)}
             placeholder={t`Type your answer`}
-            className="rounded-[11px] border border-[#303035] bg-[#0E0E10] px-3.5 py-2.5 text-[14.5px] text-[#ECECEE] outline-none focus:border-[#66666D]"
           />
           <div className="flex gap-2">
-            <button
-              type="submit"
-              disabled={!answer.trim() || submitting}
-              className="rounded-[11px] bg-[#F1F1EF] px-[17px] py-2 text-[14.5px] font-medium text-[#17171A] disabled:opacity-50"
-            >
+            <Button type="submit" disabled={!answer.trim() || submitting}>
               {submitting ? <Trans>Sending…</Trans> : <Trans>Send answer</Trans>}
-            </button>
-            <button
-              type="button"
+            </Button>
+            <Button
+              variant="outline"
               disabled={submitting}
               onClick={() => {
                 setAnswer("");
                 setEditing(false);
               }}
-              className="rounded-[11px] border border-[#26262A] px-[17px] py-2 text-[14.5px] text-[#C9C9CE] disabled:opacity-50"
             >
               <Trans>Cancel</Trans>
-            </button>
+            </Button>
           </div>
         </form>
       ) : (
         <div className="mt-3.5 flex gap-2">
-          <button
-            type="button"
-            disabled={submitting}
-            onClick={() => void submitAnswer("approved")}
-            className="rounded-[11px] bg-[#F1F1EF] px-[17px] py-2 text-[14.5px] font-medium text-[#17171A] disabled:opacity-50"
-          >
+          <Button disabled={submitting} onClick={() => void submitAnswer("approved")}>
             {submitting ? <Trans>Sending…</Trans> : <Trans>Send it</Trans>}
-          </button>
-          <button
-            type="button"
-            disabled={submitting}
-            onClick={() => setEditing(true)}
-            className="rounded-[11px] border border-[#26262A] px-[17px] py-2 text-[14.5px] text-[#C9C9CE] disabled:opacity-50"
-          >
+          </Button>
+          <Button variant="outline" disabled={submitting} onClick={() => setEditing(true)}>
             <Trans>Edit first</Trans>
-          </button>
+          </Button>
         </div>
       )}
-      {error ? <p className="mt-3 text-[13px] text-[#E65707]">{error}</p> : null}
+      {error ? <p className="mt-3 text-[13px] text-destructive">{error}</p> : null}
     </div>
   );
 }

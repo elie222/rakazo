@@ -1,5 +1,12 @@
-import type { RunActivityRow, SearchHit, SpaceBot, SpaceGroup } from "@rakazo/contracts";
+import {
+  normalizeCreateBotProfile,
+  type RunActivityRow,
+  type SearchHit,
+  type SpaceBot,
+  type SpaceGroup,
+} from "@rakazo/contracts";
 import { groupBotsForSidebar } from "@rakazo/core";
+import { botColors } from "@rakazo/ui-tokens";
 import { Redirect, useFocusEffect, useRouter } from "expo-router";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -39,15 +46,18 @@ import {
   selectInitialSpace,
   selectSpace,
 } from "../lib/api";
+import { mobileTokens, resolveMobileAppearance } from "../lib/appearance";
+import { allowFocusPrompt, scheduleFocusPrompt } from "../lib/focus-prompt";
+import { t, useI18n } from "../lib/i18n";
 import { botTag, filterBots, formatThreadTime, userInitials } from "../lib/inbox";
 import { dismissThreadNotifications, resumeLiveNotifications } from "../lib/live-notifications";
-import { native } from "../lib/native";
+import { native, useThemedStyles } from "../lib/native";
 import { previewSnippet } from "../lib/preview";
 import { registerPushToken } from "../lib/push";
 import { querySpaceSearch } from "../lib/search";
 import { mobileSearchDestination } from "../lib/search-destination";
 
-const FALLBACK_COLOR = "#9B5CF6";
+const FALLBACK_COLOR = botColors[3];
 
 type InboxItem =
   | { type: "bot"; bot: MobileBot | SpaceBot }
@@ -57,13 +67,17 @@ type InboxItem =
 
 async function openMobileSpace(spaceId: string | undefined, open: () => void) {
   if (spaceId && !(await selectSpace(spaceId))) {
-    Alert.alert("Could not switch spaces", "Try again.");
+    Alert.alert(t("Could not switch spaces"), t("Try again."));
     return;
   }
   open();
 }
 
 export default function Home() {
+  const tokens = mobileTokens();
+  const appearance = resolveMobileAppearance();
+  const styles = useThemedStyles(createHomeStyles);
+  const { t, locale } = useI18n();
   const [bots, setBots] = useState<MobileBot[]>([]);
   const [groups, setGroups] = useState<MobileGroup[]>([]);
   const [botSections, setBotSections] = useState<MobileBotSection[]>([]);
@@ -88,6 +102,7 @@ export default function Home() {
   });
   const activityRequestId = useRef(0);
   const inboxRequestId = useRef(0);
+  const creatingBotRef = useRef(false);
 
   useEffect(() => {
     void loadActivityMode().then(setActivityMode);
@@ -111,7 +126,7 @@ export default function Home() {
       ]);
       if (requestId !== inboxRequestId.current) return;
       if (!(await selectInitialSpace(nextMe.spaceId))) {
-        throw new Error("Could not save the default space");
+        throw new Error(t("Could not save the default space"));
       }
       if (requestId !== inboxRequestId.current) return;
       setBots(navigation.current.bots);
@@ -121,7 +136,7 @@ export default function Home() {
       setMe(nextMe);
     } catch (err) {
       if (requestId !== inboxRequestId.current) return;
-      setError(err instanceof Error ? err.message : "Could not load bots");
+      setError(err instanceof Error ? err.message : t("Could not load bots"));
     }
   }, []);
 
@@ -260,7 +275,7 @@ export default function Home() {
           ? [
               {
                 id: me.spaceId,
-                name: "Personal",
+                name: t("Personal"),
                 isDefault: true,
                 bots: visible,
                 groups: visibleGroups,
@@ -289,7 +304,7 @@ export default function Home() {
         ...group.bots,
       ]);
     });
-  }, [botSections, me, spaces, query, searching, searchHits, visible, visibleGroups]);
+  }, [botSections, locale, me, spaces, query, searching, searchHits, visible, visibleGroups]);
   const initials = userInitials(me?.name ?? "");
   const organizeChat = organizeTarget
     ? organizeTarget.kind === "bot"
@@ -298,6 +313,36 @@ export default function Home() {
     : null;
   const insets = useSafeAreaInsets();
   const router = useRouter();
+
+  const createQuickBot = useCallback(async () => {
+    if (creatingBotRef.current) return;
+    creatingBotRef.current = true;
+    try {
+      // Authoritative roster so a slow home fetch does not treat later bots as first.
+      // A failed list is unknown — use the delayed path rather than assuming first.
+      const existing = await rpc<MobileBot[]>("bots/list").catch(() => null);
+      const isFirstBot = existing !== null && existing.length === 0;
+      const bot = await rpc<MobileBot>("bots/create", {
+        ...normalizeCreateBotProfile({ name: "New Bot", title: "", description: "" }),
+        notifyOnFinish: true,
+        computerMode: "team",
+      });
+      void refreshBots().catch(() => undefined);
+      allowFocusPrompt(bot.id);
+      router.replace({ pathname: "/thread", params: { botId: bot.id, name: bot.name } });
+      void (async () => {
+        const started = await rpc("onboarding/start", { botId: bot.id })
+          .then(() => true)
+          .catch(() => false);
+        if (!started) return;
+        scheduleFocusPrompt(bot.id, isFirstBot);
+      })();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t("Could not create bot"));
+    } finally {
+      creatingBotRef.current = false;
+    }
+  }, [refreshBots, router, t]);
 
   if (!ready) {
     return (
@@ -311,12 +356,12 @@ export default function Home() {
   return (
     <View style={[styles.screen, { paddingTop: Math.max(insets.top, 20) }]}>
       <View style={styles.header}>
-        <CircleButton accessibilityLabel="Account" onPress={() => router.push("/account")}>
+        <CircleButton accessibilityLabel={t("Account")} onPress={() => router.push("/account")}>
           <Text style={styles.profileInitials}>{initials}</Text>
         </CircleButton>
         <View style={styles.headerActions}>
           <CircleButton
-            accessibilityLabel="Activity"
+            accessibilityLabel={t("Activity")}
             active={activityMode}
             accent
             onPress={toggleActivityMode}
@@ -325,11 +370,11 @@ export default function Home() {
               ios={activityMode ? "bell.fill" : "bell"}
               android={activityMode ? "notifications" : "notifications-outline"}
               size={17}
-              color={activityMode ? "#FFFFFF" : "#8E8E93"}
+              color={activityMode ? tokens.primaryForeground : tokens.foreground}
             />
           </CircleButton>
           <CircleButton
-            accessibilityLabel="Search"
+            accessibilityLabel={t("Search")}
             active={searching}
             onPress={() =>
               setSearching((open) => {
@@ -341,13 +386,13 @@ export default function Home() {
             <NativeSymbol ios="magnifyingglass" android="search" size={17} />
           </CircleButton>
           <CircleButton
-            accessibilityLabel="Create"
+            accessibilityLabel={t("Create")}
             onPress={() =>
-              Alert.alert("Create", undefined, [
-                { text: "New bot", onPress: () => router.push("/new") },
-                { text: "New group", onPress: () => router.push("/new-group") },
-                { text: "New space", onPress: () => router.push("/new-space") },
-                { text: "Cancel", style: "cancel" },
+              Alert.alert(t("Create"), undefined, [
+                { text: t("New bot"), onPress: () => void createQuickBot() },
+                { text: t("New group"), onPress: () => router.push("/new-group") },
+                { text: t("New space"), onPress: () => router.push("/new-space") },
+                { text: t("Cancel"), style: "cancel" },
               ])
             }
           >
@@ -361,12 +406,12 @@ export default function Home() {
           autoFocus
           value={query}
           onChangeText={setQuery}
-          placeholder="Search"
-          placeholderTextColor="#6C6C70"
+          placeholder={t("Search")}
+          placeholderTextColor={tokens.mutedForeground}
           autoCorrect={false}
           autoCapitalize="none"
           returnKeyType="search"
-          keyboardAppearance="dark"
+          keyboardAppearance={appearance}
           clearButtonMode="while-editing"
           style={styles.searchField}
         />
@@ -385,7 +430,7 @@ export default function Home() {
         }}
         keyboardDismissMode="interactive"
         keyboardShouldPersistTaps="handled"
-        indicatorStyle="white"
+        indicatorStyle={appearance === "dark" ? "white" : "black"}
         contentContainerStyle={styles.list}
         refreshControl={
           <RefreshControl
@@ -395,8 +440,8 @@ export default function Home() {
               void loadActivity();
             }}
             tintColor={native.secondaryLabel}
-            colors={["#8E8E93"]}
-            progressBackgroundColor="#1C1C1E"
+            colors={[tokens.mutedForeground]}
+            progressBackgroundColor={tokens.muted}
           />
         }
         ListHeaderComponent={
@@ -404,20 +449,20 @@ export default function Home() {
           !searching &&
           !query.trim() &&
           (activity.active.length > 0 || activity.recent.length > 0) ? (
-            <ActivitySection activity={activity} />
+            <ActivitySection activity={activity} bots={bots} />
           ) : null
         }
         ListEmptyComponent={
           <Text style={styles.empty}>
             {query.trim() && searching
               ? searchLoading
-                ? "Searching…"
-                : "No results"
+                ? t("Searching…")
+                : t("No results")
               : query.trim()
-                ? "No matching bots"
+                ? t("No matching bots")
                 : searching
-                  ? "Search conversations, files, and routines"
-                  : "Tap + to create a bot"}
+                  ? t("Search conversations, files, and routines")
+                  : t("Tap + to create a bot")}
           </Text>
         }
         renderItem={({ item }) =>
@@ -508,15 +553,20 @@ export default function Home() {
 
 function ActivitySection({
   activity,
+  bots,
 }: {
   activity: { active: RunActivityRow[]; recent: RunActivityRow[] };
+  bots: MobileBot[];
 }) {
+  const styles = useThemedStyles(createHomeStyles);
+  const { t } = useI18n();
   const router = useRouter();
+  const botsById = useMemo(() => new Map(bots.map((bot) => [bot.id, bot])), [bots]);
   const openRun = (run: RunActivityRow) => {
     if (run.groupId) {
       router.push({
         pathname: "/group-thread",
-        params: { groupId: run.groupId, name: run.groupName ?? "Group" },
+        params: { groupId: run.groupId, name: run.groupName ?? t("Group") },
       });
       return;
     }
@@ -527,19 +577,29 @@ function ActivitySection({
     <View style={styles.activitySection}>
       {activity.active.length > 0 ? (
         <>
-          <Text style={styles.sectionHeading}>Now</Text>
+          <Text style={styles.sectionHeading}>{t("Now")}</Text>
           {activity.active.map((run) => (
-            <ActivityRow key={run.runId} run={run} onPress={() => openRun(run)} />
+            <ActivityRow
+              key={run.runId}
+              run={run}
+              bot={botsById.get(run.botId)}
+              onPress={() => openRun(run)}
+            />
           ))}
         </>
       ) : null}
       {activity.recent.length > 0 ? (
         <>
           <Text style={[styles.sectionHeading, activity.active.length > 0 && styles.activityGap]}>
-            Recent
+            {t("Recent")}
           </Text>
           {activity.recent.map((run) => (
-            <ActivityRow key={run.runId} run={run} onPress={() => openRun(run)} />
+            <ActivityRow
+              key={run.runId}
+              run={run}
+              bot={botsById.get(run.botId)}
+              onPress={() => openRun(run)}
+            />
           ))}
         </>
       ) : null}
@@ -547,27 +607,86 @@ function ActivitySection({
   );
 }
 
-function ActivityRow({ run, onPress }: { run: RunActivityRow; onPress: () => void }) {
+function ActivityRow({
+  run,
+  bot,
+  onPress,
+}: {
+  run: RunActivityRow;
+  bot?: MobileBot;
+  onPress: () => void;
+}) {
   const title = run.groupName ? `${run.botName} · ${run.groupName}` : run.botName;
   const status = activityStatusLabel(run.status);
   const preview = run.promptSnippet ? `${run.promptSnippet} · ${status}` : status;
-  const activityLabel = `${title}, ${status}`;
+  return (
+    <ConversationRow
+      title={title}
+      preview={preview}
+      time={formatActivityRelativeTime(run.updatedAt)}
+      accessibilityLabel={`${title}, ${status}`}
+      onPress={onPress}
+      avatar={
+        <BotAvatar identity={run.botId} color={bot?.color ?? FALLBACK_COLOR} status={run.status} />
+      }
+    />
+  );
+}
+
+function ConversationRow({
+  title,
+  preview,
+  time,
+  avatar,
+  tag,
+  unread,
+  onPress,
+  onLongPress,
+  accessibilityLabel,
+  accessibilityHint,
+}: {
+  title: string;
+  preview: string;
+  time: string;
+  avatar: ReactNode;
+  tag?: string | null;
+  unread?: boolean;
+  onPress: () => void;
+  onLongPress?: () => void;
+  accessibilityLabel: string;
+  accessibilityHint?: string;
+}) {
+  const styles = useThemedStyles(createHomeStyles);
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={activityLabel}
+      accessibilityLabel={accessibilityLabel}
+      accessibilityHint={accessibilityHint}
       onPress={onPress}
+      onLongPress={onLongPress}
       style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
     >
-      <View style={styles.activityDot} />
+      {avatar}
       <View style={styles.rowBody}>
         <View style={styles.rowTop}>
-          <Text style={styles.name} numberOfLines={1}>
-            {title}
-          </Text>
-          <Text style={styles.time}>{formatActivityRelativeTime(run.updatedAt)}</Text>
+          <View style={styles.titleRow}>
+            <Text style={styles.name} numberOfLines={1} ellipsizeMode="tail">
+              {title}
+            </Text>
+            {tag ? (
+              <View style={styles.tag}>
+                <Text style={styles.tagLabel} numberOfLines={1}>
+                  {tag}
+                </Text>
+              </View>
+            ) : null}
+          </View>
+          <View style={styles.rowMeta}>
+            {time ? <Text style={styles.time}>{time}</Text> : null}
+            {unread ? <View accessibilityElementsHidden style={styles.unreadDot} /> : null}
+          </View>
         </View>
-        <Text style={styles.preview} numberOfLines={1}>
+        <Text style={[styles.preview, unread && styles.unreadPreview]} numberOfLines={1}>
           {preview}
         </Text>
       </View>
@@ -588,6 +707,7 @@ function CircleButton({
   active?: boolean;
   accent?: boolean;
 }) {
+  const styles = useThemedStyles(createHomeStyles);
   return (
     <Pressable
       accessibilityRole="button"
@@ -606,6 +726,7 @@ function CircleButton({
 }
 
 function SearchRow({ hit, onPress }: { hit: SearchHit; onPress: () => void }) {
+  const styles = useThemedStyles(createHomeStyles);
   return (
     <Pressable
       onPress={onPress}
@@ -635,64 +756,43 @@ function BotRow({
   onPress: () => void;
   onLongPress?: () => void;
 }) {
-  const preview = previewSnippet(bot.preview, 40) || bot.title || "No messages yet";
+  const { t } = useI18n();
+  const preview = previewSnippet(bot.preview, 40) || bot.title || t("No messages yet");
   const time = bot.updatedAt ? formatThreadTime(bot.updatedAt) : "";
   const tag = botTag(bot.title, bot.name);
   // Spelled out because an explicit label replaces the one built from the row's children.
   const label = [
     bot.name,
     tag,
-    bot.notifyOnFinish ? null : "notifications silenced",
-    bot.unread ? "unread" : null,
+    bot.notifyOnFinish ? null : t("notifications silenced"),
+    bot.unread ? t("unread") : null,
     time,
     preview,
   ]
     .filter(Boolean)
     .join(", ");
   return (
-    <Pressable
+    <ConversationRow
+      title={bot.name}
+      preview={preview}
+      time={time}
+      tag={tag}
+      unread={bot.unread}
       accessibilityLabel={label}
       accessibilityHint={
-        onLongPress ? "Long press to pin, move, or silence notifications" : undefined
+        onLongPress ? t("Long press to pin, move, or silence notifications") : undefined
       }
       onPress={onPress}
       onLongPress={onLongPress}
-      style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
-    >
-      <BotAvatar
-        color={bot.color || FALLBACK_COLOR}
-        identity={bot.id}
-        status={bot.status}
-        muted={!bot.notifyOnFinish}
-      />
-      <View style={styles.rowBody}>
-        <View style={styles.rowTop}>
-          <View style={styles.titleRow}>
-            <Text style={styles.name} numberOfLines={1} ellipsizeMode="tail">
-              {bot.name}
-            </Text>
-            {tag ? (
-              <View style={styles.tag}>
-                <Text style={styles.tagLabel} numberOfLines={1} ellipsizeMode="tail">
-                  {tag}
-                </Text>
-              </View>
-            ) : null}
-          </View>
-          <View style={styles.rowMeta}>
-            {time ? <Text style={styles.time}>{time}</Text> : null}
-            {bot.unread ? <View accessibilityElementsHidden style={styles.unreadDot} /> : null}
-          </View>
-        </View>
-        <Text
-          style={[styles.preview, bot.unread && styles.unreadPreview]}
-          numberOfLines={1}
-          ellipsizeMode="tail"
-        >
-          {preview}
-        </Text>
-      </View>
-    </Pressable>
+      avatar={
+        <BotAvatar
+          color={bot.color || FALLBACK_COLOR}
+          identity={bot.id}
+          status={bot.status}
+          muted={!bot.notifyOnFinish}
+        />
+      }
+    />
   );
 }
 
@@ -705,213 +805,200 @@ function GroupRow({
   onPress: () => void;
   onLongPress?: () => void;
 }) {
+  const { t } = useI18n();
   const preview =
     previewSnippet(group.preview, 40) || group.members.map((member) => member.name).join(", ");
   const time = group.updatedAt ? formatThreadTime(group.updatedAt) : "";
   return (
-    <Pressable
-      accessibilityLabel={[group.name, group.unread ? "unread" : null, time, preview]
+    <ConversationRow
+      title={group.name}
+      preview={preview}
+      time={time}
+      unread={group.unread}
+      accessibilityLabel={[group.name, group.unread ? t("unread") : null, time, preview]
         .filter(Boolean)
         .join(", ")}
+      accessibilityHint={onLongPress ? t("Long press to pin or move to a section") : undefined}
       onPress={onPress}
       onLongPress={onLongPress}
-      accessibilityHint={onLongPress ? "Long press to pin or move to a section" : undefined}
-      style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
-    >
-      <GroupAvatar members={group.members} size={54} />
-      <View style={styles.rowBody}>
-        <View style={styles.rowTop}>
-          <Text style={styles.name} numberOfLines={1}>
-            {group.name}
-          </Text>
-          <View style={styles.rowMeta}>
-            {time ? <Text style={styles.time}>{time}</Text> : null}
-            {group.unread ? <View accessibilityElementsHidden style={styles.unreadDot} /> : null}
-          </View>
-        </View>
-        <Text style={[styles.preview, group.unread && styles.unreadPreview]} numberOfLines={1}>
-          {preview}
-        </Text>
-      </View>
-    </Pressable>
+      avatar={<GroupAvatar members={group.members} size={54} />}
+    />
   );
 }
 
-const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: native.page,
-  },
-  centered: {
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 10,
-  },
-  headerActions: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
-  circleButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "#2C2C2E",
-    alignItems: "center",
-    justifyContent: "center",
-    overflow: "hidden",
-  },
-  circlePressed: {
-    backgroundColor: "#3A3A3C",
-  },
-  circleAccent: {
-    backgroundColor: "#4C8DFF",
-  },
-  profileInitials: {
-    color: native.label,
-    fontSize: 15,
-    fontWeight: "600",
-  },
-  searchField: {
-    marginHorizontal: 16,
-    marginBottom: 8,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: native.fill,
-    color: native.label,
-    paddingHorizontal: 12,
-    fontSize: 17,
-    writingDirection: "auto",
-  },
-  error: {
-    color: native.secondaryLabel,
-    paddingHorizontal: 20,
-    paddingBottom: 8,
-  },
-  list: {
-    flexGrow: 1,
-    paddingBottom: 32,
-  },
-  empty: {
-    color: native.secondaryLabel,
-    fontSize: 16,
-    paddingHorizontal: 20,
-    paddingTop: 28,
-  },
-  row: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    gap: 12,
-  },
-  rowPressed: {
-    opacity: 0.55,
-  },
-  rowBody: {
-    flex: 1,
-    minWidth: 0,
-    gap: 2,
-  },
-  rowTop: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  titleRow: {
-    flex: 1,
-    minWidth: 0,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  rowMeta: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 7,
-  },
-  name: {
-    flexShrink: 1,
-    color: native.label,
-    fontSize: 17,
-    fontWeight: "600",
-    writingDirection: "auto",
-  },
-  tag: {
-    flexShrink: 1,
-    borderRadius: 999,
-    backgroundColor: native.fill,
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-  },
-  tagLabel: {
-    color: native.secondaryLabel,
-    fontSize: 11,
-    fontWeight: "500",
-    writingDirection: "auto",
-  },
-  time: {
-    color: native.secondaryLabel,
-    fontSize: 15,
-  },
-  preview: {
-    color: native.secondaryLabel,
-    fontSize: 15,
-    lineHeight: 20,
-    writingDirection: "auto",
-  },
-  unreadPreview: {
-    color: native.label,
-    fontWeight: "600",
-  },
-  unreadDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: "#8B5CF6",
-  },
-  sectionHeading: {
-    color: native.secondaryLabel,
-    fontSize: 14,
-    fontWeight: "600",
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 4,
-  },
-  activitySection: {
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: "#2C2C2E",
-    marginBottom: 4,
-    paddingBottom: 4,
-  },
-  activityGap: {
-    paddingTop: 16,
-  },
-  activityDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: "#8B5CF6",
-    marginTop: 6,
-  },
-  groupAvatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: "#232326",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  groupAvatarLabel: {
-    color: "#C9C9CE",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-});
+function createHomeStyles() {
+  const tokens = mobileTokens();
+  return StyleSheet.create({
+    screen: {
+      flex: 1,
+      backgroundColor: native.page,
+    },
+    centered: {
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    header: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      paddingHorizontal: 16,
+      paddingTop: 8,
+      paddingBottom: 10,
+    },
+    headerActions: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 12,
+    },
+    circleButton: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      backgroundColor: native.fillPressed,
+      alignItems: "center",
+      justifyContent: "center",
+      overflow: "hidden",
+    },
+    circlePressed: {
+      backgroundColor: native.fill,
+    },
+    circleAccent: {
+      backgroundColor: tokens.primary,
+    },
+    profileInitials: {
+      color: native.label,
+      fontSize: 15,
+      fontWeight: "600",
+    },
+    searchField: {
+      marginHorizontal: 16,
+      marginBottom: 8,
+      minHeight: 44,
+      paddingVertical: 10,
+      textAlignVertical: "center",
+      borderRadius: 10,
+      backgroundColor: native.fill,
+      color: native.label,
+      paddingHorizontal: 12,
+      fontSize: 17,
+      writingDirection: "auto",
+    },
+    error: {
+      color: native.secondaryLabel,
+      paddingHorizontal: 20,
+      paddingBottom: 8,
+    },
+    list: {
+      flexGrow: 1,
+      paddingBottom: 32,
+    },
+    empty: {
+      color: native.secondaryLabel,
+      fontSize: 16,
+      paddingHorizontal: 20,
+      paddingTop: 28,
+    },
+    row: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingHorizontal: 16,
+      paddingVertical: 10,
+      gap: 12,
+    },
+    rowPressed: {
+      opacity: 0.55,
+    },
+    rowBody: {
+      flex: 1,
+      minWidth: 0,
+      gap: 2,
+    },
+    rowTop: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+    },
+    titleRow: {
+      flex: 1,
+      minWidth: 0,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+    },
+    rowMeta: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 7,
+    },
+    name: {
+      flexShrink: 1,
+      color: native.label,
+      fontSize: 17,
+      fontWeight: "600",
+      writingDirection: "auto",
+    },
+    tag: {
+      flexShrink: 1,
+      borderRadius: 999,
+      backgroundColor: native.fill,
+      paddingHorizontal: 7,
+      paddingVertical: 2,
+    },
+    tagLabel: {
+      color: native.secondaryLabel,
+      fontSize: 11,
+      fontWeight: "500",
+      writingDirection: "auto",
+    },
+    time: {
+      color: native.secondaryLabel,
+      fontSize: 15,
+    },
+    preview: {
+      color: native.secondaryLabel,
+      fontSize: 15,
+      lineHeight: 20,
+      writingDirection: "auto",
+    },
+    unreadPreview: {
+      color: native.label,
+      fontWeight: "600",
+    },
+    unreadDot: {
+      width: 8,
+      height: 8,
+      borderRadius: 4,
+      backgroundColor: tokens.foreground,
+    },
+    sectionHeading: {
+      color: native.secondaryLabel,
+      fontSize: 14,
+      fontWeight: "600",
+      paddingHorizontal: 16,
+      paddingTop: 12,
+      paddingBottom: 4,
+    },
+    activitySection: {
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: native.fillPressed,
+      marginBottom: 4,
+      paddingBottom: 4,
+    },
+    activityGap: {
+      paddingTop: 16,
+    },
+    groupAvatar: {
+      width: 48,
+      height: 48,
+      borderRadius: 24,
+      backgroundColor: native.fill,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    groupAvatarLabel: {
+      color: native.secondaryLabel,
+      fontSize: 16,
+      fontWeight: "600",
+    },
+  });
+}

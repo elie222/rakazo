@@ -36,7 +36,8 @@ name: Rakazo mobile smoke
 - pressKey: Enter
 - assertVisible: ${RAKAZO_E2E_MESSAGE}
 
-- tapOn: "Open computer →"
+- tapOn: "Bot actions"
+- tapOn: "Open computer"
 - extendedWaitUntil:
     visible: "Open computer"
     timeout: 30000

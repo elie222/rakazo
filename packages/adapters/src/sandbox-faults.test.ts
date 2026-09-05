@@ -123,7 +123,7 @@ describe.each([
     expect((await provider.observe(computer, context)).activeWindow).toEqual(before.activeWindow);
   });
 
-  it("stops idempotently, resumes the same machine, and provisions fresh after destroy", async () => {
+  it("stops idempotently and reports whether provisioning reuses workspace files", async () => {
     const provider = await makeProvider();
     const request = { botId: "lifecycle", homePath: "/unused" };
     const first = await provisionPrepared(provider, request, context);
@@ -148,7 +148,18 @@ describe.each([
     await provider.destroy(resumed, context);
     await provider.destroy(resumed, context);
     const replacement = await provisionPrepared(provider, request, context);
-    expect(replacement.fresh).toBe(true);
+    if (provider instanceof DesktopSandboxProvider) {
+      // A configured desktop root retains its workspace through destroy.
+      expect(replacement.fresh).toBe(false);
+      expect(
+        new TextDecoder().decode(await provider.readFile(replacement, "state.txt", context)),
+      ).toBe("preserved");
+    } else {
+      expect(replacement.fresh).toBe(true);
+      await expect(provider.readFile(replacement, "state.txt", context)).rejects.toThrow(
+        /not found/i,
+      );
+    }
     await provider.destroy(replacement, context);
   });
 
