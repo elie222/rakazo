@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, type Route, test } from "@playwright/test";
 import { captureScreenshot, completeOnboarding, signup } from "./helpers";
 
 test("message hover shows Reply and Copy; reply links to parent", async ({ page }, testInfo) => {
@@ -147,26 +147,26 @@ test("reply preview jumps to parent outside the loaded page", async ({ page }) =
     }
   };
 
-  await page.route("**/rpc/bootstrap", async (route) => {
-    const response = await route.fetch();
-    const body = (await response.json()) as Parameters<typeof stripParent>[0];
-    stripParent(body);
-    await route.fulfill({
-      status: response.status(),
-      headers: response.headers(),
-      body: JSON.stringify(body),
-    });
-  });
-  await page.route("**/rpc/threads/get", async (route) => {
-    const response = await route.fetch();
-    const body = (await response.json()) as Parameters<typeof stripParent>[0];
-    stripParent(body);
-    await route.fulfill({
-      status: response.status(),
-      headers: response.headers(),
-      body: JSON.stringify(body),
-    });
-  });
+  // One handler for both hydrate RPCs avoids overlapping globs racing on reload
+  // (Playwright "Route is already handled" when fulfill runs twice).
+  const hydrateRpc = /\/rpc\/(bootstrap|threads\/get)(?:\?|$)/;
+  const stripHydrate = async (route: Route) => {
+    try {
+      const response = await route.fetch();
+      const body = (await response.json()) as Parameters<typeof stripParent>[0];
+      stripParent(body);
+      await route.fulfill({
+        status: response.status(),
+        headers: response.headers(),
+        body: JSON.stringify(body),
+      });
+    } catch (error) {
+      // Reload can cancel an in-flight intercepted request after fetch returns.
+      if (/already handled|Target closed|Request context disposed/i.test(String(error))) return;
+      throw error;
+    }
+  };
+  await page.route(hydrateRpc, stripHydrate);
 
   await page.reload({ waitUntil: "domcontentloaded" });
   await expect(page.getByRole("combobox", { name: /^Message/ })).toBeVisible({ timeout: 20_000 });
@@ -178,8 +178,7 @@ test("reply preview jumps to parent outside the loaded page", async ({ page }) =
   await expect(offlinePreview).toBeVisible();
   await expect(offlinePreview).toHaveText("Earlier message");
 
-  await page.unroute("**/rpc/bootstrap");
-  await page.unroute("**/rpc/threads/get");
+  await page.unroute(hydrateRpc, stripHydrate);
   await offlinePreview.click();
   await expect(page.locator(`[data-message-id="${parentId}"]`)).toBeVisible({ timeout: 20_000 });
   await expect(page.locator(`[data-message-id="${parentId}"]`)).toContainText(parentText);

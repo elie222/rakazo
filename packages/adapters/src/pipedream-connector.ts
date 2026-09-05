@@ -230,6 +230,41 @@ export class PipedreamConnector implements ManagedConnectorProvider {
     return { connectionRef: request.state };
   }
 
+  /**
+   * Prefer a concrete Pipedream account id over the app slug so multi-account
+   * revoke can target one authorization. spaceId is required for the hashed
+   * external user id Pipedream uses to scope accounts.
+   */
+  async resolveConnectedAccountId(
+    userId: string,
+    slug: string,
+    currentRef: string | null | undefined,
+    excludeIds: string[] = [],
+    spaceId?: string,
+    _timeoutMs?: number,
+  ): Promise<string | undefined> {
+    const excluded = new Set(excludeIds.filter(Boolean));
+    const current = currentRef?.trim() || undefined;
+    if (!spaceId) {
+      return current && current !== slug && !excluded.has(current) ? current : undefined;
+    }
+    // Concrete account ids are already authoritative; do not reassign them.
+    if (current && current !== slug) {
+      return excluded.has(current) ? undefined : current;
+    }
+    const context = {
+      userId,
+      spaceId,
+      signal: AbortSignal.timeout(30_000),
+    } as AdapterContext;
+    const accounts = await this.accounts(context, slug);
+    const ids = accounts
+      .filter((account) => account.healthy !== false && account.dead !== true)
+      .map((account) => account.id)
+      .filter(Boolean);
+    return ids.find((id) => !excluded.has(id));
+  }
+
   async connectionReady(context: AdapterContext, externalId: string): Promise<boolean> {
     const accounts = await this.accounts(context, externalId);
     return accounts.some(
@@ -239,17 +274,48 @@ export class PipedreamConnector implements ManagedConnectorProvider {
   }
 
   async revoke(externalId: string, context: AdapterContext): Promise<void> {
-    const accounts = await this.accounts(context, externalId);
+    const accounts = await this.accounts(context);
+    const targets = accounts.filter(
+      (account) => account.id === externalId || account.app?.name_slug === externalId,
+    );
     await Promise.all(
-      accounts
-        .filter((account) => account.app?.name_slug === externalId)
-        .map((account) =>
-          this.request(
-            `/v1/connect/${encodeURIComponent(this.config.projectId)}/accounts/${encodeURIComponent(account.id)}`,
-            { method: "DELETE" },
-            context.signal,
-          ),
+      targets.map((account) =>
+        this.request(
+          `/v1/connect/${encodeURIComponent(this.config.projectId)}/accounts/${encodeURIComponent(account.id)}`,
+          { method: "DELETE" },
+          context.signal,
         ),
+      ),
+    );
+  }
+
+  /**
+   * Delete remote accounts for `slug` that no local row still references. Used when a
+   * begin loses a race to revoke and only the app slug is available — never revoke by
+   * slug alone, or every sibling authorization would be deleted.
+   */
+  async revokeUnreferencedAccounts(
+    slug: string,
+    keepAccountIds: string[],
+    context: AdapterContext,
+  ): Promise<void> {
+    const keep = new Set(keepAccountIds.filter(Boolean));
+    const accounts = await this.accounts(context, slug);
+    const orphans = accounts.filter(
+      (account) =>
+        account.app?.name_slug === slug &&
+        account.healthy !== false &&
+        account.dead !== true &&
+        !keep.has(account.id),
+    );
+    await Promise.all(
+      orphans.map((account) =>
+        this.request(
+          `/v1/connect/${encodeURIComponent(this.config.projectId)}/accounts/${encodeURIComponent(account.id)}`,
+          { method: "DELETE" },
+          context.signal,
+        ),
+      ),
     );
   }
 

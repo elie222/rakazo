@@ -172,10 +172,24 @@ export function planLiveConnectionSync(
     connectedProviders.add(slug);
   }
   const connectIdSet = new Set(connectIds);
+  // Providers that already have a connected row before this sync. Extra pending
+  // rows for those providers are additional-account attempts, not abandoned
+  // first connects — keep them. Concurrent pendings with no connected row yet
+  // still collapse to one connect + revoke the rest.
+  const previouslyConnected = new Set(
+    rows.filter((row) => row.status === "connected").map((row) => composioSlugKey(row.provider)),
+  );
   const revokeIds = rows
-    .filter(
-      (row) => (row.status === "pending" || row.status === "error") && !connectIdSet.has(row.id),
-    )
+    .filter((row) => {
+      if (row.status !== "pending" && row.status !== "error") return false;
+      if (connectIdSet.has(row.id)) return false;
+      // Keep only in-flight additional-account pendings; clear abandoned errors
+      // so live sync does not keep re-listing forever after a failed attempt.
+      if (row.status === "pending" && previouslyConnected.has(composioSlugKey(row.provider))) {
+        return false;
+      }
+      return true;
+    })
     .map((row) => row.id);
   return { connectIds, revokeIds };
 }
@@ -331,10 +345,14 @@ export class ComposioConnector implements ComposioProvider {
         callbackUrl: request.redirectUrl,
       });
       if (!connectionRequest.redirectUrl) {
-        await connectionRequest.waitForConnection(20_000).catch(() => undefined);
+        const account = await connectionRequest.waitForConnection(20_000).catch(() => undefined);
+        return {
+          authorizationUrl: null,
+          state: account?.id || connectionRequest.id || request.provider,
+        };
       }
       return {
-        authorizationUrl: connectionRequest.redirectUrl ?? null,
+        authorizationUrl: connectionRequest.redirectUrl,
         state: connectionRequest.id || request.provider,
       };
     } catch (error) {
@@ -361,15 +379,114 @@ export class ComposioConnector implements ComposioProvider {
   }
 
   async revoke(connectionRef: string, context: AdapterContext): Promise<void> {
-    const accountId = await this.connectedAccountId(context.userId, connectionRef);
-    if (accountId) await this.sdk().connectedAccounts.delete(accountId);
+    // Legacy rows may store a toolkit slug. Begin's browser OAuth state may be a
+    // connection-request id. Resolve either to a concrete connected-account id
+    // before delete — never pass a raw request id to connectedAccounts.delete.
+    const requestOptions = { signal: context.signal };
+    const listed = await this.listConnectedAccountIds(
+      context.userId,
+      connectionRef,
+      requestOptions,
+    );
+    let accountId = listed[0];
+    if (!accountId) {
+      try {
+        const account = await this.sdk().connectedAccounts.waitForConnection(connectionRef, 20_000);
+        accountId = account?.id;
+      } catch {
+        // Not a resolvable request id; fall through to treat ref as an account id.
+      }
+    }
+    accountId = accountId ?? connectionRef;
+    await this.sdk().connectedAccounts.delete(accountId, requestOptions);
   }
 
   async connectedAccountId(userId: string, slug: string): Promise<string | undefined> {
+    const ids = await this.listConnectedAccountIds(userId, slug);
+    return ids[0];
+  }
+
+  async listConnectedAccountIds(
+    userId: string,
+    slug: string,
+    requestOptions?: { signal?: AbortSignal },
+  ): Promise<string[]> {
+    try {
+      const listed = await this.sdk().connectedAccounts.list(
+        {
+          userIds: [userId],
+          toolkitSlugs: [slug],
+          statuses: ["ACTIVE"],
+        },
+        requestOptions,
+      );
+      const ids = (listed.items ?? [])
+        .map((item) => item.id)
+        .filter((id): id is string => Boolean(id));
+      if (ids.length > 0) return ids;
+    } catch {
+      // List may be unavailable; fall through to toolkit metadata.
+    }
+    if (requestOptions?.signal?.aborted) {
+      throw requestOptions.signal.reason instanceof Error
+        ? requestOptions.signal.reason
+        : new Error("Aborted");
+    }
     const session = await this.sessionFor(userId);
     const toolkits = await session.toolkits({ isConnected: true });
-    return toolkits.items.find((item) => composioSlugKey(item.slug) === composioSlugKey(slug))
+    const id = toolkits.items.find((item) => composioSlugKey(item.slug) === composioSlugKey(slug))
       ?.connection?.connectedAccount?.id;
+    return id ? [id] : [];
+  }
+
+  /**
+   * Cancel an in-flight browser OAuth authorization by its connection-request id.
+   * Composio uses the connected-account nanoid as the request id (INITIATED until
+   * OAuth finishes); deleting it invalidates the authorization URL so a revoke-win
+   * cannot leave an untracked remote after the user completes the orphaned link.
+   */
+  async cancelAuthorizationRequest(requestId: string, context: AdapterContext): Promise<void> {
+    const id = requestId.trim();
+    if (!id) return;
+    // Connection-request ids are connected-account nanoids. Delete directly so a
+    // revoke-win begin does not wait for OAuth to finish, and the authorization
+    // URL cannot later create an untracked remote. Ignore missing ids.
+    await this.sdk()
+      .connectedAccounts.delete(id, { signal: context.signal })
+      .catch(() => undefined);
+  }
+
+  /**
+   * Map a begin() state (connection-request id, account id, or provider slug) to
+   * the connected-account id revoke must delete. Prefer unused remotes so a
+   * second Gmail connect does not reuse the first account's id.
+   */
+  async resolveConnectedAccountId(
+    userId: string,
+    slug: string,
+    currentRef: string | null | undefined,
+    excludeIds: string[] = [],
+    _spaceId?: string,
+    timeoutMs = 20_000,
+  ): Promise<string | undefined> {
+    const excluded = new Set(excludeIds.filter(Boolean));
+    const current = currentRef?.trim() || undefined;
+    const slugKey = composioSlugKey(slug);
+
+    if (current && composioSlugKey(current) !== slugKey) {
+      try {
+        const account = await this.sdk().connectedAccounts.waitForConnection(current, timeoutMs);
+        if (account?.id && !excluded.has(account.id)) return account.id;
+      } catch {
+        // Request id could not be resolved. Do not fall back to another connected
+        // account — that can attach a sibling's remote identity to this row.
+      }
+      return undefined;
+    }
+
+    const ids = await this.listConnectedAccountIds(userId, slug);
+    if (current && ids.includes(current) && !excluded.has(current)) return current;
+    return ids.find((id) => !excluded.has(id));
   }
 
   private sdk(): Composio {
