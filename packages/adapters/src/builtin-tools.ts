@@ -162,14 +162,14 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "message_user",
     description:
-      "Post a short progress update to the user in this chat immediately. Does not end your turn. Use sparingly during long work for high-signal beats (what you are checking, then a result). Do not dump tool logs, thinking, or a play-by-play of every call. Put the final answer in your normal reply.",
+      "Post a short progress update to the user in this chat immediately. Does not end your turn. Use sparingly during long work for high-signal beats (what you are checking, then a result). Do not dump tool logs, thinking, or a play-by-play of every call. HARD LIMIT: cut off silently at 500 characters, so never put your final answer, a report, or any long-form content here \u2014 it will arrive mangled and the user will never see the rest. Always write your complete final answer in your normal reply, not here.",
     inputSchema: {
       type: "object",
       properties: {
         message: {
           type: "string",
           maxLength: 500,
-          description: "Short user-visible update.",
+          description: "Short user-visible update, not the final answer \u2014 longer text is silently truncated.",
         },
       },
       required: ["message"],
