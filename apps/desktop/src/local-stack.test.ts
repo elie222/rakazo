@@ -18,12 +18,12 @@ import {
   STACK_ENV_FILE,
   STACK_ENV_TEMPLATE,
   STACK_OUTPUT_LINES,
+  STACK_PROJECT_NAME,
   STACK_TOKEN_FILE,
   stackDir,
   stackFailureMessage,
   stackResourceDir,
 } from "./local-stack.js";
-import { STACK_OWNERSHIP_FAILED, STACK_PROJECT_FILE } from "./stack-project.js";
 
 const COMPOSE_DIR = path.resolve(import.meta.dirname, "..", "..", "..", "infra", "compose");
 const fakeHex = (bytes: number) => "ab".repeat(bytes);
@@ -313,7 +313,7 @@ describe("LocalStackController", () => {
       ...overrides,
       // Record the phase a poller would see while each docker command and probe runs.
       run: (binary, args, options) => {
-        if (args[0] !== "container") phases.push(stack.state().phase);
+        phases.push(stack.state().phase);
         return run(binary, args, options);
       },
       probe: (url, signal, token) => {
@@ -324,237 +324,6 @@ describe("LocalStackController", () => {
     const stack = new LocalStackController(deps);
     return stack;
   }
-
-  function projectContainers(project: string, directories: string[]): Script {
-    return (args) => {
-      if (args[0] !== "container") return ok(args);
-      if (args[1] === "ls") {
-        expect(args).toContain("--all");
-        return {
-          stdout: args.includes(`label=com.docker.compose.project=${project}`)
-            ? directories.map((_, i) => String(i + 1).repeat(12)).join("\n")
-            : "",
-        };
-      }
-      return {
-        stdout: directories
-          .map((dir) =>
-            JSON.stringify({
-              "com.docker.compose.project": project,
-              "com.docker.compose.project.working_dir": dir,
-              "com.docker.compose.project.config_files": path.join(dir, STACK_COMPOSE_FILE),
-            }),
-          )
-          .join("\n"),
-      };
-    };
-  }
-
-  async function legacyFiles() {
-    const dir = path.join(root, "stack");
-    await mkdir(dir, { recursive: true });
-    await writeFile(path.join(dir, STACK_ENV_FILE), "POSTGRES_PASSWORD=fake-preserved\n");
-    await writeFile(path.join(dir, STACK_COMPOSE_FILE), "legacy-compose-fixture\n");
-    return dir;
-  }
-
-  const composeCalls = (recorded: RecordedCall[]) =>
-    recorded.filter((call) => call.args[0] === "compose" && call.args[1] !== "version");
-
-  it("isolates a fresh install from standalone resources and ignores project env overrides", async () => {
-    const standalone = path.join(root, "standalone");
-    await mkdir(standalone);
-    const script = projectContainers("rakazo", [standalone]);
-    const stack = controller({ env: { COMPOSE_PROJECT_NAME: "rakazo" } }, script);
-    expect((await stack.start()).phase).toBe("ready");
-    const project = `rakazo-desktop-${fakeHex(16)}`;
-    const dir = path.join(root, "stack");
-    await expect(readFile(path.join(dir, STACK_PROJECT_FILE), "utf8")).resolves.toBe(
-      `${project}\n`,
-    );
-    await writeFile(path.join(dir, STACK_ENV_FILE), "COMPOSE_PROJECT_NAME=rakazo\n");
-    // Stop after a process restart must load the persisted identity too.
-    expect((await controller({}, script).stop()).phase).toBe("idle");
-    for (const call of composeCalls(calls)) {
-      expect(call.args.slice(5, 7)).toEqual(["--project-name", project]);
-      expect(call.env).not.toHaveProperty("COMPOSE_PROJECT_NAME");
-      expect(call.args).not.toContain("down");
-    }
-  });
-
-  it("upgrades and stops a proven legacy desktop stack without changing its volumes or env", async () => {
-    const dir = await legacyFiles();
-    const script = projectContainers("rakazo", [dir, dir]);
-    expect((await controller({}, script).start()).phase).toBe("ready");
-    expect((await controller({}, script).stop()).phase).toBe("idle");
-    expect(
-      (await controller({ imageTag: "v2.0.0", probe: async () => "v2.0.0" }, script).start()).phase,
-    ).toBe("ready");
-    await expect(readFile(path.join(dir, STACK_ENV_FILE), "utf8")).resolves.toBe(
-      "POSTGRES_PASSWORD=fake-preserved\n",
-    );
-    await expect(readFile(path.join(dir, STACK_PROJECT_FILE), "utf8")).resolves.toBe("rakazo\n");
-    for (const call of composeCalls(calls)) {
-      expect(call.args.slice(5, 7)).toEqual(["--project-name", "rakazo"]);
-      expect(call.args).not.toContain("down");
-      expect(call.args).not.toContain("--volumes");
-    }
-    expect(composeCalls(calls).at(-1)?.env.RAKAZO_IMAGE_TAG).toBe("v2.0.0");
-  });
-
-  it.each(["foreign", "mixed", "orphaned"])(
-    "blocks %s legacy resources on start, recovery, and stop",
-    async (kind) => {
-      const dir = await legacyFiles();
-      const standalone = path.join(root, "standalone");
-      await mkdir(standalone);
-      const directories =
-        kind === "foreign" ? [standalone] : kind === "mixed" ? [dir, standalone] : [];
-      const containers = projectContainers("rakazo", directories);
-      const stack = controller({}, (args) =>
-        args[0] === "volume" ? { stdout: "rakazo_pgdata\nrakazo_appdata\n" } : containers(args),
-      );
-      for (const state of [await stack.start(), await stack.start(), await stack.stop()]) {
-        expect(state).toMatchObject({ phase: "failed", message: STACK_OWNERSHIP_FAILED });
-      }
-      expect(composeCalls(calls)).toEqual([]);
-      await expect(readFile(path.join(dir, STACK_COMPOSE_FILE), "utf8")).resolves.toBe(
-        "legacy-compose-fixture\n",
-      );
-      await expect(readFile(path.join(dir, STACK_PROJECT_FILE))).rejects.toThrow();
-      await expect(readFile(path.join(dir, STACK_TOKEN_FILE))).rejects.toThrow();
-    },
-  );
-
-  it("rechecks ownership after pull and refuses a replacement project on stop", async () => {
-    const dir = await legacyFiles();
-    const directories = [dir];
-    const owned = projectContainers("rakazo", directories);
-    const stack = controller({}, (args) => {
-      if (args[7] === "pull") directories.push(path.join(root, "unrelated"));
-      return owned(args);
-    });
-    expect((await stack.start()).message).toBe(STACK_OWNERSHIP_FAILED);
-    expect((await stack.stop()).message).toBe(STACK_OWNERSHIP_FAILED);
-    expect(composeCalls(calls).map((call) => call.args[7])).toEqual(["pull"]);
-    expect(stack.state().output).not.toContain(root);
-  });
-
-  it("rejects foreign containers even under the persisted desktop project name", async () => {
-    const stack = controller();
-    expect((await stack.start()).phase).toBe("ready");
-    const before = composeCalls(calls).length;
-    const foreign = controller({}, projectContainers(`rakazo-desktop-${fakeHex(16)}`, [root]));
-    expect((await foreign.start()).message).toBe(STACK_OWNERSHIP_FAILED);
-    expect((await foreign.stop()).message).toBe(STACK_OWNERSHIP_FAILED);
-    expect(composeCalls(calls)).toHaveLength(before);
-  });
-
-  it("keeps the same new project after a failed first pull and a process restart", async () => {
-    const failed = controller({}, (args) => (args[7] === "pull" ? { code: 1 } : ok(args)));
-    expect((await failed.start()).phase).toBe("failed");
-    const resumed = controller({ randomHex: (bytes) => "cd".repeat(bytes) });
-    expect((await resumed.start()).phase).toBe("ready");
-    for (const call of composeCalls(calls)) {
-      expect(call.args[6]).toBe(`rakazo-desktop-${fakeHex(16)}`);
-    }
-  });
-
-  it("resumes an old first install that failed before creating containers or data volumes", async () => {
-    const dir = await legacyFiles();
-    expect((await controller().start()).phase).toBe("ready");
-    expect(calls.some((call) => call.args[0] === "volume" && call.args[1] === "ls")).toBe(true);
-    for (const call of composeCalls(calls)) {
-      expect(call.args[6]).toBe(`rakazo-desktop-${fakeHex(16)}`);
-    }
-    await expect(readFile(path.join(dir, STACK_ENV_FILE), "utf8")).resolves.toBe(
-      "POSTGRES_PASSWORD=fake-preserved\n",
-    );
-  });
-
-  it("does not select a new project when the old data-volume check fails", async () => {
-    const dir = await legacyFiles();
-    const stack = controller({}, (args) => (args[0] === "volume" ? { code: 1 } : ok(args)));
-    expect((await stack.start()).message).toBe(STACK_OWNERSHIP_FAILED);
-    expect(composeCalls(calls)).toEqual([]);
-    await expect(readFile(path.join(dir, STACK_PROJECT_FILE))).rejects.toThrow();
-  });
-
-  it("does not abandon a persisted legacy identity after its containers are removed", async () => {
-    const dir = await legacyFiles();
-    await writeFile(path.join(dir, STACK_PROJECT_FILE), "rakazo\n");
-    expect((await controller().start()).message).toBe(STACK_OWNERSHIP_FAILED);
-    expect(composeCalls(calls)).toEqual([]);
-  });
-
-  it("does not read failure logs after ownership changes during a failed up", async () => {
-    const dir = await legacyFiles();
-    const directories = [dir];
-    const owned = projectContainers("rakazo", directories);
-    const stack = controller({}, (args) => {
-      if (args[7] === "up") {
-        directories.push(root);
-        return { code: 1 };
-      }
-      return owned(args);
-    });
-    expect((await stack.start()).message).toBe(STACK_OWNERSHIP_FAILED);
-    expect(composeCalls(calls).map((call) => call.args[7])).toEqual(["pull", "up"]);
-  });
-
-  it.each(["ls", "inspect"])(
-    "fails closed when Docker %s cannot verify legacy ownership",
-    async (command) => {
-      const dir = await legacyFiles();
-      const owned = projectContainers("rakazo", [dir]);
-      const stack = controller({}, (args) =>
-        args[1] === command
-          ? { code: 1, stderr: "unavailable", lines: ["private fixture metadata"] }
-          : owned(args),
-      );
-      expect((await stack.start()).message).toBe(STACK_OWNERSHIP_FAILED);
-      expect(composeCalls(calls)).toEqual([]);
-      expect(stack.state().output).toEqual([]);
-    },
-  );
-
-  it.each(["{}", "null", "not-json", '{"com.docker.compose.project":"rakazo"}'])(
-    "rejects incomplete container metadata: %s",
-    async (metadata) => {
-      const dir = await legacyFiles();
-      const owned = projectContainers("rakazo", [dir]);
-      const stack = controller({}, (args) =>
-        args[1] === "inspect" ? { stdout: metadata } : owned(args),
-      );
-      expect((await stack.start()).message).toBe(STACK_OWNERSHIP_FAILED);
-      expect(composeCalls(calls)).toEqual([]);
-    },
-  );
-
-  it.each(["other-project", "", "a".repeat(129)])(
-    "does not replace an invalid saved project: %s",
-    async (saved) => {
-      const dir = await legacyFiles();
-      await writeFile(path.join(dir, STACK_PROJECT_FILE), saved);
-      expect((await controller().start()).message).toBe(STACK_OWNERSHIP_FAILED);
-      expect(composeCalls(calls)).toEqual([]);
-      await expect(readFile(path.join(dir, STACK_PROJECT_FILE), "utf8")).resolves.toBe(saved);
-    },
-  );
-
-  it.runIf(process.platform !== "win32")("does not follow a saved project symlink", async () => {
-    const dir = await legacyFiles();
-    const target = path.join(root, "project-fixture");
-    await writeFile(target, `rakazo-desktop-${fakeHex(16)}\n`);
-    await symlink(target, path.join(dir, STACK_PROJECT_FILE));
-    expect((await controller().start()).message).toBe(STACK_OWNERSHIP_FAILED);
-    expect(composeCalls(calls)).toEqual([]);
-  });
-
-  it("does nothing when stopped before the first install", async () => {
-    expect((await controller().stop()).phase).toBe("idle");
-    expect(calls).toEqual([]);
-  });
 
   it("installs the compose project and walks every phase to ready", async () => {
     const stack = controller();
@@ -583,9 +352,9 @@ describe("LocalStackController", () => {
       "-f",
       STACK_COMPOSE_FILE,
       "--project-name",
-      `rakazo-desktop-${fakeHex(16)}`,
+      STACK_PROJECT_NAME,
     ];
-    expect(calls.filter((call) => call.args[0] !== "container").map((call) => call.args)).toEqual([
+    expect(calls.map((call) => call.args)).toEqual([
       ["compose", "version", "--short"],
       ["info", "--format", "{{.ServerVersion}}"],
       [...compose, "pull"],
@@ -613,6 +382,26 @@ describe("LocalStackController", () => {
     if (process.platform !== "win32") {
       expect((await stat(path.join(stackPath, STACK_ENV_FILE))).mode & 0o777).toBe(0o600);
       expect((await stat(stackPath)).mode & 0o777).toBe(0o700);
+    }
+  });
+
+  it("keeps lifecycle commands off the standalone project despite environment overrides", async () => {
+    const dir = path.join(root, "stack");
+    await mkdir(dir, { recursive: true });
+    await writeFile(path.join(dir, STACK_ENV_FILE), "COMPOSE_PROJECT_NAME=rakazo\n");
+    const stack = controller({ env: { COMPOSE_PROJECT_NAME: "rakazo" } }, (args) =>
+      args[7] === "up" ? { code: 1, stderr: "port is already allocated" } : ok(args),
+    );
+    expect((await stack.start()).phase).toBe("failed");
+    // A fresh process must stop the same desktop project without discovering or adopting rakazo.
+    expect((await controller().stop()).phase).toBe("idle");
+    const commands = calls.filter(
+      (call) => call.args[0] === "compose" && call.args[1] !== "version",
+    );
+    expect(commands.map((call) => call.args[7])).toEqual(["pull", "up", "logs", "stop"]);
+    for (const call of commands) {
+      expect(call.args.slice(5, 7)).toEqual(["--project-name", "rakazo-desktop"]);
+      expect(call.env).not.toHaveProperty("COMPOSE_PROJECT_NAME");
     }
   });
 
@@ -720,11 +509,7 @@ describe("LocalStackController", () => {
       message: "Images for v1.2.3 are not published yet. Try again in a few minutes.",
       output: ["Error response from daemon: manifest unknown"],
     });
-    expect(
-      calls
-        .filter((call) => call.args[0] !== "container")
-        .map((call) => call.args[7] ?? call.args[0]),
-    ).toEqual(["compose", "info", "pull"]);
+    expect(calls.map((call) => call.args[7] ?? call.args[0])).toEqual(["compose", "info", "pull"]);
   });
 
   it("reports interruption instead of a pull failure when docker returns 130", async () => {
@@ -857,9 +642,7 @@ describe("LocalStackController", () => {
     releaseStop();
     await stopping;
     expect((await restarted).phase).toBe("ready");
-    const order = calls
-      .filter((call) => call.args[0] !== "container")
-      .map((call) => call.args[7] ?? call.args[0]);
+    const order = calls.map((call) => call.args[7] ?? call.args[0]);
     expect(order.indexOf("stop")).toBeLessThan(order.lastIndexOf("compose"));
   });
 
@@ -895,9 +678,7 @@ describe("LocalStackController", () => {
     await stopping;
     expect((await first).message).toBe("The start was interrupted. Retry to continue.");
     expect((await second).phase).toBe("ready");
-    const order = calls
-      .filter((call) => call.args[0] !== "container")
-      .map((call) => call.args[7] ?? call.args[0]);
+    const order = calls.map((call) => call.args[7] ?? call.args[0]);
     expect(order.indexOf("stop")).toBeLessThan(order.lastIndexOf("up"));
   });
 
@@ -920,9 +701,7 @@ describe("LocalStackController", () => {
     releaseStop();
     await Promise.all([firstStop, queuedStart, secondStop]);
     expect(stack.state()).toEqual(initialStackState("v1.2.3"));
-    const order = calls
-      .filter((call) => call.args[0] !== "container")
-      .map((call) => call.args[7] ?? call.args[0]);
+    const order = calls.map((call) => call.args[7] ?? call.args[0]);
     expect(order.lastIndexOf("up")).toBeLessThan(order.indexOf("stop"));
   });
 
