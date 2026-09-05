@@ -10,7 +10,7 @@ Cadre is a cloud deployment of Rakazo with managed computers and a Company OS wo
 - Cloudflare hosts the screen gateway and R2 object store. Deploy `infra/cloudflare/wrangler.jsonc`, then set `SCREEN_PROXY_SECRET` and `STORAGE_GATEWAY_TOKEN` with Wrangler secrets. Set the same values on the runtime. Configure `SCREEN_GATEWAY_ORIGIN` and `R2_GATEWAY_URL` to the Worker origin and `STORAGE_PROVIDER=r2-gateway`.
 - OpenRouter supplies the models. Users connect their key in Models; optional deployment credentials use `OPENROUTER_API_KEY`, `PI_DEFAULT_PROVIDER=openrouter`, and `PI_DEFAULT_MODEL`.
 
-Set `WEB_ORIGIN` and `BETTER_AUTH_URL` to the web origin, `API_URL` to the runtime origin, and independent strong `BETTER_AUTH_SECRET` and `ENCRYPTION_KEY` values. Keep public signups disabled until the deployment is ready; use `SIGNUP_ALLOWLIST` for initial access. Never commit values or generated deployment output.
+Set `WEB_ORIGIN` and `BETTER_AUTH_URL` to the web origin, `API_URL` to the runtime origin, and independent strong `BETTER_AUTH_SECRET` and `ENCRYPTION_KEY` values. Keep public signups disabled until the deployment is ready. An allowlist does not override `SIGNUPS_ENABLED=false`: bootstrap an owner through the auth/database services, or enable signups with a restricted `SIGNUP_ALLOWLIST` during initial registration and disable them afterward. Never commit values or generated deployment output.
 
 ## Company OS protocol
 
