@@ -3169,6 +3169,26 @@ msgstr "若让 Bot 在 {hostLabel} 上运行，它们会使用你的账户权限
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "你的一支随时在线的 Agent 团队<0/>可以交给它们真正的工作。"
 
+#: src/components/CloudAgentCard.tsx:36
+msgid "cancelled"
+msgstr "已取消"
+
+#: src/components/CloudAgentCard.tsx:38
+msgid "failed"
+msgstr "失败"
+
+#: src/components/CloudAgentCard.tsx:34
+msgid "finished"
+msgstr "已完成"
+
+#: src/components/CloudAgentCard.tsx:44
+msgid "Pull request"
+msgstr "拉取请求"
+
+#: src/components/CloudAgentCard.tsx:32
+msgid "running"
+msgstr "运行中"
+
 #: src/pages/KnowledgeSection.tsx:334
 msgid "Could not delete skill"
 msgstr "无法删除技能"

@@ -6,6 +6,7 @@ export * from "./attachments.js";
 export * from "./avatar-shape.js";
 export * from "./bot-messages.js";
 export * from "./bot-sections.js";
+export * from "./cloud-agent.js";
 export * from "./compose-update.js";
 export * from "./composer-mention-picker.js";
 export * from "./composer-mentions.js";

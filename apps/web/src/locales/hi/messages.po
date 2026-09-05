@@ -3169,6 +3169,26 @@ msgstr "यदि आप बॉट्स को {hostLabel} पर चलने 
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "हमेशा चालू रहने वाले एजेंटों की आपकी टीम<0/>जिन्हें आप असली काम सौंप सकते हैं।"
 
+#: src/components/CloudAgentCard.tsx:36
+msgid "cancelled"
+msgstr "रद्द"
+
+#: src/components/CloudAgentCard.tsx:38
+msgid "failed"
+msgstr "असफल"
+
+#: src/components/CloudAgentCard.tsx:34
+msgid "finished"
+msgstr "पूर्ण"
+
+#: src/components/CloudAgentCard.tsx:44
+msgid "Pull request"
+msgstr "पुल अनुरोध"
+
+#: src/components/CloudAgentCard.tsx:32
+msgid "running"
+msgstr "चल रहा है"
+
 #: src/pages/KnowledgeSection.tsx:334
 msgid "Could not delete skill"
 msgstr "स्किल हटाई नहीं जा सकी"

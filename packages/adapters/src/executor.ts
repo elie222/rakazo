@@ -126,6 +126,10 @@ import {
 import { loadBotMessageContext, messageBot, returnBotMessageOutcome } from "./bot-messages.js";
 import { agentConnectionTools, builtinAgentTools } from "./builtin-tools.js";
 import { archiveSpawnedBot, spawnBot } from "./child-bots.js";
+import { type CloudAgentConnection, cloudAgentsEnabled } from "./cloud-agent-factory.js";
+import { executeCloudAgentTool } from "./cloud-agent-service.js";
+import { validCloudAgentArgs } from "./cloud-agent-tools.js";
+import { selectCloudAgentTools } from "./cloud-agent-tools-select.js";
 import {
   collectLogIds,
   mergeConnectedPlugins,
@@ -180,6 +184,7 @@ import {
 import { loadAgentMemoryContext } from "./memory-context.js";
 import type { MemoryProviderResolver } from "./memory-provider-factory.js";
 import { selectMemoryTools } from "./memory-tools.js";
+import { selectConfiguredModel } from "./model-selection.js";
 import {
   filterImageReturningComputerTools,
   IMAGE_RETURNING_COMPUTER_TOOLS,
@@ -270,6 +275,7 @@ const READ_ONLY_AGENT_TOOLS = new Set([
   "skill_read",
   "web_search",
   "web_fetch",
+  "cloud_agent_status",
 ]);
 const MAX_MODEL_FILE_BYTES = 250_000;
 const TURN_ATTACHMENT_UNAVAILABLE =
@@ -437,6 +443,8 @@ export interface ExecutorDeps {
   listConnectedPluginSlugs?: (userId: string) => Promise<string[]>;
   /** Builtin web_search / web_fetch. Defaults to keyless HTTP when omitted. */
   web?: WebProvider;
+  /** Remote cloud coding agents. Null/omit means tools stay uninjected. */
+  cloudAgent?: CloudAgentConnection | null;
 }
 
 export async function deferFutureRoutine(
@@ -564,6 +572,7 @@ export function buildApprovalContinuation(
 
 export function createRunExecutor(deps: ExecutorDeps) {
   const web = deps.web ?? createWebProvider();
+  const cloudAgent = deps.cloudAgent;
   return {
     async resolveModel(scope: {
       userId: string;
@@ -588,21 +597,15 @@ export function createRunExecutor(deps: ExecutorDeps) {
         findDefaultModelCredential(deps.prisma, scope),
         deps.prisma.deploymentSettings.findUnique({ where: { id: "default" } }),
       ]);
-      // Keep provider/model/credential as one unit — never pair an override
-      // provider with a Space or deployment secret from another provider.
-      const useOverride = Boolean(hasOverride && overrideCredential);
-      const credential = useOverride ? overrideCredential : defaultCredential;
-      const deployment = deps.deploymentModelKey ? resolveDeploymentModel() : null;
-      let provider =
-        (useOverride ? override!.modelProvider : null) ??
-        credential?.provider ??
-        settings?.defaultModelProvider ??
-        deployment?.provider;
-      let id =
-        (useOverride ? override!.modelId : null) ??
-        credential?.defaultModel ??
-        settings?.defaultModelId ??
-        deployment?.model;
+      const selected = selectConfiguredModel({
+        bot: override,
+        overrideCredential,
+        defaultCredential,
+        settings,
+        deployment: deps.deploymentModelKey ? resolveDeploymentModel() : null,
+      });
+      const { credential, thinkingLevel } = selected;
+      let { provider, id } = selected;
       if (!provider || !id) {
         const runtimeFallback = runtimeFallbackModel(deps.runtime);
         provider ??= runtimeFallback?.provider;
@@ -623,12 +626,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         apiKey: resolved.oauth ? undefined : resolved.apiKey,
         baseUrl: resolved.baseUrl,
         reasoning: resolved.reasoning,
-        thinkingLevel:
-          // Apply bot thinking with a successful override or Space default.
-          // Drop it only when an override existed but its credential was missing.
-          hasOverride && !useOverride
-            ? null
-            : ((override?.thinkingLevel as AgentRunRequest["model"]["thinkingLevel"]) ?? null),
+        thinkingLevel,
         oauth: resolved.oauth
           ? { credential: resolved.oauth, persist: resolved.persistOAuth }
           : undefined,
@@ -930,10 +928,6 @@ export function createRunExecutor(deps: ExecutorDeps) {
           hasModelOverride && bot.modelProvider
             ? await findModelCredential(deps.prisma, run, bot.modelProvider)
             : null;
-        // Keep provider/model/credential as one unit — never use the Space
-        // default secret for a different override provider.
-        const useModelOverride = Boolean(hasModelOverride && overrideCredential);
-        const credential = useModelOverride ? overrideCredential! : defaultCredential;
         runAbortController = new AbortController();
         if (!leaseValid) runAbortController.abort();
         const composioRows = storedConnections.filter(
@@ -1096,18 +1090,16 @@ export function createRunExecutor(deps: ExecutorDeps) {
         }
         const runDeployment = deps.deploymentModelKey ? resolveDeploymentModel() : null;
         const runtimeFallback = runtimeFallbackModel(deps.runtime);
-        const runModelProvider =
-          (useModelOverride ? bot.modelProvider : null) ??
-          credential?.provider ??
-          settings?.defaultModelProvider ??
-          runDeployment?.provider ??
-          runtimeFallback?.provider;
-        const runModelId =
-          (useModelOverride ? bot.modelId : null) ??
-          credential?.defaultModel ??
-          settings?.defaultModelId ??
-          runDeployment?.model ??
-          runtimeFallback?.id;
+        const selected = selectConfiguredModel({
+          bot,
+          overrideCredential,
+          defaultCredential,
+          settings,
+          deployment: runDeployment,
+        });
+        const { credential, thinkingLevel } = selected;
+        const runModelProvider = selected.provider ?? runtimeFallback?.provider;
+        const runModelId = selected.id ?? runtimeFallback?.id;
         if (!runModelProvider || !runModelId) {
           const failed = await deps.events.finalizeRun({
             spaceId: run.spaceId,
@@ -1214,6 +1206,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             groupId: thread.groupId,
             trigger: run.trigger,
             semanticMemoryEnabled,
+            cloudAgentEnabled: cloudAgentsEnabled(cloudAgent, run.spaceId),
             messagingChannelRun,
           }),
           // Cross-owner agent connections only exist for chat-linked bots.
@@ -1424,6 +1417,11 @@ export function createRunExecutor(deps: ExecutorDeps) {
           if (approvedReplay.args) connectorCall.args = approvedReplay.args;
           let catalogRemapped = false;
           let resolvedToolSchema: Record<string, unknown> | undefined;
+          if (name.startsWith("cloud_agent_") && !validCloudAgentArgs(name, args)) {
+            return {
+              error: "Invalid cloud agent arguments. Raw environment variables are not supported.",
+            };
+          }
           let effectRequest: unknown = args;
           if (connectorCall.route && deps.connector?.resolveCall) {
             try {
@@ -2193,6 +2191,18 @@ export function createRunExecutor(deps: ExecutorDeps) {
           }
           if (name === "web_fetch") {
             return finish(await webFetchFromTool(web, context, args));
+          }
+
+          if (name.startsWith("cloud_agent_")) {
+            return finish(
+              await executeCloudAgentTool(
+                { ...deps, cloudAgent },
+                { ...context, operationId: effectKey, botId: bot.id },
+                run,
+                name,
+                args,
+              ),
+            );
           }
           if (name === "scratchpad_list") {
             return listScratchpadItemsFromTool(deps, {
@@ -2987,10 +2997,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 apiKey: resolved.oauth ? undefined : resolved.apiKey,
                 baseUrl: resolved.baseUrl,
                 reasoning: resolved.reasoning,
-                thinkingLevel:
-                  hasModelOverride && !useModelOverride
-                    ? null
-                    : ((bot.thinkingLevel as AgentRunRequest["model"]["thinkingLevel"]) ?? null),
+                thinkingLevel,
                 oauth: resolved.oauth
                   ? { credential: resolved.oauth, persist: resolved.persistOAuth }
                   : undefined,
@@ -3657,17 +3664,21 @@ export function selectBuiltinToolsForRun(options: {
   groupId: string | null;
   trigger: string;
   semanticMemoryEnabled: boolean;
+  cloudAgentEnabled?: boolean;
   messagingChannelRun: boolean;
 }) {
-  return selectMemoryTools(
-    filterBuiltinToolsForRun(
-      filterBuiltinToolsForThread(
-        filterImageReturningComputerTools(builtinAgentTools, options.graphicalToolsAllowed),
-        options.groupId,
+  return selectCloudAgentTools(
+    selectMemoryTools(
+      filterBuiltinToolsForRun(
+        filterBuiltinToolsForThread(
+          filterImageReturningComputerTools(builtinAgentTools, options.graphicalToolsAllowed),
+          options.groupId,
+        ),
+        options.trigger,
       ),
-      options.trigger,
+      options.semanticMemoryEnabled,
     ),
-    options.semanticMemoryEnabled,
+    Boolean(options.cloudAgentEnabled),
   ).filter(
     (tool) =>
       !options.messagingChannelRun ||

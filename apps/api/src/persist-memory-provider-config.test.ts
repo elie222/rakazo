@@ -1,5 +1,10 @@
+import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
-import { persistMemoryProviderConfig, updateMemoryProviderDefaultScope } from "./router.js";
+import {
+  disconnectMemoryProvider,
+  persistMemoryProviderConfig,
+  updateMemoryProviderDefaultScope,
+} from "./memory-provider-config.js";
 
 const actor = {
   userId: "user-1",
@@ -47,6 +52,7 @@ function makeDeps(
       updatedAt: new Date("2026-08-20T00:00:00.000Z"),
     },
   );
+  const deleteConfig = vi.fn().mockResolvedValue({ id: "cfg-1" });
   const prisma = {
     spaceMember: {
       findUnique: vi
@@ -55,7 +61,7 @@ function makeDeps(
           overrides.spaceOwner === false ? null : { role: overrides.memberRole ?? "owner" },
         ),
     },
-    spaceMemoryConfig: { findUnique, update, upsert },
+    spaceMemoryConfig: { findUnique, update, upsert, delete: deleteConfig },
     secret: { create: secretCreate, deleteMany: secretDeleteMany },
     $transaction: vi.fn(),
   };
@@ -63,7 +69,7 @@ function makeDeps(
     callback(prisma),
   );
   const deps = {
-    prisma,
+    prisma: prisma as unknown as PrismaClient,
     secrets: { put: vi.fn().mockResolvedValue({ id: "secret-new", ciphertext: "cipher" }) },
   };
   return {
@@ -73,6 +79,7 @@ function makeDeps(
     findUnique,
     upsert,
     update,
+    deleteConfig,
     transaction: prisma.$transaction,
   };
 }
@@ -93,7 +100,7 @@ describe("persistMemoryProviderConfig", () => {
     const { deps, transaction } = makeDeps();
     try {
       await expect(
-        persistMemoryProviderConfig(deps as never, actor, {
+        persistMemoryProviderConfig(deps, actor, {
           ...connectionInput("cloud"),
           provider: "unknown-provider",
         }),
@@ -114,7 +121,7 @@ describe("persistMemoryProviderConfig", () => {
       try {
         await expect(
           persistMemoryProviderConfig(
-            deps as never,
+            deps,
             deploymentOwner,
             connectionInput("local", `http://127.0.0.1:8123/internal-action${suffix}`),
           ),
@@ -135,7 +142,7 @@ describe("persistMemoryProviderConfig", () => {
       const { deps, transaction } = makeDeps();
       try {
         await expect(
-          persistMemoryProviderConfig(deps as never, actor, connectionInput("local", baseUrl)),
+          persistMemoryProviderConfig(deps, actor, connectionInput("local", baseUrl)),
         ).rejects.toMatchObject({ code: "FORBIDDEN" });
         expect(fetchMock).not.toHaveBeenCalled();
         expect(deps.secrets.put).not.toHaveBeenCalled();
@@ -153,7 +160,7 @@ describe("persistMemoryProviderConfig", () => {
     try {
       await expect(
         persistMemoryProviderConfig(
-          deps as never,
+          deps,
           deploymentOwner,
           connectionInput("local", "http://localhost:6767"),
         ),
@@ -171,7 +178,7 @@ describe("persistMemoryProviderConfig", () => {
     const { deps, upsert } = makeDeps({ spaceOwner: false });
 
     await expect(
-      persistMemoryProviderConfig(deps as never, actor, connectionInput("cloud")),
+      persistMemoryProviderConfig(deps, actor, connectionInput("cloud")),
     ).rejects.toThrow();
 
     expect(fetchMock).not.toHaveBeenCalled();
@@ -182,7 +189,7 @@ describe("persistMemoryProviderConfig", () => {
   it("rejects local mode without a baseUrl, without touching the database", async () => {
     const { deps, upsert } = makeDeps();
     await expect(
-      persistMemoryProviderConfig(deps as never, deploymentOwner, connectionInput("local")),
+      persistMemoryProviderConfig(deps, deploymentOwner, connectionInput("local")),
     ).rejects.toThrow(/baseUrl/);
     expect(upsert).not.toHaveBeenCalled();
   });
@@ -193,7 +200,7 @@ describe("persistMemoryProviderConfig", () => {
     const { deps, upsert } = makeDeps();
     await expect(
       persistMemoryProviderConfig(
-        deps as never,
+        deps,
         deploymentOwner,
         connectionInput("local", "http://169.254.169.254/latest/meta-data/"),
       ),
@@ -207,7 +214,7 @@ describe("persistMemoryProviderConfig", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("", { status: 401 })));
     const { deps, upsert } = makeDeps();
     await expect(
-      persistMemoryProviderConfig(deps as never, deploymentOwner, {
+      persistMemoryProviderConfig(deps, deploymentOwner, {
         ...connectionInput("local", "http://localhost:6767"),
         credentials: { apiKey: "sm_bad_key" },
       }),
@@ -222,7 +229,7 @@ describe("persistMemoryProviderConfig", () => {
     const { deps, upsert } = makeDeps();
 
     await persistMemoryProviderConfig(
-      deps as never,
+      deps,
       deploymentOwner,
       connectionInput("local", "http://[::1]:6767"),
     );
@@ -235,11 +242,7 @@ describe("persistMemoryProviderConfig", () => {
   it("connects cloud mode, defaulting the base URL, and returns the serialized config", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("[]", { status: 200 })));
     const { deps, upsert, transaction } = makeDeps();
-    const result = await persistMemoryProviderConfig(
-      deps as never,
-      actor,
-      connectionInput("cloud"),
-    );
+    const result = await persistMemoryProviderConfig(deps, actor, connectionInput("cloud"));
     expect(upsert).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { spaceId: "ws-1" },
@@ -264,12 +267,46 @@ describe("persistMemoryProviderConfig", () => {
     const { deps, secretDeleteMany } = makeDeps({
       existing: { id: "cfg-1", secretId: "secret-old" },
     });
-    await persistMemoryProviderConfig(deps as never, actor, {
+    await persistMemoryProviderConfig(deps, actor, {
       ...connectionInput("cloud"),
       credentials: { apiKey: "sm_new_key_12345" },
     });
     expect(secretDeleteMany).toHaveBeenCalledWith({ where: { id: "secret-old" } });
     vi.unstubAllGlobals();
+  });
+});
+
+describe("disconnectMemoryProvider", () => {
+  it("rejects non-owners before opening a transaction", async () => {
+    const { deps, transaction, secretDeleteMany } = makeDeps({ spaceOwner: false });
+
+    await expect(disconnectMemoryProvider(deps, actor)).rejects.toThrow();
+
+    expect(transaction).not.toHaveBeenCalled();
+    expect(secretDeleteMany).not.toHaveBeenCalled();
+  });
+
+  it("disconnects an existing provider and removes its secret in the same transaction", async () => {
+    const { deps, transaction, deleteConfig, secretDeleteMany } = makeDeps({
+      existing: { id: "cfg-1", secretId: "secret-old" },
+    });
+
+    await expect(disconnectMemoryProvider(deps, actor)).resolves.toEqual({ ok: true });
+
+    expect(transaction).toHaveBeenCalledExactlyOnceWith(expect.any(Function), {
+      isolationLevel: "Serializable",
+    });
+    expect(deleteConfig).toHaveBeenCalledWith({ where: { id: "cfg-1" } });
+    expect(secretDeleteMany).toHaveBeenCalledWith({ where: { id: "secret-old" } });
+  });
+
+  it("leaves secrets untouched when no provider is configured", async () => {
+    const { deps, deleteConfig, secretDeleteMany } = makeDeps();
+
+    await expect(disconnectMemoryProvider(deps, actor)).resolves.toEqual({ ok: true });
+
+    expect(deleteConfig).not.toHaveBeenCalled();
+    expect(secretDeleteMany).not.toHaveBeenCalled();
   });
 });
 
@@ -280,7 +317,7 @@ describe("updateMemoryProviderDefaultScope", () => {
       memberRole: "owner,admin",
     });
 
-    await updateMemoryProviderDefaultScope(deps as never, actor, "shared");
+    await updateMemoryProviderDefaultScope(deps, actor, "shared");
 
     expect(update).toHaveBeenCalled();
   });
@@ -290,7 +327,7 @@ describe("updateMemoryProviderDefaultScope", () => {
       existing: { id: "cfg-1", secretId: "secret-existing" },
     });
 
-    const result = await updateMemoryProviderDefaultScope(deps as never, actor, "shared");
+    const result = await updateMemoryProviderDefaultScope(deps, actor, "shared");
 
     expect(update).toHaveBeenCalledWith({
       where: { id: "cfg-1" },
@@ -307,9 +344,7 @@ describe("updateMemoryProviderDefaultScope", () => {
       spaceOwner: false,
     });
 
-    await expect(
-      updateMemoryProviderDefaultScope(deps as never, actor, "shared"),
-    ).rejects.toThrow();
+    await expect(updateMemoryProviderDefaultScope(deps, actor, "shared")).rejects.toThrow();
     expect(update).not.toHaveBeenCalled();
   });
 });

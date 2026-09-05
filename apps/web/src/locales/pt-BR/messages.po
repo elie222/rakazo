@@ -3169,6 +3169,26 @@ msgstr "Seu sistema operacional não pedirá permissão extra se você permitir 
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "Sua equipe de agentes sempre ativos<0/>, a quem você pode dar trabalho de verdade."
 
+#: src/components/CloudAgentCard.tsx:36
+msgid "cancelled"
+msgstr "cancelado"
+
+#: src/components/CloudAgentCard.tsx:38
+msgid "failed"
+msgstr "falhou"
+
+#: src/components/CloudAgentCard.tsx:34
+msgid "finished"
+msgstr "concluído"
+
+#: src/components/CloudAgentCard.tsx:44
+msgid "Pull request"
+msgstr "Solicitação de pull"
+
+#: src/components/CloudAgentCard.tsx:32
+msgid "running"
+msgstr "em execução"
+
 #: src/pages/KnowledgeSection.tsx:334
 msgid "Could not delete skill"
 msgstr "Não foi possível excluir a habilidade"

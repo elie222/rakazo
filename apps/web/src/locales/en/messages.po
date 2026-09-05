@@ -3169,6 +3169,26 @@ msgstr "Your OS will not ask for extra permission if you let bots run on {hostLa
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "Your team of always-on agents<0/>that you can give real work to."
 
+#: src/components/CloudAgentCard.tsx:36
+msgid "cancelled"
+msgstr "cancelled"
+
+#: src/components/CloudAgentCard.tsx:38
+msgid "failed"
+msgstr "failed"
+
+#: src/components/CloudAgentCard.tsx:34
+msgid "finished"
+msgstr "finished"
+
+#: src/components/CloudAgentCard.tsx:44
+msgid "Pull request"
+msgstr "Pull request"
+
+#: src/components/CloudAgentCard.tsx:32
+msgid "running"
+msgstr "running"
+
 #: src/pages/KnowledgeSection.tsx:334
 msgid "Could not delete skill"
 msgstr "Could not delete skill"
