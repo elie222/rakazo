@@ -1,4 +1,5 @@
 export const ZH_MESSAGES: Record<string, string> = {
+  Saved: "已保存",
   " (unread)": "（未读）",
   Appearance: "外观",
   Dark: "深色",

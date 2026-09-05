@@ -81,6 +81,9 @@ const ChartBlock = z
     });
   });
 
+export const SecretAskPurpose = z.enum(["otp", "password", "api_key"]);
+export type SecretAskPurpose = z.infer<typeof SecretAskPurpose>;
+
 export const MessageBlock = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("text"), text: z.string() }),
   z.object({
@@ -93,6 +96,8 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     approvalEffectId: Id.optional(),
     detail: z.string().optional(),
     input: z.enum(["text", "secret"]).optional(),
+    /** Why the secret is needed; drives field label on the masked card. */
+    purpose: SecretAskPurpose.optional(),
     status: z.enum(["pending", "answered"]).optional(),
     answer: z.string().optional(),
     actions: z

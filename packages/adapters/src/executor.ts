@@ -204,6 +204,7 @@ import {
 } from "./plot-tool.js";
 import {
   commitConsumedRunSecret,
+  normalizeSecretAskPurpose,
   reconcileManagedConnection,
   resolveCompletedSecretLeftover,
   resolveMissingRunSecretAction,
@@ -2621,6 +2622,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
                   kind: "ask",
                   text: String(args.label ?? "Code"),
                   input: "secret",
+                  purpose: normalizeSecretAskPurpose(
+                    args.purpose ? String(args.purpose) : undefined,
+                  ),
                   status: "pending",
                 },
               ],

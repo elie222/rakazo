@@ -1227,6 +1227,7 @@ describe("answerRunInput", () => {
               kind: "ask",
               text: "Enter your code",
               input: "secret",
+              purpose: "api_key",
               status: "pending",
             },
           ],
@@ -1275,6 +1276,7 @@ describe("answerRunInput", () => {
       }),
     );
     expect(tx.task.updateMany).not.toHaveBeenCalled();
+    expect(JSON.stringify(tx.event.create.mock.calls)).not.toContain("123456");
     expect(tx.externalEffect.updateMany).toHaveBeenCalledWith({
       where: {
         runId: "run-1",
@@ -1292,6 +1294,7 @@ describe("answerRunInput", () => {
             kind: "ask",
             text: "Enter your code",
             input: "secret",
+            purpose: "api_key",
             status: "answered",
             answer: "",
           },

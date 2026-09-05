@@ -311,7 +311,7 @@ msgstr "Beantwortet"
 #. placeholder {0}: selectedAskActionLabel(answer, actions)
 #: src/components/AskCard.tsx:20
 msgid "Answered: {0}"
-msgstr ""
+msgstr "Beantwortet: {0}"
 
 #: src/components/AskCard.tsx:26
 msgid "Answered: {answer}"
@@ -703,7 +703,7 @@ msgstr "Cloud"
 #: src/components/AskCard.tsx:128
 #: src/components/AskCard.tsx:133
 msgid "Code"
-msgstr ""
+msgstr "Code"
 
 #. placeholder {0}: group.title
 #: src/pages/Shell.tsx:2558

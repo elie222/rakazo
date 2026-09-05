@@ -174,6 +174,26 @@ export function inferScript(
     ];
   }
   if (
+    lower.includes("masked secret card") ||
+    lower.includes("show a secret card") ||
+    lower.includes("request a masked api key")
+  ) {
+    return [
+      {
+        assistant: "i need that value in a protected field.",
+        toolCalls: [
+          {
+            name: "request_secret",
+            args: {
+              label: "API key",
+              purpose: "api_key",
+            },
+          },
+        ],
+      },
+    ];
+  }
+  if (
     lower.includes("tappable choices") ||
     lower.includes("choice buttons") ||
     lower.includes("pick from these cities")

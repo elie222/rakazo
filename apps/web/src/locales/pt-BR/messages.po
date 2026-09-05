@@ -302,7 +302,7 @@ msgstr "Sempre permitido"
 
 #: src/components/AskCard.tsx:152
 msgid "Answer"
-msgstr "Respostas"
+msgstr "Resposta"
 
 #: src/components/AskCard.tsx:19
 msgid "Answered"
@@ -311,7 +311,7 @@ msgstr "Respondido"
 #. placeholder {0}: selectedAskActionLabel(answer, actions)
 #: src/components/AskCard.tsx:20
 msgid "Answered: {0}"
-msgstr ""
+msgstr "Respondido: {0}"
 
 #: src/components/AskCard.tsx:26
 msgid "Answered: {answer}"
@@ -703,7 +703,7 @@ msgstr "Nuvem"
 #: src/components/AskCard.tsx:128
 #: src/components/AskCard.tsx:133
 msgid "Code"
-msgstr ""
+msgstr "Código"
 
 #. placeholder {0}: group.title
 #: src/pages/Shell.tsx:2558

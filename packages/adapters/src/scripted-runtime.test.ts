@@ -49,6 +49,25 @@ describe("inferScript message_bot", () => {
   });
 });
 
+describe("inferScript request_secret", () => {
+  it("opens a masked api key card via request_secret", () => {
+    expect(inferScript("show a secret card for a masked api key")).toEqual([
+      {
+        assistant: "i need that value in a protected field.",
+        toolCalls: [
+          {
+            name: "request_secret",
+            args: {
+              label: "API key",
+              purpose: "api_key",
+            },
+          },
+        ],
+      },
+    ]);
+  });
+});
+
 describe("ScriptedAgentRuntime executionIds", () => {
   it("gives repeated tools distinct executionIds within a run", async () => {
     const runtime = new ScriptedAgentRuntime();
