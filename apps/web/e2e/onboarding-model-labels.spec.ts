@@ -63,9 +63,13 @@ test("onboarding uses compact model selects without misleading latest labels", a
   await manualModel.fill("probed-model");
   await expect(manualModel).toBeVisible();
   await expect(manualModel).toHaveValue("probed-model");
+  // Re-probe while the typed id matches a discovered model must stay freeform.
+  await page.getByRole("button", { name: "Find models" }).click();
+  await expect(manualModel).toBeVisible();
+  await expect(manualModel).toHaveValue("probed-model");
+  await expect(page.getByRole("combobox", { name: "Models from server" })).toHaveCount(0);
   await manualModel.fill("probed-model-custom");
   await expect(manualModel).toHaveValue("probed-model-custom");
-  await expect(page.getByRole("combobox", { name: "Models from server" })).toHaveCount(0);
 
   await captureScreenshot(page, testInfo, "onboarding-model-labels");
 });
