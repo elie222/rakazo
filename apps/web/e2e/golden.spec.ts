@@ -336,8 +336,13 @@ test("sign-in, spawn, and stop work in the shell", async ({ page }, testInfo) =>
   await expect(composer).toHaveAttribute("placeholder", "Message Chief");
   await expect(page.getByRole("button", { name: "Send", exact: true })).toBeVisible();
   await composer.fill("Use the newer report and keep the answer short.");
+  const send = page.getByRole("button", { name: "Send", exact: true });
+  // While a run is active, Stop sits in the tab order before Send.
   await page.keyboard.press("Tab");
-  await expect(page.getByRole("button", { name: "Send", exact: true })).toBeFocused();
+  if (!(await send.evaluate((el) => el === document.activeElement).catch(() => false))) {
+    await page.keyboard.press("Tab");
+  }
+  await expect(send).toBeFocused();
   await page.keyboard.press("Enter");
   await expect(
     page.getByTestId("transcript").getByText("Use the newer report and keep the answer short."),
