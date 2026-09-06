@@ -46,6 +46,15 @@ for (const width of [320, 375, 768]) {
       await page.getByRole("button", { name: "Open navigation", exact: true }).click();
       await expect(page.locator("aside").first()).not.toHaveAttribute("inert", "");
     }
+    await page.getByTestId("user-menu-trigger").click();
+    await expect(page.getByRole("button", { name: "Models", exact: true })).toHaveCount(0);
+    await page.getByRole("button", { name: "Voice", exact: true }).click();
+    await expect(page.getByTestId("voice-settings")).toBeVisible();
+    await expect(page.getByLabel("API key", { exact: true })).toHaveCount(0);
+    await expect(page.getByText("Personal credential", { exact: true })).toHaveCount(0);
+    await captureScreenshot(page, testInfo, `hosted-voice-${width}`);
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("voice-settings")).toBeHidden();
     await openNewBot(page);
     await expect(page.getByPlaceholder("Message New Bot")).toBeVisible();
     await expect(page.getByPlaceholder("Message New Bot")).toHaveValue("");

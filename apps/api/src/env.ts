@@ -34,6 +34,7 @@ export interface AppEnv {
   daytonaTarget: string | undefined;
   boxApiKey: string | undefined;
   boxApiUrl: string | undefined;
+  deploymentVoiceKey?: string;
   composioApiKey: string | undefined;
   pipedreamClientId: string | undefined;
   pipedreamClientSecret: string | undefined;
@@ -105,6 +106,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     daytonaTarget: source.DAYTONA_TARGET,
     boxApiKey: source.BOX_API_KEY,
     boxApiUrl: source.BOX_API_URL ?? source.BOX_BASE_URL,
+    deploymentVoiceKey: source.OPENAI_VOICE_API_KEY || source.OPENAI_API_KEY,
     composioApiKey: source.COMPOSIO_API_KEY,
     pipedreamClientId: optional(source.PIPEDREAM_CLIENT_ID),
     pipedreamClientSecret: optional(source.PIPEDREAM_CLIENT_SECRET),

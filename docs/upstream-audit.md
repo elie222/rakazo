@@ -12,6 +12,8 @@ The shared light background was warm off-white in upstream. Explicit product dir
 
 Saved workspaces download and restore in bounded parallel batches to avoid serial per-file latency on wake.
 
+The Linux desktop retains the upstream window manager and adds a file manager, text editor, development utilities and launcher dock. The noVNC viewer adds direct phone keyboard input and clipboard controls while retaining its native pointer handling. Hosted voice can use an optional server credential; its customer UI has no key fields.
+
 The hosted screen gateway permits module imports from the isolated viewer origin without forwarding application credentials. Manual computer control uses the user control grant independently of an active agent run. On phones, the computer button opens the existing full-screen viewer. Hosted accounts do not expose the model API-key settings.
 
 The paid marketing template is a separate licensed site, not a replacement application shell. Its source is retained privately; the public repository only has a routing boundary and branding.
@@ -26,6 +28,8 @@ The paid marketing template is a separate licensed site, not a replacement appli
 | `apps/api/src/app.ts` | Shared contracts or composition supporting additive hosted capabilities |
 | `apps/api/src/env.ts` | Shared contracts or composition supporting additive hosted capabilities |
 | `apps/api/src/router.ts` | Shared contracts or composition supporting additive hosted capabilities |
+| `apps/api/src/voice.ts` | Optional service-supplied voice composition |
+| `apps/api/src/voice.test.ts` | Voice fallback and tenant isolation coverage |
 | `apps/api/src/workforce.ts` | Prior optional integration; dormant in standalone deployment |
 | `apps/desktop/src/main.ts` | Shared palette applied to native startup chrome |
 | `apps/desktop/src/window-options.ts` | Shared palette applied to native startup chrome |
@@ -64,6 +68,7 @@ The paid marketing template is a separate licensed site, not a replacement appli
 | `apps/web/src/pages/Auth.tsx` | Original local auth retained; prior optional OAuth adapter dormant |
 | `apps/web/src/pages/Onboarding.tsx` | Minimal product entry, accessibility, and responsive changes |
 | `apps/web/src/pages/Shell.tsx` | Minimal product entry, accessibility, and responsive changes |
+| `apps/web/src/pages/VoiceSettingsOverlay.tsx` | Hosted voice without customer API-key fields |
 | `apps/web/src/pages/Welcome.tsx` | Minimal product entry, accessibility, and responsive changes |
 | `apps/web/src/pages/WorkforceOverlay.tsx` | Prior optional integration; dormant in standalone deployment |
 | `apps/web/src/screen-proxy.ts` | Necessary hosted runtime and deployment adapter |
@@ -112,3 +117,13 @@ The paid marketing template is a separate licensed site, not a replacement appli
 | `render.yaml` | Necessary hosted runtime and deployment adapter |
 | `turbo.json` | Adapter dependencies and build configuration |
 | `vercel.json` | Necessary hosted runtime and deployment adapter |
+| `infra/sandboxes/computer/Dockerfile` | Linux desktop applications and mobile viewer controls |
+| `infra/sandboxes/computer/embed.html` | Linux desktop applications and mobile viewer controls |
+| `infra/sandboxes/computer/fluxbox.init` | Linux desktop applications and mobile viewer controls |
+| `infra/sandboxes/computer/fluxbox.menu` | Linux desktop applications and mobile viewer controls |
+| `infra/sandboxes/computer/start.sh` | Linux desktop applications and mobile viewer controls |
+| `infra/sandboxes/computer/rakazo-browser.desktop` | Linux desktop applications and mobile viewer controls |
+| `infra/sandboxes/computer/mobile-controls.js` | Linux desktop applications and mobile viewer controls |
+| `infra/sandboxes/computer/tint2rc` | Linux desktop applications and mobile viewer controls |
+| `infra/sandboxes/supervisor/src/index.ts` | Linux desktop applications and mobile viewer controls |
+| `infra/sandboxes/supervisor/src/mobile-controls.test.ts` | Linux desktop applications and mobile viewer controls |

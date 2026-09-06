@@ -3339,3 +3339,11 @@ msgstr "이름"
 #: src/pages/HostComputerPrompt.tsx:69
 msgid "Your OS will not ask for extra permission if you let bots run on {hostLabel}. They run as you."
 msgstr "{hostLabel}에서 실행하면 Bot이 내 계정 권한으로 동작하며 운영체제가 작업마다 별도 승인을 묻지 않습니다."
+
+#: src/pages/VoiceSettingsOverlay.tsx:55
+msgid "Ready for calls and dictation."
+msgstr ""
+
+#: src/pages/VoiceSettingsOverlay.tsx:57
+msgid "Voice is temporarily unavailable."
+msgstr ""

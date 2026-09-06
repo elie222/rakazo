@@ -327,7 +327,12 @@ export async function createApp(
   const reconciler = inMemoryJobs ? createJobReconciler({ prisma, jobs }) : undefined;
   reconciler?.start();
 
+  const deploymentVoice =
+    env.sandboxProvider === "modal" && env.deploymentVoiceKey
+      ? { provider: "openai", apiKey: env.deploymentVoiceKey, voiceId: "coral" }
+      : undefined;
   const router = createRouter({
+    deploymentVoice,
     prisma,
     events,
     auth,
@@ -467,7 +472,7 @@ export async function createApp(
     if (matched) return c.newResponse(response.body, response);
     await next();
   });
-  mountVoiceHttpRoutes(app, { prisma, secrets }, async (c) => {
+  mountVoiceHttpRoutes(app, { prisma, secrets, deploymentVoice }, async (c) => {
     const session = await getSession(sessionHeaders(c.req.raw));
     if (!session?.user) return null;
     const actor = await requireMembership(

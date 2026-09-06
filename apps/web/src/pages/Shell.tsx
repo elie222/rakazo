@@ -499,6 +499,15 @@ export function ShellPage() {
   const [routineError, setRoutineError] = useState<string | null>(null);
   const [screenUrl, setScreenUrl] = useState<string | null>(null);
   const [computerOpen, setComputerOpen] = useState(false);
+  const [computerViewportHeight, setComputerViewportHeight] = useState<number>();
+  useEffect(() => {
+    if (!computerOpen || !window.visualViewport) return;
+    const viewport = window.visualViewport;
+    const resize = () => setComputerViewportHeight(viewport.height);
+    resize();
+    viewport.addEventListener("resize", resize);
+    return () => viewport.removeEventListener("resize", resize);
+  }, [computerOpen]);
   const [computerError, setComputerError] = useState<string | null>(null);
   // Screen-load failures can sit beside a still-valid embed URL; boot and
   // takeover failures must stay visible even when a URL remains.
@@ -3970,7 +3979,10 @@ export function ShellPage() {
           </div>
         </div>
       ) : computerOpen && active ? (
-        <div className="absolute inset-0 z-30 flex flex-col bg-background">
+        <div
+          className="absolute inset-0 z-30 flex flex-col bg-background"
+          style={{ height: computerViewportHeight }}
+        >
           <div
             data-testid="computer-chrome"
             className="flex flex-wrap items-center justify-between gap-3 border-b border-sidebar-border px-3 py-3 sm:px-[18px] sm:py-3.5"

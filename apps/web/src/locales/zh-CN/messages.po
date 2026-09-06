@@ -3340,3 +3340,11 @@ msgstr "你的名字"
 #: src/pages/HostComputerPrompt.tsx:69
 msgid "Your OS will not ask for extra permission if you let bots run on {hostLabel}. They run as you."
 msgstr "若让 Bot 在 {hostLabel} 上运行，它们会使用你的账户权限，系统不会再逐项询问。"
+
+#: src/pages/VoiceSettingsOverlay.tsx:55
+msgid "Ready for calls and dictation."
+msgstr ""
+
+#: src/pages/VoiceSettingsOverlay.tsx:57
+msgid "Voice is temporarily unavailable."
+msgstr ""
