@@ -569,7 +569,10 @@ const MESSAGING_PROVIDER_LABELS: Record<string, string> = {
   telegram: "Telegram",
 };
 
-export function messagingProviderLabel(provider: string): string {
+export function messagingProviderLabel(provider: string, transport?: string): string {
+  if (provider === "sendblue" && ["iMessage", "SMS", "RCS"].includes(transport ?? "")) {
+    return transport!;
+  }
   return MESSAGING_PROVIDER_LABELS[provider] ?? provider;
 }
 
@@ -577,7 +580,7 @@ export function blockText(message: MobileMessage) {
   return message.blocks
     .map((block) => {
       if (block.kind === "channel_message") {
-        return `${messagingProviderLabel(block.provider)} · ${block.fromLabel}: ${block.text}`;
+        return `${messagingProviderLabel(block.provider, block.transport)} · ${block.fromLabel}: ${block.text}`;
       }
       if (block.kind === "cloud_agent")
         return `${block.title}: ${block.status}${block.prUrl ? ` ${block.prUrl}` : ""}`;

@@ -235,6 +235,8 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     /** A group-chat message delivered into a member bot's own thread. */
     kind: z.literal("channel_message"),
     provider: z.string(),
+    /** Per-message network when a provider spans multiple transports. */
+    transport: z.string().optional(),
     channelId: Id,
     fromAddress: z.string(),
     fromLabel: z.string(),

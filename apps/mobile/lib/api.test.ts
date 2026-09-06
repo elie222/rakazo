@@ -965,6 +965,7 @@ describe("mobile thread event reduction", () => {
           {
             kind: "channel_message",
             provider: "sendblue",
+            transport: "SMS",
             channelId: "ch-1",
             fromAddress: "+15551234567",
             fromLabel: "Alex",
@@ -972,7 +973,7 @@ describe("mobile thread event reduction", () => {
           },
         ]),
       ),
-    ).toBe("iMessage · Alex: Hello from the group");
+    ).toBe("SMS · Alex: Hello from the group");
     expect(
       blockText(
         mobileMessage("channel-2", [
