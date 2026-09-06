@@ -52,6 +52,7 @@ async function main() {
     const webOrigin = `http://127.0.0.1:${webPort}`;
 
     process.env.DATABASE_URL = databaseUrl;
+    process.env.REALTIME_DATABASE_URL = databaseUrl;
     process.env.VERIFY_DATABASE = "1";
     process.env.WAKEUP_DRIVER = "memory";
     process.env.SANDBOX_PROVIDER = sandboxProvider;
@@ -84,6 +85,16 @@ async function main() {
     });
 
     if (integration) {
+      // Run real Pi before scripted journeys seed queued jobs and recurring work.
+      // A real runtime must never reconcile another scenario's scripted backlog.
+      execSync("pnpm exec vitest run packages/testkit/src/pi-offline.postgres.test.ts", {
+        stdio: "inherit",
+        env: {
+          ...process.env,
+          OPENROUTER_API_KEY: "",
+          MODEL_API_KEY: "",
+        },
+      });
       execSync(
         [
           "pnpm exec vitest run --no-file-parallelism",

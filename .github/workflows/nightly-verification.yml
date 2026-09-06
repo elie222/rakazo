@@ -41,6 +41,8 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm test:topology
+      - name: Replay computer tools against real Chromium without inference
+        run: pnpm test:computer-replay --image=rakazo/computer:topology
 
   live-providers:
     name: Live provider canaries
@@ -75,3 +77,48 @@ jobs:
         run: pnpm install --frozen-lockfile
       - if: steps.gate.outputs.enabled == 'true'
         run: pnpm test:canary
+
+  agent-evals:
+    name: Agent quality baseline
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      PI_DEFAULT_MODEL: ${{ vars.PI_DEFAULT_MODEL || 'deepseek/deepseek-v4-flash-0731' }}
+      RUN_LIVE_PROVIDERS: ${{ github.event_name == 'schedule' || inputs.run_live_providers }}
+    steps:
+      - name: Check live eval prerequisites
+        id: gate
+        shell: bash
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: |
+          if [[ "$RUN_LIVE_PROVIDERS" == "true" && -n "$OPENROUTER_API_KEY" ]]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "Agent quality evals: not run (live inference not requested or credential unavailable)." >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - if: steps.gate.outputs.enabled == 'true'
+        uses: actions/checkout@v5
+      - if: steps.gate.outputs.enabled == 'true'
+        uses: pnpm/action-setup@v4
+      - if: steps.gate.outputs.enabled == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - if: steps.gate.outputs.enabled == 'true'
+        run: pnpm install --frozen-lockfile
+      - name: Measure real-agent task success
+        if: steps.gate.outputs.enabled == 'true'
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: pnpm test:evals --live --provider openrouter --model "$PI_DEFAULT_MODEL" --api-key-env OPENROUTER_API_KEY --trials 3
+      - name: Upload redacted eval evidence
+        if: always() && steps.gate.outputs.enabled == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: agent-eval-results
+          path: test-report/evals
+          if-no-files-found: warn
+          retention-days: 14
