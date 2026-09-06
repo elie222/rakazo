@@ -138,6 +138,28 @@ test("changes and recovers an email password", async ({ page }, testInfo) => {
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   const settings = page.getByTestId("user-settings");
   await expect(settings).toBeVisible();
+  await expect(page.getByTestId("sidebar-search").locator("input")).toHaveAttribute(
+    "autocomplete",
+    "off",
+  );
+  await expect(page.getByTestId("sidebar-search").locator("input")).toHaveAttribute(
+    "name",
+    "sidebar-search",
+  );
+  await expect(settings.locator('input[name="username"]')).toHaveAttribute(
+    "autocomplete",
+    "username",
+  );
+  await expect(settings.locator('input[name="username"]')).toHaveValue(email);
+  await expect(settings.getByLabel("Current password")).toHaveAttribute(
+    "autocomplete",
+    "current-password",
+  );
+  await expect(settings.getByLabel("New password")).toHaveAttribute("autocomplete", "new-password");
+  await expect(settings.getByLabel("Confirm password")).toHaveAttribute(
+    "autocomplete",
+    "new-password",
+  );
   await settings.getByLabel("Current password").fill(originalPassword);
   await settings.getByLabel("New password").fill(changedPassword);
   await settings.getByLabel("Confirm password").fill(changedPassword);
