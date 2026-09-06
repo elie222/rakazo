@@ -16,12 +16,14 @@ When raw GitHub is unreachable, download the installer from your mirror:
 
 ```bash
 export RAKAZO_INSTALLER_URL=https://example.com/mirror/rakazo/infra/compose/install-images.sh
+export RAKAZO_DOWNLOAD_BASE=https://example.com/mirror/rakazo/infra/compose
 mkdir -p rakazo && cd rakazo &&
-curl -fsSLO "${RAKAZO_INSTALLER_URL}" &&
-bash install-images.sh
+curl -fsSL -o install-images.sh "${RAKAZO_INSTALLER_URL}" &&
+bash install-images.sh --prepare-only
 ```
 
-`RAKAZO_INSTALLER_URL` is used by this curl command; it is not an installer setting.
+`RAKAZO_INSTALLER_URL` selects the script for this curl command; `RAKAZO_DOWNLOAD_BASE` selects
+the Compose files downloaded by that script. Set both when raw GitHub is blocked.
 
 ## Compose files
 
@@ -30,7 +32,7 @@ mirror of `infra/compose`:
 
 ```bash
 export RAKAZO_DOWNLOAD_BASE=https://example.com/mirror/rakazo/infra/compose
-bash install-images.sh
+bash install-images.sh --prepare-only
 ```
 
 Trailing slashes are trimmed; non-HTTPS bases are rejected. Downloads use bounded retries.
@@ -45,20 +47,21 @@ RAKAZO_DOWNLOAD_SKIP_EXISTING=1 bash install-images.sh --prepare-only
 ```
 
 Missing files are still downloaded. `--prepare-only` creates `.env` without starting the stack;
-edit it as needed, then run `bash install-images.sh --local` to start using the local files.
+continue with the image settings and startup instructions below.
 
 ## Container images
 
-After `--prepare-only`, set image overrides in `.env` and rerun the installer (keep `--local` if
-using pre-copied Compose files):
+After `--prepare-only`, set image overrides in `.env`. For mirrored Postgres or busybox, use
+[digest-verified startup](#digest-verified-hub-mirror-startup) below. Otherwise, rerun the installer
+(keep `--local` if using pre-copied Compose files):
 
 ```env
 RAKAZO_IMAGE=registry.example.com/mirror/rakazo/app
 RAKAZO_IMAGE_TAG=edge
 RAKAZO_COMPUTER_IMAGE=registry.example.com/mirror/rakazo/computer
 RAKAZO_COMPUTER_IMAGE_TAG=edge
-POSTGRES_IMAGE=registry.example.com/mirror/postgres:16
-BUSYBOX_IMAGE=registry.example.com/mirror/busybox:1
+POSTGRES_IMAGE=registry.example.com/library/postgres@sha256:<trusted-postgres-digest>
+BUSYBOX_IMAGE=registry.example.com/library/busybox@sha256:<trusted-busybox-digest>
 ```
 
 Mirror both app and computer images and pair their tags to the same published version. Arm64
@@ -76,6 +79,48 @@ JSON configuration, then restart Docker:
 
 See the [base daemon configuration](../infra/compose/docker-daemon.json). Docker Hub mirrors do not
 replace the GHCR image overrides above.
+
+## Digest-verified Hub mirror startup
+
+Run `bash install-images.sh --prepare-only` in the installation directory first (add `--local`
+for pre-copied files). This prepares the Compose file and validates the required secrets without
+starting containers.
+
+Treat a mirror as a transport, not as the source of truth. Obtain the expected `postgres:16` and
+`busybox:1` digests from a trusted upstream or an out-of-band trusted workstation. Put the digest in
+each mirrored image reference, then pull, compare the local repository digests, and start without
+pulling again. Replace every example value below before running it:
+
+```bash
+(
+set -euo pipefail
+
+export POSTGRES_IMAGE='registry.example.com/library/postgres@sha256:<trusted-postgres-digest>'
+export BUSYBOX_IMAGE='registry.example.com/library/busybox@sha256:<trusted-busybox-digest>'
+
+docker compose --env-file .env -f docker-compose.images.yml pull
+
+for image_ref in "$POSTGRES_IMAGE" "$BUSYBOX_IMAGE"; do
+  expected_digest="${image_ref##*@}"
+  docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$image_ref" |
+    awk -F@ -v expected="$expected_digest" '$2 == expected { found=1 } END { exit !found }' || {
+      echo "digest verification failed for $image_ref" >&2
+      exit 1
+    }
+done
+
+docker compose up --help | grep -- '--pull' >/dev/null || {
+  echo 'Docker Compose with up --pull is required for verified no-repull startup.' >&2
+  exit 1
+}
+docker compose --env-file .env -f docker-compose.images.yml up -d --pull never
+)
+```
+
+This sequence fails before startup if pulling or inspection fails, or either image lacks the expected
+digest. Save the same `POSTGRES_IMAGE` and `BUSYBOX_IMAGE` references in the installation's `.env`
+for later restarts; the exports above apply only to this startup. Do not replace them with mutable
+mirror tags. After startup, follow the health checks in [the setup prompt](../SETUP_PROMPT.md).
 
 Once downloads work, continue with [published-image setup](./self-host.md#published-images-no-checkout).
 For hosts without external provider access, use local Docker computers and an operator-controlled
