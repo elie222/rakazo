@@ -379,6 +379,7 @@ export async function createApp(
       updaterUrl: env.updaterUrl,
       updaterToken: env.updaterToken,
       imageTag: env.imageTag,
+      integrationsCatalogUrl: env.integrationsCatalogUrl,
     },
   });
   const rpc = new RPCHandler(router, {
