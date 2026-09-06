@@ -53,6 +53,7 @@
       const url = `${protocol}://${window.location.host}${prefix}${path}`;
       const rfb = new RFB(document.getElementById("screen"), url);
       rfb.viewOnly = flag("view_only");
+      rfb.background = "#000000";
       rfb.scaleViewport = true;
       rfb.clipViewport = false;
       if (!rfb.viewOnly) {
