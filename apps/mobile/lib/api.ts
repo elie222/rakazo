@@ -801,24 +801,12 @@ export function applyMobileThreadEvent(
         activeRuns,
       };
     }
+    const run = runChanged && prev.run ? { ...prev.run, status } : prev.run;
     const activeRuns = activeRunChanged
       ? prev.activeRuns?.map((candidate) =>
           candidate.id === runId ? { ...candidate, status } : candidate,
         )
       : prev.activeRuns;
-    const updatedWaiting =
-      activeRunChanged && runId
-        ? activeRuns?.find((candidate) => candidate.id === runId)
-        : undefined;
-    const promoteWaiting =
-      Boolean(updatedWaiting) &&
-      (!prev.run ||
-        (prev.run.status !== "waiting_input" && prev.run.status !== "waiting_takeover"));
-    const run = promoteWaiting
-      ? updatedWaiting
-      : runChanged && prev.run
-        ? { ...prev.run, status }
-        : prev.run;
     return { ...prev, cursor, run, activeRuns, messages, computer };
   }
   if (isRunTerminalEvent(event)) {

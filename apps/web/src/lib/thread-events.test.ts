@@ -417,36 +417,6 @@ describe("thread event reduction", () => {
     ]);
   });
 
-  it("promotes an already-known peer run when it becomes waiting", () => {
-    const userRun = threadRun("run-user");
-    const peerRun = { ...threadRun("run-peer", "bot-peer"), trigger: "bot_message" as const };
-    const initial: ThreadSnapshot = {
-      ...snapshot([]),
-      run: userRun,
-      activeRuns: [userRun, peerRun],
-    };
-
-    const waiting = reduceThreadSnapshot(
-      initial,
-      event({
-        type: "run.waiting_input",
-        seq: 13,
-        runId: "run-peer",
-        botId: "bot-peer",
-      }),
-    );
-
-    expect(waiting?.run).toMatchObject({
-      id: "run-peer",
-      botId: "bot-peer",
-      status: "waiting_input",
-    });
-    expect(waiting?.activeRuns?.map((run) => ({ id: run.id, status: run.status }))).toEqual([
-      { id: "run-user", status: "running" },
-      { id: "run-peer", status: "waiting_input" },
-    ]);
-  });
-
   it("keeps event-sourced waiting_takeover when a stale refresh still shows the bot busy", () => {
     const run = threadRun("run-1");
     const waitingLocal: ThreadSnapshot = {
