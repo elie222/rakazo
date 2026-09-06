@@ -1,5 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import { signupRequiresEmailVerification } from "@rakazo/core";
+import { readBoundedJsonResponse, signupRequiresEmailVerification } from "@rakazo/core";
 import { Button, Input, Label } from "@rakazo/ui-web";
 import { Eye, EyeOff } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -12,6 +12,8 @@ type PasswordResetCapabilities = { passwordReset: boolean; resetUrl: string | nu
 
 const fieldClass = "mt-2 h-12 rounded-xl px-4 text-base md:text-base";
 const submitClass = "mt-3 h-12 w-full rounded-xl text-base";
+const AUTH_CAPABILITIES_TIMEOUT_MS = 8_000;
+const MAX_AUTH_CAPABILITIES_RESPONSE_BYTES = 64 * 1024;
 
 export function AuthPage({ mode }: { mode: AuthMode }) {
   const { t } = useLingui();
@@ -41,17 +43,26 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
   useEffect(() => {
     if (mode === "up") return;
     let active = true;
-    void fetch("/api/auth/capabilities")
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), AUTH_CAPABILITIES_TIMEOUT_MS);
+    void fetch("/api/auth/capabilities", { signal: controller.signal })
       .then(async (response) => {
         if (!response.ok) throw new Error("Could not load authentication capabilities");
-        return (await response.json()) as PasswordResetCapabilities;
+        return readBoundedJsonResponse<PasswordResetCapabilities>(
+          response,
+          MAX_AUTH_CAPABILITIES_RESPONSE_BYTES,
+          controller.signal,
+        );
       })
       .then((capabilities) => {
         if (active) setReset(capabilities);
       })
-      .catch(() => undefined);
+      .catch(() => undefined)
+      .finally(() => clearTimeout(timer));
     return () => {
       active = false;
+      clearTimeout(timer);
+      controller.abort();
     };
   }, [mode]);
 

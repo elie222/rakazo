@@ -15,6 +15,7 @@ import {
   mergeThreadHistory,
   prependThreadHistoryPage,
   progressMessageId,
+  readBoundedJsonResponse,
   reduceLiveMessageBlocks,
   runFailureError,
   signupRequiresEmailVerification,
@@ -41,6 +42,8 @@ const ENDPOINT_KEY = "rakazo.api_base";
 const SPACE_KEY = "rakazo.space_id";
 const SPACE_ROLLBACK_KEY = "rakazo.space_rollback";
 const RPC_TIMEOUT_MS = 8_000;
+export const MAX_MOBILE_AUTH_RESPONSE_BYTES = 256 * 1024;
+export const MAX_MOBILE_RPC_RESPONSE_BYTES = 16 * 1024 * 1024;
 
 let cachedApiBase: string | undefined;
 let cachedSpaceId = "";
@@ -300,16 +303,19 @@ async function authenticateWithEmail(
   action: "sign-in" | "sign-up",
   input: { email: string; password: string; name?: string },
 ) {
-  const res = await fetch(`${currentApiBase()}/api/auth/${action}/email`, {
-    method: "POST",
-    headers: { "content-type": "application/json", origin: "rakazo://" },
-    body: JSON.stringify(input),
-  });
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok) {
+  const { response, body } = await fetchMobileJson<unknown>(
+    `${currentApiBase()}/api/auth/${action}/email`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: "rakazo://" },
+      body: JSON.stringify(input),
+    },
+    {},
+  );
+  if (!response.ok) {
     throw new Error(responseErrorMessage(body, `Could not ${action.replace("-", " ")}`));
   }
-  const token = tokenFromAuthResponse(res, body);
+  const token = tokenFromAuthResponse(response, body);
   if (action === "sign-up" && signupRequiresEmailVerification(body))
     return { verificationRequired: true };
   if (!token)
@@ -336,31 +342,73 @@ export function signUp(email: string, password: string, name: string) {
 export type PasswordResetCapabilities = { passwordReset: boolean; resetUrl: string | null };
 
 export async function passwordResetCapabilities(): Promise<PasswordResetCapabilities> {
-  const response = await fetch(`${currentApiBase()}/api/auth/capabilities`, {
-    headers: { origin: "rakazo://" },
-  });
+  const { response, body } = await fetchMobileJson<PasswordResetCapabilities>(
+    `${currentApiBase()}/api/auth/capabilities`,
+    { headers: { origin: "rakazo://" } },
+    { passwordReset: false, resetUrl: null },
+  );
   if (!response.ok) throw new Error("Could not load password recovery settings");
-  return (await response.json()) as PasswordResetCapabilities;
+  return body;
 }
 
 export async function requestPasswordReset(email: string, redirectTo: string): Promise<void> {
-  const response = await fetch(`${currentApiBase()}/api/auth/request-password-reset`, {
-    method: "POST",
-    headers: { "content-type": "application/json", origin: "rakazo://" },
-    body: JSON.stringify({ email, redirectTo }),
-  });
-  const body = await response.json().catch(() => ({}));
+  const { response, body } = await fetchMobileJson<unknown>(
+    `${currentApiBase()}/api/auth/request-password-reset`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: "rakazo://" },
+      body: JSON.stringify({ email, redirectTo }),
+    },
+    {},
+  );
   if (!response.ok) throw new Error(responseErrorMessage(body, t("Could not send reset email")));
 }
 
 export async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
-  const response = await fetch(`${currentApiBase()}/api/auth/change-password`, {
-    method: "POST",
-    headers: { "content-type": "application/json", origin: "rakazo://", ...(await authHeaders()) },
-    body: JSON.stringify({ currentPassword, newPassword, revokeOtherSessions: true }),
-  });
-  const body = await response.json().catch(() => ({}));
+  const { response, body } = await fetchMobileJson<unknown>(
+    `${currentApiBase()}/api/auth/change-password`,
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        origin: "rakazo://",
+        ...(await authHeaders()),
+      },
+      body: JSON.stringify({ currentPassword, newPassword, revokeOtherSessions: true }),
+    },
+    {},
+  );
   if (!response.ok) throw new Error(responseErrorMessage(body, t("Could not change password")));
+}
+
+async function fetchMobileJson<T>(
+  input: Parameters<typeof fetch>[0],
+  init: RequestInit,
+  invalidJsonFallback?: T,
+): Promise<{ response: Response; body: T }> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(new Error("Request timed out")), RPC_TIMEOUT_MS);
+  try {
+    const response = await withAbort(
+      fetch(input, { ...init, signal: controller.signal }),
+      controller.signal,
+    );
+    try {
+      const body = await readBoundedJsonResponse<T>(
+        response,
+        MAX_MOBILE_AUTH_RESPONSE_BYTES,
+        controller.signal,
+      );
+      return { response, body };
+    } catch (error) {
+      if (invalidJsonFallback !== undefined && error instanceof SyntaxError) {
+        return { response, body: invalidJsonFallback };
+      }
+      throw error;
+    }
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export async function signOut() {
@@ -405,13 +453,20 @@ function withAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
 
 export async function deleteAccount(password: string) {
   await rpc("notifications/unregisterPush").catch(() => undefined);
-  const res = await fetch(`${currentApiBase()}/api/auth/delete-user`, {
-    method: "POST",
-    headers: { "content-type": "application/json", origin: "rakazo://", ...(await authHeaders()) },
-    body: JSON.stringify({ password }),
-  });
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok) {
+  const { response, body } = await fetchMobileJson<unknown>(
+    `${currentApiBase()}/api/auth/delete-user`,
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        origin: "rakazo://",
+        ...(await authHeaders()),
+      },
+      body: JSON.stringify({ password }),
+    },
+    {},
+  );
+  if (!response.ok) {
     throw new Error(responseErrorMessage(body, t("Could not delete account")));
   }
   await clearSessionToken();
@@ -444,7 +499,11 @@ export async function rpc<T>(
       body: JSON.stringify({ json: body }),
       signal: controller.signal,
     });
-    const parsed = (await res.json()) as { json?: T; error?: { message?: string } };
+    const parsed = await readBoundedJsonResponse<{ json?: T; error?: { message?: string } }>(
+      res,
+      MAX_MOBILE_RPC_RESPONSE_BYTES,
+      controller.signal,
+    );
     if (!res.ok || parsed.error) throw new Error(parsed.error?.message ?? `rpc ${proc} failed`);
     return parsed.json as T;
   } finally {

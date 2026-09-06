@@ -5,7 +5,11 @@ import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
-import { boundedSandboxCommandTimeoutMs, resolveSupervisorToken } from "@rakazo/core";
+import {
+  boundedSandboxCommandTimeoutMs,
+  readBoundedJsonResponse,
+  resolveSupervisorToken,
+} from "@rakazo/core";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 import { SERVICE_NAMES } from "@rakazo/logging";
 import { createRootLogger } from "@rakazo/logging/axiom";
@@ -846,6 +850,8 @@ function computerControlEndpoint(info: Docker.ContainerInspectInfo) {
   });
 }
 
+export const MAX_COMPUTER_CONTROL_RESPONSE_BYTES = 16 * 1024 * 1024;
+
 export async function controlDesktop(
   endpoint: { url: string; token: string },
   actions: Array<z.infer<typeof computerActionSchema>>,
@@ -853,6 +859,7 @@ export async function controlDesktop(
   observe: boolean,
   settleMs: number,
 ) {
+  const signal = AbortSignal.timeout(computerControlTimeoutMs(actions, settleMs));
   let response: Response;
   try {
     response = await fetch(endpoint.url, {
@@ -870,7 +877,7 @@ export async function controlDesktop(
         observe,
         settleMs,
       }),
-      signal: AbortSignal.timeout(computerControlTimeoutMs(actions, settleMs)),
+      signal,
     });
   } catch (error) {
     if (isComputerControlUnavailable(error)) {
@@ -880,11 +887,11 @@ export async function controlDesktop(
     }
     throw error;
   }
-  const payload = (await response.json()) as {
+  const payload = await readBoundedJsonResponse<{
     completed?: unknown;
     observation?: unknown;
     error?: unknown;
-  };
+  }>(response, MAX_COMPUTER_CONTROL_RESPONSE_BYTES, signal);
   if (!response.ok) throw new Error(String(payload.error ?? "computer control failed"));
   if (typeof payload.completed !== "number")
     throw new Error("computer control returned no completion count");
@@ -893,6 +900,7 @@ export async function controlDesktop(
     ...(payload.observation ? { observation: payload.observation } : {}),
   };
 }
+
 const SCREEN_READY_TIMEOUT_MS = 45_000;
 
 // Docker publishes a container's port mapping (or assigns its internal IP)
