@@ -1286,6 +1286,8 @@ describe("mobile clipboard text", () => {
             kind: "channel_message",
             provider: "sendblue",
             transport: "SMS",
+            channelId: "ch-1",
+            fromAddress: "+15551234567",
             fromLabel: "Sender",
             text: "Reply",
           },
