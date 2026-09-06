@@ -18,6 +18,7 @@ import { computerReplayContext, waitForReplayFile } from "./computer-replay.js";
 import {
   CONTACTS_CSV,
   CONTACTS_PATH,
+  ContactsBrowserFixture,
   EXPORT_FIXTURE_URL,
   EXPORT_RECEIPT_PATH,
 } from "./computer-replay-fixture.js";
@@ -174,6 +175,17 @@ function resultObject(content: unknown): Record<string, unknown> | undefined {
   } catch {
     return undefined;
   }
+}
+
+/** Reproduce transient download failures before validating a captured journey offline. */
+export function createContactsReplayBrowser(
+  sandbox: SandboxProvider,
+  recording: ContactsRecording,
+) {
+  const downloadFailures = parseContactsRecording(recording).steps.filter(
+    (step) => step.op === "click" && step.target === "Download CSV" && step.outcome === "error",
+  ).length;
+  return new ContactsBrowserFixture(sandbox, { downloadFailures });
 }
 
 /** Replays decisions through real Pi/HTTP; production browser helpers still produce every effect. */

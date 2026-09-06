@@ -8,6 +8,7 @@ import {
   type ContactsRecording,
   contactsReplaySteps,
   createContactsRecorder,
+  createContactsReplayBrowser,
   executeContactsJourney,
   parseContactsRecording,
   replayContactsRecording,
@@ -34,11 +35,11 @@ const recorded = (steps: ContactsRecordedStep[]): ContactsRecording => ({
   steps,
 });
 
-async function setup(faults?: { downloadFailures: number }) {
+async function setup() {
   const sandbox = new FakeSandboxProvider();
   const context = computerReplayContext();
   const computer = await sandbox.provision({ botId: "fixture-bot", homePath: "/fixture" }, context);
-  const browser = new ContactsBrowserFixture(sandbox, faults);
+  const browser = new ContactsBrowserFixture(sandbox);
   return {
     sandbox,
     context,
@@ -134,24 +135,27 @@ describe("sanitized real-model computer recordings", () => {
     }
   });
 
-  it("retries a failed download only after observing again and exports exactly once", async () => {
-    const fixture = await setup({ downloadFailures: 1 });
+  it("reproduces captured download failures during promotion and exports exactly once", async () => {
+    const fixture = await setup();
+    const recording = recorded([
+      ...openDialog,
+      { op: "click", target: "Download CSV", outcome: "error" },
+      { op: "snapshot", outcome: "ok" },
+      { op: "click", target: "Download CSV", outcome: "ok" },
+      { op: "read", outcome: "ok" },
+    ]);
+    const browser = createContactsReplayBrowser(fixture.sandbox, recording);
     try {
       await replayContactsRecording(
-        recorded([
-          ...openDialog,
-          { op: "click", target: "Download CSV", outcome: "error" },
-          { op: "snapshot", outcome: "ok" },
-          { op: "click", target: "Download CSV", outcome: "ok" },
-          { op: "read", outcome: "ok" },
-        ]),
+        recording,
         fixture.sandbox,
-        fixture.browser,
+        browser,
         fixture.computer,
         fixture.context,
       );
       await assertContactsExport(fixture.sandbox, fixture.computer, fixture.context);
     } finally {
+      browser.close();
       await fixture.close();
     }
   });

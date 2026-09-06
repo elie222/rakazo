@@ -14,6 +14,7 @@ import { describe, expect, it } from "vitest";
 import {
   assertContactsExport,
   createContactsRecorder,
+  createContactsReplayBrowser,
   executeContactsJourney,
   replayContactsRecording,
 } from "./computer-recording.js";
@@ -21,7 +22,6 @@ import { computerReplayContext, runComputerReplay, waitForReplayFile } from "./c
 import {
   CONTACTS_CSV,
   CONTACTS_PATH,
-  ContactsBrowserFixture,
   EXPORT_RECEIPT_PATH,
   installContactsFixture,
 } from "./computer-replay-fixture.js";
@@ -111,7 +111,7 @@ describe.skipIf(process.env.RUN_COMPUTER_REPLAY_DOCKER !== "1")(
               { botId: "fixture-bot", homePath: "/fixture" },
               offlineContext,
             );
-            const offlineBrowser = new ContactsBrowserFixture(offlineSandbox);
+            const offlineBrowser = createContactsReplayBrowser(offlineSandbox, recording);
             try {
               await replayContactsRecording(
                 recording,
