@@ -51,7 +51,7 @@ export function redact(text: string, secrets: readonly string[] = []): string {
     .replace(/(?:\/Users\/|\/home\/)[^\s"']+/g, "[local-path]")
     .replace(/\b(?:sk-|ghp_|github_pat_)[A-Za-z0-9_-]+/g, "[redacted]")
     .replace(
-      /((?:api[_-]?key|access[_-]?token|password|secret|authorization)\s*[=:]\s*)[^\s"',;&]+/gi,
+      /((?:api[_-]?key|access[_-]?token|password|secret|authorization)["']?\s*[=:]\s*)(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|(?:(?:bearer|basic|token)\s+)?[^\s"',;&]+)/gi,
       "$1[redacted]",
     );
 }

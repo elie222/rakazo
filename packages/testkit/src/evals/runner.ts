@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
-import type { JobPublisher } from "@rakazo/adapter-kit";
+import { type AgentRuntime, type JobPublisher, runJobKey } from "@rakazo/adapter-kit";
 import type { ModelConnectInput, RunStatus } from "@rakazo/contracts";
-import { isTerminal } from "@rakazo/core";
+import { ACTIVE_RUN_STATUSES, isTerminal } from "@rakazo/core";
 import type { createDb } from "@rakazo/db";
 import { sessionCookieHeader } from "../index.js";
 import type { EvalCase, Evidence } from "./cases.js";
@@ -13,8 +13,15 @@ export type EvalApp = {
   app: App;
   prisma: ReturnType<typeof createDb>["prisma"];
   jobs: JobPublisher;
+  runtime: AgentRuntime;
   connector?: { records: readonly unknown[] };
   stop: () => Promise<void>;
+};
+export type EvalActor = {
+  botId: string;
+  cookie: string;
+  userId: string;
+  spaceId: string;
 };
 export type TrialOptions = {
   connection: ModelConnectInput;
@@ -46,8 +53,7 @@ export async function runTrial(
   let cookie = "";
   let botId = "";
   const runIds: string[] = [];
-  const botIds: string[] = [];
-  const actors: Array<{ botId: string; cookie: string }> = [];
+  const actors: EvalActor[] = [];
   let pendingApproval: Evidence["pendingApproval"] = null;
   let approvalPending = false;
   let priorMemory = "";
@@ -83,8 +89,11 @@ export async function runTrial(
         notifyOnFinish: false,
       });
       botId = bot.id;
-      botIds.push(botId);
-      actors.push({ botId, cookie });
+      const persistedBot = await prisma.bot.findUniqueOrThrow({
+        where: { id: botId },
+        select: { userId: true, spaceId: true },
+      });
+      actors.push({ botId, cookie, ...persistedBot });
       await rpc(app, cookie, "bots/update", {
         botId,
         modelProvider: options.connection.provider,
@@ -156,7 +165,6 @@ export async function runTrial(
         // Force the scheduler's clock edge, not the agent's work. Attribution starts after setup.
         services.calls.length = 0;
         services.seedGithubReleases([
-          ...services.listGithubReleases(),
           {
             owner: "example",
             repo: "widget",
@@ -166,6 +174,7 @@ export async function runTrial(
             publishedAt: "2026-01-03T09:00:00Z",
             htmlUrl: "https://example.test/widget/releases/v2.2.0",
           },
+          ...services.listGithubReleases(),
         ]);
         const scheduledFor = new Date(Date.now() - 1_000);
         await prisma.routine.update({
@@ -188,14 +197,19 @@ export async function runTrial(
         );
       }
       runIds.push(runId);
-      let seenToolCount = 0;
+      let seenToolCount = result.toolCalls;
       const terminal = await poll(async () => {
         const [run, toolCount] = await Promise.all([
           prisma.run.findUnique({ where: { id: runId }, select: { status: true, error: true } }),
-          prisma.event.count({ where: { runId, type: "agent.tool.called" } }),
+          prisma.event.count({
+            where: {
+              spaceId: { in: actors.map((actor) => actor.spaceId) },
+              type: "agent.tool.called",
+            },
+          }),
         ]);
         seenToolCount = toolCount;
-        if (result.toolCalls + toolCount > options.maxToolCalls)
+        if (toolCount > options.maxToolCalls)
           throw new EvalFailure("incomplete", "Tool call budget exceeded");
         if (run?.status === "waiting_input" && scenario.approvalTool) return run;
         if (run && ["waiting_input", "waiting_approval", "paused"].includes(run.status))
@@ -206,7 +220,7 @@ export async function runTrial(
         where: { runId, type: "agent.tool.called" },
         orderBy: { seq: "asc" },
       });
-      result.toolCalls += seenToolCount;
+      result.toolCalls = seenToolCount;
       result.trace.push({
         step: stepIndex + 1,
         status: terminal.status,
@@ -315,7 +329,7 @@ export async function runTrial(
         result.cleanupFailed = true;
       }
       const usage = await handles.prisma.usageRecord
-        .findMany({ where: { botId: { in: botIds } } })
+        .findMany({ where: { OR: actorScopes(actors) } })
         .catch(() => []);
       if (usage.length) {
         result.inputTokens = usage.reduce((n, u) => n + u.inputTokens, 0);
@@ -324,11 +338,19 @@ export async function runTrial(
       // Include interrupted-run calls too. Raw tool arguments, URLs, credentials, IDs, and errors are intentionally omitted.
       const events = await handles.prisma.event
         .findMany({
-          where: { botId: { in: botIds }, type: "agent.tool.called" },
+          where: {
+            spaceId: { in: actors.map((actor) => actor.spaceId) },
+            type: "agent.tool.called",
+          },
           orderBy: { seq: "asc" },
         })
         .catch(() => []);
       result.toolCalls = events.length;
+      if (events.length > options.maxToolCalls) {
+        result.status = "failed";
+        result.category = "incomplete";
+        result.reason = "Tool call budget exceeded";
+      }
       if (!result.trace.length && events.length)
         result.trace.push({
           step: 0,
@@ -374,26 +396,141 @@ async function poll<T>(read: () => Promise<T | undefined>, deadline: number): Pr
   throw new EvalFailure("incomplete", "Trial time budget exceeded");
 }
 
-/** Disable scheduled work before cancelling every actor, including earlier isolated workspaces. */
+function actorScopes(actors: readonly EvalActor[]) {
+  return actors.map(({ userId, spaceId }) => ({ userId, spaceId }));
+}
+
+async function findScopeBots(
+  prisma: EvalApp["prisma"],
+  actors: readonly EvalActor[],
+): Promise<Array<{ id: string; userId: string; spaceId: string }>> {
+  if (!actors.length) return [];
+  return prisma.bot.findMany({
+    where: { OR: actorScopes(actors) },
+    select: { id: true, userId: true, spaceId: true },
+  });
+}
+
+function cookieForBot(bot: { userId: string; spaceId: string }, actors: readonly EvalActor[]) {
+  return actors.find((actor) => actor.userId === bot.userId && actor.spaceId === bot.spaceId)
+    ?.cookie;
+}
+
+/** Disable scheduled work and stop every run in each isolated actor scope. */
 export async function cleanupActors(
-  handles: Pick<EvalApp, "app" | "prisma">,
-  actors: readonly { botId: string; cookie: string }[],
+  handles: Pick<EvalApp, "app" | "prisma" | "jobs" | "runtime">,
+  actors: readonly EvalActor[],
 ): Promise<void> {
+  if (!actors.length) return;
   const failures: unknown[] = [];
-  try {
-    await handles.prisma.routine.updateMany({
-      where: { botId: { in: actors.map((actor) => actor.botId) } },
-      data: { active: false, nextRunAt: null },
-    });
-  } catch (error) {
-    failures.push(error);
-  }
-  for (const actor of actors) {
+  const scopes = actorScopes(actors);
+  let stable = false;
+
+  // A parent can finish spawning a child while its abort is settling. Repeat until
+  // every bot and run visible after abort was included in the pass.
+  for (let pass = 0; pass < 8; pass++) {
+    let bots: Array<{ id: string; userId: string; spaceId: string }> = actors.map((actor) => ({
+      id: actor.botId,
+      userId: actor.userId,
+      spaceId: actor.spaceId,
+    }));
+    let runsBeforeStop: Array<{ id: string }> = [];
     try {
-      await rpc(handles.app, actor.cookie, "threads/stop", { botId: actor.botId });
+      await handles.prisma.routine.updateMany({
+        where: { OR: scopes },
+        data: { active: false, nextRunAt: null },
+      });
     } catch (error) {
       failures.push(error);
     }
+
+    try {
+      bots = await findScopeBots(handles.prisma, actors);
+    } catch (error) {
+      failures.push(error);
+    }
+    try {
+      runsBeforeStop = await handles.prisma.run.findMany({
+        where: { OR: scopes },
+        select: { id: true },
+      });
+    } catch (error) {
+      failures.push(error);
+    }
+
+    for (const bot of bots) {
+      const actorCookie = cookieForBot(bot, actors);
+      if (!actorCookie) {
+        failures.push(new Error("No actor session for scoped bot"));
+        continue;
+      }
+      try {
+        await rpc(handles.app, actorCookie, "threads/stop", { botId: bot.id });
+      } catch (error) {
+        failures.push(error);
+      }
+    }
+
+    let runsAfterStop: Array<{ id: string }> = [];
+    try {
+      runsAfterStop = await handles.prisma.run.findMany({
+        where: { OR: scopes },
+        select: { id: true },
+      });
+    } catch (error) {
+      failures.push(error);
+    }
+    const handledRunIds = new Set([...runsBeforeStop, ...runsAfterStop].map((run) => run.id));
+    for (const runId of handledRunIds) {
+      try {
+        await handles.jobs.cancel(runJobKey(runId));
+      } catch (error) {
+        failures.push(error);
+      }
+    }
+    for (const runId of handledRunIds) {
+      try {
+        await handles.runtime.abort(runId);
+      } catch (error) {
+        failures.push(error);
+      }
+    }
+
+    let botsAfter: Array<{ id: string; userId: string; spaceId: string }> | undefined;
+    let runsAfter: Array<{ id: string; status: string }> | undefined;
+    let activeRoutineCount: number | undefined;
+    try {
+      await handles.prisma.routine.updateMany({
+        where: { OR: scopes },
+        data: { active: false, nextRunAt: null },
+      });
+      [botsAfter, runsAfter, activeRoutineCount] = await Promise.all([
+        findScopeBots(handles.prisma, actors),
+        handles.prisma.run.findMany({
+          where: { OR: scopes },
+          select: { id: true, status: true },
+        }),
+        handles.prisma.routine.count({ where: { OR: scopes, active: true } }),
+      ]);
+    } catch (error) {
+      failures.push(error);
+    }
+
+    if (
+      botsAfter &&
+      runsAfter &&
+      activeRoutineCount === 0 &&
+      botsAfter.every((bot) => bots.some((stopped) => stopped.id === bot.id)) &&
+      runsAfter.every(
+        (run) =>
+          handledRunIds.has(run.id) &&
+          !(ACTIVE_RUN_STATUSES as readonly string[]).includes(run.status),
+      )
+    ) {
+      stable = true;
+      break;
+    }
   }
-  if (failures.length) throw new Error("Trial work could not be stopped");
+  if (!stable) failures.push(new Error("Trial scope did not become idle"));
+  if (failures.length) throw new Error("Trial work could not be stopped", { cause: failures });
 }

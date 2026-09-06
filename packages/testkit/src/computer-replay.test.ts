@@ -34,6 +34,35 @@ describe("computer replay with real Pi and stateful offline computer", () => {
     }
   });
 
+  it("rejects an empty action batch without invalidating the current page refs", async () => {
+    const sandbox = new FakeSandboxProvider();
+    const context = computerReplayContext();
+    const computer = await sandbox.provision(
+      { botId: "fixture-bot", homePath: "/fixture" },
+      context,
+    );
+    const browser = new ContactsBrowserFixture(sandbox);
+    try {
+      await browser.navigate(computer, { url: EXPORT_FIXTURE_URL }, context);
+      const snapshot = await browser.snapshot(computer, {}, context);
+      const exportRef = snapshot.elements.find((node) => node.name === "Export contacts")!.ref;
+      expect(await browser.act(computer, { actions: [] }, context)).toMatchObject({
+        ok: false,
+        completed: 0,
+        error: "actions is required",
+        fallback: "computer_act",
+      });
+      expect(
+        await browser.act(computer, { actions: [{ kind: "click", ref: exportRef }] }, context),
+      ).toMatchObject({ ok: true, completed: 1 });
+      await expect(sandbox.readFile(computer, CONTACTS_PATH, context)).rejects.toThrow();
+      await expect(sandbox.readFile(computer, EXPORT_RECEIPT_PATH, context)).rejects.toThrow();
+    } finally {
+      browser.close();
+      await sandbox.destroy(computer, context);
+    }
+  });
+
   it("does not create an artifact after stale, incorrect, or cancelled actions", async () => {
     const sandbox = new FakeSandboxProvider();
     const context = computerReplayContext();

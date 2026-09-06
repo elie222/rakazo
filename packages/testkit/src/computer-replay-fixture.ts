@@ -40,6 +40,7 @@ export class ContactsBrowserFixture extends FakeBrowserProvider {
   }
 
   override async act(computer: ComputerRef, request: BrowserActRequest, context: AdapterContext) {
+    if (!request.actions?.length) return super.act(computer, request, context);
     const session = this.sessions.get(pageBrowserSessionKey(computer, context));
     let completed = 0;
     for (const action of request.actions) {
