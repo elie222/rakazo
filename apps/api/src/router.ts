@@ -3262,9 +3262,39 @@ export function createRouter(deps: RouterDeps) {
                   },
                   select: { providerRef: true },
                 });
-                const excludeIds = siblings
-                  .map((sibling) => sibling.providerRef)
-                  .filter((value): value is string => Boolean(value));
+                // Exclude concrete account ids only. A pending sibling may still
+                // store a slug or authorization-request id; passing those raw refs
+                // would not match remote account ids and can let this row adopt the
+                // sibling's account. If a sibling ref cannot be resolved yet, leave
+                // this row pending so a later complete can re-resolve safely.
+                const excludeIds: string[] = [];
+                let unresolvedSibling = false;
+                for (const sibling of siblings) {
+                  const ref = sibling.providerRef?.trim();
+                  // Slug-only refs cannot identify a concrete remote account; resolving
+                  // them would pick an arbitrary ACTIVE id and over-exclude.
+                  if (!ref || ref === existing.provider) continue;
+                  if (resolveAccountId) {
+                    const resolvedSiblingId = await resolveAccountId(
+                      context.actor.userId,
+                      existing.provider,
+                      ref,
+                      [],
+                      context.actor.spaceId,
+                      2_000,
+                    ).catch(() => undefined);
+                    if (resolvedSiblingId) {
+                      excludeIds.push(resolvedSiblingId);
+                    } else {
+                      unresolvedSibling = true;
+                    }
+                  } else {
+                    excludeIds.push(ref);
+                  }
+                }
+                if (unresolvedSibling) {
+                  return current;
+                }
                 resolvedAccountId = resolveAccountId
                   ? await resolveAccountId(
                       context.actor.userId,
