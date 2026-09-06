@@ -375,6 +375,13 @@ export const appContract = {
             notify: z.boolean().optional(),
             webhookEnabled: z.boolean().optional(),
             githubEnabled: z.boolean().optional(),
+            messageProvider: z
+              .string()
+              .min(1)
+              .max(50)
+              .regex(/^[a-z0-9._-]+$/i)
+              .nullable()
+              .optional(),
             /** ISO datetime to arm a never-run one-shot. */
             runAt: IsoDate.optional(),
           })
@@ -383,11 +390,12 @@ export const appContract = {
               value.crons &&
               value.crons.length === 0 &&
               value.webhookEnabled === false &&
-              value.githubEnabled === false
+              value.githubEnabled === false &&
+              value.messageProvider === null
             ) {
               ctx.addIssue({
                 code: "custom",
-                message: "Add a schedule, webhook, or GitHub trigger",
+                message: "Add a schedule, webhook, GitHub, or message trigger",
                 path: ["crons"],
               });
             }

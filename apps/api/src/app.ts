@@ -78,7 +78,7 @@ import { MarkdownMemoryStore } from "@rakazo/memory";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { type AppEnv, loadEnv } from "./env.js";
-import { createMessagingInboundHandler } from "./messaging-inbound.js";
+import { createMessagingInboundHandler, wakeMessageRoutines } from "./messaging-inbound.js";
 import { mountMessagingWebhookRoutes } from "./messaging-webhook.js";
 import { createRouter } from "./router.js";
 import { TeamChatBridge } from "./team-chat-bridge.js";
@@ -460,7 +460,7 @@ export async function createApp(
   // Messaging webhooks only exist when the surface is enabled.
   let teamChatBridge: TeamChatBridge | undefined;
   if (messaging) {
-    const inbound = createMessagingInboundHandler({
+    const inboundDeps = {
       prisma,
       events,
       jobs,
@@ -485,7 +485,8 @@ export async function createApp(
           signal: AbortSignal.timeout(2000),
         });
       },
-    });
+    } satisfies Parameters<typeof createMessagingInboundHandler>[0];
+    const inbound = createMessagingInboundHandler(inboundDeps);
     if (env.teamChatBotId) {
       const judge =
         env.teamChatJudgeProvider && env.teamChatJudgeModel
@@ -536,7 +537,8 @@ export async function createApp(
       if (preferTeamChat && teamChatBridge) {
         const mapped = toTeamChatInbound(event);
         if (mapped) {
-          await teamChatBridge.receive(mapped);
+          const target = await teamChatBridge.receive(mapped);
+          await wakeMessageRoutines(inboundDeps, target, event);
           return;
         }
       }

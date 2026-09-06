@@ -82,6 +82,7 @@ export default function RoutineDetail() {
                   ...routine.crons,
                   ...(routine.webhookEnabled ? [t("Webhook")] : []),
                   ...(routine.githubEnabled ? [t("Git event")] : []),
+                  ...(routine.messageProvider === "slack" ? [t("Slack message")] : []),
                 ].join(", "),
                 routine.timezone,
               ].join(" · ")}

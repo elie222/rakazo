@@ -219,6 +219,7 @@ export const ZH_MESSAGES: Record<string, string> = {
     "在浏览器中完成连接，然后刷新此页面。",
   "Finish signing in in your browser:": "请在浏览器中完成登录：",
   "Git event": "Git 事件",
+  "Slack message": "Slack 消息",
   Group: "群组",
   "Group name": "群组名称",
   "Group not found": "找不到群组",

@@ -2015,6 +2015,7 @@ export function createRouter(deps: RouterDeps) {
             active: input.active,
             webhookEnabled: input.webhookEnabled,
             githubEnabled: input.githubEnabled,
+            messageProvider: input.messageProvider,
             nextRunAt,
           },
         });
@@ -2046,9 +2047,11 @@ export function createRouter(deps: RouterDeps) {
         const timezone = input.timezone ?? existing.timezone;
         const webhookEnabled = input.webhookEnabled ?? existing.webhookEnabled;
         const githubEnabled = input.githubEnabled ?? existing.githubEnabled;
-        if (crons.length === 0 && !webhookEnabled && !githubEnabled) {
+        const messageProvider =
+          input.messageProvider === undefined ? existing.messageProvider : input.messageProvider;
+        if (crons.length === 0 && !webhookEnabled && !githubEnabled && !messageProvider) {
           throw new ORPCError("BAD_REQUEST", {
-            message: "Add a schedule, webhook, or GitHub trigger",
+            message: "Add a schedule, webhook, GitHub, or message trigger",
           });
         }
         if (hasMixedOneShotSchedule(crons)) {
@@ -2116,6 +2119,7 @@ export function createRouter(deps: RouterDeps) {
             notify: input.notify,
             webhookEnabled: input.webhookEnabled,
             githubEnabled: input.githubEnabled,
+            messageProvider: input.messageProvider,
             nextRunAt,
           },
         });
@@ -4780,6 +4784,7 @@ function mapRoutine(row: {
   notify: boolean;
   webhookEnabled: boolean;
   githubEnabled: boolean;
+  messageProvider: string | null;
   lastRunAt: Date | null;
   nextRunAt: Date | null;
   createdAt: Date;
@@ -4795,6 +4800,7 @@ function mapRoutine(row: {
     notify: row.notify,
     webhookEnabled: row.webhookEnabled,
     githubEnabled: row.githubEnabled,
+    messageProvider: row.messageProvider,
     lastRunAt: row.lastRunAt?.toISOString() ?? null,
     nextRunAt: row.nextRunAt?.toISOString() ?? null,
     createdAt: row.createdAt.toISOString(),

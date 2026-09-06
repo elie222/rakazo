@@ -2,6 +2,53 @@ import { expect, test } from "@playwright/test";
 import type { Routine } from "@rakazo/contracts";
 import { activeBotId, captureScreenshot, completeOnboarding, rpc, signup } from "./helpers";
 
+test("Slack message trigger uses the mounted messaging provider and persists", async ({
+  page,
+}, testInfo) => {
+  await page.route("**/rpc/messaging/status", (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        json: { enabled: true, providers: ["slack"], openSignup: false, identities: [] },
+      }),
+    }),
+  );
+  const stamp = Date.now();
+  await signup(page, `routine-slack-${stamp}@rakazo.test`, "password12", "Slack Routine");
+  await completeOnboarding(page);
+  const botId = activeBotId(page);
+
+  await page.getByTitle("Agent computer").click();
+  await page.getByRole("button", { name: "Create Routine" }).click();
+  await page.getByPlaceholder("Name this routine").fill("Triage Slack updates");
+  await page
+    .getByPlaceholder("What should this routine do each time it runs?")
+    .fill("Review the verified message event");
+  await page.getByRole("button", { name: "Add trigger" }).click();
+  await page.getByRole("menuitem", { name: "Slack message", exact: true }).click();
+
+  const panel = page.getByTestId("side-panel");
+  await expect(panel.getByText("Slack message", { exact: true })).toBeVisible();
+  await expect(
+    panel.getByText("Runs when this bot receives a verified message from this provider."),
+  ).toBeVisible();
+
+  const saved = page.waitForResponse(
+    (response) => response.url().includes("/rpc/routines/create") && response.ok(),
+  );
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await saved;
+  const [routine] = await rpc<Routine[]>(page, "routines/list", { botId });
+  expect(routine).toMatchObject({
+    name: "Triage Slack updates",
+    crons: [],
+    webhookEnabled: false,
+    githubEnabled: false,
+    messageProvider: "slack",
+  });
+  await captureScreenshot(page, testInfo, "routine-slack-message");
+});
+
 test("GitHub event trigger exposes signed delivery settings and persists", async ({
   page,
 }, testInfo) => {

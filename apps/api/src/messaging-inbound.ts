@@ -16,6 +16,11 @@ import {
   redeemMessagingLinkCode,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import {
+  deliverWebhookEvent,
+  formatUntrustedDeliveryPayload,
+  inboundEventName,
+} from "./webhook-inbound.js";
 
 export interface MessagingInboundDeps {
   prisma: PrismaClient;
@@ -147,6 +152,52 @@ async function handleDirectEvent(
       getLogger().error("messaging inbound run enqueue error", error);
     });
   }
+  await wakeMessageRoutines(deps, ids, event);
+}
+
+/** Wake provider-neutral message routines through the same approval boundary as webhooks. */
+export async function wakeMessageRoutines(
+  deps: Pick<MessagingInboundDeps, "prisma" | "events" | "jobs">,
+  target: Pick<ProvisionedMessagingIdentity, "spaceId" | "userId" | "botId" | "threadId">,
+  event: MessagingInboundMessage,
+): Promise<void> {
+  const routines = await deps.prisma.routine.findMany({
+    where: {
+      botId: target.botId,
+      spaceId: target.spaceId,
+      active: true,
+      messageProvider: event.provider,
+    },
+    select: { id: true, name: true, prompt: true },
+    orderBy: { updatedAt: "desc" },
+    take: 5,
+  });
+  if (routines.length === 0) return;
+
+  const provider = inboundEventName(event.provider);
+  const prompt = formatUntrustedDeliveryPayload(`[Messaging Event: ${provider}]`, {
+    provider: event.provider,
+    kind: event.isDirect ? "direct" : "channel",
+    handle: event.handle,
+    from: event.from,
+    fromLabel: event.fromLabel,
+    channelName: event.channelName,
+    content: event.content,
+    mediaUrl: event.mediaUrl,
+  });
+  await deliverWebhookEvent(
+    { events: deps.events, jobs: deps.jobs },
+    {
+      bot: { id: target.botId, spaceId: target.spaceId, userId: target.userId },
+      threadId: target.threadId,
+    },
+    {
+      prompt,
+      routines,
+      source: "messaging",
+      idempotencyKey: `${event.provider}:${event.handle}`,
+    },
+  );
 }
 
 /**
@@ -477,6 +528,16 @@ async function handleChannelEvent(
         getLogger().error("messaging channel fan-out enqueue error", error);
       });
     }
+    await wakeMessageRoutines(
+      deps,
+      {
+        spaceId: identity.spaceId,
+        userId: identity.userId,
+        botId: identity.botId,
+        threadId: thread.id,
+      },
+      event,
+    );
   }
 }
 

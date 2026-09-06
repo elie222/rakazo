@@ -691,6 +691,7 @@ model Routine {
   notify         Boolean   @default(true)
   webhookEnabled Boolean   @default(false)
   githubEnabled  Boolean   @default(false)
+  messageProvider String?
   lastRunAt      DateTime?
   nextRunAt      DateTime?
   createdAt      DateTime  @default(now())

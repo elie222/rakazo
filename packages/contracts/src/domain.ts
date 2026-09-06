@@ -349,6 +349,12 @@ export const RoutineSchema = z.object({
   notify: z.boolean(),
   webhookEnabled: z.boolean(),
   githubEnabled: z.boolean(),
+  messageProvider: z
+    .string()
+    .min(1)
+    .max(50)
+    .regex(/^[a-z0-9._-]+$/i)
+    .nullable(),
   lastRunAt: z.string().nullable(),
   nextRunAt: z.string().nullable(),
   createdAt: z.string(),
@@ -366,12 +372,24 @@ export const CreateRoutineInput = z
     active: z.boolean().default(false),
     webhookEnabled: z.boolean().default(false),
     githubEnabled: z.boolean().default(false),
+    messageProvider: z
+      .string()
+      .min(1)
+      .max(50)
+      .regex(/^[a-z0-9._-]+$/i)
+      .nullable()
+      .default(null),
   })
   .superRefine((value, ctx) => {
-    if (value.crons.length === 0 && !value.webhookEnabled && !value.githubEnabled) {
+    if (
+      value.crons.length === 0 &&
+      !value.webhookEnabled &&
+      !value.githubEnabled &&
+      !value.messageProvider
+    ) {
       ctx.addIssue({
         code: "custom",
-        message: "Add a schedule, webhook, or GitHub trigger",
+        message: "Add a schedule, webhook, GitHub, or message trigger",
         path: ["crons"],
       });
     }

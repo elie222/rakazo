@@ -40,6 +40,13 @@ type TargetBot = {
   modelId: string | null;
 };
 
+export type TeamChatInboundTarget = {
+  spaceId: string;
+  userId: string;
+  botId: string;
+  threadId: string;
+};
+
 export function teamChatPrompt(provider: string, senderName: string, content: string): string {
   const label = provider.charAt(0).toUpperCase() + provider.slice(1);
   return `${label} message from ${senderName}:\n\n${content}`;
@@ -120,7 +127,7 @@ export class TeamChatBridge {
     await this.reconciling?.catch(() => undefined);
   }
 
-  async receive(message: TeamChatInboundMessage): Promise<void> {
+  async receive(message: TeamChatInboundMessage): Promise<TeamChatInboundTarget> {
     const target = this.target;
     if (!target) throw new Error("Team chat bridge is not started");
     const conversation = await this.deps.prisma.externalConversation.upsert({
@@ -179,6 +186,12 @@ export class TeamChatBridge {
     });
     await this.ensureTranscriptMessage(externalMessage, conversation);
     await this.reconcileOnce();
+    return {
+      spaceId: conversation.spaceId,
+      userId: conversation.userId,
+      botId: conversation.botId,
+      threadId: conversation.thread.id,
+    };
   }
 
   private async mirrorMissingMessages(): Promise<void> {
