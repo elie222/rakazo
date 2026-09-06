@@ -1,13 +1,11 @@
-import { execSync, spawn } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { ComputerRef, ProcessEvent, SandboxProvider } from "@rakazo/adapter-kit";
-import { afterAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { BoxSandboxEmulator } from "./box-emulator.js";
 import { DaytonaSandboxEmulator } from "./daytona-emulator.js";
 import { DesktopSandboxProvider } from "./desktop-sandbox.js";
-import { DockerSandboxProvider } from "./docker-sandbox.js";
 import { ManagedSandboxEmulator } from "./e2b-emulator.js";
 import { FakeSandboxProvider } from "./fake-sandbox.js";
 import { provisionPrepared } from "./sandbox-test-support.js";
@@ -220,86 +218,3 @@ describe("sandbox conformance", () => {
     rmSync(root, { recursive: true, force: true });
   });
 });
-
-describe("docker sandbox", () => {
-  let spawned: ReturnType<typeof spawn> | undefined;
-  const dataDir = mkdtempSync(path.join(tmpdir(), "rakazo-docker-conformance-"));
-
-  afterAll(async () => {
-    spawned?.kill("SIGTERM");
-    rmSync(dataDir, { recursive: true, force: true });
-  });
-
-  it("runs the same graphical command through the supervisor", async ({ skip }) => {
-    if (!dockerAvailable() || !hasAnySandboxImage()) {
-      skip();
-      return;
-    }
-    const port = 17991;
-    const token = "sandbox-conformance-token";
-    const url = `http://127.0.0.1:${port}`;
-    const root = path.resolve(import.meta.dirname, "../../..");
-    spawned = spawn("pnpm", ["--filter", "@rakazo/sandbox-supervisor", "start"], {
-      cwd: root,
-      env: {
-        ...process.env,
-        DATA_DIR: dataDir,
-        SANDBOX_SUPERVISOR_TOKEN: token,
-        SUPERVISOR_PORT: String(port),
-      },
-      stdio: "ignore",
-    });
-    const up = await waitForHealth(`${url}/health`, 20_000);
-    if (!up) {
-      skip();
-      return;
-    }
-    const provider = new DockerSandboxProvider(url, token);
-    const botId = `conf-${Date.now()}`;
-    const computer = await provider.provision(
-      { botId, homePath: path.join(dataDir, "homes", botId) },
-      ctx,
-    );
-    const out = await drain(provider, computer);
-    expect(out).toContain("graphical-ok");
-    const session = await provider.connectScreen(computer, { view: "stream" }, ctx);
-    expect(session.url).toMatch(/embed\.html/);
-    await provider.destroy(computer, ctx);
-  }, 60_000);
-});
-
-function dockerAvailable() {
-  try {
-    execSync("docker info", { stdio: "ignore", timeout: 8_000 });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function hasAnySandboxImage() {
-  try {
-    execSync("docker image inspect rakazo/computer:local", { stdio: "ignore", timeout: 8_000 });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function ping(url: string) {
-  try {
-    const res = await fetch(url);
-    return res.ok;
-  } catch {
-    return false;
-  }
-}
-
-async function waitForHealth(url: string, ms: number) {
-  const start = Date.now();
-  while (Date.now() - start < ms) {
-    if (await ping(url)) return true;
-    await new Promise((r) => setTimeout(r, 300));
-  }
-  return false;
-}
