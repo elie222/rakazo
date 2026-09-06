@@ -299,6 +299,36 @@ describe("PipedreamConnector", () => {
     );
   });
 
+  it("marks account-list failures as pre-delete so revoke can restore local retry state", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request) => {
+        const url = String(input);
+        if (url.endsWith("/v1/oauth/token")) {
+          return Response.json({ access_token: "fake-access-token", expires_in: 3_600 });
+        }
+        if (url.includes("/accounts?")) {
+          const error = new Error("network timeout listing accounts");
+          error.name = "TimeoutError";
+          throw error;
+        }
+        throw new Error(`Unexpected request ${url}`);
+      }),
+    );
+    const connector = new PipedreamConnector({
+      clientId: "fake-client-id",
+      clientSecret: "fake-client-secret",
+      projectId: "fake-project-id",
+      environment: "development",
+      identitySecret: "fake-identity-secret",
+    });
+
+    await expect(connector.revoke("account-1", context)).rejects.toMatchObject({
+      name: "TimeoutError",
+      remoteRevokePreDelete: true,
+    });
+  });
+
   it("runs catalog, connection, discovery, execution, and revoke against the protocol emulator", async () => {
     const emulator = new ThirdPartyConnectorEmulator();
     const connector = new PipedreamConnector(
