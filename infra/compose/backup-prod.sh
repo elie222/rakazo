@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PROJECT_DIR="/opt/rakazo"
+PROJECT_DIR="${RAKAZO_DEPLOY_DIR:-/srv/rakazo}"
+[[ "${PROJECT_DIR}" == /* ]] || { echo "RAKAZO_DEPLOY_DIR must be an absolute path" >&2; exit 1; }
 COMPOSE_FILE="${PROJECT_DIR}/infra/compose/docker-compose.prod.yml"
 ENV_FILE="${PROJECT_DIR}/.env"
 BACKUP_ROOT="/var/backups/rakazo"

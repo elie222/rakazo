@@ -40,6 +40,9 @@ services:
       SANDBOX_SUPERVISOR_TOKEN: topology-only-supervisor-token-at-least-32-characters
       DOCKER_SOCKET: /var/run/docker.sock
       RAKAZO_COMPUTER_IMAGE: ${TOPOLOGY_COMPUTER_IMAGE:-rakazo/computer:topology}
+      RAKAZO_COMPUTER_MEMORY: ${RAKAZO_COMPUTER_MEMORY:-2g}
+      RAKAZO_COMPUTER_CPUS: ${RAKAZO_COMPUTER_CPUS:-2}
+      RAKAZO_COMPUTER_PIDS_LIMIT: ${RAKAZO_COMPUTER_PIDS_LIMIT:-2048}
       SANDBOX_SCREEN_NETWORK: isolated
       LOG_LEVEL: info
     volumes:
@@ -80,6 +83,9 @@ services:
       SIGNUPS_ENABLED: "true"
       WAKEUP_DRIVER: graphile
       SANDBOX_PROVIDER: docker
+      CLOUD_AGENT_PROVIDER: ${CLOUD_AGENT_PROVIDER:-none}
+      CLOUD_AGENT_SPACE_ID: ${CLOUD_AGENT_SPACE_ID:-}
+      CURSOR_API_KEY: ${CURSOR_API_KEY:-}
       AGENT_RUNTIME: scripted
       # Optional egress proxy (Mainland / corporate). Empty = unset; either case works.
       HTTP_PROXY: ${HTTP_PROXY:-${http_proxy:-}}

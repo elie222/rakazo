@@ -7,7 +7,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: mobile-android-screenshots
+  group: mobile-android-screenshots-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -136,6 +136,21 @@ jobs:
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           script: bash .github/scripts/capture-mobile-android-screenshots.sh
+
+      - name: Publish screenshot gallery
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ vars.S3_REGION }}
+          AWS_EC2_METADATA_DISABLED: "true"
+          S3_BUCKET: ${{ vars.S3_BUCKET }}
+          S3_ENDPOINT: ${{ vars.S3_ENDPOINT }}
+          PLAYWRIGHT_PUBLIC_BASE_URL: ${{ vars.PLAYWRIGHT_PUBLIC_BASE_URL }}
+          MOBILE_RUN_ATTEMPT: ${{ github.run_attempt }}
+          MOBILE_RUN_ID: ${{ github.run_id }}
+          MOBILE_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          MOBILE_SHA: ${{ github.sha }}
+        run: bash scripts/publish-mobile-screenshot-gallery.sh
 
       - name: Upload screenshots and diagnostics
         if: always()

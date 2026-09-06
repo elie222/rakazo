@@ -1,6 +1,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
 import type {
+  AgentSkillCatalogEntry,
   Bot,
   ComputerMode,
   Me,
@@ -10,6 +11,7 @@ import type {
   VoiceInfo,
 } from "@rakazo/contracts";
 import {
+  BOT_COLORS,
   BOT_DESCRIPTION_MAX_LENGTH,
   BOT_NAME_MAX_LENGTH,
   BOT_TITLE_MAX_LENGTH,
@@ -30,6 +32,10 @@ import { rpc } from "../../lib/rpc";
 
 const ScratchpadSection = lazy(() =>
   import("../ScratchpadSection").then((module) => ({ default: module.ScratchpadSection })),
+);
+
+const KnowledgeSection = lazy(() =>
+  import("../KnowledgeSection").then((module) => ({ default: module.KnowledgeSection })),
 );
 
 const fieldLabelClass = "mt-4 block text-[14px] text-muted-foreground";
@@ -172,17 +178,20 @@ export function CreateBotForm({
 export function BotSettings({
   bot,
   memoryProviderConfigured,
+  onSkillsChange,
   onSave,
   onExport,
   onClear,
 }: {
   bot: Bot;
+  onSkillsChange: (skills: AgentSkillCatalogEntry[]) => void;
   memoryProviderConfigured: boolean;
   onSave: (patch: {
     name?: string;
     title?: string;
     description?: string;
     instructions?: string;
+    color?: string;
     computerMode: ComputerMode;
     memoryScope?: "isolated" | "shared" | null;
     autoSpeak?: boolean;
@@ -195,10 +204,12 @@ export function BotSettings({
   onClear: () => void;
 }) {
   const { t } = useLingui();
+  const [advancedOpened, setAdvancedOpened] = useState(false);
   const ids = useId();
   const [name, setName] = useState(bot.name);
   const [title, setTitle] = useState(bot.title);
   const [description, setDescription] = useState(bot.description);
+  const [color, setColor] = useState(bot.color);
   const [computerMode, setComputerMode] = useState(bot.computerMode);
   const [memoryScope, setMemoryScope] = useState(bot.memoryScope);
   const [autoSpeak, setAutoSpeak] = useState(bot.autoSpeak);
@@ -282,12 +293,19 @@ export function BotSettings({
           (entry) => entry.provider === effectiveProvider && entry.id === effectiveModelId,
         )
       : undefined;
-  const thinkingOptions = (effectiveEntry?.thinkingLevels ?? []).filter((level) => level !== "off");
+  const effectiveCredential = credentials.find(
+    (entry) => entry.provider === effectiveProvider && entry.modelId === effectiveModelId,
+  );
+  const thinkingOptions = (
+    effectiveCredential?.thinkingLevels ??
+    effectiveEntry?.thinkingLevels ??
+    []
+  ).filter((level) => level !== "off");
 
   return (
     <div data-testid="bot-settings">
       <div className="flex justify-center">
-        <BotAvatar color={bot.color} identity={bot.id} size={64} status={bot.status} />
+        <BotAvatar color={color} identity={bot.id} size={64} status={bot.status} />
       </div>
       <label htmlFor={`${ids}-name`} className="mt-6 block text-[14px] text-muted-foreground">
         <Trans>Name</Trans>
@@ -320,7 +338,33 @@ export function BotSettings({
           className="mt-2"
         />
       </label>
-      <details data-testid="bot-settings-advanced" className="group mt-5">
+      <div className={fieldLabelClass}>
+        <Trans>Color</Trans>
+        <div className="mt-2 flex flex-wrap gap-2" role="radiogroup" aria-label={t`Color`}>
+          {BOT_COLORS.map((option, index) => (
+            <input
+              key={option}
+              className={`size-8 cursor-pointer appearance-none rounded-full border-2 ring-offset-card transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
+                color === option ? "border-foreground" : "border-transparent"
+              }`}
+              type="radio"
+              name={`${ids}-color`}
+              value={option}
+              checked={color === option}
+              aria-label={t`Color ${index + 1}`}
+              style={{ backgroundColor: option }}
+              onChange={() => setColor(option)}
+            />
+          ))}
+        </div>
+      </div>
+      <details
+        data-testid="bot-settings-advanced"
+        className="group mt-5"
+        onToggle={(event) => {
+          if (event.currentTarget.open) setAdvancedOpened(true);
+        }}
+      >
         <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-[14px] text-muted-foreground">
           <span className="text-muted-foreground">
             <Trans>Advanced</Trans>
@@ -332,6 +376,9 @@ export function BotSettings({
         <ComputerModePicker value={computerMode} onChange={setComputerMode} />
         <Suspense fallback={null}>
           <ScratchpadSection botId={bot.id} />
+          {advancedOpened ? (
+            <KnowledgeSection botId={bot.id} onSkillsChange={onSkillsChange} />
+          ) : null}
         </Suspense>
         <label htmlFor={`${ids}-model`} className={fieldLabelClass}>
           <Trans>Model</Trans>
@@ -456,6 +503,7 @@ export function BotSettings({
               title: nextTitle,
               description: nextDescription,
               instructions: nextDescription,
+              color,
               computerMode,
               memoryScope,
               autoSpeak,

@@ -12,6 +12,7 @@ import {
   attachmentsForThread,
   buildComposerMentionOptions,
   type ComposerMention,
+  cloudAgentHttpsUrl,
   isApprovalAskBlock,
   isRunTerminalEvent,
   isSecretAskBlock,
@@ -25,6 +26,7 @@ import {
   truncateSlashDescription,
   userVisibleMessages,
 } from "@rakazo/core";
+import * as Clipboard from "expo-clipboard";
 import { useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import { useHeaderHeight } from "expo-router/react-navigation";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -35,6 +37,7 @@ import {
   AppState,
   FlatList,
   Image,
+  Linking,
   Modal,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
@@ -43,6 +46,7 @@ import {
   ScrollView,
   Text,
   TextInput,
+  type TextProps,
   View,
 } from "react-native";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
@@ -59,6 +63,7 @@ import { NativeSymbol } from "../components/native-symbol";
 import {
   applyMobileThreadEvent,
   blockText,
+  copyableMobileMessageText,
   currentApiBase,
   loadSessionToken,
   type MobileBot,
@@ -79,13 +84,14 @@ import { mobileTokens } from "../lib/appearance";
 import { type MobileArtifactTarget, openMobileArtifact } from "../lib/artifact-open";
 import { confirmDeleteBot } from "../lib/bot-lifecycle";
 import { cancelFocusPrompt, focusPromptThreadActive } from "../lib/focus-prompt";
-import { t, useI18n } from "../lib/i18n";
+import { dateLocaleForUi, t, useI18n } from "../lib/i18n";
 import { saveLastBotId } from "../lib/last-bot";
 import {
   dismissThreadNotifications,
   resumeLiveNotifications,
   setOpenNotificationThread,
 } from "../lib/live-notifications";
+import { presentMessageActionSheet } from "../lib/message-action-sheet";
 import {
   hasVisibleMessagePresentation,
   isCenteredAgentEvent,
@@ -833,6 +839,7 @@ function Thread() {
                 event.type === "thread.message.updated" ||
                 event.type === "thread.message.reaction" ||
                 event.type === "thread.subagent" ||
+                event.type === "thread.cloud_agent" ||
                 event.type === "thread.cleared" ||
                 event.type === "run.waiting_input" ||
                 event.type === "computer.takeover.requested" ||
@@ -1251,7 +1258,53 @@ function Thread() {
     }
   }
 
+  function messageActionProps(message: MobileMessage): MessageActionProps {
+    const actions = [
+      { name: "reply", text: t("Reply"), onPress: () => setReplyTarget(message) },
+      ...(canReactToThreadMessage(message)
+        ? [
+            {
+              name: "react",
+              text: message.thumbsUp ? t("Remove thumbs-up") : t("Add thumbs-up"),
+              onPress: () => void reactToMessage(message),
+            },
+          ]
+        : []),
+      ...(message.role === "bot" && blockText(message)
+        ? [{ name: "speak", text: t("Speak message"), onPress: () => void speak(message) }]
+        : []),
+      {
+        name: "copy",
+        text: t("Copy"),
+        onPress: () => {
+          const text = copyableMobileMessageText(message);
+          if (text) void Clipboard.setStringAsync(text).catch(() => undefined);
+        },
+      },
+    ];
+    return {
+      onLongPress: () =>
+        presentMessageActionSheet({
+          actions,
+          title: message.createdAt
+            ? new Date(message.createdAt).toLocaleTimeString(dateLocaleForUi(), {
+                hour: "numeric",
+                minute: "2-digit",
+              })
+            : undefined,
+          cancel: t("Cancel"),
+          more: t("More"),
+          colorScheme,
+        }),
+      accessibilityActions: actions.map((action) => ({ name: action.name, label: action.text })),
+      onAccessibilityAction: (event) => {
+        actions.find((action) => action.name === event.nativeEvent.actionName)?.onPress();
+      },
+    };
+  }
+
   function renderMessageRow(message: MobileMessage, options?: { enableJump?: boolean }) {
+    const actionProps = messageActionProps(message);
     const activityBotId =
       !inGroup && message.role === "bot" && message.id.startsWith("progress:")
         ? (message.botId ?? botId)
@@ -1311,51 +1364,39 @@ function Thread() {
             flexShrink: 1,
           }}
         >
-          <View
-            style={{
-              alignSelf: message.role === "user" ? "flex-end" : "flex-start",
-              flexDirection: "row",
-              alignItems: "center",
-              gap: 12,
-              marginBottom: 4,
-            }}
-          >
-            <Pressable accessibilityLabel={t("Reply")} onPress={() => setReplyTarget(message)}>
-              <Text style={{ color: tokens.mutedForeground, fontSize: 12 }}>{t("Reply")}</Text>
+          <Pressable accessible={false} onLongPress={actionProps.onLongPress}>
+            <MessageBubble
+              botId={botId ?? snap?.members?.[0]?.botId ?? ""}
+              groupId={groupId}
+              message={message}
+              botName={name}
+              bots={mentionBots}
+              members={snap?.members}
+              replyPreview={
+                message.replyToMessageId ? messagesById.get(message.replyToMessageId) : undefined
+              }
+              canAnswer={message.id === answerableAskMessageId}
+              onAnswer={answerMessage}
+              onOpenBot={openBot}
+              onPreviewMarkdown={setMarkdownPreview}
+              actionProps={actionProps}
+            />
+          </Pressable>
+          {canReactToThreadMessage(message) && message.thumbsUp ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={t("Remove thumbs-up")}
+              accessibilityState={{ selected: true }}
+              onPress={() => void reactToMessage(message)}
+              hitSlop={8}
+              style={{
+                alignSelf: message.role === "user" ? "flex-end" : "flex-start",
+                marginTop: 4,
+              }}
+            >
+              <Text style={{ color: tokens.warning, fontSize: 13 }}>👍</Text>
             </Pressable>
-            {canReactToThreadMessage(message) ? (
-              <Pressable
-                accessibilityLabel={message.thumbsUp ? t("Remove thumbs-up") : t("Add thumbs-up")}
-                accessibilityState={{ selected: Boolean(message.thumbsUp) }}
-                onPress={() => void reactToMessage(message)}
-              >
-                <Text
-                  style={{
-                    color: message.thumbsUp ? tokens.warning : tokens.mutedForeground,
-                    fontSize: 13,
-                  }}
-                >
-                  👍
-                </Text>
-              </Pressable>
-            ) : null}
-          </View>
-          <MessageBubble
-            botId={botId ?? snap?.members?.[0]?.botId ?? ""}
-            groupId={groupId}
-            message={message}
-            botName={name}
-            bots={mentionBots}
-            members={snap?.members}
-            replyPreview={
-              message.replyToMessageId ? messagesById.get(message.replyToMessageId) : undefined
-            }
-            canAnswer={message.id === answerableAskMessageId}
-            onAnswer={answerMessage}
-            onOpenBot={openBot}
-            onPreviewMarkdown={setMarkdownPreview}
-            onSpeak={message.role === "bot" ? speak : undefined}
-          />
+          ) : null}
         </View>
       </View>
     );
@@ -2108,7 +2149,9 @@ function previewMessageText(message: MobileMessage): string {
   const text = message.blocks
     .flatMap((block) => {
       if (block.kind === "channel_message" && block.text) {
-        return [`${messagingProviderLabel(block.provider)} · ${block.fromLabel}: ${block.text}`];
+        return [
+          `${messagingProviderLabel(block.provider, block.transport)} · ${block.fromLabel}: ${block.text}`,
+        ];
       }
       return block.kind === "text" && block.text ? [block.text] : [];
     })
@@ -2137,6 +2180,11 @@ async function speakMessage(botId: string, message: MobileMessage) {
   }
 }
 
+type MessageActionProps = Pick<
+  TextProps,
+  "onLongPress" | "accessibilityActions" | "onAccessibilityAction"
+>;
+
 const MessageBubble = memo(function MessageBubble({
   botId,
   botName,
@@ -2149,7 +2197,7 @@ const MessageBubble = memo(function MessageBubble({
   onAnswer,
   onOpenBot,
   onPreviewMarkdown,
-  onSpeak,
+  actionProps,
 }: {
   botId: string;
   botName?: string;
@@ -2162,7 +2210,7 @@ const MessageBubble = memo(function MessageBubble({
   onAnswer: (message: MobileMessage, answer: string) => Promise<void>;
   onOpenBot: (botId: string, name: string) => void;
   onPreviewMarkdown: (target: MarkdownArtifactPreviewTarget) => void;
-  onSpeak?: (message: MobileMessage) => void;
+  actionProps: MessageActionProps;
 }) {
   const colorScheme = useResolvedAppearance();
   const tokens = mobileTokens();
@@ -2183,11 +2231,18 @@ const MessageBubble = memo(function MessageBubble({
       <View style={{ gap: 8, width: "100%" }}>
         <AskBlock
           ask={ask}
+          actionProps={actionProps}
           canAnswer={canAnswer}
           onAnswer={(answer) => onAnswer(message, answer)}
         />
         {appConnectBlocks.map((block, index) => (
-          <AppConnectCard key={`${block.provider}-${index}`} botId={cardBotId} block={block} />
+          <AppConnectCard
+            key={`${block.provider}-${index}`}
+            botId={cardBotId}
+            block={block}
+            accessibilityActions={actionProps.accessibilityActions}
+            onAccessibilityAction={actionProps.onAccessibilityAction}
+          />
         ))}
       </View>
     );
@@ -2198,6 +2253,7 @@ const MessageBubble = memo(function MessageBubble({
     const to = memberName(members, handoff.toBotId) ?? t("bot");
     return (
       <AgentEventLabel
+        actionProps={actionProps}
         label={t("{from} messaged {to}", { from, to })}
         detail={handoff.text}
         expanded={peerExpanded}
@@ -2225,7 +2281,8 @@ const MessageBubble = memo(function MessageBubble({
     // Compact receipt only: peer bodies stay out of the human thread.
     // Full view-only peer chat is web-first; mobile keeps the chip without expand.
     return (
-      <View
+      <Pressable
+        {...actionProps}
         accessible
         accessibilityLabel={label}
         style={{
@@ -2244,7 +2301,7 @@ const MessageBubble = memo(function MessageBubble({
         >
           {label}
         </Text>
-      </View>
+      </Pressable>
     );
   }
   const channelMessage = message.blocks.find(
@@ -2253,22 +2310,27 @@ const MessageBubble = memo(function MessageBubble({
   );
   if (channelMessage) {
     return (
-      <View style={{ width: "100%", paddingVertical: 4, alignItems: "center" }}>
+      <Pressable
+        {...actionProps}
+        style={{ width: "100%", paddingVertical: 4, alignItems: "center" }}
+      >
         <Text style={{ color: tokens.mutedForeground, fontSize: 13.5, textAlign: "center" }}>
-          {messagingProviderLabel(channelMessage.provider)} · {channelMessage.fromLabel}:{" "}
-          {channelMessage.text}
+          {messagingProviderLabel(channelMessage.provider, channelMessage.transport)} ·{" "}
+          {channelMessage.fromLabel}: {channelMessage.text}
         </Text>
-      </View>
+      </Pressable>
     );
   }
   const special = message.blocks.find(
-    (block) => block.kind === "subagent" || block.kind === "child_bot",
+    (block) =>
+      block.kind === "subagent" || block.kind === "child_bot" || block.kind === "cloud_agent",
   );
   if (special?.kind === "subagent") {
     const running = special.status === "running";
     const failed = special.status === "failed";
     return (
-      <View
+      <Pressable
+        {...actionProps}
         style={{
           width: "90%",
           borderRadius: 18,
@@ -2316,15 +2378,75 @@ const MessageBubble = memo(function MessageBubble({
             </ChatMarkdown>
           </View>
         ) : null}
-      </View>
+      </Pressable>
+    );
+  }
+  if (special?.kind === "cloud_agent") {
+    const title = special.title || t("Cloud agent");
+    const statusLabel =
+      special.status === "running"
+        ? t("running")
+        : special.status === "finished"
+          ? t("finished")
+          : special.status === "cancelled"
+            ? t("cancelled")
+            : t("failed");
+    const running = special.status === "running";
+    const failed = special.status === "failed" || special.status === "cancelled";
+    const prHref = cloudAgentHttpsUrl(special.prUrl);
+    const href = prHref ?? cloudAgentHttpsUrl(special.url);
+    return (
+      <Pressable
+        onPress={() => {
+          if (href) Linking.openURL(href).catch(() => undefined);
+        }}
+        testID="cloud-agent-card"
+        accessibilityRole={href ? "link" : "text"}
+        accessibilityLabel={`${title}: ${statusLabel}`}
+        disabled={!href}
+        style={{
+          width: "90%",
+          borderRadius: 18,
+          borderWidth: 1,
+          borderColor: tokens.border,
+          backgroundColor: tokens.card,
+          paddingHorizontal: 16,
+          paddingVertical: 14,
+        }}
+      >
+        <View style={{ flexDirection: "row", justifyContent: "space-between", gap: 8 }}>
+          <Text style={{ color: tokens.cardForeground, fontSize: 15, fontWeight: "600" }}>
+            {title}
+          </Text>
+          <Text
+            style={{
+              color: failed ? tokens.destructive : running ? tokens.warning : tokens.success,
+              fontSize: 13,
+            }}
+          >
+            {statusLabel}
+          </Text>
+        </View>
+        {prHref ? (
+          <Text style={{ color: tokens.mutedForeground, marginTop: 8, fontSize: 14.5 }}>
+            {t("Pull request")}
+          </Text>
+        ) : special.branch ? (
+          <Text style={{ color: tokens.mutedForeground, marginTop: 8, fontSize: 13.5 }}>
+            {special.branch}
+          </Text>
+        ) : null}
+      </Pressable>
     );
   }
   if (special?.kind === "child_bot") {
     const removed = special.status === "deleted" || special.status === "archived";
     return (
       <Pressable
-        disabled={removed}
-        onPress={() => onOpenBot(special.botId ?? "", special.name ?? t("Bot"))}
+        {...actionProps}
+        onPress={
+          removed ? undefined : () => onOpenBot(special.botId ?? "", special.name ?? t("Bot"))
+        }
         style={{
           width: "90%",
           borderRadius: 18,
@@ -2375,7 +2497,13 @@ const MessageBubble = memo(function MessageBubble({
     return (
       <View style={{ gap: 8, width: "100%" }}>
         {appConnectBlocks.map((block, index) => (
-          <AppConnectCard key={`${block.provider}-${index}`} botId={cardBotId} block={block} />
+          <AppConnectCard
+            key={`${block.provider}-${index}`}
+            botId={cardBotId}
+            block={block}
+            accessibilityActions={actionProps.accessibilityActions}
+            onAccessibilityAction={actionProps.onAccessibilityAction}
+          />
         ))}
       </View>
     );
@@ -2398,15 +2526,19 @@ const MessageBubble = memo(function MessageBubble({
           }}
         >
           {askBlock.text ? (
-            <Text style={{ color: tokens.foreground, fontSize: 15.5, lineHeight: 23 }}>
+            <Text
+              {...actionProps}
+              style={{ color: tokens.foreground, fontSize: 15.5, lineHeight: 23 }}
+            >
               {askBlock.text}
             </Text>
           ) : null}
           {askBlock.detail ? (
             <Text
+              {...(askBlock.text ? {} : actionProps)}
               style={{
                 color: tokens.mutedForeground,
-                marginTop: 8,
+                marginTop: askBlock.text ? 8 : 0,
                 fontSize: 12.5,
                 fontFamily: "Menlo",
                 lineHeight: 20,
@@ -2417,6 +2549,7 @@ const MessageBubble = memo(function MessageBubble({
           ) : null}
           {askBlock.status === "answered" ? (
             <Text
+              {...actionProps}
               style={{
                 color: tokens.success,
                 marginTop: 12,
@@ -2433,16 +2566,27 @@ const MessageBubble = memo(function MessageBubble({
           ) : canAnswer && onAnswer ? (
             <AskActions
               actions={askBlock.actions}
+              accessibilityActions={actionProps.accessibilityActions}
+              onAccessibilityAction={actionProps.onAccessibilityAction}
               onAnswer={(answer) => onAnswer(message, answer)}
             />
           ) : (
-            <Text style={{ color: tokens.mutedForeground, marginTop: 12, fontSize: 13.5 }}>
+            <Text
+              {...actionProps}
+              style={{ color: tokens.mutedForeground, marginTop: 12, fontSize: 13.5 }}
+            >
               {t("No longer active")}
             </Text>
           )}
         </View>
         {appConnectBlocks.map((block, index) => (
-          <AppConnectCard key={`${block.provider}-${index}`} botId={cardBotId} block={block} />
+          <AppConnectCard
+            key={`${block.provider}-${index}`}
+            botId={cardBotId}
+            block={block}
+            accessibilityActions={actionProps.accessibilityActions}
+            onAccessibilityAction={actionProps.onAccessibilityAction}
+          />
         ))}
       </View>
     );
@@ -2453,7 +2597,9 @@ const MessageBubble = memo(function MessageBubble({
   const caption = message.blocks
     .flatMap((block) => {
       if (block.kind === "channel_message" && block.text) {
-        return [`${messagingProviderLabel(block.provider)} · ${block.fromLabel}: ${block.text}`];
+        return [
+          `${messagingProviderLabel(block.provider, block.transport)} · ${block.fromLabel}: ${block.text}`,
+        ];
       }
       return block.kind === "text" && block.text ? [block.text] : [];
     })
@@ -2468,7 +2614,7 @@ const MessageBubble = memo(function MessageBubble({
           borderRadius: 20,
           borderWidth: 1,
           borderColor: tokens.border,
-          backgroundColor: message.role === "user" ? tokens.primary : tokens.muted,
+          backgroundColor: message.role === "user" ? tokens.secondary : tokens.muted,
           paddingHorizontal: 14,
           paddingVertical: 12,
           gap: 8,
@@ -2482,7 +2628,7 @@ const MessageBubble = memo(function MessageBubble({
         {replyPreview ? (
           <Text
             style={{
-              color: message.role === "user" ? tokens.primaryForeground : tokens.mutedForeground,
+              color: message.role === "user" ? tokens.secondaryForeground : tokens.mutedForeground,
               fontSize: 12.5,
             }}
             numberOfLines={2}
@@ -2493,7 +2639,7 @@ const MessageBubble = memo(function MessageBubble({
         {caption ? (
           <Text
             style={{
-              color: message.role === "user" ? tokens.primaryForeground : tokens.foreground,
+              color: message.role === "user" ? tokens.secondaryForeground : tokens.foreground,
               fontSize: 15,
             }}
           >
@@ -2503,6 +2649,7 @@ const MessageBubble = memo(function MessageBubble({
         {attachments.map((attachment, index) =>
           attachment.kind === "image" ? (
             <Pressable
+              {...actionProps}
               key={`${attachment.artifactId ?? attachment.name ?? "image"}-${index}`}
               onPress={() =>
                 attachment.artifactId
@@ -2522,7 +2669,7 @@ const MessageBubble = memo(function MessageBubble({
             >
               <Text
                 style={{
-                  color: message.role === "user" ? tokens.primaryForeground : tokens.foreground,
+                  color: message.role === "user" ? tokens.secondaryForeground : tokens.foreground,
                   fontSize: 15,
                 }}
               >
@@ -2531,6 +2678,7 @@ const MessageBubble = memo(function MessageBubble({
             </Pressable>
           ) : (
             <Pressable
+              {...actionProps}
               key={`${attachment.artifactId ?? attachment.name ?? "file"}-${index}`}
               onPress={() =>
                 attachment.artifactId
@@ -2556,7 +2704,7 @@ const MessageBubble = memo(function MessageBubble({
             >
               <Text
                 style={{
-                  color: message.role === "user" ? tokens.primaryForeground : tokens.foreground,
+                  color: message.role === "user" ? tokens.secondaryForeground : tokens.foreground,
                   fontSize: 15,
                 }}
               >
@@ -2566,7 +2714,7 @@ const MessageBubble = memo(function MessageBubble({
                 <Text
                   style={{
                     color:
-                      message.role === "user" ? tokens.primaryForeground : tokens.mutedForeground,
+                      message.role === "user" ? tokens.secondaryForeground : tokens.mutedForeground,
                     marginTop: 4,
                     fontSize: 13,
                   }}
@@ -2578,7 +2726,13 @@ const MessageBubble = memo(function MessageBubble({
           ),
         )}
         {appConnectBlocks.map((block, index) => (
-          <AppConnectCard key={`${block.provider}-${index}`} botId={cardBotId} block={block} />
+          <AppConnectCard
+            key={`${block.provider}-${index}`}
+            botId={cardBotId}
+            block={block}
+            accessibilityActions={actionProps.accessibilityActions}
+            onAccessibilityAction={actionProps.onAccessibilityAction}
+          />
         ))}
       </View>
     );
@@ -2587,10 +2741,6 @@ const MessageBubble = memo(function MessageBubble({
   const speaker =
     message.role === "bot" ? (memberName(members, message.botId) ?? botName) : undefined;
   const firstContent = segments.findIndex((segment) => segment.kind === "content");
-  const lastContent = segments.reduce(
-    (last, segment, index) => (segment.kind === "content" ? index : last),
-    -1,
-  );
   return (
     <View style={{ gap: 8, width: "100%" }}>
       {segments.map((segment, index) => (
@@ -2599,11 +2749,17 @@ const MessageBubble = memo(function MessageBubble({
           message={{ ...message, blocks: segment.blocks }}
           speaker={index === firstContent ? speaker : undefined}
           replyPreview={index === firstContent ? replyPreview : undefined}
-          onSpeak={index === lastContent && onSpeak ? () => onSpeak(message) : undefined}
+          actionProps={actionProps}
         />
       ))}
       {appConnectBlocks.map((block, index) => (
-        <AppConnectCard key={`${block.provider}-${index}`} botId={cardBotId} block={block} />
+        <AppConnectCard
+          key={`${block.provider}-${index}`}
+          botId={cardBotId}
+          block={block}
+          accessibilityActions={actionProps.accessibilityActions}
+          onAccessibilityAction={actionProps.onAccessibilityAction}
+        />
       ))}
     </View>
   );
@@ -2613,42 +2769,25 @@ function MessageTextCard({
   message,
   speaker,
   replyPreview,
-  onSpeak,
+  actionProps,
 }: {
   message: MobileMessage;
   speaker?: string;
   replyPreview?: MobileMessage;
-  onSpeak?: () => void;
+  actionProps: MessageActionProps;
 }) {
   const colorScheme = useResolvedAppearance();
   const tokens = mobileTokens();
-  const { t } = useI18n();
   const contentText = blockText(message);
   if (!contentText) return null;
   return (
     <Pressable
-      onLongPress={
-        onSpeak
-          ? () =>
-              Alert.alert("", undefined, [
-                { text: t("Speak message"), onPress: onSpeak },
-                { text: t("Cancel"), style: "cancel" },
-              ])
-          : undefined
-      }
-      accessibilityActions={onSpeak ? [{ name: "speak", label: t("Speak message") }] : undefined}
-      onAccessibilityAction={
-        onSpeak
-          ? (event) => {
-              if (event.nativeEvent.actionName === "speak") onSpeak();
-            }
-          : undefined
-      }
+      {...actionProps}
       style={{
         flexShrink: 1,
         minWidth: 0,
         maxWidth: "100%",
-        backgroundColor: message.role === "user" ? tokens.primary : tokens.muted,
+        backgroundColor: message.role === "user" ? tokens.secondary : tokens.muted,
         padding: 12,
         borderRadius: 20,
       }}
@@ -2668,7 +2807,7 @@ function MessageTextCard({
       {replyPreview ? (
         <Text
           style={{
-            color: message.role === "user" ? tokens.primaryForeground : tokens.mutedForeground,
+            color: message.role === "user" ? tokens.secondaryForeground : tokens.mutedForeground,
             fontSize: 12.5,
             marginBottom: 6,
           }}
@@ -2678,7 +2817,7 @@ function MessageTextCard({
         </Text>
       ) : null}
       {message.role === "user" ? (
-        <Text style={{ color: tokens.primaryForeground, fontSize: 15.5, lineHeight: 23 }}>
+        <Text style={{ color: tokens.secondaryForeground, fontSize: 15.5, lineHeight: 23 }}>
           {contentText}
         </Text>
       ) : (
@@ -2699,17 +2838,20 @@ function AgentEventLabel({
   detail,
   expanded,
   onToggle,
+  actionProps,
 }: {
   label: string;
   detail?: string;
   expanded: boolean;
   onToggle: () => void;
+  actionProps: MessageActionProps;
 }) {
   const colorScheme = useResolvedAppearance();
   const tokens = mobileTokens();
   const { t } = useI18n();
   return (
     <Pressable
+      {...actionProps}
       onPress={onToggle}
       accessibilityRole="button"
       accessibilityLabel={expanded ? t("Hide {label}", { label }) : t("Show {label}", { label })}
@@ -2744,10 +2886,12 @@ function AskBlock({
   ask,
   canAnswer,
   onAnswer,
+  actionProps,
 }: {
   ask: Extract<MobileMessage["blocks"][number], { kind: "ask" }>;
   canAnswer: boolean;
   onAnswer: (answer: string) => Promise<void>;
+  actionProps: MessageActionProps;
 }) {
   const tokens = useMobileTokens();
   const { t } = useI18n();
@@ -2756,6 +2900,14 @@ function AskBlock({
   const [submitting, setSubmitting] = useState(false);
   const answered = ask.status === "answered";
   const secretInput = isSecretAskBlock(ask);
+  const secretLabel =
+    ask.purpose === "password"
+      ? t("Password")
+      : ask.purpose === "api_key"
+        ? t("API key")
+        : t("Code");
+  const submitLabel = secretInput ? t("Save") : t("Send answer");
+  const submittingLabel = secretInput ? t("Saving…") : t("Sending…");
 
   async function submit() {
     if (submitting) return;
@@ -2763,10 +2915,11 @@ function AskBlock({
     const submitValue = secretInput ? answer : answer.trim();
     setSubmitting(true);
     setError(null);
+    if (secretInput) setAnswer("");
     try {
       await onAnswer(submitValue);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : t("Could not send answer"));
+      setError(!secretInput && cause instanceof Error ? cause.message : t("Could not send answer"));
     } finally {
       setSubmitting(false);
     }
@@ -2785,28 +2938,37 @@ function AskBlock({
         gap: 10,
       }}
     >
-      <Text style={{ color: tokens.foreground, fontSize: 15.5, fontWeight: "600" }}>
+      <Text
+        {...actionProps}
+        style={{ color: tokens.foreground, fontSize: 15.5, fontWeight: "600" }}
+      >
         {ask.text}
       </Text>
-      {ask.detail ? (
+      {secretInput && ask.credential ? (
+        <Text style={{ color: tokens.mutedForeground, fontSize: 13.5 }}>
+          {ask.credential.origin}
+        </Text>
+      ) : null}
+      {ask.detail && !secretInput ? (
         <Text style={{ color: tokens.mutedForeground, fontSize: 13.5 }}>{ask.detail}</Text>
       ) : null}
       {answered ? (
         <Text style={{ color: tokens.success, fontSize: 14 }}>
-          {secretInput
-            ? t("Submitted")
-            : t("Answered: {answer}", { answer: ask.answer ?? t("Done") })}
+          {secretInput ? t("Saved") : t("Answered: {answer}", { answer: ask.answer ?? t("Done") })}
         </Text>
       ) : canAnswer ? (
         <>
           <TextInput
-            accessibilityLabel={secretInput ? t("Code") : t("Answer")}
+            accessibilityLabel={secretInput ? secretLabel : t("Answer")}
             value={answer}
             onChangeText={setAnswer}
-            placeholder={secretInput ? t("Code") : t("Type your answer")}
+            placeholder={secretInput ? secretLabel : t("Type your answer")}
             placeholderTextColor={tokens.mutedForeground}
             secureTextEntry={secretInput}
             autoComplete="off"
+            autoCorrect={secretInput ? false : undefined}
+            autoCapitalize={secretInput ? "none" : "sentences"}
+            editable={!submitting}
             onSubmitEditing={() => void submit()}
             style={{
               minHeight: 42,
@@ -2820,7 +2982,7 @@ function AskBlock({
           />
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={t("Send answer")}
+            accessibilityLabel={submitLabel}
             disabled={(secretInput ? answer.length === 0 : !answer.trim()) || submitting}
             onPress={() => void submit()}
             style={{
@@ -2833,7 +2995,7 @@ function AskBlock({
             }}
           >
             <Text style={{ color: tokens.primaryForeground, fontWeight: "600" }}>
-              {submitting ? t("Sending…") : t("Send answer")}
+              {submitting ? submittingLabel : submitLabel}
             </Text>
           </Pressable>
         </>

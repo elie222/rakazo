@@ -40,7 +40,7 @@ import {
 } from "./compose-update.js";
 
 const target = {
-  composeFile: "/srv/rakazo/infra/compose/docker-compose.prod.yml",
+  composeFiles: ["/srv/rakazo/infra/compose/docker-compose.prod.yml"],
   envFiles: ["/srv/rakazo/.env"],
 };
 
@@ -218,13 +218,81 @@ describe("compose argv construction", () => {
         "--env-file",
         "/srv/rakazo/.env",
         "--file",
-        target.composeFile,
+        ...target.composeFiles,
         "pull",
         "api",
         "worker",
         "web",
       ],
     });
+  });
+
+  it("passes one --file per Compose file, in overlay order", () => {
+    const overlaid = {
+      ...target,
+      composeFiles: [
+        "/srv/rakazo/infra/compose/docker-compose.prod.yml",
+        "/srv/rakazo/ops/compose/docker-compose.sandbox.yml",
+      ],
+    };
+    for (const invocation of [
+      composePullArgv(overlaid),
+      composeUpArgv(overlaid),
+      composePsArgv(overlaid),
+    ]) {
+      const files = invocation.args.flatMap((arg, index) =>
+        arg === "--file" ? [invocation.args[index + 1]] : [],
+      );
+      expect(files).toEqual(overlaid.composeFiles);
+    }
+  });
+
+  it("refuses a target with no Compose file rather than running against the default stack", () => {
+    expect(() => composePullArgv({ ...target, composeFiles: [] })).toThrow(/no Compose file/);
+  });
+
+  it("recreates and pulls the target's own services when an overlay adds one", () => {
+    const withSupervisor = { ...target, services: ["api", "worker", "web", "supervisor"] };
+    expect(composePullArgv(withSupervisor).args.slice(-4)).toEqual([
+      "api",
+      "worker",
+      "web",
+      "supervisor",
+    ]);
+    expect(composeUpArgv(withSupervisor).args.slice(-4)).toEqual([
+      "api",
+      "worker",
+      "web",
+      "supervisor",
+    ]);
+  });
+
+  it("falls back to the built-in services when the target names none", () => {
+    expect(composeUpArgv({ ...target, services: [] }).args.slice(-3)).toEqual([
+      "api",
+      "worker",
+      "web",
+    ]);
+  });
+
+  it("carries the overlay files and extra services into the update plan and its recovery", () => {
+    const overlaid = {
+      ...target,
+      composeFiles: [
+        "/srv/rakazo/infra/compose/docker-compose.prod.yml",
+        "/srv/rakazo/ops/compose/docker-compose.sandbox.yml",
+      ],
+      services: ["api", "worker", "web", "supervisor"],
+    };
+    for (const strategy of ["pull", "build"] as const) {
+      const steps = composeUpdatePlan({ strategy, target: overlaid });
+      const composeSteps = steps.filter((step) => step.command === "docker");
+      expect(composeSteps.length).toBeGreaterThan(0);
+      for (const step of composeSteps) {
+        expect(step.args.filter((arg) => arg === "--file")).toHaveLength(2);
+        expect(step.args).toContain("supervisor");
+      }
+    }
   });
 
   it("passes the project name as its own -p argument so a custom stack is the one updated", () => {

@@ -56,6 +56,9 @@ async function main() {
     process.env.WAKEUP_DRIVER = "memory";
     process.env.SANDBOX_PROVIDER = sandboxProvider;
     process.env.AGENT_RUNTIME = agentRuntime;
+    // Playwright/E2E force the offline cloud-agent emulator; clear Cursor keys so cards never hit a live VM.
+    process.env.CLOUD_AGENT_PROVIDER = "emulator";
+    delete process.env.CURSOR_API_KEY;
     process.env.COMPOSIO_API_KEY = "";
     process.env.BETTER_AUTH_SECRET = "test-secret-test-secret-32chars!";
     process.env.ENCRYPTION_KEY = "test-encryption-key-test-encryption-key";
@@ -91,10 +94,14 @@ async function main() {
           "packages/testkit/src/search.test.ts",
           "packages/testkit/src/executor-lifecycle.test.ts",
           "packages/testkit/src/connections.test.ts",
+          "packages/testkit/src/bot-secrets.test.ts",
           "packages/db/src/space-membership.postgres.test.ts",
+          "packages/db/src/messaging.postgres.test.ts",
+          "packages/memory/src/commit.postgres.test.ts",
           "packages/adapters/src/wakeup.postgres.test.ts",
           "packages/adapters/src/realtime.postgres.test.ts",
           "packages/adapters/src/job-reconciler.postgres.test.ts",
+          "packages/adapters/src/cloud-agent.postgres.test.ts",
         ].join(" "),
         {
           stdio: "inherit",

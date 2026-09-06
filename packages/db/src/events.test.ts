@@ -83,6 +83,7 @@ describe("finalizeRun", () => {
       $queryRaw: vi.fn(async () => []),
       run: {
         findUnique: vi.fn(async () => ({ status: "running" })),
+        findUniqueOrThrow: vi.fn(async () => ({ sourceMessage: null })),
         findFirst: vi.fn(async () => null),
         updateMany: vi.fn(async () => ({ count: 1 })),
       },
@@ -1213,7 +1214,10 @@ describe("answerRunInput", () => {
     expect(tx.run.updateMany).not.toHaveBeenCalled();
   });
 
-  it("stores secret asks without writing plaintext to the task prompt", async () => {
+  it.each([
+    undefined,
+    { name: "example_api", origin: "https://api.example.test", auth: { type: "bearer" } },
+  ])("stores secret asks without writing plaintext to the task prompt (%j)", async (credential) => {
     const fanout = new TestFanout();
     const store = vi.fn().mockResolvedValue(undefined);
     const tx = {
@@ -1226,6 +1230,8 @@ describe("answerRunInput", () => {
               kind: "ask",
               text: "Enter your code",
               input: "secret",
+              purpose: "api_key",
+              ...(credential ? { credential } : {}),
               status: "pending",
             },
           ],
@@ -1271,9 +1277,14 @@ describe("answerRunInput", () => {
       expect.objectContaining({
         runId: "run-1",
         plaintext: "123456",
+        botId: "bot-1",
+        userId: "user-1",
+        spaceId: "workspace-1",
+        credential,
       }),
     );
     expect(tx.task.updateMany).not.toHaveBeenCalled();
+    expect(JSON.stringify(tx.event.create.mock.calls)).not.toContain("123456");
     expect(tx.externalEffect.updateMany).toHaveBeenCalledWith({
       where: {
         runId: "run-1",
@@ -1281,7 +1292,10 @@ describe("answerRunInput", () => {
         kind: "request_secret",
         status: "intended",
       },
-      data: { status: "approved" },
+      data: {
+        status: "approved",
+        ...(credential ? { result: { credentialSaved: credential } } : {}),
+      },
     });
     expect(tx.message.update).toHaveBeenCalledWith({
       where: { id: "message-1" },
@@ -1291,12 +1305,63 @@ describe("answerRunInput", () => {
             kind: "ask",
             text: "Enter your code",
             input: "secret",
+            purpose: "api_key",
+            ...(credential ? { credential } : {}),
             status: "answered",
             answer: "",
           },
         ],
       },
     });
+  });
+
+  it("does not let another workspace member save a credential as the run owner", async () => {
+    const store = vi.fn();
+    const tx = {
+      $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
+      run: {
+        findFirst: vi.fn().mockResolvedValue({ botId: "bot-1", userId: "owner" }),
+        updateMany: vi.fn(),
+      },
+      message: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "message-1",
+          blocks: [
+            {
+              kind: "ask",
+              text: "API key",
+              input: "secret",
+              status: "pending",
+              credential: {
+                name: "example_api",
+                origin: "https://api.example.test",
+                auth: { type: "bearer" },
+              },
+            },
+          ],
+        }),
+      },
+    };
+    const prisma = {
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+    } as unknown as PrismaClient;
+    expect(
+      await answerRunInput(
+        prisma,
+        {
+          spaceId: "workspace-1",
+          threadId: "thread-1",
+          runId: "run-1",
+          messageId: "message-1",
+          answeredByUserId: "other-member",
+          answer: "fake-key",
+        },
+        new TestFanout(),
+        { store },
+      ),
+    ).toBe(false);
+    expect(store).not.toHaveBeenCalled();
+    expect(tx.run.updateMany).not.toHaveBeenCalled();
   });
 
   it("rejects secret asks when no run secret writer is configured", async () => {

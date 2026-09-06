@@ -28,6 +28,7 @@ model User {
   actionApprovalRules         ActionApprovalRule[]
   actionAutoReviewPreferences ActionAutoReviewPreference[]
   createdSpaces               Space[]                      @relation("SpaceCreator")
+  botSecrets BotSecret[]
 
   @@unique([email])
   @@map("user")
@@ -183,6 +184,7 @@ model Space {
   memoryConfig                SpaceMemoryConfig?
   secrets                     Secret[]
   chatGroups                  ChatGroup[]
+  botSecrets BotSecret[]
 
   @@unique([id, organizationId])
   @@index([organizationId, createdAt])
@@ -355,6 +357,7 @@ model Bot {
   steeringMessages  SteeringMessage[]
   mcpServers        BotMcpServer[]
   groupMembers      ChatGroupMember[]
+  botSecrets BotSecret[]
 
   @@unique([spaceId, spawnKey])
   @@index([spaceId, userId, archivedAt, pinned, updatedAt])
@@ -597,6 +600,43 @@ model Attempt {
 
   @@index([runId])
   @@map("attempts")
+}
+
+// Deliberately independent of chat/user cascades: the worker must still be able
+// to cancel remote work after its originating chat or account is deleted.
+model CloudAgent {
+  id                  String   @id @default(uuid())
+  operationKey        String   @unique
+  providerKey         String
+  spaceId             String
+  userId              String
+  botId               String
+  threadId            String
+  messageId           String?
+  remoteId            String?
+  latestRunId         String?
+  title               String
+  status              String   @default("running")
+  url                 String   @default("")
+  branch              String?
+  prUrl               String?
+  launchRequest       Json
+  launchDispatched    Boolean  @default(false)
+  followup            Json?
+  followupDispatching Boolean  @default(false)
+  cancelRequested     Boolean  @default(false)
+  generation          Int      @default(0)
+  wakeGeneration      Int      @default(-1)
+  version             Int      @default(0)
+  leaseToken          String?
+  leaseExpiresAt      DateTime?
+  nextPollAt          DateTime? @default(now())
+  errorCount          Int      @default(0)
+  createdAt           DateTime @default(now())
+
+  @@index([providerKey, nextPollAt])
+  @@index([spaceId, userId, id])
+  @@map("cloud_agents")
 }
 
 model ExternalEffect {
@@ -1107,4 +1147,25 @@ model AgentConnection {
   @@unique([requesterBotId, targetBotId])
   @@index([targetBotId, status])
   @@map("agent_connections")
+}
+
+model BotSecret {
+  id         String   @id
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  spaceId    String
+  space      Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  botId      String
+  bot        Bot      @relation(fields: [botId], references: [id], onDelete: Cascade)
+  name       String
+  origin     String
+  auth       Json
+  ciphertext String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([userId, spaceId, botId, name])
+  @@index([botId])
+  @@index([spaceId])
+  @@map("bot_secrets")
 }

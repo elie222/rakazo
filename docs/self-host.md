@@ -18,74 +18,17 @@ bash install-images.sh
 ```
 
 The installer downloads `docker-compose.images.yml` and `.env.images.example`, creates `.env` with
-random secrets, then pulls and starts the images. It preserves an existing `.env` when rerun. To
-customize the public URL, image tag, or optional providers before startup, run
-`bash install-images.sh --prepare-only`, edit `.env`, then run `bash install-images.sh`.
-Flags may be combined in either order: `--prepare-only`, `--local`.
-
-### Restricted networks / mirror downloads
-
-Stage B of the installer (Compose YAML and `.env.images.example`) downloads from
-`DOWNLOAD_BASE`. Override it with a generic HTTPS mirror of `infra/compose` — do not rely on
-vendor-specific CDN defaults:
-
-```bash
-export RAKAZO_DOWNLOAD_BASE=https://example.com/mirror/rakazo/infra/compose
-bash install-images.sh
-```
-
-Trailing slashes on `RAKAZO_DOWNLOAD_BASE` are trimmed; non-HTTPS bases are rejected. Downloads
-use finite curl retries (`--retry 3 --retry-delay 2 --retry-all-errors` when supported).
-
-To reuse files already present in the working directory (skip curl when the target exists), set
-`RAKAZO_DOWNLOAD_SKIP_EXISTING=1` and/or pass `--local`:
-
-```bash
-# after placing docker-compose.images.yml and .env.images.example locally
-bash install-images.sh --local --prepare-only
-# or
-RAKAZO_DOWNLOAD_SKIP_EXISTING=1 bash install-images.sh --prepare-only
-```
-
-If skip mode is on and a required file is missing, the installer still downloads it (or fails with
-the URL in the error).
-
-Stage A (fetching `install-images.sh` itself) is separate. When raw GitHub is unreachable, point the
-bootstrap curl at your mirror of the installer script, for example:
-
-```bash
-export RAKAZO_INSTALLER_URL=https://example.com/mirror/rakazo/infra/compose/install-images.sh
-mkdir -p rakazo && cd rakazo &&
-curl -fsSLO "${RAKAZO_INSTALLER_URL}" &&
-bash install-images.sh
-```
-
-Stage C (`docker compose pull`) uses `RAKAZO_IMAGE`, `RAKAZO_IMAGE_TAG`,
-`RAKAZO_COMPUTER_IMAGE`, and `RAKAZO_COMPUTER_IMAGE_TAG` (defaults
-`ghcr.io/elie222/rakazo/{app,computer}`). When GHCR is unreachable, override those
-four in `.env` to a registry you control — keep app and computer on the same
-mirror. Do not rely on vendor-specific CDN defaults:
-
-```env
-RAKAZO_IMAGE=registry.example.com/mirror/elie222/rakazo/app
-RAKAZO_IMAGE_TAG=edge
-RAKAZO_COMPUTER_IMAGE=registry.example.com/mirror/elie222/rakazo/computer
-RAKAZO_COMPUTER_IMAGE_TAG=edge
-```
-
-After `--prepare-only`, edit `.env` then rerun `bash install-images.sh` (or
-`docker compose --env-file .env -f docker-compose.images.yml pull`). Arm64 tag
-pairing is unchanged — set both tags to the same published multi-arch release
-(see [Published images and tags](#published-images-and-tags)).
-
-`postgres:16` and `busybox:1` still pull from Docker Hub. Stage C does not cover
-them; configure the Docker daemon `registry-mirrors` or vendor those images.
+random secrets, then pulls and starts the images. It preserves an existing `.env` when rerun. For
+the installer secret list, non-reuse rules, and recovery, see
+[Self-host secrets checklist](./self-host-secrets.md). To customize the public URL, image tag, or
+optional providers before startup, run `bash install-images.sh --prepare-only`, edit `.env`, then
+run `bash install-images.sh`. Flags may be combined in either order: `--prepare-only`, `--local`.
 
 `SANDBOX_PROVIDER` defaults to `docker`. The images Compose file runs a sandbox supervisor
 (from the app image, on the internal network only) and pulls `ghcr.io/elie222/rakazo/computer`.
 Signup and local Docker computers work without an E2B account. Optional remote providers: set
-`SANDBOX_PROVIDER` to `e2b`, `daytona`, or `box` and add the matching API key. Compose requires
-`SANDBOX_SUPERVISOR_TOKEN` for the Docker path; leave it empty and `compose up` fails closed.
+`SANDBOX_PROVIDER` to `e2b`, `daytona`, or `box` and add the matching API key. The published-images
+Compose stack requires `SANDBOX_SUPERVISOR_TOKEN` for every provider; leave it empty and `compose up` fails closed.
 
 Optional: set `OPENROUTER_API_KEY` or connect a model in the UI after signup.
 
@@ -111,6 +54,26 @@ Open **Agent computer** on a bot, or send a message that uses the desktop, to se
 the local Docker computer. For in-stack Caddy plus remote E2B computers, use the
 [production Compose](#public-single-vm-deployment) path and `infra/compose/Caddyfile.prod`
 instead of this host proxy.
+
+### Restricted networks / mirror downloads
+
+If the installer, Compose downloads, or image pulls are blocked, use the
+[restricted-network guide](./self-host-restricted-network.md) for mirror settings and local files.
+
+### Bot computer resource ceilings
+
+Each Docker computer runs Xvfb, a window manager and a full Chromium driven by an agent that
+decides for itself what to open, so it is capped. These defaults provide a starting point for the
+Docker computer topology:
+
+| Variable | Default | Accepts |
+| --- | --- | --- |
+| `RAKAZO_COMPUTER_MEMORY` | `2g` | `2g`, `1536m`, a byte count. Minimum `6m`, Docker's own floor. Also caps swap, so the ceiling holds. |
+| `RAKAZO_COMPUTER_CPUS` | `2` | Whole or fractional cores, e.g. `1.5` |
+| `RAKAZO_COMPUTER_PIDS_LIMIT` | `2048` | A positive integer |
+
+Set any of them to `0`, `none` or `unlimited` to remove that ceiling. A malformed value fails the
+supervisor at startup naming the variable, rather than surfacing later as a failed bot.
 
 ## Docker Compose (single machine)
 
@@ -142,9 +105,17 @@ WEB_ORIGIN=https://app.example.com
 API_URL=https://app.example.com
 ```
 
-Cookies and CORS follow those origins. `SIGNUPS_ENABLED` / `SIGNUP_ALLOWLIST` seed the initial deployment settings. After initialization, the deployment owner's Settings values are the effective signup policy.
+Cookies and CORS follow those origins. `SIGNUPS_ENABLED` / `SIGNUP_ALLOWLIST` seed the signup
+policy when the API starts for the first time. They are not reapplied on restart, so configure them
+before that first start.
 
-### Password recovery email
+With a nonempty signup allowlist, users—including existing accounts—must verify their email to sign
+in. Configure SMTP below before enabling an allowlist or upgrading an allowlisted deployment.
+
+For a public deployment, configure SMTP and an allowlist before the API's first start.
+Keep an installation without email on a trusted local network.
+
+### Verification and password recovery email
 
 Password changes for signed-in users require no email configuration. Forgotten-password recovery
 appears on sign-in only when a transactional email provider is available. Rakazo uses a
@@ -208,27 +179,42 @@ To use an operator-controlled OpenAI-compatible server such as Ollama, LM Studio
 MLX, list its model IDs and an endpoint that both the API and worker processes can reach:
 
 ```env
-RAKAZO_LOCAL_MODELS=qwen3:4b,llama3.1:8b
+RAKAZO_LOCAL_MODELS=qwen3:4b,llama3.1:8b,qwen3-vl
 RAKAZO_LOCAL_MODELS_URL=http://127.0.0.1:11434/v1
 RAKAZO_LOCAL_CONTEXT_WINDOW=32768
 RAKAZO_LOCAL_MAX_TOKENS=4096
+# Optional: model ids on this endpoint that accept images (screenshot computer tools).
+RAKAZO_LOCAL_VISION_MODELS=qwen3-vl
 ```
 
-The loopback default is suitable when running Rakazo from a source checkout. In Docker Compose,
-use the model server's Compose service name or another address reachable from the containers.
+The loopback default is suitable when running Rakazo from a source checkout. From containers,
+prefer a stable LAN RFC1918 address (not Compose service DNS alone). On Docker Desktop,
+`host.docker.internal` also works.
 Only configure an endpoint you control: prompts, attachments, and tool results sent to that model
 leave Rakazo through this URL. Leave `RAKAZO_LOCAL_MODELS` blank to disable the provider.
 
 Each user can also connect their own OpenAI-compatible endpoint from **Connect a model** /
 **Settings → Models** on web and mobile. Choose **OpenAI-compatible**, enter the server base URL
-(for example `http://127.0.0.1:8000/v1` for Rapid-MLX, Ollama, LM Studio, llama.cpp, or vLLM),
-the exact model id from that server, and an optional API key. By default Rakazo only allows
-loopback, RFC1918, and `host.docker.internal` targets. To permit public hostnames, set
-`RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC=1` in the deployment environment. Public hostnames must resolve
-only to public addresses; redirects and DNS answers that reach private or link-local networks are
-rejected.
+(for example `http://127.0.0.1:8000/v1`), the exact model id, and an optional API key.
+Public hosts and ordinary hostnames need `RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC=1` and HTTPS.
+Literal private IP, loopback, and `host.docker.internal` targets do not. To mark user-connected
+openai-compatible model ids as vision-capable (so screenshot computer tools stay available), set
+`RAKAZO_OPENAI_COMPATIBLE_VISION_MODELS=gpt4o-vision,llava`.
+
+For servers that accept standard `reasoning_effort`, enable **Supports thinking** under
+**Advanced** when connecting. The setting is saved on the connection (no env var or restart).
+Existing connections default to disabled. Reconnect former Qwen-list or deployment-local models
+via **Settings → Models** and turn it on; the old environment list is no longer read.
+
+Enabled connections default to medium thinking. Web and desktop expose **Thinking** in a bot's
+advanced settings; mobile inherits the same backend policy. Rakazo sends standard
+`reasoning_effort` (`minimal`, `low`, `medium`, `high`, or `none` when off); the server owns
+model-specific translation. Leave **Supports thinking** off when the server lacks standard effort
+support. Existing token limits still apply; effort is not a separate reasoning-token budget.
 
 Do not commit `.env`. Never put `COMPOSIO_API_KEY`, OpenRouter keys, or provider tokens in git, logs, or chat.
+
+Optional messaging platforms (iMessage, Slack, WhatsApp, Telegram, Feishu/Lark) mount when their env credentials are set — see `.env.example`. Point a Feishu/Lark bot event subscription at `/api/v1/messaging/webhook/lark` (webhook/HTTP inbound only; do not enable long connection). Groups stay iMessage-only.
 
 ## Choosing a computer provider
 
@@ -258,13 +244,17 @@ The Electron desktop app is a client of the same API. Docker and E2B still apply
 - **None** boots the product without a computer host (fallback when Docker/supervisor is not
   configured, or when a remote provider is selected without its API key).
 
+For provider configuration and health checks, see the [provider setup guide](./self-host-sandbox-providers.md).
+
 ## Backup
 
 ```bash
 ./scripts/backup.sh
 ```
 
-This dumps Postgres (`pg_dump`) and archives `data/` into `backups/<stamp>/`.
+This dumps Postgres (`pg_dump`) and archives `data/` into `backups/<stamp>/`. A missing
+`data/` produces an empty archive; database or archive errors fail the backup. Discard the
+output directory of any failed run.
 
 ## Public single-VM deployment
 
@@ -337,9 +327,6 @@ curl --fail https://app.example.com/health
 **Build, do not pull, for a first deployment.** `RAKAZO_IMAGE_TAG` ships as `local`, a tag no
 registry serves, so the commands above build `api`, `worker`, and `web` from the checkout you just
 cloned. The opt-in command under [Updater sidecar](#updater-sidecar) builds `updater` when needed.
-Running `docker compose … pull` first — as earlier versions of this page told you to — fails outright
-with `error from registry: denied` whenever the tag you are on has not been published, and there is
-nothing to fall back to.
 
 Passing `GIT_SHA` is what makes `GET /health` report a `"revision"`; a locally built image has no
 other way to know its commit. Prebuilt images from the registry bake it in at publish time, so when
@@ -364,7 +351,21 @@ Postgres custom-format dump plus an application-data archive under `/var/backups
 `0600` and seven-day rotation. These local snapshots help with operator mistakes but are not a
 substitute for an encrypted off-host backup or provider snapshot.
 
+The scheduled backup uses `/srv/rakazo` by default. For another deployment directory, set
+`RAKAZO_DEPLOY_DIR=/absolute/path/to/checkout` in a root-owned `/etc/rakazo/backup.env`
+(mode `0600`). The service reads this optional file on each run; the script uses the selected
+checkout's `.env` and production Compose file. If the stack was started with a custom `-p`,
+set the same `COMPOSE_PROJECT_NAME` in that file. For a manual run, export these variables instead.
+When updating an existing backup installation, reinstall both the script and service unit,
+then run `systemctl daemon-reload`.
+
 ## Restore
+
+For backups created by `scripts/backup.sh`, use an empty `rakazo` database in the development
+Compose stack, with application services stopped. The SQL import runs in one transaction and
+stops on the first error, including conflicts with existing tables. Files are restored and
+application services started only after the import succeeds. This script does not consume the
+production snapshot's custom-format `rakazo.dump` or `appdata.tgz`.
 
 ```bash
 ./scripts/restore.sh backups/<stamp>
@@ -543,6 +544,29 @@ not automatically put it in a container's environment, so the production file ex
 stack started with `-p something-else` would be left alone while a second project with a new empty
 Postgres volume came up beside it.
 
+### Deployments that layer a Compose overlay
+
+`RAKAZO_COMPOSE_FILE` takes a list, separated the way Compose's own `COMPOSE_FILE` is
+(`:` by default, or whatever `COMPOSE_PATH_SEPARATOR` says). Each entry becomes its own `--file`,
+in the order given, so the updater reconciles the same stack the operator runs by hand:
+
+```
+RAKAZO_COMPOSE_FILE=infra/compose/docker-compose.prod.yml:ops/compose/overlay.yml
+```
+
+Every entry is validated separately and must stay inside `RAKAZO_DEPLOY_DIR`.
+
+If the overlay adds a service built from the application image, name it in
+`RAKAZO_UPDATE_SERVICES` (comma separated) so it is pulled, recreated and rolled back with the
+rest. Otherwise an update leaves that service running the previous code:
+
+```
+RAKAZO_UPDATE_SERVICES=supervisor
+```
+
+These names are appended to the built-in `api`, `worker`, `web`, never substituted for them, so no
+value here can drop a core service from an update.
+
 The value therefore has to be the path **the daemon** sees, which is not always the path your shell
 sees:
 
@@ -583,23 +607,19 @@ least 32 characters in production). It must differ from `BETTER_AUTH_SECRET`,
 `SANDBOX_SUPERVISOR_TOKEN`, and `SCREEN_PROXY_SECRET`. Leave the profile disabled if you would
 rather not grant the capability.
 
-## What “Rakazo Cloud” still needs
+## Other deployment layouts
 
-The product cannot be “pushed live” as a Vercel serverless app. Graphile Worker, Postgres `LISTEN`, Pi runs, and Docker computers need durable processes and a sandbox host.
+API and worker need always-on processes; serverless request handlers are not sufficient. Use a
+Node.js version supported by the root `package.json`, Postgres 16 and a persistent `DATA_DIR` volume shared by API and worker, with encrypted off-host
+backups. The current home store uses a local filesystem, so deployments on separate hosts need a
+shared filesystem; an object-storage adapter is not available yet.
 
-To run a hosted product (same codebase):
+Use the same HTTPS origin for the web app, `/api`, and `/rpc`. Preserve the authenticated screen
+proxy routes. Choose a [computer provider](#choosing-a-computer-provider) appropriate to the
+service's trust boundary, and configure `SIGNUPS_ENABLED` and `SIGNUP_ALLOWLIST` before the API's
+first start.
+The optional marketing site in `apps/www` can be hosted separately.
 
-1. Push `main` (this checkout may be ahead of GitHub).
-2. Provision managed Postgres 16 and run `pnpm db:migrate`.
-3. Run **API** and **worker** as always-on Node 22 services (Fly machines, a VM, ECS, k8s). Not lambda-style request handlers.
-4. Persist and back up `DATA_DIR` (bot homes, browser profiles, artifacts). Today the concrete store is a local filesystem (`LocalAgentHomeStore`), so attach a Rakazo-owned durable volume shared by API and worker processes. The storage contract is separate from the computer-provider contract, but an object-storage implementation is not wired yet.
-5. Choose computers: **`SANDBOX_PROVIDER=e2b`**, `daytona`, or `box` with the matching provider key for a public or multi-user production service. Each Team or Private Computer reconnects to its sandbox id (`providerRef`), while workspace state is checkpointed outside the provider at run completion, explicit stop, and idle suspension. If that sandbox is gone—or the deployment changes providers—the replacement is hydrated from Rakazo's copy. Idle computers pause after `SANDBOX_IDLE_MS` (default 10 minutes) and resume on the next message or Take control. Docker remains the local and trusted single-machine default.
-6. A Hetzner CX22 (2 vCPU / 4 GB) is enough for API + worker + Postgres when E2B owns the desktops. 2 GB works for a quiet box; 8 GB is only needed if you also run Docker computers on that same machine.
-7. Set public HTTPS `WEB_ORIGIN` / `BETTER_AUTH_URL` / `API_URL`, secrets, and an OpenRouter (or other Pi) deployment key if you want to skip per-user model keys.
-8. Put the web app behind the same origin as `/api` and `/rpc` (Vite preview proxy, or a reverse proxy). Docker noVNC connections use short-lived signed `/novnc/*` capabilities; do not replace that route with an unrestricted port proxy.
-9. Deploy `apps/www` to your public website and point `app.example.com` (or similar) at the product origin.
-10. Turn on `SIGNUP_ALLOWLIST` until you want open registration. There is no Rakazo-managed model billing in version 1 — users bring keys.
-
-Expo / desktop installers are clients of that origin (`EXPO_PUBLIC_API_URL`, `RAKAZO_WEB_URL`). They are not a Cloud control plane.
+## Connect mobile clients
 
 The iOS and Android app can also point at a self-hosted origin at runtime. On the sign-in screen, tap **Use a custom server** and enter the same HTTPS origin as `WEB_ORIGIN` (for example `https://app.example.com`). Store builds still default to `EXPO_PUBLIC_API_URL`; the in-app setting is an override for people running their own API. Changing the server signs the device out of any previous session.

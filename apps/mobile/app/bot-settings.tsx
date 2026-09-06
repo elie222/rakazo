@@ -1,4 +1,5 @@
 import {
+  BOT_COLORS,
   BOT_DESCRIPTION_MAX_LENGTH,
   BOT_NAME_MAX_LENGTH,
   BOT_TITLE_MAX_LENGTH,
@@ -7,7 +8,8 @@ import {
 } from "@rakazo/contracts";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
-import { Pressable, ScrollView, Text, TextInput } from "react-native";
+import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { BotAvatar } from "../components/bot-avatar";
 import { ComputerModePicker } from "../components/computer-mode-picker";
 import { type MobileBot, rpc } from "../lib/api";
 import { useI18n } from "../lib/i18n";
@@ -26,6 +28,7 @@ export default function BotSettingsScreen() {
   const [name, setName] = useState("");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  const [color, setColor] = useState<string>(BOT_COLORS[0]);
   const [computerMode, setComputerMode] = useState<ComputerMode>("team");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -38,6 +41,7 @@ export default function BotSettingsScreen() {
         setName(next.name);
         setTitle(next.title);
         setDescription(next.description ?? "");
+        setColor(next.color);
         setComputerMode(next.computerMode);
       })
       .catch((err) => setError(err instanceof Error ? err.message : t("Could not load bot")));
@@ -55,6 +59,7 @@ export default function BotSettingsScreen() {
         title?: string;
         description?: string;
         instructions?: string;
+        color?: string;
       } = { botId };
       if (profile.name !== bot.name) input.name = profile.name;
       if (profile.title !== bot.title) input.title = profile.title;
@@ -63,6 +68,7 @@ export default function BotSettingsScreen() {
         // Keep instructions in sync with description (same as web BotSettings).
         input.instructions = profile.instructions;
       }
+      if (color !== bot.color) input.color = color;
       if (computerMode !== bot.computerMode) {
         await rpc("bots/setComputer", { botId, mode: computerMode });
       }
@@ -87,6 +93,11 @@ export default function BotSettingsScreen() {
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
       >
+        {bot ? (
+          <View style={{ alignItems: "center", marginBottom: 24 }}>
+            <BotAvatar color={color} identity={bot.id} size={64} status={bot.status} />
+          </View>
+        ) : null}
         <Text style={{ color: tokens.mutedForeground, fontSize: 14 }}>{t("Name")}</Text>
         <TextInput
           value={name}
@@ -139,6 +150,33 @@ export default function BotSettingsScreen() {
             textAlignVertical: "top",
           }}
         />
+        <Text style={{ color: tokens.mutedForeground, marginTop: 16, fontSize: 14 }}>
+          {t("Color")}
+        </Text>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ gap: 10, marginTop: 8 }}
+          accessibilityRole="radiogroup"
+        >
+          {BOT_COLORS.map((option, index) => (
+            <Pressable
+              key={option}
+              accessibilityRole="radio"
+              accessibilityLabel={t("Color {number}", { number: index + 1 })}
+              accessibilityState={{ checked: color === option }}
+              onPress={() => setColor(option)}
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: 18,
+                backgroundColor: option,
+                borderWidth: 3,
+                borderColor: color === option ? tokens.foreground : "transparent",
+              }}
+            />
+          ))}
+        </ScrollView>
         <ComputerModePicker value={computerMode} onChange={setComputerMode} />
         {error ? <Text style={{ color: tokens.destructive, marginTop: 16 }}>{error}</Text> : null}
         <Pressable

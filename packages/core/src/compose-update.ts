@@ -394,10 +394,21 @@ export interface ComposeInvocation {
 }
 
 export interface ComposeTarget {
-  composeFile: string;
+  /**
+   * Compose files in overlay order, each passed as its own `--file`. A deployment that layers an
+   * overlay on the base file has to be reconciled with the same file list the operator uses, or an
+   * update recreates services without the overlay's wiring.
+   */
+  composeFiles: readonly string[];
   envFiles?: readonly string[];
   /** Passed as `docker compose -p <name>`. Defaults to {@link DEFAULT_COMPOSE_PROJECT_NAME}. */
   projectName?: string;
+  /**
+   * Services to pull, recreate and roll back. Defaults to {@link RECREATED_SERVICES}. A deployment
+   * whose overlay adds an app-image service has to recreate that one too, or the update leaves it
+   * running the old code.
+   */
+  services?: readonly string[];
 }
 
 function composeBase(target: ComposeTarget): string[] {
@@ -405,15 +416,23 @@ function composeBase(target: ComposeTarget): string[] {
   if (!isValidComposeProjectName(projectName)) {
     throw new Error(`Refusing an unusable Compose project name: ${projectName}`);
   }
+  if (target.composeFiles.length === 0) {
+    throw new Error("Refusing a Compose target with no Compose file.");
+  }
   const args = ["compose", "-p", projectName];
   for (const envFile of target.envFiles ?? []) args.push("--env-file", envFile);
-  args.push("--file", target.composeFile);
+  for (const composeFile of target.composeFiles) args.push("--file", composeFile);
   return args;
+}
+
+function targetServices(target: ComposeTarget): readonly string[] {
+  const services = target.services ?? [];
+  return services.length > 0 ? services : RECREATED_SERVICES;
 }
 
 export function composePullArgv(
   target: ComposeTarget,
-  services: readonly string[] = RECREATED_SERVICES,
+  services: readonly string[] = targetServices(target),
 ): ComposeInvocation {
   return { command: "docker", args: [...composeBase(target), "pull", ...services] };
 }
@@ -433,7 +452,7 @@ export function composeUpArgv(
     "never",
   ];
   args.push(options.build === true ? "--build" : "--no-build");
-  args.push(...(options.services ?? RECREATED_SERVICES));
+  args.push(...(options.services ?? targetServices(target)));
   return { command: "docker", args };
 }
 

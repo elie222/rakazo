@@ -108,7 +108,15 @@ export default function SignIn() {
       }
       if (mode === "up") {
         const trimmedEmail = email.trim();
-        await signUp(trimmedEmail, password, name.trim() || trimmedEmail.split("@")[0] || "User");
+        const result = await signUp(
+          trimmedEmail,
+          password,
+          name.trim() || trimmedEmail.split("@")[0] || "User",
+        );
+        if (result.verificationRequired) {
+          setResetSent(true);
+          return;
+        }
       } else {
         await signIn(email.trim(), password);
       }
@@ -149,12 +157,12 @@ export default function SignIn() {
                   textAlign: "center",
                 }}
               >
-                {mode === "in"
-                  ? t("Sign in to Rakazo")
-                  : mode === "up"
-                    ? t("Sign up for Rakazo")
-                    : resetSent
-                      ? t("Check your email")
+                {resetSent
+                  ? t("Check your email")
+                  : mode === "in"
+                    ? t("Sign in to Rakazo")
+                    : mode === "up"
+                      ? t("Sign up for Rakazo")
                       : t("Reset your password")}
               </Text>
               {resetSent ? (
@@ -224,21 +232,6 @@ export default function SignIn() {
                       }}
                     />
                   ) : null}
-                  {mode === "in" && reset?.passwordReset && reset.resetUrl ? (
-                    <Pressable
-                      accessibilityRole="button"
-                      hitSlop={8}
-                      onPress={() => {
-                        setMode("forgot");
-                        setError(null);
-                      }}
-                      style={{ alignSelf: "flex-end", marginTop: 10 }}
-                    >
-                      <Text style={{ color: tokens.foreground, fontSize: 14, fontWeight: "600" }}>
-                        {t("Forgot password?")}
-                      </Text>
-                    </Pressable>
-                  ) : null}
                   {error ? (
                     <Text style={{ color: tokens.destructive, marginTop: 12 }}>{error}</Text>
                   ) : null}
@@ -264,6 +257,21 @@ export default function SignIn() {
                             : t("Send reset link")}
                     </Text>
                   </Pressable>
+                  {mode === "in" && reset?.passwordReset && reset.resetUrl ? (
+                    <Pressable
+                      accessibilityRole="button"
+                      hitSlop={8}
+                      onPress={() => {
+                        setMode("forgot");
+                        setError(null);
+                      }}
+                      style={{ alignSelf: "center", marginTop: 16 }}
+                    >
+                      <Text style={{ color: tokens.foreground, fontSize: 14, fontWeight: "600" }}>
+                        {t("Forgot password?")}
+                      </Text>
+                    </Pressable>
+                  ) : null}
                   <View
                     style={{
                       flexDirection: "row",

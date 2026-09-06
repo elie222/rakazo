@@ -332,6 +332,8 @@ export interface AgentRunRequest {
     id: string;
     apiKey?: string;
     baseUrl?: string;
+    /** Whether this custom connection accepts standard reasoning_effort. */
+    reasoning?: boolean;
     /** Preferred thinking effort for reasoning models; clamped to the model’s supported set. */
     thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null;
     /** In-process OAuth credential from the encrypted store for this run. */
@@ -449,6 +451,8 @@ export interface BackgroundJobPayloads {
   "skill.teaching-expire": { skillId: string };
   "history.compact": { threadId: string };
   "messaging.deliver": { runId?: string };
+  /** Reconcile durable remote-agent intent; scope is loaded from the database. */
+  "cloud_agent.poll": { agentId: string };
 }
 
 export type BackgroundJobName = keyof BackgroundJobPayloads;
@@ -519,6 +523,8 @@ export interface MessagingSendResult {
 export interface MessagingInboundMessage {
   type: "message";
   provider: string;
+  /** Per-message transport when one provider spans multiple networks (for example SMS vs RCS). */
+  transport?: string;
   /** Provider message id; drives replay-safe client nonces downstream. */
   handle: string;
   /** Opaque conversation id — pass back to sendToThread to reply. */
@@ -584,4 +590,130 @@ export interface WebFetchResult {
   title: string;
   text: string;
   truncated: boolean;
+}
+
+/** Page-level browser on the bot computer (DOM refs), not a hosted browser vendor. */
+export interface BrowserCapabilities {
+  page: boolean;
+  /** True when element refs from snapshot can be clicked or filled. */
+  refs: boolean;
+  /** True when the adapter runs without a hosted browser vendor or API key. */
+  keyless?: boolean;
+}
+
+export interface BrowserNavigateRequest {
+  url: string;
+  signal?: AbortSignal;
+}
+
+export interface BrowserNavigateResult {
+  url: string;
+  title: string;
+  /** When set, the page tool could not operate; use computer_act instead. */
+  fallback?: "computer_act";
+  error?: string;
+}
+
+export interface BrowserSnapshotRequest {
+  signal?: AbortSignal;
+}
+
+export interface BrowserSnapshotNode {
+  /** Stable element ref for browser_act (e.g. e12). */
+  ref: string;
+  role: string;
+  name: string;
+  value?: string;
+  tag?: string;
+}
+
+export interface BrowserSnapshotResult {
+  url: string;
+  title: string;
+  /** Compact accessibility-style tree for the model. */
+  tree: string;
+  elements: BrowserSnapshotNode[];
+  fallback?: "computer_act";
+  error?: string;
+}
+
+export type BrowserActKind = "click" | "fill" | "type";
+
+export type BrowserActStep =
+  | { kind: "click"; ref: string }
+  | { kind: "fill" | "type"; ref: string; text: string };
+
+export interface BrowserActRequest {
+  actions: BrowserActStep[];
+  signal?: AbortSignal;
+}
+
+export interface BrowserActResult {
+  ok: boolean;
+  completed: number;
+  /** An action may have taken effect before its response was lost. Observe before continuing. */
+  uncertain?: boolean;
+  url: string;
+  title: string;
+  /** Snapshot after the actions when available. */
+  tree?: string;
+  elements?: BrowserSnapshotNode[];
+  fallback?: "computer_act";
+  error?: string;
+}
+
+/** A sandbox must route these commands through its owned screen, never generic host execution. */
+export type PageBrowserCommand =
+  | { command: "navigate"; url: string }
+  | { command: "snapshot" }
+  | { command: "act"; actions: BrowserActStep[] };
+
+export type PageBrowserResult = Partial<BrowserSnapshotResult & BrowserActResult> & { ok: boolean };
+
+/** Vendor-neutral status for a remote cloud coding agent. */
+export type CloudAgentStatus = "running" | "finished" | "failed" | "cancelled";
+
+export interface CloudAgentCapabilities {
+  launch: boolean;
+  reply: boolean;
+  cancel: boolean;
+  /** True when the adapter never leaves the process (tests / Playwright). */
+  offline?: boolean;
+}
+
+export type CloudAgentImage = { data: string; mimeType: string } | { url: string };
+
+export interface CloudAgentLaunchRequest {
+  /** Repeated launches with this key must resolve to the same remote agent. */
+  idempotencyKey: string;
+  prompt: string;
+  repository?: string;
+  images?: CloudAgentImage[];
+  openPr?: boolean;
+  signal?: AbortSignal;
+}
+
+export interface CloudAgentHandle {
+  id: string;
+  url: string;
+  title: string;
+  status: CloudAgentStatus;
+  /** Latest remote run id when the vendor exposes one (needed for cancel). */
+  latestRunId?: string;
+}
+
+export interface CloudAgentSnapshot {
+  id: string;
+  url: string;
+  title: string;
+  status: CloudAgentStatus;
+  branch?: string;
+  prUrl?: string;
+  latestRunId?: string;
+}
+
+export interface CloudAgentReplyRequest {
+  prompt: string;
+  images?: CloudAgentImage[];
+  signal?: AbortSignal;
 }

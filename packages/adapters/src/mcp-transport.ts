@@ -21,7 +21,7 @@ export type McpRemoteTransport = "streamable-http" | "sse";
 export interface McpUrlPolicy {
   /** Maximum URL length accepted before any network request. */
   maxUrlLength?: number;
-  /** Permit plain HTTP only for explicitly local hosts. */
+  /** Permit plain HTTP only on the configured loopback resource's exact origin. */
   allowHttpLocalhost?: boolean;
   /** Permit configured credentials on an explicitly local HTTP endpoint. */
   allowLocalHttpCredentials?: boolean;
@@ -70,6 +70,7 @@ export interface McpClientOptions {
 }
 
 const DEFAULT_HEADERS = ["accept", "content-type", "authorization", "user-agent"];
+const RESOURCE_HEADERS = new Set(["mcp-session-id", "mcp-protocol-version", "last-event-id"]);
 const DEFAULT_MAX_URL_LENGTH = 2_048;
 
 function validateUrl(raw: string | URL, policy: McpUrlPolicy = {}): URL {
@@ -97,6 +98,12 @@ export function secureFetch(
   headerPolicy: McpHeaderPolicy = {},
   network: RemoteTransportDependencies = {},
 ): SafeRemoteFetch {
+  const localOrigin =
+    urlPolicy.allowHttpLocalhost === true &&
+    resourceUrl.protocol === "http:" &&
+    isLocalMcpHost(resourceUrl.hostname)
+      ? resourceUrl.origin
+      : undefined;
   const allowed = new Set(
     [
       ...DEFAULT_HEADERS,
@@ -124,11 +131,18 @@ export function secureFetch(
   );
   const request = async (input: Request | URL | string, init?: RequestInit): Promise<Response> => {
     const source = new Request(input, init);
-    const url = validateUrl(source.url, urlPolicy);
+    // OAuth challenges and rediscovery can supply new URLs. Only the explicitly
+    // configured local resource origin (including port) may bypass remote policy.
+    const url = validateUrl(source.url, {
+      ...urlPolicy,
+      allowHttpLocalhost: new URL(source.url).origin === localOrigin,
+    });
     const headers = new Headers();
     for (const [name, value] of source.headers) {
       const normalized = name.toLowerCase();
-      if (!allowed.has(normalized)) continue;
+      if (RESOURCE_HEADERS.has(normalized)) {
+        if (url.origin !== resourceUrl.origin) continue;
+      } else if (!allowed.has(normalized)) continue;
       if (url.origin !== resourceUrl.origin && configuredCredentialValues.has(value)) continue;
       headers.set(name, value);
     }

@@ -1,5 +1,5 @@
 import type { Command200Response } from "@asciidev/box-sdk";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   BoxSandboxProvider,
   type BoxSandboxSdk,
@@ -15,6 +15,11 @@ const context = {
   botId: "bot-a",
   signal: new AbortController().signal,
 };
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
 
 describe("BoxSandboxProvider", () => {
   it("creates no-env boxes and implements execution and file operations", async () => {
@@ -300,6 +305,60 @@ describe("BoxSandboxProvider", () => {
     expect(fixture.stop).toHaveBeenCalledWith({ boxId: "bx_testbox2" }, { signal: context.signal });
     await provider.destroy(computer, context);
     expect(fixture.deleteBox).toHaveBeenCalledWith("bx_testbox2");
+  });
+
+  it("bounds a stalled permanent-delete request", async () => {
+    const deadline = new AbortController();
+    vi.spyOn(AbortSignal, "timeout").mockReturnValue(deadline.signal);
+    const fetchMock = vi.fn(
+      async (_url: string | URL | Request, init?: RequestInit): Promise<Response> =>
+        new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => reject(init.signal?.reason), {
+            once: true,
+          });
+        }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = new BoxSandboxProvider({ apiKey: "test-key" });
+
+    const pending = provider.destroy(
+      { id: "box-test", providerRef: "box-test", botId: "bot-test", kind: "box" },
+      context,
+    );
+    deadline.abort(new DOMException("Timed out", "TimeoutError"));
+
+    await expect(pending).rejects.toThrow("Box box-test was not deleted within 60 seconds");
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(fetchMock.mock.calls[0]?.[1]?.signal).toBe(deadline.signal);
+  });
+
+  it("keeps the same deadline on permanent-delete status polling", async () => {
+    const deadline = new AbortController();
+    vi.spyOn(AbortSignal, "timeout").mockReturnValue(deadline.signal);
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(null, { status: 202 }))
+      .mockImplementationOnce(
+        async (_url: string | URL | Request, init?: RequestInit): Promise<Response> =>
+          new Promise((_resolve, reject) => {
+            init?.signal?.addEventListener("abort", () => reject(init.signal?.reason), {
+              once: true,
+            });
+          }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = new BoxSandboxProvider({ apiKey: "test-key" });
+
+    const pending = provider.destroy(
+      { id: "box-test", providerRef: "box-test", botId: "bot-test", kind: "box" },
+      context,
+    );
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    deadline.abort(new DOMException("Timed out", "TimeoutError"));
+
+    await expect(pending).rejects.toThrow("Box box-test was not deleted within 60 seconds");
+    expect(fetchMock.mock.calls[0]?.[1]?.signal).toBe(deadline.signal);
+    expect(fetchMock.mock.calls[1]?.[1]?.signal).toBe(deadline.signal);
   });
 
   it("recognizes provider 404 errors without swallowing transient failures", () => {

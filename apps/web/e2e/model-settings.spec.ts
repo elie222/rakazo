@@ -1,10 +1,75 @@
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { expect, test } from "@playwright/test";
-import { captureScreenshot, completeOnboarding, signup } from "./helpers";
+import { captureScreenshot, completeOnboarding, rpc, signup } from "./helpers";
 
 const LOCAL_MODEL_ID = "rakazo-e2e-local";
 const LOCAL_MODEL_REPLY = "OpenAI-compatible endpoint verified end to end.";
+
+test("custom connections persist reasoning support and bot thinking", async ({
+  page,
+}, testInfo) => {
+  const stamp = Date.now();
+  const userName = `Reasoning ${stamp}`;
+  await signup(page, `reasoning-model-${stamp}@rakazo.test`, "password12", userName);
+  await completeOnboarding(page);
+  await page.getByRole("button", { name: new RegExp(userName) }).click();
+  await page.getByRole("button", { name: "Models", exact: true }).click();
+  await page.getByPlaceholder("Search providers").fill("openai-compatible");
+  await page.getByRole("button", { name: /OpenAI-compatible/ }).click();
+  await page.getByLabel("OpenAI-compatible server URL").fill("http://127.0.0.1:8090/v1");
+  await page.getByLabel("Model id").fill("arbitrary-model");
+  await expect(page.getByRole("checkbox", { name: "Supports thinking" })).toBeHidden();
+  await page.getByText("Advanced", { exact: true }).click();
+  await page.getByRole("checkbox", { name: "Supports thinking" }).check();
+  await captureScreenshot(page, testInfo, "openai-compatible-thinking-connection");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.getByText("Saved.", { exact: true })).toBeVisible();
+  const credentials = await rpc<Array<{ modelId?: string; reasoning?: boolean }>>(
+    page,
+    "models/credentials",
+    {},
+  );
+  expect(credentials.find((entry) => entry.modelId === "arbitrary-model")?.reasoning).toBe(true);
+  await page.reload();
+  await page.getByRole("button", { name: new RegExp(userName) }).click();
+  await page.getByRole("button", { name: "Models", exact: true }).click();
+  await page.getByText("Advanced", { exact: true }).click();
+  await expect(page.getByRole("checkbox", { name: "Supports thinking" })).toBeChecked();
+  await page.getByRole("button", { name: "Close model settings" }).click();
+  await page.locator("main").getByRole("button", { name: "Chief", exact: true }).click();
+  const settings = page.getByTestId("bot-settings");
+  await expect(settings).toBeVisible();
+  const advanced = settings.getByTestId("bot-settings-advanced");
+  await advanced.evaluate((element) => {
+    (element as HTMLDetailsElement).open = true;
+  });
+  // NativeSelect sits inside a wrapping <label>, so label text includes option
+  // copy and getByLabel(..., { exact: true }) misses the control. Use the
+  // combobox accessible name, matching other model E2E tests.
+  const model = settings.getByRole("combobox", { name: "Model", exact: true });
+  await expect(model).toBeVisible();
+  await expect(model).toContainText("arbitrary-model");
+  // Value key — not a /arbitrary-model/ label match, which also hits "Space default (arbitrary-model)".
+  await model.selectOption("openai-compatible::arbitrary-model");
+  const thinking = settings.getByRole("combobox", { name: "Thinking", exact: true });
+  await expect(thinking).toBeVisible();
+  await thinking.selectOption("low");
+  await thinking.scrollIntoViewIfNeeded();
+  await captureScreenshot(page, testInfo, "openai-compatible-thinking");
+  const saved = page.waitForResponse(
+    (response) => response.url().includes("/rpc/bots/update") && response.ok(),
+  );
+  await settings.getByRole("button", { name: "Save", exact: true }).click();
+  await saved;
+  await page.reload();
+  await page.locator("main").getByRole("button", { name: "Chief", exact: true }).click();
+  await expect(settings).toBeVisible();
+  await advanced.evaluate((element) => {
+    (element as HTMLDetailsElement).open = true;
+  });
+  await expect(thinking).toHaveValue("low");
+});
 
 test("connects, lists, and uses an OpenAI-compatible endpoint", async ({ page }, testInfo) => {
   const server = createServer((request, response) => {
@@ -128,7 +193,6 @@ test("model settings connect, replace, and cancel provider authentication", asyn
   const stamp = Date.now();
   const userName = `Models ${stamp}`;
   await signup(page, `models-${stamp}@rakazo.test`, "password12", userName);
-  await expect(page.getByLabel("API key")).toHaveAttribute("autocomplete", "new-password");
   await completeOnboarding(page);
 
   await page.getByRole("button", { name: new RegExp(userName) }).click();

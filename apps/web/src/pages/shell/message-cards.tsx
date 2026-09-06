@@ -30,7 +30,7 @@ export function ChoiceCard({
     setError(null);
     try {
       await rpc.onboarding.choose({ botId, optionId });
-      await onBotChanged().catch(() => undefined);
+      await onBotChanged();
     } catch (err) {
       setError(err instanceof Error ? err.message : t`Could not save this choice`);
       setPending(false);
@@ -54,7 +54,7 @@ export function ChoiceCard({
 
   return (
     <div className="flex justify-start">
-      <div className="relative w-[min(420px,80%)] rounded-[20px] border border-border bg-card px-[18px] py-[14px]">
+      <div className="relative w-[420px] max-w-full rounded-[20px] border border-border bg-card px-[18px] py-[14px]">
         {!block.answerId ? (
           <Button
             variant="ghost"
@@ -71,7 +71,7 @@ export function ChoiceCard({
         {block.subtitle ? (
           <div className="mt-0.5 text-[13px] text-foreground/75">{block.subtitle}</div>
         ) : null}
-        <div className="mt-3 space-y-1.5">
+        <div className="mt-3 space-y-2.5">
           {block.options
             .filter((option) => !block.answerId || option.id === block.answerId)
             .map((option) => (
@@ -80,18 +80,18 @@ export function ChoiceCard({
                 type="button"
                 disabled={Boolean(block.answerId) || pending}
                 onClick={() => void choose(option.id)}
-                className={`flex w-full items-center gap-3 rounded-xl px-3.5 py-3 text-start text-foreground disabled:opacity-60 ${block.answerId ? "bg-accent" : "bg-muted hover:bg-accent"}`}
+                className={`flex w-full items-start gap-3 rounded-xl px-3.5 py-3.5 text-start text-foreground disabled:opacity-60 ${block.answerId ? "bg-accent" : "bg-muted hover:bg-accent"}`}
               >
-                <span className="grid h-[24px] w-[24px] place-items-center rounded-[7px] bg-background text-[12.5px] font-medium text-foreground/75">
+                <span className="mt-0.5 grid h-[24px] w-[24px] shrink-0 place-items-center rounded-[7px] bg-background text-[12.5px] font-medium text-foreground/75">
                   {option.letter}
                 </span>
                 <span
-                  className={`flex-1 text-[15px] ${block.answerId ? "text-foreground/75" : "text-foreground"}`}
+                  className={`flex-1 text-[15px] leading-[1.35] ${block.answerId ? "text-foreground/75" : "text-foreground"}`}
                 >
                   {option.label}
                 </span>
                 {block.answerId === option.id ? (
-                  <span className="text-foreground/75">✓</span>
+                  <span className="mt-0.5 text-foreground/75">✓</span>
                 ) : null}
               </button>
             ))}

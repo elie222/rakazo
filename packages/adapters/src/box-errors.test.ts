@@ -104,4 +104,24 @@ describe("Box API errors", () => {
     );
     expect(cancel).toHaveBeenCalledOnce();
   });
+
+  it("falls back to the HTTP status when an error body stalls", async () => {
+    const cancel = vi.fn();
+    const controller = new AbortController();
+    const response = new Response(
+      new ReadableStream({
+        pull: () => new Promise<void>(() => undefined),
+        cancel,
+      }),
+      { status: 504 },
+    );
+
+    const pending = boxResponseError(response, "fake-key", controller.signal);
+    controller.abort(new DOMException("Timed out", "TimeoutError"));
+
+    await expect(pending).resolves.toMatchObject({
+      message: "Box API request failed (HTTP 504)",
+    });
+    expect(cancel).toHaveBeenCalledOnce();
+  });
 });

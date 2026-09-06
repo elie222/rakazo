@@ -14,6 +14,7 @@ import {
   manualUpgradeCommands,
   OFFICIAL_REPO_URL,
   OFFICIAL_SERVER_IMAGE,
+  readBoundedResponseBytes,
   resolveInstallKind,
   restartSupervisorAdvice,
 } from "@rakazo/core";
@@ -347,7 +348,11 @@ async function sidecarJson<T>(
   }
   let bytes: Uint8Array;
   try {
-    bytes = await readSidecarBody(response, signal);
+    bytes = await readBoundedResponseBytes(response, {
+      maxBytes: MAX_UPDATER_RESPONSE_BYTES,
+      tooLargeMessage: "Response is too large",
+      read: (operation) => withAbort(operation(), signal),
+    });
   } catch (error) {
     if (error instanceof Error && error.message === "Response is too large") {
       throw new UpdaterProxyError("The updater sidecar response is too large.", 502);
@@ -377,58 +382,6 @@ async function sidecarJson<T>(
 function cancelResponseBody(response: Response): void {
   try {
     void Promise.resolve(response.body?.cancel()).catch(() => undefined);
-  } catch {
-    // Best-effort release only; an untrusted cancellation must not delay the error.
-  }
-}
-
-async function readSidecarBody(response: Response, signal: AbortSignal): Promise<Uint8Array> {
-  if (!response.body) {
-    const buffer = await withAbort(response.arrayBuffer(), signal);
-    if (buffer.byteLength > MAX_UPDATER_RESPONSE_BYTES) {
-      throw new Error("Response is too large");
-    }
-    return new Uint8Array(buffer);
-  }
-
-  const reader = response.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-  try {
-    for (;;) {
-      const { done, value } = await withAbort(reader.read(), signal);
-      if (done) break;
-      if (!value?.byteLength) continue;
-      total += value.byteLength;
-      if (total > MAX_UPDATER_RESPONSE_BYTES) {
-        cancelReader(reader);
-        throw new Error("Response is too large");
-      }
-      chunks.push(value);
-    }
-  } catch (error) {
-    cancelReader(reader);
-    throw error;
-  } finally {
-    try {
-      reader.releaseLock();
-    } catch {
-      // already cancelled or released
-    }
-  }
-
-  const body = new Uint8Array(total);
-  let offset = 0;
-  for (const chunk of chunks) {
-    body.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return body;
-}
-
-function cancelReader(reader: ReadableStreamDefaultReader<Uint8Array>): void {
-  try {
-    void Promise.resolve(reader.cancel()).catch(() => undefined);
   } catch {
     // Best-effort release only; an untrusted cancellation must not delay the error.
   }

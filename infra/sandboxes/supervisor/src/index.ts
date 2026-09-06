@@ -5,7 +5,11 @@ import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
-import { boundedSandboxCommandTimeoutMs, resolveSupervisorToken } from "@rakazo/core";
+import {
+  boundedSandboxCommandTimeoutMs,
+  readBoundedJsonResponse,
+  resolveSupervisorToken,
+} from "@rakazo/core";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 import { SERVICE_NAMES } from "@rakazo/logging";
 import { createRootLogger } from "@rakazo/logging/axiom";
@@ -20,10 +24,13 @@ import {
   COMPUTER_USER,
   computerNetworkNameFor,
   computerNetworkNamesForCleanup,
+  computerResourceLimits,
   containerCreateOptions,
   containerNameFor,
+  controlPortPublicationMatches,
   hostComputerUser,
   legacyNetworkOwnedSolelyBy,
+  publishedLoopbackControlHostPort,
   resolveComputerControlEndpoint,
   resolveScreenNetworkMode,
   resolveScreenPublishTarget,
@@ -75,6 +82,9 @@ let imageReady: Promise<void> | undefined;
 let supervisorInfo: Docker.ContainerInspectInfo | undefined;
 const supervisorToken = resolveSupervisorToken(process.env);
 const screenNetworkMode = resolveScreenNetworkMode(process.env.SANDBOX_SCREEN_NETWORK);
+// Host-run supervisors on Docker Desktop (macOS/Windows) cannot reach container
+// IPs, so computer control must use a published loopback port instead.
+const controlViaLoopback = process.env.SANDBOX_CONTROL_VIA_LOOPBACK === "true";
 const computerScreens = new Map<string, Map<string, ScreenAssignment>>();
 
 const app = new Hono();
@@ -139,10 +149,15 @@ app.post("/computers", async (c) => {
       if (existing) {
         const info = await existing.inspect();
         const desired = await docker.getImage(COMPUTER_IMAGE).inspect();
+        const controlPublishOk = controlPortPublicationMatches(
+          info.HostConfig.PortBindings,
+          controlViaLoopback,
+        );
         if (
           info.Image === desired.Id &&
           (!networkMode || info.HostConfig.NetworkMode === networkMode) &&
-          info.Config.User === computerUser
+          info.Config.User === computerUser &&
+          controlPublishOk
         ) {
           if (!info.State.Running) await existing.start();
           const screenUrl = await publishedScreenUrl(
@@ -184,6 +199,7 @@ app.post("/computers", async (c) => {
           user: computerUser,
           networkMode,
           controlToken: randomUUID(),
+          publishControlPort: controlViaLoopback,
         }),
       );
       await container.start();
@@ -261,6 +277,75 @@ app.post("/computers/:id/exec", async (c) => {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return c.json({ stdout: "", stderr: message, code: 1 }, 200);
+  }
+});
+
+app.post("/computers/:id/browser", async (c) => {
+  // Read eagerly so the Node HTTP adapter observes disconnects during screen setup too.
+  const signal = c.req.raw.signal;
+  signal.throwIfAborted();
+  const body = z
+    .discriminatedUnion("command", [
+      z.object({
+        command: z.literal("navigate"),
+        url: z
+          .string()
+          .url()
+          .max(8192)
+          .refine((value) => {
+            if (!URL.canParse(value)) return false;
+            const url = new URL(value);
+            return /^https?:$/.test(url.protocol) && !url.username && !url.password;
+          }),
+      }),
+      z.object({ command: z.literal("snapshot") }),
+      z.object({
+        command: z.literal("act"),
+        actions: z
+          .array(
+            z.discriminatedUnion("kind", [
+              z.object({ kind: z.literal("click"), ref: z.string().min(1).max(200) }),
+              z.object({
+                kind: z.enum(["fill", "type"]),
+                ref: z.string().min(1).max(200),
+                text: z.string().max(32_000),
+              }),
+            ]),
+          )
+          .min(1)
+          .max(24),
+      }),
+    ])
+    .parse(await c.req.json());
+  try {
+    const { container, layout } = await managedScreen(
+      c.req.param("id"),
+      c.req.header("x-rakazo-bot-id"),
+      c.req.header("x-rakazo-space-id"),
+      c.req.header("x-rakazo-screen-id"),
+      c.req.header("x-rakazo-screen-lease-id"),
+    );
+    const result = await runContainerCommand(
+      container,
+      ["/usr/local/bin/rakazo-page-browser", body.command, JSON.stringify(body)],
+      {
+        env: [`DISPLAY=${layout.display}`, "HOME=/home/rakazo", "RAKAZO_BROWSER_WATCH_STDIN=1"],
+        timeoutMs: 25_000,
+        signal,
+      },
+    );
+    // A nonzero exit or malformed output cannot establish which mutations ran.
+    if (result.code !== 0 || Buffer.byteLength(result.stdout) > 512 * 1024) {
+      throw new Error("Page browser unavailable or interrupted");
+    }
+    return c.json(JSON.parse(result.stdout));
+  } catch {
+    return c.json({
+      ok: false,
+      fallback: "computer_act",
+      uncertain: body.command === "act",
+      error: "Page browser unavailable or interrupted. Inspect the screen before continuing.",
+    });
   }
 });
 
@@ -601,6 +686,11 @@ app.delete("/computers/:id", async (c) => {
 
 function startSupervisor() {
   const logger = createRootLogger(SERVICE_NAMES.supervisor);
+  // Resolve the ceilings before binding the port. They are otherwise parsed inside
+  // containerCreateOptions, so a malformed RAKAZO_COMPUTER_* value would let the supervisor start
+  // and pass its healthcheck, then fail the first POST /computers with a 500 that reads like a
+  // Docker problem. Failing here names the variable while the deployment is still coming up.
+  computerResourceLimits();
   const port = Number(process.env.SUPERVISOR_PORT ?? 7091);
   const hostname = process.env.SUPERVISOR_HOST ?? "127.0.0.1";
   const server = serve({ fetch: app.fetch, hostname, port }, () => {
@@ -657,6 +747,7 @@ async function ensureComputerImage() {
             "control.py",
             "xcapture.c",
             "rakazo-browser",
+            "rakazo-page-browser",
             "rakazo-browser.desktop",
             "embed.html",
             "clipboard-bridge.js",
@@ -753,24 +844,35 @@ function computerControlEndpoint(info: Docker.ContainerInspectInfo) {
   const token = info.Config.Env?.find((value) =>
     value.startsWith("RAKAZO_COMPUTER_CONTROL_TOKEN="),
   )?.slice("RAKAZO_COMPUTER_CONTROL_TOKEN=".length);
+  const publishedHostPort = controlViaLoopback
+    ? publishedLoopbackControlHostPort(info.NetworkSettings?.Ports)
+    : undefined;
   return resolveComputerControlEndpoint({
     token,
     networkMode: info.HostConfig.NetworkMode,
     networks: info.NetworkSettings?.Networks,
+    publishedHostPort,
+    requirePublishedHostPort: controlViaLoopback,
   });
 }
 
-async function controlDesktop(
+export const MAX_COMPUTER_CONTROL_RESPONSE_BYTES = 16 * 1024 * 1024;
+
+export async function controlDesktop(
   endpoint: { url: string; token: string },
   actions: Array<z.infer<typeof computerActionSchema>>,
   display: string,
   observe: boolean,
   settleMs: number,
 ) {
+  const signal = AbortSignal.timeout(computerControlTimeoutMs(actions, settleMs));
   let response: Response;
   try {
     response = await fetch(endpoint.url, {
       method: "POST",
+      // The computer can replace its listener; keep requests on the inspected
+      // computer's fixed endpoint instead of following it across sandbox networks.
+      redirect: "error",
       headers: {
         authorization: `Bearer ${endpoint.token}`,
         "content-type": "application/json",
@@ -781,7 +883,7 @@ async function controlDesktop(
         observe,
         settleMs,
       }),
-      signal: AbortSignal.timeout(computerControlTimeoutMs(actions, settleMs)),
+      signal,
     });
   } catch (error) {
     if (isComputerControlUnavailable(error)) {
@@ -791,11 +893,11 @@ async function controlDesktop(
     }
     throw error;
   }
-  const payload = (await response.json()) as {
+  const payload = await readBoundedJsonResponse<{
     completed?: unknown;
     observation?: unknown;
     error?: unknown;
-  };
+  }>(response, MAX_COMPUTER_CONTROL_RESPONSE_BYTES, signal);
   if (!response.ok) throw new Error(String(payload.error ?? "computer control failed"));
   if (typeof payload.completed !== "number")
     throw new Error("computer control returned no completion count");
@@ -804,6 +906,7 @@ async function controlDesktop(
     ...(payload.observation ? { observation: payload.observation } : {}),
   };
 }
+
 const SCREEN_READY_TIMEOUT_MS = 45_000;
 
 // Docker publishes a container's port mapping (or assigns its internal IP)
@@ -1025,8 +1128,9 @@ async function inspectSupervisorContainer() {
 async function runContainerCommand(
   container: Docker.Container,
   argv: string[],
-  options: { workingDir?: string; env?: string[]; timeoutMs?: number } = {},
+  options: { workingDir?: string; env?: string[]; timeoutMs?: number; signal?: AbortSignal } = {},
 ): Promise<{ stdout: string; stderr: string; code: number }> {
+  options.signal?.throwIfAborted();
   const timeoutMs = options.timeoutMs;
   const completionMarker = timeoutMs
     ? `/tmp/rakazo-command-${randomUUID()}.completed-124`
@@ -1039,16 +1143,30 @@ async function runContainerCommand(
     Cmd: command,
     AttachStdout: true,
     AttachStderr: true,
+    ...(options.signal ? { AttachStdin: true } : {}),
     WorkingDir: options.workingDir ?? "/home/rakazo",
     Env: options.env ?? ["DISPLAY=:1", "HOME=/home/rakazo"],
   });
-  const stream = await exec.start({ hijack: true, stdin: false });
+  options.signal?.throwIfAborted();
+  const stream = await exec.start({ hijack: true, stdin: Boolean(options.signal) });
   const chunks: Buffer[] = [];
-  await new Promise<void>((resolve, reject) => {
-    stream.on("data", (data: Buffer) => chunks.push(data));
-    stream.on("end", resolve);
-    stream.on("error", reject);
-  });
+  let onAbort: (() => void) | undefined;
+  try {
+    await new Promise<void>((resolve, reject) => {
+      stream.on("data", (data: Buffer) => chunks.push(data));
+      stream.on("end", resolve);
+      stream.on("error", reject);
+      onAbort = () => {
+        // The page helper watches stdin EOF and exits even inside a blocked CDP call.
+        stream.destroy();
+        reject(options.signal?.reason ?? new Error("command cancelled"));
+      };
+      options.signal?.addEventListener("abort", onAbort, { once: true });
+      if (options.signal?.aborted) onAbort();
+    });
+  } finally {
+    if (onAbort) options.signal?.removeEventListener("abort", onAbort);
+  }
   const inspect = await exec.inspect();
   const code = inspect.ExitCode ?? 0;
   const completedWithExit124 =

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Alert, Pressable, Text, View } from "react-native";
+import { Alert, Pressable, Text, View, type ViewProps } from "react-native";
 import { mobileTokens } from "../lib/appearance";
 import { useI18n } from "../lib/i18n";
 
@@ -15,10 +15,14 @@ export function AskActions({
   actions,
   disabled,
   onAnswer,
+  accessibilityActions,
+  onAccessibilityAction,
 }: {
   actions: AskAction[];
   disabled?: boolean;
   onAnswer: (answer: string) => Promise<void>;
+  accessibilityActions?: ViewProps["accessibilityActions"];
+  onAccessibilityAction?: ViewProps["onAccessibilityAction"];
 }) {
   const { t } = useI18n();
   const tokens = mobileTokens();
@@ -47,6 +51,8 @@ export function AskActions({
         return (
           <Pressable
             key={action.id}
+            accessibilityActions={accessibilityActions}
+            onAccessibilityAction={onAccessibilityAction}
             disabled={disabled || submitting}
             onPress={() => void submit(action.id)}
             style={{

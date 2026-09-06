@@ -479,7 +479,7 @@ export type ActionAutoReviewSettings = z.infer<typeof ActionAutoReviewSettingsSc
 
 export const CapabilityInstallSchema = z.object({
   id: Id,
-  kind: z.enum(["skill", "plugin", "mcp", "api", "connection"]),
+  kind: z.enum(["skill", "plugin", "mcp", "api", "graphql", "connection"]),
   name: z.string(),
   source: z.string(),
   version: z.string().nullable(),
@@ -670,6 +670,7 @@ export const RunSchema = z.object({
     "bot_message",
     "webhook",
     "messaging",
+    "cloud_agent",
   ]),
   routineId: Id.nullable(),
   modelProvider: z.string().nullable(),
@@ -711,6 +712,8 @@ export const ModelCredentialSchema = z.object({
   isDefault: z.boolean(),
   baseUrl: z.string().optional(),
   modelId: z.string().optional(),
+  reasoning: z.boolean().optional(),
+  thinkingLevels: z.array(ThinkingLevelSchema).optional(),
 });
 export type ModelCredential = z.infer<typeof ModelCredentialSchema>;
 
@@ -723,6 +726,7 @@ export const ModelConnectInputSchema = z
     baseUrl: z.string().optional(),
     label: z.string().optional(),
     modelId: z.string().optional(),
+    reasoning: z.boolean().optional(),
   })
   .superRefine((value, ctx) => {
     if (value.provider === OPENAI_COMPATIBLE_PROVIDER_ID) {

@@ -16,6 +16,7 @@ import {
   type ComposioProvider,
   type ConnectorRegistry,
   createBackgroundJobHandlers,
+  createCloudAgentConnection,
   createConnectorStack,
   createJobReconciler,
   createMessagingContextLoader,
@@ -47,6 +48,7 @@ import {
   pipedreamConfigFromEnv,
   pushTokenPath,
   type RemoteConnectorDependencies,
+  reconcileCloudAgents,
   ScriptedAgentRuntime,
   SmtpEmailProvider,
   SpaceMemoryProviderResolver,
@@ -280,6 +282,12 @@ export async function createApp(
       await rm(pushTokenPath(env.dataDir, userId), { force: true }).catch(() => undefined);
     },
   });
+  // One provider instance so emulator launches and polls share the same Map.
+  const cloudAgent = createCloudAgentConnection({
+    CLOUD_AGENT_PROVIDER: env.cloudAgentProvider,
+    CURSOR_API_KEY: env.cursorApiKey,
+    CLOUD_AGENT_SPACE_ID: env.cloudAgentSpaceId,
+  });
   const executor = createRunExecutor({
     prisma,
     runtime,
@@ -291,8 +299,13 @@ export async function createApp(
     connector: stack.connector,
     connectors: stack.connector,
     listConnectedPluginSlugs: stack.composio?.listConnectedSlugs.bind(stack.composio),
-    secrets: [env.deploymentModelKey ?? "", env.composioApiKey ?? ""].filter(Boolean),
+    secrets: [
+      env.deploymentModelKey ?? "",
+      env.composioApiKey ?? "",
+      env.cursorApiKey ?? "",
+    ].filter(Boolean),
     secretStore: secrets,
+    secretHttp: remoteConnectors,
     deploymentModelKey: env.deploymentModelKey,
     dataDir: env.dataDir,
     notifications,
@@ -300,6 +313,7 @@ export async function createApp(
     events,
     messaging: messaging ? createMessagingContextLoader(prisma) : undefined,
     web: createWebProvider(),
+    cloudAgent,
   });
 
   const jobHandlers = createBackgroundJobHandlers({
@@ -315,11 +329,18 @@ export async function createApp(
     memoryProviders,
     deploymentModelKey: env.deploymentModelKey,
     messaging,
+    cloudAgent,
   });
   if (inMemoryJobs) {
     await inMemoryJobs.start(jobHandlers);
   }
-  const reconciler = inMemoryJobs ? createJobReconciler({ prisma, jobs }) : undefined;
+  const reconciler = inMemoryJobs
+    ? createJobReconciler({
+        prisma,
+        jobs,
+        reconcileCloudAgents: () => reconcileCloudAgents({ prisma, jobs, cloudAgent }),
+      })
+    : undefined;
   reconciler?.start();
 
   const router = createRouter({

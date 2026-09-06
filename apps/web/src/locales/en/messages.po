@@ -710,6 +710,16 @@ msgstr "Code"
 msgid "Collapse {0}"
 msgstr "Collapse {0}"
 
+#: src/pages/shell/bot-panel.tsx:327
+#: src/pages/shell/bot-panel.tsx:328
+msgid "Color"
+msgstr "Color"
+
+#. placeholder {0}: index + 1
+#: src/pages/shell/bot-panel.tsx:337
+msgid "Color {0}"
+msgstr "Color {0}"
+
 #: src/pages/RoutineEditor.tsx:387
 msgid "Coming soon"
 msgstr "Coming soon"
@@ -2040,10 +2050,6 @@ msgstr "No managed app catalog is configured on this deployment."
 msgid "No matching models"
 msgstr "No matching models"
 
-#: src/pages/PluginsOverlay.tsx:596
-msgid "No MCP or API tool sources installed yet."
-msgstr "No MCP or API tool sources installed yet."
-
 #: src/pages/McpServersOverlay.tsx:426
 msgid "No MCP servers yet."
 msgstr "No MCP servers yet."
@@ -3168,3 +3174,111 @@ msgstr "Your OS will not ask for extra permission if you let bots run on {hostLa
 #: src/pages/Welcome.tsx:21
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "Your team of always-on agents<0/>that you can give real work to."
+
+#: src/components/CloudAgentCard.tsx:36
+msgid "cancelled"
+msgstr "cancelled"
+
+#: src/components/CloudAgentCard.tsx:38
+msgid "failed"
+msgstr "failed"
+
+#: src/components/CloudAgentCard.tsx:34
+msgid "finished"
+msgstr "finished"
+
+#: src/components/CloudAgentCard.tsx:44
+msgid "Pull request"
+msgstr "Pull request"
+
+#: src/components/CloudAgentCard.tsx:32
+msgid "running"
+msgstr "running"
+
+#: src/pages/KnowledgeSection.tsx:334
+msgid "Could not delete skill"
+msgstr "Could not delete skill"
+
+#: src/pages/KnowledgeSection.tsx:96
+#: src/pages/KnowledgeSection.tsx:142
+#: src/pages/KnowledgeSection.tsx:260
+#: src/pages/KnowledgeSection.tsx:303
+#: src/pages/KnowledgeSection.tsx:331
+msgid "Could not load"
+msgstr "Could not load"
+
+#: src/pages/KnowledgeSection.tsx:282
+msgid "Could not load skill"
+msgstr "Could not load skill"
+
+#: src/pages/KnowledgeSection.tsx:306
+msgid "Could not save skill"
+msgstr "Could not save skill"
+
+#: src/pages/KnowledgeSection.tsx:212
+msgid "Download as markdown"
+msgstr "Download as markdown"
+
+#: src/pages/KnowledgeSection.tsx:23
+msgid "Knowledge"
+msgstr "Knowledge"
+
+#: src/pages/KnowledgeSection.tsx:443
+msgid "New skill"
+msgstr "New skill"
+
+#: src/pages/KnowledgeSection.tsx:347
+msgid "No skills yet"
+msgstr "No skills yet"
+
+#: src/pages/KnowledgeSection.tsx:32
+#: src/pages/KnowledgeSection.tsx:54
+msgid "Nothing remembered yet"
+msgstr "Nothing remembered yet"
+
+#: src/pages/KnowledgeSection.tsx:364
+msgid "read-only"
+msgstr "read-only"
+
+#. placeholder {0}: doc.revision
+#: src/pages/KnowledgeSection.tsx:168
+msgid "rev {0}"
+msgstr "rev {0}"
+
+#: src/pages/KnowledgeSection.tsx:49
+msgid "Shared documents"
+msgstr "Shared documents"
+
+#: src/pages/KnowledgeSection.tsx:25
+msgid "Skills"
+msgstr "Skills"
+
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/Onboarding.tsx
+msgid "Supports thinking"
+msgstr "Supports thinking"
+
+#: src/pages/PluginsOverlay.tsx:486
+msgid "Add GraphQL"
+msgstr "Add GraphQL"
+
+#: src/pages/PluginsOverlay.tsx:504
+msgid "Add GraphQL endpoint"
+msgstr "Add GraphQL endpoint"
+
+#: src/pages/PluginsOverlay.tsx:601
+msgid "No tool sources yet."
+msgstr "No tool sources yet."
+
+#: src/pages/PluginsOverlay.tsx
+msgid "Add Executor"
+msgstr "Add Executor"
+
+#: src/pages/PluginsOverlay.tsx
+msgid "Connect Executor"
+msgstr "Connect Executor"
+
+#: src/pages/PluginsOverlay.tsx
+msgid "Executor token"
+msgstr "Executor token"
+

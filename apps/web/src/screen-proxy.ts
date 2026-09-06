@@ -8,7 +8,6 @@ const SENSITIVE_FORWARD_HEADERS = new Set([
   "proxy-authenticate",
   "proxy-authorization",
 ]);
-const SENSITIVE_RESPONSE_HEADERS = new Set(["clear-site-data", "set-cookie", "set-cookie2"]);
 const SCREEN_PROXY_CIPHER = "aes-256-gcm";
 
 export function resolveNovncTarget(url: string | undefined, secret: string, now = Date.now()) {
@@ -132,32 +131,4 @@ export function safeProxyHeaders(headers: IncomingHttpHeaders) {
       );
     }),
   );
-}
-
-export function safeProxyResponseHeaders(headers: IncomingHttpHeaders) {
-  return Object.fromEntries(
-    Object.entries(headers).filter(([key, value]) => {
-      return (
-        value != null &&
-        !isHttp2PseudoHeader(key) &&
-        !SENSITIVE_RESPONSE_HEADERS.has(key.toLowerCase())
-      );
-    }),
-  );
-}
-
-export function stripSensitiveHandshakeHeaders(response: Buffer) {
-  const end = response.indexOf("\r\n\r\n");
-  if (end < 0) return null;
-  const lines = response.subarray(0, end).toString("latin1").split("\r\n");
-  const safeLines = lines.filter((line, index) => {
-    if (index === 0) return true;
-    const separator = line.indexOf(":");
-    const name = separator < 0 ? line : line.slice(0, separator);
-    return !SENSITIVE_RESPONSE_HEADERS.has(name.trim().toLowerCase());
-  });
-  return Buffer.concat([
-    Buffer.from(`${safeLines.join("\r\n")}\r\n\r\n`, "latin1"),
-    response.subarray(end + 4),
-  ]);
 }

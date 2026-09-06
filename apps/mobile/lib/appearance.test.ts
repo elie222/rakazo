@@ -72,4 +72,23 @@ describe("mobile appearance", () => {
     expect(listener).toHaveBeenCalledTimes(1);
     expect(resolveMobileAppearance()).toBe("light");
   });
+
+  it("flips user bubble tokens when appearance switches with an existing preference", async () => {
+    const { mobileTokens, setAppearancePreference, subscribeAppearance } = await import(
+      "./appearance"
+    );
+    const listener = vi.fn();
+    subscribeAppearance(listener);
+
+    await setAppearancePreference("dark");
+    const darkBubble = mobileTokens().secondary;
+    const darkInk = mobileTokens().secondaryForeground;
+
+    listener.mockClear();
+    await setAppearancePreference("light");
+    expect(listener).toHaveBeenCalledOnce();
+    expect(mobileTokens().secondary).not.toBe(darkBubble);
+    expect(mobileTokens().secondaryForeground).not.toBe(darkInk);
+    expect(mobileTokens().secondary).not.toBe(mobileTokens().primary);
+  });
 });

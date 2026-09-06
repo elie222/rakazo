@@ -139,6 +139,17 @@ describe("Android mobile platform contract", () => {
     expect(notifications).toContain("dismissNotificationAsync");
   });
 
+  it("renders the per-message transport in every native channel-message path", () => {
+    const thread = readFileSync(resolve(mobileRoot, "app/thread.tsx"), "utf8");
+    expect(
+      thread.match(/messagingProviderLabel\(block\.provider, block\.transport\)/g),
+    ).toHaveLength(2);
+    expect(thread).toContain(
+      "messagingProviderLabel(channelMessage.provider, channelMessage.transport)",
+    );
+    expect(thread).not.toMatch(/messagingProviderLabel\((?:block|channelMessage)\.provider\)/);
+  });
+
   it("reconciles finished agents and opens ordinary chats at the latest message", () => {
     const thread = readFileSync(resolve(mobileRoot, "app/thread.tsx"), "utf8");
     const scroll = readFileSync(resolve(mobileRoot, "lib/thread-scroll.ts"), "utf8");

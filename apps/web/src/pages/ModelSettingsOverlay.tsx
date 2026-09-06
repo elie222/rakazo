@@ -5,6 +5,7 @@ import {
   openAiCompatibleConnectReady,
   openAiCompatibleProbeSuccessMessage,
 } from "@rakazo/contracts";
+import { createModelProbe, initialModelProbeState } from "@rakazo/core";
 import {
   Button,
   Dialog,
@@ -14,6 +15,7 @@ import {
   DialogHeader,
   DialogTitle,
   Input,
+  ModelThinkingOptions,
   NativeSelect,
   NativeSelectOption,
 } from "@rakazo/ui-web";
@@ -42,9 +44,11 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
   const [modelId, setModelId] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
-  const [probeModels, setProbeModels] = useState<string[]>([]);
-  const [probedBaseUrl, setProbedBaseUrl] = useState<string | null>(null);
-  const [probing, setProbing] = useState(false);
+  const [reasoning, setReasoning] = useState(false);
+  const [{ models: probeModels, baseUrl: probedBaseUrl, probing }, setProbe] =
+    useState(initialModelProbeState);
+  const [modelProbe] = useState(() => createModelProbe(setProbe));
+  const resetOpenAiCompatibleProbe = modelProbe.reset;
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState<"connect" | "default" | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -52,7 +56,6 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
   const detailScrollRef = useRef<HTMLDivElement>(null);
   const refreshRevisionRef = useRef(0);
   const selectionRevisionRef = useRef(0);
-  const probeRequestIdRef = useRef(0);
   const selectedLabelRef = useRef<string | undefined>(undefined);
 
   const {
@@ -108,6 +111,7 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
       setModelId(nextModel);
       if (nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID) {
         setBaseUrl(nextCredential?.baseUrl ?? "");
+        setReasoning(nextCredential?.reasoning ?? false);
       }
     }
   }
@@ -120,7 +124,7 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
       .finally(() => setLoading(false));
     return () => {
       refreshRevisionRef.current += 1;
-      probeRequestIdRef.current += 1;
+      modelProbe.invalidate();
     };
   }, []);
 
@@ -169,13 +173,6 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
     storedBaseUrl: credential?.baseUrl,
   });
 
-  function resetOpenAiCompatibleProbe() {
-    probeRequestIdRef.current += 1;
-    setProbeModels([]);
-    setProbedBaseUrl(null);
-    setProbing(false);
-  }
-
   function updateBaseUrl(nextBaseUrl: string) {
     setBaseUrl(nextBaseUrl);
     resetOpenAiCompatibleProbe();
@@ -191,16 +188,16 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
   function chooseProvider(nextProvider: string) {
     cancelOAuthAttempt();
     selectionRevisionRef.current += 1;
+    const nextCredential = credentials.find((entry) => entry.provider === nextProvider);
     setProvider(nextProvider);
+    setReasoning(nextCredential?.reasoning ?? false);
     setModelId(
       nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID
-        ? (credentials.find((entry) => entry.provider === nextProvider)?.modelId ?? "")
+        ? (nextCredential?.modelId ?? "")
         : (catalog.find((entry) => entry.provider === nextProvider)?.id ?? ""),
     );
     setBaseUrl(
-      nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID
-        ? (credentials.find((entry) => entry.provider === nextProvider)?.baseUrl ?? "")
-        : "",
+      nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID ? (nextCredential?.baseUrl ?? "") : "",
     );
     detailScrollRef.current?.scrollTo({ top: 0 });
     setApiKey("");
@@ -210,29 +207,20 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
   }
 
   async function probeServerModels() {
-    const trimmedBaseUrl = effectiveBaseUrl;
-    if (!trimmedBaseUrl) return;
-    resetOpenAiCompatibleProbe();
-    const requestId = probeRequestIdRef.current;
-    setProbing(true);
+    if (!baseUrl.trim()) return;
     setError(null);
     setNotice(null);
-    try {
-      const result = await rpc.models.probeOpenAiCompatible({
-        baseUrl: trimmedBaseUrl,
-        apiKey: apiKey.trim() || undefined,
-      });
-      if (requestId !== probeRequestIdRef.current) return;
-      setProbeModels(result.models);
-      setProbedBaseUrl(trimmedBaseUrl);
-      setModelId((current) => current.trim() || result.models[0] || "");
-      setNotice(openAiCompatibleProbeSuccessMessage(result.models.length));
-    } catch (err) {
-      if (requestId !== probeRequestIdRef.current) return;
-      setError(err instanceof Error ? err.message : t`Could not reach this model server`);
-    } finally {
-      if (requestId === probeRequestIdRef.current) setProbing(false);
-    }
+    await modelProbe.probe({
+      baseUrl,
+      apiKey,
+      request: rpc.models.probeOpenAiCompatible,
+      onSuccess: (models) => {
+        setModelId((current) => current.trim() || models[0] || "");
+        setNotice(openAiCompatibleProbeSuccessMessage(models.length));
+      },
+      onError: (err) =>
+        setError(err instanceof Error ? err.message : t`Could not reach this model server`),
+    });
   }
 
   async function setModelDefault() {
@@ -270,6 +258,7 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
               provider: selected.provider,
               baseUrl: effectiveBaseUrl,
               modelId: modelId.trim(),
+              reasoning,
               apiKey: apiKey.trim() || undefined,
               label: selected.providerName ?? selected.provider,
             }
@@ -496,6 +485,17 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                           </Button>
                         ) : null}
                       </div>
+                      <ModelThinkingOptions
+                        reasoning={reasoning}
+                        onReasoningChange={(value) => {
+                          selectionRevisionRef.current += 1;
+                          setReasoning(value);
+                          setNotice(null);
+                        }}
+                        disabled={busy}
+                        advancedLabel={t`Advanced`}
+                        thinkingLabel={t`Supports thinking`}
+                      />
                     </>
                   ) : (
                     <>

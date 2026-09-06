@@ -311,7 +311,7 @@ msgstr "उत्तर दिया गया"
 #. placeholder {0}: selectedAskActionLabel(answer, actions)
 #: src/components/AskCard.tsx:20
 msgid "Answered: {0}"
-msgstr ""
+msgstr "उत्तर दिया: {0}"
 
 #: src/components/AskCard.tsx:26
 msgid "Answered: {answer}"
@@ -703,12 +703,22 @@ msgstr "क्लाउड"
 #: src/components/AskCard.tsx:128
 #: src/components/AskCard.tsx:133
 msgid "Code"
-msgstr ""
+msgstr "कोड"
 
 #. placeholder {0}: group.title
 #: src/pages/Shell.tsx:2558
 msgid "Collapse {0}"
 msgstr ""
+
+#: src/pages/shell/bot-panel.tsx:327
+#: src/pages/shell/bot-panel.tsx:328
+msgid "Color"
+msgstr "रंग"
+
+#. placeholder {0}: index + 1
+#: src/pages/shell/bot-panel.tsx:337
+msgid "Color {0}"
+msgstr "रंग {0}"
 
 #: src/pages/RoutineEditor.tsx:387
 msgid "Coming soon"
@@ -2040,10 +2050,6 @@ msgstr "इस डिप्लॉयमेंट पर कोई प्रब�
 msgid "No matching models"
 msgstr ""
 
-#: src/pages/PluginsOverlay.tsx:596
-msgid "No MCP or API tool sources installed yet."
-msgstr "अभी तक कोई MCP या API टूल स्रोत इंस्टॉल नहीं है।"
-
 #: src/pages/McpServersOverlay.tsx:426
 msgid "No MCP servers yet."
 msgstr "अभी तक कोई MCP सर्वर नहीं।"
@@ -3168,3 +3174,111 @@ msgstr "यदि आप बॉट्स को {hostLabel} पर चलने 
 #: src/pages/Welcome.tsx:21
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "हमेशा चालू रहने वाले एजेंटों की आपकी टीम<0/>जिन्हें आप असली काम सौंप सकते हैं।"
+
+#: src/components/CloudAgentCard.tsx:36
+msgid "cancelled"
+msgstr "रद्द"
+
+#: src/components/CloudAgentCard.tsx:38
+msgid "failed"
+msgstr "असफल"
+
+#: src/components/CloudAgentCard.tsx:34
+msgid "finished"
+msgstr "पूर्ण"
+
+#: src/components/CloudAgentCard.tsx:44
+msgid "Pull request"
+msgstr "पुल अनुरोध"
+
+#: src/components/CloudAgentCard.tsx:32
+msgid "running"
+msgstr "चल रहा है"
+
+#: src/pages/KnowledgeSection.tsx:334
+msgid "Could not delete skill"
+msgstr "स्किल हटाई नहीं जा सकी"
+
+#: src/pages/KnowledgeSection.tsx:96
+#: src/pages/KnowledgeSection.tsx:142
+#: src/pages/KnowledgeSection.tsx:260
+#: src/pages/KnowledgeSection.tsx:303
+#: src/pages/KnowledgeSection.tsx:331
+msgid "Could not load"
+msgstr "लोड नहीं हो सका"
+
+#: src/pages/KnowledgeSection.tsx:282
+msgid "Could not load skill"
+msgstr "स्किल लोड नहीं हो सकी"
+
+#: src/pages/KnowledgeSection.tsx:306
+msgid "Could not save skill"
+msgstr "स्किल सहेजी नहीं जा सकी"
+
+#: src/pages/KnowledgeSection.tsx:212
+msgid "Download as markdown"
+msgstr "मार्कडाउन के रूप में डाउनलोड करें"
+
+#: src/pages/KnowledgeSection.tsx:23
+msgid "Knowledge"
+msgstr "ज्ञान"
+
+#: src/pages/KnowledgeSection.tsx:443
+msgid "New skill"
+msgstr "नई स्किल"
+
+#: src/pages/KnowledgeSection.tsx:347
+msgid "No skills yet"
+msgstr "अभी तक कोई स्किल नहीं"
+
+#: src/pages/KnowledgeSection.tsx:32
+#: src/pages/KnowledgeSection.tsx:54
+msgid "Nothing remembered yet"
+msgstr "अभी तक कुछ याद नहीं किया गया"
+
+#: src/pages/KnowledgeSection.tsx:364
+msgid "read-only"
+msgstr "केवल पढ़ने योग्य"
+
+#. placeholder {0}: doc.revision
+#: src/pages/KnowledgeSection.tsx:168
+msgid "rev {0}"
+msgstr "रिवीज़न {0}"
+
+#: src/pages/KnowledgeSection.tsx:49
+msgid "Shared documents"
+msgstr "साझा दस्तावेज़"
+
+#: src/pages/KnowledgeSection.tsx:25
+msgid "Skills"
+msgstr "स्किल्स"
+
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/Onboarding.tsx
+msgid "Supports thinking"
+msgstr "सोचने की क्षमता का समर्थन करता है"
+
+#: src/pages/PluginsOverlay.tsx:486
+msgid "Add GraphQL"
+msgstr "GraphQL जोड़ें"
+
+#: src/pages/PluginsOverlay.tsx:504
+msgid "Add GraphQL endpoint"
+msgstr "GraphQL एंडपॉइंट जोड़ें"
+
+#: src/pages/PluginsOverlay.tsx:601
+msgid "No tool sources yet."
+msgstr "अभी कोई टूल स्रोत नहीं है।"
+
+#: src/pages/PluginsOverlay.tsx
+msgid "Add Executor"
+msgstr "Executor जोड़ें"
+
+#: src/pages/PluginsOverlay.tsx
+msgid "Connect Executor"
+msgstr "Executor कनेक्ट करें"
+
+#: src/pages/PluginsOverlay.tsx
+msgid "Executor token"
+msgstr "Executor टोकन"
+

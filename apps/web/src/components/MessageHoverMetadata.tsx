@@ -1,21 +1,26 @@
-import { i18n } from "@lingui/core";
 import type { ReactNode } from "react";
 
 export function MessageHoverMetadata({
-  createdAt,
+  side,
+  pinned = false,
   children,
 }: {
-  createdAt: string;
+  side: "start" | "end";
+  pinned?: boolean;
   children: ReactNode;
 }) {
+  // Touch exposes More; hover-capable pointers reveal the full rail on demand.
+  const reveal = pinned
+    ? "pointer-events-auto opacity-100"
+    : "pointer-events-auto opacity-100 [@media(hover:hover)_and_(pointer:fine)]:pointer-events-none [@media(hover:hover)_and_(pointer:fine)]:opacity-0 [@media(hover:hover)_and_(pointer:fine)]:group-hover/message:pointer-events-auto [@media(hover:hover)_and_(pointer:fine)]:group-hover/message:opacity-100 [@media(hover:hover)_and_(pointer:fine)]:focus-within:pointer-events-auto [@media(hover:hover)_and_(pointer:fine)]:focus-within:opacity-100";
+
   return (
-    <div className="pointer-events-none absolute end-0 top-0 z-10 flex items-center gap-1.5 opacity-0 transition-opacity group-hover/message:pointer-events-auto group-hover/message:opacity-100 focus-within:pointer-events-auto focus-within:opacity-100">
-      <time dateTime={createdAt} className="text-[11px] tabular-nums text-muted-foreground">
-        {new Date(createdAt).toLocaleTimeString(i18n.locale || "en", {
-          hour: "numeric",
-          minute: "2-digit",
-        })}
-      </time>
+    <div
+      data-testid="message-hover-rail"
+      className={`absolute top-1/2 z-10 flex -translate-y-1/2 items-center transition-opacity ${reveal} ${
+        side === "end" ? "start-full ms-1" : "end-full me-1"
+      }`}
+    >
       {children}
     </div>
   );

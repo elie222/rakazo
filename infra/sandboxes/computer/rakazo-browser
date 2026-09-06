@@ -6,6 +6,13 @@ case "${DISPLAY:-:1}" in
   *) PROFILE="$RAKAZO_HOME/.browser-profiles/chromium" ;;
 esac
 mkdir -p "$PROFILE"
+# Page-browser tools attach over CDP. One debugging port per display/profile.
+DISPLAY_NUM="${DISPLAY#:}"
+DISPLAY_NUM="${DISPLAY_NUM%%.*}"
+case "$DISPLAY_NUM" in
+  ''|*[!0-9]*) DISPLAY_NUM=1 ;;
+esac
+DEBUG_PORT=$((9221 + DISPLAY_NUM))
 BIN="$(command -v chromium || command -v chromium-browser || true)"
 if [ -z "$BIN" ]; then
   echo "chromium is not installed" >&2
@@ -40,7 +47,7 @@ if [ -d "$ACTUAL_PROFILE" ] && [ ! -e "$ACTUAL_PROFILE/SingletonLock" ] && [ ! -
     done || true
 fi
 
-FLAGS="--test-type --no-sandbox --disable-dev-shm-usage --disable-gpu --disable-software-rasterizer --no-first-run --no-default-browser-check --disable-session-crashed-bubble --hide-crash-restore-bubble --password-store=basic --start-maximized"
+FLAGS="--test-type --no-sandbox --disable-dev-shm-usage --disable-gpu --disable-software-rasterizer --no-first-run --no-default-browser-check --disable-session-crashed-bubble --hide-crash-restore-bubble --password-store=basic --start-maximized --remote-debugging-address=127.0.0.1 --remote-debugging-port=$DEBUG_PORT"
 if [ "$USER_DATA_DIR_SET" -eq 0 ]; then
   exec "$BIN" $FLAGS --user-data-dir="$PROFILE" "$@"
 fi

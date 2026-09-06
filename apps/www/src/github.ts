@@ -1,6 +1,8 @@
+import { readBoundedJsonResponse } from "@rakazo/core";
 import { GITHUB_API_REPO } from "./site";
 
 export const GITHUB_STARS_TIMEOUT_MS = 5_000;
+export const MAX_GITHUB_STARS_RESPONSE_BYTES = 64 * 1024;
 
 export async function fetchGithubStars(fetchImpl: typeof fetch = fetch): Promise<number | null> {
   const controller = new AbortController();
@@ -20,9 +22,9 @@ export async function fetchGithubStars(fetchImpl: typeof fetch = fetch): Promise
       cancelResponseBody(response);
       return null;
     }
-    const payload = (await withAbort(response.json(), controller.signal)) as {
+    const payload = await readBoundedJsonResponse<{
       stargazers_count?: unknown;
-    };
+    }>(response, MAX_GITHUB_STARS_RESPONSE_BYTES, controller.signal);
     return typeof payload.stargazers_count === "number" ? payload.stargazers_count : null;
   } catch {
     return null;

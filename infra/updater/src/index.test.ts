@@ -288,8 +288,8 @@ describe("updater orchestration", () => {
       "checkout",
       "merge",
       "recreate",
-      "recover",
       "restore-checkout",
+      "recover",
     ]);
     expect(calls).toContainEqual(["checkout", "-B", "main", currentCommit]);
     expect(await readFile(path.join(fixture.deployDir, ".env"), "utf8")).toContain(

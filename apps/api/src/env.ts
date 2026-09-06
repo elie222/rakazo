@@ -1,4 +1,8 @@
-import { resolveDeploymentModel, resolveSandboxProvider } from "@rakazo/adapters";
+import {
+  resolveCloudAgentProvider,
+  resolveDeploymentModel,
+  resolveSandboxProvider,
+} from "@rakazo/adapters";
 import {
   resolveAuthSecret,
   resolveEncryptionKey,
@@ -6,7 +10,7 @@ import {
   resolveSupervisorToken,
 } from "@rakazo/core";
 
-export { resolveSandboxProvider } from "@rakazo/adapters";
+export { resolveCloudAgentProvider, resolveSandboxProvider } from "@rakazo/adapters";
 
 export interface AppEnv {
   nodeEnv: string;
@@ -25,6 +29,9 @@ export interface AppEnv {
   sandboxSupervisorToken: string | undefined;
   screenProxySecret: string;
   sandboxProvider: string;
+  cloudAgentProvider: string;
+  cloudAgentSpaceId: string | undefined;
+  cursorApiKey: string | undefined;
   agentRuntime: string;
   deploymentModelKey: string | undefined;
   e2bApiKey: string | undefined;
@@ -53,6 +60,11 @@ export interface AppEnv {
   whatsappVerifyToken: string | undefined;
   telegramBotToken: string | undefined;
   telegramWebhookSecret: string | undefined;
+  larkAppId: string | undefined;
+  larkAppSecret: string | undefined;
+  larkVerificationToken: string | undefined;
+  larkEncryptKey: string | undefined;
+  larkDomain: string | undefined;
   /** Unknown chat senders auto-provision their own accounts when true. */
   messagingOpenSignup: boolean;
   defaultProvider: string;
@@ -73,6 +85,7 @@ export interface AppEnv {
 export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
   const authSecret = resolveAuthSecret(source);
   const sandboxProvider = resolveSandboxProvider(source);
+  const cloudAgentProvider = resolveCloudAgentProvider(source);
   const deploymentModel = resolveDeploymentModel(source);
   const updaterUrl = optional(source.RAKAZO_UPDATER_URL);
   const updaterToken = optional(source.RAKAZO_UPDATER_TOKEN);
@@ -94,6 +107,9 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
       sandboxProvider === "docker" ? resolveSupervisorToken(source) : undefined,
     screenProxySecret: resolveScreenProxySecret(source),
     sandboxProvider,
+    cloudAgentProvider,
+    cloudAgentSpaceId: optional(source.CLOUD_AGENT_SPACE_ID),
+    cursorApiKey: optional(source.CURSOR_API_KEY),
     agentRuntime: source.AGENT_RUNTIME ?? "pi",
     // Provider, model and key resolve together: see resolveDeploymentModel.
     deploymentModelKey: deploymentModel.key,
@@ -124,6 +140,11 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     whatsappVerifyToken: optional(source.WHATSAPP_VERIFY_TOKEN),
     telegramBotToken: optional(source.TELEGRAM_BOT_TOKEN),
     telegramWebhookSecret: optional(source.TELEGRAM_WEBHOOK_SECRET_TOKEN),
+    larkAppId: optional(source.LARK_APP_ID),
+    larkAppSecret: optional(source.LARK_APP_SECRET),
+    larkVerificationToken: optional(source.LARK_VERIFICATION_TOKEN),
+    larkEncryptKey: optional(source.LARK_ENCRYPT_KEY),
+    larkDomain: optional(source.LARK_DOMAIN),
     messagingOpenSignup: source.MESSAGING_OPEN_SIGNUP === "true",
     defaultProvider: deploymentModel.provider,
     defaultModel: deploymentModel.model,

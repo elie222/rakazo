@@ -447,6 +447,7 @@ async function handleChannelEvent(
   const block: MessageBlock = {
     kind: "channel_message",
     provider: event.provider,
+    ...(event.transport ? { transport: event.transport } : {}),
     channelId: channel.id,
     fromAddress: event.from,
     fromLabel,

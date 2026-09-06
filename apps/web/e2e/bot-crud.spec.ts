@@ -46,7 +46,7 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   });
   await createBotFromPicker(page);
   await expect(page.getByPlaceholder("Message New Bot")).toBeVisible();
-  expect(failedPostCreateRefresh).toBe(true);
+  await expect.poll(() => failedPostCreateRefresh).toBe(true);
   await page.unroute("**/rpc/spaces/list");
   await expect(botList.getByRole("button", { name: /^New Bot/ })).toBeVisible();
   await page.waitForURL(/\/app\/[^/]+$/);
@@ -67,6 +67,7 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   await nameInput.fill("Researcher");
   await titleInput.fill(longTitle);
   await descriptionInput.fill("Finds reliable sources and turns them into concise briefs.");
+  await page.getByRole("radio", { name: "Color 7" }).click();
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(botList.getByRole("button", { name: /^Researcher/ })).toBeVisible();
   await expect(page.getByPlaceholder("Message Researcher")).toBeVisible();
@@ -78,6 +79,7 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
     "Finds reliable sources and turns them into concise briefs.",
   );
   const settings = page.getByTestId("bot-settings");
+  await expect(settings.getByRole("radio", { name: "Color 7" })).toBeChecked();
   const modelSelect = settings.locator("label:has-text('Model') select");
   const teamComputer = settings.getByRole("button", { name: "Team" });
   const openWork = settings.getByTestId("bot-scratchpad");

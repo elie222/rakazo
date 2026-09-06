@@ -578,6 +578,7 @@ function createChannelDeps(
   overrides: {
     text?: string;
     sourceHop?: number;
+    transport?: string;
     peerBotName?: string | null;
     messages?: unknown[];
   } = {},
@@ -592,6 +593,7 @@ function createChannelDeps(
         {
           kind: "channel_message",
           provider: "sendblue",
+          ...(overrides.transport ? { transport: overrides.transport } : {}),
           channelId: "ch-1",
           fromAddress: "+15551111111",
           fromLabel: "Alice",
@@ -748,6 +750,38 @@ function createChannelDeps(
 }
 
 describe("deliverMessagingOutbound channel runs", () => {
+  it("keeps privately answered runs out of the group and peer fan-out on retries", async () => {
+    const deps = createChannelDeps({
+      messages: [
+        {
+          id: "ask-1",
+          blocks: [{ kind: "ask", text: "Details?", status: "answered", answer: "Private detail" }],
+        },
+        { id: "reply-1", blocks: [{ kind: "text", text: "Reply containing private detail" }] },
+      ],
+    });
+    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+    expect(deps.rows).toEqual([]);
+    expect(deps.sendToThread).not.toHaveBeenCalled();
+    expect(deps.contextMessages).toEqual([]);
+    expect(deps.sendUserMessage).not.toHaveBeenCalled();
+  });
+
+  it("can still publish a group reply alongside an unanswered ask", async () => {
+    const deps = createChannelDeps({
+      messages: [
+        { id: "ask-1", blocks: [{ kind: "ask", text: "Details?", status: "pending" }] },
+        { id: "reply-1", blocks: [{ kind: "text", text: "Public update" }] },
+      ],
+    });
+    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+    expect(deps.sendToThread).toHaveBeenCalledWith(
+      { threadId: "sendblue:grp-1", body: "Alice's agent: Public update" },
+      context,
+    );
+  });
+
   it("posts the bot reply to the group with owner attribution and fans it out to peers", async () => {
     const deps = createChannelDeps();
     await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
@@ -785,6 +819,43 @@ describe("deliverMessagingOutbound channel runs", () => {
     ]);
     expect(deps.sendUserMessage).not.toHaveBeenCalled();
     expect(deps.enqueue).not.toHaveBeenCalled();
+  });
+
+  it("preserves source transport on peer fan-out blocks", async () => {
+    const deps = createChannelDeps({ transport: "SMS" });
+    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+
+    expect(deps.contextMessages).toEqual([
+      expect.objectContaining({
+        clientNonce: "messaging-peer:m-1:bot-2",
+        blocks: [
+          expect.objectContaining({
+            kind: "channel_message",
+            provider: "sendblue",
+            transport: "SMS",
+            text: "found it",
+            hop: 1,
+          }),
+        ],
+      }),
+    ]);
+  });
+
+  it("preserves source transport when waking an @-mentioned peer", async () => {
+    const deps = createChannelDeps({ text: "@Helper what do you think?", transport: "RCS" });
+    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+
+    expect(deps.sendUserMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        botId: "bot-2",
+        blocks: [
+          expect.objectContaining({
+            kind: "channel_message",
+            transport: "RCS",
+          }),
+        ],
+      }),
+    );
   });
 
   it("wakes an @-mentioned peer bot with a run", async () => {

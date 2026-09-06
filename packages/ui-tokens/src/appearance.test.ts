@@ -51,6 +51,14 @@ describe("appearance preference", () => {
     }
   });
 
+  it("keeps user message surfaces muted, not cream invert", () => {
+    const dark = tokensForAppearance("dark");
+    const light = tokensForAppearance("light");
+    expect(dark.secondary).not.toBe(dark.primary);
+    expect(light.secondary).not.toBe(light.primary);
+    expect(dark.secondaryForeground).not.toBe(dark.primaryForeground);
+  });
+
   it("tolerates a throwing localStorage getter", () => {
     const desc = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
     Object.defineProperty(globalThis, "localStorage", {

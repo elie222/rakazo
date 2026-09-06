@@ -3,6 +3,9 @@ import type { ActionApprovalRule as StoredActionApprovalRule } from "@rakazo/con
 const APPROVAL_EXEMPT_TOOLS = new Set([
   "computer_observe",
   "computer_act",
+  "browser_navigate",
+  "browser_snapshot",
+  "browser_act",
   "list_files",
   "read_file",
   "write_file",
@@ -19,7 +22,16 @@ const APPROVAL_EXEMPT_TOOLS = new Set([
   "schedule_cancel",
 ]);
 
-const APPROVAL_REQUIRED_BUILTIN_TOOLS = new Set(["destination.write", "delete_bot", "archive_bot"]);
+const APPROVAL_REQUIRED_BUILTIN_TOOLS = new Set([
+  "destination.write",
+  "delete_bot",
+  "archive_bot",
+  "secret_request",
+  "forget_secret",
+  "cloud_agent_launch",
+  "cloud_agent_reply",
+  "cloud_agent_cancel",
+]);
 const EXPLICIT_APPROVAL_BUILTIN_TOOLS = new Set(["create_space"]);
 
 const READ_ONLY_CONNECTOR_PATTERN = /(^|_)(get|list|search|find|read)(_|$)/i;
