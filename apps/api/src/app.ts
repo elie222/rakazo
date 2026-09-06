@@ -461,6 +461,8 @@ export async function createApp(
   let messagingStopped = false;
   let clearMessagingRetryDelay: (() => void) | undefined;
   let messagingInitTask: Promise<void> | undefined;
+  let clearTeamChatRetryDelay: (() => void) | undefined;
+  let teamChatInitTask: Promise<void> | undefined;
   // Messaging webhooks only exist when the surface is enabled.
   let teamChatBridge: TeamChatBridge | undefined;
   if (messaging) {
@@ -525,7 +527,34 @@ export async function createApp(
         await bridge.start();
         teamChatBridge = bridge;
       } catch (error) {
-        getLogger().error("team chat bridge failed to start; continuing without it", error);
+        getLogger().error("team chat bridge failed to start; retrying", error);
+        teamChatInitTask = (async () => {
+          let delayMs = 2_000;
+          while (!messagingStopped) {
+            await new Promise<void>((resolve) => {
+              const timer = setTimeout(resolve, delayMs);
+              clearTeamChatRetryDelay = () => {
+                clearTimeout(timer);
+                clearTeamChatRetryDelay = undefined;
+                resolve();
+              };
+            });
+            clearTeamChatRetryDelay = undefined;
+            if (messagingStopped) return;
+            try {
+              await bridge.start();
+              if (messagingStopped) {
+                await bridge.stop();
+                return;
+              }
+              teamChatBridge = bridge;
+              return;
+            } catch (retryError) {
+              getLogger().error("team chat bridge failed to start; retrying", retryError);
+              delayMs = Math.min(delayMs * 5, 30_000);
+            }
+          }
+        })();
       }
     }
     messaging.onInbound(async (event) => {
@@ -685,7 +714,9 @@ export async function createApp(
       oauthLogins.abortAll();
       messagingStopped = true;
       clearMessagingRetryDelay?.();
+      clearTeamChatRetryDelay?.();
       await messagingInitTask?.catch(() => undefined);
+      await teamChatInitTask?.catch(() => undefined);
       await messaging?.shutdown?.();
       await teamChatBridge?.stop();
       await email?.drain?.();
