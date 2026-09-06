@@ -1,3 +1,4 @@
+import { readBoundedResponseBytes } from "@rakazo/core";
 import { selectedSpaceId, withSpaceHeaders } from "./rpc.js";
 
 export type DictationMode = "hold" | "endpoint";
@@ -384,7 +385,11 @@ async function readTranscriptionBody(
     cancelResponse(response);
     throw new Error("Transcription response is too large.");
   }
-  const bytes = await readResponseBytes(response, signal);
+  const bytes = await readBoundedResponseBytes(response, {
+    maxBytes: MAX_TRANSCRIPTION_RESPONSE_BYTES,
+    tooLargeMessage: "Transcription response is too large.",
+    read: (operation) => withAbort(operation(), signal),
+  });
   try {
     const parsed = JSON.parse(new TextDecoder().decode(bytes)) as unknown;
     return parsed && typeof parsed === "object"
@@ -393,49 +398,6 @@ async function readTranscriptionBody(
   } catch {
     return {};
   }
-}
-
-async function readResponseBytes(response: Response, signal: AbortSignal): Promise<Uint8Array> {
-  if (!response.body) {
-    const buffer = await withAbort(response.arrayBuffer(), signal);
-    if (buffer.byteLength > MAX_TRANSCRIPTION_RESPONSE_BYTES) {
-      throw new Error("Transcription response is too large.");
-    }
-    return new Uint8Array(buffer);
-  }
-
-  const reader = response.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-  try {
-    for (;;) {
-      const { done, value } = await withAbort(reader.read(), signal);
-      if (done) break;
-      if (!value?.byteLength) continue;
-      total += value.byteLength;
-      if (total > MAX_TRANSCRIPTION_RESPONSE_BYTES) {
-        throw new Error("Transcription response is too large.");
-      }
-      chunks.push(value);
-    }
-  } catch (error) {
-    cancelReader(reader);
-    throw error;
-  } finally {
-    try {
-      reader.releaseLock();
-    } catch {
-      // already cancelled or released
-    }
-  }
-
-  const bytes = new Uint8Array(total);
-  let offset = 0;
-  for (const chunk of chunks) {
-    bytes.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return bytes;
 }
 
 function withAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
@@ -460,14 +422,6 @@ function withAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
 function cancelResponse(response: Response): void {
   try {
     void Promise.resolve(response.body?.cancel()).catch(() => undefined);
-  } catch {
-    // Response cleanup is best-effort.
-  }
-}
-
-function cancelReader(reader: ReadableStreamDefaultReader<Uint8Array>): void {
-  try {
-    void Promise.resolve(reader.cancel()).catch(() => undefined);
   } catch {
     // Response cleanup is best-effort.
   }

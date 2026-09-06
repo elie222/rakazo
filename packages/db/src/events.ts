@@ -13,6 +13,7 @@ import {
   sanitizeJsonValue,
 } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
+import { cancelRunsInTransaction } from "./cancel-runs.js";
 import type { Prisma, PrismaClient } from "./client.js";
 import { expireComputerExecutionLeases } from "./computers.js";
 import {
@@ -265,26 +266,7 @@ export async function clearThread(
     });
     const now = new Date();
     const runIds = activeRuns.map((run) => run.id);
-    const taskIds = activeRuns.map((run) => run.taskId);
-    if (runIds.length > 0) {
-      await tx.run.updateMany({
-        where: { id: { in: runIds } },
-        data: {
-          status: "cancelled",
-          completedAt: now,
-          leaseOwner: null,
-          leaseExpiresAt: null,
-        },
-      });
-      await tx.attempt.updateMany({
-        where: { runId: { in: runIds }, status: "running" },
-        data: { status: "cancelled", finishedAt: now },
-      });
-      await tx.task.updateMany({
-        where: { id: { in: taskIds } },
-        data: { status: "cancelled" },
-      });
-    }
+    await cancelRunsInTransaction(tx, activeRuns, now);
     // Expire as tombstones so a still-open provider screen claim cannot reset fencing to 1.
     await expireComputerExecutionLeases(tx, { runId: { in: runIds } });
     await tx.computer.updateMany({

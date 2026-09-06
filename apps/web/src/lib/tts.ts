@@ -1,3 +1,4 @@
+import { readBoundedResponseBytes } from "@rakazo/core";
 import { rpc, selectedSpaceId, withSpaceHeaders } from "./rpc.js";
 
 export type SpeechStatus = "idle" | "preparing" | "speaking";
@@ -276,55 +277,16 @@ async function readResponseBytes(
     cancelResponse(response);
     throw new Error("Voice response is too large.");
   }
-  if (!response.body) {
-    const buffer = await withAbort(signal, () => response.arrayBuffer());
-    if (buffer.byteLength > maxBytes) throw new Error("Voice response is too large.");
-    return new Uint8Array(buffer);
-  }
-
-  const reader = response.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-  try {
-    for (;;) {
-      const { done, value } = await withAbort(signal, () => reader.read());
-      if (done) break;
-      if (!value?.byteLength) continue;
-      total += value.byteLength;
-      if (total > maxBytes) throw new Error("Voice response is too large.");
-      chunks.push(value);
-    }
-  } catch (error) {
-    cancelReader(reader);
-    throw error;
-  } finally {
-    try {
-      reader.releaseLock();
-    } catch {
-      // already cancelled or released
-    }
-  }
-
-  const bytes = new Uint8Array(total);
-  let offset = 0;
-  for (const chunk of chunks) {
-    bytes.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return bytes;
+  return readBoundedResponseBytes(response, {
+    maxBytes,
+    tooLargeMessage: "Voice response is too large.",
+    read: (operation) => withAbort(signal, operation),
+  });
 }
 
 function cancelResponse(response: Response): void {
   try {
     void Promise.resolve(response.body?.cancel()).catch(() => undefined);
-  } catch {
-    // Response cleanup is best-effort.
-  }
-}
-
-function cancelReader(reader: ReadableStreamDefaultReader<Uint8Array>): void {
-  try {
-    void Promise.resolve(reader.cancel()).catch(() => undefined);
   } catch {
     // Response cleanup is best-effort.
   }

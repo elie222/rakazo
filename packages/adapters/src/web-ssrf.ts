@@ -1,5 +1,6 @@
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
+import { readBoundedResponseBytes } from "@rakazo/core";
 import { Agent } from "undici";
 import {
   createAddressCheckedLookup,
@@ -211,61 +212,20 @@ async function cancelResponseBody(response: Response, signal: AbortSignal): Prom
   ).catch(() => undefined);
 }
 
-/** Best-effort release; an untrusted stream cancellation must never delay the caller. */
-function cancelReader(reader: ReadableStreamDefaultReader<Uint8Array>): void {
-  try {
-    void Promise.resolve(reader.cancel()).catch(() => undefined);
-  } catch {
-    // sync throw from an injected stream
-  }
-}
-
 /** Read the body as a stream and abort once maxBytes is exceeded (DoS guard). */
 export async function readBodyCapped(
   response: Response,
   maxBytes: number,
   signal?: AbortSignal,
 ): Promise<Uint8Array> {
-  if (!response.body) {
-    const buffer = await withAbort(response.arrayBuffer(), signal);
-    if (buffer.byteLength > maxBytes) throw new Error("Response is too large");
-    return new Uint8Array(buffer);
-  }
-
-  const reader = response.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-  try {
-    for (;;) {
-      if (signal?.aborted) throw abortError(signal);
-      // Race each pull against the deadline — hanging streams must not block cleanup.
-      const { done, value } = await withAbort(reader.read(), signal);
-      if (done) break;
-      if (!value?.byteLength) continue;
-      total += value.byteLength;
-      if (total > maxBytes) {
-        throw new Error("Response is too large");
-      }
-      chunks.push(value);
-    }
-  } catch (error) {
-    cancelReader(reader);
-    throw error;
-  } finally {
-    try {
-      reader.releaseLock();
-    } catch {
-      // already cancelled / released
-    }
-  }
-
-  const out = new Uint8Array(total);
-  let offset = 0;
-  for (const chunk of chunks) {
-    out.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return out;
+  return readBoundedResponseBytes(response, {
+    maxBytes,
+    tooLargeMessage: "Response is too large",
+    read: (operation) => {
+      if (response.body && signal?.aborted) throw abortError(signal);
+      return withAbort(operation(), signal);
+    },
+  });
 }
 
 function assertPublicAddresses(addresses: ResolvedAddress[]): void {
