@@ -1003,7 +1003,7 @@ describe("sendThreadMessage", () => {
 });
 
 describe("stopThreadRuns", () => {
-  it("snapshots active group screens before cancelled workers can clear their leases", async () => {
+  it("snapshots every lease when group members share a team computer", async () => {
     const releaseScreen = vi.fn().mockResolvedValue(undefined);
     const execute = vi.fn(async function* () {
       yield { type: "exit", code: 0 };
@@ -1022,24 +1022,16 @@ describe("stopThreadRuns", () => {
         findMany: vi.fn().mockImplementation(async ({ where }: { where: { OR?: unknown[] } }) => {
           expect(where.OR).toEqual(
             expect.arrayContaining([
-              { id: { in: expect.arrayContaining(["computer-db-a", "computer-db-b"]) } },
+              { id: { in: ["computer-db-team"] } },
               { executionRunId: { in: ["run-a", "run-b"] } },
             ]),
           );
           return [
             {
-              id: "computer-db-a",
-              homeKey: "home-a",
+              id: "computer-db-team",
+              homeKey: "home-team",
               kind: "fake",
-              providerRef: "computer-a",
-              executionBotId: null,
-              executionRunId: null,
-            },
-            {
-              id: "computer-db-b",
-              homeKey: "home-b",
-              kind: "fake",
-              providerRef: "computer-b",
+              providerRef: "computer-team",
               executionBotId: null,
               executionRunId: null,
             },
@@ -1048,8 +1040,8 @@ describe("stopThreadRuns", () => {
       },
       computerExecutionLease: {
         findMany: vi.fn().mockResolvedValue([
-          { computerId: "computer-db-a", botId: "bot-a", runId: "run-a", fence: 2 },
-          { computerId: "computer-db-b", botId: "bot-b", runId: "run-b", fence: 4 },
+          { computerId: "computer-db-team", botId: "bot-a", runId: "run-a", fence: 2 },
+          { computerId: "computer-db-team", botId: "bot-b", runId: "run-b", fence: 4 },
         ]),
       },
     };
@@ -1093,15 +1085,22 @@ describe("stopThreadRuns", () => {
     });
     expect(execute).toHaveBeenCalledTimes(2);
     expect(execute).toHaveBeenCalledWith(
-      expect.objectContaining({ providerRef: "computer-a" }),
+      expect.objectContaining({ providerRef: "computer-team" }),
       expect.objectContaining({
-        argv: expect.arrayContaining(["rakazo-cancel-run-work", "computer-db-a", "run-a"]),
+        argv: expect.arrayContaining(["rakazo-cancel-run-work", "computer-db-team", "run-a"]),
       }),
       expect.objectContaining({ cancelRunWork: true, runId: "run-a", botId: "bot-a" }),
     );
+    expect(execute).toHaveBeenCalledWith(
+      expect.objectContaining({ providerRef: "computer-team" }),
+      expect.objectContaining({
+        argv: expect.arrayContaining(["rakazo-cancel-run-work", "computer-db-team", "run-b"]),
+      }),
+      expect.objectContaining({ cancelRunWork: true, runId: "run-b", botId: "bot-b" }),
+    );
     expect(releaseScreen).toHaveBeenCalledTimes(2);
     expect(releaseScreen).toHaveBeenCalledWith(
-      expect.objectContaining({ providerRef: "computer-a" }),
+      expect.objectContaining({ providerRef: "computer-team" }),
       expect.objectContaining({
         spaceId: "workspace-1",
         userId: "user-1",
@@ -1112,7 +1111,7 @@ describe("stopThreadRuns", () => {
       }),
     );
     expect(releaseScreen).toHaveBeenCalledWith(
-      expect.objectContaining({ providerRef: "computer-b" }),
+      expect.objectContaining({ providerRef: "computer-team" }),
       expect.objectContaining({
         spaceId: "workspace-1",
         userId: "user-1",
