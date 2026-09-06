@@ -26,5 +26,15 @@ test("onboarding skips model connect when a default model is already available",
   });
   await expect(page.getByRole("heading", { name: "Connect a model" })).toBeHidden();
   await expect(page.getByRole("button", { name: "Skip for now" })).toBeHidden();
+  await expect(page.getByRole("textbox", { name: "Name" })).toHaveCount(0);
+  await expect(page.getByRole("textbox", { name: "Title" })).toHaveCount(0);
+  await expect(page.getByRole("textbox", { name: "Description" })).toHaveCount(0);
   await captureScreenshot(page, testInfo, "onboarding-model-auto-skip");
+
+  const createRequest = page.waitForRequest("**/rpc/bots/create");
+  await page.getByRole("button", { name: "Continue" }).click();
+  expect((await createRequest).postDataJSON()).toMatchObject({
+    json: { name: "Chief", title: "", description: "", instructions: "" },
+  });
+  await expect(page.getByRole("combobox", { name: "Message Chief" })).toBeVisible();
 });

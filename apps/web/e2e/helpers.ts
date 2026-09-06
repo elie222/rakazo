@@ -37,7 +37,6 @@ export async function completeOnboarding(page: Page, testInfo?: TestInfo) {
       .catch(() => false)
   ) {
     if (testInfo) await captureScreenshot(page, testInfo, "03-create-first-bot");
-    await page.locator("label:has-text('Name') input").fill("Chief");
     const created = page.waitForResponse(
       (response) => response.url().includes("/rpc/bots/create") && response.ok(),
     );
