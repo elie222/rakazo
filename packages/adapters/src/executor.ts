@@ -66,6 +66,7 @@ import {
   type ToolCallStreak,
   toolRequiresApproval,
   toolRequiresExplicitApproval,
+  unattendedTriggerToolRequiresApproval,
   userTurnBlocksForRun,
 } from "@rakazo/core";
 import { approvalEffectKey } from "@rakazo/core/node/approval-effect-key";
@@ -1628,23 +1629,30 @@ export function createRunExecutor(deps: ExecutorDeps) {
             }
           }
           const viaConnector = !BUILTIN_AGENT_TOOL_NAMES.has(name);
-          const requiresApprovalByDefault = toolRequiresApproval(name, viaConnector);
-          const requiresExplicitApproval = toolRequiresExplicitApproval(name);
+          const requiresUnattendedApproval = unattendedTriggerToolRequiresApproval(
+            run.trigger,
+            name,
+            viaConnector,
+          );
+          const requiresApprovalByDefault =
+            requiresUnattendedApproval || toolRequiresApproval(name, viaConnector);
+          const requiresMandatoryApproval =
+            requiresUnattendedApproval || toolRequiresExplicitApproval(name);
           const connectorKind = connectorKindFromToolName(
             name,
             connectedPlugins.map((plugin) => plugin.provider),
           );
-          const approvalResolved = requiresExplicitApproval
+          const approvalResolved = requiresMandatoryApproval
             ? { decision: "ask" as const, source: "default" as const, matchingRules: [] }
             : resolveActionApprovalDetail({
                 toolName: name,
                 connectorKind,
                 rules: await loadApprovalRules(),
               });
-          const autoReviewPref = requiresExplicitApproval
+          const autoReviewPref = requiresMandatoryApproval
             ? false
             : await loadAutoReviewPreference();
-          const checker = requiresExplicitApproval ? undefined : resolveAutoReviewChecker();
+          const checker = requiresMandatoryApproval ? undefined : resolveAutoReviewChecker();
           const checkerConfigured =
             autoReviewPref && checker
               ? isAutoReviewCheckerConfigured({}) ||
@@ -1656,7 +1664,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                   ),
                 )
               : false;
-          const plan = requiresExplicitApproval
+          const plan = requiresMandatoryApproval
             ? "ask"
             : planActionGate({
                 resolved: approvalResolved,
