@@ -653,6 +653,8 @@ function toAgentTool(tool: ConnectorTool, host: ToolHost, exposedName: string): 
           instructions: raw.instructions ? String(raw.instructions) : "",
           prompt: raw.prompt ? String(raw.prompt) : "",
           computer_mode: raw.computer_mode ? String(raw.computer_mode) : "",
+          model_provider: raw.model_provider ? String(raw.model_provider) : "",
+          model_id: raw.model_id ? String(raw.model_id) : "",
         };
       }
       if (tool.name === "create_space") {
@@ -975,6 +977,8 @@ function builtinParameters(tool: ConnectorTool) {
       instructions: Type.Optional(Type.String()),
       prompt: Type.Optional(Type.String()),
       computer_mode: Type.Optional(Type.Union([Type.Literal("team"), Type.Literal("dedicated")])),
+      model_provider: Type.Optional(Type.String()),
+      model_id: Type.Optional(Type.String()),
     });
   }
   if (tool.name === "create_space") {

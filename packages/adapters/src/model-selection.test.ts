@@ -1,5 +1,7 @@
+import type { Actor } from "@rakazo/contracts";
+import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it } from "vitest";
-import { selectConfiguredModel } from "./model-selection.js";
+import { selectConfiguredModel, validateConnectedModelChoice } from "./model-selection.js";
 
 type SelectionInput = Parameters<typeof selectConfiguredModel>[0];
 
@@ -106,5 +108,48 @@ describe("configured model selection", () => {
     },
   ])("$name", ({ input, expected }) => {
     expect(selectConfiguredModel({ ...defaults, ...input })).toEqual(expected);
+  });
+});
+
+describe("connected model validation", () => {
+  const actor: Actor = {
+    userId: "user-1",
+    spaceId: "space-1",
+    email: "user@example.test",
+    isDeploymentOwner: false,
+  };
+
+  it("accepts catalog and saved free-form models but rejects unavailable choices", async () => {
+    const catalogPrisma = {
+      spaceModelPreference: { findFirst: async () => null },
+      userModelCredential: { findFirst: async () => credential("xai", null) },
+    } as unknown as PrismaClient;
+    await expect(
+      validateConnectedModelChoice(catalogPrisma, actor, "xai", "grok-4.6"),
+    ).resolves.toBeUndefined();
+    await expect(
+      validateConnectedModelChoice(catalogPrisma, actor, "xai", "not-a-model"),
+    ).resolves.toBe("Unknown model for that provider");
+
+    const customPrisma = {
+      spaceModelPreference: {
+        findFirst: async () => ({
+          credential: credential("openai-compatible", "private-model"),
+          isDefault: false,
+          modelId: "private-model",
+        }),
+      },
+    } as unknown as PrismaClient;
+    await expect(
+      validateConnectedModelChoice(customPrisma, actor, "openai-compatible", "private-model"),
+    ).resolves.toBeUndefined();
+
+    const disconnectedPrisma = {
+      spaceModelPreference: { findFirst: async () => null },
+      userModelCredential: { findFirst: async () => null },
+    } as unknown as PrismaClient;
+    await expect(
+      validateConnectedModelChoice(disconnectedPrisma, actor, "anthropic", "claude-opus-4-6"),
+    ).resolves.toBe("Connect that model provider first");
   });
 });

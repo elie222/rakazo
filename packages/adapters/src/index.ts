@@ -58,6 +58,7 @@ export * from "./messaging-context.js";
 export * from "./messaging-delivery.js";
 export * from "./messaging-platforms.js";
 export * from "./model-connect.js";
+export * from "./model-selection.js";
 export * from "./model-vision.js";
 export * from "./none-sandbox.js";
 export * from "./openai-compatible-url.js";

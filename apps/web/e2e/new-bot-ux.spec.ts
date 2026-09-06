@@ -29,6 +29,10 @@ test("create opens empty chat, picker lists bots, and sidebar collapses", async 
   await expect(picker.getByTestId("create-bot-team")).toBeVisible();
   await expect(picker.getByTestId("create-bot-private")).toBeVisible();
   await captureScreenshot(page, testInfo, "plus-picker-computer-mode");
+  await picker.getByTestId("create-bot-team").click();
+  await expect(picker.getByTestId("create-bot-model")).toBeVisible();
+  await expect(picker.getByTestId("create-bot-model-default")).toBeVisible();
+  await captureScreenshot(page, testInfo, "plus-picker-model");
   await page.keyboard.press("Escape");
 
   await createBotFromPicker(page);
@@ -96,4 +100,32 @@ test("plus picker can create a Private computer bot", async ({ page }, testInfo)
   const botId = page.url().split("/").pop()!;
   const bots = await rpc<Array<{ id: string; computerMode: string }>>(page, "bots/list", {});
   expect(bots.find((bot) => bot.id === botId)?.computerMode).toBe("dedicated");
+});
+
+test("plus picker can create a bot with a connected model", async ({ page }, testInfo) => {
+  const stamp = Date.now();
+  await signup(page, `new-bot-model-${stamp}@rakazo.test`, "password12", "New Bot Model");
+  await completeOnboarding(page);
+  await rpc(page, "models/connect", {
+    provider: "xai",
+    apiKey: "fake-xai-key-not-real",
+    label: "xAI",
+    modelId: "grok-4.6",
+  });
+  await page.goto("/app");
+  await page.waitForURL(/\/app\/[^/]+$/);
+
+  await openNewBot(page, "team", { provider: "xai", modelId: "grok-4.6" });
+  await page.waitForURL(/\/app\/[^/]+$/);
+  await expect(page.getByPlaceholder("Message New Bot")).toBeVisible();
+  await captureScreenshot(page, testInfo, "create-bot-with-model");
+
+  const botId = page.url().split("/").pop()!;
+  const bots = await rpc<
+    Array<{ id: string; modelProvider: string | null; modelId: string | null }>
+  >(page, "bots/list", {});
+  expect(bots.find((bot) => bot.id === botId)).toMatchObject({
+    modelProvider: "xai",
+    modelId: "grok-4.6",
+  });
 });

@@ -69,6 +69,18 @@ describe("contracts", () => {
     expect(parsed.notifyOnFinish).toBe(true);
   });
 
+  it("accepts only complete model overrides when creating bots", () => {
+    expect(
+      CreateBotInput.safeParse({
+        name: "Chief",
+        modelProvider: "xai",
+        modelId: "grok-4.6",
+      }).success,
+    ).toBe(true);
+    expect(CreateBotInput.safeParse({ name: "Chief", modelProvider: "xai" }).success).toBe(false);
+    expect(CreateBotInput.safeParse({ name: "Chief", modelId: "grok-4.6" }).success).toBe(false);
+  });
+
   it("normalizes bot creation fields without losing the longer instruction copy", () => {
     const profile = normalizeCreateBotProfile({
       name: `  ${"N".repeat(100)}  `,

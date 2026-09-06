@@ -22,6 +22,7 @@ import { getLogger } from "@rakazo/logging";
 import { toComputerRef } from "./computer-support.js";
 import { checkpointAndRecordComputerWorkspace } from "./computer-workspace.js";
 import { resolveAgentHomePath } from "./home.js";
+import { validateConnectedModelChoice } from "./model-selection.js";
 
 export function confirmSpawnedBotName(confirmName: string, botName: string) {
   if (confirmName !== botName) {
@@ -52,10 +53,17 @@ export async function spawnBot(
     instructions?: string;
     prompt?: string;
     computerMode?: ComputerMode;
+    modelProvider?: string;
+    modelId?: string;
   },
 ) {
   const name = input.name.trim();
   if (!name) return { error: "Bot name is required." };
+  const modelProvider = input.modelProvider?.trim() ?? "";
+  const modelId = input.modelId?.trim() ?? "";
+  if (Boolean(modelProvider) !== Boolean(modelId)) {
+    return { error: "model_provider and model_id must both be set." };
+  }
 
   const actor: Actor = {
     userId: input.spawnedBy.userId,
@@ -63,6 +71,10 @@ export async function spawnBot(
     email: "",
     isDeploymentOwner: false,
   };
+  if (modelProvider && modelId) {
+    const error = await validateConnectedModelChoice(deps.prisma, actor, modelProvider, modelId);
+    if (error) return { error };
+  }
   let duplicate = false;
   let created: Pick<Bot, "id" | "name" | "title" | "threadId">;
   try {
@@ -75,6 +87,8 @@ export async function spawnBot(
       parentBotId: input.spawnedBy.id,
       spawnKey: input.spawnKey,
       computerMode: input.computerMode,
+      modelProvider: modelProvider || undefined,
+      modelId: modelId || undefined,
       initialMessage: {
         role: "system",
         blocks: [{ kind: "meta", text: `Created by ${input.spawnedBy.name}` }],
