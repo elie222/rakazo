@@ -3325,3 +3325,9 @@ msgstr "Executor'a bağlan"
 msgid "Executor token"
 msgstr "Executor belirteci"
 
+
+msgid "Assistant"
+msgstr "Asistan"
+
+msgid "Choose a model to get started."
+msgstr "Başlamak için bir model seç."

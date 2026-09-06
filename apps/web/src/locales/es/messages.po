@@ -3285,3 +3285,9 @@ msgstr "Conectar Executor"
 msgid "Executor token"
 msgstr "Token de Executor"
 
+
+msgid "Assistant"
+msgstr "Asistente"
+
+msgid "Choose a model to get started."
+msgstr "Elige un modelo para empezar."

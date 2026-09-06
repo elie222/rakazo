@@ -26,5 +26,6 @@ test("onboarding skips model connect when a default model is already available",
   });
   await expect(page.getByRole("heading", { name: "Connect a model" })).toBeHidden();
   await expect(page.getByRole("button", { name: "Skip for now" })).toBeHidden();
+  await expect(page.locator("label:has-text('Name') input")).toHaveValue("Assistant");
   await captureScreenshot(page, testInfo, "onboarding-model-auto-skip");
 });

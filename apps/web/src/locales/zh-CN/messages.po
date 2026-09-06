@@ -3325,3 +3325,9 @@ msgstr "连接 Executor"
 msgid "Executor token"
 msgstr "Executor 令牌"
 
+
+msgid "Assistant"
+msgstr "助手"
+
+msgid "Choose a model to get started."
+msgstr "选择一个模型开始。"
