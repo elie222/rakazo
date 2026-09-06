@@ -17,6 +17,12 @@ import {
   BOT_TITLE_MAX_LENGTH,
 } from "@rakazo/contracts";
 import {
+  connectedModelOptions,
+  modelCatalogLabel,
+  modelOptionKey,
+  parseModelOptionKey,
+} from "@rakazo/core";
+import {
   BotAvatar,
   Button,
   Input,
@@ -242,44 +248,7 @@ export function BotSettings({
       .catch(() => undefined);
   }, []);
 
-  const connectedOptions: Array<{
-    key: string;
-    provider: string;
-    modelId: string;
-    label: string;
-  }> = [];
-  const seenOptions = new Set<string>();
-  for (const credential of credentials) {
-    const providerModels = catalog.filter(
-      (entry) => entry.provider === credential.provider && !entry.placeholder,
-    );
-    const credentialInCatalog = Boolean(
-      credential.modelId && providerModels.some((entry) => entry.id === credential.modelId),
-    );
-    // Catalog providers expand to every model for that connection. Free-form
-    // credentials (model id not in the catalog) stay a single connected pair.
-    const options =
-      credential.modelId && !credentialInCatalog
-        ? [
-            {
-              key: modelOptionKey(credential.provider, credential.modelId),
-              provider: credential.provider,
-              modelId: credential.modelId,
-              label: `${credential.label} · ${credential.modelId}`,
-            },
-          ]
-        : providerModels.map((entry) => ({
-            key: modelOptionKey(entry.provider, entry.id),
-            provider: entry.provider,
-            modelId: entry.id,
-            label: `${entry.providerName ?? entry.provider} · ${entry.label}`,
-          }));
-    for (const option of options) {
-      if (seenOptions.has(option.key)) continue;
-      seenOptions.add(option.key);
-      connectedOptions.push(option);
-    }
-  }
+  const connectedOptions = connectedModelOptions(credentials, catalog);
 
   const effectiveProvider = modelKey
     ? parseModelOptionKey(modelKey)?.provider
@@ -338,6 +307,53 @@ export function BotSettings({
           className="mt-2"
         />
       </label>
+      <label htmlFor={`${ids}-model`} className={fieldLabelClass}>
+        <Trans>Model</Trans>
+        <NativeSelect
+          id={`${ids}-model`}
+          className="mt-2 w-full"
+          value={modelKey}
+          onChange={(event) => {
+            setModelKey(event.target.value);
+            setThinkingLevel("");
+          }}
+        >
+          <NativeSelectOption value="">
+            {t`Space default`}
+            {me?.defaultModel
+              ? ` (${modelCatalogLabel(catalog, me.defaultProvider, me.defaultModel) ?? me.defaultModel})`
+              : ""}
+          </NativeSelectOption>
+          {modelKey && !connectedOptions.some((option) => option.key === modelKey) ? (
+            <NativeSelectOption value={modelKey}>
+              {parseModelOptionKey(modelKey)?.modelId ?? modelKey}
+            </NativeSelectOption>
+          ) : null}
+          {connectedOptions.map((option) => (
+            <NativeSelectOption key={option.key} value={option.key}>
+              {option.label}
+            </NativeSelectOption>
+          ))}
+        </NativeSelect>
+      </label>
+      {thinkingOptions.length ? (
+        <label htmlFor={`${ids}-thinking`} className={fieldLabelClass}>
+          <Trans>Thinking</Trans>
+          <NativeSelect
+            id={`${ids}-thinking`}
+            className="mt-2 w-full"
+            value={thinkingLevel}
+            onChange={(event) => setThinkingLevel(event.target.value)}
+          >
+            <NativeSelectOption value="">{t`Default (medium)`}</NativeSelectOption>
+            {thinkingOptions.map((level) => (
+              <NativeSelectOption key={level} value={level}>
+                {thinkingLevelLabel(level)}
+              </NativeSelectOption>
+            ))}
+          </NativeSelect>
+        </label>
+      ) : null}
       <div className={fieldLabelClass}>
         <Trans>Color</Trans>
         <div className="mt-2 flex flex-wrap gap-2" role="radiogroup" aria-label={t`Color`}>
@@ -380,53 +396,6 @@ export function BotSettings({
             <KnowledgeSection botId={bot.id} onSkillsChange={onSkillsChange} />
           ) : null}
         </Suspense>
-        <label htmlFor={`${ids}-model`} className={fieldLabelClass}>
-          <Trans>Model</Trans>
-          <NativeSelect
-            id={`${ids}-model`}
-            className="mt-2 w-full"
-            value={modelKey}
-            onChange={(event) => {
-              setModelKey(event.target.value);
-              setThinkingLevel("");
-            }}
-          >
-            <NativeSelectOption value="">
-              {t`Space default`}
-              {me?.defaultModel
-                ? ` (${catalogLabel(catalog, me.defaultProvider, me.defaultModel) ?? me.defaultModel})`
-                : ""}
-            </NativeSelectOption>
-            {modelKey && !connectedOptions.some((option) => option.key === modelKey) ? (
-              <NativeSelectOption value={modelKey}>
-                {parseModelOptionKey(modelKey)?.modelId ?? modelKey}
-              </NativeSelectOption>
-            ) : null}
-            {connectedOptions.map((option) => (
-              <NativeSelectOption key={option.key} value={option.key}>
-                {option.label}
-              </NativeSelectOption>
-            ))}
-          </NativeSelect>
-        </label>
-        {thinkingOptions.length ? (
-          <label htmlFor={`${ids}-thinking`} className={fieldLabelClass}>
-            <Trans>Thinking</Trans>
-            <NativeSelect
-              id={`${ids}-thinking`}
-              className="mt-2 w-full"
-              value={thinkingLevel}
-              onChange={(event) => setThinkingLevel(event.target.value)}
-            >
-              <NativeSelectOption value="">{t`Default (medium)`}</NativeSelectOption>
-              {thinkingOptions.map((level) => (
-                <NativeSelectOption key={level} value={level}>
-                  {thinkingLevelLabel(level)}
-                </NativeSelectOption>
-              ))}
-            </NativeSelect>
-          </label>
-        ) : null}
         {memoryProviderConfigured ? (
           <div className="mt-4 text-[14px] text-muted-foreground">
             <Trans>Memory scope</Trans>
@@ -542,10 +511,6 @@ export function BotSettings({
   );
 }
 
-function modelOptionKey(provider: string, modelId: string) {
-  return `${provider}::${modelId}`;
-}
-
 function thinkingLevelLabel(level: ThinkingLevel) {
   if (level === "xhigh") return t`Extra high`;
   if (level === "low") return t`Low`;
@@ -554,19 +519,4 @@ function thinkingLevelLabel(level: ThinkingLevel) {
   if (level === "minimal") return t`Minimal`;
   if (level === "max") return t`Max`;
   return `${level.slice(0, 1).toUpperCase()}${level.slice(1)}`;
-}
-
-function parseModelOptionKey(key: string) {
-  const separator = key.indexOf("::");
-  if (separator <= 0) return null;
-  return { provider: key.slice(0, separator), modelId: key.slice(separator + 2) };
-}
-
-function catalogLabel(
-  catalog: ModelCatalogEntry[],
-  provider: string | null | undefined,
-  modelId: string,
-) {
-  if (!provider) return undefined;
-  return catalog.find((entry) => entry.provider === provider && entry.id === modelId)?.label;
 }

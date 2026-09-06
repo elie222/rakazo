@@ -528,6 +528,8 @@ export type MobileBot = Pick<
   | "unread"
   | "updatedAt"
   | "computerMode"
+  | "modelProvider"
+  | "modelId"
 > &
   Partial<Pick<Bot, "parentBotId" | "spaceId">>;
 

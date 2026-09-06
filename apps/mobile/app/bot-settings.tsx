@@ -6,12 +6,24 @@ import {
   type ComputerMode,
   normalizeCreateBotProfile,
 } from "@rakazo/contracts";
+import {
+  connectedModelOptions,
+  modelCatalogLabel,
+  modelOptionKey,
+  parseModelOptionKey,
+} from "@rakazo/core";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { BotAvatar } from "../components/bot-avatar";
 import { ComputerModePicker } from "../components/computer-mode-picker";
-import { type MobileBot, rpc } from "../lib/api";
+import {
+  type MobileBot,
+  type MobileMe,
+  type MobileModel,
+  type MobileModelCredential,
+  rpc,
+} from "../lib/api";
 import { useI18n } from "../lib/i18n";
 import { useMobileTokens } from "../lib/native";
 
@@ -30,6 +42,12 @@ export default function BotSettingsScreen() {
   const [description, setDescription] = useState("");
   const [color, setColor] = useState<string>(BOT_COLORS[0]);
   const [computerMode, setComputerMode] = useState<ComputerMode>("team");
+  const [modelKey, setModelKey] = useState("");
+  const [models, setModels] = useState<MobileModel[]>([]);
+  const [credentials, setCredentials] = useState<MobileModelCredential[]>([]);
+  const [me, setMe] = useState<MobileMe | null>(null);
+  const [modelPickerOpen, setModelPickerOpen] = useState(false);
+  const [modelError, setModelError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
@@ -43,9 +61,44 @@ export default function BotSettingsScreen() {
         setDescription(next.description ?? "");
         setColor(next.color);
         setComputerMode(next.computerMode);
+        setModelKey(
+          next.modelProvider && next.modelId
+            ? modelOptionKey(next.modelProvider, next.modelId)
+            : "",
+        );
       })
       .catch((err) => setError(err instanceof Error ? err.message : t("Could not load bot")));
   }, [botId]);
+
+  useEffect(() => {
+    void Promise.all([
+      rpc<MobileMe>("me"),
+      rpc<MobileModel[]>("models/list"),
+      rpc<MobileModelCredential[]>("models/credentials"),
+    ])
+      .then(([nextMe, nextModels, nextCredentials]) => {
+        setMe(nextMe);
+        setModels(nextModels);
+        setCredentials(nextCredentials);
+      })
+      .catch(() => setModelError(t("Could not load model choices")));
+  }, []);
+
+  const connectedOptions = connectedModelOptions(credentials, models);
+  const defaultModelLabel = me?.defaultModel
+    ? `${t("Space default")} (${modelCatalogLabel(models, me.defaultProvider, me.defaultModel) ?? me.defaultModel})`
+    : t("Space default");
+  const storedOption =
+    modelKey && !connectedOptions.some((option) => option.key === modelKey)
+      ? { key: modelKey, label: parseModelOptionKey(modelKey)?.modelId ?? modelKey }
+      : null;
+  const modelOptions = [
+    { key: "", label: defaultModelLabel },
+    ...(storedOption ? [storedOption] : []),
+    ...connectedOptions.map((option) => ({ key: option.key, label: option.label })),
+  ];
+  const selectedModelLabel =
+    modelOptions.find((option) => option.key === modelKey)?.label ?? defaultModelLabel;
 
   async function save() {
     if (!botId || !bot || pending) return;
@@ -60,6 +113,8 @@ export default function BotSettingsScreen() {
         description?: string;
         instructions?: string;
         color?: string;
+        modelProvider?: string | null;
+        modelId?: string | null;
       } = { botId };
       if (profile.name !== bot.name) input.name = profile.name;
       if (profile.title !== bot.title) input.title = profile.title;
@@ -69,6 +124,13 @@ export default function BotSettingsScreen() {
         input.instructions = profile.instructions;
       }
       if (color !== bot.color) input.color = color;
+      const selectedModel = modelKey ? parseModelOptionKey(modelKey) : null;
+      const nextModelProvider = selectedModel?.provider ?? null;
+      const nextModelId = selectedModel?.modelId ?? null;
+      if (nextModelProvider !== bot.modelProvider || nextModelId !== bot.modelId) {
+        input.modelProvider = nextModelProvider;
+        input.modelId = nextModelId;
+      }
       if (computerMode !== bot.computerMode) {
         await rpc("bots/setComputer", { botId, mode: computerMode });
       }
@@ -150,6 +212,96 @@ export default function BotSettingsScreen() {
             textAlignVertical: "top",
           }}
         />
+        <Text style={{ color: tokens.mutedForeground, marginTop: 16, fontSize: 14 }}>
+          {t("Model")}
+        </Text>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={t("Model")}
+          accessibilityState={{ expanded: modelPickerOpen }}
+          onPress={() => setModelPickerOpen((open) => !open)}
+          style={{
+            marginTop: 8,
+            minHeight: 52,
+            backgroundColor: tokens.muted,
+            borderRadius: 11,
+            paddingHorizontal: 16,
+            paddingVertical: 12,
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 12,
+          }}
+        >
+          <Text style={{ color: tokens.foreground, fontSize: 15, flex: 1 }}>
+            {selectedModelLabel}
+          </Text>
+          <Text style={{ color: tokens.mutedForeground, fontSize: 18 }}>
+            {modelPickerOpen ? "⌃" : "⌄"}
+          </Text>
+        </Pressable>
+        {modelPickerOpen ? (
+          <View
+            accessibilityRole="radiogroup"
+            style={{
+              marginTop: 8,
+              borderRadius: 11,
+              overflow: "hidden",
+              backgroundColor: tokens.muted,
+            }}
+          >
+            {modelOptions.map((option, index) => (
+              <Pressable
+                key={option.key || "space-default"}
+                accessibilityRole="radio"
+                accessibilityLabel={option.label}
+                accessibilityState={{ checked: option.key === modelKey }}
+                onPress={() => {
+                  setModelKey(option.key);
+                  setModelPickerOpen(false);
+                }}
+                style={{
+                  minHeight: 52,
+                  paddingHorizontal: 16,
+                  paddingVertical: 12,
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 12,
+                  borderBottomWidth: index === modelOptions.length - 1 ? 0 : 1,
+                  borderBottomColor: tokens.background,
+                }}
+              >
+                <View
+                  style={{
+                    width: 20,
+                    height: 20,
+                    borderRadius: 10,
+                    borderWidth: 1,
+                    borderColor: tokens.mutedForeground,
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  {option.key === modelKey ? (
+                    <View
+                      style={{
+                        width: 10,
+                        height: 10,
+                        borderRadius: 5,
+                        backgroundColor: tokens.foreground,
+                      }}
+                    />
+                  ) : null}
+                </View>
+                <Text style={{ color: tokens.foreground, fontSize: 15, flex: 1 }}>
+                  {option.label}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
+        {modelError ? (
+          <Text style={{ color: tokens.destructive, marginTop: 8 }}>{modelError}</Text>
+        ) : null}
         <Text style={{ color: tokens.mutedForeground, marginTop: 16, fontSize: 14 }}>
           {t("Color")}
         </Text>

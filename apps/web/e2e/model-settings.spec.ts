@@ -41,9 +41,7 @@ test("custom connections persist reasoning support and bot thinking", async ({
   const settings = page.getByTestId("bot-settings");
   await expect(settings).toBeVisible();
   const advanced = settings.getByTestId("bot-settings-advanced");
-  await advanced.evaluate((element) => {
-    (element as HTMLDetailsElement).open = true;
-  });
+  await expect(advanced).not.toHaveAttribute("open", "");
   // NativeSelect sits inside a wrapping <label>, so label text includes option
   // copy and getByLabel(..., { exact: true }) misses the control. Use the
   // combobox accessible name, matching other model E2E tests.
@@ -65,9 +63,7 @@ test("custom connections persist reasoning support and bot thinking", async ({
   await page.reload();
   await page.locator("main").getByRole("button", { name: "Chief", exact: true }).click();
   await expect(settings).toBeVisible();
-  await advanced.evaluate((element) => {
-    (element as HTMLDetailsElement).open = true;
-  });
+  await expect(advanced).not.toHaveAttribute("open", "");
   await expect(thinking).toHaveValue("low");
 });
 
