@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import type { JobPublisher } from "@rakazo/adapter-kit";
 import { runContinueJob } from "@rakazo/adapter-kit";
 import type { EncryptedSecretStore } from "@rakazo/adapters";
@@ -43,6 +43,21 @@ export function webhookPath(botId: string): string {
   return `/api/v1/bots/${botId}/webhook`;
 }
 
+export function hasValidGithubSignature(
+  signature: string | undefined,
+  secret: string,
+  raw: string,
+): boolean {
+  if (!signature || !/^sha256=[0-9a-f]{64}$/.test(signature)) return false;
+  const expected = `sha256=${createHmac("sha256", secret).update(raw).digest("hex")}`;
+  return timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
+}
+
+function githubEventName(header: string | undefined): string {
+  const value = header?.trim() ?? "";
+  return /^[a-z0-9._-]{1,100}$/i.test(value) ? value : "event";
+}
+
 function parseWebhookPayload(
   raw: string,
   contentType: string | undefined,
@@ -66,11 +81,7 @@ function parseWebhookPayload(
 }
 
 export function mountWebhookHttpRoutes(app: Hono, deps: WebhookDeps) {
-  app.post("/api/v1/bots/:botId/webhook", async (c) => {
-    const unauthorized = () => c.json({ error: "Unauthorized" }, 401);
-    const botId = c.req.param("botId");
-    const authorization = c.req.header("authorization");
-
+  async function loadTarget(botId: string) {
     const bot = await deps.prisma.bot.findUnique({
       where: { id: botId, archivedAt: null },
       select: {
@@ -82,29 +93,77 @@ export function mountWebhookHttpRoutes(app: Hono, deps: WebhookDeps) {
       },
     });
 
-    // Same 401 for missing bot, missing secret, and bad bearer so bot ids are not enumerable.
-    if (!bot?.thread || !bot.webhookSecretId) {
-      return unauthorized();
-    }
+    if (!bot?.thread || !bot.webhookSecretId) return null;
 
     const secret = await deps.prisma.secret.findUnique({
       where: { id: bot.webhookSecretId },
       select: { id: true, ciphertext: true, kind: true, userId: true, spaceId: true },
     });
-    if (!secret || secret.kind !== WEBHOOK_SECRET_KIND) {
-      return unauthorized();
-    }
-    if (secret.userId !== bot.userId || secret.spaceId !== bot.spaceId) {
-      return unauthorized();
-    }
+    if (!secret || secret.kind !== WEBHOOK_SECRET_KIND) return null;
+    if (secret.userId !== bot.userId || secret.spaceId !== bot.spaceId) return null;
 
     let expected: string;
     try {
       expected = deps.secrets.load(secret.ciphertext, secret.id);
     } catch {
-      return unauthorized();
+      return null;
     }
-    if (!hasValidBearerToken(authorization, expected)) {
+    return { bot, threadId: bot.thread.id, expected };
+  }
+
+  async function deliver(
+    target: NonNullable<Awaited<ReturnType<typeof loadTarget>>>,
+    input: {
+      prompt: string;
+      routines: Array<{ name: string; prompt: string }>;
+      source: "webhook" | "github";
+      idempotencyKey?: string;
+    },
+  ) {
+    const promptText =
+      input.routines.length > 0
+        ? [
+            ...input.routines.map(
+              (routine) => `Run routine "${routine.name}":\n${routine.prompt.trim()}`,
+            ),
+            "",
+            input.source === "github" ? "Inbound GitHub payload:" : "Inbound webhook payload:",
+            input.prompt,
+          ].join("\n")
+        : input.prompt;
+
+    const clientNonce = input.idempotencyKey
+      ? `${input.source}:${target.bot.id}:${createHash("sha256")
+          .update(input.idempotencyKey)
+          .digest("base64url")}`
+      : undefined;
+
+    const sent = await deps.events.sendUserMessage({
+      spaceId: target.bot.spaceId,
+      threadId: target.threadId,
+      botId: target.bot.id,
+      userId: target.bot.userId,
+      blocks: [{ kind: "text", text: promptText }],
+      prompt: promptText,
+      trigger: "webhook",
+      clientNonce,
+    });
+
+    if (sent.runId) {
+      await deps.jobs.enqueue(runContinueJob(sent.runId)).catch((error) => {
+        getLogger().error(`${input.source} run enqueue error`, error);
+      });
+    }
+
+    return { ok: true as const, messageId: sent.messageId, runId: sent.runId, seq: sent.seq };
+  }
+
+  app.post("/api/v1/bots/:botId/webhook", async (c) => {
+    const unauthorized = () => c.json({ error: "Unauthorized" }, 401);
+    const target = await loadTarget(c.req.param("botId"));
+
+    // Same 401 for missing bot, missing secret, and bad bearer so bot ids are not enumerable.
+    if (!target || !hasValidBearerToken(c.req.header("authorization"), target.expected)) {
       return unauthorized();
     }
 
@@ -118,8 +177,8 @@ export function mountWebhookHttpRoutes(app: Hono, deps: WebhookDeps) {
 
     const webhookRoutines = await deps.prisma.routine.findMany({
       where: {
-        botId: bot.id,
-        spaceId: bot.spaceId,
+        botId: target.bot.id,
+        spaceId: target.bot.spaceId,
         active: true,
         webhookEnabled: true,
       },
@@ -128,45 +187,62 @@ export function mountWebhookHttpRoutes(app: Hono, deps: WebhookDeps) {
       take: 5,
     });
 
-    const promptText =
-      webhookRoutines.length > 0
-        ? [
-            ...webhookRoutines.map(
-              (routine) => `Run routine "${routine.name}":\n${routine.prompt.trim()}`,
-            ),
-            "",
-            "Inbound webhook payload:",
-            eventPrompt,
-          ].join("\n")
-        : eventPrompt;
-
     const idempotencyKey =
       c.req.header("idempotency-key")?.trim() ||
       c.req.header("x-idempotency-key")?.trim() ||
       (typeof payload.id === "string" ? payload.id.trim() : "") ||
       (typeof payload.event_id === "string" ? payload.event_id.trim() : "") ||
       undefined;
-    const clientNonce = idempotencyKey
-      ? `webhook:${bot.id}:${createHash("sha256").update(idempotencyKey).digest("base64url")}`
-      : undefined;
+    return c.json(
+      await deliver(target, {
+        prompt: eventPrompt,
+        routines: webhookRoutines,
+        source: "webhook",
+        idempotencyKey,
+      }),
+    );
+  });
 
-    const sent = await deps.events.sendUserMessage({
-      spaceId: bot.spaceId,
-      threadId: bot.thread.id,
-      botId: bot.id,
-      userId: bot.userId,
-      blocks: [{ kind: "text", text: promptText }],
-      prompt: promptText,
-      trigger: "webhook",
-      clientNonce,
-    });
+  app.post("/api/v1/bots/:botId/github", async (c) => {
+    const unauthorized = () => c.json({ error: "Unauthorized" }, 401);
+    const target = await loadTarget(c.req.param("botId"));
+    if (!target) return unauthorized();
 
-    if (sent.runId) {
-      await deps.jobs.enqueue(runContinueJob(sent.runId)).catch((error) => {
-        getLogger().error("webhook run enqueue error", error);
-      });
+    const raw = await readBoundedBody(c.req.raw, WEBHOOK_MAX_BODY_BYTES);
+    if (raw === null) {
+      return c.json({ error: "Payload too large" }, 413);
+    }
+    if (!hasValidGithubSignature(c.req.header("x-hub-signature-256"), target.expected, raw)) {
+      return unauthorized();
     }
 
-    return c.json({ ok: true, messageId: sent.messageId, runId: sent.runId, seq: sent.seq });
+    const githubRoutines = await deps.prisma.routine.findMany({
+      where: {
+        botId: target.bot.id,
+        spaceId: target.bot.spaceId,
+        active: true,
+        githubEnabled: true,
+      },
+      select: { id: true, name: true, prompt: true },
+      orderBy: { updatedAt: "desc" },
+      take: 5,
+    });
+    if (githubRoutines.length === 0) {
+      return c.json({ ok: true, ignored: true });
+    }
+
+    const payload = parseWebhookPayload(raw, c.req.header("content-type"));
+    const githubEvent = githubEventName(c.req.header("x-github-event"));
+    const eventPrompt = `[GitHub Event: ${githubEvent}]\n\`\`\`json\n${JSON.stringify(payload, null, 2)}\n\`\`\``;
+    const deliveryId = c.req.header("x-github-delivery")?.trim() || undefined;
+
+    return c.json(
+      await deliver(target, {
+        prompt: eventPrompt,
+        routines: githubRoutines,
+        source: "github",
+        idempotencyKey: deliveryId,
+      }),
+    );
   });
 }

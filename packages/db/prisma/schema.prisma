@@ -690,6 +690,7 @@ model Routine {
   active         Boolean   @default(false)
   notify         Boolean   @default(true)
   webhookEnabled Boolean   @default(false)
+  githubEnabled  Boolean   @default(false)
   lastRunAt      DateTime?
   nextRunAt      DateTime?
   createdAt      DateTime  @default(now())

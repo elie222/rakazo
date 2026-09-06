@@ -3368,6 +3368,11 @@ export function ShellPage() {
                   secret: routineWebhookSecret,
                   configured: active.webhookConfigured || Boolean(routineWebhookSecret),
                 }}
+                githubPath={
+                  typeof window !== "undefined"
+                    ? `${window.location.origin}/api/v1/bots/${active.id}/github`
+                    : `/api/v1/bots/${active.id}/github`
+                }
                 saving={savingRoutine}
                 running={runningRoutine}
                 error={routineError}
@@ -3387,8 +3392,12 @@ export function ShellPage() {
                   const targetBotId = active.id;
                   const targetRoutine = editingRoutine;
                   if (targetRoutine && targetRoutine.botId !== targetBotId) return;
-                  if (!routineDraft.schedules.length && !routineDraft.webhookEnabled) {
-                    setRoutineError(t`Add a schedule or webhook trigger`);
+                  if (
+                    !routineDraft.schedules.length &&
+                    !routineDraft.webhookEnabled &&
+                    !routineDraft.githubEnabled
+                  ) {
+                    setRoutineError(t`Add a schedule, webhook, or GitHub trigger`);
                     return;
                   }
                   const saveRequest = ++routineSaveRequest.current;
@@ -3397,7 +3406,7 @@ export function ShellPage() {
                   setRoutineError(null);
                   try {
                     if (
-                      routineDraft.webhookEnabled &&
+                      (routineDraft.webhookEnabled || routineDraft.githubEnabled) &&
                       !active.webhookConfigured &&
                       !routineWebhookSecret
                     ) {
@@ -3433,6 +3442,7 @@ export function ShellPage() {
                         crons,
                         active: armOneShot ? true : routineDraft.active,
                         webhookEnabled: routineDraft.webhookEnabled,
+                        githubEnabled: routineDraft.githubEnabled,
                         ...(runAt ? { runAt } : {}),
                       });
                     } else {
@@ -3445,6 +3455,7 @@ export function ShellPage() {
                         active: routineDraft.active,
                         notify: true,
                         webhookEnabled: routineDraft.webhookEnabled,
+                        githubEnabled: routineDraft.githubEnabled,
                       });
                     }
                     if (

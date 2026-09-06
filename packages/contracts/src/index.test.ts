@@ -6,6 +6,7 @@ import {
   BOT_TITLE_MAX_LENGTH,
   CreateBotInput,
   CreateGroupInput,
+  CreateRoutineInput,
   canReactToThreadMessage,
   McpServerConfigInput,
   MessageBlock,
@@ -181,6 +182,24 @@ describe("contracts", () => {
     expect(ReorderBotsInput.safeParse({ botIds: ["bot-2", "bot-1"] }).success).toBe(true);
     expect(ReorderBotsInput.safeParse({ botIds: [] }).success).toBe(false);
     expect(ReorderBotsInput.safeParse({ botIds: ["bot-1", "bot-1"] }).success).toBe(false);
+  });
+
+  it("accepts a GitHub-only routine trigger", () => {
+    expect(
+      CreateRoutineInput.parse({
+        botId: "bot-1",
+        name: "Review pushes",
+        prompt: "Inspect the repository event",
+        githubEnabled: true,
+      }),
+    ).toMatchObject({ crons: [], webhookEnabled: false, githubEnabled: true });
+    expect(
+      CreateRoutineInput.safeParse({
+        botId: "bot-1",
+        name: "Never runs",
+        prompt: "This has no trigger",
+      }).success,
+    ).toBe(false);
   });
 
   it("accepts bot-to-bot runs in thread snapshots and activity rows", () => {

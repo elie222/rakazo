@@ -76,8 +76,15 @@ export default function RoutineDetail() {
                 fontSize: 14,
               }}
             >
-              {routine.active ? t("Active") : t("Paused")} · {routine.crons.join(", ")} ·{" "}
-              {routine.timezone}
+              {[
+                routine.active ? t("Active") : t("Paused"),
+                [
+                  ...routine.crons,
+                  ...(routine.webhookEnabled ? [t("Webhook")] : []),
+                  ...(routine.githubEnabled ? [t("Git event")] : []),
+                ].join(", "),
+                routine.timezone,
+              ].join(" · ")}
             </Text>
           </View>
           <View style={{ gap: 8 }}>

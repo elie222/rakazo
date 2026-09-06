@@ -348,6 +348,7 @@ export const RoutineSchema = z.object({
   active: z.boolean(),
   notify: z.boolean(),
   webhookEnabled: z.boolean(),
+  githubEnabled: z.boolean(),
   lastRunAt: z.string().nullable(),
   nextRunAt: z.string().nullable(),
   createdAt: z.string(),
@@ -364,12 +365,13 @@ export const CreateRoutineInput = z
     notify: z.boolean().default(true),
     active: z.boolean().default(false),
     webhookEnabled: z.boolean().default(false),
+    githubEnabled: z.boolean().default(false),
   })
   .superRefine((value, ctx) => {
-    if (value.crons.length === 0 && !value.webhookEnabled) {
+    if (value.crons.length === 0 && !value.webhookEnabled && !value.githubEnabled) {
       ctx.addIssue({
         code: "custom",
-        message: "Add a schedule or webhook trigger",
+        message: "Add a schedule, webhook, or GitHub trigger",
         path: ["crons"],
       });
     }

@@ -22,7 +22,7 @@ import {
   Input,
   Textarea,
 } from "@rakazo/ui-web";
-import { ChevronLeft, Clock, Globe, Pause, Plus, X } from "lucide-react";
+import { ChevronLeft, Clock, GitBranch, Globe, Pause, Plus, X } from "lucide-react";
 import { useId } from "react";
 import { RoutineSchedule } from "./RoutineSchedule";
 
@@ -54,7 +54,6 @@ const SCHEDULE_PRESETS: CronFreq[] = [
 
 const COMING_SOON = [
   { id: "slack", label: () => t`Slack message` },
-  { id: "git", label: () => t`Git event` },
   { id: "teams", label: () => t`Teams message` },
   { id: "linear", label: () => t`Linear issue` },
   { id: "sentry", label: () => t`Sentry alert` },
@@ -66,6 +65,7 @@ export type RoutineDraftState = {
   prompt: string;
   schedules: CronPreset[];
   webhookEnabled: boolean;
+  githubEnabled: boolean;
   active: boolean;
   runAtLocal: string;
 };
@@ -76,6 +76,7 @@ export function emptyRoutineDraft(): RoutineDraftState {
     prompt: "",
     schedules: [],
     webhookEnabled: false,
+    githubEnabled: false,
     active: true,
     runAtLocal: "",
   };
@@ -87,6 +88,7 @@ export function draftFromRoutine(routine: Routine): RoutineDraftState {
     prompt: routine.prompt,
     schedules: routine.crons.map(presetFromCron),
     webhookEnabled: routine.webhookEnabled,
+    githubEnabled: routine.githubEnabled,
     active: routine.active,
     runAtLocal: routineNeedsOneShotArm(routine, routine.crons) ? defaultArmRunAtLocal() : "",
   };
@@ -96,6 +98,7 @@ export function routineTriggerSummary(routine: Routine): string {
   if (!routine.active) return t`Paused`;
   const parts: string[] = [];
   if (routine.webhookEnabled) parts.push(t`When a webhook fires`);
+  if (routine.githubEnabled) parts.push(t`Git event`);
   for (const cron of routine.crons) parts.push(formatCron(cron));
   return parts.length > 0 ? parts.join(" · ") : t`No trigger`;
 }
@@ -174,6 +177,7 @@ export function RoutineEditor({
   editing,
   timezone,
   webhook,
+  githubPath,
   saving,
   running,
   error,
@@ -189,6 +193,7 @@ export function RoutineEditor({
   editing: Routine | null;
   timezone: string;
   webhook: { path: string; secret: string | null; configured: boolean };
+  githubPath: string;
   saving: boolean;
   running: boolean;
   error: string | null;
@@ -201,7 +206,7 @@ export function RoutineEditor({
 }) {
   const { t } = useLingui();
   const fieldId = useId();
-  const hasTriggers = draft.schedules.length > 0 || draft.webhookEnabled;
+  const hasTriggers = draft.schedules.length > 0 || draft.webhookEnabled || draft.githubEnabled;
   const canTest = Boolean(editing) && !saving && !running;
   const needsOneShotArm =
     editing != null && routineNeedsOneShotArm(editing, draft.schedules.map(cronFromPreset));
@@ -215,6 +220,13 @@ export function RoutineEditor({
 
   async function addWebhook() {
     onChange({ ...draft, webhookEnabled: true });
+    if (!webhook.configured) {
+      await onEnsureWebhook().catch(() => undefined);
+    }
+  }
+
+  async function addGithub() {
+    onChange({ ...draft, githubEnabled: true });
     if (!webhook.configured) {
       await onEnsureWebhook().catch(() => undefined);
     }
@@ -336,12 +348,25 @@ export function RoutineEditor({
           ))}
 
           {draft.webhookEnabled ? (
-            <WebhookTriggerCard
+            <InboundTriggerCard
+              kind="webhook"
               saved={Boolean(editing)}
               path={webhook.path}
               secret={webhook.secret}
               configured={webhook.configured}
               onRemove={() => onChange({ ...draft, webhookEnabled: false })}
+              onRotate={() => void onEnsureWebhook()}
+            />
+          ) : null}
+
+          {draft.githubEnabled ? (
+            <InboundTriggerCard
+              kind="github"
+              saved={Boolean(editing)}
+              path={githubPath}
+              secret={webhook.secret}
+              configured={webhook.configured}
+              onRemove={() => onChange({ ...draft, githubEnabled: false })}
               onRotate={() => void onEnsureWebhook()}
             />
           ) : null}
@@ -394,6 +419,11 @@ export function RoutineEditor({
               </DropdownMenuItem>
             ))}
 
+            <DropdownMenuItem disabled={draft.githubEnabled} onClick={() => void addGithub()}>
+              <GitBranch />
+              <Trans>Git event</Trans>
+            </DropdownMenuItem>
+
             <DropdownMenuItem disabled={draft.webhookEnabled} onClick={() => void addWebhook()}>
               <Globe />
               <Trans>Webhook</Trans>
@@ -403,7 +433,7 @@ export function RoutineEditor({
 
         {!hasTriggers ? (
           <p className="mt-2 text-xs text-muted-foreground/70">
-            <Trans>Add a schedule or webhook to run this routine.</Trans>
+            <Trans>Add a schedule, webhook, or GitHub trigger to run this routine.</Trans>
           </p>
         ) : null}
       </div>
@@ -429,7 +459,8 @@ export function RoutineEditor({
   );
 }
 
-function WebhookTriggerCard({
+function InboundTriggerCard({
+  kind,
   saved,
   path,
   secret,
@@ -437,6 +468,7 @@ function WebhookTriggerCard({
   onRemove,
   onRotate,
 }: {
+  kind: "webhook" | "github";
   saved: boolean;
   path: string;
   secret: string | null;
@@ -451,27 +483,36 @@ function WebhookTriggerCard({
   const keyValue = pending
     ? placeholder
     : (secret ?? (configured ? t`Saved. Rotate to reveal.` : placeholder));
-  const headerValue = pending
-    ? placeholder
-    : secret
-      ? `Authorization: Bearer ${secret}`
-      : configured
-        ? "Authorization: Bearer …"
-        : placeholder;
+  const headerValue =
+    kind === "github"
+      ? pending
+        ? placeholder
+        : "X-Hub-Signature-256: sha256=…"
+      : pending
+        ? placeholder
+        : secret
+          ? `Authorization: Bearer ${secret}`
+          : configured
+            ? "Authorization: Bearer …"
+            : placeholder;
   const cellClass =
     "break-all rounded-lg bg-muted px-2.5 py-1.5 font-mono text-xs text-foreground/75";
 
   return (
     <div className="rounded-xl border border-border p-3">
       <div className="flex items-center gap-2.5 px-0.5">
-        <Globe size={16} strokeWidth={1.6} className="text-muted-foreground" aria-hidden />
+        {kind === "github" ? (
+          <GitBranch size={16} strokeWidth={1.6} className="text-muted-foreground" aria-hidden />
+        ) : (
+          <Globe size={16} strokeWidth={1.6} className="text-muted-foreground" aria-hidden />
+        )}
         <span className="flex-1 text-[14.5px] text-foreground">
-          <Trans>When a webhook fires</Trans>
+          {kind === "github" ? <Trans>Git event</Trans> : <Trans>When a webhook fires</Trans>}
         </span>
         <Button
           variant="ghost"
           size="icon-xs"
-          aria-label={t`Remove webhook`}
+          aria-label={kind === "github" ? t`Remove Git event` : t`Remove webhook`}
           onClick={onRemove}
           className="text-muted-foreground"
         >
@@ -533,8 +574,6 @@ function comingSoonColor(id: string): string {
   switch (id) {
     case "slack":
       return "#E01E5A";
-    case "git":
-      return "#8B949E";
     case "teams":
       return "#6264A7";
     case "linear":
