@@ -63,8 +63,8 @@ If the installer, Compose downloads, or image pulls are blocked, use the
 ### Bot computer resource ceilings
 
 Each Docker computer runs Xvfb, a window manager and a full Chromium driven by an agent that
-decides for itself what to open, so it is capped. The defaults suit real browsing on the 8 GB host
-this page recommends for the Docker computer topology:
+decides for itself what to open, so it is capped. These defaults provide a starting point for the
+Docker computer topology:
 
 | Variable | Default | Accepts |
 | --- | --- | --- |

@@ -20,10 +20,10 @@ export type ScreenNetworkMode = "published" | "internal" | "isolated";
  * carries mem_limit; this applies the same discipline to the containers that
  * actually run untrusted page content.
  *
- * Defaults are generous enough for real browsing and small enough that a single
- * computer cannot exhaust the 8 GB host docs/self-host.md documents for the
- * Docker computer topology. The pids default is #343's existing 2048, unchanged.
- * Set any of these to "0", "none" or "unlimited" to opt out.
+ * Defaults are a starting point for the Docker computer topology: generous enough
+ * for real browsing, small enough that one computer cannot starve the host or
+ * sibling bots. The pids default is #343's existing 2048, unchanged. Set any of
+ * these to "0", "none" or "unlimited" to opt out.
  */
 const DEFAULT_COMPUTER_MEMORY = "2g";
 const DEFAULT_COMPUTER_CPUS = "2";
