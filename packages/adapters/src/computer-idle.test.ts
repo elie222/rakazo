@@ -204,6 +204,7 @@ describe("sandbox idle", () => {
 
       expect(harness.sandbox.stop).not.toHaveBeenCalled();
       expect(harness.computer.homeRevision).toBe("rev-before");
+      expect(harness.computer.state).toBe("running");
       expect(harness.jobs.enqueue).toHaveBeenCalledOnce();
     },
   );

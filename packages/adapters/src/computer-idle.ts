@@ -259,12 +259,16 @@ export async function sleepComputerIfIdle(
       data: { homeRevision: revision, updatedAt: checkpointedAt },
     });
     if (saved.count !== 1) {
+      await deps.prisma.computer.updateMany({
+        where: { id: computerId, state: "suspending", providerRef: computer.providerRef },
+        data: { state: "running" },
+      });
       scheduleComputerSleep(deps.jobs, computerId);
       return;
     }
   } catch (error) {
     await deps.prisma.computer.updateMany({
-      where: { id: computerId, state: "suspending" },
+      where: { id: computerId, state: "suspending", providerRef: computer.providerRef },
       data: { state: "running" },
     });
     scheduleComputerSleep(deps.jobs, computerId);
