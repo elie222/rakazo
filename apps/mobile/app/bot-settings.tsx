@@ -441,7 +441,12 @@ export default function BotSettingsScreen() {
           />
           <View
             accessibilityViewIsModal
-            style={{ backgroundColor: tokens.popover, borderRadius: 24, paddingVertical: 12 }}
+            style={{
+              maxHeight: "80%",
+              backgroundColor: tokens.popover,
+              borderRadius: 24,
+              paddingVertical: 12,
+            }}
           >
             <Text
               style={{
@@ -453,30 +458,32 @@ export default function BotSettingsScreen() {
             >
               {picker === "thinking" ? t("Thinking") : t("Model")}
             </Text>
-            {androidChoices.map((choice) => (
-              <Pressable
-                key={choice.key || "space-default"}
-                accessibilityRole="button"
-                onPress={() => {
-                  if (picker === "model") selectModel(choice.key);
-                  else setThinkingLevel(choice.key);
-                  setPicker(null);
-                }}
-                style={{ minHeight: 56, justifyContent: "center", paddingHorizontal: 24 }}
-              >
-                <Text
-                  style={{
-                    color:
-                      (picker === "model" ? modelKey : thinkingLevel) === choice.key
-                        ? tokens.popoverForeground
-                        : tokens.mutedForeground,
-                    fontSize: 16,
+            <ScrollView keyboardShouldPersistTaps="handled">
+              {androidChoices.map((choice) => (
+                <Pressable
+                  key={choice.key || "space-default"}
+                  accessibilityRole="button"
+                  onPress={() => {
+                    if (picker === "model") selectModel(choice.key);
+                    else setThinkingLevel(choice.key);
+                    setPicker(null);
                   }}
+                  style={{ minHeight: 56, justifyContent: "center", paddingHorizontal: 24 }}
                 >
-                  {choice.label}
-                </Text>
-              </Pressable>
-            ))}
+                  <Text
+                    style={{
+                      color:
+                        (picker === "model" ? modelKey : thinkingLevel) === choice.key
+                          ? tokens.popoverForeground
+                          : tokens.mutedForeground,
+                      fontSize: 16,
+                    }}
+                  >
+                    {choice.label}
+                  </Text>
+                </Pressable>
+              ))}
+            </ScrollView>
           </View>
         </View>
       </Modal>
