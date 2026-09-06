@@ -7,7 +7,7 @@ import type {
   SandboxProvider,
 } from "@rakazo/adapter-kit";
 import { routineJobKey, runContinueJob, runJobKey } from "@rakazo/adapter-kit";
-import { type Actor, type Bot, GROUP_MEMBER_MIN } from "@rakazo/contracts";
+import { type Actor, type Bot, type ComputerMode, GROUP_MEMBER_MIN } from "@rakazo/contracts";
 import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
 import {
   computerScopeKey,
@@ -51,6 +51,7 @@ export async function spawnBot(
     title?: string;
     instructions?: string;
     prompt?: string;
+    computerMode?: ComputerMode;
   },
 ) {
   const name = input.name.trim();
@@ -73,6 +74,7 @@ export async function spawnBot(
       notifyOnFinish: true,
       parentBotId: input.spawnedBy.id,
       spawnKey: input.spawnKey,
+      computerMode: input.computerMode,
       initialMessage: {
         role: "system",
         blocks: [{ kind: "meta", text: `Created by ${input.spawnedBy.name}` }],

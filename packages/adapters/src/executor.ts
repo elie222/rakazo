@@ -2772,6 +2772,17 @@ export function createRunExecutor(deps: ExecutorDeps) {
             }
           }
           if (name === "spawn_bot") {
+            const computerModeArg = args.computer_mode;
+            let computerMode: "team" | "dedicated" | undefined;
+            if (computerModeArg != null && computerModeArg !== "") {
+              const value = String(computerModeArg);
+              if (value !== "team" && value !== "dedicated") {
+                return finish({
+                  error: 'computer_mode must be "team" or "dedicated".',
+                });
+              }
+              computerMode = value;
+            }
             const spawned = await spawnBot(deps, {
               spawnedBy: {
                 id: bot.id,
@@ -2785,6 +2796,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               title: args.title ? String(args.title) : undefined,
               instructions: args.instructions ? String(args.instructions) : undefined,
               prompt: args.prompt ? String(args.prompt) : undefined,
+              computerMode,
             });
             if ("error" in spawned) return finish(spawned);
             if (!(await persistEffectResult(spawned))) return uncertainEffectResult(name);

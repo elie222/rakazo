@@ -5,7 +5,7 @@ import type {
   JobPublisher,
   SandboxProvider,
 } from "@rakazo/adapter-kit";
-import type { PrismaClient } from "@rakazo/db";
+import type { createRepos, PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import {
   archiveBot,
@@ -93,6 +93,54 @@ describe("spawned bot creation", () => {
       threadId: "thread-1",
     });
     expect(enqueue).toHaveBeenCalledOnce();
+  });
+
+  it("passes computerMode through to createBot", async () => {
+    const createBot = vi.fn().mockResolvedValue({
+      id: "child-2",
+      name: "Painter",
+      title: "",
+      threadId: "thread-2",
+    });
+    const createReposSpy = vi.spyOn(await import("@rakazo/db"), "createRepos").mockReturnValue({
+      createBot,
+    } as unknown as ReturnType<typeof createRepos>);
+
+    const result = await spawnBot(
+      {
+        prisma: {} as PrismaClient,
+        jobs: { enqueue: vi.fn() } as unknown as JobPublisher,
+      },
+      {
+        spawnedBy: {
+          id: "parent-1",
+          name: "Chief",
+          spaceId: "workspace-1",
+          userId: "user-1",
+        },
+        runId: "run-1",
+        spawnKey: "tool-call-2",
+        name: "Painter",
+        computerMode: "dedicated",
+      },
+    );
+
+    expect(createBot).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: "user-1", spaceId: "workspace-1" }),
+      expect.objectContaining({
+        name: "Painter",
+        computerMode: "dedicated",
+        parentBotId: "parent-1",
+      }),
+    );
+    expect(result).toEqual({
+      ok: true,
+      botId: "child-2",
+      name: "Painter",
+      title: "",
+      threadId: "thread-2",
+    });
+    createReposSpy.mockRestore();
   });
 });
 describe("spawned bot archival", () => {

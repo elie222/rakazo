@@ -681,6 +681,12 @@ export const builtinAgentTools: ConnectorTool[] = [
           type: "string",
           description: "Optional first task to run in the new bot's thread.",
         },
+        computer_mode: {
+          type: "string",
+          enum: ["team", "dedicated"],
+          description:
+            "Optional. team shares one screen with other Team bots; dedicated (Private) gets its own. Defaults to team.",
+        },
       },
       required: ["name"],
     },
