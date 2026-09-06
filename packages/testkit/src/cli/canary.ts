@@ -1,8 +1,12 @@
 import { execSync } from "node:child_process";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
-import { PostgreSqlContainer } from "@testcontainers/postgresql";
+import { loadRootEnv } from "@rakazo/core/node/load-root-env";
+import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 
 async function main() {
+  loadRootEnv();
   const runOpenRouter = Boolean(process.env.OPENROUTER_API_KEY);
   if (!process.env.E2B_API_KEY && !process.env.BOX_API_KEY && !runOpenRouter) {
     throw new Error(
@@ -10,14 +14,22 @@ async function main() {
     );
   }
 
-  const postgres = runOpenRouter
-    ? await new PostgreSqlContainer("postgres:16-alpine").start()
-    : undefined;
+  const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-canary-"));
+  let postgres: StartedPostgreSqlContainer | undefined;
   try {
+    if (runOpenRouter) postgres = await new PostgreSqlContainer("postgres:16-alpine").start();
     const env = {
       ...process.env,
-      ...(postgres ? { DATABASE_URL: postgres.getConnectionUri() } : {}),
+      DATABASE_URL: postgres?.getConnectionUri() ?? "",
+      REALTIME_DATABASE_URL: postgres?.getConnectionUri() ?? "",
       VERIFY_PROVIDERS: "1",
+      WAKEUP_DRIVER: "memory",
+      AGENT_RUNTIME: "pi",
+      SANDBOX_PROVIDER: "fake",
+      CLOUD_AGENT_PROVIDER: "emulator",
+      COMPOSIO_API_KEY: "",
+      CURSOR_API_KEY: "",
+      MAX_TOOL_CALLS_PER_TURN: "24",
       BETTER_AUTH_SECRET: "provider-canary-auth-secret-at-least-32-characters",
       ENCRYPTION_KEY: "provider-canary-encryption-key-at-least-32-characters",
       SANDBOX_SUPERVISOR_TOKEN: "provider-canary-supervisor-token-at-least-32-characters",
@@ -26,7 +38,7 @@ async function main() {
       WEB_ORIGIN: "http://127.0.0.1:5173",
       SIGNUPS_ENABLED: "true",
       SIGNUP_ALLOWLIST: "",
-      DATA_DIR: path.resolve("test-report/canary/data"),
+      DATA_DIR: dataDir,
     };
     if (postgres) {
       execSync("pnpm --filter @rakazo/db generate", { stdio: "inherit", env });
@@ -41,7 +53,11 @@ async function main() {
       { stdio: "inherit", env },
     );
   } finally {
-    await postgres?.stop().catch(() => undefined);
+    try {
+      await postgres?.stop();
+    } finally {
+      await rm(dataDir, { recursive: true, force: true });
+    }
   }
 }
 

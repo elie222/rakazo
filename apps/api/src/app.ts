@@ -20,6 +20,7 @@ import {
   createConnectorStack,
   createJobReconciler,
   createMessagingContextLoader,
+  createMessagingTeamChatSender,
   createRunExecutor,
   createRunSandbox,
   createRunSecretWriter,
@@ -52,6 +53,7 @@ import {
   ScriptedAgentRuntime,
   SmtpEmailProvider,
   SpaceMemoryProviderResolver,
+  toTeamChatInbound,
 } from "@rakazo/adapters";
 import { blockedAuthPaths, createAuth } from "@rakazo/auth";
 import { signupPolicyFromEnv } from "@rakazo/core";
@@ -78,6 +80,8 @@ import { type AppEnv, loadEnv } from "./env.js";
 import { createMessagingInboundHandler } from "./messaging-inbound.js";
 import { mountMessagingWebhookRoutes } from "./messaging-webhook.js";
 import { createRouter } from "./router.js";
+import { TeamChatBridge } from "./team-chat-bridge.js";
+import { ModelTeamChatEngagementJudge } from "./team-chat-judge.js";
 import { mountVoiceHttpRoutes } from "./voice.js";
 import { mountWebhookHttpRoutes } from "./webhook.js";
 
@@ -441,6 +445,7 @@ export async function createApp(
   });
   mountWebhookHttpRoutes(app, { prisma, secrets, events, jobs });
   // Messaging webhooks only exist when the surface is enabled.
+  let teamChatBridge: TeamChatBridge | undefined;
   if (messaging) {
     const inbound = createMessagingInboundHandler({
       prisma,
@@ -468,9 +473,61 @@ export async function createApp(
         });
       },
     });
+    if (env.teamChatBotId) {
+      const judge =
+        env.teamChatJudgeProvider && env.teamChatJudgeModel
+          ? new ModelTeamChatEngagementJudge({
+              prisma,
+              runtime,
+              secrets,
+              deploymentProvider: env.defaultProvider,
+              deploymentModel: env.defaultModel,
+              deploymentModelKey: env.deploymentModelKey,
+              providerOverride: env.teamChatJudgeProvider,
+              modelOverride: env.teamChatJudgeModel,
+            })
+          : new ModelTeamChatEngagementJudge({
+              prisma,
+              runtime,
+              secrets,
+              deploymentProvider: env.defaultProvider,
+              deploymentModel: env.defaultModel,
+              deploymentModelKey: env.deploymentModelKey,
+            });
+      const bridge = new TeamChatBridge({
+        prisma,
+        events,
+        jobs,
+        send: createMessagingTeamChatSender(messaging),
+        providerId: "slack",
+        botId: env.teamChatBotId,
+        judge,
+      });
+      try {
+        await bridge.start();
+        teamChatBridge = bridge;
+      } catch (error) {
+        getLogger().error("team chat bridge failed to start; continuing without it", error);
+      }
+    }
     messaging.onInbound(async (event) => {
-      if (event.type === "message") await inbound(event);
-      else await applyMessagingOutboundStatus(prisma, event);
+      if (event.type !== "message") {
+        await applyMessagingOutboundStatus(prisma, event);
+        return;
+      }
+      const preferTeamChat =
+        Boolean(teamChatBridge) &&
+        (event.provider === "slack" ||
+          event.provider === "teamchat-emulator" ||
+          Boolean(event.workspaceId));
+      if (preferTeamChat && teamChatBridge) {
+        const mapped = toTeamChatInbound(event);
+        if (mapped) {
+          await teamChatBridge.receive(mapped);
+          return;
+        }
+      }
+      await inbound(event);
     });
     mountMessagingWebhookRoutes(app, { messaging });
   }
@@ -503,6 +560,7 @@ export async function createApp(
     executor,
     stop: async () => {
       oauthLogins.abortAll();
+      await teamChatBridge?.stop();
       await email?.drain?.();
       await reconciler?.stop();
       await jobs.close();

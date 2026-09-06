@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { captureScreenshot, completeOnboarding, signup } from "./helpers";
 
-test("advanced GraphQL install shows Add GraphQL in MCP, OpenAPI, GraphQL, Treg order", async ({
+test("advanced GraphQL install shows Add GraphQL in MCP, OpenAPI, GraphQL, Executor, Treg order", async ({
   page,
 }, testInfo) => {
   const stamp = Date.now();
@@ -20,14 +20,17 @@ test("advanced GraphQL install shows Add GraphQL in MCP, OpenAPI, GraphQL, Treg 
   await expect(page.getByRole("button", { name: "Add MCP server", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Add OpenAPI", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Add GraphQL", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add Executor", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Add Treg", exact: true })).toBeVisible();
 
-  const advancedActions = advanced.locator("button");
-  await expect(advancedActions.nth(0)).toHaveText("MCP servers");
-  await expect(advancedActions.nth(1)).toHaveText("Add MCP server");
-  await expect(advancedActions.nth(2)).toHaveText("Add OpenAPI");
-  await expect(advancedActions.nth(3)).toHaveText("Add GraphQL");
+  const advancedActions = page.getByTestId("integrations-advanced-add").locator("button");
+  await expect(advancedActions.nth(0)).toHaveText("Add MCP server");
+  await expect(advancedActions.nth(1)).toHaveText("Add OpenAPI");
+  await expect(advancedActions.nth(2)).toHaveText("Add GraphQL");
+  await expect(advancedActions.nth(3)).toHaveText("Add Executor");
   await expect(advancedActions.nth(4)).toHaveText("Add Treg");
+  await expect(advancedActions).toHaveCount(5);
+  await expect(page.getByRole("button", { name: "Manage MCP servers", exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "01-graphql-advanced-order");
 
   await page.getByRole("button", { name: "Add GraphQL", exact: true }).click();

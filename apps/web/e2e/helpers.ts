@@ -32,19 +32,6 @@ export async function completeOnboarding(page: Page, testInfo?: TestInfo) {
   if ((await chief.isVisible().catch(() => false)) && page.url().includes("/app")) return;
   if (
     await page
-      .getByRole("heading", { name: "Connect a model" })
-      .isVisible()
-      .catch(() => false)
-  ) {
-    if (testInfo) await captureScreenshot(page, testInfo, "02-connect-model");
-    await page.getByRole("button", { name: "Skip for now" }).click();
-    await page
-      .getByRole("heading", { name: "Create your first bot" })
-      .or(chief)
-      .waitFor({ timeout: 20_000 });
-  }
-  if (
-    await page
       .getByRole("heading", { name: "Create your first bot" })
       .isVisible()
       .catch(() => false)
@@ -90,9 +77,13 @@ export async function captureScreenshot(page: Page, testInfo: TestInfo, name: st
   await testInfo.attach(name, { contentType: "image/png", path: screenshotPath });
 }
 
-export async function openNewBot(page: Page) {
+export async function openNewBot(page: Page, computerMode: "team" | "dedicated" = "team") {
   await page.getByTestId("create-menu-trigger").click();
   await page.getByTestId("create-new-bot").click();
+  await expect(page.getByTestId("create-bot-computer")).toBeVisible();
+  await page
+    .getByTestId(computerMode === "team" ? "create-bot-team" : "create-bot-private")
+    .click();
 }
 
 export async function openNewGroup(page: Page) {

@@ -2164,7 +2164,7 @@ export function ShellPage() {
     await refreshBots().catch(() => undefined);
   }
 
-  async function createBotQuick() {
+  async function createBotQuick(computerMode: ComputerMode = "team") {
     if (creatingBotRef.current) return;
     creatingBotRef.current = true;
     try {
@@ -2172,7 +2172,7 @@ export function ShellPage() {
         name: "New Bot",
         title: "",
         description: "",
-        computerMode: "team",
+        computerMode,
       });
     } catch (error) {
       // Keep the current chat open when create fails, but surface the error.
@@ -2458,9 +2458,9 @@ export function ShellPage() {
                 >
                   <BotCreatePicker
                     bots={bots}
-                    onCreateBot={() => {
+                    onCreateBot={(computerMode) => {
                       setCreateMenuOpen(false);
-                      void createBotQuick();
+                      void createBotQuick(computerMode);
                     }}
                     onOpenBot={(id) => {
                       setCreateMenuOpen(false);

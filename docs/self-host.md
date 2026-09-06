@@ -60,6 +60,21 @@ instead of this host proxy.
 If the installer, Compose downloads, or image pulls are blocked, use the
 [restricted-network guide](./self-host-restricted-network.md) for mirror settings and local files.
 
+### Bot computer resource ceilings
+
+Each Docker computer runs Xvfb, a window manager and a full Chromium driven by an agent that
+decides for itself what to open, so it is capped. These defaults provide a starting point for the
+Docker computer topology:
+
+| Variable | Default | Accepts |
+| --- | --- | --- |
+| `RAKAZO_COMPUTER_MEMORY` | `2g` | `2g`, `1536m`, a byte count. Minimum `6m`, Docker's own floor. Also caps swap, so the ceiling holds. |
+| `RAKAZO_COMPUTER_CPUS` | `2` | Whole or fractional cores, e.g. `1.5` |
+| `RAKAZO_COMPUTER_PIDS_LIMIT` | `2048` | A positive integer |
+
+Set any of them to `0`, `none` or `unlimited` to remove that ceiling. A malformed value fails the
+supervisor at startup naming the variable, rather than surfacing later as a failed bot.
+
 ## Docker Compose (single machine)
 
 1. Copy `.env.example` to `.env` and set `BETTER_AUTH_SECRET`, `ENCRYPTION_KEY`, and `SCREEN_PROXY_SECRET` to independent long random strings (32+ characters; 64 hex for `ENCRYPTION_KEY`). Docker sandboxes also need a dedicated `SANDBOX_SUPERVISOR_TOKEN`. Keep existing `ENCRYPTION_KEY` values so stored credentials stay decryptable.
@@ -164,25 +179,27 @@ To use an operator-controlled OpenAI-compatible server such as Ollama, LM Studio
 MLX, list its model IDs and an endpoint that both the API and worker processes can reach:
 
 ```env
-RAKAZO_LOCAL_MODELS=qwen3:4b,llama3.1:8b
+RAKAZO_LOCAL_MODELS=qwen3:4b,llama3.1:8b,qwen3-vl
 RAKAZO_LOCAL_MODELS_URL=http://127.0.0.1:11434/v1
 RAKAZO_LOCAL_CONTEXT_WINDOW=32768
 RAKAZO_LOCAL_MAX_TOKENS=4096
+# Optional: model ids on this endpoint that accept images (screenshot computer tools).
+RAKAZO_LOCAL_VISION_MODELS=qwen3-vl
 ```
 
-The loopback default is suitable when running Rakazo from a source checkout. In Docker Compose,
-use the model server's Compose service name or another address reachable from the containers.
+The loopback default is suitable when running Rakazo from a source checkout. From containers,
+prefer a stable LAN RFC1918 address (not Compose service DNS alone). On Docker Desktop,
+`host.docker.internal` also works.
 Only configure an endpoint you control: prompts, attachments, and tool results sent to that model
 leave Rakazo through this URL. Leave `RAKAZO_LOCAL_MODELS` blank to disable the provider.
 
 Each user can also connect their own OpenAI-compatible endpoint from **Connect a model** /
 **Settings → Models** on web and mobile. Choose **OpenAI-compatible**, enter the server base URL
-(for example `http://127.0.0.1:8000/v1` for Rapid-MLX, Ollama, LM Studio, llama.cpp, or vLLM),
-the exact model id from that server, and an optional API key. By default Rakazo only allows
-loopback, RFC1918, and `host.docker.internal` targets. To permit public hostnames, set
-`RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC=1` in the deployment environment. Public hostnames must resolve
-only to public addresses; redirects and DNS answers that reach private or link-local networks are
-rejected.
+(for example `http://127.0.0.1:8000/v1`), the exact model id, and an optional API key.
+Public hosts and ordinary hostnames need `RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC=1` and HTTPS.
+Literal private IP, loopback, and `host.docker.internal` targets do not. To mark user-connected
+openai-compatible model ids as vision-capable (so screenshot computer tools stay available), set
+`RAKAZO_OPENAI_COMPATIBLE_VISION_MODELS=gpt4o-vision,llava`.
 
 For servers that accept standard `reasoning_effort`, enable **Supports thinking** under
 **Advanced** when connecting. The setting is saved on the connection (no env var or restart).

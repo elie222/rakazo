@@ -1795,8 +1795,11 @@ msgstr "Marcar como no leído"
 msgid "Max"
 msgstr "Máx."
 
+#: src/pages/PluginsOverlay.tsx:987
+msgid "Manage MCP servers"
+msgstr "Gestionar servidores MCP"
+
 #: src/pages/McpServersOverlay.tsx:255
-#: src/pages/PluginsOverlay.tsx:456
 msgid "MCP servers"
 msgstr "Servidores MCP"
 
@@ -3269,3 +3272,16 @@ msgstr "Añadir endpoint de GraphQL"
 #: src/pages/PluginsOverlay.tsx:601
 msgid "No tool sources yet."
 msgstr "Aún no hay fuentes de herramientas."
+
+#: src/pages/PluginsOverlay.tsx
+msgid "Add Executor"
+msgstr "Agregar Executor"
+
+#: src/pages/PluginsOverlay.tsx
+msgid "Connect Executor"
+msgstr "Conectar Executor"
+
+#: src/pages/PluginsOverlay.tsx
+msgid "Executor token"
+msgstr "Token de Executor"
+

@@ -141,6 +141,7 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
     /Gmail[\s\S]*Google Calendar[\s\S]*Google Drive[\s\S]*Slack[\s\S]*Notion/,
   );
   await expect(page.getByText("GitHub", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add Executor", exact: true })).toBeHidden();
   await expect(page.getByRole("button", { name: "Add Treg", exact: true })).toBeHidden();
   await expect(page.getByRole("button", { name: "Add MCP server", exact: true })).toBeHidden();
   await expect(page.getByRole("button", { name: "Add OpenAPI", exact: true })).toBeHidden();
@@ -151,16 +152,51 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   ).toBeHidden();
   await captureScreenshot(page, testInfo, "11-plugins-catalog");
 
-  // Nearest ancestor with an Add/Remove control (featured tile or catalog row).
+  // Nearest ancestor with an Add/Added control (featured tile or catalog row).
   const gmailRow = featured
     .getByText("Gmail", { exact: true })
     .locator("xpath=ancestor::*[.//button][1]");
   await gmailRow.getByRole("button", { name: "Add", exact: true }).click();
-  await expect(gmailRow.getByRole("button", { name: "Remove", exact: true })).toBeVisible();
+  await expect(gmailRow.getByRole("button", { name: "Added", exact: true })).toBeVisible();
+  await expect(page.getByTestId("connection-tile-gmail")).toBeVisible();
   await captureScreenshot(page, testInfo, "11a-connected-plugins");
 
-  await gmailRow.getByRole("button", { name: "Remove", exact: true }).click();
-  await expect(gmailRow.getByRole("button", { name: "Add", exact: true })).toBeVisible();
+  await gmailRow.getByRole("button", { name: "Added", exact: true }).click();
+  const detail = page.getByTestId("connection-detail");
+  await expect(detail).toBeVisible();
+  await expect(page.getByTestId("connection-accounts")).toBeVisible();
+  await expect(page.getByTestId("connection-tools")).toBeVisible();
+
+  await detail.getByRole("button", { name: "Add another", exact: true }).click();
+  await expect(detail.getByLabel("Account label")).toHaveCount(2);
+  await detail.getByLabel("Account label").nth(1).fill("Work");
+  const renamed = page.waitForResponse(
+    (response) => response.url().includes("connections/rename") && response.ok(),
+  );
+  await detail.getByLabel("Account label").nth(1).blur();
+  await renamed;
+  await expect(detail.getByLabel("Account label").nth(1)).toHaveValue("Work");
+  await captureScreenshot(page, testInfo, "11a2-multi-account-plugins");
+
+  await page.getByRole("button", { name: "Close integrations" }).click();
+  await page.getByText("Integrations").click();
+  await expect(page.getByPlaceholder("Search apps")).toBeVisible();
+  const gmailTileAgain = page.getByTestId("connection-tile-gmail");
+  await expect(gmailTileAgain.getByRole("button", { name: "Added", exact: true })).toBeVisible();
+  await gmailTileAgain.click();
+  const detailAgain = page.getByTestId("connection-detail");
+  await expect(detailAgain.getByLabel("Account label")).toHaveCount(2);
+  await expect(detailAgain.getByLabel("Account label").nth(1)).toHaveValue("Work");
+
+  await detailAgain.getByRole("button", { name: "Remove", exact: true }).last().click();
+  await expect(detailAgain.getByLabel("Account label")).toHaveCount(1);
+  await detailAgain.getByRole("button", { name: "Uninstall", exact: true }).click();
+  await expect(page.getByTestId("connection-detail")).toHaveCount(0);
+  const gmailRowEmpty = page
+    .getByTestId("featured-connectors")
+    .getByText("Gmail", { exact: true })
+    .locator("xpath=ancestor::*[.//button][1]");
+  await expect(gmailRowEmpty.getByRole("button", { name: "Add", exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "11b-connected-plugins-empty");
 
   const linearRow = page
@@ -170,20 +206,26 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await linearRow.getByRole("button", { name: "Add", exact: true }).click();
   const popup = await connectPopup;
   await popup.close();
-  await expect(linearRow.getByRole("button", { name: "Remove", exact: true })).toBeVisible();
-  await linearRow.getByRole("button", { name: "Remove", exact: true }).click();
+  await expect(linearRow.getByRole("button", { name: "Added", exact: true })).toBeVisible();
+  await linearRow.getByRole("button", { name: "Added", exact: true }).click();
+  const linearDetail = page.getByTestId("connection-detail");
+  await expect(linearDetail).toBeVisible();
+  await linearDetail.getByRole("button", { name: "Uninstall", exact: true }).click();
+  await expect(page.getByTestId("connection-detail")).toHaveCount(0);
   await expect(linearRow.getByRole("button", { name: "Add", exact: true })).toBeVisible();
 
   const advanced = page.getByTestId("integrations-advanced");
   await advanced.evaluate((element) => {
     (element as HTMLDetailsElement).open = true;
   });
-  await expect(page.getByRole("button", { name: "MCP servers", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Manage MCP servers", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Add MCP server", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Add OpenAPI", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Add GraphQL", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add Executor", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Add Treg", exact: true })).toBeVisible();
   await expect(page.getByText("Tool sources", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "MCP servers", exact: true })).toBeHidden();
   // Thin Advanced smoke only. GraphQL install and order screenshots live in graphql-integrations.spec.ts.
   await page.getByRole("button", { name: "Add Treg", exact: true }).click();
   await page.getByPlaceholder("Treg token").fill("fake-treg-browser-credential");
@@ -206,6 +248,17 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await page.getByRole("button", { name: "Verify and add", exact: true }).click();
   await expect(
     page.getByText(/API · https:\/\/api\.example\.test\/v1 · credential saved/),
+  ).toBeVisible();
+
+  await page.getByRole("button", { name: "Add Executor", exact: true }).click();
+  await expect(page.getByPlaceholder("Display name")).toHaveValue("Executor");
+  await page
+    .getByPlaceholder("https://executor.example/mcp")
+    .fill("https://executor.example.test/mcp");
+  await page.getByPlaceholder("Executor token").fill("fake-executor-browser-credential");
+  await page.getByRole("button", { name: "Verify and add", exact: true }).click();
+  await expect(
+    page.getByText(/MCP · https:\/\/executor\.example\.test\/mcp · credential saved/),
   ).toBeVisible();
   await captureScreenshot(page, testInfo, "11c-provider-emulators");
 

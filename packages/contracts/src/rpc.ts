@@ -4,6 +4,8 @@ import { ATTACHMENT_MAX_BASE64_LENGTH, ATTACHMENT_MAX_COUNT } from "./attachment
 import {
   ActionApprovalRuleSchema,
   ActionAutoReviewSettingsSchema,
+  AgentSecretInputSchema,
+  AgentSecretSchema,
   AgentSkillCatalogEntrySchema,
   AgentSkillSchema,
   AppBootstrapSchema,
@@ -26,6 +28,7 @@ import {
   CreateScratchpadItemInput,
   DeploymentSettingsSchema,
   ExportManifestSchema,
+  ExternalConversationPolicySchema,
   GroupDetailSchema,
   GroupSchema,
   McpServerConfigInput,
@@ -59,6 +62,7 @@ import {
   ThreadSnapshotSchema,
   UpdateAgentSkillInput,
   UpdateBotInput,
+  UpdateExternalConversationPolicyInput,
   UpdateGroupInput,
   UsageRecordSchema,
   VoiceCatalogEntrySchema,
@@ -559,7 +563,19 @@ export const appContract = {
     complete: oc
       .input(z.object({ connectionId: Id, code: z.string().optional() }))
       .output(ConnectionSchema),
+    rename: oc
+      .input(z.object({ connectionId: Id, displayName: z.string().trim().min(1).max(80) }))
+      .output(ConnectionSchema),
     revoke: oc.input(z.object({ connectionId: Id })).output(z.object({ ok: z.literal(true) })),
+    /** Tools the connected provider exposes. Read-only; no per-tool allowlist yet. */
+    tools: oc.input(z.object({ connectorId: z.string(), provider: z.string() })).output(
+      z.array(
+        z.object({
+          name: z.string(),
+          description: z.string(),
+        }),
+      ),
+    ),
   },
   /** External messaging surface: link state, group channels, agent connections. */
   messaging: {
@@ -678,6 +694,16 @@ export const appContract = {
         }),
       )
       .output(z.object({ ready: z.boolean(), utterances: z.array(z.string()) })),
+  },
+  externalConversations: {
+    updatePolicy: oc
+      .input(UpdateExternalConversationPolicyInput)
+      .output(ExternalConversationPolicySchema),
+  },
+  agentSecrets: {
+    list: oc.output(z.array(AgentSecretSchema)),
+    put: oc.input(AgentSecretInputSchema).output(AgentSecretSchema),
+    remove: oc.input(z.object({ id: Id })).output(z.object({ ok: z.literal(true) })),
   },
 };
 

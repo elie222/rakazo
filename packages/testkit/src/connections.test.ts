@@ -117,6 +117,72 @@ describeWithDatabase("Composio catalog reconciliation", () => {
     ]);
   });
 
+  it("keeps a second connected account for the same provider and renames it", async () => {
+    const cookie = await signup(app, `multi-account-${stamp}@rakazo.test`, "Multi Account");
+    const first = await rpc<{ connectionId: string }>(app, cookie, "connections/begin", {
+      connectorId: "composio",
+      provider: "GMAIL",
+      displayName: "Personal",
+    });
+    const second = await rpc<{ connectionId: string }>(app, cookie, "connections/begin", {
+      connectorId: "composio",
+      provider: "GMAIL",
+      displayName: "Work",
+    });
+    await expect(
+      rpc<Array<{ id: string; displayName: string; status: string }>>(
+        app,
+        cookie,
+        "connections/list",
+      ),
+    ).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: first.connectionId,
+          displayName: "Personal",
+          status: "connected",
+        }),
+        expect.objectContaining({
+          id: second.connectionId,
+          displayName: "Work",
+          status: "connected",
+        }),
+      ]),
+    );
+
+    await expect(
+      rpc<{ displayName: string }>(app, cookie, "connections/rename", {
+        connectionId: second.connectionId,
+        displayName: "Work inbox",
+      }),
+    ).resolves.toMatchObject({ displayName: "Work inbox" });
+
+    await rpc(app, cookie, "connections/catalog");
+    await expect(statuses([first.connectionId, second.connectionId])).resolves.toEqual([
+      { id: first.connectionId, status: "connected" },
+      { id: second.connectionId, status: "connected" },
+    ]);
+
+    await rpc(app, cookie, "connections/revoke", { connectionId: first.connectionId });
+    await expect(
+      rpc<Array<{ id: string; status: string }>>(app, cookie, "connections/list"),
+    ).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: first.connectionId, status: "revoked" }),
+        expect.objectContaining({ id: second.connectionId, status: "connected" }),
+      ]),
+    );
+
+    // Uninstall the remaining account: catalog must flip off Added (slug-only
+    // emulator refs used to skip remote revoke and leave Gmail stuck connected).
+    await rpc(app, cookie, "connections/revoke", { connectionId: second.connectionId });
+    await expect(
+      rpc<Array<{ slug: string; connected: boolean }>>(app, cookie, "connections/catalog", {
+        connectorId: "composio",
+      }),
+    ).resolves.toContainEqual(expect.objectContaining({ slug: "GMAIL", connected: false }));
+  });
+
   it("returns the remote catalog when local reconciliation fails", async () => {
     const cookie = await signup(app, `db-failure-connections-${stamp}@rakazo.test`, "DB Failure");
     const actor = await rpc<Actor>(app, cookie, "me");
@@ -128,6 +194,7 @@ describeWithDatabase("Composio catalog reconciliation", () => {
       .spyOn(handles.prisma.connection, "findMany")
       .mockRejectedValue(new Error("simulated reconciliation failure"));
 
+    // Scope to composio so a parallel managed provider cannot consume the one-shot findMany reject.
     const catalog = await rpc<Array<{ slug: string; connected: boolean }>>(
       app,
       cookie,
@@ -184,17 +251,26 @@ describeWithDatabase("Composio catalog reconciliation", () => {
         },
       ],
     };
-    const tool = (await handles.connectors.discoverTools(context)).find(
+    const tools = (await handles.connectors.discoverTools(context)).filter(
       (candidate) => candidate.route?.connectorId === "composio",
     );
-    expect(tool).toMatchObject({ name: "GMAIL_EMULATED_ACTION" });
+    expect(tools.map((tool) => tool.name)).toEqual([
+      "GMAIL_FETCH_EMAILS",
+      "GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID",
+      "GMAIL_FETCH_MESSAGE_BY_THREAD_ID",
+      "GMAIL_SEND_EMAIL",
+      "GMAIL_CREATE_EMAIL_DRAFT",
+      "GMAIL_LIST_LABELS",
+    ]);
+    const fetchTool = tools.find((tool) => tool.name === "GMAIL_FETCH_EMAILS");
+    expect(fetchTool).toBeDefined();
     const events = [];
     for await (const event of handles.connectors.execute(
       {
-        tool: tool!.name,
-        args: { value: "composio-product-ok" },
+        tool: fetchTool!.name,
+        args: { query: "from:teammate", max_results: 5 },
         executionId: "composio-product-execution",
-        route: tool!.route,
+        route: fetchTool!.route,
       },
       context,
     )) {
@@ -203,11 +279,26 @@ describeWithDatabase("Composio catalog reconciliation", () => {
     expect(events).toContainEqual(
       expect.objectContaining({
         type: "result",
-        data: expect.objectContaining({ ok: true, tool: "GMAIL_EMULATED_ACTION" }),
+        data: expect.objectContaining({
+          successful: true,
+          data: expect.objectContaining({
+            messages: [
+              expect.objectContaining({
+                messageId: "18c5f5d1a2b3c4d6",
+                subject: "Quarterly planning notes",
+              }),
+            ],
+            resultSizeEstimate: 1,
+          }),
+        }),
       }),
     );
     expect(composio.executions).toContainEqual(
-      expect.objectContaining({ userId: actor.userId, tool: "GMAIL_EMULATED_ACTION" }),
+      expect.objectContaining({
+        userId: actor.userId,
+        tool: "GMAIL_FETCH_EMAILS",
+        args: { query: "from:teammate", max_results: 5 },
+      }),
     );
   });
 
@@ -278,7 +369,7 @@ describeWithDatabase("Composio catalog reconciliation", () => {
     );
   });
 
-  it("installs Treg and custom MCP sources, discovers tools, and routes both calls", async () => {
+  it("installs Treg, Executor, and custom MCP sources and routes their calls", async () => {
     const cookie = await signup(app, `mcp-connectors-${stamp}@rakazo.test`, "MCP Connectors");
     const actor = await rpc<Actor>(app, cookie, "me");
     const tregCredential = "fake-treg-credential-value";
@@ -305,9 +396,24 @@ describeWithDatabase("Composio catalog reconciliation", () => {
         config: { preset: "custom", auth: { type: "none" } },
       },
     );
+    const executorCredential = "fake-executor-credential-value";
+    const executor = await rpc<{ id: string; secretConfigured: boolean }>(
+      app,
+      cookie,
+      "capabilities/install",
+      {
+        kind: "mcp",
+        name: "Executor",
+        source: "https://executor.example.test/mcp",
+        credential: executorCredential,
+        config: { preset: "custom", auth: { type: "bearer" } },
+      },
+    );
     expect(treg.secretConfigured).toBe(true);
     expect(custom.secretConfigured).toBe(false);
+    expect(executor.secretConfigured).toBe(true);
     expect(JSON.stringify(treg)).not.toContain(tregCredential);
+    expect(JSON.stringify(executor)).not.toContain(executorCredential);
 
     const provider = new InstalledConnectorProvider(
       handles.prisma,
@@ -322,10 +428,10 @@ describeWithDatabase("Composio catalog reconciliation", () => {
       signal: new AbortController().signal,
     };
     const tools = await provider.discoverTools(context);
-    // Two installs expose the same MCP tool name, so approval kinds are disambiguated.
-    expect(tools.filter((tool) => tool.route?.toolName === "notes.write")).toHaveLength(2);
+    // All three installs expose the same MCP tool name, so approval kinds are disambiguated.
+    expect(tools.filter((tool) => tool.route?.toolName === "notes.write")).toHaveLength(3);
     expect(new Set(tools.map((tool) => tool.name)).size).toBe(tools.length);
-    for (const install of [treg, custom]) {
+    for (const install of [treg, executor, custom]) {
       const tool = tools.find((candidate) => candidate.route?.resourceId === install.id);
       expect(tool?.name).toBe(`installed__${install.id}__notes.write`);
       const events = [];
@@ -345,6 +451,15 @@ describeWithDatabase("Composio catalog reconciliation", () => {
     expect(thirdParties.records).toContainEqual(
       expect.objectContaining({ provider: "mcp", operation: "notes.write", host: "treg.to" }),
     );
+    expect(thirdParties.records).toContainEqual(
+      expect.objectContaining({
+        provider: "mcp",
+        operation: "notes.write",
+        host: "executor.example.test",
+        authenticated: true,
+      }),
+    );
+    expect(JSON.stringify(thirdParties.records)).not.toContain(executorCredential);
     expect(thirdParties.records).toContainEqual(
       expect.objectContaining({
         provider: "mcp",

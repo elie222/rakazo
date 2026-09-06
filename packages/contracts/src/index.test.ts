@@ -166,6 +166,10 @@ describe("contracts", () => {
     expect(appContract.threads.subscribe).toBeTruthy();
     expect(appContract.threads.clear).toBeTruthy();
     expect(appContract.voice.prepare).toBeTruthy();
+    expect(appContract.externalConversations.updatePolicy).toBeTruthy();
+    expect(appContract.agentSecrets.list).toBeTruthy();
+    expect(appContract.agentSecrets.put).toBeTruthy();
+    expect(appContract.agentSecrets.remove).toBeTruthy();
     expect(appContract.notifications.registerPush).toBeTruthy();
     expect(ProductEventType.options).toContain("thread.message.created");
     expect(ProductEventType.options).toContain("thread.cleared");
