@@ -6,9 +6,12 @@ import { I18nBootstrap } from "./components/I18nBootstrap";
 import { applyUiDirection } from "./lib/apply-ui-direction";
 import { markAfterPaint, markOnce } from "./lib/performance";
 import { installPreloadRecovery } from "./lib/preload-recovery";
+import { captureTaskDraft } from "./lib/task-draft";
 import { applyUiAppearance, watchSystemAppearance } from "./lib/ui-appearance";
 import { resolveUiLocale } from "./lib/ui-locale";
 import "./styles.css";
+
+captureTaskDraft(window.location.pathname, window.location.search);
 
 markOnce("rk:renderer:module-evaluated");
 installPreloadRecovery();

@@ -4,7 +4,7 @@ import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from "re
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { LoadingState } from "./components/ai/primitives";
 import { authClient } from "./lib/auth";
-import { useAuthCapabilities } from "./lib/auth-capabilities";
+import { safeLoginReturn, useAuthCapabilities } from "./lib/auth-capabilities";
 import { markAfterPaint, markOnce } from "./lib/performance";
 import {
   holdUnreachableGate,
@@ -12,6 +12,7 @@ import {
   sessionRetryDelayMs,
   showSessionUnavailable,
 } from "./lib/session-gate";
+import { captureTaskDraft } from "./lib/task-draft";
 import { McpOAuthCallbackPage } from "./pages/McpOAuthCallback";
 import { ShellPage } from "./pages/Shell";
 
@@ -31,6 +32,9 @@ const WelcomePage = lazy(() =>
 export function App() {
   const capabilities = useAuthCapabilities();
   const location = useLocation();
+  useEffect(() => {
+    captureTaskDraft(location.pathname, location.search);
+  }, [location.pathname, location.search]);
   const session = authClient.useSession();
   const gate = sessionGate(session);
   const [holdingUnreachable, setHoldingUnreachable] = useState(false);
@@ -80,7 +84,16 @@ export function App() {
           />
           <Route
             path="/login"
-            element={user ? <Navigate to="/app" replace /> : <AuthPage key="login" mode="in" />}
+            element={
+              user ? (
+                <Navigate
+                  to={safeLoginReturn(new URLSearchParams(location.search).get("next"))}
+                  replace
+                />
+              ) : (
+                <AuthPage key="login" mode="in" />
+              )
+            }
           />
           <Route
             path="/signup"

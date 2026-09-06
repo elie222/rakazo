@@ -9,6 +9,7 @@ import { Button, Input, NativeSelect, NativeSelectOption, Textarea } from "@raka
 import { Check } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useAuthCapabilities } from "../lib/auth-capabilities";
 import { localizedProviderHint } from "../lib/localized-provider-hint";
 import type { ModelCatalogEntry } from "../lib/model-auth";
 import { rpc } from "../lib/rpc";
@@ -17,6 +18,7 @@ import { useModelOAuthSignIn } from "../lib/use-model-oauth-signin";
 export function OnboardingPage() {
   const { t } = useLingui();
   const navigate = useNavigate();
+  const capabilities = useAuthCapabilities();
   const fieldId = useId();
   const [step, setStep] = useState<"loading" | "model" | "bot">("loading");
   const [catalog, setCatalog] = useState<ModelCatalogEntry[]>([]);
@@ -54,6 +56,7 @@ export function OnboardingPage() {
   });
 
   useEffect(() => {
+    if (!capabilities) return;
     void Promise.all([rpc.me(), rpc.models.list().catch(() => [])])
       .then(([me, models]) => {
         setCatalog(models);
@@ -68,13 +71,13 @@ export function OnboardingPage() {
           setProvider(preferred.provider);
           setModelId(preferred.provider === OPENAI_COMPATIBLE_PROVIDER_ID ? "" : preferred.id);
         }
-        setStep("model");
+        setStep(capabilities.provider === "convex-company-os" && !me.needsModel ? "bot" : "model");
       })
       .catch(() => setStep("bot"));
     return () => {
       probeRequestIdRef.current += 1;
     };
-  }, []);
+  }, [capabilities]);
 
   const providers = useMemo(() => {
     const seen = new Map<string, ModelCatalogEntry>();

@@ -117,6 +117,10 @@ msgstr "{workingBotName} 작업 중"
 msgid "@{0}"
 msgstr "@{0}"
 
+#: src/pages/Welcome.tsx:21
+msgid "A workforce on demand<0/>for your company."
+msgstr ""
+
 #: src/pages/McpServersOverlay.tsx:354
 msgid "Access token (optional)"
 msgstr "액세스 토큰(선택 사항)"
@@ -226,6 +230,10 @@ msgstr "Treg 추가"
 msgid "Add trigger"
 msgstr "트리거 추가"
 
+#: src/pages/WorkforceOverlay.tsx:344
+msgid "Add worker"
+msgstr ""
+
 #: src/pages/McpServersOverlay.tsx:415
 #: src/pages/PluginsOverlay.tsx:333
 #: src/pages/PluginsOverlay.tsx:396
@@ -251,6 +259,10 @@ msgstr "Agent 컴퓨터"
 #: src/pages/MessagingSettingsOverlay.tsx:255
 msgid "Agent connections"
 msgstr "Agent 연결"
+
+#: src/pages/WorkforceOverlay.tsx:243
+msgid "Agent key"
+msgstr ""
 
 #: src/pages/McpServersOverlay.tsx:385
 #: src/pages/McpServersOverlay.tsx:452
@@ -480,14 +492,14 @@ msgstr "{0}의 컴퓨터를 켜는 중"
 msgid "bot"
 msgstr "Bot"
 
-#: src/pages/Shell.tsx:1700
-msgid "Bot"
-msgstr "봇"
-
 #. js-lingui-explicit-id
 #: src/lib/browser-notifications.ts:71
 msgid "Bot"
 msgstr "Bot"
+
+#: src/pages/Shell.tsx:1726
+msgid "Bot"
+msgstr "봇"
 
 #: src/pages/Shell.tsx:3895
 msgid "Bot screen"
@@ -696,6 +708,10 @@ msgstr "계정 설정 닫기"
 msgid "Close voice settings"
 msgstr "음성 설정 닫기"
 
+#: src/pages/WorkforceOverlay.tsx:128
+msgid "Close workforce"
+msgstr ""
+
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx:39
 msgid "Cloud"
 msgstr "클라우드"
@@ -717,6 +733,14 @@ msgstr "준비 중"
 #: src/pages/McpServersOverlay.tsx:305
 msgid "Command"
 msgstr "실행 명령"
+
+#: src/pages/WorkforceOverlay.tsx:179
+msgid "Company OS assignments"
+msgstr ""
+
+#: src/pages/WorkforceOverlay.tsx:231
+msgid "Company OS endpoint"
+msgstr ""
 
 #: src/pages/ScratchpadSection.tsx:119
 msgid "Complete"
@@ -773,6 +797,10 @@ msgstr "비밀번호 확인"
 msgid "Connect"
 msgstr "연결"
 
+#: src/pages/WorkforceOverlay.tsx:224
+msgid "Connect a Company OS agent key with context read and write access. Its department permissions apply to every worker."
+msgstr ""
+
 #: src/pages/Onboarding.tsx:246
 msgid "Connect a model"
 msgstr "AI 모델 연결"
@@ -800,6 +828,10 @@ msgstr "이 AI 서비스를 연결하면 내 기본 모델로 사용할 수 있�
 #: src/pages/PluginsOverlay.tsx:497
 msgid "Connect Treg"
 msgstr "Treg 연결"
+
+#: src/pages/WorkforceOverlay.tsx:347
+msgid "Connect workforce"
+msgstr ""
 
 #: src/pages/McpOAuthCallback.tsx:54
 #: src/pages/MemorySettingsOverlay.tsx:184
@@ -848,6 +880,10 @@ msgstr "{0} 연결이 아직 진행 중입니다. 이 창을 닫고 나중에 �
 #: src/pages/Onboarding.tsx:619
 msgid "Continue"
 msgstr "계속"
+
+#: src/pages/Auth.tsx:120
+msgid "Continue with Company OS"
+msgstr ""
 
 #: src/pages/Auth.tsx:187
 msgid "Continue with email"
@@ -962,6 +998,10 @@ msgstr "기억 서비스 연결을 해제하지 못했습니다."
 msgid "Could not disconnect OAuth"
 msgstr "OAuth 연결을 해제하지 못했습니다."
 
+#: src/pages/shell/message-cards.tsx:48
+msgid "Could not dismiss"
+msgstr ""
+
 #. placeholder {0}: props.name
 #: src/components/ArtifactFileCard.tsx:36
 msgid "Could not download {0}. Try again."
@@ -1007,9 +1047,17 @@ msgstr "업데이트 상태를 불러올 수 없습니다"
 msgid "Could not load voice settings"
 msgstr "음성 설정을 불러오지 못했습니다."
 
+#: src/pages/WorkforceOverlay.tsx:64
+msgid "Could not load workforce"
+msgstr ""
+
 #: src/pages/VoiceSettingsOverlay.tsx:124
 msgid "Could not play a test clip"
 msgstr "샘플 음성을 재생하지 못했습니다."
+
+#: src/pages/Auth.tsx:135
+msgid "Could not reach sign-in. Reconnecting…"
+msgstr ""
 
 #: src/pages/AccountSettingsOverlay.tsx:293
 #: src/pages/Auth.tsx:91
@@ -1090,6 +1138,10 @@ msgstr "목소리를 저장하지 못했습니다."
 msgid "Could not save this choice"
 msgstr "선택 내용을 저장하지 못했습니다."
 
+#: src/pages/WorkforceOverlay.tsx:94
+msgid "Could not save workforce"
+msgstr ""
+
 #: src/pages/Auth.tsx:70
 msgid "Could not send reset email"
 msgstr "재설정 이메일을 보낼 수 없습니다"
@@ -1097,6 +1149,11 @@ msgstr "재설정 이메일을 보낼 수 없습니다"
 #: src/pages/CallView.tsx:113
 msgid "Could not send that"
 msgstr "메시지를 보내지 못했습니다."
+
+#: src/pages/Auth.tsx:110
+#: src/pages/Auth.tsx:114
+msgid "Could not start Company OS sign-in"
+msgstr ""
 
 #: src/pages/McpServersOverlay.tsx:194
 msgid "Could not start OAuth"
@@ -1134,6 +1191,10 @@ msgstr "반응을 업데이트할 수 없습니다"
 msgid "Could not update the default memory scope"
 msgstr "기본 기억 범위를 변경하지 못했습니다."
 
+#: src/pages/WorkforceOverlay.tsx:106
+msgid "Could not update workforce"
+msgstr ""
+
 #: src/pages/MessagingSettingsOverlay.tsx:47
 msgid "Couldn't load messaging settings"
 msgstr "메시징 설정을 불러올 수 없습니다"
@@ -1165,6 +1226,10 @@ msgstr "계정 만들기"
 msgid "Create group"
 msgstr "그룹 만들기"
 
+#: src/pages/shell/bot-picker.tsx:70
+msgid "Create new Bot"
+msgstr ""
+
 #: src/pages/RoutineEditor.tsx:114
 #: src/pages/RoutineEditor.tsx:115
 msgid "Create Routine"
@@ -1175,13 +1240,13 @@ msgstr "자동 실행 만들기"
 msgid "Create space"
 msgstr "스페이스 만들기"
 
+#: src/pages/Auth.tsx:31
+msgid "Create your Cadre"
+msgstr ""
+
 #: src/pages/Onboarding.tsx:578
 msgid "Create your first bot"
 msgstr "첫 Bot 만들기"
-
-#: src/pages/Auth.tsx:31
-msgid "Create your Rakazo"
-msgstr "Rakazo 계정 만들기"
 
 #: src/components/AskCard.tsx:21
 msgid "Created"
@@ -1334,6 +1399,10 @@ msgstr "오류 닫기"
 msgid "Dismissed. Reconnect anytime from MCP settings."
 msgstr "지금은 연결하지 않았습니다. MCP 설정에서 언제든 다시 연결할 수 있습니다."
 
+#: src/pages/WorkforceOverlay.tsx:153
+msgid "Dispatch enabled"
+msgstr ""
+
 #: src/pages/PluginsOverlay.tsx:509
 msgid "Display name"
 msgstr "표시 이름"
@@ -1389,6 +1458,10 @@ msgstr "수정 후 보내기"
 #: src/pages/BotContextMenu.tsx:123
 msgid "Edit Profile"
 msgstr "Bot 정보 수정"
+
+#: src/pages/WorkforceOverlay.tsx:211
+msgid "Edit workforce"
+msgstr ""
 
 #: src/pages/Auth.tsx:125
 msgid "Email"
@@ -1568,6 +1641,10 @@ msgstr "샘플 듣기"
 msgid "Hi, this is how I'll sound when I read replies out loud."
 msgstr "안녕하세요. 답변을 소리 내어 읽을 때 이런 목소리로 들립니다."
 
+#: src/pages/Shell.tsx:3062
+msgid "Hide bots"
+msgstr ""
+
 #: src/pages/Auth.tsx:162
 msgid "Hide password"
 msgstr "비밀번호 숨기기"
@@ -1627,6 +1704,10 @@ msgstr "인스턴스 API 키"
 #: src/pages/RoutineEditor.tsx:292
 msgid "Instruction"
 msgstr "실행할 내용"
+
+#: src/pages/WorkforceOverlay.tsx:308
+msgid "Instructions"
+msgstr ""
 
 #: src/pages/PluginsOverlay.tsx:247
 #: src/pages/Shell.tsx:2842
@@ -1692,6 +1773,10 @@ msgstr "언어"
 #: src/pages/MessagingSettingsOverlay.tsx:243
 msgid "Leave"
 msgstr "나가기"
+
+#: src/pages/WorkforceOverlay.tsx:252
+msgid "Leave blank to keep saved key"
+msgstr ""
 
 #: src/pages/AccountSettingsOverlay.tsx:380
 msgid "Light"
@@ -1815,8 +1900,8 @@ msgstr "기억 사용 범위"
 msgid "Mentions"
 msgstr "멘션"
 
-#: src/pages/Shell.tsx:4809
-#: src/pages/Shell.tsx:4923
+#. js-lingui-explicit-id
+#: src/lib/browser-notifications.ts:83
 msgid "Message"
 msgstr "메시지"
 
@@ -1862,6 +1947,11 @@ msgstr "최소"
 #: src/pages/WindowChrome.tsx:25
 msgid "Minimize"
 msgstr "최소화"
+
+#: src/pages/Shell.tsx:2568
+#: src/pages/Shell.tsx:2569
+msgid "Minimize bots"
+msgstr ""
 
 #: src/pages/RoutineSchedule.tsx:65
 msgid "minute"
@@ -1962,6 +2052,14 @@ msgstr "입력 필요"
 msgid "Needs takeover"
 msgstr "인수 필요"
 
+#: src/pages/Shell.tsx:3988
+msgid "Needs you"
+msgstr ""
+
+#: src/pages/WorkforceOverlay.tsx:154
+msgid "New assignments paused"
+msgstr ""
+
 #: src/pages/Shell.tsx:2476
 #: src/pages/shell/bot-panel.tsx:106
 msgid "New bot"
@@ -2009,6 +2107,10 @@ msgstr "인증 없음"
 
 #: src/pages/shell/command-palette.tsx:107
 msgid "No bots"
+msgstr ""
+
+#: src/pages/shell/bot-picker.tsx:59
+msgid "No bots match"
 msgstr ""
 
 #: src/pages/MessagingSettingsOverlay.tsx:140
@@ -2163,9 +2265,18 @@ msgstr "OpenAI 호환 서버 주소"
 msgid "Opened its thread."
 msgstr "대화가 만들어졌습니다."
 
+#: src/pages/Auth.tsx:120
+msgid "Opening Company OS…"
+msgstr ""
+
 #: src/App.tsx:179
 msgid "Opening your Space…"
 msgstr "작업공간을 여는 중…"
+
+#: src/pages/WorkforceOverlay.tsx:287
+#: src/pages/WorkforceOverlay.tsx:291
+msgid "OpenRouter model"
+msgstr ""
 
 #: src/pages/ModelSettingsOverlay.tsx:646
 #: src/pages/Onboarding.tsx:520
@@ -2242,6 +2353,10 @@ msgstr "서버의 OpenAI 호환 주소를 붙여넣으세요. 필요하면 Rakaz
 #: src/pages/VoiceSettingsOverlay.tsx:266
 msgid "Paste your API key"
 msgstr "API 키를 붙여넣으세요"
+
+#: src/pages/WorkforceOverlay.tsx:158
+msgid "Pause"
+msgstr ""
 
 #: src/pages/RoutineEditor.tsx:96
 msgid "Paused"
@@ -2383,6 +2498,10 @@ msgstr "좋아요 제거"
 msgid "Remove webhook"
 msgstr "웹훅 제거"
 
+#: src/pages/WorkforceOverlay.tsx:329
+msgid "Remove worker"
+msgstr ""
+
 #: src/pages/Shell.tsx:5283
 msgid "Removed with chat, computer, and memory."
 msgstr "대화, 컴퓨터, 기억과 함께 삭제되었습니다."
@@ -2419,6 +2538,10 @@ msgstr "답장"
 msgid "Replying to {replyName}"
 msgstr "{replyName}에게 답장"
 
+#: src/pages/WorkforceOverlay.tsx:198
+msgid "Requests from your Company OS work queue will appear here."
+msgstr ""
+
 #: src/components/ComputerMaintenanceActions.tsx:99
 msgid "Reset"
 msgstr "재설정"
@@ -2452,6 +2575,10 @@ msgstr "복원"
 #: src/components/ComputerMaintenanceActions.tsx:90
 msgid "Restore the last saved workspace. Unsaved work on the computer is lost."
 msgstr "마지막으로 저장된 작업 공간을 복원합니다. 컴퓨터에서 저장하지 않은 작업은 사라집니다."
+
+#: src/pages/WorkforceOverlay.tsx:158
+msgid "Resume"
+msgstr ""
 
 #: src/App.tsx:148
 msgid "Retry now"
@@ -2572,6 +2699,11 @@ msgstr ""
 msgid "Search models"
 msgstr "모델 검색"
 
+#: src/pages/shell/bot-picker.tsx:51
+#: src/pages/shell/bot-picker.tsx:52
+msgid "Search or create Bots"
+msgstr ""
+
 #: src/pages/ModelSettingsOverlay.tsx:360
 #: src/pages/ModelSettingsOverlay.tsx:366
 msgid "Search providers"
@@ -2669,6 +2801,10 @@ msgstr "함께 사용"
 msgid "Show all providers"
 msgstr ""
 
+#: src/pages/Shell.tsx:3062
+msgid "Show bots"
+msgstr ""
+
 #: src/pages/Shell.tsx:3156
 msgid "Show computer"
 msgstr "컴퓨터 보기"
@@ -2698,13 +2834,17 @@ msgid "Sign in"
 msgstr "로그인"
 
 #: src/pages/Auth.tsx:29
-msgid "Sign in to Rakazo"
-msgstr "Rakazo 로그인"
+msgid "Sign in to Cadre"
+msgstr ""
 
 #: src/pages/Auth.tsx:199
 #: src/pages/Welcome.tsx:32
 msgid "Sign up"
 msgstr "가입하기"
+
+#: src/pages/Auth.tsx:125
+msgid "Sign-in was not completed. Check your verified Company OS account and try again."
+msgstr ""
 
 #. placeholder {0}: skill.name
 #: src/pages/Shell.tsx:4630
@@ -2838,6 +2978,10 @@ msgstr ""
 msgid "Switching…"
 msgstr "전환 중…"
 
+#: src/pages/WorkforceOverlay.tsx:191
+msgid "Synced"
+msgstr ""
+
 #: src/pages/AccountSettingsOverlay.tsx:379
 msgid "System"
 msgstr "시스템"
@@ -2962,6 +3106,10 @@ msgstr "실행 시각"
 msgid "Title"
 msgstr "역할"
 
+#: src/pages/shell/bot-picker.tsx:46
+msgid "To:"
+msgstr ""
+
 #: src/pages/PluginsOverlay.tsx:592
 msgid "Tool sources"
 msgstr "도구 소스"
@@ -3063,6 +3211,10 @@ msgstr "확인 중…"
 msgid "Voice"
 msgstr "음성"
 
+#: src/pages/WorkforceOverlay.tsx:151
+msgid "Waiting for first sync"
+msgstr ""
+
 #: src/pages/ModelSettingsOverlay.tsx:590
 #: src/pages/ModelSettingsOverlay.tsx:612
 #: src/pages/Onboarding.tsx:476
@@ -3126,6 +3278,25 @@ msgstr "언제 사용할지"
 msgid "Where should bots run?"
 msgstr "Bot을 어디에서 실행할까요?"
 
+#. placeholder {0}: index + 1
+#: src/pages/WorkforceOverlay.tsx:264
+msgid "Worker {0}"
+msgstr ""
+
+#: src/pages/WorkforceOverlay.tsx:313
+msgid "Worker instructions"
+msgstr ""
+
+#: src/pages/WorkforceOverlay.tsx:271
+msgid "Worker name"
+msgstr ""
+
+#: src/pages/Shell.tsx:2955
+#: src/pages/WorkforceOverlay.tsx:125
+msgid "Workforce"
+msgstr ""
+
+
 #: src/pages/Auth.tsx:185
 #: src/pages/Auth.tsx:293
 #: src/pages/CallView.tsx:251
@@ -3149,6 +3320,10 @@ msgstr "이 창을 닫아도 됩니다."
 msgid "You have control"
 msgstr "직접 조작 중"
 
+#: src/pages/WorkforceOverlay.tsx:233
+msgid "Your Company OS connection supplies the permissions for these workers."
+msgstr ""
+
 #: src/pages/Auth.tsx:133
 msgid "Your email address"
 msgstr "이메일 주소"
@@ -3164,126 +3339,3 @@ msgstr "이름"
 #: src/pages/HostComputerPrompt.tsx:69
 msgid "Your OS will not ask for extra permission if you let bots run on {hostLabel}. They run as you."
 msgstr "{hostLabel}에서 실행하면 Bot이 내 계정 권한으로 동작하며 운영체제가 작업마다 별도 승인을 묻지 않습니다."
-
-#: src/pages/Welcome.tsx:21
-msgid "Your team of always-on agents<0/>that you can give real work to."
-msgstr "언제든 실제 작업을 맡길 수 있는<0/>나만의 Agent 팀"
-
-#: src/pages/Welcome.tsx:21
-msgid "A workforce on demand<0/>for your company."
-msgstr ""
-
-#: src/pages/WorkforceOverlay.tsx:344
-msgid "Add worker"
-msgstr ""
-
-#: src/pages/WorkforceOverlay.tsx:243
-msgid "Agent key"
-msgstr ""
-
-#: src/pages/WorkforceOverlay.tsx:128
-msgid "Close workforce"
-msgstr ""
-
-#: src/pages/WorkforceOverlay.tsx:179
-msgid "Company OS assignments"
-msgstr ""
-
-#: src/pages/WorkforceOverlay.tsx:231
-msgid "Company OS endpoint"
-msgstr ""
-
-#: src/pages/WorkforceOverlay.tsx:224
-msgid "Connect a Company OS agent key with context read and write access. Its department permissions apply to every worker."
-msgstr ""
-
-#: src/pages/WorkforceOverlay.tsx:347
-msgid "Connect workforce"
-msgstr ""
-
-#: src/pages/WorkforceOverlay.tsx:64
-msgid "Could not load workforce"
-msgstr ""
-
-#: src/pages/WorkforceOverlay.tsx:94
-msgid "Could not save workforce"
-msgstr ""
-
-#: src/pages/WorkforceOverlay.tsx:106
-msgid "Could not update workforce"
-msgstr ""
-
-#: src/pages/Auth.tsx:31
-msgid "Create your Cadre"
-msgstr ""
-
-#: src/pages/WorkforceOverlay.tsx:153
-msgid "Dispatch enabled"
-msgstr ""
-
-#: src/pages/WorkforceOverlay.tsx:211
-msgid "Edit workforce"
-msgstr ""
-
-#: src/pages/WorkforceOverlay.tsx:308
-msgid "Instructions"
-msgstr ""
-
-#: src/pages/WorkforceOverlay.tsx:252
-msgid "Leave blank to keep saved key"
-msgstr ""
-
-#: src/pages/WorkforceOverlay.tsx:154
-msgid "New assignments paused"
-msgstr ""
-
-#: src/pages/WorkforceOverlay.tsx:287
-#: src/pages/WorkforceOverlay.tsx:291
-msgid "OpenRouter model"
-msgstr ""
-
-#: src/pages/WorkforceOverlay.tsx:158
-msgid "Pause"
-msgstr ""
-
-#: src/pages/WorkforceOverlay.tsx:329
-msgid "Remove worker"
-msgstr ""
-
-#: src/pages/WorkforceOverlay.tsx:198
-msgid "Requests from your Company OS work queue will appear here."
-msgstr ""
-
-#: src/pages/WorkforceOverlay.tsx:158
-msgid "Resume"
-msgstr ""
-
-#: src/pages/Auth.tsx:29
-msgid "Sign in to Cadre"
-msgstr ""
-
-#: src/pages/WorkforceOverlay.tsx:191
-msgid "Synced"
-msgstr ""
-
-#: src/pages/WorkforceOverlay.tsx:151
-msgid "Waiting for first sync"
-msgstr ""
-
-#. placeholder {0}: index + 1
-#: src/pages/WorkforceOverlay.tsx:264
-msgid "Worker {0}"
-msgstr ""
-
-#: src/pages/WorkforceOverlay.tsx:313
-msgid "Worker instructions"
-msgstr ""
-
-#: src/pages/WorkforceOverlay.tsx:271
-msgid "Worker name"
-msgstr ""
-
-#: src/pages/Shell.tsx:2955
-#: src/pages/WorkforceOverlay.tsx:125
-msgid "Workforce"
-msgstr ""

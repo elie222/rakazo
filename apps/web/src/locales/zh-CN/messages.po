@@ -117,6 +117,10 @@ msgstr "{workingBotName} 正在工作"
 msgid "@{0}"
 msgstr "@{0}"
 
+#: src/pages/Welcome.tsx:21
+msgid "A workforce on demand<0/>for your company."
+msgstr ""
+
 #: src/pages/McpServersOverlay.tsx:354
 msgid "Access token (optional)"
 msgstr "访问令牌（可选）"
@@ -226,6 +230,10 @@ msgstr "添加 Treg"
 msgid "Add trigger"
 msgstr "添加触发器"
 
+#: src/pages/WorkforceOverlay.tsx:344
+msgid "Add worker"
+msgstr ""
+
 #: src/pages/McpServersOverlay.tsx:415
 #: src/pages/PluginsOverlay.tsx:333
 #: src/pages/PluginsOverlay.tsx:396
@@ -251,6 +259,10 @@ msgstr "Agent 电脑"
 #: src/pages/MessagingSettingsOverlay.tsx:255
 msgid "Agent connections"
 msgstr "Agent 连接"
+
+#: src/pages/WorkforceOverlay.tsx:243
+msgid "Agent key"
+msgstr ""
 
 #: src/pages/McpServersOverlay.tsx:385
 #: src/pages/McpServersOverlay.tsx:452
@@ -480,7 +492,8 @@ msgstr "正在启动 {0} 的电脑"
 msgid "bot"
 msgstr "Bot"
 
-#: src/pages/Shell.tsx:1700
+#. js-lingui-explicit-id
+#: src/lib/browser-notifications.ts:71
 msgid "Bot"
 msgstr "Bot"
 
@@ -696,6 +709,10 @@ msgstr "关闭用户设置"
 msgid "Close voice settings"
 msgstr "关闭语音设置"
 
+#: src/pages/WorkforceOverlay.tsx:128
+msgid "Close workforce"
+msgstr ""
+
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx:39
 msgid "Cloud"
 msgstr "云端"
@@ -717,6 +734,14 @@ msgstr "即将推出"
 #: src/pages/McpServersOverlay.tsx:305
 msgid "Command"
 msgstr "命令"
+
+#: src/pages/WorkforceOverlay.tsx:179
+msgid "Company OS assignments"
+msgstr ""
+
+#: src/pages/WorkforceOverlay.tsx:231
+msgid "Company OS endpoint"
+msgstr ""
 
 #: src/pages/ScratchpadSection.tsx:119
 msgid "Complete"
@@ -773,6 +798,10 @@ msgstr "确认密码"
 msgid "Connect"
 msgstr "连接"
 
+#: src/pages/WorkforceOverlay.tsx:224
+msgid "Connect a Company OS agent key with context read and write access. Its department permissions apply to every worker."
+msgstr ""
+
 #: src/pages/Onboarding.tsx:246
 msgid "Connect a model"
 msgstr "连接模型"
@@ -800,6 +829,10 @@ msgstr "连接此提供方，作为你的个人模型。"
 #: src/pages/PluginsOverlay.tsx:497
 msgid "Connect Treg"
 msgstr "连接 Treg"
+
+#: src/pages/WorkforceOverlay.tsx:347
+msgid "Connect workforce"
+msgstr ""
 
 #: src/pages/McpOAuthCallback.tsx:54
 #: src/pages/MemorySettingsOverlay.tsx:184
@@ -848,6 +881,10 @@ msgstr "与 {0} 的连接仍在等待。可以关闭此窗口稍后再看。"
 #: src/pages/Onboarding.tsx:619
 msgid "Continue"
 msgstr "继续"
+
+#: src/pages/Auth.tsx:120
+msgid "Continue with Company OS"
+msgstr ""
 
 #: src/pages/Auth.tsx:187
 msgid "Continue with email"
@@ -962,6 +999,10 @@ msgstr "无法断开记忆提供方"
 msgid "Could not disconnect OAuth"
 msgstr "无法断开 OAuth"
 
+#: src/pages/shell/message-cards.tsx:48
+msgid "Could not dismiss"
+msgstr ""
+
 #. placeholder {0}: props.name
 #: src/components/ArtifactFileCard.tsx:36
 msgid "Could not download {0}. Try again."
@@ -1007,9 +1048,17 @@ msgstr "无法加载更新状态"
 msgid "Could not load voice settings"
 msgstr "无法加载语音设置"
 
+#: src/pages/WorkforceOverlay.tsx:64
+msgid "Could not load workforce"
+msgstr ""
+
 #: src/pages/VoiceSettingsOverlay.tsx:124
 msgid "Could not play a test clip"
 msgstr "无法播放测试片段"
+
+#: src/pages/Auth.tsx:135
+msgid "Could not reach sign-in. Reconnecting…"
+msgstr ""
 
 #: src/pages/AccountSettingsOverlay.tsx:293
 #: src/pages/Auth.tsx:91
@@ -1090,6 +1139,10 @@ msgstr "无法保存该语音"
 msgid "Could not save this choice"
 msgstr "无法保存此选择"
 
+#: src/pages/WorkforceOverlay.tsx:94
+msgid "Could not save workforce"
+msgstr ""
+
 #: src/pages/Auth.tsx:70
 msgid "Could not send reset email"
 msgstr "无法发送重置邮件"
@@ -1097,6 +1150,11 @@ msgstr "无法发送重置邮件"
 #: src/pages/CallView.tsx:113
 msgid "Could not send that"
 msgstr "无法发送"
+
+#: src/pages/Auth.tsx:110
+#: src/pages/Auth.tsx:114
+msgid "Could not start Company OS sign-in"
+msgstr ""
 
 #: src/pages/McpServersOverlay.tsx:194
 msgid "Could not start OAuth"
@@ -1134,6 +1192,10 @@ msgstr "无法更新反应"
 msgid "Could not update the default memory scope"
 msgstr "无法更新默认记忆范围"
 
+#: src/pages/WorkforceOverlay.tsx:106
+msgid "Could not update workforce"
+msgstr ""
+
 #: src/pages/MessagingSettingsOverlay.tsx:47
 msgid "Couldn't load messaging settings"
 msgstr "无法加载消息设置"
@@ -1165,6 +1227,10 @@ msgstr "创建账户"
 msgid "Create group"
 msgstr "创建群组"
 
+#: src/pages/shell/bot-picker.tsx:70
+msgid "Create new Bot"
+msgstr ""
+
 #: src/pages/RoutineEditor.tsx:114
 #: src/pages/RoutineEditor.tsx:115
 msgid "Create Routine"
@@ -1175,13 +1241,13 @@ msgstr ""
 msgid "Create space"
 msgstr "创建工作区"
 
+#: src/pages/Auth.tsx:31
+msgid "Create your Cadre"
+msgstr ""
+
 #: src/pages/Onboarding.tsx:578
 msgid "Create your first bot"
 msgstr "创建你的第一个 Bot"
-
-#: src/pages/Auth.tsx:31
-msgid "Create your Rakazo"
-msgstr "创建你的 Rakazo"
 
 #: src/components/AskCard.tsx:21
 msgid "Created"
@@ -1334,6 +1400,10 @@ msgstr "关闭错误"
 msgid "Dismissed. Reconnect anytime from MCP settings."
 msgstr "已关闭，可随时在 MCP 设置中重新连接。"
 
+#: src/pages/WorkforceOverlay.tsx:153
+msgid "Dispatch enabled"
+msgstr ""
+
 #: src/pages/PluginsOverlay.tsx:509
 msgid "Display name"
 msgstr "显示名称"
@@ -1389,6 +1459,10 @@ msgstr "先编辑"
 #: src/pages/BotContextMenu.tsx:123
 msgid "Edit Profile"
 msgstr "编辑资料"
+
+#: src/pages/WorkforceOverlay.tsx:211
+msgid "Edit workforce"
+msgstr ""
 
 #: src/pages/Auth.tsx:125
 msgid "Email"
@@ -1568,6 +1642,10 @@ msgstr "试听"
 msgid "Hi, this is how I'll sound when I read replies out loud."
 msgstr "你好，这是我朗读回复时的声音。"
 
+#: src/pages/Shell.tsx:3062
+msgid "Hide bots"
+msgstr ""
+
 #: src/pages/Auth.tsx:162
 msgid "Hide password"
 msgstr "隐藏密码"
@@ -1627,6 +1705,10 @@ msgstr "实例 API 密钥"
 #: src/pages/RoutineEditor.tsx:292
 msgid "Instruction"
 msgstr "指令"
+
+#: src/pages/WorkforceOverlay.tsx:308
+msgid "Instructions"
+msgstr ""
 
 #: src/pages/PluginsOverlay.tsx:247
 #: src/pages/Shell.tsx:2842
@@ -1692,6 +1774,10 @@ msgstr "语言"
 #: src/pages/MessagingSettingsOverlay.tsx:243
 msgid "Leave"
 msgstr "退出"
+
+#: src/pages/WorkforceOverlay.tsx:252
+msgid "Leave blank to keep saved key"
+msgstr ""
 
 #: src/pages/AccountSettingsOverlay.tsx:380
 msgid "Light"
@@ -1815,8 +1901,8 @@ msgstr "记忆范围"
 msgid "Mentions"
 msgstr "提及"
 
-#: src/pages/Shell.tsx:4809
-#: src/pages/Shell.tsx:4923
+#. js-lingui-explicit-id
+#: src/lib/browser-notifications.ts:83
 msgid "Message"
 msgstr "消息"
 
@@ -1862,6 +1948,11 @@ msgstr "最低"
 #: src/pages/WindowChrome.tsx:25
 msgid "Minimize"
 msgstr "最小化"
+
+#: src/pages/Shell.tsx:2568
+#: src/pages/Shell.tsx:2569
+msgid "Minimize bots"
+msgstr ""
 
 #: src/pages/RoutineSchedule.tsx:65
 msgid "minute"
@@ -1962,6 +2053,14 @@ msgstr "需要输入"
 msgid "Needs takeover"
 msgstr "需要接管"
 
+#: src/pages/Shell.tsx:3988
+msgid "Needs you"
+msgstr ""
+
+#: src/pages/WorkforceOverlay.tsx:154
+msgid "New assignments paused"
+msgstr ""
+
 #: src/pages/Shell.tsx:2476
 #: src/pages/shell/bot-panel.tsx:106
 msgid "New bot"
@@ -2009,6 +2108,10 @@ msgstr "无认证"
 
 #: src/pages/shell/command-palette.tsx:107
 msgid "No bots"
+msgstr ""
+
+#: src/pages/shell/bot-picker.tsx:59
+msgid "No bots match"
 msgstr ""
 
 #: src/pages/MessagingSettingsOverlay.tsx:140
@@ -2163,9 +2266,18 @@ msgstr "OpenAI 兼容服务器 URL"
 msgid "Opened its thread."
 msgstr "已打开其对话。"
 
+#: src/pages/Auth.tsx:120
+msgid "Opening Company OS…"
+msgstr ""
+
 #: src/App.tsx:179
 msgid "Opening your Space…"
 msgstr "正在打开工作区…"
+
+#: src/pages/WorkforceOverlay.tsx:287
+#: src/pages/WorkforceOverlay.tsx:291
+msgid "OpenRouter model"
+msgstr ""
 
 #: src/pages/ModelSettingsOverlay.tsx:646
 #: src/pages/Onboarding.tsx:520
@@ -2242,6 +2354,10 @@ msgstr "粘贴服务器的 OpenAI 兼容地址。需要时 Rakazo 会补上 /v1�
 #: src/pages/VoiceSettingsOverlay.tsx:266
 msgid "Paste your API key"
 msgstr "粘贴你的 API 密钥"
+
+#: src/pages/WorkforceOverlay.tsx:158
+msgid "Pause"
+msgstr ""
 
 #: src/pages/RoutineEditor.tsx:96
 msgid "Paused"
@@ -2383,6 +2499,10 @@ msgstr "取消点赞"
 msgid "Remove webhook"
 msgstr "移除 Webhook"
 
+#: src/pages/WorkforceOverlay.tsx:329
+msgid "Remove worker"
+msgstr ""
+
 #: src/pages/Shell.tsx:5283
 msgid "Removed with chat, computer, and memory."
 msgstr "已连同对话、电脑和记忆一起移除。"
@@ -2419,6 +2539,10 @@ msgstr "回复"
 msgid "Replying to {replyName}"
 msgstr "正在回复 {replyName}"
 
+#: src/pages/WorkforceOverlay.tsx:198
+msgid "Requests from your Company OS work queue will appear here."
+msgstr ""
+
 #: src/components/ComputerMaintenanceActions.tsx:99
 msgid "Reset"
 msgstr "重置"
@@ -2452,6 +2576,10 @@ msgstr "恢复"
 #: src/components/ComputerMaintenanceActions.tsx:90
 msgid "Restore the last saved workspace. Unsaved work on the computer is lost."
 msgstr "还原上次保存的工作区。电脑上未保存的工作会丢失。"
+
+#: src/pages/WorkforceOverlay.tsx:158
+msgid "Resume"
+msgstr ""
 
 #: src/App.tsx:148
 msgid "Retry now"
@@ -2572,6 +2700,11 @@ msgstr ""
 msgid "Search models"
 msgstr "搜索模型"
 
+#: src/pages/shell/bot-picker.tsx:51
+#: src/pages/shell/bot-picker.tsx:52
+msgid "Search or create Bots"
+msgstr ""
+
 #: src/pages/ModelSettingsOverlay.tsx:360
 #: src/pages/ModelSettingsOverlay.tsx:366
 msgid "Search providers"
@@ -2669,6 +2802,10 @@ msgstr "共享"
 msgid "Show all providers"
 msgstr ""
 
+#: src/pages/Shell.tsx:3062
+msgid "Show bots"
+msgstr ""
+
 #: src/pages/Shell.tsx:3156
 msgid "Show computer"
 msgstr "显示电脑"
@@ -2698,13 +2835,17 @@ msgid "Sign in"
 msgstr "登录"
 
 #: src/pages/Auth.tsx:29
-msgid "Sign in to Rakazo"
-msgstr "登录 Rakazo"
+msgid "Sign in to Cadre"
+msgstr ""
 
 #: src/pages/Auth.tsx:199
 #: src/pages/Welcome.tsx:32
 msgid "Sign up"
 msgstr "注册"
+
+#: src/pages/Auth.tsx:125
+msgid "Sign-in was not completed. Check your verified Company OS account and try again."
+msgstr ""
 
 #. placeholder {0}: skill.name
 #: src/pages/Shell.tsx:4630
@@ -2838,6 +2979,10 @@ msgstr ""
 msgid "Switching…"
 msgstr "正在切换…"
 
+#: src/pages/WorkforceOverlay.tsx:191
+msgid "Synced"
+msgstr ""
+
 #: src/pages/AccountSettingsOverlay.tsx:379
 msgid "System"
 msgstr "系统"
@@ -2962,6 +3107,10 @@ msgstr "时间"
 msgid "Title"
 msgstr "标题"
 
+#: src/pages/shell/bot-picker.tsx:46
+msgid "To:"
+msgstr ""
+
 #: src/pages/PluginsOverlay.tsx:592
 msgid "Tool sources"
 msgstr "工具源"
@@ -3063,6 +3212,10 @@ msgstr "正在校验…"
 msgid "Voice"
 msgstr "语音"
 
+#: src/pages/WorkforceOverlay.tsx:151
+msgid "Waiting for first sync"
+msgstr ""
+
 #: src/pages/ModelSettingsOverlay.tsx:590
 #: src/pages/ModelSettingsOverlay.tsx:612
 #: src/pages/Onboarding.tsx:476
@@ -3126,6 +3279,25 @@ msgstr "何时使用"
 msgid "Where should bots run?"
 msgstr "Bot 应在哪里运行？"
 
+#. placeholder {0}: index + 1
+#: src/pages/WorkforceOverlay.tsx:264
+msgid "Worker {0}"
+msgstr ""
+
+#: src/pages/WorkforceOverlay.tsx:313
+msgid "Worker instructions"
+msgstr ""
+
+#: src/pages/WorkforceOverlay.tsx:271
+msgid "Worker name"
+msgstr ""
+
+#: src/pages/Shell.tsx:2955
+#: src/pages/WorkforceOverlay.tsx:125
+msgid "Workforce"
+msgstr ""
+
+
 #: src/pages/Auth.tsx:185
 #: src/pages/Auth.tsx:293
 #: src/pages/CallView.tsx:251
@@ -3149,6 +3321,10 @@ msgstr "可以关闭此窗口。"
 msgid "You have control"
 msgstr "你已接管"
 
+#: src/pages/WorkforceOverlay.tsx:233
+msgid "Your Company OS connection supplies the permissions for these workers."
+msgstr ""
+
 #: src/pages/Auth.tsx:133
 msgid "Your email address"
 msgstr "你的邮箱"
@@ -3164,126 +3340,3 @@ msgstr "你的名字"
 #: src/pages/HostComputerPrompt.tsx:69
 msgid "Your OS will not ask for extra permission if you let bots run on {hostLabel}. They run as you."
 msgstr "若让 Bot 在 {hostLabel} 上运行，它们会使用你的账户权限，系统不会再逐项询问。"
-
-#: src/pages/Welcome.tsx:21
-msgid "Your team of always-on agents<0/>that you can give real work to."
-msgstr "你的一支随时在线的 Agent 团队<0/>可以交给它们真正的工作。"
-
-#: src/pages/Welcome.tsx:21
-msgid "A workforce on demand<0/>for your company."
-msgstr ""
-
-#: src/pages/WorkforceOverlay.tsx:344
-msgid "Add worker"
-msgstr ""
-
-#: src/pages/WorkforceOverlay.tsx:243
-msgid "Agent key"
-msgstr ""
-
-#: src/pages/WorkforceOverlay.tsx:128
-msgid "Close workforce"
-msgstr ""
-
-#: src/pages/WorkforceOverlay.tsx:179
-msgid "Company OS assignments"
-msgstr ""
-
-#: src/pages/WorkforceOverlay.tsx:231
-msgid "Company OS endpoint"
-msgstr ""
-
-#: src/pages/WorkforceOverlay.tsx:224
-msgid "Connect a Company OS agent key with context read and write access. Its department permissions apply to every worker."
-msgstr ""
-
-#: src/pages/WorkforceOverlay.tsx:347
-msgid "Connect workforce"
-msgstr ""
-
-#: src/pages/WorkforceOverlay.tsx:64
-msgid "Could not load workforce"
-msgstr ""
-
-#: src/pages/WorkforceOverlay.tsx:94
-msgid "Could not save workforce"
-msgstr ""
-
-#: src/pages/WorkforceOverlay.tsx:106
-msgid "Could not update workforce"
-msgstr ""
-
-#: src/pages/Auth.tsx:31
-msgid "Create your Cadre"
-msgstr ""
-
-#: src/pages/WorkforceOverlay.tsx:153
-msgid "Dispatch enabled"
-msgstr ""
-
-#: src/pages/WorkforceOverlay.tsx:211
-msgid "Edit workforce"
-msgstr ""
-
-#: src/pages/WorkforceOverlay.tsx:308
-msgid "Instructions"
-msgstr ""
-
-#: src/pages/WorkforceOverlay.tsx:252
-msgid "Leave blank to keep saved key"
-msgstr ""
-
-#: src/pages/WorkforceOverlay.tsx:154
-msgid "New assignments paused"
-msgstr ""
-
-#: src/pages/WorkforceOverlay.tsx:287
-#: src/pages/WorkforceOverlay.tsx:291
-msgid "OpenRouter model"
-msgstr ""
-
-#: src/pages/WorkforceOverlay.tsx:158
-msgid "Pause"
-msgstr ""
-
-#: src/pages/WorkforceOverlay.tsx:329
-msgid "Remove worker"
-msgstr ""
-
-#: src/pages/WorkforceOverlay.tsx:198
-msgid "Requests from your Company OS work queue will appear here."
-msgstr ""
-
-#: src/pages/WorkforceOverlay.tsx:158
-msgid "Resume"
-msgstr ""
-
-#: src/pages/Auth.tsx:29
-msgid "Sign in to Cadre"
-msgstr ""
-
-#: src/pages/WorkforceOverlay.tsx:191
-msgid "Synced"
-msgstr ""
-
-#: src/pages/WorkforceOverlay.tsx:151
-msgid "Waiting for first sync"
-msgstr ""
-
-#. placeholder {0}: index + 1
-#: src/pages/WorkforceOverlay.tsx:264
-msgid "Worker {0}"
-msgstr ""
-
-#: src/pages/WorkforceOverlay.tsx:313
-msgid "Worker instructions"
-msgstr ""
-
-#: src/pages/WorkforceOverlay.tsx:271
-msgid "Worker name"
-msgstr ""
-
-#: src/pages/Shell.tsx:2955
-#: src/pages/WorkforceOverlay.tsx:125
-msgid "Workforce"
-msgstr ""

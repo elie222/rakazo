@@ -149,6 +149,7 @@ import { isFileDrag, revokePendingAttachmentPreviews } from "../lib/pending-atta
 import { markAfterPaint, markOnce } from "../lib/performance";
 import { clearSpaceSelection, rpc, selectedSpaceId, selectSpace } from "../lib/rpc";
 import { readSeenRunErrorIds, rememberSeenRunErrorId } from "../lib/run-error-storage";
+import { clearTaskDraft, readTaskDraft } from "../lib/task-draft";
 import {
   activeThreadRuns,
   applyThreadSendReceipt,
@@ -430,6 +431,9 @@ export function ShellPage() {
     useState<ReadonlySet<string>>(readSeenRunErrorIds);
   const [menuOpen, setMenuOpen] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [desktopLayout, setDesktopLayout] = useState(
+    () => window.matchMedia("(min-width: 768px)").matches,
+  );
   const [draggedBotId, setDraggedBotId] = useState<string | null>(null);
   const [createMenuOpen, setCreateMenuOpen] = useState(false);
   const [botsSidebarCollapsed, setBotsSidebarCollapsed] = useState(false);
@@ -445,6 +449,7 @@ export function ShellPage() {
   useEffect(() => {
     const desktop = window.matchMedia("(min-width: 768px)");
     function closeMobileSidebar() {
+      setDesktopLayout(desktop.matches);
       if (desktop.matches) setMobileSidebarOpen(false);
     }
     closeMobileSidebar();
@@ -2254,6 +2259,7 @@ export function ShellPage() {
       current.some((item) => item.id === bot.id) ? current : [bot, ...current],
     );
     navigate(`/app/${bot.id}`);
+    setMobileSidebarOpen(false);
     setPanel(null);
     // Register cancellation before awaiting start so leaving the bot during
     // startup cannot miss the abort and still schedule a late focus card.
@@ -2525,7 +2531,7 @@ export function ShellPage() {
       <aside
         data-testid="bots-sidebar"
         data-collapsed={botsSidebarCollapsed ? "true" : "false"}
-        inert={botsSidebarCollapsed && !mobileSidebarOpen ? true : undefined}
+        inert={desktopLayout ? botsSidebarCollapsed : !mobileSidebarOpen}
         className={`absolute inset-y-0 start-0 z-40 flex w-[calc(100%-48px)] max-w-[316px] shrink-0 flex-col border-e border-sidebar-border bg-sidebar transition-[transform,width,opacity] md:static md:z-auto md:translate-x-0 ${
           mobileSidebarOpen ? "translate-x-0" : "-translate-x-full rtl:translate-x-full"
         } ${
@@ -3105,7 +3111,7 @@ export function ShellPage() {
               type="button"
               aria-label={t`Open navigation`}
               onClick={() => setMobileSidebarOpen(true)}
-              className="app-no-drag grid h-8 w-8 shrink-0 place-items-center rounded-lg text-foreground/75 hover:bg-accent md:hidden"
+              className="app-no-drag grid h-10 w-10 shrink-0 place-items-center rounded-full text-foreground/75 hover:bg-accent md:hidden"
             >
               <Menu size={19} strokeWidth={1.7} />
             </button>
@@ -3151,7 +3157,7 @@ export function ShellPage() {
                   setCallOpen(true);
                 }}
                 data-active={callOpen ? "" : undefined}
-                className="app-no-drag grid h-[30px] w-[34px] place-items-center rounded-[9px] hover:bg-accent data-active:bg-accent"
+                className="app-no-drag grid h-10 w-10 place-items-center rounded-full hover:bg-accent data-active:bg-accent"
               >
                 <Phone size={16} strokeWidth={1.6} className="text-foreground/75" />
               </button>
@@ -3169,7 +3175,7 @@ export function ShellPage() {
                   }
                 }}
                 data-active={panel ? "" : undefined}
-                className="app-no-drag grid h-[30px] w-[34px] place-items-center rounded-[9px] hover:bg-accent data-active:bg-accent"
+                className="app-no-drag grid h-10 w-10 place-items-center rounded-full hover:bg-accent data-active:bg-accent"
               >
                 <Monitor size={18} strokeWidth={1.6} className="text-foreground/75" />
               </button>
@@ -4423,7 +4429,10 @@ const Composer = memo(function Composer({
   onDictateStop: () => void;
 }) {
   const { t } = useLingui();
-  const [draft, setDraft] = useState("");
+  const [draft, setDraft] = useState(readTaskDraft);
+  useEffect(() => {
+    if (activeName) clearTaskDraft();
+  }, [activeName]);
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [mentionHighlightIndex, setMentionHighlightIndex] = useState(0);
   const [slashQuery, setSlashQuery] = useState<string | null>(null);
@@ -4828,7 +4837,7 @@ const Composer = memo(function Composer({
       ) : null}
       <div
         data-testid="composer-bar"
-        className="flex items-center gap-3.5 rounded-full border border-border bg-background py-[9px] pe-2.5 ps-3"
+        className="flex flex-wrap items-center gap-2 rounded-3xl border border-border bg-background py-[9px] pe-2.5 ps-3 sm:flex-nowrap sm:gap-3.5 sm:rounded-full"
       >
         <input
           ref={fileInputRef}
@@ -4874,7 +4883,7 @@ const Composer = memo(function Composer({
         >
           <Mic size={16} strokeWidth={1.8} />
         </Button>
-        <div className="flex min-w-0 flex-1 flex-wrap items-end gap-1.5">
+        <div className="order-first flex min-w-0 flex-1 basis-full flex-wrap items-end gap-1.5 px-2 sm:order-none sm:basis-auto sm:px-0">
           {selectedSkill ? (
             <span
               data-testid="skill-chip"
@@ -4984,7 +4993,7 @@ const Composer = memo(function Composer({
             autoComplete="off"
             dir="auto"
             rows={1}
-            className="max-h-32 min-h-[24px] min-w-[8rem] flex-1 resize-none overflow-y-auto bg-transparent py-0.5 text-[15.5px] leading-6 text-foreground outline-none placeholder:text-muted-foreground disabled:opacity-40"
+            className="max-h-32 min-h-[24px] min-w-0 sm:min-w-[8rem] flex-1 resize-none overflow-y-auto bg-transparent py-0.5 text-base sm:text-[15.5px] leading-6 text-foreground outline-none placeholder:text-muted-foreground disabled:opacity-40"
           />
         </div>
         {running ? (
@@ -4994,7 +5003,7 @@ const Composer = memo(function Composer({
               aria-label={t`Send`}
               disabled={sending || !canSend || disabled}
               onClick={send}
-              className="size-10 rounded-full"
+              className="ms-auto size-10 rounded-full"
             >
               <ArrowUp size={18} strokeWidth={2} />
             </Button>
@@ -5015,7 +5024,7 @@ const Composer = memo(function Composer({
             aria-label={t`Send`}
             disabled={sending || !canSend || disabled}
             onClick={send}
-            className="size-9 rounded-full"
+            className="ms-auto size-9 rounded-full"
           >
             <ArrowUp size={18} strokeWidth={2} />
           </Button>
@@ -5589,7 +5598,7 @@ const MessageView = memo(function MessageView({
           return (
             <div
               key={i}
-              className="w-[340px] rounded-[18px] border border-border bg-muted px-[18px] py-4"
+              className="w-[min(340px,100%)] rounded-[18px] border border-border bg-muted px-[18px] py-4"
             >
               <div className="flex items-center justify-between">
                 <span className="text-[15px] font-medium text-foreground">

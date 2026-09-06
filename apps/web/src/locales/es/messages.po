@@ -117,6 +117,10 @@ msgstr "{workingBotName} está trabajando"
 msgid "@{0}"
 msgstr "@{0}"
 
+#: src/pages/Welcome.tsx:21
+msgid "A workforce on demand<0/>for your company."
+msgstr ""
+
 #: src/pages/McpServersOverlay.tsx:354
 msgid "Access token (optional)"
 msgstr "Token de acceso (opcional)"
@@ -226,6 +230,10 @@ msgstr "Agregar Treg"
 msgid "Add trigger"
 msgstr "Agregar disparador"
 
+#: src/pages/WorkforceOverlay.tsx:344
+msgid "Add worker"
+msgstr ""
+
 #: src/pages/McpServersOverlay.tsx:415
 #: src/pages/PluginsOverlay.tsx:333
 #: src/pages/PluginsOverlay.tsx:396
@@ -251,6 +259,10 @@ msgstr "Computadora del agente"
 #: src/pages/MessagingSettingsOverlay.tsx:255
 msgid "Agent connections"
 msgstr "Conexiones de agentes"
+
+#: src/pages/WorkforceOverlay.tsx:243
+msgid "Agent key"
+msgstr ""
 
 #: src/pages/McpServersOverlay.tsx:385
 #: src/pages/McpServersOverlay.tsx:452
@@ -480,7 +492,8 @@ msgstr "Iniciando la computadora de {0}"
 msgid "bot"
 msgstr "bot"
 
-#: src/pages/Shell.tsx:1700
+#. js-lingui-explicit-id
+#: src/lib/browser-notifications.ts:71
 msgid "Bot"
 msgstr "Bot"
 
@@ -696,6 +709,10 @@ msgstr "Cerrar configuración de usuario"
 msgid "Close voice settings"
 msgstr "Cerrar configuración de voz"
 
+#: src/pages/WorkforceOverlay.tsx:128
+msgid "Close workforce"
+msgstr ""
+
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx:39
 msgid "Cloud"
 msgstr "Nube"
@@ -717,6 +734,14 @@ msgstr "Próximamente"
 #: src/pages/McpServersOverlay.tsx:305
 msgid "Command"
 msgstr "Comando"
+
+#: src/pages/WorkforceOverlay.tsx:179
+msgid "Company OS assignments"
+msgstr ""
+
+#: src/pages/WorkforceOverlay.tsx:231
+msgid "Company OS endpoint"
+msgstr ""
 
 #: src/pages/ScratchpadSection.tsx:119
 msgid "Complete"
@@ -773,6 +798,10 @@ msgstr "Confirmar contraseña"
 msgid "Connect"
 msgstr "Conectar"
 
+#: src/pages/WorkforceOverlay.tsx:224
+msgid "Connect a Company OS agent key with context read and write access. Its department permissions apply to every worker."
+msgstr ""
+
 #: src/pages/Onboarding.tsx:246
 msgid "Connect a model"
 msgstr "Conectar un modelo"
@@ -800,6 +829,10 @@ msgstr "Conecta este proveedor para usarlo como tu modelo personal."
 #: src/pages/PluginsOverlay.tsx:497
 msgid "Connect Treg"
 msgstr "Conectar Treg"
+
+#: src/pages/WorkforceOverlay.tsx:347
+msgid "Connect workforce"
+msgstr ""
 
 #: src/pages/McpOAuthCallback.tsx:54
 #: src/pages/MemorySettingsOverlay.tsx:184
@@ -848,6 +881,10 @@ msgstr "La conexión con {0} sigue pendiente. Puedes cerrar esto y volver a comp
 #: src/pages/Onboarding.tsx:619
 msgid "Continue"
 msgstr "Continuar"
+
+#: src/pages/Auth.tsx:120
+msgid "Continue with Company OS"
+msgstr ""
 
 #: src/pages/Auth.tsx:187
 msgid "Continue with email"
@@ -962,6 +999,10 @@ msgstr "No se pudo desconectar el proveedor de memoria"
 msgid "Could not disconnect OAuth"
 msgstr "No se pudo desconectar OAuth"
 
+#: src/pages/shell/message-cards.tsx:48
+msgid "Could not dismiss"
+msgstr ""
+
 #. placeholder {0}: props.name
 #: src/components/ArtifactFileCard.tsx:36
 msgid "Could not download {0}. Try again."
@@ -1007,9 +1048,17 @@ msgstr "No se pudo cargar el estado de actualización"
 msgid "Could not load voice settings"
 msgstr "No se pudo cargar la configuración de voz"
 
+#: src/pages/WorkforceOverlay.tsx:64
+msgid "Could not load workforce"
+msgstr ""
+
 #: src/pages/VoiceSettingsOverlay.tsx:124
 msgid "Could not play a test clip"
 msgstr "No se pudo reproducir un clip de prueba"
+
+#: src/pages/Auth.tsx:135
+msgid "Could not reach sign-in. Reconnecting…"
+msgstr ""
 
 #: src/pages/AccountSettingsOverlay.tsx:293
 #: src/pages/Auth.tsx:91
@@ -1090,6 +1139,10 @@ msgstr "No se pudo guardar esa voz"
 msgid "Could not save this choice"
 msgstr "No se pudo guardar esta opción"
 
+#: src/pages/WorkforceOverlay.tsx:94
+msgid "Could not save workforce"
+msgstr ""
+
 #: src/pages/Auth.tsx:70
 msgid "Could not send reset email"
 msgstr "No se pudo enviar el correo de restablecimiento"
@@ -1097,6 +1150,11 @@ msgstr "No se pudo enviar el correo de restablecimiento"
 #: src/pages/CallView.tsx:113
 msgid "Could not send that"
 msgstr "No se pudo enviar eso"
+
+#: src/pages/Auth.tsx:110
+#: src/pages/Auth.tsx:114
+msgid "Could not start Company OS sign-in"
+msgstr ""
 
 #: src/pages/McpServersOverlay.tsx:194
 msgid "Could not start OAuth"
@@ -1134,6 +1192,10 @@ msgstr "No se pudo actualizar la reacción"
 msgid "Could not update the default memory scope"
 msgstr "No se pudo actualizar el alcance de memoria predeterminado"
 
+#: src/pages/WorkforceOverlay.tsx:106
+msgid "Could not update workforce"
+msgstr ""
+
 #: src/pages/MessagingSettingsOverlay.tsx:47
 msgid "Couldn't load messaging settings"
 msgstr "No se pudo cargar la configuración de mensajería"
@@ -1165,6 +1227,10 @@ msgstr "Crear cuenta"
 msgid "Create group"
 msgstr "Crear grupo"
 
+#: src/pages/shell/bot-picker.tsx:70
+msgid "Create new Bot"
+msgstr ""
+
 #: src/pages/RoutineEditor.tsx:114
 #: src/pages/RoutineEditor.tsx:115
 msgid "Create Routine"
@@ -1175,13 +1241,13 @@ msgstr "Crear rutina"
 msgid "Create space"
 msgstr "Crear space"
 
+#: src/pages/Auth.tsx:31
+msgid "Create your Cadre"
+msgstr ""
+
 #: src/pages/Onboarding.tsx:578
 msgid "Create your first bot"
 msgstr "Crea tu primer bot"
-
-#: src/pages/Auth.tsx:31
-msgid "Create your Rakazo"
-msgstr "Crea tu Rakazo"
 
 #: src/components/AskCard.tsx:21
 msgid "Created"
@@ -1334,6 +1400,10 @@ msgstr "Descartar error"
 msgid "Dismissed. Reconnect anytime from MCP settings."
 msgstr "Descartado: puedes volver a conectar cuando quieras desde la configuración de MCP."
 
+#: src/pages/WorkforceOverlay.tsx:153
+msgid "Dispatch enabled"
+msgstr ""
+
 #: src/pages/PluginsOverlay.tsx:509
 msgid "Display name"
 msgstr "Nombre para mostrar"
@@ -1389,6 +1459,10 @@ msgstr "Editar primero"
 #: src/pages/BotContextMenu.tsx:123
 msgid "Edit Profile"
 msgstr "Editar perfil"
+
+#: src/pages/WorkforceOverlay.tsx:211
+msgid "Edit workforce"
+msgstr ""
 
 #: src/pages/Auth.tsx:125
 msgid "Email"
@@ -1568,6 +1642,10 @@ msgstr "Escuchar una muestra"
 msgid "Hi, this is how I'll sound when I read replies out loud."
 msgstr "Hola, así sonaré cuando lea las respuestas en voz alta."
 
+#: src/pages/Shell.tsx:3062
+msgid "Hide bots"
+msgstr ""
+
 #: src/pages/Auth.tsx:162
 msgid "Hide password"
 msgstr "Ocultar contraseña"
@@ -1627,6 +1705,10 @@ msgstr "Clave de API de instancia"
 #: src/pages/RoutineEditor.tsx:292
 msgid "Instruction"
 msgstr "Instrucción"
+
+#: src/pages/WorkforceOverlay.tsx:308
+msgid "Instructions"
+msgstr ""
 
 #: src/pages/PluginsOverlay.tsx:247
 #: src/pages/Shell.tsx:2842
@@ -1692,6 +1774,10 @@ msgstr "Idioma"
 #: src/pages/MessagingSettingsOverlay.tsx:243
 msgid "Leave"
 msgstr "Salir"
+
+#: src/pages/WorkforceOverlay.tsx:252
+msgid "Leave blank to keep saved key"
+msgstr ""
 
 #: src/pages/AccountSettingsOverlay.tsx:380
 msgid "Light"
@@ -1815,8 +1901,8 @@ msgstr "Alcance de memoria"
 msgid "Mentions"
 msgstr "Menciones"
 
-#: src/pages/Shell.tsx:4809
-#: src/pages/Shell.tsx:4923
+#. js-lingui-explicit-id
+#: src/lib/browser-notifications.ts:83
 msgid "Message"
 msgstr "Mensaje"
 
@@ -1862,6 +1948,11 @@ msgstr "Mínimo"
 #: src/pages/WindowChrome.tsx:25
 msgid "Minimize"
 msgstr "Minimizar"
+
+#: src/pages/Shell.tsx:2568
+#: src/pages/Shell.tsx:2569
+msgid "Minimize bots"
+msgstr ""
 
 #: src/pages/RoutineSchedule.tsx:65
 msgid "minute"
@@ -1962,6 +2053,14 @@ msgstr "Necesita entrada"
 msgid "Needs takeover"
 msgstr "Necesita toma de control"
 
+#: src/pages/Shell.tsx:3988
+msgid "Needs you"
+msgstr ""
+
+#: src/pages/WorkforceOverlay.tsx:154
+msgid "New assignments paused"
+msgstr ""
+
 #: src/pages/Shell.tsx:2476
 #: src/pages/shell/bot-panel.tsx:106
 msgid "New bot"
@@ -2009,6 +2108,10 @@ msgstr "Sin autenticación"
 
 #: src/pages/shell/command-palette.tsx:107
 msgid "No bots"
+msgstr ""
+
+#: src/pages/shell/bot-picker.tsx:59
+msgid "No bots match"
 msgstr ""
 
 #: src/pages/MessagingSettingsOverlay.tsx:140
@@ -2163,9 +2266,18 @@ msgstr "URL de servidor compatible con OpenAI"
 msgid "Opened its thread."
 msgstr "Se abrió su hilo."
 
+#: src/pages/Auth.tsx:120
+msgid "Opening Company OS…"
+msgstr ""
+
 #: src/App.tsx:179
 msgid "Opening your Space…"
 msgstr "Abriendo tu Space…"
+
+#: src/pages/WorkforceOverlay.tsx:287
+#: src/pages/WorkforceOverlay.tsx:291
+msgid "OpenRouter model"
+msgstr ""
 
 #: src/pages/ModelSettingsOverlay.tsx:646
 #: src/pages/Onboarding.tsx:520
@@ -2242,6 +2354,10 @@ msgstr "Pega la dirección compatible con OpenAI de tu servidor. Rakazo agrega /
 #: src/pages/VoiceSettingsOverlay.tsx:266
 msgid "Paste your API key"
 msgstr "Pega tu clave de API"
+
+#: src/pages/WorkforceOverlay.tsx:158
+msgid "Pause"
+msgstr ""
 
 #: src/pages/RoutineEditor.tsx:96
 msgid "Paused"
@@ -2383,6 +2499,10 @@ msgstr "Quitar me gusta"
 msgid "Remove webhook"
 msgstr "Quitar webhook"
 
+#: src/pages/WorkforceOverlay.tsx:329
+msgid "Remove worker"
+msgstr ""
+
 #: src/pages/Shell.tsx:5283
 msgid "Removed with chat, computer, and memory."
 msgstr "Eliminado junto con el chat, la computadora y la memoria."
@@ -2419,6 +2539,10 @@ msgstr "Responder"
 msgid "Replying to {replyName}"
 msgstr "Respondiendo a {replyName}"
 
+#: src/pages/WorkforceOverlay.tsx:198
+msgid "Requests from your Company OS work queue will appear here."
+msgstr ""
+
 #: src/components/ComputerMaintenanceActions.tsx:99
 msgid "Reset"
 msgstr "Restablecer"
@@ -2452,6 +2576,10 @@ msgstr "Restaurar"
 #: src/components/ComputerMaintenanceActions.tsx:90
 msgid "Restore the last saved workspace. Unsaved work on the computer is lost."
 msgstr "Restaura el último espacio de trabajo guardado. Se pierde el trabajo sin guardar en la computadora."
+
+#: src/pages/WorkforceOverlay.tsx:158
+msgid "Resume"
+msgstr ""
 
 #: src/App.tsx:148
 msgid "Retry now"
@@ -2572,6 +2700,11 @@ msgstr ""
 msgid "Search models"
 msgstr "Buscar modelos"
 
+#: src/pages/shell/bot-picker.tsx:51
+#: src/pages/shell/bot-picker.tsx:52
+msgid "Search or create Bots"
+msgstr ""
+
 #: src/pages/ModelSettingsOverlay.tsx:360
 #: src/pages/ModelSettingsOverlay.tsx:366
 msgid "Search providers"
@@ -2669,6 +2802,10 @@ msgstr "Compartido"
 msgid "Show all providers"
 msgstr "Mostrar todos los proveedores"
 
+#: src/pages/Shell.tsx:3062
+msgid "Show bots"
+msgstr ""
+
 #: src/pages/Shell.tsx:3156
 msgid "Show computer"
 msgstr "Mostrar computadora"
@@ -2698,13 +2835,17 @@ msgid "Sign in"
 msgstr "Iniciar sesión"
 
 #: src/pages/Auth.tsx:29
-msgid "Sign in to Rakazo"
-msgstr "Inicia sesión en Rakazo"
+msgid "Sign in to Cadre"
+msgstr ""
 
 #: src/pages/Auth.tsx:199
 #: src/pages/Welcome.tsx:32
 msgid "Sign up"
 msgstr "Registrarse"
+
+#: src/pages/Auth.tsx:125
+msgid "Sign-in was not completed. Check your verified Company OS account and try again."
+msgstr ""
 
 #. placeholder {0}: skill.name
 #: src/pages/Shell.tsx:4630
@@ -2838,6 +2979,10 @@ msgstr ""
 msgid "Switching…"
 msgstr "Cambiando…"
 
+#: src/pages/WorkforceOverlay.tsx:191
+msgid "Synced"
+msgstr ""
+
 #: src/pages/AccountSettingsOverlay.tsx:379
 msgid "System"
 msgstr "Sistema"
@@ -2962,6 +3107,10 @@ msgstr "Hora del día"
 msgid "Title"
 msgstr "Título"
 
+#: src/pages/shell/bot-picker.tsx:46
+msgid "To:"
+msgstr ""
+
 #: src/pages/PluginsOverlay.tsx:592
 msgid "Tool sources"
 msgstr "Fuentes de herramientas"
@@ -3063,6 +3212,10 @@ msgstr "Verificando…"
 msgid "Voice"
 msgstr "Voz"
 
+#: src/pages/WorkforceOverlay.tsx:151
+msgid "Waiting for first sync"
+msgstr ""
+
 #: src/pages/ModelSettingsOverlay.tsx:590
 #: src/pages/ModelSettingsOverlay.tsx:612
 #: src/pages/Onboarding.tsx:476
@@ -3126,6 +3279,25 @@ msgstr "Cuándo usar"
 msgid "Where should bots run?"
 msgstr "¿Dónde deben ejecutarse los bots?"
 
+#. placeholder {0}: index + 1
+#: src/pages/WorkforceOverlay.tsx:264
+msgid "Worker {0}"
+msgstr ""
+
+#: src/pages/WorkforceOverlay.tsx:313
+msgid "Worker instructions"
+msgstr ""
+
+#: src/pages/WorkforceOverlay.tsx:271
+msgid "Worker name"
+msgstr ""
+
+#: src/pages/Shell.tsx:2955
+#: src/pages/WorkforceOverlay.tsx:125
+msgid "Workforce"
+msgstr ""
+
+
 #: src/pages/Auth.tsx:185
 #: src/pages/Auth.tsx:293
 #: src/pages/CallView.tsx:251
@@ -3149,6 +3321,10 @@ msgstr "Puedes cerrar esta ventana."
 msgid "You have control"
 msgstr "Tienes el control"
 
+#: src/pages/WorkforceOverlay.tsx:233
+msgid "Your Company OS connection supplies the permissions for these workers."
+msgstr ""
+
 #: src/pages/Auth.tsx:133
 msgid "Your email address"
 msgstr "Tu dirección de correo"
@@ -3164,126 +3340,3 @@ msgstr "Tu nombre"
 #: src/pages/HostComputerPrompt.tsx:69
 msgid "Your OS will not ask for extra permission if you let bots run on {hostLabel}. They run as you."
 msgstr "Tu sistema operativo no pedirá permisos extra si dejas que los bots se ejecuten en {hostLabel}: se ejecutan como tú."
-
-#: src/pages/Welcome.tsx:21
-msgid "Your team of always-on agents<0/>that you can give real work to."
-msgstr "Tu equipo de agentes siempre activos<0/>a los que puedes dar trabajo real."
-
-#: src/pages/Welcome.tsx:21
-msgid "A workforce on demand<0/>for your company."
-msgstr ""
-
-#: src/pages/WorkforceOverlay.tsx:344
-msgid "Add worker"
-msgstr ""
-
-#: src/pages/WorkforceOverlay.tsx:243
-msgid "Agent key"
-msgstr ""
-
-#: src/pages/WorkforceOverlay.tsx:128
-msgid "Close workforce"
-msgstr ""
-
-#: src/pages/WorkforceOverlay.tsx:179
-msgid "Company OS assignments"
-msgstr ""
-
-#: src/pages/WorkforceOverlay.tsx:231
-msgid "Company OS endpoint"
-msgstr ""
-
-#: src/pages/WorkforceOverlay.tsx:224
-msgid "Connect a Company OS agent key with context read and write access. Its department permissions apply to every worker."
-msgstr ""
-
-#: src/pages/WorkforceOverlay.tsx:347
-msgid "Connect workforce"
-msgstr ""
-
-#: src/pages/WorkforceOverlay.tsx:64
-msgid "Could not load workforce"
-msgstr ""
-
-#: src/pages/WorkforceOverlay.tsx:94
-msgid "Could not save workforce"
-msgstr ""
-
-#: src/pages/WorkforceOverlay.tsx:106
-msgid "Could not update workforce"
-msgstr ""
-
-#: src/pages/Auth.tsx:31
-msgid "Create your Cadre"
-msgstr ""
-
-#: src/pages/WorkforceOverlay.tsx:153
-msgid "Dispatch enabled"
-msgstr ""
-
-#: src/pages/WorkforceOverlay.tsx:211
-msgid "Edit workforce"
-msgstr ""
-
-#: src/pages/WorkforceOverlay.tsx:308
-msgid "Instructions"
-msgstr ""
-
-#: src/pages/WorkforceOverlay.tsx:252
-msgid "Leave blank to keep saved key"
-msgstr ""
-
-#: src/pages/WorkforceOverlay.tsx:154
-msgid "New assignments paused"
-msgstr ""
-
-#: src/pages/WorkforceOverlay.tsx:287
-#: src/pages/WorkforceOverlay.tsx:291
-msgid "OpenRouter model"
-msgstr ""
-
-#: src/pages/WorkforceOverlay.tsx:158
-msgid "Pause"
-msgstr ""
-
-#: src/pages/WorkforceOverlay.tsx:329
-msgid "Remove worker"
-msgstr ""
-
-#: src/pages/WorkforceOverlay.tsx:198
-msgid "Requests from your Company OS work queue will appear here."
-msgstr ""
-
-#: src/pages/WorkforceOverlay.tsx:158
-msgid "Resume"
-msgstr ""
-
-#: src/pages/Auth.tsx:29
-msgid "Sign in to Cadre"
-msgstr ""
-
-#: src/pages/WorkforceOverlay.tsx:191
-msgid "Synced"
-msgstr ""
-
-#: src/pages/WorkforceOverlay.tsx:151
-msgid "Waiting for first sync"
-msgstr ""
-
-#. placeholder {0}: index + 1
-#: src/pages/WorkforceOverlay.tsx:264
-msgid "Worker {0}"
-msgstr ""
-
-#: src/pages/WorkforceOverlay.tsx:313
-msgid "Worker instructions"
-msgstr ""
-
-#: src/pages/WorkforceOverlay.tsx:271
-msgid "Worker name"
-msgstr ""
-
-#: src/pages/Shell.tsx:2955
-#: src/pages/WorkforceOverlay.tsx:125
-msgid "Workforce"
-msgstr ""

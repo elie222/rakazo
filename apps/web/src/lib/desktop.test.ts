@@ -66,9 +66,13 @@ describe("window chrome", () => {
     expect(shell).toContain(
       'className="app-drag flex items-center justify-between border-b border-sidebar-border',
     );
-    expect(shell).toContain('className="app-no-drag grid h-8 w-8');
-    expect(shell).toContain('className="app-no-drag flex min-w-0 items-center gap-3"');
-    expect(shell.match(/className="app-no-drag grid h-\[30px\] w-\[34px\]/g)).toHaveLength(2);
+    const header = shell.slice(
+      shell.indexOf("aria-hidden={mobileSidebarOpen"),
+      shell.indexOf("<Transcript"),
+    );
+    const controls = header.match(/<button\b[\s\S]*?<\/button>/g) ?? [];
+    expect(controls).toHaveLength(4);
+    for (const control of controls) expect(control).toContain('className="app-no-drag ');
   });
 });
 
