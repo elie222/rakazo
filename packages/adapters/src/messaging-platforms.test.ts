@@ -1,11 +1,11 @@
 import { Domain } from "chat-adapter-lark";
 import { describe, expect, it, vi } from "vitest";
 import {
+  enrichSlackTeamRoom,
   isMessagingEnabled,
   isMessagingSurfaceEnabled,
   type MessagingEnvironmentValues,
   messagingEnvFromProcess,
-  enrichSlackTeamRoom,
   messagingPlatformsFromEnv,
   parseSendblueStatus,
 } from "./messaging-platforms.js";
@@ -272,7 +272,6 @@ describe("isMessagingSurfaceEnabled", () => {
     vi.unstubAllEnvs();
   });
 });
-
 
 describe("enrichSlackTeamRoom", () => {
   const base = {

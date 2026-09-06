@@ -1,6 +1,10 @@
 import type { MessagingInboundMessage, MessagingSurface } from "@rakazo/adapter-kit";
 import { describe, expect, it, vi } from "vitest";
-import { createMessagingTeamChatSender, toTeamChatInbound } from "./team-chat-messaging.js";
+import {
+  createMessagingTeamChatSender,
+  resolveMessagingThreadId,
+  toTeamChatInbound,
+} from "./team-chat-messaging.js";
 
 function baseEvent(overrides: Partial<MessagingInboundMessage> = {}): MessagingInboundMessage {
   return {
@@ -70,8 +74,26 @@ describe("toTeamChatInbound", () => {
   });
 });
 
+describe("resolveMessagingThreadId", () => {
+  it("keeps conversationId when there is no reply thread", () => {
+    expect(resolveMessagingThreadId("slack:C1", null)).toBe("slack:C1");
+  });
+
+  it("appends replyThreadId onto provider:channel ids", () => {
+    expect(resolveMessagingThreadId("slack:C1", "100.1")).toBe("slack:C1:100.1");
+  });
+
+  it("replaces a stale thread segment when replyThreadId differs", () => {
+    expect(resolveMessagingThreadId("slack:C1:999.9", "100.1")).toBe("slack:C1:100.1");
+  });
+
+  it("leaves conversationId alone when it already ends with replyThreadId", () => {
+    expect(resolveMessagingThreadId("slack:C1:100.1", "100.1")).toBe("slack:C1:100.1");
+  });
+});
+
 describe("createMessagingTeamChatSender", () => {
-  it("posts through messaging.sendToThread", async () => {
+  it("posts through messaging.sendToThread using the reply thread id", async () => {
     const sendToThread = vi.fn(async () => ({ handle: "msg-1" }));
     const messaging = { sendToThread } as unknown as MessagingSurface;
     const send = createMessagingTeamChatSender(messaging);
@@ -83,7 +105,7 @@ describe("createMessagingTeamChatSender", () => {
       }),
     ).resolves.toEqual({ handle: "msg-1" });
     expect(sendToThread).toHaveBeenCalledWith(
-      { threadId: "slack:C1", body: "Done" },
+      { threadId: "slack:C1:100.1", body: "Done" },
       expect.objectContaining({
         operationId: expect.stringMatching(/^team-chat-send:/),
         spaceId: "",

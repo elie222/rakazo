@@ -201,7 +201,9 @@ test("team conversation settings open from messaging overlay", async ({ page }, 
 
   await page.getByRole("button", { name: new RegExp(userName) }).click();
   await page.getByRole("button", { name: "Settings" }).click();
-  await expect(page.getByTestId("user-settings").getByRole("heading", { name: "Messaging" })).toBeVisible();
+  await expect(
+    page.getByTestId("user-settings").getByRole("heading", { name: "Messaging" }),
+  ).toBeVisible();
   await page.getByRole("button", { name: "Manage messaging settings" }).click();
 
   await expect(page.getByTestId("messaging-settings")).toBeVisible();

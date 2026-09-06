@@ -44,6 +44,25 @@ function looksLikeMention(content: string, channelName: string | null): boolean 
   return /(^|\s)@[\w.-]+/.test(content);
 }
 
+/**
+ * Chat SDK Slack thread ids are `slack:CHANNEL:threadTs`. Team-chat stores the
+ * room conversation id separately from the in-channel reply thread, so outbound
+ * sends must recombine them when a reply thread is present.
+ */
+export function resolveMessagingThreadId(
+  conversationId: string,
+  replyThreadId: string | null,
+): string {
+  if (!replyThreadId) return conversationId;
+  if (conversationId.endsWith(`:${replyThreadId}`)) return conversationId;
+  const parts = conversationId.split(":");
+  // provider:channel[:existingTs] → provider:channel:replyThreadId
+  if (parts.length >= 2 && parts[0] && parts[1]) {
+    return `${parts[0]}:${parts[1]}:${replyThreadId}`;
+  }
+  return `${conversationId}:${replyThreadId}`;
+}
+
 /** Outbound sender that posts through the existing MessagingSurface. */
 export function createMessagingTeamChatSender(
   messaging: MessagingSurface,
@@ -61,7 +80,7 @@ export function createMessagingTeamChatSender(
     };
     const sent = await messaging.sendToThread(
       {
-        threadId: request.conversationId,
+        threadId: resolveMessagingThreadId(request.conversationId, request.replyThreadId),
         body: request.content,
         ...(request.idempotencyKey ? { idempotencyKey: request.idempotencyKey } : {}),
       },
