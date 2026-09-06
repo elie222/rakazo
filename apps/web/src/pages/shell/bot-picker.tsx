@@ -9,8 +9,8 @@ import {
   CommandList,
   CommandSeparator,
 } from "@rakazo/ui-web";
-import { ArrowLeft, Lock, Plus } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { ArrowLeft, LoaderCircle, Lock, Plus, RotateCw } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { rpc } from "../../lib/rpc";
 import { connectedModelOptions } from "./model-options";
 
@@ -39,14 +39,22 @@ export function BotCreatePicker({
   const [computerMode, setComputerMode] = useState<ComputerMode>("team");
   const [credentials, setCredentials] = useState<ModelCredential[]>([]);
   const [catalog, setCatalog] = useState<ModelCatalogEntry[]>([]);
-  useEffect(() => {
+  const [modelMetadataStatus, setModelMetadataStatus] = useState<"loading" | "ready" | "error">(
+    "loading",
+  );
+  const loadModelMetadata = useCallback(() => {
+    setModelMetadataStatus("loading");
     void Promise.all([rpc.models.credentials(), rpc.models.list()])
       .then(([nextCredentials, nextCatalog]) => {
         setCredentials(nextCredentials);
         setCatalog(nextCatalog);
+        setModelMetadataStatus("ready");
       })
-      .catch(() => undefined);
+      .catch(() => setModelMetadataStatus("error"));
   }, []);
+  useEffect(() => {
+    loadModelMetadata();
+  }, [loadModelMetadata]);
   const modelOptions = connectedModelOptions(credentials, catalog);
   const needle = query.trim().toLowerCase();
   const matched = useMemo(() => {
@@ -87,22 +95,33 @@ export function BotCreatePicker({
               >
                 <Trans>Space default</Trans>
               </CommandItem>
-              {modelOptions.map((option) => (
-                <CommandItem
-                  key={option.key}
-                  value={option.key}
-                  data-testid={`create-bot-model-${option.key}`}
-                  onSelect={() =>
-                    onCreateBot({
-                      computerMode,
-                      modelProvider: option.provider,
-                      modelId: option.modelId,
-                    })
-                  }
-                >
-                  {option.label}
+              {modelMetadataStatus === "loading" ? (
+                <div className="flex justify-center py-2 text-muted-foreground">
+                  <LoaderCircle size={16} className="animate-spin" aria-label={t`Loading…`} />
+                </div>
+              ) : modelMetadataStatus === "error" ? (
+                <CommandItem value="retry-models" onSelect={loadModelMetadata} className="gap-2">
+                  <RotateCw size={15} strokeWidth={1.8} aria-hidden="true" />
+                  <Trans>Retry now</Trans>
                 </CommandItem>
-              ))}
+              ) : (
+                modelOptions.map((option) => (
+                  <CommandItem
+                    key={option.key}
+                    value={option.key}
+                    data-testid={`create-bot-model-${option.key}`}
+                    onSelect={() =>
+                      onCreateBot({
+                        computerMode,
+                        modelProvider: option.provider,
+                        modelId: option.modelId,
+                      })
+                    }
+                  >
+                    {option.label}
+                  </CommandItem>
+                ))
+              )}
             </CommandGroup>
           </CommandList>
         </Command>
