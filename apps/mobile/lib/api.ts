@@ -343,6 +343,7 @@ export async function passwordResetCapabilities(): Promise<PasswordResetCapabili
   const { response, body } = await fetchMobileJson<PasswordResetCapabilities>(
     `${currentApiBase()}/api/auth/capabilities`,
     { headers: { origin: "rakazo://" } },
+    { passwordReset: false, resetUrl: null },
   );
   if (!response.ok) throw new Error("Could not load password recovery settings");
   return body;
