@@ -1771,7 +1771,9 @@ describeJourneys("required product journeys", () => {
       },
     });
     const askSnapshot = await rpc<Snap>(app, ada, "threads/get", { groupId: group.id });
-    expect(askSnapshot.run?.id).toBe(concurrentRun.id);
+    // Waiting asks win the headline run even when a newer busy run exists.
+    expect(askSnapshot.run?.id).toBe(groupAsk.runId);
+    expect(askSnapshot.activeRuns?.some((run) => run.id === concurrentRun.id)).toBe(true);
     expect(askSnapshot.activeRuns?.some((run) => run.id === groupAsk.runId)).toBe(true);
     const askMessage = askSnapshot.messages.find(
       (message) =>

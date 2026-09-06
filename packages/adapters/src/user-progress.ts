@@ -12,6 +12,16 @@ export function clampUserProgressMessage(text: string): string {
 }
 
 /**
+ * True when the raw text a caller tried to post as a mid-turn progress update
+ * would not fit and got cut off by clampUserProgressMessage. Callers should
+ * surface this back to the model (it gets no other signal that its message
+ * was mangled) rather than reporting a silent success.
+ */
+export function isProgressMessageTruncated(text: string): boolean {
+  return text.trim().length > USER_PROGRESS_MESSAGE_MAX_LENGTH;
+}
+
+/**
  * Pull narration text out of the in-progress turn segments so it can be posted
  * as a durable mid-turn message. Tool/step blocks stay for the final publish.
  */
