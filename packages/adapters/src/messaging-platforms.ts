@@ -1,7 +1,7 @@
 import { createSlackAdapter } from "@chat-adapter/slack";
 import { createTelegramAdapter } from "@chat-adapter/telegram";
 import { createWhatsAppAdapter } from "@chat-adapter/whatsapp";
-import type { MessagingOutboundStatus } from "@rakazo/adapter-kit";
+import type { MessagingInboundMessage, MessagingOutboundStatus } from "@rakazo/adapter-kit";
 import type { Adapter } from "chat";
 import { createLarkAdapter, Domain } from "chat-adapter-lark";
 import { createSendblueAdapter } from "chat-adapter-sendblue";
@@ -103,11 +103,12 @@ export function messagingPlatformsFromEnv(env: MessagingEnvironmentValues): Mess
   if (env.slackBotToken && env.slackSigningSecret) {
     platforms.push({
       provider: "slack",
-      capabilities: { direct: true, groups: false, typing: false },
+      capabilities: { direct: true, groups: true, typing: false },
       adapter: createSlackAdapter({
         botToken: env.slackBotToken,
         signingSecret: env.slackSigningSecret,
       }),
+      enrichTeamRoom: enrichSlackTeamRoom,
     });
   }
 
@@ -200,6 +201,52 @@ export function parseSendblueStatus(payload: unknown): MessagingOutboundStatus |
     handle: body.message_handle,
     status: typeof body.status === "string" ? body.status : "",
   };
+}
+
+/** Pull Slack team-room fields the Chat SDK does not expose on Message. */
+export function enrichSlackTeamRoom(
+  raw: unknown,
+  base: MessagingInboundMessage,
+): Partial<MessagingInboundMessage> {
+  const root = asRecord(raw);
+  const event = asRecord(root.event) ?? root;
+  const teamId =
+    stringField(root, "team_id") ??
+    stringField(event, "team") ??
+    stringField(event, "team_id");
+  const eventType = stringField(event, "type");
+  const botId = stringField(event, "bot_id") ?? stringField(asRecord(event.bot_profile) ?? {}, "id");
+  const threadTs = stringField(event, "thread_ts");
+  const channel = stringField(event, "channel");
+  const enrichment: Partial<MessagingInboundMessage> = {};
+  if (teamId) enrichment.workspaceId = teamId;
+  if (channel) enrichment.conversationKey = channel;
+  if (botId) enrichment.senderIsBot = true;
+  else if (typeof event.bot_id === "string" || event.subtype === "bot_message") {
+    enrichment.senderIsBot = true;
+  }
+  if (threadTs) enrichment.replyThreadId = threadTs;
+  else enrichment.replyThreadId = null;
+  if (!base.isDirect) {
+    enrichment.kind =
+      eventType === "app_mention" || mentionsSlackUser(stringField(event, "text") ?? base.content)
+        ? "mention"
+        : "ambient";
+  }
+  return enrichment;
+}
+
+function mentionsSlackUser(text: string): boolean {
+  return /<@[\w]+>/.test(text);
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : null;
+}
+
+function stringField(record: Record<string, unknown>, key: string): string | undefined {
+  const value = record[key];
+  return typeof value === "string" && value ? value : undefined;
 }
 
 function sendblueParticipants(raw: unknown, lineNumber: string): string[] {

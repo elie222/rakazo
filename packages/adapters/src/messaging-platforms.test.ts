@@ -161,7 +161,7 @@ describe("messagingPlatformsFromEnv", () => {
       platforms.map((platform) => [platform.provider, platform.capabilities]),
     );
     expect(capabilities.sendblue).toEqual({ direct: true, groups: true, typing: true });
-    expect(capabilities.slack).toEqual({ direct: true, groups: false, typing: false });
+    expect(capabilities.slack).toEqual({ direct: true, groups: true, typing: false });
     expect(capabilities.whatsapp).toEqual({ direct: true, groups: false, typing: false });
     expect(capabilities.telegram).toEqual({ direct: true, groups: false, typing: false });
     expect(capabilities.lark).toEqual({ direct: true, groups: false, typing: false });

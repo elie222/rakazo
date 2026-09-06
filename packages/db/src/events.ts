@@ -197,6 +197,10 @@ export interface SendUserMessageInput {
   trigger: "user" | "follow_up" | "webhook" | "messaging";
   clientNonce?: string;
   linkMessageToRun?: boolean;
+  /** When false, persist the user message without starting a run (team-chat transcript). */
+  createRun?: boolean;
+  /** When true, start a new run even if the bot is already busy (team-chat delivery). */
+  allowParallelRun?: boolean;
 }
 
 export interface SendUserMessageResult {
@@ -371,17 +375,21 @@ export async function sendUserMessage(
         blocks: input.blocks,
         clientNonce: input.clientNonce,
       });
-      const busy = await tx.run.findFirst({
-        where: {
-          threadId: input.threadId,
-          botId: input.botId,
-          status: { in: ["running", "queued", "leased", "waiting_input", "waiting_takeover"] },
-        },
-        select: { id: true, taskId: true },
-      });
+      const createRun = input.createRun !== false;
+      const busy =
+        createRun && !input.allowParallelRun
+          ? await tx.run.findFirst({
+              where: {
+                threadId: input.threadId,
+                botId: input.botId,
+                status: { in: ["running", "queued", "leased", "waiting_input", "waiting_takeover"] },
+              },
+              select: { id: true, taskId: true },
+            })
+          : null;
       let task = null;
       let run = null;
-      if (!busy) {
+      if (createRun && !busy) {
         task = await tx.task.create({
           data: {
             spaceId: input.spaceId,
@@ -408,7 +416,7 @@ export async function sendUserMessage(
         if (input.linkMessageToRun) {
           await tx.message.update({ where: { id: message.id }, data: { runId: run.id } });
         }
-      } else {
+      } else if (createRun && busy) {
         await tx.steeringMessage.create({
           data: {
             messageId: message.id,

@@ -1,6 +1,7 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type {
   Bot,
+  ExternalConversation,
   MessagingAgentConnection,
   MessagingChannelMembership,
   MessagingStatus,
@@ -19,6 +20,7 @@ import { useEffect, useState } from "react";
 
 import { providerLabel } from "../lib/messaging";
 import { rpc } from "../lib/rpc";
+import { ExternalConversationSettings } from "./ExternalConversationSettings";
 
 export function MessagingSettingsOverlay({ onClose }: { onClose: () => void }) {
   const { t } = useLingui();
@@ -26,21 +28,25 @@ export function MessagingSettingsOverlay({ onClose }: { onClose: () => void }) {
   const [channels, setChannels] = useState<MessagingChannelMembership[]>([]);
   const [connections, setConnections] = useState<MessagingAgentConnection[]>([]);
   const [bots, setBots] = useState<Bot[]>([]);
+  const [externalConversations, setExternalConversations] = useState<ExternalConversation[]>([]);
+  const [settingsConversationId, setSettingsConversationId] = useState<string | null>(null);
   const [linkBotId, setLinkBotId] = useState("");
   const [linkCode, setLinkCode] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function refresh() {
-    const [nextStatus, nextChannels, nextConnections, nextBots] = await Promise.all([
+    const [nextStatus, nextChannels, nextConnections, nextBots, navigation] = await Promise.all([
       rpc.messaging.status(),
       rpc.messaging.channels.list(),
       rpc.messaging.connections.list(),
       rpc.bots.list(),
+      rpc.spaces.list(),
     ]);
     setStatus(nextStatus);
     setChannels(nextChannels);
     setConnections(nextConnections);
     setBots(nextBots);
+    setExternalConversations(navigation.current.externalConversations);
   }
 
   useEffect(() => {
@@ -321,6 +327,60 @@ export function MessagingSettingsOverlay({ onClose }: { onClose: () => void }) {
                   </span>
                 </li>
               ))}
+            </ul>
+          )}
+        </section>
+
+        <section className="mt-5 rounded-xl border border-border px-4 py-4">
+          <h3 className="text-[15px] font-medium text-foreground">
+            <Trans>Team conversations</Trans>
+          </h3>
+          {externalConversations.length === 0 ? (
+            <p className="mt-3 text-[13px] text-muted-foreground/70">
+              <Trans>No team conversations yet.</Trans>
+            </p>
+          ) : (
+            <ul className="mt-3 space-y-3">
+              {externalConversations.map((conversation) => {
+                const bot = bots.find((candidate) => candidate.id === conversation.botId);
+                const open = settingsConversationId === conversation.id;
+                return (
+                  <li key={conversation.id} className="text-[14px] text-foreground/75">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="min-w-0 truncate">
+                        {conversation.displayName || t`External conversation`}
+                        <span className="ml-2 text-[12px] text-muted-foreground/70">
+                          {providerLabel(conversation.provider)}
+                        </span>
+                      </span>
+                      <Button
+                        variant="secondary"
+                        className="rounded-full"
+                        onClick={() =>
+                          setSettingsConversationId(open ? null : conversation.id)
+                        }
+                      >
+                        {open ? <Trans>Close</Trans> : <Trans>Settings</Trans>}
+                      </Button>
+                    </div>
+                    {open && bot ? (
+                      <div className="mt-4 rounded-lg border border-border px-3 py-3">
+                        <ExternalConversationSettings
+                          conversation={conversation}
+                          bot={bot}
+                          onSave={async (policy) => {
+                            await rpc.externalConversations.updatePolicy({
+                              externalConversationId: conversation.id,
+                              ...policy,
+                            });
+                            await refresh();
+                          }}
+                        />
+                      </div>
+                    ) : null}
+                  </li>
+                );
+              })}
             </ul>
           )}
         </section>
