@@ -15,7 +15,7 @@ export const AuthSchema = z
   .default({ type: "none" });
 
 export const PublicHeadersSchema = z
-  .record(z.string(), HeaderValue)
+  .record(HeaderName, HeaderValue)
   .default({})
   .superRefine((headers, context) => {
     for (const name of Object.keys(headers)) {

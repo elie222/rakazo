@@ -145,6 +145,18 @@ describe("GraphQL connector import", () => {
     },
   );
 
+  it("rejects invalid public header names before introspection", async () => {
+    const fetch = vi.fn();
+    await expect(
+      prepareGraphqlInstall({
+        source: "https://graphql.example.test/graphql",
+        config: { headers: { "bad header": "value" } },
+        remote: { fetch },
+      }),
+    ).rejects.toThrow();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it("allows omission of defaulted non-null root arguments", () => {
     const schema = structuredClone(STAR_WARS_INTROSPECTION);
     const arg = schema.data.__schema.types[1]!.fields![0]!.args[0]!;
