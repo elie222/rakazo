@@ -3,8 +3,8 @@ import {
   BOT_NAME_MAX_LENGTH,
   BOT_TITLE_MAX_LENGTH,
   type ComputerMode,
-  type ThinkingLevel,
   normalizeCreateBotProfile,
+  type ThinkingLevel,
 } from "@rakazo/contracts";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
