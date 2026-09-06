@@ -121,7 +121,9 @@ describe("team chat bridge", () => {
 
     await bridge.resolveDeferredMessage("external-ambient", "agent", "ambient");
     expect(updateMany).toHaveBeenLastCalledWith(
-      expect.objectContaining({ data: { status: "observed", nextAttemptAt: null } }),
+      expect.objectContaining({
+        data: { status: "observed", engagementReason: null, nextAttemptAt: null },
+      }),
     );
   });
 
@@ -177,7 +179,7 @@ describe("team chat bridge", () => {
         status: "deferred",
         nextAttemptAt: { lte: expect.any(Date) },
       },
-      data: { status: "received", nextAttemptAt: null },
+      data: { status: "received", engagementReason: null, nextAttemptAt: null },
     });
   });
 
@@ -389,7 +391,10 @@ describe("team chat bridge", () => {
         status: "deferred",
         externalConversation: { provider: "slack", botId: "bot-1" },
       },
-      data: { nextAttemptAt: expect.any(Date) },
+      data: {
+        nextAttemptAt: expect.any(Date),
+        engagementReason: "message_routine_routing",
+      },
     });
     const nextAttemptAt = (updateMany.mock.calls[0]![0] as { data: { nextAttemptAt: Date } }).data
       .nextAttemptAt;
@@ -497,6 +502,118 @@ describe("team chat bridge", () => {
       await vi.advanceTimersByTimeAsync(1_000);
       await lost;
       leaseHeartbeat.stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps routing ownership when renewal fails while a reconciler runs", async () => {
+    // Periodic renewal returns zero rows while routine delivery stays blocked.
+    // Another reconciler must re-arm the routing claim instead of starting a
+    // TeamChat agent run, and `lost` must reject so callers abort the wake.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
+    try {
+      let held = true;
+      let leaseUntil = new Date(0);
+      let engagementReason: string | null = null;
+      const sendUserMessage = vi.fn();
+      const updateMany = vi.fn(
+        async (input: {
+          where?: {
+            id?: string;
+            status?: string | { in?: string[] };
+            nextAttemptAt?: unknown;
+          };
+          data?: {
+            nextAttemptAt?: Date | null;
+            status?: string;
+            engagementReason?: string | null;
+          };
+        }) => {
+          const isRoutingHold =
+            input.where?.status === "deferred" &&
+            input.data?.nextAttemptAt instanceof Date &&
+            input.data.engagementReason === "message_routine_routing" &&
+            input.data.status === undefined;
+          // Heartbeat renewals omit nextAttemptAt from the where clause; recovery
+          // re-arms CAS on nextAttemptAt and must still succeed after lease loss.
+          if (isRoutingHold && input.where?.nextAttemptAt === undefined) {
+            if (!held) return { count: 0 };
+            leaseUntil = input.data!.nextAttemptAt as Date;
+            engagementReason = "message_routine_routing";
+            return { count: 1 };
+          }
+          if (isRoutingHold && input.where?.nextAttemptAt !== undefined) {
+            leaseUntil = input.data!.nextAttemptAt as Date;
+            engagementReason = "message_routine_routing";
+            return { count: 1 };
+          }
+          if (
+            input.where?.status === "deferred" &&
+            (input.data?.status === "received" || input.data?.status === "observed")
+          ) {
+            engagementReason = input.data.engagementReason ?? null;
+            leaseUntil = new Date(0);
+            return { count: 1 };
+          }
+          return { count: 1 };
+        },
+      );
+      const findMany = vi.fn(async ({ where }: { where: { status?: string } }) => {
+        if (where.status === "deferred" && leaseUntil.getTime() <= Date.now()) {
+          return [
+            {
+              id: "external-lost",
+              kind: "mention",
+              providerEventId: "Ev-lost",
+              engagementReason,
+              nextAttemptAt: leaseUntil,
+              externalConversation: { thread: { id: "thread-1" } },
+            },
+          ];
+        }
+        return [];
+      });
+      const bridge = new TeamChatBridge({
+        prisma: {
+          externalMessage: { updateMany, findMany },
+          message: { findUnique: vi.fn(async () => null) },
+          run: { findMany: vi.fn(async () => []) },
+        } as unknown as PrismaClient,
+        events: { sendUserMessage },
+        jobs: { enqueue: vi.fn() },
+        send: vi.fn(),
+        providerId: "slack",
+        botId: "bot-1",
+      });
+      (
+        bridge as unknown as {
+          target: { id: string; spaceId: string; userId: string; name: string };
+        }
+      ).target = { id: "bot-1", spaceId: "space-1", userId: "owner-1", name: "Chief" };
+
+      const lease = await bridge.startDeferredReservationHeartbeat("external-lost", 60_000);
+      expect(engagementReason).toBe("message_routine_routing");
+      const lost = expect(lease.lost).rejects.toThrow("Team chat deferred reservation was lost");
+
+      held = false;
+      leaseUntil = new Date(Date.now() - 1);
+      await vi.advanceTimersByTimeAsync(60_000);
+      await lost;
+      await bridge.reconcileOnce();
+
+      expect(sendUserMessage).not.toHaveBeenCalled();
+      expect(engagementReason).toBe("message_routine_routing");
+      expect(leaseUntil.getTime()).toBeGreaterThan(Date.now());
+      expect(updateMany).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ id: "external-lost", status: "deferred" }),
+          data: expect.objectContaining({ status: "received" }),
+        }),
+      );
+
+      lease.stop();
     } finally {
       vi.useRealTimers();
     }

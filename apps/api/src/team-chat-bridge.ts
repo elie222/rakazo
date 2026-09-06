@@ -22,8 +22,12 @@ const DEFERRED_RESERVATION_MS = 2 * 60_000;
 /** Hold the deferred row while routine routing may still be writing its wake nonce. */
 const ROUTING_RESERVATION_MS = 30 * 60_000;
 const ROUTING_RESERVATION_RENEWAL_MS = 60_000;
+/** Re-arm briefly when a routing-owned lease expires before promoting to agent. */
+const ROUTING_OWNERSHIP_GRACE_MS = ROUTING_RESERVATION_RENEWAL_MS * 2;
 const QUEUE_RESERVATION_MS = 2 * 60_000;
 const DELIVERY_RESERVATION_MS = 2 * 60_000;
+/** Durable claim while wakeMessageRoutines may still be writing its wake nonce. */
+const ROUTING_OWNERSHIP_REASON = "message_routine_routing";
 
 interface TeamChatBridgeDeps {
   prisma: PrismaClient;
@@ -266,7 +270,11 @@ export class TeamChatBridge {
       },
       // Routing can outlive the short deferred window; hold long enough for the
       // wake nonce to commit before reconcile is allowed to promote the row.
-      data: { nextAttemptAt: new Date(Date.now() + ROUTING_RESERVATION_MS) },
+      // engagementReason marks exclusive routine ownership for recovery/queue.
+      data: {
+        nextAttemptAt: new Date(Date.now() + ROUTING_RESERVATION_MS),
+        engagementReason: ROUTING_OWNERSHIP_REASON,
+      },
     });
     return result.count === 1;
   }
@@ -349,6 +357,7 @@ export class TeamChatBridge {
             }
           : {
               status: kind === "ambient" ? "observed" : "received",
+              engagementReason: null,
               nextAttemptAt: null,
             },
     });
@@ -421,6 +430,8 @@ export class TeamChatBridge {
    * Promote expired deferred leases. If wakeMessageRoutines already persisted a
    * routine run (crash before resolveDeferredMessage), mark the row ignored so
    * recovery cannot also start a TeamChat agent run for the same provider event.
+   * In-flight routing ownership is re-armed briefly so a live wake can finish;
+   * abandoned claims fall through to agent promotion.
    */
   private async recoverExpiredDeferredMessages(target: TargetBot, now: Date): Promise<void> {
     const expired = await this.deps.prisma.externalMessage.findMany({
@@ -436,6 +447,8 @@ export class TeamChatBridge {
         id: true,
         kind: true,
         providerEventId: true,
+        engagementReason: true,
+        nextAttemptAt: true,
         externalConversation: { select: { thread: { select: { id: true } } } },
       },
       orderBy: { createdAt: "asc" },
@@ -469,10 +482,26 @@ export class TeamChatBridge {
         });
         continue;
       }
+      const expiredAt = message.nextAttemptAt?.getTime() ?? 0;
+      if (
+        message.engagementReason === ROUTING_OWNERSHIP_REASON &&
+        now.getTime() - expiredAt <= ROUTING_OWNERSHIP_GRACE_MS
+      ) {
+        // Live wake still owns this row; do not start a fallback TeamChat agent.
+        await this.deps.prisma.externalMessage.updateMany({
+          where: { id: message.id, status: "deferred", nextAttemptAt: { lte: now } },
+          data: {
+            nextAttemptAt: new Date(now.getTime() + ROUTING_RESERVATION_MS),
+            engagementReason: ROUTING_OWNERSHIP_REASON,
+          },
+        });
+        continue;
+      }
       await this.deps.prisma.externalMessage.updateMany({
         where: { id: message.id, status: "deferred", nextAttemptAt: { lte: now } },
         data: {
           status: message.kind === "ambient" ? "observed" : "received",
+          engagementReason: null,
           nextAttemptAt: null,
         },
       });
@@ -821,6 +850,7 @@ export class TeamChatBridge {
     senderName: string;
     content: string;
     batchContext: string | null;
+    engagementReason?: string | null;
     externalConversation: {
       spaceId: string;
       botId: string;
@@ -830,6 +860,11 @@ export class TeamChatBridge {
   }): Promise<void> {
     const thread = message.externalConversation.thread;
     if (!thread) throw new Error("Team chat conversation has no Rakazo thread");
+    // In-flight routine wakes own the row via engagementReason; never start a
+    // fallback TeamChat agent until that claim is cleared.
+    if (message.engagementReason === ROUTING_OWNERSHIP_REASON) {
+      return;
+    }
     const wakeNonce = inboundDeliveryClientNonce(
       "messaging",
       message.externalConversation.botId,
