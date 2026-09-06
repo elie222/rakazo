@@ -28,6 +28,29 @@ export interface ModalSandboxOptions {
 type Frame = { image: string; mimeType: "image/png"; width: number; height: number };
 const frame = (value: Frame) => computerObservation(Buffer.from(value.image, "base64"), value);
 
+/** Normalize only provider-reported terminal states, never shell or transport errors. */
+function modalOperationError(error: unknown): unknown {
+  if (
+    error instanceof NotFoundError ||
+    (error instanceof Error &&
+      error.name === "ClientError" &&
+      /^\/modal\.client\.ModalClient\/Sandbox\w+ FAILED_PRECONDITION: Sandbox has already finished with status \w+/.test(
+        error.message,
+      ))
+  ) {
+    const missing = new Error("Cloud computer no longer exists", { cause: error });
+    missing.name = "SandboxNotFoundError";
+    return missing;
+  }
+  return error;
+}
+
+function stoppedComputer(): Error {
+  const error = new Error("Cloud computer has stopped");
+  error.name = "SandboxNotFoundError";
+  return error;
+}
+
 /** Modal runs the computer; durable homes remain in the configured AgentHomeStore. */
 export class ModalSandboxProvider implements SandboxProvider {
   private readonly client: ModalClient;
@@ -73,14 +96,11 @@ export class ModalSandboxProvider implements SandboxProvider {
   private async owned(computer: ComputerRef, ctx: AdapterContext) {
     if (computer.kind !== "modal") throw new Error("Incorrect computer provider");
     const sandbox = await this.client.sandboxes.fromId(computer.providerRef).catch((error) => {
-      if (error instanceof NotFoundError) {
-        const missing = new Error("Cloud computer no longer exists");
-        missing.name = "SandboxNotFoundError";
-        throw missing;
-      }
-      throw error;
+      throw modalOperationError(error);
     });
-    const tags = await sandbox.getTags();
+    const tags = await sandbox.getTags().catch((error) => {
+      throw modalOperationError(error);
+    });
     if (tags.cadre_owner !== this.owner(computer.botId, ctx))
       throw new Error("Computer access denied");
     this.protocols.set(sandbox.sandboxId, tags.cadre_protocol === "2");
@@ -190,10 +210,14 @@ export class ModalSandboxProvider implements SandboxProvider {
     request: Record<string, unknown>,
     timeoutMs = 30000,
   ): Promise<T> {
-    const process = await sandbox.exec(["python3", "/opt/cadre/computer_rpc.py"], {
-      timeoutMs,
-      mode: "text",
-    });
+    const process = await sandbox
+      .exec(["python3", "/opt/cadre/computer_rpc.py"], {
+        timeoutMs,
+        mode: "text",
+      })
+      .catch((error) => {
+        throw modalOperationError(error);
+      });
     // Modal limits each stdin message to 20 MiB. Browser profiles and other
     // portable files can be larger, especially after base64 encoding.
     // Untagged running images retain their primary-display protocol during rollout.
@@ -223,6 +247,7 @@ export class ModalSandboxProvider implements SandboxProvider {
     return result;
   }
   async prepare(computer: ComputerRef, ctx: AdapterContext) {
+    if ((await (await this.owned(computer, ctx)).poll()) !== null) throw stoppedComputer();
     for await (const event of this.execute(
       computer,
       {
@@ -287,6 +312,7 @@ export class ModalSandboxProvider implements SandboxProvider {
       };
     }
     const sandbox = await this.owned(computer, ctx);
+    if ((await sandbox.poll()) !== null) throw stoppedComputer();
     const screen = this.protocols.get(sandbox.sandboxId)
       ? await this.rpc<{ key: string }>(sandbox, {
           op: "resolveScreen",
@@ -295,7 +321,11 @@ export class ModalSandboxProvider implements SandboxProvider {
         })
       : undefined;
     if (request.interactive) await this.setScreenControl(computer, true, ctx, request.controlToken);
-    const tunnel = (await sandbox.tunnels())[8080];
+    const tunnel = (
+      await sandbox.tunnels().catch((error) => {
+        throw modalOperationError(error);
+      })
+    )[8080];
     if (!tunnel) throw new Error("Cloud desktop tunnel unavailable");
     const url = new URL("/embed.html", tunnel.url);
     url.searchParams.set("view_only", request.interactive ? "false" : "true");

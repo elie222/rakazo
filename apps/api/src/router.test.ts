@@ -531,13 +531,17 @@ describe("computer screen url", () => {
     controlRunId: null,
   };
 
-  const callScreenUrl = async (connectScreen: () => Promise<unknown>, updateMany = vi.fn()) => {
+  const callScreenUrl = async (
+    connectScreen: () => Promise<unknown>,
+    updateMany = vi.fn(),
+    state = "running",
+  ) => {
     const prisma = {
       bot: {
         findFirst: vi.fn().mockResolvedValue({
           id: "bot-1",
           thread: { id: "thread-1" },
-          computer: computerRow,
+          computer: { ...computerRow, state },
         }),
       },
       computer: { updateMany },
@@ -579,9 +583,20 @@ describe("computer screen url", () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ json: { url: null } });
     expect(updateMany).toHaveBeenCalledWith({
-      where: { id: "computer-1", providerRef: "sandbox-ref-1" },
+      where: { id: "computer-1", state: "running", providerRef: "sandbox-ref-1" },
       data: { state: "stopped", providerRef: null },
     });
+  });
+
+  it("waits for an in-progress boot without contacting or clearing its old ref", async () => {
+    const connectScreen = vi
+      .fn()
+      .mockRejectedValue(Object.assign(new Error("terminated"), { name: "SandboxNotFoundError" }));
+    const { response, updateMany } = await callScreenUrl(connectScreen, vi.fn(), "booting");
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ json: { url: null } });
+    expect(connectScreen).not.toHaveBeenCalled();
+    expect(updateMany).not.toHaveBeenCalled();
   });
 
   it("keeps a transport blip an error and leaves the row alone", async () => {

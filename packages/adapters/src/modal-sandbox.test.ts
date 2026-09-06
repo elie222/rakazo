@@ -276,6 +276,53 @@ describe("Modal sandbox boundary", () => {
       name: "SandboxNotFoundError",
     });
   });
+  it("recognizes a terminated legacy computer before requesting its tunnel", async () => {
+    const f = fixture();
+    f.sandbox.getTags.mockResolvedValue({
+      cadre_owner: (await f.sandbox.getTags()).cadre_owner,
+    } as never);
+    f.sandbox.poll.mockResolvedValue(137 as never);
+    await expect(
+      f.provider.connectScreen(computer, { view: "stream" }, context),
+    ).rejects.toMatchObject({ name: "SandboxNotFoundError" });
+    expect(f.sandbox.tunnels).not.toHaveBeenCalled();
+  });
+  it("normalizes termination between the liveness check and tunnel request", async () => {
+    const f = fixture();
+    f.sandbox.tunnels.mockRejectedValue(
+      Object.assign(
+        new Error(
+          "/modal.client.ModalClient/SandboxGetTunnels FAILED_PRECONDITION: Sandbox has already finished with status terminated",
+        ),
+        { name: "ClientError" },
+      ),
+    );
+    await expect(
+      f.provider.connectScreen(computer, { view: "stream" }, context),
+    ).rejects.toMatchObject({ name: "SandboxNotFoundError" });
+  });
+  it("normalizes termination during boot but leaves transport failures recoverable", async () => {
+    const f = fixture();
+    f.sandbox.exec.mockRejectedValue(
+      Object.assign(
+        new Error(
+          "/modal.client.ModalClient/SandboxExec FAILED_PRECONDITION: Sandbox has already finished with status terminated",
+        ),
+        { name: "ClientError" },
+      ),
+    );
+    await expect(f.provider.prepare(computer, context)).rejects.toMatchObject({
+      name: "SandboxNotFoundError",
+    });
+    const transport = Object.assign(new Error("connection reset"), { name: "ClientError" });
+    f.sandbox.tunnels.mockRejectedValue(transport);
+    f.sandbox.getTags.mockResolvedValue({
+      cadre_owner: (await f.sandbox.getTags()).cadre_owner,
+    } as never);
+    await expect(f.provider.connectScreen(computer, { view: "stream" }, context)).rejects.toBe(
+      transport,
+    );
+  });
   it("does not dispatch a command that was cancelled before execution", async () => {
     const f = fixture();
     await expect(async () => {

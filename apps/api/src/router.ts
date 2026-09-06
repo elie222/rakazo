@@ -1313,11 +1313,27 @@ export function createRouter(deps: RouterDeps) {
       boot: authed.computer.boot.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
         if (!bot.computer) throw new IsolationError();
-        if (bot.computer.state === "running" && bot.computer.providerRef) {
-          scheduleComputerSleep(deps.jobs, bot.computer.id);
-          return computerStatus(deps, context.actor, input.botId);
-        }
         const ctx = computerContext(context.actor, bot.id, "boot");
+        if (bot.computer.state === "running" && bot.computer.providerRef) {
+          try {
+            // A stored running state is not proof that the provider is still alive.
+            await deps.sandbox.prepare(toComputerRef(bot.computer), ctx);
+            scheduleComputerSleep(deps.jobs, bot.computer.id);
+            return computerStatus(deps, context.actor, input.botId);
+          } catch (error) {
+            if (!isSandboxGoneError(error)) throw error;
+            const cleared = await deps.prisma.computer.updateMany({
+              where: {
+                id: bot.computer.id,
+                state: "running",
+                providerRef: bot.computer.providerRef,
+              },
+              data: { state: "stopped", providerRef: null },
+            });
+            // Another request may already have recovered it. Never clear its replacement.
+            if (cleared.count !== 1) return computerStatus(deps, context.actor, input.botId);
+          }
+        }
         const manualRunId = `boot:${randomUUID()}`;
         let lease: ComputerExecutionLease | null;
         try {
@@ -1727,10 +1743,7 @@ export function createRouter(deps: RouterDeps) {
         if (await expireStaleComputerControl(deps, bot.computer)) {
           bot = await repos.getBot(context.actor, input.botId);
         }
-        if (
-          !bot.computer?.providerRef ||
-          (bot.computer.state !== "running" && bot.computer.state !== "booting")
-        ) {
+        if (!bot.computer?.providerRef || bot.computer.state !== "running") {
           return { url: null };
         }
         const computer = bot.computer;
@@ -1752,8 +1765,8 @@ export function createRouter(deps: RouterDeps) {
               throw new ORPCError("CONFLICT", { message: error.message });
             }
             if (!isSandboxGoneError(error)) throw error;
-            // The provider killed this sandbox (idle timeout) while the row still says
-            // running. Clear the dead ref so the UI offers a boot instead of 500ing.
+            // The provider ended this sandbox while the row still says running.
+            // Clear only that running ref; a concurrent boot owns its transition.
             // Leave any active control lease alone — expireComputerControl owns that
             // release (provider screen-control, events, takeover continuation).
             getLogger().error(
@@ -1761,7 +1774,7 @@ export function createRouter(deps: RouterDeps) {
               error,
             );
             await deps.prisma.computer.updateMany({
-              where: { id: computer.id, providerRef: computer.providerRef },
+              where: { id: computer.id, state: "running", providerRef: computer.providerRef },
               data: { state: "stopped", providerRef: null },
             });
             return null;

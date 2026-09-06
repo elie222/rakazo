@@ -8,6 +8,7 @@ import {
   FakeSandboxProvider,
   handoffToGroupBot,
   ManagedSandboxEmulator,
+  toComputerRef,
 } from "@rakazo/adapters";
 import { ONCE_ROUTINE_CRON } from "@rakazo/core";
 import {
@@ -16,7 +17,7 @@ import {
   createThreadMessage,
   RunHistoryWriteError,
 } from "@rakazo/db";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { sessionCookieHeader } from "./index.js";
 
 type App = { request: (input: string, init?: RequestInit) => Promise<Response> };
@@ -482,6 +483,56 @@ describeJourneys("required product journeys", () => {
     expect(snap.messages.some((m) => JSON.stringify(m.blocks).includes("reconnect-ok"))).toBe(true);
     const again = await rpc<Snap>(app, cookie, "threads/get", { botId: bot.id });
     expect(again.messages.length).toBe(snap.messages.length);
+  });
+
+  it("recovers a terminated computer when its stored state still says running", async () => {
+    const cookie = await signup(app, `dead-computer-${stamp}@rakazo.test`, "Recovery");
+    const bot = await rpc<Bot>(app, cookie, "bots/create", {
+      name: "Recovery",
+      title: "",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+    await sendAndWait(
+      app,
+      cookie,
+      bot.id,
+      "write a file in your home called notes/result.txt that says recovery-ok",
+    );
+    await rpc(app, cookie, "computer/stop", { botId: bot.id });
+    await rpc(app, cookie, "computer/boot", { botId: bot.id });
+    const record = (
+      await prisma.bot.findUniqueOrThrow({ where: { id: bot.id }, include: { computer: true } })
+    ).computer!;
+    await sandbox.destroy(toComputerRef(record), {
+      spaceId: record.spaceId,
+      userId: record.userId,
+      botId: bot.id,
+      operationId: "simulate-provider-expiry",
+      traceId: "recovery-test",
+      signal: new AbortController().signal,
+    });
+    // Fake prepare is a no-op; model the provider's terminal-state response at
+    // the boundary while exercising real API, database, and home restoration.
+    const prepare = vi.spyOn(sandbox, "prepare").mockRejectedValueOnce(
+      Object.assign(new Error("Cloud computer no longer exists"), {
+        name: "SandboxNotFoundError",
+      }),
+    );
+    try {
+      expect(
+        (await rpc<{ state: string }>(app, cookie, "computer/boot", { botId: bot.id })).state,
+      ).toBe("running");
+      const file = await rpc<{ content: string }>(app, cookie, "computer/readFile", {
+        botId: bot.id,
+        path: "notes/result.txt",
+      });
+      expect(file.content).toContain("recovery-ok");
+      expect(prepare).toHaveBeenCalledTimes(2);
+    } finally {
+      prepare.mockRestore();
+    }
   });
 
   it("4: takeover login then resume without exposing credentials", async () => {
