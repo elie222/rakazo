@@ -158,7 +158,11 @@ export async function provisionComputer(
         };
   // Choose the claim stamp before writing so a concurrent reclaim cannot make us adopt its
   // updatedAt on a follow-up read (which would let our activation overwrite the newer owner).
-  const claimStamp = new Date();
+  // Advance past the observed stamp even when Date.now() equals it (same ms or clock skew);
+  // otherwise a booting self-transition would leave the CAS token unchanged and a second
+  // worker that observed the same stamp could also claim and provision.
+  const observedStamp = reclaimStamp ?? existing.updatedAt;
+  const claimStamp = new Date(Math.max(Date.now(), observedStamp.getTime() + 1));
   const claimed = await deps.prisma.computer.updateMany({
     where: {
       id: computerId,

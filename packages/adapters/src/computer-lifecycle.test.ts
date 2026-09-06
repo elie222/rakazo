@@ -341,6 +341,79 @@ describe("computer provisioning", () => {
     }
   });
 
+  it("advances the claim stamp past the observed updatedAt when the clock does not move", async () => {
+    const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-claim-stamp-skew-"));
+    const observed = new Date("2024-01-01T00:00:00.000Z");
+    const row = {
+      id: "computer-1",
+      homeKey: "bot-1",
+      providerRef: null as string | null,
+      kind: "cloud",
+      scope: "dedicated",
+      state: "booting",
+      controlLeaseId: null,
+      updatedAt: observed,
+    };
+    const updateMany = vi.fn(
+      async ({
+        where,
+        data,
+      }: {
+        where: Record<string, unknown>;
+        data: Record<string, unknown>;
+      }) => {
+        const matches = ["id", "state", "providerRef", "kind", "updatedAt"].every(
+          (key) => !(key in where) || where[key] === row[key as keyof typeof row],
+        );
+        if (!matches) return { count: 0 };
+        Object.assign(row, data);
+        return { count: 1 };
+      },
+    );
+    const prisma = {
+      computer: {
+        findUniqueOrThrow: vi.fn(async () => ({ ...row })),
+        updateMany,
+      },
+      executionLease: {
+        findFirst: vi.fn(async () => null),
+      },
+    } as unknown as PrismaClient;
+    const sandbox = new FakeSandboxProvider();
+    const now = vi.spyOn(Date, "now").mockReturnValue(observed.getTime());
+    const setTimeoutReal = globalThis.setTimeout;
+    vi.stubGlobal("setTimeout", ((fn: (...args: never[]) => void, _ms?: number, ...args: never[]) =>
+      setTimeoutReal(fn, 0, ...args)) as unknown as typeof setTimeout);
+
+    try {
+      await provisionComputer(
+        {
+          prisma,
+          sandbox,
+          home: new LocalAgentHomeStore(dataDir),
+          jobs: {} as JobPublisher,
+          events: {} as ThreadEvents,
+          dataDir,
+        },
+        "computer-1",
+        context,
+      );
+      const claim = updateMany.mock.calls[0]?.[0] as {
+        where: { updatedAt?: Date };
+        data: { updatedAt?: Date };
+      };
+      const activationWhere = updateMany.mock.calls[1]?.[0]?.where as { updatedAt?: Date };
+      expect(claim.where.updatedAt).toEqual(observed);
+      expect(claim.data.updatedAt?.getTime()).toBe(observed.getTime() + 1);
+      expect(activationWhere.updatedAt).toEqual(claim.data.updatedAt);
+      expect(row.state).toBe("running");
+    } finally {
+      now.mockRestore();
+      vi.unstubAllGlobals();
+      await rm(dataDir, { recursive: true, force: true });
+    }
+  });
+
   it("activates a boot even if another Team bot takes a lease mid-provision", async () => {
     const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-team-lease-mid-boot-"));
     const row = {
