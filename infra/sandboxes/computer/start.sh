@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -uo pipefail
+export XCURSOR_THEME=Cadre XCURSOR_SIZE=24
 export DISPLAY="${DISPLAY:-:1}"
 export HOME="${HOME:-/home/rakazo}"
 AGENT_HOME="$HOME"
@@ -43,14 +44,13 @@ if command -v dbus-launch >/dev/null 2>&1; then
   eval "$(dbus-launch --sh-syntax)"
 fi
 
-xsetroot -solid "#111113" >/dev/null 2>&1 || true
+cadre-desktop-appearance
 mkdir -p ${FLUX_HOME}/.fluxbox
 cp /etc/rakazo/fluxbox/init ${FLUX_HOME}/.fluxbox/init
 cp /etc/rakazo/fluxbox/apps ${FLUX_HOME}/.fluxbox/apps 2>/dev/null || true
 cp /etc/rakazo/fluxbox/menu ${FLUX_HOME}/.fluxbox/menu 2>/dev/null || true
 cat > ${FLUX_HOME}/.fluxbox/startup <<EOF
 #!/bin/sh
-xsetroot -solid "#111113"
 exec fluxbox -rc ${FLUX_HOME}/.fluxbox/init
 EOF
 chmod +x ${FLUX_HOME}/.fluxbox/startup

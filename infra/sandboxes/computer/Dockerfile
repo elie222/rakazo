@@ -31,6 +31,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     x11-utils \
     x11-xserver-utils \
     imagemagick \
+    feh \
+    librsvg2-bin \
+    x11-apps \
+    adwaita-icon-theme \
     novnc \
     websockify \
     python3 \
@@ -46,14 +50,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   && groupadd --gid 1000 rakazo \
   && useradd --uid 1000 --gid rakazo --create-home --shell /bin/bash rakazo \
   && mkdir -p /etc/rakazo/fluxbox \
-  && printf '%s\n' '#!/bin/sh' 'exec xsetroot -solid "#111113" "$@"' > /usr/bin/fbsetbg \
-  && chmod +x /usr/bin/fbsetbg \
   && ln -sfn /bin/true /usr/bin/xmessage
+ENV XCURSOR_THEME=Cadre XCURSOR_SIZE=24
 ENV DISPLAY=:1
 ENV HOME=/home/rakazo
 WORKDIR /home/rakazo
 # --chmod normalizes modes: a restrictive host umask (e.g. 077 on hardened hosts) would
 # otherwise leave these files unreadable to USER 1000 at runtime.
+COPY --chmod=644 wallpaper.svg cursor.svg /usr/share/cadre/
+COPY --chmod=755 build-appearance.sh /usr/local/bin/cadre-build-appearance
+COPY --chmod=755 desktop-appearance.sh /usr/local/bin/cadre-desktop-appearance
+RUN cadre-build-appearance
 COPY --chmod=755 start.sh /usr/local/bin/rakazo-computer
 COPY --chmod=755 control.py /usr/local/bin/rakazo-computer-control
 COPY --from=capture-builder /build/librakazo-xcapture.so /usr/local/lib/librakazo-xcapture.so

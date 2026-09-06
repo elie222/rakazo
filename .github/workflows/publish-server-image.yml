@@ -68,6 +68,7 @@ jobs:
           context: ${{ matrix.context }}
           file: ${{ matrix.dockerfile }}
           push: false
+          load: ${{ matrix.name == 'computer' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: ${{ matrix.name == 'app' && format('GIT_SHA={0}', github.sha) || '' }}
@@ -75,6 +76,39 @@ jobs:
           cache-to: type=gha,mode=max,scope=pr-${{ github.event.pull_request.number }}-${{ matrix.name }}
           provenance: false
           sbom: false
+
+
+      - name: Verify and capture the Linux desktop
+        if: matrix.name == 'computer'
+        env:
+          IMAGE: ${{ steps.meta.outputs.tags }}
+        run: |
+          set -euo pipefail
+          docker run -d --name desktop-smoke --shm-size=512m "$IMAGE"
+          trap 'docker logs desktop-smoke; docker rm -f desktop-smoke' EXIT
+          for attempt in $(seq 1 90); do
+            if docker exec desktop-smoke sh -c 'xdotool search --onlyvisible --class chromium >/dev/null && pgrep tint2 >/dev/null'; then
+              break
+            fi
+            sleep 1
+          done
+          docker exec desktop-smoke sh -ec '
+            xdotool search --onlyvisible --class chromium >/dev/null
+            xrdb -query | grep -q "Xcursor.theme:.*Cadre"
+            test -s /usr/share/icons/Cadre/cursors/left_ptr
+            for window in $(xdotool search --onlyvisible --class chromium); do xdotool windowminimize "$window"; done
+            sleep 2
+            import -window root /tmp/cadre-desktop.png
+          '
+          mkdir -p desktop-screenshots
+          docker cp desktop-smoke:/tmp/cadre-desktop.png desktop-screenshots/desktop.png
+          docker cp desktop-smoke:/usr/share/cadre/cursor.svg desktop-screenshots/cursor.svg
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: matrix.name == 'computer'
+        with:
+          name: linux-desktop-screenshots
+          path: desktop-screenshots/
+          if-no-files-found: error
 
   build:
     name: Build ${{ matrix.name }} ${{ matrix.arch }}

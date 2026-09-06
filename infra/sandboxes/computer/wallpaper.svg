@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2560" height="1600" viewBox="0 0 2560 1600">
+  <defs>
+    <radialGradient id="light" cx="50%" cy="42%" r="70%">
+      <stop offset="0" stop-color="#202023"/>
+      <stop offset="1" stop-color="#000000"/>
+    </radialGradient>
+  </defs>
+  <rect width="2560" height="1600" fill="url(#light)"/>
+  <text x="1280" y="815" text-anchor="middle" font-family="DejaVu Sans" font-size="160" font-weight="bold" letter-spacing="-7" fill="#85858A">cadre</text>
+</svg>
