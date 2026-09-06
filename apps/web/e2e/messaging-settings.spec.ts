@@ -206,14 +206,18 @@ test("team conversation settings open from messaging overlay", async ({ page }, 
   ).toBeVisible();
   await page.getByRole("button", { name: "Manage messaging settings" }).click();
 
-  await expect(page.getByTestId("messaging-settings")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Team conversations" })).toBeVisible();
-  await expect(page.getByText("#launch")).toBeVisible();
-  await expect(page.getByText("Slack")).toBeVisible();
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
-  await expect(page.getByTestId("external-conversation-settings")).toBeVisible();
-  await expect(page.getByText("Listening")).toBeVisible();
-  await expect(page.getByText("Room guidance")).toBeVisible();
-  await expect(page.getByText("GitHub")).toBeVisible();
+  const messagingSettings = page.getByTestId("messaging-settings");
+  await expect(messagingSettings).toBeVisible();
+  await expect(
+    messagingSettings.getByRole("heading", { name: "Team conversations" }),
+  ).toBeVisible();
+  await expect(messagingSettings.getByText("#launch")).toBeVisible();
+  await expect(messagingSettings.getByText("Slack", { exact: true })).toBeVisible();
+  await messagingSettings.getByRole("button", { name: "Settings", exact: true }).click();
+  const conversationSettings = page.getByTestId("external-conversation-settings");
+  await expect(conversationSettings).toBeVisible();
+  await expect(conversationSettings.getByText("Listening")).toBeVisible();
+  await expect(conversationSettings.getByText("Room guidance")).toBeVisible();
+  await expect(conversationSettings.getByText("GitHub")).toBeVisible();
   await captureScreenshot(page, testInfo, "messaging-team-conversation-settings");
 });
