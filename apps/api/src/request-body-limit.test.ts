@@ -61,18 +61,21 @@ describe("API request body limits", () => {
     expect(parse).not.toHaveBeenCalled();
   });
 
-  it("rejects an invalid declared length before the route parser", async () => {
-    const { app, parse } = testApp(8);
-    const response = await app.request("/parse", {
-      method: "POST",
-      headers: { "content-type": "application/json", "content-length": "invalid" },
-      body: "{}",
-    });
+  it.each(["", "8.0", "0x8", "invalid"])(
+    "rejects invalid declared length %j before the route parser",
+    async (contentLength) => {
+      const { app, parse } = testApp(8);
+      const response = await app.request("/parse", {
+        method: "POST",
+        headers: { "content-type": "application/json", "content-length": contentLength },
+        body: "{}",
+      });
 
-    expect(response.status).toBe(413);
-    await expect(response.json()).resolves.toEqual({ error: "Request body is too large." });
-    expect(parse).not.toHaveBeenCalled();
-  });
+      expect(response.status).toBe(413);
+      await expect(response.json()).resolves.toEqual({ error: "Request body is too large." });
+      expect(parse).not.toHaveBeenCalled();
+    },
+  );
 
   it("stops an oversized streamed body before the route parser", async () => {
     const cancel = vi.fn();

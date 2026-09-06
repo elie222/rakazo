@@ -14,7 +14,7 @@ export function requestBodyLimit(maxSize: number): MiddlewareHandler {
 
     const contentLength = request.headers.get("content-length");
     if (contentLength !== null && !request.headers.has("transfer-encoding")) {
-      const declared = Number(contentLength);
+      const declared = /^[0-9]+$/.test(contentLength) ? Number(contentLength) : Number.NaN;
       if (!Number.isSafeInteger(declared) || declared < 0 || declared > maxSize) {
         cancelBody(request.body);
         return c.json({ error: "Request body is too large." }, 413);
