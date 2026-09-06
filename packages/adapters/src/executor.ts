@@ -477,6 +477,8 @@ export interface ExecutorDeps {
   secretHttp?: RemoteTransportDependencies;
   /** Remote cloud coding agents. Null/omit means tools stay uninjected. */
   cloudAgent?: CloudAgentConnection | null;
+  /** Aborted when createApp stop() begins so in-flight continueRun boot waits exit promptly. */
+  shutdownSignal?: AbortSignal;
 }
 
 export async function deferFutureRoutine(
@@ -880,6 +882,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
       let retainComputerLease = false;
       let screenRelease: { computer: ComputerRef; context: AdapterContext } | undefined;
       let runAbortController: AbortController | null = null;
+      let detachShutdown: (() => void) | undefined;
       const heartbeat = setInterval(() => {
         void Promise.all([
           renewRunLease(deps, runId, workerId, fence),
@@ -974,6 +977,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
             : null;
         runAbortController = new AbortController();
         if (!leaseValid) runAbortController.abort();
+        if (deps.shutdownSignal?.aborted) runAbortController.abort(deps.shutdownSignal.reason);
+        const onShutdown = () => runAbortController?.abort(deps.shutdownSignal?.reason);
+        deps.shutdownSignal?.addEventListener("abort", onShutdown);
+        detachShutdown = () => deps.shutdownSignal?.removeEventListener("abort", onShutdown);
         const composioRows = storedConnections.filter(
           (connection) => connection.connectorId === "composio",
         );
@@ -3739,6 +3746,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           throw new Error("Run setup failed; retrying");
         }
       } finally {
+        detachShutdown?.();
         clearInterval(heartbeat);
         if (!retainComputerLease) {
           if (screenRelease) {

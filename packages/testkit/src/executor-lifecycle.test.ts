@@ -731,6 +731,86 @@ describeIntegration("run executor lifecycle", () => {
     ).toEqual([source.id, publicSend.messageId].sort());
   });
 
+  it("recovers a computer a crashed worker left booting", async () => {
+    const seeded = await seedRun("stale-boot", "write a file that says recovered");
+    const bot = await handles.prisma.bot.findUniqueOrThrow({ where: { id: seeded.bot.id } });
+    const computerId = bot.computerId!;
+    expect(computerId).toBeTruthy();
+
+    // A worker killed between the boot claim and its own failure handler: the row keeps
+    // "booting" and its execution lease is gone. Age the claim stamp past the execution-lease
+    // TTL so reclaim treats it as abandoned, not a live mid-provision claim.
+    await handles.prisma.computerExecutionLease.deleteMany({ where: { computerId } });
+    await handles.prisma.computer.update({
+      where: { id: computerId },
+      data: {
+        state: "booting",
+        providerRef: "",
+        // Matches BOOT_CLAIM_STALE_MS (execution-lease TTL) plus a small cushion.
+        updatedAt: new Date(Date.now() - (5 * 60_000 + 1_000)),
+      },
+    });
+
+    await handles.executor.continueRun(seeded.run.id, "worker-stale-boot");
+
+    const computer = await handles.prisma.computer.findUniqueOrThrow({
+      where: { id: computerId },
+    });
+    expect(computer.state).toBe("running");
+    const run = await handles.prisma.run.findUniqueOrThrow({ where: { id: seeded.run.id } });
+    expect(run.status).toBe("completed");
+  });
+
+  it("leaves a booting computer alone while its worker still holds the lease", async () => {
+    const seeded = await seedRun("live-boot", "write a file that says waited");
+    const bot = await handles.prisma.bot.findUniqueOrThrow({ where: { id: seeded.bot.id } });
+    const computerId = bot.computerId!;
+
+    await handles.prisma.computerExecutionLease.deleteMany({ where: { computerId } });
+    await handles.prisma.computerExecutionLease.create({
+      data: {
+        computerId,
+        botId: "another-bot",
+        runId: "run-still-booting",
+        fence: 1,
+        expiresAt: new Date(Date.now() + 5 * 60_000),
+      },
+    });
+    await handles.prisma.computer.update({
+      where: { id: computerId },
+      data: { state: "booting", providerRef: "" },
+    });
+
+    try {
+      await handles.executor.continueRun(seeded.run.id, "worker-live-boot");
+
+      const computer = await handles.prisma.computer.findUniqueOrThrow({
+        where: { id: computerId },
+      });
+      expect(computer.state).toBe("booting");
+      const run = await handles.prisma.run.findUniqueOrThrow({ where: { id: seeded.run.id } });
+      expect(run.status).not.toBe("completed");
+    } finally {
+      // Shared Postgres journeys reuse one database. Leave this run terminal and the computer
+      // unblocked so later suites' reconcilers do not keep retrying a wedged boot forever.
+      await handles.prisma.computerExecutionLease.deleteMany({ where: { computerId } });
+      await handles.prisma.computer.update({
+        where: { id: computerId },
+        data: { state: "error", providerRef: "" },
+      });
+      await handles.prisma.run.updateMany({
+        where: { id: seeded.run.id, status: { notIn: ["completed", "failed", "cancelled"] } },
+        data: {
+          status: "failed",
+          error: "test cleanup after live-boot lease check",
+          leaseOwner: null,
+          leaseExpiresAt: null,
+          completedAt: new Date(),
+        },
+      });
+    }
+  });
+
   async function seedRun(
     label: string,
     prompt: string,
