@@ -57,8 +57,8 @@ test("message hover shows beside-bubble actions; reply links to parent", async (
   const botToolbar = botRow.getByTestId("message-hover-actions");
   await expect(botToolbar.getByRole("button", { name: "Reply" })).toBeVisible();
   await expect(botToolbar.getByRole("button", { name: "More" })).toBeVisible();
-  // Measure the visible bubble, so an oversized wrapper cannot hide a gap.
-  const botBubble = botRow.getByTestId("message-bot-bubble");
+  // Measure a unique visible bubble, so an oversized wrapper cannot hide a gap.
+  const botBubble = botRow.getByTestId("message-bot-bubble").first();
   await expect
     .poll(async () => {
       const railBox = await botRail.boundingBox();
