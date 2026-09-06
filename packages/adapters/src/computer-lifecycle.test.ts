@@ -380,11 +380,12 @@ describe("computer provisioning", () => {
       },
     } as unknown as PrismaClient;
     const sandbox = new FakeSandboxProvider();
-    // First Date.now() is the stale-claim check (must see the stamp as abandoned);
-    // later calls freeze at the observed ms so the claim stamp still advances by +1.
+    // First Date.now() is the stale-claim check (must see the stamp older than an
+    // execution-lease TTL); later calls freeze at the observed ms so the claim stamp
+    // still advances by +1.
     const now = vi
       .spyOn(Date, "now")
-      .mockReturnValueOnce(observed.getTime() + 10_000)
+      .mockReturnValueOnce(observed.getTime() + 5 * 60_000)
       .mockReturnValue(observed.getTime());
     const setTimeoutReal = globalThis.setTimeout;
     vi.stubGlobal("setTimeout", ((fn: (...args: never[]) => void, _ms?: number, ...args: never[]) =>
@@ -1651,6 +1652,47 @@ describe("computer replacement", () => {
       now.mockRestore();
     }
   });
+
+
+  it("refuses Reset on a stale dedicated booting row while a run is still active", async () => {
+    // Stamp is old enough to look abandoned, but a live run still owns the provision.
+    // Refuse before claiming suspending so we do not bump @updatedAt under the provisioner.
+    const updateMany = vi.fn().mockResolvedValue({ count: 1 });
+    const prisma = {
+      computer: {
+        findUniqueOrThrow: vi.fn().mockResolvedValue({
+          id: "computer-1",
+          homeKey: "bot-1",
+          providerRef: "",
+          kind: "fake",
+          scope: "dedicated",
+          state: "booting",
+          controlLeaseId: null,
+          updatedAt: new Date("2024-01-01T00:00:00.000Z"),
+        }),
+        updateMany,
+      },
+      computerExecutionLease: { findFirst: vi.fn().mockResolvedValue(null) },
+      run: { findFirst: vi.fn().mockResolvedValue({ id: "live-run" }) },
+    } as unknown as PrismaClient;
+
+    await expect(
+      replaceComputer(
+        {
+          prisma,
+          sandbox: new FakeSandboxProvider(),
+          home: {} as AgentHomeStore,
+          jobs: {} as JobPublisher,
+          events: {} as ThreadEvents,
+        },
+        "computer-1",
+        "reset",
+        context,
+      ),
+    ).rejects.toBeInstanceOf(ComputerBusyError);
+    expect(updateMany).not.toHaveBeenCalled();
+  });
+
 
   it("rejects replacement while the target bot has an active run", async () => {
     const prisma = {

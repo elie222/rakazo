@@ -30,8 +30,13 @@ const EXECUTION_LEASE_MS = 5 * 60_000;
 const RELEASED_EXECUTION_LEASE_AT = new Date(0);
 const BOOT_WAIT_ATTEMPTS = 40;
 const BOOT_WAIT_MS = 250;
-/** A booting claim newer than the boot-wait window is treated as live, not abandoned. */
-const BOOT_CLAIM_STALE_MS = BOOT_WAIT_ATTEMPTS * BOOT_WAIT_MS;
+/**
+ * A booting claim newer than an execution-lease TTL is treated as live, not abandoned.
+ * Dedicated / lease-less boots never write an execution-lease row, so this stamp age is what
+ * keeps a slow mid-provision claim from being reclaimed or Reset after the short boot-wait
+ * poll ends. Align with EXECUTION_LEASE_MS: a crashed team worker's lease would expire then.
+ */
+const BOOT_CLAIM_STALE_MS = EXECUTION_LEASE_MS;
 
 /**
  * "Nobody but us holds this computer."
@@ -120,11 +125,11 @@ export async function provisionComputer(
   // stamp keeps those callers mutually exclusive. After the wait, a finished boot returns
   // "running" and takes the normal reconnect claim instead.
   //
-  // Only reclaim stamps that were already older than the boot-wait window when we first saw
-  // them. A fresher stamp means another caller just claimed and may still be provisioning
-  // past our poll window; stealing it would double-provision and roll back their sandbox.
-  // Live boots with an execution lease are already blocked by heldByNobodyElse; this guards
-  // the lease-less path (and expired-lease gaps) against reclaiming an active claim.
+  // Only reclaim stamps that were already older than an execution-lease TTL when we first
+  // saw them. A fresher stamp means another caller may still be provisioning (dedicated and
+  // lease-less boots can outlast the short boot-wait poll); stealing would double-provision
+  // and roll back their sandbox. Live team boots with an execution lease are already blocked
+  // by heldByNobodyElse; this guards the lease-less path (and expired-lease gaps).
   const reclaimStamp = existing.state === "booting" ? existing.updatedAt : null;
   const bootClaimIsStale =
     reclaimStamp !== null && Date.now() - reclaimStamp.getTime() >= BOOT_CLAIM_STALE_MS;
@@ -519,9 +524,10 @@ export async function replaceComputer(
   }
   // Allow Reset on a stale "booting" row unless another bot still holds a live lease.
   // Dedicated computers never create an execution-lease row, so the foreign-lease check alone
-  // cannot see an in-flight dedicated boot. Refuse fresh claim stamps the same way
-  // provisionComputer does — otherwise Reset claims suspending, bumps @updatedAt on rollback,
-  // and the live provisioner's activation fence fails.
+  // cannot see an in-flight dedicated boot. Refuse claim stamps younger than an execution-lease
+  // TTL (not merely the boot-wait poll) so a slow dedicated provision is not destroyed mid-flight.
+  // Also refuse while a run still uses the computer — before claiming suspending — so rollback
+  // cannot bump @updatedAt under an in-flight boot's activation fence.
   if (existing.state === "booting") {
     if (await hasForeignExecutionLease(deps.prisma, computerId, botId)) {
       throw new ComputerBusyError();
@@ -529,6 +535,14 @@ export async function replaceComputer(
     if (Date.now() - existing.updatedAt.getTime() < BOOT_CLAIM_STALE_MS) {
       throw new ComputerBusyError();
     }
+    const activeBootRun = await deps.prisma.run.findFirst({
+      where: {
+        status: { in: [...ACTIVE_RUN_STATUSES] },
+        bot: { computerId },
+      },
+      select: { id: true },
+    });
+    if (activeBootRun) throw new ComputerBusyError();
   }
 
   const previousState = existing.state;
@@ -550,6 +564,7 @@ export async function replaceComputer(
     data: { state: "suspending" },
   });
   if (claimed.count !== 1) throw new ComputerBusyError();
+  // Re-check after the claim in case a run started between the pre-check and CAS.
   const activeRun = await deps.prisma.run.findFirst({
     where: {
       status: { in: [...ACTIVE_RUN_STATUSES] },

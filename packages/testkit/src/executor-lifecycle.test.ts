@@ -738,16 +738,16 @@ describeIntegration("run executor lifecycle", () => {
     expect(computerId).toBeTruthy();
 
     // A worker killed between the boot claim and its own failure handler: the row keeps
-    // "booting" and its execution lease is gone. Age the claim stamp past the boot-wait
-    // window so reclaim treats it as abandoned, not a live mid-provision claim.
+    // "booting" and its execution lease is gone. Age the claim stamp past the execution-lease
+    // TTL so reclaim treats it as abandoned, not a live mid-provision claim.
     await handles.prisma.computerExecutionLease.deleteMany({ where: { computerId } });
     await handles.prisma.computer.update({
       where: { id: computerId },
       data: {
         state: "booting",
         providerRef: "",
-        // Matches BOOT_CLAIM_STALE_MS (boot-wait attempts * interval) plus a small cushion.
-        updatedAt: new Date(Date.now() - 11_000),
+        // Matches BOOT_CLAIM_STALE_MS (execution-lease TTL) plus a small cushion.
+        updatedAt: new Date(Date.now() - (5 * 60_000 + 1_000)),
       },
     });
 
