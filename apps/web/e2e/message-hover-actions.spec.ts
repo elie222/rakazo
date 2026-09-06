@@ -54,21 +54,21 @@ test("message hover shows beside-bubble actions; reply links to parent", async (
   const botToolbar = botRow.getByTestId("message-hover-actions");
   await expect(botToolbar.getByRole("button", { name: "Reply" })).toBeVisible();
   await expect(botToolbar.getByRole("button", { name: "More" })).toBeVisible();
-  // Measure against the bubble frame (rail offset parent), not the inner bubble —
-  // narration/markdown wrappers can be narrower than the frame and inflate the gap.
-  const botFrame = botRow.getByTestId("message-bubble-frame");
+  // Snug to the visible bot bubble (not a wider frame). Narration wraps the
+  // bubble in w-fit so the rail's offset parent matches the bubble edge.
+  const botBubble = botRow.getByTestId("message-bot-bubble");
   await expect
     .poll(async () => {
       const railBox = await botRail.boundingBox();
-      const frameBox = await botFrame.boundingBox();
-      if (!railBox || !frameBox) return null;
+      const bubbleBox = await botBubble.boundingBox();
+      if (!railBox || !bubbleBox) return null;
       const railMid = railBox.y + railBox.height / 2;
-      const frameMid = frameBox.y + frameBox.height / 2;
+      const bubbleMid = bubbleBox.y + bubbleBox.height / 2;
       return {
-        beside: railBox.x >= frameBox.x + frameBox.width - 2,
-        flush: railBox.x - (frameBox.x + frameBox.width) < 8,
-        centered: Math.abs(railMid - frameMid) <= 12,
-        notBelow: railBox.y + railBox.height <= frameBox.y + frameBox.height + 12,
+        beside: railBox.x >= bubbleBox.x + bubbleBox.width - 2,
+        flush: railBox.x - (bubbleBox.x + bubbleBox.width) < 8,
+        centered: Math.abs(railMid - bubbleMid) <= 12,
+        notBelow: railBox.y + railBox.height <= bubbleBox.y + bubbleBox.height + 12,
       };
     })
     .toEqual({ beside: true, flush: true, centered: true, notBelow: true });
