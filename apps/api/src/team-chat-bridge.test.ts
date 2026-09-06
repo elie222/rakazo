@@ -534,8 +534,7 @@ describe("team chat bridge", () => {
           const isRoutingHold =
             input.where?.status === "deferred" &&
             input.data?.nextAttemptAt instanceof Date &&
-            (input.data.engagementReason === "message_routine_routing" ||
-              input.data.engagementReason === "message_routine_routing_rearmed") &&
+            input.data.engagementReason === "message_routine_routing" &&
             input.data.status === undefined;
           // Heartbeat renewals omit nextAttemptAt from the where clause; recovery
           // re-arms CAS on nextAttemptAt and must still succeed after lease loss.
@@ -547,7 +546,7 @@ describe("team chat bridge", () => {
           }
           if (isRoutingHold && input.where?.nextAttemptAt !== undefined) {
             leaseUntil = input.data!.nextAttemptAt as Date;
-            engagementReason = input.data!.engagementReason ?? "message_routine_routing_rearmed";
+            engagementReason = input.data!.engagementReason ?? "message_routine_routing";
             return { count: 1 };
           }
           if (
@@ -605,7 +604,7 @@ describe("team chat bridge", () => {
       await bridge.reconcileOnce();
 
       expect(sendUserMessage).not.toHaveBeenCalled();
-      expect(engagementReason).toBe("message_routine_routing_rearmed");
+      expect(engagementReason).toBe("message_routine_routing");
       expect(leaseUntil.getTime()).toBeGreaterThan(Date.now());
       expect(updateMany).not.toHaveBeenCalledWith(
         expect.objectContaining({
@@ -614,11 +613,12 @@ describe("team chat bridge", () => {
         }),
       );
 
-      // A second expiry of the one-shot re-arm must promote to agent delivery.
+      // Repeated expiry while this bridge remains live must retain ownership.
       leaseUntil = new Date(Date.now() - 1);
       await bridge.reconcileOnce();
-      expect(engagementReason).toBeNull();
-      expect(updateMany).toHaveBeenCalledWith(
+      expect(engagementReason).toBe("message_routine_routing");
+      expect(leaseUntil.getTime()).toBeGreaterThan(Date.now());
+      expect(updateMany).not.toHaveBeenCalledWith(
         expect.objectContaining({
           where: expect.objectContaining({ id: "external-lost", status: "deferred" }),
           data: expect.objectContaining({ status: "received", engagementReason: null }),
@@ -788,11 +788,7 @@ describe("team chat bridge", () => {
         where: {
           id: "external-claimed",
           status: "received",
-          NOT: {
-            engagementReason: {
-              in: ["message_routine_routing", "message_routine_routing_rearmed"],
-            },
-          },
+          NOT: { engagementReason: "message_routine_routing" },
         },
         data: expect.objectContaining({ status: "queueing" }),
       }),

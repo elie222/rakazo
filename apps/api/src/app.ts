@@ -570,6 +570,17 @@ export async function createApp(
                 try {
                   woken = await wakePromise;
                 } catch (wakeError) {
+                  const released = await bridge.resolveDeferredMessage(
+                    target.externalMessageId,
+                    "agent",
+                    mapped.kind,
+                  );
+                  if (!released) {
+                    throw new Error("Team chat deferred message ownership conflict", {
+                      cause: wakeError,
+                    });
+                  }
+                  await bridge.reconcileOnce();
                   getLogger().error(
                     "team chat routine wake failed after deferred lease loss",
                     wakeError,
