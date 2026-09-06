@@ -288,9 +288,27 @@ if [[ "$prepare_only" == true ]]; then
 fi
 
 prepare_proxy_env
-if ! docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" pull; then
-  fail "could not pull images. Shell HTTP_PROXY often does not reach the Docker daemon. Configure daemon proxy/registry-mirrors, set image env vars to a reachable registry, or preload images then compose up with --pull never."
+# Stage C image pull: finite retries for flaky GHCR/Hub (no regional CDN defaults).
+pull_images() {
+  local max_attempts=3
+  local retry_delay=2
+  local attempt
+  for ((attempt = 1; attempt <= max_attempts; attempt++)); do
+    if docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" pull; then
+      return 0
+    fi
+    if ((attempt < max_attempts)); then
+      echo "docker compose pull failed (attempt ${attempt}/${max_attempts}); retrying in ${retry_delay}s…" >&2
+      sleep "$retry_delay"
+    fi
+  done
+  return 1
+}
+
+if ! pull_images; then
+  fail "could not pull images after 3 attempts. Shell HTTP_PROXY often does not reach the Docker daemon. Configure daemon proxy/registry-mirrors, set image env vars to a reachable registry, or preload images then compose up with --pull never."
 fi
+
 # `--wait` without `--wait-timeout` can hang on one-shot services (Compose < 2.7)
 # or never return if a healthcheck stays red (Compose < 2.17). Prefer both flags.
 compose_up_help=$(docker compose up --help 2>/dev/null || true)
