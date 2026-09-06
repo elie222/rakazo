@@ -49,7 +49,9 @@ export function createMessagingTeamChatSender(
   messaging: MessagingSurface,
 ): (request: TeamChatSendRequest) => Promise<TeamChatSendResult> {
   return async (request) => {
-    const operationId = `team-chat-send:${randomUUID()}`;
+    const operationId = request.idempotencyKey
+      ? `team-chat-send:${request.idempotencyKey}`
+      : `team-chat-send:${randomUUID()}`;
     const context: AdapterContext = {
       operationId,
       traceId: operationId,
@@ -58,7 +60,11 @@ export function createMessagingTeamChatSender(
       signal: new AbortController().signal,
     };
     const sent = await messaging.sendToThread(
-      { threadId: request.conversationId, body: request.content },
+      {
+        threadId: request.conversationId,
+        body: request.content,
+        ...(request.idempotencyKey ? { idempotencyKey: request.idempotencyKey } : {}),
+      },
       context,
     );
     return { handle: sent.handle };

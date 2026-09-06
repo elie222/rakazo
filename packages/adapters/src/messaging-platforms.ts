@@ -228,16 +228,32 @@ export function enrichSlackTeamRoom(
   if (threadTs) enrichment.replyThreadId = threadTs;
   else enrichment.replyThreadId = null;
   if (!base.isDirect) {
+    const text = stringField(event, "text") ?? base.content;
+    const botUserId = slackAuthorizedBotUserId(root);
+    // app_mention is Slack's bot-directed event. A bare <@U…> mention of
+    // someone else must stay ambient so listen policy still applies.
     enrichment.kind =
-      eventType === "app_mention" || mentionsSlackUser(stringField(event, "text") ?? base.content)
-        ? "mention"
-        : "ambient";
+      eventType === "app_mention" || mentionsSlackBot(text, botUserId) ? "mention" : "ambient";
   }
   return enrichment;
 }
 
-function mentionsSlackUser(text: string): boolean {
-  return /<@[\w]+>/.test(text);
+/** Bot user id from Slack's event authorizations (the app that received the event). */
+function slackAuthorizedBotUserId(root: Record<string, unknown>): string | undefined {
+  const authorizations = root.authorizations;
+  if (!Array.isArray(authorizations)) return undefined;
+  for (const entry of authorizations) {
+    const record = asRecord(entry);
+    if (!record || record.is_bot !== true) continue;
+    const userId = stringField(record, "user_id");
+    if (userId) return userId;
+  }
+  return undefined;
+}
+
+function mentionsSlackBot(text: string, botUserId: string | undefined): boolean {
+  if (!botUserId) return false;
+  return text.includes(`<@${botUserId}>`);
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {

@@ -513,6 +513,8 @@ export interface MessagingPlatformDescriptor {
 export interface MessagingSendRequest {
   threadId: string;
   body: string;
+  /** Stable key so retries of the same logical send can be deduped upstream. */
+  idempotencyKey?: string;
 }
 
 export interface MessagingSendResult {

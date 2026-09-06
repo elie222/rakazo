@@ -5,6 +5,7 @@ import {
   isMessagingSurfaceEnabled,
   type MessagingEnvironmentValues,
   messagingEnvFromProcess,
+  enrichSlackTeamRoom,
   messagingPlatformsFromEnv,
   parseSendblueStatus,
 } from "./messaging-platforms.js";
@@ -269,5 +270,70 @@ describe("isMessagingSurfaceEnabled", () => {
     expect(isMessagingSurfaceEnabled(platforms, key(undefined, false))).toBe(true);
     expect(isMessagingSurfaceEnabled([], key("model-key", true))).toBe(false);
     vi.unstubAllEnvs();
+  });
+});
+
+
+describe("enrichSlackTeamRoom", () => {
+  const base = {
+    type: "message" as const,
+    provider: "slack",
+    handle: "Ev1",
+    threadId: "slack:C1",
+    isDirect: false,
+    from: "U_OTHER",
+    fromLabel: "Ada",
+    channelName: "launch",
+    participants: ["U_OTHER"],
+    content: "hello <@U_SOMEONE>",
+    mediaUrl: null,
+  };
+
+  it("marks app_mention events as mention", () => {
+    const enrichment = enrichSlackTeamRoom(
+      {
+        team_id: "T1",
+        authorizations: [{ user_id: "U_BOT", is_bot: true }],
+        event: { type: "app_mention", channel: "C1", text: "<@U_BOT> ship it", user: "U_OTHER" },
+      },
+      base,
+    );
+    expect(enrichment.kind).toBe("mention");
+    expect(enrichment.workspaceId).toBe("T1");
+    expect(enrichment.conversationKey).toBe("C1");
+  });
+
+  it("keeps ambient when another user is mentioned, not the bot", () => {
+    const enrichment = enrichSlackTeamRoom(
+      {
+        team_id: "T1",
+        authorizations: [{ user_id: "U_BOT", is_bot: true }],
+        event: {
+          type: "message",
+          channel: "C1",
+          text: "hey <@U_SOMEONE> can you look?",
+          user: "U_OTHER",
+        },
+      },
+      base,
+    );
+    expect(enrichment.kind).toBe("ambient");
+  });
+
+  it("marks message events that mention the authorized bot as mention", () => {
+    const enrichment = enrichSlackTeamRoom(
+      {
+        team_id: "T1",
+        authorizations: [{ user_id: "U_BOT", is_bot: true }],
+        event: {
+          type: "message",
+          channel: "C1",
+          text: "hey <@U_BOT> ship Friday?",
+          user: "U_OTHER",
+        },
+      },
+      base,
+    );
+    expect(enrichment.kind).toBe("mention");
   });
 });

@@ -158,13 +158,47 @@ describe("team chat bridge", () => {
             for (const record of records) {
               if (where.id && record.id !== where.id) continue;
               if (where.status && record.status !== where.status) continue;
+              if (
+                "providerReplyHandle" in where &&
+                where.providerReplyHandle === null &&
+                record.providerReplyHandle
+              ) {
+                continue;
+              }
+              if (
+                typeof where.providerReplyHandle === "object" &&
+                where.providerReplyHandle &&
+                "not" in (where.providerReplyHandle as object) &&
+                !record.providerReplyHandle
+              ) {
+                continue;
+              }
               Object.assign(record, data);
               count += 1;
             }
             return { count };
           },
         ),
-        findFirst: vi.fn(async () => null),
+        findUnique: vi.fn(async ({ where }: { where: { id: string } }) => {
+          return records.find((record) => record.id === where.id) ?? null;
+        }),
+        findFirst: vi.fn(async ({ where }: { where?: Record<string, unknown> } = {}) => {
+          if (!where) return null;
+          return (
+            records.find((record) => {
+              if (where.id && record.id !== where.id) return false;
+              if (where.status && record.status !== where.status) return false;
+              if (
+                typeof where.providerReplyHandle === "object" &&
+                where.providerReplyHandle &&
+                "not" in (where.providerReplyHandle as object)
+              ) {
+                return Boolean(record.providerReplyHandle);
+              }
+              return true;
+            }) ?? null
+          );
+        }),
       },
       run: { findMany: vi.fn(async () => []) },
       message: {

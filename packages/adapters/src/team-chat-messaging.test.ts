@@ -91,4 +91,28 @@ describe("createMessagingTeamChatSender", () => {
       }),
     );
   });
+
+  it("forwards idempotencyKey into the messaging send and operation id", async () => {
+    const sendToThread = vi.fn(async () => ({ handle: "msg-2" }));
+    const messaging = { sendToThread } as unknown as MessagingSurface;
+    const send = createMessagingTeamChatSender(messaging);
+    await expect(
+      send({
+        conversationId: "slack:C1",
+        replyThreadId: null,
+        content: "Retry safe",
+        idempotencyKey: "external-message:m-1",
+      }),
+    ).resolves.toEqual({ handle: "msg-2" });
+    expect(sendToThread).toHaveBeenCalledWith(
+      {
+        threadId: "slack:C1",
+        body: "Retry safe",
+        idempotencyKey: "external-message:m-1",
+      },
+      expect.objectContaining({
+        operationId: "team-chat-send:external-message:m-1",
+      }),
+    );
+  });
 });

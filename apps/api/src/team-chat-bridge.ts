@@ -631,13 +631,12 @@ export class TeamChatBridge {
     }
     const reserved = await this.reserveDelivery(message.id);
     if (!reserved) return;
-    const sent = await this.deps.send({
+    await this.sendOnce(message.id, {
       conversationId: message.externalConversation.conversationId,
       replyThreadId: message.replyThreadId,
       content,
       idempotencyKey: `external-message:${message.id}`,
     });
-    await this.markDelivered(message.id, sent.handle);
   }
 
   private async deliverFailure(message: {
@@ -652,20 +651,49 @@ export class TeamChatBridge {
     }
     const reserved = await this.reserveDelivery(message.id);
     if (!reserved) return;
-    const sent = await this.deps.send({
+    await this.sendOnce(message.id, {
       conversationId: message.externalConversation.conversationId,
       replyThreadId: message.replyThreadId,
       content: `${this.target?.name ?? "The agent"} could not complete that request. Open Rakazo for details.`,
       idempotencyKey: `external-message:${message.id}:failure`,
     });
-    await this.markDelivered(message.id, sent.handle);
+  }
+
+  /**
+   * Post at most once per reserved message. If a prior attempt already stored
+   * a provider handle, finalize without sending again. Persist the handle
+   * before flipping status so a crash mid-ack cannot reclaim into a duplicate.
+   */
+  private async sendOnce(
+    id: string,
+    request: {
+      conversationId: string;
+      replyThreadId: string | null;
+      content: string;
+      idempotencyKey: string;
+    },
+  ): Promise<void> {
+    const existing = await this.deps.prisma.externalMessage.findUnique({
+      where: { id },
+      select: { providerReplyHandle: true },
+    });
+    if (existing?.providerReplyHandle) {
+      await this.markDelivered(id, existing.providerReplyHandle);
+      return;
+    }
+    const sent = await this.deps.send(request);
+    await this.deps.prisma.externalMessage.update({
+      where: { id },
+      data: { providerReplyHandle: sent.handle },
+    });
+    await this.markDelivered(id, sent.handle);
   }
 
   private async reserveDelivery(id: string): Promise<boolean> {
     const now = new Date();
     const leaseUntil = new Date(now.getTime() + DELIVERY_RESERVATION_MS);
     const claimed = await this.deps.prisma.externalMessage.updateMany({
-      where: { id, status: "running" },
+      where: { id, status: "running", providerReplyHandle: null },
       data: {
         status: "delivering",
         nextAttemptAt: leaseUntil,
@@ -673,18 +701,34 @@ export class TeamChatBridge {
     });
     if (claimed.count === 1) return true;
 
-    const reclaimed = await this.deps.prisma.externalMessage.updateMany({
+    // Already posted but status flip was lost — finish without a second send.
+    const posted = await this.deps.prisma.externalMessage.findFirst({
+      where: { id, status: "delivering", providerReplyHandle: { not: null } },
+      select: { providerReplyHandle: true },
+    });
+    if (posted?.providerReplyHandle) {
+      await this.markDelivered(id, posted.providerReplyHandle);
+      return false;
+    }
+
+    // Expired lease with no handle: the prior attempt may have reached the
+    // provider. Prefer a lost reply over a duplicate post.
+    await this.deps.prisma.externalMessage.updateMany({
       where: {
         id,
         status: "delivering",
+        providerReplyHandle: null,
         OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: now } }],
       },
       data: {
-        status: "delivering",
-        nextAttemptAt: leaseUntil,
+        status: "delivered",
+        providerReplyHandle: "unconfirmed",
+        deliveredAt: now,
+        nextAttemptAt: null,
+        lastError: "Delivery confirmation lost; skipped retry to avoid duplicates",
       },
     });
-    return reclaimed.count === 1;
+    return false;
   }
 
   private async markDelivered(id: string, handle: string): Promise<void> {
