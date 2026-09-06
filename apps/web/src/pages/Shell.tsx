@@ -145,7 +145,7 @@ import { dictation } from "../lib/dictation";
 import { scheduleFocusPrompt } from "../lib/focus-prompt";
 import { localTimezone } from "../lib/local-timezone";
 import { copyableMessageText } from "../lib/message-text";
-import { providerLabel } from "../lib/messaging";
+import { messageProviderLabel } from "../lib/messaging";
 import { isFileDrag, revokePendingAttachmentPreviews } from "../lib/pending-attachments";
 import { markAfterPaint, markOnce } from "../lib/performance";
 import { clearSpaceSelection, rpc, selectedSpaceId, selectSpace } from "../lib/rpc";
@@ -5335,7 +5335,8 @@ const MessageView = memo(function MessageView({
               className="flex items-center justify-center gap-2 py-1 text-[13.5px] text-muted-foreground"
             >
               <span>
-                {providerLabel(block.provider)} · {block.fromLabel}: {block.text}
+                {messageProviderLabel(block.provider, block.transport)} · {block.fromLabel}:{" "}
+                {block.text}
               </span>
             </div>
           );

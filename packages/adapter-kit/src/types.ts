@@ -523,6 +523,8 @@ export interface MessagingSendResult {
 export interface MessagingInboundMessage {
   type: "message";
   provider: string;
+  /** Per-message transport when one provider spans multiple networks (for example SMS vs RCS). */
+  transport?: string;
   /** Provider message id; drives replay-safe client nonces downstream. */
   handle: string;
   /** Opaque conversation id — pass back to sendToThread to reply. */
