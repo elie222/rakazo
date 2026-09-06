@@ -273,7 +273,7 @@ export class PipedreamConnector implements ManagedConnectorProvider {
   }
 
   async revoke(externalId: string, context: AdapterContext): Promise<void> {
-    let accounts;
+    let accounts: PipedreamAccount[];
     try {
       accounts = await this.accounts(context);
     } catch (error) {
