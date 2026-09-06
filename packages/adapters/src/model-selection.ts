@@ -20,9 +20,17 @@ export async function validateConnectedModelChoice(
   const inCatalog = [...listPiCatalog(), scriptedCatalogEntry].some(
     (item) => item.provider === provider && item.id === modelId,
   );
-  return !inCatalog && credential.defaultModel !== modelId
-    ? "Unknown model for that provider"
-    : undefined;
+  if (inCatalog) return undefined;
+  const savedChoice = await prisma.spaceModelPreference.findFirst({
+    where: {
+      spaceId: actor.spaceId,
+      userId: actor.userId,
+      modelId,
+      credential: { userId: actor.userId, provider },
+    },
+    select: { id: true },
+  });
+  return savedChoice ? undefined : "Unknown model for that provider";
 }
 
 /** Select configuration without loading secrets or applying a runtime-specific fallback. */
