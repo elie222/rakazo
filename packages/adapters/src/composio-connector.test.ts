@@ -363,6 +363,43 @@ describe("composio tool mapping", () => {
     expect(deleted).toEqual(["req-pending-1"]);
   });
 
+  it.each([{ status: 404 }, { statusCode: 404 }])(
+    "ignores missing authorization requests during cancellation (%o)",
+    async (notFound) => {
+      composioSdkState.connectedAccounts.delete = async () => {
+        throw Object.assign(new Error("not found"), notFound);
+      };
+      const connector = new ComposioConnector();
+
+      await expect(
+        connector.cancelAuthorizationRequest("req-missing", {
+          operationId: "test",
+          traceId: "test",
+          spaceId: "workspace",
+          userId: "user-1",
+          signal: new AbortController().signal,
+        }),
+      ).resolves.toBeUndefined();
+    },
+  );
+
+  it("surfaces authorization cancellation failures for router fallback", async () => {
+    composioSdkState.connectedAccounts.delete = async () => {
+      throw Object.assign(new Error("service unavailable"), { status: 503 });
+    };
+    const connector = new ComposioConnector();
+
+    await expect(
+      connector.cancelAuthorizationRequest("req-pending-1", {
+        operationId: "test",
+        traceId: "test",
+        spaceId: "workspace",
+        userId: "user-1",
+        signal: new AbortController().signal,
+      }),
+    ).rejects.toThrow("service unavailable");
+  });
+
   it("resolves authorization-request ids before deleting on revoke", async () => {
     const deleted: string[] = [];
     const waited: string[] = [];
