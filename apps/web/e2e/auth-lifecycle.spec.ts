@@ -142,6 +142,10 @@ test("changes and recovers an email password", async ({ page }, testInfo) => {
     "autocomplete",
     "off",
   );
+  await expect(page.getByTestId("sidebar-search").locator("input")).toHaveAttribute(
+    "name",
+    "sidebar-search",
+  );
   await expect(settings.locator('input[name="username"]')).toHaveAttribute(
     "autocomplete",
     "username",
