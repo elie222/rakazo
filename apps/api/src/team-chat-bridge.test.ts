@@ -631,6 +631,47 @@ describe("team chat bridge", () => {
     }
   });
 
+  it("releases abandoned routing ownership before startup reconciliation", async () => {
+    const updateMany = vi.fn(async () => ({ count: 1 }));
+    const bridge = new TeamChatBridge({
+      prisma: {
+        bot: {
+          findFirst: vi.fn(async () => ({
+            id: "bot-1",
+            spaceId: "space-1",
+            userId: "owner-1",
+            name: "Chief",
+            modelProvider: null,
+            modelId: null,
+          })),
+        },
+        externalMessage: {
+          findMany: vi.fn(async () => []),
+          updateMany,
+        },
+        run: { findMany: vi.fn(async () => []) },
+      } as unknown as PrismaClient,
+      events: { sendUserMessage: vi.fn() },
+      jobs: { enqueue: vi.fn() },
+      send: vi.fn(),
+      providerId: "slack",
+      botId: "bot-1",
+      reconcileIntervalMs: 60_000,
+    });
+
+    await bridge.start();
+    await bridge.stop();
+
+    expect(updateMany).toHaveBeenCalledWith({
+      where: {
+        status: "deferred",
+        engagementReason: "message_routine_routing",
+        externalConversation: { provider: "slack", botId: "bot-1", spaceId: "space-1" },
+      },
+      data: { engagementReason: null, nextAttemptAt: expect.any(Date) },
+    });
+  });
+
   it("does not queue a received message that already woke a message routine", async () => {
     const updateMany = vi.fn(async () => ({ count: 1 }));
     const findUnique = vi.fn(async () => ({ id: "msg-routine-wake" }));

@@ -144,6 +144,7 @@ export class TeamChatBridge {
     if (!target) throw new Error(`Team chat target bot ${this.deps.botId} was not found`);
     this.target = target;
     await this.mirrorMissingMessages();
+    await this.recoverInterruptedRoutineRoutes(target);
     await this.reconcileOnce();
     this.timer = setInterval(
       () => void this.reconcileSafely(),
@@ -401,6 +402,22 @@ export class TeamChatBridge {
         await this.ensureTranscriptMessage(message, message.externalConversation);
       }
     }
+  }
+
+  /** Release routing ownership left by a stopped process before reconciliation starts. */
+  private async recoverInterruptedRoutineRoutes(target: TargetBot): Promise<void> {
+    await this.deps.prisma.externalMessage.updateMany({
+      where: {
+        status: "deferred",
+        engagementReason: ROUTING_OWNERSHIP_REASON,
+        externalConversation: {
+          provider: this.deps.providerId,
+          botId: target.id,
+          spaceId: target.spaceId,
+        },
+      },
+      data: { engagementReason: null, nextAttemptAt: new Date() },
+    });
   }
 
   private async ensureTranscriptMessage(
