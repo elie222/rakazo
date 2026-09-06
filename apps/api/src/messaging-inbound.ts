@@ -206,27 +206,40 @@ export async function wakeMessageRoutines(
 }
 
 /**
- * TeamChat skips personal inbound checks. Before waking unattended message
- * routines, require the same linked-DM / approved-channel gate.
+ * TeamChat engagement can still receive the message, but unattended
+ * message-routine wakes reuse the personal-line approval boundary:
+ * linked identity for DMs; approved channel member when we have membership
+ * state; otherwise a linked identity so public-channel strangers cannot start
+ * active routines.
  */
 export async function teamChatSenderCanWakeMessageRoutines(
   deps: Pick<MessagingInboundDeps, "prisma">,
   event: MessagingInboundMessage,
 ): Promise<boolean> {
   if (event.senderIsBot) return false;
-  if (event.isDirect) {
-    // TeamChat DMs otherwise skip personal inbound authz. Require a linked
-    // messaging identity before unattended message routines may run.
-    const identity = await deps.prisma.messagingIdentity.findUnique({
-      where: { provider_address: { provider: event.provider, address: event.from } },
-      select: { id: true },
+
+  const linkedIdentity = await deps.prisma.messagingIdentity.findUnique({
+    where: { provider_address: { provider: event.provider, address: event.from } },
+    select: { id: true },
+  });
+
+  if (event.isDirect) return Boolean(linkedIdentity);
+
+  const channel = await deps.prisma.messagingChannel.findUnique({
+    where: { threadId: event.threadId },
+    select: { id: true },
+  });
+  if (channel) {
+    const member = await deps.prisma.messagingChannelMember.findUnique({
+      where: { channelId_address: { channelId: channel.id, address: event.from } },
+      select: { status: true },
     });
-    return Boolean(identity);
+    return member?.status === "approved";
   }
-  // TeamChat channels are deployment-scoped and do not maintain personal
-  // MessagingChannel membership on this path. Non-bot channel traffic may wake
-  // the configured team bot's message routines.
-  return true;
+
+  // Pure TeamChat workspace rooms have no personal membership ledger.
+  // Still require a linked sender before waking message routines.
+  return Boolean(linkedIdentity);
 }
 
 /**

@@ -1268,18 +1268,97 @@ describe("teamChatSenderCanWakeMessageRoutines", () => {
     ).resolves.toBe(false);
   });
 
-  it("allows non-bot TeamChat channel senders and rejects bot senders", async () => {
-    const deps = createDeps({ identity: null });
+  it("requires approved membership or a linked identity for channel wakes", async () => {
+    const approved = createDeps({
+      identity: {
+        id: "mi-1",
+        provider: "slack",
+        address: "U123",
+        userId: "user-1",
+        spaceId: "ws-1",
+        botId: "bot-1",
+      },
+      members: [
+        {
+          id: "cm-1",
+          channelId: "ch-1",
+          address: "U123",
+          identityId: "mi-1",
+          status: "approved",
+        },
+      ],
+    });
     await expect(
-      teamChatSenderCanWakeMessageRoutines(deps, {
+      teamChatSenderCanWakeMessageRoutines(approved, {
         ...groupEvent,
         provider: "slack",
         from: "U123",
         isDirect: false,
       }),
     ).resolves.toBe(true);
+
+    const invited = createDeps({
+      identity: {
+        id: "mi-1",
+        provider: "slack",
+        address: "U123",
+        userId: "user-1",
+        spaceId: "ws-1",
+        botId: "bot-1",
+      },
+      members: [
+        {
+          id: "cm-1",
+          channelId: "ch-1",
+          address: "U123",
+          identityId: "mi-1",
+          status: "invited",
+        },
+      ],
+    });
     await expect(
-      teamChatSenderCanWakeMessageRoutines(deps, {
+      teamChatSenderCanWakeMessageRoutines(invited, {
+        ...groupEvent,
+        provider: "slack",
+        from: "U123",
+        isDirect: false,
+      }),
+    ).resolves.toBe(false);
+
+    // Pure TeamChat room (no MessagingChannel row): linked sender ok, stranger blocked.
+    const linkedRoom = createDeps({
+      identity: {
+        id: "mi-2",
+        provider: "slack",
+        address: "U222",
+        userId: "user-2",
+        spaceId: "ws-1",
+        botId: "bot-2",
+      },
+    });
+    linkedRoom.prisma.messagingChannel.findUnique = vi.fn(async () => null);
+    await expect(
+      teamChatSenderCanWakeMessageRoutines(linkedRoom, {
+        ...groupEvent,
+        provider: "slack",
+        from: "U222",
+        isDirect: false,
+      }),
+    ).resolves.toBe(true);
+
+    const strangerRoom = createDeps({ identity: null });
+    strangerRoom.prisma.messagingChannel.findUnique = vi.fn(async () => null);
+    await expect(
+      teamChatSenderCanWakeMessageRoutines(strangerRoom, {
+        ...groupEvent,
+        provider: "slack",
+        from: "U999",
+        isDirect: false,
+      }),
+    ).resolves.toBe(false);
+
+    await expect(
+      teamChatSenderCanWakeMessageRoutines(strangerRoom, {
         ...groupEvent,
         provider: "slack",
         from: "B123",

@@ -555,7 +555,7 @@ export async function createApp(
             return;
           }
           const target = await teamChatBridge.receive(mapped);
-          // Channels: deployment-scoped TeamChat may wake; bots are still rejected by canWake.
+          // Channel/room wakes still require personal-line approval (linked or approved).
           if (canWake) await wakeMessageRoutines(inboundDeps, target, event);
           return;
         }
