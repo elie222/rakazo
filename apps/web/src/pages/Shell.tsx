@@ -5209,7 +5209,7 @@ const MessageView = memo(function MessageView({
     return (
       <>
         {messageContext}
-        <div className="flex justify-start">
+        <div className="flex w-fit max-w-full justify-start">
           <div
             data-testid="message-bot-bubble"
             className="max-w-full space-y-2.5 rounded-[20px] bg-muted px-[18px] py-3 text-[15.5px] leading-[1.5] text-foreground/90"
@@ -5302,7 +5302,7 @@ const MessageView = memo(function MessageView({
         }
         if (block.kind === "progress") {
           return (
-            <div key={i} className="flex justify-start">
+            <div key={i} className="flex w-fit max-w-full justify-start">
               <div
                 data-testid="message-bot-bubble"
                 className="max-w-full rounded-[20px] bg-muted px-[18px] py-3 text-[15.5px] leading-[1.5] text-foreground/90"
@@ -5469,7 +5469,7 @@ const MessageView = memo(function MessageView({
         }
         if (block.kind === "text") {
           return (
-            <div key={i} className="flex justify-start">
+            <div key={i} className="flex w-fit max-w-full justify-start">
               <div
                 data-testid="message-bot-bubble"
                 className="max-w-full rounded-[20px] bg-muted px-[18px] py-3 text-[15.5px] leading-[1.5] text-foreground/90"
