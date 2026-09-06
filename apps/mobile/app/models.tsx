@@ -4,7 +4,7 @@ import {
   OPENAI_COMPATIBLE_PROVIDER_ID,
   openAiCompatibleConnectReady,
 } from "@rakazo/contracts";
-import { featuredModelProviders } from "@rakazo/core";
+import { createModelProbe, featuredModelProviders, initialModelProbeState } from "@rakazo/core";
 import { useFocusEffect } from "expo-router";
 import { useCallback, useMemo, useRef, useState } from "react";
 import {
@@ -49,9 +49,10 @@ export default function Models() {
   const [showEndpointHelp, setShowEndpointHelp] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [showApiKey, setShowApiKey] = useState(false);
-  const [probeModels, setProbeModels] = useState<string[]>([]);
-  const [probedBaseUrl, setProbedBaseUrl] = useState<string | null>(null);
-  const [probing, setProbing] = useState(false);
+  const [{ models: probeModels, baseUrl: probedBaseUrl, probing }, setProbe] =
+    useState(initialModelProbeState);
+  const [modelProbe] = useState(() => createModelProbe(setProbe));
+  const resetOpenAiCompatibleProbe = modelProbe.reset;
   const [oauth, setOauth] = useState<ModelOAuthBegin | null>(null);
   const [pasteCode, setPasteCode] = useState("");
   const [loading, setLoading] = useState(true);
@@ -62,7 +63,6 @@ export default function Models() {
   const oauthAbortRef = useRef<AbortController | null>(null);
   const oauthLoginIdRef = useRef<string | null>(null);
   const oauthCodeSubmittingRef = useRef(false);
-  const probeRequestIdRef = useRef(0);
 
   const cancelOAuth = useCallback(() => {
     const loginId = oauthLoginIdRef.current;
@@ -105,10 +105,7 @@ export default function Models() {
     setMe(nextMe);
     setCatalog(nextCatalog);
     setCredentials(nextCredentials);
-    probeRequestIdRef.current += 1;
-    setProbeModels([]);
-    setProbedBaseUrl(null);
-    setProbing(false);
+    resetOpenAiCompatibleProbe();
     setProvider(nextProvider);
     setModelId(nextModel);
     if (nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID) {
@@ -125,7 +122,7 @@ export default function Models() {
         )
         .finally(() => setLoading(false));
       return () => {
-        probeRequestIdRef.current += 1;
+        modelProbe.invalidate();
         cancelOAuth();
       };
     }, [cancelOAuth, load]),
@@ -178,13 +175,6 @@ export default function Models() {
     storedBaseUrl: credential?.baseUrl,
   });
 
-  function resetOpenAiCompatibleProbe() {
-    probeRequestIdRef.current += 1;
-    setProbeModels([]);
-    setProbedBaseUrl(null);
-    setProbing(false);
-  }
-
   function updateBaseUrl(nextBaseUrl: string) {
     setBaseUrl(nextBaseUrl);
     resetOpenAiCompatibleProbe();
@@ -217,35 +207,26 @@ export default function Models() {
   }
 
   async function probeServerModels() {
-    const trimmedBaseUrl = effectiveBaseUrl;
-    if (!trimmedBaseUrl) return;
-    resetOpenAiCompatibleProbe();
-    const requestId = probeRequestIdRef.current;
-    setProbing(true);
+    if (!baseUrl.trim()) return;
     setError(null);
     setNotice(null);
-    try {
-      const result = await rpc<{ models: string[] }>("models/probeOpenAiCompatible", {
-        baseUrl: trimmedBaseUrl,
-        apiKey: apiKey.trim() || undefined,
-      });
-      if (requestId !== probeRequestIdRef.current) return;
-      setProbeModels(result.models);
-      setProbedBaseUrl(trimmedBaseUrl);
-      setModelId((current) => current.trim() || result.models[0] || "");
-      setNotice(
-        result.models.length === 0
-          ? t("Server found. Enter a model name.")
-          : result.models.length === 1
-            ? t("Found {count} model.", { count: 1 })
-            : t("Found {count} models.", { count: result.models.length }),
-      );
-    } catch (err) {
-      if (requestId !== probeRequestIdRef.current) return;
-      setError(err instanceof Error ? err.message : t("Could not reach this model server"));
-    } finally {
-      if (requestId === probeRequestIdRef.current) setProbing(false);
-    }
+    await modelProbe.probe({
+      baseUrl,
+      apiKey,
+      request: (input) => rpc<{ models: string[] }>("models/probeOpenAiCompatible", input),
+      onSuccess: (models) => {
+        setModelId((current) => current.trim() || models[0] || "");
+        setNotice(
+          models.length === 0
+            ? t("Server found. Enter a model name.")
+            : models.length === 1
+              ? t("Found {count} model.", { count: 1 })
+              : t("Found {count} models.", { count: models.length }),
+        );
+      },
+      onError: (err) =>
+        setError(err instanceof Error ? err.message : t("Could not reach this model server")),
+    });
   }
 
   async function setModelDefault() {

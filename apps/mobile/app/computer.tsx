@@ -1,6 +1,6 @@
 import type { ComputerMode, ComputerReleaseReason } from "@rakazo/contracts";
 import { useLocalSearchParams, useNavigation } from "expo-router";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Modal, Pressable, Text, View } from "react-native";
 import {
   initialWindowMetrics,
@@ -22,6 +22,7 @@ import {
   readScreenUrl,
   SCREEN_URL_OPEN_ATTEMPTS,
 } from "../lib/computer";
+import { createComputerRefresh } from "../lib/computer-refresh";
 import { useI18n } from "../lib/i18n";
 import { useMobileTokens } from "../lib/native";
 
@@ -35,7 +36,7 @@ export default function Computer() {
   const [screenUrl, setScreenUrl] = useState<string | null>(null);
   const [screenError, setScreenError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [ready, setReady] = useState(false);
+  const [readyBotId, setReadyBotId] = useState<string | null>(null);
   const [booting, setBooting] = useState(false);
   const [switching, setSwitching] = useState(false);
   const [computerOpen, setComputerOpen] = useState(false);
@@ -51,36 +52,36 @@ export default function Computer() {
     navigation.setOptions({ title: label });
   }, [label, navigation]);
 
-  async function refreshScreen(attempts: number) {
-    if (!botId) return;
-    try {
-      setScreenUrl(
-        await readScreenUrl(() => rpc<{ url: string | null }>("computer/screenUrl", { botId }), {
-          attempts,
-        }),
-      );
-    } catch {
-      // Keep the last known URL. Cold boots often fail this RPC once, then succeed.
-    }
-  }
-
-  async function refresh(options?: { screenAttempts?: number }) {
-    if (!botId) return;
-    const status = await rpc<ComputerStatus>("computer/status", { botId });
-    setComputer(status);
-    await refreshScreen(options?.screenAttempts ?? 1);
-    setReady(true);
-    return status;
-  }
+  const refreshController = useMemo(
+    () =>
+      createComputerRefresh({
+        readStatus: () => rpc<ComputerStatus>("computer/status", { botId }),
+        readScreen: (attempts) =>
+          readScreenUrl(() => rpc<{ url: string | null }>("computer/screenUrl", { botId }), {
+            attempts,
+          }),
+        onStatus: setComputer,
+        onScreen: setScreenUrl,
+        onReady: () => setReadyBotId(botId ?? null),
+        onInitialError: (err) => setError(err instanceof Error ? err.message : String(err)),
+      }),
+    [botId],
+  );
+  const refresh = refreshController.refresh;
 
   useEffect(() => {
-    void refresh().catch((err: Error) => {
-      setError(err.message);
-      setReady(true);
-    });
-    const timer = setInterval(() => void refresh().catch(() => undefined), 2000);
-    return () => clearInterval(timer);
-  }, [botId]);
+    setComputer(null);
+    setScreenUrl(null);
+    setScreenError(null);
+    setError(null);
+    setReadyBotId(null);
+    setBooting(false);
+    setSwitching(false);
+    setComputerOpen(false);
+    autoBooted.current = null;
+    if (botId) refreshController.start();
+    return () => refreshController.dispose();
+  }, [botId, refreshController]);
 
   async function bootComputer({
     takeControl,
@@ -91,24 +92,28 @@ export default function Computer() {
     overlay: boolean;
     force?: boolean;
   }) {
-    if (!botId) return;
+    if (!botId || !refreshController.isActive()) return;
     const needsBoot = force || computer?.state !== "running" || !screenUrl;
     if (overlay && needsBoot) setBooting(true);
     try {
       if (needsBoot) await rpc("computer/boot", { botId });
+      if (!refreshController.isActive()) return;
       if (takeControl) await rpc("computer/takeover", { botId });
+      if (!refreshController.isActive()) return;
       await refresh({ screenAttempts: SCREEN_URL_OPEN_ATTEMPTS });
+      if (!refreshController.isActive()) return;
       setError(null);
     } catch (err) {
+      if (!refreshController.isActive()) return;
       setError(err instanceof Error ? err.message : t("Could not open computer"));
       throw err;
     } finally {
-      setBooting(false);
+      if (refreshController.isActive()) setBooting(false);
     }
   }
 
   useEffect(() => {
-    if (!ready || !botId) return;
+    if (!botId || readyBotId !== botId) return;
     if (computer?.state === "booting" || computer?.state === "suspended") return;
     if (autoBooted.current === botId) return;
     autoBooted.current = botId;
@@ -117,7 +122,7 @@ export default function Computer() {
       overlay: computer?.state !== "running",
       force: true,
     }).catch(() => undefined);
-  }, [ready, botId, computer?.state]);
+  }, [readyBotId, botId, computer?.state]);
 
   useEffect(() => {
     if (!botId || computer?.state !== "running") return;
@@ -136,6 +141,7 @@ export default function Computer() {
         overlay: needsTakeover || computer?.state !== "running",
         force: computer?.state !== "running",
       });
+      if (!refreshController.isActive()) return;
       setComputerOpen(true);
       setScreenError(null);
     } catch {
@@ -146,6 +152,7 @@ export default function Computer() {
   async function releaseComputer(reason?: ComputerReleaseReason) {
     if (!botId) return;
     await rpc("computer/release", { botId, reason }).catch(() => undefined);
+    if (!refreshController.isActive()) return;
     setComputerOpen(false);
     await refresh().catch(() => undefined);
   }
@@ -161,15 +168,18 @@ export default function Computer() {
           reason: computer?.takeoverRequested ? "skipped" : undefined,
         });
       }
+      if (!refreshController.isActive()) return;
       await rpc("bots/setComputer", { botId, mode });
+      if (!refreshController.isActive()) return;
       setComputer(null);
       setScreenUrl(null);
       autoBooted.current = null;
       await refresh();
     } catch (err) {
+      if (!refreshController.isActive()) return;
       setError(err instanceof Error ? err.message : t("Could not switch computer"));
     } finally {
-      setSwitching(false);
+      if (refreshController.isActive()) setSwitching(false);
     }
   }
 
