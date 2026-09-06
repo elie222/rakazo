@@ -49,9 +49,6 @@ function inboundEventName(value: unknown): string {
 }
 
 export function formatWebhookPrompt(payload: Record<string, unknown>): string {
-  if (typeof payload.text === "string" && payload.text.trim()) {
-    return payload.text.trim();
-  }
   return formatUntrustedDeliveryPayload(
     `[Inbound Event: ${inboundEventName(payload.event)}]`,
     payload,
