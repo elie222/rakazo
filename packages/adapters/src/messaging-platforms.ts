@@ -3,7 +3,7 @@ import { createTelegramAdapter } from "@chat-adapter/telegram";
 import { createWhatsAppAdapter } from "@chat-adapter/whatsapp";
 import type { MessagingOutboundStatus } from "@rakazo/adapter-kit";
 import type { Adapter } from "chat";
-import { createLarkAdapter } from "chat-adapter-lark";
+import { createLarkAdapter, Domain } from "chat-adapter-lark";
 import { createSendblueAdapter } from "chat-adapter-sendblue";
 import type { MessagingPlatform } from "./chat-sdk-surface.js";
 import { isVitestRuntime } from "./test-runtime.js";
@@ -149,7 +149,6 @@ export function messagingPlatformsFromEnv(env: MessagingEnvironmentValues): Mess
   // token the adapter accepts unsigned webhook posts. Encrypt key and
   // domain are optional (event encryption / open.feishu.cn vs open.larksuite.com).
   if (env.larkAppId && env.larkAppSecret && env.larkVerificationToken) {
-    const domain = resolveLarkDomain(env.larkDomain);
     platforms.push({
       provider: "lark",
       capabilities: { direct: true, groups: false, typing: false },
@@ -160,20 +159,14 @@ export function messagingPlatformsFromEnv(env: MessagingEnvironmentValues): Mess
         appSecret: env.larkAppSecret,
         verificationToken: env.larkVerificationToken,
         incoming: { events: "webhook", callbacks: "webhook" },
-        ...(env.larkEncryptKey ? { encryptKey: env.larkEncryptKey } : {}),
-        ...(domain ? { domain } : {}),
+        // Explicit defaults prevent the adapter from rereading untrimmed process.env values.
+        encryptKey: env.larkEncryptKey ?? "",
+        domain: env.larkDomain?.toLowerCase() === "lark" ? Domain.Lark : Domain.Feishu,
       }),
     });
   }
 
   return platforms;
-}
-
-/** Adapter accepts "feishu" (default) or "lark"; anything else is ignored. */
-function resolveLarkDomain(value: string | undefined): "feishu" | "lark" | undefined {
-  const domain = value?.toLowerCase();
-  if (domain === "feishu" || domain === "lark") return domain;
-  return undefined;
 }
 
 /** Never live under the test runner; tests build surfaces explicitly. */

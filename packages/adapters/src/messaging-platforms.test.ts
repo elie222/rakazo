@@ -133,6 +133,28 @@ describe("messagingPlatformsFromEnv", () => {
     );
   });
 
+  it.each(["", "unknown", "feishu"])("uses normalized Lark defaults for domain %s", (domain) => {
+    vi.stubEnv("LARK_DOMAIN", domain);
+    vi.stubEnv("LARK_ENCRYPT_KEY", "   ");
+    try {
+      const lark = messagingPlatformsFromEnv({
+        ...messagingEnvFromProcess(process.env),
+        larkAppId: "cli-fake",
+        larkAppSecret: "lark-secret",
+        larkVerificationToken: "lark-verify",
+      }).find((platform) => platform.provider === "lark")!;
+      const config = (
+        lark.adapter as unknown as {
+          config: { domain: Domain; encryptKey: string };
+        }
+      ).config;
+      expect(config.domain).toBe(Domain.Feishu);
+      expect(config.encryptKey).toBe("");
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it("declares group and typing support only for sendblue", () => {
     const platforms = messagingPlatformsFromEnv(fullEnv);
     const capabilities = Object.fromEntries(
