@@ -275,6 +275,75 @@ app.post("/computers/:id/exec", async (c) => {
   }
 });
 
+app.post("/computers/:id/browser", async (c) => {
+  // Read eagerly so the Node HTTP adapter observes disconnects during screen setup too.
+  const signal = c.req.raw.signal;
+  signal.throwIfAborted();
+  const body = z
+    .discriminatedUnion("command", [
+      z.object({
+        command: z.literal("navigate"),
+        url: z
+          .string()
+          .url()
+          .max(8192)
+          .refine((value) => {
+            if (!URL.canParse(value)) return false;
+            const url = new URL(value);
+            return /^https?:$/.test(url.protocol) && !url.username && !url.password;
+          }),
+      }),
+      z.object({ command: z.literal("snapshot") }),
+      z.object({
+        command: z.literal("act"),
+        actions: z
+          .array(
+            z.discriminatedUnion("kind", [
+              z.object({ kind: z.literal("click"), ref: z.string().min(1).max(200) }),
+              z.object({
+                kind: z.enum(["fill", "type"]),
+                ref: z.string().min(1).max(200),
+                text: z.string().max(32_000),
+              }),
+            ]),
+          )
+          .min(1)
+          .max(24),
+      }),
+    ])
+    .parse(await c.req.json());
+  try {
+    const { container, layout } = await managedScreen(
+      c.req.param("id"),
+      c.req.header("x-rakazo-bot-id"),
+      c.req.header("x-rakazo-space-id"),
+      c.req.header("x-rakazo-screen-id"),
+      c.req.header("x-rakazo-screen-lease-id"),
+    );
+    const result = await runContainerCommand(
+      container,
+      ["/usr/local/bin/rakazo-page-browser", body.command, JSON.stringify(body)],
+      {
+        env: [`DISPLAY=${layout.display}`, "HOME=/home/rakazo", "RAKAZO_BROWSER_WATCH_STDIN=1"],
+        timeoutMs: 25_000,
+        signal,
+      },
+    );
+    // A nonzero exit or malformed output cannot establish which mutations ran.
+    if (result.code !== 0 || Buffer.byteLength(result.stdout) > 512 * 1024) {
+      throw new Error("Page browser unavailable or interrupted");
+    }
+    return c.json(JSON.parse(result.stdout));
+  } catch {
+    return c.json({
+      ok: false,
+      fallback: "computer_act",
+      uncertain: body.command === "act",
+      error: "Page browser unavailable or interrupted. Inspect the screen before continuing.",
+    });
+  }
+});
+
 app.post("/computers/:id/observe", async (c) => {
   try {
     const { container, info, layout } = await managedScreen(
@@ -668,6 +737,7 @@ async function ensureComputerImage() {
             "control.py",
             "xcapture.c",
             "rakazo-browser",
+            "rakazo-page-browser",
             "rakazo-browser.desktop",
             "embed.html",
             "clipboard-bridge.js",
@@ -1044,8 +1114,9 @@ async function inspectSupervisorContainer() {
 async function runContainerCommand(
   container: Docker.Container,
   argv: string[],
-  options: { workingDir?: string; env?: string[]; timeoutMs?: number } = {},
+  options: { workingDir?: string; env?: string[]; timeoutMs?: number; signal?: AbortSignal } = {},
 ): Promise<{ stdout: string; stderr: string; code: number }> {
+  options.signal?.throwIfAborted();
   const timeoutMs = options.timeoutMs;
   const completionMarker = timeoutMs
     ? `/tmp/rakazo-command-${randomUUID()}.completed-124`
@@ -1058,16 +1129,30 @@ async function runContainerCommand(
     Cmd: command,
     AttachStdout: true,
     AttachStderr: true,
+    ...(options.signal ? { AttachStdin: true } : {}),
     WorkingDir: options.workingDir ?? "/home/rakazo",
     Env: options.env ?? ["DISPLAY=:1", "HOME=/home/rakazo"],
   });
-  const stream = await exec.start({ hijack: true, stdin: false });
+  options.signal?.throwIfAborted();
+  const stream = await exec.start({ hijack: true, stdin: Boolean(options.signal) });
   const chunks: Buffer[] = [];
-  await new Promise<void>((resolve, reject) => {
-    stream.on("data", (data: Buffer) => chunks.push(data));
-    stream.on("end", resolve);
-    stream.on("error", reject);
-  });
+  let onAbort: (() => void) | undefined;
+  try {
+    await new Promise<void>((resolve, reject) => {
+      stream.on("data", (data: Buffer) => chunks.push(data));
+      stream.on("end", resolve);
+      stream.on("error", reject);
+      onAbort = () => {
+        // The page helper watches stdin EOF and exits even inside a blocked CDP call.
+        stream.destroy();
+        reject(options.signal?.reason ?? new Error("command cancelled"));
+      };
+      options.signal?.addEventListener("abort", onAbort, { once: true });
+      if (options.signal?.aborted) onAbort();
+    });
+  } finally {
+    if (onAbort) options.signal?.removeEventListener("abort", onAbort);
+  }
   const inspect = await exec.inspect();
   const code = inspect.ExitCode ?? 0;
   const completedWithExit124 =

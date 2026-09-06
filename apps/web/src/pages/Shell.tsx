@@ -31,7 +31,6 @@ import {
   normalizeCreateBotProfile,
 } from "@rakazo/contracts";
 import {
-  abortableDelay,
   attachmentsForThread,
   buildComposerMentionOptions,
   type ComposerMention,
@@ -48,6 +47,7 @@ import {
   reorderBotTo,
   resolveComposerSendPlan,
   resolveMentionPickerKey,
+  runThreadSubscription,
   SLASH_ACTIONS,
   type SlashActionId,
   searchHitThreadTarget,
@@ -1094,145 +1094,81 @@ export function ShellPage() {
     expandedHistoryThread.current = null;
     historyEpoch.current += 1;
     const abort = new AbortController();
-    void (async () => {
-      const primed = bootstrappedThread.current;
-      bootstrappedThread.current = null;
-      // Pending search jumps load the around-page separately; avoid replacing it with latest.
-      const snap =
-        primed?.botId === active.id
+    void runThreadSubscription({
+      signal: abort.signal,
+      loadInitial: async () => {
+        const primed = bootstrappedThread.current;
+        bootstrappedThread.current = null;
+        // Pending search jumps load the around-page separately; avoid replacing it with latest.
+        return primed?.botId === active.id
           ? primed
           : pendingJump
-            ? await rpc.threads
-                .get({ botId: active.id }, { signal: threadSnapshotSignal(abort.signal) })
-                .catch(() => null)
-            : await refreshThread(active.id, threadSnapshotSignal(abort.signal)).catch(() => null);
-      if (abort.signal.aborted) return;
-      let subscribedThreadId = snap?.threadId;
-      let initialCursor = snap?.cursor ?? -1;
-      let headRetryMs = 250;
-      while (!subscribedThreadId && !abort.signal.aborted) {
-        const head = await rpc.threads
-          .head({ botId: active.id }, { signal: threadSnapshotSignal(abort.signal) })
-          .catch(() => null);
-        if (head) {
-          subscribedThreadId = head.threadId;
-          initialCursor = head.cursor;
-          break;
-        }
-        try {
-          await abortableDelay(headRetryMs, abort.signal);
-        } catch {
-          return;
-        }
-        headRetryMs = Math.min(headRetryMs * 2, 5_000);
-      }
-      if (!subscribedThreadId || abort.signal.aborted) return;
-      let cursor = initialCursor;
-      let snapshotReady = snapshotRef.current?.threadId === subscribedThreadId;
-      const pendingSnapshotEvents: ProductEvent[] = [];
-      if (!snapshotReady) {
-        void (async () => {
-          let snapshotRetryMs = 250;
-          while (!snapshotReady && !abort.signal.aborted) {
-            try {
-              await abortableDelay(snapshotRetryMs, abort.signal);
-            } catch {
-              return;
-            }
-            await refreshThread(active.id, threadSnapshotSignal(abort.signal)).catch(() => null);
-            if (abort.signal.aborted) return;
-            const committed = snapshotRef.current;
-            if (committed?.threadId === subscribedThreadId) {
-              snapshotReady = true;
-              const pending = pendingSnapshotEvents.splice(0);
-              for (const event of pending) {
-                if (event.seq > committed.cursor) {
-                  applyThreadEvent(event, commitSnapshot, commitComputer, snapshotRef, computerRef);
-                }
-              }
-              return;
-            }
-            snapshotRetryMs = Math.min(snapshotRetryMs * 2, 5_000);
+            ? rpc.threads.get({ botId: active.id }, { signal: threadSnapshotSignal(abort.signal) })
+            : refreshThread(active.id, threadSnapshotSignal(abort.signal));
+      },
+      loadHead: () =>
+        rpc.threads.head({ botId: active.id }, { signal: threadSnapshotSignal(abort.signal) }),
+      refresh: () => refreshThread(active.id, threadSnapshotSignal(abort.signal)),
+      currentSnapshot: () => snapshotRef.current,
+      subscribe: (cursor) =>
+        rpc.threads.subscribe({ botId: active.id, cursor }, { signal: abort.signal }),
+      beforeEvent: (event) => {
+        if (isRunTerminalEvent(event) && event.runId) {
+          terminalRunReceipts.current.add(event.runId);
+          if (terminalRunReceipts.current.size > 100) {
+            const oldest = terminalRunReceipts.current.values().next().value;
+            if (oldest !== undefined) terminalRunReceipts.current.delete(oldest);
           }
-        })();
-      }
-      const streamReady = true;
-      let retryMs = 250;
-      while (!abort.signal.aborted) {
-        try {
-          const events = await rpc.threads.subscribe(
-            { botId: active.id, cursor },
-            { signal: abort.signal },
-          );
-          for await (const event of events) {
-            if (abort.signal.aborted) break;
-            cursor = Math.max(cursor, event.seq);
-            retryMs = 250;
-            if (isRunTerminalEvent(event) && event.runId) {
-              terminalRunReceipts.current.add(event.runId);
-              if (terminalRunReceipts.current.size > 100) {
-                const oldest = terminalRunReceipts.current.values().next().value;
-                if (oldest !== undefined) terminalRunReceipts.current.delete(oldest);
-              }
-            }
-            if (snapshotReady && snapshotRef.current?.threadId === event.threadId) {
-              applyThreadEvent(event, commitSnapshot, commitComputer, snapshotRef, computerRef);
-            } else {
-              pendingSnapshotEvents.push(event);
-            }
-            const currentBot = botsRef.current.find((bot) => bot.id === active.id);
-            notifyBrowserForEvent(
-              event,
-              subscribedThreadId,
-              initialCursor,
-              streamReady,
-              currentBot?.name ?? active.name,
-              currentBot?.notifyOnFinish ?? false,
-              false,
-            );
-            if (event.type === "thread.cleared") {
-              expandedHistoryThread.current = null;
-              pinnedAroundRef.current = null;
-              historyEpoch.current += 1;
-            }
-            if (event.type === "bot.archived") {
-              void refreshBots(true).catch(() => undefined);
-            } else if (
-              event.type === "bot.spawned" ||
-              event.type === "bot.deleted" ||
-              event.type === "run.started" ||
-              isRunTerminalEvent(event) ||
-              event.type === "thread.cleared"
-            ) {
-              void refreshBots().catch(() => undefined);
-            }
-            if (event.type === "thread.message.created") {
-              const blocks = (event.payload.blocks as Array<{ kind?: string }>) ?? [];
-              if (blocks.some((block) => block.kind === "child_bot")) {
-                void refreshBots().catch(() => undefined);
-              }
-              if (event.payload.role === "bot") markBotReadIfVisible(active.id);
-            }
-            if (
-              isRunTerminalEvent(event) ||
-              event.type === "run.waiting_input" ||
-              event.type === "skill.teaching.stopped"
-            ) {
-              // waiting_input: reconcile ask cards if a stale post-send refresh raced SSE.
-              void refreshThread(active.id).catch(() => undefined);
-            } else if (isComputerStatusEvent(event)) {
-              void refreshComputerScreen(active.id).catch(() => undefined);
-            }
-          }
-        } catch {
-          // The durable cursor below makes reconnects safe after a transient network failure.
         }
-        if (abort.signal.aborted) break;
-        await refreshThread(active.id, threadSnapshotSignal(abort.signal)).catch(() => null);
-        await abortableDelay(retryMs, abort.signal);
-        retryMs = Math.min(retryMs * 2, 5_000);
-      }
-    })();
+      },
+      applyEvent: (event) =>
+        applyThreadEvent(event, commitSnapshot, commitComputer, snapshotRef, computerRef),
+      onEvent: (event, initial) => {
+        const currentBot = botsRef.current.find((bot) => bot.id === active.id);
+        notifyBrowserForEvent(
+          event,
+          initial.threadId,
+          initial.cursor,
+          true,
+          currentBot?.name ?? active.name,
+          currentBot?.notifyOnFinish ?? false,
+          false,
+        );
+        if (event.type === "thread.cleared") {
+          expandedHistoryThread.current = null;
+          pinnedAroundRef.current = null;
+          historyEpoch.current += 1;
+        }
+        if (event.type === "bot.archived") {
+          void refreshBots(true).catch(() => undefined);
+        } else if (
+          event.type === "bot.spawned" ||
+          event.type === "bot.deleted" ||
+          event.type === "run.started" ||
+          isRunTerminalEvent(event) ||
+          event.type === "thread.cleared"
+        ) {
+          void refreshBots().catch(() => undefined);
+        }
+        if (event.type === "thread.message.created") {
+          const blocks = (event.payload.blocks as Array<{ kind?: string }>) ?? [];
+          if (blocks.some((block) => block.kind === "child_bot")) {
+            void refreshBots().catch(() => undefined);
+          }
+          if (event.payload.role === "bot") markBotReadIfVisible(active.id);
+        }
+        if (
+          isRunTerminalEvent(event) ||
+          event.type === "run.waiting_input" ||
+          event.type === "skill.teaching.stopped"
+        ) {
+          // waiting_input: reconcile ask cards if a stale post-send refresh raced SSE.
+          void refreshThread(active.id).catch(() => undefined);
+        } else if (isComputerStatusEvent(event)) {
+          void refreshComputerScreen(active.id).catch(() => undefined);
+        }
+      },
+    });
     return () => {
       abort.abort();
     };
@@ -1275,107 +1211,42 @@ export function ShellPage() {
     }
     historyEpoch.current += 1;
     const abort = new AbortController();
-    void (async () => {
-      const snap = pendingJump
-        ? await rpc.threads
-            .get({ groupId }, { signal: threadSnapshotSignal(abort.signal) })
-            .catch(() => null)
-        : await refreshGroupThread(groupId, threadSnapshotSignal(abort.signal)).catch(() => null);
-      if (abort.signal.aborted) return;
-      let subscribedThreadId = snap?.threadId;
-      let initialCursor = snap?.cursor ?? -1;
-      let headRetryMs = 250;
-      while (!subscribedThreadId && !abort.signal.aborted) {
-        const head = await rpc.threads
-          .head({ groupId }, { signal: threadSnapshotSignal(abort.signal) })
-          .catch(() => null);
-        if (head) {
-          subscribedThreadId = head.threadId;
-          initialCursor = head.cursor;
-          break;
+    void runThreadSubscription({
+      signal: abort.signal,
+      loadInitial: () =>
+        pendingJump
+          ? rpc.threads.get({ groupId }, { signal: threadSnapshotSignal(abort.signal) })
+          : refreshGroupThread(groupId, threadSnapshotSignal(abort.signal)),
+      loadHead: () => rpc.threads.head({ groupId }, { signal: threadSnapshotSignal(abort.signal) }),
+      refresh: () => refreshGroupThread(groupId, threadSnapshotSignal(abort.signal)),
+      currentSnapshot: () => snapshotRef.current,
+      subscribe: (cursor) => rpc.threads.subscribe({ groupId, cursor }, { signal: abort.signal }),
+      applyEvent: (event) =>
+        applyThreadEvent(event, commitSnapshot, commitComputer, snapshotRef, computerRef),
+      onEvent: (event, initial) => {
+        const eventBot = botsRef.current.find((bot) => bot.id === event.botId);
+        notifyBrowserForEvent(
+          event,
+          initial.threadId,
+          initial.cursor,
+          true,
+          eventBot?.name ?? activeGroup.name,
+          true,
+          true,
+        );
+        if (event.type === "thread.message.created" && event.payload.role === "bot") {
+          readVisibleGroups.current.delete(groupId);
+          markVisibleGroupRead();
         }
-        try {
-          await abortableDelay(headRetryMs, abort.signal);
-        } catch {
-          return;
+        if (event.type === "run.started" || isRunTerminalEvent(event)) {
+          void refreshBots().catch(() => undefined);
         }
-        headRetryMs = Math.min(headRetryMs * 2, 5_000);
-      }
-      if (!subscribedThreadId || abort.signal.aborted) return;
-      let cursor = initialCursor;
-      let snapshotReady = snapshotRef.current?.threadId === subscribedThreadId;
-      const pendingSnapshotEvents: ProductEvent[] = [];
-      if (!snapshotReady) {
-        void (async () => {
-          let snapshotRetryMs = 250;
-          while (!snapshotReady && !abort.signal.aborted) {
-            try {
-              await abortableDelay(snapshotRetryMs, abort.signal);
-            } catch {
-              return;
-            }
-            await refreshGroupThread(groupId, threadSnapshotSignal(abort.signal)).catch(() => null);
-            if (abort.signal.aborted) return;
-            const committed = snapshotRef.current;
-            if (committed?.threadId === subscribedThreadId) {
-              snapshotReady = true;
-              const pending = pendingSnapshotEvents.splice(0);
-              for (const event of pending) {
-                if (event.seq > committed.cursor) {
-                  applyThreadEvent(event, commitSnapshot, commitComputer, snapshotRef, computerRef);
-                }
-              }
-              return;
-            }
-            snapshotRetryMs = Math.min(snapshotRetryMs * 2, 5_000);
-          }
-        })();
-      }
-      const streamReady = true;
-      let retryMs = 250;
-      while (!abort.signal.aborted) {
-        try {
-          const events = await rpc.threads.subscribe({ groupId, cursor }, { signal: abort.signal });
-          for await (const event of events) {
-            if (abort.signal.aborted) break;
-            cursor = Math.max(cursor, event.seq);
-            retryMs = 250;
-            if (snapshotReady && snapshotRef.current?.threadId === event.threadId) {
-              applyThreadEvent(event, commitSnapshot, commitComputer, snapshotRef, computerRef);
-            } else {
-              pendingSnapshotEvents.push(event);
-            }
-            const eventBot = botsRef.current.find((bot) => bot.id === event.botId);
-            notifyBrowserForEvent(
-              event,
-              subscribedThreadId,
-              initialCursor,
-              streamReady,
-              eventBot?.name ?? activeGroup.name,
-              true,
-              true,
-            );
-            if (event.type === "thread.message.created" && event.payload.role === "bot") {
-              readVisibleGroups.current.delete(groupId);
-              markVisibleGroupRead();
-            }
-            if (event.type === "run.started" || isRunTerminalEvent(event)) {
-              void refreshBots().catch(() => undefined);
-            }
-            if (isRunTerminalEvent(event) || event.type === "run.waiting_input") {
-              // waiting_input: reconcile ask cards if a stale post-send refresh raced SSE.
-              void refreshGroupThread(groupId).catch(() => undefined);
-            }
-          }
-        } catch {
-          // reconnect safely
+        if (isRunTerminalEvent(event) || event.type === "run.waiting_input") {
+          // waiting_input: reconcile ask cards if a stale post-send refresh raced SSE.
+          void refreshGroupThread(groupId).catch(() => undefined);
         }
-        if (abort.signal.aborted) break;
-        await refreshGroupThread(groupId, threadSnapshotSignal(abort.signal)).catch(() => null);
-        await abortableDelay(retryMs, abort.signal);
-        retryMs = Math.min(retryMs * 2, 5_000);
-      }
-    })();
+      },
+    });
     return () => {
       window.removeEventListener("focus", markVisibleGroupRead);
       document.removeEventListener("visibilitychange", markVisibleGroupRead);

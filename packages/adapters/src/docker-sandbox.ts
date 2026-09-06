@@ -8,6 +8,8 @@ import type {
   ComputerObservation,
   ComputerRef,
   ControlLeaseRef,
+  PageBrowserCommand,
+  PageBrowserResult,
   PortableFile,
   ProcessEvent,
   SandboxProvider,
@@ -198,6 +200,22 @@ export class DockerSandboxProvider implements SandboxProvider {
     if (body.stdout) yield { type: "stdout", data: body.stdout };
     if (body.stderr) yield { type: "stderr", data: body.stderr };
     yield { type: "exit", code: body.code };
+  }
+
+  async pageBrowser(
+    computer: ComputerRef,
+    request: PageBrowserCommand,
+    context: AdapterContext,
+  ): Promise<PageBrowserResult> {
+    const res = await fetch(this.url(`/computers/${computer.id}/browser`), {
+      method: "POST",
+      headers: { ...this.headers(context, computer.botId), "content-type": "application/json" },
+      body: JSON.stringify(request),
+      redirect: "error",
+      signal: context.signal,
+    });
+    if (!res.ok) throw new Error(`page browser failed: ${res.status}`);
+    return readSandboxJson<PageBrowserResult>(res, context.signal, 512 * 1024);
   }
 
   async connectScreen(

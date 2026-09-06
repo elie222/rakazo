@@ -132,6 +132,7 @@ describe("sandbox supervisor HTTP boundary", () => {
       ["POST", "/computers/id/exec"],
       ["POST", "/computers/id/observe"],
       ["POST", "/computers/id/actions"],
+      ["POST", "/computers/id/browser"],
       ["GET", "/computers/id/files"],
       ["POST", "/computers/id/files"],
       ["GET", "/computers/id/screen"],

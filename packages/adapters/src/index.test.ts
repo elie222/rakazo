@@ -184,6 +184,9 @@ describe("builtin tools", () => {
         "skill_delete",
         "web_search",
         "web_fetch",
+        "browser_navigate",
+        "browser_snapshot",
+        "browser_act",
       ]),
     );
   });

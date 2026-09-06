@@ -11,7 +11,6 @@ import type {
   SpaceNavigation,
 } from "@rakazo/contracts";
 import {
-  cloudAgentBlockFromPayload,
   isRunTerminalEvent,
   mergeThreadHistory,
   prependThreadHistoryPage,
@@ -20,6 +19,9 @@ import {
   runFailureError,
   signupRequiresEmailVerification,
   type ThreadHistory,
+  takeLiveMessage,
+  updateCloudAgentMessages,
+  updateMessageReaction,
   upsertMessageById,
 } from "@rakazo/core";
 import * as SecureStore from "expo-secure-store";
@@ -568,6 +570,7 @@ const MESSAGING_PROVIDER_LABELS: Record<string, string> = {
   slack: "Slack",
   whatsapp: "WhatsApp",
   telegram: "Telegram",
+  lark: "Feishu",
 };
 
 export function messagingProviderLabel(provider: string, transport?: string): string {
@@ -630,22 +633,6 @@ type ThreadEvent = {
   runId?: string;
   payload?: Record<string, unknown>;
 };
-
-function takeMobileLiveMessage(
-  snapshot: MobileSnapshot,
-  liveId: string,
-): { previous: MobileMessage | undefined; remaining: MobileMessage[] } {
-  let previous: MobileMessage | undefined;
-  const remaining: MobileMessage[] = [];
-  for (const message of snapshot.messages) {
-    if (message.id === liveId) {
-      previous = message;
-    } else if (!message.id.startsWith("progress:") || message.runId) {
-      remaining.push(message);
-    }
-  }
-  return { previous, remaining };
-}
 
 export async function subscribeThread(
   target: { botId: string } | { groupId: string },
@@ -751,7 +738,7 @@ export function applyMobileThreadEvent(
   }
   if (event.type === "thread.progress") {
     const progressId = progressMessageId(event);
-    const { previous, remaining } = takeMobileLiveMessage(prev, progressId);
+    const { previous, remaining } = takeLiveMessage(prev.messages, progressId);
     const streaming: MobileMessage = {
       id: progressId,
       role: "bot",
@@ -770,7 +757,7 @@ export function applyMobileThreadEvent(
   }
   if (event.type === "agent.tool.called") {
     const progressId = progressMessageId(event);
-    const { previous, remaining } = takeMobileLiveMessage(prev, progressId);
+    const { previous, remaining } = takeLiveMessage(prev.messages, progressId);
     const streaming: MobileMessage = {
       id: progressId,
       role: "bot",
@@ -814,51 +801,21 @@ export function applyMobileThreadEvent(
     };
   }
   if (event.type === "thread.cloud_agent") {
-    const agentId = String(event.payload?.agentId ?? "");
-    const messageId = String(event.payload?.messageId ?? "");
-    const block = cloudAgentBlockFromPayload(event.payload ?? {});
     return {
       ...prev,
       cursor: event.seq ?? prev.cursor,
-      messages: prev.messages.map((message) => {
-        if (messageId && message.id === messageId) {
-          return {
-            ...message,
-            blocks: message.blocks.map((existing) =>
-              existing.kind === "cloud_agent" && existing.agentId === agentId ? block : existing,
-            ),
-          };
-        }
-        if (
-          message.blocks.some(
-            (existing) => existing.kind === "cloud_agent" && existing.agentId === agentId,
-          )
-        ) {
-          return {
-            ...message,
-            blocks: message.blocks.map((existing) =>
-              existing.kind === "cloud_agent" && existing.agentId === agentId ? block : existing,
-            ),
-          };
-        }
-        return message;
-      }),
+      messages: updateCloudAgentMessages(prev.messages, event.payload ?? {}),
     };
   }
   if (event.type === "thread.message.reaction") {
-    const messageId = String(event.payload?.messageId ?? "");
     return {
       ...prev,
       cursor: event.seq ?? prev.cursor,
-      messages: prev.messages.map((message) =>
-        message.id === messageId
-          ? { ...message, thumbsUp: event.payload?.thumbsUp === true }
-          : message,
-      ),
+      messages: updateMessageReaction(prev.messages, event.payload ?? {}),
     };
   }
   if (event.type === "thread.message.created" || event.type === "thread.message.updated") {
-    const { remaining } = takeMobileLiveMessage(prev, progressMessageId(event));
+    const { remaining } = takeLiveMessage(prev.messages, progressMessageId(event));
     const next: MobileMessage = {
       id: String(event.payload?.messageId ?? event.id ?? `msg:${event.seq ?? 0}`),
       runId: event.runId ? String(event.runId) : undefined,

@@ -10,6 +10,7 @@ import { routineJobKey, runContinueJob, runJobKey } from "@rakazo/adapter-kit";
 import { type Actor, type Bot, GROUP_MEMBER_MIN } from "@rakazo/contracts";
 import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
 import {
+  cancelRunsInTransaction,
   computerScopeKey,
   createRepos,
   createThreadMessageInTransaction,
@@ -505,23 +506,7 @@ async function detachBotFromGroups(tx: Prisma.TransactionClient, botId: string) 
   if (activeRuns.length) {
     const now = new Date();
     const runIds = activeRuns.map((run) => run.id);
-    await tx.run.updateMany({
-      where: { id: { in: runIds } },
-      data: {
-        status: "cancelled",
-        completedAt: now,
-        leaseOwner: null,
-        leaseExpiresAt: null,
-      },
-    });
-    await tx.attempt.updateMany({
-      where: { runId: { in: runIds }, status: "running" },
-      data: { status: "cancelled", finishedAt: now },
-    });
-    await tx.task.updateMany({
-      where: { id: { in: activeRuns.map((run) => run.taskId) } },
-      data: { status: "cancelled" },
-    });
+    await cancelRunsInTransaction(tx, activeRuns, now);
     await expireComputerExecutionLeases(tx, { runId: { in: runIds } });
     await tx.computer.updateMany({
       where: { executionRunId: { in: runIds } },
