@@ -122,7 +122,11 @@ describe("team chat bridge", () => {
               .filter((r) => r.status === "received")
               .map((r) => ({ ...r, externalConversation: conversation }));
           }
-          if (typeof where.status === "object" && where.status && "in" in (where.status as object)) {
+          if (
+            typeof where.status === "object" &&
+            where.status &&
+            "in" in (where.status as object)
+          ) {
             const statuses = (where.status as { in: string[] }).in;
             return records
               .filter((r) => statuses.includes(String(r.status)))
@@ -135,21 +139,31 @@ describe("team chat bridge", () => {
           if (where.status === "observed") return [];
           return [];
         }),
-        update: vi.fn(async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => {
-          const record = records.find((r) => r.id === where.id);
-          Object.assign(record ?? {}, data);
-          return record;
-        }),
-        updateMany: vi.fn(async ({ where, data }: { where: Record<string, unknown>; data: Record<string, unknown> }) => {
-          let count = 0;
-          for (const record of records) {
-            if (where.id && record.id !== where.id) continue;
-            if (where.status && record.status !== where.status) continue;
-            Object.assign(record, data);
-            count += 1;
-          }
-          return { count };
-        }),
+        update: vi.fn(
+          async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => {
+            const record = records.find((r) => r.id === where.id);
+            Object.assign(record ?? {}, data);
+            return record;
+          },
+        ),
+        updateMany: vi.fn(
+          async ({
+            where,
+            data,
+          }: {
+            where: Record<string, unknown>;
+            data: Record<string, unknown>;
+          }) => {
+            let count = 0;
+            for (const record of records) {
+              if (where.id && record.id !== where.id) continue;
+              if (where.status && record.status !== where.status) continue;
+              Object.assign(record, data);
+              count += 1;
+            }
+            return { count };
+          },
+        ),
         findFirst: vi.fn(async () => null),
       },
       run: { findMany: vi.fn(async () => []) },

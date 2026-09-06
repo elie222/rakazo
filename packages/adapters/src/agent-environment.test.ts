@@ -24,18 +24,15 @@ describe("agent-environment", () => {
 
   it("rejects invalid secret names", () => {
     expect(() =>
-      decryptAgentEnvironment(
-        [{ name: "lowercase", secret: { id: "sec", ciphertext: "x" } }],
-        { load: () => "x" },
-      ),
+      decryptAgentEnvironment([{ name: "lowercase", secret: { id: "sec", ciphertext: "x" } }], {
+        load: () => "x",
+      }),
     ).toThrow();
   });
 
   it("formats an instruction only when secrets exist", () => {
     expect(formatAgentEnvironmentInstruction({})).toBeUndefined();
-    expect(formatAgentEnvironmentInstruction({ Z: "1", A: "2" })).toContain(
-      "A, Z",
-    );
+    expect(formatAgentEnvironmentInstruction({ Z: "1", A: "2" })).toContain("A, Z");
   });
 
   it("redacts secret values from command output", () => {

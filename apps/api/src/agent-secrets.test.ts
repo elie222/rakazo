@@ -67,11 +67,10 @@ describe("agent secrets", () => {
   });
 
   it("puts and removes secrets", async () => {
-    await putAgentSecret(
-      { prisma: prisma as never, secrets: { put } },
-      actor,
-      { name: "ACME_TOKEN", value: "super-secret" },
-    );
+    await putAgentSecret({ prisma: prisma as never, secrets: { put } }, actor, {
+      name: "ACME_TOKEN",
+      value: "super-secret",
+    });
     expect(put).toHaveBeenCalled();
     expect(prisma.secret.create).toHaveBeenCalled();
     expect(prisma.agentSecret.upsert).toHaveBeenCalled();

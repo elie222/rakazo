@@ -1,10 +1,8 @@
-import { describe, expect, it, vi } from "vitest";
 import type { MessagingInboundMessage, MessagingSurface } from "@rakazo/adapter-kit";
+import { describe, expect, it, vi } from "vitest";
 import { createMessagingTeamChatSender, toTeamChatInbound } from "./team-chat-messaging.js";
 
-function baseEvent(
-  overrides: Partial<MessagingInboundMessage> = {},
-): MessagingInboundMessage {
+function baseEvent(overrides: Partial<MessagingInboundMessage> = {}): MessagingInboundMessage {
   return {
     type: "message",
     provider: "slack",
@@ -68,9 +66,7 @@ describe("toTeamChatInbound", () => {
   });
 
   it("treats @mentions as mention when kind is omitted", () => {
-    expect(toTeamChatInbound(baseEvent({ content: "hey @rakazo look" }))?.kind).toBe(
-      "mention",
-    );
+    expect(toTeamChatInbound(baseEvent({ content: "hey @rakazo look" }))?.kind).toBe("mention");
   });
 });
 

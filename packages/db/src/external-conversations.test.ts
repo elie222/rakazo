@@ -1,7 +1,7 @@
-import { describe, expect, it, vi } from "vitest";
 import type { Actor } from "@rakazo/contracts";
-import { IsolationError } from "./scope.js";
+import { describe, expect, it, vi } from "vitest";
 import { createExternalConversationRepos } from "./external-conversations.js";
+import { IsolationError } from "./scope.js";
 
 const actor: Actor = {
   userId: "user-1",
