@@ -695,14 +695,12 @@ app.delete("/computers/:id/screen", async (c) => {
 
 app.post("/computers/:id/stop", async (c) => {
   const id = c.req.param("id");
-  const managed = await managedContainer(
-    id,
-    c.req.header("x-rakazo-bot-id"),
-    c.req.header("x-rakazo-space-id"),
-  ).catch(() => undefined);
-  if (!managed) return c.json({ error: "computer not found" }, 404);
-  const { container } = managed;
   try {
+    const { container } = await managedContainer(
+      id,
+      c.req.header("x-rakazo-bot-id"),
+      c.req.header("x-rakazo-space-id"),
+    );
     await withComputerScreenLock(id, async () => {
       const info = await container.inspect();
       if (info.State.Running) {
@@ -727,7 +725,11 @@ app.post("/computers/:id/stop", async (c) => {
       clearComputerScreenRegistry(computerScreens, id);
     });
     return c.json({ ok: true });
-  } catch {
+  } catch (error) {
+    if (error instanceof ComputerIdentityError)
+      return c.json({ error: "invalid computer identity" }, 403);
+    if (error && typeof error === "object" && "statusCode" in error && error.statusCode === 404)
+      return c.json({ error: "computer not found" }, 404);
     return c.json({ error: "computer failed to stop or checkpoint browser profiles" }, 500);
   }
 });
@@ -848,11 +850,14 @@ async function findBotContainer(botId: string, spaceId: string) {
   return undefined;
 }
 
+class ComputerIdentityError extends Error {}
+
 async function managedContainer(id: string, botId?: string, spaceId?: string) {
-  if (!botId || !spaceId) throw new Error("missing computer identity");
+  if (!botId || !spaceId) throw new ComputerIdentityError("missing computer identity");
   const container = docker.getContainer(id);
   const info = await container.inspect();
-  if (!isRakazoContainer(info, botId, spaceId)) throw new Error("computer identity mismatch");
+  if (!isRakazoContainer(info, botId, spaceId))
+    throw new ComputerIdentityError("computer identity mismatch");
   return { container, info };
 }
 

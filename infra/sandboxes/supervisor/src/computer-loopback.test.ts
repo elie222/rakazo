@@ -56,6 +56,52 @@ afterEach(async () => {
 });
 
 describe("computer loopback provision lifecycle", () => {
+  it.each([
+    { error: new Error("daemon unavailable"), status: 500 },
+    { error: Object.assign(new Error("permission denied"), { statusCode: 403 }), status: 500 },
+    { error: Object.assign(new Error("container missing"), { statusCode: 404 }), status: 404 },
+  ])("reports inspection failures correctly when stopping: $status", async ({ error, status }) => {
+    const { supervisorApp } = await import("./index.js");
+    const container = { inspect: vi.fn().mockRejectedValue(error), stop: vi.fn(), exec: vi.fn() };
+    mocks.docker.getContainer.mockReturnValue(container);
+    const response = await supervisorApp.request("/computers/inspect-failure/stop", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${resolveSupervisorToken(process.env)}`,
+        "x-rakazo-bot-id": "bot",
+        "x-rakazo-space-id": "space",
+      },
+    });
+    expect(response.status).toBe(status);
+    expect(container.stop).not.toHaveBeenCalled();
+    expect(container.exec).not.toHaveBeenCalled();
+  });
+
+  it("rejects another computer identity without stopping its container", async () => {
+    const { supervisorApp } = await import("./index.js");
+    const container = {
+      inspect: vi.fn().mockResolvedValue({
+        Config: {
+          Labels: { "rakazo.managed": "true", "rakazo.botId": "other", "rakazo.spaceId": "other" },
+        },
+      }),
+      stop: vi.fn(),
+      exec: vi.fn(),
+    };
+    mocks.docker.getContainer.mockReturnValue(container);
+    const response = await supervisorApp.request("/computers/identity-mismatch/stop", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${resolveSupervisorToken(process.env)}`,
+        "x-rakazo-bot-id": "bot",
+        "x-rakazo-space-id": "space",
+      },
+    });
+    expect(response.status).toBe(403);
+    expect(container.stop).not.toHaveBeenCalled();
+    expect(container.exec).not.toHaveBeenCalled();
+  });
+
   it("rechecks stopped state after a concurrent stop owns the screen lock", async () => {
     const { supervisorApp } = await import("./index.js");
     let running = true;
