@@ -43,6 +43,14 @@ export interface MessagingPlatform {
   channelName?: (raw: unknown) => string | null;
   /** User-facing transport carried by the raw message when it differs from the provider. */
   transport?: (raw: unknown) => string | null;
+  /**
+   * Optional team-room enrichment (workspace id, mention/ambient kind, bot
+   * sender, reply thread) derived from the raw platform payload.
+   */
+  enrichTeamRoom?: (
+    raw: unknown,
+    base: MessagingInboundMessage,
+  ) => Partial<MessagingInboundMessage>;
 }
 
 /**
@@ -211,7 +219,7 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
     if (!isDirect && !platform.capabilities.groups) return null;
     const fromLabel = message.author.fullName || message.author.userName || null;
     const transport = platform.transport?.(message.raw) ?? null;
-    return {
+    const base: MessagingInboundMessage = {
       type: "message",
       provider,
       ...(transport ? { transport } : {}),
@@ -225,6 +233,8 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
       content: message.text ?? "",
       mediaUrl: message.attachments.find((attachment) => attachment.url)?.url ?? null,
     };
+    const enrichment = platform.enrichTeamRoom?.(message.raw, base) ?? {};
+    return { ...base, ...enrichment };
   }
 }
 

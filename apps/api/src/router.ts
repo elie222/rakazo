@@ -92,6 +92,7 @@ import {
 } from "@rakazo/core";
 import {
   appendEventInTransaction,
+  createExternalConversationRepos,
   createGroupRepos,
   createRepos,
   createSpaceForMember,
@@ -118,6 +119,7 @@ import {
   touchGroupUpdatedAt,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { deleteAgentSecret, listAgentSecrets, putAgentSecret } from "./agent-secrets.js";
 import { createAgentSkillsService } from "./agent-skills.js";
 import { createOwnedArtifact, getOwnedArtifact, getSpaceArtifact } from "./artifacts.js";
 import {
@@ -478,6 +480,7 @@ export function createRouter(deps: RouterDeps) {
           isDefault: false,
           bots: [],
           groups: [],
+          externalConversations: [],
           botSections: [],
         };
       }),
@@ -867,6 +870,10 @@ export function createRouter(deps: RouterDeps) {
               ? { modelProvider: input.modelProvider, modelId: input.modelId ?? null }
               : {}),
             ...(input.thinkingLevel !== undefined ? { thinkingLevel } : {}),
+            ...(input.teamChatAmbientEnabled !== undefined
+              ? { teamChatAmbientEnabled: input.teamChatAmbientEnabled }
+              : {}),
+            ...(input.teamChatRules !== undefined ? { teamChatRules: input.teamChatRules } : {}),
           },
         });
         const bots = await repos.listBots(context.actor);
@@ -3924,6 +3931,34 @@ export function createRouter(deps: RouterDeps) {
         }),
       },
     },
+    externalConversations: {
+      updatePolicy: authed.externalConversations.updatePolicy.handler(
+        async ({ context, input }) => {
+          const { externalConversationId, ...policy } = input;
+          return createExternalConversationRepos(deps.prisma).updatePolicy(
+            context.actor,
+            externalConversationId,
+            policy,
+          );
+        },
+      ),
+    },
+    agentSecrets: {
+      list: authed.agentSecrets.list.handler(async ({ context }) =>
+        listAgentSecrets({ prisma: deps.prisma, secrets: deps.secrets }, context.actor),
+      ),
+      put: authed.agentSecrets.put.handler(async ({ context, input, signal }) =>
+        putAgentSecret(
+          { prisma: deps.prisma, secrets: deps.secrets },
+          context.actor,
+          input,
+          signal,
+        ),
+      ),
+      remove: authed.agentSecrets.remove.handler(async ({ context, input }) =>
+        deleteAgentSecret({ prisma: deps.prisma, secrets: deps.secrets }, context.actor, input.id),
+      ),
+    },
     approvalRules: {
       list: authed.approvalRules.list.handler(async ({ context }) => {
         const rows = await deps.prisma.actionApprovalRule.findMany({
@@ -4295,15 +4330,21 @@ async function spaceNavigationDto(
   });
   const spaceIds = memberships.map((membership) => membership.spaceId);
   const inactiveSpaceIds = spaceIds.filter((spaceId) => spaceId !== actor.spaceId);
-  const [currentBots, currentGroups, inactiveBots, inactiveGroups, botSections] = await Promise.all(
-    [
-      repos.listBots(actor),
-      groupRepos.listGroups(actor),
-      repos.listSpaceBotsForSpaces(actor, inactiveSpaceIds),
-      groupRepos.listSpaceGroupsForSpaces(actor, inactiveSpaceIds),
-      repos.listBotSectionsForSpaces(actor, spaceIds),
-    ],
-  );
+  const [
+    currentBots,
+    currentGroups,
+    inactiveBots,
+    inactiveGroups,
+    botSections,
+    externalConversations,
+  ] = await Promise.all([
+    repos.listBots(actor),
+    groupRepos.listGroups(actor),
+    repos.listSpaceBotsForSpaces(actor, inactiveSpaceIds),
+    groupRepos.listSpaceGroupsForSpaces(actor, inactiveSpaceIds),
+    repos.listBotSectionsForSpaces(actor, spaceIds),
+    createExternalConversationRepos(deps.prisma).listForSpaces(actor, spaceIds),
+  ]);
   const currentMembership = memberships.find((membership) => membership.spaceId === actor.spaceId);
   if (!currentMembership) throw new IsolationError();
   const botsBySpace = partitionBySpace([...currentBots, ...inactiveBots]);
@@ -4319,6 +4360,9 @@ async function spaceNavigationDto(
       name: currentMembership.space.name,
       bots: currentBots,
       groups: currentGroups,
+      externalConversations: externalConversations.filter(
+        (conversation) => conversation.spaceId === actor.spaceId,
+      ),
       botSections: sectionsFor(actor.spaceId),
     },
     spaces: memberships.map((membership) => {
@@ -4353,6 +4397,9 @@ async function spaceNavigationDto(
           unread: group.unread,
           updatedAt: group.updatedAt,
         })),
+        externalConversations: externalConversations.filter(
+          (conversation) => conversation.spaceId === membership.spaceId,
+        ),
         botSections: sectionsFor(membership.spaceId),
       };
     }),

@@ -107,3 +107,117 @@ test("Korean messaging settings show linked chat apps, channels, and connections
   await page.getByRole("button", { name: "메시징 설정 닫기" }).click();
   await expect(page.getByTestId("messaging-settings")).toHaveCount(0);
 });
+
+test("team conversation settings open from messaging overlay", async ({ page }, testInfo) => {
+  await page.route("**/rpc/messaging/status", (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        json: {
+          enabled: true,
+          providers: ["sendblue", "slack", "whatsapp", "telegram", "lark"],
+          openSignup: false,
+          identities: [],
+        },
+      }),
+    }),
+  );
+  await page.route("**/rpc/messaging/channels/list", (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ json: [] }),
+    }),
+  );
+  await page.route("**/rpc/messaging/connections/list", (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ json: [] }),
+    }),
+  );
+  await page.route("**/rpc/externalConversations/updatePolicy", (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        json: {
+          teamChatAmbientEnabled: true,
+          teamChatRules: "Reply when asked about launch.",
+          automatedSenderPolicies: {
+            B_GITHUB: { name: "GitHub", mode: "rollup", rollupHours: 6 },
+          },
+        },
+      }),
+    }),
+  );
+
+  await page.route("**/rpc/spaces/list", async (route) => {
+    const response = await route.fetch();
+    const payload = (await response.json()) as {
+      json?: {
+        current?: {
+          id: string;
+          bots: Array<{ id: string }>;
+          externalConversations?: unknown[];
+        };
+        spaces?: Array<{ id: string; externalConversations?: unknown[] }>;
+      };
+    };
+    const current = payload.json?.current;
+    const botId = current?.bots[0]?.id;
+    if (current && botId) {
+      const conversation = {
+        id: "clexternal000000000000001",
+        spaceId: current.id,
+        botId,
+        provider: "slack",
+        displayName: "#launch",
+        participantNames: ["Ada", "Grace"],
+        teamChatAmbientEnabled: null,
+        teamChatRules: null,
+        automatedSenderPolicies: {
+          B_GITHUB: { name: "GitHub", mode: "ignore" },
+        },
+        automatedSenders: [{ id: "B_GITHUB", name: "GitHub" }],
+        threadId: "clthread00000000000000001",
+        preview: "Ship Friday?",
+        unread: false,
+        updatedAt: new Date().toISOString(),
+      };
+      current.externalConversations = [conversation];
+      for (const space of payload.json?.spaces ?? []) {
+        if (space.id === current.id) space.externalConversations = [conversation];
+      }
+    }
+    await route.fulfill({
+      status: response.status(),
+      contentType: "application/json",
+      body: JSON.stringify(payload),
+    });
+  });
+
+  const stamp = Date.now();
+  const userName = `TeamChat ${stamp}`;
+  await signup(page, `team-chat-${stamp}@rakazo.test`, "password12", userName);
+  await completeOnboarding(page);
+
+  await page.getByRole("button", { name: new RegExp(userName) }).click();
+  await page.getByRole("button", { name: "Settings" }).click();
+  await expect(
+    page.getByTestId("user-settings").getByRole("heading", { name: "Messaging" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Manage messaging settings" }).click();
+
+  const messagingSettings = page.getByTestId("messaging-settings");
+  await expect(messagingSettings).toBeVisible();
+  await expect(
+    messagingSettings.getByRole("heading", { name: "Team conversations" }),
+  ).toBeVisible();
+  await expect(messagingSettings.getByText("#launch")).toBeVisible();
+  await expect(messagingSettings.getByText("Slack", { exact: true })).toBeVisible();
+  await messagingSettings.getByRole("button", { name: "Settings", exact: true }).click();
+  const conversationSettings = page.getByTestId("external-conversation-settings");
+  await expect(conversationSettings).toBeVisible();
+  await expect(conversationSettings.getByText("Listening")).toBeVisible();
+  await expect(conversationSettings.getByText("Room guidance")).toBeVisible();
+  await expect(conversationSettings.getByText("GitHub")).toBeVisible();
+  await captureScreenshot(page, testInfo, "messaging-team-conversation-settings");
+});
