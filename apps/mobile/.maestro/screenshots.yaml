@@ -140,6 +140,10 @@ tags:
 - extendedWaitUntil:
     visible: "Researcher"
     timeout: 10000
+- assertVisible: "Advanced"
+- tapOn: "Advanced"
+- assertVisible: "Model"
+- assertVisible: "Space default"
 - takeScreenshot: "17-bot-settings"
 
 - openLink: "rakazo:///computer?botId=${RAKAZO_SCREENSHOT_BOT_ID}&name=Researcher"
