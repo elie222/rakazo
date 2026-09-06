@@ -436,5 +436,4 @@ describe("team chat bridge", () => {
       }),
     );
   });
-
 });
