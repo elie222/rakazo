@@ -41,6 +41,7 @@ import {
   PORTABLE_TRANSFER_BATCH_BYTES,
   shouldSkipPortableWorkspaceFile,
 } from "./computer-workspace.js";
+import { withAbort } from "./web-ssrf.js";
 
 const BOX_API_BASE = "https://ascii.dev/api/box/v1";
 const BOX_WORKSPACE = "/home/user/rakazo-home";
@@ -48,6 +49,7 @@ const BOX_BROWSER_PROFILES = `${BOX_WORKSPACE}/.browser-profiles`;
 const BOX_READY_TIMEOUT_MS = 5 * 60_000;
 const BOX_API_COMMAND_TIMEOUT_SECONDS = 600;
 const BOX_TTL_SECONDS = 2 * 60 * 60;
+const BOX_DELETE_TIMEOUT_MS = 60_000;
 const BOX_EXPORT_CONCURRENCY = 16;
 const BOX_SCREEN_LEASE_PATH = "/tmp/rakazo-screen-lease";
 
@@ -891,25 +893,30 @@ function createBoxSdk(config: { apiKey: string; apiUrl?: string }): BoxSandboxSd
     deleteBox: async (boxId: string) => {
       const url = `${apiUrl}/boxes/${encodeURIComponent(boxId)}`;
       const headers = { Authorization: `Bearer ${config.apiKey}` };
-      const response = await fetch(url, {
-        method: "DELETE",
-        headers: {
-          ...headers,
-          "X-Ascii-Confirm-Delete": boxId,
-        },
-      });
-      if (response.status === 404) return;
-      if (!response.ok) {
-        throw await boxResponseError(response, config.apiKey);
-      }
-      const deadline = Date.now() + 60_000;
-      while (Date.now() < deadline) {
-        const status = await fetch(url, { headers });
-        if (status.status === 404) return;
-        if (!status.ok) {
-          throw await boxResponseError(status, config.apiKey);
+      const signal = AbortSignal.timeout(BOX_DELETE_TIMEOUT_MS);
+      try {
+        const response = await fetch(url, {
+          method: "DELETE",
+          headers: {
+            ...headers,
+            "X-Ascii-Confirm-Delete": boxId,
+          },
+          signal,
+        });
+        if (response.status === 404) return;
+        if (!response.ok) {
+          throw await boxResponseError(response, config.apiKey, signal);
         }
-        await delay(500);
+        while (!signal.aborted) {
+          const status = await fetch(url, { headers, signal });
+          if (status.status === 404) return;
+          if (!status.ok) {
+            throw await boxResponseError(status, config.apiKey, signal);
+          }
+          await withAbort(delay(500), signal);
+        }
+      } catch (error) {
+        if (!signal.aborted || error !== signal.reason) throw error;
       }
       throw new Error(`Box ${boxId} was not deleted within 60 seconds`);
     },
