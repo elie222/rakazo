@@ -100,15 +100,15 @@ export const MAX_SUPERVISOR_REQUEST_BYTES = 1024 * 1024;
 export const MAX_SUPERVISOR_FILE_REQUEST_BYTES = 16 * 1024 * 1024 + 64 * 1024;
 
 /** Keep normal control requests small while allowing the existing 16 MiB file payload. */
-export function supervisorRequestBodyLimit(pathname: string): number {
-  return /^\/computers\/[^/]+\/files\/?$/.test(pathname)
+export function supervisorRequestBodyLimit(method: string, pathname: string): number {
+  return method === "POST" && /^\/computers\/[^/]+\/files\/?$/.test(pathname)
     ? MAX_SUPERVISOR_FILE_REQUEST_BYTES
     : MAX_SUPERVISOR_REQUEST_BYTES;
 }
 
 const limitSupervisorRequestBody: MiddlewareHandler = async (c, next) => {
   return bodyLimit({
-    maxSize: supervisorRequestBodyLimit(c.req.path),
+    maxSize: supervisorRequestBodyLimit(c.req.method, c.req.path),
     onError: (context) => context.json({ error: "Request body is too large." }, 413),
   })(c, next);
 };

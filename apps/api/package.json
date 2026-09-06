@@ -20,7 +20,7 @@
     "@rakazo/db": "workspace:*",
     "@rakazo/logging": "workspace:*",
     "@rakazo/memory": "workspace:*",
-    "hono": "^4.9.6"
+    "hono": "^4.9.7"
   },
   "devDependencies": {
     "typescript": "^5.9.2",

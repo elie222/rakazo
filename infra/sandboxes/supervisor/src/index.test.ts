@@ -194,16 +194,23 @@ describe("sandbox supervisor HTTP boundary", () => {
     }
   });
 
-  it("keeps the larger file-write allowance scoped to that exact route", () => {
-    expect(supervisorRequestBodyLimit("/computers/id/files")).toBe(
+  it("keeps the larger file-write allowance scoped to that exact POST route", () => {
+    expect(supervisorRequestBodyLimit("POST", "/computers/id/files")).toBe(
       MAX_SUPERVISOR_FILE_REQUEST_BYTES,
     );
-    expect(supervisorRequestBodyLimit("/computers/id/files/")).toBe(
+    expect(supervisorRequestBodyLimit("POST", "/computers/id/files/")).toBe(
       MAX_SUPERVISOR_FILE_REQUEST_BYTES,
     );
-    expect(supervisorRequestBodyLimit("/computers/id/actions")).toBe(MAX_SUPERVISOR_REQUEST_BYTES);
-    expect(supervisorRequestBodyLimit("/computers/files")).toBe(MAX_SUPERVISOR_REQUEST_BYTES);
-    expect(supervisorRequestBodyLimit("/computers/id/files/extra")).toBe(
+    expect(supervisorRequestBodyLimit("PUT", "/computers/id/files")).toBe(
+      MAX_SUPERVISOR_REQUEST_BYTES,
+    );
+    expect(supervisorRequestBodyLimit("POST", "/computers/id/actions")).toBe(
+      MAX_SUPERVISOR_REQUEST_BYTES,
+    );
+    expect(supervisorRequestBodyLimit("POST", "/computers/files")).toBe(
+      MAX_SUPERVISOR_REQUEST_BYTES,
+    );
+    expect(supervisorRequestBodyLimit("POST", "/computers/id/files/extra")).toBe(
       MAX_SUPERVISOR_REQUEST_BYTES,
     );
   });
