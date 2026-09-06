@@ -13,6 +13,7 @@ import {
   acquireComputerExecutionLease,
   ComputerBusyError,
   computerSupportsUpdate,
+  holdComputerExecutionLeaseForTakeover,
   provisionComputer,
   releaseComputerExecutionLease,
   renewComputerExecutionLease,
@@ -626,7 +627,7 @@ describe("computer execution leases", () => {
         botId: "bot-1",
         runId: "run-1",
         fence: 1,
-        expiresAt: { gt: new Date(0) },
+        expiresAt: { gt: expect.any(Date) },
       },
       data: { expiresAt: expect.any(Date) },
     });
@@ -673,7 +674,7 @@ describe("computer execution leases", () => {
     await expect(renewComputerExecutionLease(prisma, lease)).resolves.toBe(false);
     expect(expiresAt).toEqual(new Date(0));
     expect(updateMany).toHaveBeenLastCalledWith({
-      where: { ...lease, expiresAt: { gt: new Date(0) } },
+      where: { ...lease, expiresAt: { gt: expect.any(Date) } },
       data: { expiresAt: expect.any(Date) },
     });
     await expect(
@@ -685,6 +686,37 @@ describe("computer execution leases", () => {
     ).resolves.toMatchObject({ runId: "run-2", fence: 2 });
     expect(create).not.toHaveBeenCalled();
   });
+
+  it.each([
+    ["renewal", renewComputerExecutionLease],
+    ["takeover", holdComputerExecutionLeaseForTakeover],
+  ] as const)(
+    "does not let late %s revive an expired lease during checkpointing",
+    async (_, extend) => {
+      const now = new Date("2026-01-01T00:00:00Z");
+      vi.useFakeTimers();
+      vi.setSystemTime(now);
+      try {
+        let expiresAt = new Date(now.getTime() + 1_000);
+        const updateMany = vi.fn().mockImplementation(async ({ where, data }) => {
+          if (expiresAt <= where.expiresAt.gt) return { count: 0 };
+          expiresAt = data.expiresAt;
+          return { count: 1 };
+        });
+        const prisma = { computerExecutionLease: { updateMany } } as unknown as PrismaClient;
+        const lease = { computerId: "computer-1", botId: "bot-1", runId: "run-1", fence: 1 };
+
+        await expect(extend(prisma, lease)).resolves.toBe(true);
+        const extendedExpiry = expiresAt;
+        vi.setSystemTime(extendedExpiry);
+        // The checkpoint claim may now exclude this expired peer. It must stay expired.
+        await expect(extend(prisma, lease)).resolves.toBe(false);
+        expect(expiresAt).toEqual(extendedExpiry);
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
 
   it("increments the screen fence when the same Team bot starts another run", async () => {
     const prisma = leasePrisma({ scope: "team" });
