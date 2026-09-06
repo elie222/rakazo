@@ -9,16 +9,7 @@ import {
 } from "@rakazo/contracts";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
-import {
-  ActionSheetIOS,
-  Modal,
-  Platform,
-  Pressable,
-  ScrollView,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
+import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { BotAvatar } from "../components/bot-avatar";
 import { ComputerModePicker } from "../components/computer-mode-picker";
 import {
@@ -29,6 +20,7 @@ import {
   rpc,
 } from "../lib/api";
 import { useI18n } from "../lib/i18n";
+import { presentMessageActionSheet } from "../lib/message-action-sheet";
 import { useMobileTokens, useResolvedAppearance } from "../lib/native";
 
 type BotSettingsRecord = MobileBot & {
@@ -67,7 +59,6 @@ export default function BotSettingsScreen() {
   const [me, setMe] = useState<MobileMe | null>(null);
   const [modelMetaReady, setModelMetaReady] = useState(false);
   const [modelMetaError, setModelMetaError] = useState<string | null>(null);
-  const [picker, setPicker] = useState<"model" | "thinking" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
@@ -207,24 +198,28 @@ export default function BotSettingsScreen() {
   }
 
   function openModelPicker() {
-    showNativePicker({
+    presentMessageActionSheet({
       title: t("Model"),
-      choices: modelChoices,
+      actions: modelChoices.map((choice) => ({
+        text: choice.label,
+        onPress: () => selectModel(choice.key),
+      })),
       colorScheme,
-      cancelLabel: t("Cancel"),
-      onSelect: selectModel,
-      onOpenAndroid: () => setPicker("model"),
+      cancel: t("Cancel"),
+      more: t("More"),
     });
   }
 
   function openThinkingPicker() {
-    showNativePicker({
+    presentMessageActionSheet({
       title: t("Thinking"),
-      choices: thinkingChoices,
+      actions: thinkingChoices.map((choice) => ({
+        text: choice.label,
+        onPress: () => setThinkingLevel(choice.key),
+      })),
       colorScheme,
-      cancelLabel: t("Cancel"),
-      onSelect: setThinkingLevel,
-      onOpenAndroid: () => setPicker("thinking"),
+      cancel: t("Cancel"),
+      more: t("More"),
     });
   }
 
@@ -261,11 +256,11 @@ export default function BotSettingsScreen() {
       if (modelChanged) {
         input.modelProvider = selected?.provider ?? null;
         input.modelId = selected?.modelId ?? null;
+      }
+      if (modelMetaReady && (modelChanged || thinkingChanged)) {
         input.thinkingLevel = thinkingOptions.length
           ? ((thinkingLevel || null) as ThinkingLevel | null)
           : null;
-      } else if (thinkingChanged && modelMetaReady && thinkingOptions.length) {
-        input.thinkingLevel = (thinkingLevel || null) as ThinkingLevel | null;
       }
       if (computerMode !== bot.computerMode) {
         await rpc("bots/setComputer", { botId, mode: computerMode });
@@ -281,9 +276,6 @@ export default function BotSettingsScreen() {
       setPending(false);
     }
   }
-
-  const androidChoices =
-    picker === "model" ? modelChoices : picker === "thinking" ? thinkingChoices : [];
 
   return (
     <>
@@ -478,101 +470,8 @@ export default function BotSettingsScreen() {
           </Text>
         </Pressable>
       </ScrollView>
-      <Modal
-        visible={picker !== null}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setPicker(null)}
-      >
-        <View
-          style={{
-            flex: 1,
-            justifyContent: "center",
-            padding: 24,
-            backgroundColor: tokens.overlay,
-          }}
-        >
-          <Pressable
-            accessibilityLabel={t("Cancel")}
-            onPress={() => setPicker(null)}
-            style={{ position: "absolute", top: 0, right: 0, bottom: 0, left: 0 }}
-          />
-          <View
-            accessibilityViewIsModal
-            style={{
-              maxHeight: "80%",
-              backgroundColor: tokens.popover,
-              borderRadius: 24,
-              paddingVertical: 12,
-            }}
-          >
-            <Text
-              style={{
-                color: tokens.mutedForeground,
-                fontSize: 13,
-                paddingHorizontal: 24,
-                paddingBottom: 8,
-              }}
-            >
-              {picker === "thinking" ? t("Thinking") : t("Model")}
-            </Text>
-            <ScrollView keyboardShouldPersistTaps="handled">
-              {androidChoices.map((choice) => (
-                <Pressable
-                  key={choice.key || "space-default"}
-                  accessibilityRole="button"
-                  onPress={() => {
-                    if (picker === "model") selectModel(choice.key);
-                    else setThinkingLevel(choice.key);
-                    setPicker(null);
-                  }}
-                  style={{ minHeight: 56, justifyContent: "center", paddingHorizontal: 24 }}
-                >
-                  <Text
-                    style={{
-                      color:
-                        (picker === "model" ? modelKey : thinkingLevel) === choice.key
-                          ? tokens.popoverForeground
-                          : tokens.mutedForeground,
-                      fontSize: 16,
-                    }}
-                  >
-                    {choice.label}
-                  </Text>
-                </Pressable>
-              ))}
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
     </>
   );
-}
-
-function showNativePicker(input: {
-  title: string;
-  choices: PickerChoice[];
-  colorScheme: "light" | "dark";
-  cancelLabel: string;
-  onSelect: (key: string) => void;
-  onOpenAndroid: () => void;
-}) {
-  if (Platform.OS === "ios") {
-    ActionSheetIOS.showActionSheetWithOptions(
-      {
-        title: input.title,
-        options: [...input.choices.map((choice) => choice.label), input.cancelLabel],
-        cancelButtonIndex: input.choices.length,
-        userInterfaceStyle: input.colorScheme,
-      },
-      (index) => {
-        const choice = input.choices[index];
-        if (choice) input.onSelect(choice.key);
-      },
-    );
-    return;
-  }
-  input.onOpenAndroid();
 }
 
 function modelOptionKey(provider: string, modelId: string) {
