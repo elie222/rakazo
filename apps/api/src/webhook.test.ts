@@ -518,6 +518,21 @@ describe("GitHub event HTTP route", () => {
     expect(deps.sendUserMessage).not.toHaveBeenCalled();
   });
 
+  it("rejects a signed delivery that omits X-GitHub-Delivery", async () => {
+    const deps = createDeps({
+      routines: [{ id: "routine-1", name: "Review pushes", prompt: "Inspect the change" }],
+    });
+    const app = mount(deps);
+    const raw = JSON.stringify({ ref: "refs/heads/main" });
+    const request = await githubRequest(raw);
+    const headers = { ...request.headers };
+    delete headers["x-github-delivery"];
+    const res = await app.request("/api/v1/bots/bot-1/github", { ...request, headers });
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({ error: "Unauthorized" });
+    expect(deps.sendUserMessage).not.toHaveBeenCalled();
+  });
+
   it("acknowledges signed deliveries when no active GitHub routine matches", async () => {
     const deps = createDeps();
     const app = mount(deps);

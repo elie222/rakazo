@@ -197,10 +197,13 @@ export function mountGithubWebhookRoute(app: Hono, deps: WebhookDeps) {
       return c.json({ ok: true, ignored: true });
     }
 
+    // GitHub always sends X-GitHub-Delivery; without it retries cannot be deduped.
+    const deliveryId = c.req.header("x-github-delivery")?.trim();
+    if (!deliveryId) return unauthorized();
+
     const payload = parseWebhookPayload(raw, c.req.header("content-type"));
     const githubEvent = githubEventName(c.req.header("x-github-event"));
     const eventPrompt = formatGithubEventPrompt(githubEvent, payload);
-    const deliveryId = c.req.header("x-github-delivery")?.trim() || undefined;
 
     return c.json(
       await deliverWebhookEvent(deps, target, {
