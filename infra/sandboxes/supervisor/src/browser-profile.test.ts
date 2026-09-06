@@ -32,7 +32,7 @@ function fixture() {
       process.platform === "darwin" ? script.replaceAll(" --reflink=auto", "") : script;
     return spawnSync(
       "bash",
-      ["-eu", "-c", portable.replaceAll("/home/rakazo", home).replaceAll("/tmp/rakazo", runtime)],
+      ["-eu", "-c", portable.replaceAll("/tmp/rakazo", runtime).replaceAll("/home/rakazo", home)],
       {
         encoding: "utf8",
         timeout: 10_000,
