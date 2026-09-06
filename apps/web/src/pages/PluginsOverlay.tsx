@@ -1,5 +1,11 @@
 import { Plural, Trans, useLingui } from "@lingui/react/macro";
-import type { CapabilityInstall, Connection, ConnectionCatalogItem } from "@rakazo/contracts";
+import type {
+  CapabilityInstall,
+  Connection,
+  ConnectionCatalogItem,
+  IntegrationCatalogResult,
+  IntegrationCatalogSurface,
+} from "@rakazo/contracts";
 import {
   abortableDelay,
   buildFeaturedConnectorTiles,
@@ -102,10 +108,11 @@ export function PluginsOverlay({
   const connectionAttempt = useRef<AbortController | null>(null);
 
   async function refresh() {
-    const [items, installs, rows] = await Promise.all([
+    const [items, installs, rows, catalogFeed] = await Promise.all([
       rpc.connections.catalog({}),
       rpc.capabilities.list(),
       rpc.connections.list(),
+      rpc.capabilities.catalogSearch({ query: "" }),
     ]);
     setCatalog(items);
     setConnections(rows);
@@ -790,6 +797,7 @@ export function PluginsOverlay({
                   if (!(event.currentTarget as HTMLDetailsElement).open) {
                     setSourceKind(null);
                     setSourceError(null);
+                    setSourceHint(null);
                     setSourceName("");
                     setSourceUrl("");
                     setCredential("");
@@ -808,7 +816,104 @@ export function PluginsOverlay({
                 </summary>
 
                 <div className="mt-4 space-y-4">
-                  <div className="flex flex-wrap gap-2" data-testid="integrations-advanced-add">
+                  {catalogFeedEnabled ? (
+                    <Card data-testid="integrations-catalog-feed">
+                      <CardHeader>
+                        <CardTitle>
+                          <Trans>Search by domain</Trans>
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-3">
+                        <form
+                          className="flex gap-2"
+                          onSubmit={(event) => {
+                            event.preventDefault();
+                            void searchCatalogFeed();
+                          }}
+                        >
+                          <Input
+                            value={catalogFeedQuery}
+                            disabled={catalogFeedPending}
+                            onChange={(event) => {
+                              setCatalogFeedQuery(event.target.value);
+                              setCatalogFeedSearched(false);
+                            }}
+                            placeholder="github.com"
+                            aria-label={t`Integration domain`}
+                          />
+                          <Button
+                            type="submit"
+                            variant="secondary"
+                            className="rounded-full"
+                            size="sm"
+                            disabled={!catalogFeedQuery.trim() || catalogFeedPending}
+                          >
+                            {catalogFeedPending ? <Trans>Searching…</Trans> : <Trans>Search</Trans>}
+                          </Button>
+                        </form>
+                        {catalogFeedError ? (
+                          <p className="text-sm text-destructive">{catalogFeedError}</p>
+                        ) : null}
+                        {catalogFeedSearched &&
+                        !catalogFeedPending &&
+                        catalogFeedResults.length === 0 ? (
+                          <p className="text-sm text-muted-foreground">
+                            <Trans>No results</Trans>
+                          </p>
+                        ) : null}
+                        {catalogFeedResults.map((result) => (
+                          <div
+                            key={`${result.domain}:${result.name}:${result.pageUrl ?? ""}`}
+                            className="rounded-xl border border-border/70 p-3"
+                          >
+                            <div className="font-medium text-foreground">
+                              {result.pageUrl ? (
+                                <a
+                                  href={result.pageUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="hover:underline"
+                                >
+                                  {result.name}
+                                </a>
+                              ) : (
+                                result.name
+                              )}
+                            </div>
+                            <div className="text-xs text-muted-foreground">{result.domain}</div>
+                            {result.description ? (
+                              <p className="mt-2 text-sm leading-5 text-muted-foreground">
+                                {result.description}
+                              </p>
+                            ) : null}
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              {result.surfaces.map((surface) => {
+                                const canAdd =
+                                  Boolean(surface.source) &&
+                                  (surface.kind === "mcp" || surface.kind === "openapi");
+                                return (
+                                  <Button
+                                    key={`${result.domain}:${surface.slug}`}
+                                    type="button"
+                                    variant="secondary"
+                                    className="rounded-full"
+                                    size="sm"
+                                    disabled={!canAdd}
+                                    title={canAdd ? undefined : t`Manual setup required`}
+                                    onClick={() => beginCatalogSurface(result, surface)}
+                                  >
+                                    {surface.kind.toUpperCase()} · {canAdd ? t`Add` : t`Manual`}
+                                  </Button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ))}
+                      </CardContent>
+                    </Card>
+                  ) : null}
+
+                  <div data-testid="integrations-advanced-add" className="flex flex-wrap gap-2">
                     <Button
                       type="button"
                       variant="secondary"
@@ -945,6 +1050,9 @@ export function PluginsOverlay({
                             and are never returned to clients or exposed to the model.
                           </Trans>
                         </p>
+                        {sourceHint ? (
+                          <p className="text-xs leading-5 text-muted-foreground">{sourceHint}</p>
+                        ) : null}
                         <div className="flex gap-2">
                           <Button
                             type="button"
