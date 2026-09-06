@@ -288,6 +288,7 @@ export async function createApp(
     CURSOR_API_KEY: env.cursorApiKey,
     CLOUD_AGENT_SPACE_ID: env.cloudAgentSpaceId,
   });
+  const shutdown = new AbortController();
   const executor = createRunExecutor({
     prisma,
     runtime,
@@ -314,6 +315,7 @@ export async function createApp(
     messaging: messaging ? createMessagingContextLoader(prisma) : undefined,
     web: createWebProvider(),
     cloudAgent,
+    shutdownSignal: shutdown.signal,
   });
 
   const jobHandlers = createBackgroundJobHandlers({
@@ -559,6 +561,9 @@ export async function createApp(
     email,
     executor,
     stop: async () => {
+      // Abort in-flight continueRun boot waits before draining jobs so stop() cannot sit
+      // on waitForComputerReady for the full boot-wait window during shared Postgres journeys.
+      shutdown.abort();
       oauthLogins.abortAll();
       await teamChatBridge?.stop();
       await email?.drain?.();

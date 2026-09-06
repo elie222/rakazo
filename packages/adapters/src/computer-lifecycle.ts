@@ -159,6 +159,19 @@ export async function provisionComputer(
   const reclaimStamp = existing.state === "booting" ? existing.updatedAt : null;
   const bootClaimIsStale =
     reclaimStamp !== null && Date.now() - reclaimStamp.getTime() >= BOOT_CLAIM_STALE_MS;
+  // A fresh booting claim (or one whose run lease is still live) cannot be reclaimed after
+  // the wait either, so do not block workers for the full boot-wait window. Shared Postgres
+  // journeys previously hung createApp stop() while continueRun sat in that wait against a
+  // wedged mid-boot row left by an earlier suite.
+  if (existing.state === "booting" && reclaimStamp !== null && !bootClaimIsStale) {
+    throw new ComputerBusyError();
+  }
+  if (
+    existing.state === "booting" &&
+    (await hasLiveForeignRunLease(deps.prisma, computerId, context.runId))
+  ) {
+    throw new ComputerBusyError();
+  }
   if (existing.state === "booting" || existing.state === "suspending") {
     existing = await waitForComputerReady(deps.prisma, computerId, context);
   }
@@ -174,11 +187,6 @@ export async function provisionComputer(
   // We came to reclaim abandoned booting; if another caller already activated, do not fall
   // through into reconnect (that would provision again under their providerRef).
   if (reclaimStamp !== null && existing.state === "running") {
-    throw new ComputerBusyError();
-  }
-  // Still booting after the wait on a fresh claim stamp: the holder is mid-provision, not
-  // abandoned. Reclaiming would let both callers provision and make the original activation fail.
-  if (existing.state === "booting" && reclaimStamp !== null && !bootClaimIsStale) {
     throw new ComputerBusyError();
   }
   // Stamp age is only a lower bound. Dedicated / lease-less boots can provision longer than
@@ -330,13 +338,13 @@ async function waitForComputerReady(
   context: AdapterContext,
 ) {
   for (let attempt = 0; attempt < BOOT_WAIT_ATTEMPTS; attempt += 1) {
+    if (context.signal.aborted) {
+      throw context.signal.reason ?? new Error("computer boot aborted");
+    }
     const current = await prisma.computer.findUniqueOrThrow({ where: { id: computerId } });
     if (current.state === "running" && current.providerRef) return current;
     if (current.state !== "booting" && current.state !== "suspending") return current;
     await new Promise((resolve) => setTimeout(resolve, BOOT_WAIT_MS));
-    if (context.signal.aborted) {
-      throw context.signal.reason ?? new Error("computer boot aborted");
-    }
   }
   return prisma.computer.findUniqueOrThrow({ where: { id: computerId } });
 }

@@ -426,7 +426,7 @@ describe("computer provisioning", () => {
     }
   });
 
-  it("does not reclaim a fresh booting claim after the boot wait", async () => {
+  it("does not reclaim a fresh booting claim without waiting", async () => {
     const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-fresh-boot-claim-"));
     const nowMs = Date.parse("2024-06-01T12:00:00.000Z");
     const row = {
@@ -441,20 +441,21 @@ describe("computer provisioning", () => {
       updatedAt: new Date(nowMs),
     };
     const updateMany = vi.fn();
+    const findUniqueOrThrow = vi.fn(async () => ({ ...row }));
     const prisma = {
       computer: {
-        findUniqueOrThrow: vi.fn(async () => ({ ...row })),
+        findUniqueOrThrow,
         updateMany,
       },
       executionLease: {
         findFirst: vi.fn(async () => null),
       },
+      run: {
+        findFirst: vi.fn(async () => null),
+      },
     } as unknown as PrismaClient;
     const sandbox = new FakeSandboxProvider();
     const now = vi.spyOn(Date, "now").mockReturnValue(nowMs);
-    const setTimeoutReal = globalThis.setTimeout;
-    vi.stubGlobal("setTimeout", ((fn: (...args: never[]) => void, _ms?: number, ...args: never[]) =>
-      setTimeoutReal(fn, 0, ...args)) as unknown as typeof setTimeout);
 
     try {
       await expect(
@@ -472,10 +473,11 @@ describe("computer provisioning", () => {
         ),
       ).rejects.toBeInstanceOf(ComputerBusyError);
       expect(updateMany).not.toHaveBeenCalled();
+      // Fail fast before the boot-wait poll — only the initial read, no wait loop.
+      expect(findUniqueOrThrow).toHaveBeenCalledTimes(1);
       expect(row.state).toBe("booting");
     } finally {
       now.mockRestore();
-      vi.unstubAllGlobals();
       await rm(dataDir, { recursive: true, force: true });
     }
   });
