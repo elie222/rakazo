@@ -78,7 +78,11 @@ import { MarkdownMemoryStore } from "@rakazo/memory";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { type AppEnv, loadEnv } from "./env.js";
-import { createMessagingInboundHandler, wakeMessageRoutines } from "./messaging-inbound.js";
+import {
+  createMessagingInboundHandler,
+  teamChatSenderCanWakeMessageRoutines,
+  wakeMessageRoutines,
+} from "./messaging-inbound.js";
 import { mountMessagingWebhookRoutes } from "./messaging-webhook.js";
 import { createRouter } from "./router.js";
 import { TeamChatBridge } from "./team-chat-bridge.js";
@@ -537,11 +541,22 @@ export async function createApp(
       if (preferTeamChat && teamChatBridge) {
         const mapped = toTeamChatInbound(event);
         if (mapped) {
+          const canWake = await teamChatSenderCanWakeMessageRoutines(inboundDeps, event);
+          if (event.isDirect) {
+            // Linked DMs: routine wake XOR TeamChat messaging continue.
+            if (!canWake) {
+              await teamChatBridge.receive(mapped);
+              return;
+            }
+            const target = await teamChatBridge.receive(mapped, { queueAgent: false });
+            const woken = await wakeMessageRoutines(inboundDeps, target, event);
+            if (woken) await teamChatBridge.dismissQueuedMessage(mapped.eventId);
+            else await teamChatBridge.reconcileOnce();
+            return;
+          }
           const target = await teamChatBridge.receive(mapped);
-          // Team chat is an explicitly configured external-workspace surface, not the
-          // personal line's identity/member model. Webhook-trigger approval still gates
-          // every consequential action started by these untrusted message events.
-          await wakeMessageRoutines(inboundDeps, target, event);
+          // Channels: deployment-scoped TeamChat may wake; bots are still rejected by canWake.
+          if (canWake) await wakeMessageRoutines(inboundDeps, target, event);
           return;
         }
       }

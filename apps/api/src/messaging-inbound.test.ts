@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import { createMessagingInboundHandler, type MessagingInboundDeps } from "./messaging-inbound.js";
+import {
+  createMessagingInboundHandler,
+  type MessagingInboundDeps,
+  teamChatSenderCanWakeMessageRoutines,
+} from "./messaging-inbound.js";
 
 const signupPolicy = { signupsEnabled: undefined, signupAllowlist: undefined };
 
@@ -115,6 +119,7 @@ function createDeps(
     routine: { findMany: vi.fn(async () => overrides.routines ?? []) },
     thread: { findFirst: vi.fn(async () => ({ id: "thread-1" })) },
     messagingChannel: {
+      findUnique: vi.fn(async () => channel),
       upsert: vi.fn(async () => channel),
       update: vi.fn(async () => ({ ...channel, introPostedAt: new Date() })),
     },
@@ -381,20 +386,43 @@ describe("createMessagingInboundHandler DM routing", () => {
         }),
       }),
     );
-    expect(vi.mocked(deps.prisma.routine.findMany).mock.calls[0]?.[0]).not.toHaveProperty("take");
-    expect(deps.sendUserMessage).toHaveBeenCalledTimes(2);
-    expect(deps.sendUserMessage).toHaveBeenLastCalledWith(
+    expect(deps.prisma.routine.findMany.mock.calls[0]?.[0]).not.toHaveProperty("take");
+    expect(deps.sendUserMessage).toHaveBeenCalledTimes(1);
+    expect(deps.sendUserMessage).toHaveBeenCalledWith(
       expect.objectContaining({
         trigger: "webhook",
         clientNonce: expect.stringMatching(/^messaging:bot-1:/),
         prompt: expect.stringContaining('Run routine "Triage Slack 1":\nReview update 1'),
       }),
     );
-    const routinePrompt = deps.sendUserMessage.mock.calls[1]?.[0]?.prompt as string;
+    expect(deps.sendUserMessage).not.toHaveBeenCalledWith(
+      expect.objectContaining({ trigger: "messaging" }),
+    );
+    const routinePrompt = deps.sendUserMessage.mock.calls[0]?.[0]?.prompt as string;
     expect(routinePrompt).toContain('Run routine "Triage Slack 6":\nReview update 6');
     expect(routinePrompt).toContain("<untrusted_delivery_payload>");
     expect(routinePrompt).toContain("&lt;/untrusted_delivery_payload&gt;");
-    expect(deps.enqueue).toHaveBeenCalledTimes(2);
+    expect(deps.enqueue).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not double-wake a DM when message routines match", async () => {
+    const deps = createDeps({
+      identity: {
+        id: "mi-slack",
+        provider: "slack",
+        address: "U123",
+        userId: "user-1",
+        spaceId: "ws-1",
+        botId: "bot-1",
+      },
+      routines: [{ id: "routine-1", name: "Triage Slack", prompt: "Review this update" }],
+    });
+    const handle = createMessagingInboundHandler(deps);
+    await handle({ ...dmEvent, provider: "slack", handle: "Ev-dm-1", from: "U123" });
+
+    expect(deps.sendUserMessage).toHaveBeenCalledTimes(1);
+    expect(deps.sendUserMessage.mock.calls[0]?.[0]?.trigger).toBe("webhook");
+    expect(deps.enqueue).toHaveBeenCalledTimes(1);
   });
 
   it("appends inbound media links to the message text", async () => {
@@ -772,12 +800,15 @@ describe("createMessagingInboundHandler channel routing", () => {
     const handle = createMessagingInboundHandler(deps);
     await handle(groupEvent);
 
-    expect(deps.sendUserMessage).toHaveBeenCalledTimes(2);
-    expect(deps.sendUserMessage).toHaveBeenLastCalledWith(
+    expect(deps.sendUserMessage).toHaveBeenCalledTimes(1);
+    expect(deps.sendUserMessage).toHaveBeenCalledWith(
       expect.objectContaining({
         trigger: "webhook",
         prompt: expect.stringContaining('Run routine "Channel triage":\nSummarize the update'),
       }),
+    );
+    expect(deps.sendUserMessage).not.toHaveBeenCalledWith(
+      expect.objectContaining({ trigger: "messaging" }),
     );
   });
 
@@ -1202,5 +1233,59 @@ describe("createMessagingInboundHandler linking", () => {
     await handle(dmEvent);
     expect(deps.provision).toHaveBeenCalled();
     expect(deps.sendUserMessage).toHaveBeenCalled();
+  });
+});
+
+describe("teamChatSenderCanWakeMessageRoutines", () => {
+  it("allows linked DM senders and rejects strangers", async () => {
+    const linked = createDeps({
+      identity: {
+        id: "mi-1",
+        provider: "slack",
+        address: "U123",
+        userId: "user-1",
+        spaceId: "ws-1",
+        botId: "bot-1",
+      },
+    });
+    await expect(
+      teamChatSenderCanWakeMessageRoutines(linked, {
+        ...dmEvent,
+        provider: "slack",
+        from: "U123",
+        isDirect: true,
+      }),
+    ).resolves.toBe(true);
+
+    const stranger = createDeps({ identity: null });
+    await expect(
+      teamChatSenderCanWakeMessageRoutines(stranger, {
+        ...dmEvent,
+        provider: "slack",
+        from: "U999",
+        isDirect: true,
+      }),
+    ).resolves.toBe(false);
+  });
+
+  it("allows non-bot TeamChat channel senders and rejects bot senders", async () => {
+    const deps = createDeps({ identity: null });
+    await expect(
+      teamChatSenderCanWakeMessageRoutines(deps, {
+        ...groupEvent,
+        provider: "slack",
+        from: "U123",
+        isDirect: false,
+      }),
+    ).resolves.toBe(true);
+    await expect(
+      teamChatSenderCanWakeMessageRoutines(deps, {
+        ...groupEvent,
+        provider: "slack",
+        from: "B123",
+        isDirect: false,
+        senderIsBot: true,
+      }),
+    ).resolves.toBe(false);
   });
 });

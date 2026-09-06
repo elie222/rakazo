@@ -101,9 +101,9 @@ export function routineTriggerSummary(routine: Routine): string {
   const parts: string[] = [];
   if (routine.webhookEnabled) parts.push(t`When a webhook fires`);
   if (routine.githubEnabled) parts.push(t`Git event`);
-  if (routine.messageProvider) {
-    parts.push(routine.messageProvider === "slack" ? t`Slack message` : t`Message event`);
-  }
+  if (routine.messageProvider === "slack") parts.push(t`Slack message`);
+  else if (routine.messageProvider === "teams") parts.push(t`Teams message`);
+  else if (routine.messageProvider) parts.push(t`Message event`);
   for (const cron of routine.crons) parts.push(formatCron(cron));
   return parts.length > 0 ? parts.join(" · ") : t`No trigger`;
 }
@@ -430,28 +430,34 @@ export function RoutineEditor({
               </DropdownMenuSubContent>
             </DropdownMenuSub>
 
-            <DropdownMenuItem
-              disabled={draft.messageProvider === "slack" || !messageProviders.includes("slack")}
-              onClick={() => addMessageProvider("slack")}
+            <span
+              className="block"
+              title={messageProviders.includes("slack") ? undefined : t`Slack not enabled`}
             >
-              <MessageSquare />
-              <Trans>Slack message</Trans>
-            </DropdownMenuItem>
-            {!messageProviders.includes("slack") ? (
-              <p className="px-2 py-1 text-xs text-muted-foreground">
-                <Trans>Connect Slack first</Trans>
-              </p>
-            ) : null}
+              <DropdownMenuItem
+                disabled={draft.messageProvider === "slack" || !messageProviders.includes("slack")}
+                onClick={() => addMessageProvider("slack")}
+              >
+                <MessageSquare />
+                <Trans>Slack message</Trans>
+              </DropdownMenuItem>
+            </span>
 
             {COMING_SOON.map((item) => (
-              <DropdownMenuItem key={item.id} disabled title={t`Coming soon`}>
-                <span
-                  aria-hidden
-                  className="inline-block size-3.5 rounded-[4px]"
-                  style={{ background: comingSoonColor(item.id), opacity: 0.55 }}
-                />
-                {item.label()}
-              </DropdownMenuItem>
+              <span
+                key={item.id}
+                className="block"
+                title={item.id === "teams" ? t`Teams not enabled` : t`Coming soon`}
+              >
+                <DropdownMenuItem disabled>
+                  <span
+                    aria-hidden
+                    className="inline-block size-3.5 rounded-[4px]"
+                    style={{ background: comingSoonColor(item.id), opacity: 0.55 }}
+                  />
+                  {item.label()}
+                </DropdownMenuItem>
+              </span>
             ))}
 
             <DropdownMenuItem disabled={draft.githubEnabled} onClick={() => void addGithub()}>
@@ -496,7 +502,12 @@ export function RoutineEditor({
 
 function MessageTriggerCard({ provider, onRemove }: { provider: string; onRemove: () => void }) {
   const { t } = useLingui();
-  const label = provider === "slack" ? t`Slack message` : t`Message event`;
+  const label =
+    provider === "slack"
+      ? t`Slack message`
+      : provider === "teams"
+        ? t`Teams message`
+        : t`Message event`;
   return (
     <div className="rounded-xl border border-border p-3">
       <div className="flex items-center gap-2.5 px-0.5">

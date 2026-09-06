@@ -127,7 +127,10 @@ export class TeamChatBridge {
     await this.reconciling?.catch(() => undefined);
   }
 
-  async receive(message: TeamChatInboundMessage): Promise<TeamChatInboundTarget> {
+  async receive(
+    message: TeamChatInboundMessage,
+    options?: { queueAgent?: boolean },
+  ): Promise<TeamChatInboundTarget> {
     const target = this.target;
     if (!target) throw new Error("Team chat bridge is not started");
     const conversation = await this.deps.prisma.externalConversation.upsert({
@@ -185,6 +188,14 @@ export class TeamChatBridge {
       update: {},
     });
     await this.ensureTranscriptMessage(externalMessage, conversation);
+    if (options?.queueAgent === false) {
+      return {
+        spaceId: conversation.spaceId,
+        userId: conversation.userId,
+        botId: conversation.botId,
+        threadId: conversation.thread.id,
+      };
+    }
     await this.reconcileOnce();
     return {
       spaceId: conversation.spaceId,
@@ -192,6 +203,20 @@ export class TeamChatBridge {
       botId: conversation.botId,
       threadId: conversation.thread.id,
     };
+  }
+
+  /** Prevent a deferred TeamChat message from later queuing a messaging run. */
+  async dismissQueuedMessage(providerEventId: string): Promise<void> {
+    const target = this.target;
+    if (!target) return;
+    await this.deps.prisma.externalMessage.updateMany({
+      where: {
+        providerEventId,
+        status: "received",
+        externalConversation: { provider: this.deps.providerId, botId: target.id },
+      },
+      data: { status: "ignored", engagementReason: "message_routine_wake" },
+    });
   }
 
   private async mirrorMissingMessages(): Promise<void> {

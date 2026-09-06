@@ -129,6 +129,10 @@ async function handleDirectEvent(
     );
   }
 
+  // Message-trigger routines own the delivery when configured. Do not also
+  // start a normal messaging continue for the same inbound handle.
+  if (await wakeMessageRoutines(deps, ids, event)) return;
+
   const sent = await deps.events.sendUserMessage({
     spaceId: ids.spaceId,
     threadId: ids.threadId,
@@ -152,7 +156,6 @@ async function handleDirectEvent(
       getLogger().error("messaging inbound run enqueue error", error);
     });
   }
-  await wakeMessageRoutines(deps, ids, event);
 }
 
 /** Wake provider-neutral message routines through the same approval boundary as webhooks. */
@@ -160,7 +163,7 @@ export async function wakeMessageRoutines(
   deps: Pick<MessagingInboundDeps, "prisma" | "events" | "jobs">,
   target: Pick<ProvisionedMessagingIdentity, "spaceId" | "userId" | "botId" | "threadId">,
   event: MessagingInboundMessage,
-): Promise<void> {
+): Promise<boolean> {
   const routines = await deps.prisma.routine.findMany({
     where: {
       botId: target.botId,
@@ -171,7 +174,7 @@ export async function wakeMessageRoutines(
     select: { id: true, name: true, prompt: true },
     orderBy: { updatedAt: "desc" },
   });
-  if (routines.length === 0) return;
+  if (routines.length === 0) return false;
 
   const provider = inboundEventName(event.provider);
   const prompt = formatUntrustedDeliveryPayload(`[Messaging Event: ${provider}]`, {
@@ -195,8 +198,35 @@ export async function wakeMessageRoutines(
       routines,
       source: "messaging",
       idempotencyKey: `${event.provider}:${event.handle}`,
+      // TeamChat channel wakes may share a live thread with an active chat run.
+      allowParallelRun: true,
     },
   );
+  return true;
+}
+
+/**
+ * TeamChat skips personal inbound checks. Before waking unattended message
+ * routines, require the same linked-DM / approved-channel gate.
+ */
+export async function teamChatSenderCanWakeMessageRoutines(
+  deps: Pick<MessagingInboundDeps, "prisma">,
+  event: MessagingInboundMessage,
+): Promise<boolean> {
+  if (event.senderIsBot) return false;
+  if (event.isDirect) {
+    // TeamChat DMs otherwise skip personal inbound authz. Require a linked
+    // messaging identity before unattended message routines may run.
+    const identity = await deps.prisma.messagingIdentity.findUnique({
+      where: { provider_address: { provider: event.provider, address: event.from } },
+      select: { id: true },
+    });
+    return Boolean(identity);
+  }
+  // TeamChat channels are deployment-scoped and do not maintain personal
+  // MessagingChannel membership on this path. Non-bot channel traffic may wake
+  // the configured team bot's message routines.
+  return true;
 }
 
 /**
@@ -512,6 +542,14 @@ async function handleChannelEvent(
     if (!identity) continue;
     const thread = await deps.prisma.thread.findFirst({ where: { botId: identity.botId } });
     if (!thread) continue;
+    const target = {
+      spaceId: identity.spaceId,
+      userId: identity.userId,
+      botId: identity.botId,
+      threadId: thread.id,
+    };
+    if (await wakeMessageRoutines(deps, target, event)) continue;
+
     const sent = await deps.events.sendUserMessage({
       spaceId: identity.spaceId,
       threadId: thread.id,
@@ -527,16 +565,6 @@ async function handleChannelEvent(
         getLogger().error("messaging channel fan-out enqueue error", error);
       });
     }
-    await wakeMessageRoutines(
-      deps,
-      {
-        spaceId: identity.spaceId,
-        userId: identity.userId,
-        botId: identity.botId,
-        threadId: thread.id,
-      },
-      event,
-    );
   }
 }
 
