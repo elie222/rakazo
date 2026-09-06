@@ -171,16 +171,16 @@ RAKAZO_LOCAL_MAX_TOKENS=4096
 ```
 
 The loopback default is suitable when running Rakazo from a source checkout. From containers,
-prefer `host.docker.internal` (Desktop, or Linux with `host-gateway`) or a stable LAN RFC1918
-address (not Compose service DNS alone).
+prefer a stable LAN RFC1918 address (not Compose service DNS alone). `host.docker.internal`
+works on Desktop; on Linux it needs an explicit `host-gateway` mapping.
 Only configure an endpoint you control: prompts, attachments, and tool results sent to that model
 leave Rakazo through this URL. Leave `RAKAZO_LOCAL_MODELS` blank to disable the provider.
 
 Each user can also connect their own OpenAI-compatible endpoint from **Connect a model** /
 **Settings → Models** on web and mobile. Choose **OpenAI-compatible**, enter the server base URL
 (for example `http://127.0.0.1:8000/v1`), the exact model id, and an optional API key.
-Public hosts need `RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC=1`. Private, loopback, and
-`host.docker.internal` targets do not.
+Public hosts and ordinary hostnames need `RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC=1`. Literal private
+IP, loopback, and `host.docker.internal` targets do not.
 
 For servers that accept standard `reasoning_effort`, enable **Supports thinking** under
 **Advanced** when connecting. The setting is saved on the connection (no env var or restart).
