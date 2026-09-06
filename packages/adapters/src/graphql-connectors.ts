@@ -321,16 +321,22 @@ export async function executeGraphqlOperation(
       signal: combineSignals(signal, AbortSignal.timeout(30_000)),
     });
     const { text, truncated } = await readBoundedText(response, 1_000_000);
-    let payload: unknown = text;
+    let payload: unknown;
     try {
-      payload = text ? JSON.parse(text) : null;
+      payload = JSON.parse(text);
     } catch {
-      // Keep non-JSON GraphQL responses as bounded text.
+      if (!response.ok) {
+        throw new Error(`GraphQL request returned HTTP ${response.status}`);
+      }
+      throw new Error("GraphQL response was not valid JSON");
     }
     if (!response.ok) {
       throw new Error(`GraphQL request returned HTTP ${response.status}`);
     }
     const record = asRecord(payload);
+    if (!record) {
+      throw new Error("GraphQL response was not a JSON object");
+    }
     const graphqlErrors = Array.isArray(record?.errors) ? record.errors : [];
     if (graphqlErrors.length > 0) {
       const first = asRecord(graphqlErrors[0]);

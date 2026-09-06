@@ -516,6 +516,46 @@ describe("GraphQL execution failures", () => {
     ).rejects.toThrow(/HTTP 500/);
   });
 
+  it("throws when a successful GraphQL HTTP response is not JSON", async () => {
+    const operation = importGraphqlSchema(STAR_WARS_INTROSPECTION)[0]!;
+    await expect(
+      executeGraphqlOperation(
+        "https://graphql.example.test/graphql",
+        { auth: { type: "none" }, headers: {}, operations: [operation] },
+        operation,
+        {},
+        undefined,
+        new AbortController().signal,
+        {
+          fetch: async () =>
+            new Response("<html>upstream unavailable</html>", {
+              status: 200,
+              headers: { "content-type": "text/html" },
+            }),
+          resolveHostname: async () => [{ address: "203.0.113.10", family: 4 as const }],
+        },
+      ),
+    ).rejects.toThrow(/not valid JSON/);
+  });
+
+  it("throws when a successful GraphQL HTTP response is not a JSON object", async () => {
+    const operation = importGraphqlSchema(STAR_WARS_INTROSPECTION)[0]!;
+    await expect(
+      executeGraphqlOperation(
+        "https://graphql.example.test/graphql",
+        { auth: { type: "none" }, headers: {}, operations: [operation] },
+        operation,
+        {},
+        undefined,
+        new AbortController().signal,
+        {
+          fetch: async () => Response.json("temporarily unavailable"),
+          resolveHostname: async () => [{ address: "203.0.113.10", family: 4 as const }],
+        },
+      ),
+    ).rejects.toThrow(/not a JSON object/);
+  });
+
   it("yields type error from InstalledConnectorProvider on GraphQL errors array", async () => {
     const events = await executeGraphqlProvider(async () =>
       Response.json({ errors: [{ message: "Field 'hello' is required" }], data: null }),
@@ -534,6 +574,20 @@ describe("GraphQL execution failures", () => {
     expect(events[0]).toMatchObject({ type: "error" });
     expect(events[0]).not.toMatchObject({ type: "result" });
     expect(String((events[0] as { message?: string }).message)).toMatch(/HTTP 502/);
+  });
+
+  it("yields type error from InstalledConnectorProvider on malformed success payload", async () => {
+    const events = await executeGraphqlProvider(
+      async () =>
+        new Response("<html>upstream unavailable</html>", {
+          status: 200,
+          headers: { "content-type": "text/html" },
+        }),
+    );
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ type: "error" });
+    expect(events[0]).not.toMatchObject({ type: "result" });
+    expect(String((events[0] as { message?: string }).message)).toMatch(/not valid JSON/);
   });
 });
 
