@@ -477,6 +477,32 @@ describe("GitHub event HTTP route", () => {
     expect(prompt).not.toContain("acme/app");
   });
 
+  it("reuses the same clientNonce for duplicate GitHub deliveries", async () => {
+    const deps = createDeps({
+      routines: [{ id: "routine-1", name: "Review pushes", prompt: "Inspect the change" }],
+    });
+    const app = mount(deps);
+    const raw = JSON.stringify({
+      after: "c".repeat(40),
+      repository: { id: 9 },
+    });
+    const first = await app.request(
+      "/api/v1/bots/bot-1/github",
+      await githubRequest(raw, SECRET, "delivery-dup-1"),
+    );
+    const second = await app.request(
+      "/api/v1/bots/bot-1/github",
+      await githubRequest(raw, SECRET, "delivery-dup-1"),
+    );
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    expect(deps.sendUserMessage).toHaveBeenCalledTimes(2);
+    const firstNonce = deps.sendUserMessage.mock.calls[0][0].clientNonce;
+    const secondNonce = deps.sendUserMessage.mock.calls[1][0].clientNonce;
+    expect(firstNonce).toBe(secondNonce);
+    expect(firstNonce).toMatch(/^github:bot-1:/);
+  });
+
   it("rejects a signature made with the wrong secret", async () => {
     const deps = createDeps({
       routines: [{ id: "routine-1", name: "Review pushes", prompt: "Inspect the change" }],

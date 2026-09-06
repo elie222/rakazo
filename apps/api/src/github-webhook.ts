@@ -1,4 +1,13 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
+import type { Hono } from "hono";
+import { readBoundedBody } from "./http-body.js";
+import {
+  deliverWebhookEvent,
+  loadWebhookTarget,
+  parseWebhookPayload,
+  WEBHOOK_MAX_BODY_BYTES,
+  type WebhookDeps,
+} from "./webhook-inbound.js";
 
 export function hasValidGithubSignature(
   signature: string | undefined,
@@ -154,4 +163,52 @@ export function formatGithubEventPrompt(event: string, payload: Record<string, u
 
 export function githubWebhookPath(botId: string): string {
   return `/api/v1/bots/${botId}/github`;
+}
+
+/** Mount the signed GitHub delivery route onto the shared webhook deps. */
+export function mountGithubWebhookRoute(app: Hono, deps: WebhookDeps) {
+  app.post("/api/v1/bots/:botId/github", async (c) => {
+    const unauthorized = () => c.json({ error: "Unauthorized" }, 401);
+
+    // Reject oversized bodies before target lookup so size limits do not reveal active bots.
+    const raw = await readBoundedBody(c.req.raw, WEBHOOK_MAX_BODY_BYTES);
+    if (raw === null) {
+      return c.json({ error: "Payload too large" }, 413);
+    }
+
+    const target = await loadWebhookTarget(deps, c.req.param("botId"));
+    if (!target) return unauthorized();
+    if (!hasValidGithubSignature(c.req.header("x-hub-signature-256"), target.expected, raw)) {
+      return unauthorized();
+    }
+
+    const githubRoutines = await deps.prisma.routine.findMany({
+      where: {
+        botId: target.bot.id,
+        spaceId: target.bot.spaceId,
+        active: true,
+        githubEnabled: true,
+      },
+      select: { id: true, name: true, prompt: true },
+      orderBy: { updatedAt: "desc" },
+      take: 5,
+    });
+    if (githubRoutines.length === 0) {
+      return c.json({ ok: true, ignored: true });
+    }
+
+    const payload = parseWebhookPayload(raw, c.req.header("content-type"));
+    const githubEvent = githubEventName(c.req.header("x-github-event"));
+    const eventPrompt = formatGithubEventPrompt(githubEvent, payload);
+    const deliveryId = c.req.header("x-github-delivery")?.trim() || undefined;
+
+    return c.json(
+      await deliverWebhookEvent(deps, target, {
+        prompt: eventPrompt,
+        routines: githubRoutines,
+        source: "github",
+        idempotencyKey: deliveryId,
+      }),
+    );
+  });
 }
