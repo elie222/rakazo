@@ -25,6 +25,9 @@ The paid marketing template is a separate licensed site, not a replacement appli
 | `apps/api/src/env.ts` | Shared contracts or composition supporting additive hosted capabilities |
 | `apps/api/src/router.ts` | Shared contracts or composition supporting additive hosted capabilities |
 | `apps/api/src/workforce.ts` | Prior optional integration; dormant in standalone deployment |
+| `apps/desktop/src/main.ts` | Shared palette applied to native startup chrome |
+| `apps/desktop/src/window-options.ts` | Shared palette applied to native startup chrome |
+| `apps/mobile/lib/theme.test.ts` | Shared palette regression expectation |
 | `apps/mobile/app/sign-in.tsx` | Original local auth retained; prior optional OAuth adapter dormant |
 | `apps/mobile/lib/api.ts` | Shared contracts or composition supporting additive hosted capabilities |
 | `apps/mobile/lib/locales/zh.ts` | Cadre branding and compiled UI labels |

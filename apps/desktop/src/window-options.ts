@@ -1,3 +1,4 @@
+import { darkTokens } from "@rakazo/ui-tokens";
 export const DEFAULT_WARM_WINDOW_TTL_MS = 15 * 60_000;
 const MAX_TIMER_DELAY_MS = 2_147_483_647;
 
@@ -12,7 +13,7 @@ export function warmWindowTtlMs(value: string | undefined) {
 function windowChrome(platform: NodeJS.Platform) {
   const mac = platform === "darwin";
   return {
-    backgroundColor: "#0D0D0E",
+    backgroundColor: darkTokens.background,
     show: true,
     autoHideMenuBar: true,
     frame: mac,
