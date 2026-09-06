@@ -35,6 +35,7 @@ async function expectRailAtRest(
     (document.activeElement as HTMLElement | null)?.blur();
   });
   await expect(rail).toHaveCSS("opacity", "0");
+  await expect(rail).toHaveCSS("pointer-events", "none");
 }
 
 test("message hover shows beside-bubble actions; reply links to parent", async ({
