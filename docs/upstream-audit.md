@@ -142,3 +142,4 @@ The continuity update adds optional native filesystem snapshot caches backed by 
 | `packages/adapters/src/computer-lifecycle.ts` | Computer continuity and regression verification |
 | `packages/adapters/src/computer-workspace.ts` | Computer continuity and regression verification |
 | `packages/adapters/src/pi-runtime.ts` | Computer continuity and regression verification |
+| `infra/modal/test_gateway.py` | Per-screen capability and live revocation regression coverage |
