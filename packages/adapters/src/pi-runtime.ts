@@ -120,41 +120,16 @@ export class PiAgentRuntime implements AgentRuntime {
 
     const work = (async () => {
       try {
-        const provider =
-          request.model.provider === "scripted" ? "openrouter" : request.model.provider;
-        const envDefaultModel = process.env.PI_DEFAULT_MODEL?.trim();
-        const envDefaultProvider = process.env.PI_DEFAULT_PROVIDER?.trim() || "openrouter";
-        const modelId =
-          request.model.id === "scripted"
-            ? envDefaultModel || "deepseek/deepseek-v4-flash-0731"
-            : request.model.id.trim();
-        const models = modelsForRequest(request, provider);
-        let model = models.getModel(provider, modelId);
-        if (!model && provider !== "openrouter" && provider !== OPENAI_COMPATIBLE_PROVIDER_ID) {
-          model = models.getModel("openrouter", modelId);
-        }
-        if (
-          !model &&
-          provider === "openrouter" &&
-          envDefaultProvider === "openrouter" &&
-          modelId === envDefaultModel
-        ) {
-          model = configuredOpenRouterModel(modelId);
-        }
-        if (!model) {
-          queue.push({ type: "text", text: `Unknown model ${provider}/${modelId}` });
+        const selectedModel = resolveRuntimeModel(request.model);
+        if (!selectedModel.model) {
+          queue.push({
+            type: "text",
+            text: `Unknown model ${selectedModel.provider}/${selectedModel.modelId}`,
+          });
           queue.push({ type: "done" });
           return;
         }
-
-        const apiKey = request.model.oauth
-          ? undefined
-          : request.model.provider === OPENAI_COMPATIBLE_PROVIDER_ID
-            ? request.model.apiKey || "local"
-            : // Only OpenRouter may fall back to the OpenRouter env key. Handing it to
-              // another provider would ship our key to a vendor it was not issued for.
-              (request.model.apiKey ??
-              (provider === "openrouter" ? process.env.OPENROUTER_API_KEY : undefined));
+        const { models, model, apiKey } = selectedModel;
         const toolDefs = request.tools.length ? request.tools : builtinAgentTools;
         const nestedAgents = new Set<Agent>();
         const host: ToolHost = {
@@ -375,6 +350,44 @@ function configuredOpenRouterModel(id: string): Model<"openai-completions"> {
     contextWindow: 16_384,
     maxTokens: 4_096,
   };
+}
+
+function resolveRuntimeModel(modelConfig: AgentRunRequest["model"]): {
+  provider: string;
+  modelId: string;
+  models: Models;
+  model: Model<Api> | undefined;
+  apiKey: string | undefined;
+} {
+  const provider = modelConfig.provider === "scripted" ? "openrouter" : modelConfig.provider;
+  const envDefaultModel = process.env.PI_DEFAULT_MODEL?.trim();
+  const envDefaultProvider = process.env.PI_DEFAULT_PROVIDER?.trim() || "openrouter";
+  const modelId =
+    modelConfig.id === "scripted"
+      ? envDefaultModel || "deepseek/deepseek-v4-flash-0731"
+      : modelConfig.id.trim();
+  const models = modelsForRequest({ model: modelConfig }, provider);
+  let model = models.getModel(provider, modelId);
+  if (!model && provider !== "openrouter" && provider !== OPENAI_COMPATIBLE_PROVIDER_ID) {
+    model = models.getModel("openrouter", modelId);
+  }
+  if (
+    !model &&
+    provider === "openrouter" &&
+    envDefaultProvider === "openrouter" &&
+    modelId === envDefaultModel
+  ) {
+    model = configuredOpenRouterModel(modelId);
+  }
+  const apiKey = modelConfig.oauth
+    ? undefined
+    : modelConfig.provider === OPENAI_COMPATIBLE_PROVIDER_ID
+      ? modelConfig.apiKey || "local"
+      : // Only OpenRouter may fall back to the OpenRouter env key. Handing it to
+        // another provider would ship our key to a vendor it was not issued for.
+        (modelConfig.apiKey ??
+        (provider === "openrouter" ? process.env.OPENROUTER_API_KEY : undefined));
+  return { provider, modelId, models, model, apiKey };
 }
 
 export function modelsForRequest(
@@ -648,6 +661,8 @@ function toAgentTool(tool: ConnectorTool, host: ToolHost, exposedName: string): 
           name: String(raw.name ?? "helper"),
           task: String(raw.task ?? ""),
           instructions: raw.instructions ? String(raw.instructions) : "",
+          model_provider: raw.model_provider ? String(raw.model_provider) : "",
+          model_id: raw.model_id ? String(raw.model_id) : "",
         };
       }
       if (tool.name === "spawn_bot") {
@@ -779,14 +794,49 @@ async function executeSubagent(host: ToolHost, executionId: string, args: Record
     progress: "starting…",
   });
 
+  const requestedProvider = String(args.model_provider ?? "").trim();
+  const requestedModelId = String(args.model_id ?? "").trim();
+  let requestModel = host.request.model;
+  try {
+    if (Boolean(requestedProvider) !== Boolean(requestedModelId)) {
+      throw new Error("model_provider and model_id must both be set");
+    }
+    if (requestedProvider && requestedModelId) {
+      if (!host.request.resolveModel) {
+        throw new Error("Per-call subagent model selection is unavailable");
+      }
+      requestModel = await host.request.resolveModel(requestedProvider, requestedModelId);
+    }
+  } catch (error) {
+    const message = sanitizeError(error instanceof Error ? error.message : String(error));
+    host.queue.push({ type: "subagent", agentId, name, task, status: "failed", result: message });
+    host.subagentGate.release();
+    return `Subagent failed: ${message}`;
+  }
+
+  const selectedModel = resolveRuntimeModel(requestModel);
+  if (!selectedModel.model) {
+    const message = `Unknown model ${selectedModel.provider}/${selectedModel.modelId}`;
+    host.queue.push({ type: "subagent", agentId, name, task, status: "failed", result: message });
+    host.subagentGate.release();
+    return `Subagent failed: ${message}`;
+  }
+  const subagentModel = selectedModel.model;
+
   const childDefs = (host.request.tools.length ? host.request.tools : builtinAgentTools).filter(
     (tool) => !DELEGATION_TOOL_NAMES.has(tool.name),
   );
-  const nestedHost: ToolHost = { ...host, depth: 1 };
+  const nestedHost: ToolHost = {
+    ...host,
+    models: selectedModel.models,
+    model: subagentModel,
+    apiKey: selectedModel.apiKey,
+    depth: 1,
+  };
   const nested = new Agent({
     streamFn: (m, ctx, options) =>
-      host.models.streamSimple(m, ctx, reliableStreamOptions(m, options)),
-    getApiKey: async () => host.apiKey,
+      selectedModel.models.streamSimple(m, ctx, reliableStreamOptions(m, options)),
+    getApiKey: async () => selectedModel.apiKey,
     transformContext: async (messages) => pruneComputerScreenshotContext(messages),
     initialState: {
       systemPrompt: [
@@ -797,8 +847,8 @@ async function executeSubagent(host: ToolHost, executionId: string, args: Record
       ]
         .filter(Boolean)
         .join(" "),
-      model: host.model,
-      thinkingLevel: thinkingLevelFor(host.model, host.request.model.thinkingLevel),
+      model: subagentModel,
+      thinkingLevel: thinkingLevelFor(subagentModel, requestModel.thinkingLevel),
       tools: toAgentTools(childDefs, nestedHost),
       messages: [],
     },
@@ -846,8 +896,8 @@ async function executeSubagent(host: ToolHost, executionId: string, args: Record
           type: "usage",
           inputTokens: event.message.usage.input ?? 0,
           outputTokens: event.message.usage.output ?? 0,
-          provider: host.model.provider,
-          model: host.model.id,
+          provider: subagentModel.provider,
+          model: subagentModel.id,
         });
       }
     }
@@ -972,6 +1022,8 @@ function builtinParameters(tool: ConnectorTool) {
       name: Type.String(),
       task: Type.String(),
       instructions: Type.Optional(Type.String()),
+      model_provider: Type.Optional(Type.String()),
+      model_id: Type.Optional(Type.String()),
     });
   }
   if (tool.name === "spawn_bot") {

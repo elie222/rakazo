@@ -204,7 +204,7 @@ import {
 import { loadAgentMemoryContext } from "./memory-context.js";
 import type { MemoryProviderResolver } from "./memory-provider-factory.js";
 import { selectMemoryTools } from "./memory-tools.js";
-import { selectConfiguredModel } from "./model-selection.js";
+import { selectConfiguredModel, validateConnectedModelChoice } from "./model-selection.js";
 import {
   filterImageReturningComputerTools,
   IMAGE_RETURNING_COMPUTER_TOOLS,
@@ -600,7 +600,43 @@ export function createRunExecutor(deps: ExecutorDeps) {
   const web = deps.web ?? createWebProvider();
   const browser = deps.browser ?? createBrowserProvider(undefined, { sandbox: deps.sandbox });
   const cloudAgent = deps.cloudAgent;
+  const resolveConnectedModel = async (
+    scope: { userId: string; spaceId: string },
+    provider: string,
+    modelId: string,
+    registerSecrets?: (values: string[]) => void,
+  ): Promise<AgentRunRequest["model"]> => {
+    const validationError = await validateConnectedModelChoice(
+      deps.prisma,
+      scope,
+      provider,
+      modelId,
+    );
+    if (validationError) throw new Error(validationError);
+    const credential = await findModelCredential(deps.prisma, scope, provider, modelId);
+    if (!credential) throw new Error("Connect that model provider first");
+    const resolved = await resolveModelKey(
+      deps,
+      scope.userId,
+      scope.spaceId,
+      credential,
+      provider,
+      registerSecrets,
+    );
+    return {
+      provider,
+      id: modelId,
+      apiKey: resolved.oauth ? undefined : resolved.apiKey,
+      baseUrl: resolved.baseUrl,
+      reasoning: resolved.reasoning,
+      thinkingLevel: null,
+      oauth: resolved.oauth
+        ? { credential: resolved.oauth, persist: resolved.persistOAuth }
+        : undefined,
+    };
+  };
   return {
+    resolveConnectedModel,
     async resolveModel(scope: {
       userId: string;
       spaceId: string;
@@ -3153,6 +3189,12 @@ export function createRunExecutor(deps: ExecutorDeps) {
               allowSilentEmpty: allowSilentPeerMessage || messagingChannelRun,
               emptyResponseText,
               executeTool: scripted ? undefined : applyTool,
+              resolveModel: scripted
+                ? undefined
+                : (provider, modelId) =>
+                    resolveConnectedModel(run, provider, modelId, (values) =>
+                      runSecrets.push(...values),
+                    ),
               claimSteering: scripted
                 ? undefined
                 : async (seenIds) => {

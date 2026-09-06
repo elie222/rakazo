@@ -1038,6 +1038,49 @@ description: Prepare standup notes
     );
   });
 
+  it("resolves an explicit subagent model within the active user and space", async () => {
+    const preference = modelPreference({
+      provider: "xai",
+      secretId: "secret-xai",
+      modelId: "grok-4.6",
+      isDefault: false,
+    });
+    const findFirst = vi.fn(
+      async (args: { where: { credential?: { provider?: string }; modelId?: string } }) => {
+        if (args.where.credential?.provider !== "xai") return null;
+        if (args.where.modelId && args.where.modelId !== "grok-4.6") return null;
+        return preference;
+      },
+    );
+    const prisma = {
+      spaceModelPreference: { findFirst },
+      userModelCredential: { findFirst: vi.fn(async () => null) },
+      secret: { findFirst: vi.fn(async () => null), findUnique: vi.fn(async () => null) },
+    } as unknown as PrismaClient;
+    const executor = createRunExecutor({
+      prisma,
+      secretStore: { load: vi.fn(), put: vi.fn() },
+    } as unknown as Parameters<typeof createRunExecutor>[0]);
+
+    const model = await executor.resolveConnectedModel(
+      { userId: "user-1", spaceId: "ws-1" },
+      "xai",
+      "grok-4.6",
+    );
+
+    expect(model).toMatchObject({ provider: "xai", id: "grok-4.6", thinkingLevel: null });
+    expect(findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          spaceId: "ws-1",
+          userId: "user-1",
+          modelId: "grok-4.6",
+          credential: { provider: "xai" },
+        }),
+      }),
+    );
+  });
+
   it("falls back to the Space default when the override provider has no credential", async () => {
     const findFirst = vi.fn(
       async (args: { where: { credential?: { provider?: string }; isDefault?: boolean } }) => {

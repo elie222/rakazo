@@ -317,6 +317,22 @@ export interface AgentSteeringMessage {
   images?: AgentInputImage[];
 }
 
+export interface AgentRunModel {
+  provider: string;
+  id: string;
+  apiKey?: string;
+  baseUrl?: string;
+  /** Whether this custom connection accepts standard reasoning_effort. */
+  reasoning?: boolean;
+  /** Preferred thinking effort for reasoning models; clamped to the model’s supported set. */
+  thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null;
+  /** In-process OAuth credential from the encrypted store for this run. */
+  oauth?: {
+    credential: AgentModelOAuthCredential;
+    persist?: (credential: AgentModelOAuthCredential) => Promise<void>;
+  };
+}
+
 export interface AgentRunRequest {
   botId: string;
   threadId: string;
@@ -327,21 +343,9 @@ export interface AgentRunRequest {
   history: Array<{ id?: string; role: "user" | "assistant" | "system"; content: string }>;
   currentTurnImages?: AgentInputImage[];
   tools: ConnectorTool[];
-  model: {
-    provider: string;
-    id: string;
-    apiKey?: string;
-    baseUrl?: string;
-    /** Whether this custom connection accepts standard reasoning_effort. */
-    reasoning?: boolean;
-    /** Preferred thinking effort for reasoning models; clamped to the model’s supported set. */
-    thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null;
-    /** In-process OAuth credential from the encrypted store for this run. */
-    oauth?: {
-      credential: AgentModelOAuthCredential;
-      persist?: (credential: AgentModelOAuthCredential) => Promise<void>;
-    };
-  };
+  model: AgentRunModel;
+  /** Resolve an explicitly requested helper model within the active user and space scope. */
+  resolveModel?: (provider: string, modelId: string) => Promise<AgentRunModel>;
   resumeFromCheckpoint?: string;
   script?: ScriptedTurn[];
   /**
