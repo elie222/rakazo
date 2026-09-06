@@ -318,16 +318,18 @@ export function mountWebhookHttpRoutes(app: Hono, deps: WebhookDeps) {
 
   app.post("/api/v1/bots/:botId/webhook", async (c) => {
     const unauthorized = () => c.json({ error: "Unauthorized" }, 401);
+
+    // Reject oversized bodies before target lookup so size limits do not reveal active bots.
+    const raw = await readBoundedBody(c.req.raw, WEBHOOK_MAX_BODY_BYTES);
+    if (raw === null) {
+      return c.json({ error: "Payload too large" }, 413);
+    }
+
     const target = await loadTarget(c.req.param("botId"));
 
     // Same 401 for missing bot, missing secret, and bad bearer so bot ids are not enumerable.
     if (!target || !hasValidBearerToken(c.req.header("authorization"), target.expected)) {
       return unauthorized();
-    }
-
-    const raw = await readBoundedBody(c.req.raw, WEBHOOK_MAX_BODY_BYTES);
-    if (raw === null) {
-      return c.json({ error: "Payload too large" }, 413);
     }
 
     const payload = parseWebhookPayload(raw, c.req.header("content-type"));
@@ -363,13 +365,15 @@ export function mountWebhookHttpRoutes(app: Hono, deps: WebhookDeps) {
 
   app.post("/api/v1/bots/:botId/github", async (c) => {
     const unauthorized = () => c.json({ error: "Unauthorized" }, 401);
-    const target = await loadTarget(c.req.param("botId"));
-    if (!target) return unauthorized();
 
+    // Reject oversized bodies before target lookup so size limits do not reveal active bots.
     const raw = await readBoundedBody(c.req.raw, WEBHOOK_MAX_BODY_BYTES);
     if (raw === null) {
       return c.json({ error: "Payload too large" }, 413);
     }
+
+    const target = await loadTarget(c.req.param("botId"));
+    if (!target) return unauthorized();
     if (!hasValidGithubSignature(c.req.header("x-hub-signature-256"), target.expected, raw)) {
       return unauthorized();
     }

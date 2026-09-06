@@ -157,6 +157,7 @@ import { isFileDrag, revokePendingAttachmentPreviews } from "../lib/pending-atta
 import { markAfterPaint, markOnce } from "../lib/performance";
 import { clearSpaceSelection, rpc, selectedSpaceId, selectSpace } from "../lib/rpc";
 import { readSeenRunErrorIds, rememberSeenRunErrorId } from "../lib/run-error-storage";
+import { sharedInflight } from "../lib/shared-inflight";
 import {
   activeThreadRuns,
   applyThreadSendReceipt,
@@ -520,6 +521,16 @@ export function ShellPage() {
   } | null>(null);
   const autoBooted = useRef<string | null>(null);
   const routineSavePending = useRef(false);
+  const webhookSecretProvisionRef = useRef(new Map<string, Promise<string>>());
+  const ensureWebhookSecret = (botId: string) =>
+    sharedInflight(webhookSecretProvisionRef.current, botId, async () => {
+      const result = await rpc.bots.rotateWebhookSecret({ botId });
+      setRoutineWebhookSecret(result.secret);
+      setBots((current) =>
+        current.map((bot) => (bot.id === botId ? { ...bot, webhookConfigured: true } : bot)),
+      );
+      return result.secret;
+    });
   const routineSaveRequest = useRef(0);
   const routineRunPending = useRef(false);
   const bootstrappedThread = useRef<ThreadSnapshot | null>(null);
@@ -3379,13 +3390,7 @@ export function ShellPage() {
                 onBack={() => setPanel("computer")}
                 onClose={() => setPanel(null)}
                 onEnsureWebhook={async () => {
-                  const result = await rpc.bots.rotateWebhookSecret({ botId: active.id });
-                  setRoutineWebhookSecret(result.secret);
-                  setBots((current) =>
-                    current.map((bot) =>
-                      bot.id === active.id ? { ...bot, webhookConfigured: true } : bot,
-                    ),
-                  );
+                  await ensureWebhookSecret(active.id);
                 }}
                 onSave={async () => {
                   if (routineSavePending.current) return;
@@ -3410,13 +3415,7 @@ export function ShellPage() {
                       !active.webhookConfigured &&
                       !routineWebhookSecret
                     ) {
-                      const rotated = await rpc.bots.rotateWebhookSecret({ botId: targetBotId });
-                      setRoutineWebhookSecret(rotated.secret);
-                      setBots((current) =>
-                        current.map((bot) =>
-                          bot.id === targetBotId ? { ...bot, webhookConfigured: true } : bot,
-                        ),
-                      );
+                      await ensureWebhookSecret(targetBotId);
                     }
                     const crons = routineDraft.schedules.map(cronFromPreset);
                     let saved: Routine;

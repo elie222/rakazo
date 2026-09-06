@@ -330,6 +330,23 @@ describe("inbound webhook HTTP route", () => {
     expect(deps.sendUserMessage).not.toHaveBeenCalled();
   });
 
+  it("rejects an oversized body for an unknown bot without target lookup", async () => {
+    const deps = createDeps({ bot: null });
+    const app = mount(deps);
+    const res = await app.request("/api/v1/bots/missing/webhook", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${SECRET}`,
+        "content-type": "text/plain",
+        "content-length": String(WEBHOOK_MAX_BODY_BYTES + 1),
+      },
+      body: "x".repeat(WEBHOOK_MAX_BODY_BYTES + 1),
+    });
+    expect(res.status).toBe(413);
+    expect(deps.prisma.bot.findUnique).not.toHaveBeenCalled();
+    expect(deps.sendUserMessage).not.toHaveBeenCalled();
+  });
+
   it.each(["declared", "streamed"] as const)(
     "does not wait on a hanging body cancel for %s oversize",
     async (kind) => {
@@ -456,6 +473,16 @@ describe("GitHub event HTTP route", () => {
     const raw = "x".repeat(WEBHOOK_MAX_BODY_BYTES + 1);
     const res = await app.request("/api/v1/bots/bot-1/github", githubRequest(raw));
     expect(res.status).toBe(413);
+    expect(deps.sendUserMessage).not.toHaveBeenCalled();
+  });
+
+  it("rejects an oversized GitHub body for an unknown bot without target lookup", async () => {
+    const deps = createDeps({ bot: null });
+    const app = mount(deps);
+    const raw = "x".repeat(WEBHOOK_MAX_BODY_BYTES + 1);
+    const res = await app.request("/api/v1/bots/missing/github", githubRequest(raw));
+    expect(res.status).toBe(413);
+    expect(deps.prisma.bot.findUnique).not.toHaveBeenCalled();
     expect(deps.sendUserMessage).not.toHaveBeenCalled();
   });
 });
