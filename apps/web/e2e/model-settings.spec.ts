@@ -193,7 +193,6 @@ test("model settings connect, replace, and cancel provider authentication", asyn
   const stamp = Date.now();
   const userName = `Models ${stamp}`;
   await signup(page, `models-${stamp}@rakazo.test`, "password12", userName);
-  await expect(page.getByLabel("API key")).toHaveAttribute("autocomplete", "new-password");
   await completeOnboarding(page);
 
   await page.getByRole("button", { name: new RegExp(userName) }).click();

@@ -48,7 +48,6 @@ export function OnboardingPage() {
   const [description, setDescription] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [needsModel, setNeedsModel] = useState(false);
 
   const {
     oauth,
@@ -70,7 +69,6 @@ export function OnboardingPage() {
     void Promise.all([rpc.me(), rpc.models.list().catch(() => [])])
       .then(([me, models]) => {
         setCatalog(models);
-        setNeedsModel(me.needsModel);
         const preferred =
           models.find(
             (entry) => entry.provider === me.defaultProvider && entry.id === me.defaultModel,
@@ -81,7 +79,7 @@ export function OnboardingPage() {
           setProvider(preferred.provider);
           setModelId(preferred.provider === OPENAI_COMPATIBLE_PROVIDER_ID ? "" : preferred.id);
         }
-        setStep("model");
+        setStep(me.needsModel ? "model" : "bot");
       })
       .catch(() => setStep("bot"));
     return () => {
@@ -565,18 +563,6 @@ export function OnboardingPage() {
               >
                 <Trans>Continue</Trans>
               </Button>
-              {needsModel ? null : (
-                <Button
-                  variant="ghost"
-                  className="text-muted-foreground"
-                  onClick={() => {
-                    cancelOAuthAttempt();
-                    setStep("bot");
-                  }}
-                >
-                  <Trans>Skip for now</Trans>
-                </Button>
-              )}
             </div>
           </div>
         ) : null}
