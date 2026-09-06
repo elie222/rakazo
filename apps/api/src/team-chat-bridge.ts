@@ -275,30 +275,47 @@ export class TeamChatBridge {
   async startDeferredReservationHeartbeat(
     externalMessageId: string,
     intervalMs = ROUTING_RESERVATION_RENEWAL_MS,
-  ): Promise<() => void> {
+  ): Promise<{ stop: () => void; lost: Promise<never> }> {
     if (!(await this.extendDeferredReservation(externalMessageId))) {
       throw new Error("Team chat deferred reservation was lost");
     }
     let active = true;
     let renewing = false;
-    const timer = setInterval(() => {
+    let timer: ReturnType<typeof setInterval> | undefined;
+    let rejectLost: ((error: Error) => void) | undefined;
+    const lost = new Promise<never>((_, reject) => {
+      rejectLost = reject;
+    });
+    // Prevent an unhandled rejection if the caller stops before awaiting lost.
+    void lost.catch(() => undefined);
+    const fail = (error: Error) => {
+      if (!active) return;
+      active = false;
+      if (timer) clearInterval(timer);
+      rejectLost?.(error);
+    };
+    timer = setInterval(() => {
       if (!active || renewing) return;
       renewing = true;
       void this.extendDeferredReservation(externalMessageId)
         .then((held) => {
-          if (active && !held) throw new Error("Team chat deferred reservation was lost");
+          if (!held) fail(new Error("Team chat deferred reservation was lost"));
         })
         .catch((error) => {
           getLogger().error("team chat deferred reservation renewal failed", error);
+          fail(error instanceof Error ? error : new Error(String(error)));
         })
         .finally(() => {
           renewing = false;
         });
     }, intervalMs);
     timer.unref?.();
-    return () => {
-      active = false;
-      clearInterval(timer);
+    return {
+      stop: () => {
+        active = false;
+        if (timer) clearInterval(timer);
+      },
+      lost,
     };
   }
 

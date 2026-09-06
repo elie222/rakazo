@@ -552,29 +552,35 @@ export async function createApp(
           // the message, so the timer cannot start a second TeamChat run.
           const target = await bridge.receive(mapped, { queueAgent: false });
           if (!target.deferred) return;
-          const stopLeaseHeartbeat = await bridge.startDeferredReservationHeartbeat(
+          const leaseHeartbeat = await bridge.startDeferredReservationHeartbeat(
             target.externalMessageId,
           );
           let woken = false;
           try {
             try {
-              woken = await wakeMessageRoutines(inboundDeps, target, event, {
-                // Must match TeamChatBridge ExternalConversation / recovery provider.
-                deliveryProvider: bridge.providerId,
-              });
+              woken = await Promise.race([
+                wakeMessageRoutines(inboundDeps, target, event, {
+                  // Must match TeamChatBridge ExternalConversation / recovery provider.
+                  deliveryProvider: bridge.providerId,
+                }),
+                leaseHeartbeat.lost,
+              ]);
             } catch (error) {
               await bridge.resolveDeferredMessage(target.externalMessageId, "agent", mapped.kind);
               await bridge.reconcileOnce();
               throw error;
             }
-            await bridge.resolveDeferredMessage(
+            const resolved = await bridge.resolveDeferredMessage(
               target.externalMessageId,
               woken ? "routine" : "agent",
               mapped.kind,
             );
+            if (!resolved) {
+              throw new Error("Team chat deferred message ownership conflict");
+            }
             if (!woken) await bridge.reconcileOnce();
           } finally {
-            stopLeaseHeartbeat();
+            leaseHeartbeat.stop();
           }
           return;
         }

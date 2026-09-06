@@ -440,7 +440,7 @@ describe("team chat bridge", () => {
 
       // Keeping the stopper open models wakeMessageRoutines still waiting on
       // delivery while reconciliation continues on its normal timer.
-      const stopHeartbeat = await bridge.startDeferredReservationHeartbeat("external-routing");
+      const leaseHeartbeat = await bridge.startDeferredReservationHeartbeat("external-routing");
       await vi.advanceTimersByTimeAsync(31 * 60_000);
       await bridge.reconcileOnce();
 
@@ -457,10 +457,46 @@ describe("team chat bridge", () => {
         }),
       );
 
-      stopHeartbeat();
+      leaseHeartbeat.stop();
       const renewalsAfterRoute = updateMany.mock.calls.length;
       await vi.advanceTimersByTimeAsync(2 * 60_000);
       expect(updateMany).toHaveBeenCalledTimes(renewalsAfterRoute);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("aborts the routing heartbeat when a lease renewal is lost", async () => {
+    vi.useFakeTimers();
+    try {
+      const updateMany = vi
+        .fn()
+        .mockResolvedValueOnce({ count: 1 })
+        .mockResolvedValueOnce({ count: 0 });
+      const bridge = new TeamChatBridge({
+        prisma: { externalMessage: { updateMany } } as unknown as PrismaClient,
+        events: { sendUserMessage: vi.fn() },
+        jobs: { enqueue: vi.fn() },
+        send: vi.fn(),
+        providerId: "slack",
+        botId: "bot-1",
+      });
+      (
+        bridge as unknown as {
+          target: { id: string; spaceId: string; userId: string; name: string };
+        }
+      ).target = { id: "bot-1", spaceId: "space-1", userId: "owner-1", name: "Chief" };
+
+      const leaseHeartbeat = await bridge.startDeferredReservationHeartbeat(
+        "external-routing",
+        1_000,
+      );
+      const lost = expect(leaseHeartbeat.lost).rejects.toThrow(
+        /Team chat deferred reservation was lost/,
+      );
+      await vi.advanceTimersByTimeAsync(1_000);
+      await lost;
+      leaseHeartbeat.stop();
     } finally {
       vi.useRealTimers();
     }
