@@ -2482,6 +2482,8 @@ export function ShellPage() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder={t`Search`}
+            autoComplete="off"
+            name="sidebar-search"
           />
         </InputGroup>
         <div className="rk-scroll flex flex-1 flex-col gap-0.5 overflow-y-auto px-2.5 pb-2.5">
