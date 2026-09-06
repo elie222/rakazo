@@ -75,6 +75,16 @@ for (const width of [320, 375, 768]) {
     await captureScreenshot(page, testInfo, `hosted-running-${width}`);
     await stop.click();
     await expect(stop).toBeHidden();
+    if (width < 768) {
+      await page.getByTitle("Agent computer").click();
+      await expect(page.getByTestId("computer-chrome")).toBeVisible();
+      await expect(page.getByRole("button", { name: "Close computer" })).toBeVisible();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+        true,
+      );
+      await captureScreenshot(page, testInfo, `hosted-computer-${width}`);
+      await page.getByRole("button", { name: "Release", exact: true }).click();
+    }
     await page.locator("main").getByRole("button", { name: "New Bot", exact: true }).click();
     await expect(page.getByTestId("bot-settings")).toBeVisible();
     await captureScreenshot(page, testInfo, `hosted-settings-${width}`);

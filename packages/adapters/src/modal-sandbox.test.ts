@@ -101,23 +101,19 @@ describe("Modal sandbox boundary", () => {
     const f = fixture();
     const view = await f.provider.connectScreen(computer, { view: "stream" }, context);
     await expect(
-      f.provider.connectScreen(
-        computer,
-        { view: "stream", interactive: true, controlToken: "control" },
-        context,
-      ),
+      f.provider.connectScreen(computer, { view: "stream", interactive: true }, context),
     ).rejects.toThrow("Control lease required");
     const control = await f.provider.connectScreen(
       computer,
       { view: "stream", interactive: true, controlToken: "control" },
-      { ...context, screenLeaseId: "lease" },
+      context,
     );
     expect(new URL(view.url).searchParams.get("cadre_token")).not.toBe("control");
     expect(new URL(control.url).searchParams.get("cadre_token")).toBe("control");
     await control.close();
     expect(f.requests).toEqual([
-      { op: "screen", interactive: true, leaseId: "lease", controlToken: "control" },
-      { op: "screen", interactive: false, leaseId: "lease" },
+      { op: "screen", interactive: true, leaseId: "control", controlToken: "control" },
+      { op: "screen", interactive: false, leaseId: "control", controlToken: "control" },
     ]);
   });
   it("normalizes missing computers for runtime recovery", async () => {

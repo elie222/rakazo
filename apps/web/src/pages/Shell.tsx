@@ -2993,17 +2993,19 @@ export function ShellPage() {
                 <span className="text-muted-foreground">⚙</span>
                 <Trans>Settings</Trans>
               </Button>
-              <Button
-                variant="ghost"
-                className="w-full justify-start font-normal"
-                onClick={() => {
-                  setMenuOpen(false);
-                  setModelsOpen(true);
-                }}
-              >
-                <Cpu size={16} strokeWidth={1.7} className="text-muted-foreground" />
-                <Trans>Models</Trans>
-              </Button>
+              {!capabilities?.hosted ? (
+                <Button
+                  variant="ghost"
+                  className="w-full justify-start font-normal"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    setModelsOpen(true);
+                  }}
+                >
+                  <Cpu size={16} strokeWidth={1.7} className="text-muted-foreground" />
+                  <Trans>Models</Trans>
+                </Button>
+              ) : null}
               <Button
                 variant="ghost"
                 className="w-full justify-start font-normal"
@@ -3171,6 +3173,11 @@ export function ShellPage() {
                 type="button"
                 title={t`Agent computer`}
                 onClick={() => {
+                  if (!desktopLayout) {
+                    setComputerOpen(true);
+                    void openComputer();
+                    return;
+                  }
                   const next = panel === "computer" ? null : "computer";
                   setPanel(next);
                   if (next === "computer" && active) {
@@ -3966,9 +3973,9 @@ export function ShellPage() {
         <div className="absolute inset-0 z-30 flex flex-col bg-background">
           <div
             data-testid="computer-chrome"
-            className="flex items-center justify-between gap-4 border-b border-sidebar-border px-[18px] py-3.5"
+            className="flex flex-wrap items-center justify-between gap-3 border-b border-sidebar-border px-3 py-3 sm:px-[18px] sm:py-3.5"
           >
-            <div className="flex min-w-0 flex-1 items-center gap-3">
+            <div className="flex min-w-0 basis-full items-center gap-3 sm:flex-1 sm:basis-auto">
               <BotAvatar
                 color={active.color}
                 identity={active.id}
@@ -3999,7 +4006,7 @@ export function ShellPage() {
                 )
               ) : null}
             </div>
-            <div className="flex items-center gap-3">
+            <div className="ms-auto flex flex-wrap items-center gap-2">
               {composerRunning ? (
                 <Button
                   type="button"

@@ -253,7 +253,8 @@ export class ModalSandboxProvider implements SandboxProvider {
       url: url.toString(),
       mimeType: "text/html",
       close: async () => {
-        if (request.interactive) await this.releaseScreen(computer, ctx);
+        if (request.interactive)
+          await this.setScreenControl(computer, false, ctx, request.controlToken);
       },
     };
   }
@@ -263,12 +264,11 @@ export class ModalSandboxProvider implements SandboxProvider {
     ctx: AdapterContext,
     controlToken?: string,
   ) {
-    if (interactive && (!ctx.screenLeaseId || !controlToken))
-      throw new Error("Control lease required");
+    if (interactive && !controlToken) throw new Error("Control lease required");
     await this.rpc(await this.owned(computer, ctx), {
       op: "screen",
       interactive,
-      leaseId: ctx.screenLeaseId,
+      leaseId: controlToken ?? ctx.screenLeaseId,
       controlToken,
     });
   }
