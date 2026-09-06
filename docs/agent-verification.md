@@ -66,6 +66,21 @@ remove credentials and unstable identifiers, and encode meaningful state
 transitions. Resolve fresh page references instead of replaying old reference
 IDs. For coordinate scenarios, control the viewport and fixture layout.
 
+## Live computer acceptance
+
+Run a vision-capable model through OpenRouter against a real E2B desktop:
+
+```bash
+COMPUTER_E2E_MODEL=openai/gpt-5.6-luna pnpm test:computer
+```
+
+This opt-in test requires `OPENROUTER_API_KEY` and `E2B_API_KEY` and incurs
+inference and sandbox usage. It checks visual observation, a real browser click,
+terminal access and exact file contents. It then destroys the sandbox outside
+the app and calls `computer/recover`, requiring a new sandbox with the saved
+file restored. `computer/boot` returns the stored running state and does not
+request recovery from an externally deleted sandbox.
+
 ## Real-model quality
 
 List the cases without inference:
