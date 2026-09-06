@@ -51,6 +51,7 @@ import {
   type PiOAuthLogins,
   planLiveConnectionSync,
   prepareApiInstall,
+  prepareGraphqlInstall,
   probeOpenAiCompatibleModels,
   provisionComputer,
   type RemoteConnectorDependencies,
@@ -2315,9 +2316,14 @@ export function createRouter(deps: RouterDeps) {
         if (JSON.stringify(config).length > 2_000_000) {
           throw new ORPCError("BAD_REQUEST", { message: "Capability configuration is too large" });
         }
-        if (credential && input.kind !== "mcp" && input.kind !== "api") {
+        if (
+          credential &&
+          input.kind !== "mcp" &&
+          input.kind !== "api" &&
+          input.kind !== "graphql"
+        ) {
           throw new ORPCError("BAD_REQUEST", {
-            message: "Credentials are only accepted for MCP and API tool sources",
+            message: "Credentials are only accepted for MCP, API, and GraphQL tool sources",
           });
         }
         try {
@@ -2337,6 +2343,17 @@ export function createRouter(deps: RouterDeps) {
           }
           if (input.kind === "api") {
             const prepared = await prepareApiInstall({
+              source,
+              config,
+              credential,
+              signal: context.signal,
+              remote: deps.remoteConnectors,
+            });
+            source = prepared.source;
+            config = prepared.config;
+          }
+          if (input.kind === "graphql") {
+            const prepared = await prepareGraphqlInstall({
               source,
               config,
               credential,

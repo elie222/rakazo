@@ -2040,10 +2040,6 @@ msgstr "此部署未配置托管应用目录。"
 msgid "No matching models"
 msgstr "没有匹配的模型"
 
-#: src/pages/PluginsOverlay.tsx:596
-msgid "No MCP or API tool sources installed yet."
-msgstr "还没有安装 MCP 或 API 工具源。"
-
 #: src/pages/McpServersOverlay.tsx:426
 msgid "No MCP servers yet."
 msgstr "还没有 MCP 服务器。"
@@ -3251,3 +3247,15 @@ msgstr "技能"
 #: src/pages/Onboarding.tsx
 msgid "Supports thinking"
 msgstr "支持思考"
+
+#: src/pages/PluginsOverlay.tsx:486
+msgid "Add GraphQL"
+msgstr "添加 GraphQL"
+
+#: src/pages/PluginsOverlay.tsx:504
+msgid "Add GraphQL endpoint"
+msgstr "添加 GraphQL 端点"
+
+#: src/pages/PluginsOverlay.tsx:601
+msgid "No tool sources yet."
+msgstr "尚无工具来源。"

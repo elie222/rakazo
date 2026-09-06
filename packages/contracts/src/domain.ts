@@ -479,7 +479,7 @@ export type ActionAutoReviewSettings = z.infer<typeof ActionAutoReviewSettingsSc
 
 export const CapabilityInstallSchema = z.object({
   id: Id,
-  kind: z.enum(["skill", "plugin", "mcp", "api", "connection"]),
+  kind: z.enum(["skill", "plugin", "mcp", "api", "graphql", "connection"]),
   name: z.string(),
   source: z.string(),
   version: z.string().nullable(),

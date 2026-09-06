@@ -26,7 +26,7 @@ import { X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { rpc } from "../lib/rpc";
 
-type SourceKind = "treg" | "mcp" | "api";
+type SourceKind = "treg" | "mcp" | "api" | "graphql";
 
 function itemKey(item: Pick<ConnectionCatalogItem, "connectorId" | "slug">) {
   return `${item.connectorId}:${item.slug}`;
@@ -75,7 +75,11 @@ export function PluginsOverlay({
       rpc.capabilities.list(),
     ]);
     setCatalog(items);
-    setSources(installs.filter((install) => install.kind === "mcp" || install.kind === "api"));
+    setSources(
+      installs.filter(
+        (install) => install.kind === "mcp" || install.kind === "api" || install.kind === "graphql",
+      ),
+    );
     return items;
   }
 
@@ -197,8 +201,14 @@ export function PluginsOverlay({
         ...(authType === "header" ? { name: authName.trim() } : {}),
       };
       await rpc.capabilities.install({
-        kind: sourceKind === "api" ? "api" : "mcp",
-        name: sourceName.trim() || (sourceKind === "treg" ? "Treg" : "Custom connector"),
+        kind: sourceKind === "treg" ? "mcp" : sourceKind,
+        name:
+          sourceName.trim() ||
+          (sourceKind === "treg"
+            ? "Treg"
+            : sourceKind === "graphql"
+              ? "GraphQL"
+              : "Custom connector"),
         source: sourceUrl.trim(),
         credential: credential.trim() || undefined,
         config:
@@ -206,7 +216,9 @@ export function PluginsOverlay({
             ? { preset: "treg", auth: { type: "bearer" } }
             : sourceKind === "api"
               ? { openApi: true, auth }
-              : { preset: "custom", auth },
+              : sourceKind === "graphql"
+                ? { auth }
+                : { preset: "custom", auth },
       });
       setCredential("");
       setSourceKind(null);
@@ -481,6 +493,15 @@ export function PluginsOverlay({
                   variant="secondary"
                   className="rounded-full"
                   size="sm"
+                  onClick={() => beginSource("graphql")}
+                >
+                  <Trans>Add GraphQL</Trans>
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="rounded-full"
+                  size="sm"
                   onClick={() => beginSource("treg")}
                 >
                   <Trans>Add Treg</Trans>
@@ -497,6 +518,8 @@ export function PluginsOverlay({
                         <Trans>Connect Treg</Trans>
                       ) : sourceKind === "mcp" ? (
                         <Trans>Add remote MCP server</Trans>
+                      ) : sourceKind === "graphql" ? (
+                        <Trans>Add GraphQL endpoint</Trans>
                       ) : (
                         <Trans>Import OpenAPI JSON</Trans>
                       )}
@@ -515,7 +538,9 @@ export function PluginsOverlay({
                         placeholder={
                           sourceKind === "mcp"
                             ? "https://example.com/mcp"
-                            : "https://example.com/openapi.json"
+                            : sourceKind === "graphql"
+                              ? "https://example.com/graphql"
+                              : "https://example.com/openapi.json"
                         }
                       />
                     ) : null}
@@ -593,13 +618,13 @@ export function PluginsOverlay({
                 </div>
                 {sources.length === 0 && !sourceKind ? (
                   <p className="text-muted-foreground/80">
-                    <Trans>No MCP or API tool sources installed yet.</Trans>
+                    <Trans>No tool sources yet.</Trans>
                   </p>
                 ) : null}
                 {sources.map((source) => (
                   <div key={source.id} className="flex items-center gap-4 rounded-xl px-3 py-2.5">
                     <div className="grid h-[42px] w-[42px] place-items-center rounded-xl bg-accent font-semibold uppercase text-foreground">
-                      {source.kind === "mcp" ? "M" : "A"}
+                      {source.kind === "mcp" ? "M" : source.kind === "graphql" ? "G" : "A"}
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="text-[15.5px] font-medium text-foreground">{source.name}</div>
