@@ -3322,3 +3322,9 @@ msgstr "Executor कनेक्ट करें"
 msgid "Executor token"
 msgstr "Executor टोकन"
 
+
+msgid "Assistant"
+msgstr "सहायक"
+
+msgid "Choose a model to get started."
+msgstr "शुरू करने के लिए एक मॉडल चुनें।"
