@@ -1,5 +1,6 @@
 import http from "node:http";
 import path from "node:path";
+import { Readable } from "node:stream";
 import { resolveSupervisorToken } from "@rakazo/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { computerNetworkNameFor, hostComputerUser } from "./computer-spec.js";
@@ -55,6 +56,129 @@ afterEach(async () => {
 });
 
 describe("computer loopback provision lifecycle", () => {
+  it.each([
+    { error: new Error("daemon unavailable"), status: 500 },
+    { error: Object.assign(new Error("permission denied"), { statusCode: 403 }), status: 500 },
+    { error: Object.assign(new Error("container missing"), { statusCode: 404 }), status: 404 },
+  ])("reports inspection failures correctly when stopping: $status", async ({ error, status }) => {
+    const { supervisorApp } = await import("./index.js");
+    const container = { inspect: vi.fn().mockRejectedValue(error), stop: vi.fn(), exec: vi.fn() };
+    mocks.docker.getContainer.mockReturnValue(container);
+    const response = await supervisorApp.request("/computers/inspect-failure/stop", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${resolveSupervisorToken(process.env)}`,
+        "x-rakazo-bot-id": "bot",
+        "x-rakazo-space-id": "space",
+      },
+    });
+    expect(response.status).toBe(status);
+    expect(container.stop).not.toHaveBeenCalled();
+    expect(container.exec).not.toHaveBeenCalled();
+  });
+
+  it("rejects another computer identity without stopping its container", async () => {
+    const { supervisorApp } = await import("./index.js");
+    const container = {
+      inspect: vi.fn().mockResolvedValue({
+        Config: {
+          Labels: { "rakazo.managed": "true", "rakazo.botId": "other", "rakazo.spaceId": "other" },
+        },
+      }),
+      stop: vi.fn(),
+      exec: vi.fn(),
+    };
+    mocks.docker.getContainer.mockReturnValue(container);
+    const response = await supervisorApp.request("/computers/identity-mismatch/stop", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${resolveSupervisorToken(process.env)}`,
+        "x-rakazo-bot-id": "bot",
+        "x-rakazo-space-id": "space",
+      },
+    });
+    expect(response.status).toBe(403);
+    expect(container.stop).not.toHaveBeenCalled();
+    expect(container.exec).not.toHaveBeenCalled();
+  });
+
+  it("rechecks stopped state after a concurrent stop owns the screen lock", async () => {
+    const { supervisorApp } = await import("./index.js");
+    let running = true;
+    let releaseStop!: () => void;
+    let stopStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      stopStarted = resolve;
+    });
+    const stopped = new Promise<void>((resolve) => {
+      releaseStop = resolve;
+    });
+    const container = {
+      inspect: vi.fn(async () => ({
+        Config: {
+          Labels: { "rakazo.managed": "true", "rakazo.botId": "bot", "rakazo.spaceId": "space" },
+        },
+        State: { Running: running },
+      })),
+      exec: vi.fn(async () => {
+        if (!running) throw new Error("container stopped");
+        return { start: async () => Readable.from([]), inspect: async () => ({ ExitCode: 0 }) };
+      }),
+      stop: vi.fn(async () => {
+        stopStarted();
+        await stopped;
+        running = false;
+      }),
+    };
+    mocks.docker.getContainer.mockReturnValue(container);
+    const stop = () =>
+      supervisorApp.request("/computers/concurrent-stop/stop", {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${resolveSupervisorToken(process.env)}`,
+          "x-rakazo-bot-id": "bot",
+          "x-rakazo-space-id": "space",
+        },
+      });
+    const first = stop();
+    await started;
+    const second = stop();
+    await vi.waitFor(() => expect(container.inspect).toHaveBeenCalledTimes(3));
+    releaseStop();
+    expect((await first).status).toBe(200);
+    expect((await second).status).toBe(200);
+    expect(container.stop).toHaveBeenCalledOnce();
+    expect(container.exec).toHaveBeenCalledOnce();
+  });
+
+  it("stops the computer after a failed checkpoint while reporting the failure", async () => {
+    const { supervisorApp } = await import("./index.js");
+    const container = {
+      inspect: vi.fn(async () => ({
+        Config: {
+          Labels: { "rakazo.managed": "true", "rakazo.botId": "bot", "rakazo.spaceId": "space" },
+        },
+        State: { Running: true },
+      })),
+      exec: vi.fn(async () => ({
+        start: async () => Readable.from([]),
+        inspect: async () => ({ ExitCode: 1 }),
+      })),
+      stop: vi.fn(async () => {}),
+    };
+    mocks.docker.getContainer.mockReturnValue(container);
+    const response = await supervisorApp.request("/computers/failed-checkpoint/stop", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${resolveSupervisorToken(process.env)}`,
+        "x-rakazo-bot-id": "bot",
+        "x-rakazo-space-id": "space",
+      },
+    });
+    expect(response.status).toBe(500);
+    expect(container.stop).toHaveBeenCalledOnce();
+  });
+
   it.each([
     { enabled: true, hosts: [], resumed: false },
     { enabled: true, hosts: ["127.0.0.1"], resumed: true },

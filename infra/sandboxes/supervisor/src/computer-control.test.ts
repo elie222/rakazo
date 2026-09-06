@@ -56,7 +56,14 @@ describe("computer control HTTP boundary", () => {
     });
 
     await expect(
-      controlDesktop({ url: `${origin}/v1/desktop`, token }, actions, ":2", observe, 25),
+      controlDesktop(
+        { url: `${origin}/v1/desktop`, token },
+        actions,
+        ":2",
+        "/tmp/test-profile",
+        observe,
+        25,
+      ),
     ).resolves.toEqual(result);
     expect(requests).toEqual([
       {
@@ -97,11 +104,20 @@ describe("computer control HTTP boundary", () => {
     });
     expect(endpoint).toEqual({ url: `${origin}/v1/desktop`, token });
     if (!endpoint) throw new Error("expected a loopback endpoint");
-    await expect(controlDesktop(endpoint, actions, ":1", false, 0)).resolves.toEqual({
+    await expect(
+      controlDesktop(endpoint, actions, ":1", "/tmp/test-profile", false, 0),
+    ).resolves.toEqual({
       completed: 1,
     });
     await expect(
-      controlDesktop({ ...endpoint, token: "wrong-token" }, actions, ":1", false, 0),
+      controlDesktop(
+        { ...endpoint, token: "wrong-token" },
+        actions,
+        ":1",
+        "/tmp/test-profile",
+        false,
+        0,
+      ),
     ).rejects.toThrow();
     expect(authorizations).toEqual([`Bearer ${token}`, "Bearer wrong-token"]);
   });
@@ -117,7 +133,14 @@ describe("computer control HTTP boundary", () => {
     });
 
     await expect(
-      controlDesktop({ url: `${origin}/v1/desktop`, token }, actions, ":1", false, 0),
+      controlDesktop(
+        { url: `${origin}/v1/desktop`, token },
+        actions,
+        ":1",
+        "/tmp/test-profile",
+        false,
+        0,
+      ),
     ).rejects.toThrow(`exceeds ${MAX_COMPUTER_CONTROL_RESPONSE_BYTES} bytes`);
   });
 
@@ -146,7 +169,7 @@ describe("computer control HTTP boundary", () => {
         const endpoint = { url: `${origin}/v1/desktop`, token };
 
         const attempt = await attemptComputerControl(() =>
-          controlDesktop(endpoint, actions, ":1", false, 0),
+          controlDesktop(endpoint, actions, ":1", "/tmp/test-profile", false, 0),
         );
         expect(targetRequests).toEqual([]);
         expect(attempt.status).toBe("failed");
@@ -156,7 +179,8 @@ describe("computer control HTTP boundary", () => {
         const fallbackObservation = { source: "original-computer" };
         await expect(
           preferComputerControl(
-            async () => (await controlDesktop(endpoint, [], ":1", true, 0)).observation,
+            async () =>
+              (await controlDesktop(endpoint, [], ":1", "/tmp/test-profile", true, 0)).observation,
             async () => fallbackObservation,
           ),
         ).resolves.toEqual(fallbackObservation);

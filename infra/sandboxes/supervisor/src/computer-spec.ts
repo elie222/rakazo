@@ -1,13 +1,26 @@
 import { createHash } from "node:crypto";
+import { MAX_DESKTOP_DISPLAY, screenPorts } from "@rakazo/core/node/desktop-runtime";
 
 export const COMPUTER_IMAGE = process.env.RAKAZO_COMPUTER_IMAGE ?? "rakazo/computer:local";
 export const COMPUTER_UID = 1000;
 export const COMPUTER_GID = 1000;
 export const COMPUTER_USER = `${COMPUTER_UID}:${COMPUTER_GID}`;
-export const TEAM_SCREEN_LIMIT = 8;
+
+export { screenPorts };
 export const COMPUTER_CONTROL_PORT = 7070;
 export const SCREEN_HOST = process.env.SANDBOX_SCREEN_HOST ?? "127.0.0.1";
 export type ScreenNetworkMode = "published" | "internal" | "isolated";
+
+export function resolveTeamScreenLimit(value = process.env.SANDBOX_TEAM_SCREEN_LIMIT): number {
+  if (value === undefined || value.trim() === "" || isUnlimited(value)) return MAX_DESKTOP_DISPLAY;
+  const limit = Number(value);
+  if (!Number.isSafeInteger(limit) || limit < 1) {
+    throw new Error(
+      "SANDBOX_TEAM_SCREEN_LIMIT must be a positive integer, or 0 for no configured cap",
+    );
+  }
+  return Math.min(limit, MAX_DESKTOP_DISPLAY);
+}
 
 /**
  * Resource ceilings for a bot computer.
@@ -120,32 +133,12 @@ export function hostComputerUser(uid = process.getuid?.(), gid = process.getgid?
   return `${uid}:${gid}`;
 }
 
-export function screenPorts(index: number) {
-  if (index < 0 || index >= TEAM_SCREEN_LIMIT) {
-    throw new Error(
-      `screen index ${index} exceeds the Team Computer limit of ${TEAM_SCREEN_LIMIT}`,
-    );
-  }
-  return {
-    display: `:${index + 1}`,
-    displayNumber: index + 1,
-    viewPort: String(6080 + index * 2),
-    controlPort: String(6081 + index * 2),
-    viewVncPort: 5900 + index * 2,
-    controlVncPort: 5901 + index * 2,
-  };
-}
-
 export function computerPortBindings(publishControlPort = false) {
   const ExposedPorts: Record<string, object> = {};
   const PortBindings: Record<string, Array<{ HostIp: string; HostPort: string }>> = {};
-  for (let index = 0; index < TEAM_SCREEN_LIMIT; index += 1) {
-    const ports = screenPorts(index);
-    ExposedPorts[`${ports.viewPort}/tcp`] = {};
-    ExposedPorts[`${ports.controlPort}/tcp`] = {};
-    PortBindings[`${ports.viewPort}/tcp`] = [{ HostIp: "127.0.0.1", HostPort: "0" }];
-    PortBindings[`${ports.controlPort}/tcp`] = [{ HostIp: "127.0.0.1", HostPort: "0" }];
-  }
+  const port = `${screenPorts(0).viewPort}/tcp`;
+  ExposedPorts[port] = {};
+  PortBindings[port] = [{ HostIp: "127.0.0.1", HostPort: "0" }];
   // Host-run Docker Desktop supervisors need an opt-in loopback mapping.
   // Otherwise control stays unpublished on the container network.
   if (publishControlPort) {
@@ -257,6 +250,12 @@ export function legacyNetworkOwnedSolelyBy(
 
 export function screenUrlFor(hostPort: string, host = SCREEN_HOST) {
   return `http://${host}:${hostPort}/embed.html`;
+}
+
+export function screenUrlWithToken(screenUrl: string, token: string) {
+  const url = new URL(screenUrl);
+  url.searchParams.set("path", `websockify?token=${encodeURIComponent(token)}`);
+  return url.toString();
 }
 
 /**

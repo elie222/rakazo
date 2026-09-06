@@ -53,7 +53,10 @@ describe("Docker sandbox", () => {
       { type: "stderr", data: "command timed out after 75 ms\n" },
       { type: "exit", code: 124 },
     ]);
-    expect(fetchMock.mock.calls[0]?.[1]?.headers).not.toHaveProperty("x-rakazo-screen-id");
+    expect(fetchMock.mock.calls[0]?.[1]?.headers).toMatchObject({
+      "x-rakazo-bot-id": "bot",
+      "x-rakazo-screen-id": "bot",
+    });
     expect(fetchMock.mock.calls[0]?.[1]?.headers).toMatchObject({
       "x-request-id": expect.any(String),
       traceparent: expect.stringMatching(/^00-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$/),
@@ -149,6 +152,7 @@ describe("Docker sandbox", () => {
         headers: expect.objectContaining({
           authorization: "Bearer test-token",
           "x-rakazo-bot-id": "home-bot",
+          "x-rakazo-screen-id": "bot",
           "x-rakazo-screen-lease-id": "run-1:1",
           "x-rakazo-space-id": "workspace",
         }),

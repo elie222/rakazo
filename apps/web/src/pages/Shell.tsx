@@ -2336,12 +2336,23 @@ export function ShellPage() {
     }
   }
 
-  async function releaseComputer(reason?: ComputerReleaseReason) {
-    if (!active) return;
-    setComputerOpen(false);
-    await rpc.computer.release({ botId: active.id, reason }).catch(() => undefined);
-    await refreshThread(active.id);
-  }
+  const releaseComputer = useCallback(
+    async (reason?: ComputerReleaseReason) => {
+      const botId = activeBotId.current;
+      if (!botId) return;
+      try {
+        await rpc.computer.release({ botId, reason });
+        if (activeBotId.current !== botId) return;
+        setComputerOpen(false);
+        await refreshThreadRef.current(botId).catch(() => undefined);
+      } catch {
+        if (activeBotId.current !== botId) return;
+        setComputerError(t`Could not continue`);
+        setComputerErrorFromScreen(false);
+      }
+    },
+    [t],
+  );
 
   function dismissComposerError() {
     // The strip shows one message at a time, so only dismiss the run failure when it is the

@@ -233,9 +233,9 @@ The Electron desktop app is a client of the same API. Docker and E2B still apply
   `DAYTONA_API_KEY` and optionally `DAYTONA_API_URL` / `DAYTONA_TARGET`.
 - **Box by ASCII** provides a managed Linux desktop through `BOX_API_KEY` and optionally
   `BOX_API_URL`. Rakazo always creates or resumes boxes with `noEnv: true`, keeps the portable
-  workspace under `/home/user/rakazo-home`, and refreshes a two-hour TTL. A Box currently exposes one
-  shared desktop, so concurrent Team bots can still use shell and files but only one can use
-  graphical tools at a time.
+  workspace under `/home/user/rakazo-home`, and refreshes a two-hour TTL. Box uses the shared Linux
+  desktop runtime and protected port routes for concurrent bot desktops. Each bot has its own
+  persistent Chrome profile; logins are not shared between bots.
 - **Desktop provider** / **This Mac** runs commands on the API/worker host. Docker stays the default.
   The Electron app asks once; if you choose This Mac, bots can use working directories under your home
   folder. Do not enable it on a public or shared service. macOS does not show its own permission

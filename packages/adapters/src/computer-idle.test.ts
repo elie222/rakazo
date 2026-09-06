@@ -12,7 +12,7 @@ import {
   sandboxIdleMs,
   sleepComputerIfIdle,
 } from "./computer-idle.js";
-import { e2bCreateOptions, openDesktopBrowser, openDesktopUrl } from "./e2b-sandbox.js";
+import { e2bCreateOptions } from "./e2b-sandbox.js";
 
 describe("sandbox idle", () => {
   it("defaults to ten minutes when SANDBOX_IDLE_MS is unset", () => {
@@ -95,14 +95,15 @@ describe("sandbox idle", () => {
     expect(harness.sandbox.stop).toHaveBeenCalledOnce();
   });
 
-  it("rechecks the lease boundary after checkpointing before it suspends", async () => {
+  it("claims the lease boundary before any checkpoint export", async () => {
     const harness = idleHarness();
     harness.prisma.computer.updateMany.mockResolvedValueOnce({ count: 0 });
     harness.prisma.run.findFirst.mockResolvedValue(null);
 
     await sleepComputerIfIdle(harness.deps, harness.computer.id);
 
-    expect(harness.home.commit).toHaveBeenCalledOnce();
+    expect(harness.home.commit).not.toHaveBeenCalled();
+    expect(harness.sandbox.exportWorkspace).not.toHaveBeenCalled();
     expect(harness.sandbox.stop).not.toHaveBeenCalled();
     expect(harness.jobs.enqueue).toHaveBeenCalledOnce();
     expect(harness.prisma.computer.update).not.toHaveBeenCalled();
@@ -137,9 +138,17 @@ describe("sandbox idle", () => {
     await sleepComputerIfIdle(harness.deps, harness.computer.id);
 
     expect(harness.home.commit).toHaveBeenCalledOnce();
+    expect(harness.prisma.computer.updateMany.mock.invocationCallOrder[0]).toBeLessThan(
+      harness.sandbox.exportWorkspace.mock.invocationCallOrder[0]!,
+    );
     expect(harness.sandbox.stop).toHaveBeenCalledOnce();
     expect(harness.prisma.computer.update).toHaveBeenCalledWith({
-      where: { id: harness.computer.id },
+      where: {
+        id: harness.computer.id,
+        state: "suspending",
+        providerRef: harness.computer.providerRef,
+        updatedAt: expect.any(Date),
+      },
       data: {
         state: "suspended",
         controlHolder: "none",
@@ -165,6 +174,71 @@ describe("sandbox idle", () => {
     expect(harness.sandbox.stop).not.toHaveBeenCalled();
     expect(harness.prisma.computer.update).not.toHaveBeenCalled();
   });
+
+  it("retains the saved revision when the database transition after stopping fails", async () => {
+    const harness = idleHarness();
+    harness.prisma.computer.update.mockRejectedValueOnce(new Error("database unavailable"));
+    harness.sandbox.stop.mockImplementationOnce(async () => {
+      expect(harness.computer.homeRevision).toBe("rev-checkpoint");
+    });
+
+    await expect(sleepComputerIfIdle(harness.deps, harness.computer.id)).rejects.toThrow(
+      "database unavailable",
+    );
+
+    expect(harness.sandbox.stop).toHaveBeenCalledOnce();
+    expect(harness.computer.homeRevision).toBe("rev-checkpoint");
+  });
+
+  it.each(["failure", "lost claim"])(
+    "does not stop when recording the revision encounters a %s",
+    async (outcome) => {
+      const harness = idleHarness();
+      const updateMany = harness.prisma.computer.updateMany.getMockImplementation()!;
+      harness.prisma.computer.updateMany.mockImplementation(async (args) => {
+        if (args.data.homeRevision) {
+          if (outcome === "failure") throw new Error("database unavailable");
+          harness.computer.updatedAt = new Date(harness.computer.updatedAt.getTime() + 1);
+        }
+        return updateMany(args);
+      });
+
+      const sleep = sleepComputerIfIdle(harness.deps, harness.computer.id);
+      if (outcome === "failure") await expect(sleep).rejects.toThrow("database unavailable");
+      else await sleep;
+
+      expect(harness.sandbox.stop).not.toHaveBeenCalled();
+      expect(harness.computer.homeRevision).toBe("rev-before");
+      expect(harness.computer.state).toBe(outcome === "failure" ? "running" : "suspending");
+      expect(harness.jobs.enqueue).toHaveBeenCalledOnce();
+    },
+  );
+
+  it.each(["checkpoint failure", "stop failure", "stop success"])(
+    "preserves a newer lifecycle owner after %s",
+    async (stage) => {
+      const harness = idleHarness();
+      const invalidate = () => {
+        harness.computer.updatedAt = new Date(harness.computer.updatedAt.getTime() + 1);
+      };
+      if (stage === "checkpoint failure") {
+        harness.home.commit.mockImplementationOnce(async () => {
+          invalidate();
+          throw new Error("checkpoint interrupted");
+        });
+      } else {
+        harness.sandbox.stop.mockImplementationOnce(async () => {
+          invalidate();
+          if (stage === "stop failure") throw new Error("stop interrupted");
+        });
+      }
+
+      await expect(sleepComputerIfIdle(harness.deps, harness.computer.id)).rejects.toThrow();
+
+      expect(harness.computer.state).toBe("suspending");
+      expect(harness.events.append).not.toHaveBeenCalled();
+    },
+  );
 });
 
 describe("background work launch and probe", () => {
@@ -373,48 +447,6 @@ describe("e2b create options", () => {
     expect(opts.timeoutMs).toBe(sandboxIdleMs());
     expect(opts.metadata.botId).toBe("bot-1");
   });
-
-  it("opens a browser on a new desktop", async () => {
-    const launched: string[] = [];
-    await openDesktopBrowser({
-      launch: async (application) => {
-        launched.push(application);
-        if (application !== "firefox") throw new Error("missing");
-      },
-      open: async () => {
-        throw new Error("should not fall back");
-      },
-    });
-    expect(launched).toEqual(["google-chrome", "firefox"]);
-  });
-
-  it("opens a URL through the named browser launcher", async () => {
-    const launched: string[] = [];
-    const commands = {
-      run: async (cmd: string) => {
-        launched.push(cmd);
-        if (cmd.includes("google-chrome")) throw new Error("missing");
-        if (cmd.includes("firefox")) return { exitCode: 0 };
-        throw new Error("missing");
-      },
-    };
-    await openDesktopUrl(
-      {
-        commands,
-        launch: async () => {
-          throw new Error("should use gtk-launch via commands");
-        },
-        open: async () => {
-          throw new Error("should not fall back");
-        },
-      },
-      "https://example.com/page",
-    );
-    expect(launched).toEqual([
-      "gtk-launch 'google-chrome' 'https://example.com/page'",
-      "gtk-launch 'firefox' 'https://example.com/page'",
-    ]);
-  });
 });
 
 function idleHarness(
@@ -430,6 +462,7 @@ function idleHarness(
   const computer = {
     id: "computer-id",
     homeKey: "team-workspace",
+    homeRevision: "rev-before",
     providerRef: "computer",
     kind: "e2b",
     state: "running",
@@ -442,16 +475,23 @@ function idleHarness(
     executionBotId: null,
     updatedAt: new Date("2026-01-01T00:00:00.000Z"),
   };
-  let checkpointedAt = computer.updatedAt;
   const prisma = {
     computer: {
-      findUnique: vi.fn(async () => ({ ...computer, updatedAt: checkpointedAt })),
+      findUnique: vi.fn(async () => ({ ...computer })),
       updateMany: vi.fn(async (args) => {
-        if (args.data.updatedAt) checkpointedAt = args.data.updatedAt;
+        if (args.where.updatedAt && args.where.updatedAt.getTime() !== computer.updatedAt.getTime())
+          return { count: 0 };
+        if (args.data.updatedAt) computer.updatedAt = args.data.updatedAt;
         if (args.data.state) computer.state = args.data.state;
+        if (args.data.homeRevision) computer.homeRevision = args.data.homeRevision;
         return { count: 1 };
       }),
-      update: vi.fn().mockResolvedValue(undefined),
+      update: vi.fn(async (args) => {
+        if (args.where.updatedAt && args.where.updatedAt.getTime() !== computer.updatedAt.getTime())
+          throw new Error("stale computer lifecycle");
+        Object.assign(computer, args.data);
+        return computer;
+      }),
     },
     run: { findFirst: vi.fn().mockResolvedValue(null) },
     agentHome: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },

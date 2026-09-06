@@ -181,7 +181,7 @@ import {
   teamBotWorkspaceDirectory,
 } from "./computer-support.js";
 import { observationToolResult, parseComputerActions } from "./computer-tools.js";
-import { checkpointAndRecordComputerWorkspace } from "./computer-workspace.js";
+import { checkpointRunComputerWorkspace } from "./computer-workspace.js";
 import { sanitizeConnectorError } from "./connector-safety.js";
 import { resolveDeploymentModel } from "./deployment-model.js";
 import { handoffToGroupBot, loadGroupContext } from "./group-handoff.js";
@@ -1210,7 +1210,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         screenRelease = { computer, context };
         scheduleComputerSleep(deps.jobs, storedComputer.id);
         const workspaceCheckpoint = createRunWorkspaceCheckpoint(() =>
-          checkpointAndRecordComputerWorkspace(deps, storedComputer, computer, context),
+          checkpointRunComputerWorkspace(deps, storedComputer, computer, context),
         );
         let currentTurnFiles: Awaited<ReturnType<typeof materializeCurrentTurnFiles>>;
         try {

@@ -7,6 +7,7 @@ import { resolveDockerSocketPath, supervisorApp, waitForScreenReady } from "./in
 import {
   assertRequestIdentity,
   attemptComputerControl,
+  browserProfilePathForScreen,
   ComputerControlUnavailableError,
   clearComputerScreenRegistry,
   completeReleasedScreen,
@@ -25,12 +26,15 @@ import {
   parseObservation,
   preferComputerControl,
   releaseAssignedScreen,
+  resetManagedScreensCommand,
   type ScreenAssignment,
   sandboxCommandTimedOut,
   sandboxTimeoutCommand,
   screenReleaseStopCommand,
   shouldReplayComputerActions,
   stopExtraScreenCommand,
+  teardownReleasedScreen,
+  withKeyedLock,
 } from "./supervisor-logic.js";
 
 const token = resolveSupervisorToken(process.env);
@@ -263,8 +267,30 @@ describe("sandbox supervisor input containment", () => {
 
   it("keeps browser routing argv identical for control and Docker exec fallback", () => {
     const action = { kind: "launch" as const, application: "chromium", uri: "https://example.com" };
-    expect(containerActionSteps([action], ":2")).toEqual([
-      { argv: ["env", "DISPLAY=:2", "rakazo-browser", "https://example.com"] },
+    const profile = browserProfilePathForScreen("writer");
+    expect(containerActionSteps([action], ":2", profile)).toEqual([
+      {
+        argv: [
+          "env",
+          "DISPLAY=:2",
+          `RAKAZO_BROWSER_PROFILE=${profile}`,
+          "rakazo-browser",
+          "https://example.com",
+        ],
+      },
+    ]);
+    expect(
+      containerActionSteps([{ kind: "open", path: "https://example.com" }], ":2", profile),
+    ).toEqual([
+      {
+        argv: [
+          "env",
+          "DISPLAY=:2",
+          `RAKAZO_BROWSER_PROFILE=${profile}`,
+          "xdg-open",
+          "https://example.com",
+        ],
+      },
     ]);
   });
 
@@ -412,12 +438,15 @@ describe("sandbox supervisor input containment", () => {
   });
 
   it("keeps the viewer read-only and uses a separate process for takeover control", () => {
-    expect(interactiveScreenCommand(false)).toMatch(/pkill .*5901/);
+    expect(interactiveScreenCommand(false)).toMatch(/pkill .*sockets\/control-1-/);
     expect(interactiveScreenCommand(false)).not.toMatch(/x11vnc -display/);
-    expect(interactiveScreenCommand(true, "lease-new")).toMatch(/x11vnc -display .* -rfbport 5901/);
-    expect(interactiveScreenCommand(true, "lease-new")).toMatch(/6081/);
-    expect(interactiveScreenCommand(true, "lease-new")).not.toMatch(/-rfbport 5900/);
-    expect(interactiveScreenCommand(false, "lease-old")).toContain("!= 'lease-old'");
+    expect(interactiveScreenCommand(true, "lease-new")).toMatch(
+      /x11vnc -display .* -rfbport 0 -unixsock .*control-1-/,
+    );
+    expect(interactiveScreenCommand(true, "lease-new")).toMatch(/6080/);
+    expect(interactiveScreenCommand(true, "lease-new")).not.toContain("sockets/view-1-");
+    expect(interactiveScreenCommand(false, "lease-old")).toContain("= 'lease-old'");
+    expect(interactiveScreenCommand(false, "lease-old")).toContain("RAKAZO_CONTROL_RELEASED");
   });
 
   it("assigns distinct screen indexes per Team bot and starts extra displays", () => {
@@ -425,20 +454,86 @@ describe("sandbox supervisor input containment", () => {
     expect(nextScreenIndex(assigned, "writer")).toBe(0);
     expect(nextScreenIndex(assigned, "researcher")).toBe(1);
     expect(nextScreenIndex(assigned, "writer")).toBe(0);
-    expect(ensureScreenCommand(0)).toContain("-display :1");
-    expect(ensureScreenCommand(0)).toContain("seq 1 100");
-    expect(ensureScreenCommand(1)).toContain("Xvfb :2");
-    expect(ensureScreenCommand(1)).toContain("rfbport 5902");
-    expect(ensureScreenCommand(1)).toContain("0.0.0.0:6082");
+    expect(ensureScreenCommand(0, "writer", "view-token")).toContain("-display :1");
+    expect(ensureScreenCommand(0, "writer", "view-token")).toContain("seq 1 100");
+    expect(ensureScreenCommand(1, "researcher", "view-token")).toContain("Xvfb :2");
+    expect(ensureScreenCommand(1, "researcher", "view-token")).toContain("sockets/view-2-");
+    expect(ensureScreenCommand(1, "researcher", "view-token")).toContain("0.0.0.0:6080");
     expect(() => nextScreenIndex(assigned, "overflow", undefined, 1)).toThrow(
       /cannot allocate another screen/,
     );
   });
 
   it("generates syntactically valid shell to start an extra display", () => {
-    const result = spawnSync("bash", ["-n"], { input: ensureScreenCommand(1) });
-    expect(result.status).toBe(0);
-    expect(result.stderr.toString()).toBe("");
+    for (const command of [
+      ensureScreenCommand(0, "writer", "view-token"),
+      ensureScreenCommand(1, "researcher", "view-token"),
+      stopExtraScreenCommand(0, "writer"),
+      stopExtraScreenCommand(1, "researcher"),
+      interactiveScreenCommand(false, "lease-old"),
+      interactiveScreenCommand(true, "lease-new"),
+      resetManagedScreensCommand(),
+    ]) {
+      const result = spawnSync("bash", ["-n"], { input: command });
+      expect(result.status).toBe(0);
+      expect(result.stderr.toString()).toBe("");
+    }
+  });
+
+  it("serializes screen lifecycle operations by container", async () => {
+    const locks = new Map<string, Promise<void>>();
+    const events: string[] = [];
+    let releaseFirst!: () => void;
+    const firstBlocked = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const first = withKeyedLock(locks, "container-1", async () => {
+      events.push("ensure:start");
+      await firstBlocked;
+      events.push("ensure:end");
+    });
+    const release = withKeyedLock(locks, "container-1", async () => {
+      events.push("release");
+    });
+
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(events).toEqual(["ensure:start"]);
+    releaseFirst();
+    await Promise.all([first, release]);
+    expect(events).toEqual(["ensure:start", "ensure:end", "release"]);
+    expect(locks.size).toBe(0);
+  });
+
+  it("resets stale managed screens without killing unrelated container jobs", () => {
+    const command = resetManagedScreensCommand();
+    expect(command).toContain("chromium-bot-*");
+    expect(command).toContain("for marker in /tmp/rakazo/browser-profile-*");
+    expect(command).toContain("/tmp/rakazo/browser-pid-*");
+    expect(command).not.toContain("pkill -9 -1");
+  });
+
+  it("keeps a persistent independent profile per bot across display slots", () => {
+    const writer = browserProfilePathForScreen("writer");
+    const researcher = browserProfilePathForScreen("researcher");
+    const command = ensureScreenCommand(0, "writer", "view-token");
+
+    expect(writer).not.toBe(researcher);
+    expect(command).toContain(writer);
+    expect(ensureScreenCommand(3, "writer", "view-token")).toContain(writer);
+    expect(ensureScreenCommand(0, "researcher", "view-token")).toContain(researcher);
+    expect(command).not.toContain("/home/rakazo/.browser-profiles/chromium/.");
+    expect(command).not.toContain(".rakazo-base-generation");
+    expect(command).toContain("browser-pid-");
+    expect(command).toContain("tr '\\0' '\\n' <\"/proc/$pid/cmdline\"");
+    expect(browserProfilePathForScreen("../../writer")).toMatch(
+      /^\/home\/rakazo\/\.browser-profiles\/chromium-bot-[0-9a-f]+$/,
+    );
+  });
+
+  it("allocates a thousand bots without a configured cap", () => {
+    const assigned = new Map<string, ScreenAssignment>();
+    for (let index = 0; index < 1000; index++)
+      expect(nextScreenIndex(assigned, `bot-${index}`)).toBe(index);
   });
 
   it("frees a released screen slot so a ninth Team bot can reuse it", () => {
@@ -446,18 +541,40 @@ describe("sandbox supervisor input containment", () => {
     for (let index = 0; index < 8; index += 1) {
       expect(nextScreenIndex(assigned, `bot-${index}`)).toBe(index);
     }
-    expect(() => nextScreenIndex(assigned, "bot-8")).toThrow(/cannot allocate another screen/);
+    expect(() => nextScreenIndex(assigned, "bot-8", undefined, 8)).toThrow(
+      /cannot allocate another screen/,
+    );
     expect(releaseAssignedScreen(assigned, "bot-3")).toBe(3);
     expect(assigned.get("bot-0")?.index).toBe(0);
     expect(assigned.get("bot-3")?.releasing).toBe(true);
     expect(() => nextScreenIndex(assigned, "bot-3")).toThrow(/still being released/);
-    expect(() => nextScreenIndex(assigned, "bot-8")).toThrow(/cannot allocate another screen/);
+    expect(() => nextScreenIndex(assigned, "bot-8", undefined, 8)).toThrow(
+      /cannot allocate another screen/,
+    );
     completeReleasedScreen(assigned, "bot-3", 3);
     expect(assigned.get("bot-3")).toBeUndefined();
     expect(nextScreenIndex(assigned, "bot-8")).toBe(3);
     expect(nextScreenIndex(assigned, "bot-0")).toBe(0);
     expect(releaseAssignedScreen(assigned, "missing")).toBeUndefined();
-    expect(() => nextScreenIndex(assigned, "bot-9")).toThrow(/cannot allocate another screen/);
+    expect(nextScreenIndex(assigned, "bot-9")).toBe(8);
+  });
+
+  it("retains a screen slot when teardown fails", async () => {
+    const assigned = new Map<string, ScreenAssignment>();
+    expect(nextScreenIndex(assigned, "writer")).toBe(0);
+    expect(releaseAssignedScreen(assigned, "writer")).toBe(0);
+
+    await expect(
+      teardownReleasedScreen(assigned, "writer", 0, async () => ({
+        code: 1,
+        stderr: "browser still running",
+      })),
+    ).rejects.toThrow("browser still running");
+
+    expect(assigned.get("writer")).toEqual({ index: 0, releasing: true });
+    expect(() => nextScreenIndex(assigned, "writer")).toThrow(/still being released/);
+    expect(nextScreenIndex(assigned, "researcher")).toBe(1);
+    expect(releaseAssignedScreen(assigned, "writer")).toBe(0);
   });
 
   it("clears all screen assignments when a container stops so slots can be reused", () => {
@@ -468,7 +585,9 @@ describe("sandbox supervisor input containment", () => {
     for (let index = 0; index < 8; index += 1) {
       nextScreenIndex(assigned, `bot-${index}`);
     }
-    expect(() => nextScreenIndex(assigned, "bot-8")).toThrow(/cannot allocate another screen/);
+    expect(() => nextScreenIndex(assigned, "bot-8", undefined, 8)).toThrow(
+      /cannot allocate another screen/,
+    );
 
     clearComputerScreenRegistry(registry, containerId);
     expect(registry.has(containerId)).toBe(false);
@@ -508,37 +627,60 @@ describe("sandbox supervisor input containment", () => {
     expect(releaseAssignedScreen(assigned, "writer", "run-2:2")).toBe(0);
   });
 
-  it("stops extra displays without touching the primary desktop", () => {
-    expect(stopExtraScreenCommand(0)).toBe("");
-    expect(stopExtraScreenCommand(1)).toContain("Xvfb :2 -screen");
-    expect(stopExtraScreenCommand(1)).toContain("rfbport 5902");
-    expect(stopExtraScreenCommand(1)).toContain("websockify.*6082");
-    expect(stopExtraScreenCommand(1)).not.toMatch(/Xvfb :1 /);
-    expect(stopExtraScreenCommand(1)).not.toMatch(/6080/);
+  it("does not let a closing viewer release a screen claimed by a run", () => {
+    const assigned = new Map<string, ScreenAssignment>();
+    expect(nextScreenIndex(assigned, "writer", "screen-view-writer:0")).toBe(0);
+    expect(nextScreenIndex(assigned, "writer", "run-1:1")).toBe(0);
+    expect(releaseAssignedScreen(assigned, "writer", "screen-view-writer:0")).toBeUndefined();
+    expect(releaseAssignedScreen(assigned, "writer", "run-1:1")).toBe(0);
   });
 
-  it("on cancel, stops primary Chromium without tearing down the desktop", () => {
-    const stop = stopExtraScreenCommand(0, { cancelRunWork: true });
-    expect(stop).toContain("--user-data-dir=/home/rakazo/.browser-profiles/chromium$");
+  it("stops the released bot's browser without tearing down the primary desktop", () => {
+    const primary = stopExtraScreenCommand(0, "writer");
+    expect(primary).toContain(`--user-data-dir=${browserProfilePathForScreen("writer")}`);
+    expect(primary).toContain("kill -KILL");
+    expect(primary).not.toMatch(/Xvfb :1 /);
+    expect(primary).not.toContain("websockify");
+    expect(primary).toContain("sockets/view-1-");
+    expect(primary).toContain("sockets/control-1-");
+    expect(primary).toContain("rm -f /tmp/rakazo/control-token-1");
+    expect(primary).toContain("transport failed to stop");
+
+    const extra = stopExtraScreenCommand(1, "researcher");
+    expect(extra).toContain("[X]vfb :2 -screen");
+    expect(extra).toContain("[f]luxbox -rc /tmp/fluxbox-home-2/.fluxbox/init");
+    expect(extra).toContain("sockets/view-2-");
+    expect(extra).not.toContain("websockify");
+    expect(extra).toContain(`--user-data-dir=${browserProfilePathForScreen("researcher")}`);
+  });
+
+  it("on cancel, stops only the matching bot's primary-display Chromium", () => {
+    const stop = stopExtraScreenCommand(0, "writer");
+    expect(stop).toContain(`--user-data-dir=${browserProfilePathForScreen("writer")}`);
+    expect(stop).not.toContain(`--user-data-dir=${browserProfilePathForScreen("researcher")}`);
     expect(stop).not.toContain("Xvfb");
     expect(stop).not.toContain("fluxbox");
   });
 
   it("does not stop the primary browser when a present registry rejects release", () => {
-    expect(screenReleaseStopCommand(undefined, { hasRegistry: true, cancelRunWork: true })).toBe(
-      "",
-    );
-    expect(stopExtraScreenCommand(0)).toBe("");
+    expect(
+      screenReleaseStopCommand(undefined, {
+        hasRegistry: true,
+        cancelRunWork: true,
+        screenId: "writer",
+      }),
+    ).toBe("");
   });
 
-  it("still stops the primary browser on cancel when the screen registry is missing", () => {
+  it("still stops the matching bot browser on cancel when the screen registry is missing", () => {
     // After a supervisor restart, in-memory assignments are gone; cancel must still
-    // tear down orphaned primary Chromium without falling back on a rejected lease.
+    // tear down the bot's orphaned Chromium without falling back on a rejected lease.
     const orphanCancelStop = screenReleaseStopCommand(undefined, {
       hasRegistry: false,
       cancelRunWork: true,
+      screenId: "writer",
     });
-    expect(orphanCancelStop).toContain("--user-data-dir=/home/rakazo/.browser-profiles/chromium$");
+    expect(orphanCancelStop).toContain(`--user-data-dir=${browserProfilePathForScreen("writer")}`);
     expect(orphanCancelStop).not.toContain("Xvfb");
   });
 

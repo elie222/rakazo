@@ -27,7 +27,6 @@ import {
 import { resolveAgentHomePath } from "./home.js";
 
 const EXECUTION_LEASE_MS = 5 * 60_000;
-const RELEASED_EXECUTION_LEASE_AT = new Date(0);
 const BOOT_WAIT_ATTEMPTS = 40;
 const BOOT_WAIT_MS = 250;
 /**
@@ -465,15 +464,16 @@ export async function renewComputerExecutionLease(
   lease: ComputerExecutionLease | null,
 ): Promise<boolean> {
   if (!lease) return true;
+  const now = new Date();
   const renewed = await prisma.computerExecutionLease.updateMany({
     where: {
       computerId: lease.computerId,
       botId: lease.botId,
       runId: lease.runId,
       fence: lease.fence,
-      expiresAt: { gt: RELEASED_EXECUTION_LEASE_AT },
+      expiresAt: { gt: now },
     },
-    data: { expiresAt: new Date(Date.now() + EXECUTION_LEASE_MS) },
+    data: { expiresAt: new Date(now.getTime() + EXECUTION_LEASE_MS) },
   });
   return renewed.count === 1;
 }
@@ -483,15 +483,16 @@ export async function holdComputerExecutionLeaseForTakeover(
   lease: ComputerExecutionLease | null,
 ): Promise<boolean> {
   if (!lease) return true;
+  const now = new Date();
   const held = await prisma.computerExecutionLease.updateMany({
     where: {
       computerId: lease.computerId,
       botId: lease.botId,
       runId: lease.runId,
       fence: lease.fence,
-      expiresAt: { gt: RELEASED_EXECUTION_LEASE_AT },
+      expiresAt: { gt: now },
     },
-    data: { expiresAt: new Date(Date.now() + 24 * 60 * 60_000) },
+    data: { expiresAt: new Date(now.getTime() + 24 * 60 * 60_000) },
   });
   return held.count === 1;
 }
