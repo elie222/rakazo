@@ -4,6 +4,7 @@ import {
   completeOnboarding,
   createBotFromPicker,
   openNewBot,
+  rpc,
   signup,
 } from "./helpers";
 
@@ -22,6 +23,12 @@ test("create opens empty chat, picker lists bots, and sidebar collapses", async 
   await expect(picker.getByTestId("create-new-bot")).toBeVisible();
   await expect(picker.getByText("Chief", { exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "plus-picker-bots");
+
+  await picker.getByTestId("create-new-bot").click();
+  await expect(picker.getByTestId("create-bot-computer")).toBeVisible();
+  await expect(picker.getByTestId("create-bot-team")).toBeVisible();
+  await expect(picker.getByTestId("create-bot-private")).toBeVisible();
+  await captureScreenshot(page, testInfo, "plus-picker-computer-mode");
   await page.keyboard.press("Escape");
 
   await createBotFromPicker(page);
@@ -72,4 +79,21 @@ test("later bot waits before showing the focus card; sending cancels it", async 
   await page.keyboard.press("Enter");
   await page.clock.fastForward(12_000);
   await expect(page.getByText("What do you want me on first?", { exact: true })).toHaveCount(0);
+});
+
+test("plus picker can create a Private computer bot", async ({ page }, testInfo) => {
+  const stamp = Date.now();
+  await signup(page, `new-bot-private-${stamp}@rakazo.test`, "password12", "New Bot Private");
+  await completeOnboarding(page);
+  await page.goto("/app");
+  await page.waitForURL(/\/app\/[^/]+$/);
+
+  await openNewBot(page, "dedicated");
+  await page.waitForURL(/\/app\/[^/]+$/);
+  await expect(page.getByPlaceholder("Message New Bot")).toBeVisible();
+  await captureScreenshot(page, testInfo, "create-private-computer-bot");
+
+  const botId = page.url().split("/").pop()!;
+  const bots = await rpc<Array<{ id: string; computerMode: string }>>(page, "bots/list", {});
+  expect(bots.find((bot) => bot.id === botId)?.computerMode).toBe("dedicated");
 });
