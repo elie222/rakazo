@@ -165,4 +165,24 @@ describe("thread subscription recovery", () => {
     expect(callbacks.subscribe).not.toHaveBeenCalled();
     expect(callbacks.loadHead).not.toHaveBeenCalled();
   });
+
+  it("skips displaced-snapshot events while retaining effects and subsequent live updates", async () => {
+    vi.useFakeTimers();
+    const { abort, channel, state, callbacks } = setup();
+    const running = runThreadSubscription(callbacks);
+    await vi.advanceTimersByTimeAsync(0);
+    state.committed = { threadId: "replacement-thread", cursor: 0 };
+    channel.send(event(11));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(callbacks.applyEvent).not.toHaveBeenCalled();
+    expect(callbacks.onEvent).toHaveBeenCalledWith(event(11), head);
+    state.committed = head;
+    channel.send(event(12));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(callbacks.applyEvent).toHaveBeenCalledExactlyOnceWith(event(12));
+    expect(callbacks.refresh).not.toHaveBeenCalled();
+    abort.abort();
+    channel.end();
+    await running;
+  });
 });

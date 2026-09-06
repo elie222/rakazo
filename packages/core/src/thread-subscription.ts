@@ -64,7 +64,7 @@ export async function runThreadSubscription(options: {
         options.beforeEvent?.(event);
         if (snapshotReady && options.currentSnapshot()?.threadId === event.threadId) {
           options.applyEvent(event);
-        } else {
+        } else if (!snapshotReady) {
           pendingSnapshotEvents.push(event);
         }
         options.onEvent(event, head);
