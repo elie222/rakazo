@@ -170,19 +170,16 @@ RAKAZO_LOCAL_CONTEXT_WINDOW=32768
 RAKAZO_LOCAL_MAX_TOKENS=4096
 ```
 
-The loopback default is suitable when running Rakazo from a source checkout. In Docker Compose,
-use the model server's Compose service name or another address reachable from the containers.
+The loopback default is suitable when running Rakazo from a source checkout. From containers,
+prefer `host.docker.internal` or a stable LAN RFC1918 address (not Compose service DNS alone).
 Only configure an endpoint you control: prompts, attachments, and tool results sent to that model
 leave Rakazo through this URL. Leave `RAKAZO_LOCAL_MODELS` blank to disable the provider.
 
 Each user can also connect their own OpenAI-compatible endpoint from **Connect a model** /
 **Settings → Models** on web and mobile. Choose **OpenAI-compatible**, enter the server base URL
-(for example `http://127.0.0.1:8000/v1` for Rapid-MLX, Ollama, LM Studio, llama.cpp, or vLLM),
-the exact model id from that server, and an optional API key. By default Rakazo only allows
-loopback, RFC1918, and `host.docker.internal` targets. To permit public hostnames, set
-`RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC=1` in the deployment environment. Public hostnames must resolve
-only to public addresses; redirects and DNS answers that reach private or link-local networks are
-rejected.
+(for example `http://127.0.0.1:8000/v1`), the exact model id, and an optional API key.
+Public hosts need `RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC=1`. Private, loopback, and
+`host.docker.internal` targets do not.
 
 For servers that accept standard `reasoning_effort`, enable **Supports thinking** under
 **Advanced** when connecting. The setting is saved on the connection (no env var or restart).
