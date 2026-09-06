@@ -685,18 +685,24 @@ describe("GraphQL execution failures", () => {
     expect(String((events[0] as { message?: string }).message)).toMatch(/HTTP 502/);
   });
 
-  it.each([{}, { errors: [] }, { errors: "failed", data: {} }, { data: [] }, { data: "failed" }])(
-    "rejects malformed GraphQL envelopes at the provider boundary: %j",
-    async (payload) => {
-      const events = await executeGraphqlProvider(async () => Response.json(payload));
-      expect(events).toHaveLength(1);
-      expect(events[0]).toMatchObject({ type: "error" });
-    },
-  );
+  it.each([
+    {},
+    { data: null },
+    { errors: [] },
+    { errors: "failed", data: {} },
+    { data: [] },
+    { data: "failed" },
+  ])("rejects malformed GraphQL envelopes at the provider boundary: %j", async (payload) => {
+    const events = await executeGraphqlProvider(async () => Response.json(payload));
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ type: "error" });
+  });
 
-  it("preserves null data in a valid GraphQL envelope", async () => {
-    const events = await executeGraphqlProvider(async () => Response.json({ data: null }));
-    expect(events).toEqual([{ type: "result", data: { status: 200, data: null } }]);
+  it("preserves null fields in a valid GraphQL result", async () => {
+    const events = await executeGraphqlProvider(async () =>
+      Response.json({ data: { hello: null } }),
+    );
+    expect(events).toEqual([{ type: "result", data: { status: 200, data: { hello: null } } }]);
   });
 
   it("yields type error from InstalledConnectorProvider on malformed success payload", async () => {

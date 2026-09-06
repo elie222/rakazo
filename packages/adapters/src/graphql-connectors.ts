@@ -335,7 +335,7 @@ export async function executeGraphqlOperation(
           : "GraphQL operation failed";
       throw new Error(message);
     }
-    if (!("data" in record) || (record.data !== null && !asRecord(record.data))) {
+    if (!asRecord(record.data)) {
       throw new Error("GraphQL response contained no valid data");
     }
     const bounded = boundUtf8Text(text, MAX_GRAPHQL_RESULT_BYTES);
