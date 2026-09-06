@@ -47,9 +47,7 @@ import {
   attemptComputerControl,
   browserProfilePathForScreen,
   ComputerControlUnavailableError,
-  checkpointScreensCommand,
   clearComputerScreenRegistry,
-  completeControlReleaseCommand,
   computerActionSchema,
   computerControlTimeoutMs,
   containerActionSteps,
@@ -71,7 +69,7 @@ import {
   screenReleaseStopCommand,
   shouldReplayComputerActions,
   stopExtraScreenCommand,
-  syncSharedBrowserProfileCommand,
+  stopScreensCommand,
   teardownReleasedScreen,
   toSandboxInput,
   withKeyedLock,
@@ -565,43 +563,8 @@ app.post("/computers/:id/screen-mode", async (c) => {
     const { container, info } = await managedContainer(id, botId, spaceId);
     const { layout, viewToken } = await withComputerScreenLock(id, async () => {
       const screen = await ensureManagedScreen(id, container, info, botId, screenId, screenLeaseId);
-      const controlChanged =
-        body.interactive || body.revokeControl !== false
-          ? await setInteractiveScreen(
-              container,
-              body.interactive,
-              body.controlToken,
-              screen.layout,
-            )
-          : false;
-      // Releasing an explicit user-control lease is the authoritative profile
-      // checkpoint: persist sign-ins, then restart the isolated browser from
-      // that shared snapshot so a resumed bot keeps the same browser state.
-      if (
-        !body.interactive &&
-        body.controlToken &&
-        body.revokeControl !== false &&
-        controlChanged
-      ) {
-        const synced = await runContainerCommand(container, [
-          "bash",
-          "-c",
-          [
-            syncSharedBrowserProfileCommand(screen.screenKey, true),
-            completeControlReleaseCommand(screen.index, body.controlToken),
-          ].join("\n"),
-        ]);
-        if (synced.code !== 0) {
-          throw new Error(synced.stderr || "shared browser profile failed to sync");
-        }
-        const restarted = await runContainerCommand(container, [
-          "bash",
-          "-c",
-          ensureScreenCommand(screen.index, screen.screenKey, screen.viewToken),
-        ]);
-        if (restarted.code !== 0) {
-          throw new Error(restarted.stderr || "computer browser failed to restart");
-        }
+      if (body.interactive || body.revokeControl !== false) {
+        await setInteractiveScreen(container, body.interactive, body.controlToken, screen.layout);
       }
       return screen;
     });
@@ -717,10 +680,10 @@ app.post("/computers/:id/stop", async (c) => {
           const checkpoint = await runContainerCommand(container, [
             "bash",
             "-c",
-            checkpointScreensCommand(screens),
+            stopScreensCommand(screens),
           ]);
           if (checkpoint.code !== 0)
-            throw new Error(checkpoint.stderr || "browser profiles failed to checkpoint");
+            throw new Error(checkpoint.stderr || "bot browsers failed to stop");
         } finally {
           // Failed profiles remain on the durable home for recovery after restart.
           await container.stop();
@@ -735,7 +698,7 @@ app.post("/computers/:id/stop", async (c) => {
       return c.json({ error: "invalid computer identity" }, 403);
     if (error && typeof error === "object" && "statusCode" in error && error.statusCode === 404)
       return c.json({ error: "computer not found" }, 404);
-    return c.json({ error: "computer failed to stop or checkpoint browser profiles" }, 500);
+    return c.json({ error: "computer failed to stop" }, 500);
   }
 });
 
@@ -917,11 +880,7 @@ async function ensureManagedScreen(
   if (ensured.code !== 0) {
     releaseAssignedScreen(assigned, screenKey);
     await teardownReleasedScreen(assigned, screenKey, index, () =>
-      runContainerCommand(container, [
-        "bash",
-        "-c",
-        stopExtraScreenCommand(index, screenKey, false),
-      ]),
+      runContainerCommand(container, ["bash", "-c", stopExtraScreenCommand(index, screenKey)]),
     );
     if (assigned.size === 0) computerScreens.delete(id);
     throw new Error(ensured.stderr || `computer screen ${layout.display} failed to start`);

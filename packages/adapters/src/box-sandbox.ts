@@ -12,7 +12,6 @@ import {
 import type {
   AdapterContext,
   CommandRequest,
-  ComputerAction,
   ComputerActionRequest,
   ComputerFileEntry,
   ComputerInput,
@@ -25,22 +24,14 @@ import type {
   ScreenRequest,
   ScreenSession,
 } from "@rakazo/adapter-kit";
-import { boundedSandboxCommandTimeoutMs, canReleaseScreenLease } from "@rakazo/core";
+import { boundedSandboxCommandTimeoutMs } from "@rakazo/core";
 import { boxResponseError, wrapBoxCall } from "./box-errors.js";
-import { SingleScreenClaimTracker } from "./computer-screens.js";
+import { normalizeWorkspacePath, shellQuote, workspacePath } from "./computer-support.js";
 import {
-  boundedComputerActions,
-  clampRounded,
-  computerObservation,
-  normalizeWorkspacePath,
-  shellQuote,
-  workspacePath,
-} from "./computer-support.js";
-import {
-  PORTABLE_BROWSER_STOP_COMMAND,
   PORTABLE_TRANSFER_BATCH_BYTES,
   shouldSkipPortableWorkspaceFile,
 } from "./computer-workspace.js";
+import { LinuxDesktop, PREPARE_LINUX_DESKTOP } from "./linux-desktop.js";
 import { withAbort } from "./web-ssrf.js";
 
 const BOX_API_BASE = "https://ascii.dev/api/box/v1";
@@ -51,7 +42,6 @@ const BOX_API_COMMAND_TIMEOUT_SECONDS = 600;
 const BOX_TTL_SECONDS = 2 * 60 * 60;
 const BOX_DELETE_TIMEOUT_MS = 60_000;
 const BOX_EXPORT_CONCURRENCY = 16;
-const BOX_SCREEN_LEASE_PATH = "/tmp/rakazo-screen-lease";
 
 export type BoxSandboxSdk = Pick<
   BoxApi,
@@ -76,32 +66,53 @@ interface BoxCommandResult {
   timedOut: boolean;
 }
 
-/** Decide whether cancel may stop Box browsers across API/worker processes. */
-export type BoxRemoteScreenLease =
-  | { status: "missing" }
-  | { status: "present"; leaseId: string }
-  | { status: "error" };
-
-/** Decide whether cancel may stop Box browsers across API/worker processes. */
-export function shouldStopBoxBrowsersOnCancel(input: {
-  remoteLease: BoxRemoteScreenLease;
-  screenLeaseId?: string;
-}): boolean {
-  // Fail closed on transport/command errors so a stale cancel cannot kill a newer browser.
-  if (input.remoteLease.status === "error") return false;
-  // No remote fence: treat as orphaned work from this cancel path.
-  if (input.remoteLease.status === "missing") return true;
-  // A remote fence always wins over any local claim state.
-  if (!input.screenLeaseId) return false;
-  return canReleaseScreenLease(input.remoteLease.leaseId, input.screenLeaseId);
-}
-
 export class BoxSandboxProvider implements SandboxProvider {
   private readonly client: BoxSandboxSdk;
+  private readonly desktops = new LinuxDesktop({
+    environment: async () => ({
+      homeDir: "/home/user",
+      workspaceDir: BOX_WORKSPACE,
+      browserProfilesDir: BOX_BROWSER_PROFILES,
+      displayStart: 20,
+      portStart: 6100,
+      vncPortStart: 5920,
+    }),
+    run: async (computer, command, context) => {
+      const result = await this.runCommand(
+        this.id(computer),
+        `bash -c ${shellQuote(command)}`,
+        undefined,
+        120_000,
+        context.signal,
+      );
+      return {
+        code: result.timedOut ? 124 : result.exitCode,
+        stdout: result.stdout,
+        stderr: result.stderr,
+      };
+    },
+    screenUrl: async (computer, port, context) => {
+      const result = await this.runCommand(
+        this.id(computer),
+        `host ${port} --private`,
+        undefined,
+        60_000,
+        context.signal,
+      );
+      if (result.exitCode !== 0 || result.timedOut)
+        throw new Error("could not expose protected desktop port");
+      const match = result.stdout.match(/https:\/\/[^\s]+/);
+      if (!match) throw new Error("Box did not return a desktop URL");
+      const url = new URL(match[0]);
+      if (!url.hostname.endsWith(".on.ascii.dev") || !url.searchParams.get("_token"))
+        throw new Error("Box desktop URL is not protected");
+      url.pathname = "/vnc.html";
+      return url.toString();
+    },
+  });
   private readonly pendingProvisions = new Map<string, Promise<ComputerRef>>();
   private readonly prepared = new Set<string>();
   private readonly preparations = new Map<string, Promise<void>>();
-  private readonly screens = new SingleScreenClaimTracker();
 
   constructor(
     config: { apiKey: string; apiUrl?: string },
@@ -121,7 +132,7 @@ export class BoxSandboxProvider implements SandboxProvider {
         snapshots: true,
         takeover: true,
         persistentHome: true,
-        multiScreen: false,
+        multiScreen: true,
       },
     };
   }
@@ -201,7 +212,6 @@ export class BoxSandboxProvider implements SandboxProvider {
     let preparation!: Promise<void>;
     preparation = (async () => {
       await this.ensureRunnable(id, context);
-      await this.stopBrowsers(id);
       const result = await this.runCommand(
         id,
         configureBoxWorkspaceCommand(),
@@ -212,7 +222,15 @@ export class BoxSandboxProvider implements SandboxProvider {
       if (result.exitCode !== 0) {
         throw new Error(result.stderr || result.stdout || "could not prepare Box workspace");
       }
-      await this.openBrowser(id);
+      const runtime = await this.runCommand(
+        id,
+        PREPARE_LINUX_DESKTOP,
+        undefined,
+        180_000,
+        context.signal,
+      );
+      if (runtime.exitCode !== 0 || runtime.timedOut)
+        throw new Error("could not prepare computer desktop tools");
       if (this.preparations.get(id) !== preparation) {
         throw new Error("Box workspace preparation was invalidated during teardown");
       }
@@ -276,106 +294,29 @@ export class BoxSandboxProvider implements SandboxProvider {
     request: ScreenRequest,
     context: AdapterContext,
   ): Promise<ScreenSession> {
-    const id = this.id(computer);
-    await this.claimScreen(id, context);
-    try {
-      const deadline = Date.now() + 60_000;
-      while (true) {
-        if (context.signal.aborted) {
-          throw context.signal.reason ?? new Error("screen connection aborted");
-        }
-        const desktop = await this.client.desktop(
-          {
-            boxId: id,
-            vnc: 1,
-            desktopRequest: { publicAccess: false },
-          },
-          { signal: context.signal },
-        );
-        if (!desktop.provisioning && desktop.desktopUrl) {
-          const url = new URL(desktop.desktopUrl);
-          url.searchParams.set("autoconnect", "true");
-          url.searchParams.set("resize", "scale");
-          url.searchParams.set("view_only", request.interactive ? "false" : "true");
-          return {
-            url: url.toString(),
-            mimeType: "text/html",
-            close: async () => undefined,
-          };
-        }
-        if (Date.now() >= deadline) throw new Error("Box desktop did not become ready");
-        await delay(1_000, undefined, { signal: context.signal });
-      }
-    } catch (error) {
-      this.screens.release(id, context);
-      throw error;
-    }
+    return this.desktops.connectScreen(computer, request, context);
   }
-
   async setScreenControl(
     computer: ComputerRef,
     interactive: boolean,
     context: AdapterContext,
-    _controlToken?: string,
+    controlToken?: string,
   ): Promise<void> {
-    if (interactive) await this.claimScreen(this.id(computer), context);
+    return this.desktops.setScreenControl(computer, interactive, context, controlToken);
   }
-
   async sendInput(
     computer: ComputerRef,
     input: ComputerInput,
     _lease: ControlLeaseRef,
     context: AdapterContext,
   ): Promise<void> {
-    const id = this.id(computer);
-    await this.claimScreen(id, context);
-    await this.applyAction(id, input, context);
+    return this.desktops.sendInput(computer, input, context);
   }
-
   async observe(computer: ComputerRef, context: AdapterContext): Promise<ComputerObservation> {
-    const id = this.id(computer);
-    await this.claimScreen(id, context);
-    const imagePath = `/tmp/rakazo-observe-${randomUUID()}.png`;
-    try {
-      const result = await this.runCommand(
-        id,
-        observeBoxCommand(imagePath),
-        undefined,
-        60_000,
-        context.signal,
-      );
-      if (result.exitCode !== 0) {
-        throw new Error(result.stderr || result.stdout || "Box screenshot failed");
-      }
-      const image = await this.readRemoteFile(id, imagePath, context.signal);
-      if (!image.byteLength) throw new Error("Box screenshot did not contain image data");
-      return parseBoxObservation(image, result.stdout);
-    } finally {
-      await this.rawCommand(id, `rm -f -- ${shellQuote(imagePath)}`, 10).catch(() => undefined);
-    }
+    return this.desktops.observe(computer, context);
   }
-
   async act(computer: ComputerRef, request: ComputerActionRequest, context: AdapterContext) {
-    const id = this.id(computer);
-    await this.claimScreen(id, context);
-    const actions = boundedComputerActions(request.actions);
-    let completed = 0;
-    for (const action of actions) {
-      if (context.signal.aborted) {
-        throw context.signal.reason ?? new Error("computer action aborted");
-      }
-      await this.applyAction(id, action, context);
-      completed += 1;
-    }
-    if (request.settleMs) {
-      await delay(clampRounded(request.settleMs, 0, 5_000), undefined, {
-        signal: context.signal,
-      });
-    }
-    return {
-      completed,
-      ...(request.observe === false ? {} : { observation: await this.observe(computer, context) }),
-    };
+    return this.desktops.act(computer, request, context);
   }
 
   async listFiles(
@@ -420,23 +361,17 @@ export class BoxSandboxProvider implements SandboxProvider {
     context: AdapterContext,
   ): AsyncIterable<PortableFile> {
     const id = this.id(computer);
-    await this.stopBrowsers(id);
-    try {
-      const entries = await this.listWorkspaceFiles(id, context);
-      for (let index = 0; index < entries.length; index += BOX_EXPORT_CONCURRENCY) {
-        const files = await Promise.all(
-          entries.slice(index, index + BOX_EXPORT_CONCURRENCY).map(async (entry) => ({
-            path: entry.path,
-            content: await this.readFile(computer, entry.path, context),
-            executable: entry.executable,
-          })),
-        );
-        yield* files;
-      }
-    } finally {
-      if (context.operationId !== "stop" && context.operationId !== "computer.sleep") {
-        await this.openBrowser(id).catch(() => undefined);
-      }
+    await this.desktops.stopBrowsers(computer, context);
+    const entries = await this.listWorkspaceFiles(id, context);
+    for (let index = 0; index < entries.length; index += BOX_EXPORT_CONCURRENCY) {
+      const files = await Promise.all(
+        entries.slice(index, index + BOX_EXPORT_CONCURRENCY).map(async (entry) => ({
+          path: entry.path,
+          content: await this.readFile(computer, entry.path, context),
+          executable: entry.executable,
+        })),
+      );
+      yield* files;
     }
   }
 
@@ -446,7 +381,7 @@ export class BoxSandboxProvider implements SandboxProvider {
     context: AdapterContext,
   ): Promise<void> {
     const id = this.id(computer);
-    await this.stopBrowsers(id);
+    await this.desktops.stopBrowsers(computer, context);
     let batch: PortableFile[] = [];
     let batchBytes = 0;
     const flush = async () => {
@@ -467,7 +402,7 @@ export class BoxSandboxProvider implements SandboxProvider {
       batchBytes += file.content.byteLength;
     }
     await flush();
-    await this.openBrowser(id).catch(() => undefined);
+    // Browser profiles are imported without opening a shared browser.
   }
 
   async snapshot(computer: ComputerRef, context: AdapterContext) {
@@ -483,11 +418,7 @@ export class BoxSandboxProvider implements SandboxProvider {
   }
 
   async releaseScreen(computer: ComputerRef, context: AdapterContext): Promise<void> {
-    const id = this.id(computer);
-    this.screens.release(id, context);
-    if (!context.cancelRunWork || !context.screenLeaseId) return;
-    // Atomically re-check the remote fence under flock before stopping browsers.
-    await this.stopBrowsersIfLeaseAllows(id, context.screenLeaseId);
+    return this.desktops.releaseScreen(computer, context);
   }
 
   async stop(computer: ComputerRef, context: AdapterContext): Promise<void> {
@@ -557,22 +488,6 @@ export class BoxSandboxProvider implements SandboxProvider {
     }
   }
 
-  private async applyAction(
-    id: string,
-    action: ComputerAction,
-    context: AdapterContext,
-  ): Promise<void> {
-    if (action.kind === "wait") {
-      await delay(clampRounded(action.ms, 0, 5_000), undefined, { signal: context.signal });
-      return;
-    }
-    const command = boxActionCommand(action);
-    const result = await this.runCommand(id, command, undefined, 60_000, context.signal);
-    if (result.exitCode !== 0) {
-      throw new Error(result.stderr || result.stdout || `Box ${action.kind} action failed`);
-    }
-  }
-
   private async writeFiles(
     id: string,
     files: readonly PortableFile[],
@@ -627,85 +542,6 @@ export class BoxSandboxProvider implements SandboxProvider {
     return parseBoxFileEntries(result.stdout).filter(
       (entry) => entry.kind === "file" && !shouldSkipPortableWorkspaceFile(entry.path),
     );
-  }
-
-  private async claimScreen(id: string, context: AdapterContext): Promise<void> {
-    this.screens.claim(id, context);
-    if (!context.screenLeaseId) return;
-    try {
-      await this.writeScreenLease(id, context.screenLeaseId);
-    } catch (error) {
-      this.screens.release(id, context);
-      throw error;
-    }
-  }
-
-  private async writeScreenLease(id: string, leaseId: string): Promise<void> {
-    const lockPath = `${BOX_SCREEN_LEASE_PATH}.lock`;
-    const script = [
-      "set -eu",
-      `lease=${shellQuote(BOX_SCREEN_LEASE_PATH)}`,
-      `lock=${shellQuote(lockPath)}`,
-      `incoming=${shellQuote(leaseId)}`,
-      'exec 9>"$lock"',
-      "flock 9",
-      'current="$(cat -- "$lease" 2>/dev/null || true)"',
-      'current="$(printf "%s" "$current" | tr -d "\\r\\n")"',
-      'if [ -n "$current" ] && [ "$current" != "$incoming" ]; then',
-      '  current_fence="${current##*:}"',
-      '  incoming_fence="${incoming##*:}"',
-      "  case \"$current_fence\" in ''|*[!0-9]*) exit 1 ;; esac",
-      "  case \"$incoming_fence\" in ''|*[!0-9]*) exit 1 ;; esac",
-      '  if [ "$incoming_fence" -le "$current_fence" ]; then exit 2; fi',
-      "fi",
-      'printf "%s\\n" "$incoming" >"$lease"',
-    ].join("\n");
-    const result = await this.rawCommand(id, script, 10);
-    if (result.exitCode !== 0 || result.timedOut) {
-      throw new Error(result.stderr || result.stdout || "could not publish Box screen lease");
-    }
-  }
-
-  private async stopBrowsersIfLeaseAllows(id: string, screenLeaseId: string): Promise<void> {
-    const lockPath = `${BOX_SCREEN_LEASE_PATH}.lock`;
-    const script = [
-      "set -eu",
-      `lease=${shellQuote(BOX_SCREEN_LEASE_PATH)}`,
-      `lock=${shellQuote(lockPath)}`,
-      `expected=${shellQuote(screenLeaseId)}`,
-      'exec 9>"$lock"',
-      "flock 9",
-      'current="$(cat -- "$lease" 2>/dev/null || true)"',
-      'current="$(printf "%s" "$current" | tr -d "\\r\\n")"',
-      'if [ -n "$current" ] && [ "$current" != "$expected" ]; then',
-      '  current_owner="${current%:*}"',
-      '  expected_owner="${expected%:*}"',
-      '  current_fence="${current##*:}"',
-      '  expected_fence="${expected##*:}"',
-      "  case \"$current_fence\" in ''|*[!0-9]*) exit 3 ;; esac",
-      "  case \"$expected_fence\" in ''|*[!0-9]*) exit 3 ;; esac",
-      '  if [ "$expected_owner" != "$current_owner" ] || [ "$expected_fence" -lt "$current_fence" ]; then',
-      "    exit 2",
-      "  fi",
-      "fi",
-      PORTABLE_BROWSER_STOP_COMMAND,
-      'rm -f -- "$lease"',
-    ].join("\n");
-    const result = await this.rawCommand(id, script, 30).catch(() => undefined);
-    // exit 2 = newer remote fence; treat as a successful no-op.
-    if (!result || result.timedOut) return;
-    if (result.exitCode === 0 || result.exitCode === 2) return;
-  }
-
-  private async stopBrowsers(id: string): Promise<void> {
-    await this.rawCommand(id, PORTABLE_BROWSER_STOP_COMMAND, 30).catch(() => undefined);
-  }
-
-  private async openBrowser(id: string): Promise<void> {
-    const result = await this.rawCommand(id, launchBoxBrowserCommand(), 30);
-    if (result.exitCode !== 0) {
-      throw new Error(result.stderr || result.stdout || "Box browser is not installed");
-    }
   }
 
   private async readRemoteFile(
@@ -860,7 +696,6 @@ export class BoxSandboxProvider implements SandboxProvider {
     this.pendingProvisions.delete(id);
     this.prepared.delete(id);
     this.preparations.delete(id);
-    this.screens.release(id);
   }
 }
 
@@ -976,61 +811,7 @@ function boxCwd(cwd: string | undefined): string {
 }
 
 function configureBoxWorkspaceCommand(): string {
-  const chrome = `${BOX_BROWSER_PROFILES}/chromium`;
-  const firefox = `${BOX_BROWSER_PROFILES}/firefox`;
-  return [
-    `mkdir -p ${shellQuote(chrome)} ${shellQuote(firefox)} /home/user/.config`,
-    `if [ "$(readlink -f /home/user/.config/google-chrome 2>/dev/null)" != ${shellQuote(chrome)} ] || [ "$(readlink -f /home/user/.config/chromium 2>/dev/null)" != ${shellQuote(chrome)} ] || [ "$(readlink -f /home/user/.mozilla 2>/dev/null)" != ${shellQuote(firefox)} ]; then`,
-    "  rm -rf /home/user/.config/google-chrome /home/user/.config/chromium /home/user/.mozilla",
-    `  ln -s ${shellQuote(chrome)} /home/user/.config/google-chrome`,
-    `  ln -s ${shellQuote(chrome)} /home/user/.config/chromium`,
-    `  ln -s ${shellQuote(firefox)} /home/user/.mozilla`,
-    "fi",
-  ].join("\n");
-}
-
-function launchBoxBrowserCommand(): string {
-  return [
-    "for app in google-chrome-stable google-chrome chromium firefox; do",
-    '  if command -v "$app" >/dev/null 2>&1; then',
-    '    nohup env DISPLAY=:0 "$app" --no-first-run --no-default-browser-check --start-maximized >/tmp/rakazo-browser.log 2>&1 &',
-    "    sleep 1",
-    "    DISPLAY=:0 wmctrl -r :ACTIVE: -b add,maximized_vert,maximized_horz 2>/dev/null || true",
-    "    exit 0",
-    "  fi",
-    "done",
-    "exit 1",
-  ].join("\n");
-}
-
-function observeBoxCommand(imagePath: string): string {
-  return [
-    `DISPLAY=:0 import -window root ${shellQuote(imagePath)}`,
-    `test -s ${shellQuote(imagePath)}`,
-    "set -- $(DISPLAY=:0 xdotool getdisplaygeometry 2>/dev/null || printf '1920 1080')",
-    'printf \'WIDTH=%s\\nHEIGHT=%s\\n\' "$1" "$2"',
-    "DISPLAY=:0 xdotool getmouselocation --shell 2>/dev/null || true",
-    "window=$(DISPLAY=:0 xdotool getactivewindow 2>/dev/null || true)",
-    "printf 'WINDOW=%s\\n' \"$window\"",
-    'if [ -n "$window" ]; then title=$(DISPLAY=:0 xdotool getwindowname "$window" 2>/dev/null | base64 -w0 || true); printf \'TITLE=%s\\n\' "$title"; fi',
-  ].join("\n");
-}
-
-function parseBoxObservation(image: Uint8Array, metadata: string): ComputerObservation {
-  const number = (name: string, fallback: number) =>
-    Number(metadata.match(new RegExp(`(?:^|\\n)${name}=(\\d+)`))?.[1]) || fallback;
-  const windowId = metadata.match(/(?:^|\n)WINDOW=(\d+)/)?.[1];
-  const encodedTitle = metadata.match(/(?:^|\n)TITLE=([^\n]*)/)?.[1];
-  const title = encodedTitle ? Buffer.from(encodedTitle, "base64").toString("utf8") : undefined;
-  const x = metadata.match(/(?:^|\n)X=(\d+)/)?.[1];
-  const y = metadata.match(/(?:^|\n)Y=(\d+)/)?.[1];
-  return computerObservation(image, {
-    mimeType: "image/png",
-    width: number("WIDTH", 1920),
-    height: number("HEIGHT", 1080),
-    ...(x && y ? { cursor: { x: Number(x), y: Number(y) } } : {}),
-    ...(windowId ? { activeWindow: { id: windowId, title } } : {}),
-  });
+  return `mkdir -p ${shellQuote(BOX_BROWSER_PROFILES)}`;
 }
 
 function listBoxFilesCommand(directory: string): string {
@@ -1080,50 +861,6 @@ function parseBoxFileEntries(output: string): ComputerFileEntry[] {
       ];
     })
     .sort((a, b) => a.path.localeCompare(b.path));
-}
-
-function boxActionCommand(action: Exclude<ComputerAction, { kind: "wait" }>): string {
-  if (action.kind === "scroll") {
-    const repeat = clampRounded(action.amount ?? 3, 1, 20);
-    return `DISPLAY=:0 xdotool click --repeat ${repeat} ${action.direction === "up" ? "4" : "5"}`;
-  }
-  if (action.kind === "key") {
-    const keys = [...(action.modifiers ?? []), action.key].join("+");
-    return `DISPLAY=:0 xdotool key ${shellQuote(keys)}`;
-  }
-  if (action.kind === "clipboard") {
-    return `DISPLAY=:0 xdotool type --delay 1 -- ${shellQuote(action.text)}`;
-  }
-  if (action.kind === "pointer") {
-    const button = action.button === "right" ? "3" : "1";
-    if (action.type === "move") return `DISPLAY=:0 xdotool mousemove ${action.x} ${action.y}`;
-    if (action.type === "down") {
-      return `DISPLAY=:0 xdotool mousemove ${action.x} ${action.y} mousedown ${button}`;
-    }
-    if (action.type === "up") {
-      return `DISPLAY=:0 xdotool mousemove ${action.x} ${action.y} mouseup ${button}`;
-    }
-    return `DISPLAY=:0 xdotool mousemove ${action.x} ${action.y} click ${button}`;
-  }
-  if (action.kind === "open") {
-    const target = /^https?:\/\//i.test(action.path)
-      ? action.path
-      : workspacePath(BOX_WORKSPACE, action.path);
-    return `nohup env DISPLAY=:0 xdg-open ${shellQuote(target)} >/tmp/rakazo-open.log 2>&1 &`;
-  }
-  const applications =
-    action.application === "browser"
-      ? ["google-chrome-stable", "google-chrome", "chromium", "firefox"]
-      : [action.application];
-  return [
-    `for app in ${applications.map(shellQuote).join(" ")}; do`,
-    '  if command -v "$app" >/dev/null 2>&1; then',
-    `    nohup env DISPLAY=:0 "$app"${action.uri ? ` ${shellQuote(action.uri)}` : ""} >/tmp/rakazo-app.log 2>&1 &`,
-    "    exit 0",
-    "  fi",
-    "done",
-    "exit 1",
-  ].join("\n");
 }
 
 function isAbortError(error: unknown): boolean {

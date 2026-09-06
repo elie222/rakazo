@@ -1,13 +1,26 @@
-import { createHash, timingSafeEqual } from "node:crypto";
+import {
+  BROWSER_APPLICATIONS as DOCKER_BROWSER_ALIASES,
+  shellQuote,
+  stopAllDesktopBrowsersCommand,
+  stopBrowserCommand,
+  stopExtraScreenCommand,
+  stopScreenTransportsCommand,
+} from "@rakazo/core/node/desktop-runtime";
+
+export {
+  browserProfilePathForScreen,
+  ensureScreenCommand,
+  interactiveScreenCommand,
+  prepareBrowserProfileCommand,
+  stopBrowserCommand,
+  stopExtraScreenCommand,
+} from "@rakazo/core/node/desktop-runtime";
+
+import { timingSafeEqual } from "node:crypto";
 import path from "node:path";
 import { canReleaseScreenLease, canTakeScreenLease } from "@rakazo/core";
 import { z } from "zod";
-import {
-  type SandboxInput,
-  screenPorts,
-  TEAM_SCREEN_LIMIT,
-  xdotoolCommand,
-} from "./computer-spec.js";
+import { type SandboxInput, TEAM_SCREEN_LIMIT, xdotoolCommand } from "./computer-spec.js";
 
 export const computerActionSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("key"), key: z.string(), modifiers: z.array(z.string()).optional() }),
@@ -29,16 +42,7 @@ export const computerActionSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("launch"), application: z.string(), uri: z.string().optional() }),
 ]);
 
-export const DOCKER_BROWSER_ALIASES = new Set([
-  "browser",
-  "chrome",
-  "chromium",
-  "chromium-browser",
-  "firefox",
-  "google-chrome",
-  "google-chrome-stable",
-  "rakazo-browser",
-]);
+export { BROWSER_APPLICATIONS as DOCKER_BROWSER_ALIASES } from "@rakazo/core/node/desktop-runtime";
 
 export function assertRequestIdentity(
   botId: string | undefined,
@@ -261,99 +265,6 @@ export function clearComputerScreenRegistry(
   registry.delete(containerId);
 }
 
-function browserKeyForScreen(screenId: string) {
-  return createHash("sha256").update(screenId).digest("hex").slice(0, 32);
-}
-
-export function browserProfilePathForScreen(screenId: string) {
-  return `/home/rakazo/.browser-profiles/chromium-bot-${browserKeyForScreen(screenId)}`;
-}
-
-const sharedBrowserProfile = "/home/rakazo/.browser-profiles/chromium";
-
-function recoverSharedBrowserProfileCommand() {
-  return [
-    `if [ ! -d ${sharedBrowserProfile} ]; then`,
-    "  recovery_profile=''",
-    "  recovery_generation=-1",
-    `  for candidate in ${sharedBrowserProfile}.previous-*; do`,
-    '    [ -d "$candidate" ] || continue',
-    '    generation=$(sed -n "1p" "$candidate/.rakazo-generation" 2>/dev/null || printf 0)',
-    "    case \"$generation\" in ''|*[!0-9]*) generation=0 ;; esac",
-    '    if [ "$generation" -gt "$recovery_generation" ]; then recovery_profile="$candidate"; recovery_generation="$generation"; fi',
-    "  done",
-    `  if [ -n "$recovery_profile" ]; then mv "$recovery_profile" ${sharedBrowserProfile}; fi`,
-    "fi",
-  ].join("\n");
-}
-
-function browserPidPathForScreen(screenId: string) {
-  return `/tmp/rakazo/browser-pid-${browserKeyForScreen(screenId)}`;
-}
-
-function browserRunningFunction(profile: string, pidFile: string) {
-  return [
-    "browser_running() {",
-    `  [ -s ${pidFile} ] || return 1`,
-    `  pid=$(cat ${pidFile})`,
-    `  case "$pid" in ''|*[!0-9]*) return 1 ;; esac`,
-    `  kill -0 "$pid" 2>/dev/null || return 1`,
-    `  command=$(tr '\\0' ' ' <"/proc/$pid/cmdline" 2>/dev/null) || return 1`,
-    `  case "$command" in *${shellQuote(`--user-data-dir=${profile}`)}*) return 0 ;; *) return 1 ;; esac`,
-    "}",
-  ];
-}
-
-function stopBrowserCommand(screenId: string) {
-  const profile = browserProfilePathForScreen(screenId);
-  const pidFile = browserPidPathForScreen(screenId);
-  return [
-    ...browserRunningFunction(profile, pidFile),
-    `if browser_running; then kill "$pid" 2>/dev/null || true; for i in $(seq 1 40); do browser_running || break; sleep 0.25; done; kill -0 "$pid" 2>/dev/null && kill -KILL "$pid" 2>/dev/null || true; fi`,
-    `if browser_running; then echo 'browser still running' >&2; exit 1; fi`,
-    `rm -f ${pidFile}`,
-    `rm -f ${profile}/SingletonLock ${profile}/SingletonCookie ${profile}/SingletonSocket`,
-  ].join("\n");
-}
-
-/**
- * Stop one isolated browser and merge its quiesced profile into the shared
- * Team Computer profile. Normal run cleanup uses optimistic generation
- * fencing, so an older concurrent session cannot overwrite newer shared
- * state. A human-controlled session may force the merge because it is the
- * authoritative place where sign-ins and other explicit browser changes occur.
- */
-export function syncSharedBrowserProfileCommand(screenId: string, force = false) {
-  const profile = browserProfilePathForScreen(screenId);
-  const key = browserKeyForScreen(screenId);
-  const next = `${sharedBrowserProfile}.next-${key}`;
-  const previous = `${sharedBrowserProfile}.previous-${key}`;
-  return [
-    "set -eu",
-    stopBrowserCommand(screenId),
-    `profile=${shellQuote(profile)}`,
-    `shared=${shellQuote(sharedBrowserProfile)}`,
-    `next=${shellQuote(next)}`,
-    `previous=${shellQuote(previous)}`,
-    recoverSharedBrowserProfileCommand(),
-    'current_generation=$(sed -n "1p" "$shared/.rakazo-generation" 2>/dev/null || printf 0)',
-    'baseline_generation=$(sed -n "1p" "$profile/.rakazo-base-generation" 2>/dev/null || printf 0)',
-    "case \"$current_generation\" in ''|*[!0-9]*) current_generation=0 ;; esac",
-    "case \"$baseline_generation\" in ''|*[!0-9]*) baseline_generation=0 ;; esac",
-    `if [ -d "$profile" ] && { [ ${force ? "1" : "0"} -eq 1 ] || [ "$baseline_generation" -eq "$current_generation" ]; }; then`,
-    '  rm -rf "$next" "$previous"',
-    '  mkdir -p "$next"',
-    '  cp -a --reflink=auto "$profile"/. "$next"/',
-    '  rm -f "$next/SingletonLock" "$next/SingletonCookie" "$next/SingletonSocket" "$next/.rakazo-base-generation"',
-    '  find "$next" -type d \\( -name Cache -o -name "Code Cache" -o -name GPUCache -o -name DawnCache -o -name GrShaderCache \\) -prune -exec rm -rf {} + 2>/dev/null || true',
-    '  printf "%s\\n" "$((current_generation + 1))" >"$next/.rakazo-generation"',
-    '  if [ -d "$shared" ]; then mv "$shared" "$previous"; fi',
-    '  if mv "$next" "$shared"; then rm -rf "$previous"; else [ ! -d "$previous" ] || mv "$previous" "$shared"; exit 1; fi',
-    "fi",
-    'rm -rf "$profile" "$next" "$previous"',
-  ].join("\n");
-}
-
 /** Choose the stop command for DELETE /screen cancel/release.
  * Callers must hold the per-computer screen lock across this decision and any stop. */
 export function screenReleaseStopCommand(
@@ -371,78 +282,19 @@ export function screenReleaseStopCommand(
   // matching bot's orphaned Chromium process without touching another bot.
   // Present registry + rejected release: newer fence owns the screen — do not kill.
   if (!options.hasRegistry && options.cancelRunWork) {
-    return syncSharedBrowserProfileCommand(options.screenId);
+    return stopBrowserCommand(options.screenId);
   }
   return "";
 }
 
-function controlTokenPath(index: number) {
-  return index === 0 ? "/tmp/rakazo/control-token" : `/tmp/rakazo/control-token-${index + 1}`;
-}
-
-function stopScreenTransportCommand(vncPort: number, webPort: string) {
-  const patterns = [
-    `^x11vnc .* -rfbport ${vncPort}( |$)`,
-    `^/usr/bin/python3 .*websockify.*:${webPort}( |$)`,
-  ];
-  const listening = [webPort, vncPort]
-    .map((port) => `timeout 1 bash -c 'echo >/dev/tcp/127.0.0.1/${port}' >/dev/null 2>&1`)
-    .join(" || ");
+export function stopScreensCommand(screens: Array<{ screenId: string; index: number }>) {
   return [
     "set -eu",
-    ...patterns.map((pattern) => `pkill -f ${shellQuote(pattern)} || true`),
-    "sleep 0.1",
-    // Transport children may be blocked on a client that stopped reading.
-    ...patterns.map((pattern) => `pkill -KILL -f ${shellQuote(pattern)} || true`),
-    `for i in $(seq 1 10); do if ! { ${listening}; }; then break; fi; sleep 0.1; done`,
-    `if ${listening}; then echo 'computer screen transport failed to stop' >&2; exit 1; fi`,
-  ].join("\n");
-}
-
-function stopScreenTransportsCommand(index: number) {
-  const layout = screenPorts(index);
-  return [
-    stopScreenTransportCommand(layout.viewVncPort, layout.viewPort),
-    stopScreenTransportCommand(layout.controlVncPort, layout.controlPort),
-    `rm -f ${controlTokenPath(index)} /tmp/rakazo/control-target-${layout.displayNumber} /tmp/rakazo/view-target-${layout.displayNumber}`,
-  ].join("\n");
-}
-
-export function stopExtraScreenCommand(index: number, screenId: string, checkpoint = true) {
-  const layout = screenPorts(index);
-  const fluxHome = `/tmp/fluxbox-home-${layout.displayNumber}`;
-  return [
-    "set -eu",
-    // Stop every client before touching browser state or recycling the display.
-    stopScreenTransportsCommand(index),
-    checkpoint ? syncSharedBrowserProfileCommand(screenId) : stopBrowserCommand(screenId),
-    `rm -f /tmp/rakazo/browser-profile-${layout.displayNumber}`,
-    ...(index === 0
-      ? []
-      : [
-          `pkill -f '[X]vfb ${layout.display} -screen' || true`,
-          `pkill -f '[f]luxbox -rc ${fluxHome}/.fluxbox/init' || true`,
-          `for i in $(seq 1 20); do if ! xdpyinfo -display ${layout.display} >/dev/null 2>&1; then break; fi; sleep 0.1; done`,
-          `if xdpyinfo -display ${layout.display} >/dev/null 2>&1; then echo 'computer screen failed to stop' >&2; exit 1; fi`,
-          `rm -f /tmp/.X${layout.displayNumber}-lock /tmp/.X11-unix/X${layout.displayNumber}`,
-        ]),
-  ].join("\n");
-}
-
-export function checkpointScreensCommand(screens: Array<{ screenId: string; index: number }>) {
-  return [
-    "set -eu",
-    "checkpoint_failed=0",
-    ...[false, true].flatMap((authoritative) =>
-      screens.map(({ screenId, index }) =>
-        [
-          `if [ ${authoritative ? "" : "! "}-s ${controlTokenPath(index)} ]; then`,
-          `  bash -eu -c ${shellQuote(syncSharedBrowserProfileCommand(screenId, authoritative))} || checkpoint_failed=1`,
-          "fi",
-        ].join("\n"),
-      ),
+    "failed=0",
+    ...screens.map(
+      ({ screenId }) => `bash -eu -c ${shellQuote(stopBrowserCommand(screenId))} || failed=1`,
     ),
-    'if [ "$checkpoint_failed" -ne 0 ]; then echo "computer screen checkpoint failed" >&2; exit 1; fi',
+    '[ "$failed" -eq 0 ] || { echo "computer browser failed to stop" >&2; exit 1; }',
   ].join("\n");
 }
 
@@ -450,9 +302,10 @@ export function resetManagedScreensCommand() {
   return [
     "set -eu",
     ...Array.from({ length: TEAM_SCREEN_LIMIT }, (_, index) => stopScreenTransportsCommand(index)),
-    "pkill -f '[c]hromium.*--user-data-dir=/home/rakazo/.browser-profiles/' 2>/dev/null || true",
-    "for i in $(seq 1 40); do if ! pgrep -f '[c]hromium.*--user-data-dir=/home/rakazo/.browser-profiles/' >/dev/null; then break; fi; sleep 0.25; done",
-    "if pgrep -f '[c]hromium.*--user-data-dir=/home/rakazo/.browser-profiles/' >/dev/null; then echo 'browser still running' >&2; exit 1; fi",
+    stopAllDesktopBrowsersCommand(),
+    "pkill -f '^([^ ]*/)?chromium[^ ]* .*--user-data-dir=/home/rakazo/.browser-profiles/' 2>/dev/null || true",
+    "for i in $(seq 1 40); do if ! pgrep -f '^([^ ]*/)?chromium[^ ]* .*--user-data-dir=/home/rakazo/.browser-profiles/' >/dev/null; then break; fi; sleep 0.25; done",
+    "if pgrep -f '^([^ ]*/)?chromium[^ ]* .*--user-data-dir=/home/rakazo/.browser-profiles/' >/dev/null; then echo 'browser still running' >&2; exit 1; fi",
     "pkill -f '[X]vfb :[2-8] ' 2>/dev/null || true",
     "pkill -f '[f]luxbox -rc /tmp/fluxbox-home-[2-8]/.fluxbox/init' 2>/dev/null || true",
     "rm -f /tmp/rakazo/browser-pid-* /tmp/rakazo/browser-profile-*",
@@ -478,81 +331,6 @@ export async function withKeyedLock<T>(
     release();
     if (locks.get(key) === current) locks.delete(key);
   }
-}
-
-/** Recover an interrupted profile; seed only a new bot's profile, atomically. */
-export function prepareBrowserProfileCommand(screenId: string) {
-  const profile = browserProfilePathForScreen(screenId);
-  const seed = `${profile}.seed`;
-  return [
-    recoverSharedBrowserProfileCommand(),
-    `if [ ! -d ${profile} ]; then`,
-    `  rm -rf ${seed}`,
-    `  mkdir -p ${seed}`,
-    `  if [ -d ${sharedBrowserProfile} ]; then cp -a --reflink=auto ${sharedBrowserProfile}/. ${seed}/; fi`,
-    `  shared_generation=$(sed -n '1p' ${sharedBrowserProfile}/.rakazo-generation 2>/dev/null || printf 0)`,
-    "  case \"$shared_generation\" in ''|*[!0-9]*) shared_generation=0 ;; esac",
-    `  printf '%s\\n' "$shared_generation" >${seed}/.rakazo-base-generation`,
-    `  mv ${seed} ${profile}`,
-    "fi",
-    `rm -f ${profile}/SingletonLock ${profile}/SingletonCookie ${profile}/SingletonSocket ${profile}/.rakazo-generation`,
-  ].join("\n");
-}
-
-export function ensureScreenCommand(index: number, screenId: string, viewToken: string) {
-  const layout = screenPorts(index);
-  const fluxHome = `/tmp/fluxbox-home-${layout.displayNumber}`;
-  const log = `/tmp/rakazo/screen-${layout.displayNumber}`;
-  const profile = browserProfilePathForScreen(screenId);
-  const pidFile = browserPidPathForScreen(screenId);
-  const setupDisplay =
-    index === 0
-      ? [
-          `for i in $(seq 1 100); do xdpyinfo -display ${layout.display} >/dev/null 2>&1 && break; sleep 0.1; done`,
-        ]
-      : [
-          `if ! xdpyinfo -display ${layout.display} >/dev/null 2>&1; then`,
-          `  mkdir -p /tmp/rakazo ${fluxHome}/.fluxbox /tmp/.X11-unix`,
-          `  rm -f /tmp/.X${layout.displayNumber}-lock /tmp/.X11-unix/X${layout.displayNumber}`,
-          `  Xvfb ${layout.display} -screen 0 1280x800x24 -ac +extension RANDR +render -noreset >${log}-xvfb.log 2>&1 &`,
-          `  for i in $(seq 1 100); do xdpyinfo -display ${layout.display} >/dev/null 2>&1 && break; sleep 0.1; done`,
-          `  xdpyinfo -display ${layout.display} >/dev/null 2>&1 || exit 1`,
-          `  cp /etc/rakazo/fluxbox/init ${fluxHome}/.fluxbox/init`,
-          `  cp /etc/rakazo/fluxbox/apps ${fluxHome}/.fluxbox/apps 2>/dev/null || true`,
-          `  cp /etc/rakazo/fluxbox/menu ${fluxHome}/.fluxbox/menu 2>/dev/null || true`,
-          `  HOME=${fluxHome} DISPLAY=${layout.display} fluxbox -rc ${fluxHome}/.fluxbox/init >${log}-fluxbox.log 2>&1 &`,
-          "fi",
-        ];
-  const targetFile = `/tmp/rakazo/view-target-${layout.displayNumber}`;
-  const setupView = [
-    `printf '%s: 127.0.0.1:${layout.viewVncPort}\\n' ${shellQuote(viewToken)} >${targetFile}`,
-    `if ! (echo >/dev/tcp/127.0.0.1/${layout.viewPort}) >/dev/null 2>&1; then`,
-    `  x11vnc -display ${layout.display} -forever -shared -viewonly -nopw -listen 127.0.0.1 -rfbport ${layout.viewVncPort} -xkb -ncache 0 >${log}-x11vnc.log 2>&1 &`,
-    `  websockify --heartbeat=30 --web=/usr/share/novnc --token-plugin=TokenFile --token-source=${targetFile} 0.0.0.0:${layout.viewPort} >${log}-novnc.log 2>&1 &`,
-    "fi",
-  ];
-  return [
-    "set -eu",
-    ...setupDisplay,
-    `xdpyinfo -display ${layout.display} >/dev/null 2>&1 || exit 1`,
-    `mkdir -p /tmp/rakazo ${path.posix.dirname(profile)}`,
-    ...browserRunningFunction(profile, pidFile),
-    `printf %s ${shellQuote(profile)} >/tmp/rakazo/browser-profile-${layout.displayNumber}`,
-    "if ! browser_running; then",
-    prepareBrowserProfileCommand(screenId),
-    `  DISPLAY=${layout.display} HOME=/home/rakazo rakazo-browser --user-data-dir=${profile} >${log}-browser.log 2>&1 & printf %s "$!" >${pidFile}`,
-    "fi",
-    `for i in $(seq 1 40); do browser_running && break; sleep 0.25; done`,
-    `browser_running || exit 1`,
-    ...setupView,
-    `for i in $(seq 1 50); do (echo >/dev/tcp/127.0.0.1/${layout.viewPort}) >/dev/null 2>&1 && exit 0; sleep 0.1; done`,
-    "exit 1",
-  ].join("\n");
-}
-
-export function completeControlReleaseCommand(index: number, token: string) {
-  const tokenFile = controlTokenPath(index);
-  return `if [ -f ${tokenFile} ] && [ "$(cat ${tokenFile})" = ${shellQuote(token)} ]; then rm -f ${tokenFile}; fi`;
 }
 
 export function containerActionStep(
@@ -636,43 +414,6 @@ export function sandboxTimeoutCommand(argv: string[], timeoutMs: number, complet
 
 export function sandboxCommandTimedOut(exitCode: number, completedWithExit124: boolean) {
   return exitCode === 124 && !completedWithExit124;
-}
-
-export function interactiveScreenCommand(
-  interactive: boolean,
-  controlToken?: string,
-  layout = screenPorts(0),
-) {
-  const tokenFile = controlTokenPath(layout.displayNumber - 1);
-  const targetFile = `/tmp/rakazo/control-target-${layout.displayNumber}`;
-  const stopTransport = stopScreenTransportCommand(layout.controlVncPort, layout.controlPort);
-  const stopProcesses = [stopTransport, `rm -f ${tokenFile} ${targetFile}`].join("\n");
-  if (!interactive) {
-    if (!controlToken) return stopProcesses;
-    return [
-      `if [ -f ${tokenFile} ] && [ "$(cat ${tokenFile})" = ${shellQuote(controlToken)} ]; then`,
-      stopTransport,
-      `rm -f ${targetFile}`,
-      "printf 'RAKAZO_CONTROL_RELEASED\\n'",
-      "fi",
-    ].join("\n");
-  }
-  if (!controlToken) throw new Error("interactive screen requires a control token");
-  return [
-    `[ -f ${tokenFile} ] && [ "$(cat ${tokenFile})" = ${shellQuote(controlToken)} ] && pgrep -f '^x11vnc .* -rfbport ${layout.controlVncPort}' >/dev/null && pgrep -f '^/usr/bin/python3 .*websockify.*${layout.controlPort}' >/dev/null && exit 0 || true`,
-    stopProcesses,
-    `printf %s ${shellQuote(controlToken)} > ${tokenFile}`,
-    `printf '%s: 127.0.0.1:${layout.controlVncPort}\\n' ${shellQuote(controlToken)} > ${targetFile}`,
-    `export DISPLAY=${layout.display}`,
-    `(x11vnc -display ${layout.display} -forever -shared -nopw -listen 127.0.0.1 -rfbport ${layout.controlVncPort} -xkb -ncache 0 >/tmp/rakazo/x11vnc-control-${layout.displayNumber}.log 2>&1 &)`,
-    `(websockify --heartbeat=30 --web=/usr/share/novnc --token-plugin=TokenFile --token-source=${targetFile} 0.0.0.0:${layout.controlPort} >/tmp/rakazo/novnc-control-${layout.displayNumber}.log 2>&1 &)`,
-    `for i in $(seq 1 50); do (echo >/dev/tcp/127.0.0.1/${layout.controlPort}) >/dev/null 2>&1 && exit 0; sleep 0.1; done`,
-    "exit 1",
-  ].join("; ");
-}
-
-function shellQuote(value: string) {
-  return `'${value.replaceAll("'", `'"'"'`)}'`;
 }
 
 export function parseObservation(output: string) {

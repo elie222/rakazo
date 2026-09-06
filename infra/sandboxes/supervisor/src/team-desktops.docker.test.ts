@@ -4,8 +4,16 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  browserLauncherPath,
+  DEFAULT_DESKTOP_ENV,
+  desktopControlCommand,
+  managedDesktopCommand,
+  releaseDesktopCommand,
+  screenPorts,
+  stopAllDesktopBrowsersCommand,
+} from "@rakazo/core/node/desktop-runtime";
 import { expect, it } from "vitest";
-import { screenPorts } from "./computer-spec.js";
 import {
   browserProfilePathForScreen,
   ensureScreenCommand,
@@ -15,28 +23,47 @@ import {
 } from "./supervisor-logic.js";
 
 // Build the computer image first. This opt-in check needs Docker but no network or credentials.
-it.skipIf(process.env.VERIFY_DOCKER_TEAM_SCREENS !== "1")(
-  "isolates live desktops, recovers profiles, and rejects recycled screen capabilities",
-  () => {
+it.skipIf(process.env.VERIFY_DOCKER_TEAM_SCREENS !== "1").each([false, true])(
+  "isolates live desktops, persists profiles, and revokes recycled capabilities (managed=%s)",
+  (managed) => {
     const name = `rakazo-team-screens-test-${randomUUID()}`;
     const directory = mkdtempSync(path.join(tmpdir(), "rakazo-team-screens-"));
     const docker = (...args: string[]) =>
       execFileSync("docker", args, { encoding: "utf8", timeout: 150_000 });
     try {
-      const commands: Record<string, string> = { reset: resetManagedScreensCommand() };
+      const env = managed
+        ? {
+            ...DEFAULT_DESKTOP_ENV,
+            preservePrimaryDisplay: false,
+            displayStart: 20,
+            portStart: 6100,
+            vncPortStart: 5920,
+          }
+        : DEFAULT_DESKTOP_ENV;
+      const commands: Record<string, string> = {
+        reset: resetManagedScreensCommand(),
+        closeall: stopAllDesktopBrowsersCommand(env),
+        viewPort: screenPorts(0, env).viewPort,
+        controlPort: screenPorts(0, env).controlPort,
+      };
       for (const [bot, index] of [
         ["a", 0],
         ["b", 1],
         ["c", 0],
       ] as const) {
-        commands[`ensure${bot}`] = ensureScreenCommand(index, `bot-${bot}`, `view-${bot}`);
-        commands[`stop${bot}`] = stopExtraScreenCommand(index, `bot-${bot}`);
-        commands[`profile${bot}`] = browserProfilePathForScreen(`bot-${bot}`);
-        commands[`control${bot}`] = interactiveScreenCommand(
-          true,
-          `control-${bot}`,
-          screenPorts(index),
-        );
+        commands[`ensure${bot}`] = managed
+          ? managedDesktopCommand(`bot-${bot}`, `run-${bot}:1`, env, `view-${bot}`)
+          : ensureScreenCommand(index, `bot-${bot}`, `view-${bot}`, env);
+        commands[`open${bot}`] =
+          `nohup ${browserLauncherPath(screenPorts(index, env).displayNumber)} http://127.0.0.1:${bot === "b" ? 8091 : 8090}/${bot} </dev/null >/tmp/browser-open-${bot}.log 2>&1 &`;
+        commands[`debug${bot}`] = String(9221 + screenPorts(index, env).displayNumber);
+        commands[`stop${bot}`] = managed
+          ? releaseDesktopCommand(`bot-${bot}`, `run-${bot}:1`, env)
+          : stopExtraScreenCommand(index, `bot-${bot}`, env);
+        commands[`profile${bot}`] = browserProfilePathForScreen(`bot-${bot}`, env);
+        commands[`control${bot}`] = managed
+          ? desktopControlCommand(`bot-${bot}`, `run-${bot}:1`, env, true, `control-${bot}`)
+          : interactiveScreenCommand(true, `control-${bot}`, screenPorts(index, env));
       }
       const commandFile = path.join(directory, "commands.json");
       writeFileSync(commandFile, JSON.stringify(commands));

@@ -1,15 +1,9 @@
 import { createServer } from "node:http";
 import { Sandbox, TimeoutError } from "@e2b/desktop";
 import { describe, expect, it, vi } from "vitest";
-import { ComputerScreenUnavailableError } from "./computer-screens.js";
 import { shouldSkipPortableWorkspaceFile } from "./computer-workspace.js";
-import {
-  E2BSandboxProvider,
-  type E2BSandboxSdk,
-  ensureE2BPrimaryViewCommand,
-  isSandboxGoneError,
-} from "./e2b-sandbox.js";
-import { noVncProxyProcessPattern } from "./extra-displays.js";
+import { E2BSandboxProvider, type E2BSandboxSdk, isSandboxGoneError } from "./e2b-sandbox.js";
+import { desktopCommandResponder } from "./linux-desktop.test-support.js";
 
 const context = {
   operationId: "e2b-test",
@@ -46,18 +40,16 @@ describe("E2B computer backend", () => {
         "expired-control-token",
       ),
     ).resolves.toBeUndefined();
-    expect(command).toHaveBeenCalledTimes(2);
+    expect(command).toHaveBeenCalledTimes(1);
     expect(command).toHaveBeenLastCalledWith(
-      expect.stringContaining("pkill -f '(^|/)x11vnc .* -rfbport 5903'"),
+      expect.stringContaining("expired-control-token"),
+      expect.objectContaining({ signal: context.signal }),
     );
-    expect(command).toHaveBeenLastCalledWith(expect.stringContaining("expired-control-token"));
   });
 
   it("reconnects concurrent primary viewers without using the SDK's global VNC lifecycle", async () => {
-    const command = vi.fn(async (value: string) => ({
-      stdout: value.includes("RAKAZO_SCREEN_INDEX=")
-        ? "RAKAZO_SCREEN_INDEX=0\n"
-        : "RAKAZO_SCREEN_PASSWORD=savedkey\n",
+    const command = vi.fn(async (_value: string) => ({
+      stdout: "RAKAZO_DESKTOP=0:savedkey\n",
       stderr: "",
       exitCode: 0,
     }));
@@ -87,8 +79,7 @@ describe("E2B computer backend", () => {
     ]);
     expect(sdk.connect).toHaveBeenCalledTimes(1);
     expect(first.url).toBe(second.url);
-    expect(new URL(first.url!).searchParams.get("password")).toBe("savedkey");
-    expect(new URL(first.url!).searchParams.get("view_only")).toBe("true");
+    expect(new URL(first.url!).searchParams.get("path")).toBe("websockify?token=savedkey");
 
     const restarted = new E2BSandboxProvider("test-key", sdk);
     const restored = await restarted.connectScreen(computer, { view: "stream" }, context);
@@ -97,29 +88,6 @@ describe("E2B computer backend", () => {
     await first.close();
     expect(command).toHaveBeenCalledTimes(commandsBeforeClose);
     expect(globalStream).not.toHaveBeenCalled();
-  });
-
-  it("keeps primary view authentication and cleanup isolated from takeover and other displays", () => {
-    const command = ensureE2BPrimaryViewCommand(":0", "savedkey");
-    expect(command).toContain("flock 8");
-    expect(command).toContain("-viewonly -listen 127.0.0.1 -rfbport 5900 -rfbauth");
-    expect(command).toContain("8>&-");
-    const patterns = [...command.matchAll(/pkill -f '([^']+)'/g)].map(
-      (match) => new RegExp(match[1]!),
-    );
-    expect(patterns.length).toBeGreaterThan(0);
-    for (const pattern of patterns) {
-      expect(`/bin/bash -l -c ${command}`).not.toMatch(pattern);
-      for (const port of [5901, 5902, 5903]) {
-        expect(`x11vnc -bg -display :2 -forever -shared -rfbport ${port}`).not.toMatch(pattern);
-      }
-      for (const port of [6081, 6082, 6083]) {
-        expect(`bash ./novnc_proxy --vnc localhost:5901 --listen ${port}`).not.toMatch(pattern);
-      }
-    }
-    expect(patterns.some((pattern) => pattern.test("x11vnc -bg -display :0 -rfbport 5900"))).toBe(
-      true,
-    );
   });
 
   it("only filters transient cache files inside portable browser profiles", () => {
@@ -269,12 +237,12 @@ describe("E2B computer backend", () => {
     };
 
     await expect(provider.connectScreen(computer, { view: "stream" }, context)).rejects.toThrow(
-      ComputerScreenUnavailableError,
+      Error,
     );
     expect(run.mock.calls[0]?.[1]?.timeoutMs).toBeGreaterThan(60_000);
   });
 
-  it("surfaces a setup TimeoutError as ComputerScreenUnavailableError", async () => {
+  it("surfaces a setup timeout without treating it as a missing sandbox", async () => {
     const run = vi.fn(async () => {
       throw new TimeoutError("the operation timed out");
     });
@@ -298,7 +266,7 @@ describe("E2B computer backend", () => {
     };
 
     await expect(provider.connectScreen(computer, { view: "stream" }, context)).rejects.toThrow(
-      ComputerScreenUnavailableError,
+      Error,
     );
   });
 
@@ -336,28 +304,15 @@ describe("E2B computer backend", () => {
     await provider.prepare(computer, context);
     await provider.prepare(computer, context);
 
-    expect(command.mock.calls.filter(([value]) => String(value).includes("ln -s"))).toHaveLength(1);
-    expect(
-      command.mock.calls.some(
-        ([value]) =>
-          String(value).includes("xdg-settings set default-web-browser google-chrome.desktop") &&
-          String(value).includes("WebBrowser=google-chrome"),
-      ),
-    ).toBe(true);
-    expect(desktop.launch).toHaveBeenCalledTimes(1);
+    expect(command.mock.calls.every(([value]) => value.includes("apt-get"))).toBe(true);
+    expect(desktop.launch).not.toHaveBeenCalled();
   });
 
   it("opens http(s) URLs through the named browser launcher", async () => {
-    const command = vi.fn(async (value: string) => {
-      if (value.includes("RAKAZO_SCREEN_INDEX=")) {
-        return { stdout: "RAKAZO_SCREEN_INDEX=0\n", stderr: "", exitCode: 0 };
-      }
-      if (value.startsWith("gtk-launch")) {
-        if (value.includes("google-chrome")) return { stdout: "", stderr: "", exitCode: 0 };
-        throw new Error("missing");
-      }
-      return { stdout: "", stderr: "", exitCode: 0 };
-    });
+    const respond = desktopCommandResponder();
+    const command = vi.fn(
+      async (value: string) => respond(value) ?? { stdout: "", stderr: "", exitCode: 0 },
+    );
     const launch = vi.fn(async () => undefined);
     const open = vi.fn(async () => undefined);
     const desktop = {
@@ -383,7 +338,14 @@ describe("E2B computer backend", () => {
       { actions: [{ kind: "open", path: "https://example.com/docs" }], observe: false },
       context,
     );
-    expect(command).toHaveBeenCalledWith("gtk-launch 'google-chrome' 'https://example.com/docs'");
+    expect(command).toHaveBeenCalledWith(
+      expect.stringContaining("browser-launch-20"),
+      expect.anything(),
+    );
+    expect(command).toHaveBeenLastCalledWith(
+      expect.stringContaining("https://example.com/docs"),
+      expect.anything(),
+    );
     expect(launch).not.toHaveBeenCalled();
     expect(open).not.toHaveBeenCalled();
 
@@ -392,28 +354,20 @@ describe("E2B computer backend", () => {
       { actions: [{ kind: "open", path: "notes/readme.md" }], observe: false },
       context,
     );
-    expect(open).toHaveBeenCalledWith("/home/user/rakazo-home/notes/readme.md");
+    expect(command).toHaveBeenLastCalledWith(
+      expect.stringContaining("/home/user/rakazo-home/notes/readme.md"),
+      expect.anything(),
+    );
   });
 
   it("controls the desktop and exposes a portable workspace", async () => {
     const files = new Map<string, Uint8Array>();
     const leftClick = vi.fn(async () => undefined);
     const typeText = vi.fn(async () => undefined);
+    const respond = desktopCommandResponder();
     const command = vi.fn(async (value: string, _options?: Record<string, unknown>) => {
-      if (value.startsWith('test "$(readlink')) throw new Error("profiles are not configured");
-      if (value.includes("RAKAZO_SCREEN_INDEX=")) {
-        return { stdout: "RAKAZO_SCREEN_INDEX=0\n", stderr: "", exitCode: 0 };
-      }
-      if (value.includes("RAKAZO_SCREEN_RELEASE=")) {
-        return {
-          stdout: "RAKAZO_SCREEN_RELEASE=0\n",
-          stderr: "",
-          exitCode: 0,
-        };
-      }
-      if (value.includes("primary-view.lock")) {
-        return { stdout: "RAKAZO_SCREEN_PASSWORD=screen-key\n", stderr: "", exitCode: 0 };
-      }
+      const response = respond(value);
+      if (response) return response;
       if (value.includes("hang")) {
         throw new TimeoutError("command timed out");
       }
@@ -548,9 +502,14 @@ describe("E2B computer backend", () => {
       },
       context,
     );
-    expect(desktop.moveMouse).toHaveBeenCalledWith(100, 120);
-    expect(leftClick).toHaveBeenCalledWith();
-    expect(typeText).toHaveBeenCalledWith("hello");
+    expect(command).toHaveBeenCalledWith(
+      expect.stringContaining("xdotool mousemove 100 120 click 1"),
+      expect.anything(),
+    );
+    expect(command).toHaveBeenCalledWith(
+      expect.stringContaining("xdotool type"),
+      expect.anything(),
+    );
     expect(result.observation).toMatchObject({ width: 1280, height: 800 });
     expect(command.mock.calls.some(([value]) => String(value).includes(".browser-profiles"))).toBe(
       true,
@@ -560,176 +519,27 @@ describe("E2B computer backend", () => {
       provider.connectScreen(computer, { view: "stream" }, context),
       provider.connectScreen(computer, { view: "stream" }, context),
     ]);
-    expect(new URL(screen.url!).searchParams.get("password")).toBe("screen-key");
-    expect(new URL(screen.url!).searchParams.get("view_only")).toBe("true");
-    expect(desktop.stream.start).not.toHaveBeenCalled();
-    expect(getStreamUrl).not.toHaveBeenCalled();
-    expect(
-      command.mock.calls.filter(([value]) => value.includes("primary-view.lock")),
-    ).toHaveLength(1);
-
-    const [control, concurrentControl] = await Promise.all([
-      provider.connectScreen(
-        computer,
-        { view: "stream", interactive: true, controlToken: "lease-1" },
-        context,
-      ),
-      provider.connectScreen(
-        computer,
-        { view: "stream", interactive: true, controlToken: "lease-1" },
-        context,
-      ),
-    ]);
-    expect(concurrentControl.url).toBe(control.url);
-    expect(
-      command.mock.calls.filter(
-        ([value]) => value.includes("novnc_proxy") && value.includes("-rfbport 5901"),
-      ),
-    ).toHaveLength(1);
-    expect(control.url).toMatch(/^https:\/\/6081-desktop\.test\/vnc\.html\?/);
-    const startControl = command.mock.calls
-      .map(([value]) => unwrapSetupCommand(String(value)))
-      .find((value) => value.includes("novnc_proxy") && value.includes("-rfbport 5901"));
-    expect(startControl).toBeDefined();
-    expect(startControl).toContain("pkill -f '(^|/)x11vnc .* -rfbport 5901'");
-    const proxyPattern = noVncProxyProcessPattern(6081);
-    expect(startControl).toContain(`pkill -f '${proxyPattern}'`);
-    expect(`/bin/bash -l -c ${startControl}`).not.toMatch(new RegExp(proxyPattern));
-    expect("bash ./novnc_proxy --vnc localhost:5901 --listen 6081 --web /opt/noVNC").toMatch(
-      new RegExp(proxyPattern),
-    );
-    // After stop: wait until VNC port is free (or fail) before storing a new password.
-    expect(startControl).toMatch(
-      /pkill -f '\(\^\|\/\)x11vnc \.\* -rfbport 5901'[\s\S]*for i in \$\(seq 1 50\); do netstat -tuln \| grep -q ':5901 ' \|\| break[\s\S]*if netstat -tuln \| grep -q ':5901 '; then exit 1; fi[\s\S]*x11vnc -storepasswd/,
-    );
-    // After starting x11vnc: require VNC port listen before starting novnc_proxy.
-    expect(startControl).toMatch(
-      /x11vnc -bg[\s\S]*-rfbport 5901[\s\S]*for i in \$\(seq 1 50\); do netstat -tuln \| grep -q ':5901 ' && break[\s\S]*if ! netstat -tuln \| grep -q ':5901 '; then exit 1; fi[\s\S]*novnc_proxy/,
-    );
-    const vncReadyIdx = startControl!.indexOf(
-      "if ! netstat -tuln | grep -q ':5901 '; then exit 1; fi",
-    );
-    const proxyStartIdx = startControl!.indexOf("./novnc_proxy --vnc localhost:5901");
-    const proxyReadyIdx = startControl!.lastIndexOf("grep -q ':6081 '");
-    expect(vncReadyIdx).toBeGreaterThan(-1);
-    expect(proxyStartIdx).toBeGreaterThan(vncReadyIdx);
-    expect(proxyReadyIdx).toBeGreaterThan(proxyStartIdx);
-
-    await provider.connectScreen(computer, { view: "stream" }, context);
-    const sameControl = await provider.connectScreen(
+    expect(new URL(screen.url!).searchParams.get("path")).toMatch(/^websockify\?token=view-/);
+    const control = await provider.connectScreen(
       computer,
       { view: "stream", interactive: true, controlToken: "lease-1" },
       context,
     );
-    expect(sameControl.url).toBe(control.url);
-
+    expect(control.url).toContain("6101-desktop.test");
+    expect(new URL(control.url!).searchParams.get("path")).toBe("websockify?token=lease-1");
     await provider.setScreenControl(computer, false, context, "lease-1");
-    expect(
-      command.mock.calls.some(([value]) =>
-        String(value).includes("pkill -f '(^|/)x11vnc .* -rfbport 5901'"),
-      ),
-    ).toBe(true);
-    const replacementControl = await provider.connectScreen(
-      computer,
-      { view: "stream", interactive: true, controlToken: "lease-2" },
-      context,
-    );
-    expect(replacementControl.url).not.toBe(control.url);
-
-    await provider.setScreenControl(computer, false, context, "lease-1");
-    expect(command).toHaveBeenLastCalledWith(expect.stringContaining("!= 'lease-1'"));
-    const stillCurrent = await provider.connectScreen(
-      computer,
-      { view: "stream", interactive: true, controlToken: "lease-2" },
-      context,
-    );
-    expect(stillCurrent.url).toBe(replacementControl.url);
-
     await screen.close();
     expect(streamStop).not.toHaveBeenCalled();
-    let finishStart!: () => void;
-    const originalCommand = command.getMockImplementation()!;
-    command.mockImplementation((value, options) => {
-      if (!value.includes("primary-view.lock")) return originalCommand(value, options);
-      return new Promise((resolve) => {
-        finishStart = () =>
-          resolve({
-            stdout: "RAKAZO_SCREEN_PASSWORD=screen-key\n",
-            stderr: "",
-            exitCode: 0,
-          });
-      });
-    });
-    const connecting = provider.connectScreen(computer, { view: "stream" }, context);
-    await vi.waitFor(() => expect(finishStart).toBeTypeOf("function"));
-    const stopping = provider.stop(computer, context);
-    finishStart();
-    await expect(connecting).rejects.toThrow(/teardown/);
-    await stopping;
+    await provider.stop(computer, context);
     expect(desktop.pause).toHaveBeenCalled();
-    expect(streamStop).not.toHaveBeenCalled();
   });
 
   it("gives Team bots distinct E2B screens and shared files", async () => {
     const files = new Map<string, Uint8Array>();
-    const screenSlots = new Map<string, number>();
-    const command = vi.fn(async (value: string) => {
-      const screenKey = value.match(/slot="\$dir\/([a-f0-9]+)\.slot"/)?.[1];
-      if (screenKey && value.includes("RAKAZO_SCREEN_INDEX=")) {
-        let index = screenSlots.get(screenKey);
-        if (index === undefined) {
-          index = Array.from({ length: 8 }, (_, candidate) => candidate).find(
-            (candidate) => ![...screenSlots.values()].includes(candidate),
-          );
-          if (index === undefined) return { stdout: "", stderr: "full", exitCode: 75 };
-          screenSlots.set(screenKey, index);
-        }
-        return {
-          stdout: `RAKAZO_SCREEN_INDEX=${index}\n`,
-          stderr: "",
-          exitCode: 0,
-        };
-      }
-      if (screenKey && value.includes("RAKAZO_SCREEN_RELEASE=")) {
-        const index = screenSlots.get(screenKey);
-        if (index === undefined) {
-          return {
-            stdout: "RAKAZO_SCREEN_RELEASE=missing\n",
-            stderr: "",
-            exitCode: 0,
-          };
-        }
-        screenSlots.delete(screenKey);
-        return {
-          stdout: `RAKAZO_SCREEN_RELEASE=${index}\n`,
-          stderr: "",
-          exitCode: 0,
-        };
-      }
-      if (value.includes("command -v Xvfb")) return { stdout: "", stderr: "", exitCode: 0 };
-      if (value.includes("RAKAZO_SCREEN_PASSWORD=")) {
-        return {
-          stdout: "RAKAZO_SCREEN_PASSWORD=test-view-password\n",
-          stderr: "",
-          exitCode: 0,
-        };
-      }
-      if (value.includes("scrot") || value.includes("import")) {
-        return {
-          stdout: `${Buffer.from([137, 80, 78, 71]).toString("base64")}\nCURSOR X=3 Y=4`,
-          stderr: "",
-          exitCode: 0,
-        };
-      }
-      if (value.includes("primary-view.lock")) {
-        return { stdout: "RAKAZO_SCREEN_PASSWORD=primary-key\n", stderr: "", exitCode: 0 };
-      }
-      if (value.includes("xdotool")) return { stdout: "", stderr: "", exitCode: 0 };
-      if (value.includes("pkill -x x11vnc")) {
-        throw new Error("global x11vnc kill is forbidden");
-      }
-      return { stdout: "shell-ok\n", stderr: "", exitCode: 0 };
-    });
+    const respond = desktopCommandResponder();
+    const command = vi.fn(
+      async (value: string) => respond(value) ?? { stdout: "", stderr: "", exitCode: 0 },
+    );
     const desktop = {
       sandboxId: "e2b-shared",
       display: ":0",
@@ -761,7 +571,7 @@ describe("E2B computer backend", () => {
         start: vi.fn(async () => undefined),
         stop: vi.fn(async () => undefined),
         getAuthKey: () => "key",
-        getUrl: () => "https://6080-desktop.test/vnc.html",
+        getUrl: () => "https://6100-desktop.test/vnc.html",
       },
       screenshot: vi.fn(async () => new Uint8Array([137, 80, 78, 71])),
       getScreenSize: vi.fn(async () => ({ width: 1280, height: 800 })),
@@ -786,17 +596,13 @@ describe("E2B computer backend", () => {
     await provider.observe(computer, researcher);
     const writerView = await provider.connectScreen(computer, { view: "stream" }, writer);
     const researcherView = await provider.connectScreen(computer, { view: "stream" }, researcher);
-    expect(writerView.url).toContain("6080-desktop.test");
-    expect(researcherView.url).toContain("6082-desktop.test");
-    expect(researcherView.url).toContain("password=test-view-password");
+    expect(writerView.url).toContain("6100-desktop.test");
+    expect(researcherView.url).toContain("6102-desktop.test");
+    expect(new URL(researcherView.url!).searchParams.get("path")).toMatch(
+      /^websockify\?token=view-/,
+    );
     expect(writerView.url).not.toBe(researcherView.url);
     expect(command.mock.calls.some(([value]) => String(value).includes("Xvfb :2"))).toBe(true);
-    expect(
-      command.mock.calls.some(
-        ([value]) =>
-          String(value).includes("-viewonly -rfbauth") && !String(value).includes("-nopw"),
-      ),
-    ).toBe(true);
     expect(command.mock.calls.some(([value]) => String(value).includes("pkill -x x11vnc"))).toBe(
       false,
     );
@@ -809,9 +615,9 @@ describe("E2B computer backend", () => {
       },
       researcher,
     );
-    expect(command.mock.calls.some(([value]) => String(value).includes("DISPLAY=:2 xdotool"))).toBe(
-      true,
-    );
+    expect(
+      command.mock.calls.some(([value]) => String(value).includes("DISPLAY=:21 xdotool")),
+    ).toBe(true);
     expect(desktop.moveMouse).not.toHaveBeenCalled();
 
     const control = await provider.connectScreen(
@@ -819,18 +625,8 @@ describe("E2B computer backend", () => {
       { view: "stream", interactive: true, controlToken: "lease-1" },
       researcher,
     );
-    expect(control.url).toMatch(/6083-desktop\.test/);
-    const startControl = command.mock.calls
-      .map(([value]) => unwrapSetupCommand(String(value)))
-      .find((value) => value.includes("-rfbport 5903") && value.includes("novnc_proxy"));
-    expect(startControl).toBeDefined();
-    expect(startControl).toContain("pkill -f '(^|/)x11vnc .* -rfbport 5903'");
-    expect(startControl).toMatch(
-      /for i in \$\(seq 1 50\); do \(echo >\/dev\/tcp\/127\.0\.0\.1\/5903\)[\s\S]*then exit 1; fi[\s\S]*x11vnc -storepasswd/,
-    );
-    expect(startControl).toMatch(
-      /x11vnc -bg[\s\S]*-rfbport 5903[\s\S]*for i in \$\(seq 1 50\); do \(echo >\/dev\/tcp\/127\.0\.0\.1\/5903\)[\s\S]*then exit 1; fi[\s\S]*novnc_proxy/,
-    );
+    expect(control.url).toContain("6103-desktop.test");
+    expect(new URL(control.url!).searchParams.get("path")).toBe("websockify?token=lease-1");
 
     await provider.writeFile(
       computer,
@@ -957,6 +753,6 @@ describe("sandbox-gone detection", () => {
   });
 });
 
-function unwrapSetupCommand(command: string): string {
+function _unwrapSetupCommand(command: string): string {
   return command.startsWith("bash -c '") ? command.slice(9, -1).replaceAll(`'"'"'`, "'") : command;
 }

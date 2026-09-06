@@ -12,7 +12,7 @@ import {
   sandboxIdleMs,
   sleepComputerIfIdle,
 } from "./computer-idle.js";
-import { e2bCreateOptions, openDesktopBrowser, openDesktopUrl } from "./e2b-sandbox.js";
+import { e2bCreateOptions } from "./e2b-sandbox.js";
 
 describe("sandbox idle", () => {
   it("defaults to ten minutes when SANDBOX_IDLE_MS is unset", () => {
@@ -95,14 +95,15 @@ describe("sandbox idle", () => {
     expect(harness.sandbox.stop).toHaveBeenCalledOnce();
   });
 
-  it("rechecks the lease boundary after checkpointing before it suspends", async () => {
+  it("claims the lease boundary before any checkpoint export", async () => {
     const harness = idleHarness();
     harness.prisma.computer.updateMany.mockResolvedValueOnce({ count: 0 });
     harness.prisma.run.findFirst.mockResolvedValue(null);
 
     await sleepComputerIfIdle(harness.deps, harness.computer.id);
 
-    expect(harness.home.commit).toHaveBeenCalledOnce();
+    expect(harness.home.commit).not.toHaveBeenCalled();
+    expect(harness.sandbox.exportWorkspace).not.toHaveBeenCalled();
     expect(harness.sandbox.stop).not.toHaveBeenCalled();
     expect(harness.jobs.enqueue).toHaveBeenCalledOnce();
     expect(harness.prisma.computer.update).not.toHaveBeenCalled();
@@ -137,11 +138,15 @@ describe("sandbox idle", () => {
     await sleepComputerIfIdle(harness.deps, harness.computer.id);
 
     expect(harness.home.commit).toHaveBeenCalledOnce();
+    expect(harness.prisma.computer.updateMany.mock.invocationCallOrder[0]).toBeLessThan(
+      harness.sandbox.exportWorkspace.mock.invocationCallOrder[0]!,
+    );
     expect(harness.sandbox.stop).toHaveBeenCalledOnce();
     expect(harness.prisma.computer.update).toHaveBeenCalledWith({
       where: { id: harness.computer.id },
       data: {
         state: "suspended",
+        homeRevision: "rev-checkpoint",
         controlHolder: "none",
         controlLeaseId: null,
         controlLeaseExpiresAt: null,
@@ -372,48 +377,6 @@ describe("e2b create options", () => {
     expect(opts.lifecycle).toEqual({ onTimeout: "pause", autoResume: false });
     expect(opts.timeoutMs).toBe(sandboxIdleMs());
     expect(opts.metadata.botId).toBe("bot-1");
-  });
-
-  it("opens a browser on a new desktop", async () => {
-    const launched: string[] = [];
-    await openDesktopBrowser({
-      launch: async (application) => {
-        launched.push(application);
-        if (application !== "firefox") throw new Error("missing");
-      },
-      open: async () => {
-        throw new Error("should not fall back");
-      },
-    });
-    expect(launched).toEqual(["google-chrome", "firefox"]);
-  });
-
-  it("opens a URL through the named browser launcher", async () => {
-    const launched: string[] = [];
-    const commands = {
-      run: async (cmd: string) => {
-        launched.push(cmd);
-        if (cmd.includes("google-chrome")) throw new Error("missing");
-        if (cmd.includes("firefox")) return { exitCode: 0 };
-        throw new Error("missing");
-      },
-    };
-    await openDesktopUrl(
-      {
-        commands,
-        launch: async () => {
-          throw new Error("should use gtk-launch via commands");
-        },
-        open: async () => {
-          throw new Error("should not fall back");
-        },
-      },
-      "https://example.com/page",
-    );
-    expect(launched).toEqual([
-      "gtk-launch 'google-chrome' 'https://example.com/page'",
-      "gtk-launch 'firefox' 'https://example.com/page'",
-    ]);
   });
 });
 

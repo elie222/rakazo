@@ -33,7 +33,6 @@ import {
   screenReleaseStopCommand,
   shouldReplayComputerActions,
   stopExtraScreenCommand,
-  syncSharedBrowserProfileCommand,
   teardownReleasedScreen,
   withKeyedLock,
 } from "./supervisor-logic.js";
@@ -469,8 +468,6 @@ describe("sandbox supervisor input containment", () => {
       ensureScreenCommand(1, "researcher", "view-token"),
       stopExtraScreenCommand(0, "writer"),
       stopExtraScreenCommand(1, "researcher"),
-      syncSharedBrowserProfileCommand("writer"),
-      syncSharedBrowserProfileCommand("writer", true),
       interactiveScreenCommand(false, "lease-old"),
       interactiveScreenCommand(true, "lease-new"),
       resetManagedScreensCommand(),
@@ -507,46 +504,30 @@ describe("sandbox supervisor input containment", () => {
 
   it("resets stale managed screens without killing unrelated container jobs", () => {
     const command = resetManagedScreensCommand();
-    expect(command).toContain("[c]hromium.*--user-data-dir=/home/rakazo/.browser-profiles/");
+    expect(command).toContain(
+      "^([^ ]*/)?chromium[^ ]* .*--user-data-dir=/home/rakazo/.browser-profiles/",
+    );
     expect(command).toContain("[X]vfb :[2-8]");
     expect(command).toContain("rm -f /tmp/rakazo/browser-pid-*");
     expect(command).not.toContain("pkill -9 -1");
   });
 
-  it("isolates live Chromium processes while seeding them from one shared profile", () => {
+  it("keeps a persistent independent profile per bot across display slots", () => {
     const writer = browserProfilePathForScreen("writer");
     const researcher = browserProfilePathForScreen("researcher");
     const command = ensureScreenCommand(0, "writer", "view-token");
 
     expect(writer).not.toBe(researcher);
-    expect(command).toContain(`--user-data-dir=${writer}`);
-    expect(ensureScreenCommand(3, "writer", "view-token")).toContain(`--user-data-dir=${writer}`);
-    expect(ensureScreenCommand(0, "researcher", "view-token")).toContain(
-      `--user-data-dir=${researcher}`,
-    );
-    expect(command).toContain("/home/rakazo/.browser-profiles/chromium/.");
-    expect(command).toContain(".rakazo-base-generation");
+    expect(command).toContain(writer);
+    expect(ensureScreenCommand(3, "writer", "view-token")).toContain(writer);
+    expect(ensureScreenCommand(0, "researcher", "view-token")).toContain(researcher);
+    expect(command).not.toContain("/home/rakazo/.browser-profiles/chromium/.");
+    expect(command).not.toContain(".rakazo-base-generation");
     expect(command).toContain("browser-pid-");
     expect(command).not.toContain("pgrep -f");
     expect(browserProfilePathForScreen("../../writer")).toMatch(
       /^\/home\/rakazo\/\.browser-profiles\/chromium-bot-[0-9a-f]+$/,
     );
-  });
-
-  it("checkpoints quiesced browser state with optimistic generation fencing", () => {
-    const normal = syncSharedBrowserProfileCommand("writer");
-    const authoritative = syncSharedBrowserProfileCommand("writer", true);
-    const profile = browserProfilePathForScreen("writer");
-
-    expect(normal).toContain(`profile='${profile}'`);
-    expect(normal).toContain("baseline_generation");
-    expect(normal).toContain('[ 0 -eq 1 ] || [ "$baseline_generation" -eq "$current_generation" ]');
-    expect(authoritative).toContain(
-      '[ 1 -eq 1 ] || [ "$baseline_generation" -eq "$current_generation" ]',
-    );
-    expect(normal).toContain('printf "%s\\n" "$((current_generation + 1))"');
-    expect(normal).toContain('rm -rf "$profile" "$next" "$previous"');
-    expect(normal).toContain('find "$next" -type d');
   });
 
   it("frees a released screen slot so a ninth Team bot can reuse it", () => {
@@ -647,8 +628,8 @@ describe("sandbox supervisor input containment", () => {
     expect(primary).toContain(`--user-data-dir=${browserProfilePathForScreen("writer")}`);
     expect(primary).toContain("kill -KILL");
     expect(primary).not.toMatch(/Xvfb :1 /);
-    expect(primary).toContain("websockify.*:6080");
-    expect(primary).toContain("websockify.*:6081");
+    expect(primary).toContain("[ :]6080");
+    expect(primary).toContain("[ :]6081");
     expect(primary).toContain("rfbport 5900");
     expect(primary).toContain("rfbport 5901");
     expect(primary).toContain("rm -f /tmp/rakazo/control-token ");
@@ -658,7 +639,7 @@ describe("sandbox supervisor input containment", () => {
     expect(extra).toContain("[X]vfb :2 -screen");
     expect(extra).toContain("[f]luxbox -rc /tmp/fluxbox-home-2/.fluxbox/init");
     expect(extra).toContain("rfbport 5902");
-    expect(extra).toContain("websockify.*:6082");
+    expect(extra).toContain("[ :]6082");
     expect(extra).toContain(`--user-data-dir=${browserProfilePathForScreen("researcher")}`);
   });
 

@@ -1,5 +1,9 @@
 """Offline Docker lifecycle smoke, invoked by team-desktops.docker.test.ts."""
 
+from concurrent.futures import ThreadPoolExecutor
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from threading import Thread
+from urllib.request import urlopen
 import base64
 import json
 import os
@@ -34,14 +38,51 @@ def websocket(port, token):
     return connection, connection.recv(8192)
 
 
+class Page(BaseHTTPRequestHandler):
+    def do_GET(self):
+        bot = self.path.strip("/")
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html")
+        self.end_headers()
+        setting = "" if bot == "read" else f"document.cookie='bot_{bot}=saved; Max-Age=86400; Path=/';"
+        self.wfile.write(f"<script>{setting} document.title=document.cookie;</script>".encode())
+
+    def log_message(self, *_args):
+        pass
+
+
+def assert_browser_cookies(commands, bot):
+    for _ in range(100):
+        try:
+            with urlopen(f"http://127.0.0.1:{commands['debug' + bot]}/json/list", timeout=1) as response:
+                pages = json.load(response)
+            if any(f"bot_{bot}=saved" in page.get("title", "") for page in pages):
+                assert all(f"bot_{other}=saved" not in page.get("title", "") for page in pages for other in "abc" if other != bot), pages
+                return
+        except OSError:
+            pass
+        time.sleep(0.1)
+    raise AssertionError(f"Bot {bot}'s independent browser cookie did not load: {pages}")
+
+
 def main():
     with open(sys.argv[1]) as source:
         commands = json.load(source)
-    for step in ["reset", "ensurea", "ensureb", "controla"]:
-        run(commands, step)
-    viewer, response = websocket(6080, "view-a")
+    for port in [8090, 8091]:
+        server = ThreadingHTTPServer(("127.0.0.1", port), Page)
+        Thread(target=server.serve_forever, daemon=True).start()
+    run(commands, "reset")
+    run(commands, "ensurea")
+    run(commands, "ensureb")
+    with ThreadPoolExecutor(2) as pool:
+        list(pool.map(lambda step: run(commands, step), ["opena", "openb"]))
+    for bot in "ab":
+        assert_browser_cookies(commands, bot)
+    run(commands, "controla")
+    view_port, control_port = int(commands["viewPort"]), int(commands["controlPort"])
+    viewer, response = websocket(view_port, "view-a")
     assert b"101 Switching Protocols" in response, response
-    controller, response = websocket(6081, "control-a")
+    controller, response = websocket(control_port, "control-a")
     assert b"101 Switching Protocols" in response, response
 
     profile = Path(commands["profilea"])
@@ -59,7 +100,10 @@ def main():
         time.sleep(0.1)
     run(commands, "ensurea")
     assert login.read_text() == "preserved-after-browser-restart"
+    run(commands, "opena")
+    assert_browser_cookies(commands, "a")
     run(commands, "stopa")
+    assert login.read_text() == "preserved-after-browser-restart"
 
     # Old clients must disconnect before the primary slot is reused.
     for connection in [viewer, controller]:
@@ -72,7 +116,11 @@ def main():
             connection.close()
     run(commands, "ensurec")
     run(commands, "controlc")
-    for port, old, current in [(6080, "view-a", "view-c"), (6081, "control-a", "control-c")]:
+    run(commands, "openc")
+    assert_browser_cookies(commands, "c")
+    assert not (Path(commands["profilec"]) / "fake-login").exists()
+    assert_browser_cookies(commands, "b")
+    for port, old, current in [(view_port, "view-a", "view-c"), (control_port, "control-a", "control-c")]:
         connection, response = websocket(port, old)
         connection.close()
         assert b"101 Switching Protocols" not in response, response
@@ -80,9 +128,22 @@ def main():
         connection.close()
         assert b"101 Switching Protocols" in response, response
     assert Path(commands["profileb"]).is_dir()
+    run(commands, "closeall")
+    run(commands, "ensureb")
+    commands["readb"] = commands["openb"].replace("/b </dev/null", "/read </dev/null")
+    run(commands, "readb")
+    assert_browser_cookies(commands, "b")
     run(commands, "stopb")
     run(commands, "stopc")
-    print("PASS: parallel desktops, profile recovery, primary cleanup, and stale view/control token rejection")
+    run(commands, "ensurea")
+    commands["reada"] = commands["opena"].replace("/a </dev/null", "/read </dev/null")
+    run(commands, "reada")
+    assert_browser_cookies(commands, "a")
+    assert login.read_text() == "preserved-after-browser-restart"
+    run(commands, "opena")
+    assert_browser_cookies(commands, "a")
+    run(commands, "stopa")
+    print("PASS: parallel desktops, independent cookies, persistent profiles, desktop cleanup, and stale view/control token rejection")
 
 
 if __name__ == "__main__":

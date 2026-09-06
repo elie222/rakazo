@@ -1,10 +1,7 @@
-import { randomBytes } from "node:crypto";
-import { setTimeout as delay } from "node:timers/promises";
 import { type CommandResult, Sandbox, TimeoutError } from "@e2b/desktop";
 import type {
   AdapterContext,
   CommandRequest,
-  ComputerAction,
   ComputerActionRequest,
   ComputerFileEntry,
   ComputerInput,
@@ -18,39 +15,13 @@ import type {
   ScreenSession,
 } from "@rakazo/adapter-kit";
 import { boundedSandboxCommandTimeoutMs } from "@rakazo/core";
-import { CANCEL_PRIMARY_BROWSER_WORK, sandboxIdleMs } from "./computer-idle.js";
-import { ComputerScreenUnavailableError, screenSessionKey } from "./computer-screens.js";
+import { sandboxIdleMs } from "./computer-idle.js";
+import { normalizeWorkspacePath, shellQuote, workspacePath } from "./computer-support.js";
 import {
-  boundedComputerActions,
-  clampRounded,
-  computerObservation,
-  normalizeWorkspacePath,
-  shellQuote,
-  workspacePath,
-} from "./computer-support.js";
-import {
-  PORTABLE_BROWSER_STOP_COMMAND,
   PORTABLE_TRANSFER_BATCH_BYTES,
   shouldSkipPortableWorkspaceFile,
 } from "./computer-workspace.js";
-import {
-  allocateExtraDisplayCommand,
-  ensureExtraDisplayCommand,
-  extraDisplayActionCommand,
-  extraDisplayControlStartCommand,
-  extraDisplayControlStopCommand,
-  extraDisplayInputCommand,
-  extraDisplayLayout,
-  noVncProxyProcessPattern,
-  observeExtraDisplayCommand,
-  parseAllocatedExtraDisplay,
-  parseExtraDisplayObservation,
-  parseExtraDisplayViewPassword,
-  parseReleasedExtraDisplay,
-  releaseExtraDisplayCommand,
-  screenControlKey,
-  websockifyProcessPattern,
-} from "./extra-displays.js";
+import { LinuxDesktop, PREPARE_LINUX_DESKTOP } from "./linux-desktop.js";
 
 const E2B_WORKSPACE = "/home/user/rakazo-home";
 const E2B_BROWSER_PROFILES = `${E2B_WORKSPACE}/.browser-profiles`;
@@ -93,55 +64,26 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-export const E2B_BROWSER_APPS = ["google-chrome", "firefox", "chromium"] as const;
-
-type E2BDesktopBrowser = {
-  launch: (application: string, uri?: string) => Promise<void>;
-  open: (fileOrUrl: string) => Promise<void>;
-};
-
-type E2BDesktopCommands = {
-  run: (cmd: string) => Promise<{ exitCode?: number }>;
-};
-
-export async function openDesktopBrowser(desktop: E2BDesktopBrowser): Promise<void> {
-  for (const app of E2B_BROWSER_APPS) {
-    try {
-      await desktop.launch(app);
-      return;
-    } catch {
-      // try the next installed browser
-    }
-  }
-  await desktop.open("https://www.google.com").catch(() => undefined);
-}
-
-/** Open an http(s) URL via a named browser — avoids the broken default-browser association. */
-export async function openDesktopUrl(
-  desktop: E2BDesktopBrowser & { commands: E2BDesktopCommands },
-  url: string,
-): Promise<void> {
-  for (const app of E2B_BROWSER_APPS) {
-    // Prefer a foreground gtk-launch so missing desktop entries / launch failures reject
-    // and we can try the next browser. desktop.launch backgrounds and always resolves.
-    const launched = await desktop.commands
-      .run(`gtk-launch ${shellQuote(app)} ${shellQuote(url)}`)
-      .then(
-        (result) => (result.exitCode ?? 0) === 0,
-        () => false,
-      );
-    if (launched) return;
-  }
-  await desktop.open(url);
-}
-
 export class E2BSandboxProvider implements SandboxProvider {
+  private readonly desktops = new LinuxDesktop({
+    environment: async () => ({
+      homeDir: "/home/user",
+      workspaceDir: E2B_WORKSPACE,
+      browserProfilesDir: E2B_BROWSER_PROFILES,
+      displayStart: 20,
+      portStart: 6100,
+      vncPortStart: 5920,
+    }),
+    run: async (computer, command, context) => {
+      const result = await this.runSetupCommand(await this.box(computer), command, context.signal);
+      return { code: result.exitCode, stdout: result.stdout, stderr: result.stderr };
+    },
+    screenUrl: async (computer, port) =>
+      `https://${(await this.box(computer)).getHost(port)}/vnc.html`,
+  });
   private readonly boxes = new Map<string, Sandbox>();
   private readonly connections = new Map<string, Promise<Sandbox>>();
   private readonly lastTouchedAt = new Map<string, number>();
-  private readonly streamStarts = new Map<string, Promise<string>>();
-  private readonly controlStreams = new Map<string, { password: string; controlToken: string }>();
-  private readonly controlStarts = new Map<string, Promise<string>>();
 
   constructor(
     private readonly apiKey: string,
@@ -202,38 +144,6 @@ export class E2BSandboxProvider implements SandboxProvider {
     return connection;
   }
 
-  private async startStream(desktop: Sandbox) {
-    if (this.boxes.get(desktop.sandboxId) !== desktop) {
-      throw new Error("screen stream stopped during computer teardown");
-    }
-    const pending = this.streamStarts.get(desktop.sandboxId);
-    if (pending) return pending;
-    let start!: Promise<string>;
-    start = this.initializeStream(desktop).finally(() => {
-      if (this.streamStarts.get(desktop.sandboxId) === start) {
-        this.streamStarts.delete(desktop.sandboxId);
-      }
-    });
-    this.streamStarts.set(desktop.sandboxId, start);
-    return start;
-  }
-
-  private async initializeStream(desktop: Sandbox): Promise<string> {
-    const result = await this.runSetupCommand(
-      desktop,
-      ensureE2BPrimaryViewCommand(desktop.display ?? ":0", randomBytes(6).toString("base64url")),
-    );
-    if (result.exitCode !== 0) {
-      throw new Error(
-        `screen stream failed to start (exit ${result.exitCode})${result.stderr ? `: ${result.stderr}` : ""}`,
-      );
-    }
-    if (this.boxes.get(desktop.sandboxId) !== desktop) {
-      throw new Error("screen stream stopped during computer teardown");
-    }
-    return parseExtraDisplayViewPassword(result.stdout);
-  }
-
   async provision(
     request: {
       botId: string;
@@ -279,9 +189,9 @@ export class E2BSandboxProvider implements SandboxProvider {
   async prepare(computer: ComputerRef, _context: AdapterContext): Promise<void> {
     const desktop = await this.box(computer);
     if (computer.fresh) await desktop.files.makeDir(E2B_WORKSPACE);
-    const profilesChanged = await configurePortableBrowserProfiles(desktop);
-    await configureDefaultWebBrowser(desktop);
-    if (!computer.fresh && profilesChanged) await openDesktopBrowser(desktop);
+    const result = await this.runSetupCommand(desktop, PREPARE_LINUX_DESKTOP, _context.signal);
+    if (result.exitCode !== 0)
+      throw new Error(result.stderr || "could not prepare computer desktop tools");
   }
 
   async *execute(
@@ -320,165 +230,29 @@ export class E2BSandboxProvider implements SandboxProvider {
     request: ScreenRequest,
     context: AdapterContext,
   ): Promise<ScreenSession> {
-    const desktop = await this.box(computer);
-    const screenKey = screenSessionKey(context);
-    const layout = await this.resolveLayout(desktop, screenKey, context.screenLeaseId);
-    if (layout.isPrimary) {
-      if (request.interactive) {
-        if (!request.controlToken) throw new Error("interactive screen requires a control token");
-        const password = await this.startControlStream(desktop, request.controlToken, screenKey);
-        const url = new URL(`https://${desktop.getHost(layout.controlPort)}/vnc.html`);
-        url.searchParams.set("autoconnect", "true");
-        url.searchParams.set("resize", "scale");
-        url.searchParams.set("password", password);
-        return {
-          url: url.toString(),
-          mimeType: "text/html",
-          close: async () => undefined,
-        };
-      }
-      const password = await this.startStream(desktop);
-      const url = new URL(`https://${desktop.getHost(layout.viewPort)}/vnc.html`);
-      url.searchParams.set("autoconnect", "true");
-      url.searchParams.set("resize", "scale");
-      url.searchParams.set("view_only", "true");
-      url.searchParams.set("password", password);
-      return {
-        url: url.toString(),
-        mimeType: "text/html",
-        close: async () => undefined,
-      };
-    }
-    const viewPassword = await this.ensureExtraDisplay(desktop, layout, context);
-    if (request.interactive) {
-      if (!request.controlToken) throw new Error("interactive screen requires a control token");
-      const password = await this.startControlStream(
-        desktop,
-        request.controlToken,
-        screenKey,
-        layout,
-      );
-      const url = new URL(`https://${desktop.getHost(layout.controlPort)}/vnc.html`);
-      url.searchParams.set("autoconnect", "true");
-      url.searchParams.set("resize", "scale");
-      url.searchParams.set("password", password);
-      return {
-        url: url.toString(),
-        mimeType: "text/html",
-        close: async () => undefined,
-      };
-    }
-    const url = new URL(`https://${desktop.getHost(layout.viewPort)}/vnc.html`);
-    url.searchParams.set("autoconnect", "true");
-    url.searchParams.set("resize", "scale");
-    url.searchParams.set("view_only", "true");
-    url.searchParams.set("password", viewPassword);
-    return {
-      url: url.toString(),
-      mimeType: "text/html",
-      close: async () => undefined,
-    };
+    return this.desktops.connectScreen(computer, request, context);
   }
-
   async setScreenControl(
     computer: ComputerRef,
     interactive: boolean,
     context: AdapterContext,
     controlToken?: string,
   ): Promise<void> {
-    const desktop = await this.box(computer);
-    const screenKey = screenSessionKey(context);
-    const layout = await this.resolveLayout(desktop, screenKey, context.screenLeaseId);
-    if (layout.isPrimary) {
-      if (interactive) {
-        if (!controlToken) throw new Error("interactive screen requires a control token");
-        await this.startControlStream(desktop, controlToken, screenKey);
-      } else {
-        await this.stopControlStream(desktop, controlToken, screenKey);
-      }
-      return;
-    }
-    if (interactive) {
-      if (!controlToken) throw new Error("interactive screen requires a control token");
-      await this.ensureExtraDisplay(desktop, layout, context);
-      await this.startControlStream(desktop, controlToken, screenKey, layout);
-    } else {
-      await this.stopControlStream(desktop, controlToken, screenKey, layout);
-    }
+    return this.desktops.setScreenControl(computer, interactive, context, controlToken);
   }
-
   async sendInput(
     computer: ComputerRef,
     input: ComputerInput,
     _lease: ControlLeaseRef,
     context: AdapterContext,
   ): Promise<void> {
-    const desktop = await this.box(computer);
-    const layout = await this.resolveLayout(
-      desktop,
-      screenSessionKey(context),
-      context.screenLeaseId,
-    );
-    if (layout.isPrimary) {
-      await applyE2BAction(desktop, input);
-      return;
-    }
-    await this.ensureExtraDisplay(desktop, layout, context);
-    const result = await desktop.commands.run(extraDisplayInputCommand(layout, input), {
-      signal: context.signal,
-    });
-    if (result.exitCode !== 0) throw new Error(result.stderr || "extra display input failed");
+    return this.desktops.sendInput(computer, input, context);
   }
-
   async observe(computer: ComputerRef, context: AdapterContext): Promise<ComputerObservation> {
-    const desktop = await this.box(computer);
-    const layout = await this.resolveLayout(
-      desktop,
-      screenSessionKey(context),
-      context.screenLeaseId,
-    );
-    if (layout.isPrimary) return observeE2BDesktop(desktop, context);
-    await this.ensureExtraDisplay(desktop, layout, context);
-    const result = await desktop.commands.run(observeExtraDisplayCommand(layout), {
-      signal: context.signal,
-    });
-    if (result.exitCode !== 0) throw new Error(result.stderr || "extra display observation failed");
-    const parsed = parseExtraDisplayObservation(result.stdout);
-    return computerObservation(parsed.image, {
-      mimeType: "image/png",
-      width: 1280,
-      height: 800,
-      cursor: parsed.cursor,
-    });
+    return this.desktops.observe(computer, context);
   }
-
   async act(computer: ComputerRef, request: ComputerActionRequest, context: AdapterContext) {
-    const desktop = await this.box(computer);
-    const layout = await this.resolveLayout(
-      desktop,
-      screenSessionKey(context),
-      context.screenLeaseId,
-    );
-    const actions = boundedComputerActions(request.actions);
-    let completed = 0;
-    if (!layout.isPrimary) await this.ensureExtraDisplay(desktop, layout, context);
-    for (const action of actions) {
-      if (context.signal.aborted)
-        throw context.signal.reason ?? new Error("computer action aborted");
-      if (layout.isPrimary) await applyE2BAction(desktop, action);
-      else {
-        const result = await desktop.commands.run(extraDisplayActionCommand(layout, action), {
-          signal: context.signal,
-        });
-        if (result.exitCode !== 0) throw new Error(result.stderr || "extra display action failed");
-      }
-      completed += 1;
-    }
-    if (request.settleMs) await desktop.wait(clampRounded(request.settleMs, 0, 5_000));
-    return {
-      completed,
-      ...(request.observe === false ? {} : { observation: await this.observe(computer, context) }),
-    };
+    return this.desktops.act(computer, request, context);
   }
 
   async listFiles(
@@ -536,14 +310,8 @@ export class E2BSandboxProvider implements SandboxProvider {
     context: AdapterContext,
   ): AsyncIterable<PortableFile> {
     const desktop = await this.box(computer);
-    await stopDesktopBrowsers(desktop);
-    try {
-      yield* walkE2BWorkspace(desktop, "", context);
-    } finally {
-      if (context.operationId !== "stop" && context.operationId !== "computer.sleep") {
-        await openDesktopBrowser(desktop);
-      }
-    }
+    await this.desktops.stopBrowsers(computer, context);
+    yield* walkE2BWorkspace(desktop, "", context);
   }
 
   async importWorkspace(
@@ -552,7 +320,7 @@ export class E2BSandboxProvider implements SandboxProvider {
     context: AdapterContext,
   ): Promise<void> {
     const desktop = await this.box(computer);
-    await stopDesktopBrowsers(desktop);
+    await this.desktops.stopBrowsers(computer, context);
     let batch: PortableFile[] = [];
     let batchBytes = 0;
     const flush = async () => {
@@ -572,7 +340,7 @@ export class E2BSandboxProvider implements SandboxProvider {
       batchBytes += file.content.byteLength;
     }
     await flush();
-    await openDesktopBrowser(desktop);
+    // Imported browser profiles remain dormant until their owning bot needs a desktop.
   }
 
   async snapshot(computer: ComputerRef, _context: AdapterContext) {
@@ -596,37 +364,13 @@ export class E2BSandboxProvider implements SandboxProvider {
   }
 
   async releaseScreen(computer: ComputerRef, context: AdapterContext): Promise<void> {
-    const id = computer.providerRef || computer.id;
-    const screenKey = screenSessionKey(context);
-    const desktop = this.boxes.get(id) ?? (await this.box(computer).catch(() => undefined));
-    if (!desktop) return;
-    const released = await desktop.commands
-      .run(releaseExtraDisplayCommand(screenKey, context.screenLeaseId))
-      .catch(() => undefined);
-    const index = released ? parseReleasedExtraDisplay(released.stdout) : undefined;
-    if (index === undefined) return;
-    const controlKey = screenControlKey(id, screenKey);
-    this.controlStreams.delete(controlKey);
-    if (index === 0) {
-      if (context.cancelRunWork) {
-        await desktop.commands.run(CANCEL_PRIMARY_BROWSER_WORK).catch(() => undefined);
-      }
-      return;
-    }
-    // Non-primary teardown runs inside the registry lock before the slot is reusable.
+    return this.desktops.releaseScreen(computer, context);
   }
 
   async stop(computer: ComputerRef, _context: AdapterContext): Promise<void> {
     const id = computer.providerRef || computer.id;
-    const pending = Promise.all([
-      this.streamStarts.get(id),
-      ...[...this.controlStarts]
-        .filter(([key]) => key.startsWith(`${id}:`))
-        .map(([, start]) => start),
-    ]);
     const desktop = this.boxes.get(id);
     this.forget(id);
-    await settleForTeardown(pending);
     if (desktop) {
       await desktop.pause().catch(() => undefined);
       return;
@@ -637,14 +381,7 @@ export class E2BSandboxProvider implements SandboxProvider {
   async destroy(computer: ComputerRef, _context: AdapterContext): Promise<void> {
     const id = computer.providerRef || computer.id;
     const desktop = this.boxes.get(id) ?? (await this.box(computer).catch(() => undefined));
-    const pending = Promise.all([
-      this.streamStarts.get(id),
-      ...[...this.controlStarts]
-        .filter(([key]) => key.startsWith(`${id}:`))
-        .map(([, start]) => start),
-    ]);
     this.forget(id);
-    await settleForTeardown(pending);
     // The SDK returns false when the sandbox is already gone; teardown is complete.
     await desktop?.kill();
   }
@@ -653,13 +390,6 @@ export class E2BSandboxProvider implements SandboxProvider {
     this.boxes.delete(id);
     this.connections.delete(id);
     this.lastTouchedAt.delete(id);
-    this.streamStarts.delete(id);
-    for (const key of [...this.controlStreams.keys()]) {
-      if (key.startsWith(`${id}:`)) this.controlStreams.delete(key);
-    }
-    for (const key of [...this.controlStarts.keys()]) {
-      if (key.startsWith(`${id}:`)) this.controlStarts.delete(key);
-    }
   }
 
   /** Apply the deployment timeout (SDK default is 60s) and return failed results instead of throwing. */
@@ -688,201 +418,6 @@ export class E2BSandboxProvider implements SandboxProvider {
       throw error;
     }
   }
-
-  private async resolveLayout(desktop: Sandbox, screenKey: string, leaseId?: string) {
-    const allocation = await this.runSetupCommand(
-      desktop,
-      allocateExtraDisplayCommand(screenKey, leaseId),
-    );
-    if (allocation.exitCode !== 0) throw new ComputerScreenUnavailableError();
-    const index = parseAllocatedExtraDisplay(allocation.stdout);
-    return extraDisplayLayout(index, desktop.display ?? ":0");
-  }
-
-  private async ensureExtraDisplay(
-    desktop: Sandbox,
-    layout: ReturnType<typeof extraDisplayLayout>,
-    context: AdapterContext,
-  ): Promise<string> {
-    if (layout.isPrimary) throw new Error("primary display does not use an extra view password");
-    const result = await this.runSetupCommand(
-      desktop,
-      ensureExtraDisplayCommand(
-        layout,
-        {
-          homeDir: "/home/user",
-          browserProfilesDir: E2B_BROWSER_PROFILES,
-        },
-        randomBytes(9).toString("base64url"),
-      ),
-      context.signal,
-    );
-    if (result.exitCode !== 0) throw new ComputerScreenUnavailableError();
-    return parseExtraDisplayViewPassword(result.stdout);
-  }
-
-  private async startControlStream(
-    desktop: Sandbox,
-    controlToken: string,
-    screenKey: string,
-    layout = extraDisplayLayout(0, desktop.display ?? ":0"),
-  ): Promise<string> {
-    const controlKey = screenControlKey(desktop.sandboxId, screenKey);
-    const pending = this.controlStarts.get(controlKey);
-    if (pending) {
-      await pending;
-      return this.startControlStream(desktop, controlToken, screenKey, layout);
-    }
-    const existing = this.controlStreams.get(controlKey);
-    if (existing?.controlToken === controlToken) return existing.password;
-    let start!: Promise<string>;
-    start = this.initializeControlStream(desktop, controlToken, controlKey, layout).finally(() => {
-      if (this.controlStarts.get(controlKey) === start) this.controlStarts.delete(controlKey);
-    });
-    this.controlStarts.set(controlKey, start);
-    return start;
-  }
-
-  private async initializeControlStream(
-    desktop: Sandbox,
-    controlToken: string,
-    controlKey: string,
-    layout: ReturnType<typeof extraDisplayLayout>,
-  ): Promise<string> {
-    const password = randomBytes(6).toString("base64url");
-    if (layout.isPrimary) {
-      const passwordFile = "/tmp/rakazo-control.vncpass";
-      const tokenFile = "/tmp/rakazo-control.token";
-      const vncPort = layout.controlVncPort;
-      const proxyPort = layout.controlPort;
-      const command = [
-        controlStreamStopCommand(),
-        // Old x11vnc may outlive pkill briefly; do not store a new password until the VNC port is free.
-        `for i in $(seq 1 50); do netstat -tuln | grep -q ':${vncPort} ' || break; sleep 0.1; done`,
-        `if netstat -tuln | grep -q ':${vncPort} '; then exit 1; fi`,
-        `printf %s ${shellQuote(controlToken)} > ${tokenFile}`,
-        `x11vnc -storepasswd ${shellQuote(password)} ${passwordFile} >/dev/null`,
-        `x11vnc -bg -display ${shellQuote(desktop.display)} -forever -wait 50 -shared -rfbport ${vncPort} -rfbauth ${passwordFile} 2>/tmp/rakazo-control-x11vnc.log`,
-        // Require the new x11vnc itself — proxy listen alone can pass with a leftover server.
-        `for i in $(seq 1 50); do netstat -tuln | grep -q ':${vncPort} ' && break; sleep 0.1; done`,
-        `if ! netstat -tuln | grep -q ':${vncPort} '; then exit 1; fi`,
-        "cd /opt/noVNC/utils",
-        `(nohup ./novnc_proxy --vnc localhost:${vncPort} --listen ${proxyPort} --web /opt/noVNC &) 8>&- >/tmp/rakazo-control-novnc.log 2>&1`,
-        `for i in $(seq 1 50); do netstat -tuln | grep -q ':${proxyPort} ' && exit 0; sleep 0.1; done`,
-        "exit 1",
-      ].join(" && ");
-      const result = await this.runSetupCommand(desktop, command);
-      if (result.exitCode !== 0) {
-        throw new Error(
-          result.stderr || `control stream failed to start (exit ${result.exitCode})`,
-        );
-      }
-    } else {
-      const result = await this.runSetupCommand(
-        desktop,
-        extraDisplayControlStartCommand(layout, controlToken, password),
-      );
-      if (result.exitCode !== 0) {
-        throw new Error(
-          result.stderr || `control stream failed to start (exit ${result.exitCode})`,
-        );
-      }
-    }
-    if (this.boxes.get(desktop.sandboxId) !== desktop) {
-      throw new Error("control stream stopped during computer teardown");
-    }
-    this.controlStreams.set(controlKey, { password, controlToken });
-    return password;
-  }
-
-  private async stopControlStream(
-    desktop: Sandbox,
-    controlToken: string | undefined,
-    screenKey: string,
-    layout = extraDisplayLayout(0, desktop.display ?? ":0"),
-  ): Promise<void> {
-    const controlKey = screenControlKey(desktop.sandboxId, screenKey);
-    await this.controlStarts.get(controlKey)?.catch(() => undefined);
-    if (layout.isPrimary) {
-      await desktop.commands.run(controlStreamStopCommand(controlToken));
-    } else {
-      await desktop.commands.run(extraDisplayControlStopCommand(layout, controlToken));
-    }
-    const existing = this.controlStreams.get(controlKey);
-    if (!controlToken || existing?.controlToken === controlToken) {
-      this.controlStreams.delete(controlKey);
-    }
-  }
-}
-
-/** Reuse primary view credentials across API restarts without touching other VNC servers. */
-export function ensureE2BPrimaryViewCommand(display: string, password: string): string {
-  const passwordFile = "/tmp/rakazo/primary-view.password";
-  const authFile = "/tmp/rakazo-primary-view.vncpass";
-  return [
-    "set -eu",
-    "umask 077",
-    "mkdir -p /tmp/rakazo",
-    "exec 8>/tmp/rakazo/primary-view.lock",
-    "flock 8",
-    `if [ -s ${passwordFile} ] && [ -s ${authFile} ] && pgrep -f '(^|/)x11vnc .* -viewonly .* -rfbport 5900 -rfbauth ${authFile}( |$)' >/dev/null && (echo >/dev/tcp/127.0.0.1/5900) >/dev/null 2>&1 && (echo >/dev/tcp/127.0.0.1/6080) >/dev/null 2>&1; then printf 'RAKAZO_SCREEN_PASSWORD=%s\\n' "$(cat ${passwordFile})"; exit 0; fi`,
-    "pkill -f '(^|/)x11vnc .* -rfbport 5900( |$)' || true",
-    `pkill -f '${noVncProxyProcessPattern(6080)}' || true`,
-    `pkill -f '${websockifyProcessPattern(6080)}' || true`,
-    "for i in $(seq 1 50); do if ! (echo >/dev/tcp/127.0.0.1/5900) >/dev/null 2>&1 && ! (echo >/dev/tcp/127.0.0.1/6080) >/dev/null 2>&1; then break; fi; sleep 0.1; done",
-    "if (echo >/dev/tcp/127.0.0.1/5900) >/dev/null 2>&1 || (echo >/dev/tcp/127.0.0.1/6080) >/dev/null 2>&1; then exit 1; fi",
-    `if [ -s ${passwordFile} ]; then password=$(cat ${passwordFile}); else password=${shellQuote(password)}; printf %s "$password" >${passwordFile}; fi`,
-    `x11vnc -storepasswd "$password" ${authFile} >/dev/null 2>&1`,
-    `x11vnc -bg -display ${shellQuote(display)} -forever -wait 50 -shared -viewonly -listen 127.0.0.1 -rfbport 5900 -rfbauth ${authFile} 8>&- >/tmp/rakazo-primary-view-x11vnc.log 2>&1`,
-    "cd /opt/noVNC/utils",
-    "(nohup ./novnc_proxy --vnc localhost:5900 --listen 6080 --web /opt/noVNC &) 8>&- >/tmp/rakazo-primary-view-novnc.log 2>&1",
-    `for i in $(seq 1 50); do if (echo >/dev/tcp/127.0.0.1/5900) >/dev/null 2>&1 && (echo >/dev/tcp/127.0.0.1/6080) >/dev/null 2>&1; then printf 'RAKAZO_SCREEN_PASSWORD=%s\\n' "$password"; exit 0; fi; sleep 0.1; done`,
-    "exit 1",
-  ].join("\n");
-}
-
-async function settleForTeardown(pending: Promise<unknown> | undefined): Promise<void> {
-  if (!pending) return;
-  await Promise.race([pending.catch(() => undefined), delay(5_000, undefined, { ref: false })]);
-}
-
-function controlStreamStopCommand(controlToken?: string) {
-  // Anchor to the x11vnc binary (path-prefixed OK). Do not use an unanchored
-  // `x11vnc.*` pattern — E2B embeds the full script in the runner argv, so that
-  // would pkill the runner itself.
-  const stop = [
-    "pkill -f '(^|/)x11vnc .* -rfbport 5901' || true",
-    `pkill -f '${websockifyProcessPattern(6081)}' || true`,
-    `pkill -f '${noVncProxyProcessPattern(6081)}' || true`,
-    "rm -f /tmp/rakazo-control.vncpass",
-    "rm -f /tmp/rakazo-control.token",
-  ].join("; ");
-  if (!controlToken) return stop;
-  return `[ -f /tmp/rakazo-control.token ] && [ "$(cat /tmp/rakazo-control.token)" != ${shellQuote(controlToken)} ] || { ${stop}; }`;
-}
-
-async function observeE2BDesktop(
-  desktop: Sandbox,
-  context: AdapterContext,
-): Promise<ComputerObservation> {
-  const [image, size, cursor, windowId] = await Promise.all([
-    desktop.screenshot("bytes"),
-    desktop.getScreenSize().catch(() => ({ width: 1280, height: 800 })),
-    desktop.getCursorPosition().catch(() => undefined),
-    desktop.getCurrentWindowId().catch(() => undefined),
-  ]);
-  if (context.signal.aborted)
-    throw context.signal.reason ?? new Error("computer observation aborted");
-  const title = windowId
-    ? await desktop.getWindowTitle(windowId).catch(() => undefined)
-    : undefined;
-  return computerObservation(image, {
-    mimeType: "image/png",
-    width: size.width,
-    height: size.height,
-    cursor,
-    activeWindow: windowId ? { id: windowId, title } : undefined,
-  });
 }
 
 async function writeE2BFiles(
@@ -906,97 +441,6 @@ async function writeE2BFiles(
       signal: context.signal,
     });
   }
-}
-
-async function configurePortableBrowserProfiles(desktop: Sandbox): Promise<boolean> {
-  const chromium = `${E2B_BROWSER_PROFILES}/chromium`;
-  const chrome = chromium;
-  const firefox = `${E2B_BROWSER_PROFILES}/firefox`;
-  const configured = await desktop.commands
-    .run(
-      [
-        `test "$(readlink -f /home/user/.config/google-chrome 2>/dev/null)" = ${shellQuote(chrome)}`,
-        `test "$(readlink -f /home/user/.config/chromium 2>/dev/null)" = ${shellQuote(chromium)}`,
-        `test "$(readlink -f /home/user/.mozilla 2>/dev/null)" = ${shellQuote(firefox)}`,
-      ].join(" && "),
-    )
-    .then(
-      () => true,
-      () => false,
-    );
-  if (configured) return false;
-  await stopDesktopBrowsers(desktop);
-  await desktop.commands.run(
-    [
-      `mkdir -p ${shellQuote(chrome)} ${shellQuote(chromium)} ${shellQuote(firefox)} /home/user/.config`,
-      "rm -rf /home/user/.config/google-chrome /home/user/.config/chromium /home/user/.mozilla",
-      `ln -s ${shellQuote(chrome)} /home/user/.config/google-chrome`,
-      `ln -s ${shellQuote(chromium)} /home/user/.config/chromium`,
-      `ln -s ${shellQuote(firefox)} /home/user/.mozilla`,
-    ].join(" && "),
-  );
-  return true;
-}
-
-/** Point xdg-open / XFCE exo-open at Chrome. Lives outside the checkpointed workspace. */
-async function configureDefaultWebBrowser(desktop: Sandbox): Promise<void> {
-  await desktop.commands
-    .run(
-      [
-        "command -v google-chrome >/dev/null 2>&1 || exit 0",
-        'mkdir -p "$HOME/.config/xfce4"',
-        "printf 'WebBrowser=google-chrome\\n' > \"$HOME/.config/xfce4/helpers.rc\"",
-        "xdg-settings set default-web-browser google-chrome.desktop",
-      ].join(" && "),
-    )
-    .catch(() => undefined);
-}
-
-async function stopDesktopBrowsers(desktop: Sandbox): Promise<void> {
-  await desktop.commands.run(PORTABLE_BROWSER_STOP_COMMAND).catch(() => undefined);
-}
-
-async function applyE2BAction(desktop: Sandbox, action: ComputerAction): Promise<void> {
-  if (action.kind === "key") {
-    await desktop.press([...(action.modifiers ?? []), action.key]);
-    return;
-  }
-  if (action.kind === "pointer") {
-    if (action.type === "move") await desktop.moveMouse(action.x, action.y);
-    else if (action.type === "down") {
-      await desktop.moveMouse(action.x, action.y);
-      await desktop.mousePress(action.button ?? "left");
-    } else if (action.type === "up") {
-      await desktop.moveMouse(action.x, action.y);
-      await desktop.mouseRelease(action.button ?? "left");
-    } else {
-      await desktop.moveMouse(action.x, action.y);
-      if (action.button === "right") await desktop.rightClick();
-      else await desktop.leftClick();
-    }
-    return;
-  }
-  if (action.kind === "clipboard") {
-    await desktop.write(action.text);
-    return;
-  }
-  if (action.kind === "scroll") {
-    await desktop.scroll(action.direction, clampRounded(action.amount ?? 3, 1, 20));
-    return;
-  }
-  if (action.kind === "wait") {
-    await desktop.wait(clampRounded(action.ms, 0, 5_000));
-    return;
-  }
-  if (action.kind === "open") {
-    if (/^https?:\/\//i.test(action.path)) {
-      await openDesktopUrl(desktop, action.path);
-      return;
-    }
-    await desktop.open(workspacePath(E2B_WORKSPACE, action.path));
-    return;
-  }
-  await desktop.launch(action.application, action.uri);
 }
 
 async function* walkE2BWorkspace(
