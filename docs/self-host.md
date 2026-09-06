@@ -171,7 +171,8 @@ RAKAZO_LOCAL_MAX_TOKENS=4096
 ```
 
 The loopback default is suitable when running Rakazo from a source checkout. From containers,
-prefer `host.docker.internal` or a stable LAN RFC1918 address (not Compose service DNS alone).
+prefer `host.docker.internal` (Desktop, or Linux with `host-gateway`) or a stable LAN RFC1918
+address (not Compose service DNS alone).
 Only configure an endpoint you control: prompts, attachments, and tool results sent to that model
 leave Rakazo through this URL. Leave `RAKAZO_LOCAL_MODELS` blank to disable the provider.
 
