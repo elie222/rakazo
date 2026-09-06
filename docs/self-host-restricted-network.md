@@ -16,12 +16,14 @@ When raw GitHub is unreachable, download the installer from your mirror:
 
 ```bash
 export RAKAZO_INSTALLER_URL=https://example.com/mirror/rakazo/infra/compose/install-images.sh
+export RAKAZO_DOWNLOAD_BASE=https://example.com/mirror/rakazo/infra/compose
 mkdir -p rakazo && cd rakazo &&
-curl -fsSLO "${RAKAZO_INSTALLER_URL}" &&
-bash install-images.sh
+curl -fsSL -o install-images.sh "${RAKAZO_INSTALLER_URL}" &&
+bash install-images.sh --prepare-only
 ```
 
-`RAKAZO_INSTALLER_URL` is used by this curl command; it is not an installer setting.
+`RAKAZO_INSTALLER_URL` selects the script for this curl command; `RAKAZO_DOWNLOAD_BASE` selects
+the Compose files downloaded by that script. Set both when raw GitHub is blocked.
 
 ## Compose files
 
@@ -30,7 +32,7 @@ mirror of `infra/compose`:
 
 ```bash
 export RAKAZO_DOWNLOAD_BASE=https://example.com/mirror/rakazo/infra/compose
-bash install-images.sh
+bash install-images.sh --prepare-only
 ```
 
 Trailing slashes are trimmed; non-HTTPS bases are rejected. Downloads use bounded retries.
@@ -45,7 +47,7 @@ RAKAZO_DOWNLOAD_SKIP_EXISTING=1 bash install-images.sh --prepare-only
 ```
 
 Missing files are still downloaded. `--prepare-only` creates `.env` without starting the stack;
-edit it as needed, then run `bash install-images.sh --local` to start using the local files.
+continue with the image settings and startup instructions below.
 
 ## Container images
 
