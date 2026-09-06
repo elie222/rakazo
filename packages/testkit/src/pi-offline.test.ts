@@ -115,7 +115,14 @@ describe("real Pi against an offline model HTTP endpoint", () => {
         }),
       ),
     ).catch((error) => {
-      server.assertComplete();
+      try {
+        server.assertComplete();
+      } catch (fixtureError) {
+        throw new AggregateError(
+          [error, fixtureError],
+          "Pi failed and model fixture validation also failed",
+        );
+      }
       throw error;
     });
     server.assertComplete();

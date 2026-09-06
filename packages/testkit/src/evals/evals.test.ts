@@ -282,6 +282,17 @@ describe("eval run controls and reporting", () => {
     expect(JSON.stringify(result)).not.toContain("synthetic-key-123");
     expect(JSON.stringify(result)).not.toContain("private.example.test");
   });
+  it.each([
+    'api_key="synthetic-credential"',
+    "secret='synthetic-credential'",
+    '"api_key": "synthetic-credential"',
+    "authorization: Bearer synthetic-credential",
+    "authorization: Basic synthetic-credential",
+    "access_token=synthetic-credential",
+  ])("redacts complete credential values in %s", (value) => {
+    expect(redact(value)).not.toContain("synthetic-credential");
+    expect(redact(value)).toContain("[redacted]");
+  });
   it("redacts credentials, endpoints, emails, and local paths", () => {
     expect(
       redact(

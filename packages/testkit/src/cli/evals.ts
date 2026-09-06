@@ -8,7 +8,6 @@ import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { EVAL_CASES } from "../evals/cases.js";
 import { emptyTrial, redact, summarize, validateControls } from "../evals/report.js";
-import { runTrial } from "../evals/runner.js";
 
 async function main() {
   const { values } = parseArgs({
@@ -138,7 +137,9 @@ async function main() {
       stdio: "pipe",
       timeout: 120_000,
     });
+    // Import runtime modules only after generation; their barrel exports load Prisma.
     const { createApp } = await import("../../../../apps/api/src/app.ts");
+    const { runTrial } = await import("../evals/runner.js");
     for (let i = 0; i < trials.length; i++) {
       const planned = trials[i]!;
       const scenario = selected.find((c) => c.id === planned.caseId)!;
