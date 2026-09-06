@@ -249,7 +249,7 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
           provider,
           id: modelId,
           oauth: {
-            credential: { type: "oauth", ...parsed.credential },
+            credential: { ...parsed.credential },
           },
         },
       };

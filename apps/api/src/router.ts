@@ -425,6 +425,7 @@ export function createRouter(deps: RouterDeps) {
           isDefault: false,
           bots: [],
           groups: [],
+          externalConversations: [],
           botSections: [],
         };
       }),

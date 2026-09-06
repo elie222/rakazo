@@ -82,13 +82,19 @@ export class MessagingTeamChatEmulator {
         version: "1.0.0",
         botUsername: "rakazo-emulator",
         postMessage: async (threadId: string, message: { text?: string }) => {
-          const handle = emulator.nextHandle("outbound");
+          const handle = emulator.allocateHandle("outbound");
           emulator.sent.push({ threadId, body: message.text ?? "", handle });
           return { id: handle, html_url: null };
         },
-      } as MessagingPlatform["adapter"],
+      } as unknown as MessagingPlatform["adapter"],
       directThreadId: (address) => `${this.provider}:dm:${address}`,
     };
+  }
+
+  /** Public handle allocator for test helpers that record outbound sends. */
+  allocateHandle(prefix: string): string {
+    this.handleCounter += 1;
+    return `${prefix}-${this.handleCounter}`;
   }
 }
 
@@ -103,7 +109,7 @@ export function createRecordingMessagingSurface(emulator: MessagingTeamChatEmula
   return {
     sent: emulator.sent,
     async sendToThread(request) {
-      const handle = emulator.nextHandle("recorded");
+      const handle = emulator.allocateHandle("recorded");
       emulator.sent.push({ threadId: request.threadId, body: request.body, handle });
       return { handle };
     },

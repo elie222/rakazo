@@ -209,13 +209,15 @@ export function enrichSlackTeamRoom(
   base: MessagingInboundMessage,
 ): Partial<MessagingInboundMessage> {
   const root = asRecord(raw);
+  if (!root) return {};
   const event = asRecord(root.event) ?? root;
   const teamId =
     stringField(root, "team_id") ??
     stringField(event, "team") ??
     stringField(event, "team_id");
   const eventType = stringField(event, "type");
-  const botId = stringField(event, "bot_id") ?? stringField(asRecord(event.bot_profile) ?? {}, "id");
+  const botProfile = asRecord(event.bot_profile) ?? {};
+  const botId = stringField(event, "bot_id") ?? stringField(botProfile, "id");
   const threadTs = stringField(event, "thread_ts");
   const channel = stringField(event, "channel");
   const enrichment: Partial<MessagingInboundMessage> = {};
