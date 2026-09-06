@@ -4,15 +4,19 @@ import { captureScreenshot, completeOnboarding, signup } from "./helpers";
 async function revealHoverRail(
   row: import("@playwright/test").Locator,
 ): Promise<import("@playwright/test").Locator> {
-  await row.hover();
   const rail = row.getByTestId("message-hover-rail");
-  await expect(rail).toHaveCSS("opacity", "1");
-  await expect(rail).toHaveCSS("pointer-events", "auto");
+  await expect
+    .poll(async () => {
+      await row.hover();
+      return rail.evaluate((element) => {
+        const style = getComputedStyle(element);
+        return { opacity: style.opacity, pointerEvents: style.pointerEvents };
+      });
+    })
+    .toEqual({ opacity: "1", pointerEvents: "auto" });
+  // Incoming replies can move the row away from the pointer; keep real focus for screenshots.
+  await rail.getByRole("button", { name: "More" }).focus();
   return rail;
-}
-
-async function clearHoverRail(rail: import("@playwright/test").Locator) {
-  await rail.evaluate((el) => el.removeAttribute("style"));
 }
 
 /** Park the pointer outside the message and blur focus so the rail returns to opacity-0. */
@@ -21,7 +25,6 @@ async function expectRailAtRest(
   row: import("@playwright/test").Locator,
 ) {
   const rail = row.getByTestId("message-hover-rail");
-  await clearHoverRail(rail);
   const box = await row.boundingBox();
   if (box) {
     // (0,0) can still sit on the first transcript row; leave below the row instead.
@@ -54,8 +57,7 @@ test("message hover shows beside-bubble actions; reply links to parent", async (
   const botToolbar = botRow.getByTestId("message-hover-actions");
   await expect(botToolbar.getByRole("button", { name: "Reply" })).toBeVisible();
   await expect(botToolbar.getByRole("button", { name: "More" })).toBeVisible();
-  // Measure against the bubble frame (rail offset parent), not an inner markdown
-  // div — padding inside the rounded bubble made the old locator look >8px away.
+  // Measure the visible bubble, so an oversized wrapper cannot hide a gap.
   const botFrame = botRow.getByTestId("message-bot-bubble");
   await expect
     .poll(async () => {
@@ -146,9 +148,8 @@ test("message hover shows beside-bubble actions; reply links to parent", async (
       return Math.abs(frameBox.x - (railBox.x + railBox.width));
     })
     .toBeLessThan(8);
-  await clearHoverRail(longRail);
 
-  // No transcript timestamp under the bubble (Grok Bot). Time lives in More.
+  // Time is only visible after opening More.
   await expect(page.getByTestId("message-hover-time")).toHaveCount(0);
   await revealHoverRail(parentRow);
   await toolbar.getByRole("button", { name: "More" }).click();
@@ -225,13 +226,11 @@ test("message hover shows beside-bubble actions; reply links to parent", async (
 
   await page.setViewportSize({ width: 390, height: 844 });
   await botRow.scrollIntoViewIfNeeded();
-  const botRailMobile = await revealHoverRail(botRow);
+  await revealHoverRail(botRow);
   await captureScreenshot(page, testInfo, "message-bot-actions-mobile");
-  await clearHoverRail(botRailMobile);
   await parentRow.scrollIntoViewIfNeeded();
-  const userRailMobile = await revealHoverRail(parentRow);
+  await revealHoverRail(parentRow);
   await captureScreenshot(page, testInfo, "message-user-actions-mobile");
-  await clearHoverRail(userRailMobile);
 });
 
 test("reply preview jumps to parent outside the loaded page", async ({ page }) => {
