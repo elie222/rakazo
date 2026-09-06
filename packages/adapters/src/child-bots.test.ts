@@ -72,6 +72,8 @@ describe("spawned bot creation", () => {
         name: " Scout ",
         title: "Ignored on a retry",
         prompt: "Do not enqueue this twice",
+        modelProvider: "xai",
+        modelId: "grok-4.6",
       },
     );
 
@@ -109,6 +111,7 @@ describe("spawned bot creation", () => {
     const result = await spawnBot(
       {
         prisma: {
+          bot: { findUnique: vi.fn().mockResolvedValue(null) },
           spaceModelPreference: {
             findFirst: vi.fn().mockResolvedValue({
               credential: { provider: "xai" },
@@ -178,6 +181,7 @@ describe("spawned bot creation", () => {
       await spawnBot(
         {
           prisma: {
+            bot: { findUnique: vi.fn().mockResolvedValue(null) },
             spaceModelPreference: { findFirst: vi.fn().mockResolvedValue(null) },
             userModelCredential: { findFirst: vi.fn().mockResolvedValue(null) },
           } as unknown as PrismaClient,

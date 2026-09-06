@@ -71,41 +71,18 @@ export async function spawnBot(
     email: "",
     isDeploymentOwner: false,
   };
-  if (modelProvider && modelId) {
-    const error = await validateConnectedModelChoice(deps.prisma, actor, modelProvider, modelId);
-    if (error) return { error };
-  }
   let duplicate = false;
   let created: Pick<Bot, "id" | "name" | "title" | "threadId">;
-  try {
-    created = await createRepos(deps.prisma).createBot(actor, {
-      name,
-      title: (input.title ?? "").trim(),
-      description: "",
-      instructions: (input.instructions ?? "").trim(),
-      notifyOnFinish: true,
-      parentBotId: input.spawnedBy.id,
-      spawnKey: input.spawnKey,
-      computerMode: input.computerMode,
-      modelProvider: modelProvider || undefined,
-      modelId: modelId || undefined,
-      initialMessage: {
-        role: "system",
-        blocks: [{ kind: "meta", text: `Created by ${input.spawnedBy.name}` }],
-        runId: input.runId,
+  const existing = await deps.prisma.bot.findUnique({
+    where: {
+      spaceId_spawnKey: {
+        spaceId: input.spawnedBy.spaceId,
+        spawnKey: input.spawnKey,
       },
-    });
-  } catch (error) {
-    const existing = await deps.prisma.bot.findUnique({
-      where: {
-        spaceId_spawnKey: {
-          spaceId: input.spawnedBy.spaceId,
-          spawnKey: input.spawnKey,
-        },
-      },
-      include: { thread: true },
-    });
-    if (!existing) throw error;
+    },
+    include: { thread: true },
+  });
+  if (existing) {
     if (!existing.thread) throw new Error(`Spawned bot ${existing.id} is missing its thread`);
     duplicate = true;
     created = {
@@ -114,6 +91,49 @@ export async function spawnBot(
       title: existing.title,
       threadId: existing.thread.id,
     };
+  } else {
+    if (modelProvider && modelId) {
+      const error = await validateConnectedModelChoice(deps.prisma, actor, modelProvider, modelId);
+      if (error) return { error };
+    }
+    try {
+      created = await createRepos(deps.prisma).createBot(actor, {
+        name,
+        title: (input.title ?? "").trim(),
+        description: "",
+        instructions: (input.instructions ?? "").trim(),
+        notifyOnFinish: true,
+        parentBotId: input.spawnedBy.id,
+        spawnKey: input.spawnKey,
+        computerMode: input.computerMode,
+        modelProvider: modelProvider || undefined,
+        modelId: modelId || undefined,
+        initialMessage: {
+          role: "system",
+          blocks: [{ kind: "meta", text: `Created by ${input.spawnedBy.name}` }],
+          runId: input.runId,
+        },
+      });
+    } catch (error) {
+      const winner = await deps.prisma.bot.findUnique({
+        where: {
+          spaceId_spawnKey: {
+            spaceId: input.spawnedBy.spaceId,
+            spawnKey: input.spawnKey,
+          },
+        },
+        include: { thread: true },
+      });
+      if (!winner) throw error;
+      if (!winner.thread) throw new Error(`Spawned bot ${winner.id} is missing its thread`);
+      duplicate = true;
+      created = {
+        id: winner.id,
+        name: winner.name,
+        title: winner.title,
+        threadId: winner.thread.id,
+      };
+    }
   }
 
   const prompt = (input.prompt ?? "").trim();
