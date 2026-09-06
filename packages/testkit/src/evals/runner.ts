@@ -14,6 +14,7 @@ export type EvalApp = {
   prisma: ReturnType<typeof createDb>["prisma"];
   jobs: JobPublisher;
   runtime: AgentRuntime;
+  harnessIssues?: readonly string[];
   connector?: { records: readonly unknown[] };
   stop: () => Promise<void>;
 };
@@ -59,6 +60,35 @@ export async function runTrial(
   let priorMemory = "";
   const secrets = [options.connection.apiKey ?? "", options.connection.baseUrl ?? ""];
   let phase: FailureCategory = "harness";
+  const seenTools = new Map<string, { name: string }>();
+  let clearedToolCount = 0;
+  const seenUsage = new Map<string, { inputTokens: number; outputTokens: number }>();
+  const countCurrentTools = () =>
+    handles!.prisma.event.count({
+      where: { spaceId: { in: actors.map((actor) => actor.spaceId) }, type: "agent.tool.called" },
+    });
+  // Clearing conversation history deletes its events and usage rows. Preserve
+  // observed records by id so multi-turn totals and budgets never reset or double count.
+  const captureTools = async () => {
+    if (!handles) return seenTools.size;
+    const events = await handles.prisma.event.findMany({
+      where: { spaceId: { in: actors.map((actor) => actor.spaceId) }, type: "agent.tool.called" },
+      select: { id: true, payload: true },
+    });
+    for (const event of events)
+      seenTools.set(event.id, {
+        name: redact(String((event.payload as { name?: string }).name ?? "unknown"), secrets),
+      });
+    return seenTools.size;
+  };
+  const captureUsage = async () => {
+    if (!handles) return;
+    const usage = await handles.prisma.usageRecord.findMany({
+      where: { OR: actorScopes(actors) },
+      select: { id: true, inputTokens: true, outputTokens: true },
+    });
+    for (const row of usage) seenUsage.set(row.id, row);
+  };
   try {
     handles = await options.createApp(services);
     const { app, prisma } = handles;
@@ -147,7 +177,9 @@ export async function runTrial(
         continue;
       }
       if ("clear" in step) {
+        await Promise.all([captureTools(), captureUsage()]);
         await rpc(app, cookie, "threads/clear", { botId });
+        clearedToolCount = seenTools.size - (await countCurrentTools());
         continue;
       }
       let runId: string;
@@ -201,12 +233,7 @@ export async function runTrial(
       const terminal = await poll(async () => {
         const [run, toolCount] = await Promise.all([
           prisma.run.findUnique({ where: { id: runId }, select: { status: true, error: true } }),
-          prisma.event.count({
-            where: {
-              spaceId: { in: actors.map((actor) => actor.spaceId) },
-              type: "agent.tool.called",
-            },
-          }),
+          countCurrentTools().then((count) => count + clearedToolCount),
         ]);
         seenToolCount = toolCount;
         if (toolCount > options.maxToolCalls)
@@ -308,11 +335,16 @@ export async function runTrial(
       result.criteria.length > 0 && result.criteria.every((c) => c.pass) ? "passed" : "failed";
     result.category = result.status === "passed" ? null : "agent";
     result.reason = result.status === "passed" ? null : "Outcome criteria failed";
+    if (result.status === "failed" && handles.harnessIssues?.length) {
+      result.category = "harness";
+      result.reason = handles.harnessIssues.join(" ");
+    }
     result.artifacts = Object.fromEntries(
-      Object.entries({ ...files, "final-response": lastText }).map(([key, value]) => [
-        key,
-        value === null ? null : redact(value, secrets),
-      ]),
+      Object.entries({
+        ...files,
+        "final-response": lastText,
+        "memory-snapshot": evidence.memory,
+      }).map(([key, value]) => [key, value === null ? null : redact(value, secrets)]),
     );
   } catch (error) {
     result.status = "failed";
@@ -328,23 +360,14 @@ export async function runTrial(
       } catch {
         result.cleanupFailed = true;
       }
-      const usage = await handles.prisma.usageRecord
-        .findMany({ where: { OR: actorScopes(actors) } })
-        .catch(() => []);
-      if (usage.length) {
-        result.inputTokens = usage.reduce((n, u) => n + u.inputTokens, 0);
-        result.outputTokens = usage.reduce((n, u) => n + u.outputTokens, 0);
+      await captureUsage().catch(() => undefined);
+      if (seenUsage.size) {
+        result.inputTokens = [...seenUsage.values()].reduce((n, u) => n + u.inputTokens, 0);
+        result.outputTokens = [...seenUsage.values()].reduce((n, u) => n + u.outputTokens, 0);
       }
-      // Include interrupted-run calls too. Raw tool arguments, URLs, credentials, IDs, and errors are intentionally omitted.
-      const events = await handles.prisma.event
-        .findMany({
-          where: {
-            spaceId: { in: actors.map((actor) => actor.spaceId) },
-            type: "agent.tool.called",
-          },
-          orderBy: { seq: "asc" },
-        })
-        .catch(() => []);
+      // Include interrupted and cleared-run calls without retaining raw arguments or ids in reports.
+      await captureTools().catch(() => undefined);
+      const events = [...seenTools.values()];
       result.toolCalls = events.length;
       if (events.length > options.maxToolCalls) {
         result.status = "failed";
@@ -355,9 +378,7 @@ export async function runTrial(
         result.trace.push({
           step: 0,
           status: "interrupted",
-          tools: events.map((e) =>
-            redact(String((e.payload as { name?: string }).name ?? "unknown"), secrets),
-          ),
+          tools: events.map((event) => event.name),
         });
     }
     try {

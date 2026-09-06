@@ -105,6 +105,7 @@ export async function createApp(
   overrides: Partial<AppEnv> & {
     prisma?: PrismaClient;
     realtime?: RealtimeFanout;
+    sandbox?: SandboxProvider;
     composio?: ComposioProvider;
     pipedream?: ManagedConnectorProvider;
     messaging?: MessagingSurface;
@@ -116,6 +117,7 @@ export async function createApp(
   const {
     prisma: prismaOverride,
     realtime: realtimeOverride,
+    sandbox: sandboxOverride,
     composio: composioOverride,
     pipedream: pipedreamOverride,
     messaging: messagingOverride,
@@ -172,18 +174,20 @@ export async function createApp(
   const jobKind = env.wakeupDriver;
   const inMemoryJobs = jobKind === "memory" ? new InMemoryJobQueue() : undefined;
   const jobs = inMemoryJobs ?? new GraphileJobPublisher(env.databaseUrl);
-  const sandbox: SandboxProvider = createRunSandbox(env.sandboxProvider, {
-    supervisorUrl: env.sandboxSupervisorUrl,
-    supervisorToken: env.sandboxSupervisorToken,
-    e2bApiKey: env.e2bApiKey,
-    daytonaApiKey: env.daytonaApiKey,
-    daytonaApiUrl: env.daytonaApiUrl,
-    daytonaTarget: env.daytonaTarget,
-    boxApiKey: env.boxApiKey,
-    boxApiUrl: env.boxApiUrl,
-    dataDir: env.dataDir,
-    prisma,
-  });
+  const sandbox: SandboxProvider =
+    sandboxOverride ??
+    createRunSandbox(env.sandboxProvider, {
+      supervisorUrl: env.sandboxSupervisorUrl,
+      supervisorToken: env.sandboxSupervisorToken,
+      e2bApiKey: env.e2bApiKey,
+      daytonaApiKey: env.daytonaApiKey,
+      daytonaApiUrl: env.daytonaApiUrl,
+      daytonaTarget: env.daytonaTarget,
+      boxApiKey: env.boxApiKey,
+      boxApiUrl: env.boxApiUrl,
+      dataDir: env.dataDir,
+      prisma,
+    });
   const mcpOAuth = new McpOAuthBroker(prisma, secrets, remoteConnectors);
   const memoryProviders = new SpaceMemoryProviderResolver(prisma, secrets);
   const oauthLogins = new PiOAuthLogins();

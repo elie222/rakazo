@@ -3,20 +3,38 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 
-/** No credentials or .env loading: isolated local Docker + HTTP model fixture only. */
+/** Offline by default. Only explicit --live --record loads a model key for a manual capture. */
 async function main() {
   const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
   const imageArg = process.argv.slice(2).find((arg) => arg.startsWith("--image="));
   const subnetArg = process.argv.slice(2).find((arg) => arg.startsWith("--subnet="));
+  const recordArg = process.argv.slice(2).find((arg) => arg.startsWith("--record="));
+  const live = process.argv.includes("--live");
+  if (Boolean(recordArg) !== live || recordArg === "--record=") {
+    throw new Error("A paid recording requires both --live and --record=<new-fixture.json>");
+  }
   const unknown = process.argv
     .slice(2)
-    .filter((arg) => !arg.startsWith("--image=") && !arg.startsWith("--subnet="));
+    .filter(
+      (arg) =>
+        !arg.startsWith("--image=") &&
+        !arg.startsWith("--subnet=") &&
+        !arg.startsWith("--record=") &&
+        arg !== "--live",
+    );
   if (unknown.length)
     throw new Error(
-      "Usage: computer-replay.ts [--image=rakazo/computer:local] [--subnet=unused-private-CIDR]",
+      "Usage: computer-replay.ts [--image=rakazo/computer:local] [--subnet=unused-private-CIDR] [--live --record=new-fixture.json]",
     );
   const image = imageArg?.slice("--image=".length) || "rakazo/computer:local";
+  let captureKey: string | undefined;
+  if (live) {
+    loadRootEnv();
+    captureKey = process.env.OPENROUTER_API_KEY;
+    if (!captureKey) throw new Error("OPENROUTER_API_KEY is required for a live recording");
+  }
   execFileSync("docker", ["image", "inspect", image], { stdio: "ignore" });
   const directory = await mkdtemp(path.join(tmpdir(), "rakazo-computer-replay-"));
   // Retain only local process/Docker discovery settings. In particular, do not
@@ -45,6 +63,12 @@ async function main() {
     SANDBOX_CONTROL_VIA_LOOPBACK: "true",
     LOG_LEVEL: "off",
     ...(subnetArg ? { COMPUTER_REPLAY_SUBNET: subnetArg.slice("--subnet=".length) } : {}),
+    ...(recordArg
+      ? {
+          COMPUTER_RECORD_OUTPUT: path.resolve(recordArg.slice("--record=".length)),
+          OPENROUTER_API_KEY: captureKey,
+        }
+      : {}),
   });
   try {
     await new Promise<void>((resolve, reject) => {

@@ -22,10 +22,12 @@ const completePage = "<title>Export complete</title><h1>Export complete</h1>";
 
 /** Hand-authored scenario, not a captured real-model trace. Only valid UI actions cause effects. */
 export class ContactsBrowserFixture extends FakeBrowserProvider {
-  private readonly exports = new Map<string, number>();
   private readonly observed = new Map<string, BrowserSnapshotResult>();
 
-  constructor(private readonly sandbox: SandboxProvider) {
+  constructor(
+    private readonly sandbox: SandboxProvider,
+    private readonly faults: { downloadFailures?: number } = {},
+  ) {
     super({ pages: { [EXPORT_FIXTURE_URL]: { html: contactsPage } } });
   }
 
@@ -62,8 +64,19 @@ export class ContactsBrowserFixture extends FakeBrowserProvider {
       if (target?.name === "Export contacts") session.load(EXPORT_FIXTURE_URL, dialogPage);
       if (target?.name === "Cancel") session.load(EXPORT_FIXTURE_URL, contactsPage);
       if (target?.name === "Download CSV") {
-        const count = (this.exports.get(computer.id) ?? 0) + 1;
-        this.exports.set(computer.id, count);
+        if ((this.faults.downloadFailures ?? 0) > 0) {
+          this.faults.downloadFailures! -= 1;
+          return {
+            ...result,
+            ok: false,
+            completed: completed - 1,
+            error: "Download temporarily unavailable",
+          };
+        }
+        const previousReceipt = await this.sandbox
+          .readFile(computer, EXPORT_RECEIPT_PATH, context)
+          .catch(() => new TextEncoder().encode("0"));
+        const count = Number(new TextDecoder().decode(previousReceipt)) + 1;
         await this.sandbox.writeFile(
           computer,
           {
@@ -147,7 +160,7 @@ HTTPServer(('127.0.0.1',8765),Handler).serve_forever()
     sandbox,
     computer,
     context,
-    "mkdir -p Downloads results; setsid -f python3 /home/rakazo/contacts_server.py > contacts-server.log 2>&1 < /dev/null",
+    "mkdir -p Downloads results; setsid -f python3 contacts_server.py > contacts-server.log 2>&1 < /dev/null",
   );
   let readinessError: unknown;
   for (let attempt = 0; attempt < 40; attempt += 1) {
@@ -180,11 +193,7 @@ async function executeChecked(
 ) {
   let code: number | undefined;
   let stderr = "";
-  for await (const event of sandbox.execute(
-    computer,
-    { argv: ["bash", "-lc", command] },
-    context,
-  )) {
+  for await (const event of sandbox.execute(computer, { argv: ["bash", "-c", command] }, context)) {
     if (event.type === "exit") code = event.code;
     if (event.type === "stderr") stderr += event.data;
   }

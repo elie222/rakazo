@@ -140,14 +140,17 @@ async function main() {
     // Import runtime modules only after generation; their barrel exports load Prisma.
     const { createApp } = await import("../../../../apps/api/src/app.ts");
     const { runTrial } = await import("../evals/runner.js");
+    const { EvalSandboxProvider } = await import("../evals/sandbox.js");
     for (let i = 0; i < trials.length; i++) {
       const planned = trials[i]!;
       const scenario = selected.find((c) => c.id === planned.caseId)!;
       trials[i] = await runTrial(scenario, planned.trial, {
         ...controls,
         connection,
-        createApp: (composio) =>
-          createApp({
+        createApp: async (composio) => {
+          const sandbox = new EvalSandboxProvider();
+          const handles = await createApp({
+            sandbox,
             databaseUrl,
             realtimeDatabaseUrl: databaseUrl,
             dataDir: path.join(dataDir, `${scenario.id}-${planned.trial}`),
@@ -179,7 +182,9 @@ async function main() {
             mcpStdioAllowedCommands: [],
             updaterUrl: undefined,
             updaterToken: undefined,
-          }),
+          });
+          return { ...handles, harnessIssues: sandbox.harnessIssues };
+        },
       });
       save();
       const result = trials[i]!;

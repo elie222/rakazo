@@ -1,16 +1,27 @@
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { mkdir } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import type { AddressInfo } from "node:net";
 import path from "node:path";
 import { serve } from "@hono/node-server";
 import type { ComputerRef } from "@rakazo/adapter-kit";
-import { ComputerBrowserProvider, DockerSandboxProvider } from "@rakazo/adapters";
+import {
+  ComputerBrowserProvider,
+  DockerSandboxProvider,
+  FakeSandboxProvider,
+} from "@rakazo/adapters";
 import { describe, expect, it } from "vitest";
+import {
+  assertContactsExport,
+  createContactsRecorder,
+  executeContactsJourney,
+  replayContactsRecording,
+} from "./computer-recording.js";
 import { computerReplayContext, runComputerReplay, waitForReplayFile } from "./computer-replay.js";
 import {
   CONTACTS_CSV,
   CONTACTS_PATH,
+  ContactsBrowserFixture,
   EXPORT_RECEIPT_PATH,
   installContactsFixture,
 } from "./computer-replay-fixture.js";
@@ -67,6 +78,61 @@ describe.skipIf(process.env.RUN_COMPUTER_REPLAY_DOCKER !== "1")(
           computer = await sandbox.provision({ botId: context.botId, homePath }, context);
           await sandbox.prepare(computer, context);
           await installContactsFixture(sandbox, computer, context);
+          if (process.env.COMPUTER_RECORD_OUTPUT) {
+            if (!process.env.OPENROUTER_API_KEY)
+              throw new Error("A manual capture requires an OpenRouter key");
+            const recorder = createContactsRecorder(
+              sandbox,
+              new ComputerBrowserProvider({ sandbox }),
+              computer,
+              context,
+            );
+            try {
+              await executeContactsJourney(
+                {
+                  provider: "openrouter",
+                  id: "openai/gpt-5.6-luna",
+                  apiKey: process.env.OPENROUTER_API_KEY,
+                },
+                recorder,
+                context,
+              );
+            } finally {
+              // Retain safe decisions for failed attempts too, without promoting a failed fixture.
+              console.log(
+                JSON.stringify({ source: "luna-openrouter-docker", steps: recorder.decisions() }),
+              );
+            }
+            const recording = recorder.recording("luna-openrouter-docker");
+            await assertContactsExport(sandbox, computer, context);
+            const offlineSandbox = new FakeSandboxProvider();
+            const offlineContext = computerReplayContext();
+            const offlineComputer = await offlineSandbox.provision(
+              { botId: "fixture-bot", homePath: "/fixture" },
+              offlineContext,
+            );
+            const offlineBrowser = new ContactsBrowserFixture(offlineSandbox);
+            try {
+              await replayContactsRecording(
+                recording,
+                offlineSandbox,
+                offlineBrowser,
+                offlineComputer,
+                offlineContext,
+              );
+              await assertContactsExport(offlineSandbox, offlineComputer, offlineContext);
+              // Only sanitized intent leaves memory, after both artifact checks pass.
+              await writeFile(
+                process.env.COMPUTER_RECORD_OUTPUT,
+                `${JSON.stringify(recording, null, 2)}\n`,
+                { flag: "wx" },
+              );
+            } finally {
+              offlineBrowser.close();
+              await offlineSandbox.destroy(offlineComputer, offlineContext);
+            }
+            return;
+          }
           const result = await runComputerReplay(
             sandbox,
             new ComputerBrowserProvider({ sandbox }),
