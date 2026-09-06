@@ -15,7 +15,8 @@ import { SERVICE_NAMES } from "@rakazo/logging";
 import { createRootLogger } from "@rakazo/logging/axiom";
 import { requestLogging } from "@rakazo/logging/hono";
 import Docker from "dockerode";
-import { Hono } from "hono";
+import { Hono, type MiddlewareHandler } from "hono";
+import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
 import {
   COMPUTER_GID,
@@ -95,6 +96,23 @@ const teamScreenLimit = resolveTeamScreenLimit();
 const controlViaLoopback = process.env.SANDBOX_CONTROL_VIA_LOOPBACK === "true";
 const computerScreens = new Map<string, Map<string, ScreenAssignment>>();
 
+export const MAX_SUPERVISOR_REQUEST_BYTES = 1024 * 1024;
+export const MAX_SUPERVISOR_FILE_REQUEST_BYTES = 16 * 1024 * 1024 + 64 * 1024;
+
+/** Keep normal control requests small while allowing the existing 16 MiB file payload. */
+export function supervisorRequestBodyLimit(pathname: string): number {
+  return /^\/computers\/[^/]+\/files\/?$/.test(pathname)
+    ? MAX_SUPERVISOR_FILE_REQUEST_BYTES
+    : MAX_SUPERVISOR_REQUEST_BYTES;
+}
+
+const limitSupervisorRequestBody: MiddlewareHandler = async (c, next) => {
+  return bodyLimit({
+    maxSize: supervisorRequestBodyLimit(c.req.path),
+    onError: (context) => context.json({ error: "Request body is too large." }, 413),
+  })(c, next);
+};
+
 const app = new Hono();
 
 export { app as supervisorApp };
@@ -125,6 +143,8 @@ app.use("/computers/*", async (c, next) => {
   }
   await next();
 });
+app.use("/computers", limitSupervisorRequestBody);
+app.use("/computers/*", limitSupervisorRequestBody);
 
 app.post("/computers", async (c) => {
   const body = z

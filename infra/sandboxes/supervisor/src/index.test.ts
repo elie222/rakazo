@@ -3,7 +3,14 @@ import http from "node:http";
 import net from "node:net";
 import { resolveSupervisorToken } from "@rakazo/core";
 import { describe, expect, it } from "vitest";
-import { resolveDockerSocketPath, supervisorApp, waitForScreenReady } from "./index.js";
+import {
+  MAX_SUPERVISOR_FILE_REQUEST_BYTES,
+  MAX_SUPERVISOR_REQUEST_BYTES,
+  resolveDockerSocketPath,
+  supervisorApp,
+  supervisorRequestBodyLimit,
+  waitForScreenReady,
+} from "./index.js";
 import {
   assertRequestIdentity,
   attemptComputerControl,
@@ -160,6 +167,45 @@ describe("sandbox supervisor HTTP boundary", () => {
     expect(hasValidBearerToken("Basic credentials", token)).toBe(false);
     expect(hasValidBearerToken(`Bearer ${"x".repeat(token.length)}`, token)).toBe(false);
     expect(hasValidBearerToken(`Bearer ${token}`, token)).toBe(true);
+  });
+
+  it("bounds authenticated control request bodies before JSON parsing", async () => {
+    const headers = {
+      authorization: `Bearer ${token}`,
+      "content-type": "application/json",
+    };
+    const declared = await supervisorApp.request("/computers/id/actions", {
+      method: "POST",
+      headers: {
+        ...headers,
+        "content-length": String(MAX_SUPERVISOR_REQUEST_BYTES + 1),
+      },
+      body: "{}",
+    });
+    const streamed = await supervisorApp.request("/computers/id/actions", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ padding: "x".repeat(MAX_SUPERVISOR_REQUEST_BYTES) }),
+    });
+
+    for (const response of [declared, streamed]) {
+      expect(response.status).toBe(413);
+      await expect(response.json()).resolves.toEqual({ error: "Request body is too large." });
+    }
+  });
+
+  it("keeps the larger file-write allowance scoped to that exact route", () => {
+    expect(supervisorRequestBodyLimit("/computers/id/files")).toBe(
+      MAX_SUPERVISOR_FILE_REQUEST_BYTES,
+    );
+    expect(supervisorRequestBodyLimit("/computers/id/files/")).toBe(
+      MAX_SUPERVISOR_FILE_REQUEST_BYTES,
+    );
+    expect(supervisorRequestBodyLimit("/computers/id/actions")).toBe(MAX_SUPERVISOR_REQUEST_BYTES);
+    expect(supervisorRequestBodyLimit("/computers/files")).toBe(MAX_SUPERVISOR_REQUEST_BYTES);
+    expect(supervisorRequestBodyLimit("/computers/id/files/extra")).toBe(
+      MAX_SUPERVISOR_REQUEST_BYTES,
+    );
   });
 
   it("rejects a provision request whose identity headers do not match its body", async () => {
