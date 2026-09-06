@@ -1,46 +1,50 @@
-import { i18n } from "@lingui/core";
 import { renderToStaticMarkup } from "react-dom/server";
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { MessageHoverMetadata } from "./MessageHoverMetadata";
 
 describe("MessageHoverMetadata", () => {
-  afterEach(() => {
-    i18n.load("en", {});
-    i18n.activate("en");
-  });
-
-  it("shows the message's creation time beside its actions on hover or focus", () => {
-    i18n.load("en", {});
-    i18n.activate("en");
-
-    const createdAt = new Date(2026, 7, 21, 18, 14).toISOString();
+  it("places bot actions flush to the right of the bubble", () => {
     const html = renderToStaticMarkup(
-      <MessageHoverMetadata createdAt={createdAt}>
-        <div data-testid="message-actions-pill" />
+      <MessageHoverMetadata side="end">
+        <div data-testid="message-actions" />
       </MessageHoverMetadata>,
     );
 
-    expect(html).toContain(
-      `<time dateTime="${createdAt}" class="text-[11px] tabular-nums text-muted-foreground">6:14 PM</time>`,
-    );
-    expect(html.indexOf("<time")).toBeLessThan(html.indexOf('data-testid="message-actions-pill"'));
+    expect(html).toContain('data-testid="message-hover-rail"');
+    expect(html).toContain("start-full");
+    expect(html).toContain("ms-1");
+    expect(html).toContain("top-1/2");
+    expect(html).toContain("-translate-y-1/2");
+    expect(html).not.toContain("ms-1.5");
+    expect(html).not.toContain("bottom-0");
+    expect(html).not.toContain("<time");
+    expect(html).toContain("opacity-0");
+    expect(html).toContain("@media(hover:hover)_and_(pointer:fine)");
     expect(html).toContain("group-hover/message:opacity-100");
     expect(html).toContain("focus-within:opacity-100");
   });
 
-  it("formats the displayed time with the active i18n locale", () => {
-    i18n.load("de", {});
-    i18n.activate("de");
-
-    const createdAt = new Date(2026, 7, 21, 18, 14).toISOString();
+  it("mirrors user actions flush to the left of the bubble", () => {
     const html = renderToStaticMarkup(
-      <MessageHoverMetadata createdAt={createdAt}>
-        <div data-testid="message-actions-pill" />
+      <MessageHoverMetadata side="start">
+        <div data-testid="message-actions" />
       </MessageHoverMetadata>,
     );
 
-    expect(html).toContain(`dateTime="${createdAt}"`);
-    expect(html).toContain(">18:14</time>");
-    expect(html).not.toContain("6:14 PM");
+    expect(html).toContain("end-full");
+    expect(html).toContain("me-1");
+    expect(html).not.toContain("start-full");
+    expect(html).not.toContain("<time");
+  });
+
+  it("pins the rail open while a nested menu is active", () => {
+    const html = renderToStaticMarkup(
+      <MessageHoverMetadata pinned side="end">
+        <div data-testid="message-actions" />
+      </MessageHoverMetadata>,
+    );
+
+    expect(html).toContain("pointer-events-auto opacity-100");
+    expect(html).not.toContain("group-hover/message:opacity-100");
   });
 });

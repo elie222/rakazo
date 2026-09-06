@@ -16,8 +16,12 @@ test("focus choice suggests apps and preserves a completed connection", async ({
     page.getByText("Hey Robin. Fresh start on my side, so I’ll keep this short."),
   ).toBeVisible();
   await expect(page.getByText("What do you want me on first?", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Day-to-day work/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Research & writing/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /A bit of everything/ })).toBeVisible();
   await page.mouse.move(1, 1);
   await captureScreenshot(page, testInfo, "01-focus-choice");
+  await captureScreenshot(page, testInfo, "choice-card-onboarding");
 
   await page.getByRole("button", { name: /Day-to-day work/ }).click();
   // The focus step suggests apps but must not rename the bot: the name the
@@ -83,4 +87,22 @@ test("focus choice suggests apps and preserves a completed connection", async ({
   await expect(slackCard(page).getByText("Connected", { exact: true })).toBeVisible();
   await page.mouse.move(1, 1);
   await captureScreenshot(page, testInfo, "04-connected-after-reload");
+});
+
+test("choice refresh failures leave options available for retry", async ({ page }) => {
+  await signup(page, `choice-refresh-${Date.now()}@rakazo.test`, "password12", "Choice Retry");
+  await completeOnboarding(page);
+  const choice = page.getByRole("button", { name: /Day-to-day work/ });
+  await expect(choice).toBeEnabled();
+  // Keep the existing choice rendered while its save succeeds and navigation refresh fails.
+  await page.route("**/rpc/onboarding/choose", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ json: { ok: true } }),
+    }),
+  );
+  await page.route("**/rpc/spaces/list", (route) => route.abort());
+  await Promise.all([page.waitForRequest("**/rpc/spaces/list"), choice.click()]);
+  await expect(choice).toBeEnabled();
 });

@@ -26,6 +26,7 @@ import {
   truncateSlashDescription,
   userVisibleMessages,
 } from "@rakazo/core";
+import * as Clipboard from "expo-clipboard";
 import { useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import { useHeaderHeight } from "expo-router/react-navigation";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -62,6 +63,7 @@ import { NativeSymbol } from "../components/native-symbol";
 import {
   applyMobileThreadEvent,
   blockText,
+  copyableMobileMessageText,
   currentApiBase,
   loadSessionToken,
   type MobileBot,
@@ -82,13 +84,14 @@ import { mobileTokens } from "../lib/appearance";
 import { type MobileArtifactTarget, openMobileArtifact } from "../lib/artifact-open";
 import { confirmDeleteBot } from "../lib/bot-lifecycle";
 import { cancelFocusPrompt, focusPromptThreadActive } from "../lib/focus-prompt";
-import { t, useI18n } from "../lib/i18n";
+import { dateLocaleForUi, t, useI18n } from "../lib/i18n";
 import { saveLastBotId } from "../lib/last-bot";
 import {
   dismissThreadNotifications,
   resumeLiveNotifications,
   setOpenNotificationThread,
 } from "../lib/live-notifications";
+import { presentMessageActionSheet } from "../lib/message-action-sheet";
 import {
   hasVisibleMessagePresentation,
   isCenteredAgentEvent,
@@ -1269,31 +1272,29 @@ function Thread() {
       ...(message.role === "bot" && blockText(message)
         ? [{ name: "speak", text: t("Speak message"), onPress: () => void speak(message) }]
         : []),
+      {
+        name: "copy",
+        text: t("Copy"),
+        onPress: () => {
+          const text = copyableMobileMessageText(message);
+          if (text) void Clipboard.setStringAsync(text).catch(() => undefined);
+        },
+      },
     ];
     return {
-      onLongPress: () => {
-        if (Platform.OS === "ios") {
-          ActionSheetIOS.showActionSheetWithOptions(
-            {
-              options: [...actions.map((action) => action.text), t("Cancel")],
-              cancelButtonIndex: actions.length,
-              userInterfaceStyle: colorScheme,
-            },
-            (index) => actions[index]?.onPress(),
-          );
-        } else {
-          // Android alerts allow at most three buttons; Back/outside tap always dismisses.
-          Alert.alert(
-            "",
-            undefined,
-            [
-              ...actions,
-              ...(actions.length < 3 ? [{ text: t("Cancel"), style: "cancel" as const }] : []),
-            ],
-            { cancelable: true },
-          );
-        }
-      },
+      onLongPress: () =>
+        presentMessageActionSheet({
+          actions,
+          title: message.createdAt
+            ? new Date(message.createdAt).toLocaleTimeString(dateLocaleForUi(), {
+                hour: "numeric",
+                minute: "2-digit",
+              })
+            : undefined,
+          cancel: t("Cancel"),
+          more: t("More"),
+          colorScheme,
+        }),
       accessibilityActions: actions.map((action) => ({ name: action.name, label: action.text })),
       onAccessibilityAction: (event) => {
         actions.find((action) => action.name === event.nativeEvent.actionName)?.onPress();
@@ -2612,7 +2613,7 @@ const MessageBubble = memo(function MessageBubble({
           borderRadius: 20,
           borderWidth: 1,
           borderColor: tokens.border,
-          backgroundColor: message.role === "user" ? tokens.primary : tokens.muted,
+          backgroundColor: message.role === "user" ? tokens.secondary : tokens.muted,
           paddingHorizontal: 14,
           paddingVertical: 12,
           gap: 8,
@@ -2626,7 +2627,7 @@ const MessageBubble = memo(function MessageBubble({
         {replyPreview ? (
           <Text
             style={{
-              color: message.role === "user" ? tokens.primaryForeground : tokens.mutedForeground,
+              color: message.role === "user" ? tokens.secondaryForeground : tokens.mutedForeground,
               fontSize: 12.5,
             }}
             numberOfLines={2}
@@ -2637,7 +2638,7 @@ const MessageBubble = memo(function MessageBubble({
         {caption ? (
           <Text
             style={{
-              color: message.role === "user" ? tokens.primaryForeground : tokens.foreground,
+              color: message.role === "user" ? tokens.secondaryForeground : tokens.foreground,
               fontSize: 15,
             }}
           >
@@ -2667,7 +2668,7 @@ const MessageBubble = memo(function MessageBubble({
             >
               <Text
                 style={{
-                  color: message.role === "user" ? tokens.primaryForeground : tokens.foreground,
+                  color: message.role === "user" ? tokens.secondaryForeground : tokens.foreground,
                   fontSize: 15,
                 }}
               >
@@ -2702,7 +2703,7 @@ const MessageBubble = memo(function MessageBubble({
             >
               <Text
                 style={{
-                  color: message.role === "user" ? tokens.primaryForeground : tokens.foreground,
+                  color: message.role === "user" ? tokens.secondaryForeground : tokens.foreground,
                   fontSize: 15,
                 }}
               >
@@ -2712,7 +2713,7 @@ const MessageBubble = memo(function MessageBubble({
                 <Text
                   style={{
                     color:
-                      message.role === "user" ? tokens.primaryForeground : tokens.mutedForeground,
+                      message.role === "user" ? tokens.secondaryForeground : tokens.mutedForeground,
                     marginTop: 4,
                     fontSize: 13,
                   }}
@@ -2785,7 +2786,7 @@ function MessageTextCard({
         flexShrink: 1,
         minWidth: 0,
         maxWidth: "100%",
-        backgroundColor: message.role === "user" ? tokens.primary : tokens.muted,
+        backgroundColor: message.role === "user" ? tokens.secondary : tokens.muted,
         padding: 12,
         borderRadius: 20,
       }}
@@ -2805,7 +2806,7 @@ function MessageTextCard({
       {replyPreview ? (
         <Text
           style={{
-            color: message.role === "user" ? tokens.primaryForeground : tokens.mutedForeground,
+            color: message.role === "user" ? tokens.secondaryForeground : tokens.mutedForeground,
             fontSize: 12.5,
             marginBottom: 6,
           }}
@@ -2815,7 +2816,7 @@ function MessageTextCard({
         </Text>
       ) : null}
       {message.role === "user" ? (
-        <Text style={{ color: tokens.primaryForeground, fontSize: 15.5, lineHeight: 23 }}>
+        <Text style={{ color: tokens.secondaryForeground, fontSize: 15.5, lineHeight: 23 }}>
           {contentText}
         </Text>
       ) : (

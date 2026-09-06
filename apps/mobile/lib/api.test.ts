@@ -1334,3 +1334,28 @@ function snapshot(
 function mobileMessage(id: string, blocks: MobileMessage["blocks"], seq?: number): MobileMessage {
   return { id, threadId: "thread-1", seq, role: "bot", blocks };
 }
+
+describe("mobile clipboard text", () => {
+  it("copies message content with transport labels and omits card chrome", async () => {
+    const { copyableMobileMessageText } = await import("./api");
+    expect(
+      copyableMobileMessageText({
+        id: "message",
+        role: "bot",
+        blocks: [
+          { kind: "text", text: "Hello" },
+          {
+            kind: "channel_message",
+            provider: "sendblue",
+            transport: "SMS",
+            channelId: "ch-1",
+            fromAddress: "+15551234567",
+            fromLabel: "Sender",
+            text: "Reply",
+          },
+          { kind: "card", lines: [] },
+        ],
+      }),
+    ).toBe("Hello\nSMS · Sender: Reply");
+  });
+});

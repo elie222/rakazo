@@ -551,6 +551,7 @@ export type MobileMessage = {
   botId?: string;
   replyToMessageId?: string;
   thumbsUp?: boolean;
+  createdAt?: string;
   blocks: MessageBlock[];
 };
 
@@ -636,6 +637,21 @@ export function messagingProviderLabel(provider: string, transport?: string): st
     return transport!;
   }
   return MESSAGING_PROVIDER_LABELS[provider] ?? provider;
+}
+
+export function copyableMobileMessageText(message: MobileMessage): string {
+  return message.blocks
+    .map((block) => {
+      if (block.kind === "channel_message") {
+        return `${messagingProviderLabel(block.provider, block.transport)} · ${block.fromLabel}: ${block.text}`;
+      }
+      if (block.kind === "text" || block.kind === "progress" || block.kind === "ask")
+        return block.text;
+      return "";
+    })
+    .filter(Boolean)
+    .join("\n")
+    .trim();
 }
 
 export function blockText(message: MobileMessage) {
