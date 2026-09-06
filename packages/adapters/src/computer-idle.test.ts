@@ -146,7 +146,6 @@ describe("sandbox idle", () => {
       where: { id: harness.computer.id },
       data: {
         state: "suspended",
-        homeRevision: "rev-checkpoint",
         controlHolder: "none",
         controlLeaseId: null,
         controlLeaseExpiresAt: null,
@@ -170,6 +169,44 @@ describe("sandbox idle", () => {
     expect(harness.sandbox.stop).not.toHaveBeenCalled();
     expect(harness.prisma.computer.update).not.toHaveBeenCalled();
   });
+
+  it("retains the saved revision when the database transition after stopping fails", async () => {
+    const harness = idleHarness();
+    harness.prisma.computer.update.mockRejectedValueOnce(new Error("database unavailable"));
+    harness.sandbox.stop.mockImplementationOnce(async () => {
+      expect(harness.computer.homeRevision).toBe("rev-checkpoint");
+    });
+
+    await expect(sleepComputerIfIdle(harness.deps, harness.computer.id)).rejects.toThrow(
+      "database unavailable",
+    );
+
+    expect(harness.sandbox.stop).toHaveBeenCalledOnce();
+    expect(harness.computer.homeRevision).toBe("rev-checkpoint");
+  });
+
+  it.each(["failure", "lost claim"])(
+    "does not stop when recording the revision encounters a %s",
+    async (outcome) => {
+      const harness = idleHarness();
+      const updateMany = harness.prisma.computer.updateMany.getMockImplementation()!;
+      harness.prisma.computer.updateMany.mockImplementation(async (args) => {
+        if (args.data.homeRevision) {
+          if (outcome === "failure") throw new Error("database unavailable");
+          return { count: 0 };
+        }
+        return updateMany(args);
+      });
+
+      const sleep = sleepComputerIfIdle(harness.deps, harness.computer.id);
+      if (outcome === "failure") await expect(sleep).rejects.toThrow("database unavailable");
+      else await sleep;
+
+      expect(harness.sandbox.stop).not.toHaveBeenCalled();
+      expect(harness.computer.homeRevision).toBe("rev-before");
+      expect(harness.jobs.enqueue).toHaveBeenCalledOnce();
+    },
+  );
 });
 
 describe("background work launch and probe", () => {
@@ -393,6 +430,7 @@ function idleHarness(
   const computer = {
     id: "computer-id",
     homeKey: "team-workspace",
+    homeRevision: "rev-before",
     providerRef: "computer",
     kind: "e2b",
     state: "running",
@@ -412,6 +450,7 @@ function idleHarness(
       updateMany: vi.fn(async (args) => {
         if (args.data.updatedAt) checkpointedAt = args.data.updatedAt;
         if (args.data.state) computer.state = args.data.state;
+        if (args.data.homeRevision) computer.homeRevision = args.data.homeRevision;
         return { count: 1 };
       }),
       update: vi.fn().mockResolvedValue(undefined),

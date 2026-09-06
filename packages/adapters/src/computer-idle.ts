@@ -241,15 +241,27 @@ export async function sleepComputerIfIdle(
     return;
   }
 
-  let revision: string;
   try {
-    revision = await checkpointComputerWorkspace(
+    const revision = await checkpointComputerWorkspace(
       deps.home,
       deps.sandbox,
       computer.homeKey,
       ref,
       ctx,
     );
+    const saved = await deps.prisma.computer.updateMany({
+      where: {
+        id: computerId,
+        state: "suspending",
+        providerRef: computer.providerRef,
+        updatedAt: checkpointedAt,
+      },
+      data: { homeRevision: revision, updatedAt: checkpointedAt },
+    });
+    if (saved.count !== 1) {
+      scheduleComputerSleep(deps.jobs, computerId);
+      return;
+    }
   } catch (error) {
     await deps.prisma.computer.updateMany({
       where: { id: computerId, state: "suspending" },
@@ -302,7 +314,6 @@ export async function sleepComputerIfIdle(
     where: { id: computerId },
     data: {
       state: "suspended",
-      homeRevision: revision,
       controlHolder: "none",
       controlLeaseId: null,
       controlLeaseExpiresAt: null,

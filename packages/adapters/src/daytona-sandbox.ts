@@ -61,7 +61,7 @@ export class DaytonaSandboxProvider implements SandboxProvider {
         undefined,
         boundedSandboxCommandTimeoutMs(undefined) / 1000,
       );
-      return { code: result.exitCode, stdout: result.result };
+      return { code: result.exitCode, stdout: result.result, stderr: result.result };
     },
     screenUrl: async (computer, port, context) => {
       const preview = await this.screenPreview(

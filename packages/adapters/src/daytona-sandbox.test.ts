@@ -12,6 +12,16 @@ const context = {
 };
 
 describe("DaytonaSandboxProvider", () => {
+  it("preserves desktop command output in failures", async () => {
+    const fixture = daytonaFixture();
+    const provider = new DaytonaSandboxProvider({ apiKey: "test-key" }, fixture.client);
+    const computer = await provider.provision({ botId: "bot-a", homePath: "/unused" }, context);
+    await provider.prepare(computer, context);
+    fixture.executeCommand.mockResolvedValueOnce({ exitCode: 1, result: "could not start Xvfb" });
+
+    await expect(provider.observe(computer, context)).rejects.toThrow("could not start Xvfb");
+  });
+
   it("implements the portable command, file, screen, and computer-use contract", async () => {
     const fixture = daytonaFixture();
     const provider = new DaytonaSandboxProvider({ apiKey: "test-key" }, fixture.client);
