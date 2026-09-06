@@ -6,7 +6,7 @@ import type {
   JobPublisher,
   SandboxProvider,
 } from "@rakazo/adapter-kit";
-import { ACTIVE_RUN_STATUSES, screenLeaseId } from "@rakazo/core";
+import { ACTIVE_RUN_STATUSES, parseScreenLeaseId, screenLeaseId } from "@rakazo/core";
 import {
   expireComputerExecutionLeases,
   type PrismaClient,
@@ -30,6 +30,54 @@ const EXECUTION_LEASE_MS = 5 * 60_000;
 const RELEASED_EXECUTION_LEASE_AT = new Date(0);
 const BOOT_WAIT_ATTEMPTS = 40;
 const BOOT_WAIT_MS = 250;
+
+/**
+ * "Nobody but us holds this computer."
+ *
+ * Whoever moves a computer to "booting" holds its execution lease for the whole provision,
+ * renewed on the run heartbeat, so a booting row whose only live lease is our own belongs to
+ * a worker that died between the claim and its own failure handler. Before this nothing
+ * cleared that state -- the claim took only stopped/suspended/error rows and replaceComputer
+ * refused a booting one -- so the computer stayed wedged for good and every run on its bot
+ * retried forever.
+ *
+ * The same predicate guards the writes that end a boot. Reclaiming means two workers can
+ * briefly believe they own one row: ours, and one merely paused past its lease. Writing
+ * unconditionally would let the late one overwrite the winner's providerRef and leak its box,
+ * which is how the orphaned sandboxes that exhaust a Docker host pile up. A lease that merely
+ * expired without being taken still passes, so a slow manual boot that never heartbeats keeps
+ * working.
+ *
+ * When screenLeaseId is absent, require that no live execution lease exists at all.
+ */
+function heldByNobodyElse(lease: { ownerId: string; fence: number } | null) {
+  return {
+    executionLeases: {
+      none: {
+        expiresAt: { gt: new Date() },
+        ...(lease ? { NOT: { runId: lease.ownerId, fence: lease.fence } } : {}),
+      },
+    },
+  };
+}
+
+/**
+ * A live execution lease held by some OTHER bot on this computer.
+ *
+ * replaceComputer already holds the lease for its own bot, so "any live lease" would always
+ * be true there; a shared Team Computer mid-boot for a different bot must still be refused.
+ */
+async function hasForeignExecutionLease(
+  prisma: PrismaClient,
+  computerId: string,
+  botId: string,
+): Promise<boolean> {
+  const live = await prisma.computerExecutionLease.findFirst({
+    where: { computerId, botId: { not: botId }, expiresAt: { gt: new Date() } },
+    select: { id: true },
+  });
+  return live !== null;
+}
 
 export class ComputerBusyError extends Error {
   constructor() {
@@ -67,19 +115,24 @@ export async function provisionComputer(
   if (existing.state === "booting" || existing.state === "suspending") {
     existing = await waitForComputerReady(deps.prisma, computerId, context);
   }
-  if (!["running", "stopped", "suspended", "error"].includes(existing.state)) {
+  // A booting row whose holder is gone is reclaimable; suspending is not.
+  if (!["running", "stopped", "suspended", "error", "booting"].includes(existing.state)) {
     throw new ComputerBusyError();
   }
 
   const reconnecting = existing.state === "running" && Boolean(existing.providerRef);
   // Reconnect can allocate a replacement too. Claim it before any provider call,
   // and compare the observed reference so a delayed caller cannot replace a winner.
+  // An abandoned "booting" row is claimed only when no other live execution lease remains.
   const previousRef = { providerRef: existing.providerRef, kind: existing.kind };
+  const bootLease = context.screenLeaseId ? parseScreenLeaseId(context.screenLeaseId) : null;
   const claimed = await deps.prisma.computer.updateMany({
     where: {
       id: computerId,
-      state: existing.state,
-      ...previousRef,
+      OR: [
+        ...(existing.state !== "booting" ? [{ state: existing.state, ...previousRef }] : []),
+        { state: "booting", ...heldByNobodyElse(bootLease) },
+      ],
       ...(context.botId ? { bots: { some: { id: context.botId, archivedAt: null } } } : {}),
     },
     data: { state: "booting" },
@@ -119,6 +172,7 @@ export async function provisionComputer(
         id: computerId,
         state: "booting",
         ...previousRef,
+        ...heldByNobodyElse(bootLease),
         ...(context.botId ? { bots: { some: { id: context.botId, archivedAt: null } } } : {}),
       },
       data: {
@@ -152,7 +206,12 @@ export async function provisionComputer(
         : undefined;
     try {
       await deps.prisma.computer.updateMany({
-        where: { id: computerId, state: "booting", ...previousRef },
+        where: {
+          id: computerId,
+          state: "booting",
+          ...previousRef,
+          ...heldByNobodyElse(bootLease),
+        },
         data: {
           state: reconnecting ? "running" : "error",
           ...(!reconnecting && rollbackError && provisioned
@@ -406,7 +465,14 @@ export async function replaceComputer(
   if (hasActiveComputerControl(existing)) {
     throw new ComputerBusyError();
   }
-  if (existing.state === "booting" || existing.state === "suspending") {
+  if (existing.state === "suspending") {
+    throw new ComputerBusyError();
+  }
+  // Allow Reset on a stale "booting" row unless another bot still holds a live lease.
+  if (
+    existing.state === "booting" &&
+    (await hasForeignExecutionLease(deps.prisma, computerId, botId))
+  ) {
     throw new ComputerBusyError();
   }
 
