@@ -8,7 +8,6 @@ import type {
   ThreadSnapshot,
 } from "@rakazo/contracts";
 import {
-  cloudAgentBlockFromPayload,
   isActive,
   isRunTerminalEvent,
   mergeThreadHistory,
@@ -17,6 +16,9 @@ import {
   reduceLiveMessageBlocks,
   runFailureError,
   subagentBlockFromPayload,
+  takeLiveMessage,
+  updateCloudAgentMessages,
+  updateMessageReaction,
   upsertMessageById,
 } from "@rakazo/core";
 
@@ -56,22 +58,6 @@ function runFromStartedEvent(event: ProductEvent, previous: Run | undefined): Ru
     completedAt: null,
     createdAt: previous?.createdAt ?? event.createdAt,
   };
-}
-
-function takeLiveMessage(
-  messages: readonly ThreadMessage[],
-  liveId: string,
-): { previous: ThreadMessage | undefined; remaining: ThreadMessage[] } {
-  let previous: ThreadMessage | undefined;
-  const remaining: ThreadMessage[] = [];
-  for (const message of messages) {
-    if (message.id === liveId) {
-      previous = message;
-    } else if (!message.id.startsWith("progress:") || message.runId) {
-      remaining.push(message);
-    }
-  }
-  return { previous, remaining };
 }
 
 const computerStates: ReadonlySet<unknown> = new Set<ComputerStatus["state"]>([
@@ -440,47 +426,17 @@ export function reduceThreadSnapshot(
   }
 
   if (event.type === "thread.cloud_agent") {
-    const agentId = String(event.payload.agentId ?? "");
-    const messageId = String(event.payload.messageId ?? "");
-    const block = cloudAgentBlockFromPayload(event.payload ?? {});
     return {
       ...prev,
       cursor: event.seq,
-      messages: prev.messages.map((message) => {
-        if (messageId && message.id === messageId) {
-          return {
-            ...message,
-            blocks: message.blocks.map((existing) =>
-              existing.kind === "cloud_agent" && existing.agentId === agentId ? block : existing,
-            ),
-          };
-        }
-        if (
-          message.blocks.some(
-            (existing) => existing.kind === "cloud_agent" && existing.agentId === agentId,
-          )
-        ) {
-          return {
-            ...message,
-            blocks: message.blocks.map((existing) =>
-              existing.kind === "cloud_agent" && existing.agentId === agentId ? block : existing,
-            ),
-          };
-        }
-        return message;
-      }),
+      messages: updateCloudAgentMessages(prev.messages, event.payload ?? {}),
     };
   }
   if (event.type === "thread.message.reaction") {
-    const messageId = String(event.payload.messageId ?? "");
     return {
       ...prev,
       cursor: event.seq,
-      messages: prev.messages.map((message) =>
-        message.id === messageId
-          ? { ...message, thumbsUp: event.payload.thumbsUp === true }
-          : message,
-      ),
+      messages: updateMessageReaction(prev.messages, event.payload ?? {}),
     };
   }
   if (event.type === "thread.message.created" || event.type === "thread.message.updated") {
