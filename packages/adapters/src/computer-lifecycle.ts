@@ -125,6 +125,16 @@ export async function provisionComputer(
   if (!["running", "stopped", "suspended", "error", "booting"].includes(existing.state)) {
     throw new ComputerBusyError();
   }
+  // Waited for suspending (or similar) and landed on booting we never stamped: another
+  // caller owns that boot. Do not adopt its updatedAt / previousRef and double-provision.
+  if (existing.state === "booting" && reclaimStamp === null) {
+    throw new ComputerBusyError();
+  }
+  // We came to reclaim abandoned booting; if another caller already activated, do not fall
+  // through into reconnect (that would provision again under their providerRef).
+  if (reclaimStamp !== null && existing.state === "running") {
+    throw new ComputerBusyError();
+  }
 
   const reconnecting = existing.state === "running" && Boolean(existing.providerRef);
   // Reconnect can allocate a replacement too. Claim it before any provider call,
@@ -139,7 +149,7 @@ export async function provisionComputer(
     existing.state === "booting"
       ? {
           state: "booting" as const,
-          updatedAt: reclaimStamp ?? existing.updatedAt,
+          updatedAt: reclaimStamp!,
           ...heldByNobodyElse(bootLease),
         }
       : {

@@ -235,6 +235,54 @@ describe("computer provisioning", () => {
     );
   });
 
+  it("rejects booting discovered only after waiting on suspending", async () => {
+    const updateMany = vi.fn();
+    const rowSuspending = {
+      id: "computer-1",
+      homeKey: "bot-1",
+      providerRef: null as string | null,
+      kind: "cloud",
+      scope: "dedicated",
+      state: "suspending",
+      controlLeaseId: null,
+      updatedAt: new Date("2024-01-01T00:00:00.000Z"),
+    };
+    const rowBooting = {
+      ...rowSuspending,
+      state: "booting",
+      updatedAt: new Date("2024-01-01T00:00:01.000Z"),
+    };
+    let reads = 0;
+    const prisma = {
+      computer: {
+        findUniqueOrThrow: vi.fn(async () => {
+          reads += 1;
+          // First read is suspending; wait loop then observes another caller's booting claim.
+          return reads === 1 ? { ...rowSuspending } : { ...rowBooting };
+        }),
+        updateMany,
+      },
+    } as unknown as PrismaClient;
+    const deps = {
+      prisma,
+      sandbox: {} as SandboxProvider,
+      home: {} as AgentHomeStore,
+      jobs: {} as JobPublisher,
+      events: {} as ThreadEvents,
+    };
+    const setTimeoutReal = globalThis.setTimeout;
+    vi.stubGlobal("setTimeout", ((fn: (...args: never[]) => void, _ms?: number, ...args: never[]) =>
+      setTimeoutReal(fn, 0, ...args)) as unknown as typeof setTimeout);
+    try {
+      await expect(provisionComputer(deps, "computer-1", context)).rejects.toBeInstanceOf(
+        ComputerBusyError,
+      );
+      expect(updateMany).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("does not adopt a concurrent reclaim stamp after claiming", async () => {
     const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-claim-stamp-race-"));
     const row = {
