@@ -1986,7 +1986,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
             try {
               return {
                 path: filePath,
-                content: new TextDecoder("utf-8", { fatal: true }).decode(bytes),
+                content: redactSecrets(
+                  new TextDecoder("utf-8", { fatal: true }).decode(bytes),
+                  runSecrets,
+                ),
               };
             } catch {
               return {

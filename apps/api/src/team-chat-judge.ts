@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
 import type { AgentModelOAuthCredential, AgentRuntime } from "@rakazo/adapter-kit";
-import { type EncryptedSecretStore, resolveModelAuth } from "@rakazo/adapters";
+import {
+  type EncryptedSecretStore,
+  resolveModelAuth,
+  serializeModelSecret,
+  toOAuthCredential,
+} from "@rakazo/adapters";
 import { findDefaultModelCredential, findModelCredential, type PrismaClient } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 
@@ -247,6 +252,14 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
           id: modelId,
           oauth: {
             credential: { ...parsed.credential },
+            persist: async (credential) => {
+              await persist(
+                serializeModelSecret({
+                  kind: "oauth",
+                  credential: toOAuthCredential(credential),
+                }),
+              );
+            },
           },
         },
       };

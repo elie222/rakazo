@@ -494,7 +494,7 @@ export async function createApp(
               deploymentModel: env.defaultModel,
               deploymentModelKey: env.deploymentModelKey,
             });
-      teamChatBridge = new TeamChatBridge({
+      const bridge = new TeamChatBridge({
         prisma,
         events,
         jobs,
@@ -503,7 +503,12 @@ export async function createApp(
         botId: env.teamChatBotId,
         judge,
       });
-      await teamChatBridge.start();
+      try {
+        await bridge.start();
+        teamChatBridge = bridge;
+      } catch (error) {
+        getLogger().error("team chat bridge failed to start; continuing without it", error);
+      }
     }
     messaging.onInbound(async (event) => {
       if (event.type !== "message") {
