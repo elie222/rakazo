@@ -27,5 +27,5 @@ it("lists eval cases without importing a generated database client or runtime ad
     { encoding: "utf8", timeout: 20_000 },
   );
   expect(output).toContain("workspace-memory-isolation:");
-  expect(output.trim().split("\n")).toHaveLength(15);
+  expect(output.trim().split("\n")).toHaveLength(16);
 });

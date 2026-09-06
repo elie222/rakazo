@@ -1,11 +1,25 @@
-import { describe, expect, it } from "vitest";
+import type { AdapterContext, MessagingInboundEvent } from "@rakazo/adapter-kit";
+import { describe, expect, it, vi } from "vitest";
 import {
   createRecordingMessagingSurface,
   MessagingTeamChatEmulator,
 } from "./messaging-team-chat-emulator.js";
 import { createMessagingTeamChatSender, toTeamChatInbound } from "./team-chat-messaging.js";
 
+const context: AdapterContext = {
+  operationId: "operation-1",
+  traceId: "trace-1",
+  spaceId: "space-1",
+  userId: "user-1",
+  signal: new AbortController().signal,
+};
+
 describe("MessagingTeamChatEmulator", () => {
+  it("rejects providers that cannot form valid thread IDs", () => {
+    expect(() => new MessagingTeamChatEmulator({ provider: "" })).toThrow(/provider/);
+    expect(() => new MessagingTeamChatEmulator({ provider: "bad:provider" })).toThrow(/provider/);
+  });
+
   it("builds inbound fixtures with team-room enrichment fields", () => {
     const emulator = new MessagingTeamChatEmulator();
     const inbound = emulator.buildInbound({
@@ -48,5 +62,40 @@ describe("MessagingTeamChatEmulator", () => {
       threadId: "teamchat-emulator:room-2",
       body: "shipped",
     });
+  });
+
+  it("acts as a complete Slack-like messaging surface for product journeys", async () => {
+    const emulator = new MessagingTeamChatEmulator({
+      provider: "slack",
+      capabilities: { groups: false },
+    });
+    const sink = vi.fn<(event: MessagingInboundEvent) => Promise<void>>(async () => undefined);
+    emulator.onInbound(sink);
+
+    const inbound = await emulator.emitInbound({
+      isDirect: true,
+      from: "U-colleague",
+      fromLabel: "Teammate",
+      content: "How is Fairhaven Robotics doing?",
+    });
+    await emulator.sendToThread({ threadId: inbound.threadId, body: "Checking now." }, context);
+
+    expect(emulator.platforms()).toEqual([
+      {
+        provider: "slack",
+        capabilities: { direct: true, groups: false, typing: false },
+      },
+    ]);
+    expect(sink).toHaveBeenCalledWith(inbound);
+    expect(emulator.sent).toMatchObject([
+      {
+        threadId: inbound.threadId,
+        body: "Checking now.",
+        handle: "outbound-2",
+      },
+    ]);
+    emulator.resetWitnesses();
+    expect(emulator.sent).toEqual([]);
+    expect(emulator.handleWebhook("teams", new Request("https://example.test"))).toBeNull();
   });
 });

@@ -5,6 +5,7 @@ import type {
   ConnectorTool,
 } from "@rakazo/adapter-kit";
 import { ComposioEmulator } from "@rakazo/adapters";
+import { CUSTOMER_SUPPORT_PROVIDERS, CUSTOMER_SUPPORT_TOOLS } from "./service-contract.js";
 
 export const INBOX = [
   {
@@ -45,6 +46,18 @@ export class EvalServices extends ComposioEmulator {
       { slug: "GMAIL", name: "Gmail", logo: null, noAuth: false },
       { slug: "CRM", name: "CRM", logo: null, noAuth: false },
       { slug: "GITHUB", name: "GitHub", logo: null, noAuth: false },
+      {
+        slug: CUSTOMER_SUPPORT_PROVIDERS.salesforce,
+        name: "Salesforce",
+        logo: null,
+        noAuth: false,
+      },
+      {
+        slug: CUSTOMER_SUPPORT_PROVIDERS.zendesk,
+        name: "Zendesk",
+        logo: null,
+        noAuth: false,
+      },
     ]);
     this.seedGithubReleases([
       {
@@ -116,6 +129,42 @@ export class EvalServices extends ComposioEmulator {
             ),
           ]
         : []),
+      ...(connected.includes(CUSTOMER_SUPPORT_PROVIDERS.salesforce)
+        ? [
+            tool(
+              CUSTOMER_SUPPORT_TOOLS.searchAccounts,
+              "Search Salesforce accounts by customer name. Returns account IDs and owners.",
+              { query: { type: "string" } },
+              ["query"],
+              true,
+            ),
+            tool(
+              CUSTOMER_SUPPORT_TOOLS.listOpportunities,
+              "Read renewal opportunities for one Salesforce account ID.",
+              { accountId: { type: "string" } },
+              ["accountId"],
+              true,
+            ),
+          ]
+        : []),
+      ...(connected.includes(CUSTOMER_SUPPORT_PROVIDERS.zendesk)
+        ? [
+            tool(
+              CUSTOMER_SUPPORT_TOOLS.searchOrganizations,
+              "Search Zendesk organizations by customer name. Returns organization IDs.",
+              { query: { type: "string" } },
+              ["query"],
+              true,
+            ),
+            tool(
+              CUSTOMER_SUPPORT_TOOLS.listTickets,
+              "Read current support tickets for one Zendesk organization ID.",
+              { organizationId: { type: "string" } },
+              ["organizationId"],
+              true,
+            ),
+          ]
+        : []),
     ];
   }
 
@@ -144,6 +193,64 @@ export class EvalServices extends ComposioEmulator {
       yield {
         type: "result",
         data: { records: structuredClone(this.records), notes: structuredClone(this.notes) },
+      };
+      return;
+    }
+    if (call.tool === CUSTOMER_SUPPORT_TOOLS.searchAccounts) {
+      const query = requiredQuery(call.args.query);
+      entry.outcome = "read";
+      yield {
+        type: "result",
+        data: {
+          accounts: structuredClone(
+            CUSTOMER_ACCOUNTS.filter((row) => row.name.toLowerCase().includes(query)),
+          ),
+        },
+      };
+      return;
+    }
+    if (call.tool === CUSTOMER_SUPPORT_TOOLS.listOpportunities) {
+      const accountId = String(call.args.accountId ?? "");
+      if (!CUSTOMER_ACCOUNTS.some((row) => row.id === accountId)) {
+        throw new Error("Unknown Salesforce account");
+      }
+      entry.outcome = "read";
+      yield {
+        type: "result",
+        data: {
+          opportunities: structuredClone(
+            CUSTOMER_OPPORTUNITIES.filter((row) => row.accountId === accountId),
+          ),
+        },
+      };
+      return;
+    }
+    if (call.tool === CUSTOMER_SUPPORT_TOOLS.searchOrganizations) {
+      const query = requiredQuery(call.args.query);
+      entry.outcome = "read";
+      yield {
+        type: "result",
+        data: {
+          organizations: structuredClone(
+            CUSTOMER_ORGANIZATIONS.filter((row) => row.name.toLowerCase().includes(query)),
+          ),
+        },
+      };
+      return;
+    }
+    if (call.tool === CUSTOMER_SUPPORT_TOOLS.listTickets) {
+      const organizationId = String(call.args.organizationId ?? "");
+      if (!CUSTOMER_ORGANIZATIONS.some((row) => row.id === organizationId)) {
+        throw new Error("Unknown Zendesk organization");
+      }
+      entry.outcome = "read";
+      yield {
+        type: "result",
+        data: {
+          tickets: structuredClone(
+            CUSTOMER_TICKETS.filter((row) => row.organizationId === organizationId),
+          ),
+        },
       };
       return;
     }
@@ -182,6 +289,72 @@ export class EvalServices extends ComposioEmulator {
     }
     throw new Error("Unsupported action or invalid arguments");
   }
+}
+
+const CUSTOMER_ACCOUNTS = [
+  {
+    id: "sf-fairhaven-robotics",
+    name: "Fairhaven Robotics",
+    owner: "Casey Morgan",
+  },
+  {
+    id: "sf-fairhaven-logistics",
+    name: "Fairhaven Logistics",
+    owner: "Riley Chen",
+  },
+] as const;
+
+const CUSTOMER_OPPORTUNITIES = [
+  {
+    id: "sf-fairhaven-robotics-renewal",
+    accountId: "sf-fairhaven-robotics",
+    name: "2026 renewal",
+    stage: "Negotiation",
+    closeDate: "2026-10-15",
+    nextStep: "Resolve the SSO escalation before the renewal review on 2026-09-09.",
+    risk: "At risk while the production SSO incident remains unresolved.",
+  },
+  {
+    id: "sf-fairhaven-logistics-renewal",
+    accountId: "sf-fairhaven-logistics",
+    name: "2026 renewal",
+    stage: "Closed Won",
+    closeDate: "2026-08-10",
+    nextStep: "Handoff completed.",
+    risk: null,
+  },
+] as const;
+
+const CUSTOMER_ORGANIZATIONS = [
+  { id: "zd-fairhaven-robotics", name: "Fairhaven Robotics" },
+  { id: "zd-fairhaven-logistics", name: "Fairhaven Logistics" },
+] as const;
+
+const CUSTOMER_TICKETS = [
+  {
+    id: "ZD-1842",
+    organizationId: "zd-fairhaven-robotics",
+    subject: "Production users cannot sign in with SSO",
+    status: "open",
+    priority: "urgent",
+    assignee: "Avery Patel",
+    latestUpdate:
+      "Engineering reproduced the audience mismatch and is testing a configuration fix.",
+  },
+  {
+    id: "ZD-1811",
+    organizationId: "zd-fairhaven-logistics",
+    subject: "Add a billing contact",
+    status: "solved",
+    priority: "low",
+    assignee: "Jamie Ortiz",
+    latestUpdate: "Billing contact added.",
+  },
+] as const;
+
+function requiredQuery(value: unknown): string {
+  if (typeof value !== "string" || !value.trim()) throw new Error("A search query is required");
+  return value.trim().toLowerCase();
 }
 
 function tool(

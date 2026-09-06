@@ -34,6 +34,8 @@ function evidence(): Evidence {
     pendingApproval: null,
     priorMemory: "",
     destinationWrites: 0,
+    toolNames: [],
+    messaging: { originThreadId: null, outbound: [] },
   };
 }
 function grades(id: string, e: Evidence) {
@@ -94,6 +96,58 @@ describe("stateful eval services", () => {
     });
     expect(tools.map((t) => t.name)).toEqual(["GMAIL_LIST_MESSAGES"]);
   });
+  it("keeps Salesforce and Zendesk coherent while separating similar customers", async () => {
+    const services = new EvalServices();
+    const connected = {
+      ...context,
+      connectedConnections: [
+        {
+          id: "salesforce",
+          connectorId: "composio",
+          externalId: "SALESFORCE",
+          displayName: "Salesforce",
+        },
+        {
+          id: "zendesk",
+          connectorId: "composio",
+          externalId: "ZENDESK",
+          displayName: "Zendesk",
+        },
+      ],
+    };
+    expect((await services.discoverTools(connected)).map((tool) => tool.name)).toEqual([
+      "SALESFORCE_SEARCH_ACCOUNTS",
+      "SALESFORCE_LIST_OPPORTUNITIES",
+      "ZENDESK_SEARCH_ORGANIZATIONS",
+      "ZENDESK_LIST_TICKETS",
+    ]);
+    const accounts = await execute(services, "SALESFORCE_SEARCH_ACCOUNTS", {
+      query: "Fairhaven",
+    });
+    expect(accounts[0]).toMatchObject({
+      type: "result",
+      data: {
+        accounts: [
+          { id: "sf-fairhaven-robotics", name: "Fairhaven Robotics" },
+          { id: "sf-fairhaven-logistics", name: "Fairhaven Logistics" },
+        ],
+      },
+    });
+    const opportunities = await execute(services, "SALESFORCE_LIST_OPPORTUNITIES", {
+      accountId: "sf-fairhaven-robotics",
+    });
+    expect(opportunities[0]).toMatchObject({
+      type: "result",
+      data: { opportunities: [{ id: "sf-fairhaven-robotics-renewal", stage: "Negotiation" }] },
+    });
+    const tickets = await execute(services, "ZENDESK_LIST_TICKETS", {
+      organizationId: "zd-fairhaven-robotics",
+    });
+    expect(tickets[0]).toMatchObject({
+      type: "result",
+      data: { tickets: [{ id: "ZD-1842", status: "open", priority: "urgent" }] },
+    });
+  });
 });
 
 describe("independent outcome graders", () => {
@@ -121,9 +175,9 @@ describe("independent outcome graders", () => {
     e.files["results/language.txt"] = "French";
     expect(passes("updated-preference", e)).toBe(false);
   });
-  it("has 15 distinct cases, each rejects empty evidence and a completion claim", () => {
-    expect(EVAL_CASES).toHaveLength(15);
-    expect(new Set(EVAL_CASES.map((c) => c.id)).size).toBe(15);
+  it("has 16 distinct cases, each rejects empty evidence and a completion claim", () => {
+    expect(EVAL_CASES).toHaveLength(16);
+    expect(new Set(EVAL_CASES.map((c) => c.id)).size).toBe(16);
     for (const scenario of EVAL_CASES) {
       expect(
         passes(scenario.id, { ...evidence(), text: "Done! I completed everything." }),
@@ -199,6 +253,49 @@ describe("independent outcome graders", () => {
     expect(passes("crm-update", e)).toBe(true);
     e.records[1]!.status = "active";
     expect(passes("crm-update", e)).toBe(false);
+  });
+  it("requires grounded cross-system evidence and a non-contradictory Slack reply", () => {
+    const e = evidence();
+    e.calls.push(
+      {
+        tool: "SALESFORCE_SEARCH_ACCOUNTS",
+        args: { query: "Fairhaven Robotics" },
+        outcome: "read",
+      },
+      {
+        tool: "SALESFORCE_LIST_OPPORTUNITIES",
+        args: { accountId: "sf-fairhaven-robotics" },
+        outcome: "read",
+      },
+      {
+        tool: "ZENDESK_SEARCH_ORGANIZATIONS",
+        args: { query: "Fairhaven Robotics" },
+        outcome: "read",
+      },
+      {
+        tool: "ZENDESK_LIST_TICKETS",
+        args: { organizationId: "zd-fairhaven-robotics" },
+        outcome: "read",
+      },
+    );
+    e.messaging = {
+      originThreadId: "slack:dm:U-colleague",
+      outbound: [
+        {
+          threadId: "slack:dm:U-colleague",
+          handle: "outbound-1",
+          body: "Casey Morgan owns the renewal, now in Negotiation. Urgent ticket ZD-1842 covers the SSO incident; engineering is testing a configuration fix.",
+        },
+      ],
+    };
+    expect(passes("slack-customer-update", e)).toBe(true);
+    e.messaging.outbound[0]!.body =
+      "Casey Morgan says this is not in Negotiation and there is no support blocker on ticket ZD-1842. Engineering is testing a configuration fix for the SSO incident.";
+    expect(passes("slack-customer-update", e)).toBe(false);
+    e.messaging.outbound[0]!.body =
+      "Casey Morgan owns the renewal, now in Negotiation. Urgent ticket ZD-1842 covers the SSO incident; engineering is testing a configuration fix.";
+    e.calls[1]!.args.accountId = "sf-fairhaven-logistics";
+    expect(passes("slack-customer-update", e)).toBe(false);
   });
   it("requires recorded approval, not merely a promise to ask", () => {
     const e = { ...evidence(), text: "I will ask for approval." };
