@@ -59,6 +59,20 @@ describe("model HTTP emulator contract", () => {
     expect(() => server.assertComplete()).toThrow(/Model routing changed/);
   });
 
+  it("rejects a request with the wrong API key", async () => {
+    const server = await startModelEmulator({ apiKey: "expected-key", steps: [] });
+    servers.push(server);
+    expect((await post(server)).status).toBe(400);
+    expect(() => server.assertComplete()).toThrow();
+  });
+
+  it("rejects a non-streaming request", async () => {
+    const server = await startModelEmulator({ steps: [] });
+    servers.push(server);
+    expect((await post(server, { stream: false })).status).toBe(400);
+    expect(() => server.assertComplete()).toThrow(/streaming model request/);
+  });
+
   it("requires argument fragments to faithfully represent the scripted tool arguments", async () => {
     const server = await startModelEmulator({
       steps: [
