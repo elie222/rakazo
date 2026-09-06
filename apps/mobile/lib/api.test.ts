@@ -249,6 +249,23 @@ describe("mobile API authentication", () => {
     expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith("rakazo.session_token");
   });
 
+  it("clears the local session when the sign-out request stalls", async () => {
+    vi.useFakeTimers();
+    vi.mocked(SecureStore.getItemAsync).mockResolvedValue("session-token");
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ json: null }))
+      .mockImplementationOnce(() => new Promise<Response>(() => undefined));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const pending = signOut();
+    await vi.advanceTimersByTimeAsync(8_000);
+    await pending;
+
+    expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith("rakazo.session_token");
+    expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith("rakazo.space_id");
+  });
+
   it("unregisters push delivery before deleting the account", async () => {
     vi.mocked(SecureStore.getItemAsync).mockResolvedValue("session-token");
     const fetchMock = vi
@@ -948,6 +965,7 @@ describe("mobile thread event reduction", () => {
           {
             kind: "channel_message",
             provider: "sendblue",
+            transport: "SMS",
             channelId: "ch-1",
             fromAddress: "+15551234567",
             fromLabel: "Alex",
@@ -955,7 +973,7 @@ describe("mobile thread event reduction", () => {
           },
         ]),
       ),
-    ).toBe("iMessage · Alex: Hello from the group");
+    ).toBe("SMS · Alex: Hello from the group");
     expect(
       blockText(
         mobileMessage("channel-2", [
@@ -1177,6 +1195,45 @@ describe("mobile thread event reduction", () => {
     expect(next?.messages).toEqual([]);
   });
 
+  it("updates a cloud agent card from thread.cloud_agent", () => {
+    const initial = snapshot([
+      mobileMessage("msg-ca", [
+        {
+          kind: "cloud_agent",
+          agentId: "ca-1",
+          title: "Add README",
+          status: "running",
+          url: "https://example.test/agents/ca-1",
+        },
+      ]),
+    ]);
+
+    const next = applyMobileThreadEvent(initial, {
+      type: "thread.cloud_agent",
+      seq: 9,
+      payload: {
+        messageId: "msg-ca",
+        agentId: "ca-1",
+        title: "Add README",
+        status: "finished",
+        url: "https://example.test/agents/ca-1",
+        branch: "cursor/add-readme",
+        prUrl: "https://github.com/example/repo/pull/1",
+      },
+    });
+
+    expect(next?.cursor).toBe(9);
+    expect(next?.messages[0]?.blocks[0]).toEqual({
+      kind: "cloud_agent",
+      agentId: "ca-1",
+      title: "Add README",
+      status: "finished",
+      url: "https://example.test/agents/ca-1",
+      branch: "cursor/add-readme",
+      prUrl: "https://github.com/example/repo/pull/1",
+    });
+  });
+
   it("leaves the snapshot unchanged for unrelated events", () => {
     const initial = snapshot();
     expect(applyMobileThreadEvent(initial, { type: "run.started" })).toBe(initial);
@@ -1215,3 +1272,26 @@ function snapshot(
 function mobileMessage(id: string, blocks: MobileMessage["blocks"], seq?: number): MobileMessage {
   return { id, threadId: "thread-1", seq, role: "bot", blocks };
 }
+
+describe("mobile clipboard text", () => {
+  it("copies message content with transport labels and omits card chrome", async () => {
+    const { copyableMobileMessageText } = await import("./api");
+    expect(
+      copyableMobileMessageText({
+        id: "message",
+        role: "bot",
+        blocks: [
+          { kind: "text", text: "Hello" },
+          {
+            kind: "channel_message",
+            provider: "sendblue",
+            transport: "SMS",
+            fromLabel: "Sender",
+            text: "Reply",
+          },
+          { kind: "card", lines: [] },
+        ],
+      }),
+    ).toBe("Hello\nSMS · Sender: Reply");
+  });
+});

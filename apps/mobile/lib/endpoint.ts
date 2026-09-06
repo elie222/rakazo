@@ -2,6 +2,7 @@ import { t } from "./i18n";
 
 const LOCAL_API = "http://127.0.0.1:3100";
 const DEFAULT_API = process.env.EXPO_PUBLIC_API_URL ?? LOCAL_API;
+export const API_PROBE_TIMEOUT_MS = 8_000;
 
 export type EndpointResult = { ok: true; url: string } | { ok: false; error: string };
 
@@ -62,19 +63,29 @@ export async function probeApiBase(
   const parsed = normalizeApiBase(input);
   if (!parsed.ok) return parsed;
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 8_000);
+  const timer = setTimeout(() => controller.abort(), API_PROBE_TIMEOUT_MS);
   try {
-    const res = await fetchImpl(`${parsed.url}/rpc/health`, {
-      method: "POST",
-      headers: { "content-type": "application/json", origin: "rakazo://" },
-      body: JSON.stringify({ json: {} }),
-      signal: controller.signal,
-    });
-    const body = (await res.json().catch(() => ({}))) as {
+    const res = await withAbort(
+      fetchImpl(`${parsed.url}/rpc/health`, {
+        method: "POST",
+        headers: { "content-type": "application/json", origin: "rakazo://" },
+        body: JSON.stringify({ json: {} }),
+        signal: controller.signal,
+      }),
+      controller.signal,
+    );
+    if (!res.ok) {
+      cancelResponseBody(res);
+      return { ok: false, error: t("That URL did not look like a Rakazo server") };
+    }
+    const body = (await withAbort(
+      res.json().catch(() => ({})),
+      controller.signal,
+    )) as {
       json?: { ok?: boolean };
       error?: { message?: string };
     };
-    if (!res.ok || body.error || body.json?.ok !== true) {
+    if (body.error || body.json?.ok !== true) {
       return { ok: false, error: t("That URL did not look like a Rakazo server") };
     }
     return parsed;
@@ -83,6 +94,32 @@ export async function probeApiBase(
   } finally {
     clearTimeout(timer);
   }
+}
+
+function cancelResponseBody(response: Response): void {
+  try {
+    void Promise.resolve(response.body?.cancel()).catch(() => undefined);
+  } catch {
+    // Probe cleanup is best-effort and must not delay the fallback result.
+  }
+}
+
+function withAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) return Promise.reject(signal.reason ?? new Error("Request timed out"));
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(signal.reason ?? new Error("Request timed out"));
+    signal.addEventListener("abort", onAbort, { once: true });
+    promise.then(
+      (value) => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(value);
+      },
+      (error: unknown) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(error);
+      },
+    );
+  });
 }
 
 function originOnly(value: string) {

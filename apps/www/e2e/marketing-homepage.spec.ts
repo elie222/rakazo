@@ -14,6 +14,7 @@ async function captureScreenshot(page: Page, testInfo: TestInfo, name: string) {
 test.describe("marketing homepage", () => {
   test("self-host is short CTAs, not an install script", async ({ page }, testInfo) => {
     await page.goto("/");
+    await page.waitForLoadState("load");
 
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
     const selfHost = page.locator("#selfhost");
@@ -28,9 +29,12 @@ test.describe("marketing homepage", () => {
       /openssl|docker-compose\.images|POSTGRES_PASSWORD|BETTER_AUTH_SECRET|mkdir rakazo/i,
     );
 
-    await selfHost.scrollIntoViewIfNeeded();
+    await expect(async () => {
+      await selfHost.scrollIntoViewIfNeeded();
+    }).toPass({ timeout: 15_000 });
     await captureScreenshot(page, testInfo, "01-marketing-homepage-selfhost");
 
+    await expect(page.locator("html")).toHaveAttribute("data-get-started-ready", "");
     await selfHost.getByRole("button", { name: /Get started/i }).click();
     const dialog = page.locator("[data-get-started-dialog]");
     await expect(dialog).toBeVisible();
@@ -43,6 +47,7 @@ test.describe("marketing homepage", () => {
 
   test("zh homepage matches the simplified self-host CTAs", async ({ page }, testInfo) => {
     await page.goto("/zh/");
+    await page.waitForLoadState("load");
 
     await expect(page.getByRole("heading", { level: 1 })).toHaveText("真正属于你的 AI 队友");
     const selfHost = page.locator("#selfhost");
@@ -57,9 +62,12 @@ test.describe("marketing homepage", () => {
       /openssl|docker-compose\.images|POSTGRES_PASSWORD|BETTER_AUTH_SECRET|mkdir rakazo/i,
     );
 
-    await selfHost.scrollIntoViewIfNeeded();
+    await expect(async () => {
+      await selfHost.scrollIntoViewIfNeeded();
+    }).toPass({ timeout: 15_000 });
     await captureScreenshot(page, testInfo, "03-marketing-homepage-zh-selfhost");
 
+    await expect(page.locator("html")).toHaveAttribute("data-get-started-ready", "");
     await selfHost.getByRole("button", { name: "开始使用" }).click();
     const dialog = page.locator("[data-get-started-dialog]");
     await expect(dialog).toBeVisible();

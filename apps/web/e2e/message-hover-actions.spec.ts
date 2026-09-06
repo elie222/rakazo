@@ -6,13 +6,8 @@ async function revealHoverRail(
 ): Promise<import("@playwright/test").Locator> {
   await row.hover();
   const rail = row.getByTestId("message-hover-rail");
-  await expect(rail).toBeVisible();
-  // Full-page shots can drop :hover; pin the rail so geometry stays visible.
-  await rail.evaluate((el) => {
-    const node = el as HTMLElement;
-    node.style.opacity = "1";
-    node.style.pointerEvents = "auto";
-  });
+  await expect(rail).toHaveCSS("opacity", "1");
+  await expect(rail).toHaveCSS("pointer-events", "auto");
   return rail;
 }
 
@@ -61,7 +56,7 @@ test("message hover shows beside-bubble actions; reply links to parent", async (
   await expect(botToolbar.getByRole("button", { name: "More" })).toBeVisible();
   // Measure against the bubble frame (rail offset parent), not an inner markdown
   // div — padding inside the rounded bubble made the old locator look >8px away.
-  const botFrame = botRow.getByTestId("message-bubble-frame");
+  const botFrame = botRow.getByTestId("message-bot-bubble");
   await expect
     .poll(async () => {
       const railBox = await botRail.boundingBox();
@@ -154,10 +149,10 @@ test("message hover shows beside-bubble actions; reply links to parent", async (
   await clearHoverRail(longRail);
 
   // No transcript timestamp under the bubble (Grok Bot). Time lives in More.
-  await expect(parentRow.getByTestId("message-hover-time")).toHaveCount(0);
+  await expect(page.getByTestId("message-hover-time")).toHaveCount(0);
   await revealHoverRail(parentRow);
   await toolbar.getByRole("button", { name: "More" }).click();
-  const moreTime = parentRow.getByTestId("message-hover-time");
+  const moreTime = page.getByTestId("message-hover-time");
   await expect(moreTime).toBeVisible();
   await expect(moreTime).toHaveText(/\d/);
   // Escape closes More and restores focus to the trigger so the rail stays up.
@@ -202,7 +197,7 @@ test("message hover shows beside-bubble actions; reply links to parent", async (
 
   await parentRow.hover();
   await toolbar.getByRole("button", { name: "More" }).click();
-  await toolbar.getByRole("button", { name: "Copy" }).click();
+  await page.getByRole("menuitem", { name: "Copy" }).click();
   await expect
     .poll(async () => page.evaluate(() => navigator.clipboard.readText()))
     .toBe(parentText);
@@ -323,4 +318,26 @@ test("reply preview jumps to parent outside the loaded page", async ({ page }) =
   await offlinePreview.click();
   await expect(page.locator(`[data-message-id="${parentId}"]`)).toBeVisible({ timeout: 20_000 });
   await expect(page.locator(`[data-message-id="${parentId}"]`)).toContainText(parentText);
+});
+
+test.describe("touch message actions", () => {
+  test.use({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });
+
+  test("More exposes actions without simulated hover", async ({ page }, testInfo) => {
+    await signup(page, `touch-actions-${Date.now()}@rakazo.test`, "password12", "Touch Actions");
+    await completeOnboarding(page);
+    expect(
+      await page.evaluate(() => matchMedia("(hover: hover) and (pointer: fine)").matches),
+    ).toBe(false);
+    const row = page.getByTestId("transcript").locator("[data-message-id]").first();
+    const rail = row.getByTestId("message-hover-rail");
+    await expect(rail).toHaveCSS("opacity", "1");
+    await expect(rail.getByRole("button", { name: "Reply", exact: true })).toBeHidden();
+    await rail.getByRole("button", { name: "More" }).tap();
+    await expect(page.getByRole("menuitem", { name: "Copy" })).toBeVisible();
+    await expect(page.getByTestId("message-hover-time")).toBeVisible();
+    await captureScreenshot(page, testInfo, "message-actions-touch-menu");
+    await page.getByRole("menuitem", { name: "Reply", exact: true }).tap();
+    await expect(page.getByRole("button", { name: "Cancel reply" })).toBeVisible();
+  });
 });

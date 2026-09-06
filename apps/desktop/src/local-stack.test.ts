@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -6,9 +6,11 @@ import type { RunDocker, RunDockerResult } from "./docker-cli.js";
 import {
   COMPOSE_WAIT_TIMEOUT_S,
   ensureStackEnv,
+  ensureStackToken,
   initialStackState,
   LocalStackController,
   type LocalStackDeps,
+  readStackToken,
   reduceStackState,
   renderStackEnv,
   resolveImageTag,
@@ -16,6 +18,8 @@ import {
   STACK_ENV_FILE,
   STACK_ENV_TEMPLATE,
   STACK_OUTPUT_LINES,
+  STACK_PROJECT_NAME,
+  STACK_TOKEN_FILE,
   stackDir,
   stackFailureMessage,
   stackResourceDir,
@@ -109,6 +113,63 @@ describe("ensureStackEnv", () => {
     await expect(ensureStackEnv(dir, "POSTGRES_PASSWORD=\n", fakeHex)).resolves.toBe("kept");
     await expect(readFile(path.join(dir, STACK_ENV_FILE), "utf8")).resolves.toBe("sentinel\n");
   });
+
+  it.runIf(process.platform !== "win32")(
+    "replaces a symlinked .env without touching its target",
+    async () => {
+      const target = path.join(dir, "outside.env");
+      await writeFile(target, "sentinel\n", "utf8");
+      await symlink(target, path.join(dir, STACK_ENV_FILE));
+
+      await expect(ensureStackEnv(dir, "POSTGRES_PASSWORD=\n", fakeHex)).resolves.toBe("created");
+      await expect(readFile(path.join(dir, STACK_ENV_FILE), "utf8")).resolves.toBe(
+        `POSTGRES_PASSWORD=${"ab".repeat(16)}\n`,
+      );
+      await expect(readFile(target, "utf8")).resolves.toBe("sentinel\n");
+    },
+  );
+});
+
+describe("stack identity", () => {
+  let dir: string;
+  beforeEach(async () => {
+    dir = await mkdtemp(path.join(tmpdir(), "rakazo-stack-token-"));
+  });
+  afterEach(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("creates one private token and reuses it", async () => {
+    const token = await ensureStackToken(dir, fakeHex);
+    await expect(ensureStackToken(dir, () => "cd".repeat(32))).resolves.toBe(token);
+    await expect(readStackToken(dir)).resolves.toBe(token);
+    if (process.platform !== "win32") {
+      expect((await stat(path.join(dir, STACK_TOKEN_FILE))).mode & 0o777).toBe(0o600);
+    }
+  });
+
+  it("replaces an invalid legacy token", async () => {
+    await writeFile(path.join(dir, STACK_TOKEN_FILE), "not-a-token\n", "utf8");
+    await expect(ensureStackToken(dir, fakeHex)).resolves.toBe("ab".repeat(32));
+  });
+
+  it("does not buffer an oversized stack token", async () => {
+    await writeFile(path.join(dir, STACK_TOKEN_FILE), "a".repeat(1025), "utf8");
+    await expect(readStackToken(dir)).resolves.toBeNull();
+  });
+
+  it.runIf(process.platform !== "win32")(
+    "does not reuse a stack token through a final symlink",
+    async () => {
+      const target = path.join(dir, "outside-token");
+      await writeFile(target, `${"cd".repeat(32)}\n`, "utf8");
+      await symlink(target, path.join(dir, STACK_TOKEN_FILE));
+
+      await expect(readStackToken(dir)).resolves.toBeNull();
+      await expect(ensureStackToken(dir, fakeHex)).resolves.toBe("ab".repeat(32));
+      await expect(readFile(target, "utf8")).resolves.toBe(`${"cd".repeat(32)}\n`);
+    },
+  );
 });
 
 describe("reduceStackState", () => {
@@ -215,7 +276,7 @@ function fakeRun(calls: RecordedCall[], script: Script): RunDocker {
 const ok: Script = (args) => {
   if (args[0] === "compose" && args[1] === "version") return { stdout: "2.29.0\n" };
   if (args[0] === "info") return { stdout: "27.1.1\n" };
-  const subcommand = args[5];
+  const subcommand = args[7];
   if (subcommand === "pull") return { lines: ["app Pulled", "computer Pulled"] };
   if (subcommand === "up") return { lines: ["Container rakazo-web-1 Started"] };
   return {};
@@ -237,13 +298,14 @@ describe("LocalStackController", () => {
 
   function controller(overrides: Partial<LocalStackDeps> = {}, script: Script = ok) {
     const run = fakeRun(calls, script);
-    const probe = overrides.probe ?? (async () => true);
+    const probe = overrides.probe ?? (async () => "v1.2.3");
     const deps: LocalStackDeps = {
       platform: "linux",
       env: { PATH: "/usr/bin", HOME: "/home/me", OPENROUTER_API_KEY: "sk-secret" },
       exists: (file) => file === "/usr/bin/docker",
       stackDir: path.join(root, "stack"),
       resourceDir: COMPOSE_DIR,
+      localWebUrl: "http://127.0.0.1:5173",
       imageTag: "v1.2.3",
       randomHex: fakeHex,
       sleep: async () => undefined,
@@ -254,9 +316,9 @@ describe("LocalStackController", () => {
         phases.push(stack.state().phase);
         return run(binary, args, options);
       },
-      probe: (signal) => {
+      probe: (url, signal, token) => {
         phases.push(stack.state().phase);
-        return probe(signal);
+        return probe(url, signal, token);
       },
     };
     const stack = new LocalStackController(deps);
@@ -283,7 +345,15 @@ describe("LocalStackController", () => {
     ]);
 
     const stackPath = path.join(root, "stack");
-    const compose = ["compose", "--env-file", ".env", "-f", STACK_COMPOSE_FILE];
+    const compose = [
+      "compose",
+      "--env-file",
+      ".env",
+      "-f",
+      STACK_COMPOSE_FILE,
+      "--project-name",
+      STACK_PROJECT_NAME,
+    ];
     expect(calls.map((call) => call.args)).toEqual([
       ["compose", "version", "--short"],
       ["info", "--format", "{{.ServerVersion}}"],
@@ -301,6 +371,7 @@ describe("LocalStackController", () => {
       });
       expect(call.env).not.toHaveProperty("OPENROUTER_API_KEY");
     }
+    expect(calls.at(-1)?.env.RAKAZO_DESKTOP_STACK_TOKEN).toBe("ab".repeat(32));
 
     await expect(readFile(path.join(stackPath, STACK_COMPOSE_FILE), "utf8")).resolves.toBe(
       await readFile(path.join(COMPOSE_DIR, STACK_COMPOSE_FILE), "utf8"),
@@ -314,12 +385,64 @@ describe("LocalStackController", () => {
     }
   });
 
+  it("keeps lifecycle commands off the standalone project despite environment overrides", async () => {
+    const dir = path.join(root, "stack");
+    await mkdir(dir, { recursive: true });
+    await writeFile(path.join(dir, STACK_ENV_FILE), "COMPOSE_PROJECT_NAME=rakazo\n");
+    const stack = controller({ env: { COMPOSE_PROJECT_NAME: "rakazo" } }, (args) =>
+      args[7] === "up" ? { code: 1, stderr: "port is already allocated" } : ok(args),
+    );
+    expect((await stack.start()).phase).toBe("failed");
+    // A fresh process must stop the same desktop project without discovering or adopting rakazo.
+    expect((await controller().stop()).phase).toBe("idle");
+    const commands = calls.filter(
+      (call) => call.args[0] === "compose" && call.args[1] !== "version",
+    );
+    expect(commands.map((call) => call.args[7])).toEqual(["pull", "up", "logs", "stop"]);
+    for (const call of commands) {
+      expect(call.args.slice(5, 7)).toEqual(["--project-name", "rakazo-desktop"]);
+      expect(call.env).not.toHaveProperty("COMPOSE_PROJECT_NAME");
+    }
+  });
+
+  it("reuses only the privately identified stack on the desired image", async () => {
+    const stackPath = path.join(root, "stack");
+    await mkdir(stackPath, { recursive: true });
+    const token = await ensureStackToken(stackPath, fakeHex);
+    const probedUrls: string[] = [];
+    const stack = controller({
+      probe: async (url, _signal, supplied) => {
+        probedUrls.push(url);
+        return supplied === token ? "v1.2.3" : null;
+      },
+    });
+
+    await expect(stack.matchesDesiredStack()).resolves.toBe(true);
+    expect(probedUrls).toEqual(["http://127.0.0.1:5173"]);
+    await expect(stack.matchesDesiredStack("http://127.0.0.1:5199")).resolves.toBe(true);
+    expect(probedUrls).toEqual(["http://127.0.0.1:5173", "http://127.0.0.1:5199"]);
+    expect(calls).toEqual([]);
+  });
+
+  it("rejects another listener and a managed stack from an older release", async () => {
+    const stackPath = path.join(root, "stack");
+    await mkdir(stackPath, { recursive: true });
+    await ensureStackToken(stackPath, fakeHex);
+
+    await expect(controller({ probe: async () => null }).matchesDesiredStack()).resolves.toBe(
+      false,
+    );
+    await expect(controller({ probe: async () => "v1.2.2" }).matchesDesiredStack()).resolves.toBe(
+      false,
+    );
+  });
+
   it("uses a plain up -d for Compose plugins older than 2.17", async () => {
     const stack = controller({}, (args) =>
       args[1] === "version" ? { stdout: "2.12.2\n" } : ok(args),
     );
     await stack.start();
-    expect(calls.at(-1)?.args.slice(5)).toEqual(["up", "-d"]);
+    expect(calls.at(-1)?.args.slice(7)).toEqual(["up", "-d"]);
   });
 
   it("stops at docker-missing when no binary exists and touches nothing", async () => {
@@ -372,7 +495,7 @@ describe("LocalStackController", () => {
 
   it("fails with a tag-specific message when the images are not published", async () => {
     const stack = controller({}, (args) =>
-      args[5] === "pull"
+      args[7] === "pull"
         ? {
             code: 1,
             stderr: "Error response from daemon: manifest unknown",
@@ -386,12 +509,12 @@ describe("LocalStackController", () => {
       message: "Images for v1.2.3 are not published yet. Try again in a few minutes.",
       output: ["Error response from daemon: manifest unknown"],
     });
-    expect(calls.map((call) => call.args[5] ?? call.args[0])).toEqual(["compose", "info", "pull"]);
+    expect(calls.map((call) => call.args[7] ?? call.args[0])).toEqual(["compose", "info", "pull"]);
   });
 
   it("reports interruption instead of a pull failure when docker returns 130", async () => {
     const stack = controller({}, (args) =>
-      args[5] === "pull" ? { code: 130, stderr: "got 3 SIGTERM" } : ok(args),
+      args[7] === "pull" ? { code: 130, stderr: "got 3 SIGTERM" } : ok(args),
     );
     const state = await stack.start();
     expect(state).toMatchObject({
@@ -402,10 +525,10 @@ describe("LocalStackController", () => {
 
   it("collects service logs when up fails", async () => {
     const stack = controller({}, (args) => {
-      if (args[5] === "up") {
+      if (args[7] === "up") {
         return { code: 1, stderr: "port is already allocated", lines: ["web Error"] };
       }
-      if (args[5] === "logs") return { lines: ["web-1 | EADDRINUSE"] };
+      if (args[7] === "logs") return { lines: ["web-1 | EADDRINUSE"] };
       return ok(args);
     });
     const state = await stack.start();
@@ -417,7 +540,7 @@ describe("LocalStackController", () => {
       "web Error",
       "web-1 | EADDRINUSE",
     ]);
-    expect(calls.at(-1)?.args.slice(5)).toEqual(["logs", "--tail", "30", "--no-color"]);
+    expect(calls.at(-1)?.args.slice(7)).toEqual(["logs", "--tail", "30", "--no-color"]);
   });
 
   it("fails when the web app never answers after up", async () => {
@@ -425,7 +548,7 @@ describe("LocalStackController", () => {
     const stack = controller({
       probe: async () => {
         probes += 1;
-        return false;
+        return null;
       },
     });
     const state = await stack.start();
@@ -437,7 +560,7 @@ describe("LocalStackController", () => {
   it("returns the same attempt while one is in flight and restarts after failure", async () => {
     let attempts = 0;
     const stack = controller({}, (args) => {
-      if (args[5] === "pull") {
+      if (args[7] === "pull") {
         attempts += 1;
         return attempts === 1 ? { code: 1, stderr: "no such host" } : ok(args);
       }
@@ -456,7 +579,7 @@ describe("LocalStackController", () => {
 
   it("does not leak randomness or docker output into the message", async () => {
     const stack = controller({}, (args) =>
-      args[5] === "pull" ? { code: 1, stderr: "/Users/me/secret-path: boom" } : ok(args),
+      args[7] === "pull" ? { code: 1, stderr: "/Users/me/secret-path: boom" } : ok(args),
     );
     const state = await stack.start();
     expect(state.message).not.toContain("/Users/me");
@@ -467,7 +590,7 @@ describe("LocalStackController", () => {
     await stack.start();
     const state = await stack.stop();
     expect(state).toEqual(initialStackState("v1.2.3"));
-    expect(calls.at(-1)?.args.slice(5)).toEqual(["stop"]);
+    expect(calls.at(-1)?.args.slice(7)).toEqual(["stop"]);
   });
 
   it("reports a stop when docker has gone missing since the start", async () => {
@@ -480,12 +603,12 @@ describe("LocalStackController", () => {
       phase: "failed",
       message: expect.stringContaining("Could not stop"),
     });
-    expect(calls.at(-1)?.args.slice(5)).not.toEqual(["stop"]);
+    expect(calls.at(-1)?.args.slice(7)).not.toEqual(["stop"]);
   });
 
   it("reports a stop that docker refused instead of pretending the stack is down", async () => {
     const stack = controller({}, (args) =>
-      args[5] === "stop"
+      args[7] === "stop"
         ? { code: 1, stderr: "/Users/me/secret-path: Cannot connect to the Docker daemon" }
         : ok(args),
     );
@@ -499,7 +622,7 @@ describe("LocalStackController", () => {
     });
     expect(state.message).not.toContain("/Users/me");
     expect(state).not.toEqual(initialStackState("v1.2.3"));
-    expect(calls.at(-1)?.args.slice(5)).toEqual(["stop"]);
+    expect(calls.at(-1)?.args.slice(7)).toEqual(["stop"]);
   });
 
   it("queues a start behind a stop so up and stop never overlap", async () => {
@@ -508,18 +631,18 @@ describe("LocalStackController", () => {
       releaseStop = resolve;
     });
     const stack = controller({}, (args) => {
-      if (args[5] === "stop") return { wait: stopGate };
+      if (args[7] === "stop") return { wait: stopGate };
       return ok(args);
     });
     await stack.start();
     const stopping = stack.stop();
     const restarted = stack.start();
     await new Promise((resolve) => setTimeout(resolve, 10));
-    expect(calls.at(-1)?.args.slice(5)).toEqual(["stop"]);
+    expect(calls.at(-1)?.args.slice(7)).toEqual(["stop"]);
     releaseStop();
     await stopping;
     expect((await restarted).phase).toBe("ready");
-    const order = calls.map((call) => call.args[5] ?? call.args[0]);
+    const order = calls.map((call) => call.args[7] ?? call.args[0]);
     expect(order.indexOf("stop")).toBeLessThan(order.lastIndexOf("compose"));
   });
 
@@ -529,18 +652,24 @@ describe("LocalStackController", () => {
       releaseStop = resolve;
     });
     let probes = 0;
+    let markProbeStarted: () => void = () => undefined;
+    const probeStarted = new Promise<void>((resolve) => {
+      markProbeStarted = resolve;
+    });
     const stack = controller(
       {
-        probe: (signal) => {
+        probe: (_url, signal) => {
           probes += 1;
-          if (probes > 1) return Promise.resolve(true);
-          return new Promise((resolve) => signal.addEventListener("abort", () => resolve(false)));
+          if (probes > 1) return Promise.resolve("v1.2.3");
+          markProbeStarted();
+          if (signal.aborted) return Promise.resolve(null);
+          return new Promise((resolve) => signal.addEventListener("abort", () => resolve(null)));
         },
       },
-      (args) => (args[5] === "stop" ? { wait: stopGate } : ok(args)),
+      (args) => (args[7] === "stop" ? { wait: stopGate } : ok(args)),
     );
     const first = stack.start();
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    await probeStarted;
     const stopping = stack.stop();
     const second = stack.start();
     expect(second).not.toBe(first);
@@ -549,7 +678,7 @@ describe("LocalStackController", () => {
     await stopping;
     expect((await first).message).toBe("The start was interrupted. Retry to continue.");
     expect((await second).phase).toBe("ready");
-    const order = calls.map((call) => call.args[5] ?? call.args[0]);
+    const order = calls.map((call) => call.args[7] ?? call.args[0]);
     expect(order.indexOf("stop")).toBeLessThan(order.lastIndexOf("up"));
   });
 
@@ -560,7 +689,7 @@ describe("LocalStackController", () => {
     });
     let stops = 0;
     const stack = controller({}, (args) => {
-      if (args[5] !== "stop") return ok(args);
+      if (args[7] !== "stop") return ok(args);
       stops += 1;
       return stops === 1 ? { wait: stopGate } : {};
     });
@@ -572,14 +701,16 @@ describe("LocalStackController", () => {
     releaseStop();
     await Promise.all([firstStop, queuedStart, secondStop]);
     expect(stack.state()).toEqual(initialStackState("v1.2.3"));
-    const order = calls.map((call) => call.args[5] ?? call.args[0]);
+    const order = calls.map((call) => call.args[7] ?? call.args[0]);
     expect(order.lastIndexOf("up")).toBeLessThan(order.indexOf("stop"));
   });
 
   it("does not wait out a slow health probe when stopped", async () => {
     const stack = controller({
-      probe: (signal) =>
-        new Promise((resolve) => signal.addEventListener("abort", () => resolve(false))),
+      probe: (_url, signal) =>
+        signal.aborted
+          ? Promise.resolve(null)
+          : new Promise((resolve) => signal.addEventListener("abort", () => resolve(null))),
     });
     const started = stack.start();
     await new Promise((resolve) => setTimeout(resolve, 10));

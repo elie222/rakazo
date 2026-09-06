@@ -10,32 +10,20 @@
     <script type="module">
       import { createElement as h } from "react";
       import { createRoot } from "react-dom/client";
-      import { ToolActivityDisclosure, ToolSteps } from "../../src/components/ToolActivityDisclosure.tsx";
       import "../../src/styles.css";
 
       const live = new URLSearchParams(location.search).get("live") === "1";
-      const steps = [
-        { label: "Launch app", count: 1 },
-        { label: "Computer observe", count: 1 },
-        { label: "Computer act", count: 1 },
-        { label: "Shell", count: 1 },
-        { label: "Shell", count: 2 },
-      ];
-      const disclosure = h(
-        ToolActivityDisclosure,
-        { live, label: live ? "Working…" : "Done" },
-        h(ToolSteps, { steps, currentIndex: live ? steps.length - 1 : undefined }),
+      const response = h(
+        "div",
+        { "data-testid": "response" },
+        live ? "Opening the terminal now…" : "Terminal is open and ready.",
       );
-      const response = live
-        ? null
-        : h("div", { "data-testid": "final-response" }, "Terminal is open and ready.");
       const bubble = h(
         "div",
         {
           className:
             "max-w-[74%] space-y-2.5 rounded-[20px] bg-[#1A1A1D] px-[18px] py-3 text-[15.5px] leading-[1.5] text-[#DFDFE2]",
         },
-        disclosure,
         response,
       );
       createRoot(document.getElementById("root")).render(

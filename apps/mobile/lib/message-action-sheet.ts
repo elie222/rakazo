@@ -1,77 +1,43 @@
-import * as Clipboard from "expo-clipboard";
 import { ActionSheetIOS, Alert, Platform } from "react-native";
 
-export type MessageActionSheetHandlers = {
-  canReact: boolean;
-  reacted: boolean;
-  onReact: () => void;
-  onReply: () => void;
-  copyText: string;
-  timeLabel: string;
-  labels: {
-    react: string;
-    removeReact: string;
-    reply: string;
-    copy: string;
-    cancel: string;
-  };
-};
+type MessageAction = { text: string; onPress: () => void };
 
-/** Native message actions: long-press sheet with React, Reply, Copy, and time. */
-export function presentMessageActionSheet(handlers: MessageActionSheetHandlers): void {
-  const reactLabel = handlers.reacted ? handlers.labels.removeReact : handlers.labels.react;
-  const runCopy = () => {
-    void Clipboard.setStringAsync(handlers.copyText).catch(() => undefined);
-  };
-
+export function presentMessageActionSheet({
+  actions,
+  title,
+  cancel,
+  more,
+  colorScheme,
+}: {
+  actions: MessageAction[];
+  title?: string;
+  cancel: string;
+  more: string;
+  colorScheme: "light" | "dark";
+}): void {
   if (Platform.OS === "ios") {
-    const options = [
-      handlers.labels.cancel,
-      ...(handlers.canReact ? [reactLabel] : []),
-      handlers.labels.reply,
-      handlers.labels.copy,
-      handlers.timeLabel,
-    ];
-    const cancelButtonIndex = 0;
-    const timeButtonIndex = options.length - 1;
     ActionSheetIOS.showActionSheetWithOptions(
       {
-        options,
-        cancelButtonIndex,
-        disabledButtonIndices: [timeButtonIndex],
+        options: [...actions.map((action) => action.text), cancel],
+        cancelButtonIndex: actions.length,
+        title,
+        userInterfaceStyle: colorScheme,
       },
-      (index) => {
-        if (index === cancelButtonIndex || index === timeButtonIndex) return;
-        let cursor = 1;
-        if (handlers.canReact) {
-          if (index === cursor) {
-            handlers.onReact();
-            return;
-          }
-          cursor += 1;
-        }
-        if (index === cursor) {
-          handlers.onReply();
-          return;
-        }
-        cursor += 1;
-        if (index === cursor) runCopy();
-      },
+      (index) => actions[index]?.onPress(),
     );
     return;
   }
 
-  Alert.alert(handlers.timeLabel, undefined, [
-    ...(handlers.canReact
-      ? [
-          {
-            text: reactLabel,
-            onPress: handlers.onReact,
-          },
-        ]
-      : []),
-    { text: handlers.labels.reply, onPress: handlers.onReply },
-    { text: handlers.labels.copy, onPress: runCopy },
-    { text: handlers.labels.cancel, style: "cancel" as const },
-  ]);
+  function showPage(remaining: MessageAction[]) {
+    // Android alerts support three buttons. Back/outside tap dismisses every page.
+    const buttons =
+      remaining.length > 3
+        ? [...remaining.slice(0, 2), { text: more, onPress: () => showPage(remaining.slice(2)) }]
+        : [
+            ...remaining,
+            ...(remaining.length < 3 ? [{ text: cancel, style: "cancel" as const }] : []),
+          ];
+    Alert.alert(title ?? "", undefined, buttons, { cancelable: true });
+  }
+  showPage(actions);
 }

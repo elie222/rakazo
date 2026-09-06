@@ -4,7 +4,16 @@ import {
   openAiCompatibleConnectReady,
   openAiCompatibleProbeSuccessMessage,
 } from "@rakazo/contracts";
-import { Button, Input, NativeSelect, NativeSelectOption, Textarea } from "@rakazo/ui-web";
+import { featuredModelProviders, selectedProviderOutsideSearchResults } from "@rakazo/core";
+import {
+  Button,
+  Input,
+  ModelThinkingOptions,
+  NativeSelect,
+  NativeSelectOption,
+  Textarea,
+} from "@rakazo/ui-web";
+import { Check } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { localizedProviderHint } from "../lib/localized-provider-hint";
@@ -19,10 +28,12 @@ export function OnboardingPage() {
   const [step, setStep] = useState<"loading" | "model" | "bot">("loading");
   const [catalog, setCatalog] = useState<ModelCatalogEntry[]>([]);
   const [query, setQuery] = useState("");
+  const [showAllProviders, setShowAllProviders] = useState(false);
   const [provider, setProvider] = useState("openrouter");
   const [modelId, setModelId] = useState("deepseek/deepseek-v4-flash-0731");
   const [apiKey, setApiKey] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
+  const [reasoning, setReasoning] = useState(false);
   const [probeModels, setProbeModels] = useState<string[]>([]);
   const [probedBaseUrl, setProbedBaseUrl] = useState<string | null>(null);
   const [probing, setProbing] = useState(false);
@@ -96,6 +107,23 @@ export function OnboardingPage() {
     return providers.filter((entry) => matching.has(entry.provider));
   }, [catalog, providers, query]);
 
+  const displayedProviders = useMemo(
+    () => (showAllProviders ? filteredProviders : featuredModelProviders(providers, provider)),
+    [filteredProviders, provider, providers, showAllProviders],
+  );
+
+  const selectedProviderOutsideResults = useMemo(
+    () =>
+      showAllProviders
+        ? selectedProviderOutsideSearchResults(filteredProviders, providers, provider)
+        : undefined,
+    [filteredProviders, provider, providers, showAllProviders],
+  );
+
+  const providerRows = selectedProviderOutsideResults
+    ? [selectedProviderOutsideResults, ...displayedProviders]
+    : displayedProviders;
+
   const modelsForProvider = useMemo(
     () => catalog.filter((entry) => entry.provider === provider),
     [catalog, provider],
@@ -165,6 +193,7 @@ export function OnboardingPage() {
           provider,
           baseUrl: baseUrl.trim(),
           modelId: modelId.trim(),
+          reasoning,
           apiKey: apiKey.trim() || undefined,
           label: selected?.providerName ?? provider,
         });
@@ -200,9 +229,15 @@ export function OnboardingPage() {
         instructions: description,
         notifyOnFinish: true,
       });
-      // Onboarding continues conversationally in the thread: greeting, focus
-      // choice, and Composio authorize cards.
-      await rpc.onboarding.start({ botId: bot.id }).catch(() => undefined);
+      // Onboarding continues conversationally in the thread: greeting first,
+      // then the focus choice (immediate for the first bot).
+      const started = await rpc.onboarding
+        .start({ botId: bot.id })
+        .then(() => true)
+        .catch(() => false);
+      if (started) {
+        await rpc.onboarding.promptFocus({ botId: bot.id }).catch(() => undefined);
+      }
       navigate(`/app/${bot.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : t`Could not create your bot`);
@@ -210,8 +245,8 @@ export function OnboardingPage() {
   }
 
   return (
-    <div className="flex min-h-full items-center justify-center bg-background px-6">
-      <div className="w-[560px]">
+    <div className="min-h-full bg-background px-6 py-12">
+      <div className="mx-auto w-full max-w-[560px]">
         {step === "loading" ? (
           <p className="text-muted-foreground">
             <Trans>Loading…</Trans>
@@ -222,51 +257,106 @@ export function OnboardingPage() {
             <h1 className="text-[32px] font-medium text-foreground">
               <Trans>Connect a model</Trans>
             </h1>
-            <p className="mt-2 text-muted-foreground">
-              <Trans>Choose a model to get started.</Trans>
-            </p>
-            <Input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              aria-label={t`Search providers and models`}
-              placeholder={t`Search providers and models`}
-              className="mt-8"
-            />
-            <div className="mt-3 max-h-48 overflow-y-auto rounded-lg border border-border">
-              {filteredProviders.map((entry) => (
-                <button
-                  key={entry.provider}
-                  type="button"
-                  onClick={() => {
-                    cancelOAuthAttempt();
-                    setProvider(entry.provider);
-                    setModelId(
-                      entry.provider === OPENAI_COMPATIBLE_PROVIDER_ID
-                        ? ""
-                        : (catalog.find((item) => item.provider === entry.provider)?.id ?? ""),
-                    );
-                    setBaseUrl("");
-                    resetOpenAiCompatibleProbe();
-                    setError(null);
-                    setNotice(null);
-                  }}
-                  className={`flex w-full items-center justify-between border-b border-border px-3.5 py-2.5 text-left last:border-0 ${
-                    entry.provider === provider ? "bg-muted" : "hover:bg-accent"
-                  }`}
-                >
-                  <span className="text-[15px] text-foreground">
-                    {entry.providerName ?? entry.provider}
-                  </span>
-                  <span className="text-[12px] text-muted-foreground">
-                    {localizedProviderHint(entry)}
-                  </span>
-                </button>
-              ))}
+            <div className="mt-8 flex items-center justify-between gap-4">
+              <p className="text-sm font-medium text-foreground">
+                <Trans>Provider</Trans>
+              </p>
+              <Button
+                variant="link"
+                size="xs"
+                className="px-0 text-muted-foreground"
+                onClick={() => {
+                  setShowAllProviders((current) => !current);
+                  setQuery("");
+                }}
+              >
+                {showAllProviders ? (
+                  <Trans>Show popular providers</Trans>
+                ) : (
+                  <Trans>Show all providers</Trans>
+                )}
+              </Button>
             </div>
-            <div className="mt-4 block text-sm text-muted-foreground">
+            {showAllProviders ? (
+              <Input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                aria-label={t`Search providers and models`}
+                placeholder={t`Search providers and models`}
+                className="mt-3"
+              />
+            ) : null}
+            <fieldset
+              aria-label={t`Model providers`}
+              className={`mt-3 overflow-y-auto rounded-xl border border-border ${
+                showAllProviders ? "max-h-64" : ""
+              }`}
+            >
+              {providerRows.map((entry) => {
+                const isSelected = entry.provider === provider;
+                const isOutsideSearchResults =
+                  entry.provider === selectedProviderOutsideResults?.provider;
+                return (
+                  <button
+                    key={entry.provider}
+                    type="button"
+                    aria-pressed={isSelected}
+                    onClick={() => {
+                      if (isSelected) return;
+                      cancelOAuthAttempt();
+                      setProvider(entry.provider);
+                      setModelId(
+                        entry.provider === OPENAI_COMPATIBLE_PROVIDER_ID
+                          ? ""
+                          : (catalog.find((item) => item.provider === entry.provider)?.id ?? ""),
+                      );
+                      setBaseUrl("");
+                      setReasoning(false);
+                      resetOpenAiCompatibleProbe();
+                      setError(null);
+                      setNotice(null);
+                    }}
+                    className={`flex min-h-11 w-full items-center gap-3 border-b border-border px-3.5 py-2.5 text-left last:border-0 ${
+                      isSelected ? "bg-muted" : "hover:bg-accent"
+                    }`}
+                  >
+                    <span className="flex min-w-0 flex-1 items-center gap-2">
+                      <span
+                        className={`truncate text-[15px] text-foreground ${isSelected ? "font-medium" : ""}`}
+                      >
+                        {entry.provider === "openai-codex"
+                          ? "ChatGPT"
+                          : (entry.providerName ?? entry.provider)}
+                      </span>
+                      {isOutsideSearchResults ? (
+                        <span className="shrink-0 text-[11px] text-muted-foreground">
+                          <Trans>Selected</Trans>
+                        </span>
+                      ) : null}
+                    </span>
+                    <span className="text-[12px] text-muted-foreground">
+                      {localizedProviderHint(entry)}
+                    </span>
+                    <span className="flex size-5 shrink-0 items-center justify-center" aria-hidden>
+                      {isSelected ? (
+                        <span className="flex size-5 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                          <Check className="size-3" strokeWidth={2.5} />
+                        </span>
+                      ) : null}
+                    </span>
+                  </button>
+                );
+              })}
+              {displayedProviders.length === 0 ? (
+                <p className="px-3.5 py-6 text-center text-sm text-muted-foreground">
+                  <Trans>No providers found</Trans>
+                </p>
+              ) : null}
+            </fieldset>
+            <div className="mt-6 block text-sm text-foreground">
               {isOpenAiCompatible ? (
                 <>
-                  <label htmlFor={`${fieldId}-base-url`} className="block">
+                  <label htmlFor={`${fieldId}-base-url`} className="block font-medium">
                     <Trans>Server URL</Trans>
                     <Input
                       id={`${fieldId}-base-url`}
@@ -296,7 +386,7 @@ export function OnboardingPage() {
                     </Button>
                   </div>
                   <div className="mt-4 block">
-                    <span>
+                    <span className="font-medium">
                       <Trans>Model</Trans>
                     </span>
                     {probeModels.length && probeModels.includes(modelId) ? (
@@ -335,10 +425,16 @@ export function OnboardingPage() {
                       </Button>
                     ) : null}
                   </div>
+                  <ModelThinkingOptions
+                    reasoning={reasoning}
+                    onReasoningChange={setReasoning}
+                    advancedLabel={t`Advanced`}
+                    thinkingLabel={t`Supports thinking`}
+                  />
                 </>
               ) : (
                 <>
-                  <span>
+                  <span className="font-medium">
                     <Trans>Model</Trans>
                   </span>
                   <NativeSelect
@@ -359,9 +455,6 @@ export function OnboardingPage() {
                 </>
               )}
             </div>
-            {!isOpenAiCompatible && selected?.billing ? (
-              <p className="mt-2 text-[13px] text-muted-foreground">{selected.billing}</p>
-            ) : null}
             {subscriptionSignIn ? (
               <div className="mt-4">
                 {oauth ? (
@@ -452,7 +545,7 @@ export function OnboardingPage() {
               ) : (
                 <label
                   htmlFor={`${fieldId}-api-key`}
-                  className="mt-4 block text-sm text-muted-foreground"
+                  className="mt-4 block text-sm font-medium text-foreground"
                 >
                   {subscriptionSignIn ? <Trans>Or paste an API key</Trans> : <Trans>API key</Trans>}
                   <Input

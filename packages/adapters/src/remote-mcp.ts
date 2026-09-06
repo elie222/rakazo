@@ -7,6 +7,7 @@ import { Agent } from "undici";
 import { combineSignals } from "./connector-safety.js";
 import {
   createAddressCheckedLookup,
+  isCloudMetadataAddress,
   isPrivateAddress,
   type ResolvedAddress,
   type ResolveHostname,
@@ -73,7 +74,7 @@ export async function callRemoteMcpTool(
       signal,
       timeout: MCP_TIMEOUT_MS,
     });
-    return limitPayload({
+    return limitRemoteMcpPayload({
       content: result.content,
       structuredContent: result.structuredContent,
       isError: result.isError ?? false,
@@ -197,6 +198,7 @@ function assertPublicAddresses(addresses: ResolvedAddress[], hostname?: string):
   const magicDns = hostname != null && isTailscaleMagicDnsHostname(hostname);
   if (
     addresses.some((entry) => {
+      if (isCloudMetadataAddress(entry.address)) return true;
       if (!isPrivateAddress(entry.address)) return false;
       // Allow only Tailscale CGNAT for MagicDNS; keep other private ranges blocked.
       return !(magicDns && isTailscaleCgnatAddress(entry.address));
@@ -206,11 +208,26 @@ function assertPublicAddresses(addresses: ResolvedAddress[], hostname?: string):
   }
 }
 
-function limitPayload(value: unknown): unknown {
+export function limitRemoteMcpPayload(value: unknown): unknown {
   const serialized = JSON.stringify(value);
-  if (serialized.length <= MAX_RESULT_BYTES) return value;
+  if (serialized === undefined) return value;
+  const bytes = Buffer.from(serialized, "utf8");
+  if (bytes.byteLength <= MAX_RESULT_BYTES) return value;
   return {
     truncated: true,
-    content: serialized.slice(0, MAX_RESULT_BYTES),
+    content: decodeUtf8Prefix(bytes, MAX_RESULT_BYTES),
   };
+}
+
+function decodeUtf8Prefix(bytes: Uint8Array, maxBytes: number): string {
+  const decoder = new TextDecoder("utf-8", { fatal: true });
+  let end = Math.min(bytes.byteLength, maxBytes);
+  while (end > 0) {
+    try {
+      return decoder.decode(bytes.subarray(0, end));
+    } catch {
+      end -= 1;
+    }
+  }
+  return "";
 }

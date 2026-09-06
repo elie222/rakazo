@@ -426,88 +426,93 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
                   <Trans>No MCP servers yet.</Trans>
                 </p>
               ) : (
-                servers.map((server) => (
-                  <Card key={server.id} size="sm">
-                    <CardContent>
-                      <div className="flex items-center justify-between">
-                        <span className="font-medium text-foreground">{server.name}</span>
-                        <Badge variant="secondary" className="uppercase">
-                          {server.transport.replace("_", " ")}
-                        </Badge>
-                      </div>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        {server.endpoint ?? server.command ?? server.slug}
-                      </p>
-                      {oauthStatusText(server) ? (
-                        <p className="mt-2 text-[11px] text-muted-foreground">
-                          {oauthStatusText(server)}
+                servers.map((server) => {
+                  const statusText = oauthStatusText(server);
+                  return (
+                    <Card key={server.id} size="sm">
+                      <CardContent>
+                        <div className="flex items-center justify-between">
+                          <span className="font-medium text-foreground">{server.name}</span>
+                          <Badge variant="secondary" className="uppercase">
+                            {server.transport.replace("_", " ")}
+                          </Badge>
+                        </div>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {server.endpoint ?? server.command ?? server.slug}
                         </p>
-                      ) : null}
-                      <div className="mt-3 flex flex-wrap items-center gap-1.5">
-                        <span className="text-[11px] text-muted-foreground">
-                          <Trans>Agents:</Trans>
-                        </span>
-                        {bots.map((bot) => {
-                          const assigned = (botAssignments[bot.id] ?? []).some(
-                            (entry) => entry.serverId === server.id,
-                          );
-                          return (
-                            <Button
-                              key={bot.id}
-                              type="button"
-                              variant={assigned ? "default" : "outline"}
-                              size="xs"
-                              className="rounded-full"
-                              aria-pressed={assigned}
-                              onClick={() => void toggleAssignment(server, bot.id)}
-                            >
-                              {assigned ? <Check aria-hidden="true" /> : null}
-                              {bot.name}
-                            </Button>
-                          );
-                        })}
-                      </div>
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        {server.transport !== "stdio" ? (
-                          <>
-                            <Button
-                              type="button"
-                              size="sm"
-                              disabled={oauthPending === server.id}
-                              onClick={() => void connectOAuth(server)}
-                            >
-                              {oauthActionLabel(server, oauthPending === server.id)}
-                            </Button>
-                            {server.oauthStatus !== "none" ? (
+                        {statusText ? (
+                          <p
+                            className={`mt-2 text-[11px] ${server.oauthStatus === "reconnect" ? "text-warning" : "text-muted-foreground"}`}
+                          >
+                            {statusText}
+                          </p>
+                        ) : null}
+                        <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                          <span className="text-[11px] text-muted-foreground">
+                            <Trans>Agents:</Trans>
+                          </span>
+                          {bots.map((bot) => {
+                            const assigned = (botAssignments[bot.id] ?? []).some(
+                              (entry) => entry.serverId === server.id,
+                            );
+                            return (
+                              <Button
+                                key={bot.id}
+                                type="button"
+                                variant={assigned ? "default" : "outline"}
+                                size="xs"
+                                className="rounded-full"
+                                aria-pressed={assigned}
+                                onClick={() => void toggleAssignment(server, bot.id)}
+                              >
+                                {assigned ? <Check aria-hidden="true" /> : null}
+                                {bot.name}
+                              </Button>
+                            );
+                          })}
+                        </div>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {server.transport !== "stdio" ? (
+                            <>
                               <Button
                                 type="button"
-                                variant="outline"
                                 size="sm"
                                 disabled={oauthPending === server.id}
-                                onClick={() => void disconnectOAuth(server)}
+                                onClick={() => void connectOAuth(server)}
                               >
-                                <Trans>Disconnect</Trans>
+                                {oauthActionLabel(server, oauthPending === server.id)}
                               </Button>
-                            ) : null}
-                          </>
-                        ) : null}
-                        <Button
-                          type="button"
-                          variant={confirmingDelete === server.id ? "destructive" : "outline"}
-                          size="sm"
-                          className="ml-auto"
-                          onClick={() => void deleteServer(server)}
-                        >
-                          {confirmingDelete === server.id ? (
-                            <Trans>Confirm delete</Trans>
-                          ) : (
-                            <Trans>Delete</Trans>
-                          )}
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))
+                              {server.oauthStatus !== "none" ? (
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  disabled={oauthPending === server.id}
+                                  onClick={() => void disconnectOAuth(server)}
+                                >
+                                  <Trans>Disconnect</Trans>
+                                </Button>
+                              ) : null}
+                            </>
+                          ) : null}
+                          <Button
+                            type="button"
+                            variant={confirmingDelete === server.id ? "destructive" : "outline"}
+                            size="sm"
+                            className="ml-auto"
+                            onClick={() => void deleteServer(server)}
+                          >
+                            {confirmingDelete === server.id ? (
+                              <Trans>Confirm delete</Trans>
+                            ) : (
+                              <Trans>Delete</Trans>
+                            )}
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })
               )}
             </div>
           </div>

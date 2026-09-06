@@ -15,7 +15,7 @@ function formatAnsweredState(
   outcome?: "created" | "cancelled",
   actions?: AskBlock["actions"],
 ): string {
-  if (secret) return t`Submitted`;
+  if (secret) return t`Saved`;
   if (!answer) return t`Answered`;
   if (!approval) return t`Answered: ${selectedAskActionLabel(answer, actions)}`;
   if (outcome === "created") return t`Created`;
@@ -39,6 +39,12 @@ function approvalActionLabel(
   return fallback;
 }
 
+function secretFieldLabel(purpose: AskBlock["purpose"]): string {
+  if (purpose === "password") return t`Password`;
+  if (purpose === "api_key") return t`API key`;
+  return t`Code`;
+}
+
 export function AskCard({
   block,
   canAnswer,
@@ -57,6 +63,7 @@ export function AskCard({
   const approvalActions = isApprovalAskBlock(block) ? block.actions : undefined;
   const askActions = block.actions;
   const secretInput = isSecretAskBlock(block);
+  const secretLabel = secretFieldLabel(block.purpose);
 
   async function submitAnswer(value: string) {
     if (submitting) return;
@@ -64,21 +71,32 @@ export function AskCard({
     const submitValue = secretInput ? value : value.trim();
     setPendingAction(secretInput ? "submit" : submitValue);
     setError(null);
+    if (secretInput) setAnswer("");
     try {
       await onAnswer(submitValue);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t`Could not submit this answer`);
+      setError(
+        !secretInput && err instanceof Error ? err.message : t`Could not submit this answer`,
+      );
     } finally {
       setPendingAction(null);
     }
   }
 
   return (
-    <div className="max-w-[74%] rounded-2xl border border-border bg-card px-5 py-4">
+    <div
+      data-testid={secretInput ? "secret-ask-card" : undefined}
+      className="max-w-[74%] rounded-2xl border border-border bg-card px-5 py-4"
+    >
       <div className="text-[15.5px] leading-[1.5] text-foreground">
         <ChatMarkdown>{block.text}</ChatMarkdown>
       </div>
-      {block.detail ? (
+      {secretInput && block.credential ? (
+        <div className="mt-2 break-all text-[13px] text-muted-foreground">
+          {block.credential.origin}
+        </div>
+      ) : null}
+      {block.detail && !secretInput ? (
         <pre className="mt-3 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-xl bg-muted px-3.5 py-3 font-mono text-[12.5px] leading-[1.7] text-muted-foreground">
           {block.detail}
         </pre>
@@ -98,11 +116,12 @@ export function AskCard({
           <Trans>No longer active</Trans>
         </div>
       ) : askActions?.length ? (
-        <div className="mt-3.5 flex flex-wrap gap-2">
+        <div className="mt-3.5 space-y-1.5">
           {askActions.map((action) => (
             <Button
               key={action.id}
               variant={approvalActions && action.id === "allow" ? "default" : "outline"}
+              className="h-auto w-full justify-start whitespace-normal px-3.5 py-3 text-start font-normal"
               disabled={submitting}
               onClick={() => void submitAnswer(action.id)}
             >
@@ -125,19 +144,17 @@ export function AskCard({
           }}
         >
           <Input
-            aria-label={t`Code`}
+            aria-label={secretLabel}
             type="password"
             autoComplete="off"
+            spellCheck={false}
+            disabled={submitting}
             value={answer}
             onChange={(event) => setAnswer(event.target.value)}
-            placeholder={t`Code`}
+            placeholder={secretLabel}
           />
-          <Button
-            type="submit"
-            className="self-start"
-            disabled={(secretInput ? answer.length === 0 : !answer.trim()) || submitting}
-          >
-            {submitting ? <Trans>Sending…</Trans> : <Trans>Submit</Trans>}
+          <Button type="submit" className="self-start" disabled={answer.length === 0 || submitting}>
+            {submitting ? <Trans>Saving…</Trans> : <Trans>Save</Trans>}
           </Button>
         </form>
       ) : editing ? (

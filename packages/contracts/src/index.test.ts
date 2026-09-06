@@ -20,6 +20,12 @@ import {
 } from "./index.js";
 
 describe("contracts", () => {
+  it("accepts structured live activity progress", () => {
+    expect(MessageBlock.parse({ kind: "progress", text: "Using browser", activity: true })).toEqual(
+      { kind: "progress", text: "Using browser", activity: true },
+    );
+  });
+
   it("accepts optional persisted duration only on valid steps blocks", () => {
     expect(
       MessageBlock.parse({
@@ -86,6 +92,12 @@ describe("contracts", () => {
   it("normalizes bot names and rejects whitespace-only values at the contract boundary", () => {
     expect(CreateBotInput.parse({ name: "  Chief  " }).name).toBe("Chief");
     expect(UpdateBotInput.parse({ botId: "bot-1", name: "  Atlas  " }).name).toBe("Atlas");
+    expect(UpdateBotInput.parse({ botId: "bot-1", title: "  Lead researcher  " }).title).toBe(
+      "Lead researcher",
+    );
+    expect(
+      UpdateBotInput.parse({ botId: "bot-1", description: "  Concise briefs.  " }).description,
+    ).toBe("Concise briefs.");
     expect(CreateBotInput.safeParse({ name: "   " }).success).toBe(false);
     expect(UpdateBotInput.safeParse({ botId: "bot-1", name: "   " }).success).toBe(false);
   });

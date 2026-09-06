@@ -44,6 +44,8 @@ test("focus choice suggests apps and preserves a completed connection", async ({
     .getByTestId("transcript")
     .getByText("Hit those three and I’ll start pulling the picture.")
     .scrollIntoViewIfNeeded();
+  await page.mouse.move(1, 1);
+  await captureScreenshot(page, testInfo, "02-app-suggestions");
   const authorizeButton = slackCard(page).getByRole("button", { name: "Authorize" });
   const restingBackground = await authorizeButton.evaluate(
     (button) => getComputedStyle(button).backgroundColor,
@@ -85,4 +87,22 @@ test("focus choice suggests apps and preserves a completed connection", async ({
   await expect(slackCard(page).getByText("Connected", { exact: true })).toBeVisible();
   await page.mouse.move(1, 1);
   await captureScreenshot(page, testInfo, "04-connected-after-reload");
+});
+
+test("choice refresh failures leave options available for retry", async ({ page }) => {
+  await signup(page, `choice-refresh-${Date.now()}@rakazo.test`, "password12", "Choice Retry");
+  await completeOnboarding(page);
+  const choice = page.getByRole("button", { name: /Day-to-day work/ });
+  await expect(choice).toBeEnabled();
+  // Keep the existing choice rendered while its save succeeds and navigation refresh fails.
+  await page.route("**/rpc/onboarding/choose", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ json: { ok: true } }),
+    }),
+  );
+  await page.route("**/rpc/spaces/list", (route) => route.abort());
+  await Promise.all([page.waitForRequest("**/rpc/spaces/list"), choice.click()]);
+  await expect(choice).toBeEnabled();
 });

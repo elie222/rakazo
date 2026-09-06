@@ -1,8 +1,13 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, open, readFile, rename, rm } from "node:fs/promises";
+import { constants } from "node:fs";
+import { lstat, mkdir, open, rename, rm } from "node:fs/promises";
 import path from "node:path";
 import type { DesktopSetup } from "@rakazo/contracts";
 import { parseStoredSetup, SETUP_FILE_NAME, serializeSetup } from "./setup-config.js";
+
+const O_NOFOLLOW = constants.O_NOFOLLOW ?? 0;
+const O_NONBLOCK = constants.O_NONBLOCK ?? 0;
+const MAX_SETUP_BYTES = 64 * 1024;
 
 export function setupFilePath(userDataDir: string): string {
   return path.join(userDataDir, SETUP_FILE_NAME);
@@ -10,13 +15,34 @@ export function setupFilePath(userDataDir: string): string {
 
 /** Returns null when setup has not run yet, or when the saved file is unusable. */
 export async function readSetup(userDataDir: string): Promise<DesktopSetup | null> {
-  let raw: string;
+  const raw = await readPrivateFile(setupFilePath(userDataDir), MAX_SETUP_BYTES);
+  if (raw === null) return null;
+  return parseStoredSetup(raw);
+}
+
+/** Reads a bounded regular file without accepting a final symlink. */
+export async function readPrivateFile(file: string, maxBytes: number): Promise<string | null> {
+  let handle: Awaited<ReturnType<typeof open>> | undefined;
   try {
-    raw = await readFile(setupFilePath(userDataDir), "utf8");
+    const before = await lstat(file);
+    if (!before.isFile() || before.isSymbolicLink()) return null;
+    handle = await open(file, constants.O_RDONLY | O_NOFOLLOW | O_NONBLOCK);
+    const after = await handle.stat();
+    if (!after.isFile() || before.dev !== after.dev || before.ino !== after.ino) return null;
+
+    const buffer = Buffer.alloc(maxBytes + 1);
+    let offset = 0;
+    while (offset < buffer.byteLength) {
+      const { bytesRead } = await handle.read(buffer, offset, buffer.byteLength - offset, offset);
+      if (bytesRead === 0) break;
+      offset += bytesRead;
+    }
+    return offset > maxBytes ? null : buffer.subarray(0, offset).toString("utf8");
   } catch {
     return null;
+  } finally {
+    await handle?.close().catch(() => undefined);
   }
-  return parseStoredSetup(raw);
 }
 
 export async function writeSetup(userDataDir: string, setup: DesktopSetup): Promise<void> {

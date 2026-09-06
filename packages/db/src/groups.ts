@@ -7,6 +7,7 @@ import {
   type SpaceGroup,
 } from "@rakazo/contracts";
 import type { Prisma, PrismaClient } from "./client.js";
+import { expireComputerExecutionLeases } from "./computers.js";
 import { IsolationError } from "./scope.js";
 import { activeRunSelection, activeRunStatuses, previewFromBlocks } from "./thread-listing.js";
 
@@ -442,7 +443,7 @@ export function createGroupRepos(prisma: PrismaClient) {
             where: { id: { in: activeRuns.map((run) => run.taskId) } },
             data: { status: "cancelled" },
           });
-          await tx.computerExecutionLease.deleteMany({ where: { runId: { in: runIds } } });
+          await expireComputerExecutionLeases(tx, { runId: { in: runIds } });
           await tx.computer.updateMany({
             where: { executionRunId: { in: runIds } },
             data: {

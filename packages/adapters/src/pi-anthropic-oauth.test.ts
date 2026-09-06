@@ -1,6 +1,9 @@
 import type { AuthInteraction } from "@earendil-works/pi-ai";
-import { describe, expect, it } from "vitest";
-import { createManualAnthropicOAuthLogin } from "./pi-anthropic-oauth.js";
+import { describe, expect, it, vi } from "vitest";
+import {
+  createManualAnthropicOAuthLogin,
+  MAX_ANTHROPIC_TOKEN_RESPONSE_BYTES,
+} from "./pi-anthropic-oauth.js";
 
 describe("manual Anthropic OAuth", () => {
   it("runs concurrent paste-back flows without binding a callback port", async () => {
@@ -50,10 +53,90 @@ describe("manual Anthropic OAuth", () => {
     ).rejects.toThrow(/state mismatch/i);
     expect(requested).toBe(false);
   });
+
+  it("rejects and cancels a declared oversized token response", async () => {
+    const response = new Response("oversized", {
+      headers: { "content-length": String(MAX_ANTHROPIC_TOKEN_RESPONSE_BYTES + 1) },
+    });
+    const cancel = vi.spyOn(response.body!, "cancel");
+    const login = createManualAnthropicOAuthLogin({
+      fetch: vi.fn().mockResolvedValue(response),
+      createVerifier: () => "expected-state",
+    });
+
+    await expect(login(interactionFor("code#expected-state"))).rejects.toThrow(
+      "Anthropic token exchange response is too large.",
+    );
+    expect(cancel).toHaveBeenCalledOnce();
+  });
+
+  it("does not wait past cancellation when an oversized body cancel hangs", async () => {
+    let cancelStarted = false;
+    const hangingBody = new ReadableStream<Uint8Array>({
+      cancel() {
+        cancelStarted = true;
+        return new Promise(() => undefined);
+      },
+    });
+    const abort = new AbortController();
+    const login = createManualAnthropicOAuthLogin({
+      fetch: vi.fn(async () => {
+        setTimeout(() => abort.abort(), 20);
+        return new Response(hangingBody, {
+          headers: { "content-length": String(MAX_ANTHROPIC_TOKEN_RESPONSE_BYTES + 1) },
+        });
+      }),
+      createVerifier: () => "expected-state",
+    });
+
+    const started = Date.now();
+    await expect(login(interactionFor("code#expected-state", abort.signal))).rejects.toThrow(
+      "Anthropic token exchange response is too large.",
+    );
+    expect(cancelStarted).toBe(true);
+    expect(Date.now() - started).toBeLessThan(500);
+  });
+
+  it("caps a streamed token response without a content length", async () => {
+    const login = createManualAnthropicOAuthLogin({
+      fetch: vi
+        .fn()
+        .mockResolvedValue(new Response(new Uint8Array(MAX_ANTHROPIC_TOKEN_RESPONSE_BYTES + 1))),
+      createVerifier: () => "expected-state",
+    });
+
+    await expect(login(interactionFor("code#expected-state"))).rejects.toThrow(
+      "Anthropic token exchange response is too large.",
+    );
+  });
+
+  it("uses the request deadline while reading the token response", async () => {
+    const requestSignals: AbortSignal[] = [];
+    const response = new Response(
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode("{"));
+        },
+      }),
+    );
+    const fetch = vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
+      requestSignals.push(init?.signal as AbortSignal);
+      return response;
+    });
+    const login = createManualAnthropicOAuthLogin({
+      fetch: fetch as typeof globalThis.fetch,
+      createVerifier: () => "expected-state",
+    });
+    const controller = new AbortController();
+    const result = login(interactionFor("code#expected-state", controller.signal));
+    controller.abort(new Error("login cancelled"));
+
+    await expect(result).rejects.toThrow("login cancelled");
+    expect(requestSignals[0]?.aborted).toBe(true);
+  });
 });
 
-function interactionFor(input: string): AuthInteraction {
-  const signal = new AbortController().signal;
+function interactionFor(input: string, signal = new AbortController().signal): AuthInteraction {
   return {
     signal,
     async prompt() {

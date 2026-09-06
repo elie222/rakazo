@@ -1,5 +1,5 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
-import { captureScreenshot, completeOnboarding, signup } from "./helpers";
+import { captureScreenshot, completeOnboarding, openNewSpace, signup } from "./helpers";
 
 function isPresented(error: Locator) {
   return error.evaluate((element) => {
@@ -112,8 +112,7 @@ test("a covered run error is not remembered until it is presented", async ({ pag
   await page.getByPlaceholder(/^Message /).fill("fail this run");
   const modalSendButton = await page.getByRole("button", { name: "Send" }).elementHandle();
   if (!modalSendButton) throw new Error("Send button not found");
-  await page.getByTitle("Create", { exact: true }).click();
-  await page.getByRole("button", { name: "New space" }).click();
+  await openNewSpace(page);
   const newSpaceDialog = page.getByRole("dialog", { name: "New space" });
   await expect(newSpaceDialog).toBeVisible();
   await modalSendButton.evaluate((button) => (button as HTMLButtonElement).click());

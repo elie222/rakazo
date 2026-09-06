@@ -26,6 +26,7 @@ import type {
   ScreenSession,
 } from "@rakazo/adapter-kit";
 import { boundedSandboxCommandTimeoutMs, canReleaseScreenLease } from "@rakazo/core";
+import { boxResponseError, wrapBoxCall } from "./box-errors.js";
 import { SingleScreenClaimTracker } from "./computer-screens.js";
 import {
   boundedComputerActions,
@@ -52,12 +53,12 @@ const BOX_SCREEN_LEASE_PATH = "/tmp/rakazo-screen-lease";
 
 export type BoxSandboxSdk = Pick<
   BoxApi,
+  | "artifactRaw"
   | "command"
   | "commandStatus"
   | "create"
   | "desktop"
   | "get"
-  | "readFile"
   | "resume"
   | "stop"
   | "update"
@@ -400,18 +401,12 @@ export class BoxSandboxProvider implements SandboxProvider {
     context: AdapterContext,
     options?: { maxBytes?: number },
   ): Promise<Uint8Array> {
-    const response = await this.client.readFile(
-      {
-        boxId: this.id(computer),
-        path: workspacePath(BOX_WORKSPACE, filePath),
-        encoding: "base64",
-      },
-      { signal: context.signal },
+    return this.readRemoteFile(
+      this.id(computer),
+      workspacePath(BOX_WORKSPACE, filePath),
+      context.signal,
+      options?.maxBytes,
     );
-    if (options?.maxBytes !== undefined && response.size > options.maxBytes) {
-      throw new Error(`computer file exceeds ${options.maxBytes} bytes`);
-    }
-    return Uint8Array.from(Buffer.from(response.content, "base64"));
   }
 
   async writeFile(computer: ComputerRef, file: PortableFile, context: AdapterContext) {
@@ -715,12 +710,43 @@ export class BoxSandboxProvider implements SandboxProvider {
     id: string,
     filePath: string,
     signal?: AbortSignal,
+    maxBytes?: number,
   ): Promise<Uint8Array> {
-    const response = await this.client.readFile(
-      { boxId: id, path: filePath, encoding: "base64" },
+    // The JSON/base64 file endpoint rejects files over 5 MiB, including browser profiles.
+    const { raw: response } = await this.client.artifactRaw(
+      { boxId: id, path: filePath },
       signal ? { signal } : undefined,
     );
-    return Uint8Array.from(Buffer.from(response.content, "base64"));
+    const reader = response.body?.getReader();
+    const chunks: Uint8Array[] = [];
+    let size = 0;
+    try {
+      if (maxBytes !== undefined && Number(response.headers.get("content-length")) > maxBytes) {
+        throw new Error(`computer file exceeds ${maxBytes} bytes`);
+      }
+      if (!reader) return new Uint8Array();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        size += value.byteLength;
+        if (maxBytes !== undefined && size > maxBytes) {
+          throw new Error(`computer file exceeds ${maxBytes} bytes`);
+        }
+        chunks.push(value);
+      }
+      const content = new Uint8Array(size);
+      let offset = 0;
+      for (const chunk of chunks) {
+        content.set(chunk, offset);
+        offset += chunk.byteLength;
+      }
+      return content;
+    } catch (error) {
+      await reader?.cancel().catch(() => undefined);
+      throw error;
+    } finally {
+      reader?.releaseLock();
+    }
   }
 
   private async runCommand(
@@ -852,16 +878,16 @@ function createBoxSdk(config: { apiKey: string; apiUrl?: string }): BoxSandboxSd
     }),
   );
   return {
-    command: api.command.bind(api),
-    commandStatus: api.commandStatus.bind(api),
-    create: api.create.bind(api),
-    desktop: api.desktop.bind(api),
-    get: api.get.bind(api),
-    readFile: api.readFile.bind(api),
-    resume: api.resume.bind(api),
-    stop: api.stop.bind(api),
-    update: api.update.bind(api),
-    writeFile: api.writeFile.bind(api),
+    artifactRaw: wrapBoxCall(api.artifactRaw.bind(api), config.apiKey),
+    command: wrapBoxCall(api.command.bind(api), config.apiKey),
+    commandStatus: wrapBoxCall(api.commandStatus.bind(api), config.apiKey),
+    create: wrapBoxCall(api.create.bind(api), config.apiKey),
+    desktop: wrapBoxCall(api.desktop.bind(api), config.apiKey),
+    get: wrapBoxCall(api.get.bind(api), config.apiKey),
+    resume: wrapBoxCall(api.resume.bind(api), config.apiKey),
+    stop: wrapBoxCall(api.stop.bind(api), config.apiKey),
+    update: wrapBoxCall(api.update.bind(api), config.apiKey),
+    writeFile: wrapBoxCall(api.writeFile.bind(api), config.apiKey),
     deleteBox: async (boxId: string) => {
       const url = `${apiUrl}/boxes/${encodeURIComponent(boxId)}`;
       const headers = { Authorization: `Bearer ${config.apiKey}` };
@@ -874,37 +900,20 @@ function createBoxSdk(config: { apiKey: string; apiUrl?: string }): BoxSandboxSd
       });
       if (response.status === 404) return;
       if (!response.ok) {
-        const message = await boxErrorMessage(response);
-        const error = new Error(message) as Error & { status: number };
-        error.status = response.status;
-        throw error;
+        throw await boxResponseError(response, config.apiKey);
       }
       const deadline = Date.now() + 60_000;
       while (Date.now() < deadline) {
         const status = await fetch(url, { headers });
         if (status.status === 404) return;
         if (!status.ok) {
-          const message = await boxErrorMessage(status);
-          const error = new Error(message) as Error & { status: number };
-          error.status = status.status;
-          throw error;
+          throw await boxResponseError(status, config.apiKey);
         }
         await delay(500);
       }
       throw new Error(`Box ${boxId} was not deleted within 60 seconds`);
     },
   };
-}
-
-async function boxErrorMessage(response: Response): Promise<string> {
-  const fallback = `Box API request failed with ${response.status}`;
-  try {
-    const body = (await response.json()) as { message?: unknown; requestId?: unknown };
-    const message = typeof body.message === "string" ? body.message : fallback;
-    return typeof body.requestId === "string" ? `${message} (${body.requestId})` : message;
-  } catch {
-    return fallback;
-  }
 }
 
 function timeoutCommand(command: string, timeoutMs: number, marker: string): string {

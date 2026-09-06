@@ -1,4 +1,4 @@
-import { copyFile, mkdir, readFile, stat } from "node:fs/promises";
+import { copyFile, lstat, mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import type { DesktopLocalStackState } from "@rakazo/contracts";
 import {
@@ -10,12 +10,14 @@ import {
   type RunDockerResult,
   resolveDockerBinary,
 } from "./docker-cli.js";
-import { writePrivateFile } from "./setup-store.js";
+import { readPrivateFile, writePrivateFile } from "./setup-store.js";
 
 export const STACK_DIR_NAME = "stack";
+export const STACK_PROJECT_NAME = "rakazo-desktop";
 export const STACK_COMPOSE_FILE = "docker-compose.images.yml";
 export const STACK_ENV_TEMPLATE = ".env.images.example";
 export const STACK_ENV_FILE = ".env";
+export const STACK_TOKEN_FILE = ".desktop-stack-token";
 export const STACK_OUTPUT_LINES = 20;
 export const STACK_HEALTH_TIMEOUT_MS = 120_000;
 export const COMPOSE_WAIT_TIMEOUT_S = 300;
@@ -27,6 +29,7 @@ const PULL_TIMEOUT_MS = 30 * 60_000;
 const UP_TIMEOUT_MS = (COMPOSE_WAIT_TIMEOUT_S + 60) * 1_000;
 const LOGS_TIMEOUT_MS = 15_000;
 const STOP_TIMEOUT_MS = 90_000;
+const MAX_STACK_TOKEN_BYTES = 1024;
 
 /** The compose project lives under the app's user data, next to the `.env` it generates. */
 export function stackDir(userDataDir: string): string {
@@ -90,7 +93,7 @@ export function renderStackEnv(template: string, randomHex: (bytes: number) => s
   return rendered.join("\n");
 }
 
-/** Never overwrites an existing `.env`: it holds the database password and auth secrets. */
+/** Keeps an existing regular `.env`, but replaces a final symlink instead of trusting its target. */
 export async function ensureStackEnv(
   dir: string,
   template: string,
@@ -98,12 +101,34 @@ export async function ensureStackEnv(
 ): Promise<"kept" | "created"> {
   const destination = path.join(dir, STACK_ENV_FILE);
   try {
-    await stat(destination);
-    return "kept";
+    const info = await lstat(destination);
+    if (!info.isSymbolicLink()) return "kept";
   } catch {
-    await writePrivateFile(destination, renderStackEnv(template, randomHex));
-    return "created";
+    // Missing files are created below.
   }
+  await writePrivateFile(destination, renderStackEnv(template, randomHex));
+  return "created";
+}
+
+const STACK_TOKEN = /^[a-f0-9]{64}$/;
+
+export async function readStackToken(dir: string): Promise<string | null> {
+  const raw = await readPrivateFile(path.join(dir, STACK_TOKEN_FILE), MAX_STACK_TOKEN_BYTES);
+  const token = raw?.trim() ?? "";
+  return STACK_TOKEN.test(token) ? token : null;
+}
+
+/** Creates an app-private identity without placing it in the user-editable Compose env file. */
+export async function ensureStackToken(
+  dir: string,
+  randomHex: (bytes: number) => string,
+): Promise<string> {
+  const existing = await readStackToken(dir);
+  if (existing !== null) return existing;
+  const token = randomHex(32);
+  if (!STACK_TOKEN.test(token)) throw new Error("Stack token generator returned invalid data.");
+  await writePrivateFile(path.join(dir, STACK_TOKEN_FILE), `${token}\n`);
+  return token;
 }
 
 export type LocalStackEvent =
@@ -207,9 +232,10 @@ export interface LocalStackDeps {
   run: RunDocker;
   stackDir: string;
   resourceDir: string;
+  localWebUrl: string;
   imageTag: string;
-  /** Answers whether the web app is reachable; the final readiness gate. */
-  probe: (signal: AbortSignal) => Promise<boolean>;
+  /** Returns the authenticated running image tag, or null for any other listener. */
+  probe: (url: string, signal: AbortSignal, token: string) => Promise<string | null>;
   randomHex: (bytes: number) => string;
   sleep?: (ms: number, signal: AbortSignal) => Promise<void>;
   healthTimeoutMs?: number;
@@ -234,6 +260,7 @@ function defaultSleep(ms: number, signal: AbortSignal) {
  */
 export class LocalStackController {
   private current: DesktopLocalStackState;
+  private currentStackToken: string | null = null;
   private running: Promise<DesktopLocalStackState> | null = null;
   private stopping: Promise<DesktopLocalStackState> | null = null;
   private inFlight: AbortController | null = null;
@@ -247,6 +274,21 @@ export class LocalStackController {
 
   state(): DesktopLocalStackState {
     return this.current;
+  }
+
+  /** Fast path for launch: only a stack with our private token and desired image may be reused. */
+  async matchesDesiredStack(url = this.deps.localWebUrl): Promise<boolean> {
+    const token = await readStackToken(this.deps.stackDir);
+    if (token === null) return false;
+    this.currentStackToken = token;
+    try {
+      return (
+        (await this.deps.probe(url, AbortSignal.timeout(HEALTH_POLL_INTERVAL_MS), token)) ===
+        this.deps.imageTag
+      );
+    } catch {
+      return false;
+    }
   }
 
   /**
@@ -368,6 +410,8 @@ export class LocalStackController {
     );
     const template = await readFile(path.join(this.deps.resourceDir, STACK_ENV_TEMPLATE), "utf8");
     await ensureStackEnv(this.deps.stackDir, template, this.deps.randomHex);
+    const stackToken = await ensureStackToken(this.deps.stackDir, this.deps.randomHex);
+    this.currentStackToken = stackToken;
 
     this.push({ type: "pull-start" });
     const pulled = await this.compose(binary, ["pull"], PULL_TIMEOUT_MS, signal);
@@ -401,7 +445,9 @@ export class LocalStackController {
     const sleep = this.deps.sleep ?? defaultSleep;
     const deadline = Date.now() + (this.deps.healthTimeoutMs ?? STACK_HEALTH_TIMEOUT_MS);
     while (!signal.aborted) {
-      if (await this.deps.probe(signal)) {
+      if (
+        (await this.deps.probe(this.deps.localWebUrl, signal, stackToken)) === this.deps.imageTag
+      ) {
         this.push({ type: "ready" });
         return;
       }
@@ -422,6 +468,9 @@ export class LocalStackController {
       env: dockerSpawnEnv(this.deps.platform, this.deps.env, binary, {
         RAKAZO_IMAGE_TAG: this.deps.imageTag,
         RAKAZO_COMPUTER_IMAGE_TAG: this.deps.imageTag,
+        ...(this.currentStackToken === null
+          ? {}
+          : { RAKAZO_DESKTOP_STACK_TOKEN: this.currentStackToken }),
         COMPOSE_PROGRESS: "plain",
       }),
       timeoutMs,
@@ -433,7 +482,16 @@ export class LocalStackController {
   private compose(binary: string, args: string[], timeoutMs: number, signal?: AbortSignal) {
     return this.docker(
       binary,
-      ["compose", "--env-file", STACK_ENV_FILE, "-f", STACK_COMPOSE_FILE, ...args],
+      [
+        "compose",
+        "--env-file",
+        STACK_ENV_FILE,
+        "-f",
+        STACK_COMPOSE_FILE,
+        "--project-name",
+        STACK_PROJECT_NAME,
+        ...args,
+      ],
       timeoutMs,
       signal,
     );

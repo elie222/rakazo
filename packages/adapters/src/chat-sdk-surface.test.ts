@@ -136,6 +136,7 @@ describe("ChatSdkMessagingSurface inbound", () => {
     const { surface, events } = createSurface({
       participants: (raw) => (raw as { roster: string[] }).roster,
       channelName: () => "The Group",
+      transport: () => "SMS",
     });
     await surface.handleWebhook(
       "mock",
@@ -148,6 +149,7 @@ describe("ChatSdkMessagingSurface inbound", () => {
         isDirect: false,
         participants: ["+15551111111", "+15552222222"],
         channelName: "The Group",
+        transport: "SMS",
         content: "group hello",
       }),
     ]);
