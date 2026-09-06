@@ -115,7 +115,8 @@ describe("real Pi against an offline model HTTP endpoint", () => {
         }),
       ),
     ).catch((error) => {
-      server.assertComplete();
+      // Prefer fixture assertion failures over an incomplete-steps mask.
+      server.assertFailures();
       throw error;
     });
     server.assertComplete();

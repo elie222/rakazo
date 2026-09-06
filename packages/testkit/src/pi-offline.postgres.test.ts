@@ -104,7 +104,7 @@ describe.skipIf(!databaseAvailable)("offline Pi product journey", () => {
               where: { id: sent.runId },
               select: { status: true },
             });
-            if (run?.status === "failed") model.assertComplete();
+            if (run?.status === "failed") model.assertFailures();
             return run?.status;
           },
           { timeout: 15_000, interval: 100 },

@@ -44,6 +44,8 @@ describe("model HTTP emulator contract", () => {
     });
     servers.push(server);
     expect(() => server.assertComplete()).toThrow(/Not all model fixture steps/);
+    // Incomplete consumption alone is not a fixture assertion failure.
+    expect(() => server.assertFailures()).not.toThrow();
     expect((await post(server)).status).toBe(200);
     server.assertComplete();
     expect((await post(server)).status).toBe(400);

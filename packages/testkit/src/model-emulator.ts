@@ -147,9 +147,13 @@ export async function startModelEmulator(options: {
     baseUrl,
     model,
     requests,
-    assertComplete() {
+    /** Surface fixture assertion failures without requiring every step to have been consumed. */
+    assertFailures() {
       if (failures.length)
         throw new AggregateError(failures, failures.map((error) => error.message).join("\n"));
+    },
+    assertComplete() {
+      this.assertFailures();
       assert.equal(stepIndex, options.steps.length, "Not all model fixture steps were consumed");
     },
     async close() {

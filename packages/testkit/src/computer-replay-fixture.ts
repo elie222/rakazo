@@ -40,6 +40,8 @@ export class ContactsBrowserFixture extends FakeBrowserProvider {
   }
 
   override async act(computer: ComputerRef, request: BrowserActRequest, context: AdapterContext) {
+    // Preserve FakeBrowser's rejection of empty action lists; do not treat them as success.
+    if (!request.actions?.length) return super.act(computer, request, context);
     const session = this.sessions.get(pageBrowserSessionKey(computer, context));
     let completed = 0;
     for (const action of request.actions) {

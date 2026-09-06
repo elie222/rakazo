@@ -156,7 +156,9 @@ export async function runComputerReplay(
     assert.equal(text, "Exported 2 contacts.");
     return { usedTools, modelRequests: emulator.requests.length, text };
   } catch (error) {
-    emulator.assertComplete();
+    // Prefer fixture assertion failures; do not mask the original runtime error
+    // with an incomplete-steps complaint when the fixture itself did not fail.
+    emulator.assertFailures();
     throw error;
   } finally {
     await emulator.close();
