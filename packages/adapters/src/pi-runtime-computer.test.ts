@@ -62,6 +62,7 @@ vi.mock("./pi-openai-compatible-provider.js", () => ({
   registerOpenAiCompatibleRuntime: (models: unknown) => models,
 }));
 
+import { COMPUTER_SCREEN_UNAVAILABLE } from "./computer-screens.js";
 import { PiAgentRuntime, pruneComputerScreenshotContext } from "./pi-runtime.js";
 
 const computerObserve: ConnectorTool = {
@@ -127,10 +128,7 @@ describe("Pi computer tool dispatch", () => {
         history: [],
         tools: [computerObserve],
         model: { provider: "test", id: "computer-test-model" },
-        executeTool: async () => ({
-          error:
-            "This computer provider does not support multiple screens. Desktop tools are already in use on the shared display. File and shell tools still work.",
-        }),
+        executeTool: async () => ({ error: COMPUTER_SCREEN_UNAVAILABLE }),
       },
       {
         operationId: "computer-test",
@@ -145,7 +143,7 @@ describe("Pi computer tool dispatch", () => {
 
     expect(fakeAgentState.result).toMatchObject({
       content: [{ type: "text" }],
-      details: { error: expect.stringMatching(/does not support multiple screens/) },
+      details: { error: expect.stringMatching(/temporarily busy/) },
     });
     expect(events.some((event) => event.text?.includes("I hit a problem"))).toBe(false);
     expect(events.at(-1)?.type).toBe("done");

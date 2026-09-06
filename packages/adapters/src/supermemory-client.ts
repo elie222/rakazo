@@ -1,4 +1,9 @@
+import { readBodyCapped } from "./web-ssrf.js";
+
 const SUPERMEMORY_TIMEOUT_MS = 15_000;
+
+/** Search responses contain at most five bounded memories plus small metadata. */
+export const MAX_SUPERMEMORY_RESPONSE_BYTES = 1024 * 1024;
 
 /** How many recalled memories a search asks for, and the most that are ever injected into a run. */
 export const MAX_RECALLED_MEMORIES = 5;
@@ -22,6 +27,30 @@ export type SupermemoryProbeResponse = { ok: true } | { ok: false; error: string
 export interface SupermemoryConnectionConfig {
   baseUrl: string;
   apiKey: string;
+}
+
+/** Base URLs are route prefixes, never credentials or request query/fragment state. */
+export function parseSupermemoryBaseUrl(baseUrl: string): URL {
+  const url = new URL(baseUrl);
+  if (
+    (url.protocol !== "http:" && url.protocol !== "https:") ||
+    url.username ||
+    url.password ||
+    // search/hash are empty for a bare ?/#, but those delimiters still swallow appended routes.
+    url.href.includes("?") ||
+    url.href.includes("#")
+  ) {
+    throw new Error(
+      "Memory base URL must use HTTP(S) without credentials, a query, or a fragment.",
+    );
+  }
+  return url;
+}
+
+function requestUrl(baseUrl: string, path: string): string {
+  const url = parseSupermemoryBaseUrl(baseUrl);
+  url.pathname = `${url.pathname.replace(/\/+$/, "")}${path}`;
+  return url.href;
 }
 
 function requestSignal(signal?: AbortSignal): AbortSignal {
@@ -56,7 +85,7 @@ function parseSearchResults(data: unknown): SupermemoryResult[] {
     };
     const text =
       typeof row.memory === "string" ? row.memory : typeof row.chunk === "string" ? row.chunk : "";
-    const memory = text.trim();
+    const memory = text.trim().slice(0, MAX_MEMORY_CONTENT_CHARS);
     if (!memory) continue;
     parsed.push({
       memory,
@@ -75,7 +104,8 @@ export async function searchSupermemory(
   signal?: AbortSignal,
 ): Promise<SupermemorySearchResponse> {
   try {
-    const response = await fetch(`${config.baseUrl}/v4/search`, {
+    const requestAbort = requestSignal(signal);
+    const response = await fetch(requestUrl(config.baseUrl, "/v4/search"), {
       method: "POST",
       headers: authHeaders(config),
       body: JSON.stringify({
@@ -85,15 +115,39 @@ export async function searchSupermemory(
         limit: boundedRecallLimit(limit),
       }),
       redirect: "error",
-      signal: requestSignal(signal),
+      signal: requestAbort,
     });
     if (!response.ok) {
       return { ok: false, error: `Supermemory search failed: ${response.status}` };
     }
-    return { ok: true, results: parseSearchResults(await response.json()) };
+    return {
+      ok: true,
+      results: parseSearchResults(await readSupermemoryJson(response, requestAbort)),
+    };
   } catch (error) {
+    if (error instanceof Error && error.message === "Supermemory response is too large.") {
+      return { ok: false, error: error.message };
+    }
     return { ok: false, error: unreachableError(error) };
   }
+}
+
+async function readSupermemoryJson(response: Response, signal?: AbortSignal): Promise<unknown> {
+  const declared = Number(response.headers.get("content-length") ?? 0);
+  if (Number.isFinite(declared) && declared > MAX_SUPERMEMORY_RESPONSE_BYTES) {
+    await response.body?.cancel().catch(() => undefined);
+    throw new Error("Supermemory response is too large.");
+  }
+  let bytes: Uint8Array;
+  try {
+    bytes = await readBodyCapped(response, MAX_SUPERMEMORY_RESPONSE_BYTES, signal);
+  } catch (error) {
+    if (error instanceof Error && error.message === "Response is too large") {
+      throw new Error("Supermemory response is too large.");
+    }
+    throw error;
+  }
+  return JSON.parse(new TextDecoder().decode(bytes));
 }
 
 export async function searchSupermemoryContainers(
@@ -144,7 +198,7 @@ export async function deleteSupermemoryContainer(
 ): Promise<SupermemorySaveResponse> {
   try {
     const response = await fetch(
-      `${config.baseUrl}/v3/container-tags/${encodeURIComponent(containerTag)}`,
+      requestUrl(config.baseUrl, `/v3/container-tags/${encodeURIComponent(containerTag)}`),
       {
         method: "DELETE",
         headers: { Authorization: `Bearer ${config.apiKey}` },
@@ -172,7 +226,7 @@ export async function saveSupermemoryMemory(
     return { ok: false, error: "Supermemory save skipped: memory content is empty." };
   }
   try {
-    const response = await fetch(`${config.baseUrl}/v4/memories`, {
+    const response = await fetch(requestUrl(config.baseUrl, "/v4/memories"), {
       method: "POST",
       headers: authHeaders(config),
       body: JSON.stringify({ containerTag, memories: [{ content: memory, isStatic: false }] }),
@@ -218,7 +272,7 @@ export async function probeSupermemory(
   config: SupermemoryConnectionConfig,
 ): Promise<SupermemoryProbeResponse> {
   try {
-    const response = await fetch(`${config.baseUrl}/v3/container-tags/list`, {
+    const response = await fetch(requestUrl(config.baseUrl, "/v3/container-tags/list"), {
       method: "GET",
       headers: authHeaders(config),
       redirect: "error",

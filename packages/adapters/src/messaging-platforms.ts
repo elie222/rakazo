@@ -3,8 +3,10 @@ import { createTelegramAdapter } from "@chat-adapter/telegram";
 import { createWhatsAppAdapter } from "@chat-adapter/whatsapp";
 import type { MessagingOutboundStatus } from "@rakazo/adapter-kit";
 import type { Adapter } from "chat";
+import { createLarkAdapter, Domain } from "chat-adapter-lark";
 import { createSendblueAdapter } from "chat-adapter-sendblue";
 import type { MessagingPlatform } from "./chat-sdk-surface.js";
+import { isVitestRuntime } from "./test-runtime.js";
 
 /**
  * Parsed platform credentials, filled from process.env at the composition
@@ -23,6 +25,11 @@ export interface MessagingEnvironmentValues {
   whatsappVerifyToken?: string | undefined;
   telegramBotToken?: string | undefined;
   telegramWebhookSecret?: string | undefined;
+  larkAppId?: string | undefined;
+  larkAppSecret?: string | undefined;
+  larkVerificationToken?: string | undefined;
+  larkEncryptKey?: string | undefined;
+  larkDomain?: string | undefined;
 }
 
 export function messagingEnvFromProcess(
@@ -44,6 +51,11 @@ export function messagingEnvFromProcess(
     whatsappVerifyToken: clean(env.WHATSAPP_VERIFY_TOKEN),
     telegramBotToken: clean(env.TELEGRAM_BOT_TOKEN),
     telegramWebhookSecret: clean(env.TELEGRAM_WEBHOOK_SECRET_TOKEN),
+    larkAppId: clean(env.LARK_APP_ID),
+    larkAppSecret: clean(env.LARK_APP_SECRET),
+    larkVerificationToken: clean(env.LARK_VERIFICATION_TOKEN),
+    larkEncryptKey: clean(env.LARK_ENCRYPT_KEY),
+    larkDomain: clean(env.LARK_DOMAIN),
   };
 }
 
@@ -84,6 +96,7 @@ export function messagingPlatformsFromEnv(env: MessagingEnvironmentValues): Mess
       peekStatus: (payload) => parseSendblueStatus(payload),
       participants: (raw) => sendblueParticipants(raw, lineNumber),
       channelName: (raw) => sendblueGroupName(raw),
+      transport: (raw) => sendblueTransport(raw),
     });
   }
 
@@ -132,12 +145,33 @@ export function messagingPlatformsFromEnv(env: MessagingEnvironmentValues): Mess
     });
   }
 
+  // App ID, secret, and verification token are all required: without the
+  // token the adapter accepts unsigned webhook posts. Encrypt key and
+  // domain are optional (event encryption / open.feishu.cn vs open.larksuite.com).
+  if (env.larkAppId && env.larkAppSecret && env.larkVerificationToken) {
+    platforms.push({
+      provider: "lark",
+      capabilities: { direct: true, groups: false, typing: false },
+      // Webhook-only: ws/long-connection incoming would consume events so
+      // the HTTP webhook at /api/v1/messaging/webhook/lark never sees them.
+      adapter: createLarkAdapter({
+        appId: env.larkAppId,
+        appSecret: env.larkAppSecret,
+        verificationToken: env.larkVerificationToken,
+        incoming: { events: "webhook", callbacks: "webhook" },
+        // Explicit defaults prevent the adapter from rereading untrimmed process.env values.
+        encryptKey: env.larkEncryptKey ?? "",
+        domain: env.larkDomain?.toLowerCase() === "lark" ? Domain.Lark : Domain.Feishu,
+      }),
+    });
+  }
+
   return platforms;
 }
 
 /** Never live under the test runner; tests build surfaces explicitly. */
 export function isMessagingEnabled(platforms: MessagingPlatform[]): boolean {
-  return platforms.length > 0 && !process.env.VITEST;
+  return platforms.length > 0 && !isVitestRuntime();
 }
 
 /**
@@ -181,4 +215,10 @@ function sendblueGroupName(raw: unknown): string | null {
   if (typeof raw !== "object" || raw === null) return null;
   const name = (raw as { group_display_name?: unknown }).group_display_name;
   return typeof name === "string" && name ? name : null;
+}
+
+function sendblueTransport(raw: unknown): string | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const service = (raw as { service?: unknown }).service;
+  return service === "iMessage" || service === "SMS" || service === "RCS" ? service : null;
 }

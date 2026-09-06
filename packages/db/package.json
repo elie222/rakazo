@@ -23,6 +23,7 @@
     "@prisma/client": "^7.9.1",
     "@rakazo/contracts": "workspace:*",
     "@rakazo/core": "workspace:*",
+    "@rakazo/logging": "workspace:*",
     "pg": "^8.16.3",
     "dotenv": "^17.2.1"
   },

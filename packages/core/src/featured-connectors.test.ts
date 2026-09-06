@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildFeaturedConnectorTiles,
   featuredConnectorProvidersMatch,
+  filterConnectionCatalogItems,
   matchFeaturedConnectorId,
   resolveFeaturedCatalogItem,
 } from "./featured-connectors.js";
@@ -70,5 +71,21 @@ describe("featured connectors", () => {
     expect(gmail?.missing).toBe(false);
     expect(drive?.missing).toBe(true);
     expect(drive?.item).toBeUndefined();
+  });
+
+  it("keeps featured apps in search while removing their duplicate browse rows", () => {
+    const catalog = [
+      item("gmail", "Gmail"),
+      item("linear", "Linear"),
+      { ...item("notion", "Notion"), connectorId: "pipedream" },
+    ];
+
+    expect(filterConnectionCatalogItems(catalog, "").map(({ name }) => name)).toEqual(["Linear"]);
+    expect(filterConnectionCatalogItems(catalog, "mail").map(({ name }) => name)).toEqual([
+      "Gmail",
+    ]);
+    expect(filterConnectionCatalogItems(catalog, "pipedream").map(({ name }) => name)).toEqual([
+      "Notion",
+    ]);
   });
 });

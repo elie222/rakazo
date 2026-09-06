@@ -129,6 +129,33 @@ describe("GraphQL connector import", () => {
     expect(JSON.stringify(fetch.mock.calls)).toContain("__schema");
   });
 
+  it.each(["host", "content-length", "connection"])(
+    "refuses transport auth header %s",
+    async (name) => {
+      const fetch = vi.fn();
+      await expect(
+        prepareGraphqlInstall({
+          source: "https://graphql.example.test/graphql",
+          config: { auth: { type: "header", name } },
+          credential: "test-credential",
+          remote: { fetch },
+        }),
+      ).rejects.toThrow(/Transport-level/);
+      expect(fetch).not.toHaveBeenCalled();
+    },
+  );
+
+  it("allows omission of defaulted non-null root arguments", () => {
+    const schema = structuredClone(STAR_WARS_INTROSPECTION);
+    const arg = schema.data.__schema.types[1]!.fields![0]!.args[0]!;
+    Object.assign(arg, { defaultValue: '"default text"' });
+    const operation = importGraphqlSchema(schema).find(
+      (item) => item.id === "mutation_createNote",
+    )!;
+    expect(operation.variableTypes.text).toBe("String");
+    expect(operation.inputSchema.required).toBeUndefined();
+  });
+
   it("refuses private GraphQL endpoints during install", async () => {
     await expect(
       prepareGraphqlInstall({
@@ -656,6 +683,20 @@ describe("GraphQL execution failures", () => {
     expect(events[0]).toMatchObject({ type: "error" });
     expect(events[0]).not.toMatchObject({ type: "result" });
     expect(String((events[0] as { message?: string }).message)).toMatch(/HTTP 502/);
+  });
+
+  it.each([{}, { errors: [] }, { errors: "failed", data: {} }, { data: [] }, { data: "failed" }])(
+    "rejects malformed GraphQL envelopes at the provider boundary: %j",
+    async (payload) => {
+      const events = await executeGraphqlProvider(async () => Response.json(payload));
+      expect(events).toHaveLength(1);
+      expect(events[0]).toMatchObject({ type: "error" });
+    },
+  );
+
+  it("preserves null data in a valid GraphQL envelope", async () => {
+    const events = await executeGraphqlProvider(async () => Response.json({ data: null }));
+    expect(events).toEqual([{ type: "result", data: { status: 200, data: null } }]);
   });
 
   it("yields type error from InstalledConnectorProvider on malformed success payload", async () => {

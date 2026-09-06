@@ -3,7 +3,7 @@ import {
   activeBotId,
   captureScreenshot,
   completeOnboarding,
-  openNewBot,
+  createNamedBot,
   realSandboxTimeout,
   rpc,
   signup,
@@ -50,7 +50,7 @@ test("Team Computer gives bots a home folder plus shared space while Private sta
 
   const privateId = await createBot(page, "Private Writer", "dedicated");
   await openComputerPanel(page);
-  await expect(page.getByText("Private Writer’s computer", { exact: true }).last()).toBeVisible();
+  await expect(page.getByText(/Private Writer['’]s screen/).last()).toBeVisible();
   await captureScreenshot(page, testInfo, "43-private-computer");
   await expect(readFileResponse(page, privateId, "notes/result.txt")).resolves.toMatchObject({
     ok: false,
@@ -92,7 +92,8 @@ test("user control leaves another Team bot's screen available", async ({ page },
 
   await openBot(page, "Chief");
   await page.getByTitle("Agent computer").click();
-  await page.getByRole("button", { name: "Take control", exact: true }).click();
+  await page.getByTestId("computer-preview").hover();
+  await page.getByTestId("computer-preview-open").click();
   await expect(page.getByRole("button", { name: "Close computer" })).toBeVisible();
   await page.getByRole("button", { name: "Close computer" }).click();
 
@@ -165,10 +166,20 @@ test("an active Team bot must be stopped before user takeover", async ({ page },
     .toBe("running");
 
   await page.getByTitle("Agent computer").click();
-  const takeControl = page.getByRole("button", { name: /Take control/i }).first();
-  await expect(takeControl).toBeDisabled();
-  await expect(page.getByText(/is using it/i).first()).toBeVisible();
-  await captureScreenshot(page, testInfo, "48b-take-control-blocked-while-busy");
+  const sidePanel = page.getByTestId("side-panel");
+  await expect(sidePanel.getByRole("button", { name: /Take control/i })).toHaveCount(0);
+  await page.getByTestId("computer-preview").hover();
+  const openBusy = sidePanel.getByTestId("computer-preview-open");
+  await expect(openBusy).toBeVisible();
+  await expect(openBusy.getByText("Open", { exact: true })).toBeVisible();
+  await openBusy.click();
+  const chrome = page.getByTestId("computer-chrome");
+  await expect(page.getByRole("button", { name: "Close computer" })).toBeVisible();
+  // Open while the bot is busy must not grant control (takeover stays blocked).
+  await expect(chrome.getByText("You have control", { exact: true })).toHaveCount(0);
+  await expect(chrome.getByRole("button", { name: /Take control/i })).toHaveCount(0);
+  await captureScreenshot(page, testInfo, "48b-open-while-busy-no-control");
+  await page.getByRole("button", { name: "Close computer" }).click();
 
   // Stop through the shell so the client refreshes computer status (API stop alone
   // does not emit a terminal thread event).
@@ -184,28 +195,22 @@ test("an active Team bot must be stopped before user takeover", async ({ page },
         ).busyBotName,
     )
     .toBeNull();
-  await expect(takeControl).toBeEnabled();
-  await takeControl.click();
-  await expect(
-    page.getByTestId("side-panel").getByText("You have control", { exact: true }),
-  ).toBeVisible();
-  await captureScreenshot(page, testInfo, "49-team-computer-takeover-after-stop");
-  await rpc(page, "computer/release", { botId: chiefId });
+
+  // After stop, Open via hover is the takeover path (no Take control button).
+  await page.getByTestId("computer-preview").hover();
+  await page.getByTestId("computer-preview-open").click();
+  await expect(page.getByRole("button", { name: "Close computer" })).toBeVisible();
+  await expect(chrome.getByText("You have control", { exact: true })).toBeVisible();
+  await expect(chrome.getByRole("button", { name: /Take control/i })).toHaveCount(0);
+  await expect(chrome.getByRole("button", { name: "Release", exact: true })).toBeVisible();
+  await captureScreenshot(page, testInfo, "49-team-computer-open-after-stop");
+  await chrome.getByRole("button", { name: "Release", exact: true }).click();
+  // Release closes the overlay and clears control without a DB edit.
+  await expect(page.getByRole("button", { name: "Close computer" })).toHaveCount(0);
 });
 
 async function createBot(page: Page, name: string, mode: "team" | "dedicated") {
-  await openNewBot(page);
-  await expect(page.getByText("New bot", { exact: true })).toBeVisible();
-  const team = page.getByRole("button", { name: "Team", exact: true });
-  const privateComputer = page.getByRole("button", { name: "Private", exact: true });
-  await expect(team).toHaveAttribute("aria-pressed", "true");
-  if (mode === "dedicated") await privateComputer.click();
-  await expect(mode === "team" ? team : privateComputer).toHaveAttribute("aria-pressed", "true");
-  await page.getByPlaceholder("Name this bot").fill(name);
-  await page.getByRole("button", { name: "Create", exact: true }).click();
-  await page.waitForURL(/\/app\/[^/]+$/);
-  await expect(page.getByPlaceholder(`Message ${name}`)).toBeVisible();
-  return activeBotId(page);
+  return createNamedBot(page, name, { computerMode: mode });
 }
 
 async function setComputerMode(
@@ -243,7 +248,8 @@ async function openBot(page: Page, name: string) {
 
 async function openComputerPanel(page: Page) {
   await page.getByTitle("Agent computer").click();
-  await expect(page.getByRole("button", { name: "Take control", exact: true })).toBeVisible();
+  await expect(page.getByTestId("computer-preview")).toBeVisible();
+  await expect(page.getByTestId("computer-preview-open")).toHaveCount(1);
 }
 
 async function sendAndWait(page: Page, botId: string, text: string) {

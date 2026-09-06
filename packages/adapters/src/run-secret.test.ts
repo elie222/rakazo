@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   commitConsumedRunSecret,
+  normalizeSecretAskPurpose,
   reconcileManagedConnection,
   resolveCompletedSecretLeftover,
   resolveMissingRunSecretAction,
@@ -12,6 +13,16 @@ import {
 describe("runSecretKind", () => {
   it("scopes secrets to a single run", () => {
     expect(runSecretKind("run-1")).toBe("run-secret:run-1");
+  });
+});
+
+describe("normalizeSecretAskPurpose", () => {
+  it("keeps known purposes and defaults unknown ones to otp", () => {
+    expect(normalizeSecretAskPurpose("api_key")).toBe("api_key");
+    expect(normalizeSecretAskPurpose("password")).toBe("password");
+    expect(normalizeSecretAskPurpose("other")).toBe("otp");
+    expect(normalizeSecretAskPurpose("otp")).toBe("otp");
+    expect(normalizeSecretAskPurpose(undefined)).toBe("otp");
   });
 });
 

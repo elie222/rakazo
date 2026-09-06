@@ -46,7 +46,7 @@ describePostgres("provisionMessagingIdentity (PostgreSQL)", () => {
       include: { accounts: true, members: true },
     });
     expect(user).toBeTruthy();
-    expect(user!.email).toBe("msg-sendblue15550001111@messaging.invalid");
+    expect(user!.email).toMatch(/^msg-[a-f0-9]{32}@messaging\.invalid$/);
     expect(user!.accounts).toHaveLength(0);
     expect(user!.members).toHaveLength(1);
     expect(user!.members[0]!.organizationId).toBe(result.spaceId);
@@ -117,16 +117,17 @@ describePostgres("provisionMessagingIdentity (PostgreSQL)", () => {
     expect(again.botId).toBe(provisioned!.botId);
 
     const users = await prisma.user.findMany({
-      where: { email: "msg-sendblue15550001111@messaging.invalid" },
+      where: { id: provisioned!.userId },
     });
     expect(users).toHaveLength(1);
     const identities = await prisma.messagingIdentity.findMany({ where: { provider, address } });
     expect(identities).toHaveLength(1);
   });
 
-  it("resumes after a partial first attempt that only created the user row", async () => {
+  it("does not reuse a legacy synthetic email without an identity binding", async () => {
     const partialAddress = "+15550002222";
-    // Simulates a crash between user.create and bootstrapUserSpace.
+    // This could be an abandoned attempt or an attacker registration. An
+    // email address alone cannot distinguish those origins.
     const orphan = await prisma.user.create({
       data: {
         id: `partial${Date.now()}`,
@@ -143,18 +144,19 @@ describePostgres("provisionMessagingIdentity (PostgreSQL)", () => {
       );
 
       expect(result.created).toBe(true);
-      expect(result.userId).toBe(orphan.id);
+      expect(result.userId).not.toBe(orphan.id);
       const identity = await prisma.messagingIdentity.findUnique({
         where: { provider_address: { provider, address: partialAddress } },
       });
       expect(identity).toBeTruthy();
       const bots = await prisma.bot.findMany({
-        where: { spaceId: result.spaceId, userId: orphan.id },
+        where: { spaceId: result.spaceId, userId: result.userId },
       });
       expect(bots).toHaveLength(1);
 
       await prisma.messagingIdentity.deleteMany({ where: { provider, address: partialAddress } });
       await prisma.organization.deleteMany({ where: { id: result.spaceId } });
+      await prisma.user.deleteMany({ where: { id: result.userId } });
     } finally {
       await prisma.user.deleteMany({ where: { id: orphan.id } });
     }

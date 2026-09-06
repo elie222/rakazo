@@ -1,6 +1,7 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { ThreadMessage, ThreadSnapshot } from "@rakazo/contracts";
 import { isSecretAskBlock, narrateTool, speechFromBlocks, spokenDecision } from "@rakazo/core";
+import { Button, Dialog, DialogContent, DialogHeader, DialogTitle } from "@rakazo/ui-web";
 import { useEffect, useRef, useState } from "react";
 import { dictation } from "../lib/dictation";
 import { speaker } from "../lib/tts";
@@ -224,16 +225,24 @@ export function CallView({
   }, [snapshot]);
 
   return (
-    <div className="absolute inset-0 z-40 grid place-items-center bg-[rgba(4,4,5,.82)] px-5">
-      <div
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) hangUp();
+      }}
+    >
+      <DialogContent
         data-testid="call-view"
-        className="w-full max-w-[420px] rounded-[24px] border border-[#2A2A2F] bg-[#141416] p-6 text-center shadow-[0_30px_80px_rgba(0,0,0,.55)]"
+        showCloseButton={false}
+        className="max-w-[420px] rounded-3xl p-6 text-center sm:max-w-[420px]"
       >
-        <div className="text-[13px] uppercase tracking-[0.12em] text-[#6C6C70]">
-          <Trans>Call</Trans>
-        </div>
-        <div className="mt-2 text-[22px] font-medium text-[#F1F1F2]">{botName}</div>
-        <div className="mt-5 text-[15px] text-[#C9C9CE]">
+        <DialogHeader className="items-center gap-2">
+          <div className="text-[13px] uppercase tracking-[0.12em] text-muted-foreground/80">
+            <Trans>Call</Trans>
+          </div>
+          <DialogTitle className="text-[22px]">{botName}</DialogTitle>
+        </DialogHeader>
+        <div className="mt-1 text-[15px] text-foreground/75">
           {phase === "listening" ? (
             <Trans>Listening…</Trans>
           ) : phase === "speaking" ? (
@@ -242,31 +251,23 @@ export function CallView({
             <Trans>Working…</Trans>
           )}
         </div>
-        <p className="mt-3 min-h-[3.2em] text-[14.5px] leading-[1.5] text-[#85858A]">
+        <p className="min-h-[3.2em] text-[14.5px] leading-[1.5] text-muted-foreground">
           {phase === "listening" ? heard || t`Say something. Silence sends it.` : caption}
         </p>
-        {error ? <p className="mt-2 text-[13px] text-[#C94244]">{error}</p> : null}
-        <div className="mt-6 flex justify-center gap-3">
-          <button
-            type="button"
-            onClick={interrupt}
-            className="rounded-full border border-[#2A2A2F] px-4 py-2 text-[14px] text-[#C9C9CE]"
-          >
+        {error ? <p className="text-[13px] text-destructive">{error}</p> : null}
+        <div className="mt-2 flex justify-center gap-3">
+          <Button variant="outline" className="rounded-full" onClick={interrupt}>
             <Trans>Interrupt</Trans>
-          </button>
-          <button
-            type="button"
-            onClick={hangUp}
-            className="rounded-full bg-[#FF5364] px-4 py-2 text-[14px] font-medium text-white"
-          >
+          </Button>
+          <Button variant="destructive" className="rounded-full" onClick={hangUp}>
             <Trans>Hang up</Trans>
-          </button>
+          </Button>
         </div>
-        <p className="mt-4 text-[12px] text-[#6C6C70]">
+        <p className="text-xs text-muted-foreground/80">
           <Trans>Space interrupts · Esc hangs up</Trans>
         </p>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 

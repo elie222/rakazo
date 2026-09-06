@@ -25,7 +25,9 @@ import {
   ComputerBusyError,
   type ComputerExecutionLease,
   type ConnectorRegistry,
+  cancelComputerRunWork,
   checkpointAndRecordComputerWorkspace,
+  clearInactiveUserComputerControl,
   computerSupportsUpdate,
   createVoiceProvider,
   deletePushToken,
@@ -37,6 +39,7 @@ import {
   expireComputerControl,
   hasActiveComputerControl,
   isAutoReviewCheckerConfigured,
+  isComputerScreenUnavailable,
   isSandboxGoneError,
   isScratchpadStatus,
   listPiCatalog,
@@ -49,7 +52,6 @@ import {
   planLiveConnectionSync,
   prepareApiInstall,
   prepareGraphqlInstall,
-  prepareMemoryProviderConnection,
   probeOpenAiCompatibleModels,
   provisionComputer,
   type RemoteConnectorDependencies,
@@ -66,7 +68,6 @@ import {
   serializeModelSecret,
   takeoverLeaseMs,
   toComputerRef,
-  toStringRecord,
   touchRunningComputer,
   verifyMcpInstall,
 } from "@rakazo/adapters";
@@ -116,6 +117,7 @@ import {
   type ThreadEvents,
   touchGroupUpdatedAt,
 } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
 import { createAgentSkillsService } from "./agent-skills.js";
 import { createOwnedArtifact, getOwnedArtifact, getSpaceArtifact } from "./artifacts.js";
 import {
@@ -124,7 +126,19 @@ import {
   toComputerStatus,
 } from "./computer-status.js";
 import { buildMcpUpdateMaterial } from "./mcp-material.js";
-import { chooseFocus, markAppConnected, startOnboarding } from "./onboarding.js";
+import {
+  disconnectMemoryProvider,
+  persistMemoryProviderConfig,
+  serializeSpaceMemoryConfig,
+  updateMemoryProviderDefaultScope,
+} from "./memory-provider-config.js";
+import {
+  chooseFocus,
+  dismissFocus,
+  markAppConnected,
+  promptFocus,
+  startOnboarding,
+} from "./onboarding.js";
 import { listSpaceRuns } from "./runs.js";
 import { addScreenProxyCapability } from "./screen-proxy.js";
 import { querySpaceSearch } from "./search.js";
@@ -335,6 +349,7 @@ export interface RouterDeps {
   /** Present when the external messaging surface is enabled. */
   messaging?: { enabled: boolean; providers: string[]; openSignup: boolean };
   env: {
+    agentRuntime: string;
     defaultProvider: string;
     defaultModel: string;
     deploymentModelKey?: string;
@@ -538,7 +553,23 @@ export function createRouter(deps: RouterDeps) {
       connect: authed.models.connect.handler(async ({ context, input }) => {
         let plaintext: string;
         try {
-          plaintext = buildModelConnectPlaintext(input);
+          let previousPlaintext: string | undefined;
+          if (input.provider === OPENAI_COMPATIBLE_PROVIDER_ID && input.apiKey === undefined) {
+            const credential = await findModelCredential(
+              deps.prisma,
+              context.actor,
+              input.provider,
+            );
+            if (credential) {
+              const secret = await deps.prisma.secret.findFirst({
+                where: { id: credential.secretId, userId: context.actor.userId, spaceId: null },
+                select: { ciphertext: true },
+              });
+              if (secret)
+                previousPlaintext = deps.secrets.load(secret.ciphertext, credential.secretId);
+            }
+          }
+          plaintext = buildModelConnectPlaintext(input, previousPlaintext);
         } catch (error) {
           throw new ORPCError("BAD_REQUEST", {
             message: error instanceof Error ? error.message : "Invalid model connection",
@@ -726,7 +757,32 @@ export function createRouter(deps: RouterDeps) {
             const entry = listPiCatalog().find(
               (item) => item.provider === effectiveProvider && item.id === effectiveModelId,
             );
-            const allowed = entry?.thinkingLevels;
+            let allowed = entry?.thinkingLevels;
+            if (effectiveProvider === OPENAI_COMPATIBLE_PROVIDER_ID) {
+              allowed = ["off"];
+              const credential = await findModelCredential(
+                deps.prisma,
+                context.actor,
+                effectiveProvider,
+              );
+              if (credential && credential.defaultModel === effectiveModelId) {
+                const secret = await deps.prisma.secret.findFirst({
+                  where: { id: credential.secretId, userId: context.actor.userId, spaceId: null },
+                  select: { ciphertext: true },
+                });
+                if (secret) {
+                  try {
+                    allowed =
+                      modelCredentialDto(
+                        credential,
+                        deps.secrets.load(secret.ciphertext, credential.secretId),
+                      ).thinkingLevels ?? allowed;
+                  } catch {
+                    // Unreadable connections must not advertise reasoning support.
+                  }
+                }
+              }
+            }
             if (allowed && !allowed.includes(input.thinkingLevel)) {
               throw new ORPCError("BAD_REQUEST", {
                 message: `Thinking level must be one of: ${allowed.join(", ")}`,
@@ -961,17 +1017,32 @@ export function createRouter(deps: RouterDeps) {
         );
         await Promise.all(
           archived.computers.map(async (computer) => {
-            if (!computer.providerRef || !computer.executionBotId) return;
-            await deps.sandbox
-              .releaseScreen?.(toComputerRef(computer), {
-                operationId: "stop",
-                traceId: "stop",
-                spaceId: context.actor.spaceId,
-                userId: context.actor.userId,
-                botId: computer.executionBotId,
-                signal: new AbortController().signal,
-              })
-              .catch(() => undefined);
+            if (!computer.providerRef || !computer.executionBotId || !computer.executionRunId) {
+              return;
+            }
+            const adapterContext = {
+              operationId: "stop",
+              traceId: "stop",
+              spaceId: context.actor.spaceId,
+              userId: context.actor.userId,
+              botId: computer.executionBotId,
+              runId: computer.executionRunId,
+              screenLeaseId: screenLeaseIdForRun(
+                { runId: computer.executionRunId, fence: computer.executionFence },
+                computer.executionRunId,
+              ),
+              cancelRunWork: true,
+              signal: new AbortController().signal,
+            };
+            const ref = toComputerRef(computer);
+            await cancelComputerRunWork(
+              deps.sandbox,
+              ref,
+              computer.id,
+              computer.executionRunId,
+              adapterContext,
+            );
+            await deps.sandbox.releaseScreen?.(ref, adapterContext).catch(() => undefined);
           }),
         );
         return { ok: true as const };
@@ -991,7 +1062,8 @@ export function createRouter(deps: RouterDeps) {
           ),
         );
         for (const result of cleanup) {
-          if (result.status === "rejected") console.error("group artifact cleanup", result.reason);
+          if (result.status === "rejected")
+            getLogger().error("group artifact cleanup", result.reason);
         }
         return { ok: true as const };
       }),
@@ -1058,6 +1130,9 @@ export function createRouter(deps: RouterDeps) {
         }
       }),
       send: authed.threads.send.handler(async ({ context, input }) => {
+        if ((await modelSetup(deps, context.actor)).needsModel) {
+          throw new ORPCError("BAD_REQUEST", { message: "Connect a model to start a run." });
+        }
         const target = await resolveThreadTarget(deps.prisma, context.actor, input);
         if (target.kind === "bot") {
           await assertTeachingSendAllowed(deps.prisma, context.actor.spaceId, target.botId);
@@ -1075,12 +1150,12 @@ export function createRouter(deps: RouterDeps) {
         );
         if (result.eventSeq != null) {
           await deps.events.notify(target.threadId, result.eventSeq).catch((error) => {
-            console.error("thread reaction realtime notification", error);
+            getLogger().error("thread reaction realtime notification", error);
           });
         }
         if (result.runId) {
           await deps.jobs.enqueue(runContinueJob(result.runId)).catch((error) => {
-            console.error("thread reaction enqueue", error);
+            getLogger().error("thread reaction enqueue", error);
           });
         }
         return { ok: true as const };
@@ -1103,7 +1178,7 @@ export function createRouter(deps: RouterDeps) {
         const [configuredMemory] = await Promise.all([
           target.kind === "bot"
             ? deps.memoryProviders.resolve(context.actor.spaceId).catch((error) => {
-                console.error("semantic memory resolution after thread clear failed", error);
+                getLogger().error("semantic memory resolution after thread clear failed", error);
                 return null;
               })
             : Promise.resolve(null),
@@ -1131,10 +1206,10 @@ export function createRouter(deps: RouterDeps) {
               computerContext(context.actor, target.botId, `thread-clear:${target.threadId}`),
             );
             if (!purged.ok) {
-              console.error("semantic memory purge after thread clear failed", purged.error);
+              getLogger().error("semantic memory purge after thread clear failed", purged.error);
             }
           } catch (error) {
-            console.error("semantic memory purge after thread clear failed", error);
+            getLogger().error("semantic memory purge after thread clear failed", error);
           }
         }
         return { ok: true as const };
@@ -1154,7 +1229,7 @@ export function createRouter(deps: RouterDeps) {
           });
           if (sent.taskId && sent.runId) {
             await deps.jobs.enqueue(runContinueJob(sent.runId)).catch((error) => {
-              console.error("follow-up enqueue", error);
+              getLogger().error("follow-up enqueue", error);
             });
           }
           return { ok: true as const };
@@ -1234,11 +1309,11 @@ export function createRouter(deps: RouterDeps) {
           return { runId: run?.id, eventSeq: event.seq };
         });
         await deps.events.notify(target.threadId, committed.eventSeq).catch((error) => {
-          console.error("group follow-up realtime notification", error);
+          getLogger().error("group follow-up realtime notification", error);
         });
         if (committed.runId) {
           await deps.jobs.enqueue(runContinueJob(committed.runId)).catch((error) => {
-            console.error("group follow-up enqueue", error);
+            getLogger().error("group follow-up enqueue", error);
           });
         }
         return { ok: true as const };
@@ -1260,7 +1335,7 @@ export function createRouter(deps: RouterDeps) {
         }
         await deps.jobs.enqueue(runContinueJob(input.runId)).catch((error) => {
           // The answer and queued run are durable; the reconciler repairs a missed immediate wake.
-          console.error("thread answer enqueue", error);
+          getLogger().error("thread answer enqueue", error);
         });
         return { ok: true as const };
       }),
@@ -1399,6 +1474,14 @@ export function createRouter(deps: RouterDeps) {
           throw new ORPCError("BAD_REQUEST", { message: "computer must be running" });
         }
         if (hasActiveComputerControl(bot.computer) && bot.computer.controlBotId === bot.id) {
+          await bindWaitingTakeoverToControl(deps, {
+            spaceId: context.actor.spaceId,
+            threadId: bot.thread?.id,
+            botId: bot.id,
+            computerId: bot.computer.id,
+            controlLeaseId: bot.computer.controlLeaseId!,
+            controlRunId: bot.computer.controlRunId,
+          });
           await scheduleComputerControlExpiry(
             deps.jobs,
             bot.computer.id,
@@ -1457,17 +1540,8 @@ export function createRouter(deps: RouterDeps) {
         ) {
           throw new ORPCError("CONFLICT", { message: "Stop the bot first" });
         }
-        const executionLeaseActive = Boolean(
-          executionLease && executionLease.expiresAt.getTime() > Date.now(),
-        );
-        const executionRunActive = Boolean(
-          executionRun && ACTIVE_RUN_STATUSES.some((status) => status === executionRun.status),
-        );
-        if (executionLease && !executionLeaseActive && !executionRunActive) {
-          await deps.prisma.computerExecutionLease.deleteMany({
-            where: { id: executionLease.id },
-          });
-        }
+        // Keep an inactive lease as a fencing tombstone. The next run reclaims it
+        // with a higher fence, even if this user's screen remains connected.
 
         const leaseId = randomUUID();
         const expiresAt = new Date(Date.now() + takeoverLeaseMs());
@@ -1491,7 +1565,17 @@ export function createRouter(deps: RouterDeps) {
           const current = await deps.prisma.computer.findUniqueOrThrow({
             where: { id: bot.computer.id },
           });
-          if (!hasActiveComputerControl(current)) throw new ORPCError("CONFLICT");
+          if (!hasActiveComputerControl(current) || current.controlBotId !== bot.id) {
+            throw new ORPCError("CONFLICT", { message: "Computer control changed; try again" });
+          }
+          await bindWaitingTakeoverToControl(deps, {
+            spaceId: context.actor.spaceId,
+            threadId: bot.thread?.id,
+            botId: bot.id,
+            computerId: current.id,
+            controlLeaseId: current.controlLeaseId!,
+            controlRunId: current.controlRunId,
+          });
           await scheduleComputerControlExpiry(
             deps.jobs,
             current.id,
@@ -1535,13 +1619,19 @@ export function createRouter(deps: RouterDeps) {
         if (!bot.computer) throw new IsolationError();
         const controlBotId = bot.computer.controlBotId;
         const controlLeaseId = bot.computer.controlLeaseId;
-        if (
-          !hasActiveComputerControl(bot.computer) ||
-          bot.computer.controlHolder !== "user" ||
-          !controlBotId ||
-          !controlLeaseId ||
-          controlBotId !== bot.id
-        ) {
+        if (bot.computer.controlHolder !== "user" || !controlBotId || controlBotId !== bot.id) {
+          return { ok: true as const };
+        }
+        if (!hasActiveComputerControl(bot.computer) || !controlLeaseId) {
+          // Stale controlHolder=user. Prefer expiry (revokes provider control). If a lease id
+          // remains after a failed revoke, keep it so reconciliation can retry.
+          if (controlLeaseId) {
+            await expireComputerControl(deps, bot.computer.id, controlLeaseId).catch(
+              () => undefined,
+            );
+          } else {
+            await clearInactiveUserComputerControl(deps.prisma, bot.computer.id);
+          }
           return { ok: true as const };
         }
         if (bot.computer.providerRef) {
@@ -1569,7 +1659,7 @@ export function createRouter(deps: RouterDeps) {
           .catch((error) => {
             // The expired job is harmless after the lease is cleared, so do not report a
             // failed release after the transaction has committed.
-            console.error("computer control expiry cancellation", error);
+            getLogger().error("computer control expiry cancellation", error);
           });
 
         await enqueueTakeoverContinuation(deps.jobs, released.runId);
@@ -1702,12 +1792,18 @@ export function createRouter(deps: RouterDeps) {
             await computerScreenContext(deps.prisma, context.actor, computer.id, bot.id, "screen"),
           )
           .catch(async (error: unknown) => {
+            if (isComputerScreenUnavailable(error)) {
+              throw new ORPCError("CONFLICT", { message: error.message });
+            }
             if (!isSandboxGoneError(error)) throw error;
             // The provider killed this sandbox (idle timeout) while the row still says
             // running. Clear the dead ref so the UI offers a boot instead of 500ing.
             // Leave any active control lease alone — expireComputerControl owns that
             // release (provider screen-control, events, takeover continuation).
-            console.error(`computer ${computer.id} sandbox ${computer.providerRef} is gone`, error);
+            getLogger().error(
+              `computer ${computer.id} sandbox ${computer.providerRef} is gone`,
+              error,
+            );
             await deps.prisma.computer.updateMany({
               where: { id: computer.id, providerRef: computer.providerRef },
               data: { state: "stopped", providerRef: null },
@@ -1824,21 +1920,9 @@ export function createRouter(deps: RouterDeps) {
       setDefaultScope: authed.memory.setDefaultScope.handler(async ({ context, input }) =>
         updateMemoryProviderDefaultScope(deps, context.actor, input.defaultMemoryScope),
       ),
-      disconnectProvider: authed.memory.disconnectProvider.handler(async ({ context }) => {
-        await requireSpaceOwner(deps.prisma, context.actor);
-        await withSerializableRetry(() =>
-          deps.prisma.$transaction(
-            async (tx) => {
-              const existing = await findSpaceMemoryConfig(tx, context.actor.spaceId);
-              if (!existing) return;
-              await tx.spaceMemoryConfig.delete({ where: { id: existing.id } });
-              await tx.secret.deleteMany({ where: { id: existing.secretId } });
-            },
-            { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
-          ),
-        );
-        return { ok: true as const };
-      }),
+      disconnectProvider: authed.memory.disconnectProvider.handler(async ({ context }) =>
+        disconnectMemoryProvider(deps, context.actor),
+      ),
     },
     routines: {
       list: authed.routines.list.handler(async ({ context, input }) => {
@@ -2080,7 +2164,7 @@ export function createRouter(deps: RouterDeps) {
         // Keep enqueue outside the nonce-collision catch. The queued run is durable;
         // log enqueue failures and still return success — the reconciler repairs a missed wake.
         await deps.jobs.enqueue(runContinueJob(run.id)).catch((error) => {
-          console.error("routine testRun enqueue", error);
+          getLogger().error("routine testRun enqueue", error);
         });
         return { runId: run.id };
       }),
@@ -2734,12 +2818,28 @@ export function createRouter(deps: RouterDeps) {
         );
         return { ok: true as const };
       }),
+      promptFocus: authed.onboarding.promptFocus.handler(async ({ context, input }) => {
+        await promptFocus(
+          { prisma: deps.prisma, events: deps.events, composio: deps.composio },
+          context.actor,
+          input.botId,
+        );
+        return { ok: true as const };
+      }),
       choose: authed.onboarding.choose.handler(async ({ context, input }) => {
         await chooseFocus(
           { prisma: deps.prisma, events: deps.events, composio: deps.composio },
           context.actor,
           input.botId,
           input.optionId,
+        );
+        return { ok: true as const };
+      }),
+      dismissFocus: authed.onboarding.dismissFocus.handler(async ({ context, input }) => {
+        await dismissFocus(
+          { prisma: deps.prisma, events: deps.events, composio: deps.composio },
+          context.actor,
+          input.botId,
         );
         return { ok: true as const };
       }),
@@ -2777,7 +2877,7 @@ export function createRouter(deps: RouterDeps) {
                   provider.describe().id,
                   nowConnected,
                 ).catch((error) => {
-                  console.error(
+                  getLogger().error(
                     `${provider.describe().id} pending-connection reconciliation failed`,
                     error,
                   );
@@ -3148,7 +3248,7 @@ export function createRouter(deps: RouterDeps) {
           });
           if (notifyRequester) {
             await deps.jobs.enqueue(messagingDeliverJob()).catch((error) => {
-              console.error("messaging connection confirmation enqueue error", error);
+              getLogger().error("messaging connection confirmation enqueue error", error);
             });
           }
           return messagingConnectionDto(deps.prisma, myBotIds, updated);
@@ -3665,27 +3765,40 @@ async function loadAutoReviewSettings(deps: RouterDeps, actor: Actor) {
 }
 
 async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
-  const [user, cred, settings] = await Promise.all([
+  const [user, setup] = await Promise.all([
     deps.prisma.user.findUniqueOrThrow({ where: { id: actor.userId } }),
-    findDefaultModelCredential(deps.prisma, actor),
-    deps.prisma.deploymentSettings.findUnique({ where: { id: "default" } }),
+    modelSetup(deps, actor),
   ]);
-  const hasDeployment = Boolean(
-    settings?.deploymentModelCredentialCipher || deps.env.deploymentModelKey,
-  );
   return {
     userId: actor.userId,
     email: user.email,
     name: user.name,
     spaceId: actor.spaceId,
     isDeploymentOwner: actor.isDeploymentOwner,
-    needsModel: !cred && !hasDeployment,
-    defaultProvider: cred?.provider ?? settings?.defaultModelProvider ?? deps.env.defaultProvider,
-    defaultModel: cred?.defaultModel ?? settings?.defaultModelId ?? deps.env.defaultModel,
-    computerHost: computerHostFor(settings?.computerHost, deps.env.sandboxProvider),
+    needsModel: setup.needsModel,
+    defaultProvider:
+      setup.credential?.provider ??
+      setup.settings?.defaultModelProvider ??
+      deps.env.defaultProvider,
+    defaultModel:
+      setup.credential?.defaultModel ?? setup.settings?.defaultModelId ?? deps.env.defaultModel,
+    computerHost: computerHostFor(setup.settings?.computerHost, deps.env.sandboxProvider),
     canChooseHostComputer: actor.isDeploymentOwner && deps.env.sandboxProvider === "docker",
     sandboxProvider: deps.env.sandboxProvider,
     avatarStyle: user.avatarStyle === "organic" ? "organic" : "robot",
+  };
+}
+
+async function modelSetup(deps: RouterDeps, actor: Actor) {
+  const [credential, settings] = await Promise.all([
+    findDefaultModelCredential(deps.prisma, actor),
+    deps.prisma.deploymentSettings.findUnique({ where: { id: "default" } }),
+  ]);
+  const hasDeployment = Boolean(deps.env.deploymentModelKey);
+  return {
+    credential,
+    settings,
+    needsModel: deps.env.agentRuntime !== "scripted" && !credential && !hasDeployment,
   };
 }
 
@@ -3756,14 +3869,84 @@ async function runComputerReplace(
 async function expireStaleComputerControl(
   deps: RouterDeps,
   computer:
-    | (NonNullable<Parameters<typeof hasActiveComputerControl>[0]> & { id: string })
+    | (NonNullable<Parameters<typeof hasActiveComputerControl>[0]> & {
+        id: string;
+        controlHolder?: string;
+      })
     | null
     | undefined,
 ): Promise<boolean> {
-  const leaseId = computer?.controlLeaseId;
-  if (!leaseId || hasActiveComputerControl(computer)) return false;
-  await expireComputerControl(deps, computer.id, leaseId).catch(() => undefined);
-  return true;
+  if (!computer || hasActiveComputerControl(computer)) return false;
+  if (computer.controlHolder !== "user") return false;
+  const leaseId = computer.controlLeaseId;
+  // Keep a failed revoke's lease id so reconciliation can retry provider shutdown.
+  if (leaseId) {
+    await expireComputerControl(deps, computer.id, leaseId).catch(() => undefined);
+    return true;
+  }
+  return clearInactiveUserComputerControl(deps.prisma, computer.id).catch(() => false);
+}
+
+/** When the user already holds control during waiting_takeover, bind controlRunId so
+ * takeoverRequested becomes true and release can resume the waiting run. */
+async function bindWaitingTakeoverToControl(
+  deps: RouterDeps,
+  input: {
+    spaceId: string;
+    threadId: string | null | undefined;
+    botId: string;
+    computerId: string;
+    controlLeaseId: string;
+    controlRunId: string | null;
+  },
+): Promise<void> {
+  await deps.prisma.$transaction(async (tx) => {
+    // Lock the execution lease so a reclaimed fence/run cannot be bound by a stale read.
+    const locked = await tx.$queryRaw<Array<{ runId: string; fence: number }>>`
+      SELECT "runId", fence FROM computer_execution_leases
+      WHERE "computerId" = ${input.computerId} AND "botId" = ${input.botId}
+      FOR UPDATE`;
+    const executionLease = locked[0];
+    if (!executionLease) return;
+
+    const executionRun = await tx.run.findUnique({
+      where: { id: executionLease.runId },
+      select: { botId: true, status: true },
+    });
+    const waitingForTakeover =
+      executionRun?.botId === input.botId && executionRun.status === "waiting_takeover";
+    if (!waitingForTakeover) return;
+    if (input.controlRunId === executionLease.runId) return;
+
+    // Confirm the locked lease row still matches before writing controlRunId.
+    const leaseStillCurrent = await tx.computerExecutionLease.count({
+      where: {
+        computerId: input.computerId,
+        botId: input.botId,
+        runId: executionLease.runId,
+        fence: executionLease.fence,
+      },
+    });
+    if (leaseStillCurrent !== 1) return;
+
+    const bound = await tx.computer.updateMany({
+      where: {
+        id: input.computerId,
+        controlLeaseId: input.controlLeaseId,
+        controlBotId: input.botId,
+      },
+      data: { controlRunId: executionLease.runId },
+    });
+    if (bound.count !== 1 || !input.threadId) return;
+
+    await deps.events.append({
+      spaceId: input.spaceId,
+      threadId: input.threadId,
+      botId: input.botId,
+      type: "computer.takeover.granted",
+      payload: { leaseId: input.controlLeaseId, takeoverRequested: true },
+    });
+  });
 }
 
 async function computerScreenContext(
@@ -3882,109 +4065,6 @@ async function persistModelCredential(
     ),
   );
   return modelCredentialDto(cred, input.plaintext);
-}
-
-async function requireSpaceOwner(prisma: PrismaClient, actor: Actor): Promise<void> {
-  const member = await prisma.spaceMember.findUnique({
-    where: { spaceId_userId: { spaceId: actor.spaceId, userId: actor.userId } },
-    select: { role: true },
-  });
-  const roles = member?.role.split(",").map((role) => role.trim());
-  if (!roles?.includes("owner")) throw new ORPCError("FORBIDDEN");
-}
-
-export async function persistMemoryProviderConfig(
-  deps: RouterDeps,
-  actor: Actor,
-  input: {
-    provider: string;
-    settings: Record<string, string>;
-    credentials: Record<string, string>;
-    defaultMemoryScope: "isolated" | "shared";
-  },
-) {
-  await requireSpaceOwner(deps.prisma, actor);
-  const prepared = await prepareMemoryProviderConnection(input).catch((error: unknown) => {
-    throw new ORPCError("BAD_REQUEST", {
-      message: error instanceof Error ? error.message : "Memory provider connection failed",
-    });
-  });
-  const stored = await deps.secrets.put(JSON.stringify(prepared.credentials), {
-    operationId: "memory-provider-config",
-    traceId: "memory-provider-config",
-    spaceId: actor.spaceId,
-    userId: actor.userId,
-    signal: new AbortController().signal,
-  });
-  const config = await withSerializableRetry(() =>
-    deps.prisma.$transaction(
-      async (tx) => {
-        const existing = await findSpaceMemoryConfig(tx, actor.spaceId);
-        const secret = await tx.secret.create({
-          data: {
-            id: stored.id,
-            userId: actor.userId,
-            spaceId: actor.spaceId,
-            kind: "memory-provider",
-            ciphertext: stored.ciphertext,
-          },
-        });
-        const updated = await tx.spaceMemoryConfig.upsert({
-          where: { spaceId: actor.spaceId },
-          create: {
-            spaceId: actor.spaceId,
-            userId: actor.userId,
-            provider: prepared.provider,
-            settings: prepared.settings,
-            secretId: secret.id,
-            defaultMemoryScope: input.defaultMemoryScope,
-          },
-          update: {
-            userId: actor.userId,
-            provider: prepared.provider,
-            settings: prepared.settings,
-            secretId: secret.id,
-            defaultMemoryScope: input.defaultMemoryScope,
-          },
-        });
-        if (existing && existing.secretId !== secret.id) {
-          await tx.secret.deleteMany({ where: { id: existing.secretId } });
-        }
-        return updated;
-      },
-      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
-    ),
-  );
-  return serializeSpaceMemoryConfig(config);
-}
-
-export async function updateMemoryProviderDefaultScope(
-  deps: RouterDeps,
-  actor: Actor,
-  defaultMemoryScope: "isolated" | "shared",
-) {
-  await requireSpaceOwner(deps.prisma, actor);
-  const existing = await findSpaceMemoryConfig(deps.prisma, actor.spaceId);
-  if (!existing) throw new ORPCError("NOT_FOUND");
-  const updated = await deps.prisma.spaceMemoryConfig.update({
-    where: { id: existing.id },
-    data: { defaultMemoryScope },
-  });
-  return serializeSpaceMemoryConfig(updated);
-}
-
-function serializeSpaceMemoryConfig(config: {
-  provider: string;
-  settings: unknown;
-  defaultMemoryScope: string;
-  updatedAt: Date;
-}) {
-  return {
-    provider: config.provider,
-    settings: toStringRecord(config.settings),
-    defaultMemoryScope: config.defaultMemoryScope as "isolated" | "shared",
-    updatedAt: config.updatedAt.toISOString(),
-  };
 }
 
 function throwIfAborted(signal?: AbortSignal) {

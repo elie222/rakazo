@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:16
+    image: ${POSTGRES_IMAGE:-postgres:16}
     environment:
       POSTGRES_USER: rakazo
       POSTGRES_PASSWORD: rakazo
@@ -28,6 +28,12 @@ services:
       SANDBOX_COMMAND_TIMEOUT_MS: ${SANDBOX_COMMAND_TIMEOUT_MS:-300000}
       SANDBOX_SUPERVISOR_TOKEN: ${SANDBOX_SUPERVISOR_TOKEN:?Set SANDBOX_SUPERVISOR_TOKEN in .env}
       SANDBOX_SCREEN_NETWORK: isolated
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      LOG_FORMAT: ${LOG_FORMAT:-}
+      AXIOM_TOKEN: ${AXIOM_TOKEN:-}
+      AXIOM_DATASET: ${AXIOM_DATASET:-}
+      AXIOM_EDGE: ${AXIOM_EDGE:-}
+      AXIOM_EDGE_URL: ${AXIOM_EDGE_URL:-}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ../../data:/data
@@ -43,7 +49,7 @@ services:
     restart: "no"
 
   data-init:
-    image: busybox:1
+    image: ${BUSYBOX_IMAGE:-busybox:1}
     command: ["chown", "-R", "1000:1000", "/data"]
     restart: "no"
     volumes:
@@ -63,7 +69,17 @@ services:
       SANDBOX_SUPERVISOR_URL: http://supervisor:7091
       WAKEUP_DRIVER: graphile
       SANDBOX_PROVIDER: docker
+      CLOUD_AGENT_PROVIDER: ${CLOUD_AGENT_PROVIDER:-none}
+      CLOUD_AGENT_SPACE_ID: ${CLOUD_AGENT_SPACE_ID:-}
+      CURSOR_API_KEY: ${CURSOR_API_KEY:-}
       AGENT_RUNTIME: pi
+      # Optional egress proxy (Mainland / corporate). Empty = unset; either case works.
+      HTTP_PROXY: ${HTTP_PROXY:-${http_proxy:-}}
+      HTTPS_PROXY: ${HTTPS_PROXY:-${https_proxy:-}}
+      NO_PROXY: ${NO_PROXY:-${no_proxy:-}}
+      http_proxy: ${http_proxy:-${HTTP_PROXY:-}}
+      https_proxy: ${https_proxy:-${HTTPS_PROXY:-}}
+      no_proxy: ${no_proxy:-${NO_PROXY:-}}
     ports:
       - "127.0.0.1:3100:3100"
     volumes:
@@ -88,8 +104,18 @@ services:
       SANDBOX_SUPERVISOR_URL: http://supervisor:7091
       WAKEUP_DRIVER: graphile
       SANDBOX_PROVIDER: docker
+      CLOUD_AGENT_PROVIDER: ${CLOUD_AGENT_PROVIDER:-none}
+      CLOUD_AGENT_SPACE_ID: ${CLOUD_AGENT_SPACE_ID:-}
+      CURSOR_API_KEY: ${CURSOR_API_KEY:-}
       SCREEN_PROXY_SECRET: ""
       AGENT_RUNTIME: pi
+      # Optional egress proxy (Mainland / corporate). Empty = unset; either case works.
+      HTTP_PROXY: ${HTTP_PROXY:-${http_proxy:-}}
+      HTTPS_PROXY: ${HTTPS_PROXY:-${https_proxy:-}}
+      NO_PROXY: ${NO_PROXY:-${no_proxy:-}}
+      http_proxy: ${http_proxy:-${HTTP_PROXY:-}}
+      https_proxy: ${https_proxy:-${HTTPS_PROXY:-}}
+      no_proxy: ${no_proxy:-${NO_PROXY:-}}
     volumes:
       - ../../data:/data
     depends_on:

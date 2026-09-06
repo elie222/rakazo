@@ -39,12 +39,17 @@ Setup:
 1. Create the directory if needed and enter it.
 2. Download and inspect this installer (do not clone the repository):
    https://raw.githubusercontent.com/elie222/rakazo/main/infra/compose/install-images.sh
+   If that host is unreachable, use a mirror URL (e.g. set `RAKAZO_INSTALLER_URL` to
+   `https://example.com/mirror/rakazo/infra/compose/install-images.sh` and curl that instead).
 3. Run `bash install-images.sh --prepare-only`. It downloads the Compose and environment example
    files, then creates `.env` with all required random secrets when one does not already exist.
+   Optional: set `RAKAZO_DOWNLOAD_BASE` to a generic mirror of `infra/compose`, and/or use
+   `--local` / `RAKAZO_DOWNLOAD_SKIP_EXISTING=1` when Compose files are already present locally.
+   See docs/self-host.md (Restricted networks / mirror downloads).
 4. Preserve existing values. Keep `SANDBOX_PROVIDER=docker` unless I chose a remote computer
    provider, and add only the provider or model keys I selected.
 5. Run `bash install-images.sh`. It preserves `.env`, pulls the images, and starts the stack.
-6. Wait until api, web, and supervisor are healthy. Default image tag is `edge` (amd64). Do not pin `latest` unless that tag exists in GHCR.
+6. Wait until api, web, and supervisor are healthy. Default image tag is `edge` (amd64 + arm64). Do not pin `latest` unless that tag exists in GHCR.
 
 Verification:
 
@@ -84,12 +89,12 @@ Before making changes, ask me these concise questions:
 3. Do I want a managed app catalog? If yes, choose Composio (`COMPOSIO_API_KEY`) or Pipedream Connect (`PIPEDREAM_CLIENT_ID`, `PIPEDREAM_CLIENT_SECRET`, and `PIPEDREAM_PROJECT_ID`); otherwise leave them empty. Explain that this is optional and that users can still add Treg, HTTPS MCP, or OpenAPI sources in the app.
 4. Set up the web app only (recommended), or also launch the Electron desktop shell after the web stack works?
 
-Do not ask me to invent `BETTER_AUTH_SECRET` or `ENCRYPTION_KEY`; generate strong random local values yourself. If I choose an API key, let me enter it through an available secure secret mechanism or directly into `.env`; never echo it back. OAuth or device-code sign-in must remain under my control.
+Generate the required application secrets with openssl; do not ask me to invent them. If I choose an API key, let me enter it through an available secure secret mechanism or directly into `.env`; never echo it back. OAuth or device-code sign-in must remain under my control.
 
 Preflight:
 
 - Verify Git, Node.js, pnpm, Docker, and Docker Compose.
-- Use Node.js 22 LTS (at least 22.12) and the repository-declared pnpm 9.15.0. Do not silently use pnpm 10 or 11: newer pnpm versions can reject this lockfile or rewrite it. Prefer Corepack; if Corepack is unavailable, use `npx --yes pnpm@9.15.0` for repo commands rather than globally installing a different version. Show the effective versions.
+- Use a Node.js version supported by `engines.node` and the pnpm version declared in `packageManager` in the root `package.json`. Prefer Corepack; if unavailable, use `npx --yes pnpm@<declared-version>` instead of globally installing a different version. Show the effective versions.
 - Verify the Docker daemon is running.
 - Check whether `127.0.0.1` ports 5433, 3100, 5173, and 7091 are available. Resolve conflicts without touching unrelated workloads.
 
@@ -97,13 +102,13 @@ Setup:
 
 1. Clone the repository if needed and enter its root.
 2. Read `AGENTS.md`, `README.md`, `.env.example`, and the root `package.json` before acting. Follow repository instructions if they have changed since this prompt was written.
-3. If `.env` does not exist, copy `.env.example` to `.env`. Generate independent random values of at least 32 bytes for `BETTER_AUTH_SECRET` and `ENCRYPTION_KEY`. Keep local defaults for Postgres, origins, Pi, Docker, and Graphile unless the preflight found a conflict. Add only the model and managed-connector credentials I selected. Leave optional credentials blank.
+3. If `.env` does not exist, copy `.env.example` to `.env`. Generate `BETTER_AUTH_SECRET`, `ENCRYPTION_KEY`, `SCREEN_PROXY_SECRET`, and `SANDBOX_SUPERVISOR_TOKEN` independently with `openssl rand -hex 32` (64 hex characters each). Keep local defaults for Postgres, origins, Pi, Docker, and Graphile unless the preflight found a conflict. Add only the model and managed-connector credentials I selected. Leave optional credentials blank.
 4. Confirm `.env` is ignored and that no secret-bearing file is staged.
 5. Start only local Postgres:
 
    `docker compose --env-file .env -f infra/compose/docker-compose.yml up postgres -d`
 
-6. With pnpm 9.15.0, run:
+6. With the repository-declared pnpm version, run:
 
    `pnpm install --frozen-lockfile`
    `pnpm db:generate`

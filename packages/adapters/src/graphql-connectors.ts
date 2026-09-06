@@ -1,4 +1,13 @@
 import { z } from "zod";
+import {
+  AuthSchema,
+  applyCredential,
+  asRecord,
+  assertNoSensitiveQuery,
+  PublicHeadersSchema,
+  readBoundedText,
+  requireCredential,
+} from "./connector-http.js";
 import { combineSignals } from "./connector-safety.js";
 import {
   assertSafeRemoteUrl,
@@ -6,41 +15,9 @@ import {
   type RemoteTransportDependencies,
 } from "./remote-mcp.js";
 
-const HeaderValue = z.string().max(2_048);
 const MAX_GRAPHQL_SELECTION_CHARS = 6_000;
 const MAX_GRAPHQL_RESULT_BYTES = 1_000_000;
 const MAX_GRAPHQL_VALIDATION_BYTES = 2_000_000;
-const HeaderName = z
-  .string()
-  .min(1)
-  .max(120)
-  .regex(/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/, "Invalid HTTP header name");
-
-const AuthSchema = z
-  .object({
-    type: z.enum(["none", "bearer", "header", "query"]).default("none"),
-    name: HeaderName.optional(),
-  })
-  .default({ type: "none" });
-
-const PublicHeadersSchema = z
-  .record(z.string(), HeaderValue)
-  .default({})
-  .superRefine((headers, context) => {
-    for (const name of Object.keys(headers)) {
-      if (isSensitiveHeader(name)) {
-        context.addIssue({
-          code: "custom",
-          message: `Sensitive header ${name} must use the encrypted credential field`,
-        });
-      } else if (isTransportHeader(name)) {
-        context.addIssue({
-          code: "custom",
-          message: `Transport-level header ${name} cannot be customized`,
-        });
-      }
-    }
-  });
 
 export const GraphqlOperationSchema = z.object({
   id: z.string().min(1).max(160),
@@ -232,7 +209,11 @@ export function importGraphqlSchema(document: Record<string, unknown>): GraphqlO
       const variableTypes: Record<string, string> = {};
       for (const arg of field.args ?? []) {
         if (!arg.name) continue;
-        variableTypes[arg.name] = printGraphqlType(arg.type);
+        variableTypes[arg.name] = printGraphqlType(
+          isNonNull(arg.type) && arg.defaultValue != null
+            ? (arg.type?.ofType ?? undefined)
+            : arg.type,
+        );
         properties[arg.name] = {
           ...graphqlTypeToJsonSchema(arg.type, typeMap, 0),
           ...(arg.description ? { description: arg.description } : {}),
@@ -342,7 +323,10 @@ export async function executeGraphqlOperation(
     if (!record) {
       throw new Error("GraphQL response was not a JSON object");
     }
-    const graphqlErrors = Array.isArray(record?.errors) ? record.errors : [];
+    if ("errors" in record && (!Array.isArray(record.errors) || record.errors.length === 0)) {
+      throw new Error("GraphQL response contained invalid errors");
+    }
+    const graphqlErrors = Array.isArray(record.errors) ? record.errors : [];
     if (graphqlErrors.length > 0) {
       const first = asRecord(graphqlErrors[0]);
       const message =
@@ -351,13 +335,16 @@ export async function executeGraphqlOperation(
           : "GraphQL operation failed";
       throw new Error(message);
     }
+    if (!("data" in record) || (record.data !== null && !asRecord(record.data))) {
+      throw new Error("GraphQL response contained no valid data");
+    }
     const bounded = boundUtf8Text(text, MAX_GRAPHQL_RESULT_BYTES);
     if (bounded.truncated) {
       return { status: response.status, data: bounded.text, truncated: true };
     }
     return {
       status: response.status,
-      data: record?.data ?? payload,
+      data: record.data,
     };
   } finally {
     await safeFetch.close().catch(() => undefined);
@@ -409,18 +396,18 @@ function buildSelection(
   if (depth >= 2) return "__typename";
   const resolved = typeMap.get(named.name);
   if (named.kind === "UNION") {
-    const parts = ["__typename"];
+    const parts = selectionParts("__typename");
     for (const possible of resolved?.possibleTypes ?? []) {
       if (!possible.name || possible.kind !== "OBJECT") continue;
       const selection = buildSelection(possible, typeMap, depth);
       const candidate = `... on ${possible.name} { ${selection || "__typename"} }`;
-      if (!appendSelectionPart(parts, candidate)) break;
+      if (!parts.append(candidate)) break;
     }
-    return parts.join(" ");
+    return parts.value();
   }
   if (!resolved?.fields?.length) return "__typename";
 
-  const parts: string[] = [];
+  const parts = selectionParts();
   for (const field of resolved.fields) {
     if (!field.name || field.name.startsWith("__")) continue;
     // Skip fields that require arguments; generated documents cannot invent them.
@@ -429,7 +416,7 @@ function buildSelection(
     const fieldNamed = unwrapNamedType(field.type);
     if (!fieldNamed) continue;
     if (fieldNamed.kind === "SCALAR" || fieldNamed.kind === "ENUM") {
-      if (!appendSelectionPart(parts, field.name)) break;
+      if (!parts.append(field.name)) break;
       continue;
     }
     if (
@@ -439,21 +426,25 @@ function buildSelection(
         fieldNamed.kind === "UNION")
     ) {
       const nested = buildSelection(field.type, typeMap, depth + 1);
-      if (nested && !appendSelectionPart(parts, `${field.name} { ${nested} }`)) break;
+      if (nested && !parts.append(`${field.name} { ${nested} }`)) break;
     }
   }
-  return parts.length > 0 ? parts.join(" ") : "__typename";
+  return parts.value() || "__typename";
 }
 
-function appendSelectionPart(parts: string[], candidate: string): boolean {
-  const separatorLength = parts.length > 0 ? 1 : 0;
-  const currentLength =
-    parts.reduce((total, part) => total + part.length, 0) + Math.max(0, parts.length - 1);
-  if (currentLength + separatorLength + candidate.length > MAX_GRAPHQL_SELECTION_CHARS) {
-    return false;
-  }
-  parts.push(candidate);
-  return true;
+function selectionParts(initial = "") {
+  const parts: string[] = initial ? [initial] : [];
+  let length = initial.length;
+  return {
+    append(candidate: string): boolean {
+      const nextLength = length + (parts.length > 0 ? 1 : 0) + candidate.length;
+      if (nextLength > MAX_GRAPHQL_SELECTION_CHARS) return false;
+      parts.push(candidate);
+      length = nextLength;
+      return true;
+    },
+    value: () => parts.join(" "),
+  };
 }
 
 function fieldRequiresArguments(field: GqlField): boolean {
@@ -545,74 +536,6 @@ function stringName(value: unknown): string | undefined {
   return typeof value === "string" && value ? value : undefined;
 }
 
-function requireCredential(auth: z.infer<typeof AuthSchema>, credential?: string): void {
-  if (auth.type !== "none" && !credential) throw new Error("This connector requires a credential");
-}
-
-function applyCredential(
-  url: URL,
-  headers: Record<string, string>,
-  auth: z.infer<typeof AuthSchema>,
-  credential?: string,
-): void {
-  if (!credential || auth.type === "none") return;
-  if (auth.type === "query") {
-    if (!auth.name) throw new Error("Authentication query name is required");
-    url.searchParams.set(auth.name, credential);
-    return;
-  }
-  const name = auth.type === "header" ? auth.name : "authorization";
-  if (!name) throw new Error("Authentication header name is required");
-  headers[name] = auth.type === "bearer" ? `Bearer ${credential}` : credential;
-}
-
-function isSensitiveHeader(name: string): boolean {
-  return /(authorization|cookie|api[-_]?key|token|secret)/i.test(name);
-}
-
-function isTransportHeader(name: string): boolean {
-  return /^(connection|content-length|host|proxy-authorization|proxy-connection|te|trailer|transfer-encoding|upgrade)$/i.test(
-    name,
-  );
-}
-
-function assertNoSensitiveQuery(value: string): void {
-  let url: URL;
-  try {
-    url = new URL(value);
-  } catch {
-    throw new Error("Connector URL is invalid");
-  }
-  for (const name of url.searchParams.keys()) {
-    if (/(auth|credential|key|password|secret|token)/i.test(name)) {
-      throw new Error(`Connector URL must put ${name} in the encrypted credential field`);
-    }
-  }
-}
-
-async function readBoundedText(
-  response: Response,
-  maximumBytes: number,
-): Promise<{ text: string; truncated: boolean }> {
-  if (!response.body) return { text: "", truncated: false };
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let bytes = 0;
-  let text = "";
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) return { text: text + decoder.decode(), truncated: false };
-    const remaining = maximumBytes - bytes;
-    if (value.byteLength > remaining) {
-      if (remaining > 0) text += decoder.decode(value.subarray(0, remaining), { stream: true });
-      await reader.cancel().catch(() => undefined);
-      return { text: text + decoder.decode(), truncated: true };
-    }
-    bytes += value.byteLength;
-    text += decoder.decode(value, { stream: true });
-  }
-}
-
 function boundUtf8Text(value: string, maximumBytes: number): { text: string; truncated: boolean } {
   const encoded = new TextEncoder().encode(value);
   if (encoded.byteLength <= maximumBytes) return { text: value, truncated: false };
@@ -628,10 +551,4 @@ function boundUtf8Text(value: string, maximumBytes: number): { text: string; tru
     }
   }
   return { text: "", truncated: true };
-}
-
-function asRecord(value: unknown): Record<string, unknown> | undefined {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined;
 }

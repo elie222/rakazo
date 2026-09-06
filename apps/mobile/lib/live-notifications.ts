@@ -2,6 +2,7 @@ import { requireNativeModule } from "expo-modules-core";
 import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
 import { apiBaseWarning, normalizeApiBase } from "./endpoint";
+import { t } from "./i18n";
 
 export interface LiveNotificationSettings {
   liveConnection: boolean;
@@ -89,7 +90,7 @@ export async function setLiveNotificationSettings(
   if (settings.liveConnection) {
     const existing = await Notifications.getPermissionsAsync();
     const granted = existing.granted || (await Notifications.requestPermissionsAsync()).granted;
-    if (!granted) throw new Error("Android blocked notifications.");
+    if (!granted) throw new Error(t("Android blocked notifications."));
   }
   await nativeNotifications.setSettings(settings, parsed.url, token, spaceId);
 }

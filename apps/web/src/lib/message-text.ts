@@ -1,12 +1,12 @@
 import type { ThreadMessage } from "@rakazo/contracts";
-import { providerLabel } from "./messaging";
+import { messageProviderLabel } from "./messaging";
 
 /** Plain message text for clipboard copy — text/ask/progress only, no chrome. */
 export function copyableMessageText(message: ThreadMessage): string {
   return message.blocks
     .map((block) => {
       if (block.kind === "channel_message") {
-        return `${providerLabel(block.provider)} · ${block.fromLabel}: ${block.text}`;
+        return `${messageProviderLabel(block.provider, block.transport)} · ${block.fromLabel}: ${block.text}`;
       }
       if (block.kind === "text" || block.kind === "progress" || block.kind === "ask") {
         return block.text;

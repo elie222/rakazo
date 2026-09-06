@@ -214,6 +214,63 @@ describe("OpenAPI connector import", () => {
     expect(queue.assertDrained).not.toThrow();
   });
 
+  it("does not emit a replacement character when a response limit splits UTF-8", async () => {
+    const install = {
+      id: "api-utf8",
+      kind: "api",
+      source: "https://93.184.216.34",
+      secretId: null,
+      createdAt: new Date(0),
+      config: {
+        auth: { type: "none" },
+        operations: [
+          {
+            id: "read_text",
+            method: "GET",
+            path: "/text",
+            inputSchema: { type: "object" },
+            readOnly: true,
+          },
+        ],
+      },
+    };
+    const prisma = {
+      capabilityInstall: {
+        findMany: vi.fn().mockResolvedValue([install]),
+        findFirst: vi.fn().mockResolvedValue(install),
+      },
+    };
+    const prefix = "a".repeat(999_999);
+    const fetch = vi.fn().mockResolvedValue(new Response(`${prefix}€`));
+    const provider = new InstalledConnectorProvider(prisma as never, {} as never, { fetch });
+    const context = {
+      spaceId: "space-1",
+      userId: "user-1",
+      signal: new AbortController().signal,
+    } as never;
+    const [tool] = await provider.discoverTools(context);
+    const events = [];
+
+    for await (const event of provider.execute(
+      { tool: tool!.name, args: {}, executionId: "utf8", route: tool!.route },
+      context,
+    )) {
+      events.push(event);
+    }
+
+    expect(events).toHaveLength(1);
+    const event = events[0] as {
+      type: string;
+      data: { status: number; data: string; truncated: boolean };
+    };
+    expect(event.type).toBe("result");
+    expect(event.data.status).toBe(200);
+    expect(event.data.truncated).toBe(true);
+    expect(event.data.data).toHaveLength(prefix.length);
+    expect(event.data.data.endsWith("a")).toBe(true);
+    expect(event.data.data.includes("\uFFFD")).toBe(false);
+  });
+
   it("keeps colliding OpenAPI operation names unique across installs", async () => {
     const installs = ["install-A", "install-B"].map((id, index) => ({
       id,

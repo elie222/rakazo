@@ -5,6 +5,7 @@ After=docker.service
 
 [Service]
 Type=oneshot
+EnvironmentFile=-/etc/rakazo/backup.env
 ExecStart=/usr/local/sbin/rakazo-backup
 Nice=10
 IOSchedulingClass=best-effort

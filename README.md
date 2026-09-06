@@ -56,14 +56,35 @@ Open [http://127.0.0.1:5173](http://127.0.0.1:5173), create an account, and conn
 Local Docker computers are on by default. Optional remote providers: `e2b`, `daytona`, or `box`
 with the matching API key.
 
-Default image tag is `edge` (main builds, `linux/amd64`). Details and tags:
+Default image tag is `edge` (main builds, `linux/amd64` + `linux/arm64`). Details and tags:
 [self-hosting guide](./docs/self-host.md#published-images-no-checkout).
+
+On restricted networks, override the installer download base (`RAKAZO_DOWNLOAD_BASE`), skip
+existing Compose files (`--local` / `RAKAZO_DOWNLOAD_SKIP_EXISTING`), or mirror the bootstrap
+script URL — see
+[Restricted networks / mirror downloads](./docs/self-host.md#restricted-networks--mirror-downloads).
 
 For an agent-assisted install, use [SETUP_PROMPT.md](./SETUP_PROMPT.md).
 
+## Run on a server
+
+Bots stay on when the backend runs on a server. Use the same installer on a VPS, then connect from
+the desktop app, the mobile app, or a browser.
+
+```bash
+bash install-images.sh --prepare-only
+# edit .env: SANDBOX_PROVIDER=box (or e2b / daytona) with its API key, RAKAZO_HOST=your.domain
+bash install-images.sh
+```
+
+Put HTTPS in front of port 5173; [docs/self-host.md](./docs/self-host.md#public-single-vm-deployment)
+covers the Caddy setup and host hardening. In the desktop app choose **Existing instance** and enter
+the `https://` address.
+
 ## Local development (source checkout)
 
-You need Node.js 22+, pnpm 9, and Docker.
+You need Node.js 22.22.2 or newer in the 22.x line, Node.js 24.x, or Node.js 26+;
+pnpm 9; and Docker. Node.js 23.x and 25.x are not supported.
 
 ```bash
 git clone https://github.com/elie222/rakazo.git
@@ -110,10 +131,16 @@ With the development stack running, launch Electron with:
 pnpm --filter @rakazo/desktop dev
 ```
 
-On first run the desktop app asks whether to use the Rakazo stack on this computer
-(`http://127.0.0.1:5173`) or connect to an existing server. Public servers must use HTTPS; HTTP is
-accepted only for loopback and private LAN addresses (not link-local). The app verifies Rakazo's
-health endpoint before saving, and later launches go straight to that instance.
+On first run the desktop app asks whether to run Rakazo on this computer or connect to an existing
+server. **This computer** installs and starts the published images with Docker Compose (the same
+files as `infra/compose/install-images.sh`) under the app's data directory, so Docker Desktop,
+OrbStack, or Docker Engine must be installed; the app links to them when it is not. Installed
+builds pin the image tag to their own version; unpackaged builds pull `edge`. Developers running
+`pnpm dev` should pick **Existing instance** with `http://127.0.0.1:5173` instead. Public servers
+must use HTTPS; HTTP is accepted only for loopback and private LAN addresses (not link-local). The
+app verifies Rakazo's health endpoint before saving, and later launches go straight to that
+instance. The stack keeps running after the app quits; **Stop Local Stack** in the application
+menu turns it off.
 
 Use **Change Rakazo Server…** in the application menu to reconnect. Closing that window without
 saving returns to the previous instance. For development automation, set `RAKAZO_WEB_URL` to point
@@ -122,16 +149,15 @@ setup again.
 
 Mobile build and release instructions live in [docs/mobile-release.md](./docs/mobile-release.md).
 
-## Web UI language
+## UI language
 
-The web (and Electron-hosted) UI supports English, Deutsch, and 한국어. Change it under
-**Settings → Language**. The marketing homepage (`apps/www`) is available in en/de/ko via
-footer language links (`/`, `/de/`, `/ko/`); other marketing pages stay English.
+The web (and Electron-hosted) UI supports English, Deutsch, 한국어, Türkçe, हिन्दी,
+Português (Brasil), and 简体中文 under **Settings → Language**. The Expo app supports
+English and 简体中文 under **Account → Language**. The marketing homepage (`apps/www`) is
+available in en/de/ko/zh via footer language links (`/`, `/de/`, `/ko/`, `/zh/`); other
+marketing pages stay English.
 
 ## Development
-
-Rakazo is a TypeScript monorepo built with React, Electron, Expo, Hono, Postgres, Prisma, Graphile
-Worker, and Pi.
 
 ```text
 apps/       web, api, worker, desktop, mobile, and public website
@@ -154,29 +180,14 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) for the development workflow and test m
 
 ## Documentation
 
-```bash
-pnpm test              # unit, property, and in-process contract tests
-pnpm test:integration  # Postgres journeys, Graphile jobs, LISTEN/NOTIFY
-pnpm test:e2e          # Playwright against the emulated stack
-pnpm test:e2e -- --sandbox=e2b # the same deterministic suite against real E2B
-pnpm test:e2e -- --sandbox=daytona # the same suite against real Daytona
-pnpm test:e2e -- --sandbox=box # the same suite against real Box
-pnpm test:topology     # local Docker + Graphile worker recovery (needs Docker)
-pnpm test:canary       # live OpenRouter / E2B / Box canaries
-# explicit real vision-model + real E2B desktop acceptance test:
-COMPUTER_E2E_MODEL=<vision-capable-openrouter-model-id> pnpm test:computer
-```
-
 - [Self-hosting](./docs/self-host.md)
 - [Computer runtime and isolation](./docs/computer-runtime.md)
+- [Desktop releases](./docs/desktop-release.md)
 - [Mobile releases](./docs/mobile-release.md)
 - [Performance testing](./docs/performance.md)
 
 ## Contributing
 
-The Playwright workflow can also be started manually with **Sandbox provider** set to `e2b`, `daytona`, or `box`.
-Those options require `E2B_API_KEY`, `DAYTONA_API_KEY`, or `BOX_API_KEY`, keep the deterministic scripted agent runtime, and destroy
-the provider machines after the run. The default and all automatic runs remain on `fake`.
 Contributions are welcome. Please read [CONTRIBUTING.md](./CONTRIBUTING.md) before opening a pull
 request. For security vulnerabilities, follow [SECURITY.md](./SECURITY.md) instead of filing a public
 issue.

@@ -268,7 +268,7 @@ async function prepareAuthenticatedProfile(benchmark: BenchmarkContext, profile:
       })
       .catch(async (error) => {
         const message = await page
-          .locator("form p.text-\\[\\#C94244\\]")
+          .locator('form p[role="alert"]')
           .textContent()
           .catch(() => null);
         throw new Error(

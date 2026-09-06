@@ -23,6 +23,14 @@ const compose = parse(readFileSync(composeFile, "utf8")) as {
 };
 const updater = compose.services.updater as ComposeService;
 
+describe("the production computer provider", () => {
+  it.each(["api", "worker"])("lets .env select the %s provider with an E2B default", (name) => {
+    expect(compose.services[name]?.env_file).toEqual(["../../.env"]);
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: this is the literal Compose expression
+    expect(compose.services[name]?.environment?.SANDBOX_PROVIDER).toBe("${SANDBOX_PROVIDER:-e2b}");
+  });
+});
+
 /**
  * The updater holds the Docker socket, which is root-equivalent on the host. These are the
  * properties that keep that from being reachable by anything but the API, and they are easy to
@@ -105,5 +113,16 @@ describe("the updater compose service", () => {
   it("does not let the api container reach the Docker socket to update itself", () => {
     expect(compose.services.api?.volumes ?? []).not.toContain("/var/run/docker.sock");
     expect(compose.services.api?.environment?.RAKAZO_UPDATER_URL).toBe("http://updater:7092");
+  });
+
+  it("passes logging configuration without using env_file", () => {
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: this is the literal Compose expression
+    expect(updater.environment?.LOG_LEVEL).toBe("${LOG_LEVEL:-info}");
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: this is the literal Compose expression
+    expect(updater.environment?.AXIOM_TOKEN).toBe("${AXIOM_TOKEN:-}");
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: this is the literal Compose expression
+    expect(updater.environment?.AXIOM_DATASET).toBe("${AXIOM_DATASET:-}");
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: this is the literal Compose expression
+    expect(updater.environment?.AXIOM_EDGE_URL).toBe("${AXIOM_EDGE_URL:-}");
   });
 });

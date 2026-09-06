@@ -8,6 +8,18 @@ import type {
 import type { PrismaClient } from "@rakazo/db";
 import { z } from "zod";
 import {
+  AuthSchema,
+  applyCredential,
+  asRecord,
+  assertNoSensitiveQuery,
+  HeaderName,
+  isSensitiveHeader,
+  isTransportHeader,
+  PublicHeadersSchema,
+  readBoundedText,
+  requireCredential,
+} from "./connector-http.js";
+import {
   combineSignals,
   redactConnectorPayload,
   sanitizeConnectorError,
@@ -33,49 +45,16 @@ import {
 } from "./remote-mcp.js";
 import type { EncryptedSecretStore } from "./secrets.js";
 
-const HeaderValue = z.string().max(2_048);
-const HeaderName = z
-  .string()
-  .min(1)
-  .max(120)
-  .regex(/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/, "Invalid HTTP header name")
-  .refine((name) => !isTransportHeader(name), "Transport-level headers cannot be customized");
 const ModelHeaderName = HeaderName.refine(
   (name) => !isSensitiveHeader(name),
   "Sensitive headers cannot be model-controlled",
 );
-const AuthSchema = z
-  .object({
-    type: z.enum(["none", "bearer", "header", "query"]).default("none"),
-    name: HeaderName.optional(),
-  })
-  .default({ type: "none" });
-
 const McpAuthSchema = z
   .object({
     type: z.enum(["none", "bearer", "header"]).default("none"),
     name: HeaderName.optional(),
   })
   .default({ type: "none" });
-
-const PublicHeadersSchema = z
-  .record(z.string(), HeaderValue)
-  .default({})
-  .superRefine((headers, context) => {
-    for (const name of Object.keys(headers)) {
-      if (isSensitiveHeader(name)) {
-        context.addIssue({
-          code: "custom",
-          message: `Sensitive header ${name} must use the encrypted credential field`,
-        });
-      } else if (isTransportHeader(name)) {
-        context.addIssue({
-          code: "custom",
-          message: `Transport-level header ${name} cannot be customized`,
-        });
-      }
-    }
-  });
 
 const McpConfigSchema = z.object({
   preset: z.enum(["treg", "custom"]).default("custom"),
@@ -607,78 +586,4 @@ function joinApiUrl(baseUrl: string, path: string): URL {
   base.search = "";
   base.hash = "";
   return base;
-}
-
-function requireCredential(auth: z.infer<typeof AuthSchema>, credential?: string): void {
-  if (auth.type !== "none" && !credential) throw new Error("This connector requires a credential");
-}
-
-function applyCredential(
-  url: URL,
-  headers: Record<string, string>,
-  auth: z.infer<typeof AuthSchema>,
-  credential?: string,
-): void {
-  if (!credential || auth.type === "none") return;
-  if (auth.type === "query") {
-    if (!auth.name) throw new Error("Authentication query name is required");
-    url.searchParams.set(auth.name, credential);
-    return;
-  }
-  const name = auth.type === "header" ? auth.name : "authorization";
-  if (!name) throw new Error("Authentication header name is required");
-  headers[name] = auth.type === "bearer" ? `Bearer ${credential}` : credential;
-}
-
-function isSensitiveHeader(name: string): boolean {
-  return /(authorization|cookie|api[-_]?key|token|secret)/i.test(name);
-}
-
-function isTransportHeader(name: string): boolean {
-  return /^(connection|content-length|host|proxy-authorization|proxy-connection|te|trailer|transfer-encoding|upgrade)$/i.test(
-    name,
-  );
-}
-
-function assertNoSensitiveQuery(value: string): void {
-  let url: URL;
-  try {
-    url = new URL(value);
-  } catch {
-    throw new Error("Connector URL is invalid");
-  }
-  for (const name of url.searchParams.keys()) {
-    if (/(auth|credential|key|password|secret|token)/i.test(name)) {
-      throw new Error(`Connector URL must put ${name} in the encrypted credential field`);
-    }
-  }
-}
-
-async function readBoundedText(
-  response: Response,
-  maximumBytes: number,
-): Promise<{ text: string; truncated: boolean }> {
-  if (!response.body) return { text: "", truncated: false };
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let bytes = 0;
-  let text = "";
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) return { text: text + decoder.decode(), truncated: false };
-    const remaining = maximumBytes - bytes;
-    if (value.byteLength > remaining) {
-      if (remaining > 0) text += decoder.decode(value.subarray(0, remaining), { stream: true });
-      await reader.cancel().catch(() => undefined);
-      return { text: text + decoder.decode(), truncated: true };
-    }
-    bytes += value.byteLength;
-    text += decoder.decode(value, { stream: true });
-  }
-}
-
-function asRecord(value: unknown): Record<string, unknown> | undefined {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined;
 }

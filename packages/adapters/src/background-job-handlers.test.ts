@@ -6,6 +6,7 @@ import type {
   SandboxProvider,
 } from "@rakazo/adapter-kit";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
+import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { describe, expect, it, vi } from "vitest";
 import { createBackgroundJobHandlers } from "./background-job-handlers.js";
 import { createRunExecutor } from "./executor.js";
@@ -27,7 +28,8 @@ describe("createBackgroundJobHandlers", () => {
         throw enqueueError;
       }),
     } as unknown as JobPublisher;
-    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-worker", sinks: [sink] }));
     const handlers = createBackgroundJobHandlers({
       executor: {
         continueRun: vi.fn(async () => undefined),
@@ -55,8 +57,10 @@ describe("createBackgroundJobHandlers", () => {
       { runId: undefined },
       expect.objectContaining({ operationId: "messaging.deliver:drain" }),
     );
-    expect(consoleError).toHaveBeenCalledWith("messaging.deliver enqueue error", enqueueError);
-    consoleError.mockRestore();
+    expect(sink.events.some((event) => event.message === "messaging.deliver enqueue error")).toBe(
+      true,
+    );
+    installLogger(createLogger({ service: "rakazo-worker", level: "off", sinks: [] }));
   });
 
   it("compacts the requested thread with the runtime, job publisher, and model key it was given", async () => {
