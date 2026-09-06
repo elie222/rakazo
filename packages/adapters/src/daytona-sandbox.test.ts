@@ -125,7 +125,7 @@ describe("DaytonaSandboxProvider", () => {
     expect(new URL(interactiveScreen.url!).searchParams.get("path")).toBe(
       "websockify?token=control-1",
     );
-    expect(fixture.getSignedPreviewUrl).toHaveBeenCalledTimes(2);
+    expect(fixture.getSignedPreviewUrl).toHaveBeenCalledOnce();
 
     await provider.stop(computer, context);
     expect(fixture.expireSignedPreviewUrl).toHaveBeenCalledWith(6100, "preview-token");
@@ -277,7 +277,8 @@ describe("DaytonaSandboxProvider", () => {
       researcher,
     );
     expect(writerView.url).toContain("6100-preview");
-    expect(researcherView.url).toContain("6102-preview");
+    expect(researcherView.url).not.toBe(writerView.url);
+    expect(researcherView.url).toContain("6100-preview");
     expect(new URL(researcherView.url!).searchParams.get("path")).toMatch(
       /^websockify\?token=view-/,
     );
@@ -308,11 +309,13 @@ describe("DaytonaSandboxProvider", () => {
       { view: "stream", interactive: true, controlToken: "lease-1" },
       researcher,
     );
-    expect(researcherControl.url).toContain("6103-preview");
-    expect(researcherControl.url).not.toContain("6102-preview");
+    expect(researcherControl.url).toContain("6100-preview");
+    expect(new URL(researcherControl.url!).searchParams.get("path")).toBe(
+      "websockify?token=lease-1",
+    );
     expect(
       fixture.executeCommand.mock.calls.some(([command]) =>
-        String(command).includes("-rfbport 5923"),
+        String(command).includes("sockets/control-"),
       ),
     ).toBe(true);
 

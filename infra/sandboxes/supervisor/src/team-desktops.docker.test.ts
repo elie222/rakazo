@@ -37,18 +37,20 @@ it.skipIf(process.env.VERIFY_DOCKER_TEAM_SCREENS !== "1").each([false, true])(
             preservePrimaryDisplay: false,
             displayStart: 20,
             portStart: 6100,
-            vncPortStart: 5920,
           }
         : DEFAULT_DESKTOP_ENV;
       const commands: Record<string, string> = {
         reset: resetManagedScreensCommand(),
+        seed: managed
+          ? `python3 -c 'from pathlib import Path; d=Path("/tmp/rakazo/desktop-assignments"); [(d / ("fixture-%s.slot" % i)).write_text(str(i) + "\\n") for i in range(1, 99)]'`
+          : "true",
         closeall: stopAllDesktopBrowsersCommand(env),
         viewPort: screenPorts(0, env).viewPort,
         controlPort: screenPorts(0, env).controlPort,
       };
       for (const [bot, index] of [
         ["a", 0],
-        ["b", 1],
+        ["b", 99],
         ["c", 0],
       ] as const) {
         commands[`ensure${bot}`] = managed
@@ -56,7 +58,7 @@ it.skipIf(process.env.VERIFY_DOCKER_TEAM_SCREENS !== "1").each([false, true])(
           : ensureScreenCommand(index, `bot-${bot}`, `view-${bot}`, env);
         commands[`open${bot}`] =
           `nohup ${browserLauncherPath(screenPorts(index, env).displayNumber)} http://127.0.0.1:${bot === "b" ? 8091 : 8090}/${bot} </dev/null >/tmp/browser-open-${bot}.log 2>&1 &`;
-        commands[`debug${bot}`] = String(9221 + screenPorts(index, env).displayNumber);
+        commands[`debug${bot}`] = String(screenPorts(index, env).debugPort);
         commands[`stop${bot}`] = managed
           ? releaseDesktopCommand(`bot-${bot}`, `run-${bot}:1`, env)
           : stopExtraScreenCommand(index, `bot-${bot}`, env);

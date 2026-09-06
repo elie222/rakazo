@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -9,6 +9,7 @@ import {
   desktopUrl,
   ensureScreenCommand,
   interactiveScreenCommand,
+  MAX_DESKTOP_DISPLAY,
   managedDesktopCommand,
   releaseDesktopCommand,
   screenPorts,
@@ -26,7 +27,6 @@ const env = {
   browserProfilesDir: "/home/user/work/.browser-profiles",
   displayStart: 20,
   portStart: 6100,
-  vncPortStart: 5920,
 };
 
 function fixture() {
@@ -55,7 +55,7 @@ function fixture() {
 }
 
 describe("shared Linux desktop lifecycle", () => {
-  it("allocates bounded live slots, keeps assignments across callers, and rejects stale leases", () => {
+  it("allocates live slots past 1000 bots, keeps assignments across callers, and rejects stale leases", () => {
     const f = fixture();
     expect(f.ensure("a").stdout).toContain("RAKAZO_DESKTOP=0:view-a");
     expect(f.ensure("b").stdout).toContain("RAKAZO_DESKTOP=1:view-b");
@@ -63,8 +63,9 @@ describe("shared Linux desktop lifecycle", () => {
     expect(f.ensure("a", "run:1").status).toBe(75);
     expect(f.release("a", "run:3").status).toBe(75);
     expect(f.release("a", "new:1").status).toBe(75);
-    for (let i = 2; i < 8; i++) expect(f.ensure(`bot-${i}`).status).toBe(0);
-    expect(f.ensure("overflow").status).toBe(75);
+    for (let i = 2; i < 1000; i++)
+      writeFileSync(path.join(f.root, `seed-${i}.slot`), `${i}\nseed:1\nunused\n`);
+    expect(f.ensure("bot-1000").stdout).toContain("RAKAZO_DESKTOP=1000:view-bot-1000");
     expect(f.release("a", "new:2").status).toBe(0);
     expect(f.ensure("c").stdout).toContain("RAKAZO_DESKTOP=0:view-c");
     expect(f.ensure("b").stdout).toContain("RAKAZO_DESKTOP=1:view-b");
@@ -110,7 +111,7 @@ describe("shared Linux desktop lifecycle", () => {
     },
   );
 
-  it("matches only the selected transport executable, including remote websockify paths", () => {
+  it("stops only the selected VNC transport and keeps the shared gateway", () => {
     const command = stopExtraScreenCommand(1, "a", env);
     const patterns = [...command.matchAll(/pkill -f '([^']+)'/g)].map(
       (match) => new RegExp(match[1]!),
@@ -123,9 +124,28 @@ describe("shared Linux desktop lifecycle", () => {
     }
     expect(
       patterns.some((pattern) =>
-        pattern.test("/usr/bin/python3 /usr/local/bin/websockify --web=/opt/noVNC 0.0.0.0:6102"),
+        pattern.test(
+          "/usr/bin/x11vnc -display :21 -rfbport 0 -unixsock /tmp/rakazo/sockets/view-21-token -forever",
+        ),
       ),
     ).toBe(true);
+  });
+
+  it("uses one published gateway and distinct private ports across 1000 desktops", () => {
+    const ports = new Set<number>();
+    for (let index = 0; index < 1000; index++) {
+      const layout = screenPorts(index, env);
+      expect(layout.viewPort).toBe("6100");
+      expect(layout.controlPort).toBe("6100");
+      expect(ports.has(layout.debugPort)).toBe(false);
+      ports.add(layout.debugPort);
+    }
+    expect(screenPorts(MAX_DESKTOP_DISPLAY - env.displayStart, env).debugPort).toBeLessThanOrEqual(
+      65535,
+    );
+    for (const index of [-1, 0.5, Number.POSITIVE_INFINITY, MAX_DESKTOP_DISPLAY]) {
+      expect(() => screenPorts(index, env)).toThrow("invalid desktop index");
+    }
   });
 
   it("keeps provider authentication while adding the per-lease websocket capability", () => {

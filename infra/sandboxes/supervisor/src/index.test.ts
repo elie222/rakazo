@@ -438,11 +438,13 @@ describe("sandbox supervisor input containment", () => {
   });
 
   it("keeps the viewer read-only and uses a separate process for takeover control", () => {
-    expect(interactiveScreenCommand(false)).toMatch(/pkill .*5901/);
+    expect(interactiveScreenCommand(false)).toMatch(/pkill .*sockets\/control-1-/);
     expect(interactiveScreenCommand(false)).not.toMatch(/x11vnc -display/);
-    expect(interactiveScreenCommand(true, "lease-new")).toMatch(/x11vnc -display .* -rfbport 5901/);
-    expect(interactiveScreenCommand(true, "lease-new")).toMatch(/6081/);
-    expect(interactiveScreenCommand(true, "lease-new")).not.toMatch(/-rfbport 5900/);
+    expect(interactiveScreenCommand(true, "lease-new")).toMatch(
+      /x11vnc -display .* -rfbport 0 -unixsock .*control-1-/,
+    );
+    expect(interactiveScreenCommand(true, "lease-new")).toMatch(/6080/);
+    expect(interactiveScreenCommand(true, "lease-new")).not.toContain("sockets/view-1-");
     expect(interactiveScreenCommand(false, "lease-old")).toContain("= 'lease-old'");
     expect(interactiveScreenCommand(false, "lease-old")).toContain("RAKAZO_CONTROL_RELEASED");
   });
@@ -455,8 +457,8 @@ describe("sandbox supervisor input containment", () => {
     expect(ensureScreenCommand(0, "writer", "view-token")).toContain("-display :1");
     expect(ensureScreenCommand(0, "writer", "view-token")).toContain("seq 1 100");
     expect(ensureScreenCommand(1, "researcher", "view-token")).toContain("Xvfb :2");
-    expect(ensureScreenCommand(1, "researcher", "view-token")).toContain("rfbport 5902");
-    expect(ensureScreenCommand(1, "researcher", "view-token")).toContain("0.0.0.0:6082");
+    expect(ensureScreenCommand(1, "researcher", "view-token")).toContain("sockets/view-2-");
+    expect(ensureScreenCommand(1, "researcher", "view-token")).toContain("0.0.0.0:6080");
     expect(() => nextScreenIndex(assigned, "overflow", undefined, 1)).toThrow(
       /cannot allocate another screen/,
     );
@@ -504,11 +506,9 @@ describe("sandbox supervisor input containment", () => {
 
   it("resets stale managed screens without killing unrelated container jobs", () => {
     const command = resetManagedScreensCommand();
-    expect(command).toContain(
-      "^([^ ]*/)?chromium[^ ]* .*--user-data-dir=/home/rakazo/.browser-profiles/",
-    );
-    expect(command).toContain("[X]vfb :[2-8]");
-    expect(command).toContain("rm -f /tmp/rakazo/browser-pid-*");
+    expect(command).toContain("chromium-bot-*");
+    expect(command).toContain("for marker in /tmp/rakazo/browser-profile-*");
+    expect(command).toContain("/tmp/rakazo/browser-pid-*");
     expect(command).not.toContain("pkill -9 -1");
   });
 
@@ -524,10 +524,16 @@ describe("sandbox supervisor input containment", () => {
     expect(command).not.toContain("/home/rakazo/.browser-profiles/chromium/.");
     expect(command).not.toContain(".rakazo-base-generation");
     expect(command).toContain("browser-pid-");
-    expect(command).not.toContain("pgrep -f");
+    expect(command).toContain("tr '\\0' '\\n' <\"/proc/$pid/cmdline\"");
     expect(browserProfilePathForScreen("../../writer")).toMatch(
       /^\/home\/rakazo\/\.browser-profiles\/chromium-bot-[0-9a-f]+$/,
     );
+  });
+
+  it("allocates a thousand bots without a configured cap", () => {
+    const assigned = new Map<string, ScreenAssignment>();
+    for (let index = 0; index < 1000; index++)
+      expect(nextScreenIndex(assigned, `bot-${index}`)).toBe(index);
   });
 
   it("frees a released screen slot so a ninth Team bot can reuse it", () => {
@@ -535,18 +541,22 @@ describe("sandbox supervisor input containment", () => {
     for (let index = 0; index < 8; index += 1) {
       expect(nextScreenIndex(assigned, `bot-${index}`)).toBe(index);
     }
-    expect(() => nextScreenIndex(assigned, "bot-8")).toThrow(/cannot allocate another screen/);
+    expect(() => nextScreenIndex(assigned, "bot-8", undefined, 8)).toThrow(
+      /cannot allocate another screen/,
+    );
     expect(releaseAssignedScreen(assigned, "bot-3")).toBe(3);
     expect(assigned.get("bot-0")?.index).toBe(0);
     expect(assigned.get("bot-3")?.releasing).toBe(true);
     expect(() => nextScreenIndex(assigned, "bot-3")).toThrow(/still being released/);
-    expect(() => nextScreenIndex(assigned, "bot-8")).toThrow(/cannot allocate another screen/);
+    expect(() => nextScreenIndex(assigned, "bot-8", undefined, 8)).toThrow(
+      /cannot allocate another screen/,
+    );
     completeReleasedScreen(assigned, "bot-3", 3);
     expect(assigned.get("bot-3")).toBeUndefined();
     expect(nextScreenIndex(assigned, "bot-8")).toBe(3);
     expect(nextScreenIndex(assigned, "bot-0")).toBe(0);
     expect(releaseAssignedScreen(assigned, "missing")).toBeUndefined();
-    expect(() => nextScreenIndex(assigned, "bot-9")).toThrow(/cannot allocate another screen/);
+    expect(nextScreenIndex(assigned, "bot-9")).toBe(8);
   });
 
   it("retains a screen slot when teardown fails", async () => {
@@ -575,7 +585,9 @@ describe("sandbox supervisor input containment", () => {
     for (let index = 0; index < 8; index += 1) {
       nextScreenIndex(assigned, `bot-${index}`);
     }
-    expect(() => nextScreenIndex(assigned, "bot-8")).toThrow(/cannot allocate another screen/);
+    expect(() => nextScreenIndex(assigned, "bot-8", undefined, 8)).toThrow(
+      /cannot allocate another screen/,
+    );
 
     clearComputerScreenRegistry(registry, containerId);
     expect(registry.has(containerId)).toBe(false);
@@ -628,18 +640,17 @@ describe("sandbox supervisor input containment", () => {
     expect(primary).toContain(`--user-data-dir=${browserProfilePathForScreen("writer")}`);
     expect(primary).toContain("kill -KILL");
     expect(primary).not.toMatch(/Xvfb :1 /);
-    expect(primary).toContain("[ :]6080");
-    expect(primary).toContain("[ :]6081");
-    expect(primary).toContain("rfbport 5900");
-    expect(primary).toContain("rfbport 5901");
-    expect(primary).toContain("rm -f /tmp/rakazo/control-token ");
+    expect(primary).not.toContain("websockify");
+    expect(primary).toContain("sockets/view-1-");
+    expect(primary).toContain("sockets/control-1-");
+    expect(primary).toContain("rm -f /tmp/rakazo/control-token-1");
     expect(primary).toContain("transport failed to stop");
 
     const extra = stopExtraScreenCommand(1, "researcher");
     expect(extra).toContain("[X]vfb :2 -screen");
     expect(extra).toContain("[f]luxbox -rc /tmp/fluxbox-home-2/.fluxbox/init");
-    expect(extra).toContain("rfbport 5902");
-    expect(extra).toContain("[ :]6082");
+    expect(extra).toContain("sockets/view-2-");
+    expect(extra).not.toContain("websockify");
     expect(extra).toContain(`--user-data-dir=${browserProfilePathForScreen("researcher")}`);
   });
 

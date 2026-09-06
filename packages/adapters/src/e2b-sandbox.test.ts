@@ -525,7 +525,7 @@ describe("E2B computer backend", () => {
       { view: "stream", interactive: true, controlToken: "lease-1" },
       context,
     );
-    expect(control.url).toContain("6101-desktop.test");
+    expect(control.url).toContain("6100-desktop.test");
     expect(new URL(control.url!).searchParams.get("path")).toBe("websockify?token=lease-1");
     await provider.setScreenControl(computer, false, context, "lease-1");
     await screen.close();
@@ -597,12 +597,16 @@ describe("E2B computer backend", () => {
     const writerView = await provider.connectScreen(computer, { view: "stream" }, writer);
     const researcherView = await provider.connectScreen(computer, { view: "stream" }, researcher);
     expect(writerView.url).toContain("6100-desktop.test");
-    expect(researcherView.url).toContain("6102-desktop.test");
+    expect(researcherView.url).not.toBe(writerView.url);
+    expect(researcherView.url).toContain("6100-desktop.test");
     expect(new URL(researcherView.url!).searchParams.get("path")).toMatch(
       /^websockify\?token=view-/,
     );
     expect(writerView.url).not.toBe(researcherView.url);
-    expect(command.mock.calls.some(([value]) => String(value).includes("Xvfb :2"))).toBe(true);
+    expect(
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: generated shell parameter expansion
+      command.mock.calls.some(([value]) => String(value).includes("Xvfb :${desktop_display}")),
+    ).toBe(true);
     expect(command.mock.calls.some(([value]) => String(value).includes("pkill -x x11vnc"))).toBe(
       false,
     );
@@ -625,7 +629,7 @@ describe("E2B computer backend", () => {
       { view: "stream", interactive: true, controlToken: "lease-1" },
       researcher,
     );
-    expect(control.url).toContain("6103-desktop.test");
+    expect(control.url).toContain("6100-desktop.test");
     expect(new URL(control.url!).searchParams.get("path")).toBe("websockify?token=lease-1");
 
     await provider.writeFile(
@@ -644,15 +648,18 @@ describe("E2B computer backend", () => {
     });
     expect(provider.describe().capabilities.multiScreen).toBe(true);
 
-    for (let index = 0; index < 7; index += 1) {
+    for (let index = 0; index < 100; index += 1) {
       await provider.observe(computer, {
         ...context,
         botId: `bot-${index + 2}`,
       });
     }
-    await expect(provider.observe(computer, { ...context, botId: "bot-9" })).rejects.toThrow(
-      /temporarily busy/,
-    );
+    await expect(
+      provider.observe(computer, { ...context, botId: "bot-102" }),
+    ).resolves.toMatchObject({
+      width: 1280,
+      height: 800,
+    });
   });
 });
 

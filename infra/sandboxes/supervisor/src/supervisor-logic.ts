@@ -1,10 +1,10 @@
 import {
   BROWSER_APPLICATIONS as DOCKER_BROWSER_ALIASES,
+  MAX_DESKTOP_DISPLAY,
+  resetDesktopRuntimeCommand,
   shellQuote,
-  stopAllDesktopBrowsersCommand,
   stopBrowserCommand,
   stopExtraScreenCommand,
-  stopScreenTransportsCommand,
 } from "@rakazo/core/node/desktop-runtime";
 
 export {
@@ -20,7 +20,7 @@ import { timingSafeEqual } from "node:crypto";
 import path from "node:path";
 import { canReleaseScreenLease, canTakeScreenLease } from "@rakazo/core";
 import { z } from "zod";
-import { type SandboxInput, TEAM_SCREEN_LIMIT, xdotoolCommand } from "./computer-spec.js";
+import { type SandboxInput, xdotoolCommand } from "./computer-spec.js";
 
 export const computerActionSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("key"), key: z.string(), modifiers: z.array(z.string()).optional() }),
@@ -188,7 +188,7 @@ export function nextScreenIndex(
   assigned: Map<string, ScreenAssignment>,
   screenId: string,
   leaseId?: string,
-  limit = TEAM_SCREEN_LIMIT,
+  limit = MAX_DESKTOP_DISPLAY,
 ): number {
   const existing = assigned.get(screenId);
   if (existing) {
@@ -299,17 +299,7 @@ export function stopScreensCommand(screens: Array<{ screenId: string; index: num
 }
 
 export function resetManagedScreensCommand() {
-  return [
-    "set -eu",
-    ...Array.from({ length: TEAM_SCREEN_LIMIT }, (_, index) => stopScreenTransportsCommand(index)),
-    stopAllDesktopBrowsersCommand(),
-    "pkill -f '^([^ ]*/)?chromium[^ ]* .*--user-data-dir=/home/rakazo/.browser-profiles/' 2>/dev/null || true",
-    "for i in $(seq 1 40); do if ! pgrep -f '^([^ ]*/)?chromium[^ ]* .*--user-data-dir=/home/rakazo/.browser-profiles/' >/dev/null; then break; fi; sleep 0.25; done",
-    "if pgrep -f '^([^ ]*/)?chromium[^ ]* .*--user-data-dir=/home/rakazo/.browser-profiles/' >/dev/null; then echo 'browser still running' >&2; exit 1; fi",
-    "pkill -f '[X]vfb :[2-8] ' 2>/dev/null || true",
-    "pkill -f '[f]luxbox -rc /tmp/fluxbox-home-[2-8]/.fluxbox/init' 2>/dev/null || true",
-    "rm -f /tmp/rakazo/browser-pid-* /tmp/rakazo/browser-profile-*",
-  ].join("\n");
+  return resetDesktopRuntimeCommand();
 }
 
 export async function withKeyedLock<T>(

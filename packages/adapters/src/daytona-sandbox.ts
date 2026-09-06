@@ -50,7 +50,6 @@ export class DaytonaSandboxProvider implements SandboxProvider {
         browserProfilesDir: path.posix.join(await this.workspaceRoot(sandbox), ".browser-profiles"),
         displayStart: 20,
         portStart: 6100,
-        vncPortStart: 5920,
       };
     },
     run: async (computer, command, context) => {

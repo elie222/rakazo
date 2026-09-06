@@ -328,7 +328,12 @@ app.post("/computers/:id/browser", async (c) => {
       container,
       ["/usr/local/bin/rakazo-page-browser", body.command, JSON.stringify(body)],
       {
-        env: [`DISPLAY=${layout.display}`, "HOME=/home/rakazo", "RAKAZO_BROWSER_WATCH_STDIN=1"],
+        env: [
+          `DISPLAY=${layout.display}`,
+          `RAKAZO_CDP_PORT=${layout.debugPort}`,
+          "HOME=/home/rakazo",
+          "RAKAZO_BROWSER_WATCH_STDIN=1",
+        ],
         timeoutMs: 25_000,
         signal,
       },

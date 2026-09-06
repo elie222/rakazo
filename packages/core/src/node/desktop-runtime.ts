@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import path from "node:path";
-export const TEAM_SCREEN_LIMIT = 8;
+// Each live Chrome needs a private debugger port. This is the TCP address-space
+// boundary, not a product limit on bots or saved browser profiles.
+export const MAX_DESKTOP_DISPLAY = 65535 - 9221;
 export const BROWSER_APPLICATIONS = new Set([
   "browser",
   "chrome",
@@ -18,7 +20,6 @@ export interface DesktopEnvironment {
   displayStart: number;
   preservePrimaryDisplay?: boolean;
   portStart?: number;
-  vncPortStart?: number;
 }
 export const DEFAULT_DESKTOP_ENV: DesktopEnvironment = {
   homeDir: "/home/rakazo",
@@ -28,17 +29,50 @@ export const DEFAULT_DESKTOP_ENV: DesktopEnvironment = {
   preservePrimaryDisplay: true,
 };
 export function screenPorts(index: number, env = DEFAULT_DESKTOP_ENV) {
-  if (!Number.isInteger(index) || index < 0 || index >= TEAM_SCREEN_LIMIT)
+  if (!Number.isSafeInteger(index) || index < 0 || index + env.displayStart > MAX_DESKTOP_DISPLAY)
     throw new Error("invalid desktop index");
   const displayNumber = env.displayStart + index;
   return {
     display: `:${displayNumber}`,
     displayNumber,
-    viewPort: String((env.portStart ?? 6080) + index * 2),
-    controlPort: String((env.portStart ?? 6080) + 1 + index * 2),
-    viewVncPort: (env.vncPortStart ?? 5900) + index * 2,
-    controlVncPort: (env.vncPortStart ?? 5900) + 1 + index * 2,
+    viewPort: String(env.portStart ?? 6080),
+    controlPort: String(env.portStart ?? 6080),
+    debugPort: 9221 + displayNumber,
   };
+}
+
+function commandLayout(index: number | undefined, env: DesktopEnvironment) {
+  if (index !== undefined) return screenPorts(index, env);
+  return {
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: generated shell parameter expansion
+    display: ":${desktop_display}",
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: generated shell parameter expansion
+    displayNumber: "${desktop_display}",
+    viewPort: String(env.portStart ?? 6080),
+    controlPort: String(env.portStart ?? 6080),
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: generated shell parameter expansion
+    debugPort: "${desktop_debug}",
+  };
+}
+
+function layoutVariables(index: number | undefined, env: DesktopEnvironment) {
+  if (index !== undefined) return [];
+  return [
+    'desktop_index="$1"',
+    `case "$desktop_index" in ''|*[!0-9]*) exit 75 ;; esac`,
+    `[[ "$desktop_index" =~ ^(0|[1-9][0-9]{0,4})$ ]] || exit 75`,
+    `desktop_display=$((desktop_index + ${env.displayStart}))`,
+    `[ "$desktop_display" -le ${MAX_DESKTOP_DISPLAY} ] || exit 75`,
+    "desktop_debug=$((9221 + desktop_display))",
+  ];
+}
+
+// Expand only generated layout variables and the validated view token.
+function quoteLayout(value: string) {
+  return value
+    .split(/(\$\{desktop_[a-z_]+\})/)
+    .map((part) => (/^\$\{desktop_[a-z_]+\}$/.test(part) ? `"${part}"` : shellQuote(part)))
+    .join("");
 }
 export function shellQuote(value: string) {
   return `'${value.replaceAll("'", `'"'"'`)}'`;
@@ -74,18 +108,26 @@ function browserRunningFunction(profile: string, pidFile: string) {
   ];
 }
 
-export function browserLauncherPath(displayNumber: number) {
+export function browserLauncherPath(displayNumber: number | string) {
   return `/tmp/rakazo/browser-launch-${displayNumber}`;
 }
 
-function browserLauncherCommand(index: number, screenId: string, env: DesktopEnvironment) {
-  const layout = screenPorts(index, env);
+function browserLauncherCommand(
+  index: number | undefined,
+  screenId: string,
+  env: DesktopEnvironment,
+) {
+  const layout = commandLayout(index, env);
   return [
     "#!/bin/bash",
     "set -eu",
+    ...(index === undefined
+      ? // biome-ignore lint/suspicious/noTemplateCurlyInString: generated shell parameter expansion
+        ['desktop_display="${0##*-}"', "desktop_debug=$((9221 + desktop_display))"]
+      : []),
     "browser=$(command -v rakazo-browser || command -v google-chrome || command -v google-chrome-stable || command -v chromium || command -v chromium-browser)",
     `export DISPLAY=${layout.display} HOME=${shellQuote(env.homeDir)}`,
-    `exec "$browser" --no-sandbox --no-first-run --no-default-browser-check --disable-dev-shm-usage --password-store=basic --remote-debugging-address=127.0.0.1 --remote-debugging-port=${9221 + layout.displayNumber} --user-data-dir=${shellQuote(browserProfilePathForScreen(screenId, env))} "$@"`,
+    `exec "$browser" --no-sandbox --no-first-run --no-default-browser-check --disable-dev-shm-usage --password-store=basic --remote-debugging-address=127.0.0.1 --remote-debugging-port=${layout.debugPort} --user-data-dir=${shellQuote(browserProfilePathForScreen(screenId, env))} "$@"`,
   ].join("\n");
 }
 
@@ -93,7 +135,7 @@ function browserLauncherCommand(index: number, screenId: string, env: DesktopEnv
 const CLOSE_BROWSER = `import base64, json, os, socket, sys, urllib.request
 pid = sys.argv[1]
 args = open('/proc/' + pid + '/cmdline', 'rb').read().split(b'\\0')
-port = next(int(arg.split(b'=')[1]) for arg in args if arg.startswith(b'--remote-debugging-port='))
+port = next(int(arg.split(b'=')[1]) for arg in reversed(args) if arg.startswith(b'--remote-debugging-port='))
 with urllib.request.urlopen('http://127.0.0.1:' + str(port) + '/json/version', timeout=2) as response:
     endpoint = json.load(response)['webSocketDebuggerUrl']
 path = '/' + endpoint.split('/', 3)[3]
@@ -154,55 +196,141 @@ export function stopAllDesktopBrowsersCommand(env = DEFAULT_DESKTOP_ENV) {
   ].join("\n");
 }
 
-function controlTokenPath(index: number) {
-  return index === 0 ? "/tmp/rakazo/control-token" : `/tmp/rakazo/control-token-${index + 1}`;
-}
-
-function stopScreenTransportCommand(vncPort: number, webPort: string) {
-  const patterns = [
-    `^([^ ]*/)?x11vnc .* -rfbport ${vncPort}( |$)`,
-    `^([^ ]*/)?python[0-9.]* +(-m +websockify|[^ ]*websockify[^ ]*) +.*[ :]${webPort}( |$)`,
-  ];
-  const listening = [webPort, vncPort]
-    .map((port) => `timeout 1 bash -c 'echo >/dev/tcp/127.0.0.1/${port}' >/dev/null 2>&1`)
-    .join(" || ");
+/** Reset discovered runtime processes after a supervisor restart; profiles remain durable. */
+export function resetDesktopRuntimeCommand(env = DEFAULT_DESKTOP_ENV) {
+  const port = String(env.portStart ?? 6080);
+  const gatewayPattern = `^([^ ]*/)?python[0-9.]* +(-m +websockify|[^ ]*websockify[^ ]*) +.*[ :]${port}( |$)`;
+  const stop = [
+    ...layoutVariables(undefined, env),
+    renderStopScreenTransportsCommand(undefined, env),
+    ...(env.preservePrimaryDisplay
+      ? [`if [ "$desktop_display" != "${env.displayStart}" ]; then`]
+      : []),
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: generated shell parameter expansion
+    'pkill -f "[X]vfb :${desktop_display} -screen" || true',
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: generated shell parameter expansion
+    'pkill -f "[f]luxbox -rc /tmp/fluxbox-home-${desktop_display}/.fluxbox/init" || true',
+    ...(env.preservePrimaryDisplay ? ["fi"] : []),
+  ].join("\n");
   return [
     "set -eu",
-    ...patterns.map((pattern) => `pkill -f ${shellQuote(pattern)} || true`),
+    `pkill -f ${shellQuote(gatewayPattern)} || true`,
     "sleep 0.1",
-    // Transport children may be blocked on a client that stopped reading.
-    ...patterns.map((pattern) => `pkill -KILL -f ${shellQuote(pattern)} || true`),
-    `for i in $(seq 1 10); do if ! { ${listening}; }; then break; fi; sleep 0.1; done`,
-    `if ${listening}; then echo 'computer screen transport failed to stop' >&2; exit 1; fi`,
+    `pkill -KILL -f ${shellQuote(gatewayPattern)} || true`,
+    stopAllDesktopBrowsersCommand(env),
+    "for marker in /tmp/rakazo/browser-profile-*; do",
+    '  [ -f "$marker" ] || continue',
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: generated shell parameter expansion
+    "  display=${marker##*-}",
+    `  case "$display" in ''|*[!0-9]*) continue ;; esac`,
+    `  index=$((display - ${env.displayStart}))`,
+    `  bash -eu -c ${shellQuote(stop)} desktop "$index"`,
+    "done",
+    // Retire the default image's legacy primary VNC process too.
+    "pkill -f '^([^ ]*/)?x11vnc .* -rfbport 5900( |$)' || true",
+    `rm -f ${TARGETS}/view-* ${TARGETS}/control-* /tmp/rakazo/browser-pid-* /tmp/rakazo/browser-profile-* /tmp/rakazo/browser-launch-*`,
+  ].join("\n");
+}
+
+const TARGETS = "/tmp/rakazo/desktop-targets";
+
+// Keep fixed mapping files present: TokenFile may be reading the directory concurrently.
+function revokeTargetCommand(kind: "view" | "control", display: number | string) {
+  return `mkdir -p ${TARGETS}; : >/tmp/rakazo/${kind}-target-next-${display}; mv /tmp/rakazo/${kind}-target-next-${display} ${TARGETS}/${kind}-${display}`;
+}
+
+function stopVncCommand(kind: "view" | "control", layout: ReturnType<typeof commandLayout>) {
+  const socketPrefix = `/tmp/rakazo/sockets/${kind}-${layout.displayNumber}-`;
+  const pattern = quoteLayout(`^([^ ]*/)?x11vnc .* -unixsock ${socketPrefix}[^ ]+( |$)`);
+  return [
+    `pkill -f ${pattern} || true`,
+    "sleep 0.1",
+    `pkill -KILL -f ${pattern} || true`,
+    `for i in $(seq 1 10); do pgrep -f ${pattern} >/dev/null || break; sleep 0.1; done`,
+    `if pgrep -f ${pattern} >/dev/null; then echo 'computer screen transport failed to stop' >&2; exit 1; fi`,
+    `rm -f ${socketPrefix}*`,
+  ].join("\n");
+}
+
+function gatewayCommand(port: string) {
+  const processPattern = `^([^ ]*/)?python[0-9.]* +(-m +websockify|[^ ]*websockify[^ ]*) +.*`;
+  const portPattern = shellQuote(`${processPattern}[ :]${port}( |$)`);
+  const gatewayPattern = shellQuote(
+    `${processPattern}--token-source=${TARGETS} +0.0.0.0:${port}( |$)`,
+  );
+  return [
+    proxyEnvironmentCommand(),
+    `mkdir -p ${TARGETS}`,
+    // This lock only covers gateway startup; desktop startup remains independent.
+    `exec 10>/tmp/rakazo/gateway-${port}.lock; flock -w 120 10`,
+    `if ! pgrep -f ${gatewayPattern} >/dev/null || ! (echo >/dev/tcp/127.0.0.1/${port}) >/dev/null 2>&1; then`,
+    // Older images boot a single-screen gateway on this port. Retire it under the startup lock.
+    `  pkill -f ${portPattern} || true`,
+    `  for i in $(seq 1 20); do if ! (echo >/dev/tcp/127.0.0.1/${port}) >/dev/null 2>&1; then break; fi; sleep 0.1; done`,
+    `  if (echo >/dev/tcp/127.0.0.1/${port}) >/dev/null 2>&1; then echo 'screen gateway port is busy' >&2; exit 1; fi`,
+    `  nohup "$proxy" --heartbeat=30 --web="$web" --token-plugin=TokenFile --token-source=${TARGETS} 0.0.0.0:${port} 8>&- 9>&- 10>&- </dev/null >/tmp/rakazo/gateway-${port}.log 2>&1 &`,
+    "fi",
+    `for i in $(seq 1 50); do (echo >/dev/tcp/127.0.0.1/${port}) >/dev/null 2>&1 && break; sleep 0.1; done`,
+    `flock -u 10; exec 10>&-`,
+    `(echo >/dev/tcp/127.0.0.1/${port}) >/dev/null 2>&1`,
   ].join("\n");
 }
 
 export function stopScreenTransportsCommand(index: number, env = DEFAULT_DESKTOP_ENV) {
-  const layout = screenPorts(index, env);
-  return [
-    stopScreenTransportCommand(layout.viewVncPort, layout.viewPort),
-    stopScreenTransportCommand(layout.controlVncPort, layout.controlPort),
-    `rm -f ${controlTokenPath(layout.displayNumber - 1)} /tmp/rakazo/control-target-${layout.displayNumber} /tmp/rakazo/view-target-${layout.displayNumber}`,
-  ].join("\n");
+  return renderStopScreenTransportsCommand(index, env);
 }
 
 export function stopExtraScreenCommand(index: number, screenId: string, env = DEFAULT_DESKTOP_ENV) {
-  const layout = screenPorts(index, env);
+  return renderStopExtraScreenCommand(index, screenId, env);
+}
+
+export function ensureScreenCommand(
+  index: number,
+  screenId: string,
+  viewToken: string,
+  env = DEFAULT_DESKTOP_ENV,
+) {
+  return renderEnsureScreenCommand(index, screenId, viewToken, env);
+}
+
+function renderStopScreenTransportsCommand(index: number | undefined, env = DEFAULT_DESKTOP_ENV) {
+  const layout = commandLayout(index, env);
+  return [
+    ...layoutVariables(index, env),
+    // Drop authorization first, then terminate VNC so already connected gateway clients disconnect.
+    revokeTargetCommand("view", layout.displayNumber),
+    revokeTargetCommand("control", layout.displayNumber),
+    stopVncCommand("view", layout),
+    stopVncCommand("control", layout),
+    `rm -f /tmp/rakazo/control-token-${layout.displayNumber}`,
+  ].join("\n");
+}
+
+function renderStopExtraScreenCommand(
+  index: number | undefined,
+  screenId: string,
+  env = DEFAULT_DESKTOP_ENV,
+) {
+  const layout = commandLayout(index, env);
   const fluxHome = `/tmp/fluxbox-home-${layout.displayNumber}`;
   return [
     "set -eu",
     // Stop every client before touching browser state or recycling the display.
-    stopScreenTransportsCommand(index, env),
+    renderStopScreenTransportsCommand(index, env),
     stopBrowserCommand(screenId, env),
     `rm -f /tmp/rakazo/browser-profile-${layout.displayNumber} ${browserLauncherPath(layout.displayNumber)}`,
     ...(index === 0 && env.preservePrimaryDisplay
       ? []
       : [
-          `pkill -f '[X]vfb ${layout.display} -screen' || true`,
-          `pkill -f '[f]luxbox -rc ${fluxHome}/.fluxbox/init' || true`,
+          ...(env.preservePrimaryDisplay
+            ? [`if [ "${layout.displayNumber}" != "${env.displayStart}" ]; then`]
+            : []),
+          `pkill -f ${quoteLayout(`[X]vfb ${layout.display} -screen`)} || true`,
+          `pkill -f ${quoteLayout(`[f]luxbox -rc ${fluxHome}/.fluxbox/init`)} || true`,
           `for i in $(seq 1 20); do if ! xdpyinfo -display ${layout.display} >/dev/null 2>&1; then break; fi; sleep 0.1; done`,
           `if xdpyinfo -display ${layout.display} >/dev/null 2>&1; then echo 'computer screen failed to stop' >&2; exit 1; fi`,
           `rm -f /tmp/.X${layout.displayNumber}-lock /tmp/.X11-unix/X${layout.displayNumber}`,
+          ...(env.preservePrimaryDisplay ? ["fi"] : []),
         ]),
   ].join("\n");
 }
@@ -219,13 +347,13 @@ function proxyEnvironmentCommand() {
   ].join("\n");
 }
 
-export function ensureScreenCommand(
-  index: number,
+function renderEnsureScreenCommand(
+  index: number | undefined,
   screenId: string,
   viewToken: string,
   env = DEFAULT_DESKTOP_ENV,
 ) {
-  const layout = screenPorts(index, env);
+  const layout = commandLayout(index, env);
   const fluxHome = `/tmp/fluxbox-home-${layout.displayNumber}`;
   const log = `/tmp/rakazo/screen-${layout.displayNumber}`;
   const profile = browserProfilePathForScreen(screenId, env);
@@ -239,26 +367,35 @@ export function ensureScreenCommand(
           `if ! xdpyinfo -display ${layout.display} >/dev/null 2>&1; then`,
           `  mkdir -p /tmp/rakazo ${fluxHome}/.fluxbox /tmp/.X11-unix`,
           `  rm -f /tmp/.X${layout.displayNumber}-lock /tmp/.X11-unix/X${layout.displayNumber}`,
-          `  nohup Xvfb ${layout.display} -screen 0 1280x800x24 -ac +extension RANDR +render -noreset 8>&- 9>&- </dev/null >${log}-xvfb.log 2>&1 &`,
+          `  nohup Xvfb ${layout.display} -screen 0 1280x800x24 -ac +extension RANDR +render -noreset -nolisten tcp 8>&- 9>&- </dev/null >${log}-xvfb.log 2>&1 &`,
           `  for i in $(seq 1 100); do xdpyinfo -display ${layout.display} >/dev/null 2>&1 && break; sleep 0.1; done`,
           `  xdpyinfo -display ${layout.display} >/dev/null 2>&1 || exit 1`,
           `  if [ -f /etc/rakazo/fluxbox/init ]; then cp /etc/rakazo/fluxbox/init ${fluxHome}/.fluxbox/init; else printf "session.screen0.toolbar.visible: false\\n" >${fluxHome}/.fluxbox/init; fi`,
           `  cp /etc/rakazo/fluxbox/apps ${fluxHome}/.fluxbox/apps 2>/dev/null || true`,
-          `  printf %s ${shellQuote(`[begin] (Desktop)\n[exec] (Browser) {${browserLauncherPath(layout.displayNumber)}}\n[end]\n`)} >${fluxHome}/.fluxbox/menu`,
-          `  printf '\nsession.menuFile: ${fluxHome}/.fluxbox/menu\n' >>${fluxHome}/.fluxbox/init`,
+          `  printf '[begin] (Desktop)\\n[exec] (Browser) {%s}\\n[end]\\n' ${browserLauncherPath(layout.displayNumber)} >${fluxHome}/.fluxbox/menu`,
+          `  printf '\\nsession.menuFile: %s\\n' ${fluxHome}/.fluxbox/menu >>${fluxHome}/.fluxbox/init`,
           `  HOME=${shellQuote(env.homeDir)} CHROME_USER_DATA_DIR=${shellQuote(profile)} BROWSER=${browserLauncherPath(layout.displayNumber)} DISPLAY=${layout.display} nohup fluxbox -rc ${fluxHome}/.fluxbox/init 8>&- 9>&- </dev/null >${log}-fluxbox.log 2>&1 &`,
           "fi",
         ];
-  const targetFile = `/tmp/rakazo/view-target-${layout.displayNumber}`;
+  const targetFile = `${TARGETS}/view-${layout.displayNumber}`;
+  const socket = `/tmp/rakazo/sockets/view-${layout.displayNumber}-\${desktop_view_token}`;
   const setupView = [
-    `printf '%s: 127.0.0.1:${layout.viewVncPort}\\n' ${shellQuote(viewToken)} >${targetFile}`,
-    `if ! (echo >/dev/tcp/127.0.0.1/${layout.viewPort}) >/dev/null 2>&1; then`,
-    `  nohup x11vnc -display ${layout.display} -forever -shared -viewonly -nopw -listen 127.0.0.1 -rfbport ${layout.viewVncPort} -xkb -ncache 0 8>&- 9>&- </dev/null >${log}-x11vnc.log 2>&1 &`,
-    `  nohup "$proxy" --heartbeat=30 --web="$web" --token-plugin=TokenFile --token-source=${targetFile} 0.0.0.0:${layout.viewPort} 8>&- 9>&- </dev/null >${log}-novnc.log 2>&1 &`,
+    `mkdir -p ${TARGETS} /tmp/rakazo/sockets`,
+    `if [ ! -S ${socket} ] || ! pgrep -f ${quoteLayout(`^([^ ]*/)?x11vnc .* -unixsock ${socket}( |$)`)} >/dev/null; then`,
+    stopVncCommand("view", layout),
+    `  nohup x11vnc -display ${layout.display} -forever -shared -viewonly -nopw -rfbport 0 -unixsock ${socket} -xkb -ncache 0 8>&- 9>&- </dev/null >${log}-x11vnc.log 2>&1 &`,
     "fi",
+    `for i in $(seq 1 50); do [ -S ${socket} ] && break; sleep 0.1; done`,
+    `[ -S ${socket} ] || exit 1`,
+    `printf '%s: unix_socket:%s\\n' "$desktop_view_token" ${socket} >/tmp/rakazo/view-target-next-${layout.displayNumber}`,
+    `mv /tmp/rakazo/view-target-next-${layout.displayNumber} ${targetFile}`,
+    gatewayCommand(layout.viewPort),
   ];
   return [
     "set -eu",
+    ...layoutVariables(index, env),
+    `desktop_view_token=${shellQuote(viewToken)}`,
+    '[[ "$desktop_view_token" =~ ^[a-zA-Z0-9_-]{1,64}$ ]] || exit 75',
     proxyEnvironmentCommand(),
     `mkdir -p /tmp/rakazo`,
     `printf %s ${shellQuote(browserLauncherCommand(index, screenId, env))} >${browserLauncherPath(layout.displayNumber)}`,
@@ -273,8 +410,8 @@ export function ensureScreenCommand(
     `  rm -f ${shellQuote(profile)}/SingletonLock ${shellQuote(profile)}/SingletonCookie ${shellQuote(profile)}/SingletonSocket`,
     `  nohup ${browserLauncherPath(layout.displayNumber)} 8>&- 9>&- </dev/null >${log}-browser.log 2>&1 & printf %s "$!" >${pidFile}`,
     "fi",
-    `for i in $(seq 1 80); do browser_running && (echo >/dev/tcp/127.0.0.1/${9221 + layout.displayNumber}) >/dev/null 2>&1 && break; sleep 0.25; done`,
-    `browser_running && (echo >/dev/tcp/127.0.0.1/${9221 + layout.displayNumber}) >/dev/null 2>&1 || exit 1`,
+    `for i in $(seq 1 80); do browser_running && (echo >/dev/tcp/127.0.0.1/${layout.debugPort}) >/dev/null 2>&1 && break; sleep 0.25; done`,
+    `browser_running && (echo >/dev/tcp/127.0.0.1/${layout.debugPort}) >/dev/null 2>&1 || exit 1`,
     ...setupView,
     `for i in $(seq 1 50); do (echo >/dev/tcp/127.0.0.1/${layout.viewPort}) >/dev/null 2>&1 && exit 0; sleep 0.1; done`,
     "exit 1",
@@ -284,35 +421,38 @@ export function ensureScreenCommand(
 export function interactiveScreenCommand(
   interactive: boolean,
   controlToken?: string,
-  layout = screenPorts(0),
+  layout: ReturnType<typeof commandLayout> = screenPorts(0),
 ) {
-  const tokenFile = controlTokenPath(layout.displayNumber - 1);
-  const targetFile = `/tmp/rakazo/control-target-${layout.displayNumber}`;
-  const stopTransport = stopScreenTransportCommand(layout.controlVncPort, layout.controlPort);
-  const stopProcesses = [stopTransport, `rm -f ${tokenFile} ${targetFile}`].join("\n");
+  const tokenFile = `/tmp/rakazo/control-token-${layout.displayNumber}`;
+  const targetFile = `${TARGETS}/control-${layout.displayNumber}`;
+  const stopProcesses = [
+    revokeTargetCommand("control", layout.displayNumber),
+    stopVncCommand("control", layout),
+    `rm -f ${tokenFile}`,
+  ].join("\n");
   if (!interactive) {
     if (!controlToken) return stopProcesses;
     return [
       `if [ -f ${tokenFile} ] && [ "$(cat ${tokenFile})" = ${shellQuote(controlToken)} ]; then`,
-      stopTransport,
-      `rm -f ${targetFile} ${tokenFile}`,
+      stopProcesses,
       "printf 'RAKAZO_CONTROL_RELEASED\\n'",
       "fi",
     ].join("\n");
   }
   if (!controlToken) throw new Error("interactive screen requires a control token");
+  const socket = `/tmp/rakazo/sockets/control-${layout.displayNumber}-${browserKeyForScreen(controlToken)}`;
   return [
-    `[ -f ${tokenFile} ] && [ "$(cat ${tokenFile})" = ${shellQuote(controlToken)} ] && (echo >/dev/tcp/127.0.0.1/${layout.controlVncPort}) >/dev/null 2>&1 && (echo >/dev/tcp/127.0.0.1/${layout.controlPort}) >/dev/null 2>&1 && exit 0 || true`,
-    proxyEnvironmentCommand(),
+    `[ -f ${tokenFile} ] && [ "$(cat ${tokenFile})" = ${shellQuote(controlToken)} ] && [ -S ${socket} ] && pgrep -f ${quoteLayout(`^([^ ]*/)?x11vnc .* -unixsock ${socket}( |$)`)} >/dev/null && (echo >/dev/tcp/127.0.0.1/${layout.controlPort}) >/dev/null 2>&1 && exit 0 || true`,
     stopProcesses,
-    `printf %s ${shellQuote(controlToken)} > ${tokenFile}`,
-    `printf '%s: 127.0.0.1:${layout.controlVncPort}\\n' ${shellQuote(controlToken)} > ${targetFile}`,
-    `export DISPLAY=${layout.display}`,
-    `(nohup x11vnc -display ${layout.display} -forever -shared -nopw -listen 127.0.0.1 -rfbport ${layout.controlVncPort} -xkb -ncache 0 8>&- 9>&- </dev/null >/tmp/rakazo/x11vnc-control-${layout.displayNumber}.log 2>&1 &)`,
-    `(nohup "$proxy" --heartbeat=30 --web="$web" --token-plugin=TokenFile --token-source=${targetFile} 0.0.0.0:${layout.controlPort} 8>&- 9>&- </dev/null >/tmp/rakazo/novnc-control-${layout.displayNumber}.log 2>&1 &)`,
-    `for i in $(seq 1 50); do (echo >/dev/tcp/127.0.0.1/${layout.controlPort}) >/dev/null 2>&1 && exit 0; sleep 0.1; done`,
-    "exit 1",
-  ].join("; ");
+    `mkdir -p ${TARGETS} /tmp/rakazo/sockets`,
+    `printf %s ${shellQuote(controlToken)} >${tokenFile}`,
+    `nohup x11vnc -display ${layout.display} -forever -shared -nopw -rfbport 0 -unixsock ${socket} -xkb -ncache 0 8>&- 9>&- </dev/null >/tmp/rakazo/x11vnc-control-${layout.displayNumber}.log 2>&1 &`,
+    `for i in $(seq 1 50); do [ -S ${socket} ] && break; sleep 0.1; done`,
+    `[ -S ${socket} ] || exit 1`,
+    `printf '%s: unix_socket:%s\\n' ${shellQuote(controlToken)} ${socket} >/tmp/rakazo/control-target-next-${layout.displayNumber}`,
+    `mv /tmp/rakazo/control-target-next-${layout.displayNumber} ${targetFile}`,
+    gatewayCommand(layout.controlPort),
+  ].join("\n");
 }
 
 const REGISTRY = "/tmp/rakazo/desktop-assignments";
@@ -347,7 +487,7 @@ function acceptLeaseCommand(leaseId?: string, release = false) {
   ];
 }
 
-/** Allocate a bounded live slot while keeping the durable profile keyed by bot identity. */
+/** Allocate a live slot while keeping the durable profile keyed by bot identity. */
 export function managedDesktopCommand(
   screenId: string,
   leaseId: string | undefined,
@@ -360,10 +500,13 @@ export function managedDesktopCommand(
     'index=$(sed -n "1p" "$slot" 2>/dev/null || true)',
     'view_token=$(sed -n "3p" "$slot" 2>/dev/null || true)',
     'if [ -z "$index" ]; then',
-    `  for candidate in $(seq 0 ${TEAM_SCREEN_LIMIT - 1}); do`,
-    '    used=0; for other in "$dir"/*.slot; do [ -f "$other" ] || continue; [ "$(sed -n "1p" "$other")" != "$candidate" ] || used=1; done',
-    '    if [ "$used" -eq 0 ]; then index=$candidate; break; fi',
-    "  done",
+    `  index=$(python3 -c ${shellQuote(`import pathlib, sys
+used = {int(slot.read_text().splitlines()[0]) for slot in pathlib.Path(sys.argv[1]).glob("*.slot")}
+index = 0
+while index in used: index += 1
+if index > ${MAX_DESKTOP_DISPLAY - env.displayStart}: sys.exit(75)
+print(index)
+`)} "$dir")`,
     '  [ -n "$index" ] || exit 75',
     `  view_token=${shellQuote(viewToken)}`,
     "fi",
@@ -372,14 +515,7 @@ export function managedDesktopCommand(
     'printf "%s\\n%s\\n%s\\n" "$index" "$incoming" "$view_token" >"$slot.next"',
     'mv "$slot.next" "$slot"',
     "flock -u 9; exec 9>&-",
-    "case $index in",
-    ...Array.from(
-      { length: TEAM_SCREEN_LIMIT },
-      (_, index) =>
-        `${index}) bash -eu -c ${shellQuote(ensureScreenCommand(index, screenId, TOKEN_PLACEHOLDER, env).replace(shellQuote(TOKEN_PLACEHOLDER), '"$1"'))} desktop "$view_token" ;;`,
-    ),
-    "*) exit 75 ;;",
-    "esac",
+    `bash -eu -c ${shellQuote(renderEnsureScreenCommand(undefined, screenId, TOKEN_PLACEHOLDER, env).replace(shellQuote(TOKEN_PLACEHOLDER), '"$2"'))} desktop "$index" "$view_token"`,
     'printf "RAKAZO_DESKTOP=%s:%s\\n" "$index" "$view_token"',
   ].join("\n");
 }
@@ -396,14 +532,8 @@ export function releaseDesktopCommand(
     ...acceptLeaseCommand(leaseId, true),
     'index=$(sed -n "1p" "$slot")',
     "flock -u 9; exec 9>&-",
-    "case $index in",
-    ...Array.from(
-      { length: TEAM_SCREEN_LIMIT },
-      (_, index) =>
-        `${index}) bash -eu -c ${shellQuote(stopExtraScreenCommand(index, screenId, env))} ;;`,
-    ),
-    "*) exit 75 ;;",
-    "esac",
+    `bash -eu -c ${shellQuote(renderStopExtraScreenCommand(undefined, screenId, env))} desktop "$index"`,
+    'exec 9>"$dir/.lock"; flock -w 120 9',
     'rm -f "$slot"',
     'printf "RAKAZO_DESKTOP_RELEASED=%s\\n" "$index"',
   ].join("\n");
@@ -423,14 +553,7 @@ export function desktopControlCommand(
     ...acceptLeaseCommand(leaseId, !interactive),
     'index=$(sed -n "1p" "$slot")',
     "flock -u 9; exec 9>&-",
-    "case $index in",
-    ...Array.from(
-      { length: TEAM_SCREEN_LIMIT },
-      (_, index) =>
-        `${index}) bash -eu -c ${shellQuote(interactiveScreenCommand(interactive, token, screenPorts(index, env)))} ;;`,
-    ),
-    "*) exit 75 ;;",
-    "esac",
+    `bash -eu -c ${shellQuote([...layoutVariables(undefined, env), interactiveScreenCommand(interactive, token, commandLayout(undefined, env))].join("\n"))} desktop "$index"`,
   ].join("\n");
 }
 

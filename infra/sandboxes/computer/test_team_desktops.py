@@ -52,6 +52,7 @@ class Page(BaseHTTPRequestHandler):
 
 
 def assert_browser_cookies(commands, bot):
+    pages = []
     for _ in range(100):
         try:
             with urlopen(f"http://127.0.0.1:{commands['debug' + bot]}/json/list", timeout=1) as response:
@@ -73,6 +74,7 @@ def main():
         Thread(target=server.serve_forever, daemon=True).start()
     run(commands, "reset")
     run(commands, "ensurea")
+    run(commands, "seed")
     run(commands, "ensureb")
     with ThreadPoolExecutor(2) as pool:
         list(pool.map(lambda step: run(commands, step), ["opena", "openb"]))
@@ -82,6 +84,15 @@ def main():
     view_port, control_port = int(commands["viewPort"]), int(commands["controlPort"])
     viewer, response = websocket(view_port, "view-a")
     assert b"101 Switching Protocols" in response, response
+    peer, response = websocket(view_port, "view-b")
+    assert b"101 Switching Protocols" in response, response
+    old_targets = [
+        line.split(": ", 1)[1].strip().split(":", 1)[1]
+        for file in Path("/tmp/rakazo/desktop-targets").glob("*")
+        for line in file.read_text().splitlines()
+        if line.startswith(("view-a: ", "control-a: "))
+    ]
+    assert len(old_targets) == 2
     controller, response = websocket(control_port, "control-a")
     assert b"101 Switching Protocols" in response, response
 
@@ -120,6 +131,18 @@ def main():
     assert_browser_cookies(commands, "c")
     assert not (Path(commands["profilec"]) / "fake-login").exists()
     assert_browser_cookies(commands, "b")
+    # A delayed lookup of an old mapping must not reach the recycled display.
+    for target in old_targets:
+        assert not Path(target).exists(), target
+    # A peer viewer must stay connected while A is released and C starts.
+    mask = os.urandom(4)
+    peer.sendall(bytes([0x89, 0x84]) + mask + bytes(value ^ mask[index % 4] for index, value in enumerate(b"peer")))
+    data = b""
+    while b"\x8a\x04peer" not in data:
+        chunk = peer.recv(8192)
+        assert chunk, "peer viewer disconnected"
+        data += chunk
+    peer.close()
     for port, old, current in [(view_port, "view-a", "view-c"), (control_port, "control-a", "control-c")]:
         connection, response = websocket(port, old)
         connection.close()

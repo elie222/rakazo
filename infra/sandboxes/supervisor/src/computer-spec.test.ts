@@ -39,11 +39,13 @@ describe("graphical computer spec", () => {
     expect(url.searchParams.get("path")).toBe("websockify?token=current-token");
   });
 
-  it("allows operators to lower but not exceed the eight-screen capacity", () => {
-    expect(resolveTeamScreenLimit(undefined)).toBe(8);
+  it("has no small default cap and accepts optional operator limits", () => {
+    expect(resolveTeamScreenLimit(undefined)).toBeGreaterThan(1000);
+    expect(resolveTeamScreenLimit("0")).toBe(resolveTeamScreenLimit(undefined));
+    expect(resolveTeamScreenLimit("1000")).toBe(1000);
     expect(resolveTeamScreenLimit("4")).toBe(4);
-    expect(() => resolveTeamScreenLimit("0")).toThrow(/integer from 1 to 8/);
-    expect(() => resolveTeamScreenLimit("9")).toThrow(/integer from 1 to 8/);
+    for (const value of ["-1", "1.5", "not-a-number"])
+      expect(() => resolveTeamScreenLimit(value)).toThrow(/positive integer/);
   });
 
   it("creates a VNC desktop, not an alpine sleep fallback", () => {
@@ -65,37 +67,20 @@ describe("graphical computer spec", () => {
     );
     expect(options.Env).toContain("NPM_CONFIG_PREFIX=/home/rakazo/.local");
     expect(options.Env?.join("\n")).not.toMatch(/AXIOM_|LOG_LEVEL|LOG_FORMAT/);
-    expect(options.ExposedPorts).toMatchObject({
-      "6080/tcp": {},
-      "6081/tcp": {},
-      "6082/tcp": {},
-      "6083/tcp": {},
-      "6084/tcp": {},
-      "6085/tcp": {},
-      "6086/tcp": {},
-      "6087/tcp": {},
-      "6088/tcp": {},
-      "6089/tcp": {},
-      "6090/tcp": {},
-      "6091/tcp": {},
-      "6092/tcp": {},
-      "6093/tcp": {},
-      "6094/tcp": {},
-      "6095/tcp": {},
-    });
+    expect(options.ExposedPorts).toEqual({ "6080/tcp": {} });
     // Browser debugging stays inside the computer trust boundary.
-    for (let display = 1; display <= 8; display += 1) {
-      const cdpPort = `${9221 + display}/tcp`;
+    for (let index = 0; index < 1000; index += 1) {
+      const cdpPort = `${screenPorts(index).debugPort}/tcp`;
       expect(options.ExposedPorts).not.toHaveProperty(cdpPort);
       expect(options.HostConfig.PortBindings).not.toHaveProperty(cdpPort);
     }
     expect(options.ExposedPorts).not.toHaveProperty("7070/tcp");
     expect(options.HostConfig.PortBindings).not.toHaveProperty("7070/tcp");
     expect(options.HostConfig.PortBindings["6080/tcp"]?.[0]?.HostIp).toBe("127.0.0.1");
-    expect(options.HostConfig.PortBindings["6081/tcp"]?.[0]?.HostIp).toBe("127.0.0.1");
-    expect(options.HostConfig.PortBindings["6082/tcp"]?.[0]?.HostIp).toBe("127.0.0.1");
-    expect(screenPorts(0)).toMatchObject({ display: ":1", viewPort: "6080", controlPort: "6081" });
-    expect(screenPorts(1)).toMatchObject({ display: ":2", viewPort: "6082", controlPort: "6083" });
+    expect(options.HostConfig.PortBindings).not.toHaveProperty("6081/tcp");
+    expect(options.HostConfig.PortBindings).not.toHaveProperty("6082/tcp");
+    expect(screenPorts(0)).toMatchObject({ display: ":1", viewPort: "6080", controlPort: "6080" });
+    expect(screenPorts(1)).toMatchObject({ display: ":2", viewPort: "6080", controlPort: "6080" });
     expect(options.HostConfig.ShmSize).toBeGreaterThanOrEqual(256 * 1024 * 1024);
     expect(options.User).toBe("1000:1000");
     expect(options.HostConfig.CapDrop).toEqual(["ALL"]);

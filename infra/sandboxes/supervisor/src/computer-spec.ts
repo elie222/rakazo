@@ -1,24 +1,25 @@
 import { createHash } from "node:crypto";
+import { MAX_DESKTOP_DISPLAY, screenPorts } from "@rakazo/core/node/desktop-runtime";
 
 export const COMPUTER_IMAGE = process.env.RAKAZO_COMPUTER_IMAGE ?? "rakazo/computer:local";
 export const COMPUTER_UID = 1000;
 export const COMPUTER_GID = 1000;
 export const COMPUTER_USER = `${COMPUTER_UID}:${COMPUTER_GID}`;
 
-import { screenPorts, TEAM_SCREEN_LIMIT } from "@rakazo/core/node/desktop-runtime";
-
-export { screenPorts, TEAM_SCREEN_LIMIT };
+export { screenPorts };
 export const COMPUTER_CONTROL_PORT = 7070;
 export const SCREEN_HOST = process.env.SANDBOX_SCREEN_HOST ?? "127.0.0.1";
 export type ScreenNetworkMode = "published" | "internal" | "isolated";
 
 export function resolveTeamScreenLimit(value = process.env.SANDBOX_TEAM_SCREEN_LIMIT): number {
-  if (value === undefined || value.trim() === "") return TEAM_SCREEN_LIMIT;
+  if (value === undefined || value.trim() === "" || isUnlimited(value)) return MAX_DESKTOP_DISPLAY;
   const limit = Number(value);
-  if (!Number.isInteger(limit) || limit < 1 || limit > TEAM_SCREEN_LIMIT) {
-    throw new Error(`SANDBOX_TEAM_SCREEN_LIMIT must be an integer from 1 to ${TEAM_SCREEN_LIMIT}`);
+  if (!Number.isSafeInteger(limit) || limit < 1) {
+    throw new Error(
+      "SANDBOX_TEAM_SCREEN_LIMIT must be a positive integer, or 0 for no configured cap",
+    );
   }
-  return limit;
+  return Math.min(limit, MAX_DESKTOP_DISPLAY);
 }
 
 /**
@@ -135,13 +136,9 @@ export function hostComputerUser(uid = process.getuid?.(), gid = process.getgid?
 export function computerPortBindings(publishControlPort = false) {
   const ExposedPorts: Record<string, object> = {};
   const PortBindings: Record<string, Array<{ HostIp: string; HostPort: string }>> = {};
-  for (let index = 0; index < TEAM_SCREEN_LIMIT; index += 1) {
-    const ports = screenPorts(index);
-    ExposedPorts[`${ports.viewPort}/tcp`] = {};
-    ExposedPorts[`${ports.controlPort}/tcp`] = {};
-    PortBindings[`${ports.viewPort}/tcp`] = [{ HostIp: "127.0.0.1", HostPort: "0" }];
-    PortBindings[`${ports.controlPort}/tcp`] = [{ HostIp: "127.0.0.1", HostPort: "0" }];
-  }
+  const port = `${screenPorts(0).viewPort}/tcp`;
+  ExposedPorts[port] = {};
+  PortBindings[port] = [{ HostIp: "127.0.0.1", HostPort: "0" }];
   // Host-run Docker Desktop supervisors need an opt-in loopback mapping.
   // Otherwise control stays unpublished on the container network.
   if (publishControlPort) {

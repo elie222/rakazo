@@ -6,10 +6,9 @@ export function desktopCommandResponder() {
     if (key && command.includes("RAKAZO_DESKTOP=")) {
       let index = slots.get(key);
       if (index === undefined) {
-        index = Array.from({ length: 8 }, (_, candidate) => candidate).find(
-          (candidate) => ![...slots.values()].includes(candidate),
-        );
-        if (index === undefined) return { exitCode: 75, stdout: "", stderr: "full" };
+        const used = new Set(slots.values());
+        index = 0;
+        while (used.has(index)) index++;
         slots.set(key, index);
       }
       return { exitCode: 0, stdout: `RAKAZO_DESKTOP=${index}:view-${key}\n`, stderr: "" };

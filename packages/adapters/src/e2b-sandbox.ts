@@ -72,7 +72,6 @@ export class E2BSandboxProvider implements SandboxProvider {
       browserProfilesDir: E2B_BROWSER_PROFILES,
       displayStart: 20,
       portStart: 6100,
-      vncPortStart: 5920,
     }),
     run: async (computer, command, context) => {
       const result = await this.runSetupCommand(await this.box(computer), command, context.signal);
