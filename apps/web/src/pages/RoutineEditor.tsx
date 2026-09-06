@@ -479,15 +479,15 @@ function InboundTriggerCard({
   const { t } = useLingui();
   const pending = !saved;
   const placeholder = t`Available after the routine is saved`;
-  const postValue = pending ? placeholder : path;
+  // GitHub delivery URL and signature header are fixed by bot id / protocol, so show
+  // them before save. The shared secret still needs a saved routine to mint.
+  const postValue = kind === "github" || !pending ? path : placeholder;
   const keyValue = pending
     ? placeholder
     : (secret ?? (configured ? t`Saved. Rotate to reveal.` : placeholder));
   const headerValue =
     kind === "github"
-      ? pending
-        ? placeholder
-        : "X-Hub-Signature-256: sha256=…"
+      ? "X-Hub-Signature-256: sha256=…"
       : pending
         ? placeholder
         : secret
