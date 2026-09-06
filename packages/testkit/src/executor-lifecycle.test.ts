@@ -776,14 +776,34 @@ describeIntegration("run executor lifecycle", () => {
       data: { state: "booting", providerRef: "" },
     });
 
-    await handles.executor.continueRun(seeded.run.id, "worker-live-boot");
+    try {
+      await handles.executor.continueRun(seeded.run.id, "worker-live-boot");
 
-    const computer = await handles.prisma.computer.findUniqueOrThrow({
-      where: { id: computerId },
-    });
-    expect(computer.state).toBe("booting");
-    const run = await handles.prisma.run.findUniqueOrThrow({ where: { id: seeded.run.id } });
-    expect(run.status).not.toBe("completed");
+      const computer = await handles.prisma.computer.findUniqueOrThrow({
+        where: { id: computerId },
+      });
+      expect(computer.state).toBe("booting");
+      const run = await handles.prisma.run.findUniqueOrThrow({ where: { id: seeded.run.id } });
+      expect(run.status).not.toBe("completed");
+    } finally {
+      // Shared Postgres journeys reuse one database. Leave this run terminal and the computer
+      // unblocked so later suites' reconcilers do not keep retrying a wedged boot forever.
+      await handles.prisma.computerExecutionLease.deleteMany({ where: { computerId } });
+      await handles.prisma.computer.update({
+        where: { id: computerId },
+        data: { state: "error", providerRef: "" },
+      });
+      await handles.prisma.run.updateMany({
+        where: { id: seeded.run.id, status: { notIn: ["completed", "failed", "cancelled"] } },
+        data: {
+          status: "failed",
+          error: "test cleanup after live-boot lease check",
+          leaseOwner: null,
+          leaseExpiresAt: null,
+          completedAt: new Date(),
+        },
+      });
+    }
   });
 
   async function seedRun(
