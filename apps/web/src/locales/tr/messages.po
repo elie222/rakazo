@@ -3348,3 +3348,109 @@ msgstr ""
 #: src/pages/VoiceSettingsOverlay.tsx:57
 msgid "Voice is temporarily unavailable."
 msgstr ""
+
+#: src/components/AttachmentMenu.tsx:63
+msgid "Attach image"
+msgstr ""
+
+#: src/components/AttachmentMenu.tsx:71
+msgid "Choose file"
+msgstr ""
+
+#: src/components/ComputerNavigationControls.tsx:141
+msgid "Click and drag"
+msgstr ""
+
+#: src/components/ComputerNavigationControls.tsx:168
+msgid "Copy and paste"
+msgstr ""
+
+#: src/components/ComputerNavigationControls.tsx:114
+msgid "Fit screen"
+msgstr ""
+
+#: src/components/ComputerNavigationControls.tsx:180
+msgid "Move the pointer"
+msgstr ""
+
+#: src/components/ComputerNavigationControls.tsx:137
+msgid "Move two fingers up, down, or sideways."
+msgstr ""
+
+#: src/components/ComputerNavigationControls.tsx:129
+#: src/components/ComputerNavigationControls.tsx:131
+msgid "Moving around"
+msgstr ""
+
+#: src/pages/shell/bot-picker.tsx:61
+msgid "New group chat"
+msgstr ""
+
+#: src/components/ComputerNavigationControls.tsx:169
+msgid "Open the clipboard button to copy selected computer text or paste text into the computer."
+msgstr ""
+
+#: src/components/ComputerNavigationControls.tsx:152
+msgid "Pinch to zoom. While zoomed in, use two fingers to move around the screen. Choose Fit screen to zoom out."
+msgstr ""
+
+#: src/components/ComputerNavigationControls.tsx:110
+msgid "Recenter pointer"
+msgstr ""
+
+#: src/components/ComputerNavigationControls.tsx:146
+msgid "Right-click"
+msgstr ""
+
+#: src/components/ComputerNavigationControls.tsx:136
+msgid "Scroll"
+msgstr ""
+
+#: src/pages/Shell.tsx:2613
+#: src/pages/Shell.tsx:2673
+msgid "Search conversations"
+msgstr ""
+
+#: src/components/AttachmentMenu.tsx:67
+msgid "Take photo"
+msgstr ""
+
+#: src/components/ComputerNavigationControls.tsx:142
+msgid "Tap to click. Move one finger to drag an item."
+msgstr ""
+
+#: src/components/ComputerNavigationControls.tsx:147
+msgid "Tap with two fingers, or touch and hold."
+msgstr ""
+
+#: src/components/ComputerNavigationControls.tsx:164
+msgid "The keyboard button opens or hides your phone’s keyboard. On a computer, type normally."
+msgstr ""
+
+#: src/components/ComputerNavigationControls.tsx:106
+#: src/components/ComputerNavigationControls.tsx:173
+#: src/components/ComputerNavigationControls.tsx:175
+msgid "Trackpad mode"
+msgstr ""
+
+#: src/components/ComputerNavigationControls.tsx:181
+msgid "Turn on Trackpad mode in the menu. Slide one finger to move the pointer and tap to click. Tap twice and hold the second touch to drag. Recenter pointer brings it back to the middle."
+msgstr ""
+
+#: src/components/ComputerNavigationControls.tsx:163
+msgid "Type"
+msgstr ""
+
+#: src/components/ComputerNavigationControls.tsx:156
+#: src/components/ComputerNavigationControls.tsx:158
+msgid "Typing and clipboard"
+msgstr ""
+
+#: src/components/ComputerNavigationControls.tsx:85
+#: src/components/ComputerNavigationControls.tsx:125
+msgid "Using the computer"
+msgstr ""
+
+#: src/components/ComputerNavigationControls.tsx:151
+msgid "Zoom"
+msgstr ""

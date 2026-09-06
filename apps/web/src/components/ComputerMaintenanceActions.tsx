@@ -16,7 +16,7 @@ import {
   DropdownMenuTrigger,
 } from "@rakazo/ui-web";
 import { MoreHorizontal } from "lucide-react";
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import { rpc } from "../lib/rpc";
 
 type Action = "recover" | "reset" | "update";
@@ -25,10 +25,12 @@ export function ComputerMaintenanceActions({
   botId,
   computer,
   onChanged,
+  children,
 }: {
   botId: string;
   computer: ComputerStatus | null;
   onChanged: () => Promise<void>;
+  children?: ReactNode;
 }) {
   const { t } = useLingui();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -47,7 +49,7 @@ export function ComputerMaintenanceActions({
   const showReset = showRecover;
   const showUpdate = computer.updateAvailable;
   const hasActions = showRecover || showReset || showUpdate;
-  if (!hasActions) return null;
+  if (!hasActions && !children) return null;
 
   async function run(action: Action) {
     setPending(action);
@@ -115,7 +117,7 @@ export function ComputerMaintenanceActions({
         <DropdownMenuTrigger
           data-testid="computer-more-button"
           aria-label={t`More computer actions`}
-          disabled={busy && pending === null}
+          disabled={!children && busy && pending === null}
           render={<Button variant="ghost" size="icon-sm" className="text-muted-foreground" />}
         >
           <MoreHorizontal />
@@ -125,6 +127,7 @@ export function ComputerMaintenanceActions({
           data-testid="computer-more-menu"
           className="w-auto min-w-44"
         >
+          {children}
           {showRecover ? (
             <DropdownMenuItem
               closeOnClick={false}

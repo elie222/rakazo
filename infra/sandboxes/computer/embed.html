@@ -15,7 +15,8 @@
         overflow: hidden;
       }
       body { display: flex; flex-direction: column; color: white; font: 14px system-ui, sans-serif; }
-      #screen { flex: 1; min-height: 0; background: black; }
+      #screen { position: relative; touch-action: none; flex: 1; min-height: 0; background: black; }
+      #touch-pointer { position: absolute; pointer-events: none; z-index: 2; width: 24px; height: 28px; }
       #controls { display: flex; flex: none; justify-content: space-between; padding: 10px 16px; background: black; }
       #controls[hidden] { display: none; }
       button { min-height: 44px; border: 1px solid #333; border-radius: 999px; padding: 10px 16px; background: #171717; color: white; font: inherit; cursor: pointer; }
@@ -33,7 +34,9 @@
       import { attachHostClipboardPaste, pasteHostText } from "./clipboard-bridge.js";
       import Keyboard from "./core/input/keyboard.js";
       import RFB from "./core/rfb.js";
+      import { releaseCapture } from "./core/util/events.js";
       import { attachMobileControls } from "./mobile-controls.js";
+      import { attachTouchNavigation } from "./touch-navigation.js";
 
       function query(name, fallback) {
         const match = `${document.location.href}${window.location.hash}`.match(
@@ -59,6 +62,7 @@
       if (!rfb.viewOnly) {
         attachHostClipboardPaste(rfb, { target: document.getElementById("screen") });
         attachMobileControls(rfb, Keyboard, pasteHostText);
+        rfb.addEventListener("connect", () => attachTouchNavigation(rfb, releaseCapture), { once: true });
       }
     </script>
   </head>

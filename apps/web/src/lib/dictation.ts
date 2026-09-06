@@ -125,6 +125,16 @@ export class Dictation {
     const spaceId = selectedSpaceId();
     this.onFinal = opts.onFinal;
     this.set({ status: "listening", transcript: "" });
+    // Hosted transcription is the paid service path. Browser recognition may
+    // expose an API but still fail because its separate speech service is unavailable.
+    if (
+      opts.transcribe &&
+      typeof MediaRecorder === "function" &&
+      typeof navigator.mediaDevices?.getUserMedia === "function"
+    ) {
+      await this.listenRecorder(mine, opts.mode, opts.endpointMs ?? 850, spaceId);
+      return;
+    }
     if (webSpeechAvailable()) {
       this.listenWebSpeech(opts.mode, opts.endpointMs ?? 850, mine);
       return;

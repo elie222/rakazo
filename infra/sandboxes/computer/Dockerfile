@@ -64,6 +64,7 @@ COPY --chmod=644 fluxbox.apps /etc/rakazo/fluxbox/apps
 COPY --chmod=644 fluxbox.menu /etc/rakazo/fluxbox/menu
 COPY --chmod=644 embed.html /usr/share/novnc/embed.html
 COPY --chmod=644 mobile-controls.js /usr/share/novnc/mobile-controls.js
+COPY --chmod=644 touch-navigation.js /usr/share/novnc/touch-navigation.js
 COPY --chmod=644 tint2rc /etc/rakazo/tint2rc
 COPY --chmod=644 clipboard-bridge.js /usr/share/novnc/clipboard-bridge.js
 # Strip CR so shebangs work even if the build context came from a CRLF checkout.

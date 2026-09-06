@@ -46,12 +46,17 @@ export function speakable(input: string): string {
   if (!input) return "";
   let text = input;
 
-  text = text.replace(/```([^\n]*)\n[\s\S]*?(?:```|$)/g, (_m, fence: string) =>
-    describeCodeBlock(fence),
-  );
-  text = text.replace(/~~~([^\n]*)\n[\s\S]*?(?:~~~|$)/g, (_m, fence: string) =>
-    describeCodeBlock(fence),
-  );
+  const fenced = (_match: string, fence: string, content: string) => {
+    const plain = !fence.trim() || /^(text|txt|plaintext)$/i.test(fence.trim());
+    const short = content.trim();
+    // Small plain-text results are often file contents the caller asked to hear.
+    if (plain && short.length <= 160 && /^[\p{L}\p{N}\s.,!?:;'"()-]+$/u.test(short)) {
+      return ` ${short} `;
+    }
+    return describeCodeBlock(fence);
+  };
+  text = text.replace(/```([^\n]*)\n([\s\S]*?)(?:```|$)/g, fenced);
+  text = text.replace(/~~~([^\n]*)\n([\s\S]*?)(?:~~~|$)/g, fenced);
 
   text = text.replace(/!\[([^\]]*)\]\([^)]*\)/g, (_m, alt: string) =>
     alt ? `. (image: ${alt}) ` : ". (an image) ",
@@ -102,6 +107,7 @@ export function speakable(input: string): string {
   text = text.replace(/\s+([.,!?;:])/g, "$1");
   text = text.replace(/(?:\.\s*){2,}/g, ". ");
   text = text.replace(/,\s*\./g, ".");
+  text = text.replace(/:\s*\./g, ":");
   text = text.trim();
 
   return /[\p{L}\p{N}]/u.test(text) ? text : "";

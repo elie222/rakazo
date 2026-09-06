@@ -39,6 +39,19 @@ function stubRecorderFallback(fetchMock: ReturnType<typeof vi.fn>) {
 }
 
 describe("Dictation recorder fallback", () => {
+  it("uses hosted transcription even when browser recognition is advertised", async () => {
+    const recognition = vi.fn();
+    vi.stubGlobal("window", { SpeechRecognition: recognition });
+    const fetchMock = vi.fn(async () => Response.json({ text: "Open the browser" }));
+    stubRecorderFallback(fetchMock);
+    const final = vi.fn();
+    const dictation = new Dictation();
+    await dictation.listen({ mode: "hold", transcribe: true, onFinal: final });
+    dictation.submitHold();
+    await vi.waitFor(() => expect(final).toHaveBeenCalledWith("Open the browser"));
+    expect(recognition).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
   it("stops tracks if hold-to-talk is cancelled while the mic prompt is open", async () => {
     const track = { stop: vi.fn() };
     let grant!: (stream: { getTracks: () => Array<{ stop: () => void }> }) => void;

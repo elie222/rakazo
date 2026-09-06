@@ -70,6 +70,7 @@ import {
 } from "@rakazo/ui-web";
 import {
   ArrowDown,
+  ArrowLeft,
   ArrowUp,
   Bell,
   Box,
@@ -81,7 +82,6 @@ import {
   Lock,
   LogOut,
   Maximize2,
-  Menu,
   Mic,
   Monitor,
   PanelLeftClose,
@@ -90,6 +90,7 @@ import {
   Plus,
   Puzzle,
   Reply,
+  Search,
   Settings,
   Square,
   ThumbsUp,
@@ -114,8 +115,10 @@ import {
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { ArtifactFileCard } from "../components/ArtifactFileCard";
 import { AskCard } from "../components/AskCard";
+import { AttachmentMenu } from "../components/AttachmentMenu";
 import { ActiveBotGlyph, CollaborationMarker } from "../components/ai/CollaborationMarker";
 import { ComputerMaintenanceActions } from "../components/ComputerMaintenanceActions";
+import { ComputerNavigationControls } from "../components/ComputerNavigationControls";
 import {
   ComputersUnavailableHint,
   computersAreUnavailable,
@@ -433,6 +436,8 @@ export function ShellPage() {
     useState<ReadonlySet<string>>(readSeenRunErrorIds);
   const [menuOpen, setMenuOpen] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
+  const sidebarSearchRef = useRef<HTMLInputElement>(null);
   const [desktopLayout, setDesktopLayout] = useState(
     () => window.matchMedia("(min-width: 768px)").matches,
   );
@@ -473,6 +478,21 @@ export function ShellPage() {
   } | null>(null);
   // The context menu anchors to the pointer, so return focus to the row that opened it.
   const botMenuAnchor = useRef<HTMLElement | null>(null);
+  const rosterHold = useRef<{ timer: ReturnType<typeof setTimeout>; x: number; y: number } | null>(
+    null,
+  );
+  const rosterHeld = useRef<{ id: string; until: number } | null>(null);
+  const cancelRosterHold = () => {
+    if (rosterHold.current) clearTimeout(rosterHold.current.timer);
+    rosterHold.current = null;
+  };
+  useEffect(
+    () => () => {
+      if (rosterHold.current) clearTimeout(rosterHold.current.timer);
+    },
+    [],
+  );
+
   useEffect(() => {
     if (botMenu || !botMenuAnchor.current) return;
     botMenuAnchor.current.focus();
@@ -499,6 +519,7 @@ export function ShellPage() {
   const [routineError, setRoutineError] = useState<string | null>(null);
   const [screenUrl, setScreenUrl] = useState<string | null>(null);
   const [computerOpen, setComputerOpen] = useState(false);
+  const computerFrameRef = useRef<HTMLIFrameElement>(null);
   const [computerViewportHeight, setComputerViewportHeight] = useState<number>();
   useEffect(() => {
     if (!computerOpen || !window.visualViewport) return;
@@ -2536,14 +2557,16 @@ export function ShellPage() {
           type="button"
           aria-label={t`Close navigation`}
           onClick={() => setMobileSidebarOpen(false)}
-          className="absolute inset-y-0 end-0 start-[min(calc(100%-48px),316px)] z-30 bg-overlay md:hidden"
-        />
+          className="absolute start-4 top-4 z-50 h-11 w-11 rounded-full md:hidden"
+        >
+          <ArrowLeft size={20} className="mx-auto" />
+        </button>
       ) : null}
       <aside
         data-testid="bots-sidebar"
         data-collapsed={botsSidebarCollapsed ? "true" : "false"}
         inert={desktopLayout ? botsSidebarCollapsed : !mobileSidebarOpen}
-        className={`absolute inset-y-0 start-0 z-40 flex w-[calc(100%-48px)] max-w-[316px] shrink-0 flex-col border-e border-sidebar-border bg-sidebar transition-[transform,width,opacity] md:static md:z-auto md:translate-x-0 ${
+        className={`absolute inset-y-0 start-0 z-40 flex w-full max-w-none shrink-0 flex-col bg-background md:max-w-[316px] md:border-e md:border-sidebar-border md:bg-sidebar transition-[transform,width,opacity] md:static md:z-auto md:translate-x-0 ${
           mobileSidebarOpen ? "translate-x-0" : "-translate-x-full rtl:translate-x-full"
         } ${
           botsSidebarCollapsed
@@ -2553,6 +2576,7 @@ export function ShellPage() {
       >
         <div className="app-drag flex items-center justify-between px-[18px] pb-3 pt-4">
           <WindowChrome />
+          <span className="h-11 w-11 md:hidden" />
           <div className="relative flex items-center gap-2.5">
             <button
               type="button"
@@ -2584,13 +2608,25 @@ export function ShellPage() {
             >
               <PanelLeftClose size={15} strokeWidth={1.8} aria-hidden="true" />
             </button>
+            <button
+              type="button"
+              aria-label={t`Search conversations`}
+              className="app-no-drag grid h-11 w-11 place-items-center rounded-full bg-muted md:hidden"
+              onClick={() => {
+                setMobileSearchOpen(true);
+                requestAnimationFrame(() => sidebarSearchRef.current?.focus());
+              }}
+            >
+              <Search size={21} />
+            </button>
             <Popover open={createMenuOpen} onOpenChange={setCreateMenuOpen}>
               <PopoverTrigger
-                className="app-no-drag text-[21px] text-muted-foreground/70 hover:text-foreground/75"
+                className="app-no-drag grid h-11 w-11 place-items-center rounded-full bg-muted text-foreground md:h-7 md:w-7 md:bg-transparent md:text-muted-foreground"
                 title={t`Create`}
+                aria-label={t`Create`}
                 data-testid="create-menu-trigger"
               >
-                +
+                <Plus size={22} strokeWidth={1.8} />
               </PopoverTrigger>
               {/* Unmount with the state change so the panel it opens never coexists with the menu. */}
               {createMenuOpen ? (
@@ -2600,6 +2636,7 @@ export function ShellPage() {
                 >
                   <BotCreatePicker
                     bots={bots}
+                    compact={!desktopLayout}
                     onCreateBot={() => {
                       setCreateMenuOpen(false);
                       void createBotQuick();
@@ -2611,6 +2648,7 @@ export function ShellPage() {
                     }}
                     onCreateGroup={() => {
                       setCreateMenuOpen(false);
+                      setMobileSidebarOpen(false);
                       setPanel("create-group");
                     }}
                     onCreateSpace={() => {
@@ -2623,11 +2661,16 @@ export function ShellPage() {
             </Popover>
           </div>
         </div>
-        <InputGroup data-testid="sidebar-search" className="mx-2.5 mb-3 w-auto rounded-xl bg-card">
+        <InputGroup
+          data-testid="sidebar-search"
+          className={`mx-4 md:mx-2.5 mb-3 w-auto rounded-full bg-card ${mobileSearchOpen || query ? "" : "hidden md:flex"}`}
+        >
           <InputGroupAddon>
-            <span aria-hidden="true">⌕</span>
+            <Search size={15} aria-hidden="true" />
           </InputGroupAddon>
           <InputGroupInput
+            ref={sidebarSearchRef}
+            aria-label={t`Search conversations`}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder={t`Search`}
@@ -2652,13 +2695,24 @@ export function ShellPage() {
                 />
               ) : null}
               {sidebarGroups.map((group) => {
-                const collapsed = Boolean(group.title) && collapsedSidebarSections.has(group.key);
+                const pinnedShelf =
+                  !desktopLayout &&
+                  group.bots.length > 0 &&
+                  group.bots.every((item) => item.chat.pinned);
+                const collapsed =
+                  !pinnedShelf && Boolean(group.title) && collapsedSidebarSections.has(group.key);
                 const groupBotIds = group.bots.flatMap((item) =>
                   item.kind === "bot" ? [item.chat.id] : [],
                 );
                 return (
-                  <div key={group.key} data-sidebar-group={group.key}>
-                    {group.title ? (
+                  <div
+                    key={group.key}
+                    data-sidebar-group={group.key}
+                    className={pinnedShelf ? "flex gap-3 overflow-x-auto px-2 py-6" : undefined}
+                  >
+                    {group.title &&
+                    !pinnedShelf &&
+                    (desktopLayout || !["Pinned", "Unassigned"].includes(group.title)) ? (
                       <div className="pt-2">
                         <button
                           type="button"
@@ -2746,7 +2800,48 @@ export function ShellPage() {
                             event.preventDefault();
                             reorderRosterBot(item.chat.id, target, groupBotIds);
                           }}
+                          onPointerDown={(event) => {
+                            cancelRosterHold();
+                            if (
+                              event.pointerType === "mouse" ||
+                              item.chat.spaceId !== bootstrapMe?.spaceId
+                            )
+                              return;
+                            const anchor = event.currentTarget,
+                              x = event.clientX,
+                              y = event.clientY;
+                            rosterHold.current = {
+                              x,
+                              y,
+                              timer: setTimeout(() => {
+                                rosterHeld.current = { id: item.chat.id, until: Date.now() + 1200 };
+                                botMenuAnchor.current = anchor;
+                                setBotMenu({
+                                  kind: item.kind,
+                                  id: item.chat.id,
+                                  position: { x, y },
+                                });
+                              }, 550),
+                            };
+                          }}
+                          onPointerMove={(event) => {
+                            const hold = rosterHold.current;
+                            if (
+                              hold &&
+                              Math.hypot(event.clientX - hold.x, event.clientY - hold.y) > 10
+                            )
+                              cancelRosterHold();
+                          }}
+                          onPointerUp={cancelRosterHold}
+                          onPointerCancel={cancelRosterHold}
                           onClick={() => {
+                            if (
+                              rosterHeld.current?.id === item.chat.id &&
+                              rosterHeld.current.until > Date.now()
+                            ) {
+                              rosterHeld.current = null;
+                              return;
+                            }
                             openSpaceChat(
                               item.chat.spaceId,
                               item.kind === "bot"
@@ -2764,11 +2859,16 @@ export function ShellPage() {
                               position: { x: event.clientX, y: event.clientY },
                             });
                           }}
-                          className={`flex w-full gap-3 rounded-xl px-2.5 py-[11px] text-start ${
+                          className={`${pinnedShelf ? "flex w-28 shrink-0 flex-col items-center gap-3 rounded-3xl px-2 py-3 text-center" : "flex w-full gap-3 rounded-2xl px-2.5 py-4 text-start md:py-[11px]"} ${
                             item.kind === "bot" ? "cursor-grab active:cursor-grabbing" : ""
                           } ${
-                            (item.kind === "bot" && !inGroup && active?.id === item.chat.id) ||
-                            (item.kind === "group" && inGroup && activeGroup?.id === item.chat.id)
+                            !pinnedShelf &&
+                            (
+                              (item.kind === "bot" && !inGroup && active?.id === item.chat.id) ||
+                                (item.kind === "group" &&
+                                  inGroup &&
+                                  activeGroup?.id === item.chat.id)
+                            )
                               ? "bg-card"
                               : "hover:bg-background"
                           }`}
@@ -2781,7 +2881,7 @@ export function ShellPage() {
                             <BotAvatar
                               color={item.chat.color}
                               identity={item.chat.id}
-                              size={38}
+                              size={pinnedShelf ? 82 : desktopLayout ? 38 : 46}
                               status={item.chat.status}
                             />
                           ) : (
@@ -2791,11 +2891,13 @@ export function ShellPage() {
                                   ? (activeSnapshot.members ?? item.chat.members)
                                   : item.chat.members
                               }
-                              size={38}
+                              size={pinnedShelf ? 82 : desktopLayout ? 38 : 46}
                             />
                           )}
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-baseline justify-between gap-2">
+                          <div className={pinnedShelf ? "w-full min-w-0" : "min-w-0 flex-1"}>
+                            <div
+                              className={`flex items-baseline gap-2 ${pinnedShelf ? "justify-center" : "justify-between"}`}
+                            >
                               <span
                                 dir="auto"
                                 data-roster-bot-name={item.kind === "bot" ? "" : undefined}
@@ -2811,9 +2913,21 @@ export function ShellPage() {
                                 ) : null}
                               </span>
                               <span className="flex shrink-0 items-center gap-1.5 text-[12.5px] text-muted-foreground/80">
-                                {item.kind === "bot" && item.chat.status !== "idle"
-                                  ? item.chat.status
-                                  : ""}
+                                {desktopLayout &&
+                                item.kind === "bot" &&
+                                item.chat.status !== "idle" ? (
+                                  item.chat.status
+                                ) : !pinnedShelf ? (
+                                  <time dateTime={item.chat.updatedAt}>
+                                    {new Intl.DateTimeFormat(
+                                      undefined,
+                                      new Date(item.chat.updatedAt).toDateString() ===
+                                        new Date().toDateString()
+                                        ? { hour: "numeric", minute: "2-digit" }
+                                        : { month: "short", day: "numeric" },
+                                    ).format(new Date(item.chat.updatedAt))}
+                                  </time>
+                                ) : null}
                                 {item.chat.unread ? (
                                   <span
                                     aria-hidden="true"
@@ -2822,7 +2936,9 @@ export function ShellPage() {
                                 ) : null}
                               </span>
                             </div>
-                            {item.kind === "bot" && item.chat.title ? (
+                            {pinnedShelf ? null : item.kind === "bot" &&
+                              item.chat.title &&
+                              desktopLayout ? (
                               <>
                                 <div
                                   dir="auto"
@@ -3128,7 +3244,7 @@ export function ShellPage() {
               onClick={() => setMobileSidebarOpen(true)}
               className="app-no-drag grid h-10 w-10 shrink-0 place-items-center rounded-full text-foreground/75 hover:bg-accent md:hidden"
             >
-              <Menu size={19} strokeWidth={1.7} />
+              <ArrowLeft size={21} strokeWidth={1.7} />
             </button>
             <button
               type="button"
@@ -3946,9 +4062,24 @@ export function ShellPage() {
           <CallView
             botId={active.id}
             botName={active.name}
+            botColor={active.color}
             transcribe={Boolean(voiceStatus?.transcribe)}
             snapshot={activeSnapshot}
-            onSend={sendMessage}
+            onSend={async (text) => {
+              const botId = active.id;
+              const sent = await rpc.threads.send({ botId, text, clientNonce: newClientNonce() });
+              if (activeBotId.current === botId) {
+                updateSnapshot((current) =>
+                  applyThreadSendReceipt(
+                    current,
+                    { botId, runId: sent.runId, taskId: sent.taskId },
+                    terminalRunReceipts.current,
+                  ),
+                );
+              }
+              await refreshThreadRef.current(botId);
+              void refreshBots().catch(() => undefined);
+            }}
             onFollowUp={followUpMessage}
             onAnswer={answerMessage}
             onClose={() => setCallOpen(false)}
@@ -4050,7 +4181,10 @@ export function ShellPage() {
                 />
               ) : null}
               {active && !recordingSkill ? (
-                <ComputerMaintenanceActions
+                <ComputerNavigationControls
+                  frameRef={computerFrameRef}
+                  screenUrl={embeddedScreenUrl}
+                  enabled={hasControl && !recordingSkill}
                   botId={active.id}
                   computer={computer}
                   onChanged={async () => {
@@ -4088,6 +4222,7 @@ export function ShellPage() {
             ) : computer?.state === "running" && embeddedScreenUrl && !computerScreenError ? (
               <>
                 <iframe
+                  ref={computerFrameRef}
                   title={t`Bot screen`}
                   src={embeddedScreenUrl}
                   sandbox={screenIframeSandbox(embeddedScreenUrl)}
@@ -4862,24 +4997,12 @@ const Composer = memo(function Composer({
         data-testid="composer-bar"
         className="flex flex-wrap items-center gap-2 rounded-3xl border border-border bg-background py-[9px] pe-2.5 ps-3 sm:flex-nowrap sm:gap-3.5 sm:rounded-full"
       >
-        <input
-          ref={fileInputRef}
-          type="file"
-          multiple
+        <AttachmentMenu
+          inputRef={fileInputRef}
           accept={ATTACHMENT_ACCEPT}
-          className="hidden"
-          onChange={(event) => void onAttachmentPick(event.target.files)}
-        />
-        <Button
-          variant="outline"
-          size="icon"
-          aria-label={t`Attach file`}
           disabled={disabled}
-          onClick={() => fileInputRef.current?.click()}
-          className="rounded-full text-foreground/75"
-        >
-          <Plus size={17} strokeWidth={1.8} />
-        </Button>
+          onPick={onAttachmentPick}
+        />
         <Button
           variant="outline"
           size="icon"

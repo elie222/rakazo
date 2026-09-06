@@ -14,12 +14,14 @@ import { useMemo, useState } from "react";
 
 export function BotCreatePicker({
   bots,
+  compact = false,
   onCreateBot,
   onOpenBot,
   onCreateGroup,
   onCreateSpace,
 }: {
   bots: Bot[];
+  compact?: boolean;
   onCreateBot: () => void;
   onOpenBot: (botId: string) => void;
   onCreateGroup: () => void;
@@ -38,6 +40,37 @@ export function BotCreatePicker({
     !needle ||
     "create new bot".includes(needle) ||
     needle.split(/\s+/).every((part) => "create new bot".includes(part));
+
+  if (compact)
+    return (
+      <div data-testid="bot-create-picker" className="w-60 p-2">
+        <button
+          type="button"
+          data-testid="create-new-bot"
+          className="flex min-h-12 w-full items-center rounded-2xl px-4 text-start hover:bg-accent"
+          onClick={onCreateBot}
+        >
+          <Trans>New bot</Trans>
+        </button>
+        <button
+          type="button"
+          data-testid="create-new-group"
+          className="flex min-h-12 w-full items-center rounded-2xl px-4 text-start hover:bg-accent"
+          onClick={onCreateGroup}
+        >
+          <Trans>New group chat</Trans>
+        </button>
+        <button
+          type="button"
+          data-testid="create-new-space"
+          className="flex min-h-11 w-full items-center gap-2 rounded-2xl px-4 text-start text-sm text-muted-foreground hover:bg-accent"
+          onClick={onCreateSpace}
+        >
+          <Lock size={14} />
+          <Trans>New space</Trans>
+        </button>
+      </div>
+    );
 
   return (
     <div data-testid="bot-create-picker" className="w-[min(320px,calc(100vw-2rem))]">

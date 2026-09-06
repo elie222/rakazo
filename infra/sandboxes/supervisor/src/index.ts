@@ -661,6 +661,7 @@ async function ensureComputerImage() {
             "embed.html",
             "clipboard-bridge.js",
             "mobile-controls.js",
+            "touch-navigation.js",
             "fluxbox.init",
             "fluxbox.apps",
             "fluxbox.menu",

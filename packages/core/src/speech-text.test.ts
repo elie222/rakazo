@@ -18,6 +18,13 @@ describe("speakable", () => {
     expect(out).toContain("That's it.");
   });
 
+  it("reads short plain-text file contents but still summarizes source code", () => {
+    expect(speakable("The file contains:\n```\ncomet\n```")).toBe("The file contains: comet");
+    expect(speakable("~~~text\nHello from voice!\n~~~")).toBe("Hello from voice!");
+    expect(speakable("```\nconst x = () => {};\n```")).toContain("code block");
+    expect(speakable(`\`\`\`text\n${"word ".repeat(40)}\n\`\`\``)).toContain("code block");
+  });
+
   it("closes an unterminated fence rather than swallowing the rest", () => {
     const out = speakable("Working on it:\n\n```sh\nnpm test");
     expect(out).toContain("Working on it");
@@ -121,7 +128,7 @@ describe("toUtterances", () => {
   });
 
   it("is empty for text that speaks to nothing", () => {
-    expect(toUtterances("```\ncode only\n```")).not.toContain("code only");
+    expect(toUtterances("```js\ncode only\n```")).not.toContain("code only");
     expect(toUtterances("")).toEqual([]);
   });
 });
