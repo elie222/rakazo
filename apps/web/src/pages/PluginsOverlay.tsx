@@ -31,6 +31,7 @@ import {
 } from "@rakazo/ui-web";
 import { ChevronDown, ChevronLeft, ChevronUp, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { optionalCatalogFeedProbe } from "../lib/optional-catalog-feed";
 import { rpc } from "../lib/rpc";
 
 type SourceKind = "treg" | "executor" | "mcp" | "api" | "graphql";
@@ -112,7 +113,7 @@ export function PluginsOverlay({
       rpc.connections.catalog({}),
       rpc.capabilities.list(),
       rpc.connections.list(),
-      rpc.capabilities.catalogSearch({ query: "" }),
+      optionalCatalogFeedProbe(rpc.capabilities.catalogSearch({ query: "" })),
     ]);
     setCatalog(items);
     setConnections(rows);
