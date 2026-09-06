@@ -8,6 +8,8 @@ import {
   currentApiBase,
   deleteAccount,
   loadApiBase,
+  MAX_MOBILE_AUTH_RESPONSE_BYTES,
+  MAX_MOBILE_RPC_RESPONSE_BYTES,
   type MobileMessage,
   type MobileSnapshot,
   mergeMobileSnapshot,
@@ -195,6 +197,40 @@ describe("mobile API authentication", () => {
     expect(SecureStore.setItemAsync).not.toHaveBeenCalled();
   });
 
+  it("does not retain an oversized sign-in response", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        jsonResponse(
+          { token: "must-not-be-read" },
+          { headers: { "content-length": String(MAX_MOBILE_AUTH_RESPONSE_BYTES + 1) } },
+        ),
+      ),
+    );
+
+    await expect(signIn("ada@example.com", "correct horse")).rejects.toThrow(
+      `exceeds ${MAX_MOBILE_AUTH_RESPONSE_BYTES} bytes`,
+    );
+    expect(SecureStore.setItemAsync).not.toHaveBeenCalled();
+  });
+
+  it("times out and cancels a stalled sign-in response body", async () => {
+    vi.useFakeTimers();
+    const cancel = vi.fn();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(new ReadableStream({ cancel }))),
+    );
+
+    const pending = signIn("ada@example.com", "correct horse");
+    const rejection = expect(pending).rejects.toThrow("Request timed out");
+    await vi.advanceTimersByTimeAsync(8_000);
+
+    await rejection;
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(SecureStore.setItemAsync).not.toHaveBeenCalled();
+  });
+
   it("clears the local session even when the sign-out request fails", async () => {
     vi.mocked(SecureStore.getItemAsync).mockResolvedValue("session-token");
     vi.stubGlobal(
@@ -304,6 +340,20 @@ describe("mobile API authentication", () => {
       }),
     );
     await expect(rpc("bots/get", { botId: "missing" })).rejects.toThrow("Bot does not exist");
+  });
+
+  it("rejects an oversized RPC response before parsing it", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        jsonResponse(
+          { json: { ok: true } },
+          { headers: { "content-length": String(MAX_MOBILE_RPC_RESPONSE_BYTES + 1) } },
+        ),
+      ),
+    );
+
+    await expect(rpc("bots/get")).rejects.toThrow(`exceeds ${MAX_MOBILE_RPC_RESPONSE_BYTES} bytes`);
   });
 
   it("shares the selected space with direct API requests", async () => {

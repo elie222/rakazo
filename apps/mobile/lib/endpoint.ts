@@ -1,10 +1,13 @@
+import { readBoundedJsonResponse } from "@rakazo/core";
 import { t } from "./i18n";
 
 const LOCAL_API = "http://127.0.0.1:3100";
 const DEFAULT_API = process.env.EXPO_PUBLIC_API_URL ?? LOCAL_API;
 export const API_PROBE_TIMEOUT_MS = 8_000;
+export const MAX_API_PROBE_RESPONSE_BYTES = 64 * 1024;
 
 export type EndpointResult = { ok: true; url: string } | { ok: false; error: string };
+type HealthResponse = { json?: { ok?: boolean }; error?: { message?: string } };
 
 export function defaultApiBase() {
   return originOnly(DEFAULT_API) ?? LOCAL_API;
@@ -78,13 +81,17 @@ export async function probeApiBase(
       cancelResponseBody(res);
       return { ok: false, error: t("That URL did not look like a Rakazo server") };
     }
-    const body = (await withAbort(
-      res.json().catch(() => ({})),
-      controller.signal,
-    )) as {
-      json?: { ok?: boolean };
-      error?: { message?: string };
-    };
+    let body: HealthResponse;
+    try {
+      body = await readBoundedJsonResponse<HealthResponse>(
+        res,
+        MAX_API_PROBE_RESPONSE_BYTES,
+        controller.signal,
+      );
+    } catch (error) {
+      if (!(error instanceof SyntaxError)) throw error;
+      body = {};
+    }
     if (body.error || body.json?.ok !== true) {
       return { ok: false, error: t("That URL did not look like a Rakazo server") };
     }

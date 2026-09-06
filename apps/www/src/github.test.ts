@@ -3,6 +3,7 @@ import {
   fetchGithubStars,
   formatStarCount,
   GITHUB_STARS_TIMEOUT_MS,
+  MAX_GITHUB_STARS_RESPONSE_BYTES,
 } from "./github.js";
 
 afterEach(() => {
@@ -31,5 +32,16 @@ describe("GitHub stars", () => {
 
     await expect(pending).resolves.toBeNull();
     expect(fetchImpl.mock.calls[0]?.[1]?.signal?.aborted).toBe(true);
+  });
+
+  it("returns the fallback for an oversized GitHub response", async () => {
+    const fetchImpl = vi.fn(async () =>
+      Response.json(
+        { stargazers_count: 12_345 },
+        { headers: { "content-length": String(MAX_GITHUB_STARS_RESPONSE_BYTES + 1) } },
+      ),
+    );
+
+    await expect(fetchGithubStars(fetchImpl as unknown as typeof fetch)).resolves.toBeNull();
   });
 });
