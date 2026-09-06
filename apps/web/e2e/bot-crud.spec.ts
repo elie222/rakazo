@@ -78,23 +78,23 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
     "Finds reliable sources and turns them into concise briefs.",
   );
   const settings = page.getByTestId("bot-settings");
-  const modelSelect = settings.locator("label:has-text('Model') select");
+  const modelSelect = settings.getByTestId("bot-settings-model").locator("select");
   const teamComputer = settings.getByRole("button", { name: "Team" });
   const openWork = settings.getByTestId("bot-scratchpad");
   await expect(teamComputer).toBeHidden();
-  await expect(modelSelect).toBeHidden();
   await expect(openWork).toBeHidden();
+  await expect(modelSelect).toBeVisible();
+  await expect(modelSelect).toContainText("Space default");
   await expect(settings.getByRole("button", { name: "Save", exact: true })).toBeVisible();
   await expect(settings.getByRole("button", { name: "Recover computer" })).toHaveCount(0);
   await expect(settings.getByRole("button", { name: "Reset computer" })).toHaveCount(0);
   await expect(settings.getByRole("button", { name: "Update computer" })).toHaveCount(0);
   await captureScreenshot(page, testInfo, "27a-settings-panel");
+  await captureScreenshot(page, testInfo, "27a-bot-settings-model");
   await settings.getByText("Advanced", { exact: true }).click();
   await expect(teamComputer).toBeVisible();
   await expect(openWork).toBeVisible();
   await expect(modelSelect).toBeVisible();
-  await expect(modelSelect).toContainText("Space default");
-  await captureScreenshot(page, testInfo, "27a-bot-settings-model");
   await page.getByRole("button", { name: "Show computer" }).click();
   const sidePanel = page.getByTestId("side-panel");
   await expect(sidePanel).toHaveAttribute("data-panel", "computer");

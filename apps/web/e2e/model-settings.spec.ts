@@ -40,14 +40,11 @@ test("custom connections persist reasoning support and bot thinking", async ({
   await page.locator("main").getByRole("button", { name: "Chief", exact: true }).click();
   const settings = page.getByTestId("bot-settings");
   await expect(settings).toBeVisible();
-  const advanced = settings.getByTestId("bot-settings-advanced");
-  await advanced.evaluate((element) => {
-    (element as HTMLDetailsElement).open = true;
-  });
+  // Model lives at the top level of bot settings (not under Advanced).
   // NativeSelect sits inside a wrapping <label>, so label text includes option
   // copy and getByLabel(..., { exact: true }) misses the control. Use the
   // combobox accessible name, matching other model E2E tests.
-  const model = settings.getByRole("combobox", { name: "Model", exact: true });
+  const model = settings.getByTestId("bot-settings-model").getByRole("combobox");
   await expect(model).toBeVisible();
   await expect(model).toContainText("arbitrary-model");
   // Value key — not a /arbitrary-model/ label match, which also hits "Space default (arbitrary-model)".
@@ -65,9 +62,6 @@ test("custom connections persist reasoning support and bot thinking", async ({
   await page.reload();
   await page.locator("main").getByRole("button", { name: "Chief", exact: true }).click();
   await expect(settings).toBeVisible();
-  await advanced.evaluate((element) => {
-    (element as HTMLDetailsElement).open = true;
-  });
   await expect(thinking).toHaveValue("low");
 });
 

@@ -335,6 +335,53 @@ export function BotSettings({
           className="mt-2"
         />
       </label>
+      <label htmlFor={`${ids}-model`} className={fieldLabelClass} data-testid="bot-settings-model">
+        <Trans>Model</Trans>
+        <NativeSelect
+          id={`${ids}-model`}
+          className="mt-2 w-full"
+          value={modelKey}
+          onChange={(event) => {
+            setModelKey(event.target.value);
+            setThinkingLevel("");
+          }}
+        >
+          <NativeSelectOption value="">
+            {t`Space default`}
+            {me?.defaultModel
+              ? ` (${catalogLabel(catalog, me.defaultProvider, me.defaultModel) ?? me.defaultModel})`
+              : ""}
+          </NativeSelectOption>
+          {modelKey && !connectedOptions.some((option) => option.key === modelKey) ? (
+            <NativeSelectOption value={modelKey}>
+              {parseModelOptionKey(modelKey)?.modelId ?? modelKey}
+            </NativeSelectOption>
+          ) : null}
+          {connectedOptions.map((option) => (
+            <NativeSelectOption key={option.key} value={option.key}>
+              {option.label}
+            </NativeSelectOption>
+          ))}
+        </NativeSelect>
+      </label>
+      {thinkingOptions.length ? (
+        <label htmlFor={`${ids}-thinking`} className={fieldLabelClass}>
+          <Trans>Thinking</Trans>
+          <NativeSelect
+            id={`${ids}-thinking`}
+            className="mt-2 w-full"
+            value={thinkingLevel}
+            onChange={(event) => setThinkingLevel(event.target.value)}
+          >
+            <NativeSelectOption value="">{t`Default (medium)`}</NativeSelectOption>
+            {thinkingOptions.map((level) => (
+              <NativeSelectOption key={level} value={level}>
+                {thinkingLevelLabel(level)}
+              </NativeSelectOption>
+            ))}
+          </NativeSelect>
+        </label>
+      ) : null}
       <details
         data-testid="bot-settings-advanced"
         className="group mt-5"
@@ -357,53 +404,6 @@ export function BotSettings({
             <KnowledgeSection botId={bot.id} onSkillsChange={onSkillsChange} />
           ) : null}
         </Suspense>
-        <label htmlFor={`${ids}-model`} className={fieldLabelClass}>
-          <Trans>Model</Trans>
-          <NativeSelect
-            id={`${ids}-model`}
-            className="mt-2 w-full"
-            value={modelKey}
-            onChange={(event) => {
-              setModelKey(event.target.value);
-              setThinkingLevel("");
-            }}
-          >
-            <NativeSelectOption value="">
-              {t`Space default`}
-              {me?.defaultModel
-                ? ` (${catalogLabel(catalog, me.defaultProvider, me.defaultModel) ?? me.defaultModel})`
-                : ""}
-            </NativeSelectOption>
-            {modelKey && !connectedOptions.some((option) => option.key === modelKey) ? (
-              <NativeSelectOption value={modelKey}>
-                {parseModelOptionKey(modelKey)?.modelId ?? modelKey}
-              </NativeSelectOption>
-            ) : null}
-            {connectedOptions.map((option) => (
-              <NativeSelectOption key={option.key} value={option.key}>
-                {option.label}
-              </NativeSelectOption>
-            ))}
-          </NativeSelect>
-        </label>
-        {thinkingOptions.length ? (
-          <label htmlFor={`${ids}-thinking`} className={fieldLabelClass}>
-            <Trans>Thinking</Trans>
-            <NativeSelect
-              id={`${ids}-thinking`}
-              className="mt-2 w-full"
-              value={thinkingLevel}
-              onChange={(event) => setThinkingLevel(event.target.value)}
-            >
-              <NativeSelectOption value="">{t`Default (medium)`}</NativeSelectOption>
-              {thinkingOptions.map((level) => (
-                <NativeSelectOption key={level} value={level}>
-                  {thinkingLevelLabel(level)}
-                </NativeSelectOption>
-              ))}
-            </NativeSelect>
-          </label>
-        ) : null}
         {memoryProviderConfigured ? (
           <div className="mt-4 text-[14px] text-muted-foreground">
             <Trans>Memory scope</Trans>
