@@ -222,7 +222,8 @@ export function resetDesktopRuntimeCommand(env = DEFAULT_DESKTOP_ENV) {
     '  [ -f "$marker" ] || continue',
     // biome-ignore lint/suspicious/noTemplateCurlyInString: generated shell parameter expansion
     "  display=${marker##*-}",
-    `  case "$display" in ''|*[!0-9]*) continue ;; esac`,
+    '  [[ "$display" =~ ^(0|[1-9][0-9]{0,4})$ ]] || continue',
+    `  [ "$display" -ge ${env.displayStart} ] && [ "$display" -le ${MAX_DESKTOP_DISPLAY} ] || continue`,
     `  index=$((display - ${env.displayStart}))`,
     `  bash -eu -c ${shellQuote(stop)} desktop "$index"`,
     "done",
@@ -501,7 +502,15 @@ export function managedDesktopCommand(
     'view_token=$(sed -n "3p" "$slot" 2>/dev/null || true)',
     'if [ -z "$index" ]; then',
     `  index=$(python3 -c ${shellQuote(`import pathlib, sys
-used = {int(slot.read_text().splitlines()[0]) for slot in pathlib.Path(sys.argv[1]).glob("*.slot")}
+used = set()
+for slot in pathlib.Path(sys.argv[1]).glob("*.slot"):
+    try:
+        with slot.open() as source: used.add(int(source.readline()))
+    except ValueError: pass
+# A damaged assignment must not make a live display available to another bot.
+for marker in pathlib.Path("/tmp/rakazo").glob("browser-profile-*"):
+    display = marker.name.rsplit("-", 1)[-1]
+    if display.isascii() and display.isdigit(): used.add(int(display) - ${env.displayStart})
 index = 0
 while index in used: index += 1
 if index > ${MAX_DESKTOP_DISPLAY - env.displayStart}: sys.exit(75)

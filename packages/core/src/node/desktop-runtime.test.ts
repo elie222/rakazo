@@ -12,6 +12,7 @@ import {
   MAX_DESKTOP_DISPLAY,
   managedDesktopCommand,
   releaseDesktopCommand,
+  resetDesktopRuntimeCommand,
   screenPorts,
   shellQuote,
   stopExtraScreenCommand,
@@ -42,7 +43,9 @@ function fixture() {
           // Lifecycle processes are stubbed here; the opt-in Docker smoke runs the real commands.
           "flock() { :; }",
           `bash() { return ${failLifecycle ? 1 : 0}; }`,
-          script.replaceAll("/tmp/rakazo/desktop-assignments", root),
+          script
+            .replaceAll("/tmp/rakazo/desktop-assignments", root)
+            .replaceAll("/tmp/rakazo", root),
         ].join("\n"),
       ],
       { encoding: "utf8", timeout: 5000 },
@@ -110,6 +113,41 @@ describe("shared Linux desktop lifecycle", () => {
       }
     },
   );
+
+  it("skips damaged assignments while reserving their live display markers", () => {
+    const f = fixture();
+    writeFileSync(path.join(f.root, "empty.slot"), "");
+    writeFileSync(path.join(f.root, "invalid.slot"), "broken\nlease:1\ntoken\n");
+    writeFileSync(
+      path.join(f.root, "browser-profile-20"),
+      "/home/user/work/.browser-profiles/live",
+    );
+    expect(f.ensure("a").stdout).toContain("RAKAZO_DESKTOP=1:view-a");
+    expect(f.ensure("b").stdout).toContain("RAKAZO_DESKTOP=2:view-b");
+    expect(f.ensure("a").stdout).toContain("RAKAZO_DESKTOP=1:view-a");
+  });
+
+  it("continues resetting valid displays after invalid or out-of-range markers", () => {
+    const f = fixture();
+    for (const display of ["019", "19", "20", "22", "99999", "invalid"])
+      writeFileSync(path.join(f.root, `browser-profile-${display}`), "fixture");
+    const record = path.join(f.root, "stopped");
+    const result = spawnSync(
+      "bash",
+      [
+        "-eu",
+        "-c",
+        [
+          "pkill() { :; }; sleep() { :; }",
+          `bash() { printf '%s\\n' "$5" >>${shellQuote(record)}; }`,
+          resetDesktopRuntimeCommand(env).replaceAll("/tmp/rakazo", f.root),
+        ].join("\n"),
+      ],
+      { encoding: "utf8", timeout: 5000 },
+    );
+    expect(result.status, result.stderr).toBe(0);
+    expect(readFileSync(record, "utf8")).toBe("0\n2\n");
+  });
 
   it("stops only the selected VNC transport and keeps the shared gateway", () => {
     const command = stopExtraScreenCommand(1, "a", env);
