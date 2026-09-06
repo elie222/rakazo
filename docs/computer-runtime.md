@@ -67,6 +67,11 @@ The disposable OS image is not a portable disk snapshot. System packages install
 
 ## Verification
 
+The [agent verification guide](agent-verification.md) also describes a deterministic
+contacts-export replay through real Pi, with either a stateful fake computer or
+real Docker Chromium. It requires no inference and complements the vision
+acceptance test below.
+
 Offline tests cover tool-result images, action parsing, provider conformance (including the page-browser adapter and computer_act fallback), workspace checkpoint/restore, provider SDK translation, lifecycle integration, and multi-screen managed-provider emulators. They never call a model or live sandbox.
 
 The explicit acceptance test requires Docker (for temporary Postgres), `E2B_API_KEY`, `OPENROUTER_API_KEY`, and a vision-capable OpenRouter model id:

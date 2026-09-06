@@ -17,19 +17,22 @@ test("advanced GraphQL install shows Add GraphQL in MCP, OpenAPI, GraphQL, Execu
     (element as HTMLDetailsElement).open = true;
   });
 
+  await expect(page.getByRole("button", { name: "Manage MCP servers", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Add MCP server", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Add OpenAPI", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Add GraphQL", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Add Executor", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Add Treg", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "MCP servers", exact: true })).toBeHidden();
 
-  const advancedActions = advanced.locator("button");
-  await expect(advancedActions.nth(0)).toHaveText("MCP servers");
-  await expect(advancedActions.nth(1)).toHaveText("Add MCP server");
-  await expect(advancedActions.nth(2)).toHaveText("Add OpenAPI");
-  await expect(advancedActions.nth(3)).toHaveText("Add GraphQL");
-  await expect(advancedActions.nth(4)).toHaveText("Add Executor");
-  await expect(advancedActions.nth(5)).toHaveText("Add Treg");
+  // Catalog Search (when enabled) lives outside this group and must not affect add order.
+  const advancedActions = advanced.getByTestId("integrations-advanced-add").locator("button");
+  await expect(advancedActions).toHaveCount(5);
+  await expect(advancedActions.nth(0)).toHaveText("Add MCP server");
+  await expect(advancedActions.nth(1)).toHaveText("Add OpenAPI");
+  await expect(advancedActions.nth(2)).toHaveText("Add GraphQL");
+  await expect(advancedActions.nth(3)).toHaveText("Add Executor");
+  await expect(advancedActions.nth(4)).toHaveText("Add Treg");
   await captureScreenshot(page, testInfo, "01-graphql-advanced-order");
 
   await page.getByRole("button", { name: "Add GraphQL", exact: true }).click();

@@ -1825,8 +1825,11 @@ msgstr "읽지 않음으로 표시"
 msgid "Max"
 msgstr "최대"
 
+#: src/pages/PluginsOverlay.tsx:987
+msgid "Manage MCP servers"
+msgstr "MCP 서버 관리"
+
 #: src/pages/McpServersOverlay.tsx:255
-#: src/pages/PluginsOverlay.tsx:759
 msgid "MCP servers"
 msgstr "MCP 서버"
 

@@ -1825,8 +1825,11 @@ msgstr "अपठित चिह्नित करें"
 msgid "Max"
 msgstr "अधिकतम"
 
+#: src/pages/PluginsOverlay.tsx:987
+msgid "Manage MCP servers"
+msgstr "MCP सर्वर प्रबंधित करें"
+
 #: src/pages/McpServersOverlay.tsx:255
-#: src/pages/PluginsOverlay.tsx:759
 msgid "MCP servers"
 msgstr "MCP सर्वर"
 

@@ -1825,8 +1825,11 @@ msgstr "Mark as Unread"
 msgid "Max"
 msgstr "Max"
 
+#: src/pages/PluginsOverlay.tsx:987
+msgid "Manage MCP servers"
+msgstr "Manage MCP servers"
+
 #: src/pages/McpServersOverlay.tsx:255
-#: src/pages/PluginsOverlay.tsx:759
 msgid "MCP servers"
 msgstr "MCP servers"
 

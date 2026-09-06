@@ -1795,8 +1795,11 @@ msgstr "Marcar como no leído"
 msgid "Max"
 msgstr "Máx."
 
+#: src/pages/PluginsOverlay.tsx:987
+msgid "Manage MCP servers"
+msgstr "Gestionar servidores MCP"
+
 #: src/pages/McpServersOverlay.tsx:255
-#: src/pages/PluginsOverlay.tsx:456
 msgid "MCP servers"
 msgstr "Servidores MCP"
 
