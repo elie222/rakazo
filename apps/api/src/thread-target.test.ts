@@ -1003,7 +1003,7 @@ describe("sendThreadMessage", () => {
 });
 
 describe("stopThreadRuns", () => {
-  it("releases every active group member screen immediately", async () => {
+  it("snapshots active group screens before cancelled workers can clear their leases", async () => {
     const releaseScreen = vi.fn().mockResolvedValue(undefined);
     const execute = vi.fn(async function* () {
       yield { type: "exit", code: 0 };
@@ -1011,18 +1011,12 @@ describe("stopThreadRuns", () => {
     const transaction = {
       $queryRaw: vi.fn(),
       run: {
-        findMany: vi.fn().mockResolvedValue([
+        updateManyAndReturn: vi.fn().mockResolvedValue([
           { id: "run-a", botId: "bot-a" },
           { id: "run-b", botId: "bot-b" },
         ]),
-        updateMany: vi.fn().mockResolvedValue({ count: 2 }),
       },
       steeringMessage: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
-    };
-    const prisma = {
-      $transaction: vi.fn(async (callback: (client: typeof transaction) => unknown) =>
-        callback(transaction),
-      ),
       computer: {
         findMany: vi.fn().mockResolvedValue([
           {
@@ -1042,13 +1036,25 @@ describe("stopThreadRuns", () => {
             executionRunId: "run-b",
           },
         ]),
-        updateMany: vi.fn().mockResolvedValue({ count: 2 }),
       },
       computerExecutionLease: {
         findMany: vi.fn().mockResolvedValue([
           { computerId: "computer-db-a", runId: "run-a", fence: 2 },
           { computerId: "computer-db-b", runId: "run-b", fence: 4 },
         ]),
+      },
+    };
+    const prisma = {
+      $transaction: vi.fn(async (callback: (client: typeof transaction) => unknown) =>
+        callback(transaction),
+      ),
+      // Simulate workers clearing execution columns as soon as the transaction
+      // commits. A post-commit lookup would now miss both sandboxes.
+      computer: {
+        findMany: vi.fn().mockResolvedValue([]),
+        updateMany: vi.fn().mockResolvedValue({ count: 2 }),
+      },
+      computerExecutionLease: {
         updateMany: vi.fn().mockResolvedValue({ count: 2 }),
       },
       event: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
@@ -1103,6 +1109,7 @@ describe("stopThreadRuns", () => {
         screenLeaseId: "run-b:4",
       }),
     );
+    expect(prisma.computer.findMany).not.toHaveBeenCalled();
     expect(prisma.computerExecutionLease.updateMany).toHaveBeenCalledWith({
       where: { runId: { in: ["run-a", "run-b"] } },
       data: { expiresAt: new Date(0) },

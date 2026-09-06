@@ -892,50 +892,49 @@ export async function stopThreadRuns(
   actor: Actor,
   target: ThreadTarget,
 ) {
-  const runIds = await deps.prisma.$transaction(async (tx) => {
+  const { runIds, computers, leases } = await deps.prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT id FROM threads WHERE id = ${target.threadId} FOR UPDATE`;
-    const ids = (
-      await tx.run.findMany({
-        where: {
-          threadId: target.threadId,
-          status: { in: [...ACTIVE_RUN_STATUSES] },
-        },
-        select: { id: true },
-      })
-    ).map((run) => run.id);
-    await tx.run.updateMany({
-      where: { id: { in: ids }, status: { in: [...ACTIVE_RUN_STATUSES] } },
+    const cancelled = await tx.run.updateManyAndReturn({
+      where: {
+        threadId: target.threadId,
+        status: { in: [...ACTIVE_RUN_STATUSES] },
+      },
       data: { status: "cancelled", completedAt: new Date() },
+      select: { id: true },
     });
+    const ids = cancelled.map((run) => run.id);
     await tx.steeringMessage.deleteMany({
       where: {
         botId: { in: target.kind === "bot" ? [target.botId] : target.memberBotIds },
         message: { threadId: target.threadId },
       },
     });
-    return ids;
+    // Snapshot teardown coordinates before commit. Once cancellation becomes
+    // visible, a worker can release its execution columns immediately; a
+    // later lookup would then miss the sandbox work this request must stop.
+    const computers = ids.length
+      ? await tx.computer.findMany({
+          where: { executionRunId: { in: ids } },
+          select: {
+            id: true,
+            homeKey: true,
+            kind: true,
+            providerRef: true,
+            executionBotId: true,
+            executionRunId: true,
+          },
+        })
+      : [];
+    const leases = ids.length
+      ? await tx.computerExecutionLease.findMany({
+          where: { runId: { in: ids } },
+          select: { computerId: true, runId: true, fence: true },
+        })
+      : [];
+    return { runIds: ids, computers, leases };
   });
-  const computers = runIds.length
-    ? await deps.prisma.computer.findMany({
-        where: { executionRunId: { in: runIds } },
-        select: {
-          id: true,
-          homeKey: true,
-          kind: true,
-          providerRef: true,
-          executionBotId: true,
-          executionRunId: true,
-        },
-      })
-    : [];
   // Keep the DB lease until after teardown so a replacement run cannot claim the
   // screen while we still need the cancelled run's screenLeaseId to release it.
-  const leases = runIds.length
-    ? await deps.prisma.computerExecutionLease.findMany({
-        where: { runId: { in: runIds } },
-        select: { computerId: true, runId: true, fence: true },
-      })
-    : [];
   const leaseByComputerId = new Map(leases.map((lease) => [lease.computerId, lease]));
   await Promise.all(
     computers.map(async (computer) => {
