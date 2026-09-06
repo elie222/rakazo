@@ -55,7 +55,9 @@ test("onboarding uses compact model selects without misleading latest labels", a
   await expect(manualModel).toBeVisible();
   // Typing before the first probe must keep freeform even if the probe returns that id.
   await manualModel.fill("probed-model");
+  const firstProbeResponse = page.waitForResponse("**/rpc/models/probeOpenAiCompatible");
   await page.getByRole("button", { name: "Find models" }).click();
+  await firstProbeResponse;
   await expect(manualModel).toBeVisible();
   await expect(manualModel).toHaveValue("probed-model");
   await expect(page.getByRole("combobox", { name: "Models from server" })).toHaveCount(0);
@@ -71,13 +73,17 @@ test("onboarding uses compact model selects without misleading latest labels", a
   await expect(manualModel).toBeVisible();
   await expect(manualModel).toHaveValue("probed-model");
   // Re-probe while the typed id matches a discovered model must stay freeform.
+  const reProbeResponse = page.waitForResponse("**/rpc/models/probeOpenAiCompatible");
   await page.getByRole("button", { name: "Find models" }).click();
+  await reProbeResponse;
   await expect(manualModel).toBeVisible();
   await expect(manualModel).toHaveValue("probed-model");
   await expect(page.getByRole("combobox", { name: "Models from server" })).toHaveCount(0);
   // Editing the server URL must not drop Other model… mode either.
   await page.getByLabel("OpenAI-compatible server URL").fill("http://127.0.0.1:8091/v1");
+  const editedUrlProbeResponse = page.waitForResponse("**/rpc/models/probeOpenAiCompatible");
   await page.getByRole("button", { name: "Find models" }).click();
+  await editedUrlProbeResponse;
   await expect(manualModel).toBeVisible();
   await expect(manualModel).toHaveValue("probed-model");
   await expect(page.getByRole("combobox", { name: "Models from server" })).toHaveCount(0);
