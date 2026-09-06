@@ -220,7 +220,10 @@ export function PluginsOverlay({
               ? { openApi: true, auth }
               : sourceKind === "graphql"
                 ? { auth }
-                : { preset: "custom", auth },
+                : {
+                    preset: "custom",
+                    auth: sourceKind === "executor" ? { type: "bearer" } : auth,
+                  },
       });
       setCredential("");
       setSourceKind(null);
@@ -559,7 +562,7 @@ export function PluginsOverlay({
                         }
                       />
                     ) : null}
-                    {sourceKind !== "treg" ? (
+                    {sourceKind !== "treg" && sourceKind !== "executor" ? (
                       <NativeSelect
                         className="w-full"
                         value={authType}
@@ -576,14 +579,14 @@ export function PluginsOverlay({
                         </NativeSelectOption>
                       </NativeSelect>
                     ) : null}
-                    {authType === "header" && sourceKind !== "treg" ? (
+                    {authType === "header" && sourceKind !== "treg" && sourceKind !== "executor" ? (
                       <Input
                         value={authName}
                         onChange={(event) => setAuthName(event.target.value)}
                         placeholder={t`Header name`}
                       />
                     ) : null}
-                    {sourceKind === "treg" || authType !== "none" ? (
+                    {sourceKind === "treg" || sourceKind === "executor" || authType !== "none" ? (
                       <Input
                         type="password"
                         autoComplete="new-password"

@@ -365,8 +365,10 @@ describeWithDatabase("Composio catalog reconciliation", () => {
         provider: "mcp",
         operation: "notes.write",
         host: "executor.example.test",
+        authenticated: true,
       }),
     );
+    expect(JSON.stringify(thirdParties.records)).not.toContain(executorCredential);
     expect(thirdParties.records).toContainEqual(
       expect.objectContaining({
         provider: "mcp",

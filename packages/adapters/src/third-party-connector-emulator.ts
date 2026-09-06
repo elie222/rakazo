@@ -2,9 +2,18 @@ import type { ResolveHostname } from "./remote-mcp.js";
 
 type EmulatorRecord =
   | { provider: "pipedream"; operation: string; app?: string }
-  | { provider: "mcp"; operation: string; host: string; args?: Record<string, unknown> }
+  | {
+      provider: "mcp";
+      operation: string;
+      host: string;
+      authenticated?: boolean;
+      args?: Record<string, unknown>;
+    }
   | { provider: "openapi"; operation: string; path: string; authenticated: boolean }
   | { provider: "graphql"; operation: string; authenticated: boolean };
+
+/** Expected Executor test bearer. Compared at the boundary; never written into records. */
+const EXPECTED_EXECUTOR_BEARER = "Bearer fake-executor-credential-value";
 
 const PIPEDREAM_APPS = [
   { id: "app-linear", name_slug: "linear", name: "Linear" },
@@ -95,6 +104,12 @@ export class ThirdPartyConnectorEmulator {
     const id = request.id;
     const headers = new Headers(init?.headers);
     const app = headers.get("x-pd-app-slug") ?? undefined;
+    const authorization = headers.get("authorization");
+    // Validate bearer at the boundary; persist only the boolean, never the secret.
+    const authenticated =
+      url.hostname === "executor.example.test"
+        ? authorization === EXPECTED_EXECUTOR_BEARER
+        : Boolean(authorization?.startsWith("Bearer ") && authorization.length > "Bearer ".length);
     if (method === "notifications/initialized") return new Response(null, { status: 202 });
     if (method === "initialize") {
       return jsonRpc(id, {
@@ -106,7 +121,12 @@ export class ThirdPartyConnectorEmulator {
       });
     }
     if (method === "tools/list") {
-      this.records.push({ provider: "mcp", operation: "tools/list", host: url.hostname });
+      this.records.push({
+        provider: "mcp",
+        operation: "tools/list",
+        host: url.hostname,
+        authenticated,
+      });
       return jsonRpc(id, {
         tools: [
           {
@@ -128,6 +148,7 @@ export class ThirdPartyConnectorEmulator {
         provider: "mcp",
         operation: String(params.name ?? "unknown"),
         host: url.hostname,
+        authenticated,
         args,
       });
       const result = { ok: true, app, text: args.text ?? null };
