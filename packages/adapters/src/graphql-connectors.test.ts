@@ -556,6 +556,26 @@ describe("GraphQL execution failures", () => {
     ).rejects.toThrow(/not a JSON object/);
   });
 
+  it("preserves a bounded result for oversized successful responses", async () => {
+    const operation = importGraphqlSchema(STAR_WARS_INTROSPECTION)[0]!;
+    const result = await executeGraphqlOperation(
+      "https://graphql.example.test/graphql",
+      { auth: { type: "none" }, headers: {}, operations: [operation] },
+      operation,
+      {},
+      undefined,
+      new AbortController().signal,
+      {
+        fetch: async () => Response.json({ data: { value: "x".repeat(1_000_000) } }),
+        resolveHostname: async () => [{ address: "203.0.113.10", family: 4 as const }],
+      },
+    );
+
+    expect(result).toMatchObject({ status: 200, truncated: true });
+    expect((result as { data: unknown }).data).toEqual(expect.any(String));
+    expect((result as { data: string }).data.length).toBeLessThanOrEqual(1_000_000);
+  });
+
   it("yields type error from InstalledConnectorProvider on GraphQL errors array", async () => {
     const events = await executeGraphqlProvider(async () =>
       Response.json({ errors: [{ message: "Field 'hello' is required" }], data: null }),
