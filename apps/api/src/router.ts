@@ -3218,7 +3218,6 @@ export function createRouter(deps: RouterDeps) {
                             currentRef: string | null | undefined,
                             excludeIds?: string[],
                             spaceId?: string,
-                            timeoutMs?: number,
                           ) => Promise<string | undefined>;
                         }
                       ).resolveConnectedAccountId;
@@ -3357,7 +3356,6 @@ export function createRouter(deps: RouterDeps) {
                       ref,
                       [],
                       context.actor.spaceId,
-                      2_000,
                     ).catch(() => undefined);
                     if (resolvedSiblingId) {
                       excludeIds.push(resolvedSiblingId);
