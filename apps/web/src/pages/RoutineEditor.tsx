@@ -101,7 +101,9 @@ export function routineTriggerSummary(routine: Routine): string {
   const parts: string[] = [];
   if (routine.webhookEnabled) parts.push(t`When a webhook fires`);
   if (routine.githubEnabled) parts.push(t`Git event`);
-  if (routine.messageProvider === "slack") parts.push(t`Slack message`);
+  if (routine.messageProvider) {
+    parts.push(routine.messageProvider === "slack" ? t`Slack message` : t`Message event`);
+  }
   for (const cron of routine.crons) parts.push(formatCron(cron));
   return parts.length > 0 ? parts.join(" · ") : t`No trigger`;
 }
@@ -430,12 +432,16 @@ export function RoutineEditor({
 
             <DropdownMenuItem
               disabled={draft.messageProvider === "slack" || !messageProviders.includes("slack")}
-              title={messageProviders.includes("slack") ? undefined : t`Connect Slack first`}
               onClick={() => addMessageProvider("slack")}
             >
               <MessageSquare />
               <Trans>Slack message</Trans>
             </DropdownMenuItem>
+            {!messageProviders.includes("slack") ? (
+              <p className="px-2 py-1 text-xs text-muted-foreground">
+                <Trans>Connect Slack first</Trans>
+              </p>
+            ) : null}
 
             {COMING_SOON.map((item) => (
               <DropdownMenuItem key={item.id} disabled title={t`Coming soon`}>

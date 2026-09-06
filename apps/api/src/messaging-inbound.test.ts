@@ -345,7 +345,12 @@ describe("createMessagingInboundHandler DM routing", () => {
     expect(request.displayName).not.toMatch(/[\r\n"]/);
   });
 
-  it("wakes matching provider routines with fenced message data and webhook approvals", async () => {
+  it("wakes every matching provider routine with fenced data and webhook approvals", async () => {
+    const routines = Array.from({ length: 6 }, (_, index) => ({
+      id: `routine-${index + 1}`,
+      name: `Triage Slack ${index + 1}`,
+      prompt: `Review update ${index + 1}`,
+    }));
     const deps = createDeps({
       identity: {
         id: "mi-slack",
@@ -355,7 +360,7 @@ describe("createMessagingInboundHandler DM routing", () => {
         spaceId: "ws-1",
         botId: "bot-1",
       },
-      routines: [{ id: "routine-1", name: "Triage Slack", prompt: "Review this update" }],
+      routines,
     });
     const handle = createMessagingInboundHandler(deps);
     await handle({
@@ -376,15 +381,17 @@ describe("createMessagingInboundHandler DM routing", () => {
         }),
       }),
     );
+    expect(vi.mocked(deps.prisma.routine.findMany).mock.calls[0]?.[0]).not.toHaveProperty("take");
     expect(deps.sendUserMessage).toHaveBeenCalledTimes(2);
     expect(deps.sendUserMessage).toHaveBeenLastCalledWith(
       expect.objectContaining({
         trigger: "webhook",
         clientNonce: expect.stringMatching(/^messaging:bot-1:/),
-        prompt: expect.stringContaining('Run routine "Triage Slack":\nReview this update'),
+        prompt: expect.stringContaining('Run routine "Triage Slack 1":\nReview update 1'),
       }),
     );
     const routinePrompt = deps.sendUserMessage.mock.calls[1]?.[0]?.prompt as string;
+    expect(routinePrompt).toContain('Run routine "Triage Slack 6":\nReview update 6');
     expect(routinePrompt).toContain("<untrusted_delivery_payload>");
     expect(routinePrompt).toContain("&lt;/untrusted_delivery_payload&gt;");
     expect(deps.enqueue).toHaveBeenCalledTimes(2);

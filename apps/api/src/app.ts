@@ -538,6 +538,9 @@ export async function createApp(
         const mapped = toTeamChatInbound(event);
         if (mapped) {
           const target = await teamChatBridge.receive(mapped);
+          // Team chat is an explicitly configured external-workspace surface, not the
+          // personal line's identity/member model. Webhook-trigger approval still gates
+          // every consequential action started by these untrusted message events.
           await wakeMessageRoutines(inboundDeps, target, event);
           return;
         }

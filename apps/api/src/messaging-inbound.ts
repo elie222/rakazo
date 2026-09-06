@@ -170,7 +170,6 @@ export async function wakeMessageRoutines(
     },
     select: { id: true, name: true, prompt: true },
     orderBy: { updatedAt: "desc" },
-    take: 5,
   });
   if (routines.length === 0) return;
 
