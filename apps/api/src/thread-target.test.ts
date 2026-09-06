@@ -1003,7 +1003,7 @@ describe("sendThreadMessage", () => {
 });
 
 describe("stopThreadRuns", () => {
-  it("releases every active group member screen immediately", async () => {
+  it("snapshots every lease when group members share a team computer", async () => {
     const releaseScreen = vi.fn().mockResolvedValue(undefined);
     const execute = vi.fn(async function* () {
       yield { type: "exit", code: 0 };
@@ -1011,44 +1011,51 @@ describe("stopThreadRuns", () => {
     const transaction = {
       $queryRaw: vi.fn(),
       run: {
-        findMany: vi.fn().mockResolvedValue([
+        updateManyAndReturn: vi.fn().mockResolvedValue([
           { id: "run-a", botId: "bot-a" },
           { id: "run-b", botId: "bot-b" },
         ]),
-        updateMany: vi.fn().mockResolvedValue({ count: 2 }),
       },
       steeringMessage: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+      computer: {
+        // Production team ownership is lease-only: Computer.executionRunId stays null.
+        findMany: vi.fn().mockImplementation(async ({ where }: { where: { OR?: unknown[] } }) => {
+          expect(where.OR).toEqual(
+            expect.arrayContaining([
+              { id: { in: ["computer-db-team"] } },
+              { executionRunId: { in: ["run-a", "run-b"] } },
+            ]),
+          );
+          return [
+            {
+              id: "computer-db-team",
+              homeKey: "home-team",
+              kind: "fake",
+              providerRef: "computer-team",
+              executionBotId: null,
+              executionRunId: null,
+            },
+          ];
+        }),
+      },
+      computerExecutionLease: {
+        findMany: vi.fn().mockResolvedValue([
+          { computerId: "computer-db-team", botId: "bot-a", runId: "run-a", fence: 2 },
+          { computerId: "computer-db-team", botId: "bot-b", runId: "run-b", fence: 4 },
+        ]),
+      },
     };
     const prisma = {
       $transaction: vi.fn(async (callback: (client: typeof transaction) => unknown) =>
         callback(transaction),
       ),
+      // Simulate workers clearing leases / execution columns as soon as the
+      // transaction commits. A post-commit lookup would now miss both sandboxes.
       computer: {
-        findMany: vi.fn().mockResolvedValue([
-          {
-            id: "computer-db-a",
-            homeKey: "home-a",
-            kind: "fake",
-            providerRef: "computer-a",
-            executionBotId: "bot-a",
-            executionRunId: "run-a",
-          },
-          {
-            id: "computer-db-b",
-            homeKey: "home-b",
-            kind: "fake",
-            providerRef: "computer-b",
-            executionBotId: "bot-b",
-            executionRunId: "run-b",
-          },
-        ]),
-        updateMany: vi.fn().mockResolvedValue({ count: 2 }),
+        findMany: vi.fn().mockResolvedValue([]),
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
       },
       computerExecutionLease: {
-        findMany: vi.fn().mockResolvedValue([
-          { computerId: "computer-db-a", runId: "run-a", fence: 2 },
-          { computerId: "computer-db-b", runId: "run-b", fence: 4 },
-        ]),
         updateMany: vi.fn().mockResolvedValue({ count: 2 }),
       },
       event: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
@@ -1072,17 +1079,28 @@ describe("stopThreadRuns", () => {
       target,
     );
 
+    expect(transaction.computerExecutionLease.findMany).toHaveBeenCalledWith({
+      where: { runId: { in: ["run-a", "run-b"] } },
+      select: { computerId: true, botId: true, runId: true, fence: true },
+    });
     expect(execute).toHaveBeenCalledTimes(2);
     expect(execute).toHaveBeenCalledWith(
-      expect.objectContaining({ providerRef: "computer-a" }),
+      expect.objectContaining({ providerRef: "computer-team" }),
       expect.objectContaining({
-        argv: expect.arrayContaining(["rakazo-cancel-run-work", "computer-db-a", "run-a"]),
+        argv: expect.arrayContaining(["rakazo-cancel-run-work", "computer-db-team", "run-a"]),
       }),
-      expect.objectContaining({ cancelRunWork: true, runId: "run-a" }),
+      expect.objectContaining({ cancelRunWork: true, runId: "run-a", botId: "bot-a" }),
+    );
+    expect(execute).toHaveBeenCalledWith(
+      expect.objectContaining({ providerRef: "computer-team" }),
+      expect.objectContaining({
+        argv: expect.arrayContaining(["rakazo-cancel-run-work", "computer-db-team", "run-b"]),
+      }),
+      expect.objectContaining({ cancelRunWork: true, runId: "run-b", botId: "bot-b" }),
     );
     expect(releaseScreen).toHaveBeenCalledTimes(2);
     expect(releaseScreen).toHaveBeenCalledWith(
-      expect.objectContaining({ providerRef: "computer-a" }),
+      expect.objectContaining({ providerRef: "computer-team" }),
       expect.objectContaining({
         spaceId: "workspace-1",
         userId: "user-1",
@@ -1093,7 +1111,7 @@ describe("stopThreadRuns", () => {
       }),
     );
     expect(releaseScreen).toHaveBeenCalledWith(
-      expect.objectContaining({ providerRef: "computer-b" }),
+      expect.objectContaining({ providerRef: "computer-team" }),
       expect.objectContaining({
         spaceId: "workspace-1",
         userId: "user-1",
@@ -1103,12 +1121,108 @@ describe("stopThreadRuns", () => {
         screenLeaseId: "run-b:4",
       }),
     );
+    expect(prisma.computer.findMany).not.toHaveBeenCalled();
     expect(prisma.computerExecutionLease.updateMany).toHaveBeenCalledWith({
       where: { runId: { in: ["run-a", "run-b"] } },
       data: { expiresAt: new Date(0) },
     });
     expect(prisma.computer.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: { executionRunId: { in: ["run-a", "run-b"] } } }),
+    );
+  });
+
+  it("does not tear down a stale legacy execution run when the lease owns a cancelled run", async () => {
+    const releaseScreen = vi.fn().mockResolvedValue(undefined);
+    const execute = vi.fn(async function* () {
+      yield { type: "exit", code: 0 };
+    });
+    const transaction = {
+      $queryRaw: vi.fn(),
+      run: {
+        updateManyAndReturn: vi.fn().mockResolvedValue([{ id: "run-a", botId: "bot-a" }]),
+      },
+      steeringMessage: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+      computer: {
+        // Selected via lease for cancelled run A, but legacy columns still name
+        // unrelated live run B. Legacy teardown must not cancel/release B.
+        findMany: vi.fn().mockResolvedValue([
+          {
+            id: "computer-db-a",
+            homeKey: "home-a",
+            kind: "fake",
+            providerRef: "computer-a",
+            executionBotId: "bot-b",
+            executionRunId: "run-b",
+          },
+        ]),
+      },
+      computerExecutionLease: {
+        findMany: vi
+          .fn()
+          .mockResolvedValue([
+            { computerId: "computer-db-a", botId: "bot-a", runId: "run-a", fence: 2 },
+          ]),
+      },
+    };
+    const prisma = {
+      $transaction: vi.fn(async (callback: (client: typeof transaction) => unknown) =>
+        callback(transaction),
+      ),
+      computer: {
+        findMany: vi.fn().mockResolvedValue([]),
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+      },
+      computerExecutionLease: {
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      event: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+    } as unknown as PrismaClient;
+    const actor = {
+      spaceId: "workspace-1",
+      userId: "user-1",
+    } as Actor;
+    const target = {
+      kind: "group",
+      groupId: "group-1",
+      groupName: "Test group",
+      threadId: "thread-1",
+      members: [],
+      memberBotIds: ["bot-a", "bot-b"],
+    } satisfies ThreadTarget;
+
+    await stopThreadRuns(
+      { prisma, sandbox: { releaseScreen, execute } as unknown as SandboxProvider },
+      actor,
+      target,
+    );
+
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(execute).toHaveBeenCalledWith(
+      expect.objectContaining({ providerRef: "computer-a" }),
+      expect.objectContaining({
+        argv: expect.arrayContaining(["rakazo-cancel-run-work", "computer-db-a", "run-a"]),
+      }),
+      expect.objectContaining({ cancelRunWork: true, runId: "run-a", botId: "bot-a" }),
+    );
+    expect(execute).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        argv: expect.arrayContaining(["rakazo-cancel-run-work", "computer-db-a", "run-b"]),
+      }),
+      expect.anything(),
+    );
+    expect(releaseScreen).toHaveBeenCalledTimes(1);
+    expect(releaseScreen).toHaveBeenCalledWith(
+      expect.objectContaining({ providerRef: "computer-a" }),
+      expect.objectContaining({
+        botId: "bot-a",
+        runId: "run-a",
+        screenLeaseId: "run-a:2",
+      }),
+    );
+    expect(releaseScreen).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ runId: "run-b" }),
     );
   });
 });

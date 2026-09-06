@@ -892,68 +892,112 @@ export async function stopThreadRuns(
   actor: Actor,
   target: ThreadTarget,
 ) {
-  const runIds = await deps.prisma.$transaction(async (tx) => {
+  const { runIds, computers, leases } = await deps.prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT id FROM threads WHERE id = ${target.threadId} FOR UPDATE`;
-    const ids = (
-      await tx.run.findMany({
-        where: {
-          threadId: target.threadId,
-          status: { in: [...ACTIVE_RUN_STATUSES] },
-        },
-        select: { id: true },
-      })
-    ).map((run) => run.id);
-    await tx.run.updateMany({
-      where: { id: { in: ids }, status: { in: [...ACTIVE_RUN_STATUSES] } },
+    const cancelled = await tx.run.updateManyAndReturn({
+      where: {
+        threadId: target.threadId,
+        status: { in: [...ACTIVE_RUN_STATUSES] },
+      },
       data: { status: "cancelled", completedAt: new Date() },
+      select: { id: true },
     });
+    const ids = cancelled.map((run) => run.id);
     await tx.steeringMessage.deleteMany({
       where: {
         botId: { in: target.kind === "bot" ? [target.botId] : target.memberBotIds },
         message: { threadId: target.threadId },
       },
     });
-    return ids;
+    // Snapshot teardown coordinates before commit. Once cancellation becomes
+    // visible, a worker can release its lease / execution columns immediately; a
+    // later lookup would then miss the sandbox work this request must stop.
+    // Team ownership lives on ComputerExecutionLease; Computer.executionRunId is
+    // only a legacy secondary path and is not written by current acquisition.
+    const leases = ids.length
+      ? await tx.computerExecutionLease.findMany({
+          where: { runId: { in: ids } },
+          select: { computerId: true, botId: true, runId: true, fence: true },
+        })
+      : [];
+    const leaseComputerIds = [...new Set(leases.map((lease) => lease.computerId))];
+    const computers = ids.length
+      ? await tx.computer.findMany({
+          where:
+            leaseComputerIds.length > 0
+              ? {
+                  OR: [{ id: { in: leaseComputerIds } }, { executionRunId: { in: ids } }],
+                }
+              : { executionRunId: { in: ids } },
+          select: {
+            id: true,
+            homeKey: true,
+            kind: true,
+            providerRef: true,
+            executionBotId: true,
+            executionRunId: true,
+          },
+        })
+      : [];
+    return { runIds: ids, computers, leases };
   });
-  const computers = runIds.length
-    ? await deps.prisma.computer.findMany({
-        where: { executionRunId: { in: runIds } },
-        select: {
-          id: true,
-          homeKey: true,
-          kind: true,
-          providerRef: true,
-          executionBotId: true,
-          executionRunId: true,
-        },
-      })
-    : [];
   // Keep the DB lease until after teardown so a replacement run cannot claim the
   // screen while we still need the cancelled run's screenLeaseId to release it.
-  const leases = runIds.length
-    ? await deps.prisma.computerExecutionLease.findMany({
-        where: { runId: { in: runIds } },
-        select: { computerId: true, runId: true, fence: true },
-      })
-    : [];
-  const leaseByComputerId = new Map(leases.map((lease) => [lease.computerId, lease]));
+  const computerById = new Map(computers.map((computer) => [computer.id, computer]));
+  const teardownTargets: Array<{
+    computer: (typeof computers)[number];
+    botId: string;
+    runId: string;
+    lease: (typeof leases)[number] | null;
+  }> = [];
+  const seenTargets = new Set<string>();
+  for (const lease of leases) {
+    const computer = computerById.get(lease.computerId);
+    if (!computer) continue;
+    const key = `${computer.id}:${lease.runId}`;
+    if (seenTargets.has(key)) continue;
+    seenTargets.add(key);
+    teardownTargets.push({
+      computer,
+      botId: lease.botId,
+      runId: lease.runId,
+      lease,
+    });
+  }
+  const cancelledRunIds = new Set(runIds);
+  for (const computer of computers) {
+    if (!computer.executionBotId || !computer.executionRunId) continue;
+    // Computers may enter the snapshot via a cancelled lease while
+    // Computer.executionRunId still points at an unrelated live run. Only treat
+    // the legacy columns as a teardown target when they belong to a run we
+    // cancelled in this transaction.
+    if (!cancelledRunIds.has(computer.executionRunId)) continue;
+    const key = `${computer.id}:${computer.executionRunId}`;
+    if (seenTargets.has(key)) continue;
+    seenTargets.add(key);
+    teardownTargets.push({
+      computer,
+      botId: computer.executionBotId,
+      runId: computer.executionRunId,
+      lease: null,
+    });
+  }
   await Promise.all(
-    computers.map(async (computer) => {
-      if (!computer.providerRef || !computer.executionBotId || !computer.executionRunId) return;
-      const lease = leaseByComputerId.get(computer.id) ?? null;
+    teardownTargets.map(async ({ computer, botId, runId, lease }) => {
+      if (!computer.providerRef) return;
       const context = {
         operationId: "stop",
         traceId: "stop",
         spaceId: actor.spaceId,
         userId: actor.userId,
-        botId: computer.executionBotId,
-        runId: computer.executionRunId,
-        screenLeaseId: screenLeaseIdForRun(lease, computer.executionRunId),
+        botId,
+        runId,
+        screenLeaseId: screenLeaseIdForRun(lease, runId),
         cancelRunWork: true,
         signal: new AbortController().signal,
       };
       const ref = toComputerRef(computer);
-      await cancelComputerRunWork(deps.sandbox, ref, computer.id, computer.executionRunId, context);
+      await cancelComputerRunWork(deps.sandbox, ref, computer.id, runId, context);
       await deps.sandbox.releaseScreen?.(ref, context).catch(() => undefined);
     }),
   );
