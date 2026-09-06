@@ -534,7 +534,8 @@ describe("team chat bridge", () => {
           const isRoutingHold =
             input.where?.status === "deferred" &&
             input.data?.nextAttemptAt instanceof Date &&
-            input.data.engagementReason === "message_routine_routing" &&
+            (input.data.engagementReason === "message_routine_routing" ||
+              input.data.engagementReason === "message_routine_routing_rearmed") &&
             input.data.status === undefined;
           // Heartbeat renewals omit nextAttemptAt from the where clause; recovery
           // re-arms CAS on nextAttemptAt and must still succeed after lease loss.
@@ -546,7 +547,7 @@ describe("team chat bridge", () => {
           }
           if (isRoutingHold && input.where?.nextAttemptAt !== undefined) {
             leaseUntil = input.data!.nextAttemptAt as Date;
-            engagementReason = input.data!.engagementReason ?? "message_routine_routing";
+            engagementReason = input.data!.engagementReason ?? "message_routine_routing_rearmed";
             return { count: 1 };
           }
           if (
@@ -604,7 +605,7 @@ describe("team chat bridge", () => {
       await bridge.reconcileOnce();
 
       expect(sendUserMessage).not.toHaveBeenCalled();
-      expect(engagementReason).toBe("message_routine_routing");
+      expect(engagementReason).toBe("message_routine_routing_rearmed");
       expect(leaseUntil.getTime()).toBeGreaterThan(Date.now());
       expect(updateMany).not.toHaveBeenCalledWith(
         expect.objectContaining({
@@ -613,12 +614,11 @@ describe("team chat bridge", () => {
         }),
       );
 
-      // Repeated expiry while this bridge remains live must retain ownership.
+      // A second expiry of the one-shot re-arm promotes to agent delivery.
       leaseUntil = new Date(Date.now() - 1);
       await bridge.reconcileOnce();
-      expect(engagementReason).toBe("message_routine_routing");
-      expect(leaseUntil.getTime()).toBeGreaterThan(Date.now());
-      expect(updateMany).not.toHaveBeenCalledWith(
+      expect(engagementReason).toBeNull();
+      expect(updateMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: expect.objectContaining({ id: "external-lost", status: "deferred" }),
           data: expect.objectContaining({ status: "received", engagementReason: null }),
@@ -631,8 +631,9 @@ describe("team chat bridge", () => {
     }
   });
 
-  it("releases abandoned routing ownership before startup reconciliation", async () => {
+  it("releases only expired routing ownership before startup reconciliation", async () => {
     const updateMany = vi.fn(async () => ({ count: 1 }));
+    const findMany = vi.fn(async () => []);
     const bridge = new TeamChatBridge({
       prisma: {
         bot: {
@@ -646,7 +647,7 @@ describe("team chat bridge", () => {
           })),
         },
         externalMessage: {
-          findMany: vi.fn(async () => []),
+          findMany,
           updateMany,
         },
         run: { findMany: vi.fn(async () => []) },
@@ -665,11 +666,54 @@ describe("team chat bridge", () => {
     expect(updateMany).toHaveBeenCalledWith({
       where: {
         status: "deferred",
-        engagementReason: "message_routine_routing",
+        engagementReason: {
+          in: ["message_routine_routing", "message_routine_routing_rearmed"],
+        },
+        nextAttemptAt: { lte: expect.any(Date) },
         externalConversation: { provider: "slack", botId: "bot-1", spaceId: "space-1" },
       },
       data: { engagementReason: null, nextAttemptAt: expect.any(Date) },
     });
+  });
+
+  it("releases expired routing ownership even when transcript mirroring fails", async () => {
+    const updateMany = vi.fn(async () => ({ count: 1 }));
+    const findMany = vi.fn(async () => {
+      throw new Error("mirror failed");
+    });
+    const bridge = new TeamChatBridge({
+      prisma: {
+        bot: {
+          findFirst: vi.fn(async () => ({
+            id: "bot-1",
+            spaceId: "space-1",
+            userId: "owner-1",
+            name: "Chief",
+            modelProvider: null,
+            modelId: null,
+          })),
+        },
+        externalMessage: { findMany, updateMany },
+        run: { findMany: vi.fn(async () => []) },
+      } as unknown as PrismaClient,
+      events: { sendUserMessage: vi.fn() },
+      jobs: { enqueue: vi.fn() },
+      send: vi.fn(),
+      providerId: "slack",
+      botId: "bot-1",
+    });
+
+    await expect(bridge.start()).rejects.toThrow("mirror failed");
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          engagementReason: {
+            in: ["message_routine_routing", "message_routine_routing_rearmed"],
+          },
+          nextAttemptAt: { lte: expect.any(Date) },
+        }),
+      }),
+    );
   });
 
   it("does not queue a received message that already woke a message routine", async () => {
@@ -788,7 +832,11 @@ describe("team chat bridge", () => {
         where: {
           id: "external-claimed",
           status: "received",
-          NOT: { engagementReason: "message_routine_routing" },
+          NOT: {
+            engagementReason: {
+              in: ["message_routine_routing", "message_routine_routing_rearmed"],
+            },
+          },
         },
         data: expect.objectContaining({ status: "queueing" }),
       }),
