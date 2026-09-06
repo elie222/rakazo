@@ -3,18 +3,29 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { ComputerRef, SandboxProvider } from "@rakazo/adapter-kit";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { computerTestSandbox } from "./computer-test-config.js";
 import { sessionCookieHeader } from "./index.js";
 
 const live = process.env.RUN_COMPUTER_E2E === "1";
 const describeLive = live ? describe : describe.skip;
 
-describeLive("real model and E2B computer journey", () => {
+describeLive("real model and sandbox computer journey", () => {
   let dataDir: string | undefined;
   let handles: Awaited<ReturnType<typeof import("../../../apps/api/src/app.ts")["createApp"]>>;
   let computer: ComputerRef | undefined;
+  let sandboxProvider: "box" | "e2b";
+  let botId: string | undefined;
+  let runId: string | undefined;
 
   beforeAll(async () => {
-    for (const key of ["DATABASE_URL", "E2B_API_KEY", "OPENROUTER_API_KEY", "COMPUTER_E2E_MODEL"]) {
+    const sandbox = computerTestSandbox(process.env.SANDBOX_PROVIDER);
+    sandboxProvider = sandbox.provider;
+    for (const key of [
+      "DATABASE_URL",
+      sandbox.apiKeyEnv,
+      "OPENROUTER_API_KEY",
+      "COMPUTER_E2E_MODEL",
+    ]) {
       if (!process.env[key]) throw new Error(`${key} is required for pnpm test:computer`);
     }
     dataDir = mkdtempSync(path.join(tmpdir(), "rakazo-computer-e2e-"));
@@ -22,9 +33,11 @@ describeLive("real model and E2B computer journey", () => {
     handles = await createApp({
       databaseUrl: process.env.DATABASE_URL!,
       dataDir,
-      sandboxProvider: "e2b",
+      sandboxProvider,
       agentRuntime: "pi",
       e2bApiKey: process.env.E2B_API_KEY,
+      boxApiKey: process.env.BOX_API_KEY,
+      boxApiUrl: process.env.BOX_API_URL ?? process.env.BOX_BASE_URL,
       openRouterKey: process.env.OPENROUTER_API_KEY,
       defaultProvider: "openrouter",
       defaultModel: process.env.COMPUTER_E2E_MODEL,
@@ -40,12 +53,32 @@ describeLive("real model and E2B computer journey", () => {
   }, 120_000);
 
   afterAll(async () => {
-    if (computer) {
-      await handles.sandbox.destroy(computer, testContext(computer.botId)).catch(() => undefined);
+    try {
+      try {
+        if (runId) await handles.runtime.abort(runId);
+        const bot = botId
+          ? await handles.prisma.bot.findUnique({
+              where: { id: botId },
+              include: { computer: true },
+            })
+          : undefined;
+        const stored = bot?.computer;
+        if (stored?.providerRef) {
+          computer = {
+            id: stored.providerRef,
+            providerRef: stored.providerRef,
+            botId: stored.homeKey,
+            kind: sandboxProvider,
+          };
+        }
+      } finally {
+        if (computer) await handles.sandbox.destroy(computer, testContext(botId ?? computer.botId));
+      }
+    } finally {
+      await handles?.stop().catch(() => undefined);
+      if (dataDir) rmSync(dataDir, { recursive: true, force: true });
     }
-    await handles?.stop().catch(() => undefined);
-    if (dataDir) rmSync(dataDir, { recursive: true, force: true });
-  });
+  }, 120_000);
 
   it("observes and clicks a real browser, then uses terminal and files", async () => {
     const stamp = Date.now();
@@ -68,6 +101,7 @@ describeLive("real model and E2B computer journey", () => {
         "This is an acceptance test. Follow the requested computer tool sequence exactly and do not claim a visual action succeeded until its result is visible.",
       notifyOnFinish: false,
     });
+    botId = bot.id;
     await rpc(handles.app, cookie, "computer/boot", { botId: bot.id });
     const storedBot = await handles.prisma.bot.findUniqueOrThrow({
       where: { id: bot.id },
@@ -78,7 +112,7 @@ describeLive("real model and E2B computer journey", () => {
       id: stored.providerRef!,
       providerRef: stored.providerRef!,
       botId: stored.homeKey,
-      kind: "e2b",
+      kind: sandboxProvider,
     };
     await installVisualFixture(handles.sandbox, computer);
 
@@ -92,6 +126,7 @@ describeLive("real model and E2B computer journey", () => {
         "Finally use write_file to create results/llm-confirmed.txt containing exactly visual-e2e-ok.",
       ].join(" "),
     });
+    runId = sent.runId;
     const completedRun = await waitForRun(
       () =>
         handles.prisma.run.findUnique({
@@ -153,7 +188,7 @@ describeLive("real model and E2B computer journey", () => {
       id: replacement.providerRef!,
       providerRef: replacement.providerRef!,
       botId: replacement.homeKey,
-      kind: "e2b",
+      kind: sandboxProvider,
     };
     expect(replacement.providerRef).not.toBe(originalRef);
     const restored = await rpc<{ content: string }>(handles.app, cookie, "computer/readFile", {
