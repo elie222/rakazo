@@ -527,6 +527,29 @@ not automatically put it in a container's environment, so the production file ex
 stack started with `-p something-else` would be left alone while a second project with a new empty
 Postgres volume came up beside it.
 
+### Deployments that layer a Compose overlay
+
+`RAKAZO_COMPOSE_FILE` takes a list, separated the way Compose's own `COMPOSE_FILE` is
+(`:` by default, or whatever `COMPOSE_PATH_SEPARATOR` says). Each entry becomes its own `--file`,
+in the order given, so the updater reconciles the same stack the operator runs by hand:
+
+```
+RAKAZO_COMPOSE_FILE=infra/compose/docker-compose.prod.yml:ops/compose/overlay.yml
+```
+
+Every entry is validated separately and must stay inside `RAKAZO_DEPLOY_DIR`.
+
+If the overlay adds a service built from the application image, name it in
+`RAKAZO_UPDATE_SERVICES` (comma separated) so it is pulled, recreated and rolled back with the
+rest. Otherwise an update leaves that service running the previous code:
+
+```
+RAKAZO_UPDATE_SERVICES=supervisor
+```
+
+These names are appended to the built-in `api`, `worker`, `web`, never substituted for them, so no
+value here can drop a core service from an update.
+
 The value therefore has to be the path **the daemon** sees, which is not always the path your shell
 sees:
 

@@ -36,6 +36,9 @@ describe("the production computer provider", () => {
  * properties that keep that from being reachable by anything but the API, and they are easy to
  * break by accident in YAML, so they are asserted rather than reviewed.
  */
+/** The Compose interpolation this file is expected to carry, as Compose spells it. */
+const interpolated = (name: string, fallback = "") => `\${${name}:-${fallback}}`;
+
 describe("the updater compose service", () => {
   it("exists and runs the updater image", () => {
     expect(updater).toBeDefined();
@@ -100,6 +103,22 @@ describe("the updater compose service", () => {
     );
     expect(compose.services.caddy?.image).toMatch(
       /^\$\{CADDY_IMAGE:-caddy:2@sha256:df7f1c2fb114453b951de51a98efc010db1655a92c2e86be6706714e2417a78d\}$/,
+    );
+  });
+
+  it("lets a deployment name its own Compose files and extra services", () => {
+    // resolveUpdaterConfig reads these from the sidecar's environment, and the sidecar's
+    // environment is exactly what this file declares. Pinning them here would make the documented
+    // variables inert: the operator sets them, the updater never sees them, and the overlay is
+    // dropped on every recreate.
+    expect(updater.environment?.RAKAZO_COMPOSE_FILE).toBe(
+      interpolated("RAKAZO_COMPOSE_FILE", "infra/compose/docker-compose.prod.yml"),
+    );
+    expect(updater.environment?.RAKAZO_UPDATE_SERVICES).toBe(
+      interpolated("RAKAZO_UPDATE_SERVICES"),
+    );
+    expect(updater.environment?.COMPOSE_PATH_SEPARATOR).toBe(
+      interpolated("COMPOSE_PATH_SEPARATOR"),
     );
   });
 
