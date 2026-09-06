@@ -85,40 +85,60 @@ async function main() {
     });
 
     if (integration) {
-      // Run real Pi before scripted journeys seed queued jobs and recurring work.
-      // A real runtime must never reconcile another scenario's scripted backlog.
-      execSync("pnpm exec vitest run packages/testkit/src/pi-offline.postgres.test.ts", {
-        stdio: "inherit",
-        env: {
-          ...process.env,
-          OPENROUTER_API_KEY: "",
-          MODEL_API_KEY: "",
-        },
-      });
-      execSync(
-        [
-          "pnpm exec vitest run --no-file-parallelism",
-          "packages/testkit/src/journeys.test.ts",
-          "packages/testkit/src/authorization.test.ts",
-          "packages/testkit/src/attachments.test.ts",
-          "packages/testkit/src/voice.test.ts",
-          "packages/testkit/src/search.test.ts",
-          "packages/testkit/src/executor-lifecycle.test.ts",
-          "packages/testkit/src/connections.test.ts",
-          "packages/testkit/src/bot-secrets.test.ts",
-          "packages/db/src/space-membership.postgres.test.ts",
-          "packages/db/src/messaging.postgres.test.ts",
-          "packages/memory/src/commit.postgres.test.ts",
-          "packages/adapters/src/wakeup.postgres.test.ts",
-          "packages/adapters/src/realtime.postgres.test.ts",
-          "packages/adapters/src/job-reconciler.postgres.test.ts",
-          "packages/adapters/src/cloud-agent.postgres.test.ts",
-        ].join(" "),
-        {
-          stdio: "inherit",
-          env: process.env,
-        },
-      );
+      const suites = [
+        "packages/testkit/src/pi-offline.postgres.test.ts",
+        "packages/testkit/src/journeys.test.ts",
+        "packages/testkit/src/authorization.test.ts",
+        "packages/testkit/src/attachments.test.ts",
+        "packages/testkit/src/voice.test.ts",
+        "packages/testkit/src/search.test.ts",
+        "packages/testkit/src/executor-lifecycle.test.ts",
+        "packages/testkit/src/connections.test.ts",
+        "packages/testkit/src/bot-secrets.test.ts",
+        "packages/db/src/space-membership.postgres.test.ts",
+        "packages/db/src/messaging.postgres.test.ts",
+        "packages/memory/src/commit.postgres.test.ts",
+        "packages/adapters/src/wakeup.postgres.test.ts",
+        "packages/adapters/src/realtime.postgres.test.ts",
+        "packages/adapters/src/job-reconciler.postgres.test.ts",
+        "packages/adapters/src/cloud-agent.postgres.test.ts",
+      ];
+      // Each app reconciles all durable work in its database, including intentionally
+      // unfinished fixture runs. Clone the pristine migrated schema so one suite
+      // cannot execute another suite's backlog or wait for it during shutdown.
+      const template = container.getDatabase().replaceAll('"', '""');
+      const databaseCommand = async (statement: string) => {
+        const result = await container.exec([
+          "psql",
+          "-U",
+          container.getUsername(),
+          "-d",
+          "postgres",
+          "-v",
+          "ON_ERROR_STOP=1",
+          "-c",
+          statement,
+        ]);
+        if (result.exitCode !== 0)
+          throw new Error("Isolated integration database operation failed");
+      };
+      for (const [index, suite] of suites.entries()) {
+        const database = `integration_${index}`;
+        await databaseCommand(`CREATE DATABASE "${database}" TEMPLATE "${template}"`);
+        const suiteUrl = new URL(databaseUrl);
+        suiteUrl.pathname = `/${database}`;
+        try {
+          await runProcess("pnpm", ["exec", "vitest", "run", suite], {
+            ...process.env,
+            DATABASE_URL: suiteUrl.toString(),
+            REALTIME_DATABASE_URL: suiteUrl.toString(),
+            OPENROUTER_API_KEY: "",
+            MODEL_API_KEY: "",
+          });
+        } finally {
+          await databaseCommand(`DROP DATABASE IF EXISTS "${database}" WITH (FORCE)`);
+        }
+      }
       await writeSummary(reportDir, {
         ok: true,
         mode,
