@@ -2,8 +2,18 @@ import type { ResolveHostname } from "./remote-mcp.js";
 
 type EmulatorRecord =
   | { provider: "pipedream"; operation: string; app?: string }
-  | { provider: "mcp"; operation: string; host: string; args?: Record<string, unknown> }
-  | { provider: "openapi"; operation: string; path: string; authenticated: boolean };
+  | {
+      provider: "mcp";
+      operation: string;
+      host: string;
+      authenticated?: boolean;
+      args?: Record<string, unknown>;
+    }
+  | { provider: "openapi"; operation: string; path: string; authenticated: boolean }
+  | { provider: "graphql"; operation: string; authenticated: boolean };
+
+/** Expected Executor test bearer. Compared at the boundary; never written into records. */
+const EXPECTED_EXECUTOR_BEARER = "Bearer fake-executor-credential-value";
 
 const PIPEDREAM_APPS = [
   { id: "app-linear", name_slug: "linear", name: "Linear" },
@@ -25,8 +35,11 @@ export class ThirdPartyConnectorEmulator {
     if (url.hostname === "remote.mcp.pipedream.net" || url.hostname === "treg.to") {
       return this.mcp(url, init);
     }
-    if (url.hostname === "mcp.example.test") return this.mcp(url, init);
+    if (url.hostname === "mcp.example.test" || url.hostname === "executor.example.test") {
+      return this.mcp(url, init);
+    }
     if (url.hostname === "api.example.test") return this.openapi(url, init);
+    if (url.hostname === "graphql.example.test") return this.graphql(url, init);
     throw new Error(`Third-party connector emulator received unexpected URL ${url}`);
   };
 
@@ -91,6 +104,12 @@ export class ThirdPartyConnectorEmulator {
     const id = request.id;
     const headers = new Headers(init?.headers);
     const app = headers.get("x-pd-app-slug") ?? undefined;
+    const authorization = headers.get("authorization");
+    // Validate bearer at the boundary; persist only the boolean, never the secret.
+    const authenticated =
+      url.hostname === "executor.example.test"
+        ? authorization === EXPECTED_EXECUTOR_BEARER
+        : Boolean(authorization?.startsWith("Bearer ") && authorization.length > "Bearer ".length);
     if (method === "notifications/initialized") return new Response(null, { status: 202 });
     if (method === "initialize") {
       return jsonRpc(id, {
@@ -102,7 +121,12 @@ export class ThirdPartyConnectorEmulator {
       });
     }
     if (method === "tools/list") {
-      this.records.push({ provider: "mcp", operation: "tools/list", host: url.hostname });
+      this.records.push({
+        provider: "mcp",
+        operation: "tools/list",
+        host: url.hostname,
+        authenticated,
+      });
       return jsonRpc(id, {
         tools: [
           {
@@ -124,6 +148,7 @@ export class ThirdPartyConnectorEmulator {
         provider: "mcp",
         operation: String(params.name ?? "unknown"),
         host: url.hostname,
+        authenticated,
         args,
       });
       const result = { ok: true, app, text: args.text ?? null };
@@ -166,6 +191,116 @@ export class ThirdPartyConnectorEmulator {
       authenticated,
     });
     return Response.json({ ok: true, contactId: url.pathname.split("/").at(-1) });
+  }
+
+  private async graphql(url: URL, init?: RequestInit): Promise<Response> {
+    const authenticated = new Headers(init?.headers).has("authorization");
+    const body = parseBody(init?.body);
+    const query = typeof body.query === "string" ? body.query : "";
+    if (query.includes("__schema")) {
+      this.records.push({ provider: "graphql", operation: "introspect", authenticated });
+      return Response.json({
+        data: {
+          __schema: {
+            queryType: { name: "Query" },
+            mutationType: { name: "Mutation" },
+            types: [
+              {
+                kind: "OBJECT",
+                name: "Query",
+                fields: [
+                  {
+                    name: "hero",
+                    description: "Fetch a hero",
+                    args: [
+                      {
+                        name: "episode",
+                        description: "Episode code",
+                        type: { kind: "ENUM", name: "Episode", ofType: null },
+                        defaultValue: null,
+                      },
+                    ],
+                    type: {
+                      kind: "OBJECT",
+                      name: "Character",
+                      ofType: null,
+                    },
+                  },
+                  {
+                    name: "hello",
+                    description: "Say hello",
+                    args: [],
+                    type: { kind: "SCALAR", name: "String", ofType: null },
+                  },
+                ],
+                inputFields: null,
+                enumValues: null,
+              },
+              {
+                kind: "OBJECT",
+                name: "Mutation",
+                fields: [
+                  {
+                    name: "createNote",
+                    description: "Create a note",
+                    args: [
+                      {
+                        name: "text",
+                        type: {
+                          kind: "NON_NULL",
+                          name: null,
+                          ofType: { kind: "SCALAR", name: "String", ofType: null },
+                        },
+                        defaultValue: null,
+                      },
+                    ],
+                    type: { kind: "SCALAR", name: "String", ofType: null },
+                  },
+                ],
+                inputFields: null,
+                enumValues: null,
+              },
+              {
+                kind: "OBJECT",
+                name: "Character",
+                fields: [
+                  {
+                    name: "name",
+                    args: [],
+                    type: { kind: "SCALAR", name: "String", ofType: null },
+                  },
+                  {
+                    name: "appearsIn",
+                    args: [],
+                    type: {
+                      kind: "LIST",
+                      name: null,
+                      ofType: { kind: "ENUM", name: "Episode", ofType: null },
+                    },
+                  },
+                ],
+                inputFields: null,
+                enumValues: null,
+              },
+              {
+                kind: "ENUM",
+                name: "Episode",
+                fields: null,
+                inputFields: null,
+                enumValues: [{ name: "NEWHOPE" }, { name: "EMPIRE" }, { name: "JEDI" }],
+              },
+              { kind: "SCALAR", name: "String", fields: null, inputFields: null, enumValues: null },
+            ],
+          },
+        },
+      });
+    }
+    this.records.push({
+      provider: "graphql",
+      operation: typeof body.operationName === "string" ? body.operationName : "execute",
+      authenticated,
+    });
+    return Response.json({ data: { ok: true, path: url.pathname } });
   }
 }
 

@@ -710,6 +710,16 @@ msgstr "Código"
 msgid "Collapse {0}"
 msgstr "Contraer {0}"
 
+#: src/pages/shell/bot-panel.tsx:327
+#: src/pages/shell/bot-panel.tsx:328
+msgid "Color"
+msgstr "Color"
+
+#. placeholder {0}: index + 1
+#: src/pages/shell/bot-panel.tsx:337
+msgid "Color {0}"
+msgstr "Color {0}"
+
 #: src/pages/RoutineEditor.tsx:387
 msgid "Coming soon"
 msgstr "Próximamente"
@@ -2040,10 +2050,6 @@ msgstr "No hay un catálogo de apps administradas configurado en este despliegue
 msgid "No matching models"
 msgstr "No hay modelos coincidentes"
 
-#: src/pages/PluginsOverlay.tsx:596
-msgid "No MCP or API tool sources installed yet."
-msgstr "Aún no hay fuentes de herramientas MCP o API instaladas."
-
 #: src/pages/McpServersOverlay.tsx:426
 msgid "No MCP servers yet."
 msgstr "Aún no hay servidores MCP."
@@ -3251,3 +3257,28 @@ msgstr "Habilidades"
 #: src/pages/Onboarding.tsx
 msgid "Supports thinking"
 msgstr "Admite razonamiento"
+
+#: src/pages/PluginsOverlay.tsx:486
+msgid "Add GraphQL"
+msgstr "Añadir GraphQL"
+
+#: src/pages/PluginsOverlay.tsx:504
+msgid "Add GraphQL endpoint"
+msgstr "Añadir endpoint de GraphQL"
+
+#: src/pages/PluginsOverlay.tsx:601
+msgid "No tool sources yet."
+msgstr "Aún no hay fuentes de herramientas."
+
+#: src/pages/PluginsOverlay.tsx
+msgid "Add Executor"
+msgstr "Agregar Executor"
+
+#: src/pages/PluginsOverlay.tsx
+msgid "Connect Executor"
+msgstr "Conectar Executor"
+
+#: src/pages/PluginsOverlay.tsx
+msgid "Executor token"
+msgstr "Token de Executor"
+

@@ -4,7 +4,7 @@ import {
   publishedLoopbackControlHostPort,
   resolveComputerControlEndpoint,
 } from "./computer-spec.js";
-import { controlDesktop } from "./index.js";
+import { controlDesktop, MAX_COMPUTER_CONTROL_RESPONSE_BYTES } from "./index.js";
 import {
   attemptComputerControl,
   preferComputerControl,
@@ -120,6 +120,28 @@ describe("computer control HTTP boundary", () => {
       ),
     ).rejects.toThrow();
     expect(authorizations).toEqual([`Bearer ${token}`, "Bearer wrong-token"]);
+  });
+
+  it("rejects an oversized computer-control response before reading it", async () => {
+    const origin = await listen((req, res) => {
+      req.resume();
+      res.writeHead(200, {
+        "content-type": "application/json",
+        "content-length": String(MAX_COMPUTER_CONTROL_RESPONSE_BYTES + 1),
+      });
+      res.end("{}");
+    });
+
+    await expect(
+      controlDesktop(
+        { url: `${origin}/v1/desktop`, token },
+        actions,
+        ":1",
+        "/tmp/test-profile",
+        false,
+        0,
+      ),
+    ).rejects.toThrow(`exceeds ${MAX_COMPUTER_CONTROL_RESPONSE_BYTES} bytes`);
   });
 
   describe.each([301, 302, 303, 307, 308])("HTTP %s", (status) => {

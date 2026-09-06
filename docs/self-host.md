@@ -18,10 +18,11 @@ bash install-images.sh
 ```
 
 The installer downloads `docker-compose.images.yml` and `.env.images.example`, creates `.env` with
-random secrets, then pulls and starts the images. It preserves an existing `.env` when rerun. To
-customize the public URL, image tag, or optional providers before startup, run
-`bash install-images.sh --prepare-only`, edit `.env`, then run `bash install-images.sh`.
-Flags may be combined in either order: `--prepare-only`, `--local`.
+random secrets, then pulls and starts the images. It preserves an existing `.env` when rerun. For
+the installer secret list, non-reuse rules, and recovery, see
+[Self-host secrets checklist](./self-host-secrets.md). To customize the public URL, image tag, or
+optional providers before startup, run `bash install-images.sh --prepare-only`, edit `.env`, then
+run `bash install-images.sh`. Flags may be combined in either order: `--prepare-only`, `--local`.
 
 `SANDBOX_PROVIDER` defaults to `docker`. The images Compose file runs a sandbox supervisor
 (from the app image, on the internal network only) and pulls `ghcr.io/elie222/rakazo/computer`.
@@ -58,6 +59,21 @@ instead of this host proxy.
 
 If the installer, Compose downloads, or image pulls are blocked, use the
 [restricted-network guide](./self-host-restricted-network.md) for mirror settings and local files.
+
+### Bot computer resource ceilings
+
+Each Docker computer runs Xvfb, a window manager and a full Chromium driven by an agent that
+decides for itself what to open, so it is capped. These defaults provide a starting point for the
+Docker computer topology:
+
+| Variable | Default | Accepts |
+| --- | --- | --- |
+| `RAKAZO_COMPUTER_MEMORY` | `2g` | `2g`, `1536m`, a byte count. Minimum `6m`, Docker's own floor. Also caps swap, so the ceiling holds. |
+| `RAKAZO_COMPUTER_CPUS` | `2` | Whole or fractional cores, e.g. `1.5` |
+| `RAKAZO_COMPUTER_PIDS_LIMIT` | `2048` | A positive integer |
+
+Set any of them to `0`, `none` or `unlimited` to remove that ceiling. A malformed value fails the
+supervisor at startup naming the variable, rather than surfacing later as a failed bot.
 
 ## Docker Compose (single machine)
 
@@ -163,25 +179,27 @@ To use an operator-controlled OpenAI-compatible server such as Ollama, LM Studio
 MLX, list its model IDs and an endpoint that both the API and worker processes can reach:
 
 ```env
-RAKAZO_LOCAL_MODELS=qwen3:4b,llama3.1:8b
+RAKAZO_LOCAL_MODELS=qwen3:4b,llama3.1:8b,qwen3-vl
 RAKAZO_LOCAL_MODELS_URL=http://127.0.0.1:11434/v1
 RAKAZO_LOCAL_CONTEXT_WINDOW=32768
 RAKAZO_LOCAL_MAX_TOKENS=4096
+# Optional: model ids on this endpoint that accept images (screenshot computer tools).
+RAKAZO_LOCAL_VISION_MODELS=qwen3-vl
 ```
 
-The loopback default is suitable when running Rakazo from a source checkout. In Docker Compose,
-use the model server's Compose service name or another address reachable from the containers.
+The loopback default is suitable when running Rakazo from a source checkout. From containers,
+prefer a stable LAN RFC1918 address (not Compose service DNS alone). On Docker Desktop,
+`host.docker.internal` also works.
 Only configure an endpoint you control: prompts, attachments, and tool results sent to that model
 leave Rakazo through this URL. Leave `RAKAZO_LOCAL_MODELS` blank to disable the provider.
 
 Each user can also connect their own OpenAI-compatible endpoint from **Connect a model** /
 **Settings → Models** on web and mobile. Choose **OpenAI-compatible**, enter the server base URL
-(for example `http://127.0.0.1:8000/v1` for Rapid-MLX, Ollama, LM Studio, llama.cpp, or vLLM),
-the exact model id from that server, and an optional API key. By default Rakazo only allows
-loopback, RFC1918, and `host.docker.internal` targets. To permit public hostnames, set
-`RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC=1` in the deployment environment. Public hostnames must resolve
-only to public addresses; redirects and DNS answers that reach private or link-local networks are
-rejected.
+(for example `http://127.0.0.1:8000/v1`), the exact model id, and an optional API key.
+Public hosts and ordinary hostnames need `RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC=1` and HTTPS.
+Literal private IP, loopback, and `host.docker.internal` targets do not. To mark user-connected
+openai-compatible model ids as vision-capable (so screenshot computer tools stay available), set
+`RAKAZO_OPENAI_COMPATIBLE_VISION_MODELS=gpt4o-vision,llava`.
 
 For servers that accept standard `reasoning_effort`, enable **Supports thinking** under
 **Advanced** when connecting. The setting is saved on the connection (no env var or restart).
@@ -525,6 +543,29 @@ not automatically put it in a container's environment, so the production file ex
 `RAKAZO_COMPOSE_PROJECT_NAME`; the final fallback is `rakazo-prod`. Without that propagation, a
 stack started with `-p something-else` would be left alone while a second project with a new empty
 Postgres volume came up beside it.
+
+### Deployments that layer a Compose overlay
+
+`RAKAZO_COMPOSE_FILE` takes a list, separated the way Compose's own `COMPOSE_FILE` is
+(`:` by default, or whatever `COMPOSE_PATH_SEPARATOR` says). Each entry becomes its own `--file`,
+in the order given, so the updater reconciles the same stack the operator runs by hand:
+
+```
+RAKAZO_COMPOSE_FILE=infra/compose/docker-compose.prod.yml:ops/compose/overlay.yml
+```
+
+Every entry is validated separately and must stay inside `RAKAZO_DEPLOY_DIR`.
+
+If the overlay adds a service built from the application image, name it in
+`RAKAZO_UPDATE_SERVICES` (comma separated) so it is pulled, recreated and rolled back with the
+rest. Otherwise an update leaves that service running the previous code:
+
+```
+RAKAZO_UPDATE_SERVICES=supervisor
+```
+
+These names are appended to the built-in `api`, `worker`, `web`, never substituted for them, so no
+value here can drop a core service from an update.
 
 The value therefore has to be the path **the daemon** sees, which is not always the path your shell
 sees:

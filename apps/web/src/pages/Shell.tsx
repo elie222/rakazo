@@ -1,3 +1,4 @@
+import { i18n } from "@lingui/core";
 import { t } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
 import { ChatMarkdown } from "@rakazo/chat-ui/web";
@@ -59,6 +60,11 @@ import {
   AvatarStyleProvider,
   BotAvatar,
   Button,
+  cn,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
   GroupAvatar,
   type GroupAvatarMember,
   InputGroup,
@@ -84,6 +90,7 @@ import {
   Menu,
   Mic,
   Monitor,
+  MoreHorizontal,
   PanelLeftClose,
   Paperclip,
   Phone,
@@ -91,8 +98,8 @@ import {
   Puzzle,
   Reply,
   Settings,
+  Smile,
   Square,
-  ThumbsUp,
   Volume2,
   X,
 } from "lucide-react";
@@ -2157,7 +2164,7 @@ export function ShellPage() {
     await refreshBots().catch(() => undefined);
   }
 
-  async function createBotQuick() {
+  async function createBotQuick(computerMode: ComputerMode = "team") {
     if (creatingBotRef.current) return;
     creatingBotRef.current = true;
     try {
@@ -2165,7 +2172,7 @@ export function ShellPage() {
         name: "New Bot",
         title: "",
         description: "",
-        computerMode: "team",
+        computerMode,
       });
     } catch (error) {
       // Keep the current chat open when create fails, but surface the error.
@@ -2462,9 +2469,9 @@ export function ShellPage() {
                 >
                   <BotCreatePicker
                     bots={bots}
-                    onCreateBot={() => {
+                    onCreateBot={(computerMode) => {
                       setCreateMenuOpen(false);
-                      void createBotQuick();
+                      void createBotQuick(computerMode);
                     }}
                     onOpenBot={(id) => {
                       setCreateMenuOpen(false);
@@ -2493,6 +2500,8 @@ export function ShellPage() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder={t`Search`}
+            autoComplete="off"
+            name="sidebar-search"
           />
         </InputGroup>
         <div className="rk-scroll flex flex-1 flex-col gap-0.5 overflow-y-auto px-2.5 pb-2.5">
@@ -4154,39 +4163,67 @@ const Transcript = memo(function Transcript({
             <div
               key={message.id}
               data-message-id={message.id}
-              className={peerReceipt ? "relative py-0.5" : "group/message relative pt-9 hover:z-20"}
+              className={peerReceipt ? "relative py-0.5" : "group/message relative hover:z-20"}
             >
-              {peerReceipt ? null : (
-                <MessageHoverActions message={message} onReply={onReply} onReact={onReact} />
-              )}
-              <MessageView
-                artifactTarget={artifactTarget}
-                message={message}
-                canAnswer={message.id === answerableAskMessageId}
-                onOpenBot={onOpenBot}
-                onOpenPeerMessages={onOpenPeerMessages}
-                onAnswer={onAnswer}
-                speakerName={
+              <div
+                className={
                   peerReceipt
                     ? undefined
-                    : message.role === "bot"
-                      ? memberName?.(message.botId)
-                      : undefined
+                    : `relative flex ${message.role === "user" ? "justify-end" : "justify-start"}`
                 }
-                memberName={memberName}
-                peerBot={peerBot}
-                replyPreview={
-                  message.replyToMessageId ? messageById.get(message.replyToMessageId) : undefined
-                }
-                replyToMessageId={message.replyToMessageId}
-                onJumpToMessage={onJumpToMessage}
-                onRefresh={onRefresh}
-                onBotChanged={onBotChanged}
-                onAddRoutine={onAddRoutine}
-                voiceReady={voiceReady}
-                speaking={speakingMessageId === message.id}
-                onSpeak={() => onSpeak(message)}
-              />
+              >
+                <div
+                  data-testid={peerReceipt ? undefined : "message-bubble-frame"}
+                  className={
+                    peerReceipt
+                      ? undefined
+                      : `relative w-fit min-w-0 ${
+                          message.role === "user"
+                            ? "max-w-[min(70%,calc(100%_-_6rem))]"
+                            : "max-w-[min(74%,calc(100%_-_6rem))]"
+                        }`
+                  }
+                >
+                  {peerReceipt ? null : (
+                    <MessageHoverActions
+                      message={message}
+                      side={message.role === "user" ? "start" : "end"}
+                      onReply={onReply}
+                      onReact={onReact}
+                    />
+                  )}
+                  <MessageView
+                    artifactTarget={artifactTarget}
+                    message={message}
+                    canAnswer={message.id === answerableAskMessageId}
+                    onOpenBot={onOpenBot}
+                    onOpenPeerMessages={onOpenPeerMessages}
+                    onAnswer={onAnswer}
+                    speakerName={
+                      peerReceipt
+                        ? undefined
+                        : message.role === "bot"
+                          ? memberName?.(message.botId)
+                          : undefined
+                    }
+                    memberName={memberName}
+                    peerBot={peerBot}
+                    replyPreview={
+                      message.replyToMessageId
+                        ? messageById.get(message.replyToMessageId)
+                        : undefined
+                    }
+                    replyToMessageId={message.replyToMessageId}
+                    onJumpToMessage={onJumpToMessage}
+                    onRefresh={onRefresh}
+                    onBotChanged={onBotChanged}
+                    onAddRoutine={onAddRoutine}
+                    voiceReady={voiceReady}
+                    speaking={speakingMessageId === message.id}
+                    onSpeak={() => onSpeak(message)}
+                  />
+                </div>
+              </div>
               {!peerReceipt && message.thumbsUp ? (
                 <button
                   type="button"
@@ -4960,14 +4997,18 @@ function previewMessageText(message: ThreadMessage): string {
 
 function MessageHoverActions({
   message,
+  side,
   onReply,
   onReact,
 }: {
   message: ThreadMessage;
+  side: "start" | "end";
   onReply: (message: ThreadMessage) => void;
   onReact: (message: ThreadMessage) => Promise<void>;
 }) {
   const { t } = useLingui();
+  const [moreOpen, setMoreOpen] = useState(false);
+
   // Streaming progress bubbles keep hover free for selection / stop clicks.
   if (message.id.startsWith("progress:")) return null;
 
@@ -4977,41 +5018,78 @@ function MessageHoverActions({
     void navigator.clipboard.writeText(text).catch(() => undefined);
   }
 
+  const iconButtonClass =
+    "grid h-7 w-7 place-items-center text-muted-foreground transition-colors hover:text-foreground";
+
   return (
-    <MessageHoverMetadata createdAt={message.createdAt}>
-      <div
-        data-testid="message-hover-actions"
-        className="flex items-center gap-0.5 rounded-full bg-accent p-0.5 shadow-sm"
-      >
-        <button
-          type="button"
-          aria-label={t`Reply`}
-          onClick={() => onReply(message)}
-          className="grid h-7 w-7 place-items-center rounded-full text-foreground/75 hover:bg-accent hover:text-foreground"
-        >
-          <Reply size={14} strokeWidth={1.8} />
-        </button>
+    <MessageHoverMetadata pinned={moreOpen} side={side}>
+      <div data-testid="message-hover-actions" className="flex items-center gap-0.5">
         {canReactToThreadMessage(message) ? (
           <button
             type="button"
             aria-label={message.thumbsUp ? t`Remove thumbs-up` : t`Add thumbs-up`}
             aria-pressed={Boolean(message.thumbsUp)}
             onClick={() => void onReact(message)}
-            className={`grid h-7 w-7 place-items-center rounded-full hover:bg-accent hover:text-foreground ${
-              message.thumbsUp ? "text-warning" : "text-foreground/75"
-            }`}
+            className={cn(
+              iconButtonClass,
+              "hidden [@media(hover:hover)_and_(pointer:fine)]:grid",
+              message.thumbsUp && "text-foreground",
+            )}
           >
-            <ThumbsUp size={14} strokeWidth={1.8} />
+            <Smile size={15} strokeWidth={1.7} />
           </button>
         ) : null}
         <button
           type="button"
-          aria-label={t`Copy`}
-          onClick={copyMessage}
-          className="grid h-7 w-7 place-items-center rounded-full text-foreground/75 hover:bg-accent hover:text-foreground"
+          aria-label={t`Reply`}
+          onClick={() => onReply(message)}
+          className={`${iconButtonClass} hidden [@media(hover:hover)_and_(pointer:fine)]:grid`}
         >
-          <Copy size={14} strokeWidth={1.8} />
+          <Reply size={15} strokeWidth={1.7} />
         </button>
+        <DropdownMenu open={moreOpen} onOpenChange={setMoreOpen}>
+          <DropdownMenuTrigger
+            aria-label={t`More`}
+            className={cn(
+              iconButtonClass,
+              "h-11 w-11 [@media(hover:hover)_and_(pointer:fine)]:h-7 [@media(hover:hover)_and_(pointer:fine)]:w-7",
+            )}
+          >
+            <MoreHorizontal size={15} strokeWidth={1.7} />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align={side === "end" ? "start" : "end"}>
+            {canReactToThreadMessage(message) ? (
+              <DropdownMenuItem
+                className="[@media(hover:hover)_and_(pointer:fine)]:hidden"
+                onClick={() => void onReact(message)}
+              >
+                <Smile size={15} />
+                {message.thumbsUp ? t`Remove thumbs-up` : t`Add thumbs-up`}
+              </DropdownMenuItem>
+            ) : null}
+            <DropdownMenuItem
+              className="[@media(hover:hover)_and_(pointer:fine)]:hidden"
+              onClick={() => onReply(message)}
+            >
+              <Reply size={15} />
+              <Trans>Reply</Trans>
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={copyMessage}>
+              <Copy size={14} strokeWidth={1.7} />
+              <Trans>Copy</Trans>
+            </DropdownMenuItem>
+            <time
+              dateTime={message.createdAt}
+              data-testid="message-hover-time"
+              className="block px-1.5 py-1 text-xs tabular-nums text-muted-foreground"
+            >
+              {new Date(message.createdAt).toLocaleTimeString(i18n.locale || "en", {
+                hour: "numeric",
+                minute: "2-digit",
+              })}
+            </time>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </MessageHoverMetadata>
   );
@@ -5144,9 +5222,10 @@ const MessageView = memo(function MessageView({
     return (
       <>
         {messageContext}
-        <div className="flex justify-start">
+        <div className="flex w-fit max-w-full justify-start">
           <div
-            className="max-w-[74%] space-y-2.5 rounded-[20px] bg-muted px-[18px] py-3 text-[15.5px] leading-[1.5] text-foreground/90"
+            data-testid="message-bot-bubble"
+            className="max-w-full space-y-2.5 rounded-[20px] bg-muted px-[18px] py-3 text-[15.5px] leading-[1.5] text-foreground/90"
             dir="auto"
           >
             {visibleNarrationBlocks.map((block, i) => {
@@ -5236,9 +5315,10 @@ const MessageView = memo(function MessageView({
         }
         if (block.kind === "progress") {
           return (
-            <div key={i} className="flex justify-start">
+            <div key={i} className="flex w-fit max-w-full justify-start">
               <div
-                className="max-w-[74%] rounded-[20px] bg-muted px-[18px] py-3 text-[15.5px] leading-[1.5] text-foreground/90"
+                data-testid="message-bot-bubble"
+                className="max-w-full rounded-[20px] bg-muted px-[18px] py-3 text-[15.5px] leading-[1.5] text-foreground/90"
                 dir="auto"
               >
                 <ChatMarkdown streaming>{block.text}</ChatMarkdown>
@@ -5389,9 +5469,10 @@ const MessageView = memo(function MessageView({
         }
         if (block.kind === "text" && message.role === "user") {
           return (
-            <div key={i} className="flex justify-end">
+            <div key={i} className="flex w-fit max-w-full justify-end">
               <div
-                className="max-w-[70%] whitespace-pre-wrap rounded-[20px] bg-primary px-[18px] py-3 text-[15.5px] leading-[1.45] text-primary-foreground"
+                data-testid="message-user-bubble"
+                className="max-w-full whitespace-pre-wrap wrap-anywhere rounded-[20px] bg-secondary px-[18px] py-3 text-[15.5px] leading-[1.45] text-secondary-foreground"
                 dir="auto"
               >
                 {block.text}
@@ -5401,9 +5482,10 @@ const MessageView = memo(function MessageView({
         }
         if (block.kind === "text") {
           return (
-            <div key={i} className="flex justify-start">
+            <div key={i} className="flex w-fit max-w-full justify-start">
               <div
-                className="max-w-[74%] rounded-[20px] bg-muted px-[18px] py-3 text-[15.5px] leading-[1.5] text-foreground/90"
+                data-testid="message-bot-bubble"
+                className="max-w-full rounded-[20px] bg-muted px-[18px] py-3 text-[15.5px] leading-[1.5] text-foreground/90"
                 dir="auto"
               >
                 <ChatMarkdown>{block.text}</ChatMarkdown>

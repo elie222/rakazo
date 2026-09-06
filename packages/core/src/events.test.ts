@@ -719,8 +719,8 @@ describe("sanitizeUtf16ForJson", () => {
     expect(
       sanitizeJsonValue({
         outer: {
-          ["meta\uD83D"]: "ok",
-          ["meta\uDE00"]: "also",
+          "meta\uD83D": "ok",
+          "meta\uDE00": "also",
         },
       }),
     ).toEqual({

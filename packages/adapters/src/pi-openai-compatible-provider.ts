@@ -9,6 +9,7 @@ import {
 } from "@earendil-works/pi-ai";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
 import { Agent } from "undici";
+import { declaredVisionModelIds, inputModalities } from "./model-modalities.js";
 import {
   createAddressCheckedLookup,
   isCloudMetadataAddress,
@@ -30,6 +31,13 @@ export { OPENAI_COMPATIBLE_PROVIDER_ID };
 /** Placeholder catalog model id; users enter the real id when connecting. */
 export const OPENAI_COMPATIBLE_CATALOG_MODEL_ID = "custom";
 
+/** Model ids this endpoint serves with vision, declared by the operator. */
+export const OPENAI_COMPATIBLE_VISION_MODELS_ENV = "RAKAZO_OPENAI_COMPATIBLE_VISION_MODELS";
+
+export function openAiCompatibleVisionModelIds(): ReadonlySet<string> {
+  return declaredVisionModelIds(OPENAI_COMPATIBLE_VISION_MODELS_ENV);
+}
+
 const DEFAULT_CONTEXT_WINDOW = 32_768;
 const DEFAULT_MAX_TOKENS = 4_096;
 const MAX_MODELS_RESPONSE_BYTES = 64 * 1024;
@@ -44,6 +52,7 @@ export function openAiCompatibleModel(
   id: string,
   baseUrl: string,
   reasoning = false,
+  acceptsImages = false,
 ): Model<"openai-completions"> {
   return {
     id,
@@ -58,7 +67,7 @@ export function openAiCompatibleModel(
       thinkingFormat: "openai",
     },
     thinkingLevelMap: { off: "none" },
-    input: ["text"],
+    input: inputModalities(acceptsImages),
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow: DEFAULT_CONTEXT_WINDOW,
     maxTokens: DEFAULT_MAX_TOKENS,
@@ -216,11 +225,30 @@ async function closeDispatcherWithResponse(
 
 /** Always-visible catalog provider with a placeholder model entry. */
 export function openAiCompatibleCatalogProvider(): Provider {
+  // The vision gate resolves against this catalog rather than the per-run
+  // registry, so a model only declared at runtime would still read as
+  // text-only. Register the operator's declared vision models here too.
+  //
+  // If the reserved placeholder id ("custom") is itself declared vision-
+  // capable, upgrade the placeholder entry rather than appending a second
+  // model with the same id — Models.getModel returns the first match, so a
+  // duplicate would leave the gate reading the text-only placeholder.
+  const visionIds = openAiCompatibleVisionModelIds();
+  const placeholderAcceptsImages = visionIds.has(OPENAI_COMPATIBLE_CATALOG_MODEL_ID);
+  const visionModels = [...visionIds]
+    .filter((id) => id !== OPENAI_COMPATIBLE_CATALOG_MODEL_ID)
+    .map((id) => openAiCompatibleModel(id, OPENAI_COMPAT_BASE, false, true));
   return openAiCompatibleProvider([
     {
-      ...openAiCompatibleModel(OPENAI_COMPATIBLE_CATALOG_MODEL_ID, OPENAI_COMPAT_BASE),
+      ...openAiCompatibleModel(
+        OPENAI_COMPATIBLE_CATALOG_MODEL_ID,
+        OPENAI_COMPAT_BASE,
+        false,
+        placeholderAcceptsImages,
+      ),
       name: "Custom model id",
     },
+    ...visionModels,
   ]);
 }
 
@@ -235,8 +263,12 @@ export function registerOpenAiCompatibleRuntime(
   opts: { modelId: string; baseUrl: string; reasoning?: boolean },
 ): MutableModels {
   const baseUrl = normalizeOpenAiCompatibleBaseUrl(opts.baseUrl);
+  const modelId = opts.modelId.trim();
+  const acceptsImages = openAiCompatibleVisionModelIds().has(modelId);
   models.setProvider(
-    openAiCompatibleProvider([openAiCompatibleModel(opts.modelId.trim(), baseUrl, opts.reasoning)]),
+    openAiCompatibleProvider([
+      openAiCompatibleModel(modelId, baseUrl, opts.reasoning, acceptsImages),
+    ]),
   );
   return models;
 }

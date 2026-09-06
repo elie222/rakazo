@@ -10,7 +10,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   COMPUTER_IMAGE,
   computerNetworkNameFor,
@@ -20,6 +20,7 @@ import {
   controlPortPublicationMatches,
   hostComputerUser,
   legacyNetworkOwnedSolelyBy,
+  parseMemoryBytes,
   publishedLoopbackControlHostPort,
   resolveComputerControlEndpoint,
   resolveScreenNetworkMode,
@@ -625,5 +626,112 @@ describe("graphical computer spec", () => {
       "click",
       "1",
     ]);
+  });
+});
+
+describe("computer resource limits", () => {
+  const KEYS = [
+    "RAKAZO_COMPUTER_MEMORY",
+    "RAKAZO_COMPUTER_CPUS",
+    "RAKAZO_COMPUTER_PIDS_LIMIT",
+  ] as const;
+  const saved = new Map<string, string | undefined>();
+
+  beforeEach(() => {
+    for (const k of KEYS) {
+      saved.set(k, process.env[k]);
+      delete process.env[k];
+    }
+  });
+
+  afterEach(() => {
+    for (const [k, v] of saved) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  });
+
+  const createInput = {
+    name: "rakazo-bot-x",
+    image: "rakazo/computer:local",
+    botId: "bot-x",
+    spaceId: "ws",
+    homePath: "/var/rakazo/homes/bot-x",
+  };
+
+  it("caps memory and cpu by default and keeps #343's pids ceiling", () => {
+    const { HostConfig } = containerCreateOptions(createInput);
+    expect(HostConfig.Memory).toBe(2 * 1024 ** 3);
+    expect(HostConfig.MemorySwap).toBe(HostConfig.Memory);
+    expect(HostConfig.NanoCpus).toBe(2 * 1e9);
+    expect(HostConfig.PidsLimit).toBe(2048);
+  });
+
+  it("pins MemorySwap to Memory so the ceiling cannot be swapped past", () => {
+    process.env.RAKAZO_COMPUTER_MEMORY = "1536m";
+    const { HostConfig } = containerCreateOptions(createInput);
+    expect(HostConfig.Memory).toBe(1536 * 1024 ** 2);
+    expect(HostConfig.MemorySwap).toBe(1536 * 1024 ** 2);
+  });
+
+  it("accepts fractional CPUs", () => {
+    process.env.RAKAZO_COMPUTER_CPUS = "1.5";
+    expect(containerCreateOptions(createInput).HostConfig.NanoCpus).toBe(1_500_000_000);
+  });
+
+  it("lets an operator opt out explicitly", () => {
+    process.env.RAKAZO_COMPUTER_MEMORY = "unlimited";
+    process.env.RAKAZO_COMPUTER_CPUS = "0";
+    process.env.RAKAZO_COMPUTER_PIDS_LIMIT = "none";
+    const { HostConfig } = containerCreateOptions(createInput);
+    expect(HostConfig.Memory).toBe(0);
+    expect(HostConfig.NanoCpus).toBe(0);
+    expect(HostConfig.PidsLimit).toBe(0);
+  });
+
+  it("rejects a malformed size instead of silently falling back", () => {
+    process.env.RAKAZO_COMPUTER_MEMORY = "2 gigs";
+    expect(() => containerCreateOptions(createInput)).toThrow(/RAKAZO_COMPUTER_MEMORY/);
+  });
+
+  it("rejects a negative cpu count", () => {
+    process.env.RAKAZO_COMPUTER_CPUS = "-1";
+    expect(() => containerCreateOptions(createInput)).toThrow(/RAKAZO_COMPUTER_CPUS/);
+  });
+
+  it("rejects a pids limit that is not a positive integer", () => {
+    process.env.RAKAZO_COMPUTER_PIDS_LIMIT = "12.5";
+    expect(() => containerCreateOptions(createInput)).toThrow(/RAKAZO_COMPUTER_PIDS_LIMIT/);
+  });
+
+  it("rejects a memory limit below Docker's 6 MiB minimum", () => {
+    // The daemon refuses these at container creation, so accepting them here would turn a typo
+    // into a 500 on the first bot rather than a startup failure naming the variable.
+    for (const value of ["1", "1m", "5m", "5242880"]) {
+      process.env.RAKAZO_COMPUTER_MEMORY = value;
+      expect(() => containerCreateOptions(createInput)).toThrow(/RAKAZO_COMPUTER_MEMORY/);
+    }
+    process.env.RAKAZO_COMPUTER_MEMORY = "6m";
+    expect(containerCreateOptions(createInput).HostConfig.Memory).toBe(6 * 1024 ** 2);
+  });
+
+  it("rejects a CPU count that would floor to Docker's unlimited", () => {
+    // Math.floor(1e-10 * 1e9) is 0, and 0 NanoCpus means uncapped. An accepted value must never
+    // turn a ceiling into no ceiling.
+    process.env.RAKAZO_COMPUTER_CPUS = "0.0000000001";
+    expect(() => containerCreateOptions(createInput)).toThrow(/RAKAZO_COMPUTER_CPUS/);
+  });
+
+  it("rejects a CPU count that leaves the safe-integer NanoCpus range", () => {
+    // 1e300 is finite, but Math.floor(1e300 * 1e9) is Infinity. 1e7 CPUs yields a non-safe
+    // integer. Both must fail closed rather than reach HostConfig.NanoCpus.
+    for (const value of ["1e300", "10000000"]) {
+      process.env.RAKAZO_COMPUTER_CPUS = value;
+      expect(() => containerCreateOptions(createInput)).toThrow(/RAKAZO_COMPUTER_CPUS/);
+    }
+  });
+
+  it("parses byte counts without a unit suffix", () => {
+    expect(parseMemoryBytes("X", "1073741824")).toBe(1024 ** 3);
   });
 });
