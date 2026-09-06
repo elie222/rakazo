@@ -228,18 +228,18 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await expect(page.getByRole("button", { name: "MCP servers", exact: true })).toBeHidden();
   // Thin Advanced smoke only. GraphQL install and order screenshots live in graphql-integrations.spec.ts.
   await expect(page.getByTestId("integrations-catalog-feed")).toBeVisible();
-  // Catalog search remains optional and manual MCP → OpenAPI → GraphQL → Treg stays available.
-  const advancedActions = advanced.locator("button");
-  await expect(advancedActions.nth(0)).toHaveText("MCP servers");
-  await expect(advancedActions.nth(1)).toHaveText("Search");
-  await expect(advancedActions.nth(2)).toHaveText("Add MCP server");
-  await expect(advancedActions.nth(3)).toHaveText("Add OpenAPI");
-  await expect(advancedActions.nth(4)).toHaveText("Add GraphQL");
-  await expect(advancedActions.nth(5)).toHaveText("Add Treg");
+  // Catalog Search is optional chrome; add buttons stay MCP → OpenAPI → GraphQL → Executor → Treg.
+  const advancedActions = advanced.getByTestId("integrations-advanced-add").locator("button");
+  await expect(advancedActions).toHaveCount(5);
+  await expect(advancedActions.nth(0)).toHaveText("Add MCP server");
+  await expect(advancedActions.nth(1)).toHaveText("Add OpenAPI");
+  await expect(advancedActions.nth(2)).toHaveText("Add GraphQL");
+  await expect(advancedActions.nth(3)).toHaveText("Add Executor");
+  await expect(advancedActions.nth(4)).toHaveText("Add Treg");
 
-  await page.getByRole("textbox", { name: "Integration domain" }).fill("github.com");
-  await page.getByRole("button", { name: "Search", exact: true }).click();
   const feed = page.getByTestId("integrations-catalog-feed");
+  await feed.getByRole("textbox", { name: "Integration domain" }).fill("github.com");
+  await feed.getByRole("button", { name: "Search", exact: true }).click();
   await expect(feed.getByText("GitHub", { exact: true })).toBeVisible();
   await expect(feed.getByRole("button", { name: "MCP · Add", exact: true })).toBeVisible();
   await expect(feed.getByRole("button", { name: "OPENAPI · Add", exact: true })).toBeVisible();
