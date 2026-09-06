@@ -169,7 +169,11 @@ export function OnboardingPage() {
         setModelId((current) => {
           const trimmed = current.trim();
           const next = trimmed || models[0] || "";
-          setManualModelId(Boolean(trimmed) && !models.includes(trimmed));
+          // Stay in manual entry across re-probes so a typed id that matches a
+          // discovered model cannot yank the freeform field back to the Select.
+          setManualModelId(
+            (wasManual) => wasManual || (Boolean(trimmed) && !models.includes(trimmed)),
+          );
           return next;
         });
         setNotice(openAiCompatibleProbeSuccessMessage(models.length));
