@@ -251,14 +251,23 @@ export default function BotSettingsScreen() {
         input.instructions = profile.instructions;
       }
       // Always persist the model pair so Space default clears an override even
-      // when catalog metadata failed to load. Thinking still needs metadata.
+      // when catalog metadata failed to load.
       input.modelProvider = selected?.provider ?? null;
       input.modelId = selected?.modelId ?? null;
-      if (modelMetaReady) {
+      const modelChanged =
+        (selected?.provider ?? null) !== (bot.modelProvider ?? null) ||
+        (selected?.modelId ?? null) !== (bot.modelId ?? null);
+      if (modelChanged) {
+        // selectModel clears thinking locally; persist that clear even when
+        // metadata failed, otherwise the previous override sticks on the server.
         input.thinkingLevel = thinkingOptions.length
           ? ((thinkingLevel || null) as ThinkingLevel | null)
           : null;
+      } else if (modelMetaReady && thinkingOptions.length) {
+        input.thinkingLevel = (thinkingLevel || null) as ThinkingLevel | null;
       }
+      // If the model is unchanged and has no thinking options (disconnected or
+      // metadata unavailable), omit thinkingLevel so an existing override stays.
       if (computerMode !== bot.computerMode) {
         await rpc("bots/setComputer", { botId, mode: computerMode });
       }
