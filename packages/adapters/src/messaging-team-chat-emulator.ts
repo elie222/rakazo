@@ -151,7 +151,7 @@ export class MessagingTeamChatEmulator implements MessagingSurface {
   }
 
   async sendTyping(threadId: string, _context: AdapterContext): Promise<void> {
-    this.assertProviderThread(threadId);
+    if (!this.capabilities.typing || providerOfThreadId(threadId) !== this.provider) return;
   }
 
   resetWitnesses(): void {

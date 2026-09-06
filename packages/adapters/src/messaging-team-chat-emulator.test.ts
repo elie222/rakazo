@@ -97,5 +97,7 @@ describe("MessagingTeamChatEmulator", () => {
     emulator.resetWitnesses();
     expect(emulator.sent).toEqual([]);
     expect(emulator.handleWebhook("teams", new Request("https://example.test"))).toBeNull();
+    await expect(emulator.sendTyping("teams:dm:U-colleague", context)).resolves.toBeUndefined();
+    await expect(emulator.sendTyping(inbound.threadId, context)).resolves.toBeUndefined();
   });
 });
