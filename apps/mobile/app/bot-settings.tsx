@@ -200,6 +200,7 @@ export default function BotSettingsScreen() {
     thinkingChoices.find((choice) => choice.key === thinkingLevel)?.label ?? t("Default (medium)");
 
   function selectModel(key: string) {
+    if (key === modelKey) return;
     setModelKey(key);
     setThinkingLevel("");
   }
