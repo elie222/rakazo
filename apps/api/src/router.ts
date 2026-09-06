@@ -3653,7 +3653,10 @@ export function createRouter(deps: RouterDeps) {
             description: tool.description,
           }));
         } catch (error) {
-          console.error("connections.tools failed", input.connectorId, input.provider, error);
+          getLogger().error("connections.tools failed", error, {
+            connectorId: input.connectorId,
+            provider: input.provider,
+          });
           return [];
         }
       }),

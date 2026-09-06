@@ -780,53 +780,53 @@ export function PluginsOverlay({
                     </Button>
                   ) : null}
 
-<div className="flex flex-wrap gap-2">
-                <Button
-                  type="button"
-                  variant="secondary"
-                  className="rounded-full"
-                  size="sm"
-                  onClick={() => beginSource("mcp")}
-                >
-                  <Trans>Add MCP server</Trans>
-                </Button>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  className="rounded-full"
-                  size="sm"
-                  onClick={() => beginSource("api")}
-                >
-                  <Trans>Add OpenAPI</Trans>
-                </Button>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  className="rounded-full"
-                  size="sm"
-                  onClick={() => beginSource("graphql")}
-                >
-                  <Trans>Add GraphQL</Trans>
-                </Button>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  className="rounded-full"
-                  size="sm"
-                  onClick={() => beginSource("executor")}
-                >
-                  <Trans>Add Executor</Trans>
-                </Button>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  className="rounded-full"
-                  size="sm"
-                  onClick={() => beginSource("treg")}
-                >
-                  <Trans>Add Treg</Trans>
-                </Button>
-              </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      className="rounded-full"
+                      size="sm"
+                      onClick={() => beginSource("mcp")}
+                    >
+                      <Trans>Add MCP server</Trans>
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      className="rounded-full"
+                      size="sm"
+                      onClick={() => beginSource("api")}
+                    >
+                      <Trans>Add OpenAPI</Trans>
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      className="rounded-full"
+                      size="sm"
+                      onClick={() => beginSource("graphql")}
+                    >
+                      <Trans>Add GraphQL</Trans>
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      className="rounded-full"
+                      size="sm"
+                      onClick={() => beginSource("executor")}
+                    >
+                      <Trans>Add Executor</Trans>
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      className="rounded-full"
+                      size="sm"
+                      onClick={() => beginSource("treg")}
+                    >
+                      <Trans>Add Treg</Trans>
+                    </Button>
+                  </div>
 
                   {sourceError ? <p className="text-sm text-destructive">{sourceError}</p> : null}
 
@@ -885,14 +885,18 @@ export function PluginsOverlay({
                             </NativeSelectOption>
                           </NativeSelect>
                         ) : null}
-                        {authType === "header" && sourceKind !== "treg" && sourceKind !== "executor" ? (
+                        {authType === "header" &&
+                        sourceKind !== "treg" &&
+                        sourceKind !== "executor" ? (
                           <Input
                             value={authName}
                             onChange={(event) => setAuthName(event.target.value)}
                             placeholder={t`Header name`}
                           />
                         ) : null}
-                        {sourceKind === "treg" || sourceKind === "executor" || authType !== "none" ? (
+                        {sourceKind === "treg" ||
+                        sourceKind === "executor" ||
+                        authType !== "none" ? (
                           <Input
                             type="password"
                             autoComplete="new-password"

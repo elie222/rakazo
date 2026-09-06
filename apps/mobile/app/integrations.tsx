@@ -100,10 +100,10 @@ export default function Integrations() {
     try {
       const installs = await rpc<CapabilityInstall[]>("capabilities/list");
       setSources(
-      installs.filter(
-        (item) => item.kind === "mcp" || item.kind === "api" || item.kind === "graphql",
-      ),
-    );
+        installs.filter(
+          (item) => item.kind === "mcp" || item.kind === "api" || item.kind === "graphql",
+        ),
+      );
     } catch {
       // Tool sources are optional; keep featured/catalog usable if this fails.
     }
