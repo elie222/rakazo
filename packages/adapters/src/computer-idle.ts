@@ -240,6 +240,12 @@ export async function sleepComputerIfIdle(
     scheduleComputerSleep(deps.jobs, computerId);
     return;
   }
+  const suspensionClaim = {
+    id: computerId,
+    state: "suspending",
+    providerRef: computer.providerRef,
+    updatedAt: checkpointedAt,
+  };
 
   try {
     const revision = await checkpointComputerWorkspace(
@@ -250,17 +256,12 @@ export async function sleepComputerIfIdle(
       ctx,
     );
     const saved = await deps.prisma.computer.updateMany({
-      where: {
-        id: computerId,
-        state: "suspending",
-        providerRef: computer.providerRef,
-        updatedAt: checkpointedAt,
-      },
+      where: suspensionClaim,
       data: { homeRevision: revision, updatedAt: checkpointedAt },
     });
     if (saved.count !== 1) {
       await deps.prisma.computer.updateMany({
-        where: { id: computerId, state: "suspending", providerRef: computer.providerRef },
+        where: suspensionClaim,
         data: { state: "running" },
       });
       scheduleComputerSleep(deps.jobs, computerId);
@@ -268,7 +269,7 @@ export async function sleepComputerIfIdle(
     }
   } catch (error) {
     await deps.prisma.computer.updateMany({
-      where: { id: computerId, state: "suspending", providerRef: computer.providerRef },
+      where: suspensionClaim,
       data: { state: "running" },
     });
     scheduleComputerSleep(deps.jobs, computerId);
@@ -285,7 +286,7 @@ export async function sleepComputerIfIdle(
   ]);
   if (activeAfterCheckpoint || backgroundAfterCheckpoint) {
     await deps.prisma.computer.updateMany({
-      where: { id: computerId, state: "suspending" },
+      where: suspensionClaim,
       data: { state: "running" },
     });
     scheduleComputerSleep(deps.jobs, computerId);
@@ -298,7 +299,7 @@ export async function sleepComputerIfIdle(
     current.updatedAt.getTime() !== checkpointedAt.getTime()
   ) {
     await deps.prisma.computer.updateMany({
-      where: { id: computerId, state: "suspending" },
+      where: suspensionClaim,
       data: { state: "running" },
     });
     scheduleComputerSleep(deps.jobs, computerId);
@@ -309,13 +310,13 @@ export async function sleepComputerIfIdle(
     await deps.sandbox.stop(ref, ctx);
   } catch (error) {
     await deps.prisma.computer.updateMany({
-      where: { id: computerId, state: "suspending" },
+      where: suspensionClaim,
       data: { state: "running" },
     });
     throw error;
   }
   await deps.prisma.computer.update({
-    where: { id: computerId },
+    where: suspensionClaim,
     data: {
       state: "suspended",
       controlHolder: "none",

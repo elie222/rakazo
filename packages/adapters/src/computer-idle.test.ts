@@ -143,7 +143,12 @@ describe("sandbox idle", () => {
     );
     expect(harness.sandbox.stop).toHaveBeenCalledOnce();
     expect(harness.prisma.computer.update).toHaveBeenCalledWith({
-      where: { id: harness.computer.id },
+      where: {
+        id: harness.computer.id,
+        state: "suspending",
+        providerRef: harness.computer.providerRef,
+        updatedAt: expect.any(Date),
+      },
       data: {
         state: "suspended",
         controlHolder: "none",
@@ -193,7 +198,7 @@ describe("sandbox idle", () => {
       harness.prisma.computer.updateMany.mockImplementation(async (args) => {
         if (args.data.homeRevision) {
           if (outcome === "failure") throw new Error("database unavailable");
-          return { count: 0 };
+          harness.computer.updatedAt = new Date(harness.computer.updatedAt.getTime() + 1);
         }
         return updateMany(args);
       });
@@ -204,8 +209,34 @@ describe("sandbox idle", () => {
 
       expect(harness.sandbox.stop).not.toHaveBeenCalled();
       expect(harness.computer.homeRevision).toBe("rev-before");
-      expect(harness.computer.state).toBe("running");
+      expect(harness.computer.state).toBe(outcome === "failure" ? "running" : "suspending");
       expect(harness.jobs.enqueue).toHaveBeenCalledOnce();
+    },
+  );
+
+  it.each(["checkpoint failure", "stop failure", "stop success"])(
+    "preserves a newer lifecycle owner after %s",
+    async (stage) => {
+      const harness = idleHarness();
+      const invalidate = () => {
+        harness.computer.updatedAt = new Date(harness.computer.updatedAt.getTime() + 1);
+      };
+      if (stage === "checkpoint failure") {
+        harness.home.commit.mockImplementationOnce(async () => {
+          invalidate();
+          throw new Error("checkpoint interrupted");
+        });
+      } else {
+        harness.sandbox.stop.mockImplementationOnce(async () => {
+          invalidate();
+          if (stage === "stop failure") throw new Error("stop interrupted");
+        });
+      }
+
+      await expect(sleepComputerIfIdle(harness.deps, harness.computer.id)).rejects.toThrow();
+
+      expect(harness.computer.state).toBe("suspending");
+      expect(harness.events.append).not.toHaveBeenCalled();
     },
   );
 });
@@ -444,17 +475,23 @@ function idleHarness(
     executionBotId: null,
     updatedAt: new Date("2026-01-01T00:00:00.000Z"),
   };
-  let checkpointedAt = computer.updatedAt;
   const prisma = {
     computer: {
-      findUnique: vi.fn(async () => ({ ...computer, updatedAt: checkpointedAt })),
+      findUnique: vi.fn(async () => ({ ...computer })),
       updateMany: vi.fn(async (args) => {
-        if (args.data.updatedAt) checkpointedAt = args.data.updatedAt;
+        if (args.where.updatedAt && args.where.updatedAt.getTime() !== computer.updatedAt.getTime())
+          return { count: 0 };
+        if (args.data.updatedAt) computer.updatedAt = args.data.updatedAt;
         if (args.data.state) computer.state = args.data.state;
         if (args.data.homeRevision) computer.homeRevision = args.data.homeRevision;
         return { count: 1 };
       }),
-      update: vi.fn().mockResolvedValue(undefined),
+      update: vi.fn(async (args) => {
+        if (args.where.updatedAt && args.where.updatedAt.getTime() !== computer.updatedAt.getTime())
+          throw new Error("stale computer lifecycle");
+        Object.assign(computer, args.data);
+        return computer;
+      }),
     },
     run: { findFirst: vi.fn().mockResolvedValue(null) },
     agentHome: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
