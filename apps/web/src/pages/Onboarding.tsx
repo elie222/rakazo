@@ -21,6 +21,8 @@ import type { ModelCatalogEntry } from "../lib/model-auth";
 import { rpc } from "../lib/rpc";
 import { useModelOAuthSignIn } from "../lib/use-model-oauth-signin";
 
+const CUSTOM_MODEL_OPTION = "__rakazo_custom_model__";
+
 export function OnboardingPage() {
   const { t } = useLingui();
   const navigate = useNavigate();
@@ -118,6 +120,7 @@ export function OnboardingPage() {
     if (nextProvider === provider) return;
     cancelOAuthAttempt();
     setProvider(nextProvider);
+    setApiKey("");
     setModelId(
       nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID
         ? ""
@@ -270,7 +273,13 @@ export function OnboardingPage() {
                       <Trans>Model</Trans>
                     </span>
                     {probeModels.length && probeModels.includes(modelId) ? (
-                      <Select value={modelId} onValueChange={(value) => setModelId(String(value))}>
+                      <Select
+                        value={modelId}
+                        onValueChange={(value) => {
+                          const next = String(value);
+                          setModelId(next === CUSTOM_MODEL_OPTION ? "" : next);
+                        }}
+                      >
                         <SelectTrigger aria-label={t`Models from server`} className="mt-2 w-full">
                           <SelectValue />
                         </SelectTrigger>
@@ -280,6 +289,9 @@ export function OnboardingPage() {
                               {id}
                             </SelectItem>
                           ))}
+                          <SelectItem value={CUSTOM_MODEL_OPTION}>
+                            <Trans>Other model…</Trans>
+                          </SelectItem>
                         </SelectContent>
                       </Select>
                     ) : (

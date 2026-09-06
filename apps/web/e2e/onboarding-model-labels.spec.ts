@@ -21,11 +21,13 @@ test("onboarding uses compact model selects without misleading latest labels", a
 
   const provider = page.getByRole("combobox", { name: "Provider" });
   await expect(provider).toContainText("OpenRouter");
+  await page.getByLabel("API key").fill("openrouter-only-key");
   await provider.click();
   await expect(page.getByRole("option", { name: "ChatGPT" })).toBeVisible();
   await expect(page.getByRole("option", { name: "Vercel AI Gateway" })).toBeVisible();
   await page.getByRole("option", { name: "Anthropic" }).click();
   await expect(provider).toContainText("Anthropic");
+  await expect(page.getByLabel(/API key/)).toHaveValue("");
 
   const models = page.getByRole("combobox", { name: "Model", exact: true });
   await models.click();
@@ -39,6 +41,16 @@ test("onboarding uses compact model selects without misleading latest labels", a
   expect(alias).toBeTruthy();
   await page.getByRole("option", { name: alias! }).click();
   await expect(models).toContainText(alias!);
+
+  await provider.click();
+  await page.getByRole("option", { name: "OpenAI-compatible" }).click();
+  await page.getByLabel("OpenAI-compatible server URL").fill("http://127.0.0.1:8090/v1");
+  await page.getByRole("button", { name: "Find models" }).click();
+  const discovered = page.getByRole("combobox", { name: "Models from server" });
+  await expect(discovered).toBeVisible();
+  await discovered.click();
+  await page.getByRole("option", { name: "Other model…" }).click();
+  await expect(page.getByLabel("Model id")).toBeVisible();
 
   await captureScreenshot(page, testInfo, "onboarding-model-labels");
 });
