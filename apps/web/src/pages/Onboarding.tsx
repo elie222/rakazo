@@ -34,6 +34,7 @@ export function OnboardingPage() {
   const [apiKey, setApiKey] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
   const [reasoning, setReasoning] = useState(false);
+  const [manualModelId, setManualModelId] = useState(false);
   const [{ models: probeModels, baseUrl: probedBaseUrl, probing }, setProbe] =
     useState(initialModelProbeState);
   const [modelProbe] = useState(() => createModelProbe(setProbe));
@@ -106,6 +107,7 @@ export function OnboardingPage() {
 
   function updateBaseUrl(nextBaseUrl: string) {
     setBaseUrl(nextBaseUrl);
+    setManualModelId(false);
     resetOpenAiCompatibleProbe();
     setError(null);
     setNotice(null);
@@ -128,6 +130,7 @@ export function OnboardingPage() {
     );
     setBaseUrl("");
     setReasoning(false);
+    setManualModelId(false);
     resetOpenAiCompatibleProbe();
     setError(null);
     setNotice(null);
@@ -142,6 +145,7 @@ export function OnboardingPage() {
       apiKey,
       request: rpc.models.probeOpenAiCompatible,
       onSuccess: (models) => {
+        setManualModelId(false);
         setModelId((current) => current.trim() || models[0] || "");
         setNotice(openAiCompatibleProbeSuccessMessage(models.length));
       },
@@ -272,12 +276,17 @@ export function OnboardingPage() {
                     <span className="font-medium">
                       <Trans>Model</Trans>
                     </span>
-                    {probeModels.length && probeModels.includes(modelId) ? (
+                    {probeModels.length && !manualModelId && probeModels.includes(modelId) ? (
                       <Select
                         value={modelId}
                         onValueChange={(value) => {
                           const next = String(value);
-                          setModelId(next === CUSTOM_MODEL_OPTION ? "" : next);
+                          if (next === CUSTOM_MODEL_OPTION) {
+                            setManualModelId(true);
+                            setModelId("");
+                          } else {
+                            setModelId(next);
+                          }
                         }}
                       >
                         <SelectTrigger aria-label={t`Models from server`} className="mt-2 w-full">
@@ -308,7 +317,10 @@ export function OnboardingPage() {
                         variant="link"
                         size="xs"
                         className="mt-2 px-0 text-muted-foreground"
-                        onClick={() => setModelId(probeModels[0] ?? "")}
+                        onClick={() => {
+                          setManualModelId(false);
+                          setModelId(probeModels[0] ?? "");
+                        }}
                       >
                         <Trans>Use a found model</Trans>
                       </Button>

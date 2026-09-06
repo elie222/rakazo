@@ -49,8 +49,16 @@ test("onboarding uses compact model selects without misleading latest labels", a
   const discovered = page.getByRole("combobox", { name: "Models from server" });
   await expect(discovered).toBeVisible();
   await discovered.click();
+  const discoveredModel = (await page.getByRole("option").allTextContents()).find(
+    (label) => label !== "Other model…",
+  );
+  expect(discoveredModel).toBeTruthy();
   await page.getByRole("option", { name: "Other model…" }).click();
-  await expect(page.getByLabel("Model id")).toBeVisible();
+  const manualModel = page.getByLabel("Model id");
+  await manualModel.fill(discoveredModel!);
+  await expect(manualModel).toBeVisible();
+  await manualModel.fill(`${discoveredModel}-custom`);
+  await expect(manualModel).toHaveValue(`${discoveredModel}-custom`);
 
   await captureScreenshot(page, testInfo, "onboarding-model-labels");
 });
