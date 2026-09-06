@@ -619,7 +619,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
       const hasOverride = Boolean(override?.modelProvider && override.modelId);
       const [overrideCredential, defaultCredential, settings] = await Promise.all([
         hasOverride
-          ? findModelCredential(deps.prisma, scope, override!.modelProvider!)
+          ? findModelCredential(deps.prisma, scope, override!.modelProvider!, override!.modelId)
           : Promise.resolve(null),
         findDefaultModelCredential(deps.prisma, scope),
         deps.prisma.deploymentSettings.findUnique({ where: { id: "default" } }),
@@ -953,7 +953,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         const hasModelOverride = Boolean(bot.modelProvider && bot.modelId);
         const overrideCredential =
           hasModelOverride && bot.modelProvider
-            ? await findModelCredential(deps.prisma, run, bot.modelProvider)
+            ? await findModelCredential(deps.prisma, run, bot.modelProvider, bot.modelId)
             : null;
         runAbortController = new AbortController();
         if (!leaseValid) runAbortController.abort();
