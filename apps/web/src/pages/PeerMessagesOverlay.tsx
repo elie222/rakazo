@@ -2,7 +2,8 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import { ChatMarkdown } from "@rakazo/chat-ui/web";
 import type { ThreadMessage } from "@rakazo/contracts";
 import { BotAvatar, Button, Dialog, DialogClose, DialogContent, DialogTitle } from "@rakazo/ui-web";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { loadPeerHistory } from "../lib/peer-history";
 import { peerConversations } from "../lib/peer-messages";
 import { rpc } from "../lib/rpc";
 
@@ -31,39 +32,37 @@ export function PeerMessagesOverlay({
   const [messages, setMessages] = useState<readonly ThreadMessage[]>([]);
   const [historyReady, setHistoryReady] = useState(false);
   const [historyFailed, setHistoryFailed] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
   const conversation = useMemo(() => {
     if (!historyReady) return null;
     return peerConversations(messages).find((entry) => entry.peerBotId === peerBotId) ?? null;
   }, [historyReady, messages, peerBotId]);
   const peerBotName = conversation?.peerBotName ?? initialPeerBotName;
-  const loadRef = useRef({ botId });
 
   useEffect(() => {
-    let cancelled = false;
-    const { botId: id } = loadRef.current;
+    const abort = new AbortController();
     setHistoryReady(false);
     setHistoryFailed(false);
-    void (async () => {
-      let before: number | undefined;
-      let collected: ThreadMessage[] = [];
-      do {
-        const page = await rpc.threads.messages({ botId: id, before, includePeerRuns: true });
-        if (cancelled) return;
-        collected = [...page.messages, ...collected];
-        before = page.olderCursor ?? undefined;
-      } while (before !== undefined);
-      if (cancelled) return;
-      setMessages(collected);
-      setHistoryReady(true);
-    })().catch(() => {
-      if (cancelled) return;
-      setHistoryFailed(true);
-      setHistoryReady(true);
-    });
+    setMessages([]);
+    void loadPeerHistory({
+      signal: abort.signal,
+      loadPage: (before, signal) =>
+        rpc.threads.messages({ botId, before, includePeerRuns: true }, { signal }),
+    })
+      .then((loaded) => {
+        if (abort.signal.aborted) return;
+        setMessages(loaded);
+        setHistoryReady(true);
+      })
+      .catch(() => {
+        if (abort.signal.aborted) return;
+        setHistoryFailed(true);
+        setHistoryReady(true);
+      });
     return () => {
-      cancelled = true;
+      abort.abort();
     };
-  }, []);
+  }, [botId, reloadKey]);
 
   const title = `${botName} · ${peerBotName}`;
 
@@ -100,7 +99,16 @@ export function PeerMessagesOverlay({
           </div>
         ) : historyFailed ? (
           <div className="grid flex-1 place-items-center px-8 text-center text-[13.5px] text-muted-foreground/80">
-            <Trans>Could not load this chat.</Trans>
+            <div className="flex flex-col items-center gap-3">
+              <Trans>Could not load this chat.</Trans>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setReloadKey((value) => value + 1)}
+              >
+                <Trans>Retry now</Trans>
+              </Button>
+            </div>
           </div>
         ) : !conversation || conversation.messages.length === 0 ? (
           <div className="grid flex-1 place-items-center px-8 text-center text-[13.5px] text-muted-foreground/80">
