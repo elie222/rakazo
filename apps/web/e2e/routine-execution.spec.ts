@@ -19,7 +19,9 @@ test("GitHub event trigger exposes signed delivery settings and persists", async
   await page.getByRole("button", { name: "Add trigger" }).click();
   await page.getByRole("menuitem", { name: "Git event", exact: true }).click();
 
-  await expect(page.getByText("Git event", { exact: true })).toBeVisible();
+  await expect(
+    page.getByTestId("side-panel").getByText("Git event", { exact: true }),
+  ).toBeVisible();
   await expect(page.getByText(new RegExp(`/api/v1/bots/${botId}/github$`))).toBeVisible();
   await expect(page.getByText("X-Hub-Signature-256: sha256=…", { exact: true })).toBeVisible();
 
