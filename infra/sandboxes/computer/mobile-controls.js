@@ -39,6 +39,7 @@ export function attachMobileControls(rfb, Keyboard, pasteHostText) {
       input.setSelectionRange(previous.length, previous.length);
     }
   });
+  keyboardButton.addEventListener("pointerdown", (event) => event.preventDefault());
   keyboardButton.addEventListener("click", () => {
     if (document.activeElement === input) input.blur();
     else {

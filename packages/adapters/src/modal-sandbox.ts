@@ -189,7 +189,7 @@ export class ModalSandboxProvider implements SandboxProvider {
         argv: [
           "bash",
           "-lc",
-          "for i in {1..100}; do xdpyinfo -display :1 >/dev/null 2>&1 && exit 0; sleep 0.2; done; exit 1",
+          "for i in {1..100}; do xdpyinfo -display :1 >/dev/null 2>&1 && python3 -c 'import urllib.request; urllib.request.urlopen(\"http://127.0.0.1:8080/embed.html\", timeout=1).read(1)' >/dev/null 2>&1 && exit 0; sleep 0.2; done; exit 1",
         ],
         timeoutMs: 25000,
       },
