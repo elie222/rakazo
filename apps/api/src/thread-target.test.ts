@@ -1018,29 +1018,38 @@ describe("stopThreadRuns", () => {
       },
       steeringMessage: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
       computer: {
-        findMany: vi.fn().mockResolvedValue([
-          {
-            id: "computer-db-a",
-            homeKey: "home-a",
-            kind: "fake",
-            providerRef: "computer-a",
-            executionBotId: "bot-a",
-            executionRunId: "run-a",
-          },
-          {
-            id: "computer-db-b",
-            homeKey: "home-b",
-            kind: "fake",
-            providerRef: "computer-b",
-            executionBotId: "bot-b",
-            executionRunId: "run-b",
-          },
-        ]),
+        // Production team ownership is lease-only: Computer.executionRunId stays null.
+        findMany: vi.fn().mockImplementation(async ({ where }: { where: { OR?: unknown[] } }) => {
+          expect(where.OR).toEqual(
+            expect.arrayContaining([
+              { id: { in: expect.arrayContaining(["computer-db-a", "computer-db-b"]) } },
+              { executionRunId: { in: ["run-a", "run-b"] } },
+            ]),
+          );
+          return [
+            {
+              id: "computer-db-a",
+              homeKey: "home-a",
+              kind: "fake",
+              providerRef: "computer-a",
+              executionBotId: null,
+              executionRunId: null,
+            },
+            {
+              id: "computer-db-b",
+              homeKey: "home-b",
+              kind: "fake",
+              providerRef: "computer-b",
+              executionBotId: null,
+              executionRunId: null,
+            },
+          ];
+        }),
       },
       computerExecutionLease: {
         findMany: vi.fn().mockResolvedValue([
-          { computerId: "computer-db-a", runId: "run-a", fence: 2 },
-          { computerId: "computer-db-b", runId: "run-b", fence: 4 },
+          { computerId: "computer-db-a", botId: "bot-a", runId: "run-a", fence: 2 },
+          { computerId: "computer-db-b", botId: "bot-b", runId: "run-b", fence: 4 },
         ]),
       },
     };
@@ -1048,11 +1057,11 @@ describe("stopThreadRuns", () => {
       $transaction: vi.fn(async (callback: (client: typeof transaction) => unknown) =>
         callback(transaction),
       ),
-      // Simulate workers clearing execution columns as soon as the transaction
-      // commits. A post-commit lookup would now miss both sandboxes.
+      // Simulate workers clearing leases / execution columns as soon as the
+      // transaction commits. A post-commit lookup would now miss both sandboxes.
       computer: {
         findMany: vi.fn().mockResolvedValue([]),
-        updateMany: vi.fn().mockResolvedValue({ count: 2 }),
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
       },
       computerExecutionLease: {
         updateMany: vi.fn().mockResolvedValue({ count: 2 }),
@@ -1078,13 +1087,17 @@ describe("stopThreadRuns", () => {
       target,
     );
 
+    expect(transaction.computerExecutionLease.findMany).toHaveBeenCalledWith({
+      where: { runId: { in: ["run-a", "run-b"] } },
+      select: { computerId: true, botId: true, runId: true, fence: true },
+    });
     expect(execute).toHaveBeenCalledTimes(2);
     expect(execute).toHaveBeenCalledWith(
       expect.objectContaining({ providerRef: "computer-a" }),
       expect.objectContaining({
         argv: expect.arrayContaining(["rakazo-cancel-run-work", "computer-db-a", "run-a"]),
       }),
-      expect.objectContaining({ cancelRunWork: true, runId: "run-a" }),
+      expect.objectContaining({ cancelRunWork: true, runId: "run-a", botId: "bot-a" }),
     );
     expect(releaseScreen).toHaveBeenCalledTimes(2);
     expect(releaseScreen).toHaveBeenCalledWith(

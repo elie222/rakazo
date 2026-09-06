@@ -910,11 +910,25 @@ export async function stopThreadRuns(
       },
     });
     // Snapshot teardown coordinates before commit. Once cancellation becomes
-    // visible, a worker can release its execution columns immediately; a
+    // visible, a worker can release its lease / execution columns immediately; a
     // later lookup would then miss the sandbox work this request must stop.
+    // Team ownership lives on ComputerExecutionLease; Computer.executionRunId is
+    // only a legacy secondary path and is not written by current acquisition.
+    const leases = ids.length
+      ? await tx.computerExecutionLease.findMany({
+          where: { runId: { in: ids } },
+          select: { computerId: true, botId: true, runId: true, fence: true },
+        })
+      : [];
+    const leaseComputerIds = [...new Set(leases.map((lease) => lease.computerId))];
     const computers = ids.length
       ? await tx.computer.findMany({
-          where: { executionRunId: { in: ids } },
+          where:
+            leaseComputerIds.length > 0
+              ? {
+                  OR: [{ id: { in: leaseComputerIds } }, { executionRunId: { in: ids } }],
+                }
+              : { executionRunId: { in: ids } },
           select: {
             id: true,
             homeKey: true,
@@ -925,34 +939,59 @@ export async function stopThreadRuns(
           },
         })
       : [];
-    const leases = ids.length
-      ? await tx.computerExecutionLease.findMany({
-          where: { runId: { in: ids } },
-          select: { computerId: true, runId: true, fence: true },
-        })
-      : [];
     return { runIds: ids, computers, leases };
   });
   // Keep the DB lease until after teardown so a replacement run cannot claim the
   // screen while we still need the cancelled run's screenLeaseId to release it.
-  const leaseByComputerId = new Map(leases.map((lease) => [lease.computerId, lease]));
+  const computerById = new Map(computers.map((computer) => [computer.id, computer]));
+  const teardownTargets: Array<{
+    computer: (typeof computers)[number];
+    botId: string;
+    runId: string;
+    lease: (typeof leases)[number] | null;
+  }> = [];
+  const seenTargets = new Set<string>();
+  for (const lease of leases) {
+    const computer = computerById.get(lease.computerId);
+    if (!computer) continue;
+    const key = `${computer.id}:${lease.runId}`;
+    if (seenTargets.has(key)) continue;
+    seenTargets.add(key);
+    teardownTargets.push({
+      computer,
+      botId: lease.botId,
+      runId: lease.runId,
+      lease,
+    });
+  }
+  for (const computer of computers) {
+    if (!computer.executionBotId || !computer.executionRunId) continue;
+    const key = `${computer.id}:${computer.executionRunId}`;
+    if (seenTargets.has(key)) continue;
+    seenTargets.add(key);
+    teardownTargets.push({
+      computer,
+      botId: computer.executionBotId,
+      runId: computer.executionRunId,
+      lease: null,
+    });
+  }
   await Promise.all(
-    computers.map(async (computer) => {
-      if (!computer.providerRef || !computer.executionBotId || !computer.executionRunId) return;
-      const lease = leaseByComputerId.get(computer.id) ?? null;
+    teardownTargets.map(async ({ computer, botId, runId, lease }) => {
+      if (!computer.providerRef) return;
       const context = {
         operationId: "stop",
         traceId: "stop",
         spaceId: actor.spaceId,
         userId: actor.userId,
-        botId: computer.executionBotId,
-        runId: computer.executionRunId,
-        screenLeaseId: screenLeaseIdForRun(lease, computer.executionRunId),
+        botId,
+        runId,
+        screenLeaseId: screenLeaseIdForRun(lease, runId),
         cancelRunWork: true,
         signal: new AbortController().signal,
       };
       const ref = toComputerRef(computer);
-      await cancelComputerRunWork(deps.sandbox, ref, computer.id, computer.executionRunId, context);
+      await cancelComputerRunWork(deps.sandbox, ref, computer.id, runId, context);
       await deps.sandbox.releaseScreen?.(ref, context).catch(() => undefined);
     }),
   );
