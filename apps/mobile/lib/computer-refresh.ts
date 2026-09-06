@@ -11,6 +11,9 @@ export function createComputerRefresh(options: {
 }) {
   let active = false;
   let revision = 0;
+  let lifetime = 0;
+  let activeActions = 0;
+  let pendingRevision: number | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
 
   function invalidate() {
@@ -18,10 +21,17 @@ export function createComputerRefresh(options: {
     clearTimeout(timer);
   }
 
+  function schedule() {
+    clearTimeout(timer);
+    if (!active || activeActions > 0 || pendingRevision === revision) return;
+    timer = setTimeout(() => void refresh().catch(() => undefined), 2000);
+  }
+
   async function refresh({ screenAttempts = 1 } = {}) {
     if (!active) return;
     invalidate();
     const requestRevision = revision;
+    pendingRevision = requestRevision;
     const current = () => active && requestRevision === revision;
     try {
       const status = await options.readStatus();
@@ -40,15 +50,36 @@ export function createComputerRefresh(options: {
     } catch (error) {
       if (current()) throw error;
     } finally {
-      if (current()) {
-        timer = setTimeout(() => void refresh().catch(() => undefined), 2000);
-      }
+      if (pendingRevision === requestRevision) pendingRevision = undefined;
+      if (current()) schedule();
     }
   }
 
   return {
     refresh,
     isActive: () => active,
+    beginAction() {
+      const started = active;
+      const actionLifetime = lifetime;
+      let finished = false;
+      const isActive = () => started && active && actionLifetime === lifetime;
+      if (started) {
+        activeActions += 1;
+        invalidate();
+      }
+      return {
+        isActive,
+        refresh: (input?: { screenAttempts?: number }) =>
+          isActive() && !finished ? refresh(input) : Promise.resolve(undefined),
+        finish() {
+          if (finished) return;
+          finished = true;
+          if (!isActive()) return;
+          activeActions -= 1;
+          schedule();
+        },
+      };
+    },
     start() {
       active = true;
       const initial = refresh();
@@ -62,6 +93,8 @@ export function createComputerRefresh(options: {
     },
     dispose() {
       active = false;
+      lifetime += 1;
+      activeActions = 0;
       invalidate();
     },
   };

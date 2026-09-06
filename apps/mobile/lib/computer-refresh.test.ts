@@ -119,3 +119,151 @@ describe("computer refresh lifecycle", () => {
     fixture.controller.dispose();
   });
 });
+
+describe("computer action lifecycle", () => {
+  it("keeps overlapping actions valid and pauses polling until both finish", async () => {
+    vi.useFakeTimers();
+    const fixture = setup();
+    fixture.controller.start();
+    await vi.advanceTimersByTimeAsync(0);
+    const boot = fixture.controller.beginAction();
+    const release = fixture.controller.beginAction();
+    const bootMutation = deferred<void>();
+    const releaseMutation = deferred<void>();
+    const bootWork = (async () => {
+      await bootMutation.promise;
+      expect(boot.isActive()).toBe(true);
+      await boot.refresh({ screenAttempts: 5 });
+      boot.finish();
+      boot.finish();
+    })();
+    const releaseWork = (async () => {
+      await releaseMutation.promise;
+      expect(release.isActive()).toBe(true);
+      await release.refresh();
+      release.finish();
+    })();
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(fixture.readStatus).toHaveBeenCalledTimes(1);
+    bootMutation.resolve();
+    await bootWork;
+    expect(fixture.readScreen).toHaveBeenLastCalledWith(5);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(fixture.readStatus).toHaveBeenCalledTimes(2);
+    releaseMutation.resolve();
+    await releaseWork;
+    expect(fixture.readStatus).toHaveBeenCalledTimes(3);
+    await vi.advanceTimersByTimeAsync(1999);
+    expect(fixture.readStatus).toHaveBeenCalledTimes(3);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(fixture.readStatus).toHaveBeenCalledTimes(4);
+    fixture.controller.dispose();
+  });
+
+  it("invalidates an old screen when an action begins, before the mutation completes", async () => {
+    vi.useFakeTimers();
+    const fixture = setup();
+    const oldScreen = deferred<string | null>();
+    fixture.readScreen.mockReturnValueOnce(oldScreen.promise);
+    fixture.controller.start();
+    await vi.advanceTimersByTimeAsync(0);
+    const action = fixture.controller.beginAction();
+    oldScreen.resolve("https://obsolete.example.test");
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(fixture.onScreen).not.toHaveBeenCalled();
+    expect(fixture.onReady).not.toHaveBeenCalled();
+    expect(fixture.readStatus).toHaveBeenCalledTimes(1);
+    await action.refresh();
+    action.finish();
+    expect(fixture.onScreen).toHaveBeenCalledExactlyOnceWith("https://screen.example.test");
+    fixture.controller.dispose();
+  });
+
+  it("lets explicit action recovery bypass a hung poll and suppresses its eventual failure", async () => {
+    vi.useFakeTimers();
+    const fixture = setup();
+    const hung = deferred<ComputerStatus>();
+    fixture.readStatus.mockReturnValueOnce(hung.promise);
+    fixture.controller.start();
+    const action = fixture.controller.beginAction();
+    await action.refresh({ screenAttempts: 5 });
+    action.finish();
+    expect(fixture.onStatus).toHaveBeenCalledExactlyOnceWith(running);
+    expect(fixture.readScreen).toHaveBeenCalledExactlyOnceWith(5);
+    hung.reject(new Error("obsolete poll failed"));
+    await vi.advanceTimersByTimeAsync(1999);
+    expect(fixture.onInitialError).not.toHaveBeenCalled();
+    expect(fixture.readStatus).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(fixture.readStatus).toHaveBeenCalledTimes(3);
+    fixture.controller.dispose();
+  });
+
+  it("waits for the latest refresh when an action finishes during another slow read", async () => {
+    vi.useFakeTimers();
+    const fixture = setup();
+    fixture.controller.start();
+    await vi.advanceTimersByTimeAsync(0);
+    const action = fixture.controller.beginAction();
+    const latest = deferred<ComputerStatus>();
+    fixture.readStatus.mockReturnValueOnce(latest.promise);
+    const refreshing = fixture.controller.refresh();
+    action.finish();
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(fixture.readStatus).toHaveBeenCalledTimes(2);
+    latest.resolve(stopped);
+    await refreshing;
+    expect(fixture.onStatus).toHaveBeenLastCalledWith(stopped);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(fixture.readStatus).toHaveBeenCalledTimes(3);
+    fixture.controller.dispose();
+  });
+
+  it("resumes recovery after a failed action even if an invalidated poll never settles", async () => {
+    vi.useFakeTimers();
+    const fixture = setup();
+    const hung = deferred<ComputerStatus>();
+    fixture.readStatus.mockReturnValueOnce(hung.promise);
+    fixture.controller.start();
+    const action = fixture.controller.beginAction();
+    const failure = new Error("mutation failed");
+    const mutation = deferred<void>();
+    const work = (async () => {
+      try {
+        await mutation.promise;
+        await action.refresh();
+      } finally {
+        action.finish();
+      }
+    })();
+    mutation.reject(failure);
+    await expect(work).rejects.toBe(failure);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(fixture.readStatus).toHaveBeenCalledTimes(2);
+    expect(fixture.onStatus).toHaveBeenCalledExactlyOnceWith(running);
+    fixture.controller.dispose();
+  });
+
+  it("keeps old action completions inactive across disposal and strict-mode restart", async () => {
+    vi.useFakeTimers();
+    const fixture = setup();
+    fixture.controller.start();
+    await vi.advanceTimersByTimeAsync(0);
+    const old = fixture.controller.beginAction();
+    fixture.controller.dispose();
+    fixture.controller.start();
+    await vi.advanceTimersByTimeAsync(0);
+    const current = fixture.controller.beginAction();
+    expect(old.isActive()).toBe(false);
+    expect(current.isActive()).toBe(true);
+    await old.refresh();
+    old.finish();
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(fixture.readStatus).toHaveBeenCalledTimes(2);
+    await current.refresh();
+    current.finish();
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(fixture.readStatus).toHaveBeenCalledTimes(4);
+    fixture.controller.dispose();
+  });
+});

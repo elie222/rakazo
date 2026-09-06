@@ -37,8 +37,10 @@ export default function Computer() {
   const [screenError, setScreenError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [readyBotId, setReadyBotId] = useState<string | null>(null);
-  const [booting, setBooting] = useState(false);
-  const [switching, setSwitching] = useState(false);
+  const [bootingCount, setBootingCount] = useState(0);
+  const [switchingCount, setSwitchingCount] = useState(0);
+  const booting = bootingCount > 0;
+  const switching = switchingCount > 0;
   const [computerOpen, setComputerOpen] = useState(false);
   const autoBooted = useRef<string | null>(null);
 
@@ -75,8 +77,8 @@ export default function Computer() {
     setScreenError(null);
     setError(null);
     setReadyBotId(null);
-    setBooting(false);
-    setSwitching(false);
+    setBootingCount(0);
+    setSwitchingCount(0);
     setComputerOpen(false);
     autoBooted.current = null;
     if (botId) refreshController.start();
@@ -92,28 +94,32 @@ export default function Computer() {
     overlay: boolean;
     force?: boolean;
   }) {
-    if (!botId || !refreshController.isActive()) return;
+    if (!botId || !refreshController.isActive()) return false;
+    const action = refreshController.beginAction();
     const needsBoot = force || computer?.state !== "running" || !screenUrl;
-    if (overlay && needsBoot) setBooting(true);
+    const showBooting = overlay && needsBoot;
+    if (showBooting) setBootingCount((count) => count + 1);
     try {
       if (needsBoot) await rpc("computer/boot", { botId });
-      if (!refreshController.isActive()) return;
+      if (!action.isActive()) return false;
       if (takeControl) await rpc("computer/takeover", { botId });
-      if (!refreshController.isActive()) return;
-      await refresh({ screenAttempts: SCREEN_URL_OPEN_ATTEMPTS });
-      if (!refreshController.isActive()) return;
+      if (!action.isActive()) return false;
+      await action.refresh({ screenAttempts: SCREEN_URL_OPEN_ATTEMPTS });
+      if (!action.isActive()) return false;
       setError(null);
+      return true;
     } catch (err) {
-      if (!refreshController.isActive()) return;
+      if (!action.isActive()) return false;
       setError(err instanceof Error ? err.message : t("Could not open computer"));
       throw err;
     } finally {
-      if (refreshController.isActive()) setBooting(false);
+      if (action.isActive() && showBooting) setBootingCount((count) => count - 1);
+      action.finish();
     }
   }
 
   useEffect(() => {
-    if (!botId || readyBotId !== botId) return;
+    if (!botId || readyBotId !== botId || switching) return;
     if (computer?.state === "booting" || computer?.state === "suspended") return;
     if (autoBooted.current === botId) return;
     autoBooted.current = botId;
@@ -122,7 +128,7 @@ export default function Computer() {
       overlay: computer?.state !== "running",
       force: true,
     }).catch(() => undefined);
-  }, [readyBotId, botId, computer?.state]);
+  }, [readyBotId, botId, computer?.state, switching]);
 
   useEffect(() => {
     if (!botId || computer?.state !== "running") return;
@@ -136,12 +142,12 @@ export default function Computer() {
     if (!botId) return;
     const needsTakeover = !(computer?.controlHolder === "user" && computer.controlBotId === botId);
     try {
-      await bootComputer({
+      const opened = await bootComputer({
         takeControl: needsTakeover,
         overlay: needsTakeover || computer?.state !== "running",
         force: computer?.state !== "running",
       });
-      if (!refreshController.isActive()) return;
+      if (!opened || !refreshController.isActive()) return;
       setComputerOpen(true);
       setScreenError(null);
     } catch {
@@ -150,16 +156,22 @@ export default function Computer() {
   }
 
   async function releaseComputer(reason?: ComputerReleaseReason) {
-    if (!botId) return;
-    await rpc("computer/release", { botId, reason }).catch(() => undefined);
-    if (!refreshController.isActive()) return;
-    setComputerOpen(false);
-    await refresh().catch(() => undefined);
+    if (!botId || !refreshController.isActive()) return;
+    const action = refreshController.beginAction();
+    try {
+      await rpc("computer/release", { botId, reason }).catch(() => undefined);
+      if (!action.isActive()) return;
+      setComputerOpen(false);
+      await action.refresh().catch(() => undefined);
+    } finally {
+      action.finish();
+    }
   }
 
   async function setComputerMode(mode: ComputerMode) {
-    if (!botId || mode === computer?.mode) return;
-    setSwitching(true);
+    if (!botId || !refreshController.isActive() || mode === computer?.mode) return;
+    const action = refreshController.beginAction();
+    setSwitchingCount((count) => count + 1);
     setError(null);
     try {
       if (hasControl) {
@@ -168,18 +180,19 @@ export default function Computer() {
           reason: computer?.takeoverRequested ? "skipped" : undefined,
         });
       }
-      if (!refreshController.isActive()) return;
+      if (!action.isActive()) return;
       await rpc("bots/setComputer", { botId, mode });
-      if (!refreshController.isActive()) return;
+      if (!action.isActive()) return;
       setComputer(null);
       setScreenUrl(null);
       autoBooted.current = null;
-      await refresh();
+      await action.refresh();
     } catch (err) {
-      if (!refreshController.isActive()) return;
+      if (!action.isActive()) return;
       setError(err instanceof Error ? err.message : t("Could not switch computer"));
     } finally {
-      if (refreshController.isActive()) setSwitching(false);
+      if (action.isActive()) setSwitchingCount((count) => count - 1);
+      action.finish();
     }
   }
 
