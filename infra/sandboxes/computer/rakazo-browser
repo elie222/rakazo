@@ -42,6 +42,11 @@ if [ -d "$ACTUAL_PROFILE" ] && [ ! -e "$ACTUAL_PROFILE/SingletonLock" ] && [ ! -
 fi
 
 FLAGS="--test-type --no-sandbox --disable-dev-shm-usage --disable-gpu --disable-software-rasterizer --no-first-run --no-default-browser-check --disable-session-crashed-bubble --hide-crash-restore-bubble --password-store=basic --start-maximized"
+# Only the hosted composition enables the session broker. The randomized CDP
+# port binds to loopback and is never exposed by the authenticated screen proxy.
+if [ "${CADRE_SHARED_BROWSER_SESSIONS:-}" = "1" ] && [ "$USER_DATA_DIR_SET" -eq 0 ]; then
+  FLAGS="$FLAGS --remote-debugging-address=127.0.0.1 --remote-debugging-port=0"
+fi
 if [ "$USER_DATA_DIR_SET" -eq 0 ]; then
   exec "$BIN" $FLAGS --user-data-dir="$PROFILE" "$@"
 fi

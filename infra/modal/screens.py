@@ -36,7 +36,7 @@ def demote():
 
 def child_env(index, key):
     env = {k:v for k,v in os.environ.items() if not k.startswith(('MODAL_', 'CADRE_SCREEN_', 'RAKAZO_COMPUTER_CONTROL_'))}
-    env.update(HOME='/home/rakazo', DISPLAY=f':{index+1}', RAKAZO_BROWSER_PROFILE=f'/home/rakazo/.browser-profiles/bot-{key}')
+    env.update(CADRE_SHARED_BROWSER_SESSIONS='1', HOME='/home/rakazo', DISPLAY=f':{index+1}', RAKAZO_BROWSER_PROFILE=f'/home/rakazo/.browser-profiles/bot-{key}')
     return env
 
 def ready(port):
@@ -130,7 +130,47 @@ def release(value, lease):
     return {'ok':True}
 
 
+def sessions_running(pid):
+    try:
+        argv = Path(f'/proc/{pid}/cmdline').read_bytes().split(b'\0')
+        return len(argv) > 1 and argv[1] == b'/opt/cadre/browser_sessions.py' and Path(f'/proc/{pid}').stat().st_uid == 1000
+    except FileNotFoundError:
+        return False
+
+
+def resume_sessions():
+    marker = STATE / 'browser-sessions.pid'
+    if marker.exists() and sessions_running(int(marker.read_text())): return
+    Path('/tmp/cadre-browser-sessions-ready').unlink(missing_ok=True)
+    child = subprocess.Popen(['/usr/bin/python3', '/opt/cadre/browser_sessions.py'],
+        env={'PATH':'/usr/local/bin:/usr/bin:/bin', 'HOME':'/home/rakazo'},
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        preexec_fn=demote, start_new_session=True)
+    (STATE / 'browser-sessions.pid').write_text(str(child.pid))
+
+
+def pause_sessions():
+    marker = STATE / 'browser-sessions.pid'
+    if not marker.exists(): return
+    pid = int(marker.read_text())
+    if not sessions_running(pid):
+        marker.unlink(missing_ok=True); return
+    try: os.killpg(pid, signal.SIGTERM)
+    except ProcessLookupError:
+        marker.unlink(missing_ok=True); return
+    for _ in range(200):
+        try:
+            if Path(f'/proc/{pid}/stat').read_text().split(') ')[1].startswith('Z'):
+                break
+            os.kill(pid, 0)
+        except (ProcessLookupError, FileNotFoundError): break
+        time.sleep(.1)
+    else: raise RuntimeError('Browser sessions are still saving')
+    marker.unlink(missing_ok=True)
+
+
 def pause_browsers():
+    pause_sessions()
     pattern='[c]hromium|[g]oogle-chrome|[f]irefox'
     subprocess.run(['pkill','-u','1000','-TERM','-f',pattern],check=False)
     for _ in range(50):
@@ -140,6 +180,7 @@ def pause_browsers():
     return {'ok':True}
 
 def resume_browsers():
+    resume_sessions()
     displays={0:screen_key()}
     for p in STATE.glob('*.json'):
         state=json.loads(p.read_text());displays[state['index']]=p.stem
