@@ -1,7 +1,37 @@
 import type { AgentRunRequest } from "@rakazo/adapter-kit";
-import type { findDefaultModelCredential } from "@rakazo/db";
+import type { Actor } from "@rakazo/contracts";
+import {
+  type findDefaultModelCredential,
+  findModelCredential,
+  type PrismaClient,
+} from "@rakazo/db";
+import { listPiCatalog, scriptedCatalogEntry } from "./pi-models.js";
 
 type ModelCredential = Awaited<ReturnType<typeof findDefaultModelCredential>>;
+
+export async function validateConnectedModelChoice(
+  prisma: PrismaClient,
+  actor: Actor,
+  provider: string,
+  modelId: string,
+) {
+  const credential = await findModelCredential(prisma, actor, provider);
+  if (!credential) return "Connect that model provider first";
+  const inCatalog = [...listPiCatalog(), scriptedCatalogEntry].some(
+    (item) => item.provider === provider && item.id === modelId,
+  );
+  if (inCatalog) return undefined;
+  const savedChoice = await prisma.spaceModelPreference.findFirst({
+    where: {
+      spaceId: actor.spaceId,
+      userId: actor.userId,
+      modelId,
+      credential: { userId: actor.userId, provider },
+    },
+    select: { id: true },
+  });
+  return savedChoice ? undefined : "Unknown model for that provider";
+}
 
 /** Select configuration without loading secrets or applying a runtime-specific fallback. */
 export function selectConfiguredModel(input: {

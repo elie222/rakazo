@@ -624,7 +624,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
       const hasOverride = Boolean(override?.modelProvider && override.modelId);
       const [overrideCredential, defaultCredential, settings] = await Promise.all([
         hasOverride
-          ? findModelCredential(deps.prisma, scope, override!.modelProvider!)
+          ? findModelCredential(deps.prisma, scope, override!.modelProvider!, override!.modelId)
           : Promise.resolve(null),
         findDefaultModelCredential(deps.prisma, scope),
         deps.prisma.deploymentSettings.findUnique({ where: { id: "default" } }),
@@ -969,7 +969,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         const hasModelOverride = Boolean(bot.modelProvider && bot.modelId);
         const overrideCredential =
           hasModelOverride && bot.modelProvider
-            ? await findModelCredential(deps.prisma, run, bot.modelProvider)
+            ? await findModelCredential(deps.prisma, run, bot.modelProvider, bot.modelId)
             : null;
         runAbortController = new AbortController();
         if (!leaseValid) runAbortController.abort();
@@ -2834,6 +2834,11 @@ export function createRunExecutor(deps: ExecutorDeps) {
               }
               computerMode = value;
             }
+            const modelProvider = args.model_provider ? String(args.model_provider).trim() : "";
+            const modelId = args.model_id ? String(args.model_id).trim() : "";
+            if (Boolean(modelProvider) !== Boolean(modelId)) {
+              return finish({ error: "model_provider and model_id must both be set." });
+            }
             const spawned = await spawnBot(deps, {
               spawnedBy: {
                 id: bot.id,
@@ -2848,6 +2853,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
               instructions: args.instructions ? String(args.instructions) : undefined,
               prompt: args.prompt ? String(args.prompt) : undefined,
               computerMode,
+              modelProvider: modelProvider || undefined,
+              modelId: modelId || undefined,
             });
             if ("error" in spawned) return finish(spawned);
             if (!(await persistEffectResult(spawned))) return uncertainEffectResult(name);

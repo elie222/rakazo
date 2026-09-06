@@ -892,6 +892,18 @@ describeWithDatabase("API authorization and resource isolation", () => {
       modelId: "grok-4.6",
     });
 
+    const createdWithModel = await rpc<
+      Bot & { modelProvider: string | null; modelId: string | null }
+    >(app, cookie, "bots/create", {
+      ...botInput("Created with model"),
+      modelProvider: "xai",
+      modelId: "grok-4.6",
+    });
+    expect(createdWithModel).toMatchObject({
+      modelProvider: "xai",
+      modelId: "grok-4.6",
+    });
+
     const updated = await rpc<
       Bot & {
         modelProvider: string | null;
@@ -925,6 +937,14 @@ describeWithDatabase("API authorization and resource isolation", () => {
     });
     expect(disconnected.status).toBeGreaterThanOrEqual(400);
     expect(await disconnected.text()).toMatch(/connect/i);
+
+    const disconnectedCreate = await raw(app, cookie, "bots/create", {
+      ...botInput("Disconnected model"),
+      modelProvider: "anthropic",
+      modelId: "claude-opus-4-6",
+    });
+    expect(disconnectedCreate.status).toBe(400);
+    expect(await disconnectedCreate.text()).toMatch(/connect/i);
 
     const partialClear = await raw(app, cookie, "bots/update", {
       botId: bot.id,

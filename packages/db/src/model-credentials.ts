@@ -93,7 +93,23 @@ export async function findModelCredential(
   prisma: PrismaClient,
   scope: ModelCredentialScope,
   provider: string,
+  modelId?: string | null,
 ) {
+  // When a bot selects a free-form model, prefer the preference that owns that modelId
+  // so runtime uses the same credential the picker advertised.
+  if (modelId) {
+    const matching = await prisma.spaceModelPreference.findFirst({
+      where: {
+        spaceId: scope.spaceId,
+        userId: scope.userId,
+        modelId,
+        credential: { provider },
+      },
+      include: { credential: true },
+      orderBy: [{ isDefault: "desc" }, { updatedAt: "desc" }, { id: "desc" }],
+    });
+    if (matching) return withModelPreference(matching);
+  }
   const preference = await prisma.spaceModelPreference.findFirst({
     where: {
       spaceId: scope.spaceId,

@@ -69,6 +69,7 @@ import {
   takeoverLeaseMs,
   toComputerRef,
   touchRunningComputer,
+  validateConnectedModelChoice,
   verifyMcpInstall,
 } from "@rakazo/adapters";
 import type { Auth } from "@rakazo/auth";
@@ -735,9 +736,18 @@ export function createRouter(deps: RouterDeps) {
         if (!found) throw new IsolationError();
         return found;
       }),
-      create: authed.bots.create.handler(async ({ context, input }) =>
-        repos.createBot(context.actor, input),
-      ),
+      create: authed.bots.create.handler(async ({ context, input }) => {
+        if (input.modelProvider && input.modelId) {
+          const error = await validateConnectedModelChoice(
+            deps.prisma,
+            context.actor,
+            input.modelProvider,
+            input.modelId,
+          );
+          if (error) throw new ORPCError("BAD_REQUEST", { message: error });
+        }
+        return repos.createBot(context.actor, input);
+      }),
       duplicate: authed.bots.duplicate.handler(async ({ context, input }) => {
         const source = await repos.getBot(context.actor, input.botId);
         const duplicate = await repos.createBot(context.actor, {
@@ -791,21 +801,13 @@ export function createRouter(deps: RouterDeps) {
           if (!section) throw new IsolationError();
         }
         if (input.modelProvider && input.modelId) {
-          const credential = await findModelCredential(
+          const error = await validateConnectedModelChoice(
             deps.prisma,
             context.actor,
             input.modelProvider,
+            input.modelId,
           );
-          if (!credential) {
-            throw new ORPCError("BAD_REQUEST", { message: "Connect that model provider first" });
-          }
-          const knownModels = [...listPiCatalog(), scriptedCatalogEntry];
-          const inCatalog = knownModels.some(
-            (item) => item.provider === input.modelProvider && item.id === input.modelId,
-          );
-          if (!inCatalog && credential.defaultModel !== input.modelId) {
-            throw new ORPCError("BAD_REQUEST", { message: "Unknown model for that provider" });
-          }
+          if (error) throw new ORPCError("BAD_REQUEST", { message: error });
         }
         const thinkingLevel = input.thinkingLevel;
         if (input.thinkingLevel) {
@@ -826,6 +828,7 @@ export function createRouter(deps: RouterDeps) {
                 deps.prisma,
                 context.actor,
                 effectiveProvider,
+                effectiveModelId,
               );
               if (credential && credential.defaultModel === effectiveModelId) {
                 const secret = await deps.prisma.secret.findFirst({
