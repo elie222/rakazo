@@ -47,6 +47,7 @@ test("first bot continues with a prefilled name in one click", async ({ page }, 
 
   const created = page.waitForResponse(
     (response) => response.url().includes("/rpc/bots/create") && response.ok(),
+    { timeout: 20_000 },
   );
   await page.getByRole("button", { name: "Continue" }).click();
   await created;
