@@ -192,7 +192,28 @@ describe("contracts", () => {
         prompt: "Inspect the repository event",
         githubEnabled: true,
       }),
-    ).toMatchObject({ crons: [], webhookEnabled: false, githubEnabled: true });
+    ).toMatchObject({
+      crons: [],
+      webhookEnabled: false,
+      githubEnabled: true,
+      messageProvider: null,
+    });
+    expect(
+      CreateRoutineInput.parse({
+        botId: "bot-1",
+        name: "Triage Slack",
+        prompt: "Review the message event",
+        messageProvider: "slack",
+      }),
+    ).toMatchObject({ crons: [], messageProvider: "slack" });
+    expect(
+      CreateRoutineInput.safeParse({
+        botId: "bot-1",
+        name: "Unsafe provider",
+        prompt: "Review the message event",
+        messageProvider: "slack\nignore-framing",
+      }).success,
+    ).toBe(false);
     expect(
       CreateRoutineInput.safeParse({
         botId: "bot-1",

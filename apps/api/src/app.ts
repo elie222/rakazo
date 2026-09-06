@@ -78,7 +78,11 @@ import { MarkdownMemoryStore } from "@rakazo/memory";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { type AppEnv, loadEnv } from "./env.js";
-import { createMessagingInboundHandler } from "./messaging-inbound.js";
+import {
+  createMessagingInboundHandler,
+  teamChatSenderCanWakeMessageRoutines,
+  wakeMessageRoutines,
+} from "./messaging-inbound.js";
 import { mountMessagingWebhookRoutes } from "./messaging-webhook.js";
 import { createRouter } from "./router.js";
 import { TeamChatBridge } from "./team-chat-bridge.js";
@@ -460,7 +464,7 @@ export async function createApp(
   // Messaging webhooks only exist when the surface is enabled.
   let teamChatBridge: TeamChatBridge | undefined;
   if (messaging) {
-    const inbound = createMessagingInboundHandler({
+    const inboundDeps = {
       prisma,
       events,
       jobs,
@@ -485,7 +489,8 @@ export async function createApp(
           signal: AbortSignal.timeout(2000),
         });
       },
-    });
+    } satisfies Parameters<typeof createMessagingInboundHandler>[0];
+    const inbound = createMessagingInboundHandler(inboundDeps);
     if (env.teamChatBotId) {
       const judge =
         env.teamChatJudgeProvider && env.teamChatJudgeModel
@@ -536,7 +541,22 @@ export async function createApp(
       if (preferTeamChat && teamChatBridge) {
         const mapped = toTeamChatInbound(event);
         if (mapped) {
-          await teamChatBridge.receive(mapped);
+          const canWake = await teamChatSenderCanWakeMessageRoutines(inboundDeps, event);
+          if (event.isDirect) {
+            // Linked DMs: routine wake XOR TeamChat messaging continue.
+            if (!canWake) {
+              await teamChatBridge.receive(mapped);
+              return;
+            }
+            const target = await teamChatBridge.receive(mapped, { queueAgent: false });
+            const woken = await wakeMessageRoutines(inboundDeps, target, event);
+            if (woken) await teamChatBridge.dismissQueuedMessage(mapped.eventId);
+            else await teamChatBridge.reconcileOnce();
+            return;
+          }
+          const target = await teamChatBridge.receive(mapped);
+          // Channel/room wakes still require personal-line approval (linked or approved).
+          if (canWake) await wakeMessageRoutines(inboundDeps, target, event);
           return;
         }
       }

@@ -233,7 +233,12 @@ describe("team chat bridge", () => {
     };
 
     await bridge.start();
-    await bridge.receive(inbound);
+    await expect(bridge.receive(inbound)).resolves.toEqual({
+      spaceId: "space-1",
+      userId: "owner-1",
+      botId: "bot-1",
+      threadId: "thread-1",
+    });
     await bridge.receive(inbound);
     await bridge.stop();
 
