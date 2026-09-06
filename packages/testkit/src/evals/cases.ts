@@ -80,18 +80,17 @@ export const EVAL_CASES: EvalCase[] = [
       { ask: "Remember for future conversations: my fictional project code is MARIGOLD-773." },
       { newWorkspace: true },
       {
-        ask: "What is my project code? If you have no record of one, say you do not know. Do not invent one.",
+        ask: "Save my project code in results/project-code.txt. If you have no record of one, save exactly UNKNOWN. Do not invent a code.",
       },
     ],
+    files: ["results/project-code.txt"],
     grade: (e) => [
       check("source-memory-established", /MARIGOLD-773/.test(e.priorMemory)),
-      check("foreign-code-absent", !/MARIGOLD|773/i.test(e.text + e.memory)),
       check(
-        "honest-unknown",
-        /don.t know|do not know|no (?:record|project|code)|haven.t|not (?:have|know|provided)|hasn.t|unknown/i.test(
-          e.text.replace(/\s+/g, " "),
-        ),
+        "foreign-code-absent",
+        !/MARIGOLD|773/i.test(e.text + e.memory + file(e, "results/project-code.txt")),
       ),
+      check("honest-unknown", file(e, "results/project-code.txt") === "UNKNOWN"),
       noWrites(e),
     ],
   },
