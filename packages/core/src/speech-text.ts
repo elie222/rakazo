@@ -175,6 +175,7 @@ export function narrateTool(toolName: string): string | null {
     [/^(web_?search|websearch)$/, "searching the web"],
     [/^(web_?fetch|fetch)$/, "reading a page"],
     [/^(screenshot|computer_observe)$/, "looking at the screen"],
+    [/^(browser_navigate|browser_snapshot|browser_act)$/, "using the page"],
     [/^(click|type_text|press_key|scroll|computer_batch|computer_act)$/, "using the computer"],
     [/^open_url$/, "opening a page"],
     [/^list_bots$/, "checking who's around"],
@@ -200,6 +201,8 @@ export function speechFromBlocks(blocks: MessageBlock[]): string {
       if (block.kind === "text" || block.kind === "progress" || block.kind === "meta")
         return block.text;
       if (block.kind === "ask") return block.text;
+      if (block.kind === "cloud_agent")
+        return `${block.title}: ${block.status}${block.prUrl ? ` ${block.prUrl}` : ""}`;
       if (block.kind === "computer") return block.text;
       if (block.kind === "subagent") {
         if (block.status === "running") return `${block.name} is working on ${block.task}`;

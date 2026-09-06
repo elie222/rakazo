@@ -1,0 +1,649 @@
+#!/usr/bin/env python3
+"""Drive the live Chromium on this computer over CDP (stdlib only).
+
+Attaches to the Chrome already showing on DISPLAY. Used by the host
+BrowserProvider. Not a vendor SDK. On failure prints JSON with
+fallback computer_act.
+"""
+
+from __future__ import annotations
+
+import base64
+import hashlib
+import json
+import os
+import socket
+import struct
+import sys
+import time
+import threading
+import urllib.request
+from urllib.parse import urlsplit
+from typing import Any
+
+
+def display_num() -> int:
+    raw = os.environ.get("DISPLAY", ":1")
+    try:
+        return int(str(raw).lstrip(":").split(".")[0] or "1")
+    except ValueError:
+        return 1
+
+
+def cdp_port() -> int:
+    override = os.environ.get("RAKAZO_CDP_PORT")
+    if override:
+        return int(override)
+    # rakazo-browser uses 9221 + display number (:1 -> 9222).
+    return 9221 + display_num()
+
+
+def http_get_json(url: str, timeout: float = 5.0) -> Any:
+    with urllib.request.urlopen(url, timeout=timeout) as resp:
+        data = resp.read(1024 * 1024 + 1)
+        if len(data) > 1024 * 1024:
+            raise RuntimeError("CDP discovery response too large")
+        return json.loads(data.decode("utf-8"))
+
+
+def wait_for_cdp(port: int, timeout_s: float = 3.0) -> None:
+    deadline = time.time() + timeout_s
+    last_error = "unreachable"
+    while time.time() < deadline:
+        try:
+            http_get_json(f"http://127.0.0.1:{port}/json/version", timeout=1.0)
+            return
+        except Exception as exc:  # noqa: BLE001
+            last_error = str(exc)
+            time.sleep(0.25)
+    raise RuntimeError(f"CDP not ready on port {port}: {last_error}")
+
+
+def discover_ws_url(port: int) -> str:
+    version = http_get_json(f"http://127.0.0.1:{port}/json/version")
+    ws = version.get("webSocketDebuggerUrl")
+    if not isinstance(ws, str) or not ws:
+        raise RuntimeError("CDP version endpoint missing webSocketDebuggerUrl")
+    parsed = urlsplit(ws)
+    if parsed.scheme != "ws" or parsed.hostname != "127.0.0.1" or parsed.port != port:
+        raise RuntimeError("Unexpected CDP endpoint")
+    return ws
+
+
+WORLD_NAME = "rakazo-page-browser"
+
+
+class CdpClient:
+    def __init__(self, ws_url: str) -> None:
+        self._ws_url = ws_url
+        self._sock: socket.socket | None = None
+        self._buf = bytearray()
+        self._next_id = 1
+        self.context_id: int | None = None
+        self._pending: dict[int, dict[str, Any] | None] = {}
+        # Worlds live in Chromium until navigation; rediscover them per CLI process.
+        self._contexts: dict[int, dict[str, Any]] = {}
+
+    def connect(self) -> None:
+        assert self._ws_url.startswith("ws://"), self._ws_url
+        rest = self._ws_url[len("ws://") :]
+        host_port, _, path = rest.partition("/")
+        if ":" in host_port:
+            host, port_s = host_port.split(":", 1)
+            port = int(port_s)
+        else:
+            host, port = host_port, 80
+        path = "/" + path
+        sock = socket.create_connection((host, port), timeout=10)
+        key = base64.b64encode(os.urandom(16)).decode("ascii")
+        req = (
+            f"GET {path} HTTP/1.1\r\n"
+            f"Host: {host_port}\r\n"
+            "Upgrade: websocket\r\n"
+            "Connection: Upgrade\r\n"
+            f"Sec-WebSocket-Key: {key}\r\n"
+            "Sec-WebSocket-Version: 13\r\n"
+            "\r\n"
+        )
+        sock.sendall(req.encode("ascii"))
+        data = b""
+        while b"\r\n\r\n" not in data:
+            chunk = sock.recv(4096)
+            if not chunk:
+                raise RuntimeError("CDP websocket handshake closed")
+            data += chunk
+            if len(data) > 16_384:
+                raise RuntimeError("CDP handshake too large")
+        header, _, leftover = data.partition(b"\r\n\r\n")
+        if b"101" not in header.split(b"\r\n", 1)[0]:
+            raise RuntimeError(f"CDP websocket upgrade failed: {header[:200]!r}")
+        expected = base64.b64encode(
+            hashlib.sha1((key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode("ascii")).digest()
+        )
+        if expected not in header:
+            raise RuntimeError("CDP websocket accept mismatch")
+        self._sock = sock
+        self._buf.extend(leftover)
+
+    def close(self) -> None:
+        if self._sock is not None:
+            try:
+                self._sock.close()
+            except OSError:
+                pass
+            self._sock = None
+
+    def _send_frame(self, payload: bytes) -> None:
+        assert self._sock is not None
+        mask = os.urandom(4)
+        masked = bytes(b ^ mask[i % 4] for i, b in enumerate(payload))
+        header = bytearray([0x81])
+        n = len(payload)
+        if n < 126:
+            header.append(0x80 | n)
+        elif n < 65536:
+            header.append(0x80 | 126)
+            header.extend(struct.pack("!H", n))
+        else:
+            header.append(0x80 | 127)
+            header.extend(struct.pack("!Q", n))
+        header.extend(mask)
+        self._sock.sendall(header + masked)
+
+    def _send_control(self, opcode: int, payload: bytes) -> None:
+        assert self._sock is not None
+        mask = os.urandom(4)
+        masked = bytes(b ^ mask[i % 4] for i, b in enumerate(payload))
+        header = bytearray([0x80 | opcode, 0x80 | len(payload)])
+        header.extend(mask)
+        self._sock.sendall(header + masked)
+
+    def _read_more(self) -> None:
+        assert self._sock is not None
+        chunk = self._sock.recv(65536)
+        if not chunk:
+            raise RuntimeError("CDP websocket closed")
+        self._buf.extend(chunk)
+
+    def _read_frame(self) -> bytes:
+        assert self._sock is not None
+        while True:
+            while len(self._buf) < 2:
+                chunk = self._sock.recv(65536)
+                if not chunk:
+                    raise RuntimeError("CDP websocket closed")
+                self._buf.extend(chunk)
+            b1, b2 = self._buf[0], self._buf[1]
+            opcode = b1 & 0x0F
+            masked = bool(b2 & 0x80)
+            length = b2 & 0x7F
+            offset = 2
+            if length == 126:
+                while len(self._buf) < 4:
+                    self._read_more()
+                length = struct.unpack("!H", self._buf[2:4])[0]
+                offset = 4
+            elif length == 127:
+                while len(self._buf) < 10:
+                    self._read_more()
+                length = struct.unpack("!Q", self._buf[2:10])[0]
+                offset = 10
+            if length > 2 * 1024 * 1024:
+                raise RuntimeError("CDP frame too large")
+            if not (b1 & 0x80):
+                raise RuntimeError("Fragmented CDP message unsupported")
+            mask = b""
+            if masked:
+                while len(self._buf) < offset + 4:
+                    self._read_more()
+                mask = bytes(self._buf[offset : offset + 4])
+                offset += 4
+            while len(self._buf) < offset + length:
+                chunk = self._sock.recv(65536)
+                if not chunk:
+                    raise RuntimeError("CDP websocket closed while reading frame")
+                self._buf.extend(chunk)
+            payload = bytes(self._buf[offset : offset + length])
+            del self._buf[: offset + length]
+            if masked:
+                payload = bytes(b ^ mask[i % 4] for i, b in enumerate(payload))
+            if opcode == 0x8:
+                raise RuntimeError("CDP websocket closed by peer")
+            if opcode == 0x9:
+                self._send_control(0xA, payload)
+                continue
+            if opcode in (0x1, 0x2, 0x0):
+                return payload
+
+    def _handle_event(self, message: dict[str, Any]) -> None:
+        method = message.get("method")
+        params = message.get("params") or {}
+        session_id = message.get("sessionId")
+        if method == "Runtime.executionContextCreated":
+            context = params.get("context")
+            if not isinstance(context, dict):
+                return
+            context_id = context.get("id")
+            if not isinstance(context_id, int):
+                return
+            recorded = dict(context)
+            recorded["_sessionId"] = session_id
+            self._contexts[context_id] = recorded
+        elif method == "Runtime.executionContextDestroyed":
+            context_id = params.get("executionContextId")
+            if isinstance(context_id, int):
+                self._contexts.pop(context_id, None)
+        elif method == "Runtime.executionContextsCleared":
+            if session_id is None:
+                self._contexts.clear()
+            else:
+                self._contexts = {
+                    cid: ctx
+                    for cid, ctx in self._contexts.items()
+                    if ctx.get("_sessionId") != session_id
+                }
+
+    def find_world_context(self, world_name: str, frame_id: str, session_id: str) -> int | None:
+        for context_id, context in self._contexts.items():
+            if context.get("name") != world_name:
+                continue
+            if context.get("_sessionId") != session_id:
+                continue
+            aux = context.get("auxData") or {}
+            if not isinstance(aux, dict) or aux.get("frameId") != frame_id or aux.get("isDefault") is not False:
+                continue
+            return context_id
+        return None
+
+    def call(
+        self,
+        method: str,
+        params: dict[str, Any] | None = None,
+        *,
+        session_id: str | None = None,
+        timeout_s: float = 30.0,
+    ) -> dict[str, Any]:
+        assert self._sock is not None
+        msg_id = self._next_id
+        self._next_id += 1
+        payload: dict[str, Any] = {"id": msg_id, "method": method, "params": params or {}}
+        if session_id:
+            payload["sessionId"] = session_id
+        self._pending[msg_id] = None
+        self._send_frame(json.dumps(payload).encode("utf-8"))
+        deadline = time.time() + timeout_s
+        while time.time() < deadline:
+            pending = self._pending.get(msg_id)
+            if pending is not None:
+                self._pending.pop(msg_id, None)
+                if "error" in pending:
+                    raise RuntimeError(f"{method} failed: {pending['error']}")
+                result = pending.get("result")
+                return result if isinstance(result, dict) else {}
+            self._sock.settimeout(max(0.1, deadline - time.time()))
+            try:
+                frame = self._read_frame()
+            except socket.timeout:
+                continue
+            message = json.loads(frame.decode("utf-8"))
+            if not isinstance(message, dict):
+                continue
+            if message.get("id") in self._pending:
+                self._pending[int(message["id"])] = message
+                continue
+            if message.get("method"):
+                self._handle_event(message)
+        raise TimeoutError(f"CDP call timed out: {method}")
+
+
+def attach_page(client: CdpClient) -> str:
+    targets = client.call("Target.getTargets").get("targetInfos") or []
+    pages = [t for t in targets if isinstance(t, dict) and t.get("type") == "page"]
+    candidates = []
+    for page in pages[:32]:
+        attached = client.call("Target.attachToTarget", {
+            "targetId": page["targetId"], "flatten": True,
+        })
+        session_id = attached["sessionId"]
+        try:
+            client.call("Page.enable", session_id=session_id)
+            ensure_world(client, session_id)
+            if eval_json(client, session_id, 'document.visibilityState === "visible"'):
+                focused = eval_json(client, session_id, "document.hasFocus()")
+                candidates.append((session_id, focused))
+        except Exception:
+            continue
+    focused = [session for session, focus in candidates if focus]
+    if len(focused) == 1:
+        selected = focused[0]
+    elif len(candidates) == 1:
+        selected = candidates[0][0]
+    else:
+        raise RuntimeError("No unambiguous visible browser tab. Use desktop tools to select a tab.")
+    ensure_world(client, selected)
+    return selected
+
+
+def ensure_world(client: CdpClient, session_id: str) -> None:
+    # Rediscover only an isolated context bound to this frame and CDP session.
+    # Never run helpers in a page-owned default context with the same name.
+    frame = client.call("Page.getFrameTree", session_id=session_id)["frameTree"]["frame"]
+    frame_id = frame["id"]
+    client.call("Runtime.enable", session_id=session_id)
+    existing = client.find_world_context(WORLD_NAME, frame_id, session_id)
+    if existing is not None:
+        client.context_id = existing
+        return
+    world = client.call("Page.createIsolatedWorld", {
+        "frameId": frame_id, "worldName": WORLD_NAME,
+    }, session_id=session_id)
+    client.context_id = world["executionContextId"]
+
+
+EVAL_HELPERS = r"""
+(() => {
+  if (window.__rakazoPageBrowser) return true;
+  const refMap = new Map();
+  // New snapshots/documents never recycle references. Retain exact nodes, not selectors.
+  function newRef() {
+    return `e${Array.from(crypto.getRandomValues(new Uint32Array(4)), n => n.toString(16).padStart(8, "0")).join("")}`;
+  }
+  function visible(el) {
+    if (!(el instanceof Element)) return false;
+    const style = window.getComputedStyle(el);
+    if (style.display === "none" || style.visibility === "hidden" || style.opacity === "0") {
+      return false;
+    }
+    const rect = el.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
+  }
+  function roleOf(el) {
+    const explicit = el.getAttribute("role");
+    if (explicit) return explicit;
+    const tag = el.tagName.toLowerCase();
+    if (tag === "a") return "link";
+    if (tag === "button") return "button";
+    if (tag === "input") {
+      const type = (el.getAttribute("type") || "text").toLowerCase();
+      if (type === "submit" || type === "button") return "button";
+      if (type === "checkbox") return "checkbox";
+      if (type === "radio") return "radio";
+      return "textbox";
+    }
+    if (tag === "textarea" || el.isContentEditable) return "textbox";
+    if (tag === "select") return "combobox";
+    if (/^h[1-6]$/.test(tag)) return "heading";
+    return tag;
+  }
+  function nameOf(el) {
+    return (
+      el.getAttribute("aria-label") ||
+      Array.from(el.labels || []).map(label => label.textContent).join(" ").trim() ||
+      el.getAttribute("placeholder") ||
+      el.getAttribute("name") ||
+      el.getAttribute("title") ||
+      (el.innerText || el.textContent || "").trim().slice(0, 80) ||
+      ""
+    );
+  }
+  function isInteractive(el) {
+    if (!(el instanceof Element)) return false;
+    const tag = el.tagName.toLowerCase();
+    if (["a", "button", "input", "textarea", "select", "summary"].includes(tag)) return true;
+    if (el.isContentEditable) return true;
+    const role = el.getAttribute("role");
+    if (
+      role &&
+      ["button", "link", "textbox", "checkbox", "radio", "menuitem", "tab", "option", "switch"].includes(
+        role
+      )
+    ) {
+      return true;
+    }
+    return typeof el.onclick === "function" || el.hasAttribute("tabindex");
+  }
+  function formatTree(elements) {
+    if (!elements.length) return "(no interactive elements)";
+    return elements
+      .map((el) => {
+        const value =
+          el.value !== undefined && el.value !== "" ? ` value=${JSON.stringify(el.value)}` : "";
+        return `- ${el.role} "${el.name}" [${el.ref}]${value}`;
+      })
+      .join("\n");
+  }
+  window.__rakazoPageBrowser = {
+    snapshot() {
+      refMap.clear();
+      const elements = [];
+      for (const el of document.querySelectorAll("body *")) {
+        if (!isInteractive(el) || !visible(el)) continue;
+        const ref = newRef();
+        refMap.set(ref, el);
+        elements.push({
+          ref,
+          role: roleOf(el),
+          name: String(nameOf(el)).slice(0, 200),
+          value: el.type === "password" ? undefined
+            : ["checkbox", "radio"].includes(el.type) ? (el.checked ? "checked" : "unchecked")
+            : "value" in el ? String(el.value ?? "").slice(0, 2000) : undefined,
+          tag: el.tagName.toLowerCase(),
+        });
+        if (elements.length >= 80) break;
+      }
+      return {
+        url: location.href,
+        title: (document.title || "").slice(0, 200),
+        elements,
+        tree: (document.body?.innerText || "").slice(0, 12000) + "\n" + formatTree(elements)
+          + (document.querySelector("iframe,frame") ? "\nEmbedded frames require desktop tools." : ""),
+      };
+    },
+    resolve(ref) {
+      const el = refMap.get(String(ref));
+      if (!el || !el.isConnected || !visible(el)) return null;
+      if (el.matches(":disabled") || el.getAttribute("aria-disabled") === "true") {
+        throw new Error("Element is disabled");
+      }
+      return el;
+    },
+    click(ref) {
+      const el = this.resolve(ref);
+      if (!el) throw new Error(`Unknown element ref: ${ref}`);
+      el.focus();
+      el.click();
+      return { url: location.href, title: (document.title || "").slice(0, 200) };
+    },
+    fill(ref, value) {
+      const el = this.resolve(ref);
+      if (!el) throw new Error(`Unknown element ref: ${ref}`);
+      if (el.readOnly) throw new Error("Element is read-only");
+      el.focus();
+      if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement) {
+        if (el instanceof HTMLInputElement && !["text", "search", "email", "url", "tel", "password", "number"].includes(el.type)) {
+          throw new Error("Input type requires desktop tools");
+        }
+        const prototype = el instanceof HTMLInputElement ? HTMLInputElement.prototype
+          : el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLSelectElement.prototype;
+        Object.getOwnPropertyDescriptor(prototype, "value").set.call(el, String(value));
+        if (el.value !== String(value)) throw new Error("Input did not accept the requested value");
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+        el.dispatchEvent(new Event("change", { bubbles: true }));
+      } else if (el.isContentEditable) {
+        el.textContent = String(value);
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+      } else {
+        throw new Error(`Element is not fillable: ${ref}`);
+      }
+      return { url: location.href, title: (document.title || "").slice(0, 200) };
+    },
+    type(ref, text) {
+      const el = this.resolve(ref);
+      if (!el) throw new Error(`Unknown element ref: ${ref}`);
+      return this.fill(ref, `${"value" in el ? el.value : el.textContent || ""}${text}`);
+    },
+  };
+  return true;
+})()
+"""
+
+
+def eval_json(client: CdpClient, session_id: str, expression: str) -> Any:
+    result = client.call(
+        "Runtime.evaluate",
+        {
+            "expression": expression,
+            "contextId": client.context_id,
+            "returnByValue": True,
+            "awaitPromise": True,
+        },
+        session_id=session_id,
+    )
+    if result.get("exceptionDetails"):
+        details = result["exceptionDetails"]
+        text = (
+            details.get("text")
+            or (details.get("exception") or {}).get("description")
+            or "evaluate failed"
+        )
+        raise RuntimeError(str(text))
+    return (result.get("result") or {}).get("value")
+
+
+def ensure_helpers(client: CdpClient, session_id: str) -> None:
+    ensure_world(client, session_id)
+    eval_json(client, session_id, EVAL_HELPERS)
+
+
+def navigate(client: CdpClient, session_id: str, url: str) -> dict[str, Any]:
+    parsed = urlsplit(url)
+    if parsed.scheme not in ("http", "https") or parsed.username or parsed.password:
+        raise RuntimeError("Only HTTP(S) URLs without embedded credentials are supported")
+    result = client.call("Page.navigate", {"url": url}, session_id=session_id, timeout_s=15.0)
+    if result.get("errorText") or result.get("isDownload"):
+        raise RuntimeError(result.get("errorText") or "Navigation started a download")
+    deadline = time.monotonic() + 10.0
+    while time.monotonic() < deadline:
+        try:
+            frame = client.call("Page.getFrameTree", session_id=session_id)["frameTree"]["frame"]
+            if result.get("loaderId") and frame.get("loaderId") != result["loaderId"]:
+                time.sleep(0.1)
+                continue
+            ensure_world(client, session_id)
+            ready = eval_json(client, session_id, "document.readyState")
+            if ready in ("interactive", "complete"):
+                return {"ok": True, "url": eval_json(client, session_id, "location.href"),
+                        "title": eval_json(client, session_id, "(document.title || '').slice(0, 200)")}
+        except Exception:
+            pass
+        time.sleep(0.1)
+    raise RuntimeError("Navigation did not settle; inspect the screen before continuing")
+
+
+def snapshot(client: CdpClient, session_id: str) -> dict[str, Any]:
+    ensure_helpers(client, session_id)
+    data = eval_json(client, session_id, "window.__rakazoPageBrowser.snapshot()")
+    if not isinstance(data, dict):
+        raise RuntimeError("snapshot returned non-object")
+    return {"ok": True, **data}
+
+
+def act(client: CdpClient, session_id: str, actions: list[dict[str, Any]]) -> dict[str, Any]:
+    if not actions or len(actions) > 24:
+        raise RuntimeError("Expected 1 to 24 actions")
+    for step in actions:
+        if not isinstance(step, dict) or step.get("kind") not in ("click", "fill", "type"):
+            raise RuntimeError("Invalid browser action")
+        if not isinstance(step.get("ref"), str) or not step["ref"]:
+            raise RuntimeError("Element ref is required")
+        if step["kind"] != "click" and not isinstance(step.get("text"), str):
+            raise RuntimeError("Text is required")
+    ensure_helpers(client, session_id)
+    completed = 0
+    uncertain = False
+    try:
+        for step in actions:
+            kind, ref = step["kind"], step["ref"]
+            # Preflight catches stale refs before a mutation is dispatched.
+            if not eval_json(client, session_id, f"Boolean(window.__rakazoPageBrowser.resolve({json.dumps(ref)}))"):
+                raise RuntimeError("Stale element ref. Take a fresh snapshot.")
+            arguments = json.dumps(ref)
+            if kind != "click":
+                arguments += ", " + json.dumps(step["text"])
+            uncertain = True
+            data = eval_json(client, session_id, f"window.__rakazoPageBrowser.{kind}({arguments})")
+            if not isinstance(data, dict):
+                raise RuntimeError("Action response unavailable")
+            completed += 1
+            uncertain = False
+        snap = snapshot(client, session_id)
+        return {**snap, "completed": completed}
+    except Exception as exc:
+        return {"ok": False, "completed": completed, "uncertain": uncertain,
+                "error": str(exc), "fallback": "computer_act"}
+
+
+def exit_when_stdin_closes() -> None:
+    """The supervisor owns this pipe; losing it cancels this helper, not Chromium."""
+    try:
+        while os.read(0, 1024):
+            pass
+    finally:
+        os._exit(130)
+
+
+def run(argv: list[str]) -> int:
+    if os.environ.get("RAKAZO_BROWSER_WATCH_STDIN") == "1":
+        threading.Thread(target=exit_when_stdin_closes, daemon=True).start()
+    if len(argv) < 2:
+        print(
+            json.dumps(
+                {
+                    "ok": False,
+                    "error": "usage: rakazo-page-browser <command> [json-args]",
+                    "fallback": "computer_act",
+                }
+            )
+        )
+        return 2
+    command = argv[1]
+    args: dict[str, Any] = {}
+    if len(argv) >= 3 and argv[2].strip():
+        args = json.loads(argv[2])
+    port = cdp_port()
+    try:
+        wait_for_cdp(port)
+        ws_url = discover_ws_url(port)
+        client = CdpClient(ws_url)
+        client.connect()
+        try:
+            session_id = attach_page(client)
+            if command == "navigate":
+                result = navigate(client, session_id, str(args.get("url") or ""))
+            elif command == "snapshot":
+                result = snapshot(client, session_id)
+            elif command == "act":
+                actions = args.get("actions")
+                if not isinstance(actions, list):
+                    raise RuntimeError("actions must be an array")
+                result = act(client, session_id, actions)
+            else:
+                result = {
+                    "ok": False,
+                    "error": f"unknown command: {command}",
+                    "fallback": "computer_act",
+                }
+                print(json.dumps(result))
+                return 2
+            print(json.dumps(result))
+            return 0  # Structured failures preserve partial action progress.
+        finally:
+            client.close()
+    except Exception as exc:  # noqa: BLE001
+        print(json.dumps({"ok": False, "error": str(exc), "fallback": "computer_act",
+                              "uncertain": command == "act"}))
+        return 0
+
+
+if __name__ == "__main__":
+    sys.exit(run(sys.argv))

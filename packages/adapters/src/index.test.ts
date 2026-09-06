@@ -172,6 +172,7 @@ describe("builtin tools", () => {
         "remember",
         "request_takeover",
         "ask_user",
+        "message_user",
         "request_secret",
         "run_subagent",
         "create_space",
@@ -183,6 +184,9 @@ describe("builtin tools", () => {
         "skill_delete",
         "web_search",
         "web_fetch",
+        "browser_navigate",
+        "browser_snapshot",
+        "browser_act",
       ]),
     );
   });

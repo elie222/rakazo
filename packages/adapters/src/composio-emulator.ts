@@ -9,6 +9,11 @@ import {
   type ComposioProvider,
   filterCatalog,
 } from "./composio-connector.js";
+import {
+  DEFAULT_RAKAZO_EMULATED_RELEASES,
+  type EmulatedGithubRelease,
+  RELEASE_WATCH_GITHUB_TOOL_NAMES,
+} from "./release-watch.js";
 
 const DEFAULT_CATALOG: ReadonlyArray<Omit<ComposioCatalogItem, "connected">> = [
   { slug: "GMAIL", name: "Gmail", logo: null, noAuth: false },
@@ -22,10 +27,14 @@ const DEFAULT_CATALOG: ReadonlyArray<Omit<ComposioCatalogItem, "connected">> = [
 /** Deterministic, offline Composio catalog and connection emulator for product tests. */
 export class ComposioEmulator implements ComposioProvider {
   private readonly connectedByUser = new Map<string, Set<string>>();
+  private githubReleases: EmulatedGithubRelease[] = [...DEFAULT_RAKAZO_EMULATED_RELEASES];
   readonly executions: Array<{
     userId: string;
+    botId?: string;
+    runId?: string;
     tool: string;
     args: Record<string, unknown>;
+    result: Record<string, unknown>;
   }> = [];
 
   constructor(
@@ -33,6 +42,15 @@ export class ComposioEmulator implements ComposioProvider {
       Omit<ComposioCatalogItem, "connected">
     > = DEFAULT_CATALOG,
   ) {}
+
+  /** Replace seeded GitHub releases (no live GitHub OAuth). */
+  seedGithubReleases(releases: readonly EmulatedGithubRelease[]): void {
+    this.githubReleases = [...releases];
+  }
+
+  listGithubReleases(): readonly EmulatedGithubRelease[] {
+    return this.githubReleases;
+  }
 
   describe() {
     return {
@@ -68,19 +86,39 @@ export class ComposioEmulator implements ComposioProvider {
         .map((connection) => connection.externalId) ??
       context.connectedProviders ??
       [];
-    return [...new Set(connected)].map((slug) => ({
-      name: `${slug}_EMULATED_ACTION`,
-      description: `Run a deterministic ${slug} action`,
-      inputSchema: {
-        type: "object",
-        properties: { value: { type: "string" } },
-      },
-    }));
+    const tools: ConnectorTool[] = [];
+    for (const slug of new Set(connected)) {
+      if (slug === "GITHUB") {
+        tools.push(...githubReleaseTools());
+        continue;
+      }
+      tools.push({
+        name: `${slug}_EMULATED_ACTION`,
+        description: `Run a deterministic ${slug} action`,
+        inputSchema: {
+          type: "object",
+          properties: { value: { type: "string" } },
+        },
+      });
+    }
+    return tools;
   }
 
   async *execute(call: ConnectorCall, context: AdapterContext): AsyncIterable<ConnectorEvent> {
-    this.executions.push({ userId: context.userId, tool: call.tool, args: call.args });
-    yield { type: "result", data: { ok: true, tool: call.tool, args: call.args } };
+    const result =
+      (RELEASE_WATCH_GITHUB_TOOL_NAMES as readonly string[]).includes(call.tool) ||
+      call.tool === "GITHUB_EMULATED_ACTION"
+        ? this.executeGithub(call.tool, call.args)
+        : { ok: true, tool: call.tool, args: call.args };
+    this.executions.push({
+      userId: context.userId,
+      botId: context.botId,
+      runId: context.runId,
+      tool: call.tool,
+      args: call.args,
+      result,
+    });
+    yield { type: "result", data: result };
   }
 
   async begin(
@@ -107,4 +145,74 @@ export class ComposioEmulator implements ComposioProvider {
   async revoke(connectionRef: string, context: AdapterContext): Promise<void> {
     this.connectedByUser.get(context.userId)?.delete(connectionRef);
   }
+
+  private executeGithub(tool: string, args: Record<string, unknown>): Record<string, unknown> {
+    const owner = String(args.owner ?? args.owner_name ?? "elie222");
+    const repo = String(args.repo ?? args.repository ?? "rakazo");
+    const matched = this.githubReleases.filter(
+      (release) =>
+        release.owner.toLowerCase() === owner.toLowerCase() &&
+        release.repo.toLowerCase() === repo.toLowerCase(),
+    );
+    if (tool === "GITHUB_LIST_RELEASES" || tool === "GITHUB_EMULATED_ACTION") {
+      return {
+        ok: true,
+        tool,
+        owner,
+        repo,
+        releases: matched.map((release) => ({
+          tag: release.tag,
+          name: release.name,
+          body: release.body,
+          publishedAt: release.publishedAt,
+          htmlUrl: release.htmlUrl,
+        })),
+      };
+    }
+    if (tool === "GITHUB_GET_RELEASE") {
+      const tag = args.tag ? String(args.tag) : undefined;
+      const release = tag
+        ? matched.find((row) => row.tag === tag)
+        : [...matched].sort((a, b) => b.publishedAt.localeCompare(a.publishedAt))[0];
+      if (!release) {
+        return { ok: false, tool, error: `No release found for ${owner}/${repo}` };
+      }
+      return { ok: true, tool, release };
+    }
+    return { ok: false, tool, error: `unknown GitHub tool ${tool}` };
+  }
+}
+
+function githubReleaseTools(): ConnectorTool[] {
+  return [
+    {
+      name: "GITHUB_LIST_RELEASES",
+      description:
+        "List releases for a GitHub repository (owner + repo). Prefer this over browsing github.com or web search when GitHub is connected.",
+      readOnly: true,
+      inputSchema: {
+        type: "object",
+        properties: {
+          owner: { type: "string", description: "Repository owner, e.g. elie222" },
+          repo: { type: "string", description: "Repository name, e.g. rakazo" },
+        },
+        required: ["owner", "repo"],
+      },
+    },
+    {
+      name: "GITHUB_GET_RELEASE",
+      description:
+        "Get one GitHub release by tag for owner/repo, or the latest release when tag is omitted. Prefer this over a computer browser.",
+      readOnly: true,
+      inputSchema: {
+        type: "object",
+        properties: {
+          owner: { type: "string" },
+          repo: { type: "string" },
+          tag: { type: "string", description: "Release tag; omit for latest." },
+        },
+        required: ["owner", "repo"],
+      },
+    },
+  ];
 }

@@ -1,11 +1,13 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { AuthInteraction, OAuthCredential } from "@earendil-works/pi-ai";
+import { readBodyCapped, withAbort } from "./web-ssrf.js";
 
 const AUTHORIZE_URL = "https://claude.ai/oauth/authorize";
 const TOKEN_URL = "https://platform.claude.com/v1/oauth/token";
 const REDIRECT_URI = "http://localhost:53692/callback";
 const SCOPES =
   "org:create_api_key user:profile user:inference user:sessions:claude_code user:mcp_servers user:file_upload";
+export const MAX_ANTHROPIC_TOKEN_RESPONSE_BYTES = 64 * 1024;
 
 // Public OAuth client identifier used by Claude Code. This is not a client secret.
 const CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
@@ -52,6 +54,7 @@ export function createManualAnthropicOAuthLogin(options: ManualAnthropicOAuthOpt
       throw new Error("OAuth state mismatch.");
     }
 
+    const requestSignal = AbortSignal.any([signal, AbortSignal.timeout(30_000)]);
     const response = await request(TOKEN_URL, {
       method: "POST",
       headers: {
@@ -66,13 +69,13 @@ export function createManualAnthropicOAuthLogin(options: ManualAnthropicOAuthOpt
         redirect_uri: REDIRECT_URI,
         code_verifier: verifier,
       }),
-      signal: AbortSignal.any([signal, AbortSignal.timeout(30_000)]),
+      signal: requestSignal,
     });
     if (!response.ok) {
       throw new Error(`Anthropic token exchange failed (${response.status}). Start sign-in again.`);
     }
 
-    const body = (await response.json()) as unknown;
+    const body = await readTokenResponse(response, requestSignal);
     if (!body || typeof body !== "object") {
       throw new Error("Anthropic token exchange returned an invalid credential.");
     }
@@ -97,6 +100,27 @@ export function createManualAnthropicOAuthLogin(options: ManualAnthropicOAuthOpt
       expires: Date.now() + credential.expires_in * 1000 - 5 * 60 * 1000,
     };
   };
+}
+
+async function readTokenResponse(response: Response, signal: AbortSignal): Promise<unknown> {
+  const declared = Number(response.headers.get("content-length") ?? 0);
+  if (Number.isFinite(declared) && declared > MAX_ANTHROPIC_TOKEN_RESPONSE_BYTES) {
+    const cancel = response.body?.cancel() ?? Promise.resolve();
+    await withAbort(
+      cancel.catch(() => undefined),
+      signal,
+    ).catch(() => undefined);
+    throw new Error("Anthropic token exchange response is too large.");
+  }
+  try {
+    const bytes = await readBodyCapped(response, MAX_ANTHROPIC_TOKEN_RESPONSE_BYTES, signal);
+    return JSON.parse(new TextDecoder().decode(bytes)) as unknown;
+  } catch (error) {
+    if (error instanceof Error && error.message === "Response is too large") {
+      throw new Error("Anthropic token exchange response is too large.");
+    }
+    throw error;
+  }
 }
 
 function parseAuthorizationInput(input: string): { code?: string; state?: string } {

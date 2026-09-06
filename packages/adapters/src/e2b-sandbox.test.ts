@@ -1,4 +1,5 @@
-import { type Sandbox, TimeoutError } from "@e2b/desktop";
+import { createServer } from "node:http";
+import { Sandbox, TimeoutError } from "@e2b/desktop";
 import { describe, expect, it, vi } from "vitest";
 import { ComputerScreenUnavailableError } from "./computer-screens.js";
 import { shouldSkipPortableWorkspaceFile } from "./computer-workspace.js";
@@ -7,7 +8,6 @@ import {
   type E2BSandboxSdk,
   ensureE2BPrimaryViewCommand,
   isSandboxGoneError,
-  isUnrecoverableSandboxError,
 } from "./e2b-sandbox.js";
 import { noVncProxyProcessPattern } from "./extra-displays.js";
 
@@ -129,30 +129,110 @@ describe("E2B computer backend", () => {
     expect(shouldSkipPortableWorkspaceFile(".browser-profiles/chromium/SingletonLock")).toBe(true);
   });
 
-  it("boots a fresh sandbox when reconnecting to a dead one fails with fetch failed", async () => {
+  it.each([
+    "ECONNRESET",
+    "ECONNREFUSED",
+    "EAI_AGAIN",
+    "EHOSTUNREACH",
+    "ENETUNREACH",
+    "ENOTFOUND",
+    "UND_ERR_CONNECT_TIMEOUT",
+    "UND_ERR_SOCKET",
+    undefined,
+  ])("preserves an existing sandbox after a %s transport failure", async (code) => {
     const desktop = { sandboxId: "fresh-e2b-box" } as unknown as Sandbox;
+    const failure = new Error("fetch failed", {
+      cause: Object.assign(new Error("transport unavailable"), { code }),
+    });
     const sdk: E2BSandboxSdk = {
       create: vi.fn(async () => desktop),
-      connect: vi.fn(async () => {
-        throw new Error("fetch failed", {
-          cause: Object.assign(new Error("getaddrinfo ENOTFOUND dead-e2b-box.e2b.app"), {
-            code: "ENOTFOUND",
-          }),
-        });
-      }),
+      connect: vi.fn().mockRejectedValueOnce(failure).mockResolvedValue({ sandboxId: "existing" }),
       pause: vi.fn(async () => undefined),
     };
     const provider = new E2BSandboxProvider("test-key", sdk);
 
-    const computer = await provider.provision(
-      { botId: "bot-1", homePath: "/unused", providerRef: "dead-e2b-box", providerKind: "e2b" },
-      context,
-    );
-
-    expect(sdk.create).toHaveBeenCalledTimes(1);
-    expect(computer.providerRef).toBe("fresh-e2b-box");
-    expect(computer.fresh).toBe(true);
+    const request = {
+      botId: "bot-1",
+      homePath: "/unused",
+      providerRef: "existing",
+      providerKind: "e2b" as const,
+    };
+    await expect(provider.provision(request, context)).rejects.toBe(failure);
+    expect(sdk.create).not.toHaveBeenCalled();
+    await expect(provider.provision(request, context)).resolves.toMatchObject({
+      providerRef: "existing",
+      fresh: false,
+    });
+    expect(sdk.create).not.toHaveBeenCalled();
   });
+
+  it("creates a replacement when the provider confirms the sandbox no longer exists", async () => {
+    const sdk: E2BSandboxSdk = {
+      create: vi.fn().mockResolvedValue({ sandboxId: "replacement" }),
+      connect: vi.fn().mockRejectedValue(
+        Object.assign(new Error("Sandbox not found"), {
+          name: "SandboxNotFoundError",
+        }),
+      ),
+      pause: vi.fn(),
+    };
+    const provider = new E2BSandboxProvider("test-key", sdk);
+    await expect(
+      provider.provision(
+        {
+          botId: "bot-1",
+          homePath: "/unused",
+          providerRef: "missing",
+          providerKind: "e2b",
+        },
+        context,
+      ),
+    ).resolves.toMatchObject({ providerRef: "replacement", fresh: true });
+    expect(sdk.create).toHaveBeenCalledOnce();
+  });
+
+  it.each([404, 503])(
+    "uses SDK deletion semantics for a cached handle receiving %s",
+    async (status) => {
+      const requests: string[] = [];
+      const server = createServer((request, response) => {
+        requests.push(`${request.method} ${request.url}`);
+        response.writeHead(status, { "content-type": "application/json" });
+        response.end(JSON.stringify({ code: status, message: "sandbox unavailable" }));
+      });
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+      try {
+        const address = server.address();
+        if (!address || typeof address === "string") throw new Error("Missing test server address");
+        const desktop = new Sandbox({
+          sandboxId: "expired",
+          envdVersion: "0.1.0",
+          apiKey: "test-key",
+          validateApiKey: false,
+          debug: false,
+          proxy: "",
+          apiUrl: `http://127.0.0.1:${address.port}`,
+        });
+        const sdk: E2BSandboxSdk = {
+          create: vi.fn().mockResolvedValue(desktop),
+          connect: vi.fn(),
+          pause: vi.fn(),
+        };
+        const provider = new E2BSandboxProvider("test-key", sdk);
+        const computer = await provider.provision({ botId: "bot", homePath: "/unused" }, context);
+        if (status === 404) {
+          await expect(provider.destroy(computer, context)).resolves.toBeUndefined();
+        } else {
+          await expect(provider.destroy(computer, context)).rejects.toThrow();
+        }
+        expect(requests).toEqual(["DELETE /sandboxes/expired"]);
+        expect(sdk.connect).not.toHaveBeenCalled();
+      } finally {
+        server.closeAllConnections();
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+      }
+    },
+  );
 
   it("gives screen setup commands a real timeout and surfaces a failed one as unavailable", async () => {
     const run = vi.fn(async (_command: string, opts?: { timeoutMs?: number }) => {
@@ -809,7 +889,6 @@ describe("sandbox-gone detection", () => {
   it("recognises every sandbox-gone wording", () => {
     for (const error of gone) {
       expect(isSandboxGoneError(error), error.message).toBe(true);
-      expect(isUnrecoverableSandboxError(error), error.message).toBe(true);
     }
   });
 
@@ -819,10 +898,8 @@ describe("sandbox-gone detection", () => {
     }
   });
 
-  it("leaves the transport split alone", () => {
-    // a blip is handled by isUnreachableTransportError, and must never read as gone
+  it("does not interpret a transport failure as sandbox loss", () => {
     expect(isSandboxGoneError(new Error("fetch failed"))).toBe(false);
-    expect(isUnrecoverableSandboxError(new Error("fetch failed"))).toBe(false);
   });
 
   it("drops a cached handle whose sandbox died and reconnects", async () => {

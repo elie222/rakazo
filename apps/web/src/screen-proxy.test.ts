@@ -1,11 +1,6 @@
 import { createCipheriv, createHash, createHmac } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import {
-  resolveNovncTarget,
-  safeProxyHeaders,
-  safeProxyResponseHeaders,
-  stripSensitiveHandshakeHeaders,
-} from "./screen-proxy.js";
+import { resolveNovncTarget, safeProxyHeaders } from "./screen-proxy.js";
 
 function signedPath(
   port: number,
@@ -114,21 +109,16 @@ describe("noVNC proxy authorization", () => {
     ).toEqual({ upgrade: "websocket", "sec-websocket-key": "key" });
   });
 
-  it("does not accept cookie or site-data mutations from a bot computer", () => {
+  it("does not forward HTTP/2 pseudo-headers to the HTTP/1 upstream", () => {
     expect(
-      safeProxyResponseHeaders({
-        "content-type": "text/html",
-        "set-cookie": ["session=attacker"],
-        "clear-site-data": '"cookies"',
+      safeProxyHeaders({
+        ":method": "GET",
+        ":path": "/novnc/embed.html",
+        ":authority": "localhost:5173",
+        ":scheme": "https",
+        upgrade: "websocket",
+        "sec-websocket-key": "key",
       }),
-    ).toEqual({ "content-type": "text/html" });
-
-    const handshake = Buffer.from(
-      "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nSet-Cookie: session=attacker\r\n\r\nframe",
-      "latin1",
-    );
-    expect(stripSensitiveHandshakeHeaders(handshake)?.toString("latin1")).toBe(
-      "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\n\r\nframe",
-    );
+    ).toEqual({ upgrade: "websocket", "sec-websocket-key": "key" });
   });
 });

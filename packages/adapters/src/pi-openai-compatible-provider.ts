@@ -11,6 +11,7 @@ import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completio
 import { Agent } from "undici";
 import {
   createAddressCheckedLookup,
+  isCloudMetadataAddress,
   isLinkLocalAddress,
   isPrivateAddress,
   type ResolveHostname,
@@ -39,22 +40,28 @@ const OPENAI_COMPAT_BASE = "http://127.0.0.1:1/v1";
 const resolveHostname: ResolveHostname = (hostname) =>
   lookup(hostname, { all: true, verbatim: true });
 
-function openAiCompatibleModel(id: string, baseUrl: string): Model<"openai-completions"> {
+export function openAiCompatibleModel(
+  id: string,
+  baseUrl: string,
+  reasoning = false,
+): Model<"openai-completions"> {
   return {
     id,
     name: id,
     api: "openai-completions",
     provider: OPENAI_COMPATIBLE_PROVIDER_ID,
     baseUrl,
-    reasoning: false,
+    reasoning,
+    compat: {
+      supportsDeveloperRole: false,
+      supportsReasoningEffort: reasoning,
+      thinkingFormat: "openai",
+    },
+    thinkingLevelMap: { off: "none" },
     input: ["text"],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow: DEFAULT_CONTEXT_WINDOW,
     maxTokens: DEFAULT_MAX_TOKENS,
-    compat: {
-      supportsDeveloperRole: false,
-      supportsReasoningEffort: false,
-    },
   };
 }
 
@@ -93,6 +100,9 @@ export function createOpenAiCompatibleLookup(
   const privateHostname = isPrivateOpenAiCompatibleHostname(hostname);
   return createAddressCheckedLookup(resolve, (addresses) => {
     if (addresses.length === 0) throw new Error("Model server did not resolve to an address");
+    if (addresses.some((entry) => isCloudMetadataAddress(entry.address))) {
+      throw new Error("Model server hostname resolved to a blocked metadata address");
+    }
     if (privateHostname) {
       if (
         addresses.some(
@@ -222,11 +232,11 @@ export function registerOpenAiCompatibleCatalog(models: MutableModels): MutableM
 /** Register a concrete model + base URL for an agent run. */
 export function registerOpenAiCompatibleRuntime(
   models: MutableModels,
-  opts: { modelId: string; baseUrl: string },
+  opts: { modelId: string; baseUrl: string; reasoning?: boolean },
 ): MutableModels {
   const baseUrl = normalizeOpenAiCompatibleBaseUrl(opts.baseUrl);
   models.setProvider(
-    openAiCompatibleProvider([openAiCompatibleModel(opts.modelId.trim(), baseUrl)]),
+    openAiCompatibleProvider([openAiCompatibleModel(opts.modelId.trim(), baseUrl, opts.reasoning)]),
   );
   return models;
 }
@@ -290,9 +300,13 @@ async function readBoundedJson(response: Response): Promise<OpenAiCompatibleMode
   const declaredSize = Number(response.headers.get("content-length") ?? 0);
   if (declaredSize > MAX_MODELS_RESPONSE_BYTES) {
     await response.body?.cancel().catch(() => undefined);
-    throw new Error("Model server response is too large");
+    throw new Error(`Model server response is too large. ${OPENAI_COMPAT_PROBE_HAND_FILL_HINT}`);
   }
-  if (!response.body) throw new Error("Model server returned an empty response");
+  if (!response.body) {
+    throw new Error(
+      `Model server returned an empty response. ${OPENAI_COMPAT_PROBE_HAND_FILL_HINT}`,
+    );
+  }
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let bytes = 0;
@@ -303,7 +317,7 @@ async function readBoundedJson(response: Response): Promise<OpenAiCompatibleMode
     bytes += value.byteLength;
     if (bytes > MAX_MODELS_RESPONSE_BYTES) {
       await reader.cancel().catch(() => undefined);
-      throw new Error("Model server response is too large");
+      throw new Error(`Model server response is too large. ${OPENAI_COMPAT_PROBE_HAND_FILL_HINT}`);
     }
     text += decoder.decode(value, { stream: true });
   }
@@ -336,7 +350,9 @@ export async function probeOpenAiCompatibleModels(
     });
     if (response.type === "opaqueredirect" || (response.status >= 300 && response.status < 400)) {
       await response.body?.cancel().catch(() => undefined);
-      throw new Error("Model server redirects are not allowed");
+      throw new Error(
+        `Model server redirects are not allowed. ${OPENAI_COMPAT_PROBE_HAND_FILL_HINT}`,
+      );
     }
     if (!response.ok) {
       await response.body?.cancel().catch(() => undefined);
@@ -346,6 +362,18 @@ export async function probeOpenAiCompatibleModels(
     }
     const body = await readBoundedJson(response);
     return probeModelIds(body);
+  } catch (error) {
+    const aborted =
+      (error instanceof Error && error.name === "AbortError") ||
+      (typeof DOMException !== "undefined" &&
+        error instanceof DOMException &&
+        error.name === "AbortError");
+    if (aborted) {
+      // Caller-cancelled probes keep the original AbortError; the 5s probe budget gets a hint.
+      if (signal?.aborted) throw error;
+      throw new Error(`Model server probe timed out. ${OPENAI_COMPAT_PROBE_HAND_FILL_HINT}`);
+    }
+    throw error;
   } finally {
     clearTimeout(timeout);
   }

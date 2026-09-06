@@ -3,7 +3,7 @@ import {
   activeBotId,
   captureScreenshot,
   completeOnboarding,
-  openNewBot,
+  createNamedBot,
   realSandboxTimeout,
   rpc,
   signup,
@@ -125,6 +125,27 @@ test("user control leaves another Team bot's screen available", async ({ page },
   await captureScreenshot(page, testInfo, "47-team-computer-control-released");
 });
 
+test("a failed control release keeps the computer open for retry", async ({ page }, testInfo) => {
+  await signup(page, `team-release-${Date.now()}@rakazo.test`, "password12", "Team Release");
+  await completeOnboarding(page);
+  await page.getByTitle("Agent computer").click();
+  await page.getByTestId("computer-preview").hover();
+  await page.getByTestId("computer-preview-open").click();
+  const chrome = page.getByTestId("computer-chrome");
+  const release = chrome.getByRole("button", { name: "Release", exact: true });
+  await expect(release).toBeVisible();
+  await page.route("**/rpc/computer/release", (route) =>
+    route.fulfill({ status: 500, body: "release unavailable" }),
+  );
+  await release.click();
+  await expect(page.getByText("Could not continue", { exact: true }).last()).toBeVisible();
+  await expect(page.getByRole("button", { name: "Close computer" })).toBeVisible();
+  await captureScreenshot(page, testInfo, "48-team-computer-release-retry");
+  await page.unroute("**/rpc/computer/release");
+  await release.click();
+  await expect(page.getByRole("button", { name: "Close computer" })).toBeHidden();
+});
+
 test("an active Team bot must be stopped before user takeover", async ({ page }, testInfo) => {
   const stamp = Date.now();
 
@@ -210,18 +231,7 @@ test("an active Team bot must be stopped before user takeover", async ({ page },
 });
 
 async function createBot(page: Page, name: string, mode: "team" | "dedicated") {
-  await openNewBot(page);
-  await expect(page.getByText("New bot", { exact: true })).toBeVisible();
-  const team = page.getByRole("button", { name: "Team", exact: true });
-  const privateComputer = page.getByRole("button", { name: "Private", exact: true });
-  await expect(team).toHaveAttribute("aria-pressed", "true");
-  if (mode === "dedicated") await privateComputer.click();
-  await expect(mode === "team" ? team : privateComputer).toHaveAttribute("aria-pressed", "true");
-  await page.getByPlaceholder("Name this bot").fill(name);
-  await page.getByRole("button", { name: "Create", exact: true }).click();
-  await page.waitForURL(/\/app\/[^/]+$/);
-  await expect(page.getByPlaceholder(`Message ${name}`)).toBeVisible();
-  return activeBotId(page);
+  return createNamedBot(page, name, { computerMode: mode });
 }
 
 async function setComputerMode(

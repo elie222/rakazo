@@ -34,11 +34,10 @@ test.describe("marketing homepage", () => {
     }).toPass({ timeout: 15_000 });
     await captureScreenshot(page, testInfo, "01-marketing-homepage-selfhost");
 
-    await expect(async () => {
-      await selfHost.getByRole("button", { name: /Get started/i }).click();
-      await expect(page.getByRole("dialog")).toBeVisible();
-    }).toPass();
-    const dialog = page.getByRole("dialog");
+    await expect(page.locator("html")).toHaveAttribute("data-get-started-ready", "");
+    await selfHost.getByRole("button", { name: /Get started/i }).click();
+    const dialog = page.locator("[data-get-started-dialog]");
+    await expect(dialog).toBeVisible();
     await expect(dialog.getByRole("heading")).toBeVisible();
     await expect(dialog).not.toContainText(
       /openssl|docker-compose\.images|POSTGRES_PASSWORD|BETTER_AUTH_SECRET|mkdir rakazo/i,
@@ -68,11 +67,10 @@ test.describe("marketing homepage", () => {
     }).toPass({ timeout: 15_000 });
     await captureScreenshot(page, testInfo, "03-marketing-homepage-zh-selfhost");
 
-    await expect(async () => {
-      await selfHost.getByRole("button", { name: "开始使用" }).click();
-      await expect(page.getByRole("dialog")).toBeVisible();
-    }).toPass();
-    const dialog = page.getByRole("dialog");
+    await expect(page.locator("html")).toHaveAttribute("data-get-started-ready", "");
+    await selfHost.getByRole("button", { name: "开始使用" }).click();
+    const dialog = page.locator("[data-get-started-dialog]");
+    await expect(dialog).toBeVisible();
     await expect(dialog.getByRole("heading")).toHaveText("你想如何开始？");
     await expect(dialog).not.toContainText(
       /openssl|docker-compose\.images|POSTGRES_PASSWORD|BETTER_AUTH_SECRET|mkdir rakazo/i,

@@ -4,6 +4,7 @@ import {
   OPENAI_COMPATIBLE_PROVIDER_ID,
   openAiCompatibleConnectReady,
 } from "@rakazo/contracts";
+import { createModelProbe, featuredModelProviders, initialModelProbeState } from "@rakazo/core";
 import { useFocusEffect } from "expo-router";
 import { useCallback, useMemo, useRef, useState } from "react";
 import {
@@ -12,12 +13,14 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { type MobileMe, type MobileModel, type MobileModelCredential, rpc } from "../lib/api";
+import { mobileTokens } from "../lib/appearance";
 import { useI18n } from "../lib/i18n";
 import {
   cancelModelOAuthAttempt,
@@ -38,14 +41,18 @@ export default function Models() {
   const [credentials, setCredentials] = useState<MobileModelCredential[]>([]);
   const [me, setMe] = useState<MobileMe | null>(null);
   const [provider, setProvider] = useState("");
+  const [showAllProviders, setShowAllProviders] = useState(false);
   const [modelId, setModelId] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
+  const [reasoning, setReasoning] = useState(false);
   const [showEndpointHelp, setShowEndpointHelp] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [showApiKey, setShowApiKey] = useState(false);
-  const [probeModels, setProbeModels] = useState<string[]>([]);
-  const [probedBaseUrl, setProbedBaseUrl] = useState<string | null>(null);
-  const [probing, setProbing] = useState(false);
+  const [{ models: probeModels, baseUrl: probedBaseUrl, probing }, setProbe] =
+    useState(initialModelProbeState);
+  const [modelProbe] = useState(() => createModelProbe(setProbe));
+  const resetOpenAiCompatibleProbe = modelProbe.reset;
   const [oauth, setOauth] = useState<ModelOAuthBegin | null>(null);
   const [pasteCode, setPasteCode] = useState("");
   const [loading, setLoading] = useState(true);
@@ -56,7 +63,6 @@ export default function Models() {
   const oauthAbortRef = useRef<AbortController | null>(null);
   const oauthLoginIdRef = useRef<string | null>(null);
   const oauthCodeSubmittingRef = useRef(false);
-  const probeRequestIdRef = useRef(0);
 
   const cancelOAuth = useCallback(() => {
     const loginId = oauthLoginIdRef.current;
@@ -99,14 +105,12 @@ export default function Models() {
     setMe(nextMe);
     setCatalog(nextCatalog);
     setCredentials(nextCredentials);
-    probeRequestIdRef.current += 1;
-    setProbeModels([]);
-    setProbedBaseUrl(null);
-    setProbing(false);
+    resetOpenAiCompatibleProbe();
     setProvider(nextProvider);
     setModelId(nextModel);
     if (nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID) {
       setBaseUrl(nextCredential?.baseUrl ?? "");
+      setReasoning(nextCredential?.reasoning ?? false);
     }
   }, []);
 
@@ -118,7 +122,7 @@ export default function Models() {
         )
         .finally(() => setLoading(false));
       return () => {
-        probeRequestIdRef.current += 1;
+        modelProbe.invalidate();
         cancelOAuth();
       };
     }, [cancelOAuth, load]),
@@ -137,6 +141,19 @@ export default function Models() {
       entries,
     }));
   }, [catalog]);
+  const featuredProviders = useMemo(
+    () =>
+      featuredModelProviders(
+        groups.map((group) => group.entries[0]!),
+        provider,
+      ),
+    [groups, provider],
+  );
+  const visibleGroups = useMemo(() => {
+    if (showAllProviders) return groups;
+    const byId = new Map(groups.map((group) => [group.id, group]));
+    return featuredProviders.map((entry) => byId.get(entry.provider)!);
+  }, [groups, featuredProviders, showAllProviders]);
   const modelsForProvider = catalog.filter((entry) => entry.provider === provider);
   const selected = modelsForProvider.find((entry) => entry.id === modelId) ?? modelsForProvider[0];
   const isOpenAiCompatible = provider === OPENAI_COMPATIBLE_PROVIDER_ID;
@@ -158,13 +175,6 @@ export default function Models() {
     storedBaseUrl: credential?.baseUrl,
   });
 
-  function resetOpenAiCompatibleProbe() {
-    probeRequestIdRef.current += 1;
-    setProbeModels([]);
-    setProbedBaseUrl(null);
-    setProbing(false);
-  }
-
   function updateBaseUrl(nextBaseUrl: string) {
     setBaseUrl(nextBaseUrl);
     resetOpenAiCompatibleProbe();
@@ -179,16 +189,16 @@ export default function Models() {
 
   function chooseProvider(nextProvider: string) {
     cancelOAuth();
+    const nextCredential = credentials.find((entry) => entry.provider === nextProvider);
     setProvider(nextProvider);
+    setReasoning(nextCredential?.reasoning ?? false);
     setModelId(
       nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID
-        ? (credentials.find((entry) => entry.provider === nextProvider)?.modelId ?? "")
+        ? (nextCredential?.modelId ?? "")
         : (catalog.find((entry) => entry.provider === nextProvider)?.id ?? ""),
     );
     setBaseUrl(
-      nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID
-        ? (credentials.find((entry) => entry.provider === nextProvider)?.baseUrl ?? "")
-        : "",
+      nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID ? (nextCredential?.baseUrl ?? "") : "",
     );
     setApiKey("");
     resetOpenAiCompatibleProbe();
@@ -197,35 +207,26 @@ export default function Models() {
   }
 
   async function probeServerModels() {
-    const trimmedBaseUrl = effectiveBaseUrl;
-    if (!trimmedBaseUrl) return;
-    resetOpenAiCompatibleProbe();
-    const requestId = probeRequestIdRef.current;
-    setProbing(true);
+    if (!baseUrl.trim()) return;
     setError(null);
     setNotice(null);
-    try {
-      const result = await rpc<{ models: string[] }>("models/probeOpenAiCompatible", {
-        baseUrl: trimmedBaseUrl,
-        apiKey: apiKey.trim() || undefined,
-      });
-      if (requestId !== probeRequestIdRef.current) return;
-      setProbeModels(result.models);
-      setProbedBaseUrl(trimmedBaseUrl);
-      setModelId((current) => current.trim() || result.models[0] || "");
-      setNotice(
-        result.models.length === 0
-          ? t("Server found. Enter a model name.")
-          : result.models.length === 1
-            ? t("Found {count} model.", { count: 1 })
-            : t("Found {count} models.", { count: result.models.length }),
-      );
-    } catch (err) {
-      if (requestId !== probeRequestIdRef.current) return;
-      setError(err instanceof Error ? err.message : t("Could not reach this model server"));
-    } finally {
-      if (requestId === probeRequestIdRef.current) setProbing(false);
-    }
+    await modelProbe.probe({
+      baseUrl,
+      apiKey,
+      request: (input) => rpc<{ models: string[] }>("models/probeOpenAiCompatible", input),
+      onSuccess: (models) => {
+        setModelId((current) => current.trim() || models[0] || "");
+        setNotice(
+          models.length === 0
+            ? t("Server found. Enter a model name.")
+            : models.length === 1
+              ? t("Found {count} model.", { count: 1 })
+              : t("Found {count} models.", { count: models.length }),
+        );
+      },
+      onError: (err) =>
+        setError(err instanceof Error ? err.message : t("Could not reach this model server")),
+    });
   }
 
   async function setModelDefault() {
@@ -268,6 +269,7 @@ export default function Models() {
               provider: selected.provider,
               baseUrl: effectiveBaseUrl,
               modelId: modelId.trim(),
+              reasoning,
               apiKey: apiKey.trim() || undefined,
               label: selected.providerName ?? selected.provider,
             }
@@ -408,12 +410,13 @@ export default function Models() {
 
         <Text style={styles.sectionTitle}>{t("Providers")}</Text>
         <View style={styles.card}>
-          {groups.map((group) => {
+          {visibleGroups.map((group) => {
             const connected = credentials.some((entry) => entry.provider === group.id);
             return (
               <Pressable
                 key={group.id}
                 accessibilityRole="button"
+                accessibilityState={{ selected: group.id === provider }}
                 onPress={() => chooseProvider(group.id)}
                 style={({ pressed }) => [
                   styles.providerRow,
@@ -433,6 +436,18 @@ export default function Models() {
               </Pressable>
             );
           })}
+          {groups.length > featuredProviders.length ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityState={{ expanded: showAllProviders }}
+              onPress={() => setShowAllProviders((value) => !value)}
+              style={styles.providerRow}
+            >
+              <Text style={styles.providerName}>
+                {showAllProviders ? t("Show less") : t("Show more")}
+              </Text>
+            </Pressable>
+          ) : null}
         </View>
 
         {selected ? (
@@ -537,6 +552,24 @@ export default function Models() {
                     ) : null}
                   </>
                 )}
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityState={{ expanded: showAdvanced }}
+                  onPress={() => setShowAdvanced((visible) => !visible)}
+                >
+                  <Text style={styles.helpLabel}>{t("Advanced")}</Text>
+                </Pressable>
+                {showAdvanced ? (
+                  <View style={styles.modelRow}>
+                    <Text style={styles.modelLabel}>{t("Supports thinking")}</Text>
+                    <Switch
+                      accessibilityLabel={t("Supports thinking")}
+                      value={reasoning}
+                      onValueChange={setReasoning}
+                      disabled={busy}
+                    />
+                  </View>
+                ) : null}
               </>
             ) : (
               <View style={styles.card}>
@@ -768,6 +801,7 @@ export default function Models() {
 }
 
 function createModelsStyles() {
+  const tokens = mobileTokens();
   return StyleSheet.create({
     screen: {
       flex: 1,
@@ -836,7 +870,7 @@ function createModelsStyles() {
       fontWeight: "600",
     },
     connected: {
-      color: "#4ECB71",
+      color: tokens.success,
       fontSize: 13,
     },
     modelRow: {
@@ -870,7 +904,7 @@ function createModelsStyles() {
       fontSize: 15,
     },
     selectedRow: {
-      backgroundColor: "#222225",
+      backgroundColor: tokens.accent,
     },
     billing: {
       color: native.secondaryLabel,
@@ -965,12 +999,12 @@ function createModelsStyles() {
       fontWeight: "600",
     },
     error: {
-      color: "#FF6961",
+      color: tokens.destructive,
       fontSize: 14,
       marginTop: 4,
     },
     notice: {
-      color: "#4ECB71",
+      color: tokens.success,
       fontSize: 14,
       marginTop: 4,
     },

@@ -83,7 +83,8 @@ the `https://` address.
 
 ## Local development (source checkout)
 
-You need Node.js 22+, pnpm 9, and Docker.
+You need Node.js 22.22.2 or newer in the 22.x line, Node.js 24.x, or Node.js 26+;
+pnpm 9; and Docker. Node.js 23.x and 25.x are not supported.
 
 ```bash
 git clone https://github.com/elie222/rakazo.git
@@ -158,9 +159,6 @@ marketing pages stay English.
 
 ## Development
 
-Rakazo is a TypeScript monorepo built with React, Electron, Expo, Hono, Postgres, Prisma, Graphile
-Worker, and Pi.
-
 ```text
 apps/       web, api, worker, desktop, mobile, and public website
 packages/   domain, contracts, persistence, adapters, UI, and test tooling
@@ -182,19 +180,6 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) for the development workflow and test m
 
 ## Documentation
 
-```bash
-pnpm test              # unit, property, and in-process contract tests
-pnpm test:integration  # Postgres journeys, Graphile jobs, LISTEN/NOTIFY
-pnpm test:e2e          # Playwright against the emulated stack
-pnpm test:e2e -- --sandbox=e2b # the same deterministic suite against real E2B
-pnpm test:e2e -- --sandbox=daytona # the same suite against real Daytona
-pnpm test:e2e -- --sandbox=box # the same suite against real Box
-pnpm test:topology     # local Docker + Graphile worker recovery (needs Docker)
-pnpm test:canary       # live OpenRouter / E2B / Box canaries
-# explicit real vision-model + real E2B desktop acceptance test:
-COMPUTER_E2E_MODEL=<vision-capable-openrouter-model-id> pnpm test:computer
-```
-
 - [Self-hosting](./docs/self-host.md)
 - [Computer runtime and isolation](./docs/computer-runtime.md)
 - [Desktop releases](./docs/desktop-release.md)
@@ -203,9 +188,6 @@ COMPUTER_E2E_MODEL=<vision-capable-openrouter-model-id> pnpm test:computer
 
 ## Contributing
 
-The Playwright workflow can also be started manually with **Sandbox provider** set to `e2b`, `daytona`, or `box`.
-Those options require `E2B_API_KEY`, `DAYTONA_API_KEY`, or `BOX_API_KEY`, keep the deterministic scripted agent runtime, and destroy
-the provider machines after the run. The default and all automatic runs remain on `fake`.
 Contributions are welcome. Please read [CONTRIBUTING.md](./CONTRIBUTING.md) before opening a pull
 request. For security vulnerabilities, follow [SECURITY.md](./SECURITY.md) instead of filing a public
 issue.

@@ -7,6 +7,9 @@ import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
 import { boundedSandboxCommandTimeoutMs, resolveSupervisorToken } from "@rakazo/core";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
+import { SERVICE_NAMES } from "@rakazo/logging";
+import { createRootLogger } from "@rakazo/logging/axiom";
+import { requestLogging } from "@rakazo/logging/hono";
 import Docker from "dockerode";
 import { Hono } from "hono";
 import { z } from "zod";
@@ -19,8 +22,10 @@ import {
   computerNetworkNamesForCleanup,
   containerCreateOptions,
   containerNameFor,
+  controlPortPublicationMatches,
   hostComputerUser,
   legacyNetworkOwnedSolelyBy,
+  publishedLoopbackControlHostPort,
   resolveComputerControlEndpoint,
   resolveScreenNetworkMode,
   resolveScreenPublishTarget,
@@ -28,6 +33,7 @@ import {
   SCREEN_HOST,
   screenPorts,
   screenUrlFor,
+  screenUrlWithToken,
   xdotoolCommand,
 } from "./computer-spec.js";
 import { assertComputerHomeWritable } from "./home-ownership.js";
@@ -36,7 +42,9 @@ import {
   attemptComputerControl,
   browserProfilePathForScreen,
   ComputerControlUnavailableError,
+  checkpointScreensCommand,
   clearComputerScreenRegistry,
+  completeControlReleaseCommand,
   computerActionSchema,
   computerControlTimeoutMs,
   containerActionSteps,
@@ -79,11 +87,16 @@ let supervisorInfo: Docker.ContainerInspectInfo | undefined;
 const supervisorToken = resolveSupervisorToken(process.env);
 const screenNetworkMode = resolveScreenNetworkMode(process.env.SANDBOX_SCREEN_NETWORK);
 const teamScreenLimit = resolveTeamScreenLimit();
+// Host-run supervisors on Docker Desktop (macOS/Windows) cannot reach container
+// IPs, so computer control must use a published loopback port instead.
+const controlViaLoopback = process.env.SANDBOX_CONTROL_VIA_LOOPBACK === "true";
 const computerScreens = new Map<string, Map<string, ScreenAssignment>>();
 
 const app = new Hono();
 
 export { app as supervisorApp };
+
+app.use("*", requestLogging());
 
 export function resolveDockerSocketPath(
   env: NodeJS.ProcessEnv = process.env,
@@ -141,20 +154,20 @@ app.post("/computers", async (c) => {
       if (existing) {
         const info = await existing.inspect();
         const desired = await docker.getImage(COMPUTER_IMAGE).inspect();
+        const controlPublishOk = controlPortPublicationMatches(
+          info.HostConfig.PortBindings,
+          controlViaLoopback,
+        );
         if (
           info.Image === desired.Id &&
           (!networkMode || info.HostConfig.NetworkMode === networkMode) &&
-          info.Config.User === computerUser
+          info.Config.User === computerUser &&
+          controlPublishOk
         ) {
           if (!info.State.Running) await existing.start();
-          const screenUrl = await publishedScreenUrl(
-            existing,
-            info.State.Running ? info : undefined,
-          );
           return c.json({
             id: existing.id,
             image: COMPUTER_IMAGE,
-            screenUrl,
             resumed: true,
           });
         }
@@ -186,14 +199,13 @@ app.post("/computers", async (c) => {
           user: computerUser,
           networkMode,
           controlToken: randomUUID(),
+          publishControlPort: controlViaLoopback,
         }),
       );
       await container.start();
-      const screenUrl = await publishedScreenUrl(container);
       return c.json({
         id: container.id,
         image: COMPUTER_IMAGE,
-        screenUrl,
         resumed: false,
       });
     });
@@ -211,12 +223,10 @@ app.get("/computers/:id", async (c) => {
       c.req.header("x-rakazo-bot-id"),
       c.req.header("x-rakazo-space-id"),
     );
-    const screenUrl = await publishedScreenUrl(container, info);
     return c.json({
       id,
       running: Boolean(info.State.Running),
       image: info.Config.Image,
-      screenUrl,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -263,6 +273,75 @@ app.post("/computers/:id/exec", async (c) => {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return c.json({ stdout: "", stderr: message, code: 1 }, 200);
+  }
+});
+
+app.post("/computers/:id/browser", async (c) => {
+  // Read eagerly so the Node HTTP adapter observes disconnects during screen setup too.
+  const signal = c.req.raw.signal;
+  signal.throwIfAborted();
+  const body = z
+    .discriminatedUnion("command", [
+      z.object({
+        command: z.literal("navigate"),
+        url: z
+          .string()
+          .url()
+          .max(8192)
+          .refine((value) => {
+            if (!URL.canParse(value)) return false;
+            const url = new URL(value);
+            return /^https?:$/.test(url.protocol) && !url.username && !url.password;
+          }),
+      }),
+      z.object({ command: z.literal("snapshot") }),
+      z.object({
+        command: z.literal("act"),
+        actions: z
+          .array(
+            z.discriminatedUnion("kind", [
+              z.object({ kind: z.literal("click"), ref: z.string().min(1).max(200) }),
+              z.object({
+                kind: z.enum(["fill", "type"]),
+                ref: z.string().min(1).max(200),
+                text: z.string().max(32_000),
+              }),
+            ]),
+          )
+          .min(1)
+          .max(24),
+      }),
+    ])
+    .parse(await c.req.json());
+  try {
+    const { container, layout } = await managedScreen(
+      c.req.param("id"),
+      c.req.header("x-rakazo-bot-id"),
+      c.req.header("x-rakazo-space-id"),
+      c.req.header("x-rakazo-screen-id"),
+      c.req.header("x-rakazo-screen-lease-id"),
+    );
+    const result = await runContainerCommand(
+      container,
+      ["/usr/local/bin/rakazo-page-browser", body.command, JSON.stringify(body)],
+      {
+        env: [`DISPLAY=${layout.display}`, "HOME=/home/rakazo", "RAKAZO_BROWSER_WATCH_STDIN=1"],
+        timeoutMs: 25_000,
+        signal,
+      },
+    );
+    // A nonzero exit or malformed output cannot establish which mutations ran.
+    if (result.code !== 0 || Buffer.byteLength(result.stdout) > 512 * 1024) {
+      throw new Error("Page browser unavailable or interrupted");
+    }
+    return c.json(JSON.parse(result.stdout));
+  } catch {
+    return c.json({
+      ok: false,
+      fallback: "computer_act",
+      uncertain: body.command === "act",
+      error: "Page browser unavailable or interrupted. Inspect the screen before continuing.",
+    });
   }
 });
 
@@ -444,7 +523,7 @@ app.post("/computers/:id/files", async (c) => {
 app.get("/computers/:id/screen", async (c) => {
   const id = c.req.param("id");
   try {
-    const { container, info, layout } = await managedScreen(
+    const { container, info, layout, viewToken } = await managedScreen(
       id,
       c.req.header("x-rakazo-bot-id"),
       c.req.header("x-rakazo-space-id"),
@@ -452,7 +531,7 @@ app.get("/computers/:id/screen", async (c) => {
       c.req.header("x-rakazo-screen-lease-id"),
     );
     const screenUrl = await publishedScreenUrl(container, info, layout.viewPort);
-    return c.redirect(screenUrl);
+    return c.redirect(screenUrlWithToken(screenUrl, viewToken));
   } catch {
     return c.json({ error: "computer not found" }, 404);
   }
@@ -479,7 +558,7 @@ app.post("/computers/:id/screen-mode", async (c) => {
     const screenId = c.req.header("x-rakazo-screen-id");
     const screenLeaseId = c.req.header("x-rakazo-screen-lease-id");
     const { container, info } = await managedContainer(id, botId, spaceId);
-    const { layout } = await withComputerScreenLock(id, async () => {
+    const { layout, viewToken } = await withComputerScreenLock(id, async () => {
       const screen = await ensureManagedScreen(id, container, info, botId, screenId, screenLeaseId);
       const controlChanged =
         body.interactive || body.revokeControl !== false
@@ -501,16 +580,19 @@ app.post("/computers/:id/screen-mode", async (c) => {
       ) {
         const synced = await runContainerCommand(container, [
           "bash",
-          "-lc",
-          syncSharedBrowserProfileCommand(screen.screenKey, true),
+          "-c",
+          [
+            syncSharedBrowserProfileCommand(screen.screenKey, true),
+            completeControlReleaseCommand(screen.index, body.controlToken),
+          ].join("\n"),
         ]);
         if (synced.code !== 0) {
           throw new Error(synced.stderr || "shared browser profile failed to sync");
         }
         const restarted = await runContainerCommand(container, [
           "bash",
-          "-lc",
-          ensureScreenCommand(screen.index, screen.screenKey),
+          "-c",
+          ensureScreenCommand(screen.index, screen.screenKey, screen.viewToken),
         ]);
         if (restarted.code !== 0) {
           throw new Error(restarted.stderr || "computer browser failed to restart");
@@ -523,7 +605,9 @@ app.post("/computers/:id/screen-mode", async (c) => {
       info,
       body.interactive ? layout.controlPort : layout.viewPort,
     );
-    return c.json({ screenUrl });
+    return c.json({
+      screenUrl: screenUrlWithToken(screenUrl, body.interactive ? body.controlToken! : viewToken),
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return c.json({ error: message }, 400);
@@ -581,7 +665,6 @@ app.delete("/computers/:id/screen", async (c) => {
     );
     const screenId = c.req.header("x-rakazo-screen-id") || c.req.header("x-rakazo-bot-id") || id;
     const cancelRunWork = c.req.header("x-rakazo-cancel-run-work") === "1";
-    const authoritativeBrowserState = c.req.header("x-rakazo-authoritative-browser-state") === "1";
     const screenLeaseId = c.req.header("x-rakazo-screen-lease-id");
     await withComputerScreenLock(id, async () => {
       const assigned = computerScreens.get(id);
@@ -590,14 +673,13 @@ app.delete("/computers/:id/screen", async (c) => {
         hasRegistry: Boolean(assigned),
         cancelRunWork,
         screenId,
-        authoritativeBrowserState,
       });
       if (assigned && index !== undefined) {
         await teardownReleasedScreen(assigned, screenId, index, () =>
-          runContainerCommand(container, ["bash", "-lc", stop]),
+          runContainerCommand(container, ["bash", "-c", stop]),
         );
       } else if (stop) {
-        const result = await runContainerCommand(container, ["bash", "-lc", stop]);
+        const result = await runContainerCommand(container, ["bash", "-c", stop]);
         if (result.code !== 0) {
           throw new Error(result.stderr || "computer screen failed to stop");
         }
@@ -614,13 +696,26 @@ app.delete("/computers/:id/screen", async (c) => {
 app.post("/computers/:id/stop", async (c) => {
   const id = c.req.param("id");
   try {
-    const { container } = await managedContainer(
+    const { container, info } = await managedContainer(
       id,
       c.req.header("x-rakazo-bot-id"),
       c.req.header("x-rakazo-space-id"),
     );
     await withComputerScreenLock(id, async () => {
-      await container.stop().catch(() => undefined);
+      if (info.State.Running) {
+        const screens = [...(computerScreens.get(id) ?? [])].map(([screenId, slot]) => ({
+          screenId,
+          index: slot.index,
+        }));
+        const checkpoint = await runContainerCommand(container, [
+          "bash",
+          "-c",
+          checkpointScreensCommand(screens),
+        ]);
+        if (checkpoint.code !== 0)
+          throw new Error(checkpoint.stderr || "browser profiles failed to checkpoint");
+        await container.stop();
+      }
       clearComputerScreenRegistry(computerScreens, id);
     });
     return c.json({ ok: true });
@@ -651,10 +746,32 @@ app.delete("/computers/:id", async (c) => {
 });
 
 function startSupervisor() {
+  const logger = createRootLogger(SERVICE_NAMES.supervisor);
   const port = Number(process.env.SUPERVISOR_PORT ?? 7091);
   const hostname = process.env.SUPERVISOR_HOST ?? "127.0.0.1";
-  return serve({ fetch: app.fetch, hostname, port }, () => {
-    console.log(`sandbox supervisor on http://${hostname}:${port}`);
+  const server = serve({ fetch: app.fetch, hostname, port }, () => {
+    logger.info("supervisor listening", { "http.host": hostname, "http.port": port });
+  });
+  let stopping = false;
+  const shutdown = async () => {
+    if (stopping) return;
+    stopping = true;
+    await closeListeningServer(server);
+    await logger.flush({ timeoutMs: 2_000 });
+    process.exit(0);
+  };
+  process.once("SIGTERM", () => void shutdown());
+  process.once("SIGINT", () => void shutdown());
+  return server;
+}
+
+function closeListeningServer(server: {
+  close(callback?: (err?: Error) => void): void;
+  closeIdleConnections?: () => void;
+}): Promise<void> {
+  server.closeIdleConnections?.();
+  return new Promise((resolve) => {
+    server.close(() => resolve());
   });
 }
 
@@ -686,6 +803,7 @@ async function ensureComputerImage() {
             "control.py",
             "xcapture.c",
             "rakazo-browser",
+            "rakazo-page-browser",
             "rakazo-browser.desktop",
             "embed.html",
             "clipboard-bridge.js",
@@ -755,7 +873,7 @@ async function ensureManagedScreen(
   if (!assigned) {
     const reset = await runContainerCommand(container, [
       "bash",
-      "-lc",
+      "-c",
       resetManagedScreensCommand(),
     ]);
     if (reset.code !== 0) throw new Error(reset.stderr || "computer screens failed to reset");
@@ -765,15 +883,22 @@ async function ensureManagedScreen(
   const screenKey = screenId || botId || id;
   const index = nextScreenIndex(assigned, screenKey, screenLeaseId, teamScreenLimit);
   const layout = screenPorts(index);
+  const slot = assigned.get(screenKey)!;
+  slot.viewToken ??= randomUUID();
+  const viewToken = slot.viewToken;
   const ensured = await runContainerCommand(container, [
     "bash",
-    "-lc",
-    ensureScreenCommand(index, screenKey),
+    "-c",
+    ensureScreenCommand(index, screenKey, viewToken),
   ]);
   if (ensured.code !== 0) {
     releaseAssignedScreen(assigned, screenKey);
     await teardownReleasedScreen(assigned, screenKey, index, () =>
-      runContainerCommand(container, ["bash", "-lc", stopExtraScreenCommand(index, screenKey)]),
+      runContainerCommand(container, [
+        "bash",
+        "-c",
+        stopExtraScreenCommand(index, screenKey, false),
+      ]),
     );
     if (assigned.size === 0) computerScreens.delete(id);
     throw new Error(ensured.stderr || `computer screen ${layout.display} failed to start`);
@@ -785,6 +910,7 @@ async function ensureManagedScreen(
     index,
     screenKey,
     browserProfile: browserProfilePathForScreen(screenKey),
+    viewToken,
   };
 }
 
@@ -811,14 +937,19 @@ function computerControlEndpoint(info: Docker.ContainerInspectInfo) {
   const token = info.Config.Env?.find((value) =>
     value.startsWith("RAKAZO_COMPUTER_CONTROL_TOKEN="),
   )?.slice("RAKAZO_COMPUTER_CONTROL_TOKEN=".length);
+  const publishedHostPort = controlViaLoopback
+    ? publishedLoopbackControlHostPort(info.NetworkSettings?.Ports)
+    : undefined;
   return resolveComputerControlEndpoint({
     token,
     networkMode: info.HostConfig.NetworkMode,
     networks: info.NetworkSettings?.Networks,
+    publishedHostPort,
+    requirePublishedHostPort: controlViaLoopback,
   });
 }
 
-async function controlDesktop(
+export async function controlDesktop(
   endpoint: { url: string; token: string },
   actions: Array<z.infer<typeof computerActionSchema>>,
   display: string,
@@ -830,6 +961,9 @@ async function controlDesktop(
   try {
     response = await fetch(endpoint.url, {
       method: "POST",
+      // The computer can replace its listener; keep requests on the inspected
+      // computer's fixed endpoint instead of following it across sandbox networks.
+      redirect: "error",
       headers: {
         authorization: `Bearer ${endpoint.token}`,
         "content-type": "application/json",
@@ -942,7 +1076,7 @@ async function setInteractiveScreen(
 ) {
   const result = await runContainerCommand(container, [
     "bash",
-    "-lc",
+    "-c",
     interactiveScreenCommand(interactive, controlToken, layout),
   ]);
   if (result.code !== 0) throw new Error(result.stderr || "control screen failed to start");
@@ -1064,8 +1198,9 @@ async function inspectSupervisorContainer() {
 async function runContainerCommand(
   container: Docker.Container,
   argv: string[],
-  options: { workingDir?: string; env?: string[]; timeoutMs?: number } = {},
+  options: { workingDir?: string; env?: string[]; timeoutMs?: number; signal?: AbortSignal } = {},
 ): Promise<{ stdout: string; stderr: string; code: number }> {
+  options.signal?.throwIfAborted();
   const timeoutMs = options.timeoutMs;
   const completionMarker = timeoutMs
     ? `/tmp/rakazo-command-${randomUUID()}.completed-124`
@@ -1078,16 +1213,30 @@ async function runContainerCommand(
     Cmd: command,
     AttachStdout: true,
     AttachStderr: true,
+    ...(options.signal ? { AttachStdin: true } : {}),
     WorkingDir: options.workingDir ?? "/home/rakazo",
     Env: options.env ?? ["DISPLAY=:1", "HOME=/home/rakazo"],
   });
-  const stream = await exec.start({ hijack: true, stdin: false });
+  options.signal?.throwIfAborted();
+  const stream = await exec.start({ hijack: true, stdin: Boolean(options.signal) });
   const chunks: Buffer[] = [];
-  await new Promise<void>((resolve, reject) => {
-    stream.on("data", (data: Buffer) => chunks.push(data));
-    stream.on("end", resolve);
-    stream.on("error", reject);
-  });
+  let onAbort: (() => void) | undefined;
+  try {
+    await new Promise<void>((resolve, reject) => {
+      stream.on("data", (data: Buffer) => chunks.push(data));
+      stream.on("end", resolve);
+      stream.on("error", reject);
+      onAbort = () => {
+        // The page helper watches stdin EOF and exits even inside a blocked CDP call.
+        stream.destroy();
+        reject(options.signal?.reason ?? new Error("command cancelled"));
+      };
+      options.signal?.addEventListener("abort", onAbort, { once: true });
+      if (options.signal?.aborted) onAbort();
+    });
+  } finally {
+    if (onAbort) options.signal?.removeEventListener("abort", onAbort);
+  }
   const inspect = await exec.inspect();
   const code = inspect.ExitCode ?? 0;
   const completedWithExit124 =

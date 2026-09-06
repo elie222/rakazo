@@ -1,9 +1,6 @@
 import type { ModelCatalogEntry } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
-import {
-  featuredModelProviders,
-  selectedProviderOutsideSearchResults,
-} from "./onboarding-providers";
+import { featuredModelProviders, selectedProviderOutsideSearchResults } from "./model-providers.js";
 
 function provider(provider: string): ModelCatalogEntry {
   return {

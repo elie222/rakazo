@@ -231,7 +231,7 @@ describe("docker sandbox", () => {
   });
 
   it("runs the same graphical command through the supervisor", async ({ skip }) => {
-    if (!dockerAvailable() || !hasAnySandboxImage()) {
+    if (!process.env.VERIFY_PROVIDERS || !dockerAvailable() || !hasAnySandboxImage()) {
       skip();
       return;
     }

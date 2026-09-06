@@ -1,12 +1,22 @@
 #!/bin/sh
 set -eu
 RAKAZO_HOME="${HOME:-/home/rakazo}"
+# Page-browser tools and desktop launchers share the assigned display profile.
+DISPLAY_NUM="${DISPLAY:-:1}"
+DISPLAY_NUM="${DISPLAY_NUM#:}"
+DISPLAY_NUM="${DISPLAY_NUM%%.*}"
+case "$DISPLAY_NUM" in
+  ''|*[!0-9]*) DISPLAY_NUM=1 ;;
+esac
+DEBUG_PORT=$((9221 + DISPLAY_NUM))
 if [ -n "${RAKAZO_BROWSER_PROFILE:-}" ]; then
   PROFILE="$RAKAZO_BROWSER_PROFILE"
+elif [ -s "/tmp/rakazo/browser-profile-$DISPLAY_NUM" ]; then
+  PROFILE="$(cat "/tmp/rakazo/browser-profile-$DISPLAY_NUM")"
 else
-  case "${DISPLAY:-:1}" in
-    :[2-9]|:[1-9][0-9]*) PROFILE="$RAKAZO_HOME/.browser-profiles/chromium-screen-${DISPLAY#:}" ;;
-    *) PROFILE="$RAKAZO_HOME/.browser-profiles/chromium" ;;
+  case "$DISPLAY_NUM" in
+    1) PROFILE="$RAKAZO_HOME/.browser-profiles/chromium" ;;
+    *) PROFILE="$RAKAZO_HOME/.browser-profiles/chromium-screen-$DISPLAY_NUM" ;;
   esac
 fi
 mkdir -p "$PROFILE"
@@ -44,7 +54,7 @@ if [ -d "$ACTUAL_PROFILE" ] && [ ! -e "$ACTUAL_PROFILE/SingletonLock" ] && [ ! -
     done || true
 fi
 
-FLAGS="--test-type --no-sandbox --disable-dev-shm-usage --disable-gpu --disable-software-rasterizer --no-first-run --no-default-browser-check --disable-session-crashed-bubble --hide-crash-restore-bubble --password-store=basic --start-maximized"
+FLAGS="--test-type --no-sandbox --disable-dev-shm-usage --disable-gpu --disable-software-rasterizer --no-first-run --no-default-browser-check --disable-session-crashed-bubble --hide-crash-restore-bubble --password-store=basic --start-maximized --remote-debugging-address=127.0.0.1 --remote-debugging-port=$DEBUG_PORT"
 if [ "$USER_DATA_DIR_SET" -eq 0 ]; then
   exec "$BIN" $FLAGS --user-data-dir="$PROFILE" "$@"
 fi

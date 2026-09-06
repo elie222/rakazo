@@ -264,7 +264,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     title: "Rakazo | Open source Grok Bot alternative",
     description: SITE_DESCRIPTION,
     ogImageAlt:
-      "Rakazo — AI teammates you actually own. Your keys, your model, your machine.",
+      "Rakazo. AI teammates you actually own. Your keys, your model, your machine.",
     availableLanguage: "English",
     skipToContent: "Skip to content",
     starFallback: "Star",
@@ -312,7 +312,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     roster: {
       eyebrow: "Bot Templates",
       heading: "Give each bot a job",
-      copy: "Start a new bot and it interviews you — a few questions about the work, how you write, and where it lives. Then it gets going.",
+      copy: "Start a new bot and it interviews you. A few questions about the work, how you write, and where it lives. Then it gets going.",
       bots: EN_ROSTER,
     },
     openSource: {
@@ -396,7 +396,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     description:
       "Rakazo ist eine Open-Source-Alternative zu Grok Bot für persistente KI-Teamkollegen, die echte Arbeit erledigen. Deine Keys, dein Modell, deine Maschine.",
     ogImageAlt:
-      "Rakazo — KI-Teamkollegen, die dir wirklich gehören. Deine Keys, dein Modell, deine Maschine.",
+      "Rakazo. KI-Teamkollegen, die dir wirklich gehören. Deine Keys, dein Modell, deine Maschine.",
     availableLanguage: "German",
     skipToContent: "Zum Inhalt springen",
     starFallback: "Star",
@@ -444,7 +444,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     roster: {
       eyebrow: "Bot-Vorlagen",
       heading: "Gib jedem Bot eine Aufgabe",
-      copy: "Starte einen neuen Bot und er interviewt dich — ein paar Fragen zur Arbeit, zu deinem Schreibstil und wo sie lebt. Dann legt er los.",
+      copy: "Starte einen neuen Bot und er interviewt dich. Ein paar Fragen zur Arbeit, zu deinem Schreibstil und wo sie lebt. Dann legt er los.",
       bots: DE_ROSTER,
     },
     openSource: {
@@ -526,8 +526,8 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
   ko: {
     title: "Rakazo | 오픈소스 Grok Bot 대안",
     description:
-      "Rakazo는 실제 업무를 수행하는 지속형 AI 팀원을 위한 오픈소스 Grok Bot 대안입니다. 키, 모델, 머신 — 모두 당신 것.",
-    ogImageAlt: "Rakazo — 진짜로 내 것인 AI 팀원. 키, 모델, 머신 — 모두 당신 것.",
+      "Rakazo는 실제 업무를 수행하는 지속형 AI 팀원을 위한 오픈소스 Grok Bot 대안입니다. 키, 모델, 머신, 모두 당신 것.",
+    ogImageAlt: "Rakazo. 진짜로 내 것인 AI 팀원. 키, 모델, 머신, 모두 당신 것.",
     availableLanguage: "Korean",
     skipToContent: "본문으로 건너뛰기",
     starFallback: "Star",
@@ -575,7 +575,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     roster: {
       eyebrow: "봇 템플릿",
       heading: "봇마다 역할을 주세요",
-      copy: "새 봇을 시작하면 인터뷰합니다 — 업무, 글쓰기 방식, 작업이 어디에 있는지 몇 가지 질문. 그다음 바로 시작합니다.",
+      copy: "새 봇을 시작하면 인터뷰합니다. 업무, 글쓰기 방식, 작업이 어디에 있는지 몇 가지 질문. 그다음 바로 시작합니다.",
       bots: KO_ROSTER,
     },
     openSource: {

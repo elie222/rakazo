@@ -41,6 +41,8 @@ export interface MessagingPlatform {
   participants?: (raw: unknown) => string[];
   /** Group display name from the raw inbound payload. */
   channelName?: (raw: unknown) => string | null;
+  /** User-facing transport carried by the raw message when it differs from the provider. */
+  transport?: (raw: unknown) => string | null;
 }
 
 /**
@@ -208,9 +210,11 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
     const isDirect = thread.isDM;
     if (!isDirect && !platform.capabilities.groups) return null;
     const fromLabel = message.author.fullName || message.author.userName || null;
+    const transport = platform.transport?.(message.raw) ?? null;
     return {
       type: "message",
       provider,
+      ...(transport ? { transport } : {}),
       handle: message.id,
       threadId: thread.id,
       isDirect,

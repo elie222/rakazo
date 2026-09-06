@@ -1,7 +1,7 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import type { ThreadSnapshot } from "@rakazo/contracts";
+import type { SearchHit, ThreadSnapshot } from "@rakazo/contracts";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { sessionCookieHeader } from "./index.js";
 
@@ -54,7 +54,38 @@ describeSearch("workspace search", () => {
       mimeType: "text/plain",
       contentBase64: Buffer.from("fixture file").toString("base64"),
     });
+    const secondArtifact = await rpc<{ id: string }>(app, cookie, "artifacts/create", {
+      botId: bot.id,
+      name: "fixture-second.txt",
+      mimeType: "text/plain",
+      contentBase64: Buffer.from("second fixture").toString("base64"),
+    });
+    await rpc(app, cookie, "artifacts/create", {
+      botId: bot.id,
+      name: "fixture-unattached.txt",
+      mimeType: "text/plain",
+      contentBase64: Buffer.from("unattached fixture").toString("base64"),
+    });
+    await sendAndWait(app, cookie, bot.id, { artifactIds: [artifact.id, secondArtifact.id] });
+    const initialFiles = await rpc<{ hits: SearchHit[] }>(app, cookie, "search/query", {
+      q: "fixture",
+    });
+    expect(
+      initialFiles.hits.filter((hit) => hit.kind === "file").map((hit) => hit.artifactId),
+    ).toEqual(expect.arrayContaining([artifact.id, secondArtifact.id]));
+    expect(initialFiles.hits.filter((hit) => hit.kind === "file")).toHaveLength(2);
+    const initialMessageId = initialFiles.hits.find(
+      (hit) => hit.artifactId === artifact.id,
+    )?.messageId;
     await sendAndWait(app, cookie, bot.id, { artifactIds: [artifact.id] });
+    const latestFiles = await rpc<{ hits: SearchHit[] }>(app, cookie, "search/query", {
+      q: "fixture",
+    });
+    const latestMessageId = latestFiles.hits.find(
+      (hit) => hit.artifactId === artifact.id,
+    )?.messageId;
+    expect(latestMessageId).toBeDefined();
+    expect(latestMessageId).not.toBe(initialMessageId);
     await rpc(app, cookie, "routines/create", {
       botId: bot.id,
       name: "Weekly fixture",

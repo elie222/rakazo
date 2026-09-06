@@ -1,4 +1,3 @@
-import { lightTokens } from "@rakazo/ui-tokens";
 import { DarkTheme, Stack, ThemeProvider } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useMemo, useState } from "react";
@@ -7,7 +6,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { AvatarStyleProvider } from "../components/avatar-style";
 import { currentApiBase, loadApiBase, loadSessionToken, selectedSpaceId } from "../lib/api";
-import { loadAppearancePreference } from "../lib/appearance";
+import { loadAppearancePreference, mobileTokens } from "../lib/appearance";
 import { bootstrapI18n, useI18n } from "../lib/i18n";
 import {
   configureForegroundNotifications,
@@ -17,35 +16,23 @@ import { native, useResolvedAppearance } from "../lib/native";
 
 configureForegroundNotifications();
 
-const lightTheme = {
-  ...DarkTheme,
-  dark: false,
-  colors: {
-    ...DarkTheme.colors,
-    primary: lightTokens.primary,
-    background: lightTokens.background,
-    card: lightTokens.background,
-    text: lightTokens.foreground,
-    border: lightTokens.border,
-    notification: lightTokens.foreground,
-  },
-};
-
 export default function Layout() {
   const { t } = useI18n();
   const [ready, setReady] = useState(false);
   const resolved = useResolvedAppearance();
   const navigationTheme = useMemo(() => {
-    const base = resolved === "light" ? lightTheme : DarkTheme;
+    const tokens = mobileTokens();
     return {
-      ...base,
+      ...DarkTheme,
+      dark: resolved === "dark",
       colors: {
-        ...base.colors,
-        background: String(native.page),
-        card: String(native.page),
-        text: String(native.label),
-        border: "transparent",
-        primary: String(native.label),
+        ...DarkTheme.colors,
+        background: tokens.background,
+        card: tokens.background,
+        text: tokens.foreground,
+        border: tokens.border,
+        primary: tokens.primary,
+        notification: tokens.foreground,
       },
     };
   }, [resolved]);
@@ -74,8 +61,8 @@ export default function Layout() {
               <StatusBar style={resolved === "light" ? "dark" : "light"} />
               <Stack
                 screenOptions={{
-                  headerStyle: { backgroundColor: String(native.page) },
-                  headerTintColor: String(native.label),
+                  headerStyle: { backgroundColor: navigationTheme.colors.background },
+                  headerTintColor: navigationTheme.colors.text,
                   headerShadowVisible: false,
                   headerBackButtonDisplayMode: "minimal",
                   contentStyle: { backgroundColor: String(native.page) },
@@ -84,6 +71,15 @@ export default function Layout() {
                 <Stack.Screen name="index" options={{ headerShown: false, title: "Rakazo" }} />
                 <Stack.Screen name="sign-in" options={{ headerShown: false }} />
                 <Stack.Screen name="account" options={{ title: t("Account") }} />
+                <Stack.Screen
+                  name="change-password"
+                  options={{
+                    title: t("Change password"),
+                    presentation: "formSheet",
+                    sheetAllowedDetents: [0.6, 1],
+                    sheetGrabberVisible: true,
+                  }}
+                />
                 <Stack.Screen name="models" options={{ title: t("Models") }} />
                 <Stack.Screen name="voice" options={{ title: t("Voice") }} />
                 <Stack.Screen name="integrations" options={{ title: t("Integrations") }} />

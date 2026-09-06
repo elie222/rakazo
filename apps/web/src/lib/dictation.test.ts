@@ -1,11 +1,42 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Dictation } from "./dictation.js";
+import {
+  Dictation,
+  MAX_TRANSCRIPTION_RESPONSE_BYTES,
+  TRANSCRIPTION_RESPONSE_TIMEOUT_MS,
+} from "./dictation.js";
 
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
   vi.useRealTimers();
 });
+
+function stubRecorderFallback(fetchMock: ReturnType<typeof vi.fn>) {
+  const track = { stop: vi.fn() };
+  vi.stubGlobal("navigator", {
+    mediaDevices: {
+      getUserMedia: vi.fn(async () => ({ getTracks: () => [track] })),
+    },
+    language: "en-US",
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  vi.stubGlobal(
+    "MediaRecorder",
+    class {
+      state = "inactive";
+      ondataavailable: ((event: { data: Blob }) => void) | null = null;
+      onstop: (() => void) | null = null;
+      start() {
+        this.state = "recording";
+      }
+      stop() {
+        this.state = "inactive";
+        this.ondataavailable?.({ data: new Blob(["audio"], { type: "audio/webm" }) });
+        this.onstop?.();
+      }
+    },
+  );
+}
 
 describe("Dictation recorder fallback", () => {
   it("stops tracks if hold-to-talk is cancelled while the mic prompt is open", async () => {
@@ -64,11 +95,7 @@ describe("Dictation recorder fallback", () => {
           init?.signal?.addEventListener("abort", () =>
             reject(Object.assign(new Error("Aborted"), { name: "AbortError" })),
           );
-          transcribe = (body) =>
-            resolve({
-              ok: true,
-              json: async () => body,
-            } as Response);
+          transcribe = (body) => resolve(Response.json(body));
         }),
     );
     vi.stubGlobal("fetch", fetchMock);
@@ -126,10 +153,9 @@ describe("Dictation recorder fallback", () => {
       },
       language: "en-US",
     });
-    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => ({
-      ok: true,
-      json: async () => ({ text: "hello" }),
-    }));
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) =>
+      Response.json({ text: "hello" }),
+    );
     vi.stubGlobal("fetch", fetchMock);
 
     class FakeRecorder {
@@ -163,6 +189,93 @@ describe("Dictation recorder fallback", () => {
     expect(headers.get("content-type")).toBe("application/json");
   });
 
+  it("rejects oversized transcription responses without waiting for cancellation", async () => {
+    const cancel = vi.fn(() => new Promise<void>(() => undefined));
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(new ReadableStream({ cancel }), {
+          headers: { "content-length": String(MAX_TRANSCRIPTION_RESPONSE_BYTES + 1) },
+        }),
+    );
+    stubRecorderFallback(fetchMock);
+    const dictation = new Dictation();
+
+    await dictation.listen({ mode: "hold", transcribe: true, onFinal: () => undefined });
+    dictation.submitHold();
+
+    await vi.waitFor(() =>
+      expect(dictation.state.error).toBe("Transcription response is too large."),
+    );
+    expect(cancel).toHaveBeenCalledOnce();
+  });
+
+  it("times out while a transcription response body is stalled", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          new ReadableStream({
+            pull: () => new Promise<void>(() => undefined),
+          }),
+        ),
+    );
+    stubRecorderFallback(fetchMock);
+    const dictation = new Dictation();
+
+    await dictation.listen({ mode: "hold", transcribe: true, onFinal: () => undefined });
+    dictation.submitHold();
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    await vi.advanceTimersByTimeAsync(TRANSCRIPTION_RESPONSE_TIMEOUT_MS);
+
+    expect(dictation.state.error).toBe("Transcription request timed out.");
+  });
+
+  it("surfaces timeout when fetch rejects with AbortError", async () => {
+    // Browsers reject aborted fetch with DOMException AbortError. Matching token
+    // means the deadline fired (stop() bumps token first), so this must not stay
+    // stuck on "transcribing".
+    const fetchMock = vi.fn(async () => {
+      throw new DOMException("The operation was aborted.", "AbortError");
+    });
+    stubRecorderFallback(fetchMock);
+    const dictation = new Dictation();
+
+    await dictation.listen({ mode: "hold", transcribe: true, onFinal: () => undefined });
+    dictation.submitHold();
+
+    await vi.waitFor(() => expect(dictation.state.error).toBe("Transcription request timed out."));
+    expect(dictation.state.status).toBe("idle");
+  });
+
+  it("stays silent when stop cancels an in-flight transcription", async () => {
+    const fetchMock = vi.fn(
+      (_url: string, init?: { signal?: AbortSignal }) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener(
+            "abort",
+            () => {
+              reject(new DOMException("The operation was aborted.", "AbortError"));
+            },
+            { once: true },
+          );
+        }),
+    );
+    stubRecorderFallback(fetchMock);
+    const dictation = new Dictation();
+
+    await dictation.listen({ mode: "hold", transcribe: true, onFinal: () => undefined });
+    dictation.submitHold();
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    expect(dictation.state.status).toBe("transcribing");
+
+    dictation.stop("cancel");
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(dictation.state.status).toBe("idle");
+    expect(dictation.state.error).toBeUndefined();
+  });
+
   it("ignores leftover audio from a replaced recorder", async () => {
     const track = { stop: vi.fn() };
     vi.stubGlobal("navigator", {
@@ -171,10 +284,9 @@ describe("Dictation recorder fallback", () => {
       },
       language: "en-US",
     });
-    const fetchMock = vi.fn(async (_url: string, _init?: { body?: string }) => ({
-      ok: true,
-      json: async () => ({ text: "ok" }),
-    }));
+    const fetchMock = vi.fn(async (_url: string, _init?: { body?: string }) =>
+      Response.json({ text: "ok" }),
+    );
     vi.stubGlobal("fetch", fetchMock);
 
     const recorders: Array<{
@@ -278,10 +390,7 @@ describe("Dictation recorder fallback", () => {
       },
       language: "en-US",
     });
-    const fetchMock = vi.fn(async () => ({
-      ok: true,
-      json: async () => ({ text: "hello" }),
-    }));
+    const fetchMock = vi.fn(async () => Response.json({ text: "hello" }));
     vi.stubGlobal("fetch", fetchMock);
 
     const onFinal = vi.fn();
@@ -348,10 +457,7 @@ describe("Dictation recorder fallback", () => {
       },
       language: "en-US",
     });
-    const fetchMock = vi.fn(async () => ({
-      ok: true,
-      json: async () => ({ text: "later" }),
-    }));
+    const fetchMock = vi.fn(async () => Response.json({ text: "later" }));
     vi.stubGlobal("fetch", fetchMock);
 
     const recorders: Array<{

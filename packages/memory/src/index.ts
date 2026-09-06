@@ -10,7 +10,7 @@ import type {
   MemoryStore,
   PortableFile,
 } from "@rakazo/adapter-kit";
-import type { PrismaClient } from "@rakazo/db";
+import { Prisma, type PrismaClient, withTransactionRetry } from "@rakazo/db";
 
 export class MarkdownMemoryStore implements MemoryStore {
   constructor(private readonly prisma: PrismaClient) {}
@@ -69,40 +69,49 @@ export class MarkdownMemoryStore implements MemoryStore {
   }
 
   async commit(request: MemoryCommitRequest, context: AdapterContext): Promise<MemoryRevision> {
-    const existing = await this.prisma.memoryDocument.findFirst({
-      where: {
-        spaceId: context.spaceId,
-        userId: context.userId,
-        scope: request.scope,
-        botId: request.botId ?? null,
-        path: request.path,
-      },
-    });
-    const doc = existing
-      ? await this.prisma.memoryDocument.update({
-          where: { id: existing.id },
-          data: { content: request.content, revision: existing.revision + 1 },
-        })
-      : await this.prisma.memoryDocument.create({
-          data: {
-            spaceId: context.spaceId,
-            userId: context.userId,
-            botId: request.botId,
-            scope: request.scope,
-            path: request.path,
-            content: request.content,
-          },
-        });
-    await this.prisma.memoryRevision.create({
-      data: {
-        documentId: doc.id,
-        revision: doc.revision,
-        content: request.content,
-        sourceRunId: request.sourceRunId,
-        sourceThreadId: request.sourceThreadId,
-      },
-    });
-    return { id: doc.id, path: doc.path, revision: doc.revision, content: doc.content };
+    // A save replaces the current content and appends its history atomically.
+    // Conflicts retry the whole transaction so revision numbers use fresh state.
+    return withTransactionRetry(() =>
+      this.prisma.$transaction(
+        async (tx) => {
+          const existing = await tx.memoryDocument.findFirst({
+            where: {
+              spaceId: context.spaceId,
+              userId: context.userId,
+              scope: request.scope,
+              botId: request.botId ?? null,
+              path: request.path,
+            },
+          });
+          const doc = existing
+            ? await tx.memoryDocument.update({
+                where: { id: existing.id },
+                data: { content: request.content, revision: existing.revision + 1 },
+              })
+            : await tx.memoryDocument.create({
+                data: {
+                  spaceId: context.spaceId,
+                  userId: context.userId,
+                  botId: request.botId,
+                  scope: request.scope,
+                  path: request.path,
+                  content: request.content,
+                },
+              });
+          await tx.memoryRevision.create({
+            data: {
+              documentId: doc.id,
+              revision: doc.revision,
+              content: request.content,
+              sourceRunId: request.sourceRunId,
+              sourceThreadId: request.sourceThreadId,
+            },
+          });
+          return { id: doc.id, path: doc.path, revision: doc.revision, content: doc.content };
+        },
+        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+      ),
+    );
   }
 
   async *exportMarkdown(

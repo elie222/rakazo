@@ -95,8 +95,12 @@ describe("the updater compose service", () => {
   it("uses the official registry namespace and digest-pins third-party runtime images", () => {
     expect(updater.image).toContain("ghcr.io/elie222/rakazo/updater");
     expect(compose.services.api?.image).toContain("ghcr.io/elie222/rakazo/app");
-    expect(compose.services.postgres?.image).toMatch(/^postgres:16@sha256:[0-9a-f]{64}$/);
-    expect(compose.services.caddy?.image).toMatch(/^caddy:2@sha256:[0-9a-f]{64}$/);
+    expect(compose.services.postgres?.image).toMatch(
+      /^\$\{POSTGRES_IMAGE:-postgres:16@sha256:e17e86066e5ef83e0952a9347f5c792b7ece00972e2aa787a6986f471b3dd3d5\}$/,
+    );
+    expect(compose.services.caddy?.image).toMatch(
+      /^\$\{CADDY_IMAGE:-caddy:2@sha256:df7f1c2fb114453b951de51a98efc010db1655a92c2e86be6706714e2417a78d\}$/,
+    );
   });
 
   it("injects the actual Compose project name into the updater container", () => {
@@ -113,5 +117,16 @@ describe("the updater compose service", () => {
   it("does not let the api container reach the Docker socket to update itself", () => {
     expect(compose.services.api?.volumes ?? []).not.toContain("/var/run/docker.sock");
     expect(compose.services.api?.environment?.RAKAZO_UPDATER_URL).toBe("http://updater:7092");
+  });
+
+  it("passes logging configuration without using env_file", () => {
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: this is the literal Compose expression
+    expect(updater.environment?.LOG_LEVEL).toBe("${LOG_LEVEL:-info}");
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: this is the literal Compose expression
+    expect(updater.environment?.AXIOM_TOKEN).toBe("${AXIOM_TOKEN:-}");
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: this is the literal Compose expression
+    expect(updater.environment?.AXIOM_DATASET).toBe("${AXIOM_DATASET:-}");
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: this is the literal Compose expression
+    expect(updater.environment?.AXIOM_EDGE_URL).toBe("${AXIOM_EDGE_URL:-}");
   });
 });

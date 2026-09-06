@@ -1,5 +1,12 @@
-import type { RunActivityRow, SearchHit, SpaceBot, SpaceGroup } from "@rakazo/contracts";
+import {
+  normalizeCreateBotProfile,
+  type RunActivityRow,
+  type SearchHit,
+  type SpaceBot,
+  type SpaceGroup,
+} from "@rakazo/contracts";
 import { groupBotsForSidebar } from "@rakazo/core";
+import { botColors } from "@rakazo/ui-tokens";
 import { Redirect, useFocusEffect, useRouter } from "expo-router";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -39,6 +46,8 @@ import {
   selectInitialSpace,
   selectSpace,
 } from "../lib/api";
+import { mobileTokens, resolveMobileAppearance } from "../lib/appearance";
+import { allowFocusPrompt, scheduleFocusPrompt } from "../lib/focus-prompt";
 import { t, useI18n } from "../lib/i18n";
 import { botTag, filterBots, formatThreadTime, userInitials } from "../lib/inbox";
 import { dismissThreadNotifications, resumeLiveNotifications } from "../lib/live-notifications";
@@ -48,7 +57,7 @@ import { registerPushToken } from "../lib/push";
 import { querySpaceSearch } from "../lib/search";
 import { mobileSearchDestination } from "../lib/search-destination";
 
-const FALLBACK_COLOR = "#9B5CF6";
+const FALLBACK_COLOR = botColors[3];
 
 type InboxItem =
   | { type: "bot"; bot: MobileBot | SpaceBot }
@@ -65,6 +74,8 @@ async function openMobileSpace(spaceId: string | undefined, open: () => void) {
 }
 
 export default function Home() {
+  const tokens = mobileTokens();
+  const appearance = resolveMobileAppearance();
   const styles = useThemedStyles(createHomeStyles);
   const { t, locale } = useI18n();
   const [bots, setBots] = useState<MobileBot[]>([]);
@@ -91,6 +102,7 @@ export default function Home() {
   });
   const activityRequestId = useRef(0);
   const inboxRequestId = useRef(0);
+  const creatingBotRef = useRef(false);
 
   useEffect(() => {
     void loadActivityMode().then(setActivityMode);
@@ -302,6 +314,36 @@ export default function Home() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
 
+  const createQuickBot = useCallback(async () => {
+    if (creatingBotRef.current) return;
+    creatingBotRef.current = true;
+    try {
+      // Authoritative roster so a slow home fetch does not treat later bots as first.
+      // A failed list is unknown — use the delayed path rather than assuming first.
+      const existing = await rpc<MobileBot[]>("bots/list").catch(() => null);
+      const isFirstBot = existing !== null && existing.length === 0;
+      const bot = await rpc<MobileBot>("bots/create", {
+        ...normalizeCreateBotProfile({ name: "New Bot", title: "", description: "" }),
+        notifyOnFinish: true,
+        computerMode: "team",
+      });
+      void refreshBots().catch(() => undefined);
+      allowFocusPrompt(bot.id);
+      router.replace({ pathname: "/thread", params: { botId: bot.id, name: bot.name } });
+      void (async () => {
+        const started = await rpc("onboarding/start", { botId: bot.id })
+          .then(() => true)
+          .catch(() => false);
+        if (!started) return;
+        scheduleFocusPrompt(bot.id, isFirstBot);
+      })();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t("Could not create bot"));
+    } finally {
+      creatingBotRef.current = false;
+    }
+  }, [refreshBots, router, t]);
+
   if (!ready) {
     return (
       <View style={[styles.screen, styles.centered]}>
@@ -328,7 +370,7 @@ export default function Home() {
               ios={activityMode ? "bell.fill" : "bell"}
               android={activityMode ? "notifications" : "notifications-outline"}
               size={17}
-              color={activityMode ? "#FFFFFF" : "#8E8E93"}
+              color={activityMode ? tokens.primaryForeground : tokens.foreground}
             />
           </CircleButton>
           <CircleButton
@@ -347,7 +389,7 @@ export default function Home() {
             accessibilityLabel={t("Create")}
             onPress={() =>
               Alert.alert(t("Create"), undefined, [
-                { text: t("New bot"), onPress: () => router.push("/new") },
+                { text: t("New bot"), onPress: () => void createQuickBot() },
                 { text: t("New group"), onPress: () => router.push("/new-group") },
                 { text: t("New space"), onPress: () => router.push("/new-space") },
                 { text: t("Cancel"), style: "cancel" },
@@ -365,11 +407,11 @@ export default function Home() {
           value={query}
           onChangeText={setQuery}
           placeholder={t("Search")}
-          placeholderTextColor="#6C6C70"
+          placeholderTextColor={tokens.mutedForeground}
           autoCorrect={false}
           autoCapitalize="none"
           returnKeyType="search"
-          keyboardAppearance="dark"
+          keyboardAppearance={appearance}
           clearButtonMode="while-editing"
           style={styles.searchField}
         />
@@ -388,7 +430,7 @@ export default function Home() {
         }}
         keyboardDismissMode="interactive"
         keyboardShouldPersistTaps="handled"
-        indicatorStyle="white"
+        indicatorStyle={appearance === "dark" ? "white" : "black"}
         contentContainerStyle={styles.list}
         refreshControl={
           <RefreshControl
@@ -398,8 +440,8 @@ export default function Home() {
               void loadActivity();
             }}
             tintColor={native.secondaryLabel}
-            colors={["#8E8E93"]}
-            progressBackgroundColor="#1C1C1E"
+            colors={[tokens.mutedForeground]}
+            progressBackgroundColor={tokens.muted}
           />
         }
         ListHeaderComponent={
@@ -407,7 +449,7 @@ export default function Home() {
           !searching &&
           !query.trim() &&
           (activity.active.length > 0 || activity.recent.length > 0) ? (
-            <ActivitySection activity={activity} />
+            <ActivitySection activity={activity} bots={bots} />
           ) : null
         }
         ListEmptyComponent={
@@ -511,12 +553,15 @@ export default function Home() {
 
 function ActivitySection({
   activity,
+  bots,
 }: {
   activity: { active: RunActivityRow[]; recent: RunActivityRow[] };
+  bots: MobileBot[];
 }) {
   const styles = useThemedStyles(createHomeStyles);
   const { t } = useI18n();
   const router = useRouter();
+  const botsById = useMemo(() => new Map(bots.map((bot) => [bot.id, bot])), [bots]);
   const openRun = (run: RunActivityRow) => {
     if (run.groupId) {
       router.push({
@@ -534,7 +579,12 @@ function ActivitySection({
         <>
           <Text style={styles.sectionHeading}>{t("Now")}</Text>
           {activity.active.map((run) => (
-            <ActivityRow key={run.runId} run={run} onPress={() => openRun(run)} />
+            <ActivityRow
+              key={run.runId}
+              run={run}
+              bot={botsById.get(run.botId)}
+              onPress={() => openRun(run)}
+            />
           ))}
         </>
       ) : null}
@@ -544,7 +594,12 @@ function ActivitySection({
             {t("Recent")}
           </Text>
           {activity.recent.map((run) => (
-            <ActivityRow key={run.runId} run={run} onPress={() => openRun(run)} />
+            <ActivityRow
+              key={run.runId}
+              run={run}
+              bot={botsById.get(run.botId)}
+              onPress={() => openRun(run)}
+            />
           ))}
         </>
       ) : null}
@@ -552,28 +607,86 @@ function ActivitySection({
   );
 }
 
-function ActivityRow({ run, onPress }: { run: RunActivityRow; onPress: () => void }) {
-  const styles = useThemedStyles(createHomeStyles);
+function ActivityRow({
+  run,
+  bot,
+  onPress,
+}: {
+  run: RunActivityRow;
+  bot?: MobileBot;
+  onPress: () => void;
+}) {
   const title = run.groupName ? `${run.botName} · ${run.groupName}` : run.botName;
   const status = activityStatusLabel(run.status);
   const preview = run.promptSnippet ? `${run.promptSnippet} · ${status}` : status;
-  const activityLabel = `${title}, ${status}`;
+  return (
+    <ConversationRow
+      title={title}
+      preview={preview}
+      time={formatActivityRelativeTime(run.updatedAt)}
+      accessibilityLabel={`${title}, ${status}`}
+      onPress={onPress}
+      avatar={
+        <BotAvatar identity={run.botId} color={bot?.color ?? FALLBACK_COLOR} status={run.status} />
+      }
+    />
+  );
+}
+
+function ConversationRow({
+  title,
+  preview,
+  time,
+  avatar,
+  tag,
+  unread,
+  onPress,
+  onLongPress,
+  accessibilityLabel,
+  accessibilityHint,
+}: {
+  title: string;
+  preview: string;
+  time: string;
+  avatar: ReactNode;
+  tag?: string | null;
+  unread?: boolean;
+  onPress: () => void;
+  onLongPress?: () => void;
+  accessibilityLabel: string;
+  accessibilityHint?: string;
+}) {
+  const styles = useThemedStyles(createHomeStyles);
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={activityLabel}
+      accessibilityLabel={accessibilityLabel}
+      accessibilityHint={accessibilityHint}
       onPress={onPress}
+      onLongPress={onLongPress}
       style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
     >
-      <View style={styles.activityDot} />
+      {avatar}
       <View style={styles.rowBody}>
         <View style={styles.rowTop}>
-          <Text style={styles.name} numberOfLines={1}>
-            {title}
-          </Text>
-          <Text style={styles.time}>{formatActivityRelativeTime(run.updatedAt)}</Text>
+          <View style={styles.titleRow}>
+            <Text style={styles.name} numberOfLines={1} ellipsizeMode="tail">
+              {title}
+            </Text>
+            {tag ? (
+              <View style={styles.tag}>
+                <Text style={styles.tagLabel} numberOfLines={1}>
+                  {tag}
+                </Text>
+              </View>
+            ) : null}
+          </View>
+          <View style={styles.rowMeta}>
+            {time ? <Text style={styles.time}>{time}</Text> : null}
+            {unread ? <View accessibilityElementsHidden style={styles.unreadDot} /> : null}
+          </View>
         </View>
-        <Text style={styles.preview} numberOfLines={1}>
+        <Text style={[styles.preview, unread && styles.unreadPreview]} numberOfLines={1}>
           {preview}
         </Text>
       </View>
@@ -643,7 +756,6 @@ function BotRow({
   onPress: () => void;
   onLongPress?: () => void;
 }) {
-  const styles = useThemedStyles(createHomeStyles);
   const { t } = useI18n();
   const preview = previewSnippet(bot.preview, 40) || bot.title || t("No messages yet");
   const time = bot.updatedAt ? formatThreadTime(bot.updatedAt) : "";
@@ -660,49 +772,27 @@ function BotRow({
     .filter(Boolean)
     .join(", ");
   return (
-    <Pressable
+    <ConversationRow
+      title={bot.name}
+      preview={preview}
+      time={time}
+      tag={tag}
+      unread={bot.unread}
       accessibilityLabel={label}
       accessibilityHint={
         onLongPress ? t("Long press to pin, move, or silence notifications") : undefined
       }
       onPress={onPress}
       onLongPress={onLongPress}
-      style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
-    >
-      <BotAvatar
-        color={bot.color || FALLBACK_COLOR}
-        identity={bot.id}
-        status={bot.status}
-        muted={!bot.notifyOnFinish}
-      />
-      <View style={styles.rowBody}>
-        <View style={styles.rowTop}>
-          <View style={styles.titleRow}>
-            <Text style={styles.name} numberOfLines={1} ellipsizeMode="tail">
-              {bot.name}
-            </Text>
-            {tag ? (
-              <View style={styles.tag}>
-                <Text style={styles.tagLabel} numberOfLines={1} ellipsizeMode="tail">
-                  {tag}
-                </Text>
-              </View>
-            ) : null}
-          </View>
-          <View style={styles.rowMeta}>
-            {time ? <Text style={styles.time}>{time}</Text> : null}
-            {bot.unread ? <View accessibilityElementsHidden style={styles.unreadDot} /> : null}
-          </View>
-        </View>
-        <Text
-          style={[styles.preview, bot.unread && styles.unreadPreview]}
-          numberOfLines={1}
-          ellipsizeMode="tail"
-        >
-          {preview}
-        </Text>
-      </View>
-    </Pressable>
+      avatar={
+        <BotAvatar
+          color={bot.color || FALLBACK_COLOR}
+          identity={bot.id}
+          status={bot.status}
+          muted={!bot.notifyOnFinish}
+        />
+      }
+    />
   );
 }
 
@@ -715,41 +805,29 @@ function GroupRow({
   onPress: () => void;
   onLongPress?: () => void;
 }) {
-  const styles = useThemedStyles(createHomeStyles);
   const { t } = useI18n();
   const preview =
     previewSnippet(group.preview, 40) || group.members.map((member) => member.name).join(", ");
   const time = group.updatedAt ? formatThreadTime(group.updatedAt) : "";
   return (
-    <Pressable
+    <ConversationRow
+      title={group.name}
+      preview={preview}
+      time={time}
+      unread={group.unread}
       accessibilityLabel={[group.name, group.unread ? t("unread") : null, time, preview]
         .filter(Boolean)
         .join(", ")}
+      accessibilityHint={onLongPress ? t("Long press to pin or move to a section") : undefined}
       onPress={onPress}
       onLongPress={onLongPress}
-      accessibilityHint={onLongPress ? t("Long press to pin or move to a section") : undefined}
-      style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
-    >
-      <GroupAvatar members={group.members} size={54} />
-      <View style={styles.rowBody}>
-        <View style={styles.rowTop}>
-          <Text style={styles.name} numberOfLines={1}>
-            {group.name}
-          </Text>
-          <View style={styles.rowMeta}>
-            {time ? <Text style={styles.time}>{time}</Text> : null}
-            {group.unread ? <View accessibilityElementsHidden style={styles.unreadDot} /> : null}
-          </View>
-        </View>
-        <Text style={[styles.preview, group.unread && styles.unreadPreview]} numberOfLines={1}>
-          {preview}
-        </Text>
-      </View>
-    </Pressable>
+      avatar={<GroupAvatar members={group.members} size={54} />}
+    />
   );
 }
 
 function createHomeStyles() {
+  const tokens = mobileTokens();
   return StyleSheet.create({
     screen: {
       flex: 1,
@@ -785,7 +863,7 @@ function createHomeStyles() {
       backgroundColor: native.fill,
     },
     circleAccent: {
-      backgroundColor: "#4C8DFF",
+      backgroundColor: tokens.primary,
     },
     profileInitials: {
       color: native.label,
@@ -795,7 +873,9 @@ function createHomeStyles() {
     searchField: {
       marginHorizontal: 16,
       marginBottom: 8,
-      height: 36,
+      minHeight: 44,
+      paddingVertical: 10,
+      textAlignVertical: "center",
       borderRadius: 10,
       backgroundColor: native.fill,
       color: native.label,
@@ -888,7 +968,7 @@ function createHomeStyles() {
       width: 8,
       height: 8,
       borderRadius: 4,
-      backgroundColor: "#8B5CF6",
+      backgroundColor: tokens.foreground,
     },
     sectionHeading: {
       color: native.secondaryLabel,
@@ -906,13 +986,6 @@ function createHomeStyles() {
     },
     activityGap: {
       paddingTop: 16,
-    },
-    activityDot: {
-      width: 8,
-      height: 8,
-      borderRadius: 4,
-      backgroundColor: "#8B5CF6",
-      marginTop: 6,
     },
     groupAvatar: {
       width: 48,
