@@ -837,6 +837,8 @@ export function PluginsOverlay({
                             disabled={catalogFeedPending}
                             onChange={(event) => {
                               setCatalogFeedQuery(event.target.value);
+                              setCatalogFeedResults([]);
+                              setCatalogFeedError(null);
                               setCatalogFeedSearched(false);
                             }}
                             placeholder="github.com"

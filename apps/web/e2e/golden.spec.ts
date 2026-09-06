@@ -245,6 +245,12 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await expect(feed.getByRole("button", { name: "OPENAPI · Add", exact: true })).toBeVisible();
   await expect(feed.getByRole("button", { name: "GRAPHQL · Manual", exact: true })).toBeDisabled();
   await expect(feed.getByRole("button", { name: "CLI · Manual", exact: true })).toBeDisabled();
+  // Editing the query must drop prior results so a stale Add cannot run for the old domain.
+  await feed.getByRole("textbox", { name: "Integration domain" }).fill("gitlab.com");
+  await expect(feed.getByText("GitHub", { exact: true })).toBeHidden();
+  await feed.getByRole("textbox", { name: "Integration domain" }).fill("github.com");
+  await feed.getByRole("button", { name: "Search", exact: true }).click();
+  await expect(feed.getByText("GitHub", { exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "11c-catalog-feed");
 
   await feed.getByRole("button", { name: "MCP · Add", exact: true }).click();
