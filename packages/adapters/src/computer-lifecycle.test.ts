@@ -1721,7 +1721,6 @@ describe("computer replacement", () => {
     }
   });
 
-
   it("refuses Reset on a stale dedicated booting row while a run is still active", async () => {
     // Stamp is old enough to look abandoned, but a live run still owns the provision.
     // Refuse before claiming suspending so we do not bump @updatedAt under the provisioner.
@@ -1760,7 +1759,6 @@ describe("computer replacement", () => {
     ).rejects.toBeInstanceOf(ComputerBusyError);
     expect(updateMany).not.toHaveBeenCalled();
   });
-
 
   it("rejects replacement while the target bot has an active run", async () => {
     const prisma = {
