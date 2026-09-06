@@ -451,9 +451,11 @@ export class ComposioConnector implements ComposioProvider {
     // Connection-request ids are connected-account nanoids. Delete directly so a
     // revoke-win begin does not wait for OAuth to finish, and the authorization
     // URL cannot later create an untracked remote. Ignore missing ids.
-    await this.sdk()
-      .connectedAccounts.delete(id, { signal: context.signal })
-      .catch(() => undefined);
+    try {
+      await this.sdk().connectedAccounts.delete(id, { signal: context.signal });
+    } catch (error) {
+      if (!isComposioNotFoundError(error)) throw error;
+    }
   }
 
   /**
@@ -493,6 +495,12 @@ export class ComposioConnector implements ComposioProvider {
     this.client ??= new Composio();
     return this.client;
   }
+}
+
+function isComposioNotFoundError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const candidate = error as { status?: unknown; statusCode?: unknown };
+  return candidate.status === 404 || candidate.statusCode === 404;
 }
 
 export class ConnectorRegistry implements ConnectorProvider {
