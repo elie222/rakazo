@@ -115,6 +115,7 @@ import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { ArtifactFileCard } from "../components/ArtifactFileCard";
 import { AskCard } from "../components/AskCard";
 import { ActiveBotGlyph, CollaborationMarker } from "../components/ai/CollaborationMarker";
+import { CloudAgentCard } from "../components/CloudAgentCard";
 import { ComputerMaintenanceActions } from "../components/ComputerMaintenanceActions";
 import {
   ComputersUnavailableHint,
@@ -144,7 +145,7 @@ import { dictation } from "../lib/dictation";
 import { scheduleFocusPrompt } from "../lib/focus-prompt";
 import { localTimezone } from "../lib/local-timezone";
 import { copyableMessageText } from "../lib/message-text";
-import { providerLabel } from "../lib/messaging";
+import { messageProviderLabel } from "../lib/messaging";
 import { isFileDrag, revokePendingAttachmentPreviews } from "../lib/pending-attachments";
 import { markAfterPaint, markOnce } from "../lib/performance";
 import { clearSpaceSelection, rpc, selectedSpaceId, selectSpace } from "../lib/rpc";
@@ -2990,7 +2991,9 @@ export function ShellPage() {
                   setMemorySettingsOpen(true);
                 }}
               >
-                <span className="text-muted-foreground">◇</span>
+                <span aria-hidden="true" className="text-muted-foreground">
+                  ◇
+                </span>
                 <Trans>Memory</Trans>
               </Button>
               <Button
@@ -3445,6 +3448,7 @@ export function ShellPage() {
                 key={active.id}
                 bot={active}
                 memoryProviderConfigured={memoryProviderConfig != null}
+                onSkillsChange={setAgentSkills}
                 onSave={async ({ computerMode, ...patch }) => {
                   if (computerMode !== active.computerMode) {
                     await rpc.bots.setComputer({
@@ -3960,9 +3964,15 @@ export function ShellPage() {
                 </span>
               )}
               {!recordingSkill && hasControl ? (
-                <span className="rounded-full bg-success/15 px-[11px] py-1 text-[13px] text-success">
-                  <Trans>You have control</Trans>
-                </span>
+                computer?.takeoverRequested ? (
+                  <span className="rounded-full bg-warning/15 px-[11px] py-1 text-[13px] text-warning">
+                    <Trans>Needs you</Trans>
+                  </span>
+                ) : (
+                  <span className="rounded-full bg-success/15 px-[11px] py-1 text-[13px] text-success">
+                    <Trans>You have control</Trans>
+                  </span>
+                )
               ) : null}
             </div>
             <div className="flex items-center gap-3">
@@ -5325,7 +5335,8 @@ const MessageView = memo(function MessageView({
               className="flex items-center justify-center gap-2 py-1 text-[13.5px] text-muted-foreground"
             >
               <span>
-                {providerLabel(block.provider)} · {block.fromLabel}: {block.text}
+                {messageProviderLabel(block.provider, block.transport)} · {block.fromLabel}:{" "}
+                {block.text}
               </span>
             </div>
           );
@@ -5554,6 +5565,7 @@ const MessageView = memo(function MessageView({
             />
           );
         }
+        if (block.kind === "cloud_agent") return <CloudAgentCard key={i} block={block} />;
         if (block.kind === "skill_draft") {
           return (
             <div key={i} className="flex justify-start">
@@ -5571,7 +5583,13 @@ const MessageView = memo(function MessageView({
                 <span className="text-[15px] font-medium text-foreground">
                   <Trans>Computer</Trans>
                 </span>
-                <span className="rounded-full bg-success/15 px-[11px] py-1 text-[13px] text-success">
+                <span
+                  className={
+                    block.state === "Needs you"
+                      ? "rounded-full bg-warning/15 px-[11px] py-1 text-[13px] text-warning"
+                      : "rounded-full bg-success/15 px-[11px] py-1 text-[13px] text-success"
+                  }
+                >
                   {block.state}
                 </span>
               </div>

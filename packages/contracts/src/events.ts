@@ -1,4 +1,5 @@
 import * as z from "zod";
+import { BotSecretDestination } from "./bot-secrets.js";
 import { Id } from "./ids.js";
 import { McpTransportSchema } from "./mcp.js";
 
@@ -14,6 +15,7 @@ export const ProductEventType = z.enum([
   "thread.meta",
   "thread.computer",
   "thread.subagent",
+  "thread.cloud_agent",
   "run.started",
   "run.checkpointed",
   "run.waiting_input",
@@ -81,6 +83,9 @@ const ChartBlock = z
     });
   });
 
+export const SecretAskPurpose = z.enum(["otp", "password", "api_key"]);
+export type SecretAskPurpose = z.infer<typeof SecretAskPurpose>;
+
 export const MessageBlock = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("text"), text: z.string() }),
   z.object({
@@ -93,6 +98,9 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     approvalEffectId: Id.optional(),
     detail: z.string().optional(),
     input: z.enum(["text", "secret"]).optional(),
+    /** Why the secret is needed; drives field label on the masked card. */
+    purpose: SecretAskPurpose.optional(),
+    credential: BotSecretDestination.optional(),
     status: z.enum(["pending", "answered"]).optional(),
     answer: z.string().optional(),
     actions: z
@@ -165,6 +173,17 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     status: z.enum(["created", "archived", "deleted"]),
   }),
   z.object({
+    /** Compact card for a remote cloud coding agent (not the bot computer). */
+    kind: z.literal("cloud_agent"),
+    agentId: z.string(),
+    title: z.string(),
+    status: z.enum(["running", "finished", "failed", "cancelled"]),
+    url: z.string(),
+    branch: z.string().optional(),
+    prUrl: z.string().optional(),
+    latestRunId: z.string().optional(),
+  }),
+  z.object({
     kind: z.literal("skill_draft"),
     skillId: Id,
     name: z.string(),
@@ -216,6 +235,8 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     /** A group-chat message delivered into a member bot's own thread. */
     kind: z.literal("channel_message"),
     provider: z.string(),
+    /** Per-message network when a provider spans multiple transports. */
+    transport: z.string().optional(),
     channelId: Id,
     fromAddress: z.string(),
     fromLabel: z.string(),

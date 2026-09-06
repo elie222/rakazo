@@ -274,6 +274,7 @@ const dmEvent = {
 
 const groupEvent = {
   ...dmEvent,
+  transport: "SMS",
   threadId: "sendblue:grp-1",
   isDirect: false,
   channelName: "Family",
@@ -683,6 +684,7 @@ describe("createMessagingInboundHandler channel routing", () => {
         {
           kind: "channel_message",
           provider: "sendblue",
+          transport: "SMS",
           channelId: "ch-1",
           fromAddress: "+15551111111",
           fromLabel: "Alice",

@@ -230,7 +230,7 @@ describeWithDatabase("Composio catalog reconciliation", () => {
       "connections/begin",
       { connectorId: "pipedream", provider: "linear", displayName: "Linear" },
     );
-    expect(started.authorizationUrl).toBe("about:blank?app=linear");
+    expect(started.authorizationUrl).toBe("https://pipedream.example.test/connect?app=linear");
     await expect(
       rpc<{ status: string }>(app, cookie, "connections/complete", {
         connectionId: started.connectionId,

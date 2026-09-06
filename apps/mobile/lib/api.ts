@@ -11,12 +11,14 @@ import type {
   SpaceNavigation,
 } from "@rakazo/contracts";
 import {
+  cloudAgentBlockFromPayload,
   isRunTerminalEvent,
   mergeThreadHistory,
   prependThreadHistoryPage,
   progressMessageId,
   reduceLiveMessageBlocks,
   runFailureError,
+  signupRequiresEmailVerification,
   type ThreadHistory,
   upsertMessageById,
 } from "@rakazo/core";
@@ -306,6 +308,8 @@ async function authenticateWithEmail(
     throw new Error(responseErrorMessage(body, `Could not ${action.replace("-", " ")}`));
   }
   const token = tokenFromAuthResponse(res, body);
+  if (action === "sign-up" && signupRequiresEmailVerification(body))
+    return { verificationRequired: true };
   if (!token)
     throw new Error(
       t(
@@ -316,6 +320,7 @@ async function authenticateWithEmail(
     );
   if (!(await clearSpace())) throw new Error(t("Could not clear the previous space"));
   await saveSessionToken(token);
+  return { verificationRequired: false };
 }
 
 export function signIn(email: string, password: string) {
@@ -359,13 +364,41 @@ export async function changePassword(currentPassword: string, newPassword: strin
 export async function signOut() {
   await rpc("notifications/unregisterPush").catch(() => undefined);
   const headers = await authHeaders();
-  await fetch(`${currentApiBase()}/api/auth/sign-out`, {
-    method: "POST",
-    headers: { "content-type": "application/json", origin: "rakazo://", ...headers },
-  }).catch(() => undefined);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), RPC_TIMEOUT_MS);
+  try {
+    await withAbort(
+      fetch(`${currentApiBase()}/api/auth/sign-out`, {
+        method: "POST",
+        headers: { "content-type": "application/json", origin: "rakazo://", ...headers },
+        signal: controller.signal,
+      }),
+      controller.signal,
+    ).catch(() => undefined);
+  } finally {
+    clearTimeout(timer);
+  }
   const sessionCleared = await clearSessionToken();
   const spaceCleared = await clearSpace();
   if (!sessionCleared || !spaceCleared) throw new Error(t("Could not clear the local session"));
+}
+
+function withAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) return Promise.reject(signal.reason ?? new Error("Request timed out"));
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(signal.reason ?? new Error("Request timed out"));
+    signal.addEventListener("abort", onAbort, { once: true });
+    promise.then(
+      (value) => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(value);
+      },
+      (error: unknown) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(error);
+      },
+    );
+  });
 }
 
 export async function deleteAccount(password: string) {
@@ -536,7 +569,10 @@ const MESSAGING_PROVIDER_LABELS: Record<string, string> = {
   telegram: "Telegram",
 };
 
-export function messagingProviderLabel(provider: string): string {
+export function messagingProviderLabel(provider: string, transport?: string): string {
+  if (provider === "sendblue" && ["iMessage", "SMS", "RCS"].includes(transport ?? "")) {
+    return transport!;
+  }
   return MESSAGING_PROVIDER_LABELS[provider] ?? provider;
 }
 
@@ -544,8 +580,10 @@ export function blockText(message: MobileMessage) {
   return message.blocks
     .map((block) => {
       if (block.kind === "channel_message") {
-        return `${messagingProviderLabel(block.provider)} · ${block.fromLabel}: ${block.text}`;
+        return `${messagingProviderLabel(block.provider, block.transport)} · ${block.fromLabel}: ${block.text}`;
       }
+      if (block.kind === "cloud_agent")
+        return `${block.title}: ${block.status}${block.prUrl ? ` ${block.prUrl}` : ""}`;
       if (block.kind === "subagent") {
         return `${block.name ?? "subagent"}: ${block.result || block.progress || block.task || ""}`;
       }
@@ -757,6 +795,38 @@ export function applyMobileThreadEvent(
       ...prev,
       cursor: event.seq ?? prev.cursor,
       messages: [...prev.messages.filter((message) => message.id !== streaming.id), streaming],
+    };
+  }
+  if (event.type === "thread.cloud_agent") {
+    const agentId = String(event.payload?.agentId ?? "");
+    const messageId = String(event.payload?.messageId ?? "");
+    const block = cloudAgentBlockFromPayload(event.payload ?? {});
+    return {
+      ...prev,
+      cursor: event.seq ?? prev.cursor,
+      messages: prev.messages.map((message) => {
+        if (messageId && message.id === messageId) {
+          return {
+            ...message,
+            blocks: message.blocks.map((existing) =>
+              existing.kind === "cloud_agent" && existing.agentId === agentId ? block : existing,
+            ),
+          };
+        }
+        if (
+          message.blocks.some(
+            (existing) => existing.kind === "cloud_agent" && existing.agentId === agentId,
+          )
+        ) {
+          return {
+            ...message,
+            blocks: message.blocks.map((existing) =>
+              existing.kind === "cloud_agent" && existing.agentId === agentId ? block : existing,
+            ),
+          };
+        }
+        return message;
+      }),
     };
   }
   if (event.type === "thread.message.reaction") {

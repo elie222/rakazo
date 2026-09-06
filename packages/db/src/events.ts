@@ -1,5 +1,6 @@
 import type { RealtimeFanout } from "@rakazo/adapter-kit";
 import {
+  type BotSecretDestination,
   type MessageBlock,
   MessageBlock as MessageBlockSchema,
   type ProductEvent,
@@ -8,6 +9,7 @@ import {
   blocksToAgentHistoryText,
   isApprovalAskBlock,
   isSecretAskBlock,
+  messagingChannelId,
   sanitizeJsonValue,
 } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
@@ -171,6 +173,8 @@ export interface PauseRunForTakeover {
   leaseOwner: string;
   leaseFence: number;
   reason: string;
+  /** Computer that should expose the pending takeover to the UI via controlRunId. */
+  computerId: string;
 }
 
 export interface AnswerRunInput {
@@ -203,6 +207,8 @@ export interface SendUserMessageResult {
 
 export interface RunSecretWriter {
   store(input: {
+    botId: string;
+    credential?: BotSecretDestination;
     runId: string;
     userId: string;
     spaceId: string;
@@ -474,15 +480,25 @@ export async function claimSteering(
         leaseOwner: input.leaseOwner,
         leaseFence: input.leaseFence,
       },
-      select: { id: true },
+      select: { id: true, trigger: true, sourceMessage: { select: { blocks: true } } },
     });
     if (!run) return [];
+    const channelId =
+      run.trigger === "messaging"
+        ? messagingChannelId(run.sourceMessage?.blocks as MessageBlock[] | undefined)
+        : undefined;
     const steering = await tx.steeringMessage.findMany({
       where: {
         botId: input.botId,
         id: input.seenIds.length ? { notIn: input.seenIds } : undefined,
         OR: [{ runId: null }, { runId: input.runId }],
-        message: { threadId: input.threadId },
+        message: {
+          threadId: input.threadId,
+          // Private follow-ups remain unclaimed for the existing private continuation.
+          ...(channelId
+            ? { blocks: { array_contains: [{ kind: "channel_message", channelId }] } }
+            : {}),
+        },
       },
       include: { message: { select: { blocks: true, seq: true } } },
       orderBy: [{ message: { seq: "asc" } }, { id: "asc" }],
@@ -543,6 +559,7 @@ export async function answerRunInput(
       : undefined;
     if (choiceAsk && !selectedChoice) return null;
     if (secretAsk && !runSecretWriter) return null;
+    if (secretAsk && pendingAsk.credential && run.userId !== input.answeredByUserId) return null;
     let approvalEffect: { id: string; kind: string } | null = null;
     let approvalUserId: string | null = null;
 
@@ -606,6 +623,8 @@ export async function answerRunInput(
       }
     } else if (secretAsk) {
       await runSecretWriter!.store({
+        botId: run.botId,
+        credential: pendingAsk.credential,
         runId: input.runId,
         userId: run.userId,
         spaceId: input.spaceId,
@@ -619,7 +638,10 @@ export async function answerRunInput(
           kind: "request_secret",
           status: "intended",
         },
-        data: { status: "approved" },
+        data: {
+          status: "approved",
+          ...(pendingAsk.credential ? { result: { credentialSaved: pendingAsk.credential } } : {}),
+        },
       });
     } else {
       const resumeLabel = selectedChoice
@@ -772,13 +794,62 @@ export async function pauseRunForTakeover(
     });
     if (attempt.count !== 1) throw new Error("Active run attempt was not available to pause");
 
+    const now = new Date();
+    // Serialize with concurrent computer/takeover grants that mutate the same row.
+    await tx.$queryRaw`
+      SELECT id FROM computers WHERE id = ${input.computerId} AND "spaceId" = ${input.spaceId} FOR UPDATE`;
+    const computer = await tx.computer.findFirst({
+      where: { id: input.computerId, spaceId: input.spaceId },
+      select: {
+        controlHolder: true,
+        controlBotId: true,
+        controlLeaseId: true,
+        controlLeaseExpiresAt: true,
+      },
+    });
+    const activeUserLease = Boolean(
+      computer?.controlHolder === "user" &&
+        computer.controlLeaseId &&
+        computer.controlLeaseExpiresAt &&
+        computer.controlLeaseExpiresAt.getTime() > now.getTime(),
+    );
+    // Keep an active same-bot user lease so Skip / I'm done appear immediately.
+    // Preserve another bot's active lease — computer/takeover owns revocation. Do not attach
+    // this run to that lease: release validates controlBotId and could clear the binding without
+    // resuming the waiting run. The requesting bot's takeover flow binds it after revocation.
+    // Otherwise clear stale control, but bind controlRunId so takeoverRequested is true.
+    const retainControl = Boolean(activeUserLease && computer?.controlBotId === input.botId);
+    const preserveForeignLease = Boolean(
+      activeUserLease && computer?.controlBotId && computer.controlBotId !== input.botId,
+    );
+    const marked = await tx.computer.updateMany({
+      where: { id: input.computerId, spaceId: input.spaceId },
+      data: retainControl
+        ? { state: "running", controlRunId: input.runId }
+        : preserveForeignLease
+          ? { state: "running" }
+          : {
+              state: "running",
+              controlHolder: "none",
+              controlLeaseId: null,
+              controlLeaseExpiresAt: null,
+              controlBotId: null,
+              controlRunId: input.runId,
+            },
+    });
+    if (marked.count !== 1) throw new Error("Computer was not available to mark for takeover");
+
     const waitingEvent = await appendEventInTransaction(tx, {
       spaceId: input.spaceId,
       threadId: input.threadId,
       botId: input.botId,
       type: "computer.takeover.requested",
       runId: input.runId,
-      payload: { reason: input.reason },
+      payload: {
+        reason: input.reason,
+        takeoverRequested: true,
+        retainedControl: retainControl,
+      },
     });
     await tx.event.deleteMany({ where: { runId: input.runId, type: "thread.progress" } });
     return { threadId: waitingEvent.threadId, seq: waitingEvent.seq };
@@ -1001,8 +1072,17 @@ async function finalizeRunOnce(
         data: { runId: null },
       });
     } else {
+      const { sourceMessage } = await tx.run.findUniqueOrThrow({
+        where: { id: input.runId },
+        select: { sourceMessage: { select: { seq: true } } },
+      });
+      // A continuation's source is the newest steering it was created for. Only newer
+      // messages justify another run after failure, even if setup failed before claiming.
       await tx.steeringMessage.updateMany({
-        where: { runId: input.runId },
+        where: {
+          runId: input.runId,
+          message: sourceMessage ? { seq: { gt: sourceMessage.seq } } : undefined,
+        },
         data: { runId: null },
       });
     }

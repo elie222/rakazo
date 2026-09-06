@@ -144,7 +144,13 @@ API_URL=https://app.example.com
 
 Cookies and CORS follow those origins. `SIGNUPS_ENABLED` / `SIGNUP_ALLOWLIST` seed the initial deployment settings. After initialization, the deployment owner's Settings values are the effective signup policy.
 
-### Password recovery email
+With a nonempty signup allowlist, users—including existing accounts—must verify their email to sign
+in. Configure SMTP below before enabling an allowlist or upgrading an allowlisted deployment.
+
+To set up without email, leave the allowlist empty, register the owner locally, then disable
+registration in Settings before exposing the server to the network.
+
+### Verification and password recovery email
 
 Password changes for signed-in users require no email configuration. Forgotten-password recovery
 appears on sign-in only when a transactional email provider is available. Rakazo uses a
@@ -228,6 +234,17 @@ loopback, RFC1918, and `host.docker.internal` targets. To permit public hostname
 only to public addresses; redirects and DNS answers that reach private or link-local networks are
 rejected.
 
+For servers that accept standard `reasoning_effort`, enable **Supports thinking** under
+**Advanced** when connecting. The setting is saved on the connection (no env var or restart).
+Existing connections default to disabled. Reconnect former Qwen-list or deployment-local models
+via **Settings → Models** and turn it on; the old environment list is no longer read.
+
+Enabled connections default to medium thinking. Web and desktop expose **Thinking** in a bot's
+advanced settings; mobile inherits the same backend policy. Rakazo sends standard
+`reasoning_effort` (`minimal`, `low`, `medium`, `high`, or `none` when off); the server owns
+model-specific translation. Leave **Supports thinking** off when the server lacks standard effort
+support. Existing token limits still apply; effort is not a separate reasoning-token budget.
+
 Do not commit `.env`. Never put `COMPOSIO_API_KEY`, OpenRouter keys, or provider tokens in git, logs, or chat.
 
 ## Choosing a computer provider
@@ -264,7 +281,9 @@ The Electron desktop app is a client of the same API. Docker and E2B still apply
 ./scripts/backup.sh
 ```
 
-This dumps Postgres (`pg_dump`) and archives `data/` into `backups/<stamp>/`.
+This dumps Postgres (`pg_dump`) and archives `data/` into `backups/<stamp>/`. A missing
+`data/` produces an empty archive; database or archive errors fail the backup. Discard the
+output directory of any failed run.
 
 ## Public single-VM deployment
 
@@ -364,7 +383,21 @@ Postgres custom-format dump plus an application-data archive under `/var/backups
 `0600` and seven-day rotation. These local snapshots help with operator mistakes but are not a
 substitute for an encrypted off-host backup or provider snapshot.
 
+The scheduled backup uses `/srv/rakazo` by default. For another deployment directory, set
+`RAKAZO_DEPLOY_DIR=/absolute/path/to/checkout` in a root-owned `/etc/rakazo/backup.env`
+(mode `0600`). The service reads this optional file on each run; the script uses the selected
+checkout's `.env` and production Compose file. If the stack was started with a custom `-p`,
+set the same `COMPOSE_PROJECT_NAME` in that file. For a manual run, export these variables instead.
+When updating an existing backup installation, reinstall both the script and service unit,
+then run `systemctl daemon-reload`.
+
 ## Restore
+
+For backups created by `scripts/backup.sh`, use an empty `rakazo` database in the development
+Compose stack, with application services stopped. The SQL import runs in one transaction and
+stops on the first error, including conflicts with existing tables. Files are restored and
+application services started only after the import succeeds. This script does not consume the
+production snapshot's custom-format `rakazo.dump` or `appdata.tgz`.
 
 ```bash
 ./scripts/restore.sh backups/<stamp>
@@ -591,7 +624,7 @@ To run a hosted product (same codebase):
 
 1. Push `main` (this checkout may be ahead of GitHub).
 2. Provision managed Postgres 16 and run `pnpm db:migrate`.
-3. Run **API** and **worker** as always-on Node 22 services (Fly machines, a VM, ECS, k8s). Not lambda-style request handlers.
+3. Run **API** and **worker** as always-on services using Node.js 22.22.2 or newer in the 22.x line, Node.js 24.x, or Node.js 26+ (Fly machines, a VM, ECS, k8s). Node.js 23.x and 25.x are not supported. Not lambda-style request handlers.
 4. Persist and back up `DATA_DIR` (bot homes, browser profiles, artifacts). Today the concrete store is a local filesystem (`LocalAgentHomeStore`), so attach a Rakazo-owned durable volume shared by API and worker processes. The storage contract is separate from the computer-provider contract, but an object-storage implementation is not wired yet.
 5. Choose computers: **`SANDBOX_PROVIDER=e2b`**, `daytona`, or `box` with the matching provider key for a public or multi-user production service. Each Team or Private Computer reconnects to its sandbox id (`providerRef`), while workspace state is checkpointed outside the provider at run completion, explicit stop, and idle suspension. If that sandbox is gone—or the deployment changes providers—the replacement is hydrated from Rakazo's copy. Idle computers pause after `SANDBOX_IDLE_MS` (default 10 minutes) and resume on the next message or Take control. Docker remains the local and trusted single-machine default.
 6. A Hetzner CX22 (2 vCPU / 4 GB) is enough for API + worker + Postgres when E2B owns the desktops. 2 GB works for a quiet box; 8 GB is only needed if you also run Docker computers on that same machine.

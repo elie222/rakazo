@@ -4,16 +4,20 @@ import {
   openAiCompatibleConnectReady,
   openAiCompatibleProbeSuccessMessage,
 } from "@rakazo/contracts";
-import { Button, Input, NativeSelect, NativeSelectOption, Textarea } from "@rakazo/ui-web";
+import { featuredModelProviders, selectedProviderOutsideSearchResults } from "@rakazo/core";
+import {
+  Button,
+  Input,
+  ModelThinkingOptions,
+  NativeSelect,
+  NativeSelectOption,
+  Textarea,
+} from "@rakazo/ui-web";
 import { Check } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { localizedProviderHint } from "../lib/localized-provider-hint";
 import type { ModelCatalogEntry } from "../lib/model-auth";
-import {
-  featuredModelProviders,
-  selectedProviderOutsideSearchResults,
-} from "../lib/onboarding-providers";
 import { rpc } from "../lib/rpc";
 import { useModelOAuthSignIn } from "../lib/use-model-oauth-signin";
 
@@ -29,6 +33,7 @@ export function OnboardingPage() {
   const [modelId, setModelId] = useState("deepseek/deepseek-v4-flash-0731");
   const [apiKey, setApiKey] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
+  const [reasoning, setReasoning] = useState(false);
   const [probeModels, setProbeModels] = useState<string[]>([]);
   const [probedBaseUrl, setProbedBaseUrl] = useState<string | null>(null);
   const [probing, setProbing] = useState(false);
@@ -188,6 +193,7 @@ export function OnboardingPage() {
           provider,
           baseUrl: baseUrl.trim(),
           modelId: modelId.trim(),
+          reasoning,
           apiKey: apiKey.trim() || undefined,
           label: selected?.providerName ?? provider,
         });
@@ -305,6 +311,7 @@ export function OnboardingPage() {
                           : (catalog.find((item) => item.provider === entry.provider)?.id ?? ""),
                       );
                       setBaseUrl("");
+                      setReasoning(false);
                       resetOpenAiCompatibleProbe();
                       setError(null);
                       setNotice(null);
@@ -418,6 +425,12 @@ export function OnboardingPage() {
                       </Button>
                     ) : null}
                   </div>
+                  <ModelThinkingOptions
+                    reasoning={reasoning}
+                    onReasoningChange={setReasoning}
+                    advancedLabel={t`Advanced`}
+                    thinkingLabel={t`Supports thinking`}
+                  />
                 </>
               ) : (
                 <>

@@ -8,6 +8,7 @@ import type {
   ThreadSnapshot,
 } from "@rakazo/contracts";
 import {
+  cloudAgentBlockFromPayload,
   isActive,
   isRunTerminalEvent,
   mergeThreadHistory,
@@ -29,6 +30,7 @@ const runTriggers = new Set<Run["trigger"]>([
   "bot_message",
   "webhook",
   "messaging",
+  "cloud_agent",
 ]);
 
 function runFromStartedEvent(event: ProductEvent, previous: Run | undefined): Run {
@@ -258,6 +260,7 @@ export function isThreadSnapshotEvent(event: ProductEvent): boolean {
     event.type === "thread.cleared" ||
     event.type === "thread.progress" ||
     event.type === "thread.subagent" ||
+    event.type === "thread.cloud_agent" ||
     event.type === "agent.tool.called" ||
     event.type === "thread.message.created" ||
     event.type === "thread.message.updated" ||
@@ -435,6 +438,39 @@ export function reduceThreadSnapshot(
     }
     return { ...prev, cursor: event.seq, messages: [...without, next, ...kept] };
   }
+
+  if (event.type === "thread.cloud_agent") {
+    const agentId = String(event.payload.agentId ?? "");
+    const messageId = String(event.payload.messageId ?? "");
+    const block = cloudAgentBlockFromPayload(event.payload ?? {});
+    return {
+      ...prev,
+      cursor: event.seq,
+      messages: prev.messages.map((message) => {
+        if (messageId && message.id === messageId) {
+          return {
+            ...message,
+            blocks: message.blocks.map((existing) =>
+              existing.kind === "cloud_agent" && existing.agentId === agentId ? block : existing,
+            ),
+          };
+        }
+        if (
+          message.blocks.some(
+            (existing) => existing.kind === "cloud_agent" && existing.agentId === agentId,
+          )
+        ) {
+          return {
+            ...message,
+            blocks: message.blocks.map((existing) =>
+              existing.kind === "cloud_agent" && existing.agentId === agentId ? block : existing,
+            ),
+          };
+        }
+        return message;
+      }),
+    };
+  }
   if (event.type === "thread.message.reaction") {
     const messageId = String(event.payload.messageId ?? "");
     return {
@@ -533,7 +569,19 @@ export function reduceComputerStatus(
   if (!prev) return prev;
   if (!isComputerStatusEvent(event)) return prev;
   if (event.type === "computer.takeover.requested") {
-    return prev.busyBotName === null ? prev : { ...prev, busyBotName: null };
+    const retainedControl = event.payload.retainedControl === true;
+    const next = {
+      ...prev,
+      busyBotName: null,
+      takeoverRequested: true,
+      ...(retainedControl ? {} : { controlHolder: "none" as const, controlBotId: null }),
+    };
+    return prev.busyBotName === next.busyBotName &&
+      prev.takeoverRequested === next.takeoverRequested &&
+      prev.controlHolder === next.controlHolder &&
+      prev.controlBotId === next.controlBotId
+      ? prev
+      : next;
   }
   if (event.type === "computer.takeover.granted") {
     const takeoverRequested = event.payload.takeoverRequested === true;

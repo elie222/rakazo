@@ -15,13 +15,29 @@ const SECRET_KEY = /password|secret|token|authorization|cookie|credential|apikey
 
 function redactValue(value: unknown, seen = new WeakSet<object>()): unknown {
   if (value === null || value === undefined) return value;
+  if (typeof value === "string") return redactSensitiveText(value);
   if (typeof value !== "object") return value;
   if (seen.has(value)) return "[Circular]";
   seen.add(value);
   if (Array.isArray(value)) {
     return value.map((item) => redactValue(item, seen));
   }
-  if (value instanceof Error) return value;
+  if (value instanceof Error) {
+    const output: Record<string, unknown> = {
+      name: value.name || "Error",
+      message: redactSensitiveText(value.message),
+    };
+    if (typeof value.stack === "string" && value.stack.length > 0) {
+      output.stack = redactSensitiveText(value.stack);
+    }
+    if (value.cause !== undefined) {
+      output.cause =
+        typeof value.cause === "string"
+          ? redactSensitiveText(value.cause)
+          : redactValue(value.cause, seen);
+    }
+    return output;
+  }
   if (value instanceof Date) return value;
   const output: Record<string, unknown> = {};
   for (const [key, nested] of Object.entries(value)) {

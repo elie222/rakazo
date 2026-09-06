@@ -23,6 +23,7 @@ const PRODUCT_VERSION = "0.1.0";
 const STATE_TIMEOUT_MS = 15_000;
 const PLAN_TIMEOUT_MS = 180_000;
 const APPLY_TIMEOUT_MS = 2_100_000;
+export const MAX_UPDATER_RESPONSE_BYTES = 1024 * 1024;
 
 export interface UpdaterProxyConfig {
   url: string | null;
@@ -313,27 +314,54 @@ async function sidecarJson<T>(
   if (!config.url || !config.token) {
     throw new UpdaterProxyError("The updater sidecar is not configured.");
   }
+  const signal = AbortSignal.timeout(timeoutMs);
   let response: Response;
   try {
-    response = await fetchImpl(new URL(route.replace(/^\//, ""), ensureTrailingSlash(config.url)), {
-      method,
-      headers: {
-        authorization: `Bearer ${config.token}`,
-        ...outgoingCorrelationHeaders(),
-        ...(body === undefined ? {} : { "content-type": "application/json" }),
-      },
-      body: body === undefined ? undefined : JSON.stringify(body),
-      signal: AbortSignal.timeout(timeoutMs),
-    });
+    response = await withAbort(
+      fetchImpl(new URL(route.replace(/^\//, ""), ensureTrailingSlash(config.url)), {
+        method,
+        headers: {
+          authorization: `Bearer ${config.token}`,
+          ...outgoingCorrelationHeaders(),
+          ...(body === undefined ? {} : { "content-type": "application/json" }),
+        },
+        body: body === undefined ? undefined : JSON.stringify(body),
+        signal,
+      }),
+      signal,
+    );
   } catch (error) {
     throw new UpdaterProxyError(
       error instanceof Error ? error.message : "The updater sidecar did not respond.",
       502,
     );
   }
-  const payload = (await response.json().catch(() => ({}))) as T & { error?: string };
   if (response.status === 401) {
+    cancelResponseBody(response);
     throw new UpdaterProxyError("The updater sidecar rejected the deployment credential.", 502);
+  }
+  const declared = Number(response.headers.get("content-length") ?? 0);
+  if (Number.isFinite(declared) && declared > MAX_UPDATER_RESPONSE_BYTES) {
+    cancelResponseBody(response);
+    throw new UpdaterProxyError("The updater sidecar response is too large.", 502);
+  }
+  let bytes: Uint8Array;
+  try {
+    bytes = await readSidecarBody(response, signal);
+  } catch (error) {
+    if (error instanceof Error && error.message === "Response is too large") {
+      throw new UpdaterProxyError("The updater sidecar response is too large.", 502);
+    }
+    throw new UpdaterProxyError(
+      error instanceof Error ? error.message : "The updater sidecar response could not be read.",
+      502,
+    );
+  }
+  let payload = {} as T & { error?: string };
+  try {
+    payload = JSON.parse(new TextDecoder().decode(bytes)) as T & { error?: string };
+  } catch {
+    // Keep the existing generic status handling for empty or malformed sidecar responses.
   }
   if (!response.ok) {
     throw new UpdaterProxyError(
@@ -344,6 +372,84 @@ async function sidecarJson<T>(
     );
   }
   return payload;
+}
+
+function cancelResponseBody(response: Response): void {
+  try {
+    void Promise.resolve(response.body?.cancel()).catch(() => undefined);
+  } catch {
+    // Best-effort release only; an untrusted cancellation must not delay the error.
+  }
+}
+
+async function readSidecarBody(response: Response, signal: AbortSignal): Promise<Uint8Array> {
+  if (!response.body) {
+    const buffer = await withAbort(response.arrayBuffer(), signal);
+    if (buffer.byteLength > MAX_UPDATER_RESPONSE_BYTES) {
+      throw new Error("Response is too large");
+    }
+    return new Uint8Array(buffer);
+  }
+
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await withAbort(reader.read(), signal);
+      if (done) break;
+      if (!value?.byteLength) continue;
+      total += value.byteLength;
+      if (total > MAX_UPDATER_RESPONSE_BYTES) {
+        cancelReader(reader);
+        throw new Error("Response is too large");
+      }
+      chunks.push(value);
+    }
+  } catch (error) {
+    cancelReader(reader);
+    throw error;
+  } finally {
+    try {
+      reader.releaseLock();
+    } catch {
+      // already cancelled or released
+    }
+  }
+
+  const body = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return body;
+}
+
+function cancelReader(reader: ReadableStreamDefaultReader<Uint8Array>): void {
+  try {
+    void Promise.resolve(reader.cancel()).catch(() => undefined);
+  } catch {
+    // Best-effort release only; an untrusted cancellation must not delay the error.
+  }
+}
+
+function withAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) return Promise.reject(signal.reason ?? new Error("Request timed out"));
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(signal.reason ?? new Error("Request timed out"));
+    signal.addEventListener("abort", onAbort, { once: true });
+    promise.then(
+      (value) => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(value);
+      },
+      (error: unknown) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(error);
+      },
+    );
+  });
 }
 
 /** Exported for tests that assert the API never treats a source tree as applyable. */

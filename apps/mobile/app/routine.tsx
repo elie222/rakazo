@@ -4,9 +4,10 @@ import { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, Text, View } from "react-native";
 import { rpc } from "../lib/api";
 import { useI18n } from "../lib/i18n";
-import { tokens } from "../lib/theme";
+import { useMobileTokens } from "../lib/native";
 
 export default function RoutineDetail() {
+  const tokens = useMobileTokens();
   const { t } = useI18n();
   const { botId, botName, routineId } = useLocalSearchParams<{
     botId?: string;
@@ -52,40 +53,47 @@ export default function RoutineDetail() {
       contentContainerStyle={{ padding: 24, gap: 18 }}
     >
       <Stack.Screen options={{ title: routine?.name ?? t("Routine") }} />
-      {loading ? <ActivityIndicator color="#85858A" /> : null}
-      {error ? <Text style={{ color: "#EF4444", fontSize: 15 }}>{error}</Text> : null}
+      {loading ? <ActivityIndicator color={tokens.mutedForeground} /> : null}
+      {error ? <Text style={{ color: tokens.destructive, fontSize: 15 }}>{error}</Text> : null}
       {routine ? (
         <>
           <View
             style={{
               borderRadius: 16,
               borderWidth: 1,
-              borderColor: "#26262A",
-              backgroundColor: "#17171A",
+              borderColor: tokens.border,
+              backgroundColor: tokens.card,
               padding: 18,
               gap: 8,
             }}
           >
-            <Text style={{ color: "#ECECEE", fontSize: 20, fontWeight: "600" }}>
+            <Text style={{ color: tokens.foreground, fontSize: 20, fontWeight: "600" }}>
               {routine.name}
             </Text>
-            <Text style={{ color: routine.active ? "#4ECB71" : "#85858A", fontSize: 14 }}>
+            <Text
+              style={{
+                color: routine.active ? tokens.success : tokens.mutedForeground,
+                fontSize: 14,
+              }}
+            >
               {routine.active ? t("Active") : t("Paused")} · {routine.crons.join(", ")} ·{" "}
               {routine.timezone}
             </Text>
           </View>
           <View style={{ gap: 8 }}>
-            <Text style={{ color: "#85858A", fontSize: 13, textTransform: "uppercase" }}>
+            <Text
+              style={{ color: tokens.mutedForeground, fontSize: 13, textTransform: "uppercase" }}
+            >
               {t("Prompt")}
             </Text>
             <Text
               selectable
               style={{
-                color: "#DFDFE2",
+                color: tokens.foreground,
                 fontSize: 15,
                 lineHeight: 23,
                 borderRadius: 16,
-                backgroundColor: "#17171A",
+                backgroundColor: tokens.card,
                 padding: 18,
               }}
             >
@@ -103,11 +111,11 @@ export default function RoutineDetail() {
             style={{
               alignItems: "center",
               borderRadius: 12,
-              backgroundColor: "#F1F1EF",
+              backgroundColor: tokens.primary,
               padding: 14,
             }}
           >
-            <Text style={{ color: "#17171A", fontSize: 15, fontWeight: "600" }}>
+            <Text style={{ color: tokens.primaryForeground, fontSize: 15, fontWeight: "600" }}>
               {t("Open conversation")}
             </Text>
           </Pressable>

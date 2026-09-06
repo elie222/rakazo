@@ -4,6 +4,7 @@ import type { DesktopSetup, DesktopStackProbeResponse } from "@rakazo/contracts"
 
 /** Where `pnpm dev` serves the Rakazo web app on this machine. */
 export const DEFAULT_LOCAL_WEB_URL = "http://127.0.0.1:5173";
+export const PROBE_RESPONSE_LIMIT_BYTES = 64 * 1024;
 
 export const SETUP_FILE_NAME = "setup.json";
 
@@ -186,7 +187,70 @@ export function desktopStackImageTag(value: unknown): string | null {
   return ok === true && typeof imageTag === "string" && imageTag !== "" ? imageTag : null;
 }
 
-function isLoopbackHost(hostname: string) {
+/** Reads a small probe response without letting an untrusted stream stall on cleanup. */
+export async function readProbeJson(response: Response): Promise<unknown> {
+  const declared = Number(response.headers.get("content-length") ?? 0);
+  if (Number.isFinite(declared) && declared > PROBE_RESPONSE_LIMIT_BYTES) {
+    cancelResponse(response);
+    return null;
+  }
+  if (response.body === null) return null;
+
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > PROBE_RESPONSE_LIMIT_BYTES) {
+        cancelReader(reader);
+        return null;
+      }
+      chunks.push(value);
+    }
+  } catch (error) {
+    cancelReader(reader);
+    throw error;
+  } finally {
+    try {
+      reader.releaseLock();
+    } catch {
+      // already cancelled or released
+    }
+  }
+
+  const body = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  try {
+    return JSON.parse(new TextDecoder().decode(body));
+  } catch {
+    return null;
+  }
+}
+
+function cancelResponse(response: Response): void {
+  try {
+    void Promise.resolve(response.body?.cancel()).catch(() => undefined);
+  } catch {
+    // Probe cleanup is best-effort.
+  }
+}
+
+function cancelReader(reader: ReadableStreamDefaultReader<Uint8Array>): void {
+  try {
+    void Promise.resolve(reader.cancel()).catch(() => undefined);
+  } catch {
+    // Probe cleanup is best-effort.
+  }
+}
+
+export function isLoopbackHost(hostname: string) {
   const host = unbracketedHost(hostname);
   if (host === "localhost" || host.endsWith(".localhost")) return true;
   if (isIP(host) === 4) return host.startsWith("127.");

@@ -449,4 +449,10 @@ describe("Composio during pnpm test", () => {
     expect(process.env.VITEST).toBeTruthy();
     expect(isComposioEnabled("ck_must_not_call_live")).toBe(false);
   });
+
+  it.each(["0", "false"])("does not treat VITEST=%s as an active test runner", (value) => {
+    vi.stubEnv("VITEST", value);
+    expect(isComposioEnabled("ck_configured")).toBe(true);
+    vi.unstubAllEnvs();
+  });
 });
