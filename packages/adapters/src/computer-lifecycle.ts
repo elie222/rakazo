@@ -146,24 +146,18 @@ export async function provisionComputer(
           state: existing.state,
           ...previousRef,
         };
+  // Choose the claim stamp before writing so a concurrent reclaim cannot make us adopt its
+  // updatedAt on a follow-up read (which would let our activation overwrite the newer owner).
+  const claimStamp = new Date();
   const claimed = await deps.prisma.computer.updateMany({
     where: {
       id: computerId,
       ...claimWhere,
       ...(context.botId ? { bots: { some: { id: context.botId, archivedAt: null } } } : {}),
     },
-    data: { state: "booting" },
+    data: { state: "booting", updatedAt: claimStamp },
   });
   if (claimed.count !== 1) throw new ComputerBusyError();
-  // Stamp this claim so activation/failure cannot race a later reclaim or a Team lease that
-  // appears mid-boot. updatedAt advances on our claim write; a concurrent reclaim advances it
-  // again and leaves our end-of-boot writes matching zero rows without wedging the winner.
-  const claimStamp = (
-    await deps.prisma.computer.findUniqueOrThrow({
-      where: { id: computerId },
-      select: { updatedAt: true },
-    })
-  ).updatedAt;
   let provisioned: ComputerRef | undefined;
   try {
     const ref = await deps.sandbox.provision(

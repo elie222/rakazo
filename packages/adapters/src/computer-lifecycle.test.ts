@@ -58,8 +58,11 @@ describe("computer provisioning", () => {
         updateMany: vi.fn(async (args) => {
           const result = await updateMany(args);
           if (result.count === 1) {
-            computerRow.updatedAt = new Date(computerRow.updatedAt.getTime() + 1);
-            Object.assign(computerRow, args.data);
+            Object.assign(
+              computerRow,
+              { updatedAt: new Date(computerRow.updatedAt.getTime() + 1) },
+              args.data,
+            );
           }
           return result;
         }),
@@ -232,6 +235,64 @@ describe("computer provisioning", () => {
     );
   });
 
+  it("does not adopt a concurrent reclaim stamp after claiming", async () => {
+    const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-claim-stamp-race-"));
+    const row = {
+      id: "computer-1",
+      homeKey: "bot-1",
+      providerRef: null as string | null,
+      kind: "cloud",
+      scope: "dedicated",
+      state: "stopped",
+      controlLeaseId: null,
+      updatedAt: new Date("2024-01-01T00:00:00.000Z"),
+    };
+    const updateMany = vi.fn(
+      async ({
+        where,
+        data,
+      }: {
+        where: Record<string, unknown>;
+        data: Record<string, unknown>;
+      }) => {
+        const matches = ["id", "state", "providerRef", "kind", "updatedAt"].every(
+          (key) => !(key in where) || where[key] === row[key as keyof typeof row],
+        );
+        if (!matches) return { count: 0 };
+        Object.assign(row, { updatedAt: new Date(row.updatedAt.getTime() + 1) }, data);
+        return { count: 1 };
+      },
+    );
+    const findUniqueOrThrow = vi.fn(async () => ({ ...row }));
+    const prisma = {
+      computer: { findUniqueOrThrow, updateMany },
+    } as unknown as PrismaClient;
+    const sandbox = new FakeSandboxProvider();
+
+    try {
+      await provisionComputer(
+        {
+          prisma,
+          sandbox,
+          home: new LocalAgentHomeStore(dataDir),
+          jobs: {} as JobPublisher,
+          events: {} as ThreadEvents,
+          dataDir,
+        },
+        "computer-1",
+        context,
+      );
+      const claimData = updateMany.mock.calls[0]?.[0]?.data as { updatedAt?: Date };
+      const activationWhere = updateMany.mock.calls[1]?.[0]?.where as { updatedAt?: Date };
+      expect(claimData.updatedAt).toBeInstanceOf(Date);
+      expect(activationWhere.updatedAt).toEqual(claimData.updatedAt);
+      // Stamp must come from the claim write, not a follow-up read that a concurrent reclaim could win.
+      expect(findUniqueOrThrow).toHaveBeenCalledTimes(1);
+    } finally {
+      await rm(dataDir, { recursive: true, force: true });
+    }
+  });
+
   it("activates a boot even if another Team bot takes a lease mid-provision", async () => {
     const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-team-lease-mid-boot-"));
     const row = {
@@ -256,7 +317,7 @@ describe("computer provisioning", () => {
           (key) => !(key in where) || where[key] === row[key as keyof typeof row],
         );
         if (!matches) return { count: 0 };
-        Object.assign(row, data, { updatedAt: new Date(row.updatedAt.getTime() + 1) });
+        Object.assign(row, { updatedAt: new Date(row.updatedAt.getTime() + 1) }, data);
         return { count: 1 };
       },
     );

@@ -56,13 +56,11 @@ async function fixture(provider: "fake" | "desktop" = "fake") {
         (key) => !(key in where) || where[key] === row[key as keyof typeof row],
       );
       if (!matches) return { count: 0 };
-      Object.assign(row, data, {
-        updatedAt: new Date(row.updatedAt.getTime() + 1),
-      });
+      Object.assign(row, { updatedAt: new Date(row.updatedAt.getTime() + 1) }, data);
       return { count: 1 };
     }),
     update: vi.fn(async ({ data }) =>
-      Object.assign(row, data, { updatedAt: new Date(row.updatedAt.getTime() + 1) }),
+      Object.assign(row, { updatedAt: new Date(row.updatedAt.getTime() + 1) }, data),
     ),
   };
   const deps = {
