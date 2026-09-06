@@ -30,6 +30,8 @@ const EXECUTION_LEASE_MS = 5 * 60_000;
 const RELEASED_EXECUTION_LEASE_AT = new Date(0);
 const BOOT_WAIT_ATTEMPTS = 40;
 const BOOT_WAIT_MS = 250;
+/** A booting claim newer than the boot-wait window is treated as live, not abandoned. */
+const BOOT_CLAIM_STALE_MS = BOOT_WAIT_ATTEMPTS * BOOT_WAIT_MS;
 
 /**
  * "Nobody but us holds this computer."
@@ -117,7 +119,15 @@ export async function provisionComputer(
   // reclaim bumps updatedAt while state stays "booting"; fencing the claim on the pre-wait
   // stamp keeps those callers mutually exclusive. After the wait, a finished boot returns
   // "running" and takes the normal reconnect claim instead.
+  //
+  // Only reclaim stamps that were already older than the boot-wait window when we first saw
+  // them. A fresher stamp means another caller just claimed and may still be provisioning
+  // past our poll window; stealing it would double-provision and roll back their sandbox.
+  // Live boots with an execution lease are already blocked by heldByNobodyElse; this guards
+  // the lease-less path (and expired-lease gaps) against reclaiming an active claim.
   const reclaimStamp = existing.state === "booting" ? existing.updatedAt : null;
+  const bootClaimIsStale =
+    reclaimStamp !== null && Date.now() - reclaimStamp.getTime() >= BOOT_CLAIM_STALE_MS;
   if (existing.state === "booting" || existing.state === "suspending") {
     existing = await waitForComputerReady(deps.prisma, computerId, context);
   }
@@ -133,6 +143,11 @@ export async function provisionComputer(
   // We came to reclaim abandoned booting; if another caller already activated, do not fall
   // through into reconnect (that would provision again under their providerRef).
   if (reclaimStamp !== null && existing.state === "running") {
+    throw new ComputerBusyError();
+  }
+  // Still booting after the wait on a fresh claim stamp: the holder is mid-provision, not
+  // abandoned. Reclaiming would let both callers provision and make the original activation fail.
+  if (existing.state === "booting" && reclaimStamp !== null && !bootClaimIsStale) {
     throw new ComputerBusyError();
   }
 

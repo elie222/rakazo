@@ -380,7 +380,12 @@ describe("computer provisioning", () => {
       },
     } as unknown as PrismaClient;
     const sandbox = new FakeSandboxProvider();
-    const now = vi.spyOn(Date, "now").mockReturnValue(observed.getTime());
+    // First Date.now() is the stale-claim check (must see the stamp as abandoned);
+    // later calls freeze at the observed ms so the claim stamp still advances by +1.
+    const now = vi
+      .spyOn(Date, "now")
+      .mockReturnValueOnce(observed.getTime() + 10_000)
+      .mockReturnValue(observed.getTime());
     const setTimeoutReal = globalThis.setTimeout;
     vi.stubGlobal("setTimeout", ((fn: (...args: never[]) => void, _ms?: number, ...args: never[]) =>
       setTimeoutReal(fn, 0, ...args)) as unknown as typeof setTimeout);
@@ -407,6 +412,60 @@ describe("computer provisioning", () => {
       expect(claim.data.updatedAt?.getTime()).toBe(observed.getTime() + 1);
       expect(activationWhere.updatedAt).toEqual(claim.data.updatedAt);
       expect(row.state).toBe("running");
+    } finally {
+      now.mockRestore();
+      vi.unstubAllGlobals();
+      await rm(dataDir, { recursive: true, force: true });
+    }
+  });
+
+  it("does not reclaim a fresh booting claim after the boot wait", async () => {
+    const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-fresh-boot-claim-"));
+    const nowMs = Date.parse("2024-06-01T12:00:00.000Z");
+    const row = {
+      id: "computer-1",
+      homeKey: "bot-1",
+      providerRef: null as string | null,
+      kind: "cloud",
+      scope: "dedicated",
+      state: "booting",
+      controlLeaseId: null,
+      // Claim stamp is "now" — still inside the boot-wait window, so not abandoned.
+      updatedAt: new Date(nowMs),
+    };
+    const updateMany = vi.fn();
+    const prisma = {
+      computer: {
+        findUniqueOrThrow: vi.fn(async () => ({ ...row })),
+        updateMany,
+      },
+      executionLease: {
+        findFirst: vi.fn(async () => null),
+      },
+    } as unknown as PrismaClient;
+    const sandbox = new FakeSandboxProvider();
+    const now = vi.spyOn(Date, "now").mockReturnValue(nowMs);
+    const setTimeoutReal = globalThis.setTimeout;
+    vi.stubGlobal("setTimeout", ((fn: (...args: never[]) => void, _ms?: number, ...args: never[]) =>
+      setTimeoutReal(fn, 0, ...args)) as unknown as typeof setTimeout);
+
+    try {
+      await expect(
+        provisionComputer(
+          {
+            prisma,
+            sandbox,
+            home: new LocalAgentHomeStore(dataDir),
+            jobs: {} as JobPublisher,
+            events: {} as ThreadEvents,
+            dataDir,
+          },
+          "computer-1",
+          context,
+        ),
+      ).rejects.toBeInstanceOf(ComputerBusyError);
+      expect(updateMany).not.toHaveBeenCalled();
+      expect(row.state).toBe("booting");
     } finally {
       now.mockRestore();
       vi.unstubAllGlobals();
