@@ -776,9 +776,15 @@ describeIntegration("run executor lifecycle", () => {
         expiresAt: new Date(Date.now() + 5 * 60_000),
       },
     });
+    // Age past BOOT_CLAIM_STALE_MS so reclaim reaches the live foreign-lease check
+    // instead of refusing on a fresh mid-provision stamp.
     await handles.prisma.computer.update({
       where: { id: computerId },
-      data: { state: "booting", providerRef: "" },
+      data: {
+        state: "booting",
+        providerRef: "",
+        updatedAt: new Date(Date.now() - (5 * 60_000 + 1_000)),
+      },
     });
 
     try {
