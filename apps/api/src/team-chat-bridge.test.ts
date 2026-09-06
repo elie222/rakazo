@@ -352,4 +352,89 @@ describe("team chat bridge", () => {
     );
     expect(record.threadMessageId).toBe("message-visible");
   });
+  it("does not reopen deliveries finalized as unconfirmed", async () => {
+    const update = vi.fn();
+    const updateMany = vi.fn(async () => ({ count: 0 }));
+    const prisma = {
+      externalMessage: {
+        findUnique: vi.fn(async () => ({
+          status: "delivered",
+          providerReplyHandle: "unconfirmed",
+        })),
+        update,
+        updateMany,
+      },
+    } as unknown as PrismaClient;
+
+    const bridge = new TeamChatBridge({
+      prisma,
+      events: { sendUserMessage: vi.fn() },
+      jobs: { enqueue: vi.fn() },
+      send: vi.fn(),
+      providerId: "slack",
+      botId: "bot-1",
+      reconcileIntervalMs: 60_000,
+    });
+
+    await (
+      bridge as unknown as {
+        retry: (
+          message: { id: string; status: string; attempts: number },
+          error: unknown,
+        ) => Promise<void>;
+      }
+    ).retry({ id: "message-1", status: "delivering", attempts: 0 }, new Error("send failed"));
+
+    expect(update).not.toHaveBeenCalled();
+    expect(updateMany).not.toHaveBeenCalled();
+  });
+
+  it("only retries rows that are still delivering without a provider handle", async () => {
+    const updateMany = vi.fn(async () => ({ count: 0 }));
+    const prisma = {
+      externalMessage: {
+        findUnique: vi.fn(async () => ({
+          status: "delivering",
+          providerReplyHandle: null,
+        })),
+        update: vi.fn(),
+        updateMany,
+      },
+    } as unknown as PrismaClient;
+
+    const bridge = new TeamChatBridge({
+      prisma,
+      events: { sendUserMessage: vi.fn() },
+      jobs: { enqueue: vi.fn() },
+      send: vi.fn(),
+      providerId: "slack",
+      botId: "bot-1",
+      reconcileIntervalMs: 60_000,
+    });
+
+    await (
+      bridge as unknown as {
+        retry: (
+          message: { id: string; status: string; attempts: number },
+          error: unknown,
+        ) => Promise<void>;
+      }
+    ).retry({ id: "message-2", status: "running", attempts: 1 }, new Error("send failed"));
+
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          id: "message-2",
+          providerReplyHandle: null,
+          status: "delivering",
+        },
+        data: expect.objectContaining({
+          status: "delivering",
+          attempts: 2,
+          lastError: "send failed",
+        }),
+      }),
+    );
+  });
+
 });

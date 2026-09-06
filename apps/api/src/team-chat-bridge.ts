@@ -751,15 +751,27 @@ export class TeamChatBridge {
       where: { id: message.id },
       select: { status: true, providerReplyHandle: true },
     });
-    if (current?.providerReplyHandle) {
-      await this.markDelivered(message.id, current.providerReplyHandle);
+    if (!current) return;
+    // A concurrent reserveDelivery may have finalized with "unconfirmed". Do not
+    // clear that lost-confirmation metadata via markDelivered.
+    if (current.providerReplyHandle) {
+      if (current.status !== "delivered") {
+        await this.markDelivered(message.id, current.providerReplyHandle);
+      }
       return;
     }
+    if (current.status === "delivered") return;
     // Once reserved for delivery, stay in delivering. Restoring the pre-reserve
     // "running" status would let reconciliation send again after a lost ack.
-    const status = current?.status === "delivering" ? "delivering" : message.status;
-    await this.deps.prisma.externalMessage.update({
-      where: { id: message.id },
+    const status = current.status === "delivering" ? "delivering" : message.status;
+    // Conditional write: if reserveDelivery finalized between the read and this
+    // update, leave the delivered/unconfirmed row alone.
+    await this.deps.prisma.externalMessage.updateMany({
+      where: {
+        id: message.id,
+        providerReplyHandle: null,
+        status: current.status,
+      },
       data: {
         status,
         attempts,
