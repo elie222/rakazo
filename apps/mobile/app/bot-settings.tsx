@@ -251,14 +251,16 @@ export default function BotSettingsScreen() {
         // Keep instructions in sync with description (same as web BotSettings).
         input.instructions = profile.instructions;
       }
-      // Always persist the model pair so Space default clears an override even
-      // when catalog metadata failed to load.
-      input.modelProvider = selected?.provider ?? null;
-      input.modelId = selected?.modelId ?? null;
+      // Only write the model pair when it changed, so saving an unrelated
+      // field cannot overwrite a newer model set elsewhere after this screen
+      // loaded. Space default still clears an override because that changes
+      // the pair to null.
       const modelChanged =
         (selected?.provider ?? null) !== (bot.modelProvider ?? null) ||
         (selected?.modelId ?? null) !== (bot.modelId ?? null);
       if (modelChanged) {
+        input.modelProvider = selected?.provider ?? null;
+        input.modelId = selected?.modelId ?? null;
         // selectModel clears thinking locally; persist that clear even when
         // metadata failed, otherwise the previous override sticks on the server.
         input.thinkingLevel = thinkingOptions.length
