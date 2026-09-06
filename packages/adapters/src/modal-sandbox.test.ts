@@ -107,6 +107,14 @@ describe("Modal sandbox boundary", () => {
     expect(f.requests.map((r) => r.op)).toEqual(["restoreBegin", "restoreEnd"]);
   });
 
+  it("waits for the primary desktop before assigning a bot display", async () => {
+    const f = fixture();
+    await f.provider.prepare(computer, { ...context, botId: "agent", screenLeaseId: "run:1" });
+    expect(f.requests[0]?.op).toBe("exec");
+    expect(f.requests[0]?.screenKey).toBeUndefined();
+    expect(f.requests[0]?.screenLease).toBeUndefined();
+  });
+
   it("keeps running legacy images usable until an idle restart", async () => {
     const f = fixture();
     f.sandbox.getTags.mockImplementation(async () => ({

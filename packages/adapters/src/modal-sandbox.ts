@@ -233,7 +233,7 @@ export class ModalSandboxProvider implements SandboxProvider {
         ],
         timeoutMs: 25000,
       },
-      ctx,
+      { ...ctx, botId: undefined, screenLeaseId: undefined },
     )) {
       if (event.type === "exit" && event.code !== 0)
         throw new Error("Cloud desktop did not become ready");
