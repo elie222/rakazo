@@ -518,11 +518,17 @@ export async function replaceComputer(
     throw new ComputerBusyError();
   }
   // Allow Reset on a stale "booting" row unless another bot still holds a live lease.
-  if (
-    existing.state === "booting" &&
-    (await hasForeignExecutionLease(deps.prisma, computerId, botId))
-  ) {
-    throw new ComputerBusyError();
+  // Dedicated computers never create an execution-lease row, so the foreign-lease check alone
+  // cannot see an in-flight dedicated boot. Refuse fresh claim stamps the same way
+  // provisionComputer does — otherwise Reset claims suspending, bumps @updatedAt on rollback,
+  // and the live provisioner's activation fence fails.
+  if (existing.state === "booting") {
+    if (await hasForeignExecutionLease(deps.prisma, computerId, botId)) {
+      throw new ComputerBusyError();
+    }
+    if (Date.now() - existing.updatedAt.getTime() < BOOT_CLAIM_STALE_MS) {
+      throw new ComputerBusyError();
+    }
   }
 
   const previousState = existing.state;
@@ -531,6 +537,8 @@ export async function replaceComputer(
     where: {
       id: computerId,
       state: previousState,
+      // CAS the booting stamp so a concurrent live claim cannot be overwritten by Reset.
+      ...(previousState === "booting" ? { updatedAt: existing.updatedAt } : {}),
       executionLeases: { none: { botId: { not: botId }, expiresAt: { gt: now } } },
       OR: [
         { controlHolder: { not: "user" } },

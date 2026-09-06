@@ -1607,6 +1607,52 @@ describe("computer replacement", () => {
     expect(updateMany).not.toHaveBeenCalled();
   });
 
+  it("refuses Reset on a fresh dedicated booting claim", async () => {
+    // Dedicated computers never write an execution-lease row, so foreign-lease checks alone
+    // cannot see an in-flight boot. A fresh claim stamp must keep Reset from destroying it.
+    const updateMany = vi.fn().mockResolvedValue({ count: 1 });
+    const nowMs = Date.parse("2024-06-01T12:00:00.000Z");
+    const prisma = {
+      computer: {
+        findUniqueOrThrow: vi.fn().mockResolvedValue({
+          id: "computer-1",
+          homeKey: "bot-1",
+          providerRef: "",
+          kind: "fake",
+          scope: "dedicated",
+          state: "booting",
+          controlLeaseId: null,
+          updatedAt: new Date(nowMs),
+        }),
+        updateMany,
+      },
+      computerExecutionLease: { findFirst: vi.fn().mockResolvedValue(null) },
+      run: { findFirst: vi.fn().mockResolvedValue(null) },
+    } as unknown as PrismaClient;
+    const now = vi.spyOn(Date, "now").mockReturnValue(nowMs);
+
+    try {
+      await expect(
+        replaceComputer(
+          {
+            prisma,
+            sandbox: new FakeSandboxProvider(),
+            home: {} as AgentHomeStore,
+            jobs: {} as JobPublisher,
+            events: {} as ThreadEvents,
+          },
+          "computer-1",
+          "reset",
+          context,
+        ),
+      ).rejects.toBeInstanceOf(ComputerBusyError);
+      expect(updateMany).not.toHaveBeenCalled();
+    } finally {
+      now.mockRestore();
+    }
+  });
+
+
   it("rejects replacement while the target bot has an active run", async () => {
     const prisma = {
       computer: {
