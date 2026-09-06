@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  cachedWorkspaceSnapshot,
   checkpointComputerWorkspace,
   ensureComputerWorkspaceLayout,
   restoreComputerWorkspace,
@@ -74,5 +75,66 @@ describe("provider-neutral computer workspace", () => {
         await replacementProvider.readFile(replacement, "notes/result.txt", context),
       ),
     ).toBe("portable");
+  });
+  it.each(["snapshot", "cache-write"])("keeps the durable home when %s fails", async (failure) => {
+    const root = await mkdtemp(path.join(tmpdir(), "workspace-cache-"));
+    roots.push(root);
+    const home = Object.assign(new LocalAgentHomeStore(root), {
+      saveWorkspaceSnapshot: vi.fn(async () => {
+        if (failure === "cache-write") throw new Error("cache unavailable");
+      }),
+    });
+    const provider = Object.assign(new FakeSandboxProvider(), {
+      snapshotWorkspace: vi.fn(async () => {
+        if (failure === "snapshot") throw new Error("provider unavailable");
+        return "snapshot";
+      }),
+    });
+    const first = await provider.provision({ botId: "bot", homePath: "/ignored" }, context);
+    await provider.writeFile(
+      first,
+      { path: "saved.txt", content: Buffer.from("durable") },
+      context,
+    );
+    await checkpointComputerWorkspace(home, provider, "bot", first, context);
+    const replacementProvider = new FakeSandboxProvider();
+    const replacement = await replacementProvider.provision(
+      { botId: "bot", homePath: "/ignored" },
+      context,
+    );
+    await restoreComputerWorkspace(home, replacementProvider, "bot", replacement, context);
+    expect(
+      Buffer.from(await replacementProvider.readFile(replacement, "saved.txt", context)).toString(),
+    ).toBe("durable");
+  });
+
+  it("does not overwrite a natively restored home and tolerates cache lookup failure", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "workspace-cache-"));
+    roots.push(root);
+    const home = Object.assign(new LocalAgentHomeStore(root), {
+      getWorkspaceSnapshot: vi.fn(async () => {
+        throw new Error("cache unavailable");
+      }),
+    });
+    const provider = Object.assign(new FakeSandboxProvider(), {
+      snapshotWorkspace: async () => "snapshot",
+    });
+    const computer = await provider.provision({ botId: "bot", homePath: "/ignored" }, context);
+    await provider.writeFile(
+      computer,
+      { path: "saved.txt", content: Buffer.from("native") },
+      context,
+    );
+    await restoreComputerWorkspace(
+      home,
+      provider,
+      "bot",
+      { ...computer, workspaceRestored: true },
+      context,
+    );
+    expect(Buffer.from(await provider.readFile(computer, "saved.txt", context)).toString()).toBe(
+      "native",
+    );
+    await expect(cachedWorkspaceSnapshot(home, provider, "bot", context)).resolves.toBeUndefined();
   });
 });

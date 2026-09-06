@@ -59,6 +59,8 @@ export interface ComputerRef {
   providerRef: string;
   /** True when the provider created an empty replacement rather than reconnecting existing state. */
   fresh?: boolean;
+  /** A new machine already contains the matching durable workspace checkpoint. */
+  workspaceRestored?: boolean;
 }
 
 export interface CommandRequest {

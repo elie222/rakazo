@@ -7,6 +7,7 @@ COMPUTER = HERE.parent / 'sandboxes' / 'computer'
 app = modal.App('cadre-computers')
 image = (modal.Image.from_dockerfile(COMPUTER / 'Dockerfile', context_dir=COMPUTER, add_python="3.12")
     .add_local_file(HERE / 'computer_rpc.py', '/opt/cadre/computer_rpc.py', copy=True)
+    .add_local_file(HERE / 'screens.py', '/opt/cadre/screens.py', copy=True)
     .add_local_file(HERE / 'screen_gateway.py', '/opt/cadre/screen_gateway.py', copy=True)
     .add_local_file(HERE / 'start.sh', '/opt/cadre/start.sh', copy=True))
 

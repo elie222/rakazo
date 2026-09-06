@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 : "${CADRE_SCREEN_VIEW_TOKEN:?Screen capability required}"
+# Runtime grants and X sockets must not survive filesystem snapshot restore.
+rm -rf /run/cadre
+install -d -m 700 /run/cadre
+rm -f /tmp/.X?-lock /tmp/.X11-unix/X?
 env -u CADRE_SCREEN_VIEW_TOKEN runuser -u rakazo -- /usr/local/bin/rakazo-computer &
 COMPUTER_PID=$!
 trap 'kill "$COMPUTER_PID" 2>/dev/null || true' EXIT

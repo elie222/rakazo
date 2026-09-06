@@ -5,6 +5,7 @@ case "${DISPLAY:-:1}" in
   :[2-9]|:[1-9][0-9]*) PROFILE="$RAKAZO_HOME/.browser-profiles/chromium-screen-${DISPLAY#:}" ;;
   *) PROFILE="$RAKAZO_HOME/.browser-profiles/chromium" ;;
 esac
+PROFILE="${RAKAZO_BROWSER_PROFILE:-$PROFILE}"
 mkdir -p "$PROFILE"
 BIN="$(command -v chromium || command -v chromium-browser || true)"
 if [ -z "$BIN" ]; then

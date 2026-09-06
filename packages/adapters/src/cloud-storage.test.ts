@@ -37,6 +37,25 @@ const ctx: AdapterContext = {
   signal: new AbortController().signal,
 };
 describe("cloud storage", () => {
+  it("only uses a provider snapshot for the current tenant and home revision", async () => {
+    const objects = new Objects();
+    const home = new CloudAgentHomeStore(objects);
+    const dir = await mkdtemp(path.join(tmpdir(), "snapshot-cache-test-"));
+    try {
+      await writeFile(path.join(dir, "result.txt"), "one");
+      const revision = await home.commit("bot", dir, ctx);
+      await home.saveWorkspaceSnapshot("bot", revision, "modal", "opaque-snapshot", ctx);
+      expect(await home.getWorkspaceSnapshot("bot", "modal", ctx)).toBe("opaque-snapshot");
+      expect(
+        await home.getWorkspaceSnapshot("bot", "modal", { ...ctx, spaceId: "foreign" }),
+      ).toBeNull();
+      expect(await home.getWorkspaceSnapshot("bot", "other-provider", ctx)).toBeNull();
+      await home.writeFile("bot", "result.txt", "two", ctx);
+      expect(await home.getWorkspaceSnapshot("bot", "modal", ctx)).toBeNull();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
   it("isolates tenant artifacts and verifies their hashes", async () => {
     const objects = new Objects();
     const artifacts = new CloudArtifactStore(objects);

@@ -70,6 +70,7 @@ export interface SandboxProvider {
       homePath: string;
       providerRef?: string;
       providerKind?: ComputerRef["kind"];
+      workspaceSnapshot?: string;
     },
     context: AdapterContext,
   ): Promise<ComputerRef>;
@@ -127,6 +128,8 @@ export interface SandboxProvider {
     context: AdapterContext,
   ): Promise<void>;
   snapshot(computer: ComputerRef, context: AdapterContext): Promise<SnapshotRef>;
+  /** Optional acceleration cache; the portable home remains the durable fallback. */
+  snapshotWorkspace?(computer: ComputerRef, context: AdapterContext): Promise<string>;
   keepAlive?(computer: ComputerRef): Promise<void>;
   /** Drop a single-screen graphical claim for this bot so another Team bot can use the display. */
   releaseScreen?(computer: ComputerRef, context: AdapterContext): Promise<void>;
@@ -231,6 +234,18 @@ export interface AgentHomeStore {
   commit(botId: string, src: string, context: AdapterContext): Promise<string>;
   restore(botId: string, revision: string, dest: string, context: AdapterContext): Promise<void>;
   exportHome(botId: string, context: AdapterContext): AsyncIterable<PortableFile>;
+  getWorkspaceSnapshot?(
+    botId: string,
+    provider: string,
+    context: AdapterContext,
+  ): Promise<string | null>;
+  saveWorkspaceSnapshot?(
+    botId: string,
+    revision: string,
+    provider: string,
+    snapshot: string,
+    context: AdapterContext,
+  ): Promise<void>;
   readFile(
     botId: string,
     path: string,

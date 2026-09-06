@@ -9,11 +9,14 @@ import signal
 import subprocess
 import sys
 import tempfile
+import stat
+from contextlib import contextmanager
+import uuid
 import time
+import screens
 
 ROOT = Path('/home/rakazo').resolve()
 LIMIT = 64 * 1024 * 1024
-SCREEN = Path('/tmp/cadre-screen.json')
 
 def target(value):
     raw = str(value)
@@ -25,18 +28,29 @@ def target(value):
         raise ValueError('Path escapes workspace')
     return p
 
-def marker(key):
-    return Path('/tmp/cadre-process-' + hashlib.sha256(key.encode()).hexdigest())
+def workspace_parts(value):
+    raw=str(value)
+    relative=raw[len(str(ROOT)):].lstrip('/') if raw==str(ROOT) or raw.startswith(str(ROOT)+'/') else raw.lstrip('/')
+    if '\\' in relative or any(p in ('.','..') for p in relative.split('/')):raise ValueError('Invalid workspace path')
+    return [p for p in relative.split('/') if p]
 
-def ensure_directory(directory):
-    missing = []
-    cursor = directory
-    while not cursor.exists():
-        missing.append(cursor)
-        cursor = cursor.parent
-    for entry in reversed(missing):
-        entry.mkdir(exist_ok=True)
-        os.chown(entry, 1000, 1000)
+@contextmanager
+def workspace_dir(parts, create=False):
+    fd=os.open(ROOT,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
+    try:
+        for part in parts:
+            if create:
+                try:os.mkdir(part,0o700,dir_fd=fd)
+                except FileExistsError:pass
+            child=os.open(part,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW,dir_fd=fd)
+            if create:os.fchown(child,1000,1000)
+            os.close(fd);fd=child
+        yield fd
+    finally:os.close(fd)
+
+
+def marker(key):
+    return screens.STATE / ('process-' + hashlib.sha256(key.encode()).hexdigest())
 
 def demote():
     os.setgroups([])
@@ -45,17 +59,24 @@ def demote():
 
 def execute(req):
     key = req['operationId']
-    cwd = target(req.get('cwd') or '')
-    ensure_directory(cwd)
+    parts = workspace_parts(req.get('cwd') or '')
     env = {**os.environ, **req.get('env', {})}
+    if req.get('screenKey'):
+        try:
+            screen_key, state = screens.resolve(req['screenKey'], req.get('screenLease'))
+            env = {**screens.child_env(state['index'], screen_key), **req.get('env', {})}
+            env['DISPLAY'] = f":{state['index']+1}"
+        except screens.ScreenUnavailableError:
+            # File and shell work can continue without borrowing another bot's display.
+            env['DISPLAY'] = ''
     # Platform credentials never enter ordinary shell commands.
     for name in list(env):
         if name.startswith(('MODAL_', 'CADRE_SCREEN_', 'RAKAZO_COMPUTER_CONTROL_')):
             env.pop(name)
     if marker(key + ':cancel').exists():
         return {'stdout': '', 'stderr': 'Cancelled', 'code': 130}
-    with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err:
-        p = subprocess.Popen(req['argv'], cwd=cwd, env=env, stdout=out, stderr=err, start_new_session=True, preexec_fn=demote)
+    with workspace_dir(parts, create=True) as directory, tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err:
+        p = subprocess.Popen(req['argv'], cwd=f'/proc/self/fd/{directory}', pass_fds=(directory,), env=env, stdout=out, stderr=err, start_new_session=True, preexec_fn=demote)
         marker(key).write_text(str(p.pid))
         if marker(key + ':cancel').exists():
             os.killpg(p.pid, signal.SIGKILL)
@@ -76,15 +97,18 @@ def execute(req):
             marker(key).unlink(missing_ok=True)
             marker(key + ':cancel').unlink(missing_ok=True)
 
-def screenshot():
-    image = subprocess.check_output(['import', '-display', ':1', '-window', 'root', 'png:-'], timeout=20)
-    dims = subprocess.check_output(['xdotool', 'getdisplaygeometry'], env={**os.environ, 'DISPLAY': ':1'}, timeout=5).decode().split()
+def screenshot(req):
+    _, state = screens.resolve(req.get('screenKey'), req.get('screenLease'))
+    display = f":{state['index']+1}"
+    image = subprocess.check_output(['import', '-display', display, '-window', 'root', 'png:-'], timeout=20)
+    dims = subprocess.check_output(['xdotool', 'getdisplaygeometry'], env={**os.environ, 'DISPLAY': display}, timeout=5).decode().split()
     return {'image': base64.b64encode(image).decode(), 'mimeType': 'image/png', 'width': int(dims[0]), 'height': int(dims[1])}
 
 def actions(req):
     values = req.get('actions', [])
     if len(values) > 24: raise ValueError('Too many actions')
-    env = {**os.environ, 'DISPLAY': ':1'}
+    key, state = screens.resolve(req.get('screenKey'), req.get('screenLease'))
+    env = screens.child_env(state['index'], key)
     for a in values:
         kind = a['kind']
         argv = None
@@ -108,7 +132,7 @@ def actions(req):
         else: raise ValueError('Unsupported action')
         if argv: subprocess.run(argv, env=env, check=True, timeout=20)
     time.sleep(min(max(req.get('settleMs', 0), 0), 5000) / 1000)
-    return {'completed': len(values), **({'observation': screenshot()} if req.get('observe') else {})}
+    return {'completed': len(values), **({'observation': screenshot(req)} if req.get('observe') else {})}
 
 def run(req):
     op = req['op']
@@ -120,46 +144,76 @@ def run(req):
             try: os.killpg(int(p.read_text()), signal.SIGKILL)
             except ProcessLookupError: pass
         return {'ok': True}
-    if op == 'observe': return screenshot()
+    if op == 'observe': return screenshot(req)
     if op == 'input':
-        current = json.loads(SCREEN.read_text()) if SCREEN.exists() else {}
-        if not req.get('leaseId') or current.get('leaseId') != req['leaseId'] or current.get('expiresAt', 0) <= time.time():
+        current = screens.load(screens.screen_key(req.get('screenKey'))) or {}
+        if not req.get('leaseId') or current.get('controlLease') != req['leaseId'] or current.get('expiresAt', 0) <= time.time():
             raise ValueError('Control lease expired')
         return actions(req)
     if op == 'actions': return actions(req)
     if op == 'list':
-        directory = target(req['path'])
-        if not directory.exists(): return []
-        rows = []
-        for p in directory.iterdir():
-            if p.is_symlink() or not (p.is_file() or p.is_dir()): continue
-            info = p.stat()
-            rows.append({'path': str(p.relative_to(ROOT)), 'kind': 'dir' if p.is_dir() else 'file', 'size': info.st_size, 'executable': bool(info.st_mode & 0o100)})
+        parts=workspace_parts(req['path']);rows=[]
+        try:
+            with workspace_dir(parts) as fd:
+                for name in os.listdir(fd):
+                    try:info=os.stat(name,dir_fd=fd,follow_symlinks=False)
+                    except FileNotFoundError:continue
+                    if not (stat.S_ISREG(info.st_mode) or stat.S_ISDIR(info.st_mode)):continue
+                    rows.append({'path':'/'.join([*parts,name]),'kind':'dir' if stat.S_ISDIR(info.st_mode) else 'file','size':info.st_size,'executable':bool(info.st_mode&0o100)})
+        except FileNotFoundError:return []
         return rows
     if op == 'read':
-        p = target(req['path'])
-        if p.stat().st_size > min(req.get('maxBytes', LIMIT), LIMIT): raise ValueError('File exceeds size limit')
-        return {'content': base64.b64encode(p.read_bytes()).decode()}
+        parts=workspace_parts(req['path'])
+        if not parts:raise ValueError('File path required')
+        with workspace_dir(parts[:-1]) as parent:
+            fd=os.open(parts[-1],os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK,dir_fd=parent)
+            with os.fdopen(fd,'rb') as f:
+                info=os.fstat(f.fileno());limit=min(req.get('maxBytes',LIMIT),LIMIT)
+                if not stat.S_ISREG(info.st_mode) or info.st_size>limit:raise ValueError('File exceeds size limit or is not regular')
+                data=f.read(limit+1)
+                if len(data)>limit:raise ValueError('File exceeds size limit')
+                return {'content':base64.b64encode(data).decode()}
     if op == 'write':
-        p = target(req['path']); data = base64.b64decode(req['content'], validate=True)
-        if len(data) > LIMIT: raise ValueError('File exceeds size limit')
-        ensure_directory(p.parent)
-        with tempfile.NamedTemporaryFile(dir=p.parent, delete=False) as f:
-            f.write(data); tmp = Path(f.name)
-        tmp.chmod(0o700 if req.get('executable') else 0o600); os.chown(tmp, 1000, 1000); tmp.replace(p)
-        return {'ok': True}
+        parts=workspace_parts(req['path']);data=base64.b64decode(req['content'],validate=True)
+        if not parts or len(data)>LIMIT:raise ValueError('Invalid file or size')
+        with workspace_dir(parts[:-1],create=True) as parent:
+            name='.cadre-write-'+uuid.uuid4().hex
+            fd=os.open(name,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600,dir_fd=parent)
+            try:
+                with os.fdopen(fd,'wb') as f:
+                    f.write(data);os.fchmod(f.fileno(),0o700 if req.get('executable') else 0o600);os.fchown(f.fileno(),1000,1000)
+                os.replace(name,parts[-1],src_dir_fd=parent,dst_dir_fd=parent)
+            finally:
+                try:os.unlink(name,dir_fd=parent)
+                except FileNotFoundError:pass
+        return {'ok':True}
     if op == 'screen':
-        with open('/tmp/cadre-screen.lock', 'a') as lock:
-            fcntl.flock(lock, fcntl.LOCK_EX)
-            current = json.loads(SCREEN.read_text()) if SCREEN.exists() else {}
-            if req.get('interactive'):
-                if not req.get('controlToken') or not req.get('leaseId'): raise ValueError('Control lease required')
-                next_value = {'token': req['controlToken'], 'leaseId': req['leaseId'], 'expiresAt': time.time() + 3600}
-            elif current.get('leaseId') != req.get('leaseId'):
-                return {'ok': True}
-            else: next_value = {}
-            tmp = SCREEN.with_suffix('.tmp'); tmp.write_text(json.dumps(next_value)); tmp.chmod(0o600); tmp.replace(SCREEN)
-        return {'ok': True}
+        return screens.control(req.get('screenKey'), req.get('leaseId'), req.get('controlToken'), req.get('interactive'))
+    if op == 'releaseScreen': return screens.release(req.get('screenKey'), req.get('screenLease'))
+    if op == 'resolveScreen':
+        key, state = screens.resolve(req.get('screenKey'), req.get('screenLease'))
+        return {'key': key, 'index': state['index']}
+    if op == 'restoreBegin': return screens.pause_browsers()
+    if op == 'restoreEnd': return screens.resume_browsers()
+    if op == 'readBatch':
+        paths = req.get('paths', [])
+        if len(paths) > 8: raise ValueError('Too many files')
+        return [run({'op':'read', 'path':p}) for p in paths]
+    if op == 'writeBatch':
+        files = req.get('files', [])
+        if len(files) > 8: raise ValueError('Too many files')
+        for file in files: run({**file, 'op':'write'})
+        return {'ok':True}
+    if op == 'manifest':
+        rows=[];pending=[''];total=0
+        while pending:
+            for entry in run({'op':'list','path':pending.pop()}):
+                if entry['path'].startswith('.browser-profiles/') and any(part in ('Cache','Code Cache','GPUCache','GrShaderCache','ShaderCache','DawnGraphiteCache','DawnWebGPUCache','Crashpad','SingletonCookie','SingletonLock','SingletonSocket','BrowserMetrics','DevToolsActivePort','lock','.parentlock') for part in entry['path'].split('/')): continue
+                if entry['kind']=='dir': pending.append(entry['path'])
+                else:
+                    rows.append(entry);total+=entry['size']
+                if len(rows)+len(pending)>10000 or total>512*1024*1024: raise ValueError('Workspace exceeds checkpoint limit')
+        return rows
     raise ValueError('Unsupported operation')
 
 if __name__ == '__main__':

@@ -602,7 +602,7 @@ function toAgentTool(tool: ConnectorTool, host: ToolHost, exposedName: string): 
       if (tool.name === "shell") {
         return {
           command: String(raw.command ?? ""),
-          cwd: raw.cwd ? String(raw.cwd) : "/home/rakazo",
+          ...(raw.cwd ? { cwd: String(raw.cwd) } : {}),
         };
       }
       if (tool.name === "run_subagent") {

@@ -18,6 +18,8 @@ The hosted screen gateway permits module imports from the isolated viewer origin
 
 The paid marketing template is a separate licensed site, not a replacement application shell. Its source is retained privately; the public repository only has a routing boundary and branding.
 
+The continuity update adds optional native filesystem snapshot caches backed by the portable home, batched Modal file transfers, separate bot displays and a stop/reconnect correction. Shell arguments preserve the executor's per-bot working directory when the model omits `cwd`. No marketing routes, components or licensed source are changed.
+
 ## Complete path inventory
 
 | Path | Classification |
@@ -128,3 +130,16 @@ The paid marketing template is a separate licensed site, not a replacement appli
 | `infra/sandboxes/supervisor/src/index.ts` | Linux desktop applications and mobile viewer controls |
 | `infra/sandboxes/supervisor/src/mobile-controls.test.ts` | Linux desktop applications and mobile viewer controls |
 | `infra/sandboxes/computer/mobile-controls.d.ts` | Typed viewer keyboard boundary |
+| `infra/modal/screens.py` | Computer continuity and regression verification |
+| `infra/modal/test_screens.py` | Computer continuity and regression verification |
+| `infra/modal/test_files.py` | Computer continuity and regression verification |
+| `packages/adapters/src/pi-runtime-tool-dispatch.test.ts` | Computer continuity and regression verification |
+| `docs/computer-runtime.md` | Computer continuity and regression verification |
+| `docs/upstream-audit.md` | Computer continuity and regression verification |
+| `infra/sandboxes/computer/rakazo-browser` | Computer continuity and regression verification |
+| `packages/adapter-kit/src/interfaces.ts` | Computer continuity and regression verification |
+| `packages/adapter-kit/src/types.ts` | Computer continuity and regression verification |
+| `packages/adapters/src/computer-lifecycle.ts` | Computer continuity and regression verification |
+| `packages/adapters/src/computer-workspace.ts` | Computer continuity and regression verification |
+| `packages/adapters/src/pi-runtime.ts` | Computer continuity and regression verification |
+| `infra/modal/test_gateway.py` | Per-screen capability and live revocation regression coverage |

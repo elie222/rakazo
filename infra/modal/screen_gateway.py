@@ -1,5 +1,8 @@
 """The only tunneled sandbox port. Static viewer assets are public; RFB requires a capability."""
 import hmac
+import hashlib
+import re
+import screens
 import json
 import os
 from pathlib import Path
@@ -15,15 +18,27 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urlsplit(self.path)
         query = parse_qs(parsed.query)
         upgrade = self.headers.get('Upgrade', '').lower() == 'websocket'
-        port = 6080
+        key = query.get('screen', [''])[0]
+        if key and not re.fullmatch('[a-f0-9]{64}',key):
+            self.send_error(403); return
+        key = key or screens.screen_key()
+        state = screens.load(key)
+        if upgrade and query.get('screen') and not state:
+            self.send_error(403); return
+        state = state or {'index':0}
+        index = state['index']
+        port = 6080 + index * 2 if upgrade else 6080
         if upgrade:
             token = query.get('cadre_token', [''])[0]
             if query.get('view_only', ['true'])[0] == 'false':
-                try: state = json.loads(Path('/tmp/cadre-screen.json').read_text())
+                try: state = screens.load(key) or {}
                 except (FileNotFoundError, json.JSONDecodeError): state = {}
                 expected = state.get('token', '') if state.get('expiresAt', 0) > time.time() else ''
-                port = 6081
-            else: expected = os.environ.get('CADRE_SCREEN_VIEW_TOKEN', '')
+                port = 6081 + index * 2
+            else:
+                expected = os.environ.get('CADRE_SCREEN_VIEW_TOKEN', '')
+                if query.get('screen'):
+                    expected = hmac.new(expected.encode(), key.encode(), hashlib.sha256).hexdigest()
             if not expected or not hmac.compare_digest(token, expected):
                 self.send_error(403); return
         elif parsed.path == '/websockify':
@@ -31,9 +46,9 @@ class Handler(BaseHTTPRequestHandler):
         try:
             with socket.create_connection(('127.0.0.1', port), timeout=10) as upstream:
                 lines = [f'GET {parsed.path or "/"} HTTP/1.1', f'Host: 127.0.0.1:{port}']
-                for key, value in self.headers.items():
-                    if key.lower() not in ('host', 'authorization', 'cookie'):
-                        lines.append(f'{key}: {value}')
+                for header, value in self.headers.items():
+                    if header.lower() not in ('host', 'authorization', 'cookie'):
+                        lines.append(f'{header}: {value}')
                 upstream.sendall(('\r\n'.join(lines) + '\r\n\r\n').encode())
                 upstream.settimeout(None)
                 self.connection.settimeout(None)
@@ -44,8 +59,8 @@ class Handler(BaseHTTPRequestHandler):
                         data = source.recv(65536)
                         if not data: return
                         (upstream if source is self.connection else self.connection).sendall(data)
-                    if upgrade and port == 6081:
-                        try: current = json.loads(Path('/tmp/cadre-screen.json').read_text())
+                    if upgrade and query.get('view_only', ['true'])[0] == 'false':
+                        try: current = screens.load(key) or {}
                         except (FileNotFoundError, json.JSONDecodeError): return
                         if current.get('token') != token or current.get('expiresAt', 0) <= time.time(): return
         except (OSError, TimeoutError): return

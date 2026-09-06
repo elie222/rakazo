@@ -66,3 +66,15 @@ COMPUTER_E2E_MODEL=<vision-capable-openrouter-model-id> pnpm test:computer
 ```
 
 It starts the full API, provisions a real E2B desktop, serves a deterministic page inside the sandbox, and asks a real model to observe and click a button. The button creates a server-side marker; the test then requires the model to use terminal and file tools and verifies both the marker and recorded tool calls. Finally, it destroys the provider machine, boots a replacement through the stale provider reference, and verifies that the external checkpoint restored the model-created file. The command is opt-in and is not run by `pnpm test` or CI unless invoked explicitly.
+
+## Modal desktop continuity
+
+Modal uses a Debian 12 image with Fluxbox, Chromium, a file manager, a terminal and noVNC. One shared computer can keep eight independent bot displays in addition to the original desktop. Each bot display has a persistent browser profile under the shared home. Screens share files and installed tools; concurrent Chromium sessions use separate profiles. Display state and control grants live in a root-owned registry. A user takeover targets only that bot's screen and expires independently of another bot's run.
+
+At a checkpoint, the portable home is committed first. A native filesystem snapshot is then recorded as an optional acceleration cache for that exact home revision. The snapshot has a 24-hour provider TTL; the adapter accepts it for 23 hours and only for the same workspace owner and base image. Missing, expired, incompatible or invalid snapshots fall back to the portable home. Portable imports close Chromium before replacing profile files and reopen the registered browser displays afterward, including after a transfer failure. External writes advance the home revision, so an older cache cannot hide newer files.
+
+This preserves filesystem state, including installed software in a valid native snapshot. It does not preserve running processes, TCP connections or open application windows. The desktop starts again on wake. The portable fallback preserves the home and browser profiles, not system packages outside the home. Process-preserving memory snapshots remain a separate provider evaluation, not an enabled production feature.
+
+Running older images retain their existing command, file and viewer protocol until their next idle restart. They are never cached as the new base image. Stop waits for provider termination before reconnect can create a replacement.
+
+The browser viewer forwards pointer input directly. Its keyboard button focuses or blurs an input so the device can show or hide its native keyboard; it does not render a keyboard emulator. Mobile Chromium testing is not a substitute for testing a physical iPhone with Safari.

@@ -748,6 +748,34 @@ describe("Pi connector tool dispatch", () => {
     expect(maxToolCallsPerTurn({ MAX_TOOL_CALLS_PER_TURN: " 12.9 " })).toBe(12);
   });
 
+  it.each([undefined, "/home/rakazo/shared"])(
+    "preserves the executor workspace default or explicit cwd (%s)",
+    async (cwd) => {
+      fakeAgentState.invoke = { name: "shell", args: { command: "pwd", ...(cwd ? { cwd } : {}) } };
+      const executeTool = vi.fn(async () => ({ ok: true }));
+      for await (const _event of new PiAgentRuntime().run(
+        {
+          botId: "b",
+          threadId: "t",
+          runId: "r",
+          prompt: "show current folder",
+          instructions: "Use shell.",
+          history: [],
+          tools: [shellTool],
+          model: { provider: "test", id: "dispatch-test-model" },
+          executeTool,
+        },
+        { signal: new AbortController().signal },
+      )) {
+      }
+      expect(executeTool).toHaveBeenCalledWith(
+        "shell",
+        { command: "pwd", ...(cwd ? { cwd } : {}) },
+        "call-1",
+      );
+    },
+  );
+
   it("serialises object content instead of writing [object Object] for write_file", async () => {
     fakeAgentState.invoke = {
       name: "write_file",
