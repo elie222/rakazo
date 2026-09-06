@@ -1400,16 +1400,24 @@ export function createRouter(deps: RouterDeps) {
           where: { computerId: bot.computer.id, botId: bot.id },
         });
         try {
+          let providerGone = false;
           if (bot.computer.providerRef) {
             const ctx = computerContext(context.actor, bot.id, "stop");
             const ref = toComputerRef(bot.computer);
-            await checkpointAndRecordComputerWorkspace(deps, bot.computer, ref, ctx);
-            await deps.sandbox.stop(ref, ctx);
+            try {
+              await checkpointAndRecordComputerWorkspace(deps, bot.computer, ref, ctx);
+              await deps.sandbox.stop(ref, ctx);
+            } catch (error) {
+              if (!isSandboxGoneError(error)) throw error;
+              // A terminated computer cannot checkpoint again. Keep its last durable home.
+              providerGone = true;
+            }
           }
           await deps.prisma.computer.update({
             where: { id: bot.computer.id },
             data: {
               state: "stopped",
+              ...(providerGone ? { providerRef: null } : {}),
               controlHolder: "none",
               controlLeaseId: null,
               controlLeaseExpiresAt: null,

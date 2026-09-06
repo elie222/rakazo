@@ -533,6 +533,47 @@ describeJourneys("required product journeys", () => {
     } finally {
       prepare.mockRestore();
     }
+    // Stop keeps real transport errors visible, but an already-terminated
+    // provider is an idempotent stop and must preserve the last durable home.
+    const exportWorkspace = vi
+      .spyOn(sandbox, "exportWorkspace")
+      .mockImplementation(async function* () {
+        yield* [];
+        throw new Error("checkpoint connection reset");
+      });
+    try {
+      await expect(rpc(app, cookie, "computer/stop", { botId: bot.id })).rejects.toThrow();
+      const before = await prisma.computer.findUniqueOrThrow({ where: { id: record.id } });
+      expect(before.providerRef).not.toBeNull();
+      await sandbox.destroy(toComputerRef(before), {
+        spaceId: before.spaceId,
+        userId: before.userId,
+        botId: bot.id,
+        operationId: "simulate-expiry-before-stop",
+        traceId: "stop-recovery-test",
+        signal: new AbortController().signal,
+      });
+      exportWorkspace.mockImplementation(async function* () {
+        yield* [];
+        throw Object.assign(new Error("computer terminated"), { name: "SandboxNotFoundError" });
+      });
+      expect(
+        (await rpc<{ state: string }>(app, cookie, "computer/stop", { botId: bot.id })).state,
+      ).toBe("stopped");
+      const stopped = await prisma.computer.findUniqueOrThrow({ where: { id: record.id } });
+      expect(stopped.providerRef).toBeNull();
+    } finally {
+      exportWorkspace.mockRestore();
+    }
+    await rpc(app, cookie, "computer/boot", { botId: bot.id });
+    expect(
+      (
+        await rpc<{ content: string }>(app, cookie, "computer/readFile", {
+          botId: bot.id,
+          path: "notes/result.txt",
+        })
+      ).content,
+    ).toContain("recovery-ok");
   });
 
   it("4: takeover login then resume without exposing credentials", async () => {

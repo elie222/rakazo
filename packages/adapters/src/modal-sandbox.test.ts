@@ -323,6 +323,20 @@ describe("Modal sandbox boundary", () => {
       transport,
     );
   });
+  it("normalizes the SDK completed-container error without treating connection errors as expiry", async () => {
+    const f = fixture();
+    f.sandbox.exec.mockRejectedValue(
+      new Error(
+        'Sandbox sb-example123 has already completed with result: exception:"Container terminated due to user termination request"',
+      ),
+    );
+    await expect(f.provider.prepare(computer, context)).rejects.toMatchObject({
+      name: "SandboxNotFoundError",
+    });
+    const transport = new Error("connection reset while starting command");
+    f.sandbox.exec.mockRejectedValue(transport);
+    await expect(f.provider.prepare(computer, context)).rejects.toBe(transport);
+  });
   it("does not dispatch a command that was cancelled before execution", async () => {
     const f = fixture();
     await expect(async () => {

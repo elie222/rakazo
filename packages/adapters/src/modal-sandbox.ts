@@ -36,7 +36,9 @@ function modalOperationError(error: unknown): unknown {
       error.name === "ClientError" &&
       /^\/modal\.client\.ModalClient\/Sandbox\w+ FAILED_PRECONDITION: Sandbox has already finished with status \w+/.test(
         error.message,
-      ))
+      )) ||
+    (error instanceof Error &&
+      /^Sandbox sb-[A-Za-z0-9]+ has already completed with result: /.test(error.message))
   ) {
     const missing = new Error("Cloud computer no longer exists", { cause: error });
     missing.name = "SandboxNotFoundError";
