@@ -12,12 +12,13 @@ for (const width of [320, 375, 768]) {
     );
     await expect(page.getByRole("heading", { name: "Connect a model" })).toBeVisible();
     // Exercise hosted entry with the real local data API and a configured model.
-    // Only the provider capability is substituted; this is not a live OAuth test.
+    // Only hosted availability is substituted; local account auth stays unchanged.
     await page.route("**/api/auth/capabilities", (route) =>
       route.fulfill({
         json: {
-          provider: "convex-company-os",
-          companyOsOrigin: "https://company.example",
+          provider: "local",
+          hosted: true,
+          companyOsOrigin: null,
           passwordReset: false,
           resetUrl: null,
         },
@@ -31,6 +32,7 @@ for (const width of [320, 375, 768]) {
     await expect(page.getByRole("combobox", { name: "Message Researcher" })).toHaveValue(
       "Prepare a research brief for review.",
     );
+    await expect(page.getByRole("button", { name: "Workforce", exact: true })).toHaveCount(0);
     await captureScreenshot(page, testInfo, `hosted-chat-${width}`);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
       true,

@@ -128,6 +128,7 @@ import { TeachRecordingChrome, TeachStopButton } from "../components/teach/Teach
 import { readActivityMode, writeActivityMode } from "../lib/activity-mode";
 import type { ArtifactTarget } from "../lib/artifact-open";
 import { authClient } from "../lib/auth";
+import { useAuthCapabilities } from "../lib/auth-capabilities";
 import { takeInitialBootstrap } from "../lib/bootstrap";
 import {
   BOTS_SIDEBAR_EDGE_DRAG_PX,
@@ -409,6 +410,7 @@ export function ShellPage() {
     commitSnapshot(update(snapshotRef.current));
   }
   const [pluginsOpen, setPluginsOpen] = useState(false);
+  const capabilities = useAuthCapabilities();
   const [workforceOpen, setWorkforceOpen] = useState(false);
   const [mcpOpen, setMcpOpen] = useState(false);
   const [accountSettingsOpen, setAccountSettingsOpen] = useState(false);
@@ -2952,14 +2954,16 @@ export function ShellPage() {
             <Trans>Integrations</Trans>
           </span>
         </button>
-        <button
-          type="button"
-          onClick={() => setWorkforceOpen(true)}
-          className="mx-3 mb-2 flex items-center gap-3 rounded-lg px-3 py-2 text-sm hover:bg-background"
-        >
-          <Cpu size={18} />
-          <Trans>Workforce</Trans>
-        </button>
+        {capabilities?.companyOsOrigin ? (
+          <button
+            type="button"
+            onClick={() => setWorkforceOpen(true)}
+            className="mx-3 mb-2 flex items-center gap-3 rounded-lg px-3 py-2 text-sm hover:bg-background"
+          >
+            <Cpu size={18} />
+            <Trans>Workforce</Trans>
+          </button>
+        ) : null}
         <Popover open={menuOpen} onOpenChange={setMenuOpen}>
           <PopoverTrigger
             data-testid="user-menu-trigger"

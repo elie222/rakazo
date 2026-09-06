@@ -71,7 +71,7 @@ export function OnboardingPage() {
           setProvider(preferred.provider);
           setModelId(preferred.provider === OPENAI_COMPATIBLE_PROVIDER_ID ? "" : preferred.id);
         }
-        setStep(capabilities.provider === "convex-company-os" && !me.needsModel ? "bot" : "model");
+        setStep(capabilities.hosted && !me.needsModel ? "bot" : "model");
       })
       .catch(() => setStep("bot"));
     return () => {

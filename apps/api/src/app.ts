@@ -408,6 +408,7 @@ export async function createApp(
   app.get("/api/auth/capabilities", (c) =>
     c.json({
       provider: companyOsOAuth ? "convex-company-os" : "local",
+      hosted: env.sandboxProvider === "modal",
       companyOsOrigin: companyOsOAuth?.origin ?? null,
       webOrigin: env.webOrigin,
       passwordReset: !companyOsOAuth && Boolean(email),
