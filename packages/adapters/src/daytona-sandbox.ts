@@ -534,7 +534,12 @@ export class DaytonaSandboxProvider implements SandboxProvider {
       ),
     );
     this.forget(id);
-    await sandbox.delete(120, true);
+    try {
+      await sandbox.delete(120, true);
+    } catch (error) {
+      // Deletion is idempotent even when the sandbox disappears after lookup.
+      if (!isUnrecoverableDaytonaError(error)) throw error;
+    }
   }
 
   private ref(sandbox: Sandbox, botId: string, fresh: boolean): ComputerRef {

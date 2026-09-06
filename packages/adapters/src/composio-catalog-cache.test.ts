@@ -1,4 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { execFile } from "node:child_process";
+import { setImmediate } from "node:timers/promises";
+import { promisify } from "node:util";
+import { describe, expect, it, vi } from "vitest";
 import {
   createToolkitDirectoryCache,
   mergeCatalogWithConnected,
@@ -62,5 +65,73 @@ describe("composio toolkit directory cache", () => {
     );
     expect(items.find((item) => item.slug === "github")?.connected).toBe(false);
     expect(items.find((item) => item.slug === "hackernews")?.connected).toBe(true);
+  });
+
+  it("handles detached refresh rejection in a real Node process", async () => {
+    const moduleUrl = new URL("./composio-catalog-cache.ts", import.meta.url).href;
+    const { stdout } = await promisify(execFile)(
+      process.execPath,
+      [
+        "--unhandled-rejections=strict",
+        "--import=tsx",
+        "--input-type=module",
+        "--eval",
+        `
+          import { setImmediate } from "node:timers/promises";
+          import { createToolkitDirectoryCache } from ${JSON.stringify(moduleUrl)};
+          let now = 0;
+          const cache = createToolkitDirectoryCache({ ttlMs: 10, now: () => now });
+          await cache.get(async () => []);
+          now = 10;
+          await cache.get(async () => { throw new Error("directory unavailable"); });
+          await setImmediate();
+          console.log("refresh failure handled");
+        `,
+      ],
+      { timeout: 10_000, env: { ...process.env, NODE_OPTIONS: "" } },
+    );
+    expect(stdout.trim()).toBe("refresh failure handled");
+  });
+
+  it("keeps stale items after a failed refresh and retries on the next read", async () => {
+    let now = 0;
+    const cache = createToolkitDirectoryCache({ ttlMs: 10, now: () => now });
+    const first = await cache.get(async () => [
+      { slug: "gmail", name: "Gmail", logo: null, noAuth: false },
+    ]);
+    now = 10;
+    let rejectRefresh: (error: Error) => void = () => undefined;
+    const refresh = new Promise<typeof first>((_resolve, reject) => {
+      rejectRefresh = reject;
+    });
+    const loader = vi.fn(() => refresh);
+
+    expect(await cache.get(loader)).toBe(first);
+    expect(await cache.get(loader)).toBe(first);
+    expect(loader).toHaveBeenCalledTimes(1);
+    rejectRefresh(new Error("directory unavailable"));
+    await setImmediate();
+    expect(cache.peek()).toBe(first);
+
+    const updated = [{ slug: "slack", name: "Slack", logo: null, noAuth: false }];
+    const retry = vi.fn(async () => updated);
+    expect(await cache.get(retry)).toBe(first);
+    await setImmediate();
+    expect(await cache.get(retry)).toBe(updated);
+    expect(retry).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["throw", "reject"])("propagates a cold-load %s and allows retry", async (failure) => {
+    const cache = createToolkitDirectoryCache();
+    const error = new Error("directory unavailable");
+    await expect(
+      cache.get(() => {
+        if (failure === "throw") throw error;
+        return Promise.reject(error);
+      }),
+    ).rejects.toBe(error);
+    expect(cache.peek()).toBeUndefined();
+    const items = [{ slug: "gmail", name: "Gmail", logo: null, noAuth: false }];
+    expect(await cache.get(async () => items)).toBe(items);
   });
 });

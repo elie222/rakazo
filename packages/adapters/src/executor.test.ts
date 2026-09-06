@@ -56,6 +56,7 @@ describe("run tool selection", () => {
       groupId,
       trigger,
       semanticMemoryEnabled: false,
+      messagingChannelRun: false,
     }).map((tool) => tool.name);
 
   it("withholds schedule creation only from routine-triggered runs", () => {
@@ -329,6 +330,38 @@ describe("run notification preference", () => {
 });
 
 describe("createRunExecutor", () => {
+  it("excludes private summaries and memory tools from group messaging runs", () => {
+    const messages = [{ role: "user", content: "Group request" }];
+    expect(
+      threadContextForRun(
+        "messaging",
+        {
+          messages,
+          summary: "Private test detail",
+          historyCompactedUpToSeq: 12,
+        },
+        true,
+      ),
+    ).toEqual({
+      messages,
+      summary: null,
+      historyCompactedUpToSeq: null,
+      includeSemanticRecall: false,
+    });
+    const tools = selectBuiltinToolsForRun({
+      graphicalToolsAllowed: false,
+      groupId: null,
+      trigger: "messaging",
+      semanticMemoryEnabled: true,
+      messagingChannelRun: true,
+    }).map((tool) => tool.name);
+    expect(tools).not.toContain("recall_memory");
+    expect(tools).not.toContain("remember");
+    expect(tools).not.toContain("save_memory");
+    expect(tools.some((tool) => tool.startsWith("scratchpad_"))).toBe(false);
+    expect(tools).toContain("web_fetch");
+  });
+
   it("isolates routine runs from every thread-history source", () => {
     const threadContext = {
       messages: [{ role: "user", content: "Create this routine" }],
@@ -336,13 +369,13 @@ describe("createRunExecutor", () => {
       historyCompactedUpToSeq: 4,
     };
 
-    expect(threadContextForRun("routine", threadContext)).toEqual({
+    expect(threadContextForRun("routine", threadContext, false)).toEqual({
       messages: [],
       summary: null,
       historyCompactedUpToSeq: null,
       includeSemanticRecall: false,
     });
-    expect(threadContextForRun("user", threadContext)).toEqual({
+    expect(threadContextForRun("user", threadContext, false)).toEqual({
       ...threadContext,
       includeSemanticRecall: true,
     });

@@ -155,6 +155,21 @@ describe("openai-compatible provider", () => {
     });
   });
 
+  it.each([
+    ["100.100.100.200", 4],
+    ["fd00:ec2::254", 6],
+  ])("rejects local hostnames that resolve to metadata address %s", async (address, family) => {
+    const lookup = createOpenAiCompatibleLookup(new URL("http://localhost:8000/v1"), async () => [
+      { address, family },
+    ]);
+    const error = await new Promise<Error | null>((resolve) => {
+      lookup("localhost", { family: 0, all: false }, (lookupError) => resolve(lookupError));
+    });
+    expect(error).toMatchObject({
+      message: "Model server hostname resolved to a blocked metadata address",
+    });
+  });
+
   it("always exposes a catalog provider entry", () => {
     const provider = openAiCompatibleCatalogProvider();
     expect(provider.id).toBe(OPENAI_COMPATIBLE_PROVIDER_ID);

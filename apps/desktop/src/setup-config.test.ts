@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   DEFAULT_LOCAL_WEB_URL,
   desktopStackImageTag,
@@ -6,9 +6,11 @@ import {
   managedLocalOpenUrl,
   maySendDesktopStackToken,
   normalizeServerUrl,
+  PROBE_RESPONSE_LIMIT_BYTES,
   parseSetupInput,
   parseStoredSetup,
   probeFailureMessage,
+  readProbeJson,
   resolveStartupTarget,
   safeExternalUrl,
   serializeSetup,
@@ -213,6 +215,35 @@ describe("managed stack response", () => {
     expect(desktopStackImageTag({ ok: true, imageTag: "" })).toBeNull();
     expect(desktopStackImageTag({ ok: false, imageTag: "v0.2.0" })).toBeNull();
     expect(desktopStackImageTag({ json: { ok: true, imageTag: "v0.2.0" } })).toBeNull();
+  });
+
+  it("parses a bounded JSON probe response", async () => {
+    await expect(readProbeJson(Response.json({ ok: true }))).resolves.toEqual({ ok: true });
+  });
+
+  it("rejects a declared oversized response without waiting for cancellation", async () => {
+    const cancel = vi.fn(() => new Promise<void>(() => undefined));
+    const response = new Response(new ReadableStream({ cancel }), {
+      headers: { "content-length": String(PROBE_RESPONSE_LIMIT_BYTES + 1) },
+    });
+
+    await expect(readProbeJson(response)).resolves.toBeNull();
+    expect(cancel).toHaveBeenCalledOnce();
+  });
+
+  it("rejects a streamed oversized response without waiting for cancellation", async () => {
+    const cancel = vi.fn(() => new Promise<void>(() => undefined));
+    const response = new Response(
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(new Uint8Array(PROBE_RESPONSE_LIMIT_BYTES + 1));
+        },
+        cancel,
+      }),
+    );
+
+    await expect(readProbeJson(response)).resolves.toBeNull();
+    expect(cancel).toHaveBeenCalledOnce();
   });
 });
 

@@ -35,6 +35,45 @@ describe("redaction", () => {
     expect(redacted.self).toBe("[Circular]");
   });
 
+  it("redacts Error values nested in bindings", () => {
+    const cause = new Error("password=inner-secret");
+    const error = new Error("request failed with token=outer-secret", { cause });
+
+    const redacted = redactBindings({ detail: error });
+
+    expect(redacted.detail).toMatchObject({
+      name: "Error",
+      message: "request failed with token=[Redacted]",
+      cause: { name: "Error", message: "password=[Redacted]" },
+    });
+    expect(JSON.stringify(redacted.detail)).not.toMatch(/inner-secret|outer-secret/);
+  });
+
+  it("redacts string Error causes", () => {
+    const error = new Error("request failed", { cause: "token=cause-secret" });
+
+    const redacted = redactBindings({ detail: error });
+
+    expect(redacted.detail).toMatchObject({
+      name: "Error",
+      message: "request failed",
+      cause: "token=[Redacted]",
+    });
+    expect(JSON.stringify(redacted.detail)).not.toContain("cause-secret");
+  });
+
+  it("redacts secrets embedded in string binding values", () => {
+    const redacted = redactBindings({
+      detail: "token=binding-secret",
+      nested: { note: "Bearer nested-secret" },
+    });
+
+    expect(redacted).toEqual({
+      detail: "token=[Redacted]",
+      nested: { note: "Bearer [Redacted]" },
+    });
+  });
+
   it("redacts secrets embedded in free text", () => {
     const redacted = redactSensitiveText(
       "user person@example.com used Bearer supersecret and token=abc123",

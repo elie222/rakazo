@@ -92,17 +92,37 @@ describe("auth response token parsing", () => {
     );
   });
 
-  it("falls back to and decodes the Better Auth session cookie", () => {
+  it.each(["better-auth.session_token", "__Secure-better-auth.session_token"])(
+    "falls back to and decodes the %s cookie",
+    (name) => {
+      const response = new Response(null, {
+        headers: { "set-cookie": `${name}=abc%2F123%3D; Path=/; HttpOnly` },
+      });
+
+      expect(tokenFromAuthResponse(response, {})).toBe("abc/123=");
+    },
+  );
+
+  it("finds a secure session after another Set-Cookie value", () => {
     const response = new Response(null, {
-      headers: { "set-cookie": "better-auth.session_token=abc%2F123%3D; Path=/; HttpOnly" },
+      headers: {
+        "set-cookie":
+          "other=value; Path=/, __Secure-better-auth.session_token=secure-token; Path=/; HttpOnly",
+      },
     });
 
-    expect(tokenFromAuthResponse(response, {})).toBe("abc/123=");
+    expect(tokenFromAuthResponse(response, {})).toBe("secure-token");
   });
 
   it("rejects unrelated cookies and malformed response bodies", () => {
-    const response = new Response(null, { headers: { "set-cookie": "other=value; Path=/" } });
-    expect(tokenFromAuthResponse(response, { token: 123 })).toBe("");
-    expect(tokenFromAuthResponse(response, null)).toBe("");
+    const unrelated = new Response(null, {
+      headers: { "set-cookie": "notbetter-auth.session_token=attacker; Path=/" },
+    });
+    const malformed = new Response(null, {
+      headers: { "set-cookie": "better-auth.session_token=bad%ZZ; Path=/" },
+    });
+    expect(tokenFromAuthResponse(unrelated, { token: 123 })).toBe("");
+    expect(tokenFromAuthResponse(unrelated, null)).toBe("");
+    expect(tokenFromAuthResponse(malformed, {})).toBe("");
   });
 });

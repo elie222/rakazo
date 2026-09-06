@@ -311,7 +311,7 @@ msgstr "Yanıtlandı"
 #. placeholder {0}: selectedAskActionLabel(answer, actions)
 #: src/components/AskCard.tsx:20
 msgid "Answered: {0}"
-msgstr ""
+msgstr "Yanıtlandı: {0}"
 
 #: src/components/AskCard.tsx:26
 msgid "Answered: {answer}"
@@ -703,7 +703,7 @@ msgstr "Bulut"
 #: src/components/AskCard.tsx:128
 #: src/components/AskCard.tsx:133
 msgid "Code"
-msgstr ""
+msgstr "Kod"
 
 #. placeholder {0}: group.title
 #: src/pages/Shell.tsx:2558
@@ -3168,3 +3168,86 @@ msgstr "Botların {hostLabel} üzerinde çalışmasına izin verirsen işletim s
 #: src/pages/Welcome.tsx:21
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "Gerçek işler verebileceğin,<0/>her zaman açık agent takımın."
+
+#: src/components/CloudAgentCard.tsx:36
+msgid "cancelled"
+msgstr "iptal edildi"
+
+#: src/components/CloudAgentCard.tsx:38
+msgid "failed"
+msgstr "başarısız"
+
+#: src/components/CloudAgentCard.tsx:34
+msgid "finished"
+msgstr "tamamlandı"
+
+#: src/components/CloudAgentCard.tsx:44
+msgid "Pull request"
+msgstr "Çekme isteği"
+
+#: src/components/CloudAgentCard.tsx:32
+msgid "running"
+msgstr "çalışıyor"
+
+#: src/pages/KnowledgeSection.tsx:334
+msgid "Could not delete skill"
+msgstr "Beceri silinemedi"
+
+#: src/pages/KnowledgeSection.tsx:96
+#: src/pages/KnowledgeSection.tsx:142
+#: src/pages/KnowledgeSection.tsx:260
+#: src/pages/KnowledgeSection.tsx:303
+#: src/pages/KnowledgeSection.tsx:331
+msgid "Could not load"
+msgstr "Yüklenemedi"
+
+#: src/pages/KnowledgeSection.tsx:282
+msgid "Could not load skill"
+msgstr "Beceri yüklenemedi"
+
+#: src/pages/KnowledgeSection.tsx:306
+msgid "Could not save skill"
+msgstr "Beceri kaydedilemedi"
+
+#: src/pages/KnowledgeSection.tsx:212
+msgid "Download as markdown"
+msgstr "Markdown olarak indir"
+
+#: src/pages/KnowledgeSection.tsx:23
+msgid "Knowledge"
+msgstr "Bilgi"
+
+#: src/pages/KnowledgeSection.tsx:443
+msgid "New skill"
+msgstr "Yeni beceri"
+
+#: src/pages/KnowledgeSection.tsx:347
+msgid "No skills yet"
+msgstr "Henüz beceri yok"
+
+#: src/pages/KnowledgeSection.tsx:32
+#: src/pages/KnowledgeSection.tsx:54
+msgid "Nothing remembered yet"
+msgstr "Henüz hatırlanan bir şey yok"
+
+#: src/pages/KnowledgeSection.tsx:364
+msgid "read-only"
+msgstr "salt okunur"
+
+#. placeholder {0}: doc.revision
+#: src/pages/KnowledgeSection.tsx:168
+msgid "rev {0}"
+msgstr "rev {0}"
+
+#: src/pages/KnowledgeSection.tsx:49
+msgid "Shared documents"
+msgstr "Paylaşılan belgeler"
+
+#: src/pages/KnowledgeSection.tsx:25
+msgid "Skills"
+msgstr "Beceriler"
+
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/Onboarding.tsx
+msgid "Supports thinking"
+msgstr "Düşünmeyi destekler"

@@ -108,6 +108,20 @@ describe("openai-compatible URL policy", () => {
     expect(() => assertAllowedOpenAiCompatibleUrl("http://metadata.google.internal/")).toThrow(
       /blocked metadata or link-local host/,
     );
+    expect(() =>
+      assertAllowedOpenAiCompatibleUrl("http://100.100.100.200/latest/meta-data/"),
+    ).toThrow(/blocked metadata or link-local host/);
+    expect(() =>
+      assertAllowedOpenAiCompatibleUrl("http://[::ffff:100.100.100.200]/latest/meta-data/"),
+    ).toThrow(/blocked metadata or link-local host/);
+    expect(() =>
+      assertAllowedOpenAiCompatibleUrl("http://[fd00:ec2::254]/latest/meta-data/"),
+    ).toThrow(/blocked metadata or link-local host/);
+    expect(() =>
+      assertAllowedOpenAiCompatibleUrl(
+        "http://[fd00:0ec2:0000:0000:0000:0000:0000:0254]/latest/meta-data/",
+      ),
+    ).toThrow(/blocked metadata or link-local host/);
   });
 
   it("rejects public hosts unless explicitly allowed", () => {

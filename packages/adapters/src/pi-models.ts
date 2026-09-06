@@ -4,7 +4,6 @@ import type { ModelOAuthSignInMode, ThinkingLevel } from "@rakazo/contracts";
 import { LOCAL_PROVIDER_ID, registerLocalProvider } from "./pi-local-provider.js";
 import { SUBSCRIPTION_SIGN_IN_PROVIDERS } from "./pi-oauth.js";
 import {
-  OPENAI_COMPATIBLE_CATALOG_MODEL_ID,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   registerOpenAiCompatibleCatalog,
 } from "./pi-openai-compatible-provider.js";
@@ -67,7 +66,9 @@ function buildPiCatalog(): PiCatalogEntry[] {
         signIn: signInMeta?.mode,
         reasoning: Boolean(model.reasoning),
         thinkingLevels,
-        ...(model.id === OPENAI_COMPATIBLE_CATALOG_MODEL_ID ? { placeholder: true } : {}),
+        // Compatibility metadata does not prove a model is served by a user's
+        // endpoint. Keep each custom connection scoped to its entered model ID.
+        ...(provider.id === OPENAI_COMPATIBLE_PROVIDER_ID ? { placeholder: true } : {}),
       });
     }
   }

@@ -14,6 +14,7 @@ import {
   DialogHeader,
   DialogTitle,
   Input,
+  ModelThinkingOptions,
   NativeSelect,
   NativeSelectOption,
 } from "@rakazo/ui-web";
@@ -42,6 +43,7 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
   const [modelId, setModelId] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
+  const [reasoning, setReasoning] = useState(false);
   const [probeModels, setProbeModels] = useState<string[]>([]);
   const [probedBaseUrl, setProbedBaseUrl] = useState<string | null>(null);
   const [probing, setProbing] = useState(false);
@@ -108,6 +110,7 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
       setModelId(nextModel);
       if (nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID) {
         setBaseUrl(nextCredential?.baseUrl ?? "");
+        setReasoning(nextCredential?.reasoning ?? false);
       }
     }
   }
@@ -191,16 +194,16 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
   function chooseProvider(nextProvider: string) {
     cancelOAuthAttempt();
     selectionRevisionRef.current += 1;
+    const nextCredential = credentials.find((entry) => entry.provider === nextProvider);
     setProvider(nextProvider);
+    setReasoning(nextCredential?.reasoning ?? false);
     setModelId(
       nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID
-        ? (credentials.find((entry) => entry.provider === nextProvider)?.modelId ?? "")
+        ? (nextCredential?.modelId ?? "")
         : (catalog.find((entry) => entry.provider === nextProvider)?.id ?? ""),
     );
     setBaseUrl(
-      nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID
-        ? (credentials.find((entry) => entry.provider === nextProvider)?.baseUrl ?? "")
-        : "",
+      nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID ? (nextCredential?.baseUrl ?? "") : "",
     );
     detailScrollRef.current?.scrollTo({ top: 0 });
     setApiKey("");
@@ -270,6 +273,7 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
               provider: selected.provider,
               baseUrl: effectiveBaseUrl,
               modelId: modelId.trim(),
+              reasoning,
               apiKey: apiKey.trim() || undefined,
               label: selected.providerName ?? selected.provider,
             }
@@ -496,6 +500,17 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                           </Button>
                         ) : null}
                       </div>
+                      <ModelThinkingOptions
+                        reasoning={reasoning}
+                        onReasoningChange={(value) => {
+                          selectionRevisionRef.current += 1;
+                          setReasoning(value);
+                          setNotice(null);
+                        }}
+                        disabled={busy}
+                        advancedLabel={t`Advanced`}
+                        thinkingLabel={t`Supports thinking`}
+                      />
                     </>
                   ) : (
                     <>

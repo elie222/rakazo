@@ -166,6 +166,15 @@ describe("sendblue platform hooks", () => {
     expect(sendblue.channelName!(null)).toBeNull();
   });
 
+  it("accepts only supported per-message transports", () => {
+    for (const service of ["iMessage", "SMS", "RCS"]) {
+      expect(sendblue.transport!({ service })).toBe(service);
+    }
+    expect(sendblue.transport!({ service: "email" })).toBeNull();
+    expect(sendblue.transport!({ service: 42 })).toBeNull();
+    expect(sendblue.transport!(null)).toBeNull();
+  });
+
   it("derives deterministic provider-prefixed direct thread ids", () => {
     expect(sendblue.directThreadId!("+15551234567")).toMatch(/^sendblue:/);
     expect(sendblue.adapter.isDM?.(sendblue.directThreadId!("+15551234567"))).toBe(true);
@@ -214,6 +223,12 @@ describe("isMessagingEnabled", () => {
   it("is disabled under vitest even with platforms configured", () => {
     expect(process.env.VITEST).toBeTruthy();
     expect(isMessagingEnabled(messagingPlatformsFromEnv(fullEnv))).toBe(false);
+  });
+
+  it.each(["0", "false"])("does not treat VITEST=%s as an active test runner", (value) => {
+    vi.stubEnv("VITEST", value);
+    expect(isMessagingEnabled(messagingPlatformsFromEnv(fullEnv))).toBe(true);
+    vi.unstubAllEnvs();
   });
 });
 

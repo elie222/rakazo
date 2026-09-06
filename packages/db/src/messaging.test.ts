@@ -156,3 +156,115 @@ describe("messaging link codes", () => {
     expect(normalizeMessagingLinkCode(formatMessagingLinkCode("ABCD2345"))).toBe("ABCD2345");
   });
 });
+
+describe("messaging identity isolation", () => {
+  function fixture() {
+    const users = [{ id: "attacker", email: "msg-sendblue15550001111@messaging.invalid" }];
+    const identities: {
+      provider: string;
+      address: string;
+      userId: string;
+      spaceId: string;
+      botId: string;
+    }[] = [];
+    const prisma = {
+      user: {
+        findUnique: vi.fn(
+          async ({ where }: { where: { id?: string; email?: string } }) =>
+            users.find((user) => (where.id ? user.id === where.id : user.email === where.email)) ??
+            null,
+        ),
+        create: vi.fn(async ({ data }: { data: { id: string; email: string } }) => {
+          users.push(data);
+          return data;
+        }),
+      },
+      messagingIdentity: {
+        findUnique: vi.fn(
+          async ({
+            where,
+          }: {
+            where: { provider_address: { provider: string; address: string } };
+          }) =>
+            identities.find(
+              (row) =>
+                row.provider === where.provider_address.provider &&
+                row.address === where.provider_address.address,
+            ) ?? null,
+        ),
+        create: vi.fn(async ({ data }: { data: (typeof identities)[number] }) => {
+          identities.push(data);
+          return data;
+        }),
+      },
+      spaceMember: {
+        findFirst: vi.fn(async ({ where }: { where: { userId: string } }) => ({
+          spaceId: `space-${where.userId}`,
+        })),
+      },
+      bot: {
+        findFirst: vi.fn(async ({ where }: { where: { userId: string } }) => ({
+          id: `bot-${where.userId}`,
+        })),
+      },
+      thread: {
+        findFirst: vi.fn(async ({ where }: { where: { botId: string } }) => ({
+          id: `thread-${where.botId}`,
+        })),
+      },
+    };
+    const provision = (provider: string, address: string) =>
+      provisionMessagingIdentity(
+        prisma as unknown as PrismaClient,
+        { provider, address },
+        { signupsEnabled: "true", signupAllowlist: "" },
+      );
+    return { prisma, users, provision };
+  }
+
+  it("never attaches a new sender to a preclaimed synthetic email", async () => {
+    const f = fixture();
+    const result = await f.provision("sendblue", "+15550001111");
+    expect(result.userId).not.toBe("attacker");
+    expect(result.spaceId).not.toBe("space-attacker");
+    expect(f.users).toHaveLength(2);
+    expect(f.users[1]!.email).not.toBe(f.users[0]!.email);
+    expect(f.prisma.user.findUnique).toHaveBeenCalledWith({ where: { id: result.userId } });
+    expect(await f.provision("sendblue", "+15550001111")).toMatchObject({
+      userId: result.userId,
+      created: false,
+    });
+    expect(f.prisma.user.create).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps punctuation, long addresses, case, and tuple boundaries distinct", async () => {
+    const f = fixture();
+    const requests = [
+      ["slack", "a-b"],
+      ["slack", "ab"],
+      ["slack", "AB"],
+      ["slack", `${"a".repeat(70)}1`],
+      ["slack", `${"a".repeat(70)}2`],
+      ["slack-a", "b"],
+    ] as const;
+    const results = [];
+    for (const [provider, address] of requests) results.push(await f.provision(provider, address));
+    expect(new Set(results.map((result) => result.userId)).size).toBe(requests.length);
+  });
+
+  it("resumes a crash after user creation by its internal key", async () => {
+    const f = fixture();
+    f.prisma.bot.findFirst.mockRejectedValueOnce(new Error("simulated crash"));
+    await expect(f.provision("sendblue", "+15550001111")).rejects.toThrow("simulated crash");
+    const orphan = f.users[1]!;
+    expect(await f.provision("sendblue", "+15550001111")).toMatchObject({ userId: orphan.id });
+    expect(f.prisma.user.create).toHaveBeenCalledTimes(1);
+  });
+
+  it("propagates database failures instead of treating them as identity races", async () => {
+    const f = fixture();
+    f.prisma.user.create.mockRejectedValueOnce(new Error("database unavailable"));
+    await expect(f.provision("sendblue", "+15550001111")).rejects.toThrow("database unavailable");
+    expect(f.prisma.messagingIdentity.create).not.toHaveBeenCalled();
+  });
+});

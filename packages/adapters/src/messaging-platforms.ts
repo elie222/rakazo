@@ -6,6 +6,7 @@ import type { Adapter } from "chat";
 import { createLarkAdapter } from "chat-adapter-lark";
 import { createSendblueAdapter } from "chat-adapter-sendblue";
 import type { MessagingPlatform } from "./chat-sdk-surface.js";
+import { isVitestRuntime } from "./test-runtime.js";
 
 /**
  * Parsed platform credentials, filled from process.env at the composition
@@ -95,6 +96,7 @@ export function messagingPlatformsFromEnv(env: MessagingEnvironmentValues): Mess
       peekStatus: (payload) => parseSendblueStatus(payload),
       participants: (raw) => sendblueParticipants(raw, lineNumber),
       channelName: (raw) => sendblueGroupName(raw),
+      transport: (raw) => sendblueTransport(raw),
     });
   }
 
@@ -176,7 +178,7 @@ function resolveLarkDomain(value: string | undefined): "feishu" | "lark" | undef
 
 /** Never live under the test runner; tests build surfaces explicitly. */
 export function isMessagingEnabled(platforms: MessagingPlatform[]): boolean {
-  return platforms.length > 0 && !process.env.VITEST;
+  return platforms.length > 0 && !isVitestRuntime();
 }
 
 /**
@@ -220,4 +222,10 @@ function sendblueGroupName(raw: unknown): string | null {
   if (typeof raw !== "object" || raw === null) return null;
   const name = (raw as { group_display_name?: unknown }).group_display_name;
   return typeof name === "string" && name ? name : null;
+}
+
+function sendblueTransport(raw: unknown): string | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const service = (raw as { service?: unknown }).service;
+  return service === "iMessage" || service === "SMS" || service === "RCS" ? service : null;
 }

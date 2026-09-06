@@ -1324,11 +1324,35 @@ describe("computer event reduction", () => {
     expect(computerTakeoverBlocked(computer({ busyBotName: "Writer" }), "completed")).toBe(false);
   });
 
-  it("clears the busy bot when takeover is requested or granted", () => {
-    const busy = computer({ state: "running", busyBotName: "Writer" });
+  it("marks takeover requested and clears control unless the lease was retained", () => {
+    const busy = computer({ state: "running", busyBotName: "Writer", controlHolder: "bot" });
     expect(
       reduceComputerStatus(busy, event({ type: "computer.takeover.requested", payload: {} })),
-    ).toMatchObject({ busyBotName: null });
+    ).toMatchObject({
+      busyBotName: null,
+      takeoverRequested: true,
+      controlHolder: "none",
+      controlBotId: null,
+    });
+    expect(
+      reduceComputerStatus(
+        computer({
+          state: "running",
+          controlHolder: "user",
+          controlBotId: "bot-1",
+          takeoverRequested: false,
+        }),
+        event({
+          type: "computer.takeover.requested",
+          payload: { retainedControl: true },
+        }),
+      ),
+    ).toMatchObject({
+      controlHolder: "user",
+      controlBotId: "bot-1",
+      takeoverRequested: true,
+      busyBotName: null,
+    });
     expect(
       reduceComputerStatus(
         busy,

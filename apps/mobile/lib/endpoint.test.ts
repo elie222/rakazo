@@ -1,8 +1,9 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  API_PROBE_TIMEOUT_MS,
   apiBaseWarning,
   defaultApiBase,
   displayApiHost,
@@ -10,6 +11,11 @@ import {
   probeApiBase,
   usesCustomApiBase,
 } from "./endpoint.js";
+
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
 
 describe("normalizeApiBase", () => {
   it("trims, adds https, and keeps only the origin", () => {
@@ -109,6 +115,38 @@ describe("probeApiBase", () => {
     ) as unknown as typeof fetch;
     await expect(probeApiBase("https://example.com", fetchImpl)).resolves.toMatchObject({
       ok: false,
+    });
+  });
+
+  it("returns a failure when an injected fetch ignores the probe signal", async () => {
+    vi.useFakeTimers();
+    const fetchImpl = vi.fn(
+      (_input: RequestInfo | URL, _init?: RequestInit) => new Promise<Response>(() => undefined),
+    );
+
+    const pending = probeApiBase("https://app.example.com", fetchImpl as typeof fetch);
+    await vi.advanceTimersByTimeAsync(API_PROBE_TIMEOUT_MS);
+
+    await expect(pending).resolves.toMatchObject({
+      ok: false,
+      error: "Could not reach that server",
+    });
+    expect(fetchImpl.mock.calls[0]?.[1]?.signal?.aborted).toBe(true);
+  });
+
+  it("returns a failure when a health response body never settles", async () => {
+    vi.useFakeTimers();
+    const fetchImpl = vi.fn(async () => ({
+      ok: true,
+      json: () => new Promise<unknown>(() => undefined),
+    }));
+
+    const pending = probeApiBase("https://app.example.com", fetchImpl as unknown as typeof fetch);
+    await vi.advanceTimersByTimeAsync(API_PROBE_TIMEOUT_MS);
+
+    await expect(pending).resolves.toMatchObject({
+      ok: false,
+      error: "Could not reach that server",
     });
   });
 });

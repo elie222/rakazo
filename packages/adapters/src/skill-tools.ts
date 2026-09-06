@@ -2,6 +2,7 @@ import {
   buildSkillMd,
   findSkillByName,
   isSkillReadOnly,
+  mergeBuiltinSkills,
   parseSkillMd,
   type SkillRecord,
   type SkillSource,
@@ -89,7 +90,7 @@ export async function listAgentSkillRecords(
     where: { spaceId: owner.spaceId, userId: owner.userId },
     orderBy: [{ name: "asc" }, { id: "asc" }],
   });
-  return [...builtinRecords(), ...rows.map(toRecord)];
+  return mergeBuiltinSkills(builtinRecords(), rows.map(toRecord));
 }
 
 async function findOwnedSkill(

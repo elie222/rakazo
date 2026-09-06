@@ -96,13 +96,15 @@ export class DesktopSandboxProvider implements SandboxProvider {
       return { ...existing.ref, fresh: false };
     }
     const id = `desktop-${request.botId}`;
-    await mkdir(home, { recursive: true });
+    // Recursive mkdir returns undefined when the directory already exists. This
+    // survives adapter/process restarts and distinguishes live files from a new home.
+    const created = await mkdir(home, { recursive: true });
     const ref: ComputerRef = {
       id,
       botId: request.botId,
       kind: "desktop",
       providerRef: home,
-      fresh: true,
+      fresh: created !== undefined,
     };
     this.boxes.set(id, {
       ref,

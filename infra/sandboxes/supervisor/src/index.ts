@@ -22,8 +22,10 @@ import {
   computerNetworkNamesForCleanup,
   containerCreateOptions,
   containerNameFor,
+  controlPortPublicationMatches,
   hostComputerUser,
   legacyNetworkOwnedSolelyBy,
+  publishedLoopbackControlHostPort,
   resolveComputerControlEndpoint,
   resolveScreenNetworkMode,
   resolveScreenPublishTarget,
@@ -75,6 +77,9 @@ let imageReady: Promise<void> | undefined;
 let supervisorInfo: Docker.ContainerInspectInfo | undefined;
 const supervisorToken = resolveSupervisorToken(process.env);
 const screenNetworkMode = resolveScreenNetworkMode(process.env.SANDBOX_SCREEN_NETWORK);
+// Host-run supervisors on Docker Desktop (macOS/Windows) cannot reach container
+// IPs, so computer control must use a published loopback port instead.
+const controlViaLoopback = process.env.SANDBOX_CONTROL_VIA_LOOPBACK === "true";
 const computerScreens = new Map<string, Map<string, ScreenAssignment>>();
 
 const app = new Hono();
@@ -139,10 +144,15 @@ app.post("/computers", async (c) => {
       if (existing) {
         const info = await existing.inspect();
         const desired = await docker.getImage(COMPUTER_IMAGE).inspect();
+        const controlPublishOk = controlPortPublicationMatches(
+          info.HostConfig.PortBindings,
+          controlViaLoopback,
+        );
         if (
           info.Image === desired.Id &&
           (!networkMode || info.HostConfig.NetworkMode === networkMode) &&
-          info.Config.User === computerUser
+          info.Config.User === computerUser &&
+          controlPublishOk
         ) {
           if (!info.State.Running) await existing.start();
           const screenUrl = await publishedScreenUrl(
@@ -184,6 +194,7 @@ app.post("/computers", async (c) => {
           user: computerUser,
           networkMode,
           controlToken: randomUUID(),
+          publishControlPort: controlViaLoopback,
         }),
       );
       await container.start();
@@ -753,14 +764,19 @@ function computerControlEndpoint(info: Docker.ContainerInspectInfo) {
   const token = info.Config.Env?.find((value) =>
     value.startsWith("RAKAZO_COMPUTER_CONTROL_TOKEN="),
   )?.slice("RAKAZO_COMPUTER_CONTROL_TOKEN=".length);
+  const publishedHostPort = controlViaLoopback
+    ? publishedLoopbackControlHostPort(info.NetworkSettings?.Ports)
+    : undefined;
   return resolveComputerControlEndpoint({
     token,
     networkMode: info.HostConfig.NetworkMode,
     networks: info.NetworkSettings?.Networks,
+    publishedHostPort,
+    requirePublishedHostPort: controlViaLoopback,
   });
 }
 
-async function controlDesktop(
+export async function controlDesktop(
   endpoint: { url: string; token: string },
   actions: Array<z.infer<typeof computerActionSchema>>,
   display: string,
@@ -771,6 +787,9 @@ async function controlDesktop(
   try {
     response = await fetch(endpoint.url, {
       method: "POST",
+      // The computer can replace its listener; keep requests on the inspected
+      // computer's fixed endpoint instead of following it across sandbox networks.
+      redirect: "error",
       headers: {
         authorization: `Bearer ${endpoint.token}`,
         "content-type": "application/json",

@@ -1,6 +1,34 @@
 import type { MessageBlock } from "@rakazo/contracts";
 import type { Prisma, PrismaClient } from "./client.js";
 
+/** Group turns use channel inputs and their own outputs, never private thread history. */
+export function loadRunHistoryMessages(
+  prisma: PrismaClient,
+  run: { id: string; threadId: string },
+  limit: number,
+  channelId?: string,
+) {
+  return prisma.message.findMany({
+    where: {
+      threadId: run.threadId,
+      ...(channelId
+        ? {
+            OR: [
+              {
+                role: "user",
+                blocks: { array_contains: [{ kind: "channel_message", channelId }] },
+              },
+              { role: "bot", runId: run.id },
+            ],
+          }
+        : {}),
+    },
+    orderBy: { seq: "desc" },
+    take: limit,
+    select: { id: true, seq: true, role: true, runId: true, blocks: true },
+  });
+}
+
 export interface CreateThreadMessageInput {
   threadId: string;
   role: "user" | "bot" | "system";

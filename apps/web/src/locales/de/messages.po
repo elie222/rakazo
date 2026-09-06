@@ -311,7 +311,7 @@ msgstr "Beantwortet"
 #. placeholder {0}: selectedAskActionLabel(answer, actions)
 #: src/components/AskCard.tsx:20
 msgid "Answered: {0}"
-msgstr ""
+msgstr "Beantwortet: {0}"
 
 #: src/components/AskCard.tsx:26
 msgid "Answered: {answer}"
@@ -703,7 +703,7 @@ msgstr "Cloud"
 #: src/components/AskCard.tsx:128
 #: src/components/AskCard.tsx:133
 msgid "Code"
-msgstr ""
+msgstr "Code"
 
 #. placeholder {0}: group.title
 #: src/pages/Shell.tsx:2558
@@ -3168,3 +3168,86 @@ msgstr "Auf {hostLabel} fragt dein Betriebssystem nicht nach zusätzlichen Berec
 #: src/pages/Welcome.tsx:21
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "Dein Team aus jederzeit verfügbaren Agents<0/>für echte Aufgaben."
+
+#: src/components/CloudAgentCard.tsx:36
+msgid "cancelled"
+msgstr "abgebrochen"
+
+#: src/components/CloudAgentCard.tsx:38
+msgid "failed"
+msgstr "fehlgeschlagen"
+
+#: src/components/CloudAgentCard.tsx:34
+msgid "finished"
+msgstr "abgeschlossen"
+
+#: src/components/CloudAgentCard.tsx:44
+msgid "Pull request"
+msgstr "Pull Request"
+
+#: src/components/CloudAgentCard.tsx:32
+msgid "running"
+msgstr "läuft"
+
+#: src/pages/KnowledgeSection.tsx:334
+msgid "Could not delete skill"
+msgstr "Skill konnte nicht gelöscht werden"
+
+#: src/pages/KnowledgeSection.tsx:96
+#: src/pages/KnowledgeSection.tsx:142
+#: src/pages/KnowledgeSection.tsx:260
+#: src/pages/KnowledgeSection.tsx:303
+#: src/pages/KnowledgeSection.tsx:331
+msgid "Could not load"
+msgstr "Laden fehlgeschlagen"
+
+#: src/pages/KnowledgeSection.tsx:282
+msgid "Could not load skill"
+msgstr "Skill konnte nicht geladen werden"
+
+#: src/pages/KnowledgeSection.tsx:306
+msgid "Could not save skill"
+msgstr "Skill konnte nicht gespeichert werden"
+
+#: src/pages/KnowledgeSection.tsx:212
+msgid "Download as markdown"
+msgstr "Als Markdown herunterladen"
+
+#: src/pages/KnowledgeSection.tsx:23
+msgid "Knowledge"
+msgstr "Wissen"
+
+#: src/pages/KnowledgeSection.tsx:443
+msgid "New skill"
+msgstr "Neuer Skill"
+
+#: src/pages/KnowledgeSection.tsx:347
+msgid "No skills yet"
+msgstr "Noch keine Skills"
+
+#: src/pages/KnowledgeSection.tsx:32
+#: src/pages/KnowledgeSection.tsx:54
+msgid "Nothing remembered yet"
+msgstr "Noch nichts gemerkt"
+
+#: src/pages/KnowledgeSection.tsx:364
+msgid "read-only"
+msgstr "schreibgeschützt"
+
+#. placeholder {0}: doc.revision
+#: src/pages/KnowledgeSection.tsx:168
+msgid "rev {0}"
+msgstr "Rev. {0}"
+
+#: src/pages/KnowledgeSection.tsx:49
+msgid "Shared documents"
+msgstr "Geteilte Dokumente"
+
+#: src/pages/KnowledgeSection.tsx:25
+msgid "Skills"
+msgstr "Skills"
+
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/Onboarding.tsx
+msgid "Supports thinking"
+msgstr "Unterstützt Denkmodus"
