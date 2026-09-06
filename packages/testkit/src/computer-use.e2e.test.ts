@@ -141,19 +141,21 @@ describeLive("real model and E2B computer journey", () => {
 
     const originalRef = computer.providerRef;
     await handles.sandbox.destroy(computer, testContext(bot.id));
-    await rpc(handles.app, cookie, "computer/boot", { botId: bot.id });
+    // Simulate loss outside the app: the stored state still says running, so use
+    // recovery to replace the missing sandbox and restore its checkpoint.
+    await rpc(handles.app, cookie, "computer/recover", { botId: bot.id });
     const replacementBot = await handles.prisma.bot.findUniqueOrThrow({
       where: { id: bot.id },
       include: { computer: true },
     });
     const replacement = replacementBot.computer!;
-    expect(replacement.providerRef).not.toBe(originalRef);
     computer = {
       id: replacement.providerRef!,
       providerRef: replacement.providerRef!,
       botId: replacement.homeKey,
       kind: "e2b",
     };
+    expect(replacement.providerRef).not.toBe(originalRef);
     const restored = await rpc<{ content: string }>(handles.app, cookie, "computer/readFile", {
       botId: bot.id,
       path: "results/llm-confirmed.txt",
