@@ -196,9 +196,9 @@ leave Rakazo through this URL. Leave `RAKAZO_LOCAL_MODELS` blank to disable the 
 Each user can also connect their own OpenAI-compatible endpoint from **Connect a model** /
 **Settings → Models** on web and mobile. Choose **OpenAI-compatible**, enter the server base URL
 (for example `http://127.0.0.1:8000/v1`), the exact model id, and an optional API key.
-Public hosts and ordinary hostnames need `RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC=1`. Literal private
-IP, loopback, and `host.docker.internal` targets do not. To mark user-connected openai-compatible
-model ids as vision-capable (so screenshot computer tools stay available), set
+Public hosts and ordinary hostnames need `RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC=1` and HTTPS.
+Literal private IP, loopback, and `host.docker.internal` targets do not. To mark user-connected
+openai-compatible model ids as vision-capable (so screenshot computer tools stay available), set
 `RAKAZO_OPENAI_COMPATIBLE_VISION_MODELS=gpt4o-vision,llava`.
 
 For servers that accept standard `reasoning_effort`, enable **Supports thinking** under
