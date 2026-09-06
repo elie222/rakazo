@@ -68,6 +68,8 @@ it.skipIf(process.env.VERIFY_DOCKER_TEAM_SCREENS !== "1")(
     } finally {
       try {
         docker("rm", "-f", name);
+      } catch {
+        // Cleanup must not replace the original test failure.
       } finally {
         rmSync(directory, { recursive: true, force: true });
       }

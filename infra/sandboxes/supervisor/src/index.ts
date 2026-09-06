@@ -218,7 +218,7 @@ app.post("/computers", async (c) => {
 app.get("/computers/:id", async (c) => {
   const id = c.req.param("id");
   try {
-    const { container, info } = await managedContainer(
+    const { info } = await managedContainer(
       id,
       c.req.header("x-rakazo-bot-id"),
       c.req.header("x-rakazo-space-id"),
@@ -695,32 +695,40 @@ app.delete("/computers/:id/screen", async (c) => {
 
 app.post("/computers/:id/stop", async (c) => {
   const id = c.req.param("id");
+  const managed = await managedContainer(
+    id,
+    c.req.header("x-rakazo-bot-id"),
+    c.req.header("x-rakazo-space-id"),
+  ).catch(() => undefined);
+  if (!managed) return c.json({ error: "computer not found" }, 404);
+  const { container } = managed;
   try {
-    const { container, info } = await managedContainer(
-      id,
-      c.req.header("x-rakazo-bot-id"),
-      c.req.header("x-rakazo-space-id"),
-    );
     await withComputerScreenLock(id, async () => {
+      const info = await container.inspect();
       if (info.State.Running) {
         const screens = [...(computerScreens.get(id) ?? [])].map(([screenId, slot]) => ({
           screenId,
           index: slot.index,
         }));
-        const checkpoint = await runContainerCommand(container, [
-          "bash",
-          "-c",
-          checkpointScreensCommand(screens),
-        ]);
-        if (checkpoint.code !== 0)
-          throw new Error(checkpoint.stderr || "browser profiles failed to checkpoint");
-        await container.stop();
+        try {
+          const checkpoint = await runContainerCommand(container, [
+            "bash",
+            "-c",
+            checkpointScreensCommand(screens),
+          ]);
+          if (checkpoint.code !== 0)
+            throw new Error(checkpoint.stderr || "browser profiles failed to checkpoint");
+        } finally {
+          // Failed profiles remain on the durable home for recovery after restart.
+          await container.stop();
+          clearComputerScreenRegistry(computerScreens, id);
+        }
       }
       clearComputerScreenRegistry(computerScreens, id);
     });
     return c.json({ ok: true });
   } catch {
-    return c.json({ error: "computer not found" }, 404);
+    return c.json({ error: "computer failed to stop or checkpoint browser profiles" }, 500);
   }
 });
 

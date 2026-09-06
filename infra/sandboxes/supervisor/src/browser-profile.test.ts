@@ -1,5 +1,13 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -43,6 +51,56 @@ function fixture() {
 }
 
 describe("durable browser profiles", () => {
+  it.each(["seed", "checkpoint"])(
+    "recovers an interrupted shared-profile swap before %s",
+    (operation) => {
+      const { shared, profile, run } = fixture();
+      writeFileSync(path.join(shared, "login"), "saved-sign-in");
+      writeFileSync(path.join(shared, ".rakazo-generation"), "4");
+      expect(run(prepareBrowserProfileCommand("writer")).status).toBe(0);
+      writeFileSync(path.join(profile("writer"), "login"), "new-sign-in");
+      const stale = `${shared}.previous-old`;
+      mkdirSync(stale);
+      writeFileSync(path.join(stale, ".rakazo-generation"), "3");
+      renameSync(shared, `${shared}.previous-interrupted`);
+
+      if (operation === "seed") {
+        expect(run(prepareBrowserProfileCommand("reader")).status).toBe(0);
+        expect(readFileSync(path.join(profile("reader"), "login"), "utf8")).toBe("saved-sign-in");
+        expect(readFileSync(path.join(profile("reader"), ".rakazo-base-generation"), "utf8")).toBe(
+          "4\n",
+        );
+      } else {
+        expect(run(syncSharedBrowserProfileCommand("writer")).status).toBe(0);
+        expect(readFileSync(path.join(shared, "login"), "utf8")).toBe("new-sign-in");
+        expect(readFileSync(path.join(shared, ".rakazo-generation"), "utf8")).toBe("5\n");
+      }
+    },
+  );
+
+  it("attempts later checkpoints after a copy failure and preserves the failed profile", () => {
+    const { shared, profile, run } = fixture();
+    for (const bot of ["broken", "healthy"]) {
+      expect(run(prepareBrowserProfileCommand(bot)).status).toBe(0);
+      writeFileSync(path.join(profile(bot), "login"), bot);
+    }
+    const result = run(
+      [
+        `cp() { case "$*" in *'${browserProfilePathForScreen("broken")}'*) return 1 ;; esac; command cp "$@"; }`,
+        "export -f cp",
+        checkpointScreensCommand([
+          { screenId: "broken", index: 0 },
+          { screenId: "healthy", index: 1 },
+        ]),
+      ].join("\n"),
+    );
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("computer screen checkpoint failed");
+    expect(readFileSync(path.join(shared, "login"), "utf8")).toBe("healthy");
+    expect(readFileSync(path.join(profile("broken"), "login"), "utf8")).toBe("broken");
+    expect(existsSync(profile("healthy"))).toBe(false);
+  });
+
   it("checkpoints viewer-only profiles on stop and promotes the controller last", () => {
     const { shared, runtime, profile, run } = fixture();
     for (const bot of ["controller", "viewer"]) {

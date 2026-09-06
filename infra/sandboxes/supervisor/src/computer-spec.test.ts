@@ -191,7 +191,7 @@ describe("graphical computer spec", () => {
       chmodSync(chromium, 0o755);
 
       const run = (display: string, args: string[] = []) => {
-        const result = spawnSync("bash", [path.join(root, "rakazo-browser"), ...args], {
+        const result = spawnSync("sh", [path.join(root, "rakazo-browser"), ...args], {
           env: {
             ...process.env,
             DISPLAY: display,
@@ -210,6 +210,13 @@ describe("graphical computer spec", () => {
         expect(run(":1").some((arg) => arg.startsWith("--remote-debugging-port="))).toBe(true);
         expect(run(":2")).toContain(`--user-data-dir=${home}/.browser-profiles/chromium-screen-2`);
         expect(run(":2")).toContain("--remote-debugging-port=9223");
+        for (const display of [8, 9]) {
+          const args = run(`:0${display}.0`);
+          expect(args).toContain(`--remote-debugging-port=${9221 + display}`);
+          expect(args).toContain(
+            `--user-data-dir=${home}/.browser-profiles/chromium-screen-${display}`,
+          );
+        }
         const explicit = run(":3", [`--user-data-dir=${home}/custom-profile`]);
         expect(explicit).toContain(`--user-data-dir=${home}/custom-profile`);
         expect(explicit).not.toContain(

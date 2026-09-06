@@ -271,6 +271,22 @@ export function browserProfilePathForScreen(screenId: string) {
 
 const sharedBrowserProfile = "/home/rakazo/.browser-profiles/chromium";
 
+function recoverSharedBrowserProfileCommand() {
+  return [
+    `if [ ! -d ${sharedBrowserProfile} ]; then`,
+    "  recovery_profile=''",
+    "  recovery_generation=-1",
+    `  for candidate in ${sharedBrowserProfile}.previous-*; do`,
+    '    [ -d "$candidate" ] || continue',
+    '    generation=$(sed -n "1p" "$candidate/.rakazo-generation" 2>/dev/null || printf 0)',
+    "    case \"$generation\" in ''|*[!0-9]*) generation=0 ;; esac",
+    '    if [ "$generation" -gt "$recovery_generation" ]; then recovery_profile="$candidate"; recovery_generation="$generation"; fi',
+    "  done",
+    `  if [ -n "$recovery_profile" ]; then mv "$recovery_profile" ${sharedBrowserProfile}; fi`,
+    "fi",
+  ].join("\n");
+}
+
 function browserPidPathForScreen(screenId: string) {
   return `/tmp/rakazo/browser-pid-${browserKeyForScreen(screenId)}`;
 }
@@ -319,6 +335,7 @@ export function syncSharedBrowserProfileCommand(screenId: string, force = false)
     `shared=${shellQuote(sharedBrowserProfile)}`,
     `next=${shellQuote(next)}`,
     `previous=${shellQuote(previous)}`,
+    recoverSharedBrowserProfileCommand(),
     'current_generation=$(sed -n "1p" "$shared/.rakazo-generation" 2>/dev/null || printf 0)',
     'baseline_generation=$(sed -n "1p" "$profile/.rakazo-base-generation" 2>/dev/null || printf 0)',
     "case \"$current_generation\" in ''|*[!0-9]*) current_generation=0 ;; esac",
@@ -415,15 +432,17 @@ export function stopExtraScreenCommand(index: number, screenId: string, checkpoi
 export function checkpointScreensCommand(screens: Array<{ screenId: string; index: number }>) {
   return [
     "set -eu",
+    "checkpoint_failed=0",
     ...[false, true].flatMap((authoritative) =>
       screens.map(({ screenId, index }) =>
         [
           `if [ ${authoritative ? "" : "! "}-s ${controlTokenPath(index)} ]; then`,
-          syncSharedBrowserProfileCommand(screenId, authoritative),
+          `  bash -eu -c ${shellQuote(syncSharedBrowserProfileCommand(screenId, authoritative))} || checkpoint_failed=1`,
           "fi",
         ].join("\n"),
       ),
     ),
+    'if [ "$checkpoint_failed" -ne 0 ]; then echo "computer screen checkpoint failed" >&2; exit 1; fi',
   ].join("\n");
 }
 
@@ -466,6 +485,7 @@ export function prepareBrowserProfileCommand(screenId: string) {
   const profile = browserProfilePathForScreen(screenId);
   const seed = `${profile}.seed`;
   return [
+    recoverSharedBrowserProfileCommand(),
     `if [ ! -d ${profile} ]; then`,
     `  rm -rf ${seed}`,
     `  mkdir -p ${seed}`,
