@@ -67,6 +67,12 @@ describe("graphical computer spec", () => {
       "6094/tcp": {},
       "6095/tcp": {},
     });
+    // Browser debugging stays inside the computer trust boundary.
+    for (let display = 1; display <= 8; display += 1) {
+      const cdpPort = `${9221 + display}/tcp`;
+      expect(options.ExposedPorts).not.toHaveProperty(cdpPort);
+      expect(options.HostConfig.PortBindings).not.toHaveProperty(cdpPort);
+    }
     expect(options.ExposedPorts).not.toHaveProperty("7070/tcp");
     expect(options.HostConfig.PortBindings).not.toHaveProperty("7070/tcp");
     expect(options.HostConfig.PortBindings["6080/tcp"]?.[0]?.HostIp).toBe("127.0.0.1");
@@ -148,6 +154,8 @@ describe("graphical computer spec", () => {
     expect(browser).toMatch(/chromium-screen-\$\{DISPLAY/);
     expect(browser).toMatch(/USER_DATA_DIR_SET/);
     expect(desktop).toMatch(/Exec=\/usr\/local\/bin\/rakazo-browser %U/);
+    expect(dockerfile).toMatch(/rakazo-page-browser/);
+    expect(browser).toMatch(/remote-debugging-port/);
     expect(desktop).toMatch(/x-scheme-handler\/http/);
     expect(desktop).toMatch(/x-scheme-handler\/https/);
     expect(start).not.toMatch(/windowsize 1280 800/);
@@ -183,7 +191,9 @@ describe("graphical computer spec", () => {
 
       try {
         expect(run(":1")).toContain(`--user-data-dir=${home}/.browser-profiles/chromium`);
+        expect(run(":1").some((arg) => arg.startsWith("--remote-debugging-port="))).toBe(true);
         expect(run(":2")).toContain(`--user-data-dir=${home}/.browser-profiles/chromium-screen-2`);
+        expect(run(":2")).toContain("--remote-debugging-port=9223");
         const explicit = run(":3", [`--user-data-dir=${home}/custom-profile`]);
         expect(explicit).toContain(`--user-data-dir=${home}/custom-profile`);
         expect(explicit).not.toContain(
