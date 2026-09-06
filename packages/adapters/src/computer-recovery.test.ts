@@ -133,7 +133,6 @@ describe("computer recovery preserves live work", () => {
     ).toBe("winner work");
   });
 
-
   it("claims an abandoned booting computer only once when callers have no screenLeaseId", async () => {
     const { deps, row, computer } = await fixture();
     row.state = "booting";
@@ -148,11 +147,8 @@ describe("computer recovery preserves live work", () => {
     });
     const provision = vi.spyOn(deps.sandbox, "provision");
     const setTimeoutReal = globalThis.setTimeout;
-    vi.stubGlobal(
-      "setTimeout",
-      ((fn: (...args: never[]) => void, _ms?: number, ...args: never[]) =>
-        setTimeoutReal(fn, 0, ...args)) as unknown as typeof setTimeout,
-    );
+    vi.stubGlobal("setTimeout", ((fn: (...args: never[]) => void, _ms?: number, ...args: never[]) =>
+      setTimeoutReal(fn, 0, ...args)) as unknown as typeof setTimeout);
     try {
       const results = await Promise.allSettled([
         provisionComputer(deps, row.id, context),

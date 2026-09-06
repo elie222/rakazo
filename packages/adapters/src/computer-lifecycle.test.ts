@@ -167,11 +167,8 @@ describe("computer provisioning", () => {
     };
 
     const setTimeoutReal = globalThis.setTimeout;
-    vi.stubGlobal(
-      "setTimeout",
-      ((fn: (...args: never[]) => void, _ms?: number, ...args: never[]) =>
-        setTimeoutReal(fn, 0, ...args)) as unknown as typeof setTimeout,
-    );
+    vi.stubGlobal("setTimeout", ((fn: (...args: never[]) => void, _ms?: number, ...args: never[]) =>
+      setTimeoutReal(fn, 0, ...args)) as unknown as typeof setTimeout);
     try {
       await expect(provisionComputer(deps, "computer-1", context)).rejects.toBeInstanceOf(
         ComputerBusyError,
@@ -207,11 +204,8 @@ describe("computer provisioning", () => {
       },
     );
     const setTimeoutReal2 = globalThis.setTimeout;
-    vi.stubGlobal(
-      "setTimeout",
-      ((fn: (...args: never[]) => void, _ms?: number, ...args: never[]) =>
-        setTimeoutReal2(fn, 0, ...args)) as unknown as typeof setTimeout,
-    );
+    vi.stubGlobal("setTimeout", ((fn: (...args: never[]) => void, _ms?: number, ...args: never[]) =>
+      setTimeoutReal2(fn, 0, ...args)) as unknown as typeof setTimeout);
     try {
       await expect(
         provisionComputer(deps, "computer-1", {
@@ -238,7 +232,6 @@ describe("computer provisioning", () => {
     );
   });
 
-
   it("activates a boot even if another Team bot takes a lease mid-provision", async () => {
     const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-team-lease-mid-boot-"));
     const row = {
@@ -252,7 +245,13 @@ describe("computer provisioning", () => {
       updatedAt: new Date("2024-01-01T00:00:00.000Z"),
     };
     const updateMany = vi.fn(
-      async ({ where, data }: { where: Record<string, unknown>; data: Record<string, unknown> }) => {
+      async ({
+        where,
+        data,
+      }: {
+        where: Record<string, unknown>;
+        data: Record<string, unknown>;
+      }) => {
         const matches = ["id", "state", "providerRef", "kind", "updatedAt"].every(
           (key) => !(key in where) || where[key] === row[key as keyof typeof row],
         );
@@ -301,7 +300,6 @@ describe("computer provisioning", () => {
     }
   });
 
-
   it.each([
     { stage: "prepare", rollbackFails: false },
     { stage: "restore", rollbackFails: false },
@@ -321,7 +319,7 @@ describe("computer provisioning", () => {
         scope: "dedicated",
         state: "running",
         controlLeaseId: null,
-          updatedAt: new Date("2024-01-01T00:00:00.000Z"),
+        updatedAt: new Date("2024-01-01T00:00:00.000Z"),
       };
       const ref = {
         id: "provider-2",
@@ -405,7 +403,7 @@ describe("computer provisioning", () => {
       scope: "dedicated",
       state: "running",
       controlLeaseId: null,
-          updatedAt: new Date("2024-01-01T00:00:00.000Z"),
+      updatedAt: new Date("2024-01-01T00:00:00.000Z"),
     };
     const ref = {
       id: "provider-2",
@@ -484,7 +482,7 @@ describe("computer provisioning", () => {
             scope: "dedicated",
             state: "running",
             controlLeaseId: null,
-          updatedAt: new Date("2024-01-01T00:00:00.000Z"),
+            updatedAt: new Date("2024-01-01T00:00:00.000Z"),
           }),
           updateMany: vi
             .fn()
@@ -752,7 +750,7 @@ describe("computer provisioning", () => {
             scope: "dedicated",
             state: "running",
             controlLeaseId: null,
-          updatedAt: new Date("2024-01-01T00:00:00.000Z"),
+            updatedAt: new Date("2024-01-01T00:00:00.000Z"),
           }),
           updateMany: vi.fn().mockResolvedValue({ count: 1 }),
           update: vi.fn(),
@@ -1200,7 +1198,7 @@ describe("computer replacement", () => {
       scope: "dedicated",
       state: "running",
       controlLeaseId: null,
-          updatedAt: new Date("2024-01-01T00:00:00.000Z"),
+      updatedAt: new Date("2024-01-01T00:00:00.000Z"),
       homeRevision: revision,
     };
     const findUniqueOrThrow = vi
@@ -1485,7 +1483,7 @@ describe("computer replacement", () => {
         state: "running",
         controlHolder: "user",
         controlLeaseId: null,
-          updatedAt: new Date("2024-01-01T00:00:00.000Z"),
+        updatedAt: new Date("2024-01-01T00:00:00.000Z"),
         controlLeaseExpiresAt: null,
         controlBotId: "bot-1",
       })
@@ -1498,7 +1496,7 @@ describe("computer replacement", () => {
         state: "running",
         controlHolder: "none",
         controlLeaseId: null,
-          updatedAt: new Date("2024-01-01T00:00:00.000Z"),
+        updatedAt: new Date("2024-01-01T00:00:00.000Z"),
         controlLeaseExpiresAt: null,
         controlBotId: null,
       });
@@ -1753,7 +1751,7 @@ describe("computer replacement", () => {
         scope: "dedicated",
         state: "stopped",
         controlLeaseId: null,
-          updatedAt: new Date("2024-01-01T00:00:00.000Z"),
+        updatedAt: new Date("2024-01-01T00:00:00.000Z"),
       })
       .mockResolvedValue({
         id: "computer-1",
@@ -1763,7 +1761,7 @@ describe("computer replacement", () => {
         scope: "dedicated",
         state: "stopped",
         controlLeaseId: null,
-          updatedAt: new Date("2024-01-01T00:00:00.000Z"),
+        updatedAt: new Date("2024-01-01T00:00:00.000Z"),
       });
     const prisma = {
       computer: { findUniqueOrThrow, updateMany, update },
@@ -1849,7 +1847,7 @@ describe("computer replacement", () => {
       scope: "dedicated",
       state: "running",
       controlLeaseId: null,
-          updatedAt: new Date("2024-01-01T00:00:00.000Z"),
+      updatedAt: new Date("2024-01-01T00:00:00.000Z"),
       homeRevision: null,
     };
     const findUniqueOrThrow = vi
@@ -1908,7 +1906,7 @@ describe("computer replacement", () => {
       scope: "dedicated",
       state: "running",
       controlLeaseId: null,
-          updatedAt: new Date("2024-01-01T00:00:00.000Z"),
+      updatedAt: new Date("2024-01-01T00:00:00.000Z"),
       homeRevision: null,
     };
     const updateMany = vi.fn().mockResolvedValueOnce({ count: 1 }).mockResolvedValue({ count: 1 });
