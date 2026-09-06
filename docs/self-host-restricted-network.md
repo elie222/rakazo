@@ -60,8 +60,8 @@ RAKAZO_IMAGE=registry.example.com/mirror/rakazo/app
 RAKAZO_IMAGE_TAG=edge
 RAKAZO_COMPUTER_IMAGE=registry.example.com/mirror/rakazo/computer
 RAKAZO_COMPUTER_IMAGE_TAG=edge
-POSTGRES_IMAGE=registry.example.com/mirror/postgres@sha256:<trusted-postgres-digest>
-BUSYBOX_IMAGE=registry.example.com/mirror/busybox@sha256:<trusted-busybox-digest>
+POSTGRES_IMAGE=registry.example.com/library/postgres@sha256:<trusted-postgres-digest>
+BUSYBOX_IMAGE=registry.example.com/library/busybox@sha256:<trusted-busybox-digest>
 ```
 
 Mirror both app and computer images and pair their tags to the same published version. Arm64

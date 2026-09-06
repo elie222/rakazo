@@ -97,7 +97,7 @@ Generate the required application secrets with openssl; do not ask me to invent 
 Preflight:
 
 - Verify Git, Node.js, pnpm, Docker, and Docker Compose.
-- Use a Node.js version supported by `engines.node` and the pnpm version declared in `packageManager` in the root `package.json`. Prefer Corepack; if unavailable, use `npx --yes pnpm@<declared-version>` instead of globally installing a different version. Show the effective versions.
+- Use a Node.js version supported by `engines.node` and the pnpm version declared in `packageManager` in the root `package.json`. Prefer Corepack; if unavailable, use `npx --yes pnpm@<declared-version>` instead of globally installing a different version. Use that same executable for every later `pnpm` command, including verification and restart commands. Show the effective versions.
 - Verify the Docker daemon is running.
 - Check whether `127.0.0.1` ports 5433, 3100, 5173, and 7091 are available. Resolve conflicts without touching unrelated workloads.
 
@@ -105,7 +105,7 @@ Setup:
 
 1. Clone the repository if needed and enter its root.
 2. Read `AGENTS.md`, `README.md`, `.env.example`, and the root `package.json` before acting. Follow repository instructions if they have changed since this prompt was written.
-3. If `.env` does not exist, copy `.env.example` to `.env`. Generate `BETTER_AUTH_SECRET`, `ENCRYPTION_KEY`, `SCREEN_PROXY_SECRET`, and `SANDBOX_SUPERVISOR_TOKEN` independently with `openssl rand -hex 32` (64 hex characters each). Keep local defaults for Postgres, origins, Pi, Docker, and Graphile unless the preflight found a conflict. Add only the model and managed-connector credentials I selected. Leave optional credentials blank.
+3. If `.env` does not exist, copy `.env.example` to `.env`. In a new file, generate `BETTER_AUTH_SECRET`, `ENCRYPTION_KEY`, `SCREEN_PROXY_SECRET`, and `SANDBOX_SUPERVISOR_TOKEN` independently with `openssl rand -hex 32` (64 hex characters each). For an existing file, check those keys without printing values and generate only absent keys. Preserve existing values; if a required value is empty, ask before replacing it. Keep local defaults for Postgres, origins, Pi, Docker, and Graphile unless the preflight found a conflict. Add only the model and managed-connector credentials I selected. Leave optional credentials blank.
 4. Confirm `.env` is ignored and that no secret-bearing file is staged.
 5. Start only local Postgres:
 
