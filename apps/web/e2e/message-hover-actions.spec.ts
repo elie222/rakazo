@@ -56,7 +56,8 @@ test("message hover shows beside-bubble actions; reply links to parent", async (
   await expect(botToolbar.getByRole("button", { name: "More" })).toBeVisible();
   // Snug to the visible bot bubble (not a wider frame). Narration wraps the
   // bubble in w-fit so the rail's offset parent matches the bubble edge.
-  const botBubble = botRow.getByTestId("message-bot-bubble");
+  // A message can render several bubbles; pin geometry to the first one.
+  const botBubble = botRow.getByTestId("message-bot-bubble").first();
   await expect
     .poll(async () => {
       const railBox = await botRail.boundingBox();
