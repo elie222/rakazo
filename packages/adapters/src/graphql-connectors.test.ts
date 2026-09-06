@@ -576,6 +576,68 @@ describe("GraphQL execution failures", () => {
     expect((result as { data: string }).data.length).toBeLessThanOrEqual(1_000_000);
   });
 
+  it("rejects malformed responses that exceed the result limit", async () => {
+    const operation = importGraphqlSchema(STAR_WARS_INTROSPECTION)[0]!;
+    await expect(
+      executeGraphqlOperation(
+        "https://graphql.example.test/graphql",
+        { auth: { type: "none" }, headers: {}, operations: [operation] },
+        operation,
+        {},
+        undefined,
+        new AbortController().signal,
+        {
+          fetch: async () =>
+            new Response(`<html>${"x".repeat(1_000_000)}</html>`, {
+              status: 200,
+              headers: { "content-type": "text/html" },
+            }),
+          resolveHostname: async () => [{ address: "203.0.113.10", family: 4 as const }],
+        },
+      ),
+    ).rejects.toThrow(/not valid JSON/);
+  });
+
+  it("rejects GraphQL errors that exceed the result limit", async () => {
+    const operation = importGraphqlSchema(STAR_WARS_INTROSPECTION)[0]!;
+    await expect(
+      executeGraphqlOperation(
+        "https://graphql.example.test/graphql",
+        { auth: { type: "none" }, headers: {}, operations: [operation] },
+        operation,
+        {},
+        undefined,
+        new AbortController().signal,
+        {
+          fetch: async () =>
+            Response.json({
+              errors: [{ message: "Oversized operation failed" }],
+              padding: "x".repeat(1_000_000),
+            }),
+          resolveHostname: async () => [{ address: "203.0.113.10", family: 4 as const }],
+        },
+      ),
+    ).rejects.toThrow(/Oversized operation failed/);
+  });
+
+  it("rejects responses that exceed the validation limit", async () => {
+    const operation = importGraphqlSchema(STAR_WARS_INTROSPECTION)[0]!;
+    await expect(
+      executeGraphqlOperation(
+        "https://graphql.example.test/graphql",
+        { auth: { type: "none" }, headers: {}, operations: [operation] },
+        operation,
+        {},
+        undefined,
+        new AbortController().signal,
+        {
+          fetch: async () => Response.json({ data: { value: "x".repeat(2_000_000) } }),
+          resolveHostname: async () => [{ address: "203.0.113.10", family: 4 as const }],
+        },
+      ),
+    ).rejects.toThrow(/validation limit/);
+  });
+
   it("yields type error from InstalledConnectorProvider on GraphQL errors array", async () => {
     const events = await executeGraphqlProvider(async () =>
       Response.json({ errors: [{ message: "Field 'hello' is required" }], data: null }),

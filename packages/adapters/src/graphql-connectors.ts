@@ -8,6 +8,8 @@ import {
 
 const HeaderValue = z.string().max(2_048);
 const MAX_GRAPHQL_SELECTION_CHARS = 6_000;
+const MAX_GRAPHQL_RESULT_BYTES = 1_000_000;
+const MAX_GRAPHQL_VALIDATION_BYTES = 2_000_000;
 const HeaderName = z
   .string()
   .min(1)
@@ -320,12 +322,15 @@ export async function executeGraphqlOperation(
       body: JSON.stringify({ query: document, variables, operationName: opName }),
       signal: combineSignals(signal, AbortSignal.timeout(30_000)),
     });
-    const { text, truncated } = await readBoundedText(response, 1_000_000);
+    const { text, truncated: validationTruncated } = await readBoundedText(
+      response,
+      MAX_GRAPHQL_VALIDATION_BYTES,
+    );
     if (!response.ok) {
       throw new Error(`GraphQL request returned HTTP ${response.status}`);
     }
-    if (truncated) {
-      return { status: response.status, data: text, truncated: true };
+    if (validationTruncated) {
+      throw new Error("GraphQL response exceeded the validation limit");
     }
     let payload: unknown;
     try {
@@ -345,6 +350,10 @@ export async function executeGraphqlOperation(
           ? first.message
           : "GraphQL operation failed";
       throw new Error(message);
+    }
+    const bounded = boundUtf8Text(text, MAX_GRAPHQL_RESULT_BYTES);
+    if (bounded.truncated) {
+      return { status: response.status, data: bounded.text, truncated: true };
     }
     return {
       status: response.status,
@@ -602,6 +611,23 @@ async function readBoundedText(
     bytes += value.byteLength;
     text += decoder.decode(value, { stream: true });
   }
+}
+
+function boundUtf8Text(value: string, maximumBytes: number): { text: string; truncated: boolean } {
+  const encoded = new TextEncoder().encode(value);
+  if (encoded.byteLength <= maximumBytes) return { text: value, truncated: false };
+  let end = maximumBytes;
+  while (end > 0) {
+    try {
+      return {
+        text: new TextDecoder("utf-8", { fatal: true }).decode(encoded.subarray(0, end)),
+        truncated: true,
+      };
+    } catch {
+      end -= 1;
+    }
+  }
+  return { text: "", truncated: true };
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
