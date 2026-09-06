@@ -18,10 +18,11 @@ bash install-images.sh
 ```
 
 The installer downloads `docker-compose.images.yml` and `.env.images.example`, creates `.env` with
-random secrets, then pulls and starts the images. It preserves an existing `.env` when rerun. To
-customize the public URL, image tag, or optional providers before startup, run
-`bash install-images.sh --prepare-only`, edit `.env`, then run `bash install-images.sh`.
-Flags may be combined in either order: `--prepare-only`, `--local`.
+random secrets, then pulls and starts the images. It preserves an existing `.env` when rerun. For
+the installer secret list, non-reuse rules, and recovery, see
+[Self-host secrets checklist](./self-host-secrets.md). To customize the public URL, image tag, or
+optional providers before startup, run `bash install-images.sh --prepare-only`, edit `.env`, then
+run `bash install-images.sh`. Flags may be combined in either order: `--prepare-only`, `--local`.
 
 `SANDBOX_PROVIDER` defaults to `docker`. The images Compose file runs a sandbox supervisor
 (from the app image, on the internal network only) and pulls `ghcr.io/elie222/rakazo/computer`.
