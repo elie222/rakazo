@@ -1825,8 +1825,11 @@ msgstr "Marcar como Não Lida"
 msgid "Max"
 msgstr "Máximo"
 
+#: src/pages/PluginsOverlay.tsx:987
+msgid "Manage MCP servers"
+msgstr "Gerenciar servidores MCP"
+
 #: src/pages/McpServersOverlay.tsx:255
-#: src/pages/PluginsOverlay.tsx:759
 msgid "MCP servers"
 msgstr "Servidores MCP"
 

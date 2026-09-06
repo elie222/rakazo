@@ -768,19 +768,7 @@ export function PluginsOverlay({
                 </summary>
 
                 <div className="mt-4 space-y-4">
-                  {onOpenMcp ? (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="rounded-full"
-                      size="sm"
-                      onClick={onOpenMcp}
-                    >
-                      <Trans>MCP servers</Trans>
-                    </Button>
-                  ) : null}
-
-                  <div className="flex flex-wrap gap-2">
+                  <div className="flex flex-wrap gap-2" data-testid="integrations-advanced-add">
                     <Button
                       type="button"
                       variant="secondary"
@@ -988,6 +976,17 @@ export function PluginsOverlay({
                         </Button>
                       </div>
                     ))}
+                    {onOpenMcp ? (
+                      <Button
+                        type="button"
+                        variant="link"
+                        size="xs"
+                        className="mt-2 px-0 text-muted-foreground"
+                        onClick={onOpenMcp}
+                      >
+                        <Trans>Manage MCP servers</Trans>
+                      </Button>
+                    ) : null}
                   </div>
                 </div>
               </details>
