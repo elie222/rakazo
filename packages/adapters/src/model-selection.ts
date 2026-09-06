@@ -11,7 +11,7 @@ type ModelCredential = Awaited<ReturnType<typeof findDefaultModelCredential>>;
 
 export async function validateConnectedModelChoice(
   prisma: PrismaClient,
-  actor: Actor,
+  actor: Pick<Actor, "userId" | "spaceId">,
   provider: string,
   modelId: string,
 ) {

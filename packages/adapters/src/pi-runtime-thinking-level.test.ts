@@ -10,6 +10,8 @@ const fakeAgentState = vi.hoisted(() => ({
     maxTokens?: number;
   }>,
   sessionIds: [] as Array<string | undefined>,
+  subagentArgs: { name: "helper", task: "help" } as Record<string, unknown>,
+  lastSubagentResult: undefined as unknown,
   failPrompt: false,
   abortCalls: 0,
 }));
@@ -42,7 +44,10 @@ vi.mock("@earendil-works/pi-agent-core", () => ({
     async prompt() {
       if (fakeAgentState.failPrompt) throw new Error("prompt failed");
       const runSubagent = this.tools.find((tool) => tool.name === "run_subagent");
-      await runSubagent?.execute("subagent-call", { name: "helper", task: "help" });
+      fakeAgentState.lastSubagentResult = await runSubagent?.execute(
+        "subagent-call",
+        fakeAgentState.subagentArgs,
+      );
     }
     async waitForIdle() {}
     abort() {
@@ -97,6 +102,15 @@ async function runWithModel(
   provider = "test",
   signal = new AbortController().signal,
   thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null,
+  resolveModel?: (
+    provider: string,
+    modelId: string,
+  ) => Promise<{
+    provider: string;
+    id: string;
+    apiKey?: string;
+    thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null;
+  }>,
 ) {
   const runtime = new PiAgentRuntime();
   for await (const _event of runtime.run(
@@ -110,6 +124,7 @@ async function runWithModel(
       tools: [],
       model: { provider, id: modelId, thinkingLevel },
       executeTool: vi.fn(async () => ({ ok: true })),
+      resolveModel,
     },
     {
       operationId: "1",
@@ -129,6 +144,8 @@ describe("Pi agent thinking level", () => {
     fakeAgentState.thinkingLevels = [];
     fakeAgentState.models = [];
     fakeAgentState.sessionIds = [];
+    fakeAgentState.subagentArgs = { name: "helper", task: "help" };
+    fakeAgentState.lastSubagentResult = undefined;
     fakeAgentState.failPrompt = false;
     vi.unstubAllEnvs();
   });
@@ -150,6 +167,72 @@ describe("Pi agent thinking level", () => {
   it("honors a per-bot thinking level on reasoning models", async () => {
     const levels = await runWithModel("grok-4.6", "xai", new AbortController().signal, "high");
     expect(levels).toEqual(["high", "high"]);
+  });
+
+  it("resolves and runs an explicitly selected subagent model", async () => {
+    fakeAgentState.subagentArgs = {
+      name: "helper",
+      task: "help",
+      model_provider: "xai",
+      model_id: "grok-4.6",
+    };
+    const resolveModel = vi.fn(async (provider: string, modelId: string) => ({
+      provider,
+      id: modelId,
+      apiKey: "subagent-key",
+      thinkingLevel: "high" as const,
+    }));
+
+    const levels = await runWithModel(
+      "plain-model",
+      "test",
+      new AbortController().signal,
+      null,
+      resolveModel,
+    );
+
+    expect(resolveModel).toHaveBeenCalledWith("xai", "grok-4.6");
+    expect(fakeAgentState.models.map((model) => `${model.provider}/${model.id}`)).toEqual([
+      "test/plain-model",
+      "xai/grok-4.6",
+    ]);
+    expect(levels).toEqual(["off", "high"]);
+  });
+
+  it("rejects an incomplete per-call subagent model pair", async () => {
+    fakeAgentState.subagentArgs = {
+      name: "helper",
+      task: "help",
+      model_provider: "xai",
+    };
+    const resolveModel = vi.fn();
+
+    await runWithModel("plain-model", "test", new AbortController().signal, null, resolveModel);
+
+    expect(resolveModel).not.toHaveBeenCalled();
+    expect(fakeAgentState.lastSubagentResult).toMatchObject({
+      details: { result: "Subagent failed: model_provider and model_id must both be set" },
+    });
+  });
+
+  it("surfaces a scoped model-resolution failure without starting the helper", async () => {
+    fakeAgentState.subagentArgs = {
+      name: "helper",
+      task: "help",
+      model_provider: "anthropic",
+      model_id: "claude-opus-4-6",
+    };
+    const resolveModel = vi.fn(async () => {
+      throw new Error("Connect that model provider first");
+    });
+
+    await runWithModel("plain-model", "test", new AbortController().signal, null, resolveModel);
+
+    expect(resolveModel).toHaveBeenCalledWith("anthropic", "claude-opus-4-6");
+    expect(fakeAgentState.models).toHaveLength(1);
+    expect(fakeAgentState.lastSubagentResult).toMatchObject({
+      details: { result: "Subagent failed: Connect that model provider first" },
+    });
   });
 
   it("keeps reasoning off for the main agent and subagent", async () => {

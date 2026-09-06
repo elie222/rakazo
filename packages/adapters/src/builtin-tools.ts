@@ -689,6 +689,14 @@ export const builtinAgentTools: ConnectorTool[] = [
           type: "string",
           description: "Optional extra system instructions for the helper.",
         },
+        model_provider: {
+          type: "string",
+          description: "Optional connected model provider. Set together with model_id.",
+        },
+        model_id: {
+          type: "string",
+          description: "Optional connected model ID. Set together with model_provider.",
+        },
       },
       required: ["name", "task"],
     },
