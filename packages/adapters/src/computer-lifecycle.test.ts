@@ -160,6 +160,9 @@ describe("computer provisioning", () => {
         findUniqueOrThrow: vi.fn(async () => ({ ...row })),
         updateMany,
       },
+      run: {
+        findFirst: vi.fn(async () => null),
+      },
     } as unknown as PrismaClient;
     const deps = {
       prisma,
@@ -378,6 +381,9 @@ describe("computer provisioning", () => {
       executionLease: {
         findFirst: vi.fn(async () => null),
       },
+      run: {
+        findFirst: vi.fn(async () => null),
+      },
     } as unknown as PrismaClient;
     const sandbox = new FakeSandboxProvider();
     // First Date.now() is the stale-claim check (must see the stamp older than an
@@ -469,6 +475,68 @@ describe("computer provisioning", () => {
       expect(row.state).toBe("booting");
     } finally {
       now.mockRestore();
+      vi.unstubAllGlobals();
+      await rm(dataDir, { recursive: true, force: true });
+    }
+  });
+
+  it("does not reclaim a stale booting claim while another run still holds a live worker lease", async () => {
+    const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-stale-boot-live-run-"));
+    const row = {
+      id: "computer-1",
+      homeKey: "bot-1",
+      providerRef: null as string | null,
+      kind: "cloud",
+      scope: "dedicated",
+      state: "booting",
+      controlLeaseId: null,
+      // Older than an execution-lease TTL — stamp looks abandoned, but the run is alive.
+      updatedAt: new Date("2024-01-01T00:00:00.000Z"),
+    };
+    const updateMany = vi.fn();
+    const prisma = {
+      computer: {
+        findUniqueOrThrow: vi.fn(async () => ({ ...row })),
+        updateMany,
+      },
+      executionLease: {
+        findFirst: vi.fn(async () => null),
+      },
+      run: {
+        findFirst: vi.fn(async () => ({ id: "other-run" })),
+      },
+    } as unknown as PrismaClient;
+    const sandbox = new FakeSandboxProvider();
+    const setTimeoutReal = globalThis.setTimeout;
+    vi.stubGlobal("setTimeout", ((fn: (...args: never[]) => void, _ms?: number, ...args: never[]) =>
+      setTimeoutReal(fn, 0, ...args)) as unknown as typeof setTimeout);
+
+    try {
+      await expect(
+        provisionComputer(
+          {
+            prisma,
+            sandbox,
+            home: new LocalAgentHomeStore(dataDir),
+            jobs: {} as JobPublisher,
+            events: {} as ThreadEvents,
+            dataDir,
+          },
+          "computer-1",
+          { ...context, runId: "recovering-run" },
+        ),
+      ).rejects.toBeInstanceOf(ComputerBusyError);
+      expect(updateMany).not.toHaveBeenCalled();
+      expect(prisma.run.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            id: { not: "recovering-run" },
+            leaseExpiresAt: expect.objectContaining({ gt: expect.any(Date) }),
+          }),
+        }),
+      );
+      expect(row.state).toBe("booting");
+    } finally {
       vi.unstubAllGlobals();
       await rm(dataDir, { recursive: true, force: true });
     }

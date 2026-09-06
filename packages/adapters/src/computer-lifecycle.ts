@@ -32,9 +32,10 @@ const BOOT_WAIT_ATTEMPTS = 40;
 const BOOT_WAIT_MS = 250;
 /**
  * A booting claim newer than an execution-lease TTL is treated as live, not abandoned.
- * Dedicated / lease-less boots never write an execution-lease row, so this stamp age is what
- * keeps a slow mid-provision claim from being reclaimed or Reset after the short boot-wait
- * poll ends. Align with EXECUTION_LEASE_MS: a crashed team worker's lease would expire then.
+ * Dedicated / lease-less boots never write an execution-lease row, so this stamp age is the
+ * lower bound before reclaim/Reset may treat a lease-less claim as abandoned. Align with
+ * EXECUTION_LEASE_MS (a crashed team worker's lease would expire then). Slow dedicated boots
+ * past this window stay protected while their run worker lease still heartbeats.
  */
 const BOOT_CLAIM_STALE_MS = EXECUTION_LEASE_MS;
 
@@ -82,6 +83,31 @@ async function hasForeignExecutionLease(
 ): Promise<boolean> {
   const live = await prisma.computerExecutionLease.findFirst({
     where: { computerId, botId: { not: botId }, expiresAt: { gt: new Date() } },
+    select: { id: true },
+  });
+  return live !== null;
+}
+
+/**
+ * A live worker lease on another run that uses this computer.
+ *
+ * Dedicated boots never take a computer execution lease, so after BOOT_CLAIM_STALE_MS the
+ * claim stamp alone would look abandoned while provision is still running. A heartbeating
+ * run lease proves the provisioner is alive. exceptRunId lets a recovering continueRun
+ * reclaim its own abandoned boot without treating itself as foreign.
+ */
+async function hasLiveForeignRunLease(
+  prisma: PrismaClient,
+  computerId: string,
+  exceptRunId?: string,
+): Promise<boolean> {
+  const live = await prisma.run.findFirst({
+    where: {
+      status: { in: [...ACTIVE_RUN_STATUSES] },
+      bot: { computerId },
+      leaseExpiresAt: { gt: new Date() },
+      ...(exceptRunId ? { id: { not: exceptRunId } } : {}),
+    },
     select: { id: true },
   });
   return live !== null;
@@ -153,6 +179,15 @@ export async function provisionComputer(
   // Still booting after the wait on a fresh claim stamp: the holder is mid-provision, not
   // abandoned. Reclaiming would let both callers provision and make the original activation fail.
   if (existing.state === "booting" && reclaimStamp !== null && !bootClaimIsStale) {
+    throw new ComputerBusyError();
+  }
+  // Stamp age is only a lower bound. Dedicated / lease-less boots can provision longer than
+  // BOOT_CLAIM_STALE_MS; a heartbeating foreign run lease means the holder is still alive.
+  if (
+    existing.state === "booting" &&
+    reclaimStamp !== null &&
+    (await hasLiveForeignRunLease(deps.prisma, computerId, context.runId))
+  ) {
     throw new ComputerBusyError();
   }
 
