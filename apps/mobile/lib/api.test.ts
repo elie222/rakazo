@@ -1162,7 +1162,11 @@ describe("mobile thread event reduction", () => {
   });
 
   it("inserts a peer takeover run that was absent from the open snapshot", () => {
-    const progress = mobileMessage("progress:run-peer", [{ kind: "progress", text: "working…" }], 1);
+    const progress = mobileMessage(
+      "progress:run-peer",
+      [{ kind: "progress", text: "working…" }],
+      1,
+    );
     const initial: MobileSnapshot = {
       ...snapshot([progress]),
       run: { id: "run-user", status: "running" },

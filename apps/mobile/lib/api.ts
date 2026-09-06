@@ -761,7 +761,9 @@ export function applyMobileThreadEvent(
     const progressCleared = messages.length !== prev.messages.length;
     const runId = event.runId;
     const knownInRun = Boolean(runId && prev.run?.id === runId);
-    const knownInActive = Boolean(runId && prev.activeRuns?.some((candidate) => candidate.id === runId));
+    const knownInActive = Boolean(
+      runId && prev.activeRuns?.some((candidate) => candidate.id === runId),
+    );
     // Peer bot_message runs are omitted from snapshots while busy; the first wait
     // event is how an open thread learns they need ask/takeover UI.
     const needsInsert = Boolean(runId) && !knownInRun && !knownInActive;

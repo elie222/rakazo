@@ -567,7 +567,7 @@ export async function createApp(
           await messaging.initialize?.();
           return;
         } catch (error) {
-          console.error(
+          getLogger().error(
             attempt === delayMs.length - 1
               ? "messaging surface initialize failed"
               : "messaging surface initialize failed; retrying",
