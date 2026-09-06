@@ -258,6 +258,7 @@ export default function BotSettingsScreen() {
       const modelChanged =
         (selected?.provider ?? null) !== (bot.modelProvider ?? null) ||
         (selected?.modelId ?? null) !== (bot.modelId ?? null);
+      const thinkingChanged = (thinkingLevel || null) !== (bot.thinkingLevel ?? null);
       if (modelChanged) {
         input.modelProvider = selected?.provider ?? null;
         input.modelId = selected?.modelId ?? null;
@@ -266,11 +267,11 @@ export default function BotSettingsScreen() {
         input.thinkingLevel = thinkingOptions.length
           ? ((thinkingLevel || null) as ThinkingLevel | null)
           : null;
-      } else if (modelMetaReady && thinkingOptions.length) {
+      } else if (thinkingChanged && modelMetaReady && thinkingOptions.length) {
         input.thinkingLevel = (thinkingLevel || null) as ThinkingLevel | null;
       }
-      // If the model is unchanged and has no thinking options (disconnected or
-      // metadata unavailable), omit thinkingLevel so an existing override stays.
+      // If the model is unchanged and Thinking was not edited (or has no options),
+      // omit thinkingLevel so a concurrent override is not overwritten.
       if (computerMode !== bot.computerMode) {
         await rpc("bots/setComputer", { botId, mode: computerMode });
       }
