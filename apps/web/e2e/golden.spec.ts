@@ -211,6 +211,7 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   ).toBeVisible();
 
   await page.getByRole("button", { name: "Add Executor", exact: true }).click();
+  await expect(page.getByPlaceholder("Display name")).toHaveValue("Executor");
   await page
     .getByPlaceholder("https://executor.example/mcp")
     .fill("https://executor.example.test/mcp");
