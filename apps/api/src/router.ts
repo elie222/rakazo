@@ -1437,6 +1437,11 @@ export function createRouter(deps: RouterDeps) {
             screenLeaseId: screenLeaseIdForRun(lease, manualRunId),
           });
           scheduleComputerSleep(deps.jobs, bot.computer.id);
+        } catch (error) {
+          if (error instanceof ComputerBusyError) {
+            throw new ORPCError("CONFLICT", { message: "Computer is busy" });
+          }
+          throw error;
         } finally {
           await releaseComputerExecutionLease(deps.prisma, lease);
         }

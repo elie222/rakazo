@@ -10,6 +10,8 @@ import {
 import {
   acquireComputerExecutionLease,
   appendRecordingEvent,
+  ComputerBusyError,
+  type ComputerExecutionLease,
   captureTeachingSnapshot,
   completeTeachingSession,
   emptyRecording,
@@ -144,16 +146,29 @@ async function ensureGraphicalComputer(
   if (bot.computer.state !== "running" || !bot.computer.providerRef) {
     const ctx = computerContext(actor, bot.id, "skills.start");
     const manualRunId = `teach:${randomUUID()}`;
-    const lease = await acquireComputerExecutionLease(deps.prisma, {
-      computerId: bot.computer.id,
-      runId: manualRunId,
-      botId: bot.id,
-    });
+    let lease: ComputerExecutionLease | null;
+    try {
+      lease = await acquireComputerExecutionLease(deps.prisma, {
+        computerId: bot.computer.id,
+        runId: manualRunId,
+        botId: bot.id,
+      });
+    } catch (error) {
+      if (error instanceof ComputerBusyError) {
+        throw new ORPCError("CONFLICT", { message: "Computer is busy" });
+      }
+      throw error;
+    }
     try {
       await provisionComputer(deps, bot.computer.id, {
         ...ctx,
         screenLeaseId: screenLeaseIdForRun(lease, manualRunId),
       });
+    } catch (error) {
+      if (error instanceof ComputerBusyError) {
+        throw new ORPCError("CONFLICT", { message: "Computer is busy" });
+      }
+      throw error;
     } finally {
       await releaseComputerExecutionLease(deps.prisma, lease);
     }
