@@ -89,6 +89,11 @@ and synthetic services; it does not use production application data. Each trial
 uses fresh accounts and services. The runner disables its routines and cancels
 its work before proceeding; cleanup failure leaves remaining trials not run.
 
+Nightly runs accept the same connection JSON through the `MODEL_CONNECTION_JSON`
+repository secret, including compatible endpoints. When absent, they reuse the
+existing OpenRouter canary credential and configured default model. Connection
+credentials are available only to the prerequisite and live execution steps.
+
 The suite covers artifacts and calculations, inbox grounding and injected
 instructions, precise and read-only CRM operations, approval payloads, uncertain
 writes, durable preferences, workspace memory isolation, saved taught playbooks,

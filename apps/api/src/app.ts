@@ -3,6 +3,7 @@ import { rm } from "node:fs/promises";
 import { ORPCError, onError } from "@orpc/server";
 import { RPCHandler } from "@orpc/server/fetch";
 import type {
+  AgentRuntime,
   JobPublisher,
   ManagedConnectorProvider,
   MessagingSurface,
@@ -92,6 +93,7 @@ export interface AppHandles {
   messaging?: MessagingSurface;
   email?: TransactionalEmailProvider;
   executor: ReturnType<typeof createRunExecutor>;
+  runtime: AgentRuntime;
   stop: () => Promise<void>;
 }
 
@@ -501,6 +503,7 @@ export async function createApp(
     messaging,
     email,
     executor,
+    runtime,
     stop: async () => {
       oauthLogins.abortAll();
       await email?.drain?.();
