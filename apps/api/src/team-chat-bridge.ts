@@ -28,6 +28,11 @@ const QUEUE_RESERVATION_MS = 2 * 60_000;
 const DELIVERY_RESERVATION_MS = 2 * 60_000;
 /** Durable claim while wakeMessageRoutines may still be writing its wake nonce. */
 const ROUTING_OWNERSHIP_REASON = "message_routine_routing";
+const DEFERRED_RESERVATION_LOST = "Team chat deferred reservation was lost";
+
+export function isDeferredReservationLost(error: unknown): boolean {
+  return error instanceof Error && error.message === DEFERRED_RESERVATION_LOST;
+}
 
 interface TeamChatBridgeDeps {
   prisma: PrismaClient;
@@ -285,7 +290,7 @@ export class TeamChatBridge {
     intervalMs = ROUTING_RESERVATION_RENEWAL_MS,
   ): Promise<{ stop: () => void; lost: Promise<never> }> {
     if (!(await this.extendDeferredReservation(externalMessageId))) {
-      throw new Error("Team chat deferred reservation was lost");
+      throw new Error(DEFERRED_RESERVATION_LOST);
     }
     let active = true;
     let renewing = false;
@@ -307,7 +312,7 @@ export class TeamChatBridge {
       renewing = true;
       void this.extendDeferredReservation(externalMessageId)
         .then((held) => {
-          if (!held) fail(new Error("Team chat deferred reservation was lost"));
+          if (!held) fail(new Error(DEFERRED_RESERVATION_LOST));
         })
         .catch((error) => {
           getLogger().error("team chat deferred reservation renewal failed", error);
@@ -880,21 +885,32 @@ export class TeamChatBridge {
         },
         select: { id: true },
       });
-    // Lease recovery may have promoted this row before wake finished. If the
-    // messaging routine nonce now exists, do not start a fallback agent run.
-    if (await findWake()) {
+    const abandonForRoutine = async (status: "received" | "queueing") => {
       await this.deps.prisma.externalMessage.updateMany({
-        where: { id: message.id, status: "received" },
+        where: {
+          id: message.id,
+          status,
+          ...(status === "queueing" ? { runId: null } : {}),
+        },
         data: {
           status: "ignored",
           engagementReason: "message_routine_wake",
           nextAttemptAt: null,
         },
       });
+    };
+    // Lease recovery may have promoted this row before wake finished. If the
+    // messaging routine nonce now exists, do not start a fallback agent run.
+    if (await findWake()) {
+      await abandonForRoutine("received");
       return;
     }
     const claimed = await this.deps.prisma.externalMessage.updateMany({
-      where: { id: message.id, status: "received" },
+      where: {
+        id: message.id,
+        status: "received",
+        NOT: { engagementReason: ROUTING_OWNERSHIP_REASON },
+      },
       data: {
         status: "queueing",
         nextAttemptAt: new Date(Date.now() + QUEUE_RESERVATION_MS),
@@ -903,14 +919,22 @@ export class TeamChatBridge {
     if (claimed.count !== 1) return;
     // Wake may commit between the pre-claim check and this reservation.
     if (await findWake()) {
-      await this.deps.prisma.externalMessage.updateMany({
-        where: { id: message.id, status: "queueing", runId: null },
-        data: {
-          status: "ignored",
-          engagementReason: "message_routine_wake",
-          nextAttemptAt: null,
-        },
-      });
+      await abandonForRoutine("queueing");
+      return;
+    }
+    // Final pre-create barrier: an in-flight wakeMessageRoutines can still commit
+    // after lease loss. Re-check ownership + nonce immediately before creating a
+    // distinct TeamChat agent run.
+    const latest = await this.deps.prisma.externalMessage.findUnique({
+      where: { id: message.id },
+      select: { status: true, engagementReason: true },
+    });
+    if (
+      latest?.status !== "queueing" ||
+      latest.engagementReason === ROUTING_OWNERSHIP_REASON ||
+      (await findWake())
+    ) {
+      await abandonForRoutine("queueing");
       return;
     }
     const prompt =

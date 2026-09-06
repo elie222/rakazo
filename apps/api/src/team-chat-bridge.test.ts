@@ -732,12 +732,158 @@ describe("team chat bridge", () => {
 
     expect(updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: "external-claimed", status: "received" },
+        where: {
+          id: "external-claimed",
+          status: "received",
+          NOT: { engagementReason: "message_routine_routing" },
+        },
         data: expect.objectContaining({ status: "queueing" }),
       }),
     );
     expect(updateMany).toHaveBeenCalledWith({
       where: { id: "external-claimed", status: "queueing", runId: null },
+      data: {
+        status: "ignored",
+        engagementReason: "message_routine_wake",
+        nextAttemptAt: null,
+      },
+    });
+    expect(sendUserMessage).not.toHaveBeenCalled();
+  });
+
+  it("blocks fallback queueing when an in-flight wake commits after the queueing claim", async () => {
+    // Lost-lease path can promote/queue while wakeMessageRoutines is still in
+    // flight. The final pre-create barrier must see the routine nonce and abandon
+    // before creating a distinct TeamChat agent run.
+    const updateMany = vi.fn(async () => ({ count: 1 }));
+    const messageFindUnique = vi
+      .fn()
+      .mockResolvedValueOnce(null) // pre-claim
+      .mockResolvedValueOnce(null) // post-claim
+      .mockResolvedValueOnce({ id: "msg-routine-wake" }); // final barrier
+    const sendUserMessage = vi.fn();
+    const bridge = new TeamChatBridge({
+      prisma: {
+        externalMessage: {
+          updateMany,
+          findUnique: vi.fn(async () => ({
+            status: "queueing",
+            engagementReason: null,
+          })),
+        },
+        message: { findUnique: messageFindUnique },
+      } as unknown as PrismaClient,
+      events: { sendUserMessage },
+      jobs: { enqueue: vi.fn() },
+      send: vi.fn(),
+      providerId: "slack",
+      botId: "bot-1",
+    });
+
+    await (
+      bridge as unknown as {
+        queue(message: {
+          id: string;
+          providerEventId: string;
+          senderId: string;
+          senderName: string;
+          content: string;
+          batchContext: null;
+          engagementReason?: string | null;
+          externalConversation: {
+            spaceId: string;
+            botId: string;
+            userId: string;
+            thread: { id: string };
+          };
+        }): Promise<void>;
+      }
+    ).queue({
+      id: "external-raced",
+      providerEventId: "Ev-raced",
+      senderId: "U-1",
+      senderName: "Ada",
+      content: "hello",
+      batchContext: null,
+      engagementReason: null,
+      externalConversation: {
+        spaceId: "space-1",
+        botId: "bot-1",
+        userId: "owner-1",
+        thread: { id: "thread-1" },
+      },
+    });
+
+    expect(messageFindUnique).toHaveBeenCalledTimes(3);
+    expect(updateMany).toHaveBeenCalledWith({
+      where: { id: "external-raced", status: "queueing", runId: null },
+      data: {
+        status: "ignored",
+        engagementReason: "message_routine_wake",
+        nextAttemptAt: null,
+      },
+    });
+    expect(sendUserMessage).not.toHaveBeenCalled();
+  });
+
+  it("blocks fallback queueing when routing ownership remains after lease loss", async () => {
+    const updateMany = vi.fn(async () => ({ count: 1 }));
+    const sendUserMessage = vi.fn();
+    const bridge = new TeamChatBridge({
+      prisma: {
+        externalMessage: {
+          updateMany,
+          findUnique: vi.fn(async () => ({
+            status: "queueing",
+            engagementReason: "message_routine_routing",
+          })),
+        },
+        message: { findUnique: vi.fn(async () => null) },
+      } as unknown as PrismaClient,
+      events: { sendUserMessage },
+      jobs: { enqueue: vi.fn() },
+      send: vi.fn(),
+      providerId: "slack",
+      botId: "bot-1",
+    });
+
+    await (
+      bridge as unknown as {
+        queue(message: {
+          id: string;
+          providerEventId: string;
+          senderId: string;
+          senderName: string;
+          content: string;
+          batchContext: null;
+          engagementReason?: string | null;
+          externalConversation: {
+            spaceId: string;
+            botId: string;
+            userId: string;
+            thread: { id: string };
+          };
+        }): Promise<void>;
+      }
+    ).queue({
+      id: "external-owned",
+      providerEventId: "Ev-owned",
+      senderId: "U-1",
+      senderName: "Ada",
+      content: "hello",
+      batchContext: null,
+      // Snapshot missed ownership (e.g. stale reconcile read after lease loss).
+      engagementReason: null,
+      externalConversation: {
+        spaceId: "space-1",
+        botId: "bot-1",
+        userId: "owner-1",
+        thread: { id: "thread-1" },
+      },
+    });
+
+    expect(updateMany).toHaveBeenCalledWith({
+      where: { id: "external-owned", status: "queueing", runId: null },
       data: {
         status: "ignored",
         engagementReason: "message_routine_wake",
@@ -795,7 +941,9 @@ describe("team chat bridge", () => {
     });
 
     expect(updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { id: "external-1", status: "received" } }),
+      expect.objectContaining({
+        where: expect.objectContaining({ id: "external-1", status: "received" }),
+      }),
     );
     expect(sendUserMessage).not.toHaveBeenCalled();
   });

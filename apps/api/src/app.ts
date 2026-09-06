@@ -85,7 +85,7 @@ import {
 } from "./messaging-inbound.js";
 import { mountMessagingWebhookRoutes } from "./messaging-webhook.js";
 import { createRouter } from "./router.js";
-import { TeamChatBridge } from "./team-chat-bridge.js";
+import { isDeferredReservationLost, TeamChatBridge } from "./team-chat-bridge.js";
 import { ModelTeamChatEngagementJudge } from "./team-chat-judge.js";
 import { mountVoiceHttpRoutes } from "./voice.js";
 import { mountWebhookHttpRoutes } from "./webhook.js";
@@ -557,18 +557,30 @@ export async function createApp(
           );
           let woken = false;
           try {
+            const wakePromise = wakeMessageRoutines(inboundDeps, target, event, {
+              // Must match TeamChatBridge ExternalConversation / recovery provider.
+              deliveryProvider: bridge.providerId,
+            });
             try {
-              woken = await Promise.race([
-                wakeMessageRoutines(inboundDeps, target, event, {
-                  // Must match TeamChatBridge ExternalConversation / recovery provider.
-                  deliveryProvider: bridge.providerId,
-                }),
-                leaseHeartbeat.lost,
-              ]);
+              woken = await Promise.race([wakePromise, leaseHeartbeat.lost]);
             } catch (error) {
-              await bridge.resolveDeferredMessage(target.externalMessageId, "agent", mapped.kind);
-              await bridge.reconcileOnce();
-              throw error;
+              if (isDeferredReservationLost(error)) {
+                // Lease loss must not start a fallback agent beside an in-flight
+                // wake: await that wake, then resolve from its settled result.
+                try {
+                  woken = await wakePromise;
+                } catch (wakeError) {
+                  getLogger().error(
+                    "team chat routine wake failed after deferred lease loss",
+                    wakeError,
+                  );
+                  return;
+                }
+              } else {
+                await bridge.resolveDeferredMessage(target.externalMessageId, "agent", mapped.kind);
+                await bridge.reconcileOnce();
+                throw error;
+              }
             }
             const resolved = await bridge.resolveDeferredMessage(
               target.externalMessageId,
