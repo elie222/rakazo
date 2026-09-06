@@ -68,6 +68,12 @@ test("onboarding uses compact model selects without misleading latest labels", a
   await expect(manualModel).toBeVisible();
   await expect(manualModel).toHaveValue("probed-model");
   await expect(page.getByRole("combobox", { name: "Models from server" })).toHaveCount(0);
+  // Editing the server URL must not drop Other model… mode either.
+  await page.getByLabel("OpenAI-compatible server URL").fill("http://127.0.0.1:8091/v1");
+  await page.getByRole("button", { name: "Find models" }).click();
+  await expect(manualModel).toBeVisible();
+  await expect(manualModel).toHaveValue("probed-model");
+  await expect(page.getByRole("combobox", { name: "Models from server" })).toHaveCount(0);
   await manualModel.fill("probed-model-custom");
   await expect(manualModel).toHaveValue("probed-model-custom");
 

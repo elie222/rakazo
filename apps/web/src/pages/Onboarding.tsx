@@ -128,7 +128,7 @@ export function OnboardingPage() {
 
   function updateBaseUrl(nextBaseUrl: string) {
     setBaseUrl(nextBaseUrl);
-    setManualModelId(false);
+    // Keep Other model… mode across URL edits; only provider change clears it.
     resetOpenAiCompatibleProbe();
     setError(null);
     setNotice(null);
