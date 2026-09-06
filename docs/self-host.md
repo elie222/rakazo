@@ -179,7 +179,7 @@ To use an operator-controlled OpenAI-compatible server such as Ollama, LM Studio
 MLX, list its model IDs and an endpoint that both the API and worker processes can reach:
 
 ```env
-RAKAZO_LOCAL_MODELS=qwen3:4b,llama3.1:8b
+RAKAZO_LOCAL_MODELS=qwen3:4b,llama3.1:8b,qwen3-vl
 RAKAZO_LOCAL_MODELS_URL=http://127.0.0.1:11434/v1
 RAKAZO_LOCAL_CONTEXT_WINDOW=32768
 RAKAZO_LOCAL_MAX_TOKENS=4096
