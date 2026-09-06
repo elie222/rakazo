@@ -7,3 +7,4 @@ Terminal=false
 Categories=Network;WebBrowser;
 MimeType=x-scheme-handler/http;x-scheme-handler/https;text/html;
 StartupNotify=false
+Icon=chromium

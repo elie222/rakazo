@@ -3340,3 +3340,11 @@ msgstr "Adın"
 #: src/pages/HostComputerPrompt.tsx:69
 msgid "Your OS will not ask for extra permission if you let bots run on {hostLabel}. They run as you."
 msgstr "Botların {hostLabel} üzerinde çalışmasına izin verirsen işletim sistemin ek izin istemez. Botlar senin adına çalışır."
+
+#: src/pages/VoiceSettingsOverlay.tsx:55
+msgid "Ready for calls and dictation."
+msgstr ""
+
+#: src/pages/VoiceSettingsOverlay.tsx:57
+msgid "Voice is temporarily unavailable."
+msgstr ""

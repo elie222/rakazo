@@ -2,9 +2,12 @@ import type { Actor } from "@rakazo/contracts";
 import { Hono } from "hono";
 import { describe, expect, it, vi } from "vitest";
 import {
+  loadVoiceCredential,
   MAX_SPEAK_REQUEST_BYTES,
   MAX_TRANSCRIBE_REQUEST_BYTES,
   mountVoiceHttpRoutes,
+  resolveVoiceTarget,
+  toVoiceCredential,
   toVoiceStatus,
   type VoiceDeps,
 } from "./voice.js";
@@ -109,5 +112,56 @@ describe("voice HTTP routes", () => {
 
     expect(response.status).toBe(413);
     expect(cancel).toHaveBeenCalledOnce();
+  });
+});
+
+describe("deployment supplied voice", () => {
+  const actor = { userId: "user", spaceId: "space" } as Actor;
+  function fixture() {
+    const prisma = {
+      spaceVoicePreference: { findFirst: vi.fn(async () => null) },
+      userVoiceCredential: { findFirst: vi.fn(async () => null) },
+      bot: { findFirst: vi.fn(async () => null) },
+      secret: { findFirst: vi.fn() },
+    };
+    const deps = {
+      prisma,
+      secrets: { load: vi.fn() },
+      deploymentVoice: {
+        provider: "openai",
+        apiKey: "test-server-voice-secret",
+        voiceId: "coral",
+      },
+    } as unknown as VoiceDeps;
+    return { deps, prisma };
+  }
+  it("works without a customer credential and never serializes the server key", async () => {
+    const { deps, prisma } = fixture();
+    const loaded = await loadVoiceCredential(deps, actor);
+    expect(loaded?.apiKey).toBe("test-server-voice-secret");
+    expect(toVoiceStatus(loaded?.cred ?? null)).toMatchObject({ ready: true, transcribe: true });
+    expect(JSON.stringify(toVoiceCredential(loaded!.cred))).not.toContain(
+      "test-server-voice-secret",
+    );
+    expect(prisma.secret.findFirst).not.toHaveBeenCalled();
+  });
+  it("does not substitute the hosted key for a different voice provider", async () => {
+    const { deps } = fixture();
+    expect(await loadVoiceCredential(deps, actor, "elevenlabs")).toBeNull();
+    expect((await loadVoiceCredential(deps, actor, "openai"))?.cred.voiceId).toBe("coral");
+  });
+  it("preserves an unconfigured self-hosted installation", async () => {
+    const { deps } = fixture();
+    delete deps.deploymentVoice;
+    expect(await loadVoiceCredential(deps, actor)).toBeNull();
+  });
+  it("checks bot ownership before granting hosted voice access", async () => {
+    const { deps, prisma } = fixture();
+    await expect(resolveVoiceTarget(deps, actor, { botId: "foreign-bot" })).rejects.toThrow();
+    expect(prisma.bot.findFirst).toHaveBeenCalledWith({
+      where: { id: "foreign-bot", userId: "user", spaceId: "space" },
+      select: { voiceId: true },
+    });
+    expect(prisma.spaceVoicePreference.findFirst).not.toHaveBeenCalled();
   });
 });

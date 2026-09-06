@@ -2,6 +2,13 @@ import { expect, test } from "@playwright/test";
 import { captureScreenshot, completeOnboarding, signup } from "./helpers";
 
 test("workforce connection, responsive states, and pause control", async ({ page }, testInfo) => {
+  // This optional integration is visible only on deployments that configure it.
+  await page.route("**/api/auth/capabilities", async (route) => {
+    const response = await route.fetch();
+    await route.fulfill({
+      json: { ...(await response.json()), companyOsOrigin: "https://company.example.com" },
+    });
+  });
   await signup(
     page,
     `workforce-${Date.now()}@example.com`,

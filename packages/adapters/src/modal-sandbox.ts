@@ -189,7 +189,7 @@ export class ModalSandboxProvider implements SandboxProvider {
         argv: [
           "bash",
           "-lc",
-          "for i in {1..100}; do xdpyinfo -display :1 >/dev/null 2>&1 && exit 0; sleep 0.2; done; exit 1",
+          "for i in {1..100}; do xdpyinfo -display :1 >/dev/null 2>&1 && python3 -c 'import urllib.request; urllib.request.urlopen(\"http://127.0.0.1:8080/embed.html\", timeout=1).read(1)' >/dev/null 2>&1 && exit 0; sleep 0.2; done; exit 1",
         ],
         timeoutMs: 25000,
       },
@@ -253,7 +253,8 @@ export class ModalSandboxProvider implements SandboxProvider {
       url: url.toString(),
       mimeType: "text/html",
       close: async () => {
-        if (request.interactive) await this.releaseScreen(computer, ctx);
+        if (request.interactive)
+          await this.setScreenControl(computer, false, ctx, request.controlToken);
       },
     };
   }
@@ -263,12 +264,11 @@ export class ModalSandboxProvider implements SandboxProvider {
     ctx: AdapterContext,
     controlToken?: string,
   ) {
-    if (interactive && (!ctx.screenLeaseId || !controlToken))
-      throw new Error("Control lease required");
+    if (interactive && !controlToken) throw new Error("Control lease required");
     await this.rpc(await this.owned(computer, ctx), {
       op: "screen",
       interactive,
-      leaseId: ctx.screenLeaseId,
+      leaseId: controlToken ?? ctx.screenLeaseId,
       controlToken,
     });
   }
@@ -376,7 +376,39 @@ export class ModalSandboxProvider implements SandboxProvider {
     files: AsyncIterable<PortableFile>,
     ctx: AdapterContext,
   ) {
-    for await (const file of files) await this.writeFile(computer, file, ctx);
+    const sandbox = await this.owned(computer, ctx);
+    let pending: Promise<unknown>[] = [];
+    let bytes = 0;
+    const flush = async () => {
+      const results = await Promise.allSettled(pending);
+      pending = [];
+      bytes = 0;
+      const failure = results.find((result) => result.status === "rejected");
+      if (failure?.status === "rejected") throw failure.reason;
+    };
+    try {
+      for await (const file of files) {
+        ctx.signal.throwIfAborted();
+        if (
+          pending.length &&
+          (pending.length >= 8 || bytes + file.content.length > 8 * 1024 * 1024)
+        )
+          await flush();
+        bytes += file.content.length;
+        const write = this.rpc(sandbox, {
+          op: "write",
+          path: file.path,
+          executable: file.executable,
+          content: Buffer.from(file.content).toString("base64"),
+        });
+        // Attach a handler immediately while the next remote file is downloading.
+        void write.catch(() => undefined);
+        pending.push(write);
+      }
+      await flush();
+    } finally {
+      await Promise.allSettled(pending);
+    }
   }
   async snapshot(computer: ComputerRef, ctx: AdapterContext) {
     const image = await (await this.owned(computer, ctx)).snapshotFilesystem();

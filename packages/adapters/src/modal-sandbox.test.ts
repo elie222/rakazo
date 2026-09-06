@@ -64,6 +64,28 @@ describe("Modal sandbox boundary", () => {
     expect(f.requests[0]?.path).toBe("artifacts/恢复.bin");
     expect(Buffer.from(String(f.requests[0]?.content), "base64").equals(content)).toBe(true);
   });
+  it("restores a workspace with bounded parallel transfers and one ownership check", async () => {
+    const f = fixture();
+    const exec = f.sandbox.exec.getMockImplementation()!;
+    let active = 0;
+    let peak = 0;
+    f.sandbox.exec.mockImplementation(async () => {
+      active++;
+      peak = Math.max(peak, active);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      active--;
+      return exec();
+    });
+    async function* files() {
+      for (let i = 0; i < 19; i++) yield { path: `files/${i}.txt`, content: Buffer.from(`${i}`) };
+    }
+    await f.provider.importWorkspace(computer, files(), context);
+    expect(peak).toBe(8);
+    expect(active).toBe(0);
+    expect(f.sandbox.getTags).toHaveBeenCalledTimes(1);
+    expect(f.requests).toHaveLength(19);
+    expect(new Set(f.requests.map((request) => request.path)).size).toBe(19);
+  });
   it("reconnects without creating a new computer and executes bounded non-PTY commands", async () => {
     const f = fixture();
     expect(
@@ -101,23 +123,19 @@ describe("Modal sandbox boundary", () => {
     const f = fixture();
     const view = await f.provider.connectScreen(computer, { view: "stream" }, context);
     await expect(
-      f.provider.connectScreen(
-        computer,
-        { view: "stream", interactive: true, controlToken: "control" },
-        context,
-      ),
+      f.provider.connectScreen(computer, { view: "stream", interactive: true }, context),
     ).rejects.toThrow("Control lease required");
     const control = await f.provider.connectScreen(
       computer,
       { view: "stream", interactive: true, controlToken: "control" },
-      { ...context, screenLeaseId: "lease" },
+      context,
     );
     expect(new URL(view.url).searchParams.get("cadre_token")).not.toBe("control");
     expect(new URL(control.url).searchParams.get("cadre_token")).toBe("control");
     await control.close();
     expect(f.requests).toEqual([
-      { op: "screen", interactive: true, leaseId: "lease", controlToken: "control" },
-      { op: "screen", interactive: false, leaseId: "lease" },
+      { op: "screen", interactive: true, leaseId: "control", controlToken: "control" },
+      { op: "screen", interactive: false, leaseId: "control", controlToken: "control" },
     ]);
   });
   it("normalizes missing computers for runtime recovery", async () => {

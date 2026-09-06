@@ -367,12 +367,25 @@ export class CloudAgentHomeStore implements AgentHomeStore {
   async *exportHome(botId: string, context: AdapterContext): AsyncIterable<PortableFile> {
     const prefix = this.prefix(botId, context);
     const { manifest } = await this.current(prefix);
-    for (const [name, entry] of Object.entries(manifest.files))
-      yield {
-        path: name,
-        content: await this.content(prefix, entry),
-        executable: entry.executable,
-      };
+    const entries = Object.entries(manifest.files);
+    while (entries.length) {
+      context.signal.throwIfAborted();
+      const batch = [entries.shift()!];
+      let bytes = batch[0]![1].size;
+      while (entries.length && batch.length < 8 && bytes + entries[0]![1].size <= 8 * 1024 * 1024) {
+        const entry = entries.shift()!;
+        batch.push(entry);
+        bytes += entry[1].size;
+      }
+      const files = await Promise.all(
+        batch.map(async ([name, entry]) => ({
+          path: name,
+          content: await this.content(prefix, entry),
+          executable: entry.executable,
+        })),
+      );
+      for (const file of files) yield file;
+    }
   }
   async readFile(
     botId: string,

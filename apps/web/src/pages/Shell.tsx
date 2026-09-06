@@ -128,6 +128,7 @@ import { TeachRecordingChrome, TeachStopButton } from "../components/teach/Teach
 import { readActivityMode, writeActivityMode } from "../lib/activity-mode";
 import type { ArtifactTarget } from "../lib/artifact-open";
 import { authClient } from "../lib/auth";
+import { useAuthCapabilities } from "../lib/auth-capabilities";
 import { takeInitialBootstrap } from "../lib/bootstrap";
 import {
   BOTS_SIDEBAR_EDGE_DRAG_PX,
@@ -409,6 +410,7 @@ export function ShellPage() {
     commitSnapshot(update(snapshotRef.current));
   }
   const [pluginsOpen, setPluginsOpen] = useState(false);
+  const capabilities = useAuthCapabilities();
   const [workforceOpen, setWorkforceOpen] = useState(false);
   const [mcpOpen, setMcpOpen] = useState(false);
   const [accountSettingsOpen, setAccountSettingsOpen] = useState(false);
@@ -497,6 +499,15 @@ export function ShellPage() {
   const [routineError, setRoutineError] = useState<string | null>(null);
   const [screenUrl, setScreenUrl] = useState<string | null>(null);
   const [computerOpen, setComputerOpen] = useState(false);
+  const [computerViewportHeight, setComputerViewportHeight] = useState<number>();
+  useEffect(() => {
+    if (!computerOpen || !window.visualViewport) return;
+    const viewport = window.visualViewport;
+    const resize = () => setComputerViewportHeight(viewport.height);
+    resize();
+    viewport.addEventListener("resize", resize);
+    return () => viewport.removeEventListener("resize", resize);
+  }, [computerOpen]);
   const [computerError, setComputerError] = useState<string | null>(null);
   // Screen-load failures can sit beside a still-valid embed URL; boot and
   // takeover failures must stay visible even when a URL remains.
@@ -2952,14 +2963,16 @@ export function ShellPage() {
             <Trans>Integrations</Trans>
           </span>
         </button>
-        <button
-          type="button"
-          onClick={() => setWorkforceOpen(true)}
-          className="mx-3 mb-2 flex items-center gap-3 rounded-lg px-3 py-2 text-sm hover:bg-background"
-        >
-          <Cpu size={18} />
-          <Trans>Workforce</Trans>
-        </button>
+        {capabilities?.companyOsOrigin ? (
+          <button
+            type="button"
+            onClick={() => setWorkforceOpen(true)}
+            className="mx-3 mb-2 flex items-center gap-3 rounded-lg px-3 py-2 text-sm hover:bg-background"
+          >
+            <Cpu size={18} />
+            <Trans>Workforce</Trans>
+          </button>
+        ) : null}
         <Popover open={menuOpen} onOpenChange={setMenuOpen}>
           <PopoverTrigger
             data-testid="user-menu-trigger"
@@ -2989,17 +3002,19 @@ export function ShellPage() {
                 <span className="text-muted-foreground">⚙</span>
                 <Trans>Settings</Trans>
               </Button>
-              <Button
-                variant="ghost"
-                className="w-full justify-start font-normal"
-                onClick={() => {
-                  setMenuOpen(false);
-                  setModelsOpen(true);
-                }}
-              >
-                <Cpu size={16} strokeWidth={1.7} className="text-muted-foreground" />
-                <Trans>Models</Trans>
-              </Button>
+              {!capabilities?.hosted ? (
+                <Button
+                  variant="ghost"
+                  className="w-full justify-start font-normal"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    setModelsOpen(true);
+                  }}
+                >
+                  <Cpu size={16} strokeWidth={1.7} className="text-muted-foreground" />
+                  <Trans>Models</Trans>
+                </Button>
+              ) : null}
               <Button
                 variant="ghost"
                 className="w-full justify-start font-normal"
@@ -3167,6 +3182,11 @@ export function ShellPage() {
                 type="button"
                 title={t`Agent computer`}
                 onClick={() => {
+                  if (!desktopLayout) {
+                    setComputerOpen(true);
+                    void openComputer();
+                    return;
+                  }
                   const next = panel === "computer" ? null : "computer";
                   setPanel(next);
                   if (next === "computer" && active) {
@@ -3959,12 +3979,15 @@ export function ShellPage() {
           </div>
         </div>
       ) : computerOpen && active ? (
-        <div className="absolute inset-0 z-30 flex flex-col bg-background">
+        <div
+          className="absolute inset-0 z-30 flex flex-col bg-background"
+          style={{ height: computerViewportHeight }}
+        >
           <div
             data-testid="computer-chrome"
-            className="flex items-center justify-between gap-4 border-b border-sidebar-border px-[18px] py-3.5"
+            className="flex flex-wrap items-center justify-between gap-3 border-b border-sidebar-border px-3 py-3 sm:px-[18px] sm:py-3.5"
           >
-            <div className="flex min-w-0 flex-1 items-center gap-3">
+            <div className="flex min-w-0 basis-full items-center gap-3 sm:flex-1 sm:basis-auto">
               <BotAvatar
                 color={active.color}
                 identity={active.id}
@@ -3995,7 +4018,7 @@ export function ShellPage() {
                 )
               ) : null}
             </div>
-            <div className="flex items-center gap-3">
+            <div className="ms-auto flex flex-wrap items-center gap-2">
               {composerRunning ? (
                 <Button
                   type="button"

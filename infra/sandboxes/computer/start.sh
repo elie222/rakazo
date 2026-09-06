@@ -49,6 +49,8 @@ EOF
 chmod +x /tmp/fluxbox-home/.fluxbox/startup
 HOME=/tmp/fluxbox-home /tmp/fluxbox-home/.fluxbox/startup >/tmp/rakazo/fluxbox.log 2>&1 &
 
+tint2 -c /etc/rakazo/tint2rc >/tmp/rakazo/dock.log 2>&1 &
+
 register_browser_handler() {
   local mime="$1"
   if ! xdg-mime default rakazo-browser.desktop "$mime" >/dev/null 2>&1 \

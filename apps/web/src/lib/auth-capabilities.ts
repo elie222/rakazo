@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 export interface AuthCapabilities {
   provider: "local" | "convex-company-os";
+  hosted?: boolean;
   webOrigin?: string;
   companyOsOrigin: string | null;
   passwordReset: boolean;

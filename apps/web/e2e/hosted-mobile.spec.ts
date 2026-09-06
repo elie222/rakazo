@@ -12,12 +12,13 @@ for (const width of [320, 375, 768]) {
     );
     await expect(page.getByRole("heading", { name: "Connect a model" })).toBeVisible();
     // Exercise hosted entry with the real local data API and a configured model.
-    // Only the provider capability is substituted; this is not a live OAuth test.
+    // Only hosted availability is substituted; local account auth stays unchanged.
     await page.route("**/api/auth/capabilities", (route) =>
       route.fulfill({
         json: {
-          provider: "convex-company-os",
-          companyOsOrigin: "https://company.example",
+          provider: "local",
+          hosted: true,
+          companyOsOrigin: null,
           passwordReset: false,
           resetUrl: null,
         },
@@ -31,6 +32,7 @@ for (const width of [320, 375, 768]) {
     await expect(page.getByRole("combobox", { name: "Message Researcher" })).toHaveValue(
       "Prepare a research brief for review.",
     );
+    await expect(page.getByRole("button", { name: "Workforce", exact: true })).toHaveCount(0);
     await captureScreenshot(page, testInfo, `hosted-chat-${width}`);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
       true,
@@ -44,6 +46,15 @@ for (const width of [320, 375, 768]) {
       await page.getByRole("button", { name: "Open navigation", exact: true }).click();
       await expect(page.locator("aside").first()).not.toHaveAttribute("inert", "");
     }
+    await page.getByTestId("user-menu-trigger").click();
+    await expect(page.getByRole("button", { name: "Models", exact: true })).toHaveCount(0);
+    await page.getByRole("button", { name: "Voice", exact: true }).click();
+    await expect(page.getByTestId("voice-settings")).toBeVisible();
+    await expect(page.getByLabel("API key", { exact: true })).toHaveCount(0);
+    await expect(page.getByText("Personal credential", { exact: true })).toHaveCount(0);
+    await captureScreenshot(page, testInfo, `hosted-voice-${width}`);
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("voice-settings")).toBeHidden();
     await openNewBot(page);
     await expect(page.getByPlaceholder("Message New Bot")).toBeVisible();
     await expect(page.getByPlaceholder("Message New Bot")).toHaveValue("");
@@ -73,6 +84,16 @@ for (const width of [320, 375, 768]) {
     await captureScreenshot(page, testInfo, `hosted-running-${width}`);
     await stop.click();
     await expect(stop).toBeHidden();
+    if (width < 768) {
+      await page.getByTitle("Agent computer").click();
+      await expect(page.getByTestId("computer-chrome")).toBeVisible();
+      await expect(page.getByRole("button", { name: "Close computer" })).toBeVisible();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+        true,
+      );
+      await captureScreenshot(page, testInfo, `hosted-computer-${width}`);
+      await page.getByRole("button", { name: "Release", exact: true }).click();
+    }
     await page.locator("main").getByRole("button", { name: "New Bot", exact: true }).click();
     await expect(page.getByTestId("bot-settings")).toBeVisible();
     await captureScreenshot(page, testInfo, `hosted-settings-${width}`);

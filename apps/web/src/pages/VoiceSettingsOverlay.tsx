@@ -15,9 +15,77 @@ import {
 } from "@rakazo/ui-web";
 import { XIcon } from "lucide-react";
 import { useEffect, useId, useMemo, useState } from "react";
+import { useAuthCapabilities } from "../lib/auth-capabilities";
 import { rpc } from "../lib/rpc";
 
 export function VoiceSettingsOverlay({ onClose }: { onClose: () => void }) {
+  const capabilities = useAuthCapabilities();
+  if (!capabilities) return null;
+  return capabilities?.hosted ? (
+    <HostedVoiceSettings onClose={onClose} />
+  ) : (
+    <PersonalVoiceSettings onClose={onClose} />
+  );
+}
+
+function HostedVoiceSettings({ onClose }: { onClose: () => void }) {
+  const { t } = useLingui();
+  const [status, setStatus] = useState<VoiceStatus | null>(null);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    void rpc.voice
+      .status()
+      .then(setStatus)
+      .catch(() => setError(t`Could not load voice settings`));
+  }, []);
+  return (
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
+      <DialogContent data-testid="voice-settings">
+        <DialogTitle>
+          <Trans>Voice</Trans>
+        </DialogTitle>
+        <DialogDescription>
+          {status?.ready ? (
+            <Trans>Ready for calls and dictation.</Trans>
+          ) : (
+            <Trans>Voice is temporarily unavailable.</Trans>
+          )}
+        </DialogDescription>
+        {error ? (
+          <p role="alert" className="text-sm text-destructive">
+            {error}
+          </p>
+        ) : null}
+        <Button
+          disabled={!status?.ready || pending}
+          onClick={async () => {
+            setPending(true);
+            setError(null);
+            try {
+              const { speaker } = await import("../lib/tts.js");
+              await speaker.speak(t`Hi, this is how I'll sound when I read replies out loud.`);
+              if (speaker.state.error) setError(speaker.state.error);
+            } catch {
+              setError(t`Could not play a test clip`);
+            } finally {
+              setPending(false);
+            }
+          }}
+        >
+          <Trans>Hear a sample</Trans>
+        </Button>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function PersonalVoiceSettings({ onClose }: { onClose: () => void }) {
   const { t } = useLingui();
   const apiKeyId = useId();
   const voiceSelectId = useId();

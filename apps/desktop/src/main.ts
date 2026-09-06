@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { DesktopReachability, DesktopSetup } from "@rakazo/contracts";
+import { darkTokens } from "@rakazo/ui-tokens";
 import { app, BrowserWindow, ipcMain, Menu, net, type Session, session, shell } from "electron";
 import {
   DesktopUpdateController,
@@ -524,7 +525,7 @@ function oauthPopupWindowOptions() {
     frame: true,
     titleBarStyle: "default" as const,
     autoHideMenuBar: true,
-    backgroundColor: "#0D0D0E",
+    backgroundColor: darkTokens.background,
     webPreferences: {
       preload: "",
       nodeIntegration: false,

@@ -29,6 +29,7 @@ import { withSerializableRetry } from "./serializable-retry.js";
 export interface VoiceDeps {
   prisma: PrismaClient;
   secrets: EncryptedSecretStore;
+  deploymentVoice?: { provider: string; apiKey: string; voiceId: string };
 }
 
 export { listVoiceCatalog };
@@ -86,7 +87,19 @@ export async function loadVoiceCredential(deps: VoiceDeps, actor: Actor, provide
   const cred = provider
     ? await findVoiceCredential(deps.prisma, actor, provider)
     : await findDefaultVoiceCredential(deps.prisma, actor);
-  if (!cred) return null;
+  if (!cred) {
+    const hosted = deps.deploymentVoice;
+    if (!hosted || (provider && provider !== hosted.provider)) return null;
+    return {
+      cred: {
+        id: "deployment-voice",
+        provider: hosted.provider,
+        voiceId: hosted.voiceId,
+        isDefault: true,
+      },
+      apiKey: hosted.apiKey,
+    };
+  }
   const secret = await deps.prisma.secret.findFirst({
     where: { id: cred.secretId, userId: actor.userId, spaceId: null },
   });

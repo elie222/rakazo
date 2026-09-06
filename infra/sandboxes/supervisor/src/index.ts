@@ -660,6 +660,7 @@ async function ensureComputerImage() {
             "rakazo-browser.desktop",
             "embed.html",
             "clipboard-bridge.js",
+            "mobile-controls.js",
             "fluxbox.init",
             "fluxbox.apps",
             "fluxbox.menu",

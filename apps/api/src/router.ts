@@ -99,7 +99,6 @@ import {
   createThreadMessageInTransaction,
   deleteUnreferencedCredentialSecret,
   findDefaultModelCredential,
-  findDefaultVoiceCredential,
   findModelCredential,
   findSpaceMemoryConfig,
   formatMessagingLinkCode,
@@ -164,6 +163,7 @@ import {
   prepareVoice,
   toVoiceCredential,
   toVoiceStatus,
+  type VoiceDeps,
   voiceContext,
 } from "./voice.js";
 
@@ -325,6 +325,7 @@ function mcpAssignmentDto(row: {
 }
 
 export interface RouterDeps {
+  deploymentVoice?: VoiceDeps["deploymentVoice"];
   prisma: PrismaClient;
   events: ThreadEvents;
   auth: Auth;
@@ -3487,8 +3488,8 @@ export function createRouter(deps: RouterDeps) {
     voice: {
       catalog: authed.voice.catalog.handler(async () => listVoiceCatalog()),
       status: authed.voice.status.handler(async ({ context }) => {
-        const cred = await findDefaultVoiceCredential(deps.prisma, context.actor);
-        return toVoiceStatus(cred);
+        const loaded = await loadDefaultVoiceCredential(deps, context.actor);
+        return toVoiceStatus(loaded?.cred ?? null);
       }),
       credentials: authed.voice.credentials.handler(async ({ context }) => {
         const rows = await deps.prisma.userVoiceCredential.findMany({

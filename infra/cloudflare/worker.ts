@@ -104,6 +104,9 @@ export default {
       for (const name of ["set-cookie", "clear-site-data"]) outputHeaders.delete(name);
       outputHeaders.set("cache-control", "private, no-store");
       outputHeaders.set("referrer-policy", "no-referrer");
+      // The viewer is sandboxed to an opaque origin; its module imports use CORS.
+      // These requests already require the signed, expiring screen capability.
+      outputHeaders.set("access-control-allow-origin", "*");
       return new Response(upstream.body, { status: upstream.status, headers: outputHeaders });
     }
     return new Response("Not found", { status: 404 });

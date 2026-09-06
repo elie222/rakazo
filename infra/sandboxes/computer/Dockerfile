@@ -19,6 +19,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     x11vnc \
     fluxbox \
     xterm \
+    pcmanfm \
+    mousepad \
+    tint2 \
+    git \
+    curl \
+    unzip \
+    python3-pip \
+    python3-venv \
     xdotool \
     x11-utils \
     x11-xserver-utils \
@@ -55,6 +63,8 @@ COPY --chmod=644 fluxbox.init /etc/rakazo/fluxbox/init
 COPY --chmod=644 fluxbox.apps /etc/rakazo/fluxbox/apps
 COPY --chmod=644 fluxbox.menu /etc/rakazo/fluxbox/menu
 COPY --chmod=644 embed.html /usr/share/novnc/embed.html
+COPY --chmod=644 mobile-controls.js /usr/share/novnc/mobile-controls.js
+COPY --chmod=644 tint2rc /etc/rakazo/tint2rc
 COPY --chmod=644 clipboard-bridge.js /usr/share/novnc/clipboard-bridge.js
 # Strip CR so shebangs work even if the build context came from a CRLF checkout.
 RUN ldconfig \
