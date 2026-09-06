@@ -128,6 +128,18 @@ describe("mobile API authentication", () => {
     );
   });
 
+  it("treats a malformed capabilities response as password recovery being unavailable", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("not-json", { status: 200 })),
+    );
+
+    await expect(passwordResetCapabilities()).resolves.toEqual({
+      passwordReset: false,
+      resetUrl: null,
+    });
+  });
+
   it("changes a password with the bearer session and revokes other sessions", async () => {
     vi.mocked(SecureStore.getItemAsync).mockResolvedValue("session-token");
     const fetchMock = vi.fn(async () => jsonResponse({ status: true }));
