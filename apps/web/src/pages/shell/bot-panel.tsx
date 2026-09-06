@@ -290,7 +290,14 @@ export function BotSettings({
           (entry) => entry.provider === effectiveProvider && entry.id === effectiveModelId,
         )
       : undefined;
-  const thinkingOptions = (effectiveEntry?.thinkingLevels ?? []).filter((level) => level !== "off");
+  const effectiveCredential = credentials.find(
+    (entry) => entry.provider === effectiveProvider && entry.modelId === effectiveModelId,
+  );
+  const thinkingOptions = (
+    effectiveCredential?.thinkingLevels ??
+    effectiveEntry?.thinkingLevels ??
+    []
+  ).filter((level) => level !== "off");
 
   return (
     <div data-testid="bot-settings">

@@ -332,6 +332,8 @@ export interface AgentRunRequest {
     id: string;
     apiKey?: string;
     baseUrl?: string;
+    /** Whether this custom connection accepts standard reasoning_effort. */
+    reasoning?: boolean;
     /** Preferred thinking effort for reasoning models; clamped to the model’s supported set. */
     thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null;
     /** In-process OAuth credential from the encrypted store for this run. */
@@ -521,6 +523,8 @@ export interface MessagingSendResult {
 export interface MessagingInboundMessage {
   type: "message";
   provider: string;
+  /** Per-message transport when one provider spans multiple networks (for example SMS vs RCS). */
+  transport?: string;
   /** Provider message id; drives replay-safe client nonces downstream. */
   handle: string;
   /** Opaque conversation id — pass back to sendToThread to reply. */

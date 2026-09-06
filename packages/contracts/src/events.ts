@@ -1,4 +1,5 @@
 import * as z from "zod";
+import { BotSecretDestination } from "./bot-secrets.js";
 import { Id } from "./ids.js";
 import { McpTransportSchema } from "./mcp.js";
 
@@ -99,6 +100,7 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     input: z.enum(["text", "secret"]).optional(),
     /** Why the secret is needed; drives field label on the masked card. */
     purpose: SecretAskPurpose.optional(),
+    credential: BotSecretDestination.optional(),
     status: z.enum(["pending", "answered"]).optional(),
     answer: z.string().optional(),
     actions: z
@@ -233,6 +235,8 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     /** A group-chat message delivered into a member bot's own thread. */
     kind: z.literal("channel_message"),
     provider: z.string(),
+    /** Per-message network when a provider spans multiple transports. */
+    transport: z.string().optional(),
     channelId: Id,
     fromAddress: z.string(),
     fromLabel: z.string(),

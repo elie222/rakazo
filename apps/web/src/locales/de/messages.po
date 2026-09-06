@@ -3246,3 +3246,8 @@ msgstr "Geteilte Dokumente"
 #: src/pages/KnowledgeSection.tsx:25
 msgid "Skills"
 msgstr "Skills"
+
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/Onboarding.tsx
+msgid "Supports thinking"
+msgstr "Unterstützt Denkmodus"

@@ -712,6 +712,8 @@ export const ModelCredentialSchema = z.object({
   isDefault: z.boolean(),
   baseUrl: z.string().optional(),
   modelId: z.string().optional(),
+  reasoning: z.boolean().optional(),
+  thinkingLevels: z.array(ThinkingLevelSchema).optional(),
 });
 export type ModelCredential = z.infer<typeof ModelCredentialSchema>;
 
@@ -724,6 +726,7 @@ export const ModelConnectInputSchema = z
     baseUrl: z.string().optional(),
     label: z.string().optional(),
     modelId: z.string().optional(),
+    reasoning: z.boolean().optional(),
   })
   .superRefine((value, ctx) => {
     if (value.provider === OPENAI_COMPATIBLE_PROVIDER_ID) {

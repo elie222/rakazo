@@ -106,6 +106,15 @@ describe("sendblue platform hooks", () => {
     expect(sendblue.channelName!(null)).toBeNull();
   });
 
+  it("accepts only supported per-message transports", () => {
+    for (const service of ["iMessage", "SMS", "RCS"]) {
+      expect(sendblue.transport!({ service })).toBe(service);
+    }
+    expect(sendblue.transport!({ service: "email" })).toBeNull();
+    expect(sendblue.transport!({ service: 42 })).toBeNull();
+    expect(sendblue.transport!(null)).toBeNull();
+  });
+
   it("derives deterministic provider-prefixed direct thread ids", () => {
     expect(sendblue.directThreadId!("+15551234567")).toMatch(/^sendblue:/);
     expect(sendblue.adapter.isDM?.(sendblue.directThreadId!("+15551234567"))).toBe(true);

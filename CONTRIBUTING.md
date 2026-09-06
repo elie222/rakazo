@@ -4,18 +4,8 @@ Thanks for helping improve Rakazo. Keep changes focused and testable.
 
 ## Run locally
 
-See [README.md](README.md) for full details. Quick start from the repo root:
-
-```bash
-cp .env.example .env
-# Set BETTER_AUTH_SECRET and ENCRYPTION_KEY to long random strings.
-docker compose --env-file .env -f infra/compose/docker-compose.yml up postgres -d
-pnpm install
-pnpm db:generate
-pnpm db:migrate
-pnpm sandbox:build
-pnpm dev
-```
+Follow the [source checkout setup](README.md#local-development-source-checkout) for prerequisites,
+required secrets, and startup commands.
 
 ## Checks before you open a PR
 
@@ -25,12 +15,28 @@ pnpm dev
 | `pnpm test:integration` | Postgres via Testcontainers: product journeys, authorization, executor lifecycle, Graphile / LISTEN/NOTIFY. Needs Docker. |
 | `pnpm test:e2e` | Playwright against the emulated API. Needs Docker. |
 | `pnpm test:topology` | Local product-path smoke: Docker computer + Graphile worker recovery. Needs Docker. Not PR CI. |
-| `pnpm test:canary` | Live OpenRouter / E2B canaries. Needs keys. Not PR CI. |
-| `pnpm test:computer` | Real vision model + E2B desktop. Needs keys; see README. Not PR CI. |
+| `pnpm test:canary` | Live provider canaries. Needs keys. Not PR CI. |
+| `pnpm test:computer` | Real vision model + E2B desktop. Needs keys; see [computer verification](docs/computer-runtime.md#verification). Not PR CI. |
 | `pnpm check` | TypeScript (`tsc`) across the monorepo. |
 | `pnpm lint` | Biome lint and format check. |
 
 CI runs `pnpm lint`, `pnpm check`, production builds (including Electron preload smoke), `pnpm test`, `pnpm test:integration`, and `pnpm test:e2e` on every PR.
+
+## Optional live-provider checks
+
+The default Playwright suite uses the fake sandbox. To run the same scripted-agent suite against
+real computers, set the matching `E2B_API_KEY`, `DAYTONA_API_KEY`, or `BOX_API_KEY` and choose a provider:
+
+```bash
+pnpm test:e2e -- --sandbox=e2b
+pnpm test:e2e -- --sandbox=daytona
+pnpm test:e2e -- --sandbox=box
+```
+
+The Playwright workflow also accepts these providers through its manual **Sandbox provider** input.
+These runs provision real machines and destroy them after the suite. Automatic runs use `fake`.
+For the separate real-model desktop acceptance test, see
+[computer verification](docs/computer-runtime.md#verification).
 
 ## Secrets and configuration
 

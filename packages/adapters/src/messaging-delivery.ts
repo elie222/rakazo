@@ -189,6 +189,7 @@ async function mirrorChannelRun(
       const block: MessageBlock = {
         kind: "channel_message",
         provider: identity.provider,
+        ...(channelBlock.transport ? { transport: channelBlock.transport } : {}),
         channelId: channel.id,
         fromAddress: identity.address,
         fromLabel,

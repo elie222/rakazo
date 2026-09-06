@@ -405,6 +405,7 @@ export function modelsForRequest(
     return registerOpenAiCompatibleRuntime(models, {
       modelId: request.model.id,
       baseUrl: request.model.baseUrl,
+      reasoning: request.model.reasoning,
     });
   }
   return catalogModels();

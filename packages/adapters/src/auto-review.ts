@@ -216,6 +216,7 @@ export async function runAutoReviewJudge(input: {
   checker: AutoReviewChecker;
   apiKey?: string;
   baseUrl?: string;
+  reasoning?: boolean;
   oauth?: {
     credential: AgentModelOAuthCredential;
     persist?: (credential: AgentModelOAuthCredential) => Promise<void>;
@@ -248,6 +249,7 @@ export async function runAutoReviewJudge(input: {
           id: input.checker.model,
           apiKey: input.oauth ? undefined : input.apiKey,
           baseUrl: input.baseUrl,
+          reasoning: input.reasoning,
           oauth: input.oauth,
         },
       },

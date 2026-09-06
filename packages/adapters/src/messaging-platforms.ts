@@ -85,6 +85,7 @@ export function messagingPlatformsFromEnv(env: MessagingEnvironmentValues): Mess
       peekStatus: (payload) => parseSendblueStatus(payload),
       participants: (raw) => sendblueParticipants(raw, lineNumber),
       channelName: (raw) => sendblueGroupName(raw),
+      transport: (raw) => sendblueTransport(raw),
     });
   }
 
@@ -182,4 +183,10 @@ function sendblueGroupName(raw: unknown): string | null {
   if (typeof raw !== "object" || raw === null) return null;
   const name = (raw as { group_display_name?: unknown }).group_display_name;
   return typeof name === "string" && name ? name : null;
+}
+
+function sendblueTransport(raw: unknown): string | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const service = (raw as { service?: unknown }).service;
+  return service === "iMessage" || service === "SMS" || service === "RCS" ? service : null;
 }

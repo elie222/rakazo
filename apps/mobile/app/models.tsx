@@ -13,6 +13,7 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   View,
@@ -44,7 +45,9 @@ export default function Models() {
   const [modelId, setModelId] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
+  const [reasoning, setReasoning] = useState(false);
   const [showEndpointHelp, setShowEndpointHelp] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [showApiKey, setShowApiKey] = useState(false);
   const [probeModels, setProbeModels] = useState<string[]>([]);
   const [probedBaseUrl, setProbedBaseUrl] = useState<string | null>(null);
@@ -110,6 +113,7 @@ export default function Models() {
     setModelId(nextModel);
     if (nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID) {
       setBaseUrl(nextCredential?.baseUrl ?? "");
+      setReasoning(nextCredential?.reasoning ?? false);
     }
   }, []);
 
@@ -195,16 +199,16 @@ export default function Models() {
 
   function chooseProvider(nextProvider: string) {
     cancelOAuth();
+    const nextCredential = credentials.find((entry) => entry.provider === nextProvider);
     setProvider(nextProvider);
+    setReasoning(nextCredential?.reasoning ?? false);
     setModelId(
       nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID
-        ? (credentials.find((entry) => entry.provider === nextProvider)?.modelId ?? "")
+        ? (nextCredential?.modelId ?? "")
         : (catalog.find((entry) => entry.provider === nextProvider)?.id ?? ""),
     );
     setBaseUrl(
-      nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID
-        ? (credentials.find((entry) => entry.provider === nextProvider)?.baseUrl ?? "")
-        : "",
+      nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID ? (nextCredential?.baseUrl ?? "") : "",
     );
     setApiKey("");
     resetOpenAiCompatibleProbe();
@@ -284,6 +288,7 @@ export default function Models() {
               provider: selected.provider,
               baseUrl: effectiveBaseUrl,
               modelId: modelId.trim(),
+              reasoning,
               apiKey: apiKey.trim() || undefined,
               label: selected.providerName ?? selected.provider,
             }
@@ -566,6 +571,24 @@ export default function Models() {
                     ) : null}
                   </>
                 )}
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityState={{ expanded: showAdvanced }}
+                  onPress={() => setShowAdvanced((visible) => !visible)}
+                >
+                  <Text style={styles.helpLabel}>{t("Advanced")}</Text>
+                </Pressable>
+                {showAdvanced ? (
+                  <View style={styles.modelRow}>
+                    <Text style={styles.modelLabel}>{t("Supports thinking")}</Text>
+                    <Switch
+                      accessibilityLabel={t("Supports thinking")}
+                      value={reasoning}
+                      onValueChange={setReasoning}
+                      disabled={busy}
+                    />
+                  </View>
+                ) : null}
               </>
             ) : (
               <View style={styles.card}>

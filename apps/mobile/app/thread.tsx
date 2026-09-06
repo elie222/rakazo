@@ -2147,7 +2147,9 @@ function previewMessageText(message: MobileMessage): string {
   const text = message.blocks
     .flatMap((block) => {
       if (block.kind === "channel_message" && block.text) {
-        return [`${messagingProviderLabel(block.provider)} · ${block.fromLabel}: ${block.text}`];
+        return [
+          `${messagingProviderLabel(block.provider, block.transport)} · ${block.fromLabel}: ${block.text}`,
+        ];
       }
       return block.kind === "text" && block.text ? [block.text] : [];
     })
@@ -2311,8 +2313,8 @@ const MessageBubble = memo(function MessageBubble({
         style={{ width: "100%", paddingVertical: 4, alignItems: "center" }}
       >
         <Text style={{ color: tokens.mutedForeground, fontSize: 13.5, textAlign: "center" }}>
-          {messagingProviderLabel(channelMessage.provider)} · {channelMessage.fromLabel}:{" "}
-          {channelMessage.text}
+          {messagingProviderLabel(channelMessage.provider, channelMessage.transport)} ·{" "}
+          {channelMessage.fromLabel}: {channelMessage.text}
         </Text>
       </Pressable>
     );
@@ -2593,7 +2595,9 @@ const MessageBubble = memo(function MessageBubble({
   const caption = message.blocks
     .flatMap((block) => {
       if (block.kind === "channel_message" && block.text) {
-        return [`${messagingProviderLabel(block.provider)} · ${block.fromLabel}: ${block.text}`];
+        return [
+          `${messagingProviderLabel(block.provider, block.transport)} · ${block.fromLabel}: ${block.text}`,
+        ];
       }
       return block.kind === "text" && block.text ? [block.text] : [];
     })
@@ -2938,6 +2942,11 @@ function AskBlock({
       >
         {ask.text}
       </Text>
+      {secretInput && ask.credential ? (
+        <Text style={{ color: tokens.mutedForeground, fontSize: 13.5 }}>
+          {ask.credential.origin}
+        </Text>
+      ) : null}
       {ask.detail && !secretInput ? (
         <Text style={{ color: tokens.mutedForeground, fontSize: 13.5 }}>{ask.detail}</Text>
       ) : null}
