@@ -41,14 +41,15 @@ const BOOT_WAIT_MS = 250;
  * refused a booting one -- so the computer stayed wedged for good and every run on its bot
  * retried forever.
  *
- * The same predicate guards the writes that end a boot. Reclaiming means two workers can
- * briefly believe they own one row: ours, and one merely paused past its lease. Writing
- * unconditionally would let the late one overwrite the winner's providerRef and leak its box,
- * which is how the orphaned sandboxes that exhaust a Docker host pile up. A lease that merely
- * expired without being taken still passes, so a slow manual boot that never heartbeats keeps
- * working.
+ * Used only when claiming an abandoned "booting" row. End-of-boot writes fence on the claim
+ * stamp (updatedAt) instead: fencing them with this predicate too would let a second Team bot
+ * lease that appears mid-provision block both activation and the failure write, leave the row
+ * stuck in "booting", and destroy the valid winner's sandbox. A lease that merely expired
+ * without being taken still passes, so a slow manual boot that never heartbeats keeps working.
  *
- * When screenLeaseId is absent, require that no live execution lease exists at all.
+ * When screenLeaseId is absent, require that no live execution lease exists at all. Booting
+ * reclaim compare-and-swaps the pre-wait updatedAt so two lease-less callers cannot both
+ * match even if one re-reads the other's claim stamp during the boot wait.
  */
 function heldByNobodyElse(lease: { ownerId: string; fence: number } | null) {
   return {
@@ -112,6 +113,11 @@ export async function provisionComputer(
   const homePath = resolveAgentHomePath(deps.home, existing.homeKey, deps.dataDir ?? "./data");
   await mkdir(homePath, { recursive: true });
 
+  // If we first observe abandoned "booting", remember that stamp before waiting. A concurrent
+  // reclaim bumps updatedAt while state stays "booting"; fencing the claim on the pre-wait
+  // stamp keeps those callers mutually exclusive. After the wait, a finished boot returns
+  // "running" and takes the normal reconnect claim instead.
+  const reclaimStamp = existing.state === "booting" ? existing.updatedAt : null;
   if (existing.state === "booting" || existing.state === "suspending") {
     existing = await waitForComputerReady(deps.prisma, computerId, context);
   }
@@ -123,21 +129,41 @@ export async function provisionComputer(
   const reconnecting = existing.state === "running" && Boolean(existing.providerRef);
   // Reconnect can allocate a replacement too. Claim it before any provider call,
   // and compare the observed reference so a delayed caller cannot replace a winner.
-  // An abandoned "booting" row is claimed only when no other live execution lease remains.
+  // An abandoned "booting" row is claimed only when no other live execution lease remains,
+  // and only when we observed "booting" (never as an OR arm on a running/stopped claim).
   const previousRef = { providerRef: existing.providerRef, kind: existing.kind };
   const bootLease = context.screenLeaseId ? parseScreenLeaseId(context.screenLeaseId) : null;
+  // Reclaim "booting" only when we observed it. Always ORing a booting arm lets a second
+  // caller match after the first claimed running/stopped/… → booting and double-provision.
+  const claimWhere =
+    existing.state === "booting"
+      ? {
+          state: "booting" as const,
+          updatedAt: reclaimStamp ?? existing.updatedAt,
+          ...heldByNobodyElse(bootLease),
+        }
+      : {
+          state: existing.state,
+          ...previousRef,
+        };
   const claimed = await deps.prisma.computer.updateMany({
     where: {
       id: computerId,
-      OR: [
-        ...(existing.state !== "booting" ? [{ state: existing.state, ...previousRef }] : []),
-        { state: "booting", ...heldByNobodyElse(bootLease) },
-      ],
+      ...claimWhere,
       ...(context.botId ? { bots: { some: { id: context.botId, archivedAt: null } } } : {}),
     },
     data: { state: "booting" },
   });
   if (claimed.count !== 1) throw new ComputerBusyError();
+  // Stamp this claim so activation/failure cannot race a later reclaim or a Team lease that
+  // appears mid-boot. updatedAt advances on our claim write; a concurrent reclaim advances it
+  // again and leaves our end-of-boot writes matching zero rows without wedging the winner.
+  const claimStamp = (
+    await deps.prisma.computer.findUniqueOrThrow({
+      where: { id: computerId },
+      select: { updatedAt: true },
+    })
+  ).updatedAt;
   let provisioned: ComputerRef | undefined;
   try {
     const ref = await deps.sandbox.provision(
@@ -171,8 +197,8 @@ export async function provisionComputer(
       where: {
         id: computerId,
         state: "booting",
+        updatedAt: claimStamp,
         ...previousRef,
-        ...heldByNobodyElse(bootLease),
         ...(context.botId ? { bots: { some: { id: context.botId, archivedAt: null } } } : {}),
       },
       data: {
@@ -209,8 +235,8 @@ export async function provisionComputer(
         where: {
           id: computerId,
           state: "booting",
+          updatedAt: claimStamp,
           ...previousRef,
-          ...heldByNobodyElse(bootLease),
         },
         data: {
           state: reconnecting ? "running" : "error",

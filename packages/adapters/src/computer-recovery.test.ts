@@ -45,19 +45,25 @@ async function fixture(provider: "fake" | "desktop" = "fake") {
     controlHolder: "none",
     controlLeaseId: null,
     homeRevision: "saved",
+    updatedAt: new Date("2024-01-01T00:00:00.000Z"),
   };
-  // Model the atomic scalar predicates used by claims, including stale references.
+  // Model the atomic scalar predicates used by claims, including stale references
+  // and the updatedAt claim stamp used for booting reclaim / end-of-boot writes.
   const computer = {
     findUniqueOrThrow: vi.fn(async () => ({ ...row })),
     updateMany: vi.fn(async ({ where, data }) => {
-      const matches = ["id", "state", "providerRef", "kind"].every(
+      const matches = ["id", "state", "providerRef", "kind", "updatedAt"].every(
         (key) => !(key in where) || where[key] === row[key as keyof typeof row],
       );
       if (!matches) return { count: 0 };
-      Object.assign(row, data);
+      Object.assign(row, data, {
+        updatedAt: new Date(row.updatedAt.getTime() + 1),
+      });
       return { count: 1 };
     }),
-    update: vi.fn(async ({ data }) => Object.assign(row, data)),
+    update: vi.fn(async ({ data }) =>
+      Object.assign(row, data, { updatedAt: new Date(row.updatedAt.getTime() + 1) }),
+    ),
   };
   const deps = {
     prisma: {
@@ -78,9 +84,15 @@ describe("computer recovery preserves live work", () => {
     const { deps, row, computer, first } = await fixture();
     await deps.sandbox.destroy(first, context);
     row.providerRef = "missing-provider";
-    // Both workers read the original row before either claims it.
+    // Both workers read the original row before either claims it; later reads
+    // (claim stamp, activation) must see the live row so updatedAt fencing works.
     const original = { ...row };
-    computer.findUniqueOrThrow.mockResolvedValue(original);
+    let reads = 0;
+    computer.findUniqueOrThrow.mockImplementation(async () => {
+      reads += 1;
+      if (reads <= 2) return { ...original };
+      return { ...row };
+    });
     const provision = vi.spyOn(deps.sandbox, "provision");
     const restore = vi.spyOn(deps.sandbox, "importWorkspace");
     const results = await Promise.allSettled([
@@ -119,6 +131,43 @@ describe("computer recovery preserves live work", () => {
     expect(
       new TextDecoder().decode(await deps.sandbox.readFile(winner, "notes.txt", context)),
     ).toBe("winner work");
+  });
+
+
+  it("claims an abandoned booting computer only once when callers have no screenLeaseId", async () => {
+    const { deps, row, computer } = await fixture();
+    row.state = "booting";
+    row.providerRef = null;
+    const observed = { ...row };
+    let reads = 0;
+    computer.findUniqueOrThrow.mockImplementation(async () => {
+      reads += 1;
+      // First two reads are the concurrent observations before either claims.
+      if (reads <= 2) return { ...observed };
+      return { ...row };
+    });
+    const provision = vi.spyOn(deps.sandbox, "provision");
+    const setTimeoutReal = globalThis.setTimeout;
+    vi.stubGlobal(
+      "setTimeout",
+      ((fn: (...args: never[]) => void, _ms?: number, ...args: never[]) =>
+        setTimeoutReal(fn, 0, ...args)) as unknown as typeof setTimeout,
+    );
+    try {
+      const results = await Promise.allSettled([
+        provisionComputer(deps, row.id, context),
+        provisionComputer(deps, row.id, { ...context, botId: "other-bot" }),
+      ]);
+      const successful = results.filter((result) => result.status === "fulfilled");
+      const rejected = results.filter((result) => result.status === "rejected");
+      expect(successful).toHaveLength(1);
+      expect(rejected).toHaveLength(1);
+      expect(rejected[0]?.reason).toBeInstanceOf(ComputerBusyError);
+      expect(provision).toHaveBeenCalledOnce();
+      expect(row.state).toBe("running");
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("preserves the reference and workspace through an uncertain reconnect and a retry", async () => {
