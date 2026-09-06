@@ -127,3 +127,4 @@ The paid marketing template is a separate licensed site, not a replacement appli
 | `infra/sandboxes/computer/tint2rc` | Linux desktop applications and mobile viewer controls |
 | `infra/sandboxes/supervisor/src/index.ts` | Linux desktop applications and mobile viewer controls |
 | `infra/sandboxes/supervisor/src/mobile-controls.test.ts` | Linux desktop applications and mobile viewer controls |
+| `infra/sandboxes/computer/mobile-controls.d.ts` | Typed viewer keyboard boundary |

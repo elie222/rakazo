@@ -30,10 +30,10 @@
       dialog footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
     </style>
     <script type="module">
-      import { attachMobileControls } from "./mobile-controls.js";
-      import Keyboard from "./core/input/keyboard.js";
       import { attachHostClipboardPaste, pasteHostText } from "./clipboard-bridge.js";
+      import Keyboard from "./core/input/keyboard.js";
       import RFB from "./core/rfb.js";
+      import { attachMobileControls } from "./mobile-controls.js";
 
       function query(name, fallback) {
         const match = `${document.location.href}${window.location.hash}`.match(
@@ -64,14 +64,14 @@
   <body>
     <div id="screen"></div>
     <div id="controls" hidden>
-      <button id="clipboard-button" aria-label="Clipboard" title="Clipboard"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M9 5H6v16h12V5h-3M9 3h6v4H9zM9 11h6M9 15h6"/></svg></button>
-      <button id="keyboard-button" aria-label="Keyboard" aria-pressed="false" title="Keyboard"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="3"/><path d="M5 9h2m2 0h2m2 0h2m2 0h2M5 12h2m2 0h2m2 0h2m2 0h2M7 15h10"/></svg></button>
+      <button type="button" id="clipboard-button" aria-label="Clipboard" title="Clipboard"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M9 5H6v16h12V5h-3M9 3h6v4H9zM9 11h6M9 15h6"/></svg></button>
+      <button type="button" id="keyboard-button" aria-label="Keyboard" aria-pressed="false" title="Keyboard"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="3"/><path d="M5 9h2m2 0h2m2 0h2m2 0h2M5 12h2m2 0h2m2 0h2m2 0h2M7 15h10"/></svg></button>
     </div>
     <textarea id="keyboard-input" aria-label="Type on computer" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" tabindex="-1"></textarea>
     <dialog id="clipboard-dialog" aria-labelledby="clipboard-title">
-      <header><strong id="clipboard-title">Clipboard</strong><button id="clipboard-close" aria-label="Close clipboard">×</button></header>
+      <header><strong id="clipboard-title">Clipboard</strong><button type="button" id="clipboard-close" aria-label="Close clipboard">×</button></header>
       <textarea id="clipboard-text" aria-label="Clipboard text" placeholder="Paste text here"></textarea>
-      <footer><button id="clipboard-copy">Copy</button><button id="clipboard-paste">Paste to computer</button></footer>
+      <footer><button type="button" id="clipboard-copy">Copy</button><button type="button" id="clipboard-paste">Paste to computer</button></footer>
     </dialog>
   </body>
 </html>
