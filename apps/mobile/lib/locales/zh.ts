@@ -218,6 +218,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Finish connecting in the browser, then refresh this page.":
     "在浏览器中完成连接，然后刷新此页面。",
   "Finish signing in in your browser:": "请在浏览器中完成登录：",
+  "Git event": "Git 事件",
   Group: "群组",
   "Group name": "群组名称",
   "Group not found": "找不到群组",
@@ -414,6 +415,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Use default server": "使用默认服务器",
   "Use this model": "使用此模型",
   Voice: "语音",
+  Webhook: "Webhook",
   "Waiting for sign-in…": "正在等待登录…",
   "Waiting for this bot’s response.": "正在等待这个 Bot 的回复。",
   "Waiting…": "等待中…",

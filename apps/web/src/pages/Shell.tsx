@@ -157,6 +157,7 @@ import { isFileDrag, revokePendingAttachmentPreviews } from "../lib/pending-atta
 import { markAfterPaint, markOnce } from "../lib/performance";
 import { clearSpaceSelection, rpc, selectedSpaceId, selectSpace } from "../lib/rpc";
 import { readSeenRunErrorIds, rememberSeenRunErrorId } from "../lib/run-error-storage";
+import { sharedInflight } from "../lib/shared-inflight";
 import {
   activeThreadRuns,
   applyThreadSendReceipt,
@@ -520,6 +521,16 @@ export function ShellPage() {
   } | null>(null);
   const autoBooted = useRef<string | null>(null);
   const routineSavePending = useRef(false);
+  const webhookSecretProvisionRef = useRef(new Map<string, Promise<string>>());
+  const ensureWebhookSecret = (botId: string) =>
+    sharedInflight(webhookSecretProvisionRef.current, botId, async () => {
+      const result = await rpc.bots.rotateWebhookSecret({ botId });
+      setRoutineWebhookSecret(result.secret);
+      setBots((current) =>
+        current.map((bot) => (bot.id === botId ? { ...bot, webhookConfigured: true } : bot)),
+      );
+      return result.secret;
+    });
   const routineSaveRequest = useRef(0);
   const routineRunPending = useRef(false);
   const bootstrappedThread = useRef<ThreadSnapshot | null>(null);
@@ -3379,27 +3390,30 @@ export function ShellPage() {
                   secret: routineWebhookSecret,
                   configured: active.webhookConfigured || Boolean(routineWebhookSecret),
                 }}
+                githubPath={
+                  typeof window !== "undefined"
+                    ? `${window.location.origin}/api/v1/bots/${active.id}/github`
+                    : `/api/v1/bots/${active.id}/github`
+                }
                 saving={savingRoutine}
                 running={runningRoutine}
                 error={routineError}
                 onBack={() => setPanel("computer")}
                 onClose={() => setPanel(null)}
                 onEnsureWebhook={async () => {
-                  const result = await rpc.bots.rotateWebhookSecret({ botId: active.id });
-                  setRoutineWebhookSecret(result.secret);
-                  setBots((current) =>
-                    current.map((bot) =>
-                      bot.id === active.id ? { ...bot, webhookConfigured: true } : bot,
-                    ),
-                  );
+                  await ensureWebhookSecret(active.id);
                 }}
                 onSave={async () => {
                   if (routineSavePending.current) return;
                   const targetBotId = active.id;
                   const targetRoutine = editingRoutine;
                   if (targetRoutine && targetRoutine.botId !== targetBotId) return;
-                  if (!routineDraft.schedules.length && !routineDraft.webhookEnabled) {
-                    setRoutineError(t`Add a schedule or webhook trigger`);
+                  if (
+                    !routineDraft.schedules.length &&
+                    !routineDraft.webhookEnabled &&
+                    !routineDraft.githubEnabled
+                  ) {
+                    setRoutineError(t`Add a schedule, webhook, or GitHub trigger`);
                     return;
                   }
                   const saveRequest = ++routineSaveRequest.current;
@@ -3408,17 +3422,11 @@ export function ShellPage() {
                   setRoutineError(null);
                   try {
                     if (
-                      routineDraft.webhookEnabled &&
+                      (routineDraft.webhookEnabled || routineDraft.githubEnabled) &&
                       !active.webhookConfigured &&
                       !routineWebhookSecret
                     ) {
-                      const rotated = await rpc.bots.rotateWebhookSecret({ botId: targetBotId });
-                      setRoutineWebhookSecret(rotated.secret);
-                      setBots((current) =>
-                        current.map((bot) =>
-                          bot.id === targetBotId ? { ...bot, webhookConfigured: true } : bot,
-                        ),
-                      );
+                      await ensureWebhookSecret(targetBotId);
                     }
                     const crons = routineDraft.schedules.map(cronFromPreset);
                     let saved: Routine;
@@ -3444,6 +3452,7 @@ export function ShellPage() {
                         crons,
                         active: armOneShot ? true : routineDraft.active,
                         webhookEnabled: routineDraft.webhookEnabled,
+                        githubEnabled: routineDraft.githubEnabled,
                         ...(runAt ? { runAt } : {}),
                       });
                     } else {
@@ -3456,6 +3465,7 @@ export function ShellPage() {
                         active: routineDraft.active,
                         notify: true,
                         webhookEnabled: routineDraft.webhookEnabled,
+                        githubEnabled: routineDraft.githubEnabled,
                       });
                     }
                     if (

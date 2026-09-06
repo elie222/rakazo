@@ -1,5 +1,44 @@
 import { expect, test } from "@playwright/test";
-import { captureScreenshot, completeOnboarding, signup } from "./helpers";
+import type { Routine } from "@rakazo/contracts";
+import { activeBotId, captureScreenshot, completeOnboarding, rpc, signup } from "./helpers";
+
+test("GitHub event trigger exposes signed delivery settings and persists", async ({
+  page,
+}, testInfo) => {
+  const stamp = Date.now();
+  await signup(page, `routine-github-${stamp}@rakazo.test`, "password12", "GitHub Routine");
+  await completeOnboarding(page);
+  const botId = activeBotId(page);
+
+  await page.getByTitle("Agent computer").click();
+  await page.getByRole("button", { name: "Create Routine" }).click();
+  await page.getByPlaceholder("Name this routine").fill("Review repository events");
+  await page
+    .getByPlaceholder("What should this routine do each time it runs?")
+    .fill("Inspect the signed GitHub event");
+  await page.getByRole("button", { name: "Add trigger" }).click();
+  await page.getByRole("menuitem", { name: "Git event", exact: true }).click();
+
+  await expect(
+    page.getByTestId("side-panel").getByText("Git event", { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText(new RegExp(`/api/v1/bots/${botId}/github$`))).toBeVisible();
+  await expect(page.getByText("X-Hub-Signature-256: sha256=…", { exact: true })).toBeVisible();
+
+  const saved = page.waitForResponse(
+    (response) => response.url().includes("/rpc/routines/create") && response.ok(),
+  );
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await saved;
+  const [routine] = await rpc<Routine[]>(page, "routines/list", { botId });
+  expect(routine).toMatchObject({
+    name: "Review repository events",
+    crons: [],
+    webhookEnabled: false,
+    githubEnabled: true,
+  });
+  await captureScreenshot(page, testInfo, "routine-github-event");
+});
 
 test("Korean webhook routine keeps technical field labels in English", async ({
   page,

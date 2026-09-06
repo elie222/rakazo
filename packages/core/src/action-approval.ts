@@ -34,6 +34,23 @@ const APPROVAL_REQUIRED_BUILTIN_TOOLS = new Set([
 ]);
 const EXPLICIT_APPROVAL_BUILTIN_TOOLS = new Set(["create_space"]);
 
+const UNATTENDED_SAFE_BUILTIN_TOOLS = new Set([
+  "browser_snapshot",
+  "cloud_agent_status",
+  "computer_observe",
+  "list_files",
+  "list_secrets",
+  "read_file",
+  "recall_memory",
+  "request_takeover",
+  "run_subagent",
+  "schedule_list",
+  "scratchpad_list",
+  "skill_read",
+  "web_fetch",
+  "web_search",
+]);
+
 const READ_ONLY_CONNECTOR_PATTERN = /(^|_)(get|list|search|find|read)(_|$)/i;
 const MUTATING_CONNECTOR_PATTERN =
   /(^|_)(accept|add|approve|archive|assign|buy|cancel|charge|checkout|close|commit|copy|create|delete|deploy|disable|enable|execute|forward|grant|invite|link|mark|merge|modify|move|patch|pay|post|publish|purchase|put|register|reject|remove|rename|replace|reply|reset|revoke|run|schedule|send|set|share|start|stop|submit|subscribe|trigger|unassign|unlink|unsubscribe|update|upload|upsert|write)(_|$)/i;
@@ -75,6 +92,18 @@ export function toolRequiresApproval(toolName: string, viaConnector: boolean): b
 /** Security-boundary changes cannot be auto-reviewed or permanently allowed. */
 export function toolRequiresExplicitApproval(toolName: string): boolean {
   return EXPLICIT_APPROVAL_BUILTIN_TOOLS.has(toolName);
+}
+
+/** External webhook runs may inspect state unattended, but side effects always need the owner. */
+export function unattendedTriggerToolRequiresApproval(
+  trigger: string,
+  toolName: string,
+  viaConnector: boolean,
+): boolean {
+  if (trigger !== "webhook") return false;
+  return viaConnector
+    ? connectorToolRequiresApproval(toolName)
+    : !UNATTENDED_SAFE_BUILTIN_TOOLS.has(toolName);
 }
 
 function categoryMatches(category: string, toolName: string, connectorKind: string): boolean {

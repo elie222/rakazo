@@ -374,14 +374,20 @@ export const appContract = {
             active: z.boolean().optional(),
             notify: z.boolean().optional(),
             webhookEnabled: z.boolean().optional(),
+            githubEnabled: z.boolean().optional(),
             /** ISO datetime to arm a never-run one-shot. */
             runAt: IsoDate.optional(),
           })
           .superRefine((value, ctx) => {
-            if (value.crons && value.crons.length === 0 && value.webhookEnabled === false) {
+            if (
+              value.crons &&
+              value.crons.length === 0 &&
+              value.webhookEnabled === false &&
+              value.githubEnabled === false
+            ) {
               ctx.addIssue({
                 code: "custom",
-                message: "Add a schedule or webhook trigger",
+                message: "Add a schedule, webhook, or GitHub trigger",
                 path: ["crons"],
               });
             }

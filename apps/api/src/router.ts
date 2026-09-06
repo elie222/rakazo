@@ -2014,6 +2014,7 @@ export function createRouter(deps: RouterDeps) {
             notify: input.notify,
             active: input.active,
             webhookEnabled: input.webhookEnabled,
+            githubEnabled: input.githubEnabled,
             nextRunAt,
           },
         });
@@ -2044,9 +2045,10 @@ export function createRouter(deps: RouterDeps) {
         const crons = input.crons ?? existing.crons;
         const timezone = input.timezone ?? existing.timezone;
         const webhookEnabled = input.webhookEnabled ?? existing.webhookEnabled;
-        if (crons.length === 0 && !webhookEnabled) {
+        const githubEnabled = input.githubEnabled ?? existing.githubEnabled;
+        if (crons.length === 0 && !webhookEnabled && !githubEnabled) {
           throw new ORPCError("BAD_REQUEST", {
-            message: "Add a schedule or webhook trigger",
+            message: "Add a schedule, webhook, or GitHub trigger",
           });
         }
         if (hasMixedOneShotSchedule(crons)) {
@@ -2113,6 +2115,7 @@ export function createRouter(deps: RouterDeps) {
             active: input.active,
             notify: input.notify,
             webhookEnabled: input.webhookEnabled,
+            githubEnabled: input.githubEnabled,
             nextRunAt,
           },
         });
@@ -4776,6 +4779,7 @@ function mapRoutine(row: {
   active: boolean;
   notify: boolean;
   webhookEnabled: boolean;
+  githubEnabled: boolean;
   lastRunAt: Date | null;
   nextRunAt: Date | null;
   createdAt: Date;
@@ -4790,6 +4794,7 @@ function mapRoutine(row: {
     active: row.active,
     notify: row.notify,
     webhookEnabled: row.webhookEnabled,
+    githubEnabled: row.githubEnabled,
     lastRunAt: row.lastRunAt?.toISOString() ?? null,
     nextRunAt: row.nextRunAt?.toISOString() ?? null,
     createdAt: row.createdAt.toISOString(),
