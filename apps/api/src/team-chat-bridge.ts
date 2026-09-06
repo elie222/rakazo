@@ -747,10 +747,21 @@ export class TeamChatBridge {
   private async retry(message: { id: string; status: string; attempts: number }, error: unknown) {
     const attempts = message.attempts + 1;
     const delay = Math.min(60_000, 1_000 * 2 ** Math.min(attempts, 6));
+    const current = await this.deps.prisma.externalMessage.findUnique({
+      where: { id: message.id },
+      select: { status: true, providerReplyHandle: true },
+    });
+    if (current?.providerReplyHandle) {
+      await this.markDelivered(message.id, current.providerReplyHandle);
+      return;
+    }
+    // Once reserved for delivery, stay in delivering. Restoring the pre-reserve
+    // "running" status would let reconciliation send again after a lost ack.
+    const status = current?.status === "delivering" ? "delivering" : message.status;
     await this.deps.prisma.externalMessage.update({
       where: { id: message.id },
       data: {
-        status: message.status,
+        status,
         attempts,
         lastError: error instanceof Error ? error.message.slice(0, 500) : "Unknown bridge error",
         nextAttemptAt: new Date(Date.now() + delay),
