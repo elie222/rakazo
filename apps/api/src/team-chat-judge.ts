@@ -1,11 +1,8 @@
 import { randomUUID } from "node:crypto";
 import type { AgentModelOAuthCredential, AgentRuntime } from "@rakazo/adapter-kit";
 import { type EncryptedSecretStore, resolveModelAuth } from "@rakazo/adapters";
-import {
-  findDefaultModelCredential,
-  findModelCredential,
-  type PrismaClient,
-} from "@rakazo/db";
+import { findDefaultModelCredential, findModelCredential, type PrismaClient } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
 
 const MAX_RULES_CHARS = 4_000;
 const MAX_MESSAGES = 20;
@@ -168,7 +165,7 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
       }
       return parseTeamChatEngagementDecision(text);
     } catch (error) {
-      console.error("team chat engagement judge failed", safeError(error));
+      getLogger().error("team chat engagement judge failed", safeError(error));
       return { act: false };
     }
   }

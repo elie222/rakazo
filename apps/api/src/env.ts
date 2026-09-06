@@ -151,8 +151,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     larkEncryptKey: optional(source.LARK_ENCRYPT_KEY),
     larkDomain: optional(source.LARK_DOMAIN),
     messagingOpenSignup: source.MESSAGING_OPEN_SIGNUP === "true",
-    teamChatBotId:
-      optional(source.TEAM_CHAT_BOT_ID) ?? optional(source.SLACK_RAKAZO_BOT_ID),
+    teamChatBotId: optional(source.TEAM_CHAT_BOT_ID) ?? optional(source.SLACK_RAKAZO_BOT_ID),
     teamChatJudgeProvider: optional(source.TEAM_CHAT_JUDGE_PROVIDER),
     teamChatJudgeModel: optional(source.TEAM_CHAT_JUDGE_MODEL),
     defaultProvider: deploymentModel.provider,

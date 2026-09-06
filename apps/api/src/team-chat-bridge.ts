@@ -1,8 +1,14 @@
-import type { JobPublisher, TeamChatInboundMessage, TeamChatSendRequest, TeamChatSendResult } from "@rakazo/adapter-kit";
+import type {
+  JobPublisher,
+  TeamChatInboundMessage,
+  TeamChatSendRequest,
+  TeamChatSendResult,
+} from "@rakazo/adapter-kit";
 import { runContinueJob } from "@rakazo/adapter-kit";
 import { AutomatedSenderPoliciesSchema, type MessageBlock } from "@rakazo/contracts";
 import { BOT_MESSAGE_MAX_HOPS } from "@rakazo/core";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
 import type { TeamChatEngagementJudge } from "./team-chat-judge.js";
 
 const DEFAULT_RECONCILE_INTERVAL_MS = 1_000;
@@ -710,10 +716,7 @@ export class TeamChatBridge {
 
   private async reconcileSafely(): Promise<void> {
     await this.reconcileOnce().catch((error) => {
-      console.error(
-        "team chat reconciliation error",
-        error instanceof Error ? error.message : error,
-      );
+      getLogger().error("team chat reconciliation error", error);
     });
   }
 }

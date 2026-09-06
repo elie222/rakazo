@@ -382,7 +382,9 @@ export async function sendUserMessage(
               where: {
                 threadId: input.threadId,
                 botId: input.botId,
-                status: { in: ["running", "queued", "leased", "waiting_input", "waiting_takeover"] },
+                status: {
+                  in: ["running", "queued", "leased", "waiting_input", "waiting_takeover"],
+                },
               },
               select: { id: true, taskId: true },
             })

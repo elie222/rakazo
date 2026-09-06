@@ -356,9 +356,7 @@ export function MessagingSettingsOverlay({ onClose }: { onClose: () => void }) {
                       <Button
                         variant="secondary"
                         className="rounded-full"
-                        onClick={() =>
-                          setSettingsConversationId(open ? null : conversation.id)
-                        }
+                        onClick={() => setSettingsConversationId(open ? null : conversation.id)}
                       >
                         {open ? <Trans>Close</Trans> : <Trans>Settings</Trans>}
                       </Button>

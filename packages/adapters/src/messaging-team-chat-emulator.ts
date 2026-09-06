@@ -1,7 +1,4 @@
-import type {
-  MessagingInboundMessage,
-  MessagingSendResult,
-} from "@rakazo/adapter-kit";
+import type { MessagingInboundMessage, MessagingSendResult } from "@rakazo/adapter-kit";
 import type { MessagingPlatform } from "./chat-sdk-surface.js";
 
 export interface TeamChatEmulatorInbound {
@@ -51,8 +48,7 @@ export class MessagingTeamChatEmulator {
       provider: this.provider,
       handle: partial.handle ?? this.nextHandle("inbound"),
       threadId:
-        partial.threadId ??
-        `${this.provider}:${isDirect ? "dm" : "room"}-${this.inboundCounter}`,
+        partial.threadId ?? `${this.provider}:${isDirect ? "dm" : "room"}-${this.inboundCounter}`,
       isDirect,
       from: partial.from ?? "U-emulator",
       fromLabel: partial.fromLabel === undefined ? "Emulator User" : partial.fromLabel,
@@ -71,7 +67,6 @@ export class MessagingTeamChatEmulator {
 
   /** Platform descriptor for mounting beside other messaging platforms in tests. */
   createPlatform(): MessagingPlatform {
-    const emulator = this;
     return {
       provider: this.provider,
       capabilities: { direct: true, groups: true, typing: false },
@@ -82,8 +77,8 @@ export class MessagingTeamChatEmulator {
         version: "1.0.0",
         botUsername: "rakazo-emulator",
         postMessage: async (threadId: string, message: { text?: string }) => {
-          const handle = emulator.allocateHandle("outbound");
-          emulator.sent.push({ threadId, body: message.text ?? "", handle });
+          const handle = this.allocateHandle("outbound");
+          this.sent.push({ threadId, body: message.text ?? "", handle });
           return { id: handle, html_url: null };
         },
       } as unknown as MessagingPlatform["adapter"],
@@ -100,10 +95,7 @@ export class MessagingTeamChatEmulator {
 
 /** Thin MessagingSurface stand-in that only records sendToThread for unit tests. */
 export function createRecordingMessagingSurface(emulator: MessagingTeamChatEmulator): {
-  sendToThread: (request: {
-    threadId: string;
-    body: string;
-  }) => Promise<MessagingSendResult>;
+  sendToThread: (request: { threadId: string; body: string }) => Promise<MessagingSendResult>;
   sent: SentPost[];
 } {
   return {

@@ -10,17 +10,14 @@ import type {
 } from "@rakazo/adapter-kit";
 
 /** Map a Chat SDK inbound message into a team-chat event, or null if empty. */
-export function toTeamChatInbound(
-  event: MessagingInboundMessage,
-): TeamChatInboundMessage | null {
+export function toTeamChatInbound(event: MessagingInboundMessage): TeamChatInboundMessage | null {
   const mediaLine = event.mediaUrl?.trim() ? `\n${event.mediaUrl.trim()}` : "";
   const content = `${event.content}${mediaLine}`.trim();
   if (!content) return null;
 
   const kind: TeamChatMessageKind = event.isDirect
     ? "direct"
-    : (event.kind ??
-      (looksLikeMention(event.content, event.channelName) ? "mention" : "ambient"));
+    : (event.kind ?? (looksLikeMention(event.content, event.channelName) ? "mention" : "ambient"));
 
   return {
     eventId: event.handle,

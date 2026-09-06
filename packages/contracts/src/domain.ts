@@ -23,7 +23,6 @@ export const ThinkingLevelSchema = z.enum([
 ]);
 export type ThinkingLevel = z.infer<typeof ThinkingLevelSchema>;
 
-
 export const AGENT_SECRET_NAME_PATTERN = /^[A-Z_][A-Z0-9_]{0,63}$/;
 
 export const AgentSecretSchema = z.object({
@@ -175,7 +174,6 @@ export const SpaceGroupSchema = GroupSchema.pick({
   updatedAt: true,
 });
 export type SpaceGroup = z.infer<typeof SpaceGroupSchema>;
-
 
 export const TEAM_CHAT_RULES_MAX_LENGTH = 4000;
 export const AutomatedSenderPolicyModeSchema = z.enum(["ignore", "rollup", "action", "user"]);

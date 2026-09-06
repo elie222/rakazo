@@ -92,6 +92,11 @@ import {
   messageConnectedAgent,
   respondAgentConnection,
 } from "./agent-connections.js";
+import {
+  decryptAgentEnvironment,
+  formatAgentEnvironmentInstruction,
+  redactAgentCommandResult,
+} from "./agent-environment.js";
 import { buildApprovalAskBlock } from "./approval-ask.js";
 import {
   approvalPausedToolResult,
@@ -256,11 +261,6 @@ import {
 } from "./scratchpad-tools.js";
 import { inferScript } from "./scripted-runtime.js";
 import type { EncryptedSecretStore } from "./secrets.js";
-import {
-  decryptAgentEnvironment,
-  formatAgentEnvironmentInstruction,
-  redactAgentCommandResult,
-} from "./agent-environment.js";
 import {
   listAgentSkillRecords,
   skillCreateFromTool,

@@ -212,9 +212,7 @@ export function enrichSlackTeamRoom(
   if (!root) return {};
   const event = asRecord(root.event) ?? root;
   const teamId =
-    stringField(root, "team_id") ??
-    stringField(event, "team") ??
-    stringField(event, "team_id");
+    stringField(root, "team_id") ?? stringField(event, "team") ?? stringField(event, "team_id");
   const eventType = stringField(event, "type");
   const botProfile = asRecord(event.bot_profile) ?? {};
   const botId = stringField(event, "bot_id") ?? stringField(botProfile, "id");
