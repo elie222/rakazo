@@ -266,6 +266,31 @@ export class CloudAgentHomeStore implements AgentHomeStore {
       throw new Error("Home content integrity check failed");
     return value.bytes;
   }
+  async getWorkspaceSnapshot(botId: string, provider: string, context: AdapterContext) {
+    const prefix = this.prefix(botId, context);
+    const { manifest } = await this.current(prefix);
+    const cached = await this.objects.get(
+      `${prefix}/snapshot-cache/${segment(provider)}/${segment(manifest.revision)}.json`,
+    );
+    if (!cached) return null;
+    const value = JSON.parse(new TextDecoder().decode(cached.bytes));
+    return value?.revision === manifest.revision && typeof value.snapshot === "string"
+      ? value.snapshot
+      : null;
+  }
+  async saveWorkspaceSnapshot(
+    botId: string,
+    revision: string,
+    provider: string,
+    snapshot: string,
+    context: AdapterContext,
+  ) {
+    const prefix = this.prefix(botId, context);
+    await this.objects.put(
+      `${prefix}/snapshot-cache/${segment(provider)}/${segment(revision)}.json`,
+      encoder.encode(JSON.stringify({ revision, snapshot })),
+    );
+  }
   async checkout(botId: string, dest: string, context: AdapterContext) {
     const prefix = this.prefix(botId, context);
     const { manifest } = await this.current(prefix);

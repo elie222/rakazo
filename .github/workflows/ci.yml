@@ -92,6 +92,8 @@ jobs:
         env:
           DATABASE_URL: postgres://rakazo:rakazo@127.0.0.1:5433/rakazo
       - run: pnpm test
+      - name: Modal screen and filesystem boundaries
+        run: python3 -m unittest discover -s infra/modal -p 'test_*.py'
 
   test-integration:
     name: Postgres journeys

@@ -20,6 +20,7 @@ import {
 } from "./computer-control.js";
 import { toComputerRef } from "./computer-support.js";
 import {
+  cachedWorkspaceSnapshot,
   checkpointAndRecordComputerWorkspace,
   ensureComputerWorkspaceLayout,
   restoreComputerWorkspace,
@@ -93,6 +94,12 @@ export async function provisionComputer(
         homePath,
         providerRef: existing.providerRef ?? undefined,
         providerKind: existing.kind as ComputerRef["kind"],
+        workspaceSnapshot: await cachedWorkspaceSnapshot(
+          deps.home,
+          deps.sandbox,
+          existing.homeKey,
+          context,
+        ),
       },
       context,
     );
@@ -192,6 +199,12 @@ async function reconnectComputer(
       homePath,
       providerRef: computer.providerRef ?? undefined,
       providerKind: computer.kind as ComputerRef["kind"],
+      workspaceSnapshot: await cachedWorkspaceSnapshot(
+        deps.home,
+        deps.sandbox,
+        computer.homeKey,
+        context,
+      ),
     },
     context,
   );

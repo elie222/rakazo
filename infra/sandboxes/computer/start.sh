@@ -3,7 +3,14 @@ set -uo pipefail
 export DISPLAY="${DISPLAY:-:1}"
 export HOME="${HOME:-/home/rakazo}"
 AGENT_HOME="$HOME"
-mkdir -p "$AGENT_HOME" "$AGENT_HOME/.local/bin" "$AGENT_HOME/.config" /tmp/rakazo /tmp/.X11-unix /tmp/fluxbox-home
+case "$DISPLAY" in :[1-9]) ;; *) echo "Invalid display" >&2; exit 1 ;; esac
+DISPLAY_NUMBER="${DISPLAY#:}"
+VIEW_VNC_PORT=$((5900 + (DISPLAY_NUMBER - 1) * 2))
+VIEW_PORT=$((6080 + (DISPLAY_NUMBER - 1) * 2))
+FLUX_HOME="/tmp/fluxbox-home-$DISPLAY_NUMBER"
+PROFILE="${RAKAZO_BROWSER_PROFILE:-$AGENT_HOME/.browser-profiles/chromium}"
+export RAKAZO_BROWSER_PROFILE="$PROFILE"
+mkdir -p "$AGENT_HOME" "$AGENT_HOME/.local/bin" "$AGENT_HOME/.config" /tmp/rakazo /tmp/.X11-unix ${FLUX_HOME}
 export PATH="$AGENT_HOME/.local/bin:/usr/local/bin:$PATH"
 export NPM_CONFIG_PREFIX="$AGENT_HOME/.local"
 export PIP_USER=1
@@ -13,14 +20,14 @@ if [[ -n "${RAKAZO_COMPUTER_CONTROL_TOKEN:-}" ]]; then
   /usr/local/bin/rakazo-computer-control >/tmp/rakazo/control.log 2>&1 &
 fi
 
-rm -f /tmp/.X1-lock /tmp/.X11-unix/X1
+rm -f "/tmp/.X$DISPLAY_NUMBER-lock" "/tmp/.X11-unix/X$DISPLAY_NUMBER"
 
-Xvfb :1 -screen 0 1280x800x24 -ac +extension RANDR +render -noreset >/tmp/rakazo/xvfb.log 2>&1 &
+Xvfb "$DISPLAY" -screen 0 1280x800x24 -ac +extension RANDR +render -noreset >/tmp/rakazo/xvfb.log 2>&1 &
 XVFB_PID=$!
 
 ready=0
 for _ in $(seq 1 100); do
-  if xdpyinfo -display :1 >/dev/null 2>&1; then
+  if xdpyinfo -display "$DISPLAY" >/dev/null 2>&1; then
     ready=1
     break
   fi
@@ -37,17 +44,17 @@ if command -v dbus-launch >/dev/null 2>&1; then
 fi
 
 xsetroot -solid "#111113" >/dev/null 2>&1 || true
-mkdir -p /tmp/fluxbox-home/.fluxbox
-cp /etc/rakazo/fluxbox/init /tmp/fluxbox-home/.fluxbox/init
-cp /etc/rakazo/fluxbox/apps /tmp/fluxbox-home/.fluxbox/apps 2>/dev/null || true
-cp /etc/rakazo/fluxbox/menu /tmp/fluxbox-home/.fluxbox/menu 2>/dev/null || true
-cat > /tmp/fluxbox-home/.fluxbox/startup <<'EOF'
+mkdir -p ${FLUX_HOME}/.fluxbox
+cp /etc/rakazo/fluxbox/init ${FLUX_HOME}/.fluxbox/init
+cp /etc/rakazo/fluxbox/apps ${FLUX_HOME}/.fluxbox/apps 2>/dev/null || true
+cp /etc/rakazo/fluxbox/menu ${FLUX_HOME}/.fluxbox/menu 2>/dev/null || true
+cat > ${FLUX_HOME}/.fluxbox/startup <<EOF
 #!/bin/sh
 xsetroot -solid "#111113"
-exec fluxbox -rc /tmp/fluxbox-home/.fluxbox/init
+exec fluxbox -rc ${FLUX_HOME}/.fluxbox/init
 EOF
-chmod +x /tmp/fluxbox-home/.fluxbox/startup
-HOME=/tmp/fluxbox-home /tmp/fluxbox-home/.fluxbox/startup >/tmp/rakazo/fluxbox.log 2>&1 &
+chmod +x ${FLUX_HOME}/.fluxbox/startup
+HOME=${FLUX_HOME} ${FLUX_HOME}/.fluxbox/startup >/tmp/rakazo/fluxbox.log 2>&1 &
 
 tint2 -c /etc/rakazo/tint2rc >/tmp/rakazo/dock.log 2>&1 &
 
@@ -68,9 +75,9 @@ if ! xdg-settings set default-web-browser rakazo-browser.desktop >/dev/null 2>&1
   exit 1
 fi
 
-rm -f "$AGENT_HOME/.browser-profiles/chromium/SingletonLock" \
-  "$AGENT_HOME/.browser-profiles/chromium/SingletonCookie" \
-  "$AGENT_HOME/.browser-profiles/chromium/SingletonSocket"
+rm -f "$PROFILE/SingletonLock" \
+  "$PROFILE/SingletonCookie" \
+  "$PROFILE/SingletonSocket"
 
 HOME="$AGENT_HOME" rakazo-browser >/tmp/rakazo/browser.log 2>&1 &
 browser_up=0
@@ -91,7 +98,7 @@ if [[ "$browser_up" -ne 1 ]]; then
   xterm -geometry 100x28+48+48 -bg "#111113" -fg "#E8E8EA" -cr "#E8E8EA" -title "Terminal" >/tmp/rakazo/xterm.log 2>&1 &
 fi
 
-x11vnc -display :1 -forever -shared -viewonly -nopw -listen 127.0.0.1 -rfbport 5900 -xkb -ncache 0 >/tmp/rakazo/x11vnc.log 2>&1 &
+x11vnc -display "$DISPLAY" -forever -shared -viewonly -nopw -listen 127.0.0.1 -rfbport "$VIEW_VNC_PORT" -xkb -ncache 0 >/tmp/rakazo/x11vnc.log 2>&1 &
 
 NOVNC_ROOT=/usr/share/novnc
 if [[ ! -d "$NOVNC_ROOT" ]]; then
@@ -106,7 +113,7 @@ if [[ ! -f "$NOVNC_ROOT/clipboard-bridge.js" ]]; then
   echo "noVNC clipboard-bridge.js is missing from the computer image" >&2
   exit 1
 fi
-websockify --heartbeat=30 --web="$NOVNC_ROOT" 0.0.0.0:6080 127.0.0.1:5900 >/tmp/rakazo/novnc.log 2>&1 &
+websockify --heartbeat=30 --web="$NOVNC_ROOT" "0.0.0.0:$VIEW_PORT" "127.0.0.1:$VIEW_VNC_PORT" >/tmp/rakazo/novnc.log 2>&1 &
 
 while kill -0 "$XVFB_PID" 2>/dev/null; do
   sleep 2

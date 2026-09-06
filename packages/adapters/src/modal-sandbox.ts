@@ -12,7 +12,9 @@ import type {
   SandboxProvider,
   ScreenRequest,
 } from "@rakazo/adapter-kit";
+import { getLogger } from "@rakazo/logging";
 import { AlreadyExistsError, ModalClient, NotFoundError, type Sandbox } from "modal";
+import { screenSessionKey } from "./computer-screens.js";
 import { boundedComputerActions, computerObservation } from "./computer-support.js";
 import { shouldSkipPortableWorkspaceFile } from "./computer-workspace.js";
 
@@ -30,6 +32,8 @@ const frame = (value: Frame) => computerObservation(Buffer.from(value.image, "ba
 export class ModalSandboxProvider implements SandboxProvider {
   private readonly client: ModalClient;
   private readonly appName: string;
+  private readonly protocols = new Map<string, boolean>();
+  private readonly images = new Map<string, string>();
   constructor(
     private readonly options: ModalSandboxOptions,
     client?: ModalClient,
@@ -51,7 +55,7 @@ export class ModalSandboxProvider implements SandboxProvider {
         snapshots: true,
         takeover: true,
         persistentHome: false,
-        multiScreen: false,
+        multiScreen: true,
       },
     };
   }
@@ -76,8 +80,11 @@ export class ModalSandboxProvider implements SandboxProvider {
       }
       throw error;
     });
-    if ((await sandbox.getTags()).cadre_owner !== this.owner(computer.botId, ctx))
+    const tags = await sandbox.getTags();
+    if (tags.cadre_owner !== this.owner(computer.botId, ctx))
       throw new Error("Computer access denied");
+    this.protocols.set(sandbox.sandboxId, tags.cadre_protocol === "2");
+    this.images.set(sandbox.sandboxId, tags.cadre_image ?? "");
     return sandbox;
   }
   async provision(
@@ -86,6 +93,7 @@ export class ModalSandboxProvider implements SandboxProvider {
       homePath: string;
       providerRef?: string;
       providerKind?: ComputerRef["kind"];
+      workspaceSnapshot?: string;
     },
     ctx: AdapterContext,
   ): Promise<ComputerRef> {
@@ -117,6 +125,7 @@ export class ModalSandboxProvider implements SandboxProvider {
       const sandbox = await this.client.sandboxes.fromName(this.appName, name);
       if ((await sandbox.getTags()).cadre_owner !== owner)
         throw new Error("Computer access denied");
+      if ((await sandbox.poll()) !== null) throw new NotFoundError("Computer has stopped");
       return ref(sandbox, false);
     };
     try {
@@ -125,12 +134,28 @@ export class ModalSandboxProvider implements SandboxProvider {
       if (!(e instanceof NotFoundError)) throw e;
     }
     const app = await this.client.apps.fromName(this.appName, { createIfMissing: true });
-    const image = await this.client.images.fromId(this.options.imageId);
-    try {
-      return ref(
+    let imageId = this.options.imageId;
+    if (req.workspaceSnapshot) {
+      try {
+        const snapshot = JSON.parse(req.workspaceSnapshot);
+        if (
+          snapshot.owner === owner &&
+          snapshot.baseImage === this.options.imageId &&
+          /^im-[A-Za-z0-9]+$/.test(snapshot.imageId) &&
+          snapshot.expiresAt > Date.now()
+        )
+          imageId = snapshot.imageId;
+      } catch {
+        /* An invalid cache is never authority to restore another workspace. */
+      }
+    }
+    const startedAt = Date.now();
+    const create = async (selectedImage: string) => {
+      const image = await this.client.images.fromId(selectedImage);
+      const result = ref(
         await this.client.sandboxes.create(app, image, {
           name,
-          tags: { cadre_owner: owner },
+          tags: { cadre_owner: owner, cadre_protocol: "2", cadre_image: this.options.imageId },
           command: ["bash", "/opt/cadre/start.sh"],
           cpu: 2,
           memoryMiB: 4096,
@@ -144,8 +169,19 @@ export class ModalSandboxProvider implements SandboxProvider {
         }),
         true,
       );
+      result.workspaceRestored = selectedImage !== this.options.imageId;
+      getLogger().info("computer.provisioned", {
+        durationMs: Date.now() - startedAt,
+        restoredSnapshot: result.workspaceRestored,
+      });
+      return result;
+    };
+    try {
+      return await create(imageId);
     } catch (e) {
       if (e instanceof AlreadyExistsError) return existing();
+      if (imageId !== this.options.imageId && e instanceof NotFoundError)
+        return create(this.options.imageId);
       throw e;
     }
   }
@@ -160,7 +196,11 @@ export class ModalSandboxProvider implements SandboxProvider {
     });
     // Modal limits each stdin message to 20 MiB. Browser profiles and other
     // portable files can be larger, especially after base64 encoding.
-    const input = Buffer.from(JSON.stringify(request));
+    // Untagged running images retain their primary-display protocol during rollout.
+    const wireRequest = this.protocols.get(sandbox.sandboxId)
+      ? request
+      : { ...request, screenKey: undefined, screenLease: undefined };
+    const input = Buffer.from(JSON.stringify(wireRequest));
     try {
       for (let offset = 0; offset < input.length; offset += 1024 * 1024) {
         await process.stdin.writeBytes(input.subarray(offset, offset + 1024 * 1024));
@@ -218,7 +258,14 @@ export class ModalSandboxProvider implements SandboxProvider {
       if (ctx.signal.aborted) cancel();
       const result = await this.rpc<{ stdout: string; stderr: string; code: number }>(
         sandbox,
-        { ...request, op: "exec", operationId, timeoutMs },
+        {
+          ...request,
+          op: "exec",
+          operationId,
+          timeoutMs,
+          screenKey: ctx.botId,
+          screenLease: ctx.screenLeaseId,
+        },
         timeoutMs + 15000,
       );
       ctx.signal.throwIfAborted();
@@ -240,14 +287,28 @@ export class ModalSandboxProvider implements SandboxProvider {
       };
     }
     const sandbox = await this.owned(computer, ctx);
+    const screen = this.protocols.get(sandbox.sandboxId)
+      ? await this.rpc<{ key: string }>(sandbox, {
+          op: "resolveScreen",
+          screenKey: screenSessionKey(ctx),
+          screenLease: ctx.screenLeaseId,
+        })
+      : undefined;
     if (request.interactive) await this.setScreenControl(computer, true, ctx, request.controlToken);
     const tunnel = (await sandbox.tunnels())[8080];
     if (!tunnel) throw new Error("Cloud desktop tunnel unavailable");
     const url = new URL("/embed.html", tunnel.url);
     url.searchParams.set("view_only", request.interactive ? "false" : "true");
+    if (screen) url.searchParams.set("screen", screen.key);
     url.searchParams.set(
       "cadre_token",
-      request.interactive ? request.controlToken! : this.viewToken(computer.botId, ctx),
+      request.interactive
+        ? request.controlToken!
+        : screen
+          ? createHmac("sha256", this.viewToken(computer.botId, ctx))
+              .update(screen.key)
+              .digest("hex")
+          : this.viewToken(computer.botId, ctx),
     );
     return {
       url: url.toString(),
@@ -270,10 +331,18 @@ export class ModalSandboxProvider implements SandboxProvider {
       interactive,
       leaseId: controlToken ?? ctx.screenLeaseId,
       controlToken,
+      screenKey: screenSessionKey(ctx),
     });
   }
   async releaseScreen(computer: ComputerRef, ctx: AdapterContext) {
     await this.setScreenControl(computer, false, ctx);
+    const sandbox = await this.owned(computer, ctx);
+    if (!this.protocols.get(sandbox.sandboxId)) return;
+    await this.rpc(sandbox, {
+      op: "releaseScreen",
+      screenKey: screenSessionKey(ctx),
+      screenLease: ctx.screenLeaseId,
+    });
   }
   async sendInput(
     computer: ComputerRef,
@@ -287,15 +356,28 @@ export class ModalSandboxProvider implements SandboxProvider {
       op: "input",
       actions: [input],
       leaseId: lease.leaseId,
+      screenKey: screenSessionKey(ctx),
     });
   }
   async observe(computer: ComputerRef, ctx: AdapterContext) {
-    return frame(await this.rpc<Frame>(await this.owned(computer, ctx), { op: "observe" }));
+    return frame(
+      await this.rpc<Frame>(await this.owned(computer, ctx), {
+        op: "observe",
+        screenKey: screenSessionKey(ctx),
+        screenLease: ctx.screenLeaseId,
+      }),
+    );
   }
   async act(computer: ComputerRef, request: ComputerActionRequest, ctx: AdapterContext) {
     const result = await this.rpc<{ completed: number; observation?: Frame }>(
       await this.owned(computer, ctx),
-      { ...request, actions: boundedComputerActions(request.actions), op: "actions" },
+      {
+        ...request,
+        actions: boundedComputerActions(request.actions),
+        op: "actions",
+        screenKey: screenSessionKey(ctx),
+        screenLease: ctx.screenLeaseId,
+      },
       60000,
     );
     return {
@@ -328,28 +410,41 @@ export class ModalSandboxProvider implements SandboxProvider {
     });
   }
   async *exportWorkspace(computer: ComputerRef, ctx: AdapterContext): AsyncIterable<PortableFile> {
-    const pending = [""];
-    const files: ComputerFileEntry[] = [];
-    let total = 0;
-    let count = 0;
-    while (pending.length) {
-      ctx.signal.throwIfAborted();
-      const listings = await Promise.all(
-        pending.splice(0, 8).map((directory) => this.listFiles(computer, directory, ctx)),
-      );
-      for (const entries of listings)
-        for (const entry of entries) {
+    const sandbox = await this.owned(computer, ctx);
+    if (!this.protocols.get(sandbox.sandboxId)) {
+      const pending = [""];
+      let count = 0;
+      let bytes = 0;
+      while (pending.length) {
+        ctx.signal.throwIfAborted();
+        for (const entry of await this.rpc<ComputerFileEntry[]>(sandbox, {
+          op: "list",
+          path: pending.pop()!,
+        })) {
           if (shouldSkipPortableWorkspaceFile(entry.path)) continue;
-          if (++count > 10000) throw new Error("Workspace has too many files");
-          if (entry.kind === "dir") pending.push(entry.path);
-          else {
-            total += entry.size;
-            if (total > 512 * 1024 * 1024)
-              throw new Error("Workspace exceeds checkpoint size limit");
-            files.push(entry);
+          if (++count > 10000) throw new Error("Workspace contains too many files");
+          if (entry.kind === "dir") {
+            pending.push(entry.path);
+            continue;
           }
+          bytes += entry.size;
+          if (bytes > 512 * 1024 * 1024) throw new Error("Workspace exceeds transfer limit");
+          const result = await this.rpc<{ content: string }>(sandbox, {
+            op: "read",
+            path: entry.path,
+          });
+          yield {
+            path: entry.path,
+            executable: entry.executable,
+            content: Buffer.from(result.content, "base64"),
+          };
         }
+      }
+      return;
     }
+    const files = (await this.rpc<ComputerFileEntry[]>(sandbox, { op: "manifest" })).filter(
+      (entry) => !shouldSkipPortableWorkspaceFile(entry.path),
+    );
     // Bound both RPC concurrency and the bytes held before yielding to the home store.
     while (files.length) {
       ctx.signal.throwIfAborted();
@@ -360,14 +455,17 @@ export class ModalSandboxProvider implements SandboxProvider {
         batch.push(entry);
         bytes += entry.size;
       }
-      const contents = await Promise.all(
-        batch.map(async (entry) => ({
+      const contents = await this.rpc<Array<{ content: string }>>(sandbox, {
+        op: "readBatch",
+        paths: batch.map((entry) => entry.path),
+      });
+      if (contents.length !== batch.length) throw new Error("Incomplete workspace batch");
+      for (const [index, entry] of batch.entries())
+        yield {
           path: entry.path,
           executable: entry.executable,
-          content: await this.readFile(computer, entry.path, ctx),
-        })),
-      );
-      for (const file of contents) yield file;
+          content: Buffer.from(contents[index]!.content, "base64"),
+        };
     }
   }
 
@@ -377,45 +475,66 @@ export class ModalSandboxProvider implements SandboxProvider {
     ctx: AdapterContext,
   ) {
     const sandbox = await this.owned(computer, ctx);
-    let pending: Promise<unknown>[] = [];
-    let bytes = 0;
-    const flush = async () => {
-      const results = await Promise.allSettled(pending);
-      pending = [];
-      bytes = 0;
-      const failure = results.find((result) => result.status === "rejected");
-      if (failure?.status === "rejected") throw failure.reason;
-    };
-    try {
+    if (!this.protocols.get(sandbox.sandboxId)) {
       for await (const file of files) {
         ctx.signal.throwIfAborted();
-        if (
-          pending.length &&
-          (pending.length >= 8 || bytes + file.content.length > 8 * 1024 * 1024)
-        )
-          await flush();
-        bytes += file.content.length;
-        const write = this.rpc(sandbox, {
+        await this.rpc(sandbox, {
           op: "write",
           path: file.path,
           executable: file.executable,
           content: Buffer.from(file.content).toString("base64"),
         });
-        // Attach a handler immediately while the next remote file is downloading.
-        void write.catch(() => undefined);
-        pending.push(write);
       }
-      await flush();
-    } finally {
-      await Promise.allSettled(pending);
+      return;
     }
+    let batch: Array<{ path: string; executable?: boolean; content: string }> = [];
+    let bytes = 0;
+    const flush = async () => {
+      if (!batch.length) return;
+      await this.rpc(sandbox, { op: "writeBatch", files: batch });
+      batch = [];
+      bytes = 0;
+    };
+    for await (const file of files) {
+      ctx.signal.throwIfAborted();
+      if (batch.length && (batch.length >= 8 || bytes + file.content.length > 8 * 1024 * 1024))
+        await flush();
+      bytes += file.content.length;
+      batch.push({
+        path: file.path,
+        executable: file.executable,
+        content: Buffer.from(file.content).toString("base64"),
+      });
+    }
+    await flush();
   }
   async snapshot(computer: ComputerRef, ctx: AdapterContext) {
-    const image = await (await this.owned(computer, ctx)).snapshotFilesystem();
+    const image = await (await this.owned(computer, ctx)).snapshotFilesystem({
+      ttlMs: 24 * 60 * 60 * 1000,
+    });
     return { id: image.imageId, createdAt: new Date().toISOString() };
   }
+  async snapshotWorkspace(computer: ComputerRef, ctx: AdapterContext) {
+    const sandbox = await this.owned(computer, ctx);
+    if (
+      !this.protocols.get(sandbox.sandboxId) ||
+      this.images.get(sandbox.sandboxId) !== this.options.imageId
+    )
+      throw new Error("Computer image update awaits idle restart");
+    const snapshot = await this.snapshot(computer, ctx);
+    return JSON.stringify({
+      imageId: snapshot.id,
+      baseImage: this.options.imageId,
+      owner: this.owner(computer.botId, ctx),
+      expiresAt: Date.now() + 23 * 60 * 60 * 1000,
+    });
+  }
   async stop(computer: ComputerRef, ctx: AdapterContext) {
-    await (await this.owned(computer, ctx)).terminate();
+    const sandbox = await this.owned(computer, ctx);
+    await sandbox.terminate();
+    await sandbox.wait();
+    this.protocols.delete(sandbox.sandboxId);
+    this.images.delete(sandbox.sandboxId);
   }
   async destroy(computer: ComputerRef, ctx: AdapterContext) {
     await this.stop(computer, ctx);

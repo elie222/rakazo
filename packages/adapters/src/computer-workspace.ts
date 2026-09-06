@@ -10,8 +10,24 @@ import type {
 } from "@rakazo/adapter-kit";
 import type { ComputerMode } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
 import { normalizeWorkspacePath, teamBotWorkspaceDirectory } from "./computer-support.js";
 import { LocalAgentHomeStore } from "./home.js";
+
+export async function cachedWorkspaceSnapshot(
+  home: AgentHomeStore,
+  sandbox: SandboxProvider,
+  homeKey: string,
+  context: AdapterContext,
+) {
+  if (!sandbox.snapshotWorkspace || !home.getWorkspaceSnapshot) return undefined;
+  try {
+    return (await home.getWorkspaceSnapshot(homeKey, sandbox.describe().id, context)) ?? undefined;
+  } catch {
+    getLogger().warn("computer.snapshot_cache.unavailable");
+    return undefined;
+  }
+}
 
 export const PORTABLE_BROWSER_STOP_COMMAND =
   "pkill -f '[g]oogle-chrome|[c]hromium|[f]irefox' || true";
@@ -56,6 +72,7 @@ export async function restoreComputerWorkspace(
   context: AdapterContext,
 ): Promise<void> {
   if (computer.kind === "docker" && home instanceof LocalAgentHomeStore) return;
+  if (computer.workspaceRestored) return;
   await sandbox.importWorkspace(computer, home.exportHome(homeKey, context), context);
 }
 
@@ -97,7 +114,23 @@ export async function checkpointComputerWorkspace(
     for await (const file of sandbox.exportWorkspace(computer, context)) {
       await writePortableFile(staging, file);
     }
-    return await home.commit(homeKey, staging, context);
+    const revision = await home.commit(homeKey, staging, context);
+    if (sandbox.snapshotWorkspace && home.saveWorkspaceSnapshot) {
+      try {
+        const snapshot = await sandbox.snapshotWorkspace(computer, context);
+        await home.saveWorkspaceSnapshot(
+          homeKey,
+          revision,
+          sandbox.describe().id,
+          snapshot,
+          context,
+        );
+      } catch {
+        // A cache failure must never invalidate a successful durable checkpoint.
+        getLogger().warn("computer.snapshot_cache.unavailable");
+      }
+    }
+    return revision;
   } finally {
     await rm(staging, { recursive: true, force: true });
   }
