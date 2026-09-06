@@ -23,6 +23,10 @@ import { useModelOAuthSignIn } from "../lib/use-model-oauth-signin";
 
 const CUSTOM_MODEL_OPTION = "__rakazo_custom_model__";
 
+function providerLabel(entry: ModelCatalogEntry): string {
+  return entry.provider === "openai-codex" ? "ChatGPT" : (entry.providerName ?? entry.provider);
+}
+
 export function OnboardingPage() {
   const { t } = useLingui();
   const navigate = useNavigate();
@@ -104,6 +108,23 @@ export function OnboardingPage() {
     modelId,
     probedBaseUrl,
   });
+  const otherModelLabel = t`Other model…`;
+  // Base UI Select.Value only resolves labels when Root gets `items`.
+  const providerItems = useMemo(
+    () => providers.map((entry) => ({ value: entry.provider, label: providerLabel(entry) })),
+    [providers],
+  );
+  const modelItems = useMemo(
+    () => modelsForProvider.map((entry) => ({ value: entry.id, label: entry.label })),
+    [modelsForProvider],
+  );
+  const probeModelItems = useMemo(
+    () => [
+      ...probeModels.map((id) => ({ value: id, label: id })),
+      { value: CUSTOM_MODEL_OPTION, label: otherModelLabel },
+    ],
+    [otherModelLabel, probeModels],
+  );
 
   function updateBaseUrl(nextBaseUrl: string) {
     setBaseUrl(nextBaseUrl);
@@ -145,8 +166,12 @@ export function OnboardingPage() {
       apiKey,
       request: rpc.models.probeOpenAiCompatible,
       onSuccess: (models) => {
-        setManualModelId(false);
-        setModelId((current) => current.trim() || models[0] || "");
+        setModelId((current) => {
+          const trimmed = current.trim();
+          const next = trimmed || models[0] || "";
+          setManualModelId(Boolean(trimmed) && !models.includes(trimmed));
+          return next;
+        });
         setNotice(openAiCompatibleProbeSuccessMessage(models.length));
       },
       onError: (err) =>
@@ -233,16 +258,18 @@ export function OnboardingPage() {
               <span>
                 <Trans>Provider</Trans>
               </span>
-              <Select value={provider} onValueChange={(value) => selectProvider(String(value))}>
+              <Select
+                value={provider}
+                onValueChange={(value) => selectProvider(String(value))}
+                items={providerItems}
+              >
                 <SelectTrigger aria-label={t`Provider`} className="mt-2 w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   {providers.map((entry) => (
                     <SelectItem key={entry.provider} value={entry.provider}>
-                      {entry.provider === "openai-codex"
-                        ? "ChatGPT"
-                        : (entry.providerName ?? entry.provider)}
+                      {providerLabel(entry)}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -276,7 +303,7 @@ export function OnboardingPage() {
                     <span className="font-medium">
                       <Trans>Model</Trans>
                     </span>
-                    {probeModels.length && !manualModelId && probeModels.includes(modelId) ? (
+                    {probeModels.length && !manualModelId ? (
                       <Select
                         value={modelId}
                         onValueChange={(value) => {
@@ -285,9 +312,11 @@ export function OnboardingPage() {
                             setManualModelId(true);
                             setModelId("");
                           } else {
+                            setManualModelId(false);
                             setModelId(next);
                           }
                         }}
+                        items={probeModelItems}
                       >
                         <SelectTrigger aria-label={t`Models from server`} className="mt-2 w-full">
                           <SelectValue />
@@ -312,7 +341,7 @@ export function OnboardingPage() {
                         className="mt-2"
                       />
                     )}
-                    {probeModels.length && !probeModels.includes(modelId) ? (
+                    {probeModels.length && manualModelId ? (
                       <Button
                         variant="link"
                         size="xs"
@@ -341,9 +370,12 @@ export function OnboardingPage() {
                   <Select
                     value={selected?.id ?? modelId}
                     onValueChange={(value) => {
+                      const next = String(value);
+                      if (next === modelId) return;
                       cancelOAuthAttempt();
-                      setModelId(String(value));
+                      setModelId(next);
                     }}
+                    items={modelItems}
                   >
                     <SelectTrigger aria-label={t`Model`} className="mt-2 w-full">
                       <SelectValue />

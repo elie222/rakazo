@@ -42,23 +42,30 @@ test("onboarding uses compact model selects without misleading latest labels", a
   await page.getByRole("option", { name: alias! }).click();
   await expect(models).toContainText(alias!);
 
+  await page.route("**/rpc/models/probeOpenAiCompatible", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ json: { models: ["probed-model"] } }),
+    });
+  });
   await provider.click();
   await page.getByRole("option", { name: "OpenAI-compatible" }).click();
   await page.getByLabel("OpenAI-compatible server URL").fill("http://127.0.0.1:8090/v1");
   await page.getByRole("button", { name: "Find models" }).click();
   const discovered = page.getByRole("combobox", { name: "Models from server" });
   await expect(discovered).toBeVisible();
+  await expect(discovered).toContainText("probed-model");
   await discovered.click();
-  const discoveredModel = (await page.getByRole("option").allTextContents()).find(
-    (label) => label !== "Other model…",
-  );
-  expect(discoveredModel).toBeTruthy();
   await page.getByRole("option", { name: "Other model…" }).click();
   const manualModel = page.getByLabel("Model id");
-  await manualModel.fill(discoveredModel!);
   await expect(manualModel).toBeVisible();
-  await manualModel.fill(`${discoveredModel}-custom`);
-  await expect(manualModel).toHaveValue(`${discoveredModel}-custom`);
+  // Typing a discovered id (or its prefix) must keep the freeform field.
+  await manualModel.fill("probed-model");
+  await expect(manualModel).toBeVisible();
+  await expect(manualModel).toHaveValue("probed-model");
+  await manualModel.fill("probed-model-custom");
+  await expect(manualModel).toHaveValue("probed-model-custom");
+  await expect(page.getByRole("combobox", { name: "Models from server" })).toHaveCount(0);
 
   await captureScreenshot(page, testInfo, "onboarding-model-labels");
 });
