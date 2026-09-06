@@ -96,8 +96,8 @@ the first account is registered.
 With a nonempty signup allowlist, users—including existing accounts—must verify their email to sign
 in. Configure SMTP below before enabling an allowlist or upgrading an allowlisted deployment.
 
-To set up without email, leave the allowlist empty, register the owner locally, then disable
-registration in Settings before exposing the server to the network.
+For a public deployment, configure SMTP and an allowlist before the first account is registered.
+Keep an installation without email on a trusted local network.
 
 ### Verification and password recovery email
 
