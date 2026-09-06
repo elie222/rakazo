@@ -18,6 +18,7 @@
     "@rakazo/contracts": "workspace:*",
     "@rakazo/core": "workspace:*",
     "@rakazo/db": "workspace:*",
+    "@rakazo/logging": "workspace:*",
     "@rakazo/memory": "workspace:*",
     "hono": "^4.9.6"
   },

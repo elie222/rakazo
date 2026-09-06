@@ -110,7 +110,7 @@ describe("Team Computer parallel screens", () => {
         claims.claim("computer-1", researcher);
         return "ok";
       }),
-    ).resolves.toEqual({ error: expect.stringMatching(/does not support multiple screens/) });
+    ).resolves.toEqual({ error: expect.stringMatching(/temporarily busy/) });
     expect(isComputerScreenUnavailable(new Error("cannot allocate another screen"))).toBe(true);
   });
 

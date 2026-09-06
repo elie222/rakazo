@@ -71,42 +71,6 @@ export function e2bCreateOptions(botId: string, apiKey: string) {
   };
 }
 
-// A sandbox that has expired stops resolving as a host, so reaching it fails at the socket
-// rather than with a 404. undici reports every one of those as a bare "fetch failed" and
-// hides the errno on the cause chain. Used only by provision reconnect: replaceComputer must
-// not treat these as permanent, or an update-mode checkpoint blip destroys the old box
-// without committing workspace changes that exist only there.
-const SANDBOX_UNREACHABLE_CODES = new Set([
-  "ECONNREFUSED",
-  "ECONNRESET",
-  "EAI_AGAIN",
-  "EHOSTUNREACH",
-  "ENETUNREACH",
-  "ENOTFOUND",
-  "UND_ERR_CONNECT_TIMEOUT",
-  "UND_ERR_SOCKET",
-]);
-
-export function isUnreachableTransportError(error: unknown): boolean {
-  for (let current = error; current instanceof Error; current = current.cause) {
-    const code = (current as { code?: unknown }).code;
-    if (typeof code === "string" && SANDBOX_UNREACHABLE_CODES.has(code)) return true;
-    if (current.message === "fetch failed") return true;
-  }
-  return false;
-}
-
-/**
- * True when the sandbox is permanently gone (404 / killed / not found). Used by
- * replaceComputer to decide whether to swallow checkpoint/destroy failures.
- * Transient transport errors stay recoverable so update/reset can abort without
- * discarding an uncommitted workspace on a still-reachable box.
- */
-export function isUnrecoverableSandboxError(error: unknown): boolean {
-  if (LEGACY_GONE_MESSAGE.test(errorMessage(error))) return true;
-  return isSandboxGoneError(error);
-}
-
 // How the E2B SDK words a sandbox that no longer exists. It does not always say "not found":
 // an expired sandbox surfaces as a TimeoutError about the *sandbox* timeout (502 / Unavailable
 // from envd), which used to read as a live sandbox and left every later call throwing forever.
@@ -114,14 +78,7 @@ const SANDBOX_GONE_MESSAGE =
   /probably not running anymore|likely due to sandbox timeout|killed or reached its end of life|sandbox [^:]{0,60}not found|sandbox [^:]{0,60}does not exist/i;
 // The same words from a live sandbox: a missing binary or a missing file inside it.
 const SHELL_MISSING_TARGET = /command not found|no such file|^path .* not found/i;
-const LEGACY_GONE_MESSAGE =
-  /not found|does not exist|404|not_found|killed|doesn't exist|sandbox not found/i;
-
-/**
- * Narrower than isUnrecoverableSandboxError: the provider itself said this sandbox is gone.
- * A missing binary or a missing file inside a live sandbox is not proof of death, so callers
- * that persist "the sandbox is gone" must use this one.
- */
+/** Only provider-specific evidence of sandbox loss permits automatic replacement. */
 export function isSandboxGoneError(error: unknown): boolean {
   const message = errorMessage(error);
   if (SHELL_MISSING_TARGET.test(message)) return false;
@@ -303,10 +260,8 @@ export class E2BSandboxProvider implements SandboxProvider {
         };
       } catch (error) {
         this.boxes.delete(request.providerRef);
-        // Permanent gone (404/killed) or unreachable transport: boot fresh. Other errors rethrow.
-        if (!isUnrecoverableSandboxError(error) && !isUnreachableTransportError(error)) {
-          throw error;
-        }
+        // A transport failure says nothing about the workspace still on the server.
+        if (!isSandboxGoneError(error)) throw error;
       }
     }
     const desktop = await this.sdk.create(e2bCreateOptions(request.botId, this.apiKey));
@@ -690,6 +645,7 @@ export class E2BSandboxProvider implements SandboxProvider {
     ]);
     this.forget(id);
     await settleForTeardown(pending);
+    // The SDK returns false when the sandbox is already gone; teardown is complete.
     await desktop?.kill();
   }
 

@@ -6,6 +6,7 @@ import {
   type SandboxProvider,
 } from "@rakazo/adapter-kit";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
 import { toComputerRef } from "./computer-support.js";
 
 export const DEFAULT_TAKEOVER_LEASE_MS = 15 * 60 * 1000;
@@ -52,7 +53,7 @@ export async function enqueueTakeoverContinuation(
     await jobs.enqueue(runContinueJob(runId));
   } catch (error) {
     // The release is durable; reconciliation will retry this queued run.
-    console.error("takeover continuation enqueue", error);
+    getLogger().error("takeover continuation enqueue", error);
   }
 }
 
@@ -171,7 +172,7 @@ export async function expireComputerControl(
             new Date(now.getTime() + 30_000),
           );
         } catch (error) {
-          console.error("orphan computer control expiry reschedule", error);
+          getLogger().error("orphan computer control expiry reschedule", error);
         }
         return false;
       }

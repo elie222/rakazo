@@ -30,7 +30,6 @@ import {
   normalizeCreateBotProfile,
 } from "@rakazo/contracts";
 import {
-  abortableDelay,
   attachmentsForThread,
   buildComposerMentionOptions,
   type ComposerMention,
@@ -41,11 +40,13 @@ import {
   isActive,
   isPeerReceiptBlocks,
   isRunTerminalEvent,
+  isToolActivityBlock,
   latestAnswerableAskMessageId,
   mentionChipKey,
   reorderBotTo,
   resolveComposerSendPlan,
   resolveMentionPickerKey,
+  runThreadSubscription,
   SLASH_ACTIONS,
   type SlashActionId,
   searchHitThreadTarget,
@@ -66,7 +67,6 @@ import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-  Separator,
 } from "@rakazo/ui-web";
 import {
   ArrowDown,
@@ -84,6 +84,7 @@ import {
   Menu,
   Mic,
   Monitor,
+  PanelLeftClose,
   Paperclip,
   Phone,
   Plus,
@@ -114,13 +115,13 @@ import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { ArtifactFileCard } from "../components/ArtifactFileCard";
 import { AskCard } from "../components/AskCard";
 import { ActiveBotGlyph, CollaborationMarker } from "../components/ai/CollaborationMarker";
+import { CloudAgentCard } from "../components/CloudAgentCard";
 import { ComputerMaintenanceActions } from "../components/ComputerMaintenanceActions";
 import {
   ComputersUnavailableHint,
   computersAreUnavailable,
 } from "../components/ComputersUnavailableHint";
 import { MessageHoverMetadata } from "../components/MessageHoverMetadata";
-import { ToolActivityDisclosure, ToolSteps } from "../components/ToolActivityDisclosure";
 import { SkillDraftCard } from "../components/teach/SkillDraftCard";
 import { TeachCaptureOverlay } from "../components/teach/TeachCaptureOverlay";
 import { TeachComputerOverlayControl } from "../components/teach/TeachComputerOverlay";
@@ -130,21 +131,28 @@ import type { ArtifactTarget } from "../lib/artifact-open";
 import { authClient } from "../lib/auth";
 import { takeInitialBootstrap } from "../lib/bootstrap";
 import {
+  BOTS_SIDEBAR_EDGE_DRAG_PX,
+  readBotsSidebarCollapsed,
+  writeBotsSidebarCollapsed,
+} from "../lib/bots-sidebar-pref";
+import {
   deliverBrowserNotification as deliverNativeBrowserNotification,
   requestBrowserNotificationPermission,
   shouldNotifyBrowser,
 } from "../lib/browser-notifications";
 import { loadComputerScreen } from "../lib/computer-screen";
 import { dictation } from "../lib/dictation";
+import { scheduleFocusPrompt } from "../lib/focus-prompt";
 import { localTimezone } from "../lib/local-timezone";
 import { copyableMessageText } from "../lib/message-text";
-import { providerLabel } from "../lib/messaging";
+import { messageProviderLabel } from "../lib/messaging";
 import { isFileDrag, revokePendingAttachmentPreviews } from "../lib/pending-attachments";
 import { markAfterPaint, markOnce } from "../lib/performance";
 import { clearSpaceSelection, rpc, selectedSpaceId, selectSpace } from "../lib/rpc";
 import { readSeenRunErrorIds, rememberSeenRunErrorId } from "../lib/run-error-storage";
 import {
   activeThreadRuns,
+  applyThreadSendReceipt,
   clearActiveThreadRuns,
   computerPanelAutoBoot,
   computerPanelAutoUsesBoot,
@@ -180,6 +188,8 @@ import {
 } from "./RoutineEditor";
 import { SpaceSearchResults } from "./SpaceSearch";
 import { BotSettings, CreateBotForm } from "./shell/bot-panel";
+import { BotCreatePicker } from "./shell/bot-picker";
+import { CommandPalette, isCommandPaletteHotkey } from "./shell/command-palette";
 import {
   ClearConversationDialog,
   DeleteBotDialog,
@@ -311,6 +321,9 @@ export function ShellPage() {
   useEffect(() => {
     setCollapsedSidebarSections(readCollapsedSidebarSections(userId));
   }, [userId]);
+  useEffect(() => {
+    setBotsSidebarCollapsed(readBotsSidebarCollapsed(userId));
+  }, [userId]);
   const [query, setQuery] = useState("");
   const [searchHits, setSearchHits] = useState<SearchHit[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
@@ -350,6 +363,9 @@ export function ShellPage() {
   const botsRefreshApplied = useRef(0);
   const archivedBotsRefreshEpoch = useRef(0);
   const botsRefreshInFlight = useRef(0);
+  // A very fast run can finish over SSE while its threads.send response is still
+  // returning. Do not let that late receipt resurrect terminal work as queued.
+  const terminalRunReceipts = useRef(new Set<string>());
   // Last-known computer/screen per bot, so switching back to an already-seen
   // bot paints its computer pane instantly instead of blanking it while the
   // thread + screen RPCs round-trip again (see refreshThread / refreshComputerScreen).
@@ -413,7 +429,15 @@ export function ShellPage() {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [draggedBotId, setDraggedBotId] = useState<string | null>(null);
   const [createMenuOpen, setCreateMenuOpen] = useState(false);
+  const [botsSidebarCollapsed, setBotsSidebarCollapsed] = useState(false);
+  const focusPromptAbortRef = useRef<AbortController | null>(null);
+  const focusPromptBotIdRef = useRef<string | null>(null);
+  const creatingBotRef = useRef(false);
+  const botsSidebarEdgeDragRef = useRef<{ startX: number; mode: "expand" | "collapse" } | null>(
+    null,
+  );
   const [newSpaceOpen, setNewSpaceOpen] = useState(false);
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
 
   useEffect(() => {
     const desktop = window.matchMedia("(min-width: 768px)");
@@ -1063,138 +1087,81 @@ export function ShellPage() {
     expandedHistoryThread.current = null;
     historyEpoch.current += 1;
     const abort = new AbortController();
-    void (async () => {
-      const primed = bootstrappedThread.current;
-      bootstrappedThread.current = null;
-      // Pending search jumps load the around-page separately; avoid replacing it with latest.
-      const snap =
-        primed?.botId === active.id
+    void runThreadSubscription({
+      signal: abort.signal,
+      loadInitial: async () => {
+        const primed = bootstrappedThread.current;
+        bootstrappedThread.current = null;
+        // Pending search jumps load the around-page separately; avoid replacing it with latest.
+        return primed?.botId === active.id
           ? primed
           : pendingJump
-            ? await rpc.threads
-                .get({ botId: active.id }, { signal: threadSnapshotSignal(abort.signal) })
-                .catch(() => null)
-            : await refreshThread(active.id, threadSnapshotSignal(abort.signal)).catch(() => null);
-      if (abort.signal.aborted) return;
-      let subscribedThreadId = snap?.threadId;
-      let initialCursor = snap?.cursor ?? -1;
-      let headRetryMs = 250;
-      while (!subscribedThreadId && !abort.signal.aborted) {
-        const head = await rpc.threads
-          .head({ botId: active.id }, { signal: threadSnapshotSignal(abort.signal) })
-          .catch(() => null);
-        if (head) {
-          subscribedThreadId = head.threadId;
-          initialCursor = head.cursor;
-          break;
-        }
-        try {
-          await abortableDelay(headRetryMs, abort.signal);
-        } catch {
-          return;
-        }
-        headRetryMs = Math.min(headRetryMs * 2, 5_000);
-      }
-      if (!subscribedThreadId || abort.signal.aborted) return;
-      let cursor = initialCursor;
-      let snapshotReady = snapshotRef.current?.threadId === subscribedThreadId;
-      const pendingSnapshotEvents: ProductEvent[] = [];
-      if (!snapshotReady) {
-        void (async () => {
-          let snapshotRetryMs = 250;
-          while (!snapshotReady && !abort.signal.aborted) {
-            try {
-              await abortableDelay(snapshotRetryMs, abort.signal);
-            } catch {
-              return;
-            }
-            await refreshThread(active.id, threadSnapshotSignal(abort.signal)).catch(() => null);
-            if (abort.signal.aborted) return;
-            const committed = snapshotRef.current;
-            if (committed?.threadId === subscribedThreadId) {
-              snapshotReady = true;
-              const pending = pendingSnapshotEvents.splice(0);
-              for (const event of pending) {
-                if (event.seq > committed.cursor) {
-                  applyThreadEvent(event, commitSnapshot, commitComputer, snapshotRef, computerRef);
-                }
-              }
-              return;
-            }
-            snapshotRetryMs = Math.min(snapshotRetryMs * 2, 5_000);
+            ? rpc.threads.get({ botId: active.id }, { signal: threadSnapshotSignal(abort.signal) })
+            : refreshThread(active.id, threadSnapshotSignal(abort.signal));
+      },
+      loadHead: () =>
+        rpc.threads.head({ botId: active.id }, { signal: threadSnapshotSignal(abort.signal) }),
+      refresh: () => refreshThread(active.id, threadSnapshotSignal(abort.signal)),
+      currentSnapshot: () => snapshotRef.current,
+      subscribe: (cursor) =>
+        rpc.threads.subscribe({ botId: active.id, cursor }, { signal: abort.signal }),
+      beforeEvent: (event) => {
+        if (isRunTerminalEvent(event) && event.runId) {
+          terminalRunReceipts.current.add(event.runId);
+          if (terminalRunReceipts.current.size > 100) {
+            const oldest = terminalRunReceipts.current.values().next().value;
+            if (oldest !== undefined) terminalRunReceipts.current.delete(oldest);
           }
-        })();
-      }
-      const streamReady = true;
-      let retryMs = 250;
-      while (!abort.signal.aborted) {
-        try {
-          const events = await rpc.threads.subscribe(
-            { botId: active.id, cursor },
-            { signal: abort.signal },
-          );
-          for await (const event of events) {
-            if (abort.signal.aborted) break;
-            cursor = Math.max(cursor, event.seq);
-            retryMs = 250;
-            if (snapshotReady && snapshotRef.current?.threadId === event.threadId) {
-              applyThreadEvent(event, commitSnapshot, commitComputer, snapshotRef, computerRef);
-            } else {
-              pendingSnapshotEvents.push(event);
-            }
-            const currentBot = botsRef.current.find((bot) => bot.id === active.id);
-            notifyBrowserForEvent(
-              event,
-              subscribedThreadId,
-              initialCursor,
-              streamReady,
-              currentBot?.name ?? active.name,
-              currentBot?.notifyOnFinish ?? false,
-              false,
-            );
-            if (event.type === "thread.cleared") {
-              expandedHistoryThread.current = null;
-              pinnedAroundRef.current = null;
-              historyEpoch.current += 1;
-            }
-            if (event.type === "bot.archived") {
-              void refreshBots(true).catch(() => undefined);
-            } else if (
-              event.type === "bot.spawned" ||
-              event.type === "bot.deleted" ||
-              event.type === "run.started" ||
-              isRunTerminalEvent(event) ||
-              event.type === "thread.cleared"
-            ) {
-              void refreshBots().catch(() => undefined);
-            }
-            if (event.type === "thread.message.created") {
-              const blocks = (event.payload.blocks as Array<{ kind?: string }>) ?? [];
-              if (blocks.some((block) => block.kind === "child_bot")) {
-                void refreshBots().catch(() => undefined);
-              }
-              if (event.payload.role === "bot") markBotReadIfVisible(active.id);
-            }
-            if (
-              isRunTerminalEvent(event) ||
-              event.type === "run.waiting_input" ||
-              event.type === "skill.teaching.stopped"
-            ) {
-              // waiting_input: reconcile ask cards if a stale post-send refresh raced SSE.
-              void refreshThread(active.id).catch(() => undefined);
-            } else if (isComputerStatusEvent(event)) {
-              void refreshComputerScreen(active.id).catch(() => undefined);
-            }
-          }
-        } catch {
-          // The durable cursor below makes reconnects safe after a transient network failure.
         }
-        if (abort.signal.aborted) break;
-        await refreshThread(active.id, threadSnapshotSignal(abort.signal)).catch(() => null);
-        await abortableDelay(retryMs, abort.signal);
-        retryMs = Math.min(retryMs * 2, 5_000);
-      }
-    })();
+      },
+      applyEvent: (event) =>
+        applyThreadEvent(event, commitSnapshot, commitComputer, snapshotRef, computerRef),
+      onEvent: (event, initial) => {
+        const currentBot = botsRef.current.find((bot) => bot.id === active.id);
+        notifyBrowserForEvent(
+          event,
+          initial.threadId,
+          initial.cursor,
+          true,
+          currentBot?.name ?? active.name,
+          currentBot?.notifyOnFinish ?? false,
+          false,
+        );
+        if (event.type === "thread.cleared") {
+          expandedHistoryThread.current = null;
+          pinnedAroundRef.current = null;
+          historyEpoch.current += 1;
+        }
+        if (event.type === "bot.archived") {
+          void refreshBots(true).catch(() => undefined);
+        } else if (
+          event.type === "bot.spawned" ||
+          event.type === "bot.deleted" ||
+          event.type === "run.started" ||
+          isRunTerminalEvent(event) ||
+          event.type === "thread.cleared"
+        ) {
+          void refreshBots().catch(() => undefined);
+        }
+        if (event.type === "thread.message.created") {
+          const blocks = (event.payload.blocks as Array<{ kind?: string }>) ?? [];
+          if (blocks.some((block) => block.kind === "child_bot")) {
+            void refreshBots().catch(() => undefined);
+          }
+          if (event.payload.role === "bot") markBotReadIfVisible(active.id);
+        }
+        if (
+          isRunTerminalEvent(event) ||
+          event.type === "run.waiting_input" ||
+          event.type === "skill.teaching.stopped"
+        ) {
+          // waiting_input: reconcile ask cards if a stale post-send refresh raced SSE.
+          void refreshThread(active.id).catch(() => undefined);
+        } else if (isComputerStatusEvent(event)) {
+          void refreshComputerScreen(active.id).catch(() => undefined);
+        }
+      },
+    });
     return () => {
       abort.abort();
     };
@@ -1237,107 +1204,42 @@ export function ShellPage() {
     }
     historyEpoch.current += 1;
     const abort = new AbortController();
-    void (async () => {
-      const snap = pendingJump
-        ? await rpc.threads
-            .get({ groupId }, { signal: threadSnapshotSignal(abort.signal) })
-            .catch(() => null)
-        : await refreshGroupThread(groupId, threadSnapshotSignal(abort.signal)).catch(() => null);
-      if (abort.signal.aborted) return;
-      let subscribedThreadId = snap?.threadId;
-      let initialCursor = snap?.cursor ?? -1;
-      let headRetryMs = 250;
-      while (!subscribedThreadId && !abort.signal.aborted) {
-        const head = await rpc.threads
-          .head({ groupId }, { signal: threadSnapshotSignal(abort.signal) })
-          .catch(() => null);
-        if (head) {
-          subscribedThreadId = head.threadId;
-          initialCursor = head.cursor;
-          break;
+    void runThreadSubscription({
+      signal: abort.signal,
+      loadInitial: () =>
+        pendingJump
+          ? rpc.threads.get({ groupId }, { signal: threadSnapshotSignal(abort.signal) })
+          : refreshGroupThread(groupId, threadSnapshotSignal(abort.signal)),
+      loadHead: () => rpc.threads.head({ groupId }, { signal: threadSnapshotSignal(abort.signal) }),
+      refresh: () => refreshGroupThread(groupId, threadSnapshotSignal(abort.signal)),
+      currentSnapshot: () => snapshotRef.current,
+      subscribe: (cursor) => rpc.threads.subscribe({ groupId, cursor }, { signal: abort.signal }),
+      applyEvent: (event) =>
+        applyThreadEvent(event, commitSnapshot, commitComputer, snapshotRef, computerRef),
+      onEvent: (event, initial) => {
+        const eventBot = botsRef.current.find((bot) => bot.id === event.botId);
+        notifyBrowserForEvent(
+          event,
+          initial.threadId,
+          initial.cursor,
+          true,
+          eventBot?.name ?? activeGroup.name,
+          true,
+          true,
+        );
+        if (event.type === "thread.message.created" && event.payload.role === "bot") {
+          readVisibleGroups.current.delete(groupId);
+          markVisibleGroupRead();
         }
-        try {
-          await abortableDelay(headRetryMs, abort.signal);
-        } catch {
-          return;
+        if (event.type === "run.started" || isRunTerminalEvent(event)) {
+          void refreshBots().catch(() => undefined);
         }
-        headRetryMs = Math.min(headRetryMs * 2, 5_000);
-      }
-      if (!subscribedThreadId || abort.signal.aborted) return;
-      let cursor = initialCursor;
-      let snapshotReady = snapshotRef.current?.threadId === subscribedThreadId;
-      const pendingSnapshotEvents: ProductEvent[] = [];
-      if (!snapshotReady) {
-        void (async () => {
-          let snapshotRetryMs = 250;
-          while (!snapshotReady && !abort.signal.aborted) {
-            try {
-              await abortableDelay(snapshotRetryMs, abort.signal);
-            } catch {
-              return;
-            }
-            await refreshGroupThread(groupId, threadSnapshotSignal(abort.signal)).catch(() => null);
-            if (abort.signal.aborted) return;
-            const committed = snapshotRef.current;
-            if (committed?.threadId === subscribedThreadId) {
-              snapshotReady = true;
-              const pending = pendingSnapshotEvents.splice(0);
-              for (const event of pending) {
-                if (event.seq > committed.cursor) {
-                  applyThreadEvent(event, commitSnapshot, commitComputer, snapshotRef, computerRef);
-                }
-              }
-              return;
-            }
-            snapshotRetryMs = Math.min(snapshotRetryMs * 2, 5_000);
-          }
-        })();
-      }
-      const streamReady = true;
-      let retryMs = 250;
-      while (!abort.signal.aborted) {
-        try {
-          const events = await rpc.threads.subscribe({ groupId, cursor }, { signal: abort.signal });
-          for await (const event of events) {
-            if (abort.signal.aborted) break;
-            cursor = Math.max(cursor, event.seq);
-            retryMs = 250;
-            if (snapshotReady && snapshotRef.current?.threadId === event.threadId) {
-              applyThreadEvent(event, commitSnapshot, commitComputer, snapshotRef, computerRef);
-            } else {
-              pendingSnapshotEvents.push(event);
-            }
-            const eventBot = botsRef.current.find((bot) => bot.id === event.botId);
-            notifyBrowserForEvent(
-              event,
-              subscribedThreadId,
-              initialCursor,
-              streamReady,
-              eventBot?.name ?? activeGroup.name,
-              true,
-              true,
-            );
-            if (event.type === "thread.message.created" && event.payload.role === "bot") {
-              readVisibleGroups.current.delete(groupId);
-              markVisibleGroupRead();
-            }
-            if (event.type === "run.started" || isRunTerminalEvent(event)) {
-              void refreshBots().catch(() => undefined);
-            }
-            if (isRunTerminalEvent(event) || event.type === "run.waiting_input") {
-              // waiting_input: reconcile ask cards if a stale post-send refresh raced SSE.
-              void refreshGroupThread(groupId).catch(() => undefined);
-            }
-          }
-        } catch {
-          // reconnect safely
+        if (isRunTerminalEvent(event) || event.type === "run.waiting_input") {
+          // waiting_input: reconcile ask cards if a stale post-send refresh raced SSE.
+          void refreshGroupThread(groupId).catch(() => undefined);
         }
-        if (abort.signal.aborted) break;
-        await refreshGroupThread(groupId, threadSnapshotSignal(abort.signal)).catch(() => null);
-        await abortableDelay(retryMs, abort.signal);
-        retryMs = Math.min(retryMs * 2, 5_000);
-      }
-    })();
+      },
+    });
     return () => {
       window.removeEventListener("focus", markVisibleGroupRead);
       document.removeEventListener("visibilitychange", markVisibleGroupRead);
@@ -1946,6 +1848,12 @@ export function ShellPage() {
       const trimmed = plan.trimmed;
       setSending(true);
       setSendError(null);
+      const dropDelayedSetup = () => {
+        // Only after successful engagement so a failed upload/send keeps the setup card.
+        if (initialBotTarget && focusPromptBotIdRef.current === initialBotTarget) {
+          cancelFocusPrompt();
+        }
+      };
       try {
         if (plan.shouldRunRoutines) {
           const sendNonce = newClientNonce();
@@ -1959,6 +1867,7 @@ export function ShellPage() {
           );
         }
         if (!plan.shouldSend) {
+          dropDelayedSetup();
           setReplyTarget(null);
           revokePendingAttachmentPreviews(attachments);
           setPendingAttachments((current) =>
@@ -2001,7 +1910,7 @@ export function ShellPage() {
             replyToMessageId: reroutedToGroup ? undefined : activeReplyTarget?.id,
           });
         } else if (botTarget) {
-          await rpc.threads.send({
+          const sent = await rpc.threads.send({
             botId: botTarget,
             clientNonce,
             text: trimmed || undefined,
@@ -2009,7 +1918,21 @@ export function ShellPage() {
             artifactIds: artifactIds.length ? artifactIds : undefined,
             replyToMessageId: activeReplyTarget?.id,
           });
+          if (activeBotId.current === botTarget) {
+            updateSnapshot((current) =>
+              applyThreadSendReceipt(
+                current,
+                {
+                  botId: botTarget,
+                  runId: sent.runId,
+                  taskId: sent.taskId,
+                },
+                terminalRunReceipts.current,
+              ),
+            );
+          }
         }
+        dropDelayedSetup();
         setReplyTarget(null);
         revokePendingAttachmentPreviews(attachments);
         setPendingAttachments((current) =>
@@ -2172,12 +2095,24 @@ export function ShellPage() {
     await refreshBots().catch(() => undefined);
   }
 
+  function cancelFocusPrompt() {
+    focusPromptAbortRef.current?.abort();
+    focusPromptAbortRef.current = null;
+    focusPromptBotIdRef.current = null;
+  }
+
+  function setBotsSidebarCollapsedPref(collapsed: boolean) {
+    setBotsSidebarCollapsed(collapsed);
+    writeBotsSidebarCollapsed(userId, collapsed);
+  }
+
   async function createBot(input: {
     name: string;
     title: string;
     description: string;
     computerMode: ComputerMode;
   }) {
+    const isFirstBot = botsRef.current.length === 0;
     const bot = await rpc.bots.create({
       ...normalizeCreateBotProfile(input),
       notifyOnFinish: true,
@@ -2188,7 +2123,56 @@ export function ShellPage() {
     );
     navigate(`/app/${bot.id}`);
     setPanel(null);
+    // Register cancellation before awaiting start so leaving the bot during
+    // startup cannot miss the abort and still schedule a late focus card.
+    cancelFocusPrompt();
+    const controller = new AbortController();
+    focusPromptAbortRef.current = controller;
+    focusPromptBotIdRef.current = bot.id;
+    const started = await rpc.onboarding
+      .start({ botId: bot.id })
+      .then(() => true)
+      .catch(() => false);
+    if (!started || controller.signal.aborted || focusPromptBotIdRef.current !== bot.id) {
+      if (focusPromptAbortRef.current === controller) {
+        focusPromptAbortRef.current = null;
+        focusPromptBotIdRef.current = null;
+      }
+      await refreshBots().catch(() => undefined);
+      return;
+    }
+    void scheduleFocusPrompt({
+      immediate: isFirstBot,
+      signal: controller.signal,
+      prompt: async () => {
+        if (focusPromptBotIdRef.current !== bot.id || activeBotId.current !== bot.id) return;
+        await rpc.onboarding.promptFocus({ botId: bot.id }).catch(() => undefined);
+      },
+    }).finally(() => {
+      if (focusPromptAbortRef.current === controller) {
+        focusPromptAbortRef.current = null;
+        focusPromptBotIdRef.current = null;
+      }
+    });
     await refreshBots().catch(() => undefined);
+  }
+
+  async function createBotQuick() {
+    if (creatingBotRef.current) return;
+    creatingBotRef.current = true;
+    try {
+      await createBot({
+        name: "New Bot",
+        title: "",
+        description: "",
+        computerMode: "team",
+      });
+    } catch (error) {
+      // Keep the current chat open when create fails, but surface the error.
+      setSendError(error instanceof Error ? error.message : t`Could not create bot`);
+    } finally {
+      creatingBotRef.current = false;
+    }
   }
 
   async function bootComputer({
@@ -2260,6 +2244,14 @@ export function ShellPage() {
   }, [active?.id]);
 
   useEffect(() => {
+    if (focusPromptBotIdRef.current && focusPromptBotIdRef.current !== active?.id) {
+      cancelFocusPrompt();
+    }
+  }, [active?.id]);
+
+  useEffect(() => () => cancelFocusPrompt(), []);
+
+  useEffect(() => {
     if (!computer?.busyBotName) {
       setComputerError(null);
       setComputerErrorFromScreen(false);
@@ -2302,6 +2294,16 @@ export function ShellPage() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [computerOpen]);
+
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      if (!isCommandPaletteHotkey(event)) return;
+      event.preventDefault();
+      setCommandPaletteOpen((open) => !open);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   useEffect(() => {
     if ((panel !== "computer" && !computerOpen) || !active || computer?.state !== "running") return;
@@ -2389,8 +2391,15 @@ export function ShellPage() {
         />
       ) : null}
       <aside
-        className={`absolute inset-y-0 start-0 z-40 flex w-[calc(100%-48px)] max-w-[316px] shrink-0 flex-col border-e border-sidebar-border bg-sidebar transition-transform md:static md:z-auto md:w-[316px] md:translate-x-0 ${
+        data-testid="bots-sidebar"
+        data-collapsed={botsSidebarCollapsed ? "true" : "false"}
+        inert={botsSidebarCollapsed && !mobileSidebarOpen ? true : undefined}
+        className={`absolute inset-y-0 start-0 z-40 flex w-[calc(100%-48px)] max-w-[316px] shrink-0 flex-col border-e border-sidebar-border bg-sidebar transition-[transform,width,opacity] md:static md:z-auto md:translate-x-0 ${
           mobileSidebarOpen ? "translate-x-0" : "-translate-x-full rtl:translate-x-full"
+        } ${
+          botsSidebarCollapsed
+            ? "md:w-0 md:max-w-0 md:overflow-hidden md:border-e-0 md:opacity-0 md:pointer-events-none"
+            : "md:w-[316px]"
         }`}
       >
         <div className="app-drag flex items-center justify-between px-[18px] pb-3 pt-4">
@@ -2416,10 +2425,21 @@ export function ShellPage() {
                 aria-hidden="true"
               />
             </button>
+            <button
+              type="button"
+              className="app-no-drag hidden h-7 w-7 items-center justify-center rounded-full text-muted-foreground/70 hover:text-foreground/75 md:inline-flex"
+              aria-label={t`Minimize bots`}
+              title={t`Minimize bots`}
+              data-testid="minimize-bots-sidebar"
+              onClick={() => setBotsSidebarCollapsedPref(true)}
+            >
+              <PanelLeftClose size={15} strokeWidth={1.8} aria-hidden="true" />
+            </button>
             <Popover open={createMenuOpen} onOpenChange={setCreateMenuOpen}>
               <PopoverTrigger
                 className="app-no-drag text-[21px] text-muted-foreground/70 hover:text-foreground/75"
                 title={t`Create`}
+                data-testid="create-menu-trigger"
               >
                 +
               </PopoverTrigger>
@@ -2427,40 +2447,28 @@ export function ShellPage() {
               {createMenuOpen ? (
                 <PopoverContent
                   align="end"
-                  className="app-no-drag w-auto min-w-[160px] gap-0 p-1 data-closed:animate-none"
+                  className="app-no-drag w-auto gap-0 overflow-hidden p-0 data-closed:animate-none"
                 >
-                  <Button
-                    variant="ghost"
-                    className="w-full justify-start font-normal"
-                    onClick={() => {
+                  <BotCreatePicker
+                    bots={bots}
+                    onCreateBot={() => {
                       setCreateMenuOpen(false);
-                      setPanel("create");
+                      void createBotQuick();
                     }}
-                  >
-                    <Trans>New bot</Trans>
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    className="w-full justify-start font-normal"
-                    onClick={() => {
+                    onOpenBot={(id) => {
+                      setCreateMenuOpen(false);
+                      setMobileSidebarOpen(false);
+                      navigate(`/app/${id}`);
+                    }}
+                    onCreateGroup={() => {
                       setCreateMenuOpen(false);
                       setPanel("create-group");
                     }}
-                  >
-                    <Trans>New group</Trans>
-                  </Button>
-                  <Separator className="my-1" />
-                  <Button
-                    variant="ghost"
-                    className="w-full justify-start font-normal"
-                    onClick={() => {
+                    onCreateSpace={() => {
                       setCreateMenuOpen(false);
                       setNewSpaceOpen(true);
                     }}
-                  >
-                    <Lock size={14} strokeWidth={1.8} aria-hidden="true" />
-                    <Trans>New space</Trans>
-                  </Button>
+                  />
                 </PopoverContent>
               ) : null}
             </Popover>
@@ -2854,7 +2862,9 @@ export function ShellPage() {
                   setMemorySettingsOpen(true);
                 }}
               >
-                <span className="text-muted-foreground">◇</span>
+                <span aria-hidden="true" className="text-muted-foreground">
+                  ◇
+                </span>
                 <Trans>Memory</Trans>
               </Button>
               <Button
@@ -2902,6 +2912,49 @@ export function ShellPage() {
           ) : null}
         </Popover>
       </aside>
+
+      <button
+        type="button"
+        data-testid="bots-sidebar-edge"
+        aria-label={botsSidebarCollapsed ? t`Show bots` : t`Hide bots`}
+        aria-pressed={!botsSidebarCollapsed}
+        className={`absolute inset-y-0 z-50 hidden w-2 cursor-ew-resize touch-none border-0 bg-transparent p-0 md:block ${
+          botsSidebarCollapsed ? "start-0" : "start-[308px]"
+        }`}
+        onPointerDown={(event) => {
+          event.currentTarget.setPointerCapture(event.pointerId);
+          botsSidebarEdgeDragRef.current = {
+            startX: event.clientX,
+            mode: botsSidebarCollapsed ? "expand" : "collapse",
+          };
+        }}
+        onPointerMove={(event) => {
+          const drag = botsSidebarEdgeDragRef.current;
+          if (!drag) return;
+          const rtl =
+            typeof document !== "undefined" &&
+            document.documentElement.getAttribute("dir") === "rtl";
+          const delta = rtl ? drag.startX - event.clientX : event.clientX - drag.startX;
+          if (drag.mode === "expand" && delta >= BOTS_SIDEBAR_EDGE_DRAG_PX) {
+            botsSidebarEdgeDragRef.current = null;
+            setBotsSidebarCollapsedPref(false);
+          } else if (drag.mode === "collapse" && delta <= -BOTS_SIDEBAR_EDGE_DRAG_PX) {
+            botsSidebarEdgeDragRef.current = null;
+            setBotsSidebarCollapsedPref(true);
+          }
+        }}
+        onPointerUp={(event) => {
+          const drag = botsSidebarEdgeDragRef.current;
+          botsSidebarEdgeDragRef.current = null;
+          if (!drag) return;
+          if (Math.abs(event.clientX - drag.startX) < BOTS_SIDEBAR_EDGE_DRAG_PX) {
+            setBotsSidebarCollapsedPref(!botsSidebarCollapsed);
+          }
+        }}
+        onPointerCancel={() => {
+          botsSidebarEdgeDragRef.current = null;
+        }}
+      />
 
       <main
         aria-hidden={mobileSidebarOpen || undefined}
@@ -3015,7 +3068,7 @@ export function ShellPage() {
         />
         {recordingSkill ? (
           <div className="px-6 pb-2 text-center text-[13px] text-destructive">
-            <Trans>Teaching in progress — stop teaching before sending a new message.</Trans>
+            <Trans>Teaching in progress. Stop teaching before sending a new message.</Trans>
           </div>
         ) : null}
         <Composer
@@ -3266,6 +3319,7 @@ export function ShellPage() {
                 key={active.id}
                 bot={active}
                 memoryProviderConfigured={memoryProviderConfig != null}
+                onSkillsChange={setAgentSkills}
                 onSave={async ({ computerMode, ...patch }) => {
                   if (computerMode !== active.computerMode) {
                     await rpc.bots.setComputer({
@@ -3584,6 +3638,16 @@ export function ShellPage() {
           />
         ) : null}
 
+        <CommandPalette
+          open={commandPaletteOpen}
+          onOpenChange={setCommandPaletteOpen}
+          bots={bots}
+          onSelectBot={(id) => {
+            setMobileSidebarOpen(false);
+            navigate(`/app/${id}`);
+          }}
+        />
+
         {newSpaceOpen ? (
           <NewSpaceDialog
             onCancel={() => setNewSpaceOpen(false)}
@@ -3771,9 +3835,15 @@ export function ShellPage() {
                 </span>
               )}
               {!recordingSkill && hasControl ? (
-                <span className="rounded-full bg-success/15 px-[11px] py-1 text-[13px] text-success">
-                  <Trans>You have control</Trans>
-                </span>
+                computer?.takeoverRequested ? (
+                  <span className="rounded-full bg-warning/15 px-[11px] py-1 text-[13px] text-warning">
+                    <Trans>Needs you</Trans>
+                  </span>
+                ) : (
+                  <span className="rounded-full bg-success/15 px-[11px] py-1 text-[13px] text-success">
+                    <Trans>You have control</Trans>
+                  </span>
+                )
               ) : null}
             </div>
             <div className="flex items-center gap-3">
@@ -4067,6 +4137,7 @@ const Transcript = memo(function Transcript({
           </button>
         ) : null}
         {messages.map((message) => {
+          if (!message.blocks.some((block) => !isToolActivityBlock(block))) return null;
           const peerReceipt = isPeerReceiptBlocks(message.blocks);
           return (
             <div
@@ -4124,8 +4195,10 @@ const Transcript = memo(function Transcript({
         !messages.some(
           (message) =>
             message.id.startsWith("progress:") &&
-            message.blocks[0]?.kind === "progress" &&
-            message.blocks[0].text,
+            message.blocks.some(
+              (block) =>
+                block.kind === "progress" && !isToolActivityBlock(block) && Boolean(block.text),
+            ),
         ) ? (
           <ActiveBotGlyph bots={workingBots} label={workingLabel} />
         ) : null}
@@ -4768,7 +4841,7 @@ const Composer = memo(function Composer({
             autoComplete="off"
             dir="auto"
             rows={1}
-            className="max-h-32 min-h-[24px] min-w-[8rem] flex-1 resize-none overflow-y-auto bg-transparent py-0.5 text-[15.5px] leading-6 text-foreground outline-none placeholder:text-foreground/90 disabled:opacity-40"
+            className="max-h-32 min-h-[24px] min-w-[8rem] flex-1 resize-none overflow-y-auto bg-transparent py-0.5 text-[15.5px] leading-6 text-foreground outline-none placeholder:text-muted-foreground disabled:opacity-40"
           />
         </div>
         {running ? (
@@ -5032,6 +5105,7 @@ const MessageView = memo(function MessageView({
       (block) => block.kind === "text" || block.kind === "progress" || block.kind === "steps",
     );
   const isLive = message.id.startsWith("progress:");
+  const visibleNarrationBlocks = message.blocks.filter((block) => !isToolActivityBlock(block));
   const parentJumpId = replyPreview?.id ?? replyToMessageId;
   const messageContext = (
     <>
@@ -5055,6 +5129,7 @@ const MessageView = memo(function MessageView({
     </>
   );
   if (isNarration) {
+    if (visibleNarrationBlocks.length === 0) return null;
     return (
       <>
         {messageContext}
@@ -5063,22 +5138,7 @@ const MessageView = memo(function MessageView({
             className="max-w-[74%] space-y-2.5 rounded-[20px] bg-muted px-[18px] py-3 text-[15.5px] leading-[1.5] text-foreground/90"
             dir="auto"
           >
-            {message.blocks.map((block, i) => {
-              if (block.kind === "steps") {
-                const isCurrentBlock = isLive && i === message.blocks.length - 1;
-                return (
-                  <ToolActivityDisclosure
-                    key={i}
-                    live={isLive}
-                    label={isLive ? t`Working…` : t`Done`}
-                  >
-                    <ToolSteps
-                      steps={block.steps}
-                      currentIndex={isCurrentBlock ? block.steps.length - 1 : undefined}
-                    />
-                  </ToolActivityDisclosure>
-                );
-              }
+            {visibleNarrationBlocks.map((block, i) => {
               if (block.kind === "text" || block.kind === "progress") {
                 return (
                   <div key={i}>
@@ -5107,6 +5167,7 @@ const MessageView = memo(function MessageView({
     <>
       {messageContext}
       {message.blocks.map((block, i) => {
+        if (isToolActivityBlock(block)) return null;
         if (block.kind === "handoff") {
           const from = memberName?.(block.fromBotId) ?? t`bot`;
           const to = memberName?.(block.toBotId) ?? t`bot`;
@@ -5145,7 +5206,8 @@ const MessageView = memo(function MessageView({
               className="flex items-center justify-center gap-2 py-1 text-[13.5px] text-muted-foreground"
             >
               <span>
-                {providerLabel(block.provider)} · {block.fromLabel}: {block.text}
+                {messageProviderLabel(block.provider, block.transport)} · {block.fromLabel}:{" "}
+                {block.text}
               </span>
             </div>
           );
@@ -5169,23 +5231,6 @@ const MessageView = memo(function MessageView({
                 dir="auto"
               >
                 <ChatMarkdown streaming>{block.text}</ChatMarkdown>
-              </div>
-            </div>
-          );
-        }
-        if (block.kind === "steps") {
-          return (
-            <div key={i} className="flex justify-start">
-              <div
-                className="max-w-[74%] space-y-1.5 rounded-[20px] bg-muted px-[18px] py-3"
-                dir="ltr"
-              >
-                <ToolActivityDisclosure live={isLive} label={isLive ? t`Working…` : t`Done`}>
-                  <ToolSteps
-                    steps={block.steps}
-                    currentIndex={isLive ? block.steps.length - 1 : undefined}
-                  />
-                </ToolActivityDisclosure>
               </div>
             </div>
           );
@@ -5391,6 +5436,7 @@ const MessageView = memo(function MessageView({
             />
           );
         }
+        if (block.kind === "cloud_agent") return <CloudAgentCard key={i} block={block} />;
         if (block.kind === "skill_draft") {
           return (
             <div key={i} className="flex justify-start">
@@ -5408,7 +5454,13 @@ const MessageView = memo(function MessageView({
                 <span className="text-[15px] font-medium text-foreground">
                   <Trans>Computer</Trans>
                 </span>
-                <span className="rounded-full bg-success/15 px-[11px] py-1 text-[13px] text-success">
+                <span
+                  className={
+                    block.state === "Needs you"
+                      ? "rounded-full bg-warning/15 px-[11px] py-1 text-[13px] text-warning"
+                      : "rounded-full bg-success/15 px-[11px] py-1 text-[13px] text-success"
+                  }
+                >
                   {block.state}
                 </span>
               </div>

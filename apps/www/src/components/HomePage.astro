@@ -123,6 +123,8 @@ const structuredData = {
     <Header locale={locale} copy={copy.nav} starsLabel={starsLabel} homeHref={homeHref} />
 
     <main id="main">
+      <GetStartedDialog copy={copy.getStartedDialog} waitlist={copy.waitlist} />
+
       <section class="hero">
         <a class="hero__pill" href="#selfhost">
           <span class="hero__badge">{copy.hero.badge}</span>
@@ -279,8 +281,6 @@ const structuredData = {
           }
         </div>
       </section>
-
-      <GetStartedDialog copy={copy.getStartedDialog} waitlist={copy.waitlist} />
     </main>
 
     <Footer

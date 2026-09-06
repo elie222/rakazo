@@ -52,3 +52,29 @@ test("account settings language picker includes Korean and applies it", async ({
   await expect(picker).toHaveText("한국어");
   await captureScreenshot(page, testInfo, "ui-locale-settings-ko");
 });
+
+test("account settings language picker includes Spanish and applies it", async ({
+  page,
+}, testInfo) => {
+  const stamp = Date.now();
+  await signup(page, `ui-locale-es-${stamp}@rakazo.test`, "password12", "Locale QA");
+  await completeOnboarding(page, testInfo);
+
+  await page.getByTestId("user-menu-trigger").click();
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  const settings = page.getByTestId("user-settings");
+  await expect(settings).toBeVisible();
+  await expect(settings.getByRole("heading", { name: "Settings", exact: true })).toBeVisible();
+  await expect(settings.getByRole("heading", { name: "Language", exact: true })).toBeVisible();
+
+  const picker = settings.getByTestId("ui-locale-select");
+  await picker.click();
+  await expect(settings.getByRole("option", { name: "Español", exact: true })).toBeVisible();
+  await captureScreenshot(page, testInfo, "ui-locale-picker-es");
+
+  await settings.getByRole("option", { name: "Español", exact: true }).click();
+  await expect(settings.getByRole("heading", { name: "Configuración", exact: true })).toBeVisible();
+  await expect(settings.getByRole("heading", { name: "Idioma", exact: true })).toBeVisible();
+  await expect(picker).toHaveText("Español");
+  await captureScreenshot(page, testInfo, "ui-locale-settings-es");
+});

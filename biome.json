@@ -76,6 +76,34 @@
           }
         }
       }
+    },
+    {
+      "includes": [
+        "apps/api/**",
+        "apps/worker/**",
+        "infra/sandboxes/supervisor/**",
+        "infra/updater/**",
+        "packages/adapters/**",
+        "packages/db/**",
+        "packages/logging/**"
+      ],
+      "linter": {
+        "rules": {
+          "suspicious": {
+            "noConsole": "error"
+          }
+        }
+      }
+    },
+    {
+      "includes": ["packages/logging/src/console-sink.ts", "packages/logging/src/sink-guard.ts"],
+      "linter": {
+        "rules": {
+          "suspicious": {
+            "noConsole": "off"
+          }
+        }
+      }
     }
   ]
 }

@@ -157,4 +157,13 @@ describe("the images compose file", () => {
     expect(compose.services.postgres?.ports).toBeUndefined();
     expect(compose.services.supervisor?.ports).toBeUndefined();
   });
+
+  it("passes logging variables to the supervisor without putting them on computer containers", () => {
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: this is the literal Compose expression
+    expect(compose.services.supervisor?.environment?.AXIOM_TOKEN).toBe("${AXIOM_TOKEN:-}");
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: this is the literal Compose expression
+    expect(compose.services.supervisor?.environment?.AXIOM_DATASET).toBe("${AXIOM_DATASET:-}");
+    expect(compose.services.computer?.environment?.AXIOM_TOKEN).toBeUndefined();
+    expect(compose.services.computer?.environment?.LOG_LEVEL).toBeUndefined();
+  });
 });

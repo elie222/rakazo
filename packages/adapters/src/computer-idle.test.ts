@@ -12,13 +12,7 @@ import {
   sandboxIdleMs,
   sleepComputerIfIdle,
 } from "./computer-idle.js";
-import {
-  e2bCreateOptions,
-  isUnreachableTransportError,
-  isUnrecoverableSandboxError,
-  openDesktopBrowser,
-  openDesktopUrl,
-} from "./e2b-sandbox.js";
+import { e2bCreateOptions, openDesktopBrowser, openDesktopUrl } from "./e2b-sandbox.js";
 
 describe("sandbox idle", () => {
   it("defaults to ten minutes when SANDBOX_IDLE_MS is unset", () => {
@@ -378,18 +372,6 @@ describe("e2b create options", () => {
     expect(opts.lifecycle).toEqual({ onTimeout: "pause", autoResume: false });
     expect(opts.timeoutMs).toBe(sandboxIdleMs());
     expect(opts.metadata.botId).toBe("bot-1");
-  });
-
-  it("only recreates when the sandbox is actually gone", () => {
-    expect(isUnrecoverableSandboxError(new Error("sandbox not found"))).toBe(true);
-    expect(isUnrecoverableSandboxError(new Error("ECONNRESET"))).toBe(false);
-    // Transient transport codes must not satisfy the replaceComputer predicate: otherwise
-    // update mode swallows a checkpoint blip, destroys the old box, and drops uncommitted work.
-    const reset = Object.assign(new Error("socket hang up"), { code: "ECONNRESET" });
-    expect(isUnrecoverableSandboxError(reset)).toBe(false);
-    expect(isUnreachableTransportError(reset)).toBe(true);
-    expect(isUnrecoverableSandboxError(new Error("fetch failed"))).toBe(false);
-    expect(isUnreachableTransportError(new Error("fetch failed"))).toBe(true);
   });
 
   it("opens a browser on a new desktop", async () => {

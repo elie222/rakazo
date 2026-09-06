@@ -15,6 +15,7 @@ import {
   type PrismaClient,
   withTransactionRetry,
 } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
 import type { ExecutorDeps } from "./executor.js";
 
 /**
@@ -295,14 +296,14 @@ export async function messageBot(
   if (!committed.ok) return committed;
 
   await deps.events.notify(targetThreadId, committed.targetEventSeq).catch((error) => {
-    console.error("bot message realtime notification", error);
+    getLogger().error("bot message realtime notification", error);
   });
   await deps.events.notify(run.threadId, committed.senderEventSeq).catch((error) => {
-    console.error("bot message sender echo notification", error);
+    getLogger().error("bot message sender echo notification", error);
   });
   await deps.jobs.enqueue(runContinueJob(committed.runId)).catch((error) => {
     // The queued run is durable; the job reconciler repairs a missed wake.
-    console.error("bot message enqueue", error);
+    getLogger().error("bot message enqueue", error);
   });
   return {
     ok: true as const,
@@ -331,17 +332,20 @@ export async function returnBotMessageOutcome(
   const source = await loadBotMessageContext(deps.prisma, run.sourceMessageId);
   if (!source) {
     await markBotOutcomeReturned(deps.prisma, run.id);
-    return false;
+    // Handled: nothing to deliver. Return true so callers do not release a reservation.
+    return true;
   }
   const sourceIntent = source.intent ?? "request";
   if (sourceIntent !== "request" && sourceIntent !== "question") {
     await markBotOutcomeReturned(deps.prisma, run.id);
-    return false;
+    return true;
   }
   const sent = await deps.prisma.message.findMany({
     where: { threadId: run.threadId, runId: run.id },
     select: { blocks: true },
   });
+  // Only an explicit result counts as a terminal outcome. Interim message_bot
+  // status updates must not suppress the automatic final return.
   const alreadyReturned = sent.some((message) =>
     (Array.isArray(message.blocks) ? (message.blocks as MessageBlock[]) : []).some(
       (block) =>
@@ -352,7 +356,7 @@ export async function returnBotMessageOutcome(
   );
   if (alreadyReturned) {
     await markBotOutcomeReturned(deps.prisma, run.id);
-    return false;
+    return true;
   }
   const outcome = await messageBot(
     deps,
@@ -362,7 +366,8 @@ export async function returnBotMessageOutcome(
       bot_id: source.fromBotId,
       message: clampBotMessage(text),
       intent,
-      deliveryKey: `auto-${intent}:${run.id}`,
+      // One key per run so status vs result (executor vs reconciler) cannot double-deliver.
+      deliveryKey: `auto-outcome:${run.id}`,
     },
     { allowTerminalSource: true },
   );

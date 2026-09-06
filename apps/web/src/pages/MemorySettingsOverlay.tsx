@@ -16,6 +16,7 @@ import {
 import { XIcon } from "lucide-react";
 import { useEffect, useId, useState } from "react";
 import { rpc } from "../lib/rpc";
+import { SpaceMemorySection } from "./KnowledgeSection";
 import {
   defaultMemoryProviderSettings,
   MEMORY_PROVIDER_SETTINGS,
@@ -242,6 +243,7 @@ export function MemorySettingsOverlay({
               <Trans>The selected memory provider is not available in this build.</Trans>
             </p>
           )}
+          <SpaceMemorySection />
         </div>
       </DialogContent>
     </Dialog>

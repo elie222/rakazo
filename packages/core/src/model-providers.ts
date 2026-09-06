@@ -12,7 +12,7 @@ export const POPULAR_MODEL_PROVIDER_IDS = [
 const DEFAULT_PROVIDER_COUNT = POPULAR_MODEL_PROVIDER_IDS.length;
 const POPULAR_MODEL_PROVIDER_ID_SET = new Set<string>(POPULAR_MODEL_PROVIDER_IDS);
 
-/** Keep onboarding short while ensuring a deployment's current default is never hidden. */
+/** Keep provider selection short while ensuring a deployment's current default is never hidden. */
 export function featuredModelProviders(
   providers: readonly ModelCatalogEntry[],
   selectedProvider: string,

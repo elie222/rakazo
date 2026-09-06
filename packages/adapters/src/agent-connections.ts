@@ -10,6 +10,7 @@ import {
 } from "@rakazo/core";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { appendEventInTransaction, createThreadMessageInTransaction } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
 import { currentBotMessageHop } from "./bot-messages.js";
 
 export interface AgentConnectionDeps {
@@ -170,7 +171,7 @@ export async function connectAgent(
   if (claimed.status !== "pending") return { ok: true, status: claimed.status };
 
   await deps.jobs.enqueue(messagingDeliverJob()).catch((error) => {
-    console.error("agent connection invite enqueue error", error);
+    getLogger().error("agent connection invite enqueue error", error);
   });
   return { ok: true, status: "pending" };
 }
@@ -393,7 +394,7 @@ export async function messageConnectedAgent(
   await deps.events.notify(targetThreadId, committed.targetEventSeq).catch(() => undefined);
   await deps.events.notify(run.threadId, committed.senderEventSeq).catch(() => undefined);
   await deps.jobs.enqueue(runContinueJob(committed.runId)).catch((error) => {
-    console.error("agent connection message enqueue", error);
+    getLogger().error("agent connection message enqueue", error);
   });
   return {
     ok: true,

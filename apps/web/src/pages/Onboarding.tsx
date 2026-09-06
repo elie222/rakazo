@@ -4,16 +4,25 @@ import {
   openAiCompatibleConnectReady,
   openAiCompatibleProbeSuccessMessage,
 } from "@rakazo/contracts";
-import { Button, Input, NativeSelect, NativeSelectOption, Textarea } from "@rakazo/ui-web";
+import {
+  createModelProbe,
+  featuredModelProviders,
+  initialModelProbeState,
+  selectedProviderOutsideSearchResults,
+} from "@rakazo/core";
+import {
+  Button,
+  Input,
+  ModelThinkingOptions,
+  NativeSelect,
+  NativeSelectOption,
+  Textarea,
+} from "@rakazo/ui-web";
 import { Check } from "lucide-react";
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { localizedProviderHint } from "../lib/localized-provider-hint";
 import type { ModelCatalogEntry } from "../lib/model-auth";
-import {
-  featuredModelProviders,
-  selectedProviderOutsideSearchResults,
-} from "../lib/onboarding-providers";
 import { rpc } from "../lib/rpc";
 import { useModelOAuthSignIn } from "../lib/use-model-oauth-signin";
 
@@ -29,16 +38,17 @@ export function OnboardingPage() {
   const [modelId, setModelId] = useState("deepseek/deepseek-v4-flash-0731");
   const [apiKey, setApiKey] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
-  const [probeModels, setProbeModels] = useState<string[]>([]);
-  const [probedBaseUrl, setProbedBaseUrl] = useState<string | null>(null);
-  const [probing, setProbing] = useState(false);
+  const [reasoning, setReasoning] = useState(false);
+  const [{ models: probeModels, baseUrl: probedBaseUrl, probing }, setProbe] =
+    useState(initialModelProbeState);
+  const [modelProbe] = useState(() => createModelProbe(setProbe));
+  const resetOpenAiCompatibleProbe = modelProbe.reset;
   const [name, setName] = useState("");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [needsModel, setNeedsModel] = useState(false);
-  const probeRequestIdRef = useRef(0);
 
   const {
     oauth,
@@ -75,7 +85,7 @@ export function OnboardingPage() {
       })
       .catch(() => setStep("bot"));
     return () => {
-      probeRequestIdRef.current += 1;
+      modelProbe.invalidate();
     };
   }, []);
 
@@ -135,13 +145,6 @@ export function OnboardingPage() {
     probedBaseUrl,
   });
 
-  function resetOpenAiCompatibleProbe() {
-    probeRequestIdRef.current += 1;
-    setProbeModels([]);
-    setProbedBaseUrl(null);
-    setProbing(false);
-  }
-
   function updateBaseUrl(nextBaseUrl: string) {
     setBaseUrl(nextBaseUrl);
     resetOpenAiCompatibleProbe();
@@ -155,29 +158,20 @@ export function OnboardingPage() {
   }
 
   async function probeServerModels() {
-    const trimmedBaseUrl = baseUrl.trim();
-    if (!trimmedBaseUrl) return;
-    resetOpenAiCompatibleProbe();
-    const requestId = probeRequestIdRef.current;
-    setProbing(true);
+    if (!baseUrl.trim()) return;
     setError(null);
     setNotice(null);
-    try {
-      const result = await rpc.models.probeOpenAiCompatible({
-        baseUrl: trimmedBaseUrl,
-        apiKey: apiKey.trim() || undefined,
-      });
-      if (requestId !== probeRequestIdRef.current) return;
-      setProbeModels(result.models);
-      setProbedBaseUrl(trimmedBaseUrl);
-      setModelId((current) => current.trim() || result.models[0] || "");
-      setNotice(openAiCompatibleProbeSuccessMessage(result.models.length));
-    } catch (err) {
-      if (requestId !== probeRequestIdRef.current) return;
-      setError(err instanceof Error ? err.message : t`Could not reach this model server`);
-    } finally {
-      if (requestId === probeRequestIdRef.current) setProbing(false);
-    }
+    await modelProbe.probe({
+      baseUrl,
+      apiKey,
+      request: rpc.models.probeOpenAiCompatible,
+      onSuccess: (models) => {
+        setModelId((current) => current.trim() || models[0] || "");
+        setNotice(openAiCompatibleProbeSuccessMessage(models.length));
+      },
+      onError: (err) =>
+        setError(err instanceof Error ? err.message : t`Could not reach this model server`),
+    });
   }
 
   async function saveModel() {
@@ -188,6 +182,7 @@ export function OnboardingPage() {
           provider,
           baseUrl: baseUrl.trim(),
           modelId: modelId.trim(),
+          reasoning,
           apiKey: apiKey.trim() || undefined,
           label: selected?.providerName ?? provider,
         });
@@ -223,9 +218,15 @@ export function OnboardingPage() {
         instructions: description,
         notifyOnFinish: true,
       });
-      // Onboarding continues conversationally in the thread: greeting, focus
-      // choice, and Composio authorize cards.
-      await rpc.onboarding.start({ botId: bot.id }).catch(() => undefined);
+      // Onboarding continues conversationally in the thread: greeting first,
+      // then the focus choice (immediate for the first bot).
+      const started = await rpc.onboarding
+        .start({ botId: bot.id })
+        .then(() => true)
+        .catch(() => false);
+      if (started) {
+        await rpc.onboarding.promptFocus({ botId: bot.id }).catch(() => undefined);
+      }
       navigate(`/app/${bot.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : t`Could not create your bot`);
@@ -299,6 +300,7 @@ export function OnboardingPage() {
                           : (catalog.find((item) => item.provider === entry.provider)?.id ?? ""),
                       );
                       setBaseUrl("");
+                      setReasoning(false);
                       resetOpenAiCompatibleProbe();
                       setError(null);
                       setNotice(null);
@@ -412,6 +414,12 @@ export function OnboardingPage() {
                       </Button>
                     ) : null}
                   </div>
+                  <ModelThinkingOptions
+                    reasoning={reasoning}
+                    onReasoningChange={setReasoning}
+                    advancedLabel={t`Advanced`}
+                    thinkingLabel={t`Supports thinking`}
+                  />
                 </>
               ) : (
                 <>

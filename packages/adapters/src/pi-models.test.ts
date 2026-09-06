@@ -2,6 +2,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { catalogModelLabel, listPiCatalog, scriptedCatalogEntry } from "./pi-models.js";
 
 describe("Pi model catalog", () => {
+  it("keeps the custom catalog independent of server model IDs", () => {
+    const custom = listPiCatalog().filter((entry) => entry.provider === "openai-compatible");
+    expect(custom).toHaveLength(1);
+    expect(custom[0]).toMatchObject({ id: "custom", placeholder: true, reasoning: false });
+  });
+
   afterEach(() => {
     vi.unstubAllEnvs();
     vi.resetModules();

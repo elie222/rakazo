@@ -4,6 +4,7 @@ import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import {
   createRunExecutor,
+  createRunWorkspaceCheckpoint,
   loadCurrentTurnImages,
   missingTurnImagesInstruction,
   runNotificationsEnabled,
@@ -12,6 +13,42 @@ import {
   threadContextForRun,
 } from "./executor.js";
 
+describe("run workspace checkpoint", () => {
+  it("skips clean turns and flushes once after a mutation", async () => {
+    const persist = vi.fn(async () => undefined);
+    const checkpoint = createRunWorkspaceCheckpoint(persist);
+
+    await expect(checkpoint.flush()).resolves.toBe(false);
+    checkpoint.markDirty();
+    await expect(checkpoint.flush()).resolves.toBe(true);
+    await expect(checkpoint.flush()).resolves.toBe(false);
+    expect(persist).toHaveBeenCalledOnce();
+  });
+
+  it("marks materialized steering files for checkpointing", async () => {
+    const persist = vi.fn(async () => undefined);
+    const checkpoint = createRunWorkspaceCheckpoint(persist);
+
+    checkpoint.markFiles([]);
+    await expect(checkpoint.flush()).resolves.toBe(false);
+    checkpoint.markFiles([{ path: "attachments/result.txt" }]);
+    await expect(checkpoint.flush()).resolves.toBe(true);
+  });
+
+  it("keeps a failed checkpoint dirty for retry", async () => {
+    const persist = vi
+      .fn<() => Promise<void>>()
+      .mockRejectedValueOnce(new Error("checkpoint failed"))
+      .mockResolvedValueOnce(undefined);
+    const checkpoint = createRunWorkspaceCheckpoint(persist);
+    checkpoint.markDirty();
+
+    await expect(checkpoint.flush()).rejects.toThrow("checkpoint failed");
+    await expect(checkpoint.flush()).resolves.toBe(true);
+    expect(persist).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe("run tool selection", () => {
   const toolNames = (trigger: string, groupId: string | null = null) =>
     selectBuiltinToolsForRun({
@@ -19,6 +56,7 @@ describe("run tool selection", () => {
       groupId,
       trigger,
       semanticMemoryEnabled: false,
+      messagingChannelRun: false,
     }).map((tool) => tool.name);
 
   it("withholds schedule creation only from routine-triggered runs", () => {
@@ -292,6 +330,38 @@ describe("run notification preference", () => {
 });
 
 describe("createRunExecutor", () => {
+  it("excludes private summaries and memory tools from group messaging runs", () => {
+    const messages = [{ role: "user", content: "Group request" }];
+    expect(
+      threadContextForRun(
+        "messaging",
+        {
+          messages,
+          summary: "Private test detail",
+          historyCompactedUpToSeq: 12,
+        },
+        true,
+      ),
+    ).toEqual({
+      messages,
+      summary: null,
+      historyCompactedUpToSeq: null,
+      includeSemanticRecall: false,
+    });
+    const tools = selectBuiltinToolsForRun({
+      graphicalToolsAllowed: false,
+      groupId: null,
+      trigger: "messaging",
+      semanticMemoryEnabled: true,
+      messagingChannelRun: true,
+    }).map((tool) => tool.name);
+    expect(tools).not.toContain("recall_memory");
+    expect(tools).not.toContain("remember");
+    expect(tools).not.toContain("save_memory");
+    expect(tools.some((tool) => tool.startsWith("scratchpad_"))).toBe(false);
+    expect(tools).toContain("web_fetch");
+  });
+
   it("isolates routine runs from every thread-history source", () => {
     const threadContext = {
       messages: [{ role: "user", content: "Create this routine" }],
@@ -299,13 +369,13 @@ describe("createRunExecutor", () => {
       historyCompactedUpToSeq: 4,
     };
 
-    expect(threadContextForRun("routine", threadContext)).toEqual({
+    expect(threadContextForRun("routine", threadContext, false)).toEqual({
       messages: [],
       summary: null,
       historyCompactedUpToSeq: null,
       includeSemanticRecall: false,
     });
-    expect(threadContextForRun("user", threadContext)).toEqual({
+    expect(threadContextForRun("user", threadContext, false)).toEqual({
       ...threadContext,
       includeSemanticRecall: true,
     });

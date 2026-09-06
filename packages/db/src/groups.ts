@@ -6,7 +6,9 @@ import {
   type GroupMember,
   type SpaceGroup,
 } from "@rakazo/contracts";
+import { cancelRunsInTransaction } from "./cancel-runs.js";
 import type { Prisma, PrismaClient } from "./client.js";
+import { expireComputerExecutionLeases } from "./computers.js";
 import { IsolationError } from "./scope.js";
 import { activeRunSelection, activeRunStatuses, previewFromBlocks } from "./thread-listing.js";
 
@@ -324,23 +326,7 @@ export function createGroupRepos(prisma: PrismaClient) {
           : [];
         if (activeRuns.length) {
           const now = new Date();
-          await tx.run.updateMany({
-            where: { id: { in: activeRuns.map((run) => run.id) } },
-            data: {
-              status: "cancelled",
-              completedAt: now,
-              leaseOwner: null,
-              leaseExpiresAt: null,
-            },
-          });
-          await tx.attempt.updateMany({
-            where: { runId: { in: activeRuns.map((run) => run.id) }, status: "running" },
-            data: { status: "cancelled", finishedAt: now },
-          });
-          await tx.task.updateMany({
-            where: { id: { in: activeRuns.map((run) => run.taskId) } },
-            data: { status: "cancelled" },
-          });
+          await cancelRunsInTransaction(tx, activeRuns, now);
         }
         if (input.name !== undefined) {
           await tx.chatGroup.update({
@@ -425,24 +411,8 @@ export function createGroupRepos(prisma: PrismaClient) {
         }));
 
         if (runIds.length) {
-          await tx.run.updateMany({
-            where: { id: { in: runIds } },
-            data: {
-              status: "cancelled",
-              completedAt: now,
-              leaseOwner: null,
-              leaseExpiresAt: null,
-            },
-          });
-          await tx.attempt.updateMany({
-            where: { runId: { in: runIds }, status: "running" },
-            data: { status: "cancelled", finishedAt: now },
-          });
-          await tx.task.updateMany({
-            where: { id: { in: activeRuns.map((run) => run.taskId) } },
-            data: { status: "cancelled" },
-          });
-          await tx.computerExecutionLease.deleteMany({ where: { runId: { in: runIds } } });
+          await cancelRunsInTransaction(tx, activeRuns, now);
+          await expireComputerExecutionLeases(tx, { runId: { in: runIds } });
           await tx.computer.updateMany({
             where: { executionRunId: { in: runIds } },
             data: {
