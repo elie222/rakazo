@@ -765,6 +765,7 @@ export function createRouter(deps: RouterDeps) {
                 deps.prisma,
                 context.actor,
                 effectiveProvider,
+                effectiveModelId,
               );
               if (credential && credential.defaultModel === effectiveModelId) {
                 const secret = await deps.prisma.secret.findFirst({

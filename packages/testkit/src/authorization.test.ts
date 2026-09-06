@@ -943,7 +943,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       modelProvider: "anthropic",
       modelId: "claude-opus-4-6",
     });
-    expect(disconnectedCreate.status).toBeGreaterThanOrEqual(400);
+    expect(disconnectedCreate.status).toBe(400);
     expect(await disconnectedCreate.text()).toMatch(/connect/i);
 
     const partialClear = await raw(app, cookie, "bots/update", {

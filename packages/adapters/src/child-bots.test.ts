@@ -109,6 +109,7 @@ describe("spawned bot creation", () => {
     const result = await spawnBot(
       {
         prisma: {
+          bot: { findUnique: vi.fn().mockResolvedValue(null) },
           spaceModelPreference: {
             findFirst: vi.fn().mockResolvedValue({
               credential: { provider: "xai" },
@@ -169,7 +170,12 @@ describe("spawned bot creation", () => {
     };
     expect(
       await spawnBot(
-        { prisma: {} as PrismaClient, jobs: { enqueue: vi.fn() } as unknown as JobPublisher },
+        {
+          prisma: {
+            bot: { findUnique: vi.fn().mockResolvedValue(null) },
+          } as unknown as PrismaClient,
+          jobs: { enqueue: vi.fn() } as unknown as JobPublisher,
+        },
         { ...input, modelProvider: "xai" },
       ),
     ).toEqual({ error: "model_provider and model_id must both be set." });
@@ -178,6 +184,7 @@ describe("spawned bot creation", () => {
       await spawnBot(
         {
           prisma: {
+            bot: { findUnique: vi.fn().mockResolvedValue(null) },
             spaceModelPreference: { findFirst: vi.fn().mockResolvedValue(null) },
             userModelCredential: { findFirst: vi.fn().mockResolvedValue(null) },
           } as unknown as PrismaClient,
@@ -186,6 +193,56 @@ describe("spawned bot creation", () => {
         { ...input, modelProvider: "xai", modelId: "grok-4.6" },
       ),
     ).toEqual({ error: "Connect that model provider first" });
+  });
+
+  it("returns an existing child on retry even if the model provider is disconnected", async () => {
+    const findUnique = vi.fn().mockResolvedValue({
+      id: "child-1",
+      name: "Scout",
+      title: "Venue researcher",
+      thread: { id: "thread-1" },
+    });
+    const enqueue = vi.fn().mockResolvedValue(undefined);
+    const preferenceFindFirst = vi.fn().mockResolvedValue(null);
+    const credentialFindFirst = vi.fn().mockResolvedValue(null);
+
+    const result = await spawnBot(
+      {
+        prisma: {
+          bot: { findUnique },
+          spaceModelPreference: { findFirst: preferenceFindFirst },
+          userModelCredential: { findFirst: credentialFindFirst },
+          run: { findUnique: vi.fn().mockResolvedValue({ id: "child-run-1" }) },
+        } as unknown as PrismaClient,
+        jobs: { enqueue } as unknown as JobPublisher,
+      },
+      {
+        spawnedBy: {
+          id: "parent-1",
+          name: "Chief",
+          spaceId: "workspace-1",
+          userId: "user-1",
+        },
+        runId: "run-retry-disconnected",
+        spawnKey: "tool-call-1",
+        name: "Scout",
+        prompt: "Continue",
+        modelProvider: "xai",
+        modelId: "grok-4.6",
+      },
+    );
+
+    expect(result).toEqual({
+      ok: true,
+      duplicate: true,
+      botId: "child-1",
+      name: "Scout",
+      title: "Venue researcher",
+      threadId: "thread-1",
+    });
+    expect(preferenceFindFirst).not.toHaveBeenCalled();
+    expect(credentialFindFirst).not.toHaveBeenCalled();
+    expect(enqueue).toHaveBeenCalledOnce();
   });
 });
 describe("spawned bot archival", () => {
