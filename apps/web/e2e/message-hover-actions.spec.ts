@@ -54,9 +54,9 @@ test("message hover shows beside-bubble actions; reply links to parent", async (
   const botToolbar = botRow.getByTestId("message-hover-actions");
   await expect(botToolbar.getByRole("button", { name: "Reply" })).toBeVisible();
   await expect(botToolbar.getByRole("button", { name: "More" })).toBeVisible();
-  // Measure against the bubble frame (rail offset parent), not an inner markdown
-  // div — padding inside the rounded bubble made the old locator look >8px away.
-  const botFrame = botRow.getByTestId("message-bot-bubble");
+  // Measure against the bubble frame (rail offset parent), not the inner bubble —
+  // narration/markdown wrappers can be narrower than the frame and inflate the gap.
+  const botFrame = botRow.getByTestId("message-bubble-frame");
   await expect
     .poll(async () => {
       const railBox = await botRail.boundingBox();
