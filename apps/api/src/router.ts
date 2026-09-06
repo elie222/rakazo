@@ -232,6 +232,53 @@ async function reconcilePendingConnections(
 }
 
 /** Serialize begin/revoke for one user+provider so slug-wide remote deletes cannot race a new connect. */
+
+function isAmbiguousRemoteRevokeFailure(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const name = "name" in error && typeof error.name === "string" ? error.name : "";
+  if (name === "TimeoutError" || name === "AbortError") return true;
+  const message = error instanceof Error ? error.message : String(error);
+  return /timeout|timed out|aborted|network|ECONNRESET|ECONNREFUSED|fetch failed/i.test(message);
+}
+
+/** True when a connector failed before issuing any remote DELETE. */
+function isRemoteRevokePreDeleteFailure(error: unknown): boolean {
+  return Boolean(
+    error &&
+      typeof error === "object" &&
+      "remoteRevokePreDelete" in error &&
+      (error as { remoteRevokePreDelete?: boolean }).remoteRevokePreDelete === true,
+  );
+}
+
+function shouldRestoreLocalAfterRemoteRevokeFailure(error: unknown): boolean {
+  // Pre-delete list/network failures never reached DELETE — always keep retry state.
+  // Post-delete timeouts stay ambiguous and leave the row revoked.
+  return isRemoteRevokePreDeleteFailure(error) || !isAmbiguousRemoteRevokeFailure(error);
+}
+
+/**
+ * Concrete account ids still referenced by active local rows. When any row still
+ * only has the provider slug (or no ref), orphan cleanup must not run — a sibling
+ * may have created its remote account before persisting the concrete id.
+ */
+function concreteKeepAccountIds(
+  refs: Array<string | null | undefined>,
+  provider: string,
+): { keepIds: string[]; canRevokeUnreferenced: boolean } {
+  const keepIds: string[] = [];
+  let canRevokeUnreferenced = true;
+  for (const ref of refs) {
+    const value = ref?.trim();
+    if (!value || value === provider) {
+      canRevokeUnreferenced = false;
+      continue;
+    }
+    keepIds.push(value);
+  }
+  return { keepIds, canRevokeUnreferenced };
+}
+
 async function lockProviderConnectionScope(
   tx: Prisma.TransactionClient,
   owner: Pick<Actor, "spaceId" | "userId">,
@@ -3055,11 +3102,14 @@ export function createRouter(deps: RouterDeps) {
                         },
                         select: { providerRef: true },
                       });
-                      const keepIds = kept
-                        .map((entry) => entry.providerRef)
-                        .filter((value): value is string =>
-                          Boolean(value && value !== input.provider),
-                        );
+                      const { keepIds, canRevokeUnreferenced } = concreteKeepAccountIds(
+                        kept.map((entry) => entry.providerRef),
+                        input.provider,
+                      );
+                      // Skip while any sibling still lacks a concrete account id —
+                      // otherwise slug-only pending refs are dropped from keepIds and
+                      // revokeUnreferencedAccounts deletes that sibling's remote auth.
+                      if (!canRevokeUnreferenced) return;
                       await revokeUnreferenced(input.provider, keepIds, adapterContext);
                     },
                     { timeout: 60_000 },
@@ -3131,77 +3181,103 @@ export function createRouter(deps: RouterDeps) {
                   "connections.complete",
                   context.signal,
                 );
+                const restoreRevokedForRetry = async () => {
+                  // Cleanup failed while the row is already revoked — restore pending
+                  // so the UI can retry removal instead of leaving an orphan remote.
+                  // Use the root client (not tx): throwing IsolationError aborts this
+                  // transaction and would otherwise roll back a tx-scoped restore.
+                  await deps.prisma.connection.updateMany({
+                    where: {
+                      id: current.id,
+                      spaceId: context.actor.spaceId,
+                      userId: context.actor.userId,
+                      status: "revoked",
+                    },
+                    data: { status: "pending" },
+                  });
+                };
                 const pendingRef = current.providerRef?.trim();
-                if (pendingRef && pendingRef !== current.provider) {
-                  const cancelAuthorizationRequest = (
-                    connector as {
-                      cancelAuthorizationRequest?: (
-                        requestId: string,
-                        context: typeof revokedContext,
-                      ) => Promise<void>;
-                    }
-                  ).cancelAuthorizationRequest;
-                  if (cancelAuthorizationRequest) {
-                    await cancelAuthorizationRequest(pendingRef, revokedContext).catch(
-                      () => undefined,
-                    );
-                  } else {
-                    const resolveAccountId = (
+                try {
+                  if (pendingRef && pendingRef !== current.provider) {
+                    const cancelAuthorizationRequest = (
                       connector as {
-                        resolveConnectedAccountId?: (
-                          userId: string,
-                          slug: string,
-                          currentRef: string | null | undefined,
-                          excludeIds?: string[],
-                          spaceId?: string,
-                        ) => Promise<string | undefined>;
+                        cancelAuthorizationRequest?: (
+                          requestId: string,
+                          context: typeof revokedContext,
+                        ) => Promise<void>;
                       }
-                    ).resolveConnectedAccountId;
-                    let revokeRef = pendingRef;
-                    if (resolveAccountId) {
-                      const resolved = await resolveAccountId(
-                        context.actor.userId,
-                        current.provider,
-                        pendingRef,
-                        [],
-                        context.actor.spaceId,
-                      ).catch(() => undefined);
-                      revokeRef = resolved ?? "";
+                    ).cancelAuthorizationRequest;
+                    if (cancelAuthorizationRequest) {
+                      await cancelAuthorizationRequest(pendingRef, revokedContext);
+                    } else {
+                      const resolveAccountId = (
+                        connector as {
+                          resolveConnectedAccountId?: (
+                            userId: string,
+                            slug: string,
+                            currentRef: string | null | undefined,
+                            excludeIds?: string[],
+                            spaceId?: string,
+                            timeoutMs?: number,
+                          ) => Promise<string | undefined>;
+                        }
+                      ).resolveConnectedAccountId;
+                      let revokeRef = pendingRef;
+                      if (resolveAccountId) {
+                        const resolved = await resolveAccountId(
+                          context.actor.userId,
+                          current.provider,
+                          pendingRef,
+                          [],
+                          context.actor.spaceId,
+                        ).catch(() => undefined);
+                        revokeRef = resolved ?? "";
+                      }
+                      if (revokeRef) {
+                        await connector.revoke(revokeRef, revokedContext);
+                      }
                     }
-                    if (revokeRef) {
-                      await connector.revoke(revokeRef, revokedContext).catch(() => undefined);
-                    }
-                  }
-                } else {
-                  const revokeUnreferenced = (
-                    connector as {
-                      revokeUnreferencedAccounts?: (
-                        slug: string,
-                        keepAccountIds: string[],
-                        context: typeof revokedContext,
-                      ) => Promise<void>;
-                    }
-                  ).revokeUnreferencedAccounts;
-                  if (revokeUnreferenced) {
-                    const kept = await tx.connection.findMany({
-                      where: {
-                        spaceId: context.actor.spaceId,
-                        userId: context.actor.userId,
-                        connectorId: existing.connectorId,
-                        provider: existing.provider,
-                        status: { in: ["connected", "pending", "error"] },
-                      },
-                      select: { providerRef: true },
-                    });
-                    const keepIds = kept
-                      .map((entry) => entry.providerRef)
-                      .filter((value): value is string =>
-                        Boolean(value && value !== existing.provider),
+                  } else {
+                    const revokeUnreferenced = (
+                      connector as {
+                        revokeUnreferencedAccounts?: (
+                          slug: string,
+                          keepAccountIds: string[],
+                          context: typeof revokedContext,
+                        ) => Promise<void>;
+                      }
+                    ).revokeUnreferencedAccounts;
+                    if (revokeUnreferenced) {
+                      const kept = await tx.connection.findMany({
+                        where: {
+                          spaceId: context.actor.spaceId,
+                          userId: context.actor.userId,
+                          connectorId: existing.connectorId,
+                          provider: existing.provider,
+                          status: { in: ["connected", "pending", "error"] },
+                        },
+                        select: { providerRef: true },
+                      });
+                      const { keepIds, canRevokeUnreferenced } = concreteKeepAccountIds(
+                        kept.map((entry) => entry.providerRef),
+                        existing.provider,
                       );
-                    await revokeUnreferenced(existing.provider, keepIds, revokedContext).catch(
-                      () => undefined,
-                    );
+                      if (canRevokeUnreferenced) {
+                        await revokeUnreferenced(existing.provider, keepIds, revokedContext);
+                      }
+                    }
                   }
+                } catch (error) {
+                  getLogger().error(
+                    "connections.complete remote cleanup failed for revoked row",
+                    error,
+                    {
+                      connectionId: current.id,
+                      connectorId: existing.connectorId,
+                      provider: existing.provider,
+                    },
+                  );
+                  await restoreRevokedForRetry();
                 }
                 throw new IsolationError();
               }
@@ -3525,10 +3601,20 @@ export function createRouter(deps: RouterDeps) {
               connectionContext(context.actor, "connections.revoke", context.signal),
             );
           } catch (error) {
-            // Always restore on failure so lookup/network errors before DELETE keep
-            // a retryable local row. A rare timeout after a successful remote delete
-            // may leave a dangling provider auth; reconnect/live sync can clear it.
-            await restoreLocalStatus();
+            // Restore when DELETE clearly did not run (including pre-delete list
+            // timeouts). Post-delete timeouts stay ambiguous — leave revoked.
+            if (shouldRestoreLocalAfterRemoteRevokeFailure(error)) {
+              await restoreLocalStatus();
+            } else {
+              getLogger().error(
+                "connections.revoke remote outcome uncertain; leaving local revoked",
+                error,
+                {
+                  connectionId: input.connectionId,
+                  connectorId: outcome.remote.connectorId,
+                },
+              );
+            }
             if (error instanceof ORPCError) throw error;
             throw new ORPCError("BAD_REQUEST", { message: sanitizeComposioError(error) });
           }

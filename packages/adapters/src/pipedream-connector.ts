@@ -273,7 +273,16 @@ export class PipedreamConnector implements ManagedConnectorProvider {
   }
 
   async revoke(externalId: string, context: AdapterContext): Promise<void> {
-    const accounts = await this.accounts(context);
+    let accounts;
+    try {
+      accounts = await this.accounts(context);
+    } catch (error) {
+      // Listing failed before any DELETE — mark so callers can restore local retry state.
+      if (error && typeof error === "object") {
+        (error as { remoteRevokePreDelete?: boolean }).remoteRevokePreDelete = true;
+      }
+      throw error;
+    }
     const targets = accounts.filter(
       (account) => account.id === externalId || account.app?.name_slug === externalId,
     );

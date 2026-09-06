@@ -431,19 +431,31 @@ export class ComposioConnector implements ComposioProvider {
     // connection-request id. Resolve either to a concrete connected-account id
     // before delete — never pass a raw request id to connectedAccounts.delete.
     const requestOptions = { signal: context.signal };
-    const listed = await this.listConnectedAccountIds(
-      context.userId,
-      connectionRef,
-      requestOptions,
-    );
-    let accountId = listed[0];
-    if (!accountId) {
-      try {
-        const account = await this.sdk().connectedAccounts.waitForConnection(connectionRef, 20_000);
-        accountId = account?.id;
-      } catch {
-        // Not a resolvable request id; fall through to treat ref as an account id.
+    let accountId: string | undefined;
+    try {
+      const listed = await this.listConnectedAccountIds(
+        context.userId,
+        connectionRef,
+        requestOptions,
+      );
+      accountId = listed[0];
+      if (!accountId) {
+        try {
+          const account = await this.sdk().connectedAccounts.waitForConnection(
+            connectionRef,
+            20_000,
+          );
+          accountId = account?.id;
+        } catch {
+          // Not a resolvable request id; fall through to treat ref as an account id.
+        }
       }
+    } catch (error) {
+      // Resolution failed before any DELETE — mark so callers can restore local retry state.
+      if (error && typeof error === "object") {
+        (error as { remoteRevokePreDelete?: boolean }).remoteRevokePreDelete = true;
+      }
+      throw error;
     }
     accountId = accountId ?? connectionRef;
     await this.sdk().connectedAccounts.delete(accountId, requestOptions);
