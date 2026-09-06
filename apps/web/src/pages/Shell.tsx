@@ -195,7 +195,7 @@ import {
 } from "./RoutineEditor";
 import { SpaceSearchResults } from "./SpaceSearch";
 import { BotSettings, CreateBotForm } from "./shell/bot-panel";
-import { BotCreatePicker } from "./shell/bot-picker";
+import { BotCreatePicker, type BotCreateSelection } from "./shell/bot-picker";
 import { CommandPalette, isCommandPaletteHotkey } from "./shell/command-palette";
 import {
   ClearConversationDialog,
@@ -2118,12 +2118,16 @@ export function ShellPage() {
     title: string;
     description: string;
     computerMode: ComputerMode;
+    modelProvider?: string;
+    modelId?: string;
   }) {
     const isFirstBot = botsRef.current.length === 0;
     const bot = await rpc.bots.create({
       ...normalizeCreateBotProfile(input),
       notifyOnFinish: true,
       computerMode: input.computerMode,
+      modelProvider: input.modelProvider,
+      modelId: input.modelId,
     });
     setBots((current) =>
       current.some((item) => item.id === bot.id) ? current : [bot, ...current],
@@ -2164,7 +2168,7 @@ export function ShellPage() {
     await refreshBots().catch(() => undefined);
   }
 
-  async function createBotQuick(computerMode: ComputerMode = "team") {
+  async function createBotQuick(selection: BotCreateSelection = { computerMode: "team" }) {
     if (creatingBotRef.current) return;
     creatingBotRef.current = true;
     try {
@@ -2172,7 +2176,9 @@ export function ShellPage() {
         name: "New Bot",
         title: "",
         description: "",
-        computerMode,
+        computerMode: selection.computerMode,
+        modelProvider: selection.modelProvider,
+        modelId: selection.modelId,
       });
     } catch (error) {
       // Keep the current chat open when create fails, but surface the error.
@@ -2458,9 +2464,9 @@ export function ShellPage() {
                 >
                   <BotCreatePicker
                     bots={bots}
-                    onCreateBot={(computerMode) => {
+                    onCreateBot={(selection) => {
                       setCreateMenuOpen(false);
-                      void createBotQuick(computerMode);
+                      void createBotQuick(selection);
                     }}
                     onOpenBot={(id) => {
                       setCreateMenuOpen(false);

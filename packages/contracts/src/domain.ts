@@ -184,15 +184,27 @@ export const BOT_TITLE_MAX_LENGTH = 500;
 export const BOT_DESCRIPTION_MAX_LENGTH = 4000;
 export const BOT_INSTRUCTIONS_MAX_LENGTH = 20000;
 
-export const CreateBotInput = z.object({
-  name: z.string().trim().min(1).max(BOT_NAME_MAX_LENGTH),
-  title: z.string().max(BOT_TITLE_MAX_LENGTH).default(""),
-  description: z.string().max(BOT_DESCRIPTION_MAX_LENGTH).default(""),
-  instructions: z.string().max(BOT_INSTRUCTIONS_MAX_LENGTH).default(""),
-  notifyOnFinish: z.boolean().default(true),
-  color: z.string().optional(),
-  computerMode: ComputerModeSchema.default("team"),
-});
+export const CreateBotInput = z
+  .object({
+    name: z.string().trim().min(1).max(BOT_NAME_MAX_LENGTH),
+    title: z.string().max(BOT_TITLE_MAX_LENGTH).default(""),
+    description: z.string().max(BOT_DESCRIPTION_MAX_LENGTH).default(""),
+    instructions: z.string().max(BOT_INSTRUCTIONS_MAX_LENGTH).default(""),
+    notifyOnFinish: z.boolean().default(true),
+    color: z.string().optional(),
+    computerMode: ComputerModeSchema.default("team"),
+    modelProvider: z.string().trim().min(1).max(80).optional(),
+    modelId: z.string().trim().min(1).max(200).optional(),
+  })
+  .superRefine((value, ctx) => {
+    if ((value.modelProvider === undefined) !== (value.modelId === undefined)) {
+      ctx.addIssue({
+        code: "custom",
+        message: "modelProvider and modelId must both be set",
+        path: [value.modelProvider === undefined ? "modelProvider" : "modelId"],
+      });
+    }
+  });
 export type CreateBotInput = z.infer<typeof CreateBotInput>;
 
 export function normalizeCreateBotProfile(

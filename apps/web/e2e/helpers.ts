@@ -77,12 +77,22 @@ export async function captureScreenshot(page: Page, testInfo: TestInfo, name: st
   await testInfo.attach(name, { contentType: "image/png", path: screenshotPath });
 }
 
-export async function openNewBot(page: Page, computerMode: "team" | "dedicated" = "team") {
+export async function openNewBot(
+  page: Page,
+  computerMode: "team" | "dedicated" = "team",
+  model?: { provider: string; modelId: string },
+) {
   await page.getByTestId("create-menu-trigger").click();
   await page.getByTestId("create-new-bot").click();
   await expect(page.getByTestId("create-bot-computer")).toBeVisible();
   await page
     .getByTestId(computerMode === "team" ? "create-bot-team" : "create-bot-private")
+    .click();
+  await expect(page.getByTestId("create-bot-model")).toBeVisible();
+  await page
+    .getByTestId(
+      model ? `create-bot-model-${model.provider}::${model.modelId}` : "create-bot-model-default",
+    )
     .click();
 }
 
