@@ -80,6 +80,7 @@ import { cors } from "hono/cors";
 import { type AppEnv, loadEnv } from "./env.js";
 import { createMessagingInboundHandler } from "./messaging-inbound.js";
 import { mountMessagingWebhookRoutes } from "./messaging-webhook.js";
+import { mountApiRequestBodyLimits } from "./request-body-limit.js";
 import { createRouter } from "./router.js";
 import { TeamChatBridge } from "./team-chat-bridge.js";
 import { ModelTeamChatEngagementJudge } from "./team-chat-judge.js";
@@ -422,6 +423,7 @@ export async function createApp(
         }),
     );
   }
+  mountApiRequestBodyLimits(app);
   app.on(["GET", "POST"], "/api/auth/*", async (c) => {
     const path = new URL(c.req.url).pathname.replace("/api/auth", "");
     if (blockedAuthPaths.some((blocked) => path.startsWith(blocked))) {
