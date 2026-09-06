@@ -101,6 +101,7 @@ export async function materializeCurrentTurnFiles(
     context: AdapterContext & { botId: string };
     computer: ComputerRef;
     computerMode: ComputerMode;
+    markWorkspaceDirty?: () => void;
   },
 ): Promise<MaterializedThreadFile[]> {
   const fileBlocks = blocks?.filter(
@@ -126,6 +127,7 @@ export async function materializeCurrentTurnFiles(
       throw new Error(`Attached file exceeds the 10 MiB limit: ${row.name}`);
     }
     const relativePath = `attachments/${row.id}${attachmentExtensionForMimeType(row.mimeType)}`;
+    input.markWorkspaceDirty?.();
     await deps.sandbox.writeFile(
       input.computer,
       {

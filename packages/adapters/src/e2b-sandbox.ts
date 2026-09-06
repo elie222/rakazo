@@ -18,7 +18,7 @@ import type {
   ScreenSession,
 } from "@rakazo/adapter-kit";
 import { boundedSandboxCommandTimeoutMs } from "@rakazo/core";
-import { sandboxIdleMs } from "./computer-idle.js";
+import { CANCEL_PRIMARY_BROWSER_WORK, sandboxIdleMs } from "./computer-idle.js";
 import { ComputerScreenUnavailableError, screenSessionKey } from "./computer-screens.js";
 import {
   boundedComputerActions,
@@ -41,14 +41,15 @@ import {
   extraDisplayControlStopCommand,
   extraDisplayInputCommand,
   extraDisplayLayout,
+  noVncProxyProcessPattern,
   observeExtraDisplayCommand,
   parseAllocatedExtraDisplay,
   parseExtraDisplayObservation,
   parseExtraDisplayViewPassword,
   parseReleasedExtraDisplay,
-  primaryStreamCleanupCommand,
   releaseExtraDisplayCommand,
   screenControlKey,
+  websockifyProcessPattern,
 } from "./extra-displays.js";
 
 const E2B_WORKSPACE = "/home/user/rakazo-home";
@@ -70,42 +71,6 @@ export function e2bCreateOptions(botId: string, apiKey: string) {
   };
 }
 
-// A sandbox that has expired stops resolving as a host, so reaching it fails at the socket
-// rather than with a 404. undici reports every one of those as a bare "fetch failed" and
-// hides the errno on the cause chain. Used only by provision reconnect: replaceComputer must
-// not treat these as permanent, or an update-mode checkpoint blip destroys the old box
-// without committing workspace changes that exist only there.
-const SANDBOX_UNREACHABLE_CODES = new Set([
-  "ECONNREFUSED",
-  "ECONNRESET",
-  "EAI_AGAIN",
-  "EHOSTUNREACH",
-  "ENETUNREACH",
-  "ENOTFOUND",
-  "UND_ERR_CONNECT_TIMEOUT",
-  "UND_ERR_SOCKET",
-]);
-
-export function isUnreachableTransportError(error: unknown): boolean {
-  for (let current = error; current instanceof Error; current = current.cause) {
-    const code = (current as { code?: unknown }).code;
-    if (typeof code === "string" && SANDBOX_UNREACHABLE_CODES.has(code)) return true;
-    if (current.message === "fetch failed") return true;
-  }
-  return false;
-}
-
-/**
- * True when the sandbox is permanently gone (404 / killed / not found). Used by
- * replaceComputer to decide whether to swallow checkpoint/destroy failures.
- * Transient transport errors stay recoverable so update/reset can abort without
- * discarding an uncommitted workspace on a still-reachable box.
- */
-export function isUnrecoverableSandboxError(error: unknown): boolean {
-  if (LEGACY_GONE_MESSAGE.test(errorMessage(error))) return true;
-  return isSandboxGoneError(error);
-}
-
 // How the E2B SDK words a sandbox that no longer exists. It does not always say "not found":
 // an expired sandbox surfaces as a TimeoutError about the *sandbox* timeout (502 / Unavailable
 // from envd), which used to read as a live sandbox and left every later call throwing forever.
@@ -113,14 +78,7 @@ const SANDBOX_GONE_MESSAGE =
   /probably not running anymore|likely due to sandbox timeout|killed or reached its end of life|sandbox [^:]{0,60}not found|sandbox [^:]{0,60}does not exist/i;
 // The same words from a live sandbox: a missing binary or a missing file inside it.
 const SHELL_MISSING_TARGET = /command not found|no such file|^path .* not found/i;
-const LEGACY_GONE_MESSAGE =
-  /not found|does not exist|404|not_found|killed|doesn't exist|sandbox not found/i;
-
-/**
- * Narrower than isUnrecoverableSandboxError: the provider itself said this sandbox is gone.
- * A missing binary or a missing file inside a live sandbox is not proof of death, so callers
- * that persist "the sandbox is gone" must use this one.
- */
+/** Only provider-specific evidence of sandbox loss permits automatic replacement. */
 export function isSandboxGoneError(error: unknown): boolean {
   const message = errorMessage(error);
   if (SHELL_MISSING_TARGET.test(message)) return false;
@@ -179,10 +137,11 @@ export async function openDesktopUrl(
 
 export class E2BSandboxProvider implements SandboxProvider {
   private readonly boxes = new Map<string, Sandbox>();
+  private readonly connections = new Map<string, Promise<Sandbox>>();
   private readonly lastTouchedAt = new Map<string, number>();
-  private readonly streamReady = new Set<string>();
-  private readonly streamStarts = new Map<string, Promise<void>>();
+  private readonly streamStarts = new Map<string, Promise<string>>();
   private readonly controlStreams = new Map<string, { password: string; controlToken: string }>();
+  private readonly controlStarts = new Map<string, Promise<string>>();
 
   constructor(
     private readonly apiKey: string,
@@ -221,25 +180,35 @@ export class E2BSandboxProvider implements SandboxProvider {
         this.lastTouchedAt.set(id, Date.now());
         return existing;
       }
-      this.forget(id);
+      if (this.boxes.get(id) === existing) this.forget(id);
     }
-    const connected = await this.sdk.connect(id, {
-      apiKey: this.apiKey,
-      timeoutMs: sandboxIdleMs(),
-    });
-    this.boxes.set(connected.sandboxId, connected);
-    this.lastTouchedAt.set(connected.sandboxId, Date.now());
-    return connected;
+    const pending = this.connections.get(id);
+    if (pending) return pending;
+    let connection!: Promise<Sandbox>;
+    connection = this.sdk
+      .connect(id, { apiKey: this.apiKey, timeoutMs: sandboxIdleMs() })
+      .then((connected) => {
+        if (this.connections.get(id) !== connection) {
+          throw new Error("computer connection stopped during teardown");
+        }
+        this.boxes.set(connected.sandboxId, connected);
+        this.lastTouchedAt.set(connected.sandboxId, Date.now());
+        return connected;
+      })
+      .finally(() => {
+        if (this.connections.get(id) === connection) this.connections.delete(id);
+      });
+    this.connections.set(id, connection);
+    return connection;
   }
 
   private async startStream(desktop: Sandbox) {
     if (this.boxes.get(desktop.sandboxId) !== desktop) {
       throw new Error("screen stream stopped during computer teardown");
     }
-    if (this.streamReady.has(desktop.sandboxId)) return;
     const pending = this.streamStarts.get(desktop.sandboxId);
     if (pending) return pending;
-    let start!: Promise<void>;
+    let start!: Promise<string>;
     start = this.initializeStream(desktop).finally(() => {
       if (this.streamStarts.get(desktop.sandboxId) === start) {
         this.streamStarts.delete(desktop.sandboxId);
@@ -249,21 +218,20 @@ export class E2BSandboxProvider implements SandboxProvider {
     return start;
   }
 
-  private async initializeStream(desktop: Sandbox) {
-    await desktop.commands.run(primaryStreamCleanupCommand()).catch(() => undefined);
-    await desktop.stream.start({ requireAuth: true });
-    try {
-      await desktop.commands.run("x11vnc -R viewonly");
-    } catch (error) {
-      await desktop.stream.stop().catch(() => undefined);
-      throw error;
+  private async initializeStream(desktop: Sandbox): Promise<string> {
+    const result = await this.runSetupCommand(
+      desktop,
+      ensureE2BPrimaryViewCommand(desktop.display ?? ":0", randomBytes(6).toString("base64url")),
+    );
+    if (result.exitCode !== 0) {
+      throw new Error(
+        `screen stream failed to start (exit ${result.exitCode})${result.stderr ? `: ${result.stderr}` : ""}`,
+      );
     }
-    const current = this.boxes.get(desktop.sandboxId);
-    if (current !== desktop) {
-      if (!current) await desktop.stream.stop().catch(() => undefined);
+    if (this.boxes.get(desktop.sandboxId) !== desktop) {
       throw new Error("screen stream stopped during computer teardown");
     }
-    this.streamReady.add(desktop.sandboxId);
+    return parseExtraDisplayViewPassword(result.stdout);
   }
 
   async provision(
@@ -277,12 +245,12 @@ export class E2BSandboxProvider implements SandboxProvider {
   ): Promise<ComputerRef> {
     if (request.providerRef && request.providerKind === "e2b") {
       try {
-        const desktop = await this.sdk.connect(request.providerRef, {
-          apiKey: this.apiKey,
-          timeoutMs: sandboxIdleMs(),
+        const desktop = await this.box({
+          id: request.providerRef,
+          providerRef: request.providerRef,
+          kind: "e2b",
+          botId: request.botId,
         });
-        this.boxes.set(desktop.sandboxId, desktop);
-        this.lastTouchedAt.set(desktop.sandboxId, Date.now());
         return {
           id: desktop.sandboxId,
           botId: request.botId,
@@ -292,10 +260,8 @@ export class E2BSandboxProvider implements SandboxProvider {
         };
       } catch (error) {
         this.boxes.delete(request.providerRef);
-        // Permanent gone (404/killed) or unreachable transport: boot fresh. Other errors rethrow.
-        if (!isUnrecoverableSandboxError(error) && !isUnreachableTransportError(error)) {
-          throw error;
-        }
+        // A transport failure says nothing about the workspace still on the server.
+        if (!isSandboxGoneError(error)) throw error;
       }
     }
     const desktop = await this.sdk.create(e2bCreateOptions(request.botId, this.apiKey));
@@ -358,7 +324,6 @@ export class E2BSandboxProvider implements SandboxProvider {
     const screenKey = screenSessionKey(context);
     const layout = await this.resolveLayout(desktop, screenKey, context.screenLeaseId);
     if (layout.isPrimary) {
-      await this.startStream(desktop);
       if (request.interactive) {
         if (!request.controlToken) throw new Error("interactive screen requires a control token");
         const password = await this.startControlStream(desktop, request.controlToken, screenKey);
@@ -372,28 +337,16 @@ export class E2BSandboxProvider implements SandboxProvider {
           close: async () => undefined,
         };
       }
-      let authKey: string | undefined;
-      try {
-        authKey = desktop.stream.getAuthKey();
-      } catch {
-        authKey = undefined;
-      }
-      const url =
-        typeof desktop.stream.getUrl === "function"
-          ? desktop.stream.getUrl({
-              autoConnect: true,
-              viewOnly: true,
-              resize: "scale",
-              ...(authKey ? { authKey } : {}),
-            })
-          : null;
+      const password = await this.startStream(desktop);
+      const url = new URL(`https://${desktop.getHost(layout.viewPort)}/vnc.html`);
+      url.searchParams.set("autoconnect", "true");
+      url.searchParams.set("resize", "scale");
+      url.searchParams.set("view_only", "true");
+      url.searchParams.set("password", password);
       return {
-        url,
+        url: url.toString(),
         mimeType: "text/html",
-        close: async () => {
-          await desktop.stream.stop().catch(() => undefined);
-          this.streamReady.delete(desktop.sandboxId);
-        },
+        close: async () => undefined,
       };
     }
     const viewPassword = await this.ensureExtraDisplay(desktop, layout, context);
@@ -445,9 +398,9 @@ export class E2BSandboxProvider implements SandboxProvider {
       }
       return;
     }
-    await this.ensureExtraDisplay(desktop, layout, context);
     if (interactive) {
       if (!controlToken) throw new Error("interactive screen requires a control token");
+      await this.ensureExtraDisplay(desktop, layout, context);
       await this.startControlStream(desktop, controlToken, screenKey, layout);
     } else {
       await this.stopControlStream(desktop, controlToken, screenKey, layout);
@@ -654,13 +607,23 @@ export class E2BSandboxProvider implements SandboxProvider {
     if (index === undefined) return;
     const controlKey = screenControlKey(id, screenKey);
     this.controlStreams.delete(controlKey);
-    if (index === 0) return;
+    if (index === 0) {
+      if (context.cancelRunWork) {
+        await desktop.commands.run(CANCEL_PRIMARY_BROWSER_WORK).catch(() => undefined);
+      }
+      return;
+    }
     // Non-primary teardown runs inside the registry lock before the slot is reusable.
   }
 
   async stop(computer: ComputerRef, _context: AdapterContext): Promise<void> {
     const id = computer.providerRef || computer.id;
-    const pending = this.streamStarts.get(id);
+    const pending = Promise.all([
+      this.streamStarts.get(id),
+      ...[...this.controlStarts]
+        .filter(([key]) => key.startsWith(`${id}:`))
+        .map(([, start]) => start),
+    ]);
     const desktop = this.boxes.get(id);
     this.forget(id);
     await settleForTeardown(pending);
@@ -674,19 +637,28 @@ export class E2BSandboxProvider implements SandboxProvider {
   async destroy(computer: ComputerRef, _context: AdapterContext): Promise<void> {
     const id = computer.providerRef || computer.id;
     const desktop = this.boxes.get(id) ?? (await this.box(computer).catch(() => undefined));
-    const pending = this.streamStarts.get(id);
+    const pending = Promise.all([
+      this.streamStarts.get(id),
+      ...[...this.controlStarts]
+        .filter(([key]) => key.startsWith(`${id}:`))
+        .map(([, start]) => start),
+    ]);
     this.forget(id);
     await settleForTeardown(pending);
+    // The SDK returns false when the sandbox is already gone; teardown is complete.
     await desktop?.kill();
   }
 
   private forget(id: string): void {
     this.boxes.delete(id);
+    this.connections.delete(id);
     this.lastTouchedAt.delete(id);
-    this.streamReady.delete(id);
     this.streamStarts.delete(id);
     for (const key of [...this.controlStreams.keys()]) {
       if (key.startsWith(`${id}:`)) this.controlStreams.delete(key);
+    }
+    for (const key of [...this.controlStarts.keys()]) {
+      if (key.startsWith(`${id}:`)) this.controlStarts.delete(key);
     }
   }
 
@@ -697,7 +669,8 @@ export class E2BSandboxProvider implements SandboxProvider {
     signal?: AbortSignal,
   ): Promise<CommandResult> {
     try {
-      return await desktop.commands.run(command, {
+      // E2B's outer login shell can fail its logout hook under `set -e`, even after `exit 0`.
+      return await desktop.commands.run(`bash -c ${shellQuote(command)}`, {
         ...(signal ? { signal } : {}),
         timeoutMs: boundedSandboxCommandTimeoutMs(undefined),
       });
@@ -755,8 +728,27 @@ export class E2BSandboxProvider implements SandboxProvider {
     layout = extraDisplayLayout(0, desktop.display ?? ":0"),
   ): Promise<string> {
     const controlKey = screenControlKey(desktop.sandboxId, screenKey);
+    const pending = this.controlStarts.get(controlKey);
+    if (pending) {
+      await pending;
+      return this.startControlStream(desktop, controlToken, screenKey, layout);
+    }
     const existing = this.controlStreams.get(controlKey);
     if (existing?.controlToken === controlToken) return existing.password;
+    let start!: Promise<string>;
+    start = this.initializeControlStream(desktop, controlToken, controlKey, layout).finally(() => {
+      if (this.controlStarts.get(controlKey) === start) this.controlStarts.delete(controlKey);
+    });
+    this.controlStarts.set(controlKey, start);
+    return start;
+  }
+
+  private async initializeControlStream(
+    desktop: Sandbox,
+    controlToken: string,
+    controlKey: string,
+    layout: ReturnType<typeof extraDisplayLayout>,
+  ): Promise<string> {
     const password = randomBytes(6).toString("base64url");
     if (layout.isPrimary) {
       const passwordFile = "/tmp/rakazo-control.vncpass";
@@ -775,18 +767,29 @@ export class E2BSandboxProvider implements SandboxProvider {
         `for i in $(seq 1 50); do netstat -tuln | grep -q ':${vncPort} ' && break; sleep 0.1; done`,
         `if ! netstat -tuln | grep -q ':${vncPort} '; then exit 1; fi`,
         "cd /opt/noVNC/utils",
-        `(nohup ./novnc_proxy --vnc localhost:${vncPort} --listen ${proxyPort} --web /opt/noVNC >/tmp/rakazo-control-novnc.log 2>&1 &)`,
+        `(nohup ./novnc_proxy --vnc localhost:${vncPort} --listen ${proxyPort} --web /opt/noVNC &) 8>&- >/tmp/rakazo-control-novnc.log 2>&1`,
         `for i in $(seq 1 50); do netstat -tuln | grep -q ':${proxyPort} ' && exit 0; sleep 0.1; done`,
         "exit 1",
       ].join(" && ");
       const result = await this.runSetupCommand(desktop, command);
-      if (result.exitCode !== 0) throw new Error(result.stderr || "control stream failed to start");
+      if (result.exitCode !== 0) {
+        throw new Error(
+          result.stderr || `control stream failed to start (exit ${result.exitCode})`,
+        );
+      }
     } else {
       const result = await this.runSetupCommand(
         desktop,
         extraDisplayControlStartCommand(layout, controlToken, password),
       );
-      if (result.exitCode !== 0) throw new Error(result.stderr || "control stream failed to start");
+      if (result.exitCode !== 0) {
+        throw new Error(
+          result.stderr || `control stream failed to start (exit ${result.exitCode})`,
+        );
+      }
+    }
+    if (this.boxes.get(desktop.sandboxId) !== desktop) {
+      throw new Error("control stream stopped during computer teardown");
     }
     this.controlStreams.set(controlKey, { password, controlToken });
     return password;
@@ -799,6 +802,7 @@ export class E2BSandboxProvider implements SandboxProvider {
     layout = extraDisplayLayout(0, desktop.display ?? ":0"),
   ): Promise<void> {
     const controlKey = screenControlKey(desktop.sandboxId, screenKey);
+    await this.controlStarts.get(controlKey)?.catch(() => undefined);
     if (layout.isPrimary) {
       await desktop.commands.run(controlStreamStopCommand(controlToken));
     } else {
@@ -811,7 +815,33 @@ export class E2BSandboxProvider implements SandboxProvider {
   }
 }
 
-async function settleForTeardown(pending: Promise<void> | undefined): Promise<void> {
+/** Reuse primary view credentials across API restarts without touching other VNC servers. */
+export function ensureE2BPrimaryViewCommand(display: string, password: string): string {
+  const passwordFile = "/tmp/rakazo/primary-view.password";
+  const authFile = "/tmp/rakazo-primary-view.vncpass";
+  return [
+    "set -eu",
+    "umask 077",
+    "mkdir -p /tmp/rakazo",
+    "exec 8>/tmp/rakazo/primary-view.lock",
+    "flock 8",
+    `if [ -s ${passwordFile} ] && [ -s ${authFile} ] && pgrep -f '(^|/)x11vnc .* -viewonly .* -rfbport 5900 -rfbauth ${authFile}( |$)' >/dev/null && (echo >/dev/tcp/127.0.0.1/5900) >/dev/null 2>&1 && (echo >/dev/tcp/127.0.0.1/6080) >/dev/null 2>&1; then printf 'RAKAZO_SCREEN_PASSWORD=%s\\n' "$(cat ${passwordFile})"; exit 0; fi`,
+    "pkill -f '(^|/)x11vnc .* -rfbport 5900( |$)' || true",
+    `pkill -f '${noVncProxyProcessPattern(6080)}' || true`,
+    `pkill -f '${websockifyProcessPattern(6080)}' || true`,
+    "for i in $(seq 1 50); do if ! (echo >/dev/tcp/127.0.0.1/5900) >/dev/null 2>&1 && ! (echo >/dev/tcp/127.0.0.1/6080) >/dev/null 2>&1; then break; fi; sleep 0.1; done",
+    "if (echo >/dev/tcp/127.0.0.1/5900) >/dev/null 2>&1 || (echo >/dev/tcp/127.0.0.1/6080) >/dev/null 2>&1; then exit 1; fi",
+    `if [ -s ${passwordFile} ]; then password=$(cat ${passwordFile}); else password=${shellQuote(password)}; printf %s "$password" >${passwordFile}; fi`,
+    `x11vnc -storepasswd "$password" ${authFile} >/dev/null 2>&1`,
+    `x11vnc -bg -display ${shellQuote(display)} -forever -wait 50 -shared -viewonly -listen 127.0.0.1 -rfbport 5900 -rfbauth ${authFile} 8>&- >/tmp/rakazo-primary-view-x11vnc.log 2>&1`,
+    "cd /opt/noVNC/utils",
+    "(nohup ./novnc_proxy --vnc localhost:5900 --listen 6080 --web /opt/noVNC &) 8>&- >/tmp/rakazo-primary-view-novnc.log 2>&1",
+    `for i in $(seq 1 50); do if (echo >/dev/tcp/127.0.0.1/5900) >/dev/null 2>&1 && (echo >/dev/tcp/127.0.0.1/6080) >/dev/null 2>&1; then printf 'RAKAZO_SCREEN_PASSWORD=%s\\n' "$password"; exit 0; fi; sleep 0.1; done`,
+    "exit 1",
+  ].join("\n");
+}
+
+async function settleForTeardown(pending: Promise<unknown> | undefined): Promise<void> {
   if (!pending) return;
   await Promise.race([pending.catch(() => undefined), delay(5_000, undefined, { ref: false })]);
 }
@@ -822,8 +852,8 @@ function controlStreamStopCommand(controlToken?: string) {
   // would pkill the runner itself.
   const stop = [
     "pkill -f '(^|/)x11vnc .* -rfbport 5901' || true",
-    "pkill -f '^/usr/bin/python3 .*websockify.*6081' || true",
-    "pkill -f 'novnc_proxy.*--listen 6081' || true",
+    `pkill -f '${websockifyProcessPattern(6081)}' || true`,
+    `pkill -f '${noVncProxyProcessPattern(6081)}' || true`,
     "rm -f /tmp/rakazo-control.vncpass",
     "rm -f /tmp/rakazo-control.token",
   ].join("; ");

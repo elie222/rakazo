@@ -6,8 +6,9 @@ import {
   type CronPreset,
   type CronUnit,
   cronFromPreset,
-  defaultCronPreset,
 } from "@rakazo/core";
+import { Input, NativeSelect, NativeSelectOption } from "@rakazo/ui-web";
+import { Clock } from "lucide-react";
 
 const UNITS: CronUnit[] = ["minutes", "hours", "days"];
 const NUMBERS = [1, 2, 3, 5, 10, 15, 30, 45];
@@ -98,61 +99,6 @@ function describeCronPresetLocalized(preset: CronPreset): { lead: string; detail
   return { lead: t`Every day`, detail: t`at ${preset.time}` };
 }
 
-export function RoutineSchedules({
-  value,
-  onChange,
-}: {
-  value: CronPreset[];
-  onChange: (next: CronPreset[]) => void;
-}) {
-  const { t } = useLingui();
-
-  return (
-    <div className="space-y-2">
-      {value.map((preset, index) => (
-        // Presets carry no stable id — index is the only key available, and
-        // rows never reorder (only append/remove at the end), so it's safe.
-        <div key={index} className="flex items-start gap-2">
-          <div className="flex-1">
-            <RoutineSchedule
-              value={preset}
-              onChange={(next) => onChange(value.map((p, i) => (i === index ? next : p)))}
-            />
-          </div>
-          {value.length > 1 ? (
-            <button
-              type="button"
-              aria-label={t`Remove this schedule`}
-              onClick={() => onChange(value.filter((_, i) => i !== index))}
-              className="mt-3 shrink-0 text-[var(--rk-muted)] hover:text-[var(--rk-ink)]"
-            >
-              <svg
-                width="15"
-                height="15"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.8"
-                strokeLinecap="round"
-                aria-hidden="true"
-              >
-                <path d="M18 6 6 18M6 6l12 12" />
-              </svg>
-            </button>
-          ) : null}
-        </div>
-      ))}
-      <button
-        type="button"
-        onClick={() => onChange([...value, defaultCronPreset()])}
-        className="text-[13.5px] text-[var(--rk-muted)] hover:text-[var(--rk-ink)]"
-      >
-        <Trans>+ Add another schedule</Trans>
-      </button>
-    </div>
-  );
-}
-
 export function RoutineSchedule({
   value,
   onChange,
@@ -170,76 +116,62 @@ export function RoutineSchedule({
   }
 
   const intervalAmountSelect = (
-    <select
-      className="rk-schedule-select"
+    <NativeSelect
+      size="sm"
       value={String(value.n)}
       aria-label={t`Interval amount`}
       onChange={(event) => patch({ n: Number(event.target.value) })}
     >
       {numbers.map((n) => (
-        <option key={n} value={n}>
+        <NativeSelectOption key={n} value={n}>
           {n}
-        </option>
+        </NativeSelectOption>
       ))}
-    </select>
+    </NativeSelect>
   );
 
   const intervalUnitSelect = (
-    <select
-      className="rk-schedule-select"
+    <NativeSelect
+      size="sm"
       value={value.unit}
       aria-label={t`Interval unit`}
       onChange={(event) => patch({ unit: event.target.value as CronUnit })}
     >
       {UNITS.map((unit) => (
-        <option key={unit} value={unit}>
+        <NativeSelectOption key={unit} value={unit}>
           {cronUnitLabel(unit)}
-        </option>
+        </NativeSelectOption>
       ))}
-    </select>
+    </NativeSelect>
   );
 
   const timeSelect = (
-    <select
-      className="rk-schedule-select"
+    <NativeSelect
+      size="sm"
       value={value.time}
       aria-label={t`Time of day`}
       onChange={(event) => patch({ time: event.target.value })}
     >
       {times.map((time) => (
-        <option key={time} value={time}>
+        <NativeSelectOption key={time} value={time}>
           {time}
-        </option>
+        </NativeSelectOption>
       ))}
-    </select>
+    </NativeSelect>
   );
 
   return (
-    <div className="mt-2 rounded-[13px] border border-[var(--rk-border)] p-3">
+    <div className="mt-2 rounded-xl border border-border p-3">
       <div className="flex items-center gap-2.5 px-0.5">
-        <svg
-          width="17"
-          height="17"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="#C9C9CE"
-          strokeWidth="1.6"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          aria-hidden="true"
-          className="shrink-0"
-        >
-          <circle cx="12" cy="12" r="9" />
-          <path d="M12 7v5l3 2" />
-        </svg>
-        <span className="text-[14.5px] text-[var(--rk-ink)]">{lead}</span>
+        <Clock size={17} strokeWidth={1.6} className="shrink-0 text-muted-foreground" aria-hidden />
+        <span className="text-[14.5px] text-foreground">{lead}</span>
         {detail ? (
-          <span className="flex-1 text-[14.5px] text-[var(--rk-muted)]">{detail}</span>
+          <span className="flex-1 text-[14.5px] text-muted-foreground">{detail}</span>
         ) : null}
       </div>
-      <div className="mt-2.5 flex flex-wrap items-center gap-2 rounded-[11px] bg-[var(--rk-surface)] px-2.5 py-2.5 text-[14px] text-[var(--rk-faint)]">
-        <select
-          className="rk-schedule-select"
+      <div className="mt-2.5 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+        <NativeSelect
+          size="sm"
           value={value.freq}
           aria-label={t`How often`}
           onChange={(event) => {
@@ -252,11 +184,11 @@ export function RoutineSchedule({
           }}
         >
           {CRON_FREQS.map((freq) => (
-            <option key={freq} value={freq}>
+            <NativeSelectOption key={freq} value={freq}>
               {cronFreqLabel(freq)}
-            </option>
+            </NativeSelectOption>
           ))}
-        </select>
+        </NativeSelect>
         {value.freq === "Interval" ? (
           <Trans>
             every {intervalAmountSelect} {intervalUnitSelect}
@@ -264,12 +196,12 @@ export function RoutineSchedule({
         ) : null}
         {TIMED.includes(value.freq) ? <Trans>at {timeSelect}</Trans> : null}
         {value.freq === "Advanced" ? (
-          <input
+          <Input
             value={value.cron}
             placeholder="*/3 * * * *"
             aria-label={t`Cron expression`}
             onChange={(event) => patch({ cron: event.target.value })}
-            className="min-w-[120px] flex-1 rounded-lg border-0 bg-[var(--rk-scroll)] px-2.5 py-1.5 font-mono text-[13.5px] text-[var(--rk-ink)] outline-none"
+            className="h-7 min-w-[120px] flex-1 font-mono text-[13px] md:text-[13px]"
           />
         ) : null}
       </div>

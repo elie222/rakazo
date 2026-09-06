@@ -439,6 +439,11 @@ describe("Pi connector tool dispatch", () => {
       events.push(event);
     }
 
+    expect(events).toContainEqual({
+      type: "progress",
+      text: "Using destination_write",
+      activity: true,
+    });
     expect(events).not.toContainEqual({ type: "text", text: "I finished the work." });
     expect(events.at(-1)).toEqual({ type: "done" });
   });

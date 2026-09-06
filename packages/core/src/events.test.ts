@@ -3,11 +3,13 @@ import {
   appendTextSegment,
   appendToolCallSegment,
   appendToolStep,
+  containsSecret,
   createStreamingRedactor,
   endsSentence,
   humanizeToolName,
   isRunTerminalEvent,
   projectMessages,
+  reduceLiveMessageBlocks,
   runFailureError,
   sanitizeJsonValue,
   sanitizeUtf16ForJson,
@@ -15,12 +17,45 @@ import {
   trackToolNameStreak,
 } from "./events.js";
 
+describe("containsSecret", () => {
+  it("detects secrets that JSON escaping changes", () => {
+    expect(containsSecret({ 'api"key': { nested: 'api"key' } }, ['api"key'])).toBe(true);
+    expect(containsSecret({ nested: ["line\nbreak"] }, ["line\nbreak"])).toBe(true);
+  });
+
+  it("does not confuse escaped text with the original control character", () => {
+    expect(containsSecret({ value: "literal\\ntext" }, ["\n"])).toBe(false);
+  });
+});
+
 describe("isRunTerminalEvent", () => {
   it("recognizes every terminal run outcome", () => {
     expect(isRunTerminalEvent({ type: "run.completed" })).toBe(true);
     expect(isRunTerminalEvent({ type: "run.failed" })).toBe(true);
     expect(isRunTerminalEvent({ type: "run.cancelled" })).toBe(true);
     expect(isRunTerminalEvent({ type: "run.waiting_input" })).toBe(false);
+  });
+});
+
+describe("reduceLiveMessageBlocks", () => {
+  it("preserves structured live activity markers", () => {
+    expect(
+      reduceLiveMessageBlocks([], {
+        type: "progress",
+        payload: { text: "Using browser", activity: true },
+      }),
+    ).toEqual([{ kind: "progress", text: "Using browser", activity: true }]);
+  });
+
+  it("replaces punctuated activity text with its tool step", () => {
+    const activity = reduceLiveMessageBlocks([], {
+      type: "progress",
+      payload: { text: "Running: echo done.", activity: true },
+    });
+
+    expect(reduceLiveMessageBlocks(activity, { type: "tool", name: "shell" })).toEqual([
+      { kind: "steps", steps: [{ label: "Shell", count: 1 }] },
+    ]);
   });
 });
 

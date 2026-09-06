@@ -34,6 +34,9 @@ export type FeaturedConnectorTile = {
   missing: boolean;
 };
 
+/** Keep catalog screens responsive even when a provider exposes thousands of apps. */
+export const CONNECTION_CATALOG_PAGE_SIZE = 60;
+
 function normalizeConnectorKey(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "");
 }
@@ -80,6 +83,26 @@ export function buildFeaturedConnectorTiles(
       missing: hasCatalog && !item,
     };
   });
+}
+
+export function filterConnectionCatalogItems(
+  catalog: readonly ConnectionCatalogItem[],
+  query: string,
+): ConnectionCatalogItem[] {
+  const needle = query.trim().toLowerCase();
+  if (!needle) {
+    return catalog.filter(
+      (item) =>
+        matchFeaturedConnectorId(item.slug) === null &&
+        matchFeaturedConnectorId(item.name) === null,
+    );
+  }
+  return catalog.filter(
+    (item) =>
+      item.name.toLowerCase().includes(needle) ||
+      item.slug.toLowerCase().includes(needle) ||
+      item.connectorId.toLowerCase().includes(needle),
+  );
 }
 
 export const EMPTY_PLUGIN_CATALOG_MESSAGE =

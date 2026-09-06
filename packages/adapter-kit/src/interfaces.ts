@@ -7,6 +7,11 @@ import type {
   ArtifactPut,
   BackgroundJob,
   BackgroundJobHandlers,
+  CloudAgentCapabilities,
+  CloudAgentHandle,
+  CloudAgentLaunchRequest,
+  CloudAgentReplyRequest,
+  CloudAgentSnapshot,
   CommandRequest,
   ComputerActionRequest,
   ComputerActionResult,
@@ -347,4 +352,21 @@ export interface WebFetchProvider {
 /** Convenience when one adapter owns both search and fetch. */
 export interface WebProvider extends WebSearchProvider, WebFetchProvider {
   describe(): AdapterDescriptor<WebSearchCapabilities & WebFetchCapabilities>;
+}
+
+/**
+ * Provider-neutral remote cloud coding agents (clone a repo on a vendor VM,
+ * open a PR). Not the bot computer — shell/sandbox stays separate. Core runs
+ * with none configured; tools are injected only when a provider is present.
+ */
+export interface CloudAgentProvider {
+  describe(): AdapterDescriptor<CloudAgentCapabilities>;
+  launch(request: CloudAgentLaunchRequest, context: AdapterContext): Promise<CloudAgentHandle>;
+  get(id: string, context: AdapterContext, runId?: string): Promise<CloudAgentSnapshot>;
+  reply(
+    id: string,
+    request: CloudAgentReplyRequest,
+    context: AdapterContext,
+  ): Promise<CloudAgentHandle>;
+  cancel(id: string, context: AdapterContext, runId?: string): Promise<CloudAgentSnapshot>;
 }

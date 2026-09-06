@@ -11,6 +11,7 @@ const fakeAgentState = vi.hoisted(() => ({
   }>,
   sessionIds: [] as Array<string | undefined>,
   failPrompt: false,
+  abortCalls: 0,
 }));
 
 type FakeAgentTool = {
@@ -44,7 +45,9 @@ vi.mock("@earendil-works/pi-agent-core", () => ({
       await runSubagent?.execute("subagent-call", { name: "helper", task: "help" });
     }
     async waitForIdle() {}
-    abort() {}
+    abort() {
+      fakeAgentState.abortCalls += 1;
+    }
   },
 }));
 
@@ -182,13 +185,14 @@ describe("Pi agent thinking level", () => {
 
   it("removes the abort listener when prompting fails", async () => {
     const controller = new AbortController();
-    const removeEventListener = vi.spyOn(controller.signal, "removeEventListener");
+    fakeAgentState.abortCalls = 0;
     fakeAgentState.failPrompt = true;
 
     await expect(runWithModel("plain-model", "test", controller.signal)).rejects.toThrow(
       "prompt failed",
     );
 
-    expect(removeEventListener).toHaveBeenCalledWith("abort", expect.any(Function));
+    controller.abort();
+    expect(fakeAgentState.abortCalls).toBe(0);
   });
 });

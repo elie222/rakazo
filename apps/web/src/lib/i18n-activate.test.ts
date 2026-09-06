@@ -50,6 +50,7 @@ describe("activateUiLocale", () => {
       hi: async () => ({ messages: { Settings: "सेटिंग्स" } }),
       "pt-BR": async () => ({ messages: { Settings: "Configurações" } }),
       "zh-CN": async () => ({ messages: { Settings: "设置" } }),
+      es: async () => ({ messages: { Settings: "Configuración" } }),
     });
 
     const locale = await activateUiLocale("de");
@@ -82,6 +83,9 @@ describe("activateUiLocale", () => {
       "zh-CN": async () => {
         throw new Error("zh-CN missing");
       },
+      es: async () => {
+        throw new Error("es missing");
+      },
     });
 
     const locale = await activateUiLocale("ko");
@@ -103,6 +107,7 @@ describe("activateUiLocale", () => {
       hi: async () => ({ messages: { Settings: "सेटिंग्स" } }),
       "pt-BR": async () => ({ messages: { Settings: "Configurações" } }),
       "zh-CN": async () => ({ messages: { Settings: "设置" } }),
+      es: async () => ({ messages: { Settings: "Configuración" } }),
     });
 
     const first = activateUiLocale("de");
@@ -129,6 +134,7 @@ describe("activateUiLocale", () => {
       hi: async () => ({ messages: { Settings: "सेटिंग्स" } }),
       "pt-BR": async () => ({ messages: { Settings: "Configurações" } }),
       "zh-CN": async () => ({ messages: { Settings: "设置" } }),
+      es: async () => ({ messages: { Settings: "Configuración" } }),
     });
 
     await activateUiLocale("en");
@@ -160,6 +166,7 @@ describe("activateUiLocale", () => {
       hi: async () => ({ messages: { Settings: "सेटिंग्स" } }),
       "pt-BR": async () => ({ messages: { Settings: "Configurações" } }),
       "zh-CN": async () => ({ messages: { Settings: "设置" } }),
+      es: async () => ({ messages: { Settings: "Configuración" } }),
     });
 
     await activateUiLocale("en");

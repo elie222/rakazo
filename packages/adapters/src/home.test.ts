@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -72,7 +72,7 @@ describe("LocalAgentHomeStore path containment", () => {
   it("allows directory symlinks that remain inside the bot home", async () => {
     const { store, home } = await fixture();
     await mkdir(path.join(home, "target-dir"));
-    await symlink("target-dir", path.join(home, "linked-dir"));
+    await symlink(path.join(home, "target-dir"), path.join(home, "linked-dir"), "junction");
 
     await store.writeFile("bot-1", "linked-dir/result.txt", "safe", context);
     expect(await readFile(path.join(home, "target-dir", "result.txt"), "utf8")).toBe("safe");
@@ -98,7 +98,7 @@ describe("LocalAgentHomeStore path containment", () => {
     const { root, store, home } = await fixture();
     const outside = path.join(root, "outside-dir");
     await mkdir(outside);
-    await symlink(outside, path.join(home, "escape-dir"));
+    await symlink(outside, path.join(home, "escape-dir"), "junction");
 
     await expect(
       store.writeFile("bot-1", "escape-dir/new/result.txt", "changed", context),
@@ -120,5 +120,32 @@ describe("LocalAgentHomeStore path containment", () => {
     const exported = [];
     for await (const file of store.exportHome("bot-1", context)) exported.push(file.path);
     expect(exported).toEqual(["safe.txt"]);
+  });
+
+  it("exports and copies internal links, bytes, empty directories, and file modes", async () => {
+    const { root, store, home } = await fixture();
+    const bytes = Buffer.from([0, 255, 127, 10]);
+    await mkdir(path.join(home, "nested/empty"), { recursive: true });
+    await writeFile(path.join(home, "nested/run"), bytes);
+    await chmod(path.join(home, "nested/run"), 0o750);
+    await symlink("nested/run", path.join(home, "linked"));
+    await symlink(home, path.join(home, "nested/loop"), "junction");
+
+    const files = [];
+    for await (const file of store.exportHome("bot-1", context)) files.push(file);
+    expect(files.map((file) => file.path).sort()).toEqual(["linked", "nested/run"]);
+    for (const file of files) {
+      expect(Buffer.from(file.content)).toEqual(bytes);
+      if (process.platform !== "win32") expect(file.executable).toBe(true);
+    }
+    const dest = path.join(root, "checkout");
+    await store.checkout("bot-1", dest, context);
+    expect(await readFile(path.join(dest, "linked"))).toEqual(bytes);
+    expect((await stat(path.join(dest, "nested/empty"))).isDirectory()).toBe(true);
+    if (process.platform !== "win32") {
+      expect((await stat(path.join(dest, "nested/run"))).mode & 0o777).toBe(0o750);
+    }
+    await store.commit("bot-2", dest, context);
+    expect(await readFile(path.join(store.pathFor("bot-2"), "nested/run"))).toEqual(bytes);
   });
 });

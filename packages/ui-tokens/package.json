@@ -9,7 +9,8 @@
   },
   "scripts": {
     "check": "tsc --noEmit -p tsconfig.json",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run --passWithNoTests",
+    "generate": "tsx src/generate-css.ts"
   },
   "devDependencies": {
     "typescript": "^5.9.2",

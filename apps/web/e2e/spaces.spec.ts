@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { captureScreenshot, completeOnboarding, signup } from "./helpers";
+import { captureScreenshot, completeOnboarding, openNewSpace, signup } from "./helpers";
 
 test("spaces stay invisible by default and chat creation requires approval", async ({
   page,
@@ -13,8 +13,7 @@ test("spaces stay invisible by default and chat creation requires approval", asy
   await expect(sidebar.getByRole("button", { name: /^Chief/ })).toHaveCount(1);
   await captureScreenshot(page, testInfo, "single-space-sidebar");
 
-  await page.getByTitle("Create", { exact: true }).click();
-  await page.getByRole("button", { name: "New space" }).click();
+  await openNewSpace(page);
   const dialog = page.getByRole("dialog", { name: "New space" });
   await expect(dialog.getByLabel("Name")).toBeVisible();
   await dialog.getByLabel("Name").fill("Customer support");

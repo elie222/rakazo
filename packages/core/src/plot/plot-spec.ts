@@ -264,6 +264,31 @@ export function parsePlotData(name: string, content: string): unknown[] {
 
 const XMLNS = "http://www.w3.org/2000/xmlns/";
 
+function isSafePlotLink(href: string): boolean {
+  try {
+    // Use the URL parser's control-character and scheme handling. The fixed
+    // base allows relative links even in the server's about:blank document;
+    // retain the original attribute so clients resolve it against their page.
+    const { protocol } = new URL(href, "https://plot.invalid/");
+    return ["http:", "https:", "mailto:", "tel:"].includes(protocol);
+  } catch {
+    return false;
+  }
+}
+
+function sanitizePlotLinks(plotted: Element): void {
+  // Inspect the resolved output: href can come from columns, per-mark arrays,
+  // channel objects, scales, or transforms. Check both href and xlink:href
+  // before either mounting the live plot or serializing it for export.
+  for (const anchor of Array.from(plotted.querySelectorAll("a"))) {
+    for (const attribute of Array.from(anchor.attributes)) {
+      if (attribute.localName === "href" && !isSafePlotLink(attribute.value)) {
+        anchor.removeAttributeNode(attribute);
+      }
+    }
+  }
+}
+
 export type PlotParts = {
   /** The rendered element (an <svg>, or a <figure> wrapping one). */
   plotted: Element;
@@ -319,6 +344,7 @@ export function buildPlotParts(
     ...(overrides.height ? { height: overrides.height } : {}),
     marks: marks.map((mark) => buildMark(mark, sharedData, normalizeData)),
   });
+  sanitizePlotLinks(plotted);
   const svg = plotted.tagName === "svg" ? plotted : plotted.querySelector("svg");
   if (!svg) throw new Error("Plot did not produce an SVG element");
   const width = Number(svg.getAttribute("width") ?? overrides.width ?? spec.width ?? 640);

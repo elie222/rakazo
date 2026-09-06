@@ -6,17 +6,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   BACKGROUND_WORK_LAUNCH,
   BACKGROUND_WORK_PROBE,
+  CANCEL_COMPUTER_RUN_WORK,
+  CANCEL_PRIMARY_BROWSER_WORK,
   DEFAULT_SANDBOX_IDLE_MS,
   sandboxIdleMs,
   sleepComputerIfIdle,
 } from "./computer-idle.js";
-import {
-  e2bCreateOptions,
-  isUnreachableTransportError,
-  isUnrecoverableSandboxError,
-  openDesktopBrowser,
-  openDesktopUrl,
-} from "./e2b-sandbox.js";
+import { e2bCreateOptions, openDesktopBrowser, openDesktopUrl } from "./e2b-sandbox.js";
 
 describe("sandbox idle", () => {
   it("defaults to ten minutes when SANDBOX_IDLE_MS is unset", () => {
@@ -191,7 +187,7 @@ describe("background work launch and probe", () => {
       const databaseId = "computer-db-id";
       const providerRef = "provider-ref";
       const launchId = "active";
-      markers.add(`/tmp/rakazo-background-${databaseId}-${launchId}`);
+      markers.add(`/tmp/rakazo-background-${databaseId}-run-1-${launchId}`);
 
       const launched = spawn(
         "bash",
@@ -200,6 +196,7 @@ describe("background work launch and probe", () => {
           BACKGROUND_WORK_LAUNCH,
           "rakazo-background-launch",
           databaseId,
+          "run-1",
           launchId,
           "exec sleep 30",
         ],
@@ -217,13 +214,21 @@ describe("background work launch and probe", () => {
     "cleans a completed marker without blocking a later launch",
     async () => {
       const markerId = "computer-relaunch-id";
-      const completedMarker = `/tmp/rakazo-background-${markerId}-completed`;
-      const activeMarker = `/tmp/rakazo-background-${markerId}-active`;
+      const completedMarker = `/tmp/rakazo-background-${markerId}-run-1-completed`;
+      const activeMarker = `/tmp/rakazo-background-${markerId}-run-1-active`;
       markers.add(completedMarker);
       markers.add(activeMarker);
       const completed = spawn(
         "bash",
-        ["-c", BACKGROUND_WORK_LAUNCH, "rakazo-background-launch", markerId, "completed", "true"],
+        [
+          "-c",
+          BACKGROUND_WORK_LAUNCH,
+          "rakazo-background-launch",
+          markerId,
+          "run-1",
+          "completed",
+          "true",
+        ],
         { stdio: "ignore" },
       );
       children.push(completed);
@@ -239,6 +244,7 @@ describe("background work launch and probe", () => {
           BACKGROUND_WORK_LAUNCH,
           "rakazo-background-launch",
           markerId,
+          "run-1",
           "active",
           "exec sleep 30",
         ],
@@ -253,7 +259,7 @@ describe("background work launch and probe", () => {
     "does not run the command when its marker cannot be opened",
     async () => {
       const markerId = "computer-marker-error";
-      const marker = `/tmp/rakazo-background-${markerId}-collision`;
+      const marker = `/tmp/rakazo-background-${markerId}-run-1-collision`;
       const commandRan = `/tmp/rakazo-background-command-ran-${markerId}`;
       markers.add(marker);
       markers.add(commandRan);
@@ -265,6 +271,7 @@ describe("background work launch and probe", () => {
           BACKGROUND_WORK_LAUNCH,
           "rakazo-background-launch",
           markerId,
+          "run-1",
           "collision",
           `touch ${commandRan}`,
         ],
@@ -281,7 +288,7 @@ describe("background work launch and probe", () => {
     "does not follow a pre-existing marker symlink",
     async () => {
       const markerId = "computer-marker-symlink";
-      const marker = `/tmp/rakazo-background-${markerId}-collision`;
+      const marker = `/tmp/rakazo-background-${markerId}-run-1-collision`;
       const commandRan = `/tmp/rakazo-background-command-ran-${markerId}`;
       markers.add(marker);
       markers.add(commandRan);
@@ -293,6 +300,7 @@ describe("background work launch and probe", () => {
           BACKGROUND_WORK_LAUNCH,
           "rakazo-background-launch",
           markerId,
+          "run-1",
           "collision",
           `touch ${commandRan}`,
         ],
@@ -304,6 +312,58 @@ describe("background work launch and probe", () => {
       expect(existsSync(commandRan)).toBe(false);
     },
   );
+
+  it.skipIf(process.platform === "win32")(
+    "cancel tears down background shell work for that run",
+    async () => {
+      const computerId = "computer-cancel-id";
+      const runId = "run-cancel-1";
+      const launchId = "active";
+      const marker = `/tmp/rakazo-background-${computerId}-${runId}-${launchId}`;
+      markers.add(marker);
+
+      const launched = spawn(
+        "bash",
+        [
+          "-c",
+          BACKGROUND_WORK_LAUNCH,
+          "rakazo-background-launch",
+          computerId,
+          runId,
+          launchId,
+          "exec sleep 30",
+        ],
+        { stdio: "ignore" },
+      );
+      children.push(launched);
+
+      await expect.poll(() => probeBackgroundWork(computerId)).toBe(0);
+
+      const launchedDone = processExit(launched);
+      const cancel = spawn(
+        "bash",
+        ["-c", CANCEL_COMPUTER_RUN_WORK, "rakazo-cancel-run-work", computerId, runId],
+        { stdio: "ignore" },
+      );
+      children.push(cancel);
+      expect(await processExit(cancel)).toBe(0);
+      await launchedDone;
+      expect(await probeBackgroundWork(computerId)).toBe(1);
+    },
+  );
+});
+
+describe("CANCEL_PRIMARY_BROWSER_WORK", () => {
+  it("targets the primary profile and matches browser argv0 only", () => {
+    expect(CANCEL_PRIMARY_BROWSER_WORK).toContain(".browser-profiles/chromium");
+    expect(CANCEL_PRIMARY_BROWSER_WORK).toContain("chromium-screen-");
+    expect(CANCEL_PRIMARY_BROWSER_WORK).toContain('argv0=""; IFS= read -r -d "" argv0');
+    expect(CANCEL_PRIMARY_BROWSER_WORK).toContain("*/chromium|*/chromium-*|chromium|chromium-*");
+    expect(CANCEL_PRIMARY_BROWSER_WORK).toContain("*/firefox|*/firefox-*|firefox|firefox-*");
+    expect(CANCEL_PRIMARY_BROWSER_WORK).not.toContain("*[c]hromium*");
+    expect(CANCEL_PRIMARY_BROWSER_WORK).not.toContain("*[f]irefox*");
+    expect(CANCEL_PRIMARY_BROWSER_WORK).not.toContain("*[g]oogle-chrome*");
+  });
 });
 
 describe("e2b create options", () => {
@@ -312,18 +372,6 @@ describe("e2b create options", () => {
     expect(opts.lifecycle).toEqual({ onTimeout: "pause", autoResume: false });
     expect(opts.timeoutMs).toBe(sandboxIdleMs());
     expect(opts.metadata.botId).toBe("bot-1");
-  });
-
-  it("only recreates when the sandbox is actually gone", () => {
-    expect(isUnrecoverableSandboxError(new Error("sandbox not found"))).toBe(true);
-    expect(isUnrecoverableSandboxError(new Error("ECONNRESET"))).toBe(false);
-    // Transient transport codes must not satisfy the replaceComputer predicate: otherwise
-    // update mode swallows a checkpoint blip, destroys the old box, and drops uncommitted work.
-    const reset = Object.assign(new Error("socket hang up"), { code: "ECONNRESET" });
-    expect(isUnrecoverableSandboxError(reset)).toBe(false);
-    expect(isUnreachableTransportError(reset)).toBe(true);
-    expect(isUnrecoverableSandboxError(new Error("fetch failed"))).toBe(false);
-    expect(isUnreachableTransportError(new Error("fetch failed"))).toBe(true);
   });
 
   it("opens a browser on a new desktop", async () => {

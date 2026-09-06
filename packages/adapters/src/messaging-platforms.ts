@@ -5,6 +5,7 @@ import type { MessagingOutboundStatus } from "@rakazo/adapter-kit";
 import type { Adapter } from "chat";
 import { createSendblueAdapter } from "chat-adapter-sendblue";
 import type { MessagingPlatform } from "./chat-sdk-surface.js";
+import { isVitestRuntime } from "./test-runtime.js";
 
 /**
  * Parsed platform credentials, filled from process.env at the composition
@@ -137,7 +138,7 @@ export function messagingPlatformsFromEnv(env: MessagingEnvironmentValues): Mess
 
 /** Never live under the test runner; tests build surfaces explicitly. */
 export function isMessagingEnabled(platforms: MessagingPlatform[]): boolean {
-  return platforms.length > 0 && !process.env.VITEST;
+  return platforms.length > 0 && !isVitestRuntime();
 }
 
 /**

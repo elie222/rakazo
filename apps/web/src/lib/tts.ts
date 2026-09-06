@@ -19,6 +19,9 @@ interface SpeakOptions {
 type TtsErrorBody = { error?: string };
 
 const IDLE: SpeechSnapshot = { status: "idle" };
+export const VOICE_RESPONSE_TIMEOUT_MS = 70_000;
+export const MAX_VOICE_AUDIO_BYTES = 16 * 1024 * 1024;
+const MAX_VOICE_ERROR_BYTES = 64 * 1024;
 
 export class Speaker {
   private snapshot: SpeechSnapshot = IDLE;
@@ -163,18 +166,28 @@ export class Speaker {
     signal: AbortSignal,
     spaceId: string | null,
   ): Promise<Blob> {
-    const res = await fetch("/api/voice/speak", {
-      method: "POST",
-      headers: withSpaceHeaders({ "content-type": "application/json" }, spaceId),
-      credentials: "include",
-      body: JSON.stringify({ text, voiceId: opts.voiceId, botId: opts.botId }),
-      signal,
-    });
-    if (!res.ok) {
-      const body: TtsErrorBody = await res.json().catch(() => ({}));
-      throw new Error(body.error ?? `the voice service returned ${res.status}`);
+    const deadline = requestDeadline(signal, VOICE_RESPONSE_TIMEOUT_MS);
+    try {
+      const res = await withAbort(deadline.signal, () =>
+        fetch("/api/voice/speak", {
+          method: "POST",
+          headers: withSpaceHeaders({ "content-type": "application/json" }, spaceId),
+          credentials: "include",
+          body: JSON.stringify({ text, voiceId: opts.voiceId, botId: opts.botId }),
+          signal: deadline.signal,
+        }),
+      );
+      if (!res.ok) {
+        const body = await readVoiceError(res, deadline.signal);
+        throw new Error(body.error ?? `the voice service returned ${res.status}`);
+      }
+      const bytes = await readResponseBytes(res, MAX_VOICE_AUDIO_BYTES, deadline.signal);
+      return new Blob([new Uint8Array(bytes)], {
+        type: res.headers.get("content-type") ?? "audio/mpeg",
+      });
+    } finally {
+      deadline.dispose();
     }
-    return res.blob();
   }
 
   private play(blob: Blob, live: () => boolean): Promise<boolean> {
@@ -223,4 +236,96 @@ function withAbort<T>(signal: AbortSignal, run: () => Promise<T>): Promise<T> {
       },
     );
   });
+}
+
+function requestDeadline(parent: AbortSignal, timeoutMs: number) {
+  const controller = new AbortController();
+  const abortFromParent = () => controller.abort(parent.reason);
+  if (parent.aborted) abortFromParent();
+  else parent.addEventListener("abort", abortFromParent, { once: true });
+  const timer = setTimeout(
+    () => controller.abort(new Error("Voice request timed out.")),
+    timeoutMs,
+  );
+  return {
+    signal: controller.signal,
+    dispose() {
+      clearTimeout(timer);
+      parent.removeEventListener("abort", abortFromParent);
+    },
+  };
+}
+
+async function readVoiceError(response: Response, signal: AbortSignal): Promise<TtsErrorBody> {
+  const bytes = await readResponseBytes(response, MAX_VOICE_ERROR_BYTES, signal);
+  try {
+    const parsed = JSON.parse(new TextDecoder().decode(bytes)) as unknown;
+    return parsed && typeof parsed === "object" ? (parsed as TtsErrorBody) : {};
+  } catch {
+    return {};
+  }
+}
+
+async function readResponseBytes(
+  response: Response,
+  maxBytes: number,
+  signal: AbortSignal,
+): Promise<Uint8Array> {
+  const declared = Number(response.headers.get("content-length") ?? 0);
+  if (Number.isFinite(declared) && declared > maxBytes) {
+    cancelResponse(response);
+    throw new Error("Voice response is too large.");
+  }
+  if (!response.body) {
+    const buffer = await withAbort(signal, () => response.arrayBuffer());
+    if (buffer.byteLength > maxBytes) throw new Error("Voice response is too large.");
+    return new Uint8Array(buffer);
+  }
+
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await withAbort(signal, () => reader.read());
+      if (done) break;
+      if (!value?.byteLength) continue;
+      total += value.byteLength;
+      if (total > maxBytes) throw new Error("Voice response is too large.");
+      chunks.push(value);
+    }
+  } catch (error) {
+    cancelReader(reader);
+    throw error;
+  } finally {
+    try {
+      reader.releaseLock();
+    } catch {
+      // already cancelled or released
+    }
+  }
+
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return bytes;
+}
+
+function cancelResponse(response: Response): void {
+  try {
+    void Promise.resolve(response.body?.cancel()).catch(() => undefined);
+  } catch {
+    // Response cleanup is best-effort.
+  }
+}
+
+function cancelReader(reader: ReadableStreamDefaultReader<Uint8Array>): void {
+  try {
+    void Promise.resolve(reader.cancel()).catch(() => undefined);
+  } catch {
+    // Response cleanup is best-effort.
+  }
 }

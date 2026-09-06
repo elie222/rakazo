@@ -834,6 +834,48 @@ describeWithDatabase("API authorization and resource isolation", () => {
     expect(await missing.text()).toMatch(/credential/i);
   });
 
+  it("validates custom thinking against the saved connection capability", async () => {
+    const cookie = await signup(app, `custom-thinking-${stamp}@rakazo.test`, "Custom Thinking");
+    const bot = await rpc<Bot>(app, cookie, "bots/create", botInput("Thinking Bot"));
+    const connection = {
+      provider: "openai-compatible",
+      modelId: "arbitrary-model",
+      baseUrl: "http://localhost:8000/v1",
+    };
+    await rpc(app, cookie, "models/connect", {
+      ...connection,
+      apiKey: "fake-saved-key",
+      reasoning: false,
+    });
+    await rpc(app, cookie, "models/connect", { ...connection, reasoning: true });
+    const actor = await rpc<Actor>(app, cookie, "me");
+    expect(
+      await handles.executor.resolveModel({
+        userId: actor.userId,
+        spaceId: actor.spaceId,
+        botId: bot.id,
+      }),
+    ).toMatchObject({ apiKey: "fake-saved-key", reasoning: true });
+    const update = {
+      botId: bot.id,
+      modelProvider: connection.provider,
+      modelId: connection.modelId,
+    };
+    expect(
+      await rpc(app, cookie, "bots/update", { ...update, thinkingLevel: "low" }),
+    ).toMatchObject({ thinkingLevel: "low" });
+    expect(
+      (await raw(app, cookie, "bots/update", { ...update, thinkingLevel: "xhigh" })).status,
+    ).toBe(400);
+    await rpc(app, cookie, "models/connect", { ...connection, reasoning: false });
+    expect(
+      (await raw(app, cookie, "bots/update", { ...update, thinkingLevel: "low" })).status,
+    ).toBe(400);
+    expect(
+      await rpc(app, cookie, "bots/update", { ...update, thinkingLevel: "off" }),
+    ).toMatchObject({ thinkingLevel: "off" });
+  });
+
   it("validates per-bot model overrides against connected providers and catalog", async () => {
     const cookie = await signup(app, `bot-model-${stamp}@rakazo.test`, "Bot Model");
     const bot = await rpc<
@@ -971,6 +1013,12 @@ describeWithDatabase("API authorization and resource isolation", () => {
     const other = await signup(app, `deployment-other-${stamp}@rakazo.test`, "Deployment Other");
     const ownerActor = await rpc<Actor>(app, owner, "me");
     const otherActor = await rpc<Actor>(app, other, "me");
+    // This test changes a live allowlist; the operator has already proved
+    // ownership of the mailbox. Endpoint verification has offline auth tests.
+    await handles.prisma.user.update({
+      where: { id: ownerActor.userId },
+      data: { emailVerified: true },
+    });
     await handles.prisma.deploymentSettings.update({
       where: { id: "default" },
       data: {
@@ -1025,7 +1073,17 @@ describeWithDatabase("API authorization and resource isolation", () => {
       });
       expect(disallowedSignup.status).toBe(400);
       expect(await disallowedSignup.text()).toContain("Email is not allowed to register");
-      await signup(app, approvedEmail, "Approved Signup");
+      const unverifiedSignup = await app.request("/api/auth/sign-up/email", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          email: approvedEmail,
+          password: "password123",
+          name: "Approved Signup",
+        }),
+      });
+      expect(unverifiedSignup.status).toBe(400);
+      expect(await unverifiedSignup.text()).toContain("Registration requires email delivery");
     } finally {
       await rpc(app, owner, "deployment/update", {
         signupsEnabled: true,

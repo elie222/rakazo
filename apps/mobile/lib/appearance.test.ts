@@ -45,6 +45,21 @@ describe("mobile appearance", () => {
     await setAppearancePreference("system");
   });
 
+  it("notifies mounted navigation when the saved preference loads", async () => {
+    const { UI_APPEARANCE_STORAGE_KEY, lightTokens } = await import("@rakazo/ui-tokens");
+    const { loadAppearancePreference, mobileTokens, subscribeAppearance } = await import(
+      "./appearance"
+    );
+    store.set(UI_APPEARANCE_STORAGE_KEY, "light");
+    const listener = vi.fn();
+    subscribeAppearance(listener);
+
+    await loadAppearancePreference();
+
+    expect(listener).toHaveBeenCalledOnce();
+    expect(mobileTokens()).toEqual(lightTokens);
+  });
+
   it("notifies subscribers when the OS scheme flips under System preference", async () => {
     const { resolveMobileAppearance, subscribeAppearance } = await import("./appearance");
     const listener = vi.fn();

@@ -45,7 +45,7 @@ export class ThirdPartyConnectorEmulator {
       const externalUserId = String(body.external_user_id ?? "");
       this.pendingUsers.add(externalUserId);
       this.records.push({ provider: "pipedream", operation: "begin" });
-      return Response.json({ connect_link_url: "about:blank" });
+      return Response.json({ connect_link_url: "https://pipedream.example.test/connect" });
     }
     if (url.pathname.endsWith("/accounts") && method === "GET") {
       const externalUserId = url.searchParams.get("external_user_id") ?? "";

@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { assertSafeRemoteUrl, createSafeLookup, createSafeRemoteFetch } from "./remote-mcp.js";
+import {
+  assertSafeRemoteUrl,
+  createSafeLookup,
+  createSafeRemoteFetch,
+  limitRemoteMcpPayload,
+} from "./remote-mcp.js";
 
 const publicResolver = async () => [{ address: "203.0.113.10", family: 4 as const }];
 
@@ -76,6 +81,11 @@ describe("remote MCP URL policy", () => {
         { address: "169.254.169.254", family: 4 as const },
       ]),
     ).rejects.toThrow("private address");
+    await expect(
+      assertSafeRemoteUrl("https://box.tail12345.ts.net/openapi.json", async () => [
+        { address: "100.100.100.200", family: 4 as const },
+      ]),
+    ).rejects.toThrow("private address");
   });
 
   it("rejects private addresses in the lookup used by the network connection", async () => {
@@ -116,5 +126,16 @@ describe("remote MCP URL policy", () => {
     } finally {
       await safeFetch.close();
     }
+  });
+});
+
+describe("remote MCP result limits", () => {
+  it("applies the result budget in UTF-8 bytes instead of JavaScript characters", () => {
+    const value = { content: "界".repeat(400_000) };
+    const limited = limitRemoteMcpPayload(value) as { truncated: boolean; content: string };
+
+    expect(limited.truncated).toBe(true);
+    expect(Buffer.byteLength(limited.content, "utf8")).toBeLessThanOrEqual(1_000_000);
+    expect(limited.content).not.toContain("\uFFFD");
   });
 });

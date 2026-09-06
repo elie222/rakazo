@@ -19,15 +19,16 @@ export function messagingChannelPrivacyBlock(): string {
   ].join("\n");
 }
 
+export function messagingChannelId(sourceBlocks: MessageBlock[] | undefined): string | undefined {
+  return sourceBlocks?.find((block) => block.kind === "channel_message")?.channelId;
+}
+
 /** Channel runs are messaging runs whose waking message came from a channel. */
 export function isMessagingChannelRun(
   trigger: string,
   sourceBlocks: MessageBlock[] | undefined,
 ): boolean {
-  return (
-    trigger === "messaging" &&
-    Boolean(sourceBlocks?.some((block) => block.kind === "channel_message"))
-  );
+  return trigger === "messaging" && Boolean(messagingChannelId(sourceBlocks));
 }
 
 /**

@@ -1,18 +1,3 @@
-:root {
-  color-scheme: dark;
-  --bg: #050506;
-  --panel: #0f0f12;
-  --panel-raised: #17171c;
-  --border: #26262e;
-  --border-strong: #3a3a46;
-  --text: #f4f4f6;
-  --text-muted: #9a9aa8;
-  --accent: #2563eb;
-  --accent-hover: #3b76f2;
-  --danger: #f87171;
-  --ok: #4ade80;
-}
-
 * {
   box-sizing: border-box;
 }
@@ -24,8 +9,8 @@ body {
 
 body {
   margin: 0;
-  background: var(--bg);
-  color: var(--text);
+  background: var(--background);
+  color: var(--foreground);
   font-family:
     "Segoe UI", -apple-system, BlinkMacSystemFont, Inter, Roboto, Helvetica, Arial, sans-serif;
   font-size: 14px;
@@ -55,18 +40,22 @@ body {
   flex: none;
 }
 
+html[data-platform="darwin"] .titlebar {
+  padding-left: 88px;
+}
+
 .titlebar-name {
   font-size: 12px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--text-muted);
+  color: var(--muted-foreground);
 }
 
 .titlebar-quit {
   -webkit-app-region: no-drag;
   background: none;
   border: 0;
-  color: var(--text-muted);
+  color: var(--muted-foreground);
   font: inherit;
   font-size: 12px;
   cursor: pointer;
@@ -75,8 +64,8 @@ body {
 }
 
 .titlebar-quit:hover {
-  color: var(--text);
-  background: var(--panel-raised);
+  color: var(--foreground);
+  background: var(--accent);
 }
 
 .shell {
@@ -98,15 +87,8 @@ body {
 }
 
 .subheading {
-  margin: 0 0 24px;
-  color: var(--text-muted);
-}
-
-.card {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  padding: 20px;
+  margin: 0 0 20px;
+  color: var(--muted-foreground);
 }
 
 .choices {
@@ -120,47 +102,36 @@ body {
 .choice {
   display: flex;
   gap: 12px;
-  align-items: flex-start;
+  align-items: center;
   padding: 14px;
   border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--panel-raised);
+  border-radius: calc(var(--radius) - 2px);
+  background: var(--card);
   cursor: pointer;
 }
 
 .choice:hover {
-  border-color: var(--border-strong);
+  border-color: var(--input);
 }
 
 .choice:has(input:checked) {
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 12%, var(--panel-raised));
+  border-color: var(--primary);
+  background: var(--accent);
 }
 
 .choice:has(input:focus-visible) {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
 
 .choice input {
-  margin: 2px 0 0;
-  accent-color: var(--accent);
+  margin: 0;
+  accent-color: var(--primary);
   flex: none;
-}
-
-.choice-body {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
 }
 
 .choice-title {
   font-weight: 600;
-}
-
-.choice-note {
-  color: var(--text-muted);
-  font-size: 13px;
 }
 
 .panel {
@@ -173,55 +144,101 @@ body {
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--text-muted);
+  color: var(--muted-foreground);
   margin-bottom: 6px;
 }
 
 .field {
   width: 100%;
   padding: 10px 12px;
-  border-radius: 9px;
-  border: 1px solid var(--border-strong);
-  background: #08080a;
-  color: var(--text);
+  border-radius: calc(var(--radius) - 3px);
+  border: 1px solid var(--input);
+  background: var(--background);
+  color: var(--foreground);
   font: inherit;
   font-family: ui-monospace, SFMono-Regular, "Cascadia Mono", Menlo, monospace;
   font-size: 13px;
 }
 
 .field:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--ring);
   outline-offset: 1px;
-  border-color: var(--accent);
+  border-color: var(--ring);
 }
 
-.hint {
-  margin: 8px 0 0;
-  font-size: 12.5px;
-  color: var(--text-muted);
+.stack-phase {
+  margin: 0;
+  min-height: 20px;
+  font-size: 13px;
+  color: var(--foreground);
 }
 
-.hint code {
-  background: var(--panel-raised);
+.stack-phase[data-tone="error"] {
+  color: var(--destructive);
+}
+
+.stack-phase[data-tone="ok"] {
+  color: var(--success);
+}
+
+.stack-output {
+  margin: 10px 0 0;
+  max-height: 160px;
+  overflow: auto;
+  padding: 10px 12px;
+  border-radius: calc(var(--radius) - 3px);
   border: 1px solid var(--border);
-  border-radius: 5px;
-  padding: 1px 5px;
+  background: var(--background);
+  color: var(--muted-foreground);
+  font-family: ui-monospace, SFMono-Regular, "Cascadia Mono", Menlo, monospace;
   font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.stack-help {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin-top: 10px;
+}
+
+.link {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  font-size: 13px;
+  color: var(--link);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.link:hover {
+  color: var(--foreground);
+}
+
+.link:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: 3px;
 }
 
 .status {
   margin: 14px 0 0;
   min-height: 20px;
   font-size: 13px;
-  color: var(--text-muted);
+  color: var(--muted-foreground);
 }
 
 .status[data-tone="ok"] {
-  color: var(--ok);
+  color: var(--success);
 }
 
 .status[data-tone="error"] {
-  color: var(--danger);
+  color: var(--destructive);
 }
 
 .actions {
@@ -235,7 +252,7 @@ body {
   font: inherit;
   font-weight: 600;
   padding: 9px 18px;
-  border-radius: 9px;
+  border-radius: calc(var(--radius) - 3px);
   cursor: pointer;
   border: 1px solid transparent;
 }
@@ -246,32 +263,30 @@ body {
 }
 
 .button:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
 
 .button-primary {
-  background: var(--accent);
-  color: #fff;
+  background: var(--primary);
+  color: var(--primary-foreground);
 }
 
 .button-primary:hover:not(:disabled) {
-  background: var(--accent-hover);
+  background: color-mix(in srgb, var(--primary) 88%, var(--foreground));
 }
 
 .button-secondary {
-  background: var(--panel-raised);
-  color: var(--text);
-  border-color: var(--border-strong);
+  background: var(--secondary);
+  color: var(--secondary-foreground);
+  border-color: var(--input);
 }
 
 .button-secondary:hover:not(:disabled) {
-  border-color: var(--text-muted);
+  border-color: var(--muted-foreground);
 }
 
-.footnote {
-  margin: 16px 0 0;
-  font-size: 12px;
-  color: var(--text-muted);
-  text-align: center;
+/* Last so it wins over the flex layouts above at equal specificity. */
+[hidden] {
+  display: none;
 }

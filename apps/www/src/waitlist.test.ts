@@ -69,6 +69,32 @@ describe("waitlist", () => {
     expect(response.status).toBe(400);
   });
 
+  it.each(["declared", "streamed"] as const)(
+    "does not wait on a hanging body cancel for %s oversize",
+    async (kind) => {
+      let cancelStarted = false;
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new Uint8Array(2_049));
+        },
+        cancel() {
+          cancelStarted = true;
+          return new Promise(() => undefined);
+        },
+      });
+      const request = new Request("https://rakazo.com/api/waitlist", {
+        method: "POST",
+        headers: kind === "declared" ? { "content-length": "2049" } : undefined,
+        body,
+        duplex: "half",
+      } as RequestInit & { duplex: "half" });
+
+      const response = await waitlistFunction.fetch(request);
+      expect(response.status).toBe(400);
+      expect(cancelStarted).toBe(true);
+    },
+  );
+
   it("silently accepts submissions that fill the bot trap", async () => {
     const request = new Request("https://rakazo.com/api/waitlist", {
       method: "POST",

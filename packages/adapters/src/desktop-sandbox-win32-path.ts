@@ -116,8 +116,11 @@ function nt(): NtFns {
  * path of the held inode.
  */
 export function pathFromDirectoryFd(fd: number): string {
+  return pathFromWindowsHandle(nt().getOsFhandle(fd) as number | bigint);
+}
+
+export function pathFromWindowsHandle(handle: number | bigint): string {
   const api = nt();
-  const handle = api.getOsFhandle(fd) as number | bigint;
   if (handle === -1n || handle === -1) escapeWorkspace();
 
   const flags = 0; // VOLUME_NAME_DOS

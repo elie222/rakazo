@@ -7,7 +7,7 @@ import { captureScreenshot, completeOnboarding, signup } from "./helpers";
  * navigation from account settings, layout, and both action lists — renders
  * exactly as it would against a live deployment.
  */
-test("messaging settings show linked chat apps, channels, and connections", async ({
+test("Korean messaging settings show linked chat apps, channels, and connections", async ({
   page,
 }, testInfo) => {
   await page.route("**/rpc/messaging/status", (route) =>
@@ -81,24 +81,29 @@ test("messaging settings show linked chat apps, channels, and connections", asyn
 
   await page.getByRole("button", { name: new RegExp(userName) }).click();
   await page.getByRole("button", { name: "Settings" }).click();
-  await expect(page.getByRole("heading", { name: "Messaging" })).toBeVisible();
-  await page.getByRole("button", { name: "Manage messaging settings" }).click();
+  const settings = page.getByTestId("user-settings");
+  await settings.getByTestId("ui-locale-select").click();
+  await settings.getByRole("option", { name: "한국어", exact: true }).click();
+  await expect(settings.getByRole("heading", { name: "메시징", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "메시징 설정 관리" }).click();
 
   await expect(page.getByTestId("messaging-settings")).toBeVisible();
   await expect(page.getByText("iMessage · Slack · WhatsApp · Telegram")).toBeVisible();
   await expect(page.getByText("iMessage · +15551230001")).toBeVisible();
   await expect(page.getByText("→ Chief")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Unlink" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "연결 해제" })).toBeVisible();
   await expect(page.getByText("Family")).toBeVisible();
   await expect(page.getByText("Dana's Assistant")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Approve" })).toHaveCount(2);
+  await expect(page.getByRole("button", { name: "승인" })).toHaveCount(2);
 
   // Linking flow: pick a bot, request a code, read it back.
-  await page.getByLabel("Bot to link").selectOption({ index: 1 });
-  await page.getByRole("button", { name: "Link a chat app" }).click();
-  await expect(page.getByTestId("messaging-link-code")).toContainText("ABCD-2345");
-  await captureScreenshot(page, testInfo, "messaging-settings");
+  await page.getByLabel("연결할 Bot").selectOption({ index: 1 });
+  await page.getByRole("button", { name: "채팅 앱 연결" }).click();
+  await expect(page.getByTestId("messaging-link-code")).toContainText(
+    "채팅 앱에서 연결할 회선으로 ABCD-2345를 보내세요.",
+  );
+  await captureScreenshot(page, testInfo, "messaging-settings-ko");
 
-  await page.getByRole("button", { name: "Close messaging settings" }).click();
+  await page.getByRole("button", { name: "메시징 설정 닫기" }).click();
   await expect(page.getByTestId("messaging-settings")).toHaveCount(0);
 });

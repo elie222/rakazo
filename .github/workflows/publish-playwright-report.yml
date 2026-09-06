@@ -91,6 +91,7 @@ jobs:
             <<<"$artifacts")"
           if [[ "$count" == "1" ]]; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "id=$(jq -r --arg name "$ARTIFACT_NAME" '.artifacts[] | select(.name == $name and .expired == false) | .id' <<<"$artifacts")" >> "$GITHUB_OUTPUT"
           elif [[ "$count" == "0" && "$PLAYWRIGHT_JOB_RESULT" == "timed_out" ]]; then
             echo "::warning::The timed-out Playwright job ended before it uploaded an artifact. Publishing an empty gallery."
             echo "exists=false" >> "$GITHUB_OUTPUT"
@@ -100,12 +101,16 @@ jobs:
           fi
       - name: Download Playwright artifacts
         if: steps.artifact.outputs.exists == 'true'
-        uses: actions/download-artifact@v4
-        with:
-          name: playwright-artifacts-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}
-          path: .
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          run-id: ${{ github.event.workflow_run.id }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ARTIFACT_ID: ${{ steps.artifact.outputs.id }}
+        shell: bash
+        run: |
+          gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${ARTIFACT_ID}/zip" > "$RUNNER_TEMP/playwright-artifacts.zip"
+          # Keep untrusted files outside the checkout, dependencies, configuration,
+          # and generated dashboard consumed by the comment step.
+          python3 scripts/extract-playwright-artifacts.py \
+            "$RUNNER_TEMP/playwright-artifacts.zip" "$RUNNER_TEMP/playwright-artifacts"
       - name: Publish trusted Playwright screenshot gallery
         id: publish
         env:
@@ -127,6 +132,8 @@ jobs:
           PLAYWRIGHT_PR_NUMBER: ${{ steps.pull_request.outputs.number }}
           PLAYWRIGHT_REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}
           PLAYWRIGHT_PUBLISH_REPORT: ${{ github.event.workflow_run.event == 'push' }}
+          PLAYWRIGHT_REPORT_DIR: ${{ runner.temp }}/playwright-artifacts/playwright-report
+          PLAYWRIGHT_TEST_RESULTS_DIR: ${{ runner.temp }}/playwright-artifacts/apps/web/test-results
         run: bash scripts/publish-playwright-report.sh
       - name: Link screenshot gallery from pull request
         if: >-

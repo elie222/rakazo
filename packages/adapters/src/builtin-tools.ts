@@ -1,4 +1,11 @@
 import type { ConnectorTool } from "@rakazo/adapter-kit";
+import {
+  BotSecretDestination,
+  BotSecretName,
+  SecretAskPurpose,
+  SecretHttpRequest,
+} from "@rakazo/contracts";
+import { z } from "zod";
 
 export const DELEGATION_TOOL_NAMES = new Set([
   "run_subagent",
@@ -160,18 +167,57 @@ export const builtinAgentTools: ConnectorTool[] = [
     },
   },
   {
+    name: "message_user",
+    description:
+      "Post a short progress update to the user in this chat immediately. Does not end your turn. Use sparingly during long work for high-signal beats (what you are checking, then a result). Do not dump tool logs, thinking, or a play-by-play of every call. Put the final answer in your normal reply.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        message: {
+          type: "string",
+          maxLength: 500,
+          description: "Short user-visible update.",
+        },
+      },
+      required: ["message"],
+    },
+  },
+  {
     name: "request_secret",
     description:
-      "Collect a one-shot OTP, password, or API key in a masked field that never reaches the chat transcript or model. For website logins, CAPTCHA, passkeys, or anything that needs the live desktop, call request_takeover instead.",
+      "Collect a credential in a masked field. Supply credential to save a named API credential for this bot and user at one HTTPS origin, or connectionId for a one-use connector code. Existing named credentials are reused unless replace is true. For website logins, CAPTCHA, passkeys, or anything that needs the live desktop, call request_takeover instead.",
     inputSchema: {
       type: "object",
       properties: {
         label: { type: "string" },
-        purpose: { type: "string", enum: ["otp", "password", "api_key"] },
+        purpose: { type: "string", enum: SecretAskPurpose.options },
         connectionId: { type: "string" },
+        credential: z.toJSONSchema(BotSecretDestination),
+        replace: {
+          type: "boolean",
+          description: "Ask the user to replace an existing credential value.",
+        },
       },
       required: ["label", "purpose"],
     },
+  },
+  {
+    name: "list_secrets",
+    description:
+      "List saved credential names and destinations available to this bot and user. Values are never returned.",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "secret_request",
+    description:
+      "Make an authenticated HTTPS request using a saved credential name. The backend injects authentication only at its saved origin. Redirects are rejected; response echoes of the credential are redacted. Use normal request URLs and bodies without secret placeholders.",
+    inputSchema: z.toJSONSchema(SecretHttpRequest, { io: "input" }),
+  },
+  {
+    name: "forget_secret",
+    description:
+      "Remove a saved credential for this bot and user, preventing future requests from using it.",
+    inputSchema: z.toJSONSchema(z.object({ name: BotSecretName })),
   },
   {
     name: "render_plot",
@@ -309,6 +355,71 @@ export const builtinAgentTools: ConnectorTool[] = [
     },
     readOnly: true,
   },
+  {
+    name: "cloud_agent_launch",
+    description:
+      "Launch a remote cloud coding agent on a connected repository. Returns immediately with a tracking id and status; the agent link appears when launched. Opens a PR when openPr is true. Not the bot computer.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        prompt: { type: "string", description: "Task for the remote agent." },
+        repository: {
+          type: "string",
+          description: "Git repository URL (optional for no-repo agents).",
+        },
+        openPr: {
+          type: "boolean",
+          description: "Open a pull request when the run finishes.",
+        },
+        images: {
+          type: "array",
+          description: "Optional images (data+mimeType or url).",
+          items: { type: "object" },
+        },
+      },
+      required: ["prompt"],
+    },
+  },
+  {
+    name: "cloud_agent_status",
+    description: "Get status, branch, and PR url for a cloud coding agent.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "Cloud agent id from launch." },
+      },
+      required: ["id"],
+    },
+    readOnly: true,
+  },
+  {
+    name: "cloud_agent_reply",
+    description: "Send a follow-up prompt to an existing cloud coding agent.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "Cloud agent id." },
+        prompt: { type: "string", description: "Follow-up instruction." },
+        images: {
+          type: "array",
+          description: "Optional images (data+mimeType or url).",
+          items: { type: "object" },
+        },
+      },
+      required: ["id", "prompt"],
+    },
+  },
+  {
+    name: "cloud_agent_cancel",
+    description: "Cancel the active run on a cloud coding agent.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "Cloud agent id." },
+      },
+      required: ["id"],
+    },
+  },
   // Semantic-memory tools: exposed by selectMemoryTools() only when a
   // A Space memory provider is configured (which hides `remember`).
   {
@@ -412,7 +523,8 @@ export const builtinAgentTools: ConnectorTool[] = [
         name: { type: "string", description: "Short label shown in Routines." },
         prompt: {
           type: "string",
-          description: "What the bot should do when the schedule fires.",
+          description:
+            "Concrete steps for when the schedule fires: name the connected plugin tools to call (e.g. GITHUB_LIST_RELEASES for owner/repo), what to extract, and how to report. Prefer plugin tools over computer browser or web search for app data.",
         },
         cron: { type: "string", description: "5-field cron for repeating schedules." },
         every: { type: "number", description: "Repeat interval amount for repeating schedules." },

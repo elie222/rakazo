@@ -1,3 +1,5 @@
+import { dateLocaleForUi } from "./i18n";
+
 const DAY_MS = 86_400_000;
 
 export function filterBots<T extends { name: string; title: string; preview: string }>(
@@ -41,9 +43,9 @@ export function formatThreadTime(iso: string, now = new Date()) {
     return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
   }
   if (dayDiff < 7) {
-    return date.toLocaleDateString("en-US", { weekday: "long" });
+    return date.toLocaleDateString(dateLocaleForUi(), { weekday: "long" });
   }
-  return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  return date.toLocaleDateString(dateLocaleForUi(), { month: "short", day: "numeric" });
 }
 
 function pad(value: number) {

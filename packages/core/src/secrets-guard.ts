@@ -19,18 +19,19 @@ const DEDICATED_SECRET_PLACEHOLDERS = new Set([
 
 export function isDevSecretAllowed(env: NodeJS.ProcessEnv = process.env): boolean {
   if (env.RAKAZO_ALLOW_DEV_SECRETS === "1") return true;
-  if (env.VITEST) return true;
+  if (env.VITEST === "true" || env.VITEST === "1") return true;
   const nodeEnv = env.NODE_ENV;
   return nodeEnv === "development" || nodeEnv === "test";
 }
 
 export function resolveAuthSecret(env: NodeJS.ProcessEnv = process.env): string {
   const value = env.BETTER_AUTH_SECRET;
-  if (!value) {
+  if (value === undefined || !value.trim()) {
     if (isDevSecretAllowed(env)) return DEV_AUTH_SECRET_PLACEHOLDER;
     throw new Error(RUNTIME_SECRETS_ERROR);
   }
-  if (!isDevSecretAllowed(env) && value === DEV_AUTH_SECRET_PLACEHOLDER) {
+  const normalized = value.trim();
+  if (!isDevSecretAllowed(env) && normalized === DEV_AUTH_SECRET_PLACEHOLDER) {
     throw new Error(RUNTIME_SECRETS_ERROR);
   }
   return value;
@@ -38,11 +39,12 @@ export function resolveAuthSecret(env: NodeJS.ProcessEnv = process.env): string 
 
 export function resolveEncryptionKey(env: NodeJS.ProcessEnv = process.env): string {
   const value = env.ENCRYPTION_KEY;
-  if (!value) {
+  if (value === undefined || !value.trim()) {
     if (isDevSecretAllowed(env)) return DEV_ENCRYPTION_KEY_PLACEHOLDER;
     throw new Error(RUNTIME_SECRETS_ERROR);
   }
-  if (!isDevSecretAllowed(env) && value === DEV_ENCRYPTION_KEY_PLACEHOLDER) {
+  const normalized = value.trim();
+  if (!isDevSecretAllowed(env) && normalized === DEV_ENCRYPTION_KEY_PLACEHOLDER) {
     throw new Error(RUNTIME_SECRETS_ERROR);
   }
   return value;

@@ -279,13 +279,14 @@ test("sign-in, spawn, and stop work in the shell", async ({ page }, testInfo) =>
     .click();
   await composer.fill("keep working until I stop you");
   await page.keyboard.press("Enter");
-  await expect(page.getByText("still working").first()).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole("button", { name: "Stop", exact: true })).toBeVisible({
+    timeout: 30_000,
+  });
   await expect(page.getByTestId("composer-steering-status")).toHaveCount(0);
   await expect(page.getByText("Messages sent now guide the next turn.")).toHaveCount(0);
   await expect(page.getByText(/^Steer /)).toHaveCount(0);
   await expect(composer).toHaveAttribute("placeholder", "Message Chief");
   await expect(page.getByRole("button", { name: "Send", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Stop", exact: true })).toBeVisible();
   await composer.fill("Use the newer report and keep the answer short.");
   await page.keyboard.press("Tab");
   await expect(page.getByRole("button", { name: "Send", exact: true })).toBeFocused();

@@ -62,6 +62,175 @@ describe("MCP transport seam", () => {
     await expect(session.callTool("echo")).rejects.toThrow("not connected");
   });
 
+  it("preserves SDK session and protocol headers after stateful initialization", async () => {
+    const requests: Request[] = [];
+    const session = new McpSession();
+    try {
+      await session.connectRemote({
+        url: "https://mcp.example.test/mcp",
+        network: {
+          ...TEST_NETWORK,
+          fetch: vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+            const request = new Request(input, init);
+            requests.push(request);
+            const message = request.method === "POST" ? await request.json() : undefined;
+            if (message?.method === "initialize") {
+              return Response.json(
+                {
+                  jsonrpc: "2.0",
+                  id: message.id,
+                  result: {
+                    protocolVersion: "2025-11-25",
+                    capabilities: { tools: {} },
+                    serverInfo: { name: "fake-stateful-server", version: "1" },
+                  },
+                },
+                { headers: { "Mcp-Session-Id": "fake-session" } },
+              );
+            }
+            if (
+              request.headers.get("mcp-session-id") !== "fake-session" ||
+              request.headers.get("mcp-protocol-version") !== "2025-11-25"
+            ) {
+              return new Response(null, { status: 400 });
+            }
+            if (request.method === "GET") return new Response(null, { status: 405 });
+            if (message?.method === "tools/list") {
+              return Response.json({ jsonrpc: "2.0", id: message.id, result: { tools: [] } });
+            }
+            return new Response(null, { status: 202 });
+          }),
+        },
+      });
+
+      await expect(session.listTools()).resolves.toEqual({ tools: [] });
+      expect(requests[0]?.headers.has("mcp-session-id")).toBe(false);
+      expect(requests.length).toBeGreaterThanOrEqual(3);
+      expect(
+        requests
+          .slice(1)
+          .every((request) => request.headers.get("mcp-session-id") === "fake-session"),
+      ).toBe(true);
+    } finally {
+      await session.close();
+    }
+  });
+
+  it.each([
+    ["https://mcp.example.test/mcp", "http://localhost:8123"],
+    ["https://mcp.example.test/mcp", "http://127.0.0.1:8123"],
+    ["https://mcp.example.test/mcp", "http://[::1]:8123"],
+    ["https://localhost:8123/mcp", "http://localhost:8123"],
+    ["http://localhost:8123/mcp", "http://localhost:8124"],
+    ["http://localhost:8123/mcp", "http://127.0.0.1:8123"],
+    ["http://[::1]:8123/mcp", "http://[::1]:8124"],
+  ])("does not extend the local exception from %s to %s", async (resource, origin) => {
+    const fetchImpl = vi.fn();
+    const safeFetch = secureFetch(
+      new URL(resource),
+      { allowHttpLocalhost: true, allowLocalHttpCredentials: true },
+      {},
+      { fetch: fetchImpl, ...TEST_NETWORK },
+    );
+    try {
+      await expect(safeFetch(`${origin}/.well-known/oauth-protected-resource`)).rejects.toThrow(
+        "HTTPS",
+      );
+      await expect(
+        safeFetch(`${origin}/token`, { method: "POST", body: "fake-token-body" }),
+      ).rejects.toThrow("HTTPS");
+      expect(fetchImpl).not.toHaveBeenCalled();
+    } finally {
+      await safeFetch.close();
+    }
+  });
+
+  it.each(["localhost", "127.0.0.1", "[::1]"])(
+    "allows explicitly configured HTTP %s discovery and token traffic on the same origin",
+    async (host) => {
+      const origin = `http://${host}:8123`;
+      const fetchImpl = vi.fn(async () => Response.json({ ok: true }));
+      const resolveHostname = vi.fn();
+      const safeFetch = secureFetch(
+        new URL(`${origin}/mcp`),
+        { allowHttpLocalhost: true },
+        {},
+        { fetch: fetchImpl, resolveHostname },
+      );
+      try {
+        await expect(
+          safeFetch(`${origin}/.well-known/oauth-protected-resource`),
+        ).resolves.toHaveProperty("ok", true);
+        await expect(
+          safeFetch(`${origin}/token`, { method: "POST", body: "fake-token-body" }),
+        ).resolves.toHaveProperty("ok", true);
+        expect(fetchImpl).toHaveBeenCalledTimes(2);
+        expect(resolveHostname).not.toHaveBeenCalled();
+      } finally {
+        await safeFetch.close();
+      }
+    },
+  );
+
+  it.each(["https://localhost:8123", "https://127.0.0.1:8123", "https://private.example.test"])(
+    "applies remote network policy to discovery and token traffic at %s",
+    async (origin) => {
+      const fetchImpl = vi.fn();
+      const safeFetch = secureFetch(
+        new URL("http://localhost:8123/mcp"),
+        { allowHttpLocalhost: true },
+        {},
+        {
+          fetch: fetchImpl,
+          resolveHostname: async () => [{ address: "10.0.0.1", family: 4 }],
+        },
+      );
+      try {
+        await expect(safeFetch(`${origin}/.well-known/oauth-protected-resource`)).rejects.toThrow(
+          "private",
+        );
+        await expect(
+          safeFetch(`${origin}/token`, { method: "POST", body: "fake-token-body" }),
+        ).rejects.toThrow("private");
+        expect(fetchImpl).not.toHaveBeenCalled();
+      } finally {
+        await safeFetch.close();
+      }
+    },
+  );
+
+  it("keeps SDK protocol headers on the resource origin and strips them on other origins", async () => {
+    const safeFetch = secureFetch(
+      new URL("https://mcp.example.test/mcp"),
+      {},
+      {},
+      {
+        ...TEST_NETWORK,
+        fetch: vi.fn(async (_input: string | URL | Request, init?: RequestInit) =>
+          Response.json(Object.fromEntries(new Headers(init?.headers))),
+        ),
+      },
+    );
+    const headers = {
+      "mcp-session-id": "fake-session",
+      "mcp-protocol-version": "2025-11-25",
+      "last-event-id": "fake-event",
+    };
+    try {
+      await expect(
+        (await safeFetch("https://mcp.example.test/mcp", { headers })).json(),
+      ).resolves.toEqual(headers);
+      await expect(
+        (await safeFetch("https://auth.example.test/discovery", { headers })).json(),
+      ).resolves.toEqual({});
+      await expect(
+        (await safeFetch("https://mcp.example.test:8443/discovery", { headers })).json(),
+      ).resolves.toEqual({});
+    } finally {
+      await safeFetch.close();
+    }
+  });
+
   it("lets the SDK refresh a rejected token, persist rotation, and retry the MCP request", async () => {
     const resourceHeaders: string[] = [];
     const persisted: unknown[] = [];
@@ -360,6 +529,103 @@ describe("MCP transport seam", () => {
 
     expect(seen.authorization).toBe("Bearer stored");
     expect(seen["x-api-key"]).toBe("stored-key");
+  });
+
+  it("drops request headers outside the configured allowlist", async () => {
+    let seen: Record<string, string> = {};
+    const safeFetch = secureFetch(
+      new URL("https://mcp.example.test/mcp"),
+      {},
+      { allowedHeaders: ["accept"] },
+      {
+        resolveHostname: TEST_NETWORK.resolveHostname,
+        fetch: vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+          const request = input instanceof Request ? input : new Request(input, init);
+          seen = Object.fromEntries(request.headers.entries());
+          return Response.json({ ok: true });
+        }),
+      },
+    );
+
+    await safeFetch("https://mcp.example.test/mcp", {
+      headers: { Accept: "application/json", "X-Untrusted": "drop-me" },
+    });
+
+    expect(seen.accept).toBe("application/json");
+    expect(seen["x-untrusted"]).toBeUndefined();
+  });
+
+  it("honours init header replacement for Request inputs", async () => {
+    let seen: Record<string, string> = {};
+    const safeFetch = secureFetch(
+      new URL("https://mcp.example.test/mcp"),
+      {},
+      {},
+      {
+        resolveHostname: TEST_NETWORK.resolveHostname,
+        fetch: vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+          const request = input instanceof Request ? input : new Request(input, init);
+          seen = Object.fromEntries(request.headers.entries());
+          return Response.json({ ok: true });
+        }),
+      },
+    );
+    const request = new Request("https://mcp.example.test/mcp", {
+      headers: { Authorization: "Bearer stale", "Content-Type": "application/json" },
+    });
+
+    await safeFetch(request, { headers: { Accept: "application/json" } });
+
+    expect(seen.accept).toBe("application/json");
+    expect(seen.authorization).toBeUndefined();
+    expect(seen["content-type"]).toBeUndefined();
+  });
+
+  it("does not forward configured resource credentials to another origin", async () => {
+    let seen: Record<string, string> = {};
+    const safeFetch = secureFetch(
+      new URL("https://mcp.example.test/mcp"),
+      {},
+      { headers: { Authorization: "Bearer stored", "X-Api-Key": "stored-key" } },
+      {
+        resolveHostname: TEST_NETWORK.resolveHostname,
+        fetch: vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+          const request = input instanceof Request ? input : new Request(input, init);
+          seen = Object.fromEntries(request.headers.entries());
+          return Response.json({ ok: true });
+        }),
+      },
+    );
+
+    await safeFetch("https://auth.example.test/token", {
+      headers: { Authorization: "Bearer stored", "X-Api-Key": "stored-key" },
+    });
+
+    expect(seen.authorization).toBeUndefined();
+    expect(seen["x-api-key"]).toBeUndefined();
+  });
+
+  it("does not forward configured credential values under another header name", async () => {
+    let seen: Record<string, string> = {};
+    const safeFetch = secureFetch(
+      new URL("https://mcp.example.test/mcp"),
+      {},
+      { headers: { "X-Api-Key": "stored-key" } },
+      {
+        resolveHostname: TEST_NETWORK.resolveHostname,
+        fetch: vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+          const request = input instanceof Request ? input : new Request(input, init);
+          seen = Object.fromEntries(request.headers.entries());
+          return Response.json({ ok: true });
+        }),
+      },
+    );
+
+    await safeFetch("https://auth.example.test/token", {
+      headers: { Authorization: "stored-key" },
+    });
+
+    expect(seen.authorization).toBeUndefined();
   });
 
   it("never retries a failed write against the endpoint origin", async () => {

@@ -15,6 +15,7 @@ import {
   normalizeMessagingLinkCode,
   redeemMessagingLinkCode,
 } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
 
 export interface MessagingInboundDeps {
   prisma: PrismaClient;
@@ -140,10 +141,10 @@ async function handleDirectEvent(
     // clear on their own after a short display window or when the reply
     // arrives, so long runs simply outlive them.
     void deps.typing?.(event.threadId).catch((error) => {
-      console.error("messaging typing indicator error", error);
+      getLogger().error("messaging typing indicator error", error);
     });
     await deps.jobs.enqueue(runContinueJob(sent.runId)).catch((error) => {
-      console.error("messaging inbound run enqueue error", error);
+      getLogger().error("messaging inbound run enqueue error", error);
     });
   }
 }
@@ -310,7 +311,7 @@ async function writeConfirmation(
 
 async function enqueueDeliverJob(deps: MessagingInboundDeps): Promise<void> {
   await deps.jobs.enqueue(messagingDeliverJob()).catch((error) => {
-    console.error("messaging confirmation enqueue error", error);
+    getLogger().error("messaging confirmation enqueue error", error);
   });
 }
 
@@ -328,7 +329,7 @@ async function enqueueConfirmation(
     skipDuplicates: true,
   });
   await deps.jobs.enqueue(messagingDeliverJob()).catch((error) => {
-    console.error("messaging confirmation enqueue error", error);
+    getLogger().error("messaging confirmation enqueue error", error);
   });
 }
 
@@ -423,7 +424,7 @@ async function handleChannelEvent(
       data: { introPostedAt: new Date() },
     });
     await deps.jobs.enqueue(messagingDeliverJob()).catch((error) => {
-      console.error("messaging intro enqueue error", error);
+      getLogger().error("messaging intro enqueue error", error);
     });
   }
 
@@ -472,7 +473,7 @@ async function handleChannelEvent(
     });
     if (sent.runId) {
       await deps.jobs.enqueue(runContinueJob(sent.runId)).catch((error) => {
-        console.error("messaging channel fan-out enqueue error", error);
+        getLogger().error("messaging channel fan-out enqueue error", error);
       });
     }
   }
@@ -515,7 +516,7 @@ async function inviteMember(
     await deps.events.notify(thread.id, note.seq).catch(() => undefined);
   }
   await deps.jobs.enqueue(messagingDeliverJob()).catch((error) => {
-    console.error("messaging invite enqueue error", error);
+    getLogger().error("messaging invite enqueue error", error);
   });
 }
 

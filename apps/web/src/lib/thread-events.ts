@@ -8,6 +8,7 @@ import type {
   ThreadSnapshot,
 } from "@rakazo/contracts";
 import {
+  cloudAgentBlockFromPayload,
   isActive,
   isRunTerminalEvent,
   mergeThreadHistory,
@@ -29,6 +30,7 @@ const runTriggers = new Set<Run["trigger"]>([
   "bot_message",
   "webhook",
   "messaging",
+  "cloud_agent",
 ]);
 
 function runFromStartedEvent(event: ProductEvent, previous: Run | undefined): Run {
@@ -84,6 +86,49 @@ export function activeThreadRuns(
   snapshot: ThreadSnapshot | null,
 ): NonNullable<ThreadSnapshot["activeRuns"]> {
   return snapshot?.activeRuns ?? (snapshot?.run ? [snapshot.run] : []);
+}
+
+/**
+ * Reflect a committed direct-message send before its follow-up snapshot arrives.
+ *
+ * threads.send returns only after the message and run are durable. Keeping that
+ * receipt prevents a transient snapshot/SSE interruption from showing a stored
+ * user bubble with no working state. A matching live run always wins, and the
+ * next durable event or refresh still supplies the authoritative status.
+ */
+export function applyThreadSendReceipt(
+  snapshot: ThreadSnapshot | null,
+  receipt: { botId: string; runId: string; taskId: string; createdAt?: string },
+  terminalRunIds: ReadonlySet<string> = new Set(),
+): ThreadSnapshot | null {
+  if (
+    !snapshot ||
+    snapshot.groupId ||
+    snapshot.botId !== receipt.botId ||
+    snapshot.run?.id === receipt.runId ||
+    terminalRunIds.has(receipt.runId)
+  ) {
+    return snapshot;
+  }
+  const currentRuns = activeThreadRuns(snapshot);
+  if (currentRuns.some((run) => isActive(run.status as RunStatus))) return snapshot;
+  const createdAt = receipt.createdAt ?? new Date().toISOString();
+  const run: Run = {
+    id: receipt.runId,
+    botId: receipt.botId,
+    threadId: snapshot.threadId,
+    taskId: receipt.taskId,
+    status: "queued",
+    trigger: "user",
+    routineId: null,
+    modelProvider: null,
+    modelId: null,
+    error: null,
+    startedAt: null,
+    completedAt: null,
+    createdAt,
+  };
+  return { ...snapshot, run, activeRuns: [run] };
 }
 
 /** Reason the newest run stopped, until the reader dismisses that run's failure. */
@@ -215,6 +260,7 @@ export function isThreadSnapshotEvent(event: ProductEvent): boolean {
     event.type === "thread.cleared" ||
     event.type === "thread.progress" ||
     event.type === "thread.subagent" ||
+    event.type === "thread.cloud_agent" ||
     event.type === "agent.tool.called" ||
     event.type === "thread.message.created" ||
     event.type === "thread.message.updated" ||
@@ -392,6 +438,39 @@ export function reduceThreadSnapshot(
     }
     return { ...prev, cursor: event.seq, messages: [...without, next, ...kept] };
   }
+
+  if (event.type === "thread.cloud_agent") {
+    const agentId = String(event.payload.agentId ?? "");
+    const messageId = String(event.payload.messageId ?? "");
+    const block = cloudAgentBlockFromPayload(event.payload ?? {});
+    return {
+      ...prev,
+      cursor: event.seq,
+      messages: prev.messages.map((message) => {
+        if (messageId && message.id === messageId) {
+          return {
+            ...message,
+            blocks: message.blocks.map((existing) =>
+              existing.kind === "cloud_agent" && existing.agentId === agentId ? block : existing,
+            ),
+          };
+        }
+        if (
+          message.blocks.some(
+            (existing) => existing.kind === "cloud_agent" && existing.agentId === agentId,
+          )
+        ) {
+          return {
+            ...message,
+            blocks: message.blocks.map((existing) =>
+              existing.kind === "cloud_agent" && existing.agentId === agentId ? block : existing,
+            ),
+          };
+        }
+        return message;
+      }),
+    };
+  }
   if (event.type === "thread.message.reaction") {
     const messageId = String(event.payload.messageId ?? "");
     return {
@@ -476,6 +555,13 @@ export function computerPanelAutoUsesBoot(
   return action === "boot" || action === "recover-screen";
 }
 
+export function computerPanelNeedsMaintenance(
+  state: ComputerStatus["state"] | undefined,
+  booting: boolean,
+): boolean {
+  return !booting && (state === "error" || state === "stopped");
+}
+
 export function reduceComputerStatus(
   prev: ComputerStatus | null,
   event: ProductEvent,
@@ -483,7 +569,19 @@ export function reduceComputerStatus(
   if (!prev) return prev;
   if (!isComputerStatusEvent(event)) return prev;
   if (event.type === "computer.takeover.requested") {
-    return prev.busyBotName === null ? prev : { ...prev, busyBotName: null };
+    const retainedControl = event.payload.retainedControl === true;
+    const next = {
+      ...prev,
+      busyBotName: null,
+      takeoverRequested: true,
+      ...(retainedControl ? {} : { controlHolder: "none" as const, controlBotId: null }),
+    };
+    return prev.busyBotName === next.busyBotName &&
+      prev.takeoverRequested === next.takeoverRequested &&
+      prev.controlHolder === next.controlHolder &&
+      prev.controlBotId === next.controlBotId
+      ? prev
+      : next;
   }
   if (event.type === "computer.takeover.granted") {
     const takeoverRequested = event.payload.takeoverRequested === true;

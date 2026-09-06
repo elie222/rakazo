@@ -10,6 +10,7 @@ import type {
   VoiceVerifyResult,
 } from "@rakazo/adapter-kit";
 import {
+  readVoiceAudio,
   readVoiceJson,
   requireOk,
   speechUploadName,
@@ -74,6 +75,7 @@ export class OpenAIVoiceProvider implements VoiceProvider {
   }
 
   async synthesize(request: VoiceSynthesizeRequest, context: AdapterContext): Promise<SpeechClip> {
+    const signal = voiceDeadline(request.signal ?? context.signal, 60_000);
     const res = await fetch(`${API}/audio/speech`, {
       method: "POST",
       headers: {
@@ -86,10 +88,10 @@ export class OpenAIVoiceProvider implements VoiceProvider {
         input: request.text,
         response_format: "mp3",
       }),
-      signal: voiceDeadline(request.signal ?? context.signal, 60_000),
+      signal,
     });
     await requireOk(res, "OpenAI", "speaking");
-    return { bytes: new Uint8Array(await res.arrayBuffer()), mimeType: "audio/mpeg" };
+    return { bytes: await readVoiceAudio(res, signal), mimeType: "audio/mpeg" };
   }
 
   async transcribe(
@@ -109,7 +111,7 @@ export class OpenAIVoiceProvider implements VoiceProvider {
       body: form,
       signal: voiceDeadline(request.signal ?? context.signal, 60_000),
     });
-    const body = await readVoiceJson(res);
+    const body = await readVoiceJson(res, { requireValid: res.ok });
     if (!res.ok) throw new Error(voiceHttpError(res.status, "OpenAI", "transcribing", body));
     return { text: String((body as { text?: unknown } | null)?.text ?? "").trim() };
   }

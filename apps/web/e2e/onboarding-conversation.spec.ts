@@ -26,14 +26,42 @@ test("focus choice suggests apps and preserves a completed connection", async ({
   await expect(page.getByPlaceholder("Message Chief")).toBeVisible();
   await expect(page.getByText("Slack", { exact: true })).toBeVisible();
   await expect(page.getByText("Gmail", { exact: true })).toBeVisible();
+  const connectionCards = page.getByRole("group", { name: / connection$/ });
+  await expect(connectionCards).toHaveCount(3);
+  const cardBoxes = await connectionCards.evaluateAll((cards) =>
+    cards.map((card) => {
+      const { bottom, top } = card.getBoundingClientRect();
+      return { bottom, top };
+    }),
+  );
+  expect(cardBoxes[1].top - cardBoxes[0].bottom).toBeGreaterThanOrEqual(8);
+  expect(cardBoxes[2].top - cardBoxes[1].bottom).toBeGreaterThanOrEqual(8);
   await page
     .getByTestId("transcript")
     .getByText("Hit those three and I’ll start pulling the picture.")
     .scrollIntoViewIfNeeded();
   await page.mouse.move(1, 1);
   await captureScreenshot(page, testInfo, "02-app-suggestions");
+  const authorizeButton = slackCard(page).getByRole("button", { name: "Authorize" });
+  const restingBackground = await authorizeButton.evaluate(
+    (button) => getComputedStyle(button).backgroundColor,
+  );
+  const accentBackground = await authorizeButton.evaluate((button) => {
+    const probe = document.createElement("span");
+    probe.style.backgroundColor = "var(--accent)";
+    button.append(probe);
+    const backgroundColor = getComputedStyle(probe).backgroundColor;
+    probe.remove();
+    return backgroundColor;
+  });
+  expect(accentBackground).not.toBe(restingBackground);
+  await authorizeButton.hover();
+  await expect
+    .poll(() => authorizeButton.evaluate((button) => getComputedStyle(button).backgroundColor))
+    .toBe(accentBackground);
+  await captureScreenshot(page, testInfo, "02-app-suggestions-authorize-hover");
 
-  await slackCard(page).getByRole("button", { name: "Authorize" }).click();
+  await authorizeButton.click();
   await expect(slackCard(page).getByText("Connected", { exact: true })).toBeVisible();
   await expect(slackCard(page).getByText("Connected", { exact: true })).toHaveCSS("opacity", "1");
   await expect

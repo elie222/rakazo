@@ -23,6 +23,7 @@ apps/desktop/out
 apps/desktop/e2e/screenshots
 apps/mobile/.expo
 apps/mobile/dist
+apps/mobile/android
 apps/mobile/ios
 packages/db/src/generated
 infra/sandboxes/supervisor/dist

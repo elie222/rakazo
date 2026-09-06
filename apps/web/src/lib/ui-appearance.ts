@@ -29,7 +29,7 @@ export function applyResolvedAppearance(
   if (typeof document === "undefined") return;
   const meta = document.querySelector(THEME_COLOR_META);
   if (meta) {
-    meta.setAttribute("content", tokensForAppearance(appearance).page);
+    meta.setAttribute("content", tokensForAppearance(appearance).background);
   }
 }
 

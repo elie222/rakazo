@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   browserWindowOptions,
   DEFAULT_WARM_WINDOW_TTL_MS,
+  developmentIconFile,
   setupWindowOptions,
   warmWindowTtlMs,
 } from "./window-options.js";
@@ -55,4 +56,26 @@ describe("warm window lifetime", () => {
       expect(warmWindowTtlMs(value)).toBe(DEFAULT_WARM_WINDOW_TTL_MS);
     },
   );
+});
+
+describe("development icon", () => {
+  it("uses the squircle asset on macOS because the dock draws the file unmasked", () => {
+    expect(developmentIconFile("darwin")).toBe("icon-macos.png");
+  });
+
+  it("keeps the full-bleed icon elsewhere", () => {
+    for (const platform of ["win32", "linux"] as const) {
+      expect(developmentIconFile(platform)).toBe("icon.png");
+    }
+  });
+});
+
+describe("window background", () => {
+  it("matches the shared dark background token so startup chrome does not flash", async () => {
+    const { darkTokens } = await import("@rakazo/ui-tokens");
+    for (const platform of ["darwin", "win32", "linux"] as const) {
+      expect(browserWindowOptions(platform).backgroundColor).toBe(darkTokens.background);
+      expect(setupWindowOptions(platform).backgroundColor).toBe(darkTokens.background);
+    }
+  });
 });

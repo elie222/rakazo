@@ -1,6 +1,7 @@
 import { JSDOM } from "jsdom";
 import { describe, expect, it } from "vitest";
 import {
+  buildPlotParts,
   CHART_CATALOG,
   PLOT_TOOL_GUIDE,
   type PlotSpec,
@@ -45,6 +46,99 @@ describe("render_plot", () => {
 
     expect(() => renderPlotSpecToSvg(spec, penguinish, dom())).not.toThrow();
     expect(color.legend).toBe(true);
+  });
+
+  const xlink = "http://www.w3.org/1999/xlink";
+  const linkedDot = { type: "dot", options: { x: "x", y: "y", href: "url" } };
+
+  function expectInertLinks(element: Element) {
+    const links = Array.from(element.querySelectorAll("a"));
+    expect(links.length).toBeGreaterThan(0);
+    for (const link of links) {
+      expect(link.hasAttribute("href")).toBe(false);
+      expect(link.hasAttributeNS(xlink, "href")).toBe(false);
+      expect(link.childElementCount).toBeGreaterThan(0);
+    }
+  }
+
+  it.each([
+    "javascript:void(0)",
+    "JaVaScRiPt:void(0)",
+    " \u0000\u001fjavascript:void(0)",
+    "java\tscr\ript:\nvoid(0)",
+    "javascript:%76oid(0)",
+    "data:text/html,<script>void(0)</script>",
+    "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg'/>",
+    "vbscript:msgbox(1)",
+    "file:///example.txt",
+    "blob:https://example.test/chart",
+    "custom:launch",
+    "https://[invalid",
+  ])("makes unsafe or malformed chart links inert: %j", (url) => {
+    const spec = { marks: [linkedDot] };
+    const data = [{ x: 1, y: 2, url }];
+    const { plotted } = buildPlotParts(spec, data, dom());
+    expectInertLinks(plotted);
+    expect(plotted.querySelectorAll("circle")).toHaveLength(1);
+    const svg = renderPlotSpecToSvg(spec, data, dom());
+    expectInertLinks(
+      new JSDOM(svg, { contentType: "image/svg+xml" }).window.document.documentElement,
+    );
+    expect(data).toEqual([{ x: 1, y: 2, url }]);
+    expect(linkedDot.options.href).toBe("url");
+  });
+
+  it.each([
+    "https://example.test/chart?a=1&b=2",
+    "HTTP://example.test/chart",
+    "//example.test/chart",
+    "/charts/1",
+    "../charts/1",
+    "?chart=1",
+    "#details",
+    "mailto:chart@example.test",
+    "tel:+15555550123",
+    // DOM attributes are not entity-decoded or percent-decoded into a scheme.
+    "java&#x73;cript:void(0)",
+    "javascript%3Avoid(0)",
+    "java%73cript:void(0)",
+  ])("preserves supported links without changing URL interpretation: %j", (url) => {
+    const spec = { marks: [linkedDot] };
+    const data = [{ x: 1, y: 2, url }];
+    const { plotted } = buildPlotParts(spec, data, dom());
+    expect(plotted.querySelector("a")?.getAttributeNS(xlink, "href")).toBe(url);
+    const svg = renderPlotSpecToSvg(spec, data, dom());
+    const parsed = new JSDOM(svg, { contentType: "image/svg+xml" }).window.document;
+    const link = parsed.querySelector("a");
+    expect(link?.getAttributeNS(xlink, "href") ?? link?.getAttribute("href")).toBe(url);
+  });
+
+  it("checks resolved links from nested, per-mark, array, scaled, and transformed channels", () => {
+    const url = "javascript:void(0)";
+    const data = [{ x: 1, y: 2, url }];
+    const specs: PlotSpec[] = [
+      { data, marks: [linkedDot] },
+      { marks: [{ ...linkedDot, data }] },
+      { data, marks: [{ type: "dot", options: { x: "x", y: "y", href: [url] } }] },
+      {
+        data,
+        marks: [{ type: "dot", options: { x: "x", y: "y", href: { value: "url", scale: null } } }],
+      },
+      {
+        data,
+        color: { type: "ordinal", domain: [1], range: [url] },
+        marks: [{ type: "dot", options: { x: "x", y: "y", href: { value: "x", scale: "color" } } }],
+      },
+      {
+        data,
+        marks: [
+          { ...linkedDot, transform: { name: "groupX", outputs: { y: "sum", href: "first" } } },
+        ],
+      },
+    ];
+    for (const spec of specs) {
+      expectInertLinks(buildPlotParts(spec, undefined, dom()).plotted);
+    }
   });
 
   it("supports transforms: binned histogram and grouped stacked bars", () => {

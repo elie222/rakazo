@@ -837,6 +837,81 @@ describeJourneys("required product journeys", () => {
     ).toBe(releaseEventsBefore + 1);
   });
 
+  it("4e: concurrent Team takeovers never return another bot's lease", async () => {
+    const cookie = await signup(
+      app,
+      `takeover-owner-race-j-${stamp}@rakazo.test`,
+      "Takeover Owner Race",
+    );
+    const writer = await rpc<Bot>(app, cookie, "bots/create", {
+      name: "Writer",
+      title: "",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+    const researcher = await rpc<Bot>(app, cookie, "bots/create", {
+      name: "Researcher",
+      title: "",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+    const analyst = await rpc<Bot>(app, cookie, "bots/create", {
+      name: "Analyst",
+      title: "",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+
+    await rpc(app, cookie, "computer/boot", { botId: writer.id });
+    const writerLease = await rpc<{ leaseId: string }>(app, cookie, "computer/takeover", {
+      botId: writer.id,
+    });
+
+    const originalSetScreenControl = sandbox.setScreenControl;
+    let revocations = 0;
+    let releaseRevocations!: () => void;
+    const bothRevocationsReached = new Promise<void>((resolve) => {
+      releaseRevocations = resolve;
+    });
+    const barrierTimeout = setTimeout(releaseRevocations, 1_000);
+    sandbox.setScreenControl = async (_computer, interactive, _context, controlToken) => {
+      expect(interactive).toBe(false);
+      expect(controlToken).toBe(writerLease.leaseId);
+      revocations += 1;
+      if (revocations === 2) releaseRevocations();
+      await bothRevocationsReached;
+    };
+
+    let responses: Response[] = [];
+    try {
+      responses = await Promise.all([
+        raw(app, cookie, "computer/takeover", { botId: researcher.id }),
+        raw(app, cookie, "computer/takeover", { botId: analyst.id }),
+      ]);
+    } finally {
+      clearTimeout(barrierTimeout);
+      releaseRevocations();
+      sandbox.setScreenControl = originalSetScreenControl;
+    }
+
+    expect(revocations).toBe(2);
+    expect(responses.map((response) => response.status).sort()).toEqual([200, 409]);
+    const computer = await prisma.computer.findFirstOrThrow({
+      where: { bots: { some: { id: writer.id } } },
+      select: { controlBotId: true, controlLeaseId: true },
+    });
+    const winner = computer.controlBotId === researcher.id ? researcher : analyst;
+    const successfulResponse = responses.find((response) => response.status === 200)!;
+    await expect(successfulResponse.clone().json()).resolves.toMatchObject({
+      json: { leaseId: computer.controlLeaseId },
+    });
+
+    await rpc(app, cookie, "computer/release", { botId: winner.id });
+  });
+
   it("5: a routine wakes the bot and posts into the existing thread", async () => {
     const cookie = await signup(app, `routine-j-${stamp}@rakazo.test`, "Routine");
     const bot = await rpc<Bot>(app, cookie, "bots/create", {

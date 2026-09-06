@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { modelsForRequest } from "./pi-runtime.js";
 import { workmateClaudeProvider } from "./workmate-claude.js";
 
 const keys = ["WORKMATE_CLAUDE_BASE_URL", "WORKMATE_CLAUDE_MODELS"] as const;
@@ -18,6 +19,12 @@ describe("WorkMate Claude provider", () => {
     process.env.WORKMATE_CLAUDE_MODELS = "claude-sonnet-5, fable";
 
     const provider = workmateClaudeProvider();
+
+    const catalog = modelsForRequest(
+      { model: { provider: "workmate-claude", id: "fable" } },
+      "workmate-claude",
+    );
+    expect(catalog.getModel("workmate-claude", "fable")?.baseUrl).toBe("http://127.0.0.1:8788/v1");
 
     expect(provider?.id).toBe("workmate-claude");
     expect(provider?.getModels().map((model) => model.id)).toEqual(["claude-sonnet-5", "fable"]);

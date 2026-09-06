@@ -6,7 +6,6 @@ case "${DISPLAY:-:1}" in
   *) PROFILE="$RAKAZO_HOME/.browser-profiles/chromium" ;;
 esac
 mkdir -p "$PROFILE"
-rm -f "$PROFILE/SingletonLock" "$PROFILE/SingletonCookie" "$PROFILE/SingletonSocket"
 BIN="$(command -v chromium || command -v chromium-browser || true)"
 if [ -z "$BIN" ]; then
   echo "chromium is not installed" >&2
@@ -25,6 +24,21 @@ for arg in "$@"; do
     --user-data-dir) PREV_ARG_WAS_USER_DATA_DIR=1; USER_DATA_DIR_SET=1 ;;
   esac
 done
+
+# Recover only a dead process on this host; foreign or live locks stay protected.
+if [ -L "$ACTUAL_PROFILE/SingletonLock" ] && [ -d /proc ]; then
+  LOCK_TARGET="$(readlink "$ACTUAL_PROFILE/SingletonLock")"
+  LOCK_HOST="${LOCK_TARGET%-*}"
+  LOCK_PID="${LOCK_TARGET##*-}"
+  case "$LOCK_PID" in
+    ''|0|*[!0-9]*) ;;
+    *)
+      if [ "$LOCK_HOST" = "$(hostname)" ] && [ ! -d "/proc/$LOCK_PID" ]; then
+        rm -f "$ACTUAL_PROFILE/SingletonLock" "$ACTUAL_PROFILE/SingletonCookie" "$ACTUAL_PROFILE/SingletonSocket"
+      fi
+      ;;
+  esac
+fi
 
 clear_crash_state() {
   f="$1"

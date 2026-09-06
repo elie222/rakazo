@@ -1,11 +1,16 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   DEFAULT_LOCAL_WEB_URL,
+  desktopStackImageTag,
   isRakazoHealth,
+  managedLocalOpenUrl,
+  maySendDesktopStackToken,
   normalizeServerUrl,
+  PROBE_RESPONSE_LIMIT_BYTES,
   parseSetupInput,
   parseStoredSetup,
   probeFailureMessage,
+  readProbeJson,
   resolveStartupTarget,
   safeExternalUrl,
   serializeSetup,
@@ -59,6 +64,33 @@ describe("server address normalization", () => {
 
   it("rejects embedded credentials rather than writing them to disk", () => {
     expect(normalizeServerUrl("https://user:secret@rakazo.example.com")).toBeNull();
+  });
+});
+
+describe("managed local open URL", () => {
+  it("returns the authenticated managed origin when the request matches", () => {
+    expect(managedLocalOpenUrl("http://127.0.0.1:5173/", DEFAULT_LOCAL_WEB_URL)).toBe(
+      "http://127.0.0.1:5173",
+    );
+    expect(managedLocalOpenUrl("http://127.0.0.1:5199", "http://127.0.0.1:5199/path?x=1")).toBe(
+      "http://127.0.0.1:5199",
+    );
+  });
+
+  it("rejects a different loopback origin even when both are local", () => {
+    expect(managedLocalOpenUrl("http://127.0.0.1:5199", DEFAULT_LOCAL_WEB_URL)).toBeNull();
+    expect(managedLocalOpenUrl("http://localhost:5173", DEFAULT_LOCAL_WEB_URL)).toBeNull();
+    expect(managedLocalOpenUrl("https://rakazo.example.com", DEFAULT_LOCAL_WEB_URL)).toBeNull();
+  });
+});
+
+describe("desktop stack token transport", () => {
+  it("allows HTTPS and loopback HTTP only", () => {
+    expect(maySendDesktopStackToken("https://rakazo.example.com")).toBe(true);
+    expect(maySendDesktopStackToken("http://127.0.0.1:5173")).toBe(true);
+    expect(maySendDesktopStackToken("http://localhost:5173")).toBe(true);
+    expect(maySendDesktopStackToken("http://10.0.0.8:5173")).toBe(false);
+    expect(maySendDesktopStackToken("http://rakazo.local:5173")).toBe(false);
   });
 });
 
@@ -174,6 +206,44 @@ describe("Rakazo health response", () => {
     expect(isRakazoHealth({ json: { ok: true, version: "0.1.0" } })).toBe(true);
     expect(isRakazoHealth({ json: { ok: true } })).toBe(false);
     expect(isRakazoHealth({ ok: true, version: "0.1.0" })).toBe(false);
+  });
+});
+
+describe("managed stack response", () => {
+  it("returns only a non-empty authenticated image tag", () => {
+    expect(desktopStackImageTag({ ok: true, imageTag: "v0.2.0" })).toBe("v0.2.0");
+    expect(desktopStackImageTag({ ok: true, imageTag: "" })).toBeNull();
+    expect(desktopStackImageTag({ ok: false, imageTag: "v0.2.0" })).toBeNull();
+    expect(desktopStackImageTag({ json: { ok: true, imageTag: "v0.2.0" } })).toBeNull();
+  });
+
+  it("parses a bounded JSON probe response", async () => {
+    await expect(readProbeJson(Response.json({ ok: true }))).resolves.toEqual({ ok: true });
+  });
+
+  it("rejects a declared oversized response without waiting for cancellation", async () => {
+    const cancel = vi.fn(() => new Promise<void>(() => undefined));
+    const response = new Response(new ReadableStream({ cancel }), {
+      headers: { "content-length": String(PROBE_RESPONSE_LIMIT_BYTES + 1) },
+    });
+
+    await expect(readProbeJson(response)).resolves.toBeNull();
+    expect(cancel).toHaveBeenCalledOnce();
+  });
+
+  it("rejects a streamed oversized response without waiting for cancellation", async () => {
+    const cancel = vi.fn(() => new Promise<void>(() => undefined));
+    const response = new Response(
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(new Uint8Array(PROBE_RESPONSE_LIMIT_BYTES + 1));
+        },
+        cancel,
+      }),
+    );
+
+    await expect(readProbeJson(response)).resolves.toBeNull();
+    expect(cancel).toHaveBeenCalledOnce();
   });
 });
 

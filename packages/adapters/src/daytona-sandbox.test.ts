@@ -212,6 +212,22 @@ describe("DaytonaSandboxProvider", () => {
     await expect(provider.stop(computer, context)).resolves.toBeUndefined();
   });
 
+  it("accepts definitive deletion while preserving transient teardown failures", async () => {
+    const fixture = daytonaFixture();
+    const provider = new DaytonaSandboxProvider({ apiKey: "test-key" }, fixture.client);
+    const computer = await provider.provision({ botId: "bot-a", homePath: "/unused" }, context);
+    const failure = new Error("temporary Daytona outage");
+    fixture.deleteSandbox.mockRejectedValueOnce(failure).mockRejectedValueOnce({ statusCode: 404 });
+
+    await expect(provider.destroy(computer, context)).rejects.toBe(failure);
+    await expect(provider.destroy(computer, context)).resolves.toBeUndefined();
+    expect(fixture.deleteSandbox).toHaveBeenCalledTimes(2);
+    // Subsequent teardown can also observe the missing resource during lookup.
+    fixture.get.mockRejectedValueOnce({ statusCode: 404 });
+    await expect(provider.destroy(computer, context)).resolves.toBeUndefined();
+    expect(fixture.deleteSandbox).toHaveBeenCalledTimes(2);
+  });
+
   it("gives Team bots distinct Daytona previews without a second computerUse.start", async () => {
     const fixture = daytonaFixture();
     const provider = new DaytonaSandboxProvider({ apiKey: "test-key" }, fixture.client);

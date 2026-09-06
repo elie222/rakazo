@@ -70,8 +70,13 @@ export function tokenFromAuthResponse(res: Response, body: unknown) {
   const fromJson = jsonToken(body);
   if (fromJson) return fromJson;
   const cookies = res.headers.get("set-cookie") ?? "";
-  const match = cookies.match(/better-auth\.session_token=([^;]+)/);
-  return match?.[1] ? decodeURIComponent(match[1]) : "";
+  const encoded = cookies.match(/(?:^|,\s*)(?:__Secure-)?better-auth\.session_token=([^;,]*)/)?.[1];
+  if (!encoded) return "";
+  try {
+    return decodeURIComponent(encoded);
+  } catch {
+    return "";
+  }
 }
 
 function jsonToken(body: unknown): string {

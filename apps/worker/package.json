@@ -14,6 +14,7 @@
     "@rakazo/adapters": "workspace:*",
     "@rakazo/core": "workspace:*",
     "@rakazo/db": "workspace:*",
+    "@rakazo/logging": "workspace:*",
     "@rakazo/memory": "workspace:*"
   },
   "devDependencies": {

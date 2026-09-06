@@ -25,7 +25,8 @@ import type {
   ScreenRequest,
   ScreenSession,
 } from "@rakazo/adapter-kit";
-import { boundedSandboxCommandTimeoutMs } from "@rakazo/core";
+import { boundedSandboxCommandTimeoutMs, canReleaseScreenLease } from "@rakazo/core";
+import { boxResponseError, wrapBoxCall } from "./box-errors.js";
 import { SingleScreenClaimTracker } from "./computer-screens.js";
 import {
   boundedComputerActions,
@@ -48,15 +49,16 @@ const BOX_READY_TIMEOUT_MS = 5 * 60_000;
 const BOX_API_COMMAND_TIMEOUT_SECONDS = 600;
 const BOX_TTL_SECONDS = 2 * 60 * 60;
 const BOX_EXPORT_CONCURRENCY = 16;
+const BOX_SCREEN_LEASE_PATH = "/tmp/rakazo-screen-lease";
 
 export type BoxSandboxSdk = Pick<
   BoxApi,
+  | "artifactRaw"
   | "command"
   | "commandStatus"
   | "create"
   | "desktop"
   | "get"
-  | "readFile"
   | "resume"
   | "stop"
   | "update"
@@ -70,6 +72,26 @@ interface BoxCommandResult {
   stderr: string;
   exitCode: number;
   timedOut: boolean;
+}
+
+/** Decide whether cancel may stop Box browsers across API/worker processes. */
+export type BoxRemoteScreenLease =
+  | { status: "missing" }
+  | { status: "present"; leaseId: string }
+  | { status: "error" };
+
+/** Decide whether cancel may stop Box browsers across API/worker processes. */
+export function shouldStopBoxBrowsersOnCancel(input: {
+  remoteLease: BoxRemoteScreenLease;
+  screenLeaseId?: string;
+}): boolean {
+  // Fail closed on transport/command errors so a stale cancel cannot kill a newer browser.
+  if (input.remoteLease.status === "error") return false;
+  // No remote fence: treat as orphaned work from this cancel path.
+  if (input.remoteLease.status === "missing") return true;
+  // A remote fence always wins over any local claim state.
+  if (!input.screenLeaseId) return false;
+  return canReleaseScreenLease(input.remoteLease.leaseId, input.screenLeaseId);
 }
 
 export class BoxSandboxProvider implements SandboxProvider {
@@ -253,7 +275,7 @@ export class BoxSandboxProvider implements SandboxProvider {
     context: AdapterContext,
   ): Promise<ScreenSession> {
     const id = this.id(computer);
-    this.screens.claim(id, context);
+    await this.claimScreen(id, context);
     try {
       const deadline = Date.now() + 60_000;
       while (true) {
@@ -294,7 +316,7 @@ export class BoxSandboxProvider implements SandboxProvider {
     context: AdapterContext,
     _controlToken?: string,
   ): Promise<void> {
-    if (interactive) this.screens.claim(this.id(computer), context);
+    if (interactive) await this.claimScreen(this.id(computer), context);
   }
 
   async sendInput(
@@ -304,13 +326,13 @@ export class BoxSandboxProvider implements SandboxProvider {
     context: AdapterContext,
   ): Promise<void> {
     const id = this.id(computer);
-    this.screens.claim(id, context);
+    await this.claimScreen(id, context);
     await this.applyAction(id, input, context);
   }
 
   async observe(computer: ComputerRef, context: AdapterContext): Promise<ComputerObservation> {
     const id = this.id(computer);
-    this.screens.claim(id, context);
+    await this.claimScreen(id, context);
     const imagePath = `/tmp/rakazo-observe-${randomUUID()}.png`;
     try {
       const result = await this.runCommand(
@@ -333,7 +355,7 @@ export class BoxSandboxProvider implements SandboxProvider {
 
   async act(computer: ComputerRef, request: ComputerActionRequest, context: AdapterContext) {
     const id = this.id(computer);
-    this.screens.claim(id, context);
+    await this.claimScreen(id, context);
     const actions = boundedComputerActions(request.actions);
     let completed = 0;
     for (const action of actions) {
@@ -379,18 +401,12 @@ export class BoxSandboxProvider implements SandboxProvider {
     context: AdapterContext,
     options?: { maxBytes?: number },
   ): Promise<Uint8Array> {
-    const response = await this.client.readFile(
-      {
-        boxId: this.id(computer),
-        path: workspacePath(BOX_WORKSPACE, filePath),
-        encoding: "base64",
-      },
-      { signal: context.signal },
+    return this.readRemoteFile(
+      this.id(computer),
+      workspacePath(BOX_WORKSPACE, filePath),
+      context.signal,
+      options?.maxBytes,
     );
-    if (options?.maxBytes !== undefined && response.size > options.maxBytes) {
-      throw new Error(`computer file exceeds ${options.maxBytes} bytes`);
-    }
-    return Uint8Array.from(Buffer.from(response.content, "base64"));
   }
 
   async writeFile(computer: ComputerRef, file: PortableFile, context: AdapterContext) {
@@ -465,7 +481,11 @@ export class BoxSandboxProvider implements SandboxProvider {
   }
 
   async releaseScreen(computer: ComputerRef, context: AdapterContext): Promise<void> {
-    this.screens.release(this.id(computer), context);
+    const id = this.id(computer);
+    this.screens.release(id, context);
+    if (!context.cancelRunWork || !context.screenLeaseId) return;
+    // Atomically re-check the remote fence under flock before stopping browsers.
+    await this.stopBrowsersIfLeaseAllows(id, context.screenLeaseId);
   }
 
   async stop(computer: ComputerRef, context: AdapterContext): Promise<void> {
@@ -607,6 +627,74 @@ export class BoxSandboxProvider implements SandboxProvider {
     );
   }
 
+  private async claimScreen(id: string, context: AdapterContext): Promise<void> {
+    this.screens.claim(id, context);
+    if (!context.screenLeaseId) return;
+    try {
+      await this.writeScreenLease(id, context.screenLeaseId);
+    } catch (error) {
+      this.screens.release(id, context);
+      throw error;
+    }
+  }
+
+  private async writeScreenLease(id: string, leaseId: string): Promise<void> {
+    const lockPath = `${BOX_SCREEN_LEASE_PATH}.lock`;
+    const script = [
+      "set -eu",
+      `lease=${shellQuote(BOX_SCREEN_LEASE_PATH)}`,
+      `lock=${shellQuote(lockPath)}`,
+      `incoming=${shellQuote(leaseId)}`,
+      'exec 9>"$lock"',
+      "flock 9",
+      'current="$(cat -- "$lease" 2>/dev/null || true)"',
+      'current="$(printf "%s" "$current" | tr -d "\\r\\n")"',
+      'if [ -n "$current" ] && [ "$current" != "$incoming" ]; then',
+      '  current_fence="${current##*:}"',
+      '  incoming_fence="${incoming##*:}"',
+      "  case \"$current_fence\" in ''|*[!0-9]*) exit 1 ;; esac",
+      "  case \"$incoming_fence\" in ''|*[!0-9]*) exit 1 ;; esac",
+      '  if [ "$incoming_fence" -le "$current_fence" ]; then exit 2; fi',
+      "fi",
+      'printf "%s\\n" "$incoming" >"$lease"',
+    ].join("\n");
+    const result = await this.rawCommand(id, script, 10);
+    if (result.exitCode !== 0 || result.timedOut) {
+      throw new Error(result.stderr || result.stdout || "could not publish Box screen lease");
+    }
+  }
+
+  private async stopBrowsersIfLeaseAllows(id: string, screenLeaseId: string): Promise<void> {
+    const lockPath = `${BOX_SCREEN_LEASE_PATH}.lock`;
+    const script = [
+      "set -eu",
+      `lease=${shellQuote(BOX_SCREEN_LEASE_PATH)}`,
+      `lock=${shellQuote(lockPath)}`,
+      `expected=${shellQuote(screenLeaseId)}`,
+      'exec 9>"$lock"',
+      "flock 9",
+      'current="$(cat -- "$lease" 2>/dev/null || true)"',
+      'current="$(printf "%s" "$current" | tr -d "\\r\\n")"',
+      'if [ -n "$current" ] && [ "$current" != "$expected" ]; then',
+      '  current_owner="${current%:*}"',
+      '  expected_owner="${expected%:*}"',
+      '  current_fence="${current##*:}"',
+      '  expected_fence="${expected##*:}"',
+      "  case \"$current_fence\" in ''|*[!0-9]*) exit 3 ;; esac",
+      "  case \"$expected_fence\" in ''|*[!0-9]*) exit 3 ;; esac",
+      '  if [ "$expected_owner" != "$current_owner" ] || [ "$expected_fence" -lt "$current_fence" ]; then',
+      "    exit 2",
+      "  fi",
+      "fi",
+      PORTABLE_BROWSER_STOP_COMMAND,
+      'rm -f -- "$lease"',
+    ].join("\n");
+    const result = await this.rawCommand(id, script, 30).catch(() => undefined);
+    // exit 2 = newer remote fence; treat as a successful no-op.
+    if (!result || result.timedOut) return;
+    if (result.exitCode === 0 || result.exitCode === 2) return;
+  }
+
   private async stopBrowsers(id: string): Promise<void> {
     await this.rawCommand(id, PORTABLE_BROWSER_STOP_COMMAND, 30).catch(() => undefined);
   }
@@ -622,12 +710,43 @@ export class BoxSandboxProvider implements SandboxProvider {
     id: string,
     filePath: string,
     signal?: AbortSignal,
+    maxBytes?: number,
   ): Promise<Uint8Array> {
-    const response = await this.client.readFile(
-      { boxId: id, path: filePath, encoding: "base64" },
+    // The JSON/base64 file endpoint rejects files over 5 MiB, including browser profiles.
+    const { raw: response } = await this.client.artifactRaw(
+      { boxId: id, path: filePath },
       signal ? { signal } : undefined,
     );
-    return Uint8Array.from(Buffer.from(response.content, "base64"));
+    const reader = response.body?.getReader();
+    const chunks: Uint8Array[] = [];
+    let size = 0;
+    try {
+      if (maxBytes !== undefined && Number(response.headers.get("content-length")) > maxBytes) {
+        throw new Error(`computer file exceeds ${maxBytes} bytes`);
+      }
+      if (!reader) return new Uint8Array();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        size += value.byteLength;
+        if (maxBytes !== undefined && size > maxBytes) {
+          throw new Error(`computer file exceeds ${maxBytes} bytes`);
+        }
+        chunks.push(value);
+      }
+      const content = new Uint8Array(size);
+      let offset = 0;
+      for (const chunk of chunks) {
+        content.set(chunk, offset);
+        offset += chunk.byteLength;
+      }
+      return content;
+    } catch (error) {
+      await reader?.cancel().catch(() => undefined);
+      throw error;
+    } finally {
+      reader?.releaseLock();
+    }
   }
 
   private async runCommand(
@@ -759,16 +878,16 @@ function createBoxSdk(config: { apiKey: string; apiUrl?: string }): BoxSandboxSd
     }),
   );
   return {
-    command: api.command.bind(api),
-    commandStatus: api.commandStatus.bind(api),
-    create: api.create.bind(api),
-    desktop: api.desktop.bind(api),
-    get: api.get.bind(api),
-    readFile: api.readFile.bind(api),
-    resume: api.resume.bind(api),
-    stop: api.stop.bind(api),
-    update: api.update.bind(api),
-    writeFile: api.writeFile.bind(api),
+    artifactRaw: wrapBoxCall(api.artifactRaw.bind(api), config.apiKey),
+    command: wrapBoxCall(api.command.bind(api), config.apiKey),
+    commandStatus: wrapBoxCall(api.commandStatus.bind(api), config.apiKey),
+    create: wrapBoxCall(api.create.bind(api), config.apiKey),
+    desktop: wrapBoxCall(api.desktop.bind(api), config.apiKey),
+    get: wrapBoxCall(api.get.bind(api), config.apiKey),
+    resume: wrapBoxCall(api.resume.bind(api), config.apiKey),
+    stop: wrapBoxCall(api.stop.bind(api), config.apiKey),
+    update: wrapBoxCall(api.update.bind(api), config.apiKey),
+    writeFile: wrapBoxCall(api.writeFile.bind(api), config.apiKey),
     deleteBox: async (boxId: string) => {
       const url = `${apiUrl}/boxes/${encodeURIComponent(boxId)}`;
       const headers = { Authorization: `Bearer ${config.apiKey}` };
@@ -781,37 +900,20 @@ function createBoxSdk(config: { apiKey: string; apiUrl?: string }): BoxSandboxSd
       });
       if (response.status === 404) return;
       if (!response.ok) {
-        const message = await boxErrorMessage(response);
-        const error = new Error(message) as Error & { status: number };
-        error.status = response.status;
-        throw error;
+        throw await boxResponseError(response, config.apiKey);
       }
       const deadline = Date.now() + 60_000;
       while (Date.now() < deadline) {
         const status = await fetch(url, { headers });
         if (status.status === 404) return;
         if (!status.ok) {
-          const message = await boxErrorMessage(status);
-          const error = new Error(message) as Error & { status: number };
-          error.status = status.status;
-          throw error;
+          throw await boxResponseError(status, config.apiKey);
         }
         await delay(500);
       }
       throw new Error(`Box ${boxId} was not deleted within 60 seconds`);
     },
   };
-}
-
-async function boxErrorMessage(response: Response): Promise<string> {
-  const fallback = `Box API request failed with ${response.status}`;
-  try {
-    const body = (await response.json()) as { message?: unknown; requestId?: unknown };
-    const message = typeof body.message === "string" ? body.message : fallback;
-    return typeof body.requestId === "string" ? `${message} (${body.requestId})` : message;
-  } catch {
-    return fallback;
-  }
 }
 
 function timeoutCommand(command: string, timeoutMs: number, marker: string): string {

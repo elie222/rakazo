@@ -739,6 +739,38 @@ function createChannelDeps(
 }
 
 describe("deliverMessagingOutbound channel runs", () => {
+  it("keeps privately answered runs out of the group and peer fan-out on retries", async () => {
+    const deps = createChannelDeps({
+      messages: [
+        {
+          id: "ask-1",
+          blocks: [{ kind: "ask", text: "Details?", status: "answered", answer: "Private detail" }],
+        },
+        { id: "reply-1", blocks: [{ kind: "text", text: "Reply containing private detail" }] },
+      ],
+    });
+    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+    expect(deps.rows).toEqual([]);
+    expect(deps.sendToThread).not.toHaveBeenCalled();
+    expect(deps.contextMessages).toEqual([]);
+    expect(deps.sendUserMessage).not.toHaveBeenCalled();
+  });
+
+  it("can still publish a group reply alongside an unanswered ask", async () => {
+    const deps = createChannelDeps({
+      messages: [
+        { id: "ask-1", blocks: [{ kind: "ask", text: "Details?", status: "pending" }] },
+        { id: "reply-1", blocks: [{ kind: "text", text: "Public update" }] },
+      ],
+    });
+    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+    expect(deps.sendToThread).toHaveBeenCalledWith(
+      { threadId: "sendblue:grp-1", body: "Alice's agent: Public update" },
+      context,
+    );
+  });
+
   it("posts the bot reply to the group with owner attribution and fans it out to peers", async () => {
     const deps = createChannelDeps();
     await deliverMessagingOutbound(deps, { runId: "run-1" }, context);

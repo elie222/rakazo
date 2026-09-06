@@ -22,11 +22,15 @@ import {
   readScreenUrl,
   SCREEN_URL_OPEN_ATTEMPTS,
 } from "../lib/computer";
+import { useI18n } from "../lib/i18n";
+import { useMobileTokens } from "../lib/native";
 
 export default function Computer() {
+  const { t } = useI18n();
+  const tokens = useMobileTokens();
   const navigation = useNavigation();
   const { botId, name: nameParam } = useLocalSearchParams<{ botId?: string; name?: string }>();
-  const name = nameParam || "Bot";
+  const name = nameParam || t("Bot");
   const [computer, setComputer] = useState<ComputerStatus | null>(null);
   const [screenUrl, setScreenUrl] = useState<string | null>(null);
   const [screenError, setScreenError] = useState<string | null>(null);
@@ -38,6 +42,8 @@ export default function Computer() {
   const autoBooted = useRef<string | null>(null);
 
   const embeddedScreenUrl = embeddableScreenUrl(screenUrl, currentApiBase());
+  useEffect(() => setScreenError(null), [embeddedScreenUrl]);
+
   const hasControl = computer?.controlHolder === "user" && computer.controlBotId === botId;
   const label = computerLabel(computer?.mode, name);
 
@@ -94,7 +100,7 @@ export default function Computer() {
       await refresh({ screenAttempts: SCREEN_URL_OPEN_ATTEMPTS });
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not open computer");
+      setError(err instanceof Error ? err.message : t("Could not open computer"));
       throw err;
     } finally {
       setBooting(false);
@@ -161,7 +167,7 @@ export default function Computer() {
       autoBooted.current = null;
       await refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not switch computer");
+      setError(err instanceof Error ? err.message : t("Could not switch computer"));
     } finally {
       setSwitching(false);
     }
@@ -171,36 +177,42 @@ export default function Computer() {
     screenError ?? previewPlaceholder(computer?.state, booting, name, computer?.mode);
 
   return (
-    <View style={{ flex: 1, backgroundColor: "#0A0A0B", padding: 24 }}>
-      {error ? <Text style={{ color: "#85858A", marginBottom: 12 }}>{error}</Text> : null}
+    <View style={{ flex: 1, backgroundColor: tokens.background, padding: 24 }}>
+      {error ? (
+        <Text style={{ color: tokens.mutedForeground, marginBottom: 12 }}>{error}</Text>
+      ) : null}
       <View
         style={{
           flex: 1,
           minHeight: 220,
           borderRadius: 14,
           overflow: "hidden",
-          backgroundColor: "#0E0E10",
+          backgroundColor: tokens.card,
         }}
       >
         {computerOpen ? (
           <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
-            <Text style={{ color: "#6C6C70" }}>Open in full window</Text>
+            <Text style={{ color: tokens.mutedForeground }}>{t("Open in full window")}</Text>
           </View>
-        ) : computer?.state === "running" && embeddedScreenUrl ? (
+        ) : computer?.state === "running" && embeddedScreenUrl && !screenError ? (
           <ScreenWebView
             url={embeddedScreenUrl}
             interactive={false}
             onError={() =>
-              setScreenError("Could not load the desktop. This device cannot reach the screen URL.")
+              setScreenError(
+                t("Could not load the desktop. This device cannot reach the screen URL."),
+              )
             }
           />
         ) : (
           <View style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: 16 }}>
-            <Text style={{ color: "#6C6C70", textAlign: "center" }}>{placeholder}</Text>
+            <Text style={{ color: tokens.mutedForeground, textAlign: "center" }}>
+              {placeholder}
+            </Text>
           </View>
         )}
         <Pressable
-          accessibilityLabel="Open computer"
+          accessibilityLabel={t("Open computer")}
           onPress={() => void openComputer()}
           style={{ position: "absolute", top: 0, right: 0, bottom: 0, left: 0 }}
         />
@@ -214,7 +226,9 @@ export default function Computer() {
           gap: 12,
         }}
       >
-        <Text style={{ color: "#85858A", flex: 1 }}>{controlLabel(computer, name, botId)}</Text>
+        <Text style={{ color: tokens.mutedForeground, flex: 1 }}>
+          {controlLabel(computer, name, botId)}
+        </Text>
         {hasControl ? (
           <ComputerReleaseActions
             takeoverRequested={computer?.takeoverRequested ?? false}
@@ -224,13 +238,13 @@ export default function Computer() {
           <Pressable
             onPress={() => void openComputer()}
             style={{
-              backgroundColor: "#1A1A1D",
+              backgroundColor: tokens.muted,
               paddingHorizontal: 14,
               paddingVertical: 10,
               borderRadius: 12,
             }}
           >
-            <Text style={{ color: "#ECECEE" }}>Take control</Text>
+            <Text style={{ color: tokens.foreground }}>{t("Take control")}</Text>
           </Pressable>
         )}
       </View>
@@ -250,22 +264,6 @@ export default function Computer() {
         disabled={switching}
         onChange={(mode) => void setComputerMode(mode)}
       />
-      <View
-        style={{
-          marginTop: 18,
-          borderRadius: 12,
-          borderWidth: 1,
-          borderColor: "#232326",
-          padding: 14,
-          gap: 8,
-        }}
-      >
-        <Text style={{ color: "#85858A", fontSize: 14 }}>Teach a task</Text>
-        <Text style={{ color: "#6C6C70", fontSize: 13.5, lineHeight: 20 }}>
-          Recording a live demonstration needs desktop or web with the full computer view. You can
-          still ask this bot to run saved skills from chat.
-        </Text>
-      </View>
 
       <Modal
         visible={booting || computerOpen}
@@ -281,7 +279,7 @@ export default function Computer() {
               edges={["top", "left", "right"]}
               style={{
                 flex: 1,
-                backgroundColor: "rgba(4,4,5,0.96)",
+                backgroundColor: tokens.background,
                 alignItems: "center",
                 justifyContent: "center",
                 gap: 22,
@@ -289,9 +287,14 @@ export default function Computer() {
               }}
             >
               <Text
-                style={{ color: "#F1F1F2", fontSize: 19, fontWeight: "500", textAlign: "center" }}
+                style={{
+                  color: tokens.foreground,
+                  fontSize: 19,
+                  fontWeight: "500",
+                  textAlign: "center",
+                }}
               >
-                Booting {label}
+                {t("Booting {label}", { label })}
               </Text>
               <View
                 style={{
@@ -300,7 +303,7 @@ export default function Computer() {
                   maxWidth: 420,
                   overflow: "hidden",
                   borderRadius: 999,
-                  backgroundColor: "#232327",
+                  backgroundColor: tokens.muted,
                 }}
               >
                 <View
@@ -308,13 +311,13 @@ export default function Computer() {
                     height: "100%",
                     width: "66%",
                     borderRadius: 999,
-                    backgroundColor: "#F1F1EF",
+                    backgroundColor: tokens.primary,
                   }}
                 />
               </View>
             </SafeAreaView>
           ) : (
-            <View style={{ flex: 1, backgroundColor: "#050506" }}>
+            <View style={{ flex: 1, backgroundColor: tokens.background }}>
               <SafeAreaView
                 edges={["top", "left", "right"]}
                 style={{
@@ -323,7 +326,7 @@ export default function Computer() {
                   justifyContent: "space-between",
                   gap: 12,
                   borderBottomWidth: 1,
-                  borderBottomColor: "#171719",
+                  borderBottomColor: tokens.border,
                   paddingHorizontal: 18,
                   paddingVertical: 14,
                 }}
@@ -331,7 +334,7 @@ export default function Computer() {
                 <View style={{ flex: 1, minWidth: 0, gap: 8 }}>
                   <Text
                     numberOfLines={1}
-                    style={{ color: "#ECECEE", fontSize: 15.5, fontWeight: "500" }}
+                    style={{ color: tokens.foreground, fontSize: 15.5, fontWeight: "500" }}
                   >
                     {label}
                   </Text>
@@ -340,12 +343,14 @@ export default function Computer() {
                       style={{
                         alignSelf: "flex-start",
                         borderRadius: 999,
-                        backgroundColor: "rgba(48,162,75,0.14)",
+                        backgroundColor: tokens.muted,
                         paddingHorizontal: 11,
                         paddingVertical: 4,
                       }}
                     >
-                      <Text style={{ color: "#4ECB71", fontSize: 13 }}>You have control</Text>
+                      <Text style={{ color: tokens.success, fontSize: 13 }}>
+                        {t("You have control")}
+                      </Text>
                     </View>
                   ) : null}
                 </View>
@@ -365,7 +370,7 @@ export default function Computer() {
                       hitSlop={8}
                       style={{
                         borderWidth: 1,
-                        borderColor: "#26262A",
+                        borderColor: tokens.border,
                         paddingHorizontal: 12,
                         paddingVertical: 8,
                         borderRadius: 10,
@@ -373,11 +378,11 @@ export default function Computer() {
                         justifyContent: "center",
                       }}
                     >
-                      <Text style={{ color: "#ECECEE" }}>Take control</Text>
+                      <Text style={{ color: tokens.foreground }}>{t("Take control")}</Text>
                     </Pressable>
                   )}
                   <Pressable
-                    accessibilityLabel="Close computer"
+                    accessibilityLabel={t("Close computer")}
                     hitSlop={8}
                     onPress={() => setComputerOpen(false)}
                     style={{
@@ -387,18 +392,23 @@ export default function Computer() {
                       justifyContent: "center",
                     }}
                   >
-                    <NativeSymbol ios="xmark" android="close" size={16} color="#85858A" />
+                    <NativeSymbol
+                      ios="xmark"
+                      android="close"
+                      size={16}
+                      color={tokens.mutedForeground}
+                    />
                   </Pressable>
                 </View>
               </SafeAreaView>
-              <View style={{ flex: 1, backgroundColor: "#0E0E10" }}>
-                {computer?.state === "running" && embeddedScreenUrl ? (
+              <View style={{ flex: 1, backgroundColor: tokens.card }}>
+                {computer?.state === "running" && embeddedScreenUrl && !screenError ? (
                   <ScreenWebView
                     url={embeddedScreenUrl}
                     interactive={hasControl}
                     onError={() =>
                       setScreenError(
-                        "Could not load the desktop. This device cannot reach the screen URL.",
+                        t("Could not load the desktop. This device cannot reach the screen URL."),
                       )
                     }
                   />
@@ -406,10 +416,8 @@ export default function Computer() {
                   <View
                     style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: 16 }}
                   >
-                    <Text style={{ color: "#6C6C70", textAlign: "center" }}>
-                      {computer?.state === "suspended"
-                        ? "Computer is asleep"
-                        : computerLabel(computer?.mode, name)}
+                    <Text style={{ color: tokens.mutedForeground, textAlign: "center" }}>
+                      {placeholder}
                     </Text>
                   </View>
                 )}
@@ -429,13 +437,15 @@ function ComputerReleaseActions({
   takeoverRequested: boolean;
   onRelease: (reason?: ComputerReleaseReason) => Promise<void>;
 }) {
+  const { t } = useI18n();
+  const tokens = useMobileTokens();
   const actions: Array<{ label: string; reason?: ComputerReleaseReason; primary?: boolean }> =
     takeoverRequested
       ? [
-          { label: "Skip", reason: "skipped" },
-          { label: "I’m done", reason: "done", primary: true },
+          { label: t("Skip"), reason: "skipped" },
+          { label: t("I’m done"), reason: "done", primary: true },
         ]
-      : [{ label: "Release" }];
+      : [{ label: t("Release") }];
   return (
     <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
       {actions.map((action) => (
@@ -448,14 +458,16 @@ function ComputerReleaseActions({
             minHeight: 44,
             justifyContent: "center",
             borderWidth: 1,
-            borderColor: action.primary ? "#F1F1EF" : "#26262A",
-            backgroundColor: action.primary ? "#F1F1EF" : "#1A1A1D",
+            borderColor: action.primary ? tokens.primary : tokens.border,
+            backgroundColor: action.primary ? tokens.primary : tokens.muted,
             paddingHorizontal: 12,
             paddingVertical: 8,
             borderRadius: 10,
           }}
         >
-          <Text style={{ color: action.primary ? "#17171A" : "#ECECEE" }}>{action.label}</Text>
+          <Text style={{ color: action.primary ? tokens.primaryForeground : tokens.foreground }}>
+            {action.label}
+          </Text>
         </Pressable>
       ))}
     </View>
@@ -471,11 +483,12 @@ function ScreenWebView({
   interactive: boolean;
   onError: () => void;
 }) {
+  const tokens = useMobileTokens();
   return (
     <WebView
       key={url}
       source={{ uri: url }}
-      style={{ flex: 1, backgroundColor: "#000" }}
+      style={{ flex: 1, backgroundColor: tokens.background }}
       pointerEvents={interactive ? "auto" : "none"}
       javaScriptEnabled
       domStorageEnabled

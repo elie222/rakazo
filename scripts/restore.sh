@@ -11,7 +11,10 @@ if [[ -f "$ROOT/.env" ]]; then compose=(docker compose --env-file "$ROOT/.env" -
 until "${compose[@]}" exec -T postgres pg_isready -U rakazo >/dev/null 2>&1; do
   sleep 1
 done
-"${compose[@]}" exec -T postgres psql -U rakazo -d rakazo < "$SRC/rakazo.sql"
+# Stop on SQL errors and roll back the dump before restoring files or starting
+# the application. -f is required for psql's single-transaction mode.
+"${compose[@]}" exec -T postgres psql -X -U rakazo -d rakazo \
+  --set=ON_ERROR_STOP=on --single-transaction --file=- < "$SRC/rakazo.sql"
 if [[ -f "$SRC/homes.tgz" ]]; then
   tar -xzf "$SRC/homes.tgz" -C "$ROOT"
 fi

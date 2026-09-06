@@ -1,9 +1,10 @@
 import { createHash } from "node:crypto";
 import { isIP } from "node:net";
-import type { DesktopSetup } from "@rakazo/contracts";
+import type { DesktopSetup, DesktopStackProbeResponse } from "@rakazo/contracts";
 
 /** Where `pnpm dev` serves the Rakazo web app on this machine. */
 export const DEFAULT_LOCAL_WEB_URL = "http://127.0.0.1:5173";
+export const PROBE_RESPONSE_LIMIT_BYTES = 64 * 1024;
 
 export const SETUP_FILE_NAME = "setup.json";
 
@@ -44,6 +45,33 @@ export function normalizeServerUrl(input: string): string | null {
   // Rakazo serves its renderer, RPC, and auth routes from one origin. Keeping a
   // user-supplied path would make the setup probe and the loaded app disagree.
   return url.origin;
+}
+
+/**
+ * Managed ("new") setups may only open the configured local stack origin.
+ * A saved or IPC URL that normalizes to a different loopback host/port is rejected.
+ */
+export function managedLocalOpenUrl(requestedUrl: string, localWebUrl: string): string | null {
+  const managed = normalizeServerUrl(localWebUrl);
+  const requested = normalizeServerUrl(requestedUrl);
+  if (managed === null || requested === null || requested !== managed) return null;
+  return managed;
+}
+
+/**
+ * The private managed-stack token may travel over HTTPS anywhere, or over HTTP
+ * only to loopback. Private-network and .local HTTP stay cleartext on a LAN, so
+ * they must not receive the token.
+ */
+export function maySendDesktopStackToken(serverUrl: string): boolean {
+  try {
+    const url = new URL(serverUrl);
+    if (url.protocol === "https:") return true;
+    if (url.protocol === "http:") return isLoopbackHost(url.hostname);
+    return false;
+  } catch {
+    return false;
+  }
 }
 
 /** Validates an untrusted value (saved file or IPC payload) into a usable setup. */
@@ -153,7 +181,76 @@ export function isRakazoHealth(value: unknown): boolean {
   );
 }
 
-function isLoopbackHost(hostname: string) {
+export function desktopStackImageTag(value: unknown): string | null {
+  if (typeof value !== "object" || value === null) return null;
+  const { ok, imageTag } = value as Partial<DesktopStackProbeResponse>;
+  return ok === true && typeof imageTag === "string" && imageTag !== "" ? imageTag : null;
+}
+
+/** Reads a small probe response without letting an untrusted stream stall on cleanup. */
+export async function readProbeJson(response: Response): Promise<unknown> {
+  const declared = Number(response.headers.get("content-length") ?? 0);
+  if (Number.isFinite(declared) && declared > PROBE_RESPONSE_LIMIT_BYTES) {
+    cancelResponse(response);
+    return null;
+  }
+  if (response.body === null) return null;
+
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > PROBE_RESPONSE_LIMIT_BYTES) {
+        cancelReader(reader);
+        return null;
+      }
+      chunks.push(value);
+    }
+  } catch (error) {
+    cancelReader(reader);
+    throw error;
+  } finally {
+    try {
+      reader.releaseLock();
+    } catch {
+      // already cancelled or released
+    }
+  }
+
+  const body = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  try {
+    return JSON.parse(new TextDecoder().decode(body));
+  } catch {
+    return null;
+  }
+}
+
+function cancelResponse(response: Response): void {
+  try {
+    void Promise.resolve(response.body?.cancel()).catch(() => undefined);
+  } catch {
+    // Probe cleanup is best-effort.
+  }
+}
+
+function cancelReader(reader: ReadableStreamDefaultReader<Uint8Array>): void {
+  try {
+    void Promise.resolve(reader.cancel()).catch(() => undefined);
+  } catch {
+    // Probe cleanup is best-effort.
+  }
+}
+
+export function isLoopbackHost(hostname: string) {
   const host = unbracketedHost(hostname);
   if (host === "localhost" || host.endsWith(".localhost")) return true;
   if (isIP(host) === 4) return host.startsWith("127.");

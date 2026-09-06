@@ -21,7 +21,7 @@ export type McpRemoteTransport = "streamable-http" | "sse";
 export interface McpUrlPolicy {
   /** Maximum URL length accepted before any network request. */
   maxUrlLength?: number;
-  /** Permit plain HTTP only for explicitly local hosts. */
+  /** Permit plain HTTP only on the configured loopback resource's exact origin. */
   allowHttpLocalhost?: boolean;
   /** Permit configured credentials on an explicitly local HTTP endpoint. */
   allowLocalHttpCredentials?: boolean;
@@ -30,7 +30,7 @@ export interface McpUrlPolicy {
 }
 
 export interface McpHeaderPolicy {
-  /** Headers are copied into requests only when named here. */
+  /** Additional SDK request headers allowed beyond defaults and configured headers. */
   allowedHeaders?: readonly string[];
   headers?: Record<string, string>;
 }
@@ -70,6 +70,7 @@ export interface McpClientOptions {
 }
 
 const DEFAULT_HEADERS = ["accept", "content-type", "authorization", "user-agent"];
+const RESOURCE_HEADERS = new Set(["mcp-session-id", "mcp-protocol-version", "last-event-id"]);
 const DEFAULT_MAX_URL_LENGTH = 2_048;
 
 function validateUrl(raw: string | URL, policy: McpUrlPolicy = {}): URL {
@@ -97,15 +98,27 @@ export function secureFetch(
   headerPolicy: McpHeaderPolicy = {},
   network: RemoteTransportDependencies = {},
 ): SafeRemoteFetch {
+  const localOrigin =
+    urlPolicy.allowHttpLocalhost === true &&
+    resourceUrl.protocol === "http:" &&
+    isLocalMcpHost(resourceUrl.hostname)
+      ? resourceUrl.origin
+      : undefined;
   const allowed = new Set(
-    (headerPolicy.allowedHeaders ?? DEFAULT_HEADERS).map((h) => h.toLowerCase()),
+    [
+      ...DEFAULT_HEADERS,
+      ...(headerPolicy.allowedHeaders ?? []),
+      ...Object.keys(headerPolicy.headers ?? {}),
+    ].map((header) => header.toLowerCase()),
   );
   const configured = Object.entries(headerPolicy.headers ?? {}).filter(([name]) =>
     allowed.has(name.toLowerCase()),
   );
-  const configuredNames = new Set(
-    Object.keys(headerPolicy.headers ?? {}).map((name) => name.toLowerCase()),
+  const configuredValues = new Map(
+    configured.map(([name, value]) => [name.toLowerCase(), value] as const),
   );
+  const configuredCredentialValues = new Set(configuredValues.values());
+  const configuredNames = new Set(configuredValues.keys());
   const localCredentialHeaders = new Set([
     ...configuredNames,
     "authorization",
@@ -117,9 +130,22 @@ export function secureFetch(
     network.resolveHostname,
   );
   const request = async (input: Request | URL | string, init?: RequestInit): Promise<Response> => {
-    const source = input instanceof Request ? input : new Request(input, init);
-    const url = validateUrl(source.url, urlPolicy);
-    const headers = new Headers(source.headers);
+    const source = new Request(input, init);
+    // OAuth challenges and rediscovery can supply new URLs. Only the explicitly
+    // configured local resource origin (including port) may bypass remote policy.
+    const url = validateUrl(source.url, {
+      ...urlPolicy,
+      allowHttpLocalhost: new URL(source.url).origin === localOrigin,
+    });
+    const headers = new Headers();
+    for (const [name, value] of source.headers) {
+      const normalized = name.toLowerCase();
+      if (RESOURCE_HEADERS.has(normalized)) {
+        if (url.origin !== resourceUrl.origin) continue;
+      } else if (!allowed.has(normalized)) continue;
+      if (url.origin !== resourceUrl.origin && configuredCredentialValues.has(value)) continue;
+      headers.set(name, value);
+    }
     const localHttp = url.protocol === "http:" && isLocalMcpHost(url.hostname);
     if (localHttp && urlPolicy.allowLocalHttpCredentials !== true) {
       for (const name of [...headers.keys()]) {
@@ -128,15 +154,6 @@ export function secureFetch(
     }
     if (!localHttp && url.origin === resourceUrl.origin) {
       for (const [name, value] of configured) headers.set(name, value);
-    }
-    for (const [name, value] of new Headers(init?.headers)) {
-      if (
-        localHttp &&
-        urlPolicy.allowLocalHttpCredentials !== true &&
-        localCredentialHeaders.has(name.toLowerCase())
-      )
-        continue;
-      if (allowed.has(name.toLowerCase())) headers.set(name, value);
     }
     // Buffer the body: a re-wrapped Request body is a stream without a replayable
     // source, and undici fails the whole request when a server answers 401 early

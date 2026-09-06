@@ -59,6 +59,103 @@ done
 
 docker compose version >/dev/null 2>&1 || fail "the Docker Compose plugin is required."
 
+# Optional proxy knobs from an existing .env (operators often set them there for
+# containers). Do not override values already present in the shell. Treat each
+# HTTP/HTTPS/NO_PROXY pair as one family so either case in the shell wins.
+# Within .env, later assignments for a family win (shell presence is snapshotted
+# before the file is read). Comment stripping is quote-aware so `#` inside
+# matching quotes is kept; this is not a full dotenv parser.
+load_proxy_vars_from_env_file() {
+  local file="$1"
+  local line key value
+  local i c quote out
+  local shell_http=0 shell_https=0 shell_no=0
+  [[ -f "$file" ]] || return 0
+  [[ -n "${HTTP_PROXY+x}" || -n "${http_proxy+x}" ]] && shell_http=1
+  [[ -n "${HTTPS_PROXY+x}" || -n "${https_proxy+x}" ]] && shell_https=1
+  [[ -n "${NO_PROXY+x}" || -n "${no_proxy+x}" ]] && shell_no=1
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    # Windows/.editorconfig CRLF: drop trailing CR so quoted values still match.
+    line="${line%$'\r'}"
+    out=""
+    quote=""
+    for ((i = 0; i < ${#line}; i++)); do
+      c="${line:i:1}"
+      if [[ -n "$quote" ]]; then
+        # Inside double quotes, treat \" and \\ as escaped so \# stays in-value.
+        if [[ "$quote" == '"' && "$c" == '\' ]] && ((i + 1 < ${#line})); then
+          out+="$c"
+          i=$((i + 1))
+          out+="${line:i:1}"
+          continue
+        fi
+        out+="$c"
+        [[ "$c" == "$quote" ]] && quote=""
+      elif [[ "$c" == "'" || "$c" == '"' ]]; then
+        quote="$c"
+        out+="$c"
+      elif [[ "$c" == "#" ]]; then
+        break
+      else
+        out+="$c"
+      fi
+    done
+    line="$out"
+    [[ "$line" =~ ^[[:space:]]*(HTTP_PROXY|HTTPS_PROXY|NO_PROXY|http_proxy|https_proxy|no_proxy)=(.*)$ ]] || continue
+    key="${BASH_REMATCH[1]}"
+    value="${BASH_REMATCH[2]}"
+    value="${value#"${value%%[![:space:]]*}"}"
+    value="${value%"${value##*[![:space:]]}"}"
+    if [[ "${value:0:1}" == '"' && "${value: -1}" == '"' ]]; then
+      value="${value:1:${#value}-2}"
+      value="${value//\\\"/\"}"
+      value="${value//\\\\/\\}"
+    elif [[ "${value:0:1}" == "'" && "${value: -1}" == "'" ]]; then
+      value="${value:1:${#value}-2}"
+    fi
+    case "$key" in
+      HTTP_PROXY|http_proxy)
+        if ((shell_http)); then
+          continue
+        fi
+        unset -v HTTP_PROXY http_proxy
+        ;;
+      HTTPS_PROXY|https_proxy)
+        if ((shell_https)); then
+          continue
+        fi
+        unset -v HTTPS_PROXY https_proxy
+        ;;
+      NO_PROXY|no_proxy)
+        if ((shell_no)); then
+          continue
+        fi
+        unset -v NO_PROXY no_proxy
+        ;;
+    esac
+    export "${key}=${value}"
+  done <"$file"
+}
+
+# curl uses lowercase http_proxy for http:// URLs; many Mainland hosts only export HTTP_PROXY.
+sync_curl_proxy_env() {
+  if [[ -n "${HTTP_PROXY+x}" && -z "${http_proxy+x}" ]]; then
+    export http_proxy="$HTTP_PROXY"
+  fi
+  if [[ -n "${HTTPS_PROXY+x}" && -z "${https_proxy+x}" ]]; then
+    export https_proxy="$HTTPS_PROXY"
+  fi
+  if [[ -n "${NO_PROXY+x}" && -z "${no_proxy+x}" ]]; then
+    export no_proxy="$NO_PROXY"
+  fi
+}
+
+prepare_proxy_env() {
+  load_proxy_vars_from_env_file "$ENV_FILE"
+  sync_curl_proxy_env
+}
+prepare_proxy_env
+
 curl_download() {
   local url="$1"
   local out="$2"
@@ -95,7 +192,7 @@ download() {
 
   temporary_file=$(mktemp "./${filename}.tmp.XXXXXX")
   if ! curl_download "$url" "$temporary_file"; then
-    fail "could not download ${filename} from ${url}."
+    fail "could not download ${filename} from ${url}. Set HTTP_PROXY/HTTPS_PROXY in the shell or .env (NO_PROXY for localhost), or pre-place the file and use --local."
   fi
   mv -- "$temporary_file" "$filename"
   temporary_file=""
@@ -190,7 +287,10 @@ if [[ "$prepare_only" == true ]]; then
   exit 0
 fi
 
-docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" pull
+prepare_proxy_env
+if ! docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" pull; then
+  fail "could not pull images. Shell HTTP_PROXY often does not reach the Docker daemon. Configure daemon proxy/registry-mirrors, set image env vars to a reachable registry, or preload images then compose up with --pull never."
+fi
 # `--wait` without `--wait-timeout` can hang on one-shot services (Compose < 2.7)
 # or never return if a healthcheck stays red (Compose < 2.17). Prefer both flags.
 compose_up_help=$(docker compose up --help 2>/dev/null || true)

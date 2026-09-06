@@ -1,5 +1,5 @@
 import type { ComputerMode } from "@rakazo/contracts";
-import type { PrismaClient } from "./client.js";
+import type { Prisma, PrismaClient } from "./client.js";
 
 export type { ComputerMode } from "@rakazo/contracts";
 
@@ -21,6 +21,18 @@ export function computerHomeKey(mode: ComputerMode, spaceId: string, botId?: str
 }
 
 type ComputerDb = Pick<PrismaClient, "computer">;
+type ExecutionLeaseDb = Pick<PrismaClient, "computerExecutionLease">;
+
+/** Expire leases as fencing tombstones so the next acquire increments fence. */
+export async function expireComputerExecutionLeases(
+  prisma: ExecutionLeaseDb,
+  where: Prisma.ComputerExecutionLeaseWhereInput,
+): Promise<void> {
+  await prisma.computerExecutionLease.updateMany({
+    where,
+    data: { expiresAt: new Date(0) },
+  });
+}
 
 export async function ensureComputerRecord(
   prisma: ComputerDb,

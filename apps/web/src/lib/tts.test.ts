@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Speaker } from "./tts.js";
+import { MAX_VOICE_AUDIO_BYTES, Speaker, VOICE_RESPONSE_TIMEOUT_MS } from "./tts.js";
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
@@ -96,5 +97,54 @@ describe("Speaker", () => {
     expect(headers.get("x-rakazo-space-id")).toBe("space-support");
     expect(headers.get("content-type")).toBe("application/json");
     expect(prepare.mock.calls[0]?.[3]).toBe("space-support");
+  });
+
+  it("rejects oversized audio without waiting for response cancellation", async () => {
+    const cancel = vi.fn(() => new Promise<void>(() => undefined));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(new ReadableStream({ cancel }), {
+            headers: { "content-length": String(MAX_VOICE_AUDIO_BYTES + 1) },
+          }),
+      ),
+    );
+    const speaker = new Speaker();
+    vi.spyOn(
+      speaker as unknown as { prepare: () => Promise<string[]> },
+      "prepare",
+    ).mockResolvedValue(["Hello."]);
+
+    await expect(speaker.speak("Hello.")).resolves.toBeUndefined();
+
+    expect(speaker.state.error).toBe("Voice response is too large.");
+    expect(cancel).toHaveBeenCalledOnce();
+  });
+
+  it("times out while a voice response body is stalled", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            new ReadableStream({
+              pull: () => new Promise<void>(() => undefined),
+            }),
+          ),
+      ),
+    );
+    const speaker = new Speaker();
+    vi.spyOn(
+      speaker as unknown as { prepare: () => Promise<string[]> },
+      "prepare",
+    ).mockResolvedValue(["Hello."]);
+
+    const pending = speaker.speak("Hello.");
+    await vi.advanceTimersByTimeAsync(VOICE_RESPONSE_TIMEOUT_MS);
+    await pending;
+
+    expect(speaker.state.error).toBe("Voice request timed out.");
   });
 });

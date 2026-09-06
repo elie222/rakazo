@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { assertSafeWebUrl, fetchSafeWebText, isBlockedHostname } from "./web-ssrf.js";
 
 const publicResolver = async () => [{ address: "203.0.113.10", family: 4 as const }];
@@ -92,6 +92,35 @@ describe("web SSRF policy", () => {
     expect(result.body).toContain("hello");
   });
 
+  it("drops caller-provided headers on cross-origin redirects", async () => {
+    let finalHeaders = new Headers();
+    const fetchMock: typeof fetch = async (input, init) => {
+      const url = new URL(String(input));
+      if (url.origin === "https://example.test") {
+        return new Response(null, {
+          status: 302,
+          headers: { location: "https://other.example.test/final" },
+        });
+      }
+      finalHeaders = new Headers(init?.headers);
+      return new Response("ok", { status: 200 });
+    };
+
+    await fetchSafeWebText("https://example.test/start", {
+      fetch: fetchMock,
+      resolveHostname: publicResolver,
+      headers: {
+        Authorization: "Bearer stored",
+        "X-Api-Key": "stored-key",
+        "X-Trace-Id": "trace-1",
+      },
+    });
+
+    expect(finalHeaders.get("authorization")).toBeNull();
+    expect(finalHeaders.get("x-api-key")).toBeNull();
+    expect(finalHeaders.get("x-trace-id")).toBeNull();
+  });
+
   it("rejects oversized Content-Length before reading", async () => {
     const fetchMock: typeof fetch = async () =>
       new Response("ignored", {
@@ -152,6 +181,22 @@ describe("web SSRF policy", () => {
     await expect(readBodyCapped(response, 500)).rejects.toThrow(/too large/i);
     // Second chunk already exceeds; a third pull must not be needed.
     expect(pulls).toBeLessThanOrEqual(2);
+  });
+
+  it("readBodyCapped does not wait for a hanging stream cancellation", async () => {
+    const { readBodyCapped } = await import("./web-ssrf.js");
+    const cancel = vi.fn(() => new Promise<void>(() => undefined));
+    const response = new Response(
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new Uint8Array(501));
+        },
+        cancel,
+      }),
+    );
+
+    await expect(readBodyCapped(response, 500)).rejects.toThrow(/too large/i);
+    expect(cancel).toHaveBeenCalledOnce();
   });
 
   it("accepts a streamed body that stays under maxBytes", async () => {

@@ -8,7 +8,13 @@ export function resolveMobileUiLocale(): string {
   return Intl.DateTimeFormat().resolvedOptions().locale || "en";
 }
 
-export function applyMobileUiDirection(locale = resolveMobileUiLocale()) {
+/**
+ * Apply layout direction for a UI locale.
+ * Default is English (LTR): mobile UI locales are en / zh-CN only.
+ * Do not pass the device locale here — that fights bootstrapI18n on RTL phones
+ * and can reload-loop when the resolved UI locale stays LTR.
+ */
+export function applyMobileUiDirection(locale = "en") {
   const rtl = textDirectionForLocale(locale) === "rtl";
   // Always allow RTL so a later locale switch can take effect after relaunch.
   I18nManager.allowRTL(true);

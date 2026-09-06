@@ -7,6 +7,7 @@ import {
   MAX_PLAYWRIGHT_SCREENSHOT_COUNT,
   type PlaywrightRun,
   type PlaywrightScreenshot,
+  renderMobileScreenshotGallery,
   renderPlaywrightDashboard,
   renderScreenshotGallery,
   shouldPublishStableMainBaseline,
@@ -351,6 +352,34 @@ describe("renderScreenshotGallery", () => {
     expect(html).toContain("Automatic failure capture");
     expect(html).toContain('data-filter="all" aria-pressed="true"');
     expect(html).toContain('data-filter="new" aria-pressed="false" disabled');
+  });
+
+  it("renders the same responsive gallery as a mobile catalog without review controls", () => {
+    const html = renderMobileScreenshotGallery({
+      createdAt: "2026-08-16T10:00:00.000Z",
+      runUrl: "https://github.com/example/repository/actions/runs/200",
+      screenshots: [
+        {
+          fileName: "images/01-inbox.png",
+          source: "01-inbox.png",
+          title: "inbox",
+        },
+      ],
+      screenshotsUrl: "https://example.com/playwright/mobile-android/runs/200-1/index.html",
+      sha: "abcdef1234567890",
+    });
+
+    expect(html).toContain("<h1>Android screenshots</h1>");
+    expect(html).toContain("<strong>inbox</strong>");
+    expect(html).toContain(
+      'src="https://example.com/playwright/mobile-android/runs/200-1/images/01-inbox.png"',
+    );
+    expect(html).not.toContain('class="badges"');
+    expect(html).not.toContain("SHA-256");
+    expect(html).not.toContain("NO BASELINE");
+    expect(html).not.toContain('class="filters"');
+    expect(html).not.toContain('document.querySelectorAll("figure")');
+    expect(html).not.toContain("All runs");
   });
 });
 

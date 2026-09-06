@@ -4,7 +4,9 @@ import { runContinueJob } from "@rakazo/adapter-kit";
 import type { EncryptedSecretStore } from "@rakazo/adapters";
 import { hasValidBearerToken } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
 import type { Hono } from "hono";
+import { readBoundedBody } from "./http-body.js";
 
 export const WEBHOOK_MAX_BODY_BYTES = 64 * 1024;
 export const WEBHOOK_SECRET_KIND = "webhook";
@@ -39,38 +41,6 @@ export function formatWebhookPrompt(payload: Record<string, unknown>): string {
 
 export function webhookPath(botId: string): string {
   return `/api/v1/bots/${botId}/webhook`;
-}
-
-export async function readBoundedBody(request: Request, maxBytes: number): Promise<string | null> {
-  const contentLengthHeader = request.headers.get("content-length");
-  if (contentLengthHeader !== null) {
-    const contentLength = Number(contentLengthHeader);
-    if (!Number.isFinite(contentLength) || contentLength < 0 || contentLength > maxBytes) {
-      return null;
-    }
-  }
-
-  if (!request.body) return "";
-
-  const reader = request.body.getReader();
-  const decoder = new TextDecoder();
-  let bytes = 0;
-  let body = "";
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      bytes += value.byteLength;
-      if (bytes > maxBytes) {
-        await reader.cancel();
-        return null;
-      }
-      body += decoder.decode(value, { stream: true });
-    }
-    return body + decoder.decode();
-  } finally {
-    reader.releaseLock();
-  }
 }
 
 function parseWebhookPayload(
@@ -193,7 +163,7 @@ export function mountWebhookHttpRoutes(app: Hono, deps: WebhookDeps) {
 
     if (sent.runId) {
       await deps.jobs.enqueue(runContinueJob(sent.runId)).catch((error) => {
-        console.error("webhook run enqueue error", error);
+        getLogger().error("webhook run enqueue error", error);
       });
     }
 

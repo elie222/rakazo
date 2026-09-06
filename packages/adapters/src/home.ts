@@ -5,7 +5,6 @@ import {
   mkdir,
   open,
   readdir,
-  readFile,
   realpath,
   rename,
   rm,
@@ -14,6 +13,7 @@ import {
 } from "node:fs/promises";
 import path from "node:path";
 import type { AdapterContext, AgentHomeStore, PortableFile } from "@rakazo/adapter-kit";
+import { fileHandlePath } from "./file-handle-path.js";
 
 export class LocalAgentHomeStore implements AgentHomeStore {
   private readonly botWrites = new Map<string, Promise<void>>();
@@ -97,7 +97,8 @@ export class LocalAgentHomeStore implements AgentHomeStore {
     await this.recoverInterruptedCommit(botId);
     const dir = this.botDir(botId);
     await mkdir(dir, { recursive: true });
-    yield* walkFiles(dir, dir);
+    const root = await realpath(dir);
+    yield* walkFiles(root, root);
   }
 
   async readFile(
@@ -266,7 +267,11 @@ async function containedTarget(root: string, candidate: string) {
 
 function assertContained(root: string, candidate: string) {
   const relative = path.relative(root, candidate);
-  if (relative === "" || (!relative.startsWith(`..${path.sep}`) && relative !== "..")) return;
+  if (
+    relative === "" ||
+    (!path.isAbsolute(relative) && !relative.startsWith(`..${path.sep}`) && relative !== "..")
+  )
+    return;
   throw new Error("Path escapes the bot home");
 }
 
@@ -283,21 +288,52 @@ async function pathExists(target: string) {
   }
 }
 
-async function copyDir(src: string, dest: string, sourceRoot = src, visited = new Set<string>()) {
-  await mkdir(dest, { recursive: true });
-  const current = await containedTarget(sourceRoot, src).catch(() => null);
+async function traversalTarget(root: string, candidate: string) {
+  const resolved = await realpath(candidate);
+  assertContained(root, resolved);
+  return resolved;
+}
+
+async function readTraversalFile(root: string, full: string) {
+  const handle = await open(
+    full,
+    constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0),
+  );
+  try {
+    const info = await handle.stat();
+    if (!info.isFile()) throw new Error("Home entry is not a regular file");
+    // O_NOFOLLOW only protects the final component. A parent can be swapped
+    // during open and restored before any pathname recheck. Check the actual
+    // opened object against the root captured once for the entire traversal.
+    assertContained(root, await fileHandlePath(handle.fd));
+    return { content: await handle.readFile(), mode: info.mode };
+  } finally {
+    await handle.close();
+  }
+}
+
+async function copyDir(
+  src: string,
+  dest: string,
+  sourceRoot?: string,
+  visited = new Set<string>(),
+) {
+  const root = sourceRoot ?? (await realpath(src));
+  const current = await traversalTarget(root, src).catch(() => null);
   if (!current || visited.has(current)) return;
+  await mkdir(dest, { recursive: true });
   visited.add(current);
   const entries = await readdir(current, { withFileTypes: true }).catch(() => []);
   for (const entry of entries) {
-    const from = await containedTarget(sourceRoot, path.join(current, entry.name)).catch(
-      () => null,
-    );
+    const from = await traversalTarget(root, path.join(current, entry.name)).catch(() => null);
     if (!from) continue;
     const to = path.join(dest, entry.name);
     const info = await stat(from);
-    if (info.isDirectory()) await copyDir(from, to, sourceRoot, visited);
-    else if (info.isFile()) await writeFile(to, await readFile(from), { mode: info.mode & 0o777 });
+    if (info.isDirectory()) await copyDir(from, to, root, visited);
+    else if (info.isFile()) {
+      const file = await readTraversalFile(root, from);
+      await writeFile(to, file.content, { mode: file.mode & 0o777 });
+    }
   }
 }
 
@@ -307,12 +343,12 @@ async function* walkFiles(
   outputPath = "",
   visited = new Set<string>(),
 ): AsyncGenerator<PortableFile> {
-  const resolvedCurrent = await containedTarget(root, current).catch(() => null);
+  const resolvedCurrent = await traversalTarget(root, current).catch(() => null);
   if (!resolvedCurrent || visited.has(resolvedCurrent)) return;
   visited.add(resolvedCurrent);
   const entries = await readdir(resolvedCurrent, { withFileTypes: true }).catch(() => []);
   for (const entry of entries) {
-    const full = await containedTarget(root, path.join(resolvedCurrent, entry.name)).catch(
+    const full = await traversalTarget(root, path.join(resolvedCurrent, entry.name)).catch(
       () => null,
     );
     if (!full) continue;
@@ -321,11 +357,11 @@ async function* walkFiles(
     if (info.isDirectory()) {
       yield* walkFiles(root, full, portablePath, visited);
     } else if (info.isFile()) {
-      const content = await readFile(full);
+      const { content, mode } = await readTraversalFile(root, full);
       yield {
         path: portablePath,
         content: new Uint8Array(content),
-        executable: Boolean(info.mode & 0o100),
+        executable: Boolean(mode & 0o100),
       };
     }
   }

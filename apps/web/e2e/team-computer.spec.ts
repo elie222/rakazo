@@ -3,7 +3,7 @@ import {
   activeBotId,
   captureScreenshot,
   completeOnboarding,
-  openNewBot,
+  createNamedBot,
   realSandboxTimeout,
   rpc,
   signup,
@@ -202,23 +202,15 @@ test("an active Team bot must be stopped before user takeover", async ({ page },
   await expect(page.getByRole("button", { name: "Close computer" })).toBeVisible();
   await expect(chrome.getByText("You have control", { exact: true })).toBeVisible();
   await expect(chrome.getByRole("button", { name: /Take control/i })).toHaveCount(0);
+  await expect(chrome.getByRole("button", { name: "Release", exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "49-team-computer-open-after-stop");
-  await rpc(page, "computer/release", { botId: chiefId });
+  await chrome.getByRole("button", { name: "Release", exact: true }).click();
+  // Release closes the overlay and clears control without a DB edit.
+  await expect(page.getByRole("button", { name: "Close computer" })).toHaveCount(0);
 });
 
 async function createBot(page: Page, name: string, mode: "team" | "dedicated") {
-  await openNewBot(page);
-  await expect(page.getByText("New bot", { exact: true })).toBeVisible();
-  const team = page.getByRole("button", { name: "Team", exact: true });
-  const privateComputer = page.getByRole("button", { name: "Private", exact: true });
-  await expect(team).toHaveAttribute("aria-pressed", "true");
-  if (mode === "dedicated") await privateComputer.click();
-  await expect(mode === "team" ? team : privateComputer).toHaveAttribute("aria-pressed", "true");
-  await page.getByPlaceholder("Name this bot").fill(name);
-  await page.getByRole("button", { name: "Create", exact: true }).click();
-  await page.waitForURL(/\/app\/[^/]+$/);
-  await expect(page.getByPlaceholder(`Message ${name}`)).toBeVisible();
-  return activeBotId(page);
+  return createNamedBot(page, name, { computerMode: mode });
 }
 
 async function setComputerMode(

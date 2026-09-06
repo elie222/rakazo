@@ -75,7 +75,8 @@ describe("archiveGroup", () => {
   let runUpdateMany: ReturnType<typeof vi.fn>;
   let attemptUpdateMany: ReturnType<typeof vi.fn>;
   let taskUpdateMany: ReturnType<typeof vi.fn>;
-  let leaseDeleteMany: ReturnType<typeof vi.fn>;
+  let leaseUpdateMany: ReturnType<typeof vi.fn>;
+  let leaseFindMany: ReturnType<typeof vi.fn>;
   let computerUpdateMany: ReturnType<typeof vi.fn>;
   let eventDeleteMany: ReturnType<typeof vi.fn>;
   let groupUpdate: ReturnType<typeof vi.fn>;
@@ -87,16 +88,21 @@ describe("archiveGroup", () => {
     findManyRuns = vi.fn().mockResolvedValue([{ id: "run-1", taskId: "task-1" }]);
     findManyComputers = vi.fn().mockResolvedValue([
       {
+        id: "computer-1",
         homeKey: "home-1",
         kind: "fake",
         providerRef: "computer-1",
         executionBotId: "bot-1",
+        executionRunId: "run-1",
       },
     ]);
     runUpdateMany = vi.fn();
     attemptUpdateMany = vi.fn();
     taskUpdateMany = vi.fn();
-    leaseDeleteMany = vi.fn();
+    leaseUpdateMany = vi.fn();
+    leaseFindMany = vi
+      .fn()
+      .mockResolvedValue([{ computerId: "computer-1", runId: "run-1", fence: 3 }]);
     computerUpdateMany = vi.fn();
     eventDeleteMany = vi.fn();
     groupUpdate = vi.fn();
@@ -106,7 +112,7 @@ describe("archiveGroup", () => {
       run: { findMany: findManyRuns, updateMany: runUpdateMany },
       attempt: { updateMany: attemptUpdateMany },
       task: { updateMany: taskUpdateMany },
-      computerExecutionLease: { deleteMany: leaseDeleteMany },
+      computerExecutionLease: { findMany: leaseFindMany, updateMany: leaseUpdateMany },
       computer: { findMany: findManyComputers, updateMany: computerUpdateMany },
       event: { deleteMany: eventDeleteMany },
     };
@@ -122,10 +128,13 @@ describe("archiveGroup", () => {
       cancelledRunIds: ["run-1"],
       computers: [
         {
+          id: "computer-1",
           homeKey: "home-1",
           kind: "fake",
           providerRef: "computer-1",
           executionBotId: "bot-1",
+          executionRunId: "run-1",
+          executionFence: 3,
         },
       ],
     });
@@ -144,7 +153,10 @@ describe("archiveGroup", () => {
         }),
       }),
     );
-    expect(leaseDeleteMany).toHaveBeenCalledWith({ where: { runId: { in: ["run-1"] } } });
+    expect(leaseUpdateMany).toHaveBeenCalledWith({
+      where: { runId: { in: ["run-1"] } },
+      data: { expiresAt: new Date(0) },
+    });
     expect(computerUpdateMany).toHaveBeenCalledWith({
       where: { executionRunId: { in: ["run-1"] } },
       data: {

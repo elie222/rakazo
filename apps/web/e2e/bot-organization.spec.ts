@@ -21,12 +21,11 @@ test("pinned bots and sidebar sections persist", async ({ page }, testInfo) => {
   await expect(sidebar.locator('[data-sidebar-group="pinned"]')).toHaveCount(0);
 
   await bot.click({ button: "right" });
-  await page.getByRole("menuitem", { name: "Move to", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Move to", exact: true }).hover();
+  const moveMenu = page.getByRole("menu", { name: "Move to", exact: true });
+  await expect(moveMenu).toBeVisible();
   await captureScreenshot(page, testInfo, "move-to-section-menu");
-  await page
-    .getByRole("menu", { name: /Move Chief to section/ })
-    .getByText("New section")
-    .click();
+  await moveMenu.getByText("New section").click();
   const dialog = page.getByRole("dialog", { name: "New section" });
   await dialog.getByLabel("Name").fill("Projects");
   await dialog.getByRole("button", { name: "Create" }).click();
@@ -233,9 +232,9 @@ test("group chats share every context-menu action", async ({ page }, testInfo) =
   await group.click({ button: "right" });
   await page.getByRole("menuitem", { name: "Unpin", exact: true }).click();
   await group.click({ button: "right" });
-  await page.getByRole("menuitem", { name: "Move to", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Move to", exact: true }).hover();
   await page
-    .getByRole("menu", { name: /Move Group menu to section/ })
+    .getByRole("menu", { name: "Move to", exact: true })
     .getByRole("menuitem", { name: "New section", exact: true })
     .click();
   const sectionDialog = page.getByRole("dialog", { name: "New section" });

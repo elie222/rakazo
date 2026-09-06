@@ -79,67 +79,81 @@ const { copy, waitlist } = Astro.props;
   </div>
 </dialog>
 
-<script>
-  const dialog = document.querySelector<HTMLDialogElement>("[data-get-started-dialog]");
-  const openers = document.querySelectorAll<HTMLButtonElement>("[data-get-started-open]");
-  const closeButtons = dialog?.querySelectorAll<HTMLButtonElement>("[data-get-started-close]");
-  const choice = dialog?.querySelector<HTMLElement>("[data-get-started-choice]");
-  const signup = dialog?.querySelector<HTMLElement>("[data-get-started-signup]");
-  const success = dialog?.querySelector<HTMLElement>("[data-get-started-success]");
-  const successTitle = dialog?.querySelector<HTMLElement>("[data-get-started-success-title]");
-  const email = dialog?.querySelector<HTMLInputElement>("input[type='email']");
-  const selfHostBtn = dialog?.querySelector<HTMLButtonElement>("[data-get-started-selfhost]");
-  const cloudBtn = dialog?.querySelector<HTMLButtonElement>("[data-get-started-cloud]");
-  const backBtn = dialog?.querySelector<HTMLButtonElement>("[data-get-started-back]");
+<script is:inline>
+  (function () {
+    const dialog = document.querySelector("[data-get-started-dialog]");
+    if (!dialog) return;
 
-  function showChoice() {
-    if (!choice || !signup || !success) return;
-    choice.hidden = false;
-    signup.hidden = true;
-    success.hidden = true;
-    dialog?.setAttribute("aria-labelledby", "get-started-title");
-  }
+    const choice = dialog.querySelector("[data-get-started-choice]");
+    const signup = dialog.querySelector("[data-get-started-signup]");
+    const success = dialog.querySelector("[data-get-started-success]");
+    const successTitle = dialog.querySelector("[data-get-started-success-title]");
+    const email = dialog.querySelector("input[type='email']");
+    const selfHostBtn = dialog.querySelector("[data-get-started-selfhost]");
 
-  function showCloud() {
-    if (!choice || !signup || !success) return;
-    choice.hidden = true;
-    signup.hidden = false;
-    success.hidden = true;
-    dialog?.setAttribute("aria-labelledby", "get-started-cloud-title");
-    window.requestAnimationFrame(() => email?.focus());
-  }
+    function showChoice() {
+      if (!choice || !signup || !success) return;
+      choice.hidden = false;
+      signup.hidden = true;
+      success.hidden = true;
+      dialog.setAttribute("aria-labelledby", "get-started-title");
+    }
 
-  openers.forEach((opener) => {
-    opener.addEventListener("click", () => {
-      if (!dialog || dialog.open) return;
-      showChoice();
-      dialog.showModal();
-      window.requestAnimationFrame(() => selfHostBtn?.focus());
+    function showCloud() {
+      if (!choice || !signup || !success) return;
+      choice.hidden = true;
+      signup.hidden = false;
+      success.hidden = true;
+      dialog.setAttribute("aria-labelledby", "get-started-cloud-title");
+      window.requestAnimationFrame(() => email?.focus());
+    }
+
+    document.addEventListener("click", (event) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+
+      if (target.closest("[data-get-started-open]")) {
+        if (dialog.open) return;
+        showChoice();
+        dialog.showModal();
+        window.requestAnimationFrame(() => selfHostBtn?.focus());
+        return;
+      }
+
+      if (target.closest("[data-get-started-close]")) {
+        dialog.close();
+        return;
+      }
+
+      if (target.closest("[data-get-started-selfhost]")) {
+        dialog.close();
+        document.getElementById("selfhost")?.scrollIntoView({ behavior: "smooth" });
+        return;
+      }
+
+      if (target.closest("[data-get-started-cloud]")) {
+        showCloud();
+        return;
+      }
+
+      if (target.closest("[data-get-started-back]")) {
+        showChoice();
+      }
     });
-  });
 
-  selfHostBtn?.addEventListener("click", () => {
-    dialog?.close();
-    document.getElementById("selfhost")?.scrollIntoView({ behavior: "smooth" });
-  });
+    dialog.addEventListener("click", (event) => {
+      if (event.target === dialog) dialog.close();
+    });
 
-  cloudBtn?.addEventListener("click", () => showCloud());
-  backBtn?.addEventListener("click", () => showChoice());
+    dialog.addEventListener("waitlist:joined", () => {
+      if (!choice || !signup || !success) return;
+      choice.hidden = true;
+      signup.hidden = true;
+      success.hidden = false;
+      dialog.setAttribute("aria-labelledby", "get-started-success-title");
+      successTitle?.focus();
+    });
 
-  closeButtons?.forEach((button) => {
-    button.addEventListener("click", () => dialog?.close());
-  });
-
-  dialog?.addEventListener("click", (event) => {
-    if (event.target === dialog) dialog.close();
-  });
-
-  dialog?.addEventListener("waitlist:joined", () => {
-    if (!choice || !signup || !success) return;
-    choice.hidden = true;
-    signup.hidden = true;
-    success.hidden = false;
-    dialog.setAttribute("aria-labelledby", "get-started-success-title");
-    successTitle?.focus();
-  });
+    document.documentElement.dataset.getStartedReady = "";
+  })();
 </script>

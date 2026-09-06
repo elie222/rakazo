@@ -1,6 +1,11 @@
 import type { ProcessEvent } from "@rakazo/adapter-kit";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DockerSandboxProvider } from "./docker-sandbox.js";
+import {
+  DockerSandboxProvider,
+  MAX_SANDBOX_ERROR_RESPONSE_BYTES,
+  MAX_SANDBOX_SUCCESS_RESPONSE_BYTES,
+  SCREEN_RELEASE_TIMEOUT_MS,
+} from "./docker-sandbox.js";
 
 const context = {
   operationId: "docker-test",
@@ -13,7 +18,10 @@ const context = {
 };
 
 describe("Docker sandbox", () => {
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
 
   it("sends the bounded timeout to the supervisor and preserves its honest result", async () => {
     const fetchMock = vi.fn(async (_input: string | URL | Request, _init?: RequestInit) =>
@@ -46,6 +54,82 @@ describe("Docker sandbox", () => {
       { type: "exit", code: 124 },
     ]);
     expect(fetchMock.mock.calls[0]?.[1]?.headers).not.toHaveProperty("x-rakazo-screen-id");
+    expect(fetchMock.mock.calls[0]?.[1]?.headers).toMatchObject({
+      "x-request-id": expect.any(String),
+      traceparent: expect.stringMatching(/^00-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$/),
+    });
+  });
+
+  it("rejects a declared oversized success response without buffering it", async () => {
+    const cancel = vi.fn();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(new ReadableStream({ cancel }), {
+            headers: { "content-length": String(MAX_SANDBOX_SUCCESS_RESPONSE_BYTES + 1) },
+          }),
+      ),
+    );
+    const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
+
+    await expect(
+      provider.provision({ botId: "bot", homePath: "/tmp/bot" }, context),
+    ).rejects.toThrow(`sandbox response exceeds ${MAX_SANDBOX_SUCCESS_RESPONSE_BYTES} bytes`);
+    await vi.waitFor(() => expect(cancel).toHaveBeenCalledOnce());
+  });
+
+  it("stops a streamed file response at the caller-derived encoded limit", async () => {
+    const cancel = vi.fn();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            new ReadableStream({
+              start(controller) {
+                controller.enqueue(new Uint8Array(1029));
+              },
+              cancel,
+            }),
+          ),
+      ),
+    );
+    const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
+
+    await expect(
+      provider.readFile(
+        { id: "computer", botId: "bot", kind: "docker", providerRef: "computer" },
+        "small.txt",
+        context,
+        { maxBytes: 1 },
+      ),
+    ).rejects.toThrow("sandbox response exceeds 1028 bytes");
+    await vi.waitFor(() => expect(cancel).toHaveBeenCalledOnce());
+  });
+
+  it("accepts a valid encoded envelope above the generic response cap", async () => {
+    const maxBytes = 13 * 1024 * 1024;
+    const encodedLimit = Math.ceil(maxBytes / 3) * 4 + 1024;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response('{"content":""}', {
+            headers: { "content-length": String(encodedLimit) },
+          }),
+      ),
+    );
+    const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
+
+    await expect(
+      provider.readFile(
+        { id: "computer", botId: "bot", kind: "docker", providerRef: "computer" },
+        "large.bin",
+        context,
+        { maxBytes },
+      ),
+    ).resolves.toEqual(new Uint8Array());
   });
 
   it("releases this bot's screen assignment through the supervisor", async () => {
@@ -90,7 +174,28 @@ describe("Docker sandbox", () => {
     ).resolves.toBeUndefined();
 
     expect(fetchMock).toHaveBeenCalledOnce();
-    expect(fetchMock.mock.calls[0]?.[1]).not.toHaveProperty("signal");
+    expect(fetchMock.mock.calls[0]?.[1]?.signal).not.toBe(abort.signal);
+    expect(fetchMock.mock.calls[0]?.[1]?.signal?.aborted).toBe(false);
+  });
+
+  it("bounds screen release even when fetch ignores cancellation", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn(
+      async (_input: string | URL | Request, _init?: RequestInit) =>
+        new Promise<Response>(() => undefined),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
+
+    const pending = provider.releaseScreen(
+      { id: "computer", botId: "home-bot", kind: "docker", providerRef: "computer" },
+      context,
+    );
+    const rejected = expect(pending).rejects.toThrow("sandbox screen release timed out");
+    await vi.advanceTimersByTimeAsync(SCREEN_RELEASE_TIMEOUT_MS);
+
+    await rejected;
+    expect(fetchMock.mock.calls[0]?.[1]?.signal?.aborted).toBe(true);
   });
 
   it("surfaces a supervisor failure from stop and destroy instead of swallowing it", async () => {
@@ -118,6 +223,51 @@ describe("Docker sandbox", () => {
     );
   });
 
+  it("does not buffer an oversized supervisor error body", async () => {
+    const cancel = vi.fn();
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(new ReadableStream({ cancel }), {
+          status: 500,
+          headers: { "content-length": String(MAX_SANDBOX_ERROR_RESPONSE_BYTES + 1) },
+        }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
+    const computer = {
+      id: "computer",
+      botId: "bot",
+      kind: "docker",
+      providerRef: "computer",
+    } as const;
+
+    await expect(provider.stop(computer, context)).rejects.toThrow("sandbox stop failed: 500");
+    await vi.waitFor(() => expect(cancel).toHaveBeenCalledOnce());
+  });
+
+  it("stops reading a streamed supervisor error at the byte limit", async () => {
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              controller.enqueue(new Uint8Array(MAX_SANDBOX_ERROR_RESPONSE_BYTES + 1));
+            },
+          }),
+          { status: 500 },
+        ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
+
+    await expect(
+      provider.stop(
+        { id: "computer", botId: "bot", kind: "docker", providerRef: "computer" },
+        context,
+      ),
+    ).rejects.toThrow("sandbox stop failed: 500");
+  });
+
   it("treats a computer the supervisor no longer knows as already stopped and destroyed", async () => {
     const fetchMock = vi.fn(async () =>
       Response.json({ error: "computer not found" }, { status: 404 }),
@@ -134,5 +284,21 @@ describe("Docker sandbox", () => {
     await expect(provider.stop(computer, context)).resolves.toBeUndefined();
     await expect(provider.destroy(computer, context)).resolves.toBeUndefined();
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+  it("asks the supervisor to cancel orphaned run work when releasing a screen", async () => {
+    const fetchMock = vi.fn(async () => Response.json({ ok: true }));
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
+    await provider.releaseScreen(
+      { id: "computer-1", botId: "bot", kind: "docker", providerRef: "computer-1" },
+      { ...context, cancelRunWork: true },
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://supervisor.test/computers/computer-1/screen",
+      expect.objectContaining({
+        method: "DELETE",
+        headers: expect.objectContaining({ "x-rakazo-cancel-run-work": "1" }),
+      }),
+    );
   });
 });

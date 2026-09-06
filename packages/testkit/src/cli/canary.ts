@@ -37,7 +37,7 @@ async function main() {
       });
     }
     execSync(
-      "pnpm exec vitest run --no-file-parallelism packages/testkit/src/providers.canary.test.ts",
+      "pnpm exec vitest run --no-file-parallelism packages/testkit/src/providers.canary.test.ts packages/testkit/src/release-watch.canary.test.ts",
       { stdio: "inherit", env },
     );
   } finally {

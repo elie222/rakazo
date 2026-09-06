@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { allowlistDrift, McpConnector } from "./mcp-connector.js";
+import { type McpOAuthBroker, StoredMcpOAuthProvider } from "./mcp-oauth.js";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -382,6 +383,92 @@ describe("MCP connector session cache", () => {
     expect(state.calls).toEqual(["__catalog_search", "__catalog_load", "__catalog_execute"]);
     await connector.close();
   });
+
+  it.each(["localhost", "127.0.0.1", "[::1]"])(
+    "blocks OAuth rediscovery to HTTP %s after invalid_client from a public server",
+    async (host) => {
+      const requests: Request[] = [];
+      const metadataUrl = `http://${host}:8123/private-probe`;
+      const provider = new StoredMcpOAuthProvider(
+        "server-1",
+        {
+          oauth: {
+            redirectUri: "https://app.example.test/mcp/oauth/callback",
+            tokens: {
+              access_token: "fake-stale-access",
+              refresh_token: "fake-refresh",
+              token_type: "bearer",
+            },
+            clientInformation: { client_id: "fake-client" },
+            discoveryState: {
+              authorizationServerUrl: "https://auth.example.test",
+              resourceMetadata: {
+                resource: SERVER.endpoint,
+                authorization_servers: ["https://auth.example.test"],
+              },
+              authorizationServerMetadata: {
+                issuer: "https://auth.example.test",
+                authorization_endpoint: "https://auth.example.test/authorize",
+                token_endpoint: "https://auth.example.test/token",
+                response_types_supported: ["code"],
+              },
+            },
+          },
+        },
+        async () => undefined,
+      );
+      const invalidate = vi.spyOn(provider, "invalidateCredentials");
+      const connector = new McpConnector(
+        { botMcpServer: { findMany: vi.fn().mockResolvedValue([ASSIGNMENT]) } } as never,
+        {} as never,
+        {
+          network: {
+            resolveHostname: async () => [{ address: "203.0.113.10", family: 4 }],
+            fetch: vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+              const request = new Request(input, init);
+              requests.push(request);
+              if (request.url === SERVER.endpoint) {
+                return new Response(null, {
+                  status: 401,
+                  headers: { "WWW-Authenticate": `Bearer resource_metadata="${metadataUrl}"` },
+                });
+              }
+              if (request.url === "https://auth.example.test/token") {
+                return Response.json({ error: "invalid_client" }, { status: 400 });
+              }
+              return new Response(null, { status: 404 });
+            }),
+          },
+        },
+        { providerFor: vi.fn().mockResolvedValue(provider) } as unknown as McpOAuthBroker,
+      );
+
+      try {
+        await expect(
+          connector.discoverTools({
+            spaceId: "w1",
+            userId: "u1",
+            botId: "bot-1",
+            signal: new AbortController().signal,
+          } as never),
+        ).resolves.toEqual([]);
+
+        expect(requests.slice(0, 2).map((request) => `${request.method} ${request.url}`)).toEqual([
+          `POST ${SERVER.endpoint}`,
+          "POST https://auth.example.test/token",
+        ]);
+        expect(invalidate).toHaveBeenCalledWith("all");
+        expect(requests.some((request) => request.url === metadataUrl)).toBe(false);
+        // The endpoint-origin compatibility retry remains allowed, through remote policy.
+        expect(
+          requests.some((request) => request.url === "https://mcp.example.test/private-probe"),
+        ).toBe(true);
+        expect(requests.every((request) => new URL(request.url).protocol === "https:")).toBe(true);
+      } finally {
+        await connector.close();
+      }
+    },
+  );
 
   it("connects to an explicitly configured localhost HTTP server", async () => {
     const state = { failNext: false, initializations: 0 };

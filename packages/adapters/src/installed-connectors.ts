@@ -633,7 +633,9 @@ async function readBoundedText(
     if (value.byteLength > remaining) {
       if (remaining > 0) text += decoder.decode(value.subarray(0, remaining), { stream: true });
       await reader.cancel().catch(() => undefined);
-      return { text: text + decoder.decode(), truncated: true };
+      // Do not flush an incomplete sequence at the byte boundary: TextDecoder
+      // would turn it into U+FFFD instead of returning the valid UTF-8 prefix.
+      return { text, truncated: true };
     }
     bytes += value.byteLength;
     text += decoder.decode(value, { stream: true });

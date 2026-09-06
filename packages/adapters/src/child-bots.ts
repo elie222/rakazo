@@ -13,10 +13,12 @@ import {
   computerScopeKey,
   createRepos,
   createThreadMessageInTransaction,
+  expireComputerExecutionLeases,
   type Prisma,
   type PrismaClient,
   withTransactionRetry,
 } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
 import { toComputerRef } from "./computer-support.js";
 import { checkpointAndRecordComputerWorkspace } from "./computer-workspace.js";
 import { resolveAgentHomePath } from "./home.js";
@@ -111,7 +113,7 @@ export async function spawnBot(
     });
     await deps.jobs
       .enqueue(runContinueJob(run.id))
-      .catch((error) => console.error("spawned bot enqueue", error));
+      .catch((error) => getLogger().error("spawned bot enqueue", error));
   }
 
   return {
@@ -285,7 +287,7 @@ export async function archiveBot(
       where: { botId: bot.id },
       data: { active: false, nextRunAt: null },
     });
-    await tx.computerExecutionLease.deleteMany({ where: { botId: bot.id } });
+    await expireComputerExecutionLeases(tx, { botId: bot.id });
     await tx.computer.updateMany({
       where: {
         OR: [{ controlBotId: bot.id }, { executionBotId: bot.id }],
@@ -520,7 +522,7 @@ async function detachBotFromGroups(tx: Prisma.TransactionClient, botId: string) 
       where: { id: { in: activeRuns.map((run) => run.taskId) } },
       data: { status: "cancelled" },
     });
-    await tx.computerExecutionLease.deleteMany({ where: { runId: { in: runIds } } });
+    await expireComputerExecutionLeases(tx, { runId: { in: runIds } });
     await tx.computer.updateMany({
       where: { executionRunId: { in: runIds } },
       data: {
@@ -562,7 +564,7 @@ async function removeStoredArtifacts(
     [...new Set(storageKeys)].map((storageKey) => artifacts.remove(storageKey, context)),
   );
   for (const result of results) {
-    if (result.status === "rejected") console.error("group artifact cleanup", result.reason);
+    if (result.status === "rejected") getLogger().error("group artifact cleanup", result.reason);
   }
 }
 

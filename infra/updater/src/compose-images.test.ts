@@ -104,6 +104,18 @@ describe("the images compose file", () => {
     }
   });
 
+  it("passes optional HTTP(S)_PROXY / NO_PROXY into api and worker", () => {
+    for (const name of ["api", "worker"] as const) {
+      const env = compose.services[name]?.environment ?? {};
+      expect(env.HTTP_PROXY).toBe("${HTTP_PROXY:-${http_proxy:-}}");
+      expect(env.HTTPS_PROXY).toBe("${HTTPS_PROXY:-${https_proxy:-}}");
+      expect(env.NO_PROXY).toBe("${NO_PROXY:-${no_proxy:-}}");
+      expect(env.http_proxy).toBe("${http_proxy:-${HTTP_PROXY:-}}");
+      expect(env.https_proxy).toBe("${https_proxy:-${HTTPS_PROXY:-}}");
+      expect(env.no_proxy).toBe("${no_proxy:-${NO_PROXY:-}}");
+    }
+  });
+
   it("never builds from a checkout", () => {
     for (const service of Object.values(compose.services)) {
       expect(service.build).toBeUndefined();
@@ -144,5 +156,14 @@ describe("the images compose file", () => {
     expect(compose.services.web?.ports).toEqual(["127.0.0.1:5173:5173"]);
     expect(compose.services.postgres?.ports).toBeUndefined();
     expect(compose.services.supervisor?.ports).toBeUndefined();
+  });
+
+  it("passes logging variables to the supervisor without putting them on computer containers", () => {
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: this is the literal Compose expression
+    expect(compose.services.supervisor?.environment?.AXIOM_TOKEN).toBe("${AXIOM_TOKEN:-}");
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: this is the literal Compose expression
+    expect(compose.services.supervisor?.environment?.AXIOM_DATASET).toBe("${AXIOM_DATASET:-}");
+    expect(compose.services.computer?.environment?.AXIOM_TOKEN).toBeUndefined();
+    expect(compose.services.computer?.environment?.LOG_LEVEL).toBeUndefined();
   });
 });

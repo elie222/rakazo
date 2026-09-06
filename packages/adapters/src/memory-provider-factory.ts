@@ -6,6 +6,7 @@ import {
   decodeLegacySupermemoryCredentials,
   prepareSupermemoryConnection,
   SUPERMEMORY_PROVIDER_ID,
+  supermemoryRequiresDeploymentOwner,
 } from "./supermemory-memory-provider.js";
 
 export interface MemoryProviderConnectionInput {
@@ -30,6 +31,7 @@ export interface MemoryProviderResolver {
 }
 
 interface MemoryProviderAdapter {
+  requiresDeploymentOwner(settings: Record<string, string>): boolean;
   prepare(
     settings: Record<string, string>,
     credentials: Record<string, string>,
@@ -45,6 +47,7 @@ const MEMORY_PROVIDER_ADAPTERS: ReadonlyMap<string, MemoryProviderAdapter> = new
   [
     SUPERMEMORY_PROVIDER_ID,
     {
+      requiresDeploymentOwner: supermemoryRequiresDeploymentOwner,
       prepare: prepareSupermemoryConnection,
       create: createSupermemoryProvider,
       decodeLegacyCredentials: decodeLegacySupermemoryCredentials,
@@ -56,6 +59,14 @@ function memoryProviderAdapter(provider: string): MemoryProviderAdapter {
   const adapter = MEMORY_PROVIDER_ADAPTERS.get(provider);
   if (!adapter) throw new Error(`Unknown memory provider "${provider}".`);
   return adapter;
+}
+
+/** Adapters classify their settings; callers enforce the deployment trust boundary. */
+export function memoryProviderRequiresDeploymentOwner(
+  provider: string,
+  settings: Record<string, string>,
+): boolean {
+  return memoryProviderAdapter(provider).requiresDeploymentOwner(settings);
 }
 
 export async function prepareMemoryProviderConnection(
@@ -99,7 +110,7 @@ function decodeCredentials(provider: string, plaintext: string): Record<string, 
 
 export class SpaceMemoryProviderResolver implements MemoryProviderResolver {
   constructor(
-    private readonly prisma: Pick<PrismaClient, "spaceMemoryConfig">,
+    private readonly prisma: Pick<PrismaClient, "spaceMemoryConfig" | "deploymentSettings">,
     private readonly secrets: EncryptedSecretStore,
   ) {}
 
@@ -109,12 +120,21 @@ export class SpaceMemoryProviderResolver implements MemoryProviderResolver {
       include: { secret: true },
     });
     if (!config) return null;
+    const settings = toStringRecord(config.settings);
+    if (memoryProviderRequiresDeploymentOwner(config.provider, settings)) {
+      const deployment = await this.prisma.deploymentSettings.findUnique({
+        where: { id: "default" },
+        select: { ownerUserId: true },
+      });
+      // Also disable pre-existing local configurations authored outside the deployment boundary.
+      if (!deployment?.ownerUserId || deployment.ownerUserId !== config.userId) return null;
+    }
     const credentials = decodeCredentials(
       config.provider,
       this.secrets.load(config.secret.ciphertext, config.secret.id),
     );
     return {
-      provider: createMemoryProvider(config.provider, toStringRecord(config.settings), credentials),
+      provider: createMemoryProvider(config.provider, settings, credentials),
       defaultScope: config.defaultMemoryScope === "shared" ? "shared" : "isolated",
     };
   }

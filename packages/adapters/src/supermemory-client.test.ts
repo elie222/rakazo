@@ -1,8 +1,9 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   deleteSupermemoryContainer,
   MAX_MEMORY_CONTENT_CHARS,
   MAX_RECALLED_MEMORIES,
+  MAX_SUPERMEMORY_RESPONSE_BYTES,
   probeSupermemory,
   saveSupermemoryMemory,
   saveSupermemoryMemoryToContainers,
@@ -11,6 +12,61 @@ import {
 } from "./supermemory-client.js";
 
 const config = { baseUrl: "http://localhost:6767", apiKey: "sm_test_key" };
+
+afterEach(() => vi.unstubAllGlobals());
+
+describe("Supermemory request URLs", () => {
+  const operations = [
+    { method: "GET", path: "/v3/container-tags/list", request: probeSupermemory },
+    {
+      method: "POST",
+      path: "/v4/search",
+      request: (connection: typeof config) => searchSupermemory("query", "fake:tag", connection),
+    },
+    {
+      method: "POST",
+      path: "/v4/memories",
+      request: (connection: typeof config) => saveSupermemoryMemory("fact", "fake:tag", connection),
+    },
+    {
+      method: "DELETE",
+      path: "/v3/container-tags/fake%3Atag",
+      request: (connection: typeof config) => deleteSupermemoryContainer("fake:tag", connection),
+    },
+  ];
+
+  it.each([
+    "http://127.0.0.1:8123/internal-action#",
+    "http://127.0.0.1:8123/internal-action#ignored",
+    "http://127.0.0.1:8123/internal-action?",
+    "http://127.0.0.1:8123/internal-action?action=delete",
+    "http://fake:credential@localhost:6767",
+    "file:///fake-memory",
+  ])("rejects ambiguous base URLs before every transport call: %s", async (baseUrl) => {
+    const fetchMock = vi.fn().mockImplementation(async () => Response.json({ results: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+    for (const { request } of operations) {
+      expect(await request({ ...config, baseUrl })).toMatchObject({ ok: false });
+    }
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it.each(["", "/", "/memory", "/memory/"])(
+    "preserves the base prefix and provider route for every method: %s",
+    async (prefix) => {
+      const fetchMock = vi.fn().mockImplementation(async () => Response.json({ results: [] }));
+      vi.stubGlobal("fetch", fetchMock);
+      for (const { request, method, path } of operations) {
+        expect(await request({ ...config, baseUrl: `http://[::1]:6767${prefix}` })).toMatchObject({
+          ok: true,
+        });
+        const [url, init] = fetchMock.mock.lastCall!;
+        expect(url).toBe(`http://[::1]:6767${prefix.replace(/\/$/, "")}${path}`);
+        expect(init).toMatchObject({ method, redirect: "error" });
+      }
+    },
+  );
+});
 
 describe("searchSupermemory", () => {
   it("posts the query and container tag, returning search results on success", async () => {
@@ -92,6 +148,57 @@ describe("searchSupermemory", () => {
     const result = await searchSupermemory("anything", "rakazo:bot-123", config);
 
     expect(result).toEqual({ ok: true, results: [{ memory: "kept", similarity: 0 }] });
+    vi.unstubAllGlobals();
+  });
+
+  it("bounds each recalled memory to the provider content limit", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response(JSON.stringify({ results: [{ memory: `kept${"x".repeat(20_000)}` }] })),
+        ),
+    );
+
+    const result = await searchSupermemory("anything", "rakazo:bot-123", config);
+
+    expect(result.ok && result.results[0]?.memory).toHaveLength(MAX_MEMORY_CONTENT_CHARS);
+    vi.unstubAllGlobals();
+  });
+
+  it("rejects an oversized search response before buffering it", async () => {
+    const cancel = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        headers: new Headers({
+          "content-length": String(MAX_SUPERMEMORY_RESPONSE_BYTES + 1),
+        }),
+        body: { cancel },
+      }),
+    );
+
+    const result = await searchSupermemory("anything", "rakazo:bot-123", config);
+
+    expect(result).toEqual({
+      ok: false,
+      error: expect.stringContaining("response is too large"),
+    });
+    expect(cancel).toHaveBeenCalledOnce();
+    vi.unstubAllGlobals();
+  });
+
+  it("caps a chunked search response without a content length", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response(new Uint8Array(MAX_SUPERMEMORY_RESPONSE_BYTES + 1))),
+    );
+
+    const result = await searchSupermemory("anything", "rakazo:bot-123", config);
+
+    expect(result).toEqual({ ok: false, error: "Supermemory response is too large." });
     vi.unstubAllGlobals();
   });
 });

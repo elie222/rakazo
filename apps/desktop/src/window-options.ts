@@ -12,7 +12,7 @@ export function warmWindowTtlMs(value: string | undefined) {
 function windowChrome(platform: NodeJS.Platform) {
   const mac = platform === "darwin";
   return {
-    backgroundColor: "#050506",
+    backgroundColor: "#0D0D0E",
     show: true,
     autoHideMenuBar: true,
     frame: mac,
@@ -23,6 +23,14 @@ function windowChrome(platform: NodeJS.Platform) {
 
 export function browserWindowOptions(platform: NodeJS.Platform) {
   return { width: 1440, height: 900, ...windowChrome(platform) };
+}
+
+/**
+ * Unpackaged (dev) launches set the dock/taskbar icon by hand. macOS draws the file as-is,
+ * so it needs the squircle-with-margins asset; packaged builds already use icon.icns.
+ */
+export function developmentIconFile(platform: NodeJS.Platform) {
+  return platform === "darwin" ? "icon-macos.png" : "icon.png";
 }
 
 /** The first-run setup window is smaller and keeps the same frameless chrome. */

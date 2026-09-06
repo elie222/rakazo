@@ -155,6 +155,12 @@ describe("isMessagingEnabled", () => {
     expect(process.env.VITEST).toBeTruthy();
     expect(isMessagingEnabled(messagingPlatformsFromEnv(fullEnv))).toBe(false);
   });
+
+  it.each(["0", "false"])("does not treat VITEST=%s as an active test runner", (value) => {
+    vi.stubEnv("VITEST", value);
+    expect(isMessagingEnabled(messagingPlatformsFromEnv(fullEnv))).toBe(true);
+    vi.unstubAllEnvs();
+  });
 });
 
 describe("isMessagingSurfaceEnabled", () => {

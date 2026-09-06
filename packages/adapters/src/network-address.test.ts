@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isLinkLocalAddress, isPrivateAddress } from "./network-address.js";
+import { isCloudMetadataAddress, isLinkLocalAddress, isPrivateAddress } from "./network-address.js";
 
 describe("network address classification", () => {
   it.each([
@@ -52,4 +52,23 @@ describe("network address classification", () => {
   ])("classifies %s as public", (address) => {
     expect(isPrivateAddress(address)).toBe(false);
   });
+
+  it.each([
+    "169.254.169.254",
+    "100.100.100.200",
+    "fd00:ec2::254",
+    "fd00:0ec2:0000:0000:0000:0000:0000:0254",
+    "::ffff:100.100.100.200",
+    "64:ff9b::6464:64c8",
+    "2002:6464:64c8::1",
+  ])("classifies %s as a cloud metadata address", (address) => {
+    expect(isCloudMetadataAddress(address)).toBe(true);
+  });
+
+  it.each(["10.0.0.1", "100.100.100.201", "fd00:ec2::255"])(
+    "does not classify %s as a cloud metadata address",
+    (address) => {
+      expect(isCloudMetadataAddress(address)).toBe(false);
+    },
+  );
 });

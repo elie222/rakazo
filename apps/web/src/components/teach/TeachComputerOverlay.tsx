@@ -1,5 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { ComputerStatus } from "@rakazo/contracts";
+import { Button, Label, Popover, PopoverContent, PopoverTrigger, Textarea } from "@rakazo/ui-web";
 import { useEffect, useRef, useState } from "react";
 import { rpc } from "../../lib/rpc";
 
@@ -41,6 +42,7 @@ export function TeachComputerOverlayControl({
   const [syncingRecording, setSyncingRecording] = useState(true);
   const busy = Boolean(busyProp) || localBusy;
   const startLocked = needsRefresh || syncingRecording;
+  const recoveryVisible = !goalOpen && needsRefresh && recoveryOpen;
 
   // Re-seed the lock from server state on mount / bot change. Local needsRefresh
   // is lost on remount and can leak across bots if not cleared when idle.
@@ -174,109 +176,107 @@ export function TeachComputerOverlayControl({
     }
   }
 
+  function closeGoal() {
+    setGoalOpen(false);
+    setError(null);
+  }
+
   return (
-    <div className="relative flex max-w-[min(360px,100%)] flex-col items-end">
-      {goalOpen ? (
-        <div
-          data-testid="teach-chrome-popover"
-          className="absolute end-0 top-full z-20 mt-2 w-[min(360px,calc(100vw-2rem))] rounded-[12px] border border-[var(--rk-border)] bg-[var(--rk-inset)] px-3 py-3 shadow-[0_12px_40px_rgba(0,0,0,.45)]"
-        >
-          <label htmlFor="teach-goal-input" className="text-[13px] text-[var(--rk-muted)]">
-            <Trans>What result will you demonstrate?</Trans>
-          </label>
-          <textarea
-            id="teach-goal-input"
-            data-testid="teach-goal-input"
-            value={goal}
-            onChange={(event) => setGoal(event.target.value)}
-            rows={3}
-            className="mt-2 w-full rounded-[10px] border border-[var(--rk-border)] bg-[var(--rk-panel)] px-3 py-2 text-[14px] text-[var(--rk-ink)] outline-none"
-            placeholder={t`Export this week's list from the CRM and drop it in the shared folder`}
-          />
-          {error ? (
-            <div role="alert" className="mt-2 text-[13px] text-[var(--rk-danger-soft)]">
-              {error}
-            </div>
-          ) : null}
-          <div className="mt-3 flex gap-2">
-            <button
-              type="button"
-              disabled={busy || startLocked || !goal.trim()}
-              onClick={() => void startTeaching()}
-              className="rounded-[11px] bg-[var(--rk-cream)] px-4 py-2 text-[14px] text-[var(--rk-cream-ink)] disabled:opacity-40"
-            >
-              {busy || syncingRecording ? <Trans>Starting…</Trans> : <Trans>Start recording</Trans>}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setGoalOpen(false);
-                setError(null);
-              }}
-              className="rounded-[11px] border border-[var(--rk-border)] px-4 py-2 text-[14px] text-[var(--rk-ink)]"
-            >
-              <Trans>Cancel</Trans>
-            </button>
-          </div>
-        </div>
-      ) : null}
-      {!goalOpen && needsRefresh && recoveryOpen ? (
-        <div
-          data-testid="teach-refresh-recovery"
-          className="absolute end-0 top-full z-20 mt-2 w-[min(320px,calc(100vw-2rem))] rounded-[12px] border border-[var(--rk-border)] bg-[var(--rk-inset)] px-3 py-3 shadow-[0_12px_40px_rgba(0,0,0,.45)]"
-        >
-          {error ? (
-            <div role="alert" className="text-[13px] text-[var(--rk-danger-soft)]">
-              {error}
-            </div>
-          ) : (
-            <p className="text-[13px] text-[var(--rk-muted)]">
-              <Trans>Recording started. Refresh the view to continue.</Trans>
-            </p>
-          )}
-          <div className="mt-3 flex gap-2">
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => void refreshView()}
-              className="rounded-[11px] bg-[var(--rk-cream)] px-4 py-2 text-[14px] text-[var(--rk-cream-ink)] disabled:opacity-40"
-            >
-              {busy ? <Trans>Refreshing…</Trans> : <Trans>Refresh view</Trans>}
-            </button>
-            <button
-              type="button"
-              onClick={() => setRecoveryOpen(false)}
-              className="rounded-[11px] border border-[var(--rk-border)] px-4 py-2 text-[14px] text-[var(--rk-ink)]"
-            >
-              <Trans>Dismiss</Trans>
-            </button>
-          </div>
-        </div>
-      ) : null}
-      <button
-        type="button"
+    <Popover
+      open={goalOpen || recoveryVisible}
+      onOpenChange={(open) => {
+        if (!open) {
+          if (goalOpen) closeGoal();
+          else setRecoveryOpen(false);
+          return;
+        }
+        if (syncingRecording) return;
+        if (needsRefresh) {
+          // Keep Start recording locked; only reopen refresh recovery.
+          setRecoveryOpen(true);
+          return;
+        }
+        setError(null);
+        setGoalOpen(true);
+      }}
+    >
+      <PopoverTrigger
         data-testid="teach-start-button"
         aria-label={t`Teach a task`}
-        aria-expanded={goalOpen || (needsRefresh && recoveryOpen)}
         disabled={busy || syncingRecording}
-        onClick={() => {
-          if (syncingRecording) return;
-          if (needsRefresh) {
-            // Keep Start recording locked; only reopen refresh recovery.
-            setRecoveryOpen((open) => !open);
-            return;
-          }
-          setError(null);
-          setGoalOpen((open) => !open);
-        }}
-        className="flex items-center gap-2 rounded-[10px] border border-[var(--rk-scroll)] bg-[var(--rk-surface)] px-3 py-1.5 text-[13px] text-[var(--rk-ink)] hover:bg-[var(--rk-surface-2)] disabled:opacity-40"
+        render={<Button variant="outline" size="sm" />}
       >
         <span
           aria-hidden
-          className="inline-block h-2 w-2 shrink-0 rounded-full border border-[var(--rk-ink)]"
+          className="inline-block h-2 w-2 shrink-0 rounded-full border border-foreground"
         />
         <Trans>Teach a task</Trans>
-      </button>
-    </div>
+      </PopoverTrigger>
+      <PopoverContent
+        align="end"
+        sideOffset={8}
+        data-testid={goalOpen ? "teach-chrome-popover" : "teach-refresh-recovery"}
+        className="w-[min(360px,calc(100vw-2rem))]"
+      >
+        {goalOpen ? (
+          <>
+            <Label
+              htmlFor="teach-goal-input"
+              className="text-[13px] font-normal text-muted-foreground"
+            >
+              <Trans>What result will you demonstrate?</Trans>
+            </Label>
+            <Textarea
+              id="teach-goal-input"
+              data-testid="teach-goal-input"
+              value={goal}
+              onChange={(event) => setGoal(event.target.value)}
+              rows={3}
+              placeholder={t`Export this week's list from the CRM and drop it in the shared folder`}
+            />
+            {error ? (
+              <div role="alert" className="text-[13px] text-destructive">
+                {error}
+              </div>
+            ) : null}
+            <div className="flex gap-2">
+              <Button
+                disabled={busy || startLocked || !goal.trim()}
+                onClick={() => void startTeaching()}
+              >
+                {busy || syncingRecording ? (
+                  <Trans>Starting…</Trans>
+                ) : (
+                  <Trans>Start recording</Trans>
+                )}
+              </Button>
+              <Button variant="outline" onClick={closeGoal}>
+                <Trans>Cancel</Trans>
+              </Button>
+            </div>
+          </>
+        ) : (
+          <>
+            {error ? (
+              <div role="alert" className="text-[13px] text-destructive">
+                {error}
+              </div>
+            ) : (
+              <p className="text-[13px] text-muted-foreground">
+                <Trans>Recording started. Refresh the view to continue.</Trans>
+              </p>
+            )}
+            <div className="flex gap-2">
+              <Button disabled={busy} onClick={() => void refreshView()}>
+                {busy ? <Trans>Refreshing…</Trans> : <Trans>Refresh view</Trans>}
+              </Button>
+              <Button variant="outline" onClick={() => setRecoveryOpen(false)}>
+                <Trans>Dismiss</Trans>
+              </Button>
+            </div>
+          </>
+        )}
+      </PopoverContent>
+    </Popover>
   );
 }

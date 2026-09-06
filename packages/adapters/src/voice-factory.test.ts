@@ -14,6 +14,7 @@ import {
   listVoiceCatalog,
   VOICE_CATALOG,
 } from "./voice-factory.js";
+import { MAX_SYNTHESIZED_AUDIO_BYTES } from "./voice-http.js";
 
 const ctx = {
   operationId: "voice",
@@ -89,10 +90,7 @@ describe("ElevenLabsVoiceProvider", () => {
   it("transcribes through Scribe", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue({
-        ok: true,
-        json: async () => ({ text: "hello there" }),
-      }),
+      vi.fn().mockResolvedValue(new Response(JSON.stringify({ text: "hello there" }))),
     );
     const provider = new ElevenLabsVoiceProvider();
     await expect(
@@ -126,10 +124,7 @@ describe("OpenAIVoiceProvider", () => {
   });
 
   it("names Firefox ogg recordings from the mime type", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ text: "hello" }),
-    });
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ text: "hello" })));
     vi.stubGlobal("fetch", fetchMock);
     await new OpenAIVoiceProvider().transcribe!(
       { audio: new Uint8Array([1]), mimeType: "audio/ogg;codecs=opus", apiKey: "sk-test" },
@@ -145,10 +140,11 @@ describe("CartesiaVoiceProvider", () => {
   it("maps the voices list from either array or { data } payloads", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue({
-        ok: true,
-        json: async () => ({ data: [{ id: "sonic", name: "Katie" }] }),
-      }),
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response(JSON.stringify({ data: [{ id: "sonic", name: "Katie" }] })),
+        ),
     );
     const provider = new CartesiaVoiceProvider();
     const voices = await provider.listVoices("sk-test", ctx);
@@ -168,6 +164,34 @@ describe("CartesiaVoiceProvider", () => {
     expect([...clip.bytes]).toEqual([4, 5]);
     expect(String(fetchMock.mock.calls[0]?.[0])).toContain("/tts/bytes");
   });
+});
+
+describe("hosted voice response limits", () => {
+  it.each([
+    ["ElevenLabs", () => new ElevenLabsVoiceProvider(), "voice"],
+    ["OpenAI", () => new OpenAIVoiceProvider(), "alloy"],
+    ["Cartesia", () => new CartesiaVoiceProvider(), "sonic"],
+  ])(
+    "rejects an oversized %s speech response before buffering it",
+    async (_name, create, voiceId) => {
+      const cancel = vi.fn().mockResolvedValue(undefined);
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue({
+          ok: true,
+          headers: new Headers({
+            "content-length": String(MAX_SYNTHESIZED_AUDIO_BYTES + 1),
+          }),
+          body: { cancel },
+        }),
+      );
+
+      await expect(
+        create().synthesize({ text: "Hi", voiceId, apiKey: "sk-test" }, ctx),
+      ).rejects.toThrow("Voice response is too large.");
+      expect(cancel).toHaveBeenCalledOnce();
+    },
+  );
 });
 
 describe("ScriptedVoiceProvider", () => {

@@ -1,6 +1,11 @@
 import type { AdapterContext } from "@rakazo/adapter-kit";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { PipedreamConnector, pipedreamConfigFromEnv } from "./pipedream-connector.js";
+import {
+  isPipedreamEnabled,
+  MAX_PIPEDREAM_RESPONSE_BYTES,
+  PipedreamConnector,
+  pipedreamConfigFromEnv,
+} from "./pipedream-connector.js";
 import { ThirdPartyConnectorEmulator } from "./third-party-connector-emulator.js";
 
 const context: AdapterContext = {
@@ -29,10 +34,200 @@ describe("pipedreamConfigFromEnv", () => {
       identitySecret: "identity-secret",
     });
   });
+
+  it.each(["0", "false"])("does not treat VITEST=%s as an active test runner", (value) => {
+    vi.stubEnv("VITEST", value);
+    expect(
+      isPipedreamEnabled({
+        clientId: "client-id",
+        clientSecret: "client-secret",
+        projectId: "project-id",
+        environment: "production",
+        identitySecret: "identity-secret",
+      }),
+    ).toBe(true);
+    vi.unstubAllEnvs();
+  });
 });
 
 describe("PipedreamConnector", () => {
   afterEach(() => vi.unstubAllGlobals());
+
+  it.each([
+    "javascript:alert(document.domain)",
+    "http://pipedream.example.test/connect",
+    "https://user:password@pipedream.example.test/connect",
+  ])("rejects an unsafe provider connect URL: %s", async (connectUrl) => {
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        Response.json({ access_token: "fake-access-token", expires_in: 3_600 }),
+      )
+      .mockResolvedValueOnce(Response.json({ connect_link_url: connectUrl }));
+    const connector = new PipedreamConnector(
+      {
+        clientId: "fake-client-id",
+        clientSecret: "fake-client-secret",
+        projectId: "fake-project-id",
+        environment: "development",
+        identitySecret: "fake-identity-secret",
+      },
+      { fetch },
+    );
+
+    await expect(
+      connector.begin(
+        { provider: "gmail", redirectUrl: "https://rakazo.example.test/app" },
+        context,
+      ),
+    ).rejects.toThrow("secure HTTPS connect URL");
+  });
+
+  it("rejects an oversized token response before buffering it", async () => {
+    const response = new Response("oversized", {
+      headers: { "content-length": String(MAX_PIPEDREAM_RESPONSE_BYTES + 1) },
+    });
+    const cancel = vi.spyOn(response.body!, "cancel");
+    const connector = new PipedreamConnector(
+      {
+        clientId: "fake-client-id",
+        clientSecret: "fake-client-secret",
+        projectId: "fake-project-id",
+        environment: "development",
+        identitySecret: "fake-identity-secret",
+      },
+      { fetch: vi.fn().mockResolvedValue(response) },
+    );
+
+    await expect(
+      connector.begin(
+        { provider: "gmail", redirectUrl: "https://rakazo.example.test/app" },
+        context,
+      ),
+    ).rejects.toThrow("Pipedream response is too large.");
+    expect(cancel).toHaveBeenCalledOnce();
+  });
+
+  it("rejects oversized Content-Length without waiting on a hanging body cancel", async () => {
+    let cancelStarted = false;
+    const hangingBody = new ReadableStream<Uint8Array>({
+      start() {
+        // never enqueues or closes
+      },
+      cancel() {
+        cancelStarted = true;
+        return new Promise(() => {
+          // never settles
+        });
+      },
+    });
+    const abort = new AbortController();
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        Response.json({ access_token: "fake-access-token", expires_in: 3_600 }),
+      )
+      .mockImplementationOnce(async () => {
+        setTimeout(() => abort.abort(), 20);
+        return new Response(hangingBody, {
+          headers: { "content-length": String(MAX_PIPEDREAM_RESPONSE_BYTES + 1) },
+        });
+      });
+    const connector = new PipedreamConnector(
+      {
+        clientId: "fake-client-id",
+        clientSecret: "fake-client-secret",
+        projectId: "fake-project-id",
+        environment: "development",
+        identitySecret: "fake-identity-secret",
+      },
+      { fetch },
+    );
+
+    const started = Date.now();
+    await expect(
+      connector.begin(
+        { provider: "gmail", redirectUrl: "https://rakazo.example.test/app" },
+        { ...context, signal: abort.signal },
+      ),
+    ).rejects.toThrow("Pipedream response is too large.");
+    expect(cancelStarted).toBe(true);
+    expect(Date.now() - started).toBeLessThan(500);
+  });
+
+  it("caps a chunked API response without a content length", async () => {
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        Response.json({ access_token: "fake-access-token", expires_in: 3_600 }),
+      )
+      .mockResolvedValueOnce(new Response(new Uint8Array(MAX_PIPEDREAM_RESPONSE_BYTES + 1)));
+    const connector = new PipedreamConnector(
+      {
+        clientId: "fake-client-id",
+        clientSecret: "fake-client-secret",
+        projectId: "fake-project-id",
+        environment: "development",
+        identitySecret: "fake-identity-secret",
+      },
+      { fetch },
+    );
+
+    await expect(
+      connector.begin(
+        { provider: "gmail", redirectUrl: "https://rakazo.example.test/app" },
+        context,
+      ),
+    ).rejects.toThrow("Pipedream response is too large.");
+  });
+
+  it("clears a rejected token before reading an oversized 401 response", async () => {
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(Response.json({ access_token: "rejected-token", expires_in: 3_600 }))
+      .mockResolvedValueOnce(
+        new Response("oversized", {
+          status: 401,
+          headers: { "content-length": String(MAX_PIPEDREAM_RESPONSE_BYTES + 1) },
+        }),
+      )
+      .mockResolvedValueOnce(
+        Response.json({ access_token: "replacement-token", expires_in: 3_600 }),
+      )
+      .mockResolvedValueOnce(
+        Response.json({ connect_link_url: "https://pipedream.example.test/connect" }),
+      );
+    const connector = new PipedreamConnector(
+      {
+        clientId: "fake-client-id",
+        clientSecret: "fake-client-secret",
+        projectId: "fake-project-id",
+        environment: "development",
+        identitySecret: "fake-identity-secret",
+      },
+      { fetch },
+    );
+
+    await expect(
+      connector.begin(
+        { provider: "gmail", redirectUrl: "https://rakazo.example.test/app" },
+        context,
+      ),
+    ).rejects.toThrow("Pipedream response is too large.");
+    await expect(
+      connector.begin(
+        { provider: "gmail", redirectUrl: "https://rakazo.example.test/app" },
+        context,
+      ),
+    ).resolves.toEqual({
+      authorizationUrl: "https://pipedream.example.test/connect?app=gmail",
+      state: "gmail",
+    });
+    expect(fetch).toHaveBeenCalledTimes(4);
+    expect(fetch.mock.calls[3]?.[1]?.headers).toEqual(
+      expect.objectContaining({ authorization: "Bearer replacement-token" }),
+    );
+  });
 
   it("uses one opaque external identity across the app catalog and account flow", async () => {
     const requests: Array<{ url: string; init?: RequestInit }> = [];
@@ -125,7 +320,10 @@ describe("PipedreamConnector", () => {
         { provider: "linear", redirectUrl: "https://rakazo.example.test/app" },
         context,
       ),
-    ).resolves.toEqual({ authorizationUrl: "about:blank?app=linear", state: "linear" });
+    ).resolves.toEqual({
+      authorizationUrl: "https://pipedream.example.test/connect?app=linear",
+      state: "linear",
+    });
     await expect(connector.connectionReady(context, "linear")).resolves.toBe(true);
 
     const connectedContext = {

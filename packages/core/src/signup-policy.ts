@@ -16,6 +16,18 @@ export function emailAllowed(email: string, allowlist: string[]): boolean {
   });
 }
 
+/** Internal messaging users have no mailbox and cannot authenticate by email. */
+export function isMessagingEmail(email: string): boolean {
+  return email.trim().toLowerCase().endsWith("@messaging.invalid");
+}
+
+/** A successful signup with an explicit null token awaits mailbox proof. */
+export function signupRequiresEmailVerification(response: unknown): boolean {
+  return Boolean(
+    response && typeof response === "object" && "token" in response && response.token === null,
+  );
+}
+
 export function signupsOpen(enabled: string | undefined): boolean {
   if (enabled === undefined) return true;
   return enabled !== "false" && enabled !== "0";

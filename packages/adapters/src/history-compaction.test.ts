@@ -7,6 +7,7 @@ import type {
 import { historyCompactJob } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
+import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { describe, expect, it, vi } from "vitest";
 import {
   compactHistory,
@@ -741,16 +742,18 @@ describe("compactHistory", () => {
       return { ok: true, value: undefined };
     });
     harness.purgeHistory.mockRejectedValueOnce(new Error("provider unavailable"));
-    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-worker", sinks: [sink] }));
 
     await expect(compactHistory(harness.deps, "thread-1")).resolves.toBeUndefined();
 
     expect(harness.jobs.enqueue).toHaveBeenCalledWith(historyCompactJob("thread-1"));
-    expect(consoleError).toHaveBeenCalledWith(
-      "history.compact could not purge stale semantic memory",
-      expect.any(Error),
-    );
-    consoleError.mockRestore();
+    expect(
+      sink.events.some(
+        (event) => event.message === "history.compact could not purge stale semantic memory",
+      ),
+    ).toBe(true);
+    installLogger(createLogger({ service: "rakazo-worker", level: "off", sinks: [] }));
   });
 
   it("falls back to the deployment's configured default model when no deployment key is available", async () => {

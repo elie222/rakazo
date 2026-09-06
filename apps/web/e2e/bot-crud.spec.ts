@@ -1,5 +1,10 @@
 import { expect, test } from "@playwright/test";
-import { captureScreenshot, completeOnboarding, openNewBot, signup } from "./helpers";
+import {
+  captureScreenshot,
+  completeOnboarding,
+  openNewBot,
+  signup,
+} from "./helpers";
 
 test("bot creation, editing, and deletion persist", async ({ page }, testInfo) => {
   const stamp = Date.now();
@@ -33,6 +38,7 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   await expect(page.getByRole("button", { name: "Create", exact: true })).toBeEnabled();
   await captureScreenshot(page, testInfo, "26a-new-bot-error");
   await page.unroute("**/rpc/bots/create");
+
   let failedPostCreateRefresh = false;
   await page.route("**/rpc/spaces/list", async (route) => {
     if (failedPostCreateRefresh) {
@@ -43,11 +49,10 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
     await route.abort("failed");
   });
   await page.getByRole("button", { name: "Create", exact: true }).click();
-
-  await expect(botList.getByRole("button", { name: /^Researcher/ })).toBeVisible();
-  expect(failedPostCreateRefresh).toBe(true);
-  await page.unroute("**/rpc/spaces/list");
   await expect(page.getByPlaceholder("Message Researcher")).toBeVisible();
+  await expect.poll(() => failedPostCreateRefresh).toBe(true);
+  await page.unroute("**/rpc/spaces/list");
+  await expect(botList.getByRole("button", { name: /^Researcher/ })).toBeVisible();
   await page.waitForURL(/\/app\/[^/]+$/);
   const deletedBotPath = new URL(page.url()).pathname;
   await page.evaluate(() => window.dispatchEvent(new Event("focus")));
@@ -81,6 +86,9 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   await expect(modelSelect).toBeHidden();
   await expect(openWork).toBeHidden();
   await expect(settings.getByRole("button", { name: "Save", exact: true })).toBeVisible();
+  await expect(settings.getByRole("button", { name: "Recover computer" })).toHaveCount(0);
+  await expect(settings.getByRole("button", { name: "Reset computer" })).toHaveCount(0);
+  await expect(settings.getByRole("button", { name: "Update computer" })).toHaveCount(0);
   await captureScreenshot(page, testInfo, "27a-settings-panel");
   await settings.getByText("Advanced", { exact: true }).click();
   await expect(teamComputer).toBeVisible();

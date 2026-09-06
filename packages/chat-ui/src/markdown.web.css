@@ -29,7 +29,7 @@
 .rk-chat-markdown h5,
 .rk-chat-markdown h6 {
   margin: 0.9em 0 0.35em;
-  color: #f3f3f4;
+  color: var(--foreground);
   font-weight: 650;
   line-height: 1.25;
 }
@@ -80,16 +80,17 @@
 }
 
 .rk-chat-markdown a {
-  color: #86b7ff;
+  color: var(--link);
   text-decoration: underline;
-  text-decoration-color: rgba(134, 183, 255, 0.55);
+  text-decoration-color: color-mix(in srgb, var(--link) 55%, transparent);
   text-underline-offset: 0.15em;
 }
 
 .rk-chat-markdown code {
-  border: 1px solid #34343a;
+  border: 1px solid var(--border);
   border-radius: 0.35em;
-  background: #101012;
+  background: var(--muted);
+  color: var(--foreground);
   padding: 0.08em 0.32em;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 0.88em;
@@ -100,9 +101,9 @@
 .rk-chat-markdown pre {
   max-width: 100%;
   overflow-x: auto;
-  border: 1px solid #2d2d32;
+  border: 1px solid var(--border);
   border-radius: 0.75em;
-  background: #0e0e10;
+  background: var(--card);
   padding: 0.8em 0.9em;
   direction: ltr;
   unicode-bidi: isolate;
@@ -134,10 +135,10 @@
   justify-content: center;
   width: 1.75em;
   height: 1.75em;
-  border: 1px solid #34343a;
+  border: 1px solid var(--border);
   border-radius: 0.4em;
-  background: #17171a;
-  color: #b8b8bd;
+  background: var(--muted);
+  color: var(--muted-foreground);
   opacity: 0;
   transition: opacity 0.12s;
   cursor: pointer;
@@ -149,14 +150,14 @@
 }
 
 .rk-chat-markdown-copy:hover {
-  background: #202024;
-  color: #f3f3f4;
+  background: var(--accent);
+  color: var(--foreground);
 }
 
 .rk-chat-markdown blockquote {
-  border-left: 3px solid #55555c;
+  border-left: 3px solid var(--border);
   padding-left: 0.85em;
-  color: #aaaab0;
+  color: var(--muted-foreground);
 }
 
 .rk-chat-markdown table {
@@ -169,7 +170,7 @@
 
 .rk-chat-markdown th,
 .rk-chat-markdown td {
-  border: 1px solid #34343a;
+  border: 1px solid var(--border);
   padding: 0.4em 0.6em;
   text-align: left;
   /* Not the container's `anywhere`: its break opportunities count toward
@@ -178,15 +179,15 @@
 }
 
 .rk-chat-markdown th {
-  background: #232327;
-  color: #f3f3f4;
+  background: var(--muted);
+  color: var(--foreground);
   font-weight: 600;
 }
 
 .rk-chat-markdown hr {
   margin: 0.9em 0;
   border: 0;
-  border-top: 1px solid #34343a;
+  border-top: 1px solid var(--border);
 }
 
 .rk-chat-markdown img {
@@ -199,7 +200,7 @@
 
 .rk-chat-markdown input[type="checkbox"] {
   margin-right: 0.4em;
-  accent-color: #6ea8fe;
+  accent-color: var(--primary);
 }
 
 .rk-chat-markdown-streaming {
@@ -214,7 +215,7 @@
   width: 0.16em;
   height: 1em;
   border-radius: 999px;
-  background: #85858a;
+  background: var(--muted-foreground);
   animation: rkMarkdownCursor 1s steps(2, jump-none) infinite;
 }
 
