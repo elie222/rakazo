@@ -362,17 +362,30 @@ export function reduceThreadSnapshot(
         activeRuns,
       };
     }
+    const activeRuns = activeRunChanged
+      ? prev.activeRuns?.map((candidate) =>
+          candidate.id === runId ? { ...candidate, status } : candidate,
+        )
+      : prev.activeRuns;
+    const updatedWaiting =
+      activeRunChanged && runId
+        ? activeRuns?.find((candidate) => candidate.id === runId)
+        : undefined;
+    const promoteWaiting =
+      Boolean(updatedWaiting) &&
+      (!prev.run ||
+        (prev.run.status !== "waiting_input" && prev.run.status !== "waiting_takeover"));
     return {
       ...prev,
       cursor: event.seq,
       members,
       messages,
-      run: runChanged && prev.run ? { ...prev.run, status } : prev.run,
-      activeRuns: activeRunChanged
-        ? prev.activeRuns?.map((candidate) =>
-            candidate.id === runId ? { ...candidate, status } : candidate,
-          )
-        : prev.activeRuns,
+      run: promoteWaiting
+        ? updatedWaiting
+        : runChanged && prev.run
+          ? { ...prev.run, status }
+          : prev.run,
+      activeRuns,
     };
   }
   if (isRunTerminalEvent(event)) {

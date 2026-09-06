@@ -1196,6 +1196,30 @@ describe("mobile thread event reduction", () => {
     expect(waiting?.computer?.busyBotName).toBeNull();
   });
 
+  it("promotes an already-known peer run when it becomes waiting", () => {
+    const initial: MobileSnapshot = {
+      ...snapshot([]),
+      run: { id: "run-user", status: "running" },
+      activeRuns: [
+        { id: "run-user", status: "running" },
+        { id: "run-peer", botId: "bot-peer", status: "running" },
+      ],
+    };
+
+    const waiting = applyMobileThreadEvent(initial, {
+      type: "run.waiting_input",
+      runId: "run-peer",
+      botId: "bot-peer",
+      seq: 13,
+    });
+
+    expect(waiting?.run).toEqual({ id: "run-peer", botId: "bot-peer", status: "waiting_input" });
+    expect(waiting?.activeRuns).toEqual([
+      { id: "run-user", status: "running" },
+      { id: "run-peer", botId: "bot-peer", status: "waiting_input" },
+    ]);
+  });
+
   it("advances the cursor for durable message events", () => {
     const next = applyMobileThreadEvent(snapshot(), {
       type: "thread.message.created",
