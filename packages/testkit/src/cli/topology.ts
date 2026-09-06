@@ -220,7 +220,11 @@ async function waitForWorker(
   const started = Date.now();
   while (Date.now() - started < timeoutMs) {
     const logs = compose(["logs", "--no-color", "--tail", "100", "worker"], true);
-    if (logs.includes("rakazo worker ready")) return;
+    // apps/worker logs readiness via the structured logger (packages/logging) as
+    // {"timestamp":...,"level":"info","message":"worker ready","service.name":"rakazo-worker"},
+    // not the old plain "rakazo worker ready" console.log line -- match the JSON field directly
+    // rather than a substring that depends on the sink's exact key order.
+    if (logs.includes('"message":"worker ready"')) return;
     await delay(500);
   }
   throw new Error("Graphile worker did not become ready");

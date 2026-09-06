@@ -1,3 +1,4 @@
+import { ORPCError } from "@orpc/server";
 import { type JobPublisher, runContinueJob } from "@rakazo/adapter-kit";
 import { cancelComputerRunWork, screenLeaseIdForRun, toComputerRef } from "@rakazo/adapters";
 import {
@@ -56,6 +57,8 @@ export type ThreadTarget =
 
 const THREAD_MESSAGE_PAGE_SIZE = 100;
 const RUNS_NEEDING_CONTINUE = new Set(["queued"]);
+
+const STEERABLE_RUN_STATUSES = new Set(["queued", "leased", "running"]);
 
 type MentionTargetInput = string | { kind: "bot" | "group" | "routine" | "connector"; id: string };
 
@@ -321,17 +324,27 @@ export async function threadSnapshot(
       }),
       deps.prisma.$transaction(async (tx) => {
         await tx.$queryRaw`SELECT id FROM threads WHERE id = ${target.threadId} FOR SHARE`;
-        const [messagePage, last, run] = await Promise.all([
+        const [messagePage, last, waitingRun, busyOrFailed] = await Promise.all([
           loadMessagePage(tx, target.threadId, undefined, THREAD_MESSAGE_PAGE_SIZE),
           tx.event.findFirst({
             where: { threadId: target.threadId },
             orderBy: { seq: "desc" },
             select: { seq: true },
           }),
+          // Waiting asks win over a concurrent busy run (including peer bot_message).
           tx.run.findFirst({
             where: {
               botId: target.botId,
               threadId: target.threadId,
+              status: { in: ["waiting_input", "waiting_takeover"] },
+            },
+            orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+          }),
+          tx.run.findFirst({
+            where: {
+              botId: target.botId,
+              threadId: target.threadId,
+              // Hide peer bot_message busy/failed noise; waiting is handled above.
               trigger: { not: "bot_message" },
               status: { in: [...ACTIVE_RUN_STATUSES, "failed"] },
             },
@@ -340,6 +353,7 @@ export async function threadSnapshot(
             orderBy: [{ createdAt: "desc" }, { id: "desc" }],
           }),
         ]);
+        const run = waitingRun ?? busyOrFailed;
         // A failed run is only the thread's word while it is still the newest
         // terminal run; otherwise a stale failure would resurface in the
         // composer error strip on every load, forever. Instead of comparing
@@ -352,7 +366,7 @@ export async function threadSnapshot(
                 where: {
                   botId: target.botId,
                   threadId: target.threadId,
-                  // Match the selection query — peer bot_message runs must not bury a user-visible failure.
+                  // Peer bot_message failures must not bury a user-visible failure.
                   trigger: { not: "bot_message" },
                   status: { in: ["failed", "completed", "cancelled"] },
                 },
@@ -398,8 +412,12 @@ export async function threadSnapshot(
       tx.run.findMany({
         where: {
           threadId: target.threadId,
-          trigger: { not: "bot_message" },
           status: { in: [...ACTIVE_RUN_STATUSES] },
+          // Include waiting peer runs so their ask cards stay answerable.
+          OR: [
+            { trigger: { not: "bot_message" } },
+            { status: { in: ["waiting_input", "waiting_takeover"] } },
+          ],
         },
         orderBy: { createdAt: "desc" },
       }),
@@ -434,6 +452,7 @@ export async function threadSnapshot(
       liveEvents,
     };
   });
+  const primaryActiveRun = pickPrimaryActiveRun(core.activeRuns);
   return {
     groupId: target.groupId,
     groupName: target.groupName,
@@ -447,11 +466,26 @@ export async function threadSnapshot(
     run:
       core.terminalRun?.status === "failed"
         ? mapRun(core.terminalRun)
-        : core.activeRuns[0]
-          ? mapRun(core.activeRuns[0])
+        : primaryActiveRun
+          ? mapRun(primaryActiveRun)
           : null,
     activeRuns: core.activeRuns.map(mapRun),
   };
+}
+
+/**
+ * Prefer a waiting ask/takeover over a merely-busy run for the group's headline
+ * `run` field, even when the busy run started more recently — createdAt-desc
+ * ordering alone would let a fresh busy run for one bot bury an older waiting
+ * card for another. `activeRuns` still carries every active run regardless of
+ * which one is picked here, so nothing is hidden from the client, only the
+ * single-run summary field.
+ */
+function pickPrimaryActiveRun<T extends { status: string }>(runs: readonly T[]): T | undefined {
+  return (
+    runs.find((run) => run.status === "waiting_input" || run.status === "waiting_takeover") ??
+    runs[0]
+  );
 }
 
 /** Latest terminal by end time (completedAt, else createdAt), then createdAt, then id. */
@@ -574,7 +608,7 @@ export async function sendThreadMessage(
           replyToMessageId: input.replyToMessageId,
           clientNonce: input.clientNonce,
         });
-        const active = await tx.run.findFirst({
+        const activeRuns = await tx.run.findMany({
           where: {
             threadId: target.threadId,
             botId: target.botId,
@@ -582,6 +616,12 @@ export async function sendThreadMessage(
           },
           select: { id: true, taskId: true, status: true },
         });
+        if (activeRuns.some((run) => !STEERABLE_RUN_STATUSES.has(run.status))) {
+          throw new ORPCError("CONFLICT", {
+            message: "Answer the pending ask first.",
+          });
+        }
+        const active = activeRuns[0];
         if (active) {
           await tx.steeringMessage.create({
             data: {
@@ -689,7 +729,15 @@ export async function sendThreadMessage(
         },
         select: { id: true, taskId: true, botId: true, status: true },
       });
-      const activeByBotId = new Map(activeRuns.map((run) => [run.botId, run]));
+      const activeByBotId = new Map<string, (typeof activeRuns)[number]>();
+      for (const run of activeRuns) {
+        if (!STEERABLE_RUN_STATUSES.has(run.status)) {
+          throw new ORPCError("CONFLICT", {
+            message: "Answer the pending ask first.",
+          });
+        }
+        if (!activeByBotId.has(run.botId)) activeByBotId.set(run.botId, run);
+      }
       const runs: Array<{ id: string; taskId: string; botId: string; status: string }> = [];
       for (const botId of targetBotIds) {
         const active = activeByBotId.get(botId);

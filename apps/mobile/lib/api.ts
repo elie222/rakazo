@@ -752,27 +752,60 @@ export function applyMobileThreadEvent(
       activeRuns: [],
     };
   }
-  if (event.type === "run.waiting_input") {
+  if (event.type === "run.waiting_input" || event.type === "computer.takeover.requested") {
+    const status = event.type === "run.waiting_input" ? "waiting_input" : "waiting_takeover";
     const progressId = progressMessageId(event);
+    // Waiting pauses drop live progress server-side; clear a leftover bubble so
+    // the waiting footer is not hidden behind a stale "Working…" row.
     const messages = prev.messages.filter((message) => message.id !== progressId);
     const progressCleared = messages.length !== prev.messages.length;
-    const runChanged = Boolean(
-      prev.run && prev.run.id === event.runId && prev.run.status !== "waiting_input",
+    const runId = event.runId;
+    const knownInRun = Boolean(runId && prev.run?.id === runId);
+    const knownInActive = Boolean(runId && prev.activeRuns?.some((candidate) => candidate.id === runId));
+    // Peer bot_message runs are omitted from snapshots while busy; the first wait
+    // event is how an open thread learns they need ask/takeover UI.
+    const needsInsert = Boolean(runId) && !knownInRun && !knownInActive;
+    const runChanged = Boolean(knownInRun && prev.run && prev.run.status !== status);
+    const activeRunChanged = Boolean(
+      knownInActive &&
+        prev.activeRuns?.some((candidate) => candidate.id === runId && candidate.status !== status),
     );
-    const activeRunChanged = prev.activeRuns?.some(
-      (candidate) => candidate.id === event.runId && candidate.status !== "waiting_input",
-    );
+    const computer =
+      event.type === "computer.takeover.requested" && prev.computer?.busyBotName
+        ? { ...prev.computer, busyBotName: null }
+        : prev.computer;
+    const computerChanged = computer !== prev.computer;
     const cursor = event.seq ?? prev.cursor;
-    if (!runChanged && !activeRunChanged && !progressCleared) {
+    if (!runChanged && !activeRunChanged && !progressCleared && !needsInsert && !computerChanged) {
       return cursor === prev.cursor ? prev : { ...prev, cursor };
     }
-    const run = runChanged && prev.run ? { ...prev.run, status: "waiting_input" } : prev.run;
+    if (needsInsert && runId) {
+      const waitingRun = {
+        id: runId,
+        status,
+        ...(event.botId ? { botId: event.botId } : {}),
+      };
+      const baseActive = prev.activeRuns ?? (prev.run ? [prev.run] : []);
+      const activeRuns = [...baseActive.filter((candidate) => candidate.id !== runId), waitingRun];
+      const promoteWaiting =
+        !prev.run ||
+        (prev.run.status !== "waiting_input" && prev.run.status !== "waiting_takeover");
+      return {
+        ...prev,
+        cursor,
+        messages,
+        computer,
+        run: promoteWaiting ? waitingRun : prev.run,
+        activeRuns,
+      };
+    }
+    const run = runChanged && prev.run ? { ...prev.run, status } : prev.run;
     const activeRuns = activeRunChanged
       ? prev.activeRuns?.map((candidate) =>
-          candidate.id === event.runId ? { ...candidate, status: "waiting_input" } : candidate,
+          candidate.id === runId ? { ...candidate, status } : candidate,
         )
       : prev.activeRuns;
-    return { ...prev, cursor, run, activeRuns, messages };
+    return { ...prev, cursor, run, activeRuns, messages, computer };
   }
   if (isRunTerminalEvent(event)) {
     const activeRuns = prev.activeRuns?.filter((candidate) => candidate.id !== event.runId);
