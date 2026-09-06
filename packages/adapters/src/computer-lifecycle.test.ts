@@ -1652,7 +1652,6 @@ describe("computer replacement", () => {
     }
   });
 
-
   it("rejects replacement while the target bot has an active run", async () => {
     const prisma = {
       computer: {
