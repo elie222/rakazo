@@ -64,6 +64,28 @@ describe("Modal sandbox boundary", () => {
     expect(f.requests[0]?.path).toBe("artifacts/恢复.bin");
     expect(Buffer.from(String(f.requests[0]?.content), "base64").equals(content)).toBe(true);
   });
+  it("restores a workspace with bounded parallel transfers and one ownership check", async () => {
+    const f = fixture();
+    const exec = f.sandbox.exec.getMockImplementation()!;
+    let active = 0;
+    let peak = 0;
+    f.sandbox.exec.mockImplementation(async () => {
+      active++;
+      peak = Math.max(peak, active);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      active--;
+      return exec();
+    });
+    async function* files() {
+      for (let i = 0; i < 19; i++) yield { path: `files/${i}.txt`, content: Buffer.from(`${i}`) };
+    }
+    await f.provider.importWorkspace(computer, files(), context);
+    expect(peak).toBe(8);
+    expect(active).toBe(0);
+    expect(f.sandbox.getTags).toHaveBeenCalledTimes(1);
+    expect(f.requests).toHaveLength(19);
+    expect(new Set(f.requests.map((request) => request.path)).size).toBe(19);
+  });
   it("reconnects without creating a new computer and executes bounded non-PTY commands", async () => {
     const f = fixture();
     expect(

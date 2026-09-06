@@ -376,7 +376,39 @@ export class ModalSandboxProvider implements SandboxProvider {
     files: AsyncIterable<PortableFile>,
     ctx: AdapterContext,
   ) {
-    for await (const file of files) await this.writeFile(computer, file, ctx);
+    const sandbox = await this.owned(computer, ctx);
+    let pending: Promise<unknown>[] = [];
+    let bytes = 0;
+    const flush = async () => {
+      const results = await Promise.allSettled(pending);
+      pending = [];
+      bytes = 0;
+      const failure = results.find((result) => result.status === "rejected");
+      if (failure?.status === "rejected") throw failure.reason;
+    };
+    try {
+      for await (const file of files) {
+        ctx.signal.throwIfAborted();
+        if (
+          pending.length &&
+          (pending.length >= 8 || bytes + file.content.length > 8 * 1024 * 1024)
+        )
+          await flush();
+        bytes += file.content.length;
+        const write = this.rpc(sandbox, {
+          op: "write",
+          path: file.path,
+          executable: file.executable,
+          content: Buffer.from(file.content).toString("base64"),
+        });
+        // Attach a handler immediately while the next remote file is downloading.
+        void write.catch(() => undefined);
+        pending.push(write);
+      }
+      await flush();
+    } finally {
+      await Promise.allSettled(pending);
+    }
   }
   async snapshot(computer: ComputerRef, ctx: AdapterContext) {
     const image = await (await this.owned(computer, ctx)).snapshotFilesystem();

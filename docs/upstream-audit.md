@@ -10,6 +10,8 @@ On hosted installations, a configured deployment model skips provider setup. The
 
 The shared light background was warm off-white in upstream. Explicit product direction now sets white/black foundations and neutral grays; sans-serif UI typography and upstream structure remain. Responsive fixes preserve the original desktop shell while fixing mobile navigation, touch targets, composer overlap, and draft handoff.
 
+Saved workspaces download and restore in bounded parallel batches to avoid serial per-file latency on wake.
+
 The hosted screen gateway permits module imports from the isolated viewer origin without forwarding application credentials. Manual computer control uses the user control grant independently of an active agent run. On phones, the computer button opens the existing full-screen viewer. Hosted accounts do not expose the model API-key settings.
 
 The paid marketing template is a separate licensed site, not a replacement application shell. Its source is retained privately; the public repository only has a routing boundary and branding.
