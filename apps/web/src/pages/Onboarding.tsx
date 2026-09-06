@@ -339,7 +339,10 @@ export function OnboardingPage() {
                     ) : (
                       <Input
                         value={modelId}
-                        onChange={(e) => setModelId(e.target.value)}
+                        onChange={(e) => {
+                          setManualModelId(true);
+                          setModelId(e.target.value);
+                        }}
                         aria-label={t`Model id`}
                         placeholder="exact-model-id"
                         className="mt-2"

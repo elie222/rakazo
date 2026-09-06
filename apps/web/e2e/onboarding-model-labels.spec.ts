@@ -51,13 +51,20 @@ test("onboarding uses compact model selects without misleading latest labels", a
   await provider.click();
   await page.getByRole("option", { name: "OpenAI-compatible" }).click();
   await page.getByLabel("OpenAI-compatible server URL").fill("http://127.0.0.1:8090/v1");
+  const manualModel = page.getByLabel("Model id");
+  await expect(manualModel).toBeVisible();
+  // Typing before the first probe must keep freeform even if the probe returns that id.
+  await manualModel.fill("probed-model");
   await page.getByRole("button", { name: "Find models" }).click();
+  await expect(manualModel).toBeVisible();
+  await expect(manualModel).toHaveValue("probed-model");
+  await expect(page.getByRole("combobox", { name: "Models from server" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Use a found model" }).click();
   const discovered = page.getByRole("combobox", { name: "Models from server" });
   await expect(discovered).toBeVisible();
   await expect(discovered).toContainText("probed-model");
   await discovered.click();
   await page.getByRole("option", { name: "Other model…" }).click();
-  const manualModel = page.getByLabel("Model id");
   await expect(manualModel).toBeVisible();
   // Typing a discovered id (or its prefix) must keep the freeform field.
   await manualModel.fill("probed-model");
