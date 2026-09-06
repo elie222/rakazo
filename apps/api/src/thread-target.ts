@@ -964,8 +964,14 @@ export async function stopThreadRuns(
       lease,
     });
   }
+  const cancelledRunIds = new Set(runIds);
   for (const computer of computers) {
     if (!computer.executionBotId || !computer.executionRunId) continue;
+    // Computers may enter the snapshot via a cancelled lease while
+    // Computer.executionRunId still points at an unrelated live run. Only treat
+    // the legacy columns as a teardown target when they belong to a run we
+    // cancelled in this transaction.
+    if (!cancelledRunIds.has(computer.executionRunId)) continue;
     const key = `${computer.id}:${computer.executionRunId}`;
     if (seenTargets.has(key)) continue;
     seenTargets.add(key);
