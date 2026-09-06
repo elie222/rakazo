@@ -81,12 +81,32 @@ describe("Modal sandbox boundary", () => {
       for (let i = 0; i < 19; i++) yield { path: `files/${i}.txt`, content: Buffer.from(`${i}`) };
     }
     await f.provider.importWorkspace(computer, files(), context);
-    expect(f.requests.map((r) => (r.files as unknown[]).length)).toEqual([8, 8, 3]);
-    expect(f.sandbox.getTags).toHaveBeenCalledTimes(1);
     expect(
-      new Set(f.requests.flatMap((r) => (r.files as { path: string }[]).map((f) => f.path))).size,
+      f.requests.filter((r) => r.op === "writeBatch").map((r) => (r.files as unknown[]).length),
+    ).toEqual([8, 8, 3]);
+    expect(f.sandbox.getTags).toHaveBeenCalledTimes(1);
+    expect(f.requests[0]?.op).toBe("restoreBegin");
+    expect(f.requests.at(-1)?.op).toBe("restoreEnd");
+    expect(
+      new Set(
+        f.requests
+          .filter((r) => r.op === "writeBatch")
+          .flatMap((r) => (r.files as { path: string }[]).map((f) => f.path)),
+      ).size,
     ).toBe(19);
   });
+  it("reopens browsers if a portable restore fails", async () => {
+    const f = fixture();
+    async function* files() {
+      yield { path: "one", content: Buffer.from("one") };
+      throw new Error("home unavailable");
+    }
+    await expect(f.provider.importWorkspace(computer, files(), context)).rejects.toThrow(
+      "home unavailable",
+    );
+    expect(f.requests.map((r) => r.op)).toEqual(["restoreBegin", "restoreEnd"]);
+  });
+
   it("keeps running legacy images usable until an idle restart", async () => {
     const f = fixture();
     f.sandbox.getTags.mockImplementation(async () => ({

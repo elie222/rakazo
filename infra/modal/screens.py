@@ -128,3 +128,24 @@ def release(value, lease):
         if not lease or not current or current == lease or (same_owner and fence(lease)>=fence(current)):
             state.pop('lease',None);save(key,state)
     return {'ok':True}
+
+
+def pause_browsers():
+    pattern='[c]hromium|[g]oogle-chrome|[f]irefox'
+    subprocess.run(['pkill','-u','1000','-TERM','-f',pattern],check=False)
+    for _ in range(50):
+        if subprocess.run(['pgrep','-u','1000','-f',pattern],stdout=subprocess.DEVNULL).returncode != 0: return {'ok':True}
+        time.sleep(.1)
+    subprocess.run(['pkill','-u','1000','-KILL','-f',pattern],check=False)
+    return {'ok':True}
+
+def resume_browsers():
+    displays={0:screen_key()}
+    for p in STATE.glob('*.json'):
+        state=json.loads(p.read_text());displays[state['index']]=p.stem
+    for index,key in displays.items():
+        env=child_env(index,key)
+        if index==0: env['RAKAZO_BROWSER_PROFILE']='/home/rakazo/.browser-profiles/chromium'
+        if ready(6080+index*2):
+            subprocess.Popen(['rakazo-browser'],env=env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,preexec_fn=demote,start_new_session=True)
+    return {'ok':True}

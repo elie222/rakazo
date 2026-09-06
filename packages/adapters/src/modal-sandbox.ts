@@ -487,27 +487,33 @@ export class ModalSandboxProvider implements SandboxProvider {
       }
       return;
     }
-    let batch: Array<{ path: string; executable?: boolean; content: string }> = [];
-    let bytes = 0;
-    const flush = async () => {
-      if (!batch.length) return;
-      await this.rpc(sandbox, { op: "writeBatch", files: batch });
-      batch = [];
-      bytes = 0;
-    };
-    for await (const file of files) {
-      ctx.signal.throwIfAborted();
-      if (batch.length && (batch.length >= 8 || bytes + file.content.length > 8 * 1024 * 1024))
-        await flush();
-      bytes += file.content.length;
-      batch.push({
-        path: file.path,
-        executable: file.executable,
-        content: Buffer.from(file.content).toString("base64"),
-      });
+    await this.rpc(sandbox, { op: "restoreBegin" });
+    try {
+      let batch: Array<{ path: string; executable?: boolean; content: string }> = [];
+      let bytes = 0;
+      const flush = async () => {
+        if (!batch.length) return;
+        await this.rpc(sandbox, { op: "writeBatch", files: batch });
+        batch = [];
+        bytes = 0;
+      };
+      for await (const file of files) {
+        ctx.signal.throwIfAborted();
+        if (batch.length && (batch.length >= 8 || bytes + file.content.length > 8 * 1024 * 1024))
+          await flush();
+        bytes += file.content.length;
+        batch.push({
+          path: file.path,
+          executable: file.executable,
+          content: Buffer.from(file.content).toString("base64"),
+        });
+      }
+      await flush();
+    } finally {
+      await this.rpc(sandbox, { op: "restoreEnd" });
     }
-    await flush();
   }
+
   async snapshot(computer: ComputerRef, ctx: AdapterContext) {
     const image = await (await this.owned(computer, ctx)).snapshotFilesystem({
       ttlMs: 24 * 60 * 60 * 1000,

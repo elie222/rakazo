@@ -193,6 +193,8 @@ def run(req):
     if op == 'resolveScreen':
         key, state = screens.resolve(req.get('screenKey'), req.get('screenLease'))
         return {'key': key, 'index': state['index']}
+    if op == 'restoreBegin': return screens.pause_browsers()
+    if op == 'restoreEnd': return screens.resume_browsers()
     if op == 'readBatch':
         paths = req.get('paths', [])
         if len(paths) > 8: raise ValueError('Too many files')
