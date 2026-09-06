@@ -3269,3 +3269,16 @@ msgstr "GraphQL एंडपॉइंट जोड़ें"
 #: src/pages/PluginsOverlay.tsx:601
 msgid "No tool sources yet."
 msgstr "अभी कोई टूल स्रोत नहीं है।"
+
+#: src/pages/PluginsOverlay.tsx
+msgid "Add Executor"
+msgstr "Executor जोड़ें"
+
+#: src/pages/PluginsOverlay.tsx
+msgid "Connect Executor"
+msgstr "Executor कनेक्ट करें"
+
+#: src/pages/PluginsOverlay.tsx
+msgid "Executor token"
+msgstr "Executor टोकन"
+

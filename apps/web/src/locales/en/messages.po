@@ -3269,3 +3269,16 @@ msgstr "Add GraphQL endpoint"
 #: src/pages/PluginsOverlay.tsx:601
 msgid "No tool sources yet."
 msgstr "No tool sources yet."
+
+#: src/pages/PluginsOverlay.tsx
+msgid "Add Executor"
+msgstr "Add Executor"
+
+#: src/pages/PluginsOverlay.tsx
+msgid "Connect Executor"
+msgstr "Connect Executor"
+
+#: src/pages/PluginsOverlay.tsx
+msgid "Executor token"
+msgstr "Executor token"
+
