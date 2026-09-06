@@ -33,6 +33,19 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  installer-smoke:
+    name: Compose installer smokes
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - run: bash infra/compose/run-smokes.sh
+
   validate:
     name: Validate ${{ matrix.name }} image
     if: github.event_name == 'pull_request'
