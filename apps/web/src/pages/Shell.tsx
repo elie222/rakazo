@@ -3223,12 +3223,7 @@ export function ShellPage() {
                       <Trans>Open in full window</Trans>
                     </div>
                   ) : computer?.kind === "desktop" ? (
-                    <div className="grid h-full place-items-center px-6 text-center text-sm text-muted-foreground/80">
-                      <Trans>
-                        This bot runs on this computer, not a Linux desktop. Shell and files use
-                        your home folder.
-                      </Trans>
-                    </div>
+                    <DesktopKindEmptyState className="grid h-full place-items-center px-6 text-center text-sm text-muted-foreground/80" />
                   ) : computer?.state === "running" && embeddedScreenUrl && !computerScreenError ? (
                     <iframe
                       title={t`Bot screen preview`}
@@ -3934,12 +3929,7 @@ export function ShellPage() {
           ) : null}
           <div className="relative min-h-0 flex-1 bg-background">
             {computer?.kind === "desktop" ? (
-              <div className="grid h-full place-items-center px-8 text-center text-sm text-muted-foreground/80">
-                <Trans>
-                  This bot runs on this computer. There is no separate Linux desktop. Ask it to use
-                  the shell; working directories under your home folder are allowed.
-                </Trans>
-              </div>
+              <DesktopKindEmptyState className="grid h-full place-items-center px-8 text-center text-sm text-muted-foreground/80" />
             ) : computer?.state === "running" && embeddedScreenUrl && !computerScreenError ? (
               <>
                 <iframe
@@ -5620,6 +5610,16 @@ function screenIframeSandbox(url: string | null) {
   } catch {
     return undefined;
   }
+}
+
+function DesktopKindEmptyState({ className }: { className?: string }) {
+  return (
+    <div className={className}>
+      <Trans>
+        This bot runs on this computer, not a Linux desktop. Shell and files use your home folder.
+      </Trans>
+    </div>
+  );
 }
 
 function computerPlaceholder(

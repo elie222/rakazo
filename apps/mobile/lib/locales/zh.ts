@@ -432,8 +432,7 @@ export const ZH_MESSAGES: Record<string, string> = {
     "工作已停止，但线程无法刷新：{detail}",
   "You have control": "你已接管控制",
   "Your account": "你的账户",
-  "Your key or subscription token is stored securely and is never shown here.":
-    "你的密钥或订阅令牌会安全存储，绝不会显示在这里。",
+  "Stored securely. Never shown here.": "已安全存储。不会显示在这里。",
   Actions: "操作",
   Active: "启用",
   Add: "添加",
