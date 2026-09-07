@@ -99,11 +99,7 @@ import {
   Settings,
   Smile,
   Square,
-<<<<<<< HEAD
   Trash2,
-  Volume2,
-=======
->>>>>>> 4440f602 (Unify account menu icons and move Models/Memory/Voice into Settings)
   X,
 } from "lucide-react";
 import {

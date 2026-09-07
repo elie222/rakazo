@@ -204,6 +204,7 @@ export function SettingsOverlay({
                   onAvatarStyleChange={onAvatarStyleChange}
                   messagingEnabled={messagingEnabled}
                   onOpenMessaging={onOpenMessaging}
+                  isDeploymentOwner={isDeploymentOwner}
                 />
               ) : null}
               {section === "usage" ? (

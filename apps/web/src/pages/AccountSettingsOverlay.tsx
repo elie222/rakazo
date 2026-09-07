@@ -154,14 +154,9 @@ export function GeneralSettingsPanels({
       </section>
 
       {isDeploymentOwner ? (
-        <section className="rounded-xl border border-border px-4 py-4">
-          <h3 className="text-[15px] font-medium text-foreground">
-            <Trans>Server integrations</Trans>
-          </h3>
-          <Button className="mt-3" variant="outline" render={<Link to="/integrations/setup" />}>
-            <Trans>Manage server integrations</Trans>
-          </Button>
-        </section>
+        <Button variant="outline" render={<Link to="/integrations/setup" />}>
+          <Trans>Server integrations</Trans>
+        </Button>
       ) : null}
 
       <details data-testid="advanced-settings" className="group rounded-xl border border-border">
