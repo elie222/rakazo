@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import path from "node:path";
@@ -133,22 +133,20 @@ async function main() {
 /** Maestro host-side helper: expand the Android shade without flaky status-bar swipes. */
 function startDeviceControlServer(): Server {
   const server = createServer((req, res) => {
-    try {
-      if (req.method === "GET" && req.url === "/expand-notifications") {
-        execFileSync("adb", ["shell", "cmd", "statusbar", "expand-notifications"], {
-          stdio: ["ignore", "pipe", "pipe"],
-        });
-        res.writeHead(200, { "content-type": "text/plain; charset=utf-8" });
-        res.end("ok");
-        return;
-      }
+    if (req.method !== "GET" || req.url !== "/expand-notifications") {
       res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
       res.end("not found");
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      res.writeHead(500, { "content-type": "text/plain; charset=utf-8" });
-      res.end(message);
+      return;
     }
+    execFile(
+      "adb",
+      ["shell", "cmd", "statusbar", "expand-notifications"],
+      { timeout: 5_000 },
+      (error) => {
+        res.writeHead(error ? 500 : 200, { "content-type": "text/plain; charset=utf-8" });
+        res.end(error ? "Could not expand notifications" : "ok");
+      },
+    );
   });
   server.listen(DEVICE_CONTROL_PORT, "127.0.0.1");
   return server;

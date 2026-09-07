@@ -79,6 +79,9 @@ name: Android live working status demonstration
 - assertTrue: ${output.expandNotifications.ok}
 - waitForAnimationToEnd:
     timeout: 2000
+- extendedWaitUntil:
+    visible: "Internet"
+    timeout: 5000
 - assertNotVisible: "Researcher is working"
 - takeScreenshot: "31-live-working-stopped"
 - stopRecording
