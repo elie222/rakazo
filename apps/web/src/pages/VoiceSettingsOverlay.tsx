@@ -44,9 +44,13 @@ export function VoiceSettingsOverlay({
   const busy = pending !== null;
 
   useEffect(() => {
-    onBusyChange?.(busy);
     return () => onBusyChange?.(false);
-  }, [busy, onBusyChange]);
+  }, [onBusyChange]);
+
+  function markPending(next: "connect" | "voice" | "test" | null) {
+    setPending(next);
+    onBusyChange?.(next !== null);
+  }
 
   async function refresh(nextProvider?: string) {
     const [nextCatalog, nextCredentials, nextStatus] = await Promise.all([
@@ -90,7 +94,7 @@ export function VoiceSettingsOverlay({
     if (!selected || !apiKey.trim()) return;
     setError(null);
     setNotice(null);
-    setPending("connect");
+    markPending("connect");
     try {
       await rpc.voice.connect({
         provider: selected.id,
@@ -103,14 +107,14 @@ export function VoiceSettingsOverlay({
     } catch (err) {
       setError(err instanceof Error ? err.message : t`Could not connect this voice provider`);
     } finally {
-      setPending(null);
+      markPending(null);
     }
   }
 
   async function chooseVoice(nextVoiceId: string) {
     setVoiceId(nextVoiceId);
     if (!credential) return;
-    setPending("voice");
+    markPending("voice");
     setError(null);
     try {
       await rpc.voice.setVoice({ voiceId: nextVoiceId, provider: selected?.id });
@@ -118,14 +122,14 @@ export function VoiceSettingsOverlay({
     } catch (err) {
       setError(err instanceof Error ? err.message : t`Could not save that voice`);
     } finally {
-      setPending(null);
+      markPending(null);
     }
   }
 
   async function testVoice() {
     setError(null);
     setNotice(null);
-    setPending("test");
+    markPending("test");
     try {
       const { speaker } = await import("../lib/tts.js");
       await speaker.speak(t`Hi, this is how I'll sound when I read replies out loud.`);
@@ -137,7 +141,7 @@ export function VoiceSettingsOverlay({
     } catch (err) {
       setError(err instanceof Error ? err.message : t`Could not play a test clip`);
     } finally {
-      setPending(null);
+      markPending(null);
     }
   }
 

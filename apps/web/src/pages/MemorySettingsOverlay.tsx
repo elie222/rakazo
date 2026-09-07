@@ -95,14 +95,18 @@ export function MemorySettingsOverlay({
   const busy = pending !== null;
 
   useEffect(() => {
-    onBusyChange?.(busy);
     return () => onBusyChange?.(false);
-  }, [busy, onBusyChange]);
+  }, [onBusyChange]);
+
+  function markPending(next: "connect" | "disconnect" | "scope" | null) {
+    setPending(next);
+    onBusyChange?.(next !== null);
+  }
 
   async function connect(draft: MemoryProviderConnectionDraft) {
     if (!registration) return false;
     setError(null);
-    setPending("connect");
+    markPending("connect");
     try {
       const next = await rpc.memory.connectProvider({
         provider: registration.id,
@@ -115,34 +119,34 @@ export function MemorySettingsOverlay({
       setError(err instanceof Error ? err.message : t`Could not connect ${registration.name}`);
       return false;
     } finally {
-      setPending(null);
+      markPending(null);
     }
   }
 
   async function disconnect() {
     setError(null);
-    setPending("disconnect");
+    markPending("disconnect");
     try {
       await rpc.memory.disconnectProvider();
       onConfigChange(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : t`Could not disconnect memory provider`);
     } finally {
-      setPending(null);
+      markPending(null);
     }
   }
 
   async function updateDefaultScope(scope: "isolated" | "shared") {
     if (scope === defaultScope) return;
     setError(null);
-    setPending("scope");
+    markPending("scope");
     try {
       const next = await rpc.memory.setDefaultScope({ defaultMemoryScope: scope });
       onConfigChange(next);
     } catch (err) {
       setError(err instanceof Error ? err.message : t`Could not update the default memory scope`);
     } finally {
-      setPending(null);
+      markPending(null);
     }
   }
 
