@@ -39,8 +39,9 @@ name: Android live working status demonstration
     timeout: 30000
 - pressKey: HOME
 - swipe:
-    start: "50%, 0%"
+    start: "50%, 1%"
     end: "50%, 80%"
+    duration: 1000
 - extendedWaitUntil:
     visible: "Researcher is working"
     timeout: 30000
@@ -60,8 +61,9 @@ name: Android live working status demonstration
 - tapOn: "Live working status"
 - pressKey: HOME
 - swipe:
-    start: "50%, 0%"
+    start: "50%, 1%"
     end: "50%, 80%"
+    duration: 1000
 - assertNotVisible: "Researcher is working"
 - takeScreenshot: "31-live-working-stopped"
 - stopRecording
