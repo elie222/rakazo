@@ -3072,7 +3072,7 @@ msgstr "正在更新…"
 msgid "Usage"
 msgstr "用量"
 
-#: src/pages/HostComputerPrompt.tsx:84
+#: src/pages/HostComputerPrompt.tsx:92
 msgid "Use {hostLabel}"
 msgstr "使用 {hostLabel}"
 
@@ -3309,14 +3309,14 @@ msgstr "连接 Executor"
 msgid "Executor token"
 msgstr "Executor 令牌"
 
-#: src/pages/HostComputerPrompt.tsx:76
+#: src/pages/HostComputerPrompt.tsx:84
 msgid "Docker"
 msgstr "Docker"
 
-#: src/pages/HostComputerPrompt.tsx:62
+#: src/pages/HostComputerPrompt.tsx:63
 msgid "Docker limits access to your computer for added security. Using {hostLabel} lets bots work with your local files and tools."
 msgstr "Docker 限制对你电脑的访问，以提高安全性。使用{hostLabel}时，Bot 可以处理你的本地文件并使用本地工具。"
 
-#: src/pages/HostComputerPrompt.tsx:88
+#: src/pages/HostComputerPrompt.tsx:69
 msgid "Local access lets bots run commands without asking. Avoid it on shared or public servers."
 msgstr "本地访问权限允许 Bot 无需询问就执行命令。请勿在共享或公开服务器上启用。"

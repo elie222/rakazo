@@ -3072,7 +3072,7 @@ msgstr "Updating…"
 msgid "Usage"
 msgstr "Usage"
 
-#: src/pages/HostComputerPrompt.tsx:84
+#: src/pages/HostComputerPrompt.tsx:92
 msgid "Use {hostLabel}"
 msgstr "Use {hostLabel}"
 
@@ -3309,14 +3309,14 @@ msgstr "Connect Executor"
 msgid "Executor token"
 msgstr "Executor token"
 
-#: src/pages/HostComputerPrompt.tsx:76
+#: src/pages/HostComputerPrompt.tsx:84
 msgid "Docker"
 msgstr "Docker"
 
-#: src/pages/HostComputerPrompt.tsx:62
+#: src/pages/HostComputerPrompt.tsx:63
 msgid "Docker limits access to your computer for added security. Using {hostLabel} lets bots work with your local files and tools."
 msgstr "Docker limits access to your computer for added security. Using {hostLabel} lets bots work with your local files and tools."
 
-#: src/pages/HostComputerPrompt.tsx:88
+#: src/pages/HostComputerPrompt.tsx:69
 msgid "Local access lets bots run commands without asking. Avoid it on shared or public servers."
 msgstr "Local access lets bots run commands without asking. Avoid it on shared or public servers."
