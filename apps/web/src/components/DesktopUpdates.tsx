@@ -22,7 +22,16 @@ function useDesktopUpdates() {
       const started = revision.current;
       try {
         const next = await bridge!.state();
-        if (!stopped && started === revision.current && !pending.current) setState(next);
+        if (!stopped && started === revision.current && !pending.current) {
+          setState((current) =>
+            current &&
+            Object.entries(next).every(
+              ([key, value]) => current[key as keyof DesktopUpdateState] === value,
+            )
+              ? current
+              : next,
+          );
+        }
       } catch {
         // A disappearing bridge during shutdown should not interrupt the app.
       } finally {
