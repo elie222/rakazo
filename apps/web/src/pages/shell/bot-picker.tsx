@@ -112,7 +112,7 @@ export function BotCreatePicker({
                   onShowGroupInfo();
                 }}
                 onKeyDown={(event) => event.stopPropagation()}
-                className="-mr-1 shrink-0 rounded p-1 text-muted-foreground/70 opacity-0 transition-opacity duration-150 group-focus-within/command-item:opacity-100 group-hover/command-item:opacity-100 hover:text-foreground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-ring [@media(hover:none)]:opacity-70"
+                className="-mr-1 shrink-0 rounded p-1 text-muted-foreground/70 opacity-0 transition-opacity duration-150 group-focus-within/command-item:opacity-100 group-hover/command-item:opacity-100 hover:text-foreground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-ring [@media(any-pointer:coarse)]:opacity-70"
               >
                 <Info size={14} strokeWidth={1.8} aria-hidden="true" />
               </button>
@@ -140,7 +140,7 @@ export function BotCreatePicker({
                   onShowSpaceInfo();
                 }}
                 onKeyDown={(event) => event.stopPropagation()}
-                className="-mr-1 shrink-0 rounded p-1 text-muted-foreground/70 opacity-0 transition-opacity duration-150 group-focus-within/command-item:opacity-100 group-hover/command-item:opacity-100 hover:text-foreground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-ring [@media(hover:none)]:opacity-70"
+                className="-mr-1 shrink-0 rounded p-1 text-muted-foreground/70 opacity-0 transition-opacity duration-150 group-focus-within/command-item:opacity-100 group-hover/command-item:opacity-100 hover:text-foreground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-ring [@media(any-pointer:coarse)]:opacity-70"
               >
                 <Info size={14} strokeWidth={1.8} aria-hidden="true" />
               </button>
