@@ -144,13 +144,10 @@ export function PeerMessagesOverlay({
           </div>
         )}
 
-        <div className="flex items-center justify-between gap-4 border-t border-sidebar-border px-[18px] py-3.5">
+        <div className="flex items-center gap-4 border-t border-sidebar-border px-[18px] py-3.5">
           <p className="text-[13.5px] text-muted-foreground/80">
             <Trans>This chat is view-only</Trans>
           </p>
-          <DialogClose render={<Button variant="outline" size="sm" />}>
-            <Trans>Close</Trans>
-          </DialogClose>
         </div>
       </DialogContent>
     </Dialog>

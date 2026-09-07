@@ -88,6 +88,7 @@ test("shows peer chips in transcript and opens view-only peer chat", async ({ pa
   await expect(view).toBeVisible();
   await expect(view.getByRole("heading", { name: /Chief · Researcher/ })).toBeVisible();
   await expect(view.getByText("This chat is view-only")).toBeVisible();
+  await expect(view.getByRole("button", { name: "Close" })).toHaveCount(1);
   await expect(view.getByText("peer-exchange-alpha").first()).toBeVisible({
     timeout: 30_000,
   });
