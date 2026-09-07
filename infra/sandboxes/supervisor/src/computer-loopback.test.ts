@@ -238,6 +238,7 @@ describe("computer loopback provision lifecycle", () => {
     });
     expect(response.status).toBe(200);
     if (resumed) {
+      expect(mocks.docker.createNetwork).not.toHaveBeenCalled();
       expect(existing.start).toHaveBeenCalledOnce();
       expect(existing.remove).not.toHaveBeenCalled();
       expect(mocks.docker.createContainer).not.toHaveBeenCalled();
@@ -253,5 +254,114 @@ describe("computer loopback provision lifecycle", () => {
         expect.stringMatching(/^RAKAZO_COMPUTER_CONTROL_TOKEN=.+/),
       );
     }
+  });
+});
+
+describe("provisioning network rollback", () => {
+  function fixture() {
+    const network = { remove: vi.fn().mockResolvedValue(undefined) };
+    const container = {
+      id: "new-computer",
+      start: vi.fn().mockResolvedValue(undefined),
+      remove: vi.fn().mockResolvedValue(undefined),
+    };
+    mocks.docker.getImage.mockReturnValue({ inspect: vi.fn().mockResolvedValue({ Id: "image" }) });
+    mocks.docker.listContainers.mockResolvedValue([]);
+    mocks.docker.createNetwork.mockResolvedValue(network);
+    mocks.docker.createContainer.mockResolvedValue(container);
+    return { network, container };
+  }
+
+  async function provision(homePath = path.join(process.env.DATA_DIR!, "homes", "bot")) {
+    const { supervisorApp } = await import("./index.js");
+    return supervisorApp.request("/computers", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${resolveSupervisorToken(process.env)}`,
+        "content-type": "application/json",
+        "x-rakazo-bot-id": "bot",
+        "x-rakazo-space-id": "space",
+      },
+      body: JSON.stringify({ botId: "bot", spaceId: "space", homePath }),
+    });
+  }
+
+  it("does not allocate a network for an invalid home", async () => {
+    fixture();
+    expect((await provision("/invalid-home")).status).toBe(500);
+    expect(mocks.docker.createNetwork).not.toHaveBeenCalled();
+  });
+
+  it("does not allocate a network when home validation fails", async () => {
+    fixture();
+    mocks.assertHomeWritable.mockRejectedValue(new Error("home is not writable"));
+    expect((await provision()).status).toBe(500);
+    expect(mocks.docker.createNetwork).not.toHaveBeenCalled();
+  });
+
+  it("removes the new network on every failed container creation, then can retry", async () => {
+    const { network } = fixture();
+    mocks.docker.createContainer.mockRejectedValue(new Error("container creation failed"));
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const response = await provision();
+      expect(response.status).toBe(500);
+      expect(await response.json()).toEqual({ error: "container creation failed" });
+      expect(network.remove).toHaveBeenCalledTimes(attempt + 1);
+      expect(network.remove).toHaveBeenLastCalledWith();
+    }
+    const { network: retryNetwork } = fixture();
+    expect((await provision()).status).toBe(200);
+    expect(retryNetwork.remove).not.toHaveBeenCalled();
+  });
+
+  it("removes a failed new container before its new network", async () => {
+    const { network, container } = fixture();
+    container.start.mockRejectedValue(new Error("container start failed"));
+    const response = await provision();
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({ error: "container start failed" });
+    expect(container.remove).toHaveBeenCalledExactlyOnceWith();
+    expect(network.remove).toHaveBeenCalledExactlyOnceWith();
+    expect(container.remove.mock.invocationCallOrder[0]).toBeLessThan(
+      network.remove.mock.invocationCallOrder[0]!,
+    );
+  });
+
+  it("does not remove an existing network after failed creation", async () => {
+    const { network } = fixture();
+    mocks.docker.createNetwork.mockRejectedValue(new Error("network already exists"));
+    mocks.docker.createContainer.mockRejectedValue(new Error("container creation failed"));
+    expect((await provision()).status).toBe(500);
+    expect(network.remove).not.toHaveBeenCalled();
+  });
+
+  it("preserves the provision error if Docker refuses cleanup of active resources", async () => {
+    const { network, container } = fixture();
+    container.start.mockRejectedValue(new Error("start response lost"));
+    container.remove.mockRejectedValue(new Error("container is running"));
+    network.remove.mockRejectedValue(new Error("network has active endpoints"));
+    const response = await provision();
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({ error: "start response lost" });
+    expect(container.remove).toHaveBeenCalledExactlyOnceWith();
+    expect(network.remove).toHaveBeenCalledExactlyOnceWith();
+  });
+
+  it("does not allocate or delete the shared internal network", async () => {
+    fixture();
+    vi.stubEnv("SANDBOX_SCREEN_NETWORK", "internal");
+    vi.stubEnv("HOSTNAME", "supervisor");
+    mocks.docker.getContainer.mockReturnValue({
+      inspect: vi.fn().mockResolvedValue({
+        NetworkSettings: { Networks: { shared: {} } },
+        Mounts: [],
+      }),
+    });
+    mocks.docker.createContainer.mockRejectedValue(new Error("container creation failed"));
+    const response = await provision();
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({ error: "container creation failed" });
+    expect(mocks.docker.createContainer).toHaveBeenCalledOnce();
+    expect(mocks.docker.createNetwork).not.toHaveBeenCalled();
   });
 });

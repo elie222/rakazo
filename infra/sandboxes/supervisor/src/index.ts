@@ -162,7 +162,7 @@ app.post("/computers", async (c) => {
     return await withBotLifecycleLock(body.botId, async () => {
       await ensureComputerImage();
       const runtimeInfo = await inspectSupervisorContainer();
-      const networkMode = await computerNetworkName(body.botId, runtimeInfo);
+      const networkMode = computerNetworkName(body.botId, runtimeInfo);
       const serviceHomePath = path.resolve(body.homePath);
       assertBotHomePath(serviceHomePath, body.botId);
       const hostUid = process.getuid?.();
@@ -212,20 +212,31 @@ app.post("/computers", async (c) => {
         await existing.remove({ force: true }).catch(() => undefined);
       }
       const name = containerNameFor(body.botId);
-      const container = await docker.createContainer(
-        containerCreateOptions({
-          name,
-          image: COMPUTER_IMAGE,
-          botId: body.botId,
-          spaceId: body.spaceId,
-          homePath,
-          user: computerUser,
-          networkMode,
-          controlToken: randomUUID(),
-          publishControlPort: controlViaLoopback,
-        }),
-      );
-      await container.start();
+      const createdNetwork =
+        screenNetworkMode === "internal" ? undefined : await ensureBotNetwork(body.botId);
+      let container: Docker.Container | undefined;
+      try {
+        container = await docker.createContainer(
+          containerCreateOptions({
+            name,
+            image: COMPUTER_IMAGE,
+            botId: body.botId,
+            spaceId: body.spaceId,
+            homePath,
+            user: computerUser,
+            networkMode,
+            controlToken: randomUUID(),
+            publishControlPort: controlViaLoopback,
+          }),
+        );
+        await container.start();
+      } catch (error) {
+        // Never force removal: a lost start response may hide a running computer.
+        // Docker also refuses network removal while any endpoint is attached.
+        await container?.remove().catch(() => undefined);
+        await createdNetwork?.remove().catch(() => undefined);
+        throw error;
+      }
       return c.json({
         id: container.id,
         image: COMPUTER_IMAGE,
@@ -1098,7 +1109,7 @@ async function setInteractiveScreen(
 // one another (Docker's default "bridge" network allows any container to
 // dial any other container's exposed ports, which would let one bot's
 // computer reach another bot's desktop/VNC endpoint with no authentication).
-async function computerNetworkName(botId: string, info: Docker.ContainerInspectInfo | undefined) {
+function computerNetworkName(botId: string, info: Docker.ContainerInspectInfo | undefined) {
   if (screenNetworkMode === "internal") {
     // The supervisor itself runs in this shared network in that topology and
     // needs to address child containers by their in-network IP, so children
@@ -1108,7 +1119,7 @@ async function computerNetworkName(botId: string, info: Docker.ContainerInspectI
   if (screenNetworkMode === "isolated" && !info) {
     throw new Error("isolated Compose screens require a containerized supervisor");
   }
-  return ensureBotNetwork(botId);
+  return computerNetworkNameFor(botId);
 }
 
 async function connectComposeScreenPeers(networkName: string, info: Docker.ContainerInspectInfo) {
@@ -1139,13 +1150,12 @@ async function connectComposeScreenPeers(networkName: string, info: Docker.Conta
 
 async function ensureBotNetwork(botId: string) {
   const name = computerNetworkNameFor(botId);
-  await docker
+  return docker
     .createNetwork({ Name: name, Driver: "bridge", CheckDuplicate: true })
     .catch((error) => {
       // Existing networks and concurrent provision requests are both safe.
       if (!/already exists/i.test(String(error))) throw error;
     });
-  return name;
 }
 
 async function removeBotNetwork(botId: string) {

@@ -36,12 +36,14 @@ services:
   computer:
     image: ${RAKAZO_COMPUTER_IMAGE:-ghcr.io/elie222/rakazo/computer}:${RAKAZO_COMPUTER_IMAGE_TAG:-edge}
     command: ["true"]
+    network_mode: none
     restart: "no"
 
   data-init:
     # Optional Hub override; unset keeps busybox:1.
     image: ${BUSYBOX_IMAGE:-busybox:1}
     command: ["chown", "-R", "1000:1000", "/data"]
+    network_mode: none
     restart: "no"
     volumes:
       - appdata:/data
@@ -116,6 +118,9 @@ services:
     environment:
       NODE_ENV: production
       API_HOST: "0.0.0.0"
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://127.0.0.1:5173}
+      WEB_ORIGIN: ${WEB_ORIGIN:-http://127.0.0.1:5173}
+      API_URL: ${API_URL:-http://127.0.0.1:5173}
       DATABASE_URL: postgres://${POSTGRES_USER:-rakazo}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-rakazo}
       DATA_DIR: /data
       SANDBOX_PROVIDER: ${SANDBOX_PROVIDER:-docker}
@@ -133,7 +138,7 @@ services:
       https_proxy: ${https_proxy:-${HTTPS_PROXY:-}}
       no_proxy: ${no_proxy:-${NO_PROXY:-}}
     ports:
-      - "127.0.0.1:3100:3100"
+      - "127.0.0.1:${RAKAZO_API_PORT:-3100}:3100"
     volumes:
       - appdata:/data
     networks:
@@ -225,7 +230,7 @@ services:
       RAKAZO_IMAGE_TAG: ${RAKAZO_IMAGE_TAG:-edge}
       SCREEN_PROXY_SECRET: ${SCREEN_PROXY_SECRET:?Set SCREEN_PROXY_SECRET in .env}
     ports:
-      - "127.0.0.1:5173:5173"
+      - "127.0.0.1:${RAKAZO_WEB_PORT:-5173}:5173"
     networks:
       - app
     depends_on:

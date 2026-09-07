@@ -210,6 +210,7 @@ export type DockerFailureKind =
   | "compose-missing"
   | "image-not-found"
   | "network"
+  | "address-pool-exhausted"
   | "port-in-use"
   | "other";
 
@@ -242,6 +243,10 @@ const NETWORK = [
   "network is unreachable",
   "context deadline exceeded",
 ];
+const ADDRESS_POOL_EXHAUSTED = [
+  "all predefined address pools have been fully subnetted",
+  "could not find an available, non-overlapping ipv4 address pool",
+];
 const PORT_IN_USE = ["address already in use", "port is already allocated", "bind for 127.0.0.1"];
 
 /** Docker output can contain paths and hostnames, so callers map kinds to fixed messages. */
@@ -253,6 +258,7 @@ export function classifyDockerFailure(output: string): DockerFailureKind {
   if (matches(COMPOSE_MISSING)) return "compose-missing";
   if (matches(PORT_IN_USE)) return "port-in-use";
   if (matches(IMAGE_NOT_FOUND)) return "image-not-found";
+  if (matches(ADDRESS_POOL_EXHAUSTED)) return "address-pool-exhausted";
   if (matches(NETWORK)) return "network";
   return "other";
 }

@@ -133,6 +133,14 @@ describe("classifyDockerFailure", () => {
     ["net/http: TLS handshake timeout", "network"],
     ["Bind for 127.0.0.1:5173 failed: port is already allocated", "port-in-use"],
     ["listen tcp 127.0.0.1:3100: bind: address already in use", "port-in-use"],
+    [
+      "Error response from daemon: all predefined address pools have been fully subnetted",
+      "address-pool-exhausted",
+    ],
+    [
+      "could not find an available, non-overlapping IPv4 address pool among the defaults to assign to the network",
+      "address-pool-exhausted",
+    ],
     ["something else entirely", "other"],
   ])("classifies %j as %s", (output, kind) => {
     expect(classifyDockerFailure(output)).toBe(kind);
