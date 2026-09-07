@@ -15,6 +15,7 @@ import {
   runJobKey,
   type SandboxProvider,
 } from "@rakazo/adapter-kit";
+import type { IntegrationProviderSettings } from "@rakazo/adapters";
 import {
   acquireComputerExecutionLease,
   applyTeachingDesktopInput,
@@ -76,6 +77,7 @@ import {
   type Actor,
   appContract,
   type ComputerStatus,
+  IntegrationProviderIdSchema,
   type McpServer,
   type Me,
   OPENAI_COMPATIBLE_PROVIDER_ID,
@@ -407,6 +409,7 @@ export interface RouterDeps {
   home: AgentHomeStore;
   secrets: EncryptedSecretStore;
   oauthLogins: PiOAuthLogins;
+  integrationSettings?: IntegrationProviderSettings;
   composio?: ComposioProvider;
   mcpOAuth?: McpOAuthBroker;
   connectors: ConnectorRegistry;
@@ -434,6 +437,7 @@ export interface RouterDeps {
 export function createRouter(deps: RouterDeps) {
   const os = implement(appContract).$context<{ actor: Actor | null; signal?: AbortSignal }>();
   const repos = createRepos(deps.prisma);
+  const onboardingDeps = { prisma: deps.prisma, events: deps.events, connectors: deps.connectors };
   const mcpOAuth = deps.mcpOAuth ?? new McpOAuthBroker(deps.prisma, deps.secrets);
   const groupRepos = createGroupRepos(deps.prisma);
   const taughtSkills = createTaughtSkillsService({
@@ -2368,7 +2372,7 @@ export function createRouter(deps: RouterDeps) {
         }));
       }),
       catalogSearch: authed.capabilities.catalogSearch.handler(async ({ context, input }) => {
-        const baseUrl = deps.env.integrationsCatalogUrl;
+        const baseUrl = deps.env.integrationsCatalogUrl ?? "https://integrations.sh";
         if (!baseUrl) return { enabled: false, results: [] };
         try {
           const results = await searchIntegrationCatalog({
@@ -2895,45 +2899,52 @@ export function createRouter(deps: RouterDeps) {
     },
     onboarding: {
       start: authed.onboarding.start.handler(async ({ context, input }) => {
-        await startOnboarding(
-          { prisma: deps.prisma, events: deps.events, composio: deps.composio },
-          context.actor,
-          input.botId,
-        );
+        await startOnboarding(onboardingDeps, context.actor, input.botId);
         return { ok: true as const };
       }),
       promptFocus: authed.onboarding.promptFocus.handler(async ({ context, input }) => {
-        await promptFocus(
-          { prisma: deps.prisma, events: deps.events, composio: deps.composio },
-          context.actor,
-          input.botId,
-        );
+        await promptFocus(onboardingDeps, context.actor, input.botId);
         return { ok: true as const };
       }),
       choose: authed.onboarding.choose.handler(async ({ context, input }) => {
-        await chooseFocus(
-          { prisma: deps.prisma, events: deps.events, composio: deps.composio },
-          context.actor,
-          input.botId,
-          input.optionId,
-        );
+        await chooseFocus(onboardingDeps, context.actor, input.botId, input.optionId);
         return { ok: true as const };
       }),
       dismissFocus: authed.onboarding.dismissFocus.handler(async ({ context, input }) => {
-        await dismissFocus(
-          { prisma: deps.prisma, events: deps.events, composio: deps.composio },
-          context.actor,
-          input.botId,
-        );
+        await dismissFocus(onboardingDeps, context.actor, input.botId);
         return { ok: true as const };
       }),
       appConnected: authed.onboarding.appConnected.handler(async ({ context, input }) => {
-        await markAppConnected(
-          { prisma: deps.prisma, events: deps.events, composio: deps.composio },
-          context.actor,
-          input.botId,
-          input.provider,
-        );
+        await markAppConnected(onboardingDeps, context.actor, input.botId, input.provider);
+        return { ok: true as const };
+      }),
+    },
+    integrationSetup: {
+      get: authed.integrationSetup.get.handler(async ({ context }) => ({
+        canConfigure: context.actor.isDeploymentOwner,
+        webUrl: new URL("/integrations/setup", deps.env.webOrigin).toString(),
+        providers: await Promise.all(
+          IntegrationProviderIdSchema.options.map(async (id) => ({
+            id,
+            configured: deps.integrationSettings
+              ? await deps.integrationSettings.configured(id)
+              : Boolean(deps.connectors.managed(id)),
+          })),
+        ),
+      })),
+      save: authed.integrationSetup.save.handler(async ({ context, input }) => {
+        if (!context.actor.isDeploymentOwner) throw new ORPCError("FORBIDDEN");
+        if (!deps.integrationSettings) throw new ORPCError("NOT_IMPLEMENTED");
+        try {
+          await deps.integrationSettings.save(
+            input,
+            connectionContext(context.actor, "integrationSetup.save", context.signal),
+          );
+        } catch {
+          throw new ORPCError("BAD_REQUEST", {
+            message: "Could not verify or save these credentials",
+          });
+        }
         return { ok: true as const };
       }),
     },
@@ -2990,7 +3001,11 @@ export function createRouter(deps: RouterDeps) {
         }));
       }),
       begin: authed.connections.begin.handler(async ({ context, input }) => {
-        const connector = deps.connectors.managed(input.connectorId);
+        const connector =
+          deps.integrationSettings &&
+          (input.connectorId === "composio" || input.connectorId === "pipedream")
+            ? await deps.integrationSettings.resolve(input.connectorId)
+            : deps.connectors.managed(input.connectorId);
         if (!connector) {
           throw new ORPCError("BAD_REQUEST", {
             message: `Connector ${input.connectorId} is not configured`,

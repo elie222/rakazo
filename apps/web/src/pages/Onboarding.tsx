@@ -19,8 +19,9 @@ import {
   Textarea,
 } from "@rakazo/ui-web";
 import { Check } from "lucide-react";
-import { useEffect, useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { IntegrationSetup } from "../components/integrations/IntegrationSetup";
 import { localizedProviderHint } from "../lib/localized-provider-hint";
 import type { ModelCatalogEntry } from "../lib/model-auth";
 import { rpc } from "../lib/rpc";
@@ -30,7 +31,9 @@ export function OnboardingPage() {
   const { t } = useLingui();
   const navigate = useNavigate();
   const fieldId = useId();
-  const [step, setStep] = useState<"loading" | "model" | "bot">("loading");
+  const [step, setStep] = useState<"loading" | "model" | "integrations" | "bot">("loading");
+  const createdBot = useRef<Awaited<ReturnType<typeof rpc.bots.create>> | null>(null);
+  const [integrationServers, setIntegrationServers] = useState<string[]>([]);
   const [catalog, setCatalog] = useState<ModelCatalogEntry[]>([]);
   const [query, setQuery] = useState("");
   const [showAllProviders, setShowAllProviders] = useState(false);
@@ -61,7 +64,7 @@ export function OnboardingPage() {
     onClearError: () => setError(null),
     onError: setError,
     onFinished: () => {
-      setStep("bot");
+      setStep("integrations");
     },
   });
 
@@ -79,9 +82,9 @@ export function OnboardingPage() {
           setProvider(preferred.provider);
           setModelId(preferred.provider === OPENAI_COMPATIBLE_PROVIDER_ID ? "" : preferred.id);
         }
-        setStep(me.needsModel ? "model" : "bot");
+        setStep(me.needsModel ? "model" : "integrations");
       })
-      .catch(() => setStep("bot"));
+      .catch(() => setStep("integrations"));
     return () => {
       modelProbe.invalidate();
     };
@@ -192,7 +195,7 @@ export function OnboardingPage() {
           label: selected?.providerName ?? provider,
         });
       }
-      setStep("bot");
+      setStep("integrations");
     } catch (err) {
       setError(err instanceof Error ? err.message : t`Could not save model`);
     }
@@ -209,13 +212,19 @@ export function OnboardingPage() {
   async function createBot() {
     setError(null);
     try {
-      const bot = await rpc.bots.create({
-        name: name.trim(),
-        title,
-        description,
-        instructions: description,
-        notifyOnFinish: true,
-      });
+      const bot =
+        createdBot.current ??
+        (await rpc.bots.create({
+          name: name.trim(),
+          title,
+          description,
+          instructions: description,
+          notifyOnFinish: true,
+        }));
+      createdBot.current = bot;
+      for (const serverId of integrationServers) {
+        await rpc.mcp.assignments.approve({ botId: bot.id, serverId });
+      }
       // Onboarding continues conversationally in the thread: greeting first,
       // then the focus choice (immediate for the first bot).
       const started = await rpc.onboarding
@@ -565,6 +574,14 @@ export function OnboardingPage() {
               </Button>
             </div>
           </div>
+        ) : null}
+        {step === "integrations" ? (
+          <IntegrationSetup
+            onDone={() => setStep("bot")}
+            onServerConnected={(id) =>
+              setIntegrationServers((current) => [...new Set([...current, id])])
+            }
+          />
         ) : null}
         {step === "bot" ? (
           <div>

@@ -1,4 +1,5 @@
 import type { JobPublisher, JobWorkerHost } from "@rakazo/adapter-kit";
+import { ComposioConnector, IntegrationProviderSettings } from "@rakazo/adapters";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 
 loadRootEnv();
@@ -115,9 +116,20 @@ async function main() {
   })
     ? new ChatSdkMessagingSurface(messagingPlatforms)
     : undefined;
-  const stack = createConnectorStack(isComposioEnabled(process.env.COMPOSIO_API_KEY), undefined, [
+  const integrationSettings = new IntegrationProviderSettings(
+    prisma,
+    secrets,
+    resolveEncryptionKey(process.env),
+    {
+      composio: isComposioEnabled(process.env.COMPOSIO_API_KEY)
+        ? new ComposioConnector(process.env.COMPOSIO_API_KEY)
+        : undefined,
+      pipedream,
+    },
+  );
+  const stack = createConnectorStack(false, undefined, [
     new InstalledConnectorProvider(prisma, secrets),
-    ...(pipedream ? [pipedream] : []),
+    ...integrationSettings.providers(),
     mcp,
   ]);
   const connector = stack.destination;
@@ -140,7 +152,17 @@ async function main() {
     artifacts,
     connector: stack.connector,
     connectors: stack.connector,
-    listConnectedPluginSlugs: stack.composio?.listConnectedSlugs.bind(stack.composio),
+    listConnectedPluginSlugs: async (userId) => {
+      const provider = await integrationSettings.resolve("composio");
+      if (!provider) throw new Error("Integration provider is unavailable");
+      return provider.listConnectedExternalIds({
+        userId,
+        spaceId: "",
+        operationId: "connections.sync",
+        traceId: "connections.sync",
+        signal: AbortSignal.timeout(15_000),
+      });
+    },
     secrets: [
       deploymentModelKey ?? "",
       process.env.COMPOSIO_API_KEY ?? "",

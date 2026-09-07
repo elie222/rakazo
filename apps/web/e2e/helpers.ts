@@ -26,10 +26,16 @@ export async function rpc<T>(page: Page, procedure: string, body: unknown): Prom
 
 export async function completeOnboarding(page: Page, testInfo?: TestInfo) {
   await page.waitForURL(/\/(onboarding|app)/, { timeout: 20_000 });
-  const heading = page.getByRole("heading", { name: /Connect a model|Create your first bot/ });
+  const heading = page.getByRole("heading", {
+    name: /Connect a model|Connect apps|Create your first bot/,
+  });
   const chief = page.getByText("Chief").first();
   await heading.or(chief).waitFor({ timeout: 20_000 });
   if ((await chief.isVisible().catch(() => false)) && page.url().includes("/app")) return;
+  if (await page.getByRole("heading", { name: "Connect apps", exact: true }).isVisible()) {
+    if (testInfo) await captureScreenshot(page, testInfo, "02-connect-apps");
+    await page.getByRole("button", { name: "Skip", exact: true }).click();
+  }
   if (
     await page
       .getByRole("heading", { name: "Create your first bot" })

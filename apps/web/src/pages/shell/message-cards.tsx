@@ -125,6 +125,7 @@ export function AppConnectCard({
     setError(null);
     try {
       const started = await rpc.connections.begin({
+        connectorId: block.connectorId,
         provider: block.provider,
         displayName: block.name,
       });

@@ -39,6 +39,7 @@ export function AppConnectCard({
       const started = await rpc<{ connectionId: string; authorizationUrl: string | null }>(
         "connections/begin",
         {
+          connectorId: block.connectorId,
           provider: block.provider,
           displayName: block.name,
         },

@@ -70,6 +70,7 @@ export default function Layout() {
               >
                 <Stack.Screen name="index" options={{ headerShown: false, title: "Rakazo" }} />
                 <Stack.Screen name="sign-in" options={{ headerShown: false }} />
+                <Stack.Screen name="integration-setup" options={{ title: t("Connect apps") }} />
                 <Stack.Screen name="account" options={{ title: t("Account") }} />
                 <Stack.Screen
                   name="change-password"

@@ -120,7 +120,7 @@ export default function SignIn() {
       } else {
         await signIn(email.trim(), password);
       }
-      router.replace("/");
+      router.replace(mode === "up" ? "/integration-setup" : "/");
     } catch (err) {
       setError(err instanceof Error ? err.message : t("Could not continue"));
     } finally {

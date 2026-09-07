@@ -677,3 +677,54 @@ describe("MCP OAuth", () => {
     expect(requests).not.toContain("POST https://mcp.example.test/register");
   });
 });
+
+describe("MCP setup with an existing access token", () => {
+  it.each(["https://mcp.example.test/mcp", "http://127.0.0.1:8080/mcp"])(
+    "verifies %s using the stored token without starting OAuth",
+    async (endpoint) => {
+      const fetch = vi.fn<typeof globalThis.fetch>(async (input, init) => {
+        const request = new Request(input, init);
+        expect(request.url).toBe(endpoint);
+        expect(request.headers.get("authorization")).toBe("Bearer fake-executor-token");
+        if (request.method !== "POST") return new Response(null, { status: 405 });
+        const body = (await request.json()) as { id?: number; method: string };
+        if (body.method === "initialize")
+          return Response.json({
+            jsonrpc: "2.0",
+            id: body.id,
+            result: {
+              protocolVersion: "2025-03-26",
+              capabilities: {},
+              serverInfo: { name: "test", version: "1" },
+            },
+          });
+        return new Response(null, { status: 202 });
+      });
+      const prisma = {
+        mcpServer: {
+          findFirst: vi.fn(async () => ({ id: "server", endpoint, secretId: "secret" })),
+        },
+        secret: { findFirst: vi.fn(async () => ({ id: "secret", ciphertext: "encrypted" })) },
+        mcpOAuthSession: oauthSessionStore(),
+      };
+      const secrets = {
+        load: vi.fn(() => JSON.stringify({ secret: "fake-executor-token" })),
+        put: vi.fn(),
+      };
+      const broker = new McpOAuthBroker(prisma as never, secrets as never, {
+        ...TEST_NETWORK,
+        fetch,
+      });
+      await expect(
+        broker.begin({
+          serverId: "server",
+          userId: "user",
+          spaceId: "space",
+          redirectUri: "https://app.example.test/mcp/oauth/callback",
+        }),
+      ).resolves.toEqual({ status: "authorization_not_requested" });
+      expect(fetch).toHaveBeenCalled();
+      expect(secrets.put).not.toHaveBeenCalled();
+    },
+  );
+});

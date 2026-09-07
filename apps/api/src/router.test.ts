@@ -632,3 +632,35 @@ describe("computer screen url", () => {
     expect(updateMany).not.toHaveBeenCalled();
   });
 });
+
+describe("integration setup authorization", () => {
+  it("rejects provider credentials from a non-owner before verification or persistence", async () => {
+    const save = vi.fn();
+    const deps = {
+      prisma: {},
+      env: { webOrigin: "https://example.test" },
+      integrationSettings: { save },
+    } as unknown as RouterDeps;
+    const handler = new RPCHandler(createRouter(deps));
+    const { response } = await handler.handle(
+      new Request("https://example.test/rpc/integrationSetup/save", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ json: { provider: "composio", apiKey: "fake-key" } }),
+      }),
+      {
+        prefix: "/rpc",
+        context: {
+          actor: {
+            userId: "member",
+            spaceId: "space",
+            email: "member@rakazo.test",
+            isDeploymentOwner: false,
+          },
+        },
+      },
+    );
+    expect(response.status).toBe(403);
+    expect(save).not.toHaveBeenCalled();
+  });
+});

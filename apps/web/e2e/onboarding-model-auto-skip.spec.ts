@@ -21,7 +21,7 @@ test("onboarding skips model connect when a default model is already available",
     `Model auto skip ${stamp}`,
   );
 
-  await expect(page.getByRole("heading", { name: "Create your first bot" })).toBeVisible({
+  await expect(page.getByRole("heading", { name: "Connect apps" })).toBeVisible({
     timeout: 20_000,
   });
   await expect(page.getByRole("heading", { name: "Connect a model" })).toBeHidden();
