@@ -579,5 +579,7 @@
   "Message from": "Nachricht von",
   "This chat is view-only": "Dieser Chat ist schreibgeschützt",
   "Could not load this chat.": "Dieser Chat konnte nicht geladen werden.",
-  "No messages with {peerBotName} yet.": "Noch keine Nachrichten mit {peerBotName}."
+  "No messages with {peerBotName} yet.": "Noch keine Nachrichten mit {peerBotName}.",
+  "Docker gives bots a separate workspace.": "Docker gibt Bots einen separaten Arbeitsbereich.",
+  "On {hostLabel}, bots can access your files and run commands without asking. Avoid this on shared or public servers.": "Wenn {hostLabel} verwendet wird, können Bots ohne Rückfrage auf deine Dateien zugreifen und Befehle ausführen. Vermeide dies auf gemeinsam genutzten oder öffentlichen Servern."
 }

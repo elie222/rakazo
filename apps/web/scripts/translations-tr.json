@@ -576,5 +576,7 @@
   "Message from": "Mesaj gönderen",
   "This chat is view-only": "Bu sohbet yalnızca görüntülenebilir",
   "Could not load this chat.": "Bu sohbet yüklenemedi.",
-  "No messages with {peerBotName} yet.": "{peerBotName} ile henüz mesaj yok."
+  "No messages with {peerBotName} yet.": "{peerBotName} ile henüz mesaj yok.",
+  "Docker gives bots a separate workspace.": "Docker, botlara ayrı bir çalışma alanı sağlar.",
+  "On {hostLabel}, bots can access your files and run commands without asking. Avoid this on shared or public servers.": "{hostLabel} kullanıldığında botlar sormadan dosyalarına erişebilir ve komut çalıştırabilir. Paylaşılan veya herkese açık sunucularda bu seçeneği kullanma."
 }

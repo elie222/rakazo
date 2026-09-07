@@ -579,5 +579,7 @@
   "Message from": "메시지 보낸 봇",
   "This chat is view-only": "이 채팅은 읽기 전용입니다",
   "Could not load this chat.": "이 채팅을 불러오지 못했습니다.",
-  "No messages with {peerBotName} yet.": "{peerBotName}와의 메시지가 아직 없습니다."
+  "No messages with {peerBotName} yet.": "{peerBotName}와의 메시지가 아직 없습니다.",
+  "Docker gives bots a separate workspace.": "Docker는 Bot에게 별도의 작업 공간을 제공합니다.",
+  "On {hostLabel}, bots can access your files and run commands without asking. Avoid this on shared or public servers.": "{hostLabel}에서는 Bot이 묻지 않고 파일에 접근하고 명령을 실행할 수 있습니다. 공유 서버나 공개 서버에서는 이 옵션을 사용하지 마세요."
 }

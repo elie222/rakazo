@@ -582,5 +582,7 @@
   "Message from": "संदेश भेजने वाला",
   "This chat is view-only": "यह चैट केवल देखने के लिए है",
   "Could not load this chat.": "यह चैट लोड नहीं हो सकी.",
-  "No messages with {peerBotName} yet.": "{peerBotName} के साथ अभी कोई संदेश नहीं."
+  "No messages with {peerBotName} yet.": "{peerBotName} के साथ अभी कोई संदेश नहीं.",
+  "Docker gives bots a separate workspace.": "Docker बॉट्स को अलग कार्यक्षेत्र देता है।",
+  "On {hostLabel}, bots can access your files and run commands without asking. Avoid this on shared or public servers.": "{hostLabel} चुनने पर बॉट्स बिना पूछे आपकी फ़ाइलें खोल सकते हैं और कमांड चला सकते हैं। साझा या सार्वजनिक सर्वर पर इस विकल्प से बचें।"
 }

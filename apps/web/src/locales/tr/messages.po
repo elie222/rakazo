@@ -3315,8 +3315,8 @@ msgstr "Executor belirteci"
 
 #: src/pages/HostComputerPrompt.tsx:62
 msgid "Docker gives bots a separate workspace."
-msgstr ""
+msgstr "Docker, botlara ayrı bir çalışma alanı sağlar."
 
 #: src/pages/HostComputerPrompt.tsx:80
 msgid "On {hostLabel}, bots can access your files and run commands without asking. Avoid this on shared or public servers."
-msgstr ""
+msgstr "{hostLabel} kullanıldığında botlar sormadan dosyalarına erişebilir ve komut çalıştırabilir. Paylaşılan veya herkese açık sunucularda bu seçeneği kullanma."

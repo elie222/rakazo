@@ -3275,8 +3275,8 @@ msgstr "Token de Executor"
 
 #: src/pages/HostComputerPrompt.tsx:62
 msgid "Docker gives bots a separate workspace."
-msgstr ""
+msgstr "Docker les da a los bots un espacio de trabajo separado."
 
 #: src/pages/HostComputerPrompt.tsx:80
 msgid "On {hostLabel}, bots can access your files and run commands without asking. Avoid this on shared or public servers."
-msgstr ""
+msgstr "En {hostLabel}, los bots pueden acceder a tus archivos y ejecutar comandos sin preguntar. Evita esta opción en servidores compartidos o públicos."

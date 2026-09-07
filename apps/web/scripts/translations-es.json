@@ -722,5 +722,7 @@
   "Apps": "Apps",
   "Asleep": "En reposo",
   "at <0/>": "a las <0/>",
-  "Authorization expired — reconnect required": "Autorización expirada: se requiere reconectar"
+  "Authorization expired — reconnect required": "Autorización expirada: se requiere reconectar",
+  "Docker gives bots a separate workspace.": "Docker les da a los bots un espacio de trabajo separado.",
+  "On {hostLabel}, bots can access your files and run commands without asking. Avoid this on shared or public servers.": "En {hostLabel}, los bots pueden acceder a tus archivos y ejecutar comandos sin preguntar. Evita esta opción en servidores compartidos o públicos."
 }

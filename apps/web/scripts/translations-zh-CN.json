@@ -728,5 +728,7 @@
   "Waiting for the API to come back…": "正在等待 API 恢复…",
   "Webhook": "Webhook",
   "What should this routine do each time it runs?": "每次运行时，这个例行任务应做什么？",
-  "When a webhook fires": "当 Webhook 触发时"
+  "When a webhook fires": "当 Webhook 触发时",
+  "Docker gives bots a separate workspace.": "Docker 为 Bot 提供独立的工作空间。",
+  "On {hostLabel}, bots can access your files and run commands without asking. Avoid this on shared or public servers.": "使用{hostLabel}时，Bot 可以直接访问你的文件并执行命令，无需询问。请勿在共享或公开服务器上使用此选项。"
 }

@@ -3315,8 +3315,8 @@ msgstr "Executor टोकन"
 
 #: src/pages/HostComputerPrompt.tsx:62
 msgid "Docker gives bots a separate workspace."
-msgstr ""
+msgstr "Docker बॉट्स को अलग कार्यक्षेत्र देता है।"
 
 #: src/pages/HostComputerPrompt.tsx:80
 msgid "On {hostLabel}, bots can access your files and run commands without asking. Avoid this on shared or public servers."
-msgstr ""
+msgstr "{hostLabel} चुनने पर बॉट्स बिना पूछे आपकी फ़ाइलें खोल सकते हैं और कमांड चला सकते हैं। साझा या सार्वजनिक सर्वर पर इस विकल्प से बचें।"
