@@ -767,7 +767,12 @@ export async function createApp(
       pendingTeamChatInbound.reject(new Error("Team chat bridge stopped before startup"));
       // Cancel in-flight start() before awaiting the retry task so stop() cannot
       // sit on DB/reconcile work that bridge.start() is still running.
-      await teamChatBridgeInstance?.stop().catch(() => undefined);
+      await settleWithTimeout(
+        teamChatBridgeInstance
+          ? teamChatBridgeInstance.stop().catch(() => undefined)
+          : undefined,
+        TEAM_CHAT_STARTUP_SHUTDOWN_MS,
+      );
       await messagingInitTask?.catch(() => undefined);
       await settleWithTimeout(teamChatInitTask, TEAM_CHAT_STARTUP_SHUTDOWN_MS);
       await messaging?.shutdown?.();

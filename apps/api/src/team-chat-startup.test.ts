@@ -143,8 +143,15 @@ describe("TeamChatBridge start cancellation", () => {
       const blockedReconcile = new Promise<void>((resolve) => {
         releaseReconcile = resolve;
       });
-      const findMany = vi.fn(async () => {
-        await blockedReconcile;
+      let deferredLookups = 0;
+      const findMany = vi.fn(async ({ where }: { where: Record<string, unknown> }) => {
+        // Mirror finishes immediately; block only once reconcileOnce reads deferred rows.
+        if (where.threadMessageId === null) return [];
+        if (where.status === "deferred") {
+          deferredLookups += 1;
+          await blockedReconcile;
+          return [];
+        }
         return [];
       });
       const bridge = new TeamChatBridge({
@@ -174,7 +181,7 @@ describe("TeamChatBridge start cancellation", () => {
 
       const starting = bridge.start();
       await vi.waitFor(() => {
-        expect(findMany).toHaveBeenCalled();
+        expect(deferredLookups).toBeGreaterThan(0);
       });
       const stopping = bridge.stop();
       await vi.advanceTimersByTimeAsync(2_000);
