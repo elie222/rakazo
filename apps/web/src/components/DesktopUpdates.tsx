@@ -44,7 +44,9 @@ function useDesktopUpdates() {
     try {
       const next = await bridge[action]();
       setState(next);
-      if (next.phase === "error") setError(next.message);
+      if (next.phase === "error" || (action === "install" && next.message !== state?.message)) {
+        setError(next.message);
+      }
     } catch {
       setError(t`Could not complete the update. Try again.`);
     } finally {

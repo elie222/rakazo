@@ -5,6 +5,7 @@ test("desktop update can be checked, deferred, and installed from settings", asy
   page,
 }, testInfo) => {
   await page.addInitScript(() => {
+    let installAttempts = 0;
     let state = {
       phase: "idle",
       currentVersion: "0.1.2",
@@ -33,6 +34,10 @@ test("desktop update can be checked, deferred, and installed from settings", asy
             return state;
           },
           install: async () => {
+            if (++installAttempts === 1) {
+              state = { ...state, message: "The update could not be completed. Try again later." };
+              return state;
+            }
             document.documentElement.dataset.updateInstalled = "true";
             return state;
           },
@@ -60,6 +65,10 @@ test("desktop update can be checked, deferred, and installed from settings", asy
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   await expect(settings.getByRole("button", { name: "Restart to update" })).toBeVisible();
   await captureScreenshot(page, testInfo, "desktop-update-settings");
+  await settings.getByRole("button", { name: "Restart to update" }).click();
+  await expect(settings.getByRole("status")).toHaveText(
+    "The update could not be completed. Try again later.",
+  );
   await settings.getByRole("button", { name: "Restart to update" }).click();
   await expect(page.locator("html")).toHaveAttribute("data-update-installed", "true");
 });

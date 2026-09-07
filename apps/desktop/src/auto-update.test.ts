@@ -182,7 +182,7 @@ describe("reduceUpdateState", () => {
     expect(ready).toMatchObject({ phase: "ready", availableVersion: "0.2.0", percent: 100 });
   });
 
-  it("lets an install failure leave the ready phase", () => {
+  it("keeps a verified download ready after an install failure", () => {
     const failed = apply([
       { type: "downloaded", version: "0.2.0" },
       {
@@ -193,7 +193,7 @@ describe("reduceUpdateState", () => {
       },
     ]);
     expect(failed).toMatchObject({
-      phase: "error",
+      phase: "ready",
       availableVersion: "0.2.0",
       message: "The update could not be completed. Try again later.",
     });
@@ -381,7 +381,7 @@ describe("DesktopUpdateController", () => {
     expect(fake.updater.quitAndInstall).toHaveBeenCalledTimes(1);
   });
 
-  it("reports install failures instead of staying ready", async () => {
+  it("retries installation after a synchronous failure without downloading again", async () => {
     let fake: ReturnType<typeof fakeUpdater>;
     fake = fakeUpdater({
       checkForUpdates: vi.fn(async () => {
@@ -401,10 +401,13 @@ describe("DesktopUpdateController", () => {
 
     const state = await controller.install();
     expect(state).toMatchObject({
-      phase: "error",
+      phase: "ready",
       message: "The update could not be completed. Try again later.",
     });
-    expect(await controller.install()).toMatchObject({ phase: "error" });
+    vi.mocked(fake.updater.quitAndInstall).mockImplementation(() => undefined);
+    expect(await controller.install()).toMatchObject({ phase: "ready" });
+    expect(fake.updater.quitAndInstall).toHaveBeenCalledTimes(2);
+    expect(fake.updater.downloadUpdate).toHaveBeenCalledTimes(1);
   });
 
   it("lets a manual check escape a prior empty-feed freeze", async () => {

@@ -146,9 +146,15 @@ export function reduceUpdateState(
       };
     case "failed": {
       // electron-updater can emit late errors after a verified download; keep installable
-      // state unless this failure came from quitAndInstall itself.
+      // state. A synchronous install failure can retry the same verified download.
       if (state.phase === "ready" && event.installFailed !== true) return state;
       const failure = classifyUpdaterFailure(event.error);
+      if (state.phase === "ready" && event.installFailed === true) {
+        return {
+          ...state,
+          message: failure.message ?? "The update could not be completed. Try again later.",
+        };
+      }
       if (failure.kind === "no-releases" && state.phase === "checking") {
         return {
           ...state,
