@@ -77,9 +77,14 @@ describe("system browser authentication", () => {
     expect(options.onCallback).toHaveBeenCalledOnce();
   });
 
-  it.each(["127.0.0.1", "::1"])(
-    "uses the remaining loopback family when %s is unavailable",
-    async (unavailable) => {
+  it.each([
+    ["127.0.0.1", "EADDRNOTAVAIL"],
+    ["::1", "EADDRNOTAVAIL"],
+    ["127.0.0.1", "EADDRINUSE"],
+    ["::1", "EADDRINUSE"],
+  ] as const)(
+    "uses the remaining loopback family when %s fails with %s",
+    async (unavailable, code) => {
       const { authorization, callback, options } = await setup();
       const localCallback = callback.replace("127.0.0.1", "localhost");
       authorization.searchParams.set("redirect_uri", localCallback);
@@ -87,7 +92,7 @@ describe("system browser authentication", () => {
       vi.spyOn(Server.prototype, "listen").mockImplementation(function (this: Server, ...args) {
         if (args[1] === unavailable) {
           queueMicrotask(() =>
-            this.emit("error", Object.assign(new Error("Unavailable"), { code: "EADDRNOTAVAIL" })),
+            this.emit("error", Object.assign(new Error("Unavailable"), { code })),
           );
           return this;
         }
