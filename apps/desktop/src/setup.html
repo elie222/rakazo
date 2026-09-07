@@ -53,7 +53,16 @@
                 </svg>
               </button>
             </div>
-            <div id="stack-progress" class="progress" hidden>
+            <div
+              id="stack-progress"
+              class="progress"
+              role="progressbar"
+              aria-label="Setup progress"
+              aria-valuemin="0"
+              aria-valuemax="100"
+              aria-valuenow="0"
+              hidden
+            >
               <div id="stack-progress-fill" class="progress-fill"></div>
             </div>
             <p id="stack-detail" class="stack-detail"></p>

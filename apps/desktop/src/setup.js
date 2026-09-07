@@ -52,6 +52,8 @@
   let lastStack = null;
   let lastProgress = 0;
   let detailsOpen = false;
+  /** Set when a failure opened the output; a retry closes it again, a person's own click does not. */
+  let detailsOpenedByFailure = false;
   /** Resolves the poll wait early when the main process pushes a new state. */
   let wakePoll = null;
 
@@ -96,7 +98,8 @@
   function formatBytes(bytes) {
     if (bytes >= 1e9) return `${(bytes / 1e9).toFixed(1)} GB`;
     if (bytes >= 1e6) return `${Math.round(bytes / 1e6)} MB`;
-    return `${Math.round(bytes / 1e3)} kB`;
+    if (bytes >= 1e3) return `${Math.round(bytes / 1e3)} kB`;
+    return `${Math.round(bytes)} B`;
   }
 
   function progressFor(stack) {
@@ -118,16 +121,26 @@
       stack.phase === "checking-docker"
         ? progressFor(stack)
         : Math.max(lastProgress, progressFor(stack));
-    stackProgressFill.style.width = `${(lastProgress * 100).toFixed(1)}%`;
+    const percent = (lastProgress * 100).toFixed(1);
+    stackProgressFill.style.width = `${percent}%`;
+    stackProgress.setAttribute("aria-valuenow", percent);
   }
 
   function renderDetails(stack) {
     const bytes = stack.phase === "pulling" ? downloadedBytes(stack) : 0;
     stackDetail.textContent = bytes > 0 ? `${formatBytes(bytes)} downloaded` : "";
 
+    // A new attempt clears the output, so drop an expansion the person did not ask for.
+    if (stack.phase === "checking-docker" && detailsOpenedByFailure) {
+      detailsOpen = false;
+      detailsOpenedByFailure = false;
+    }
     const hasOutput = stack.output.length > 0;
     // A failure asks the person to read the output, so open it for them.
-    if (stack.phase === "failed" && hasOutput) detailsOpen = true;
+    if (stack.phase === "failed" && hasOutput && !detailsOpen) {
+      detailsOpen = true;
+      detailsOpenedByFailure = true;
+    }
     stackDetails.hidden = !hasOutput;
     stackDetails.setAttribute("aria-expanded", String(detailsOpen && hasOutput));
     stackOutput.hidden = !(detailsOpen && hasOutput);
@@ -280,6 +293,7 @@
 
   stackDetails.addEventListener("click", () => {
     detailsOpen = !detailsOpen;
+    detailsOpenedByFailure = false;
     if (lastStack !== null) renderDetails(lastStack);
   });
 
@@ -306,8 +320,12 @@
   function watchStack() {
     bridge.stack.onChange(() => {
       wakePoll?.();
-      // A follow that ended on an error restarts here instead of leaving the panel frozen.
-      if (!stackPolling && selectedMode() === "new") void followStack();
+      // A follow that ended on an error restarts here instead of leaving the panel frozen;
+      // hold the controls until it has rendered the state it is restarting on.
+      if (!stackPolling && selectedMode() === "new") {
+        setBusy(true);
+        void followStack();
+      }
     });
   }
 
