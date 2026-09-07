@@ -1,4 +1,7 @@
-import { isLocalSettingsProcedure, LOCAL_SETTINGS_TOKEN_HEADER } from "@rakazo/contracts";
+import {
+  isLocalSettingsProcedure,
+  LOCAL_SETTINGS_TOKEN_HEADER,
+} from "@rakazo/contracts/local-settings";
 import { isLoopbackHost } from "./setup-config.js";
 
 /** Only a fixed local target and known settings procedures can receive host authority. */

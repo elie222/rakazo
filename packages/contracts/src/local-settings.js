@@ -19,7 +19,8 @@ const procedures = new Set([
   "integrationSetup/save",
 ]);
 
-export function isLocalSettingsProcedure(pathname: string): boolean {
+/** @param {string} pathname */
+export function isLocalSettingsProcedure(pathname) {
   return (
     pathname.startsWith(`${LOCAL_SETTINGS_RPC}/`) &&
     procedures.has(pathname.slice(LOCAL_SETTINGS_RPC.length + 1))

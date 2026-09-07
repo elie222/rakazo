@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { LOCAL_SETTINGS_RPC, LOCAL_SETTINGS_TOKEN_HEADER } from "@rakazo/contracts";
 import { describe, expect, it, vi } from "vitest";
 import { requestLocalSettings } from "./local-settings.js";
@@ -5,6 +6,20 @@ import { requestLocalSettings } from "./local-settings.js";
 const target = { origin: "http://127.0.0.1:5173", token: "ab".repeat(32) };
 const pathname = `${LOCAL_SETTINGS_RPC}/models/connect`;
 describe("local settings transport", () => {
+  it("loads shared settings contracts in native Node without a TypeScript loader", () => {
+    expect(() =>
+      execFileSync(
+        process.execPath,
+        [
+          "--no-experimental-strip-types",
+          "--input-type=module",
+          "-e",
+          'import { LOCAL_SETTINGS_PAGE, isLocalSettingsProcedure } from "@rakazo/contracts/local-settings"; if (LOCAL_SETTINGS_PAGE !== "/desktop-settings" || !isLocalSettingsProcedure("/api/desktop-settings/rpc/me")) throw new Error("Invalid runtime contract");',
+        ],
+        { cwd: import.meta.dirname, env: { ...process.env, NODE_OPTIONS: "" }, stdio: "pipe" },
+      ),
+    ).not.toThrow();
+  });
   it("sends only the scoped capability, without cookies or following redirects", async () => {
     const fetcher = vi.fn(async () => new Response('{"json":{"ok":true}}'));
     expect(await requestLocalSettings(target, pathname, '{"json":{}}', fetcher)).toEqual({
