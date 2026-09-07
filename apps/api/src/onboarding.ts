@@ -344,6 +344,7 @@ export async function markAppConnected(
   actor: Actor,
   botId: string,
   provider: string,
+  connectorId = "composio",
 ): Promise<void> {
   const { bot, thread } = await requireBotThread(deps, actor, botId);
   const target = { spaceId: actor.spaceId, botId: bot.id, threadId: thread.id };
@@ -359,13 +360,16 @@ export async function markAppConnected(
       !blocks.some(
         (block) =>
           block.kind === "app_connect" &&
+          (block.connectorId ?? "composio") === connectorId &&
           featuredConnectorProvidersMatch(block.provider, provider) &&
           block.status !== "connected",
       )
     )
       continue;
     const next = blocks.map((block) =>
-      block.kind === "app_connect" && featuredConnectorProvidersMatch(block.provider, provider)
+      block.kind === "app_connect" &&
+      (block.connectorId ?? "composio") === connectorId &&
+      featuredConnectorProvidersMatch(block.provider, provider)
         ? { ...block, status: "connected" as const }
         : block,
     );

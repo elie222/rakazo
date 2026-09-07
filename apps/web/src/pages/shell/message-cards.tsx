@@ -141,7 +141,7 @@ export function AppConnectCard({
           if (controller.signal.aborted) return;
           setLocalStatus("connected");
           await rpc.onboarding
-            .appConnected({ botId, provider: block.provider })
+            .appConnected({ botId, provider: block.provider, connectorId: block.connectorId })
             .catch(() => undefined);
           return;
         }

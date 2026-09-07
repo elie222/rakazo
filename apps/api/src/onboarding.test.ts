@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { chooseFocus } from "./onboarding.js";
+import { chooseFocus, markAppConnected } from "./onboarding.js";
 
 const posted = vi.hoisted(() => [] as Array<{ blocks: unknown[] }>);
 vi.mock("@rakazo/db", async (original) => ({
@@ -33,7 +33,7 @@ function fixture(catalog: unknown[]) {
     email: "user@rakazo.test",
     isDeploymentOwner: true,
   };
-  return { deps, actor };
+  return { deps, actor, tx };
 }
 describe("onboarding connection suggestions", () => {
   it("does not invent authorization cards when no connector has an app catalog", async () => {
@@ -56,5 +56,22 @@ describe("onboarding connection suggestions", () => {
     ).toEqual([
       expect.objectContaining({ connectorId: "pipedream", provider: "slack", name: "Slack" }),
     ]);
+  });
+});
+
+it("marks only the authorized connector when provider slugs collide", async () => {
+  const { deps, actor, tx } = fixture([]);
+  const blocks = ["composio", "pipedream"].map((connectorId) => ({
+    kind: "app_connect",
+    connectorId,
+    provider: "slack",
+    name: "Slack",
+    status: "pending",
+  }));
+  deps.prisma.message = { findMany: vi.fn(async () => [{ id: "cards", blocks }]) } as never;
+  await markAppConnected(deps, actor, "bot", "slack", "pipedream");
+  expect(tx.message.update).toHaveBeenCalledWith({
+    where: { id: "cards" },
+    data: { blocks: [blocks[0], { ...blocks[1], status: "connected" }] },
   });
 });

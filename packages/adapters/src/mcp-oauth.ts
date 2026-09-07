@@ -318,7 +318,7 @@ export class McpOAuthBroker {
     const networkFetch = oauthFetch(server.endpoint, this.network, loaded.material);
     const transport = new StreamableHTTPClientTransport(endpoint, {
       requestInit: { headers: networkFetch.headers },
-      authProvider: endpoint.protocol === "http:" ? undefined : provider,
+      authProvider: provider,
       fetch: networkFetch.fetch,
     });
     const client = new Client({ name: "rakazo-oauth", version: "0.1.0" });

@@ -86,10 +86,24 @@ test("direct MCP connects a catalog result without asking for a URL and assigns 
   await captureScreenshot(page, testInfo, "integration-setup-direct-connected");
   await page.getByRole("button", { name: "Continue", exact: true }).click();
   await page.getByLabel("Name", { exact: true }).fill("Connected Bot");
+  let createCalls = 0;
+  let releaseCreate!: () => void;
+  const createGate = new Promise<void>((resolve) => {
+    releaseCreate = resolve;
+  });
+  await page.route("**/rpc/bots/create", async (route) => {
+    createCalls += 1;
+    await createGate;
+    await route.continue();
+  });
+
   const assigned = page.waitForResponse(
     (response) => response.url().includes("/rpc/mcp/assignments/approve") && response.ok(),
   );
   await page.getByRole("button", { name: "Continue", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Continue", exact: true })).toBeDisabled();
+  await expect.poll(() => createCalls).toBe(1);
+  releaseCreate();
   const response = await assigned;
   expect(response.request().postDataJSON().json.serverId).toBe(serverId);
   await page.waitForURL(/\/app\//);

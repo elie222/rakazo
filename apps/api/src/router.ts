@@ -2934,7 +2934,13 @@ export function createRouter(deps: RouterDeps) {
         return { ok: true as const };
       }),
       appConnected: authed.onboarding.appConnected.handler(async ({ context, input }) => {
-        await markAppConnected(onboardingDeps, context.actor, input.botId, input.provider);
+        await markAppConnected(
+          onboardingDeps,
+          context.actor,
+          input.botId,
+          input.provider,
+          input.connectorId,
+        );
         return { ok: true as const };
       }),
     },

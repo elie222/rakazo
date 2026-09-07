@@ -32,6 +32,8 @@ export function OnboardingPage() {
   const navigate = useNavigate();
   const fieldId = useId();
   const [step, setStep] = useState<"loading" | "model" | "integrations" | "bot">("loading");
+  const creatingBot = useRef(false);
+  const [creating, setCreating] = useState(false);
   const createdBot = useRef<Awaited<ReturnType<typeof rpc.bots.create>> | null>(null);
   const [integrationServers, setIntegrationServers] = useState<string[]>([]);
   const [catalog, setCatalog] = useState<ModelCatalogEntry[]>([]);
@@ -210,6 +212,9 @@ export function OnboardingPage() {
   }
 
   async function createBot() {
+    if (creatingBot.current) return;
+    creatingBot.current = true;
+    setCreating(true);
     setError(null);
     try {
       const bot =
@@ -237,6 +242,9 @@ export function OnboardingPage() {
       navigate(`/app/${bot.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : t`Could not create your bot`);
+    } finally {
+      creatingBot.current = false;
+      setCreating(false);
     }
   }
 
@@ -626,7 +634,11 @@ export function OnboardingPage() {
               />
             </label>
             {error ? <p className="mt-3 text-sm text-destructive">{error}</p> : null}
-            <Button className="mt-6" disabled={!name.trim()} onClick={() => void createBot()}>
+            <Button
+              className="mt-6"
+              disabled={creating || !name.trim()}
+              onClick={() => void createBot()}
+            >
               <Trans>Continue</Trans>
             </Button>
           </div>

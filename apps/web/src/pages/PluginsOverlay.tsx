@@ -205,7 +205,7 @@ export function PluginsOverlay({
   async function notifyAppConnected(item: ConnectionCatalogItem) {
     if (!activeBotId) return;
     await rpc.onboarding
-      .appConnected({ botId: activeBotId, provider: item.slug })
+      .appConnected({ botId: activeBotId, provider: item.slug, connectorId: item.connectorId })
       .catch(() => undefined);
   }
 
@@ -714,7 +714,11 @@ export function PluginsOverlay({
                 botId={activeBotId}
                 onDone={() => {
                   setSetupOpen(false);
-                  void refresh();
+                  void refresh().catch((err: unknown) =>
+                    setCatalogError(
+                      err instanceof Error ? err.message : t`Could not load integrations`,
+                    ),
+                  );
                 }}
               />
             </div>

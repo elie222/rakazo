@@ -582,7 +582,9 @@ export const appContract = {
     dismissFocus: oc.input(z.object({ botId: Id })).output(z.object({ ok: z.literal(true) })),
     /** Flip an app_connect card to connected after authorization completes. */
     appConnected: oc
-      .input(z.object({ botId: Id, provider: z.string() }))
+      .input(
+        z.object({ botId: Id, provider: z.string(), connectorId: z.string().default("composio") }),
+      )
       .output(z.object({ ok: z.literal(true) })),
   },
   integrationSetup: {
