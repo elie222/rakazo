@@ -98,6 +98,7 @@ import {
   appendEventInTransaction,
   CannotDeleteDefaultSpaceError,
   CannotDeleteLastSpaceError,
+  CannotDeleteSpaceAsNonOwnerError,
   createExternalConversationRepos,
   createGroupRepos,
   createRepos,
@@ -511,8 +512,11 @@ export function createRouter(deps: RouterDeps) {
             userId: context.actor.userId,
             spaceId: input.spaceId,
           };
-          // Destroy leftover team sandboxes before cascading the Space row so a
-          // failed destroy still leaves a durable providerRef for retry/recovery.
+          // Destroy leftover team sandboxes before cascading the Space row. Clear
+          // each providerRef only after that destroy succeeds so a failed destroy
+          // keeps the durable handle, and a later SpaceNotEmptyError cannot leave
+          // a row pointing at a sandbox that is already gone (same order as
+          // destroyBot: provider teardown, then drop the persisted handle).
           const computers = await listDeletableSpaceComputers(deps.prisma, deleteInput);
           const adapterContext = connectionContext(context.actor, "spaces.remove", context.signal);
           for (const computer of computers) {
@@ -520,16 +524,13 @@ export function createRouter(deps: RouterDeps) {
               ...adapterContext,
               botId: computer.homeKey,
             });
-          }
-          if (computers.length > 0) {
-            // Drop the refs after a successful destroy so a later failed delete
-            // cannot leave Computer rows pointing at sandboxes that are gone.
             await deps.prisma.computer.updateMany({
               where: {
                 spaceId: input.spaceId,
-                providerRef: { in: computers.map((computer) => computer.providerRef) },
+                homeKey: computer.homeKey,
+                providerRef: computer.providerRef,
               },
-              data: { providerRef: null, state: "stopped" },
+              data: { state: "stopped", providerRef: null },
             });
           }
           const fallback = await deleteEmptySpaceForMember(deps.prisma, deleteInput);
@@ -537,6 +538,9 @@ export function createRouter(deps: RouterDeps) {
         } catch (error) {
           if (error instanceof SpaceNotFoundError) {
             throw new ORPCError("NOT_FOUND", { message: error.message });
+          }
+          if (error instanceof CannotDeleteSpaceAsNonOwnerError) {
+            throw new ORPCError("FORBIDDEN", { message: error.message });
           }
           if (
             error instanceof CannotDeleteDefaultSpaceError ||
@@ -4556,14 +4560,15 @@ async function spaceNavigationDto(
     repos.listBotSectionsForSpaces(actor, spaceIds),
     createExternalConversationRepos(deps.prisma).listForSpaces(actor, spaceIds),
     // Active-only navigation lists miss archived content in other spaces; count any
-    // bot/group so an archived-only space does not look globally empty.
+    // bot/group in the actor's spaces (including another member's) so a shared
+    // non-empty space cannot look empty for onboarding redirects.
     deps.prisma.bot.findMany({
-      where: { spaceId: { in: spaceIds }, userId: actor.userId },
+      where: { spaceId: { in: spaceIds } },
       select: { spaceId: true },
       distinct: ["spaceId"],
     }),
     deps.prisma.chatGroup.findMany({
-      where: { spaceId: { in: spaceIds }, userId: actor.userId },
+      where: { spaceId: { in: spaceIds } },
       select: { spaceId: true },
       distinct: ["spaceId"],
     }),

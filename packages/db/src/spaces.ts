@@ -48,6 +48,13 @@ export class SpaceNotEmptyError extends Error {
   }
 }
 
+export class CannotDeleteSpaceAsNonOwnerError extends Error {
+  constructor() {
+    super("Only the space owner can delete it");
+    this.name = "CannotDeleteSpaceAsNonOwnerError";
+  }
+}
+
 type SpaceClient = Pick<
   PrismaClient,
   | "space"
@@ -255,12 +262,14 @@ async function assertEmptySpaceDeletable(
     },
     select: {
       organizationId: true,
+      role: true,
       space: { select: { isDefault: true } },
     },
   });
   if (!targetMembership || targetMembership.organizationId !== currentMembership.organizationId) {
     throw new SpaceNotFoundError();
   }
+  if (targetMembership.role !== "owner") throw new CannotDeleteSpaceAsNonOwnerError();
   if (targetMembership.space.isDefault) throw new CannotDeleteDefaultSpaceError();
   const memberships = await db.spaceMember.findMany({
     where: {
@@ -295,10 +304,13 @@ async function assertEmptySpaceDeletable(
   };
 }
 
-/** Provider refs for leftover team computers on a space the member may delete.
- * Callers destroy these before `deleteEmptySpaceForMember` so a failed destroy
- * does not cascade away the only durable handle. Re-checks empty/default/last
- * guards; the delete path re-checks them under a transaction. */
+/** Provider refs for leftover team computers on a space the owner may delete.
+ * Callers destroy these before `deleteEmptySpaceForMember`, then clear each
+ * providerRef only after that destroy succeeds — matching bot-delete’s
+ * destroy-then-drop-handle order so a failed destroy keeps the durable ref,
+ * while a later SpaceNotEmptyError cannot leave a row pointing at a sandbox
+ * that is already gone. Re-checks empty/default/last/owner guards; the delete
+ * path re-checks them under a transaction. */
 export async function listDeletableSpaceComputers(
   prisma: PrismaClient,
   input: EmptySpaceDeleteInput,
@@ -309,15 +321,17 @@ export async function listDeletableSpaceComputers(
 
 /** Delete an empty, non-default privacy boundary.
  *
- * Only empty spaces can be removed: bots (including archived) and groups would
- * otherwise orphan sandbox computers and files that `destroyBot` cleans up per
- * bot. Callers must destroy any leftover team sandboxes before invoking this so
- * a failed `sandbox.destroy` cannot lose the only persisted providerRef.
- * Callers should surface `SpaceNotEmptyError` as "delete its bots and groups
- * first" so an empty space is always deletable in two steps without an
- * onboarding trap. Returns the space the client should switch to when the
- * active space was deleted (the current space when deleting another; otherwise
- * the default, else the oldest remaining). */
+ * Only the SpaceMember owner may delete, and only empty spaces: bots
+ * (including archived) and groups would otherwise orphan sandbox computers and
+ * files that `destroyBot` cleans up per bot. Callers must destroy any leftover
+ * team sandboxes and clear those providerRefs before invoking this so a failed
+ * `sandbox.destroy` cannot lose the only persisted handle, and a failed delete
+ * cannot leave a stale ref to a destroyed sandbox. Callers should surface
+ * `SpaceNotEmptyError` as "delete its bots and groups first" so an empty space
+ * is always deletable in two steps without an onboarding trap. Returns the
+ * space the client should switch to when the active space was deleted (the
+ * current space when deleting another; otherwise the default, else the oldest
+ * remaining). */
 export async function deleteEmptySpaceForMember(
   prisma: PrismaClient,
   input: EmptySpaceDeleteInput,
