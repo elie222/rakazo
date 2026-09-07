@@ -706,7 +706,7 @@ export function PluginsOverlay({
             className="mb-4"
             onClick={() => setSetupOpen((current) => !current)}
           >
-            <Trans>Add MCP server</Trans>
+            <Trans>Browse MCP servers</Trans>
           </Button>
           {setupOpen ? (
             <div className="mb-6">
