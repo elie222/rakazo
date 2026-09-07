@@ -327,6 +327,29 @@ describe("provisioning network rollback", () => {
     );
   });
 
+  it("preserves the existing computer when its replacement network cannot be allocated", async () => {
+    fixture();
+    const existing = {
+      id: "existing-computer",
+      remove: vi.fn().mockResolvedValue(undefined),
+      inspect: vi.fn().mockResolvedValue({
+        Image: "old-image",
+        Config: {
+          Labels: { "rakazo.managed": "true", "rakazo.botId": "bot", "rakazo.spaceId": "space" },
+        },
+        HostConfig: { PortBindings: {} },
+      }),
+    };
+    mocks.docker.listContainers.mockResolvedValue([{ Id: existing.id }]);
+    mocks.docker.getContainer.mockReturnValue(existing);
+    mocks.docker.createNetwork.mockRejectedValue(new Error("address pools exhausted"));
+    const response = await provision();
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({ error: "address pools exhausted" });
+    expect(existing.remove).not.toHaveBeenCalled();
+    expect(mocks.docker.createContainer).not.toHaveBeenCalled();
+  });
+
   it("does not remove an existing network after failed creation", async () => {
     const { network } = fixture();
     mocks.docker.createNetwork.mockRejectedValue(new Error("network already exists"));

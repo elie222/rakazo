@@ -208,14 +208,14 @@ app.post("/computers", async (c) => {
           ? COMPUTER_GID
           : hostGid;
       await assertComputerHomeWritable(serviceHomePath, effectiveUid, effectiveGid);
-      if (existing) {
-        await existing.remove({ force: true }).catch(() => undefined);
-      }
       const name = containerNameFor(body.botId);
       const createdNetwork =
         screenNetworkMode === "internal" ? undefined : await ensureBotNetwork(body.botId);
       let container: Docker.Container | undefined;
       try {
+        if (existing) {
+          await existing.remove({ force: true }).catch(() => undefined);
+        }
         container = await docker.createContainer(
           containerCreateOptions({
             name,
