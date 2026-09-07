@@ -101,6 +101,9 @@ so its failure action warns that unsaved work may be lost.
 
 The reconciler republishes queued operations after a missed enqueue. Jobs already
 claimed are never destructively replayed. A worker that stops heartbeating for ten
-minutes leaves a visible failure requiring explicit recovery. Progress reports
+minutes is marked interrupted and remains reserved until its provider calls settle.
+Only then is recovery available. If a worker has permanently disappeared, an operator
+must stop the affected workers and verify that provider operations have stopped before
+clearing the reservation; a stale heartbeat alone never authorizes takeover. Progress reports
 actual lifecycle stages rather than estimated percentages; workspace files and
 browser profiles are portable, while system packages outside the workspace are not.

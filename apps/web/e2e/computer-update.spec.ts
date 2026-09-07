@@ -47,6 +47,12 @@ test("computer maintenance shows durable background progress and failure recover
   await page.reload();
   await page.getByRole("button", { name: /Updating Team Computer/ }).click();
   await expect(dialog).toBeVisible();
+  updates = [{ ...updating, status: "interrupted" }];
+  await expect(
+    dialog.getByText("Recovery is unavailable until the previous operation has stopped."),
+  ).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Recover computer" })).toHaveCount(0);
+  await captureScreenshot(page, testInfo, "computer-update-interrupted");
   updates = [{ ...updating, status: "failed" }];
   await expect(dialog.getByRole("heading")).toHaveText("Update failed");
   await captureScreenshot(page, testInfo, "computer-update-failed");

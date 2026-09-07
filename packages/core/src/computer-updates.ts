@@ -89,3 +89,7 @@ export function computerUpdateStages(
     ? COMPUTER_UPDATE_STAGES.filter((stage) => stage !== "saving")
     : COMPUTER_UPDATE_STAGES;
 }
+
+export function computerUpdateNeedsAttention(update: ComputerUpdate): boolean {
+  return update.status === "failed" || update.status === "interrupted";
+}

@@ -1,5 +1,5 @@
 import { COMPUTER_UPDATE_STAGES, type ComputerUpdate } from "@rakazo/contracts";
-import { computerUpdateStages } from "@rakazo/core";
+import { computerUpdateNeedsAttention, computerUpdateStages } from "@rakazo/core";
 import { usePathname } from "expo-router";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { ActivityIndicator, Modal, Pressable, StyleSheet, Text, View } from "react-native";
@@ -29,7 +29,7 @@ export function ComputerUpdateProgress() {
     t("Reconnecting"),
   ];
   const title = (update: ComputerUpdate) =>
-    update.status === "failed"
+    computerUpdateNeedsAttention(update)
       ? update.action === "recover"
         ? t("Recovery failed")
         : t("Update failed")
@@ -55,7 +55,9 @@ export function ComputerUpdateProgress() {
             }}
             style={[styles.pill, { backgroundColor: tokens.card, borderColor: tokens.border }]}
           >
-            {update.status !== "failed" ? <ActivityIndicator color={tokens.foreground} /> : null}
+            {!computerUpdateNeedsAttention(update) ? (
+              <ActivityIndicator color={tokens.foreground} />
+            ) : null}
             <View>
               <Text style={{ color: tokens.foreground }}>{title(update)}</Text>
               <Text style={[styles.secondary, { color: tokens.mutedForeground }]}>
@@ -76,9 +78,11 @@ export function ComputerUpdateProgress() {
             <Text accessibilityRole="header" style={[styles.title, { color: tokens.foreground }]}>
               {title(selected)}
             </Text>
-            {selected.status === "failed" ? (
+            {computerUpdateNeedsAttention(selected) ? (
               <Text style={{ color: tokens.mutedForeground }}>
-                {t("Recovery restores the last saved workspace. Unsaved work may be lost.")}
+                {selected.status === "interrupted"
+                  ? t("Recovery is unavailable until the previous operation has stopped.")
+                  : t("Recovery restores the last saved workspace. Unsaved work may be lost.")}
               </Text>
             ) : (
               computerUpdateStages(selected.action).map((stage, index) => {

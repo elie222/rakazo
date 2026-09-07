@@ -3400,3 +3400,7 @@ msgstr ""
 #: src/components/ComputerUpdateProgress.tsx:47
 msgid "Updating Team Computer"
 msgstr ""
+
+#: src/components/ComputerUpdateProgress.tsx
+msgid "Recovery is unavailable until the previous operation has stopped."
+msgstr ""

@@ -1,6 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import { COMPUTER_UPDATE_STAGES, type ComputerUpdate } from "@rakazo/contracts";
-import { computerUpdateStages } from "@rakazo/core";
+import { computerUpdateNeedsAttention, computerUpdateStages } from "@rakazo/core";
 import { Button, cn, Dialog, DialogContent, DialogTitle } from "@rakazo/ui-web";
 import { CheckCircle2, Circle, CircleAlert, LoaderCircle } from "lucide-react";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
@@ -22,7 +22,10 @@ export function ComputerUpdateProgress({ onCompleted }: { onCompleted: () => voi
   useEffect(() => {
     if (
       previous.current.some(
-        (old) => old.status !== "failed" && !updates.some((item) => item.id === old.id),
+        (old) =>
+          old.status !== "failed" &&
+          (!updates.some((item) => item.id === old.id) ||
+            updates.some((item) => item.id === old.id && item.status === "failed")),
       )
     )
       completed.current();
@@ -36,7 +39,7 @@ export function ComputerUpdateProgress({ onCompleted }: { onCompleted: () => voi
     t`Reconnecting`,
   ];
   const title = (update: ComputerUpdate) =>
-    update.status === "failed"
+    computerUpdateNeedsAttention(update)
       ? update.action === "recover"
         ? t`Recovery failed`
         : t`Update failed`
@@ -61,7 +64,7 @@ export function ComputerUpdateProgress({ onCompleted }: { onCompleted: () => voi
               computerUpdates.open(update.id);
             }}
           >
-            {update.status === "failed" ? (
+            {computerUpdateNeedsAttention(update) ? (
               <CircleAlert className="text-destructive" />
             ) : (
               <LoadingState
@@ -96,7 +99,7 @@ export function ComputerUpdateProgress({ onCompleted }: { onCompleted: () => voi
             <div className="border-b border-border px-6 py-5">
               <DialogTitle className="text-lg font-semibold">{title(selected)}</DialogTitle>
             </div>
-            {selected.status !== "failed" ? (
+            {!computerUpdateNeedsAttention(selected) ? (
               <ol className="space-y-4 px-6 py-6" aria-label={t`Update progress`}>
                 {computerUpdateStages(selected.action).map((stage, index) => {
                   const current = computerUpdateStages(selected.action).indexOf(selected.stage);
@@ -122,7 +125,7 @@ export function ComputerUpdateProgress({ onCompleted }: { onCompleted: () => voi
                         className={cn(
                           "size-5 shrink-0",
                           index === current &&
-                            selected.status !== "failed" &&
+                            !computerUpdateNeedsAttention(selected) &&
                             "animate-spin motion-reduce:animate-none",
                           index === current && selected.status === "failed" && "text-destructive",
                         )}
@@ -133,12 +136,18 @@ export function ComputerUpdateProgress({ onCompleted }: { onCompleted: () => voi
                 })}
               </ol>
             ) : null}
-            {selected.status === "failed" ? (
+            {computerUpdateNeedsAttention(selected) ? (
               <p
                 role="alert"
                 className="mx-6 my-6 rounded-xl bg-muted px-4 py-4 text-sm text-muted-foreground"
               >
-                <Trans>Recovery restores the last saved workspace. Unsaved work may be lost.</Trans>
+                {selected.status === "interrupted" ? (
+                  <Trans>Recovery is unavailable until the previous operation has stopped.</Trans>
+                ) : (
+                  <Trans>
+                    Recovery restores the last saved workspace. Unsaved work may be lost.
+                  </Trans>
+                )}
               </p>
             ) : (
               <span role="status" className="sr-only">

@@ -1,4 +1,6 @@
 export const ZH_MESSAGES: Record<string, string> = {
+  "Recovery is unavailable until the previous operation has stopped.":
+    "上一次操作停止之前，无法恢复。",
   "Continue in Background": "在后台继续",
   "Could not complete action": "无法完成操作",
   Dismiss: "关闭",

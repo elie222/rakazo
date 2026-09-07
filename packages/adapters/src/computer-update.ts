@@ -149,7 +149,7 @@ async function finishUpdate(
 ) {
   await prisma.$transaction(async (tx) => {
     const finished = await tx.computerUpdate.updateMany({
-      where: { id, status: "running" },
+      where: { id, status: { in: ["running", "interrupted"] } },
       data: { status },
     });
     if (finished.count !== 1) return;
@@ -182,13 +182,11 @@ export async function reconcileComputerUpdates(deps: Pick<Deps, "prisma" | "jobs
       await deps.prisma.$transaction(async (tx) => {
         const stale = await tx.computerUpdate.updateMany({
           where: { id: update.id, status: "running", updatedAt: update.updatedAt },
-          data: { status: "failed" },
+          data: { status: "interrupted" },
         });
+        // A stale heartbeat is not proof that provider calls have stopped. Only
+        // the worker's settled path can release this reservation.
         if (stale.count !== 1) return;
-        await tx.computer.updateMany({
-          where: { id: update.computerId, maintenanceId: update.id },
-          data: { maintenanceId: null, state: "error" },
-        });
       });
     }
   }

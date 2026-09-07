@@ -42,7 +42,13 @@ function fixture(status = "queued") {
     findUniqueOrThrow: vi.fn(async () => row),
     findMany: vi.fn(async () => [row]),
     updateMany: vi.fn(async ({ where, data }) => {
-      if (where.status && where.status !== row.status) return { count: 0 };
+      if (
+        where.status &&
+        (typeof where.status === "string"
+          ? where.status !== row.status
+          : !where.status.in.includes(row.status))
+      )
+        return { count: 0 };
       Object.assign(row, data);
       return { count: 1 };
     }),
@@ -91,16 +97,35 @@ describe("background computer maintenance", () => {
     expect(jobs.enqueue).toHaveBeenCalledTimes(2);
     expect(replacement).not.toHaveBeenCalled();
   });
-  it("marks an abandoned worker as failed instead of repeating a destructive step", async () => {
+  it("keeps an interrupted worker reserved instead of repeating a destructive step", async () => {
     const { row, deps, computer } = fixture("running");
     await reconcileComputerUpdates(deps);
-    expect(row.status).toBe("failed");
-    expect(computer.updateMany).toHaveBeenCalledWith({
-      where: { id: row.computerId, maintenanceId: row.id },
-      data: { maintenanceId: null, state: "error" },
-    });
+    expect(row.status).toBe("interrupted");
+    expect(computer.updateMany).not.toHaveBeenCalled();
     expect(replacement).not.toHaveBeenCalled();
   });
+  it("releases an interrupted reservation only after the worker has settled", async () => {
+    const { row, deps, computer } = fixture();
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    replacement.mockImplementationOnce(async (_deps, _id, _mode, _ctx, _holder, progress) => {
+      await pending;
+      await progress?.("recreating");
+      return {} as Awaited<ReturnType<typeof replaceComputer>>;
+    });
+    const work = performComputerUpdate(deps, row.id);
+    await vi.waitFor(() => expect(replacement).toHaveBeenCalled());
+    await reconcileComputerUpdates(deps);
+    expect(row.status).toBe("interrupted");
+    expect(computer.updateMany).not.toHaveBeenCalled();
+    release();
+    await work;
+    expect(row.status).toBe("failed");
+    expect(computer.updateMany).toHaveBeenCalledOnce();
+  });
+
   it("rejects a busy computer before publishing an operation", async () => {
     const { row, deps, computer, jobs } = fixture();
     computer.updateMany.mockResolvedValueOnce({ count: 0 });
