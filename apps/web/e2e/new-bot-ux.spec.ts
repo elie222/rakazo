@@ -72,8 +72,10 @@ test("picker rows explain groups and spaces", async ({ page }, testInfo) => {
   await expect(picker).toBeVisible();
 
   await picker.getByTestId("create-new-group").hover();
+  const groupInfo = picker.getByTestId("picker-info-group");
+  await expect.poll(() => groupInfo.evaluate((el) => getComputedStyle(el).opacity)).toBe("1");
   await captureScreenshot(page, testInfo, "picker-group-info-hover");
-  await picker.getByTestId("picker-info-group").click();
+  await groupInfo.click();
   const dialog = page.getByTestId("picker-info-dialog");
   await expect(dialog).toBeVisible();
   await expect(dialog.getByText("Groups", { exact: true })).toBeVisible();
@@ -84,8 +86,11 @@ test("picker rows explain groups and spaces", async ({ page }, testInfo) => {
   await expect(dialog).toBeHidden();
 
   await page.getByTestId("create-menu-trigger").click();
+  const spaceInfo = picker.getByTestId("picker-info-space");
+  await expect.poll(() => spaceInfo.evaluate((el) => getComputedStyle(el).opacity)).toBe("0");
   await picker.getByTestId("create-new-space").hover();
-  await picker.getByTestId("picker-info-space").click();
+  await expect.poll(() => spaceInfo.evaluate((el) => getComputedStyle(el).opacity)).toBe("1");
+  await spaceInfo.click();
   await expect(dialog).toBeVisible();
   await expect(dialog.getByText("Spaces", { exact: true })).toBeVisible();
   await expect(dialog).toContainText("private workspace");
