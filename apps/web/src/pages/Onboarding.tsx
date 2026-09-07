@@ -24,6 +24,32 @@ import { useModelOAuthSignIn } from "../lib/use-model-oauth-signin";
 const CUSTOM_MODEL_OPTION = "__rakazo_custom_model__";
 const FIRST_BOT_NAME = "Chief";
 
+/** Survives StrictMode remounts so concurrent first-bot creates share one attempt. */
+let firstBotEnsure: Promise<{ id: string }> | null = null;
+
+async function ensureFirstBot(): Promise<{ id: string }> {
+  if (firstBotEnsure) return firstBotEnsure;
+  firstBotEnsure = (async () => {
+    const existing = await rpc.bots.list().catch(() => []);
+    const reuse = existing.find((bot) => bot.name === FIRST_BOT_NAME) ?? existing[0] ?? null;
+    if (reuse) return { id: reuse.id };
+    const created = await rpc.bots.create({
+      name: FIRST_BOT_NAME,
+      title: "",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+    return { id: created.id };
+  })();
+  try {
+    return await firstBotEnsure;
+  } catch (error) {
+    firstBotEnsure = null;
+    throw error;
+  }
+}
+
 function providerLabel(entry: ModelCatalogEntry): string {
   return entry.provider === "openai-codex" ? "ChatGPT" : (entry.providerName ?? entry.provider);
 }
@@ -230,13 +256,7 @@ export function OnboardingPage() {
     createStartedRef.current = true;
     setError(null);
     try {
-      const bot = await rpc.bots.create({
-        name: FIRST_BOT_NAME,
-        title: "",
-        description: "",
-        instructions: "",
-        notifyOnFinish: true,
-      });
+      const bot = await ensureFirstBot();
       // Onboarding continues conversationally in the thread: greeting first,
       // then the focus choice (immediate for the first bot).
       const started = await rpc.onboarding
