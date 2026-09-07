@@ -7,12 +7,18 @@
     "preview": {
       "distribution": "internal",
       "environment": "preview",
-      "channel": "preview"
+      "channel": "preview",
+      "ios": {
+        "image": "macos-tahoe-26.5-xcode-26.6"
+      }
     },
     "production": {
       "autoIncrement": true,
       "environment": "production",
-      "channel": "production"
+      "channel": "production",
+      "ios": {
+        "image": "macos-tahoe-26.5-xcode-26.6"
+      }
     }
   },
   "submit": {

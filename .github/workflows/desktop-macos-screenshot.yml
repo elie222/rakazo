@@ -47,7 +47,9 @@ jobs:
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconName' apps/desktop/out/mac-arm64/Rakazo.app/Contents/Info.plist)" = Icon
         env:
           RAKAZO_ALLOW_DEV_SECRETS: "1"
-      - name: Capture native macOS setup window
+      - name: Capture packaged macOS setup window and Dock
+        env:
+          RAKAZO_E2E_EXECUTABLE: out/mac-arm64/Rakazo.app/Contents/MacOS/Rakazo
         run: >-
           pnpm --filter @rakazo/desktop exec playwright test
           --config e2e/playwright.config.ts setup.spec.ts
