@@ -1175,13 +1175,17 @@ msgstr "Crear cuenta"
 msgid "Create group"
 msgstr "Crear grupo"
 
+#: src/pages/shell/bot-picker.tsx:70
+msgid "Create new Bot"
+msgstr "Crear nuevo bot"
+
 #: src/pages/shell/bot-picker.tsx:95
 msgid "Create new Group"
-msgstr ""
+msgstr "Crear nuevo grupo"
 
 #: src/pages/shell/bot-picker.tsx:104
 msgid "Create new Space"
-msgstr ""
+msgstr "Crear nuevo space"
 
 #: src/pages/RoutineEditor.tsx:114
 #: src/pages/RoutineEditor.tsx:115

@@ -1201,13 +1201,17 @@ msgstr "创建账户"
 msgid "Create group"
 msgstr "创建群组"
 
+#: src/pages/shell/bot-picker.tsx:70
+msgid "Create new Bot"
+msgstr "新建 Bot"
+
 #: src/pages/shell/bot-picker.tsx:95
 msgid "Create new Group"
-msgstr ""
+msgstr "新建群组"
 
 #: src/pages/shell/bot-picker.tsx:104
 msgid "Create new Space"
-msgstr ""
+msgstr "新建工作区"
 
 #: src/pages/RoutineEditor.tsx:114
 #: src/pages/RoutineEditor.tsx:115

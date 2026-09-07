@@ -1201,13 +1201,17 @@ msgstr "Hesap oluştur"
 msgid "Create group"
 msgstr "Grup oluştur"
 
+#: src/pages/shell/bot-picker.tsx:70
+msgid "Create new Bot"
+msgstr "Yeni bot oluştur"
+
 #: src/pages/shell/bot-picker.tsx:95
 msgid "Create new Group"
-msgstr ""
+msgstr "Yeni grup oluştur"
 
 #: src/pages/shell/bot-picker.tsx:104
 msgid "Create new Space"
-msgstr ""
+msgstr "Yeni space oluştur"
 
 #: src/pages/RoutineEditor.tsx:114
 #: src/pages/RoutineEditor.tsx:115

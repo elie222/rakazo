@@ -1201,6 +1201,10 @@ msgstr "Create account"
 msgid "Create group"
 msgstr "Create group"
 
+#: src/pages/shell/bot-picker.tsx:70
+msgid "Create new Bot"
+msgstr "Create new Bot"
+
 #: src/pages/shell/bot-picker.tsx:95
 msgid "Create new Group"
 msgstr "Create new Group"
