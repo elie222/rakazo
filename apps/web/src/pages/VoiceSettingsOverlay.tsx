@@ -5,7 +5,6 @@ import {
   Dialog,
   DialogClose,
   DialogContent,
-  DialogDescription,
   DialogTitle,
   Field,
   FieldLabel,
@@ -136,6 +135,7 @@ export function VoiceSettingsOverlay({ onClose }: { onClose: () => void }) {
     >
       <DialogContent
         data-testid="voice-settings"
+        aria-describedby={undefined}
         showCloseButton={false}
         className="flex h-[min(680px,calc(100%-2rem))] w-[920px] flex-col gap-0 overflow-hidden rounded-2xl p-0 sm:h-[min(680px,calc(100%-5rem))] sm:max-w-[calc(100%-5rem)]"
       >
@@ -144,16 +144,6 @@ export function VoiceSettingsOverlay({ onClose }: { onClose: () => void }) {
             <DialogTitle className="text-2xl font-medium text-foreground">
               <Trans>Voice</Trans>
             </DialogTitle>
-            <DialogDescription className="mt-1 text-[13.5px] text-muted-foreground/70">
-              {loading ? (
-                <Trans>Loading voice providers…</Trans>
-              ) : (
-                <Trans>
-                  Bring your own key. The provider is swappable; your bots keep the same speak and
-                  call buttons.
-                </Trans>
-              )}
-            </DialogDescription>
           </div>
           <DialogClose
             aria-label={t`Close voice settings`}
@@ -161,24 +151,6 @@ export function VoiceSettingsOverlay({ onClose }: { onClose: () => void }) {
           >
             <XIcon />
           </DialogClose>
-        </div>
-
-        <div className="mx-6 mt-5 rounded-xl border border-border px-4 py-3 sm:mx-8">
-          <div className="text-[12.5px] uppercase tracking-[0.08em] text-muted-foreground/80">
-            <Trans>Active voice</Trans>
-          </div>
-          <div className="mt-1 text-[16px] text-foreground">
-            {status?.ready
-              ? voiceOptions.find((voice) => voice.id === status.voiceId)?.label || status.voiceId
-              : status?.configured
-                ? t`Pick a voice`
-                : t`Not configured`}
-          </div>
-          <div className="mt-1 text-[13px] text-muted-foreground">
-            {selected?.name ?? status?.provider ?? (
-              <Trans>Connect ElevenLabs, OpenAI, or Cartesia</Trans>
-            )}
-          </div>
         </div>
 
         <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-hidden px-6 py-6 sm:px-8 md:flex-row">
@@ -228,31 +200,15 @@ export function VoiceSettingsOverlay({ onClose }: { onClose: () => void }) {
           </div>
 
           <div className="rk-scroll min-h-0 min-w-0 flex-1 overflow-y-auto">
+            {loading ? (
+              <p className="text-sm text-muted-foreground">
+                <Trans>Loading voice providers…</Trans>
+              </p>
+            ) : null}
             {error ? <p className="mb-4 text-sm text-destructive">{error}</p> : null}
             {notice ? <p className="mb-4 text-sm text-success">{notice}</p> : null}
             {selected ? (
               <>
-                <p className="text-[13.5px] leading-[1.5] text-muted-foreground">
-                  {selected.description}
-                </p>
-                <div className="mt-5 rounded-xl border border-border px-4 py-3">
-                  <div className="text-[12.5px] uppercase tracking-[0.08em] text-muted-foreground/80">
-                    <Trans>Personal credential</Trans>
-                  </div>
-                  <div className="mt-1 text-[15px] text-foreground">
-                    {credential ? (
-                      <Trans>Connected · {selected.name}</Trans>
-                    ) : (
-                      <Trans>Not connected</Trans>
-                    )}
-                  </div>
-                  <div className="mt-1 text-[13px] text-muted-foreground">
-                    <Trans>
-                      Keys stay on the server. The app only learns whether a provider is configured.
-                    </Trans>
-                  </div>
-                </div>
-
                 <Field className="mt-5">
                   <FieldLabel htmlFor={apiKeyId}>
                     <Trans>API key</Trans>
