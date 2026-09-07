@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { mkdir, rm, writeFile } from "node:fs/promises";
+import { createServer, type Server } from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
@@ -20,7 +21,10 @@ const FLOW_DIR = path.join(ROOT, "apps", "mobile", ".maestro");
 const EMAIL = "mobile-screenshots@example.test";
 const PASSWORD = "test-password-123";
 const API_PORT = 3110;
+const DEVICE_CONTROL_PORT = 3111;
 const HOST_API_URL = `http://127.0.0.1:${API_PORT}`;
+const DEVICE_CONTROL_URL = `http://127.0.0.1:${DEVICE_CONTROL_PORT}`;
+const EXPAND_NOTIFICATIONS_URL = `${DEVICE_CONTROL_URL}/expand-notifications`;
 const WEB_ORIGIN = "http://127.0.0.1:5180";
 
 type App = { request: (input: string, init?: RequestInit) => Response | Promise<Response> };
@@ -71,6 +75,7 @@ async function main() {
     hostname: "0.0.0.0",
     port: API_PORT,
   });
+  const deviceControl = startDeviceControlServer();
 
   try {
     await waitForHealth(`${HOST_API_URL}/health`, 15_000);
@@ -101,6 +106,8 @@ async function main() {
           `RAKAZO_SCREENSHOT_ROUTINE_ID=${fixture.routineId}`,
           "-e",
           `RAKAZO_NOTIFICATION_VIDEO=${path.join(REPORT_DIR, "notification-demo")}`,
+          "-e",
+          `RAKAZO_EXPAND_NOTIFICATIONS_URL=${EXPAND_NOTIFICATIONS_URL}`,
           path.join(FLOW_DIR, `${flow}.yaml`),
         ],
         process.env,
@@ -115,9 +122,36 @@ async function main() {
       server.close(() => resolve());
       server.closeAllConnections();
     });
+    await new Promise<void>((resolve, reject) => {
+      deviceControl.close((error) => (error ? reject(error) : resolve()));
+    }).catch(() => undefined);
     await handles.stop().catch(() => undefined);
     await rm(DATA_DIR, { recursive: true, force: true });
   }
+}
+
+/** Maestro host-side helper: expand the Android shade without flaky status-bar swipes. */
+function startDeviceControlServer(): Server {
+  const server = createServer((req, res) => {
+    try {
+      if (req.method === "GET" && req.url === "/expand-notifications") {
+        execFileSync("adb", ["shell", "cmd", "statusbar", "expand-notifications"], {
+          stdio: ["ignore", "pipe", "pipe"],
+        });
+        res.writeHead(200, { "content-type": "text/plain; charset=utf-8" });
+        res.end("ok");
+        return;
+      }
+      res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
+      res.end("not found");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      res.writeHead(500, { "content-type": "text/plain; charset=utf-8" });
+      res.end(message);
+    }
+  });
+  server.listen(DEVICE_CONTROL_PORT, "127.0.0.1");
+  return server;
 }
 
 function configureEnvironment() {

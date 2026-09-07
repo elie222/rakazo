@@ -38,13 +38,19 @@ name: Android live working status demonstration
     visible: "Stop"
     timeout: 30000
 - pressKey: HOME
-- swipe:
-    start: "50%, 1%"
-    end: "50%, 80%"
-    duration: 1000
+# Status-bar swipe is flaky on API 34 emulators; expand via host adb helper instead.
+- repeat:
+    times: 8
+    while:
+      notVisible: "Researcher is working"
+    commands:
+      - evalScript: ${output.expandNotifications = http.get(RAKAZO_EXPAND_NOTIFICATIONS_URL)}
+      - assertTrue: ${output.expandNotifications.ok}
+      - waitForAnimationToEnd:
+          timeout: 2000
 - extendedWaitUntil:
     visible: "Researcher is working"
-    timeout: 30000
+    timeout: 5000
 - takeScreenshot: "30-live-working-notification"
 - tapOn: "Researcher is working"
 - extendedWaitUntil:
@@ -60,10 +66,10 @@ name: Android live working status demonstration
     direction: DOWN
 - tapOn: "Live working status"
 - pressKey: HOME
-- swipe:
-    start: "50%, 1%"
-    end: "50%, 80%"
-    duration: 1000
+- evalScript: ${output.expandNotifications = http.get(RAKAZO_EXPAND_NOTIFICATIONS_URL)}
+- assertTrue: ${output.expandNotifications.ok}
+- waitForAnimationToEnd:
+    timeout: 2000
 - assertNotVisible: "Researcher is working"
 - takeScreenshot: "31-live-working-stopped"
 - stopRecording
