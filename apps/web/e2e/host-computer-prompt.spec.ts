@@ -38,6 +38,9 @@ for (const platform of ["darwin", "win32"]) {
     await page.reload();
     const dialog = page.getByRole("dialog", { name: "Where should bots run?" });
     await expect(dialog).toBeVisible();
+    await expect(dialog).toHaveAccessibleDescription(
+      /Local access lets bots run commands without asking\. Avoid it on shared or public servers\./,
+    );
     const host = platform === "darwin" ? "this Mac" : "this computer";
     await expect(
       dialog.getByText(
