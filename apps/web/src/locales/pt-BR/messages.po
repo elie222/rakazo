@@ -1391,10 +1391,6 @@ msgstr "Nome de exibição"
 msgid "Do not type passwords into the demo. Use Take control for credentials."
 msgstr "Não digite senhas na demonstração. Use Assuma o controle das credenciais."
 
-#: src/pages/HostComputerPrompt.tsx:68
-msgid "Docker (recommended)"
-msgstr "Docker (recomendado)"
-
 #: src/pages/Auth.tsx:197
 msgid "Don’t have an account?"
 msgstr "Não tem uma conta?"
@@ -3076,7 +3072,7 @@ msgstr "Atualizando…"
 msgid "Usage"
 msgstr "Uso"
 
-#: src/pages/HostComputerPrompt.tsx:76
+#: src/pages/HostComputerPrompt.tsx:84
 msgid "Use {hostLabel}"
 msgstr "Usar {hostLabel}"
 
@@ -3313,10 +3309,14 @@ msgstr "Conectar Executor"
 msgid "Executor token"
 msgstr "Token do Executor"
 
-#: src/pages/HostComputerPrompt.tsx:62
-msgid "Docker gives bots a separate workspace."
-msgstr "O Docker dá aos bots um espaço de trabalho separado."
+#: src/pages/HostComputerPrompt.tsx:76
+msgid "Docker"
+msgstr "Docker"
 
-#: src/pages/HostComputerPrompt.tsx:80
-msgid "On {hostLabel}, bots can access your files and run commands without asking. Avoid this on shared or public servers."
-msgstr "Ao usar {hostLabel}, os bots podem acessar seus arquivos e executar comandos sem perguntar. Evite esta opção em servidores compartilhados ou públicos."
+#: src/pages/HostComputerPrompt.tsx:62
+msgid "Docker limits access to your computer for added security. Using {hostLabel} lets bots work with your local files and tools."
+msgstr "O Docker limita o acesso ao seu computador para maior segurança. Usar {hostLabel} permite que os bots trabalhem com seus arquivos e ferramentas locais."
+
+#: src/pages/HostComputerPrompt.tsx:88
+msgid "Local access lets bots run commands without asking. Avoid it on shared or public servers."
+msgstr "O acesso local permite que os bots executem comandos sem perguntar. Evite usá-lo em servidores compartilhados ou públicos."

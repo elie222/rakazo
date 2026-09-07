@@ -247,7 +247,6 @@
   "Dismissed. Reconnect anytime from MCP settings.": "Dispensado. Reconecte a qualquer momento a partir das configurações do MCP.",
   "Display name": "Nome de exibição",
   "Do not type passwords into the demo. Use Take control for credentials.": "Não digite senhas na demonstração. Use Assuma o controle das credenciais.",
-  "Docker (recommended)": "Docker (recomendado)",
   "Docker is the default: bots use a shared Team Computer.": "O Docker é o padrão: os bots usam um Computador de Equipe compartilhado.",
   "Don’t have an account?": "Não tem uma conta?",
   "Done": "Concluído",
@@ -582,6 +581,7 @@
   "This chat is view-only": "Este chat é somente leitura",
   "Could not load this chat.": "Não foi possível carregar este chat.",
   "No messages with {peerBotName} yet.": "Ainda sem mensagens com {peerBotName}.",
-  "Docker gives bots a separate workspace.": "O Docker dá aos bots um espaço de trabalho separado.",
-  "On {hostLabel}, bots can access your files and run commands without asking. Avoid this on shared or public servers.": "Ao usar {hostLabel}, os bots podem acessar seus arquivos e executar comandos sem perguntar. Evite esta opção em servidores compartilhados ou públicos."
+  "Docker limits access to your computer for added security. Using {hostLabel} lets bots work with your local files and tools.": "O Docker limita o acesso ao seu computador para maior segurança. Usar {hostLabel} permite que os bots trabalhem com seus arquivos e ferramentas locais.",
+  "Local access lets bots run commands without asking. Avoid it on shared or public servers.": "O acesso local permite que os bots executem comandos sem perguntar. Evite usá-lo em servidores compartilhados ou públicos.",
+  "Docker": "Docker"
 }

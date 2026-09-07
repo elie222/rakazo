@@ -248,7 +248,6 @@
   "Dismissed. Reconnect anytime from MCP settings.": "Kapatıldı. MCP ayarlarından istediğin zaman yeniden bağlanabilirsin.",
   "Display name": "Görünen ad",
   "Do not type passwords into the demo. Use Take control for credentials.": "Demoya parola yazma. Kimlik bilgileri için Kontrolü al'ı kullan.",
-  "Docker (recommended)": "Docker (önerilen)",
   "Docker is the default: bots use a shared Team Computer.": "Varsayılan Docker'dır: botlar ortak bir Takım Bilgisayarı kullanır.",
   "Don’t have an account?": "Hesabın yok mu?",
   "Done": "Bitti",
@@ -577,6 +576,7 @@
   "This chat is view-only": "Bu sohbet yalnızca görüntülenebilir",
   "Could not load this chat.": "Bu sohbet yüklenemedi.",
   "No messages with {peerBotName} yet.": "{peerBotName} ile henüz mesaj yok.",
-  "Docker gives bots a separate workspace.": "Docker, botlara ayrı bir çalışma alanı sağlar.",
-  "On {hostLabel}, bots can access your files and run commands without asking. Avoid this on shared or public servers.": "{hostLabel} kullanıldığında botlar sormadan dosyalarına erişebilir ve komut çalıştırabilir. Paylaşılan veya herkese açık sunucularda bu seçeneği kullanma."
+  "Docker limits access to your computer for added security. Using {hostLabel} lets bots work with your local files and tools.": "Docker, ek güvenlik için bilgisayarına erişimi sınırlar. {hostLabel} kullanıldığında botlar yerel dosyaların ve araçlarınla çalışabilir.",
+  "Local access lets bots run commands without asking. Avoid it on shared or public servers.": "Yerel erişim, botların sormadan komut çalıştırmasına izin verir. Paylaşılan veya herkese açık sunucularda bunu kullanma.",
+  "Docker": "Docker"
 }

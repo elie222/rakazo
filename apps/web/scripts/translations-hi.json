@@ -247,7 +247,6 @@
   "Dismissed. Reconnect anytime from MCP settings.": "खारिज किया गया। MCP सेटिंग्स से कभी भी पुनः कनेक्ट करें।",
   "Display name": "प्रदर्शित नाम",
   "Do not type passwords into the demo. Use Take control for credentials.": "डेमो में पासवर्ड टाइप न करें। क्रेडेंशियल्स के लिए 'टेक कंट्रोल' (Take control) का इस्तेमाल करें।",
-  "Docker (recommended)": "Docker (अनुशंसित)",
   "Docker is the default: bots use a shared Team Computer.": "Docker डिफ़ॉल्ट है: बॉट एक साझा टीम कंप्यूटर का उपयोग करते हैं।",
   "Don’t have an account?": "खाता नहीं है?",
   "Done": "पूर्ण",
@@ -583,6 +582,7 @@
   "This chat is view-only": "यह चैट केवल देखने के लिए है",
   "Could not load this chat.": "यह चैट लोड नहीं हो सकी.",
   "No messages with {peerBotName} yet.": "{peerBotName} के साथ अभी कोई संदेश नहीं.",
-  "Docker gives bots a separate workspace.": "Docker बॉट्स को अलग कार्यक्षेत्र देता है।",
-  "On {hostLabel}, bots can access your files and run commands without asking. Avoid this on shared or public servers.": "{hostLabel} चुनने पर बॉट्स बिना पूछे आपकी फ़ाइलें खोल सकते हैं और कमांड चला सकते हैं। साझा या सार्वजनिक सर्वर पर इस विकल्प से बचें।"
+  "Docker limits access to your computer for added security. Using {hostLabel} lets bots work with your local files and tools.": "Docker अतिरिक्त सुरक्षा के लिए आपके कंप्यूटर तक पहुँच सीमित करता है। {hostLabel} चुनने पर बॉट्स आपकी स्थानीय फ़ाइलों और टूल्स के साथ काम कर सकते हैं।",
+  "Local access lets bots run commands without asking. Avoid it on shared or public servers.": "स्थानीय पहुँच मिलने पर बॉट्स बिना पूछे कमांड चला सकते हैं। साझा या सार्वजनिक सर्वर पर इससे बचें।",
+  "Docker": "Docker"
 }

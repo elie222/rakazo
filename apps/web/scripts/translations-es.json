@@ -300,7 +300,6 @@
   "Dismissed. Reconnect anytime from MCP settings.": "Descartado: puedes volver a conectar cuando quieras desde la configuración de MCP.",
   "Display name": "Nombre para mostrar",
   "Do not type passwords into the demo. Use Take control for credentials.": "No escribas contraseñas en la demo. Usa Tomar control para las credenciales.",
-  "Docker (recommended)": "Docker (recomendado)",
   "Docker is the default: bots use a shared Team Computer.": "Docker es el valor predeterminado: los bots usan una Team Computer compartida.",
   "Don’t have an account?": "¿No tienes una cuenta?",
   "Done": "Listo",
@@ -723,6 +722,7 @@
   "Asleep": "En reposo",
   "at <0/>": "a las <0/>",
   "Authorization expired — reconnect required": "Autorización expirada: se requiere reconectar",
-  "Docker gives bots a separate workspace.": "Docker les da a los bots un espacio de trabajo separado.",
-  "On {hostLabel}, bots can access your files and run commands without asking. Avoid this on shared or public servers.": "En {hostLabel}, los bots pueden acceder a tus archivos y ejecutar comandos sin preguntar. Evita esta opción en servidores compartidos o públicos."
+  "Docker limits access to your computer for added security. Using {hostLabel} lets bots work with your local files and tools.": "Docker limita el acceso a tu computadora para mayor seguridad. Usar {hostLabel} permite que los bots trabajen con tus archivos y herramientas locales.",
+  "Local access lets bots run commands without asking. Avoid it on shared or public servers.": "El acceso local permite que los bots ejecuten comandos sin preguntar. Evítalo en servidores compartidos o públicos.",
+  "Docker": "Docker"
 }
