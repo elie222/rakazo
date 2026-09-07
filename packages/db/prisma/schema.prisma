@@ -221,6 +221,7 @@ model Invitation {
   role           String?
   status         String
   expiresAt      DateTime
+  createdAt      DateTime     @default(now())
   inviterId      String
   user           User         @relation(fields: [inviterId], references: [id], onDelete: Cascade)
 

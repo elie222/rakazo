@@ -22,9 +22,9 @@
   "devDependencies": {
     "@playwright/test": "1.63.0",
     "@rakazo/ui-tokens": "workspace:*",
-    "electron": "43.6.0",
+    "electron": "44.2.0",
     "electron-builder": "26.15.3",
-    "typescript": "5.9.3",
+    "typescript": "7.0.2",
     "vitest": "4.1.11"
   },
   "build": {
