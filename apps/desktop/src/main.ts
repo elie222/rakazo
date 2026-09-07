@@ -456,9 +456,10 @@ async function waitForMountedAppDocument(contents: Electron.WebContents) {
           performance.getEntriesByName("rk:renderer:shell-ready").length > 0,
       );
       const authOrWelcomeSurface = Boolean(
-        document.querySelector(
-          'form input[type="email"], form input[name="email"], form input#email',
-        ) ||
+        document.querySelector('[data-rakazo-surface="welcome"]') ||
+          document.querySelector(
+            'form input[type="email"], form input[name="email"], form input#email',
+          ) ||
           Array.from(document.querySelectorAll("button")).some((button) =>
             /sign\\s*in/i.test((button.textContent || "").trim()),
           ) ||

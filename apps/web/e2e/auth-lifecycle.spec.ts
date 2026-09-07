@@ -57,6 +57,7 @@ test("logout protects bot deep links and sign-in restores the session", async ({
   await page.getByRole("button", { name: "Log out" }).click();
   await expect(page.getByRole("heading", { name: "Sign in to Rakazo" })).toBeVisible();
   await page.goto("/");
+  await expect(page.locator('[data-rakazo-surface="welcome"]')).toBeVisible();
   await expect(page.getByText(/Your team of always-on agents/)).toBeVisible();
   await page.getByRole("button", { name: /Sign up/ }).click();
   await expect(page).toHaveURL(/\/sign-up$/);
