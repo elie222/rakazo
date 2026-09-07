@@ -31,8 +31,8 @@ export function oauthStateOf(verificationUri: string): string | undefined {
 }
 
 /**
- * Sign-in popups in the desktop app redirect to a loopback URL the renderer
- * never sees. The main process captures the code there so the browser flow's
+ * Desktop sign-in redirects to a loopback URL the renderer never sees.
+ * The main process captures the code there so the browser flow's
  * copy-and-paste step can be skipped. No-ops in a browser.
  *
  * Pass the attempt's state to ignore codes captured for any other attempt.

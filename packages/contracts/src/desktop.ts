@@ -47,7 +47,13 @@ export interface RakazoDesktop {
   update: RakazoDesktopUpdate;
   oauth: {
     /**
-     * Authorization codes captured from a sign-in popup's loopback redirect.
+     * Open system-browser auth. A redirect_uri must be HTTP loopback with state;
+     * URLs without a redirect use backend polling. Optional for older desktops.
+     */
+    open?: (authorizationUrl: string) => Promise<void>;
+    cancel?: (authorizationUrl: string) => Promise<void>;
+    /**
+     * Authorization codes captured from the system browser or a legacy popup.
      * Returns an unsubscribe function.
      */
     onCallback: (listener: (callback: RakazoDesktopOAuthCallback) => void) => () => void;

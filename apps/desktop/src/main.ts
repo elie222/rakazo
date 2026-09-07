@@ -9,6 +9,7 @@ import {
   type ElectronAutoUpdater,
   LAUNCH_CHECK_DELAY_MS,
 } from "./auto-update.js";
+import { openBrowserAuth } from "./browser-auth.js";
 import { DOCKER_INSTALL_LINKS, isDesktopSetupLink, runDocker } from "./docker-cli.js";
 import {
   LocalStackController,
@@ -935,6 +936,63 @@ app.whenReady().then(async () => {
   const icon = developmentIcon();
   if (process.platform === "darwin" && icon) app.dock?.setIcon(icon);
   installApplicationMenu();
+  const browserAuthAttempts = new Map<string, AbortController>();
+  const cancelBrowserAuth = () => {
+    for (const attempt of browserAuthAttempts.values()) attempt.abort();
+    browserAuthAttempts.clear();
+  };
+  app.on("before-quit", cancelBrowserAuth);
+  ipcMain.handle("desktop.oauth.open", async (event, url: unknown) => {
+    if (
+      !fromMainWindow(event) ||
+      event.senderFrame !== event.sender.mainFrame ||
+      typeof url !== "string" ||
+      url.length > 16_384
+    )
+      throw new Error("Invalid sign-in request.");
+    if (browserAuthAttempts.has(url) || browserAuthAttempts.size >= 8) {
+      throw new Error("A sign-in attempt is already active. Cancel it and retry.");
+    }
+    const controller = new AbortController();
+    browserAuthAttempts.set(url, controller);
+    const stop = () => controller.abort();
+    const expiry = setTimeout(stop, 10 * 60_000);
+    expiry.unref();
+    event.sender.once("destroyed", stop);
+    event.sender.once("did-navigate", stop);
+    controller.signal.addEventListener(
+      "abort",
+      () => {
+        clearTimeout(expiry);
+        event.sender.removeListener("destroyed", stop);
+        event.sender.removeListener("did-navigate", stop);
+        if (browserAuthAttempts.get(url) === controller) browserAuthAttempts.delete(url);
+      },
+      { once: true },
+    );
+    try {
+      await openBrowserAuth(url, {
+        signal: controller.signal,
+        onClose: stop,
+        openExternal: (target) => shell.openExternal(target),
+        onCallback: (callback) => {
+          if (!event.sender.isDestroyed()) event.sender.send("desktop.oauth.callback", callback);
+        },
+      });
+    } catch {
+      controller.abort();
+      throw new Error("Could not open browser sign-in. Close other sign-in attempts and retry.");
+    }
+  });
+  ipcMain.handle("desktop.oauth.cancel", (event, url: unknown) => {
+    if (
+      !fromMainWindow(event) ||
+      event.senderFrame !== event.sender.mainFrame ||
+      typeof url !== "string"
+    )
+      return;
+    browserAuthAttempts.get(url)?.abort();
+  });
   ipcMain.handle("desktop.platform", () => process.platform);
   ipcMain.handle("desktop.window.close", (event) => {
     windowFrom(event)?.close();
