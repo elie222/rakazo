@@ -32,7 +32,7 @@ async function ensureFirstBot(): Promise<{ id: string }> {
   // Clear after settle so a later onboarding visit (archive/delete then empty
   // refresh) re-lists instead of reusing a deleted bot id.
   firstBotEnsure = (async () => {
-    const existing = await rpc.bots.list().catch(() => []);
+    const existing = await rpc.bots.list();
     const reuse = existing.find((bot) => bot.name === FIRST_BOT_NAME) ?? existing[0] ?? null;
     if (reuse) return { id: reuse.id };
     const created = await rpc.bots.create({
