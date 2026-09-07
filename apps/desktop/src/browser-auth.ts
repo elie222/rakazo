@@ -108,13 +108,11 @@ export async function openBrowserAuth(
           server.close();
           server.closeAllConnections();
           const code = (error as NodeJS.ErrnoException).code;
-          // For localhost, keep going when one family is missing or occupied;
-          // explicit 127.0.0.1/::1 redirects still fail hard on bind errors.
+          // Skip a disabled address family; still fail on conflicts like EADDRINUSE
+          // so a localhost redirect cannot land on another process's listener.
           if (
             callback.hostname !== "localhost" ||
-            (code !== "EAFNOSUPPORT" &&
-              code !== "EADDRNOTAVAIL" &&
-              code !== "EADDRINUSE")
+            (code !== "EAFNOSUPPORT" && code !== "EADDRNOTAVAIL")
           )
             throw error;
         }

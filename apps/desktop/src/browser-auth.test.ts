@@ -77,14 +77,9 @@ describe("system browser authentication", () => {
     expect(options.onCallback).toHaveBeenCalledOnce();
   });
 
-  it.each([
-    ["127.0.0.1", "EADDRNOTAVAIL"],
-    ["::1", "EADDRNOTAVAIL"],
-    ["127.0.0.1", "EADDRINUSE"],
-    ["::1", "EADDRINUSE"],
-  ] as const)(
-    "uses the remaining loopback family when %s fails with %s",
-    async (unavailable, code) => {
+  it.each(["127.0.0.1", "::1"])(
+    "uses the remaining loopback family when %s is unavailable",
+    async (unavailable) => {
       const { authorization, callback, options } = await setup();
       const localCallback = callback.replace("127.0.0.1", "localhost");
       authorization.searchParams.set("redirect_uri", localCallback);
@@ -92,7 +87,7 @@ describe("system browser authentication", () => {
       vi.spyOn(Server.prototype, "listen").mockImplementation(function (this: Server, ...args) {
         if (args[1] === unavailable) {
           queueMicrotask(() =>
-            this.emit("error", Object.assign(new Error("Unavailable"), { code })),
+            this.emit("error", Object.assign(new Error("Unavailable"), { code: "EADDRNOTAVAIL" })),
           );
           return this;
         }
@@ -129,6 +124,25 @@ describe("system browser authentication", () => {
     await expect(openBrowserAuth(authorization.href, options)).rejects.toThrow(
       "No loopback address is available.",
     );
+    expect(options.openExternal).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when a localhost family hits EADDRINUSE", async () => {
+    const { authorization, callback, options } = await setup();
+    authorization.searchParams.set("redirect_uri", callback.replace("127.0.0.1", "localhost"));
+    const listen = Server.prototype.listen;
+    vi.spyOn(Server.prototype, "listen").mockImplementation(function (this: Server, ...args) {
+      if (args[1] === "127.0.0.1") {
+        queueMicrotask(() =>
+          this.emit("error", Object.assign(new Error("In use"), { code: "EADDRINUSE" })),
+        );
+        return this;
+      }
+      return Reflect.apply(listen, this, args);
+    });
+    await expect(openBrowserAuth(authorization.href, options)).rejects.toMatchObject({
+      code: "EADDRINUSE",
+    });
     expect(options.openExternal).not.toHaveBeenCalled();
   });
 
