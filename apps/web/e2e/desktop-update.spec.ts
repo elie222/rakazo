@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { captureScreenshot, completeOnboarding, signup } from "./helpers";
+import { captureScreenshot, completeOnboarding, openUserSettings, signup } from "./helpers";
 
 test("desktop update can be checked, deferred, and installed from settings", async ({
   page,
@@ -61,8 +61,7 @@ test("desktop update can be checked, deferred, and installed from settings", asy
   await signup(page, `desktop-update-${stamp}@rakazo.test`, "password12", "Update Tester");
   await completeOnboarding(page);
   await expect(page.getByRole("complementary", { name: "Desktop update" })).toHaveCount(0);
-  await page.getByTestId("user-menu-trigger").click();
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await openUserSettings(page, "updates");
   const settings = page.getByTestId("desktop-update-settings");
   await expect(settings.getByText("v0.1.2")).toBeVisible();
   await expect(settings.getByText("Up to date", { exact: true })).toHaveCount(0);
@@ -84,8 +83,7 @@ test("desktop update can be checked, deferred, and installed from settings", asy
   );
   await prompt.getByRole("button", { name: "Later" }).click();
   await expect(prompt).toHaveCount(0);
-  await page.getByTestId("user-menu-trigger").click();
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await openUserSettings(page, "updates");
   await expect(settings.getByRole("button", { name: "Restart to update" })).toBeVisible();
   await settings.scrollIntoViewIfNeeded();
   await captureScreenshot(page, testInfo, "desktop-update-settings");
@@ -96,8 +94,7 @@ test("desktop update can be checked, deferred, and installed from settings", asy
 test("ordinary web sessions do not show desktop update controls", async ({ page }) => {
   await signup(page, `web-update-${Date.now()}@rakazo.test`, "password12", "Web Tester");
   await completeOnboarding(page);
-  await page.getByTestId("user-menu-trigger").click();
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await openUserSettings(page, "updates");
   await expect(page.getByTestId("desktop-update-settings")).toHaveCount(0);
   await expect(page.getByRole("complementary", { name: "Desktop update" })).toHaveCount(0);
 });

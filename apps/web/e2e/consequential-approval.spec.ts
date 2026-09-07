@@ -1,5 +1,12 @@
 import { expect, type Page, test } from "@playwright/test";
-import { activeBotId, captureScreenshot, completeOnboarding, rpc, signup } from "./helpers";
+import {
+  activeBotId,
+  captureScreenshot,
+  completeOnboarding,
+  openUserSettings,
+  rpc,
+  signup,
+} from "./helpers";
 
 test("actions run by default while optional confirmations live in advanced user settings", async ({
   page,
@@ -19,8 +26,7 @@ test("actions run by default while optional confirmations live in advanced user 
   await expect(page.getByTestId("bot-settings").getByText("Action confirmations")).toHaveCount(0);
   await page.getByRole("button", { name: "Close panel" }).click();
 
-  await openUserSettings(page);
-  const settings = page.getByTestId("user-settings");
+  const settings = await openUserSettings(page);
   await expect(settings).toHaveAttribute("role", "dialog");
   await expect(settings).toBeFocused();
   await expect(settings.getByText("Optional controls most people never need")).toBeVisible();
@@ -90,12 +96,6 @@ test("actions run by default while optional confirmations live in advanced user 
   await expectComposerReady(page);
   await expect(page.getByRole("button", { name: "Allow once", exact: true })).toHaveCount(0);
 });
-
-async function openUserSettings(page: Page) {
-  await page.getByTestId("user-menu-trigger").click();
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
-  await expect(page.getByTestId("user-settings")).toBeVisible();
-}
 
 async function sendDestinationWrite(page: Page, prompt: string) {
   await expectComposerReady(page);

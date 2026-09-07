@@ -16,7 +16,16 @@ import { XIcon } from "lucide-react";
 import { useEffect, useId, useMemo, useState } from "react";
 import { rpc } from "../lib/rpc";
 
-export function VoiceSettingsOverlay({ onClose }: { onClose: () => void }) {
+export function VoiceSettingsOverlay({
+  onClose,
+  embedded = false,
+  onBusyChange,
+}: {
+  onClose: () => void;
+  /** Render panel body only for the shared Settings shell. */
+  embedded?: boolean;
+  onBusyChange?: (busy: boolean) => void;
+}) {
   const { t } = useLingui();
   const apiKeyId = useId();
   const voiceSelectId = useId();
@@ -31,6 +40,17 @@ export function VoiceSettingsOverlay({ onClose }: { onClose: () => void }) {
   const [pending, setPending] = useState<"connect" | "voice" | "test" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+
+  const busy = pending !== null;
+
+  useEffect(() => {
+    return () => onBusyChange?.(false);
+  }, [onBusyChange]);
+
+  function markPending(next: "connect" | "voice" | "test" | null) {
+    setPending(next);
+    onBusyChange?.(next !== null);
+  }
 
   async function refresh(nextProvider?: string) {
     const [nextCatalog, nextCredentials, nextStatus] = await Promise.all([
@@ -65,7 +85,6 @@ export function VoiceSettingsOverlay({ onClose }: { onClose: () => void }) {
 
   const selected = catalog.find((entry) => entry.id === provider) ?? catalog[0];
   const credential = credentials.find((entry) => entry.provider === provider);
-  const busy = pending !== null;
   const voiceOptions = useMemo(
     () => (voices.length ? voices : voiceId ? [{ id: voiceId, label: voiceId }] : []),
     [voices, voiceId],
@@ -75,7 +94,7 @@ export function VoiceSettingsOverlay({ onClose }: { onClose: () => void }) {
     if (!selected || !apiKey.trim()) return;
     setError(null);
     setNotice(null);
-    setPending("connect");
+    markPending("connect");
     try {
       await rpc.voice.connect({
         provider: selected.id,
@@ -88,14 +107,14 @@ export function VoiceSettingsOverlay({ onClose }: { onClose: () => void }) {
     } catch (err) {
       setError(err instanceof Error ? err.message : t`Could not connect this voice provider`);
     } finally {
-      setPending(null);
+      markPending(null);
     }
   }
 
   async function chooseVoice(nextVoiceId: string) {
     setVoiceId(nextVoiceId);
     if (!credential) return;
-    setPending("voice");
+    markPending("voice");
     setError(null);
     try {
       await rpc.voice.setVoice({ voiceId: nextVoiceId, provider: selected?.id });
@@ -103,14 +122,14 @@ export function VoiceSettingsOverlay({ onClose }: { onClose: () => void }) {
     } catch (err) {
       setError(err instanceof Error ? err.message : t`Could not save that voice`);
     } finally {
-      setPending(null);
+      markPending(null);
     }
   }
 
   async function testVoice() {
     setError(null);
     setNotice(null);
-    setPending("test");
+    markPending("test");
     try {
       const { speaker } = await import("../lib/tts.js");
       await speaker.speak(t`Hi, this is how I'll sound when I read replies out loud.`);
@@ -122,23 +141,13 @@ export function VoiceSettingsOverlay({ onClose }: { onClose: () => void }) {
     } catch (err) {
       setError(err instanceof Error ? err.message : t`Could not play a test clip`);
     } finally {
-      setPending(null);
+      markPending(null);
     }
   }
 
-  return (
-    <Dialog
-      open
-      onOpenChange={(open) => {
-        if (!open) onClose();
-      }}
-    >
-      <DialogContent
-        data-testid="voice-settings"
-        aria-describedby={undefined}
-        showCloseButton={false}
-        className="flex h-[min(680px,calc(100%-2rem))] w-[920px] flex-col gap-0 overflow-hidden rounded-2xl p-0 sm:h-[min(680px,calc(100%-5rem))] sm:max-w-[calc(100%-5rem)]"
-      >
+  const body = (
+    <>
+      {!embedded ? (
         <div className="flex items-start justify-between px-6 pt-6 sm:px-8 sm:pt-7">
           <div>
             <DialogTitle className="text-2xl font-medium text-foreground">
@@ -147,131 +156,161 @@ export function VoiceSettingsOverlay({ onClose }: { onClose: () => void }) {
           </div>
           <DialogClose
             aria-label={t`Close voice settings`}
+            disabled={busy}
             render={<Button variant="ghost" size="icon-sm" />}
           >
             <XIcon />
           </DialogClose>
         </div>
+      ) : null}
 
-        <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-hidden px-6 py-6 sm:px-8 md:flex-row">
-          <div className="flex min-h-0 shrink-0 flex-col md:w-[280px]">
-            <div className="mb-3 text-[13.5px] text-muted-foreground">
-              <Trans>Providers</Trans>
-            </div>
-            <div className="rk-scroll overflow-y-auto rounded-xl border border-border">
-              {catalog.map((entry) => {
-                const connected = credentials.some((cred) => cred.provider === entry.id);
-                return (
-                  <button
-                    key={entry.id}
-                    type="button"
-                    onClick={() => {
-                      setProvider(entry.id);
-                      setApiKey("");
-                      setError(null);
-                      setNotice(null);
-                      void refresh(entry.id);
-                    }}
-                    className={`flex w-full items-center gap-3 border-b border-border px-3.5 py-3 text-start transition-colors last:border-0 ${
-                      entry.id === provider ? "bg-muted" : "hover:bg-accent"
-                    }`}
-                  >
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[15px] text-foreground">
-                        {entry.name}
-                      </span>
-                      <span className="mt-0.5 block text-[12px] text-muted-foreground/80">
-                        {entry.transcribe ? (
-                          <Trans>Speak + transcribe</Trans>
-                        ) : (
-                          <Trans>Speak only</Trans>
-                        )}
-                      </span>
-                    </span>
-                    {connected ? (
-                      <span className="text-[12px] text-success">
-                        <Trans>Connected</Trans>
-                      </span>
-                    ) : null}
-                  </button>
-                );
-              })}
-            </div>
+      <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-hidden px-6 py-6 sm:px-8 md:flex-row">
+        <div className="flex min-h-0 shrink-0 flex-col md:w-[280px]">
+          <div className="mb-3 text-[13.5px] text-muted-foreground">
+            <Trans>Providers</Trans>
           </div>
-
-          <div className="rk-scroll min-h-0 min-w-0 flex-1 overflow-y-auto">
-            {loading ? (
-              <p className="text-sm text-muted-foreground">
-                <Trans>Loading voice providers…</Trans>
-              </p>
-            ) : null}
-            {error ? <p className="mb-4 text-sm text-destructive">{error}</p> : null}
-            {notice ? <p className="mb-4 text-sm text-success">{notice}</p> : null}
-            {selected ? (
-              <>
-                <Field className="mt-5">
-                  <FieldLabel htmlFor={apiKeyId}>
-                    <Trans>API key</Trans>
-                  </FieldLabel>
-                  <Input
-                    id={apiKeyId}
-                    type="password"
-                    autoComplete="new-password"
-                    value={apiKey}
-                    onChange={(event) => setApiKey(event.target.value)}
-                    placeholder={credential ? t`Paste a replacement key` : t`Paste your API key`}
-                  />
-                </Field>
-                <Button
+          <div className="rk-scroll overflow-y-auto rounded-xl border border-border">
+            {catalog.map((entry) => {
+              const connected = credentials.some((cred) => cred.provider === entry.id);
+              return (
+                <button
+                  key={entry.id}
                   type="button"
-                  className="mt-3"
-                  disabled={busy || apiKey.trim().length < 8}
-                  onClick={() => void connectKey()}
+                  onClick={() => {
+                    setProvider(entry.id);
+                    setApiKey("");
+                    setError(null);
+                    setNotice(null);
+                    void refresh(entry.id);
+                  }}
+                  className={`flex w-full items-center gap-3 border-b border-border px-3.5 py-3 text-start transition-colors last:border-0 ${
+                    entry.id === provider ? "bg-muted" : "hover:bg-accent"
+                  }`}
                 >
-                  {pending === "connect" ? (
-                    <Trans>Connecting…</Trans>
-                  ) : credential ? (
-                    <Trans>Replace key</Trans>
-                  ) : (
-                    <Trans>Connect</Trans>
-                  )}
-                </Button>
-
-                {credential ? (
-                  <>
-                    <Field className="mt-6">
-                      <FieldLabel htmlFor={voiceSelectId}>
-                        <Trans>Voice</Trans>
-                      </FieldLabel>
-                      <NativeSelect
-                        id={voiceSelectId}
-                        className="w-full"
-                        value={voiceId}
-                        onChange={(event) => void chooseVoice(event.target.value)}
-                      >
-                        {voiceOptions.map((voice) => (
-                          <NativeSelectOption key={voice.id} value={voice.id}>
-                            {voice.label}
-                            {voice.description ? ` · ${voice.description}` : ""}
-                          </NativeSelectOption>
-                        ))}
-                      </NativeSelect>
-                    </Field>
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      className="mt-4 rounded-full"
-                      disabled={busy || !status?.ready}
-                      onClick={() => void testVoice()}
-                    >
-                      {pending === "test" ? <Trans>Playing…</Trans> : <Trans>Hear a sample</Trans>}
-                    </Button>
-                  </>
-                ) : null}
-              </>
-            ) : null}
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[15px] text-foreground">{entry.name}</span>
+                    <span className="mt-0.5 block text-[12px] text-muted-foreground/80">
+                      {entry.transcribe ? (
+                        <Trans>Speak + transcribe</Trans>
+                      ) : (
+                        <Trans>Speak only</Trans>
+                      )}
+                    </span>
+                  </span>
+                  {connected ? (
+                    <span className="text-[12px] text-success">
+                      <Trans>Connected</Trans>
+                    </span>
+                  ) : null}
+                </button>
+              );
+            })}
           </div>
         </div>
+
+        <div className="rk-scroll min-h-0 min-w-0 flex-1 overflow-y-auto">
+          {loading ? (
+            <p className="text-sm text-muted-foreground">
+              <Trans>Loading voice providers…</Trans>
+            </p>
+          ) : null}
+          {error ? <p className="mb-4 text-sm text-destructive">{error}</p> : null}
+          {notice ? <p className="mb-4 text-sm text-success">{notice}</p> : null}
+          {selected ? (
+            <>
+              <Field className="mt-5">
+                <FieldLabel htmlFor={apiKeyId}>
+                  <Trans>API key</Trans>
+                </FieldLabel>
+                <Input
+                  id={apiKeyId}
+                  type="password"
+                  autoComplete="new-password"
+                  value={apiKey}
+                  onChange={(event) => setApiKey(event.target.value)}
+                  placeholder={credential ? t`Paste a replacement key` : t`Paste your API key`}
+                />
+              </Field>
+              <Button
+                type="button"
+                className="mt-3"
+                disabled={busy || apiKey.trim().length < 8}
+                onClick={() => void connectKey()}
+              >
+                {pending === "connect" ? (
+                  <Trans>Connecting…</Trans>
+                ) : credential ? (
+                  <Trans>Replace key</Trans>
+                ) : (
+                  <Trans>Connect</Trans>
+                )}
+              </Button>
+
+              {credential ? (
+                <>
+                  <Field className="mt-6">
+                    <FieldLabel htmlFor={voiceSelectId}>
+                      <Trans>Voice</Trans>
+                    </FieldLabel>
+                    <NativeSelect
+                      id={voiceSelectId}
+                      className="w-full"
+                      value={voiceId}
+                      onChange={(event) => void chooseVoice(event.target.value)}
+                    >
+                      {voiceOptions.map((voice) => (
+                        <NativeSelectOption key={voice.id} value={voice.id}>
+                          {voice.label}
+                          {voice.description ? ` · ${voice.description}` : ""}
+                        </NativeSelectOption>
+                      ))}
+                    </NativeSelect>
+                  </Field>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className="mt-4 rounded-full"
+                    disabled={busy || !status?.ready}
+                    onClick={() => void testVoice()}
+                  >
+                    {pending === "test" ? <Trans>Playing…</Trans> : <Trans>Hear a sample</Trans>}
+                  </Button>
+                </>
+              ) : null}
+            </>
+          ) : null}
+        </div>
+      </div>
+    </>
+  );
+
+  if (embedded) {
+    return (
+      <div data-testid="voice-settings" className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        {body}
+      </div>
+    );
+  }
+
+  return (
+    <Dialog
+      open
+      onOpenChange={(open, details) => {
+        if (open) return;
+        if (busy) {
+          details.cancel();
+          return;
+        }
+        onClose();
+      }}
+    >
+      <DialogContent
+        data-testid="voice-settings"
+        aria-describedby={undefined}
+        showCloseButton={false}
+        className="flex h-[min(680px,calc(100%-2rem))] w-[920px] flex-col gap-0 overflow-hidden rounded-2xl p-0 sm:h-[min(680px,calc(100%-5rem))] sm:max-w-[calc(100%-5rem)]"
+      >
+        {body}
       </DialogContent>
     </Dialog>
   );
