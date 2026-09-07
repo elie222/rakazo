@@ -1784,7 +1784,7 @@ msgstr "Tela Cheia"
 #: src/pages/SettingsOverlay.tsx:92
 #: src/pages/SettingsOverlay.tsx:103
 msgid "General"
-msgstr ""
+msgstr "Geral"
 
 #: src/components/integrations/IntegrationSetup.tsx:209
 msgid "Get credentials"
@@ -3556,7 +3556,7 @@ msgstr ""
 
 #: src/pages/SettingsOverlay.tsx:98
 msgid "Updates"
-msgstr ""
+msgstr "Atualizações"
 
 #. placeholder {0}: update.name
 #: src/components/ComputerUpdateProgress.tsx:67

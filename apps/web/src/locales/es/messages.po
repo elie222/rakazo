@@ -1784,7 +1784,7 @@ msgstr "Pantalla completa"
 #: src/pages/SettingsOverlay.tsx:92
 #: src/pages/SettingsOverlay.tsx:103
 msgid "General"
-msgstr ""
+msgstr "General"
 
 #: src/components/integrations/IntegrationSetup.tsx:209
 msgid "Get credentials"
@@ -3556,7 +3556,7 @@ msgstr "Actualizado"
 
 #: src/pages/SettingsOverlay.tsx:98
 msgid "Updates"
-msgstr ""
+msgstr "Actualizaciones"
 
 #. placeholder {0}: update.name
 #: src/components/ComputerUpdateProgress.tsx:67

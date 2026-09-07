@@ -67,7 +67,7 @@ export function SettingsOverlay({
   memoryConfig: SpaceMemoryConfig | null | undefined;
   onMemoryConfigChange: (config: SpaceMemoryConfig | null) => void;
   onClose: () => void;
-  onVoiceStatusMaybeChanged?: () => void;
+  onVoiceStatusMaybeChanged?: () => void | Promise<void>;
 }) {
   const { t } = useLingui();
   const panelRef = useRef<HTMLDivElement>(null);
@@ -111,10 +111,17 @@ export function SettingsOverlay({
           ? t`Close voice settings`
           : t`Close user settings`;
 
-  function requestClose() {
+  async function refreshVoiceStatus() {
+    await onVoiceStatusMaybeChanged?.();
+  }
+
+  function leaveSettings(next: () => void) {
     if (panelBusy) return;
-    onVoiceStatusMaybeChanged?.();
-    onClose();
+    void refreshVoiceStatus().finally(next);
+  }
+
+  function requestClose() {
+    leaveSettings(onClose);
   }
 
   const widePane = section === "models" || section === "voice";
@@ -203,7 +210,9 @@ export function SettingsOverlay({
                   avatarStyle={avatarStyle}
                   onAvatarStyleChange={onAvatarStyleChange}
                   messagingEnabled={messagingEnabled}
-                  onOpenMessaging={onOpenMessaging}
+                  onOpenMessaging={
+                    onOpenMessaging ? () => leaveSettings(onOpenMessaging) : undefined
+                  }
                   isDeploymentOwner={isDeploymentOwner}
                 />
               ) : null}

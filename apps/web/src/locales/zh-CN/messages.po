@@ -1784,7 +1784,7 @@ msgstr "全屏"
 #: src/pages/SettingsOverlay.tsx:92
 #: src/pages/SettingsOverlay.tsx:103
 msgid "General"
-msgstr ""
+msgstr "通用"
 
 #: src/components/integrations/IntegrationSetup.tsx:209
 msgid "Get credentials"
@@ -3556,7 +3556,7 @@ msgstr "已更新"
 
 #: src/pages/SettingsOverlay.tsx:98
 msgid "Updates"
-msgstr ""
+msgstr "更新"
 
 #. placeholder {0}: update.name
 #: src/components/ComputerUpdateProgress.tsx:67

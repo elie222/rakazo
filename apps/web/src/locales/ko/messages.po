@@ -1784,7 +1784,7 @@ msgstr "전체 화면"
 #: src/pages/SettingsOverlay.tsx:92
 #: src/pages/SettingsOverlay.tsx:103
 msgid "General"
-msgstr ""
+msgstr "일반"
 
 #: src/components/integrations/IntegrationSetup.tsx:209
 msgid "Get credentials"
@@ -3556,7 +3556,7 @@ msgstr "업데이트됨"
 
 #: src/pages/SettingsOverlay.tsx:98
 msgid "Updates"
-msgstr ""
+msgstr "업데이트"
 
 #. placeholder {0}: update.name
 #: src/components/ComputerUpdateProgress.tsx:67

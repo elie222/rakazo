@@ -3818,11 +3818,12 @@ export function ShellPage() {
               memoryProviderConfigRevision.current += 1;
               setMemoryProviderConfig(config);
             }}
-            onVoiceStatusMaybeChanged={() => {
-              void rpc.voice
-                .status()
-                .then(setVoiceStatus)
-                .catch(() => undefined);
+            onVoiceStatusMaybeChanged={async () => {
+              try {
+                setVoiceStatus(await rpc.voice.status());
+              } catch {
+                // Closing Settings should not fail if voice status is unreachable.
+              }
             }}
             onClose={() => {
               setSettingsOpen(false);
