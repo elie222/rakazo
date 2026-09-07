@@ -356,7 +356,6 @@ model Bot {
   agentHome         AgentHome?
   browserProfile    BrowserProfile?
   artifacts         Artifact[]
-  usageRecords      UsageRecord[]
   tasks             Task[]
   runs              Run[]
   steeringMessages  SteeringMessage[]
@@ -941,8 +940,15 @@ model UsageRecord {
   id           String   @id @default(cuid())
   spaceId      String
   space        Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  /// Which bot spent this. Deliberately NOT a relation: a usage row is spend that really
+  /// happened, and no lifecycle event on the bot may delete it or blank its attribution.
+  /// `Cascade` erased the row; `SetNull` would erase the attribution instead, and because
+  /// deleting a bot also deletes its runs, `runId` goes null in the same breath — the row
+  /// would keep only space, user, model and token counts.
+  ///
+  /// So the id outlives the bot and may dangle. Read it with a LEFT JOIN; `BotDeletion.id`
+  /// IS the bot id, so a deleted bot's name is still reachable for display.
   botId        String?
-  bot          Bot?     @relation(fields: [botId], references: [id], onDelete: Cascade)
   userId       String
   runId        String?
   run          Run?     @relation(fields: [runId], references: [id], onDelete: SetNull)
