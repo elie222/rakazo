@@ -24,7 +24,7 @@ import { useModelOAuthSignIn } from "../lib/use-model-oauth-signin";
 const CUSTOM_MODEL_OPTION = "__rakazo_custom_model__";
 const FIRST_BOT_NAME = "Chief";
 
-/** Survives StrictMode remounts so concurrent first-bot creates share one attempt. */
+/** Survives StrictMode remounts; concurrent first-bot creates share one in-flight attempt. */
 let firstBotEnsure: Promise<{ id: string }> | null = null;
 
 async function ensureFirstBot(): Promise<{ id: string }> {
