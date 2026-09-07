@@ -1391,13 +1391,9 @@ msgstr "표시 이름"
 msgid "Do not type passwords into the demo. Use Take control for credentials."
 msgstr "시연 중에는 비밀번호를 입력하지 마세요. 인증이 필요하면 직접 조작을 사용하세요."
 
-#: src/pages/HostComputerPrompt.tsx:79
+#: src/pages/HostComputerPrompt.tsx:68
 msgid "Docker (recommended)"
 msgstr "Docker에서 실행(권장)"
-
-#: src/pages/HostComputerPrompt.tsx:62
-msgid "Docker is the default: bots use a shared Team Computer."
-msgstr "기본 설정은 Docker이며, Bot들이 격리된 팀 컴퓨터를 함께 사용합니다."
 
 #: src/pages/Auth.tsx:197
 msgid "Don’t have an account?"
@@ -1812,10 +1808,6 @@ msgstr "로그아웃"
 #: src/pages/shell/bot-panel.tsx:492
 msgid "Low"
 msgstr "낮음"
-
-#: src/pages/HostComputerPrompt.tsx:64
-msgid "macOS will not ask for extra permission if you let bots run on this Mac. They run as you."
-msgstr "이 Mac에서 실행하면 Bot이 내 계정 권한으로 동작하며 macOS가 작업마다 별도 승인을 묻지 않습니다."
 
 #: src/pages/AccountSettingsOverlay.tsx:143
 msgid "Manage messaging settings"
@@ -2953,10 +2945,6 @@ msgstr "이 채팅은 읽기 전용입니다"
 msgid "this computer"
 msgstr "이 컴퓨터"
 
-#: src/pages/HostComputerPrompt.tsx:97
-msgid "This computer runs shell commands with your account, including files in your home folder. Do not turn it on for a shared or public server."
-msgstr "이 컴퓨터에서는 홈 폴더의 파일을 포함해 내 계정 권한으로 터미널 명령을 실행합니다. 여러 사람이 쓰거나 공개된 서버에서는 사용하지 마세요."
-
 #: src/components/ArtifactFileCard.tsx:133
 msgid "This file is not valid UTF-8 Markdown."
 msgstr "이 파일은 올바른 UTF-8 Markdown 형식이 아닙니다."
@@ -2964,10 +2952,6 @@ msgstr "이 파일은 올바른 UTF-8 Markdown 형식이 아닙니다."
 #: src/pages/HostComputerPrompt.tsx:22
 msgid "this Mac"
 msgstr "이 Mac"
-
-#: src/pages/HostComputerPrompt.tsx:92
-msgid "This Mac runs shell commands with your account, including files in your home folder. Do not turn it on for a shared or public server."
-msgstr "이 Mac에서는 홈 폴더의 파일을 포함해 내 계정 권한으로 터미널 명령을 실행합니다. 여러 사람이 쓰거나 공개된 서버에서는 사용하지 마세요."
 
 #: src/pages/shell/dialogs.tsx:185
 msgid "This permanently removes every message and stops current work. The chat remains available."
@@ -3092,7 +3076,7 @@ msgstr "업데이트 중…"
 msgid "Usage"
 msgstr "사용량"
 
-#: src/pages/HostComputerPrompt.tsx:87
+#: src/pages/HostComputerPrompt.tsx:76
 msgid "Use {hostLabel}"
 msgstr "{hostLabel} 사용"
 
@@ -3218,10 +3202,6 @@ msgstr "안전하게 저장됩니다. 이 화면에 표시되지 않습니다."
 msgid "Your name"
 msgstr "이름"
 
-#: src/pages/HostComputerPrompt.tsx:69
-msgid "Your OS will not ask for extra permission if you let bots run on {hostLabel}. They run as you."
-msgstr "{hostLabel}에서 실행하면 Bot이 내 계정 권한으로 동작하며 운영체제가 작업마다 별도 승인을 묻지 않습니다."
-
 #: src/pages/Welcome.tsx:21
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "언제든 실제 작업을 맡길 수 있는<0/>나만의 Agent 팀"
@@ -3333,3 +3313,10 @@ msgstr "Executor 연결"
 msgid "Executor token"
 msgstr "Executor 토큰"
 
+#: src/pages/HostComputerPrompt.tsx:62
+msgid "Docker gives bots a separate workspace."
+msgstr ""
+
+#: src/pages/HostComputerPrompt.tsx:80
+msgid "On {hostLabel}, bots can access your files and run commands without asking. Avoid this on shared or public servers."
+msgstr ""

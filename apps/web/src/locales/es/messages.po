@@ -1365,13 +1365,9 @@ msgstr "Nombre para mostrar"
 msgid "Do not type passwords into the demo. Use Take control for credentials."
 msgstr "No escribas contraseñas en la demo. Usa Tomar control para las credenciales."
 
-#: src/pages/HostComputerPrompt.tsx:79
+#: src/pages/HostComputerPrompt.tsx:68
 msgid "Docker (recommended)"
 msgstr "Docker (recomendado)"
-
-#: src/pages/HostComputerPrompt.tsx:62
-msgid "Docker is the default: bots use a shared Team Computer."
-msgstr "Docker es el valor predeterminado: los bots usan una Team Computer compartida."
 
 #: src/pages/Auth.tsx:197
 msgid "Don’t have an account?"
@@ -1782,10 +1778,6 @@ msgstr "Cerrar sesión"
 #: src/pages/shell/bot-panel.tsx:492
 msgid "Low"
 msgstr "Bajo"
-
-#: src/pages/HostComputerPrompt.tsx:64
-msgid "macOS will not ask for extra permission if you let bots run on this Mac. They run as you."
-msgstr "MacOS no pedirá permisos extra si dejas que los bots se ejecuten en esta Mac: se ejecutan como tú."
 
 #: src/pages/AccountSettingsOverlay.tsx:143
 msgid "Manage messaging settings"
@@ -2921,10 +2913,6 @@ msgstr "Este chat es de solo lectura"
 msgid "this computer"
 msgstr "esta computadora"
 
-#: src/pages/HostComputerPrompt.tsx:97
-msgid "This computer runs shell commands with your account, including files in your home folder. Do not turn it on for a shared or public server."
-msgstr "Esta computadora ejecuta comandos de shell con tu cuenta, incluidos archivos de tu carpeta de inicio. No la actives en un servidor compartido o público."
-
 #: src/components/ArtifactFileCard.tsx:133
 msgid "This file is not valid UTF-8 Markdown."
 msgstr "Este archivo no es Markdown UTF-8 válido."
@@ -2932,10 +2920,6 @@ msgstr "Este archivo no es Markdown UTF-8 válido."
 #: src/pages/HostComputerPrompt.tsx:22
 msgid "this Mac"
 msgstr "esta Mac"
-
-#: src/pages/HostComputerPrompt.tsx:92
-msgid "This Mac runs shell commands with your account, including files in your home folder. Do not turn it on for a shared or public server."
-msgstr "Esta Mac ejecuta comandos de shell con tu cuenta, incluidos archivos de tu carpeta de inicio. No la actives en un servidor compartido o público."
 
 #: src/pages/shell/dialogs.tsx:185
 msgid "This permanently removes every message and stops current work. The chat remains available."
@@ -3052,7 +3036,7 @@ msgstr "Actualizando…"
 msgid "Usage"
 msgstr "Uso"
 
-#: src/pages/HostComputerPrompt.tsx:87
+#: src/pages/HostComputerPrompt.tsx:76
 msgid "Use {hostLabel}"
 msgstr "Usar {hostLabel}"
 
@@ -3178,10 +3162,6 @@ msgstr "Almacenado de forma segura. Nunca se muestra aquí."
 msgid "Your name"
 msgstr "Tu nombre"
 
-#: src/pages/HostComputerPrompt.tsx:69
-msgid "Your OS will not ask for extra permission if you let bots run on {hostLabel}. They run as you."
-msgstr "Tu sistema operativo no pedirá permisos extra si dejas que los bots se ejecuten en {hostLabel}: se ejecutan como tú."
-
 #: src/pages/Welcome.tsx:21
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "Tu equipo de agentes siempre activos<0/>a los que puedes dar trabajo real."
@@ -3293,3 +3273,10 @@ msgstr "Conectar Executor"
 msgid "Executor token"
 msgstr "Token de Executor"
 
+#: src/pages/HostComputerPrompt.tsx:62
+msgid "Docker gives bots a separate workspace."
+msgstr ""
+
+#: src/pages/HostComputerPrompt.tsx:80
+msgid "On {hostLabel}, bots can access your files and run commands without asking. Avoid this on shared or public servers."
+msgstr ""

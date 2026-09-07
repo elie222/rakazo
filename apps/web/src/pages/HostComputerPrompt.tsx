@@ -59,18 +59,7 @@ export function HostComputerPrompt({ initialMe }: { initialMe?: Me }) {
             <Trans>Where should bots run?</Trans>
           </DialogTitle>
           <DialogDescription className="leading-relaxed">
-            <Trans>Docker is the default: bots use a shared Team Computer.</Trans>{" "}
-            {mac ? (
-              <Trans>
-                macOS will not ask for extra permission if you let bots run on this Mac. They run as
-                you.
-              </Trans>
-            ) : (
-              <Trans>
-                Your OS will not ask for extra permission if you let bots run on {hostLabel}. They
-                run as you.
-              </Trans>
-            )}
+            <Trans>Docker gives bots a separate workspace.</Trans>
           </DialogDescription>
         </DialogHeader>
         {error ? <p className="text-sm text-destructive">{error}</p> : null}
@@ -88,17 +77,10 @@ export function HostComputerPrompt({ initialMe }: { initialMe?: Me }) {
           </Button>
         </div>
         <p className="text-xs leading-relaxed text-muted-foreground/80">
-          {mac ? (
-            <Trans>
-              This Mac runs shell commands with your account, including files in your home folder.
-              Do not turn it on for a shared or public server.
-            </Trans>
-          ) : (
-            <Trans>
-              This computer runs shell commands with your account, including files in your home
-              folder. Do not turn it on for a shared or public server.
-            </Trans>
-          )}
+          <Trans>
+            On {hostLabel}, bots can access your files and run commands without asking. Avoid this
+            on shared or public servers.
+          </Trans>
         </p>
       </DialogContent>
     </Dialog>
