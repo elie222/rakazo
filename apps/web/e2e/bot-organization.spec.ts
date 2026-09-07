@@ -245,6 +245,7 @@ test("group chats share every context-menu action", async ({ page }, testInfo) =
   await expect(
     page.getByRole("alertdialog", { name: "Clear Group menu’s conversation?" }),
   ).toBeVisible();
+  await captureScreenshot(page, testInfo, "group-clear-conversation-confirmation");
   await page.getByRole("button", { name: "Clear", exact: true }).click();
   await expect(
     page.getByRole("alertdialog", { name: "Clear Group menu’s conversation?" }),

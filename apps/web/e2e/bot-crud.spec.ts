@@ -139,20 +139,31 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   await expect(descriptionInput).toHaveValue("Builds durable, source-backed research briefs.");
   await captureScreenshot(page, testInfo, "29-reloaded-bot-profile");
 
-  const atlas = botList.getByRole("button", { name: /^Atlas/ });
-  await atlas.click({ button: "right" });
+  const longUnbrokenName = "A".repeat(80);
+  expect(longUnbrokenName.length).toBe(80);
+  await nameInput.fill(longUnbrokenName);
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  const longNameBot = botList.getByRole("button", {
+    name: new RegExp(`^${longUnbrokenName}`),
+  });
+  await expect(longNameBot).toBeVisible();
+  await expect(page.getByPlaceholder(`Message ${longUnbrokenName}`)).toBeVisible();
+
+  await longNameBot.click({ button: "right" });
   await page.getByRole("menuitem", { name: "Delete" }).click();
-  await expect(page.getByRole("alertdialog", { name: "Delete Atlas?" })).toBeVisible();
+  await expect(
+    page.getByRole("alertdialog", { name: `Delete ${longUnbrokenName}?` }),
+  ).toBeVisible();
   await captureScreenshot(page, testInfo, "30-delete-bot-confirmation");
   await page.getByRole("button", { name: "Delete", exact: true }).click();
 
-  await expect(botList.getByText("Atlas", { exact: true })).toHaveCount(0);
+  await expect(botList.getByText(longUnbrokenName, { exact: true })).toHaveCount(0);
   await expect(botList.getByRole("button", { name: /^Chief/ })).toBeVisible();
   await page.waitForURL((url) => url.pathname !== deletedBotPath);
 
   await page.goto(deletedBotPath);
   await page.waitForURL((url) => url.pathname !== deletedBotPath);
-  await expect(botList.getByText("Atlas", { exact: true })).toHaveCount(0);
+  await expect(botList.getByText(longUnbrokenName, { exact: true })).toHaveCount(0);
   await expect(botList.getByRole("button", { name: /^Chief/ })).toBeVisible();
   await expect(page.getByPlaceholder("Message Chief")).toBeVisible();
   await captureScreenshot(page, testInfo, "31-deleted-bot-fallback");
