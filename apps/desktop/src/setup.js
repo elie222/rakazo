@@ -130,6 +130,9 @@
         renderStack(stack);
         if (TERMINAL_PHASES.has(stack.phase)) {
           if (stack.phase === "ready" && selectedMode() === "new") {
+            const current = await bridge.state();
+            if (selectedMode() !== "new") return;
+            defaultLocalUrl = current.defaultLocalUrl;
             await save("new", defaultLocalUrl);
           }
           return;

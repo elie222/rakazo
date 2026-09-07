@@ -719,8 +719,10 @@ describe("sanitizeUtf16ForJson", () => {
     expect(
       sanitizeJsonValue({
         outer: {
-          "meta\uD83D": "ok",
-          "meta\uDE00": "also",
+          // biome-ignore lint/complexity/useLiteralKeys: keep computed keys so unpaired surrogates stay intentional fixtures
+          ["meta\uD83D"]: "ok",
+          // biome-ignore lint/complexity/useLiteralKeys: keep computed keys so unpaired surrogates stay intentional fixtures
+          ["meta\uDE00"]: "also",
         },
       }),
     ).toEqual({

@@ -14,6 +14,8 @@ interface ComposeService {
   ports?: unknown[];
   user?: string;
   restart?: string;
+  network_mode?: string;
+  networks?: string[];
 }
 
 const repoRoot = path.resolve(import.meta.dirname, "../../..");
@@ -116,6 +118,16 @@ describe("the images compose file", () => {
     }
   });
 
+  it("does not allocate a default network for offline init services", () => {
+    for (const name of ["computer", "data-init"]) {
+      expect(compose.services[name]?.network_mode).toBe("none");
+      expect(compose.services[name]?.networks).toBeUndefined();
+    }
+    for (const name of ["postgres", ...appServices]) {
+      expect(compose.services[name]?.networks?.length).toBeGreaterThan(0);
+    }
+  });
+
   it("never builds from a checkout", () => {
     for (const service of Object.values(compose.services)) {
       expect(service.build).toBeUndefined();
@@ -153,7 +165,11 @@ describe("the images compose file", () => {
   });
 
   it("publishes the web UI on loopback only", () => {
-    expect(compose.services.web?.ports).toEqual(["127.0.0.1:5173:5173"]);
+    expect(compose.services.web?.ports).toEqual(["127.0.0.1:${RAKAZO_WEB_PORT:-5173}:5173"]);
+    expect(compose.services.api?.ports).toEqual(["127.0.0.1:${RAKAZO_API_PORT:-3100}:3100"]);
+    for (const key of ["BETTER_AUTH_URL", "WEB_ORIGIN", "API_URL"]) {
+      expect(compose.services.api?.environment?.[key]).toBe(`\${${key}:-http://127.0.0.1:5173}`);
+    }
     expect(compose.services.postgres?.ports).toBeUndefined();
     expect(compose.services.supervisor?.ports).toBeUndefined();
   });

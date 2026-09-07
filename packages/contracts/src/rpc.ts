@@ -4,6 +4,8 @@ import { ATTACHMENT_MAX_BASE64_LENGTH, ATTACHMENT_MAX_COUNT } from "./attachment
 import {
   ActionApprovalRuleSchema,
   ActionAutoReviewSettingsSchema,
+  AgentSecretInputSchema,
+  AgentSecretSchema,
   AgentSkillCatalogEntrySchema,
   AgentSkillSchema,
   AppBootstrapSchema,
@@ -26,8 +28,10 @@ import {
   CreateScratchpadItemInput,
   DeploymentSettingsSchema,
   ExportManifestSchema,
+  ExternalConversationPolicySchema,
   GroupDetailSchema,
   GroupSchema,
+  IntegrationCatalogResultSchema,
   McpServerConfigInput,
   McpServerSchema,
   MemoryDocumentSchema,
@@ -59,6 +63,7 @@ import {
   ThreadSnapshotSchema,
   UpdateAgentSkillInput,
   UpdateBotInput,
+  UpdateExternalConversationPolicyInput,
   UpdateGroupInput,
   UsageRecordSchema,
   VoiceCatalogEntrySchema,
@@ -369,14 +374,28 @@ export const appContract = {
             active: z.boolean().optional(),
             notify: z.boolean().optional(),
             webhookEnabled: z.boolean().optional(),
+            githubEnabled: z.boolean().optional(),
+            messageProvider: z
+              .string()
+              .min(1)
+              .max(50)
+              .regex(/^[a-z0-9._-]+$/i)
+              .nullable()
+              .optional(),
             /** ISO datetime to arm a never-run one-shot. */
             runAt: IsoDate.optional(),
           })
           .superRefine((value, ctx) => {
-            if (value.crons && value.crons.length === 0 && value.webhookEnabled === false) {
+            if (
+              value.crons &&
+              value.crons.length === 0 &&
+              value.webhookEnabled === false &&
+              value.githubEnabled === false &&
+              value.messageProvider === null
+            ) {
               ctx.addIssue({
                 code: "custom",
-                message: "Add a schedule or webhook trigger",
+                message: "Add a schedule, webhook, GitHub, or message trigger",
                 path: ["crons"],
               });
             }
@@ -468,6 +487,12 @@ export const appContract = {
   },
   capabilities: {
     list: oc.output(z.array(CapabilityInstallSchema)),
+    catalogSearch: oc.input(z.object({ query: z.string().trim().max(253).default("") })).output(
+      z.object({
+        enabled: z.boolean(),
+        results: z.array(IntegrationCatalogResultSchema),
+      }),
+    ),
     install: oc
       .input(
         z.object({
@@ -690,6 +715,16 @@ export const appContract = {
         }),
       )
       .output(z.object({ ready: z.boolean(), utterances: z.array(z.string()) })),
+  },
+  externalConversations: {
+    updatePolicy: oc
+      .input(UpdateExternalConversationPolicyInput)
+      .output(ExternalConversationPolicySchema),
+  },
+  agentSecrets: {
+    list: oc.output(z.array(AgentSecretSchema)),
+    put: oc.input(AgentSecretInputSchema).output(AgentSecretSchema),
+    remove: oc.input(z.object({ id: Id })).output(z.object({ ok: z.literal(true) })),
   },
 };
 

@@ -1201,6 +1201,18 @@ msgstr "创建账户"
 msgid "Create group"
 msgstr "创建群组"
 
+#: src/pages/shell/bot-picker.tsx:70
+msgid "Create new Bot"
+msgstr "新建 Bot"
+
+#: src/pages/shell/bot-picker.tsx:95
+msgid "Create new Group"
+msgstr "新建群组"
+
+#: src/pages/shell/bot-picker.tsx:104
+msgid "Create new Space"
+msgstr "新建工作区"
+
 #: src/pages/RoutineEditor.tsx:114
 #: src/pages/RoutineEditor.tsx:115
 msgid "Create Routine"
@@ -1825,8 +1837,11 @@ msgstr "标为未读"
 msgid "Max"
 msgstr "最大"
 
+#: src/pages/PluginsOverlay.tsx:987
+msgid "Manage MCP servers"
+msgstr "管理 MCP 服务器"
+
 #: src/pages/McpServersOverlay.tsx:255
-#: src/pages/PluginsOverlay.tsx:759
 msgid "MCP servers"
 msgstr "MCP 服务器"
 
@@ -2921,13 +2936,9 @@ msgstr "所选记忆提供方在此构建中不可用。"
 msgid "Thinking"
 msgstr "思考"
 
-#: src/pages/Shell.tsx:3186
+#: src/pages/Shell.tsx:5618
 msgid "This bot runs on this computer, not a Linux desktop. Shell and files use your home folder."
 msgstr "此 Bot 运行在这台电脑上，而不是 Linux 桌面。Shell 和文件使用你的主目录。"
-
-#: src/pages/Shell.tsx:3887
-msgid "This bot runs on this computer. There is no separate Linux desktop. Ask it to use the shell; working directories under your home folder are allowed."
-msgstr "此 Bot 运行在这台电脑上，没有单独的 Linux 桌面。让它使用 shell；主目录下的工作目录可用。"
 
 #: src/pages/shell/dialogs.tsx:276
 #: src/pages/shell/dialogs.tsx:329
@@ -3200,8 +3211,8 @@ msgid "Your email address"
 msgstr "你的邮箱"
 
 #: src/pages/ModelSettingsOverlay.tsx:539
-msgid "Your key or subscription token is stored securely and is never shown here."
-msgstr "你的密钥或订阅令牌已安全存储，不会显示在这里。"
+msgid "Stored securely. Never shown here."
+msgstr "已安全存储。不会显示在这里。"
 
 #: src/pages/Auth.tsx:118
 msgid "Your name"

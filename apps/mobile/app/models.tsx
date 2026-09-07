@@ -612,9 +612,7 @@ export default function Models() {
                 </Text>
                 <Text style={styles.secondary}>
                   {credential
-                    ? t(
-                        "Your key or subscription token is stored securely and is never shown here.",
-                      )
+                    ? t("Stored securely. Never shown here.")
                     : t("Connect this provider to use it as your personal model.")}
                 </Text>
               </View>

@@ -114,18 +114,18 @@ describe("Team Computer parallel screens", () => {
     expect(isComputerScreenUnavailable(new Error("cannot allocate another screen"))).toBe(true);
   });
 
-  it("lets a second Team bot use graphics after the first run releases the claim", async () => {
+  it("lets Team bots use independent emulator screens concurrently", async () => {
     const emulator = new ManagedSandboxEmulator();
-    expect(emulator.describe().capabilities.multiScreen).toBe(false);
+    expect(emulator.describe().capabilities.multiScreen).toBe(true);
     const computer = await emulator.provision({ botId: "team-home", homePath: "/tmp" }, writer);
     await emulator.observe(computer, writer);
     await emulator.connectScreen(computer, { view: "stream" }, researcher);
     await expect(emulator.observe(computer, writer)).resolves.toMatchObject({
       activeWindow: expect.anything(),
     });
-    await expect(emulator.observe(computer, researcher)).rejects.toThrow(
-      ComputerScreenUnavailableError,
-    );
+    await expect(emulator.observe(computer, researcher)).resolves.toMatchObject({
+      activeWindow: expect.anything(),
+    });
     await emulator.releaseScreen(computer, writer);
     await expect(emulator.observe(computer, researcher)).resolves.toMatchObject({
       activeWindow: expect.anything(),

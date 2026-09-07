@@ -69,8 +69,8 @@ describe("server address normalization", () => {
 
 describe("managed local open URL", () => {
   it("returns the authenticated managed origin when the request matches", () => {
-    expect(managedLocalOpenUrl("http://127.0.0.1:5173/", DEFAULT_LOCAL_WEB_URL)).toBe(
-      "http://127.0.0.1:5173",
+    expect(managedLocalOpenUrl(`${DEFAULT_LOCAL_WEB_URL}/`, DEFAULT_LOCAL_WEB_URL)).toBe(
+      DEFAULT_LOCAL_WEB_URL,
     );
     expect(managedLocalOpenUrl("http://127.0.0.1:5199", "http://127.0.0.1:5199/path?x=1")).toBe(
       "http://127.0.0.1:5199",

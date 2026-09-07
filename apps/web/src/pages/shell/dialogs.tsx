@@ -178,7 +178,7 @@ export function ClearConversationDialog({
     <AlertDialog open onOpenChange={closeUnlessBusy(clearing, onCancel)}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>
+          <AlertDialogTitle className="break-words">
             <Trans>Clear {bot.name}’s conversation?</Trans>
           </AlertDialogTitle>
           <AlertDialogDescription>
@@ -231,7 +231,7 @@ export function DeleteBotDialog({
     <AlertDialog open onOpenChange={closeUnlessBusy(deleting, onCancel)}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>
+          <AlertDialogTitle className="break-words">
             <Trans>Delete {bot.name}?</Trans>
           </AlertDialogTitle>
           <AlertDialogDescription>

@@ -1,5 +1,5 @@
 import { mkdir, mkdtemp, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
-import { createServer, type Server } from "node:http";
+import { createServer, type RequestListener, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { type ElectronApplication, _electron as electron, expect, test } from "@playwright/test";
@@ -10,7 +10,13 @@ const STACK_PROBE_PATH = "/.well-known/rakazo-desktop-stack";
 const STACK_TOKEN_HEADER = "x-rakazo-desktop-stack-token";
 const COMPOSE_DIR = path.resolve(import.meta.dirname, "..", "..", "..", "infra", "compose");
 
-type FakeDockerMode = "ok" | "daemon-down" | "pull-fails";
+type FakeDockerMode =
+  | "ok"
+  | "daemon-down"
+  | "pull-fails"
+  | "pool-exhausted"
+  | "port-conflict"
+  | "ports-exhausted";
 
 let server: Server;
 let serverUrl: string;
@@ -78,6 +84,14 @@ function fakeDockerLog() {
  */
 async function writeFakeDocker(mode: FakeDockerMode) {
   const script = path.join(userData, "fake-docker.sh");
+  let up = '  up) echo "Container rakazo-web-1 Started"; exit 0 ;;';
+  if (mode === "pool-exhausted") {
+    up = '  up) echo "all predefined address pools have been fully subnetted" >&2; exit 1 ;;';
+  } else if (mode === "ports-exhausted") {
+    up = '  up) echo "port is already allocated" >&2; exit 1 ;;';
+  } else if (mode === "port-conflict") {
+    up = `  up) if [ ! -f '${path.join(userData, "port-conflict")}' ]; then touch '${path.join(userData, "port-conflict")}'; echo "port is already allocated" >&2; exit 1; fi; echo "Container rakazo-web-1 Started"; exit 0 ;;`;
+  }
   const lines = [
     "#!/bin/sh",
     `printf '%s | %s | %s\\n' "$PWD" "$RAKAZO_IMAGE_TAG" "$*" >> '${fakeDockerLog()}'`,
@@ -94,7 +108,7 @@ async function writeFakeDocker(mode: FakeDockerMode) {
     mode === "pull-fails"
       ? '    echo "Error response from daemon: manifest unknown" >&2; exit 1 ;;'
       : '    echo "app Pulled"; sleep 2; echo "computer Pulled"; exit 0 ;;',
-    '  up) echo "Container rakazo-web-1 Started"; exit 0 ;;',
+    up,
     '  logs) echo "web-1 | listening"; exit 0 ;;',
     "esac",
     "exit 0",
@@ -105,7 +119,7 @@ async function writeFakeDocker(mode: FakeDockerMode) {
 }
 
 async function launch(mode: FakeDockerMode | "missing") {
-  const env = { ...process.env, RAKAZO_PERFORMANCE_USER_DATA: userData };
+  const env: NodeJS.ProcessEnv = { ...process.env, RAKAZO_PERFORMANCE_USER_DATA: userData };
   // A stale RAKAZO_WEB_URL from the developer's shell would bypass setup entirely.
   delete env.RAKAZO_WEB_URL;
   return electron.launch({
@@ -376,4 +390,62 @@ test("an existing stack .env is never rewritten", async () => {
   await expect(appWindow.getByText(APP_MARKER)).toBeVisible();
 
   await expect(readFile(path.join(stackDir, ".env"), "utf8")).resolves.toBe(sentinel);
+});
+
+test("exhausted address pools explain recovery", async () => {
+  app = await launch("pool-exhausted");
+  const setup = await app.firstWindow();
+  await setup.getByRole("button", { name: "Continue" }).click();
+  await expect(setup.locator("#stack-phase")).toHaveText(
+    "Docker has no free network address pools. Remove unused Docker networks or expand Docker’s address pools, then retry.",
+  );
+  await expect(setup.getByRole("button", { name: "Retry" })).toBeEnabled();
+  await setup.screenshot({
+    path: path.join(import.meta.dirname, "screenshots", "09-setup-address-pool-exhausted.png"),
+  });
+});
+
+test("a port conflict opens and saves the replacement managed origin", async () => {
+  app = await launch("port-conflict");
+  const setup = await app.firstWindow();
+  const appWindowPromise = app.waitForEvent("window");
+  await setup.getByRole("button", { name: "Continue" }).click();
+  const urlFile = path.join(userData, "stack", ".desktop-web-url");
+  let replacementUrl = "";
+  await expect
+    .poll(async () => {
+      replacementUrl = await readFile(urlFile, "utf8").catch(() => "");
+      return replacementUrl !== "" && replacementUrl !== serverUrl;
+    })
+    .toBe(true);
+  // Stand in for the web container Docker would bind to the selected port.
+  const replacement = createServer(server.listeners("request")[0] as RequestListener);
+  await new Promise<void>((resolve) =>
+    replacement.listen(Number(new URL(replacementUrl).port), "127.0.0.1", resolve),
+  );
+  try {
+    const appWindow = await appWindowPromise;
+    await expect(appWindow.getByText(APP_MARKER)).toBeVisible();
+    await expect.poll(savedSetup).toEqual({ mode: "new", serverUrl: replacementUrl });
+    expect((await readLog()).filter((line) => line.includes(" up -d"))).toHaveLength(2);
+  } finally {
+    replacement.closeAllConnections();
+    await new Promise<void>((resolve, reject) =>
+      replacement.close((error) => (error ? reject(error) : resolve())),
+    );
+  }
+});
+
+test("repeated port conflicts stop with a retry action", async () => {
+  app = await launch("ports-exhausted");
+  const setup = await app.firstWindow();
+  await setup.getByRole("button", { name: "Continue" }).click();
+  await expect(setup.locator("#stack-phase")).toHaveText(
+    "Could not bind a local port after retrying. Retry to choose another port.",
+  );
+  await expect(setup.getByRole("button", { name: "Retry" })).toBeEnabled();
+  expect((await readLog()).filter((line) => line.includes(" up -d"))).toHaveLength(3);
+  await setup.screenshot({
+    path: path.join(import.meta.dirname, "screenshots", "10-setup-ports-unavailable.png"),
+  });
 });

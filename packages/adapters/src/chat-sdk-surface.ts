@@ -43,6 +43,14 @@ export interface MessagingPlatform {
   channelName?: (raw: unknown) => string | null;
   /** User-facing transport carried by the raw message when it differs from the provider. */
   transport?: (raw: unknown) => string | null;
+  /**
+   * Optional team-room enrichment (workspace id, mention/ambient kind, bot
+   * sender, reply thread) derived from the raw platform payload.
+   */
+  enrichTeamRoom?: (
+    raw: unknown,
+    base: MessagingInboundMessage,
+  ) => Partial<MessagingInboundMessage>;
 }
 
 /**
@@ -156,11 +164,58 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
     await raceWithSignal(platform.adapter.startTyping(threadId), context.signal);
   }
 
+  /**
+   * Proactively start the underlying Chat SDK instance. Webhook handling
+   * and outbound sends already trigger this lazily (see ensureInitialized
+   * below), but a polling-mode adapter (Telegram in "auto" mode with no
+   * public webhook URL registered) needs its pull loop running before the
+   * first inbound message can ever arrive, so long-running hosts call this
+   * explicitly at startup instead of waiting on the first send.
+   */
+  async initialize(): Promise<void> {
+    await this.ensureInitialized();
+  }
+
+  /**
+   * Stop Telegram getUpdates before exit. Chat.shutdown() only calls
+   * adapter.disconnect(), which Telegram does not implement.
+   */
+  async shutdown(): Promise<void> {
+    const pending = this.initialized;
+    this.initialized = undefined;
+    if (pending) await pending.catch(() => undefined);
+    await this.stopPollingAdapters();
+    const chat = this.chat as { shutdown?: () => Promise<void> };
+    await chat.shutdown?.().catch(() => undefined);
+  }
+
   private ensureInitialized(): Promise<void> {
     // Webhook handling initializes lazily inside the Chat SDK; proactive
-    // sends from job runners need the explicit call.
-    this.initialized ??= this.chat.initialize();
+    // sends from job runners need the explicit call. Chat keeps a rejected
+    // initPromise until shutdown(), so clear that before allowing a retry.
+    if (!this.initialized) {
+      this.initialized = this.chat.initialize().catch(async (error) => {
+        try {
+          // Telegram may already be polling if Promise.all failed on another
+          // adapter after Telegram's initialize started getUpdates.
+          await this.stopPollingAdapters();
+          await (this.chat as { shutdown?: () => Promise<void> }).shutdown?.();
+        } catch {
+          // Best-effort reset of Chat's cached init failure.
+        } finally {
+          this.initialized = undefined;
+        }
+        throw error;
+      });
+    }
     return this.initialized;
+  }
+
+  private async stopPollingAdapters(): Promise<void> {
+    for (const platform of this.byProvider.values()) {
+      const adapter = platform.adapter as { stopPolling?: () => Promise<void> };
+      await adapter.stopPolling?.().catch(() => undefined);
+    }
   }
 
   private async dispatchWebhook(platform: MessagingPlatform, request: Request): Promise<Response> {
@@ -211,7 +266,7 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
     if (!isDirect && !platform.capabilities.groups) return null;
     const fromLabel = message.author.fullName || message.author.userName || null;
     const transport = platform.transport?.(message.raw) ?? null;
-    return {
+    const base: MessagingInboundMessage = {
       type: "message",
       provider,
       ...(transport ? { transport } : {}),
@@ -225,6 +280,8 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
       content: message.text ?? "",
       mediaUrl: message.attachments.find((attachment) => attachment.url)?.url ?? null,
     };
+    const enrichment = platform.enrichTeamRoom?.(message.raw, base) ?? {};
+    return { ...base, ...enrichment };
   }
 }
 

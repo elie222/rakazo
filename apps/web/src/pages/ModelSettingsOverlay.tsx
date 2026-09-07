@@ -536,9 +536,7 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                     </div>
                     <div className="mt-1 text-[13px] text-muted-foreground">
                       {credential ? (
-                        <Trans>
-                          Your key or subscription token is stored securely and is never shown here.
-                        </Trans>
+                        <Trans>Stored securely. Never shown here.</Trans>
                       ) : (
                         <Trans>Connect this provider to use it as your personal model.</Trans>
                       )}

@@ -1,7 +1,7 @@
 import { createSlackAdapter } from "@chat-adapter/slack";
 import { createTelegramAdapter } from "@chat-adapter/telegram";
 import { createWhatsAppAdapter } from "@chat-adapter/whatsapp";
-import type { MessagingOutboundStatus } from "@rakazo/adapter-kit";
+import type { MessagingInboundMessage, MessagingOutboundStatus } from "@rakazo/adapter-kit";
 import type { Adapter } from "chat";
 import { createLarkAdapter, Domain } from "chat-adapter-lark";
 import { createSendblueAdapter } from "chat-adapter-sendblue";
@@ -63,8 +63,26 @@ export function messagingEnvFromProcess(
  * Build the platform list for every fully configured provider. Group
  * conversations stay sendblue-only until channel semantics are mapped for
  * the other platforms, so their capabilities say so instead of half-working.
+ *
+ * `pollInboundMessages` must be true only in the one process that also
+ * registers the inbound sink (messaging.onInbound — apps/api/src/app.ts).
+ * Telegram's "auto" mode starts a long-poll the moment anything calls
+ * chat.initialize() when no webhook is registered — and that includes a
+ * process that only ever meant to *send*: outbound delivery
+ * (sendToThread) lazily initializes too. A second process polling with no
+ * inbound sink attached doesn't just do nothing — it actively steals
+ * Telegram's single getUpdates slot away from the process that IS
+ * listening, so both sides spend every cycle losing a 409 Conflict to the
+ * other and messages stop arriving at all. Any caller that only sends
+ * (e.g. apps/worker/src/index.ts, for messaging.deliver jobs) must leave
+ * this false so Telegram mode resolves to "webhook" (passive — resolves
+ * bot identity for outbound calls, never polls, and no webhook route is
+ * mounted there for it to receive on anyway).
  */
-export function messagingPlatformsFromEnv(env: MessagingEnvironmentValues): MessagingPlatform[] {
+export function messagingPlatformsFromEnv(
+  env: MessagingEnvironmentValues,
+  options: { pollInboundMessages?: boolean } = {},
+): MessagingPlatform[] {
   const platforms: MessagingPlatform[] = [];
 
   if (
@@ -103,11 +121,12 @@ export function messagingPlatformsFromEnv(env: MessagingEnvironmentValues): Mess
   if (env.slackBotToken && env.slackSigningSecret) {
     platforms.push({
       provider: "slack",
-      capabilities: { direct: true, groups: false, typing: false },
+      capabilities: { direct: true, groups: true, typing: false },
       adapter: createSlackAdapter({
         botToken: env.slackBotToken,
         signingSecret: env.slackSigningSecret,
       }),
+      enrichTeamRoom: enrichSlackTeamRoom,
     });
   }
 
@@ -135,12 +154,21 @@ export function messagingPlatformsFromEnv(env: MessagingEnvironmentValues): Mess
     platforms.push({
       provider: "telegram",
       capabilities: { direct: true, groups: false, typing: false },
-      // Webhook-only: auto mode can long-poll getUpdates from the worker on
-      // initialize() and consume updates so the HTTP webhook never sees them.
+      // Auto mode: uses the webhook route when Telegram has one registered
+      // (checked via getWebhookInfo), and otherwise falls back to
+      // long-polling getUpdates. Self-hosted/local deployments typically
+      // have no public HTTPS endpoint for Telegram to push to, so the API
+      // process calls initialize() at startup (apps/api/src/app.ts) to
+      // start that polling loop immediately rather than waiting for the
+      // first inbound webhook or outbound send. It must be the API
+      // process specifically: that's where the inbound sink is registered,
+      // and Telegram allows only one live getUpdates connection per bot —
+      // a second poller elsewhere would just steal that slot and drop
+      // every message into the void.
       adapter: createTelegramAdapter({
         botToken: env.telegramBotToken,
         secretToken: env.telegramWebhookSecret,
-        mode: "webhook",
+        mode: options.pollInboundMessages ? "auto" : "webhook",
       }),
     });
   }
@@ -200,6 +228,68 @@ export function parseSendblueStatus(payload: unknown): MessagingOutboundStatus |
     handle: body.message_handle,
     status: typeof body.status === "string" ? body.status : "",
   };
+}
+
+/** Pull Slack team-room fields the Chat SDK does not expose on Message. */
+export function enrichSlackTeamRoom(
+  raw: unknown,
+  base: MessagingInboundMessage,
+): Partial<MessagingInboundMessage> {
+  const root = asRecord(raw);
+  if (!root) return {};
+  const event = asRecord(root.event) ?? root;
+  const teamId =
+    stringField(root, "team_id") ?? stringField(event, "team") ?? stringField(event, "team_id");
+  const eventType = stringField(event, "type");
+  const botProfile = asRecord(event.bot_profile) ?? {};
+  const botId = stringField(event, "bot_id") ?? stringField(botProfile, "id");
+  const threadTs = stringField(event, "thread_ts");
+  const channel = stringField(event, "channel");
+  const enrichment: Partial<MessagingInboundMessage> = {};
+  if (teamId) enrichment.workspaceId = teamId;
+  if (channel) enrichment.conversationKey = channel;
+  if (botId) enrichment.senderIsBot = true;
+  else if (typeof event.bot_id === "string" || event.subtype === "bot_message") {
+    enrichment.senderIsBot = true;
+  }
+  if (threadTs) enrichment.replyThreadId = threadTs;
+  else enrichment.replyThreadId = null;
+  if (!base.isDirect) {
+    const text = stringField(event, "text") ?? base.content;
+    const botUserId = slackAuthorizedBotUserId(root);
+    // app_mention is Slack's bot-directed event. A bare <@U…> mention of
+    // someone else must stay ambient so listen policy still applies.
+    enrichment.kind =
+      eventType === "app_mention" || mentionsSlackBot(text, botUserId) ? "mention" : "ambient";
+  }
+  return enrichment;
+}
+
+/** Bot user id from Slack's event authorizations (the app that received the event). */
+function slackAuthorizedBotUserId(root: Record<string, unknown>): string | undefined {
+  const authorizations = root.authorizations;
+  if (!Array.isArray(authorizations)) return undefined;
+  for (const entry of authorizations) {
+    const record = asRecord(entry);
+    if (!record || record.is_bot !== true) continue;
+    const userId = stringField(record, "user_id");
+    if (userId) return userId;
+  }
+  return undefined;
+}
+
+function mentionsSlackBot(text: string, botUserId: string | undefined): boolean {
+  if (!botUserId) return false;
+  return text.includes(`<@${botUserId}>`);
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : null;
+}
+
+function stringField(record: Record<string, unknown>, key: string): string | undefined {
+  const value = record[key];
+  return typeof value === "string" && value ? value : undefined;
 }
 
 function sendblueParticipants(raw: unknown, lineNumber: string): string[] {

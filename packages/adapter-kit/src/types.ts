@@ -513,6 +513,8 @@ export interface MessagingPlatformDescriptor {
 export interface MessagingSendRequest {
   threadId: string;
   body: string;
+  /** Stable key so retries of the same logical send can be deduped upstream. */
+  idempotencyKey?: string;
 }
 
 export interface MessagingSendResult {
@@ -520,6 +522,8 @@ export interface MessagingSendResult {
 }
 
 /** Provider-neutral inbound message after platform webhook parsing. */
+export type TeamChatMessageKind = "direct" | "mention" | "ambient";
+
 export interface MessagingInboundMessage {
   type: "message";
   provider: string;
@@ -541,6 +545,47 @@ export interface MessagingInboundMessage {
   participants: string[];
   content: string;
   mediaUrl: string | null;
+  /** Team-room workspace/team id when the platform reports one (Slack team_id, …). */
+  workspaceId?: string;
+  /** Stable conversation key within the workspace (channel id, DM key, …). */
+  conversationKey?: string;
+  /** How this message should engage the team-chat bot. */
+  kind?: TeamChatMessageKind;
+  /** Provider thread id for in-channel replies (Slack thread_ts); null for channel root. */
+  replyThreadId?: string | null;
+  /** True when the sender is another bot/app. */
+  senderIsBot?: boolean;
+  /** Display names for room participants when the platform reports them. */
+  participantNames?: string[];
+}
+
+/** Provider-neutral inbound team/external room message for TeamChatBridge. */
+export interface TeamChatInboundMessage {
+  eventId: string;
+  workspaceId: string;
+  kind: TeamChatMessageKind;
+  conversationType?: "im" | "channel" | "group" | "mpim";
+  conversationKey: string;
+  /** Messaging threadId used with sendToThread. */
+  conversationId: string;
+  conversationName?: string;
+  participantNames?: string[];
+  replyThreadId: string | null;
+  senderId: string;
+  senderName: string;
+  senderIsBot?: boolean;
+  content: string;
+}
+
+export interface TeamChatSendRequest {
+  conversationId: string;
+  replyThreadId: string | null;
+  content: string;
+  idempotencyKey?: string;
+}
+
+export interface TeamChatSendResult {
+  handle: string;
 }
 
 /** Provider-neutral outbound delivery status after platform webhook parsing. */

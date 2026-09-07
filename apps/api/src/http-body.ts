@@ -32,10 +32,11 @@ export async function readBoundedBody(request: Request, maxBytes: number): Promi
   }
 }
 
-function cancelBody(body: { cancel(): Promise<void> } | null): void {
+/** Best-effort body/reader cancel; must not delay a rejection response. */
+export function cancelBody(body: { cancel(): Promise<void> } | null): void {
   try {
     void body?.cancel().catch(() => undefined);
   } catch {
-    // Best-effort cleanup must not delay the 413 response.
+    // Ignore cancel failures.
   }
 }

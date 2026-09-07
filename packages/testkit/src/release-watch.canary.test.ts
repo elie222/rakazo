@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
@@ -8,24 +8,11 @@ import {
   RELEASE_WATCH_GITHUB_TOOL_NAMES,
   resolveReleaseWatchEvalModelId,
 } from "@rakazo/adapters";
+import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 import { afterAll, describe, expect, it } from "vitest";
 import { sessionCookieHeader } from "./index.js";
 
-function loadEnvFile() {
-  const file = path.resolve(".env");
-  if (!existsSync(file)) return;
-  for (const line of readFileSync(file, "utf8").split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
-    const eq = trimmed.indexOf("=");
-    if (eq < 1) continue;
-    const key = trimmed.slice(0, eq);
-    const value = trimmed.slice(eq + 1).replace(/^["']|["']$/g, "");
-    if (!(key in process.env)) process.env[key] = value;
-  }
-}
-
-loadEnvFile();
+if (process.env.VERIFY_PROVIDERS) loadRootEnv();
 
 const live = Boolean(
   process.env.VERIFY_PROVIDERS && process.env.OPENROUTER_API_KEY && process.env.DATABASE_URL,
@@ -34,10 +21,15 @@ const describeLive = live ? describe : describe.skip;
 
 describeLive("live release-watch eval (GPT 5.6 Luna + GitHub emulator)", () => {
   let stop: (() => Promise<void>) | undefined;
+  let dataDir: string | undefined;
   const composio = new ComposioEmulator();
 
   afterAll(async () => {
-    await stop?.();
+    try {
+      await stop?.();
+    } finally {
+      if (dataDir) rmSync(dataDir, { recursive: true, force: true });
+    }
   });
 
   it("writes a concrete routine and reads seeded releases via GitHub tools, not the browser", async () => {
@@ -45,7 +37,7 @@ describeLive("live release-watch eval (GPT 5.6 Luna + GitHub emulator)", () => {
     process.env.PI_DEFAULT_MODEL = modelId;
 
     const { createApp } = await import("../../../apps/api/src/app.ts");
-    const dataDir = mkdtempSync(path.join(tmpdir(), "rakazo-release-watch-"));
+    dataDir = mkdtempSync(path.join(tmpdir(), "rakazo-release-watch-"));
     const handles = await createApp({
       databaseUrl: process.env.DATABASE_URL!,
       dataDir,

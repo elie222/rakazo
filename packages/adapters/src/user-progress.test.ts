@@ -6,6 +6,7 @@ import {
   clampUserProgressMessage,
   extractNarrationText,
   finalBlocksAfterMidTurnProgress,
+  isProgressMessageTruncated,
   isUserProgressClientNonce,
   USER_PROGRESS_MESSAGE_MAX_LENGTH,
   userProgressClientNonce,
@@ -21,6 +22,19 @@ describe("clampUserProgressMessage", () => {
     const clamped = clampUserProgressMessage("x".repeat(USER_PROGRESS_MESSAGE_MAX_LENGTH + 40));
     expect(clamped).toHaveLength(USER_PROGRESS_MESSAGE_MAX_LENGTH);
     expect(clamped.endsWith("…")).toBe(true);
+  });
+});
+
+describe("isProgressMessageTruncated", () => {
+  it("is false for text that fits", () => {
+    expect(isProgressMessageTruncated("short update")).toBe(false);
+    expect(isProgressMessageTruncated("x".repeat(USER_PROGRESS_MESSAGE_MAX_LENGTH))).toBe(false);
+  });
+
+  it("is true for text that would be cut off by clampUserProgressMessage", () => {
+    const long = "x".repeat(USER_PROGRESS_MESSAGE_MAX_LENGTH + 1);
+    expect(isProgressMessageTruncated(long)).toBe(true);
+    expect(clampUserProgressMessage(long).endsWith("…")).toBe(true);
   });
 });
 

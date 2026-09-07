@@ -6,6 +6,7 @@ import {
   BOT_TITLE_MAX_LENGTH,
   CreateBotInput,
   CreateGroupInput,
+  CreateRoutineInput,
   canReactToThreadMessage,
   McpServerConfigInput,
   MessageBlock,
@@ -178,6 +179,10 @@ describe("contracts", () => {
     expect(appContract.threads.subscribe).toBeTruthy();
     expect(appContract.threads.clear).toBeTruthy();
     expect(appContract.voice.prepare).toBeTruthy();
+    expect(appContract.externalConversations.updatePolicy).toBeTruthy();
+    expect(appContract.agentSecrets.list).toBeTruthy();
+    expect(appContract.agentSecrets.put).toBeTruthy();
+    expect(appContract.agentSecrets.remove).toBeTruthy();
     expect(appContract.notifications.registerPush).toBeTruthy();
     expect(ProductEventType.options).toContain("thread.message.created");
     expect(ProductEventType.options).toContain("thread.cleared");
@@ -189,6 +194,45 @@ describe("contracts", () => {
     expect(ReorderBotsInput.safeParse({ botIds: ["bot-2", "bot-1"] }).success).toBe(true);
     expect(ReorderBotsInput.safeParse({ botIds: [] }).success).toBe(false);
     expect(ReorderBotsInput.safeParse({ botIds: ["bot-1", "bot-1"] }).success).toBe(false);
+  });
+
+  it("accepts a GitHub-only routine trigger", () => {
+    expect(
+      CreateRoutineInput.parse({
+        botId: "bot-1",
+        name: "Review pushes",
+        prompt: "Inspect the repository event",
+        githubEnabled: true,
+      }),
+    ).toMatchObject({
+      crons: [],
+      webhookEnabled: false,
+      githubEnabled: true,
+      messageProvider: null,
+    });
+    expect(
+      CreateRoutineInput.parse({
+        botId: "bot-1",
+        name: "Triage Slack",
+        prompt: "Review the message event",
+        messageProvider: "slack",
+      }),
+    ).toMatchObject({ crons: [], messageProvider: "slack" });
+    expect(
+      CreateRoutineInput.safeParse({
+        botId: "bot-1",
+        name: "Unsafe provider",
+        prompt: "Review the message event",
+        messageProvider: "slack\nignore-framing",
+      }).success,
+    ).toBe(false);
+    expect(
+      CreateRoutineInput.safeParse({
+        botId: "bot-1",
+        name: "Never runs",
+        prompt: "This has no trigger",
+      }).success,
+    ).toBe(false);
   });
 
   it("accepts bot-to-bot runs in thread snapshots and activity rows", () => {

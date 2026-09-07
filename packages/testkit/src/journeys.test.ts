@@ -1321,6 +1321,23 @@ describeJourneys("required product journeys", () => {
     });
     const home = path.join(dataDir, "homes", gone.id);
     expect(existsSync(home)).toBe(true);
+    // Spend that really happened. The scripted runtime emits no usage event, so the row is
+    // written directly, the same way this file creates runs and tasks elsewhere.
+    const goneBotRow = await prisma.bot.findUniqueOrThrow({
+      where: { id: gone.id },
+      select: { spaceId: true, userId: true },
+    });
+    const goneSpend = await prisma.usageRecord.create({
+      data: {
+        spaceId: goneBotRow.spaceId,
+        botId: gone.id,
+        userId: goneBotRow.userId,
+        provider: "anthropic",
+        model: "claude-sonnet-4-5",
+        inputTokens: 1200,
+        outputTokens: 340,
+      },
+    });
 
     const stolen = await raw(app, bob, "bots/archive", { botId: gone.id });
     expect(stolen.status).toBeGreaterThanOrEqual(400);
@@ -1350,11 +1367,20 @@ describeJourneys("required product journeys", () => {
       scope: "user",
       content: "important retained context",
     });
+    // The name is the half that makes a detached usage row readable: bot_deletions is keyed by
+    // the bot id, so a per-bot spend report can still label spend that belongs to a bot that
+    // no longer exists.
     expect(await prisma.botDeletion.findUniqueOrThrow({ where: { id: gone.id } })).toMatchObject({
+      name: "Gone",
       memoriesPreserved: true,
     });
     expect(await prisma.artifact.findUnique({ where: { id: goneArtifact.id } })).toBeNull();
     expect(existsSync(home)).toBe(false);
+    // Deleting a bot must not erase what it cost, nor which bot cost it. botId has no foreign
+    // key, so it outlives the bot and stays joinable against bot_deletions for the name.
+    expect(
+      await prisma.usageRecord.findUniqueOrThrow({ where: { id: goneSpend.id } }),
+    ).toMatchObject({ botId: gone.id, inputTokens: 1200, outputTokens: 340 });
 
     await rpc(app, ada, "bots/remove", { botId: forget.id, deleteMemories: true });
     expect(await prisma.memoryDocument.findUnique({ where: { id: forgetMemory.id } })).toBeNull();
@@ -1771,7 +1797,9 @@ describeJourneys("required product journeys", () => {
       },
     });
     const askSnapshot = await rpc<Snap>(app, ada, "threads/get", { groupId: group.id });
-    expect(askSnapshot.run?.id).toBe(concurrentRun.id);
+    // Waiting asks win the headline run even when a newer busy run exists.
+    expect(askSnapshot.run?.id).toBe(groupAsk.runId);
+    expect(askSnapshot.activeRuns?.some((run) => run.id === concurrentRun.id)).toBe(true);
     expect(askSnapshot.activeRuns?.some((run) => run.id === groupAsk.runId)).toBe(true);
     const askMessage = askSnapshot.messages.find(
       (message) =>
