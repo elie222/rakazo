@@ -97,6 +97,7 @@ import {
   Plus,
   Puzzle,
   Reply,
+  Search,
   Settings,
   Smile,
   Square,
@@ -2498,7 +2499,7 @@ export function ShellPage() {
         </div>
         <InputGroup data-testid="sidebar-search" className="mx-2.5 mb-3 w-auto rounded-xl bg-card">
           <InputGroupAddon>
-            <span aria-hidden="true">⌕</span>
+            <Search size={16} strokeWidth={1.8} aria-hidden="true" />
           </InputGroupAddon>
           <InputGroupInput
             value={query}
