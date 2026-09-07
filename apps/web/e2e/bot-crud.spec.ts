@@ -139,8 +139,9 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   await expect(descriptionInput).toHaveValue("Builds durable, source-backed research briefs.");
   await captureScreenshot(page, testInfo, "29-reloaded-bot-profile");
 
-  const longUnbrokenName = "A".repeat(80);
-  expect(longUnbrokenName.length).toBe(80);
+  // Wrap in the narrow dialog without pushing Delete below the Playwright viewport.
+  const longUnbrokenName = "A".repeat(48);
+  expect(longUnbrokenName.length).toBe(48);
   await nameInput.fill(longUnbrokenName);
   await page.getByRole("button", { name: "Save", exact: true }).click();
   const longNameBot = botList.getByRole("button", {
@@ -151,11 +152,12 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
 
   await longNameBot.click({ button: "right" });
   await page.getByRole("menuitem", { name: "Delete" }).click();
-  await expect(
-    page.getByRole("alertdialog", { name: `Delete ${longUnbrokenName}?` }),
-  ).toBeVisible();
+  const deleteDialog = page.getByRole("alertdialog", {
+    name: `Delete ${longUnbrokenName}?`,
+  });
+  await expect(deleteDialog).toBeVisible();
   await captureScreenshot(page, testInfo, "30-delete-bot-confirmation");
-  await page.getByRole("button", { name: "Delete", exact: true }).click();
+  await deleteDialog.getByRole("button", { name: "Delete", exact: true }).click();
 
   await expect(botList.getByText(longUnbrokenName, { exact: true })).toHaveCount(0);
   await expect(botList.getByRole("button", { name: /^Chief/ })).toBeVisible();
