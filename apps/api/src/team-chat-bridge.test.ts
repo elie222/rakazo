@@ -832,13 +832,12 @@ describe("team chat bridge", () => {
         where: {
           id: "external-claimed",
           status: "received",
-          NOT: {
-            engagementReason: {
-              in: ["message_routine_routing", "message_routine_routing_rearmed"],
-            },
-          },
+          engagementReason: null,
         },
-        data: expect.objectContaining({ status: "queueing" }),
+        data: expect.objectContaining({
+          status: "queueing",
+          engagementReason: "message_teamchat_agent",
+        }),
       }),
     );
     expect(updateMany).toHaveBeenCalledWith({
@@ -869,7 +868,7 @@ describe("team chat bridge", () => {
           updateMany,
           findUnique: vi.fn(async () => ({
             status: "queueing",
-            engagementReason: null,
+            engagementReason: "message_teamchat_agent",
           })),
         },
         message: { findUnique: messageFindUnique },
@@ -925,6 +924,105 @@ describe("team chat bridge", () => {
       },
     });
     expect(sendUserMessage).not.toHaveBeenCalled();
+  });
+
+  it("does not continue an agent run when a routine wake wins during sendUserMessage", async () => {
+    // Pause inside sendUserMessage after the final pre-create ownership/nonce
+    // checks so a concurrent wake can commit first; only one path may continue.
+    let releaseSend!: () => void;
+    const sendGate = new Promise<void>((resolve) => {
+      releaseSend = resolve;
+    });
+    let woken = false;
+    const messageFindUnique = vi.fn(async () => (woken ? { id: "msg-routine-wake" } : null));
+    const enqueue = vi.fn();
+    const updateMany = vi.fn(async () => ({ count: 1 }));
+    const sendUserMessage = vi.fn(async () => {
+      await sendGate;
+      return { messageId: "message-1", runId: "run-1", seq: 1, taskId: "task-1" };
+    });
+    const bridge = new TeamChatBridge({
+      prisma: {
+        externalMessage: {
+          updateMany,
+          findUnique: vi.fn(async () => ({
+            status: "queueing",
+            engagementReason: "message_teamchat_agent",
+          })),
+        },
+        message: { findUnique: messageFindUnique },
+      } as unknown as PrismaClient,
+      events: { sendUserMessage },
+      jobs: { enqueue },
+      send: vi.fn(),
+      providerId: "slack",
+      botId: "bot-1",
+    });
+
+    const queuePromise = (
+      bridge as unknown as {
+        queue(message: {
+          id: string;
+          providerEventId: string;
+          senderId: string;
+          senderName: string;
+          content: string;
+          batchContext: null;
+          engagementReason?: string | null;
+          externalConversation: {
+            spaceId: string;
+            botId: string;
+            userId: string;
+            thread: { id: string };
+          };
+        }): Promise<void>;
+      }
+    ).queue({
+      id: "external-atomic",
+      providerEventId: "Ev-atomic",
+      senderId: "U-1",
+      senderName: "Ada",
+      content: "hello",
+      batchContext: null,
+      engagementReason: null,
+      externalConversation: {
+        spaceId: "space-1",
+        botId: "bot-1",
+        userId: "owner-1",
+        thread: { id: "thread-1" },
+      },
+    });
+
+    await vi.waitFor(() => {
+      expect(sendUserMessage).toHaveBeenCalled();
+    });
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          id: "external-atomic",
+          status: "received",
+          engagementReason: null,
+        },
+        data: expect.objectContaining({
+          status: "queueing",
+          engagementReason: "message_teamchat_agent",
+        }),
+      }),
+    );
+    // Simulate wakeMessageRoutines committing after the final pre-create check.
+    woken = true;
+    releaseSend();
+    await queuePromise;
+
+    expect(enqueue).not.toHaveBeenCalled();
+    expect(updateMany).toHaveBeenCalledWith({
+      where: { id: "external-atomic", status: "queueing", runId: null },
+      data: {
+        status: "ignored",
+        engagementReason: "message_routine_wake",
+        nextAttemptAt: null,
+      },
+    });
   });
 
   it("blocks fallback queueing when routing ownership remains after lease loss", async () => {

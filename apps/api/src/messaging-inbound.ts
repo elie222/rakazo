@@ -23,6 +23,10 @@ import {
   messagingWakeIdempotencyKey,
 } from "./webhook-inbound.js";
 
+/** Matches TeamChatBridge deferred routing ownership while a wake may still create a run. */
+const MESSAGE_ROUTING_REASON = "message_routine_routing";
+const MESSAGE_ROUTING_REARMED_REASON = "message_routine_routing_rearmed";
+
 export interface MessagingInboundDeps {
   prisma: PrismaClient;
   events: Pick<ThreadEvents, "sendUserMessage" | "notify">;
@@ -171,6 +175,12 @@ export async function wakeMessageRoutines(
      * the inbound event.provider differs (e.g. teamchat-emulator).
      */
     deliveryProvider?: string;
+    /**
+     * TeamChat external message id. When set, atomically reassert routine
+     * ownership before creating a run so a concurrent TeamChat agent claim
+     * cannot also deliver for the same provider event.
+     */
+    externalMessageId?: string;
   },
 ): Promise<boolean> {
   const routines = await deps.prisma.routine.findMany({
@@ -184,6 +194,27 @@ export async function wakeMessageRoutines(
     orderBy: { updatedAt: "desc" },
   });
   if (routines.length === 0) return false;
+
+  if (options?.externalMessageId) {
+    // CAS: only deliver when agent ownership has not claimed the row. Holding
+    // message_routine_routing blocks TeamChat queue() from creating a parallel run.
+    const reserved = await deps.prisma.externalMessage.updateMany({
+      where: {
+        id: options.externalMessageId,
+        status: { in: ["deferred", "received", "observed"] },
+        OR: [
+          { engagementReason: null },
+          {
+            engagementReason: {
+              in: [MESSAGE_ROUTING_REASON, MESSAGE_ROUTING_REARMED_REASON],
+            },
+          },
+        ],
+      },
+      data: { engagementReason: MESSAGE_ROUTING_REASON },
+    });
+    if (reserved.count !== 1) return false;
+  }
 
   const provider = inboundEventName(event.provider);
   const prompt = formatUntrustedDeliveryPayload(`[Messaging Event: ${provider}]`, {

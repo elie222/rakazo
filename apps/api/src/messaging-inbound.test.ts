@@ -463,6 +463,72 @@ describe("createMessagingInboundHandler DM routing", () => {
     expect(expected).not.toBe(mismatched);
   });
 
+  it("refuses TeamChat routine wake when agent ownership already claimed the row", async () => {
+    const deps = createDeps({
+      routines: [{ id: "routine-1", name: "Triage", prompt: "Review" }],
+    });
+    const updateMany = vi.fn(async () => ({ count: 0 }));
+    (deps.prisma as { externalMessage: { updateMany: typeof updateMany } }).externalMessage = {
+      updateMany,
+    };
+
+    const woken = await wakeMessageRoutines(
+      deps,
+      { spaceId: "ws-1", userId: "user-1", botId: "bot-1", threadId: "thread-1" },
+      { ...dmEvent, provider: "slack", handle: "Ev-owned", from: "U123" },
+      { deliveryProvider: "slack", externalMessageId: "external-agent-owned" },
+    );
+
+    expect(woken).toBe(false);
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          id: "external-agent-owned",
+          status: { in: ["deferred", "received", "observed"] },
+        }),
+        data: { engagementReason: "message_routine_routing" },
+      }),
+    );
+    expect(deps.sendUserMessage).not.toHaveBeenCalled();
+  });
+
+  it("reasserts routing ownership before creating a TeamChat routine wake run", async () => {
+    const deps = createDeps({
+      routines: [{ id: "routine-1", name: "Triage", prompt: "Review" }],
+    });
+    const updateMany = vi.fn(async () => ({ count: 1 }));
+    (deps.prisma as { externalMessage: { updateMany: typeof updateMany } }).externalMessage = {
+      updateMany,
+    };
+
+    const woken = await wakeMessageRoutines(
+      deps,
+      { spaceId: "ws-1", userId: "user-1", botId: "bot-1", threadId: "thread-1" },
+      { ...dmEvent, provider: "slack", handle: "Ev-reserve", from: "U123" },
+      { deliveryProvider: "slack", externalMessageId: "external-deferred" },
+    );
+
+    expect(woken).toBe(true);
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          id: "external-deferred",
+          status: { in: ["deferred", "received", "observed"] },
+          OR: [
+            { engagementReason: null },
+            {
+              engagementReason: {
+                in: ["message_routine_routing", "message_routine_routing_rearmed"],
+              },
+            },
+          ],
+        },
+        data: { engagementReason: "message_routine_routing" },
+      }),
+    );
+    expect(deps.sendUserMessage).toHaveBeenCalledTimes(1);
+  });
+
   it("appends inbound media links to the message text", async () => {
     const deps = createDeps();
     const handle = createMessagingInboundHandler(deps);

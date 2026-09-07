@@ -30,6 +30,8 @@ const DELIVERY_RESERVATION_MS = 2 * 60_000;
 const ROUTING_OWNERSHIP_REASON = "message_routine_routing";
 /** One-shot grace claim; a second expiry promotes to agent delivery. */
 const ROUTING_OWNERSHIP_REARMED_REASON = "message_routine_routing_rearmed";
+/** Exclusive claim while TeamChat is creating the fallback agent run. */
+const AGENT_OWNERSHIP_REASON = "message_teamchat_agent";
 const DEFERRED_RESERVATION_LOST = "Team chat deferred reservation was lost";
 
 export function isDeferredReservationLost(error: unknown): boolean {
@@ -941,18 +943,19 @@ export class TeamChatBridge {
       await abandonForRoutine("received");
       return;
     }
+    // Atomically claim queueing + exclusive agent ownership before creating a
+    // run so a concurrent wake cannot also deliver for this provider event.
+    // Require engagementReason null so routing ownership (including a wake that
+    // reasserted it after lease loss) wins the CAS and this path backs off.
     const claimed = await this.deps.prisma.externalMessage.updateMany({
       where: {
         id: message.id,
         status: "received",
-        NOT: {
-          engagementReason: {
-            in: [ROUTING_OWNERSHIP_REASON, ROUTING_OWNERSHIP_REARMED_REASON],
-          },
-        },
+        engagementReason: null,
       },
       data: {
         status: "queueing",
+        engagementReason: AGENT_OWNERSHIP_REASON,
         nextAttemptAt: new Date(Date.now() + QUEUE_RESERVATION_MS),
       },
     });
@@ -962,16 +965,14 @@ export class TeamChatBridge {
       await abandonForRoutine("queueing");
       return;
     }
-    // Final pre-create barrier: an in-flight wakeMessageRoutines can still commit
-    // after lease loss. Re-check ownership + nonce immediately before creating a
-    // distinct TeamChat agent run.
+    // Final pre-create barrier: refuse if routing ownership reappeared.
     const latest = await this.deps.prisma.externalMessage.findUnique({
       where: { id: message.id },
       select: { status: true, engagementReason: true },
     });
     if (
       latest?.status !== "queueing" ||
-      isRoutingOwnershipReason(latest.engagementReason) ||
+      latest.engagementReason !== AGENT_OWNERSHIP_REASON ||
       (await findWake())
     ) {
       await abandonForRoutine("queueing");
@@ -992,9 +993,19 @@ export class TeamChatBridge {
       linkMessageToRun: true,
       allowParallelRun: true,
     });
+    // Routine wake may have committed during sendUserMessage. Do not continue a
+    // fallback agent beside that wake.
+    if (await findWake()) {
+      await abandonForRoutine("queueing");
+      return;
+    }
     if (!sent.runId) throw new Error("Team chat message did not create an agent run");
     const linked = await this.deps.prisma.externalMessage.updateMany({
-      where: { id: message.id, status: "queueing" },
+      where: {
+        id: message.id,
+        status: "queueing",
+        engagementReason: AGENT_OWNERSHIP_REASON,
+      },
       data: {
         status: "running",
         runId: sent.runId,
@@ -1174,6 +1185,7 @@ export class TeamChatBridge {
       },
       data: {
         status,
+        ...(current.status === "queueing" ? { engagementReason: null } : {}),
         attempts,
         lastError: error instanceof Error ? error.message.slice(0, 500) : "Unknown bridge error",
         nextAttemptAt: new Date(Date.now() + delay),

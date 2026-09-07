@@ -589,6 +589,7 @@ export async function createApp(
             const wakePromise = wakeMessageRoutines(inboundDeps, target, event, {
               // Must match TeamChatBridge ExternalConversation / recovery provider.
               deliveryProvider: bridge.providerId,
+              externalMessageId: target.externalMessageId,
             });
             try {
               woken = await Promise.race([wakePromise, leaseHeartbeat.lost]);
