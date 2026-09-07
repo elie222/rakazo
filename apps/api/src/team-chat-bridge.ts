@@ -1020,9 +1020,39 @@ export class TeamChatBridge {
       linkMessageToRun: true,
       allowParallelRun: true,
     });
-    // Routine wake may have committed during sendUserMessage. Do not continue a
-    // fallback agent beside that wake.
+    // Routine wake may have committed during sendUserMessage. Cancel the
+    // fallback run before abandoning so the job reconciler cannot enqueue it
+    // beside the routine wake.
     if (await findWake()) {
+      if (sent.runId) {
+        const cancelledAt = new Date();
+        await this.deps.prisma.run.updateMany({
+          where: {
+            id: sent.runId,
+            status: { in: ["queued", "running", "leased", "waiting_input", "waiting_takeover"] },
+          },
+          data: {
+            status: "cancelled",
+            completedAt: cancelledAt,
+            leaseOwner: null,
+            leaseExpiresAt: null,
+          },
+        });
+        const taskId =
+          sent.taskId ??
+          (
+            await this.deps.prisma.run.findUnique({
+              where: { id: sent.runId },
+              select: { taskId: true },
+            })
+          )?.taskId;
+        if (taskId) {
+          await this.deps.prisma.task.updateMany({
+            where: { id: taskId },
+            data: { status: "cancelled" },
+          });
+        }
+      }
       await abandonForRoutine("queueing");
       return;
     }

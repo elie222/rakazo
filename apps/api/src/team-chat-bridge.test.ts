@@ -950,6 +950,8 @@ describe("team chat bridge", () => {
     const messageFindUnique = vi.fn(async () => (woken ? { id: "msg-routine-wake" } : null));
     const enqueue = vi.fn();
     const updateMany = vi.fn(async () => ({ count: 1 }));
+    const runUpdateMany = vi.fn(async () => ({ count: 1 }));
+    const taskUpdateMany = vi.fn(async () => ({ count: 1 }));
     const sendUserMessage = vi.fn(async () => {
       await sendGate;
       return { messageId: "message-1", runId: "run-1", seq: 1, taskId: "task-1" };
@@ -964,6 +966,8 @@ describe("team chat bridge", () => {
           })),
         },
         message: { findUnique: messageFindUnique },
+        run: { updateMany: runUpdateMany },
+        task: { updateMany: taskUpdateMany },
       } as unknown as PrismaClient,
       events: { sendUserMessage },
       jobs: { enqueue },
@@ -1041,6 +1045,16 @@ describe("team chat bridge", () => {
     await queuePromise;
 
     expect(enqueue).not.toHaveBeenCalled();
+    expect(runUpdateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: "run-1" }),
+        data: expect.objectContaining({ status: "cancelled" }),
+      }),
+    );
+    expect(taskUpdateMany).toHaveBeenCalledWith({
+      where: { id: "task-1" },
+      data: { status: "cancelled" },
+    });
     expect(updateMany).toHaveBeenCalledWith({
       where: { id: "external-atomic", status: "queueing", runId: null },
       data: {
