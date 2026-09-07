@@ -10,6 +10,14 @@ import { BOT_MESSAGE_MAX_HOPS } from "@rakazo/core";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { TeamChatEngagementJudge } from "./team-chat-judge.js";
+import {
+  MESSAGE_ROUTING_REASON,
+  MESSAGE_ROUTING_REARMED_REASON,
+  MESSAGE_ROUTING_RESERVATION_MS,
+  settleWithTimeout,
+  TEAM_CHAT_STARTUP_SHUTDOWN_MS,
+  TEAMCHAT_AGENT_OWNERSHIP_REASON,
+} from "./team-chat-startup.js";
 import { inboundDeliveryClientNonce, messagingWakeIdempotencyKey } from "./webhook-inbound.js";
 
 const DEFAULT_RECONCILE_INTERVAL_MS = 1_000;
@@ -20,18 +28,15 @@ const AMBIENT_CONTEXT_MESSAGES = 20;
 const AMBIENT_CONTEXT_MESSAGE_CHARS = 2_000;
 const DEFERRED_RESERVATION_MS = 2 * 60_000;
 /** Hold the deferred row while routine routing may still be writing its wake nonce. */
-const ROUTING_RESERVATION_MS = 30 * 60_000;
+const ROUTING_RESERVATION_MS = MESSAGE_ROUTING_RESERVATION_MS;
 const ROUTING_RESERVATION_RENEWAL_MS = 60_000;
 /** One-shot grace after a routing lease expires before promoting to agent. */
 const ROUTING_OWNERSHIP_GRACE_MS = ROUTING_RESERVATION_RENEWAL_MS * 2;
 const QUEUE_RESERVATION_MS = 2 * 60_000;
 const DELIVERY_RESERVATION_MS = 2 * 60_000;
-/** Durable claim while wakeMessageRoutines may still be writing its wake nonce. */
-const ROUTING_OWNERSHIP_REASON = "message_routine_routing";
-/** One-shot grace claim; a second expiry promotes to agent delivery. */
-const ROUTING_OWNERSHIP_REARMED_REASON = "message_routine_routing_rearmed";
-/** Exclusive claim while TeamChat is creating the fallback agent run. */
-const AGENT_OWNERSHIP_REASON = "message_teamchat_agent";
+const ROUTING_OWNERSHIP_REASON = MESSAGE_ROUTING_REASON;
+const ROUTING_OWNERSHIP_REARMED_REASON = MESSAGE_ROUTING_REARMED_REASON;
+const AGENT_OWNERSHIP_REASON = TEAMCHAT_AGENT_OWNERSHIP_REASON;
 const DEFERRED_RESERVATION_LOST = "Team chat deferred reservation was lost";
 
 export function isDeferredReservationLost(error: unknown): boolean {
@@ -170,11 +175,12 @@ export class TeamChatBridge {
   }
 
   async stop(): Promise<void> {
-    // Invalidate any in-flight start() so shutdown does not wait on DB/reconcile.
+    // Invalidate any in-flight start() so later startup phases abort.
     this.startGeneration += 1;
     if (this.timer) clearInterval(this.timer);
     this.timer = undefined;
-    await this.reconciling?.catch(() => undefined);
+    // Do not let a blocked reconcileOnce from start() hang process shutdown.
+    await settleWithTimeout(this.reconciling, TEAM_CHAT_STARTUP_SHUTDOWN_MS);
   }
 
   async receive(
@@ -537,9 +543,9 @@ export class TeamChatBridge {
         continue;
       }
       if (message.engagementReason === ROUTING_OWNERSHIP_REASON) {
-        // Grant one short grace lease only. A live heartbeat rewrites ownership
-        // back to ROUTING_OWNERSHIP_REASON; an abandoned claim expires again and
-        // promotes below.
+        // Grant one short grace lease only. A live heartbeat or wake CAS rewrites
+        // ownership back to ROUTING_OWNERSHIP_REASON with a future nextAttemptAt;
+        // an abandoned claim expires again and promotes below.
         await this.deps.prisma.externalMessage.updateMany({
           where: {
             id: message.id,
@@ -554,8 +560,17 @@ export class TeamChatBridge {
         });
         continue;
       }
+      // Do not promote over a live wake that reasserted ROUTING after this read.
       await this.deps.prisma.externalMessage.updateMany({
-        where: { id: message.id, status: "deferred", nextAttemptAt: { lte: now } },
+        where: {
+          id: message.id,
+          status: "deferred",
+          nextAttemptAt: { lte: now },
+          OR: [
+            { engagementReason: null },
+            { engagementReason: ROUTING_OWNERSHIP_REARMED_REASON },
+          ],
+        },
         data: {
           status: message.kind === "ambient" ? "observed" : "received",
           engagementReason: null,

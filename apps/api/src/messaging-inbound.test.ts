@@ -486,7 +486,10 @@ describe("createMessagingInboundHandler DM routing", () => {
           id: "external-agent-owned",
           status: { in: ["deferred", "received", "observed"] },
         }),
-        data: { engagementReason: "message_routine_routing" },
+        data: expect.objectContaining({
+          engagementReason: "message_routine_routing",
+          nextAttemptAt: expect.any(Date),
+        }),
       }),
     );
     expect(deps.sendUserMessage).not.toHaveBeenCalled();
@@ -523,7 +526,10 @@ describe("createMessagingInboundHandler DM routing", () => {
             },
           ],
         },
-        data: { engagementReason: "message_routine_routing" },
+        data: expect.objectContaining({
+          engagementReason: "message_routine_routing",
+          nextAttemptAt: expect.any(Date),
+        }),
       }),
     );
     expect(deps.sendUserMessage).toHaveBeenCalledTimes(1);

@@ -22,10 +22,11 @@ import {
   inboundEventName,
   messagingWakeIdempotencyKey,
 } from "./webhook-inbound.js";
-
-/** Matches TeamChatBridge deferred routing ownership while a wake may still create a run. */
-const MESSAGE_ROUTING_REASON = "message_routine_routing";
-const MESSAGE_ROUTING_REARMED_REASON = "message_routine_routing_rearmed";
+import {
+  MESSAGE_ROUTING_REASON,
+  MESSAGE_ROUTING_REARMED_REASON,
+  MESSAGE_ROUTING_RESERVATION_MS,
+} from "./team-chat-startup.js";
 
 export interface MessagingInboundDeps {
   prisma: PrismaClient;
@@ -211,7 +212,11 @@ export async function wakeMessageRoutines(
           },
         ],
       },
-      data: { engagementReason: MESSAGE_ROUTING_REASON },
+      data: {
+        engagementReason: MESSAGE_ROUTING_REASON,
+        // Outlive a dead heartbeat so reconcile cannot promote to agent mid-wake.
+        nextAttemptAt: new Date(Date.now() + MESSAGE_ROUTING_RESERVATION_MS),
+      },
     });
     if (reserved.count !== 1) return false;
   }

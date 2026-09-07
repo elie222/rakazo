@@ -178,6 +178,7 @@ describe("team chat bridge", () => {
         id: "external-expired",
         status: "deferred",
         nextAttemptAt: { lte: expect.any(Date) },
+        OR: [{ engagementReason: null }, { engagementReason: "message_routine_routing_rearmed" }],
       },
       data: { status: "received", engagementReason: null, nextAttemptAt: null },
     });
@@ -620,7 +621,14 @@ describe("team chat bridge", () => {
       expect(engagementReason).toBeNull();
       expect(updateMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: expect.objectContaining({ id: "external-lost", status: "deferred" }),
+          where: expect.objectContaining({
+            id: "external-lost",
+            status: "deferred",
+            OR: [
+              { engagementReason: null },
+              { engagementReason: "message_routine_routing_rearmed" },
+            ],
+          }),
           data: expect.objectContaining({ status: "received", engagementReason: null }),
         }),
       );

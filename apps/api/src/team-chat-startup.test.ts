@@ -135,4 +135,54 @@ describe("TeamChatBridge start cancellation", () => {
     releaseFind?.(null);
     await expect(starting).rejects.toThrow("Team chat bridge start cancelled");
   });
+
+  it("bounds stop() when startup reconcileOnce stays blocked", async () => {
+    vi.useFakeTimers();
+    try {
+      let releaseReconcile: (() => void) | undefined;
+      const blockedReconcile = new Promise<void>((resolve) => {
+        releaseReconcile = resolve;
+      });
+      const findMany = vi.fn(async () => {
+        await blockedReconcile;
+        return [];
+      });
+      const bridge = new TeamChatBridge({
+        prisma: {
+          bot: {
+            findFirst: vi.fn(async () => ({
+              id: "bot-1",
+              spaceId: "space-1",
+              userId: "user-1",
+              name: "Chief",
+              modelProvider: null,
+              modelId: null,
+            })),
+          },
+          externalMessage: {
+            findMany,
+            updateMany: vi.fn(async () => ({ count: 0 })),
+          },
+          run: { findMany: vi.fn(async () => []) },
+        } as unknown as PrismaClient,
+        events: { sendUserMessage: vi.fn() },
+        jobs: { enqueue: vi.fn() },
+        send: vi.fn(),
+        providerId: "slack",
+        botId: "bot-1",
+      });
+
+      const starting = bridge.start();
+      await vi.waitFor(() => {
+        expect(findMany).toHaveBeenCalled();
+      });
+      const stopping = bridge.stop();
+      await vi.advanceTimersByTimeAsync(2_000);
+      await expect(stopping).resolves.toBeUndefined();
+      releaseReconcile?.();
+      await expect(starting).rejects.toThrow("Team chat bridge start cancelled");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

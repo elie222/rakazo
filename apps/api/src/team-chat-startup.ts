@@ -6,6 +6,15 @@ export const PENDING_TEAM_CHAT_LIMIT = 100;
 /** Bound how long shutdown waits for an in-flight TeamChatBridge.start(). */
 export const TEAM_CHAT_STARTUP_SHUTDOWN_MS = 2_000;
 
+/** Durable claim while wakeMessageRoutines may still be writing its wake nonce. */
+export const MESSAGE_ROUTING_REASON = "message_routine_routing";
+/** One-shot grace claim; a second expiry promotes to agent delivery. */
+export const MESSAGE_ROUTING_REARMED_REASON = "message_routine_routing_rearmed";
+/** Exclusive claim while TeamChat is creating the fallback agent run. */
+export const TEAMCHAT_AGENT_OWNERSHIP_REASON = "message_teamchat_agent";
+/** Hold deferred rows while a TeamChat wake may still create its run. */
+export const MESSAGE_ROUTING_RESERVATION_MS = 30 * 60_000;
+
 export function prefersTeamChatSurface(
   event: Pick<MessagingInboundMessage, "provider" | "workspaceId">,
   teamChatBotId: string | undefined | null,
