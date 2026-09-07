@@ -54,7 +54,7 @@ function useDesktopUpdates() {
       ) {
         setConfirmedCheck(next.checkedAt);
       }
-      if (next.phase === "error" || (action === "install" && next.message !== state?.message)) {
+      if (next.phase === "error" || action === "install") {
         setError(next.message);
       }
     } catch {

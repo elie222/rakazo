@@ -404,9 +404,13 @@ describe("DesktopUpdateController", () => {
       phase: "ready",
       message: "The update could not be completed. Try again later.",
     });
+    expect(await controller.install()).toMatchObject({
+      phase: "ready",
+      message: "The update could not be completed. Try again later.",
+    });
     vi.mocked(fake.updater.quitAndInstall).mockImplementation(() => undefined);
-    expect(await controller.install()).toMatchObject({ phase: "ready" });
-    expect(fake.updater.quitAndInstall).toHaveBeenCalledTimes(2);
+    expect(await controller.install()).toMatchObject({ phase: "ready", message: null });
+    expect(fake.updater.quitAndInstall).toHaveBeenCalledTimes(3);
     expect(fake.updater.downloadUpdate).toHaveBeenCalledTimes(1);
   });
 

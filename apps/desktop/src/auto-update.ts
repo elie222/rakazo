@@ -404,6 +404,7 @@ export class DesktopUpdateController {
       return this.current;
     }
     this.installStarted = true;
+    this.current = { ...this.current, message: null };
     try {
       updater.quitAndInstall();
     } catch (error) {
