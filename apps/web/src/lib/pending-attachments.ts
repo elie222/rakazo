@@ -14,10 +14,9 @@ export function isFilePaste(
   clipboardData: Pick<DataTransfer, "files" | "items"> | null | undefined,
 ): boolean {
   if (!clipboardData) return false;
-  return (
-    (clipboardData.files?.length ?? 0) > 0 ||
-    Array.from(clipboardData.items ?? []).some((item) => item.kind === "file")
-  );
+  // Require a non-empty FileList. Some browsers advertise file-kind items with
+  // an empty files list; those must not intercept native text paste.
+  return (clipboardData.files?.length ?? 0) > 0;
 }
 
 export function revokePendingAttachmentPreviews(

@@ -4575,9 +4575,20 @@ const Composer = memo(function Composer({
 
   function handlePaste(event: ClipboardEvent<HTMLTextAreaElement>) {
     const clipboardData = event.clipboardData;
+    // Only intercept real FileList pastes; leave text-only / empty-files native.
     if (disabled || !clipboardData || !isFilePaste(clipboardData)) return;
     event.preventDefault();
     void onAttachmentPick(clipboardData.files);
+    const text = clipboardData.getData("text/plain");
+    if (!text) return;
+    const textarea = event.currentTarget;
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    updateDraft(`${draft.slice(0, start)}${text}${draft.slice(end)}`);
+    const caret = start + text.length;
+    window.requestAnimationFrame(() => {
+      textareaRef.current?.setSelectionRange(caret, caret);
+    });
   }
 
   const showComposerPlaceholder =

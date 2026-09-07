@@ -39,8 +39,8 @@ describe("isFilePaste", () => {
     expect(isFilePaste(pasteData(1))).toBe(true);
   });
 
-  it("recognizes file items when the file list is empty", () => {
-    expect(isFilePaste(pasteData(0, ["file"]))).toBe(true);
+  it("ignores file-kind items when the file list is empty", () => {
+    expect(isFilePaste(pasteData(0, ["file"]))).toBe(false);
   });
 
   it("ignores text-only pastes", () => {
