@@ -9,6 +9,7 @@ function useDesktopUpdates() {
   const bridge = desktopBridge()?.update;
   const [state, setState] = useState<DesktopUpdateState | null>(null);
   const [busy, setBusy] = useState(false);
+  const [confirmedCheck, setConfirmedCheck] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const pending = useRef(false);
   const revision = useRef(0);
@@ -41,9 +42,18 @@ function useDesktopUpdates() {
     revision.current++;
     setBusy(true);
     setError(null);
+    if (action === "check") setConfirmedCheck(null);
     try {
       const next = await bridge[action]();
       setState(next);
+      if (
+        action === "check" &&
+        next.phase === "idle" &&
+        !next.message &&
+        next.checkedAt !== state?.checkedAt
+      ) {
+        setConfirmedCheck(next.checkedAt);
+      }
       if (next.phase === "error" || (action === "install" && next.message !== state?.message)) {
         setError(next.message);
       }
@@ -55,7 +65,7 @@ function useDesktopUpdates() {
       setBusy(false);
     }
   }
-  return { state, busy, error, act };
+  return { state, busy, error, act, confirmedCheck };
 }
 
 const UpdatesContext = createContext<ReturnType<typeof useDesktopUpdates> | null>(null);
@@ -109,7 +119,7 @@ export function DesktopUpdatesProvider({ children }: { children: ReactNode }) {
 export function DesktopUpdateSection() {
   const updates = useContext(UpdatesContext);
   if (!updates?.state) return null;
-  const { state, busy, error, act } = updates;
+  const { state, busy, error, act, confirmedCheck } = updates;
   const ready = state.phase === "ready";
   const downloading = state.phase === "available" || state.phase === "downloading";
   return (
@@ -143,7 +153,7 @@ export function DesktopUpdateSection() {
           state.message ??
           (downloading ? (
             `${state.percent ?? 0}%`
-          ) : state.phase === "idle" && state.checkedAt ? (
+          ) : state.phase === "idle" && confirmedCheck && state.checkedAt === confirmedCheck ? (
             <Trans>Up to date</Trans>
           ) : null)}
       </p>
