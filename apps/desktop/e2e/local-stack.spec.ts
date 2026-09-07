@@ -172,6 +172,8 @@ test("This computer installs and starts the stack, then opens the app", async ()
   await expect(setup.locator("#stack-output")).toBeHidden();
   await setup.screenshot({
     path: path.join(import.meta.dirname, "screenshots", "06-setup-installing.png"),
+    // Fast-forward the bar's width transition so the artifact shows the value, not a frame of it.
+    animations: "disabled",
   });
   await setup.getByRole("button", { name: "Technical details" }).click();
   await expect(setup.locator("#stack-output")).toContainText("app Pulled");
