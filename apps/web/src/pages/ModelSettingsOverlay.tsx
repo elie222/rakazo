@@ -34,7 +34,13 @@ import type { ModelCatalogEntry, ModelCredential } from "../lib/model-auth";
 import { rpc } from "../lib/rpc";
 import { useModelOAuthSignIn } from "../lib/use-model-oauth-signin";
 
-export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
+export function ModelSettingsOverlay({
+  onClose,
+  localOwner = false,
+}: {
+  onClose: () => void;
+  localOwner?: boolean;
+}) {
   const { t } = useLingui();
   const [catalog, setCatalog] = useState<ModelCatalogEntry[]>([]);
   const [credentials, setCredentials] = useState<ModelCredential[]>([]);
@@ -314,6 +320,8 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
             <DialogDescription className="mt-1 text-[13.5px] text-muted-foreground/70">
               {loading ? (
                 <Trans>Loading model catalog…</Trans>
+              ) : localOwner ? (
+                <Trans>Models for the server owner’s default space.</Trans>
               ) : (
                 <Trans>Choose which connected model Rakazo uses.</Trans>
               )}

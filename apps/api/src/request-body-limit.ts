@@ -1,3 +1,4 @@
+import { LOCAL_SETTINGS_RPC } from "@rakazo/contracts";
 import type { Hono, MiddlewareHandler } from "hono";
 import { cancelBody } from "./http-body.js";
 
@@ -57,5 +58,6 @@ export function requestBodyLimit(maxSize: number): MiddlewareHandler {
 /** Install limits only on framework-parsed JSON surfaces with known payload contracts. */
 export function mountApiRequestBodyLimits(app: Hono): void {
   app.use("/api/auth/*", requestBodyLimit(MAX_AUTH_REQUEST_BYTES));
+  app.use(`${LOCAL_SETTINGS_RPC}/*`, requestBodyLimit(MAX_RPC_REQUEST_BYTES));
   app.use("/rpc/*", requestBodyLimit(MAX_RPC_REQUEST_BYTES));
 }
