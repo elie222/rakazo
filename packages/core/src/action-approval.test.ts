@@ -11,6 +11,7 @@ import {
   resolveActionApprovalDetail,
   toolRequiresApproval,
   toolRequiresExplicitApproval,
+  unattendedTriggerToolRequiresApproval,
 } from "./action-approval.js";
 
 describe("toolRequiresApproval", () => {
@@ -63,6 +64,35 @@ describe("connectorToolRequiresApproval", () => {
   it("matches read-only connector tool names", () => {
     expect(connectorToolRequiresApproval("list_items")).toBe(false);
     expect(connectorToolRequiresApproval("send_message")).toBe(true);
+  });
+});
+
+describe("unattendedTriggerToolRequiresApproval", () => {
+  it("forces approval for webhook-triggered local side effects", () => {
+    for (const name of ["shell", "write_file", "browser_act", "computer_act"]) {
+      expect(unattendedTriggerToolRequiresApproval("webhook", name, false)).toBe(true);
+    }
+  });
+
+  it("allows webhook-triggered reads to stay unattended", () => {
+    for (const name of [
+      "computer_observe",
+      "read_file",
+      "web_search",
+      "browser_snapshot",
+      "request_takeover",
+      "run_subagent",
+    ]) {
+      expect(unattendedTriggerToolRequiresApproval("webhook", name, false)).toBe(false);
+    }
+    expect(unattendedTriggerToolRequiresApproval("webhook", "github_get_issue", true)).toBe(false);
+  });
+
+  it("forces approval for webhook-triggered connector writes regardless of normal rules", () => {
+    expect(unattendedTriggerToolRequiresApproval("webhook", "github_create_issue", true)).toBe(
+      true,
+    );
+    expect(unattendedTriggerToolRequiresApproval("user", "shell", false)).toBe(false);
   });
 });
 

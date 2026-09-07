@@ -106,10 +106,14 @@ async function withoutPeerRunMessages<T extends { runId: string | null; blocks: 
   const peerRunIds = new Set(peerRuns.map((run) => run.id));
   return rows.filter((row) => {
     if (!row.runId || !peerRunIds.has(row.runId)) return true;
-    // Keep compact sent/received receipts; clients render them as chips.
+    // Keep peer receipts (chips), ask cards, and the bot's own text reply.
     const blocks = row.blocks as MessageBlock[];
     return blocks.some(
-      (block) => block.kind === "bot_message_sent" || block.kind === "bot_message_received",
+      (block) =>
+        block.kind === "bot_message_sent" ||
+        block.kind === "bot_message_received" ||
+        block.kind === "ask" ||
+        block.kind === "text",
     );
   });
 }
@@ -128,6 +132,39 @@ export async function isPeerRun(
     cache.set(runId, peerRun);
   }
   return peerRun;
+}
+
+/** Peer-run SSE events that must still reach an open thread (terminals, waits, receipts, asks, text). */
+export function shouldForwardPeerThreadEvent(event: {
+  type: string;
+  payload: { blocks?: unknown };
+}): boolean {
+  if (
+    event.type === "run.completed" ||
+    event.type === "run.failed" ||
+    event.type === "run.cancelled" ||
+    event.type === "run.waiting_input" ||
+    event.type === "computer.takeover.requested"
+  ) {
+    return true;
+  }
+  if (event.type !== "thread.message.created" && event.type !== "thread.message.updated") {
+    return false;
+  }
+  const blocks = event.payload.blocks;
+  return (
+    Array.isArray(blocks) &&
+    blocks.some(
+      (block) =>
+        !!block &&
+        typeof block === "object" &&
+        "kind" in block &&
+        (block.kind === "bot_message_received" ||
+          block.kind === "bot_message_sent" ||
+          block.kind === "ask" ||
+          block.kind === "text"),
+    )
+  );
 }
 
 function toThreadMessage(row: {

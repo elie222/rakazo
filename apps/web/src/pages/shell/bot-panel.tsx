@@ -26,8 +26,8 @@ import {
   Textarea,
   Toggle,
 } from "@rakazo/ui-web";
-import { X } from "lucide-react";
-import { lazy, Suspense, useEffect, useId, useState } from "react";
+import { LoaderCircle, RotateCw, X } from "lucide-react";
+import { lazy, Suspense, useCallback, useEffect, useId, useState } from "react";
 import { rpc } from "../../lib/rpc";
 import {
   catalogLabel,
@@ -49,9 +49,13 @@ const fieldLabelClass = "mt-4 block text-[14px] text-muted-foreground";
 function ComputerModePicker({
   value,
   onChange,
+  teamTestId,
+  privateTestId,
 }: {
   value: ComputerMode;
   onChange: (value: ComputerMode) => void;
+  teamTestId?: string;
+  privateTestId?: string;
 }) {
   return (
     <div className="mt-4">
@@ -64,6 +68,7 @@ function ComputerModePicker({
             key={mode}
             variant="outline"
             pressed={value === mode}
+            data-testid={mode === "team" ? teamTestId : privateTestId}
             onPressedChange={(pressed) => {
               if (pressed) onChange(mode);
             }}
@@ -86,6 +91,8 @@ export function CreateBotForm({
     title: string;
     description: string;
     computerMode: ComputerMode;
+    modelProvider?: string;
+    modelId?: string;
   }) => Promise<void>;
   onCancel: () => void;
 }) {
@@ -95,19 +102,49 @@ export function CreateBotForm({
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [computerMode, setComputerMode] = useState<ComputerMode>("team");
+  const [modelKey, setModelKey] = useState("");
+  const [credentials, setCredentials] = useState<ModelCredential[]>([]);
+  const [catalog, setCatalog] = useState<ModelCatalogEntry[]>([]);
+  const [me, setMe] = useState<Me | null>(null);
+  const [modelMetaStatus, setModelMetaStatus] = useState<"loading" | "ready" | "error">("loading");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const loadModelMetadata = useCallback(() => {
+    setModelMetaStatus("loading");
+    void Promise.allSettled([rpc.models.credentials(), rpc.models.list(), rpc.me()]).then(
+      ([credentialsResult, catalogResult, meResult]) => {
+        if (credentialsResult.status === "fulfilled") setCredentials(credentialsResult.value);
+        if (catalogResult.status === "fulfilled") setCatalog(catalogResult.value);
+        if (meResult.status === "fulfilled") setMe(meResult.value);
+        // Connected options need credentials + catalog; me only enriches Space default.
+        setModelMetaStatus(
+          credentialsResult.status === "rejected" || catalogResult.status === "rejected"
+            ? "error"
+            : "ready",
+        );
+      },
+    );
+  }, []);
+
+  useEffect(() => {
+    loadModelMetadata();
+  }, [loadModelMetadata]);
+
+  const connectedOptions = connectedModelOptions(credentials, catalog);
 
   async function handleSubmit() {
     if (!name.trim() || submitting) return;
     setError(null);
     setSubmitting(true);
     try {
+      const selected = modelKey ? parseModelOptionKey(modelKey) : null;
       await onCreate({
         name: name.trim(),
         title: title.trim(),
         description: description.trim(),
         computerMode,
+        ...(selected ? { modelProvider: selected.provider, modelId: selected.modelId } : {}),
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : t`Could not create bot`);
@@ -117,7 +154,7 @@ export function CreateBotForm({
   }
 
   return (
-    <div>
+    <div data-testid="create-bot-form">
       <div className="mb-4 flex items-center justify-between">
         <span className="text-[13.5px] text-muted-foreground">
           <Trans>New bot</Trans>
@@ -169,7 +206,60 @@ export function CreateBotForm({
           className="mt-2"
         />
       </label>
-      <ComputerModePicker value={computerMode} onChange={setComputerMode} />
+      <div data-testid="create-bot-computer">
+        <ComputerModePicker
+          value={computerMode}
+          onChange={setComputerMode}
+          teamTestId="create-bot-team"
+          privateTestId="create-bot-private"
+        />
+      </div>
+      <div className={fieldLabelClass}>
+        <div className="text-[14px] text-muted-foreground">
+          <Trans>Model</Trans>
+        </div>
+        {modelMetaStatus === "loading" ? (
+          <div className="mt-2 flex justify-center py-2 text-muted-foreground">
+            <LoaderCircle size={16} className="animate-spin" aria-label={t`Loading…`} />
+          </div>
+        ) : modelMetaStatus === "error" ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="mt-2 gap-2"
+            data-testid="create-bot-model-retry"
+            onClick={loadModelMetadata}
+          >
+            <RotateCw size={15} strokeWidth={1.8} aria-hidden="true" />
+            <Trans>Retry now</Trans>
+          </Button>
+        ) : (
+          <NativeSelect
+            id={`${ids}-model`}
+            data-testid="create-bot-model"
+            className="mt-2 w-full"
+            value={modelKey}
+            onChange={(event) => setModelKey(event.target.value)}
+          >
+            <NativeSelectOption value="" data-testid="create-bot-model-default">
+              {t`Space default`}
+              {me?.defaultModel
+                ? ` (${catalogLabel(catalog, me.defaultProvider, me.defaultModel) ?? me.defaultModel})`
+                : ""}
+            </NativeSelectOption>
+            {connectedOptions.map((option) => (
+              <NativeSelectOption
+                key={option.key}
+                value={option.key}
+                data-testid={`create-bot-model-${option.key}`}
+              >
+                {option.label}
+              </NativeSelectOption>
+            ))}
+          </NativeSelect>
+        )}
+      </div>
       <Button
         className="mt-5"
         disabled={!name.trim() || submitting}

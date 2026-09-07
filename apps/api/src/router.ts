@@ -93,6 +93,7 @@ import {
 } from "@rakazo/core";
 import {
   appendEventInTransaction,
+  createExternalConversationRepos,
   createGroupRepos,
   createRepos,
   createSpaceForMember,
@@ -119,6 +120,7 @@ import {
   touchGroupUpdatedAt,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { deleteAgentSecret, listAgentSecrets, putAgentSecret } from "./agent-secrets.js";
 import { createAgentSkillsService } from "./agent-skills.js";
 import { createOwnedArtifact, getOwnedArtifact, getSpaceArtifact } from "./artifacts.js";
 import {
@@ -126,6 +128,7 @@ import {
   resolveBusyBotName,
   toComputerStatus,
 } from "./computer-status.js";
+import { searchIntegrationCatalog } from "./integration-catalog.js";
 import { buildMcpUpdateMaterial } from "./mcp-material.js";
 import {
   disconnectMemoryProvider,
@@ -152,7 +155,12 @@ import {
   UpdaterProxyError,
 } from "./server-update.js";
 import { assertTeachingSendAllowed, createTaughtSkillsService } from "./taught-skills.js";
-import { isPeerRun, loadAllMessages, loadMessagePage } from "./thread-message-pages.js";
+import {
+  isPeerRun,
+  loadAllMessages,
+  loadMessagePage,
+  shouldForwardPeerThreadEvent,
+} from "./thread-message-pages.js";
 import {
   reactToThreadMessage,
   resolveThreadTarget,
@@ -420,6 +428,7 @@ export interface RouterDeps {
     updaterUrl?: string;
     updaterToken?: string;
     imageTag?: string;
+    integrationsCatalogUrl?: string;
   };
 }
 
@@ -479,6 +488,7 @@ export function createRouter(deps: RouterDeps) {
           isDefault: false,
           bots: [],
           groups: [],
+          externalConversations: [],
           botSections: [],
         };
       }),
@@ -870,6 +880,10 @@ export function createRouter(deps: RouterDeps) {
               ? { modelProvider: input.modelProvider, modelId: input.modelId ?? null }
               : {}),
             ...(input.thinkingLevel !== undefined ? { thinkingLevel } : {}),
+            ...(input.teamChatAmbientEnabled !== undefined
+              ? { teamChatAmbientEnabled: input.teamChatAmbientEnabled }
+              : {}),
+            ...(input.teamChatRules !== undefined ? { teamChatRules: input.teamChatRules } : {}),
           },
         });
         const bots = await repos.listBots(context.actor);
@@ -1168,25 +1182,7 @@ export function createRouter(deps: RouterDeps) {
           context.signal,
         )) {
           if (await isPeerRun(deps.prisma, event.runId, peerRunCache)) {
-            // Keep terminal peer-run events so clients can clear working state.
-            // Keep compact peer receipts for mobile; drop peer activity/replies.
-            const isTerminal =
-              event.type === "run.completed" ||
-              event.type === "run.failed" ||
-              event.type === "run.cancelled";
-            const blocks = event.payload.blocks;
-            const isReceipt =
-              (event.type === "thread.message.created" ||
-                event.type === "thread.message.updated") &&
-              Array.isArray(blocks) &&
-              blocks.some(
-                (block) =>
-                  !!block &&
-                  typeof block === "object" &&
-                  "kind" in block &&
-                  (block.kind === "bot_message_received" || block.kind === "bot_message_sent"),
-              );
-            if (!isTerminal && !isReceipt) continue;
+            if (!shouldForwardPeerThreadEvent(event)) continue;
           }
           yield event;
         }
@@ -1444,6 +1440,11 @@ export function createRouter(deps: RouterDeps) {
             screenLeaseId: screenLeaseIdForRun(lease, manualRunId),
           });
           scheduleComputerSleep(deps.jobs, bot.computer.id);
+        } catch (error) {
+          if (error instanceof ComputerBusyError) {
+            throw new ORPCError("CONFLICT", { message: "Computer is busy" });
+          }
+          throw error;
         } finally {
           await releaseComputerExecutionLease(deps.prisma, lease);
         }
@@ -2021,6 +2022,8 @@ export function createRouter(deps: RouterDeps) {
             notify: input.notify,
             active: input.active,
             webhookEnabled: input.webhookEnabled,
+            githubEnabled: input.githubEnabled,
+            messageProvider: input.messageProvider,
             nextRunAt,
           },
         });
@@ -2051,9 +2054,12 @@ export function createRouter(deps: RouterDeps) {
         const crons = input.crons ?? existing.crons;
         const timezone = input.timezone ?? existing.timezone;
         const webhookEnabled = input.webhookEnabled ?? existing.webhookEnabled;
-        if (crons.length === 0 && !webhookEnabled) {
+        const githubEnabled = input.githubEnabled ?? existing.githubEnabled;
+        const messageProvider =
+          input.messageProvider === undefined ? existing.messageProvider : input.messageProvider;
+        if (crons.length === 0 && !webhookEnabled && !githubEnabled && !messageProvider) {
           throw new ORPCError("BAD_REQUEST", {
-            message: "Add a schedule or webhook trigger",
+            message: "Add a schedule, webhook, GitHub, or message trigger",
           });
         }
         if (hasMixedOneShotSchedule(crons)) {
@@ -2120,6 +2126,8 @@ export function createRouter(deps: RouterDeps) {
             active: input.active,
             notify: input.notify,
             webhookEnabled: input.webhookEnabled,
+            githubEnabled: input.githubEnabled,
+            messageProvider: input.messageProvider,
             nextRunAt,
           },
         });
@@ -2361,6 +2369,23 @@ export function createRouter(deps: RouterDeps) {
           config: row.config as Record<string, unknown>,
           createdAt: row.createdAt.toISOString(),
         }));
+      }),
+      catalogSearch: authed.capabilities.catalogSearch.handler(async ({ context, input }) => {
+        const baseUrl = deps.env.integrationsCatalogUrl;
+        if (!baseUrl) return { enabled: false, results: [] };
+        try {
+          const results = await searchIntegrationCatalog({
+            baseUrl,
+            query: input.query,
+            signal: context.signal ?? new AbortController().signal,
+            fetch: deps.remoteConnectors?.fetch,
+          });
+          return { enabled: true, results };
+        } catch (error) {
+          throw new ORPCError("BAD_GATEWAY", {
+            message: error instanceof Error ? error.message : "Integration catalog search failed",
+          });
+        }
       }),
       install: authed.capabilities.install.handler(async ({ context, input }) => {
         let source = input.source.trim();
@@ -3927,6 +3952,34 @@ export function createRouter(deps: RouterDeps) {
         }),
       },
     },
+    externalConversations: {
+      updatePolicy: authed.externalConversations.updatePolicy.handler(
+        async ({ context, input }) => {
+          const { externalConversationId, ...policy } = input;
+          return createExternalConversationRepos(deps.prisma).updatePolicy(
+            context.actor,
+            externalConversationId,
+            policy,
+          );
+        },
+      ),
+    },
+    agentSecrets: {
+      list: authed.agentSecrets.list.handler(async ({ context }) =>
+        listAgentSecrets({ prisma: deps.prisma, secrets: deps.secrets }, context.actor),
+      ),
+      put: authed.agentSecrets.put.handler(async ({ context, input, signal }) =>
+        putAgentSecret(
+          { prisma: deps.prisma, secrets: deps.secrets },
+          context.actor,
+          input,
+          signal,
+        ),
+      ),
+      remove: authed.agentSecrets.remove.handler(async ({ context, input }) =>
+        deleteAgentSecret({ prisma: deps.prisma, secrets: deps.secrets }, context.actor, input.id),
+      ),
+    },
     approvalRules: {
       list: authed.approvalRules.list.handler(async ({ context }) => {
         const rows = await deps.prisma.actionApprovalRule.findMany({
@@ -4298,15 +4351,21 @@ async function spaceNavigationDto(
   });
   const spaceIds = memberships.map((membership) => membership.spaceId);
   const inactiveSpaceIds = spaceIds.filter((spaceId) => spaceId !== actor.spaceId);
-  const [currentBots, currentGroups, inactiveBots, inactiveGroups, botSections] = await Promise.all(
-    [
-      repos.listBots(actor),
-      groupRepos.listGroups(actor),
-      repos.listSpaceBotsForSpaces(actor, inactiveSpaceIds),
-      groupRepos.listSpaceGroupsForSpaces(actor, inactiveSpaceIds),
-      repos.listBotSectionsForSpaces(actor, spaceIds),
-    ],
-  );
+  const [
+    currentBots,
+    currentGroups,
+    inactiveBots,
+    inactiveGroups,
+    botSections,
+    externalConversations,
+  ] = await Promise.all([
+    repos.listBots(actor),
+    groupRepos.listGroups(actor),
+    repos.listSpaceBotsForSpaces(actor, inactiveSpaceIds),
+    groupRepos.listSpaceGroupsForSpaces(actor, inactiveSpaceIds),
+    repos.listBotSectionsForSpaces(actor, spaceIds),
+    createExternalConversationRepos(deps.prisma).listForSpaces(actor, spaceIds),
+  ]);
   const currentMembership = memberships.find((membership) => membership.spaceId === actor.spaceId);
   if (!currentMembership) throw new IsolationError();
   const botsBySpace = partitionBySpace([...currentBots, ...inactiveBots]);
@@ -4322,6 +4381,9 @@ async function spaceNavigationDto(
       name: currentMembership.space.name,
       bots: currentBots,
       groups: currentGroups,
+      externalConversations: externalConversations.filter(
+        (conversation) => conversation.spaceId === actor.spaceId,
+      ),
       botSections: sectionsFor(actor.spaceId),
     },
     spaces: memberships.map((membership) => {
@@ -4356,6 +4418,9 @@ async function spaceNavigationDto(
           unread: group.unread,
           updatedAt: group.updatedAt,
         })),
+        externalConversations: externalConversations.filter(
+          (conversation) => conversation.spaceId === membership.spaceId,
+        ),
         botSections: sectionsFor(membership.spaceId),
       };
     }),
@@ -4726,6 +4791,8 @@ function mapRoutine(row: {
   active: boolean;
   notify: boolean;
   webhookEnabled: boolean;
+  githubEnabled: boolean;
+  messageProvider: string | null;
   lastRunAt: Date | null;
   nextRunAt: Date | null;
   createdAt: Date;
@@ -4740,6 +4807,8 @@ function mapRoutine(row: {
     active: row.active,
     notify: row.notify,
     webhookEnabled: row.webhookEnabled,
+    githubEnabled: row.githubEnabled,
+    messageProvider: row.messageProvider,
     lastRunAt: row.lastRunAt?.toISOString() ?? null,
     nextRunAt: row.nextRunAt?.toISOString() ?? null,
     createdAt: row.createdAt.toISOString(),

@@ -1,25 +1,14 @@
-import { existsSync, mkdtempSync, readFileSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { BoxSandboxProvider, E2BSandboxProvider, PiAgentRuntime } from "@rakazo/adapters";
+import type { RunStatus } from "@rakazo/contracts";
+import { isTerminal } from "@rakazo/core";
+import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 import { afterAll, describe, expect, it } from "vitest";
 import { sessionCookieHeader } from "./index.js";
 
-function loadEnvFile() {
-  const file = path.resolve(".env");
-  if (!existsSync(file)) return;
-  for (const line of readFileSync(file, "utf8").split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
-    const eq = trimmed.indexOf("=");
-    if (eq < 1) continue;
-    const key = trimmed.slice(0, eq);
-    const value = trimmed.slice(eq + 1).replace(/^["']|["']$/g, "");
-    if (!(key in process.env)) process.env[key] = value;
-  }
-}
-
-loadEnvFile();
+if (process.env.VERIFY_PROVIDERS) loadRootEnv();
 
 const liveE2b = Boolean(process.env.VERIFY_PROVIDERS && process.env.E2B_API_KEY);
 const liveBox = Boolean(process.env.VERIFY_PROVIDERS && process.env.BOX_API_KEY);
@@ -135,21 +124,26 @@ describePi("live OpenRouter / Pi canary", () => {
       if (event.type === "text") text += event.text;
       if (event.type === "done" && event.text && !text) text = event.text;
     }
-    expect(text.toLowerCase()).toMatch(/pong/);
+    expect(text.trim().toLowerCase()).toBe("pong");
     expect(text).not.toMatch(/sk-or-|OPENROUTER_API_KEY/i);
   }, 90_000);
 });
 
 describePiApp("live OpenRouter product journey", () => {
   let stop: (() => Promise<void>) | undefined;
+  let dataDir: string | undefined;
 
   afterAll(async () => {
-    await stop?.();
+    try {
+      await stop?.();
+    } finally {
+      if (dataDir) rmSync(dataDir, { recursive: true, force: true });
+    }
   });
 
   it("completes a bot turn through the API with the live model", async () => {
     const { createApp } = await import("../../../apps/api/src/app.ts");
-    const dataDir = mkdtempSync(path.join(tmpdir(), "rakazo-pi-"));
+    dataDir = mkdtempSync(path.join(tmpdir(), "rakazo-pi-"));
     const handles = await createApp({
       databaseUrl: process.env.DATABASE_URL!,
       dataDir,
@@ -173,24 +167,27 @@ describePiApp("live OpenRouter product journey", () => {
       instructions: "Reply briefly. Prefer the write_file tool when asked to write a file.",
       notifyOnFinish: true,
     });
-    await rpc(handles.app, cookie, "threads/send", {
+    const sent = await rpc<{ runId: string }>(handles.app, cookie, "threads/send", {
       botId: botRes.id,
       text: "Use write_file to save notes/result.txt containing exactly openrouter-ok",
     });
-    const snap = await waitFor(handles.app, cookie, botRes.id, 90_000);
+    const run = await waitForRun(
+      () =>
+        handles.prisma.run.findUnique({
+          where: { id: sent.runId },
+          select: { status: true },
+        }),
+      90_000,
+    );
+    expect(run.status).toBe("completed");
+    const snap = await rpc<Snap>(handles.app, cookie, "threads/get", { botId: botRes.id });
     const blob = JSON.stringify(snap);
     expect(blob).not.toMatch(/sk-or-/i);
     const file = await rpc<{ content: string }>(handles.app, cookie, "computer/readFile", {
       botId: botRes.id,
       path: "notes/result.txt",
-    }).catch(() => ({ content: "" }));
-    const ok =
-      file.content.includes("openrouter-ok") ||
-      blob.toLowerCase().includes("openrouter-ok") ||
-      blob.toLowerCase().includes("pong") ||
-      snap.messages.some((m) => m.role === "bot");
-    expect(ok).toBe(true);
-    if (file.content) expect(file.content).toContain("openrouter-ok");
+    });
+    expect(file.content).toBe("openrouter-ok");
   }, 120_000);
 });
 
@@ -212,13 +209,13 @@ async function rpc<T>(app: App, cookie: string, proc: string, body: unknown = {}
   return parsed.json as T;
 }
 
-async function waitFor(app: App, cookie: string, botId: string, ms: number): Promise<Snap> {
+async function waitForRun(load: () => Promise<{ status: string } | null>, ms: number) {
   const start = Date.now();
-  let last: Snap | null = null;
+  let last: { status: string } | null = null;
   while (Date.now() - start < ms) {
-    last = await rpc<Snap>(app, cookie, "threads/get", { botId });
-    if (!last.run || ["completed", "failed", "cancelled"].includes(last.run.status)) return last;
+    last = await load();
+    if (last && isTerminal(last.status as RunStatus)) return last;
     await new Promise((r) => setTimeout(r, 400));
   }
-  throw new Error(`timeout waiting for live model turn: ${JSON.stringify(last)}`);
+  throw new Error(`timeout waiting for live model turn: ${last?.status ?? "not found"}`);
 }

@@ -15,7 +15,7 @@
     "@rakazo/contracts": "workspace:*",
     "@rakazo/core": "workspace:*",
     "@rakazo/logging": "workspace:*",
-    "hono": "^4.9.6",
+    "hono": "^4.9.7",
     "tsx": "^4.20.5"
   },
   "devDependencies": {

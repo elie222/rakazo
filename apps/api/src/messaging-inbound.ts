@@ -16,6 +16,17 @@ import {
   redeemMessagingLinkCode,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import {
+  MESSAGE_ROUTING_REARMED_REASON,
+  MESSAGE_ROUTING_REASON,
+  MESSAGE_ROUTING_RESERVATION_MS,
+} from "./team-chat-startup.js";
+import {
+  deliverWebhookEvent,
+  formatUntrustedDeliveryPayload,
+  inboundEventName,
+  messagingWakeIdempotencyKey,
+} from "./webhook-inbound.js";
 
 export interface MessagingInboundDeps {
   prisma: PrismaClient;
@@ -124,6 +135,10 @@ async function handleDirectEvent(
     );
   }
 
+  // Message-trigger routines own the delivery when configured. Do not also
+  // start a normal messaging continue for the same inbound handle.
+  if (await wakeMessageRoutines(deps, ids, event)) return;
+
   const sent = await deps.events.sendUserMessage({
     spaceId: ids.spaceId,
     threadId: ids.threadId,
@@ -147,6 +162,132 @@ async function handleDirectEvent(
       getLogger().error("messaging inbound run enqueue error", error);
     });
   }
+}
+
+/** Wake provider-neutral message routines through the same approval boundary as webhooks. */
+export async function wakeMessageRoutines(
+  deps: Pick<MessagingInboundDeps, "prisma" | "events" | "jobs">,
+  target: Pick<ProvisionedMessagingIdentity, "spaceId" | "userId" | "botId" | "threadId">,
+  event: MessagingInboundMessage,
+  options?: {
+    /**
+     * Provider prefix for the wake clientNonce. TeamChat recovery looks up
+     * nonces with TeamChatBridge.providerId (often "slack"); pass that here when
+     * the inbound event.provider differs (e.g. teamchat-emulator).
+     */
+    deliveryProvider?: string;
+    /**
+     * TeamChat external message id. When set, atomically reassert routine
+     * ownership before creating a run so a concurrent TeamChat agent claim
+     * cannot also deliver for the same provider event.
+     */
+    externalMessageId?: string;
+  },
+): Promise<boolean> {
+  const routines = await deps.prisma.routine.findMany({
+    where: {
+      botId: target.botId,
+      spaceId: target.spaceId,
+      active: true,
+      messageProvider: event.provider,
+    },
+    select: { id: true, name: true, prompt: true },
+    orderBy: { updatedAt: "desc" },
+  });
+  if (routines.length === 0) return false;
+
+  if (options?.externalMessageId) {
+    // CAS: only deliver when agent ownership has not claimed the row. Holding
+    // message_routine_routing blocks TeamChat queue() from creating a parallel run.
+    const reserved = await deps.prisma.externalMessage.updateMany({
+      where: {
+        id: options.externalMessageId,
+        status: { in: ["deferred", "received", "observed"] },
+        OR: [
+          { engagementReason: null },
+          {
+            engagementReason: {
+              in: [MESSAGE_ROUTING_REASON, MESSAGE_ROUTING_REARMED_REASON],
+            },
+          },
+        ],
+      },
+      data: {
+        engagementReason: MESSAGE_ROUTING_REASON,
+        // Outlive a dead heartbeat so reconcile cannot promote to agent mid-wake.
+        nextAttemptAt: new Date(Date.now() + MESSAGE_ROUTING_RESERVATION_MS),
+      },
+    });
+    if (reserved.count !== 1) return false;
+  }
+
+  const provider = inboundEventName(event.provider);
+  const prompt = formatUntrustedDeliveryPayload(`[Messaging Event: ${provider}]`, {
+    provider: event.provider,
+    kind: event.isDirect ? "direct" : "channel",
+    handle: event.handle,
+    from: event.from,
+    fromLabel: event.fromLabel,
+    channelName: event.channelName,
+    content: event.content,
+    mediaUrl: event.mediaUrl,
+  });
+  await deliverWebhookEvent(
+    { events: deps.events, jobs: deps.jobs },
+    {
+      bot: { id: target.botId, spaceId: target.spaceId, userId: target.userId },
+      threadId: target.threadId,
+    },
+    {
+      prompt,
+      routines,
+      source: "messaging",
+      idempotencyKey: messagingWakeIdempotencyKey(
+        options?.deliveryProvider ?? event.provider,
+        event.handle,
+      ),
+      // TeamChat channel wakes may share a live thread with an active chat run.
+      allowParallelRun: true,
+    },
+  );
+  return true;
+}
+
+/**
+ * TeamChat engagement can still receive the message, but unattended
+ * message-routine wakes reuse the personal-line approval boundary:
+ * linked identity for DMs; approved channel member when we have membership
+ * state; otherwise a linked identity so public-channel strangers cannot start
+ * active routines.
+ */
+export async function teamChatSenderCanWakeMessageRoutines(
+  deps: Pick<MessagingInboundDeps, "prisma">,
+  event: MessagingInboundMessage,
+): Promise<boolean> {
+  if (event.senderIsBot) return false;
+
+  const linkedIdentity = await deps.prisma.messagingIdentity.findUnique({
+    where: { provider_address: { provider: event.provider, address: event.from } },
+    select: { id: true },
+  });
+
+  if (event.isDirect) return Boolean(linkedIdentity);
+
+  const channel = await deps.prisma.messagingChannel.findUnique({
+    where: { threadId: event.threadId },
+    select: { id: true },
+  });
+  if (channel) {
+    const member = await deps.prisma.messagingChannelMember.findUnique({
+      where: { channelId_address: { channelId: channel.id, address: event.from } },
+      select: { status: true },
+    });
+    return member?.status === "approved";
+  }
+
+  // Pure TeamChat workspace rooms have no personal membership ledger.
+  // Still require a linked sender before waking message routines.
+  return Boolean(linkedIdentity);
 }
 
 /**
@@ -462,6 +603,14 @@ async function handleChannelEvent(
     if (!identity) continue;
     const thread = await deps.prisma.thread.findFirst({ where: { botId: identity.botId } });
     if (!thread) continue;
+    const target = {
+      spaceId: identity.spaceId,
+      userId: identity.userId,
+      botId: identity.botId,
+      threadId: thread.id,
+    };
+    if (await wakeMessageRoutines(deps, target, event)) continue;
+
     const sent = await deps.events.sendUserMessage({
       spaceId: identity.spaceId,
       threadId: thread.id,

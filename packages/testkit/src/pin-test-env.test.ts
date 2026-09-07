@@ -14,6 +14,7 @@ describeFast("pnpm test emulator pin", () => {
 
   it("does not keep a live Composio key in the test process", () => {
     expect(process.env.COMPOSIO_API_KEY).toBeUndefined();
+    expect(process.env.INTEGRATIONS_CATALOG_URL).toBeUndefined();
   });
 
   itOffline(

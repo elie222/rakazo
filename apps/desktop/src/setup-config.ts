@@ -2,8 +2,8 @@ import { createHash } from "node:crypto";
 import { isIP } from "node:net";
 import type { DesktopSetup, DesktopStackProbeResponse } from "@rakazo/contracts";
 
-/** Where `pnpm dev` serves the Rakazo web app on this machine. */
-export const DEFAULT_LOCAL_WEB_URL = "http://127.0.0.1:5173";
+/** Managed desktop origin; development keeps its usual web/API ports. */
+export const DEFAULT_LOCAL_WEB_URL = "http://127.0.0.1:45173";
 export const PROBE_RESPONSE_LIMIT_BYTES = 64 * 1024;
 
 export const SETUP_FILE_NAME = "setup.json";

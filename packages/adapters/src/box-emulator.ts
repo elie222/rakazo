@@ -1,6 +1,6 @@
 import { ManagedSandboxEmulator } from "./e2b-emulator.js";
 
-/** Box protocol emulator with the provider's single-desktop constraint. */
+/** Managed-provider emulator configured with Box identity. */
 export class BoxSandboxEmulator extends ManagedSandboxEmulator {
   constructor() {
     super({ id: "box-emulator", kind: "box" });

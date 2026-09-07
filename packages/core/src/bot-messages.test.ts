@@ -356,7 +356,8 @@ describe("inbound wake prompt", () => {
       text: "The answer is 42.",
       intent: "result",
     });
-    expect(resultPrompt).toContain("summarize this result to the user now");
+    expect(resultPrompt).toContain("Relay it to the user now");
+    expect(resultPrompt).toContain("include the actual substance");
     expect(resultPrompt).not.toContain("staying silent is fine");
   });
 

@@ -25,12 +25,29 @@ import {
   resolveComputerControlEndpoint,
   resolveScreenNetworkMode,
   resolveScreenPublishTarget,
+  resolveTeamScreenLimit,
   screenPorts,
   screenUrlFor,
+  screenUrlWithToken,
   xdotoolCommand,
 } from "./computer-spec.js";
 
 describe("graphical computer spec", () => {
+  it("binds the embed WebSocket path to the current screen capability", () => {
+    const url = new URL(screenUrlWithToken("http://screen.test:6080/embed.html", "current-token"));
+    expect(url.pathname).toBe("/embed.html");
+    expect(url.searchParams.get("path")).toBe("websockify?token=current-token");
+  });
+
+  it("has no small default cap and accepts optional operator limits", () => {
+    expect(resolveTeamScreenLimit(undefined)).toBeGreaterThan(1000);
+    expect(resolveTeamScreenLimit("0")).toBe(resolveTeamScreenLimit(undefined));
+    expect(resolveTeamScreenLimit("1000")).toBe(1000);
+    expect(resolveTeamScreenLimit("4")).toBe(4);
+    for (const value of ["-1", "1.5", "not-a-number"])
+      expect(() => resolveTeamScreenLimit(value)).toThrow(/positive integer/);
+  });
+
   it("creates a VNC desktop, not an alpine sleep fallback", () => {
     const options = containerCreateOptions({
       name: "rakazo-bot-abc",
@@ -50,37 +67,20 @@ describe("graphical computer spec", () => {
     );
     expect(options.Env).toContain("NPM_CONFIG_PREFIX=/home/rakazo/.local");
     expect(options.Env?.join("\n")).not.toMatch(/AXIOM_|LOG_LEVEL|LOG_FORMAT/);
-    expect(options.ExposedPorts).toMatchObject({
-      "6080/tcp": {},
-      "6081/tcp": {},
-      "6082/tcp": {},
-      "6083/tcp": {},
-      "6084/tcp": {},
-      "6085/tcp": {},
-      "6086/tcp": {},
-      "6087/tcp": {},
-      "6088/tcp": {},
-      "6089/tcp": {},
-      "6090/tcp": {},
-      "6091/tcp": {},
-      "6092/tcp": {},
-      "6093/tcp": {},
-      "6094/tcp": {},
-      "6095/tcp": {},
-    });
+    expect(options.ExposedPorts).toEqual({ "6080/tcp": {} });
     // Browser debugging stays inside the computer trust boundary.
-    for (let display = 1; display <= 8; display += 1) {
-      const cdpPort = `${9221 + display}/tcp`;
+    for (let index = 0; index < 1000; index += 1) {
+      const cdpPort = `${screenPorts(index).debugPort}/tcp`;
       expect(options.ExposedPorts).not.toHaveProperty(cdpPort);
       expect(options.HostConfig.PortBindings).not.toHaveProperty(cdpPort);
     }
     expect(options.ExposedPorts).not.toHaveProperty("7070/tcp");
     expect(options.HostConfig.PortBindings).not.toHaveProperty("7070/tcp");
     expect(options.HostConfig.PortBindings["6080/tcp"]?.[0]?.HostIp).toBe("127.0.0.1");
-    expect(options.HostConfig.PortBindings["6081/tcp"]?.[0]?.HostIp).toBe("127.0.0.1");
-    expect(options.HostConfig.PortBindings["6082/tcp"]?.[0]?.HostIp).toBe("127.0.0.1");
-    expect(screenPorts(0)).toMatchObject({ display: ":1", viewPort: "6080", controlPort: "6081" });
-    expect(screenPorts(1)).toMatchObject({ display: ":2", viewPort: "6082", controlPort: "6083" });
+    expect(options.HostConfig.PortBindings).not.toHaveProperty("6081/tcp");
+    expect(options.HostConfig.PortBindings).not.toHaveProperty("6082/tcp");
+    expect(screenPorts(0)).toMatchObject({ display: ":1", viewPort: "6080", controlPort: "6080" });
+    expect(screenPorts(1)).toMatchObject({ display: ":2", viewPort: "6080", controlPort: "6080" });
     expect(options.HostConfig.ShmSize).toBeGreaterThanOrEqual(256 * 1024 * 1024);
     expect(options.User).toBe("1000:1000");
     expect(options.HostConfig.CapDrop).toEqual(["ALL"]);
@@ -140,7 +140,7 @@ describe("graphical computer spec", () => {
     expect(dockerfile).toMatch(/USER 1000:1000/);
     expect(start).toMatch(/rakazo-computer-control/);
     expect(start).toMatch(/rakazo-browser/);
-    expect(start).toMatch(/SingletonLock/);
+    expect(start).not.toMatch(/browser\.log/);
     expect(start).toMatch(/xdg-mime default rakazo-browser\.desktop/);
     expect(start).toMatch(/register_browser_handler x-scheme-handler\/http/);
     expect(start).toMatch(/register_browser_handler x-scheme-handler\/https/);
@@ -152,8 +152,9 @@ describe("graphical computer spec", () => {
     expect(start).not.toMatch(/xdg-mime default rakazo-browser\.desktop .*\|\| true/);
     expect(start).toMatch(/x11vnc .* -viewonly /);
     expect(browser).toMatch(/\.browser-profiles\/chromium/);
-    expect(browser).toMatch(/chromium-screen-\$\{DISPLAY/);
+    expect(browser).toMatch(/chromium-screen-\$DISPLAY_NUM/);
     expect(browser).toMatch(/USER_DATA_DIR_SET/);
+    expect(browser).toMatch(/RAKAZO_BROWSER_PROFILE/);
     expect(desktop).toMatch(/Exec=\/usr\/local\/bin\/rakazo-browser %U/);
     expect(dockerfile).toMatch(/rakazo-page-browser/);
     expect(browser).toMatch(/remote-debugging-port/);
@@ -176,7 +177,7 @@ describe("graphical computer spec", () => {
       chmodSync(chromium, 0o755);
 
       const run = (display: string, args: string[] = []) => {
-        const result = spawnSync("bash", [path.join(root, "rakazo-browser"), ...args], {
+        const result = spawnSync("sh", [path.join(root, "rakazo-browser"), ...args], {
           env: {
             ...process.env,
             DISPLAY: display,
@@ -195,6 +196,13 @@ describe("graphical computer spec", () => {
         expect(run(":1").some((arg) => arg.startsWith("--remote-debugging-port="))).toBe(true);
         expect(run(":2")).toContain(`--user-data-dir=${home}/.browser-profiles/chromium-screen-2`);
         expect(run(":2")).toContain("--remote-debugging-port=9223");
+        for (const display of [8, 9]) {
+          const args = run(`:0${display}.0`);
+          expect(args).toContain(`--remote-debugging-port=${9221 + display}`);
+          expect(args).toContain(
+            `--user-data-dir=${home}/.browser-profiles/chromium-screen-${display}`,
+          );
+        }
         const explicit = run(":3", [`--user-data-dir=${home}/custom-profile`]);
         expect(explicit).toContain(`--user-data-dir=${home}/custom-profile`);
         expect(explicit).not.toContain(

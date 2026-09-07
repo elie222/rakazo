@@ -1,8 +1,9 @@
 import { spawnSync } from "node:child_process";
 import { createServer } from "node:net";
 import path from "node:path";
-import type { ThreadSnapshot } from "@rakazo/contracts";
+import type { RunsListOutput, ThreadSnapshot } from "@rakazo/contracts";
 import { isTerminal } from "@rakazo/core";
+import { computerNetworkNameFor } from "../../../../infra/sandboxes/supervisor/src/computer-spec.js";
 
 const composeFile = path.resolve("infra/compose/docker-compose.topology.yml");
 const keep = process.argv.includes("--keep");
@@ -68,14 +69,14 @@ async function main() {
 
     compose(["start", "worker"]);
     const completed = await waitForRun(baseUrl, cookie, bot.id, sent.runId, 90_000);
-    if (completed.run && completed.run.status !== "completed") {
-      throw new Error(`worker did not complete queued run: ${JSON.stringify(completed.run)}`);
+    if (completed.runId !== sent.runId || completed.status !== "completed") {
+      throw new Error(`worker did not complete queued run: ${JSON.stringify(completed)}`);
     }
     const file = await rpc<{ content: string }>(baseUrl, cookie, "computer/readFile", {
       botId: bot.id,
       path: "notes/result.txt",
     });
-    if (!file.content.includes("topology-recovery-ok")) {
+    if (file.content !== "topology-recovery-ok\n") {
       throw new Error(`unexpected sandbox file content: ${JSON.stringify(file.content)}`);
     }
     const computer = await rpc<{ state: string }>(baseUrl, cookie, "computer/status", {
@@ -84,6 +85,12 @@ async function main() {
     if (computer.state !== "running") {
       throw new Error(`Docker computer did not remain running: ${JSON.stringify(computer)}`);
     }
+    // File-only runs leave desktops unopened. Request the actual screen before
+    // checking the supervisor/web peers that the screen connection attaches.
+    const screen = await rpc<{ url: string | null }>(baseUrl, cookie, "computer/screenUrl", {
+      botId: bot.id,
+    });
+    if (!screen.url) throw new Error("Docker computer did not expose a screen");
     assertComputerNetworkIsolation(compose, project);
     await rpc(baseUrl, cookie, "bots/remove", { botId: bot.id });
     botId = undefined;
@@ -175,18 +182,15 @@ async function waitForRun(
   timeoutMs: number,
 ) {
   const started = Date.now();
-  let last: ThreadSnapshot | undefined;
   while (Date.now() - started < timeoutMs) {
-    last = await rpc<ThreadSnapshot>(baseUrl, cookie, "threads/get", { botId });
-    if (
-      (last.run?.id === runId && isTerminal(last.run.status)) ||
-      (!last.run && last.messages.some((message) => message.role === "bot"))
-    ) {
-      return last;
-    }
+    // Thread snapshots intentionally omit completed runs. Inspect persisted run
+    // history so a reply from another run cannot stand in for this completion.
+    const recent = await rpc<RunsListOutput>(baseUrl, cookie, "runs/list", { filter: "recent" });
+    const run = recent.runs.find((run) => run.runId === runId && run.botId === botId);
+    if (run && isTerminal(run.status)) return run;
     await delay(300);
   }
-  throw new Error(`timed out waiting for run ${runId}: ${JSON.stringify(last?.run)}`);
+  throw new Error(`timed out waiting for run ${runId}`);
 }
 
 async function waitForHealth(baseUrl: string, timeoutMs: number) {
@@ -220,7 +224,11 @@ async function waitForWorker(
   const started = Date.now();
   while (Date.now() - started < timeoutMs) {
     const logs = compose(["logs", "--no-color", "--tail", "100", "worker"], true);
-    if (logs.includes("rakazo worker ready")) return;
+    // apps/worker logs readiness via the structured logger (packages/logging) as
+    // {"timestamp":...,"level":"info","message":"worker ready","service.name":"rakazo-worker"},
+    // not the old plain "rakazo worker ready" console.log line -- match the JSON field directly
+    // rather than a substring that depends on the sink's exact key order.
+    if (logs.includes('"message":"worker ready"')) return;
     await delay(500);
   }
   throw new Error("Graphile worker did not become ready");
@@ -314,8 +322,34 @@ function removeManagedComputers(
 ) {
   try {
     const supervisorId = compose(["ps", "--quiet", "supervisor"], true).trim();
-    const ids = isolatedSupervisorNetworks(supervisorId, projectName).flatMap((networkName) =>
-      docker([
+    const networks = new Set(isolatedSupervisorNetworks(supervisorId, projectName));
+    // A failed run may provision a computer without ever opening its screen.
+    // Such a network has no supervisor peer; discover it from this disposable
+    // topology's own database, never from unrelated managed host computers.
+    try {
+      const homes = compose(
+        [
+          "exec",
+          "-T",
+          "postgres",
+          "psql",
+          "-U",
+          "rakazo",
+          "-d",
+          "rakazo",
+          "-Atc",
+          'SELECT "homeKey" FROM computers',
+        ],
+        true,
+      );
+      for (const home of homes.split("\n").filter(Boolean)) {
+        networks.add(computerNetworkNameFor(home));
+      }
+    } catch {
+      // The database may not exist yet when Compose startup itself fails.
+    }
+    for (const networkName of networks) {
+      const ids = docker([
         "ps",
         "--all",
         "--quiet",
@@ -326,9 +360,30 @@ function removeManagedComputers(
       ])
         .split("\n")
         .map((id) => id.trim())
-        .filter(Boolean),
-    );
-    if (ids.length) docker(["rm", "--force", ...ids]);
+        .filter(Boolean);
+      if (ids.length) docker(["rm", "--force", ...ids]);
+      const networkId = docker([
+        "network",
+        "ls",
+        "--quiet",
+        "--filter",
+        `name=^${networkName}$`,
+      ]).trim();
+      if (!networkId) continue;
+      const peers = JSON.parse(
+        docker(["network", "inspect", networkId, "--format", "{{json .Containers}}"]),
+      ) as Record<string, unknown>;
+      for (const peerId of Object.keys(peers)) {
+        const owner = docker([
+          "inspect",
+          peerId,
+          "--format",
+          '{{index .Config.Labels "com.docker.compose.project"}}',
+        ]).trim();
+        if (owner === projectName) docker(["network", "disconnect", networkId, peerId]);
+      }
+      docker(["network", "rm", networkId]);
+    }
   } catch (error) {
     console.error(
       `managed computer cleanup failed: ${error instanceof Error ? error.message : error}`,

@@ -77,23 +77,11 @@ export async function captureScreenshot(page: Page, testInfo: TestInfo, name: st
   await testInfo.attach(name, { contentType: "image/png", path: screenshotPath });
 }
 
-export async function openNewBot(
-  page: Page,
-  computerMode: "team" | "dedicated" = "team",
-  model?: { provider: string; modelId: string },
-) {
+export async function openNewBot(page: Page) {
   await page.getByTestId("create-menu-trigger").click();
   await page.getByTestId("create-new-bot").click();
-  await expect(page.getByTestId("create-bot-computer")).toBeVisible();
-  await page
-    .getByTestId(computerMode === "team" ? "create-bot-team" : "create-bot-private")
-    .click();
-  await expect(page.getByTestId("create-bot-model")).toBeVisible();
-  await page
-    .getByTestId(
-      model ? `create-bot-model-${model.provider}::${model.modelId}` : "create-bot-model-default",
-    )
-    .click();
+  await expect(page.getByTestId("side-panel")).toHaveAttribute("data-panel", "create");
+  await expect(page.getByTestId("create-bot-form")).toBeVisible();
 }
 
 export async function openNewGroup(page: Page) {
@@ -106,9 +94,38 @@ export async function openNewSpace(page: Page) {
   await page.getByTestId("create-new-space").click();
 }
 
-/** Instant-create a bot from the + picker and wait for its chat (side panel closed). */
-export async function createBotFromPicker(page: Page) {
+/** Open the create form from the + picker, submit, and wait for the new chat. */
+export async function createBotFromPicker(
+  page: Page,
+  options: {
+    name?: string;
+    title?: string;
+    description?: string;
+    computerMode?: "team" | "dedicated";
+    model?: { provider: string; modelId: string };
+  } = {},
+) {
+  const name = options.name ?? "New Bot";
   await openNewBot(page);
+  const form = page.getByTestId("create-bot-form");
+  await form.locator("label:has-text('Name') input").fill(name);
+  if (options.title != null) {
+    await form.locator("label:has-text('Title') input").fill(options.title);
+  }
+  if (options.description != null) {
+    await form.locator("label:has-text('Description') textarea").fill(options.description);
+  }
+  if (options.computerMode === "dedicated") {
+    await form.getByTestId("create-bot-private").click();
+  } else if (options.computerMode === "team") {
+    await form.getByTestId("create-bot-team").click();
+  }
+  if (options.model) {
+    const key = `${options.model.provider}::${options.model.modelId}`;
+    await expect(form.getByTestId(`create-bot-model-${key}`)).toBeAttached();
+    await form.getByTestId("create-bot-model").selectOption(key);
+  }
+  await form.getByRole("button", { name: "Create", exact: true }).click();
   await page.waitForURL(/\/app\/[^/]+$/);
   await expect(page.getByTestId("side-panel")).toHaveAttribute("data-panel", "closed");
 }

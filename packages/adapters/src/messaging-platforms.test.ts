@@ -1,6 +1,7 @@
 import { Domain } from "chat-adapter-lark";
 import { describe, expect, it, vi } from "vitest";
 import {
+  enrichSlackTeamRoom,
   isMessagingEnabled,
   isMessagingSurfaceEnabled,
   type MessagingEnvironmentValues,
@@ -161,7 +162,7 @@ describe("messagingPlatformsFromEnv", () => {
       platforms.map((platform) => [platform.provider, platform.capabilities]),
     );
     expect(capabilities.sendblue).toEqual({ direct: true, groups: true, typing: true });
-    expect(capabilities.slack).toEqual({ direct: true, groups: false, typing: false });
+    expect(capabilities.slack).toEqual({ direct: true, groups: true, typing: false });
     expect(capabilities.whatsapp).toEqual({ direct: true, groups: false, typing: false });
     expect(capabilities.telegram).toEqual({ direct: true, groups: false, typing: false });
     expect(capabilities.lark).toEqual({ direct: true, groups: false, typing: false });
@@ -269,5 +270,69 @@ describe("isMessagingSurfaceEnabled", () => {
     expect(isMessagingSurfaceEnabled(platforms, key(undefined, false))).toBe(true);
     expect(isMessagingSurfaceEnabled([], key("model-key", true))).toBe(false);
     vi.unstubAllEnvs();
+  });
+});
+
+describe("enrichSlackTeamRoom", () => {
+  const base = {
+    type: "message" as const,
+    provider: "slack",
+    handle: "Ev1",
+    threadId: "slack:C1",
+    isDirect: false,
+    from: "U_OTHER",
+    fromLabel: "Ada",
+    channelName: "launch",
+    participants: ["U_OTHER"],
+    content: "hello <@U_SOMEONE>",
+    mediaUrl: null,
+  };
+
+  it("marks app_mention events as mention", () => {
+    const enrichment = enrichSlackTeamRoom(
+      {
+        team_id: "T1",
+        authorizations: [{ user_id: "U_BOT", is_bot: true }],
+        event: { type: "app_mention", channel: "C1", text: "<@U_BOT> ship it", user: "U_OTHER" },
+      },
+      base,
+    );
+    expect(enrichment.kind).toBe("mention");
+    expect(enrichment.workspaceId).toBe("T1");
+    expect(enrichment.conversationKey).toBe("C1");
+  });
+
+  it("keeps ambient when another user is mentioned, not the bot", () => {
+    const enrichment = enrichSlackTeamRoom(
+      {
+        team_id: "T1",
+        authorizations: [{ user_id: "U_BOT", is_bot: true }],
+        event: {
+          type: "message",
+          channel: "C1",
+          text: "hey <@U_SOMEONE> can you look?",
+          user: "U_OTHER",
+        },
+      },
+      base,
+    );
+    expect(enrichment.kind).toBe("ambient");
+  });
+
+  it("marks message events that mention the authorized bot as mention", () => {
+    const enrichment = enrichSlackTeamRoom(
+      {
+        team_id: "T1",
+        authorizations: [{ user_id: "U_BOT", is_bot: true }],
+        event: {
+          type: "message",
+          channel: "C1",
+          text: "hey <@U_BOT> ship Friday?",
+          user: "U_OTHER",
+        },
+      },
+      base,
+    );
+    expect(enrichment.kind).toBe("mention");
   });
 });

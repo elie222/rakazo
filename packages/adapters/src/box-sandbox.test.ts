@@ -1,11 +1,7 @@
 import type { Command200Response } from "@asciidev/box-sdk";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  BoxSandboxProvider,
-  type BoxSandboxSdk,
-  isUnrecoverableBoxError,
-  shouldStopBoxBrowsersOnCancel,
-} from "./box-sandbox.js";
+import { BoxSandboxProvider, type BoxSandboxSdk, isUnrecoverableBoxError } from "./box-sandbox.js";
+import { desktopCommandResponder } from "./linux-desktop.test-support.js";
 
 const context = {
   operationId: "test",
@@ -237,7 +233,7 @@ describe("BoxSandboxProvider", () => {
     expect(body.locked).toBe(false);
   });
 
-  it("captures the desktop, exposes a private view, and enforces one screen", async () => {
+  it("captures independent desktops and exposes protected ports", async () => {
     const fixture = boxFixture();
     const provider = new BoxSandboxProvider({ apiKey: "test-key" }, fixture.client);
     const computer = await provider.provision({ botId: "bot-a", homePath: "/unused" }, context);
@@ -246,19 +242,20 @@ describe("BoxSandboxProvider", () => {
     const observation = await provider.observe(computer, context);
     expect(observation).toMatchObject({
       mimeType: "image/png",
-      width: 1920,
-      height: 1080,
-      cursor: { x: 21, y: 34 },
-      activeWindow: { id: "42", title: "Box browser" },
+      width: 1280,
+      height: 800,
+      cursor: { x: 10, y: 20 },
     });
-    expect(observation.image).toEqual(Uint8Array.from([137, 80, 78, 71]));
+    expect(observation.image).toEqual(Uint8Array.from([1, 2, 3]));
 
     const screen = await provider.connectScreen(
       computer,
       { view: "stream", interactive: false },
       context,
     );
-    expect(screen.url).toContain("view_only=true");
+    expect(new URL(screen.url!).searchParams.get("path")).toMatch(
+      /^websockify\?_token=secret&token=view-/,
+    );
     expect(screen.url).toContain("_token=secret");
 
     await provider.act(
@@ -272,24 +269,10 @@ describe("BoxSandboxProvider", () => {
       ),
     ).toBe(true);
 
-    await expect(provider.observe(computer, { ...context, botId: "bot-b" })).rejects.toThrow(
-      /temporarily busy/i,
-    );
-    expect(provider.describe().capabilities.multiScreen).toBe(false);
-  });
-
-  it("releases the screen claim when desktop connection fails", async () => {
-    const fixture = boxFixture();
-    fixture.desktop.mockRejectedValueOnce(new Error("desktop unavailable"));
-    const provider = new BoxSandboxProvider({ apiKey: "test-key" }, fixture.client);
-    const computer = await provider.provision({ botId: "bot-a", homePath: "/unused" }, context);
-
-    await expect(
-      provider.connectScreen(computer, { view: "stream", interactive: false }, context),
-    ).rejects.toThrow("desktop unavailable");
     await expect(provider.observe(computer, { ...context, botId: "bot-b" })).resolves.toMatchObject(
-      { width: 1920, height: 1080 },
+      { width: 1280 },
     );
+    expect(provider.describe().capabilities.multiScreen).toBe(true);
   });
 
   it("archives on stop and permanently deletes on destroy", async () => {
@@ -369,6 +352,7 @@ describe("BoxSandboxProvider", () => {
 
 function boxFixture(options: { state?: string } = {}) {
   const files = new Map<string, Uint8Array>();
+  const respond = desktopCommandResponder();
   const create = vi.fn(async () => createResponse());
   const fixture = {
     state: options.state ?? "ready",
@@ -391,6 +375,12 @@ function boxFixture(options: { state?: string } = {}) {
     commandStatus: vi.fn(),
     command: vi.fn(async (request: { commandRequest: { command: string; cwd?: string } }) => {
       const command = request.commandRequest.command;
+      const response = respond(command);
+      if (response) return finished(response);
+      if (command.includes("host ") && command.includes("--private")) {
+        const port = command.match(/host (\d+)/)?.[1];
+        return finished({ stdout: `https://box-test-${port}.on.ascii.dev?_token=secret` });
+      }
       if (command.includes("TEST_VALUE=works")) return finished({ stdout: "hello\n" });
       if (command.includes("find ") && command.includes("rakazo-home/bin")) {
         const target = "/home/user/rakazo-home/bin/tool";
@@ -445,7 +435,7 @@ function boxFixture(options: { state?: string } = {}) {
     ),
     artifactRaw: vi.fn(async ({ path }: { path: string }) => {
       const content = path.startsWith("/tmp/rakazo-observe-")
-        ? Uint8Array.from([137, 80, 78, 71])
+        ? Uint8Array.from([1, 2, 3])
         : (files.get(path) ?? new Uint8Array());
       return { raw: new Response(Buffer.from(content)) };
     }),
@@ -493,49 +483,3 @@ function finished(overrides: Partial<Command200Response> = {}): Command200Respon
     ...overrides,
   } as Command200Response;
 }
-
-describe("shouldStopBoxBrowsersOnCancel", () => {
-  it("keeps a newer remote fence alive even if a local claim was released", () => {
-    expect(
-      shouldStopBoxBrowsersOnCancel({
-        remoteLease: { status: "present", leaseId: "run-2:2" },
-        screenLeaseId: "run-1:1",
-      }),
-    ).toBe(false);
-  });
-
-  it("stops cross-process cancel when the remote fence matches", () => {
-    expect(
-      shouldStopBoxBrowsersOnCancel({
-        remoteLease: { status: "present", leaseId: "run-1:1" },
-        screenLeaseId: "run-1:1",
-      }),
-    ).toBe(true);
-  });
-
-  it("stops orphaned browsers when no remote fence exists", () => {
-    expect(
-      shouldStopBoxBrowsersOnCancel({
-        remoteLease: { status: "missing" },
-        screenLeaseId: "run-1:1",
-      }),
-    ).toBe(true);
-  });
-
-  it("fails closed when the remote lease cannot be read", () => {
-    expect(
-      shouldStopBoxBrowsersOnCancel({
-        remoteLease: { status: "error" },
-        screenLeaseId: "run-1:1",
-      }),
-    ).toBe(false);
-  });
-
-  it("fails closed when cancel has no screen lease id", () => {
-    expect(
-      shouldStopBoxBrowsersOnCancel({
-        remoteLease: { status: "present", leaseId: "run-1:1" },
-      }),
-    ).toBe(false);
-  });
-});

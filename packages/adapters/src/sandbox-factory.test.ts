@@ -29,7 +29,7 @@ describe("createSandboxProvider", () => {
     expect(createSandboxProvider("daytona-emulator", {}).describe().id).toBe("daytona-emulator");
     expect(createSandboxProvider("box-emulator", {}).describe()).toMatchObject({
       id: "box-emulator",
-      capabilities: { multiScreen: false },
+      capabilities: { multiScreen: true },
     });
   });
 
