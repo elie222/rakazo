@@ -7,6 +7,7 @@ on:
       - "apps/desktop/e2e/setup.spec.ts"
       - "apps/desktop/package.json"
       - "apps/desktop/assets/**"
+      - "packages/ui-tokens/assets/**"
       - "apps/desktop/scripts/copy-static.mjs"
       - "apps/desktop/src/setup*"
       - "apps/desktop/src/window-options.ts"
