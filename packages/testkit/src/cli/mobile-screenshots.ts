@@ -16,7 +16,7 @@ import { runProcess } from "./process.js";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
 const REPORT_DIR = path.join(ROOT, "test-report", "mobile-screenshots");
 const DATA_DIR = path.join(ROOT, ".tmp", "mobile-screenshots-data");
-const FLOW = path.join(ROOT, "apps", "mobile", ".maestro", "screenshots.yaml");
+const FLOW_DIR = path.join(ROOT, "apps", "mobile", ".maestro");
 const EMAIL = "mobile-screenshots@example.test";
 const PASSWORD = "test-password-123";
 const API_PORT = 3110;
@@ -73,34 +73,38 @@ async function main() {
 
   try {
     await waitForHealth(`${HOST_API_URL}/health`, 15_000);
-    await runProcess(
-      "maestro",
-      [
-        "test",
-        "--no-ansi",
-        "--flatten-debug-output",
-        "--debug-output",
-        path.join(REPORT_DIR, "debug"),
-        "--test-output-dir",
-        REPORT_DIR,
-        "--format",
-        "HTML",
-        "--output",
-        path.join(REPORT_DIR, "report.html"),
-        "-e",
-        `RAKAZO_SCREENSHOT_EMAIL=${EMAIL}`,
-        "-e",
-        `RAKAZO_SCREENSHOT_PASSWORD=${PASSWORD}`,
-        "-e",
-        `RAKAZO_SCREENSHOT_BOT_ID=${fixture.botId}`,
-        "-e",
-        `RAKAZO_SCREENSHOT_GROUP_ID=${fixture.groupId}`,
-        "-e",
-        `RAKAZO_SCREENSHOT_ROUTINE_ID=${fixture.routineId}`,
-        FLOW,
-      ],
-      process.env,
-    );
+    for (const flow of ["screenshots", "notification-demo"]) {
+      await runProcess(
+        "maestro",
+        [
+          "test",
+          "--no-ansi",
+          "--flatten-debug-output",
+          "--debug-output",
+          path.join(REPORT_DIR, "debug", flow),
+          "--test-output-dir",
+          REPORT_DIR,
+          "--format",
+          "HTML",
+          "--output",
+          path.join(REPORT_DIR, `${flow}.html`),
+          "-e",
+          `RAKAZO_SCREENSHOT_EMAIL=${EMAIL}`,
+          "-e",
+          `RAKAZO_SCREENSHOT_PASSWORD=${PASSWORD}`,
+          "-e",
+          `RAKAZO_SCREENSHOT_BOT_ID=${fixture.botId}`,
+          "-e",
+          `RAKAZO_SCREENSHOT_GROUP_ID=${fixture.groupId}`,
+          "-e",
+          `RAKAZO_SCREENSHOT_ROUTINE_ID=${fixture.routineId}`,
+          "-e",
+          `RAKAZO_NOTIFICATION_VIDEO=${path.join(REPORT_DIR, "notification-demo")}`,
+          path.join(FLOW_DIR, `${flow}.yaml`),
+        ],
+        process.env,
+      );
+    }
     await writeFile(
       path.join(REPORT_DIR, "summary.json"),
       `${JSON.stringify({ ok: true }, null, 2)}\n`,

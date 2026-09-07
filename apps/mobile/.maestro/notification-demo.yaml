@@ -1,0 +1,67 @@
+appId: com.rakazo.app
+name: Android live working status demonstration
+---
+- launchApp:
+    clearState: true
+    permissions:
+      notifications: allow
+- extendedWaitUntil:
+    visible: "Sign up for Rakazo"
+    timeout: 30000
+- tapOn: "Sign in"
+- tapOn: "Email"
+- inputText: ${RAKAZO_SCREENSHOT_EMAIL}
+- tapOn: "Password"
+- inputText: ${RAKAZO_SCREENSHOT_PASSWORD}
+- hideKeyboard
+- tapOn: "Sign in"
+- extendedWaitUntil:
+    visible: "Researcher"
+    timeout: 30000
+
+# Only the public demo is recorded; sign-in uses disposable fixture credentials.
+- startRecording: ${RAKAZO_NOTIFICATION_VIDEO}
+- openLink: "rakazo:///account"
+- scrollUntilVisible:
+    element: "Live working status"
+    direction: DOWN
+- tapOn: "Live working status"
+- openLink: "rakazo:///thread?botId=${RAKAZO_SCREENSHOT_BOT_ID}&name=Researcher"
+- extendedWaitUntil:
+    visible: "Message Researcher"
+    timeout: 10000
+- tapOn: "Message Researcher"
+- inputText: "Review the launch checklist and keep working until I stop you."
+- hideKeyboard
+- tapOn: "Send"
+- extendedWaitUntil:
+    visible: "Stop"
+    timeout: 30000
+- pressKey: HOME
+- swipe:
+    start: "50%, 0%"
+    end: "50%, 80%"
+- extendedWaitUntil:
+    visible: "Researcher is working"
+    timeout: 30000
+- takeScreenshot: "30-live-working-notification"
+- tapOn: "Researcher is working"
+- extendedWaitUntil:
+    visible: "Stop"
+    timeout: 10000
+- tapOn: "Stop"
+- extendedWaitUntil:
+    notVisible: "Stop"
+    timeout: 30000
+- openLink: "rakazo:///account"
+- scrollUntilVisible:
+    element: "Live working status"
+    direction: DOWN
+- tapOn: "Live working status"
+- pressKey: HOME
+- swipe:
+    start: "50%, 0%"
+    end: "50%, 80%"
+- assertNotVisible: "Researcher is working"
+- takeScreenshot: "31-live-working-stopped"
+- stopRecording
