@@ -12,24 +12,24 @@
     "e2e": "playwright test"
   },
   "dependencies": {
-    "@astrojs/react": "^6.0.2",
-    "@astrojs/sitemap": "3.7.3",
+    "@astrojs/react": "6.0.5",
+    "@astrojs/sitemap": "3.7.4",
     "@rakazo/core": "workspace:*",
     "@rakazo/ui-web": "workspace:*",
     "@vercel/functions": "3.9.5",
-    "astro": "^7.2.1",
-    "posthog-js": "1.417.1",
+    "astro": "7.3.1",
+    "posthog-js": "1.428.2",
     "react": "19.2.3",
     "react-dom": "19.2.3",
-    "zod": "4.4.3"
+    "zod": "4.5.4"
   },
   "devDependencies": {
-    "@astrojs/check": "^0.9.10",
-    "@playwright/test": "^1.55.0",
-    "@tailwindcss/vite": "^4.1.12",
-    "@types/react": "^19.1.12",
-    "@types/react-dom": "^19.1.9",
-    "tailwindcss": "^4.1.12",
-    "typescript": "^5.9.2"
+    "@astrojs/check": "0.9.10",
+    "@playwright/test": "1.63.0",
+    "@tailwindcss/vite": "4.3.3",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.7",
+    "tailwindcss": "4.3.3",
+    "typescript": "6.0.3"
   }
 }

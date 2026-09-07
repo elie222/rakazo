@@ -13,9 +13,9 @@
   },
   "dependencies": {
     "@rakazo/ui-tokens": "workspace:*",
-    "@ronradtke/react-native-markdown-display": "^9.0.3",
-    "react-markdown": "^10.1.0",
-    "remark-gfm": "^4.0.1"
+    "@ronradtke/react-native-markdown-display": "9.0.3",
+    "react-markdown": "10.1.0",
+    "remark-gfm": "4.0.1"
   },
   "peerDependencies": {
     "react": "19.2.3",
@@ -27,10 +27,10 @@
     }
   },
   "devDependencies": {
-    "@types/react": "^19.2.18",
+    "@types/react": "19.2.18",
     "react": "19.2.3",
-    "react-native": "0.86.2",
-    "typescript": "~6.0.3",
-    "vitest": "^4.1.10"
+    "react-native": "0.86.3",
+    "typescript": "7.0.2",
+    "vitest": "4.1.11"
   }
 }

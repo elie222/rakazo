@@ -1500,7 +1500,7 @@ function computer(overrides: Partial<ComputerStatus> = {}): ComputerStatus {
     screenHeight: 800,
     homeRevision: null,
     busyBotName: null,
-    updateAvailable: true,
+    canUpdate: true,
     ...overrides,
   };
 }

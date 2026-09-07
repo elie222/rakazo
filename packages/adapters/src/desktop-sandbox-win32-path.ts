@@ -7,7 +7,9 @@ import {
   writeFile as writeFileCb,
 } from "node:fs";
 import { promisify } from "node:util";
-import koffi from "koffi";
+import koffi, { type LibraryHandle } from "koffi";
+
+type KoffiFunction = ReturnType<LibraryHandle["func"]>;
 
 const closeFd = promisify(closeCb);
 const fchmodFd = promisify(fchmodCb);
@@ -44,12 +46,12 @@ function escapeWorkspace(): never {
 }
 
 type NtFns = {
-  NtCreateFile: koffi.KoffiFunction;
-  RtlInitUnicodeString: koffi.KoffiFunction;
-  getOsFhandle: koffi.KoffiFunction;
-  openOsFhandle: koffi.KoffiFunction;
-  CloseHandle: koffi.KoffiFunction;
-  GetFinalPathNameByHandleW: koffi.KoffiFunction;
+  NtCreateFile: KoffiFunction;
+  RtlInitUnicodeString: KoffiFunction;
+  getOsFhandle: KoffiFunction;
+  openOsFhandle: KoffiFunction;
+  CloseHandle: KoffiFunction;
+  GetFinalPathNameByHandleW: KoffiFunction;
   objectAttributesSize: number;
 };
 

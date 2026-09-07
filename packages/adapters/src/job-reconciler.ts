@@ -104,6 +104,7 @@ export function createJobReconciler(
     jobs: JobPublisher;
     events?: ThreadEvents;
     leadership?: ReconciliationLeadership;
+    reconcileComputerUpdates?: () => Promise<void>;
     reconcileCloudAgents?: () => Promise<void>;
   },
   options: { intervalMs?: number; batchSize?: number } = {},
@@ -122,7 +123,15 @@ export function createJobReconciler(
     reconciling = (async () => {
       if (deps.leadership && !(await deps.leadership.tryAcquire())) return;
 
-      await deps.reconcileCloudAgents?.();
+      const auxiliary = await Promise.allSettled(
+        [deps.reconcileCloudAgents, deps.reconcileComputerUpdates].map(async (reconcile) =>
+          reconcile?.(),
+        ),
+      );
+      for (const result of auxiliary) {
+        if (result.status === "rejected")
+          getLogger().error("auxiliary reconciliation", result.reason);
+      }
 
       const now = new Date();
       controlScanDeadline ??= new Date(now.getTime() + CONTROL_LOOKAHEAD_MS);

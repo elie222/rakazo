@@ -3347,6 +3347,80 @@ msgstr "Docker अतिरिक्त सुरक्षा के लिए �
 msgid "Local access lets bots run commands without asking. Avoid it on shared or public servers."
 msgstr "स्थानीय पहुँच मिलने पर बॉट्स बिना पूछे कमांड चला सकते हैं। साझा या सार्वजनिक सर्वर पर इससे बचें।"
 
+#: src/components/ComputerUpdateProgress.tsx:181
+msgid "Continue in Background"
+msgstr ""
+
+#: src/components/ComputerUpdateProgress.tsx:151
+msgid "Could not complete action"
+msgstr ""
+
+#: src/components/ComputerUpdateProgress.tsx:31
+msgid "Getting ready"
+msgstr ""
+
+#. placeholder {0}: update.name
+#: src/components/ComputerUpdateProgress.tsx:45
+msgid "Recovering {0}’s Computer"
+msgstr ""
+
+#: src/components/ComputerUpdateProgress.tsx:44
+msgid "Recovering Team Computer"
+msgstr ""
+
+#: src/components/ComputerUpdateProgress.tsx:40
+msgid "Recovery failed"
+msgstr ""
+
+#: src/components/ComputerUpdateProgress.tsx:33
+msgid "Recreating the computer"
+msgstr ""
+
+#: src/components/ComputerUpdateProgress.tsx:34
+msgid "Restoring your workspace"
+msgstr ""
+
+#: src/components/ComputerUpdateProgress.tsx:32
+msgid "Saving your workspace"
+msgstr ""
+
+#: src/components/ComputerUpdateProgress.tsx:139
+msgid "Recovery restores the last saved workspace. Unsaved work may be lost."
+msgstr ""
+
+#: src/components/ComputerUpdateProgress.tsx:101
+msgid "Update progress"
+msgstr ""
+
+#. placeholder {0}: update.name
+#: src/components/ComputerUpdateProgress.tsx:48
+msgid "Updating {0}’s Computer"
+msgstr ""
+
+#: src/components/ComputerUpdateProgress.tsx:47
+msgid "Updating Team Computer"
+msgstr ""
+
+#: src/components/ComputerUpdateProgress.tsx
+msgid "Recovery is unavailable until the previous operation has stopped."
+msgstr ""
+
+#: src/components/ComputerUpdateProgress.tsx
+msgid "Release computer"
+msgstr ""
+
+#: src/components/ComputerUpdateProgress.tsx
+msgid "Release interrupted computer?"
+msgstr ""
+
+#: src/components/ComputerUpdateProgress.tsx
+msgid "Stop all workers and confirm that provider operations have stopped before releasing this computer."
+msgstr ""
+
+#: src/components/ComputerUpdateProgress.tsx
+msgid "Workers and operations are stopped"
+msgstr ""
+
 msgid "Opening chat…"
 msgstr "चैट खुल रही है…"
 

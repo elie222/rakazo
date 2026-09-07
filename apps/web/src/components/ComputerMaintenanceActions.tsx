@@ -17,6 +17,7 @@ import {
 } from "@rakazo/ui-web";
 import { MoreHorizontal } from "lucide-react";
 import { useState } from "react";
+import { computerUpdates } from "../lib/computer-updates";
 import { rpc } from "../lib/rpc";
 
 type Action = "recover" | "reset" | "update";
@@ -45,7 +46,7 @@ export function ComputerMaintenanceActions({
     computer.state === "suspended" ||
     computer.state === "stopped";
   const showReset = showRecover;
-  const showUpdate = computer.updateAvailable;
+  const showUpdate = computer.canUpdate;
   const hasActions = showRecover || showReset || showUpdate;
   if (!hasActions) return null;
 
@@ -53,12 +54,12 @@ export function ComputerMaintenanceActions({
     setPending(action);
     setError(null);
     try {
-      if (action === "recover") await rpc.computer.recover({ botId });
+      if (action === "recover") await computerUpdates.start(botId, "recover");
       else if (action === "reset") await rpc.computer.reset({ botId });
-      else await rpc.computer.update({ botId });
+      else await computerUpdates.start(botId);
       setConfirmReset(false);
-      await onChanged();
       setMenuOpen(false);
+      await onChanged();
     } catch (err) {
       setError(err instanceof Error ? err.message : t`Could not update computer`);
     } finally {

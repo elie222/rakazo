@@ -1,3 +1,4 @@
+import { computerSupportsUpdate } from "@rakazo/adapters";
 import type { ComputerStatus } from "@rakazo/contracts";
 import { ACTIVE_RUN_STATUSES, computerScreenSize } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
@@ -56,11 +57,13 @@ export function toComputerStatus(
     controlBotId?: string | null;
     controlRunId?: string | null;
     homeRevision: string;
+    maintenanceId?: string | null;
   } | null,
   busyBotName: string | null = null,
 ): ComputerStatus {
-  const state =
-    computer?.state === "suspending"
+  const state = computer?.maintenanceId
+    ? "booting"
+    : computer?.state === "suspending"
       ? "running"
       : computer?.state === "stopped" ||
           computer?.state === "booting" ||
@@ -79,11 +82,11 @@ export function toComputerStatus(
     controlHolder: (computer?.controlHolder ?? "none") as ComputerStatus["controlHolder"],
     controlBotId: computer?.controlBotId ?? null,
     takeoverRequested: Boolean(computer?.controlRunId),
-    screenAvailable: state === "running" || state === "booting",
+    screenAvailable: !computer?.maintenanceId && (state === "running" || state === "booting"),
     screenWidth: screen.width,
     screenHeight: screen.height,
     homeRevision: computer?.homeRevision ?? null,
     busyBotName,
-    updateAvailable: kind !== "desktop",
+    canUpdate: computerSupportsUpdate(kind),
   };
 }

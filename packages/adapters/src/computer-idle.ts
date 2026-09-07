@@ -229,6 +229,7 @@ export async function sleepComputerIfIdle(
     where: {
       id: computerId,
       state: "running",
+      maintenanceId: null,
       providerRef: computer.providerRef,
       updatedAt: computer.updatedAt,
       executionRunId: null,

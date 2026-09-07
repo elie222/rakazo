@@ -10,17 +10,17 @@
     "test": "vitest run --root ../../.. infra/sandboxes/supervisor/src"
   },
   "dependencies": {
-    "@hono/node-server": "^1.19.1",
+    "@hono/node-server": "2.1.1",
     "@rakazo/core": "workspace:*",
     "@rakazo/logging": "workspace:*",
-    "dockerode": "^4.0.7",
-    "hono": "^4.9.7",
-    "tsx": "^4.20.5",
-    "zod": "^4.1.5"
+    "dockerode": "5.0.1",
+    "hono": "4.13.7",
+    "tsx": "4.23.13",
+    "zod": "4.5.4"
   },
   "devDependencies": {
-    "@types/dockerode": "^3.3.44",
-    "typescript": "^5.9.2",
-    "vitest": "^4.1.10"
+    "@types/dockerode": "4.0.1",
+    "typescript": "7.0.2",
+    "vitest": "4.1.11"
   }
 }

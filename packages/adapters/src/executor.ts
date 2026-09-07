@@ -211,7 +211,11 @@ import {
 import { loadAgentMemoryContext } from "./memory-context.js";
 import type { MemoryProviderResolver } from "./memory-provider-factory.js";
 import { selectMemoryTools } from "./memory-tools.js";
-import { selectConfiguredModel } from "./model-selection.js";
+import {
+  isCatalogModelChoice,
+  selectConfiguredModel,
+  validateConnectedModelChoice,
+} from "./model-selection.js";
 import {
   filterImageReturningComputerTools,
   IMAGE_RETURNING_COMPUTER_TOOLS,
@@ -706,7 +710,49 @@ export function createRunExecutor(deps: ExecutorDeps) {
   const web = deps.web ?? createWebProvider();
   const browser = deps.browser ?? createBrowserProvider(undefined, { sandbox: deps.sandbox });
   const cloudAgent = deps.cloudAgent;
+  const resolveConnectedModel = async (
+    scope: { userId: string; spaceId: string },
+    provider: string,
+    modelId: string,
+    registerSecrets?: (values: string[]) => void,
+  ): Promise<AgentRunRequest["model"]> => {
+    const validationError = await validateConnectedModelChoice(
+      deps.prisma,
+      scope,
+      provider,
+      modelId,
+    );
+    if (validationError) throw new Error(validationError);
+    const credential = await findModelCredential(deps.prisma, scope, provider, modelId);
+    if (!credential) throw new Error("Connect that model provider first");
+    // Free-form selections must keep the preference that owns this modelId. A
+    // intervening delete/change can make findModelCredential fall back to another
+    // same-provider credential; reject that mismatch instead of mixing baseUrl.
+    if (!isCatalogModelChoice(provider, modelId) && credential.defaultModel !== modelId) {
+      throw new Error("Unknown model for that provider");
+    }
+    const resolved = await resolveModelKey(
+      deps,
+      scope.userId,
+      scope.spaceId,
+      credential,
+      provider,
+      registerSecrets,
+    );
+    return {
+      provider,
+      id: modelId,
+      apiKey: resolved.oauth ? undefined : resolved.apiKey,
+      baseUrl: resolved.baseUrl,
+      reasoning: resolved.reasoning,
+      thinkingLevel: null,
+      oauth: resolved.oauth
+        ? { credential: resolved.oauth, persist: resolved.persistOAuth }
+        : undefined,
+    };
+  };
   return {
+    resolveConnectedModel,
     async resolveModel(scope: {
       userId: string;
       spaceId: string;
@@ -725,7 +771,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
       const hasOverride = Boolean(override?.modelProvider && override.modelId);
       const [overrideCredential, defaultCredential, settings] = await Promise.all([
         hasOverride
-          ? findModelCredential(deps.prisma, scope, override!.modelProvider!)
+          ? findModelCredential(deps.prisma, scope, override!.modelProvider!, override!.modelId)
           : Promise.resolve(null),
         findDefaultModelCredential(deps.prisma, scope),
         deps.prisma.deploymentSettings.findUnique({ where: { id: "default" } }),
@@ -1071,7 +1117,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         const hasModelOverride = Boolean(bot.modelProvider && bot.modelId);
         const overrideCredential =
           hasModelOverride && bot.modelProvider
-            ? await findModelCredential(deps.prisma, run, bot.modelProvider)
+            ? await findModelCredential(deps.prisma, run, bot.modelProvider, bot.modelId)
             : null;
         runAbortController = new AbortController();
         if (!leaseValid) runAbortController.abort();
@@ -3288,6 +3334,12 @@ export function createRunExecutor(deps: ExecutorDeps) {
               allowSilentEmpty: allowSilentPeerMessage || messagingChannelRun,
               emptyResponseText,
               executeTool: scripted ? undefined : applyTool,
+              resolveModel: scripted
+                ? undefined
+                : (provider, modelId) =>
+                    resolveConnectedModel(run, provider, modelId, (values) =>
+                      runSecrets.push(...values),
+                    ),
               onToolCompleted: (completion) =>
                 appendToolCompletionAudit(
                   deps,

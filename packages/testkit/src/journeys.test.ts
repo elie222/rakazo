@@ -8,15 +8,16 @@ import {
   FakeSandboxProvider,
   handoffToGroupBot,
   ManagedSandboxEmulator,
+  toComputerRef,
 } from "@rakazo/adapters";
-import { ONCE_ROUTINE_CRON } from "@rakazo/core";
+import { ACTIVE_RUN_STATUSES, ONCE_ROUTINE_CRON } from "@rakazo/core";
 import {
   appendEvent,
   createThreadEvents,
   createThreadMessage,
   RunHistoryWriteError,
 } from "@rakazo/db";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { sessionCookieHeader } from "./index.js";
 
 type App = { request: (input: string, init?: RequestInit) => Promise<Response> };
@@ -134,6 +135,103 @@ describeJourneys("required product journeys", () => {
 
   afterAll(async () => {
     await stop?.();
+  });
+
+  it("computer updates preserve the workspace and reserve the shared computer until completion", async () => {
+    const cookie = await signup(app, `maintenance-${stamp}@rakazo.test`, "Maintenance");
+    const outsider = await signup(app, `maintenance-other-${stamp}@rakazo.test`, "Other workspace");
+    const bot = await rpc<Bot>(app, cookie, "bots/create", {
+      name: "Writer",
+      title: "Writer",
+      description: "Writes files",
+      instructions: "Write files.",
+    });
+    await waitForDatabase(
+      async () =>
+        (await prisma.run.count({
+          where: { botId: bot.id, status: { in: [...ACTIVE_RUN_STATUSES] } },
+        })) === 0,
+    );
+    await rpc(app, cookie, "computer/boot", { botId: bot.id });
+    const original = await prisma.bot.findUniqueOrThrow({
+      where: { id: bot.id },
+      include: { computer: true },
+    });
+    const ctx = {
+      operationId: "fixture",
+      traceId: "fixture",
+      spaceId: original.spaceId,
+      userId: original.userId,
+      botId: bot.id,
+      signal: new AbortController().signal,
+    };
+    await sandbox.writeFile(
+      toComputerRef(original.computer!),
+      { path: "notes.txt", content: new TextEncoder().encode("durable work") },
+      ctx,
+    );
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const destroyed = vi.spyOn(sandbox, "destroy");
+    const exportWorkspace = sandbox.exportWorkspace.bind(sandbox);
+    const spy = vi
+      .spyOn(sandbox, "exportWorkspace")
+      .mockImplementation(async function* (ref, context) {
+        await gate;
+        yield* exportWorkspace(ref, context);
+      });
+    try {
+      const update = await rpc<{ id: string }>(app, cookie, "computer/update", { botId: bot.id });
+      await waitForDatabase(
+        async () =>
+          (await prisma.computerUpdate.findUniqueOrThrow({ where: { id: update.id } })).stage ===
+          "saving",
+      );
+      expect(await rpc(app, outsider, "computer/updates")).toEqual([]);
+      const duplicate = await app.request("/rpc/computer/update", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: cookie },
+        body: JSON.stringify({ json: { botId: bot.id } }),
+      });
+      expect(duplicate.status).toBe(409);
+      const stopped = await app.request("/rpc/computer/stop", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: cookie },
+        body: JSON.stringify({ json: { botId: bot.id } }),
+      });
+      expect(stopped.status).toBe(409);
+      const switched = await app.request("/rpc/bots/setComputer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: cookie },
+        body: JSON.stringify({ json: { botId: bot.id, mode: "dedicated" } }),
+      });
+      expect(switched.status).toBe(409);
+      release();
+      await waitForDatabase(
+        async () =>
+          (await prisma.computerUpdate.findUniqueOrThrow({ where: { id: update.id } })).status ===
+          "completed",
+      );
+      const replacement = await prisma.computer.findUniqueOrThrow({
+        where: { id: original.computerId! },
+      });
+      expect(replacement.maintenanceId).toBeNull();
+      expect(destroyed).toHaveBeenCalledWith(
+        expect.objectContaining({ providerRef: original.computer!.providerRef }),
+        expect.anything(),
+      );
+      expect(
+        new TextDecoder().decode(
+          await sandbox.readFile(toComputerRef(replacement), "notes.txt", ctx),
+        ),
+      ).toBe("durable work");
+    } finally {
+      release();
+      spy.mockRestore();
+      destroyed.mockRestore();
+    }
   });
 
   it("1+2: users are isolated and workspace bots share the Team Computer", async () => {

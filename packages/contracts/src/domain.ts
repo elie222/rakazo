@@ -723,6 +723,25 @@ export const UsageRecordSchema = z.object({
   createdAt: z.string(),
 });
 
+export const COMPUTER_UPDATE_STAGES = [
+  "preparing",
+  "saving",
+  "recreating",
+  "restoring",
+  "reconnecting",
+] as const;
+export const ComputerUpdateSchema = z.object({
+  canReleaseReservation: z.boolean().optional(),
+  action: z.enum(["update", "recover"]),
+  id: Id,
+  botId: Id,
+  name: z.string(),
+  mode: ComputerModeSchema,
+  status: z.enum(["queued", "running", "interrupted", "completed", "failed"]),
+  stage: z.enum(COMPUTER_UPDATE_STAGES),
+});
+export type ComputerUpdate = z.infer<typeof ComputerUpdateSchema>;
+
 export const ComputerStatusSchema = z.object({
   botId: Id,
   mode: ComputerModeSchema,
@@ -736,7 +755,7 @@ export const ComputerStatusSchema = z.object({
   screenHeight: z.number().int().positive(),
   homeRevision: z.string().nullable(),
   busyBotName: z.string().nullable(),
-  updateAvailable: z.boolean(),
+  canUpdate: z.boolean(),
 });
 export type ComputerStatus = z.infer<typeof ComputerStatusSchema>;
 

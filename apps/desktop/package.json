@@ -17,15 +17,15 @@
   },
   "dependencies": {
     "@rakazo/contracts": "workspace:*",
-    "electron-updater": "^6.8.9"
+    "electron-updater": "6.8.9"
   },
   "devDependencies": {
-    "@playwright/test": "^1.55.0",
+    "@playwright/test": "1.63.0",
     "@rakazo/ui-tokens": "workspace:*",
-    "electron": "^43.4.0",
-    "electron-builder": "^26.0.12",
-    "typescript": "^5.9.2",
-    "vitest": "^4.1.10"
+    "electron": "44.2.0",
+    "electron-builder": "26.15.3",
+    "typescript": "7.0.2",
+    "vitest": "4.1.11"
   },
   "build": {
     "appId": "dev.rakazo.desktop",

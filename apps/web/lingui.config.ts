@@ -10,6 +10,5 @@ export default defineConfig({
       exclude: ["**/locales/**", "**/*.test.*"],
     },
   ],
-  format: "po",
   compileNamespace: "es",
 });

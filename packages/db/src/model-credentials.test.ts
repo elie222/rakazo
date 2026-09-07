@@ -43,6 +43,51 @@ describe("findModelCredential", () => {
       orderBy: newestModelCredentialOrder,
     });
   });
+
+  it("prefers the preference that owns a free-form modelId over the provider default", async () => {
+    const matching = {
+      credential: {
+        id: "credential-other",
+        userId: "user",
+        provider: "openai-compatible",
+        label: "Other",
+        secretId: "secret-other",
+        createdAt: new Date(0),
+        updatedAt: new Date(0),
+      },
+      isDefault: false,
+      modelId: "other-model",
+    };
+    const preferenceFindFirst = vi.fn().mockResolvedValue(matching);
+    const prisma = {
+      spaceModelPreference: { findFirst: preferenceFindFirst },
+      userModelCredential: { findFirst: vi.fn() },
+    } as unknown as PrismaClient;
+
+    await expect(
+      findModelCredential(
+        prisma,
+        { userId: "user", spaceId: "space" },
+        "openai-compatible",
+        "other-model",
+      ),
+    ).resolves.toEqual({
+      ...matching.credential,
+      isDefault: false,
+      defaultModel: "other-model",
+    });
+    expect(preferenceFindFirst).toHaveBeenCalledWith({
+      where: {
+        userId: "user",
+        spaceId: "space",
+        modelId: "other-model",
+        credential: { provider: "openai-compatible" },
+      },
+      include: { credential: true },
+      orderBy: [{ isDefault: "desc" }, { updatedAt: "desc" }, { id: "desc" }],
+    });
+    expect(preferenceFindFirst).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("selectSpaceModelPreference", () => {

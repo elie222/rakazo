@@ -730,3 +730,80 @@ describe("integration setup authorization", () => {
     expect(save).not.toHaveBeenCalled();
   });
 });
+
+describe("interrupted computer reservation release", () => {
+  function fixture() {
+    const order: string[] = [];
+    const computerUpdate = {
+      findFirst: vi.fn(async () => ({ id: "update-1", computerId: "computer-1" })),
+      updateMany: vi.fn(async () => {
+        order.push("operation");
+        return { count: 1 };
+      }),
+    };
+    const computer = {
+      updateMany: vi.fn(async () => {
+        order.push("computer");
+        return { count: 1 };
+      }),
+    };
+    const prisma = { computer, computerUpdate, $transaction: vi.fn(async (fn) => fn(prisma)) };
+    const handler = new RPCHandler(
+      createRouter({ prisma, env: { sandboxProvider: "fake" } } as unknown as RouterDeps),
+    );
+    const call = async (owner: boolean, workersStopped?: boolean) =>
+      handler.handle(
+        new Request("http://127.0.0.1/rpc/computer/releaseInterrupted", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ json: { id: "update-1", workersStopped } }),
+        }),
+        {
+          prefix: "/rpc",
+          context: {
+            actor: {
+              spaceId: "space-1",
+              userId: "user-1",
+              email: "user@rakazo.test",
+              isDeploymentOwner: owner,
+            },
+          },
+        },
+      );
+    return { prisma, computer, computerUpdate, order, call };
+  }
+  it.each([
+    { owner: false, stopped: true, status: 403 },
+    { owner: true, stopped: false, status: 400 },
+    { owner: true, stopped: undefined, status: 400 },
+  ])(
+    "requires owner authorization and an explicit stopped-workers assertion: %j",
+    async ({ owner, stopped, status }) => {
+      const { call, prisma } = fixture();
+      const { response } = await call(owner, stopped);
+      expect(response.status).toBe(status);
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    },
+  );
+  it("atomically releases only an interrupted reservation in the owner's workspace", async () => {
+    const { call, computer, computerUpdate, order } = fixture();
+    const { response } = await call(true, true);
+    expect(response.status).toBe(200);
+    expect(computerUpdate.findFirst).toHaveBeenCalledWith({
+      where: {
+        id: "update-1",
+        status: "interrupted",
+        computer: { spaceId: "space-1", bots: { some: { userId: "user-1", archivedAt: null } } },
+      },
+    });
+    expect(computerUpdate.updateMany).toHaveBeenCalledWith({
+      where: { id: "update-1", status: "interrupted" },
+      data: { status: "failed" },
+    });
+    expect(computer.updateMany).toHaveBeenCalledWith({
+      where: { id: "computer-1", maintenanceId: "update-1" },
+      data: { maintenanceId: null, state: "error" },
+    });
+    expect(order).toEqual(["operation", "computer"]);
+  });
+});
