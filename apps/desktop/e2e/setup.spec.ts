@@ -103,6 +103,12 @@ test("first run asks whether to use a local or existing instance", async () => {
   await expect(setup.locator(".titlebar")).toHaveCSS("padding-left", "88px");
   expect((await setup.locator(".titlebar-name").boundingBox())?.x).toBeGreaterThanOrEqual(88);
   if (process.platform === "darwin") {
+    if (process.env.CI) {
+      await execFileAsync("screencapture", [
+        "-x",
+        path.join(import.meta.dirname, "screenshots", "09-macos-dock.png"),
+      ]);
+    }
     await app.evaluate(({ BrowserWindow }) => {
       const window = BrowserWindow.getAllWindows()[0];
       if (window === undefined) throw new Error("Setup window is unavailable");

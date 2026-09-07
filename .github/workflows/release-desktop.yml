@@ -93,7 +93,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          include='[{"os":"macos-14","artifact":"macos"},{"os":"ubuntu-24.04","artifact":"linux"}]'
+          include='[{"os":"macos-26","artifact":"macos"},{"os":"ubuntu-24.04","artifact":"linux"}]'
           if [[ "$WINDOWS_SIGNING" == "true" ]]; then
             include="$(jq -c '. + [{"os":"windows-2022","artifact":"windows"}]' <<<"$include")"
           fi

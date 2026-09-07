@@ -55,7 +55,7 @@
       "main": "dist/main.js"
     },
     "mac": {
-      "icon": "assets/icon.icns",
+      "icon": "assets/Rakazo.icon",
       "category": "public.app-category.productivity",
       "target": [
         "dmg",
