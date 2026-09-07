@@ -17,16 +17,16 @@ import {
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import {
+  MESSAGE_ROUTING_REARMED_REASON,
+  MESSAGE_ROUTING_REASON,
+  MESSAGE_ROUTING_RESERVATION_MS,
+} from "./team-chat-startup.js";
+import {
   deliverWebhookEvent,
   formatUntrustedDeliveryPayload,
   inboundEventName,
   messagingWakeIdempotencyKey,
 } from "./webhook-inbound.js";
-import {
-  MESSAGE_ROUTING_REASON,
-  MESSAGE_ROUTING_REARMED_REASON,
-  MESSAGE_ROUTING_RESERVATION_MS,
-} from "./team-chat-startup.js";
 
 export interface MessagingInboundDeps {
   prisma: PrismaClient;

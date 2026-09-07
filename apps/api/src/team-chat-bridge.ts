@@ -11,8 +11,8 @@ import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { TeamChatEngagementJudge } from "./team-chat-judge.js";
 import {
-  MESSAGE_ROUTING_REASON,
   MESSAGE_ROUTING_REARMED_REASON,
+  MESSAGE_ROUTING_REASON,
   MESSAGE_ROUTING_RESERVATION_MS,
   settleWithTimeout,
   TEAM_CHAT_STARTUP_SHUTDOWN_MS,
