@@ -3346,3 +3346,57 @@ msgstr "O Docker limita o acesso ao seu computador para maior segurança. Usar {
 #: src/pages/HostComputerPrompt.tsx:69
 msgid "Local access lets bots run commands without asking. Avoid it on shared or public servers."
 msgstr "O acesso local permite que os bots executem comandos sem perguntar. Evite usá-lo em servidores compartilhados ou públicos."
+
+#: src/components/ComputerUpdateProgress.tsx:181
+msgid "Continue in Background"
+msgstr ""
+
+#: src/components/ComputerUpdateProgress.tsx:151
+msgid "Could not complete action"
+msgstr ""
+
+#: src/components/ComputerUpdateProgress.tsx:31
+msgid "Getting ready"
+msgstr ""
+
+#. placeholder {0}: update.name
+#: src/components/ComputerUpdateProgress.tsx:45
+msgid "Recovering {0}’s Computer"
+msgstr ""
+
+#: src/components/ComputerUpdateProgress.tsx:44
+msgid "Recovering Team Computer"
+msgstr ""
+
+#: src/components/ComputerUpdateProgress.tsx:40
+msgid "Recovery failed"
+msgstr ""
+
+#: src/components/ComputerUpdateProgress.tsx:33
+msgid "Recreating the computer"
+msgstr ""
+
+#: src/components/ComputerUpdateProgress.tsx:34
+msgid "Restoring your workspace"
+msgstr ""
+
+#: src/components/ComputerUpdateProgress.tsx:32
+msgid "Saving your workspace"
+msgstr ""
+
+#: src/components/ComputerUpdateProgress.tsx:139
+msgid "Recovery restores the last saved workspace. Unsaved work may be lost."
+msgstr ""
+
+#: src/components/ComputerUpdateProgress.tsx:101
+msgid "Update progress"
+msgstr ""
+
+#. placeholder {0}: update.name
+#: src/components/ComputerUpdateProgress.tsx:48
+msgid "Updating {0}’s Computer"
+msgstr ""
+
+#: src/components/ComputerUpdateProgress.tsx:47
+msgid "Updating Team Computer"
+msgstr ""

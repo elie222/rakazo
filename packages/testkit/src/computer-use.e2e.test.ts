@@ -178,7 +178,17 @@ describeLive("real model and sandbox computer journey", () => {
     await handles.sandbox.destroy(computer, testContext(bot.id));
     // Simulate loss outside the app: the stored state still says running, so use
     // recovery to replace the missing sandbox and restore its checkpoint.
-    await rpc(handles.app, cookie, "computer/recover", { botId: bot.id });
+    const recovery = await rpc<{ id: string }>(handles.app, cookie, "computer/recover", {
+      botId: bot.id,
+    });
+    await expect
+      .poll(
+        async () =>
+          (await handles.prisma.computerUpdate.findUniqueOrThrow({ where: { id: recovery.id } }))
+            .status,
+        { timeout: 120_000 },
+      )
+      .toBe("completed");
     const replacementBot = await handles.prisma.bot.findUniqueOrThrow({
       where: { id: bot.id },
       include: { computer: true },

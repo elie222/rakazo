@@ -83,3 +83,24 @@ It starts the full API, provisions a real E2B desktop, serves a deterministic pa
 ### Docker desktop lifecycle regression
 
 Build the computer image, then run `VERIFY_DOCKER_TEAM_SCREENS=1 pnpm exec vitest run infra/sandboxes/supervisor/src/team-desktops.docker.test.ts`. Set `RAKAZO_COMPUTER_IMAGE` to select a prebuilt image. The test uses an isolated Docker container with networking disabled and fake browser state; it verifies parallel Chrome desktops visiting local fixture sites, independent cookies, profile persistence after release, transport teardown, and rejection of old view/control tokens after slot reuse. It runs both Docker supervision and the command path used by remote providers. Default unit tests exercise profile persistence, allocation, and lease fencing offline without Docker.
+
+## Computer maintenance
+
+Update and recovery run as durable background jobs. A computer-wide reservation
+excludes new execution leases, stop, takeover, idle suspension, and computer-mode
+changes while the operation saves and replaces the workspace. Progress is stored
+separately from the computer's provisioning fence. Web and Electron show a dialog
+or compact background pill; mobile uses a native sheet. Reopening the app restores
+active operations and failures from the API.
+
+Update explicitly rebuilds with the configured provider/image; `canUpdate` means
+the computer supports that action, not that a newer image was detected. Provider
+migration and image-version discovery are not part of this UI. Updates checkpoint
+live work before teardown. Recovery can fall back to the last saved workspace,
+so its failure action warns that unsaved work may be lost.
+
+The reconciler republishes queued operations after a missed enqueue. Jobs already
+claimed are never destructively replayed. A worker that stops heartbeating for ten
+minutes leaves a visible failure requiring explicit recovery. Progress reports
+actual lifecycle stages rather than estimated percentages; workspace files and
+browser profiles are portable, while system packages outside the workspace are not.

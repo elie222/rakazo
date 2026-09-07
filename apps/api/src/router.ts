@@ -30,6 +30,7 @@ import {
   checkpointAndRecordComputerWorkspace,
   clearInactiveUserComputerControl,
   computerSupportsUpdate,
+  computerUpdateView,
   createVoiceProvider,
   deletePushToken,
   deploymentAutoReviewDefault,
@@ -55,6 +56,7 @@ import {
   prepareGraphqlInstall,
   probeOpenAiCompatibleModels,
   provisionComputer,
+  queueComputerUpdate,
   type RemoteConnectorDependencies,
   releaseComputerExecutionLease,
   replaceComputer,
@@ -900,7 +902,7 @@ export function createRouter(deps: RouterDeps) {
           return repos.setBotComputer(context.actor, bot.id, input.mode);
         }
         const claimed = await deps.prisma.bot.updateMany({
-          where: { id: bot.id, computerSwitching: false },
+          where: { id: bot.id, computerSwitching: false, computer: { maintenanceId: null } },
           data: { computerSwitching: true },
         });
         if (claimed.count !== 1) throw new ORPCError("CONFLICT");
@@ -1460,6 +1462,7 @@ export function createRouter(deps: RouterDeps) {
           where: {
             id: bot.computer.id,
             state: { not: "suspending" },
+            maintenanceId: null,
             executionLeases: {
               none: { botId: { not: bot.id }, expiresAt: { gt: now } },
             },
@@ -1523,15 +1526,72 @@ export function createRouter(deps: RouterDeps) {
         );
         return computerStatus(deps, context.actor, input.botId);
       }),
-      recover: authed.computer.recover.handler(async ({ context, input }) =>
-        runComputerReplace(deps, context, input.botId, "recover", "recover"),
-      ),
+      recover: authed.computer.recover.handler(async ({ context, input }) => {
+        const bot = await repos.getBot(context.actor, input.botId);
+        if (!bot.computer) throw new IsolationError();
+        try {
+          return await queueComputerUpdate(deps, bot.computer.id, bot.id, "recover");
+        } catch (error) {
+          if (error instanceof ComputerBusyError)
+            throw new ORPCError("CONFLICT", { message: "Computer is busy" });
+          throw error;
+        }
+      }),
       reset: authed.computer.reset.handler(async ({ context, input }) =>
         runComputerReplace(deps, context, input.botId, "reset", "reset"),
       ),
-      update: authed.computer.update.handler(async ({ context, input }) =>
-        runComputerReplace(deps, context, input.botId, "update", "update"),
-      ),
+      update: authed.computer.update.handler(async ({ context, input }) => {
+        const bot = await repos.getBot(context.actor, input.botId);
+        if (!bot.computer) throw new IsolationError();
+        if (!computerSupportsUpdate(bot.computer.kind))
+          throw new ORPCError("BAD_REQUEST", {
+            message: "Computer update is not available on this device",
+          });
+        try {
+          return await queueComputerUpdate(deps, bot.computer.id, bot.id);
+        } catch (error) {
+          if (error instanceof ComputerBusyError)
+            throw new ORPCError("CONFLICT", { message: "Computer is busy" });
+          throw error;
+        }
+      }),
+      updates: authed.computer.updates.handler(async ({ context }) => {
+        const rows = await deps.prisma.computerUpdate.findMany({
+          where: {
+            status: { in: ["queued", "running", "failed"] },
+            computer: {
+              spaceId: context.actor.spaceId,
+              bots: { some: { userId: context.actor.userId, archivedAt: null } },
+            },
+          },
+          include: {
+            computer: {
+              include: {
+                bots: {
+                  where: { userId: context.actor.userId, archivedAt: null },
+                  select: { id: true, name: true },
+                },
+              },
+            },
+          },
+          orderBy: { createdAt: "desc" },
+        });
+        return rows.map(computerUpdateView);
+      }),
+      dismissUpdate: authed.computer.dismissUpdate.handler(async ({ context, input }) => {
+        await deps.prisma.computerUpdate.updateMany({
+          where: {
+            id: input.id,
+            status: "failed",
+            computer: {
+              spaceId: context.actor.spaceId,
+              bots: { some: { userId: context.actor.userId, archivedAt: null } },
+            },
+          },
+          data: { status: "dismissed" },
+        });
+        return { ok: true as const };
+      }),
       takeover: authed.computer.takeover.handler(async ({ context, input }) => {
         let bot = await repos.getBot(context.actor, input.botId);
         if (!bot.computer?.providerRef || bot.computer.state !== "running") {
@@ -1613,6 +1673,7 @@ export function createRouter(deps: RouterDeps) {
           where: {
             id: bot.computer.id,
             state: "running",
+            maintenanceId: null,
             controlHolder: { not: "user" },
             controlLeaseId: null,
           },

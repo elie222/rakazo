@@ -54,6 +54,7 @@ import {
   pushTokenPath,
   type RemoteConnectorDependencies,
   reconcileCloudAgents,
+  reconcileComputerUpdates,
   removePiUserSessions,
   ScriptedAgentRuntime,
   SmtpEmailProvider,
@@ -390,6 +391,7 @@ export async function createApp(
         prisma,
         jobs,
         reconcileCloudAgents: () => reconcileCloudAgents({ prisma, jobs, cloudAgent }),
+        reconcileComputerUpdates: () => reconcileComputerUpdates({ prisma, jobs }),
       })
     : undefined;
   reconciler?.start();
