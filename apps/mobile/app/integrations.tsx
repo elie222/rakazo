@@ -7,7 +7,6 @@ import {
   filterConnectionCatalogItems,
   humanizeToolName,
 } from "@rakazo/core";
-import { useRouter } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -36,7 +35,6 @@ function itemKey(item: Pick<ConnectionCatalogItem, "connectorId" | "slug">) {
 }
 
 export default function Integrations() {
-  const router = useRouter();
   const styles = useThemedStyles(createIntegrationsStyles);
   const { t } = useI18n();
   const { width } = useWindowDimensions();
@@ -529,16 +527,6 @@ export default function Integrations() {
   return (
     <SafeAreaView edges={["bottom"]} style={styles.screen}>
       <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content}>
-        {!detailItem ? (
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => router.push("/integration-setup")}
-            style={styles.cardButton}
-          >
-            <Text style={styles.buttonLabel}>{t("Connect apps")}</Text>
-          </Pressable>
-        ) : null}
-
         {!detailItem ? (
           <TextInput
             value={query}

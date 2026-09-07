@@ -2945,18 +2945,25 @@ export function createRouter(deps: RouterDeps) {
       }),
     },
     integrationSetup: {
-      get: authed.integrationSetup.get.handler(async ({ context }) => ({
-        canConfigure: context.actor.isDeploymentOwner,
-        webUrl: new URL("/integrations/setup", deps.env.webOrigin).toString(),
-        providers: await Promise.all(
-          IntegrationProviderIdSchema.options.map(async (id) => ({
-            id,
-            configured: deps.integrationSettings
-              ? await deps.integrationSettings.configured(id)
-              : Boolean(deps.connectors.managed(id)),
-          })),
-        ),
-      })),
+      get: authed.integrationSetup.get.handler(async ({ context }) => {
+        const canConfigure = context.actor.isDeploymentOwner;
+        const providers = canConfigure
+          ? await Promise.all(
+              IntegrationProviderIdSchema.options.map(async (id) => ({
+                id,
+                configured: deps.integrationSettings
+                  ? await deps.integrationSettings.configured(id)
+                  : Boolean(deps.connectors.managed(id)),
+              })),
+            )
+          : [];
+        return {
+          canConfigure,
+          needsSetup: canConfigure && !providers.some((provider) => provider.configured),
+          webUrl: new URL("/integrations/setup", deps.env.webOrigin).toString(),
+          providers,
+        };
+      }),
       save: authed.integrationSetup.save.handler(async ({ context, input }) => {
         if (!context.actor.isDeploymentOwner) throw new ORPCError("FORBIDDEN");
         if (!deps.integrationSettings) throw new ORPCError("NOT_IMPLEMENTED");

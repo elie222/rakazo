@@ -15,6 +15,7 @@ export type IntegrationProviderConfig = z.infer<typeof IntegrationProviderConfig
 export type IntegrationProviderId = z.infer<typeof IntegrationProviderIdSchema>;
 export const IntegrationSetupStateSchema = z.object({
   canConfigure: z.boolean(),
+  needsSetup: z.boolean(),
   webUrl: z.string().url(),
   providers: z.array(z.object({ id: IntegrationProviderIdSchema, configured: z.boolean() })),
 });

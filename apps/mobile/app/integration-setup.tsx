@@ -29,7 +29,13 @@ export default function IntegrationSetup() {
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     void rpc<IntegrationSetupState>("integrationSetup/get")
-      .then(setState)
+      .then((setup) => {
+        if (!setup.canConfigure) {
+          router.replace("/integrations");
+          return;
+        }
+        setState(setup);
+      })
       .catch(() => setError(t("Could not load integrations")));
   }, []);
   const choices = [
@@ -76,6 +82,8 @@ export default function IntegrationSetup() {
       </Pressable>
     );
   }
+  if (!state) return error ? <Text accessibilityRole="alert">{error}</Text> : <ActivityIndicator />;
+
   return (
     <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
       <View style={styles.choices}>

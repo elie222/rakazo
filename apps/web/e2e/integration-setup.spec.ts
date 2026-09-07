@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { captureScreenshot, signup } from "./helpers";
+import { captureScreenshot, completeOnboarding, signup } from "./helpers";
 
 test("setup exposes all integration choices and saves only the selected provider", async ({
   page,
@@ -10,6 +10,7 @@ test("setup exposes all integration choices and saves only the selected provider
       json: {
         json: {
           canConfigure: true,
+          needsSetup: true,
           webUrl: "https://example.test/integrations/setup",
           providers: [
             { id: "composio", configured: false },
@@ -24,7 +25,7 @@ test("setup exposes all integration choices and saves only the selected provider
     return route.fulfill({ json: { json: { ok: true } } });
   });
   await signup(page, `integration-setup-${Date.now()}@rakazo.test`, "password12", "Setup Test");
-  await expect(page.getByRole("heading", { name: "Connect apps" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Server integrations" })).toBeVisible();
   for (const name of ["Direct MCP", "Composio", "Pipedream", "Executor"]) {
     await expect(page.getByRole("button", { name, exact: true })).toBeVisible();
   }
@@ -46,6 +47,18 @@ test("setup exposes all integration choices and saves only the selected provider
 test("direct MCP connects a catalog result without asking for a URL and assigns it to the first bot", async ({
   page,
 }, testInfo) => {
+  await page.route("**/rpc/integrationSetup/get", (route) =>
+    route.fulfill({
+      json: {
+        json: {
+          canConfigure: true,
+          needsSetup: true,
+          webUrl: "https://example.test/integrations/setup",
+          providers: [],
+        },
+      },
+    }),
+  );
   let serverId = "";
   await page.route("**/rpc/capabilities/catalogSearch", (route) =>
     route.fulfill({
@@ -110,8 +123,20 @@ test("direct MCP connects a catalog result without asking for a URL and assigns 
 });
 
 test("Executor reconnect saves a replacement token before authorization", async ({ page }) => {
+  await page.route("**/rpc/integrationSetup/get", (route) =>
+    route.fulfill({
+      json: {
+        json: {
+          canConfigure: true,
+          needsSetup: true,
+          webUrl: "https://example.test/integrations/setup",
+          providers: [],
+        },
+      },
+    }),
+  );
   await signup(page, `executor-reconnect-${Date.now()}@rakazo.test`, "password12", "Executor Test");
-  await expect(page.getByRole("heading", { name: "Connect apps" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Server integrations" })).toBeVisible();
   const server = await page.evaluate(async () => {
     const response = await fetch("/rpc/mcp/servers/create", {
       method: "POST",
@@ -158,4 +183,73 @@ test("Executor reconnect saves a replacement token before authorization", async 
   await page.getByRole("button", { name: "Connect", exact: true }).click();
   await expect.poll(() => saved).toBe(true);
   await expect(page.getByRole("alert")).toBeHidden();
+});
+
+test("remote members skip server setup and keep direct MCP connections", async ({
+  page,
+}, testInfo) => {
+  await page.route("**/rpc/integrationSetup/get", (route) =>
+    route.fulfill({
+      json: {
+        json: {
+          canConfigure: false,
+          needsSetup: false,
+          providers: [],
+          webUrl: "https://example.test/integrations/setup",
+        },
+      },
+    }),
+  );
+  await signup(page, `remote-member-${Date.now()}@rakazo.test`, "password12", "Remote Member");
+  await expect(page.getByRole("heading", { name: "Create your first bot" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Server integrations" })).toBeHidden();
+  await captureScreenshot(page, testInfo, "remote-member-onboarding");
+  await completeOnboarding(page);
+  await page.goto("/integrations/setup?mode=mcp");
+  await expect(page.getByRole("heading", { name: "Add MCP server" })).toBeVisible();
+  for (const name of ["Composio", "Pipedream", "Executor"]) {
+    await expect(page.getByRole("button", { name, exact: true })).toBeHidden();
+  }
+  await expect(page.getByRole("textbox", { name: "Search apps", exact: true })).toBeVisible();
+  await captureScreenshot(page, testInfo, "remote-member-mcp");
+  await page.goto("/integrations/setup");
+  await page.waitForURL(/\/app/);
+  await expect(page.getByRole("heading", { name: "Server integrations" })).toBeHidden();
+});
+
+test("configured server owners manage providers from settings", async ({ page }, testInfo) => {
+  await page.route("**/rpc/bootstrap", async (route) => {
+    const response = await route.fetch();
+    const body = await response.json();
+    await route.fulfill({
+      response,
+      json: { json: { ...body.json, me: { ...body.json.me, isDeploymentOwner: true } } },
+    });
+  });
+  await page.route("**/rpc/integrationSetup/get", (route) =>
+    route.fulfill({
+      json: {
+        json: {
+          canConfigure: true,
+          needsSetup: false,
+          providers: [{ id: "composio", configured: true }],
+          webUrl: "https://example.test/integrations/setup",
+        },
+      },
+    }),
+  );
+  await signup(page, `configured-owner-${Date.now()}@rakazo.test`, "password12", "Server Owner");
+  await expect(page.getByRole("heading", { name: "Create your first bot" })).toBeVisible();
+  await completeOnboarding(page);
+  await page.getByTestId("user-menu-trigger").click();
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  const settings = page.getByTestId("user-settings");
+  const link = settings.getByRole("link", { name: "Server integrations", exact: true });
+  await expect(link).toBeVisible();
+  await captureScreenshot(page, testInfo, "server-integrations-settings");
+  await link.click();
+  await expect(page.getByRole("heading", { name: "Server integrations" })).toBeVisible();
+  await page.getByRole("button", { name: "Composio", exact: true }).click();
+  await expect(page.getByText("Connected", { exact: true })).toBeVisible();
+  await captureScreenshot(page, testInfo, "server-integrations-configured");
 });

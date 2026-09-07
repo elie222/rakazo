@@ -10,17 +10,22 @@ type Choice = "direct" | "composio" | "pipedream" | "executor";
 
 export function IntegrationSetup({
   onDone,
+  serverSetup = false,
+  initialState,
   botId,
   onServerConnected,
 }: {
   onDone?: () => void;
+  serverSetup?: boolean;
+  initialState?: IntegrationSetupState | null;
   botId?: string;
   onServerConnected?: (id: string) => void;
 }) {
   const { t } = useLingui();
   const fieldId = useId();
-  const [state, setState] = useState<IntegrationSetupState | null>(null);
-  const [choice, setChoice] = useState<Choice>("direct");
+  const [state, setState] = useState<IntegrationSetupState | null>(initialState ?? null);
+  const [selectedChoice, setChoice] = useState<Choice>("direct");
+  const choice = serverSetup ? selectedChoice : "direct";
   const [apiKey, setApiKey] = useState("");
   const [clientId, setClientId] = useState("");
   const [projectId, setProjectId] = useState("");
@@ -55,11 +60,12 @@ export function IntegrationSetup({
   ];
   const configured = state?.providers.find((provider) => provider.id === choice)?.configured;
   useEffect(() => {
+    if (!serverSetup || initialState) return;
     void rpc.integrationSetup
       .get()
       .then(setState)
       .catch(() => setError(t`Could not load integrations`));
-  }, []);
+  }, [serverSetup, initialState]);
 
   async function run(action: () => Promise<void>) {
     setBusy(true);
@@ -115,33 +121,37 @@ export function IntegrationSetup({
     });
   }
 
+  if (serverSetup && !state?.canConfigure) return error ? <p role="alert">{error}</p> : null;
+
   return (
     <div className="space-y-6">
       <h1 className="text-[32px] font-medium text-foreground">
-        <Trans>Connect apps</Trans>
+        {serverSetup ? t`Server integrations` : t`Add MCP server`}
       </h1>
-      <fieldset
-        aria-label={t`Integration options`}
-        className="overflow-hidden rounded-xl border border-border"
-      >
-        {choices.map(({ id, label }) => (
-          <button
-            key={id}
-            type="button"
-            aria-pressed={choice === id}
-            disabled={busy}
-            onClick={() => {
-              setChoice(id);
-              setApiKey("");
-              setError(null);
-            }}
-            className={`flex min-h-11 w-full items-center justify-between border-b border-border px-3.5 py-2.5 text-left last:border-0 ${choice === id ? "bg-muted" : "hover:bg-accent"}`}
-          >
-            <span>{label}</span>
-            {choice === id ? <Check className="size-4" aria-hidden /> : null}
-          </button>
-        ))}
-      </fieldset>
+      {serverSetup ? (
+        <fieldset
+          aria-label={t`Integration options`}
+          className="overflow-hidden rounded-xl border border-border"
+        >
+          {choices.map(({ id, label }) => (
+            <button
+              key={id}
+              type="button"
+              aria-pressed={choice === id}
+              disabled={busy}
+              onClick={() => {
+                setChoice(id);
+                setApiKey("");
+                setError(null);
+              }}
+              className={`flex min-h-11 w-full items-center justify-between border-b border-border px-3.5 py-2.5 text-left last:border-0 ${choice === id ? "bg-muted" : "hover:bg-accent"}`}
+            >
+              <span>{label}</span>
+              {choice === id ? <Check className="size-4" aria-hidden /> : null}
+            </button>
+          ))}
+        </fieldset>
+      ) : null}
       {choice === "composio" || choice === "pipedream" ? (
         <>
           {configured ? (

@@ -659,6 +659,47 @@ describe("computer screen url", () => {
 });
 
 describe("integration setup authorization", () => {
+  it.each([
+    { owner: false, configured: false, needsSetup: false },
+    { owner: true, configured: false, needsSetup: true },
+    { owner: true, configured: true, needsSetup: false },
+  ])(
+    "offers server setup only to an owner without configured providers: %j",
+    async ({ owner, configured, needsSetup }) => {
+      const lookup = vi.fn(async () => configured);
+      const deps = {
+        prisma: {},
+        env: { webOrigin: "https://example.test" },
+        integrationSettings: { configured: lookup },
+      } as unknown as RouterDeps;
+      const handler = new RPCHandler(createRouter(deps));
+      const { response } = await handler.handle(
+        new Request("https://example.test/rpc/integrationSetup/get", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ json: null }),
+        }),
+        {
+          prefix: "/rpc",
+          context: {
+            actor: {
+              userId: "user",
+              spaceId: "space",
+              email: "user@rakazo.test",
+              isDeploymentOwner: owner,
+            },
+          },
+        },
+      );
+      const result = (await response.json()).json;
+      expect(result).toMatchObject({ canConfigure: owner, needsSetup });
+      if (!owner) {
+        expect(result.providers).toEqual([]);
+        expect(lookup).not.toHaveBeenCalled();
+      }
+    },
+  );
+
   it("rejects provider credentials from a non-owner before verification or persistence", async () => {
     const save = vi.fn();
     const deps = {

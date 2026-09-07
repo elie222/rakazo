@@ -1,4 +1,5 @@
 export const ZH_MESSAGES: Record<string, string> = {
+  "Server integrations": "服务器集成",
   "Ask the server owner to configure this provider.": "请联系服务器所有者配置此服务。",
   "Client ID": "客户端 ID",
   "Client secret": "客户端密钥",

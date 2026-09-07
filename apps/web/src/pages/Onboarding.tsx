@@ -1,5 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import {
+  type IntegrationSetupState,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   openAiCompatibleConnectReady,
   openAiCompatibleProbeSuccessMessage,
@@ -32,6 +33,8 @@ export function OnboardingPage() {
   const navigate = useNavigate();
   const fieldId = useId();
   const [step, setStep] = useState<"loading" | "model" | "integrations" | "bot">("loading");
+  const [integrationSetup, setIntegrationSetup] = useState<IntegrationSetupState | null>(null);
+  const needsIntegrationSetup = integrationSetup?.needsSetup ?? false;
   const creatingBot = useRef(false);
   const [creating, setCreating] = useState(false);
   const createdBot = useRef<Awaited<ReturnType<typeof rpc.bots.create>> | null>(null);
@@ -66,13 +69,18 @@ export function OnboardingPage() {
     onClearError: () => setError(null),
     onError: setError,
     onFinished: () => {
-      setStep("integrations");
+      setStep(needsIntegrationSetup ? "integrations" : "bot");
     },
   });
 
   useEffect(() => {
-    void Promise.all([rpc.me(), rpc.models.list().catch(() => [])])
-      .then(([me, models]) => {
+    void Promise.all([
+      rpc.me(),
+      rpc.models.list().catch(() => []),
+      rpc.integrationSetup.get().catch(() => null),
+    ])
+      .then(([me, models, integrations]) => {
+        setIntegrationSetup(integrations);
         setCatalog(models);
         const preferred =
           models.find(
@@ -84,9 +92,9 @@ export function OnboardingPage() {
           setProvider(preferred.provider);
           setModelId(preferred.provider === OPENAI_COMPATIBLE_PROVIDER_ID ? "" : preferred.id);
         }
-        setStep(me.needsModel ? "model" : "integrations");
+        setStep(me.needsModel ? "model" : integrations?.needsSetup ? "integrations" : "bot");
       })
-      .catch(() => setStep("integrations"));
+      .catch(() => setStep("bot"));
     return () => {
       modelProbe.invalidate();
     };
@@ -197,7 +205,7 @@ export function OnboardingPage() {
           label: selected?.providerName ?? provider,
         });
       }
-      setStep("integrations");
+      setStep(needsIntegrationSetup ? "integrations" : "bot");
     } catch (err) {
       setError(err instanceof Error ? err.message : t`Could not save model`);
     }
@@ -585,6 +593,8 @@ export function OnboardingPage() {
         ) : null}
         {step === "integrations" ? (
           <IntegrationSetup
+            serverSetup
+            initialState={integrationSetup}
             onDone={() => setStep("bot")}
             onServerConnected={(id) =>
               setIntegrationServers((current) => [...new Set([...current, id])])
