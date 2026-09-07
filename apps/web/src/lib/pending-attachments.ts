@@ -10,6 +10,16 @@ export function isFileDrag(dataTransfer: Pick<DataTransfer, "types" | "items"> |
   );
 }
 
+export function isFilePaste(
+  clipboardData: Pick<DataTransfer, "files" | "items"> | null | undefined,
+): boolean {
+  if (!clipboardData) return false;
+  return (
+    (clipboardData.files?.length ?? 0) > 0 ||
+    Array.from(clipboardData.items ?? []).some((item) => item.kind === "file")
+  );
+}
+
 export function revokePendingAttachmentPreviews(
   attachments: readonly PendingAttachmentPreview[],
 ): void {
