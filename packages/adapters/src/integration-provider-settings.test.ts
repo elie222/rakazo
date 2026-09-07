@@ -83,4 +83,33 @@ describe("integration provider settings", () => {
     }
     expect(f.factory).not.toHaveBeenCalled();
   });
+  it("warms directories only for configured providers", async () => {
+    const f = fixture();
+    const warm = vi.fn(async () => undefined);
+    const adapter = {
+      listConnectedExternalIds: vi.fn(async () => []),
+      catalog: vi.fn(async () => []),
+      discoverTools: vi.fn(async () => []),
+      warmDirectory: warm,
+    } as unknown as ManagedConnectorProvider;
+    f.factory.mockReturnValue(adapter);
+    const fallbackWarm = vi.fn(async () => undefined);
+    const settings = new IntegrationProviderSettings(
+      f.prisma as unknown as PrismaClient,
+      f.secrets,
+      "test-identity",
+      {
+        pipedream: {
+          warmDirectory: fallbackWarm,
+        } as unknown as ManagedConnectorProvider,
+      },
+      f.factory,
+    );
+    settings.warmDirectories();
+    await vi.waitFor(() => expect(fallbackWarm).toHaveBeenCalledOnce());
+    expect(warm).not.toHaveBeenCalled();
+    await settings.save({ provider: "composio", apiKey: "fake-warm-key" }, context);
+    settings.warmDirectories();
+    await vi.waitFor(() => expect(warm).toHaveBeenCalledOnce());
+  });
 });

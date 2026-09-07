@@ -134,6 +134,7 @@ async function main() {
   ]);
   const connector = stack.destination;
   await connector.start();
+  integrationSettings.warmDirectories();
   const memoryProviders = new SpaceMemoryProviderResolver(prisma, secrets);
   const home = new LocalAgentHomeStore(dataDir);
   const artifacts = new LocalArtifactStore(dataDir);
@@ -154,7 +155,7 @@ async function main() {
     connectors: stack.connector,
     listConnectedPluginSlugs: async (userId) => {
       const provider = await integrationSettings.resolve("composio");
-      if (!provider) throw new Error("Integration provider is unavailable");
+      if (!provider) return [];
       return provider.listConnectedExternalIds({
         userId,
         spaceId: "",

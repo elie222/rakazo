@@ -91,6 +91,15 @@ export class IntegrationProviderSettings {
       (id) => new ConfiguredIntegrationProvider(id, this),
     );
   }
+
+  /** Warm catalogs for env- and DB-configured providers. Fire-and-forget. */
+  warmDirectories(): void {
+    for (const id of IntegrationProviderIdSchema.options) {
+      void this.resolve(id)
+        .then((provider) => provider?.warmDirectory?.())
+        .catch(() => undefined);
+    }
+  }
 }
 
 class ConfiguredIntegrationProvider implements ManagedConnectorProvider {
