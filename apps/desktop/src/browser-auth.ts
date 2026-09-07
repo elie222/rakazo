@@ -92,16 +92,29 @@ export async function openBrowserAuth(
         servers.push(server);
         server.requestTimeout = 10_000;
         server.headersTimeout = 10_000;
-        await new Promise<void>((resolve, reject) => {
-          server.once("error", reject);
-          server.listen(Number(callback.port), host, () => {
-            // Cancellation may have happened while listen was resolving.
-            if (options.signal.aborted) {
-              close();
-              reject(new Error("Sign-in cancelled."));
-            } else resolve();
+        try {
+          await new Promise<void>((resolve, reject) => {
+            server.once("error", reject);
+            server.listen(Number(callback.port), host, () => {
+              // Cancellation may have happened while listen was resolving.
+              if (options.signal.aborted) {
+                close();
+                reject(new Error("Sign-in cancelled."));
+              } else resolve();
+            });
           });
-        });
+        } catch (error) {
+          const code = (error as NodeJS.ErrnoException).code;
+          // A disabled address family is safe to skip; an occupied port is not.
+          if (
+            callback.hostname !== "localhost" ||
+            (code !== "EAFNOSUPPORT" && code !== "EADDRNOTAVAIL")
+          )
+            throw error;
+        }
+      }
+      if (!servers.some((server) => server.listening)) {
+        throw new Error("No loopback address is available.");
       }
     }
     options.signal.throwIfAborted();

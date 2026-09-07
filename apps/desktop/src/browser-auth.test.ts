@@ -1,11 +1,13 @@
 import { get } from "node:http";
-import { createServer } from "node:net";
+import { createServer, Server } from "node:net";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { openBrowserAuth } from "./browser-auth.js";
 
 const controllers: AbortController[] = [];
 afterEach(() => {
   for (const controller of controllers) controller.abort();
+  controllers.length = 0;
+  vi.restoreAllMocks();
 });
 async function setup() {
   const reservation = createServer();
@@ -74,6 +76,41 @@ describe("system browser authentication", () => {
     expect((await fetch(`${localCallback}?code=x&state=test-state`)).status).toBe(200);
     expect(options.onCallback).toHaveBeenCalledOnce();
   });
+
+  it.each(["127.0.0.1", "::1"])(
+    "uses the remaining loopback family when %s is unavailable",
+    async (unavailable) => {
+      const { authorization, callback, options } = await setup();
+      const localCallback = callback.replace("127.0.0.1", "localhost");
+      authorization.searchParams.set("redirect_uri", localCallback);
+      const listen = Server.prototype.listen;
+      vi.spyOn(Server.prototype, "listen").mockImplementation(function (this: Server, ...args) {
+        if (args[1] === unavailable) {
+          queueMicrotask(() =>
+            this.emit("error", Object.assign(new Error("Unavailable"), { code: "EADDRNOTAVAIL" })),
+          );
+          return this;
+        }
+        return Reflect.apply(listen, this, args);
+      });
+      await openBrowserAuth(authorization.href, options);
+      const remaining = unavailable === "::1" ? "127.0.0.1" : "[::1]";
+      const status = await new Promise<number | undefined>((resolve, reject) => {
+        get(
+          `${callback.replace("127.0.0.1", remaining)}?code=x&state=test-state`,
+          {
+            headers: { Host: new URL(localCallback).host },
+          },
+          (response) => {
+            response.resume();
+            resolve(response.statusCode);
+          },
+        ).on("error", reject);
+      });
+      expect(status).toBe(200);
+      expect(options.onCallback).toHaveBeenCalledOnce();
+    },
+  );
 
   it("rejects an unrelated Host header", async () => {
     const { authorization, callback, options } = await setup();
