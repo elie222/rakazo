@@ -1,4 +1,4 @@
-import type { ComposioProvider } from "@rakazo/adapters";
+import type { ConnectorRegistry } from "@rakazo/adapters";
 import type { Actor, MessageBlock } from "@rakazo/contracts";
 import { featuredConnectorProvidersMatch } from "@rakazo/core";
 import {
@@ -12,14 +12,14 @@ import {
 
 /**
  * First-run conversational onboarding, seeded deterministically into the bot's
- * thread: greeting, a focus choice, and Composio app cards the user authorizes
+ * thread: greeting, a focus choice, and available app cards the user authorizes
  * inline. Focus must not rename the bot. No model tokens are spent.
  */
 
 type OnboardingDeps = {
   prisma: PrismaClient;
   events: ThreadEvents;
-  composio?: Pick<ComposioProvider, "catalog">;
+  connectors: ConnectorRegistry;
 };
 
 type FocusOption = {
@@ -68,15 +68,6 @@ const APP_DESCRIPTIONS: Record<string, string> = {
   notion: "Search and edit pages and databases.",
   googledocs: "Draft and edit documents.",
   hackernews: "Search stories and discussions.",
-};
-
-const APP_NAMES: Record<string, string> = {
-  gmail: "Gmail",
-  googlecalendar: "Google Calendar",
-  googledocs: "Google Docs",
-  hackernews: "Hacker News",
-  notion: "Notion",
-  slack: "Slack",
 };
 
 async function requireBotThread(deps: OnboardingDeps, actor: Actor, botId: string) {
@@ -289,30 +280,46 @@ export async function chooseFocus(
     },
   ]);
 
-  const catalog = deps.composio
-    ? await deps.composio
-        .catalog({
-          operationId: "onboarding.choose",
-          traceId: "onboarding.choose",
-          spaceId: actor.spaceId,
-          userId: actor.userId,
-          botId: bot.id,
-          signal: new AbortController().signal,
-        })
-        .catch(() => [])
-    : [];
-  const bySlug = new Map(catalog.map((entry) => [entry.slug.toLowerCase(), entry]));
-  const cards: MessageBlock[] = option.apps.map((slug) => {
-    const entry = bySlug.get(slug.toLowerCase());
-    return {
-      kind: "app_connect",
-      provider: entry?.slug ?? slug,
-      name: entry?.name ?? APP_NAMES[slug] ?? capitalize(slug),
-      description: APP_DESCRIPTIONS[slug] ?? `Connect ${entry?.name ?? slug} to your account.`,
-      logo: entry?.logo ?? null,
-      status: entry?.connected ? "connected" : "pending",
-    };
+  const providers = deps.connectors.managedProviders();
+  const catalog = (
+    await Promise.all(
+      providers.map((provider) =>
+        provider
+          .catalog({
+            operationId: "onboarding.choose",
+            traceId: "onboarding.choose",
+            spaceId: actor.spaceId,
+            userId: actor.userId,
+            botId: bot.id,
+            signal: AbortSignal.timeout(15_000),
+          })
+          .catch(() => []),
+      ),
+    )
+  ).flat();
+  const cards: MessageBlock[] = option.apps.flatMap((slug) => {
+    const entry = catalog.find(
+      (item) =>
+        item.slug.toLowerCase() === slug.toLowerCase() ||
+        featuredConnectorProvidersMatch(item.slug, slug),
+    );
+    if (!entry) return [];
+    return [
+      {
+        kind: "app_connect" as const,
+        connectorId: entry.connectorId ?? "composio",
+        provider: entry.slug,
+        name: entry.name,
+        description: APP_DESCRIPTIONS[slug] ?? "",
+        logo: entry.logo ?? null,
+        status: entry.connected ? ("connected" as const) : ("pending" as const),
+      },
+    ];
   });
+  if (!cards.length) {
+    await post(deps, target, [{ kind: "text", text: "What would you like to work on first?" }]);
+    return;
+  }
   const cardNames = cards
     .map((card) => (card.kind === "app_connect" ? card.name : ""))
     .filter(Boolean);
@@ -337,6 +344,7 @@ export async function markAppConnected(
   actor: Actor,
   botId: string,
   provider: string,
+  connectorId = "composio",
 ): Promise<void> {
   const { bot, thread } = await requireBotThread(deps, actor, botId);
   const target = { spaceId: actor.spaceId, botId: bot.id, threadId: thread.id };
@@ -352,13 +360,16 @@ export async function markAppConnected(
       !blocks.some(
         (block) =>
           block.kind === "app_connect" &&
+          (block.connectorId ?? "composio") === connectorId &&
           featuredConnectorProvidersMatch(block.provider, provider) &&
           block.status !== "connected",
       )
     )
       continue;
     const next = blocks.map((block) =>
-      block.kind === "app_connect" && featuredConnectorProvidersMatch(block.provider, provider)
+      block.kind === "app_connect" &&
+      (block.connectorId ?? "composio") === connectorId &&
+      featuredConnectorProvidersMatch(block.provider, provider)
         ? { ...block, status: "connected" as const }
         : block,
     );

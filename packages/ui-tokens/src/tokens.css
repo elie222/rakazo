@@ -13,6 +13,8 @@
   --primary-foreground: #1a1a1a;
   --secondary: #1a1a1d;
   --secondary-foreground: #ececee;
+  --chat-user: #2b2b31;
+  --chat-user-foreground: #ececee;
   --muted: #1a1a1d;
   --muted-foreground: #85858a;
   --accent: #202023;
@@ -22,10 +24,10 @@
   --border: #26262a;
   --input: #2a2a2e;
   --ring: #a6a6ad;
-  --sidebar: #0b0b0c;
+  --sidebar: #17171a;
   --sidebar-foreground: #ececee;
-  --sidebar-border: #171719;
-  --sidebar-accent: #141416;
+  --sidebar-border: #26262a;
+  --sidebar-accent: #232329;
   --sidebar-accent-foreground: #ececee;
   --link: #86b7ff;
   --success: #4ecb71;
@@ -48,6 +50,8 @@
   --primary-foreground: #f1f1ef;
   --secondary: #f0f0ed;
   --secondary-foreground: #1a1a1a;
+  --chat-user: #e2e2dc;
+  --chat-user-foreground: #1a1a1a;
   --muted: #f0f0ed;
   --muted-foreground: #6c6c70;
   --accent: #eaeae6;

@@ -1,5 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import {
+  type IntegrationSetupState,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   openAiCompatibleConnectReady,
   openAiCompatibleProbeSuccessMessage,
@@ -17,6 +18,7 @@ import {
 } from "@rakazo/ui-web";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { IntegrationSetup } from "../components/integrations/IntegrationSetup";
 import type { ModelCatalogEntry } from "../lib/model-auth";
 import { rpc } from "../lib/rpc";
 import { useModelOAuthSignIn } from "../lib/use-model-oauth-signin";
@@ -53,11 +55,18 @@ function providerLabel(entry: ModelCatalogEntry): string {
   return entry.provider === "openai-codex" ? "ChatGPT" : (entry.providerName ?? entry.provider);
 }
 
+function nextStepAfterModel(needsIntegrationSetup: boolean): "integrations" | "bot" {
+  return needsIntegrationSetup ? "integrations" : "bot";
+}
+
 export function OnboardingPage() {
   const { t } = useLingui();
   const navigate = useNavigate();
   const fieldId = useId();
-  const [step, setStep] = useState<"loading" | "model" | "bot">("loading");
+  const [step, setStep] = useState<"loading" | "model" | "integrations" | "bot">("loading");
+  const [integrationSetup, setIntegrationSetup] = useState<IntegrationSetupState | null>(null);
+  const needsIntegrationSetup = integrationSetup?.needsSetup ?? false;
+  const [integrationServers, setIntegrationServers] = useState<string[]>([]);
   const [catalog, setCatalog] = useState<ModelCatalogEntry[]>([]);
   const [provider, setProvider] = useState("openrouter");
   const [modelId, setModelId] = useState("");
@@ -85,13 +94,18 @@ export function OnboardingPage() {
     onClearError: () => setError(null),
     onError: setError,
     onFinished: () => {
-      setStep("bot");
+      setStep(nextStepAfterModel(needsIntegrationSetup));
     },
   });
 
   useEffect(() => {
-    void Promise.all([rpc.me(), rpc.models.list().catch(() => [])])
-      .then(([me, models]) => {
+    void Promise.all([
+      rpc.me(),
+      rpc.models.list().catch(() => []),
+      rpc.integrationSetup.get().catch(() => null),
+    ])
+      .then(([me, models, integrations]) => {
+        setIntegrationSetup(integrations);
         setCatalog(models);
         const preferred =
           models.find(
@@ -103,7 +117,7 @@ export function OnboardingPage() {
           setProvider(preferred.provider);
           setModelId(preferred.provider === OPENAI_COMPATIBLE_PROVIDER_ID ? "" : preferred.id);
         }
-        setStep(me.needsModel ? "model" : "bot");
+        setStep(me.needsModel ? "model" : integrations?.needsSetup ? "integrations" : "bot");
       })
       .catch(() => setStep("bot"));
     return () => {
@@ -236,7 +250,7 @@ export function OnboardingPage() {
           label: selected?.providerName ?? provider,
         });
       }
-      setStep("bot");
+      setStep(nextStepAfterModel(needsIntegrationSetup));
     } catch (err) {
       setError(err instanceof Error ? err.message : t`Could not save model`);
     }
@@ -256,6 +270,9 @@ export function OnboardingPage() {
     setError(null);
     try {
       const bot = await ensureFirstBot();
+      for (const serverId of integrationServers) {
+        await rpc.mcp.assignments.approve({ botId: bot.id, serverId });
+      }
       // Onboarding continues conversationally in the thread: greeting first,
       // then the focus choice (immediate for the first bot).
       const started = await rpc.onboarding
@@ -543,6 +560,16 @@ export function OnboardingPage() {
               </Button>
             </div>
           </div>
+        ) : null}
+        {step === "integrations" ? (
+          <IntegrationSetup
+            serverSetup
+            initialState={integrationSetup}
+            onDone={() => setStep("bot")}
+            onServerConnected={(id) =>
+              setIntegrationServers((current) => [...new Set([...current, id])])
+            }
+          />
         ) : null}
         {step === "bot" ? (
           <div>

@@ -182,7 +182,11 @@ export default function Integrations() {
     const botId = lastBotId || (await loadLastBotId());
     if (!botId) return;
     if (botId !== lastBotId) setLastBotId(botId);
-    void rpc("onboarding/appConnected", { botId, provider: item.slug }).catch(() => undefined);
+    void rpc("onboarding/appConnected", {
+      botId,
+      provider: item.slug,
+      connectorId: item.connectorId,
+    }).catch(() => undefined);
   }
 
   async function connect(item: ConnectionCatalogItem) {
@@ -523,8 +527,6 @@ export default function Integrations() {
   return (
     <SafeAreaView edges={["bottom"]} style={styles.screen}>
       <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content}>
-        {!detailItem ? <Text style={styles.explanation}>{t("Connect apps.")}</Text> : null}
-
         {!detailItem ? (
           <TextInput
             value={query}

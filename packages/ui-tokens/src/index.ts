@@ -22,6 +22,8 @@ export type ColorTokens = {
   primaryForeground: string;
   secondary: string;
   secondaryForeground: string;
+  chatUser: string;
+  chatUserForeground: string;
   muted: string;
   mutedForeground: string;
   accent: string;
@@ -55,6 +57,8 @@ export const darkTokens = {
   primaryForeground: "#1A1A1A",
   secondary: "#1A1A1D",
   secondaryForeground: "#ECECEE",
+  chatUser: "#2B2B31",
+  chatUserForeground: "#ECECEE",
   muted: "#1A1A1D",
   mutedForeground: "#85858A",
   accent: "#202023",
@@ -64,10 +68,10 @@ export const darkTokens = {
   border: "#26262A",
   input: "#2A2A2E",
   ring: "#A6A6AD",
-  sidebar: "#0B0B0C",
+  sidebar: "#17171A",
   sidebarForeground: "#ECECEE",
-  sidebarBorder: "#171719",
-  sidebarAccent: "#141416",
+  sidebarBorder: "#26262A",
+  sidebarAccent: "#232329",
   sidebarAccentForeground: "#ECECEE",
   link: "#86B7FF",
   success: "#4ECB71",
@@ -88,6 +92,8 @@ export const lightTokens = {
   primaryForeground: "#F1F1EF",
   secondary: "#F0F0ED",
   secondaryForeground: "#1A1A1A",
+  chatUser: "#E2E2DC",
+  chatUserForeground: "#1A1A1A",
   muted: "#F0F0ED",
   mutedForeground: "#6C6C70",
   accent: "#EAEAE6",

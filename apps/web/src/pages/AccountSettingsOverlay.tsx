@@ -20,6 +20,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { Link } from "react-router-dom";
 import { ApprovalRulesSettings } from "../components/ApprovalRulesSettings";
 import { SuccessPop } from "../components/ai/primitives";
 import {
@@ -217,6 +218,12 @@ export function AccountSettingsOverlay({
             <Trans>Model spend uses your provider keys.</Trans>
           </p>
         </div>
+
+        {isDeploymentOwner ? (
+          <Button className="mt-5" variant="outline" render={<Link to="/integrations/setup" />}>
+            <Trans>Server integrations</Trans>
+          </Button>
+        ) : null}
 
         <DesktopUpdateSection />
         <SoftwareUpdateSection isDeploymentOwner={isDeploymentOwner} />

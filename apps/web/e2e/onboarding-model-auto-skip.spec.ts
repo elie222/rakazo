@@ -13,6 +13,19 @@ test("onboarding skips model connect when a default model is already available",
     });
   });
 
+  await page.route("**/rpc/integrationSetup/get", (route) =>
+    route.fulfill({
+      json: {
+        json: {
+          canConfigure: false,
+          needsSetup: false,
+          webUrl: "https://example.test/integrations/setup",
+          providers: [],
+        },
+      },
+    }),
+  );
+
   const createRequest = page.waitForRequest("**/rpc/bots/create");
   const stamp = Date.now();
   await signup(
@@ -23,11 +36,15 @@ test("onboarding skips model connect when a default model is already available",
   );
 
   await expect(page.getByRole("heading", { name: "Connect a model" })).toBeHidden();
+  await expect(page.getByRole("heading", { name: "Server integrations" })).toBeHidden();
   await expect(page.getByRole("heading", { name: "Create your first bot" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Skip for now" })).toBeHidden();
   await expect(page.getByRole("textbox", { name: "Name" })).toHaveCount(0);
   await expect(page.getByRole("textbox", { name: "Title" })).toHaveCount(0);
   await expect(page.getByRole("textbox", { name: "Description" })).toHaveCount(0);
+  for (const name of ["Composio", "Pipedream", "Executor"]) {
+    await expect(page.getByRole("button", { name, exact: true })).toBeHidden();
+  }
 
   expect((await createRequest).postDataJSON()).toMatchObject({
     json: { name: "Chief", title: "", description: "", instructions: "" },

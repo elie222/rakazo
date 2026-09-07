@@ -5,22 +5,43 @@ import {
   BOT_TITLE_MAX_LENGTH,
   type ComputerMode,
   normalizeCreateBotProfile,
+  type ThinkingLevel,
 } from "@rakazo/contracts";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { BotAvatar } from "../components/bot-avatar";
 import { ComputerModePicker } from "../components/computer-mode-picker";
-import { type MobileBot, rpc } from "../lib/api";
+import {
+  type MobileBot,
+  type MobileMe,
+  type MobileModel,
+  type MobileModelCredential,
+  rpc,
+} from "../lib/api";
 import { useI18n } from "../lib/i18n";
-import { useMobileTokens } from "../lib/native";
+import { presentMessageActionSheet } from "../lib/message-action-sheet";
+import { useMobileTokens, useResolvedAppearance } from "../lib/native";
 
 type BotSettingsRecord = MobileBot & {
   description?: string;
 };
 
+type ModelOption = {
+  key: string;
+  provider: string;
+  modelId: string;
+  label: string;
+};
+
+type PickerChoice = {
+  key: string;
+  label: string;
+};
+
 export default function BotSettingsScreen() {
   const tokens = useMobileTokens();
+  const colorScheme = useResolvedAppearance();
   const { t } = useI18n();
   const router = useRouter();
   const { botId } = useLocalSearchParams<{ botId: string }>();
@@ -30,6 +51,14 @@ export default function BotSettingsScreen() {
   const [description, setDescription] = useState("");
   const [color, setColor] = useState<string>(BOT_COLORS[0]);
   const [computerMode, setComputerMode] = useState<ComputerMode>("team");
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [modelKey, setModelKey] = useState("");
+  const [thinkingLevel, setThinkingLevel] = useState("");
+  const [credentials, setCredentials] = useState<MobileModelCredential[]>([]);
+  const [catalog, setCatalog] = useState<MobileModel[]>([]);
+  const [me, setMe] = useState<MobileMe | null>(null);
+  const [modelMetaReady, setModelMetaReady] = useState(false);
+  const [modelMetaError, setModelMetaError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
@@ -43,9 +72,156 @@ export default function BotSettingsScreen() {
         setDescription(next.description ?? "");
         setColor(next.color);
         setComputerMode(next.computerMode);
+        setModelKey(
+          next.modelProvider && next.modelId
+            ? modelOptionKey(next.modelProvider, next.modelId)
+            : "",
+        );
+        setThinkingLevel(next.thinkingLevel ?? "");
       })
       .catch((err) => setError(err instanceof Error ? err.message : t("Could not load bot")));
   }, [botId]);
+
+  useEffect(() => {
+    void Promise.all([
+      rpc<MobileMe>("me"),
+      rpc<MobileModel[]>("models/list"),
+      rpc<MobileModelCredential[]>("models/credentials"),
+    ])
+      .then(([nextMe, nextCatalog, nextCredentials]) => {
+        setMe(nextMe);
+        setCatalog(nextCatalog);
+        setCredentials(nextCredentials);
+        setModelMetaError(null);
+        setModelMetaReady(true);
+      })
+      .catch((err) => {
+        setModelMetaReady(false);
+        setModelMetaError(err instanceof Error ? err.message : t("Could not load model settings"));
+      });
+  }, [t]);
+
+  const connectedOptions = useMemo(() => {
+    const options: ModelOption[] = [];
+    const seen = new Set<string>();
+    for (const credential of credentials) {
+      const providerModels = catalog.filter(
+        (entry) => entry.provider === credential.provider && !entry.placeholder,
+      );
+      const credentialInCatalog = Boolean(
+        credential.modelId && providerModels.some((entry) => entry.id === credential.modelId),
+      );
+      const nextOptions =
+        credential.modelId && !credentialInCatalog
+          ? [
+              {
+                key: modelOptionKey(credential.provider, credential.modelId),
+                provider: credential.provider,
+                modelId: credential.modelId,
+                label: `${credential.label} · ${credential.modelId}`,
+              },
+            ]
+          : providerModels.map((entry) => ({
+              key: modelOptionKey(entry.provider, entry.id),
+              provider: entry.provider,
+              modelId: entry.id,
+              label: `${entry.providerName ?? entry.provider} · ${entry.label}`,
+            }));
+      for (const option of nextOptions) {
+        if (seen.has(option.key)) continue;
+        seen.add(option.key);
+        options.push(option);
+      }
+    }
+    return options;
+  }, [catalog, credentials]);
+
+  const effectiveProvider = modelKey
+    ? parseModelOptionKey(modelKey)?.provider
+    : (me?.defaultProvider ?? null);
+  const effectiveModelId = modelKey
+    ? parseModelOptionKey(modelKey)?.modelId
+    : (me?.defaultModel ?? null);
+  const effectiveEntry =
+    effectiveProvider && effectiveModelId
+      ? catalog.find(
+          (entry) => entry.provider === effectiveProvider && entry.id === effectiveModelId,
+        )
+      : undefined;
+  const effectiveCredential = credentials.find(
+    (entry) => entry.provider === effectiveProvider && entry.modelId === effectiveModelId,
+  );
+  const thinkingOptions = (
+    effectiveCredential?.thinkingLevels ??
+    effectiveEntry?.thinkingLevels ??
+    []
+  ).filter((level) => level !== "off");
+
+  const spaceDefaultLabel = me?.defaultModel
+    ? `${t("Space default")} (${catalogLabel(catalog, me.defaultProvider, me.defaultModel) ?? me.defaultModel})`
+    : t("Space default");
+
+  const modelChoices: PickerChoice[] = useMemo(() => {
+    const choices: PickerChoice[] = [{ key: "", label: spaceDefaultLabel }];
+    if (modelKey && !connectedOptions.some((option) => option.key === modelKey)) {
+      choices.push({
+        key: modelKey,
+        label: parseModelOptionKey(modelKey)?.modelId ?? modelKey,
+      });
+    }
+    for (const option of connectedOptions) {
+      choices.push({ key: option.key, label: option.label });
+    }
+    return choices;
+  }, [connectedOptions, modelKey, spaceDefaultLabel]);
+
+  const thinkingChoices: PickerChoice[] = useMemo(
+    () => [
+      { key: "", label: t("Default (medium)") },
+      ...thinkingOptions.map((level) => ({
+        key: level,
+        label: thinkingLevelLabel(level, t),
+      })),
+    ],
+    [t, thinkingOptions],
+  );
+
+  const selectedModelLabel =
+    modelChoices.find((choice) => choice.key === modelKey)?.label ?? spaceDefaultLabel;
+  const selectedThinkingLabel =
+    thinkingChoices.find((choice) => choice.key === thinkingLevel)?.label ?? t("Default (medium)");
+
+  function selectModel(key: string) {
+    if (key === modelKey) return;
+    setModelKey(key);
+    setThinkingLevel("");
+  }
+
+  function openModelPicker() {
+    presentMessageActionSheet({
+      title: t("Model"),
+      actions: modelChoices.map((choice) => ({
+        text: choice.label,
+        onPress: () => selectModel(choice.key),
+      })),
+      colorScheme,
+      cancel: t("Cancel"),
+      more: t("More"),
+    });
+  }
+
+  function openThinkingPicker() {
+    presentMessageActionSheet({
+      title: t("Thinking"),
+      actions: thinkingChoices.map((choice) => ({
+        text: choice.label,
+        onPress: () => setThinkingLevel(choice.key),
+      })),
+      colorScheme,
+      cancel: t("Cancel"),
+      more: t("More"),
+    });
+  }
 
   async function save() {
     if (!botId || !bot || pending) return;
@@ -53,6 +229,7 @@ export default function BotSettingsScreen() {
     setError(null);
     try {
       const profile = normalizeCreateBotProfile({ name, title, description });
+      const selected = modelKey ? parseModelOptionKey(modelKey) : null;
       const input: {
         botId: string;
         name?: string;
@@ -60,6 +237,9 @@ export default function BotSettingsScreen() {
         description?: string;
         instructions?: string;
         color?: string;
+        modelProvider?: string | null;
+        modelId?: string | null;
+        thinkingLevel?: ThinkingLevel | null;
       } = { botId };
       if (profile.name !== bot.name) input.name = profile.name;
       if (profile.title !== bot.title) input.title = profile.title;
@@ -69,6 +249,19 @@ export default function BotSettingsScreen() {
         input.instructions = profile.instructions;
       }
       if (color !== bot.color) input.color = color;
+      const modelChanged =
+        (selected?.provider ?? null) !== (bot.modelProvider ?? null) ||
+        (selected?.modelId ?? null) !== (bot.modelId ?? null);
+      const thinkingChanged = (thinkingLevel || null) !== (bot.thinkingLevel ?? null);
+      if (modelChanged) {
+        input.modelProvider = selected?.provider ?? null;
+        input.modelId = selected?.modelId ?? null;
+      }
+      if (modelMetaReady && (modelChanged || thinkingChanged)) {
+        input.thinkingLevel = thinkingOptions.length
+          ? ((thinkingLevel || null) as ThinkingLevel | null)
+          : null;
+      }
       if (computerMode !== bot.computerMode) {
         await rpc("bots/setComputer", { botId, mode: computerMode });
       }
@@ -178,6 +371,87 @@ export default function BotSettingsScreen() {
           ))}
         </ScrollView>
         <ComputerModePicker value={computerMode} onChange={setComputerMode} />
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={t("Advanced")}
+          accessibilityState={{ expanded: advancedOpen }}
+          onPress={() => setAdvancedOpen((open) => !open)}
+          style={{
+            marginTop: 20,
+            minHeight: 44,
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "space-between",
+          }}
+        >
+          <Text style={{ color: tokens.mutedForeground, fontSize: 14 }}>{t("Advanced")}</Text>
+          <Text style={{ color: tokens.mutedForeground, fontSize: 18 }}>
+            {advancedOpen ? "⌃" : "⌄"}
+          </Text>
+        </Pressable>
+        {advancedOpen ? (
+          <View>
+            <Text
+              style={{
+                color: tokens.mutedForeground,
+                marginTop: 8,
+                marginBottom: 8,
+                fontSize: 14,
+              }}
+            >
+              {t("Model")}
+            </Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={t("Model")}
+              onPress={openModelPicker}
+              style={{
+                borderWidth: 1,
+                borderColor: tokens.border,
+                backgroundColor: tokens.muted,
+                borderRadius: 11,
+                paddingVertical: 12,
+                paddingHorizontal: 16,
+              }}
+            >
+              <Text style={{ color: tokens.foreground }}>{selectedModelLabel}</Text>
+            </Pressable>
+            {thinkingOptions.length ? (
+              <>
+                <Text
+                  style={{
+                    color: tokens.mutedForeground,
+                    marginTop: 16,
+                    marginBottom: 8,
+                    fontSize: 14,
+                  }}
+                >
+                  {t("Thinking")}
+                </Text>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={t("Thinking")}
+                  onPress={openThinkingPicker}
+                  style={{
+                    borderWidth: 1,
+                    borderColor: tokens.border,
+                    backgroundColor: tokens.muted,
+                    borderRadius: 11,
+                    paddingVertical: 12,
+                    paddingHorizontal: 16,
+                  }}
+                >
+                  <Text style={{ color: tokens.foreground }}>{selectedThinkingLabel}</Text>
+                </Pressable>
+              </>
+            ) : null}
+            {modelMetaError ? (
+              <Text style={{ color: tokens.mutedForeground, marginTop: 12, fontSize: 13 }}>
+                {modelMetaError}
+              </Text>
+            ) : null}
+          </View>
+        ) : null}
         {error ? <Text style={{ color: tokens.destructive, marginTop: 16 }}>{error}</Text> : null}
         <Pressable
           onPress={() => void save()}
@@ -198,4 +472,33 @@ export default function BotSettingsScreen() {
       </ScrollView>
     </>
   );
+}
+
+function modelOptionKey(provider: string, modelId: string) {
+  return `${provider}::${modelId}`;
+}
+
+function parseModelOptionKey(key: string) {
+  const separator = key.indexOf("::");
+  if (separator <= 0) return null;
+  return { provider: key.slice(0, separator), modelId: key.slice(separator + 2) };
+}
+
+function catalogLabel(
+  catalog: MobileModel[],
+  provider: string | null | undefined,
+  modelId: string,
+) {
+  if (!provider) return undefined;
+  return catalog.find((entry) => entry.provider === provider && entry.id === modelId)?.label;
+}
+
+function thinkingLevelLabel(level: ThinkingLevel, t: (message: string) => string) {
+  if (level === "xhigh") return t("Extra high");
+  if (level === "low") return t("Low");
+  if (level === "medium") return t("Medium");
+  if (level === "high") return t("High");
+  if (level === "minimal") return t("Minimal");
+  if (level === "max") return t("Max");
+  return `${level.slice(0, 1).toUpperCase()}${level.slice(1)}`;
 }

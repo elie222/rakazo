@@ -129,150 +129,152 @@ describe("MCP OAuth", () => {
     expect(persisted.at(-1)?.oauth?.tokens).toBeUndefined();
   });
 
-  it("lets the official Streamable HTTP transport drive discovery, registration, PKCE, redirect, and token exchange", async () => {
-    const requests: string[] = [];
-    let registration: Record<string, unknown> | undefined;
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
-        const request = input instanceof Request ? input : new Request(input, init);
-        const url = new URL(request.url);
-        requests.push(`${request.method} ${url.toString()}`);
+  it.each(["https://mcp.example.test", "http://127.0.0.1:8080"])(
+    "drives discovery, registration, PKCE, redirect, and token exchange for %s",
+    async (mcpOrigin) => {
+      const requests: string[] = [];
+      let registration: Record<string, unknown> | undefined;
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+          const request = input instanceof Request ? input : new Request(input, init);
+          const url = new URL(request.url);
+          requests.push(`${request.method} ${url.toString()}`);
 
-        if (url.href === "https://mcp.example.test/mcp" && request.method === "POST") {
-          return new Response(null, {
-            status: 401,
-            headers: {
-              "WWW-Authenticate":
-                'Bearer resource_metadata="https://mcp.example.test/.well-known/oauth-protected-resource/mcp"',
-            },
-          });
-        }
-        if (url.href === "https://mcp.example.test/.well-known/oauth-protected-resource/mcp") {
-          return Response.json({
-            resource: "https://mcp.example.test/mcp",
-            authorization_servers: ["https://auth.example.test"],
-          });
-        }
-        if (url.href === "https://auth.example.test/.well-known/oauth-authorization-server") {
-          return Response.json({
-            issuer: "https://auth.example.test",
-            authorization_endpoint: "https://auth.example.test/authorize",
-            token_endpoint: "https://auth.example.test/token",
-            registration_endpoint: "https://auth.example.test/register",
-            response_types_supported: ["code"],
-            grant_types_supported: ["authorization_code", "refresh_token"],
-            code_challenge_methods_supported: ["S256"],
-          });
-        }
-        if (url.href === "https://auth.example.test/register" && request.method === "POST") {
-          registration = (await request.json()) as Record<string, unknown>;
-          return Response.json(
-            {
-              client_id: "registered-client-id",
-              redirect_uris: ["http://127.0.0.1:5173/mcp/oauth/callback"],
-              token_endpoint_auth_method: "none",
-            },
-            { status: 201 },
-          );
-        }
-        if (url.href === "https://auth.example.test/token" && request.method === "POST") {
-          return Response.json({
-            access_token: "access-token",
-            refresh_token: "refresh-token",
-            token_type: "bearer",
-            expires_in: 3600,
-          });
-        }
-        throw new Error(`Unexpected request: ${request.method} ${url}`);
-      }),
-    );
-    let secretCounter = 0;
-    const storedPayloads: string[] = [];
-    const put = vi.fn(async (plaintext: string) => {
-      storedPayloads.push(plaintext);
-      secretCounter += 1;
-      return { id: `secret-${secretCounter}`, ciphertext: `encrypted-${secretCounter}` };
-    });
-    const tx = {
-      $executeRaw: vi.fn().mockResolvedValue(1),
-      mcpServer: {
-        findFirst: vi.fn().mockResolvedValue({
-          endpoint: "https://mcp.example.test/mcp",
-          secretId: null,
+          if (url.href === `${mcpOrigin}/mcp` && request.method === "POST") {
+            return new Response(null, {
+              status: 401,
+              headers: {
+                "WWW-Authenticate": `Bearer resource_metadata="${mcpOrigin}/.well-known/oauth-protected-resource/mcp"`,
+              },
+            });
+          }
+          if (url.href === `${mcpOrigin}/.well-known/oauth-protected-resource/mcp`) {
+            return Response.json({
+              resource: `${mcpOrigin}/mcp`,
+              authorization_servers: ["https://auth.example.test"],
+            });
+          }
+          if (url.href === "https://auth.example.test/.well-known/oauth-authorization-server") {
+            return Response.json({
+              issuer: "https://auth.example.test",
+              authorization_endpoint: "https://auth.example.test/authorize",
+              token_endpoint: "https://auth.example.test/token",
+              registration_endpoint: "https://auth.example.test/register",
+              response_types_supported: ["code"],
+              grant_types_supported: ["authorization_code", "refresh_token"],
+              code_challenge_methods_supported: ["S256"],
+            });
+          }
+          if (url.href === "https://auth.example.test/register" && request.method === "POST") {
+            registration = (await request.json()) as Record<string, unknown>;
+            return Response.json(
+              {
+                client_id: "registered-client-id",
+                redirect_uris: ["http://127.0.0.1:5173/mcp/oauth/callback"],
+                token_endpoint_auth_method: "none",
+              },
+              { status: 201 },
+            );
+          }
+          if (url.href === "https://auth.example.test/token" && request.method === "POST") {
+            return Response.json({
+              access_token: "access-token",
+              refresh_token: "refresh-token",
+              token_type: "bearer",
+              expires_in: 3600,
+            });
+          }
+          throw new Error(`Unexpected request: ${request.method} ${url}`);
         }),
-        update: vi.fn().mockResolvedValue({}),
-      },
-      secret: {
-        findFirst: vi.fn(),
-        create: vi.fn().mockResolvedValue({}),
-        deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
-      },
-    };
-    const prisma = {
-      mcpServer: {
-        findFirst: vi.fn().mockResolvedValue({
-          id: "server-1",
-          endpoint: "https://mcp.example.test/mcp",
-          secretId: null,
-        }),
-        update: vi.fn().mockResolvedValue({}),
-      },
-      secret: {
-        findFirst: vi.fn(),
-        create: vi.fn().mockResolvedValue({}),
-        deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
-      },
-      mcpOAuthSession: oauthSessionStore(),
-      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
-    };
-    const broker = new McpOAuthBroker(prisma as never, { put } as never, TEST_NETWORK);
+      );
+      let secretCounter = 0;
+      const storedPayloads: string[] = [];
+      const put = vi.fn(async (plaintext: string) => {
+        storedPayloads.push(plaintext);
+        secretCounter += 1;
+        return { id: `secret-${secretCounter}`, ciphertext: `encrypted-${secretCounter}` };
+      });
+      const tx = {
+        $executeRaw: vi.fn().mockResolvedValue(1),
+        mcpServer: {
+          findFirst: vi.fn().mockResolvedValue({
+            endpoint: `${mcpOrigin}/mcp`,
+            secretId: null,
+          }),
+          update: vi.fn().mockResolvedValue({}),
+        },
+        secret: {
+          findFirst: vi.fn(),
+          create: vi.fn().mockResolvedValue({}),
+          deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
+        },
+      };
+      const prisma = {
+        mcpServer: {
+          findFirst: vi.fn().mockResolvedValue({
+            id: "server-1",
+            endpoint: `${mcpOrigin}/mcp`,
+            secretId: null,
+          }),
+          update: vi.fn().mockResolvedValue({}),
+        },
+        secret: {
+          findFirst: vi.fn(),
+          create: vi.fn().mockResolvedValue({}),
+          deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
+        },
+        mcpOAuthSession: oauthSessionStore(),
+        $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+      };
+      const broker = new McpOAuthBroker(prisma as never, { put } as never, TEST_NETWORK);
 
-    const started = await broker.begin({
-      serverId: "server-1",
-      spaceId: "workspace-1",
-      userId: "user-1",
-      redirectUri: "http://127.0.0.1:5173/mcp/oauth/callback",
-    });
-    expect(started.status).toBe("authorization_required");
-    if (started.status !== "authorization_required") throw new Error("OAuth was not requested");
-    const authorizationUrl = new URL(started.authorizationUrl);
+      const started = await broker.begin({
+        serverId: "server-1",
+        spaceId: "workspace-1",
+        userId: "user-1",
+        redirectUri: "http://127.0.0.1:5173/mcp/oauth/callback",
+      });
+      expect(started.status).toBe("authorization_required");
+      if (started.status !== "authorization_required") throw new Error("OAuth was not requested");
+      const authorizationUrl = new URL(started.authorizationUrl);
 
-    expect(registration).toMatchObject({ client_name: "Rakazo", application_type: "native" });
-    expect(authorizationUrl.origin).toBe("https://auth.example.test");
-    expect(authorizationUrl.searchParams.get("client_id")).toBe("registered-client-id");
-    expect(authorizationUrl.searchParams.get("code_challenge_method")).toBe("S256");
-    expect(authorizationUrl.searchParams.get("state")).toBe(started.sessionId);
+      expect(registration).toMatchObject({ client_name: "Rakazo", application_type: "native" });
+      expect(authorizationUrl.origin).toBe("https://auth.example.test");
+      expect(authorizationUrl.searchParams.get("client_id")).toBe("registered-client-id");
+      expect(authorizationUrl.searchParams.get("code_challenge_method")).toBe("S256");
+      expect(authorizationUrl.searchParams.get("state")).toBe(started.sessionId);
 
-    const second = await broker.begin({
-      serverId: "server-1",
-      spaceId: "workspace-1",
-      userId: "user-1",
-      redirectUri: "http://127.0.0.1:5173/mcp/oauth/callback",
-    });
-    expect(second.status).toBe("authorization_required");
-    if (second.status !== "authorization_required") throw new Error("OAuth was not requested");
-    expect(second.sessionId).not.toBe(started.sessionId);
+      const second = await broker.begin({
+        serverId: "server-1",
+        spaceId: "workspace-1",
+        userId: "user-1",
+        redirectUri: "http://127.0.0.1:5173/mcp/oauth/callback",
+      });
+      expect(second.status).toBe("authorization_required");
+      if (second.status !== "authorization_required") throw new Error("OAuth was not requested");
+      expect(second.sessionId).not.toBe(started.sessionId);
 
-    await broker.complete({
-      sessionId: started.sessionId,
-      code: "authorization-code",
-      state: started.sessionId,
-      spaceId: "workspace-1",
-      userId: "user-1",
-    });
+      await broker.complete({
+        sessionId: started.sessionId,
+        code: "authorization-code",
+        state: started.sessionId,
+        spaceId: "workspace-1",
+        userId: "user-1",
+      });
 
-    expect(requests).toContain("POST https://auth.example.test/token");
-    expect(
-      storedPayloads
-        .map((value) => JSON.parse(value))
-        .some((value) => value.oauth?.tokens?.access_token === "access-token"),
-    ).toBe(true);
-    expect(prisma.mcpServer.update).toHaveBeenCalledWith({
-      where: { id: "server-1" },
-      data: { revision: { increment: 1 } },
-    });
-  });
+      expect(requests).toContain("POST https://auth.example.test/token");
+      expect(
+        storedPayloads
+          .map((value) => JSON.parse(value))
+          .some((value) => value.oauth?.tokens?.access_token === "access-token"),
+      ).toBe(true);
+      expect(prisma.mcpServer.update).toHaveBeenCalledWith({
+        where: { id: "server-1" },
+        data: { revision: { increment: 1 } },
+      });
+    },
+  );
 
   it("applies the transport URL policy to OAuth traffic: no plain-HTTP endpoints, no redirects", async () => {
     const fetchCalls: string[] = [];
@@ -676,4 +678,55 @@ describe("MCP OAuth", () => {
     );
     expect(requests).not.toContain("POST https://mcp.example.test/register");
   });
+});
+
+describe("MCP setup with an existing access token", () => {
+  it.each(["https://mcp.example.test/mcp", "http://127.0.0.1:8080/mcp"])(
+    "verifies %s using the stored token without starting OAuth",
+    async (endpoint) => {
+      const fetch = vi.fn<typeof globalThis.fetch>(async (input, init) => {
+        const request = new Request(input, init);
+        expect(request.url).toBe(endpoint);
+        expect(request.headers.get("authorization")).toBe("Bearer fake-executor-token");
+        if (request.method !== "POST") return new Response(null, { status: 405 });
+        const body = (await request.json()) as { id?: number; method: string };
+        if (body.method === "initialize")
+          return Response.json({
+            jsonrpc: "2.0",
+            id: body.id,
+            result: {
+              protocolVersion: "2025-03-26",
+              capabilities: {},
+              serverInfo: { name: "test", version: "1" },
+            },
+          });
+        return new Response(null, { status: 202 });
+      });
+      const prisma = {
+        mcpServer: {
+          findFirst: vi.fn(async () => ({ id: "server", endpoint, secretId: "secret" })),
+        },
+        secret: { findFirst: vi.fn(async () => ({ id: "secret", ciphertext: "encrypted" })) },
+        mcpOAuthSession: oauthSessionStore(),
+      };
+      const secrets = {
+        load: vi.fn(() => JSON.stringify({ secret: "fake-executor-token" })),
+        put: vi.fn(),
+      };
+      const broker = new McpOAuthBroker(prisma as never, secrets as never, {
+        ...TEST_NETWORK,
+        fetch,
+      });
+      await expect(
+        broker.begin({
+          serverId: "server",
+          userId: "user",
+          spaceId: "space",
+          redirectUri: "https://app.example.test/mcp/oauth/callback",
+        }),
+      ).resolves.toEqual({ status: "authorization_not_requested" });
+      expect(fetch).toHaveBeenCalled();
+      expect(secrets.put).not.toHaveBeenCalled();
+    },
+  );
 });

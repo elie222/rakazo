@@ -1267,3 +1267,12 @@ model AgentSecret {
   @@index([spaceId, updatedAt])
   @@map("agent_secrets")
 }
+
+// Deployment-owned integration credentials; never exposed through read DTOs.
+model IntegrationProviderConfig {
+  id         String @id
+  ciphertext String
+  updatedAt  DateTime @updatedAt
+
+  @@map("integration_provider_configs")
+}

@@ -73,6 +73,10 @@ import {
 } from "./domain.js";
 import { ProductEventSchema } from "./events.js";
 import { Id, IsoDate } from "./ids.js";
+import {
+  IntegrationProviderConfigSchema,
+  IntegrationSetupStateSchema,
+} from "./integration-settings.js";
 import { RunsListOutputSchema } from "./runs.js";
 import { SearchQueryOutputSchema } from "./search.js";
 
@@ -487,12 +491,19 @@ export const appContract = {
   },
   capabilities: {
     list: oc.output(z.array(CapabilityInstallSchema)),
-    catalogSearch: oc.input(z.object({ query: z.string().trim().max(253).default("") })).output(
-      z.object({
-        enabled: z.boolean(),
-        results: z.array(IntegrationCatalogResultSchema),
-      }),
-    ),
+    catalogSearch: oc
+      .input(
+        z.object({
+          query: z.string().trim().max(253).default(""),
+          usePublicCatalog: z.boolean().default(false),
+        }),
+      )
+      .output(
+        z.object({
+          enabled: z.boolean(),
+          results: z.array(IntegrationCatalogResultSchema),
+        }),
+      ),
     install: oc
       .input(
         z.object({
@@ -510,7 +521,14 @@ export const appContract = {
     servers: {
       list: oc.output(z.array(McpServerSchema)),
       create: oc.input(McpServerConfigInput).output(McpServerSchema),
-      update: oc.input(z.object({ id: Id, config: McpServerConfigInput })).output(McpServerSchema),
+      update: oc
+        .input(
+          z.union([
+            z.object({ id: Id, config: McpServerConfigInput }),
+            z.object({ id: Id, secret: z.string().min(1).max(16384) }),
+          ]),
+        )
+        .output(McpServerSchema),
       remove: oc.input(z.object({ id: Id })).output(z.object({ ok: z.literal(true) })),
     },
     assignments: {
@@ -564,8 +582,14 @@ export const appContract = {
     dismissFocus: oc.input(z.object({ botId: Id })).output(z.object({ ok: z.literal(true) })),
     /** Flip an app_connect card to connected after authorization completes. */
     appConnected: oc
-      .input(z.object({ botId: Id, provider: z.string() }))
+      .input(
+        z.object({ botId: Id, provider: z.string(), connectorId: z.string().default("composio") }),
+      )
       .output(z.object({ ok: z.literal(true) })),
+  },
+  integrationSetup: {
+    get: oc.output(IntegrationSetupStateSchema),
+    save: oc.input(IntegrationProviderConfigSchema).output(z.object({ ok: z.literal(true) })),
   },
   connections: {
     catalog: oc

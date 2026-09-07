@@ -31,6 +31,7 @@ import {
 } from "@rakazo/ui-web";
 import { ChevronDown, ChevronLeft, ChevronUp, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { IntegrationSetup } from "../components/integrations/IntegrationSetup";
 import { optionalCatalogFeedProbe } from "../lib/optional-catalog-feed";
 import { rpc } from "../lib/rpc";
 
@@ -78,6 +79,7 @@ export function PluginsOverlay({
   activeBotId?: string;
 }) {
   const { t } = useLingui();
+  const [setupOpen, setSetupOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [visibleCount, setVisibleCount] = useState(CONNECTION_CATALOG_PAGE_SIZE);
   const [catalog, setCatalog] = useState<ConnectionCatalogItem[]>([]);
@@ -203,7 +205,7 @@ export function PluginsOverlay({
   async function notifyAppConnected(item: ConnectionCatalogItem) {
     if (!activeBotId) return;
     await rpc.onboarding
-      .appConnected({ botId: activeBotId, provider: item.slug })
+      .appConnected({ botId: activeBotId, provider: item.slug, connectorId: item.connectorId })
       .catch(() => undefined);
   }
 
@@ -699,6 +701,28 @@ export function PluginsOverlay({
         ) : null}
 
         <div id="integration-list" className="rk-scroll flex-1 overflow-y-auto px-8 py-6">
+          <Button
+            variant="outline"
+            className="mb-4"
+            onClick={() => setSetupOpen((current) => !current)}
+          >
+            <Trans>Browse MCP servers</Trans>
+          </Button>
+          {setupOpen ? (
+            <div className="mb-6">
+              <IntegrationSetup
+                botId={activeBotId}
+                onDone={() => {
+                  setSetupOpen(false);
+                  void refresh().catch((err: unknown) =>
+                    setCatalogError(
+                      err instanceof Error ? err.message : t`Could not load integrations`,
+                    ),
+                  );
+                }}
+              />
+            </div>
+          ) : null}
           {catalogError ? <p className="mb-4 text-sm text-destructive">{catalogError}</p> : null}
 
           {detailItem ? (

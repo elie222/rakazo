@@ -39,6 +39,7 @@ export function AppConnectCard({
       const started = await rpc<{ connectionId: string; authorizationUrl: string | null }>(
         "connections/begin",
         {
+          connectorId: block.connectorId,
           provider: block.provider,
           displayName: block.name,
         },
@@ -55,7 +56,11 @@ export function AppConnectCard({
         ).catch(() => undefined);
         if (row?.status === "connected") {
           if (controller.signal.aborted) return;
-          await rpc("onboarding/appConnected", { botId, provider: block.provider });
+          await rpc("onboarding/appConnected", {
+            botId,
+            provider: block.provider,
+            connectorId: block.connectorId,
+          });
           if (controller.signal.aborted) return;
           setLocalStatus("connected");
           return;
