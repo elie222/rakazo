@@ -26,8 +26,8 @@ import {
   Textarea,
   Toggle,
 } from "@rakazo/ui-web";
-import { X } from "lucide-react";
-import { lazy, Suspense, useEffect, useId, useState } from "react";
+import { LoaderCircle, RotateCw, X } from "lucide-react";
+import { lazy, Suspense, useCallback, useEffect, useId, useState } from "react";
 import { rpc } from "../../lib/rpc";
 import {
   catalogLabel,
@@ -106,18 +106,30 @@ export function CreateBotForm({
   const [credentials, setCredentials] = useState<ModelCredential[]>([]);
   const [catalog, setCatalog] = useState<ModelCatalogEntry[]>([]);
   const [me, setMe] = useState<Me | null>(null);
+  const [modelMetaStatus, setModelMetaStatus] = useState<"loading" | "ready" | "error">("loading");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    void Promise.all([rpc.models.credentials(), rpc.models.list(), rpc.me()])
-      .then(([nextCredentials, nextCatalog, nextMe]) => {
-        setCredentials(nextCredentials);
-        setCatalog(nextCatalog);
-        setMe(nextMe);
-      })
-      .catch(() => undefined);
+  const loadModelMetadata = useCallback(() => {
+    setModelMetaStatus("loading");
+    void Promise.allSettled([rpc.models.credentials(), rpc.models.list(), rpc.me()]).then(
+      ([credentialsResult, catalogResult, meResult]) => {
+        if (credentialsResult.status === "fulfilled") setCredentials(credentialsResult.value);
+        if (catalogResult.status === "fulfilled") setCatalog(catalogResult.value);
+        if (meResult.status === "fulfilled") setMe(meResult.value);
+        // Connected options need credentials + catalog; me only enriches Space default.
+        setModelMetaStatus(
+          credentialsResult.status === "rejected" || catalogResult.status === "rejected"
+            ? "error"
+            : "ready",
+        );
+      },
+    );
   }, []);
+
+  useEffect(() => {
+    loadModelMetadata();
+  }, [loadModelMetadata]);
 
   const connectedOptions = connectedModelOptions(credentials, catalog);
 
@@ -202,32 +214,52 @@ export function CreateBotForm({
           privateTestId="create-bot-private"
         />
       </div>
-      <label htmlFor={`${ids}-model`} className={fieldLabelClass}>
-        <Trans>Model</Trans>
-        <NativeSelect
-          id={`${ids}-model`}
-          data-testid="create-bot-model"
-          className="mt-2 w-full"
-          value={modelKey}
-          onChange={(event) => setModelKey(event.target.value)}
-        >
-          <NativeSelectOption value="" data-testid="create-bot-model-default">
-            {t`Space default`}
-            {me?.defaultModel
-              ? ` (${catalogLabel(catalog, me.defaultProvider, me.defaultModel) ?? me.defaultModel})`
-              : ""}
-          </NativeSelectOption>
-          {connectedOptions.map((option) => (
-            <NativeSelectOption
-              key={option.key}
-              value={option.key}
-              data-testid={`create-bot-model-${option.key}`}
-            >
-              {option.label}
+      <div className={fieldLabelClass}>
+        <div className="text-[14px] text-muted-foreground">
+          <Trans>Model</Trans>
+        </div>
+        {modelMetaStatus === "loading" ? (
+          <div className="mt-2 flex justify-center py-2 text-muted-foreground">
+            <LoaderCircle size={16} className="animate-spin" aria-label={t`Loading…`} />
+          </div>
+        ) : modelMetaStatus === "error" ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="mt-2 gap-2"
+            data-testid="create-bot-model-retry"
+            onClick={loadModelMetadata}
+          >
+            <RotateCw size={15} strokeWidth={1.8} aria-hidden="true" />
+            <Trans>Retry now</Trans>
+          </Button>
+        ) : (
+          <NativeSelect
+            id={`${ids}-model`}
+            data-testid="create-bot-model"
+            className="mt-2 w-full"
+            value={modelKey}
+            onChange={(event) => setModelKey(event.target.value)}
+          >
+            <NativeSelectOption value="" data-testid="create-bot-model-default">
+              {t`Space default`}
+              {me?.defaultModel
+                ? ` (${catalogLabel(catalog, me.defaultProvider, me.defaultModel) ?? me.defaultModel})`
+                : ""}
             </NativeSelectOption>
-          ))}
-        </NativeSelect>
-      </label>
+            {connectedOptions.map((option) => (
+              <NativeSelectOption
+                key={option.key}
+                value={option.key}
+                data-testid={`create-bot-model-${option.key}`}
+              >
+                {option.label}
+              </NativeSelectOption>
+            ))}
+          </NativeSelect>
+        )}
+      </div>
       <Button
         className="mt-5"
         disabled={!name.trim() || submitting}
