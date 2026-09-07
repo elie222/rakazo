@@ -512,11 +512,7 @@ export function createRouter(deps: RouterDeps) {
           });
           // Team computers can outlive bots; destroy provider sandboxes after the
           // cascade so empty-space delete does not leave unreachable live boxes.
-          const adapterContext = connectionContext(
-            context.actor,
-            "spaces.remove",
-            context.signal,
-          );
+          const adapterContext = connectionContext(context.actor, "spaces.remove", context.signal);
           await Promise.all(
             fallback.orphanedComputers.map((computer) =>
               deps.sandbox
