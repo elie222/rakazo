@@ -9,7 +9,7 @@ import {
   CommandList,
   CommandSeparator,
 } from "@rakazo/ui-web";
-import { Lock, Plus } from "lucide-react";
+import { Lock, Plus, Users } from "lucide-react";
 import { useMemo, useState } from "react";
 
 export function BotCreatePicker({
@@ -89,8 +89,10 @@ export function BotCreatePicker({
               value="create-group"
               data-testid="create-new-group"
               onSelect={() => onCreateGroup()}
+              className="gap-2"
             >
-              <Trans>New group</Trans>
+              <Users size={16} strokeWidth={1.8} aria-hidden="true" />
+              <Trans>Create new Group</Trans>
             </CommandItem>
             <CommandItem
               value="create-space"
@@ -99,7 +101,7 @@ export function BotCreatePicker({
               className="gap-2"
             >
               <Lock size={14} strokeWidth={1.8} aria-hidden="true" />
-              <Trans>New space</Trans>
+              <Trans>Create new Space</Trans>
             </CommandItem>
           </CommandGroup>
         </CommandList>
