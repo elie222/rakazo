@@ -87,6 +87,12 @@ import { mountMessagingWebhookRoutes } from "./messaging-webhook.js";
 import { createRouter } from "./router.js";
 import { isDeferredReservationLost, TeamChatBridge } from "./team-chat-bridge.js";
 import { ModelTeamChatEngagementJudge } from "./team-chat-judge.js";
+import {
+  PendingTeamChatInbound,
+  prefersTeamChatSurface,
+  settleWithTimeout,
+  TEAM_CHAT_STARTUP_SHUTDOWN_MS,
+} from "./team-chat-startup.js";
 import { mountVoiceHttpRoutes } from "./voice.js";
 import { mountWebhookHttpRoutes } from "./webhook.js";
 
@@ -465,6 +471,9 @@ export async function createApp(
   let teamChatInitTask: Promise<void> | undefined;
   // Messaging webhooks only exist when the surface is enabled.
   let teamChatBridge: TeamChatBridge | undefined;
+  /** Constructed even before start() succeeds so stop() can cancel in-flight startup. */
+  let teamChatBridgeInstance: TeamChatBridge | undefined;
+  const pendingTeamChatInbound = new PendingTeamChatInbound();
   if (messaging) {
     const inboundDeps = {
       prisma,
@@ -493,6 +502,87 @@ export async function createApp(
       },
     } satisfies Parameters<typeof createMessagingInboundHandler>[0];
     const inbound = createMessagingInboundHandler(inboundDeps);
+    const handleTeamChatInbound = async (
+      bridge: TeamChatBridge,
+      event: Parameters<typeof wakeMessageRoutines>[2],
+    ) => {
+      const mapped = toTeamChatInbound(event);
+      if (!mapped) {
+        await inbound(event);
+        return;
+      }
+      const canWake = await teamChatSenderCanWakeMessageRoutines(inboundDeps, event);
+      if (!canWake) {
+        await bridge.receive(mapped);
+        return;
+      }
+
+      // Persist a non-reconcilable row until routine routing owns or releases
+      // the message, so the timer cannot start a second TeamChat run.
+      const target = await bridge.receive(mapped, { queueAgent: false });
+      if (!target.deferred) return;
+      const leaseHeartbeat = await bridge.startDeferredReservationHeartbeat(
+        target.externalMessageId,
+      );
+      let woken = false;
+      try {
+        const wakePromise = wakeMessageRoutines(inboundDeps, target, event, {
+          // Must match TeamChatBridge ExternalConversation / recovery provider.
+          deliveryProvider: bridge.providerId,
+          externalMessageId: target.externalMessageId,
+        });
+        try {
+          woken = await Promise.race([wakePromise, leaseHeartbeat.lost]);
+        } catch (error) {
+          if (isDeferredReservationLost(error)) {
+            // Lease loss must not start a fallback agent beside an in-flight
+            // wake: await that wake, then resolve from its settled result.
+            try {
+              woken = await wakePromise;
+            } catch (wakeError) {
+              const released = await bridge.resolveDeferredMessage(
+                target.externalMessageId,
+                "agent",
+                mapped.kind,
+              );
+              if (!released) {
+                throw new Error("Team chat deferred message ownership conflict", {
+                  cause: wakeError,
+                });
+              }
+              await bridge.reconcileOnce();
+              getLogger().error(
+                "team chat routine wake failed after deferred lease loss",
+                wakeError,
+              );
+              return;
+            }
+          } else {
+            await bridge.resolveDeferredMessage(target.externalMessageId, "agent", mapped.kind);
+            await bridge.reconcileOnce();
+            throw error;
+          }
+        }
+        const resolved = await bridge.resolveDeferredMessage(
+          target.externalMessageId,
+          woken ? "routine" : "agent",
+          mapped.kind,
+        );
+        if (!resolved) {
+          throw new Error("Team chat deferred message ownership conflict");
+        }
+        if (!woken) await bridge.reconcileOnce();
+      } finally {
+        leaseHeartbeat.stop();
+      }
+    };
+    const flushPendingTeamChatInbound = (bridge: TeamChatBridge) => {
+      for (const event of pendingTeamChatInbound.drain()) {
+        void handleTeamChatInbound(bridge, event).catch((error) => {
+          getLogger().error("team chat buffered inbound failed", error);
+        });
+      }
+    };
     if (env.teamChatBotId) {
       const judge =
         env.teamChatJudgeProvider && env.teamChatJudgeModel
@@ -523,6 +613,7 @@ export async function createApp(
         botId: env.teamChatBotId,
         judge,
       });
+      teamChatBridgeInstance = bridge;
       try {
         await bridge.start();
         teamChatBridge = bridge;
@@ -548,8 +639,15 @@ export async function createApp(
                 return;
               }
               teamChatBridge = bridge;
+              flushPendingTeamChatInbound(bridge);
               return;
             } catch (retryError) {
+              if (
+                retryError instanceof Error &&
+                retryError.message === "Team chat bridge start cancelled"
+              ) {
+                return;
+              }
               getLogger().error("team chat bridge failed to start; retrying", retryError);
               delayMs = Math.min(delayMs * 5, 30_000);
             }
@@ -562,81 +660,25 @@ export async function createApp(
         await applyMessagingOutboundStatus(prisma, event);
         return;
       }
-      const preferTeamChat =
-        Boolean(teamChatBridge) &&
-        (event.provider === "slack" ||
-          event.provider === "teamchat-emulator" ||
-          Boolean(event.workspaceId));
-      if (preferTeamChat && teamChatBridge) {
+      if (prefersTeamChatSurface(event, env.teamChatBotId)) {
         const bridge = teamChatBridge;
-        const mapped = toTeamChatInbound(event);
-        if (mapped) {
-          const canWake = await teamChatSenderCanWakeMessageRoutines(inboundDeps, event);
-          if (!canWake) {
-            await bridge.receive(mapped);
-            return;
-          }
-
-          // Persist a non-reconcilable row until routine routing owns or releases
-          // the message, so the timer cannot start a second TeamChat run.
-          const target = await bridge.receive(mapped, { queueAgent: false });
-          if (!target.deferred) return;
-          const leaseHeartbeat = await bridge.startDeferredReservationHeartbeat(
-            target.externalMessageId,
-          );
-          let woken = false;
-          try {
-            const wakePromise = wakeMessageRoutines(inboundDeps, target, event, {
-              // Must match TeamChatBridge ExternalConversation / recovery provider.
-              deliveryProvider: bridge.providerId,
-              externalMessageId: target.externalMessageId,
-            });
-            try {
-              woken = await Promise.race([wakePromise, leaseHeartbeat.lost]);
-            } catch (error) {
-              if (isDeferredReservationLost(error)) {
-                // Lease loss must not start a fallback agent beside an in-flight
-                // wake: await that wake, then resolve from its settled result.
-                try {
-                  woken = await wakePromise;
-                } catch (wakeError) {
-                  const released = await bridge.resolveDeferredMessage(
-                    target.externalMessageId,
-                    "agent",
-                    mapped.kind,
-                  );
-                  if (!released) {
-                    throw new Error("Team chat deferred message ownership conflict", {
-                      cause: wakeError,
-                    });
-                  }
-                  await bridge.reconcileOnce();
-                  getLogger().error(
-                    "team chat routine wake failed after deferred lease loss",
-                    wakeError,
-                  );
-                  return;
-                }
-              } else {
-                await bridge.resolveDeferredMessage(target.externalMessageId, "agent", mapped.kind);
-                await bridge.reconcileOnce();
-                throw error;
-              }
-            }
-            const resolved = await bridge.resolveDeferredMessage(
-              target.externalMessageId,
-              woken ? "routine" : "agent",
-              mapped.kind,
+        if (bridge) {
+          await handleTeamChatInbound(bridge, event);
+          return;
+        }
+        // Bridge is still starting (or retrying). Do not fall through to the
+        // personal-line inbound path — that bypasses externalMessage ownership
+        // and can wake routines for unlinked TeamChat senders.
+        if (teamChatInitTask) {
+          if (!pendingTeamChatInbound.enqueue(event)) {
+            getLogger().error(
+              "team chat inbound buffer full; dropping message until bridge starts",
             );
-            if (!resolved) {
-              throw new Error("Team chat deferred message ownership conflict");
-            }
-            if (!woken) await bridge.reconcileOnce();
-          } finally {
-            leaseHeartbeat.stop();
           }
           return;
         }
+        getLogger().error("team chat bridge unavailable; dropping inbound message");
+        return;
       }
       await inbound(event);
     });
@@ -716,8 +758,12 @@ export async function createApp(
       messagingStopped = true;
       clearMessagingRetryDelay?.();
       clearTeamChatRetryDelay?.();
+      pendingTeamChatInbound.drain();
+      // Cancel in-flight start() before awaiting the retry task so stop() cannot
+      // sit on DB/reconcile work that bridge.start() is still running.
+      await teamChatBridgeInstance?.stop().catch(() => undefined);
       await messagingInitTask?.catch(() => undefined);
-      await teamChatInitTask?.catch(() => undefined);
+      await settleWithTimeout(teamChatInitTask, TEAM_CHAT_STARTUP_SHUTDOWN_MS);
       await messaging?.shutdown?.();
       await teamChatBridge?.stop();
       await email?.drain?.();

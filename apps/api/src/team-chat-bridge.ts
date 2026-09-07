@@ -122,6 +122,8 @@ export class TeamChatBridge {
   private target: TargetBot | undefined;
   private timer: ReturnType<typeof setInterval> | undefined;
   private reconciling: Promise<void> | undefined;
+  /** Bumped by stop() so an in-flight start() exits before arming the timer. */
+  private startGeneration = 0;
 
   constructor(private readonly deps: TeamChatBridgeDeps) {}
 
@@ -132,6 +134,12 @@ export class TeamChatBridge {
 
   async start(): Promise<void> {
     if (this.timer) return;
+    const generation = ++this.startGeneration;
+    const throwIfStopped = () => {
+      if (generation !== this.startGeneration) {
+        throw new Error("Team chat bridge start cancelled");
+      }
+    };
     const target = await this.deps.prisma.bot.findFirst({
       where: { id: this.deps.botId, archivedAt: null },
       select: {
@@ -143,13 +151,17 @@ export class TeamChatBridge {
         modelId: true,
       },
     });
+    throwIfStopped();
     if (!target) throw new Error(`Team chat target bot ${this.deps.botId} was not found`);
     this.target = target;
     // Release abandoned routes before any later setup that might throw and leave
     // start() unfinished (for example transcript mirroring).
     await this.recoverInterruptedRoutineRoutes(target);
+    throwIfStopped();
     await this.mirrorMissingMessages();
+    throwIfStopped();
     await this.reconcileOnce();
+    throwIfStopped();
     this.timer = setInterval(
       () => void this.reconcileSafely(),
       this.deps.reconcileIntervalMs ?? DEFAULT_RECONCILE_INTERVAL_MS,
@@ -158,6 +170,8 @@ export class TeamChatBridge {
   }
 
   async stop(): Promise<void> {
+    // Invalidate any in-flight start() so shutdown does not wait on DB/reconcile.
+    this.startGeneration += 1;
     if (this.timer) clearInterval(this.timer);
     this.timer = undefined;
     await this.reconciling?.catch(() => undefined);
