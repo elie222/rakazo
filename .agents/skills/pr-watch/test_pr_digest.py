@@ -59,6 +59,8 @@ class DigestTests(unittest.TestCase):
         original = comment()
         for body, expected in [(original['html_url'], 0),
                                ('[fixed](' + original['html_url'] + ')', 0),
+                               (original['html_url'] + '.', 0),
+                               (original['html_url'] + '3.', 11),
                                (original['html_url'] + '3', 11),
                                ('#issuecomment-12', 11)]:
             with self.subTest(body=body):
@@ -103,6 +105,17 @@ class DigestTests(unittest.TestCase):
         inline['in_reply_to_id'] = 19
         result, _ = self.run_digest(dict(conversation=[comment()], inline=[inline]))
         self.assertEqual(result.returncode, 11)
+
+    def test_inline_edits_require_a_new_reply(self):
+        for updated, expected in [('2026-01-01T00:00:00Z', 0),
+                                  ('2026-01-03T00:00:00Z', 11)]:
+            with self.subTest(updated=updated):
+                root = comment(updated=updated)
+                root.update(path='example.sh', line=1, in_reply_to_id=None)
+                reply = comment(13, 'Fixed', 'viewer', updated='2026-01-02T00:00:00Z')
+                reply['in_reply_to_id'] = root['id']
+                result, _ = self.run_digest(dict(inline=[root, reply]))
+                self.assertEqual(result.returncode, expected, result.stdout + result.stderr)
 
     def test_terminal_controls_are_removed(self):
         result, _ = self.run_digest(dict(conversation=[comment(body='Fix \x1b]0;title\x07 this')]))

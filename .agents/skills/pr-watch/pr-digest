@@ -176,7 +176,7 @@ digest() {
   # Compare complete URL tokens, never substrings or bare comment IDs.
   local link_def='
     def links($url):
-      [scan("https?://[^\\s<>\\\"()\\[\\]]+")] | index($url) != null;'
+      [scan("https?://[^\\s<>\\\"()\\[\\]]+")] | map(sub("[.,;:!?]+$"; "")) | index($url) != null;'
 
   # Inline review threads. One stays open until *you* have replied to it; a bot
   # follow-up confirming your fix must not mark it handled.
@@ -185,9 +185,11 @@ digest() {
     || die "could not read review comments"
   open=$(jq --arg me "$viewer" --argjson n "$BODY_CHARS" "
     $clean_def
-    [.[] | select(.in_reply_to_id != null and .user.login == \$me) | .in_reply_to_id] as \$mine
+    [.[] | select(.in_reply_to_id != null and .user.login == \$me)] as \$mine
     | [.[] | select(.in_reply_to_id == null and .user.login != \$me)
-           | select(.id as \$i | (\$mine | index(\$i)) | not)
+           | . as \$root
+           | select([\$mine[] | select(.in_reply_to_id == \$root.id
+                        and .created_at > \$root.updated_at)] | length == 0)
            | {key: \"\(.id):\(.updated_at)\", id, author: .user.login, path,
               line: (.line // .original_line), body: (.body | clean)}]" <<<"$inline")
 

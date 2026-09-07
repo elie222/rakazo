@@ -92,8 +92,9 @@ deploy tables, rate-limit notices, sticky bot summaries, screenshot galleries)
 but keeps actionable bot conversation comments in the open set. A conversation
 comment is handled only once *you* have posted a later conversation comment
 that quotes its permalink; bot follow-ups do not close it. Quote the complete
-URL as a Markdown link or on its own, without trailing punctuation. An edit to
-the original comment after your reply reopens it (`updated_at` moves past the reply).
+URL as a Markdown link or on its own; sentence-ending punctuation is accepted.
+An edit to an inline or conversation root after your reply reopens the finding
+(`updated_at` moves past the reply).
 
 Review summaries block only while that reviewer has an active change request;
 a later approval or dismissal clears it. A general comment does not override
