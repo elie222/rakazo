@@ -70,11 +70,7 @@ test("voice settings connect a key, speak a reply, and open a call", async ({ pa
   await speakReply.click();
   await replySpoken;
 
-  await page.getByRole("button", { name: new RegExp(userName) }).click();
-  await page
-    .locator('[data-slot="popover-content"]')
-    .getByRole("button", { name: "Voice", exact: true })
-    .click();
+  await openUserSettings(page, "voice");
   await expect(page.getByRole("button", { name: "Replace key" })).toBeVisible();
   await page.getByRole("button", { name: "Close voice settings" }).click();
 
