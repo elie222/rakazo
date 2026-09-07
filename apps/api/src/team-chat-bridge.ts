@@ -128,12 +128,23 @@ export class TeamChatBridge {
   private reconciling: Promise<void> | undefined;
   /** Bumped by stop() so an in-flight start() exits before arming the timer. */
   private startGeneration = 0;
+  /** Same-process wakes still delivering; do not treat their expired leases as orphans. */
+  private readonly inFlightRoutineWakes = new Set<string>();
 
   constructor(private readonly deps: TeamChatBridgeDeps) {}
 
   /** Provider used for ExternalConversation rows and wake clientNonce recovery. */
   get providerId(): string {
     return this.deps.providerId;
+  }
+
+  /** Mark a deferred row as having an in-process routine wake until clearRoutineWake. */
+  markRoutineWakeInFlight(externalMessageId: string): void {
+    this.inFlightRoutineWakes.add(externalMessageId);
+  }
+
+  clearRoutineWakeInFlight(externalMessageId: string): void {
+    this.inFlightRoutineWakes.delete(externalMessageId);
   }
 
   async start(): Promise<void> {
@@ -543,9 +554,13 @@ export class TeamChatBridge {
         continue;
       }
       if (isRoutingOwnershipReason(message.engagementReason)) {
-        // Lease expired and no wake nonce: drop orphaned ownership so a later
-        // reconcile can promote. Live wakes re-hold the heartbeat (future lease)
-        // after renewal loss; do not promote in this same write.
+        if (this.inFlightRoutineWakes.has(message.id)) {
+          // Same-process wake still delivering; keep exclusive ownership.
+          continue;
+        }
+        // Lease expired and no local wake: drop orphaned ownership so a later
+        // reconcile can promote. Live wakes re-hold the heartbeat after renewal
+        // loss, or are tracked in inFlightRoutineWakes above.
         await this.deps.prisma.externalMessage.updateMany({
           where: {
             id: message.id,

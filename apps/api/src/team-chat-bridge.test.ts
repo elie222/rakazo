@@ -902,6 +902,58 @@ describe("team chat bridge", () => {
     );
   });
 
+  it("keeps in-flight routine wakes exclusive after lease expiry", async () => {
+    const updateMany = vi.fn(async () => ({ count: 1 }));
+    const findMany = vi.fn(async ({ where }: { where: { status?: string } }) =>
+      where.status === "deferred"
+        ? [
+            {
+              id: "external-inflight",
+              kind: "mention",
+              providerEventId: "Ev-inflight",
+              engagementReason: "message_routine_routing",
+              nextAttemptAt: new Date(Date.now() - 1_000),
+              externalConversation: { thread: { id: "thread-1" } },
+            },
+          ]
+        : [],
+    );
+    const bridge = new TeamChatBridge({
+      prisma: {
+        externalMessage: { updateMany, findMany },
+        message: { findUnique: vi.fn(async () => null) },
+        run: { findMany: vi.fn(async () => []) },
+      } as unknown as PrismaClient,
+      events: { sendUserMessage: vi.fn() },
+      jobs: { enqueue: vi.fn() },
+      send: vi.fn(),
+      providerId: "slack",
+      botId: "bot-1",
+    });
+    (
+      bridge as unknown as {
+        target: { id: string; spaceId: string; userId: string; name: string };
+      }
+    ).target = { id: "bot-1", spaceId: "space-1", userId: "owner-1", name: "Chief" };
+    bridge.markRoutineWakeInFlight("external-inflight");
+
+    await bridge.reconcileOnce();
+
+    expect(updateMany).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: "external-inflight" }),
+        data: expect.objectContaining({ engagementReason: null }),
+      }),
+    );
+    expect(updateMany).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: "external-inflight" }),
+        data: expect.objectContaining({ status: "received" }),
+      }),
+    );
+    bridge.clearRoutineWakeInFlight("external-inflight");
+  });
+
   it("releases only expired routing ownership before startup reconciliation", async () => {
     const updateMany = vi.fn(async () => ({ count: 1 }));
     const findMany = vi.fn(async () => []);

@@ -525,6 +525,7 @@ export async function createApp(
         target.externalMessageId,
       );
       let woken = false;
+      bridge.markRoutineWakeInFlight(target.externalMessageId);
       try {
         const wakePromise = wakeMessageRoutines(inboundDeps, target, event, {
           // Must match TeamChatBridge ExternalConversation / recovery provider.
@@ -584,6 +585,7 @@ export async function createApp(
         }
         if (!woken) await bridge.reconcileOnce();
       } finally {
+        bridge.clearRoutineWakeInFlight(target.externalMessageId);
         leaseHeartbeat.stop();
       }
     };
