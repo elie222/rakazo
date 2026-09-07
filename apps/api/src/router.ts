@@ -113,6 +113,7 @@ import {
   InvalidSpaceNameError,
   IsolationError,
   issueMessagingLinkCode,
+  listDeletableSpaceComputers,
   lockOwnedGroup,
   newestModelCredentialOrder,
   newestVoiceCredentialOrder,
@@ -505,24 +506,22 @@ export function createRouter(deps: RouterDeps) {
       }),
       remove: authed.spaces.remove.handler(async ({ context, input }) => {
         try {
-          const fallback = await deleteEmptySpaceForMember(deps.prisma, {
+          const deleteInput = {
             currentSpaceId: context.actor.spaceId,
             userId: context.actor.userId,
             spaceId: input.spaceId,
-          });
-          // Team computers can outlive bots; destroy provider sandboxes after the
-          // cascade so empty-space delete does not leave unreachable live boxes.
+          };
+          // Destroy leftover team sandboxes before cascading the Space row so a
+          // failed destroy still leaves a durable providerRef for retry/recovery.
+          const computers = await listDeletableSpaceComputers(deps.prisma, deleteInput);
           const adapterContext = connectionContext(context.actor, "spaces.remove", context.signal);
-          await Promise.all(
-            fallback.orphanedComputers.map((computer) =>
-              deps.sandbox
-                .destroy(toComputerRef(computer), {
-                  ...adapterContext,
-                  botId: computer.homeKey,
-                })
-                .catch(() => undefined),
-            ),
-          );
+          for (const computer of computers) {
+            await deps.sandbox.destroy(toComputerRef(computer), {
+              ...adapterContext,
+              botId: computer.homeKey,
+            });
+          }
+          const fallback = await deleteEmptySpaceForMember(deps.prisma, deleteInput);
           return { ok: true as const, activeSpaceId: fallback.id };
         } catch (error) {
           if (error instanceof SpaceNotFoundError) {

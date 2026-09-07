@@ -216,103 +216,126 @@ export async function createSpaceForMember(
   return { id: spaceId, name };
 }
 
+type EmptySpaceDeleteInput = {
+  currentSpaceId: string;
+  userId: string;
+  spaceId: string;
+};
+
+type SpaceDeleteDb = Pick<PrismaClient, "spaceMember" | "bot" | "chatGroup" | "computer">;
+
+async function assertEmptySpaceDeletable(
+  db: SpaceDeleteDb,
+  input: EmptySpaceDeleteInput,
+): Promise<{
+  organizationId: string;
+  memberships: Array<{
+    spaceId: string;
+    createdAt: Date;
+    space: { isDefault: boolean };
+  }>;
+  computers: Array<{ homeKey: string; kind: string; providerRef: string }>;
+}> {
+  const currentMembership = await db.spaceMember.findUnique({
+    where: {
+      spaceId_userId: {
+        spaceId: input.currentSpaceId,
+        userId: input.userId,
+      },
+    },
+    select: { organizationId: true },
+  });
+  if (!currentMembership) throw new IsolationError();
+  const targetMembership = await db.spaceMember.findUnique({
+    where: {
+      spaceId_userId: {
+        spaceId: input.spaceId,
+        userId: input.userId,
+      },
+    },
+    select: {
+      organizationId: true,
+      space: { select: { isDefault: true } },
+    },
+  });
+  if (!targetMembership || targetMembership.organizationId !== currentMembership.organizationId) {
+    throw new SpaceNotFoundError();
+  }
+  if (targetMembership.space.isDefault) throw new CannotDeleteDefaultSpaceError();
+  const memberships = await db.spaceMember.findMany({
+    where: {
+      userId: input.userId,
+      organizationId: currentMembership.organizationId,
+    },
+    select: {
+      spaceId: true,
+      createdAt: true,
+      space: { select: { isDefault: true } },
+    },
+    orderBy: { createdAt: "asc" },
+  });
+  if (memberships.length <= 1) throw new CannotDeleteLastSpaceError();
+  const [botCount, groupCount, computers] = await Promise.all([
+    db.bot.count({ where: { spaceId: input.spaceId } }),
+    db.chatGroup.count({ where: { spaceId: input.spaceId } }),
+    db.computer.findMany({
+      where: { spaceId: input.spaceId, providerRef: { not: null } },
+      select: { homeKey: true, kind: true, providerRef: true },
+    }),
+  ]);
+  if (botCount > 0 || groupCount > 0) throw new SpaceNotEmptyError();
+  return {
+    organizationId: currentMembership.organizationId,
+    memberships,
+    computers: computers.flatMap((computer) =>
+      computer.providerRef
+        ? [{ homeKey: computer.homeKey, kind: computer.kind, providerRef: computer.providerRef }]
+        : [],
+    ),
+  };
+}
+
+/** Provider refs for leftover team computers on a space the member may delete.
+ * Callers destroy these before `deleteEmptySpaceForMember` so a failed destroy
+ * does not cascade away the only durable handle. Re-checks empty/default/last
+ * guards; the delete path re-checks them under a transaction. */
+export async function listDeletableSpaceComputers(
+  prisma: PrismaClient,
+  input: EmptySpaceDeleteInput,
+): Promise<Array<{ homeKey: string; kind: string; providerRef: string }>> {
+  const planned = await assertEmptySpaceDeletable(prisma, input);
+  return planned.computers;
+}
+
 /** Delete an empty, non-default privacy boundary.
  *
  * Only empty spaces can be removed: bots (including archived) and groups would
  * otherwise orphan sandbox computers and files that `destroyBot` cleans up per
- * bot. Team computers can outlive bots, so this returns any leftover computer
- * refs for the caller to `sandbox.destroy` after the row cascade. Callers
- * should surface `SpaceNotEmptyError` as "delete its bots and groups first" so
- * an empty space is always deletable in two steps without an onboarding trap.
- * Returns the space the client should switch to when the active space was
- * deleted (the default, else the oldest remaining). */
+ * bot. Callers must destroy any leftover team sandboxes before invoking this so
+ * a failed `sandbox.destroy` cannot lose the only persisted providerRef.
+ * Callers should surface `SpaceNotEmptyError` as "delete its bots and groups
+ * first" so an empty space is always deletable in two steps without an
+ * onboarding trap. Returns the space the client should switch to when the
+ * active space was deleted (the current space when deleting another; otherwise
+ * the default, else the oldest remaining). */
 export async function deleteEmptySpaceForMember(
   prisma: PrismaClient,
-  input: {
-    currentSpaceId: string;
-    userId: string;
-    spaceId: string;
-  },
-): Promise<{
-  id: string;
-  orphanedComputers: Array<{ homeKey: string; kind: string; providerRef: string }>;
-}> {
+  input: EmptySpaceDeleteInput,
+): Promise<{ id: string }> {
   return withTransactionRetry(() =>
     prisma.$transaction(
       async (tx) => {
-        const currentMembership = await tx.spaceMember.findUnique({
-          where: {
-            spaceId_userId: {
-              spaceId: input.currentSpaceId,
-              userId: input.userId,
-            },
-          },
-          select: { organizationId: true },
-        });
-        if (!currentMembership) throw new IsolationError();
-        const targetMembership = await tx.spaceMember.findUnique({
-          where: {
-            spaceId_userId: {
-              spaceId: input.spaceId,
-              userId: input.userId,
-            },
-          },
-          select: {
-            organizationId: true,
-            space: { select: { isDefault: true } },
-          },
-        });
-        if (
-          !targetMembership ||
-          targetMembership.organizationId !== currentMembership.organizationId
-        ) {
-          throw new SpaceNotFoundError();
-        }
-        if (targetMembership.space.isDefault) throw new CannotDeleteDefaultSpaceError();
-        const memberships = await tx.spaceMember.findMany({
-          where: {
-            userId: input.userId,
-            organizationId: currentMembership.organizationId,
-          },
-          select: {
-            spaceId: true,
-            createdAt: true,
-            space: { select: { isDefault: true } },
-          },
-          orderBy: { createdAt: "asc" },
-        });
-        if (memberships.length <= 1) throw new CannotDeleteLastSpaceError();
-        const [botCount, groupCount, computers] = await Promise.all([
-          tx.bot.count({ where: { spaceId: input.spaceId } }),
-          tx.chatGroup.count({ where: { spaceId: input.spaceId } }),
-          tx.computer.findMany({
-            where: { spaceId: input.spaceId, providerRef: { not: null } },
-            select: { homeKey: true, kind: true, providerRef: true },
-          }),
-        ]);
-        if (botCount > 0 || groupCount > 0) throw new SpaceNotEmptyError();
+        const planned = await assertEmptySpaceDeletable(tx, input);
         await tx.space.delete({ where: { id: input.spaceId } });
-        const orphanedComputers = computers.flatMap((computer) =>
-          computer.providerRef
-            ? [
-                {
-                  homeKey: computer.homeKey,
-                  kind: computer.kind,
-                  providerRef: computer.providerRef,
-                },
-              ]
-            : [],
-        );
         if (input.spaceId !== input.currentSpaceId) {
-          return { id: input.currentSpaceId, orphanedComputers };
+          return { id: input.currentSpaceId };
         }
-        const remaining = memberships.filter((membership) => membership.spaceId !== input.spaceId);
+        const remaining = planned.memberships.filter(
+          (membership) => membership.spaceId !== input.spaceId,
+        );
         const fallback = remaining.find((membership) => membership.space.isDefault) ?? remaining[0];
         if (!fallback) throw new CannotDeleteLastSpaceError();
-        return {
-          id: fallback.spaceId,
-          orphanedComputers,
-        };
+        return { id: fallback.spaceId };
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     ),
