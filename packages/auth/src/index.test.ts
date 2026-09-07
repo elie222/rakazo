@@ -30,7 +30,11 @@ describe("buildTrustedOrigins", () => {
         baseURL: "https://api.example.test",
         extraOrigins: ["https://extra.example.test"],
       }),
-    ).toEqual(["https://app.example.test", "https://api.example.test", "https://extra.example.test"]);
+    ).toEqual([
+      "https://app.example.test",
+      "https://api.example.test",
+      "https://extra.example.test",
+    ]);
   });
 });
 
