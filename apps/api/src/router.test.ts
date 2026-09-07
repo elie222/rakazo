@@ -41,6 +41,31 @@ describe("account preferences", () => {
     return { update, deps, actor, handler: new RPCHandler(createRouter(deps)) };
   }
 
+  it("keeps an unconfigured catalog offline unless explicitly requested", async () => {
+    const { actor, deps } = preferencesDeps("robot");
+    const fetch = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ results: [] }), {
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    deps.remoteConnectors = { fetch } as RouterDeps["remoteConnectors"];
+    const handler = new RPCHandler(createRouter(deps));
+    const request = async (usePublicCatalog?: boolean) =>
+      handler.handle(
+        new Request("http://127.0.0.1/rpc/capabilities/catalogSearch", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ json: { query: "notion", usePublicCatalog } }),
+        }),
+        { prefix: "/rpc", context: { actor } },
+      );
+    const { response } = await request();
+    await expect(response.json()).resolves.toEqual({ json: { enabled: false, results: [] } });
+    expect(fetch).not.toHaveBeenCalled();
+    await request(true);
+    expect(fetch).toHaveBeenCalled();
+  });
+
   it("persists and returns the selected avatar style", async () => {
     const { update, actor, handler } = preferencesDeps("organic");
 

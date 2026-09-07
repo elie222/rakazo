@@ -78,7 +78,7 @@ test("direct MCP connects a catalog result without asking for a URL and assigns 
   });
   await signup(page, `direct-mcp-setup-${Date.now()}@rakazo.test`, "password12", "Direct MCP");
   await page.getByRole("textbox", { name: "Search apps", exact: true }).fill("Notion");
-  await page.getByRole("button", { name: "Search", exact: true }).click();
+  await page.getByRole("button", { name: "Search integrations.sh", exact: true }).click();
   await expect(page.getByText("Notion", { exact: true })).toBeVisible();
   await expect(page.getByRole("textbox", { name: "Server URL" })).toBeHidden();
   await page.getByRole("button", { name: "Connect", exact: true }).click();
@@ -93,4 +93,55 @@ test("direct MCP connects a catalog result without asking for a URL and assigns 
   const response = await assigned;
   expect(response.request().postDataJSON().json.serverId).toBe(serverId);
   await page.waitForURL(/\/app\//);
+});
+
+test("Executor reconnect saves a replacement token before authorization", async ({ page }) => {
+  await signup(page, `executor-reconnect-${Date.now()}@rakazo.test`, "password12", "Executor Test");
+  await expect(page.getByRole("heading", { name: "Connect apps" })).toBeVisible();
+  const server = await page.evaluate(async () => {
+    const response = await fetch("/rpc/mcp/servers/create", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-rakazo-space-id": localStorage.getItem("rakazo:space-id") ?? "",
+      },
+      body: JSON.stringify({
+        json: {
+          slug: "existing-executor",
+          name: "Executor",
+          transport: "streamable_http",
+          endpoint: "http://localhost:8765/mcp",
+          secret: "fake-old-token",
+          headers: { "X-Test": "fake-header" },
+        },
+      }),
+    });
+    if (!response.ok) throw new Error(`Server creation failed: ${response.status}`);
+    return (await response.json()).json;
+  });
+  let saved = false;
+  await page.route("**/rpc/mcp/servers/update", async (route) => {
+    expect(route.request().postDataJSON()).toEqual({
+      json: { id: server.id, secret: "fake-new-token" },
+    });
+    const response = await route.fetch();
+    expect(response.ok()).toBe(true);
+    const updated = (await response.json()).json;
+    expect(updated.headerKeys).toEqual(["X-Test"]);
+    expect(updated.revision).toBe(server.revision + 1);
+    saved = true;
+    await route.fulfill({ response });
+  });
+  await page.route("**/rpc/mcp/oauth/begin", (route) => {
+    expect(saved).toBe(true);
+    return route.fulfill({ json: { json: { status: "already_connected" } } });
+  });
+  await page.getByRole("button", { name: "Executor", exact: true }).click();
+  await page
+    .getByRole("textbox", { name: "Server URL", exact: true })
+    .fill("http://localhost:8765/mcp");
+  await page.getByLabel("Access token", { exact: true }).fill("fake-new-token");
+  await page.getByRole("button", { name: "Connect", exact: true }).click();
+  await expect.poll(() => saved).toBe(true);
+  await expect(page.getByRole("alert")).toBeHidden();
 });

@@ -1,4 +1,17 @@
 export const ZH_MESSAGES: Record<string, string> = {
+  "Ask the server owner to configure this provider.": "请联系服务器所有者配置此服务。",
+  "Client ID": "客户端 ID",
+  "Client secret": "客户端密钥",
+  "Connect apps": "连接应用",
+  Continue: "继续",
+  "Could not verify or save these credentials": "无法验证或保存这些凭据",
+  "Direct MCP": "直连 MCP",
+  "Finish MCP authorization in the web app.": "请在网页应用中完成 MCP 授权。",
+  "Get credentials": "获取凭据",
+  "Open web app": "打开网页应用",
+  "Project ID": "项目 ID",
+  "Set up Executor on your server in the web app.": "请在网页应用中为服务器设置 Executor。",
+
   "Cloud agent": "云端智能体",
   "Pull request": "拉取请求",
   running: "运行中",

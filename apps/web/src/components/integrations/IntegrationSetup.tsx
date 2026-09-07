@@ -104,6 +104,9 @@ export function IntegrationSetup({
           endpoint: url,
           ...(apiKey.trim() ? { secret: apiKey.trim() } : {}),
         }));
+      if (existing && apiKey.trim()) {
+        await rpc.mcp.servers.update({ id: existing.id, secret: apiKey.trim() });
+      }
       const result = await connectMcpOauth(server.id);
       if (result === "cancelled") return;
       if (botId) await rpc.mcp.assignments.approve({ botId, serverId: server.id });
@@ -215,7 +218,10 @@ export function IntegrationSetup({
             onSubmit={(event) => {
               event.preventDefault();
               void run(async () => {
-                const response = await rpc.capabilities.catalogSearch({ query });
+                const response = await rpc.capabilities.catalogSearch({
+                  query,
+                  usePublicCatalog: true,
+                });
                 setResults(response.results);
                 setSearched(true);
               });
@@ -228,7 +234,7 @@ export function IntegrationSetup({
               onChange={(event) => setQuery(event.target.value)}
             />
             <Button type="submit" disabled={busy || !query.trim()}>
-              <Trans>Search</Trans>
+              <Trans>Search integrations.sh</Trans>
             </Button>
           </form>
           {remoteResults.map((result) => (
