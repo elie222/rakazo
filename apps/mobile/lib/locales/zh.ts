@@ -1,4 +1,29 @@
 export const ZH_MESSAGES: Record<string, string> = {
+  "Release computer": "释放电脑",
+  "Release interrupted computer?": "释放中断的电脑？",
+  "Stop all workers and confirm that provider operations have stopped before releasing this computer.":
+    "释放此电脑前，请停止所有工作进程，并确认服务提供方的操作已经停止。",
+  "Workers and operations are stopped": "工作进程和操作均已停止",
+
+  "Recovery is unavailable until the previous operation has stopped.":
+    "上一次操作停止之前，无法恢复。",
+  "Continue in Background": "在后台继续",
+  "Could not complete action": "无法完成操作",
+  Dismiss: "关闭",
+  "Getting ready": "正在准备",
+  Reconnecting: "正在重新连接",
+  "Recovering Team Computer": "正在恢复团队电脑",
+  "Recovering {name}’s Computer": "正在恢复 {name} 的电脑",
+  "Recovery failed": "恢复失败",
+  "Recreating the computer": "正在重建电脑",
+  "Restoring your workspace": "正在还原工作区",
+  "Saving your workspace": "正在保存工作区",
+  "Recovery restores the last saved workspace. Unsaved work may be lost.":
+    "电脑未能完成操作。可从最近保存的工作区恢复；未保存的工作可能会丢失。",
+  "Update failed": "更新失败",
+  "Updating Team Computer": "正在更新团队电脑",
+  "Updating {name}’s Computer": "正在更新 {name} 的电脑",
+
   "Server integrations": "服务器集成",
   "Ask the server owner to configure this provider.": "请联系服务器所有者配置此服务。",
   "Client ID": "客户端 ID",

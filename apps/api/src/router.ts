@@ -30,6 +30,7 @@ import {
   checkpointAndRecordComputerWorkspace,
   clearInactiveUserComputerControl,
   computerSupportsUpdate,
+  computerUpdateView,
   createVoiceProvider,
   deletePushToken,
   deploymentAutoReviewDefault,
@@ -55,6 +56,7 @@ import {
   prepareGraphqlInstall,
   probeOpenAiCompatibleModels,
   provisionComputer,
+  queueComputerUpdate,
   type RemoteConnectorDependencies,
   releaseComputerExecutionLease,
   replaceComputer,
@@ -494,6 +496,7 @@ export function createRouter(deps: RouterDeps) {
           id: space.id,
           name: space.name,
           isDefault: false,
+          hasContent: false,
           bots: [],
           groups: [],
           externalConversations: [],
@@ -507,6 +510,23 @@ export function createRouter(deps: RouterDeps) {
             userId: context.actor.userId,
             spaceId: input.spaceId,
           });
+          // Team computers can outlive bots; destroy provider sandboxes after the
+          // cascade so empty-space delete does not leave unreachable live boxes.
+          const adapterContext = connectionContext(
+            context.actor,
+            "spaces.remove",
+            context.signal,
+          );
+          await Promise.all(
+            fallback.orphanedComputers.map((computer) =>
+              deps.sandbox
+                .destroy(toComputerRef(computer), {
+                  ...adapterContext,
+                  botId: computer.homeKey,
+                })
+                .catch(() => undefined),
+            ),
+          );
           return { ok: true as const, activeSpaceId: fallback.id };
         } catch (error) {
           if (error instanceof SpaceNotFoundError) {
@@ -926,9 +946,12 @@ export function createRouter(deps: RouterDeps) {
         if (currentMode === input.mode) {
           return repos.setBotComputer(context.actor, bot.id, input.mode);
         }
-        const claimed = await deps.prisma.bot.updateMany({
-          where: { id: bot.id, computerSwitching: false },
-          data: { computerSwitching: true },
+        const claimed = await deps.prisma.$transaction(async (tx) => {
+          await tx.$queryRaw`SELECT id FROM computers WHERE id = ${bot.computerId} FOR UPDATE`;
+          return tx.bot.updateMany({
+            where: { id: bot.id, computerSwitching: false, computer: { maintenanceId: null } },
+            data: { computerSwitching: true },
+          });
         });
         if (claimed.count !== 1) throw new ORPCError("CONFLICT");
         try {
@@ -1487,6 +1510,7 @@ export function createRouter(deps: RouterDeps) {
           where: {
             id: bot.computer.id,
             state: { not: "suspending" },
+            maintenanceId: null,
             executionLeases: {
               none: { botId: { not: bot.id }, expiresAt: { gt: now } },
             },
@@ -1550,15 +1574,101 @@ export function createRouter(deps: RouterDeps) {
         );
         return computerStatus(deps, context.actor, input.botId);
       }),
-      recover: authed.computer.recover.handler(async ({ context, input }) =>
-        runComputerReplace(deps, context, input.botId, "recover", "recover"),
-      ),
+      recover: authed.computer.recover.handler(async ({ context, input }) => {
+        const bot = await repos.getBot(context.actor, input.botId);
+        if (!bot.computer) throw new IsolationError();
+        try {
+          return await queueComputerUpdate(deps, bot.computer.id, bot.id, "recover");
+        } catch (error) {
+          if (error instanceof ComputerBusyError)
+            throw new ORPCError("CONFLICT", { message: "Computer is busy" });
+          throw error;
+        }
+      }),
       reset: authed.computer.reset.handler(async ({ context, input }) =>
         runComputerReplace(deps, context, input.botId, "reset", "reset"),
       ),
-      update: authed.computer.update.handler(async ({ context, input }) =>
-        runComputerReplace(deps, context, input.botId, "update", "update"),
-      ),
+      update: authed.computer.update.handler(async ({ context, input }) => {
+        const bot = await repos.getBot(context.actor, input.botId);
+        if (!bot.computer) throw new IsolationError();
+        if (!computerSupportsUpdate(bot.computer.kind))
+          throw new ORPCError("BAD_REQUEST", {
+            message: "Computer update is not available on this device",
+          });
+        try {
+          return await queueComputerUpdate(deps, bot.computer.id, bot.id);
+        } catch (error) {
+          if (error instanceof ComputerBusyError)
+            throw new ORPCError("CONFLICT", { message: "Computer is busy" });
+          throw error;
+        }
+      }),
+      updates: authed.computer.updates.handler(async ({ context }) => {
+        const rows = await deps.prisma.computerUpdate.findMany({
+          where: {
+            status: { in: ["queued", "running", "interrupted", "failed"] },
+            computer: {
+              spaceId: context.actor.spaceId,
+              bots: { some: { userId: context.actor.userId, archivedAt: null } },
+            },
+          },
+          include: {
+            computer: {
+              include: {
+                bots: {
+                  where: { userId: context.actor.userId, archivedAt: null },
+                  select: { id: true, name: true },
+                },
+              },
+            },
+          },
+          orderBy: { createdAt: "desc" },
+        });
+        return rows.map((row) => computerUpdateView(row, context.actor.isDeploymentOwner));
+      }),
+      releaseInterrupted: authed.computer.releaseInterrupted.handler(async ({ context, input }) => {
+        if (!context.actor.isDeploymentOwner) throw new ORPCError("FORBIDDEN");
+        // This is an attended lock release, never a heartbeat-based takeover.
+        // The contract requires the operator's explicit workersStopped assertion.
+        await deps.prisma.$transaction(async (tx) => {
+          const update = await tx.computerUpdate.findFirst({
+            where: {
+              id: input.id,
+              status: "interrupted",
+              computer: {
+                spaceId: context.actor.spaceId,
+                bots: { some: { userId: context.actor.userId, archivedAt: null } },
+              },
+            },
+          });
+          if (!update) throw new ORPCError("CONFLICT");
+          const failed = await tx.computerUpdate.updateMany({
+            where: { id: update.id, status: "interrupted" },
+            data: { status: "failed" },
+          });
+          if (failed.count !== 1) throw new ORPCError("CONFLICT");
+          const released = await tx.computer.updateMany({
+            where: { id: update.computerId, maintenanceId: update.id },
+            data: { maintenanceId: null, state: "error" },
+          });
+          if (released.count !== 1) throw new ORPCError("CONFLICT");
+        });
+        return { ok: true as const };
+      }),
+      dismissUpdate: authed.computer.dismissUpdate.handler(async ({ context, input }) => {
+        await deps.prisma.computerUpdate.updateMany({
+          where: {
+            id: input.id,
+            status: "failed",
+            computer: {
+              spaceId: context.actor.spaceId,
+              bots: { some: { userId: context.actor.userId, archivedAt: null } },
+            },
+          },
+          data: { status: "dismissed" },
+        });
+        return { ok: true as const };
+      }),
       takeover: authed.computer.takeover.handler(async ({ context, input }) => {
         let bot = await repos.getBot(context.actor, input.botId);
         if (!bot.computer?.providerRef || bot.computer.state !== "running") {
@@ -1640,6 +1750,7 @@ export function createRouter(deps: RouterDeps) {
           where: {
             id: bot.computer.id,
             state: "running",
+            maintenanceId: null,
             controlHolder: { not: "user" },
             controlLeaseId: null,
           },
@@ -4429,6 +4540,8 @@ async function spaceNavigationDto(
     inactiveGroups,
     botSections,
     externalConversations,
+    contentBots,
+    contentGroups,
   ] = await Promise.all([
     repos.listBots(actor),
     groupRepos.listGroups(actor),
@@ -4436,6 +4549,22 @@ async function spaceNavigationDto(
     groupRepos.listSpaceGroupsForSpaces(actor, inactiveSpaceIds),
     repos.listBotSectionsForSpaces(actor, spaceIds),
     createExternalConversationRepos(deps.prisma).listForSpaces(actor, spaceIds),
+    // Active-only navigation lists miss archived content in other spaces; count any
+    // bot/group so an archived-only space does not look globally empty.
+    deps.prisma.bot.findMany({
+      where: { spaceId: { in: spaceIds }, userId: actor.userId },
+      select: { spaceId: true },
+      distinct: ["spaceId"],
+    }),
+    deps.prisma.chatGroup.findMany({
+      where: { spaceId: { in: spaceIds }, userId: actor.userId },
+      select: { spaceId: true },
+      distinct: ["spaceId"],
+    }),
+  ]);
+  const spacesWithContent = new Set([
+    ...contentBots.map((row) => row.spaceId),
+    ...contentGroups.map((row) => row.spaceId),
   ]);
   const currentMembership = memberships.find((membership) => membership.spaceId === actor.spaceId);
   if (!currentMembership) throw new IsolationError();
@@ -4464,6 +4593,7 @@ async function spaceNavigationDto(
         id: membership.spaceId,
         name: membership.space.name,
         isDefault: membership.space.isDefault,
+        hasContent: spacesWithContent.has(membership.spaceId),
         bots: spaceBots.map((bot) => ({
           id: bot.id,
           spaceId: bot.spaceId,

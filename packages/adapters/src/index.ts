@@ -31,6 +31,7 @@ export * from "./computer-lifecycle.js";
 export * from "./computer-screens.js";
 export * from "./computer-support.js";
 export * from "./computer-tools.js";
+export * from "./computer-update.js";
 export * from "./computer-workspace.js";
 export * from "./cursor-cloud-agent.js";
 export * from "./daytona-emulator.js";

@@ -130,6 +130,7 @@ import {
   ComputersUnavailableHint,
   computersAreUnavailable,
 } from "../components/ComputersUnavailableHint";
+import { ComputerUpdateProgress } from "../components/ComputerUpdateProgress";
 import { MessageHoverMetadata } from "../components/MessageHoverMetadata";
 import { SkillDraftCard } from "../components/teach/SkillDraftCard";
 import { TeachCaptureOverlay } from "../components/teach/TeachCaptureOverlay";
@@ -751,7 +752,7 @@ export function ShellPage() {
           archived?.length === 0 &&
           groupList.length === 0 &&
           archivedGroupList?.length === 0 &&
-          !navigation.spaces.some((space) => space.bots.length > 0 || space.groups.length > 0)
+          !navigation.spaces.some((space) => space.hasContent)
         ) {
           // Only the very first bot everywhere needs onboarding. An empty
           // current space with content elsewhere stays in the app so the
@@ -981,7 +982,7 @@ export function ShellPage() {
           bootstrap.archivedBots.length === 0 &&
           groupList.length === 0 &&
           bootstrap.archivedGroups.length === 0 &&
-          !bootstrap.spaces.some((space) => space.bots.length > 0 || space.groups.length > 0)
+          !bootstrap.spaces.some((space) => space.hasContent)
         ) {
           navigate("/onboarding", { replace: true });
           return;
@@ -1297,6 +1298,7 @@ export function ShellPage() {
                 id: bootstrapMe.spaceId,
                 name: "Personal",
                 isDefault: true,
+                hasContent: true,
                 bots,
                 groups,
                 botSections,
@@ -2414,6 +2416,11 @@ export function ShellPage() {
       data-ready={shellReady}
       className="relative flex h-full min-w-0 overflow-hidden bg-background text-foreground/90"
     >
+      <ComputerUpdateProgress
+        onCompleted={() => {
+          if (active) void refreshThread(active.id);
+        }}
+      />
       {bootstrapMe !== undefined ? (
         <HostComputerPrompt initialMe={bootstrapMe ?? undefined} />
       ) : null}

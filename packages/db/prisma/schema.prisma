@@ -866,6 +866,22 @@ model BrowserProfile {
   @@map("browser_profiles")
 }
 
+model ComputerUpdate {
+  action     String   @default("update")
+  id         String   @id @default(cuid())
+  computerId String
+  computer   Computer @relation(fields: [computerId], references: [id], onDelete: Cascade)
+  botId      String
+  status     String   @default("queued")
+  stage      String   @default("preparing")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([computerId, createdAt])
+  @@index([status, updatedAt])
+  @@map("computer_updates")
+}
+
 model Computer {
   id                      String                   @id @default(cuid())
   spaceId                 String
@@ -893,6 +909,8 @@ model Computer {
   updatedAt               DateTime                 @updatedAt
   bots                    Bot[]
   executionLeases         ComputerExecutionLease[]
+  maintenanceId           String?
+  updates                 ComputerUpdate[]
 
   @@index([spaceId, scope])
   @@map("computers")

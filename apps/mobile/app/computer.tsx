@@ -273,9 +273,7 @@ export default function Computer() {
           </Pressable>
         )}
       </View>
-      {computer?.state === "error" ||
-      computer?.state === "stopped" ||
-      (computer?.state === "running" && !embeddedScreenUrl) ? (
+      {computer ? (
         <ComputerMaintenanceActions
           botId={botId ?? ""}
           computer={computer}
