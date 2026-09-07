@@ -61,8 +61,8 @@ export function HostComputerPrompt({ initialMe }: { initialMe?: Me }) {
           <DialogDescription className="space-y-2 leading-relaxed">
             <span className="block">
               <Trans>
-                Docker limits access to your computer for added security. Using {hostLabel} lets bots
-                work with your local files and tools.
+                Docker limits access to your computer for added security. Using {hostLabel} lets
+                bots work with your local files and tools.
               </Trans>
             </span>
             <span className="block text-xs text-muted-foreground/80">
