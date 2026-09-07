@@ -111,7 +111,7 @@ export function SettingsOverlay({
 
   function requestClose() {
     if (memoryBusy) return;
-    if (section === "voice") onVoiceStatusMaybeChanged?.();
+    onVoiceStatusMaybeChanged?.();
     onClose();
   }
 

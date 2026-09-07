@@ -96,6 +96,7 @@ export function MemorySettingsOverlay({
 
   useEffect(() => {
     onBusyChange?.(busy);
+    return () => onBusyChange?.(false);
   }, [busy, onBusyChange]);
 
   async function connect(draft: MemoryProviderConnectionDraft) {
