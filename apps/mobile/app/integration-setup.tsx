@@ -165,7 +165,9 @@ export default function IntegrationSetup() {
           {button(
             t("Open web app"),
             () => {
-              if (state) void Linking.openURL(state.webUrl);
+              const url = new URL(state.webUrl);
+              if (choice === "direct") url.searchParams.set("mode", "mcp");
+              void Linking.openURL(url.toString());
             },
             !state,
           )}
