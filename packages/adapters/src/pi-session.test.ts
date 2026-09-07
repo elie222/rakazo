@@ -81,6 +81,10 @@ describe("Pi JSONL sessions", () => {
 
       const raw = await readFiles(path.join(root, "sessions"));
       expect(raw).toContain("rakazo_context");
+      expect(raw).toContain("rakazoThreadId");
+      expect(raw).toContain("thread-1");
+      expect(raw).toContain("rakazoTraceId");
+      expect(raw).toContain("trace-1");
       expect(raw).toContain("Be concise.");
       expect(raw).toContain("prior");
       expect(raw).toContain("I should answer.");

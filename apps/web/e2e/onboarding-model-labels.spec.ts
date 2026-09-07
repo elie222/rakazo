@@ -9,7 +9,14 @@ test("onboarding model list never labels an older model the latest one", async (
     const body = (await response.json()) as { json: Record<string, unknown> };
     await route.fulfill({
       response,
-      json: { json: { ...body.json, needsModel: true } },
+      json: {
+        json: {
+          ...body.json,
+          needsModel: true,
+          defaultProvider: "openrouter",
+          defaultModel: "openai/gpt-5.6-luna",
+        },
+      },
     });
   });
 
@@ -25,7 +32,14 @@ test("onboarding model list never labels an older model the latest one", async (
   );
   await expect(page.getByRole("button", { name: /ChatGPT.*ChatGPT Plus\/Pro/ })).toBeVisible();
   await expect(page.getByRole("button", { name: /Vercel AI Gateway/ })).toBeVisible();
+  const modelPicker = page.getByRole("combobox", { name: "Model", exact: true });
+  await expect(modelPicker).toHaveValue("openai/gpt-5.6-luna");
   await captureScreenshot(page, testInfo, "onboarding-popular-providers");
+  await page.getByRole("button", { name: /ChatGPT.*ChatGPT Plus\/Pro/ }).click();
+  await modelPicker.selectOption("gpt-6-astra");
+  await expect(modelPicker).toHaveValue("gpt-6-astra");
+  await captureScreenshot(page, testInfo, "onboarding-chatgpt-astra");
+  await page.getByRole("button", { name: /OpenRouter/ }).click();
   await page.getByRole("button", { name: "Show all providers" }).click();
   await page.getByPlaceholder("Search providers and models").fill("anthropic");
   await expect(page.getByRole("button", { name: /OpenRouter/ })).toHaveAttribute(
@@ -42,6 +56,9 @@ test("onboarding model list never labels an older model the latest one", async (
   );
 
   const models = page.getByRole("combobox", { name: "Model", exact: true });
+  await models.selectOption("claude-fable-5-1");
+  await expect(models).toHaveValue("claude-fable-5-1");
+  await captureScreenshot(page, testInfo, "onboarding-anthropic-fable");
   const labels = await models.getByRole("option").allTextContents();
   // "latest" is an upstream alias marker, so it lands on families like Claude Opus 4.5 while
   // newer models carry no marker. Rendered as-is it tells the user the opposite of the truth.

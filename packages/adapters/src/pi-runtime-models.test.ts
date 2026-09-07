@@ -2,6 +2,8 @@ import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import type { AgentRunRequest } from "@rakazo/adapter-kit";
 import { describe, expect, it } from "vitest";
 import { buildModelConnectPlaintext, modelCredentialDto } from "./model-connect.js";
+import { modelAcceptsImageInput } from "./model-vision.js";
+import { listPiCatalog } from "./pi-models.js";
 import { resolveModelAuth } from "./pi-oauth.js";
 import { OPENAI_COMPATIBLE_PROVIDER_ID } from "./pi-openai-compatible-provider.js";
 import { modelsForRequest } from "./pi-runtime.js";
@@ -11,6 +13,21 @@ function requestModel(id: string, baseUrl: string): Pick<AgentRunRequest, "model
 }
 
 describe("request model catalogs", () => {
+  it.each([
+    ["openrouter", "openai/gpt-5.6-luna"],
+    ["openai-codex", "gpt-6-astra"],
+    ["anthropic", "claude-fable-5-1"],
+  ])("offers and resolves %s/%s with vision", (provider, id) => {
+    const entry = listPiCatalog().find((model) => model.provider === provider && model.id === id);
+    expect(entry).toBeDefined();
+    const model = modelsForRequest({ model: { provider, id } }, provider).getModel(provider, id);
+    expect(model).toBeDefined();
+    expect(model?.input).toContain("image");
+    expect(modelAcceptsImageInput(provider, id)).toBe(true);
+    expect(entry?.thinkingLevels).toEqual(getSupportedThinkingLevels(model!));
+    if (provider === "openai-codex") expect(entry?.signIn).toBe("device-code");
+  });
+
   it("isolates concurrent OpenAI-compatible endpoint registrations", () => {
     const first = modelsForRequest(
       requestModel("first-model", "http://127.0.0.1:8001/v1"),

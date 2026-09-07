@@ -1,7 +1,8 @@
 import type { Dirent } from "node:fs";
 import { readdir, rm, stat } from "node:fs/promises";
 import path from "node:path";
-import { type AgentMessage, JsonlSessionRepo, type Session } from "@earendil-works/pi-agent-core";
+import { type AgentMessage, type Branch, JsonlSessionRepo } from "@earendil-works/pi-agent-core";
+import { BACKGROUND_CONTEXT } from "@earendil-works/pi-agent-core/harness/context";
 import { NodeExecutionEnv } from "@earendil-works/pi-agent-core/node";
 import { getLogger } from "@rakazo/logging";
 
@@ -163,22 +164,16 @@ export class PiJsonlSessionRecorder implements PiSessionRecorder {
   async start(input: PiSessionStart): Promise<PiSessionHandle> {
     const sessionsRoot = piSessionBotRoot(this.sessionsRoot, input.userId, input.botId);
     const repo = new JsonlSessionRepo({
-      fs: this.fs,
+      fileSystem: this.fs,
       sessionsRoot,
     });
-    const session = await repo.create({
-      id: input.runId,
-      cwd: this.cwd,
-      metadata: {
-        rakazoUserId: input.userId,
-        rakazoBotId: input.botId,
-        rakazoRunId: input.runId,
-        rakazoThreadId: input.threadId,
-        ...(input.traceId ? { rakazoTraceId: input.traceId } : {}),
-        model: input.model,
-        provider: input.provider,
+    const session = await repo.create(
+      {
+        id: input.runId,
+        cwd: this.cwd,
       },
-    });
+      BACKGROUND_CONTEXT,
+    );
     try {
       await prunePiSessionFiles(sessionsRoot);
     } catch (error) {
@@ -188,9 +183,17 @@ export class PiJsonlSessionRecorder implements PiSessionRecorder {
         error,
       });
     }
-    const handle = new BestEffortPiSession(session, input.runId);
+    const handle = new BestEffortPiSession(
+      await session.createBranch("main", null, BACKGROUND_CONTEXT),
+      input.runId,
+    );
 
     await handle.appendCustomEntry("rakazo_context", {
+      rakazoUserId: input.userId,
+      rakazoBotId: input.botId,
+      rakazoRunId: input.runId,
+      rakazoThreadId: input.threadId,
+      ...(input.traceId ? { rakazoTraceId: input.traceId } : {}),
       model: input.model,
       provider: input.provider,
       thinkingLevel: input.thinkingLevel,
@@ -208,13 +211,13 @@ class BestEffortPiSession implements PiSessionHandle {
   private failureLogged = false;
 
   constructor(
-    private readonly session: Session,
+    private readonly session: Branch,
     private readonly runId: string,
   ) {}
 
   async appendMessage(message: AgentMessage): Promise<void> {
     try {
-      await this.session.appendMessage(message);
+      await this.session.appendMessage(message, BACKGROUND_CONTEXT);
     } catch (error) {
       this.logFailure("message", error);
     }
@@ -222,7 +225,7 @@ class BestEffortPiSession implements PiSessionHandle {
 
   async appendCustomEntry(customType: string, data: Record<string, string>): Promise<void> {
     try {
-      await this.session.appendCustomEntry(customType, data);
+      await this.session.appendCustomEntry(customType, data, BACKGROUND_CONTEXT);
     } catch (error) {
       this.logFailure("context", error);
     }

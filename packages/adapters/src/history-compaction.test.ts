@@ -379,7 +379,7 @@ describe("compactHistory", () => {
     expect(request.tools).toEqual([]);
     expect(request.model).toEqual({
       provider: "openrouter",
-      id: "deepseek/deepseek-v4-flash-0731",
+      id: "openai/gpt-5.6-luna",
       apiKey: "openrouter-key",
     });
     expect(request.prompt).toContain("message 0");
