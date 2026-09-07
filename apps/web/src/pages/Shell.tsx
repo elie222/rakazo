@@ -88,11 +88,11 @@ import {
   LogOut,
   Maximize2,
   Menu,
+  Mic,
   Monitor,
   MoreHorizontal,
   PanelLeftClose,
   Paperclip,
-  Phone,
   Plus,
   Puzzle,
   Reply,
@@ -3014,24 +3014,6 @@ export function ShellPage() {
             </button>
           </div>
           <div className="flex items-center gap-1">
-            {!inGroup && active ? (
-              <button
-                type="button"
-                title={voiceStatus?.ready ? t`Call` : t`Set up voice to call`}
-                aria-label={t`Call`}
-                onClick={() => {
-                  if (!voiceStatus?.ready) {
-                    setVoiceOpen(true);
-                    return;
-                  }
-                  setCallOpen(true);
-                }}
-                data-active={callOpen ? "" : undefined}
-                className="app-no-drag grid h-[30px] w-[34px] place-items-center rounded-[9px] hover:bg-accent data-active:bg-accent"
-              >
-                <Phone size={16} strokeWidth={1.6} className="text-foreground/75" />
-              </button>
-            ) : null}
             {!inGroup ? (
               <button
                 type="button"
@@ -3103,6 +3085,17 @@ export function ShellPage() {
           onRemoveAttachment={removeAttachment}
           onSend={sendMessage}
           onStop={stopRun}
+          onVoice={
+            !inGroup && active
+              ? () => {
+                  if (!voiceStatus?.ready) {
+                    setVoiceOpen(true);
+                    return;
+                  }
+                  setCallOpen(true);
+                }
+              : undefined
+          }
           replyTarget={activeReplyTarget}
           replyTargetName={replyTargetName}
           onClearReply={() => setReplyTarget(null)}
@@ -4261,6 +4254,7 @@ const Composer = memo(function Composer({
   onRemoveAttachment,
   onSend,
   onStop,
+  onVoice,
   replyTarget,
   replyTargetName,
   onClearReply,
@@ -4285,6 +4279,7 @@ const Composer = memo(function Composer({
   onRemoveAttachment: (attachment: PendingAttachment) => void;
   onSend: (text: string, mentions?: ComposerMention[]) => Promise<void>;
   onStop: () => Promise<void>;
+  onVoice?: () => void;
   replyTarget?: ThreadMessage | null;
   replyTargetName?: string;
   onClearReply?: () => void;
@@ -4851,6 +4846,19 @@ const Composer = memo(function Composer({
             className="max-h-32 min-h-[24px] min-w-[8rem] flex-1 resize-none overflow-y-auto bg-transparent py-0.5 text-[15.5px] leading-6 text-foreground outline-none placeholder:text-muted-foreground disabled:opacity-40"
           />
         </div>
+        {onVoice ? (
+          <Button
+            variant="outline"
+            size="icon"
+            aria-label={t`Voice`}
+            title={t`Voice`}
+            disabled={disabled}
+            onClick={onVoice}
+            className="rounded-full text-foreground/75"
+          >
+            <Mic size={16} strokeWidth={1.8} />
+          </Button>
+        ) : null}
         {running ? (
           <>
             <Button

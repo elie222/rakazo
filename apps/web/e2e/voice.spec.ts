@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { completeOnboarding, rpc, signup } from "./helpers";
+import { captureScreenshot, completeOnboarding, rpc, signup } from "./helpers";
 
 test("voice settings connect a key, speak a reply, and open a call", async ({ page }, testInfo) => {
   const stamp = Date.now();
@@ -7,14 +7,19 @@ test("voice settings connect a key, speak a reply, and open a call", async ({ pa
   await signup(page, `voice-${stamp}@rakazo.test`, "password12", userName);
   await completeOnboarding(page);
 
-  await page.getByRole("button", { name: "Call" }).click();
+  await expect(page.getByRole("button", { name: "Call", exact: true })).toHaveCount(0);
+  await expect(
+    page.getByTestId("composer-bar").getByRole("button", { name: "Voice", exact: true }),
+  ).toHaveCount(1);
+  await captureScreenshot(page, testInfo, "voice-composer");
+  await page
+    .getByTestId("composer-bar")
+    .getByRole("button", { name: "Voice", exact: true })
+    .click();
   await expect(page.getByTestId("voice-settings")).toBeVisible();
   await expect(page.getByLabel("API key", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Dictate", exact: true })).toHaveCount(0);
-  await testInfo.attach("voice-settings", {
-    body: await page.screenshot(),
-    contentType: "image/png",
-  });
+  await captureScreenshot(page, testInfo, "voice-settings");
   await page.getByRole("button", { name: "Close voice settings" }).click();
   await expect(page.getByTestId("voice-settings")).toHaveCount(0);
 
@@ -24,7 +29,10 @@ test("voice settings connect a key, speak a reply, and open a call", async ({ pa
   expect(preparedOff.ready).toBe(false);
 
   await page.getByRole("button", { name: new RegExp(userName) }).click();
-  await page.getByRole("button", { name: "Voice", exact: true }).click();
+  await page
+    .locator('[data-slot="popover-content"]')
+    .getByRole("button", { name: "Voice", exact: true })
+    .click();
   await expect(page.getByTestId("voice-settings")).toBeVisible();
   await page.getByRole("button", { name: /Scripted/ }).click();
   const apiKeyInput = page.getByPlaceholder(/Paste your API key/);
@@ -67,11 +75,17 @@ test("voice settings connect a key, speak a reply, and open a call", async ({ pa
   await replySpoken;
 
   await page.getByRole("button", { name: new RegExp(userName) }).click();
-  await page.getByRole("button", { name: "Voice", exact: true }).click();
+  await page
+    .locator('[data-slot="popover-content"]')
+    .getByRole("button", { name: "Voice", exact: true })
+    .click();
   await expect(page.getByRole("button", { name: "Replace key" })).toBeVisible();
   await page.getByRole("button", { name: "Close voice settings" }).click();
 
-  await page.getByRole("button", { name: "Call" }).click();
+  await page
+    .getByTestId("composer-bar")
+    .getByRole("button", { name: "Voice", exact: true })
+    .click();
   await expect(page.getByTestId("call-view")).toBeVisible();
   await expect(page.getByRole("button", { name: "Hang up" })).toBeVisible();
   await page.getByRole("button", { name: "Hang up" }).click();
