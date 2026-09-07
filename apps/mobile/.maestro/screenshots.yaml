@@ -8,6 +8,15 @@ tags:
     permissions:
       notifications: deny
 
+# A cold API 34 emulator can show a launcher ANR over the healthy app.
+- extendedWaitUntil:
+    visible: "Sign up for Rakazo|Pixel Launcher isn't responding"
+    timeout: 30000
+- runFlow:
+    when:
+      visible: "Pixel Launcher isn't responding"
+    commands:
+      - tapOn: "Close app"
 - extendedWaitUntil:
     visible: "Sign up for Rakazo"
     timeout: 30000
