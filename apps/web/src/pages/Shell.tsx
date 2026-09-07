@@ -210,6 +210,7 @@ import {
   DeleteItemDialog,
   NewBotSectionDialog,
   NewSpaceDialog,
+  PickerInfoDialog,
 } from "./shell/dialogs";
 import {
   AppConnectCard,
@@ -451,6 +452,7 @@ export function ShellPage() {
     null,
   );
   const [newSpaceOpen, setNewSpaceOpen] = useState(false);
+  const [pickerInfoTopic, setPickerInfoTopic] = useState<"group" | "space" | null>(null);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
 
   useEffect(() => {
@@ -2491,6 +2493,16 @@ export function ShellPage() {
                       setMobileSidebarOpen(false);
                       setNewSpaceOpen(true);
                     }}
+                    onShowGroupInfo={() => {
+                      setCreateMenuOpen(false);
+                      setMobileSidebarOpen(false);
+                      setPickerInfoTopic("group");
+                    }}
+                    onShowSpaceInfo={() => {
+                      setCreateMenuOpen(false);
+                      setMobileSidebarOpen(false);
+                      setPickerInfoTopic("space");
+                    }}
                   />
                 </PopoverContent>
               ) : null}
@@ -3689,6 +3701,10 @@ export function ShellPage() {
               window.location.assign("/onboarding");
             }}
           />
+        ) : null}
+
+        {pickerInfoTopic ? (
+          <PickerInfoDialog topic={pickerInfoTopic} onClose={() => setPickerInfoTopic(null)} />
         ) : null}
 
         {clearTarget ? (

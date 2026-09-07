@@ -1213,6 +1213,32 @@ msgstr "새 그룹 만들기"
 msgid "Create new Space"
 msgstr "새 스페이스 만들기"
 
+#: src/pages/shell/bot-picker.tsx:105
+#: src/pages/shell/bot-picker.tsx:106
+msgid "About groups"
+msgstr ""
+
+#: src/pages/shell/bot-picker.tsx:133
+#: src/pages/shell/bot-picker.tsx:134
+msgid "About spaces"
+msgstr ""
+
+#: src/pages/shell/dialogs.tsx:131
+msgid "Groups"
+msgstr ""
+
+#: src/pages/shell/dialogs.tsx:131
+msgid "Spaces"
+msgstr ""
+
+#: src/pages/shell/dialogs.tsx:136
+msgid "One conversation with 2–6 of your bots in a shared thread. Name the group, pick its members, and they all reply in the same chat."
+msgstr ""
+
+#: src/pages/shell/dialogs.tsx:141
+msgid "A separate, private workspace with its own bots and groups. Use spaces to keep contexts apart, such as work and personal."
+msgstr ""
+
 #: src/pages/RoutineEditor.tsx:114
 #: src/pages/RoutineEditor.tsx:115
 msgid "Create Routine"
