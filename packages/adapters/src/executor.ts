@@ -211,7 +211,11 @@ import {
 import { loadAgentMemoryContext } from "./memory-context.js";
 import type { MemoryProviderResolver } from "./memory-provider-factory.js";
 import { selectMemoryTools } from "./memory-tools.js";
-import { selectConfiguredModel, validateConnectedModelChoice } from "./model-selection.js";
+import {
+  isCatalogModelChoice,
+  selectConfiguredModel,
+  validateConnectedModelChoice,
+} from "./model-selection.js";
 import {
   filterImageReturningComputerTools,
   IMAGE_RETURNING_COMPUTER_TOOLS,
@@ -721,6 +725,12 @@ export function createRunExecutor(deps: ExecutorDeps) {
     if (validationError) throw new Error(validationError);
     const credential = await findModelCredential(deps.prisma, scope, provider, modelId);
     if (!credential) throw new Error("Connect that model provider first");
+    // Free-form selections must keep the preference that owns this modelId. A
+    // intervening delete/change can make findModelCredential fall back to another
+    // same-provider credential; reject that mismatch instead of mixing baseUrl.
+    if (!isCatalogModelChoice(provider, modelId) && credential.defaultModel !== modelId) {
+      throw new Error("Unknown model for that provider");
+    }
     const resolved = await resolveModelKey(
       deps,
       scope.userId,

@@ -1,6 +1,6 @@
 import type { Actor } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { selectConfiguredModel, validateConnectedModelChoice } from "./model-selection.js";
 
 type SelectionInput = Parameters<typeof selectConfiguredModel>[0];
@@ -129,22 +129,58 @@ describe("connected model validation", () => {
       validateConnectedModelChoice(catalogPrisma, actor, "xai", "not-a-model"),
     ).resolves.toBe("Unknown model for that provider");
 
-    const customPreferences = [
-      {
-        credential: credential("openai-compatible", "newest-model"),
-        isDefault: true,
-        modelId: "newest-model",
+    const preferenceFindFirst = vi.fn(
+      async (args: {
+        where: {
+          spaceId?: string;
+          userId?: string;
+          modelId?: string;
+          credential?: { provider?: string; userId?: string };
+        };
+      }) => {
+        if (args.where.modelId) {
+          if (
+            args.where.spaceId === actor.spaceId &&
+            args.where.userId === actor.userId &&
+            args.where.modelId === "private-model" &&
+            args.where.credential?.provider === "openai-compatible" &&
+            args.where.credential?.userId === actor.userId
+          ) {
+            return { id: "saved-private-model" };
+          }
+          return null;
+        }
+        if (args.where.credential?.provider === "openai-compatible") {
+          return {
+            credential: credential("openai-compatible", "newest-model"),
+            isDefault: true,
+            modelId: "newest-model",
+          };
+        }
+        return null;
       },
-      { id: "older-choice" },
-    ];
+    );
     const customPrisma = {
-      spaceModelPreference: {
-        findFirst: async () => customPreferences.shift() ?? null,
-      },
+      spaceModelPreference: { findFirst: preferenceFindFirst },
+      userModelCredential: { findFirst: async () => null },
     } as unknown as PrismaClient;
     await expect(
       validateConnectedModelChoice(customPrisma, actor, "openai-compatible", "private-model"),
     ).resolves.toBeUndefined();
+    expect(preferenceFindFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          spaceId: actor.spaceId,
+          userId: actor.userId,
+          modelId: "private-model",
+          credential: { userId: actor.userId, provider: "openai-compatible" },
+        }),
+        select: { id: true },
+      }),
+    );
+    await expect(
+      validateConnectedModelChoice(customPrisma, actor, "openai-compatible", "missing-model"),
+    ).resolves.toBe("Unknown model for that provider");
 
     const disconnectedPrisma = {
       spaceModelPreference: { findFirst: async () => null },

@@ -1170,6 +1170,45 @@ description: Prepare standup notes
     );
   });
 
+  it("rejects a free-form selection when the owning preference disappears", async () => {
+    const preference = modelPreference({
+      provider: "openai-compatible",
+      secretId: "secret-compat",
+      modelId: "newest-model",
+      isDefault: true,
+    });
+    const findFirst = vi.fn(
+      async (args: {
+        where: { credential?: { provider?: string; userId?: string }; modelId?: string };
+        select?: unknown;
+      }) => {
+        if (args.select) {
+          return args.where.modelId === "private-model" ? { id: "saved" } : null;
+        }
+        if (args.where.modelId === "private-model") return null;
+        if (args.where.credential?.provider === "openai-compatible") return preference;
+        return null;
+      },
+    );
+    const prisma = {
+      spaceModelPreference: { findFirst },
+      userModelCredential: { findFirst: vi.fn(async () => null) },
+      secret: { findFirst: vi.fn(async () => null), findUnique: vi.fn(async () => null) },
+    } as unknown as PrismaClient;
+    const executor = createRunExecutor({
+      prisma,
+      secretStore: { load: vi.fn(), put: vi.fn() },
+    } as unknown as Parameters<typeof createRunExecutor>[0]);
+
+    await expect(
+      executor.resolveConnectedModel(
+        { userId: "user-1", spaceId: "ws-1" },
+        "openai-compatible",
+        "private-model",
+      ),
+    ).rejects.toThrow("Unknown model for that provider");
+  });
+
   it("falls back to the Space default when the override provider has no credential", async () => {
     const findFirst = vi.fn(
       async (args: { where: { credential?: { provider?: string }; isDefault?: boolean } }) => {
