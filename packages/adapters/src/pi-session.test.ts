@@ -80,11 +80,21 @@ describe("Pi JSONL sessions", () => {
       } satisfies AgentMessage);
 
       const raw = await readFiles(path.join(root, "sessions"));
-      expect(raw).toContain("rakazo_context");
-      expect(raw).toContain("rakazoThreadId");
-      expect(raw).toContain("thread-1");
-      expect(raw).toContain("rakazoTraceId");
-      expect(raw).toContain("trace-1");
+      const records = raw
+        .trim()
+        .split("\n")
+        .filter(Boolean)
+        .flatMap((line) => JSON.parse(line));
+      expect(records).toContainEqual(
+        expect.objectContaining({
+          kind: "entry",
+          customType: "rakazo_context",
+          data: expect.objectContaining({
+            rakazoThreadId: "thread-1",
+            rakazoTraceId: "trace-1",
+          }),
+        }),
+      );
       expect(raw).toContain("Be concise.");
       expect(raw).toContain("prior");
       expect(raw).toContain("I should answer.");
