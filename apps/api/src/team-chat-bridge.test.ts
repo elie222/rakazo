@@ -832,7 +832,20 @@ describe("team chat bridge", () => {
         where: {
           id: "external-claimed",
           status: "received",
-          engagementReason: null,
+          OR: [
+            { engagementReason: null },
+            {
+              NOT: {
+                engagementReason: {
+                  in: [
+                    "message_routine_routing",
+                    "message_routine_routing_rearmed",
+                    "message_teamchat_agent",
+                  ],
+                },
+              },
+            },
+          ],
         },
         data: expect.objectContaining({
           status: "queueing",
@@ -1001,7 +1014,20 @@ describe("team chat bridge", () => {
         where: {
           id: "external-atomic",
           status: "received",
-          engagementReason: null,
+          OR: [
+            { engagementReason: null },
+            {
+              NOT: {
+                engagementReason: {
+                  in: [
+                    "message_routine_routing",
+                    "message_routine_routing_rearmed",
+                    "message_teamchat_agent",
+                  ],
+                },
+              },
+            },
+          ],
         },
         data: expect.objectContaining({
           status: "queueing",

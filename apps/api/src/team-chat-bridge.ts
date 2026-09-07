@@ -945,13 +945,26 @@ export class TeamChatBridge {
     }
     // Atomically claim queueing + exclusive agent ownership before creating a
     // run so a concurrent wake cannot also deliver for this provider event.
-    // Require engagementReason null so routing ownership (including a wake that
-    // reasserted it after lease loss) wins the CAS and this path backs off.
+    // Allow null or non-ownership reasons (e.g. ambient judge text); refuse when
+    // routing ownership was reasserted by an in-flight wake.
     const claimed = await this.deps.prisma.externalMessage.updateMany({
       where: {
         id: message.id,
         status: "received",
-        engagementReason: null,
+        OR: [
+          { engagementReason: null },
+          {
+            NOT: {
+              engagementReason: {
+                in: [
+                  ROUTING_OWNERSHIP_REASON,
+                  ROUTING_OWNERSHIP_REARMED_REASON,
+                  AGENT_OWNERSHIP_REASON,
+                ],
+              },
+            },
+          },
+        ],
       },
       data: {
         status: "queueing",
