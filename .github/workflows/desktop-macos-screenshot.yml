@@ -42,8 +42,11 @@ jobs:
         run: |
           pnpm --filter @rakazo/web build
           CSC_IDENTITY_AUTO_DISCOVERY=false pnpm --filter @rakazo/desktop exec electron-builder --mac --dir --publish never -c.mac.identity=null -c.mac.notarize=false
-          test -s apps/desktop/out/mac-arm64/Rakazo.app/Contents/Resources/Assets.car
-          test -s apps/desktop/out/mac-arm64/Rakazo.app/Contents/Resources/icon.icns
+          xcrun assetutil --info apps/desktop/out/mac-arm64/Rakazo.app/Contents/Resources/Assets.car > "$RUNNER_TEMP/icon-assets.json"
+          jq -e 'any(.[]; .Name == "Icon" and .AssetType == "IconImageStack") and any(.[]; .Name == "Icon_Assets/orange-bot" and .AssetType == "Image")' "$RUNNER_TEMP/icon-assets.json"
+          iconutil -c iconset apps/desktop/out/mac-arm64/Rakazo.app/Contents/Resources/icon.icns -o "$RUNNER_TEMP/fallback.iconset"
+          sips -s format png "$RUNNER_TEMP/fallback.iconset/icon_128x128@2x.png" --out "$RUNNER_TEMP/fallback-decoded.png"
+          test -s "$RUNNER_TEMP/fallback-decoded.png"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconName' apps/desktop/out/mac-arm64/Rakazo.app/Contents/Info.plist)" = Icon
         env:
           RAKAZO_ALLOW_DEV_SECRETS: "1"
