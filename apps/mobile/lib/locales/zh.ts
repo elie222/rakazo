@@ -1,4 +1,10 @@
 export const ZH_MESSAGES: Record<string, string> = {
+  "Release computer": "释放电脑",
+  "Release interrupted computer?": "释放中断的电脑？",
+  "Stop all workers and confirm that provider operations have stopped before releasing this computer.":
+    "释放此电脑前，请停止所有工作进程，并确认服务提供方的操作已经停止。",
+  "Workers and operations are stopped": "工作进程和操作均已停止",
+
   "Recovery is unavailable until the previous operation has stopped.":
     "上一次操作停止之前，无法恢复。",
   "Continue in Background": "在后台继续",

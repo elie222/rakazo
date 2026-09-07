@@ -729,6 +729,7 @@ export const COMPUTER_UPDATE_STAGES = [
   "reconnecting",
 ] as const;
 export const ComputerUpdateSchema = z.object({
+  canReleaseReservation: z.boolean().optional(),
   action: z.enum(["update", "recover"]),
   id: Id,
   botId: Id,

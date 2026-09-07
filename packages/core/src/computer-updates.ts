@@ -5,6 +5,7 @@ export function createComputerUpdates(client: {
   list: () => Promise<ComputerUpdate[]>;
   start: (botId: string, action: "update" | "recover") => Promise<ComputerUpdate>;
   dismiss: (id: string) => Promise<unknown>;
+  releaseInterrupted: (id: string) => Promise<unknown>;
 }) {
   let state: { updates: ComputerUpdate[]; openId: string | null } = { updates: [], openId: null };
   const listeners = new Set<() => void>();
@@ -67,6 +68,13 @@ export function createComputerUpdates(client: {
       emit();
       clearTimeout(timer);
       timer = setTimeout(() => void poll(epoch), 1500);
+    },
+    async releaseInterrupted(id: string) {
+      const epoch = generation;
+      await client.releaseInterrupted(id);
+      if (epoch !== generation) return;
+      revision++;
+      await poll(epoch);
     },
     async dismiss(id: string) {
       const epoch = generation;

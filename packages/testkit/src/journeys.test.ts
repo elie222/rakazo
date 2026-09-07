@@ -202,6 +202,12 @@ describeJourneys("required product journeys", () => {
         body: JSON.stringify({ json: { botId: bot.id } }),
       });
       expect(stopped.status).toBe(409);
+      const switched = await app.request("/rpc/bots/setComputer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: cookie },
+        body: JSON.stringify({ json: { botId: bot.id, mode: "dedicated" } }),
+      });
+      expect(switched.status).toBe(409);
       release();
       await waitForDatabase(
         async () =>

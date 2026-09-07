@@ -54,6 +54,7 @@ function fixture(status = "queued") {
     }),
   };
   const prisma = {
+    $queryRaw: vi.fn(async () => []),
     computer,
     bot: { findFirst: vi.fn(async () => ({ userId: "user" })) },
     computerUpdate,

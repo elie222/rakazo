@@ -1,6 +1,7 @@
 import { type ComputerUpdate, ComputerUpdateSchema } from "@rakazo/contracts";
 import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
 import { scheduleComputerSleep } from "./computer-idle.js";
 import {
   ComputerBusyError,
@@ -11,15 +12,19 @@ import {
 type Deps = Parameters<typeof replaceComputer>[0];
 const STALE_MS = 10 * 60_000;
 
-export function computerUpdateView(row: {
-  action: string;
-  id: string;
-  botId: string;
-  status: string;
-  stage: string;
-  computer: { scope: string; bots: { id: string; name: string }[] };
-}): ComputerUpdate {
+export function computerUpdateView(
+  row: {
+    action: string;
+    id: string;
+    botId: string;
+    status: string;
+    stage: string;
+    computer: { scope: string; bots: { id: string; name: string }[] };
+  },
+  isDeploymentOwner = false,
+): ComputerUpdate {
   return ComputerUpdateSchema.parse({
+    canReleaseReservation: isDeploymentOwner && row.status === "interrupted",
     action: row.action,
     id: row.id,
     botId: row.computer.bots.some((bot) => bot.id === row.botId)
@@ -39,6 +44,9 @@ export async function queueComputerUpdate(
   action: "update" | "recover" = "update",
 ) {
   const update = await deps.prisma.$transaction(async (tx) => {
+    // Mode switches lock this same row before marking a bot as switching.
+    // The following statement then observes their committed reservation.
+    await tx.$queryRaw`SELECT id FROM computers WHERE id = ${computerId} FOR UPDATE`;
     const computer = await tx.computer.findUniqueOrThrow({ where: { id: computerId } });
     if (action === "update" && !computerSupportsUpdate(computer.kind))
       throw new Error("Computer update is not available on this device");
@@ -51,6 +59,7 @@ export async function queueComputerUpdate(
         controlHolder: { not: "user" },
         executionLeases: { none: { expiresAt: { gt: new Date() } } },
         bots: {
+          some: { id: botId, archivedAt: null },
           none: {
             OR: [
               { computerSwitching: true },
@@ -133,7 +142,8 @@ export async function performComputerUpdate(deps: Deps, updateId: string) {
     );
     await finishUpdate(deps.prisma, updateId, update.computerId, "completed");
     scheduleComputerSleep(deps.jobs, update.computerId);
-  } catch {
+  } catch (error) {
+    getLogger().error("computer update failed", error, { updateId, computerId: update.computerId });
     // Provider errors may contain credentials or private URLs. Expose only the failed stage.
     await finishUpdate(deps.prisma, updateId, update.computerId, "failed");
   } finally {

@@ -3364,3 +3364,19 @@ msgstr ""
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Recovery is unavailable until the previous operation has stopped."
 msgstr ""
+
+#: src/components/ComputerUpdateProgress.tsx
+msgid "Release computer"
+msgstr ""
+
+#: src/components/ComputerUpdateProgress.tsx
+msgid "Release interrupted computer?"
+msgstr ""
+
+#: src/components/ComputerUpdateProgress.tsx
+msgid "Stop all workers and confirm that provider operations have stopped before releasing this computer."
+msgstr ""
+
+#: src/components/ComputerUpdateProgress.tsx
+msgid "Workers and operations are stopped"
+msgstr ""

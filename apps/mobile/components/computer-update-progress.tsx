@@ -2,7 +2,7 @@ import { COMPUTER_UPDATE_STAGES, type ComputerUpdate } from "@rakazo/contracts";
 import { computerUpdateNeedsAttention, computerUpdateStages } from "@rakazo/core";
 import { usePathname } from "expo-router";
 import { useEffect, useState, useSyncExternalStore } from "react";
-import { ActivityIndicator, Modal, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Alert, Modal, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { computerUpdates } from "../lib/computer-updates";
 import { useI18n } from "../lib/i18n";
@@ -112,6 +112,37 @@ export function ComputerUpdateProgress() {
               <Text accessibilityRole="alert" style={{ color: tokens.destructive }}>
                 {t("Could not complete action")}
               </Text>
+            ) : null}
+            {selected.status === "interrupted" && selected.canReleaseReservation ? (
+              <Pressable
+                accessibilityRole="button"
+                disabled={busy}
+                style={styles.button}
+                onPress={() =>
+                  Alert.alert(
+                    t("Release interrupted computer?"),
+                    t(
+                      "Stop all workers and confirm that provider operations have stopped before releasing this computer.",
+                    ),
+                    [
+                      { text: t("Cancel"), style: "cancel" },
+                      {
+                        text: t("Workers and operations are stopped"),
+                        onPress: () => {
+                          setBusy(true);
+                          setError(false);
+                          void computerUpdates
+                            .releaseInterrupted(selected.id)
+                            .catch(() => setError(true))
+                            .finally(() => setBusy(false));
+                        },
+                      },
+                    ],
+                  )
+                }
+              >
+                <Text style={{ color: tokens.foreground }}>{t("Release computer")}</Text>
+              </Pressable>
             ) : null}
             {selected.status === "failed" ? (
               <Pressable

@@ -3404,3 +3404,19 @@ msgstr "Updating Team Computer"
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Recovery is unavailable until the previous operation has stopped."
 msgstr "Recovery is unavailable until the previous operation has stopped."
+
+#: src/components/ComputerUpdateProgress.tsx
+msgid "Release computer"
+msgstr "Release computer"
+
+#: src/components/ComputerUpdateProgress.tsx
+msgid "Release interrupted computer?"
+msgstr "Release interrupted computer?"
+
+#: src/components/ComputerUpdateProgress.tsx
+msgid "Stop all workers and confirm that provider operations have stopped before releasing this computer."
+msgstr "Stop all workers and confirm that provider operations have stopped before releasing this computer."
+
+#: src/components/ComputerUpdateProgress.tsx
+msgid "Workers and operations are stopped"
+msgstr "Workers and operations are stopped"

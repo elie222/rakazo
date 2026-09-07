@@ -901,9 +901,12 @@ export function createRouter(deps: RouterDeps) {
         if (currentMode === input.mode) {
           return repos.setBotComputer(context.actor, bot.id, input.mode);
         }
-        const claimed = await deps.prisma.bot.updateMany({
-          where: { id: bot.id, computerSwitching: false, computer: { maintenanceId: null } },
-          data: { computerSwitching: true },
+        const claimed = await deps.prisma.$transaction(async (tx) => {
+          await tx.$queryRaw`SELECT id FROM computers WHERE id = ${bot.computerId} FOR UPDATE`;
+          return tx.bot.updateMany({
+            where: { id: bot.id, computerSwitching: false, computer: { maintenanceId: null } },
+            data: { computerSwitching: true },
+          });
         });
         if (claimed.count !== 1) throw new ORPCError("CONFLICT");
         try {
@@ -1576,7 +1579,36 @@ export function createRouter(deps: RouterDeps) {
           },
           orderBy: { createdAt: "desc" },
         });
-        return rows.map(computerUpdateView);
+        return rows.map((row) => computerUpdateView(row, context.actor.isDeploymentOwner));
+      }),
+      releaseInterrupted: authed.computer.releaseInterrupted.handler(async ({ context, input }) => {
+        if (!context.actor.isDeploymentOwner) throw new ORPCError("FORBIDDEN");
+        // This is an attended lock release, never a heartbeat-based takeover.
+        // The contract requires the operator's explicit workersStopped assertion.
+        await deps.prisma.$transaction(async (tx) => {
+          const update = await tx.computerUpdate.findFirst({
+            where: {
+              id: input.id,
+              status: "interrupted",
+              computer: {
+                spaceId: context.actor.spaceId,
+                bots: { some: { userId: context.actor.userId, archivedAt: null } },
+              },
+            },
+          });
+          if (!update) throw new ORPCError("CONFLICT");
+          const failed = await tx.computerUpdate.updateMany({
+            where: { id: update.id, status: "interrupted" },
+            data: { status: "failed" },
+          });
+          if (failed.count !== 1) throw new ORPCError("CONFLICT");
+          const released = await tx.computer.updateMany({
+            where: { id: update.computerId, maintenanceId: update.id },
+            data: { maintenanceId: null, state: "error" },
+          });
+          if (released.count !== 1) throw new ORPCError("CONFLICT");
+        });
+        return { ok: true as const };
       }),
       dismissUpdate: authed.computer.dismissUpdate.handler(async ({ context, input }) => {
         await deps.prisma.computerUpdate.updateMany({
