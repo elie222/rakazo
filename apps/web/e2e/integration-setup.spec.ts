@@ -40,7 +40,9 @@ test("setup exposes all integration choices and saves only the selected provider
   await page.getByLabel("API key", { exact: true }).fill("fake-composio-key");
   await captureScreenshot(page, testInfo, "integration-setup-composio");
   await page.getByRole("button", { name: "Continue", exact: true }).click();
-  expect(saved).toEqual([{ json: { provider: "composio", apiKey: "fake-composio-key" } }]);
+  await expect
+    .poll(() => saved)
+    .toEqual([{ json: { provider: "composio", apiKey: "fake-composio-key" } }]);
   await expect(page.getByRole("heading", { name: "Create your first bot" })).toHaveCount(0);
   await expect(page.getByRole("combobox", { name: "Message Chief" })).toBeVisible({
     timeout: 20_000,

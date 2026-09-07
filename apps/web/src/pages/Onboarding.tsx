@@ -25,6 +25,7 @@ import { useModelOAuthSignIn } from "../lib/use-model-oauth-signin";
 
 const CUSTOM_MODEL_OPTION = "__rakazo_custom_model__";
 const FIRST_BOT_NAME = "Chief";
+const FIRST_BOT_SPAWN_KEY = "onboarding:first";
 const FIRST_BOT_LOCK = "rakazo:onboarding-first-bot";
 
 /** Survives StrictMode remounts; concurrent first-bot creates share one in-flight attempt. */
@@ -32,16 +33,25 @@ let firstBotEnsure: Promise<{ id: string }> | null = null;
 
 async function createOrReuseFirstBot(): Promise<{ id: string }> {
   const existing = await rpc.bots.list();
-  const reuse = existing.find((bot) => bot.name === FIRST_BOT_NAME) ?? existing[0] ?? null;
+  const reuse = existing.find((bot) => bot.name === FIRST_BOT_NAME);
   if (reuse) return { id: reuse.id };
-  const created = await rpc.bots.create({
-    name: FIRST_BOT_NAME,
-    title: "",
-    description: "",
-    instructions: "",
-    notifyOnFinish: true,
-  });
-  return { id: created.id };
+  try {
+    const created = await rpc.bots.create({
+      name: FIRST_BOT_NAME,
+      title: "",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+      spawnKey: FIRST_BOT_SPAWN_KEY,
+    });
+    return { id: created.id };
+  } catch (error) {
+    // Another tab won the unique (spaceId, spawnKey) race; reuse that Chief.
+    const afterConflict = await rpc.bots.list();
+    const winner = afterConflict.find((bot) => bot.name === FIRST_BOT_NAME);
+    if (winner) return { id: winner.id };
+    throw error;
+  }
 }
 
 async function withFirstBotLock<T>(run: () => Promise<T>): Promise<T> {
@@ -53,6 +63,7 @@ async function withFirstBotLock<T>(run: () => Promise<T>): Promise<T> {
 async function ensureFirstBot(): Promise<{ id: string }> {
   if (firstBotEnsure) return firstBotEnsure;
   // Web Lock serializes cross-tab creates; module promise covers same-tab StrictMode.
+  // spawnKey makes create idempotent when locks are unavailable.
   // Clear after settle so a later empty-space visit re-lists instead of reusing a deleted id.
   firstBotEnsure = withFirstBotLock(createOrReuseFirstBot).finally(() => {
     firstBotEnsure = null;

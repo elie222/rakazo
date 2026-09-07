@@ -278,6 +278,8 @@ export const CreateBotInput = z.object({
   notifyOnFinish: z.boolean().default(true),
   color: z.string().optional(),
   computerMode: ComputerModeSchema.default("team"),
+  /** Idempotency key within a space (unique with spaceId). */
+  spawnKey: z.string().trim().min(1).max(120).optional(),
 });
 export type CreateBotInput = z.infer<typeof CreateBotInput>;
 
