@@ -112,6 +112,21 @@ describe("system browser authentication", () => {
     },
   );
 
+  it("does not open the browser when no loopback family can bind", async () => {
+    const { authorization, callback, options } = await setup();
+    authorization.searchParams.set("redirect_uri", callback.replace("127.0.0.1", "localhost"));
+    vi.spyOn(Server.prototype, "listen").mockImplementation(function (this: Server) {
+      queueMicrotask(() =>
+        this.emit("error", Object.assign(new Error("Unavailable"), { code: "EAFNOSUPPORT" })),
+      );
+      return this;
+    });
+    await expect(openBrowserAuth(authorization.href, options)).rejects.toThrow(
+      "No loopback address is available.",
+    );
+    expect(options.openExternal).not.toHaveBeenCalled();
+  });
+
   it("rejects an unrelated Host header", async () => {
     const { authorization, callback, options } = await setup();
     await openBrowserAuth(authorization.href, options);

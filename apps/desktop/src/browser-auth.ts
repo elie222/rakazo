@@ -50,6 +50,7 @@ export async function openBrowserAuth(
         throw new Error("Sign-in requires a loopback redirect and state.");
       }
       let consumed = false;
+      // localhost may resolve to either family; bind whichever is available.
       const hosts =
         callback.hostname === "localhost"
           ? ["127.0.0.1", "::1"]
@@ -89,7 +90,6 @@ export async function openBrowserAuth(
           response.end("You can close this tab and return to Rakazo.", close);
           options.onCallback({ code, state });
         });
-        servers.push(server);
         server.requestTimeout = 10_000;
         server.headersTimeout = 10_000;
         try {
@@ -103,9 +103,12 @@ export async function openBrowserAuth(
               } else resolve();
             });
           });
+          servers.push(server);
         } catch (error) {
+          server.close();
+          server.closeAllConnections();
           const code = (error as NodeJS.ErrnoException).code;
-          // A disabled address family is safe to skip; an occupied port is not.
+          // Skip a disabled address family; still fail on conflicts like EADDRINUSE.
           if (
             callback.hostname !== "localhost" ||
             (code !== "EAFNOSUPPORT" && code !== "EADDRNOTAVAIL")
@@ -113,7 +116,7 @@ export async function openBrowserAuth(
             throw error;
         }
       }
-      if (!servers.some((server) => server.listening)) {
+      if (servers.length === 0) {
         throw new Error("No loopback address is available.");
       }
     }
