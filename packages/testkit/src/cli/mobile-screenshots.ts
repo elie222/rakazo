@@ -25,6 +25,7 @@ const WEB_ORIGIN = "http://127.0.0.1:5180";
 
 type App = { request: (input: string, init?: RequestInit) => Response | Promise<Response> };
 
+/** Capture app screenshots and the notification demo against an isolated, disposable backend. */
 async function main() {
   process.chdir(ROOT);
   configureEnvironment();
