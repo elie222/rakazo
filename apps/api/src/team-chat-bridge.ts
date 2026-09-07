@@ -30,11 +30,10 @@ const DEFERRED_RESERVATION_MS = 2 * 60_000;
 /** Hold the deferred row while routine routing may still be writing its wake nonce. */
 const ROUTING_RESERVATION_MS = MESSAGE_ROUTING_RESERVATION_MS;
 const ROUTING_RESERVATION_RENEWAL_MS = 60_000;
-/** One-shot grace after a routing lease expires before promoting to agent. */
-const ROUTING_OWNERSHIP_GRACE_MS = ROUTING_RESERVATION_RENEWAL_MS * 2;
 const QUEUE_RESERVATION_MS = 2 * 60_000;
 const DELIVERY_RESERVATION_MS = 2 * 60_000;
 const ROUTING_OWNERSHIP_REASON = MESSAGE_ROUTING_REASON;
+/** Legacy grace marker; still exclusive ownership, never promote while set. */
 const ROUTING_OWNERSHIP_REARMED_REASON = MESSAGE_ROUTING_REARMED_REASON;
 const AGENT_OWNERSHIP_REASON = TEAMCHAT_AGENT_OWNERSHIP_REASON;
 const DEFERRED_RESERVATION_LOST = "Team chat deferred reservation was lost";
@@ -490,8 +489,10 @@ export class TeamChatBridge {
    * Promote expired deferred leases. If wakeMessageRoutines already persisted a
    * routine run (crash before resolveDeferredMessage), mark the row ignored so
    * recovery cannot also start a TeamChat agent run for the same provider event.
-   * In-flight routing ownership is re-armed briefly so a live wake can finish;
-   * abandoned claims fall through to agent promotion.
+   * Routing ownership is exclusive until resolveDeferredMessage or process-start
+   * recoverInterruptedRoutineRoutes: do not promote while it is set, even after
+   * the lease or any prior grace window expires. Heartbeat loss must not let
+   * reconcile start a fallback agent beside an in-flight wake.
    */
   private async recoverExpiredDeferredMessages(target: TargetBot, now: Date): Promise<void> {
     const expired = await this.deps.prisma.externalMessage.findMany({
@@ -542,22 +543,8 @@ export class TeamChatBridge {
         });
         continue;
       }
-      if (message.engagementReason === ROUTING_OWNERSHIP_REASON) {
-        // Grant one short grace lease only. A live heartbeat or wake CAS rewrites
-        // ownership back to ROUTING_OWNERSHIP_REASON with a future nextAttemptAt;
-        // an abandoned claim expires again and promotes below.
-        await this.deps.prisma.externalMessage.updateMany({
-          where: {
-            id: message.id,
-            status: "deferred",
-            engagementReason: ROUTING_OWNERSHIP_REASON,
-            nextAttemptAt: { lte: now },
-          },
-          data: {
-            nextAttemptAt: new Date(now.getTime() + ROUTING_OWNERSHIP_GRACE_MS),
-            engagementReason: ROUTING_OWNERSHIP_REARMED_REASON,
-          },
-        });
+      if (isRoutingOwnershipReason(message.engagementReason)) {
+        // Exclusive until resolveDeferredMessage or recoverInterruptedRoutineRoutes.
         continue;
       }
       // Do not promote over a live wake that reasserted ROUTING after this read.
@@ -566,10 +553,7 @@ export class TeamChatBridge {
           id: message.id,
           status: "deferred",
           nextAttemptAt: { lte: now },
-          OR: [
-            { engagementReason: null },
-            { engagementReason: ROUTING_OWNERSHIP_REARMED_REASON },
-          ],
+          engagementReason: null,
         },
         data: {
           status: message.kind === "ambient" ? "observed" : "received",

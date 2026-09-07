@@ -178,7 +178,7 @@ describe("team chat bridge", () => {
         id: "external-expired",
         status: "deferred",
         nextAttemptAt: { lte: expect.any(Date) },
-        OR: [{ engagementReason: null }, { engagementReason: "message_routine_routing_rearmed" }],
+        engagementReason: null,
       },
       data: { status: "received", engagementReason: null, nextAttemptAt: null },
     });
@@ -510,8 +510,8 @@ describe("team chat bridge", () => {
 
   it("keeps routing ownership when renewal fails while a reconciler runs", async () => {
     // Periodic renewal returns zero rows while routine delivery stays blocked.
-    // Another reconciler must re-arm the routing claim instead of starting a
-    // TeamChat agent run, and `lost` must reject so callers abort the wake.
+    // Another reconciler must leave exclusive routing ownership in place instead
+    // of promoting to a TeamChat agent run, even past the former grace window.
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
     try {
@@ -538,17 +538,11 @@ describe("team chat bridge", () => {
             (input.data.engagementReason === "message_routine_routing" ||
               input.data.engagementReason === "message_routine_routing_rearmed") &&
             input.data.status === undefined;
-          // Heartbeat renewals omit nextAttemptAt from the where clause; recovery
-          // re-arms CAS on nextAttemptAt and must still succeed after lease loss.
+          // Heartbeat renewals omit nextAttemptAt from the where clause.
           if (isRoutingHold && input.where?.nextAttemptAt === undefined) {
             if (!held) return { count: 0 };
             leaseUntil = input.data!.nextAttemptAt as Date;
             engagementReason = input.data!.engagementReason ?? "message_routine_routing";
-            return { count: 1 };
-          }
-          if (isRoutingHold && input.where?.nextAttemptAt !== undefined) {
-            leaseUntil = input.data!.nextAttemptAt as Date;
-            engagementReason = input.data!.engagementReason ?? "message_routine_routing_rearmed";
             return { count: 1 };
           }
           if (
@@ -606,8 +600,7 @@ describe("team chat bridge", () => {
       await bridge.reconcileOnce();
 
       expect(sendUserMessage).not.toHaveBeenCalled();
-      expect(engagementReason).toBe("message_routine_routing_rearmed");
-      expect(leaseUntil.getTime()).toBeGreaterThan(Date.now());
+      expect(engagementReason).toBe("message_routine_routing");
       expect(updateMany).not.toHaveBeenCalledWith(
         expect.objectContaining({
           where: expect.objectContaining({ id: "external-lost", status: "deferred" }),
@@ -615,25 +608,157 @@ describe("team chat bridge", () => {
         }),
       );
 
-      // A second expiry of the one-shot re-arm promotes to agent delivery.
+      // Ownership survives the former two-minute grace window: reconcile must
+      // not promote while an in-flight wake may still commit.
       leaseUntil = new Date(Date.now() - 1);
+      await vi.advanceTimersByTimeAsync(2 * 60_000);
       await bridge.reconcileOnce();
-      expect(engagementReason).toBeNull();
-      expect(updateMany).toHaveBeenCalledWith(
+      expect(engagementReason).toBe("message_routine_routing");
+      expect(sendUserMessage).not.toHaveBeenCalled();
+      expect(updateMany).not.toHaveBeenCalledWith(
         expect.objectContaining({
-          where: expect.objectContaining({
-            id: "external-lost",
-            status: "deferred",
-            OR: [
-              { engagementReason: null },
-              { engagementReason: "message_routine_routing_rearmed" },
-            ],
-          }),
+          where: expect.objectContaining({ id: "external-lost", status: "deferred" }),
           data: expect.objectContaining({ status: "received", engagementReason: null }),
         }),
       );
 
       lease.stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not promote a rearmed routing claim after grace while wake is blocked", async () => {
+    // Heartbeat renewal fails; wake stays blocked past the old re-armed grace
+    // window. Reconcile must not promote/queue a TeamChat run beside the wake.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
+    try {
+      let leaseUntil = new Date(Date.now() - 1);
+      let engagementReason: string | null = "message_routine_routing_rearmed";
+      let status = "deferred";
+      const sendUserMessage = vi.fn();
+      const updateMany = vi.fn(
+        async (input: {
+          where?: { id?: string; status?: string | { in?: string[] } };
+          data?: {
+            nextAttemptAt?: Date | null;
+            status?: string;
+            engagementReason?: string | null;
+          };
+        }) => {
+          if (
+            input.where?.id === "external-grace" &&
+            (input.data?.status === "received" || input.data?.status === "queueing")
+          ) {
+            status = input.data.status;
+            engagementReason = input.data.engagementReason ?? null;
+            leaseUntil = input.data.nextAttemptAt ?? new Date(0);
+            return { count: 1 };
+          }
+          if (
+            input.where?.id === "external-grace" &&
+            input.data?.nextAttemptAt instanceof Date &&
+            input.data.status === undefined
+          ) {
+            leaseUntil = input.data.nextAttemptAt;
+            engagementReason = input.data.engagementReason ?? engagementReason;
+            return { count: 1 };
+          }
+          return { count: 0 };
+        },
+      );
+      const findMany = vi.fn(
+        async ({ where }: { where: { status?: string | { in?: string[] } } }) => {
+          if (
+            where.status === "deferred" &&
+            status === "deferred" &&
+            leaseUntil.getTime() <= Date.now()
+          ) {
+            return [
+              {
+                id: "external-grace",
+                kind: "mention",
+                providerEventId: "Ev-grace",
+                engagementReason,
+                nextAttemptAt: leaseUntil,
+                externalConversation: {
+                  spaceId: "space-1",
+                  botId: "bot-1",
+                  userId: "owner-1",
+                  thread: { id: "thread-1" },
+                },
+              },
+            ];
+          }
+          if (where.status === "received" && status === "received") {
+            return [
+              {
+                id: "external-grace",
+                kind: "mention",
+                providerEventId: "Ev-grace",
+                senderId: "U-1",
+                senderName: "Ada",
+                content: "hello",
+                batchContext: null,
+                engagementReason,
+                nextAttemptAt: null,
+                externalConversation: {
+                  spaceId: "space-1",
+                  botId: "bot-1",
+                  userId: "owner-1",
+                  thread: { id: "thread-1" },
+                },
+              },
+            ];
+          }
+          return [];
+        },
+      );
+      const bridge = new TeamChatBridge({
+        prisma: {
+          externalMessage: {
+            updateMany,
+            findMany,
+            findUnique: vi.fn(async () => ({
+              status,
+              engagementReason,
+            })),
+          },
+          message: { findUnique: vi.fn(async () => null) },
+          run: { findMany: vi.fn(async () => []) },
+        } as unknown as PrismaClient,
+        events: { sendUserMessage },
+        jobs: { enqueue: vi.fn() },
+        send: vi.fn(),
+        providerId: "slack",
+        botId: "bot-1",
+      });
+      (
+        bridge as unknown as {
+          target: { id: string; spaceId: string; userId: string; name: string };
+        }
+      ).target = { id: "bot-1", spaceId: "space-1", userId: "owner-1", name: "Chief" };
+
+      // Past the former two-minute re-armed grace; wake still blocked (no nonce).
+      await vi.advanceTimersByTimeAsync(3 * 60_000);
+      await bridge.reconcileOnce();
+
+      expect(status).toBe("deferred");
+      expect(engagementReason).toBe("message_routine_routing_rearmed");
+      expect(sendUserMessage).not.toHaveBeenCalled();
+      expect(updateMany).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ id: "external-grace", status: "deferred" }),
+          data: expect.objectContaining({ status: "received" }),
+        }),
+      );
+      expect(updateMany).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ id: "external-grace" }),
+          data: expect.objectContaining({ status: "queueing" }),
+        }),
+      );
     } finally {
       vi.useRealTimers();
     }

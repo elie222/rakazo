@@ -536,26 +536,37 @@ export async function createApp(
         } catch (error) {
           if (isDeferredReservationLost(error)) {
             // Lease loss must not start a fallback agent beside an in-flight
-            // wake: await that wake, then resolve from its settled result.
+            // wake: re-hold exclusive ownership while awaiting that wake, then
+            // resolve from its settled result.
+            let hold: { stop: () => void } | undefined;
             try {
-              woken = await wakePromise;
-            } catch (wakeError) {
-              const released = await bridge.resolveDeferredMessage(
-                target.externalMessageId,
-                "agent",
-                mapped.kind,
-              );
-              if (!released) {
-                throw new Error("Team chat deferred message ownership conflict", {
-                  cause: wakeError,
-                });
+              hold = await bridge.startDeferredReservationHeartbeat(target.externalMessageId);
+            } catch {
+              // Row already left deferred; wake CAS / resolve decide the winner.
+            }
+            try {
+              try {
+                woken = await wakePromise;
+              } catch (wakeError) {
+                const released = await bridge.resolveDeferredMessage(
+                  target.externalMessageId,
+                  "agent",
+                  mapped.kind,
+                );
+                if (!released) {
+                  throw new Error("Team chat deferred message ownership conflict", {
+                    cause: wakeError,
+                  });
+                }
+                await bridge.reconcileOnce();
+                getLogger().error(
+                  "team chat routine wake failed after deferred lease loss",
+                  wakeError,
+                );
+                return;
               }
-              await bridge.reconcileOnce();
-              getLogger().error(
-                "team chat routine wake failed after deferred lease loss",
-                wakeError,
-              );
-              return;
+            } finally {
+              hold?.stop();
             }
           } else {
             await bridge.resolveDeferredMessage(target.externalMessageId, "agent", mapped.kind);
