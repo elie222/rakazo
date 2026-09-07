@@ -269,9 +269,19 @@ const ATTACHMENT_ACCEPT = ATTACHMENT_ALLOWED_MIME_TYPES.join(",");
 /** Identity colour for bots the roster no longer knows about. */
 const FALLBACK_BOT_COLOR = "#85858A";
 const THREAD_SNAPSHOT_TIMEOUT_MS = 2_000;
+/** Bound Settings leave so a hung voice status refresh cannot block dismissal. */
+const VOICE_STATUS_REFRESH_TIMEOUT_MS = 10_000;
 
 function threadSnapshotSignal(parent: AbortSignal): AbortSignal {
   return AbortSignal.any([parent, AbortSignal.timeout(THREAD_SNAPSHOT_TIMEOUT_MS)]);
+}
+
+function voiceStatusRefreshTimeout(): Promise<never> {
+  return new Promise((_, reject) => {
+    AbortSignal.timeout(VOICE_STATUS_REFRESH_TIMEOUT_MS).addEventListener("abort", () => {
+      reject(new DOMException("Voice status refresh timed out", "TimeoutError"));
+    });
+  });
 }
 
 function collapsedSidebarSectionsStorageKey(userId: string | null | undefined): string | null {
@@ -3820,9 +3830,12 @@ export function ShellPage() {
             }}
             onVoiceStatusMaybeChanged={async () => {
               try {
-                setVoiceStatus(await rpc.voice.status());
+                setVoiceStatus(
+                  await Promise.race([rpc.voice.status(), voiceStatusRefreshTimeout()]),
+                );
               } catch {
-                // Closing Settings should not fail if voice status is unreachable.
+                // Prefer reopening Voice settings over CallView with stale readiness.
+                setVoiceStatus(null);
               }
             }}
             onClose={() => {
