@@ -19,10 +19,12 @@ import { rpc } from "../lib/rpc";
 export function VoiceSettingsOverlay({
   onClose,
   embedded = false,
+  onBusyChange,
 }: {
   onClose: () => void;
   /** Render panel body only for the shared Settings shell. */
   embedded?: boolean;
+  onBusyChange?: (busy: boolean) => void;
 }) {
   const { t } = useLingui();
   const apiKeyId = useId();
@@ -38,6 +40,13 @@ export function VoiceSettingsOverlay({
   const [pending, setPending] = useState<"connect" | "voice" | "test" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+
+  const busy = pending !== null;
+
+  useEffect(() => {
+    onBusyChange?.(busy);
+    return () => onBusyChange?.(false);
+  }, [busy, onBusyChange]);
 
   async function refresh(nextProvider?: string) {
     const [nextCatalog, nextCredentials, nextStatus] = await Promise.all([
@@ -72,7 +81,6 @@ export function VoiceSettingsOverlay({
 
   const selected = catalog.find((entry) => entry.id === provider) ?? catalog[0];
   const credential = credentials.find((entry) => entry.provider === provider);
-  const busy = pending !== null;
   const voiceOptions = useMemo(
     () => (voices.length ? voices : voiceId ? [{ id: voiceId, label: voiceId }] : []),
     [voices, voiceId],
@@ -144,6 +152,7 @@ export function VoiceSettingsOverlay({
           </div>
           <DialogClose
             aria-label={t`Close voice settings`}
+            disabled={busy}
             render={<Button variant="ghost" size="icon-sm" />}
           >
             <XIcon />
@@ -282,8 +291,13 @@ export function VoiceSettingsOverlay({
   return (
     <Dialog
       open
-      onOpenChange={(open) => {
-        if (!open) onClose();
+      onOpenChange={(open, details) => {
+        if (open) return;
+        if (busy) {
+          details.cancel();
+          return;
+        }
+        onClose();
       }}
     >
       <DialogContent

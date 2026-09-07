@@ -74,7 +74,9 @@ export function SettingsOverlay({
   const usageRef = useRef<HTMLDivElement>(null);
   const [section, setSection] = useState<SettingsSection>(initialSection);
   const [memoryBusy, setMemoryBusy] = useState(false);
+  const [voiceBusy, setVoiceBusy] = useState(false);
   const showComputer = isDeploymentOwner && computersAreUnavailable(sandboxProvider);
+  const panelBusy = memoryBusy || voiceBusy;
 
   useEffect(() => {
     setSection(initialSection);
@@ -110,7 +112,7 @@ export function SettingsOverlay({
           : t`Close user settings`;
 
   function requestClose() {
-    if (memoryBusy) return;
+    if (panelBusy) return;
     onVoiceStatusMaybeChanged?.();
     onClose();
   }
@@ -122,7 +124,7 @@ export function SettingsOverlay({
       open
       onOpenChange={(open, details) => {
         if (open) return;
-        if (memoryBusy) {
+        if (panelBusy) {
           details.cancel();
           return;
         }
@@ -158,8 +160,9 @@ export function SettingsOverlay({
                   type="button"
                   data-testid={`settings-nav-${item.id}`}
                   aria-current={active ? "page" : undefined}
+                  disabled={panelBusy}
                   onClick={() => setSection(item.id)}
-                  className={`flex shrink-0 items-center gap-2.5 rounded-lg px-2.5 py-2 text-start text-[13.5px] transition-colors ${
+                  className={`flex shrink-0 items-center gap-2.5 rounded-lg px-2.5 py-2 text-start text-[13.5px] transition-colors disabled:pointer-events-none disabled:opacity-50 ${
                     active
                       ? "bg-muted text-foreground"
                       : "text-muted-foreground hover:bg-accent hover:text-foreground"
@@ -179,7 +182,7 @@ export function SettingsOverlay({
               </DialogTitle>
               <DialogClose
                 aria-label={closeLabel}
-                disabled={memoryBusy}
+                disabled={panelBusy}
                 render={<Button variant="ghost" size="icon-sm" />}
               >
                 <XIcon />
@@ -223,7 +226,7 @@ export function SettingsOverlay({
                 />
               ) : null}
               {section === "voice" ? (
-                <VoiceSettingsOverlay embedded onClose={requestClose} />
+                <VoiceSettingsOverlay embedded onClose={requestClose} onBusyChange={setVoiceBusy} />
               ) : null}
             </div>
           </div>
