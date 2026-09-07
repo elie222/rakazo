@@ -28,7 +28,7 @@ die() { echo "pr-digest: $*" >&2; exit 1; }
 api() {
   local out
   if ! out=$(gh api "$@" 2>/dev/null); then
-    die "gh api $1 failed: $(gh api "$@" 2>&1 | head -1)"
+    die "gh api request failed (not retried)"
   fi
   printf '%s' "$out"
 }
@@ -163,14 +163,20 @@ digest() {
   # bot conversation comments are not noise and must block green.
   local noise_def='
     def noise:
-      test("^\\[vc\\]:")
-      or test("(?i)is attempting to deploy a commit")
-      or test("rate limited by coderabbit")
-      or test("Review limit reached")
-      or test("rakazo-playwright-screenshots")
-      or test("(?i)(?:^|\\n)###? +Playwright screenshots")
-      or test("<!-- This is an auto-generated comment: summarize by coderabbit\\.ai -->")
-      or test("<h3>Greptile Summary</h3>");'
+      .user.type == "Bot" and (
+        (.user.login == "vercel[bot]" and (.body | startswith("[vc]: ")))
+        or (.user.login == "coderabbitai[bot]" and (.body |
+          startswith("<!-- This is an auto-generated comment: summarize by coderabbit.ai -->")
+          or startswith("<!-- This is an auto-generated comment: rate limited by coderabbit.ai -->")))
+        or (.user.login == "greptile-apps[bot]" and (.body | startswith("<h3>Greptile Summary</h3>")))
+        or (.user.login == "github-actions[bot]" and (.body |
+          startswith("<!-- rakazo-playwright-screenshots -->\n### Playwright screenshots")))
+      );'
+
+  # Compare complete URL tokens, never substrings or bare comment IDs.
+  local link_def='
+    def links($url):
+      [scan("https?://[^\\s<>\\\"()\\[\\]]+")] | index($url) != null;'
 
   # Inline review threads. One stays open until *you* have replied to it; a bot
   # follow-up confirming your fix must not mark it handled.
@@ -194,21 +200,21 @@ digest() {
     || die "could not read conversation comments"
   noise_n=$(jq "
     $noise_def
-    [.[] | select(.body | noise)] | length" <<<"$convo")
+    [.[] | select(noise)] | length" <<<"$convo")
   convo_open=$(jq --arg me "$viewer" --argjson n "$BODY_CHARS" "
     $clean_def
     $noise_def
+    $link_def
     [.[] | select(.user.login == \$me)
          | {id, created_at, body, html_url}] as \$mine
     | [.[]
        | select(.user.login != \$me)
-       | select(.body | noise | not)
+       | select(noise | not)
        | . as \$c
        | select(
            [\$mine[]
             | select(.created_at > \$c.updated_at
-                     and (.body | (contains(\$c.html_url)
-                                   or test(\"#issuecomment-\(\$c.id)\"))))]
+                     and (.body | links(\$c.html_url)))]
            | length == 0)
        | {key: \"\(.id):\(.updated_at)\", id, author: .user.login,
           path: \"(conversation)\", line: 0, body: (.body | clean)}]" <<<"$convo")
@@ -220,8 +226,12 @@ digest() {
     || die "could not read reviews"
   review_open=$(jq --arg me "$viewer" --argjson n "$BODY_CHARS" "
     $clean_def
-    [.[] | select(.user.type != \"Bot\" and .user.login != \$me)
-         | select((.body // \"\") != \"\")
+    group_by(.user.login)
+    | map(sort_by(.submitted_at, .id)
+          | map(select(.state == \"APPROVED\" or .state == \"CHANGES_REQUESTED\" or .state == \"DISMISSED\"))
+          | last)
+    | [.[] | select(. != null and .user.login != \$me)
+         | select(.state == \"CHANGES_REQUESTED\" and (.body // \"\") != \"\")
          | {key: \"r\(.id):\(.submitted_at)\", id, author: .user.login,
             path: \"(review \(.state))\", line: 0, body: (.body | clean)}]" <<<"$reviews")
 
@@ -307,7 +317,8 @@ main() {
   if [ "$watch" -eq 1 ]; then
     local started=$SECONDS head runs statuses empty=0 left
     while :; do
-      head=$(gh pr view "$pr" --repo "$repo" --json headRefOid --jq .headRefOid)
+      head=$(gh pr view "$pr" --repo "$repo" --json headRefOid --jq .headRefOid) \
+        || die "could not read PR head"
       runs=$(check_runs "$repo" "$head") || die "could not read check runs"
       statuses=$(commit_statuses "$repo" "$head") || die "could not read commit statuses"
       if [ "$(jq '[.[] | select(.status != "completed")] | length' <<<"$runs")" = "0" ] &&

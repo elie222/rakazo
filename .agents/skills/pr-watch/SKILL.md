@@ -84,15 +84,20 @@ all succeeded.
 ```
 
 GitHub conversation comments (as opposed to inline review comments) have no
-threaded replies. Respond with a new `gh pr comment` that quotes the permalink
-and names the author; there is no `--reply-to` flag. The digest treats an
+threaded replies. Respond with a new `gh pr comment` that quotes the full
+permalink; there is no `--reply-to` flag. The digest treats an
 unanswered conversation comment the same as an open inline finding — both
 yield `VERDICT open-comments`. It skips known non-actionable noise (Vercel
 deploy tables, rate-limit notices, sticky bot summaries, screenshot galleries)
 but keeps actionable bot conversation comments in the open set. A conversation
 comment is handled only once *you* have posted a later conversation comment
-that quotes its permalink; bot follow-ups do not close it. An edit to the
-original comment after your reply reopens it (`updated_at` moves past the reply).
+that quotes its permalink; bot follow-ups do not close it. Quote the complete
+URL as a Markdown link or on its own, without trailing punctuation. An edit to
+the original comment after your reply reopens it (`updated_at` moves past the reply).
+
+Review summaries block only while that reviewer has an active change request;
+a later approval or dismissal clears it. A general comment does not override
+a change request.
 
 The digest prints each finding in full once, then lists it as a one-liner while
 it stays open, so nothing is hidden and re-observing is cheap. `--all` reprints
