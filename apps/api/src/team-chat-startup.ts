@@ -20,7 +20,11 @@ export function prefersTeamChatSurface(
 
 /** Queue TeamChat-shaped messages until TeamChatBridge.receive is available. */
 export class PendingTeamChatInbound {
-  private readonly events: MessagingInboundMessage[] = [];
+  private readonly events: Array<{
+    event: MessagingInboundMessage;
+    resolve: () => void;
+    reject: (error: unknown) => void;
+  }> = [];
 
   constructor(private readonly limit = PENDING_TEAM_CHAT_LIMIT) {}
 
@@ -28,14 +32,23 @@ export class PendingTeamChatInbound {
     return this.events.length;
   }
 
-  enqueue(event: MessagingInboundMessage): boolean {
-    if (this.events.length >= this.limit) return false;
-    this.events.push(event);
-    return true;
+  enqueue(event: MessagingInboundMessage): Promise<void> | null {
+    if (this.events.length >= this.limit) return null;
+    return new Promise<void>((resolve, reject) => {
+      this.events.push({ event, resolve, reject });
+    });
   }
 
-  drain(): MessagingInboundMessage[] {
-    return this.events.splice(0, this.events.length);
+  flush(handle: (event: MessagingInboundMessage) => Promise<void>): void {
+    for (const pending of this.events.splice(0, this.events.length)) {
+      void handle(pending.event).then(pending.resolve, pending.reject);
+    }
+  }
+
+  reject(error: unknown): void {
+    for (const pending of this.events.splice(0, this.events.length)) {
+      pending.reject(error);
+    }
   }
 }
 

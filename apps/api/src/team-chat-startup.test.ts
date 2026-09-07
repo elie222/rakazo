@@ -37,13 +37,48 @@ describe("team chat startup helpers", () => {
     expect(prefersTeamChatSurface(message(), undefined)).toBe(false);
   });
 
-  it("buffers TeamChat inbound until the bridge can receive", () => {
+  it("settles buffered TeamChat inbound only after the bridge receives it", async () => {
     const pending = new PendingTeamChatInbound(2);
-    expect(pending.enqueue(message({ handle: "Ev-1" }))).toBe(true);
-    expect(pending.enqueue(message({ handle: "Ev-2" }))).toBe(true);
-    expect(pending.enqueue(message({ handle: "Ev-3" }))).toBe(false);
+    const first = pending.enqueue(message({ handle: "Ev-1" }));
+    const second = pending.enqueue(message({ handle: "Ev-2" }));
+    expect(first).not.toBeNull();
+    expect(second).not.toBeNull();
+    expect(pending.enqueue(message({ handle: "Ev-3" }))).toBeNull();
     expect(pending.size).toBe(2);
-    expect(pending.drain().map((event) => event.handle)).toEqual(["Ev-1", "Ev-2"]);
+
+    const handled: string[] = [];
+    pending.flush(async (event) => {
+      handled.push(event.handle);
+    });
+    await Promise.all([first!, second!]);
+
+    expect(handled).toEqual(["Ev-1", "Ev-2"]);
+    expect(pending.size).toBe(0);
+  });
+
+  it("rejects buffered TeamChat inbound when startup stops", async () => {
+    const pending = new PendingTeamChatInbound();
+    const delivery = pending.enqueue(message());
+    expect(delivery).not.toBeNull();
+    const rejected = expect(delivery!).rejects.toThrow("startup stopped");
+
+    pending.reject(new Error("startup stopped"));
+
+    await rejected;
+    expect(pending.size).toBe(0);
+  });
+
+  it("propagates buffered TeamChat processing failures to the webhook", async () => {
+    const pending = new PendingTeamChatInbound();
+    const delivery = pending.enqueue(message());
+    expect(delivery).not.toBeNull();
+    const rejected = expect(delivery!).rejects.toThrow("receive failed");
+
+    pending.flush(async () => {
+      throw new Error("receive failed");
+    });
+
+    await rejected;
     expect(pending.size).toBe(0);
   });
 

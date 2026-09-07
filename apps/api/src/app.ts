@@ -577,11 +577,7 @@ export async function createApp(
       }
     };
     const flushPendingTeamChatInbound = (bridge: TeamChatBridge) => {
-      for (const event of pendingTeamChatInbound.drain()) {
-        void handleTeamChatInbound(bridge, event).catch((error) => {
-          getLogger().error("team chat buffered inbound failed", error);
-        });
-      }
+      pendingTeamChatInbound.flush((event) => handleTeamChatInbound(bridge, event));
     };
     if (env.teamChatBotId) {
       const judge =
@@ -670,15 +666,14 @@ export async function createApp(
         // personal-line inbound path — that bypasses externalMessage ownership
         // and can wake routines for unlinked TeamChat senders.
         if (teamChatInitTask) {
-          if (!pendingTeamChatInbound.enqueue(event)) {
-            getLogger().error(
-              "team chat inbound buffer full; dropping message until bridge starts",
-            );
+          const pending = pendingTeamChatInbound.enqueue(event);
+          if (!pending) {
+            throw new Error("Team chat inbound buffer is full");
           }
+          await pending;
           return;
         }
-        getLogger().error("team chat bridge unavailable; dropping inbound message");
-        return;
+        throw new Error("Team chat bridge is unavailable");
       }
       await inbound(event);
     });
@@ -758,7 +753,7 @@ export async function createApp(
       messagingStopped = true;
       clearMessagingRetryDelay?.();
       clearTeamChatRetryDelay?.();
-      pendingTeamChatInbound.drain();
+      pendingTeamChatInbound.reject(new Error("Team chat bridge stopped before startup"));
       // Cancel in-flight start() before awaiting the retry task so stop() cannot
       // sit on DB/reconcile work that bridge.start() is still running.
       await teamChatBridgeInstance?.stop().catch(() => undefined);
