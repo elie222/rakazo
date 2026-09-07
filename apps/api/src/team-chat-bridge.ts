@@ -573,7 +573,7 @@ export class TeamChatBridge {
           botId: target.id,
         },
       },
-      data: { status: "received", nextAttemptAt: null },
+      data: { status: "received", engagementReason: null, nextAttemptAt: null },
     });
     await this.evaluateAmbient(now);
     const received = await this.deps.prisma.externalMessage.findMany({
