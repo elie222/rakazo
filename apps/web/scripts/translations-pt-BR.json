@@ -583,5 +583,7 @@
   "No messages with {peerBotName} yet.": "Ainda sem mensagens com {peerBotName}.",
   "Docker limits access to your computer for added security. Using {hostLabel} lets bots work with your local files and tools.": "O Docker limita o acesso ao seu computador para maior segurança. Usar {hostLabel} permite que os bots trabalhem com seus arquivos e ferramentas locais.",
   "Local access lets bots run commands without asking. Avoid it on shared or public servers.": "O acesso local permite que os bots executem comandos sem perguntar. Evite usá-lo em servidores compartilhados ou públicos.",
-  "Docker": "Docker"
+  "Docker": "Docker",
+  "Opening chat…": "Abrindo o chat…",
+  "Try again": "Tentar novamente"
 }

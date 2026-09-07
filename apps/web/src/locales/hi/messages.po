@@ -3322,7 +3322,7 @@ msgid "Local access lets bots run commands without asking. Avoid it on shared or
 msgstr "स्थानीय पहुँच मिलने पर बॉट्स बिना पूछे कमांड चला सकते हैं। साझा या सार्वजनिक सर्वर पर इससे बचें।"
 
 msgid "Opening chat…"
-msgstr ""
+msgstr "चैट खुल रही है…"
 
 msgid "Try again"
-msgstr ""
+msgstr "फिर से कोशिश करें"

@@ -581,5 +581,7 @@
   "No messages with {peerBotName} yet.": "{peerBotName}와의 메시지가 아직 없습니다.",
   "Docker limits access to your computer for added security. Using {hostLabel} lets bots work with your local files and tools.": "Docker는 보안을 위해 컴퓨터 접근을 제한합니다. {hostLabel}에서는 Bot이 로컬 파일과 도구로 작업할 수 있습니다.",
   "Local access lets bots run commands without asking. Avoid it on shared or public servers.": "로컬 접근을 허용하면 Bot이 묻지 않고 명령을 실행할 수 있습니다. 공유 서버나 공개 서버에서는 허용하지 마세요.",
-  "Docker": "Docker"
+  "Docker": "Docker",
+  "Opening chat…": "채팅 여는 중…",
+  "Try again": "다시 시도"
 }

@@ -3322,7 +3322,7 @@ msgid "Local access lets bots run commands without asking. Avoid it on shared or
 msgstr "O acesso local permite que os bots executem comandos sem perguntar. Evite usá-lo em servidores compartilhados ou públicos."
 
 msgid "Opening chat…"
-msgstr ""
+msgstr "Abrindo o chat…"
 
 msgid "Try again"
-msgstr ""
+msgstr "Tentar novamente"

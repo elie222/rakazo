@@ -29,6 +29,8 @@ let firstBotEnsure: Promise<{ id: string }> | null = null;
 
 async function ensureFirstBot(): Promise<{ id: string }> {
   if (firstBotEnsure) return firstBotEnsure;
+  // Clear after settle so a later onboarding visit (archive/delete then empty
+  // refresh) re-lists instead of reusing a deleted bot id.
   firstBotEnsure = (async () => {
     const existing = await rpc.bots.list().catch(() => []);
     const reuse = existing.find((bot) => bot.name === FIRST_BOT_NAME) ?? existing[0] ?? null;
@@ -41,13 +43,10 @@ async function ensureFirstBot(): Promise<{ id: string }> {
       notifyOnFinish: true,
     });
     return { id: created.id };
-  })();
-  try {
-    return await firstBotEnsure;
-  } catch (error) {
+  })().finally(() => {
     firstBotEnsure = null;
-    throw error;
-  }
+  });
+  return firstBotEnsure;
 }
 
 function providerLabel(entry: ModelCatalogEntry): string {

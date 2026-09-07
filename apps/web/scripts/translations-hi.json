@@ -584,5 +584,7 @@
   "No messages with {peerBotName} yet.": "{peerBotName} के साथ अभी कोई संदेश नहीं.",
   "Docker limits access to your computer for added security. Using {hostLabel} lets bots work with your local files and tools.": "Docker अतिरिक्त सुरक्षा के लिए आपके कंप्यूटर तक पहुँच सीमित करता है। {hostLabel} चुनने पर बॉट्स आपकी स्थानीय फ़ाइलों और टूल्स के साथ काम कर सकते हैं।",
   "Local access lets bots run commands without asking. Avoid it on shared or public servers.": "स्थानीय पहुँच मिलने पर बॉट्स बिना पूछे कमांड चला सकते हैं। साझा या सार्वजनिक सर्वर पर इससे बचें।",
-  "Docker": "Docker"
+  "Docker": "Docker",
+  "Opening chat…": "चैट खुल रही है…",
+  "Try again": "फिर से कोशिश करें"
 }
