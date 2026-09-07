@@ -85,7 +85,13 @@ all succeeded.
 
 GitHub conversation comments (as opposed to inline review comments) have no
 threaded replies. Respond with a new `gh pr comment` that quotes the permalink
-and names the author; there is no `--reply-to` flag.
+and names the author; there is no `--reply-to` flag. The digest treats an
+unanswered conversation comment the same as an open inline finding — both
+yield `VERDICT open-comments`. It skips known non-actionable noise (Vercel
+deploy tables, rate-limit notices, sticky bot summaries, screenshot galleries)
+but keeps actionable bot conversation comments in the open set. A conversation
+comment is handled only once *you* have posted a later conversation comment
+that quotes its permalink; bot follow-ups do not close it.
 
 The digest prints each finding in full once, then lists it as a one-liner while
 it stays open, so nothing is hidden and re-observing is cheap. `--all` reprints
@@ -127,7 +133,8 @@ Finish only when one observation of a single SHA proves all of:
 2. Every review bot has produced a signal on that SHA. If none has ever
    appeared, require two consecutive observations separated by a full wait
    before concluding none is configured.
-3. Every root comment is answered and no new one appeared.
+3. Every root comment is answered — inline review threads and conversation
+   comments alike — and no new one appeared.
 4. At least one full wait happened after your last push or reply.
 
 Report the PR link, final head, waits, fix rounds, what feedback you handled and
