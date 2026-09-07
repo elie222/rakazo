@@ -119,7 +119,7 @@ async function writeFakeDocker(mode: FakeDockerMode) {
 }
 
 async function launch(mode: FakeDockerMode | "missing") {
-  const env = { ...process.env, RAKAZO_PERFORMANCE_USER_DATA: userData };
+  const env: NodeJS.ProcessEnv = { ...process.env, RAKAZO_PERFORMANCE_USER_DATA: userData };
   // A stale RAKAZO_WEB_URL from the developer's shell would bypass setup entirely.
   delete env.RAKAZO_WEB_URL;
   return electron.launch({
