@@ -89,7 +89,7 @@ describe("desktop preload bridge", () => {
 
 describe("setup preload bridge", () => {
   it("exposes only the first-run setup operations", async () => {
-    const { invoke, exposeInMainWorld } = runPreload("setup-preload.cjs");
+    const { invoke, on, exposeInMainWorld } = runPreload("setup-preload.cjs");
 
     expect(exposeInMainWorld).toHaveBeenCalledTimes(1);
     const [globalName, bridge] = exposeInMainWorld.mock.calls[0] as [string, RakazoSetup];
@@ -104,7 +104,7 @@ describe("setup preload bridge", () => {
       "state",
       "test",
     ]);
-    expect(Object.keys(bridge.stack).sort()).toEqual(["start", "state"]);
+    expect(Object.keys(bridge.stack).sort()).toEqual(["onChange", "start", "state"]);
 
     await bridge.state();
     await bridge.test("http://127.0.0.1:5173");
@@ -123,5 +123,12 @@ describe("setup preload bridge", () => {
       "desktop.setup.stack.start",
     ]);
     expect(invoke).toHaveBeenCalledWith("desktop.setup.openLink", "orbstack");
+
+    const listener = vi.fn();
+    bridge.stack.onChange(listener);
+    const [channel, handler] = on.mock.calls.at(-1) as [string, (...args: unknown[]) => void];
+    expect(channel).toBe("desktop.setup.stack.changed");
+    handler({}, { phase: "pulling" });
+    expect(listener).toHaveBeenCalledWith({ phase: "pulling" });
   });
 });

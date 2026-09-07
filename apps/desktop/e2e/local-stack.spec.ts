@@ -107,7 +107,7 @@ async function writeFakeDocker(mode: FakeDockerMode) {
     "  pull)",
     mode === "pull-fails"
       ? '    echo "Error response from daemon: manifest unknown" >&2; exit 1 ;;'
-      : '    echo "app Pulled"; sleep 2; echo "computer Pulled"; exit 0 ;;',
+      : '    echo " a235d761c5d1 Downloading 59.47MB"; echo " a235d761c5d1 Downloading 412.3MB"; echo "app Pulled"; sleep 2; echo "computer Pulled"; exit 0 ;;',
     up,
     '  logs) echo "web-1 | listening"; exit 0 ;;',
     "esac",
@@ -164,12 +164,17 @@ test("This computer installs and starts the stack, then opens the app", async ()
 
   const appWindowPromise = app.waitForEvent("window");
   await setup.getByRole("button", { name: "Continue" }).click();
-  await expect(setup.locator("#stack-phase")).toHaveText("Downloading Rakazo images…");
-  await expect(setup.locator("#stack-output")).toContainText("app Pulled");
+  await expect(setup.locator("#stack-phase")).toHaveText("Downloading Rakazo…");
   await expect(setup.getByRole("button", { name: "Continue" })).toBeDisabled();
+  // Docker output stays behind the details toggle; the phase, the bar, and the size show by default.
+  await expect(setup.locator("#stack-detail")).toHaveText("412 MB downloaded");
+  await expect(setup.locator("#stack-progress")).toBeVisible();
+  await expect(setup.locator("#stack-output")).toBeHidden();
   await setup.screenshot({
     path: path.join(import.meta.dirname, "screenshots", "06-setup-installing.png"),
   });
+  await setup.getByRole("button", { name: "Technical details" }).click();
+  await expect(setup.locator("#stack-output")).toContainText("app Pulled");
 
   const appWindow = await appWindowPromise;
   await expect(appWindow.getByText(APP_MARKER)).toBeVisible();
@@ -229,7 +234,7 @@ test("switching to Existing instance while the stack starts keeps that choice", 
   const setup = await app.firstWindow();
 
   await setup.getByRole("button", { name: "Continue" }).click();
-  await expect(setup.locator("#stack-phase")).toHaveText("Downloading Rakazo images…");
+  await expect(setup.locator("#stack-phase")).toHaveText("Downloading Rakazo…");
 
   // Fake docker sleeps during pull; leave This computer before ready so followStack must not save.
   await setup.getByRole("radio", { name: /Existing instance/ }).check();

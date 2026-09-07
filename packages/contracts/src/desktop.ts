@@ -109,6 +109,8 @@ export interface DesktopLocalStackState {
   message: string | null;
   /** Bounded tail of docker output for the current attempt. */
   output: string[];
+  /** Bytes pulled per image layer in the current attempt; the sum is the only progress Docker reports. */
+  layerBytes: Record<string, number>;
   /** Image tag this app launches (`v<app version>` for installed builds, `edge` otherwise). */
   imageTag: string;
 }
@@ -133,5 +135,7 @@ export interface RakazoSetup {
     state: () => Promise<DesktopLocalStackState>;
     /** Starts (or retries) the stack; a no-op while a start is already in flight. */
     start: () => Promise<DesktopLocalStackState>;
+    /** Fires on every state change so progress never depends on a renderer timer. */
+    onChange: (listener: (state: DesktopLocalStackState) => void) => void;
   };
 }

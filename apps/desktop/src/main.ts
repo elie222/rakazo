@@ -564,6 +564,8 @@ function createSetupWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: true,
+      // A long pull runs while this window sits behind others; throttled timers would freeze it.
+      backgroundThrottling: false,
     },
   });
   setupWindow = win;
@@ -914,6 +916,11 @@ app.whenReady().then(async () => {
     }),
     probe: (url, signal, token) => probeManagedStack(url, token, signal),
     randomHex: (bytes) => randomBytes(bytes).toString("hex"),
+    onState: (state) => {
+      if (setupWindow !== null && !setupWindow.isDestroyed()) {
+        setupWindow.webContents.send("desktop.setup.stack.changed", state);
+      }
+    },
   });
   currentSetup = await readSetup(userDataDir);
   const target = resolveStartupTarget({
