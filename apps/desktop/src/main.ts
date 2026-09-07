@@ -966,9 +966,9 @@ app.whenReady().then(async () => {
     }
     quitting = true;
     const state = await desktopUpdater.install();
-    // Install failures leave ready via installFailed; also clear quitting if still ready
-    // is no longer true for any other reason.
-    if (state.phase !== "ready") quitting = false;
+    // A failed install stays ready for retry but reports a message. Restore normal
+    // window behavior while the user keeps working after that failure.
+    if (state.phase !== "ready" || state.message !== null) quitting = false;
     return state;
   });
   ipcMain.handle("desktop.setup.state", (event) => {
