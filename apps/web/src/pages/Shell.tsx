@@ -3730,9 +3730,10 @@ export function ShellPage() {
               const effectiveSpaceId = selectedSpaceId() ?? bootstrapMe?.spaceId;
               if (effectiveSpaceId === targetId) {
                 // The auth boundary changed, so reload like a space switch.
-                selectSpace(result.activeSpaceId);
-                window.location.assign("/app");
-                return;
+                if (selectSpace(result.activeSpaceId)) {
+                  window.location.assign("/app");
+                  return;
+                }
               }
               await refreshBots(true);
             }}

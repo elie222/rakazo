@@ -292,22 +292,26 @@ export async function deleteEmptySpaceForMember(
         ]);
         if (botCount > 0 || groupCount > 0) throw new SpaceNotEmptyError();
         await tx.space.delete({ where: { id: input.spaceId } });
+        const orphanedComputers = computers.flatMap((computer) =>
+          computer.providerRef
+            ? [
+                {
+                  homeKey: computer.homeKey,
+                  kind: computer.kind,
+                  providerRef: computer.providerRef,
+                },
+              ]
+            : [],
+        );
+        if (input.spaceId !== input.currentSpaceId) {
+          return { id: input.currentSpaceId, orphanedComputers };
+        }
         const remaining = memberships.filter((membership) => membership.spaceId !== input.spaceId);
         const fallback = remaining.find((membership) => membership.space.isDefault) ?? remaining[0];
         if (!fallback) throw new CannotDeleteLastSpaceError();
         return {
           id: fallback.spaceId,
-          orphanedComputers: computers.flatMap((computer) =>
-            computer.providerRef
-              ? [
-                  {
-                    homeKey: computer.homeKey,
-                    kind: computer.kind,
-                    providerRef: computer.providerRef,
-                  },
-                ]
-              : [],
-          ),
+          orphanedComputers,
         };
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
