@@ -318,6 +318,7 @@ function createWindow(url: string, partition: string | null) {
   if (!launchUpdateCheckScheduled) {
     launchUpdateCheckScheduled = true;
     setTimeout(() => void desktopUpdater.check(false), LAUNCH_CHECK_DELAY_MS).unref();
+    setInterval(() => void desktopUpdater.check(false), 60 * 60 * 1_000).unref();
   }
   return { loaded, win };
 }

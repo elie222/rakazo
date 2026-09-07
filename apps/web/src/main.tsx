@@ -2,6 +2,7 @@ import { StrictMode, useEffect, useLayoutEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import { App } from "./App";
+import { DesktopUpdatesProvider } from "./components/DesktopUpdates";
 import { I18nBootstrap } from "./components/I18nBootstrap";
 import { applyUiDirection } from "./lib/apply-ui-direction";
 import { markAfterPaint, markOnce } from "./lib/performance";
@@ -34,7 +35,9 @@ createRoot(document.getElementById("root")!).render(
     <AppearanceSync />
     <I18nBootstrap>
       <BrowserRouter>
-        <App />
+        <DesktopUpdatesProvider>
+          <App />
+        </DesktopUpdatesProvider>
       </BrowserRouter>
     </I18nBootstrap>
   </StrictMode>,

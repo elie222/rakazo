@@ -26,6 +26,7 @@ import {
   ComputersUnavailableHint,
   computersAreUnavailable,
 } from "../components/ComputersUnavailableHint";
+import { DesktopUpdateSection } from "../components/DesktopUpdates";
 import { SoftwareUpdateSection } from "../components/SoftwareUpdateSection";
 import { authClient } from "../lib/auth";
 import { getActiveUiLocale, setUiLocale } from "../lib/i18n";
@@ -217,6 +218,7 @@ export function AccountSettingsOverlay({
           </p>
         </div>
 
+        <DesktopUpdateSection />
         <SoftwareUpdateSection isDeploymentOwner={isDeploymentOwner} />
 
         {isDeploymentOwner && computersAreUnavailable(sandboxProvider) ? (
