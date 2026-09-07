@@ -40,7 +40,13 @@ test("desktop update can be checked, deferred, and installed from settings", asy
           },
           install: async () => {
             if (++installAttempts <= 2) {
-              state = { ...state, message: "The update could not be completed. Try again later." };
+              state = { ...state, message: null };
+              setTimeout(() => {
+                state = {
+                  ...state,
+                  message: "The update could not be completed. Try again later.",
+                };
+              }, 100);
               return state;
             }
             state = { ...state, message: null };

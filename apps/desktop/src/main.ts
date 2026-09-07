@@ -80,10 +80,17 @@ const updaterEnvironment = {
   version: app.getVersion(),
   disabled: process.env.RAKAZO_DISABLE_AUTO_UPDATE === "1",
 };
-const desktopUpdater = new DesktopUpdateController(updaterEnvironment, async () => {
-  const module = await import("electron-updater");
-  return (module.default ?? module).autoUpdater as unknown as ElectronAutoUpdater;
-});
+const desktopUpdater = new DesktopUpdateController(
+  updaterEnvironment,
+  async () => {
+    const module = await import("electron-updater");
+    return (module.default ?? module).autoUpdater as unknown as ElectronAutoUpdater;
+  },
+  undefined,
+  () => {
+    quitting = false;
+  },
+);
 let launchUpdateCheckScheduled = false;
 let localStack: LocalStackController;
 

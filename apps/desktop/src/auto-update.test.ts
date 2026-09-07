@@ -121,7 +121,7 @@ describe("reduceUpdateState", () => {
       availableVersion: "0.2.0",
       percent: 100,
     });
-    expect(state.message).toContain("Restart Rakazo");
+    expect(state.message).toBeNull();
   });
 
   it("clamps progress to a percentage while downloading", () => {
@@ -412,6 +412,29 @@ describe("DesktopUpdateController", () => {
     expect(await controller.install()).toMatchObject({ phase: "ready", message: null });
     expect(fake.updater.quitAndInstall).toHaveBeenCalledTimes(3);
     expect(fake.updater.downloadUpdate).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports asynchronous installation errors and permits retry", async () => {
+    const onInstallFailure = vi.fn();
+    const fake = fakeUpdater();
+    const controller = new DesktopUpdateController(
+      packaged,
+      async () => fake.updater,
+      clock,
+      onInstallFailure,
+    );
+    await controller.check(false);
+    fake.emit("update-downloaded", { version: "0.2.0" });
+    await controller.install();
+    fake.emit("error", new Error("installer failed after returning"));
+    expect(controller.state()).toMatchObject({
+      phase: "ready",
+      message: "The update could not be completed. Try again later.",
+    });
+    expect(onInstallFailure).toHaveBeenCalledTimes(1);
+    await controller.install();
+    expect(fake.updater.quitAndInstall).toHaveBeenCalledTimes(2);
+    expect(controller.state().message).toBeNull();
   });
 
   it("lets a manual check escape a prior empty-feed freeze", async () => {

@@ -105,9 +105,9 @@ export function DesktopUpdatesProvider({ children }: { children: ReactNode }) {
               <Trans>Later</Trans>
             </Button>
           </div>
-          {error ? (
+          {error || state.message ? (
             <p role="status" className="mt-2 text-sm">
-              {error}
+              {error ?? state.message}
             </p>
           ) : null}
         </aside>
