@@ -521,6 +521,17 @@ export function createRouter(deps: RouterDeps) {
               botId: computer.homeKey,
             });
           }
+          if (computers.length > 0) {
+            // Drop the refs after a successful destroy so a later failed delete
+            // cannot leave Computer rows pointing at sandboxes that are gone.
+            await deps.prisma.computer.updateMany({
+              where: {
+                spaceId: input.spaceId,
+                providerRef: { in: computers.map((computer) => computer.providerRef) },
+              },
+              data: { providerRef: null, state: "stopped" },
+            });
+          }
           const fallback = await deleteEmptySpaceForMember(deps.prisma, deleteInput);
           return { ok: true as const, activeSpaceId: fallback.id };
         } catch (error) {
