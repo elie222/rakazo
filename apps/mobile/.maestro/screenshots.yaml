@@ -113,8 +113,11 @@ tags:
 - longPressOn: "The fixture workspace is ready."
 - assertVisible: "Add thumbs-up"
 - assertVisible: "Reply"
-- assertVisible: "Speak message"
 - takeScreenshot: "15b-message-actions"
+- tapOn: "More"
+- assertVisible: "Speak message"
+- back
+- longPressOn: "The fixture workspace is ready."
 - tapOn: "Add thumbs-up"
 - extendedWaitUntil:
     visible: "Remove thumbs-up"
