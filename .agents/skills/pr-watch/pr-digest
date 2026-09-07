@@ -22,9 +22,12 @@ SHOW_ALL=0
 die() { echo "pr-digest: $*" >&2; exit 1; }
 
 # A failed API call must never look like a clean PR, so every fetch is checked.
+# Keep stderr out of the payload — mixing it in corrupts JSON for jq.
 api() {
   local out
-  out=$(gh api "$@" 2>&1) || die "gh api $1 failed: $(head -1 <<<"$out")"
+  if ! out=$(gh api "$@" 2>/dev/null); then
+    die "gh api $1 failed: $(gh api "$@" 2>&1 | head -1)"
+  fi
   printf '%s' "$out"
 }
 
@@ -50,11 +53,16 @@ logs() {
     tail -n "${PR_DIGEST_LOG_LINES:-80}")
   if [ -n "$out" ]; then
     echo "$out"
-  else
-    gh run view --job "$job" --log-failed 2>/dev/null |
-      perl -pe 's/^[^\t]*\t[^\t]*\t\S+\s//' |
-      grep -vE '^\s*$|^\[WebServer\]' | tail -n 40
+    return 0
   fi
+  out=$(gh run view --job "$job" --log-failed 2>/dev/null |
+    perl -pe 's/^[^\t]*\t[^\t]*\t\S+\s//' |
+    grep -vE '^\s*$|^\[WebServer\]' | tail -n 40)
+  if [ -n "$out" ]; then
+    echo "$out"
+    return 0
+  fi
+  die "no failed log for job $job"
 }
 
 # The reply endpoint needs the pull number, which the comment itself carries.
@@ -141,6 +149,9 @@ digest() {
           sub("<details>(?:(?!<details>)[\\s\\S])*?</details>"; ""))
       | gsub("<img[^>]*alt=\"(?<a>[^\"]*)\"[^>]*>"; "\(.a)")
       | gsub("<[^>]+>"; "") | gsub("\\s+"; " ")
+      | explode
+      | map(select(. >= 32 and (. < 127 or . > 159)))
+      | implode
       | sub("^ +"; "") | sub(" +$"; "") | .[0:$n];'
 
   # Deploy tables, rate-limit notices, screenshot galleries, and sticky bot
@@ -171,7 +182,8 @@ digest() {
 
   # Conversation comments have no threads. One stays open until *you* post a
   # later conversation comment that quotes its permalink; any later post of
-  # yours is not enough, and a bot confirming a fix must not close it.
+  # yours is not enough, and a bot confirming a fix must not close it. Compare
+  # against updated_at so an edit after your reply reopens the finding.
   local convo noise_n convo_open
   convo=$(api --paginate "repos/$repo/issues/$pr/comments?per_page=100" | jq -s 'add // []')
   noise_n=$(jq "
@@ -188,7 +200,7 @@ digest() {
        | . as \$c
        | select(
            [\$mine[]
-            | select(.created_at > \$c.created_at
+            | select(.created_at > \$c.updated_at
                      and (.body | (contains(\$c.html_url)
                                    or test(\"#issuecomment-\(\$c.id)\"))))]
            | length == 0)
@@ -220,8 +232,12 @@ digest() {
   fi
 
   # A verdict describes one commit. If the head moved while we were reading,
-  # everything above may already be stale.
-  if [ "$(gh pr view "$pr" --repo "$repo" --json headRefOid --jq .headRefOid)" != "$head" ]; then
+  # everything above may already be stale. A failed re-read is an error, not
+  # an out-of-sync signal — callers must not push to "reconcile" a blind miss.
+  local head_now
+  head_now=$(gh pr view "$pr" --repo "$repo" --json headRefOid --jq .headRefOid) \
+    || die "could not re-read PR $pr head"
+  if [ "$head_now" != "$head" ]; then
     echo "VERDICT out-of-sync (head moved during this observation)"
     return 20
   fi
@@ -240,7 +256,12 @@ main() {
     case $1 in
       --watch) watch=1 ;;
       --all) SHOW_ALL=1 ;;
-      --logs) shift; logs "${1:?job id}"; exit 0 ;;
+      --logs)
+        shift
+        command -v perl >/dev/null || die "perl not found"
+        logs "${1:?job id}"
+        exit $?
+        ;;
       --reply) shift; reply "${1:?comment id}" "${2:?reply body}"; exit $? ;;
       -h|--help) sed -n '2,11p' "$0"; exit 0 ;;
       *) pr=$1 ;;
@@ -253,9 +274,13 @@ main() {
 
   local repo viewer
   repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null) || die "not a GitHub repo"
-  viewer=$(gh api user --jq .login 2>/dev/null \
-    || gh api graphql -f query='query { viewer { login } }' --jq .data.viewer.login) \
+  # Prefer GraphQL: integration tokens often cannot GET /user, and a failed
+  # REST call still writes its error body to stdout — composing it with
+  # `$(a || b)` would concatenate that body onto the real login.
+  viewer=$(gh api graphql -f query='query { viewer { login } }' --jq .data.viewer.login 2>/dev/null) \
+    || viewer=$(gh api user --jq .login 2>/dev/null) \
     || die "could not resolve authenticated user"
+  case $viewer in ''|null|\{*) die "could not resolve authenticated user" ;; esac
   [ -n "$pr" ] || pr=$(gh pr view --json number --jq .number 2>/dev/null) || die "no PR for this branch"
 
   if [ "$watch" -eq 1 ]; then

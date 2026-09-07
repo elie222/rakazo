@@ -91,7 +91,8 @@ yield `VERDICT open-comments`. It skips known non-actionable noise (Vercel
 deploy tables, rate-limit notices, sticky bot summaries, screenshot galleries)
 but keeps actionable bot conversation comments in the open set. A conversation
 comment is handled only once *you* have posted a later conversation comment
-that quotes its permalink; bot follow-ups do not close it.
+that quotes its permalink; bot follow-ups do not close it. An edit to the
+original comment after your reply reopens it (`updated_at` moves past the reply).
 
 The digest prints each finding in full once, then lists it as a one-liner while
 it stays open, so nothing is hidden and re-observing is cheap. `--all` reprints
@@ -105,6 +106,7 @@ resolve just that one:
 ```bash
 REPO=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
 PR_NUM=$(gh pr view --json number --jq .number)
+COMMENT_ID=<root-review-comment-id>
 OWNER=${REPO%%/*}; REPO_NAME=${REPO#*/}
 THREAD_ID=$(gh api graphql --paginate -f query='
   query($owner:String!, $repo:String!, $pr:Int!, $endCursor:String) {
