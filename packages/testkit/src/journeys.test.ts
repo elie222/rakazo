@@ -1367,7 +1367,11 @@ describeJourneys("required product journeys", () => {
       scope: "user",
       content: "important retained context",
     });
+    // The name is the half that makes a detached usage row readable: bot_deletions is keyed by
+    // the bot id, so a per-bot spend report can still label spend that belongs to a bot that
+    // no longer exists.
     expect(await prisma.botDeletion.findUniqueOrThrow({ where: { id: gone.id } })).toMatchObject({
+      name: "Gone",
       memoriesPreserved: true,
     });
     expect(await prisma.artifact.findUnique({ where: { id: goneArtifact.id } })).toBeNull();
