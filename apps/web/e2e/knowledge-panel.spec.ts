@@ -1,7 +1,14 @@
 import { readFile } from "node:fs/promises";
 import { expect, test } from "@playwright/test";
 import type { MemoryDocument } from "@rakazo/contracts";
-import { activeBotId, captureScreenshot, completeOnboarding, rpc, signup } from "./helpers";
+import {
+  activeBotId,
+  captureScreenshot,
+  completeOnboarding,
+  openUserSettings,
+  rpc,
+  signup,
+} from "./helpers";
 
 test("memory and skills are readable and editable in the app", async ({ page }, testInfo) => {
   const stamp = Date.now();
@@ -11,10 +18,9 @@ test("memory and skills are readable and editable in the app", async ({ page }, 
   await page.goto("/app");
   await page.waitForURL(/\/app\/[^/]+$/);
 
-  // Space-wide documents live in the Memory settings overlay. Open that before
-  // bot settings so the Knowledge Memory tab cannot steal this click.
-  await page.getByRole("button", { name: new RegExp(userName) }).click();
-  await page.getByRole("button", { name: "Memory", exact: true }).click();
+  // Space-wide documents live in Settings → Memory. Open that before bot
+  // settings so the Knowledge Memory tab cannot steal this click.
+  await openUserSettings(page, "memory");
   await expect(page.getByLabel("Close memory settings")).toBeVisible();
   const spaceDocs = page.getByTestId("space-memory-documents");
   await expect(spaceDocs.getByText("Shared documents")).toBeVisible();
