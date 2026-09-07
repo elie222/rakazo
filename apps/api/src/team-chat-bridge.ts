@@ -489,10 +489,9 @@ export class TeamChatBridge {
    * Promote expired deferred leases. If wakeMessageRoutines already persisted a
    * routine run (crash before resolveDeferredMessage), mark the row ignored so
    * recovery cannot also start a TeamChat agent run for the same provider event.
-   * Routing ownership is exclusive until resolveDeferredMessage or process-start
-   * recoverInterruptedRoutineRoutes: do not promote while it is set, even after
-   * the lease or any prior grace window expires. Heartbeat loss must not let
-   * reconcile start a fallback agent beside an in-flight wake.
+   * Expired routing ownership is cleared (not promoted) so a later reconcile can
+   * take over; live wakes re-hold the heartbeat after renewal loss. Ambient judge
+   * reasons are not ownership and may promote.
    */
   private async recoverExpiredDeferredMessages(target: TargetBot, now: Date): Promise<void> {
     const expired = await this.deps.prisma.externalMessage.findMany({
@@ -544,16 +543,42 @@ export class TeamChatBridge {
         continue;
       }
       if (isRoutingOwnershipReason(message.engagementReason)) {
-        // Exclusive until resolveDeferredMessage or recoverInterruptedRoutineRoutes.
+        // Lease expired and no wake nonce: drop orphaned ownership so a later
+        // reconcile can promote. Live wakes re-hold the heartbeat (future lease)
+        // after renewal loss; do not promote in this same write.
+        await this.deps.prisma.externalMessage.updateMany({
+          where: {
+            id: message.id,
+            status: "deferred",
+            nextAttemptAt: { lte: now },
+            engagementReason: {
+              in: [ROUTING_OWNERSHIP_REASON, ROUTING_OWNERSHIP_REARMED_REASON],
+            },
+          },
+          data: { engagementReason: null, nextAttemptAt: now },
+        });
         continue;
       }
-      // Do not promote over a live wake that reasserted ROUTING after this read.
+      // Promote when free of ownership claims. Ambient judge text is not ownership.
       await this.deps.prisma.externalMessage.updateMany({
         where: {
           id: message.id,
           status: "deferred",
           nextAttemptAt: { lte: now },
-          engagementReason: null,
+          OR: [
+            { engagementReason: null },
+            {
+              NOT: {
+                engagementReason: {
+                  in: [
+                    ROUTING_OWNERSHIP_REASON,
+                    ROUTING_OWNERSHIP_REARMED_REASON,
+                    AGENT_OWNERSHIP_REASON,
+                  ],
+                },
+              },
+            },
+          ],
         },
         data: {
           status: message.kind === "ambient" ? "observed" : "received",

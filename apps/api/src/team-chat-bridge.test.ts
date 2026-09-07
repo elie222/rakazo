@@ -178,7 +178,20 @@ describe("team chat bridge", () => {
         id: "external-expired",
         status: "deferred",
         nextAttemptAt: { lte: expect.any(Date) },
-        engagementReason: null,
+        OR: [
+          { engagementReason: null },
+          {
+            NOT: {
+              engagementReason: {
+                in: [
+                  "message_routine_routing",
+                  "message_routine_routing_rearmed",
+                  "message_teamchat_agent",
+                ],
+              },
+            },
+          },
+        ],
       },
       data: { status: "received", engagementReason: null, nextAttemptAt: null },
     });
@@ -630,7 +643,8 @@ describe("team chat bridge", () => {
 
   it("does not promote a rearmed routing claim after grace while wake is blocked", async () => {
     // Heartbeat renewal fails; wake stays blocked past the old re-armed grace
-    // window. Reconcile must not promote/queue a TeamChat run beside the wake.
+    // window. First reconcile only drops orphaned ownership; it must not queue a
+    // TeamChat run beside the wake in that same pass.
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
     try {
@@ -662,7 +676,9 @@ describe("team chat bridge", () => {
             input.data.status === undefined
           ) {
             leaseUntil = input.data.nextAttemptAt;
-            engagementReason = input.data.engagementReason ?? engagementReason;
+            if ("engagementReason" in (input.data ?? {})) {
+              engagementReason = input.data.engagementReason ?? null;
+            }
             return { count: 1 };
           }
           return { count: 0 };
@@ -745,23 +761,145 @@ describe("team chat bridge", () => {
       await bridge.reconcileOnce();
 
       expect(status).toBe("deferred");
-      expect(engagementReason).toBe("message_routine_routing_rearmed");
+      expect(engagementReason).toBeNull();
       expect(sendUserMessage).not.toHaveBeenCalled();
-      expect(updateMany).not.toHaveBeenCalledWith(
+      expect(updateMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: expect.objectContaining({ id: "external-grace", status: "deferred" }),
-          data: expect.objectContaining({ status: "received" }),
+          where: expect.objectContaining({
+            id: "external-grace",
+            status: "deferred",
+            engagementReason: {
+              in: ["message_routine_routing", "message_routine_routing_rearmed"],
+            },
+          }),
+          data: { engagementReason: null, nextAttemptAt: expect.any(Date) },
         }),
       );
       expect(updateMany).not.toHaveBeenCalledWith(
         expect.objectContaining({
           where: expect.objectContaining({ id: "external-grace" }),
-          data: expect.objectContaining({ status: "queueing" }),
+          data: expect.objectContaining({ status: "received" }),
         }),
       );
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("promotes deferred rows that still carry an ambient engagement reason", async () => {
+    const updateMany = vi.fn(async () => ({ count: 1 }));
+    const findMany = vi.fn(async ({ where }: { where: { status?: string } }) =>
+      where.status === "deferred"
+        ? [
+            {
+              id: "external-ambient",
+              kind: "ambient",
+              providerEventId: "Ev-ambient",
+              engagementReason: "Channel may need a reply",
+              nextAttemptAt: new Date(Date.now() - 1_000),
+              externalConversation: { thread: { id: "thread-1" } },
+            },
+          ]
+        : [],
+    );
+    const bridge = new TeamChatBridge({
+      prisma: {
+        externalMessage: { updateMany, findMany },
+        message: { findUnique: vi.fn(async () => null) },
+        run: { findMany: vi.fn(async () => []) },
+      } as unknown as PrismaClient,
+      events: { sendUserMessage: vi.fn() },
+      jobs: { enqueue: vi.fn() },
+      send: vi.fn(),
+      providerId: "slack",
+      botId: "bot-1",
+    });
+    (
+      bridge as unknown as {
+        target: { id: string; spaceId: string; userId: string; name: string };
+      }
+    ).target = { id: "bot-1", spaceId: "space-1", userId: "owner-1", name: "Chief" };
+
+    await bridge.reconcileOnce();
+
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          id: "external-ambient",
+          status: "deferred",
+          OR: [
+            { engagementReason: null },
+            {
+              NOT: {
+                engagementReason: {
+                  in: [
+                    "message_routine_routing",
+                    "message_routine_routing_rearmed",
+                    "message_teamchat_agent",
+                  ],
+                },
+              },
+            },
+          ],
+        }),
+        data: expect.objectContaining({ status: "observed", engagementReason: null }),
+      }),
+    );
+  });
+
+  it("clears expired routing ownership during reconcile so orphans are not stuck", async () => {
+    const updateMany = vi.fn(async () => ({ count: 1 }));
+    const findMany = vi.fn(async ({ where }: { where: { status?: string } }) =>
+      where.status === "deferred"
+        ? [
+            {
+              id: "external-orphan",
+              kind: "mention",
+              providerEventId: "Ev-orphan",
+              engagementReason: "message_routine_routing",
+              nextAttemptAt: new Date(Date.now() - 1_000),
+              externalConversation: { thread: { id: "thread-1" } },
+            },
+          ]
+        : [],
+    );
+    const bridge = new TeamChatBridge({
+      prisma: {
+        externalMessage: { updateMany, findMany },
+        message: { findUnique: vi.fn(async () => null) },
+        run: { findMany: vi.fn(async () => []) },
+      } as unknown as PrismaClient,
+      events: { sendUserMessage: vi.fn() },
+      jobs: { enqueue: vi.fn() },
+      send: vi.fn(),
+      providerId: "slack",
+      botId: "bot-1",
+    });
+    (
+      bridge as unknown as {
+        target: { id: string; spaceId: string; userId: string; name: string };
+      }
+    ).target = { id: "bot-1", spaceId: "space-1", userId: "owner-1", name: "Chief" };
+
+    await bridge.reconcileOnce();
+
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          id: "external-orphan",
+          engagementReason: {
+            in: ["message_routine_routing", "message_routine_routing_rearmed"],
+          },
+        }),
+        data: { engagementReason: null, nextAttemptAt: expect.any(Date) },
+      }),
+    );
+    expect(updateMany).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: "external-orphan" }),
+        data: expect.objectContaining({ status: "received" }),
+      }),
+    );
   });
 
   it("releases only expired routing ownership before startup reconciliation", async () => {
