@@ -143,6 +143,13 @@ export function OnboardingPage() {
     probedBaseUrl,
   });
 
+  const canSaveModel = Boolean(
+    selected &&
+      modelId.trim() &&
+      !oauthPending &&
+      (isOpenAiCompatible ? openAiCompatibleReady : acceptsKey && apiKey.trim()),
+  );
+
   function updateBaseUrl(nextBaseUrl: string) {
     setBaseUrl(nextBaseUrl);
     resetOpenAiCompatibleProbe();
@@ -173,7 +180,7 @@ export function OnboardingPage() {
   }
 
   async function saveModel() {
-    if (!selected || !modelId.trim()) return;
+    if (!canSaveModel) return;
     setError(null);
     try {
       if (isOpenAiCompatible) {
@@ -558,15 +565,7 @@ export function OnboardingPage() {
             {notice ? <p className="mt-3 text-sm text-success">{notice}</p> : null}
             {error ? <p className="mt-3 text-sm text-destructive">{error}</p> : null}
             <div className="mt-6 flex gap-3">
-              <Button
-                disabled={
-                  !selected ||
-                  !modelId.trim() ||
-                  oauthPending ||
-                  (isOpenAiCompatible && !openAiCompatibleReady)
-                }
-                onClick={() => void saveModel()}
-              >
+              <Button disabled={!canSaveModel} onClick={() => void saveModel()}>
                 <Trans>Continue</Trans>
               </Button>
             </div>

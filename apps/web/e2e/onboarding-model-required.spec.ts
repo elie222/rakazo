@@ -7,7 +7,14 @@ test("onboarding requires a model when the deployment has none", async ({ page }
     const body = (await response.json()) as { json: Record<string, unknown> };
     await route.fulfill({
       response,
-      json: { json: { ...body.json, needsModel: true } },
+      json: {
+        json: {
+          ...body.json,
+          needsModel: true,
+          defaultProvider: "openrouter",
+          defaultModel: "openai/gpt-5.6-luna",
+        },
+      },
     });
   });
 
@@ -23,6 +30,13 @@ test("onboarding requires a model when the deployment has none", async ({ page }
   });
 
   await expect(page.getByRole("button", { name: "Skip for now" })).toBeHidden();
+  const continueButton = page.getByRole("button", { name: "Continue", exact: true });
+  await expect(continueButton).toBeDisabled();
+  await page.getByLabel("API key", { exact: true }).fill("   ");
+  await expect(continueButton).toBeDisabled();
+  await page.getByLabel("API key", { exact: true }).fill("fake-test-key");
+  await expect(continueButton).toBeEnabled();
+  await page.getByLabel("API key", { exact: true }).fill("");
   await captureScreenshot(page, testInfo, "onboarding-model-required");
 });
 
