@@ -3346,3 +3346,23 @@ msgstr "Docker는 보안을 위해 컴퓨터 접근을 제한합니다. {hostLab
 #: src/pages/HostComputerPrompt.tsx:69
 msgid "Local access lets bots run commands without asking. Avoid it on shared or public servers."
 msgstr "로컬 접근을 허용하면 Bot이 묻지 않고 명령을 실행할 수 있습니다. 공유 서버나 공개 서버에서는 허용하지 마세요."
+
+#: src/pages/Shell.tsx:3663
+msgid "Actions for space"
+msgstr ""
+
+#: src/pages/Shell.tsx:3677
+msgid "Delete space"
+msgstr ""
+
+#: src/pages/Shell.tsx:3715
+msgid "Only empty spaces can be deleted. Delete its bots and groups first."
+msgstr ""
+
+#: src/pages/shell/dialogs.tsx:405
+msgid "Could not delete space"
+msgstr ""
+
+#: src/pages/Onboarding.tsx:277
+msgid "Back to app"
+msgstr ""

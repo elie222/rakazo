@@ -3346,3 +3346,23 @@ msgstr "Docker limits access to your computer for added security. Using {hostLab
 #: src/pages/HostComputerPrompt.tsx:69
 msgid "Local access lets bots run commands without asking. Avoid it on shared or public servers."
 msgstr "Local access lets bots run commands without asking. Avoid it on shared or public servers."
+
+#: src/pages/Shell.tsx:3663
+msgid "Actions for space"
+msgstr "Actions for space"
+
+#: src/pages/Shell.tsx:3677
+msgid "Delete space"
+msgstr "Delete space"
+
+#: src/pages/Shell.tsx:3715
+msgid "Only empty spaces can be deleted. Delete its bots and groups first."
+msgstr "Only empty spaces can be deleted. Delete its bots and groups first."
+
+#: src/pages/shell/dialogs.tsx:405
+msgid "Could not delete space"
+msgstr "Could not delete space"
+
+#: src/pages/Onboarding.tsx:277
+msgid "Back to app"
+msgstr "Back to app"

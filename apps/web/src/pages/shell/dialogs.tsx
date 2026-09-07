@@ -359,11 +359,13 @@ export function DeleteBotDialog({
 export function DeleteItemDialog({
   item,
   noun,
+  description,
   onCancel,
   onConfirm,
 }: {
   item: { name: string };
-  noun: "group" | "routine";
+  noun: "group" | "routine" | "space";
+  description?: React.ReactNode;
   onCancel: () => void;
   onConfirm: () => Promise<void>;
 }) {
@@ -379,7 +381,7 @@ export function DeleteItemDialog({
             <Trans>Delete {item.name}?</Trans>
           </AlertDialogTitle>
           <AlertDialogDescription>
-            <Trans>This cannot be undone.</Trans>
+            {description ?? <Trans>This cannot be undone.</Trans>}
           </AlertDialogDescription>
         </AlertDialogHeader>
         {error ? <p className="text-[13.5px] text-destructive">{error}</p> : null}
@@ -399,7 +401,9 @@ export function DeleteItemDialog({
                     ? err.message
                     : noun === "group"
                       ? t`Could not delete group`
-                      : t`Could not delete routine`,
+                      : noun === "space"
+                        ? t`Could not delete space`
+                        : t`Could not delete routine`,
                 );
                 setDeleting(false);
               });

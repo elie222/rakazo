@@ -1,5 +1,11 @@
 import { expect, test } from "@playwright/test";
-import { captureScreenshot, completeOnboarding, openNewSpace, signup } from "./helpers";
+import {
+  captureScreenshot,
+  completeOnboarding,
+  createNamedBot,
+  openNewSpace,
+  signup,
+} from "./helpers";
 
 test("spaces stay invisible by default and chat creation requires approval", async ({
   page,
@@ -68,4 +74,68 @@ test("spaces stay invisible by default and chat creation requires approval", asy
     .poll(() => page.evaluate(() => window.localStorage.getItem("rakazo:space-id")))
     .toBe(personalSpaceId);
   await expect(sidebar.getByText("Customer support", { exact: true })).toBeVisible();
+});
+
+test("a new space can be abandoned from onboarding and deleted from the sidebar", async ({
+  page,
+}, testInfo) => {
+  const stamp = Date.now();
+  await signup(page, `spaces-delete-${stamp}@rakazo.test`, "password12", "Space Owner");
+  await completeOnboarding(page);
+
+  const sidebar = page.locator("aside").first();
+  await openNewSpace(page);
+  const dialog = page.getByRole("dialog", { name: "New space" });
+  await dialog.getByLabel("Name").fill("Temporary");
+  await dialog.getByRole("button", { name: "Create space", exact: true }).click();
+  await page.waitForURL(/\/onboarding/);
+
+  // The per-space onboarding is escapable: going back leaves the empty space
+  // behind instead of trapping the user.
+  await expect(page.getByRole("button", { name: "Back to app", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Back to app", exact: true }).click();
+  await page.waitForURL(/\/app/);
+  await expect(page).not.toHaveURL(/\/onboarding/);
+  await expect(sidebar.getByText("Temporary", { exact: true })).toBeVisible();
+  await captureScreenshot(page, testInfo, "empty-space-sidebar");
+
+  await sidebar.getByRole("button", { name: "Open Temporary" }).click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Delete space" }).click();
+  const deleteDialog = page.getByRole("alertdialog", { name: "Delete Temporary?" });
+  await expect(deleteDialog).toBeVisible();
+  await captureScreenshot(page, testInfo, "delete-space-dialog");
+  await deleteDialog.getByRole("button", { name: "Delete", exact: true }).click();
+  await expect(sidebar.getByText("Temporary", { exact: true })).toHaveCount(0);
+  await expect(page).not.toHaveURL(/\/onboarding/);
+  await expect(sidebar.getByRole("button", { name: /^Chief/ })).toHaveCount(1);
+});
+
+test("deleting the last bot in a space stays in the app when other spaces have bots", async ({
+  page,
+}) => {
+  const stamp = Date.now();
+  await signup(page, `spaces-empty-${stamp}@rakazo.test`, "password12", "Space Owner");
+  await completeOnboarding(page);
+  await createNamedBot(page, "Second");
+
+  const sidebar = page.locator("aside").first();
+  await openNewSpace(page);
+  const dialog = page.getByRole("dialog", { name: "New space" });
+  await dialog.getByLabel("Name").fill("Side");
+  await dialog.getByRole("button", { name: "Create space", exact: true }).click();
+  await page.waitForURL(/\/onboarding/);
+  await completeOnboarding(page);
+  await expect(sidebar.getByText("Side", { exact: true })).toBeVisible();
+
+  // Delete the only bot in the new space: the app must stay put (the other
+  // space still has bots) instead of forcing per-space onboarding.
+  const sideBot = sidebar.getByRole("button", { name: /^Chief/ }).last();
+  await sideBot.click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Delete" }).click();
+  const deleteDialog = page.getByRole("alertdialog", { name: /Delete Chief/ });
+  await expect(deleteDialog).toBeVisible();
+  await deleteDialog.getByRole("button", { name: "Delete", exact: true }).click();
+  await page.waitForURL(/\/app/);
+  await expect(page).not.toHaveURL(/\/onboarding/);
+  await expect(sidebar.getByText("Side", { exact: true })).toBeVisible();
 });

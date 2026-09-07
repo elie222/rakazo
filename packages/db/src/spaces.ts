@@ -20,6 +20,34 @@ export class InvalidSpaceNameError extends Error {
   }
 }
 
+export class SpaceNotFoundError extends Error {
+  constructor() {
+    super("Space not found");
+    this.name = "SpaceNotFoundError";
+  }
+}
+
+export class CannotDeleteDefaultSpaceError extends Error {
+  constructor() {
+    super("The default space cannot be deleted");
+    this.name = "CannotDeleteDefaultSpaceError";
+  }
+}
+
+export class CannotDeleteLastSpaceError extends Error {
+  constructor() {
+    super("The last remaining space cannot be deleted");
+    this.name = "CannotDeleteLastSpaceError";
+  }
+}
+
+export class SpaceNotEmptyError extends Error {
+  constructor() {
+    super("Delete its bots and groups first");
+    this.name = "SpaceNotEmptyError";
+  }
+}
+
 type SpaceClient = Pick<
   PrismaClient,
   | "space"
@@ -28,6 +56,8 @@ type SpaceClient = Pick<
   | "spaceVoicePreference"
   | "memoryDocument"
   | "notificationPreference"
+  | "bot"
+  | "chatGroup"
 >;
 
 interface CreateSpaceInput {
@@ -184,4 +214,81 @@ export async function createSpaceForMember(
   );
 
   return { id: spaceId, name };
+}
+
+/** Delete an empty, non-default privacy boundary.
+ *
+ * Only empty spaces can be removed: bots (including archived) and groups would
+ * otherwise orphan sandbox computers and files that `destroyBot` cleans up per
+ * bot. Callers should surface `SpaceNotEmptyError` as "delete its bots and
+ * groups first" so an empty space is always deletable in two steps without an
+ * onboarding trap. Returns the space the client should switch to when the
+ * active space was deleted (the default, else the oldest remaining). */
+export async function deleteEmptySpaceForMember(
+  prisma: PrismaClient,
+  input: {
+    currentSpaceId: string;
+    userId: string;
+    spaceId: string;
+  },
+): Promise<{ id: string }> {
+  return withTransactionRetry(() =>
+    prisma.$transaction(
+      async (tx) => {
+        const currentMembership = await tx.spaceMember.findUnique({
+          where: {
+            spaceId_userId: {
+              spaceId: input.currentSpaceId,
+              userId: input.userId,
+            },
+          },
+          select: { organizationId: true },
+        });
+        if (!currentMembership) throw new IsolationError();
+        const targetMembership = await tx.spaceMember.findUnique({
+          where: {
+            spaceId_userId: {
+              spaceId: input.spaceId,
+              userId: input.userId,
+            },
+          },
+          select: {
+            organizationId: true,
+            space: { select: { isDefault: true } },
+          },
+        });
+        if (
+          !targetMembership ||
+          targetMembership.organizationId !== currentMembership.organizationId
+        ) {
+          throw new SpaceNotFoundError();
+        }
+        if (targetMembership.space.isDefault) throw new CannotDeleteDefaultSpaceError();
+        const memberships = await tx.spaceMember.findMany({
+          where: {
+            userId: input.userId,
+            organizationId: currentMembership.organizationId,
+          },
+          select: {
+            spaceId: true,
+            createdAt: true,
+            space: { select: { isDefault: true } },
+          },
+          orderBy: { createdAt: "asc" },
+        });
+        if (memberships.length <= 1) throw new CannotDeleteLastSpaceError();
+        const [botCount, groupCount] = await Promise.all([
+          tx.bot.count({ where: { spaceId: input.spaceId } }),
+          tx.chatGroup.count({ where: { spaceId: input.spaceId } }),
+        ]);
+        if (botCount > 0 || groupCount > 0) throw new SpaceNotEmptyError();
+        await tx.space.delete({ where: { id: input.spaceId } });
+        const remaining = memberships.filter((membership) => membership.spaceId !== input.spaceId);
+        const fallback = remaining.find((membership) => membership.space.isDefault) ?? remaining[0];
+        if (!fallback) throw new CannotDeleteLastSpaceError();
+        return { id: fallback.spaceId };
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    ),
+  );
 }

@@ -68,6 +68,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["models/setDefault", { provider: "test", modelId: "test/model" }],
       ["spaces/list"],
       ["spaces/create", { name: "Nope" }],
+      ["spaces/remove", { spaceId: "missing-space" }],
       ["bots/list"],
       ["bots/listArchived"],
       ["bots/get", { botId: "missing-bot" }],
@@ -832,6 +833,40 @@ describeWithDatabase("API authorization and resource isolation", () => {
     });
     expect(missing.status).toBeGreaterThanOrEqual(400);
     expect(await missing.text()).toMatch(/credential/i);
+  });
+
+  it("deletes only empty, non-default spaces", async () => {
+    const cookie = await signup(app, `space-delete-${stamp}@rakazo.test`, "Space Delete");
+    const actor = await rpc<Actor>(app, cookie, "me");
+    const empty = await rpc<Space>(app, cookie, "spaces/create", { name: "Temporary" });
+    const busy = await rpc<Space>(app, cookie, "spaces/create", { name: "Busy" });
+    await rpc<Bot>(app, cookie, "bots/create", botInput("Busy bot"), busy.id);
+
+    await expect(raw(app, cookie, "spaces/remove", { spaceId: busy.id })).resolves.toMatchObject({
+      status: 400,
+    });
+    await expect(
+      handles.prisma.space.findUnique({ where: { id: busy.id } }),
+    ).resolves.not.toBeNull();
+    await expect(
+      raw(app, cookie, "spaces/remove", { spaceId: actor.spaceId }),
+    ).resolves.toMatchObject({ status: 400 });
+    await expect(
+      raw(app, cookie, "spaces/remove", { spaceId: "missing-space" }),
+    ).resolves.toMatchObject({ status: 404 });
+
+    const removed = await rpc<{ ok: true; activeSpaceId: string }>(app, cookie, "spaces/remove", {
+      spaceId: empty.id,
+    });
+    expect(removed).toEqual({ ok: true, activeSpaceId: actor.spaceId });
+    await expect(handles.prisma.space.findUnique({ where: { id: empty.id } })).resolves.toBeNull();
+    const navigation = await rpc<SpaceNavigation>(app, cookie, "spaces/list");
+    expect(navigation.spaces.map((space) => space.id)).not.toContain(empty.id);
+
+    const intruder = await signup(app, `space-delete-intruder-${stamp}@rakazo.test`, "Intruder");
+    await expect(raw(app, intruder, "spaces/remove", { spaceId: busy.id })).resolves.toMatchObject({
+      status: 404,
+    });
   });
 
   it("validates custom thinking against the saved connection capability", async () => {

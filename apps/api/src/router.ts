@@ -94,11 +94,14 @@ import {
 } from "@rakazo/core";
 import {
   appendEventInTransaction,
+  CannotDeleteDefaultSpaceError,
+  CannotDeleteLastSpaceError,
   createExternalConversationRepos,
   createGroupRepos,
   createRepos,
   createSpaceForMember,
   createThreadMessageInTransaction,
+  deleteEmptySpaceForMember,
   deleteUnreferencedCredentialSecret,
   findDefaultModelCredential,
   findDefaultVoiceCredential,
@@ -115,6 +118,8 @@ import {
   type PrismaClient,
   parseComputerMode,
   SpaceLimitError,
+  SpaceNotEmptyError,
+  SpaceNotFoundError,
   selectSpaceModelPreference,
   selectSpaceVoicePreference,
   type ThreadEvents,
@@ -494,6 +499,28 @@ export function createRouter(deps: RouterDeps) {
           externalConversations: [],
           botSections: [],
         };
+      }),
+      remove: authed.spaces.remove.handler(async ({ context, input }) => {
+        try {
+          const fallback = await deleteEmptySpaceForMember(deps.prisma, {
+            currentSpaceId: context.actor.spaceId,
+            userId: context.actor.userId,
+            spaceId: input.spaceId,
+          });
+          return { ok: true as const, activeSpaceId: fallback.id };
+        } catch (error) {
+          if (error instanceof SpaceNotFoundError) {
+            throw new ORPCError("NOT_FOUND", { message: error.message });
+          }
+          if (
+            error instanceof CannotDeleteDefaultSpaceError ||
+            error instanceof CannotDeleteLastSpaceError ||
+            error instanceof SpaceNotEmptyError
+          ) {
+            throw new ORPCError("BAD_REQUEST", { message: error.message });
+          }
+          throw error;
+        }
       }),
     },
     bootstrap: authed.bootstrap.handler(async ({ context, input }) => {

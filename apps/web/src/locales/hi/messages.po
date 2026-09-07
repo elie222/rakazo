@@ -3346,3 +3346,23 @@ msgstr "Docker अतिरिक्त सुरक्षा के लिए �
 #: src/pages/HostComputerPrompt.tsx:69
 msgid "Local access lets bots run commands without asking. Avoid it on shared or public servers."
 msgstr "स्थानीय पहुँच मिलने पर बॉट्स बिना पूछे कमांड चला सकते हैं। साझा या सार्वजनिक सर्वर पर इससे बचें।"
+
+#: src/pages/Shell.tsx:3663
+msgid "Actions for space"
+msgstr ""
+
+#: src/pages/Shell.tsx:3677
+msgid "Delete space"
+msgstr ""
+
+#: src/pages/Shell.tsx:3715
+msgid "Only empty spaces can be deleted. Delete its bots and groups first."
+msgstr ""
+
+#: src/pages/shell/dialogs.tsx:405
+msgid "Could not delete space"
+msgstr ""
+
+#: src/pages/Onboarding.tsx:277
+msgid "Back to app"
+msgstr ""
