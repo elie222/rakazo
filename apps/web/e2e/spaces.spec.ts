@@ -45,7 +45,7 @@ test("spaces stay invisible by default and chat creation requires approval", asy
   const supportSpaceId = supportSpaceGroup?.split(":")[1];
   expect(supportSpaceId).toBeTruthy();
   await supportSpace.getByRole("button", { name: "Open Customer support" }).click();
-  await page.waitForURL(/\/onboarding/);
+  await page.waitForURL(/\/(onboarding|app)/);
   await expect
     .poll(() => page.evaluate(() => window.localStorage.getItem("rakazo:space-id")))
     .toBe(supportSpaceId);

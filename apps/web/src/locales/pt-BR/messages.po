@@ -3320,3 +3320,9 @@ msgstr "O Docker limita o acesso ao seu computador para maior segurança. Usar {
 #: src/pages/HostComputerPrompt.tsx:69
 msgid "Local access lets bots run commands without asking. Avoid it on shared or public servers."
 msgstr "O acesso local permite que os bots executem comandos sem perguntar. Evite usá-lo em servidores compartilhados ou públicos."
+
+msgid "Opening chat…"
+msgstr ""
+
+msgid "Try again"
+msgstr ""

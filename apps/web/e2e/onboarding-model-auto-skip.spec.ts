@@ -13,6 +13,7 @@ test("onboarding skips model connect when a default model is already available",
     });
   });
 
+  const createRequest = page.waitForRequest("**/rpc/bots/create");
   const stamp = Date.now();
   await signup(
     page,
@@ -21,10 +22,18 @@ test("onboarding skips model connect when a default model is already available",
     `Model auto skip ${stamp}`,
   );
 
-  await expect(page.getByRole("heading", { name: "Create your first bot" })).toBeVisible({
+  await expect(page.getByRole("heading", { name: "Connect a model" })).toBeHidden();
+  await expect(page.getByRole("heading", { name: "Create your first bot" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Skip for now" })).toBeHidden();
+  await expect(page.getByRole("textbox", { name: "Name" })).toHaveCount(0);
+  await expect(page.getByRole("textbox", { name: "Title" })).toHaveCount(0);
+  await expect(page.getByRole("textbox", { name: "Description" })).toHaveCount(0);
+
+  expect((await createRequest).postDataJSON()).toMatchObject({
+    json: { name: "Chief", title: "", description: "", instructions: "" },
+  });
+  await expect(page.getByRole("combobox", { name: "Message Chief" })).toBeVisible({
     timeout: 20_000,
   });
-  await expect(page.getByRole("heading", { name: "Connect a model" })).toBeHidden();
-  await expect(page.getByRole("button", { name: "Skip for now" })).toBeHidden();
   await captureScreenshot(page, testInfo, "onboarding-model-auto-skip");
 });

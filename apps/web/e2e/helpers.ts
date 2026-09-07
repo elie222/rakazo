@@ -26,28 +26,14 @@ export async function rpc<T>(page: Page, procedure: string, body: unknown): Prom
 
 export async function completeOnboarding(page: Page, testInfo?: TestInfo) {
   await page.waitForURL(/\/(onboarding|app)/, { timeout: 20_000 });
-  const heading = page.getByRole("heading", { name: /Connect a model|Create your first bot/ });
-  const chief = page.getByText("Chief").first();
-  await heading.or(chief).waitFor({ timeout: 20_000 });
-  if ((await chief.isVisible().catch(() => false)) && page.url().includes("/app")) return;
-  if (
-    await page
-      .getByRole("heading", { name: "Create your first bot" })
-      .isVisible()
-      .catch(() => false)
-  ) {
-    if (testInfo) await captureScreenshot(page, testInfo, "03-create-first-bot");
-    await page.locator("label:has-text('Name') input").fill("Chief");
-    const created = page.waitForResponse(
-      (response) => response.url().includes("/rpc/bots/create") && response.ok(),
-    );
-    await page.getByRole("button", { name: "Continue" }).click();
-    await created;
-    await page.waitForURL(/\/app\//, { timeout: 20_000 });
-  }
-  await page.waitForURL(/\/app/);
+  // First bot is created automatically after model connect (or skip when a default
+  // model already exists). Land in Chief's chat without a create-bot form.
+  await page.waitForURL(/\/app\//, { timeout: 20_000 });
   await expect(page.getByText("Chief").first()).toBeVisible();
-  if (testInfo) await captureScreenshot(page, testInfo, "06-onboarding-complete");
+  if (testInfo) {
+    await captureScreenshot(page, testInfo, "03-create-first-bot");
+    await captureScreenshot(page, testInfo, "06-onboarding-complete");
+  }
 }
 
 export async function signup(
