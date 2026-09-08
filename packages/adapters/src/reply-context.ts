@@ -12,16 +12,10 @@ function messageBlocks(message: QuotedMessage): MessageBlock[] {
   return Array.isArray(message.blocks) ? (message.blocks as MessageBlock[]) : [];
 }
 
-function replyContext(
-  source: ReplyMessage,
-  threadId: string,
-  legacyReaction = false,
-): string | undefined {
-  const target = legacyReaction ? source : source.replyTo;
+function replyContext(source: ReplyMessage, threadId: string): string | undefined {
+  const target = source.replyTo;
   if (!target || target.threadId !== threadId) return undefined;
-  const emoji = legacyReaction
-    ? "👍"
-    : messageReaction({ ...source, blocks: messageBlocks(source) });
+  const emoji = messageReaction({ ...source, blocks: messageBlocks(source) });
   const content = blocksToAgentHistoryText(messageBlocks(target));
   const quote = JSON.stringify({
     messageId: target.id,
@@ -47,7 +41,6 @@ export async function loadReplyContext(
   prisma: PrismaClient,
   threadId: string,
   sourceMessageId: string | null | undefined,
-  trigger?: string,
 ): Promise<string | undefined> {
   if (!sourceMessageId) return undefined;
   const selection = { id: true, threadId: true, role: true, blocks: true } as const;
@@ -55,5 +48,5 @@ export async function loadReplyContext(
     where: { id: sourceMessageId, threadId },
     select: { ...selection, replyToMessageId: true, replyTo: { select: selection } },
   });
-  return source ? replyContext(source, threadId, trigger === "reaction") : undefined;
+  return source ? replyContext(source, threadId) : undefined;
 }
