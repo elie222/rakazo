@@ -4207,9 +4207,10 @@ const Transcript = memo(function Transcript({
             {loadingOlder ? t`Loading…` : t`Load earlier messages`}
           </button>
         ) : null}
-        {reactionView.messages.map((message) => {
+        {reactionView.visibleMessages.map((message) => {
           if (!message.blocks.some((block) => !isToolActivityBlock(block))) return null;
           const peerReceipt = isPeerReceiptBlocks(message.blocks);
+          const messageReactions = reactionView.reactions.get(message.id);
           return (
             <div
               key={message.id}
@@ -4275,7 +4276,7 @@ const Transcript = memo(function Transcript({
                   />
                 </div>
               </div>
-              {!peerReceipt && reactionView.reactions.has(message.id) ? (
+              {!peerReceipt && messageReactions ? (
                 <div
                   data-testid="message-reactions"
                   className={cn(
@@ -4283,7 +4284,7 @@ const Transcript = memo(function Transcript({
                     message.role === "user" && "justify-end",
                   )}
                 >
-                  {[...reactionView.reactions.get(message.id)!].map(([emoji, count]) => (
+                  {[...messageReactions].map(([emoji, count]) => (
                     <span
                       key={emoji}
                       className="rounded-full border border-border bg-muted px-2 py-0.5 text-xs"

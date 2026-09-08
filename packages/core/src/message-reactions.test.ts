@@ -19,7 +19,7 @@ describe("reaction conversation presentation", () => {
       message("three", "❤️", parent.id),
     ];
     const result = projectMessageReactions(messages);
-    expect(result.messages).toEqual([parent]);
+    expect(result.visibleMessages).toEqual([parent]);
     expect([...result.reactions.get(parent.id)!]).toEqual([
       ["❤️", 2],
       ["👍", 1],
@@ -28,7 +28,7 @@ describe("reaction conversation presentation", () => {
   });
   it("keeps replies visible when their parent is outside the loaded page", () => {
     const reply = message("reply", "❤️", "old-parent");
-    expect(projectMessageReactions([reply]).messages).toEqual([reply]);
+    expect(projectMessageReactions([reply]).visibleMessages).toEqual([reply]);
   });
   it("does not collapse ordinary replies, standalone emoji, or bot messages", () => {
     expect(messageReaction(message("one", "❤️"))).toBeNull();

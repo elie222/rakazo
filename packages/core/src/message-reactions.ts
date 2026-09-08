@@ -25,19 +25,14 @@ export function projectMessageReactions<Message extends ReactionMessage>(
   const visibleMessages = messages.filter((message) => {
     const emoji = messageReaction(message);
     const parentId = message.replyToMessageId;
+    const parent = parentId ? parents.get(parentId) : undefined;
     // Keep an ordinary reply bubble when the parent is outside the loaded page, so it can be opened.
-    if (
-      !emoji ||
-      !parentId ||
-      !parents.has(parentId) ||
-      messageReaction(parents.get(parentId)!) ||
-      parentId === message.id
-    )
+    if (!emoji || !parentId || !parent || messageReaction(parent) || parentId === message.id)
       return true;
     const counts = reactions.get(parentId) ?? new Map<MessageReaction, number>();
     counts.set(emoji, (counts.get(emoji) ?? 0) + 1);
     reactions.set(parentId, counts);
     return false;
   });
-  return { messages: visibleMessages, reactions };
+  return { visibleMessages, reactions };
 }

@@ -319,7 +319,7 @@ function Thread() {
       ),
     [snap?.messages],
   );
-  const visibleMessages = reactionView.messages;
+  const visibleMessages = reactionView.visibleMessages;
   const latestMessageId = visibleMessages.at(-1)?.id ?? null;
   const activePendingAttachments = attachmentsForThread(pendingAttachments, threadKey);
   const composerMentionTargets = useMemo(
@@ -1325,6 +1325,7 @@ function Thread() {
 
   function renderMessageRow(message: MobileMessage, options?: { enableJump?: boolean }) {
     const actionProps = messageActionProps(message);
+    const messageReactions = reactionView.reactions.get(message.id);
     const activityBotId =
       !inGroup && message.role === "bot" && message.id.startsWith("progress:")
         ? (message.botId ?? botId)
@@ -1402,7 +1403,7 @@ function Thread() {
               actionProps={actionProps}
             />
           </Pressable>
-          {reactionView.reactions.has(message.id) ? (
+          {messageReactions ? (
             <View
               style={{
                 flexDirection: "row",
@@ -1412,7 +1413,7 @@ function Thread() {
                 justifyContent: message.role === "user" ? "flex-end" : "flex-start",
               }}
             >
-              {[...reactionView.reactions.get(message.id)!].map(([emoji, count]) => (
+              {[...messageReactions].map(([emoji, count]) => (
                 <Text
                   key={emoji}
                   style={{
