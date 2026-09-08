@@ -144,7 +144,9 @@ describe("openai-compatible provider", () => {
       const request = new Request(`http://localhost:${port}/v1/models`, {
         headers: { Accept: "application/json" },
       });
-      await expect(safeFetch(request)).resolves.toMatchObject({ status: 200 });
+      const response = await safeFetch(request);
+      expect(response).toMatchObject({ status: 200 });
+      await response.body?.cancel().catch(() => undefined);
       await expect(
         probeOpenAiCompatibleModels({ baseUrl: `http://localhost:${port}/v1` }, safeFetch),
       ).resolves.toEqual(["from-request"]);
