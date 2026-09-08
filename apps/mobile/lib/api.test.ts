@@ -974,6 +974,41 @@ describe("mobile API authentication", () => {
     expect(storage.get("rakazo.space_id")).toBe("space-new");
   });
 
+  it("ignores a 401 from a request sent before the user switched Spaces", async () => {
+    const storage = new Map<string, string>([["rakazo.space_id", "space-a"]]);
+    vi.mocked(SecureStore.getItemAsync).mockImplementation(async (key) => storage.get(key) ?? null);
+    vi.mocked(SecureStore.deleteItemAsync).mockImplementation(async (key) => {
+      storage.delete(key);
+    });
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+      storage.set(key, value);
+    });
+    await loadApiBase();
+    expect(selectedSpaceId()).toBe("space-a");
+
+    let resolveStale!: (value: Response) => void;
+    const fetchMock = vi.fn().mockImplementationOnce(
+      () =>
+        new Promise<Response>((resolve) => {
+          resolveStale = resolve;
+        }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const stale = rpc("bots/list");
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect(fetchMock.mock.calls[0]![1].headers["x-rakazo-space-id"]).toBe("space-a");
+    await expect(selectSpace("space-b")).resolves.toBe(true);
+    resolveStale(jsonResponse({ error: { message: "Unauthorized" } }, { status: 401 }));
+
+    // The stale request fails without probing or touching the new selection;
+    // Space B's own requests run recovery if B is itself inaccessible.
+    await expect(stale).rejects.toThrow("Unauthorized");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(selectedSpaceId()).toBe("space-b");
+    expect(storage.get("rakazo.space_id")).toBe("space-b");
+  });
+
   it("re-persists a Space selected while recovery cleanup is in flight", async () => {
     const storage = new Map<string, string>([["rakazo.space_id", "space-deleted"]]);
     vi.mocked(SecureStore.getItemAsync).mockImplementation(async (key) => storage.get(key) ?? null);

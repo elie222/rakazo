@@ -90,16 +90,20 @@ export async function loadApiBase() {
 
 export async function selectSpace(id: string) {
   if (!(await clearStoredValue(SPACE_ROLLBACK_KEY))) return false;
+  // Claim memory before persisting: recovery paths reconcile against the
+  // in-memory selection, so a durable write must never precede its owner.
+  const previousSpaceId = cachedSpaceId;
+  cachedSpaceId = id;
   try {
     await SecureStore.setItemAsync(SPACE_KEY, id);
-    cachedSpaceId = id;
-    await resumeLiveNotifications(currentApiBase(), await loadSessionToken(), id).catch(
-      () => undefined,
-    );
-    return true;
   } catch {
+    if (cachedSpaceId === id) cachedSpaceId = previousSpaceId;
     return false;
   }
+  await resumeLiveNotifications(currentApiBase(), await loadSessionToken(), id).catch(
+    () => undefined,
+  );
+  return true;
 }
 
 export function selectedSpaceId(): string | null {
@@ -525,13 +529,18 @@ export async function rpc<T>(
   else options.signal?.addEventListener("abort", abort, { once: true });
   const timer =
     options.timeoutMs === null ? undefined : setTimeout(abort, options.timeoutMs ?? RPC_TIMEOUT_MS);
+  // Bind recovery to the Space this request was sent with: a 401 arriving
+  // after the user switched Spaces belongs to a stale request and must not
+  // touch the current selection — the new Space's own requests run recovery.
+  const requestHeaders = options.requestContext?.headers ?? (await authHeaders());
+  const requestSpaceId = requestHeaders["x-rakazo-space-id"];
   try {
     const res = await fetch(`${options.requestContext?.apiBase ?? currentApiBase()}/rpc/${proc}`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
         origin: "rakazo://",
-        ...(options.requestContext?.headers ?? (await authHeaders())),
+        ...requestHeaders,
       },
       body: JSON.stringify({ json: body }),
       signal: controller.signal,
@@ -564,6 +573,8 @@ export async function rpc<T>(
       if (
         unauthorized &&
         previousSpaceId &&
+        requestSpaceId &&
+        selectedSpaceId() === requestSpaceId &&
         !options.requestContext &&
         !options.skipSpaceAuthRecovery
       ) {
