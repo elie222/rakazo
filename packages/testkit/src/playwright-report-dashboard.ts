@@ -1,5 +1,5 @@
 const MAX_HISTORY_LENGTH = 100;
-export const MAX_PLAYWRIGHT_SCREENSHOT_COUNT = 250;
+export const MAX_PLAYWRIGHT_SCREENSHOT_COUNT = 300;
 export const MAX_PLAYWRIGHT_SCREENSHOT_BYTES = 250 * 1024 * 1024;
 const SHARED_PAGE_STYLES = `
     :root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, sans-serif; background: #09090b; color: #fafafa; }
