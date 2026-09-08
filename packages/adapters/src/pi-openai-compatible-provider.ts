@@ -9,7 +9,6 @@ import {
 } from "@earendil-works/pi-ai";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
 import { Agent } from "undici";
-import { fetchCompatibleWithUndiciAgent } from "./undici-compat-fetch.js";
 import { declaredVisionModelIds, inputModalities } from "./model-modalities.js";
 import {
   createAddressCheckedLookup,
@@ -26,6 +25,7 @@ import {
   normalizeOpenAiCompatibleBaseUrl,
   OPENAI_COMPATIBLE_PROVIDER_ID,
 } from "./openai-compatible-url.js";
+import { fetchCompatibleWithUndiciAgent } from "./undici-compat-fetch.js";
 
 export { OPENAI_COMPATIBLE_PROVIDER_ID };
 
@@ -165,9 +165,7 @@ export function createOpenAiCompatibleFetch(
       isIP(hostname) === 0
         ? new Agent({ connect: { lookup: createOpenAiCompatibleLookup(url, resolve) } })
         : undefined;
-    const transportFetch = dispatcher
-      ? fetchCompatibleWithUndiciAgent(baseFetch)
-      : baseFetch;
+    const transportFetch = dispatcher ? fetchCompatibleWithUndiciAgent(baseFetch) : baseFetch;
     try {
       const response =
         input instanceof Request && dispatcher

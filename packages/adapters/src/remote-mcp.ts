@@ -4,7 +4,6 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { ConnectorTool } from "@rakazo/adapter-kit";
 import { Agent } from "undici";
-import { fetchCompatibleWithUndiciAgent } from "./undici-compat-fetch.js";
 import { combineSignals } from "./connector-safety.js";
 import {
   createAddressCheckedLookup,
@@ -13,6 +12,7 @@ import {
   type ResolvedAddress,
   type ResolveHostname,
 } from "./network-address.js";
+import { fetchCompatibleWithUndiciAgent } from "./undici-compat-fetch.js";
 
 const MAX_MCP_TOOLS = 250;
 const MAX_MCP_PAGES = 20;

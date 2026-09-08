@@ -2,13 +2,13 @@ import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
 import { readBoundedResponseBytes } from "@rakazo/core";
 import { Agent } from "undici";
-import { fetchCompatibleWithUndiciAgent } from "./undici-compat-fetch.js";
 import {
   createAddressCheckedLookup,
   isPrivateAddress,
   type ResolvedAddress,
   type ResolveHostname,
 } from "./network-address.js";
+import { fetchCompatibleWithUndiciAgent } from "./undici-compat-fetch.js";
 
 const DEFAULT_TIMEOUT_MS = 15_000;
 const DEFAULT_MAX_BYTES = 5 * 1024 * 1024;
