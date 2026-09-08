@@ -185,6 +185,7 @@ msgstr "Action confirmations"
 
 #. placeholder {0}: bot.name
 #: src/pages/BotContextMenu.tsx:82
+#: src/pages/Shell.tsx:2609
 msgid "Actions for {0}"
 msgstr "Actions for {0}"
 
@@ -548,10 +549,6 @@ msgstr "Avatars"
 #: src/pages/RoutineEditor.tsx:260
 msgid "Back"
 msgstr "Back"
-
-#: src/pages/Onboarding.tsx:277
-msgid "Back to app"
-msgstr "Back to app"
 
 #: src/pages/Auth.tsx:126
 #: src/pages/Auth.tsx:235

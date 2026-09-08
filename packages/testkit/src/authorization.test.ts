@@ -3,7 +3,13 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { ComposioEmulator } from "@rakazo/adapters";
 import type { appContract, Space, SpaceNavigation } from "@rakazo/contracts";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import {
+  claimEmptySpaceDeletionForMember,
+  deleteEmptySpaceForMember,
+  releaseSpaceDeletionClaim,
+  renewSpaceDeletionClaim,
+} from "@rakazo/db";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { createApp } from "../../../apps/api/src/app.ts";
 import { sessionCookieHeader } from "./index.js";
 
@@ -841,7 +847,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
     const actor = await rpc<Actor>(app, cookie, "me");
     const empty = await rpc<Space>(app, cookie, "spaces/create", { name: "Temporary" });
     const busy = await rpc<Space>(app, cookie, "spaces/create", { name: "Busy" });
-    await rpc<Bot>(app, cookie, "bots/create", botInput("Busy bot"), busy.id);
+    const busyBot = await rpc<Bot>(app, cookie, "bots/create", botInput("Busy bot"), busy.id);
 
     await expect(raw(app, cookie, "spaces/remove", { spaceId: busy.id })).resolves.toMatchObject({
       status: 400,
@@ -849,6 +855,15 @@ describeWithDatabase("API authorization and resource isolation", () => {
     await expect(
       handles.prisma.space.findUnique({ where: { id: busy.id } }),
     ).resolves.not.toBeNull();
+    await rpc(app, cookie, "bots/archive", { botId: busyBot.id }, busy.id);
+    expect(
+      (await rpc<SpaceNavigation>(app, cookie, "spaces/list", {}, busy.id)).spaces.find(
+        (space) => space.id === busy.id,
+      ),
+    ).toMatchObject({ hasContent: true, canDelete: false });
+    await expect(raw(app, cookie, "spaces/remove", { spaceId: busy.id })).resolves.toMatchObject({
+      status: 400,
+    });
     await expect(
       raw(app, cookie, "spaces/remove", { spaceId: actor.spaceId }),
     ).resolves.toMatchObject({ status: 400 });
@@ -871,6 +886,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
 
     // Shared-space members must not delete; only the SpaceMember owner may.
     const shared = await rpc<Space>(app, cookie, "spaces/create", { name: "Shared empty" });
+    expect(shared.canDelete).toBe(true);
     const sharedRow = await handles.prisma.space.findUniqueOrThrow({
       where: { id: shared.id },
       select: { organizationId: true },
@@ -916,6 +932,12 @@ describeWithDatabase("API authorization and resource isolation", () => {
       botInput("Owner shared bot"),
       shared.id,
     );
+    const ownerNavigation = await rpc<SpaceNavigation>(app, cookie, "spaces/list", {}, shared.id);
+    expect(ownerNavigation.spaces).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: shared.id, hasContent: true, canDelete: false }),
+      ]),
+    );
     const memberNavigation = await rpc<SpaceNavigation>(
       app,
       memberCookie,
@@ -924,10 +946,17 @@ describeWithDatabase("API authorization and resource isolation", () => {
       shared.id,
     );
     expect(memberNavigation.spaces).toEqual(
-      expect.arrayContaining([expect.objectContaining({ id: shared.id, hasContent: true })]),
+      expect.arrayContaining([
+        expect.objectContaining({ id: shared.id, hasContent: true, canDelete: false }),
+      ]),
     );
 
     await rpc(app, cookie, "bots/remove", { botId: ownerBot.id, deleteMemories: true }, shared.id);
+    expect(
+      (await rpc<SpaceNavigation>(app, cookie, "spaces/list", {}, shared.id)).spaces.find(
+        (space) => space.id === shared.id,
+      )?.canDelete,
+    ).toBe(true);
     const ownerRemoved = await rpc<{ ok: true; activeSpaceId: string }>(
       app,
       cookie,
@@ -938,6 +967,186 @@ describeWithDatabase("API authorization and resource isolation", () => {
     );
     expect(ownerRemoved.ok).toBe(true);
     await expect(handles.prisma.space.findUnique({ where: { id: shared.id } })).resolves.toBeNull();
+  });
+
+  it("blocks bot creation after empty space deletion is claimed", async () => {
+    const cookie = await signup(app, `space-race-${stamp}@rakazo.test`, "Space Race");
+    const actor = await rpc<Actor>(app, cookie, "me");
+    const space = await rpc<Space>(app, cookie, "spaces/create", { name: "Concurrent" });
+    await handles.prisma.computer.create({
+      data: {
+        spaceId: space.id,
+        userId: actor.userId,
+        scopeKey: `space-race-scope-${stamp}`,
+        homeKey: `space-race-home-${stamp}`,
+        kind: "fake",
+        providerRef: `space-race-provider-${stamp}`,
+      },
+    });
+    const deleteInput = {
+      currentSpaceId: space.id,
+      userId: actor.userId,
+      spaceId: space.id,
+    };
+
+    const firstClaim = await claimEmptySpaceDeletionForMember(handles.prisma, deleteInput);
+    expect(firstClaim.recovered).toBe(false);
+    expect(firstClaim.computers).toEqual([
+      expect.objectContaining({ providerRef: `space-race-provider-${stamp}` }),
+    ]);
+    await expect(
+      renewSpaceDeletionClaim(handles.prisma, { ...deleteInput, claimId: firstClaim.claimId }),
+    ).resolves.toBe(true);
+    const claimedNavigation = await rpc<SpaceNavigation>(app, cookie, "spaces/list", {}, space.id);
+    expect(claimedNavigation.spaces.find((item) => item.id === space.id)?.canDelete).toBe(false);
+    const blockedCreate = await raw(app, cookie, "bots/create", botInput("Racing bot"), space.id);
+    expect(blockedCreate.ok).toBe(false);
+    expect(blockedCreate.status).toBe(409);
+    expect(await handles.prisma.bot.count({ where: { spaceId: space.id } })).toBe(0);
+    expect(
+      await handles.prisma.computer.findFirst({
+        where: { spaceId: space.id },
+        select: { providerRef: true },
+      }),
+    ).toEqual({ providerRef: `space-race-provider-${stamp}` });
+
+    await handles.prisma.space.update({
+      where: { id: space.id },
+      data: { deletingAt: new Date(Date.now() - 6 * 60_000) },
+    });
+    const replacementClaim = await claimEmptySpaceDeletionForMember(handles.prisma, deleteInput);
+    expect(replacementClaim.recovered).toBe(true);
+    await expect(
+      deleteEmptySpaceForMember(handles.prisma, { ...deleteInput, claimId: firstClaim.claimId }),
+    ).rejects.toThrow("Space deletion is already in progress");
+    await releaseSpaceDeletionClaim(handles.prisma, {
+      ...deleteInput,
+      claimId: firstClaim.claimId,
+    });
+    expect(
+      await handles.prisma.space.findUnique({
+        where: { id: space.id },
+        select: { deletionClaimId: true },
+      }),
+    ).toEqual({ deletionClaimId: replacementClaim.claimId });
+    await releaseSpaceDeletionClaim(handles.prisma, {
+      ...deleteInput,
+      claimId: replacementClaim.claimId,
+    });
+    const created = await raw(app, cookie, "bots/create", botInput("After retry"), space.id);
+    expect(created.ok).toBe(true);
+  });
+
+  it("keeps a space claimed after ambiguous sandbox teardown failure", async () => {
+    const cookie = await signup(app, `space-teardown-${stamp}@rakazo.test`, "Teardown");
+    const actor = await rpc<Actor>(app, cookie, "me");
+    const space = await rpc<Space>(app, cookie, "spaces/create", { name: "Teardown" });
+    await handles.prisma.computer.create({
+      data: {
+        spaceId: space.id,
+        userId: actor.userId,
+        scopeKey: `space-teardown-scope-${stamp}`,
+        homeKey: `space-teardown-home-${stamp}`,
+        kind: "fake",
+        providerRef: `space-teardown-provider-${stamp}`,
+      },
+    });
+    const destroy = vi
+      .spyOn(handles.sandbox, "destroy")
+      .mockRejectedValueOnce(new Error("ambiguous provider failure"));
+
+    try {
+      const removed = await raw(app, cookie, "spaces/remove", { spaceId: space.id }, space.id);
+      expect(removed.status).toBe(500);
+      const lifecycle = await handles.prisma.space.findUnique({
+        where: { id: space.id },
+        select: { deletingAt: true, deletionClaimId: true },
+      });
+      expect(lifecycle?.deletingAt).toBeInstanceOf(Date);
+      expect(lifecycle?.deletionClaimId).toBeTruthy();
+      expect(
+        await handles.prisma.computer.findFirst({
+          where: { spaceId: space.id },
+          select: { providerRef: true },
+        }),
+      ).toEqual({ providerRef: `space-teardown-provider-${stamp}` });
+      const blockedCreate = await raw(
+        app,
+        cookie,
+        "bots/create",
+        botInput("Blocked after teardown"),
+        space.id,
+      );
+      expect(blockedCreate.ok).toBe(false);
+    } finally {
+      destroy.mockRestore();
+      const lifecycle = await handles.prisma.space.findUnique({
+        where: { id: space.id },
+        select: { deletionClaimId: true },
+      });
+      if (lifecycle?.deletionClaimId) {
+        await releaseSpaceDeletionClaim(handles.prisma, {
+          currentSpaceId: space.id,
+          spaceId: space.id,
+          userId: actor.userId,
+          claimId: lifecycle.deletionClaimId,
+        });
+      }
+    }
+  });
+
+  it("times out a hung sandbox teardown without unblocking the space", async () => {
+    const cookie = await signup(app, `space-deadline-${stamp}@rakazo.test`, "Deadline");
+    const actor = await rpc<Actor>(app, cookie, "me");
+    const space = await rpc<Space>(app, cookie, "spaces/create", { name: "Deadline" });
+    await handles.prisma.computer.create({
+      data: {
+        spaceId: space.id,
+        userId: actor.userId,
+        scopeKey: `space-deadline-scope-${stamp}`,
+        homeKey: `space-deadline-home-${stamp}`,
+        kind: "fake",
+        providerRef: `space-deadline-provider-${stamp}`,
+      },
+    });
+    process.env.SPACE_TEARDOWN_TIMEOUT_MS = "50";
+    const destroy = vi
+      .spyOn(handles.sandbox, "destroy")
+      .mockImplementation(() => new Promise(() => undefined));
+
+    try {
+      const removed = await raw(app, cookie, "spaces/remove", { spaceId: space.id }, space.id);
+      expect(removed.status).toBe(500);
+      const lifecycle = await handles.prisma.space.findUnique({
+        where: { id: space.id },
+        select: { deletingAt: true, deletionClaimId: true },
+      });
+      expect(lifecycle?.deletingAt).toBeInstanceOf(Date);
+      expect(lifecycle?.deletionClaimId).toBeTruthy();
+      const blockedCreate = await raw(
+        app,
+        cookie,
+        "bots/create",
+        botInput("Blocked during teardown"),
+        space.id,
+      );
+      expect(blockedCreate.status).toBe(409);
+    } finally {
+      destroy.mockRestore();
+      delete process.env.SPACE_TEARDOWN_TIMEOUT_MS;
+      const lifecycle = await handles.prisma.space.findUnique({
+        where: { id: space.id },
+        select: { deletionClaimId: true },
+      });
+      if (lifecycle?.deletionClaimId) {
+        await releaseSpaceDeletionClaim(handles.prisma, {
+          currentSpaceId: space.id,
+          spaceId: space.id,
+          userId: actor.userId,
+          claimId: lifecycle.deletionClaimId,
+        });
+      }
+    }
   });
 
   it("validates custom thinking against the saved connection capability", async () => {

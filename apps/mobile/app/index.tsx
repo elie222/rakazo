@@ -5,7 +5,6 @@ import {
   type SpaceBot,
   type SpaceGroup,
 } from "@rakazo/contracts";
-import { groupBotsForSidebar } from "@rakazo/core";
 import { botColors } from "@rakazo/ui-tokens";
 import { Redirect, useFocusEffect, useRouter } from "expo-router";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -50,6 +49,15 @@ import { mobileTokens, resolveMobileAppearance } from "../lib/appearance";
 import { allowFocusPrompt, scheduleFocusPrompt } from "../lib/focus-prompt";
 import { t, useI18n } from "../lib/i18n";
 import { botTag, filterBots, formatThreadTime, userInitials } from "../lib/inbox";
+import {
+  canDeleteInboxSpace,
+  type InboxSpace,
+  type InboxSpaceItem,
+  removeInboxSpace,
+  retryInboxSpaceFallback,
+  selectInboxSpace,
+  spaceInboxItems,
+} from "../lib/inbox-spaces";
 import { dismissThreadNotifications, resumeLiveNotifications } from "../lib/live-notifications";
 import { native, useThemedStyles } from "../lib/native";
 import { previewSnippet } from "../lib/preview";
@@ -59,11 +67,7 @@ import { mobileSearchDestination } from "../lib/search-destination";
 
 const FALLBACK_COLOR = botColors[3];
 
-type InboxItem =
-  | { type: "bot"; bot: MobileBot | SpaceBot }
-  | { type: "group"; group: MobileGroup | SpaceGroup }
-  | { type: "search"; hit: SearchHit }
-  | { type: "heading"; key: string; title: string };
+type InboxItem = InboxSpaceItem | { type: "search"; hit: SearchHit };
 
 async function openMobileSpace(spaceId: string | undefined, open: () => void) {
   if (spaceId && !(await selectSpace(spaceId))) {
@@ -103,6 +107,12 @@ export default function Home() {
   const activityRequestId = useRef(0);
   const inboxRequestId = useRef(0);
   const creatingBotRef = useRef(false);
+  const spaceActionRef = useRef<{ busy: boolean; recoveryId: string | null }>({
+    busy: false,
+    recoveryId: null,
+  });
+  const [spaceBusy, setSpaceBusy] = useState(false);
+  const [spaceRecoveryId, setSpaceRecoveryId] = useState<string | null>(null);
 
   useEffect(() => {
     void loadActivityMode().then(setActivityMode);
@@ -117,6 +127,7 @@ export default function Home() {
   }, []);
 
   const loadBots = useCallback(async () => {
+    if (spaceActionRef.current.busy || spaceActionRef.current.recoveryId) return;
     const requestId = ++inboxRequestId.current;
     setError(null);
     try {
@@ -179,6 +190,7 @@ export default function Home() {
   );
 
   const loadActivity = useCallback(async () => {
+    if (spaceActionRef.current.busy || spaceActionRef.current.recoveryId) return;
     if (!hasSession || !activityMode || searching || query.trim()) {
       activityRequestId.current += 1;
       setActivity({ active: [], recent: [] });
@@ -284,27 +296,7 @@ export default function Home() {
               },
             ]
           : [];
-    const showSpaceNames = sidebarSpaces.length > 1;
-    return sidebarSpaces.flatMap((space) => {
-      const chats = [
-        ...space.bots.map((chat) => ({ type: "bot" as const, bot: chat, ...chat })),
-        ...space.groups.map((chat) => ({ type: "group" as const, group: chat, ...chat })),
-      ];
-      return groupBotsForSidebar(chats, space.botSections).flatMap((group) => [
-        ...(group.title || showSpaceNames
-          ? [
-              {
-                type: "heading" as const,
-                key: `${space.id}:${group.key}`,
-                title: showSpaceNames
-                  ? `🔒 ${space.name}${group.title ? ` · ${group.title}` : ""}`
-                  : (group.title ?? ""),
-              },
-            ]
-          : []),
-        ...group.bots,
-      ]);
-    });
+    return spaceInboxItems(sidebarSpaces);
   }, [botSections, locale, me, spaces, query, searching, searchHits, visible, visibleGroups]);
   const initials = userInitials(me?.name ?? "");
   const organizeChat = organizeTarget
@@ -315,8 +307,102 @@ export default function Home() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
 
+  async function chooseInboxSpace(spaceId: string) {
+    if (spaceActionRef.current.busy) return;
+    spaceActionRef.current.busy = true;
+    setSpaceBusy(true);
+    inboxRequestId.current += 1;
+    activityRequestId.current += 1;
+    setActivity({ active: [], recent: [] });
+    try {
+      const refresh = async () => {
+        spaceActionRef.current.recoveryId = null;
+        setSpaceRecoveryId(null);
+        spaceActionRef.current.busy = false;
+        await refreshBots();
+        await loadActivity();
+      };
+      const selected =
+        spaceActionRef.current.recoveryId === spaceId
+          ? await retryInboxSpaceFallback(spaceId, refresh)
+          : await selectInboxSpace(spaceId, refresh);
+      if (!selected) throw new Error(t("Could not switch spaces"));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : t("Could not switch spaces");
+      setError(message);
+      Alert.alert(message, t("Try again."));
+    } finally {
+      spaceActionRef.current.busy = false;
+      setSpaceBusy(false);
+    }
+  }
+
+  async function deleteInboxSpace(space: InboxSpace) {
+    if (
+      !canDeleteInboxSpace(space) ||
+      spaceActionRef.current.busy ||
+      spaceActionRef.current.recoveryId
+    )
+      return;
+    spaceActionRef.current.busy = true;
+    setSpaceBusy(true);
+    inboxRequestId.current += 1;
+    activityRequestId.current += 1;
+    try {
+      const recoveryId = await removeInboxSpace(space.id, async () => {
+        spaceActionRef.current.busy = false;
+        setActivity({ active: [], recent: [] });
+        await refreshBots();
+        await loadActivity();
+      });
+      if (recoveryId) {
+        spaceActionRef.current.recoveryId = recoveryId;
+        setSpaceRecoveryId(recoveryId);
+        setError(t("Could not switch spaces"));
+      }
+    } catch (err) {
+      Alert.alert(
+        t("Could not delete space"),
+        err instanceof Error ? err.message : t("Try again."),
+      );
+    } finally {
+      spaceActionRef.current.busy = false;
+      setSpaceBusy(false);
+    }
+  }
+
+  function showSpaceActions(space: InboxSpace) {
+    if (
+      !canDeleteInboxSpace(space) ||
+      spaceActionRef.current.busy ||
+      spaceActionRef.current.recoveryId
+    )
+      return;
+    Alert.alert(space.name, undefined, [
+      { text: t("Cancel"), style: "cancel" },
+      {
+        text: t("Delete space"),
+        style: "destructive",
+        onPress: () =>
+          Alert.alert(
+            t("Delete {name}?", { name: space.name }),
+            t("This removes the empty space for everyone."),
+            [
+              { text: t("Cancel"), style: "cancel" },
+              {
+                text: t("Delete"),
+                style: "destructive",
+                onPress: () => void deleteInboxSpace(space),
+              },
+            ],
+          ),
+      },
+    ]);
+  }
+
   const createQuickBot = useCallback(async () => {
-    if (creatingBotRef.current) return;
+    if (creatingBotRef.current || spaceActionRef.current.busy || spaceActionRef.current.recoveryId)
+      return;
     creatingBotRef.current = true;
     try {
       // Authoritative roster so a slow home fetch does not treat later bots as first.
@@ -388,14 +474,15 @@ export default function Home() {
           </CircleButton>
           <CircleButton
             accessibilityLabel={t("Create")}
-            onPress={() =>
+            onPress={() => {
+              if (spaceActionRef.current.busy || spaceActionRef.current.recoveryId) return;
               Alert.alert(t("Create"), undefined, [
                 { text: t("New bot"), onPress: () => void createQuickBot() },
                 { text: t("New group"), onPress: () => router.push("/new-group") },
                 { text: t("New space"), onPress: () => router.push("/new-space") },
                 { text: t("Cancel"), style: "cancel" },
-              ])
-            }
+              ]);
+            }}
           >
             <NativeSymbol ios="plus" android="add" size={18} />
           </CircleButton>
@@ -419,6 +506,16 @@ export default function Home() {
       ) : null}
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
+      {spaceRecoveryId ? (
+        <Pressable
+          accessibilityRole="button"
+          disabled={spaceBusy}
+          onPress={() => void chooseInboxSpace(spaceRecoveryId)}
+          style={styles.recoveryAction}
+        >
+          <Text style={styles.spaceTitle}>{t("Try again.")}</Text>
+        </Pressable>
+      ) : null}
 
       <FlatList<InboxItem>
         data={listData}
@@ -477,11 +574,45 @@ export default function Home() {
               }}
             />
           ) : item.type === "heading" ? (
-            <Text style={styles.sectionHeading}>{item.title}</Text>
+            item.space ? (
+              <View style={styles.spaceHeading}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={item.title}
+                  accessibilityState={{
+                    selected: item.space.id === me?.spaceId,
+                    disabled: spaceBusy,
+                  }}
+                  disabled={spaceBusy}
+                  onPress={() => {
+                    if (item.space) void chooseInboxSpace(item.space.id);
+                  }}
+                  style={({ pressed }) => [styles.spaceSelect, pressed && styles.rowPressed]}
+                >
+                  <Text style={styles.spaceTitle}>{item.title}</Text>
+                </Pressable>
+                {canDeleteInboxSpace(item.space) ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={t("Space actions for {name}", { name: item.title })}
+                    disabled={spaceBusy || !!spaceRecoveryId}
+                    onPress={() => {
+                      if (item.space) showSpaceActions(item.space);
+                    }}
+                    style={({ pressed }) => [styles.spaceActions, pressed && styles.rowPressed]}
+                  >
+                    <NativeSymbol ios="ellipsis" android="ellipsis-horizontal" size={20} />
+                  </Pressable>
+                ) : null}
+              </View>
+            ) : (
+              <Text style={styles.sectionHeading}>{item.title}</Text>
+            )
           ) : item.type === "group" ? (
             <GroupRow
               group={item.group}
               onPress={() => {
+                if (spaceActionRef.current.busy || spaceActionRef.current.recoveryId) return;
                 void openMobileSpace(item.group.spaceId, () =>
                   router.push({
                     pathname: "/group-thread",
@@ -499,6 +630,7 @@ export default function Home() {
             <BotRow
               bot={item.bot}
               onPress={() => {
+                if (spaceActionRef.current.busy || spaceActionRef.current.recoveryId) return;
                 void openMobileSpace(item.bot.spaceId, () =>
                   router.push({
                     pathname: "/thread",
@@ -970,6 +1102,34 @@ function createHomeStyles() {
       height: 8,
       borderRadius: 4,
       backgroundColor: tokens.foreground,
+    },
+    spaceHeading: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingHorizontal: 16,
+      paddingTop: 8,
+    },
+    spaceSelect: {
+      flex: 1,
+      minHeight: 44,
+      justifyContent: "center",
+    },
+    spaceTitle: {
+      color: native.label,
+      fontSize: 14,
+      fontWeight: "600",
+      writingDirection: "auto",
+    },
+    spaceActions: {
+      width: 44,
+      height: 44,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    recoveryAction: {
+      minHeight: 44,
+      paddingHorizontal: 20,
+      justifyContent: "center",
     },
     sectionHeading: {
       color: native.secondaryLabel,

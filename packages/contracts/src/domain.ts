@@ -249,6 +249,8 @@ export const SpaceSchema = z.object({
   isDefault: z.boolean(),
   /** True when the space has any bot or group, including archived. */
   hasContent: z.boolean(),
+  /** True only when the current member may delete this non-default space. */
+  canDelete: z.boolean().optional(),
   bots: z.array(SpaceBotSchema),
   groups: z.array(SpaceGroupSchema),
   externalConversations: z.array(ExternalConversationSchema),
