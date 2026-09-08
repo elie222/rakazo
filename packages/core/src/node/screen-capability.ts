@@ -52,12 +52,9 @@ export function sealScreenCapability(
   const policy = target.searchParams.get("view_only") === "false" ? "control" : "view";
   const expiresAt = now + SCREEN_PROXY_TTL_MS;
   const iv = randomBytes(12);
-  const cipher = createCipheriv(
-    "aes-256-gcm",
-    createHash("sha256").update(secret).digest(),
-    iv,
-    { authTagLength: 16 },
-  );
+  const cipher = createCipheriv("aes-256-gcm", createHash("sha256").update(secret).digest(), iv, {
+    authTagLength: 16,
+  });
   cipher.setAAD(Buffer.from(`${policy}:${expiresAt}`));
   const ciphertext = Buffer.concat([
     cipher.update(JSON.stringify({ url, scope }), "utf8"),

@@ -111,8 +111,8 @@ describe("screen capability lifecycle authorization", () => {
     expect(
       addScreenProxyCapability("desktop://screen/computer", secret, "https://app.example", scope),
     ).toBe("desktop://screen/computer");
-    expect(
-      addScreenProxyCapability("local://preview", secret, "https://app.example", scope),
-    ).toBe("local://preview");
+    expect(addScreenProxyCapability("local://preview", secret, "https://app.example", scope)).toBe(
+      "local://preview",
+    );
   });
 });
