@@ -12,8 +12,9 @@ import {
 } from "./agent-skill.js";
 
 describe("built-in skill merging", () => {
-  it("uses the same normalized names for catalog precedence and prompt expansion", () => {
+  it("keeps same-name skills with distinct identities without duplicating an exact id", () => {
     const builtin = {
+      id: "builtin:Interrogate",
       name: "Interrogate",
       description: "Builtin review",
       content: "Builtin instructions",
@@ -22,19 +23,23 @@ describe("built-in skill merging", () => {
     };
     const saved = {
       ...builtin,
+      id: "plugin-interrogate",
       name: " Interrogate ",
       content: "Saved instructions",
       source: "user" as const,
       readOnly: false,
     };
     const skills = mergeBuiltinSkills<typeof builtin | typeof saved>([builtin], [saved]);
-    expect(skills).toEqual([saved]);
+    expect(skills).toEqual([saved, builtin]);
     expect(findSkillByName(skills, " INTERROGATE ")).toBe(saved);
     for (const prompt of ["/Interrogate\nreview this", "Use @Interrogate to review this"]) {
       expect(expandSkillReferencesInPrompt(prompt, skills)).toContain("Saved instructions");
       expect(expandSkillReferencesInPrompt(prompt, skills)).not.toContain("Builtin instructions");
       expect(expandSkillReferencesInPrompt(prompt, skills)).not.toContain("@Interrogate");
     }
+    expect(
+      mergeBuiltinSkills<typeof builtin | typeof saved>([builtin], [{ ...saved, id: builtin.id }]),
+    ).toEqual([{ ...saved, id: builtin.id }]);
     expect(mergeBuiltinSkills([builtin], [])).toEqual([builtin]);
   });
 });
