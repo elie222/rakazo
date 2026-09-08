@@ -177,6 +177,7 @@ function toThreadMessage(row: {
   replyToMessageId: string | null;
   runId: string | null;
   thumbsUp: boolean;
+  reaction?: string | null;
   createdAt: Date;
 }): ThreadMessage {
   return {
@@ -189,6 +190,7 @@ function toThreadMessage(row: {
     replyToMessageId: row.replyToMessageId ?? undefined,
     runId: row.runId ?? undefined,
     thumbsUp: row.thumbsUp,
+    reaction: row.reaction as import("@rakazo/contracts").MessageReaction | null | undefined,
     createdAt: row.createdAt.toISOString(),
   };
 }

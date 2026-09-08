@@ -64,17 +64,27 @@ describe("queued run supersession", () => {
 describe("message thumbs-up", () => {
   it("wakes once on add and not on replay or removal", async () => {
     let thumbsUp = false;
+    let reaction: string | null = null;
     let busy = false;
     let eventSeq = 0;
     const tx = {
       $queryRaw: vi.fn(async () => [
-        { id: "message-1", role: "bot", blocks: [{ kind: "text", text: "Done" }], thumbsUp },
+        {
+          id: "message-1",
+          role: "bot",
+          blocks: [{ kind: "text", text: "Done" }],
+          thumbsUp,
+          reaction,
+        },
       ]),
       message: {
-        update: vi.fn(async ({ data }: { data: { thumbsUp: boolean } }) => {
-          thumbsUp = data.thumbsUp;
-          return { id: "message-1" };
-        }),
+        update: vi.fn(
+          async ({ data }: { data: { thumbsUp: boolean; reaction: string | null } }) => {
+            thumbsUp = data.thumbsUp;
+            reaction = data.reaction;
+            return { id: "message-1" };
+          },
+        ),
       },
       run: {
         findFirst: vi.fn(async () => (busy ? { id: "run-active" } : null)),
@@ -123,7 +133,7 @@ describe("message thumbs-up", () => {
     expect(String(tx.$queryRaw.mock.calls[0]?.[0])).toContain("SELECT id FROM threads");
     expect(String(tx.$queryRaw.mock.calls[0]?.[0])).toContain("FOR UPDATE");
     expect(String(tx.$queryRaw.mock.calls[1]?.[0])).toContain(
-      'SELECT id, "thumbsUp" FROM messages',
+      'SELECT id, "thumbsUp", reaction FROM messages',
     );
     expect(String(tx.$queryRaw.mock.calls[1]?.[0])).toContain("FOR UPDATE");
     expect(tx.run.create).toHaveBeenCalledWith(
@@ -136,11 +146,23 @@ describe("message thumbs-up", () => {
       expect.objectContaining({
         data: expect.objectContaining({
           type: "thread.message.reaction",
-          payload: { messageId: "message-1", thumbsUp: true },
+          payload: { messageId: "message-1", thumbsUp: true, reaction: "👍" },
         }),
       }),
     );
     expect(thumbsUp).toBe(true);
+    for (const emoji of ["👎", "❤️", "😂", "🎉", "😮"] as const) {
+      await expect(
+        reactToThreadMessage({ prisma }, actor, target, "message-1", false, emoji),
+      ).resolves.toMatchObject({ changed: true, runId: null });
+      expect(reaction).toBe(emoji);
+      await expect(
+        reactToThreadMessage({ prisma }, actor, target, "message-1", false, emoji),
+      ).resolves.toMatchObject({ changed: false });
+    }
+    await reactToThreadMessage({ prisma }, actor, target, "message-1", false, null);
+    expect(reaction).toBeNull();
+    expect(tx.task.create).toHaveBeenCalledOnce();
   });
 });
 

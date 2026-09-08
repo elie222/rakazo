@@ -78,6 +78,7 @@ import {
   IntegrationProviderConfigSchema,
   IntegrationSetupStateSchema,
 } from "./integration-settings.js";
+import { MessageReactionSchema } from "./reactions.js";
 import { RunsListOutputSchema } from "./runs.js";
 import { SearchQueryOutputSchema } from "./search.js";
 
@@ -287,6 +288,7 @@ export const appContract = {
         threadTarget.safeExtend({
           messageId: Id,
           thumbsUp: z.boolean(),
+          reaction: MessageReactionSchema.nullable().optional(),
         }),
       )
       .output(z.object({ ok: z.literal(true) })),

@@ -561,6 +561,7 @@ export type MobileMessage = {
   botId?: string;
   replyToMessageId?: string;
   thumbsUp?: boolean;
+  reaction?: import("@rakazo/contracts").MessageReaction | null;
   createdAt?: string;
   blocks: MessageBlock[];
 };

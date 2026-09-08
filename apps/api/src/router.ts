@@ -1266,6 +1266,7 @@ export function createRouter(deps: RouterDeps) {
           target,
           input.messageId,
           input.thumbsUp,
+          input.reaction,
         );
         if (result.eventSeq != null) {
           await deps.events.notify(target.threadId, result.eventSeq).catch((error) => {

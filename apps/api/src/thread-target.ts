@@ -839,18 +839,24 @@ export async function reactToThreadMessage(
   target: ThreadTarget,
   messageId: string,
   thumbsUp: boolean,
+  reaction?: import("@rakazo/contracts").MessageReaction | null,
 ) {
+  const selectedReaction = reaction === undefined ? (thumbsUp ? "👍" : null) : reaction;
+  thumbsUp = selectedReaction === "👍";
   return deps.prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT id FROM threads WHERE id = ${target.threadId} FOR UPDATE`;
     const [message] = await tx.$queryRaw<
-      Array<{ id: string; thumbsUp: boolean }>
-    >`SELECT id, "thumbsUp" FROM messages WHERE id = ${messageId} AND "threadId" = ${target.threadId} FOR UPDATE`;
+      Array<{ id: string; thumbsUp: boolean; reaction?: string | null }>
+    >`SELECT id, "thumbsUp", reaction FROM messages WHERE id = ${messageId} AND "threadId" = ${target.threadId} FOR UPDATE`;
     if (!message) throw new IsolationError();
-    if (message.thumbsUp === thumbsUp) {
+    if ((message.reaction ?? (message.thumbsUp ? "👍" : null)) === selectedReaction) {
       return { changed: false, eventSeq: null, runId: null };
     }
 
-    await tx.message.update({ where: { id: message.id }, data: { thumbsUp } });
+    await tx.message.update({
+      where: { id: message.id },
+      data: { thumbsUp, reaction: selectedReaction },
+    });
     const botId = target.kind === "bot" ? target.botId : target.memberBotIds[0];
     if (!botId) throw new IsolationError();
 
@@ -891,7 +897,7 @@ export async function reactToThreadMessage(
       threadId: target.threadId,
       botId,
       type: "thread.message.reaction",
-      payload: { messageId: message.id, thumbsUp },
+      payload: { messageId: message.id, thumbsUp, reaction: selectedReaction },
       runId: run?.id,
     });
     return { changed: true, eventSeq: event.seq, runId: run?.id ?? null };

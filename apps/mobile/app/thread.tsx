@@ -6,7 +6,11 @@ import type {
   MessageBlock,
   Routine,
 } from "@rakazo/contracts";
-import { canReactToThreadMessage } from "@rakazo/contracts";
+import {
+  canReactToThreadMessage,
+  MESSAGE_REACTIONS,
+  type MessageReaction,
+} from "@rakazo/contracts";
 import {
   abortableDelay,
   attachmentsForThread,
@@ -1243,7 +1247,7 @@ function Thread() {
     );
   }
 
-  async function reactToMessage(message: MobileMessage) {
+  async function reactToMessage(message: MobileMessage, reaction: MessageReaction | null = null) {
     const targetBotId = botId;
     const targetGroupId = groupId;
     if (!targetBotId && !targetGroupId) return;
@@ -1251,7 +1255,8 @@ function Thread() {
       await rpc("threads/react", {
         ...(targetGroupId ? { groupId: targetGroupId } : { botId: targetBotId! }),
         messageId: message.id,
-        thumbsUp: !message.thumbsUp,
+        thumbsUp: reaction === "👍",
+        reaction,
       });
     } catch (err) {
       if (!isCurrentTarget(targetBotId, targetGroupId)) return;
@@ -1266,8 +1271,24 @@ function Thread() {
         ? [
             {
               name: "react",
-              text: message.thumbsUp ? t("Remove thumbs-up") : t("Add thumbs-up"),
-              onPress: () => void reactToMessage(message),
+              text: t("React"),
+              onPress: () =>
+                presentMessageActionSheet({
+                  cancel: t("Cancel"),
+                  more: t("More"),
+                  colorScheme,
+                  actions: MESSAGE_REACTIONS.map((emoji) => ({
+                    name: emoji,
+                    text: emoji,
+                    onPress: () =>
+                      void reactToMessage(
+                        message,
+                        (message.reaction ?? (message.thumbsUp ? "👍" : null)) === emoji
+                          ? null
+                          : emoji,
+                      ),
+                  })),
+                }),
             },
           ]
         : []),
@@ -1383,10 +1404,10 @@ function Thread() {
               actionProps={actionProps}
             />
           </Pressable>
-          {canReactToThreadMessage(message) && message.thumbsUp ? (
+          {canReactToThreadMessage(message) && (message.reaction || message.thumbsUp) ? (
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel={t("Remove thumbs-up")}
+              accessibilityLabel={t("Remove reaction")}
               accessibilityState={{ selected: true }}
               onPress={() => void reactToMessage(message)}
               hitSlop={8}
@@ -1395,7 +1416,9 @@ function Thread() {
                 marginTop: 4,
               }}
             >
-              <Text style={{ color: tokens.warning, fontSize: 13 }}>👍</Text>
+              <Text style={{ color: tokens.warning, fontSize: 13 }}>
+                {message.reaction ?? "👍"}
+              </Text>
             </Pressable>
           ) : null}
         </View>

@@ -46,6 +46,17 @@ export function updateMessageReaction<Message extends { id: string }>(
 ): Message[] {
   const messageId = String(payload.messageId ?? "");
   return messages.map((message) =>
-    message.id === messageId ? { ...message, thumbsUp: payload.thumbsUp === true } : message,
+    message.id === messageId
+      ? {
+          ...message,
+          thumbsUp: payload.thumbsUp === true,
+          reaction:
+            payload.reaction !== undefined
+              ? payload.reaction
+              : payload.thumbsUp === true
+                ? "👍"
+                : null,
+        }
+      : message,
   );
 }

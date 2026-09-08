@@ -28,6 +28,8 @@ import {
   ATTACHMENT_MAX_BYTES,
   ATTACHMENT_MAX_COUNT,
   canReactToThreadMessage,
+  MESSAGE_REACTIONS,
+  type MessageReaction,
   normalizeCreateBotProfile,
 } from "@rakazo/contracts";
 import {
@@ -1800,7 +1802,7 @@ export function ShellPage() {
     }
   }, []);
   const reactToMessage = useCallback(
-    async (message: ThreadMessage) => {
+    async (message: ThreadMessage, reaction: MessageReaction | null = null) => {
       const botId = activeBotId.current;
       const groupId = activeGroupId.current;
       if (!botId && !groupId) return;
@@ -1808,7 +1810,8 @@ export function ShellPage() {
         await rpc.threads.react({
           ...(groupId ? { groupId } : { botId: botId! }),
           messageId: message.id,
-          thumbsUp: !message.thumbsUp,
+          thumbsUp: reaction === "👍",
+          reaction,
         });
       } catch (error) {
         const stillHere = groupId
@@ -4057,7 +4060,7 @@ const Transcript = memo(function Transcript({
   onOpenBot: (botId: string) => void;
   onAnswer: (message: ThreadMessage, text: string) => Promise<void>;
   onReply: (message: ThreadMessage) => void;
-  onReact: (message: ThreadMessage) => Promise<void>;
+  onReact: (message: ThreadMessage, reaction?: MessageReaction | null) => Promise<void>;
   onJumpToMessage: (messageId: string) => void;
   onOpenPeerMessages: (peer: { peerBotId: string; peerBotName: string }) => void;
   memberName?: (botId: string | undefined) => string | undefined;
@@ -4270,16 +4273,16 @@ const Transcript = memo(function Transcript({
                   />
                 </div>
               </div>
-              {!peerReceipt && message.thumbsUp ? (
+              {!peerReceipt && (message.reaction || message.thumbsUp) ? (
                 <button
                   type="button"
-                  aria-label={t`Remove thumbs-up`}
+                  aria-label={t`Remove reaction`}
                   onClick={() => void onReact(message)}
                   className={`mt-1 rounded-full border border-border bg-muted px-2 py-0.5 text-xs ${
                     message.role === "user" ? "ml-auto block" : ""
                   }`}
                 >
-                  👍
+                  {message.reaction ?? "👍"}
                 </button>
               ) : null}
             </div>
@@ -5048,10 +5051,11 @@ function MessageHoverActions({
   message: ThreadMessage;
   side: "start" | "end";
   onReply: (message: ThreadMessage) => void;
-  onReact: (message: ThreadMessage) => Promise<void>;
+  onReact: (message: ThreadMessage, reaction?: MessageReaction | null) => Promise<void>;
 }) {
   const { t } = useLingui();
   const [moreOpen, setMoreOpen] = useState(false);
+  const [reactionsOpen, setReactionsOpen] = useState(false);
 
   // Streaming progress bubbles keep hover free for selection / stop clicks.
   if (message.id.startsWith("progress:")) return null;
@@ -5066,22 +5070,46 @@ function MessageHoverActions({
     "grid h-7 w-7 place-items-center text-muted-foreground transition-colors hover:text-foreground";
 
   return (
-    <MessageHoverMetadata pinned={moreOpen} side={side}>
+    <MessageHoverMetadata pinned={moreOpen || reactionsOpen} side={side}>
       <div data-testid="message-hover-actions" className="flex items-center gap-0.5">
         {canReactToThreadMessage(message) ? (
-          <button
-            type="button"
-            aria-label={message.thumbsUp ? t`Remove thumbs-up` : t`Add thumbs-up`}
-            aria-pressed={Boolean(message.thumbsUp)}
-            onClick={() => void onReact(message)}
-            className={cn(
-              iconButtonClass,
-              "hidden [@media(hover:hover)_and_(pointer:fine)]:grid",
-              message.thumbsUp && "text-foreground",
-            )}
-          >
-            <Smile size={15} strokeWidth={1.7} />
-          </button>
+          <Popover open={reactionsOpen} onOpenChange={setReactionsOpen}>
+            <PopoverTrigger
+              aria-label={t`React`}
+              className={cn(
+                iconButtonClass,
+                "h-11 w-11 [@media(hover:hover)_and_(pointer:fine)]:h-7 [@media(hover:hover)_and_(pointer:fine)]:w-7",
+              )}
+            >
+              <Smile size={15} strokeWidth={1.7} />
+            </PopoverTrigger>
+            <PopoverContent
+              align={side === "end" ? "start" : "end"}
+              className="w-auto flex-row gap-0 rounded-2xl p-1.5"
+              aria-label={t`Reactions`}
+            >
+              {MESSAGE_REACTIONS.map((emoji) => (
+                <button
+                  key={emoji}
+                  type="button"
+                  aria-label={emoji}
+                  aria-pressed={(message.reaction ?? (message.thumbsUp ? "👍" : null)) === emoji}
+                  className="grid h-11 w-11 place-items-center rounded-xl text-2xl hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring aria-pressed:bg-accent"
+                  onClick={() => {
+                    setReactionsOpen(false);
+                    void onReact(
+                      message,
+                      (message.reaction ?? (message.thumbsUp ? "👍" : null)) === emoji
+                        ? null
+                        : emoji,
+                    );
+                  }}
+                >
+                  {emoji}
+                </button>
+              ))}
+            </PopoverContent>
+          </Popover>
         ) : null}
         <button
           type="button"
@@ -5102,15 +5130,6 @@ function MessageHoverActions({
             <MoreHorizontal size={15} strokeWidth={1.7} />
           </DropdownMenuTrigger>
           <DropdownMenuContent align={side === "end" ? "start" : "end"}>
-            {canReactToThreadMessage(message) ? (
-              <DropdownMenuItem
-                className="[@media(hover:hover)_and_(pointer:fine)]:hidden"
-                onClick={() => void onReact(message)}
-              >
-                <Smile size={15} />
-                {message.thumbsUp ? t`Remove thumbs-up` : t`Add thumbs-up`}
-              </DropdownMenuItem>
-            ) : null}
             <DropdownMenuItem
               className="[@media(hover:hover)_and_(pointer:fine)]:hidden"
               onClick={() => onReply(message)}
