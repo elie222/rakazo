@@ -3732,3 +3732,9 @@ msgstr "回应"
 
 msgid "Reactions"
 msgstr "表情回应"
+
+msgid "Opening chat…"
+msgstr "正在打开聊天…"
+
+msgid "Try again"
+msgstr "重试"

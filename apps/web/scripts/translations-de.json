@@ -582,5 +582,7 @@
   "Docker limits access to your computer for added security. Using {hostLabel} lets bots work with your local files and tools.": "Docker begrenzt für mehr Sicherheit den Zugriff auf deinen Computer. Wenn {hostLabel} verwendet wird, können Bots mit deinen lokalen Dateien und Werkzeugen arbeiten.",
   "Local access lets bots run commands without asking. Avoid it on shared or public servers.": "Mit lokalem Zugriff können Bots ohne Rückfrage Befehle ausführen. Vermeide dies auf gemeinsam genutzten oder öffentlichen Servern.",
   "Docker": "Docker",
+  "Opening chat…": "Chat wird geöffnet…",
+  "Try again": "Erneut versuchen",
   "To:": "An:"
 }

@@ -3732,3 +3732,9 @@ msgstr "Tepki ver"
 
 msgid "Reactions"
 msgstr "Tepkiler"
+
+msgid "Opening chat…"
+msgstr "Sohbet açılıyor…"
+
+msgid "Try again"
+msgstr "Tekrar dene"

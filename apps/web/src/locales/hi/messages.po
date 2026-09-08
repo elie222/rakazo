@@ -3732,3 +3732,9 @@ msgstr "प्रतिक्रिया दें"
 
 msgid "Reactions"
 msgstr "प्रतिक्रियाएँ"
+
+msgid "Opening chat…"
+msgstr "चैट खुल रही है…"
+
+msgid "Try again"
+msgstr "फिर से कोशिश करें"

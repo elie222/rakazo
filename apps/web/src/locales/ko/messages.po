@@ -3732,3 +3732,9 @@ msgstr "반응하기"
 
 msgid "Reactions"
 msgstr "반응"
+
+msgid "Opening chat…"
+msgstr "채팅 여는 중…"
+
+msgid "Try again"
+msgstr "다시 시도"

@@ -3732,3 +3732,9 @@ msgstr "Reagieren"
 
 msgid "Reactions"
 msgstr "Reaktionen"
+
+msgid "Opening chat…"
+msgstr "Chat wird geöffnet…"
+
+msgid "Try again"
+msgstr "Erneut versuchen"

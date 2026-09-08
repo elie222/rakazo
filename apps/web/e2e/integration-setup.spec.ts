@@ -40,8 +40,13 @@ test("setup exposes all integration choices and saves only the selected provider
   await page.getByLabel("API key", { exact: true }).fill("fake-composio-key");
   await captureScreenshot(page, testInfo, "integration-setup-composio");
   await page.getByRole("button", { name: "Continue", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Create your first bot" })).toBeVisible();
-  expect(saved).toEqual([{ json: { provider: "composio", apiKey: "fake-composio-key" } }]);
+  await expect
+    .poll(() => saved)
+    .toEqual([{ json: { provider: "composio", apiKey: "fake-composio-key" } }]);
+  await expect(page.getByRole("heading", { name: "Create your first bot" })).toHaveCount(0);
+  await expect(page.getByRole("combobox", { name: "Message Chief" })).toBeVisible({
+    timeout: 20_000,
+  });
 });
 
 test("direct MCP connects a catalog result without asking for a URL and assigns it to the first bot", async ({
@@ -97,8 +102,6 @@ test("direct MCP connects a catalog result without asking for a URL and assigns 
   await page.getByRole("button", { name: "Connect", exact: true }).click();
   await expect(page.getByRole("button", { name: "Connected", exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "integration-setup-direct-connected");
-  await page.getByRole("button", { name: "Continue", exact: true }).click();
-  await page.getByLabel("Name", { exact: true }).fill("Connected Bot");
   let createCalls = 0;
   let releaseCreate!: () => void;
   const createGate = new Promise<void>((resolve) => {
@@ -114,12 +117,13 @@ test("direct MCP connects a catalog result without asking for a URL and assigns 
     (response) => response.url().includes("/rpc/mcp/assignments/approve") && response.ok(),
   );
   await page.getByRole("button", { name: "Continue", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Continue", exact: true })).toBeDisabled();
+  await expect(page.getByText("Opening chat…")).toBeVisible();
   await expect.poll(() => createCalls).toBe(1);
   releaseCreate();
   const response = await assigned;
   expect(response.request().postDataJSON().json.serverId).toBe(serverId);
   await page.waitForURL(/\/app\//);
+  await expect(page.getByRole("combobox", { name: "Message Chief" })).toBeVisible();
 });
 
 test("Executor reconnect saves a replacement token before authorization", async ({ page }) => {
@@ -201,8 +205,8 @@ test("remote members skip server setup and keep direct MCP connections", async (
     }),
   );
   await signup(page, `remote-member-${Date.now()}@rakazo.test`, "password12", "Remote Member");
-  await expect(page.getByRole("heading", { name: "Create your first bot" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Server integrations" })).toBeHidden();
+  await expect(page.getByRole("heading", { name: "Create your first bot" })).toHaveCount(0);
   await captureScreenshot(page, testInfo, "remote-member-onboarding");
   await completeOnboarding(page);
   await page.goto("/integrations/setup?mode=mcp");
@@ -239,7 +243,7 @@ test("configured server owners manage providers from settings", async ({ page },
     }),
   );
   await signup(page, `configured-owner-${Date.now()}@rakazo.test`, "password12", "Server Owner");
-  await expect(page.getByRole("heading", { name: "Create your first bot" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Server integrations" })).toBeHidden();
   await completeOnboarding(page);
   await page.getByTestId("user-menu-trigger").click();
   await page.getByRole("button", { name: "Settings", exact: true }).click();
