@@ -53,8 +53,7 @@ describe.each([undefined, profile])(
       if (!("argv" in step)) throw new Error("expected command");
       if (
         browserProfile &&
-        (action.kind === "open" ||
-          (action.kind === "launch" && action.application === "chromium"))
+        (action.kind === "open" || (action.kind === "launch" && action.application === "chromium"))
       ) {
         expect(step.argv[2]).toBe(`RAKAZO_BROWSER_PROFILE=${browserProfile}`);
       }
