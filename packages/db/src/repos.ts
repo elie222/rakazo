@@ -384,8 +384,8 @@ export function createRepos(prisma: PrismaClient) {
       const envKind = process.env.SANDBOX_PROVIDER ?? "docker";
       const kind =
         envKind === "docker" && settings?.computerHost === "this-mac" ? "desktop" : envKind;
-      const bot = await prisma
-        .$transaction(async (tx) => {
+      const insertBot = () =>
+        prisma.$transaction(async (tx) => {
           const positions = await tx.bot.aggregate({
             where: { spaceId: actor.spaceId, userId: actor.userId },
             _max: { position: true },
@@ -459,28 +459,47 @@ export function createRepos(prisma: PrismaClient) {
             where: { id: created.id },
             include: { thread: true, computer: true },
           });
-        })
-        .catch(async (error: unknown) => {
-          if (!input.spawnKey || !isSpawnKeyConflict(error)) throw error;
-          const existing = await prisma.bot.findUnique({
-            where: {
-              spaceId_spawnKey: {
-                spaceId: actor.spaceId,
-                spawnKey: input.spawnKey,
-              },
-            },
-            include: { thread: true, computer: true },
-          });
-          if (!existing || existing.userId !== actor.userId) throw error;
-          // Archived holders still occupy the unique spawn key; restore so
-          // empty-space onboarding can recreate/reuse the first bot.
-          if (!existing.archivedAt) return existing;
-          return prisma.bot.update({
-            where: { id: existing.id },
-            data: { archivedAt: null },
-            include: { thread: true, computer: true },
-          });
         });
+
+      const findBySpawnKey = async () => {
+        if (!input.spawnKey) return null;
+        return prisma.bot.findUnique({
+          where: {
+            spaceId_spawnKey: {
+              spaceId: actor.spaceId,
+              spawnKey: input.spawnKey,
+            },
+          },
+          include: { thread: true, computer: true },
+        });
+      };
+
+      let bot: Awaited<ReturnType<typeof insertBot>>;
+      try {
+        bot = await insertBot();
+      } catch (error) {
+        if (!input.spawnKey || !isSpawnKeyConflict(error)) throw error;
+        const existing = await findBySpawnKey();
+        if (!existing || existing.userId !== actor.userId) throw error;
+        if (!existing.archivedAt) {
+          bot = existing;
+        } else {
+          // Free the key from the archived bot so empty-space onboarding
+          // creates a fresh first bot (stale thread/runtime must not return).
+          await prisma.bot.update({
+            where: { id: existing.id },
+            data: { spawnKey: null },
+          });
+          try {
+            bot = await insertBot();
+          } catch (retryError) {
+            if (!isSpawnKeyConflict(retryError)) throw retryError;
+            const winner = await findBySpawnKey();
+            if (!winner || winner.userId !== actor.userId || winner.archivedAt) throw retryError;
+            bot = winner;
+          }
+        }
+      }
       return mapBot(bot);
     },
 
