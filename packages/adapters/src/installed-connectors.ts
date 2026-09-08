@@ -385,7 +385,7 @@ async function loadOpenApiDocument(
   signal?: AbortSignal,
   remote: RemoteConnectorDependencies = {},
 ): Promise<Record<string, unknown>> {
-  const safeFetch = createSafeRemoteFetch(remote.fetch ?? globalThis.fetch, remote.resolveHostname);
+  const safeFetch = createSafeRemoteFetch(remote.fetch, remote.resolveHostname);
   try {
     const response = await safeFetch(url, {
       headers,
@@ -550,7 +550,7 @@ async function executeApiOperation(
     headers["content-type"] = "application/json";
   }
   applyCredential(url, headers, config.auth, credential);
-  const safeFetch = createSafeRemoteFetch(remote.fetch ?? globalThis.fetch, remote.resolveHostname);
+  const safeFetch = createSafeRemoteFetch(remote.fetch, remote.resolveHostname);
   try {
     const response = await safeFetch(url, {
       method: operation.method,

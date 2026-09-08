@@ -25,6 +25,7 @@ import {
   normalizeOpenAiCompatibleBaseUrl,
   OPENAI_COMPATIBLE_PROVIDER_ID,
 } from "./openai-compatible-url.js";
+import { dispatcherFetch } from "./undici-fetch.js";
 
 export { OPENAI_COMPATIBLE_PROVIDER_ID };
 
@@ -76,12 +77,19 @@ export function openAiCompatibleModel(
 
 function openAiCompatibleProvider(models: Model<"openai-completions">[]): Provider {
   const api = openAICompletionsApi();
-  const safeFetch = createOpenAiCompatibleFetch();
+  // Guard the fetch the caller supplied (the runtime's seam for tests) or the
+  // dispatcher-matched default; never the bare global.
   const safeApi: ProviderStreams = {
     stream: (model, context, options) =>
-      api.stream(model, context, { ...options, fetch: safeFetch }),
+      api.stream(model, context, {
+        ...options,
+        fetch: createOpenAiCompatibleFetch(options?.fetch),
+      }),
     streamSimple: (model, context, options) =>
-      api.streamSimple(model, context, { ...options, fetch: safeFetch }),
+      api.streamSimple(model, context, {
+        ...options,
+        fetch: createOpenAiCompatibleFetch(options?.fetch),
+      }),
   };
   return createProvider({
     id: OPENAI_COMPATIBLE_PROVIDER_ID,
@@ -150,7 +158,7 @@ function requestCarriesAuthorization(input: RequestInfo | URL, init?: RequestIni
 }
 
 export function createOpenAiCompatibleFetch(
-  baseFetch: typeof globalThis.fetch = globalThis.fetch,
+  baseFetch: typeof globalThis.fetch = dispatcherFetch,
   resolve: ResolveHostname = resolveHostname,
 ): typeof globalThis.fetch {
   return async (input, init) => {
@@ -363,7 +371,7 @@ async function readBoundedJson(response: Response): Promise<OpenAiCompatibleMode
 
 export async function probeOpenAiCompatibleModels(
   input: { baseUrl: string; apiKey?: string },
-  fetchImpl: typeof fetch = fetch,
+  fetchImpl?: typeof fetch,
   signal?: AbortSignal,
 ): Promise<string[]> {
   const baseUrl = assertAllowedOpenAiCompatibleUrl(input.baseUrl);

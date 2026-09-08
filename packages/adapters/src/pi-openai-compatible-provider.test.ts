@@ -128,6 +128,24 @@ describe("openai-compatible provider", () => {
     }
   });
 
+  it("drives the guarded dispatcher with a fetch from the same undici", async () => {
+    // See remote-mcp.test: failing inside the lookup proves the request was
+    // dispatched through the Agent rather than rejected by a mismatched fetch.
+    const previous = process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC;
+    process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC = "1";
+    try {
+      const safeFetch = createOpenAiCompatibleFetch(undefined, async () => {
+        throw new Error("lookup reached");
+      });
+      await expect(safeFetch("https://models.example.test/v1/models")).rejects.toMatchObject({
+        cause: { message: "lookup reached" },
+      });
+    } finally {
+      if (previous === undefined) delete process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC;
+      else process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC = previous;
+    }
+  });
+
   it("rejects public hostnames that resolve to private addresses", async () => {
     const lookup = createOpenAiCompatibleLookup(
       new URL("https://models.example.test/v1"),

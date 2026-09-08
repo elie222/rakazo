@@ -8,6 +8,8 @@ import {
 afterEach(() => vi.unstubAllGlobals());
 
 const TEST_NETWORK = {
+  // Read the global per call so a fetch stubbed after construction still wins.
+  fetch: (input: string | URL | Request, init?: RequestInit) => globalThis.fetch(input, init),
   resolveHostname: async () => [{ address: "203.0.113.10", family: 4 }],
 };
 

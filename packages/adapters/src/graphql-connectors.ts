@@ -295,7 +295,7 @@ export async function executeGraphqlOperation(
     if (name in args) variables[name] = args[name];
   }
 
-  const safeFetch = createSafeRemoteFetch(remote.fetch ?? globalThis.fetch, remote.resolveHostname);
+  const safeFetch = createSafeRemoteFetch(remote.fetch, remote.resolveHostname);
   try {
     const response = await safeFetch(url, {
       method: "POST",
@@ -357,7 +357,7 @@ async function introspectGraphqlEndpoint(
   signal?: AbortSignal,
   remote: RemoteGraphqlDependencies = {},
 ): Promise<Record<string, unknown>> {
-  const safeFetch = createSafeRemoteFetch(remote.fetch ?? globalThis.fetch, remote.resolveHostname);
+  const safeFetch = createSafeRemoteFetch(remote.fetch, remote.resolveHostname);
   try {
     const response = await safeFetch(url, {
       method: "POST",

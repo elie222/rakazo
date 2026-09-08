@@ -24,6 +24,12 @@ const ASSIGNMENT = {
   server: SERVER,
 };
 
+const TEST_NETWORK = {
+  // Read the global per call so a fetch stubbed after construction still wins.
+  fetch: (input: string | URL | Request, init?: RequestInit) => globalThis.fetch(input, init),
+  resolveHostname: async () => [{ address: "203.0.113.10", family: 4 }],
+};
+
 function mcpFetch(
   state: {
     failNext: boolean;
@@ -102,7 +108,7 @@ describe("MCP connector session cache", () => {
       },
     };
     const connector = new McpConnector(prisma as never, {} as never, {
-      network: { resolveHostname: async () => [{ address: "203.0.113.10", family: 4 }] },
+      network: TEST_NETWORK,
     });
     const context = {
       spaceId: "w1",
@@ -148,7 +154,7 @@ describe("MCP connector session cache", () => {
           },
         } as never,
         {} as never,
-        { network: { resolveHostname: async () => [{ address: "203.0.113.10", family: 4 }] } },
+        { network: TEST_NETWORK },
       );
       const tools = await connector.discoverTools(context);
       if (count === 20) {
@@ -205,7 +211,7 @@ describe("MCP connector session cache", () => {
       },
     };
     const connector = new McpConnector(prisma as never, {} as never, {
-      network: { resolveHostname: async () => [{ address: "203.0.113.10", family: 4 }] },
+      network: TEST_NETWORK,
     });
     const context = {
       spaceId: "w1",
@@ -364,7 +370,7 @@ describe("MCP connector session cache", () => {
       },
     };
     const connector = new McpConnector(prisma as never, {} as never, {
-      network: { resolveHostname: async () => [{ address: "203.0.113.10", family: 4 }] },
+      network: TEST_NETWORK,
     });
     const context = {
       spaceId: "w1",
@@ -537,9 +543,7 @@ describe("MCP connector session cache", () => {
       },
     };
     const connector = new McpConnector(prisma as never, {} as never, {
-      network: {
-        resolveHostname: async () => [{ address: "203.0.113.10", family: 4 }],
-      },
+      network: TEST_NETWORK,
     });
     const context = {
       spaceId: "w1",
@@ -581,7 +585,7 @@ describe("MCP connector session cache", () => {
       },
     };
     const connector = new McpConnector(prisma as never, {} as never, {
-      network: { resolveHostname: async () => [{ address: "203.0.113.10", family: 4 }] },
+      network: TEST_NETWORK,
     });
     const contextFor = (spaceId: string, userId: string) =>
       ({ spaceId, userId, botId: "bot-1", signal: new AbortController().signal }) as never;
