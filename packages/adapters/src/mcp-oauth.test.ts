@@ -671,7 +671,7 @@ describe("MCP OAuth", () => {
         userId: "user-1",
         redirectUri: "http://127.0.0.1:5173/mcp/oauth/callback",
       }),
-    ).rejects.toThrow(/fetch failed|Unexpected request/);
+    ).rejects.toThrow(/Could not reach private-auth\.example\.test|Unexpected request/);
 
     expect(requests).toContain(
       "GET https://mcp.example.test/.well-known/oauth-protected-resource/mcp",
