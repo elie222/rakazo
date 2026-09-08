@@ -51,6 +51,13 @@ describe.each([undefined, profile])(
     ])("accepts generated $kind argv and identifies a long-lived process", (action) => {
       const step = containerActionStep(action, display, browserProfile);
       if (!("argv" in step)) throw new Error("expected command");
+      if (
+        browserProfile &&
+        (action.kind === "open" ||
+          (action.kind === "launch" && action.application === "chromium"))
+      ) {
+        expect(step.argv[2]).toBe(`RAKAZO_BROWSER_PROFILE=${browserProfile}`);
+      }
       expect(check(step.argv)).toEqual({ allowed: true, longLived: true });
     });
 
