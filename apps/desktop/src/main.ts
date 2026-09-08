@@ -655,7 +655,7 @@ async function showLocalSettings() {
       titleBarStyle: "default",
       trafficLightPosition: undefined,
       webPreferences: {
-        preload: path.join(import.meta.dirname, "preload.cjs"),
+        preload: path.join(import.meta.dirname, "settings-preload.cjs"),
         nodeIntegration: false,
         contextIsolation: true,
         sandbox: true,

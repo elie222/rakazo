@@ -32,7 +32,6 @@ describe("desktop preload bridge", () => {
     expect(globalName).toBe("rakazoDesktop");
     expect(bridge.platform).toBe("linux");
     expect(Object.keys(bridge).sort()).toEqual([
-      "localSettings",
       "oauth",
       "platform",
       "update",
@@ -70,16 +69,17 @@ describe("desktop preload bridge", () => {
     ]);
   });
 
-  it("keeps setup off the app bridge so a connected server cannot re-point the app", () => {
+  it("keeps setup and local settings off the app bridge", () => {
     const { exposeInMainWorld } = runPreload("preload.cjs");
     const [, bridge] = exposeInMainWorld.mock.calls[0] as [string, Record<string, unknown>];
     expect(Object.keys(bridge).sort()).toEqual([
-      "localSettings",
       "oauth",
       "platform",
       "update",
       "window",
     ]);
+    expect(bridge.localSettings).toBeUndefined();
+    expect(bridge.setup).toBeUndefined();
   });
 
   it("forwards captured codes without leaking the IPC event to the renderer", () => {
@@ -100,6 +100,27 @@ describe("desktop preload bridge", () => {
 
     unsubscribe();
     expect(off).toHaveBeenCalledWith("desktop.oauth.callback", expect.any(Function));
+  });
+});
+
+describe("settings preload bridge", () => {
+  it("exposes local settings only on the isolated settings window bridge", async () => {
+    const { invoke, exposeInMainWorld } = runPreload("settings-preload.cjs");
+
+    expect(exposeInMainWorld).toHaveBeenCalledTimes(1);
+    const [globalName, bridge] = exposeInMainWorld.mock.calls[0] as [string, RakazoDesktop];
+    expect(globalName).toBe("rakazoDesktop");
+    expect(Object.keys(bridge).sort()).toEqual([
+      "localSettings",
+      "oauth",
+      "platform",
+      "update",
+      "window",
+    ]);
+    await bridge.localSettings?.request("/api/desktop-settings/rpc/me", "{}");
+    expect(invoke.mock.calls.map(([channel]) => channel)).toEqual([
+      "desktop.localSettings.request",
+    ]);
   });
 });
 

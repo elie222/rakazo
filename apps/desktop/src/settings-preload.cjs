@@ -1,7 +1,13 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
+// Isolated Local Server Settings window only. Ordinary app windows use preload.cjs
+// and must not receive this capability.
 contextBridge.exposeInMainWorld("rakazoDesktop", {
   platform: process.platform,
+  localSettings: {
+    request: (pathname, body) =>
+      ipcRenderer.invoke("desktop.localSettings.request", pathname, body),
+  },
   window: {
     close: () => ipcRenderer.invoke("desktop.window.close"),
     minimize: () => ipcRenderer.invoke("desktop.window.minimize"),

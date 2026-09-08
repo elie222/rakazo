@@ -478,17 +478,7 @@ test("the native settings menu opens an isolated logged-out settings capability"
   const main = await nextWindow;
   await expect(main.getByText(APP_MARKER)).toBeVisible();
   await expect.poll(savedSetup).toEqual({ mode: "new", serverUrl });
-  const denied = await main.evaluate(async () => {
-    try {
-      await window.rakazoDesktop?.localSettings?.request(
-        "/api/desktop-settings/rpc/integrationSetup/get",
-        "{}",
-      );
-      return false;
-    } catch {
-      return true;
-    }
-  });
+  const denied = await main.evaluate(() => window.rakazoDesktop?.localSettings === undefined);
   expect(denied).toBe(true);
   const settingsOpened = app.waitForEvent("window");
   await app.evaluate(({ Menu }) => {
