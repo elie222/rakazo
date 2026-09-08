@@ -97,7 +97,11 @@ export async function selectSpace(id: string) {
   try {
     await SecureStore.setItemAsync(SPACE_KEY, id);
   } catch {
+    // Roll back the claim and heal durable state: a concurrent recovery may
+    // have persisted the rolled-back id after reading it, which would leave
+    // restart opening a Space the live session is not using.
     if (cachedSpaceId === id) cachedSpaceId = previousSpaceId;
+    if (previousSpaceId) await writeStoredValue(SPACE_KEY, previousSpaceId);
     return false;
   }
   await resumeLiveNotifications(currentApiBase(), await loadSessionToken(), id).catch(

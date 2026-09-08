@@ -1009,6 +1009,29 @@ describe("mobile API authentication", () => {
     expect(storage.get("rakazo.space_id")).toBe("space-b");
   });
 
+  it("heals durable divergence when persisting a new Space fails", async () => {
+    const storage = new Map<string, string>([["rakazo.space_id", "space-support"]]);
+    vi.mocked(SecureStore.getItemAsync).mockImplementation(async (key) => storage.get(key) ?? null);
+    vi.mocked(SecureStore.deleteItemAsync).mockImplementation(async (key) => {
+      storage.delete(key);
+    });
+    await loadApiBase();
+    await expect(selectSpace("space-support")).resolves.toBe(true);
+    // A concurrent recovery persisted the claimed id, then the selection
+    // write below fails and rolls the claim back.
+    storage.set("rakazo.space_id", "space-new");
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+      if (key === "rakazo.space_id" && value === "space-new") {
+        throw new Error("device locked");
+      }
+      storage.set(key, value);
+    });
+
+    await expect(selectSpace("space-new")).resolves.toBe(false);
+    expect(selectedSpaceId()).toBe("space-support");
+    expect(storage.get("rakazo.space_id")).toBe("space-support");
+  });
+
   it("re-persists a Space selected while recovery cleanup is in flight", async () => {
     const storage = new Map<string, string>([["rakazo.space_id", "space-deleted"]]);
     vi.mocked(SecureStore.getItemAsync).mockImplementation(async (key) => storage.get(key) ?? null);
