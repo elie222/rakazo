@@ -100,7 +100,10 @@ test("a new space auto-completes onboarding and can be deleted from the sidebar"
   await expect(sidebar.getByRole("button", { name: /^Chief/ })).toHaveCount(2);
   await captureScreenshot(page, testInfo, "new-space-after-onboarding");
 
-  await sidebar.getByRole("button", { name: "Open Temporary" }).click({ button: "right" });
+  // Non-empty spaces use Collapse/Expand on the header, not Open.
+  await temporarySpace
+    .getByRole("button", { name: /^(Collapse|Expand) Temporary$/ })
+    .click({ button: "right" });
   await page.getByRole("menuitem", { name: "Delete space" }).click();
   const deleteDialog = page.getByRole("alertdialog", { name: "Delete Temporary?" });
   await expect(deleteDialog).toBeVisible();
