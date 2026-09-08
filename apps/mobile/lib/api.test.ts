@@ -790,9 +790,7 @@ describe("mobile API authentication", () => {
 
     const fetchMock = vi
       .fn()
-      .mockResolvedValueOnce(
-        jsonResponse({ error: { message: "Unauthorized" } }, { status: 401 }),
-      )
+      .mockResolvedValueOnce(jsonResponse({ error: { message: "Unauthorized" } }, { status: 401 }))
       .mockResolvedValueOnce(jsonResponse({ json: { spaces: [] } }));
     vi.stubGlobal("fetch", fetchMock);
 
@@ -820,12 +818,8 @@ describe("mobile API authentication", () => {
 
     const fetchMock = vi
       .fn()
-      .mockResolvedValueOnce(
-        jsonResponse({ error: { message: "Unauthorized" } }, { status: 401 }),
-      )
-      .mockResolvedValueOnce(
-        jsonResponse({ error: { message: "Unauthorized" } }, { status: 401 }),
-      );
+      .mockResolvedValueOnce(jsonResponse({ error: { message: "Unauthorized" } }, { status: 401 }))
+      .mockResolvedValueOnce(jsonResponse({ error: { message: "Unauthorized" } }, { status: 401 }));
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(rpc("spaces/list")).rejects.toThrow("Unauthorized");

@@ -549,7 +549,7 @@ export async function rpc<T>(
       ) {
         cachedSpaceId = "";
         try {
-          const result = await rpc(proc, body, { ...options, skipSpaceAuthRecovery: true });
+          const result = await rpc<T>(proc, body, { ...options, skipSpaceAuthRecovery: true });
           await clearStoredValue(SPACE_KEY);
           await clearStoredValue(SPACE_ROLLBACK_KEY);
           return result;
