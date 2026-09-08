@@ -974,6 +974,34 @@ describe("mobile API authentication", () => {
     expect(storage.get("rakazo.space_id")).toBe("space-new");
   });
 
+  it("re-persists a Space selected while recovery cleanup is in flight", async () => {
+    const storage = new Map<string, string>([["rakazo.space_id", "space-deleted"]]);
+    vi.mocked(SecureStore.getItemAsync).mockImplementation(async (key) => storage.get(key) ?? null);
+    let injected = false;
+    vi.mocked(SecureStore.deleteItemAsync).mockImplementation(async (key) => {
+      if (key === "rakazo.space_id" && !injected) {
+        injected = true;
+        await expect(selectSpace("space-new")).resolves.toBe(true);
+      }
+      storage.delete(key);
+    });
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+      storage.set(key, value);
+    });
+    await loadApiBase();
+
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ error: { message: "Unauthorized" } }, { status: 401 }))
+      .mockResolvedValueOnce(jsonResponse({ json: { spaces: [] } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(rpc("spaces/list")).resolves.toEqual({ spaces: [] });
+    expect(injected).toBe(true);
+    expect(selectedSpaceId()).toBe("space-new");
+    expect(storage.get("rakazo.space_id")).toBe("space-new");
+  });
+
   it("does not retry a mutating RPC against the default Space after Space auth failure", async () => {
     const storage = new Map<string, string>([["rakazo.space_id", "space-deleted"]]);
     vi.mocked(SecureStore.getItemAsync).mockImplementation(async (key) => storage.get(key) ?? null);

@@ -552,6 +552,15 @@ export async function rpc<T>(
       // Space — only safe reads may retry as themselves; other procs probe
       // with spaces/list, then fail the original call.
       const previousSpaceId = selectedSpaceId();
+      // Clear stale selection records, then re-persist a Space selected while
+      // cleanup was in flight: check-then-clear cannot be atomic on
+      // SecureStore, so reconcile afterwards instead of trusting the check.
+      const clearStaleSpaceSelection = async () => {
+        await clearStoredValue(SPACE_KEY);
+        await clearStoredValue(SPACE_ROLLBACK_KEY);
+        const reselected = selectedSpaceId();
+        if (reselected) await writeStoredValue(SPACE_KEY, reselected);
+      };
       if (
         unauthorized &&
         previousSpaceId &&
@@ -578,10 +587,7 @@ export async function rpc<T>(
             const result = await rpc<T>(proc, body, recoveryOptions);
             // A Space selected while the retry was in flight already owns both
             // the in-memory and durable selection; leave it alone.
-            if (!selectedSpaceId()) {
-              await clearStoredValue(SPACE_KEY);
-              await clearStoredValue(SPACE_ROLLBACK_KEY);
-            }
+            if (!selectedSpaceId()) await clearStaleSpaceSelection();
             return result;
           }
           await rpc("spaces/list", {}, recoveryOptions);
@@ -589,10 +595,7 @@ export async function rpc<T>(
           if (!selectedSpaceId()) cachedSpaceId = previousSpaceId;
           throw retryError;
         }
-        if (!selectedSpaceId()) {
-          await clearStoredValue(SPACE_KEY);
-          await clearStoredValue(SPACE_ROLLBACK_KEY);
-        }
+        if (!selectedSpaceId()) await clearStaleSpaceSelection();
         throw new Error(message);
       }
       throw new Error(message);
