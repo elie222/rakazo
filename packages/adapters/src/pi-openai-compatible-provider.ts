@@ -173,8 +173,8 @@ export function createOpenAiCompatibleFetch(
         ? new Agent({ connect: { lookup: createOpenAiCompatibleLookup(url, resolve) } })
         : undefined;
     try {
-      const response = await baseFetch(input instanceof Request ? input : url, {
-        ...init,
+      const response = await baseFetch(url, {
+        ...(await requestInitFor(input, init)),
         redirect: "error",
         ...(dispatcher ? { dispatcher } : {}),
       } as RequestInit & { dispatcher?: Agent });
@@ -184,6 +184,18 @@ export function createOpenAiCompatibleFetch(
       throw error;
     }
   };
+}
+
+/** The base fetch comes from the undici package, which recognizes only its own
+ * Request class and reads a global Request as the string "[object Request]".
+ * Flatten Request inputs to a URL plus init, with init overriding the
+ * Request's fields the way fetch itself merges them. */
+async function requestInitFor(input: RequestInfo | URL, init?: RequestInit): Promise<RequestInit> {
+  if (!(input instanceof Request)) return init ?? {};
+  const request = new Request(input, init);
+  const body =
+    request.method === "GET" || request.method === "HEAD" ? undefined : await request.arrayBuffer();
+  return { method: request.method, headers: request.headers, body, signal: request.signal };
 }
 
 async function closeDispatcherWithResponse(

@@ -717,11 +717,7 @@ export function createRouter(deps: RouterDeps) {
       probeOpenAiCompatible: authed.models.probeOpenAiCompatible.handler(
         async ({ context, input }) => {
           try {
-            const models = await probeOpenAiCompatibleModels(
-              input,
-              deps.remoteConnectors?.fetch,
-              context.signal,
-            );
+            const models = await probeOpenAiCompatibleModels(input, undefined, context.signal);
             return { models };
           } catch (error) {
             throw new ORPCError("BAD_REQUEST", {
