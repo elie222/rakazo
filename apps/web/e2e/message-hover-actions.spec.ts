@@ -48,8 +48,15 @@ test("message hover shows beside-bubble actions; reply links to parent", async (
 
   const transcript = page.getByTestId("transcript");
 
-  // Bot welcome (left bubble): rail hidden at rest, then beside on hover.
-  const botRow = transcript.locator(`[data-message-id]`).first();
+  // Empty start: no Fresh-start greeting. Answer the focus card so a plain
+  // bot text bubble exists for hover layout checks.
+  await expect(page.getByText("What do you want me on first?", { exact: true })).toBeVisible({
+    timeout: 20_000,
+  });
+  await page.getByRole("button", { name: /Day-to-day work/ }).click();
+  const botText = page.getByText(/Got it\./);
+  await expect(botText).toBeVisible({ timeout: 20_000 });
+  const botRow = transcript.locator(`[data-message-id]`).filter({ has: botText }).first();
   await expect(botRow).toBeVisible();
   await expectRailAtRest(page, botRow);
   await captureScreenshot(page, testInfo, "message-actions-rest-desktop");
@@ -328,7 +335,17 @@ test.describe("touch message actions", () => {
     expect(
       await page.evaluate(() => matchMedia("(hover: hover) and (pointer: fine)").matches),
     ).toBe(false);
-    const row = page.getByTestId("transcript").locator("[data-message-id]").first();
+    await expect(page.getByText("What do you want me on first?", { exact: true })).toBeVisible({
+      timeout: 20_000,
+    });
+    await page.getByRole("button", { name: /Day-to-day work/ }).click();
+    const botText = page.getByText(/Got it\./);
+    await expect(botText).toBeVisible({ timeout: 20_000 });
+    const row = page
+      .getByTestId("transcript")
+      .locator("[data-message-id]")
+      .filter({ has: botText })
+      .first();
     const rail = row.getByTestId("message-hover-rail");
     await expect(rail).toHaveCSS("opacity", "1");
     await expect(rail.getByRole("button", { name: "Reply", exact: true })).toBeHidden();

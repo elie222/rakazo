@@ -262,6 +262,7 @@ function Thread() {
   const routeName = useRef(name);
   routeName.current = name;
   const mentionBotsRefreshGeneration = useRef(0);
+  const mentionBotsAppliedGeneration = useRef(0);
   const readVisibleTarget = useRef<string | null>(null);
   const threadKey = groupId ?? botId;
   const [threadScrollState, setThreadScrollState] = useState<ThreadScrollState>(() =>
@@ -411,8 +412,11 @@ function Thread() {
     const targetBotId = botId;
     try {
       const bots = await rpc<MobileBot[]>("bots/list");
-      if (generation !== mentionBotsRefreshGeneration.current) return;
+      // Apply any successful response that is still the newest applied so far.
+      // A later failed refresh must not discard an earlier success.
+      if (generation < mentionBotsAppliedGeneration.current) return;
       if (targetBotId !== activeBotId.current) return;
+      mentionBotsAppliedGeneration.current = generation;
       setMentionBots(bots);
       if (targetBotId) {
         const next = bots.find((bot) => bot.id === targetBotId);
