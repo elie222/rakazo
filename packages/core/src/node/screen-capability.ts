@@ -52,7 +52,12 @@ export function sealScreenCapability(
   const policy = target.searchParams.get("view_only") === "false" ? "control" : "view";
   const expiresAt = now + SCREEN_PROXY_TTL_MS;
   const iv = randomBytes(12);
-  const cipher = createCipheriv("aes-256-gcm", createHash("sha256").update(secret).digest(), iv);
+  const cipher = createCipheriv(
+    "aes-256-gcm",
+    createHash("sha256").update(secret).digest(),
+    iv,
+    { authTagLength: 16 },
+  );
   cipher.setAAD(Buffer.from(`${policy}:${expiresAt}`));
   const ciphertext = Buffer.concat([
     cipher.update(JSON.stringify({ url, scope }), "utf8"),
@@ -85,10 +90,12 @@ export function openScreenCapability(
   if (!Number.isSafeInteger(expiresAt) || expiresAt <= now) return null;
   try {
     const sealed = Buffer.from(match[3]!, "base64url");
+    if (sealed.length < 28) return null;
     const decipher = createDecipheriv(
       "aes-256-gcm",
       createHash("sha256").update(secret).digest(),
       sealed.subarray(0, 12),
+      { authTagLength: 16 },
     );
     decipher.setAAD(Buffer.from(`${match[1]}:${expiresAt}`));
     decipher.setAuthTag(sealed.subarray(12, 28));

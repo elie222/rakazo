@@ -78,6 +78,13 @@ describe("sealed screen capabilities", () => {
     ).toBeNull();
     expect(openScreenCapability(value, "fake-secret", 100 + SCREEN_PROXY_TTL_MS)).toBeNull();
   });
+  it("rejects truncated capability tokens before decryption", () => {
+    const value = path("http://127.0.0.1:49152/embed.html");
+    const match = value.match(/^(\/novnc\/session\/view\/\d+\.)([A-Za-z0-9_-]+)(\/.*)$/);
+    expect(match).not.toBeNull();
+    const truncated = `${match![1]}${match![2]!.slice(0, 8)}${match![3]}`;
+    expect(openScreenCapability(truncated, "fake-secret", 101)).toBeNull();
+  });
   it("enforces view policy and still serves relative assets", () => {
     const value = path("http://127.0.0.1:49152/embed.html");
     expect(

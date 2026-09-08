@@ -642,6 +642,16 @@ describe("computer screen url", () => {
     });
   });
 
+  it("returns desktop provider screen URLs without sealing them", async () => {
+    const { response } = await callScreenUrl(async () => ({
+      url: "desktop://screen/computer-1",
+    }));
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      json: { url: "desktop://screen/computer-1?view_only=true" },
+    });
+  });
+
   it("clears the row instead of 500ing when the provider says the sandbox is gone", async () => {
     const { response, updateMany } = await callScreenUrl(() =>
       Promise.reject(

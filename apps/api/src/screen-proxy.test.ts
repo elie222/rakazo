@@ -107,4 +107,12 @@ describe("screen capability lifecycle authorization", () => {
         .status,
     ).toBe(403);
   });
+  it("passes desktop and other non-http screen URLs through unsealed", () => {
+    expect(
+      addScreenProxyCapability("desktop://screen/computer", secret, "https://app.example", scope),
+    ).toBe("desktop://screen/computer");
+    expect(
+      addScreenProxyCapability("local://preview", secret, "https://app.example", scope),
+    ).toBe("local://preview");
+  });
 });

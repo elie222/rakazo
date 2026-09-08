@@ -33,6 +33,9 @@ export const RU_MESSAGES: Record<string, string> = {
   "Recreating the computer": "Повторное создание компьютера",
   "Release computer": "Освободить компьютер",
   "Release interrupted computer?": "Освободить прерванный компьютер?",
+  "Make sure nothing is still running on this computer.":
+    "Убедитесь, что на этом компьютере ничего не запущено.",
+  "Nothing is still running": "Ничего не запущено",
   "Restoring your workspace": "Восстановление вашего рабочего пространства",
   "Saving your workspace": "Сохранение вашего рабочего пространства",
   "Server integrations": "Интеграции сервера",
