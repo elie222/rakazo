@@ -1032,6 +1032,33 @@ describe("mobile API authentication", () => {
     expect(storage.get("rakazo.space_id")).toBe("space-support");
   });
 
+  it("keeps a newer overlapping selection when an older persist fails", async () => {
+    const storage = new Map<string, string>([["rakazo.space_id", "space-support"]]);
+    vi.mocked(SecureStore.getItemAsync).mockImplementation(async (key) => storage.get(key) ?? null);
+    vi.mocked(SecureStore.deleteItemAsync).mockImplementation(async (key) => {
+      storage.delete(key);
+    });
+    let rejectA!: (reason: Error) => void;
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+      if (key === "rakazo.space_id" && value === "space-a") {
+        await new Promise<never>((_, reject) => {
+          rejectA = reject;
+        });
+      }
+      storage.set(key, value);
+    });
+    await loadApiBase();
+
+    const pendingA = selectSpace("space-a");
+    await vi.waitFor(() => expect(selectedSpaceId()).toBe("space-a"));
+    await expect(selectSpace("space-b")).resolves.toBe(true);
+    rejectA(new Error("device locked"));
+
+    await expect(pendingA).resolves.toBe(false);
+    expect(selectedSpaceId()).toBe("space-b");
+    expect(storage.get("rakazo.space_id")).toBe("space-b");
+  });
+
   it("re-persists a Space selected while recovery cleanup is in flight", async () => {
     const storage = new Map<string, string>([["rakazo.space_id", "space-deleted"]]);
     vi.mocked(SecureStore.getItemAsync).mockImplementation(async (key) => storage.get(key) ?? null);
