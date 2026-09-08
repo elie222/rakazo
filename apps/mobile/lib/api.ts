@@ -105,17 +105,28 @@ export function selectedSpaceId(): string | null {
 }
 
 /** Keep requests usable after the server deleted the selected Space but native
- * storage could not replace it. Prefer a durable endpoint-bound recovery
- * record; if that write also fails, clear the stale selection so startup can
- * resolve the server default. */
+ * storage could not replace it. Prefer writing the replacement selection; if
+ * that fails, drop the deleted id before recording recovery so a restart cannot
+ * reload an inaccessible Space when only one durable mutation succeeds. */
 export async function adoptDeletedSpaceFallback(id: string): Promise<boolean> {
   cachedSpaceId = id;
+  // selectSpace may have failed only while clearing a prior rollback record;
+  // still try to replace the deleted selection directly.
+  if (await writeStoredValue(SPACE_KEY, id)) {
+    await clearStoredValue(SPACE_ROLLBACK_KEY);
+    await resumeLiveNotifications(currentApiBase(), await loadSessionToken(), id).catch(
+      () => undefined,
+    );
+    return true;
+  }
+  // Clear before saving recovery: an empty selection lets startup resolve the
+  // server default even when the recovery record cannot be written.
+  const staleSelectionCleared = await clearStoredValue(SPACE_KEY);
   const recoverySaved = await saveSpaceRollback(id);
-  const staleSelectionCleared = recoverySaved ? false : await clearStoredValue(SPACE_KEY);
   await resumeLiveNotifications(currentApiBase(), await loadSessionToken(), id).catch(
     () => undefined,
   );
-  return recoverySaved || staleSelectionCleared;
+  return staleSelectionCleared || recoverySaved;
 }
 
 export async function selectInitialSpace(id: string) {
@@ -136,12 +147,16 @@ async function clearStoredValue(key: string): Promise<boolean> {
     await SecureStore.deleteItemAsync(key);
     return true;
   } catch {
-    try {
-      await SecureStore.setItemAsync(key, "");
-      return true;
-    } catch {
-      return false;
-    }
+    return writeStoredValue(key, "");
+  }
+}
+
+async function writeStoredValue(key: string, value: string): Promise<boolean> {
+  try {
+    await SecureStore.setItemAsync(key, value);
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -208,15 +223,10 @@ async function restoreCredentials(previousToken: string, previousSpace: string) 
 }
 
 async function saveSpaceRollback(spaceId: string): Promise<boolean> {
-  try {
-    await SecureStore.setItemAsync(
-      SPACE_ROLLBACK_KEY,
-      JSON.stringify({ apiBase: currentApiBase(), spaceId }),
-    );
-    return true;
-  } catch {
-    return false;
-  }
+  return writeStoredValue(
+    SPACE_ROLLBACK_KEY,
+    JSON.stringify({ apiBase: currentApiBase(), spaceId }),
+  );
 }
 
 async function recoverSpaceRollback(apiBase: string) {
@@ -238,13 +248,14 @@ async function recoverSpaceRollback(apiBase: string) {
     await clearStoredValue(SPACE_ROLLBACK_KEY);
     return;
   }
-  try {
-    cachedSpaceId = rollback.spaceId;
-    await SecureStore.setItemAsync(SPACE_KEY, rollback.spaceId);
+  cachedSpaceId = rollback.spaceId;
+  if (await writeStoredValue(SPACE_KEY, rollback.spaceId)) {
     await clearStoredValue(SPACE_ROLLBACK_KEY);
-  } catch {
-    // Keep a valid recovery record for the next launch when storage is writable.
+    return;
   }
+  // Could not replace the selection yet. Drop the deleted id so startup RPCs
+  // are not scoped to an inaccessible Space; keep the recovery record.
+  await clearStoredValue(SPACE_KEY);
 }
 
 export async function saveApiBase(input: string): Promise<EndpointResult> {
