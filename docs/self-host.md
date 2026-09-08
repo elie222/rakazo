@@ -92,9 +92,13 @@ On Windows, if an older clone with `core.autocrlf=true` leaves the computer pane
 Compose runs Postgres, the sandbox supervisor (Docker socket), API, worker, and a Vite preview of the web app. Bot computers are sibling containers (`rakazo/computer:local`) on separate per-bot networks; only the supervisor and screen proxy join each one. The API process does not get an unrestricted Docker socket; the supervisor owns the lifecycle.
 
 Postgres stays on the Compose network only (not published on the host), matching the images
-compose. Credentials come from `.env` (`POSTGRES_PASSWORD` is required). For host-side clients
-(`pnpm db:migrate`, GUI tools), add `infra/compose/docker-compose.postgres-host.yml` so
-Postgres is published on loopback `127.0.0.1:5433`, or use
+compose. Credentials come from `.env` (`POSTGRES_PASSWORD` is required). Prefer a URI-safe value
+(`openssl rand -hex 16`); characters such as `@ : / ? # %` break the interpolated `DATABASE_URL`
+inside Compose. Official Postgres images set the role password only on first volume init, so an
+existing `pgdata` volume keeps its original password: keep that value in `.env`, or recreate the
+volume / run `ALTER ROLE` before rotating. For host-side clients (`pnpm db:migrate`, GUI tools),
+add `infra/compose/docker-compose.postgres-host.yml` so Postgres is published on loopback
+`127.0.0.1:5433`, or use
 `docker compose --env-file .env -f infra/compose/docker-compose.yml exec postgres psql -U rakazo -d rakazo`.
 Do not publish Postgres on a public interface.
 

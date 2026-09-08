@@ -124,6 +124,9 @@ Postgres stays network-internal in the default Compose file (same as published i
 `postgres-host` overlay publishes loopback `127.0.0.1:5433` for host-side `pnpm` and DB tools.
 Without the overlay, open a shell with
 `docker compose --env-file .env -f infra/compose/docker-compose.yml exec postgres psql -U rakazo -d rakazo`.
+Use a URI-safe `POSTGRES_PASSWORD` (`openssl rand -hex 16`). An existing `pgdata` volume keeps the
+password from first init, so either keep that value in `.env` or recreate the volume / `ALTER ROLE`
+before rotating.
 
 Open [http://127.0.0.1:5173](http://127.0.0.1:5173), create an account, connect a model, and create
 your first bot.
