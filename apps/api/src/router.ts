@@ -96,11 +96,15 @@ import {
 } from "@rakazo/core";
 import {
   appendEventInTransaction,
+  CannotDeleteDefaultSpaceError,
+  CannotDeleteLastSpaceError,
+  CannotDeleteSpaceAsNonOwnerError,
   createExternalConversationRepos,
   createGroupRepos,
   createRepos,
   createSpaceForMember,
   createThreadMessageInTransaction,
+  deleteEmptySpaceForMember,
   deleteUnreferencedCredentialSecret,
   findDefaultModelCredential,
   findDefaultVoiceCredential,
@@ -110,6 +114,7 @@ import {
   InvalidSpaceNameError,
   IsolationError,
   issueMessagingLinkCode,
+  listDeletableSpaceComputers,
   lockOwnedGroup,
   newestModelCredentialOrder,
   newestVoiceCredentialOrder,
@@ -117,6 +122,8 @@ import {
   type PrismaClient,
   parseComputerMode,
   SpaceLimitError,
+  SpaceNotEmptyError,
+  SpaceNotFoundError,
   selectSpaceModelPreference,
   selectSpaceVoicePreference,
   type ThreadEvents,
@@ -491,11 +498,59 @@ export function createRouter(deps: RouterDeps) {
           id: space.id,
           name: space.name,
           isDefault: false,
+          hasContent: false,
           bots: [],
           groups: [],
           externalConversations: [],
           botSections: [],
         };
+      }),
+      remove: authed.spaces.remove.handler(async ({ context, input }) => {
+        try {
+          const deleteInput = {
+            currentSpaceId: context.actor.spaceId,
+            userId: context.actor.userId,
+            spaceId: input.spaceId,
+          };
+          // Destroy leftover team sandboxes before cascading the Space row. Clear
+          // each providerRef only after that destroy succeeds so a failed destroy
+          // keeps the durable handle, and a later SpaceNotEmptyError cannot leave
+          // a row pointing at a sandbox that is already gone (same order as
+          // destroyBot: provider teardown, then drop the persisted handle).
+          const computers = await listDeletableSpaceComputers(deps.prisma, deleteInput);
+          const adapterContext = connectionContext(context.actor, "spaces.remove", context.signal);
+          for (const computer of computers) {
+            await deps.sandbox.destroy(toComputerRef(computer), {
+              ...adapterContext,
+              botId: computer.homeKey,
+            });
+            await deps.prisma.computer.updateMany({
+              where: {
+                spaceId: input.spaceId,
+                homeKey: computer.homeKey,
+                providerRef: computer.providerRef,
+              },
+              data: { state: "stopped", providerRef: null },
+            });
+          }
+          const fallback = await deleteEmptySpaceForMember(deps.prisma, deleteInput);
+          return { ok: true as const, activeSpaceId: fallback.id };
+        } catch (error) {
+          if (error instanceof SpaceNotFoundError) {
+            throw new ORPCError("NOT_FOUND", { message: error.message });
+          }
+          if (error instanceof CannotDeleteSpaceAsNonOwnerError) {
+            throw new ORPCError("FORBIDDEN", { message: error.message });
+          }
+          if (
+            error instanceof CannotDeleteDefaultSpaceError ||
+            error instanceof CannotDeleteLastSpaceError ||
+            error instanceof SpaceNotEmptyError
+          ) {
+            throw new ORPCError("BAD_REQUEST", { message: error.message });
+          }
+          throw error;
+        }
       }),
     },
     bootstrap: authed.bootstrap.handler(async ({ context, input }) => {
@@ -4495,6 +4550,8 @@ async function spaceNavigationDto(
     inactiveGroups,
     botSections,
     externalConversations,
+    contentBots,
+    contentGroups,
   ] = await Promise.all([
     repos.listBots(actor),
     groupRepos.listGroups(actor),
@@ -4502,6 +4559,23 @@ async function spaceNavigationDto(
     groupRepos.listSpaceGroupsForSpaces(actor, inactiveSpaceIds),
     repos.listBotSectionsForSpaces(actor, spaceIds),
     createExternalConversationRepos(deps.prisma).listForSpaces(actor, spaceIds),
+    // Active-only navigation lists miss archived content in other spaces; count any
+    // bot/group in the actor's spaces (including another member's) so a shared
+    // non-empty space cannot look empty for onboarding redirects.
+    deps.prisma.bot.findMany({
+      where: { spaceId: { in: spaceIds } },
+      select: { spaceId: true },
+      distinct: ["spaceId"],
+    }),
+    deps.prisma.chatGroup.findMany({
+      where: { spaceId: { in: spaceIds } },
+      select: { spaceId: true },
+      distinct: ["spaceId"],
+    }),
+  ]);
+  const spacesWithContent = new Set([
+    ...contentBots.map((row) => row.spaceId),
+    ...contentGroups.map((row) => row.spaceId),
   ]);
   const currentMembership = memberships.find((membership) => membership.spaceId === actor.spaceId);
   if (!currentMembership) throw new IsolationError();
@@ -4530,6 +4604,7 @@ async function spaceNavigationDto(
         id: membership.spaceId,
         name: membership.space.name,
         isDefault: membership.space.isDefault,
+        hasContent: spacesWithContent.has(membership.spaceId),
         bots: spaceBots.map((bot) => ({
           id: bot.id,
           spaceId: bot.spaceId,

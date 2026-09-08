@@ -11,12 +11,15 @@ type Choice = "direct" | "composio" | "pipedream" | "executor";
 export function IntegrationSetup({
   onDone,
   serverSetup = false,
+  managedOnly = false,
   initialState,
   botId,
   onServerConnected,
 }: {
   onDone?: () => void;
   serverSetup?: boolean;
+  /** Local host settings can configure providers, but cannot access account MCP servers. */
+  managedOnly?: boolean;
   initialState?: IntegrationSetupState | null;
   botId?: string;
   onServerConnected?: (id: string) => void;
@@ -24,7 +27,7 @@ export function IntegrationSetup({
   const { t } = useLingui();
   const fieldId = useId();
   const [state, setState] = useState<IntegrationSetupState | null>(initialState ?? null);
-  const [selectedChoice, setChoice] = useState<Choice>("direct");
+  const [selectedChoice, setChoice] = useState<Choice>(managedOnly ? "composio" : "direct");
   const choice = serverSetup ? selectedChoice : "direct";
   const [apiKey, setApiKey] = useState("");
   const [clientId, setClientId] = useState("");
@@ -133,23 +136,25 @@ export function IntegrationSetup({
           aria-label={t`Integration options`}
           className="overflow-hidden rounded-xl border border-border"
         >
-          {choices.map(({ id, label }) => (
-            <button
-              key={id}
-              type="button"
-              aria-pressed={choice === id}
-              disabled={busy}
-              onClick={() => {
-                setChoice(id);
-                setApiKey("");
-                setError(null);
-              }}
-              className={`flex min-h-11 w-full items-center justify-between border-b border-border px-3.5 py-2.5 text-left last:border-0 ${choice === id ? "bg-muted" : "hover:bg-accent"}`}
-            >
-              <span>{label}</span>
-              {choice === id ? <Check className="size-4" aria-hidden /> : null}
-            </button>
-          ))}
+          {choices
+            .filter(({ id }) => !managedOnly || id === "composio" || id === "pipedream")
+            .map(({ id, label }) => (
+              <button
+                key={id}
+                type="button"
+                aria-pressed={choice === id}
+                disabled={busy}
+                onClick={() => {
+                  setChoice(id);
+                  setApiKey("");
+                  setError(null);
+                }}
+                className={`flex min-h-11 w-full items-center justify-between border-b border-border px-3.5 py-2.5 text-left last:border-0 ${choice === id ? "bg-muted" : "hover:bg-accent"}`}
+              >
+                <span>{label}</span>
+                {choice === id ? <Check className="size-4" aria-hidden /> : null}
+              </button>
+            ))}
         </fieldset>
       ) : null}
       {choice === "composio" || choice === "pipedream" ? (
@@ -209,7 +214,11 @@ export function IntegrationSetup({
                 <Trans>Get credentials</Trans>
               </a>
               {!onDone ? (
-                <Button disabled={busy || !credentialsReady} onClick={() => void saveProvider()}>
+                <Button
+                  className="ml-3"
+                  disabled={busy || !credentialsReady}
+                  onClick={() => void saveProvider()}
+                >
                   {busy ? t`Connecting…` : t`Connect`}
                 </Button>
               ) : null}

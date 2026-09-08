@@ -277,6 +277,7 @@ export default function Home() {
                 id: me.spaceId,
                 name: t("Personal"),
                 isDefault: true,
+                hasContent: true,
                 bots: visible,
                 groups: visibleGroups,
                 botSections,

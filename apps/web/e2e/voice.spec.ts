@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { captureScreenshot, completeOnboarding, rpc, signup } from "./helpers";
+import { captureScreenshot, completeOnboarding, openUserSettings, rpc, signup } from "./helpers";
 
 test("voice settings connect a key, speak a reply, and open a call", async ({ page }, testInfo) => {
   const stamp = Date.now();
@@ -28,11 +28,7 @@ test("voice settings connect a key, speak a reply, and open a call", async ({ pa
   });
   expect(preparedOff.ready).toBe(false);
 
-  await page.getByRole("button", { name: new RegExp(userName) }).click();
-  await page
-    .locator('[data-slot="popover-content"]')
-    .getByRole("button", { name: "Voice", exact: true })
-    .click();
+  await openUserSettings(page, "voice");
   await expect(page.getByTestId("voice-settings")).toBeVisible();
   await page.getByRole("button", { name: /Scripted/ }).click();
   const apiKeyInput = page.getByPlaceholder(/Paste your API key/);
@@ -74,11 +70,7 @@ test("voice settings connect a key, speak a reply, and open a call", async ({ pa
   await speakReply.click();
   await replySpoken;
 
-  await page.getByRole("button", { name: new RegExp(userName) }).click();
-  await page
-    .locator('[data-slot="popover-content"]')
-    .getByRole("button", { name: "Voice", exact: true })
-    .click();
+  await openUserSettings(page, "voice");
   await expect(page.getByRole("button", { name: "Replace key" })).toBeVisible();
   await page.getByRole("button", { name: "Close voice settings" }).click();
 

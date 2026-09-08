@@ -124,6 +124,21 @@ export async function createBotFromPicker(
   await expect(page.getByTestId("side-panel")).toHaveAttribute("data-panel", "closed");
 }
 
+/** Open the user Settings overlay, optionally switching to a sidebar section. */
+export async function openUserSettings(
+  page: Page,
+  section?: "general" | "models" | "memory" | "voice" | "usage" | "computer" | "updates",
+) {
+  await page.getByTestId("user-menu-trigger").click();
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  const settings = page.getByTestId("user-settings");
+  await expect(settings).toBeVisible();
+  if (section && section !== "general") {
+    await settings.getByTestId(`settings-nav-${section}`).click();
+  }
+  return settings;
+}
+
 /** Create a named bot via RPC for test setup (skips the + picker). */
 export async function createNamedBot(
   page: Page,

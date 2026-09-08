@@ -51,12 +51,30 @@ test("logout protects bot deep links and sign-in restores the session", async ({
   await expect(page.getByPlaceholder("Message Chief")).toBeVisible();
 
   await page.getByRole("button", { name: new RegExp(userName, "i") }).click();
+  await expect(page.getByRole("button", { name: "Settings", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Usage", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Log out" })).toBeVisible();
+  await expect(
+    page
+      .locator('[data-slot="popover-content"]')
+      .getByRole("button", { name: "Models", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page
+      .locator('[data-slot="popover-content"]')
+      .getByRole("button", { name: "Memory", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page
+      .locator('[data-slot="popover-content"]')
+      .getByRole("button", { name: "Voice", exact: true }),
+  ).toHaveCount(0);
   await captureScreenshot(page, testInfo, "36-account-menu");
 
   await page.getByRole("button", { name: "Log out" }).click();
   await expect(page.getByRole("heading", { name: "Sign in to Rakazo" })).toBeVisible();
   await page.goto("/");
+  await expect(page.locator('[data-rakazo-surface="welcome"]')).toBeVisible();
   await expect(page.getByText(/Your team of always-on agents/)).toBeVisible();
   await page.getByRole("button", { name: /Sign up/ }).click();
   await expect(page).toHaveURL(/\/sign-up$/);
