@@ -99,7 +99,8 @@ Preflight:
 - Verify Git, Node.js, pnpm, Docker, and Docker Compose.
 - Use a Node.js version supported by `engines.node` and the pnpm version declared in `packageManager` in the root `package.json`. Prefer Corepack; if unavailable, use `npx --yes pnpm@<declared-version>` instead of globally installing a different version. Use that same executable for every later `pnpm` command, including verification and restart commands. Show the effective versions.
 - Verify the Docker daemon is running.
-- Check whether `127.0.0.1` ports 5433, 3100, 5173, and 7091 are available. Resolve conflicts without touching unrelated workloads.
+- Check whether `127.0.0.1` ports 5433 (only if using the postgres-host overlay), 3100, 5173, and 7091 are available. Resolve conflicts without touching unrelated workloads.
+- Ensure `.env` sets a non-empty `POSTGRES_PASSWORD` and that host-side `DATABASE_URL` uses the same password when the postgres-host overlay is in use.
 
 Setup:
 
@@ -109,7 +110,7 @@ Setup:
 4. Confirm `.env` is ignored and that no secret-bearing file is staged.
 5. Start only local Postgres:
 
-   `docker compose --env-file .env -f infra/compose/docker-compose.yml up postgres -d`
+   `docker compose --env-file .env -f infra/compose/docker-compose.yml -f infra/compose/docker-compose.postgres-host.yml up postgres -d`
 
 6. With the repository-declared pnpm version, run:
 

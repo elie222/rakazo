@@ -29,6 +29,11 @@ openssl rand -hex 16   # POSTGRES_PASSWORD
 openssl rand -hex 32   # BETTER_AUTH_SECRET, ENCRYPTION_KEY, SCREEN_PROXY_SECRET, SANDBOX_SUPERVISOR_TOKEN
 ```
 
+Source-checkout `.env.example` also requires `POSTGRES_PASSWORD` (same
+`openssl rand -hex 16` shape) for `infra/compose/docker-compose.yml`. Put the
+same value in host-side `DATABASE_URL` when using the optional
+`docker-compose.postgres-host.yml` overlay.
+
 Source-checkout `.env.example` asks for a **64-hex** `ENCRYPTION_KEY` in
 comments; published-images installer uses 32 bytes of hex (64 hex chars) via
 `openssl rand -hex 32`. Prefer long independent random values either way.
