@@ -259,6 +259,8 @@ function Thread() {
   activeBotId.current = botId;
   const activeGroupId = useRef(groupId);
   activeGroupId.current = groupId;
+  const routeName = useRef(name);
+  routeName.current = name;
   const readVisibleTarget = useRef<string | null>(null);
   const threadKey = groupId ?? botId;
   const [threadScrollState, setThreadScrollState] = useState<ThreadScrollState>(() =>
@@ -409,14 +411,16 @@ function Thread() {
       setMentionBots(bots);
       if (botId) {
         const next = bots.find((bot) => bot.id === botId);
-        if (next?.name && next.name !== name) {
+        // Read the route name from a ref so renaming does not recreate this
+        // callback (and restart the SSE subscription that depends on it).
+        if (next?.name && next.name !== routeName.current) {
           router.setParams({ name: next.name });
         }
       }
     } catch {
       // Keep the last known roster if refresh fails.
     }
-  }, [botId, groupId, name, router]);
+  }, [botId, groupId, router]);
 
   useEffect(() => {
     void refreshMentionBots();
@@ -500,7 +504,7 @@ function Thread() {
       headerTitle: () => (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={!inGroup && botId ? t("Bot settings") : displayName || t("Thread")}
+          accessibilityLabel={!inGroup && botId ? t("Chat settings") : displayName || t("Thread")}
           disabled={inGroup || !botId}
           onPress={() => {
             if (!botId || inGroup) return;
