@@ -376,6 +376,7 @@ export const RU_MESSAGES: Record<string, string> = {
     "Публичным серверам требуется https://. HTTP работает только в вашей локальной сети.",
   "Questions, approvals, takeover": "Вопросы, подтверждения, передача управления",
   Queued: "В очереди",
+  React: "Реакция",
   Recent: "Недавние",
   Recover: "Восстановить",
   "Recover computer": "Восстановить компьютер",
