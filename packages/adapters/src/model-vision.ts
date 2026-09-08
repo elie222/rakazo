@@ -5,6 +5,7 @@ import {
   OPENAI_COMPATIBLE_PROVIDER_ID,
   registerOpenAiCompatibleCatalog,
 } from "./pi-openai-compatible-provider.js";
+import { registerAstraModel } from "./pi-models.js";
 
 /** Computer tools whose results include screenshots for the model. */
 export const IMAGE_RETURNING_COMPUTER_TOOLS = new Set([
@@ -21,7 +22,9 @@ const SCRIPTED_DEFAULT_MODEL_ID = "deepseek/deepseek-v4-flash-0731";
 let catalogModelsCache: Models | undefined;
 
 function catalogModels(): Models {
-  catalogModelsCache ??= registerOpenAiCompatibleCatalog(registerLocalProvider(builtinModels()));
+  catalogModelsCache ??= registerAstraModel(
+    registerOpenAiCompatibleCatalog(registerLocalProvider(builtinModels())),
+  );
   return catalogModelsCache;
 }
 

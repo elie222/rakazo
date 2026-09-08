@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { catalogModelLabel, listPiCatalog, scriptedCatalogEntry } from "./pi-models.js";
+import { builtinModels } from "@earendil-works/pi-ai/providers/all";
+import {
+  catalogModelLabel,
+  listPiCatalog,
+  registerAstraModel,
+  scriptedCatalogEntry,
+} from "./pi-models.js";
 
 describe("Pi model catalog", () => {
   it("keeps the custom catalog independent of server model IDs", () => {
@@ -54,6 +60,26 @@ describe("Pi model catalog", () => {
     });
     const openAiCompatible = catalog.find((entry) => entry.provider === "openai-compatible");
     expect(openAiCompatible).toMatchObject({ id: "custom", placeholder: true });
+  });
+
+  it("registers Astra with its verified capabilities and exact effort choices", () => {
+    const astra = listPiCatalog().find(
+      (entry) => entry.provider === "openai-codex" && entry.id === "gpt-6-astra",
+    );
+    expect(astra).toMatchObject({
+      label: "GPT-6 Astra",
+      reasoning: true,
+      thinkingLevels: ["low", "medium", "high", "xhigh", "max", "ultra"],
+    });
+    const models = builtinModels();
+    const originalAuth = models.getProvider("openai-codex")?.auth;
+    const registered = registerAstraModel(models).getModel("openai-codex", "gpt-6-astra");
+    expect(registered).toMatchObject({
+      contextWindow: 272_000,
+      maxTokens: 32_768,
+      input: ["text", "image"],
+    });
+    expect(models.getProvider("openai-codex")?.auth).toBe(originalAuth);
   });
 
   it("adds a configured OpenRouter model that is newer than the static catalog", async () => {

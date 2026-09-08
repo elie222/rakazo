@@ -1,5 +1,6 @@
-import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
+import { createProvider, getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
+import type { Api, Model, MutableModels, ProviderStreams } from "@earendil-works/pi-ai";
 import type { ModelOAuthSignInMode, ThinkingLevel } from "@rakazo/contracts";
 import { LOCAL_PROVIDER_ID, registerLocalProvider } from "./pi-local-provider.js";
 import { SUBSCRIPTION_SIGN_IN_PROVIDERS } from "./pi-oauth.js";
@@ -34,8 +35,63 @@ export function listPiCatalog(): PiCatalogEntry[] {
 
 let cachedCatalog: PiCatalogEntry[] | undefined;
 
+const ASTRA_MODEL_ID = "gpt-6-astra";
+const ASTRA_CONTEXT_WINDOW = 272_000;
+// Pi requires an output cap, but Codex's first-party registry does not publish Astra's.
+// This is a conservative adapter safety cap, not a claim about the provider limit.
+const ASTRA_ADAPTER_MAX_TOKENS = 32_768;
+const ASTRA_THINKING_LEVELS: ThinkingLevel[] = ["low", "medium", "high", "xhigh", "max", "ultra"];
+
+/** Add the currently supported Codex model to older Pi catalogs while retaining the real stream. */
+export function registerAstraModel(models: MutableModels): MutableModels {
+  const provider = models.getProvider("openai-codex");
+  if (!provider || provider.getModels().some((model) => model.id === ASTRA_MODEL_ID)) return models;
+  const modelBaseUrl = provider.baseUrl ?? provider.getModels()[0]?.baseUrl;
+  if (!modelBaseUrl) return models;
+  const astra: Model<"openai-codex-responses"> = {
+    id: ASTRA_MODEL_ID,
+    name: "GPT-6 Astra",
+    api: "openai-codex-responses",
+    provider: "openai-codex",
+    baseUrl: modelBaseUrl,
+    reasoning: true,
+    input: ["text", "image"],
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    contextWindow: ASTRA_CONTEXT_WINDOW,
+    maxTokens: ASTRA_ADAPTER_MAX_TOKENS,
+    thinkingLevelMap: {
+      minimal: null,
+      low: "low",
+      medium: "medium",
+      high: "high",
+      xhigh: "xhigh",
+      max: "max",
+      ultra: "ultra",
+    } as Model<"openai-codex-responses">["thinkingLevelMap"] & { ultra: "ultra" },
+  };
+  const api: ProviderStreams = {
+    stream: (model, context, options) => provider.stream(model, context, options),
+    streamSimple: (model, context, options) => provider.streamSimple(model, context, options),
+  };
+  models.setProvider(
+    createProvider({
+      id: provider.id,
+      name: provider.name,
+      baseUrl: provider.baseUrl,
+      headers: provider.headers,
+      auth: provider.auth,
+      models: [...provider.getModels(), astra] as readonly Model<Api>[],
+      filterModels: provider.filterModels?.bind(provider),
+      api,
+    }),
+  );
+  return models;
+}
+
 function buildPiCatalog(): PiCatalogEntry[] {
-  const models = registerOpenAiCompatibleCatalog(registerLocalProvider(builtinModels()));
+  const models = registerAstraModel(
+    registerOpenAiCompatibleCatalog(registerLocalProvider(builtinModels())),
+  );
   const workmateClaude = workmateClaudeProvider();
   if (workmateClaude) models.setProvider(workmateClaude);
   const entries: PiCatalogEntry[] = [];
@@ -54,7 +110,10 @@ function buildPiCatalog(): PiCatalogEntry[] {
     const providerModels = provider.getModels();
     const modelIds = providerModels.map((model) => model.id);
     for (const model of providerModels) {
-      const thinkingLevels = getSupportedThinkingLevels(model) as ThinkingLevel[];
+      const thinkingLevels =
+        model.id === ASTRA_MODEL_ID
+          ? ASTRA_THINKING_LEVELS
+          : (getSupportedThinkingLevels(model) as ThinkingLevel[]);
       entries.push({
         provider: provider.id,
         providerName: provider.name,

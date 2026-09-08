@@ -335,7 +335,7 @@ export interface AgentRunRequest {
     /** Whether this custom connection accepts standard reasoning_effort. */
     reasoning?: boolean;
     /** Preferred thinking effort for reasoning models; clamped to the model’s supported set. */
-    thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null;
+    thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra" | null;
     /** In-process OAuth credential from the encrypted store for this run. */
     oauth?: {
       credential: AgentModelOAuthCredential;
