@@ -186,6 +186,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "Could not delete account": "Не удалось удалить аккаунт",
   "Could not delete bot": "Не удалось удалить бота",
   "Could not delete group": "Не удалось удалить группу",
+  "Could not delete space": "Не удалось удалить пространство",
   "Could not finish sign-in": "Не удалось завершить вход",
   "Could not load bot": "Не удалось загрузить бота",
   "Could not load bots": "Не удалось загрузить ботов",
@@ -241,6 +242,7 @@ export const RU_MESSAGES: Record<string, string> = {
   Delete: "Удалить",
   "Delete account": "Удалить аккаунт",
   "Delete group": "Удалить группу",
+  "Delete space": "Удалить пространство",
   "Delete memories too": "Удалить также память",
   "Delete {name}?": "Удалить {name}?",
   "Delete this group? Bots and their solo threads are kept.":
@@ -440,6 +442,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "Silence notifications": "Отключить уведомления",
   Skip: "Пропустить",
   Space: "Пространство",
+  "Space actions for {name}": "Действия пространства {name}",
   "Space created": "Пространство создано",
   "Speak + transcribe": "Озвучить и расшифровать",
   "Speak message": "Озвучить сообщение",
@@ -550,6 +553,7 @@ export const RU_MESSAGES: Record<string, string> = {
   Submitted: "Отправлено",
   "Teach a task": "Научить задачу",
   "this model": "эта модель",
+  "This removes the empty space for everyone.": "Это удалит пустое пространство для всех.",
   "This removes every message and stops current work. The bot, computer, memory, and routines are kept.":
     "Это удалит все сообщения и остановит текущую работу. Бот, компьютер, память и задачи сохранятся.",
   "This subscription sign-in is not available in Rakazo yet. Use a deployment credential or choose another provider.":
