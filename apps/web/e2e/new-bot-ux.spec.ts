@@ -20,6 +20,7 @@ test("create opens form, then empty chat; picker lists bots; sidebar collapses",
   await page.getByTestId("create-menu-trigger").click();
   const picker = page.getByTestId("bot-create-picker");
   await expect(picker).toBeVisible();
+  await expect(picker.getByPlaceholder("Search")).toBeVisible();
   await expect(picker.getByTestId("create-new-bot")).toBeVisible();
   await expect(picker.getByText("Chief", { exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "plus-picker-bots");
