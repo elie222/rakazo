@@ -76,7 +76,7 @@ test("spaces stay invisible by default and chat creation requires approval", asy
   await expect(sidebar.getByText("Customer support", { exact: true })).toBeVisible();
 });
 
-test("a new space can be abandoned from onboarding and deleted from the sidebar", async ({
+test("a new space auto-completes onboarding and can be deleted from the sidebar", async ({
   page,
 }, testInfo) => {
   const stamp = Date.now();
@@ -88,16 +88,13 @@ test("a new space can be abandoned from onboarding and deleted from the sidebar"
   const dialog = page.getByRole("dialog", { name: "New space" });
   await dialog.getByLabel("Name").fill("Temporary");
   await dialog.getByRole("button", { name: "Create space", exact: true }).click();
-  await page.waitForURL(/\/onboarding/);
 
-  // The per-space onboarding is escapable: going back leaves the empty space
-  // behind instead of trapping the user.
-  await expect(page.getByRole("button", { name: "Back to app", exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Back to app", exact: true }).click();
-  await page.waitForURL(/\/app/);
-  await expect(page).not.toHaveURL(/\/onboarding/);
+  // Model is already connected, so onboarding skips the form and lands in Chief.
+  await completeOnboarding(page);
+  await expect(page).toHaveURL(/\/app\//);
   await expect(sidebar.getByText("Temporary", { exact: true })).toBeVisible();
-  await captureScreenshot(page, testInfo, "empty-space-sidebar");
+  await expect(sidebar.getByRole("button", { name: /^Chief/ })).toBeVisible();
+  await captureScreenshot(page, testInfo, "new-space-after-onboarding");
 
   await sidebar.getByRole("button", { name: "Open Temporary" }).click({ button: "right" });
   await page.getByRole("menuitem", { name: "Delete space" }).click();
