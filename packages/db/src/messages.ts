@@ -25,7 +25,16 @@ export function loadRunHistoryMessages(
     },
     orderBy: { seq: "desc" },
     take: limit,
-    select: { id: true, seq: true, role: true, runId: true, blocks: true },
+    select: {
+      id: true,
+      threadId: true,
+      seq: true,
+      role: true,
+      runId: true,
+      blocks: true,
+      replyToMessageId: true,
+      replyTo: { select: { id: true, threadId: true, role: true, blocks: true } },
+    },
   });
 }
 

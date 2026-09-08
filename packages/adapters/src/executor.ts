@@ -39,7 +39,6 @@ import {
   appendToolCallSegment,
   applyJudgeDecision,
   assertTransition,
-  blocksToAgentHistoryText,
   botMessageAllowsSilence,
   connectorKindFromToolName,
   containsSecret,
@@ -239,6 +238,7 @@ import {
   searchChartCatalog,
 } from "./plot-tool.js";
 import type { RemoteTransportDependencies } from "./remote-mcp.js";
+import { loadReplyContext, messageToAgentHistoryText } from "./reply-context.js";
 import {
   commitConsumedRunSecret,
   normalizeSecretAskPurpose,
@@ -1192,7 +1192,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 | "user"
                 | "assistant"
                 | "system",
-              content: blocksToAgentHistoryText(m.blocks as MessageBlock[]),
+              content: messageToAgentHistoryText(m),
             })),
             summary: thread.historyCompactionSummary,
             historyCompactedUpToSeq: thread.historyCompactedUpToSeq,
@@ -3233,7 +3233,13 @@ export function createRunExecutor(deps: ExecutorDeps) {
           (request) => redactSecrets(JSON.stringify(request), runSecrets),
           { exposedToolNames: new Set(tools.map((tool) => tool.name)) },
         );
-        const prompt = [basePrompt, takeoverResume?.promptNote, approvalContinuation]
+        const replyContext = await loadReplyContext(
+          deps.prisma,
+          thread.id,
+          run.sourceMessageId,
+          run.trigger,
+        );
+        const prompt = [replyContext, basePrompt, takeoverResume?.promptNote, approvalContinuation]
           .filter(Boolean)
           .join("\n\n");
         const historicalContext: AgentRunRequest["history"] = [];
@@ -3393,7 +3399,12 @@ export function createRunExecutor(deps: ExecutorDeps) {
                           id: item.id,
                           messageId: item.messageId,
                           historyText: item.text,
-                          text: [item.text, filesInstruction, unavailableInstruction]
+                          text: [
+                            await loadReplyContext(deps.prisma, thread.id, item.messageId),
+                            item.text,
+                            filesInstruction,
+                            unavailableInstruction,
+                          ]
                             .filter(Boolean)
                             .join("\n\n"),
                           images,

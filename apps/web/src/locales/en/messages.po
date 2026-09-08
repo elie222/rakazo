@@ -3726,3 +3726,9 @@ msgstr "Your name"
 #: src/pages/Welcome.tsx:21
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "Your team of always-on agents<0/>that you can give real work to."
+
+msgid "React"
+msgstr "React"
+
+msgid "Reactions"
+msgstr "Reactions"

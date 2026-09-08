@@ -196,15 +196,19 @@ test("message hover shows beside-bubble actions; reply links to parent", async (
   }
   await captureScreenshot(page, testInfo, "message-reaction-picker");
   await page.getByRole("button", { name: "❤️", exact: true }).click();
-  await expect(parentRow.getByRole("button", { name: "Remove reaction" })).toHaveText("❤️");
+  await expect(parentRow.getByTestId("message-reactions")).toHaveText("❤️");
   await parentRow.hover();
   await react.click();
   await page.getByRole("button", { name: "👍", exact: true }).click();
-  const reactionChip = parentRow
-    .getByRole("button", { name: "Remove reaction" })
-    .filter({ hasText: "👍" });
-  await expect(reactionChip).toBeVisible();
-  await captureScreenshot(page, testInfo, "message-thumbs-up");
+  await expect(parentRow.getByTestId("message-reactions")).toContainText("👍");
+  await parentRow.hover();
+  await react.click();
+  await page.getByRole("button", { name: "❤️", exact: true }).click();
+  await expect(parentRow.getByTestId("message-reactions")).toContainText("❤️ 2");
+  await captureScreenshot(page, testInfo, "message-multiple-reactions");
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await expect(parentRow.getByTestId("message-reactions")).toContainText("❤️ 2");
+  await expect(parentRow.getByTestId("message-reactions")).toContainText("👍");
 
   await parentRow.hover();
   await toolbar.getByRole("button", { name: "More" }).click();
@@ -345,9 +349,10 @@ test.describe("touch message actions", () => {
     await expect(page.getByRole("button", { name: "🎉", exact: true })).toBeVisible();
     await captureScreenshot(page, testInfo, "message-reaction-picker-touch");
     await page.getByRole("button", { name: "🎉", exact: true }).tap();
-    await expect(row.getByRole("button", { name: "Remove reaction" })).toHaveText("🎉");
-    await row.getByRole("button", { name: "Remove reaction" }).tap();
-    await expect(row.getByRole("button", { name: "Remove reaction" })).toHaveCount(0);
+    await expect(row.getByTestId("message-reactions")).toHaveText("🎉");
+    await rail.getByRole("button", { name: "React", exact: true }).tap();
+    await page.getByRole("button", { name: "🎉", exact: true }).tap();
+    await expect(row.getByTestId("message-reactions")).toHaveText("🎉 2");
     await rail.getByRole("button", { name: "More" }).tap();
     await expect(page.getByRole("menuitem", { name: "Copy" })).toBeVisible();
     await expect(page.getByTestId("message-hover-time")).toBeVisible();

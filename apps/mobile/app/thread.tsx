@@ -22,6 +22,7 @@ import {
   isSecretAskBlock,
   latestAnswerableAskMessageId,
   mentionChipKey,
+  projectMessageReactions,
   resolveComposerSendPlan,
   SLASH_ACTIONS,
   type SlashActionId,
@@ -309,13 +310,16 @@ function Thread() {
   const [markdownPreview, setMarkdownPreview] = useState<MarkdownArtifactPreviewTarget | null>(
     null,
   );
-  const visibleMessages = useMemo(
+  const reactionView = useMemo(
     () =>
-      userVisibleMessages(snap?.messages ?? [], { includePeerReceipts: true }).filter((message) =>
-        hasVisibleMessagePresentation(message.blocks),
+      projectMessageReactions(
+        userVisibleMessages(snap?.messages ?? [], { includePeerReceipts: true }).filter((message) =>
+          hasVisibleMessagePresentation(message.blocks),
+        ),
       ),
     [snap?.messages],
   );
+  const visibleMessages = reactionView.messages;
   const latestMessageId = visibleMessages.at(-1)?.id ?? null;
   const activePendingAttachments = attachmentsForThread(pendingAttachments, threadKey);
   const composerMentionTargets = useMemo(
@@ -1247,7 +1251,7 @@ function Thread() {
     );
   }
 
-  async function reactToMessage(message: MobileMessage, reaction: MessageReaction | null = null) {
+  async function reactToMessage(message: MobileMessage, reaction: MessageReaction) {
     const targetBotId = botId;
     const targetGroupId = groupId;
     if (!targetBotId && !targetGroupId) return;
@@ -1255,8 +1259,8 @@ function Thread() {
       await rpc("threads/react", {
         ...(targetGroupId ? { groupId: targetGroupId } : { botId: targetBotId! }),
         messageId: message.id,
-        thumbsUp: reaction === "👍",
         reaction,
+        clientNonce: newClientNonce(),
       });
     } catch (err) {
       if (!isCurrentTarget(targetBotId, targetGroupId)) return;
@@ -1280,13 +1284,7 @@ function Thread() {
                   actions: MESSAGE_REACTIONS.map((emoji) => ({
                     name: emoji,
                     text: emoji,
-                    onPress: () =>
-                      void reactToMessage(
-                        message,
-                        (message.reaction ?? (message.thumbsUp ? "👍" : null)) === emoji
-                          ? null
-                          : emoji,
-                      ),
+                    onPress: () => void reactToMessage(message, emoji),
                   })),
                 }),
             },
@@ -1404,22 +1402,35 @@ function Thread() {
               actionProps={actionProps}
             />
           </Pressable>
-          {canReactToThreadMessage(message) && (message.reaction || message.thumbsUp) ? (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={t("Remove reaction")}
-              accessibilityState={{ selected: true }}
-              onPress={() => void reactToMessage(message)}
-              hitSlop={8}
+          {reactionView.reactions.has(message.id) ? (
+            <View
               style={{
-                alignSelf: message.role === "user" ? "flex-end" : "flex-start",
+                flexDirection: "row",
+                flexWrap: "wrap",
+                gap: 4,
                 marginTop: 4,
+                justifyContent: message.role === "user" ? "flex-end" : "flex-start",
               }}
             >
-              <Text style={{ color: tokens.warning, fontSize: 13 }}>
-                {message.reaction ?? "👍"}
-              </Text>
-            </Pressable>
+              {[...reactionView.reactions.get(message.id)!].map(([emoji, count]) => (
+                <Text
+                  key={emoji}
+                  style={{
+                    color: tokens.foreground,
+                    backgroundColor: tokens.muted,
+                    borderColor: tokens.border,
+                    borderWidth: 1,
+                    borderRadius: 16,
+                    paddingHorizontal: 8,
+                    paddingVertical: 2,
+                    fontSize: 13,
+                  }}
+                >
+                  {emoji}
+                  {count > 1 ? ` ${count}` : ""}
+                </Text>
+              ))}
+            </View>
           ) : null}
         </View>
       </View>

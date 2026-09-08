@@ -46,6 +46,7 @@ import {
   isToolActivityBlock,
   latestAnswerableAskMessageId,
   mentionChipKey,
+  projectMessageReactions,
   reorderBotTo,
   resolveComposerSendPlan,
   resolveMentionPickerKey,
@@ -1802,7 +1803,7 @@ export function ShellPage() {
     }
   }, []);
   const reactToMessage = useCallback(
-    async (message: ThreadMessage, reaction: MessageReaction | null = null) => {
+    async (message: ThreadMessage, reaction: MessageReaction) => {
       const botId = activeBotId.current;
       const groupId = activeGroupId.current;
       if (!botId && !groupId) return;
@@ -1810,8 +1811,8 @@ export function ShellPage() {
         await rpc.threads.react({
           ...(groupId ? { groupId } : { botId: botId! }),
           messageId: message.id,
-          thumbsUp: reaction === "👍",
           reaction,
+          clientNonce: newClientNonce(),
         });
       } catch (error) {
         const stillHere = groupId
@@ -4060,7 +4061,7 @@ const Transcript = memo(function Transcript({
   onOpenBot: (botId: string) => void;
   onAnswer: (message: ThreadMessage, text: string) => Promise<void>;
   onReply: (message: ThreadMessage) => void;
-  onReact: (message: ThreadMessage, reaction?: MessageReaction | null) => Promise<void>;
+  onReact: (message: ThreadMessage, reaction: MessageReaction) => Promise<void>;
   onJumpToMessage: (messageId: string) => void;
   onOpenPeerMessages: (peer: { peerBotId: string; peerBotName: string }) => void;
   memberName?: (botId: string | undefined) => string | undefined;
@@ -4083,6 +4084,7 @@ const Transcript = memo(function Transcript({
     () => new Map(messages.map((message) => [message.id, message])),
     [messages],
   );
+  const reactionView = useMemo(() => projectMessageReactions(messages), [messages]);
   const workingBotName = workingBots.length === 1 ? workingBots[0]?.name : undefined;
   const workingLabel =
     workingBotName != null && workingBotName !== ""
@@ -4205,7 +4207,7 @@ const Transcript = memo(function Transcript({
             {loadingOlder ? t`Loading…` : t`Load earlier messages`}
           </button>
         ) : null}
-        {messages.map((message) => {
+        {reactionView.messages.map((message) => {
           if (!message.blocks.some((block) => !isToolActivityBlock(block))) return null;
           const peerReceipt = isPeerReceiptBlocks(message.blocks);
           return (
@@ -4273,17 +4275,24 @@ const Transcript = memo(function Transcript({
                   />
                 </div>
               </div>
-              {!peerReceipt && (message.reaction || message.thumbsUp) ? (
-                <button
-                  type="button"
-                  aria-label={t`Remove reaction`}
-                  onClick={() => void onReact(message)}
-                  className={`mt-1 rounded-full border border-border bg-muted px-2 py-0.5 text-xs ${
-                    message.role === "user" ? "ml-auto block" : ""
-                  }`}
+              {!peerReceipt && reactionView.reactions.has(message.id) ? (
+                <div
+                  data-testid="message-reactions"
+                  className={cn(
+                    "mt-1 flex flex-wrap gap-1",
+                    message.role === "user" && "justify-end",
+                  )}
                 >
-                  {message.reaction ?? "👍"}
-                </button>
+                  {[...reactionView.reactions.get(message.id)!].map(([emoji, count]) => (
+                    <span
+                      key={emoji}
+                      className="rounded-full border border-border bg-muted px-2 py-0.5 text-xs"
+                    >
+                      {emoji}
+                      {count > 1 ? ` ${count}` : ""}
+                    </span>
+                  ))}
+                </div>
               ) : null}
             </div>
           );
@@ -5051,7 +5060,7 @@ function MessageHoverActions({
   message: ThreadMessage;
   side: "start" | "end";
   onReply: (message: ThreadMessage) => void;
-  onReact: (message: ThreadMessage, reaction?: MessageReaction | null) => Promise<void>;
+  onReact: (message: ThreadMessage, reaction: MessageReaction) => Promise<void>;
 }) {
   const { t } = useLingui();
   const [moreOpen, setMoreOpen] = useState(false);
@@ -5093,16 +5102,10 @@ function MessageHoverActions({
                   key={emoji}
                   type="button"
                   aria-label={emoji}
-                  aria-pressed={(message.reaction ?? (message.thumbsUp ? "👍" : null)) === emoji}
-                  className="grid h-11 w-11 place-items-center rounded-xl text-2xl hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring aria-pressed:bg-accent"
+                  className="grid h-11 w-11 place-items-center rounded-xl text-2xl hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
                   onClick={() => {
                     setReactionsOpen(false);
-                    void onReact(
-                      message,
-                      (message.reaction ?? (message.thumbsUp ? "👍" : null)) === emoji
-                        ? null
-                        : emoji,
-                    );
+                    void onReact(message, emoji);
                   }}
                 >
                   {emoji}

@@ -5,6 +5,7 @@ import {
   type Actor,
   GROUP_MEMBER_MIN,
   type GroupMember,
+  type MessageBlock,
   type RunStatus,
   type ThreadSnapshot,
 } from "@rakazo/contracts";
@@ -833,74 +834,50 @@ export async function sendThreadMessage(
   return sendResult(committed.message, committed.runs);
 }
 
+/** Reactions are quiet user replies: recorded in history without scheduling a response. */
 export async function reactToThreadMessage(
   deps: { prisma: PrismaClient },
   actor: Actor,
   target: ThreadTarget,
-  messageId: string,
-  thumbsUp: boolean,
-  reaction?: import("@rakazo/contracts").MessageReaction | null,
+  input: {
+    messageId: string;
+    reaction: import("@rakazo/contracts").MessageReaction;
+    clientNonce: string;
+  },
 ) {
-  const selectedReaction = reaction === undefined ? (thumbsUp ? "👍" : null) : reaction;
-  thumbsUp = selectedReaction === "👍";
   return deps.prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT id FROM threads WHERE id = ${target.threadId} FOR UPDATE`;
-    const [message] = await tx.$queryRaw<
-      Array<{ id: string; thumbsUp: boolean; reaction?: string | null }>
-    >`SELECT id, "thumbsUp", reaction FROM messages WHERE id = ${messageId} AND "threadId" = ${target.threadId} FOR UPDATE`;
-    if (!message) throw new IsolationError();
-    if ((message.reaction ?? (message.thumbsUp ? "👍" : null)) === selectedReaction) {
-      return { changed: false, eventSeq: null, runId: null };
-    }
-
-    await tx.message.update({
-      where: { id: message.id },
-      data: { thumbsUp, reaction: selectedReaction },
+    const parent = await tx.message.findFirst({
+      where: { id: input.messageId, threadId: target.threadId },
+      select: { id: true },
     });
+    if (!parent) throw new IsolationError();
+    const existing = await tx.message.findUnique({
+      where: {
+        threadId_clientNonce: { threadId: target.threadId, clientNonce: input.clientNonce },
+      },
+      select: { id: true },
+    });
+    if (existing) return { eventSeq: null };
     const botId = target.kind === "bot" ? target.botId : target.memberBotIds[0];
     if (!botId) throw new IsolationError();
-
-    let run: { id: string; status: string } | null = null;
-    if (thumbsUp && target.kind === "bot") {
-      const busy = await tx.run.findFirst({
-        where: { botId, status: { in: ["running", "queued", "leased"] } },
-        select: { id: true },
-      });
-      if (!busy) {
-        const task = await tx.task.create({
-          data: {
-            spaceId: actor.spaceId,
-            botId,
-            threadId: target.threadId,
-            userId: actor.userId,
-            prompt: "The user gave this message a thumbs-up.",
-            status: "queued",
-          },
-        });
-        run = await tx.run.create({
-          data: {
-            spaceId: actor.spaceId,
-            botId,
-            threadId: target.threadId,
-            taskId: task.id,
-            userId: actor.userId,
-            status: "queued",
-            trigger: "reaction",
-            sourceMessageId: message.id,
-          },
-        });
-      }
-    }
-
+    const blocks: MessageBlock[] = [{ kind: "text", text: input.reaction }];
+    const message = await createThreadMessageInTransaction(tx, {
+      threadId: target.threadId,
+      role: "user",
+      blocks,
+      replyToMessageId: parent.id,
+      clientNonce: input.clientNonce,
+    });
+    if (target.kind === "group") await touchGroupUpdatedAt(tx, target.groupId);
     const event = await appendEventInTransaction(tx, {
       spaceId: actor.spaceId,
       threadId: target.threadId,
       botId,
-      type: "thread.message.reaction",
-      payload: { messageId: message.id, thumbsUp, reaction: selectedReaction },
-      runId: run?.id,
+      type: "thread.message.created",
+      payload: { messageId: message.id, role: "user", blocks, replyToMessageId: parent.id },
     });
-    return { changed: true, eventSeq: event.seq, runId: run?.id ?? null };
+    return { eventSeq: event.seq };
   });
 }
 

@@ -2,7 +2,6 @@ import * as z from "zod";
 import { BotSecretDestination } from "./bot-secrets.js";
 import { Id } from "./ids.js";
 import { McpTransportSchema } from "./mcp.js";
-import { MessageReactionSchema } from "./reactions.js";
 
 export const ProductEventType = z.enum([
   "thread.message.created",
@@ -291,8 +290,6 @@ export const ThreadMessageSchema = z.object({
   botId: Id.optional(),
   replyToMessageId: Id.optional(),
   runId: Id.optional(),
-  thumbsUp: z.boolean().optional(),
-  reaction: MessageReactionSchema.nullable().optional(),
   createdAt: z.string(),
 });
 export type ThreadMessage = z.infer<typeof ThreadMessageSchema>;
