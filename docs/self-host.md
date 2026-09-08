@@ -99,7 +99,7 @@ existing `pgdata` volume keeps its original password: keep that value in `.env`,
 volume / run `ALTER ROLE` before rotating. For host-side clients (`pnpm db:migrate`, GUI tools),
 add `infra/compose/docker-compose.postgres-host.yml` so Postgres is published on loopback
 `127.0.0.1:5433`, or use
-`docker compose --env-file .env -f infra/compose/docker-compose.yml exec postgres psql -U rakazo -d rakazo`.
+`docker compose --env-file .env -f infra/compose/docker-compose.yml exec postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"'`.
 Do not publish Postgres on a public interface.
 
 The Docker supervisor is not published as its own image and is not exposed on the host. It runs from

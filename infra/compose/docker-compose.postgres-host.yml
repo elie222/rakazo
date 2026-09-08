@@ -10,7 +10,7 @@
 #
 # Prefer `docker compose exec` when you only need a one-off psql session:
 #   docker compose --env-file .env -f infra/compose/docker-compose.yml exec postgres \
-#     psql -U "${POSTGRES_USER:-rakazo}" -d "${POSTGRES_DB:-rakazo}"
+#     sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
 
 services:
   postgres:

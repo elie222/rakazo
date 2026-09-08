@@ -106,7 +106,7 @@ Setup:
 
 1. Clone the repository if needed and enter its root.
 2. Read `AGENTS.md`, `README.md`, `.env.example`, and the root `package.json` before acting. Follow repository instructions if they have changed since this prompt was written.
-3. If `.env` does not exist, copy `.env.example` to `.env`. In a new file, generate `BETTER_AUTH_SECRET`, `ENCRYPTION_KEY`, `SCREEN_PROXY_SECRET`, and `SANDBOX_SUPERVISOR_TOKEN` independently with `openssl rand -hex 32` (64 hex characters each). For an existing file, check those keys without printing values and generate only absent keys. Preserve existing values; if a required value is empty, ask before replacing it. Keep local defaults for Postgres, origins, Pi, Docker, and Graphile unless the preflight found a conflict. Add only the model and managed-connector credentials I selected. Leave optional credentials blank.
+3. If `.env` does not exist, copy `.env.example` to `.env`. In a new file, generate `POSTGRES_PASSWORD` with `openssl rand -hex 16` and put the same value into host-side `DATABASE_URL` (replace any placeholder password). Also generate `BETTER_AUTH_SECRET`, `ENCRYPTION_KEY`, `SCREEN_PROXY_SECRET`, and `SANDBOX_SUPERVISOR_TOKEN` independently with `openssl rand -hex 32` (64 hex characters each). For an existing file, check those keys without printing values and generate only absent keys. Preserve existing values; if a required value is empty, ask before replacing it. Keep local defaults for Postgres user/db, origins, Pi, Docker, and Graphile unless the preflight found a conflict. Add only the model and managed-connector credentials I selected. Leave optional credentials blank.
 4. Confirm `.env` is ignored and that no secret-bearing file is staged.
 5. Start only local Postgres:
 

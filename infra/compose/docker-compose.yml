@@ -3,6 +3,8 @@ services:
     image: ${POSTGRES_IMAGE:-postgres:16}
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-rakazo}
+      # Role password is applied only on first pgdata init. Existing volumes keep
+      # the old password; set this to match, or ALTER ROLE / recreate pgdata.
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: ${POSTGRES_DB:-rakazo}
     volumes:
