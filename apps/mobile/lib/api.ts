@@ -44,6 +44,8 @@ const SPACE_ROLLBACK_KEY = "rakazo.space_rollback";
 const RPC_TIMEOUT_MS = 8_000;
 export const MAX_MOBILE_AUTH_RESPONSE_BYTES = 256 * 1024;
 export const MAX_MOBILE_RPC_RESPONSE_BYTES = 16 * 1024 * 1024;
+/** Inbox bootstrap reads safe to replay without a Space header during auth recovery. */
+const SPACE_AUTH_RECOVERY_SAFE_PROCS = new Set(["spaces/list", "me"]);
 
 let cachedApiBase: string | undefined;
 let cachedSpaceId = "";
@@ -546,7 +548,9 @@ export async function rpc<T>(
       // reloads it and the first RPCs 401. Probe once without a Space header:
       // success means the selection was inaccessible (clear it); failure means
       // the session itself is bad (restore the selection so a later sign-in
-      // keeps the user's Space).
+      // keeps the user's Space). Never replay a mutation against the default
+      // Space — only safe reads may retry as themselves; other procs probe
+      // with spaces/list, then fail the original call.
       const previousSpaceId = selectedSpaceId();
       if (
         unauthorized &&
@@ -555,19 +559,28 @@ export async function rpc<T>(
         !options.skipSpaceAuthRecovery
       ) {
         cachedSpaceId = "";
+        const retrySameProc = SPACE_AUTH_RECOVERY_SAFE_PROCS.has(proc);
         try {
-          const result = await rpc<T>(proc, body, { ...options, skipSpaceAuthRecovery: true });
-          // A Space selected while the retry was in flight already owns both
-          // the in-memory and durable selection; leave it alone.
-          if (!selectedSpaceId()) {
-            await clearStoredValue(SPACE_KEY);
-            await clearStoredValue(SPACE_ROLLBACK_KEY);
+          if (retrySameProc) {
+            const result = await rpc<T>(proc, body, { ...options, skipSpaceAuthRecovery: true });
+            // A Space selected while the retry was in flight already owns both
+            // the in-memory and durable selection; leave it alone.
+            if (!selectedSpaceId()) {
+              await clearStoredValue(SPACE_KEY);
+              await clearStoredValue(SPACE_ROLLBACK_KEY);
+            }
+            return result;
           }
-          return result;
+          await rpc("spaces/list", {}, { ...options, skipSpaceAuthRecovery: true });
         } catch (retryError) {
           if (!selectedSpaceId()) cachedSpaceId = previousSpaceId;
           throw retryError;
         }
+        if (!selectedSpaceId()) {
+          await clearStoredValue(SPACE_KEY);
+          await clearStoredValue(SPACE_ROLLBACK_KEY);
+        }
+        throw new Error(message);
       }
       throw new Error(message);
     }
