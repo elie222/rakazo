@@ -49,7 +49,7 @@ import {
   type TextProps,
   View,
 } from "react-native";
-import { KeyboardAvoidingView } from "react-native-keyboard-controller";
+import { KeyboardAvoidingView, useKeyboardState } from "react-native-keyboard-controller";
 import { useReducedMotion } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppConnectCard } from "../components/AppConnectCard";
@@ -230,6 +230,7 @@ function Thread() {
   const router = useRouter();
   const headerHeight = useHeaderHeight();
   const insets = useSafeAreaInsets();
+  const keyboardVisible = useKeyboardState((state) => state.isVisible);
   const { botId, groupId, name, messageId } = useLocalSearchParams<{
     botId?: string;
     groupId?: string;
@@ -372,6 +373,7 @@ function Thread() {
         })
       : [];
   const currentBot = botId ? mentionBots.find((bot) => bot.id === botId) : undefined;
+  const displayName = currentBot?.name ?? name;
   const notificationThreadId = snap?.threadId ?? currentBot?.threadId;
   activeThreadId.current = notificationThreadId;
   const currentBotStatus = snap ? snap.run?.status : currentBot?.status;
@@ -400,14 +402,28 @@ function Thread() {
     setThreadScrollState(scrollBehavior.current.state());
   }, [threadKey]);
 
+  const refreshMentionBots = useCallback(async () => {
+    if (!botId && !groupId) return;
+    try {
+      const bots = await rpc<MobileBot[]>("bots/list");
+      setMentionBots(bots);
+      if (botId) {
+        const next = bots.find((bot) => bot.id === botId);
+        if (next?.name && next.name !== name) {
+          router.setParams({ name: next.name });
+        }
+      }
+    } catch {
+      // Keep the last known roster if refresh fails.
+    }
+  }, [botId, groupId, name, router]);
+
   useEffect(() => {
-    void rpc<MobileBot[]>("bots/list")
-      .then(setMentionBots)
-      .catch(() => setMentionBots([]));
+    void refreshMentionBots();
     void rpc<MobileGroup[]>("groups/list")
       .then(setMentionGroups)
       .catch(() => setMentionGroups([]));
-  }, []);
+  }, [refreshMentionBots]);
 
   useEffect(() => {
     if (mentionBots.length === 0) {
@@ -480,9 +496,18 @@ function Thread() {
 
   useLayoutEffect(() => {
     navigation.setOptions({
-      title: name || t("Thread"),
+      title: displayName || t("Thread"),
       headerTitle: () => (
-        <View
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={
+            !inGroup && botId ? t("Bot settings") : displayName || t("Thread")
+          }
+          disabled={inGroup || !botId}
+          onPress={() => {
+            if (!botId || inGroup) return;
+            router.push({ pathname: "/bot-settings", params: { botId } });
+          }}
           style={{
             flexDirection: "row",
             alignItems: "center",
@@ -503,9 +528,9 @@ function Thread() {
             numberOfLines={1}
             style={{ color: tokens.foreground, fontSize: 18, fontWeight: "600" }}
           >
-            {name || t("Thread")}
+            {displayName || t("Thread")}
           </Text>
-        </View>
+        </Pressable>
       ),
       headerRight: () =>
         inGroup ? (
@@ -541,9 +566,9 @@ function Thread() {
     botId,
     currentBot,
     currentBotStatus,
+    displayName,
     groupId,
     inGroup,
-    name,
     navigation,
     router,
     t,
@@ -575,11 +600,19 @@ function Thread() {
 
   const botActions = [
     {
+      text: t("Chat settings"),
+      onPress: () =>
+        router.push({
+          pathname: "/bot-settings",
+          params: { botId: botId ?? "" },
+        }),
+    },
+    {
       text: t("Open computer"),
       onPress: () =>
         router.push({
           pathname: "/computer",
-          params: { botId: botId ?? "", name: name ?? t("Bot") },
+          params: { botId: botId ?? "", name: displayName ?? t("Bot") },
         }),
     },
     {
@@ -612,7 +645,7 @@ function Thread() {
     {
       text: t("Delete…"),
       destructive: true,
-      onPress: () => confirmDeleteBot({ id: botId ?? "", name: name || t("Bot") }, leaveBot),
+      onPress: () => confirmDeleteBot({ id: botId ?? "", name: displayName || t("Bot") }, leaveBot),
     },
   ];
 
@@ -776,11 +809,12 @@ function Thread() {
           threadId: notificationThreadId,
         }).catch(() => undefined);
       }
+      void refreshMentionBots();
       markReadIfVisible();
       return () => {
         void setOpenNotificationThread(null).catch(() => undefined);
       };
-    }, [botId, markReadIfVisible, notificationThreadId]),
+    }, [botId, markReadIfVisible, notificationThreadId, refreshMentionBots]),
   );
 
   useEffect(() => {
@@ -853,11 +887,15 @@ function Thread() {
                 }
                 setSnap((prev) => applyMobileThreadEvent(prev, event));
               }
+              if (event.type === "bot.updated") {
+                void refreshMentionBots();
+              }
               if (event.type === "thread.message.created" && event.payload?.role === "bot") {
                 readVisibleTarget.current = null;
                 markReadIfVisible();
               }
               if (isRunTerminalEvent(event)) {
+                void refreshMentionBots();
                 if (!jumpScrollTarget.current && !expandedHistoryThread.current) {
                   void refresh().catch(() => undefined);
                 }
@@ -879,7 +917,7 @@ function Thread() {
     return () => {
       abort.abort();
     };
-  }, [botId, groupId, markReadIfVisible]);
+  }, [botId, groupId, markReadIfVisible, refreshMentionBots]);
 
   useEffect(() => {
     if (!botId && !groupId) return;
@@ -1370,7 +1408,7 @@ function Thread() {
               botId={botId ?? snap?.members?.[0]?.botId ?? ""}
               groupId={groupId}
               message={message}
-              botName={name}
+              botName={displayName}
               bots={mentionBots}
               members={snap?.members}
               replyPreview={
@@ -1406,10 +1444,11 @@ function Thread() {
   const workingFooter =
     !inGroup && currentBot && isWorkingStatus(currentBotStatus) && !hasLiveProgress ? (
       <View
+        accessibilityLabel={t("{name} is working", { name: currentBot.name })}
+        accessibilityRole="text"
         style={{
           flexDirection: "row",
           alignItems: "center",
-          gap: 10,
           minHeight: 40,
           marginTop: 12,
         }}
@@ -1420,16 +1459,18 @@ function Thread() {
           size={28}
           status={currentBotStatus}
         />
-        <Text style={{ color: tokens.mutedForeground, fontSize: 13.5 }}>
-          {t("{name} is working", { name: currentBot.name })}
-        </Text>
       </View>
     ) : inGroup && workingGroupBots.length > 0 ? (
       <View
+        accessibilityLabel={
+          workingGroupBots.length === 1
+            ? t("{name} is working", { name: workingGroupBots[0]?.name ?? t("Agent") })
+            : t("{count} agents working", { count: workingGroupBots.length })
+        }
+        accessibilityRole="text"
         style={{
           flexDirection: "row",
           alignItems: "center",
-          gap: 10,
           minHeight: 40,
           marginTop: 12,
         }}
@@ -1447,11 +1488,6 @@ function Thread() {
             </View>
           ))}
         </View>
-        <Text style={{ color: tokens.mutedForeground, fontSize: 13.5, flexShrink: 1 }}>
-          {workingGroupBots.length === 1
-            ? t("{name} is working", { name: workingGroupBots[0]?.name ?? t("Agent") })
-            : t("{count} agents working", { count: workingGroupBots.length })}
-        </Text>
       </View>
     ) : null;
 
@@ -1585,7 +1621,7 @@ function Thread() {
           </Pressable>
         ) : null}
       </View>
-      <View style={{ paddingBottom: Math.max(insets.bottom + 12, 24) }}>
+      <View style={{ paddingBottom: keyboardVisible ? 12 : Math.max(insets.bottom + 12, 24) }}>
         {replyTarget ? (
           <View
             style={{
@@ -1906,7 +1942,7 @@ function Thread() {
             <TextInput
               value={draft}
               onChangeText={updateDraft}
-              accessibilityLabel={name ? t("Message {name}", { name }) : t("Message")}
+              accessibilityLabel={displayName ? t("Message {name}", { name: displayName }) : t("Message")}
               onKeyPress={(event) => {
                 if (
                   event.nativeEvent.key === "Backspace" &&
@@ -1919,8 +1955,8 @@ function Thread() {
               placeholder={
                 selectedSkill || selectedMentions.length
                   ? undefined
-                  : name
-                    ? t("Message {name}", { name })
+                  : displayName
+                    ? t("Message {name}", { name: displayName })
                     : t("Message…")
               }
               placeholderTextColor={tokens.mutedForeground}

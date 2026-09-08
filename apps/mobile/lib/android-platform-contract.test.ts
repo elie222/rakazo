@@ -30,7 +30,8 @@ describe("Android mobile platform contract", () => {
     expect(thread).not.toContain("automaticOffset");
     expect(thread).not.toContain("KeyboardStickyView");
     expect(thread).toContain("useSafeAreaInsets");
-    expect(thread).toContain("Math.max(insets.bottom + 12, 24)");
+    expect(thread).toContain("useKeyboardState");
+    expect(thread).toContain("keyboardVisible ? 12 : Math.max(insets.bottom + 12, 24)");
   });
 
   it("requests live-update promotion and exposes its Android settings", () => {
@@ -166,6 +167,13 @@ describe("Android mobile platform contract", () => {
     expect(thread).toContain("inGroup && workingGroupBots.length > 0 ?");
     expect(thread).toContain("workingGroupBots.length - index");
     expect(thread).toContain("agents working");
+    // Visible chrome is avatar-only; copy stays on accessibilityLabel.
+    expect(thread).toMatch(
+      /accessibilityLabel=\{\s*workingGroupBots\.length === 1[\s\S]*agents working/,
+    );
+    expect(thread).not.toMatch(
+      /workingGroupBots\.length === 1\s*\?[\s\S]*<Text[^>]*>\s*\{t\("\{name\} is working"/,
+    );
   });
 
   it("keeps send and stop separate while steering active work", () => {

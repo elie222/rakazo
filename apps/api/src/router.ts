@@ -947,6 +947,28 @@ export function createRouter(deps: RouterDeps) {
         const bots = await repos.listBots(context.actor);
         const bot = bots.find((b) => b.id === input.botId);
         if (!bot) throw new IsolationError();
+        if (
+          input.name !== undefined ||
+          input.title !== undefined ||
+          input.description !== undefined
+        ) {
+          await deps.events
+            .append({
+              spaceId: context.actor.spaceId,
+              threadId: bot.threadId,
+              botId: bot.id,
+              type: "bot.updated",
+              payload: {
+                botId: bot.id,
+                name: bot.name,
+                title: bot.title,
+                description: bot.description,
+              },
+            })
+            .catch((error) => {
+              getLogger().error("bot.updated after bots.update", error);
+            });
+        }
         return bot;
       }),
       setComputer: authed.bots.setComputer.handler(async ({ context, input }) => {

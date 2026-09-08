@@ -744,6 +744,28 @@ export const builtinAgentTools: ConnectorTool[] = [
     },
   },
   {
+    name: "update_bot",
+    description:
+      "Update this bot's own profile fields that the user sees in chat: name (header and list label), title (short role line), and description. Call this when the user asks you to rename yourself or change your title/description. Do not claim you updated the profile without calling this tool.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: {
+          type: "string",
+          description: "Display name shown in the chat header and bot list.",
+        },
+        title: {
+          type: "string",
+          description: "Short role or headline shown in bot settings.",
+        },
+        description: {
+          type: "string",
+          description: "Longer blurb describing what this bot does.",
+        },
+      },
+    },
+  },
+  {
     name: "archive_bot",
     description:
       "Archive a bot this bot created. Archiving stops its work and routines, hides it from the active list, and preserves its conversation, memory, and files for the user to restore or delete later. confirm_name must exactly match its name. This cannot archive you, bots the user created, or bots another bot created.",

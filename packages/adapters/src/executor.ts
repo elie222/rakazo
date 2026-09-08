@@ -29,6 +29,9 @@ import {
 import type { MessageBlock, RunStatus } from "@rakazo/contracts";
 import {
   ATTACHMENT_MAX_BYTES,
+  BOT_DESCRIPTION_MAX_LENGTH,
+  BOT_NAME_MAX_LENGTH,
+  BOT_TITLE_MAX_LENGTH,
   BotSecretName,
   BotSecretSubmission,
   isAttachmentImageMimeType,
@@ -3033,6 +3036,81 @@ export function createRunExecutor(deps: ExecutorDeps) {
             }
             return spawned;
           }
+          if (name === "update_bot") {
+            const patch: { name?: string; title?: string; description?: string } = {};
+            if (args.name !== undefined) patch.name = String(args.name);
+            if (args.title !== undefined) patch.title = String(args.title);
+            if (args.description !== undefined) patch.description = String(args.description);
+            if (Object.keys(patch).length === 0) {
+              return finish({
+                error: "Provide at least one of name, title, or description.",
+              });
+            }
+            if (patch.name !== undefined) {
+              const nextName = patch.name.trim();
+              if (!nextName) return finish({ error: "name cannot be empty." });
+              if (nextName.length > BOT_NAME_MAX_LENGTH) {
+                return finish({ error: `name must be at most ${BOT_NAME_MAX_LENGTH} characters.` });
+              }
+              patch.name = nextName;
+            }
+            if (patch.title !== undefined) {
+              const nextTitle = patch.title.trim();
+              if (nextTitle.length > BOT_TITLE_MAX_LENGTH) {
+                return finish({
+                  error: `title must be at most ${BOT_TITLE_MAX_LENGTH} characters.`,
+                });
+              }
+              patch.title = nextTitle;
+            }
+            if (patch.description !== undefined) {
+              const nextDescription = patch.description.trim();
+              if (nextDescription.length > BOT_DESCRIPTION_MAX_LENGTH) {
+                return finish({
+                  error: `description must be at most ${BOT_DESCRIPTION_MAX_LENGTH} characters.`,
+                });
+              }
+              patch.description = nextDescription;
+            }
+            // Placeholder names stay invisible in the header if only title changes;
+            // promote the title into name so chat chrome matches the profile update.
+            if (
+              patch.name === undefined &&
+              patch.title &&
+              /^(New Bot|Bot|Untitled)$/i.test(bot.name)
+            ) {
+              patch.name = patch.title.slice(0, BOT_NAME_MAX_LENGTH);
+            }
+            const updated = await deps.prisma.bot.update({
+              where: { id: bot.id },
+              data: patch,
+              select: { id: true, name: true, title: true, description: true },
+            });
+            try {
+              await deps.events.append({
+                spaceId: run.spaceId,
+                threadId: thread.id,
+                botId: bot.id,
+                runId: run.id,
+                type: "bot.updated",
+                payload: {
+                  botId: updated.id,
+                  name: updated.name,
+                  title: updated.title,
+                  description: updated.description,
+                },
+              });
+            } catch (error) {
+              getLogger().error("bot.updated notification", error);
+            }
+            return finish({
+              ok: true,
+              botId: updated.id,
+              name: updated.name,
+              title: updated.title,
+              description: updated.description,
+            });
+          }
           if (name === "message_user") {
             const rawMessage = redactSecrets(String(args.message ?? ""), runSecrets);
             const text = clampUserProgressMessage(rawMessage);
@@ -3301,6 +3379,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 "A bot and a subagent are different. Never use both for the same request.",
                 "create_space proposes a new privacy boundary inside the current organization. Use it when the user asks to create a space or separate data between teams or projects. It always pauses for explicit user approval; never claim the space exists before the tool succeeds.",
                 "spawn_bot creates a lasting regular bot (own chat, computer, memory) that appears in the user's bot list. If the user asked to create a bot, call spawn_bot once and stop. Do not run_subagent to demo it.",
+                "update_bot updates this bot's own name (chat header / list label), title, and description. When the user asks you to rename yourself or change your title or description, call update_bot — do not claim you changed them without the tool.",
                 "run_subagent is a short helper inside this turn only. It is not a bot, has no thread, and does not show in the list. Use it for parallel work you will summarize here.",
                 botDirectory,
                 "archive_bot safely archives a bot this bot created, and only that bot. Use it when the user asks to remove that bot or when it is finished and unused. The user can restore it or permanently delete it later. confirm_name must exactly match its name.",

@@ -130,20 +130,12 @@ export async function startOnboarding(
   actor: Actor,
   botId: string,
 ): Promise<void> {
-  const { bot, thread } = await requireBotThread(deps, actor, botId);
+  const { thread } = await requireBotThread(deps, actor, botId);
   const existing = await deps.prisma.message.count({ where: { threadId: thread.id } });
   if (existing > 0) return;
-  const user = await deps.prisma.user.findUnique({
-    where: { id: actor.userId },
-    select: { name: true },
-  });
-  const firstName = (user?.name ?? "there").split(/\s+/)[0];
-  const target = { spaceId: actor.spaceId, botId: bot.id, threadId: thread.id };
-  // Greeting only. The focus card is posted later via promptFocus so non-first
-  // bots can wait ~10s for free typing, or skip if the user already engaged.
-  await post(deps, target, [
-    { kind: "text", text: `Hey ${firstName}. Fresh start on my side, so I’ll keep this short.` },
-  ]);
+  // Fresh chats start empty (same as web). The focus card is posted later via
+  // promptFocus so non-first bots can wait ~10s for free typing, or skip if the
+  // user already engaged.
 }
 
 function messageHasChoice(blocks: MessageBlock[]): boolean {
