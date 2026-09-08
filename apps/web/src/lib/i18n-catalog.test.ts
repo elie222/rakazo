@@ -176,6 +176,8 @@ describe("lingui catalogs", () => {
     i18n.activate("de");
     expect(i18n._({ id: "Settings", message: "Settings" })).toBe("Einstellungen");
     expect(i18n._({ id: "Cancel", message: "Cancel" })).toBe("Abbrechen");
+    expect(i18n._({ id: "Search", message: "Search" })).toBe("Suchen");
+    expect(i18n._({ id: "To:", message: "To:" })).toBe("An:");
 
     i18n.load("ko", ko as Record<string, string>);
     i18n.activate("ko");

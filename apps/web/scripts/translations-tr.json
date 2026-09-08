@@ -580,5 +580,6 @@
   "Local access lets bots run commands without asking. Avoid it on shared or public servers.": "Yerel erişim, botların sormadan komut çalıştırmasına izin verir. Paylaşılan veya herkese açık sunucularda bunu kullanma.",
   "Docker": "Docker",
   "Opening chat…": "Sohbet açılıyor…",
-  "Try again": "Tekrar dene"
+  "Try again": "Tekrar dene",
+  "To:": "Kime:"
 }

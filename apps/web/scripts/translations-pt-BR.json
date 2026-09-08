@@ -585,5 +585,6 @@
   "Local access lets bots run commands without asking. Avoid it on shared or public servers.": "O acesso local permite que os bots executem comandos sem perguntar. Evite usá-lo em servidores compartilhados ou públicos.",
   "Docker": "Docker",
   "Opening chat…": "Abrindo o chat…",
-  "Try again": "Tentar novamente"
+  "Try again": "Tentar novamente",
+  "To:": "Para:"
 }

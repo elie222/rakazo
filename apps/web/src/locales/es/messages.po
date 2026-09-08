@@ -3032,6 +3032,8 @@ msgstr "Di sí o no, o responde en una frase."
 #: src/pages/ModelSettingsOverlay.tsx:988
 #: src/pages/PluginsOverlay.tsx:878
 #: src/pages/Shell.tsx:2540
+#: src/pages/shell/bot-picker.tsx:55
+#: src/pages/shell/bot-picker.tsx:56
 #: src/pages/shell/command-palette.tsx:102
 msgid "Search"
 msgstr "Buscar"
@@ -3058,11 +3060,6 @@ msgstr ""
 #: src/pages/ModelSettingsOverlay.tsx:983
 msgid "Search models"
 msgstr "Buscar modelos"
-
-#: src/pages/shell/bot-picker.tsx:55
-#: src/pages/shell/bot-picker.tsx:56
-msgid "Search or create Bots"
-msgstr ""
 
 #: src/pages/ModelSettingsOverlay.tsx:359
 #: src/pages/ModelSettingsOverlay.tsx:365
@@ -3485,7 +3482,7 @@ msgstr "Título"
 
 #: src/pages/shell/bot-picker.tsx:50
 msgid "To:"
-msgstr ""
+msgstr "Para:"
 
 #: src/pages/PluginsOverlay.tsx:1114
 msgid "Tool sources"
