@@ -1,7 +1,7 @@
-import { builtinModels } from "@earendil-works/pi-ai/providers/all";
-import { OPENAI_COMPATIBLE_PROVIDER_ID } from "@rakazo/contracts";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
+import { builtinModels } from "@earendil-works/pi-ai/providers/all";
+import { OPENAI_COMPATIBLE_PROVIDER_ID } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import { buildModelConnectPlaintext } from "./model-connect.js";
 import { listPiCatalog } from "./pi-models.js";
@@ -141,14 +141,14 @@ describe("openai-compatible provider", () => {
       const safeFetch = createOpenAiCompatibleFetch(undefined, async () => [
         { address: "127.0.0.1", family: 4 },
       ]);
-      const request = new Request(`http://localhost:${port}/v1/models`, {
+      const request = new Request(`http://127.0.0.1:${port}/v1/models`, {
         headers: { Accept: "application/json" },
       });
       const response = await safeFetch(request);
       expect(response).toMatchObject({ status: 200 });
       await response.body?.cancel().catch(() => undefined);
       await expect(
-        probeOpenAiCompatibleModels({ baseUrl: `http://localhost:${port}/v1` }, safeFetch),
+        probeOpenAiCompatibleModels({ baseUrl: `http://127.0.0.1:${port}/v1` }, safeFetch),
       ).resolves.toEqual(["from-request"]);
     } finally {
       await new Promise<void>((resolve, reject) =>
