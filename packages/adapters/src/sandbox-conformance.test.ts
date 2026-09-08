@@ -184,6 +184,27 @@ describe("sandbox conformance", () => {
     rmSync(root, { recursive: true, force: true });
   });
 
+  it("treats a repeated destroy as success so a stale deletion retry is safe", async () => {
+    const root = mkdtempSync(path.join(tmpdir(), "rakazo-destroy-idempotent-"));
+    const providers: SandboxProvider[] = [
+      new FakeSandboxProvider(),
+      new ManagedSandboxEmulator(),
+      new DaytonaSandboxEmulator(),
+      new BoxSandboxEmulator(),
+      new DesktopSandboxProvider({ root }),
+    ];
+    for (const [index, provider] of providers.entries()) {
+      const computer = await provisionPrepared(
+        provider,
+        { botId: `destroy-twice-${index}`, homePath: `/tmp/destroy-twice-${index}` },
+        ctx,
+      );
+      await provider.destroy(computer, ctx);
+      await expect(provider.destroy(computer, ctx)).resolves.toBeUndefined();
+    }
+    rmSync(root, { recursive: true, force: true });
+  });
+
   it("reuses one desktop machine per bot", async () => {
     const root = mkdtempSync(path.join(tmpdir(), "rakazo-desktop-reuse-"));
     const desktop = new DesktopSandboxProvider({ root });

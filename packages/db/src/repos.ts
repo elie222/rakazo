@@ -11,6 +11,7 @@ import type { PrismaClient } from "./client.js";
 import { type ComputerMode, ensureComputerRecord, parseComputerMode } from "./computers.js";
 import { createThreadMessageInTransaction } from "./messages.js";
 import { IsolationError } from "./scope.js";
+import { lockSpaceForContentCreation } from "./spaces.js";
 import { activeRunSelection, previewFromBlocks } from "./thread-listing.js";
 
 /** Newest messages loaded for sidebar preview; enough to skip a short peer-run tail. */
@@ -371,6 +372,18 @@ export function createRepos(prisma: PrismaClient) {
       const kind =
         envKind === "docker" && settings?.computerHost === "this-mac" ? "desktop" : envKind;
       const bot = await prisma.$transaction(async (tx) => {
+        const membership = await lockSpaceForContentCreation(tx, {
+          spaceId: actor.spaceId,
+          userId: actor.userId,
+        });
+        await tx.member.updateMany({
+          where: {
+            organizationId: membership.organizationId,
+            userId: actor.userId,
+            onboardedAt: null,
+          },
+          data: { onboardedAt: new Date() },
+        });
         const positions = await tx.bot.aggregate({
           where: { spaceId: actor.spaceId, userId: actor.userId },
           _max: { position: true },

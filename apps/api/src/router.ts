@@ -99,6 +99,7 @@ import {
   CannotDeleteDefaultSpaceError,
   CannotDeleteLastSpaceError,
   CannotDeleteSpaceAsNonOwnerError,
+  claimEmptySpaceDeletionForMember,
   createExternalConversationRepos,
   createGroupRepos,
   createRepos,
@@ -114,13 +115,16 @@ import {
   InvalidSpaceNameError,
   IsolationError,
   issueMessagingLinkCode,
-  listDeletableSpaceComputers,
   lockOwnedGroup,
   newestModelCredentialOrder,
   newestVoiceCredentialOrder,
   Prisma,
   type PrismaClient,
   parseComputerMode,
+  releaseSpaceDeletionClaim,
+  renewSpaceDeletionClaim,
+  SPACE_DELETION_CLAIM_TIMEOUT_MS,
+  SpaceDeletionInProgressError,
   SpaceLimitError,
   SpaceNotEmptyError,
   SpaceNotFoundError,
@@ -499,6 +503,7 @@ export function createRouter(deps: RouterDeps) {
           name: space.name,
           isDefault: false,
           hasContent: false,
+          canDelete: true,
           bots: [],
           groups: [],
           externalConversations: [],
@@ -506,41 +511,98 @@ export function createRouter(deps: RouterDeps) {
         };
       }),
       remove: authed.spaces.remove.handler(async ({ context, input }) => {
+        let claimId: string | null = null;
+        let claimActive = false;
+        let claimHealthy = true;
+        let claimReleasable = false;
+        let claimRenewal: ReturnType<typeof setInterval> | null = null;
+        const deleteInput = {
+          currentSpaceId: context.actor.spaceId,
+          userId: context.actor.userId,
+          spaceId: input.spaceId,
+        };
         try {
-          const deleteInput = {
-            currentSpaceId: context.actor.spaceId,
-            userId: context.actor.userId,
-            spaceId: input.spaceId,
+          // Claim emptiness before external teardown. Bot and group creation
+          // take the same lifecycle lock and reject the Space until deletion
+          // finishes or this claim is released.
+          const claim = await claimEmptySpaceDeletionForMember(deps.prisma, deleteInput);
+          claimId = claim.claimId;
+          claimActive = true;
+          // A recovered worker can safely finish deletion, but cannot know
+          // whether the previous worker still has provider teardown in flight.
+          // Keep the Space claimed on failure so content cannot reuse it.
+          claimReleasable = !claim.recovered;
+          const claimedInput = { ...deleteInput, claimId };
+          const assertClaim = async () => {
+            if (!claimHealthy) throw new SpaceDeletionInProgressError();
+            try {
+              const renewed = await renewSpaceDeletionClaim(deps.prisma, claimedInput);
+              if (!renewed) {
+                claimHealthy = false;
+                claimReleasable = false;
+                throw new SpaceDeletionInProgressError();
+              }
+            } catch (error) {
+              claimHealthy = false;
+              claimReleasable = false;
+              throw error;
+            }
           };
-          // Destroy leftover team sandboxes before cascading the Space row. Clear
-          // each providerRef only after that destroy succeeds so a failed destroy
-          // keeps the durable handle, and a later SpaceNotEmptyError cannot leave
-          // a row pointing at a sandbox that is already gone (same order as
-          // destroyBot: provider teardown, then drop the persisted handle).
-          const computers = await listDeletableSpaceComputers(deps.prisma, deleteInput);
+          claimRenewal = setInterval(() => {
+            void assertClaim().catch((renewalError) => {
+              if (claimActive) {
+                getLogger().error("space deletion claim renewal failed", renewalError);
+              }
+            });
+          }, SPACE_DELETION_CLAIM_TIMEOUT_MS / 5);
           const adapterContext = connectionContext(context.actor, "spaces.remove", context.signal);
-          for (const computer of computers) {
+          for (const computer of claim.computers) {
+            await assertClaim();
+            // Provider errors are ambiguous: teardown may have reached the
+            // remote service. From this point, only successful deletion may
+            // unblock content creation; a stale recovery must finish it.
+            claimReleasable = false;
             await deps.sandbox.destroy(toComputerRef(computer), {
               ...adapterContext,
               botId: computer.homeKey,
             });
+            // Never clear a provider handle after this worker loses its claim.
+            await assertClaim();
             await deps.prisma.computer.updateMany({
               where: {
                 spaceId: input.spaceId,
                 homeKey: computer.homeKey,
                 providerRef: computer.providerRef,
+                space: { deletionClaimId: claimId },
               },
               data: { state: "stopped", providerRef: null },
             });
           }
-          const fallback = await deleteEmptySpaceForMember(deps.prisma, deleteInput);
+          await assertClaim();
+          claimActive = false;
+          if (claimRenewal) {
+            clearInterval(claimRenewal);
+            claimRenewal = null;
+          }
+          const fallback = await deleteEmptySpaceForMember(deps.prisma, claimedInput);
           return { ok: true as const, activeSpaceId: fallback.id };
         } catch (error) {
+          if (context.signal?.aborted) claimReleasable = false;
+          if (claimId && claimReleasable) {
+            await releaseSpaceDeletionClaim(deps.prisma, { ...deleteInput, claimId }).catch(
+              (releaseError) => {
+                getLogger().error("space deletion claim release failed", releaseError);
+              },
+            );
+          }
           if (error instanceof SpaceNotFoundError) {
             throw new ORPCError("NOT_FOUND", { message: error.message });
           }
           if (error instanceof CannotDeleteSpaceAsNonOwnerError) {
             throw new ORPCError("FORBIDDEN", { message: error.message });
+          }
+          if (error instanceof SpaceDeletionInProgressError) {
+            throw new ORPCError("CONFLICT", { message: error.message });
           }
           if (
             error instanceof CannotDeleteDefaultSpaceError ||
@@ -550,6 +612,9 @@ export function createRouter(deps: RouterDeps) {
             throw new ORPCError("BAD_REQUEST", { message: error.message });
           }
           throw error;
+        } finally {
+          claimActive = false;
+          if (claimRenewal) clearInterval(claimRenewal);
         }
       }),
     },
@@ -573,6 +638,7 @@ export function createRouter(deps: RouterDeps) {
         : [null, []];
       return {
         me,
+        needsOnboarding: navigation.needsOnboarding,
         bots,
         groups,
         botSections,
@@ -4537,7 +4603,9 @@ async function spaceNavigationDto(
     where: { userId: actor.userId, organizationId: currentSpace.organizationId },
     select: {
       spaceId: true,
-      space: { select: { name: true, isDefault: true } },
+      role: true,
+      member: { select: { onboardedAt: true } },
+      space: { select: { name: true, isDefault: true, deletingAt: true } },
     },
     orderBy: { createdAt: "asc" },
   });
@@ -4585,8 +4653,10 @@ async function spaceNavigationDto(
   const botsFor = (spaceId: string) => botsBySpace.get(spaceId) ?? [];
   const groupsFor = (spaceId: string) => groupsBySpace.get(spaceId) ?? [];
   const sectionsFor = (spaceId: string) => sectionsBySpace.get(spaceId) ?? [];
+  const staleClaimBefore = new Date(Date.now() - SPACE_DELETION_CLAIM_TIMEOUT_MS);
 
   return {
+    needsOnboarding: currentMembership.member.onboardedAt === null,
     current: {
       id: actor.spaceId,
       name: currentMembership.space.name,
@@ -4605,6 +4675,12 @@ async function spaceNavigationDto(
         name: membership.space.name,
         isDefault: membership.space.isDefault,
         hasContent: spacesWithContent.has(membership.spaceId),
+        canDelete:
+          membership.role === "owner" &&
+          !membership.space.isDefault &&
+          memberships.length > 1 &&
+          !spacesWithContent.has(membership.spaceId) &&
+          (membership.space.deletingAt === null || membership.space.deletingAt < staleClaimBefore),
         bots: spaceBots.map((bot) => ({
           id: bot.id,
           spaceId: bot.spaceId,

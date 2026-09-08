@@ -137,6 +137,7 @@ model Member {
   user             User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   role             String
   createdAt        DateTime
+  onboardedAt      DateTime?
   spaceMemberships SpaceMember[]
 
   @@unique([organizationId, userId])
@@ -154,6 +155,8 @@ model Space {
   createdByUserId             String?
   createdByUser               User?                        @relation("SpaceCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
   createdAt                   DateTime                     @default(now())
+  deletingAt                  DateTime?
+  deletionClaimId             String?
   memberships                 SpaceMember[]
   bots                        Bot[]
   botSections                 BotSection[]

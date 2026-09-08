@@ -247,6 +247,8 @@ export const SpaceSchema = z.object({
   isDefault: z.boolean(),
   /** True when the space has any bot or group, including archived. */
   hasContent: z.boolean(),
+  /** True only when the current member may delete this non-default space. */
+  canDelete: z.boolean().optional(),
   bots: z.array(SpaceBotSchema),
   groups: z.array(SpaceGroupSchema),
   externalConversations: z.array(ExternalConversationSchema),
@@ -255,6 +257,8 @@ export const SpaceSchema = z.object({
 export type Space = z.infer<typeof SpaceSchema>;
 
 export const SpaceNavigationSchema = z.object({
+  /** Whether this organization membership still needs first-use setup. */
+  needsOnboarding: z.boolean().optional(),
   current: z.object({
     id: Id,
     name: z.string(),
@@ -1119,6 +1123,7 @@ export const MeSchema = z.object({
 export type Me = z.infer<typeof MeSchema>;
 
 export const AppBootstrapSchema = z.object({
+  needsOnboarding: z.boolean().optional(),
   me: MeSchema,
   bots: z.array(BotSchema),
   groups: z.array(GroupSchema),

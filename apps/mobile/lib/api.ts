@@ -77,7 +77,9 @@ export async function loadApiBase() {
   try {
     const storedSpace = (await SecureStore.getItemAsync(SPACE_KEY)) ?? "";
     cachedSpaceId = storedSpace;
-    if (!storedSpace) await recoverSpaceRollback(cachedApiBase);
+    // A deletion fallback must override the now-invalid saved Space even when
+    // the device failed to replace that value before the previous process exited.
+    await recoverSpaceRollback(cachedApiBase);
   } catch {
     // Keep any in-memory selection when SecureStore is temporarily unavailable.
   }
@@ -100,6 +102,20 @@ export async function selectSpace(id: string) {
 
 export function selectedSpaceId(): string | null {
   return cachedSpaceId || null;
+}
+
+/** Keep requests usable after the server deleted the selected Space but native
+ * storage could not replace it. Prefer a durable endpoint-bound recovery
+ * record; if that write also fails, clear the stale selection so startup can
+ * resolve the server default. */
+export async function adoptDeletedSpaceFallback(id: string): Promise<boolean> {
+  cachedSpaceId = id;
+  const recoverySaved = await saveSpaceRollback(id);
+  const staleSelectionCleared = recoverySaved ? false : await clearStoredValue(SPACE_KEY);
+  await resumeLiveNotifications(currentApiBase(), await loadSessionToken(), id).catch(
+    () => undefined,
+  );
+  return recoverySaved || staleSelectionCleared;
 }
 
 export async function selectInitialSpace(id: string) {

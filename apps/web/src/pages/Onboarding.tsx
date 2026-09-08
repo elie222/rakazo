@@ -78,8 +78,13 @@ export function OnboardingPage() {
       rpc.me(),
       rpc.models.list().catch(() => []),
       rpc.integrationSetup.get().catch(() => null),
+      rpc.spaces.list(),
     ])
-      .then(([me, models, integrations]) => {
+      .then(([me, models, integrations, navigation]) => {
+        if (navigation.needsOnboarding === false) {
+          navigate("/app", { replace: true });
+          return;
+        }
         setIntegrationSetup(integrations);
         setCatalog(models);
         const preferred =
@@ -267,16 +272,6 @@ export function OnboardingPage() {
   return (
     <div className="min-h-full bg-background px-6 py-12">
       <div className="mx-auto w-full max-w-[560px]">
-        {step !== "loading" ? (
-          <Button
-            variant="link"
-            size="xs"
-            className="mb-6 px-0 text-muted-foreground"
-            onClick={() => navigate("/app")}
-          >
-            <Trans>Back to app</Trans>
-          </Button>
-        ) : null}
         {step === "loading" ? (
           <p className="text-muted-foreground">
             <Trans>Loading…</Trans>

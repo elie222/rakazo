@@ -10,6 +10,7 @@ import { cancelRunsInTransaction } from "./cancel-runs.js";
 import type { Prisma, PrismaClient } from "./client.js";
 import { expireComputerExecutionLeases } from "./computers.js";
 import { IsolationError } from "./scope.js";
+import { lockSpaceForContentCreation } from "./spaces.js";
 import { activeRunSelection, activeRunStatuses, previewFromBlocks } from "./thread-listing.js";
 
 type GroupRecord = {
@@ -247,6 +248,10 @@ export function createGroupRepos(prisma: PrismaClient) {
     async createGroup(actor: Actor, input: { name: string; botIds: string[] }): Promise<Group> {
       const members = await assertOwnedBots(prisma, actor, input.botIds);
       const created = await prisma.$transaction(async (tx) => {
+        await lockSpaceForContentCreation(tx, {
+          spaceId: actor.spaceId,
+          userId: actor.userId,
+        });
         const group = await tx.chatGroup.create({
           data: {
             spaceId: actor.spaceId,

@@ -1,6 +1,7 @@
 import * as SecureStore from "expo-secure-store";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  adoptDeletedSpaceFallback,
   applyMobileThreadEvent,
   authHeaders,
   blockText,
@@ -676,6 +677,37 @@ describe("mobile API authentication", () => {
     vi.mocked(SecureStore.setItemAsync).mockReset();
     vi.mocked(SecureStore.deleteItemAsync).mockReset();
     await resetApiBase();
+  });
+
+  it("recovers a deleted-space fallback over a stale saved selection after restart", async () => {
+    const storage = new Map<string, string>([["rakazo.space_id", "space-deleted"]]);
+    vi.mocked(SecureStore.getItemAsync).mockImplementation(async (key) => storage.get(key) ?? null);
+    vi.mocked(SecureStore.deleteItemAsync).mockImplementation(async (key) => {
+      storage.delete(key);
+    });
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+      if (key === "rakazo.space_id") throw new Error("device locked");
+      storage.set(key, value);
+    });
+    await loadApiBase();
+
+    await expect(selectSpace("space-personal")).resolves.toBe(false);
+    await expect(adoptDeletedSpaceFallback("space-personal")).resolves.toBe(true);
+    expect(selectedSpaceId()).toBe("space-personal");
+    expect(storage.get("rakazo.space_id")).toBe("space-deleted");
+    expect(storage.get("rakazo.space_rollback")).toBe(
+      JSON.stringify({ apiBase: "http://127.0.0.1:3100", spaceId: "space-personal" }),
+    );
+
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+      storage.set(key, value);
+    });
+    vi.resetModules();
+    const restartedApi = await import("./api.js");
+    await restartedApi.loadApiBase();
+    expect(restartedApi.selectedSpaceId()).toBe("space-personal");
+    expect(storage.get("rakazo.space_id")).toBe("space-personal");
+    expect(storage.has("rakazo.space_rollback")).toBe(false);
   });
 
   it("recovers the active space after rollback persistence fails", async () => {
