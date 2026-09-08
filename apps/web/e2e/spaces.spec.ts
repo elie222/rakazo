@@ -93,7 +93,11 @@ test("a new space auto-completes onboarding and can be deleted from the sidebar"
   await completeOnboarding(page);
   await expect(page).toHaveURL(/\/app\//);
   await expect(sidebar.getByText("Temporary", { exact: true })).toBeVisible();
-  await expect(sidebar.getByRole("button", { name: /^Chief/ })).toBeVisible();
+  const temporarySpace = sidebar
+    .locator('[data-sidebar-group^="space:"]')
+    .filter({ hasText: "Temporary" });
+  await expect(temporarySpace.getByRole("button", { name: /^Chief/ })).toBeVisible();
+  await expect(sidebar.getByRole("button", { name: /^Chief/ })).toHaveCount(2);
   await captureScreenshot(page, testInfo, "new-space-after-onboarding");
 
   await sidebar.getByRole("button", { name: "Open Temporary" }).click({ button: "right" });
