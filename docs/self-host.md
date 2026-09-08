@@ -94,9 +94,11 @@ Compose runs Postgres, the sandbox supervisor (Docker socket), API, worker, and 
 Postgres stays on the Compose network only (not published on the host), matching the images
 compose. Credentials come from `.env` (`POSTGRES_PASSWORD` is required). Prefer a URI-safe value
 (`openssl rand -hex 16`); characters such as `@ : / ? # %` break the interpolated `DATABASE_URL`
-inside Compose. Official Postgres images set the role password only on first volume init, so an
-existing `pgdata` volume keeps its original password: keep that value in `.env`, or recreate the
-volume / run `ALTER ROLE` before rotating. For host-side clients (`pnpm db:migrate`, GUI tools),
+inside Compose. Official Postgres images set user, password, and database only on first volume
+init, so an existing `pgdata` volume keeps its original identity: keep those values in `.env`, or
+change them in place with `ALTER ROLE` / rename. Recreate the volume only after a backup (or when
+the data is disposable); `docker compose down -v` deletes all Postgres state. For host-side clients
+(`pnpm db:migrate`, GUI tools),
 add `infra/compose/docker-compose.postgres-host.yml` so Postgres is published on loopback
 `127.0.0.1:5433`, or use
 `docker compose --env-file .env -f infra/compose/docker-compose.yml exec postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"'`.

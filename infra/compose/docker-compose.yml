@@ -2,9 +2,10 @@ services:
   postgres:
     image: ${POSTGRES_IMAGE:-postgres:16}
     environment:
+      # USER/PASSWORD/DB apply only on first pgdata init. Keep existing values in
+      # .env, or ALTER ROLE / rename in place. Recreate pgdata only after backup
+      # (or when the volume is disposable); down -v deletes all DB state.
       POSTGRES_USER: ${POSTGRES_USER:-rakazo}
-      # Role password is applied only on first pgdata init. Existing volumes keep
-      # the old password; set this to match, or ALTER ROLE / recreate pgdata.
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: ${POSTGRES_DB:-rakazo}
     volumes:

@@ -125,8 +125,9 @@ Postgres stays network-internal in the default Compose file (same as published i
 Without the overlay, open a shell with
 `docker compose --env-file .env -f infra/compose/docker-compose.yml exec postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"'`.
 Use a URI-safe `POSTGRES_PASSWORD` (`openssl rand -hex 16`). An existing `pgdata` volume keeps the
-password from first init, so either keep that value in `.env` or recreate the volume / `ALTER ROLE`
-before rotating.
+user, password, and database from first init, so keep those values in `.env`, or change them in
+place with `ALTER ROLE` / rename. Recreate the volume only after a backup (or when the data is
+disposable); `docker compose down -v` deletes all Postgres state.
 
 Open [http://127.0.0.1:5173](http://127.0.0.1:5173), create an account, connect a model, and create
 your first bot.
