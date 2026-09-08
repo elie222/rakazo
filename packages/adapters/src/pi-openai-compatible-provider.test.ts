@@ -1,5 +1,7 @@
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { OPENAI_COMPATIBLE_PROVIDER_ID } from "@rakazo/contracts";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { describe, expect, it } from "vitest";
 import { buildModelConnectPlaintext } from "./model-connect.js";
 import { listPiCatalog } from "./pi-models.js";
@@ -125,6 +127,31 @@ describe("openai-compatible provider", () => {
     } finally {
       if (previous === undefined) delete process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC;
       else process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC = previous;
+    }
+  });
+
+  it("accepts global Request objects when hostname uses an undici Agent dispatcher", async () => {
+    const server = createServer((_req, res) => {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ object: "list", data: [{ id: "from-request" }] }));
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const port = (server.address() as AddressInfo).port;
+    try {
+      const safeFetch = createOpenAiCompatibleFetch(undefined, async () => [
+        { address: "127.0.0.1", family: 4 },
+      ]);
+      const request = new Request(`http://localhost:${port}/v1/models`, {
+        headers: { Accept: "application/json" },
+      });
+      await expect(safeFetch(request)).resolves.toMatchObject({ status: 200 });
+      await expect(
+        probeOpenAiCompatibleModels({ baseUrl: `http://localhost:${port}/v1` }, safeFetch),
+      ).resolves.toEqual(["from-request"]);
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
     }
   });
 

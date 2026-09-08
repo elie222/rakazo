@@ -169,11 +169,26 @@ export function createOpenAiCompatibleFetch(
       ? fetchCompatibleWithUndiciAgent(baseFetch)
       : baseFetch;
     try {
-      const response = await transportFetch(input instanceof Request ? input : url, {
-        ...init,
-        redirect: "error",
-        ...(dispatcher ? { dispatcher } : {}),
-      } as RequestInit & { dispatcher?: Agent });
+      const response =
+        input instanceof Request && dispatcher
+          ? await transportFetch(url.href, {
+              ...init,
+              method: init?.method ?? input.method,
+              headers: init?.headers ?? input.headers,
+              body:
+                init?.body ??
+                (input.method !== "GET" && input.method !== "HEAD"
+                  ? await input.clone().arrayBuffer()
+                  : undefined),
+              signal: init?.signal ?? input.signal,
+              redirect: "error",
+              dispatcher,
+            } as RequestInit & { dispatcher: Agent })
+          : await transportFetch(input instanceof Request ? input : url, {
+              ...init,
+              redirect: "error",
+              ...(dispatcher ? { dispatcher } : {}),
+            } as RequestInit & { dispatcher?: Agent });
       return dispatcher ? await closeDispatcherWithResponse(response, dispatcher) : response;
     } catch (error) {
       await dispatcher?.close().catch(() => undefined);

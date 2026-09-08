@@ -1,16 +1,23 @@
-import { Agent } from "undici";
+import { Agent, MockAgent } from "undici";
 import { describe, expect, it } from "vitest";
 import { fetchCompatibleWithUndiciAgent } from "./undici-compat-fetch.js";
 
 describe("fetchCompatibleWithUndiciAgent", () => {
   it("uses undici fetch when paired with an undici Agent dispatcher", async () => {
-    const transportFetch = fetchCompatibleWithUndiciAgent();
-    const response = await transportFetch("https://example.com", {
-      method: "HEAD",
-      dispatcher: new Agent(),
-    } as RequestInit & { dispatcher: Agent });
-    await response.body?.cancel().catch(() => undefined);
-    expect(response.status).toBeLessThan(500);
+    const agent = new MockAgent();
+    agent.disableNetConnect();
+    agent.get("https://example.test").intercept({ path: "/", method: "HEAD" }).reply(200);
+    try {
+      const transportFetch = fetchCompatibleWithUndiciAgent();
+      const response = await transportFetch("https://example.test/", {
+        method: "HEAD",
+        dispatcher: agent,
+      } as RequestInit & { dispatcher: Agent });
+      await response.body?.cancel().catch(() => undefined);
+      expect(response.status).toBe(200);
+    } finally {
+      await agent.close();
+    }
   });
 
   it("keeps injected fetch implementations for tests", () => {
