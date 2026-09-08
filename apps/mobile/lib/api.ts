@@ -560,9 +560,22 @@ export async function rpc<T>(
       ) {
         cachedSpaceId = "";
         const retrySameProc = SPACE_AUTH_RECOVERY_SAFE_PROCS.has(proc);
+        // Share the original deadline/cancellation with recovery calls instead
+        // of starting a second full timeout behind the first request.
+        const recoveryOptions: {
+          signal?: AbortSignal;
+          timeoutMs?: number | null;
+          requestContext?: ApiRequestContext;
+          skipSpaceAuthRecovery?: boolean;
+        } = {
+          ...options,
+          timeoutMs: null,
+          signal: controller.signal,
+          skipSpaceAuthRecovery: true,
+        };
         try {
           if (retrySameProc) {
-            const result = await rpc<T>(proc, body, { ...options, skipSpaceAuthRecovery: true });
+            const result = await rpc<T>(proc, body, recoveryOptions);
             // A Space selected while the retry was in flight already owns both
             // the in-memory and durable selection; leave it alone.
             if (!selectedSpaceId()) {
@@ -571,7 +584,7 @@ export async function rpc<T>(
             }
             return result;
           }
-          await rpc("spaces/list", {}, { ...options, skipSpaceAuthRecovery: true });
+          await rpc("spaces/list", {}, recoveryOptions);
         } catch (retryError) {
           if (!selectedSpaceId()) cachedSpaceId = previousSpaceId;
           throw retryError;
