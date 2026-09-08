@@ -20,7 +20,9 @@ describe("reply context", () => {
     const context = await loadReplyContext(prisma, "thread-1", "user-reply");
     expect(findFirst).toHaveBeenCalledWith({
       where: { id: "user-reply", threadId: "thread-1" },
-      select: { replyTo: { select: { id: true, threadId: true, role: true, blocks: true } } },
+      select: expect.objectContaining({
+        replyTo: { select: { id: true, threadId: true, role: true, blocks: true, thumbsUp: true } },
+      }),
     });
     expect(context).toContain('"messageId":"message-first"');
     expect(context).toContain('"role":"assistant"');
@@ -51,6 +53,27 @@ describe("reply context", () => {
     expect(context).toContain("[image: example.png]");
     expect(context).toContain("\\u003c/reply_target\\u003e");
     expect(context?.match(/<\/reply_target>/g)).toHaveLength(1);
+  });
+
+  it("includes reactions on reply targets", async () => {
+    const { prisma } = harness({ ...target, thumbsUp: true });
+    expect(await loadReplyContext(prisma, "thread-1", "user-reply")).toContain(
+      '"reactions":["👍"]',
+    );
+  });
+
+  it("quotes the reacted-to source rather than its reply parent", async () => {
+    const { prisma, findFirst } = harness();
+    findFirst.mockResolvedValue({
+      ...target,
+      thumbsUp: true,
+      replyTo: { ...target, id: "parent" },
+    });
+    const context = await loadReplyContext(prisma, "thread-1", target.id, "reaction");
+    expect(context).toContain("<reaction_target>");
+    expect(context).toContain('"messageId":"message-first"');
+    expect(context).toContain('"reactions":["👍"]');
+    expect(context).not.toContain('"messageId":"parent"');
   });
 
   it("bounds large quotes and marks truncation", async () => {

@@ -1193,7 +1193,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 | "user"
                 | "assistant"
                 | "system",
-              content: blocksToAgentHistoryText(m.blocks as MessageBlock[]),
+              content: blocksToAgentHistoryText(m.blocks as MessageBlock[], m.thumbsUp),
             })),
             summary: thread.historyCompactionSummary,
             historyCompactedUpToSeq: thread.historyCompactedUpToSeq,
@@ -3234,7 +3234,12 @@ export function createRunExecutor(deps: ExecutorDeps) {
           (request) => redactSecrets(JSON.stringify(request), runSecrets),
           { exposedToolNames: new Set(tools.map((tool) => tool.name)) },
         );
-        const replyContext = await loadReplyContext(deps.prisma, thread.id, run.sourceMessageId);
+        const replyContext = await loadReplyContext(
+          deps.prisma,
+          thread.id,
+          run.sourceMessageId,
+          run.trigger,
+        );
         const prompt = [replyContext, basePrompt, takeoverResume?.promptNote, approvalContinuation]
           .filter(Boolean)
           .join("\n\n");

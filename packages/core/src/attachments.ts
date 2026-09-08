@@ -86,8 +86,8 @@ export function promptTextForAttachments(
   return [caption, ...notes].filter(Boolean).join("\n\n") || "See attached files.";
 }
 
-export function blocksToAgentHistoryText(blocks: MessageBlock[]): string {
-  return blocks
+export function blocksToAgentHistoryText(blocks: MessageBlock[], thumbsUp = false): string {
+  const content = blocks
     .map((block) => {
       if (block.kind === "text") return block.text;
       if (block.kind === "chart") return `[chart: ${block.name}]`;
@@ -107,6 +107,7 @@ export function blocksToAgentHistoryText(blocks: MessageBlock[]): string {
     })
     .filter(Boolean)
     .join("\n");
+  return thumbsUp ? `${content}\n[User reaction: 👍]` : content;
 }
 
 const EXTENSION_MIME_TYPES: Record<string, AttachmentMimeType> = {

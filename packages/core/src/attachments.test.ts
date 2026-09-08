@@ -109,3 +109,11 @@ describe("peer message history", () => {
     ).toBe("[to Analyst] chart it");
   });
 });
+
+describe("history reactions", () => {
+  it("attaches a thumbs-up to its message and omits removed reactions", () => {
+    const blocks = [{ kind: "text" as const, text: "Hello" }];
+    expect(blocksToAgentHistoryText(blocks, true)).toBe("Hello\n[User reaction: 👍]");
+    expect(blocksToAgentHistoryText(blocks, false)).toBe("Hello");
+  });
+});

@@ -25,7 +25,7 @@ export function loadRunHistoryMessages(
     },
     orderBy: { seq: "desc" },
     take: limit,
-    select: { id: true, seq: true, role: true, runId: true, blocks: true },
+    select: { id: true, seq: true, role: true, runId: true, blocks: true, thumbsUp: true },
   });
 }
 
