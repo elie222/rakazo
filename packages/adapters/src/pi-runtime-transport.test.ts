@@ -1,10 +1,6 @@
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { describe, expect, it } from "vitest";
-import {
-  conversationSessionId,
-  isOpenCodeProvider,
-  reliableStreamOptions,
-} from "./pi-runtime.js";
+import { conversationSessionId, isOpenCodeProvider, reliableStreamOptions } from "./pi-runtime.js";
 
 describe("Pi runtime transport", () => {
   it.each([

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import {
   Agent,
   type AgentMessage,
@@ -25,7 +26,6 @@ import type {
   ConnectorTool,
 } from "@rakazo/adapter-kit";
 import { getLogger } from "@rakazo/logging";
-import { randomUUID } from "node:crypto";
 import { isToolPauseResult } from "./approval-effect.js";
 import { builtinAgentTools, DELEGATION_TOOL_NAMES } from "./builtin-tools.js";
 import { DEFAULT_OPENROUTER_MODEL_ID } from "./deployment-model.js";
@@ -1357,8 +1357,7 @@ export function isOpenCodeProvider(provider: string): boolean {
   return provider === "opencode" || provider === "opencode-go";
 }
 
-const OPENCODE_SESSION_ERROR =
-  "OpenCode rejected this chat session. Send the message again.";
+const OPENCODE_SESSION_ERROR = "OpenCode rejected this chat session. Send the message again.";
 
 function looksLikeOpenCodeSessionError(message: string): boolean {
   return (
