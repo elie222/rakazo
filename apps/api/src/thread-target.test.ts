@@ -197,7 +197,9 @@ describe("threadSnapshot", () => {
     expect(findManyEvents).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
-          type: { in: ["thread.progress", "thread.subagent", "agent.tool.called"] },
+          type: {
+            in: ["thread.progress", "thread.subagent", "agent.tool.called", "agent.tool.completed"],
+          },
         }),
       }),
     );

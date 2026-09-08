@@ -252,7 +252,6 @@
   "Dismissed. Reconnect anytime from MCP settings.": "Verworfen. Du kannst die Verbindung jederzeit in den MCP-Einstellungen wiederherstellen.",
   "Display name": "Anzeigename",
   "Do not type passwords into the demo. Use Take control for credentials.": "Gib keine Passwörter in die Demo ein. Verwende „Kontrolle übernehmen“ für Zugangsdaten.",
-  "Docker (recommended)": "Docker (empfohlen)",
   "Docker is the default: bots use a shared Team Computer.": "Docker ist der Standard: Bots verwenden einen gemeinsamen Team-Computer.",
   "Don’t have an account?": "Du hast noch kein Konto?",
   "Done": "Fertig",
@@ -525,7 +524,6 @@
   "The selected memory provider is not available in this build.": "Der ausgewählte Erinnerungsanbieter ist in diesem Build nicht verfügbar.",
   "Thinking": "Denkmodus",
   "This bot runs on this computer, not a Linux desktop. Shell and files use your home folder.": "Dieser Bot wird auf diesem Computer und nicht auf einem Linux-Desktop ausgeführt. Shell und Dateien verwenden deinen persönlichen Ordner.",
-  "This bot runs on this computer. There is no separate Linux desktop. Ask it to use the shell; working directories under your home folder are allowed.": "Dieser Bot wird auf diesem Computer ausgeführt. Es gibt keinen separaten Linux-Desktop. Bitte ihn, die Shell zu verwenden; Arbeitsverzeichnisse in deinem persönlichen Ordner sind zulässig.",
   "This cannot be undone.": "Dies kann nicht rückgängig gemacht werden.",
   "this computer": "dieser Computer",
   "This computer runs shell commands with your account, including files in your home folder. Do not turn it on for a shared or public server.": "Dieser Computer führt Shell-Befehle mit deinem Konto aus und kann auf Dateien in deinem persönlichen Ordner zugreifen. Aktiviere dies nicht auf einem gemeinsam genutzten oder öffentlichen Server.",
@@ -572,7 +570,7 @@
   "You can close this window.": "Du kannst dieses Fenster schließen.",
   "You have control": "Du hast die Kontrolle",
   "Your email address": "Deine E-Mail-Adresse",
-  "Your key or subscription token is stored securely and is never shown here.": "Dein Schlüssel oder Abonnementtoken wird sicher gespeichert und hier nie angezeigt.",
+  "Stored securely. Never shown here.": "Sicher gespeichert. Hier nie angezeigt.",
   "Your name": "Dein Name",
   "Your team of always-on agents<0/>that you can give real work to.": "Dein Team aus jederzeit verfügbaren Agents<0/>für echte Aufgaben.",
   "No managed app catalog is configured on this deployment.": "Für diese Bereitstellung ist kein verwalteter App-Katalog konfiguriert.",
@@ -580,5 +578,9 @@
   "Message from": "Nachricht von",
   "This chat is view-only": "Dieser Chat ist schreibgeschützt",
   "Could not load this chat.": "Dieser Chat konnte nicht geladen werden.",
-  "No messages with {peerBotName} yet.": "Noch keine Nachrichten mit {peerBotName}."
+  "No messages with {peerBotName} yet.": "Noch keine Nachrichten mit {peerBotName}.",
+  "Docker limits access to your computer for added security. Using {hostLabel} lets bots work with your local files and tools.": "Docker begrenzt für mehr Sicherheit den Zugriff auf deinen Computer. Wenn {hostLabel} verwendet wird, können Bots mit deinen lokalen Dateien und Werkzeugen arbeiten.",
+  "Local access lets bots run commands without asking. Avoid it on shared or public servers.": "Mit lokalem Zugriff können Bots ohne Rückfrage Befehle ausführen. Vermeide dies auf gemeinsam genutzten oder öffentlichen Servern.",
+  "Docker": "Docker",
+  "To:": "An:"
 }

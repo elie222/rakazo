@@ -47,6 +47,7 @@ import { native, useThemedStyles } from "../lib/native";
 import { registerPushToken } from "../lib/push";
 import { UI_LOCALE_LABELS, UI_LOCALES, type UiLocale } from "../lib/ui-locale";
 
+/** Render account settings, including the entry point for voice configuration. */
 export default function Account() {
   const { t, locale } = useI18n();
   const router = useRouter();
@@ -406,7 +407,7 @@ export default function Account() {
           <View>
             <Text style={styles.settingsTitle}>{t("Voice")}</Text>
             <Text style={styles.settingsExplanation}>
-              {t("Speak replies aloud with ElevenLabs, OpenAI, or Cartesia")}
+              {t("Speak replies aloud with ElevenLabs, OpenAI, Cartesia, or Fish Audio")}
             </Text>
           </View>
           <Text style={styles.chevron}>›</Text>
@@ -424,6 +425,16 @@ export default function Account() {
           </View>
           <Text style={styles.chevron}>›</Text>
         </Pressable>
+
+        {me?.isDeploymentOwner ? (
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => router.push("/integration-setup")}
+            style={styles.settingsButton}
+          >
+            <Text style={styles.settingsTitle}>{t("Server integrations")}</Text>
+          </Pressable>
+        ) : null}
 
         <Pressable
           accessibilityRole="button"

@@ -44,6 +44,7 @@ async function fixture(provider: "fake" | "desktop" = "fake") {
     kind: first.kind,
     controlHolder: "none",
     controlLeaseId: null,
+    maintenanceId: null as string | null,
     homeRevision: "saved",
     updatedAt: new Date("2024-01-01T00:00:00.000Z"),
   };
@@ -78,6 +79,23 @@ async function fixture(provider: "fake" | "desktop" = "fake") {
 }
 
 describe("computer recovery preserves live work", () => {
+  it("blocks competing maintenance and boots while an update owns the computer", async () => {
+    const { deps, row } = await fixture();
+    row.maintenanceId = "other-update";
+    const destroy = vi.spyOn(deps.sandbox, "destroy");
+    const provision = vi.spyOn(deps.sandbox, "provision");
+    await expect(provisionComputer(deps, row.id, context)).rejects.toBeInstanceOf(
+      ComputerBusyError,
+    );
+    for (const mode of ["update", "recover", "reset"] as const) {
+      await expect(replaceComputer(deps, row.id, mode, context)).rejects.toBeInstanceOf(
+        ComputerBusyError,
+      );
+    }
+    expect(destroy).not.toHaveBeenCalled();
+    expect(provision).not.toHaveBeenCalled();
+  });
+
   it("claims a running computer before concurrent workers can create competing replacements", async () => {
     const { deps, row, computer, first } = await fixture();
     await deps.sandbox.destroy(first, context);

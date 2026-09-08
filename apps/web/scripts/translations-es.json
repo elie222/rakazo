@@ -300,7 +300,6 @@
   "Dismissed. Reconnect anytime from MCP settings.": "Descartado: puedes volver a conectar cuando quieras desde la configuración de MCP.",
   "Display name": "Nombre para mostrar",
   "Do not type passwords into the demo. Use Take control for credentials.": "No escribas contraseñas en la demo. Usa Tomar control para las credenciales.",
-  "Docker (recommended)": "Docker (recomendado)",
   "Docker is the default: bots use a shared Team Computer.": "Docker es el valor predeterminado: los bots usan una Team Computer compartida.",
   "Don’t have an account?": "¿No tienes una cuenta?",
   "Done": "Listo",
@@ -645,7 +644,6 @@
   "The selected memory provider is not available in this build.": "El proveedor de memoria seleccionado no está disponible en esta build.",
   "Thinking": "Pensando",
   "This bot runs on this computer, not a Linux desktop. Shell and files use your home folder.": "Este bot se ejecuta en esta computadora, no en un escritorio Linux. El shell y los archivos usan tu carpeta de inicio.",
-  "This bot runs on this computer. There is no separate Linux desktop. Ask it to use the shell; working directories under your home folder are allowed.": "Este bot se ejecuta en esta computadora. No hay un escritorio Linux aparte. Pídele que use el shell; se permiten directorios de trabajo bajo tu carpeta de inicio.",
   "This cannot be undone.": "Esto no se puede deshacer.",
   "This chat is view-only": "Este chat es de solo lectura",
   "this computer": "esta computadora",
@@ -706,7 +704,7 @@
   "You can close this window.": "Puedes cerrar esta ventana.",
   "You have control": "Tienes el control",
   "Your email address": "Tu dirección de correo",
-  "Your key or subscription token is stored securely and is never shown here.": "Tu clave o token de suscripción se almacena de forma segura y nunca se muestra aquí.",
+  "Stored securely. Never shown here.": "Almacenado de forma segura. Nunca se muestra aquí.",
   "Your name": "Tu nombre",
   "Your team of always-on agents<0/>that you can give real work to.": "Tu equipo de agentes siempre activos<0/>a los que puedes dar trabajo real.",
   "{0} {1}": "{0} {1}",
@@ -723,5 +721,9 @@
   "Apps": "Apps",
   "Asleep": "En reposo",
   "at <0/>": "a las <0/>",
-  "Authorization expired — reconnect required": "Autorización expirada: se requiere reconectar"
+  "Authorization expired — reconnect required": "Autorización expirada: se requiere reconectar",
+  "Docker limits access to your computer for added security. Using {hostLabel} lets bots work with your local files and tools.": "Docker limita el acceso a tu computadora para mayor seguridad. Usar {hostLabel} permite que los bots trabajen con tus archivos y herramientas locales.",
+  "Local access lets bots run commands without asking. Avoid it on shared or public servers.": "El acceso local permite que los bots ejecuten comandos sin preguntar. Evítalo en servidores compartidos o públicos.",
+  "Docker": "Docker",
+  "To:": "Para:"
 }

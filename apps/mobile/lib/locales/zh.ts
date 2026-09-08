@@ -1,4 +1,43 @@
 export const ZH_MESSAGES: Record<string, string> = {
+  "Release computer": "释放电脑",
+  "Release interrupted computer?": "释放中断的电脑？",
+  "Stop all workers and confirm that provider operations have stopped before releasing this computer.":
+    "释放此电脑前，请停止所有工作进程，并确认服务提供方的操作已经停止。",
+  "Workers and operations are stopped": "工作进程和操作均已停止",
+
+  "Recovery is unavailable until the previous operation has stopped.":
+    "上一次操作停止之前，无法恢复。",
+  "Continue in Background": "在后台继续",
+  "Could not complete action": "无法完成操作",
+  Dismiss: "关闭",
+  "Getting ready": "正在准备",
+  Reconnecting: "正在重新连接",
+  "Recovering Team Computer": "正在恢复团队电脑",
+  "Recovering {name}’s Computer": "正在恢复 {name} 的电脑",
+  "Recovery failed": "恢复失败",
+  "Recreating the computer": "正在重建电脑",
+  "Restoring your workspace": "正在还原工作区",
+  "Saving your workspace": "正在保存工作区",
+  "Recovery restores the last saved workspace. Unsaved work may be lost.":
+    "电脑未能完成操作。可从最近保存的工作区恢复；未保存的工作可能会丢失。",
+  "Update failed": "更新失败",
+  "Updating Team Computer": "正在更新团队电脑",
+  "Updating {name}’s Computer": "正在更新 {name} 的电脑",
+
+  "Server integrations": "服务器集成",
+  "Ask the server owner to configure this provider.": "请联系服务器所有者配置此服务。",
+  "Client ID": "客户端 ID",
+  "Client secret": "客户端密钥",
+  "Connect apps": "连接应用",
+  Continue: "继续",
+  "Could not verify or save these credentials": "无法验证或保存这些凭据",
+  "Direct MCP": "直连 MCP",
+  "Finish MCP authorization in the web app.": "请在网页应用中完成 MCP 授权。",
+  "Get credentials": "获取凭据",
+  "Open web app": "打开网页应用",
+  "Project ID": "项目 ID",
+  "Set up Executor on your server in the web app.": "请在网页应用中为服务器设置 Executor。",
+
   "Cloud agent": "云端智能体",
   "Pull request": "拉取请求",
   running: "运行中",
@@ -57,6 +96,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   Archive: "归档",
   "Archive keeps everything and can be undone. Delete is permanent.":
     "归档会保留全部内容，可以撤销。删除不可恢复。",
+  "Default (medium)": "默认（中）",
   "Archived bots": "已归档的 Bot",
   "Archived. Chat, memory, and files kept.": "已归档。对话、记忆和文件均已保留。",
   Asleep: "已休眠",
@@ -257,6 +297,9 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Enter your Rakazo server address.": "输入你的 Rakazo 服务器地址。",
   "Show less": "收起",
   Members: "成员",
+  Max: "最高",
+  Minimal: "最低",
+  Medium: "中",
   "Members ({min}–{max})": "成员（{min}–{max}）",
   "Message…": "发消息…",
   Message: "消息",
@@ -381,12 +424,13 @@ export const ZH_MESSAGES: Record<string, string> = {
   Skip: "跳过",
   Space: "空间",
   "Space created": "空间已创建",
+  "Space default": "空间默认",
   "Speak + transcribe": "朗读并转写",
   "Speak message": "朗读消息",
   Speak: "朗读",
   "Speak only": "仅朗读",
-  "Speak replies aloud with ElevenLabs, OpenAI, or Cartesia":
-    "使用 ElevenLabs、OpenAI 或 Cartesia 朗读回复",
+  "Speak replies aloud with ElevenLabs, OpenAI, Cartesia, or Fish Audio":
+    "使用 ElevenLabs、OpenAI、Cartesia 或 Fish Audio 朗读回复",
   Starting: "正在启动",
   "Starting…": "正在启动…",
   Stop: "停止",
@@ -432,8 +476,7 @@ export const ZH_MESSAGES: Record<string, string> = {
     "工作已停止，但线程无法刷新：{detail}",
   "You have control": "你已接管控制",
   "Your account": "你的账户",
-  "Your key or subscription token is stored securely and is never shown here.":
-    "你的密钥或订阅令牌会安全存储，绝不会显示在这里。",
+  "Stored securely. Never shown here.": "已安全存储。不会显示在这里。",
   Actions: "操作",
   Active: "启用",
   Add: "添加",
@@ -447,8 +490,8 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Booting {label}": "正在启动 {label}",
   bot: "Bot",
   "{from} messaged {to}": "{from} 已向 {to} 发消息",
-  "Bring your own key. ElevenLabs, OpenAI, and Cartesia all plug into the same speak buttons.":
-    "自带密钥。ElevenLabs、OpenAI 和 Cartesia 都接入同一套朗读按钮。",
+  "Bring your own key. ElevenLabs, OpenAI, Cartesia, and Fish Audio all plug into the same speak buttons.":
+    "自带密钥。ElevenLabs、OpenAI、Cartesia 和 Fish Audio 都接入同一套朗读按钮。",
   "Configure a plugin catalog on the server to connect apps.":
     "在服务器上配置插件目录即可连接应用。",
   "Connected {name}.": "已连接 {name}。",
@@ -515,4 +558,8 @@ export const ZH_MESSAGES: Record<string, string> = {
   "{name} (permission denied)": "{name}（未授予权限）",
   "{name} (unsupported type)": "{name}（不支持的类型）",
   "Saved {name} locally": "已将 {name} 保存在本地",
+  Thinking: "思考",
+  "Extra high": "超高",
+  Low: "低",
+  High: "高",
 };

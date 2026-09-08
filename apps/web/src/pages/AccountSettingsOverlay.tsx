@@ -1,31 +1,20 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { AvatarStyle } from "@rakazo/contracts";
-import {
-  BotAvatar,
-  Button,
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogTitle,
-  Field,
-  FieldLabel,
-  Input,
-  Toggle,
-} from "@rakazo/ui-web";
-import { ChevronDown, XIcon } from "lucide-react";
+import { BotAvatar, Button, Field, FieldLabel, Input, Toggle } from "@rakazo/ui-web";
+import { ChevronDown } from "lucide-react";
 import {
   type KeyboardEvent as ReactKeyboardEvent,
+  type RefObject,
   useEffect,
   useId,
   useRef,
   useState,
 } from "react";
+import { Link } from "react-router-dom";
 import { ApprovalRulesSettings } from "../components/ApprovalRulesSettings";
 import { SuccessPop } from "../components/ai/primitives";
-import {
-  ComputersUnavailableHint,
-  computersAreUnavailable,
-} from "../components/ComputersUnavailableHint";
+import { ComputersUnavailableHint } from "../components/ComputersUnavailableHint";
+import { DesktopUpdateSection } from "../components/DesktopUpdates";
 import { SoftwareUpdateSection } from "../components/SoftwareUpdateSection";
 import { authClient } from "../lib/auth";
 import { getActiveUiLocale, setUiLocale } from "../lib/i18n";
@@ -36,34 +25,26 @@ import {
 } from "../lib/ui-appearance";
 import { UI_LOCALE_LABELS, UI_LOCALES, type UiLocale } from "../lib/ui-locale";
 
-export function AccountSettingsOverlay({
-  email,
-  name,
-  usage,
-  focusUsage,
-  avatarStyle,
-  onAvatarStyleChange,
-  isDeploymentOwner = false,
-  sandboxProvider,
-  messagingEnabled = false,
-  onOpenMessaging,
-  onClose,
-}: {
+export type SettingsGeneralProps = {
   email?: string | null;
   name: string;
-  usage?: { runs: number; inputTokens: number; outputTokens: number } | null;
-  focusUsage?: boolean;
   avatarStyle: AvatarStyle;
   onAvatarStyleChange: (style: AvatarStyle) => Promise<void>;
-  isDeploymentOwner?: boolean;
-  sandboxProvider?: string | null;
   messagingEnabled?: boolean;
   onOpenMessaging?: () => void;
-  onClose: () => void;
-}) {
+  isDeploymentOwner?: boolean;
+};
+
+export function GeneralSettingsPanels({
+  email,
+  name,
+  avatarStyle,
+  onAvatarStyleChange,
+  messagingEnabled = false,
+  onOpenMessaging,
+  isDeploymentOwner = false,
+}: SettingsGeneralProps) {
   const { t } = useLingui();
-  const panelRef = useRef<HTMLDivElement>(null);
-  const usageRef = useRef<HTMLDivElement>(null);
   const [locale, setLocale] = useState<UiLocale>(() => getActiveUiLocale());
   const localeRequestRef = useRef(0);
   const [appearance, setAppearance] = useState<AppearancePreference>(() =>
@@ -96,164 +77,165 @@ export function AccountSettingsOverlay({
   }
 
   return (
-    <Dialog
-      open
-      onOpenChange={(open) => {
-        if (!open) onClose();
-      }}
-    >
-      <DialogContent
-        ref={panelRef}
-        data-testid="user-settings"
-        showCloseButton={false}
-        initialFocus={() => (focusUsage ? usageRef.current : panelRef.current)}
-        className="rk-scroll block max-h-[calc(100%-2rem)] w-[640px] overflow-y-auto overscroll-contain rounded-2xl p-6 sm:max-h-[calc(100%-5rem)] sm:max-w-[calc(100%-5rem)] sm:p-8"
-      >
-        <div className="flex items-start justify-between gap-6">
-          <DialogTitle className="text-2xl font-medium text-foreground">
-            <Trans>Settings</Trans>
-          </DialogTitle>
-          <DialogClose
-            aria-label={t`Close user settings`}
-            render={<Button variant="ghost" size="icon-sm" />}
-          >
-            <XIcon />
-          </DialogClose>
-        </div>
+    <div className="space-y-5">
+      <section className="rounded-xl border border-border px-4 py-4">
+        <h3 className="text-[15px] font-medium text-foreground">
+          <Trans>Account</Trans>
+        </h3>
+        <p className="mt-3 text-[14px] text-foreground/75">{name}</p>
+        {email ? <p className="mt-1 text-[13px] text-muted-foreground/70">{email}</p> : null}
+      </section>
 
-        <section className="mt-8 rounded-xl border border-border px-4 py-4">
+      <ChangePasswordSection email={email} />
+
+      {messagingEnabled && onOpenMessaging ? (
+        <section className="rounded-xl border border-border px-4 py-4">
           <h3 className="text-[15px] font-medium text-foreground">
-            <Trans>Account</Trans>
+            <Trans>Messaging</Trans>
           </h3>
-          <p className="mt-3 text-[14px] text-foreground/75">{name}</p>
-          {email ? <p className="mt-1 text-[13px] text-muted-foreground/70">{email}</p> : null}
-        </section>
-
-        <ChangePasswordSection email={email} />
-
-        {messagingEnabled && onOpenMessaging ? (
-          <section className="mt-5 rounded-xl border border-border px-4 py-4">
-            <h3 className="text-[15px] font-medium text-foreground">
-              <Trans>Messaging</Trans>
-            </h3>
-            <p className="mt-3 text-[13px] text-muted-foreground/70">
-              <Trans>Chat apps, group channels, and agent connections.</Trans>
-            </p>
-            <Button variant="secondary" className="mt-3 rounded-full" onClick={onOpenMessaging}>
-              <Trans>Manage messaging settings</Trans>
-            </Button>
-          </section>
-        ) : null}
-
-        <section className="mt-5 rounded-xl border border-border px-4 py-4">
-          <h3 className="text-[15px] font-medium text-foreground">
-            <Trans>Appearance</Trans>
-          </h3>
-          <AppearancePicker
-            value={appearance}
-            onChange={(next) => {
-              setAppearance(next);
-              setUiAppearance(next);
-            }}
-          />
-        </section>
-
-        <section className="mt-5 rounded-xl border border-border px-4 py-4">
-          <h3 className="text-[15px] font-medium text-foreground">
-            <Trans>Language</Trans>
-          </h3>
-          <UiLocalePicker value={locale} onChange={chooseLocale} />
-        </section>
-
-        <section className="mt-5 rounded-xl border border-border px-4 py-4">
-          <h3 className="text-[15px] font-medium text-foreground">
-            <Trans>Avatars</Trans>
-          </h3>
-          <div className="mt-3 grid grid-cols-2 gap-3">
-            {(["robot", "organic"] as const).map((style) => (
-              <Toggle
-                key={style}
-                variant="outline"
-                pressed={style === avatarStyle}
-                disabled={avatarPending}
-                onPressedChange={() => void chooseAvatarStyle(style)}
-                className="h-auto justify-start gap-3 px-3.5 py-3 text-[14px] font-normal"
-              >
-                <BotAvatar
-                  color="#D9508A"
-                  identity="avatar-style-preview"
-                  size={32}
-                  variant={style}
-                />
-                <span>{style === "robot" ? <Trans>Robot</Trans> : <Trans>Organic</Trans>}</span>
-              </Toggle>
-            ))}
-          </div>
-          {avatarError ? (
-            <p role="alert" className="mt-3 text-[12.5px] text-destructive">
-              {avatarError}
-            </p>
-          ) : null}
-        </section>
-
-        <div
-          ref={usageRef}
-          tabIndex={-1}
-          data-testid="usage-settings"
-          className="mt-5 rounded-xl border border-border px-4 py-4 outline-none"
-        >
-          <h3 className="text-[15px] font-medium text-foreground">
-            <Trans>Usage</Trans>
-          </h3>
-          {usage ? (
-            <p className="mt-3 text-[14px] text-foreground/75">
-              <Trans>
-                {usage.runs} runs · {usage.inputTokens + usage.outputTokens} tokens
-              </Trans>
-            </p>
-          ) : null}
-          <p className={`text-[12.5px] text-muted-foreground/80 ${usage ? "mt-2" : "mt-3"}`}>
-            <Trans>Model spend uses your provider keys.</Trans>
+          <p className="mt-3 text-[13px] text-muted-foreground/70">
+            <Trans>Chat apps, group channels, and agent connections.</Trans>
           </p>
+          <Button variant="secondary" className="mt-3 rounded-full" onClick={onOpenMessaging}>
+            <Trans>Manage messaging settings</Trans>
+          </Button>
+        </section>
+      ) : null}
+
+      <section className="rounded-xl border border-border px-4 py-4">
+        <h3 className="text-[15px] font-medium text-foreground">
+          <Trans>Appearance</Trans>
+        </h3>
+        <AppearancePicker
+          value={appearance}
+          onChange={(next) => {
+            setAppearance(next);
+            setUiAppearance(next);
+          }}
+        />
+      </section>
+
+      <section className="rounded-xl border border-border px-4 py-4">
+        <h3 className="text-[15px] font-medium text-foreground">
+          <Trans>Language</Trans>
+        </h3>
+        <UiLocalePicker value={locale} onChange={chooseLocale} />
+      </section>
+
+      <section className="rounded-xl border border-border px-4 py-4">
+        <h3 className="text-[15px] font-medium text-foreground">
+          <Trans>Avatars</Trans>
+        </h3>
+        <div className="mt-3 grid grid-cols-2 gap-3">
+          {(["robot", "organic"] as const).map((style) => (
+            <Toggle
+              key={style}
+              variant="outline"
+              pressed={style === avatarStyle}
+              disabled={avatarPending}
+              onPressedChange={() => void chooseAvatarStyle(style)}
+              className="h-auto justify-start gap-3 px-3.5 py-3 text-[14px] font-normal"
+            >
+              <BotAvatar
+                color="#D9508A"
+                identity="avatar-style-preview"
+                size={32}
+                variant={style}
+              />
+              <span>{style === "robot" ? <Trans>Robot</Trans> : <Trans>Organic</Trans>}</span>
+            </Toggle>
+          ))}
         </div>
-
-        <SoftwareUpdateSection isDeploymentOwner={isDeploymentOwner} />
-
-        {isDeploymentOwner && computersAreUnavailable(sandboxProvider) ? (
-          <div
-            data-testid="computers-setup-settings"
-            className="mt-5 rounded-xl border border-border px-4 py-4"
-          >
-            <h3 className="text-[15px] font-medium text-foreground">
-              <Trans>Computers</Trans>
-            </h3>
-            <ComputersUnavailableHint className="mt-3 text-[13px] leading-relaxed text-muted-foreground" />
-          </div>
+        {avatarError ? (
+          <p role="alert" className="mt-3 text-[12.5px] text-destructive">
+            {avatarError}
+          </p>
         ) : null}
+      </section>
 
-        <details
-          data-testid="advanced-settings"
-          className="group mt-5 rounded-xl border border-border"
-        >
-          <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-4 py-4 text-[14px] text-foreground/75">
-            <span>
-              <span className="block text-[15px] text-foreground">
-                <Trans>Advanced</Trans>
-              </span>
-              <span className="mt-1 block text-[12.5px] text-muted-foreground/80">
-                <Trans>Optional controls most people never need</Trans>
-              </span>
+      {isDeploymentOwner ? (
+        <Button variant="outline" render={<Link to="/integrations/setup" />}>
+          <Trans>Server integrations</Trans>
+        </Button>
+      ) : null}
+
+      <details data-testid="advanced-settings" className="group rounded-xl border border-border">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-4 py-4 text-[14px] text-foreground/75">
+          <span>
+            <span className="block text-[15px] text-foreground">
+              <Trans>Advanced</Trans>
             </span>
-            <span aria-hidden="true" className="transition-transform group-open:rotate-90">
-              ›
+            <span className="mt-1 block text-[12.5px] text-muted-foreground/80">
+              <Trans>Optional controls most people never need</Trans>
             </span>
-          </summary>
-          <div className="border-t border-border px-4 pb-5">
-            <ApprovalRulesSettings />
-          </div>
-        </details>
-      </DialogContent>
-    </Dialog>
+          </span>
+          <span aria-hidden="true" className="transition-transform group-open:rotate-90">
+            ›
+          </span>
+        </summary>
+        <div className="border-t border-border px-4 pb-5">
+          <ApprovalRulesSettings />
+        </div>
+      </details>
+    </div>
+  );
+}
+
+export function UsageSettingsPanel({
+  usage,
+  panelRef,
+}: {
+  usage?: { runs: number; inputTokens: number; outputTokens: number } | null;
+  panelRef?: RefObject<HTMLDivElement | null>;
+}) {
+  return (
+    <div
+      ref={panelRef}
+      tabIndex={-1}
+      data-testid="usage-settings"
+      className="rounded-xl border border-border px-4 py-4 outline-none"
+    >
+      <h3 className="text-[15px] font-medium text-foreground">
+        <Trans>Usage</Trans>
+      </h3>
+      {usage ? (
+        <p className="mt-3 text-[14px] text-foreground/75">
+          <Trans>
+            {usage.runs} runs · {usage.inputTokens + usage.outputTokens} tokens
+          </Trans>
+        </p>
+      ) : null}
+      <p className={`text-[12.5px] text-muted-foreground/80 ${usage ? "mt-2" : "mt-3"}`}>
+        <Trans>Model spend uses your provider keys.</Trans>
+      </p>
+    </div>
+  );
+}
+
+export function ComputerSettingsPanel() {
+  return (
+    <div
+      data-testid="computers-setup-settings"
+      className="rounded-xl border border-border px-4 py-4"
+    >
+      <h3 className="text-[15px] font-medium text-foreground">
+        <Trans>Computers</Trans>
+      </h3>
+      <ComputersUnavailableHint className="mt-3 text-[13px] leading-relaxed text-muted-foreground" />
+    </div>
+  );
+}
+
+export function UpdatesSettingsPanel({
+  isDeploymentOwner = false,
+}: {
+  isDeploymentOwner?: boolean;
+}) {
+  return (
+    <div className="space-y-5">
+      <DesktopUpdateSection />
+      <SoftwareUpdateSection isDeploymentOwner={isDeploymentOwner} />
+    </div>
   );
 }
 
@@ -297,7 +279,7 @@ function ChangePasswordSection({ email }: { email?: string | null }) {
   }
 
   return (
-    <section className="mt-5 rounded-xl border border-border px-4 py-4">
+    <section className="rounded-xl border border-border px-4 py-4">
       <h3 className="text-[15px] font-medium text-foreground">
         <Trans>Password</Trans>
       </h3>

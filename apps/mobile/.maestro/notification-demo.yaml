@@ -1,0 +1,87 @@
+appId: com.rakazo.app
+name: Android live working status demonstration
+---
+- launchApp:
+    clearState: true
+    permissions:
+      notifications: allow
+# A cold API 34 emulator can show a launcher ANR over the healthy app.
+- extendedWaitUntil:
+    visible: "Sign up for Rakazo|Pixel Launcher isn't responding"
+    timeout: 30000
+- runFlow:
+    when:
+      visible: "Pixel Launcher isn't responding"
+    commands:
+      - tapOn: "Close app"
+- extendedWaitUntil:
+    visible: "Sign up for Rakazo"
+    timeout: 30000
+- tapOn: "Sign in"
+- tapOn: "Email"
+- inputText: ${RAKAZO_SCREENSHOT_EMAIL}
+- tapOn: "Password"
+- inputText: ${RAKAZO_SCREENSHOT_PASSWORD}
+- hideKeyboard
+- tapOn: "Sign in"
+- extendedWaitUntil:
+    visible: "Researcher"
+    timeout: 30000
+
+# Only the public demo is recorded; sign-in uses disposable fixture credentials.
+- startRecording: ${RAKAZO_NOTIFICATION_VIDEO}
+- openLink: "rakazo:///account"
+- scrollUntilVisible:
+    element: "Live working status"
+    direction: DOWN
+- tapOn: "Live working status"
+- openLink: "rakazo:///thread?botId=${RAKAZO_SCREENSHOT_BOT_ID}&name=Researcher"
+- extendedWaitUntil:
+    visible: "Message Researcher"
+    timeout: 10000
+- tapOn: "Message Researcher"
+- inputText: "Review the launch checklist and keep working until I stop you."
+- hideKeyboard
+- tapOn: "Send"
+- extendedWaitUntil:
+    visible: "Stop"
+    timeout: 30000
+- pressKey: HOME
+# Status-bar swipe is flaky on API 34 emulators; expand via host adb helper instead.
+- repeat:
+    times: 8
+    while:
+      notVisible: "Researcher is working"
+    commands:
+      - evalScript: ${output.expandNotifications = http.get(RAKAZO_EXPAND_NOTIFICATIONS_URL)}
+      - assertTrue: ${output.expandNotifications.ok}
+      - waitForAnimationToEnd:
+          timeout: 2000
+- extendedWaitUntil:
+    visible: "Researcher is working"
+    timeout: 5000
+- takeScreenshot: "30-live-working-notification"
+- tapOn: "Researcher is working"
+- extendedWaitUntil:
+    visible: "Stop"
+    timeout: 10000
+- tapOn: "Stop"
+- extendedWaitUntil:
+    notVisible: "Stop"
+    timeout: 30000
+- openLink: "rakazo:///account"
+- scrollUntilVisible:
+    element: "Live working status"
+    direction: DOWN
+- tapOn: "Live working status"
+- pressKey: HOME
+- evalScript: ${output.expandNotifications = http.get(RAKAZO_EXPAND_NOTIFICATIONS_URL)}
+- assertTrue: ${output.expandNotifications.ok}
+- waitForAnimationToEnd:
+    timeout: 2000
+- extendedWaitUntil:
+    visible: "Internet"
+    timeout: 5000
+- assertNotVisible: "Researcher is working"
+- takeScreenshot: "31-live-working-stopped"
+- stopRecording

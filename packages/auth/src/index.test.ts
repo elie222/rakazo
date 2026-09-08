@@ -1,10 +1,40 @@
 import { describe, expect, it, vi } from "vitest";
-import { blockedAuthPaths, passwordResetEmail, resolveSignupPolicy } from "./index.js";
+import {
+  blockedAuthPaths,
+  buildTrustedOrigins,
+  passwordResetEmail,
+  resolveSignupPolicy,
+} from "./index.js";
 
 describe("auth policy", () => {
   it("blocks invitation and org-creation paths in version 1", () => {
     expect(blockedAuthPaths.some((path) => path.includes("invite"))).toBe(true);
     expect(blockedAuthPaths.some((path) => path.includes("create"))).toBe(true);
+  });
+});
+
+describe("buildTrustedOrigins", () => {
+  it("adds the localhost twin for a 127.0.0.1 web origin", () => {
+    expect(
+      buildTrustedOrigins({
+        webOrigin: "http://127.0.0.1:5173",
+        baseURL: "http://127.0.0.1:5173",
+      }),
+    ).toEqual(expect.arrayContaining(["http://127.0.0.1:5173", "http://localhost:5173"]));
+  });
+
+  it("keeps extraOrigins and does not twin non-loopback hosts", () => {
+    expect(
+      buildTrustedOrigins({
+        webOrigin: "https://app.example.test",
+        baseURL: "https://api.example.test",
+        extraOrigins: ["https://extra.example.test"],
+      }),
+    ).toEqual([
+      "https://app.example.test",
+      "https://api.example.test",
+      "https://extra.example.test",
+    ]);
   });
 });
 

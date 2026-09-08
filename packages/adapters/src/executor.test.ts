@@ -3,6 +3,7 @@ import { ONCE_ROUTINE_CRON } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import {
+  appendToolCompletionAudit,
   createRunExecutor,
   createRunWorkspaceCheckpoint,
   loadCurrentTurnImages,
@@ -11,7 +12,94 @@ import {
   selectBuiltinToolsForRun,
   settleSteeringAttachmentLoads,
   threadContextForRun,
+  toolCompletionAuditPayload,
+  toolCompletionFromResult,
 } from "./executor.js";
+
+describe("tool completion audit", () => {
+  it("records result metadata without persisting tool contents", () => {
+    const payload = toolCompletionAuditPayload({
+      name: "computer_observe",
+      executionId: "call-1",
+      durationMs: 12.6,
+      result: {
+        kind: "agent_tool_result",
+        content: [
+          { type: "text", text: "Visible window" },
+          { type: "image", data: "image-bytes", mimeType: "image/png" },
+        ],
+        details: {
+          frameId: "frame-1",
+          capturedAt: "2026-09-07T00:00:00.000Z",
+          width: 1280,
+          height: 720,
+          activeWindow: { title: "Private window" },
+        },
+      },
+    });
+
+    expect(payload).toEqual({
+      name: "computer_observe",
+      executionId: "call-1",
+      durationMs: 13,
+      outcome: "succeeded",
+      contentTypes: ["text", "image"],
+      frameId: "frame-1",
+      capturedAt: "2026-09-07T00:00:00.000Z",
+      width: 1280,
+      height: 720,
+    });
+    expect(payload).not.toHaveProperty("content");
+    expect(payload).not.toHaveProperty("activeWindow");
+  });
+
+  it("does not fail the run when the audit append fails", async () => {
+    const append = vi.fn().mockRejectedValue(new Error("database unavailable"));
+
+    await expect(
+      appendToolCompletionAudit(
+        { events: { append } },
+        { spaceId: "space-1", threadId: "thread-1", botId: "bot-1", runId: "run-1" },
+        {
+          name: "destination.write",
+          executionId: "call-1",
+          durationMs: 4,
+          error: new Error("Bearer secret-token"),
+        },
+        ["secret-token"],
+      ),
+    ).resolves.toBeUndefined();
+    expect(append).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "agent.tool.completed",
+        payload: expect.objectContaining({
+          outcome: "error",
+          error: "Bearer [redacted]",
+        }),
+      }),
+    );
+  });
+
+  it("records rejected scripted tool results as errors", () => {
+    const completion = toolCompletionFromResult(
+      { name: "destination.write", executionId: "call-1", durationMs: 4 },
+      { error: "destination rejected the record" },
+    );
+
+    expect(completion).toEqual({
+      name: "destination.write",
+      executionId: "call-1",
+      durationMs: 4,
+      error: "destination rejected the record",
+      paused: false,
+    });
+    expect(toolCompletionAuditPayload(completion)).toMatchObject({
+      outcome: "error",
+      error: "destination rejected the record",
+    });
+    expect(completion).not.toHaveProperty("result");
+  });
+});
 
 describe("run workspace checkpoint", () => {
   it("skips clean turns and flushes once after a mutation", async () => {
@@ -1037,6 +1125,88 @@ description: Prepare standup notes
         where: expect.objectContaining({ credential: { provider: "xai" } }),
       }),
     );
+  });
+
+  it("resolves an explicit subagent model within the active user and space", async () => {
+    const preference = modelPreference({
+      provider: "xai",
+      secretId: "secret-xai",
+      modelId: "grok-4.6",
+      isDefault: false,
+    });
+    const findFirst = vi.fn(
+      async (args: { where: { credential?: { provider?: string }; modelId?: string } }) => {
+        if (args.where.credential?.provider !== "xai") return null;
+        if (args.where.modelId && args.where.modelId !== "grok-4.6") return null;
+        return preference;
+      },
+    );
+    const prisma = {
+      spaceModelPreference: { findFirst },
+      userModelCredential: { findFirst: vi.fn(async () => null) },
+      secret: { findFirst: vi.fn(async () => null), findUnique: vi.fn(async () => null) },
+    } as unknown as PrismaClient;
+    const executor = createRunExecutor({
+      prisma,
+      secretStore: { load: vi.fn(), put: vi.fn() },
+    } as unknown as Parameters<typeof createRunExecutor>[0]);
+
+    const model = await executor.resolveConnectedModel(
+      { userId: "user-1", spaceId: "ws-1" },
+      "xai",
+      "grok-4.6",
+    );
+
+    expect(model).toMatchObject({ provider: "xai", id: "grok-4.6", thinkingLevel: null });
+    expect(findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          spaceId: "ws-1",
+          userId: "user-1",
+          modelId: "grok-4.6",
+          credential: { provider: "xai" },
+        }),
+      }),
+    );
+  });
+
+  it("rejects a free-form selection when the owning preference disappears", async () => {
+    const preference = modelPreference({
+      provider: "openai-compatible",
+      secretId: "secret-compat",
+      modelId: "newest-model",
+      isDefault: true,
+    });
+    const findFirst = vi.fn(
+      async (args: {
+        where: { credential?: { provider?: string; userId?: string }; modelId?: string };
+        select?: unknown;
+      }) => {
+        if (args.select) {
+          return args.where.modelId === "private-model" ? { id: "saved" } : null;
+        }
+        if (args.where.modelId === "private-model") return null;
+        if (args.where.credential?.provider === "openai-compatible") return preference;
+        return null;
+      },
+    );
+    const prisma = {
+      spaceModelPreference: { findFirst },
+      userModelCredential: { findFirst: vi.fn(async () => null) },
+      secret: { findFirst: vi.fn(async () => null), findUnique: vi.fn(async () => null) },
+    } as unknown as PrismaClient;
+    const executor = createRunExecutor({
+      prisma,
+      secretStore: { load: vi.fn(), put: vi.fn() },
+    } as unknown as Parameters<typeof createRunExecutor>[0]);
+
+    await expect(
+      executor.resolveConnectedModel(
+        { userId: "user-1", spaceId: "ws-1" },
+        "openai-compatible",
+        "private-model",
+      ),
+    ).rejects.toThrow("Unknown model for that provider");
   });
 
   it("falls back to the Space default when the override provider has no credential", async () => {

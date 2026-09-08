@@ -204,6 +204,7 @@ export function planLiveConnectionSync(
 }
 
 export class ComposioConnector implements ComposioProvider {
+  constructor(private readonly apiKey?: string) {}
   private client: Composio | undefined;
   private readonly catalogSessions = new Map<string, string>();
   private readonly executeSessions = new Map<string, { sessionId: string; key: string }>();
@@ -551,7 +552,7 @@ export class ComposioConnector implements ComposioProvider {
   }
 
   private sdk(): Composio {
-    this.client ??= new Composio();
+    this.client ??= new Composio(this.apiKey ? { apiKey: this.apiKey } : undefined);
     return this.client;
   }
 }

@@ -39,7 +39,7 @@ describe("toComputerStatus", () => {
         scope: "team",
         controlHolder: "none",
         homeRevision: "r1",
-      }).updateAvailable,
+      }).canUpdate,
     ).toBe(false);
     expect(
       toComputerStatus("bot-1", {
@@ -48,7 +48,7 @@ describe("toComputerStatus", () => {
         scope: "team",
         controlHolder: "none",
         homeRevision: "r1",
-      }).updateAvailable,
+      }).canUpdate,
     ).toBe(true);
   });
 });

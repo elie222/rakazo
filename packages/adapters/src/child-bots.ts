@@ -23,6 +23,7 @@ import { getLogger } from "@rakazo/logging";
 import { toComputerRef } from "./computer-support.js";
 import { checkpointAndRecordComputerWorkspace } from "./computer-workspace.js";
 import { resolveAgentHomePath } from "./home.js";
+import { removePiBotSessions } from "./pi-session.js";
 
 export function confirmSpawnedBotName(confirmName: string, botName: string) {
   if (confirmName !== botName) {
@@ -202,6 +203,7 @@ type LifecycleBot = {
   id: string;
   spaceId: string;
   name: string;
+  userId?: string;
   archivedAt: Date | null;
   computerId?: string | null;
   webhookSecretId?: string | null;
@@ -360,6 +362,8 @@ export async function destroyBot(
   if (dedicated?.providerRef) {
     await deps.sandbox.destroy(toComputerRef(dedicated), context).catch(() => undefined);
   }
+  // Keep the bot deletion transaction from committing if raw transcript cleanup fails.
+  await removePiBotSessions(deps.dataDir, bot.userId, bot.id);
   const deletion = await withTransactionRetry(() =>
     deps.prisma.$transaction(async (tx) => {
       const locked = await tx.$queryRaw<Array<{ id: string; webhookSecretId: string | null }>>`

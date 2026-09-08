@@ -18,7 +18,7 @@
     "@rakazo/memory": "workspace:*"
   },
   "devDependencies": {
-    "typescript": "^5.9.2",
-    "vitest": "^4.1.10"
+    "typescript": "7.0.2",
+    "vitest": "4.1.11"
   }
 }

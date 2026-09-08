@@ -221,6 +221,7 @@ model Invitation {
   role           String?
   status         String
   expiresAt      DateTime
+  createdAt      DateTime     @default(now())
   inviterId      String
   user           User         @relation(fields: [inviterId], references: [id], onDelete: Cascade)
 
@@ -356,7 +357,6 @@ model Bot {
   agentHome         AgentHome?
   browserProfile    BrowserProfile?
   artifacts         Artifact[]
-  usageRecords      UsageRecord[]
   tasks             Task[]
   runs              Run[]
   steeringMessages  SteeringMessage[]
@@ -866,6 +866,22 @@ model BrowserProfile {
   @@map("browser_profiles")
 }
 
+model ComputerUpdate {
+  action     String   @default("update")
+  id         String   @id @default(cuid())
+  computerId String
+  computer   Computer @relation(fields: [computerId], references: [id], onDelete: Cascade)
+  botId      String
+  status     String   @default("queued")
+  stage      String   @default("preparing")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([computerId, createdAt])
+  @@index([status, updatedAt])
+  @@map("computer_updates")
+}
+
 model Computer {
   id                      String                   @id @default(cuid())
   spaceId                 String
@@ -893,6 +909,8 @@ model Computer {
   updatedAt               DateTime                 @updatedAt
   bots                    Bot[]
   executionLeases         ComputerExecutionLease[]
+  maintenanceId           String?
+  updates                 ComputerUpdate[]
 
   @@index([spaceId, scope])
   @@map("computers")
@@ -941,8 +959,15 @@ model UsageRecord {
   id           String   @id @default(cuid())
   spaceId      String
   space        Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  /// Which bot spent this. Deliberately NOT a relation: a usage row is spend that really
+  /// happened, and no lifecycle event on the bot may delete it or blank its attribution.
+  /// `Cascade` erased the row; `SetNull` would erase the attribution instead, and because
+  /// deleting a bot also deletes its runs, `runId` goes null in the same breath — the row
+  /// would keep only space, user, model and token counts.
+  ///
+  /// So the id outlives the bot and may dangle. Read it with a LEFT JOIN; `BotDeletion.id`
+  /// IS the bot id, so a deleted bot's name is still reachable for display.
   botId        String?
-  bot          Bot?     @relation(fields: [botId], references: [id], onDelete: Cascade)
   userId       String
   runId        String?
   run          Run?     @relation(fields: [runId], references: [id], onDelete: SetNull)
@@ -1260,4 +1285,13 @@ model AgentSecret {
   @@unique([spaceId, name])
   @@index([spaceId, updatedAt])
   @@map("agent_secrets")
+}
+
+// Deployment-owned integration credentials; never exposed through read DTOs.
+model IntegrationProviderConfig {
+  id         String @id
+  ciphertext String
+  updatedAt  DateTime @updatedAt
+
+  @@map("integration_provider_configs")
 }

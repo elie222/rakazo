@@ -5,6 +5,7 @@ import type {
   AgentModelOAuthCredential,
   AgentRunRequest,
   AgentRuntime,
+  AgentToolCompletion,
   ArtifactStore,
   BrowserProvider,
   ComputerRef,
@@ -210,7 +211,11 @@ import {
 import { loadAgentMemoryContext } from "./memory-context.js";
 import type { MemoryProviderResolver } from "./memory-provider-factory.js";
 import { selectMemoryTools } from "./memory-tools.js";
-import { selectConfiguredModel } from "./model-selection.js";
+import {
+  isCatalogModelChoice,
+  selectConfiguredModel,
+  validateConnectedModelChoice,
+} from "./model-selection.js";
 import {
   filterImageReturningComputerTools,
   IMAGE_RETURNING_COMPUTER_TOOLS,
@@ -482,6 +487,102 @@ export interface ExecutorDeps {
   shutdownSignal?: AbortSignal;
 }
 
+function isAuditableToolResult(value: unknown): value is {
+  kind: "agent_tool_result";
+  content: unknown[];
+  details: unknown;
+} {
+  return (
+    Boolean(value) &&
+    typeof value === "object" &&
+    (value as { kind?: unknown }).kind === "agent_tool_result" &&
+    Array.isArray((value as { content?: unknown }).content)
+  );
+}
+
+function isFailedToolResult(value: unknown): value is { error: unknown } {
+  if (!value || typeof value !== "object" || !("error" in value)) return false;
+  const error = (value as { error?: unknown }).error;
+  return error !== undefined && error !== null;
+}
+
+export function toolCompletionFromResult(
+  base: Pick<AgentToolCompletion, "name" | "executionId" | "durationMs">,
+  result: unknown,
+): AgentToolCompletion {
+  const paused = isToolPauseResult(result);
+  if (isFailedToolResult(result)) return { ...base, error: result.error, paused };
+  return { ...base, result, paused };
+}
+
+export function toolCompletionAuditPayload(
+  completion: AgentToolCompletion,
+  secrets: string[] = [],
+): Record<string, unknown> {
+  const durationMs = Number.isFinite(completion.durationMs)
+    ? Math.max(0, Math.round(completion.durationMs))
+    : 0;
+  const payload: Record<string, unknown> = {
+    name: redactSecrets(completion.name, secrets),
+    executionId: redactSecrets(completion.executionId, secrets),
+    durationMs,
+    outcome: completion.paused ? "paused" : completion.error === undefined ? "succeeded" : "error",
+  };
+  if (completion.error !== undefined) {
+    payload.error = sanitizeConnectorError(completion.error, secrets);
+  }
+  if (!isAuditableToolResult(completion.result)) return payload;
+
+  payload.contentTypes = completion.result.content.flatMap((part) => {
+    if (!part || typeof part !== "object") return [];
+    const type = (part as { type?: unknown }).type;
+    return type === "text" || type === "image" ? [type] : [];
+  });
+  const details = completion.result.details;
+  if (!details || typeof details !== "object" || Array.isArray(details)) {
+    return payload;
+  }
+  const record = details as Record<string, unknown>;
+  if (typeof record.frameId === "string") {
+    payload.frameId = redactSecrets(record.frameId, secrets);
+  }
+  if (typeof record.capturedAt === "string") {
+    payload.capturedAt = record.capturedAt;
+  }
+  if (typeof record.width === "number" && Number.isFinite(record.width)) {
+    payload.width = record.width;
+  }
+  if (typeof record.height === "number" && Number.isFinite(record.height)) {
+    payload.height = record.height;
+  }
+  return payload;
+}
+
+export async function appendToolCompletionAudit(
+  deps: { events: Pick<ThreadEvents, "append"> },
+  target: { spaceId: string; threadId: string; botId: string; runId: string },
+  completion: AgentToolCompletion,
+  secrets: string[] = [],
+): Promise<void> {
+  try {
+    await deps.events.append({
+      spaceId: target.spaceId,
+      threadId: target.threadId,
+      botId: target.botId,
+      runId: target.runId,
+      type: "agent.tool.completed",
+      payload: toolCompletionAuditPayload(completion, secrets),
+    });
+  } catch (error) {
+    // Audit persistence must not change the tool result or strand the run.
+    getLogger().warn("agent tool completion audit append failed", {
+      error: sanitizeConnectorError(error, secrets),
+      tool: redactSecrets(completion.name, secrets),
+      executionId: redactSecrets(completion.executionId, secrets),
+    });
+  }
+}
+
 export async function deferFutureRoutine(
   jobs: JobPublisher,
   routineId: string,
@@ -609,7 +710,49 @@ export function createRunExecutor(deps: ExecutorDeps) {
   const web = deps.web ?? createWebProvider();
   const browser = deps.browser ?? createBrowserProvider(undefined, { sandbox: deps.sandbox });
   const cloudAgent = deps.cloudAgent;
+  const resolveConnectedModel = async (
+    scope: { userId: string; spaceId: string },
+    provider: string,
+    modelId: string,
+    registerSecrets?: (values: string[]) => void,
+  ): Promise<AgentRunRequest["model"]> => {
+    const validationError = await validateConnectedModelChoice(
+      deps.prisma,
+      scope,
+      provider,
+      modelId,
+    );
+    if (validationError) throw new Error(validationError);
+    const credential = await findModelCredential(deps.prisma, scope, provider, modelId);
+    if (!credential) throw new Error("Connect that model provider first");
+    // Free-form selections must keep the preference that owns this modelId. A
+    // intervening delete/change can make findModelCredential fall back to another
+    // same-provider credential; reject that mismatch instead of mixing baseUrl.
+    if (!isCatalogModelChoice(provider, modelId) && credential.defaultModel !== modelId) {
+      throw new Error("Unknown model for that provider");
+    }
+    const resolved = await resolveModelKey(
+      deps,
+      scope.userId,
+      scope.spaceId,
+      credential,
+      provider,
+      registerSecrets,
+    );
+    return {
+      provider,
+      id: modelId,
+      apiKey: resolved.oauth ? undefined : resolved.apiKey,
+      baseUrl: resolved.baseUrl,
+      reasoning: resolved.reasoning,
+      thinkingLevel: null,
+      oauth: resolved.oauth
+        ? { credential: resolved.oauth, persist: resolved.persistOAuth }
+        : undefined,
+    };
+  };
   return {
+    resolveConnectedModel,
     async resolveModel(scope: {
       userId: string;
       spaceId: string;
@@ -628,7 +771,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
       const hasOverride = Boolean(override?.modelProvider && override.modelId);
       const [overrideCredential, defaultCredential, settings] = await Promise.all([
         hasOverride
-          ? findModelCredential(deps.prisma, scope, override!.modelProvider!)
+          ? findModelCredential(deps.prisma, scope, override!.modelProvider!, override!.modelId)
           : Promise.resolve(null),
         findDefaultModelCredential(deps.prisma, scope),
         deps.prisma.deploymentSettings.findUnique({ where: { id: "default" } }),
@@ -974,7 +1117,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         const hasModelOverride = Boolean(bot.modelProvider && bot.modelId);
         const overrideCredential =
           hasModelOverride && bot.modelProvider
-            ? await findModelCredential(deps.prisma, run, bot.modelProvider)
+            ? await findModelCredential(deps.prisma, run, bot.modelProvider, bot.modelId)
             : null;
         runAbortController = new AbortController();
         if (!leaseValid) runAbortController.abort();
@@ -3191,6 +3334,24 @@ export function createRunExecutor(deps: ExecutorDeps) {
               allowSilentEmpty: allowSilentPeerMessage || messagingChannelRun,
               emptyResponseText,
               executeTool: scripted ? undefined : applyTool,
+              resolveModel: scripted
+                ? undefined
+                : (provider, modelId) =>
+                    resolveConnectedModel(run, provider, modelId, (values) =>
+                      runSecrets.push(...values),
+                    ),
+              onToolCompleted: (completion) =>
+                appendToolCompletionAudit(
+                  deps,
+                  {
+                    spaceId: run.spaceId,
+                    threadId: thread.id,
+                    botId: bot.id,
+                    runId,
+                  },
+                  completion,
+                  runSecrets,
+                ),
               claimSteering: scripted
                 ? undefined
                 : async (seenIds) => {
@@ -3454,8 +3615,47 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 return;
               }
               if (scripted) {
-                const result = await applyTool(event.name, event.args, event.executionId);
-                if (isToolPauseResult(result)) return;
+                const startedAt = Date.now();
+                try {
+                  const result = await applyTool(event.name, event.args, event.executionId);
+                  await appendToolCompletionAudit(
+                    deps,
+                    {
+                      spaceId: run.spaceId,
+                      threadId: thread.id,
+                      botId: bot.id,
+                      runId,
+                    },
+                    toolCompletionFromResult(
+                      {
+                        name: event.name,
+                        executionId: event.executionId,
+                        durationMs: Date.now() - startedAt,
+                      },
+                      result,
+                    ),
+                    runSecrets,
+                  );
+                  if (isToolPauseResult(result)) return;
+                } catch (error) {
+                  await appendToolCompletionAudit(
+                    deps,
+                    {
+                      spaceId: run.spaceId,
+                      threadId: thread.id,
+                      botId: bot.id,
+                      runId,
+                    },
+                    {
+                      name: event.name,
+                      executionId: event.executionId,
+                      durationMs: Date.now() - startedAt,
+                      error,
+                    },
+                    runSecrets,
+                  );
+                  throw error;
+                }
               }
             } else if (event.type === "subagent") {
               const safeTask = redactSecrets(event.task, runSecrets);

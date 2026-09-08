@@ -13,6 +13,18 @@ test("onboarding skips model connect when a default model is already available",
     });
   });
 
+  await page.route("**/rpc/integrationSetup/get", (route) =>
+    route.fulfill({
+      json: {
+        json: {
+          canConfigure: false,
+          needsSetup: false,
+          webUrl: "https://example.test/integrations/setup",
+          providers: [],
+        },
+      },
+    }),
+  );
   const stamp = Date.now();
   await signup(
     page,
@@ -24,6 +36,10 @@ test("onboarding skips model connect when a default model is already available",
   await expect(page.getByRole("heading", { name: "Create your first bot" })).toBeVisible({
     timeout: 20_000,
   });
+  await expect(page.getByRole("heading", { name: "Server integrations" })).toBeHidden();
+  for (const name of ["Composio", "Pipedream", "Executor"]) {
+    await expect(page.getByRole("button", { name, exact: true })).toBeHidden();
+  }
   await expect(page.getByRole("heading", { name: "Connect a model" })).toBeHidden();
   await expect(page.getByRole("button", { name: "Skip for now" })).toBeHidden();
   await captureScreenshot(page, testInfo, "onboarding-model-auto-skip");

@@ -37,7 +37,35 @@
 
         <section id="panel-new" class="panel">
           <div id="stack" hidden>
-            <p id="stack-phase" class="stack-phase" role="status" aria-live="polite"></p>
+            <div class="stack-head">
+              <p id="stack-phase" class="stack-phase" role="status" aria-live="polite"></p>
+              <button
+                id="stack-details"
+                class="icon-button"
+                type="button"
+                aria-controls="stack-output"
+                aria-expanded="false"
+                aria-label="Technical details"
+                title="Technical details"
+              >
+                <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                  <path d="M3.5 4.5 7 8l-3.5 3.5M8.5 11.5H13" />
+                </svg>
+              </button>
+            </div>
+            <div
+              id="stack-progress"
+              class="progress"
+              role="progressbar"
+              aria-label="Setup progress"
+              aria-valuemin="0"
+              aria-valuemax="100"
+              aria-valuenow="0"
+              hidden
+            >
+              <div id="stack-progress-fill" class="progress-fill"></div>
+            </div>
+            <p id="stack-detail" class="stack-detail"></p>
             <pre id="stack-output" class="stack-output" hidden></pre>
             <div id="stack-docker-help" class="stack-help" hidden>
               <button class="link" type="button" data-link="docker-desktop">Docker Desktop</button>

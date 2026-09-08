@@ -1,0 +1,7 @@
+# yaml-language-server: $schema=https://storage.googleapis.com/coderabbit_public_assets/schema.v2.json
+reviews:
+  tools:
+    # Biome owns this repo's CSS (see biome.json and `pnpm lint`); Stylelint is not
+    # installed or configured here, so its findings are about rules we do not run.
+    stylelint:
+      enabled: false

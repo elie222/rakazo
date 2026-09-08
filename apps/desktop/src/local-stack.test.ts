@@ -196,6 +196,25 @@ describe("reduceStackState", () => {
     expect(state.phase).toBe("ready");
   });
 
+  it("sums the largest size each layer reports and clears it for the next attempt", () => {
+    let state = reduceStackState(start, { type: "check-start" });
+    state = reduceStackState(state, { type: "pull-start" });
+    for (const line of [
+      " a235d761c5d1 Downloading 59.47MB",
+      " a235d761c5d1 Downloading 1.02GB",
+      // Out-of-order and repeated lines must never walk the total backwards.
+      " a235d761c5d1 Downloading 900MB",
+      " 37d39b5cad9d Downloading 491.5kB",
+      " 37d39b5cad9d Extracting 491.5kB",
+      " app Pulled",
+    ]) {
+      state = reduceStackState(state, { type: "output", line });
+    }
+    expect(state.layerBytes).toEqual({ a235d761c5d1: 1.02e9, "37d39b5cad9d": 491_500 });
+
+    expect(reduceStackState(state, { type: "check-start" }).layerBytes).toEqual({});
+  });
+
   it("keeps only the last lines of output", () => {
     let state = reduceStackState(start, { type: "check-start" });
     state = reduceStackState(state, { type: "pull-start" });
@@ -325,6 +344,24 @@ describe("LocalStackController", () => {
     const stack = new LocalStackController(deps);
     return stack;
   }
+
+  it("pushes every state change so the setup window is never left waiting on a poll", async () => {
+    const pushed: string[] = [];
+    const stack = controller({ onState: (state) => pushed.push(state.phase) });
+
+    await stack.start();
+    expect(pushed).toEqual([
+      "checking-docker",
+      "preparing",
+      "pulling",
+      "pulling",
+      "pulling",
+      "starting",
+      "starting",
+      "waiting-healthy",
+      "ready",
+    ]);
+  });
 
   it("installs the compose project and walks every phase to ready", async () => {
     const stack = controller();

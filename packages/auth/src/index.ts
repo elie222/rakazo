@@ -40,7 +40,7 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
     appName: "Rakazo",
     secret: env.secret,
     baseURL: env.baseURL,
-    trustedOrigins: [env.webOrigin, env.baseURL, ...(env.extraOrigins ?? [])],
+    trustedOrigins: buildTrustedOrigins(env),
     database: prismaAdapter(prisma, { provider: "postgresql" }),
     emailAndPassword: {
       enabled: true,
@@ -252,6 +252,35 @@ function escapeHtml(value: string): string {
 }
 
 export type Auth = ReturnType<typeof createAuth>;
+
+/** Assemble Better Auth trustedOrigins, adding localhost↔127.0.0.1 twins for loopback. */
+export function buildTrustedOrigins(env: Pick<AuthEnv, "webOrigin" | "baseURL" | "extraOrigins">) {
+  const configured = [env.webOrigin, env.baseURL, ...(env.extraOrigins ?? [])];
+  const twins = [env.webOrigin, env.baseURL].flatMap(loopbackTwinOrigins);
+  return [...new Set([...configured, ...twins])];
+}
+
+function isLoopbackHost(host: string): boolean {
+  return host === "localhost" || host === "127.0.0.1" || host === "::1" || host === "[::1]";
+}
+
+/** Same-scheme/port localhost and 127.0.0.1 variants when `origin` is loopback. */
+function loopbackTwinOrigins(origin: string): string[] {
+  try {
+    const url = new URL(origin);
+    if (!isLoopbackHost(url.hostname)) return [];
+    const twins: string[] = [];
+    for (const host of ["localhost", "127.0.0.1"] as const) {
+      if (host === url.hostname) continue;
+      const twin = new URL(origin);
+      twin.hostname = host;
+      twins.push(twin.origin);
+    }
+    return twins;
+  } catch {
+    return [];
+  }
+}
 
 export const blockedAuthPaths = [
   "/organization/create",

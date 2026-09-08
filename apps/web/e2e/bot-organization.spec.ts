@@ -169,7 +169,7 @@ test("chat composer controls are vertically centered", async ({ page }) => {
   await completeOnboarding(page);
 
   const centers = await page.getByTestId("composer-bar").evaluate((composer) =>
-    ["Attach file", "Dictate", "Message Chief", "Send"].map((label) => {
+    ["Attach file", "Message Chief", "Voice", "Send"].map((label) => {
       const element = composer.querySelector<HTMLElement>(`[aria-label="${label}"]`);
       if (!element) throw new Error(`Missing composer control: ${label}`);
       const box = element.getBoundingClientRect();
@@ -245,6 +245,7 @@ test("group chats share every context-menu action", async ({ page }, testInfo) =
   await expect(
     page.getByRole("alertdialog", { name: "Clear Group menu’s conversation?" }),
   ).toBeVisible();
+  await captureScreenshot(page, testInfo, "group-clear-conversation-confirmation");
   await page.getByRole("button", { name: "Clear", exact: true }).click();
   await expect(
     page.getByRole("alertdialog", { name: "Clear Group menu’s conversation?" }),

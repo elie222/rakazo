@@ -5,7 +5,7 @@ export type OAuthCallbackFromOptions = {
   excludeOrigins?: readonly string[];
 };
 
-const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
+export const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
 
 /**
  * Providers that sign in through a loopback redirect — Anthropic sends the

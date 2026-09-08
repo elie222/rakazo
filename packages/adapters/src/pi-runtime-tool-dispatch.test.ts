@@ -2,7 +2,14 @@ import type { ConnectorTool } from "@rakazo/adapter-kit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const fakeAgentState = vi.hoisted(() => ({
-  mode: "dispatch" as "dispatch" | "empty" | "two-boundaries" | "subagent-limit" | "parent-limit",
+  mode: "dispatch" as
+    | "dispatch"
+    | "empty"
+    | "two-boundaries"
+    | "silent-continuation"
+    | "subagent-limit"
+    | "parent-limit",
+  emitFinalAfterFollowUp: true,
   abortCount: 0,
   tools: [] as Array<{
     name: string;
@@ -15,6 +22,7 @@ const fakeAgentState = vi.hoisted(() => ({
   },
   preparedMessages: [] as unknown[],
   steeredMessages: [] as unknown[],
+  followUpMessages: [] as unknown[],
   initialMessages: [] as unknown[],
   promptInputs: [] as string[],
   promptImages: [] as unknown[][],
@@ -69,6 +77,59 @@ vi.mock("@earendil-works/pi-agent-core", () => ({
         return;
       }
 
+      if (fakeAgentState.mode === "silent-continuation") {
+        const target =
+          this.tools.find((tool) => tool.name === fakeAgentState.invoke.name) ?? this.tools[0];
+        if (!target) throw new Error("expected tool was not exposed");
+        const rawArgs = fakeAgentState.invoke.args;
+        const args = target.prepareArguments?.(rawArgs) ?? rawArgs;
+        const narration = "I will check the destination first.";
+        this.emit({
+          type: "message_update",
+          assistantMessageEvent: { type: "text_delta", delta: narration },
+        });
+        this.emit({ type: "tool_execution_start", toolName: target.name, args });
+        await target.execute("call-1", args);
+        this.emit({
+          type: "turn_end",
+          message: {
+            role: "assistant",
+            content: [
+              { type: "text", text: narration },
+              {
+                type: "toolCall",
+                id: "call-1",
+                name: target.name,
+                arguments: args,
+              },
+            ],
+          },
+          toolResults: [{ toolCallId: "call-1", result: { ok: true } }],
+        });
+        this.emit({
+          type: "turn_end",
+          message: { role: "assistant", content: [] },
+          toolResults: [],
+        });
+        if (fakeAgentState.followUpMessages.length > 0 && fakeAgentState.emitFinalAfterFollowUp) {
+          const text = "The final answer.";
+          this.emit({
+            type: "message_update",
+            assistantMessageEvent: { type: "text_delta", delta: text },
+          });
+          this.emit({
+            type: "message_end",
+            message: { role: "assistant", content: [{ type: "text", text }] },
+          });
+          this.emit({
+            type: "turn_end",
+            message: { role: "assistant", content: [{ type: "text", text }] },
+            toolResults: [],
+          });
+        }
+        return;
+      }
+
       if (fakeAgentState.mode === "parent-limit") {
         const shell = this.tools.find((tool) => tool.name === "shell");
         if (!shell) throw new Error("shell was not exposed");
@@ -103,6 +164,10 @@ vi.mock("@earendil-works/pi-agent-core", () => ({
 
     steer(message: unknown) {
       fakeAgentState.steeredMessages.push(message);
+    }
+
+    followUp(message: unknown) {
+      fakeAgentState.followUpMessages.push(message);
     }
 
     abort() {
@@ -182,6 +247,8 @@ describe("Pi connector tool dispatch", () => {
     fakeAgentState.tools = [];
     fakeAgentState.preparedMessages = [];
     fakeAgentState.steeredMessages = [];
+    fakeAgentState.followUpMessages = [];
+    fakeAgentState.emitFinalAfterFollowUp = true;
     fakeAgentState.initialMessages = [];
     fakeAgentState.promptInputs = [];
     fakeAgentState.promptImages = [];
@@ -446,6 +513,143 @@ describe("Pi connector tool dispatch", () => {
     });
     expect(events).not.toContainEqual({ type: "text", text: "I finished the work." });
     expect(events.at(-1)).toEqual({ type: "done" });
+  });
+
+  it("continues after narration is followed by a silent tool result turn", async () => {
+    fakeAgentState.mode = "silent-continuation";
+    const runtime = new PiAgentRuntime();
+    const events: unknown[] = [];
+    const onToolCompleted = vi.fn();
+
+    for await (const event of runtime.run(
+      {
+        botId: "b",
+        threadId: "t",
+        runId: "silent-continuation",
+        prompt: "send the update and report back",
+        instructions: "Use the destination tool, then tell the user what happened.",
+        history: [],
+        tools: [destinationTool],
+        model: { provider: "test", id: "dispatch-test-model" },
+        executeTool: vi.fn(async () => ({ ok: true })),
+        onToolCompleted,
+      },
+      {
+        operationId: "silent-continuation",
+        traceId: "silent-continuation",
+        spaceId: "w",
+        userId: "u",
+        signal: new AbortController().signal,
+      },
+    )) {
+      events.push(event);
+    }
+
+    expect(fakeAgentState.followUpMessages).toHaveLength(1);
+    expect(fakeAgentState.followUpMessages[0]).toEqual(
+      expect.objectContaining({
+        role: "user",
+        content: expect.stringContaining("Continue"),
+      }),
+    );
+    expect(onToolCompleted).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "destination.write",
+        executionId: "call-1",
+        result: expect.objectContaining({ content: expect.any(Array) }),
+        durationMs: expect.any(Number),
+      }),
+    );
+    expect(events).toContainEqual({ type: "text", text: "The final answer." });
+    expect(events.at(-1)).toEqual({
+      type: "done",
+      text: "I will check the destination first.The final answer.",
+    });
+  });
+
+  it("does not wait for a slow tool completion hook", async () => {
+    let resolveAudit!: () => void;
+    const audit = new Promise<void>((resolve) => {
+      resolveAudit = resolve;
+    });
+    const onToolCompleted = vi.fn(() => audit);
+    let settled = false;
+    const runtime = new PiAgentRuntime();
+    const run = (async () => {
+      for await (const _event of runtime.run(
+        {
+          botId: "b",
+          threadId: "t",
+          runId: "non-blocking-audit",
+          prompt: "send the update",
+          instructions: "Use the destination tool.",
+          history: [],
+          tools: [destinationTool],
+          model: { provider: "test", id: "dispatch-test-model" },
+          executeTool: vi.fn(async () => ({ ok: true })),
+          onToolCompleted,
+        },
+        {
+          operationId: "non-blocking-audit",
+          traceId: "non-blocking-audit",
+          spaceId: "w",
+          userId: "u",
+          signal: new AbortController().signal,
+        },
+      )) {
+        // Exhaust the runtime event stream.
+      }
+    })().finally(() => {
+      settled = true;
+    });
+
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      expect(settled).toBe(true);
+      expect(onToolCompleted).toHaveBeenCalledOnce();
+    } finally {
+      resolveAudit();
+      await run;
+    }
+  });
+
+  it("makes an unfinished tool turn visible instead of completing silently", async () => {
+    fakeAgentState.mode = "silent-continuation";
+    fakeAgentState.emitFinalAfterFollowUp = false;
+    const runtime = new PiAgentRuntime();
+    const events: unknown[] = [];
+
+    for await (const event of runtime.run(
+      {
+        botId: "b",
+        threadId: "t",
+        runId: "silent-fallback",
+        prompt: "send the update and report back",
+        instructions: "Use the destination tool, then tell the user what happened.",
+        history: [],
+        tools: [destinationTool],
+        model: { provider: "test", id: "dispatch-test-model" },
+        executeTool: vi.fn(async () => ({ ok: true })),
+      },
+      {
+        operationId: "silent-fallback",
+        traceId: "silent-fallback",
+        spaceId: "w",
+        userId: "u",
+        signal: new AbortController().signal,
+      },
+    )) {
+      events.push(event);
+    }
+
+    expect(events).toContainEqual({
+      type: "text",
+      text: "I completed the tool step but could not produce a final response. Please ask me to continue.",
+    });
+    expect(events.at(-1)).toEqual({
+      type: "done",
+      text: "I completed the tool step but could not produce a final response. Please ask me to continue.",
+    });
   });
 
   it("keeps FYI bot-message wakes silent when the model produces nothing", async () => {

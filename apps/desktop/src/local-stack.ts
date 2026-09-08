@@ -171,7 +171,22 @@ export type LocalStackEvent =
   | { type: "failed"; message: string };
 
 export function initialStackState(imageTag: string): DesktopLocalStackState {
-  return { phase: "idle", message: null, output: [], imageTag };
+  return { phase: "idle", message: null, output: [], layerBytes: {}, imageTag };
+}
+
+/** `COMPOSE_PROGRESS=plain` reports a layer's downloaded size and never its total. */
+const PULL_PROGRESS = /^\s*(\S+)\s+Downloading\s+([\d.]+)\s*([kKMG]?B)\b/;
+const BYTE_UNITS: Record<string, number> = { B: 1, kB: 1e3, MB: 1e6, GB: 1e9 };
+
+/** Layers report a growing size, so the largest value seen for a layer is what it has pulled. */
+function reduceLayerBytes(layerBytes: Record<string, number>, line: string) {
+  const match = PULL_PROGRESS.exec(line);
+  if (match === null) return layerBytes;
+  const layer = match[1] ?? "";
+  const unit = match[3] === "KB" ? "kB" : (match[3] ?? "");
+  const bytes = Number(match[2]) * (BYTE_UNITS[unit] ?? 0);
+  if (!Number.isFinite(bytes) || bytes <= (layerBytes[layer] ?? 0)) return layerBytes;
+  return { ...layerBytes, [layer]: bytes };
 }
 
 export function reduceStackState(
@@ -179,7 +194,7 @@ export function reduceStackState(
   event: LocalStackEvent,
 ): DesktopLocalStackState {
   if (event.type === "check-start") {
-    return { ...state, phase: "checking-docker", message: null, output: [] };
+    return { ...state, phase: "checking-docker", message: null, output: [], layerBytes: {} };
   }
   // Terminal phases only leave through the next check-start.
   if (state.phase === "ready" || state.phase === "failed") return state;
@@ -204,7 +219,11 @@ export function reduceStackState(
       ) {
         return state;
       }
-      return { ...state, output: [...state.output, event.line].slice(-STACK_OUTPUT_LINES) };
+      return {
+        ...state,
+        output: [...state.output, event.line].slice(-STACK_OUTPUT_LINES),
+        layerBytes: reduceLayerBytes(state.layerBytes, event.line),
+      };
     case "ready":
       return { ...state, phase: "ready", message: null };
     case "failed":
@@ -267,6 +286,8 @@ export interface LocalStackDeps {
   /** Returns the authenticated running image tag, or null for any other listener. */
   probe: (url: string, signal: AbortSignal, token: string) => Promise<string | null>;
   randomHex: (bytes: number) => string;
+  /** Called on every state change so the setup window is pushed progress instead of polling for it. */
+  onState?: (state: DesktopLocalStackState) => void;
   sleep?: (ms: number, signal: AbortSignal) => Promise<void>;
   healthTimeoutMs?: number;
 }
@@ -371,15 +392,22 @@ export class LocalStackController {
   private async runStop(): Promise<DesktopLocalStackState> {
     const binary = resolveDockerBinary(this.deps.platform, this.deps.env, this.deps.exists);
     const stopped = binary === null ? null : await this.compose(binary, ["stop"], STOP_TIMEOUT_MS);
-    this.current =
+    this.setState(
       stopped?.code === 0
         ? initialStackState(this.deps.imageTag)
-        : { ...this.current, phase: "failed", message: STOP_FAILED };
+        : { ...this.current, phase: "failed", message: STOP_FAILED },
+    );
     return this.current;
   }
 
   private push(event: LocalStackEvent) {
-    this.current = reduceStackState(this.current, event);
+    this.setState(reduceStackState(this.current, event));
+  }
+
+  private setState(next: DesktopLocalStackState) {
+    if (next === this.current) return;
+    this.current = next;
+    this.deps.onState?.(next);
   }
 
   private async run(): Promise<DesktopLocalStackState> {

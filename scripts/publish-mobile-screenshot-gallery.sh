@@ -55,3 +55,17 @@ if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
   printf '### Android screenshots\n- [Screenshot gallery](%s)\n' \
     "$gallery_url" >> "$GITHUB_STEP_SUMMARY"
 fi
+
+video_path="test-report/mobile-screenshots/notification-demo.mp4"
+if [[ -f "$video_path" ]]; then
+  aws s3 cp \
+    "$video_path" \
+    "$bucket_uri/runs/$run_key/notification-demo.mp4" \
+    --endpoint-url "$S3_ENDPOINT" \
+    --content-type "video/mp4" \
+    --cache-control "public,max-age=31536000,immutable"
+  if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
+    printf -- '- [Live working status video](%s)\n' \
+      "$public_base_url/runs/$run_key/notification-demo.mp4" >> "$GITHUB_STEP_SUMMARY"
+  fi
+fi

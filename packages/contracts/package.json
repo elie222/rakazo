@@ -8,18 +8,19 @@
       "types": "./src/index.ts",
       "development": "./src/index.ts",
       "default": "./src/index.ts"
-    }
+    },
+    "./local-settings": "./src/local-settings.js"
   },
   "scripts": {
     "check": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run --root ../.. packages/contracts/src"
   },
   "dependencies": {
-    "@orpc/contract": "^1.15.0",
-    "zod": "^4.1.5"
+    "@orpc/contract": "1.15.0",
+    "zod": "4.5.4"
   },
   "devDependencies": {
-    "typescript": "^5.9.2",
-    "vitest": "^4.1.10"
+    "typescript": "7.0.2",
+    "vitest": "4.1.11"
   }
 }

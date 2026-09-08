@@ -1,7 +1,7 @@
 import type { ModelOAuthBegin } from "@rakazo/contracts";
 import { cancelModelOAuthAttempt, finishModelOAuthAttempt } from "@rakazo/core";
 import { useEffect, useRef, useState } from "react";
-import { oauthStateOf, onDesktopOAuthCallback } from "./desktop";
+import { desktopBridge, oauthStateOf, onDesktopOAuthCallback } from "./desktop";
 import { waitForModelOAuth } from "./model-auth";
 import { rpc } from "./rpc";
 
@@ -145,7 +145,22 @@ export function useModelOAuthSignIn(options: {
           oauthStateOf(started.verificationUri),
         );
       }
-      window.open(started.verificationUri, "rakazo-model-oauth", "noopener,noreferrer");
+      const browserAuth = desktopBridge()?.oauth;
+      if (browserAuth?.open) {
+        const cancelBrowser = () =>
+          void browserAuth.cancel?.(started.verificationUri).catch(() => undefined);
+        controller.signal.addEventListener("abort", cancelBrowser, { once: true });
+        const releaseCapture = oauthCaptureRef.current;
+        oauthCaptureRef.current = () => {
+          releaseCapture?.();
+          controller.signal.removeEventListener("abort", cancelBrowser);
+          cancelBrowser();
+        };
+        await browserAuth.open(started.verificationUri);
+        if (controller.signal.aborted) return;
+      } else {
+        window.open(started.verificationUri, "rakazo-model-oauth", "noopener,noreferrer");
+      }
       waitingForCode = started.mode === "auth-url";
       if (!waitingForCode) await finishSubscriptionSignIn(started.loginId, controller);
     } catch (err) {
@@ -157,6 +172,7 @@ export function useModelOAuthSignIn(options: {
       setOauth(null);
     } finally {
       if (!waitingForCode) {
+        if (oauthAbortRef.current === controller) releaseOAuthCapture();
         finishModelOAuthAttempt(oauthAbortRef, controller, () => setOauthPending(false));
       }
     }

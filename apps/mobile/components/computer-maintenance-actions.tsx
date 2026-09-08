@@ -2,6 +2,7 @@ import type { ComputerStatus } from "@rakazo/contracts";
 import { useState } from "react";
 import { Alert, Pressable, Text, View } from "react-native";
 import { rpc } from "../lib/api";
+import { computerUpdates } from "../lib/computer-updates";
 import { useI18n } from "../lib/i18n";
 import { useMobileTokens } from "../lib/native";
 
@@ -29,9 +30,9 @@ export function ComputerMaintenanceActions({
     setPending(action);
     setError(null);
     try {
-      if (action === "recover") await rpc("computer/recover", { botId });
+      if (action === "recover") await computerUpdates.start(botId, "recover");
       else if (action === "reset") await rpc("computer/reset", { botId });
-      else await rpc("computer/update", { botId });
+      else await computerUpdates.start(botId);
       await onChanged();
     } catch (err) {
       setError(err instanceof Error ? err.message : t("Could not update computer"));
@@ -71,7 +72,7 @@ export function ComputerMaintenanceActions({
           {pending === "reset" ? t("Resetting…") : t("Reset computer")}
         </Text>
       </Pressable>
-      {computer.updateAvailable ? (
+      {computer.canUpdate ? (
         <Pressable
           disabled={busy || pending !== null}
           onPress={() => void run("update")}

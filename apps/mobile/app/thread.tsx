@@ -835,6 +835,7 @@ function Thread() {
               if (
                 event.type === "thread.progress" ||
                 event.type === "agent.tool.called" ||
+                event.type === "agent.tool.completed" ||
                 event.type === "thread.message.created" ||
                 event.type === "thread.message.updated" ||
                 event.type === "thread.message.reaction" ||

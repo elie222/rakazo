@@ -8,6 +8,15 @@ tags:
     permissions:
       notifications: deny
 
+# A cold API 34 emulator can show a launcher ANR over the healthy app.
+- extendedWaitUntil:
+    visible: "Sign up for Rakazo|Pixel Launcher isn't responding"
+    timeout: 30000
+- runFlow:
+    when:
+      visible: "Pixel Launcher isn't responding"
+    commands:
+      - tapOn: "Close app"
 - extendedWaitUntil:
     visible: "Sign up for Rakazo"
     timeout: 30000
@@ -113,8 +122,11 @@ tags:
 - longPressOn: "The fixture workspace is ready."
 - assertVisible: "Add thumbs-up"
 - assertVisible: "Reply"
-- assertVisible: "Speak message"
 - takeScreenshot: "15b-message-actions"
+- tapOn: "More"
+- assertVisible: "Speak message"
+- back
+- longPressOn: "The fixture workspace is ready."
 - tapOn: "Add thumbs-up"
 - extendedWaitUntil:
     visible: "Remove thumbs-up"
@@ -140,6 +152,10 @@ tags:
 - extendedWaitUntil:
     visible: "Researcher"
     timeout: 10000
+- assertVisible: "Advanced"
+- tapOn: "Advanced"
+- assertVisible: "Model"
+- assertVisible: "Space default"
 - takeScreenshot: "17-bot-settings"
 
 - openLink: "rakazo:///computer?botId=${RAKAZO_SCREENSHOT_BOT_ID}&name=Researcher"

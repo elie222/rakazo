@@ -82,7 +82,6 @@ import {
   ChevronDown,
   Clock,
   Copy,
-  Cpu,
   Gauge,
   Lock,
   LogOut,
@@ -93,14 +92,14 @@ import {
   MoreHorizontal,
   PanelLeftClose,
   Paperclip,
-  Phone,
   Plus,
   Puzzle,
   Reply,
+  Search,
   Settings,
   Smile,
   Square,
-  Volume2,
+  Trash2,
   X,
 } from "lucide-react";
 import {
@@ -129,6 +128,7 @@ import {
   ComputersUnavailableHint,
   computersAreUnavailable,
 } from "../components/ComputersUnavailableHint";
+import { ComputerUpdateProgress } from "../components/ComputerUpdateProgress";
 import { MessageHoverMetadata } from "../components/MessageHoverMetadata";
 import { SkillDraftCard } from "../components/teach/SkillDraftCard";
 import { TeachCaptureOverlay } from "../components/teach/TeachCaptureOverlay";
@@ -149,7 +149,6 @@ import {
   shouldNotifyBrowser,
 } from "../lib/browser-notifications";
 import { loadComputerScreen } from "../lib/computer-screen";
-import { dictation } from "../lib/dictation";
 import { scheduleFocusPrompt } from "../lib/focus-prompt";
 import { localTimezone } from "../lib/local-timezone";
 import { copyableMessageText } from "../lib/message-text";
@@ -199,6 +198,7 @@ import {
   RoutineListRow,
   routineNeedsOneShotArm,
 } from "./RoutineEditor";
+import type { SettingsSection } from "./SettingsOverlay";
 import { SpaceSearchResults } from "./SpaceSearch";
 import { BotSettings, CreateBotForm } from "./shell/bot-panel";
 import { BotCreatePicker } from "./shell/bot-picker";
@@ -209,6 +209,7 @@ import {
   DeleteItemDialog,
   NewBotSectionDialog,
   NewSpaceDialog,
+  PickerInfoDialog,
 } from "./shell/dialogs";
 import {
   AppConnectCard,
@@ -222,18 +223,13 @@ import { WindowChrome } from "./WindowChrome";
 const BotContextMenu = lazy(() =>
   import("./BotContextMenu").then((module) => ({ default: module.BotContextMenu })),
 );
-const AccountSettingsOverlay = lazy(() =>
-  import("./AccountSettingsOverlay").then((module) => ({
-    default: module.AccountSettingsOverlay,
-  })),
-);
 const MessagingSettingsOverlay = lazy(() =>
   import("./MessagingSettingsOverlay").then((module) => ({
     default: module.MessagingSettingsOverlay,
   })),
 );
-const ModelSettingsOverlay = lazy(() =>
-  import("./ModelSettingsOverlay").then((module) => ({ default: module.ModelSettingsOverlay })),
+const SettingsOverlay = lazy(() =>
+  import("./SettingsOverlay").then((module) => ({ default: module.SettingsOverlay })),
 );
 const PeerMessagesOverlay = lazy(() =>
   import("./PeerMessagesOverlay").then((module) => ({ default: module.PeerMessagesOverlay })),
@@ -243,14 +239,6 @@ const PluginsOverlay = lazy(() =>
 );
 const McpServersOverlay = lazy(() =>
   import("./McpServersOverlay").then((module) => ({ default: module.McpServersOverlay })),
-);
-const MemorySettingsOverlay = lazy(() =>
-  import("./MemorySettingsOverlay").then((module) => ({
-    default: module.MemorySettingsOverlay,
-  })),
-);
-const VoiceSettingsOverlay = lazy(() =>
-  import("./VoiceSettingsOverlay").then((module) => ({ default: module.VoiceSettingsOverlay })),
 );
 const CallView = lazy(() => import("./CallView").then((module) => ({ default: module.CallView })));
 
@@ -281,9 +269,19 @@ const ATTACHMENT_ACCEPT = ATTACHMENT_ALLOWED_MIME_TYPES.join(",");
 /** Identity colour for bots the roster no longer knows about. */
 const FALLBACK_BOT_COLOR = "#85858A";
 const THREAD_SNAPSHOT_TIMEOUT_MS = 2_000;
+/** Bound Settings leave so a hung voice status refresh cannot block dismissal. */
+const VOICE_STATUS_REFRESH_TIMEOUT_MS = 10_000;
 
 function threadSnapshotSignal(parent: AbortSignal): AbortSignal {
   return AbortSignal.any([parent, AbortSignal.timeout(THREAD_SNAPSHOT_TIMEOUT_MS)]);
+}
+
+function voiceStatusRefreshTimeout(): Promise<never> {
+  return new Promise((_, reject) => {
+    AbortSignal.timeout(VOICE_STATUS_REFRESH_TIMEOUT_MS).addEventListener("abort", () => {
+      reject(new DOMException("Voice status refresh timed out", "TimeoutError"));
+    });
+  });
 }
 
 function collapsedSidebarSectionsStorageKey(userId: string | null | undefined): string | null {
@@ -420,23 +418,18 @@ export function ShellPage() {
   }
   const [pluginsOpen, setPluginsOpen] = useState(false);
   const [mcpOpen, setMcpOpen] = useState(false);
-  const [accountSettingsOpen, setAccountSettingsOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsSection, setSettingsSection] = useState<SettingsSection>("general");
   const [messagingSettingsOpen, setMessagingSettingsOpen] = useState(false);
   const [messagingSurfaceEnabled, setMessagingSurfaceEnabled] = useState(false);
   const [messagingProviders, setMessagingProviders] = useState<string[]>([]);
-  const [accountSettingsFocusUsage, setAccountSettingsFocusUsage] = useState(false);
-  const [modelsOpen, setModelsOpen] = useState(false);
-  const [memorySettingsOpen, setMemorySettingsOpen] = useState(false);
   const [memoryProviderConfig, setMemoryProviderConfig] = useState<
     SpaceMemoryConfig | null | undefined
   >(undefined);
   const memoryProviderConfigRevision = useRef(0);
-  const [voiceOpen, setVoiceOpen] = useState(false);
   const [callOpen, setCallOpen] = useState(false);
   const [voiceStatus, setVoiceStatus] = useState<VoiceStatus | null>(null);
   const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null);
-  const [dictating, setDictating] = useState(false);
-  const [dictationError, setDictationError] = useState<string | null>(null);
   const [dismissedRunErrorIds, setDismissedRunErrorIds] =
     useState<ReadonlySet<string>>(readSeenRunErrorIds);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -450,6 +443,7 @@ export function ShellPage() {
     null,
   );
   const [newSpaceOpen, setNewSpaceOpen] = useState(false);
+  const [pickerInfoTopic, setPickerInfoTopic] = useState<"group" | "space" | null>(null);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
 
   useEffect(() => {
@@ -483,6 +477,18 @@ export function ShellPage() {
   }, [botMenu]);
   const [deleteTarget, setDeleteTarget] = useState<Bot | null>(null);
   const [deleteGroupTarget, setDeleteGroupTarget] = useState<Group | null>(null);
+  const [deleteSpaceTarget, setDeleteSpaceTarget] = useState<Space | null>(null);
+  const [spaceMenu, setSpaceMenu] = useState<{
+    id: string;
+    position: ContextMenuPosition;
+  } | null>(null);
+  const spaceMenuAnchor = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    if (spaceMenu || !spaceMenuAnchor.current) return;
+    spaceMenuAnchor.current.focus();
+    spaceMenuAnchor.current = null;
+  }, [spaceMenu]);
+  const closeSpaceMenu = useCallback(() => setSpaceMenu(null), []);
   const [clearTarget, setClearTarget] = useState<
     { kind: "bot"; chat: Bot } | { kind: "group"; chat: Group } | null
   >(null);
@@ -738,8 +744,12 @@ export function ShellPage() {
           list.length === 0 &&
           archived?.length === 0 &&
           groupList.length === 0 &&
-          archivedGroupList?.length === 0
+          archivedGroupList?.length === 0 &&
+          !navigation.spaces.some((space) => space.hasContent)
         ) {
+          // Only the very first bot everywhere needs onboarding. An empty
+          // current space with content elsewhere stays in the app so the
+          // space can be switched to or deleted instead of trapping the user.
           navigate("/onboarding", { replace: true });
           return;
         }
@@ -964,7 +974,8 @@ export function ShellPage() {
           bootstrap.bots.length === 0 &&
           bootstrap.archivedBots.length === 0 &&
           groupList.length === 0 &&
-          bootstrap.archivedGroups.length === 0
+          bootstrap.archivedGroups.length === 0 &&
+          !bootstrap.spaces.some((space) => space.hasContent)
         ) {
           navigate("/onboarding", { replace: true });
           return;
@@ -1038,14 +1049,8 @@ export function ShellPage() {
     const unsubSpeech = speaker.subscribe((state) => {
       setSpeakingMessageId(state.status === "idle" ? null : (state.messageId ?? null));
     });
-    const unsubDictation = dictation.subscribe((state) => {
-      setDictating(state.status === "listening" || state.status === "transcribing");
-      if (state.error) setDictationError(state.error);
-      else if (state.status === "listening") setDictationError(null);
-    });
     return () => {
       unsubSpeech();
-      unsubDictation();
     };
   }, []);
 
@@ -1286,6 +1291,7 @@ export function ShellPage() {
                 id: bootstrapMe.spaceId,
                 name: "Personal",
                 isDefault: true,
+                hasContent: true,
                 bots,
                 groups,
                 botSections,
@@ -1316,6 +1322,9 @@ export function ShellPage() {
           : group.title,
         showLock: showSpaceNames,
         emptySpaceId: undefined as string | undefined,
+        spaceId: space.id,
+        spaceName: space.name,
+        spaceIsDefault: space.isDefault,
       }));
       if (sections.length > 0) return sections;
       // Keep empty spaces selectable; chat clicks are the only switch control.
@@ -1328,6 +1337,9 @@ export function ShellPage() {
           bots: [],
           showLock: true,
           emptySpaceId: space.id,
+          spaceId: space.id,
+          spaceName: space.name,
+          spaceIsDefault: space.isDefault,
         },
       ];
     });
@@ -1574,7 +1586,7 @@ export function ShellPage() {
   const transcriptRunning = workingRuns.length > 0;
   const composerRunning = currentRuns.some((run) => isActive(run.status));
   const runError = threadRunError(activeSnapshot, dismissedRunErrorIds);
-  const displayedRunError = !sendError && !dictationError ? runError : null;
+  const displayedRunError = !sendError ? runError : null;
   const displayedRunErrorId = displayedRunError ? (activeSnapshot?.run?.id ?? null) : null;
   const handleRunErrorPresented = useCallback((runId: string) => {
     rememberSeenRunErrorId(runId);
@@ -2132,6 +2144,11 @@ export function ShellPage() {
     writeBotsSidebarCollapsed(userId, collapsed);
   }
 
+  function openSettings(section: SettingsSection = "general") {
+    setSettingsSection(section);
+    setSettingsOpen(true);
+  }
+
   async function createBot(input: {
     name: string;
     title: string;
@@ -2360,7 +2377,6 @@ export function ShellPage() {
     // one on screen; otherwise a live run would be silenced before it has even failed.
     const failedRunId = displayedRunErrorId;
     setSendError(null);
-    setDictationError(null);
     if (failedRunId) {
       rememberSeenRunErrorId(failedRunId);
       setDismissedRunErrorIds((current) => new Set(current).add(failedRunId));
@@ -2398,6 +2414,11 @@ export function ShellPage() {
       data-ready={shellReady}
       className="relative flex h-full min-w-0 overflow-hidden bg-background text-foreground/90"
     >
+      <ComputerUpdateProgress
+        onCompleted={() => {
+          if (active) void refreshThread(active.id);
+        }}
+      />
       {bootstrapMe !== undefined ? (
         <HostComputerPrompt initialMe={bootstrapMe ?? undefined} />
       ) : null}
@@ -2490,15 +2511,28 @@ export function ShellPage() {
                       setMobileSidebarOpen(false);
                       setNewSpaceOpen(true);
                     }}
+                    onShowGroupInfo={() => {
+                      setCreateMenuOpen(false);
+                      setMobileSidebarOpen(false);
+                      setPickerInfoTopic("group");
+                    }}
+                    onShowSpaceInfo={() => {
+                      setCreateMenuOpen(false);
+                      setMobileSidebarOpen(false);
+                      setPickerInfoTopic("space");
+                    }}
                   />
                 </PopoverContent>
               ) : null}
             </Popover>
           </div>
         </div>
-        <InputGroup data-testid="sidebar-search" className="mx-2.5 mb-3 w-auto rounded-xl bg-card">
+        <InputGroup
+          data-testid="sidebar-search"
+          className="mx-2.5 mb-3 w-auto rounded-xl bg-card dark:bg-input"
+        >
           <InputGroupAddon>
-            <span aria-hidden="true">⌕</span>
+            <Search size={16} strokeWidth={1.8} aria-hidden="true" />
           </InputGroupAddon>
           <InputGroupInput
             value={query}
@@ -2537,7 +2571,7 @@ export function ShellPage() {
                       <div className="pt-2">
                         <button
                           type="button"
-                          className="flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-[12.5px] font-medium text-muted-foreground/80 hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
+                          className="flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-[12.5px] font-medium text-muted-foreground/80 hover:bg-sidebar-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
                           onClick={() => {
                             if (group.emptySpaceId) {
                               openSpaceChat(group.emptySpaceId, "/onboarding");
@@ -2545,6 +2579,18 @@ export function ShellPage() {
                             }
                             toggleSidebarSection(group.key);
                           }}
+                          onContextMenu={
+                            group.spaceId && !group.spaceIsDefault
+                              ? (event) => {
+                                  event.preventDefault();
+                                  spaceMenuAnchor.current = event.currentTarget;
+                                  setSpaceMenu({
+                                    id: group.spaceId as string,
+                                    position: { x: event.clientX, y: event.clientY },
+                                  });
+                                }
+                              : undefined
+                          }
                           aria-expanded={group.emptySpaceId ? undefined : !collapsed}
                           aria-label={
                             group.emptySpaceId
@@ -2644,8 +2690,8 @@ export function ShellPage() {
                           } ${
                             (item.kind === "bot" && !inGroup && active?.id === item.chat.id) ||
                             (item.kind === "group" && inGroup && activeGroup?.id === item.chat.id)
-                              ? "bg-card"
-                              : "hover:bg-background"
+                              ? "bg-sidebar-accent"
+                              : "hover:bg-sidebar-accent"
                           }`}
                           style={{
                             opacity:
@@ -2747,7 +2793,7 @@ export function ShellPage() {
                 type="button"
                 aria-expanded={archivedOpen}
                 onClick={() => setArchivedOpen((open) => !open)}
-                className="flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-[13.5px] text-muted-foreground hover:bg-background"
+                className="flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-[13.5px] text-muted-foreground hover:bg-sidebar-accent"
               >
                 <span>
                   <Trans>Archived</Trans>
@@ -2829,7 +2875,7 @@ export function ShellPage() {
         <button
           type="button"
           onClick={() => setPluginsOpen(true)}
-          className="mx-3 mb-1 flex items-center gap-3 rounded-[11px] px-2.5 py-2 hover:bg-background"
+          className="mx-3 mb-1 flex items-center gap-3 rounded-[11px] px-2.5 py-2 hover:bg-sidebar-accent"
         >
           <span className="grid h-[30px] w-[30px] place-items-center rounded-full bg-muted text-foreground/75">
             <Puzzle size={15} strokeWidth={1.7} />
@@ -2860,65 +2906,28 @@ export function ShellPage() {
                 aria-label={t`Settings`}
                 onClick={() => {
                   setMenuOpen(false);
-                  setAccountSettingsFocusUsage(false);
-                  setAccountSettingsOpen(true);
+                  openSettings("general");
                 }}
               >
-                <span className="text-muted-foreground">⚙</span>
+                <Settings className="text-muted-foreground" strokeWidth={1.75} />
                 <Trans>Settings</Trans>
               </Button>
               <Button
                 variant="ghost"
                 className="w-full justify-start font-normal"
+                aria-label={t`Usage`}
                 onClick={() => {
                   setMenuOpen(false);
-                  setModelsOpen(true);
+                  void rpc.usage
+                    .summary()
+                    .then(setUsage)
+                    .catch(() => undefined);
+                  openSettings("usage");
                 }}
               >
-                <Cpu size={16} strokeWidth={1.7} className="text-muted-foreground" />
-                <Trans>Models</Trans>
-              </Button>
-              <Button
-                variant="ghost"
-                className="w-full justify-start font-normal"
-                onClick={() => {
-                  setMenuOpen(false);
-                  setMemorySettingsOpen(true);
-                }}
-              >
-                <span aria-hidden="true" className="text-muted-foreground">
-                  ◇
-                </span>
-                <Trans>Memory</Trans>
-              </Button>
-              <Button
-                variant="ghost"
-                className="w-full justify-start font-normal"
-                onClick={() => {
-                  setMenuOpen(false);
-                  setVoiceOpen(true);
-                }}
-              >
-                <Volume2 size={16} strokeWidth={1.7} className="text-muted-foreground" />
-                <Trans>Voice</Trans>
-              </Button>
-              <Button
-                variant="ghost"
-                className="w-full justify-start font-normal"
-                onClick={async () => {
-                  setUsage(await rpc.usage.summary());
-                }}
-              >
-                <Gauge size={16} strokeWidth={1.7} className="text-muted-foreground" />
+                <Gauge className="text-muted-foreground" strokeWidth={1.75} />
                 <Trans>Usage</Trans>
               </Button>
-              {usage ? (
-                <p className="px-2.5 pb-2 text-[12.5px] text-muted-foreground">
-                  <Trans>
-                    {usage.runs} runs · {usage.inputTokens + usage.outputTokens} tokens
-                  </Trans>
-                </p>
-              ) : null}
               <Button
                 variant="ghost"
                 className="w-full justify-start font-normal"
@@ -2929,7 +2938,7 @@ export function ShellPage() {
                   })
                 }
               >
-                <LogOut size={16} strokeWidth={1.7} className="text-muted-foreground" />
+                <LogOut className="text-muted-foreground" strokeWidth={1.75} />
                 <Trans>Log out</Trans>
               </Button>
             </PopoverContent>
@@ -3024,24 +3033,6 @@ export function ShellPage() {
             </button>
           </div>
           <div className="flex items-center gap-1">
-            {!inGroup && active ? (
-              <button
-                type="button"
-                title={voiceStatus?.ready ? t`Call` : t`Set up voice to call`}
-                aria-label={t`Call`}
-                onClick={() => {
-                  if (!voiceStatus?.ready) {
-                    setVoiceOpen(true);
-                    return;
-                  }
-                  setCallOpen(true);
-                }}
-                data-active={callOpen ? "" : undefined}
-                className="app-no-drag grid h-[30px] w-[34px] place-items-center rounded-[9px] hover:bg-accent data-active:bg-accent"
-              >
-                <Phone size={16} strokeWidth={1.6} className="text-foreground/75" />
-              </button>
-            ) : null}
             {!inGroup ? (
               <button
                 type="button"
@@ -3103,7 +3094,6 @@ export function ShellPage() {
           pendingAttachments={activePendingAttachments}
           attachmentNotice={attachmentNotice}
           sendError={sendError}
-          dictationError={dictationError}
           runError={displayedRunError}
           runErrorId={displayedRunErrorId}
           onRunErrorPresented={handleRunErrorPresented}
@@ -3114,6 +3104,17 @@ export function ShellPage() {
           onRemoveAttachment={removeAttachment}
           onSend={sendMessage}
           onStop={stopRun}
+          onVoice={
+            !inGroup && active
+              ? () => {
+                  if (!voiceStatus?.ready) {
+                    openSettings("voice");
+                    return;
+                  }
+                  setCallOpen(true);
+                }
+              : undefined
+          }
           replyTarget={activeReplyTarget}
           replyTargetName={replyTargetName}
           onClearReply={() => setReplyTarget(null)}
@@ -3126,29 +3127,17 @@ export function ShellPage() {
               return;
             }
             if (action === "settings-general") {
-              setAccountSettingsFocusUsage(false);
-              setAccountSettingsOpen(true);
+              openSettings("general");
               return;
             }
             if (action === "settings-usage") {
-              setAccountSettingsFocusUsage(true);
-              setAccountSettingsOpen(true);
               void rpc.usage
                 .summary()
                 .then(setUsage)
                 .catch(() => undefined);
+              openSettings("usage");
             }
           }}
-          dictating={dictating}
-          transcribe={Boolean(voiceStatus?.transcribe)}
-          onDictateStart={(onFinal) => {
-            void dictation.listen({
-              mode: "hold",
-              transcribe: Boolean(voiceStatus?.transcribe),
-              onFinal,
-            });
-          }}
-          onDictateStop={() => dictation.submitHold()}
         />
       </main>
 
@@ -3223,12 +3212,7 @@ export function ShellPage() {
                       <Trans>Open in full window</Trans>
                     </div>
                   ) : computer?.kind === "desktop" ? (
-                    <div className="grid h-full place-items-center px-6 text-center text-sm text-muted-foreground/80">
-                      <Trans>
-                        This bot runs on this computer, not a Linux desktop. Shell and files use
-                        your home folder.
-                      </Trans>
-                    </div>
+                    <DesktopKindEmptyState className="grid h-full place-items-center px-6 text-center text-sm text-muted-foreground/80" />
                   ) : computer?.state === "running" && embeddedScreenUrl && !computerScreenError ? (
                     <iframe
                       title={t`Bot screen preview`}
@@ -3622,6 +3606,46 @@ export function ShellPage() {
           />
         ) : null}
 
+        {spaceMenu ? (
+          <DropdownMenu
+            open
+            onOpenChange={(open) => {
+              if (!open) closeSpaceMenu();
+            }}
+          >
+            {/* Invisible anchor at the pointer position, mirroring the bot menu. */}
+            <DropdownMenuTrigger
+              render={
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  aria-hidden
+                  className="fixed size-0 p-0 opacity-0"
+                  style={{ left: spaceMenu.position.x, top: spaceMenu.position.y }}
+                />
+              }
+            />
+            <DropdownMenuContent
+              aria-label={t`Actions for space`}
+              align="start"
+              sideOffset={0}
+              className="w-[220px]"
+            >
+              <DropdownMenuItem
+                variant="destructive"
+                onClick={() => {
+                  const target = spaces.find((space) => space.id === spaceMenu.id);
+                  if (target) setDeleteSpaceTarget(target);
+                  setSpaceMenu(null);
+                }}
+              >
+                <Trash2 />
+                {t`Delete space`}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : null}
+
         {deleteTarget ? (
           <DeleteBotDialog
             bot={deleteTarget}
@@ -3644,6 +3668,32 @@ export function ShellPage() {
               await rpc.groups.remove({ groupId: deleteGroupTarget.id });
               setDeleteGroupTarget(null);
               setPanel(null);
+              await refreshBots(true);
+            }}
+          />
+        ) : null}
+
+        {deleteSpaceTarget ? (
+          <DeleteItemDialog
+            item={deleteSpaceTarget}
+            noun="space"
+            description={
+              <Trans>Only empty spaces can be deleted. Delete its bots and groups first.</Trans>
+            }
+            onCancel={() => setDeleteSpaceTarget(null)}
+            onConfirm={async () => {
+              const targetId = deleteSpaceTarget.id;
+              const result = await rpc.spaces.remove({ spaceId: targetId });
+              setDeleteSpaceTarget(null);
+              setPanel(null);
+              const effectiveSpaceId = selectedSpaceId() ?? bootstrapMe?.spaceId;
+              if (effectiveSpaceId === targetId) {
+                // The auth boundary changed, so reload like a space switch.
+                if (selectSpace(result.activeSpaceId)) {
+                  window.location.assign("/app");
+                  return;
+                }
+              }
               await refreshBots(true);
             }}
           />
@@ -3688,6 +3738,10 @@ export function ShellPage() {
               window.location.assign("/onboarding");
             }}
           />
+        ) : null}
+
+        {pickerInfoTopic ? (
+          <PickerInfoDialog topic={pickerInfoTopic} onClose={() => setPickerInfoTopic(null)} />
         ) : null}
 
         {clearTarget ? (
@@ -3751,31 +3805,45 @@ export function ShellPage() {
       </Suspense>
 
       <Suspense fallback={null}>
-        {accountSettingsOpen ? (
-          <AccountSettingsOverlay
+        {settingsOpen ? (
+          <SettingsOverlay
             name={userName}
             email={session.data?.user.email}
             usage={usage}
-            focusUsage={accountSettingsFocusUsage}
+            initialSection={settingsSection}
             avatarStyle={bootstrapMe?.avatarStyle ?? "robot"}
             isDeploymentOwner={bootstrapMe?.isDeploymentOwner === true}
             sandboxProvider={bootstrapMe?.sandboxProvider}
             messagingEnabled={messagingSurfaceEnabled}
             onOpenMessaging={() => {
-              setAccountSettingsOpen(false);
+              setSettingsOpen(false);
               setMessagingSettingsOpen(true);
             }}
             onAvatarStyleChange={async (avatarStyle) => {
               const nextMe = await rpc.preferences.update({ avatarStyle });
               setBootstrapMe(nextMe);
             }}
+            memoryConfig={memoryProviderConfig}
+            onMemoryConfigChange={(config) => {
+              memoryProviderConfigRevision.current += 1;
+              setMemoryProviderConfig(config);
+            }}
+            onVoiceStatusMaybeChanged={async () => {
+              try {
+                setVoiceStatus(
+                  await Promise.race([rpc.voice.status(), voiceStatusRefreshTimeout()]),
+                );
+              } catch {
+                // Prefer reopening Voice settings over CallView with stale readiness.
+                setVoiceStatus(null);
+              }
+            }}
             onClose={() => {
-              setAccountSettingsOpen(false);
-              setAccountSettingsFocusUsage(false);
+              setSettingsOpen(false);
+              setSettingsSection("general");
             }}
           />
         ) : null}
-        {modelsOpen ? <ModelSettingsOverlay onClose={() => setModelsOpen(false)} /> : null}
         {peerConversation && active ? (
           <PeerMessagesOverlay
             botId={active.id}
@@ -3789,17 +3857,6 @@ export function ShellPage() {
             onClose={() => setPeerConversation(null)}
           />
         ) : null}
-        {voiceOpen ? (
-          <VoiceSettingsOverlay
-            onClose={() => {
-              setVoiceOpen(false);
-              void rpc.voice
-                .status()
-                .then(setVoiceStatus)
-                .catch(() => undefined);
-            }}
-          />
-        ) : null}
         {callOpen && active ? (
           <CallView
             botId={active.id}
@@ -3810,19 +3867,6 @@ export function ShellPage() {
             onFollowUp={followUpMessage}
             onAnswer={answerMessage}
             onClose={() => setCallOpen(false)}
-          />
-        ) : null}
-      </Suspense>
-
-      <Suspense fallback={null}>
-        {memorySettingsOpen ? (
-          <MemorySettingsOverlay
-            onClose={() => setMemorySettingsOpen(false)}
-            config={memoryProviderConfig}
-            onConfigChange={(config) => {
-              memoryProviderConfigRevision.current += 1;
-              setMemoryProviderConfig(config);
-            }}
           />
         ) : null}
       </Suspense>
@@ -3934,12 +3978,7 @@ export function ShellPage() {
           ) : null}
           <div className="relative min-h-0 flex-1 bg-background">
             {computer?.kind === "desktop" ? (
-              <div className="grid h-full place-items-center px-8 text-center text-sm text-muted-foreground/80">
-                <Trans>
-                  This bot runs on this computer. There is no separate Linux desktop. Ask it to use
-                  the shell; working directories under your home folder are allowed.
-                </Trans>
-              </div>
+              <DesktopKindEmptyState className="grid h-full place-items-center px-8 text-center text-sm text-muted-foreground/80" />
             ) : computer?.state === "running" && embeddedScreenUrl && !computerScreenError ? (
               <>
                 <iframe
@@ -4282,7 +4321,6 @@ const Composer = memo(function Composer({
   pendingAttachments,
   attachmentNotice,
   sendError,
-  dictationError,
   runError,
   runErrorId,
   onRunErrorPresented,
@@ -4293,6 +4331,7 @@ const Composer = memo(function Composer({
   onRemoveAttachment,
   onSend,
   onStop,
+  onVoice,
   replyTarget,
   replyTargetName,
   onClearReply,
@@ -4300,10 +4339,6 @@ const Composer = memo(function Composer({
   agentSkills,
   onSlashOpen,
   onSlashAction,
-  dictating,
-  transcribe,
-  onDictateStart,
-  onDictateStop,
 }: {
   activeName?: string;
   running: boolean;
@@ -4311,7 +4346,6 @@ const Composer = memo(function Composer({
   pendingAttachments: PendingAttachment[];
   attachmentNotice: string | null;
   sendError: string | null;
-  dictationError: string | null;
   runError: string | null;
   runErrorId: string | null;
   onRunErrorPresented: (runId: string) => void;
@@ -4322,6 +4356,7 @@ const Composer = memo(function Composer({
   onRemoveAttachment: (attachment: PendingAttachment) => void;
   onSend: (text: string, mentions?: ComposerMention[]) => Promise<void>;
   onStop: () => Promise<void>;
+  onVoice?: () => void;
   replyTarget?: ThreadMessage | null;
   replyTargetName?: string;
   onClearReply?: () => void;
@@ -4329,10 +4364,6 @@ const Composer = memo(function Composer({
   agentSkills?: AgentSkillCatalogEntry[];
   onSlashOpen?: () => void;
   onSlashAction?: (action: SlashActionId) => void;
-  dictating: boolean;
-  transcribe: boolean;
-  onDictateStart: (onFinal: (text: string) => void) => void;
-  onDictateStop: () => void;
 }) {
   const { t } = useLingui();
   const [draft, setDraft] = useState("");
@@ -4599,14 +4630,14 @@ const Composer = memo(function Composer({
         draggingFiles ? "rounded-[14px] ring-2 ring-inset ring-ring" : ""
       }`}
     >
-      {sendError || dictationError || runError ? (
+      {sendError || runError ? (
         <div
           ref={runErrorRef}
           role="alert"
           data-testid="composer-error"
           className="mb-3 flex items-center gap-2 rounded-[14px] border border-destructive/40 bg-destructive/10 px-4 py-2 text-[13px] text-destructive"
         >
-          <span className="min-w-0 flex-1">{sendError ?? dictationError ?? runError}</span>
+          <span className="min-w-0 flex-1">{sendError ?? runError}</span>
           <button
             type="button"
             aria-label={t`Dismiss error`}
@@ -4778,32 +4809,6 @@ const Composer = memo(function Composer({
         >
           <Plus size={17} strokeWidth={1.8} />
         </Button>
-        <Button
-          variant="outline"
-          size="icon"
-          aria-label={dictating ? t`Stop dictation` : t`Dictate`}
-          onMouseDown={(event) => {
-            event.preventDefault();
-            onDictateStart((text) => setDraft((current) => `${current} ${text}`.trim()));
-          }}
-          onMouseUp={onDictateStop}
-          onMouseLeave={() => {
-            if (dictating) onDictateStop();
-          }}
-          onTouchStart={(event) => {
-            event.preventDefault();
-            onDictateStart((text) => setDraft((current) => `${current} ${text}`.trim()));
-          }}
-          onTouchEnd={onDictateStop}
-          className={`rounded-full ${
-            dictating
-              ? "border-success bg-success/15 text-success hover:bg-success/15 hover:text-success"
-              : "text-foreground/75"
-          }`}
-          title={transcribe ? t`Hold to talk` : t`Hold to talk (on-device dictation)`}
-        >
-          <Mic size={16} strokeWidth={1.8} />
-        </Button>
         <div className="flex min-w-0 flex-1 flex-wrap items-end gap-1.5">
           {selectedSkill ? (
             <span
@@ -4918,6 +4923,19 @@ const Composer = memo(function Composer({
             className="max-h-32 min-h-[24px] min-w-[8rem] flex-1 resize-none overflow-y-auto bg-transparent py-0.5 text-[15.5px] leading-6 text-foreground outline-none placeholder:text-muted-foreground disabled:opacity-40"
           />
         </div>
+        {onVoice ? (
+          <Button
+            variant="outline"
+            size="icon"
+            aria-label={t`Voice`}
+            title={t`Voice`}
+            disabled={disabled}
+            onClick={onVoice}
+            className="rounded-full text-foreground/75"
+          >
+            <Mic size={16} strokeWidth={1.8} />
+          </Button>
+        ) : null}
         {running ? (
           <>
             <Button
@@ -5498,7 +5516,7 @@ const MessageView = memo(function MessageView({
             <div key={i} className="flex w-fit max-w-full justify-end">
               <div
                 data-testid="message-user-bubble"
-                className="max-w-full whitespace-pre-wrap wrap-anywhere rounded-[20px] bg-secondary px-[18px] py-3 text-[15.5px] leading-[1.45] text-secondary-foreground"
+                className="max-w-full whitespace-pre-wrap wrap-anywhere rounded-[20px] bg-chat-user px-[18px] py-3 text-[15.5px] leading-[1.45] text-chat-user-foreground"
                 dir="auto"
               >
                 {block.text}
@@ -5620,6 +5638,16 @@ function screenIframeSandbox(url: string | null) {
   } catch {
     return undefined;
   }
+}
+
+function DesktopKindEmptyState({ className }: { className?: string }) {
+  return (
+    <div className={className}>
+      <Trans>
+        This bot runs on this computer, not a Linux desktop. Shell and files use your home folder.
+      </Trans>
+    </div>
+  );
 }
 
 function computerPlaceholder(

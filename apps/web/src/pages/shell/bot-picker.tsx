@@ -9,7 +9,7 @@ import {
   CommandList,
   CommandSeparator,
 } from "@rakazo/ui-web";
-import { Lock, Plus } from "lucide-react";
+import { Info, Lock, Plus, Users } from "lucide-react";
 import { useMemo, useState } from "react";
 
 export function BotCreatePicker({
@@ -18,12 +18,16 @@ export function BotCreatePicker({
   onOpenBot,
   onCreateGroup,
   onCreateSpace,
+  onShowGroupInfo,
+  onShowSpaceInfo,
 }: {
   bots: Bot[];
   onCreateBot: () => void;
   onOpenBot: (botId: string) => void;
   onCreateGroup: () => void;
   onCreateSpace: () => void;
+  onShowGroupInfo: () => void;
+  onShowSpaceInfo: () => void;
 }) {
   const { t } = useLingui();
   const [query, setQuery] = useState("");
@@ -48,8 +52,8 @@ export function BotCreatePicker({
         <input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder={t`Search or create Bots`}
-          aria-label={t`Search or create Bots`}
+          placeholder={t`Search`}
+          aria-label={t`Search`}
           className="min-w-0 flex-1 bg-transparent text-[14px] text-foreground outline-none placeholder:text-muted-foreground"
         />
       </label>
@@ -89,8 +93,29 @@ export function BotCreatePicker({
               value="create-group"
               data-testid="create-new-group"
               onSelect={() => onCreateGroup()}
+              className="gap-2"
             >
-              <Trans>New group</Trans>
+              <Users size={16} strokeWidth={1.8} aria-hidden="true" />
+              <span className="min-w-0 flex-1 truncate">
+                <Trans>Create new Group</Trans>
+              </span>
+              <button
+                type="button"
+                data-testid="picker-info-group"
+                aria-label={t`About groups`}
+                title={t`About groups`}
+                onPointerDown={(event) => event.stopPropagation()}
+                onMouseDown={(event) => event.stopPropagation()}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  event.preventDefault();
+                  onShowGroupInfo();
+                }}
+                onKeyDown={(event) => event.stopPropagation()}
+                className="-mr-2 shrink-0 rounded p-1 text-muted-foreground/70 opacity-0 transition-opacity duration-150 group-focus-within/command-item:opacity-100 group-hover/command-item:opacity-100 hover:text-foreground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-ring"
+              >
+                <Info size={14} strokeWidth={1.8} aria-hidden="true" />
+              </button>
             </CommandItem>
             <CommandItem
               value="create-space"
@@ -99,7 +124,26 @@ export function BotCreatePicker({
               className="gap-2"
             >
               <Lock size={14} strokeWidth={1.8} aria-hidden="true" />
-              <Trans>New space</Trans>
+              <span className="min-w-0 flex-1 truncate">
+                <Trans>Create new Space</Trans>
+              </span>
+              <button
+                type="button"
+                data-testid="picker-info-space"
+                aria-label={t`About spaces`}
+                title={t`About spaces`}
+                onPointerDown={(event) => event.stopPropagation()}
+                onMouseDown={(event) => event.stopPropagation()}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  event.preventDefault();
+                  onShowSpaceInfo();
+                }}
+                onKeyDown={(event) => event.stopPropagation()}
+                className="-mr-2 shrink-0 rounded p-1 text-muted-foreground/70 opacity-0 transition-opacity duration-150 group-focus-within/command-item:opacity-100 group-hover/command-item:opacity-100 hover:text-foreground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-ring"
+              >
+                <Info size={14} strokeWidth={1.8} aria-hidden="true" />
+              </button>
             </CommandItem>
           </CommandGroup>
         </CommandList>

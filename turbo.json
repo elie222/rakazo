@@ -18,7 +18,7 @@
       "outputs": ["dist/**", "src/generated/**"]
     },
     "check": {
-      "dependsOn": ["^check", "^generate"]
+      "dependsOn": ["^check", "^generate", "generate"]
     },
     "test": {
       "dependsOn": ["^generate"],

@@ -24,14 +24,20 @@ function runPreload(file: string, ipc: { invoke?: unknown; on?: unknown; off?: u
 }
 
 describe("desktop preload bridge", () => {
-  it("exposes only the platform, the four window operations, the updater, and the OAuth bridge", async () => {
+  it("exposes the scoped desktop bridges", async () => {
     const { invoke, exposeInMainWorld } = runPreload("preload.cjs");
 
     expect(exposeInMainWorld).toHaveBeenCalledTimes(1);
     const [globalName, bridge] = exposeInMainWorld.mock.calls[0] as [string, RakazoDesktop];
     expect(globalName).toBe("rakazoDesktop");
     expect(bridge.platform).toBe("linux");
-    expect(Object.keys(bridge).sort()).toEqual(["oauth", "platform", "update", "window"]);
+    expect(Object.keys(bridge).sort()).toEqual([
+      "localSettings",
+      "oauth",
+      "platform",
+      "update",
+      "window",
+    ]);
     expect(Object.keys(bridge.window).sort()).toEqual([
       "close",
       "minimize",
@@ -40,6 +46,8 @@ describe("desktop preload bridge", () => {
     ]);
     expect(Object.keys(bridge.update).sort()).toEqual(["check", "download", "install", "state"]);
 
+    await bridge.oauth.open?.("https://provider.example.com/authorize");
+    await bridge.oauth.cancel?.("https://provider.example.com/authorize");
     await bridge.window.close();
     await bridge.window.minimize();
     await bridge.window.toggleMaximize();
@@ -49,6 +57,8 @@ describe("desktop preload bridge", () => {
     await bridge.update.download();
     await bridge.update.install();
     expect(invoke.mock.calls.map(([channel]) => channel)).toEqual([
+      "desktop.oauth.open",
+      "desktop.oauth.cancel",
       "desktop.window.close",
       "desktop.window.minimize",
       "desktop.window.toggleMaximize",
@@ -63,7 +73,13 @@ describe("desktop preload bridge", () => {
   it("keeps setup off the app bridge so a connected server cannot re-point the app", () => {
     const { exposeInMainWorld } = runPreload("preload.cjs");
     const [, bridge] = exposeInMainWorld.mock.calls[0] as [string, Record<string, unknown>];
-    expect(Object.keys(bridge).sort()).toEqual(["oauth", "platform", "update", "window"]);
+    expect(Object.keys(bridge).sort()).toEqual([
+      "localSettings",
+      "oauth",
+      "platform",
+      "update",
+      "window",
+    ]);
   });
 
   it("forwards captured codes without leaking the IPC event to the renderer", () => {
@@ -89,7 +105,7 @@ describe("desktop preload bridge", () => {
 
 describe("setup preload bridge", () => {
   it("exposes only the first-run setup operations", async () => {
-    const { invoke, exposeInMainWorld } = runPreload("setup-preload.cjs");
+    const { invoke, on, exposeInMainWorld } = runPreload("setup-preload.cjs");
 
     expect(exposeInMainWorld).toHaveBeenCalledTimes(1);
     const [globalName, bridge] = exposeInMainWorld.mock.calls[0] as [string, RakazoSetup];
@@ -104,7 +120,7 @@ describe("setup preload bridge", () => {
       "state",
       "test",
     ]);
-    expect(Object.keys(bridge.stack).sort()).toEqual(["start", "state"]);
+    expect(Object.keys(bridge.stack).sort()).toEqual(["onChange", "start", "state"]);
 
     await bridge.state();
     await bridge.test("http://127.0.0.1:5173");
@@ -123,5 +139,12 @@ describe("setup preload bridge", () => {
       "desktop.setup.stack.start",
     ]);
     expect(invoke).toHaveBeenCalledWith("desktop.setup.openLink", "orbstack");
+
+    const listener = vi.fn();
+    bridge.stack.onChange(listener);
+    const [channel, handler] = on.mock.calls.at(-1) as [string, (...args: unknown[]) => void];
+    expect(channel).toBe("desktop.setup.stack.changed");
+    handler({}, { phase: "pulling" });
+    expect(listener).toHaveBeenCalledWith({ phase: "pulling" });
   });
 });

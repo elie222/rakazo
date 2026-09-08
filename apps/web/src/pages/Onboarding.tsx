@@ -1,5 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import {
+  type IntegrationSetupState,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   openAiCompatibleConnectReady,
   openAiCompatibleProbeSuccessMessage,
@@ -19,8 +20,9 @@ import {
   Textarea,
 } from "@rakazo/ui-web";
 import { Check } from "lucide-react";
-import { useEffect, useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { IntegrationSetup } from "../components/integrations/IntegrationSetup";
 import { localizedProviderHint } from "../lib/localized-provider-hint";
 import type { ModelCatalogEntry } from "../lib/model-auth";
 import { rpc } from "../lib/rpc";
@@ -30,12 +32,18 @@ export function OnboardingPage() {
   const { t } = useLingui();
   const navigate = useNavigate();
   const fieldId = useId();
-  const [step, setStep] = useState<"loading" | "model" | "bot">("loading");
+  const [step, setStep] = useState<"loading" | "model" | "integrations" | "bot">("loading");
+  const [integrationSetup, setIntegrationSetup] = useState<IntegrationSetupState | null>(null);
+  const needsIntegrationSetup = integrationSetup?.needsSetup ?? false;
+  const creatingBot = useRef(false);
+  const [creating, setCreating] = useState(false);
+  const createdBot = useRef<Awaited<ReturnType<typeof rpc.bots.create>> | null>(null);
+  const [integrationServers, setIntegrationServers] = useState<string[]>([]);
   const [catalog, setCatalog] = useState<ModelCatalogEntry[]>([]);
   const [query, setQuery] = useState("");
   const [showAllProviders, setShowAllProviders] = useState(false);
   const [provider, setProvider] = useState("openrouter");
-  const [modelId, setModelId] = useState("deepseek/deepseek-v4-flash-0731");
+  const [modelId, setModelId] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
   const [reasoning, setReasoning] = useState(false);
@@ -61,13 +69,18 @@ export function OnboardingPage() {
     onClearError: () => setError(null),
     onError: setError,
     onFinished: () => {
-      setStep("bot");
+      setStep(needsIntegrationSetup ? "integrations" : "bot");
     },
   });
 
   useEffect(() => {
-    void Promise.all([rpc.me(), rpc.models.list().catch(() => [])])
-      .then(([me, models]) => {
+    void Promise.all([
+      rpc.me(),
+      rpc.models.list().catch(() => []),
+      rpc.integrationSetup.get().catch(() => null),
+    ])
+      .then(([me, models, integrations]) => {
+        setIntegrationSetup(integrations);
         setCatalog(models);
         const preferred =
           models.find(
@@ -79,7 +92,7 @@ export function OnboardingPage() {
           setProvider(preferred.provider);
           setModelId(preferred.provider === OPENAI_COMPATIBLE_PROVIDER_ID ? "" : preferred.id);
         }
-        setStep(me.needsModel ? "model" : "bot");
+        setStep(me.needsModel ? "model" : integrations?.needsSetup ? "integrations" : "bot");
       })
       .catch(() => setStep("bot"));
     return () => {
@@ -143,6 +156,13 @@ export function OnboardingPage() {
     probedBaseUrl,
   });
 
+  const canSaveModel = Boolean(
+    selected &&
+      modelId.trim() &&
+      !oauthPending &&
+      (isOpenAiCompatible ? openAiCompatibleReady : acceptsKey && apiKey.trim()),
+  );
+
   function updateBaseUrl(nextBaseUrl: string) {
     setBaseUrl(nextBaseUrl);
     resetOpenAiCompatibleProbe();
@@ -173,6 +193,7 @@ export function OnboardingPage() {
   }
 
   async function saveModel() {
+    if (!canSaveModel) return;
     setError(null);
     try {
       if (isOpenAiCompatible) {
@@ -192,7 +213,7 @@ export function OnboardingPage() {
           label: selected?.providerName ?? provider,
         });
       }
-      setStep("bot");
+      setStep(needsIntegrationSetup ? "integrations" : "bot");
     } catch (err) {
       setError(err instanceof Error ? err.message : t`Could not save model`);
     }
@@ -207,15 +228,24 @@ export function OnboardingPage() {
   }
 
   async function createBot() {
+    if (creatingBot.current) return;
+    creatingBot.current = true;
+    setCreating(true);
     setError(null);
     try {
-      const bot = await rpc.bots.create({
-        name: name.trim(),
-        title,
-        description,
-        instructions: description,
-        notifyOnFinish: true,
-      });
+      const bot =
+        createdBot.current ??
+        (await rpc.bots.create({
+          name: name.trim(),
+          title,
+          description,
+          instructions: description,
+          notifyOnFinish: true,
+        }));
+      createdBot.current = bot;
+      for (const serverId of integrationServers) {
+        await rpc.mcp.assignments.approve({ botId: bot.id, serverId });
+      }
       // Onboarding continues conversationally in the thread: greeting first,
       // then the focus choice (immediate for the first bot).
       const started = await rpc.onboarding
@@ -228,12 +258,25 @@ export function OnboardingPage() {
       navigate(`/app/${bot.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : t`Could not create your bot`);
+    } finally {
+      creatingBot.current = false;
+      setCreating(false);
     }
   }
 
   return (
     <div className="min-h-full bg-background px-6 py-12">
       <div className="mx-auto w-full max-w-[560px]">
+        {step !== "loading" ? (
+          <Button
+            variant="link"
+            size="xs"
+            className="mb-6 px-0 text-muted-foreground"
+            onClick={() => navigate("/app")}
+          >
+            <Trans>Back to app</Trans>
+          </Button>
+        ) : null}
         {step === "loading" ? (
           <p className="text-muted-foreground">
             <Trans>Loading…</Trans>
@@ -557,14 +600,21 @@ export function OnboardingPage() {
             {notice ? <p className="mt-3 text-sm text-success">{notice}</p> : null}
             {error ? <p className="mt-3 text-sm text-destructive">{error}</p> : null}
             <div className="mt-6 flex gap-3">
-              <Button
-                disabled={oauthPending || (isOpenAiCompatible && !openAiCompatibleReady)}
-                onClick={() => void saveModel()}
-              >
+              <Button disabled={!canSaveModel} onClick={() => void saveModel()}>
                 <Trans>Continue</Trans>
               </Button>
             </div>
           </div>
+        ) : null}
+        {step === "integrations" ? (
+          <IntegrationSetup
+            serverSetup
+            initialState={integrationSetup}
+            onDone={() => setStep("bot")}
+            onServerConnected={(id) =>
+              setIntegrationServers((current) => [...new Set([...current, id])])
+            }
+          />
         ) : null}
         {step === "bot" ? (
           <div>
@@ -609,7 +659,11 @@ export function OnboardingPage() {
               />
             </label>
             {error ? <p className="mt-3 text-sm text-destructive">{error}</p> : null}
-            <Button className="mt-6" disabled={!name.trim()} onClick={() => void createBot()}>
+            <Button
+              className="mt-6"
+              disabled={creating || !name.trim()}
+              onClick={() => void createBot()}
+            >
               <Trans>Continue</Trans>
             </Button>
           </div>

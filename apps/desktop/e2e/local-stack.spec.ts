@@ -40,6 +40,19 @@ test.beforeAll(async () => {
       response.end(JSON.stringify({ ok: true, imageTag: IMAGE_TAG }));
       return;
     }
+    if (request.url === "/api/desktop-settings/rpc/integrationSetup/get") {
+      const expected = await readFile(path.join(userData, "stack", ".desktop-stack-token"), "utf8");
+      if (
+        request.headers["x-rakazo-local-settings-token"] !== expected.trim() ||
+        request.headers.cookie
+      ) {
+        response.writeHead(401).end();
+        return;
+      }
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ json: { canConfigure: true } }));
+      return;
+    }
     if (request.url === "/rpc/health" && request.method === "POST") {
       response.writeHead(200, { "content-type": "application/json; charset=utf-8" });
       response.end(JSON.stringify({ json: { ok: true, version: "0.1.0" } }));
@@ -107,7 +120,7 @@ async function writeFakeDocker(mode: FakeDockerMode) {
     "  pull)",
     mode === "pull-fails"
       ? '    echo "Error response from daemon: manifest unknown" >&2; exit 1 ;;'
-      : '    echo "app Pulled"; sleep 2; echo "computer Pulled"; exit 0 ;;',
+      : '    echo " a235d761c5d1 Downloading 59.47MB"; echo " a235d761c5d1 Downloading 412.3MB"; echo "app Pulled"; sleep 2; echo "computer Pulled"; exit 0 ;;',
     up,
     '  logs) echo "web-1 | listening"; exit 0 ;;',
     "esac",
@@ -164,12 +177,19 @@ test("This computer installs and starts the stack, then opens the app", async ()
 
   const appWindowPromise = app.waitForEvent("window");
   await setup.getByRole("button", { name: "Continue" }).click();
-  await expect(setup.locator("#stack-phase")).toHaveText("Downloading Rakazo images…");
-  await expect(setup.locator("#stack-output")).toContainText("app Pulled");
+  await expect(setup.locator("#stack-phase")).toHaveText("Downloading Rakazo…");
   await expect(setup.getByRole("button", { name: "Continue" })).toBeDisabled();
+  // Docker output stays behind the details toggle; the phase, the bar, and the size show by default.
+  await expect(setup.locator("#stack-detail")).toHaveText("412 MB downloaded");
+  await expect(setup.locator("#stack-progress")).toBeVisible();
+  await expect(setup.locator("#stack-output")).toBeHidden();
   await setup.screenshot({
     path: path.join(import.meta.dirname, "screenshots", "06-setup-installing.png"),
+    // Fast-forward the bar's width transition so the artifact shows the value, not a frame of it.
+    animations: "disabled",
   });
+  await setup.getByRole("button", { name: "Technical details" }).click();
+  await expect(setup.locator("#stack-output")).toContainText("app Pulled");
 
   const appWindow = await appWindowPromise;
   await expect(appWindow.getByText(APP_MARKER)).toBeVisible();
@@ -229,7 +249,7 @@ test("switching to Existing instance while the stack starts keeps that choice", 
   const setup = await app.firstWindow();
 
   await setup.getByRole("button", { name: "Continue" }).click();
-  await expect(setup.locator("#stack-phase")).toHaveText("Downloading Rakazo images…");
+  await expect(setup.locator("#stack-phase")).toHaveText("Downloading Rakazo…");
 
   // Fake docker sleeps during pull; leave This computer before ready so followStack must not save.
   await setup.getByRole("radio", { name: /Existing instance/ }).check();
@@ -448,4 +468,48 @@ test("repeated port conflicts stop with a retry action", async () => {
   await setup.screenshot({
     path: path.join(import.meta.dirname, "screenshots", "10-setup-ports-unavailable.png"),
   });
+});
+
+test("the native settings menu opens an isolated logged-out settings capability", async () => {
+  app = await launch("ok");
+  const setup = await app.firstWindow();
+  const nextWindow = app.waitForEvent("window");
+  await setup.getByRole("button", { name: "Continue", exact: true }).click();
+  const main = await nextWindow;
+  await expect(main.getByText(APP_MARKER)).toBeVisible();
+  await expect.poll(savedSetup).toEqual({ mode: "new", serverUrl });
+  const denied = await main.evaluate(async () => {
+    try {
+      await window.rakazoDesktop?.localSettings?.request(
+        "/api/desktop-settings/rpc/integrationSetup/get",
+        "{}",
+      );
+      return false;
+    } catch {
+      return true;
+    }
+  });
+  expect(denied).toBe(true);
+  const settingsOpened = app.waitForEvent("window");
+  await app.evaluate(({ Menu }) => {
+    const item = Menu.getApplicationMenu()?.getMenuItemById("local-server-settings");
+    if (!item) throw new Error("Missing settings menu");
+    item.click();
+  });
+  const settings = await settingsOpened;
+  await expect(settings).toHaveURL(`${serverUrl}/desktop-settings`);
+  const result = await settings.evaluate(() =>
+    window.rakazoDesktop?.localSettings?.request(
+      "/api/desktop-settings/rpc/integrationSetup/get",
+      "{}",
+    ),
+  );
+  expect(result?.status).toBe(200);
+  expect(JSON.parse(result!.body)).toEqual({ json: { canConfigure: true } });
+  await app.evaluate(({ Menu }) =>
+    Menu.getApplicationMenu()?.getMenuItemById("local-server-settings")?.click(),
+  );
+  expect(app.windows()).toHaveLength(2);
+  await settings.close();
+  await expect(main.getByText(APP_MARKER)).toBeVisible();
 });

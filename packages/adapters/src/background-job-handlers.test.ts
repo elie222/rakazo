@@ -114,7 +114,7 @@ describe("createBackgroundJobHandlers", () => {
       executor.resolveModel({ userId: "user-1", spaceId: "workspace-1" }),
     ).resolves.toEqual({
       provider: "openrouter",
-      id: "deepseek/deepseek-v4-flash-0731",
+      id: "openai/gpt-5.6-luna",
       apiKey: "deployment-key",
       baseUrl: undefined,
       thinkingLevel: null,

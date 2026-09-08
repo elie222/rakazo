@@ -58,10 +58,15 @@ export function MemorySettingsOverlay({
   onClose,
   config,
   onConfigChange,
+  embedded = false,
+  onBusyChange,
 }: {
   onClose: () => void;
   config: SpaceMemoryConfig | null | undefined;
   onConfigChange: (config: SpaceMemoryConfig | null) => void;
+  /** Render panel body only for the shared Settings shell. */
+  embedded?: boolean;
+  onBusyChange?: (busy: boolean) => void;
 }) {
   const { t } = useLingui();
   const providerSelectId = useId();
@@ -89,10 +94,19 @@ export function MemorySettingsOverlay({
   const registration = memoryProviderSettings(config?.provider ?? selectedProvider);
   const busy = pending !== null;
 
+  useEffect(() => {
+    return () => onBusyChange?.(false);
+  }, [onBusyChange]);
+
+  function markPending(next: "connect" | "disconnect" | "scope" | null) {
+    setPending(next);
+    onBusyChange?.(next !== null);
+  }
+
   async function connect(draft: MemoryProviderConnectionDraft) {
     if (!registration) return false;
     setError(null);
-    setPending("connect");
+    markPending("connect");
     try {
       const next = await rpc.memory.connectProvider({
         provider: registration.id,
@@ -105,53 +119,40 @@ export function MemorySettingsOverlay({
       setError(err instanceof Error ? err.message : t`Could not connect ${registration.name}`);
       return false;
     } finally {
-      setPending(null);
+      markPending(null);
     }
   }
 
   async function disconnect() {
     setError(null);
-    setPending("disconnect");
+    markPending("disconnect");
     try {
       await rpc.memory.disconnectProvider();
       onConfigChange(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : t`Could not disconnect memory provider`);
     } finally {
-      setPending(null);
+      markPending(null);
     }
   }
 
   async function updateDefaultScope(scope: "isolated" | "shared") {
     if (scope === defaultScope) return;
     setError(null);
-    setPending("scope");
+    markPending("scope");
     try {
       const next = await rpc.memory.setDefaultScope({ defaultMemoryScope: scope });
       onConfigChange(next);
     } catch (err) {
       setError(err instanceof Error ? err.message : t`Could not update the default memory scope`);
     } finally {
-      setPending(null);
+      markPending(null);
     }
   }
 
-  return (
-    <Dialog
-      open
-      onOpenChange={(open, details) => {
-        if (open) return;
-        if (busy) {
-          details.cancel();
-          return;
-        }
-        onClose();
-      }}
-    >
-      <DialogContent
-        showCloseButton={false}
-        className="flex max-h-[min(760px,calc(100%-2rem))] w-[560px] flex-col gap-0 overflow-hidden rounded-2xl p-0 sm:max-h-[min(760px,calc(100%-5rem))] sm:max-w-[calc(100%-5rem)]"
-      >
+  const body = (
+    <>
+      {!embedded ? (
         <div className="flex items-start justify-between px-6 pt-6 sm:px-8 sm:pt-7">
           <div>
             <DialogTitle className="text-2xl font-medium text-foreground">
@@ -171,80 +172,109 @@ export function MemorySettingsOverlay({
             <XIcon />
           </DialogClose>
         </div>
+      ) : (
+        <p className="px-6 pt-1 text-[13.5px] text-muted-foreground/70 sm:px-8">
+          {registration?.description ?? <Trans>Manage the Space semantic memory provider.</Trans>}
+        </p>
+      )}
 
-        <div className="rk-scroll min-h-0 flex-1 overflow-y-auto px-6 py-6 sm:px-8">
-          {error ? <p className="mb-4 text-sm text-destructive">{error}</p> : null}
+      <div className="rk-scroll min-h-0 flex-1 overflow-y-auto px-6 py-6 sm:px-8">
+        {error ? <p className="mb-4 text-sm text-destructive">{error}</p> : null}
 
-          {config === undefined ? (
-            <p className="text-sm text-muted-foreground">
-              <Trans>Loading memory settings…</Trans>
-            </p>
-          ) : config ? (
-            <div className="rounded-xl border border-border px-4 py-3">
-              <div className="text-[12.5px] uppercase tracking-[0.08em] text-muted-foreground/80">
-                <Trans>Connected</Trans>
-              </div>
-              <div className="mt-1 text-[15px] text-foreground">
-                {registration?.connectedLabel(config) ?? config.provider}
-              </div>
-              <div className="mt-3">
-                <ScopePicker
-                  value={defaultScope}
-                  disabled={busy}
-                  onChange={(scope) => void updateDefaultScope(scope)}
-                />
-              </div>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={busy}
-                onClick={() => void disconnect()}
-                className="mt-3"
-              >
-                {pending === "disconnect" ? (
-                  <Trans>Disconnecting…</Trans>
-                ) : (
-                  <Trans>Disconnect</Trans>
-                )}
-              </Button>
+        {config === undefined ? (
+          <p className="text-sm text-muted-foreground">
+            <Trans>Loading memory settings…</Trans>
+          </p>
+        ) : config ? (
+          <div className="rounded-xl border border-border px-4 py-3">
+            <div className="text-[12.5px] uppercase tracking-[0.08em] text-muted-foreground/80">
+              <Trans>Connected</Trans>
             </div>
-          ) : registration ? (
-            <>
-              {MEMORY_PROVIDER_SETTINGS.length > 1 ? (
-                <Field className="mb-4">
-                  <FieldLabel htmlFor={providerSelectId}>
-                    <Trans>Provider</Trans>
-                  </FieldLabel>
-                  <NativeSelect
-                    id={providerSelectId}
-                    className="w-full"
-                    value={selectedProvider}
-                    disabled={busy}
-                    onChange={(event) => setSelectedProvider(event.target.value)}
-                  >
-                    {MEMORY_PROVIDER_SETTINGS.map((entry) => (
-                      <NativeSelectOption key={entry.id} value={entry.id}>
-                        {entry.name}
-                      </NativeSelectOption>
-                    ))}
-                  </NativeSelect>
-                </Field>
-              ) : null}
+            <div className="mt-1 text-[15px] text-foreground">
+              {registration?.connectedLabel(config) ?? config.provider}
+            </div>
+            <div className="mt-3">
+              <ScopePicker
+                value={defaultScope}
+                disabled={busy}
+                onChange={(scope) => void updateDefaultScope(scope)}
+              />
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={busy}
+              onClick={() => void disconnect()}
+              className="mt-3"
+            >
+              {pending === "disconnect" ? <Trans>Disconnecting…</Trans> : <Trans>Disconnect</Trans>}
+            </Button>
+          </div>
+        ) : registration ? (
+          <>
+            {MEMORY_PROVIDER_SETTINGS.length > 1 ? (
+              <Field className="mb-4">
+                <FieldLabel htmlFor={providerSelectId}>
+                  <Trans>Provider</Trans>
+                </FieldLabel>
+                <NativeSelect
+                  id={providerSelectId}
+                  className="w-full"
+                  value={selectedProvider}
+                  disabled={busy}
+                  onChange={(event) => setSelectedProvider(event.target.value)}
+                >
+                  {MEMORY_PROVIDER_SETTINGS.map((entry) => (
+                    <NativeSelectOption key={entry.id} value={entry.id}>
+                      {entry.name}
+                    </NativeSelectOption>
+                  ))}
+                </NativeSelect>
+              </Field>
+            ) : null}
 
-              <div className="mb-4">
-                <ScopePicker value={defaultScope} disabled={busy} onChange={setDefaultScope} />
-              </div>
+            <div className="mb-4">
+              <ScopePicker value={defaultScope} disabled={busy} onChange={setDefaultScope} />
+            </div>
 
-              <registration.SettingsForm busy={busy} onConnect={connect} />
-            </>
-          ) : (
-            <p className="text-sm text-destructive">
-              <Trans>The selected memory provider is not available in this build.</Trans>
-            </p>
-          )}
-          <SpaceMemorySection />
-        </div>
+            <registration.SettingsForm busy={busy} onConnect={connect} />
+          </>
+        ) : (
+          <p className="text-sm text-destructive">
+            <Trans>The selected memory provider is not available in this build.</Trans>
+          </p>
+        )}
+        <SpaceMemorySection />
+      </div>
+    </>
+  );
+
+  if (embedded) {
+    return (
+      <div data-testid="memory-settings" className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        {body}
+      </div>
+    );
+  }
+
+  return (
+    <Dialog
+      open
+      onOpenChange={(open, details) => {
+        if (open) return;
+        if (busy) {
+          details.cancel();
+          return;
+        }
+        onClose();
+      }}
+    >
+      <DialogContent
+        showCloseButton={false}
+        className="flex max-h-[min(760px,calc(100%-2rem))] w-[560px] flex-col gap-0 overflow-hidden rounded-2xl p-0 sm:max-h-[min(760px,calc(100%-5rem))] sm:max-w-[calc(100%-5rem)]"
+      >
+        {body}
       </DialogContent>
     </Dialog>
   );

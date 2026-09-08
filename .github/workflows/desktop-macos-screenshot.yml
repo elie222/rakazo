@@ -6,6 +6,8 @@ on:
       - ".github/workflows/desktop-macos-screenshot.yml"
       - "apps/desktop/e2e/setup.spec.ts"
       - "apps/desktop/package.json"
+      - "apps/desktop/assets/**"
+      - "packages/ui-tokens/assets/**"
       - "apps/desktop/scripts/copy-static.mjs"
       - "apps/desktop/src/setup*"
       - "apps/desktop/src/window-options.ts"
@@ -23,8 +25,8 @@ concurrency:
 jobs:
   screenshot:
     name: macOS setup screenshot
-    runs-on: macos-latest
-    timeout-minutes: 10
+    runs-on: macos-26
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
         with:
@@ -36,7 +38,21 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @rakazo/desktop build
-      - name: Capture native macOS setup window
+      - name: Verify packaged Tahoe icon and legacy fallback
+        run: |
+          pnpm --filter @rakazo/web build
+          CSC_IDENTITY_AUTO_DISCOVERY=false pnpm --filter @rakazo/desktop exec electron-builder --mac --dir --publish never -c.mac.identity=null -c.mac.notarize=false
+          xcrun assetutil --info apps/desktop/out/mac-arm64/Rakazo.app/Contents/Resources/Assets.car > "$RUNNER_TEMP/icon-assets.json"
+          jq -e 'any(.[]; .Name == "Icon" and .AssetType == "IconImageStack") and any(.[]; .Name == "Icon_Assets/orange-bot" and .AssetType == "Image")' "$RUNNER_TEMP/icon-assets.json"
+          iconutil -c iconset apps/desktop/out/mac-arm64/Rakazo.app/Contents/Resources/icon.icns -o "$RUNNER_TEMP/fallback.iconset"
+          sips -s format png "$RUNNER_TEMP/fallback.iconset/icon_128x128@2x.png" --out "$RUNNER_TEMP/fallback-decoded.png"
+          test -s "$RUNNER_TEMP/fallback-decoded.png"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconName' apps/desktop/out/mac-arm64/Rakazo.app/Contents/Info.plist)" = Icon
+        env:
+          RAKAZO_ALLOW_DEV_SECRETS: "1"
+      - name: Capture packaged macOS setup window and Dock
+        env:
+          RAKAZO_E2E_EXECUTABLE: out/mac-arm64/Rakazo.app/Contents/MacOS/Rakazo
         run: >-
           pnpm --filter @rakazo/desktop exec playwright test
           --config e2e/playwright.config.ts setup.spec.ts
@@ -46,6 +62,8 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: desktop-e2e-macos-screenshot
-          path: apps/desktop/e2e/screenshots/08-setup-macos-native-controls.png
+          path: |
+            apps/desktop/e2e/screenshots/08-setup-macos-native-controls.png
+            apps/desktop/e2e/screenshots/09-macos-dock.png
           if-no-files-found: error
           retention-days: 1

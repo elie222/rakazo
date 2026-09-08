@@ -166,11 +166,90 @@ html[data-platform="darwin"] .titlebar {
   border-color: var(--ring);
 }
 
+.stack-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 .stack-phase {
   margin: 0;
   min-height: 20px;
   font-size: 13px;
   color: var(--foreground);
+}
+
+.icon-button {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+
+.icon-button:hover,
+.icon-button[aria-expanded="true"] {
+  color: var(--foreground);
+  background: var(--accent);
+}
+
+.icon-button:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.icon-button svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.progress {
+  margin-top: 10px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--accent);
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  width: 0;
+  border-radius: inherit;
+  background: var(--primary);
+  transition: width 400ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .progress-fill {
+    transition: none;
+  }
+}
+
+.stack-detail {
+  margin: 8px 0 0;
+  min-height: 18px;
+  font-size: 12px;
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+
+/* No size to report (a failure, or before the first layer): take no room. */
+.stack-detail:empty {
+  margin: 0;
+  min-height: 0;
 }
 
 .stack-phase[data-tone="error"] {

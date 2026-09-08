@@ -10,6 +10,7 @@ import {
   safeScreenProxyResponseHeaders,
   stripSensitiveHandshakeHeaders,
 } from "@rakazo/core/node/screen-proxy-response";
+import babel from "@rolldown/plugin-babel";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig, loadEnv, type PreviewServer, type ViteDevServer } from "vite";
@@ -165,11 +166,8 @@ export default defineConfig(({ mode }) => {
   const imageTag = process.env.RAKAZO_IMAGE_TAG ?? rootEnv.RAKAZO_IMAGE_TAG ?? "edge";
   return {
     plugins: [
-      react({
-        babel: {
-          plugins: ["@lingui/babel-plugin-lingui-macro"],
-        },
-      }),
+      react(),
+      babel({ plugins: ["@lingui/babel-plugin-lingui-macro"] }),
       lingui(),
       tailwindcss(),
       {

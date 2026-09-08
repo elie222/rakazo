@@ -528,6 +528,9 @@ export type MobileBot = Pick<
   | "unread"
   | "updatedAt"
   | "computerMode"
+  | "modelProvider"
+  | "modelId"
+  | "thinkingLevel"
 > &
   Partial<Pick<Bot, "parentBotId" | "spaceId">>;
 
@@ -535,7 +538,14 @@ export type MobileBotSection = BotSection;
 
 export type MobileMe = Pick<
   Me,
-  "name" | "email" | "spaceId" | "defaultProvider" | "defaultModel" | "needsModel" | "avatarStyle"
+  | "name"
+  | "email"
+  | "spaceId"
+  | "defaultProvider"
+  | "defaultModel"
+  | "needsModel"
+  | "avatarStyle"
+  | "isDeploymentOwner"
 >;
 
 export type MobileModel = ModelCatalogEntry;
@@ -867,6 +877,9 @@ export function applyMobileThreadEvent(
       cursor: event.seq ?? prev.cursor,
       messages: [...remaining, streaming],
     };
+  }
+  if (event.type === "agent.tool.completed") {
+    return { ...prev, cursor: event.seq ?? prev.cursor };
   }
   if (event.type === "thread.subagent") {
     const agentId = String(event.payload?.agentId ?? event.id ?? "live");

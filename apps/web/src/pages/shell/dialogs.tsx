@@ -18,7 +18,7 @@ import {
   DialogTitle,
   Input,
 } from "@rakazo/ui-web";
-import { Lock } from "lucide-react";
+import { Lock, Users } from "lucide-react";
 import { useId, useState } from "react";
 
 /** Each dialog is mounted only while open, so `open` is always true and the
@@ -91,6 +91,59 @@ export function NewSpaceDialog({
             {saving ? <Trans>Creating…</Trans> : <Trans>Create space</Trans>}
           </Button>
         </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+export function PickerInfoDialog({
+  topic,
+  onClose,
+}: {
+  topic: "group" | "space";
+  onClose: () => void;
+}) {
+  return (
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
+      <DialogContent data-testid="picker-info-dialog">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2.5">
+            {topic === "group" ? (
+              <Users
+                size={17}
+                strokeWidth={1.8}
+                className="text-muted-foreground"
+                aria-hidden="true"
+              />
+            ) : (
+              <Lock
+                size={17}
+                strokeWidth={1.8}
+                className="text-muted-foreground"
+                aria-hidden="true"
+              />
+            )}
+            {topic === "group" ? <Trans>Groups</Trans> : <Trans>Spaces</Trans>}
+          </DialogTitle>
+          <DialogDescription>
+            {topic === "group" ? (
+              <Trans>
+                One conversation with 2–6 of your bots in a shared thread. Name the group, pick its
+                members, and they all reply in the same chat.
+              </Trans>
+            ) : (
+              <Trans>
+                A separate, private workspace with its own bots and groups. Use spaces to keep
+                contexts apart, such as work and personal.
+              </Trans>
+            )}
+          </DialogDescription>
+        </DialogHeader>
       </DialogContent>
     </Dialog>
   );
@@ -178,7 +231,7 @@ export function ClearConversationDialog({
     <AlertDialog open onOpenChange={closeUnlessBusy(clearing, onCancel)}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>
+          <AlertDialogTitle className="break-words">
             <Trans>Clear {bot.name}’s conversation?</Trans>
           </AlertDialogTitle>
           <AlertDialogDescription>
@@ -231,7 +284,7 @@ export function DeleteBotDialog({
     <AlertDialog open onOpenChange={closeUnlessBusy(deleting, onCancel)}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>
+          <AlertDialogTitle className="break-words">
             <Trans>Delete {bot.name}?</Trans>
           </AlertDialogTitle>
           <AlertDialogDescription>
@@ -306,11 +359,13 @@ export function DeleteBotDialog({
 export function DeleteItemDialog({
   item,
   noun,
+  description,
   onCancel,
   onConfirm,
 }: {
   item: { name: string };
-  noun: "group" | "routine";
+  noun: "group" | "routine" | "space";
+  description?: React.ReactNode;
   onCancel: () => void;
   onConfirm: () => Promise<void>;
 }) {
@@ -326,7 +381,7 @@ export function DeleteItemDialog({
             <Trans>Delete {item.name}?</Trans>
           </AlertDialogTitle>
           <AlertDialogDescription>
-            <Trans>This cannot be undone.</Trans>
+            {description ?? <Trans>This cannot be undone.</Trans>}
           </AlertDialogDescription>
         </AlertDialogHeader>
         {error ? <p className="text-[13.5px] text-destructive">{error}</p> : null}
@@ -346,7 +401,9 @@ export function DeleteItemDialog({
                     ? err.message
                     : noun === "group"
                       ? t`Could not delete group`
-                      : t`Could not delete routine`,
+                      : noun === "space"
+                        ? t`Could not delete space`
+                        : t`Could not delete routine`,
                 );
                 setDeleting(false);
               });

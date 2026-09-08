@@ -10,6 +10,7 @@ import type {
   OAuthClientMetadata,
   OAuthTokens,
 } from "@modelcontextprotocol/sdk/shared/auth.js";
+import { isLocalMcpHost } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { secureFetch, validateUrl, withEndpointOriginFallback } from "./mcp-transport.js";
 import type { RemoteTransportDependencies } from "./remote-mcp.js";
@@ -201,10 +202,28 @@ const MAX_PENDING_SESSIONS = 100;
 function oauthFetch(
   endpoint: string,
   network: RemoteTransportDependencies,
-): { fetch: typeof fetch; close: () => Promise<void> } {
+  material: OAuthMaterial = {},
+): { fetch: typeof fetch; close: () => Promise<void>; headers: Record<string, string> } {
   const url = new URL(endpoint);
-  const safeFetch = secureFetch(url, {}, {}, network);
+  const localHttp = url.protocol === "http:" && isLocalMcpHost(url.hostname);
+  const headers = {
+    ...material.headers,
+    ...(material.secret
+      ? {
+          Authorization: material.secret.startsWith("Bearer ")
+            ? material.secret
+            : `Bearer ${material.secret}`,
+        }
+      : {}),
+  };
+  const safeFetch = secureFetch(
+    url,
+    { allowHttpLocalhost: localHttp, allowLocalHttpCredentials: localHttp },
+    { headers },
+    network,
+  );
   return {
+    headers,
     fetch: withEndpointOriginFallback(url.origin, safeFetch),
     close: () => safeFetch.close(),
   };
@@ -296,8 +315,9 @@ export class McpOAuthBroker {
     // cancelled popup), the server keeps its valid connection. The SDK itself
     // invalidates dead tokens when a refresh is rejected with invalid_grant.
     const endpoint = new URL(server.endpoint);
-    const networkFetch = oauthFetch(server.endpoint, this.network);
+    const networkFetch = oauthFetch(server.endpoint, this.network, loaded.material);
     const transport = new StreamableHTTPClientTransport(endpoint, {
+      requestInit: { headers: networkFetch.headers },
       authProvider: provider,
       fetch: networkFetch.fetch,
     });

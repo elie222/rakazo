@@ -34,13 +34,13 @@
     "compose:down": "docker compose --env-file .env -f infra/compose/docker-compose.yml down -v"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.8",
-    "@types/node": "^24.3.0",
-    "cross-env": "^10.1.0",
-    "tsx": "^4.20.5",
-    "turbo": "^2.5.6",
-    "typescript": "^5.9.2",
-    "vitest": "^4.1.10"
+    "@biomejs/biome": "2.5.12",
+    "@types/node": "24.13.3",
+    "cross-env": "10.1.0",
+    "tsx": "4.23.13",
+    "turbo": "2.10.12",
+    "typescript": "7.0.2",
+    "vitest": "4.1.11"
   },
   "pnpm": {
     "overrides": {

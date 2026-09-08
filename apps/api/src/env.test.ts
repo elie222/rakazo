@@ -16,6 +16,13 @@ describe("loadEnv", () => {
     expect(env.nodeEnv).toBe("test");
   });
 
+  it("defaults Pi JSONL session recording to off", () => {
+    expect(loadEnv(base).piSessionRecording).toBe(false);
+    expect(loadEnv({ ...base, PI_SESSION_RECORDING: "false" }).piSessionRecording).toBe(false);
+    expect(loadEnv({ ...base, PI_SESSION_RECORDING: "1" }).piSessionRecording).toBe(false);
+    expect(loadEnv({ ...base, PI_SESSION_RECORDING: "true" }).piSessionRecording).toBe(true);
+  });
+
   it("keeps explicit emulator settings for pnpm test", () => {
     const env = loadEnv({
       ...base,

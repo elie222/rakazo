@@ -37,6 +37,10 @@ export interface RakazoDesktopOAuthCallback {
 }
 
 export interface RakazoDesktop {
+  /** Only the isolated local settings window is authorized to call this bridge. */
+  localSettings?: {
+    request: (pathname: string, body: string) => Promise<{ status: number; body: string }>;
+  };
   platform: string;
   window: {
     close: () => Promise<void>;
@@ -47,7 +51,13 @@ export interface RakazoDesktop {
   update: RakazoDesktopUpdate;
   oauth: {
     /**
-     * Authorization codes captured from a sign-in popup's loopback redirect.
+     * Open system-browser auth. A redirect_uri must be HTTP loopback with state;
+     * URLs without a redirect use backend polling. Optional for older desktops.
+     */
+    open?: (authorizationUrl: string) => Promise<void>;
+    cancel?: (authorizationUrl: string) => Promise<void>;
+    /**
+     * Authorization codes captured from the system browser or a legacy popup.
      * Returns an unsubscribe function.
      */
     onCallback: (listener: (callback: RakazoDesktopOAuthCallback) => void) => () => void;
@@ -109,6 +119,8 @@ export interface DesktopLocalStackState {
   message: string | null;
   /** Bounded tail of docker output for the current attempt. */
   output: string[];
+  /** Bytes pulled per image layer in the current attempt; the sum is the only progress Docker reports. */
+  layerBytes: Record<string, number>;
   /** Image tag this app launches (`v<app version>` for installed builds, `edge` otherwise). */
   imageTag: string;
 }
@@ -133,5 +145,7 @@ export interface RakazoSetup {
     state: () => Promise<DesktopLocalStackState>;
     /** Starts (or retries) the stack; a no-op while a start is already in flight. */
     start: () => Promise<DesktopLocalStackState>;
+    /** Fires on every state change so progress never depends on a renderer timer. */
+    onChange: (listener: (state: DesktopLocalStackState) => void) => void;
   };
 }

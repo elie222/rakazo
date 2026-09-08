@@ -14,7 +14,19 @@ vi.mock("better-auth/adapters/prisma", async () => {
 });
 vi.mock("@rakazo/db", () => ({ bootstrapUserSpace: vi.fn(async () => ({ spaceId: "space-1" })) }));
 
-function fixture({ allowlist = "", delivery = true } = {}) {
+function fixture({
+  allowlist = "",
+  delivery = true,
+  baseURL = "http://auth.example.test",
+  webOrigin = "http://web.example.test",
+  requestOrigin,
+}: {
+  allowlist?: string;
+  delivery?: boolean;
+  baseURL?: string;
+  webOrigin?: string;
+  requestOrigin?: string;
+} = {}) {
   const data: Record<string, Record<string, unknown>[]> = {
     user: [],
     account: [],
@@ -43,8 +55,8 @@ function fixture({ allowlist = "", delivery = true } = {}) {
   });
   const auth = createAuth(prisma as never, {
     secret: "offline-auth-secret-at-least-32-characters",
-    baseURL: "http://auth.example.test",
-    webOrigin: "http://web.example.test",
+    baseURL,
+    webOrigin,
     signupsEnabled: "true",
     signupAllowlist: "",
     email: delivery
@@ -63,11 +75,11 @@ function fixture({ allowlist = "", delivery = true } = {}) {
   });
   const request = (path: string, body?: unknown, token?: string) =>
     auth.handler(
-      new Request(`http://auth.example.test/api/auth${path}`, {
+      new Request(`${baseURL}/api/auth${path}`, {
         method: body ? "POST" : "GET",
         headers: {
           "content-type": "application/json",
-          origin: "http://web.example.test",
+          origin: requestOrigin ?? webOrigin,
           ...(token ? { authorization: `Bearer ${token}` } : {}),
         },
         body: body ? JSON.stringify(body) : undefined,
@@ -94,6 +106,28 @@ function fixture({ allowlist = "", delivery = true } = {}) {
 }
 
 beforeEach(() => vi.clearAllMocks());
+
+describe("loopback trusted origins", () => {
+  it("accepts Origin localhost when webOrigin is 127.0.0.1", async () => {
+    const f = fixture({
+      delivery: false,
+      baseURL: "http://127.0.0.1:5173",
+      webOrigin: "http://127.0.0.1:5173",
+      requestOrigin: "http://localhost:5173",
+    });
+    expect((await f.signup()).status).toBe(200);
+  });
+
+  it("accepts Origin 127.0.0.1 when webOrigin is localhost", async () => {
+    const f = fixture({
+      delivery: false,
+      baseURL: "http://localhost:5173",
+      webOrigin: "http://localhost:5173",
+      requestOrigin: "http://127.0.0.1:5173",
+    });
+    expect((await f.signup()).status).toBe(200);
+  });
+});
 
 describe("identity trust through auth endpoints", () => {
   it("keeps first-owner bootstrap and password signup available without email for open deployments", async () => {
