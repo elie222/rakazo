@@ -96,6 +96,15 @@ export async function selectSpace(id: string) {
   cachedSpaceId = id;
   try {
     await SecureStore.setItemAsync(SPACE_KEY, id);
+    // Our write may have landed stale behind a newer overlapping selection's
+    // write. Re-assert the live selection best-effort so durable converges
+    // to it; each selector heals at most once, so overlapping chains settle
+    // on the latest claim. Never delete here: a missing memory owner means
+    // another path (recovery, sign-out) owns cleanup.
+    const liveSpaceId = cachedSpaceId;
+    if (liveSpaceId && liveSpaceId !== id) {
+      await writeStoredValue(SPACE_KEY, liveSpaceId);
+    }
   } catch {
     // Roll back the claim and heal durable state: a concurrent recovery may
     // have persisted the rolled-back id after reading it, which would leave

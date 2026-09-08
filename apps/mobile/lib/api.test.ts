@@ -1059,6 +1059,34 @@ describe("mobile API authentication", () => {
     expect(storage.get("rakazo.space_id")).toBe("space-b");
   });
 
+  it("converges durable state to the latest overlapping selection", async () => {
+    const storage = new Map<string, string>([["rakazo.space_id", "space-support"]]);
+    vi.mocked(SecureStore.getItemAsync).mockImplementation(async (key) => storage.get(key) ?? null);
+    vi.mocked(SecureStore.deleteItemAsync).mockImplementation(async (key) => {
+      storage.delete(key);
+    });
+    let resolveA!: () => void;
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+      if (key === "rakazo.space_id" && value === "space-a") {
+        await new Promise<void>((resolve) => {
+          resolveA = resolve;
+        });
+      }
+      storage.set(key, value);
+    });
+    await loadApiBase();
+
+    const pendingA = selectSpace("space-a");
+    await vi.waitFor(() => expect(selectedSpaceId()).toBe("space-a"));
+    await expect(selectSpace("space-b")).resolves.toBe(true);
+    // The older write lands stale after the newer one completed.
+    resolveA();
+
+    await expect(pendingA).resolves.toBe(true);
+    expect(selectedSpaceId()).toBe("space-b");
+    expect(storage.get("rakazo.space_id")).toBe("space-b");
+  });
+
   it("re-persists a Space selected while recovery cleanup is in flight", async () => {
     const storage = new Map<string, string>([["rakazo.space_id", "space-deleted"]]);
     vi.mocked(SecureStore.getItemAsync).mockImplementation(async (key) => storage.get(key) ?? null);
