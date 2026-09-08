@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
 import { workingAvatarDuration, workingAvatarFrame } from "@rakazo/core";
+import { describe, expect, it } from "vitest";
 
 describe("working avatar motion", () => {
   it("reuses shared core choreography", () => {

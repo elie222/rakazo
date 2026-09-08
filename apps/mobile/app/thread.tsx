@@ -500,9 +500,7 @@ function Thread() {
       headerTitle: () => (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={
-            !inGroup && botId ? t("Bot settings") : displayName || t("Thread")
-          }
+          accessibilityLabel={!inGroup && botId ? t("Bot settings") : displayName || t("Thread")}
           disabled={inGroup || !botId}
           onPress={() => {
             if (!botId || inGroup) return;
@@ -1942,7 +1940,9 @@ function Thread() {
             <TextInput
               value={draft}
               onChangeText={updateDraft}
-              accessibilityLabel={displayName ? t("Message {name}", { name: displayName }) : t("Message")}
+              accessibilityLabel={
+                displayName ? t("Message {name}", { name: displayName }) : t("Message")
+              }
               onKeyPress={(event) => {
                 if (
                   event.nativeEvent.key === "Backspace" &&
