@@ -1,4 +1,4 @@
-import { Agent, MockAgent } from "undici";
+import { MockAgent } from "undici";
 import { describe, expect, it } from "vitest";
 import { fetchCompatibleWithUndiciAgent } from "./undici-compat-fetch.js";
 
@@ -12,7 +12,7 @@ describe("fetchCompatibleWithUndiciAgent", () => {
       const response = await transportFetch("https://example.test/", {
         method: "HEAD",
         dispatcher: agent,
-      } as RequestInit & { dispatcher: Agent });
+      } as RequestInit & { dispatcher: MockAgent });
       await response.body?.cancel().catch(() => undefined);
       expect(response.status).toBe(200);
     } finally {
