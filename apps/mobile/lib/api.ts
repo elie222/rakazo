@@ -557,11 +557,15 @@ export async function rpc<T>(
         cachedSpaceId = "";
         try {
           const result = await rpc<T>(proc, body, { ...options, skipSpaceAuthRecovery: true });
-          await clearStoredValue(SPACE_KEY);
-          await clearStoredValue(SPACE_ROLLBACK_KEY);
+          // A Space selected while the retry was in flight already owns both
+          // the in-memory and durable selection; leave it alone.
+          if (!selectedSpaceId()) {
+            await clearStoredValue(SPACE_KEY);
+            await clearStoredValue(SPACE_ROLLBACK_KEY);
+          }
           return result;
         } catch (retryError) {
-          cachedSpaceId = previousSpaceId;
+          if (!selectedSpaceId()) cachedSpaceId = previousSpaceId;
           throw retryError;
         }
       }
