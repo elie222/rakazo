@@ -15,7 +15,7 @@ export async function commitBotUpdate(
     spaceId: string;
     threadId: string;
     botId: string;
-    data: Prisma.BotUpdateInput;
+    data: Prisma.BotUncheckedUpdateInput;
     emitBotUpdated: boolean;
   },
   appendEvent: AppendEvent = appendEventInTransaction,
