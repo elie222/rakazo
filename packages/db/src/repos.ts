@@ -471,8 +471,15 @@ export function createRepos(prisma: PrismaClient) {
             },
             include: { thread: true, computer: true },
           });
-          if (!existing || existing.userId !== actor.userId || existing.archivedAt) throw error;
-          return existing;
+          if (!existing || existing.userId !== actor.userId) throw error;
+          // Archived holders still occupy the unique spawn key; restore so
+          // empty-space onboarding can recreate/reuse the first bot.
+          if (!existing.archivedAt) return existing;
+          return prisma.bot.update({
+            where: { id: existing.id },
+            data: { archivedAt: null },
+            include: { thread: true, computer: true },
+          });
         });
       return mapBot(bot);
     },
