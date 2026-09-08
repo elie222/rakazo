@@ -1169,10 +1169,6 @@ msgstr "MCP-Server konnten nicht geladen werden"
 msgid "Could not load model settings"
 msgstr "Modelleinstellungen konnten nicht geladen werden"
 
-#: src/pages/Onboarding.tsx:664
-msgid "Could not load setup status. Reload to try again."
-msgstr ""
-
 #: src/pages/KnowledgeSection.tsx:302
 msgid "Could not load skill"
 msgstr "Skill konnte nicht geladen werden"
@@ -3033,6 +3029,8 @@ msgstr "Antworte mit Ja oder Nein oder in einem Satz."
 #: src/pages/ModelSettingsOverlay.tsx:988
 #: src/pages/PluginsOverlay.tsx:878
 #: src/pages/Shell.tsx:2540
+#: src/pages/shell/bot-picker.tsx:55
+#: src/pages/shell/bot-picker.tsx:56
 #: src/pages/shell/command-palette.tsx:102
 msgid "Search"
 msgstr "Suchen"
@@ -3059,11 +3057,6 @@ msgstr ""
 #: src/pages/ModelSettingsOverlay.tsx:983
 msgid "Search models"
 msgstr "Modelle suchen"
-
-#: src/pages/shell/bot-picker.tsx:55
-#: src/pages/shell/bot-picker.tsx:56
-msgid "Search or create Bots"
-msgstr ""
 
 #: src/pages/ModelSettingsOverlay.tsx:359
 #: src/pages/ModelSettingsOverlay.tsx:365
@@ -3486,7 +3479,7 @@ msgstr "Titel"
 
 #: src/pages/shell/bot-picker.tsx:50
 msgid "To:"
-msgstr ""
+msgstr "An:"
 
 #: src/pages/PluginsOverlay.tsx:1114
 msgid "Tool sources"
@@ -3730,3 +3723,9 @@ msgstr "Dein Name"
 #: src/pages/Welcome.tsx:21
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "Dein Team aus jederzeit verfügbaren Agents<0/>für echte Aufgaben."
+
+msgid "Opening chat…"
+msgstr "Chat wird geöffnet…"
+
+msgid "Try again"
+msgstr "Erneut versuchen"

@@ -1169,10 +1169,6 @@ msgstr "MCP सर्वर लोड नहीं हो सके"
 msgid "Could not load model settings"
 msgstr "मॉडल सेटिंग्स लोड नहीं हो सकीं"
 
-#: src/pages/Onboarding.tsx:664
-msgid "Could not load setup status. Reload to try again."
-msgstr ""
-
 #: src/pages/KnowledgeSection.tsx:302
 msgid "Could not load skill"
 msgstr "स्किल लोड नहीं हो सकी"
@@ -3033,6 +3029,8 @@ msgstr "हां या ना कहें, या एक वाक्य म�
 #: src/pages/ModelSettingsOverlay.tsx:988
 #: src/pages/PluginsOverlay.tsx:878
 #: src/pages/Shell.tsx:2540
+#: src/pages/shell/bot-picker.tsx:55
+#: src/pages/shell/bot-picker.tsx:56
 #: src/pages/shell/command-palette.tsx:102
 msgid "Search"
 msgstr "खोजें"
@@ -3058,11 +3056,6 @@ msgstr ""
 
 #: src/pages/ModelSettingsOverlay.tsx:983
 msgid "Search models"
-msgstr ""
-
-#: src/pages/shell/bot-picker.tsx:55
-#: src/pages/shell/bot-picker.tsx:56
-msgid "Search or create Bots"
 msgstr ""
 
 #: src/pages/ModelSettingsOverlay.tsx:359
@@ -3486,7 +3479,7 @@ msgstr "शीर्षक"
 
 #: src/pages/shell/bot-picker.tsx:50
 msgid "To:"
-msgstr ""
+msgstr "प्रति:"
 
 #: src/pages/PluginsOverlay.tsx:1114
 msgid "Tool sources"
@@ -3730,3 +3723,9 @@ msgstr "आपका नाम"
 #: src/pages/Welcome.tsx:21
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "हमेशा चालू रहने वाले एजेंटों की आपकी टीम<0/>जिन्हें आप असली काम सौंप सकते हैं।"
+
+msgid "Opening chat…"
+msgstr "चैट खुल रही है…"
+
+msgid "Try again"
+msgstr "फिर से कोशिश करें"

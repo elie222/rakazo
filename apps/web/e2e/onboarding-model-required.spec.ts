@@ -54,6 +54,7 @@ for (const unavailable of ["empty", "failed"] as const) {
     await signup(page, `catalog-${unavailable}-${stamp}@rakazo.test`, "password12", "Model setup");
     await expect(page.getByRole("heading", { name: "Connect a model" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Continue", exact: true })).toBeDisabled();
-    await expect(page.getByRole("heading", { name: "Create your first bot" })).toBeHidden();
+    await expect(page.getByRole("heading", { name: "Create your first bot" })).toHaveCount(0);
+    await expect(page.getByRole("combobox", { name: "Message Chief" })).toHaveCount(0);
   });
 }

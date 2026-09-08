@@ -673,7 +673,6 @@ export function createRouter(deps: RouterDeps) {
         : [null, []];
       return {
         me,
-        needsOnboarding: navigation.needsOnboarding,
         bots,
         groups,
         botSections,
@@ -4655,7 +4654,6 @@ async function spaceNavigationDto(
     select: {
       spaceId: true,
       role: true,
-      member: { select: { onboardedAt: true } },
       space: { select: { name: true, isDefault: true, deletingAt: true } },
     },
     orderBy: { createdAt: "asc" },
@@ -4707,7 +4705,6 @@ async function spaceNavigationDto(
   const staleClaimBefore = new Date(Date.now() - SPACE_DELETION_CLAIM_TIMEOUT_MS);
 
   return {
-    needsOnboarding: currentMembership.member.onboardedAt === null,
     current: {
       id: actor.spaceId,
       name: currentMembership.space.name,

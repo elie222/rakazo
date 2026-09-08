@@ -730,5 +730,8 @@
   "When a webhook fires": "当 Webhook 触发时",
   "Docker limits access to your computer for added security. Using {hostLabel} lets bots work with your local files and tools.": "Docker 限制对你电脑的访问，以提高安全性。使用{hostLabel}时，Bot 可以处理你的本地文件并使用本地工具。",
   "Local access lets bots run commands without asking. Avoid it on shared or public servers.": "本地访问权限允许 Bot 无需询问就执行命令。请勿在共享或公开服务器上启用。",
-  "Docker": "Docker"
+  "Docker": "Docker",
+  "Opening chat…": "正在打开聊天…",
+  "Try again": "重试",
+  "To:": "至:"
 }

@@ -68,6 +68,8 @@ export const BotSchema = z.object({
   teamChatAmbientEnabled: z.boolean(),
   teamChatRules: z.string(),
   webhookConfigured: z.boolean(),
+  /** Present when created with an idempotency key (e.g. onboarding:first). */
+  spawnKey: z.string().nullable(),
 });
 export type Bot = z.infer<typeof BotSchema>;
 
@@ -257,8 +259,6 @@ export const SpaceSchema = z.object({
 export type Space = z.infer<typeof SpaceSchema>;
 
 export const SpaceNavigationSchema = z.object({
-  /** Whether this organization membership still needs first-use setup. */
-  needsOnboarding: z.boolean().optional(),
   current: z.object({
     id: Id,
     name: z.string(),
@@ -284,6 +284,8 @@ export const CreateBotInput = z.object({
   notifyOnFinish: z.boolean().default(true),
   color: z.string().optional(),
   computerMode: ComputerModeSchema.default("team"),
+  /** Idempotency key within a space (unique with spaceId). */
+  spawnKey: z.string().trim().min(1).max(120).optional(),
 });
 export type CreateBotInput = z.infer<typeof CreateBotInput>;
 
@@ -1123,7 +1125,6 @@ export const MeSchema = z.object({
 export type Me = z.infer<typeof MeSchema>;
 
 export const AppBootstrapSchema = z.object({
-  needsOnboarding: z.boolean().optional(),
   me: MeSchema,
   bots: z.array(BotSchema),
   groups: z.array(GroupSchema),

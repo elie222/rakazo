@@ -739,7 +739,17 @@ export function ShellPage() {
         setSpaces(navigation.spaces);
         setInitialBotsLoaded(true);
         botsRefreshApplied.current = request;
-        if (navigation.needsOnboarding === true) {
+        if (
+          includeArchived &&
+          list.length === 0 &&
+          archived?.length === 0 &&
+          groupList.length === 0 &&
+          archivedGroupList?.length === 0 &&
+          !navigation.spaces.some((space) => space.hasContent)
+        ) {
+          // Only the very first bot everywhere needs onboarding. An empty
+          // current space with content elsewhere stays in the app so the
+          // space can be switched to or deleted instead of trapping the user.
           navigate("/onboarding", { replace: true });
           return;
         }
@@ -960,7 +970,13 @@ export function ShellPage() {
           markOnce("rk:renderer:thread-response");
         }
         if (!applyBotLists) return;
-        if (bootstrap.needsOnboarding === true) {
+        if (
+          bootstrap.bots.length === 0 &&
+          bootstrap.archivedBots.length === 0 &&
+          groupList.length === 0 &&
+          bootstrap.archivedGroups.length === 0 &&
+          !bootstrap.spaces.some((space) => space.hasContent)
+        ) {
           navigate("/onboarding", { replace: true });
           return;
         }
@@ -2559,7 +2575,7 @@ export function ShellPage() {
                           className="flex min-w-0 flex-1 items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-[12.5px] font-medium text-muted-foreground/80 hover:bg-sidebar-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
                           onClick={() => {
                             if (group.emptySpaceId) {
-                              openSpaceChat(group.emptySpaceId, "/app");
+                              openSpaceChat(group.emptySpaceId, "/onboarding");
                               return;
                             }
                             toggleSidebarSection(group.key);
@@ -3748,7 +3764,7 @@ export function ShellPage() {
                 await refreshBots();
                 return;
               }
-              window.location.assign("/app");
+              window.location.assign("/onboarding");
             }}
           />
         ) : null}

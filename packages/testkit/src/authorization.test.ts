@@ -1148,32 +1148,6 @@ describeWithDatabase("API authorization and resource isolation", () => {
     }
   });
 
-  it("keeps onboarding complete after its only used secondary space is deleted", async () => {
-    const cookie = await signup(app, `space-onboarding-${stamp}@rakazo.test`, "Onboarding");
-    const actor = await rpc<Actor>(app, cookie, "me");
-    expect((await rpc<SpaceNavigation>(app, cookie, "spaces/list")).needsOnboarding).toBe(true);
-
-    const secondary = await rpc<Space>(app, cookie, "spaces/create", { name: "Secondary" });
-    const bot = await rpc<Bot>(app, cookie, "bots/create", botInput("Archive me"), secondary.id);
-    await rpc(app, cookie, "bots/archive", { botId: bot.id }, secondary.id);
-    expect(
-      (await rpc<SpaceNavigation>(app, cookie, "spaces/list", {}, secondary.id)).needsOnboarding,
-    ).toBe(false);
-    expect(
-      (await rpc<{ needsOnboarding?: boolean }>(app, cookie, "bootstrap", {}, secondary.id))
-        .needsOnboarding,
-    ).toBe(false);
-
-    await rpc(app, cookie, "bots/remove", { botId: bot.id }, secondary.id);
-    await rpc(app, cookie, "spaces/remove", { spaceId: secondary.id }, secondary.id);
-    expect(
-      await handles.prisma.botDeletion.count({ where: { deletedByUserId: actor.userId } }),
-    ).toBe(0);
-    expect(
-      (await rpc<SpaceNavigation>(app, cookie, "spaces/list", {}, actor.spaceId)).needsOnboarding,
-    ).toBe(false);
-  });
-
   it("validates custom thinking against the saved connection capability", async () => {
     const cookie = await signup(app, `custom-thinking-${stamp}@rakazo.test`, "Custom Thinking");
     const bot = await rpc<Bot>(app, cookie, "bots/create", botInput("Thinking Bot"));

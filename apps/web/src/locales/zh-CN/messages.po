@@ -1169,10 +1169,6 @@ msgstr "无法加载 MCP 服务器"
 msgid "Could not load model settings"
 msgstr "无法加载模型设置"
 
-#: src/pages/Onboarding.tsx:664
-msgid "Could not load setup status. Reload to try again."
-msgstr ""
-
 #: src/pages/KnowledgeSection.tsx:302
 msgid "Could not load skill"
 msgstr "无法加载技能"
@@ -3033,6 +3029,8 @@ msgstr "回答是或否，或一句话说明。"
 #: src/pages/ModelSettingsOverlay.tsx:988
 #: src/pages/PluginsOverlay.tsx:878
 #: src/pages/Shell.tsx:2540
+#: src/pages/shell/bot-picker.tsx:55
+#: src/pages/shell/bot-picker.tsx:56
 #: src/pages/shell/command-palette.tsx:102
 msgid "Search"
 msgstr "搜索"
@@ -3059,11 +3057,6 @@ msgstr ""
 #: src/pages/ModelSettingsOverlay.tsx:983
 msgid "Search models"
 msgstr "搜索模型"
-
-#: src/pages/shell/bot-picker.tsx:55
-#: src/pages/shell/bot-picker.tsx:56
-msgid "Search or create Bots"
-msgstr ""
 
 #: src/pages/ModelSettingsOverlay.tsx:359
 #: src/pages/ModelSettingsOverlay.tsx:365
@@ -3486,7 +3479,7 @@ msgstr "标题"
 
 #: src/pages/shell/bot-picker.tsx:50
 msgid "To:"
-msgstr ""
+msgstr "至:"
 
 #: src/pages/PluginsOverlay.tsx:1114
 msgid "Tool sources"
@@ -3730,3 +3723,9 @@ msgstr "你的名字"
 #: src/pages/Welcome.tsx:21
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "你的一支随时在线的 Agent 团队<0/>可以交给它们真正的工作。"
+
+msgid "Opening chat…"
+msgstr "正在打开聊天…"
+
+msgid "Try again"
+msgstr "重试"

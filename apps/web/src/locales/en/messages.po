@@ -1169,10 +1169,6 @@ msgstr "Could not load MCP servers"
 msgid "Could not load model settings"
 msgstr "Could not load model settings"
 
-#: src/pages/Onboarding.tsx:664
-msgid "Could not load setup status. Reload to try again."
-msgstr "Could not load setup status. Reload to try again."
-
 #: src/pages/KnowledgeSection.tsx:302
 msgid "Could not load skill"
 msgstr "Could not load skill"
@@ -3033,6 +3029,8 @@ msgstr "Say yes or no, or answer in a sentence."
 #: src/pages/ModelSettingsOverlay.tsx:988
 #: src/pages/PluginsOverlay.tsx:878
 #: src/pages/Shell.tsx:2540
+#: src/pages/shell/bot-picker.tsx:55
+#: src/pages/shell/bot-picker.tsx:56
 #: src/pages/shell/command-palette.tsx:102
 msgid "Search"
 msgstr "Search"
@@ -3059,11 +3057,6 @@ msgstr "Search integrations.sh"
 #: src/pages/ModelSettingsOverlay.tsx:983
 msgid "Search models"
 msgstr "Search models"
-
-#: src/pages/shell/bot-picker.tsx:55
-#: src/pages/shell/bot-picker.tsx:56
-msgid "Search or create Bots"
-msgstr "Search or create Bots"
 
 #: src/pages/ModelSettingsOverlay.tsx:359
 #: src/pages/ModelSettingsOverlay.tsx:365
@@ -3730,3 +3723,9 @@ msgstr "Your name"
 #: src/pages/Welcome.tsx:21
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "Your team of always-on agents<0/>that you can give real work to."
+
+msgid "Opening chat…"
+msgstr "Opening chat…"
+
+msgid "Try again"
+msgstr "Try again"

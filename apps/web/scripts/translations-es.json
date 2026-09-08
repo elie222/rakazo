@@ -724,5 +724,8 @@
   "Authorization expired — reconnect required": "Autorización expirada: se requiere reconectar",
   "Docker limits access to your computer for added security. Using {hostLabel} lets bots work with your local files and tools.": "Docker limita el acceso a tu computadora para mayor seguridad. Usar {hostLabel} permite que los bots trabajen con tus archivos y herramientas locales.",
   "Local access lets bots run commands without asking. Avoid it on shared or public servers.": "El acceso local permite que los bots ejecuten comandos sin preguntar. Evítalo en servidores compartidos o públicos.",
-  "Docker": "Docker"
+  "Docker": "Docker",
+  "Opening chat…": "Abriendo el chat…",
+  "Try again": "Intentarlo de nuevo",
+  "To:": "Para:"
 }
