@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
+import { stream as streamCodex } from "@earendil-works/pi-ai/api/openai-codex-responses";
 import {
   catalogModelLabel,
   listPiCatalog,
@@ -80,6 +81,45 @@ describe("Pi model catalog", () => {
       input: ["text", "image"],
     });
     expect(models.getProvider("openai-codex")?.auth).toBe(originalAuth);
+  });
+
+  it("sends Astra ultra unchanged in the OpenAI Codex request body", async () => {
+    let payload: { reasoning?: { effort?: string } } | undefined;
+    const fetch = vi.fn<typeof globalThis.fetch>(async (_input, init) => {
+      payload = JSON.parse(String(init?.body));
+      return new Response(JSON.stringify({ error: { message: "fixture stop" } }), {
+        status: 400,
+        headers: { "content-type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetch);
+    const token = `e30.${Buffer.from(
+      JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: "fixture" } }),
+    ).toString("base64url")}.fixture`;
+    const models = registerAstraModel(builtinModels());
+    const model = models.getModel("openai-codex", "gpt-6-astra");
+    expect(model).toBeDefined();
+    const stream = streamCodex(
+      model!,
+      {
+        systemPrompt: "Test fixture.",
+        messages: [{ role: "user", content: "hello", timestamp: 1 }],
+        tools: [],
+      },
+      {
+        apiKey: token,
+        reasoningEffort: "ultra",
+        transport: "sse",
+        fetch,
+        onPayload: (body: typeof payload) => {
+          payload = body;
+        },
+      } as never,
+    );
+    for await (const _event of stream) {
+      // Exhaust the stream so the adapter constructs and sends its request.
+    }
+    expect(payload).toMatchObject({ reasoning: { effort: "ultra" } });
   });
 
   it("adds a configured OpenRouter model that is newer than the static catalog", async () => {

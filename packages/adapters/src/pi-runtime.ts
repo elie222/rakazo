@@ -58,13 +58,15 @@ const MAX_PARALLEL_SUBAGENTS = 4;
 // reasoning (e.g. google/gemini-3.7-flash). Keep a real level when model.reasoning
 // is set; plain models stay off.
 const REASONING_MODEL_THINKING_LEVEL: ModelThinkingLevel = "medium";
-function thinkingLevelFor(
+export function thinkingLevelFor(
   model: Model<Api>,
   preferred?: AgentRunRequest["model"]["thinkingLevel"],
 ): ModelThinkingLevel | "ultra" {
   if (!model.reasoning) return "off";
   if (preferred === "ultra") {
-    return model.id === "gpt-6-astra" ? "ultra" : clampThinkingLevel(model, "max");
+    return model.provider === "openai-codex" && model.id === "gpt-6-astra"
+      ? "ultra"
+      : clampThinkingLevel(model, "max");
   }
   if (preferred) return clampThinkingLevel(model, preferred);
   return clampThinkingLevel(model, REASONING_MODEL_THINKING_LEVEL);

@@ -71,7 +71,15 @@ export function registerAstraModel(models: MutableModels): MutableModels {
   };
   const api: ProviderStreams = {
     stream: (model, context, options) => provider.stream(model, context, options),
-    streamSimple: (model, context, options) => provider.streamSimple(model, context, options),
+    streamSimple: (model, context, options) =>
+      model.provider === "openai-codex" &&
+      model.id === ASTRA_MODEL_ID &&
+      (options as { reasoning?: string } | undefined)?.reasoning === "ultra"
+        ? provider.stream(model, context, {
+            ...options,
+            reasoningEffort: "ultra",
+          } as never)
+        : provider.streamSimple(model, context, options),
   };
   models.setProvider(
     createProvider({
@@ -111,7 +119,7 @@ function buildPiCatalog(): PiCatalogEntry[] {
     const modelIds = providerModels.map((model) => model.id);
     for (const model of providerModels) {
       const thinkingLevels =
-        model.id === ASTRA_MODEL_ID
+        provider.id === "openai-codex" && model.id === ASTRA_MODEL_ID
           ? ASTRA_THINKING_LEVELS
           : (getSupportedThinkingLevels(model) as ThinkingLevel[]);
       entries.push({
