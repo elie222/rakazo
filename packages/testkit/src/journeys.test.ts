@@ -18,6 +18,7 @@ import {
   RunHistoryWriteError,
 } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import type { createApp } from "../../../apps/api/src/app.ts";
 import { sessionCookieHeader } from "./index.js";
 
 type App = { request: (input: string, init?: RequestInit) => Promise<Response> };
@@ -31,19 +32,11 @@ const describeJourneys = hasDb ? describe : describe.skip;
 describeJourneys("required product journeys", () => {
   let app: App;
   let stop: () => Promise<void>;
-  let prisma: Awaited<
-    ReturnType<typeof import("../../../apps/api/src/app.ts").createApp>
-  >["prisma"];
-  let connector: Awaited<
-    ReturnType<typeof import("../../../apps/api/src/app.ts").createApp>
-  >["connector"];
-  let executor: Awaited<
-    ReturnType<typeof import("../../../apps/api/src/app.ts").createApp>
-  >["executor"];
-  let jobs: Awaited<ReturnType<typeof import("../../../apps/api/src/app.ts").createApp>>["jobs"];
-  let sandbox: Awaited<
-    ReturnType<typeof import("../../../apps/api/src/app.ts").createApp>
-  >["sandbox"];
+  let prisma: Awaited<ReturnType<typeof createApp>>["prisma"];
+  let connector: Awaited<ReturnType<typeof createApp>>["connector"];
+  let executor: Awaited<ReturnType<typeof createApp>>["executor"];
+  let jobs: Awaited<ReturnType<typeof createApp>>["jobs"];
+  let sandbox: Awaited<ReturnType<typeof createApp>>["sandbox"];
   const stamp = Date.now();
   const dataDir = mkdtempSync(path.join(tmpdir(), "rakazo-journey-"));
 

@@ -41,6 +41,7 @@ import {
   teachRecordingTtlMs,
 } from "@rakazo/core";
 import {
+  type createRepos,
   expireComputerExecutionLeases,
   IsolationError,
   type PrismaClient,
@@ -135,7 +136,7 @@ async function cancelActiveRuns(
 async function ensureGraphicalComputer(
   deps: TaughtSkillsDeps,
   actor: Actor,
-  bot: Awaited<ReturnType<ReturnType<typeof import("@rakazo/db").createRepos>["getBot"]>>,
+  bot: Awaited<ReturnType<ReturnType<typeof createRepos>["getBot"]>>,
 ) {
   if (bot.computer?.kind === "desktop") {
     throw new ORPCError("BAD_REQUEST", {
@@ -191,7 +192,7 @@ async function ensureGraphicalComputer(
 async function grantTakeover(
   deps: TaughtSkillsDeps,
   actor: Actor,
-  bot: Awaited<ReturnType<ReturnType<typeof import("@rakazo/db").createRepos>["getBot"]>>,
+  bot: Awaited<ReturnType<ReturnType<typeof createRepos>["getBot"]>>,
   until: Date,
 ): Promise<{ bot: typeof bot; leaseId: string }> {
   if (!bot.computer) throw new IsolationError();

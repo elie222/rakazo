@@ -1,5 +1,6 @@
 import { createCipheriv, createHash } from "node:crypto";
 import type { AdapterContext, MessagingInboundEvent } from "@rakazo/adapter-kit";
+import type * as LarkAdapterModule from "chat-adapter-lark";
 import type { HttpInstance } from "chat-adapter-lark";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ChatSdkMessagingSurface } from "./chat-sdk-surface.js";
@@ -9,7 +10,7 @@ const { request } = vi.hoisted(() => ({ request: vi.fn() }));
 
 // Exercise the pinned adapter and SDK; replace only their outbound HTTP boundary.
 vi.mock("chat-adapter-lark", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("chat-adapter-lark")>();
+  const actual = await importOriginal<typeof LarkAdapterModule>();
   return {
     ...actual,
     createLarkAdapter: (config: Parameters<typeof actual.createLarkAdapter>[0]) =>

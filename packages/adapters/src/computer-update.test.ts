@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type * as ComputerLifecycleModule from "./computer-lifecycle.js";
 import { replaceComputer } from "./computer-lifecycle.js";
 import {
   performComputerUpdate,
@@ -7,7 +8,7 @@ import {
 } from "./computer-update.js";
 
 vi.mock("./computer-lifecycle.js", async (original) => ({
-  ...(await original<typeof import("./computer-lifecycle.js")>()),
+  ...(await original<typeof ComputerLifecycleModule>()),
   replaceComputer: vi.fn(),
 }));
 const replacement = vi.mocked(replaceComputer);

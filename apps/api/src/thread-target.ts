@@ -1,11 +1,12 @@
 import { ORPCError } from "@orpc/server";
-import { type JobPublisher, runContinueJob } from "@rakazo/adapter-kit";
+import { type JobPublisher, runContinueJob, type SandboxProvider } from "@rakazo/adapter-kit";
 import { cancelComputerRunWork, screenLeaseIdForRun, toComputerRef } from "@rakazo/adapters";
 import {
   type Actor,
   GROUP_MEMBER_MIN,
   type GroupMember,
   type MessageBlock,
+  type MessageReaction,
   type RunStatus,
   type ThreadSnapshot,
 } from "@rakazo/contracts";
@@ -834,14 +835,17 @@ export async function sendThreadMessage(
   return sendResult(committed.message, committed.runs);
 }
 
-/** Reactions are quiet user replies: recorded in history without scheduling a response. */
+/**
+ * Append an emoji reply to the conversation so the next AI turn sees its target.
+ * Clients render it beneath that message; the reaction itself does not start an AI turn.
+ */
 export async function reactToThreadMessage(
   deps: { prisma: PrismaClient },
   actor: Actor,
   target: ThreadTarget,
   input: {
     messageId: string;
-    reaction: import("@rakazo/contracts").MessageReaction;
+    reaction: MessageReaction;
     clientNonce: string;
   },
 ) {
@@ -884,7 +888,7 @@ export async function reactToThreadMessage(
 export async function stopThreadRuns(
   deps: {
     prisma: PrismaClient;
-    sandbox: import("@rakazo/adapter-kit").SandboxProvider;
+    sandbox: SandboxProvider;
   },
   actor: Actor,
   target: ThreadTarget,

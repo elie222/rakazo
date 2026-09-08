@@ -1,9 +1,7 @@
-import { expect, type Route, test } from "@playwright/test";
+import { expect, type Locator, type Page, type Route, test } from "@playwright/test";
 import { captureScreenshot, completeOnboarding, signup } from "./helpers";
 
-async function revealHoverRail(
-  row: import("@playwright/test").Locator,
-): Promise<import("@playwright/test").Locator> {
+async function revealHoverRail(row: Locator): Promise<Locator> {
   const rail = row.getByTestId("message-hover-rail");
   await expect
     .poll(async () => {
@@ -20,10 +18,7 @@ async function revealHoverRail(
 }
 
 /** Park the pointer outside the message and blur focus so the rail returns to opacity-0. */
-async function expectRailAtRest(
-  page: import("@playwright/test").Page,
-  row: import("@playwright/test").Locator,
-) {
+async function expectRailAtRest(page: Page, row: Locator) {
   const rail = row.getByTestId("message-hover-rail");
   const box = await row.boundingBox();
   if (box) {

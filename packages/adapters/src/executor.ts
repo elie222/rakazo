@@ -4522,8 +4522,7 @@ export async function loadCurrentTurnImages(
     },
   });
   const byId = new Map(rows.map((row) => [row.id, row]));
-  const images: NonNullable<import("@rakazo/adapter-kit").AgentRunRequest["currentTurnImages"]> =
-    [];
+  const images: NonNullable<AgentRunRequest["currentTurnImages"]> = [];
 
   for (const block of imageBlocks) {
     const row = byId.get(block.artifactId);

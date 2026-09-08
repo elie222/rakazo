@@ -9,6 +9,7 @@ import type {
 import { messagingDeliverJob } from "@rakazo/adapter-kit";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import type { CloudAgentConnection } from "./cloud-agent-factory.js";
 import { pollCloudAgent } from "./cloud-agent-poll.js";
 import { expireComputerControl } from "./computer-control.js";
 import { scheduleComputerSleep, sleepComputerIfIdle } from "./computer-idle.js";
@@ -33,7 +34,7 @@ export function createBackgroundJobHandlers(deps: {
   memoryProviders: MemoryProviderResolver;
   deploymentModelKey?: string;
   messaging?: MessagingSurface;
-  cloudAgent?: import("./cloud-agent-factory.js").CloudAgentConnection | null;
+  cloudAgent?: CloudAgentConnection | null;
 }): BackgroundJobHandlers {
   const deliverMessaging = async (runId?: string) => {
     if (!deps.messaging) return;

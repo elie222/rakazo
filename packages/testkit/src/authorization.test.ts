@@ -4,10 +4,11 @@ import path from "node:path";
 import { ComposioEmulator } from "@rakazo/adapters";
 import type { appContract, Space, SpaceNavigation } from "@rakazo/contracts";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import type { createApp } from "../../../apps/api/src/app.ts";
 import { sessionCookieHeader } from "./index.js";
 
 type App = { request: (input: string, init?: RequestInit) => Response | Promise<Response> };
-type AppHandles = Awaited<ReturnType<typeof import("../../../apps/api/src/app.ts").createApp>>;
+type AppHandles = Awaited<ReturnType<typeof createApp>>;
 type RpcPath<T, Prefix extends string = ""> = T extends { "~orpc": unknown }
   ? Prefix
   : T extends object
