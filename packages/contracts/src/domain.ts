@@ -68,6 +68,8 @@ export const BotSchema = z.object({
   teamChatAmbientEnabled: z.boolean(),
   teamChatRules: z.string(),
   webhookConfigured: z.boolean(),
+  /** Present when created with an idempotency key (e.g. onboarding:first). */
+  spawnKey: z.string().nullable(),
 });
 export type Bot = z.infer<typeof BotSchema>;
 

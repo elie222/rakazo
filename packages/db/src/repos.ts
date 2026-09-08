@@ -16,6 +16,19 @@ import { activeRunSelection, previewFromBlocks } from "./thread-listing.js";
 /** Newest messages loaded for sidebar preview; enough to skip a short peer-run tail. */
 const SIDEBAR_PREVIEW_MESSAGE_WINDOW = 16;
 
+
+function isUniqueViolation(error: unknown): boolean {
+  return Boolean(error && typeof error === "object" && "code" in error && error.code === "P2002");
+}
+
+function isSpawnKeyConflict(error: unknown): boolean {
+  if (!isUniqueViolation(error)) return false;
+  const target = (error as { meta?: { target?: string[] | string } }).meta?.target;
+  if (target == null) return true;
+  const fields = Array.isArray(target) ? target : [target];
+  return fields.some((field) => field === "spawnKey" || field.includes("spawnKey"));
+}
+
 function mapBot(
   bot: {
     id: string;
@@ -43,6 +56,7 @@ function mapBot(
     teamChatAmbientEnabled?: boolean;
     teamChatRules?: string;
     webhookSecretId?: string | null;
+    spawnKey?: string | null;
   },
   preview = "",
   status = "idle",
@@ -79,6 +93,7 @@ function mapBot(
     teamChatAmbientEnabled: bot.teamChatAmbientEnabled ?? false,
     teamChatRules: bot.teamChatRules ?? "",
     webhookConfigured: Boolean(bot.webhookSecretId),
+    spawnKey: bot.spawnKey ?? null,
   };
 }
 
@@ -444,6 +459,19 @@ export function createRepos(prisma: PrismaClient) {
           where: { id: created.id },
           include: { thread: true, computer: true },
         });
+      }).catch(async (error: unknown) => {
+        if (!input.spawnKey || !isSpawnKeyConflict(error)) throw error;
+        const existing = await prisma.bot.findUnique({
+          where: {
+            spaceId_spawnKey: {
+              spaceId: actor.spaceId,
+              spawnKey: input.spawnKey,
+            },
+          },
+          include: { thread: true, computer: true },
+        });
+        if (!existing || existing.userId !== actor.userId || existing.archivedAt) throw error;
+        return existing;
       });
       return mapBot(bot);
     },
