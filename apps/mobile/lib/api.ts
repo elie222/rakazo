@@ -105,25 +105,24 @@ export function selectedSpaceId(): string | null {
 }
 
 /** Keep requests usable after the server deleted the selected Space but native
- * storage could not replace it. Prefer writing the replacement selection; if
- * that fails, drop the deleted id before recording recovery so a restart cannot
- * reload an inaccessible Space when only one durable mutation succeeds. */
+ * storage could not replace it. Neutralize any same-endpoint rollback before
+ * writing the replacement selection so a cleanup failure cannot leave the new
+ * id beside a stale record that recoverSpaceRollback would prefer on restart. */
 export async function adoptDeletedSpaceFallback(id: string): Promise<boolean> {
   cachedSpaceId = id;
-  // selectSpace may have failed only while clearing a prior rollback record;
-  // still try to replace the deleted selection directly.
-  if (await writeStoredValue(SPACE_KEY, id)) {
-    // A leftover same-endpoint rollback must not remain beside the new
-    // selection: recoverSpaceRollback would replace SPACE_KEY on restart.
-    if ((await clearStoredValue(SPACE_ROLLBACK_KEY)) || (await saveSpaceRollback(id))) {
-      await resumeLiveNotifications(currentApiBase(), await loadSessionToken(), id).catch(
-        () => undefined,
-      );
-      return true;
-    }
-    // Could not neutralize the stale rollback; undo the selection write so
-    // restart recovery cannot override a newer fallback with the old record.
-    await clearStoredValue(SPACE_KEY);
+  // Neutralize any same-endpoint rollback before writing SPACE_KEY. Writing the
+  // selection first can leave it beside a stale record that recoverSpaceRollback
+  // would prefer on restart if later cleanup fails.
+  const rollbackNeutralized =
+    (await clearStoredValue(SPACE_ROLLBACK_KEY)) || (await saveSpaceRollback(id));
+  if (rollbackNeutralized && (await writeStoredValue(SPACE_KEY, id))) {
+    // SPACE_KEY is authoritative; drop a rollback we may have written only to
+    // overwrite a stale record (best-effort).
+    await clearStoredValue(SPACE_ROLLBACK_KEY);
+    await resumeLiveNotifications(currentApiBase(), await loadSessionToken(), id).catch(
+      () => undefined,
+    );
+    return true;
   }
   // Clear before saving recovery: an empty selection lets startup resolve the
   // server default even when the recovery record cannot be written.
