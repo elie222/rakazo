@@ -55,6 +55,7 @@ export function OnboardingPage() {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [statusFailed, setStatusFailed] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
 
   const {
@@ -99,7 +100,10 @@ export function OnboardingPage() {
         }
         setStep(me.needsModel ? "model" : integrations?.needsSetup ? "integrations" : "bot");
       })
-      .catch(() => setStep("bot"));
+      .catch(() => {
+        setStatusFailed(true);
+        setStep("bot");
+      });
     return () => {
       modelProbe.invalidate();
     };
@@ -233,7 +237,9 @@ export function OnboardingPage() {
   }
 
   async function createBot() {
-    if (creatingBot.current) return;
+    // Never create without the authoritative onboarding status: a failed
+    // spaces.list could otherwise duplicate a bot for an onboarded user.
+    if (creatingBot.current || statusFailed) return;
     creatingBot.current = true;
     setCreating(true);
     setError(null);
@@ -653,10 +659,15 @@ export function OnboardingPage() {
                 className="mt-2"
               />
             </label>
+            {statusFailed ? (
+              <p className="mt-3 text-sm text-destructive">
+                <Trans>Could not load setup status. Reload to try again.</Trans>
+              </p>
+            ) : null}
             {error ? <p className="mt-3 text-sm text-destructive">{error}</p> : null}
             <Button
               className="mt-6"
-              disabled={creating || !name.trim()}
+              disabled={creating || !name.trim() || statusFailed}
               onClick={() => void createBot()}
             >
               <Trans>Continue</Trans>

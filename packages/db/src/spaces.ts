@@ -253,7 +253,8 @@ export async function lockSpaceForContentCreation(
       space: { select: { deletingAt: true } },
     },
   });
-  if (!membership || membership.space.deletingAt) throw new IsolationError();
+  if (!membership) throw new IsolationError();
+  if (membership.space.deletingAt) throw new SpaceDeletionInProgressError();
   return { organizationId: membership.organizationId };
 }
 

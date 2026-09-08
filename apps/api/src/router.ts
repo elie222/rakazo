@@ -447,6 +447,24 @@ export interface RouterDeps {
   };
 }
 
+/** Bound for one provider sandbox destroy during Space deletion. Providers may
+ * ignore the request abort signal, so without a deadline a hung destroy would
+ * keep the deletion claim renewed forever and block stale-claim recovery. */
+const SPACE_TEARDOWN_TIMEOUT_MS = 120_000;
+
+function spaceTeardownTimeoutMs(): number {
+  const override = Number(process.env.SPACE_TEARDOWN_TIMEOUT_MS ?? "");
+  return Number.isFinite(override) && override > 0 ? override : SPACE_TEARDOWN_TIMEOUT_MS;
+}
+
+/** Surface a Space deletion race as a retryable conflict instead of a generic failure. */
+function mapSpaceLifecycleError(error: unknown): unknown {
+  if (error instanceof SpaceDeletionInProgressError) {
+    return new ORPCError("CONFLICT", { message: error.message });
+  }
+  return error;
+}
+
 export function createRouter(deps: RouterDeps) {
   const os = implement(appContract).$context<{ actor: Actor | null; signal?: AbortSignal }>();
   const repos = createRepos(deps.prisma);
@@ -562,10 +580,27 @@ export function createRouter(deps: RouterDeps) {
             // remote service. From this point, only successful deletion may
             // unblock content creation; a stale recovery must finish it.
             claimReleasable = false;
-            await deps.sandbox.destroy(toComputerRef(computer), {
-              ...adapterContext,
-              botId: computer.homeKey,
-            });
+            let teardownTimer: ReturnType<typeof setTimeout> | undefined;
+            try {
+              await Promise.race([
+                deps.sandbox.destroy(toComputerRef(computer), {
+                  ...adapterContext,
+                  botId: computer.homeKey,
+                }),
+                new Promise<never>((_, reject) => {
+                  teardownTimer = setTimeout(() => {
+                    // Stop renewal so the claim goes stale and a later
+                    // worker can recover; never release after teardown
+                    // started, since the hung destroy may still complete.
+                    claimHealthy = false;
+                    claimReleasable = false;
+                    reject(new Error("Space sandbox teardown timed out"));
+                  }, spaceTeardownTimeoutMs());
+                }),
+              ]);
+            } finally {
+              if (teardownTimer !== undefined) clearTimeout(teardownTimer);
+            }
             // Never clear a provider handle after this worker loses its claim.
             await assertClaim();
             await deps.prisma.computer.updateMany({
@@ -869,23 +904,31 @@ export function createRouter(deps: RouterDeps) {
         if (!found) throw new IsolationError();
         return found;
       }),
-      create: authed.bots.create.handler(async ({ context, input }) =>
-        repos.createBot(context.actor, input),
-      ),
+      create: authed.bots.create.handler(async ({ context, input }) => {
+        try {
+          return await repos.createBot(context.actor, input);
+        } catch (error) {
+          throw mapSpaceLifecycleError(error);
+        }
+      }),
       duplicate: authed.bots.duplicate.handler(async ({ context, input }) => {
         const source = await repos.getBot(context.actor, input.botId);
-        const duplicate = await repos.createBot(context.actor, {
-          name: duplicateBotName(source.name),
-          title: source.title,
-          description: source.description,
-          instructions: source.instructions,
-          notifyOnFinish: source.notifyOnFinish,
-          color: source.color,
-          computerMode: source.computer?.scope === "dedicated" ? "dedicated" : "team",
-          modelProvider: source.modelProvider,
-          modelId: source.modelId,
-          thinkingLevel: source.thinkingLevel,
-        });
+        const duplicate = await repos
+          .createBot(context.actor, {
+            name: duplicateBotName(source.name),
+            title: source.title,
+            description: source.description,
+            instructions: source.instructions,
+            notifyOnFinish: source.notifyOnFinish,
+            color: source.color,
+            computerMode: source.computer?.scope === "dedicated" ? "dedicated" : "team",
+            modelProvider: source.modelProvider,
+            modelId: source.modelId,
+            thinkingLevel: source.thinkingLevel,
+          })
+          .catch((error: unknown) => {
+            throw mapSpaceLifecycleError(error);
+          });
         const assignments = await deps.prisma.botMcpServer.findMany({
           where: {
             botId: source.id,
@@ -1163,9 +1206,13 @@ export function createRouter(deps: RouterDeps) {
       }),
     },
     groups: {
-      create: authed.groups.create.handler(async ({ context, input }) =>
-        groupRepos.createGroup(context.actor, input),
-      ),
+      create: authed.groups.create.handler(async ({ context, input }) => {
+        try {
+          return await groupRepos.createGroup(context.actor, input);
+        } catch (error) {
+          throw mapSpaceLifecycleError(error);
+        }
+      }),
       list: authed.groups.list.handler(async ({ context }) => groupRepos.listGroups(context.actor)),
       listArchived: authed.groups.listArchived.handler(async ({ context }) =>
         groupRepos.listGroups(context.actor, { archived: true }),
@@ -1186,10 +1233,14 @@ export function createRouter(deps: RouterDeps) {
       }),
       duplicate: authed.groups.duplicate.handler(async ({ context, input }) => {
         const source = await groupRepos.getGroup(context.actor, input.groupId);
-        return groupRepos.createGroup(context.actor, {
-          name: duplicateBotName(source.name),
-          botIds: source.members.map((member) => member.bot.id),
-        });
+        try {
+          return await groupRepos.createGroup(context.actor, {
+            name: duplicateBotName(source.name),
+            botIds: source.members.map((member) => member.bot.id),
+          });
+        } catch (error) {
+          throw mapSpaceLifecycleError(error);
+        }
       }),
       update: authed.groups.update.handler(async ({ context, input }) => {
         if (input.sectionId) {

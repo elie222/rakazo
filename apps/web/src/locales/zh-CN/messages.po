@@ -1169,6 +1169,10 @@ msgstr "无法加载 MCP 服务器"
 msgid "Could not load model settings"
 msgstr "无法加载模型设置"
 
+#: src/pages/Onboarding.tsx:664
+msgid "Could not load setup status. Reload to try again."
+msgstr ""
+
 #: src/pages/KnowledgeSection.tsx:302
 msgid "Could not load skill"
 msgstr "无法加载技能"

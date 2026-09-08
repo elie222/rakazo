@@ -1169,6 +1169,10 @@ msgstr "MCP सर्वर लोड नहीं हो सके"
 msgid "Could not load model settings"
 msgstr "मॉडल सेटिंग्स लोड नहीं हो सकीं"
 
+#: src/pages/Onboarding.tsx:664
+msgid "Could not load setup status. Reload to try again."
+msgstr ""
+
 #: src/pages/KnowledgeSection.tsx:302
 msgid "Could not load skill"
 msgstr "स्किल लोड नहीं हो सकी"
