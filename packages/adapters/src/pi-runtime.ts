@@ -25,6 +25,7 @@ import type {
   ConnectorTool,
 } from "@rakazo/adapter-kit";
 import { getLogger } from "@rakazo/logging";
+import { randomUUID } from "node:crypto";
 import { isToolPauseResult } from "./approval-effect.js";
 import { builtinAgentTools, DELEGATION_TOOL_NAMES } from "./builtin-tools.js";
 import { DEFAULT_OPENROUTER_MODEL_ID } from "./deployment-model.js";
@@ -227,7 +228,7 @@ export class PiAgentRuntime implements AgentRuntime {
 
         let agent: Agent;
         agent = new Agent({
-          sessionId: `${request.threadId}:${request.botId}`,
+          sessionId: conversationSessionId(request.threadId, request.botId),
           steeringMode: "all",
           streamFn: (m, ctx, options) =>
             models.streamSimple(m, ctx, reliableStreamOptions(m, options)),
@@ -374,7 +375,7 @@ export class PiAgentRuntime implements AgentRuntime {
         const budgetExceeded = host.toolCallBudget.exceeded;
         const error = agent.state.errorMessage;
         if (error && !budgetExceeded) {
-          throw new Error(sanitizeError(error));
+          throw new Error(sanitizeProviderError(model.provider, error));
         }
         if (budgetExceeded) {
           const budgetMessage = toolCallBudgetExceededMessage(host.toolCallBudget.limit);
@@ -964,6 +965,7 @@ async function executeSubagent(host: ToolHost, executionId: string, args: Record
     depth: 1,
   };
   const nested = new Agent({
+    sessionId: conversationSessionId(host.request.threadId, host.request.botId, agentId),
     streamFn: (m, ctx, options) =>
       selectedModel.models.streamSimple(m, ctx, reliableStreamOptions(m, options)),
     getApiKey: async () => selectedModel.apiKey,
@@ -1061,7 +1063,7 @@ async function executeSubagent(host: ToolHost, executionId: string, args: Record
     const budgetExceeded = host.toolCallBudget.exceeded;
     const error = nested.state.errorMessage;
     if (error && !budgetExceeded) {
-      const message = sanitizeError(error);
+      const message = sanitizeProviderError(subagentModel.provider, error);
       host.queue.push({ type: "subagent", agentId, name, task, status: "failed", result: message });
       return `Subagent failed: ${message}`;
     }
@@ -1346,6 +1348,34 @@ function sanitizeError(message: string) {
   return sanitizeSensitiveText(message);
 }
 
+/** Stable OpenCode affinity id for a bot conversation (and optional nested agent). */
+export function conversationSessionId(threadId: string, botId: string, agentId?: string): string {
+  return agentId ? `${threadId}:${botId}:${agentId}` : `${threadId}:${botId}`;
+}
+
+export function isOpenCodeProvider(provider: string): boolean {
+  return provider === "opencode" || provider === "opencode-go";
+}
+
+const OPENCODE_SESSION_ERROR =
+  "OpenCode rejected this chat session. Send the message again.";
+
+function looksLikeOpenCodeSessionError(message: string): boolean {
+  return (
+    /x-opencode-session/i.test(message) ||
+    /session\s*(id|header|required|missing|invalid|expired|stale)/i.test(message) ||
+    /model is unavailable/i.test(message)
+  );
+}
+
+function sanitizeProviderError(provider: string, message: string): string {
+  const sanitized = sanitizeError(message);
+  if (isOpenCodeProvider(provider) && looksLikeOpenCodeSessionError(sanitized)) {
+    return OPENCODE_SESSION_ERROR;
+  }
+  return sanitized;
+}
+
 interface EventQueue {
   push(event: AgentRuntimeEvent): void;
   fail(error: Error): void;
@@ -1448,11 +1478,29 @@ export function reliableStreamOptions(
   model: Pick<Model<Api>, "api" | "provider">,
   options?: SimpleStreamOptions,
 ): SimpleStreamOptions | undefined {
-  if (model.provider !== "openai-codex" && model.api !== "openai-codex-responses") {
-    return options;
+  let next = options;
+
+  if (model.provider === "openai-codex" || model.api === "openai-codex-responses") {
+    // Pi cannot fall back after a WebSocket has emitted its start event. Long tool
+    // runs then surface abnormal close 1006 as a terminal model error. SSE has
+    // bounded network retries and no long-lived connection between tool turns.
+    next = { ...next, transport: "sse" };
   }
-  // Pi cannot fall back after a WebSocket has emitted its start event. Long tool
-  // runs then surface abnormal close 1006 as a terminal model error. SSE has
-  // bounded network retries and no long-lived connection between tool turns.
-  return { ...options, transport: "sse" };
+
+  // OpenCode Go/Zen require a sticky x-opencode-session header (affinity + some
+  // models 400 without it). Pi 0.85.1 does not attach that header on its own.
+  if (isOpenCodeProvider(model.provider)) {
+    const sessionId = next?.sessionId?.trim() || randomUUID();
+    next = {
+      ...next,
+      sessionId,
+      headers: {
+        "x-opencode-session": sessionId,
+        "x-opencode-client": "rakazo",
+        ...next?.headers,
+      },
+    };
+  }
+
+  return next;
 }
