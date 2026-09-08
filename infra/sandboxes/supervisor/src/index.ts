@@ -19,16 +19,19 @@ import { Hono, type MiddlewareHandler } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
 import {
+  assertVolumeSubpathSupport,
   COMPUTER_GID,
   COMPUTER_IMAGE,
   COMPUTER_UID,
   COMPUTER_USER,
+  computerHomeStorage,
   computerNetworkNameFor,
   computerNetworkNamesForCleanup,
   computerResourceLimits,
   containerCreateOptions,
   containerNameFor,
   controlPortPublicationMatches,
+  homeVolumeMatches,
   hostComputerUser,
   legacyNetworkOwnedSolelyBy,
   publishedLoopbackControlHostPort,
@@ -171,7 +174,10 @@ app.post("/computers", async (c) => {
       // do so as the same user, but a root supervisor must never create or chown
       // user-controlled paths at runtime; Compose data-init handles legacy data.
       if (hostUid !== 0) await mkdir(serviceHomePath, { recursive: true });
-      const homePath = hostHomePath(serviceHomePath, runtimeInfo);
+      const storage = computerHomeStorage(serviceHomePath, dataDir, runtimeInfo);
+      if (storage.homeVolume) {
+        assertVolumeSubpathSupport((await docker.version()).ApiVersion);
+      }
       const computerUser = runtimeInfo ? COMPUTER_USER : hostComputerUser(hostUid, hostGid);
       const existing = await findBotContainer(body.botId, body.spaceId);
       if (existing) {
@@ -185,7 +191,8 @@ app.post("/computers", async (c) => {
           info.Image === desired.Id &&
           (!networkMode || info.HostConfig.NetworkMode === networkMode) &&
           info.Config.User === computerUser &&
-          controlPublishOk
+          controlPublishOk &&
+          (!storage.homeVolume || homeVolumeMatches(info.HostConfig.Mounts, storage.homeVolume))
         ) {
           if (!info.State.Running) await existing.start();
           return c.json({
@@ -222,7 +229,7 @@ app.post("/computers", async (c) => {
             image: COMPUTER_IMAGE,
             botId: body.botId,
             spaceId: body.spaceId,
-            homePath,
+            ...storage,
             user: computerUser,
             networkMode,
             controlToken: randomUUID(),
@@ -943,12 +950,6 @@ function assertBotHomePath(homePath: string, botId: string) {
   if (homePath !== expected) {
     throw new Error("computer home must be the bot's home directory");
   }
-}
-
-function hostHomePath(serviceHomePath: string, info: Docker.ContainerInspectInfo | undefined) {
-  const dataMount = info?.Mounts.find((mount) => mount.Destination === dataDir);
-  if (!dataMount?.Source) return serviceHomePath;
-  return path.join(dataMount.Source, path.relative(dataDir, serviceHomePath));
 }
 
 function computerControlEndpoint(info: Docker.ContainerInspectInfo) {

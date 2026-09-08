@@ -10,14 +10,18 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import type Docker from "dockerode";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  assertVolumeSubpathSupport,
   COMPUTER_IMAGE,
+  computerHomeStorage,
   computerNetworkNameFor,
   computerNetworkNamesForCleanup,
   containerCreateOptions,
   containerNameFor,
   controlPortPublicationMatches,
+  homeVolumeMatches,
   hostComputerUser,
   legacyNetworkOwnedSolelyBy,
   parseMemoryBytes,
@@ -718,5 +722,74 @@ describe("computer resource limits", () => {
 
   it("parses byte counts without a unit suffix", () => {
     expect(parseMemoryBytes("X", "1073741824")).toBe(1024 ** 3);
+  });
+});
+
+describe("computer home storage", () => {
+  const runtime = (mount: object) => ({ Mounts: [mount] }) as Docker.ContainerInspectInfo;
+  it("keeps named volumes native and exposes only the bot subdirectory", () => {
+    const storage = computerHomeStorage(
+      "/data/homes/bot",
+      "/data",
+      runtime({
+        Type: "volume",
+        Name: "example_appdata",
+        Source: "/var/lib/docker/volumes/example_appdata/_data",
+        Destination: "/data",
+      }),
+    );
+    const options = containerCreateOptions({
+      name: "bot",
+      image: "computer",
+      botId: "bot",
+      spaceId: "space",
+      ...storage,
+    });
+    expect(options.HostConfig.Binds).toBeUndefined();
+    expect(options.HostConfig.Mounts).toEqual([
+      {
+        Type: "volume",
+        Source: "example_appdata",
+        Target: "/home/rakazo",
+        VolumeOptions: { NoCopy: true, Subpath: "homes/bot" },
+      },
+    ]);
+    expect(homeVolumeMatches(options.HostConfig.Mounts, storage.homeVolume!)).toBe(true);
+    expect(homeVolumeMatches(undefined, storage.homeVolume!)).toBe(false);
+    expect(
+      homeVolumeMatches(options.HostConfig.Mounts, {
+        name: "example_appdata",
+        subpath: "homes/other",
+      }),
+    ).toBe(false);
+  });
+  it("preserves native host paths and translates supervisor bind mounts", () => {
+    expect(computerHomeStorage("/data/homes/bot", "/data", undefined)).toEqual({
+      homePath: "/data/homes/bot",
+    });
+    expect(
+      computerHomeStorage(
+        "/data/homes/bot",
+        "/data",
+        runtime({ Type: "bind", Source: "/srv/data", Destination: "/data" }),
+      ),
+    ).toEqual({ homePath: "/srv/data/homes/bot" });
+  });
+  it("rejects paths outside the volume and missing volume names", () => {
+    for (const home of ["/data", "/other", "/data/../other"])
+      expect(() => computerHomeStorage(home, "/data", undefined)).toThrow();
+    expect(() =>
+      computerHomeStorage(
+        "/data/homes/bot",
+        "/data",
+        runtime({ Type: "volume", Destination: "/data" }),
+      ),
+    ).toThrow(/no name/);
+  });
+  it("fails closed on daemons that could ignore volume subpaths", () => {
+    for (const version of ["1.44", "", "invalid", "0.99"])
+      expect(() => assertVolumeSubpathSupport(version)).toThrow(/Docker Engine 26/);
+    for (const version of ["1.45", "1.46", "2.0"])
+      expect(() => assertVolumeSubpathSupport(version)).not.toThrow();
   });
 });
