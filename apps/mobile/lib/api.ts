@@ -102,6 +102,9 @@ export async function selectSpace(id: string) {
   const previousSpaceId = cachedSpaceId;
   cachedSpaceId = id;
   bumpSpaceSelectionGeneration();
+  // Generation ownership distinguishes A→B→A from "we still own this claim":
+  // an ID-only check would treat a later same-id selection as ours.
+  const claimGeneration = spaceSelectionGeneration;
   try {
     await SecureStore.setItemAsync(SPACE_KEY, id);
     // Our write may have landed stale behind a newer overlapping selection's
@@ -118,7 +121,7 @@ export async function selectSpace(id: string) {
     // have persisted the rolled-back id after reading it, which would leave
     // restart opening a Space the live session is not using. A newer
     // overlapping selection owns both by now, so only heal a claim we hold.
-    if (cachedSpaceId === id) {
+    if (cachedSpaceId === id && spaceSelectionGeneration === claimGeneration) {
       cachedSpaceId = previousSpaceId;
       bumpSpaceSelectionGeneration();
       if (previousSpaceId) await writeStoredValue(SPACE_KEY, previousSpaceId);
@@ -599,7 +602,16 @@ export async function rpc<T>(
         await clearStoredValue(SPACE_KEY);
         await clearStoredValue(SPACE_ROLLBACK_KEY);
         const reselected = selectedSpaceId();
-        if (reselected) await writeStoredValue(SPACE_KEY, reselected);
+        if (!reselected) return;
+        // Own the reconcile write by generation: a newer selection that
+        // persists between snapshot and write must not be overwritten by
+        // this stale id, and a write that lands stale heals once to live.
+        const writeGeneration = spaceSelectionGeneration;
+        await writeStoredValue(SPACE_KEY, reselected);
+        if (spaceSelectionGeneration !== writeGeneration) {
+          const live = selectedSpaceId();
+          if (live) await writeStoredValue(SPACE_KEY, live);
+        }
       };
       if (
         unauthorized &&
