@@ -1,101 +1,84 @@
-import { createCipheriv, createHash, createHmac } from "node:crypto";
-import { describe, expect, it } from "vitest";
-import { resolveNovncTarget, safeProxyHeaders } from "./screen-proxy.js";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { resolveNovncTarget, safeProxyHeaders, watchScreenAuthorization } from "./screen-proxy.js";
 
-function signedPath(
-  port: number,
-  expiresAt: number,
-  secret: string,
-  rest = "/embed.html",
-  hostname = "127.0.0.1",
-  policy: "view" | "control" = "view",
-) {
-  const signature = createHmac("sha256", secret)
-    .update(`${hostname}:${port}:${policy}:${expiresAt}`)
-    .digest("base64url");
-  const target = Buffer.from(hostname).toString("base64url");
-  return `/novnc/${target}/${port}/${policy}/${expiresAt}.${signature}${rest}`;
-}
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.useRealTimers();
+});
 
-function remotePath(
-  expiresAt: number,
-  secret: string,
-  url: string,
-  policy: "view" | "control" = "view",
-) {
-  const iv = Buffer.alloc(12, 1);
-  const cipher = createCipheriv("aes-256-gcm", createHash("sha256").update(secret).digest(), iv);
-  cipher.setAAD(Buffer.from(`${policy}:${expiresAt}`));
-  const ciphertext = Buffer.concat([cipher.update(url, "utf8"), cipher.final()]);
-  const token = Buffer.concat([iv, cipher.getAuthTag(), ciphertext]).toString("base64url");
-  return `/novnc/remote/${policy}/${expiresAt}.${token}/vnc.html`;
-}
-
-describe("noVNC proxy authorization", () => {
-  it("accepts signed, unexpired loopback targets", () => {
-    expect(resolveNovncTarget(signedPath(49152, 2_000, "secret"), "secret", 1_000)).toEqual({
+describe("screen proxy", () => {
+  it("rejects legacy URLs without contacting the API", async () => {
+    const fetch = vi.fn();
+    vi.stubGlobal("fetch", fetch);
+    expect(
+      await resolveNovncTarget("/novnc/old/view/token/embed.html", "secret", "http://api.example"),
+    ).toBeNull();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+  it("checks each request and fails closed on revocation or API failure", async () => {
+    const target = {
+      protocol: "http:",
       hostname: "127.0.0.1",
       port: 49152,
-      path: "/embed.html?view_only=true",
+      path: "/websockify",
       interactive: false,
+    };
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(Response.json(target))
+      .mockResolvedValueOnce(new Response(null, { status: 403 }))
+      .mockRejectedValueOnce(new Error("offline"));
+    vi.stubGlobal("fetch", fetch);
+    const resolve = () =>
+      resolveNovncTarget("/novnc/session/view/token/websockify", "secret", "http://api.example");
+    expect(await resolve()).toEqual(target);
+    expect(await resolve()).toBeNull();
+    expect(await resolve()).toBeNull();
+    expect(fetch).toHaveBeenCalledTimes(3);
+    expect(fetch.mock.calls[0]?.[1]).toMatchObject({
+      redirect: "error",
+      headers: { authorization: "Bearer secret" },
     });
   });
-
-  it("rejects arbitrary ports, bad signatures, and expired capabilities", () => {
-    expect(resolveNovncTarget("/novnc/5432/index.html", "secret", 1_000)).toBeNull();
-    expect(resolveNovncTarget(signedPath(49152, 2_000, "wrong"), "secret", 1_000)).toBeNull();
-    expect(resolveNovncTarget(signedPath(49152, 999, "secret"), "secret", 1_000)).toBeNull();
-  });
-
-  it("binds server-enforced view mode while allowing required noVNC paths", () => {
-    const viewOnly = signedPath(49152, 2_000, "secret", "/embed.html?view_only=true");
-    expect(resolveNovncTarget(viewOnly, "secret", 1_000)?.path).toBe("/embed.html?view_only=true");
-    expect(
-      resolveNovncTarget(viewOnly.replace("view_only=true", "view_only=false"), "secret", 1_000),
-    ).toMatchObject({ path: "/embed.html?view_only=true", interactive: false });
-    expect(
-      resolveNovncTarget(
-        viewOnly.replace(/\/embed\.html\?view_only=true$/, "/websockify"),
-        "secret",
-        1_000,
-      ),
-    ).toMatchObject({ path: "/websockify", interactive: false });
-    expect(resolveNovncTarget(viewOnly.replace("/view/", "/control/"), "secret", 1_000)).toBeNull();
-    expect(resolveNovncTarget(viewOnly.replace("/49152/", "/49153/"), "secret", 1_000)).toBeNull();
-
-    const control = signedPath(
-      49153,
-      2_000,
-      "secret",
-      "/embed.html?view_only=true",
-      "127.0.0.1",
-      "control",
+  it("fails closed for a malformed authority response", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(Response.json({ hostname: "screen.example", port: "443" })),
     );
-    expect(resolveNovncTarget(control, "secret", 1_000)).toMatchObject({
-      path: "/embed.html?view_only=false",
-      interactive: true,
-    });
-  });
-
-  it("keeps encrypted external Box targets bound to their view/control policy", () => {
-    const target = "https://box.example/vnc.html?token=provider-secret&view_only=true";
-    const view = remotePath(2_000, "secret", target);
-    expect(resolveNovncTarget(view, "secret", 1_000)).toMatchObject({
-      protocol: "https:",
-      hostname: "box.example",
-      port: 443,
-      path: "/vnc.html?token=provider-secret&view_only=true",
-      interactive: false,
-    });
     expect(
-      resolveNovncTarget(view.replace("/vnc.html", "/vnc.html?view_only=false"), "secret", 1_000),
-    ).toMatchObject({
-      path: "/vnc.html?token=provider-secret&view_only=true",
-      interactive: false,
-    });
-    expect(resolveNovncTarget(view.replace("/view/", "/control/"), "secret", 1_000)).toBeNull();
+      await resolveNovncTarget(
+        "/novnc/session/view/token/vnc.html",
+        "secret",
+        "http://api.example",
+      ),
+    ).toBeNull();
   });
 
+  it("closes an active stream on revocation and stops checking closed streams", async () => {
+    vi.useFakeTimers();
+    const check = vi.fn().mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+    const revoke = vi.fn();
+    watchScreenAuthorization(check, revoke);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(revoke).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(revoke).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(check).toHaveBeenCalledTimes(2);
+    const stop = watchScreenAuthorization(check, revoke);
+    stop();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(check).toHaveBeenCalledTimes(2);
+  });
+  it("closes a stream when authorization fails unexpectedly", async () => {
+    vi.useFakeTimers();
+    const revoke = vi.fn();
+    watchScreenAuthorization(async () => {
+      throw new Error("unavailable");
+    }, revoke);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(revoke).toHaveBeenCalledTimes(1);
+  });
   it("does not forward application credentials", () => {
     expect(
       safeProxyHeaders({

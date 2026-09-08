@@ -2141,13 +2141,13 @@ export function createRouter(deps: RouterDeps) {
           !(hasActiveComputerControl(bot.computer) && bot.computer.controlBotId === bot.id),
         );
         return {
-          url: addScreenProxyCapability(
-            viewUrl,
-            deps.env.screenProxySecret,
-            deps.env.webOrigin,
-            undefined,
-            { proxyExternal: bot.computer.kind === "box" },
-          ),
+          url: addScreenProxyCapability(viewUrl, deps.env.screenProxySecret, deps.env.webOrigin, {
+            botId: bot.id,
+            computerId: computer.id,
+            botGeneration: bot.screenGeneration,
+            computerGeneration: computer.screenGeneration,
+            controlLeaseId: computer.controlLeaseId,
+          }),
         };
       }),
       heartbeat: authed.computer.heartbeat.handler(async ({ context, input }) => {
