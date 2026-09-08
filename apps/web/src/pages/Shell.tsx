@@ -4211,6 +4211,21 @@ const Transcript = memo(function Transcript({
               data-message-id={message.id}
               className={peerReceipt ? "relative py-0.5" : "group/message relative hover:z-20"}
             >
+              {!peerReceipt && !message.id.startsWith("progress:") ? (
+                <time
+                  dateTime={message.createdAt}
+                  data-testid="message-hover-time"
+                  className={cn(
+                    "pointer-events-none absolute top-1 z-10 text-xs tabular-nums text-muted-foreground opacity-0 transition-opacity group-hover/message:opacity-100 group-focus-within/message:opacity-100",
+                    message.role === "user" ? "start-0" : "end-0",
+                  )}
+                >
+                  {new Date(message.createdAt).toLocaleTimeString(i18n.locale || "en", {
+                    hour: "numeric",
+                    minute: "2-digit",
+                  })}
+                </time>
+              ) : null}
               <div
                 className={
                   peerReceipt
@@ -5122,16 +5137,6 @@ function MessageHoverActions({
               <Copy size={14} strokeWidth={1.7} />
               <Trans>Copy</Trans>
             </DropdownMenuItem>
-            <time
-              dateTime={message.createdAt}
-              data-testid="message-hover-time"
-              className="block px-1.5 py-1 text-xs tabular-nums text-muted-foreground"
-            >
-              {new Date(message.createdAt).toLocaleTimeString(i18n.locale || "en", {
-                hour: "numeric",
-                minute: "2-digit",
-              })}
-            </time>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>

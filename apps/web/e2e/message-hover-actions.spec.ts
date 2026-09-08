@@ -36,6 +36,7 @@ async function expectRailAtRest(
   });
   await expect(rail).toHaveCSS("opacity", "0");
   await expect(rail).toHaveCSS("pointer-events", "none");
+  await expect(row.getByTestId("message-hover-time")).toHaveCSS("opacity", "0");
 }
 
 test("message hover shows beside-bubble actions; reply links to parent", async ({
@@ -56,6 +57,14 @@ test("message hover shows beside-bubble actions; reply links to parent", async (
 
   const botRail = await revealHoverRail(botRow);
   const botToolbar = botRow.getByTestId("message-hover-actions");
+  const botTime = botRow.getByTestId("message-hover-time");
+  await expect(botTime).toHaveCSS("opacity", "1");
+  const botTimeBox = await botTime.boundingBox();
+  const botRowBox = await botRow.boundingBox();
+  expect(botTimeBox).not.toBeNull();
+  expect(botRowBox).not.toBeNull();
+  expect(Math.abs(botTimeBox!.x + botTimeBox!.width - botRowBox!.x - botRowBox!.width)).toBeLessThan(2);
+
   await expect(botToolbar.getByRole("button", { name: "Reply" })).toBeVisible();
   await expect(botToolbar.getByRole("button", { name: "More" })).toBeVisible();
   // Measure a unique visible bubble, so an oversized wrapper cannot hide a gap.
@@ -150,13 +159,18 @@ test("message hover shows beside-bubble actions; reply links to parent", async (
     })
     .toBeLessThan(8);
 
-  // Time is only visible after opening More.
-  await expect(page.getByTestId("message-hover-time")).toHaveCount(0);
+  // Time appears at the opposite row edge on hover, outside More.
   await revealHoverRail(parentRow);
+  const rowTime = parentRow.getByTestId("message-hover-time");
+  await expect(rowTime).toHaveCSS("opacity", "1");
+  await expect(rowTime).toHaveText(/\d/);
+  const timeBox = await rowTime.boundingBox();
+  const rowBox = await parentRow.boundingBox();
+  expect(timeBox).not.toBeNull();
+  expect(rowBox).not.toBeNull();
+  expect(Math.abs(timeBox!.x - rowBox!.x)).toBeLessThan(2);
   await toolbar.getByRole("button", { name: "More" }).click();
-  const moreTime = page.getByTestId("message-hover-time");
-  await expect(moreTime).toBeVisible();
-  await expect(moreTime).toHaveText(/\d/);
+  await expect(page.getByRole("menu").locator("time")).toHaveCount(0);
   // Escape closes More and restores focus to the trigger so the rail stays up.
   await page.keyboard.press("Escape");
   await expect(toolbar.getByRole("button", { name: "More" })).toBeFocused();
@@ -334,7 +348,7 @@ test.describe("touch message actions", () => {
     await expect(rail.getByRole("button", { name: "Reply", exact: true })).toBeHidden();
     await rail.getByRole("button", { name: "More" }).tap();
     await expect(page.getByRole("menuitem", { name: "Copy" })).toBeVisible();
-    await expect(page.getByTestId("message-hover-time")).toBeVisible();
+    await expect(page.getByRole("menu").locator("time")).toHaveCount(0);
     await captureScreenshot(page, testInfo, "message-actions-touch-menu");
     await page.getByRole("menuitem", { name: "Reply", exact: true }).tap();
     await expect(page.getByRole("button", { name: "Cancel reply" })).toBeVisible();
