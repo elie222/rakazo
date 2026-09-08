@@ -16,7 +16,6 @@ import { activeRunSelection, previewFromBlocks } from "./thread-listing.js";
 /** Newest messages loaded for sidebar preview; enough to skip a short peer-run tail. */
 const SIDEBAR_PREVIEW_MESSAGE_WINDOW = 16;
 
-
 function isUniqueViolation(error: unknown): boolean {
   return Boolean(error && typeof error === "object" && "code" in error && error.code === "P2002");
 }
@@ -385,94 +384,96 @@ export function createRepos(prisma: PrismaClient) {
       const envKind = process.env.SANDBOX_PROVIDER ?? "docker";
       const kind =
         envKind === "docker" && settings?.computerHost === "this-mac" ? "desktop" : envKind;
-      const bot = await prisma.$transaction(async (tx) => {
-        const positions = await tx.bot.aggregate({
-          where: { spaceId: actor.spaceId, userId: actor.userId },
-          _max: { position: true },
-        });
-        const teamComputer = await ensureComputerRecord(tx, {
-          mode: "team",
-          spaceId: actor.spaceId,
-          userId: actor.userId,
-          kind,
-        });
-        const created = await tx.bot.create({
-          data: {
-            spaceId: actor.spaceId,
-            userId: actor.userId,
-            name: input.name,
-            title: input.title,
-            description: input.description,
-            instructions: input.instructions,
-            notifyOnFinish: input.notifyOnFinish,
-            color,
-            position: (positions._max.position ?? -1) + 1,
-            parentBotId: input.parentBotId ?? null,
-            computerId: teamComputer.id,
-            spawnKey: input.spawnKey,
-            modelProvider,
-            modelId,
-            thinkingLevel,
-          },
-        });
-        const thread = await tx.thread.create({
-          data: {
-            spaceId: actor.spaceId,
-            botId: created.id,
-            userId: actor.userId,
-          },
-        });
-        if (input.initialMessage) {
-          await createThreadMessageInTransaction(tx, {
-            threadId: thread.id,
-            ...input.initialMessage,
+      const bot = await prisma
+        .$transaction(async (tx) => {
+          const positions = await tx.bot.aggregate({
+            where: { spaceId: actor.spaceId, userId: actor.userId },
+            _max: { position: true },
           });
-        }
-        if (input.computerMode === "dedicated") {
-          const dedicated = await ensureComputerRecord(tx, {
-            mode: "dedicated",
+          const teamComputer = await ensureComputerRecord(tx, {
+            mode: "team",
             spaceId: actor.spaceId,
             userId: actor.userId,
-            botId: created.id,
             kind,
           });
-          await tx.bot.update({ where: { id: created.id }, data: { computerId: dedicated.id } });
-        }
-        await tx.browserProfile.create({
-          data: {
-            spaceId: actor.spaceId,
-            botId: created.id,
-            userId: actor.userId,
-          },
-        });
-        await tx.memoryDocument.create({
-          data: {
-            spaceId: actor.spaceId,
-            userId: actor.userId,
-            botId: created.id,
-            scope: "bot",
-            path: "MEMORY.md",
-            content: `# ${input.name}\n\n`,
-          },
-        });
-        return tx.bot.findFirstOrThrow({
-          where: { id: created.id },
-          include: { thread: true, computer: true },
-        });
-      }).catch(async (error: unknown) => {
-        if (!input.spawnKey || !isSpawnKeyConflict(error)) throw error;
-        const existing = await prisma.bot.findUnique({
-          where: {
-            spaceId_spawnKey: {
+          const created = await tx.bot.create({
+            data: {
               spaceId: actor.spaceId,
+              userId: actor.userId,
+              name: input.name,
+              title: input.title,
+              description: input.description,
+              instructions: input.instructions,
+              notifyOnFinish: input.notifyOnFinish,
+              color,
+              position: (positions._max.position ?? -1) + 1,
+              parentBotId: input.parentBotId ?? null,
+              computerId: teamComputer.id,
               spawnKey: input.spawnKey,
+              modelProvider,
+              modelId,
+              thinkingLevel,
             },
-          },
-          include: { thread: true, computer: true },
+          });
+          const thread = await tx.thread.create({
+            data: {
+              spaceId: actor.spaceId,
+              botId: created.id,
+              userId: actor.userId,
+            },
+          });
+          if (input.initialMessage) {
+            await createThreadMessageInTransaction(tx, {
+              threadId: thread.id,
+              ...input.initialMessage,
+            });
+          }
+          if (input.computerMode === "dedicated") {
+            const dedicated = await ensureComputerRecord(tx, {
+              mode: "dedicated",
+              spaceId: actor.spaceId,
+              userId: actor.userId,
+              botId: created.id,
+              kind,
+            });
+            await tx.bot.update({ where: { id: created.id }, data: { computerId: dedicated.id } });
+          }
+          await tx.browserProfile.create({
+            data: {
+              spaceId: actor.spaceId,
+              botId: created.id,
+              userId: actor.userId,
+            },
+          });
+          await tx.memoryDocument.create({
+            data: {
+              spaceId: actor.spaceId,
+              userId: actor.userId,
+              botId: created.id,
+              scope: "bot",
+              path: "MEMORY.md",
+              content: `# ${input.name}\n\n`,
+            },
+          });
+          return tx.bot.findFirstOrThrow({
+            where: { id: created.id },
+            include: { thread: true, computer: true },
+          });
+        })
+        .catch(async (error: unknown) => {
+          if (!input.spawnKey || !isSpawnKeyConflict(error)) throw error;
+          const existing = await prisma.bot.findUnique({
+            where: {
+              spaceId_spawnKey: {
+                spaceId: actor.spaceId,
+                spawnKey: input.spawnKey,
+              },
+            },
+            include: { thread: true, computer: true },
+          });
+          if (!existing || existing.userId !== actor.userId || existing.archivedAt) throw error;
+          return existing;
         });
-        if (!existing || existing.userId !== actor.userId || existing.archivedAt) throw error;
-        return existing;
-      });
       return mapBot(bot);
     },
 
