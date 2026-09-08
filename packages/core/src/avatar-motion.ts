@@ -17,7 +17,7 @@ export interface WorkingAvatarFrame {
 
 /** Per shape-family loop length in ms — keep in sync with web CSS animation durations. */
 export const WORKING_AVATAR_DURATIONS_MS = [
-  1800, 1350, 1600, 2400, 1350, 1350, 1100, 1350, 1600, 1350,
+  1800, 1350, 1600, 2400, 2400, 1350, 1100, 1350, 1600, 1350,
 ] as const;
 
 export function workingAvatarDuration(seed: number): number {

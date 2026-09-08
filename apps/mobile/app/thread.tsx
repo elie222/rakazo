@@ -261,6 +261,7 @@ function Thread() {
   activeGroupId.current = groupId;
   const routeName = useRef(name);
   routeName.current = name;
+  const mentionBotsRefreshGeneration = useRef(0);
   const readVisibleTarget = useRef<string | null>(null);
   const threadKey = groupId ?? botId;
   const [threadScrollState, setThreadScrollState] = useState<ThreadScrollState>(() =>
@@ -406,11 +407,15 @@ function Thread() {
 
   const refreshMentionBots = useCallback(async () => {
     if (!botId && !groupId) return;
+    const generation = ++mentionBotsRefreshGeneration.current;
+    const targetBotId = botId;
     try {
       const bots = await rpc<MobileBot[]>("bots/list");
+      if (generation !== mentionBotsRefreshGeneration.current) return;
+      if (targetBotId !== activeBotId.current) return;
       setMentionBots(bots);
-      if (botId) {
-        const next = bots.find((bot) => bot.id === botId);
+      if (targetBotId) {
+        const next = bots.find((bot) => bot.id === targetBotId);
         // Read the route name from a ref so renaming does not recreate this
         // callback (and restart the SSE subscription that depends on it).
         if (next?.name && next.name !== routeName.current) {
