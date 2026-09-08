@@ -72,7 +72,7 @@ msgstr "{0} ч. сводки"
 #. placeholder {1}: usage.inputTokens + usage.outputTokens
 #: src/pages/AccountSettingsOverlay.tsx:203
 msgid "{0} runs · {1} tokens"
-msgstr "{0} запусков · {1} токенов"
+msgstr "Запусков: {0} · токенов: {1}"
 
 #. placeholder {0}: bot.name
 #: src/pages/ExternalConversationSettings.tsx:232

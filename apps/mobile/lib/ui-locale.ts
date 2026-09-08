@@ -10,10 +10,12 @@ export const UI_LOCALE_LABELS: Record<UiLocale, string> = {
   ru: "Русский",
 };
 
+/** Convert an internal locale identifier to the document language tag. */
 export function htmlLangForLocale(locale: string): string {
   return locale === "zh-CN" ? "zh-CN" : locale;
 }
 
+/** Return whether a value is one of the supported mobile UI locales. */
 export function isUiLocale(value: string | null | undefined): value is UiLocale {
   return value === "en" || value === "zh-CN" || value === "ru";
 }

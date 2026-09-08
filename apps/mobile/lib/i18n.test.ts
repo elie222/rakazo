@@ -17,6 +17,7 @@ vi.mock("./ui-direction", () => ({
   applyMobileUiDirection: vi.fn(),
 }));
 
+/** Recursively collect source files used to validate mobile translation coverage. */
 function collectSourceFiles(dir: string): string[] {
   const files: string[] = [];
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -62,7 +63,7 @@ describe("mobile i18n", () => {
     expect(t("Sign in to Rakazo")).toBe("Войти в Rakazo");
     expect(t("New bot")).toBe("Новый бот");
     expect(t("{runs} runs · {tokens} tokens", { runs: 3, tokens: 12 })).toBe(
-      "3 запусков · 12 токенов",
+      "Запусков: 3 · токенов: 12",
     );
     expect(t("Delete {name}?", { name: "Scout" })).toBe("Удалить Scout?");
   });

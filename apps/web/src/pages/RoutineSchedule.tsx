@@ -25,6 +25,7 @@ const TIMES = [
 
 const TIMED: CronFreq[] = ["Every day", "Weekdays", "Every week", "Every month"];
 
+/** Translate a cron frequency into the active UI locale. */
 function cronFreqLabel(freq: CronFreq): string {
   switch (freq) {
     case "Every hour":
@@ -46,6 +47,7 @@ function cronFreqLabel(freq: CronFreq): string {
   }
 }
 
+/** Translate a cron interval unit in its plural form. */
 function cronUnitLabel(unit: CronUnit): string {
   switch (unit) {
     case "minutes":
@@ -59,6 +61,7 @@ function cronUnitLabel(unit: CronUnit): string {
   }
 }
 
+/** Translate a cron interval unit in its singular form. */
 function cronUnitLabelSingular(unit: CronUnit): string {
   switch (unit) {
     case "minutes":
@@ -72,6 +75,7 @@ function cronUnitLabelSingular(unit: CronUnit): string {
   }
 }
 
+/** Select the Russian noun form for a numeric interval. */
 function russianPluralForm(value: number, one: string, few: string, many: string): string {
   const absolute = Math.abs(value);
   const mod10 = absolute % 10;
@@ -81,6 +85,7 @@ function russianPluralForm(value: number, one: string, few: string, many: string
   return many;
 }
 
+/** Return the Russian interval unit with the case required after an amount. */
 function russianIntervalUnit(value: number, unit: CronUnit): string {
   switch (unit) {
     case "minutes":
@@ -94,17 +99,20 @@ function russianIntervalUnit(value: number, unit: CronUnit): string {
   }
 }
 
+/** Return the Russian lead word for a recurring interval. */
 function russianIntervalLead(value: number, unit: CronUnit): string {
   if (value !== 1) return "Каждые";
   return unit === "minutes" ? "Каждую" : "Каждый";
 }
 
+/** Return the neutral lead used by the interval controls. */
 function russianIntervalControlLead(): string {
   // The amount select stays visible for 1, so use a construction that keeps
   // the number in the sentence grammatical: “Раз в 1 час”, “Раз в 2 часа”.
   return "Раз в";
 }
 
+/** Build the Russian summary shown above the interval controls. */
 function describeRussianInterval(
   value: number,
   unit: CronUnit,
@@ -121,6 +129,7 @@ function describeRussianInterval(
   };
 }
 
+/** Build the localized summary for any routine schedule preset. */
 function describeCronPresetLocalized(
   preset: CronPreset,
   locale: string,
@@ -154,6 +163,7 @@ function describeCronPresetLocalized(
   return { lead: t`Every day`, detail: t`at ${preset.time}` };
 }
 
+/** Render schedule selectors and the localized summary for a routine. */
 export function RoutineSchedule({
   value,
   onChange,

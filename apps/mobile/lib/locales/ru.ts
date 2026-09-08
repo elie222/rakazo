@@ -68,7 +68,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "{name} is using it": "{name} использует это",
   "{name} is working": "{name} работает",
   "{name}’s computer": "Компьютер {name}",
-  "{runs} runs · {tokens} tokens": "{runs} запусков · {tokens} токенов",
+  "{runs} runs · {tokens} tokens": "Запусков: {runs} · токенов: {tokens}",
   "{style} avatars": "Аватары: {style}",
   "@{name}": "@{name}",
   "API key": "API-ключ",

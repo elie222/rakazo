@@ -16,6 +16,7 @@ export const UI_LOCALE_LABELS: Record<UiLocale, string> = {
   ru: "Русский",
 };
 
+/** Return whether a value is one of the supported web UI locales. */
 export function isUiLocale(value: string | null | undefined): value is UiLocale {
   return (
     value === "en" ||
