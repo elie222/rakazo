@@ -63,7 +63,9 @@ test("message hover shows beside-bubble actions; reply links to parent", async (
   const botRowBox = await botRow.boundingBox();
   expect(botTimeBox).not.toBeNull();
   expect(botRowBox).not.toBeNull();
-  expect(Math.abs(botTimeBox!.x + botTimeBox!.width - botRowBox!.x - botRowBox!.width)).toBeLessThan(2);
+  expect(
+    Math.abs(botTimeBox!.x + botTimeBox!.width - botRowBox!.x - botRowBox!.width),
+  ).toBeLessThan(2);
 
   await expect(botToolbar.getByRole("button", { name: "Reply" })).toBeVisible();
   await expect(botToolbar.getByRole("button", { name: "More" })).toBeVisible();
@@ -348,6 +350,8 @@ test.describe("touch message actions", () => {
     await expect(rail.getByRole("button", { name: "Reply", exact: true })).toBeHidden();
     await rail.getByRole("button", { name: "More" }).tap();
     await expect(page.getByRole("menuitem", { name: "Copy" })).toBeVisible();
+    await expect(row.getByTestId("message-hover-time")).toHaveCSS("opacity", "1");
+    await expect(row.getByTestId("message-hover-time")).toHaveText(/\d/);
     await expect(page.getByRole("menu").locator("time")).toHaveCount(0);
     await captureScreenshot(page, testInfo, "message-actions-touch-menu");
     await page.getByRole("menuitem", { name: "Reply", exact: true }).tap();

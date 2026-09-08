@@ -4216,7 +4216,7 @@ const Transcript = memo(function Transcript({
                   dateTime={message.createdAt}
                   data-testid="message-hover-time"
                   className={cn(
-                    "pointer-events-none absolute top-1 z-10 text-xs tabular-nums text-muted-foreground opacity-0 transition-opacity group-hover/message:opacity-100 group-focus-within/message:opacity-100",
+                    "pointer-events-none absolute top-1 z-10 text-xs tabular-nums text-muted-foreground opacity-0 transition-opacity group-hover/message:opacity-100 group-focus-within/message:opacity-100 group-has-[[aria-expanded=true]]/message:opacity-100",
                     message.role === "user" ? "start-0" : "end-0",
                   )}
                 >
