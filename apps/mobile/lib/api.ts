@@ -22,7 +22,6 @@ import {
   type ThreadHistory,
   takeLiveMessage,
   updateCloudAgentMessages,
-  updateMessageReaction,
   upsertMessageById,
 } from "@rakazo/core";
 import * as SecureStore from "expo-secure-store";
@@ -682,7 +681,6 @@ export type MobileMessage = {
   role: "user" | "bot" | "system";
   botId?: string;
   replyToMessageId?: string;
-  thumbsUp?: boolean;
   createdAt?: string;
   blocks: MessageBlock[];
 };
@@ -1036,13 +1034,6 @@ export function applyMobileThreadEvent(
       messages: updateCloudAgentMessages(prev.messages, event.payload ?? {}),
     };
   }
-  if (event.type === "thread.message.reaction") {
-    return {
-      ...prev,
-      cursor: event.seq ?? prev.cursor,
-      messages: updateMessageReaction(prev.messages, event.payload ?? {}),
-    };
-  }
   if (event.type === "thread.message.created" || event.type === "thread.message.updated") {
     const { remaining } = takeLiveMessage(prev.messages, progressMessageId(event));
     const next: MobileMessage = {
@@ -1054,7 +1045,6 @@ export function applyMobileThreadEvent(
       replyToMessageId: event.payload?.replyToMessageId
         ? String(event.payload.replyToMessageId)
         : undefined,
-      thumbsUp: event.payload?.thumbsUp === true,
     };
     return {
       ...prev,

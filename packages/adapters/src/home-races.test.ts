@@ -2,11 +2,12 @@ import * as fs from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type * as FileHandlePathModule from "./file-handle-path.js";
 import { fileHandlePath } from "./file-handle-path.js";
 import { LocalAgentHomeStore } from "./home.js";
 
 vi.mock("./file-handle-path.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./file-handle-path.js")>();
+  const actual = await importOriginal<typeof FileHandlePathModule>();
   return { fileHandlePath: vi.fn(actual.fileHandlePath) };
 });
 

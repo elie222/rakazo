@@ -1,10 +1,6 @@
 import type { MessageBlock } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
-import {
-  takeLiveMessage,
-  updateCloudAgentMessages,
-  updateMessageReaction,
-} from "./thread-message-updates.js";
+import { takeLiveMessage, updateCloudAgentMessages } from "./thread-message-updates.js";
 
 const cloud = (agentId: string): MessageBlock => ({
   kind: "cloud_agent",
@@ -51,18 +47,5 @@ describe("shared message updates", () => {
     expect(result[0]?.blocks[1]).toBe(messages[0]?.blocks[1]);
     expect(result[2]).toBe(messages[2]);
     expect(messages[0]?.blocks[0]).toMatchObject({ status: "running" });
-  });
-
-  it("sets reactions only for the supplied message and accepts only literal true", () => {
-    const messages = [
-      { id: "first", thumbsUp: true, replyToMessageId: "reply" },
-      { id: "second", thumbsUp: false },
-    ];
-    const result = updateMessageReaction(messages, { messageId: "first", thumbsUp: "true" });
-    expect(result[0]).toEqual({ ...messages[0], thumbsUp: false });
-    expect(result[1]).toBe(messages[1]);
-    expect(
-      updateMessageReaction(messages, { messageId: "second", thumbsUp: true })[1]?.thumbsUp,
-    ).toBe(true);
   });
 });

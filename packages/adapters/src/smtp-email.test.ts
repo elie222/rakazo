@@ -1,3 +1,4 @@
+import type { Socket } from "node:net";
 import { createServer } from "node:net";
 import { describe, expect, it, vi } from "vitest";
 import { SmtpEmailProvider } from "./smtp-email.js";
@@ -170,7 +171,7 @@ describe("SmtpEmailProvider", () => {
   });
 
   it("rejects an smtp relay that does not advertise STARTTLS", async () => {
-    const sockets = new Set<import("node:net").Socket>();
+    const sockets = new Set<Socket>();
     const server = createServer((socket) => {
       sockets.add(socket);
       socket.on("close", () => sockets.delete(socket));

@@ -10,10 +10,11 @@ import {
   renewSpaceDeletionClaim,
 } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import type { createApp } from "../../../apps/api/src/app.ts";
 import { sessionCookieHeader } from "./index.js";
 
 type App = { request: (input: string, init?: RequestInit) => Response | Promise<Response> };
-type AppHandles = Awaited<ReturnType<typeof import("../../../apps/api/src/app.ts").createApp>>;
+type AppHandles = Awaited<ReturnType<typeof createApp>>;
 type RpcPath<T, Prefix extends string = ""> = T extends { "~orpc": unknown }
   ? Prefix
   : T extends object

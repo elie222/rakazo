@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 import {
   captureScreenshot,
   completeOnboarding,
@@ -7,7 +7,7 @@ import {
   signup,
 } from "./helpers";
 
-async function createBot(page: import("@playwright/test").Page, name: string) {
+async function createBot(page: Page, name: string) {
   return createNamedBot(page, name);
 }
 

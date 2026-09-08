@@ -6,7 +6,11 @@ import type {
   MessageBlock,
   Routine,
 } from "@rakazo/contracts";
-import { canReactToThreadMessage } from "@rakazo/contracts";
+import {
+  canReactToThreadMessage,
+  MESSAGE_REACTIONS,
+  type MessageReaction,
+} from "@rakazo/contracts";
 import {
   abortableDelay,
   attachmentsForThread,
@@ -18,6 +22,7 @@ import {
   isSecretAskBlock,
   latestAnswerableAskMessageId,
   mentionChipKey,
+  projectMessageReactions,
   resolveComposerSendPlan,
   SLASH_ACTIONS,
   type SlashActionId,
@@ -305,13 +310,16 @@ function Thread() {
   const [markdownPreview, setMarkdownPreview] = useState<MarkdownArtifactPreviewTarget | null>(
     null,
   );
-  const visibleMessages = useMemo(
+  const reactionView = useMemo(
     () =>
-      userVisibleMessages(snap?.messages ?? [], { includePeerReceipts: true }).filter((message) =>
-        hasVisibleMessagePresentation(message.blocks),
+      projectMessageReactions(
+        userVisibleMessages(snap?.messages ?? [], { includePeerReceipts: true }).filter((message) =>
+          hasVisibleMessagePresentation(message.blocks),
+        ),
       ),
     [snap?.messages],
   );
+  const visibleMessages = reactionView.visibleMessages;
   const latestMessageId = visibleMessages.at(-1)?.id ?? null;
   const activePendingAttachments = attachmentsForThread(pendingAttachments, threadKey);
   const composerMentionTargets = useMemo(
@@ -1243,7 +1251,7 @@ function Thread() {
     );
   }
 
-  async function reactToMessage(message: MobileMessage) {
+  async function reactToMessage(message: MobileMessage, reaction: MessageReaction) {
     const targetBotId = botId;
     const targetGroupId = groupId;
     if (!targetBotId && !targetGroupId) return;
@@ -1251,7 +1259,8 @@ function Thread() {
       await rpc("threads/react", {
         ...(targetGroupId ? { groupId: targetGroupId } : { botId: targetBotId! }),
         messageId: message.id,
-        thumbsUp: !message.thumbsUp,
+        reaction,
+        clientNonce: newClientNonce(),
       });
     } catch (err) {
       if (!isCurrentTarget(targetBotId, targetGroupId)) return;
@@ -1266,8 +1275,18 @@ function Thread() {
         ? [
             {
               name: "react",
-              text: message.thumbsUp ? t("Remove thumbs-up") : t("Add thumbs-up"),
-              onPress: () => void reactToMessage(message),
+              text: t("React"),
+              onPress: () =>
+                presentMessageActionSheet({
+                  cancel: t("Cancel"),
+                  more: t("More"),
+                  colorScheme,
+                  actions: MESSAGE_REACTIONS.map((emoji) => ({
+                    name: emoji,
+                    text: emoji,
+                    onPress: () => void reactToMessage(message, emoji),
+                  })),
+                }),
             },
           ]
         : []),
@@ -1306,6 +1325,7 @@ function Thread() {
 
   function renderMessageRow(message: MobileMessage, options?: { enableJump?: boolean }) {
     const actionProps = messageActionProps(message);
+    const messageReactions = reactionView.reactions.get(message.id);
     const activityBotId =
       !inGroup && message.role === "bot" && message.id.startsWith("progress:")
         ? (message.botId ?? botId)
@@ -1383,20 +1403,35 @@ function Thread() {
               actionProps={actionProps}
             />
           </Pressable>
-          {canReactToThreadMessage(message) && message.thumbsUp ? (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={t("Remove thumbs-up")}
-              accessibilityState={{ selected: true }}
-              onPress={() => void reactToMessage(message)}
-              hitSlop={8}
+          {messageReactions ? (
+            <View
               style={{
-                alignSelf: message.role === "user" ? "flex-end" : "flex-start",
+                flexDirection: "row",
+                flexWrap: "wrap",
+                gap: 4,
                 marginTop: 4,
+                justifyContent: message.role === "user" ? "flex-end" : "flex-start",
               }}
             >
-              <Text style={{ color: tokens.warning, fontSize: 13 }}>👍</Text>
-            </Pressable>
+              {[...messageReactions].map(([emoji, count]) => (
+                <Text
+                  key={emoji}
+                  style={{
+                    color: tokens.foreground,
+                    backgroundColor: tokens.muted,
+                    borderColor: tokens.border,
+                    borderWidth: 1,
+                    borderRadius: 16,
+                    paddingHorizontal: 8,
+                    paddingVertical: 2,
+                    fontSize: 13,
+                  }}
+                >
+                  {emoji}
+                  {count > 1 ? ` ${count}` : ""}
+                </Text>
+              ))}
+            </View>
           ) : null}
         </View>
       </View>

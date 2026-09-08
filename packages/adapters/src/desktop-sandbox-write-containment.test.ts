@@ -1,3 +1,5 @@
+import type * as NodeFs from "node:fs";
+import type * as NodeFsPromises from "node:fs/promises";
 import {
   link,
   mkdir,
@@ -19,7 +21,7 @@ const lstatRace = vi.hoisted(() => ({
 }));
 
 vi.mock("node:fs", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("node:fs")>();
+  const actual = await importOriginal<typeof NodeFs>();
   return {
     ...actual,
     constants: { ...actual.constants, O_NOFOLLOW: 0 },
@@ -27,7 +29,7 @@ vi.mock("node:fs", async (importOriginal) => {
 });
 
 vi.mock("node:fs/promises", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("node:fs/promises")>();
+  const actual = await importOriginal<typeof NodeFsPromises>();
   return {
     ...actual,
     lstat: async (target: string, options?: { bigint?: boolean }) => {

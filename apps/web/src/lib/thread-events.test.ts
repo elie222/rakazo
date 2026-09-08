@@ -60,19 +60,28 @@ describe("thread event reduction", () => {
     );
   });
 
-  it("applies a persisted thumbs-up event to its message", () => {
+  it("appends an emoji reply with its exact target", () => {
     const initial = snapshot([message("message-1", [{ kind: "text", text: "Done" }], 1)]);
 
     const next = reduceThreadSnapshot(
       initial,
       event({
-        type: "thread.message.reaction",
+        type: "thread.message.created",
         seq: 4,
-        payload: { messageId: "message-1", thumbsUp: true },
+        payload: {
+          messageId: "reaction-1",
+          role: "user",
+          blocks: [{ kind: "text", text: "❤️" }],
+          replyToMessageId: "message-1",
+        },
       }),
     );
 
-    expect(next?.messages[0]?.thumbsUp).toBe(true);
+    expect(next?.messages.find((message) => message.id === "reaction-1")).toMatchObject({
+      role: "user",
+      blocks: [{ kind: "text", text: "❤️" }],
+      replyToMessageId: "message-1",
+    });
     expect(next?.cursor).toBe(4);
   });
 

@@ -1376,21 +1376,10 @@ export function createRouter(deps: RouterDeps) {
       }),
       react: authed.threads.react.handler(async ({ context, input }) => {
         const target = await resolveThreadTarget(deps.prisma, context.actor, input);
-        const result = await reactToThreadMessage(
-          deps,
-          context.actor,
-          target,
-          input.messageId,
-          input.thumbsUp,
-        );
+        const result = await reactToThreadMessage(deps, context.actor, target, input);
         if (result.eventSeq != null) {
           await deps.events.notify(target.threadId, result.eventSeq).catch((error) => {
             getLogger().error("thread reaction realtime notification", error);
-          });
-        }
-        if (result.runId) {
-          await deps.jobs.enqueue(runContinueJob(result.runId)).catch((error) => {
-            getLogger().error("thread reaction enqueue", error);
           });
         }
         return { ok: true as const };

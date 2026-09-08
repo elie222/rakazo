@@ -9,10 +9,11 @@ import {
   ThirdPartyConnectorEmulator,
 } from "@rakazo/adapters";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import type { createApp } from "../../../apps/api/src/app.ts";
 import { sessionCookieHeader } from "./index.js";
 
 type App = { request: (input: string, init?: RequestInit) => Promise<Response> };
-type AppHandles = Awaited<ReturnType<typeof import("../../../apps/api/src/app.ts").createApp>>;
+type AppHandles = Awaited<ReturnType<typeof createApp>>;
 type Actor = { spaceId: string; userId: string };
 
 process.env.WAKEUP_DRIVER = "memory";

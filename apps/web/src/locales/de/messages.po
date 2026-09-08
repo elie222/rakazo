@@ -3724,6 +3724,12 @@ msgstr "Dein Name"
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "Dein Team aus jederzeit verfügbaren Agents<0/>für echte Aufgaben."
 
+msgid "React"
+msgstr "Reagieren"
+
+msgid "Reactions"
+msgstr "Reaktionen"
+
 msgid "Opening chat…"
 msgstr "Chat wird geöffnet…"
 

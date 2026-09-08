@@ -1,3 +1,4 @@
+import type * as NodeFsPromises from "node:fs/promises";
 import http from "node:http";
 import path from "node:path";
 import { Readable } from "node:stream";
@@ -26,7 +27,7 @@ vi.mock("dockerode", () => ({
 }));
 vi.mock("./home-ownership.js", () => ({ assertComputerHomeWritable: mocks.assertHomeWritable }));
 vi.mock("node:fs/promises", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("node:fs/promises")>()),
+  ...(await importOriginal<typeof NodeFsPromises>()),
   mkdir: vi.fn(),
 }));
 

@@ -5,6 +5,7 @@ import type { AgentRuntimeEvent } from "@rakazo/adapter-kit";
 import { ScriptedAgentRuntime } from "@rakazo/adapters";
 import { answerRunInput } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import type { createApp } from "../../../apps/api/src/app.ts";
 
 const hasDb = process.env.VERIFY_DATABASE === "1" && Boolean(process.env.DATABASE_URL);
 const describeIntegration = hasDb ? describe : describe.skip;
@@ -16,7 +17,7 @@ const destination = {
 const key = "fake-reusable-api-key";
 
 describeIntegration("reusable credential lifecycle", () => {
-  let handles: Awaited<ReturnType<typeof import("../../../apps/api/src/app.ts")["createApp"]>>;
+  let handles: Awaited<ReturnType<typeof createApp>>;
   const dataDir = mkdtempSync(path.join(tmpdir(), "rakazo-secret-lifecycle-"));
   const stamp = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const fetch = vi.fn<typeof globalThis.fetch>(async (_url, init) => {

@@ -61,29 +61,29 @@ describe("queued run supersession", () => {
   });
 });
 
-describe("message thumbs-up", () => {
-  it("wakes once on add and not on replay or removal", async () => {
-    let thumbsUp = false;
-    let busy = false;
+describe("reaction messages", () => {
+  it("appends repeated reactions as quiet replies and deduplicates retries", async () => {
+    const messages = new Map<string, { id: string }>();
+    let messageSeq = 0;
     let eventSeq = 0;
     const tx = {
-      $queryRaw: vi.fn(async () => [
-        { id: "message-1", role: "bot", blocks: [{ kind: "text", text: "Done" }], thumbsUp },
-      ]),
+      $queryRaw: vi.fn().mockResolvedValue([]),
       message: {
-        update: vi.fn(async ({ data }: { data: { thumbsUp: boolean } }) => {
-          thumbsUp = data.thumbsUp;
-          return { id: "message-1" };
+        findFirst: vi.fn().mockResolvedValue({ id: "parent" }),
+        findUnique: vi.fn(
+          async ({ where }: { where: { threadId_clientNonce: { clientNonce: string } } }) =>
+            messages.get(where.threadId_clientNonce.clientNonce) ?? null,
+        ),
+        create: vi.fn(async ({ data }: { data: { clientNonce: string } }) => {
+          const message = { id: `reaction-${messages.size}`, ...data };
+          messages.set(data.clientNonce, message);
+          return message;
         }),
       },
-      run: {
-        findFirst: vi.fn(async () => (busy ? { id: "run-active" } : null)),
-        create: vi.fn().mockResolvedValue({ id: "run-1", status: "queued" }),
-        findUnique: vi.fn().mockResolvedValue({ status: "queued" }),
-      },
-      task: { create: vi.fn().mockResolvedValue({ id: "task-1" }) },
       thread: {
-        update: vi.fn(async () => ({ nextEventSeq: ++eventSeq })),
+        update: vi.fn(async ({ data }: { data: { nextMessageSeq?: unknown } }) =>
+          data.nextMessageSeq ? { nextMessageSeq: ++messageSeq } : { nextEventSeq: ++eventSeq },
+        ),
       },
       event: {
         create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({
@@ -92,55 +92,62 @@ describe("message thumbs-up", () => {
           ...data,
         })),
       },
+      task: { create: vi.fn() },
+      run: { create: vi.fn() },
     };
     const prisma = {
       $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
     } as unknown as PrismaClient;
-    const actor = { spaceId: "workspace-1", userId: "user-1" } as Actor;
-    const target = {
-      kind: "bot",
-      botId: "bot-1",
-      threadId: "thread-1",
-      bot: { computer: null },
-    } as ThreadTarget;
-
-    await expect(
-      reactToThreadMessage({ prisma }, actor, target, "message-1", true),
-    ).resolves.toEqual(expect.objectContaining({ changed: true, runId: "run-1" }));
-    await expect(
-      reactToThreadMessage({ prisma }, actor, target, "message-1", true),
-    ).resolves.toEqual(expect.objectContaining({ changed: false, runId: null }));
-    await expect(
-      reactToThreadMessage({ prisma }, actor, target, "message-1", false),
-    ).resolves.toEqual(expect.objectContaining({ changed: true, runId: null }));
-    busy = true;
-    await expect(
-      reactToThreadMessage({ prisma }, actor, target, "message-1", true),
-    ).resolves.toEqual(expect.objectContaining({ changed: true, runId: null }));
-
-    expect(tx.task.create).toHaveBeenCalledOnce();
-    expect(tx.run.create).toHaveBeenCalledOnce();
-    expect(String(tx.$queryRaw.mock.calls[0]?.[0])).toContain("SELECT id FROM threads");
-    expect(String(tx.$queryRaw.mock.calls[0]?.[0])).toContain("FOR UPDATE");
-    expect(String(tx.$queryRaw.mock.calls[1]?.[0])).toContain(
-      'SELECT id, "thumbsUp" FROM messages',
-    );
-    expect(String(tx.$queryRaw.mock.calls[1]?.[0])).toContain("FOR UPDATE");
-    expect(tx.run.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({ sourceMessageId: "message-1", trigger: "reaction" }),
-      }),
-    );
+    const actor = { spaceId: "space-1", userId: "user-1" } as Actor;
+    const target = { kind: "bot", botId: "bot-1", threadId: "thread-1" } as ThreadTarget;
+    for (const [clientNonce, reaction] of [
+      ["first", "❤️"],
+      ["second", "👍"],
+      ["third", "❤️"],
+      ["third", "❤️"],
+    ] as const) {
+      await reactToThreadMessage({ prisma }, actor, target, {
+        messageId: "parent",
+        reaction,
+        clientNonce,
+      });
+    }
+    expect(tx.message.create).toHaveBeenCalledTimes(3);
     expect(tx.event.create).toHaveBeenCalledTimes(3);
-    expect(tx.event.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          type: "thread.message.reaction",
-          payload: { messageId: "message-1", thumbsUp: true },
-        }),
+    expect(tx.message.create).toHaveBeenLastCalledWith({
+      data: expect.objectContaining({
+        role: "user",
+        blocks: [{ kind: "text", text: "❤️" }],
+        replyToMessageId: "parent",
+        clientNonce: "third",
       }),
-    );
-    expect(thumbsUp).toBe(true);
+    });
+    expect(tx.event.create).toHaveBeenLastCalledWith({
+      data: expect.objectContaining({
+        type: "thread.message.created",
+        payload: {
+          messageId: "reaction-2",
+          role: "user",
+          blocks: [{ kind: "text", text: "❤️" }],
+          replyToMessageId: "parent",
+        },
+      }),
+    });
+    expect(tx.task.create).not.toHaveBeenCalled();
+    expect(tx.run.create).not.toHaveBeenCalled();
+    expect(tx.message.findFirst).toHaveBeenCalledWith({
+      where: { id: "parent", threadId: "thread-1" },
+      select: { id: true },
+    });
+    tx.message.findFirst.mockResolvedValueOnce(null);
+    await expect(
+      reactToThreadMessage({ prisma }, actor, target, {
+        messageId: "elsewhere",
+        reaction: "❤️",
+        clientNonce: "fourth",
+      }),
+    ).rejects.toThrow();
+    expect(tx.message.create).toHaveBeenCalledTimes(3);
   });
 });
 
@@ -956,7 +963,6 @@ describe("sendThreadMessage", () => {
           botId: null,
           replyToMessageId: null,
           runId: null,
-          thumbsUp: false,
           createdAt: new Date(),
         }),
         update: vi.fn(),

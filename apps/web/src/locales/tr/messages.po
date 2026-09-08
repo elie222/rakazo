@@ -3724,6 +3724,12 @@ msgstr "Adın"
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "Gerçek işler verebileceğin,<0/>her zaman açık agent takımın."
 
+msgid "React"
+msgstr "Tepki ver"
+
+msgid "Reactions"
+msgstr "Tepkiler"
+
 msgid "Opening chat…"
 msgstr "Sohbet açılıyor…"
 

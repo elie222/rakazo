@@ -3724,6 +3724,12 @@ msgstr "你的名字"
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "你的一支随时在线的 Agent 团队<0/>可以交给它们真正的工作。"
 
+msgid "React"
+msgstr "回应"
+
+msgid "Reactions"
+msgstr "表情回应"
+
 msgid "Opening chat…"
 msgstr "正在打开聊天…"
 

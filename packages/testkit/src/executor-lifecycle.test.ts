@@ -4,6 +4,7 @@ import path from "node:path";
 import { approvalEffectKey } from "@rakazo/core/node/approval-effect-key";
 import { createThreadEvents, createThreadMessage, loadRunHistoryMessages } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import type { createApp } from "../../../apps/api/src/app.ts";
 
 process.env.WAKEUP_DRIVER = "memory";
 process.env.SANDBOX_PROVIDER = "fake";
@@ -13,7 +14,7 @@ const hasDb = process.env.VERIFY_DATABASE === "1" && Boolean(process.env.DATABAS
 const describeIntegration = hasDb ? describe : describe.skip;
 
 describeIntegration("run executor lifecycle", () => {
-  let handles: Awaited<ReturnType<typeof import("../../../apps/api/src/app.ts")["createApp"]>>;
+  let handles: Awaited<ReturnType<typeof createApp>>;
   const dataDir = mkdtempSync(path.join(tmpdir(), "rakazo-executor-lifecycle-"));
   const stamp = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 

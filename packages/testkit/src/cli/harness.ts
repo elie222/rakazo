@@ -3,6 +3,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 import { PostgreSqlContainer } from "@testcontainers/postgresql";
+import type { createApp } from "../../../../apps/api/src/app.ts";
 import { runProcess } from "./process.js";
 
 loadRootEnv();
@@ -286,9 +287,7 @@ async function main() {
   }
 }
 
-type AppHandles = Awaited<
-  ReturnType<typeof import("../../../../apps/api/src/app.ts")["createApp"]>
->;
+type AppHandles = Awaited<ReturnType<typeof createApp>>;
 
 async function managedComputers(handles: AppHandles) {
   if (!["e2b", "daytona", "box"].includes(sandboxProvider)) return [];

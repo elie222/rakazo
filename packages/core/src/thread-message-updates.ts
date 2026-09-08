@@ -39,13 +39,3 @@ export function updateCloudAgentMessages<Message extends { id: string; blocks: M
     return message;
   });
 }
-
-export function updateMessageReaction<Message extends { id: string }>(
-  messages: readonly Message[],
-  payload: Record<string, unknown>,
-): Message[] {
-  const messageId = String(payload.messageId ?? "");
-  return messages.map((message) =>
-    message.id === messageId ? { ...message, thumbsUp: payload.thumbsUp === true } : message,
-  );
-}
