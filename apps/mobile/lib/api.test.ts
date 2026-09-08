@@ -1009,6 +1009,43 @@ describe("mobile API authentication", () => {
     expect(storage.get("rakazo.space_id")).toBe("space-b");
   });
 
+  it("ignores a stale 401 after switching away and back to the same Space", async () => {
+    const storage = new Map<string, string>([["rakazo.space_id", "space-a"]]);
+    vi.mocked(SecureStore.getItemAsync).mockImplementation(async (key) => storage.get(key) ?? null);
+    vi.mocked(SecureStore.deleteItemAsync).mockImplementation(async (key) => {
+      storage.delete(key);
+    });
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+      storage.set(key, value);
+    });
+    await loadApiBase();
+    expect(selectedSpaceId()).toBe("space-a");
+
+    let resolveStale!: (value: Response) => void;
+    const fetchMock = vi.fn().mockImplementationOnce(
+      () =>
+        new Promise<Response>((resolve) => {
+          resolveStale = resolve;
+        }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const stale = rpc("bots/list");
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect(fetchMock.mock.calls[0]![1].headers["x-rakazo-space-id"]).toBe("space-a");
+    await expect(selectSpace("space-b")).resolves.toBe(true);
+    await expect(selectSpace("space-a")).resolves.toBe(true);
+    resolveStale(jsonResponse({ error: { message: "Unauthorized" } }, { status: 401 }));
+
+    // ID-only matching would treat this obsolete Space A response as current
+    // after A → B → A; the selection epoch must keep recovery from clearing
+    // the newer Space A selection.
+    await expect(stale).rejects.toThrow("Unauthorized");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(selectedSpaceId()).toBe("space-a");
+    expect(storage.get("rakazo.space_id")).toBe("space-a");
+  });
+
   it("heals durable divergence when persisting a new Space fails", async () => {
     const storage = new Map<string, string>([["rakazo.space_id", "space-support"]]);
     vi.mocked(SecureStore.getItemAsync).mockImplementation(async (key) => storage.get(key) ?? null);

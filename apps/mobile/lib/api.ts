@@ -48,6 +48,13 @@ const SPACE_AUTH_RECOVERY_SAFE_PROCS = new Set(["spaces/list", "me"]);
 
 let cachedApiBase: string | undefined;
 let cachedSpaceId = "";
+/** Bumped on every in-memory Space selection change so a delayed response
+ * cannot treat a later reselection of the same Space id as its own. */
+let spaceSelectionGeneration = 0;
+
+function bumpSpaceSelectionGeneration(): void {
+  spaceSelectionGeneration += 1;
+}
 
 function responseErrorMessage(body: unknown, fallback: string): string {
   return typeof body === "object" && body && "message" in body
@@ -78,6 +85,7 @@ export async function loadApiBase() {
   try {
     const storedSpace = (await SecureStore.getItemAsync(SPACE_KEY)) ?? "";
     cachedSpaceId = storedSpace;
+    bumpSpaceSelectionGeneration();
     // A deletion fallback must override the now-invalid saved Space even when
     // the device failed to replace that value before the previous process exited.
     await recoverSpaceRollback(cachedApiBase);
@@ -93,6 +101,7 @@ export async function selectSpace(id: string) {
   // in-memory selection, so a durable write must never precede its owner.
   const previousSpaceId = cachedSpaceId;
   cachedSpaceId = id;
+  bumpSpaceSelectionGeneration();
   try {
     await SecureStore.setItemAsync(SPACE_KEY, id);
     // Our write may have landed stale behind a newer overlapping selection's
@@ -111,6 +120,7 @@ export async function selectSpace(id: string) {
     // overlapping selection owns both by now, so only heal a claim we hold.
     if (cachedSpaceId === id) {
       cachedSpaceId = previousSpaceId;
+      bumpSpaceSelectionGeneration();
       if (previousSpaceId) await writeStoredValue(SPACE_KEY, previousSpaceId);
     }
     return false;
@@ -131,6 +141,7 @@ export function selectedSpaceId(): string | null {
  * id beside a stale record that recoverSpaceRollback would prefer on restart. */
 export async function adoptDeletedSpaceFallback(id: string): Promise<boolean> {
   cachedSpaceId = id;
+  bumpSpaceSelectionGeneration();
   // Neutralize any same-endpoint rollback before writing SPACE_KEY. Writing the
   // selection first can leave it beside a stale record that recoverSpaceRollback
   // would prefer on restart if later cleanup fails.
@@ -167,6 +178,7 @@ async function clearSpace(): Promise<boolean> {
   const rollbackCleared = await clearStoredValue(SPACE_ROLLBACK_KEY);
   if (!spaceCleared || !rollbackCleared) return false;
   cachedSpaceId = "";
+  bumpSpaceSelectionGeneration();
   return true;
 }
 
@@ -220,6 +232,7 @@ async function clearCredentialsForEndpointChange(): Promise<
   }
   const sessionCleared = await clearSessionToken();
   cachedSpaceId = "";
+  bumpSpaceSelectionGeneration();
   const spaceCleared = await clearStoredValue(SPACE_KEY);
   if (sessionCleared && spaceCleared) {
     return { ok: true, previousToken: previousToken.value, previousSpace: previousSpace.value };
@@ -236,6 +249,7 @@ async function restoreCredentials(previousToken: string, previousSpace: string) 
   if (previousToken) await restoreSessionToken(previousToken);
   if (previousSpace) {
     cachedSpaceId = previousSpace;
+    bumpSpaceSelectionGeneration();
     try {
       await SecureStore.setItemAsync(SPACE_KEY, previousSpace);
       await clearStoredValue(SPACE_ROLLBACK_KEY);
@@ -277,6 +291,7 @@ async function recoverSpaceRollback(apiBase: string) {
     return;
   }
   cachedSpaceId = rollback.spaceId;
+  bumpSpaceSelectionGeneration();
   if (await writeStoredValue(SPACE_KEY, rollback.spaceId)) {
     await clearStoredValue(SPACE_ROLLBACK_KEY);
     return;
@@ -544,9 +559,10 @@ export async function rpc<T>(
   else options.signal?.addEventListener("abort", abort, { once: true });
   const timer =
     options.timeoutMs === null ? undefined : setTimeout(abort, options.timeoutMs ?? RPC_TIMEOUT_MS);
-  // Bind recovery to the Space this request was sent with: a 401 arriving
-  // after the user switched Spaces belongs to a stale request and must not
-  // touch the current selection — the new Space's own requests run recovery.
+  // Bind recovery to the Space + selection epoch this request was sent with:
+  // a 401 arriving after the user switched Spaces — including A → B → A —
+  // belongs to a stale request and must not touch the current selection.
+  const requestSpaceGeneration = spaceSelectionGeneration;
   const requestHeaders = options.requestContext?.headers ?? (await authHeaders());
   const requestSpaceId = requestHeaders["x-rakazo-space-id"];
   try {
@@ -590,10 +606,12 @@ export async function rpc<T>(
         previousSpaceId &&
         requestSpaceId &&
         selectedSpaceId() === requestSpaceId &&
+        spaceSelectionGeneration === requestSpaceGeneration &&
         !options.requestContext &&
         !options.skipSpaceAuthRecovery
       ) {
         cachedSpaceId = "";
+        bumpSpaceSelectionGeneration();
         const retrySameProc = SPACE_AUTH_RECOVERY_SAFE_PROCS.has(proc);
         // Share the original deadline/cancellation with recovery calls instead
         // of starting a second full timeout behind the first request.
@@ -618,7 +636,10 @@ export async function rpc<T>(
           }
           await rpc("spaces/list", {}, recoveryOptions);
         } catch (retryError) {
-          if (!selectedSpaceId()) cachedSpaceId = previousSpaceId;
+          if (!selectedSpaceId()) {
+            cachedSpaceId = previousSpaceId;
+            bumpSpaceSelectionGeneration();
+          }
           throw retryError;
         }
         if (!selectedSpaceId()) await clearStaleSpaceSelection();
