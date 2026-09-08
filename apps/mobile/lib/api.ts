@@ -113,11 +113,17 @@ export async function adoptDeletedSpaceFallback(id: string): Promise<boolean> {
   // selectSpace may have failed only while clearing a prior rollback record;
   // still try to replace the deleted selection directly.
   if (await writeStoredValue(SPACE_KEY, id)) {
-    await clearStoredValue(SPACE_ROLLBACK_KEY);
-    await resumeLiveNotifications(currentApiBase(), await loadSessionToken(), id).catch(
-      () => undefined,
-    );
-    return true;
+    // A leftover same-endpoint rollback must not remain beside the new
+    // selection: recoverSpaceRollback would replace SPACE_KEY on restart.
+    if ((await clearStoredValue(SPACE_ROLLBACK_KEY)) || (await saveSpaceRollback(id))) {
+      await resumeLiveNotifications(currentApiBase(), await loadSessionToken(), id).catch(
+        () => undefined,
+      );
+      return true;
+    }
+    // Could not neutralize the stale rollback; undo the selection write so
+    // restart recovery cannot override a newer fallback with the old record.
+    await clearStoredValue(SPACE_KEY);
   }
   // Clear before saving recovery: an empty selection lets startup resolve the
   // server default even when the recovery record cannot be written.
@@ -126,7 +132,9 @@ export async function adoptDeletedSpaceFallback(id: string): Promise<boolean> {
   await resumeLiveNotifications(currentApiBase(), await loadSessionToken(), id).catch(
     () => undefined,
   );
-  return staleSelectionCleared || recoverySaved;
+  // Only treat a cleared selection as durable success when no same-endpoint
+  // rollback remains to override it after restart.
+  return recoverySaved || (staleSelectionCleared && (await clearStoredValue(SPACE_ROLLBACK_KEY)));
 }
 
 export async function selectInitialSpace(id: string) {
