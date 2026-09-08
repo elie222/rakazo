@@ -803,6 +803,39 @@ describe("mobile API authentication", () => {
     expect(fetchMock.mock.calls[1]![1].headers["x-rakazo-space-id"]).toBeUndefined();
   });
 
+  it("keeps the Space selection when unauthorized is a session failure", async () => {
+    const storage = new Map<string, string>([["rakazo.space_id", "space-support"]]);
+    vi.mocked(SecureStore.getItemAsync).mockImplementation(async (key) => {
+      if (key === "rakazo.session_token") return "expired-token";
+      return storage.get(key) ?? null;
+    });
+    vi.mocked(SecureStore.deleteItemAsync).mockImplementation(async (key) => {
+      storage.delete(key);
+    });
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+      storage.set(key, value);
+    });
+    await loadApiBase();
+    expect(selectedSpaceId()).toBe("space-support");
+
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse({ error: { message: "Unauthorized" } }, { status: 401 }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({ error: { message: "Unauthorized" } }, { status: 401 }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(rpc("spaces/list")).rejects.toThrow("Unauthorized");
+    expect(selectedSpaceId()).toBe("space-support");
+    expect(storage.get("rakazo.space_id")).toBe("space-support");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[0]![1].headers["x-rakazo-space-id"]).toBe("space-support");
+    expect(fetchMock.mock.calls[1]![1].headers["x-rakazo-space-id"]).toBeUndefined();
+  });
+
   it("recovers the active space after rollback persistence fails", async () => {
     vi.mocked(SecureStore.getItemAsync).mockResolvedValue(null);
     await loadApiBase();

@@ -500,24 +500,6 @@ export async function deleteAccount(password: string) {
   await clearSpace();
 }
 
-let spaceAuthRecovery: Promise<void> | null = null;
-
-/** Drop a selection the server no longer accepts. Always clears memory; durable
- * clears are best-effort so a fully locked SecureStore still unblocks the session. */
-async function recoverFromInaccessibleSpaceSelection(): Promise<void> {
-  if (!selectedSpaceId()) return;
-  if (!spaceAuthRecovery) {
-    spaceAuthRecovery = (async () => {
-      cachedSpaceId = "";
-      await clearStoredValue(SPACE_KEY);
-      await clearStoredValue(SPACE_ROLLBACK_KEY);
-    })().finally(() => {
-      spaceAuthRecovery = null;
-    });
-  }
-  await spaceAuthRecovery;
-}
-
 export async function rpc<T>(
   proc: string,
   body: unknown = {},
@@ -554,16 +536,27 @@ export async function rpc<T>(
       const message = parsed.error?.message ?? `rpc ${proc} failed`;
       const unauthorized = res.status === 401 || /unauthorized/i.test(message);
       // After a delete where SecureStore could not clear the stale id, restart
-      // reloads it and the first RPCs 401. Drop the selection and retry once
-      // without a Space header so default resolution can proceed.
+      // reloads it and the first RPCs 401. Probe once without a Space header:
+      // success means the selection was inaccessible (clear it); failure means
+      // the session itself is bad (restore the selection so a later sign-in
+      // keeps the user's Space).
+      const previousSpaceId = selectedSpaceId();
       if (
         unauthorized &&
-        selectedSpaceId() &&
+        previousSpaceId &&
         !options.requestContext &&
         !options.skipSpaceAuthRecovery
       ) {
-        await recoverFromInaccessibleSpaceSelection();
-        return rpc(proc, body, { ...options, skipSpaceAuthRecovery: true });
+        cachedSpaceId = "";
+        try {
+          const result = await rpc(proc, body, { ...options, skipSpaceAuthRecovery: true });
+          await clearStoredValue(SPACE_KEY);
+          await clearStoredValue(SPACE_ROLLBACK_KEY);
+          return result;
+        } catch (retryError) {
+          cachedSpaceId = previousSpaceId;
+          throw retryError;
+        }
       }
       throw new Error(message);
     }
