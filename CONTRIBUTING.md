@@ -25,6 +25,22 @@ required secrets, and startup commands.
 
 CI runs `pnpm lint`, `pnpm check`, production builds (including Electron preload smoke), `pnpm test`, `pnpm test:integration`, and `pnpm test:e2e` on every PR.
 
+## Adding a UI language
+
+The web and Electron-hosted UI use Lingui catalogs. To add a locale, register it in
+`apps/web/lingui.config.ts`, `apps/web/src/lib/ui-locale.ts`, and
+`apps/web/src/lib/i18n.ts`, then run `pnpm --filter @rakazo/web intl:extract`, fill the new
+`apps/web/src/locales/<locale>/messages.po` catalog, and validate it with
+`pnpm --filter @rakazo/web intl:compile`. Keep message IDs, placeholders, JSX markers, and
+ICU plural branches intact; do not commit generated `*.js`/`*.mjs` catalog files.
+
+Expo mobile has its own catalog and locale registry. Add the locale to
+`apps/mobile/lib/ui-locale.ts`, add `apps/mobile/lib/locales/<locale>.ts`, and register the
+catalog in `apps/mobile/lib/i18n.ts`. Web PO entries do not translate mobile automatically.
+Update the locale unit tests and a UI E2E scenario for each supported surface. The marketing
+homepage in `apps/www` and the native Electron setup window have separate localization paths;
+scope and test those changes explicitly instead of assuming the web catalog covers them.
+
 See [agent verification](docs/agent-verification.md) for the distinction between
 deterministic execution tests, computer replay, and real-model quality evals.
 

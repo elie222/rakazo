@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { i18n } from "@lingui/core";
 import { beforeEach, describe, expect, it } from "vitest";
 import de from "../../scripts/translations-de.json";
@@ -206,5 +208,19 @@ describe("lingui catalogs", () => {
     i18n.activate("es");
     expect(i18n._({ id: "Settings", message: "Settings" })).toBe("Configuración");
     expect(i18n._({ id: "Cancel", message: "Cancel" })).toBe("Cancelar");
+  });
+
+  it("ships the Russian runtime catalog with translated chrome and Russian plurals", () => {
+    const catalog = readFileSync(
+      fileURLToPath(new URL("../locales/ru/messages.po", import.meta.url)),
+      "utf8",
+    );
+
+    expect(catalog).toContain('msgid "Settings"\nmsgstr "Настройки"');
+    expect(catalog).toContain('msgid "Language"\nmsgstr "Язык"');
+    expect(catalog).toContain('msgid "Cancel"\nmsgstr "Отмена"');
+    expect(catalog).toContain(
+      'msgstr "{0, plural, one {# модель} few {# модели} many {# моделей} other {# модели}}"',
+    );
   });
 });

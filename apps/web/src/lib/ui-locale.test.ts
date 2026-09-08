@@ -21,6 +21,9 @@ describe("normalizeUiLocale", () => {
     expect(normalizeUiLocale("es-419")).toBe("es");
     expect(normalizeUiLocale("ES")).toBe("es");
     expect(normalizeUiLocale("es_AR")).toBe("es");
+    expect(normalizeUiLocale("ru-RU")).toBe("ru");
+    expect(normalizeUiLocale("ru_KZ")).toBe("ru");
+    expect(normalizeUiLocale(" RU ")).toBe("ru");
     expect(normalizeUiLocale("zh-CN")).toBe("zh-CN");
     expect(normalizeUiLocale("zh")).toBe("zh-CN");
     expect(normalizeUiLocale("zh-Hans")).toBe("zh-CN");
@@ -93,6 +96,13 @@ describe("resolveUiLocale", () => {
         navigatorLanguage: "es-MX",
       }),
     ).toBe("es");
+    expect(
+      resolveUiLocale({
+        stored: null,
+        envDefault: null,
+        navigatorLanguage: "ru-RU",
+      }),
+    ).toBe("ru");
     expect(
       resolveUiLocale({
         stored: null,

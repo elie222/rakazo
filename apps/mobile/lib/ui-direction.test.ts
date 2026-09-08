@@ -73,7 +73,7 @@ describe("mobile ui direction", () => {
     expect(reloadAppAsync).not.toHaveBeenCalled();
   });
 
-  it("defaults to LTR English so a no-arg call cannot fight zh/en UI locale bootstrap", async () => {
+  it("defaults to LTR English so a no-arg call cannot fight zh/en/ru UI locale bootstrap", async () => {
     const resolvedOptions = vi.fn().mockReturnValue({ locale: "ar-SA" });
     vi.stubGlobal("Intl", {
       ...Intl,

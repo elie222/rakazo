@@ -9,14 +9,15 @@ import {
 } from "./ui-locale";
 
 describe("UI_LOCALES", () => {
-  it("only offers locales that have mobile catalogs today", () => {
-    expect([...UI_LOCALES]).toEqual(["en", "zh-CN"]);
-    expect(Object.keys(UI_LOCALE_LABELS).sort()).toEqual(["en", "zh-CN"]);
+  it("offers every locale with a mobile catalog", () => {
+    expect([...UI_LOCALES]).toEqual(["en", "zh-CN", "ru"]);
+    expect(Object.keys(UI_LOCALE_LABELS).sort()).toEqual(["en", "ru", "zh-CN"]);
     expect(isUiLocale("de")).toBe(false);
     expect(isUiLocale("ko")).toBe(false);
     expect(isUiLocale("tr")).toBe(false);
     expect(isUiLocale("hi")).toBe(false);
     expect(isUiLocale("pt-BR")).toBe(false);
+    expect(isUiLocale("ru")).toBe(true);
   });
 });
 
@@ -27,6 +28,8 @@ describe("normalizeUiLocale", () => {
     expect(normalizeUiLocale("zh")).toBe("zh-CN");
     expect(normalizeUiLocale("zh-Hans")).toBe("zh-CN");
     expect(normalizeUiLocale("zh-SG")).toBe("zh-CN");
+    expect(normalizeUiLocale("ru-RU")).toBe("ru");
+    expect(normalizeUiLocale("ru_KZ")).toBe("ru");
   });
 
   it("does not fold Traditional Chinese into Simplified", () => {

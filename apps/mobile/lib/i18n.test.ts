@@ -56,22 +56,35 @@ describe("mobile i18n", () => {
       "3 次运行 · 12 个 token",
     );
     expect(t("Delete {name}?", { name: "Scout" })).toBe("要删除 Scout 吗？");
+
+    resetI18nForTests("ru");
+    expect(t("Account")).toBe("Аккаунт");
+    expect(t("Sign in to Rakazo")).toBe("Войти в Rakazo");
+    expect(t("New bot")).toBe("Новый бот");
+    expect(t("{runs} runs · {tokens} tokens", { runs: 3, tokens: 12 })).toBe(
+      "3 запусков · 12 токенов",
+    );
+    expect(t("Delete {name}?", { name: "Scout" })).toBe("Удалить Scout?");
   });
 
-  it("preserves interpolations in the Chinese catalog", async () => {
+  it("preserves interpolations in the Chinese and Russian catalogs", async () => {
     const { ZH_MESSAGES } = await import("./locales/zh");
-    const empty = Object.entries(ZH_MESSAGES).filter(([, value]) => !value.trim());
-    const interpolationMismatches = Object.entries(ZH_MESSAGES).filter(([id, value]) => {
-      const tokens = (message: string) =>
-        [...message.matchAll(/\{([A-Za-z0-9_]+)\}/g)].map((match) => match[1]).sort();
-      return JSON.stringify(tokens(id)) !== JSON.stringify(tokens(value));
-    });
-    expect(empty).toEqual([]);
-    expect(interpolationMismatches).toEqual([]);
+    const { RU_MESSAGES } = await import("./locales/ru");
+    for (const messages of [ZH_MESSAGES, RU_MESSAGES]) {
+      const empty = Object.entries(messages).filter(([, value]) => !value.trim());
+      const interpolationMismatches = Object.entries(messages).filter(([id, value]) => {
+        const tokens = (message: string) =>
+          [...message.matchAll(/\{([A-Za-z0-9_]+)\}/g)].map((match) => match[1]).sort();
+        return JSON.stringify(tokens(id)) !== JSON.stringify(tokens(value));
+      });
+      expect(empty).toEqual([]);
+      expect(interpolationMismatches).toEqual([]);
+    }
   });
 
-  it("translates every mobile chrome t() id", async () => {
+  it("translates every mobile chrome t() id in both non-English catalogs", async () => {
     const { ZH_MESSAGES } = await import("./locales/zh");
+    const { RU_MESSAGES } = await import("./locales/ru");
     const { EMPTY_PLUGIN_CATALOG_MESSAGE, SLASH_ACTIONS } = await import("@rakazo/core");
     const { OPENAI_COMPATIBLE_BASE_URL_HINT } = await import("@rakazo/contracts");
     const mobileRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -90,8 +103,10 @@ describe("mobile i18n", () => {
         ids.add(JSON.parse(`"${match[1]}"`) as string);
       }
     }
-    const missing = [...ids].filter((id) => !ZH_MESSAGES[id]?.trim()).sort();
-    expect(missing).toEqual([]);
+    for (const messages of [ZH_MESSAGES, RU_MESSAGES]) {
+      const missing = [...ids].filter((id) => !messages[id]?.trim()).sort();
+      expect(missing).toEqual([]);
+    }
   });
 
   it("prefers the stored locale, then activates and persists a new choice", async () => {
@@ -112,6 +127,17 @@ describe("mobile i18n", () => {
     expect(applyMobileUiDirection).toHaveBeenCalledWith("en");
   });
 
+  it("normalizes a regional Russian stored locale before activation", async () => {
+    const { getItemAsync } = await import("expo-secure-store");
+    vi.mocked(getItemAsync).mockResolvedValue("ru-RU");
+    const { bootstrapI18n, dateLocaleForUi, getActiveUiLocale, t } = await import("./i18n");
+
+    await expect(bootstrapI18n()).resolves.toBe("ru");
+    expect(getActiveUiLocale()).toBe("ru");
+    expect(t("Language")).toBe("Язык");
+    expect(dateLocaleForUi()).toBe("ru");
+  });
+
   it("keeps the last locale when rapid setUiLocale calls finish out of order", async () => {
     const { setItemAsync } = await import("expo-secure-store");
     const { applyMobileUiDirection } = await import("./ui-direction");
@@ -119,7 +145,7 @@ describe("mobile i18n", () => {
     resetI18nForTests("en");
 
     const gates = new Map<string, { release: () => void; wait: Promise<void> }>();
-    for (const locale of ["en", "zh-CN"] as const) {
+    for (const locale of ["en", "zh-CN", "ru"] as const) {
       let release!: () => void;
       const wait = new Promise<void>((resolve) => {
         release = resolve;

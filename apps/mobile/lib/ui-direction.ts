@@ -10,7 +10,7 @@ export function resolveMobileUiLocale(): string {
 
 /**
  * Apply layout direction for a UI locale.
- * Default is English (LTR): mobile UI locales are en / zh-CN only.
+ * Default is English (LTR): supported mobile UI locales are en / zh-CN / ru.
  * Do not pass the device locale here — that fights bootstrapI18n on RTL phones
  * and can reload-loop when the resolved UI locale stays LTR.
  */
