@@ -757,7 +757,8 @@ function toAgentTool(tool: ConnectorTool, host: ToolHost, exposedName: string): 
       if (tool.name === "shell") {
         return {
           command: String(raw.command ?? ""),
-          cwd: raw.cwd ? String(raw.cwd) : "/home/rakazo",
+          // The executor chooses the bot-scoped default, including Team workspaces.
+          ...(raw.cwd ? { cwd: String(raw.cwd) } : {}),
         };
       }
       if (tool.name === "run_subagent") {

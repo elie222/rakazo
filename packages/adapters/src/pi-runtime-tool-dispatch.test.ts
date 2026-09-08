@@ -443,6 +443,38 @@ describe("Pi connector tool dispatch", () => {
     else process.env.MAX_TOOL_CALLS_PER_TURN = previousMaxToolCalls;
   });
 
+  it.each([undefined, "", ".", "/home/rakazo", "subdir"])(
+    "preserves executor-owned shell cwd defaults (%j)",
+    async (cwd) => {
+      const command = "printf WORKSPACE_OK > roundtrip.txt";
+      fakeAgentState.invoke = {
+        name: "shell",
+        args: cwd === undefined ? { command } : { command, cwd },
+      };
+      const executeTool = vi.fn(async () => ({ ok: true }));
+      const runtime = new PiAgentRuntime();
+      for await (const _event of runtime.run(
+        {
+          botId: "b",
+          threadId: "t",
+          runId: "r",
+          prompt: "write the workspace test file",
+          instructions: "Use shell.",
+          history: [],
+          tools: [shellTool],
+          model: { provider: "test", id: "dispatch-test-model" },
+          executeTool,
+        },
+        { signal: new AbortController().signal },
+      )) {
+        // Exercise Pi argument preparation and execution, not just path helpers.
+      }
+      expect(executeTool.mock.calls).toStrictEqual([
+        ["shell", cwd ? { command, cwd } : { command }, "call-1"],
+      ]);
+    },
+  );
+
   it("exposes a provider-safe name while executing the original connector name", async () => {
     const executeTool = vi.fn(async () => ({ ok: true }));
     const runtime = new PiAgentRuntime();
