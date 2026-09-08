@@ -121,13 +121,11 @@ export function ComputerUpdateProgress() {
                 onPress={() =>
                   Alert.alert(
                     t("Release interrupted computer?"),
-                    t(
-                      "Stop all workers and confirm that provider operations have stopped before releasing this computer.",
-                    ),
+                    t("Make sure nothing is still running on this computer."),
                     [
                       { text: t("Cancel"), style: "cancel" },
                       {
-                        text: t("Workers and operations are stopped"),
+                        text: t("Nothing is still running"),
                         onPress: () => {
                           setBusy(true);
                           setError(false);

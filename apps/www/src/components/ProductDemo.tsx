@@ -66,7 +66,7 @@ const ONBOARD = [
       "Polished / formal",
       "Match whatever I draft",
     ],
-    ack: "Got it — {answer} it is.",
+    ack: "Got it. {answer} it is.",
   },
   {
     q: "Where does most of that work live?",
@@ -229,7 +229,7 @@ function OnboardThread({
       <div className="product-demo__time">{text("Today")}</div>
       <div className="product-demo__message product-demo__message--bot">
         <div className="product-demo__bubble product-demo__bubble--bot">
-          {text("Hey Avery — good to meet you.")}
+          {text("Hey Avery. Good to meet you.")}
         </div>
       </div>
       {ONBOARD.map((step, index) => {
@@ -279,7 +279,7 @@ function OnboardThread({
         <div className="product-demo__message product-demo__message--bot">
           <div className="product-demo__bubble product-demo__bubble--bot">
             {text(
-              "That’s everything I need. Give me a first job whenever you’re ready — I’ll ask before anything leaves the building.",
+              "That’s everything I need. Give me a first job whenever you’re ready. I’ll ask before anything leaves the building.",
             )}
           </div>
         </div>
@@ -1222,7 +1222,7 @@ export function ProductDemo({ locale = "en" }: { locale?: Locale }) {
         ) : null}
       </div>
       <p className="product-demo__caption">
-        {text("Live demo — pick a bot, open its computer, add a routine, or start a new chat.")}
+        {text("Live demo. Pick a bot, open its computer, add a routine, or start a new chat.")}
       </p>
     </div>
   );

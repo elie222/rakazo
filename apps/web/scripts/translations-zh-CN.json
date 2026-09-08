@@ -94,7 +94,6 @@
   "Attach file": "附加文件",
   "Attachment": "附件",
   "Authorization code or callback URL": "授权码或回调 URL",
-  "Authorization expired — reconnect required": "授权已过期，需要重新连接",
   "Authorization timed out. Please try again.": "授权超时，请重试。",
   "Authorize": "授权",
   "Base URL": "Base URL",
@@ -534,7 +533,6 @@
   "This server cannot be assigned without a bot.": "没有 Bot 就无法分配此服务器。",
   "This server did not request browser authorization.": "此服务器未请求浏览器授权。",
   "This server is already connected. Disconnect it first to authorize again.": "此服务器已连接。请先断开再重新授权。",
-  "This server uses browser sign-in. Authorize it to let your agents use its tools. A popup will open.": "此服务器使用浏览器登录。授权后 Agent 才能使用其工具，将打开弹窗。",
   "This subscription sign-in is not available in Rakazo yet. Use a deployment credential or choose another provider.": "此订阅登录在 Rakazo 中尚不可用。请使用部署凭据或选择其他提供方。",
   "Time of day": "时间",
   "Title": "标题",
@@ -733,5 +731,8 @@
   "Docker": "Docker",
   "Opening chat…": "正在打开聊天…",
   "Try again": "重试",
-  "To:": "至:"
+  "To:": "至:",
+  "Authorize this server so agents can use its tools. A popup opens.": "授权此服务器后，Agent 才能使用其工具。将打开弹窗。",
+  "Make sure nothing is still running on this computer.": "请确认这台电脑上没有仍在运行的任务。",
+  "Nothing is still running": "没有仍在运行的任务"
 }

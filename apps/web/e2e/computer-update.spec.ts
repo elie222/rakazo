@@ -69,9 +69,7 @@ test("computer maintenance shows durable background progress and failure recover
   await confirmation.getByRole("button", { name: "Cancel", exact: true }).click();
   expect(releases).toBe(0);
   await dialog.getByRole("button", { name: "Release computer", exact: true }).click();
-  await confirmation
-    .getByRole("button", { name: "Workers and operations are stopped", exact: true })
-    .click();
+  await confirmation.getByRole("button", { name: "Nothing is still running", exact: true }).click();
   await expect(dialog.getByRole("button", { name: "Recover computer", exact: true })).toBeVisible();
   expect(releases).toBe(1);
   await expect(dialog.getByRole("heading")).toHaveText("Update failed");

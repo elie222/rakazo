@@ -415,7 +415,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       badge: "Apache-2.0",
       pill: "Self-hosted",
       heading: "KI-Teamkollegen, die dir wirklich gehören",
-      lead: "Rakazo ist eine Open-Source-Alternative zu Grok Bot. Gib einem Bot echte Arbeit. Er meldet sich in deinen Tools an, nutzt sie wie du — und kommt zurück, wenn er dich braucht.",
+      lead: "Rakazo ist eine Open-Source-Alternative zu Grok Bot. Gib einem Bot echte Arbeit. Er meldet sich in deinen Tools an, nutzt sie wie du. Er kommt zurück, wenn er dich braucht.",
       getStarted: "Loslegen",
       viewOnGithub: "Auf GitHub ansehen",
       setupWithAgent: "Mit deinem Agenten einrichten",
@@ -474,7 +474,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     },
     cta: {
       heading: "Triff deinen ersten Bot",
-      copy: "Gib Rakazo etwas, das du aufgeschoben hast — und lass es den Follow-through übernehmen.",
+      copy: "Gib Rakazo etwas, das du aufgeschoben hast. Lass es den Follow-through übernehmen.",
       getStarted: "Loslegen",
       viewOnGithub: "Auf GitHub ansehen",
       openSourceValue: "Open Source",
