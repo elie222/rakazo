@@ -2,6 +2,7 @@ import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
 import { readBoundedResponseBytes } from "@rakazo/core";
 import { Agent } from "undici";
+import { fetchCompatibleWithUndiciAgent } from "./undici-compat-fetch.js";
 import {
   createAddressCheckedLookup,
   isPrivateAddress,
@@ -88,6 +89,7 @@ export async function fetchSafeWebText(
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const maxBytes = options.maxBytes ?? DEFAULT_MAX_BYTES;
   const baseFetch = options.fetch ?? globalThis.fetch;
+  const transportFetch = fetchCompatibleWithUndiciAgent(baseFetch);
   const dispatcher = new Agent({
     connect: { lookup: createAddressCheckedLookup(resolve, assertPublicAddresses) },
   });
@@ -104,7 +106,7 @@ export async function fetchSafeWebText(
 
   try {
     return await followRedirects(url, {
-      baseFetch,
+      transportFetch,
       resolve,
       dispatcher,
       maxBytes,
@@ -132,7 +134,7 @@ export async function fetchSafeWebText(
 async function followRedirects(
   rawUrl: string,
   state: {
-    baseFetch: typeof globalThis.fetch;
+    transportFetch: typeof globalThis.fetch;
     resolve: ResolveHostname;
     dispatcher: Agent;
     maxBytes: number;
@@ -148,7 +150,7 @@ async function followRedirects(
   const validated = await assertSafeWebUrl(rawUrl, state.resolve, state.signal);
   // Race fetch against the deadline — injected fetch may ignore init.signal.
   const response = await withAbort(
-    state.baseFetch(validated.href, {
+    state.transportFetch(validated.href, {
       method: "GET",
       redirect: "manual",
       signal: state.signal,

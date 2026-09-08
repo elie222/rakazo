@@ -4,6 +4,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { ConnectorTool } from "@rakazo/adapter-kit";
 import { Agent } from "undici";
+import { fetchCompatibleWithUndiciAgent } from "./undici-compat-fetch.js";
 import { combineSignals } from "./connector-safety.js";
 import {
   createAddressCheckedLookup,
@@ -138,12 +139,13 @@ export function createSafeRemoteFetch(
   resolve: ResolveHostname = resolveHostname,
 ): SafeRemoteFetch {
   const dispatcher = new Agent({ connect: { lookup: createSafeLookup(resolve) } });
+  const transportFetch = fetchCompatibleWithUndiciAgent(baseFetch);
   const safeFetch = async (input: string | URL | Request, init?: RequestInit) => {
     if (typeof input !== "string" && !(input instanceof URL)) {
       throw new Error("Connector fetch requires a URL, not a Request");
     }
     const url = await assertSafeRemoteUrl(String(input), resolve);
-    const response = await baseFetch(url, {
+    const response = await transportFetch(url, {
       ...init,
       redirect: "manual",
       dispatcher,
