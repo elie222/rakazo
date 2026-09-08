@@ -500,6 +500,24 @@ export async function deleteAccount(password: string) {
   await clearSpace();
 }
 
+let spaceAuthRecovery: Promise<void> | null = null;
+
+/** Drop a selection the server no longer accepts. Always clears memory; durable
+ * clears are best-effort so a fully locked SecureStore still unblocks the session. */
+async function recoverFromInaccessibleSpaceSelection(): Promise<void> {
+  if (!selectedSpaceId()) return;
+  if (!spaceAuthRecovery) {
+    spaceAuthRecovery = (async () => {
+      cachedSpaceId = "";
+      await clearStoredValue(SPACE_KEY);
+      await clearStoredValue(SPACE_ROLLBACK_KEY);
+    })().finally(() => {
+      spaceAuthRecovery = null;
+    });
+  }
+  await spaceAuthRecovery;
+}
+
 export async function rpc<T>(
   proc: string,
   body: unknown = {},
@@ -507,6 +525,7 @@ export async function rpc<T>(
     signal?: AbortSignal;
     timeoutMs?: number | null;
     requestContext?: ApiRequestContext;
+    skipSpaceAuthRecovery?: boolean;
   } = {},
 ): Promise<T> {
   const controller = new AbortController();
@@ -531,7 +550,23 @@ export async function rpc<T>(
       MAX_MOBILE_RPC_RESPONSE_BYTES,
       controller.signal,
     );
-    if (!res.ok || parsed.error) throw new Error(parsed.error?.message ?? `rpc ${proc} failed`);
+    if (!res.ok || parsed.error) {
+      const message = parsed.error?.message ?? `rpc ${proc} failed`;
+      const unauthorized = res.status === 401 || /unauthorized/i.test(message);
+      // After a delete where SecureStore could not clear the stale id, restart
+      // reloads it and the first RPCs 401. Drop the selection and retry once
+      // without a Space header so default resolution can proceed.
+      if (
+        unauthorized &&
+        selectedSpaceId() &&
+        !options.requestContext &&
+        !options.skipSpaceAuthRecovery
+      ) {
+        await recoverFromInaccessibleSpaceSelection();
+        return rpc(proc, body, { ...options, skipSpaceAuthRecovery: true });
+      }
+      throw new Error(message);
+    }
     return parsed.json as T;
   } finally {
     if (timer) clearTimeout(timer);
