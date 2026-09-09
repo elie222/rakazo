@@ -94,6 +94,7 @@ import {
   Monitor,
   MoreHorizontal,
   PanelLeftClose,
+  PanelLeftOpen,
   Paperclip,
   Plus,
   Puzzle,
@@ -3026,6 +3027,18 @@ export function ShellPage() {
             >
               <Menu size={19} strokeWidth={1.7} />
             </button>
+            {botsSidebarCollapsed ? (
+              <button
+                type="button"
+                data-testid="restore-bots-sidebar"
+                aria-label={t`Show bots`}
+                title={t`Show bots`}
+                onClick={() => setBotsSidebarCollapsedPref(false)}
+                className="app-no-drag hidden h-8 w-8 shrink-0 place-items-center rounded-lg text-foreground/75 hover:bg-accent md:grid"
+              >
+                <PanelLeftOpen size={19} strokeWidth={1.7} aria-hidden="true" />
+              </button>
+            ) : null}
             <button
               type="button"
               data-testid="bot-settings-trigger"

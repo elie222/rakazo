@@ -49,7 +49,16 @@ test("create opens form, then empty chat; picker lists bots; sidebar collapses",
   await expect(page.getByTestId("bots-sidebar")).toHaveAttribute("data-collapsed", "true");
   const edge = page.getByTestId("bots-sidebar-edge");
   await expect(edge).toBeVisible();
+  const restore = page.getByTestId("restore-bots-sidebar");
+  await expect(restore).toBeVisible();
   await captureScreenshot(page, testInfo, "bots-sidebar-collapsed");
+
+  await restore.click();
+  await expect(page.getByTestId("bots-sidebar")).toHaveAttribute("data-collapsed", "false");
+  await expect(restore).toHaveCount(0);
+
+  await page.getByTestId("minimize-bots-sidebar").click();
+  await expect(page.getByTestId("bots-sidebar")).toHaveAttribute("data-collapsed", "true");
 
   const box = await edge.boundingBox();
   expect(box).toBeTruthy();
