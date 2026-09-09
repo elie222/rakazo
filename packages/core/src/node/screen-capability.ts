@@ -69,7 +69,9 @@ export function sealScreenCapability(
     autoconnect: "true",
     resize: "scale",
     view_only: policy === "control" ? "false" : "true",
-    path: `${prefix.slice(1)}/websockify`,
+    // Our embed resolves the socket relative to its own capability directory;
+    // stock noVNC resolves it from the origin root.
+    path: target.pathname === "/embed.html" ? "websockify" : `${prefix.slice(1)}/websockify`,
   }).toString();
   return result.toString();
 }
