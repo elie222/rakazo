@@ -18,7 +18,8 @@ import {
   lazyCatalogTools,
   resolveCatalogCall,
 } from "./lazy-tool-catalog.js";
-import { type McpOAuthBroker, type OAuthMaterial, oauthMaterialSecrets } from "./mcp-oauth.js";
+import type { McpOAuthBroker, OAuthMaterial } from "./mcp-oauth.js";
+import { oauthMaterialSecrets } from "./mcp-oauth.js";
 import { McpSession } from "./mcp-transport.js";
 import type { RemoteTransportDependencies } from "./remote-mcp.js";
 import type { EncryptedSecretStore } from "./secrets.js";
