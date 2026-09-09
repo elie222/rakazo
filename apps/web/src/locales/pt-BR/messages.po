@@ -529,6 +529,10 @@ msgstr "A autorização expirou. Tente novamente."
 msgid "Authorize"
 msgstr "Autorizar"
 
+#: src/pages/shell/message-cards.tsx:350
+msgid "Authorize this server so agents can use its tools. A popup opens."
+msgstr "Autorize este servidor para que os agentes usem suas ferramentas. Uma janela pop-up será aberta."
+
 #: src/pages/ExternalConversationSettings.tsx:160
 msgid "Automated senders"
 msgstr ""
@@ -624,7 +628,7 @@ msgstr "Não é possível acessar o servidor."
 #: src/components/AskCard.tsx:35
 #: src/components/AskCard.tsx:186
 #: src/components/ComputerMaintenanceActions.tsx:97
-#: src/components/ComputerUpdateProgress.tsx:236
+#: src/components/ComputerUpdateProgress.tsx:233
 #: src/components/teach/TeachComputerOverlay.tsx:254
 #: src/pages/KnowledgeSection.tsx:212
 #: src/pages/KnowledgeSection.tsx:437
@@ -2080,6 +2084,10 @@ msgstr "Sair"
 msgid "Low"
 msgstr "Baixo"
 
+#: src/components/ComputerUpdateProgress.tsx:228
+msgid "Make sure nothing is still running on this computer."
+msgstr "Confirme que nada ainda está em execução neste computador."
+
 #: src/pages/PluginsOverlay.tsx:1162
 msgid "Manage MCP servers"
 msgstr "Gerenciar servidores MCP"
@@ -2463,6 +2471,10 @@ msgstr ""
 #: src/pages/shell/message-cards.tsx:367
 msgid "Not now"
 msgstr "Agora não"
+
+#: src/components/ComputerUpdateProgress.tsx:251
+msgid "Nothing is still running"
+msgstr "Nada ainda está em execução"
 
 #: src/pages/KnowledgeSection.tsx:163
 msgid "Nothing remembered yet"
@@ -3306,10 +3318,6 @@ msgstr "Passos"
 msgid "Stop"
 msgstr "Parar"
 
-#: src/components/ComputerUpdateProgress.tsx:228
-msgid "Stop all workers and confirm that provider operations have stopped before releasing this computer."
-msgstr ""
-
 #: src/pages/Shell.tsx:5288
 #: src/pages/Shell.tsx:5539
 msgid "Stop speaking"
@@ -3458,10 +3466,6 @@ msgstr "Este servidor não solicitou autorização do navegador."
 #: src/pages/McpServersOverlay.tsx:185
 msgid "This server is already connected. Disconnect it first to authorize again."
 msgstr "Este servidor já está conectado. Desconecte-o primeiro para autorizar novamente."
-
-#: src/pages/shell/message-cards.tsx:350
-msgid "This server uses browser sign-in. Authorize it to let your agents use its tools. A popup will open."
-msgstr "Este servidor usa o login do navegador. Autorize-o a permitir que seus agentes usem suas ferramentas. Um pop-up será aberto."
 
 #: src/pages/ModelSettingsOverlay.tsx:709
 msgid "This subscription sign-in is not available in Rakazo yet. Use a deployment credential or choose another provider."
@@ -3684,10 +3688,6 @@ msgstr "Quando usar"
 #: src/pages/HostComputerPrompt.tsx:59
 msgid "Where should bots run?"
 msgstr "Onde os bots devem ser executados?"
-
-#: src/components/ComputerUpdateProgress.tsx:254
-msgid "Workers and operations are stopped"
-msgstr ""
 
 #: src/pages/Auth.tsx:209
 #: src/pages/Auth.tsx:317

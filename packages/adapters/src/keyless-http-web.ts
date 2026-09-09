@@ -52,7 +52,7 @@ export const duckDuckGoHtmlSearchBackend: KeylessHtmlSearchBackend = {
  * Mozilla Readability with a lightweight HTML-strip fallback.
  */
 export class KeylessHttpWebProvider implements WebProvider {
-  private readonly fetchImpl: typeof globalThis.fetch;
+  private readonly fetchImpl?: typeof globalThis.fetch;
   private readonly resolveHostname?: ResolveHostname;
   private readonly searchBackend: KeylessHtmlSearchBackend;
   private readonly searchTimeoutMs: number;
@@ -61,7 +61,7 @@ export class KeylessHttpWebProvider implements WebProvider {
   private readonly userAgent: string;
 
   constructor(options: KeylessHttpWebOptions = {}) {
-    this.fetchImpl = options.fetch ?? globalThis.fetch;
+    this.fetchImpl = options.fetch;
     this.resolveHostname = options.resolveHostname;
     this.searchBackend = options.searchBackend ?? duckDuckGoHtmlSearchBackend;
     this.searchTimeoutMs = options.searchTimeoutMs ?? 15_000;

@@ -125,10 +125,7 @@ export function secureFetch(
     "cookie",
     "proxy-authorization",
   ]);
-  const safeRemoteFetch = createSafeRemoteFetch(
-    network.fetch ?? globalThis.fetch,
-    network.resolveHostname,
-  );
+  const safeRemoteFetch = createSafeRemoteFetch(network.fetch, network.resolveHostname);
   const request = async (input: Request | URL | string, init?: RequestInit): Promise<Response> => {
     const source = new Request(input, init);
     // OAuth challenges and rediscovery can supply new URLs. Only the explicitly

@@ -86,7 +86,6 @@
   "Attach file": "फ़ाइल संलग्न करें",
   "Attachment": "अटैचमेंट",
   "Authorization code or callback URL": "ऑथराइज़ेशन कोड या कॉलबैक URL",
-  "Authorization expired — reconnect required": "ऑथराइज़ेशन समाप्त — पुनः कनेक्ट करना आवश्यक",
   "Authorization timed out. Please try again.": "ऑथराइज़ेशन का समय समाप्त हो गया। कृपया पुनः प्रयास करें।",
   "Authorize": "ऑथराइज़ करें",
   "Base URL": "बेस URL",
@@ -536,7 +535,6 @@
   "This server cannot be assigned without a bot.": "बॉट के बिना यह सर्वर असाइन नहीं किया जा सकता।",
   "This server did not request browser authorization.": "इस सर्वर ने ब्राउज़र ऑथराइज़ेशन नहीं मांगा।",
   "This server is already connected. Disconnect it first to authorize again.": "यह सर्वर पहले से कनेक्टेड है। पुनः ऑथराइज़ करने के लिए पहले इसे डिस्कनेक्ट करें।",
-  "This server uses browser sign-in. Authorize it to let your agents use its tools. A popup will open.": "यह सर्वर ब्राउज़र साइन-इन का उपयोग करता है। अपने एजेंट को इसके टूल उपयोग करने देने के लिए इसे ऑथराइज़ करें। एक पॉपअप खुलेगा।",
   "This subscription sign-in is not available in Rakazo yet. Use a deployment credential or choose another provider.": "यह सब्सक्रिप्शन साइन-इन अभी Rakazo में उपलब्ध नहीं है। किसी डिप्लॉयमेंट क्रेडेंशियल का उपयोग करें या दूसरा प्रोवाइडर चुनें।",
   "Time of day": "दिन का समय",
   "Title": "शीर्षक",
@@ -587,5 +585,8 @@
   "Docker": "Docker",
   "Opening chat…": "चैट खुल रही है…",
   "Try again": "फिर से कोशिश करें",
-  "To:": "प्रति:"
+  "To:": "प्रति:",
+  "Authorize this server so agents can use its tools. A popup opens.": "एजेंटों को इसके टूल का उपयोग करने देने के लिए इस सर्वर को ऑथराइज़ करें। एक पॉपअप खुलता है।",
+  "Make sure nothing is still running on this computer.": "सुनिश्चित करें कि इस कंप्यूटर पर कुछ भी चल नहीं रहा है।",
+  "Nothing is still running": "कुछ भी नहीं चल रहा"
 }

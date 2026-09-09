@@ -99,22 +99,28 @@ Preflight:
 - Verify Git, Node.js, pnpm, Docker, and Docker Compose.
 - Use a Node.js version supported by `engines.node` and the pnpm version declared in `packageManager` in the root `package.json`. Prefer Corepack; if unavailable, use `npx --yes pnpm@<declared-version>` instead of globally installing a different version. Use that same executable for every later `pnpm` command, including verification and restart commands. Show the effective versions.
 - Verify the Docker daemon is running.
-- Check whether `127.0.0.1` ports 5433, 3100, 5173, and 7091 are available. Resolve conflicts without touching unrelated workloads.
+- Check whether `127.0.0.1` ports 5433 (only if using the optional postgres-host overlay), 3100, 5173, and 7091 are available. Resolve conflicts without touching unrelated workloads.
+- Ensure `.env` sets a non-empty `POSTGRES_PASSWORD`. When using the optional postgres-host overlay (or any host-side `DATABASE_URL`), that URL must use the same password.
 
 Setup:
 
 1. Clone the repository if needed and enter its root.
 2. Read `AGENTS.md`, `README.md`, `.env.example`, and the root `package.json` before acting. Follow repository instructions if they have changed since this prompt was written.
-3. If `.env` does not exist, copy `.env.example` to `.env`. In a new file, generate `BETTER_AUTH_SECRET`, `ENCRYPTION_KEY`, `SCREEN_PROXY_SECRET`, and `SANDBOX_SUPERVISOR_TOKEN` independently with `openssl rand -hex 32` (64 hex characters each). For an existing file, check those keys without printing values and generate only absent keys. Preserve existing values; if a required value is empty, ask before replacing it. Keep local defaults for Postgres, origins, Pi, Docker, and Graphile unless the preflight found a conflict. Add only the model and managed-connector credentials I selected. Leave optional credentials blank.
+3. If `.env` does not exist, copy `.env.example` to `.env`. In a new file, generate `POSTGRES_PASSWORD` with `openssl rand -hex 16` and put the same value into host-side `DATABASE_URL` (replace any placeholder password). Also generate `BETTER_AUTH_SECRET`, `ENCRYPTION_KEY`, `SCREEN_PROXY_SECRET`, and `SANDBOX_SUPERVISOR_TOKEN` independently with `openssl rand -hex 32` (64 hex characters each). For an existing file, check those keys without printing values and generate only absent non-Postgres secrets. For `POSTGRES_PASSWORD` and host-side `DATABASE_URL` (when present / when the postgres-host overlay will be used), compare the password parts without printing them and require one confirmed shared password written to both settings. First check whether the Compose `pgdata` volume already exists (for example `docker volume ls` for the project postgres volume). If `pgdata` is absent, generate one URI-safe password with `openssl rand -hex 16` and write it to both `POSTGRES_PASSWORD` and host-side `DATABASE_URL`. If `pgdata` exists and either credential is missing or they disagree, ask which password that volume already uses and set both to that first-init value. Do not generate a new `POSTGRES_PASSWORD` when `pgdata` already exists unless I explicitly confirm in-place `ALTER ROLE` or a disposable `pgdata` recreate (backup first; `docker compose down -v` deletes all Postgres state); otherwise preserve the working credentials so `pnpm db:migrate` keeps authenticating. Preserve other existing values; if a required non-Postgres value is empty, ask before replacing it. Keep local defaults for Postgres user/db, origins, Pi, Docker, and Graphile unless the preflight found a conflict. Add only the model and managed-connector credentials I selected. Leave optional credentials blank.
 4. Confirm `.env` is ignored and that no secret-bearing file is staged.
-5. Start only local Postgres:
+5. Start only local Postgres with the base Compose file (Postgres stays network-internal; no host publish):
 
    `docker compose --env-file .env -f infra/compose/docker-compose.yml up postgres -d`
+
+   The `infra/compose/docker-compose.postgres-host.yml` overlay is optional: add it only when host-side DB access is needed (`pnpm db:migrate`, GUI tools), so loopback `127.0.0.1:5433` is published, and keep host-side `DATABASE_URL` on the same password as `POSTGRES_PASSWORD`. Without the overlay, use `docker compose --env-file .env -f infra/compose/docker-compose.yml exec postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"'` for one-off SQL.
 
 6. With the repository-declared pnpm version, run:
 
    `pnpm install --frozen-lockfile`
    `pnpm db:generate`
+
+   For host-side `pnpm db:migrate`, ensure Postgres is up with the optional postgres-host overlay (same volume) and that `DATABASE_URL` matches `POSTGRES_PASSWORD`, then run:
+
    `pnpm db:migrate`
    `pnpm sandbox:build`
 

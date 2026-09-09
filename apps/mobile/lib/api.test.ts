@@ -1124,6 +1124,84 @@ describe("mobile API authentication", () => {
     expect(storage.get("rakazo.space_id")).toBe("space-b");
   });
 
+  it("keeps a later A claim when an earlier A→B→A persist fails", async () => {
+    const storage = new Map<string, string>([["rakazo.space_id", "space-support"]]);
+    vi.mocked(SecureStore.getItemAsync).mockImplementation(async (key) => storage.get(key) ?? null);
+    vi.mocked(SecureStore.deleteItemAsync).mockImplementation(async (key) => {
+      storage.delete(key);
+    });
+    let firstAWriteCount = 0;
+    let rejectFirstA!: (reason: Error) => void;
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+      if (key === "rakazo.space_id" && value === "space-a") {
+        firstAWriteCount += 1;
+        if (firstAWriteCount === 1) {
+          await new Promise<never>((_, reject) => {
+            rejectFirstA = reject;
+          });
+        }
+      }
+      storage.set(key, value);
+    });
+    await loadApiBase();
+
+    const pendingFirstA = selectSpace("space-a");
+    await vi.waitFor(() => expect(selectedSpaceId()).toBe("space-a"));
+    await expect(selectSpace("space-b")).resolves.toBe(true);
+    await expect(selectSpace("space-a")).resolves.toBe(true);
+    expect(storage.get("rakazo.space_id")).toBe("space-a");
+    rejectFirstA(new Error("device locked"));
+
+    await expect(pendingFirstA).resolves.toBe(false);
+    expect(selectedSpaceId()).toBe("space-a");
+    expect(storage.get("rakazo.space_id")).toBe("space-a");
+  });
+
+  it("does not let auth cleanup overwrite a newer selection with a stale snapshot", async () => {
+    const storage = new Map<string, string>([["rakazo.space_id", "space-deleted"]]);
+    vi.mocked(SecureStore.getItemAsync).mockImplementation(async (key) => storage.get(key) ?? null);
+    let injected = false;
+    let holdCleanupReconcile = false;
+    let releaseCleanupWrite!: () => void;
+    const cleanupWriteHeld = new Promise<void>((resolve) => {
+      releaseCleanupWrite = resolve;
+    });
+    vi.mocked(SecureStore.deleteItemAsync).mockImplementation(async (key) => {
+      if (key === "rakazo.space_id" && !injected) {
+        injected = true;
+        // Finish selecting B before cleanup snapshots it for reconcile.
+        await expect(selectSpace("space-b")).resolves.toBe(true);
+        holdCleanupReconcile = true;
+      }
+      storage.delete(key);
+    });
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+      if (key === "rakazo.space_id" && value === "space-b" && holdCleanupReconcile) {
+        holdCleanupReconcile = false;
+        // Hold only the post-clear reconcile write of the B snapshot.
+        await cleanupWriteHeld;
+      }
+      storage.set(key, value);
+    });
+    await loadApiBase();
+
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ error: { message: "Unauthorized" } }, { status: 401 }))
+      .mockResolvedValueOnce(jsonResponse({ json: { spaces: [] } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const pendingRpc = rpc("spaces/list");
+    await vi.waitFor(() => expect(selectedSpaceId()).toBe("space-b"));
+    await expect(selectSpace("space-c")).resolves.toBe(true);
+    expect(storage.get("rakazo.space_id")).toBe("space-c");
+    releaseCleanupWrite();
+
+    await expect(pendingRpc).resolves.toEqual({ spaces: [] });
+    expect(selectedSpaceId()).toBe("space-c");
+    expect(storage.get("rakazo.space_id")).toBe("space-c");
+  });
+
   it("re-persists a Space selected while recovery cleanup is in flight", async () => {
     const storage = new Map<string, string>([["rakazo.space_id", "space-deleted"]]);
     vi.mocked(SecureStore.getItemAsync).mockImplementation(async (key) => storage.get(key) ?? null);

@@ -61,7 +61,7 @@ export const DEMO_BOTS: DemoBot[] = [
     routines: [{ name: "Monday briefing", when: "Mondays 7am" }],
     screen: {
       host: "notion.so",
-      title: "Offsite — week of the 14th",
+      title: "Offsite: week of the 14th",
       lines: ["Harbor House held", "Contract out for signature", "4 calendar holds → invites"],
     },
     thread: [
@@ -99,7 +99,7 @@ export const DEMO_BOTS: DemoBot[] = [
     ],
     screen: {
       host: "app.hubspot.com",
-      title: "Seed-stage fintech — review list",
+      title: "Seed-stage fintech: review list",
       lines: ["40 accounts scored", "22 LinkedIn profiles read", "18 drafts queued"],
     },
     thread: [
@@ -127,7 +127,7 @@ export const DEMO_BOTS: DemoBot[] = [
         text: "two of them raised last week, so those drafts lead with the round. everything else follows your usual opener.",
       },
     ],
-    reply: "on it — i will queue those and leave the rest in review.",
+    reply: "on it. i will queue those and leave the rest in review.",
   },
   {
     id: "inbox",
@@ -141,7 +141,7 @@ export const DEMO_BOTS: DemoBot[] = [
     ],
     screen: {
       host: "mail.google.com",
-      title: "Inbox — 5 drafts parked",
+      title: "Inbox: 5 drafts parked",
       lines: ["41 threads read", "26 archived · 9 replied", "Nora’s renewal held"],
     },
     thread: [
@@ -179,7 +179,7 @@ export const DEMO_BOTS: DemoBot[] = [
     routines: [{ name: "Renewal watch", when: "Daily 9am" }],
     screen: {
       host: "app.hubspot.com",
-      title: "Helix — renewal",
+      title: "Helix: renewal",
       lines: ["Thursday 10am with Sam", "Annual only", "Nora approves"],
     },
     thread: [
@@ -211,7 +211,7 @@ export const DEMO_BOTS: DemoBot[] = [
     screen: {
       host: "app.ashbyhq.com",
       title: "Infra applicants",
-      lines: ["61 read", "9 shortlisted — ran their own cluster", "3 intros held"],
+      lines: ["61 read", "9 shortlisted: ran their own cluster", "3 intros held"],
     },
     thread: [
       { type: "time", text: "Yesterday 4:15 PM" },
@@ -244,7 +244,7 @@ export const DEMO_BOTS: DemoBot[] = [
     screen: {
       host: "app.ramp.com",
       title: "Month-end close",
-      lines: ["9 receipts matched", "Harbor hotel — two nights", "Report filed · $2,340"],
+      lines: ["9 receipts matched", "Harbor hotel: two nights", "Report filed · $2,340"],
     },
     thread: [
       { type: "time", text: "Yesterday 3:11 AM" },
@@ -284,7 +284,7 @@ export const DEMO_BOTS: DemoBot[] = [
     routines: [{ name: "Triage sweep", when: "Every 2h" }],
     screen: {
       host: "sentry.io",
-      title: "Auth loop — P1",
+      title: "Auth loop: P1",
       lines: ["6 new reports", "4 reproduced", "Stale session token"],
     },
     thread: [

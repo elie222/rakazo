@@ -9,9 +9,11 @@ import {
   createAddressCheckedLookup,
   isCloudMetadataAddress,
   isPrivateAddress,
+  isTailscaleAddress,
   type ResolvedAddress,
   type ResolveHostname,
 } from "./network-address.js";
+import { dispatcherFetch } from "./undici-fetch.js";
 
 const MAX_MCP_TOOLS = 250;
 const MAX_MCP_PAGES = 20;
@@ -93,7 +95,7 @@ async function withRemoteMcpClient<T>(
   );
   const signal = combineSignals(options.signal, AbortSignal.timeout(MCP_TIMEOUT_MS));
   const safeFetch = createSafeRemoteFetch(
-    options.fetch ?? globalThis.fetch,
+    options.fetch,
     options.resolveHostname ?? resolveHostname,
   );
   const transport = new StreamableHTTPClientTransport(endpoint, {
@@ -134,7 +136,7 @@ export async function assertSafeRemoteUrl(
 }
 
 export function createSafeRemoteFetch(
-  baseFetch: typeof globalThis.fetch = globalThis.fetch,
+  baseFetch: typeof globalThis.fetch = dispatcherFetch,
   resolve: ResolveHostname = resolveHostname,
 ): SafeRemoteFetch {
   const dispatcher = new Agent({ connect: { lookup: createSafeLookup(resolve) } });
@@ -143,11 +145,19 @@ export function createSafeRemoteFetch(
       throw new Error("Connector fetch requires a URL, not a Request");
     }
     const url = await assertSafeRemoteUrl(String(input), resolve);
-    const response = await baseFetch(url, {
-      ...init,
-      redirect: "manual",
-      dispatcher,
-    } as RequestInit & { dispatcher: Agent });
+    let response: Response;
+    try {
+      response = await baseFetch(url, {
+        ...init,
+        redirect: "manual",
+        dispatcher,
+      } as RequestInit & { dispatcher: Agent });
+    } catch (error) {
+      const detail = transportFailureDetail(error);
+      throw new Error(`Could not reach ${url.host}${detail ? `: ${detail}` : ""}`, {
+        cause: error,
+      });
+    }
     if (response.status >= 300 && response.status < 400) {
       throw new Error("Connector redirects are not allowed");
     }
@@ -158,6 +168,25 @@ export function createSafeRemoteFetch(
   return result;
 }
 
+const MAX_CAUSE_DEPTH = 5;
+
+/** undici reports refused ports, unreachable hosts, DNS misses and TLS errors
+ * alike as `TypeError: fetch failed` and keeps the actionable reason in `cause`
+ * (or in the per-address errors of a happy-eyeballs AggregateError). */
+function transportFailureDetail(error: unknown, depth = 0): string | undefined {
+  if (depth >= MAX_CAUSE_DEPTH || !(error instanceof Error)) return undefined;
+  if (error instanceof AggregateError) {
+    for (const inner of error.errors) {
+      const detail = transportFailureDetail(inner, depth + 1);
+      if (detail) return detail;
+    }
+  }
+  return (
+    transportFailureDetail(error.cause, depth + 1) ??
+    (error.message === "fetch failed" ? undefined : error.message)
+  );
+}
+
 export function createSafeLookup(resolve: ResolveHostname = resolveHostname): LookupFunction {
   return createAddressCheckedLookup(resolve, assertPublicAddresses);
 }
@@ -166,16 +195,6 @@ export function createSafeLookup(resolve: ResolveHostname = resolveHostname): Lo
 function isTailscaleMagicDnsHostname(hostname: string): boolean {
   const normalized = hostname.toLowerCase().replace(/\.$/, "");
   return normalized === "ts.net" || normalized.endsWith(".ts.net");
-}
-
-/** Tailscale assigns CGNAT 100.64.0.0/10; MagicDNS may resolve there. */
-function isTailscaleCgnatAddress(address: string): boolean {
-  const value = address.toLowerCase().replace(/^\[|\]$/g, "");
-  const mapped = value.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/)?.[1];
-  const ipv4 = mapped ?? (isIP(value) === 4 ? value : undefined);
-  if (!ipv4) return false;
-  const [a, b] = ipv4.split(".").map(Number);
-  return a === 100 && b != null && b >= 64 && b <= 127;
 }
 
 function isPrivateHostname(hostname: string): boolean {
@@ -200,8 +219,8 @@ function assertPublicAddresses(addresses: ResolvedAddress[], hostname?: string):
     addresses.some((entry) => {
       if (isCloudMetadataAddress(entry.address)) return true;
       if (!isPrivateAddress(entry.address)) return false;
-      // Allow only Tailscale CGNAT for MagicDNS; keep other private ranges blocked.
-      return !(magicDns && isTailscaleCgnatAddress(entry.address));
+      // Allow only Tailscale ranges for MagicDNS; keep other private ranges blocked.
+      return !(magicDns && isTailscaleAddress(entry.address));
     })
   ) {
     throw new Error("Connector URL resolves to a private address");

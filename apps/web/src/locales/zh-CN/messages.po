@@ -529,6 +529,10 @@ msgstr "授权超时，请重试。"
 msgid "Authorize"
 msgstr "授权"
 
+#: src/pages/shell/message-cards.tsx:350
+msgid "Authorize this server so agents can use its tools. A popup opens."
+msgstr "授权此服务器后，Agent 才能使用其工具。将打开弹窗。"
+
 #: src/pages/ExternalConversationSettings.tsx:160
 msgid "Automated senders"
 msgstr ""
@@ -624,7 +628,7 @@ msgstr "无法连接服务器。"
 #: src/components/AskCard.tsx:35
 #: src/components/AskCard.tsx:186
 #: src/components/ComputerMaintenanceActions.tsx:97
-#: src/components/ComputerUpdateProgress.tsx:236
+#: src/components/ComputerUpdateProgress.tsx:233
 #: src/components/teach/TeachComputerOverlay.tsx:254
 #: src/pages/KnowledgeSection.tsx:212
 #: src/pages/KnowledgeSection.tsx:437
@@ -2080,6 +2084,10 @@ msgstr "退出登录"
 msgid "Low"
 msgstr "低"
 
+#: src/components/ComputerUpdateProgress.tsx:228
+msgid "Make sure nothing is still running on this computer."
+msgstr "请确认这台电脑上没有仍在运行的任务。"
+
 #: src/pages/PluginsOverlay.tsx:1162
 msgid "Manage MCP servers"
 msgstr "管理 MCP 服务器"
@@ -2463,6 +2471,10 @@ msgstr "不在插件目录中"
 #: src/pages/shell/message-cards.tsx:367
 msgid "Not now"
 msgstr "暂不"
+
+#: src/components/ComputerUpdateProgress.tsx:251
+msgid "Nothing is still running"
+msgstr "没有仍在运行的任务"
 
 #: src/pages/KnowledgeSection.tsx:163
 msgid "Nothing remembered yet"
@@ -3306,10 +3318,6 @@ msgstr "步骤"
 msgid "Stop"
 msgstr "停止"
 
-#: src/components/ComputerUpdateProgress.tsx:228
-msgid "Stop all workers and confirm that provider operations have stopped before releasing this computer."
-msgstr ""
-
 #: src/pages/Shell.tsx:5288
 #: src/pages/Shell.tsx:5539
 msgid "Stop speaking"
@@ -3458,10 +3466,6 @@ msgstr "此服务器未请求浏览器授权。"
 #: src/pages/McpServersOverlay.tsx:185
 msgid "This server is already connected. Disconnect it first to authorize again."
 msgstr "此服务器已连接。请先断开再重新授权。"
-
-#: src/pages/shell/message-cards.tsx:350
-msgid "This server uses browser sign-in. Authorize it to let your agents use its tools. A popup will open."
-msgstr "此服务器使用浏览器登录。授权后 Agent 才能使用其工具，将打开弹窗。"
 
 #: src/pages/ModelSettingsOverlay.tsx:709
 msgid "This subscription sign-in is not available in Rakazo yet. Use a deployment credential or choose another provider."
@@ -3684,10 +3688,6 @@ msgstr "何时使用"
 #: src/pages/HostComputerPrompt.tsx:59
 msgid "Where should bots run?"
 msgstr "Bot 应在哪里运行？"
-
-#: src/components/ComputerUpdateProgress.tsx:254
-msgid "Workers and operations are stopped"
-msgstr ""
 
 #: src/pages/Auth.tsx:209
 #: src/pages/Auth.tsx:317

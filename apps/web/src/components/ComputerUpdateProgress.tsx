@@ -225,10 +225,7 @@ export function ComputerUpdateProgress({ onCompleted }: { onCompleted: () => voi
               <Trans>Release interrupted computer?</Trans>
             </AlertDialogTitle>
             <AlertDialogDescription>
-              <Trans>
-                Stop all workers and confirm that provider operations have stopped before releasing
-                this computer.
-              </Trans>
+              <Trans>Make sure nothing is still running on this computer.</Trans>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -251,7 +248,7 @@ export function ComputerUpdateProgress({ onCompleted }: { onCompleted: () => voi
                   .finally(() => setRecovering(false));
               }}
             >
-              <Trans>Workers and operations are stopped</Trans>
+              <Trans>Nothing is still running</Trans>
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

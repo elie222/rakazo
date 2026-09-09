@@ -33,6 +33,9 @@ export const RU_MESSAGES: Record<string, string> = {
   "Recreating the computer": "Повторное создание компьютера",
   "Release computer": "Освободить компьютер",
   "Release interrupted computer?": "Освободить прерванный компьютер?",
+  "Make sure nothing is still running on this computer.":
+    "Убедитесь, что на этом компьютере ничего не запущено.",
+  "Nothing is still running": "Ничего не запущено",
   "Restoring your workspace": "Восстановление вашего рабочего пространства",
   "Saving your workspace": "Сохранение вашего рабочего пространства",
   "Server integrations": "Интеграции сервера",
@@ -242,8 +245,8 @@ export const RU_MESSAGES: Record<string, string> = {
   Delete: "Удалить",
   "Delete account": "Удалить аккаунт",
   "Delete group": "Удалить группу",
-  "Delete memories too": "Удалить также память",
   "Delete space": "Удалить пространство",
+  "Delete memories too": "Удалить также память",
   "Delete {name}?": "Удалить {name}?",
   "Delete this group? Bots and their solo threads are kept.":
     "Удалить эту группу? Боты и их отдельные диалоги сохранятся.",
@@ -442,7 +445,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "Silence notifications": "Отключить уведомления",
   Skip: "Пропустить",
   Space: "Пространство",
-  "Space actions for {name}": "Действия с пространством {name}",
+  "Space actions for {name}": "Действия пространства {name}",
   "Space created": "Пространство создано",
   "Speak + transcribe": "Озвучить и расшифровать",
   "Speak message": "Озвучить сообщение",
@@ -553,7 +556,7 @@ export const RU_MESSAGES: Record<string, string> = {
   Submitted: "Отправлено",
   "Teach a task": "Научить задачу",
   "this model": "эта модель",
-  "This removes the empty space for everyone.": "Пустое пространство будет удалено для всех.",
+  "This removes the empty space for everyone.": "Это удалит пустое пространство для всех.",
   "This removes every message and stops current work. The bot, computer, memory, and routines are kept.":
     "Это удалит все сообщения и остановит текущую работу. Бот, компьютер, память и задачи сохранятся.",
   "This subscription sign-in is not available in Rakazo yet. Use a deployment credential or choose another provider.":

@@ -657,7 +657,6 @@
   "This server cannot be assigned without a bot.": "Este servidor no se puede asignar sin un bot.",
   "This server did not request browser authorization.": "Este servidor no solicitó autorización del navegador.",
   "This server is already connected. Disconnect it first to authorize again.": "Este servidor ya está conectado. Desconéctalo primero para autorizarlo de nuevo.",
-  "This server uses browser sign-in. Authorize it to let your agents use its tools. A popup will open.": "Este servidor usa inicio de sesión en el navegador. Autorízalo para que tus agentes usen sus herramientas: se abrirá una ventana emergente.",
   "This subscription sign-in is not available in Rakazo yet. Use a deployment credential or choose another provider.": "Este inicio de sesión por suscripción aún no está disponible en Rakazo. Usa una credencial de despliegue o elige otro proveedor.",
   "Time of day": "Hora del día",
   "Title": "Título",
@@ -721,11 +720,13 @@
   "Apps": "Apps",
   "Asleep": "En reposo",
   "at <0/>": "a las <0/>",
-  "Authorization expired — reconnect required": "Autorización expirada: se requiere reconectar",
   "Docker limits access to your computer for added security. Using {hostLabel} lets bots work with your local files and tools.": "Docker limita el acceso a tu computadora para mayor seguridad. Usar {hostLabel} permite que los bots trabajen con tus archivos y herramientas locales.",
   "Local access lets bots run commands without asking. Avoid it on shared or public servers.": "El acceso local permite que los bots ejecuten comandos sin preguntar. Evítalo en servidores compartidos o públicos.",
   "Docker": "Docker",
   "Opening chat…": "Abriendo el chat…",
   "Try again": "Intentarlo de nuevo",
-  "To:": "Para:"
+  "To:": "Para:",
+  "Authorize this server so agents can use its tools. A popup opens.": "Autoriza este servidor para que tus agentes usen sus herramientas. Se abre una ventana emergente.",
+  "Make sure nothing is still running on this computer.": "Asegúrate de que no quede nada en ejecución en este ordenador.",
+  "Nothing is still running": "No queda nada en ejecución"
 }

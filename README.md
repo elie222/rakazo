@@ -92,9 +92,11 @@ cd rakazo
 cp .env.example .env
 ```
 
-Set `BETTER_AUTH_SECRET`, `ENCRYPTION_KEY`, and `SCREEN_PROXY_SECRET` in `.env` to independent
-long random values. Docker sandboxes also need a dedicated `SANDBOX_SUPERVISOR_TOKEN`. You can
-also set `OPENROUTER_API_KEY`, or connect a supported model provider during onboarding.
+Set `POSTGRES_PASSWORD` (for example `openssl rand -hex 16`), then put the same value in
+`DATABASE_URL`. Set `BETTER_AUTH_SECRET`, `ENCRYPTION_KEY`, and `SCREEN_PROXY_SECRET` to
+independent long random values. Docker sandboxes also need a dedicated
+`SANDBOX_SUPERVISOR_TOKEN`. You can also set `OPENROUTER_API_KEY`, or connect a supported
+model provider during onboarding.
 
 Managed app catalogs are optional. Set `COMPOSIO_API_KEY` for Composio, or the
 `PIPEDREAM_CLIENT_ID`, `PIPEDREAM_CLIENT_SECRET`, and `PIPEDREAM_PROJECT_ID` trio for Pipedream
@@ -107,13 +109,25 @@ hosted product should review [Treg's integration terms](https://treg.to/integrat
 a written agreement for hosted resale.
 
 ```bash
-docker compose --env-file .env -f infra/compose/docker-compose.yml up postgres -d
+docker compose --env-file .env \
+  -f infra/compose/docker-compose.yml \
+  -f infra/compose/docker-compose.postgres-host.yml \
+  up postgres -d
 pnpm install
 pnpm db:generate
 pnpm db:migrate
 pnpm sandbox:build
 pnpm dev
 ```
+
+Postgres stays network-internal in the default Compose file (same as published images). The
+`postgres-host` overlay publishes loopback `127.0.0.1:5433` for host-side `pnpm` and DB tools.
+Without the overlay, open a shell with
+`docker compose --env-file .env -f infra/compose/docker-compose.yml exec postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"'`.
+Use a URI-safe `POSTGRES_PASSWORD` (`openssl rand -hex 16`). An existing `pgdata` volume keeps the
+user, password, and database from first init, so keep those values in `.env`, or change them in
+place with `ALTER ROLE` / rename. Recreate the volume only after a backup (or when the data is
+disposable); `docker compose down -v` deletes all Postgres state.
 
 Open [http://127.0.0.1:5173](http://127.0.0.1:5173), create an account, connect a model, and create
 your first bot.

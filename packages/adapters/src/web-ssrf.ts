@@ -8,6 +8,7 @@ import {
   type ResolvedAddress,
   type ResolveHostname,
 } from "./network-address.js";
+import { dispatcherFetch } from "./undici-fetch.js";
 
 const DEFAULT_TIMEOUT_MS = 15_000;
 const DEFAULT_MAX_BYTES = 5 * 1024 * 1024;
@@ -87,7 +88,7 @@ export async function fetchSafeWebText(
   const resolve = options.resolveHostname ?? defaultResolveHostname;
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const maxBytes = options.maxBytes ?? DEFAULT_MAX_BYTES;
-  const baseFetch = options.fetch ?? globalThis.fetch;
+  const baseFetch = options.fetch ?? dispatcherFetch;
   const dispatcher = new Agent({
     connect: { lookup: createAddressCheckedLookup(resolve, assertPublicAddresses) },
   });

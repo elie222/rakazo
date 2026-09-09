@@ -817,7 +817,7 @@ export function createRouter(deps: RouterDeps) {
       probeOpenAiCompatible: authed.models.probeOpenAiCompatible.handler(
         async ({ context, input }) => {
           try {
-            const models = await probeOpenAiCompatibleModels(input, fetch, context.signal);
+            const models = await probeOpenAiCompatibleModels(input, undefined, context.signal);
             return { models };
           } catch (error) {
             throw new ORPCError("BAD_REQUEST", {
@@ -2141,13 +2141,13 @@ export function createRouter(deps: RouterDeps) {
           !(hasActiveComputerControl(bot.computer) && bot.computer.controlBotId === bot.id),
         );
         return {
-          url: addScreenProxyCapability(
-            viewUrl,
-            deps.env.screenProxySecret,
-            deps.env.webOrigin,
-            undefined,
-            { proxyExternal: bot.computer.kind === "box" },
-          ),
+          url: addScreenProxyCapability(viewUrl, deps.env.screenProxySecret, deps.env.webOrigin, {
+            botId: bot.id,
+            computerId: computer.id,
+            botGeneration: bot.screenGeneration,
+            computerGeneration: computer.screenGeneration,
+            controlLeaseId: computer.controlLeaseId,
+          }),
         };
       }),
       heartbeat: authed.computer.heartbeat.handler(async ({ context, input }) => {

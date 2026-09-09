@@ -128,6 +128,67 @@ describe("openai-compatible provider", () => {
     }
   });
 
+  it("drives the guarded dispatcher with a fetch from the same undici", async () => {
+    // See remote-mcp.test: failing inside the lookup proves the request was
+    // dispatched through the Agent rather than rejected by a mismatched fetch.
+    const previous = process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC;
+    process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC = "1";
+    try {
+      const safeFetch = createOpenAiCompatibleFetch(undefined, async () => {
+        throw new Error("lookup reached");
+      });
+      await expect(safeFetch("https://models.example.test/v1/models")).rejects.toMatchObject({
+        cause: { message: "lookup reached" },
+      });
+    } finally {
+      if (previous === undefined) delete process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC;
+      else process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC = previous;
+    }
+  });
+
+  it("flattens a global Request so the package fetch can dispatch it", async () => {
+    // undici's fetch reads a foreign Request as "[object Request]"; reaching
+    // the lookup proves the request was dispatched with its URL instead.
+    const previous = process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC;
+    process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC = "1";
+    try {
+      const safeFetch = createOpenAiCompatibleFetch(undefined, async () => {
+        throw new Error("lookup reached");
+      });
+      const request = new Request("https://models.example.test/v1/chat/completions", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ model: "local" }),
+      });
+      await expect(safeFetch(request)).rejects.toMatchObject({
+        cause: { message: "lookup reached" },
+      });
+    } finally {
+      if (previous === undefined) delete process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC;
+      else process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC = previous;
+    }
+  });
+
+  it("carries a Request's method, headers and body through as init", async () => {
+    let seen: { url: string; init?: RequestInit } | undefined;
+    const safeFetch = createOpenAiCompatibleFetch(async (input, init) => {
+      seen = { url: String(input), init };
+      return new Response("{}", { status: 200 });
+    });
+    await safeFetch(
+      new Request("http://127.0.0.1:8000/v1/models", {
+        method: "POST",
+        headers: { "x-trace": "1" },
+        body: "payload",
+      }),
+      { headers: { "x-trace": "2" } },
+    );
+    expect(seen?.url).toBe("http://127.0.0.1:8000/v1/models");
+    expect(seen?.init?.method).toBe("POST");
+    expect(new Headers(seen?.init?.headers).get("x-trace")).toBe("2");
+    expect(Buffer.from(seen?.init?.body as ArrayBuffer).toString()).toBe("payload");
+  });
+
   it("rejects public hostnames that resolve to private addresses", async () => {
     const lookup = createOpenAiCompatibleLookup(
       new URL("https://models.example.test/v1"),

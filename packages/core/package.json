@@ -33,6 +33,11 @@
       "types": "./src/node/desktop-runtime.ts",
       "development": "./src/node/desktop-runtime.ts",
       "default": "./src/node/desktop-runtime.ts"
+    },
+    "./node/screen-capability": {
+      "types": "./src/node/screen-capability.ts",
+      "development": "./src/node/screen-capability.ts",
+      "default": "./src/node/screen-capability.ts"
     }
   },
   "scripts": {

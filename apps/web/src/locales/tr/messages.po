@@ -529,6 +529,10 @@ msgstr "Yetkilendirme zaman aşımına uğradı. Lütfen tekrar dene."
 msgid "Authorize"
 msgstr "Yetkilendir"
 
+#: src/pages/shell/message-cards.tsx:350
+msgid "Authorize this server so agents can use its tools. A popup opens."
+msgstr "Agent'ların araçlarını kullanabilmesi için bu sunucuyu yetkilendir. Bir açılır pencere açılır."
+
 #: src/pages/ExternalConversationSettings.tsx:160
 msgid "Automated senders"
 msgstr ""
@@ -624,7 +628,7 @@ msgstr "Sunucuya ulaşılamıyor."
 #: src/components/AskCard.tsx:35
 #: src/components/AskCard.tsx:186
 #: src/components/ComputerMaintenanceActions.tsx:97
-#: src/components/ComputerUpdateProgress.tsx:236
+#: src/components/ComputerUpdateProgress.tsx:233
 #: src/components/teach/TeachComputerOverlay.tsx:254
 #: src/pages/KnowledgeSection.tsx:212
 #: src/pages/KnowledgeSection.tsx:437
@@ -2080,6 +2084,10 @@ msgstr "Çıkış yap"
 msgid "Low"
 msgstr "Düşük"
 
+#: src/components/ComputerUpdateProgress.tsx:228
+msgid "Make sure nothing is still running on this computer."
+msgstr "Bu bilgisayarda hâlâ çalışan bir şey olmadığından emin ol."
+
 #: src/pages/PluginsOverlay.tsx:1162
 msgid "Manage MCP servers"
 msgstr "MCP sunucularını yönet"
@@ -2463,6 +2471,10 @@ msgstr ""
 #: src/pages/shell/message-cards.tsx:367
 msgid "Not now"
 msgstr "Şimdi değil"
+
+#: src/components/ComputerUpdateProgress.tsx:251
+msgid "Nothing is still running"
+msgstr "Hâlâ çalışan bir şey yok"
 
 #: src/pages/KnowledgeSection.tsx:163
 msgid "Nothing remembered yet"
@@ -3306,10 +3318,6 @@ msgstr "Adımlar"
 msgid "Stop"
 msgstr "Durdur"
 
-#: src/components/ComputerUpdateProgress.tsx:228
-msgid "Stop all workers and confirm that provider operations have stopped before releasing this computer."
-msgstr ""
-
 #: src/pages/Shell.tsx:5288
 #: src/pages/Shell.tsx:5539
 msgid "Stop speaking"
@@ -3458,10 +3466,6 @@ msgstr "Bu sunucu tarayıcı yetkilendirmesi istemedi."
 #: src/pages/McpServersOverlay.tsx:185
 msgid "This server is already connected. Disconnect it first to authorize again."
 msgstr "Bu sunucu zaten bağlı. Yeniden yetkilendirmek için önce bağlantısını kes."
-
-#: src/pages/shell/message-cards.tsx:350
-msgid "This server uses browser sign-in. Authorize it to let your agents use its tools. A popup will open."
-msgstr "Bu sunucu tarayıcıyla oturum açar. Agent'larının araçlarını kullanabilmesi için yetkilendir. Bir açılır pencere açılacak."
 
 #: src/pages/ModelSettingsOverlay.tsx:709
 msgid "This subscription sign-in is not available in Rakazo yet. Use a deployment credential or choose another provider."
@@ -3684,10 +3688,6 @@ msgstr "Ne zaman kullanılır"
 #: src/pages/HostComputerPrompt.tsx:59
 msgid "Where should bots run?"
 msgstr "Botlar nerede çalışsın?"
-
-#: src/components/ComputerUpdateProgress.tsx:254
-msgid "Workers and operations are stopped"
-msgstr ""
 
 #: src/pages/Auth.tsx:209
 #: src/pages/Auth.tsx:317

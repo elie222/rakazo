@@ -5,6 +5,7 @@ import { parse } from "yaml";
 
 interface ComposeService {
   environment?: Record<string, unknown>;
+  ports?: unknown[];
 }
 
 const repoRoot = path.resolve(import.meta.dirname, "../../..");
@@ -37,5 +38,28 @@ describe("local and topology compose proxy passthrough", () => {
     for (const name of ["api", "worker"] as const) {
       expectProxyPassthrough(compose.services[name]?.environment);
     }
+  });
+});
+
+describe("source-checkout compose postgres hardening", () => {
+  it("keeps postgres network-internal and requires POSTGRES_PASSWORD from .env", () => {
+    const compose = loadCompose("infra/compose/docker-compose.yml");
+    const postgres = compose.services.postgres;
+    expect(postgres?.ports).toBeUndefined();
+    expect(postgres?.environment?.POSTGRES_PASSWORD).toBe(
+      "${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}",
+    );
+    expect(postgres?.environment?.POSTGRES_USER).toBe("${POSTGRES_USER:-rakazo}");
+    expect(postgres?.environment?.POSTGRES_DB).toBe("${POSTGRES_DB:-rakazo}");
+    for (const name of ["api", "worker"] as const) {
+      expect(compose.services[name]?.environment?.DATABASE_URL).toBe(
+        "postgres://${POSTGRES_USER:-rakazo}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-rakazo}",
+      );
+    }
+  });
+
+  it("publishes loopback postgres only via the optional host overlay", () => {
+    const overlay = loadCompose("infra/compose/docker-compose.postgres-host.yml");
+    expect(overlay.services.postgres?.ports).toEqual(["127.0.0.1:5433:5432"]);
   });
 });

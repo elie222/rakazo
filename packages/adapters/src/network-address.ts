@@ -8,6 +8,8 @@ const CLOUD_METADATA_IPV4 = new Set([
   ipv4ToNumber("100.100.100.200"),
 ]);
 const AWS_IMDS_IPV6 = 0xfd000ec2000000000000000000000254n;
+/** fd7a:115c:a1e0::/48 — the Tailscale IPv6 range. */
+const TAILSCALE_ULA_PREFIX = 0xfd7a115ca1e0n;
 
 export function createAddressCheckedLookup(
   resolve: ResolveHostname,
@@ -78,6 +80,22 @@ export function isCloudMetadataAddress(address: string): boolean {
   if (ipv6 === AWS_IMDS_IPV6) return true;
   const embeddedIpv4 = getEmbeddedIpv4Number(ipv6);
   return embeddedIpv4 !== undefined && isCloudMetadataIpv4Number(embeddedIpv4);
+}
+
+/** Tailscale gives every node a CGNAT 100.64.0.0/10 address and an
+ * fd7a:115c:a1e0::/48 ULA, and MagicDNS answers with both. Callers that accept
+ * a tailnet host have to accept the IPv6 half too, or the name resolves to one
+ * allowed and one blocked address and the whole host is rejected. */
+export function isTailscaleAddress(address: string): boolean {
+  const value = address.toLowerCase().replace(/^\[|\]$/g, "");
+  const mapped = value.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/)?.[1];
+  const ipv4 = mapped ?? (isIP(value) === 4 ? value : undefined);
+  if (ipv4) {
+    const [a, b] = ipv4.split(".").map(Number);
+    return a === 100 && b != null && b >= 64 && b <= 127;
+  }
+  const ipv6 = parseIpv6(value);
+  return ipv6 !== undefined && ipv6 >> 80n === TAILSCALE_ULA_PREFIX;
 }
 
 export function isLinkLocalAddress(address: string): boolean {

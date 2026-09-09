@@ -25,6 +25,7 @@ import {
   normalizeOpenAiCompatibleBaseUrl,
   OPENAI_COMPATIBLE_PROVIDER_ID,
 } from "./openai-compatible-url.js";
+import { dispatcherFetch } from "./undici-fetch.js";
 
 export { OPENAI_COMPATIBLE_PROVIDER_ID };
 
@@ -76,12 +77,19 @@ export function openAiCompatibleModel(
 
 function openAiCompatibleProvider(models: Model<"openai-completions">[]): Provider {
   const api = openAICompletionsApi();
-  const safeFetch = createOpenAiCompatibleFetch();
+  // Guard the fetch the caller supplied (the runtime's seam for tests) or the
+  // dispatcher-matched default; never the bare global.
   const safeApi: ProviderStreams = {
     stream: (model, context, options) =>
-      api.stream(model, context, { ...options, fetch: safeFetch }),
+      api.stream(model, context, {
+        ...options,
+        fetch: createOpenAiCompatibleFetch(options?.fetch),
+      }),
     streamSimple: (model, context, options) =>
-      api.streamSimple(model, context, { ...options, fetch: safeFetch }),
+      api.streamSimple(model, context, {
+        ...options,
+        fetch: createOpenAiCompatibleFetch(options?.fetch),
+      }),
   };
   return createProvider({
     id: OPENAI_COMPATIBLE_PROVIDER_ID,
@@ -150,7 +158,7 @@ function requestCarriesAuthorization(input: RequestInfo | URL, init?: RequestIni
 }
 
 export function createOpenAiCompatibleFetch(
-  baseFetch: typeof globalThis.fetch = globalThis.fetch,
+  baseFetch: typeof globalThis.fetch = dispatcherFetch,
   resolve: ResolveHostname = resolveHostname,
 ): typeof globalThis.fetch {
   return async (input, init) => {
@@ -165,8 +173,8 @@ export function createOpenAiCompatibleFetch(
         ? new Agent({ connect: { lookup: createOpenAiCompatibleLookup(url, resolve) } })
         : undefined;
     try {
-      const response = await baseFetch(input instanceof Request ? input : url, {
-        ...init,
+      const response = await baseFetch(url, {
+        ...(await requestInitFor(input, init)),
         redirect: "error",
         ...(dispatcher ? { dispatcher } : {}),
       } as RequestInit & { dispatcher?: Agent });
@@ -176,6 +184,18 @@ export function createOpenAiCompatibleFetch(
       throw error;
     }
   };
+}
+
+/** The base fetch comes from the undici package, which recognizes only its own
+ * Request class and reads a global Request as the string "[object Request]".
+ * Flatten Request inputs to a URL plus init, with init overriding the
+ * Request's fields the way fetch itself merges them. */
+async function requestInitFor(input: RequestInfo | URL, init?: RequestInit): Promise<RequestInit> {
+  if (!(input instanceof Request)) return init ?? {};
+  const request = new Request(input, init);
+  const body =
+    request.method === "GET" || request.method === "HEAD" ? undefined : await request.arrayBuffer();
+  return { method: request.method, headers: request.headers, body, signal: request.signal };
 }
 
 async function closeDispatcherWithResponse(
@@ -363,7 +383,7 @@ async function readBoundedJson(response: Response): Promise<OpenAiCompatibleMode
 
 export async function probeOpenAiCompatibleModels(
   input: { baseUrl: string; apiKey?: string },
-  fetchImpl: typeof fetch = fetch,
+  fetchImpl?: typeof fetch,
   signal?: AbortSignal,
 ): Promise<string[]> {
   const baseUrl = assertAllowedOpenAiCompatibleUrl(input.baseUrl);

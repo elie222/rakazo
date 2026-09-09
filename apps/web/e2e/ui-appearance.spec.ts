@@ -1,5 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
-import { captureScreenshot, completeOnboarding, signup } from "./helpers";
+import { captureScreenshot, completeOnboarding, createNamedBot, signup } from "./helpers";
 
 async function captureSidebarSearchSelected(
   page: Page,
@@ -93,4 +93,30 @@ test("account settings appearance control switches to light mode", async ({ page
   await expect(settings).toBeHidden();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   await captureSidebarSearchSelected(page, testInfo, "sidebar-search-selected-dark");
+});
+
+test("sidebar bot rows hover with the same tone as the integrations row", async ({
+  page,
+}, testInfo) => {
+  const stamp = Date.now();
+  await signup(page, `ui-hover-${stamp}@rakazo.test`, "password12", "Hover QA");
+  await completeOnboarding(page, testInfo);
+  await createNamedBot(page, "Second Bot");
+
+  const sidebar = page.locator("aside").first();
+  const chief = sidebar.getByRole("button", { name: /^Chief/ }).first();
+  await expect(chief).toBeVisible();
+  const readChiefBg = () => chief.evaluate((el) => getComputedStyle(el).backgroundColor);
+  await expect.poll(readChiefBg).toBe("rgba(0, 0, 0, 0)");
+
+  await chief.hover();
+  await expect.poll(readChiefBg).not.toBe("rgba(0, 0, 0, 0)");
+  const chiefBg = await readChiefBg();
+  await captureScreenshot(page, testInfo, "sidebar-row-hover");
+
+  const integrations = sidebar.getByRole("button", { name: "Integrations", exact: true });
+  await integrations.hover();
+  await expect
+    .poll(() => integrations.evaluate((el) => getComputedStyle(el).backgroundColor))
+    .toBe(chiefBg);
 });

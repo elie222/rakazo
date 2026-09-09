@@ -87,7 +87,6 @@
   "Attach file": "Dosya ekle",
   "Attachment": "Ek",
   "Authorization code or callback URL": "Yetkilendirme kodu veya callback URL'si",
-  "Authorization expired — reconnect required": "Yetkilendirme süresi doldu — yeniden bağlanmak gerekiyor",
   "Authorization timed out. Please try again.": "Yetkilendirme zaman aşımına uğradı. Lütfen tekrar dene.",
   "Authorize": "Yetkilendir",
   "Base URL": "Temel URL",
@@ -533,7 +532,6 @@
   "This server cannot be assigned without a bot.": "Bu sunucu bir bot olmadan atanamaz.",
   "This server did not request browser authorization.": "Bu sunucu tarayıcı yetkilendirmesi istemedi.",
   "This server is already connected. Disconnect it first to authorize again.": "Bu sunucu zaten bağlı. Yeniden yetkilendirmek için önce bağlantısını kes.",
-  "This server uses browser sign-in. Authorize it to let your agents use its tools. A popup will open.": "Bu sunucu tarayıcıyla oturum açar. Agent'larının araçlarını kullanabilmesi için yetkilendir. Bir açılır pencere açılacak.",
   "This subscription sign-in is not available in Rakazo yet. Use a deployment credential or choose another provider.": "Bu abonelik girişi Rakazo'da henüz kullanılamıyor. Bir dağıtım kimlik bilgisi kullan veya başka bir sağlayıcı seç.",
   "Time of day": "Günün saati",
   "Title": "Başlık",
@@ -581,5 +579,8 @@
   "Docker": "Docker",
   "Opening chat…": "Sohbet açılıyor…",
   "Try again": "Tekrar dene",
-  "To:": "Kime:"
+  "To:": "Kime:",
+  "Authorize this server so agents can use its tools. A popup opens.": "Agent'ların araçlarını kullanabilmesi için bu sunucuyu yetkilendir. Bir açılır pencere açılır.",
+  "Make sure nothing is still running on this computer.": "Bu bilgisayarda hâlâ çalışan bir şey olmadığından emin ol.",
+  "Nothing is still running": "Hâlâ çalışan bir şey yok"
 }

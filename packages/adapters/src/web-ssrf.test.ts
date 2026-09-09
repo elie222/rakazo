@@ -121,6 +121,21 @@ describe("web SSRF policy", () => {
     expect(finalHeaders.get("x-trace-id")).toBeNull();
   });
 
+  it("drives the guarded dispatcher with a fetch from the same undici", async () => {
+    // See remote-mcp.test: failing inside the lookup proves the request was
+    // dispatched through the Agent rather than rejected by a mismatched fetch.
+    let resolutions = 0;
+    await expect(
+      fetchSafeWebText("https://example.test/start", {
+        resolveHostname: async () => {
+          resolutions += 1;
+          if (resolutions > 1) throw new Error("lookup reached");
+          return [{ address: "203.0.113.10", family: 4 as const }];
+        },
+      }),
+    ).rejects.toMatchObject({ cause: { message: "lookup reached" } });
+  });
+
   it("rejects oversized Content-Length before reading", async () => {
     const fetchMock: typeof fetch = async () =>
       new Response("ignored", {

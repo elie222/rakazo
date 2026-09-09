@@ -8,6 +8,7 @@ import { computerNetworkNameFor, hostComputerUser } from "./computer-spec.js";
 
 const mocks = vi.hoisted(() => ({
   docker: {
+    version: vi.fn(),
     getImage: vi.fn(),
     getContainer: vi.fn(),
     listContainers: vi.fn(),
@@ -18,6 +19,7 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock("dockerode", () => ({
   default: class {
+    version = mocks.docker.version;
     getImage = mocks.docker.getImage;
     getContainer = mocks.docker.getContainer;
     listContainers = mocks.docker.listContainers;
@@ -286,6 +288,52 @@ describe("provisioning network rollback", () => {
       body: JSON.stringify({ botId: "bot", spaceId: "space", homePath }),
     });
   }
+
+  it.each(["1.44", "1.45"])(
+    "provisions named-volume homes only with subpath support (%s)",
+    async (apiVersion) => {
+      fixture();
+      vi.stubEnv("SANDBOX_SCREEN_NETWORK", "internal");
+      vi.stubEnv("HOSTNAME", "supervisor");
+      mocks.docker.version.mockResolvedValue({ ApiVersion: apiVersion });
+      mocks.docker.getContainer.mockReturnValue({
+        inspect: vi.fn().mockResolvedValue({
+          NetworkSettings: { Networks: { shared: {} } },
+          Mounts: [
+            {
+              Type: "volume",
+              Name: "example_appdata",
+              Destination: process.env.DATA_DIR,
+              Source: "/var/lib/docker/volumes/example_appdata/_data",
+            },
+          ],
+        }),
+      });
+      const response = await provision();
+      if (apiVersion === "1.44") {
+        expect(response.status).toBe(500);
+        expect(mocks.docker.createContainer).not.toHaveBeenCalled();
+        expect(mocks.docker.createNetwork).not.toHaveBeenCalled();
+      } else {
+        expect(response.status).toBe(200);
+        expect(mocks.docker.createContainer).toHaveBeenCalledWith(
+          expect.objectContaining({
+            User: "1000:1000",
+            HostConfig: expect.objectContaining({
+              Mounts: [
+                expect.objectContaining({
+                  Type: "volume",
+                  Source: "example_appdata",
+                  Target: "/home/rakazo",
+                  VolumeOptions: { NoCopy: true, Subpath: "homes/bot" },
+                }),
+              ],
+            }),
+          }),
+        );
+      }
+    },
+  );
 
   it("does not allocate a network for an invalid home", async () => {
     fixture();

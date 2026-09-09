@@ -94,7 +94,6 @@
   "Attach file": "Datei anhängen",
   "Attachment": "Anhang",
   "Authorization code or callback URL": "Autorisierungscode oder Callback-URL",
-  "Authorization expired — reconnect required": "Autorisierung abgelaufen — erneute Verbindung erforderlich",
   "Authorization timed out. Please try again.": "Zeitüberschreitung bei der Autorisierung. Versuche es erneut.",
   "Authorize": "Autorisieren",
   "Base URL": "Basis-URL",
@@ -535,7 +534,6 @@
   "This server cannot be assigned without a bot.": "Dieser Server kann ohne Bot nicht zugewiesen werden.",
   "This server did not request browser authorization.": "Dieser Server hat keine Browserautorisierung angefordert.",
   "This server is already connected. Disconnect it first to authorize again.": "Dieser Server ist bereits verbunden. Trenne zuerst die Verbindung, um ihn erneut zu autorisieren.",
-  "This server uses browser sign-in. Authorize it to let your agents use its tools. A popup will open.": "Dieser Server verwendet die Browseranmeldung. Autorisiere ihn, damit deine Agents seine Tools verwenden können. Ein Pop-up wird geöffnet.",
   "This subscription sign-in is not available in Rakazo yet. Use a deployment credential or choose another provider.": "Diese Abonnementanmeldung ist in Rakazo noch nicht verfügbar. Verwende Zugangsdaten der Bereitstellung oder wähle einen anderen Anbieter.",
   "Time of day": "Uhrzeit",
   "Title": "Titel",
@@ -584,5 +582,8 @@
   "Docker": "Docker",
   "Opening chat…": "Chat wird geöffnet…",
   "Try again": "Erneut versuchen",
-  "To:": "An:"
+  "To:": "An:",
+  "Authorize this server so agents can use its tools. A popup opens.": "Autorisiere diesen Server, damit Agents seine Tools nutzen können. Ein Pop-up öffnet sich.",
+  "Make sure nothing is still running on this computer.": "Stelle sicher, dass auf diesem Computer nichts mehr läuft.",
+  "Nothing is still running": "Nichts läuft mehr"
 }

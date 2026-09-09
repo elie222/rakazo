@@ -29,6 +29,19 @@ openssl rand -hex 16   # POSTGRES_PASSWORD
 openssl rand -hex 32   # BETTER_AUTH_SECRET, ENCRYPTION_KEY, SCREEN_PROXY_SECRET, SANDBOX_SUPERVISOR_TOKEN
 ```
 
+Source-checkout `.env.example` also requires `POSTGRES_PASSWORD` (same
+`openssl rand -hex 16` shape) for `infra/compose/docker-compose.yml`. Put the
+same value in host-side `DATABASE_URL` when using the optional
+`docker-compose.postgres-host.yml` overlay. Keep the password URI-safe: Compose
+interpolates it into `DATABASE_URL` the same way the images stack does. Hex from
+`openssl rand` is safe; characters such as `@ : / ? # %` are not.
+
+Existing source-checkout `pgdata` volumes keep the user, password, and database
+from first init (often the former hardcoded `rakazo` / `rakazo`). Keep those
+values in `.env`, or change them in place with `ALTER ROLE` / rename. Recreate
+the volume only after a backup (or when the data is disposable);
+`docker compose down -v` deletes all Postgres state.
+
 Source-checkout `.env.example` asks for a **64-hex** `ENCRYPTION_KEY` in
 comments; published-images installer uses 32 bytes of hex (64 hex chars) via
 `openssl rand -hex 32`. Prefer long independent random values either way.

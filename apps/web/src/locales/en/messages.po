@@ -529,6 +529,10 @@ msgstr "Authorization timed out. Please try again."
 msgid "Authorize"
 msgstr "Authorize"
 
+#: src/pages/shell/message-cards.tsx:350
+msgid "Authorize this server so agents can use its tools. A popup opens."
+msgstr "Authorize this server so agents can use its tools. A popup opens."
+
 #: src/pages/ExternalConversationSettings.tsx:160
 msgid "Automated senders"
 msgstr "Automated senders"
@@ -624,7 +628,7 @@ msgstr "Can't reach the server."
 #: src/components/AskCard.tsx:35
 #: src/components/AskCard.tsx:186
 #: src/components/ComputerMaintenanceActions.tsx:97
-#: src/components/ComputerUpdateProgress.tsx:236
+#: src/components/ComputerUpdateProgress.tsx:233
 #: src/components/teach/TeachComputerOverlay.tsx:254
 #: src/pages/KnowledgeSection.tsx:212
 #: src/pages/KnowledgeSection.tsx:437
@@ -2080,6 +2084,10 @@ msgstr "Log out"
 msgid "Low"
 msgstr "Low"
 
+#: src/components/ComputerUpdateProgress.tsx:228
+msgid "Make sure nothing is still running on this computer."
+msgstr "Make sure nothing is still running on this computer."
+
 #: src/pages/PluginsOverlay.tsx:1162
 msgid "Manage MCP servers"
 msgstr "Manage MCP servers"
@@ -2463,6 +2471,10 @@ msgstr "Not in the plugin catalog"
 #: src/pages/shell/message-cards.tsx:367
 msgid "Not now"
 msgstr "Not now"
+
+#: src/components/ComputerUpdateProgress.tsx:251
+msgid "Nothing is still running"
+msgstr "Nothing is still running"
 
 #: src/pages/KnowledgeSection.tsx:163
 msgid "Nothing remembered yet"
@@ -3306,10 +3318,6 @@ msgstr "Steps"
 msgid "Stop"
 msgstr "Stop"
 
-#: src/components/ComputerUpdateProgress.tsx:228
-msgid "Stop all workers and confirm that provider operations have stopped before releasing this computer."
-msgstr "Stop all workers and confirm that provider operations have stopped before releasing this computer."
-
 #: src/pages/Shell.tsx:5288
 #: src/pages/Shell.tsx:5539
 msgid "Stop speaking"
@@ -3458,10 +3466,6 @@ msgstr "This server did not request browser authorization."
 #: src/pages/McpServersOverlay.tsx:185
 msgid "This server is already connected. Disconnect it first to authorize again."
 msgstr "This server is already connected. Disconnect it first to authorize again."
-
-#: src/pages/shell/message-cards.tsx:350
-msgid "This server uses browser sign-in. Authorize it to let your agents use its tools. A popup will open."
-msgstr "This server uses browser sign-in. Authorize it to let your agents use its tools. A popup will open."
 
 #: src/pages/ModelSettingsOverlay.tsx:709
 msgid "This subscription sign-in is not available in Rakazo yet. Use a deployment credential or choose another provider."
@@ -3684,10 +3688,6 @@ msgstr "When to use"
 #: src/pages/HostComputerPrompt.tsx:59
 msgid "Where should bots run?"
 msgstr "Where should bots run?"
-
-#: src/components/ComputerUpdateProgress.tsx:254
-msgid "Workers and operations are stopped"
-msgstr "Workers and operations are stopped"
 
 #: src/pages/Auth.tsx:209
 #: src/pages/Auth.tsx:317

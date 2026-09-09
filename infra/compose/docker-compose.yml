@@ -2,15 +2,16 @@ services:
   postgres:
     image: ${POSTGRES_IMAGE:-postgres:16}
     environment:
-      POSTGRES_USER: rakazo
-      POSTGRES_PASSWORD: rakazo
-      POSTGRES_DB: rakazo
-    ports:
-      - "127.0.0.1:5433:5432"
+      # USER/PASSWORD/DB apply only on first pgdata init. Keep existing values in
+      # .env, or ALTER ROLE / rename in place. Recreate pgdata only after backup
+      # (or when the volume is disposable); down -v deletes all DB state.
+      POSTGRES_USER: ${POSTGRES_USER:-rakazo}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-rakazo}
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U rakazo"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-rakazo} -d ${POSTGRES_DB:-rakazo}"]
       interval: 3s
       timeout: 5s
       retries: 20
@@ -67,7 +68,7 @@ services:
     env_file:
       - ../../.env
     environment:
-      DATABASE_URL: postgres://rakazo:rakazo@postgres:5432/rakazo
+      DATABASE_URL: postgres://${POSTGRES_USER:-rakazo}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-rakazo}
       API_HOST: "0.0.0.0"
       DATA_DIR: /data
       SANDBOX_SUPERVISOR_URL: http://supervisor:7091
@@ -103,7 +104,7 @@ services:
       - ../../.env
     environment:
       BETTER_AUTH_SECRET: ""
-      DATABASE_URL: postgres://rakazo:rakazo@postgres:5432/rakazo
+      DATABASE_URL: postgres://${POSTGRES_USER:-rakazo}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-rakazo}
       DATA_DIR: /data
       SANDBOX_SUPERVISOR_URL: http://supervisor:7091
       WAKEUP_DRIVER: graphile
