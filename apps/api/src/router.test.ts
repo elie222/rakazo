@@ -4,7 +4,7 @@ import type { Actor } from "@rakazo/contracts";
 import { openScreenCapability } from "@rakazo/core/node/screen-capability";
 import type { PrismaClient } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createRouter, type RouterDeps } from "./router.js";
 
 describe("account preferences", () => {
@@ -839,4 +839,82 @@ describe("interrupted computer reservation release", () => {
     });
     expect(order).toEqual(["operation", "computer"]);
   });
+});
+
+describe("bot restore computer quota", () => {
+  function fixture(archivedBot: { archivedAt: Date | null } | null, inUse = 0) {
+    const bot = archivedBot
+      ? {
+          ...archivedBot,
+          id: "bot-archived",
+          computerId: "computer-archived",
+          computer: { id: "computer-archived" },
+          userId: "user-1",
+        }
+      : null;
+    const prisma = {
+      bot: {
+        findFirst: vi.fn(async () => bot),
+        update: vi.fn(async () => ({})),
+      },
+      computer: {
+        count: vi.fn(async (args: { where: { id?: string } }) =>
+          args.where.id ? 0 : inUse,
+        ),
+      },
+    };
+    const handler = new RPCHandler(
+      createRouter({ prisma, env: { sandboxProvider: "fake" } } as unknown as RouterDeps),
+    );
+    const call = async () =>
+      handler.handle(
+        new Request("http://127.0.0.1/rpc/bots/restore", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ json: { botId: "bot-archived" } }),
+        }),
+        {
+          prefix: "/rpc",
+          context: {
+            actor: {
+              spaceId: "space-1",
+              userId: "user-1",
+              email: "user@rakazo.test",
+              isDeploymentOwner: true,
+            },
+          },
+        },
+      );
+    return { prisma, call };
+  }
+
+  it("archives, creates, then restores is refused when the restore would exceed the cap", async () => {
+    process.env.SANDBOX_MAX_COMPUTERS_PER_USER = "1";
+    const { prisma, call } = fixture({ archivedAt: new Date() }, 1);
+    const { response } = await call();
+    expect(response.status).toBe(400);
+    expect(prisma.bot.update).not.toHaveBeenCalled();
+  });
+
+  it("restores normally when the user is below the cap or the computer is already live", async () => {
+    process.env.SANDBOX_MAX_COMPUTERS_PER_USER = "1";
+    const { prisma, call } = fixture({ archivedAt: new Date() }, 0);
+    const { response } = await call();
+    expect(response.status).toBe(200);
+    expect(prisma.bot.update).toHaveBeenCalledWith({
+      where: { id: "bot-archived" },
+      data: { archivedAt: null },
+    });
+  });
+
+  it("does not enforce anything when the cap is unset", async () => {
+    const { prisma, call } = fixture({ archivedAt: new Date() }, 99);
+    const { response } = await call();
+    expect(response.status).toBe(200);
+    expect(prisma.bot.update).toHaveBeenCalledOnce();
+  });
+});
+
+afterEach(() => {
+  delete process.env.SANDBOX_MAX_COMPUTERS_PER_USER;
 });

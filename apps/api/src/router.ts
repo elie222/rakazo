@@ -120,11 +120,12 @@ import {
   newestVoiceCredentialOrder,
   Prisma,
   type PrismaClient,
+  assertComputerQuotaForRestore,
+  ComputerLimitError,
   parseComputerMode,
   releaseSpaceDeletionClaim,
   renewSpaceDeletionClaim,
   SPACE_DELETION_CLAIM_TIMEOUT_MS,
-  ComputerLimitError,
   SpaceDeletionInProgressError,
   SpaceLimitError,
   SpaceNotEmptyError,
@@ -1152,7 +1153,17 @@ export function createRouter(deps: RouterDeps) {
       restore: authed.bots.restore.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId, { includeArchived: true });
         if (!bot.archivedAt) return { ok: true as const };
-        await deps.prisma.bot.update({ where: { id: bot.id }, data: { archivedAt: null } });
+        try {
+          if (bot.computer) {
+            await assertComputerQuotaForRestore(deps.prisma, {
+              userId: context.actor.userId,
+              computerId: bot.computer.id,
+            });
+          }
+          await deps.prisma.bot.update({ where: { id: bot.id }, data: { archivedAt: null } });
+        } catch (error) {
+          throw mapSpaceLifecycleError(error);
+        }
         return { ok: true as const };
       }),
       remove: authed.bots.remove.handler(async ({ context, input }) => {
