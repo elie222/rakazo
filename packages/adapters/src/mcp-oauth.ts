@@ -35,17 +35,37 @@ export type OAuthMaterial = {
 /** Values that must never appear in model-visible tool results or errors. */
 export function oauthMaterialSecrets(material: OAuthMaterial): string[] {
   const values: string[] = [];
-  if (material.secret) values.push(material.secret);
-  if (material.env) values.push(...Object.values(material.env).filter(Boolean));
-  if (material.headers) values.push(...Object.values(material.headers).filter(Boolean));
-  const tokens = material.oauth?.tokens;
-  if (tokens?.access_token) values.push(tokens.access_token);
-  if (tokens?.refresh_token) values.push(tokens.refresh_token);
+  const add = (value: string | undefined) => {
+    if (!value) return;
+    values.push(value);
+    const bearer = value.match(/^Bearer\s+(.+)$/i);
+    if (bearer?.[1]) values.push(bearer[1]);
+  };
+  add(material.secret);
+  add(material.oauth?.tokens?.access_token);
+  add(material.oauth?.tokens?.refresh_token);
   const client = material.oauth?.clientInformation;
   if (client && "client_secret" in client && typeof client.client_secret === "string") {
-    values.push(client.client_secret);
+    add(client.client_secret);
   }
-  return [...new Set(values.filter((value) => value.length > 0))];
+  // Only credential-shaped headers/env enter the list. Ordinary values such as
+  // NODE_ENV=production must not redact unrelated tool output.
+  const credentialKey = /(secret|token|password|credential|api[_-]?key|^auth)/i;
+  const minCredentialLength = 8;
+  for (const [key, value] of Object.entries(material.headers ?? {})) {
+    if (
+      value.length >= minCredentialLength &&
+      (credentialKey.test(key) || key.toLowerCase() === "authorization")
+    ) {
+      add(value);
+    }
+  }
+  for (const [key, value] of Object.entries(material.env ?? {})) {
+    if (value.length >= minCredentialLength && credentialKey.test(key)) {
+      add(value);
+    }
+  }
+  return [...new Set(values)];
 }
 
 type ServerRef = { id: string; endpoint: string | null; secretId: string | null };

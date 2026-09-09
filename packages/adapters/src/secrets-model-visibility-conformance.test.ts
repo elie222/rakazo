@@ -68,11 +68,11 @@ describe("secrets model-visibility conformance", () => {
   });
 
   describe("oauth material collection", () => {
-    it("collects static secrets, header/env values, tokens, and client_secret", () => {
+    it("collects static secrets, long header/env values, tokens, and client_secret", () => {
       const material: OAuthMaterial = {
-        secret: "static-mcp-token",
-        env: { API_TOKEN: "env-mcp-token" },
-        headers: { "X-Api-Key": "header-mcp-token" },
+        secret: "Bearer static-mcp-token-value",
+        env: { API_TOKEN: "env-mcp-token-value", NODE_ENV: "production" },
+        headers: { "X-Api-Key": "header-mcp-token-value", "X-Env": "info" },
         oauth: {
           tokens: {
             access_token: OAUTH_ACCESS,
@@ -88,14 +88,34 @@ describe("secrets model-visibility conformance", () => {
       const secrets = oauthMaterialSecrets(material);
       expect(secrets).toEqual(
         expect.arrayContaining([
-          "static-mcp-token",
-          "env-mcp-token",
-          "header-mcp-token",
+          "Bearer static-mcp-token-value",
+          "static-mcp-token-value",
+          "env-mcp-token-value",
+          "header-mcp-token-value",
           OAUTH_ACCESS,
           OAUTH_REFRESH,
           OAUTH_CLIENT_SECRET,
         ]),
       );
+      expect(secrets).not.toContain("production");
+      expect(secrets).not.toContain("info");
+    });
+
+    it("picks up rotated access tokens from the live material object", () => {
+      const material: OAuthMaterial = {
+        oauth: {
+          tokens: {
+            access_token: "oauth-access-token-before-rotation",
+            refresh_token: OAUTH_REFRESH,
+            token_type: "bearer",
+          },
+        },
+      };
+      expect(oauthMaterialSecrets(material)).toContain("oauth-access-token-before-rotation");
+      material.oauth!.tokens!.access_token = "oauth-access-token-after-rotation";
+      const secrets = oauthMaterialSecrets(material);
+      expect(secrets).toContain("oauth-access-token-after-rotation");
+      expect(secrets).not.toContain("oauth-access-token-before-rotation");
     });
   });
 
