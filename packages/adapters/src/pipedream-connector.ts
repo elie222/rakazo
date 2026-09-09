@@ -195,11 +195,17 @@ export class PipedreamConnector implements ManagedConnectorProvider {
         call.route?.toolName ?? call.tool,
         call.args,
       );
-      yield { type: "result", data: redactConnectorPayload(result, [token]) };
+      yield {
+        type: "result",
+        data: redactConnectorPayload(result, [token, this.config.clientSecret]),
+      };
     } catch (error) {
       yield {
         type: "error",
-        message: sanitizeConnectorError(error, token ? [token] : []),
+        message: sanitizeConnectorError(
+          error,
+          [token, this.config.clientSecret].filter((value): value is string => Boolean(value)),
+        ),
       };
     }
   }

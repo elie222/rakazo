@@ -8,7 +8,7 @@ import type {
 import { isLocalMcpHost } from "@rakazo/contracts";
 import type { McpServer, PrismaClient } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
-import { sanitizeConnectorError } from "./connector-safety.js";
+import { redactConnectorPayload, sanitizeConnectorError } from "./connector-safety.js";
 import {
   CATALOG_EXECUTE,
   catalogEntries,
@@ -18,12 +18,12 @@ import {
   lazyCatalogTools,
   resolveCatalogCall,
 } from "./lazy-tool-catalog.js";
-import type { McpOAuthBroker, OAuthMaterial } from "./mcp-oauth.js";
+import { type McpOAuthBroker, type OAuthMaterial, oauthMaterialSecrets } from "./mcp-oauth.js";
 import { McpSession } from "./mcp-transport.js";
 import type { RemoteTransportDependencies } from "./remote-mcp.js";
 import type { EncryptedSecretStore } from "./secrets.js";
 
-type SessionEntry = { session: McpSession; revision: number };
+type SessionEntry = { session: McpSession; revision: number; secrets: string[] };
 type PendingSession = { revision: number; promise: Promise<McpSession> };
 
 /** Runtime MCP connector. Authorization is re-checked against the bot assignment on every call. */
@@ -201,11 +201,13 @@ export class McpConnector implements ConnectorProvider {
         call.args,
         { signal: context.signal },
       );
-      yield { type: "result", data: result };
+      const secrets = this.sessionSecrets(assignment.server, context);
+      yield { type: "result", data: redactConnectorPayload(result, secrets) };
     } catch (error) {
       // A thrown call means the transport or auth broke; drop the session so the next call reconnects.
+      const secrets = this.sessionSecrets(assignment.server, context);
       await this.evict(this.sessionKey(assignment.server, context));
-      yield { type: "error", message: error instanceof Error ? error.message : String(error) };
+      yield { type: "error", message: sanitizeConnectorError(error, secrets) };
     }
   }
 
@@ -242,8 +244,8 @@ export class McpConnector implements ConnectorProvider {
     }
     if (existing) await this.evict(sessionKey);
 
-    const promise = this.connectSession(server, context).then((session) => {
-      this.sessions.set(sessionKey, { session, revision: server.revision });
+    const promise = this.connectSession(server, context).then(({ session, secrets }) => {
+      this.sessions.set(sessionKey, { session, revision: server.revision, secrets });
       return session;
     });
     this.connecting.set(sessionKey, { revision: server.revision, promise });
@@ -254,7 +256,10 @@ export class McpConnector implements ConnectorProvider {
     }
   }
 
-  private async connectSession(server: McpServer, context: AdapterContext): Promise<McpSession> {
+  private async connectSession(
+    server: McpServer,
+    context: AdapterContext,
+  ): Promise<{ session: McpSession; secrets: string[] }> {
     const session = new McpSession({ name: `rakazo-${server.slug}` });
     try {
       const secret = server.secretId
@@ -269,6 +274,7 @@ export class McpConnector implements ConnectorProvider {
       const material = secret
         ? (JSON.parse(this.secrets.load(secret.ciphertext, secret.id)) as OAuthMaterial)
         : {};
+      const secrets = oauthMaterialSecrets(material);
       const loaded = { material, ...(secret ? { secretId: secret.id } : {}) };
       const args = Array.isArray(server.args) ? server.args.map(String) : [];
       const env = { ...(material.env ?? {}) };
@@ -310,10 +316,14 @@ export class McpConnector implements ConnectorProvider {
           signal: context.signal,
         });
       }
-      return session;
+      return { session, secrets };
     } catch (error) {
       await session.close().catch(() => undefined);
       throw error;
     }
+  }
+
+  private sessionSecrets(server: McpServer, context: AdapterContext): string[] {
+    return this.sessions.get(this.sessionKey(server, context))?.secrets ?? [];
   }
 }

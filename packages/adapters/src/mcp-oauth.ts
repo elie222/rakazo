@@ -32,6 +32,22 @@ export type OAuthMaterial = {
   oauth?: OAuthState;
 };
 
+/** Values that must never appear in model-visible tool results or errors. */
+export function oauthMaterialSecrets(material: OAuthMaterial): string[] {
+  const values: string[] = [];
+  if (material.secret) values.push(material.secret);
+  if (material.env) values.push(...Object.values(material.env).filter(Boolean));
+  if (material.headers) values.push(...Object.values(material.headers).filter(Boolean));
+  const tokens = material.oauth?.tokens;
+  if (tokens?.access_token) values.push(tokens.access_token);
+  if (tokens?.refresh_token) values.push(tokens.refresh_token);
+  const client = material.oauth?.clientInformation;
+  if (client && "client_secret" in client && typeof client.client_secret === "string") {
+    values.push(client.client_secret);
+  }
+  return [...new Set(values.filter((value) => value.length > 0))];
+}
+
 type ServerRef = { id: string; endpoint: string | null; secretId: string | null };
 type ActorRef = { spaceId: string; userId: string };
 
