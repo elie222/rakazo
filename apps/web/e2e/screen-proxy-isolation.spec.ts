@@ -5,9 +5,17 @@ import type { AddressInfo, Server as NetServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { expect, test } from "@playwright/test";
+import { openScreenCapability } from "@rakazo/core/node/screen-capability";
 import { createServer, type Plugin, preview, type ViteDevServer } from "vite";
 import { addScreenProxyCapability } from "../../api/src/screen-proxy";
 
+const scope = {
+  botId: "bot",
+  computerId: "computer",
+  botGeneration: 0,
+  computerGeneration: 0,
+  controlLeaseId: null,
+};
 const secret = "fake-screen-proxy-browser-test-secret";
 const screenHtml = `<!doctype html><title>Fake screen</title>
 <script type="module">
@@ -48,6 +56,7 @@ for (const mode of ["development", "preview"] as const) {
     let screenUrl: string;
     let stop: () => Promise<void>;
 
+    let authorized = true;
     test.beforeAll(async () => {
       const root = await mkdtemp(path.join(tmpdir(), "rakazo-screen-test-"));
       await mkdir(path.join(root, "dist"));
@@ -76,6 +85,7 @@ for (const mode of ["development", "preview"] as const) {
         socket.write(Buffer.from([0x81, 2, 111, 107]));
         socket.on("data", () => socket.end(Buffer.from([0x88, 0])));
         socket.on("error", () => socket.destroy());
+        socket.on("end", () => socket.destroy());
       });
       const upstreamOrigin = await listen(upstream);
 
@@ -97,6 +107,20 @@ for (const mode of ["development", "preview"] as const) {
           } else next();
         });
       }
+      const authority = createHttpServer(async (req, res) => {
+        const chunks: Buffer[] = [];
+        for await (const chunk of req) chunks.push(Buffer.from(chunk));
+        const body = JSON.parse(Buffer.concat(chunks).toString());
+        const capability = openScreenCapability(body.path, secret);
+        if (!authorized || !capability || req.headers.authorization !== `Bearer ${secret}`) {
+          res.writeHead(403).end();
+          return;
+        }
+        res.setHeader("content-type", "application/json");
+        res.end(JSON.stringify(capability.target));
+      });
+      const previousApi = process.env.API_PROXY_TARGET;
+      process.env.API_PROXY_TARGET = await listen(authority);
       const previousSecret = process.env.SCREEN_PROXY_SECRET;
       process.env.SCREEN_PROXY_SECRET = secret;
       try {
@@ -115,13 +139,16 @@ for (const mode of ["development", "preview"] as const) {
         if ("listen" in server) await listen(server.httpServer!);
         origin = `http://127.0.0.1:${(server.httpServer!.address() as AddressInfo).port}`;
         // Exercise the same capability issuer used by the production API, with a configured web origin.
-        screenUrl = addScreenProxyCapability(`${upstreamOrigin}/embed.html`, secret, origin);
+        screenUrl = addScreenProxyCapability(`${upstreamOrigin}/embed.html`, secret, origin, scope);
         stop = async () => {
           await server.close();
           await close(upstream);
+          await close(authority);
           await rm(root, { recursive: true, force: true });
         };
       } finally {
+        if (previousApi === undefined) delete process.env.API_PROXY_TARGET;
+        else process.env.API_PROXY_TARGET = previousApi;
         if (previousSecret === undefined) delete process.env.SCREEN_PROXY_SECRET;
         else process.env.SCREEN_PROXY_SECRET = previousSecret;
       }
@@ -151,6 +178,39 @@ for (const mode of ["development", "preview"] as const) {
       expect(
         (await page.context().cookies(origin)).find((c) => c.name === "app-session")?.value,
       ).toBe("fake-session");
+    });
+
+    test("revocation blocks replay and closes an already connected socket", async ({
+      page,
+      request,
+    }) => {
+      await page.goto(`${origin}/app`);
+      await page.evaluate(async (url) => {
+        const target = new URL(url);
+        target.protocol = "ws:";
+        target.pathname = target.pathname.replace("/embed.html", "/hold");
+        const socket = new WebSocket(target);
+        const state = window as unknown as { screenClosed: boolean };
+        state.screenClosed = false;
+        socket.onclose = () => {
+          state.screenClosed = true;
+        };
+        await new Promise<void>((resolve, reject) => {
+          socket.onmessage = () => resolve();
+          socket.onerror = () => reject(new Error("socket failed"));
+        });
+      }, screenUrl);
+      authorized = false;
+      try {
+        expect((await request.get(screenUrl)).status()).toBe(403);
+        await expect
+          .poll(() =>
+            page.evaluate(() => (window as unknown as { screenClosed: boolean }).screenClosed),
+          )
+          .toBe(true);
+      } finally {
+        authorized = true;
+      }
     });
 
     for (const sandbox of ["allow-scripts allow-pointer-lock", null]) {

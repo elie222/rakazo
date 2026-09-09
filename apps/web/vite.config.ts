@@ -13,9 +13,14 @@ import {
 import babel from "@rolldown/plugin-babel";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
-import { defineConfig, loadEnv, type PreviewServer, type ViteDevServer } from "vite";
+import type { PreviewServer, ViteDevServer } from "vite";
+import { defineConfig, loadEnv } from "vite";
 import { resolveScreenProxySecret } from "../../packages/core/src/secrets-guard.ts";
-import { resolveNovncTarget, safeProxyHeaders } from "./src/screen-proxy.js";
+import {
+  resolveNovncTarget,
+  safeProxyHeaders,
+  watchScreenAuthorization,
+} from "./src/screen-proxy.js";
 
 const webPort = Number(process.env.WEB_PORT ?? 5173);
 const DESKTOP_STACK_PROBE_PATH = "/.well-known/rakazo-desktop-stack";
@@ -54,13 +59,14 @@ function attachDesktopStackProbe(
   });
 }
 
-function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string) {
-  server.middlewares.use((req, res, next) => {
+function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string, api: string) {
+  server.middlewares.use(async (req, res, next) => {
     if (!req.url?.startsWith("/novnc/")) {
       next();
       return;
     }
-    const target = resolveNovncTarget(req.url, secret);
+    const target = await resolveNovncTarget(req.url, secret, api);
+    if (res.destroyed) return;
     if (!target) {
       res.statusCode = 403;
       res.end("Invalid or expired screen capability");
@@ -85,16 +91,33 @@ function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string)
         incoming.pipe(res);
       },
     );
-    upstream.on("error", (error) => {
+    const stopChecking = watchScreenAuthorization(
+      async () => Boolean(await resolveNovncTarget(req.url, secret, api)),
+      () => {
+        upstream.destroy();
+        res.destroy();
+      },
+    );
+    res.once("close", () => {
+      stopChecking();
+      upstream.destroy();
+    });
+    upstream.on("error", () => {
+      stopChecking();
+      if (res.headersSent) {
+        res.destroy();
+        return;
+      }
       res.statusCode = 502;
-      res.end(error.message);
+      res.end("Screen unavailable");
     });
     req.pipe(upstream);
   });
 
-  server.httpServer?.on("upgrade", (req, socket, head) => {
+  server.httpServer?.on("upgrade", async (req, socket, head) => {
     if (!req.url?.startsWith("/novnc/")) return;
-    const target = resolveNovncTarget(req.url, secret);
+    const target = await resolveNovncTarget(req.url, secret, api);
+    if (socket.destroyed) return;
     if (!target) {
       socket.destroy();
       return;
@@ -103,6 +126,21 @@ function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string)
       target.protocol === "https:"
         ? tls.connect({ port: target.port, host: target.hostname, servername: target.hostname })
         : net.connect(target.port, target.hostname);
+    const stopChecking = watchScreenAuthorization(
+      async () => Boolean(await resolveNovncTarget(req.url, secret, api)),
+      () => {
+        socket.destroy();
+        upstream.destroy();
+      },
+    );
+    socket.once("close", () => {
+      stopChecking();
+      upstream.destroy();
+    });
+    upstream.once("close", () => {
+      stopChecking();
+      socket.destroy();
+    });
     upstream.once(target.protocol === "https:" ? "secureConnect" : "connect", () => {
       const headerLines = [
         `${req.method ?? "GET"} ${target.path} HTTP/1.1`,
@@ -192,8 +230,8 @@ export default defineConfig(({ mode }) => {
       },
       {
         name: "rakazo-novnc-proxy",
-        configureServer: (server) => attachNovncProxy(server, screenProxySecret()),
-        configurePreviewServer: (server) => attachNovncProxy(server, screenProxySecret()),
+        configureServer: (server) => attachNovncProxy(server, screenProxySecret(), api),
+        configurePreviewServer: (server) => attachNovncProxy(server, screenProxySecret(), api),
       },
     ],
     server: {

@@ -1,6 +1,7 @@
 import { RPCHandler } from "@orpc/server/fetch";
 import { COMPUTER_SCREEN_UNAVAILABLE, ComputerScreenUnavailableError } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
+import { openScreenCapability } from "@rakazo/core/node/screen-capability";
 import type { PrismaClient } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { describe, expect, it, vi } from "vitest";
@@ -570,6 +571,7 @@ describe("computer screen url", () => {
   } satisfies Actor;
   const computerRow = {
     id: "computer-1",
+    screenGeneration: 3,
     kind: "e2b",
     scope: "team",
     state: "running",
@@ -587,6 +589,7 @@ describe("computer screen url", () => {
       bot: {
         findFirst: vi.fn().mockResolvedValue({
           id: "bot-1",
+          screenGeneration: 2,
           thread: { id: "thread-1" },
           computer: computerRow,
         }),
@@ -618,6 +621,36 @@ describe("computer screen url", () => {
     );
     return { response, updateMany };
   };
+
+  it("issues lifecycle-bound capabilities for managed-provider screens too", async () => {
+    const { response } = await callScreenUrl(async () => ({
+      url: "https://screen.example/vnc.html?token=fake-token",
+    }));
+    expect(response.status).toBe(200);
+    const { json } = await response.json();
+    const url = new URL(json.url);
+    expect(url.origin).toBe("http://127.0.0.1:5173");
+    expect(openScreenCapability(url.pathname, "fake-test-secret")).toMatchObject({
+      scope: {
+        botId: "bot-1",
+        computerId: "computer-1",
+        botGeneration: 2,
+        computerGeneration: 3,
+        controlLeaseId: null,
+      },
+      target: { hostname: "screen.example", interactive: false },
+    });
+  });
+
+  it("returns desktop provider screen URLs without sealing them", async () => {
+    const { response } = await callScreenUrl(async () => ({
+      url: "desktop://screen/computer-1",
+    }));
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      json: { url: "desktop://screen/computer-1?view_only=true" },
+    });
+  });
 
   it("clears the row instead of 500ing when the provider says the sandbox is gone", async () => {
     const { response, updateMany } = await callScreenUrl(() =>

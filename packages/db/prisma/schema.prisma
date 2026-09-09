@@ -318,6 +318,7 @@ model SpaceVoicePreference {
 }
 
 model Bot {
+  screenGeneration Int @default(0)
   id                String            @id @default(cuid())
   spaceId           String
   space             Space             @relation(fields: [spaceId], references: [id], onDelete: Cascade)
@@ -884,6 +885,7 @@ model ComputerUpdate {
 }
 
 model Computer {
+  screenGeneration Int @default(0)
   id                      String                   @id @default(cuid())
   spaceId                 String
   space                   Space                    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
