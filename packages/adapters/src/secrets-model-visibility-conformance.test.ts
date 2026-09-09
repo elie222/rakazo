@@ -71,7 +71,13 @@ describe("secrets model-visibility conformance", () => {
     it("collects static secrets, long header/env values, tokens, and client_secret", () => {
       const material: OAuthMaterial = {
         secret: "Bearer static-mcp-token-value",
-        env: { API_TOKEN: "env-mcp-token-value", NODE_ENV: "production" },
+        env: {
+          API_TOKEN: "env-mcp-token-value",
+          NODE_ENV: "production",
+          AUTH_MODE: "oauth",
+          SESSION_TIMEOUT: "3600",
+          COOKIE_DOMAIN: "example.test",
+        },
         headers: {
           "X-Api-Key": "header-mcp-token-value",
           Cookie: "session=short",
@@ -104,6 +110,9 @@ describe("secrets model-visibility conformance", () => {
       );
       expect(secrets).not.toContain("production");
       expect(secrets).not.toContain("info");
+      expect(secrets).not.toContain("oauth");
+      expect(secrets).not.toContain("3600");
+      expect(secrets).not.toContain("example.test");
     });
 
     it("picks up rotated access tokens from the live material object", () => {

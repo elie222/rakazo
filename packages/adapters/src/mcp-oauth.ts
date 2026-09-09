@@ -48,17 +48,40 @@ export function oauthMaterialSecrets(material: OAuthMaterial): string[] {
   if (client && "client_secret" in client && typeof client.client_secret === "string") {
     add(client.client_secret);
   }
-  // Credential-carrying headers/env only. Ordinary config (NODE_ENV=production) stays out.
-  const credentialKey = /(secret|token|password|credential|api[_-]?key|cookie|session|^auth)/i;
   for (const [key, value] of Object.entries(material.headers ?? {})) {
-    if (credentialKey.test(key) || key.toLowerCase() === "authorization") {
-      add(value);
-    }
+    if (isCredentialCarrierKey(key)) add(value);
   }
   for (const [key, value] of Object.entries(material.env ?? {})) {
-    if (credentialKey.test(key)) add(value);
+    if (isCredentialCarrierKey(key)) add(value);
   }
   return [...new Set(values)];
+}
+
+/** True for keys that carry credentials, not ordinary config such as SESSION_TIMEOUT. */
+function isCredentialCarrierKey(key: string): boolean {
+  const normalized = key.toLowerCase().replace(/-/g, "_");
+  if (
+    normalized === "authorization" ||
+    normalized === "cookie" ||
+    normalized === "set_cookie" ||
+    normalized === "x_api_key" ||
+    normalized === "api_key" ||
+    normalized === "api_token"
+  ) {
+    return true;
+  }
+  if (
+    /(?:^|_)(secret|password|credential|access_token|refresh_token|id_token|auth_token|session_token|session_id|session_key|session_secret|api_key|api_token)$/.test(
+      normalized,
+    )
+  ) {
+    return true;
+  }
+  // Generic *_token keys, excluding timeout/ttl/type/mode/name/count config.
+  if (/(?:^|_)token$/.test(normalized)) {
+    return !/(timeout|ttl|max|count|type|mode|name)$/.test(normalized);
+  }
+  return false;
 }
 
 type ServerRef = { id: string; endpoint: string | null; secretId: string | null };
