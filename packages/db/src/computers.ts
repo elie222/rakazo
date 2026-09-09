@@ -50,6 +50,46 @@ export class ComputerLimitError extends Error {
   }
 }
 
+/** Computers a user still backs with a live (non-archived) bot. */
+async function countInUseComputersForUser(
+  prisma: ComputerDb,
+  userId: string,
+): Promise<number> {
+  return prisma.computer.count({
+    where: {
+      userId,
+      bots: { some: { archivedAt: null } },
+    },
+  });
+}
+
+/**
+ * Refuse a restore that would push a user past the cap.
+ *
+ * A restore re-links the bot to its Computer row, which reactivates the quota
+ * if that row was only referenced by archived bots (the dedicated case; a team
+ * row shared with live bots keeps counting). Throws ComputerLimitError when the
+ * restore would exceed the configured SANDBOX_MAX_COMPUTERS_PER_USER.
+ */
+export async function assertComputerQuotaForRestore(
+  prisma: ComputerDb,
+  input: { userId: string; computerId: string },
+): Promise<void> {
+  const limit = resolveMaxComputersPerUser();
+  if (limit <= 0) return;
+  // If another live bot already references this row (team computer shared
+  // across the space), restoring this bot adds nothing to the count.
+  const alreadyLive = await prisma.computer.count({
+    where: {
+      id: input.computerId,
+      bots: { some: { archivedAt: null } },
+    },
+  });
+  if (alreadyLive > 0) return;
+  const inUse = await countInUseComputersForUser(prisma, input.userId);
+  if (inUse >= limit) throw new ComputerLimitError(limit);
+}
+
 /** Expire leases as fencing tombstones so the next acquire increments fence. */
 export async function expireComputerExecutionLeases(
   prisma: ExecutionLeaseDb,
