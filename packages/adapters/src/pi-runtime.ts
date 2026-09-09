@@ -1248,7 +1248,9 @@ function isAgentToolExecutionResult(result: unknown): result is AgentToolExecuti
   );
 }
 
-export function jsonSchemaParameters(schema: Record<string, unknown>) {
+export function jsonSchemaParameters(
+  schema: Record<string, unknown>,
+): ReturnType<typeof Type.Object> {
   // Top-level oneOf/anyOf (e.g. request_secret's credential XOR connectionId)
   // must stay a union. Falling through to properties would drop the exclusivity
   // and re-expose both destinations as optional siblings.
@@ -1260,7 +1262,7 @@ export function jsonSchemaParameters(schema: Record<string, unknown>) {
   if (alternatives && alternatives.length > 0 && schema.properties == null) {
     return Type.Union(
       alternatives.map((variant) => jsonSchemaParameters(variant as Record<string, unknown>)),
-    );
+    ) as unknown as ReturnType<typeof Type.Object>;
   }
   const properties = (schema.properties ?? {}) as Record<string, unknown>;
   const required = new Set(Array.isArray(schema.required) ? schema.required.map(String) : []);
