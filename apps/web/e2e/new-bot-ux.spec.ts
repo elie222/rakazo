@@ -94,7 +94,7 @@ test("picker rows explain groups and spaces", async ({ page }, testInfo) => {
   await spaceInfo.click();
   await expect(dialog).toBeVisible();
   await expect(dialog.getByText("Spaces", { exact: true })).toBeVisible();
-  await expect(dialog).toContainText("private workspace");
+  await expect(dialog).toContainText("own bots and groups");
   await captureScreenshot(page, testInfo, "picker-space-info-dialog");
   await page.keyboard.press("Escape");
   await expect(dialog).toBeHidden();
