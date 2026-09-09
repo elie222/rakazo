@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import { builtinAgentTools } from "./builtin-tools.js";
-import { jsonField, prepareRequestSecretArguments } from "./pi-runtime.js";
+import { parseConnectorToolArgs } from "./lazy-tool-catalog.js";
+import { jsonField, jsonSchemaParameters, prepareRequestSecretArguments } from "./pi-runtime.js";
 
 /**
  * `pi-runtime` used to re-declare `request_secret`'s parameters by hand, and the
@@ -12,7 +13,8 @@ import { jsonField, prepareRequestSecretArguments } from "./pi-runtime.js";
  *
  * These assert the canonical schema still carries what the executor requires, so
  * a future hand-rolled override has to fail here rather than silently drop a
- * field again.
+ * field again — including the credential XOR connectionId exclusivity the
+ * executor enforces.
  */
 function toolNamed(name: string) {
   const tool = builtinAgentTools.find((entry) => entry.name === name);
@@ -20,42 +22,97 @@ function toolNamed(name: string) {
   return tool;
 }
 
+function requestSecretSchema() {
+  return toolNamed("request_secret").inputSchema as Record<string, unknown>;
+}
+
+function oneOfBranches(schema: Record<string, unknown>) {
+  const branches = Array.isArray(schema.oneOf) ? schema.oneOf : [];
+  return branches as Array<{
+    properties?: Record<string, { properties?: Record<string, unknown> }>;
+    required?: string[];
+  }>;
+}
+
+const sampleCredential = {
+  name: "github_pat",
+  origin: "https://api.github.com",
+  auth: { type: "bearer" },
+};
+
 describe("request_secret parameters", () => {
-  it("exposes credential, because the executor only stores a value when it is present", () => {
-    const schema = toolNamed("request_secret").inputSchema as {
-      properties?: Record<string, unknown>;
-    };
-    expect(Object.keys(schema.properties ?? {})).toContain("credential");
+  it("exposes credential on the destination branch the executor persists", () => {
+    const credentialBranch = oneOfBranches(requestSecretSchema()).find((branch) =>
+      (branch.required ?? []).includes("credential"),
+    );
+    expect(credentialBranch?.properties).toHaveProperty("credential");
   });
 
   it("describes the credential destination fields the executor validates", () => {
-    const schema = toolNamed("request_secret").inputSchema as {
-      properties?: { credential?: { properties?: Record<string, unknown> } };
-    };
-    const credential = schema.properties?.credential?.properties ?? {};
+    const credentialBranch = oneOfBranches(requestSecretSchema()).find((branch) =>
+      (branch.required ?? []).includes("credential"),
+    );
+    const credential = credentialBranch?.properties?.credential?.properties ?? {};
     // normalizeSecretDestination rejects the call unless all three resolve.
     expect(Object.keys(credential).sort()).toEqual(["auth", "name", "origin"]);
   });
 
-  it("still offers connectionId, which is the mutually exclusive alternative", () => {
-    const schema = toolNamed("request_secret").inputSchema as {
-      properties?: Record<string, unknown>;
+  it("exposes connectionId on the mutually exclusive alternative branch", () => {
+    const connectionBranch = oneOfBranches(requestSecretSchema()).find((branch) =>
+      (branch.required ?? []).includes("connectionId"),
+    );
+    expect(connectionBranch?.properties).toHaveProperty("connectionId");
+  });
+
+  it("rejects both destinations and neither, matching the executor", () => {
+    const schema = requestSecretSchema();
+    expect(() =>
+      parseConnectorToolArgs(schema, {
+        label: "GitHub PAT",
+        purpose: "api_key",
+        credential: sampleCredential,
+        connectionId: "conn_1",
+      }),
+    ).toThrow();
+    expect(() =>
+      parseConnectorToolArgs(schema, { label: "GitHub PAT", purpose: "api_key" }),
+    ).toThrow();
+    expect(
+      parseConnectorToolArgs(schema, {
+        label: "GitHub PAT",
+        purpose: "api_key",
+        credential: sampleCredential,
+      }),
+    ).toMatchObject({ credential: sampleCredential });
+    expect(
+      parseConnectorToolArgs(schema, {
+        label: "c",
+        purpose: "otp",
+        connectionId: "abc",
+      }),
+    ).toMatchObject({ connectionId: "abc" });
+  });
+
+  it("keeps exclusivity when converted for the PI model", () => {
+    const converted = jsonSchemaParameters(requestSecretSchema()) as {
+      anyOf?: unknown[];
+      oneOf?: unknown[];
     };
-    // The executor rejects a call that supplies both or neither.
-    expect(Object.keys(schema.properties ?? {})).toContain("connectionId");
+    // Type.Union serializes as anyOf; the model must still see two exclusive shapes.
+    const variants = converted.anyOf ?? converted.oneOf ?? [];
+    expect(variants.length).toBe(2);
   });
 });
 
 describe("prepareRequestSecretArguments", () => {
   it("keeps credential, which is what makes the value persist", () => {
-    const credential = {
-      name: "github_pat",
-      origin: "https://api.github.com",
-      auth: { type: "bearer" },
-    };
     expect(
-      prepareRequestSecretArguments({ label: "GitHub PAT", purpose: "api_key", credential }),
-    ).toEqual({ label: "GitHub PAT", purpose: "api_key", credential });
+      prepareRequestSecretArguments({
+        label: "GitHub PAT",
+        purpose: "api_key",
+        credential: sampleCredential,
+      }),
+    ).toEqual({ label: "GitHub PAT", purpose: "api_key", credential: sampleCredential });
   });
 
   it("keeps replace, so an existing credential can be overwritten", () => {
