@@ -426,7 +426,6 @@
   "Provider": "Anbieter",
   "Providers": "Anbieter",
   "Queued": "In Warteschlange",
-  "Rakazo verifies the source before saving it. Credentials are encrypted and are never returned to clients or exposed to the model.": "Rakazo prüft die Quelle vor dem Speichern. Zugangsdaten werden verschlüsselt und weder an Clients zurückgegeben noch dem Modell zugänglich gemacht.",
   "Read replies aloud": "Antworten vorlesen",
   "Recent": "Kürzlich",
   "Reconnect OAuth": "OAuth erneut verbinden",
@@ -585,5 +584,6 @@
   "To:": "An:",
   "Authorize this server so agents can use its tools. A popup opens.": "Autorisiere diesen Server, damit Agents seine Tools nutzen können. Ein Pop-up öffnet sich.",
   "Make sure nothing is still running on this computer.": "Stelle sicher, dass auf diesem Computer nichts mehr läuft.",
-  "Nothing is still running": "Nichts läuft mehr"
+  "Nothing is still running": "Nichts läuft mehr",
+  "Credentials are encrypted and never sent to the model.": "Zugangsdaten werden verschlüsselt und dem Modell nie gesendet."
 }

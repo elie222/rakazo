@@ -421,7 +421,6 @@
   "Provider": "प्रोवाइडर",
   "Providers": "प्रोवाइडर्स",
   "Queued": "कतार में",
-  "Rakazo verifies the source before saving it. Credentials are encrypted and are never returned to clients or exposed to the model.": "Rakazo सहेजने से पहले स्रोत की पुष्टि करता है। क्रेडेंशियल एन्क्रिप्टेड होते हैं और कभी क्लाइंट को नहीं लौटाए जाते, न ही मॉडल को दिखाए जाते हैं।",
   "Read replies aloud": "उत्तर पढ़कर सुनाएं",
   "Recent": "हाल के",
   "Reconnect OAuth": "OAuth पुनः कनेक्ट करें",
@@ -588,5 +587,6 @@
   "To:": "प्रति:",
   "Authorize this server so agents can use its tools. A popup opens.": "एजेंटों को इसके टूल का उपयोग करने देने के लिए इस सर्वर को ऑथराइज़ करें। एक पॉपअप खुलता है।",
   "Make sure nothing is still running on this computer.": "सुनिश्चित करें कि इस कंप्यूटर पर कुछ भी चल नहीं रहा है।",
-  "Nothing is still running": "कुछ भी नहीं चल रहा"
+  "Nothing is still running": "कुछ भी नहीं चल रहा",
+  "Credentials are encrypted and never sent to the model.": "क्रेडेंशियल एन्क्रिप्टेड होते हैं और मॉडल को कभी नहीं भेजे जाते।"
 }

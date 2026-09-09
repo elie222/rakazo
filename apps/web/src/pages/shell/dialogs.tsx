@@ -132,15 +132,9 @@ export function PickerInfoDialog({
           </DialogTitle>
           <DialogDescription>
             {topic === "group" ? (
-              <Trans>
-                One conversation with 2–6 of your bots in a shared thread. Name the group, pick its
-                members, and they all reply in the same chat.
-              </Trans>
+              <Trans>Shared chat with 2-6 bots. They all reply in the same thread.</Trans>
             ) : (
-              <Trans>
-                A separate, private workspace with its own bots and groups. Use spaces to keep
-                contexts apart, such as work and personal.
-              </Trans>
+              <Trans>Private workspace with its own bots and groups.</Trans>
             )}
           </DialogDescription>
         </DialogHeader>

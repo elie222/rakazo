@@ -141,9 +141,9 @@ msgstr "{workingBotName} работает"
 msgid "@{0}"
 msgstr "@{0}"
 
-#: src/pages/shell/dialogs.tsx:140
-msgid "A separate, private workspace with its own bots and groups. Use spaces to keep contexts apart, such as work and personal."
-msgstr "Отдельное приватное пространство со своими ботами и группами. Используйте пространства, чтобы разделять контексты, например рабочий и личный."
+#: src/pages/shell/dialogs.tsx:137
+msgid "Private workspace with its own bots and groups."
+msgstr "Приватное пространство со своими ботами и группами."
 
 #: src/pages/shell/bot-picker.tsx:105
 #: src/pages/shell/bot-picker.tsx:106
@@ -2506,8 +2506,8 @@ msgid "on the 1st at {0}"
 msgstr "1-го числа в {0}"
 
 #: src/pages/shell/dialogs.tsx:135
-msgid "One conversation with 2–6 of your bots in a shared thread. Name the group, pick its members, and they all reply in the same chat."
-msgstr "Один общий разговор с 2–6 вашими ботами. Назовите группу, выберите ее участников — и все они будут отвечать в одном чате."
+msgid "Shared chat with 2-6 bots. They all reply in the same thread."
+msgstr "Общий чат с 2-6 ботами. Все отвечают в одной ветке."
 
 #: src/pages/Shell.tsx:3681
 msgid "Only empty spaces can be deleted. Delete its bots and groups first."
@@ -2678,8 +2678,8 @@ msgid "Queued"
 msgstr "В очереди"
 
 #: src/pages/PluginsOverlay.tsx:1075
-msgid "Rakazo verifies the source before saving it. Credentials are encrypted and are never returned to clients or exposed to the model."
-msgstr "Rakazo проверяет источник перед сохранением. Учётные данные зашифрованы и никогда не возвращаются клиентам и не раскрываются модели."
+msgid "Credentials are encrypted and never sent to the model."
+msgstr "Учётные данные зашифрованы и никогда не передаются модели."
 
 #: src/pages/shell/bot-panel.tsx:478
 msgid "Read replies aloud"

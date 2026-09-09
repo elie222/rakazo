@@ -426,7 +426,6 @@
   "Provider": "서비스",
   "Providers": "서비스",
   "Queued": "대기 중",
-  "Rakazo verifies the source before saving it. Credentials are encrypted and are never returned to clients or exposed to the model.": "Rakazo는 저장하기 전에 연결 상태를 확인합니다. 인증 정보는 암호화되며 앱이나 AI 모델에 노출되지 않습니다.",
   "Read replies aloud": "답변을 자동으로 읽기",
   "Recent": "최근",
   "Reconnect OAuth": "OAuth 다시 연결",
@@ -585,5 +584,6 @@
   "To:": "받는 사람:",
   "Authorize this server so agents can use its tools. A popup opens.": "에이전트가 도구를 사용할 수 있도록 이 서버에 권한을 부여하세요. 팝업이 열립니다.",
   "Make sure nothing is still running on this computer.": "이 컴퓨터에서 실행 중인 작업이 없는지 확인하세요.",
-  "Nothing is still running": "실행 중인 작업 없음"
+  "Nothing is still running": "실행 중인 작업 없음",
+  "Credentials are encrypted and never sent to the model.": "인증 정보는 암호화되며 모델에 전송되지 않습니다."
 }

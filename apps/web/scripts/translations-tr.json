@@ -424,7 +424,6 @@
   "Provider": "Sağlayıcı",
   "Providers": "Sağlayıcılar",
   "Queued": "Kuyrukta",
-  "Rakazo verifies the source before saving it. Credentials are encrypted and are never returned to clients or exposed to the model.": "Rakazo kaynağı kaydetmeden önce doğrular. Kimlik bilgileri şifrelenir; istemcilere asla geri gönderilmez ve modele gösterilmez.",
   "Read replies aloud": "Yanıtları sesli oku",
   "Recent": "Son",
   "Reconnect OAuth": "OAuth'u yeniden bağla",
@@ -582,5 +581,6 @@
   "To:": "Kime:",
   "Authorize this server so agents can use its tools. A popup opens.": "Agent'ların araçlarını kullanabilmesi için bu sunucuyu yetkilendir. Bir açılır pencere açılır.",
   "Make sure nothing is still running on this computer.": "Bu bilgisayarda hâlâ çalışan bir şey olmadığından emin ol.",
-  "Nothing is still running": "Hâlâ çalışan bir şey yok"
+  "Nothing is still running": "Hâlâ çalışan bir şey yok",
+  "Credentials are encrypted and never sent to the model.": "Kimlik bilgileri şifrelenir ve modele asla gönderilmez."
 }

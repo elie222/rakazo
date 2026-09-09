@@ -1072,10 +1072,7 @@ export function PluginsOverlay({
                           />
                         ) : null}
                         <p className="text-xs leading-5 text-muted-foreground">
-                          <Trans>
-                            Rakazo verifies the source before saving it. Credentials are encrypted
-                            and are never returned to clients or exposed to the model.
-                          </Trans>
+                          <Trans>Credentials are encrypted and never sent to the model.</Trans>
                         </p>
                         {sourceHint ? (
                           <p className="text-xs leading-5 text-muted-foreground">{sourceHint}</p>
