@@ -53,12 +53,24 @@ export class ComputerLimitError extends Error {
   }
 }
 
-/** Computers a user still backs with a live (non-archived) bot. */
-async function countInUseComputersForUser(prisma: ComputerDb, userId: string): Promise<number> {
+/**
+ * Computers a user still backs with a live (non-archived) bot.
+ *
+ * excludeBotId drops one bot's current reference: a bot being re-linked to a
+ * new computer in the same transaction leaves its old row behind, so that
+ * intermediate reference must not count against the final live set.
+ */
+async function countInUseComputersForUser(
+  prisma: ComputerDb,
+  userId: string,
+  excludeBotId?: string,
+): Promise<number> {
   return prisma.computer.count({
     where: {
       userId,
-      bots: { some: { archivedAt: null } },
+      bots: {
+        some: excludeBotId ? { archivedAt: null, id: { not: excludeBotId } } : { archivedAt: null },
+      },
     },
   });
 }
@@ -160,11 +172,18 @@ async function ensureComputerRecordWithQuota(
     select: { id: true },
   });
   if (!existing) {
-    // Archiving a bot keeps its Computer row (stopped) but releases the sandbox,
-    // so archived rows must not consume quota; count only rows still referenced
-    // by a non-archived bot the user owns.
-    const inUse = await countInUseComputersForUser(tx, input.userId);
-    if (inUse >= limit) throw new ComputerLimitError(limit);
+    // The bot being linked to this new computer is part of this same
+    // transaction; its old or intermediate reference is leaving the live set
+    // when this link commits. Exclude this bot's current reference so a
+    // transaction that ends with exactly one active computer is not refused
+    // at cap 1 (createBot links the team computer first, then re-links the
+    // bot to the new dedicated one; setBotComputer switches the same way).
+    // References from other active bots still count: a team computer another
+    // live bot keeps using stays in-use after the re-link.
+    const inUse = await countInUseComputersForUser(tx, input.userId, input.botId);
+    // The new row itself will be referenced by this bot after the link, so
+    // the post-transaction set is one more than the remaining live set.
+    if (inUse + 1 > limit) throw new ComputerLimitError(limit);
   }
   return upsertComputerRecord(tx, input, scopeKey);
 }

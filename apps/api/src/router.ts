@@ -101,10 +101,12 @@ import {
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   appendEventInTransaction,
+  assertComputerQuotaForRestore,
   BotSectionNameConflictError,
   CannotDeleteDefaultSpaceError,
   CannotDeleteLastSpaceError,
   CannotDeleteSpaceAsNonOwnerError,
+  ComputerLimitError,
   claimEmptySpaceDeletionForMember,
   createExternalConversationRepos,
   createGroupRepos,
@@ -125,8 +127,6 @@ import {
   newestModelCredentialOrder,
   newestVoiceCredentialOrder,
   Prisma,
-  assertComputerQuotaForRestore,
-  ComputerLimitError,
   parseComputerMode,
   releaseSpaceDeletionClaim,
   renewSpaceDeletionClaim,

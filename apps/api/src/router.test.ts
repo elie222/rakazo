@@ -1196,9 +1196,7 @@ describe("bot restore computer quota", () => {
         update: vi.fn(async () => ({})),
       },
       computer: {
-        count: vi.fn(async (args: { where: { id?: string } }) =>
-          args.where.id ? 0 : inUse,
-        ),
+        count: vi.fn(async (args: { where: { id?: string } }) => (args.where.id ? 0 : inUse)),
       },
     };
     const handler = new RPCHandler(
