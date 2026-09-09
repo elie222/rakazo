@@ -8,7 +8,7 @@ import type {
 import { isLocalMcpHost } from "@rakazo/contracts";
 import type { McpServer, PrismaClient } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
-import { sanitizeConnectorError } from "./connector-safety.js";
+import { redactMailConnectorResult, sanitizeConnectorError } from "./connector-safety.js";
 import {
   CATALOG_EXECUTE,
   catalogEntries,
@@ -201,7 +201,12 @@ export class McpConnector implements ConnectorProvider {
         call.args,
         { signal: context.signal },
       );
-      yield { type: "result", data: result };
+      yield {
+        type: "result",
+        data: redactMailConnectorResult(call.tool, result, {
+          resourceId: call.route?.resourceId,
+        }),
+      };
     } catch (error) {
       // A thrown call means the transport or auth broke; drop the session so the next call reconnects.
       await this.evict(this.sessionKey(assignment.server, context));

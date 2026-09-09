@@ -15,6 +15,7 @@ import {
   mergeCatalogWithConnected,
   type ToolkitDirectoryEntry,
 } from "./composio-catalog-cache.js";
+import { redactMailConnectorResult } from "./connector-safety.js";
 import { DestinationEmulator } from "./destination-emulator.js";
 import { isVitestRuntime } from "./test-runtime.js";
 
@@ -375,7 +376,7 @@ export class ComposioConnector implements ComposioProvider {
       yield {
         type: "result",
         data: {
-          data: sanitizePayload(result.data),
+          data: redactMailConnectorResult(call.tool, sanitizePayload(result.data)),
           logId,
         },
       };

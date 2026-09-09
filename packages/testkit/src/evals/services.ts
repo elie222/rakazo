@@ -5,6 +5,7 @@ import type {
   ConnectorTool,
 } from "@rakazo/adapter-kit";
 import { ComposioEmulator } from "@rakazo/adapters";
+import { redactMailConnectorReadPayload } from "@rakazo/core";
 import { CUSTOMER_SUPPORT_PROVIDERS, CUSTOMER_SUPPORT_TOOLS } from "./service-contract.js";
 
 export const INBOX = [
@@ -185,7 +186,12 @@ export class EvalServices extends ComposioEmulator {
     this.calls.push(entry);
     if (call.tool === "GMAIL_LIST_MESSAGES") {
       entry.outcome = "read";
-      yield { type: "result", data: { messages: structuredClone(this.inbox) } };
+      yield {
+        type: "result",
+        data: redactMailConnectorReadPayload(call.tool, {
+          messages: structuredClone(this.inbox),
+        }),
+      };
       return;
     }
     if (call.tool === "CRM_LIST_RECORDS") {

@@ -1,4 +1,4 @@
-import { redactSecrets } from "@rakazo/core";
+import { redactMailConnectorReadPayload, redactSecrets } from "@rakazo/core";
 
 export function combineSignals(...signals: Array<AbortSignal | undefined>): AbortSignal {
   return AbortSignal.any(signals.filter((signal): signal is AbortSignal => Boolean(signal)));
@@ -21,6 +21,15 @@ export function redactConnectorPayload(value: unknown, secrets: string[]): unkno
   } catch {
     return { ok: true };
   }
+}
+
+/** Apply mail OTP / reset / magic-link redaction on connector read results. */
+export function redactMailConnectorResult(
+  toolName: string,
+  payload: unknown,
+  options?: { connectorSlug?: string; resourceId?: string },
+): unknown {
+  return redactMailConnectorReadPayload(toolName, payload, options);
 }
 
 function redactPayloadValue(value: unknown, secrets: string[]): unknown {

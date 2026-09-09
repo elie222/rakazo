@@ -11,6 +11,7 @@ import { collectPages, filterCatalog } from "./composio-connector.js";
 import {
   combineSignals,
   redactConnectorPayload,
+  redactMailConnectorResult,
   sanitizeConnectorError,
 } from "./connector-safety.js";
 import {
@@ -195,7 +196,14 @@ export class PipedreamConnector implements ManagedConnectorProvider {
         call.route?.toolName ?? call.tool,
         call.args,
       );
-      yield { type: "result", data: redactConnectorPayload(result, [token]) };
+      yield {
+        type: "result",
+        data: redactMailConnectorResult(
+          call.route?.toolName ?? call.tool,
+          redactConnectorPayload(result, [token]),
+          { connectorSlug: app, resourceId: app },
+        ),
+      };
     } catch (error) {
       yield {
         type: "error",

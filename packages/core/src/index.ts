@@ -18,6 +18,7 @@ export * from "./events.js";
 export * from "./featured-connectors.js";
 export * from "./group-mentions.js";
 export * from "./http-response.js";
+export * from "./mail-credential-redaction.js";
 export * from "./mcp.js";
 export * from "./message-pages.js";
 export * from "./message-reactions.js";

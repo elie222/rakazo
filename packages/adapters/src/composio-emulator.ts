@@ -9,6 +9,7 @@ import {
   type ComposioProvider,
   filterCatalog,
 } from "./composio-connector.js";
+import { redactMailConnectorResult } from "./connector-safety.js";
 import {
   DEFAULT_RAKAZO_EMULATED_RELEASES,
   type EmulatedGithubRelease,
@@ -408,7 +409,7 @@ export class ComposioEmulator implements ComposioProvider {
         ? this.executeGithub(call.tool, args)
         : { ok: true, tool: call.tool, args };
     this.executions.push({ userId: context.userId, tool: call.tool, args });
-    yield { type: "result", data: result };
+    yield { type: "result", data: redactMailConnectorResult(call.tool, result) };
   }
 
   async begin(

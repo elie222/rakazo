@@ -22,6 +22,7 @@ import {
 import {
   combineSignals,
   redactConnectorPayload,
+  redactMailConnectorResult,
   sanitizeConnectorError,
 } from "./connector-safety.js";
 import { executeGraphqlOperation, GraphqlConfigSchema } from "./graphql-connectors.js";
@@ -255,7 +256,10 @@ export class InstalledConnectorProvider implements ConnectorProvider {
         );
         yield {
           type: "result",
-          data: redactConnectorPayload(result, credential ? [credential] : []),
+          data: redactMailConnectorResult(
+            call.route?.toolName ?? call.tool,
+            redactConnectorPayload(result, credential ? [credential] : []),
+          ),
         };
         return;
       }
@@ -276,7 +280,10 @@ export class InstalledConnectorProvider implements ConnectorProvider {
         );
         yield {
           type: "result",
-          data: redactConnectorPayload(result, credential ? [credential] : []),
+          data: redactMailConnectorResult(
+            call.route?.toolName ?? call.tool,
+            redactConnectorPayload(result, credential ? [credential] : []),
+          ),
         };
         return;
       }
@@ -296,7 +303,10 @@ export class InstalledConnectorProvider implements ConnectorProvider {
       );
       yield {
         type: "result",
-        data: redactConnectorPayload(result, credential ? [credential] : []),
+        data: redactMailConnectorResult(
+          call.route?.toolName ?? call.tool,
+          redactConnectorPayload(result, credential ? [credential] : []),
+        ),
       };
     } catch (error) {
       yield {
