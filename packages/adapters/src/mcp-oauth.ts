@@ -48,22 +48,15 @@ export function oauthMaterialSecrets(material: OAuthMaterial): string[] {
   if (client && "client_secret" in client && typeof client.client_secret === "string") {
     add(client.client_secret);
   }
-  // Only credential-shaped headers/env enter the list. Ordinary values such as
-  // NODE_ENV=production must not redact unrelated tool output.
-  const credentialKey = /(secret|token|password|credential|api[_-]?key|^auth)/i;
-  const minCredentialLength = 8;
+  // Credential-carrying headers/env only. Ordinary config (NODE_ENV=production) stays out.
+  const credentialKey = /(secret|token|password|credential|api[_-]?key|cookie|session|^auth)/i;
   for (const [key, value] of Object.entries(material.headers ?? {})) {
-    if (
-      value.length >= minCredentialLength &&
-      (credentialKey.test(key) || key.toLowerCase() === "authorization")
-    ) {
+    if (credentialKey.test(key) || key.toLowerCase() === "authorization") {
       add(value);
     }
   }
   for (const [key, value] of Object.entries(material.env ?? {})) {
-    if (value.length >= minCredentialLength && credentialKey.test(key)) {
-      add(value);
-    }
+    if (credentialKey.test(key)) add(value);
   }
   return [...new Set(values)];
 }

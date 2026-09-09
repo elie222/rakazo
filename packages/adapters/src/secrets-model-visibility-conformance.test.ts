@@ -72,7 +72,11 @@ describe("secrets model-visibility conformance", () => {
       const material: OAuthMaterial = {
         secret: "Bearer static-mcp-token-value",
         env: { API_TOKEN: "env-mcp-token-value", NODE_ENV: "production" },
-        headers: { "X-Api-Key": "header-mcp-token-value", "X-Env": "info" },
+        headers: {
+          "X-Api-Key": "header-mcp-token-value",
+          Cookie: "session=short",
+          "X-Env": "info",
+        },
         oauth: {
           tokens: {
             access_token: OAUTH_ACCESS,
@@ -92,6 +96,7 @@ describe("secrets model-visibility conformance", () => {
           "static-mcp-token-value",
           "env-mcp-token-value",
           "header-mcp-token-value",
+          "session=short",
           OAUTH_ACCESS,
           OAUTH_REFRESH,
           OAUTH_CLIENT_SECRET,
