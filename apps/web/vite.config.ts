@@ -1,5 +1,5 @@
 import { timingSafeEqual } from "node:crypto";
-import type { ClientRequest } from "node:http";
+import type { ClientRequest, IncomingMessage } from "node:http";
 import http from "node:http";
 import https from "node:https";
 import net from "node:net";
@@ -80,9 +80,29 @@ function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string,
     const transport = target.protocol === "https:" ? https : http;
     let upstream: ClientRequest | undefined;
     let retries = 0;
+    let retryPending = false;
     let stopChecking: () => void = () => undefined;
     const retryable = req.method === "GET";
-    const requestUpstream = () => {
+    const scheduleRetry = (incoming?: IncomingMessage) => {
+      if (!retryable || retryPending || retries >= 3 || res.destroyed) return false;
+      retryPending = true;
+      retries += 1;
+      const delayMs = 50 * retries;
+      const retry = () => {
+        setTimeout(() => {
+          retryPending = false;
+          if (!res.destroyed) requestUpstream();
+        }, delayMs);
+      };
+      if (incoming && !incoming.destroyed) {
+        incoming.once("close", retry);
+        incoming.destroy();
+      } else {
+        retry();
+      }
+      return true;
+    };
+    function requestUpstream() {
       if (res.destroyed) return;
       upstream = transport.request(
         {
@@ -94,10 +114,7 @@ function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string,
           ...(target.protocol === "https:" ? { servername: target.hostname } : {}),
         },
         (incoming) => {
-          if (retryable && (incoming.statusCode ?? 502) >= 500 && retries < 3 && !res.destroyed) {
-            retries += 1;
-            incoming.destroy();
-            setTimeout(requestUpstream, 50 * retries);
+          if ((incoming.statusCode ?? 502) >= 500 && scheduleRetry(incoming)) {
             return;
           }
           res.writeHead(
@@ -108,9 +125,7 @@ function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string,
         },
       );
       upstream.on("error", () => {
-        if (retryable && !res.headersSent && retries < 3 && !res.destroyed) {
-          retries += 1;
-          setTimeout(requestUpstream, 50 * retries);
+        if (retryable && !res.headersSent && !res.destroyed && (retryPending || scheduleRetry())) {
           return;
         }
         stopChecking();
@@ -123,7 +138,7 @@ function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string,
       });
       if (req.method === "GET" || req.readableEnded) upstream.end();
       else req.pipe(upstream);
-    };
+    }
     stopChecking = watchScreenAuthorization(
       async () => Boolean(await resolveNovncTarget(req.url, secret, api)),
       () => {
