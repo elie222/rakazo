@@ -49,27 +49,37 @@ export function oauthMaterialSecrets(material: OAuthMaterial): string[] {
     add(client.client_secret);
   }
   for (const [key, value] of Object.entries(material.headers ?? {})) {
-    if (isCredentialCarrierKey(key)) add(value);
+    if (isAuthHeaderKey(key)) {
+      // Cookie / X-Session / Authorization always carry auth material, including short values.
+      add(value);
+    } else if (isCredentialCarrierKey(key) && looksLikeSecretValue(value)) {
+      add(value);
+    }
   }
   for (const [key, value] of Object.entries(material.env ?? {})) {
-    if (isCredentialCarrierKey(key)) add(value);
+    if (isCredentialCarrierKey(key) && looksLikeSecretValue(value)) add(value);
   }
   return [...new Set(values)];
+}
+
+/** Headers whose values are credentials even when short (e.g. Cookie, X-Session). */
+function isAuthHeaderKey(key: string): boolean {
+  const normalized = key.toLowerCase().replace(/-/g, "_");
+  return (
+    normalized === "authorization" ||
+    normalized === "cookie" ||
+    normalized === "set_cookie" ||
+    normalized === "x_session" ||
+    normalized === "x_api_key" ||
+    normalized === "api_key" ||
+    normalized === "x_auth_token"
+  );
 }
 
 /** True for keys that carry credentials, not ordinary config such as SESSION_TIMEOUT. */
 function isCredentialCarrierKey(key: string): boolean {
   const normalized = key.toLowerCase().replace(/-/g, "_");
-  if (
-    normalized === "authorization" ||
-    normalized === "cookie" ||
-    normalized === "set_cookie" ||
-    normalized === "x_api_key" ||
-    normalized === "api_key" ||
-    normalized === "api_token"
-  ) {
-    return true;
-  }
+  if (isAuthHeaderKey(key)) return true;
   if (
     /(?:^|_)(secret|password|credential|access_token|refresh_token|id_token|auth_token|session_token|session_id|session_key|session_secret|api_key|api_token)$/.test(
       normalized,
@@ -83,6 +93,54 @@ function isCredentialCarrierKey(key: string): boolean {
   }
   return false;
 }
+
+/**
+ * Env/header values under credential-shaped keys must look like secrets before
+ * they enter global substring redaction. Ordinary enums such as "production"
+ * or "oauth" would otherwise corrupt unrelated tool output.
+ */
+function looksLikeSecretValue(value: string): boolean {
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  if (COMMON_CONFIG_VALUES.has(trimmed.toLowerCase())) return false;
+  if (/^\d+(\.\d+)?$/.test(trimmed)) return false;
+  return true;
+}
+
+const COMMON_CONFIG_VALUES = new Set([
+  "production",
+  "development",
+  "staging",
+  "test",
+  "testing",
+  "oauth",
+  "openid",
+  "true",
+  "false",
+  "yes",
+  "no",
+  "on",
+  "off",
+  "none",
+  "null",
+  "debug",
+  "info",
+  "warn",
+  "error",
+  "http",
+  "https",
+  "local",
+  "localhost",
+  "enabled",
+  "disabled",
+  "default",
+  "auto",
+  "manual",
+  "read",
+  "write",
+  "sync",
+  "async",
+]);
 
 type ServerRef = { id: string; endpoint: string | null; secretId: string | null };
 type ActorRef = { spaceId: string; userId: string };

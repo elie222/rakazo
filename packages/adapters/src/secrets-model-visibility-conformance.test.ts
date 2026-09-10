@@ -68,19 +68,22 @@ describe("secrets model-visibility conformance", () => {
   });
 
   describe("oauth material collection", () => {
-    it("collects static secrets, long header/env values, tokens, and client_secret", () => {
+    it("redacts Cookie/X-Session and short auth material without corrupting config enums", () => {
       const material: OAuthMaterial = {
         secret: "Bearer static-mcp-token-value",
         env: {
           API_TOKEN: "env-mcp-token-value",
+          API_SECRET: "production",
           NODE_ENV: "production",
           AUTH_MODE: "oauth",
           SESSION_TIMEOUT: "3600",
           COOKIE_DOMAIN: "example.test",
+          SHORT_API_KEY: "ab12",
         },
         headers: {
           "X-Api-Key": "header-mcp-token-value",
-          Cookie: "session=short",
+          Cookie: "sid=x",
+          "X-Session": "s1",
           "X-Env": "info",
         },
         oauth: {
@@ -102,17 +105,38 @@ describe("secrets model-visibility conformance", () => {
           "static-mcp-token-value",
           "env-mcp-token-value",
           "header-mcp-token-value",
-          "session=short",
+          "sid=x",
+          "s1",
+          "ab12",
           OAUTH_ACCESS,
           OAUTH_REFRESH,
           OAUTH_CLIENT_SECRET,
         ]),
       );
+      // Ordinary config must not enter global substring redaction.
       expect(secrets).not.toContain("production");
       expect(secrets).not.toContain("info");
       expect(secrets).not.toContain("oauth");
       expect(secrets).not.toContain("3600");
       expect(secrets).not.toContain("example.test");
+
+      const payload = {
+        ok: true,
+        note: "deployed to production with oauth mode",
+        cookie: "sid=x",
+        session: "s1",
+        shortKey: "ab12",
+      };
+      const redacted = redactConnectorPayload(payload, secrets);
+      expect(redacted).toMatchObject({
+        ok: true,
+        note: "deployed to production with oauth mode",
+      });
+      expect(JSON.stringify(redacted)).not.toContain("sid=x");
+      expect(JSON.stringify(redacted)).not.toContain('"s1"');
+      expect(JSON.stringify(redacted)).not.toContain("ab12");
+      expect(JSON.stringify(redacted)).toContain("production");
+      expect(JSON.stringify(redacted)).toContain("oauth");
     });
 
     it("picks up rotated access tokens from the live material object", () => {
