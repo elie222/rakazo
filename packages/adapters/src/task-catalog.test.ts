@@ -77,7 +77,18 @@ describe("task catalog", () => {
       },
     ]);
     expect(prisma.taughtSkill.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: expect.objectContaining({ status: "saved" }) }),
+      expect.objectContaining({
+        where: {
+          spaceId: "space-1",
+          botId: "bot-1",
+          status: "saved",
+        },
+      }),
+    );
+    expect(prisma.taughtSkill.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.not.objectContaining({ userId: expect.anything() }),
+      }),
     );
     expect(result.skills).toEqual(
       expect.arrayContaining([
