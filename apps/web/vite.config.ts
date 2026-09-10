@@ -1,4 +1,5 @@
 import { timingSafeEqual } from "node:crypto";
+import type { ClientRequest } from "node:http";
 import http from "node:http";
 import https from "node:https";
 import net from "node:net";
@@ -77,41 +78,64 @@ function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string,
       host: `${target.hostname}:${target.port}`,
     };
     const transport = target.protocol === "https:" ? https : http;
-    const upstream = transport.request(
-      {
-        hostname: target.hostname,
-        port: target.port,
-        path: target.path,
-        method: req.method,
-        headers,
-        ...(target.protocol === "https:" ? { servername: target.hostname } : {}),
-      },
-      (incoming) => {
-        res.writeHead(incoming.statusCode ?? 502, safeScreenProxyResponseHeaders(incoming.headers));
-        incoming.pipe(res);
-      },
-    );
-    const stopChecking = watchScreenAuthorization(
+    let upstream: ClientRequest | undefined;
+    let retries = 0;
+    let stopChecking: () => void = () => undefined;
+    const retryable = req.method === "GET";
+    const requestUpstream = () => {
+      if (res.destroyed) return;
+      upstream = transport.request(
+        {
+          hostname: target.hostname,
+          port: target.port,
+          path: target.path,
+          method: req.method,
+          headers,
+          ...(target.protocol === "https:" ? { servername: target.hostname } : {}),
+        },
+        (incoming) => {
+          if (retryable && (incoming.statusCode ?? 502) >= 500 && retries < 3 && !res.destroyed) {
+            incoming.resume();
+            retries += 1;
+            setTimeout(requestUpstream, 50 * retries);
+            return;
+          }
+          res.writeHead(
+            incoming.statusCode ?? 502,
+            safeScreenProxyResponseHeaders(incoming.headers),
+          );
+          incoming.pipe(res);
+        },
+      );
+      upstream.on("error", () => {
+        if (retryable && !res.headersSent && retries < 3 && !res.destroyed) {
+          retries += 1;
+          setTimeout(requestUpstream, 50 * retries);
+          return;
+        }
+        stopChecking();
+        if (res.headersSent) {
+          res.destroy();
+          return;
+        }
+        res.statusCode = 502;
+        res.end("Screen unavailable");
+      });
+      if (req.method === "GET" || req.readableEnded) upstream.end();
+      else req.pipe(upstream);
+    };
+    stopChecking = watchScreenAuthorization(
       async () => Boolean(await resolveNovncTarget(req.url, secret, api)),
       () => {
-        upstream.destroy();
+        upstream?.destroy();
         res.destroy();
       },
     );
     res.once("close", () => {
       stopChecking();
-      upstream.destroy();
+      upstream?.destroy();
     });
-    upstream.on("error", () => {
-      stopChecking();
-      if (res.headersSent) {
-        res.destroy();
-        return;
-      }
-      res.statusCode = 502;
-      res.end("Screen unavailable");
-    });
-    req.pipe(upstream);
+    requestUpstream();
   });
 
   server.httpServer?.on("upgrade", async (req, socket, head) => {
