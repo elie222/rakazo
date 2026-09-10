@@ -70,11 +70,30 @@ export default function ChangePassword() {
     <SafeAreaView edges={["bottom"]} style={styles.screen}>
       <Stack.Screen
         options={{
+          headerBackVisible: false,
+          // Android / older iOS: plain text Cancel like New bot / New space.
           headerLeft: () => (
-            <Pressable accessibilityRole="button" onPress={close} style={styles.cancel}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={t("Cancel")}
+              hitSlop={8}
+              onPress={close}
+              style={styles.cancel}
+            >
               <Text style={styles.cancelLabel}>{t("Cancel")}</Text>
             </Pressable>
           ),
+          // iOS formSheet wraps custom headerLeft in a filled bar button; use a
+          // native plain item and hide the shared liquid-glass background.
+          unstable_headerLeftItems: () => [
+            {
+              type: "button",
+              label: t("Cancel"),
+              variant: "plain",
+              hidesSharedBackground: true,
+              onPress: close,
+            },
+          ],
         }}
       />
       <KeyboardAvoidingView
@@ -150,7 +169,12 @@ function createStyles() {
   return StyleSheet.create({
     screen: { flex: 1, backgroundColor: native.page },
     content: { padding: 20, gap: 12 },
-    cancel: { minHeight: 44, justifyContent: "center", paddingEnd: 16 },
+    cancel: {
+      backgroundColor: "transparent",
+      paddingEnd: 20,
+      paddingVertical: 8,
+      justifyContent: "center",
+    },
     cancelLabel: { color: native.label, fontSize: 17 },
     input: {
       minHeight: 48,
