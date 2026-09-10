@@ -308,7 +308,6 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Message {name}": "给 {name} 发消息",
   Model: "模型",
   "Model id": "模型 ID",
-  "Model spend uses your provider keys.": "模型费用使用你自己的提供商密钥结算。",
   "Model updated.": "模型已更新。",
   Models: "模型",
   "Move to": "移动到",

@@ -111,7 +111,6 @@ export default function Account() {
           })}
         </Text>
       ) : null}
-      <Text style={styles.settingsExplanation}>{t("Model spend uses your provider keys.")}</Text>
     </View>
   );
 
@@ -709,11 +708,6 @@ function createAccountStyles() {
     settingsValue: {
       color: native.secondaryLabel,
       fontSize: 15,
-    },
-    settingsExplanation: {
-      color: native.secondaryLabel,
-      fontSize: 13,
-      marginTop: 3,
     },
     chevron: {
       color: native.secondaryLabel,

@@ -324,8 +324,6 @@ export const RU_MESSAGES: Record<string, string> = {
   "Message {name}": "Написать {name}",
   Model: "Модель",
   "Model id": "Идентификатор модели",
-  "Model spend uses your provider keys.":
-    "Расходы на модель оплачиваются вашими ключами провайдера.",
   "Model updated.": "Модель обновлена.",
   Models: "Модели",
   "Move to": "Переместить в",
