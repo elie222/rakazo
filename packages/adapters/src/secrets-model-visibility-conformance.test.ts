@@ -79,6 +79,7 @@ describe("secrets model-visibility conformance", () => {
           SESSION_TIMEOUT: "3600",
           COOKIE_DOMAIN: "example.test",
           SHORT_API_KEY: "ab12",
+          ACCESS_TOKEN: "123456",
         },
         headers: {
           "X-Api-Key": "header-mcp-token-value",
@@ -108,6 +109,7 @@ describe("secrets model-visibility conformance", () => {
           "sid=x",
           "s1",
           "ab12",
+          "123456",
           OAUTH_ACCESS,
           OAUTH_REFRESH,
           OAUTH_CLIENT_SECRET,
@@ -126,6 +128,7 @@ describe("secrets model-visibility conformance", () => {
         cookie: "sid=x",
         session: "s1",
         shortKey: "ab12",
+        numericToken: "123456",
       };
       const redacted = redactConnectorPayload(payload, secrets);
       expect(redacted).toMatchObject({
@@ -135,6 +138,7 @@ describe("secrets model-visibility conformance", () => {
       expect(JSON.stringify(redacted)).not.toContain("sid=x");
       expect(JSON.stringify(redacted)).not.toContain('"s1"');
       expect(JSON.stringify(redacted)).not.toContain("ab12");
+      expect(JSON.stringify(redacted)).not.toContain("123456");
       expect(JSON.stringify(redacted)).toContain("production");
       expect(JSON.stringify(redacted)).toContain("oauth");
     });
@@ -154,6 +158,19 @@ describe("secrets model-visibility conformance", () => {
       const secrets = oauthMaterialSecrets(material);
       expect(secrets).toContain("oauth-access-token-after-rotation");
       expect(secrets).not.toContain("oauth-access-token-before-rotation");
+    });
+
+    it("registers numeric-only values under explicit credential keys", () => {
+      const secrets = oauthMaterialSecrets({
+        env: {
+          ACCESS_TOKEN: "123456",
+          API_SECRET: "production",
+          REFRESH_TOKEN_TIMEOUT: "3600",
+        },
+      });
+      expect(secrets).toContain("123456");
+      expect(secrets).not.toContain("production");
+      expect(secrets).not.toContain("3600");
     });
   });
 

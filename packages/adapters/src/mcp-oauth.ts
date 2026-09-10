@@ -52,12 +52,27 @@ export function oauthMaterialSecrets(material: OAuthMaterial): string[] {
     if (isAuthHeaderKey(key)) {
       // Cookie / X-Session / Authorization always carry auth material, including short values.
       add(value);
-    } else if (isCredentialCarrierKey(key) && looksLikeSecretValue(value)) {
+    } else if (
+      isExplicitCredentialKey(key) &&
+      looksLikeSecretValue(value, { allowNumeric: true })
+    ) {
+      add(value);
+    } else if (
+      isAmbiguousCredentialKey(key) &&
+      looksLikeSecretValue(value, { allowNumeric: false })
+    ) {
       add(value);
     }
   }
   for (const [key, value] of Object.entries(material.env ?? {})) {
-    if (isCredentialCarrierKey(key) && looksLikeSecretValue(value)) add(value);
+    if (isExplicitCredentialKey(key) && looksLikeSecretValue(value, { allowNumeric: true })) {
+      add(value);
+    } else if (
+      isAmbiguousCredentialKey(key) &&
+      looksLikeSecretValue(value, { allowNumeric: false })
+    ) {
+      add(value);
+    }
   }
   return [...new Set(values)];
 }
@@ -76,18 +91,19 @@ function isAuthHeaderKey(key: string): boolean {
   );
 }
 
-/** True for keys that carry credentials, not ordinary config such as SESSION_TIMEOUT. */
-function isCredentialCarrierKey(key: string): boolean {
+/** Explicit credential keys (access_token, api_key, …); numeric values stay redacted. */
+function isExplicitCredentialKey(key: string): boolean {
   const normalized = key.toLowerCase().replace(/-/g, "_");
   if (isAuthHeaderKey(key)) return true;
-  if (
-    /(?:^|_)(secret|password|credential|access_token|refresh_token|id_token|auth_token|session_token|session_id|session_key|session_secret|api_key|api_token)$/.test(
-      normalized,
-    )
-  ) {
-    return true;
-  }
-  // Generic *_token keys, excluding timeout/ttl/type/mode/name/count config.
+  return /(?:^|_)(secret|password|credential|access_token|refresh_token|id_token|auth_token|session_token|session_id|session_key|session_secret|api_key|api_token)$/.test(
+    normalized,
+  );
+}
+
+/** Ambiguous *_token keys where numeric-only values are usually config, not secrets. */
+function isAmbiguousCredentialKey(key: string): boolean {
+  if (isExplicitCredentialKey(key)) return false;
+  const normalized = key.toLowerCase().replace(/-/g, "_");
   if (/(?:^|_)token$/.test(normalized)) {
     return !/(timeout|ttl|max|count|type|mode|name)$/.test(normalized);
   }
@@ -95,15 +111,16 @@ function isCredentialCarrierKey(key: string): boolean {
 }
 
 /**
- * Env/header values under credential-shaped keys must look like secrets before
- * they enter global substring redaction. Ordinary enums such as "production"
- * or "oauth" would otherwise corrupt unrelated tool output.
+ * Values under credential-shaped keys must look like secrets before entering
+ * global substring redaction. Ordinary enums such as "production" or "oauth"
+ * would otherwise corrupt unrelated tool output. Numeric-only filtering applies
+ * only to ambiguous keys — explicit carriers still register OTP-like tokens.
  */
-function looksLikeSecretValue(value: string): boolean {
+function looksLikeSecretValue(value: string, options: { allowNumeric?: boolean } = {}): boolean {
   const trimmed = value.trim();
   if (!trimmed) return false;
   if (COMMON_CONFIG_VALUES.has(trimmed.toLowerCase())) return false;
-  if (/^\d+(\.\d+)?$/.test(trimmed)) return false;
+  if (!options.allowNumeric && /^\d+(\.\d+)?$/.test(trimmed)) return false;
   return true;
 }
 

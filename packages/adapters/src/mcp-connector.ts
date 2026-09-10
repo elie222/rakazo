@@ -196,17 +196,21 @@ export class McpConnector implements ConnectorProvider {
       yield { type: "error", message: "MCP tool is not assigned to this bot" };
       return;
     }
+    // Capture material before callTool so a concurrent eviction/replace cannot
+    // drop this call's OAuth secrets from model-visible redaction. Recompute via
+    // oauthMaterialSecrets(material) so in-place token refresh stays covered.
+    let material: OAuthMaterial | undefined;
     try {
-      const result = await (await this.sessionFor(assignment.server, context)).callTool(
-        call.route.toolName,
-        call.args,
-        { signal: context.signal },
-      );
-      const secrets = this.sessionSecrets(assignment.server, context);
+      const session = await this.sessionFor(assignment.server, context);
+      material = this.sessions.get(this.sessionKey(assignment.server, context))?.material;
+      const result = await session.callTool(call.route.toolName, call.args, {
+        signal: context.signal,
+      });
+      const secrets = material ? oauthMaterialSecrets(material) : [];
       yield { type: "result", data: redactConnectorPayload(result, secrets) };
     } catch (error) {
       // A thrown call means the transport or auth broke; drop the session so the next call reconnects.
-      const secrets = this.sessionSecrets(assignment.server, context);
+      const secrets = material ? oauthMaterialSecrets(material) : [];
       await this.evict(this.sessionKey(assignment.server, context));
       yield { type: "error", message: sanitizeConnectorError(error, secrets) };
     }
@@ -321,11 +325,5 @@ export class McpConnector implements ConnectorProvider {
       await session.close().catch(() => undefined);
       throw error;
     }
-  }
-
-  private sessionSecrets(server: McpServer, context: AdapterContext): string[] {
-    const entry = this.sessions.get(this.sessionKey(server, context));
-    // Recompute from the live material so OAuth refresh/rotation stays redacted.
-    return entry ? oauthMaterialSecrets(entry.material) : [];
   }
 }
