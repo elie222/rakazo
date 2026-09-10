@@ -122,7 +122,6 @@ export const ZH_MESSAGES: Record<string, string> = {
   Checking: "检查中",
   "Checking…": "正在检查…",
   "Check your email": "请查看邮箱",
-  "Choose your provider and active model": "选择提供商和当前模型",
   Clear: "清除",
   "Clear conversation": "清除对话",
   "Clear conversation?": "要清除对话吗？",
@@ -143,7 +142,6 @@ export const ZH_MESSAGES: Record<string, string> = {
   Connect: "连接",
   "Connect a voice provider first.": "请先连接语音提供商。",
   "Connect API key": "连接 API 密钥",
-  "Connect apps.": "连接应用。",
   "Connect Executor": "连接 Executor",
   "Connect Treg": "连接 Treg",
   "Connect this provider to use it as your personal model.": "连接此提供商，将其用作你的个人模型。",
@@ -250,8 +248,6 @@ export const ZH_MESSAGES: Record<string, string> = {
   "OTA · {id} · {date}": "OTA · {id} · {date}",
   "Enter a server URL": "请输入服务器地址",
   "Enter this code in your browser:": "请在浏览器中输入此代码：",
-  "Enter your current password, then confirm permanent deletion of your account and all associated data.":
-    "输入当前密码，然后确认永久删除账户及所有相关数据。",
   "Executor token": "Executor 令牌",
   Failed: "失败",
   "Failed to refresh": "刷新失败",
@@ -436,8 +432,6 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Speak message": "朗读消息",
   Speak: "朗读",
   "Speak only": "仅朗读",
-  "Speak replies aloud with ElevenLabs, OpenAI, Cartesia, or Fish Audio":
-    "使用 ElevenLabs、OpenAI、Cartesia 或 Fish Audio 朗读回复",
   Starting: "正在启动",
   "Starting…": "正在启动…",
   Stop: "停止",

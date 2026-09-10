@@ -42,8 +42,6 @@ export const RU_MESSAGES: Record<string, string> = {
   "Set up Executor on your server in the web app.":
     "Настройте Executor на сервере в веб-приложении.",
   "Space default": "Пространство по умолчанию",
-  "Speak replies aloud with ElevenLabs, OpenAI, Cartesia, or Fish Audio":
-    "Озвучивать ответы с помощью ElevenLabs, OpenAI, Cartesia или Fish Audio",
   "Stop all workers and confirm that provider operations have stopped before releasing this computer.":
     "Остановите всех воркеров и убедитесь, что операции провайдера остановлены, прежде чем освобождать этот компьютер.",
   "Stored securely. Never shown here.": "Хранится безопасно. Здесь не отображается.",
@@ -136,7 +134,6 @@ export const RU_MESSAGES: Record<string, string> = {
   Checking: "Проверка",
   "Checking…": "Проверка…",
   "Check your email": "Проверьте свою электронную почту",
-  "Choose your provider and active model": "Выберите своего провайдера и активную модель",
   Clear: "Очистить",
   "Clear conversation": "Очистить диалог",
   "Clear conversation?": "Очистить диалог?",
@@ -158,7 +155,6 @@ export const RU_MESSAGES: Record<string, string> = {
   Connect: "Подключить",
   "Connect a voice provider first.": "Сначала подключите провайдера голосовой связи.",
   "Connect API key": "Подключить API-ключ",
-  "Connect apps.": "Подключить приложения.",
   "Connect Executor": "Подключить Executor",
   "Connect Treg": "Подключить Treg",
   "Connect this provider to use it as your personal model.":
@@ -267,8 +263,6 @@ export const RU_MESSAGES: Record<string, string> = {
   "OTA · {id} · {date}": "OTA · {id} · {date}",
   "Enter a server URL": "Введите URL-адрес сервера",
   "Enter this code in your browser:": "Введите этот код в браузере:",
-  "Enter your current password, then confirm permanent deletion of your account and all associated data.":
-    "Введите свой текущий пароль, а затем подтвердите окончательное удаление вашей учетной записи и всех связанных с ней данных.",
   "Executor token": "Токен Executor",
   Failed: "Ошибка",
   "Failed to refresh": "Не удалось обновить",
@@ -456,8 +450,6 @@ export const RU_MESSAGES: Record<string, string> = {
   "Speak message": "Озвучить сообщение",
   Speak: "Озвучить",
   "Speak only": "Только озвучить",
-  "Speak replies aloud with ElevenLabs, OpenAI, or Cartesia":
-    "Озвучивайте ответы с помощью ElevenLabs, OpenAI или Cartesia",
   Starting: "Запуск",
   "Starting…": "Запуск…",
   Stop: "Остановить",

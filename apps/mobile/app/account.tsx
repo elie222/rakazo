@@ -393,12 +393,7 @@ export default function Account() {
           onPress={() => router.push("/models")}
           style={({ pressed }) => [styles.settingsButton, pressed && styles.pressed]}
         >
-          <View>
-            <Text style={styles.settingsTitle}>{t("Models")}</Text>
-            <Text style={styles.settingsExplanation}>
-              {t("Choose your provider and active model")}
-            </Text>
-          </View>
+          <Text style={styles.settingsTitle}>{t("Models")}</Text>
           <Text style={styles.chevron}>›</Text>
         </Pressable>
 
@@ -408,12 +403,7 @@ export default function Account() {
           onPress={() => router.push("/voice")}
           style={({ pressed }) => [styles.settingsButton, pressed && styles.pressed]}
         >
-          <View>
-            <Text style={styles.settingsTitle}>{t("Voice")}</Text>
-            <Text style={styles.settingsExplanation}>
-              {t("Speak replies aloud with ElevenLabs, OpenAI, Cartesia, or Fish Audio")}
-            </Text>
-          </View>
+          <Text style={styles.settingsTitle}>{t("Voice")}</Text>
           <Text style={styles.chevron}>›</Text>
         </Pressable>
 
@@ -423,10 +413,7 @@ export default function Account() {
           onPress={() => router.push("/integrations")}
           style={({ pressed }) => [styles.settingsButton, pressed && styles.pressed]}
         >
-          <View>
-            <Text style={styles.settingsTitle}>{t("Integrations")}</Text>
-            <Text style={styles.settingsExplanation}>{t("Connect apps.")}</Text>
-          </View>
+          <Text style={styles.settingsTitle}>{t("Integrations")}</Text>
           <Text style={styles.chevron}>›</Text>
         </Pressable>
 
@@ -490,11 +477,6 @@ export default function Account() {
 
         <View style={styles.dangerZone}>
           <Text style={styles.dangerTitle}>{t("Delete account")}</Text>
-          <Text style={styles.explanation}>
-            {t(
-              "Enter your current password, then confirm permanent deletion of your account and all associated data.",
-            )}
-          </Text>
           <TextInput
             accessibilityLabel={t("Current password")}
             autoCapitalize="none"
@@ -748,12 +730,6 @@ function createAccountStyles() {
       color: tokens.destructive,
       fontSize: 17,
       fontWeight: "600",
-    },
-    explanation: {
-      color: native.secondaryLabel,
-      fontSize: 14,
-      lineHeight: 20,
-      marginTop: 8,
     },
     password: {
       height: 48,
