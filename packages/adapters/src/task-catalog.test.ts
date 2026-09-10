@@ -78,16 +78,18 @@ describe("task catalog", () => {
     ]);
     expect(prisma.taughtSkill.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({
-          status: "saved",
+        where: {
           spaceId: "space-1",
           botId: "bot-1",
-        }),
+          status: "saved",
+        },
       }),
     );
-    const taughtSkillWhere = vi.mocked(prisma.taughtSkill.findMany).mock.calls[0]?.[0]?.where;
-    expect(taughtSkillWhere).toBeDefined();
-    expect(taughtSkillWhere).not.toHaveProperty("userId");
+    expect(prisma.taughtSkill.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.not.objectContaining({ userId: expect.anything() }),
+      }),
+    );
     expect(result.skills).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ name: "Daily report", source: "user", readOnly: false }),
