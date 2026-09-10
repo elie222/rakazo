@@ -1,16 +1,7 @@
 import { useLingui } from "@lingui/react/macro";
 import type { AvatarStyle, SpaceMemoryConfig } from "@rakazo/contracts";
 import { Button, Dialog, DialogClose, DialogContent, DialogTitle } from "@rakazo/ui-web";
-import {
-  Brain,
-  CloudDownload,
-  Cpu,
-  Gauge,
-  Monitor,
-  Settings,
-  Volume2,
-  XIcon,
-} from "lucide-react";
+import { Brain, CloudDownload, Cpu, Gauge, Monitor, Settings, Volume2, XIcon } from "lucide-react";
 import { type ComponentType, useEffect, useRef, useState } from "react";
 import { computersAreUnavailable } from "../components/ComputersUnavailableHint";
 import {
