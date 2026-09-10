@@ -2,9 +2,9 @@ import { useLingui } from "@lingui/react/macro";
 import type { AvatarStyle, SpaceMemoryConfig } from "@rakazo/contracts";
 import { Button, Dialog, DialogClose, DialogContent, DialogTitle } from "@rakazo/ui-web";
 import {
+  Brain,
   CloudDownload,
   Cpu,
-  Diamond,
   Gauge,
   Monitor,
   Settings,
@@ -91,7 +91,7 @@ export function SettingsOverlay({
   const navItems: NavItem[] = [
     { id: "general", label: t`General`, icon: Settings },
     { id: "models", label: t`Models`, icon: Cpu },
-    { id: "memory", label: t`Memory`, icon: Diamond },
+    { id: "memory", label: t`Memory`, icon: Brain },
     { id: "voice", label: t`Voice`, icon: Volume2 },
     { id: "usage", label: t`Usage`, icon: Gauge },
     ...(showComputer ? [{ id: "computer" as const, label: t`Computer`, icon: Monitor }] : []),
