@@ -178,6 +178,7 @@ describe("builtin tools", () => {
         "create_space",
         "spawn_bot",
         "archive_bot",
+        "task_catalog",
         "skill_read",
         "skill_create",
         "skill_update",
