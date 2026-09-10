@@ -45,7 +45,6 @@ export async function taskCatalogFromTool(deps: TaskCatalogToolDeps, input: Task
       where: {
         spaceId: input.spaceId,
         botId: input.botId,
-        userId: input.userId,
         status: "saved",
       },
       orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
