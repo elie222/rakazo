@@ -115,31 +115,34 @@ tags:
 - extendedWaitUntil:
     visible: "The fixture workspace is ready."
     timeout: 10000
-- assertNotVisible: "Add thumbs-up"
-- assertNotVisible: "Remove thumbs-up"
 - assertNotVisible: "Reply"
+- assertNotVisible: "React"
+- assertNotVisible: "More"
 - takeScreenshot: "15-thread"
 - longPressOn: "The fixture workspace is ready."
-- assertVisible: "Add thumbs-up"
 - assertVisible: "Reply"
+- assertVisible: "React"
+- assertVisible: "More"
 - takeScreenshot: "15b-message-actions"
 - tapOn: "More"
 - assertVisible: "Speak message"
 - back
 - longPressOn: "The fixture workspace is ready."
-- tapOn: "Add thumbs-up"
+- tapOn: "React"
+- tapOn: "👍"
 - extendedWaitUntil:
-    visible: "Remove thumbs-up"
+    visible: "👍"
     timeout: 10000
 - assertNotVisible: "Reply"
 - takeScreenshot: "15c-message-reaction"
-- tapOn: "Remove thumbs-up"
-- extendedWaitUntil:
-    notVisible: "Remove thumbs-up"
-    timeout: 10000
 - longPressOn: "Summarize the fixture launch checklist."
-- assertVisible: "Add thumbs-up"
+- assertVisible: "Reply"
+- assertVisible: "React"
+- assertVisible: "More"
+- tapOn: "More"
 - assertNotVisible: "Speak message"
+- back
+- longPressOn: "Summarize the fixture launch checklist."
 - tapOn: "Reply"
 - assertVisible: "Replying to"
 - tapOn: "Cancel reply"
@@ -168,19 +171,20 @@ tags:
 - extendedWaitUntil:
     visible: "The fixture launch plan is ready."
     timeout: 10000
-- assertNotVisible: "Add thumbs-up"
 - assertNotVisible: "Reply"
+- assertNotVisible: "React"
+- assertNotVisible: "More"
 - takeScreenshot: "19-group-thread"
 - longPressOn: "The fixture launch plan is ready."
-- assertVisible: "Add thumbs-up"
-- tapOn: "Add thumbs-up"
+- assertVisible: "Reply"
+- assertVisible: "React"
+- assertVisible: "More"
+- tapOn: "React"
+- tapOn: "👍"
 - extendedWaitUntil:
-    visible: "Remove thumbs-up"
+    visible: "👍"
     timeout: 10000
-- tapOn: "Remove thumbs-up"
-- extendedWaitUntil:
-    notVisible: "Remove thumbs-up"
-    timeout: 10000
+- assertNotVisible: "Reply"
 
 - openLink: "rakazo:///group-settings?groupId=${RAKAZO_SCREENSHOT_GROUP_ID}"
 - extendedWaitUntil:
