@@ -1319,7 +1319,7 @@ describe("createMessagingInboundHandler linking", () => {
         idempotencyKey: "link:code-1",
         kind: "dm",
         identityId: "mi-linked",
-        body: 'Linked — messages here now reach "Chief".',
+        body: 'Linked. Messages here now reach "Chief".',
       }),
     ]);
   });

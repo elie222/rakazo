@@ -374,7 +374,7 @@ export const RU_MESSAGES: Record<string, string> = {
   Pin: "Закрепить",
   "Please try again.": "Повторите попытку.",
   "Point this app at your self-hosted Rakazo origin, the same HTTPS URL you open in a browser.":
-    "Направьте это приложение на свой собственный источник Rakazo — тот же URL-адрес HTTPS, который вы открываете в браузере.",
+    "Направьте это приложение на свой собственный источник Rakazo, тот же URL-адрес HTTPS, который вы открываете в браузере.",
   Private: "Личный",
   Providers: "Провайдеры",
   "Public servers need https://. HTTP only works on your local network.":

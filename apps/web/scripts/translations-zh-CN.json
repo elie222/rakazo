@@ -70,7 +70,6 @@
   "Answered: {answer}": "已回答：{answer}",
   "API key": "API 密钥",
   "API key header": "API 密钥请求头",
-  "Applies when you click Add server. Use the agent chips on each server card to change access at any time — the agent picks it up on its next message.": "在点击「添加服务器」时生效。可随时用每张服务器卡片上的 Agent 标签改权限，Agent 会在下一条消息时采用。",
   "Approval boundaries": "审批边界",
   "Approve": "批准",
   "Approve this server to let your agent use its tools.": "批准此服务器后，Agent 才能使用它的工具。",

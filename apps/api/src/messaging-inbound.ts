@@ -318,7 +318,7 @@ async function tryRedeemLinkCode(
     deps,
     { id: redeemed.identityId },
     redeemed.confirmationKey,
-    `Linked — messages here now reach "${bot?.name ?? "your agent"}".`,
+    `Linked. Messages here now reach "${bot?.name ?? "your agent"}".`,
   );
   return true;
 }

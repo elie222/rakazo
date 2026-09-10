@@ -70,7 +70,6 @@
   "Answered: {answer}": "Beantwortet: {answer}",
   "API key": "API-Schlüssel",
   "API key header": "API-Schlüssel-Header",
-  "Applies when you click Add server. Use the agent chips on each server card to change access at any time — the agent picks it up on its next message.": "Gilt beim Hinzufügen des Servers. Mit den Agent-Chips auf jeder Serverkarte kannst du den Zugriff jederzeit ändern. Der Agent übernimmt die Änderung mit seiner nächsten Nachricht.",
   "Approval boundaries": "Bestätigungsgrenzen",
   "Approve": "Genehmigen",
   "Approve this server to let your agent use its tools.": "Genehmige diesen Server, damit dein Agent seine Tools verwenden kann.",

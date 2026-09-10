@@ -70,7 +70,6 @@
   "Answered: {answer}": "응답: {answer}",
   "API key": "API 키",
   "API key header": "API 키 헤더",
-  "Applies when you click Add server. Use the agent chips on each server card to change access at any time — the agent picks it up on its next message.": "서버를 추가할 때 적용됩니다. 각 서버 카드의 Bot 버튼으로 언제든 권한을 바꿀 수 있으며 다음 메시지부터 반영됩니다.",
   "Approval boundaries": "승인이 필요한 범위",
   "Approve": "승인",
   "Approve this server to let your agent use its tools.": "이 서버를 승인하면 Bot이 제공되는 도구를 사용할 수 있습니다.",

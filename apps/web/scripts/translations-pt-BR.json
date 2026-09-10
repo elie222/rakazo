@@ -64,7 +64,6 @@
   "Answered: {answer}": "Respondido: {answer}",
   "API key": "Chave de API",
   "API key header": "Cabeçalho da chave API",
-  "Applies when you click Add server. Use the agent chips on each server card to change access at any time — the agent picks it up on its next message.": "Aplica-se quando você clica em Adicionar servidor. Use os chips do agente em cada placa do servidor para alterar o acesso a qualquer momento — o agente o pega na próxima mensagem.",
   "Approval boundaries": "Limites de aprovação",
   "Approve": "Aprovar",
   "Approve this server to let your agent use its tools.": "Aprove este servidor para permitir que seu agente use suas ferramentas.",

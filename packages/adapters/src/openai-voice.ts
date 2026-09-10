@@ -65,7 +65,7 @@ export class OpenAIVoiceProvider implements VoiceProvider {
     } catch {
       return {
         ok: false,
-        message: "Couldn't reach OpenAI to check that key — check your connection.",
+        message: "Couldn't reach OpenAI to check that key. Check your connection.",
       };
     }
   }

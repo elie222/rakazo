@@ -64,7 +64,6 @@
   "Answered: {answer}": "उत्तर: {answer}",
   "API key": "API कुंजी",
   "API key header": "API कुंजी हेडर",
-  "Applies when you click Add server. Use the agent chips on each server card to change access at any time — the agent picks it up on its next message.": "यह तब लागू होता है जब आप 'सर्वर जोड़ें' पर क्लिक करते हैं। एक्सेस कभी भी बदलने के लिए हर सर्वर कार्ड पर एजेंट चिप का उपयोग करें — एजेंट इसे अपने अगले संदेश पर अपना लेगा।",
   "Approval boundaries": "अनुमोदन सीमाएं",
   "Approve": "अनुमोदित करें",
   "Approve this server to let your agent use its tools.": "अपने एजेंट को इसके टूल उपयोग करने देने के लिए इस सर्वर को अनुमोदित करें।",

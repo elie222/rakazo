@@ -64,7 +64,6 @@
   "Answered: {answer}": "Yanıtlandı: {answer}",
   "API key": "API anahtarı",
   "API key header": "API anahtarı üstbilgisi",
-  "Applies when you click Add server. Use the agent chips on each server card to change access at any time — the agent picks it up on its next message.": "Sunucu ekle'ye tıkladığında uygulanır. Erişimi istediğin zaman değiştirmek için her sunucu kartındaki agent çiplerini kullan — agent bunu bir sonraki mesajında algılar.",
   "Approval boundaries": "Onay sınırları",
   "Approve": "Onayla",
   "Approve this server to let your agent use its tools.": "Agent'ının bu sunucunun araçlarını kullanabilmesi için sunucuyu onayla.",

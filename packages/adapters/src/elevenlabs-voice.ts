@@ -52,7 +52,7 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
     } catch {
       return {
         ok: false,
-        message: "Couldn't reach ElevenLabs to check that key — check your connection.",
+        message: "Couldn't reach ElevenLabs to check that key. Check your connection.",
       };
     }
   }
