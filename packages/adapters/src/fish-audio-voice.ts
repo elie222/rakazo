@@ -16,6 +16,7 @@ import {
   speechUploadName,
   voiceDeadline,
   voiceHttpError,
+  voiceUnreachable,
 } from "./voice-http.js";
 
 const API = "https://api.fish.audio";
@@ -58,7 +59,7 @@ export class FishAudioVoiceProvider implements VoiceProvider {
     } catch {
       return {
         ok: false,
-        message: "Couldn't reach Fish Audio to check that key. Check your connection.",
+        message: voiceUnreachable("Fish Audio"),
       };
     }
   }

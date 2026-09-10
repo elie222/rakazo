@@ -16,6 +16,7 @@ import {
   speechUploadName,
   voiceDeadline,
   voiceHttpError,
+  voiceUnreachable,
 } from "./voice-http.js";
 
 const API = "https://api.elevenlabs.io/v1";
@@ -52,7 +53,7 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
     } catch {
       return {
         ok: false,
-        message: "Couldn't reach ElevenLabs to check that key. Check your connection.",
+        message: voiceUnreachable("ElevenLabs"),
       };
     }
   }

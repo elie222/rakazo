@@ -16,6 +16,7 @@ import {
   speechUploadName,
   voiceDeadline,
   voiceHttpError,
+  voiceUnreachable,
 } from "./voice-http.js";
 
 const API = "https://api.openai.com/v1";
@@ -65,7 +66,7 @@ export class OpenAIVoiceProvider implements VoiceProvider {
     } catch {
       return {
         ok: false,
-        message: "Couldn't reach OpenAI to check that key. Check your connection.",
+        message: voiceUnreachable("OpenAI"),
       };
     }
   }

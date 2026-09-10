@@ -14,6 +14,7 @@ import {
   requireOk,
   voiceDeadline,
   voiceHttpError,
+  voiceUnreachable,
 } from "./voice-http.js";
 
 const API = "https://api.cartesia.ai";
@@ -49,7 +50,7 @@ export class CartesiaVoiceProvider implements VoiceProvider {
     } catch {
       return {
         ok: false,
-        message: "Couldn't reach Cartesia to check that key. Check your connection.",
+        message: voiceUnreachable("Cartesia"),
       };
     }
   }
