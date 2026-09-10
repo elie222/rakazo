@@ -47,11 +47,7 @@ import {
 import { presentMessageActionSheet } from "../lib/message-action-sheet";
 import { native, useResolvedAppearance, useThemedStyles } from "../lib/native";
 import { registerPushToken } from "../lib/push";
-import {
-  ACCOUNT_UI_LOCALES,
-  UI_LOCALE_LABELS,
-  type AccountUiLocale,
-} from "../lib/ui-locale";
+import { ACCOUNT_UI_LOCALES, type AccountUiLocale, UI_LOCALE_LABELS } from "../lib/ui-locale";
 
 /** Render account settings, including the entry point for voice configuration. */
 export default function Account() {
