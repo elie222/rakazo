@@ -30,7 +30,7 @@ describe("task catalog", () => {
         ]),
       },
       taughtSkill: {
-        findMany: vi.fn(async () => [
+        findMany: vi.fn(async (_args: Record<string, unknown>) => [
           { id: "taught-1", name: "Export report", goal: "Export the report", status: "saved" },
         ]),
       },
