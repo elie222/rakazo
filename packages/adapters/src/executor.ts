@@ -608,7 +608,7 @@ async function loadLivePluginSlugs(
   }
 }
 
-async function persistLivePluginConnections(
+export async function persistLivePluginConnections(
   prisma: PrismaClient,
   owner: { userId: string; spaceId: string },
   rows: PluginConnectionRow[],
@@ -624,6 +624,9 @@ async function persistLivePluginConnections(
       },
       data: { status: "connected" },
     });
+    for (const row of rows) {
+      if (sync.connectIds.includes(row.id)) row.status = "connected";
+    }
   }
   if (sync.revokeIds.length > 0) {
     await prisma.connection.updateMany({
@@ -634,6 +637,9 @@ async function persistLivePluginConnections(
       },
       data: { status: "revoked" },
     });
+    for (const row of rows) {
+      if (sync.revokeIds.includes(row.id)) row.status = "revoked";
+    }
   }
 }
 
