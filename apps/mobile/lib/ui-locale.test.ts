@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  ACCOUNT_UI_LOCALES,
   htmlLangForLocale,
   isUiLocale,
   normalizeUiLocale,
@@ -18,6 +19,13 @@ describe("UI_LOCALES", () => {
     expect(isUiLocale("hi")).toBe(false);
     expect(isUiLocale("pt-BR")).toBe(false);
     expect(isUiLocale("ru")).toBe(true);
+  });
+});
+
+describe("ACCOUNT_UI_LOCALES", () => {
+  it("limits the Account picker to English and Simplified Chinese", () => {
+    expect([...ACCOUNT_UI_LOCALES]).toEqual(["en", "zh-CN"]);
+    expect(ACCOUNT_UI_LOCALES).not.toContain("ru");
   });
 });
 
