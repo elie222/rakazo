@@ -1142,13 +1142,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
           }
         }
         const connectedComposio = mergeConnectedPlugins(composioRows, liveSlugs);
-        const activeKeys = new Set(
-          connectedComposio.map((connection) => `composio:${connection.provider}`),
-        );
-        const connectedPlugins = storedConnections.filter(
-          (connection) =>
-            connection.status === "connected" ||
-            activeKeys.has(`${connection.connectorId}:${connection.provider}`),
+        const connectedPlugins = selectRunConnections(
+          storedConnections,
+          connectedComposio.map((connection) => connection.provider),
         );
         const context = {
           operationId: runId,
@@ -4593,6 +4589,17 @@ async function withModelCredentialLock<T>(key: string, fn: () => Promise<T>): Pr
     release();
     if (modelCredentialLocks.get(key) === current) modelCredentialLocks.delete(key);
   }
+}
+
+export function selectRunConnections<
+  T extends { connectorId: string; provider: string; status: string },
+>(rows: T[], connectedComposioProviders: string[]): T[] {
+  const activeKeys = new Set(connectedComposioProviders.map((provider) => `composio:${provider}`));
+  return rows.filter(
+    (row) =>
+      row.status !== "revoked" &&
+      (row.status === "connected" || activeKeys.has(`${row.connectorId}:${row.provider}`)),
+  );
 }
 
 export async function loadCurrentTurnImages(
