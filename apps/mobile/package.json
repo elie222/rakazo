@@ -25,6 +25,7 @@
     "@react-native-vector-icons/ionicons": "13.1.4",
     "@react-native-vector-icons/material-design-icons": "13.1.4",
     "expo": "57.0.21",
+    "expo-application": "57.0.2",
     "expo-audio": "57.0.4",
     "expo-clipboard": "57.0.1",
     "expo-constants": "57.0.17",

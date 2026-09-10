@@ -243,6 +243,11 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Don’t have an account?": "还没有账户？",
   Done: "完成",
   Email: "邮箱",
+  Embedded: "内置",
+  "{channel} · {id}": "{channel} · {id}",
+  "{channel} · {id} · {date}": "{channel} · {id} · {date}",
+  "OTA · {id}": "OTA · {id}",
+  "OTA · {id} · {date}": "OTA · {id} · {date}",
   "Enter a server URL": "请输入服务器地址",
   "Enter this code in your browser:": "请在浏览器中输入此代码：",
   "Enter your current password, then confirm permanent deletion of your account and all associated data.":

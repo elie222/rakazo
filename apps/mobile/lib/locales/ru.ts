@@ -260,6 +260,11 @@ export const RU_MESSAGES: Record<string, string> = {
   "Don’t have an account?": "Нет аккаунта?",
   Done: "Готово",
   Email: "Электронная почта",
+  Embedded: "Встроенная",
+  "{channel} · {id}": "{channel} · {id}",
+  "{channel} · {id} · {date}": "{channel} · {id} · {date}",
+  "OTA · {id}": "OTA · {id}",
+  "OTA · {id} · {date}": "OTA · {id} · {date}",
   "Enter a server URL": "Введите URL-адрес сервера",
   "Enter this code in your browser:": "Введите этот код в браузере:",
   "Enter your current password, then confirm permanent deletion of your account and all associated data.":

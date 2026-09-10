@@ -26,6 +26,7 @@ import {
   selectedSpaceId,
   signOut,
 } from "../lib/api";
+import { formatUpdateLabel, getAppVersionInfo } from "../lib/app-version";
 import {
   getCachedAppearancePreference,
   mobileTokens,
@@ -75,6 +76,9 @@ export default function Account() {
   const { avatarStyle, updateAvatarStyle } = useAvatarStyle();
   const appearance = getCachedAppearancePreference();
   const styles = useThemedStyles(createAccountStyles);
+  const versionInfo = getAppVersionInfo();
+  const updateLabel = formatUpdateLabel(versionInfo.update, t);
+  const versionAccessibility = [versionInfo.nativeLabel, updateLabel].filter(Boolean).join(". ");
 
   useEffect(() => {
     void rpc<MobileMe>("me")
@@ -471,6 +475,19 @@ export default function Account() {
           </View>
         ) : null}
 
+        {versionInfo.nativeLabel || updateLabel ? (
+          <View
+            accessibilityLabel={versionAccessibility}
+            accessibilityRole="summary"
+            style={styles.versionFooter}
+          >
+            {versionInfo.nativeLabel ? (
+              <Text style={styles.versionLine}>{versionInfo.nativeLabel}</Text>
+            ) : null}
+            {updateLabel ? <Text style={styles.versionLine}>{updateLabel}</Text> : null}
+          </View>
+        ) : null}
+
         <View style={styles.dangerZone}>
           <Text style={styles.dangerTitle}>{t("Delete account")}</Text>
           <Text style={styles.explanation}>
@@ -709,6 +726,16 @@ function createAccountStyles() {
       color: native.secondaryLabel,
       fontSize: 28,
       fontWeight: "300",
+    },
+    versionFooter: {
+      marginTop: 4,
+      alignItems: "center",
+      gap: 2,
+    },
+    versionLine: {
+      color: native.tertiaryLabel,
+      fontSize: 12,
+      textAlign: "center",
     },
     dangerZone: {
       marginTop: 12,
