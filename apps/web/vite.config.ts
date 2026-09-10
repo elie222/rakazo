@@ -95,8 +95,8 @@ function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string,
         },
         (incoming) => {
           if (retryable && (incoming.statusCode ?? 502) >= 500 && retries < 3 && !res.destroyed) {
-            incoming.resume();
             retries += 1;
+            incoming.destroy();
             setTimeout(requestUpstream, 50 * retries);
             return;
           }
