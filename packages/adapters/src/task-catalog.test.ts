@@ -76,6 +76,9 @@ describe("task catalog", () => {
         source: "taught_skill",
       },
     ]);
+    expect(prisma.taughtSkill.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ status: "saved" }) }),
+    );
     expect(result.skills).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ name: "Daily report", source: "user", readOnly: false }),
