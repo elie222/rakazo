@@ -928,7 +928,6 @@ async function isManagedSpaceContainer(
   }
 }
 
-
 class ComputerIdentityError extends Error {}
 
 async function managedContainer(id: string, botId?: string, spaceId?: string) {
