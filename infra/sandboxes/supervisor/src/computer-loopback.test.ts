@@ -4,7 +4,7 @@ import path from "node:path";
 import { Readable } from "node:stream";
 import { resolveSupervisorToken } from "@rakazo/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { computerNetworkNameFor, hostComputerUser } from "./computer-spec.js";
+import { COMPUTER_IMAGE, computerNetworkNameFor, hostComputerUser } from "./computer-spec.js";
 
 const mocks = vi.hoisted(() => ({
   docker: {
@@ -578,5 +578,73 @@ describe("space computer limit enforcement", () => {
       resumed: true,
     });
     expect(mocks.docker.createContainer).not.toHaveBeenCalled();
+  });
+
+  it("counts legacy workspaceId COMPUTER_IMAGE containers toward the limit", async () => {
+    setupContainerFixture();
+    vi.stubEnv("SANDBOX_MAX_COMPUTERS_PER_SPACE", "1");
+
+    mocks.docker.listContainers.mockImplementation(
+      async (opts?: { filters?: { label?: string[] } }) => {
+        const labels = opts?.filters?.label ?? [];
+        if (labels.some((l: string) => l.startsWith("rakazo.botId="))) {
+          return [];
+        }
+        // Legacy managed computer: COMPUTER_IMAGE + workspaceId, no rakazo.managed.
+        return [
+          {
+            Id: "legacy",
+            Image: COMPUTER_IMAGE,
+            Labels: { "rakazo.workspaceId": "space-1", "rakazo.botId": "legacy-bot" },
+          },
+        ];
+      },
+    );
+
+    const response = await provisionBot("bot-new", "space-1");
+    expect(response.status).toBe(429);
+    expect(await response.json()).toEqual({
+      error: "Computer limit reached for space (max: 1)",
+    });
+    expect(mocks.docker.createContainer).not.toHaveBeenCalled();
+  });
+
+  it("serializes concurrent creates for different bots in the same space", async () => {
+    const { container } = setupContainerFixture();
+    vi.stubEnv("SANDBOX_MAX_COMPUTERS_PER_SPACE", "1");
+
+    let created = 0;
+    mocks.docker.listContainers.mockImplementation(
+      async (opts?: { filters?: { label?: string[] } }) => {
+        const labels = opts?.filters?.label ?? [];
+        if (labels.some((l: string) => l.startsWith("rakazo.botId="))) {
+          return [];
+        }
+        return Array.from({ length: created }, (_, index) => ({
+          Id: `c${index}`,
+          Labels: { "rakazo.managed": "true", "rakazo.spaceId": "space-1" },
+        }));
+      },
+    );
+    mocks.docker.createContainer.mockImplementation(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 40));
+      created += 1;
+      return {
+        ...container,
+        id: `new-container-${created}`,
+      };
+    });
+
+    const [first, second] = await Promise.all([
+      provisionBot("bot-a", "space-1"),
+      provisionBot("bot-b", "space-1"),
+    ]);
+    const statuses = [first.status, second.status].sort((a, b) => a - b);
+    expect(statuses).toEqual([200, 429]);
+    expect(mocks.docker.createContainer).toHaveBeenCalledOnce();
+    const rejected = first.status === 429 ? first : second;
+    expect(await rejected.json()).toEqual({
+      error: "Computer limit reached for space (max: 1)",
+    });
   });
 });
