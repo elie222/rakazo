@@ -12,6 +12,26 @@ const context = {
 };
 
 describe("DaytonaSandboxProvider", () => {
+  it("forwards an optional snapshot name to create()", async () => {
+    const fixture = daytonaFixture();
+    const provider = new DaytonaSandboxProvider(
+      { apiKey: "test-key", snapshot: "rakazo-computer" },
+      fixture.client,
+    );
+    await provider.provision({ botId: "bot-a", homePath: "/unused" }, context);
+    expect(fixture.create).toHaveBeenCalledWith(
+      expect.objectContaining({ snapshot: "rakazo-computer" }),
+      { timeout: 120 },
+    );
+  });
+
+  it("omits snapshot from create() when unset", async () => {
+    const fixture = daytonaFixture();
+    const provider = new DaytonaSandboxProvider({ apiKey: "test-key" }, fixture.client);
+    await provider.provision({ botId: "bot-a", homePath: "/unused" }, context);
+    expect(fixture.create.mock.calls[0]?.[0]).not.toHaveProperty("snapshot");
+  });
+
   it("preserves desktop command output in failures", async () => {
     const fixture = daytonaFixture();
     const provider = new DaytonaSandboxProvider({ apiKey: "test-key" }, fixture.client);
@@ -422,7 +442,7 @@ function daytonaFixture(options: { id?: string; state?: string; prepareFails?: b
     stop,
     delete: deleteSandbox,
   } as unknown as Sandbox;
-  const create = vi.fn(async () => sandbox);
+  const create = vi.fn(async (_config?: object, _opts?: object) => sandbox);
   const get = vi.fn(async () => sandbox);
   return {
     sandbox,

@@ -201,6 +201,7 @@ export async function createApp(
       daytonaApiKey: env.daytonaApiKey,
       daytonaApiUrl: env.daytonaApiUrl,
       daytonaTarget: env.daytonaTarget,
+      daytonaSnapshot: env.daytonaSnapshot,
       boxApiKey: env.boxApiKey,
       boxApiUrl: env.boxApiUrl,
       dataDir: env.dataDir,

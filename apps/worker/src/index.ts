@@ -78,6 +78,7 @@ async function main() {
     daytonaApiKey: process.env.DAYTONA_API_KEY,
     daytonaApiUrl: process.env.DAYTONA_API_URL,
     daytonaTarget: process.env.DAYTONA_TARGET,
+    daytonaSnapshot: process.env.DAYTONA_SNAPSHOT,
     boxApiKey: process.env.BOX_API_KEY,
     boxApiUrl: process.env.BOX_API_URL ?? process.env.BOX_BASE_URL,
     dataDir,
