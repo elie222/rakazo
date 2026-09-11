@@ -1,8 +1,9 @@
 import { createServer } from "node:http";
-import { Sandbox, TimeoutError } from "@e2b/desktop";
+import { Sandbox, SandboxNotFoundError, TimeoutError } from "@e2b/desktop";
 import { describe, expect, it, vi } from "vitest";
 import { shouldSkipPortableWorkspaceFile } from "./computer-workspace.js";
-import { E2BSandboxProvider, type E2BSandboxSdk, isSandboxGoneError } from "./e2b-sandbox.js";
+import type { E2BSandboxSdk } from "./e2b-sandbox.js";
+import { E2BSandboxProvider, isSandboxGoneError } from "./e2b-sandbox.js";
 import { desktopCommandResponder } from "./linux-desktop.test-support.js";
 
 const context = {
@@ -664,20 +665,18 @@ describe("E2B computer backend", () => {
 });
 
 describe("sandbox-gone detection", () => {
-  // Verbatim wordings from @e2b/desktop 2.3.1 (e2b 2.38.3 dist).
+  // Wordings verified against @e2b/desktop 2.4.0 (e2b 2.49.1 dist).
   const gone = [
     new TimeoutError(
       "502: This error is likely due to sandbox timeout. You can modify the sandbox timeout by passing 'timeoutMs' when starting the sandbox or calling '.setTimeout' on the sandbox with the desired timeout.",
     ),
-    Object.assign(new Error("Sandbox is probably not running anymore"), {
-      name: "SandboxNotFoundError",
-    }),
+    new SandboxNotFoundError("Sandbox is probably not running anymore"),
     new TimeoutError(
       "stream reset: The sandbox was killed or reached its end of life while the request was in flight.",
     ),
-    Object.assign(new Error("Paused sandbox sandbox-ref-1 not found"), {
-      name: "SandboxNotFoundError",
-    }),
+    new SandboxNotFoundError("Paused sandbox sandbox-ref-1 not found"),
+    // The SDK error class must also identify loss when the API supplies a different message.
+    new SandboxNotFoundError("Unavailable"),
   ];
   const alive = [
     new Error("bash: x11vnc: command not found"),
@@ -705,11 +704,11 @@ describe("sandbox-gone detection", () => {
     expect(isSandboxGoneError(new Error("fetch failed"))).toBe(false);
   });
 
-  it("drops a cached handle whose sandbox died and reconnects", async () => {
+  it.each(gone)("drops a cached handle and reconnects after %s", async (error) => {
     const dead = {
       sandboxId: "box-1",
       setTimeout: vi.fn(async () => {
-        throw new TimeoutError("502: This error is likely due to sandbox timeout.");
+        throw error;
       }),
     } as unknown as Sandbox;
     const revived = { sandboxId: "box-1", setTimeout: vi.fn(async () => undefined) };
