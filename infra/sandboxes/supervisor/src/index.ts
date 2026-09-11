@@ -38,6 +38,7 @@ import {
   resolveComputerControlEndpoint,
   resolveScreenNetworkMode,
   resolveScreenPublishTarget,
+  resolveSpaceComputerLimit,
   resolveTeamScreenLimit,
   SCREEN_HOST,
   screenPorts,
@@ -202,6 +203,20 @@ app.post("/computers", async (c) => {
           });
         }
       }
+
+      if (!existing) {
+        const spaceComputerLimit = resolveSpaceComputerLimit();
+        if (spaceComputerLimit > 0) {
+          const currentCount = await countSpaceContainers(body.spaceId);
+          if (currentCount >= spaceComputerLimit) {
+            return c.json(
+              { error: `Computer limit reached for space (max: ${spaceComputerLimit})` },
+              429,
+            );
+          }
+        }
+      }
+
       // Existing containers with the current image already use the selected user.
       // Before replacing or creating a container, validate its home without
       // privileged filesystem mutations that could escape via concurrent renames.
@@ -865,6 +880,37 @@ async function findBotContainer(botId: string, spaceId: string) {
     if (isRakazoContainer(info, botId, spaceId)) return container;
   }
   return undefined;
+}
+
+export async function countSpaceContainers(spaceId: string): Promise<number> {
+  const listed = await docker.listContainers({
+    all: true,
+    filters: {
+      label: ["rakazo.managed=true"],
+    },
+  });
+  let count = 0;
+  for (const item of listed) {
+    const labels = item.Labels ?? {};
+    const itemSpaceId = labels["rakazo.spaceId"] ?? labels["rakazo.workspaceId"];
+    if (itemSpaceId === spaceId) {
+      count++;
+    } else if (!item.Labels) {
+      try {
+        const info = await docker.getContainer(item.Id).inspect();
+        const infoLabels = info.Config?.Labels ?? {};
+        const isManaged =
+          infoLabels["rakazo.managed"] === "true" || info.Config?.Image === COMPUTER_IMAGE;
+        const infoSpaceId = infoLabels["rakazo.spaceId"] ?? infoLabels["rakazo.workspaceId"];
+        if (isManaged && infoSpaceId === spaceId) {
+          count++;
+        }
+      } catch {
+        // Container might have been removed concurrently
+      }
+    }
+  }
+  return count;
 }
 
 class ComputerIdentityError extends Error {}

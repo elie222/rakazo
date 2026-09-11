@@ -149,6 +149,16 @@ export class DockerSandboxProvider implements SandboxProvider {
     });
     if (!res.ok) {
       const detail = await safeBody(res, context.signal);
+      let parsedDetail: string | undefined;
+      try {
+        const json = JSON.parse(detail);
+        if (typeof json.error === "string") {
+          parsedDetail = json.error;
+        }
+      } catch {}
+      if (res.status === 429 && parsedDetail?.includes("Computer limit reached")) {
+        throw new Error(parsedDetail);
+      }
       throw new Error(`sandbox provision failed: ${res.status} ${detail}`.trim());
     }
     const body = await readSandboxJson<{ id: string; resumed?: boolean }>(res, context.signal);
