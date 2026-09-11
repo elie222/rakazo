@@ -87,15 +87,21 @@
 }
 
 .rk-chat-markdown code {
-  border: 1px solid var(--border);
+  border: 1px solid rgba(239, 68, 68, 0.2);
   border-radius: 0.35em;
-  background: var(--muted);
-  color: var(--foreground);
-  padding: 0.08em 0.32em;
+  background: rgba(239, 68, 68, 0.08);
+  color: #f87171;
+  padding: 0.1em 0.35em;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 0.88em;
   direction: ltr;
   unicode-bidi: isolate;
+}
+
+[data-theme="light"] .rk-chat-markdown code {
+  border: 1px solid rgba(220, 38, 38, 0.2);
+  background: rgba(220, 38, 38, 0.06);
+  color: #dc2626;
 }
 
 .rk-chat-markdown pre {

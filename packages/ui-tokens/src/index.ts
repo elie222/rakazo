@@ -47,38 +47,38 @@ export type ColorTokens = {
 };
 
 export const darkTokens = {
-  background: "#0D0D0E",
+  background: "#0B0C0E",
   foreground: "#ECECEE",
-  card: "#141416",
+  card: "#141518",
   cardForeground: "#ECECEE",
-  popover: "#141416",
+  popover: "#141518",
   popoverForeground: "#ECECEE",
   primary: "#F1F1EF",
-  primaryForeground: "#1A1A1A",
-  secondary: "#1A1A1D",
+  primaryForeground: "#0B0C0E",
+  secondary: "#18191E",
   secondaryForeground: "#ECECEE",
-  chatUser: "#2B2B31",
+  chatUser: "#22242B",
   chatUserForeground: "#ECECEE",
-  muted: "#1A1A1D",
+  muted: "#141518",
   mutedForeground: "#85858A",
-  accent: "#202023",
+  accent: "#1A1B20",
   accentForeground: "#ECECEE",
   destructive: "#EF4444",
   destructiveForeground: "#FFFFFF",
-  border: "#26262A",
-  input: "#2A2A2E",
-  ring: "#A6A6AD",
-  sidebar: "#17171A",
+  border: "#1E2026",
+  input: "#18191E",
+  ring: "#3B82F6",
+  sidebar: "#111215",
   sidebarForeground: "#ECECEE",
-  sidebarBorder: "#26262A",
-  sidebarAccent: "#232329",
+  sidebarBorder: "#1C1D22",
+  sidebarAccent: "#1A1B20",
   sidebarAccentForeground: "#ECECEE",
-  link: "#86B7FF",
+  link: "#3B82F6",
   success: "#4ECB71",
   warning: "#E9C46A",
-  overlay: "rgba(4, 4, 5, 0.62)",
-  scrollbar: "#2A2A2E",
-  scrollbarHover: "#414147",
+  overlay: "rgba(4, 4, 5, 0.72)",
+  scrollbar: "#1E2026",
+  scrollbarHover: "#2E313A",
 } as const satisfies ColorTokens;
 
 export const lightTokens = {
@@ -140,7 +140,7 @@ export function isAppearancePreference(
 export function normalizeAppearancePreference(
   raw: string | null | undefined,
 ): AppearancePreference {
-  return isAppearancePreference(raw) ? raw : "system";
+  return isAppearancePreference(raw) ? raw : "dark";
 }
 
 export type ResolveAppearancePreferenceOptions = {
@@ -182,7 +182,7 @@ export function resolveAppearance(
   preference: AppearancePreference,
   system: ResolvedAppearance = "dark",
 ): ResolvedAppearance {
-  if (preference === "system") return system;
+  if (preference === "system") return "dark";
   return preference;
 }
 

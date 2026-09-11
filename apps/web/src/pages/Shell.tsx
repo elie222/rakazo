@@ -86,6 +86,7 @@ import {
   Clock,
   Copy,
   Gauge,
+  LayoutGrid,
   Lock,
   LogOut,
   Maximize2,
@@ -2648,10 +2649,10 @@ export function ShellPage() {
                 return (
                   <div key={group.key} data-sidebar-group={group.key}>
                     {group.title ? (
-                      <div className="flex items-center pt-2">
+                      <div className="flex items-center pt-3 pb-0.5">
                         <button
                           type="button"
-                          className="flex min-w-0 flex-1 items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-[12.5px] font-medium text-muted-foreground/80 hover:bg-sidebar-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
+                          className="flex min-w-0 flex-1 items-center justify-between gap-2 rounded-lg px-2.5 py-1 text-[11px] font-semibold tracking-wider uppercase text-muted-foreground/60 hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
                           onClick={() => {
                             if (group.emptySpaceId) {
                               openSpaceChat(group.emptySpaceId, "/onboarding");
@@ -2817,7 +2818,7 @@ export function ShellPage() {
                               <span
                                 dir="auto"
                                 data-roster-bot-name={item.kind === "bot" ? "" : undefined}
-                                className={`truncate text-[15px] text-foreground ${
+                                className={`truncate text-[14.5px] text-foreground ${
                                   item.chat.unread ? "font-semibold" : "font-medium"
                                 }`}
                               >
@@ -2828,46 +2829,39 @@ export function ShellPage() {
                                   </span>
                                 ) : null}
                               </span>
-                              <span className="flex shrink-0 items-center gap-1.5 text-[12.5px] text-muted-foreground/80">
-                                {item.kind === "bot" && item.chat.status !== "idle"
-                                  ? item.chat.status
-                                  : ""}
+                              <div className="flex shrink-0 items-center gap-1.5">
+                                <span className="text-[11.5px] text-muted-foreground/70 tabular-nums">
+                                  {formatRosterTime(item.chat.updatedAt)}
+                                </span>
                                 {item.chat.unread ? (
                                   <span
                                     aria-hidden="true"
-                                    className="inline-block h-2 w-2 rounded-full bg-foreground"
+                                    className="inline-block h-2 w-2 rounded-full bg-[#3B82F6] shadow-sm shadow-[#3B82F6]/50"
                                   />
                                 ) : null}
-                              </span>
+                              </div>
                             </div>
                             {item.kind === "bot" && item.chat.title ? (
-                              <>
-                                <div
-                                  dir="auto"
-                                  className={`mt-0.5 truncate text-[13.5px] ${
-                                    item.chat.unread
-                                      ? "font-medium text-foreground/75"
-                                      : "text-muted-foreground"
-                                  }`}
-                                >
+                              <div className="mt-1 flex items-center gap-1.5 overflow-hidden">
+                                <span className="inline-block shrink-0 truncate rounded bg-accent/80 border border-border px-1.5 py-0.5 text-[10.5px] font-medium text-muted-foreground/90">
                                   {item.chat.title}
-                                </div>
+                                </span>
                                 {item.chat.preview ? (
-                                  <div
+                                  <span
                                     dir="auto"
-                                    className="truncate text-[12.5px] text-muted-foreground/80"
+                                    className="truncate text-[12px] text-muted-foreground/70"
                                   >
                                     {item.chat.preview}
-                                  </div>
+                                  </span>
                                 ) : null}
-                              </>
+                              </div>
                             ) : (
                               <div
                                 dir="auto"
-                                className={`mt-0.5 truncate text-[13.5px] ${
+                                className={`mt-0.5 truncate text-[12.5px] ${
                                   item.chat.unread
                                     ? "font-medium text-foreground/75"
-                                    : "text-muted-foreground"
+                                    : "text-muted-foreground/70"
                                 }`}
                               >
                                 {item.kind === "bot"
@@ -2972,13 +2966,13 @@ export function ShellPage() {
         <button
           type="button"
           onClick={() => setPluginsOpen(true)}
-          className="mx-3 mb-1 flex items-center gap-3 rounded-[11px] px-2.5 py-2 hover:bg-sidebar-accent"
+          className="mx-3 mb-1 flex items-center gap-3 rounded-xl px-2.5 py-2 hover:bg-sidebar-accent transition-colors"
         >
-          <span className="grid h-[30px] w-[30px] place-items-center rounded-full bg-muted text-foreground/75">
-            <Puzzle size={15} strokeWidth={1.7} />
+          <span className="grid h-[30px] w-[30px] place-items-center rounded-lg bg-accent text-foreground/80">
+            <LayoutGrid size={15} strokeWidth={1.8} />
           </span>
-          <span className="text-[14.5px] text-foreground/90">
-            <Trans>Integrations</Trans>
+          <span className="text-[14px] font-medium text-foreground/90">
+            <Trans>Marketplace</Trans>
           </span>
         </button>
         <Popover open={menuOpen} onOpenChange={setMenuOpen}>
@@ -4147,7 +4141,7 @@ export function ShellPage() {
   );
 
   return (
-    <AvatarStyleProvider value={bootstrapMe?.avatarStyle ?? "robot"}>{shell}</AvatarStyleProvider>
+    <AvatarStyleProvider value={bootstrapMe?.avatarStyle === "robot" ? "robot" : "organic"}>{shell}</AvatarStyleProvider>
   );
 }
 
@@ -4944,7 +4938,7 @@ const Composer = memo(function Composer({
       ) : null}
       <div
         data-testid="composer-bar"
-        className="flex items-center gap-3.5 rounded-full border border-border bg-background py-[9px] pe-2.5 ps-3"
+        className="flex items-center gap-3.5 rounded-full border border-border bg-[#141518] py-[9px] pe-2.5 ps-3 shadow-lg transition-colors focus-within:border-ring/50"
       >
         <input
           ref={fileInputRef}
@@ -5194,6 +5188,36 @@ function previewMessageText(message: ThreadMessage): string {
   return t`Message`;
 }
 
+function formatRosterTime(isoDate?: string | null): string {
+  if (!isoDate) return "";
+  try {
+    const d = new Date(isoDate);
+    if (isNaN(d.getTime())) return "";
+    const now = new Date();
+    const isToday =
+      d.getDate() === now.getDate() &&
+      d.getMonth() === now.getMonth() &&
+      d.getFullYear() === now.getFullYear();
+    if (isToday) {
+      return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    }
+    const yesterday = new Date(now);
+    yesterday.setDate(now.getDate() - 1);
+    const isYesterday =
+      d.getDate() === yesterday.getDate() &&
+      d.getMonth() === yesterday.getMonth() &&
+      d.getFullYear() === yesterday.getFullYear();
+    if (isYesterday) return "Yesterday";
+    const diffDays = Math.floor((now.getTime() - d.getTime()) / (1000 * 60 * 60 * 24));
+    if (diffDays < 7) {
+      return d.toLocaleDateString([], { weekday: "short" });
+    }
+    return d.toLocaleDateString([], { month: "short", day: "numeric" });
+  } catch {
+    return "";
+  }
+}
+
 function MessageHoverActions({
   message,
   side,
@@ -5424,7 +5448,7 @@ const MessageView = memo(function MessageView({
         <div className="flex w-fit max-w-full justify-start">
           <div
             data-testid="message-bot-bubble"
-            className="max-w-full space-y-2.5 rounded-[20px] bg-muted px-[18px] py-3 text-[15.5px] leading-[1.5] text-foreground/90"
+            className="max-w-full space-y-3 py-1 text-[15px] leading-[1.65] text-foreground/95"
             dir="auto"
           >
             {visibleNarrationBlocks.map((block, i) => {
@@ -5671,7 +5695,7 @@ const MessageView = memo(function MessageView({
             <div key={i} className="flex w-fit max-w-full justify-end">
               <div
                 data-testid="message-user-bubble"
-                className="max-w-full whitespace-pre-wrap wrap-anywhere rounded-[20px] bg-chat-user px-[18px] py-3 text-[15.5px] leading-[1.45] text-chat-user-foreground"
+                className="max-w-full whitespace-pre-wrap wrap-anywhere rounded-2xl bg-chat-user px-4 py-2.5 text-[15px] leading-[1.45] text-chat-user-foreground shadow-sm"
                 dir="auto"
               >
                 {block.text}
@@ -5684,7 +5708,7 @@ const MessageView = memo(function MessageView({
             <div key={i} className="flex w-fit max-w-full justify-start">
               <div
                 data-testid="message-bot-bubble"
-                className="max-w-full rounded-[20px] bg-muted px-[18px] py-3 text-[15.5px] leading-[1.5] text-foreground/90"
+                className="max-w-full py-1 text-[15px] leading-[1.65] text-foreground/95"
                 dir="auto"
               >
                 <ChatMarkdown>{block.text}</ChatMarkdown>
