@@ -719,9 +719,14 @@ describe("space computer limit enforcement", () => {
       provisionBot("bot-existing", "space-1"),
       provisionBot("bot-new", "space-1"),
     ]);
-    const statuses = [replaceResponse.status, createResponse.status].sort((a, b) => a - b);
-    expect(statuses).toEqual([200, 429]);
+    // With the space lock, the incompatible replace keeps its slot and must succeed;
+    // the concurrent fresh create must see the space still at capacity.
+    expect(replaceResponse.status).toBe(200);
+    expect(createResponse.status).toBe(429);
     expect(mocks.docker.createContainer).toHaveBeenCalledOnce();
     expect(present.size).toBe(1);
+    expect(await createResponse.json()).toEqual({
+      error: "Computer limit reached for space (max: 1)",
+    });
   });
 });
