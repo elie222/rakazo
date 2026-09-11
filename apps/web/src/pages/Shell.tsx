@@ -83,6 +83,8 @@ import {
   Bell,
   Box,
   ChevronDown,
+  ChevronLeft,
+  ChevronsRight,
   Clock,
   Copy,
   Gauge,
@@ -2814,23 +2816,30 @@ export function ShellPage() {
                             />
                           )}
                           <div className="min-w-0 flex-1">
-                            <div className="flex items-baseline justify-between gap-2">
-                              <span
-                                dir="auto"
-                                data-roster-bot-name={item.kind === "bot" ? "" : undefined}
-                                className={`truncate text-[14.5px] text-foreground ${
-                                  item.chat.unread ? "font-semibold" : "font-medium"
-                                }`}
-                              >
-                                {item.chat.name}
+                            <div className="flex items-center justify-between gap-1.5">
+                              <div className="flex min-w-0 items-center gap-1.5 overflow-hidden">
+                                <span
+                                  dir="auto"
+                                  data-roster-bot-name={item.kind === "bot" ? "" : undefined}
+                                  className={`truncate text-[14px] text-foreground ${
+                                    item.chat.unread ? "font-semibold" : "font-medium"
+                                  }`}
+                                >
+                                  {item.chat.name}
+                                </span>
+                                {item.kind === "bot" && item.chat.title ? (
+                                  <span className="shrink-0 max-w-[120px] truncate rounded bg-[#202228] border border-border/40 px-1.5 py-0.5 text-[10.5px] font-medium text-muted-foreground/80">
+                                    {item.chat.title}
+                                  </span>
+                                ) : null}
                                 {item.chat.unread ? (
                                   <span className="sr-only">
                                     <Trans> (unread)</Trans>
                                   </span>
                                 ) : null}
-                              </span>
+                              </div>
                               <div className="flex shrink-0 items-center gap-1.5">
-                                <span className="text-[11.5px] text-muted-foreground/70 tabular-nums">
+                                <span className="text-[11.5px] text-muted-foreground/60 tabular-nums">
                                   {formatRosterTime(item.chat.updatedAt)}
                                 </span>
                                 {item.chat.unread ? (
@@ -2841,35 +2850,20 @@ export function ShellPage() {
                                 ) : null}
                               </div>
                             </div>
-                            {item.kind === "bot" && item.chat.title ? (
-                              <div className="mt-1 flex items-center gap-1.5 overflow-hidden">
-                                <span className="inline-block shrink-0 truncate rounded bg-accent/80 border border-border px-1.5 py-0.5 text-[10.5px] font-medium text-muted-foreground/90">
-                                  {item.chat.title}
-                                </span>
-                                {item.chat.preview ? (
-                                  <span
-                                    dir="auto"
-                                    className="truncate text-[12px] text-muted-foreground/70"
-                                  >
-                                    {item.chat.preview}
-                                  </span>
-                                ) : null}
-                              </div>
-                            ) : (
-                              <div
-                                dir="auto"
-                                className={`mt-0.5 truncate text-[12.5px] ${
-                                  item.chat.unread
-                                    ? "font-medium text-foreground/75"
-                                    : "text-muted-foreground/70"
-                                }`}
-                              >
-                                {item.kind === "bot"
-                                  ? item.chat.preview
-                                  : item.chat.preview ||
-                                    item.chat.members.map((member) => member.name).join(", ")}
-                              </div>
-                            )}
+                            <div
+                              dir="auto"
+                              className={`mt-0.5 truncate text-[12.5px] ${
+                                item.chat.unread
+                                  ? "font-medium text-foreground/75"
+                                  : "text-muted-foreground/60"
+                              }`}
+                            >
+                              {item.kind === "bot"
+                                ? item.chat.preview ||
+                                  (item.chat.status !== "idle" ? item.chat.status : "")
+                                : item.chat.preview ||
+                                  item.chat.members.map((member) => member.name).join(", ")}
+                            </div>
                           </div>
                         </button>
                       ))}
@@ -3268,15 +3262,37 @@ export function ShellPage() {
       >
         {panel && (active || activeGroup || panel === "create") ? (
           <div className="rk-scroll h-full w-full overflow-y-auto px-5 py-[17px] md:w-[384px]">
-            {panel !== "routine" &&
+            {panel === "settings" ? (
+              <div className="mb-4 flex items-center justify-between">
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={t`Back to computer`}
+                  onClick={() => setPanel("computer")}
+                  className="text-muted-foreground hover:text-foreground"
+                >
+                  <ChevronLeft size={18} strokeWidth={2} />
+                </Button>
+                <span className="text-[14px] font-medium text-foreground">
+                  <Trans>Settings</Trans>
+                </span>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={t`Close panel`}
+                  onClick={() => setPanel(null)}
+                  className="text-muted-foreground hover:text-foreground"
+                >
+                  <ChevronsRight size={18} strokeWidth={2} />
+                </Button>
+              </div>
+            ) : panel !== "routine" &&
             panel !== "create" &&
             panel !== "create-group" &&
             panel !== "group-settings" ? (
               <div className="mb-4 flex items-center justify-between">
                 <span className="text-[13.5px] text-muted-foreground">
-                  {panel === "settings" ? (
-                    <Trans>Settings</Trans>
-                  ) : active ? (
+                  {active ? (
                     (computer?.state ?? active.status)
                   ) : (
                     <Trans>Group</Trans>
@@ -3299,9 +3315,9 @@ export function ShellPage() {
                     <Button
                       variant="ghost"
                       size="icon-sm"
-                      aria-label={panel === "settings" ? t`Show computer` : t`Show settings`}
-                      onClick={() => setPanel(panel === "settings" ? "computer" : "settings")}
-                      className={panel === "settings" ? "text-foreground" : "text-muted-foreground"}
+                      aria-label={t`Show settings`}
+                      onClick={() => setPanel("settings")}
+                      className="text-muted-foreground hover:text-foreground"
                     >
                       <Settings size={16} strokeWidth={1.7} />
                     </Button>

@@ -29,6 +29,7 @@ import {
 import { X } from "lucide-react";
 import { lazy, Suspense, useEffect, useId, useState } from "react";
 import { rpc } from "../../lib/rpc";
+import { AvatarStudioPopover } from "./avatar-studio-popover";
 
 const ScratchpadSection = lazy(() =>
   import("../ScratchpadSection").then((module) => ({ default: module.ScratchpadSection })),
@@ -204,6 +205,7 @@ export function BotSettings({
     description?: string;
     instructions?: string;
     color?: string;
+    notifyOnFinish?: boolean;
     computerMode: ComputerMode;
     memoryScope?: "isolated" | "shared" | null;
     autoSpeak?: boolean;
@@ -222,6 +224,7 @@ export function BotSettings({
   const [title, setTitle] = useState(bot.title);
   const [description, setDescription] = useState(bot.description);
   const [color, setColor] = useState(bot.color);
+  const [notifyOnFinish, setNotifyOnFinish] = useState(bot.notifyOnFinish ?? true);
   const [computerMode, setComputerMode] = useState(bot.computerMode);
   const [memoryScope, setMemoryScope] = useState(bot.memoryScope);
   const [autoSpeak, setAutoSpeak] = useState(bot.autoSpeak);
@@ -317,10 +320,16 @@ export function BotSettings({
 
   return (
     <div data-testid="bot-settings">
-      <div className="flex justify-center">
-        <BotAvatar color={color} identity={bot.id} size={64} status={bot.status} />
+      <div className="flex justify-center py-2">
+        <AvatarStudioPopover
+          value={color}
+          identity={bot.id}
+          status={bot.status}
+          size={76}
+          onChange={(newColor) => setColor(newColor)}
+        />
       </div>
-      <label htmlFor={`${ids}-name`} className="mt-6 block text-[14px] text-muted-foreground">
+      <label htmlFor={`${ids}-name`} className="mt-5 block text-[14px] text-muted-foreground">
         <Trans>Name</Trans>
         <Input
           id={`${ids}-name`}
@@ -331,12 +340,13 @@ export function BotSettings({
         />
       </label>
       <label htmlFor={`${ids}-title`} className={fieldLabelClass}>
-        <Trans>Title</Trans>
+        <Trans>Label (optional)</Trans>
         <Input
           id={`${ids}-title`}
           value={title}
           maxLength={BOT_TITLE_MAX_LENGTH}
           onChange={(e) => setTitle(e.target.value)}
+          placeholder={t`e.g. Hivenet Agent, Presales, Timesheets bot`}
           className="mt-2"
         />
       </label>
@@ -347,29 +357,24 @@ export function BotSettings({
           value={description}
           maxLength={BOT_DESCRIPTION_MAX_LENGTH}
           onChange={(e) => setDescription(e.target.value)}
-          rows={4}
+          rows={3}
           className="mt-2"
         />
       </label>
-      <div className={fieldLabelClass}>
-        <Trans>Color</Trans>
-        <div className="mt-2 flex flex-wrap gap-2" role="radiogroup" aria-label={t`Color`}>
-          {BOT_COLORS.map((option, index) => (
-            <input
-              key={option}
-              className={`size-8 cursor-pointer appearance-none rounded-full border-2 ring-offset-card transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
-                color === option ? "border-foreground" : "border-transparent"
-              }`}
-              type="radio"
-              name={`${ids}-color`}
-              value={option}
-              checked={color === option}
-              aria-label={t`Color ${index + 1}`}
-              style={{ backgroundColor: option }}
-              onChange={() => setColor(option)}
-            />
-          ))}
+      <div className="mt-5 flex items-center justify-between rounded-xl border border-border/40 bg-[#0E0F12] p-3.5">
+        <div className="space-y-0.5 pe-3">
+          <div className="text-[13.5px] font-medium text-foreground">
+            <Trans>Notifications</Trans>
+          </div>
+          <div className="text-[12px] text-muted-foreground/70">
+            <Trans>Get notified when this Bot finishes or needs input</Trans>
+          </div>
         </div>
+        <Switch
+          id={`${ids}-notify-finish`}
+          checked={notifyOnFinish}
+          onCheckedChange={(checked) => setNotifyOnFinish(checked)}
+        />
       </div>
       <details
         data-testid="bot-settings-advanced"
@@ -519,6 +524,7 @@ export function BotSettings({
               description: nextDescription,
               instructions: nextDescription,
               color,
+              notifyOnFinish,
               computerMode,
               memoryScope,
               autoSpeak,
