@@ -127,22 +127,13 @@ tags:
 - tapOn: "More"
 - assertVisible: "Speak message"
 - back
-- longPressOn: "The fixture workspace is ready."
-- tapOn: "React"
-- tapOn: "👍"
-- extendedWaitUntil:
-    visible: "👍"
-    timeout: 10000
-- assertNotVisible: "Reply"
-- takeScreenshot: "15c-message-reaction"
+# User messages omit Speak, so Android fits Reply/React/Copy on one page (no More).
 - longPressOn: "Summarize the fixture launch checklist."
 - assertVisible: "Reply"
 - assertVisible: "React"
-- assertVisible: "More"
-- tapOn: "More"
+- assertVisible: "Copy"
+- assertNotVisible: "More"
 - assertNotVisible: "Speak message"
-- back
-- longPressOn: "Summarize the fixture launch checklist."
 - tapOn: "Reply"
 - assertVisible: "Replying to"
 - tapOn: "Cancel reply"
@@ -179,12 +170,7 @@ tags:
 - assertVisible: "Reply"
 - assertVisible: "React"
 - assertVisible: "More"
-- tapOn: "React"
-- tapOn: "👍"
-- extendedWaitUntil:
-    visible: "👍"
-    timeout: 10000
-- assertNotVisible: "Reply"
+- back
 
 - openLink: "rakazo:///group-settings?groupId=${RAKAZO_SCREENSHOT_GROUP_ID}"
 - extendedWaitUntil:
@@ -239,3 +225,14 @@ tags:
 - openLink: "rakazo:///thread?botId=${RAKAZO_SCREENSHOT_BOT_ID}&name=Researcher"
 - assertVisible: "The fixture workspace is ready."
 - takeScreenshot: "29-thread-light-restored"
+
+# Capture the reaction after theme comparisons. Reactions are append-only, so adding
+# 👍 earlier would leak into dark/light thread frames with no remove control.
+- longPressOn: "The fixture workspace is ready."
+- tapOn: "React"
+- tapOn: "👍"
+- extendedWaitUntil:
+    visible: "👍"
+    timeout: 10000
+- assertNotVisible: "Reply"
+- takeScreenshot: "15c-message-reaction"
