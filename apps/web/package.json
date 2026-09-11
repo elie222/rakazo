@@ -23,8 +23,8 @@
     "@rakazo/core": "workspace:*",
     "@rakazo/ui-tokens": "workspace:*",
     "@rakazo/ui-web": "workspace:*",
-    "better-auth": "1.7.3",
-    "lucide-react": "1.42.0",
+    "better-auth": "1.7.4",
+    "lucide-react": "1.44.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-router-dom": "7.18.3"
@@ -46,7 +46,7 @@
     "cross-env": "10.1.0",
     "tailwindcss": "4.3.3",
     "typescript": "7.0.2",
-    "vite": "8.2.2",
+    "vite": "8.3.0",
     "vitest": "4.1.11"
   }
 }

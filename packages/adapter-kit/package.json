@@ -16,7 +16,7 @@
   },
   "dependencies": {
     "@rakazo/contracts": "workspace:*",
-    "zod": "4.5.4"
+    "zod": "4.6.2"
   },
   "devDependencies": {
     "typescript": "7.0.2",
