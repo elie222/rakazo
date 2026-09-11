@@ -4965,14 +4965,14 @@ const Composer = memo(function Composer({
           onChange={(event) => void onAttachmentPick(event.target.files)}
         />
         <Button
-          variant="outline"
+          variant="ghost"
           size="icon"
           aria-label={t`Attach file`}
           disabled={disabled}
           onClick={() => fileInputRef.current?.click()}
-          className="rounded-full text-foreground/75"
+          className="size-8 shrink-0 rounded-full border border-white/10 bg-white/5 text-muted-foreground hover:bg-white/10 hover:text-foreground transition-colors"
         >
-          <Plus size={17} strokeWidth={1.8} />
+          <Plus size={16} strokeWidth={2} />
         </Button>
         <div className="flex min-w-0 flex-1 flex-wrap items-end gap-1.5">
           {selectedSkill ? (
@@ -5088,50 +5088,60 @@ const Composer = memo(function Composer({
             className="max-h-32 min-h-[24px] min-w-[8rem] flex-1 resize-none overflow-y-auto bg-transparent py-0.5 text-[15.5px] leading-6 text-foreground outline-none placeholder:text-muted-foreground disabled:opacity-40"
           />
         </div>
-        {onVoice ? (
-          <Button
-            variant="outline"
-            size="icon"
-            aria-label={t`Voice`}
-            title={t`Voice`}
-            disabled={disabled}
-            onClick={onVoice}
-            className="rounded-full text-foreground/75"
-          >
-            <Mic size={16} strokeWidth={1.8} />
-          </Button>
-        ) : null}
         {running ? (
-          <>
-            <Button
-              size="icon"
-              aria-label={t`Send`}
-              disabled={sending || !canSend || disabled}
-              onClick={send}
-              className="size-10 rounded-full"
-            >
-              <ArrowUp size={18} strokeWidth={2} />
-            </Button>
+          <div className="flex items-center gap-1.5 shrink-0">
+            {canSend ? (
+              <Button
+                size="icon"
+                aria-label={t`Send`}
+                disabled={sending || disabled}
+                onClick={send}
+                className="size-8 rounded-full bg-white text-black hover:bg-white/90 shadow-sm transition-transform active:scale-95"
+              >
+                <ArrowUp size={16} strokeWidth={2.2} />
+              </Button>
+            ) : null}
             <Button
               variant="outline"
               size="icon"
               aria-label={t`Stop`}
               disabled={sending}
               onClick={() => void onStop()}
-              className="size-10 rounded-full text-foreground/75"
+              className="size-8 rounded-full border border-white/15 bg-white/5 text-foreground/80 hover:bg-white/10 hover:text-foreground shadow-sm"
             >
-              <Square size={12} strokeWidth={0} fill="currentColor" />
+              <Square size={11} strokeWidth={0} fill="currentColor" />
             </Button>
-          </>
+          </div>
+        ) : canSend ? (
+          <Button
+            size="icon"
+            aria-label={t`Send`}
+            disabled={sending || disabled}
+            onClick={send}
+            className="size-8 shrink-0 rounded-full bg-white text-black hover:bg-white/90 shadow-sm transition-transform active:scale-95"
+          >
+            <ArrowUp size={16} strokeWidth={2.2} />
+          </Button>
+        ) : onVoice ? (
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label={t`Voice`}
+            title={t`Voice`}
+            disabled={disabled}
+            onClick={onVoice}
+            className="size-8 shrink-0 rounded-full bg-white text-black hover:bg-white/90 shadow-sm transition-transform active:scale-95"
+          >
+            <Mic size={16} strokeWidth={2.2} />
+          </Button>
         ) : (
           <Button
             size="icon"
             aria-label={t`Send`}
-            disabled={sending || !canSend || disabled}
-            onClick={send}
-            className="size-9 rounded-full"
+            disabled
+            className="size-8 shrink-0 rounded-full bg-white/10 text-muted-foreground/30"
           >
-            <ArrowUp size={18} strokeWidth={2} />
+            <ArrowUp size={16} strokeWidth={2} />
           </Button>
         )}
       </div>

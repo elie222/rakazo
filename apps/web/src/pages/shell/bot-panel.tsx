@@ -318,25 +318,81 @@ export function BotSettings({
   ).filter((level) => level !== "off");
   const defaultThinkingLevel = effectiveCredential?.thinkingLevel ?? "medium";
 
+  async function executeSave(patchOverrides?: {
+    name?: string;
+    title?: string;
+    description?: string;
+    color?: string;
+    notifyOnFinish?: boolean;
+  }) {
+    const selected = modelKey ? parseModelOptionKey(modelKey) : null;
+    const nextName = (patchOverrides?.name !== undefined ? patchOverrides.name : name).trim();
+    const nextTitle = (patchOverrides?.title !== undefined ? patchOverrides.title : title).trim();
+    const nextDescription = (
+      patchOverrides?.description !== undefined ? patchOverrides.description : description
+    ).trim();
+    const nextColor = patchOverrides?.color !== undefined ? patchOverrides.color : color;
+    const nextNotify =
+      patchOverrides?.notifyOnFinish !== undefined ? patchOverrides.notifyOnFinish : notifyOnFinish;
+
+    if (nextName) setName(nextName);
+    setTitle(nextTitle);
+    setDescription(nextDescription);
+
+    try {
+      setSaving(true);
+      setError(null);
+      await onSave({
+        name: nextName || bot.name,
+        title: nextTitle,
+        description: nextDescription,
+        instructions: nextDescription,
+        color: nextColor,
+        notifyOnFinish: nextNotify,
+        computerMode,
+        memoryScope,
+        autoSpeak,
+        voiceId: voiceId || null,
+        modelProvider: selected?.provider ?? null,
+        modelId: selected?.modelId ?? null,
+        ...(modelMetaReady
+          ? {
+              thinkingLevel: thinkingOptions.length
+                ? ((thinkingLevel || null) as ThinkingLevel | null)
+                : null,
+            }
+          : {}),
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t`Could not save`);
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <div data-testid="bot-settings">
-      <div className="flex justify-center py-2">
+      <div className="flex justify-center py-4">
         <AvatarStudioPopover
           value={color}
           identity={bot.id}
           status={bot.status}
           size={76}
-          onChange={(newColor) => setColor(newColor)}
+          onChange={(newColor) => {
+            setColor(newColor);
+            void executeSave({ color: newColor });
+          }}
         />
       </div>
-      <label htmlFor={`${ids}-name`} className="mt-5 block text-[14px] text-muted-foreground">
+      <label htmlFor={`${ids}-name`} className="mt-4 block text-[13.5px] text-muted-foreground/80">
         <Trans>Name</Trans>
         <Input
           id={`${ids}-name`}
           value={name}
           maxLength={BOT_NAME_MAX_LENGTH}
           onChange={(e) => setName(e.target.value)}
-          className="mt-2"
+          onBlur={() => void executeSave()}
+          className="mt-1.5"
         />
       </label>
       <label htmlFor={`${ids}-title`} className={fieldLabelClass}>
@@ -346,8 +402,9 @@ export function BotSettings({
           value={title}
           maxLength={BOT_TITLE_MAX_LENGTH}
           onChange={(e) => setTitle(e.target.value)}
+          onBlur={() => void executeSave()}
           placeholder={t`e.g. Hivenet Agent, Presales, Timesheets bot`}
-          className="mt-2"
+          className="mt-1.5"
         />
       </label>
       <label htmlFor={`${ids}-description`} className={fieldLabelClass}>
@@ -357,12 +414,13 @@ export function BotSettings({
           value={description}
           maxLength={BOT_DESCRIPTION_MAX_LENGTH}
           onChange={(e) => setDescription(e.target.value)}
+          onBlur={() => void executeSave()}
           rows={3}
-          className="mt-2"
+          className="mt-1.5"
         />
       </label>
-      <div className="mt-5 flex items-center justify-between rounded-xl border border-border/40 bg-[#0E0F12] p-3.5">
-        <div className="space-y-0.5 pe-3">
+      <div className="mt-6 flex items-center justify-between pt-4 border-t border-border/20">
+        <div className="space-y-0.5 pe-4">
           <div className="text-[13.5px] font-medium text-foreground">
             <Trans>Notifications</Trans>
           </div>
@@ -373,7 +431,10 @@ export function BotSettings({
         <Switch
           id={`${ids}-notify-finish`}
           checked={notifyOnFinish}
-          onCheckedChange={(checked) => setNotifyOnFinish(checked)}
+          onCheckedChange={(checked) => {
+            setNotifyOnFinish(checked);
+            void executeSave({ notifyOnFinish: checked });
+          }}
         />
       </div>
       <details
