@@ -204,10 +204,11 @@ app.post("/computers", async (c) => {
         }
       }
 
-      // Fresh creates under a space cap: serialize count+create per space inside the
-      // bot lock. Lock order is always bot → space; never take a bot lock while
-      // holding a space lock (avoids deadlock across bots in the same space).
-      const spaceComputerLimit = !existing ? resolveSpaceComputerLimit() : 0;
+      // Under a space cap, serialize count+create and incompatible replace (remove+create)
+      // per space inside the bot lock. Replacements skip the admission check but still
+      // take the lock so a temporary free slot cannot be stolen by another bot's create.
+      // Lock order is always bot → space; never take a bot lock while holding a space lock.
+      const spaceComputerLimit = resolveSpaceComputerLimit();
       const createComputer = async () => {
         if (!existing && spaceComputerLimit > 0) {
           const currentCount = await countSpaceContainers(body.spaceId);
@@ -268,7 +269,7 @@ app.post("/computers", async (c) => {
         });
       };
 
-      if (!existing && spaceComputerLimit > 0) {
+      if (spaceComputerLimit > 0) {
         return await withSpaceComputerLock(body.spaceId, createComputer);
       }
       return await createComputer();

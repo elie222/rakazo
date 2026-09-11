@@ -647,4 +647,81 @@ describe("space computer limit enforcement", () => {
       error: "Computer limit reached for space (max: 1)",
     });
   });
+
+  it("serializes incompatible replace with a concurrent fresh create at the cap", async () => {
+    const { container } = setupContainerFixture();
+    vi.stubEnv("SANDBOX_MAX_COMPUTERS_PER_SPACE", "1");
+
+    const present = new Set<string>(["existing-incompatible"]);
+    const existing = {
+      id: "existing-incompatible",
+      inspect: vi.fn().mockResolvedValue({
+        Image: "stale-image",
+        Config: {
+          User: hostComputerUser(process.getuid?.(), process.getgid?.()),
+          Labels: {
+            "rakazo.managed": "true",
+            "rakazo.botId": "bot-existing",
+            "rakazo.spaceId": "space-1",
+          },
+        },
+        State: { Running: true },
+        HostConfig: {
+          NetworkMode: computerNetworkNameFor("bot-existing"),
+          PortBindings: {},
+          Mounts: [],
+        },
+      }),
+      start: vi.fn().mockResolvedValue(undefined),
+      remove: vi.fn(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 40));
+        present.delete("existing-incompatible");
+      }),
+    };
+
+    mocks.docker.getContainer.mockImplementation((id: string) =>
+      id === existing.id ? existing : container,
+    );
+    mocks.docker.listContainers.mockImplementation(
+      async (opts?: { filters?: { label?: string[] } }) => {
+        const labels = opts?.filters?.label ?? [];
+        if (labels.some((l: string) => l === "rakazo.botId=bot-existing")) {
+          return present.has(existing.id)
+            ? [
+                {
+                  Id: existing.id,
+                  Labels: {
+                    "rakazo.managed": "true",
+                    "rakazo.botId": "bot-existing",
+                    "rakazo.spaceId": "space-1",
+                  },
+                },
+              ]
+            : [];
+        }
+        if (labels.some((l: string) => l.startsWith("rakazo.botId="))) {
+          return [];
+        }
+        return [...present].map((Id) => ({
+          Id,
+          Labels: { "rakazo.managed": "true", "rakazo.spaceId": "space-1" },
+        }));
+      },
+    );
+    mocks.docker.createContainer.mockImplementation(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 40));
+      const id = `created-${present.size + 1}`;
+      present.add(id);
+      return { ...container, id };
+    });
+
+    const [replaceResponse, createResponse] = await Promise.all([
+      provisionBot("bot-existing", "space-1"),
+      provisionBot("bot-new", "space-1"),
+    ]);
+    const statuses = [replaceResponse.status, createResponse.status].sort((a, b) => a - b);
+    expect(statuses).toEqual([200, 429]);
+    expect(mocks.docker.createContainer).toHaveBeenCalledOnce();
+    expect(present.size).toBe(1);
+  });
 });
