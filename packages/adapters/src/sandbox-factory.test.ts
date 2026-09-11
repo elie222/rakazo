@@ -1,6 +1,25 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NO_SANDBOX_MESSAGE } from "./none-sandbox.js";
-import { createSandboxProvider } from "./sandbox-factory.js";
+
+const daytonaCtor = vi.fn();
+
+vi.mock("./daytona-sandbox.js", () => ({
+  DaytonaSandboxProvider: class {
+    constructor(config: unknown) {
+      daytonaCtor(config);
+    }
+    describe() {
+      return {
+        id: "daytona",
+        contractVersion: "1",
+        adapterVersion: "0.1.0",
+        capabilities: {},
+      };
+    }
+  },
+}));
+
+const { createSandboxProvider } = await import("./sandbox-factory.js");
 
 const ctx = {
   operationId: "op",
@@ -11,6 +30,10 @@ const ctx = {
 };
 
 describe("createSandboxProvider", () => {
+  beforeEach(() => {
+    daytonaCtor.mockClear();
+  });
+
   it("returns fake sandbox when explicitly requested", () => {
     const sandbox = createSandboxProvider("fake", {});
     expect(sandbox.describe().id).toBe("fake");
@@ -41,6 +64,22 @@ describe("createSandboxProvider", () => {
       createSandboxProvider("e2b", {}).provision({ botId: "b", homePath: "/tmp" }, ctx),
     ).rejects.toThrow(/E2B_API_KEY/);
     expect(createSandboxProvider("box", { boxApiKey: "test-box-key" }).describe().id).toBe("box");
+  });
+
+  it("passes daytonaSnapshot through to the Daytona provider", () => {
+    const provider = createSandboxProvider("daytona", {
+      daytonaApiKey: "test-daytona-key",
+      daytonaApiUrl: "https://daytona.test/api",
+      daytonaTarget: "test-target",
+      daytonaSnapshot: "rakazo-computer",
+    });
+    expect(provider.describe().id).toBe("daytona");
+    expect(daytonaCtor).toHaveBeenCalledWith({
+      apiKey: "test-daytona-key",
+      apiUrl: "https://daytona.test/api",
+      target: "test-target",
+      snapshot: "rakazo-computer",
+    });
   });
 
   it("throws on unknown provider", () => {
