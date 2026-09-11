@@ -1128,7 +1128,7 @@ export function parametersFor(tool: ConnectorTool) {
   if (!openAiToolParametersNeedNormalization(schema)) return schema;
   return Type.Unsafe(
     normalizeOpenAiToolParameters(JSON.parse(JSON.stringify(schema))),
-  ) as ReturnType<typeof Type.Object>;
+  ) as unknown as ReturnType<typeof Type.Object>;
 }
 
 /** A remote MCP server controls its own schemas, so a shape TypeBox cannot express must
