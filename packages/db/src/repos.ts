@@ -13,6 +13,7 @@ import { createThreadMessageInTransaction } from "./messages.js";
 import { IsolationError } from "./scope.js";
 import { lockSpaceForContentCreation } from "./spaces.js";
 import { activeRunSelection, previewFromBlocks } from "./thread-listing.js";
+import { withTransactionRetry } from "./transaction-retry.js";
 
 /** Newest messages loaded for sidebar preview; enough to skip a short peer-run tail. */
 const SIDEBAR_PREVIEW_MESSAGE_WINDOW = 16;
@@ -535,18 +536,25 @@ export function createRepos(prisma: PrismaClient) {
         include: { computer: true },
       });
       if (!bot?.computer) throw new IsolationError();
-      const computer = await ensureComputerRecord(prisma, {
-        mode,
-        spaceId: actor.spaceId,
-        userId: actor.userId,
-        botId,
-        kind: bot.computer.kind,
-      });
-      const updated = await prisma.bot.update({
-        where: { id: botId },
-        data: { computerId: computer.id },
-        include: { thread: true, computer: true },
-      });
+      const kind = bot.computer.kind;
+      // Keep ensure + bot link in one transaction so a capped quota lock covers
+      // both steps (a computer row alone does not count until a live bot refs it).
+      const updated = await withTransactionRetry(() =>
+        prisma.$transaction(async (tx) => {
+          const computer = await ensureComputerRecord(tx, {
+            mode,
+            spaceId: actor.spaceId,
+            userId: actor.userId,
+            botId,
+            kind,
+          });
+          return tx.bot.update({
+            where: { id: botId },
+            data: { computerId: computer.id },
+            include: { thread: true, computer: true },
+          });
+        }),
+      );
       return mapBot(updated);
     },
   };
