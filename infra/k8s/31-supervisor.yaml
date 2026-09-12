@@ -1,0 +1,141 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: supervisor
+  namespace: rakazo
+  labels:
+    app.kubernetes.io/name: rakazo
+    app.kubernetes.io/component: supervisor
+spec:
+  selector:
+    app.kubernetes.io/name: rakazo
+    app.kubernetes.io/component: supervisor
+  ports:
+    - name: http
+      port: 7091
+      targetPort: 7091
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: supervisor
+  namespace: rakazo
+  labels:
+    app.kubernetes.io/name: rakazo
+    app.kubernetes.io/component: supervisor
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: rakazo
+      app.kubernetes.io/component: supervisor
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: rakazo
+        app.kubernetes.io/component: supervisor
+    spec:
+      enableServiceLinks: false
+      securityContext:
+        fsGroup: 1000
+      volumes:
+        - name: docker-sock
+          emptyDir: {}
+        - name: docker-graph
+          emptyDir: {}
+        - name: appdata
+          persistentVolumeClaim:
+            claimName: app-data
+      initContainers:
+        - name: chown-data
+          image: busybox:1.36
+          command: ["sh", "-c", "chown 1000:1000 /data; chmod 755 /data"]
+          volumeMounts:
+            - name: appdata
+              mountPath: /data
+      containers:
+        - name: dind
+          image: docker:27-dind
+          imagePullPolicy: IfNotPresent
+          args:
+            - --storage-driver=overlay2
+            - --host=unix:///var/run/docker.sock
+            - --host=tcp://0.0.0.0:2375
+          env:
+            - name: DOCKER_TLS_CERTDIR
+              value: ""
+          securityContext:
+            privileged: true
+          volumeMounts:
+            - name: docker-sock
+              mountPath: /var/run
+            - name: docker-graph
+              mountPath: /var/lib/docker
+            - name: appdata
+              mountPath: /data
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "docker info >/dev/null 2>&1 || ls /var/run/docker.sock >/dev/null"]
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            failureThreshold: 30
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: 1000m
+              memory: 2Gi
+
+        - name: supervisor
+          image: ghcr.io/elie222/rakazo/app:edge
+          imagePullPolicy: Always
+          command: ["bash", "-lc", "pnpm --filter @rakazo/sandbox-supervisor start"]
+          ports:
+            - containerPort: 7091
+              name: http
+          env:
+            - name: NODE_ENV
+              value: "production"
+            - name: SUPERVISOR_HOST
+              value: "0.0.0.0"
+            - name: SUPERVISOR_PORT
+              value: "7091"
+            - name: DATA_DIR
+              value: "/data"
+            - name: DOCKER_HOST
+              value: "tcp://127.0.0.1:2375"
+            - name: RAKAZO_COMPUTER_IMAGE
+              value: "ghcr.io/elie222/rakazo/computer:edge"
+            - name: SANDBOX_SUPERVISOR_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: rakazo-secrets
+                  key: SANDBOX_SUPERVISOR_TOKEN
+            - name: SANDBOX_SCREEN_NETWORK
+              value: "published"
+          volumeMounts:
+            - name: appdata
+              mountPath: /data
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 7091
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            failureThreshold: 30
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 7091
+            initialDelaySeconds: 30
+            periodSeconds: 15
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: 1000m
+              memory: 1536Mi
