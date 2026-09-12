@@ -171,10 +171,18 @@ test("create group from + and see two bots in one transcript", async ({ page }, 
   ).toBeVisible();
   await composer.fill("ask me which city to use");
   await composer.press("Enter");
-  // threads/get / member status can observe waiting_input before realtime paints the ask card.
-  await expect(page.getByRole("button", { name: /Research Writer waiting_input/ })).toBeVisible({
-    timeout: 60_000,
-  });
+  // threads/get can observe waiting_input before the shell realtime feed paints the ask card.
+  await expect
+    .poll(
+      async () => {
+        const snapshot = await rpc<{ run?: { status: string } | null }>(page, "threads/get", {
+          groupId: draftGroupId,
+        });
+        return snapshot.run?.status ?? null;
+      },
+      { timeout: 60_000 },
+    )
+    .toBe("waiting_input");
   const cityAsk = page.locator("p").filter({ hasText: /^Which city should I use\?$/ });
   if ((await cityAsk.count()) === 0) {
     await page.reload({ waitUntil: "domcontentloaded" });
