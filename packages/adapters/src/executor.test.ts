@@ -195,10 +195,12 @@ describe("run tool selection", () => {
 
   it("withholds schedule creation only from routine-triggered runs", () => {
     expect(toolNames("routine")).not.toContain("schedule_create");
+    expect(toolNames("routine")).toContain("task_catalog");
     expect(toolNames("routine")).toEqual(
       expect.arrayContaining(["schedule_list", "schedule_cancel"]),
     );
     expect(toolNames("user")).toContain("schedule_create");
+    expect(toolNames("user")).toContain("task_catalog");
   });
 
   it("keeps schedule tools in group chats and still blocks create on routines", () => {
@@ -492,6 +494,7 @@ describe("createRunExecutor", () => {
     expect(tools).not.toContain("recall_memory");
     expect(tools).not.toContain("remember");
     expect(tools).not.toContain("save_memory");
+    expect(tools).not.toContain("task_catalog");
     expect(tools.some((tool) => tool.startsWith("scratchpad_"))).toBe(false);
     expect(tools).toContain("web_fetch");
   });

@@ -2,6 +2,7 @@ import { ONCE_ROUTINE_CRON } from "@rakazo/core";
 import { describe, expect, it, vi } from "vitest";
 import {
   cancelScheduleFromTool,
+  compactScheduleInput,
   createScheduleFromTool,
   filterBuiltinToolsForRun,
   filterBuiltinToolsForThread,
@@ -83,6 +84,41 @@ describe("resolveScheduleTiming", () => {
     expect(resolveScheduleTiming({ cron: "0 9 * * *", delayMinutes: 5 })).toEqual({
       ok: false,
       error: "Provide either a repeating schedule or a one-shot time, not both.",
+    });
+  });
+
+  it("ignores null and empty optional fields from model serializers", () => {
+    const repeating = resolveScheduleTiming({
+      cron: "0 9 * * *",
+      every: null,
+      unit: "",
+      delayMinutes: null,
+      runAt: "",
+    });
+    expect(repeating.ok).toBe(true);
+    if (!repeating.ok) return;
+    expect(repeating.oneShot).toBe(false);
+
+    const oneShot = resolveScheduleTiming({
+      cron: null,
+      every: null,
+      unit: "",
+      delayMinutes: 10,
+      delaySeconds: null,
+    });
+    expect(oneShot.ok).toBe(true);
+    if (!oneShot.ok) return;
+    expect(oneShot.oneShot).toBe(true);
+  });
+
+  it("keeps zero values for normal validation instead of treating them as absent", () => {
+    expect(resolveScheduleTiming({ every: 0, unit: "minutes" })).toEqual({
+      ok: false,
+      error: "every must be a positive whole number.",
+    });
+    expect(compactScheduleInput({ every: 0, unit: "minutes", cron: null, runAt: "" })).toEqual({
+      every: 0,
+      unit: "minutes",
     });
   });
 });
