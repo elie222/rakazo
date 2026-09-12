@@ -72,8 +72,9 @@ export function toComputerStatus(
           computer?.state === "error"
         ? computer.state
         : "stopped";
-  const screen = computerScreenSize(computer?.kind);
-  const kind = (computer?.kind ?? "fake") as ComputerStatus["kind"];
+  const rawKind = computer?.kind === "none" ? "fake" : computer?.kind;
+  const screen = computerScreenSize(rawKind);
+  const kind = (rawKind ?? "fake") as ComputerStatus["kind"];
   return {
     botId,
     mode: computer?.scope === "dedicated" ? "dedicated" : "team",

@@ -13,6 +13,38 @@ export const COMPUTER_CONTROL_PORT = 7070;
 export const SCREEN_HOST = process.env.SANDBOX_SCREEN_HOST ?? "127.0.0.1";
 export type ScreenNetworkMode = "published" | "internal" | "isolated";
 
+function isLoopbackScreenHost(host: string) {
+  return host === "127.0.0.1" || host === "localhost" || host === "::1" || host.trim() === "";
+}
+
+/**
+ * Publish computer VNC/control on loopback by default so local Docker Desktop
+ * does not expose the screen on the LAN. Only bind all interfaces when
+ * SANDBOX_SCREEN_HOST is a non-loopback address (e.g. the k8s pod IP).
+ * Empty / whitespace SANDBOX_SCREEN_HOST is treated as loopback - never 0.0.0.0.
+ */
+export function publishedScreenHostIp(
+  host = process.env.SANDBOX_SCREEN_HOST ?? "127.0.0.1",
+): "127.0.0.1" | "0.0.0.0" {
+  return isLoopbackScreenHost(host) ? "127.0.0.1" : "0.0.0.0";
+}
+
+/** Accept loopback, or Docker's all-interfaces forms - never a concrete external IP. */
+function isAcceptedPublishedHostIp(hostIp: string | undefined) {
+  return hostIp === "127.0.0.1" || hostIp === "0.0.0.0" || hostIp === "";
+}
+
+/**
+ * Reuse only when HostIp matches what we would publish for the current
+ * SANDBOX_SCREEN_HOST (loopback vs all-interfaces for CGNAT/cross-pod).
+ */
+function hostIpMatchesCurrentPublication(hostIp: string | undefined): boolean {
+  const expected = publishedScreenHostIp();
+  if (expected === "127.0.0.1") return hostIp === "127.0.0.1";
+  // Docker may record all-interfaces publication as "" or "0.0.0.0".
+  return hostIp === "0.0.0.0" || hostIp === "";
+}
+
 export function resolveTeamScreenLimit(value = process.env.SANDBOX_TEAM_SCREEN_LIMIT): number {
   if (value === undefined || value.trim() === "" || isUnlimited(value)) return MAX_DESKTOP_DISPLAY;
   const limit = Number(value);
@@ -152,13 +184,15 @@ export function computerPortBindings(publishControlPort = false) {
   const ExposedPorts: Record<string, object> = {};
   const PortBindings: Record<string, Array<{ HostIp: string; HostPort: string }>> = {};
   const port = `${screenPorts(0).viewPort}/tcp`;
+  const hostIp = publishedScreenHostIp();
   ExposedPorts[port] = {};
-  PortBindings[port] = [{ HostIp: "127.0.0.1", HostPort: "0" }];
-  // Host-run Docker Desktop supervisors need an opt-in loopback mapping.
-  // Otherwise control stays unpublished on the container network.
+  // Default 127.0.0.1 keeps local Docker Desktop screens off the LAN.
+  // When SANDBOX_SCREEN_HOST is the k8s pod IP, bind 0.0.0.0 so web (other
+  // pods) can reach the published port via that pod IP.
+  PortBindings[port] = [{ HostIp: hostIp, HostPort: "0" }];
   if (publishControlPort) {
     ExposedPorts[`${COMPUTER_CONTROL_PORT}/tcp`] = {};
-    PortBindings[`${COMPUTER_CONTROL_PORT}/tcp`] = [{ HostIp: "127.0.0.1", HostPort: "0" }];
+    PortBindings[`${COMPUTER_CONTROL_PORT}/tcp`] = [{ HostIp: hostIp, HostPort: "0" }];
   }
   return { ExposedPorts, PortBindings };
 }
@@ -297,7 +331,7 @@ export function containerNameFor(botId: string) {
 
 export function computerNetworkNameFor(botId: string) {
   // Keep distinct botIds on distinct networks even when sanitization collapses
-  // characters (e.g. "a/b" and "ab"). Do not change containerNameFor — that
+  // characters (e.g. "a/b" and "ab"). Do not change containerNameFor - that
   // name must stay stable so an existing computer can resume.
   const hash = createHash("sha256").update(botId).digest("hex").slice(0, 32);
   return `rakazo-computer-${sanitizeIdentifier(botId).slice(0, 32)}-${hash}`;
@@ -370,10 +404,10 @@ function validHostPort(port: string | undefined): port is string {
   return !!port && /^\d{1,5}$/.test(port) && Number(port) > 0 && Number(port) <= 65535;
 }
 
-/** Resolve an assigned runtime port only when every control binding is loopback. */
+/** Resolve an assigned runtime port only when every control binding is loopback or all interfaces. */
 export function publishedLoopbackControlHostPort(portBindings: ControlPortBindings) {
   const bindings = portBindings?.[`${COMPUTER_CONTROL_PORT}/tcp`];
-  if (!bindings?.length || bindings.some((binding) => binding.HostIp !== "127.0.0.1")) {
+  if (!bindings?.length || bindings.some((binding) => !isAcceptedPublishedHostIp(binding.HostIp))) {
     return undefined;
   }
   return bindings.find((binding) => validHostPort(binding.HostPort))?.HostPort;
@@ -394,7 +428,7 @@ export function controlPortPublicationMatches(
     !!bindings?.length &&
     bindings.every(
       (binding) =>
-        binding.HostIp === "127.0.0.1" &&
+        hostIpMatchesCurrentPublication(binding.HostIp) &&
         (binding.HostPort === "" || binding.HostPort === "0" || validHostPort(binding.HostPort)),
     )
   );

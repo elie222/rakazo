@@ -26,6 +26,7 @@ import {
   legacyNetworkOwnedSolelyBy,
   parseMemoryBytes,
   publishedLoopbackControlHostPort,
+  publishedScreenHostIp,
   resolveComputerControlEndpoint,
   resolveScreenNetworkMode,
   resolveScreenPublishTarget,
@@ -94,6 +95,13 @@ describe("graphical computer spec", () => {
     expect(options.ExposedPorts).not.toHaveProperty("7070/tcp");
     expect(options.HostConfig.PortBindings).not.toHaveProperty("7070/tcp");
     expect(options.HostConfig.PortBindings["6080/tcp"]?.[0]?.HostIp).toBe("127.0.0.1");
+    expect(publishedScreenHostIp()).toBe("127.0.0.1");
+    expect(publishedScreenHostIp("127.0.0.1")).toBe("127.0.0.1");
+    expect(publishedScreenHostIp("localhost")).toBe("127.0.0.1");
+    expect(publishedScreenHostIp("::1")).toBe("127.0.0.1");
+    expect(publishedScreenHostIp("")).toBe("127.0.0.1");
+    expect(publishedScreenHostIp("   ")).toBe("127.0.0.1");
+    expect(publishedScreenHostIp("100.96.0.30")).toBe("0.0.0.0");
     expect(options.HostConfig.PortBindings).not.toHaveProperty("6081/tcp");
     expect(options.HostConfig.PortBindings).not.toHaveProperty("6082/tcp");
     expect(screenPorts(0)).toMatchObject({ display: ":1", viewPort: "6080", controlPort: "6080" });
@@ -105,6 +113,32 @@ describe("graphical computer spec", () => {
     expect(options.HostConfig.PidsLimit).toBe(2048);
     expect(options.HostConfig.ReadonlyPaths).toContain("/usr/share/novnc");
     expect(options.HostConfig.NetworkMode).toBe("rakazo_default");
+  });
+
+  it("binds published ports on all interfaces when SANDBOX_SCREEN_HOST is non-loopback", () => {
+    const previous = process.env.SANDBOX_SCREEN_HOST;
+    process.env.SANDBOX_SCREEN_HOST = "100.96.0.30";
+    try {
+      expect(publishedScreenHostIp()).toBe("0.0.0.0");
+      const options = containerCreateOptions({
+        name: "rakazo-bot-abc",
+        image: COMPUTER_IMAGE,
+        botId: "abc",
+        spaceId: "ws",
+        homePath: "/var/rakazo/homes/abc",
+        networkMode: "rakazo_default",
+        publishControlPort: true,
+      });
+      expect(options.HostConfig.PortBindings["6080/tcp"]).toEqual([
+        { HostIp: "0.0.0.0", HostPort: "0" },
+      ]);
+      expect(options.HostConfig.PortBindings["7070/tcp"]).toEqual([
+        { HostIp: "0.0.0.0", HostPort: "0" },
+      ]);
+    } finally {
+      if (previous === undefined) delete process.env.SANDBOX_SCREEN_HOST;
+      else process.env.SANDBOX_SCREEN_HOST = previous;
+    }
   });
 
   it("still publishes host ports when NetworkMode is a per-bot isolated network", () => {
@@ -320,7 +354,7 @@ describe("graphical computer spec", () => {
 
   it("uses the published host mapping in the default topology even when a container IP exists", () => {
     // Regression: per-bot NetworkMode always yields a 172.x address. Returning
-    // that to clients makes local/dev screens look dead — browsers cannot load
+    // that to clients makes local/dev screens look dead - browsers cannot load
     // docker-internal IPs. Probe and return the host mapping instead.
     const networkMode = computerNetworkNameFor("bot_1");
     expect(
@@ -479,7 +513,30 @@ describe("graphical computer spec", () => {
     },
   );
 
-  it.each(["0.0.0.0", "", "::", "192.0.2.1", undefined])(
+  it.each(["0.0.0.0", ""])(
+    "accepts all-interfaces control bindings for cross-pod publication (%j)",
+    (HostIp) => {
+      const previous = process.env.SANDBOX_SCREEN_HOST;
+      process.env.SANDBOX_SCREEN_HOST = "100.96.0.30";
+      try {
+        const bindings = { "7070/tcp": [{ HostIp, HostPort: "55100" }] };
+        expect(controlPortPublicationMatches(bindings, true)).toBe(true);
+        expect(controlPortPublicationMatches(bindings, false)).toBe(false);
+        expect(publishedLoopbackControlHostPort(bindings)).toBe("55100");
+      } finally {
+        if (previous === undefined) delete process.env.SANDBOX_SCREEN_HOST;
+        else process.env.SANDBOX_SCREEN_HOST = previous;
+      }
+    },
+  );
+
+  it("does not reuse all-interfaces control bindings under loopback screen host", () => {
+    const bindings = { "7070/tcp": [{ HostIp: "0.0.0.0", HostPort: "55100" }] };
+    expect(controlPortPublicationMatches(bindings, true)).toBe(false);
+    expect(publishedLoopbackControlHostPort(bindings)).toBe("55100");
+  });
+
+  it.each(["::", "192.0.2.1", undefined])(
     "rejects external control bindings even alongside loopback (%j)",
     (HostIp) => {
       const external = { HostIp, HostPort: "55100" };
