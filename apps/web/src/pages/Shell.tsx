@@ -84,8 +84,6 @@ import {
   Bell,
   Box,
   ChevronDown,
-  ChevronLeft,
-  ChevronsRight,
   Clock,
   Copy,
   Gauge,
@@ -2786,7 +2784,7 @@ export function ShellPage() {
                               position: { x: event.clientX, y: event.clientY },
                             });
                           }}
-                          className={`flex w-full items-center gap-3 rounded-xl px-2.5 py-[10px] text-start transition-colors ${
+                          className={`flex w-full items-center gap-3 rounded-xl px-2.5 py-[10px] text-start ${
                             item.kind === "bot" ? "cursor-grab active:cursor-grabbing" : ""
                           } ${
                             (item.kind === "bot" && !inGroup && active?.id === item.chat.id) ||
@@ -2961,7 +2959,7 @@ export function ShellPage() {
         <button
           type="button"
           onClick={() => setPluginsOpen(true)}
-          className="mx-3 mb-1 flex items-center gap-3 rounded-xl px-2.5 py-2 hover:bg-sidebar-accent transition-colors"
+          className="mx-3 mb-1 flex items-center gap-3 rounded-xl px-2.5 py-2 hover:bg-sidebar-accent"
         >
           <span className="grid h-[30px] w-[30px] place-items-center rounded-lg bg-accent text-foreground/80">
             <LayoutGrid size={15} strokeWidth={1.8} />
@@ -3263,37 +3261,19 @@ export function ShellPage() {
       >
         {panel && (active || activeGroup || panel === "create") ? (
           <div className="rk-scroll h-full w-full overflow-y-auto px-5 py-[17px] md:w-[384px]">
-            {panel === "settings" ? (
-              <div className="mb-4 flex items-center justify-between">
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label={t`Back to computer`}
-                  onClick={() => setPanel("computer")}
-                  className="text-muted-foreground hover:text-foreground"
-                >
-                  <ChevronLeft size={18} strokeWidth={2} />
-                </Button>
-                <span className="text-[14px] font-medium text-foreground">
-                  <Trans>Settings</Trans>
-                </span>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label={t`Close panel`}
-                  onClick={() => setPanel(null)}
-                  className="text-muted-foreground hover:text-foreground"
-                >
-                  <ChevronsRight size={18} strokeWidth={2} />
-                </Button>
-              </div>
-            ) : panel !== "routine" &&
-              panel !== "create" &&
-              panel !== "create-group" &&
-              panel !== "group-settings" ? (
+            {panel !== "routine" &&
+            panel !== "create" &&
+            panel !== "create-group" &&
+            panel !== "group-settings" ? (
               <div className="mb-4 flex items-center justify-between">
                 <span className="text-[13.5px] text-muted-foreground">
-                  {active ? (computer?.state ?? active.status) : <Trans>Group</Trans>}
+                  {panel === "settings" ? (
+                    <Trans>Settings</Trans>
+                  ) : active ? (
+                    (computer?.state ?? active.status)
+                  ) : (
+                    <Trans>Group</Trans>
+                  )}
                 </span>
                 <div className="flex gap-1">
                   {active &&
@@ -3314,7 +3294,7 @@ export function ShellPage() {
                       size="icon-sm"
                       aria-label={panel === "settings" ? t`Show computer` : t`Show settings`}
                       onClick={() => setPanel(panel === "settings" ? "computer" : "settings")}
-                      className="text-muted-foreground hover:text-foreground"
+                      className={panel === "settings" ? "text-foreground" : "text-muted-foreground"}
                     >
                       <Settings size={16} strokeWidth={1.7} />
                     </Button>
