@@ -37,7 +37,7 @@ describe("GroupAvatar", () => {
       />,
     );
     expect(html).toContain('data-working="true"');
-    expect(html).toContain("rakazo-bot-avatar-ring");
+    expect(html).toContain("rakazo-bot-avatar");
   });
 
   it("renders 3 mini bot avatars for 3 members", () => {

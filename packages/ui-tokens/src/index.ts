@@ -140,7 +140,7 @@ export function isAppearancePreference(
 export function normalizeAppearancePreference(
   raw: string | null | undefined,
 ): AppearancePreference {
-  return isAppearancePreference(raw) ? raw : "dark";
+  return isAppearancePreference(raw) ? raw : "system";
 }
 
 export type ResolveAppearancePreferenceOptions = {
@@ -182,7 +182,7 @@ export function resolveAppearance(
   preference: AppearancePreference,
   system: ResolvedAppearance = "dark",
 ): ResolvedAppearance {
-  if (preference === "system") return "dark";
+  if (preference === "system") return system;
   return preference;
 }
 

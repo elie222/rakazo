@@ -11,13 +11,11 @@ import type {
   VoiceInfo,
 } from "@rakazo/contracts";
 import {
-  BOT_COLORS,
   BOT_DESCRIPTION_MAX_LENGTH,
   BOT_NAME_MAX_LENGTH,
   BOT_TITLE_MAX_LENGTH,
 } from "@rakazo/contracts";
 import {
-  BotAvatar,
   Button,
   Input,
   NativeSelect,
@@ -396,7 +394,7 @@ export function BotSettings({
         />
       </label>
       <label htmlFor={`${ids}-title`} className={fieldLabelClass}>
-        <Trans>Label (optional)</Trans>
+        <Trans>Title</Trans>
         <Input
           id={`${ids}-title`}
           value={title}

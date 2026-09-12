@@ -2613,7 +2613,7 @@ export function ShellPage() {
         </div>
         <InputGroup
           data-testid="sidebar-search"
-          className="mx-2.5 mb-3 w-auto rounded-xl bg-[#1c1c1f] border border-white/[0.06] text-muted-foreground focus-within:border-white/20"
+          className="mx-2.5 mb-3 w-auto rounded-xl bg-card dark:bg-input border border-border text-muted-foreground focus-within:border-ring"
         >
           <InputGroupAddon>
             <Search size={16} strokeWidth={1.8} aria-hidden="true" />
@@ -2791,7 +2791,7 @@ export function ShellPage() {
                           } ${
                             (item.kind === "bot" && !inGroup && active?.id === item.chat.id) ||
                             (item.kind === "group" && inGroup && activeGroup?.id === item.chat.id)
-                              ? "bg-[#242426] border border-white/[0.08] shadow-sm text-white"
+                              ? "bg-sidebar-accent border border-border shadow-sm text-sidebar-accent-foreground"
                               : "hover:bg-white/[0.04] text-foreground/90 border border-transparent"
                           }`}
                           style={{
@@ -2829,7 +2829,7 @@ export function ShellPage() {
                                   {item.chat.name}
                                 </span>
                                 {item.kind === "bot" && item.chat.title ? (
-                                  <span className="shrink-0 max-w-[130px] truncate rounded-md bg-white/[0.06] border border-white/10 px-2 py-0.5 text-[11px] font-normal text-muted-foreground/85">
+                                  <span className="max-w-[130px] shrink-0 truncate rounded-md border border-border bg-muted px-2 py-0.5 text-[11px] font-normal text-muted-foreground">
                                     {item.chat.title}
                                   </span>
                                 ) : null}
@@ -2846,7 +2846,7 @@ export function ShellPage() {
                                 {item.chat.unread ? (
                                   <span
                                     aria-hidden="true"
-                                    className="inline-block h-2 w-2 rounded-full bg-[#3B82F6] shadow-sm shadow-[#3B82F6]/50"
+                                    className="inline-block h-2 w-2 rounded-full bg-foreground"
                                   />
                                 ) : null}
                               </div>
@@ -3302,16 +3302,12 @@ export function ShellPage() {
                 </Button>
               </div>
             ) : panel !== "routine" &&
-            panel !== "create" &&
-            panel !== "create-group" &&
-            panel !== "group-settings" ? (
+              panel !== "create" &&
+              panel !== "create-group" &&
+              panel !== "group-settings" ? (
               <div className="mb-4 flex items-center justify-between">
                 <span className="text-[13.5px] text-muted-foreground">
-                  {active ? (
-                    (computer?.state ?? active.status)
-                  ) : (
-                    <Trans>Group</Trans>
-                  )}
+                  {active ? (computer?.state ?? active.status) : <Trans>Group</Trans>}
                 </span>
                 <div className="flex gap-1">
                   {active &&
@@ -4171,9 +4167,7 @@ export function ShellPage() {
     </div>
   );
 
-  return (
-    <AvatarStyleProvider value="organic">{shell}</AvatarStyleProvider>
-  );
+  return <AvatarStyleProvider value="organic">{shell}</AvatarStyleProvider>;
 }
 
 const Transcript = memo(function Transcript({
@@ -4969,7 +4963,7 @@ const Composer = memo(function Composer({
       ) : null}
       <div
         data-testid="composer-bar"
-        className="flex items-center gap-3.5 rounded-full border border-white/[0.1] bg-[#18181b] py-[9px] pe-2.5 ps-3 shadow-lg transition-colors focus-within:border-white/20"
+        className="flex items-center gap-3.5 rounded-full border border-border bg-background py-[9px] pe-2.5 ps-3 transition-colors focus-within:border-ring"
       >
         <input
           ref={fileInputRef}
@@ -4985,7 +4979,7 @@ const Composer = memo(function Composer({
           aria-label={t`Attach file`}
           disabled={disabled}
           onClick={() => fileInputRef.current?.click()}
-          className="size-8 shrink-0 rounded-full border border-white/10 bg-white/[0.06] text-muted-foreground hover:bg-white/10 hover:text-foreground transition-colors"
+          className="size-8 shrink-0 rounded-full border border-border bg-muted text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
         >
           <Plus size={16} strokeWidth={2} />
         </Button>
@@ -5122,7 +5116,7 @@ const Composer = memo(function Composer({
               aria-label={t`Stop`}
               disabled={sending}
               onClick={() => void onStop()}
-              className="size-8 rounded-full border border-white/15 bg-white/5 text-foreground/80 hover:bg-white/10 hover:text-foreground shadow-sm"
+              className="size-8 rounded-full border border-border bg-muted text-foreground/80 shadow-sm transition-colors hover:bg-accent hover:text-foreground"
             >
               <Square size={11} strokeWidth={0} fill="currentColor" />
             </Button>
@@ -5233,7 +5227,7 @@ function formatRosterTime(isoDate?: string | null): string {
   if (!isoDate) return "";
   try {
     const d = new Date(isoDate);
-    if (isNaN(d.getTime())) return "";
+    if (Number.isNaN(d.getTime())) return "";
     const now = new Date();
     const isToday =
       d.getDate() === now.getDate() &&
@@ -5504,7 +5498,7 @@ const MessageView = memo(function MessageView({
         <div className="flex w-fit max-w-full justify-start">
           <div
             data-testid="message-bot-bubble"
-            className="max-w-[94%] space-y-3 rounded-2xl bg-[#1c1c1e] border border-white/[0.08] px-5 py-4 text-[14.5px] leading-[1.65] text-[#ededed] shadow-sm"
+            className="max-w-full space-y-2.5 rounded-[20px] bg-muted px-[18px] py-3 text-[15.5px] leading-[1.5] text-foreground/90"
             dir="auto"
           >
             {visibleNarrationBlocks.map((block, i) => {
@@ -5751,7 +5745,7 @@ const MessageView = memo(function MessageView({
             <div key={i} className="flex w-fit max-w-full justify-end">
               <div
                 data-testid="message-user-bubble"
-                className="max-w-[85%] whitespace-pre-wrap wrap-anywhere rounded-2xl bg-[#2e2e32] border border-white/10 px-4 py-2.5 text-[15px] leading-[1.45] text-white shadow-sm"
+                className="max-w-full whitespace-pre-wrap wrap-anywhere rounded-[20px] bg-chat-user px-[18px] py-3 text-[15.5px] leading-[1.45] text-chat-user-foreground"
                 dir="auto"
               >
                 {block.text}
@@ -5764,7 +5758,7 @@ const MessageView = memo(function MessageView({
             <div key={i} className="flex w-fit max-w-full justify-start">
               <div
                 data-testid="message-bot-bubble"
-                className="max-w-[94%] rounded-2xl bg-[#1c1c1e] border border-white/[0.08] px-5 py-4 text-[14.5px] leading-[1.65] text-[#ededed] shadow-sm"
+                className="max-w-full rounded-[20px] bg-muted px-[18px] py-3 text-[15.5px] leading-[1.5] text-foreground/90"
                 dir="auto"
               >
                 <ChatMarkdown>{block.text}</ChatMarkdown>
