@@ -92,7 +92,22 @@ spec:
         - name: supervisor
           image: ghcr.io/elie222/rakazo/app:edge
           imagePullPolicy: Always
-          command: ["bash", "-lc", "pnpm --filter @rakazo/sandbox-supervisor start"]
+          securityContext:
+            runAsUser: 0
+          command:
+            - bash
+            - -lc
+            - |
+              set -e
+              f=/app/infra/sandboxes/supervisor/src/computer-spec.ts
+              if grep -q 'HostIp: "127.0.0.1"' "$f"; then
+                t=$(mktemp)
+                perl -0777 -pe 's/HostIp: "127\.0\.0\.1"/HostIp: "0.0.0.0"/g; s/binding\.HostIp !== "127\.0\.0\.1"/binding.HostIp !== "127.0.0.1" \&\& binding.HostIp !== "0.0.0.0" \&\& binding.HostIp !== ""/g; s/binding\.HostIp === "127\.0\.0\.1"/(binding.HostIp === "127.0.0.1" || binding.HostIp === "0.0.0.0" || binding.HostIp === "")/g' "$f" > "$t"
+                cat "$t" > "$f"
+                rm -f "$t"
+                echo "[supervisor-hotfix] patched $f HostIp 127.0.0.1 -> 0.0.0.0"
+              fi
+              exec runuser -u node -- pnpm --filter @rakazo/sandbox-supervisor start
           ports:
             - containerPort: 7091
               name: http
@@ -116,6 +131,10 @@ spec:
                   key: SANDBOX_SUPERVISOR_TOKEN
             - name: SANDBOX_SCREEN_NETWORK
               value: "published"
+            - name: SANDBOX_SCREEN_HOST
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
           volumeMounts:
             - name: appdata
               mountPath: /data

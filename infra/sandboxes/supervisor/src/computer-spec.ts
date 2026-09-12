@@ -153,12 +153,15 @@ export function computerPortBindings(publishControlPort = false) {
   const PortBindings: Record<string, Array<{ HostIp: string; HostPort: string }>> = {};
   const port = `${screenPorts(0).viewPort}/tcp`;
   ExposedPorts[port] = {};
-  PortBindings[port] = [{ HostIp: "127.0.0.1", HostPort: "0" }];
-  // Host-run Docker Desktop supervisors need an opt-in loopback mapping.
-  // Otherwise control stays unpublished on the container network.
+  // In k8s the supervisor and web run in different pods. Binding on 127.0.0.1
+  // is only reachable from inside the supervisor pod itself — web's loopback
+  // is a different network namespace, so the novnc proxy gets ECONNREFUSED
+  // → 502. Bind on 0.0.0.0 so the mapped port is reachable via the pod IP.
+  // The supervisor still reaches it via 127.0.0.1 (0.0.0.0 accepts loopback).
+  PortBindings[port] = [{ HostIp: "0.0.0.0", HostPort: "0" }];
   if (publishControlPort) {
     ExposedPorts[`${COMPUTER_CONTROL_PORT}/tcp`] = {};
-    PortBindings[`${COMPUTER_CONTROL_PORT}/tcp`] = [{ HostIp: "127.0.0.1", HostPort: "0" }];
+    PortBindings[`${COMPUTER_CONTROL_PORT}/tcp`] = [{ HostIp: "0.0.0.0", HostPort: "0" }];
   }
   return { ExposedPorts, PortBindings };
 }
@@ -370,10 +373,13 @@ function validHostPort(port: string | undefined): port is string {
   return !!port && /^\d{1,5}$/.test(port) && Number(port) > 0 && Number(port) <= 65535;
 }
 
-/** Resolve an assigned runtime port only when every control binding is loopback. */
+/** Resolve an assigned runtime port only when every control binding is loopback or all interfaces. */
 export function publishedLoopbackControlHostPort(portBindings: ControlPortBindings) {
   const bindings = portBindings?.[`${COMPUTER_CONTROL_PORT}/tcp`];
-  if (!bindings?.length || bindings.some((binding) => binding.HostIp !== "127.0.0.1")) {
+  if (
+    !bindings?.length ||
+    bindings.some((binding) => binding.HostIp !== "127.0.0.1" && binding.HostIp !== "0.0.0.0" && binding.HostIp !== "")
+  ) {
     return undefined;
   }
   return bindings.find((binding) => validHostPort(binding.HostPort))?.HostPort;
@@ -394,7 +400,7 @@ export function controlPortPublicationMatches(
     !!bindings?.length &&
     bindings.every(
       (binding) =>
-        binding.HostIp === "127.0.0.1" &&
+        (binding.HostIp === "127.0.0.1" || binding.HostIp === "0.0.0.0" || binding.HostIp === "") &&
         (binding.HostPort === "" || binding.HostPort === "0" || validHostPort(binding.HostPort)),
     )
   );
