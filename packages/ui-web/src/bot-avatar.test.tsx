@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   BotAvatar,
   GROK_BOT_COLORS,
+  GrokShapePreview,
   parseBotAvatar,
   resolvePersonaColorDef,
   resolvePersonaShape,
@@ -74,5 +75,33 @@ describe("BotAvatar", () => {
     expect(html).toContain("<img");
     expect(html).not.toContain("<path");
     expect(html).not.toContain("grok-character-eyes");
+  });
+
+  it("does not treat arbitrary http(s) color values as remote images", () => {
+    const parsed = parseBotAvatar("https://evil.example/track.png");
+    expect(parsed.isImage).toBe(false);
+    expect(parsed.imageUrl).toBeUndefined();
+    const html = renderToString(
+      <BotAvatar color="https://evil.example/track.png" identity="maya" size={32} />,
+    );
+    expect(html).not.toContain("<img");
+    expect(html).not.toContain("evil.example");
+  });
+
+  it("honors reduced-motion for the working mascot pulse class", () => {
+    const html = renderToString(
+      <BotAvatar color="#8B5CF6" identity="maya" size={32} status="running" />,
+    );
+    expect(html).toContain("animate-pulse");
+    expect(html).toContain("motion-reduce:animate-none");
+  });
+
+  it("exposes shape picker name and pressed state", () => {
+    const html = renderToString(
+      <GrokShapePreview shapeIndex={0} color="#8B5CF6" selected onClick={() => undefined} />,
+    );
+    expect(html).toContain('aria-label="hex"');
+    expect(html).toContain('aria-pressed="true"');
+    expect(html).toContain("focus-visible:ring-2");
   });
 });

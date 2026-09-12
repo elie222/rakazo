@@ -4,6 +4,7 @@ import { readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { DesktopReachability, DesktopSetup } from "@rakazo/contracts";
 import { LOCAL_SETTINGS_PAGE } from "@rakazo/contracts/local-settings";
+import { darkTokens } from "@rakazo/ui-tokens";
 import {
   app,
   BrowserWindow,
@@ -563,7 +564,7 @@ function oauthPopupWindowOptions() {
     frame: true,
     titleBarStyle: "default" as const,
     autoHideMenuBar: true,
-    backgroundColor: "#0B0C0E",
+    backgroundColor: darkTokens.background,
     webPreferences: {
       preload: "",
       nodeIntegration: false,

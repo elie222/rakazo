@@ -543,7 +543,7 @@ msgstr ""
 
 #: src/pages/shell/avatar-studio-popover.tsx:133
 msgid "Avatar Studio"
-msgstr ""
+msgstr "Avatar-Studio"
 
 #: src/pages/AccountSettingsOverlay.tsx:127
 msgid "Avatars"
@@ -556,7 +556,7 @@ msgstr ""
 
 #: src/pages/Shell.tsx:3285
 msgid "Back to computer"
-msgstr ""
+msgstr "Zurück zum Computer"
 
 #: src/pages/Auth.tsx:126
 #: src/pages/Auth.tsx:235
@@ -609,7 +609,7 @@ msgstr "Bot-Bildschirmvorschau"
 
 #: src/pages/Shell.tsx:3157
 msgid "Bot settings"
-msgstr ""
+msgstr "Bot-Einstellungen"
 
 #: src/pages/MessagingSettingsOverlay.tsx:151
 msgid "Bot to link"
@@ -734,7 +734,7 @@ msgstr ""
 
 #: src/pages/shell/avatar-studio-popover.tsx:136
 msgid "Choose a bot shape, color, or upload an image"
-msgstr ""
+msgstr "Wähle eine Bot-Form und Farbe oder lade ein Bild hoch"
 
 #: src/pages/MessagingSettingsOverlay.tsx:158
 msgid "Choose a bot…"
@@ -746,7 +746,7 @@ msgstr "Wähle ein neues Passwort"
 
 #: src/pages/shell/avatar-studio-popover.tsx:267
 msgid "Choose file"
-msgstr ""
+msgstr "Datei wählen"
 
 #: src/pages/ModelSettingsOverlay.tsx:364
 msgid "Choose which connected model Rakazo uses."
@@ -859,7 +859,7 @@ msgstr ""
 
 #: src/pages/shell/avatar-studio-popover.tsx:208
 msgid "Color"
-msgstr ""
+msgstr "Farbe"
 
 #: src/pages/RoutineEditor.tsx:455
 msgid "Coming soon"
@@ -1464,7 +1464,7 @@ msgstr ""
 
 #: src/pages/shell/avatar-studio-popover.tsx:116
 msgid "Customize bot avatar"
-msgstr ""
+msgstr "Bot-Avatar anpassen"
 
 #: src/pages/AccountSettingsOverlay.tsx:373
 msgid "Dark"
@@ -1491,7 +1491,7 @@ msgstr "Standard"
 #. placeholder {0}: thinkingLevelLabel(defaultThinkingLevel)
 #: src/pages/shell/bot-panel.tsx:499
 msgid "Default ({0})"
-msgstr ""
+msgstr "Standard ({0})"
 
 #: src/pages/MemorySettingsOverlay.tsx:38
 msgid "Default scope"
@@ -1655,7 +1655,7 @@ msgstr "Skill-Entwurf"
 
 #: src/pages/shell/avatar-studio-popover.tsx:264
 msgid "Drag, drop, or paste an image"
-msgstr ""
+msgstr "Bild ziehen, ablegen oder einfügen"
 
 #: src/pages/BotContextMenu.tsx:127
 msgid "Duplicate"
@@ -1663,7 +1663,7 @@ msgstr "Duplizieren"
 
 #: src/pages/shell/bot-panel.tsx:404
 msgid "e.g. Hivenet Agent, Presales, Timesheets bot"
-msgstr ""
+msgstr "z. B. Hivenet Agent, Presales, Zeiterfassungs-Bot"
 
 #: src/pages/Shell.tsx:5488
 msgid "Earlier message"
@@ -1857,7 +1857,7 @@ msgstr ""
 
 #: src/pages/shell/bot-panel.tsx:426
 msgid "Get notified when this Bot finishes or needs input"
-msgstr ""
+msgstr "Benachrichtigung, wenn dieser Bot fertig ist oder Eingabe braucht"
 
 #: src/components/ComputerUpdateProgress.tsx:50
 msgid "Getting ready"
@@ -1967,7 +1967,7 @@ msgstr ""
 
 #: src/pages/shell/avatar-studio-popover.tsx:235
 msgid "Image upload area"
-msgstr ""
+msgstr "Bild-Upload-Bereich"
 
 #: src/pages/PluginsOverlay.tsx:1006
 msgid "Import OpenAPI JSON"
@@ -2565,7 +2565,7 @@ msgstr "Noch nichts gemerkt"
 
 #: src/pages/shell/bot-panel.tsx:423
 msgid "Notifications"
-msgstr ""
+msgstr "Benachrichtigungen"
 
 #: src/pages/ActivityList.tsx:72
 msgid "Now"
@@ -3262,7 +3262,7 @@ msgstr "Einrichtungshilfe"
 
 #: src/pages/shell/avatar-studio-popover.tsx:191
 msgid "Shape"
-msgstr ""
+msgstr "Form"
 
 #: src/pages/MemorySettingsOverlay.tsx:49
 #: src/pages/shell/bot-panel.tsx:517
@@ -3683,7 +3683,7 @@ msgstr ""
 
 #: src/pages/shell/avatar-studio-popover.tsx:174
 msgid "Upload"
-msgstr ""
+msgstr "Hochladen"
 
 #: src/pages/AccountSettingsOverlay.tsx:199
 #: src/pages/SettingsOverlay.tsx:87
@@ -3823,3 +3823,12 @@ msgstr "Dein Name"
 #: src/pages/Welcome.tsx:21
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "Dein Team aus jederzeit verfügbaren Agents<0/>für echte Aufgaben."
+
+msgid "Yesterday"
+msgstr "Gestern"
+
+msgid "Color {0}"
+msgstr "Farbe {0}"
+
+msgid "Color {color}"
+msgstr "Farbe {color}"

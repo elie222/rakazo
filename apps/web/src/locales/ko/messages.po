@@ -543,7 +543,7 @@ msgstr "루틴을 저장한 후 사용할 수 있습니다"
 
 #: src/pages/shell/avatar-studio-popover.tsx:133
 msgid "Avatar Studio"
-msgstr ""
+msgstr "아바타 스튜디오"
 
 #: src/pages/AccountSettingsOverlay.tsx:127
 msgid "Avatars"
@@ -556,7 +556,7 @@ msgstr "뒤로"
 
 #: src/pages/Shell.tsx:3285
 msgid "Back to computer"
-msgstr ""
+msgstr "컴퓨터로 돌아가기"
 
 #: src/pages/Auth.tsx:126
 #: src/pages/Auth.tsx:235
@@ -609,7 +609,7 @@ msgstr "Bot 화면 미리보기"
 
 #: src/pages/Shell.tsx:3157
 msgid "Bot settings"
-msgstr ""
+msgstr "봇 설정"
 
 #: src/pages/MessagingSettingsOverlay.tsx:151
 msgid "Bot to link"
@@ -734,7 +734,7 @@ msgstr "체크아웃에 로컬 변경 사항이 있습니다. 업데이트하기
 
 #: src/pages/shell/avatar-studio-popover.tsx:136
 msgid "Choose a bot shape, color, or upload an image"
-msgstr ""
+msgstr "봇 모양과 색을 고르거나 이미지를 업로드하세요"
 
 #: src/pages/MessagingSettingsOverlay.tsx:158
 msgid "Choose a bot…"
@@ -746,7 +746,7 @@ msgstr "새 비밀번호 선택"
 
 #: src/pages/shell/avatar-studio-popover.tsx:267
 msgid "Choose file"
-msgstr ""
+msgstr "파일 선택"
 
 #: src/pages/ModelSettingsOverlay.tsx:364
 msgid "Choose which connected model Rakazo uses."
@@ -859,7 +859,7 @@ msgstr "{0} 접기"
 
 #: src/pages/shell/avatar-studio-popover.tsx:208
 msgid "Color"
-msgstr ""
+msgstr "색상"
 
 #: src/pages/RoutineEditor.tsx:455
 msgid "Coming soon"
@@ -1464,7 +1464,7 @@ msgstr "고객 지원"
 
 #: src/pages/shell/avatar-studio-popover.tsx:116
 msgid "Customize bot avatar"
-msgstr ""
+msgstr "봇 아바타 맞춤설정"
 
 #: src/pages/AccountSettingsOverlay.tsx:373
 msgid "Dark"
@@ -1491,7 +1491,7 @@ msgstr "기본값"
 #. placeholder {0}: thinkingLevelLabel(defaultThinkingLevel)
 #: src/pages/shell/bot-panel.tsx:499
 msgid "Default ({0})"
-msgstr ""
+msgstr "기본값 ({0})"
 
 #: src/pages/MemorySettingsOverlay.tsx:38
 msgid "Default scope"
@@ -1655,7 +1655,7 @@ msgstr "작업 기술 초안"
 
 #: src/pages/shell/avatar-studio-popover.tsx:264
 msgid "Drag, drop, or paste an image"
-msgstr ""
+msgstr "이미지를 끌어다 놓거나 붙여넣으세요"
 
 #: src/pages/BotContextMenu.tsx:127
 msgid "Duplicate"
@@ -1663,7 +1663,7 @@ msgstr "복제"
 
 #: src/pages/shell/bot-panel.tsx:404
 msgid "e.g. Hivenet Agent, Presales, Timesheets bot"
-msgstr ""
+msgstr "예: Hivenet Agent, Presales, 근무표 봇"
 
 #: src/pages/Shell.tsx:5488
 msgid "Earlier message"
@@ -1857,7 +1857,7 @@ msgstr ""
 
 #: src/pages/shell/bot-panel.tsx:426
 msgid "Get notified when this Bot finishes or needs input"
-msgstr ""
+msgstr "이 봇이 끝나거나 입력이 필요할 때 알림 받기"
 
 #: src/components/ComputerUpdateProgress.tsx:50
 msgid "Getting ready"
@@ -1967,7 +1967,7 @@ msgstr ""
 
 #: src/pages/shell/avatar-studio-popover.tsx:235
 msgid "Image upload area"
-msgstr ""
+msgstr "이미지 업로드 영역"
 
 #: src/pages/PluginsOverlay.tsx:1006
 msgid "Import OpenAPI JSON"
@@ -2565,7 +2565,7 @@ msgstr "아직 기억한 내용이 없습니다"
 
 #: src/pages/shell/bot-panel.tsx:423
 msgid "Notifications"
-msgstr ""
+msgstr "알림"
 
 #: src/pages/ActivityList.tsx:72
 msgid "Now"
@@ -3262,7 +3262,7 @@ msgstr "설정 도움말"
 
 #: src/pages/shell/avatar-studio-popover.tsx:191
 msgid "Shape"
-msgstr ""
+msgstr "모양"
 
 #: src/pages/MemorySettingsOverlay.tsx:49
 #: src/pages/shell/bot-panel.tsx:517
@@ -3683,7 +3683,7 @@ msgstr "업데이트 중…"
 
 #: src/pages/shell/avatar-studio-popover.tsx:174
 msgid "Upload"
-msgstr ""
+msgstr "업로드"
 
 #: src/pages/AccountSettingsOverlay.tsx:199
 #: src/pages/SettingsOverlay.tsx:87
@@ -3823,3 +3823,12 @@ msgstr "이름"
 #: src/pages/Welcome.tsx:21
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "언제든 실제 작업을 맡길 수 있는<0/>나만의 Agent 팀"
+
+msgid "Yesterday"
+msgstr "어제"
+
+msgid "Color {0}"
+msgstr "색상 {0}"
+
+msgid "Color {color}"
+msgstr "색상 {color}"

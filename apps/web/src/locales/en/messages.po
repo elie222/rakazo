@@ -3823,3 +3823,12 @@ msgstr "Your name"
 #: src/pages/Welcome.tsx:21
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "Your team of always-on agents<0/>that you can give real work to."
+
+msgid "Yesterday"
+msgstr "Yesterday"
+
+msgid "Color {color}"
+msgstr "Color {color}"
+
+msgid "Color {0}"
+msgstr "Color {0}"

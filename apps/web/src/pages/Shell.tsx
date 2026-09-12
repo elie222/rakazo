@@ -5184,13 +5184,14 @@ function formatRosterTime(isoDate?: string | null): string {
   try {
     const d = new Date(isoDate);
     if (Number.isNaN(d.getTime())) return "";
+    const locale = i18n.locale || "en";
     const now = new Date();
     const isToday =
       d.getDate() === now.getDate() &&
       d.getMonth() === now.getMonth() &&
       d.getFullYear() === now.getFullYear();
     if (isToday) {
-      return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+      return d.toLocaleTimeString(locale, { hour: "numeric", minute: "2-digit" });
     }
     const yesterday = new Date(now);
     yesterday.setDate(now.getDate() - 1);
@@ -5198,12 +5199,12 @@ function formatRosterTime(isoDate?: string | null): string {
       d.getDate() === yesterday.getDate() &&
       d.getMonth() === yesterday.getMonth() &&
       d.getFullYear() === yesterday.getFullYear();
-    if (isYesterday) return "Yesterday";
+    if (isYesterday) return t`Yesterday`;
     const diffDays = Math.floor((now.getTime() - d.getTime()) / (1000 * 60 * 60 * 24));
     if (diffDays < 7) {
-      return d.toLocaleDateString([], { weekday: "short" });
+      return d.toLocaleDateString(locale, { weekday: "short" });
     }
-    return d.toLocaleDateString([], { month: "short", day: "numeric" });
+    return d.toLocaleDateString(locale, { month: "short", day: "numeric" });
   } catch {
     return "";
   }

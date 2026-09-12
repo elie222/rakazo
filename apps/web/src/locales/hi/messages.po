@@ -543,7 +543,7 @@ msgstr ""
 
 #: src/pages/shell/avatar-studio-popover.tsx:133
 msgid "Avatar Studio"
-msgstr ""
+msgstr "अवतार स्टूडियो"
 
 #: src/pages/AccountSettingsOverlay.tsx:127
 msgid "Avatars"
@@ -556,7 +556,7 @@ msgstr ""
 
 #: src/pages/Shell.tsx:3285
 msgid "Back to computer"
-msgstr ""
+msgstr "कंप्यूटर पर वापस जाएं"
 
 #: src/pages/Auth.tsx:126
 #: src/pages/Auth.tsx:235
@@ -609,7 +609,7 @@ msgstr "बॉट स्क्रीन प्रीव्यू"
 
 #: src/pages/Shell.tsx:3157
 msgid "Bot settings"
-msgstr ""
+msgstr "बॉट सेटिंग्स"
 
 #: src/pages/MessagingSettingsOverlay.tsx:151
 msgid "Bot to link"
@@ -734,7 +734,7 @@ msgstr ""
 
 #: src/pages/shell/avatar-studio-popover.tsx:136
 msgid "Choose a bot shape, color, or upload an image"
-msgstr ""
+msgstr "बॉट का आकार और रंग चुनें, या छवि अपलोड करें"
 
 #: src/pages/MessagingSettingsOverlay.tsx:158
 msgid "Choose a bot…"
@@ -746,7 +746,7 @@ msgstr "नया पासवर्ड चुनें"
 
 #: src/pages/shell/avatar-studio-popover.tsx:267
 msgid "Choose file"
-msgstr ""
+msgstr "फ़ाइल चुनें"
 
 #: src/pages/ModelSettingsOverlay.tsx:364
 msgid "Choose which connected model Rakazo uses."
@@ -859,7 +859,7 @@ msgstr ""
 
 #: src/pages/shell/avatar-studio-popover.tsx:208
 msgid "Color"
-msgstr ""
+msgstr "रंग"
 
 #: src/pages/RoutineEditor.tsx:455
 msgid "Coming soon"
@@ -1464,7 +1464,7 @@ msgstr ""
 
 #: src/pages/shell/avatar-studio-popover.tsx:116
 msgid "Customize bot avatar"
-msgstr ""
+msgstr "बॉट अवतार अनुकूलित करें"
 
 #: src/pages/AccountSettingsOverlay.tsx:373
 msgid "Dark"
@@ -1491,7 +1491,7 @@ msgstr "डिफ़ॉल्ट"
 #. placeholder {0}: thinkingLevelLabel(defaultThinkingLevel)
 #: src/pages/shell/bot-panel.tsx:499
 msgid "Default ({0})"
-msgstr ""
+msgstr "डिफ़ॉल्ट ({0})"
 
 #: src/pages/MemorySettingsOverlay.tsx:38
 msgid "Default scope"
@@ -1655,7 +1655,7 @@ msgstr "ड्राफ़्ट स्किल"
 
 #: src/pages/shell/avatar-studio-popover.tsx:264
 msgid "Drag, drop, or paste an image"
-msgstr ""
+msgstr "छवि खींचें, छोड़ें या पेस्ट करें"
 
 #: src/pages/BotContextMenu.tsx:127
 msgid "Duplicate"
@@ -1663,7 +1663,7 @@ msgstr "डुप्लिकेट"
 
 #: src/pages/shell/bot-panel.tsx:404
 msgid "e.g. Hivenet Agent, Presales, Timesheets bot"
-msgstr ""
+msgstr "उदा. Hivenet Agent, Presales, टाइमशीट बॉट"
 
 #: src/pages/Shell.tsx:5488
 msgid "Earlier message"
@@ -1857,7 +1857,7 @@ msgstr ""
 
 #: src/pages/shell/bot-panel.tsx:426
 msgid "Get notified when this Bot finishes or needs input"
-msgstr ""
+msgstr "जब यह बॉट समाप्त हो या इनपुट चाहिए तो सूचित हों"
 
 #: src/components/ComputerUpdateProgress.tsx:50
 msgid "Getting ready"
@@ -1967,7 +1967,7 @@ msgstr ""
 
 #: src/pages/shell/avatar-studio-popover.tsx:235
 msgid "Image upload area"
-msgstr ""
+msgstr "छवि अपलोड क्षेत्र"
 
 #: src/pages/PluginsOverlay.tsx:1006
 msgid "Import OpenAPI JSON"
@@ -2565,7 +2565,7 @@ msgstr "अभी तक कुछ याद नहीं किया गया
 
 #: src/pages/shell/bot-panel.tsx:423
 msgid "Notifications"
-msgstr ""
+msgstr "सूचनाएं"
 
 #: src/pages/ActivityList.tsx:72
 msgid "Now"
@@ -3262,7 +3262,7 @@ msgstr "सेटअप सहायता"
 
 #: src/pages/shell/avatar-studio-popover.tsx:191
 msgid "Shape"
-msgstr ""
+msgstr "आकार"
 
 #: src/pages/MemorySettingsOverlay.tsx:49
 #: src/pages/shell/bot-panel.tsx:517
@@ -3683,7 +3683,7 @@ msgstr "अपडेट हो रहा है…"
 
 #: src/pages/shell/avatar-studio-popover.tsx:174
 msgid "Upload"
-msgstr ""
+msgstr "अपलोड"
 
 #: src/pages/AccountSettingsOverlay.tsx:199
 #: src/pages/SettingsOverlay.tsx:87
@@ -3823,3 +3823,12 @@ msgstr "आपका नाम"
 #: src/pages/Welcome.tsx:21
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "हमेशा चालू रहने वाले एजेंटों की आपकी टीम<0/>जिन्हें आप असली काम सौंप सकते हैं।"
+
+msgid "Yesterday"
+msgstr "कल"
+
+msgid "Color {0}"
+msgstr "रंग {0}"
+
+msgid "Color {color}"
+msgstr "रंग {color}"

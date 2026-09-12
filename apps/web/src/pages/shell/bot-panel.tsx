@@ -25,7 +25,7 @@ import {
   Toggle,
 } from "@rakazo/ui-web";
 import { X } from "lucide-react";
-import { lazy, Suspense, useEffect, useId, useState } from "react";
+import { lazy, Suspense, useEffect, useId, useRef, useState } from "react";
 import { rpc } from "../../lib/rpc";
 import { AvatarStudioPopover } from "./avatar-studio-popover";
 
@@ -238,6 +238,7 @@ export function BotSettings({
   const [modelMetaReady, setModelMetaReady] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const saveQueueRef = useRef(Promise.resolve());
   useEffect(() => {
     void rpc.voice
       .voices({})
@@ -368,6 +369,21 @@ export function BotSettings({
     }
   }
 
+  function enqueueSave(patchOverrides?: {
+    name?: string;
+    title?: string;
+    description?: string;
+    color?: string;
+    notifyOnFinish?: boolean;
+  }) {
+    // Serialize full-object auto-saves so an older in-flight request cannot
+    // finish after a newer one and clobber fields.
+    saveQueueRef.current = saveQueueRef.current
+      .catch(() => undefined)
+      .then(() => executeSave(patchOverrides));
+    return saveQueueRef.current;
+  }
+
   return (
     <div data-testid="bot-settings">
       <div className="flex justify-center py-4">
@@ -378,7 +394,7 @@ export function BotSettings({
           size={76}
           onChange={(newColor) => {
             setColor(newColor);
-            void executeSave({ color: newColor });
+            void enqueueSave({ color: newColor });
           }}
         />
       </div>
@@ -389,7 +405,7 @@ export function BotSettings({
           value={name}
           maxLength={BOT_NAME_MAX_LENGTH}
           onChange={(e) => setName(e.target.value)}
-          onBlur={() => void executeSave()}
+          onBlur={() => void enqueueSave()}
           className="mt-1.5"
         />
       </label>
@@ -400,7 +416,7 @@ export function BotSettings({
           value={title}
           maxLength={BOT_TITLE_MAX_LENGTH}
           onChange={(e) => setTitle(e.target.value)}
-          onBlur={() => void executeSave()}
+          onBlur={() => void enqueueSave()}
           placeholder={t`e.g. Hivenet Agent, Presales, Timesheets bot`}
           className="mt-1.5"
         />
@@ -412,26 +428,34 @@ export function BotSettings({
           value={description}
           maxLength={BOT_DESCRIPTION_MAX_LENGTH}
           onChange={(e) => setDescription(e.target.value)}
-          onBlur={() => void executeSave()}
+          onBlur={() => void enqueueSave()}
           rows={3}
           className="mt-1.5"
         />
       </label>
       <div className="mt-6 flex items-center justify-between pt-4 border-t border-border/20">
         <div className="space-y-0.5 pe-4">
-          <div className="text-[13.5px] font-medium text-foreground">
+          <div
+            id={`${ids}-notify-finish-label`}
+            className="text-[13.5px] font-medium text-foreground"
+          >
             <Trans>Notifications</Trans>
           </div>
-          <div className="text-[12px] text-muted-foreground/70">
+          <div
+            id={`${ids}-notify-finish-desc`}
+            className="text-[12px] text-muted-foreground/70"
+          >
             <Trans>Get notified when this Bot finishes or needs input</Trans>
           </div>
         </div>
         <Switch
           id={`${ids}-notify-finish`}
           checked={notifyOnFinish}
+          aria-labelledby={`${ids}-notify-finish-label`}
+          aria-describedby={`${ids}-notify-finish-desc`}
           onCheckedChange={(checked) => {
             setNotifyOnFinish(checked);
-            void executeSave({ notifyOnFinish: checked });
+            void enqueueSave({ notifyOnFinish: checked });
           }}
         />
       </div>

@@ -243,12 +243,9 @@ export function parseBotAvatar(
   imageUrl?: string;
 } {
   if (!rawColor) return { color: "#F97316", isImage: false };
-  if (
-    rawColor.startsWith("data:image/") ||
-    rawColor.startsWith("http://") ||
-    rawColor.startsWith("https://") ||
-    rawColor.startsWith("blob:")
-  ) {
+  // Only data: image URLs are rendered. Arbitrary http(s)/blob values in `color`
+  // must not become <img src> (SSRF / tracking when other members view the bot).
+  if (rawColor.startsWith("data:image/")) {
     return { color: "#F97316", isImage: true, imageUrl: rawColor };
   }
   if (rawColor.includes("::shape_")) {
@@ -302,7 +299,7 @@ export const BotAvatar = memo(function BotAvatar({
     return (
       <div
         className={cn(
-          "rakazo-bot-avatar relative overflow-hidden rounded-full flex items-center justify-center select-none bg-[#1A1C22] shrink-0 border border-white/10",
+          "rakazo-bot-avatar relative overflow-hidden rounded-full flex items-center justify-center select-none bg-secondary shrink-0 border border-border",
           className,
         )}
         data-working={isWorking}
@@ -391,7 +388,9 @@ export const BotAvatar = memo(function BotAvatar({
         aria-hidden="true"
         className={cn(
           "overflow-visible transition-transform duration-300",
-          isWorking ? "animate-pulse scale-[1.04]" : "hover:scale-[1.03]",
+          isWorking
+            ? "animate-pulse scale-[1.04] motion-reduce:animate-none"
+            : "hover:scale-[1.03] motion-reduce:hover:scale-100",
         )}
         style={{
           filter: isWorking
@@ -436,14 +435,16 @@ export function GrokShapePreview({
     <button
       type="button"
       onClick={onClick}
+      aria-label={key}
+      aria-pressed={selected ?? false}
       className={cn(
-        "relative flex size-11 items-center justify-center rounded-xl transition-transform hover:scale-105 active:scale-95 focus:outline-none",
+        "relative flex size-11 items-center justify-center rounded-xl transition-transform hover:scale-105 active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-popover",
         selected
           ? "ring-2 ring-primary ring-offset-2 ring-offset-popover bg-white/10"
           : "hover:bg-white/5",
       )}
     >
-      <svg viewBox={VIEWBOX} className="size-8 overflow-visible">
+      <svg viewBox={VIEWBOX} className="size-8 overflow-visible" aria-hidden="true">
         <path d={path} fill={colorDef.light} />
         <g fill={colorDef.eyeColor}>
           <ellipse cx={CENTER - 29} cy={CENTER - 8} rx={10} ry={7} />
