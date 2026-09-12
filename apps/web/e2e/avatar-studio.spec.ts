@@ -8,7 +8,7 @@ test("bot settings open Avatar Studio on the Bot tab", async ({ page }, testInfo
   await page.goto("/app");
   await page.waitForURL(/\/app\/[^/]+$/);
 
-  await page.getByRole("button", { name: "Show settings" }).click();
+  await page.getByTestId("bot-settings-trigger").click();
   const settings = page.getByTestId("bot-settings");
   await expect(settings).toBeVisible();
 

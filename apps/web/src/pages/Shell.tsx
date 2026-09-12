@@ -2791,8 +2791,8 @@ export function ShellPage() {
                           } ${
                             (item.kind === "bot" && !inGroup && active?.id === item.chat.id) ||
                             (item.kind === "group" && inGroup && activeGroup?.id === item.chat.id)
-                              ? "bg-sidebar-accent border border-border shadow-sm text-sidebar-accent-foreground"
-                              : "hover:bg-sidebar-accent text-foreground/90 border border-transparent"
+                              ? "bg-sidebar-accent"
+                              : "hover:bg-sidebar-accent"
                           }`}
                           style={{
                             opacity:
@@ -3312,8 +3312,8 @@ export function ShellPage() {
                     <Button
                       variant="ghost"
                       size="icon-sm"
-                      aria-label={t`Show settings`}
-                      onClick={() => setPanel("settings")}
+                      aria-label={panel === "settings" ? t`Show computer` : t`Show settings`}
+                      onClick={() => setPanel(panel === "settings" ? "computer" : "settings")}
                       className="text-muted-foreground hover:text-foreground"
                     >
                       <Settings size={16} strokeWidth={1.7} />
