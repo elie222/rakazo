@@ -2792,7 +2792,7 @@ export function ShellPage() {
                             (item.kind === "bot" && !inGroup && active?.id === item.chat.id) ||
                             (item.kind === "group" && inGroup && activeGroup?.id === item.chat.id)
                               ? "bg-sidebar-accent border border-border shadow-sm text-sidebar-accent-foreground"
-                              : "hover:bg-white/[0.04] text-foreground/90 border border-transparent"
+                              : "hover:bg-sidebar-accent text-foreground/90 border border-transparent"
                           }`}
                           style={{
                             opacity:
@@ -2967,7 +2967,7 @@ export function ShellPage() {
             <LayoutGrid size={15} strokeWidth={1.8} />
           </span>
           <span className="text-[14px] font-medium text-foreground/90">
-            <Trans>Marketplace</Trans>
+            <Trans>Integrations</Trans>
           </span>
         </button>
         <Popover open={menuOpen} onOpenChange={setMenuOpen}>
@@ -3154,7 +3154,7 @@ export function ShellPage() {
             {active ? (
               <button
                 type="button"
-                title={t`Settings`}
+                title={inGroup ? t`Group settings` : t`Bot settings`}
                 onClick={() => {
                   const target = inGroup ? "group-settings" : "settings";
                   setPanel(panel === target ? null : target);
