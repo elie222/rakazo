@@ -14,13 +14,14 @@ export const SCREEN_HOST = process.env.SANDBOX_SCREEN_HOST ?? "127.0.0.1";
 export type ScreenNetworkMode = "published" | "internal" | "isolated";
 
 function isLoopbackScreenHost(host: string) {
-  return host === "127.0.0.1" || host === "localhost" || host === "::1";
+  return host === "127.0.0.1" || host === "localhost" || host === "::1" || host.trim() === "";
 }
 
 /**
  * Publish computer VNC/control on loopback by default so local Docker Desktop
  * does not expose the screen on the LAN. Only bind all interfaces when
  * SANDBOX_SCREEN_HOST is a non-loopback address (e.g. the k8s pod IP).
+ * Empty / whitespace SANDBOX_SCREEN_HOST is treated as loopback - never 0.0.0.0.
  */
 export function publishedScreenHostIp(
   host = process.env.SANDBOX_SCREEN_HOST ?? "127.0.0.1",
@@ -28,9 +29,20 @@ export function publishedScreenHostIp(
   return isLoopbackScreenHost(host) ? "127.0.0.1" : "0.0.0.0";
 }
 
-/** Accept loopback, or Docker's all-interfaces forms — never a concrete external IP. */
+/** Accept loopback, or Docker's all-interfaces forms - never a concrete external IP. */
 function isAcceptedPublishedHostIp(hostIp: string | undefined) {
   return hostIp === "127.0.0.1" || hostIp === "0.0.0.0" || hostIp === "";
+}
+
+/**
+ * Reuse only when HostIp matches what we would publish for the current
+ * SANDBOX_SCREEN_HOST (loopback vs all-interfaces for CGNAT/cross-pod).
+ */
+function hostIpMatchesCurrentPublication(hostIp: string | undefined): boolean {
+  const expected = publishedScreenHostIp();
+  if (expected === "127.0.0.1") return hostIp === "127.0.0.1";
+  // Docker may record all-interfaces publication as "" or "0.0.0.0".
+  return hostIp === "0.0.0.0" || hostIp === "";
 }
 
 export function resolveTeamScreenLimit(value = process.env.SANDBOX_TEAM_SCREEN_LIMIT): number {
@@ -319,7 +331,7 @@ export function containerNameFor(botId: string) {
 
 export function computerNetworkNameFor(botId: string) {
   // Keep distinct botIds on distinct networks even when sanitization collapses
-  // characters (e.g. "a/b" and "ab"). Do not change containerNameFor — that
+  // characters (e.g. "a/b" and "ab"). Do not change containerNameFor - that
   // name must stay stable so an existing computer can resume.
   const hash = createHash("sha256").update(botId).digest("hex").slice(0, 32);
   return `rakazo-computer-${sanitizeIdentifier(botId).slice(0, 32)}-${hash}`;
@@ -416,7 +428,7 @@ export function controlPortPublicationMatches(
     !!bindings?.length &&
     bindings.every(
       (binding) =>
-        isAcceptedPublishedHostIp(binding.HostIp) &&
+        hostIpMatchesCurrentPublication(binding.HostIp) &&
         (binding.HostPort === "" || binding.HostPort === "0" || validHostPort(binding.HostPort)),
     )
   );
