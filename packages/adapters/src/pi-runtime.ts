@@ -1363,7 +1363,11 @@ export function jsonField(spec: unknown): ReturnType<typeof Type.String> {
   if (variants && variants.length > 0) {
     return Type.Union(variants.map((variant) => jsonField(variant))) as never;
   }
+  if (Array.isArray(definition.type) && definition.type.length > 0) {
+    return Type.Union(definition.type.map((type) => jsonField({ ...definition, type }))) as never;
+  }
   const type = "type" in definition ? String(definition.type) : "string";
+  if (type === "null") return Type.Null() as never;
   if (type === "number" || type === "integer") return Type.Number() as never;
   if (type === "boolean") return Type.Boolean() as never;
   if (type === "array") {
