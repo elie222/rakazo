@@ -305,6 +305,7 @@ export const BotAvatar = memo(function BotAvatar({
           "rakazo-bot-avatar relative overflow-hidden rounded-full flex items-center justify-center select-none bg-[#1A1C22] shrink-0 border border-white/10",
           className,
         )}
+        data-working={isWorking}
         style={{
           width: size,
           height: size,
@@ -313,6 +314,29 @@ export const BotAvatar = memo(function BotAvatar({
             : "0 2px 5px rgba(0,0,0,0.5)",
         }}
       >
+        {isWorking ? (
+          <svg
+            className="rakazo-bot-avatar-ring absolute pointer-events-none"
+            style={{
+              inset: -4,
+              width: size + 8,
+              height: size + 8,
+            }}
+            viewBox="0 0 48 48"
+            fill="none"
+            aria-hidden="true"
+          >
+            <circle
+              cx="24"
+              cy="24"
+              r="22"
+              stroke="#3B82F6"
+              strokeWidth="3.2"
+              strokeLinecap="round"
+              strokeDasharray="45 80"
+            />
+          </svg>
+        ) : null}
         <img src={parsed.imageUrl} alt="" className="h-full w-full object-cover" />
       </div>
     );
@@ -330,6 +354,36 @@ export const BotAvatar = memo(function BotAvatar({
       }}
       data-working={isWorking}
     >
+      <svg
+        className="rakazo-bot-avatar-ring absolute pointer-events-none"
+        style={{
+          inset: -4,
+          width: size + 8,
+          height: size + 8,
+          filter: `drop-shadow(0 0 6px ${colorDef.light}) drop-shadow(0 0 10px #ffffff)`,
+        }}
+        viewBox="0 0 48 48"
+        fill="none"
+        aria-hidden="true"
+      >
+        <circle
+          cx="24"
+          cy="24"
+          r="22"
+          stroke={`url(#${id}-ring)`}
+          strokeWidth="3.2"
+          strokeLinecap="round"
+          strokeDasharray="45 80"
+        />
+        <circle cx="43" cy="24" r="2.8" fill="#ffffff" />
+        <defs>
+          <linearGradient id={`${id}-ring`} x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="#ffffff" stopOpacity="1" />
+            <stop offset="60%" stopColor={colorDef.light} stopOpacity="0.9" />
+            <stop offset="100%" stopColor={colorDef.light} stopOpacity="0" />
+          </linearGradient>
+        </defs>
+      </svg>
       <svg
         viewBox={VIEWBOX}
         width={size}

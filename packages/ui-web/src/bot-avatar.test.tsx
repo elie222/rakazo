@@ -19,12 +19,12 @@ describe("BotAvatar", () => {
     );
 
     const gradMatches = [...html.matchAll(/id="([^"]+)"/g)].map((m) => m[1]);
-    expect(gradMatches).toHaveLength(2);
-    expect(gradMatches[0]).toBeTruthy();
-    expect(gradMatches[1]).toBeTruthy();
-    expect(gradMatches[0]).not.toBe(gradMatches[1]);
-    expect(html).toContain(`url(#${gradMatches[0]})`);
-    expect(html).toContain(`url(#${gradMatches[1]})`);
+    expect(gradMatches).toHaveLength(4);
+    expect(new Set(gradMatches).size).toBe(4);
+    for (const id of gradMatches) {
+      expect(id).toBeTruthy();
+      expect(html).toContain(`url(#${id})`);
+    }
   });
 
   it.each([...ACTIVE_RUN_STATUSES])("marks active run status %s as working", (status) => {
@@ -72,6 +72,7 @@ describe("BotAvatar", () => {
       <BotAvatar color="data:image/png;base64,abc" identity="maya" size={32} />,
     );
     expect(html).toContain("<img");
-    expect(html).not.toContain("<svg");
+    expect(html).not.toContain("<path");
+    expect(html).not.toContain("grok-character-eyes");
   });
 });
