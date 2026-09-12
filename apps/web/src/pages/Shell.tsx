@@ -5418,18 +5418,17 @@ const MessageView = memo(function MessageView({
   const messageContext = (
     <>
       {speakerName ? (
-        <div className="mb-1.5 flex items-center gap-2" dir="auto">
+        <div
+          className="mb-1.5 flex items-center gap-2 text-[13px] font-semibold tracking-tight"
+          dir="auto"
+          style={{ color: speakerColorDef.light }}
+        >
           <BotAvatar
             color={speakerBot?.color ?? FALLBACK_BOT_COLOR}
             identity={message.botId}
             size={22}
           />
-          <span
-            style={{ color: speakerColorDef.light }}
-            className="text-[13px] font-semibold tracking-tight"
-          >
-            {speakerName}
-          </span>
+          {speakerName}
         </div>
       ) : null}
       {parentJumpId ? (
