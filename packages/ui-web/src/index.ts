@@ -6,6 +6,8 @@ export {
   GROK_MASCOT_SHAPES,
   GrokShapePreview,
   parseBotAvatar,
+  resolvePersonaColorDef,
+  resolvePersonaShape,
 } from "./bot-avatar.js";
 export * from "./components/ui/alert-dialog.js";
 export * from "./components/ui/badge.js";

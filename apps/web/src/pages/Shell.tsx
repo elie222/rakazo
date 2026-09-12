@@ -76,6 +76,7 @@ import {
   Popover,
   PopoverContent,
   PopoverTrigger,
+  resolvePersonaColorDef,
 } from "@rakazo/ui-web";
 import {
   ArrowDown,
@@ -2612,7 +2613,7 @@ export function ShellPage() {
         </div>
         <InputGroup
           data-testid="sidebar-search"
-          className="mx-2.5 mb-3 w-auto rounded-xl bg-card dark:bg-input"
+          className="mx-2.5 mb-3 w-auto rounded-xl bg-[#1c1c1f] border border-white/[0.06] text-muted-foreground focus-within:border-white/20"
         >
           <InputGroupAddon>
             <Search size={16} strokeWidth={1.8} aria-hidden="true" />
@@ -2785,13 +2786,13 @@ export function ShellPage() {
                               position: { x: event.clientX, y: event.clientY },
                             });
                           }}
-                          className={`flex w-full gap-3 rounded-xl px-2.5 py-[11px] text-start ${
+                          className={`flex w-full items-center gap-3 rounded-xl px-2.5 py-[10px] text-start transition-colors ${
                             item.kind === "bot" ? "cursor-grab active:cursor-grabbing" : ""
                           } ${
                             (item.kind === "bot" && !inGroup && active?.id === item.chat.id) ||
                             (item.kind === "group" && inGroup && activeGroup?.id === item.chat.id)
-                              ? "bg-sidebar-accent"
-                              : "hover:bg-sidebar-accent"
+                              ? "bg-[#242426] border border-white/[0.08] shadow-sm text-white"
+                              : "hover:bg-white/[0.04] text-foreground/90 border border-transparent"
                           }`}
                           style={{
                             opacity:
@@ -2828,7 +2829,7 @@ export function ShellPage() {
                                   {item.chat.name}
                                 </span>
                                 {item.kind === "bot" && item.chat.title ? (
-                                  <span className="shrink-0 max-w-[120px] truncate rounded bg-[#202228] border border-border/40 px-1.5 py-0.5 text-[10.5px] font-medium text-muted-foreground/80">
+                                  <span className="shrink-0 max-w-[130px] truncate rounded-md bg-white/[0.06] border border-white/10 px-2 py-0.5 text-[11px] font-normal text-muted-foreground/85">
                                     {item.chat.title}
                                   </span>
                                 ) : null}
@@ -3144,10 +3145,24 @@ export function ShellPage() {
                     void refreshThread(active.id).catch(() => undefined);
                   }
                 }}
-                data-active={panel ? "" : undefined}
+                data-active={panel === "computer" ? "" : undefined}
                 className="app-no-drag grid h-[30px] w-[34px] place-items-center rounded-[9px] hover:bg-accent data-active:bg-accent"
               >
                 <Monitor size={18} strokeWidth={1.6} className="text-foreground/75" />
+              </button>
+            ) : null}
+            {active ? (
+              <button
+                type="button"
+                title={t`Settings`}
+                onClick={() => {
+                  const target = inGroup ? "group-settings" : "settings";
+                  setPanel(panel === target ? null : target);
+                }}
+                data-active={panel === "settings" || panel === "group-settings" ? "" : undefined}
+                className="app-no-drag grid h-[30px] w-[34px] place-items-center rounded-[9px] hover:bg-accent data-active:bg-accent"
+              >
+                <Settings size={18} strokeWidth={1.6} className="text-foreground/75" />
               </button>
             ) : null}
           </div>
@@ -4157,7 +4172,7 @@ export function ShellPage() {
   );
 
   return (
-    <AvatarStyleProvider value={bootstrapMe?.avatarStyle === "robot" ? "robot" : "organic"}>{shell}</AvatarStyleProvider>
+    <AvatarStyleProvider value="organic">{shell}</AvatarStyleProvider>
   );
 }
 
@@ -4954,7 +4969,7 @@ const Composer = memo(function Composer({
       ) : null}
       <div
         data-testid="composer-bar"
-        className="flex items-center gap-3.5 rounded-full border border-border bg-[#141518] py-[9px] pe-2.5 ps-3 shadow-lg transition-colors focus-within:border-ring/50"
+        className="flex items-center gap-3.5 rounded-full border border-white/[0.1] bg-[#18181b] py-[9px] pe-2.5 ps-3 shadow-lg transition-colors focus-within:border-white/20"
       >
         <input
           ref={fileInputRef}
@@ -4970,7 +4985,7 @@ const Composer = memo(function Composer({
           aria-label={t`Attach file`}
           disabled={disabled}
           onClick={() => fileInputRef.current?.click()}
-          className="size-8 shrink-0 rounded-full border border-white/10 bg-white/5 text-muted-foreground hover:bg-white/10 hover:text-foreground transition-colors"
+          className="size-8 shrink-0 rounded-full border border-white/10 bg-white/[0.06] text-muted-foreground hover:bg-white/10 hover:text-foreground transition-colors"
         >
           <Plus size={16} strokeWidth={2} />
         </Button>
@@ -5445,11 +5460,26 @@ const MessageView = memo(function MessageView({
   const isLive = message.id.startsWith("progress:");
   const visibleNarrationBlocks = message.blocks.filter((block) => !isToolActivityBlock(block));
   const parentJumpId = replyPreview?.id ?? replyToMessageId;
+  const speakerBot = message.botId ? peerBot?.(message.botId) : undefined;
+  const speakerColorDef = useMemo(
+    () => resolvePersonaColorDef(message.botId ?? "bot", speakerBot?.color),
+    [message.botId, speakerBot?.color],
+  );
   const messageContext = (
     <>
       {speakerName ? (
-        <div className="mb-1 text-[12.5px] font-medium text-muted-foreground" dir="auto">
-          {speakerName}
+        <div className="mb-1.5 flex items-center gap-2" dir="auto">
+          <BotAvatar
+            color={speakerBot?.color ?? FALLBACK_BOT_COLOR}
+            identity={message.botId}
+            size={22}
+          />
+          <span
+            style={{ color: speakerColorDef.light }}
+            className="text-[13px] font-semibold tracking-tight"
+          >
+            {speakerName}
+          </span>
         </div>
       ) : null}
       {parentJumpId ? (
@@ -5474,7 +5504,7 @@ const MessageView = memo(function MessageView({
         <div className="flex w-fit max-w-full justify-start">
           <div
             data-testid="message-bot-bubble"
-            className="max-w-full space-y-3 py-1 text-[15px] leading-[1.65] text-foreground/95"
+            className="max-w-[94%] space-y-3 rounded-2xl bg-[#1c1c1e] border border-white/[0.08] px-5 py-4 text-[14.5px] leading-[1.65] text-[#ededed] shadow-sm"
             dir="auto"
           >
             {visibleNarrationBlocks.map((block, i) => {
@@ -5721,7 +5751,7 @@ const MessageView = memo(function MessageView({
             <div key={i} className="flex w-fit max-w-full justify-end">
               <div
                 data-testid="message-user-bubble"
-                className="max-w-full whitespace-pre-wrap wrap-anywhere rounded-2xl bg-chat-user px-4 py-2.5 text-[15px] leading-[1.45] text-chat-user-foreground shadow-sm"
+                className="max-w-[85%] whitespace-pre-wrap wrap-anywhere rounded-2xl bg-[#2e2e32] border border-white/10 px-4 py-2.5 text-[15px] leading-[1.45] text-white shadow-sm"
                 dir="auto"
               >
                 {block.text}
@@ -5734,7 +5764,7 @@ const MessageView = memo(function MessageView({
             <div key={i} className="flex w-fit max-w-full justify-start">
               <div
                 data-testid="message-bot-bubble"
-                className="max-w-full py-1 text-[15px] leading-[1.65] text-foreground/95"
+                className="max-w-[94%] rounded-2xl bg-[#1c1c1e] border border-white/[0.08] px-5 py-4 text-[14.5px] leading-[1.65] text-[#ededed] shadow-sm"
                 dir="auto"
               >
                 <ChatMarkdown>{block.text}</ChatMarkdown>
