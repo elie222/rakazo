@@ -239,6 +239,15 @@ export function BotSettings({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const saveQueueRef = useRef(Promise.resolve());
+  const executeSaveRef = useRef<
+    (patchOverrides?: {
+      name?: string;
+      title?: string;
+      description?: string;
+      color?: string;
+      notifyOnFinish?: boolean;
+    }) => Promise<void>
+  >(async () => undefined);
   useEffect(() => {
     void rpc.voice
       .voices({})
@@ -368,6 +377,7 @@ export function BotSettings({
       setSaving(false);
     }
   }
+  executeSaveRef.current = executeSave;
 
   function enqueueSave(patchOverrides?: {
     name?: string;
@@ -377,10 +387,11 @@ export function BotSettings({
     notifyOnFinish?: boolean;
   }) {
     // Serialize full-object auto-saves so an older in-flight request cannot
-    // finish after a newer one and clobber fields.
+    // finish after a newer one and clobber fields. Always call through a ref so
+    // queued work reads the latest field values, not a stale render closure.
     saveQueueRef.current = saveQueueRef.current
       .catch(() => undefined)
-      .then(() => executeSave(patchOverrides));
+      .then(() => executeSaveRef.current(patchOverrides));
     return saveQueueRef.current;
   }
 
@@ -589,40 +600,13 @@ export function BotSettings({
         <Button
           disabled={saving}
           onClick={() => {
-            setSaving(true);
-            setError(null);
-            const selected = modelKey ? parseModelOptionKey(modelKey) : null;
-            const nextName = name.trim();
-            const nextTitle = title.trim();
-            const nextDescription = description.trim();
-            setName(nextName);
-            setTitle(nextTitle);
-            setDescription(nextDescription);
-            void onSave({
-              name: nextName,
-              title: nextTitle,
-              description: nextDescription,
-              instructions: nextDescription,
+            void enqueueSave({
+              name,
+              title,
+              description,
               color,
               notifyOnFinish,
-              computerMode,
-              memoryScope,
-              autoSpeak,
-              voiceId: voiceId || null,
-              modelProvider: selected?.provider ?? null,
-              modelId: selected?.modelId ?? null,
-              // Only clear thinking when catalog metadata is available; otherwise
-              // preserve the stored override if models.list failed or is still loading.
-              ...(modelMetaReady
-                ? {
-                    thinkingLevel: thinkingOptions.length
-                      ? ((thinkingLevel || null) as ThinkingLevel | null)
-                      : null,
-                  }
-                : {}),
-            })
-              .catch((err) => setError(err instanceof Error ? err.message : t`Could not save`))
-              .finally(() => setSaving(false));
+            });
           }}
         >
           <Trans>Save</Trans>
