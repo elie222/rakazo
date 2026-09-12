@@ -62,7 +62,7 @@ spec:
           args:
             - --storage-driver=overlay2
             - --host=unix:///var/run/docker.sock
-            - --host=tcp://0.0.0.0:2375
+            - --host=tcp://127.0.0.1:2375
           env:
             - name: DOCKER_TLS_CERTDIR
               value: ""
@@ -92,22 +92,7 @@ spec:
         - name: supervisor
           image: ghcr.io/elie222/rakazo/app:edge
           imagePullPolicy: Always
-          securityContext:
-            runAsUser: 0
-          command:
-            - bash
-            - -lc
-            - |
-              set -e
-              f=/app/infra/sandboxes/supervisor/src/computer-spec.ts
-              if grep -q 'HostIp: "127.0.0.1"' "$f"; then
-                t=$(mktemp)
-                perl -0777 -pe 's/HostIp: "127\.0\.0\.1"/HostIp: "0.0.0.0"/g; s/binding\.HostIp !== "127\.0\.0\.1"/binding.HostIp !== "127.0.0.1" \&\& binding.HostIp !== "0.0.0.0" \&\& binding.HostIp !== ""/g; s/binding\.HostIp === "127\.0\.0\.1"/(binding.HostIp === "127.0.0.1" || binding.HostIp === "0.0.0.0" || binding.HostIp === "")/g' "$f" > "$t"
-                cat "$t" > "$f"
-                rm -f "$t"
-                echo "[supervisor-hotfix] patched $f HostIp 127.0.0.1 -> 0.0.0.0"
-              fi
-              exec runuser -u node -- pnpm --filter @rakazo/sandbox-supervisor start
+          command: ["bash", "-lc", "pnpm --filter @rakazo/sandbox-supervisor start"]
           ports:
             - containerPort: 7091
               name: http

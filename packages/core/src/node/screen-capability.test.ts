@@ -151,4 +151,20 @@ describe("sealed screen capabilities", () => {
       expect(openScreenCapability(path(url), "fake-secret", 101)).toBeNull();
     },
   );
+  it.each([
+    "http://100.64.0.1:49152/embed.html",
+    "http://100.96.0.30:32769/embed.html",
+    "http://100.127.255.254:49152/embed.html",
+  ])("allows CGNAT 100.64/10 screen targets %s", (url) => {
+    expect(openScreenCapability(path(url), "fake-secret", 101)?.target.hostname).toBe(
+      new URL(url).hostname,
+    );
+  });
+  it.each([
+    "http://100.63.255.255:49152/embed.html",
+    "http://100.128.0.1:49152/embed.html",
+    "http://100.129.0.1:49152/embed.html",
+  ])("rejects addresses outside CGNAT 100.64/10 %s", (url) => {
+    expect(openScreenCapability(path(url), "fake-secret", 101)).toBeNull();
+  });
 });

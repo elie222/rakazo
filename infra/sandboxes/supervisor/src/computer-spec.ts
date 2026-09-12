@@ -13,6 +13,26 @@ export const COMPUTER_CONTROL_PORT = 7070;
 export const SCREEN_HOST = process.env.SANDBOX_SCREEN_HOST ?? "127.0.0.1";
 export type ScreenNetworkMode = "published" | "internal" | "isolated";
 
+function isLoopbackScreenHost(host: string) {
+  return host === "127.0.0.1" || host === "localhost" || host === "::1";
+}
+
+/**
+ * Publish computer VNC/control on loopback by default so local Docker Desktop
+ * does not expose the screen on the LAN. Only bind all interfaces when
+ * SANDBOX_SCREEN_HOST is a non-loopback address (e.g. the k8s pod IP).
+ */
+export function publishedScreenHostIp(
+  host = process.env.SANDBOX_SCREEN_HOST ?? "127.0.0.1",
+): "127.0.0.1" | "0.0.0.0" {
+  return isLoopbackScreenHost(host) ? "127.0.0.1" : "0.0.0.0";
+}
+
+/** Accept loopback, or Docker's all-interfaces forms — never a concrete external IP. */
+function isAcceptedPublishedHostIp(hostIp: string | undefined) {
+  return hostIp === "127.0.0.1" || hostIp === "0.0.0.0" || hostIp === "";
+}
+
 export function resolveTeamScreenLimit(value = process.env.SANDBOX_TEAM_SCREEN_LIMIT): number {
   if (value === undefined || value.trim() === "" || isUnlimited(value)) return MAX_DESKTOP_DISPLAY;
   const limit = Number(value);
@@ -152,16 +172,15 @@ export function computerPortBindings(publishControlPort = false) {
   const ExposedPorts: Record<string, object> = {};
   const PortBindings: Record<string, Array<{ HostIp: string; HostPort: string }>> = {};
   const port = `${screenPorts(0).viewPort}/tcp`;
+  const hostIp = publishedScreenHostIp();
   ExposedPorts[port] = {};
-  // In k8s the supervisor and web run in different pods. Binding on 127.0.0.1
-  // is only reachable from inside the supervisor pod itself — web's loopback
-  // is a different network namespace, so the novnc proxy gets ECONNREFUSED
-  // → 502. Bind on 0.0.0.0 so the mapped port is reachable via the pod IP.
-  // The supervisor still reaches it via 127.0.0.1 (0.0.0.0 accepts loopback).
-  PortBindings[port] = [{ HostIp: "0.0.0.0", HostPort: "0" }];
+  // Default 127.0.0.1 keeps local Docker Desktop screens off the LAN.
+  // When SANDBOX_SCREEN_HOST is the k8s pod IP, bind 0.0.0.0 so web (other
+  // pods) can reach the published port via that pod IP.
+  PortBindings[port] = [{ HostIp: hostIp, HostPort: "0" }];
   if (publishControlPort) {
     ExposedPorts[`${COMPUTER_CONTROL_PORT}/tcp`] = {};
-    PortBindings[`${COMPUTER_CONTROL_PORT}/tcp`] = [{ HostIp: "0.0.0.0", HostPort: "0" }];
+    PortBindings[`${COMPUTER_CONTROL_PORT}/tcp`] = [{ HostIp: hostIp, HostPort: "0" }];
   }
   return { ExposedPorts, PortBindings };
 }
@@ -376,10 +395,7 @@ function validHostPort(port: string | undefined): port is string {
 /** Resolve an assigned runtime port only when every control binding is loopback or all interfaces. */
 export function publishedLoopbackControlHostPort(portBindings: ControlPortBindings) {
   const bindings = portBindings?.[`${COMPUTER_CONTROL_PORT}/tcp`];
-  if (
-    !bindings?.length ||
-    bindings.some((binding) => binding.HostIp !== "127.0.0.1" && binding.HostIp !== "0.0.0.0" && binding.HostIp !== "")
-  ) {
+  if (!bindings?.length || bindings.some((binding) => !isAcceptedPublishedHostIp(binding.HostIp))) {
     return undefined;
   }
   return bindings.find((binding) => validHostPort(binding.HostPort))?.HostPort;
@@ -400,7 +416,7 @@ export function controlPortPublicationMatches(
     !!bindings?.length &&
     bindings.every(
       (binding) =>
-        (binding.HostIp === "127.0.0.1" || binding.HostIp === "0.0.0.0" || binding.HostIp === "") &&
+        isAcceptedPublishedHostIp(binding.HostIp) &&
         (binding.HostPort === "" || binding.HostPort === "0" || validHostPort(binding.HostPort)),
     )
   );
