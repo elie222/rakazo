@@ -3151,20 +3151,6 @@ export function ShellPage() {
                 <Monitor size={18} strokeWidth={1.6} className="text-foreground/75" />
               </button>
             ) : null}
-            {active ? (
-              <button
-                type="button"
-                title={inGroup ? t`Group settings` : t`Bot settings`}
-                onClick={() => {
-                  const target = inGroup ? "group-settings" : "settings";
-                  setPanel(panel === target ? null : target);
-                }}
-                data-active={panel === "settings" || panel === "group-settings" ? "" : undefined}
-                className="app-no-drag grid h-[30px] w-[34px] place-items-center rounded-[9px] hover:bg-accent data-active:bg-accent"
-              >
-                <Settings size={18} strokeWidth={1.6} className="text-foreground/75" />
-              </button>
-            ) : null}
           </div>
         </div>
         {!active && !activeGroup && initialBotsLoaded ? (
@@ -5097,19 +5083,30 @@ const Composer = memo(function Composer({
             className="max-h-32 min-h-[24px] min-w-[8rem] flex-1 resize-none overflow-y-auto bg-transparent py-0.5 text-[15.5px] leading-6 text-foreground outline-none placeholder:text-muted-foreground disabled:opacity-40"
           />
         </div>
+        {onVoice ? (
+          <Button
+            variant="outline"
+            size="icon"
+            aria-label={t`Voice`}
+            title={t`Voice`}
+            disabled={disabled}
+            onClick={onVoice}
+            className="size-8 shrink-0 rounded-full text-foreground/75"
+          >
+            <Mic size={16} strokeWidth={1.8} />
+          </Button>
+        ) : null}
         {running ? (
           <div className="flex items-center gap-1.5 shrink-0">
-            {canSend ? (
-              <Button
-                size="icon"
-                aria-label={t`Send`}
-                disabled={sending || disabled}
-                onClick={send}
-                className="size-8 rounded-full bg-white text-black hover:bg-white/90 shadow-sm transition-transform active:scale-95"
-              >
-                <ArrowUp size={16} strokeWidth={2.2} />
-              </Button>
-            ) : null}
+            <Button
+              size="icon"
+              aria-label={t`Send`}
+              disabled={sending || !canSend || disabled}
+              onClick={send}
+              className="size-8 rounded-full bg-white text-black hover:bg-white/90 shadow-sm transition-transform active:scale-95"
+            >
+              <ArrowUp size={16} strokeWidth={2.2} />
+            </Button>
             <Button
               variant="outline"
               size="icon"
@@ -5121,36 +5118,15 @@ const Composer = memo(function Composer({
               <Square size={11} strokeWidth={0} fill="currentColor" />
             </Button>
           </div>
-        ) : canSend ? (
-          <Button
-            size="icon"
-            aria-label={t`Send`}
-            disabled={sending || disabled}
-            onClick={send}
-            className="size-8 shrink-0 rounded-full bg-white text-black hover:bg-white/90 shadow-sm transition-transform active:scale-95"
-          >
-            <ArrowUp size={16} strokeWidth={2.2} />
-          </Button>
-        ) : onVoice ? (
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label={t`Voice`}
-            title={t`Voice`}
-            disabled={disabled}
-            onClick={onVoice}
-            className="size-8 shrink-0 rounded-full bg-white text-black hover:bg-white/90 shadow-sm transition-transform active:scale-95"
-          >
-            <Mic size={16} strokeWidth={2.2} />
-          </Button>
         ) : (
           <Button
             size="icon"
             aria-label={t`Send`}
-            disabled
-            className="size-8 shrink-0 rounded-full bg-white/10 text-muted-foreground/30"
+            disabled={sending || !canSend || disabled}
+            onClick={send}
+            className="size-8 shrink-0 rounded-full bg-white text-black hover:bg-white/90 shadow-sm transition-transform active:scale-95 disabled:bg-white/10 disabled:text-muted-foreground/30 disabled:shadow-none"
           >
-            <ArrowUp size={16} strokeWidth={2} />
+            <ArrowUp size={16} strokeWidth={2.2} />
           </Button>
         )}
       </div>
