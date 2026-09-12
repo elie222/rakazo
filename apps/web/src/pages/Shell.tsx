@@ -76,6 +76,7 @@ import {
   Popover,
   PopoverContent,
   PopoverTrigger,
+  resolvePersonaColorDef,
 } from "@rakazo/ui-web";
 import {
   ArrowDown,
@@ -86,6 +87,7 @@ import {
   Clock,
   Copy,
   Gauge,
+  LayoutGrid,
   Lock,
   LogOut,
   Maximize2,
@@ -2609,7 +2611,7 @@ export function ShellPage() {
         </div>
         <InputGroup
           data-testid="sidebar-search"
-          className="mx-2.5 mb-3 w-auto rounded-xl bg-card dark:bg-input"
+          className="mx-2.5 mb-3 w-auto rounded-xl bg-card dark:bg-input border border-border text-muted-foreground focus-within:border-ring"
         >
           <InputGroupAddon>
             <Search size={16} strokeWidth={1.8} aria-hidden="true" />
@@ -2648,10 +2650,10 @@ export function ShellPage() {
                 return (
                   <div key={group.key} data-sidebar-group={group.key}>
                     {group.title ? (
-                      <div className="flex items-center pt-2">
+                      <div className="flex items-center pt-3 pb-0.5">
                         <button
                           type="button"
-                          className="flex min-w-0 flex-1 items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-[12.5px] font-medium text-muted-foreground/80 hover:bg-sidebar-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
+                          className="flex min-w-0 flex-1 items-center justify-between gap-2 rounded-lg px-2.5 py-1 text-[11px] font-semibold tracking-wider uppercase text-muted-foreground/60 hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
                           onClick={() => {
                             if (group.emptySpaceId) {
                               openSpaceChat(group.emptySpaceId, "/onboarding");
@@ -2782,7 +2784,7 @@ export function ShellPage() {
                               position: { x: event.clientX, y: event.clientY },
                             });
                           }}
-                          className={`flex w-full gap-3 rounded-xl px-2.5 py-[11px] text-start ${
+                          className={`flex w-full items-center gap-3 rounded-xl px-2.5 py-[10px] text-start ${
                             item.kind === "bot" ? "cursor-grab active:cursor-grabbing" : ""
                           } ${
                             (item.kind === "bot" && !inGroup && active?.id === item.chat.id) ||
@@ -2813,69 +2815,54 @@ export function ShellPage() {
                             />
                           )}
                           <div className="min-w-0 flex-1">
-                            <div className="flex items-baseline justify-between gap-2">
-                              <span
-                                dir="auto"
-                                data-roster-bot-name={item.kind === "bot" ? "" : undefined}
-                                className={`truncate text-[15px] text-foreground ${
-                                  item.chat.unread ? "font-semibold" : "font-medium"
-                                }`}
-                              >
-                                {item.chat.name}
+                            <div className="flex items-center justify-between gap-1.5">
+                              <div className="flex min-w-0 items-center gap-1.5 overflow-hidden">
+                                <span
+                                  dir="auto"
+                                  data-roster-bot-name={item.kind === "bot" ? "" : undefined}
+                                  className={`truncate text-[14px] text-foreground ${
+                                    item.chat.unread ? "font-semibold" : "font-medium"
+                                  }`}
+                                >
+                                  {item.chat.name}
+                                </span>
+                                {item.kind === "bot" && item.chat.title ? (
+                                  <span className="max-w-[130px] shrink-0 truncate rounded-md border border-border bg-muted px-2 py-0.5 text-[11px] font-normal text-muted-foreground">
+                                    {item.chat.title}
+                                  </span>
+                                ) : null}
                                 {item.chat.unread ? (
                                   <span className="sr-only">
                                     <Trans> (unread)</Trans>
                                   </span>
                                 ) : null}
-                              </span>
-                              <span className="flex shrink-0 items-center gap-1.5 text-[12.5px] text-muted-foreground/80">
-                                {item.kind === "bot" && item.chat.status !== "idle"
-                                  ? item.chat.status
-                                  : ""}
+                              </div>
+                              <div className="flex shrink-0 items-center gap-1.5">
+                                <span className="text-[11.5px] text-muted-foreground/60 tabular-nums">
+                                  {formatRosterTime(item.chat.updatedAt)}
+                                </span>
                                 {item.chat.unread ? (
                                   <span
                                     aria-hidden="true"
                                     className="inline-block h-2 w-2 rounded-full bg-foreground"
                                   />
                                 ) : null}
-                              </span>
-                            </div>
-                            {item.kind === "bot" && item.chat.title ? (
-                              <>
-                                <div
-                                  dir="auto"
-                                  className={`mt-0.5 truncate text-[13.5px] ${
-                                    item.chat.unread
-                                      ? "font-medium text-foreground/75"
-                                      : "text-muted-foreground"
-                                  }`}
-                                >
-                                  {item.chat.title}
-                                </div>
-                                {item.chat.preview ? (
-                                  <div
-                                    dir="auto"
-                                    className="truncate text-[12.5px] text-muted-foreground/80"
-                                  >
-                                    {item.chat.preview}
-                                  </div>
-                                ) : null}
-                              </>
-                            ) : (
-                              <div
-                                dir="auto"
-                                className={`mt-0.5 truncate text-[13.5px] ${
-                                  item.chat.unread
-                                    ? "font-medium text-foreground/75"
-                                    : "text-muted-foreground"
-                                }`}
-                              >
-                                {item.kind === "bot"
-                                  ? item.chat.preview
-                                  : item.chat.preview ||
-                                    item.chat.members.map((member) => member.name).join(", ")}
                               </div>
-                            )}
+                            </div>
+                            <div
+                              dir="auto"
+                              className={`mt-0.5 truncate text-[12.5px] ${
+                                item.chat.unread
+                                  ? "font-medium text-foreground/75"
+                                  : "text-muted-foreground/60"
+                              }`}
+                            >
+                              {item.kind === "bot"
+                                ? item.chat.preview ||
+                                  (item.chat.status !== "idle" ? item.chat.status : "")
+                                : item.chat.preview ||
+                                  item.chat.members.map((member) => member.name).join(", ")}
+                            </div>
                           </div>
                         </button>
                       ))}
@@ -2972,12 +2959,12 @@ export function ShellPage() {
         <button
           type="button"
           onClick={() => setPluginsOpen(true)}
-          className="mx-3 mb-1 flex items-center gap-3 rounded-[11px] px-2.5 py-2 hover:bg-sidebar-accent"
+          className="mx-3 mb-1 flex items-center gap-3 rounded-xl px-2.5 py-2 hover:bg-sidebar-accent"
         >
-          <span className="grid h-[30px] w-[30px] place-items-center rounded-full bg-muted text-foreground/75">
-            <Puzzle size={15} strokeWidth={1.7} />
+          <span className="grid h-[30px] w-[30px] place-items-center rounded-lg bg-accent text-foreground/80">
+            <LayoutGrid size={15} strokeWidth={1.8} />
           </span>
-          <span className="text-[14.5px] text-foreground/90">
+          <span className="text-[14px] font-medium text-foreground/90">
             <Trans>Integrations</Trans>
           </span>
         </button>
@@ -3156,7 +3143,7 @@ export function ShellPage() {
                     void refreshThread(active.id).catch(() => undefined);
                   }
                 }}
-                data-active={panel ? "" : undefined}
+                data-active={panel === "computer" ? "" : undefined}
                 className="app-no-drag grid h-[30px] w-[34px] place-items-center rounded-[9px] hover:bg-accent data-active:bg-accent"
               >
                 <Monitor size={18} strokeWidth={1.6} className="text-foreground/75" />
@@ -4146,9 +4133,7 @@ export function ShellPage() {
     </div>
   );
 
-  return (
-    <AvatarStyleProvider value={bootstrapMe?.avatarStyle ?? "robot"}>{shell}</AvatarStyleProvider>
-  );
+  return <AvatarStyleProvider value="organic">{shell}</AvatarStyleProvider>;
 }
 
 const Transcript = memo(function Transcript({
@@ -4944,7 +4929,7 @@ const Composer = memo(function Composer({
       ) : null}
       <div
         data-testid="composer-bar"
-        className="flex items-center gap-3.5 rounded-full border border-border bg-background py-[9px] pe-2.5 ps-3"
+        className="flex items-center gap-3.5 rounded-full border border-border bg-background py-[9px] pe-2.5 ps-3 transition-colors focus-within:border-ring"
       >
         <input
           ref={fileInputRef}
@@ -4955,14 +4940,14 @@ const Composer = memo(function Composer({
           onChange={(event) => void onAttachmentPick(event.target.files)}
         />
         <Button
-          variant="outline"
+          variant="ghost"
           size="icon"
           aria-label={t`Attach file`}
           disabled={disabled}
           onClick={() => fileInputRef.current?.click()}
-          className="rounded-full text-foreground/75"
+          className="size-8 shrink-0 rounded-full border border-border bg-muted text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
         >
-          <Plus size={17} strokeWidth={1.8} />
+          <Plus size={16} strokeWidth={2} />
         </Button>
         <div className="flex min-w-0 flex-1 flex-wrap items-end gap-1.5">
           {selectedSkill ? (
@@ -5086,21 +5071,21 @@ const Composer = memo(function Composer({
             title={t`Voice`}
             disabled={disabled}
             onClick={onVoice}
-            className="rounded-full text-foreground/75"
+            className="size-8 shrink-0 rounded-full text-foreground/75"
           >
             <Mic size={16} strokeWidth={1.8} />
           </Button>
         ) : null}
         {running ? (
-          <>
+          <div className="flex items-center gap-1.5 shrink-0">
             <Button
               size="icon"
               aria-label={t`Send`}
               disabled={sending || !canSend || disabled}
               onClick={send}
-              className="size-10 rounded-full"
+              className="size-8 rounded-full bg-white text-black hover:bg-white/90 shadow-sm transition-transform active:scale-95"
             >
-              <ArrowUp size={18} strokeWidth={2} />
+              <ArrowUp size={16} strokeWidth={2.2} />
             </Button>
             <Button
               variant="outline"
@@ -5108,20 +5093,20 @@ const Composer = memo(function Composer({
               aria-label={t`Stop`}
               disabled={sending}
               onClick={() => void onStop()}
-              className="size-10 rounded-full text-foreground/75"
+              className="size-8 rounded-full border border-border bg-muted text-foreground/80 shadow-sm transition-colors hover:bg-accent hover:text-foreground"
             >
-              <Square size={12} strokeWidth={0} fill="currentColor" />
+              <Square size={11} strokeWidth={0} fill="currentColor" />
             </Button>
-          </>
+          </div>
         ) : (
           <Button
             size="icon"
             aria-label={t`Send`}
             disabled={sending || !canSend || disabled}
             onClick={send}
-            className="size-9 rounded-full"
+            className="size-8 shrink-0 rounded-full bg-white text-black hover:bg-white/90 shadow-sm transition-transform active:scale-95 disabled:bg-white/10 disabled:text-muted-foreground/30 disabled:shadow-none"
           >
-            <ArrowUp size={18} strokeWidth={2} />
+            <ArrowUp size={16} strokeWidth={2.2} />
           </Button>
         )}
       </div>
@@ -5192,6 +5177,37 @@ function previewMessageText(message: ThreadMessage): string {
     return t`Attachment`;
   }
   return t`Message`;
+}
+
+function formatRosterTime(isoDate?: string | null): string {
+  if (!isoDate) return "";
+  try {
+    const d = new Date(isoDate);
+    if (Number.isNaN(d.getTime())) return "";
+    const locale = i18n.locale || "en";
+    const now = new Date();
+    const isToday =
+      d.getDate() === now.getDate() &&
+      d.getMonth() === now.getMonth() &&
+      d.getFullYear() === now.getFullYear();
+    if (isToday) {
+      return d.toLocaleTimeString(locale, { hour: "numeric", minute: "2-digit" });
+    }
+    const yesterday = new Date(now);
+    yesterday.setDate(now.getDate() - 1);
+    const isYesterday =
+      d.getDate() === yesterday.getDate() &&
+      d.getMonth() === yesterday.getMonth() &&
+      d.getFullYear() === yesterday.getFullYear();
+    if (isYesterday) return t`Yesterday`;
+    const diffDays = Math.floor((now.getTime() - d.getTime()) / (1000 * 60 * 60 * 24));
+    if (diffDays < 7) {
+      return d.toLocaleDateString(locale, { weekday: "short" });
+    }
+    return d.toLocaleDateString(locale, { month: "short", day: "numeric" });
+  } catch {
+    return "";
+  }
 }
 
 function MessageHoverActions({
@@ -5395,10 +5411,24 @@ const MessageView = memo(function MessageView({
   const isLive = message.id.startsWith("progress:");
   const visibleNarrationBlocks = message.blocks.filter((block) => !isToolActivityBlock(block));
   const parentJumpId = replyPreview?.id ?? replyToMessageId;
+  const speakerBot = message.botId ? peerBot?.(message.botId) : undefined;
+  const speakerColorDef = useMemo(
+    () => resolvePersonaColorDef(message.botId ?? "bot", speakerBot?.color),
+    [message.botId, speakerBot?.color],
+  );
   const messageContext = (
     <>
       {speakerName ? (
-        <div className="mb-1 text-[12.5px] font-medium text-muted-foreground" dir="auto">
+        <div
+          className="mb-1.5 flex items-center gap-2 text-[13px] font-semibold tracking-tight"
+          dir="auto"
+          style={{ color: speakerColorDef.light }}
+        >
+          <BotAvatar
+            color={speakerBot?.color ?? FALLBACK_BOT_COLOR}
+            identity={message.botId}
+            size={22}
+          />
           {speakerName}
         </div>
       ) : null}
