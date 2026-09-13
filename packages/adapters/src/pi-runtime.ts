@@ -995,7 +995,7 @@ async function executeSubagent(host: ToolHost, executionId: string, args: Record
       selectedModel.models.streamSimple(m, ctx, reliableStreamOptions(m, options)),
     getApiKey: async () => selectedModel.apiKey,
     transformContext: async (messages) =>
-      pruneComputerScreenshotContext(messages, host.request.model.maxImagesPerPrompt),
+      pruneComputerScreenshotContext(messages, requestModel.maxImagesPerPrompt),
     initialState: {
       systemPrompt: [
         `You are a Rakazo subagent named "${name}".`,
