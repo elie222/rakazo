@@ -18,6 +18,7 @@ import {
   computerHomeStorage,
   computerNetworkNameFor,
   computerNetworkNamesForCleanup,
+  configuredScreenHost,
   containerCreateOptions,
   containerNameFor,
   controlPortPublicationMatches,
@@ -95,6 +96,10 @@ describe("graphical computer spec", () => {
     expect(options.ExposedPorts).not.toHaveProperty("7070/tcp");
     expect(options.HostConfig.PortBindings).not.toHaveProperty("7070/tcp");
     expect(options.HostConfig.PortBindings["6080/tcp"]?.[0]?.HostIp).toBe("127.0.0.1");
+    expect(configuredScreenHost(undefined)).toBe("127.0.0.1");
+    expect(configuredScreenHost("")).toBe("127.0.0.1");
+    expect(configuredScreenHost("   ")).toBe("127.0.0.1");
+    expect(configuredScreenHost("100.96.0.30")).toBe("100.96.0.30");
     expect(publishedScreenHostIp()).toBe("127.0.0.1");
     expect(publishedScreenHostIp("127.0.0.1")).toBe("127.0.0.1");
     expect(publishedScreenHostIp("localhost")).toBe("127.0.0.1");
@@ -102,6 +107,12 @@ describe("graphical computer spec", () => {
     expect(publishedScreenHostIp("")).toBe("127.0.0.1");
     expect(publishedScreenHostIp("   ")).toBe("127.0.0.1");
     expect(publishedScreenHostIp("100.96.0.30")).toBe("0.0.0.0");
+    expect(screenUrlFor("16080", configuredScreenHost(""))).toBe(
+      "http://127.0.0.1:16080/embed.html",
+    );
+    expect(screenUrlFor("16080", configuredScreenHost("   "))).toBe(
+      "http://127.0.0.1:16080/embed.html",
+    );
     expect(options.HostConfig.PortBindings).not.toHaveProperty("6081/tcp");
     expect(options.HostConfig.PortBindings).not.toHaveProperty("6082/tcp");
     expect(screenPorts(0)).toMatchObject({ display: ":1", viewPort: "6080", controlPort: "6080" });
@@ -531,9 +542,16 @@ describe("graphical computer spec", () => {
   );
 
   it("does not reuse all-interfaces control bindings under loopback screen host", () => {
-    const bindings = { "7070/tcp": [{ HostIp: "0.0.0.0", HostPort: "55100" }] };
-    expect(controlPortPublicationMatches(bindings, true)).toBe(false);
-    expect(publishedLoopbackControlHostPort(bindings)).toBe("55100");
+    const previous = process.env.SANDBOX_SCREEN_HOST;
+    process.env.SANDBOX_SCREEN_HOST = "127.0.0.1";
+    try {
+      const bindings = { "7070/tcp": [{ HostIp: "0.0.0.0", HostPort: "55100" }] };
+      expect(controlPortPublicationMatches(bindings, true)).toBe(false);
+      expect(publishedLoopbackControlHostPort(bindings)).toBe("55100");
+    } finally {
+      if (previous === undefined) delete process.env.SANDBOX_SCREEN_HOST;
+      else process.env.SANDBOX_SCREEN_HOST = previous;
+    }
   });
 
   it.each(["::", "192.0.2.1", undefined])(

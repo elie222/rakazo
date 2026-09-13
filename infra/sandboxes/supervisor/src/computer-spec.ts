@@ -10,11 +10,27 @@ export const COMPUTER_USER = `${COMPUTER_UID}:${COMPUTER_GID}`;
 
 export { screenPorts };
 export const COMPUTER_CONTROL_PORT = 7070;
-export const SCREEN_HOST = process.env.SANDBOX_SCREEN_HOST ?? "127.0.0.1";
 export type ScreenNetworkMode = "published" | "internal" | "isolated";
 
+/**
+ * Trim SANDBOX_SCREEN_HOST; empty/whitespace → 127.0.0.1 so URL helpers never
+ * emit hosts like `http://:16080/...`.
+ */
+export function configuredScreenHost(raw = process.env.SANDBOX_SCREEN_HOST): string {
+  const trimmed = (raw ?? "").trim();
+  return trimmed === "" ? "127.0.0.1" : trimmed;
+}
+
+export const SCREEN_HOST = configuredScreenHost();
+
 function isLoopbackScreenHost(host: string) {
-  return host === "127.0.0.1" || host === "localhost" || host === "::1" || host.trim() === "";
+  const normalized = host.trim();
+  return (
+    normalized === "" ||
+    normalized === "127.0.0.1" ||
+    normalized === "localhost" ||
+    normalized === "::1"
+  );
 }
 
 /**
@@ -24,7 +40,7 @@ function isLoopbackScreenHost(host: string) {
  * Empty / whitespace SANDBOX_SCREEN_HOST is treated as loopback - never 0.0.0.0.
  */
 export function publishedScreenHostIp(
-  host = process.env.SANDBOX_SCREEN_HOST ?? "127.0.0.1",
+  host = configuredScreenHost(),
 ): "127.0.0.1" | "0.0.0.0" {
   return isLoopbackScreenHost(host) ? "127.0.0.1" : "0.0.0.0";
 }
