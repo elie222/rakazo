@@ -39,9 +39,7 @@ function isLoopbackScreenHost(host: string) {
  * SANDBOX_SCREEN_HOST is a non-loopback address (e.g. the k8s pod IP).
  * Empty / whitespace SANDBOX_SCREEN_HOST is treated as loopback - never 0.0.0.0.
  */
-export function publishedScreenHostIp(
-  host = configuredScreenHost(),
-): "127.0.0.1" | "0.0.0.0" {
+export function publishedScreenHostIp(host = configuredScreenHost()): "127.0.0.1" | "0.0.0.0" {
   return isLoopbackScreenHost(host) ? "127.0.0.1" : "0.0.0.0";
 }
 
