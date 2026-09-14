@@ -16,6 +16,7 @@ import {
   createRunSandbox,
   createRunSecretWriter,
   createWebProvider,
+  databaseCapacityBackoffMs,
   EncryptedSecretStore,
   ExpoPushProvider,
   GraphileJobPublisher,
@@ -218,7 +219,10 @@ async function main() {
   // until Postgres has capacity: exhausting then returning from main().catch
   // left a live process that held connections but never ran jobs or registered
   // signal handlers, even after capacity returned. Do not exit(1) here; that
-  // crash-loops into the same saturated Postgres.
+  // crash-loops into the same saturated Postgres. GraphileJobWorkerHost also
+  // observes runner.promise after start and restarts with the same backoff if
+  // the runner dies later on 53300 (unhandledRejection still swallows that
+  // code so we do not Docker crash-loop on transient completeJob failures).
   for (let attempt = 0; ; attempt += 1) {
     try {
       await jobHost.start(jobHandlers);
@@ -226,9 +230,7 @@ async function main() {
     } catch (error) {
       if (!isTooManyDatabaseConnections(error)) throw error;
       logger.error("worker job host start waiting on database capacity", error);
-      await new Promise((resolve) =>
-        setTimeout(resolve, Math.min(30_000, 200 * 2 ** Math.min(attempt, 8))),
-      );
+      await new Promise((resolve) => setTimeout(resolve, databaseCapacityBackoffMs(attempt)));
     }
   }
   const reconciler = createJobReconciler({

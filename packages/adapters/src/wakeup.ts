@@ -5,6 +5,7 @@ import {
   type JobPublisher,
   type JobWorkerHost,
 } from "@rakazo/adapter-kit";
+import { isTooManyDatabaseConnections } from "@rakazo/db";
 import { runCorrelatedJob, unwrapJobPayload, wrapJobPayload } from "@rakazo/logging";
 import { makeWorkerUtils, type Runner, run, type WorkerUtils } from "graphile-worker";
 import type { Pool } from "pg";
@@ -47,8 +48,16 @@ export class GraphileJobPublisher implements JobPublisher {
   }
 }
 
+/** Same bounded backoff the worker uses around jobHost.start for 53300. */
+export function databaseCapacityBackoffMs(attempt: number): number {
+  return Math.min(30_000, 200 * 2 ** Math.min(attempt, 8));
+}
+
 export class GraphileJobWorkerHost implements JobWorkerHost {
   private runner: Runner | undefined;
+  private handlers: BackgroundJobHandlers | undefined;
+  private stopping = false;
+  private superviseTask: Promise<void> | undefined;
 
   constructor(
     private readonly pgPool: Pool,
@@ -56,11 +65,37 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
       concurrency?: number;
       pollInterval?: number;
       noHandleSignals?: boolean;
+      /** Test seam: delay between 53300 restart attempts. */
+      sleep?: (ms: number) => Promise<void>;
     } = {},
   ) {}
 
   async start(handlers: BackgroundJobHandlers): Promise<void> {
-    if (this.runner) return;
+    if (this.runner || this.superviseTask) return;
+    this.stopping = false;
+    this.handlers = handlers;
+    await this.launchRunner();
+    // run() resolves once the runner is up; runner.promise can still reject later
+    // (e.g. Postgres 53300). Observe it so a dead runner cannot leave the worker
+    // process idle forever while unhandledRejection swallows that same error.
+    this.superviseTask = this.supervise();
+  }
+
+  async stop(): Promise<void> {
+    this.stopping = true;
+    try {
+      await this.runner?.stop();
+    } finally {
+      await this.superviseTask?.catch(() => undefined);
+      this.runner = undefined;
+      this.superviseTask = undefined;
+      this.handlers = undefined;
+    }
+  }
+
+  private async launchRunner(): Promise<void> {
+    const handlers = this.handlers;
+    if (!handlers) throw new Error("Background job worker has no handlers");
     const taskList = Object.fromEntries(
       Object.keys(handlers).map((name) => [
         name,
@@ -75,19 +110,46 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
         },
       ]),
     );
-    this.runner = await run({
+    const runner = await run({
       pgPool: this.pgPool,
       concurrency: this.options.concurrency ?? 4,
       pollInterval: this.options.pollInterval ?? 500,
       noHandleSignals: this.options.noHandleSignals,
       taskList,
     });
+    if (this.stopping) {
+      await runner.stop().catch(() => undefined);
+      return;
+    }
+    this.runner = runner;
   }
 
-  async stop(): Promise<void> {
-    const runner = this.runner;
-    this.runner = undefined;
-    await runner?.stop();
+  private async supervise(): Promise<void> {
+    const sleep =
+      this.options.sleep ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));
+    for (;;) {
+      const runner = this.runner;
+      if (!runner || this.stopping) return;
+      try {
+        await runner.promise;
+        return;
+      } catch (error) {
+        if (this.stopping) return;
+        if (this.runner === runner) this.runner = undefined;
+        if (!isTooManyDatabaseConnections(error)) throw error;
+        for (let attempt = 0; ; attempt += 1) {
+          if (this.stopping) return;
+          try {
+            await this.launchRunner();
+            if (this.stopping || !this.runner) return;
+            break;
+          } catch (startError) {
+            if (!isTooManyDatabaseConnections(startError)) throw startError;
+            await sleep(databaseCapacityBackoffMs(attempt));
+          }
+        }
+      }
+    }
   }
 }
 
