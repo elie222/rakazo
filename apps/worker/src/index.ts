@@ -49,6 +49,7 @@ import {
   createThreadEvents,
   isTooManyDatabaseConnections,
   parsePositiveInteger,
+  retryOnTooManyConnections,
 } from "@rakazo/db";
 import { SERVICE_NAMES } from "@rakazo/logging";
 import { createRootLogger } from "@rakazo/logging/axiom";
@@ -213,7 +214,10 @@ async function main() {
     messaging,
     cloudAgent,
   });
-  await jobHost.start(jobHandlers);
+  // graphile-worker run() connects through the shared pool. createPool already
+  // retries connect() on 53300; wrap start so a saturated Postgres at boot gets
+  // the same backoff instead of failing main() on the first exhausted attempt.
+  await retryOnTooManyConnections(() => jobHost.start(jobHandlers));
   const reconciler = createJobReconciler({
     prisma,
     jobs,
@@ -265,5 +269,9 @@ async function main() {
 main().catch(async (error) => {
   logger.error("worker startup failed", error);
   await logger.flush({ timeoutMs: 2_000 });
+  // Awaited startup failures (e.g. jobHost.start after connect retries exhaust)
+  // never hit unhandledRejection. Exiting on 53300 restarts into the same
+  // saturated Postgres; stay up and let backends drain.
+  if (isTooManyDatabaseConnections(error)) return;
   process.exit(1);
 });
