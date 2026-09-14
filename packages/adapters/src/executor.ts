@@ -73,7 +73,10 @@ import {
   unattendedTriggerToolRequiresApproval,
   userTurnBlocksForRun,
 } from "@rakazo/core";
-import { approvalEffectKey } from "@rakazo/core/node/approval-effect-key";
+import {
+  approvalEffectKey,
+  toolEffectIdempotencyKey,
+} from "@rakazo/core/node/approval-effect-key";
 import {
   appendEventInTransaction,
   createSpaceForMember,
@@ -1843,7 +1846,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             needsApprovalEarly ||
             requiresApprovalByDefault
               ? approvalEffectKey(runId, replayEffectToolName, args)
-              : executionId;
+              : toolEffectIdempotencyKey(runId, replayEffectToolName, executionId);
           // Connector read-only hints must not bypass approval, review, or replay decisions.
           const applied = READ_ONLY_AGENT_TOOLS.has(name)
             ? undefined

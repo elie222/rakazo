@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { approvalEffectKey, stableJsonValue } from "./approval-effect-key.js";
+import {
+  approvalEffectKey,
+  stableJsonValue,
+  toolEffectIdempotencyKey,
+} from "./approval-effect-key.js";
 
 describe("stableJsonValue", () => {
   it("sorts object keys", () => {
@@ -33,3 +37,25 @@ describe("approvalEffectKey", () => {
     expect(key).not.toContain("private draft");
   });
 });
+
+describe("toolEffectIdempotencyKey", () => {
+  it("scopes provider tool-call ids to run and tool", () => {
+    expect(toolEffectIdempotencyKey("run-1", "write_file", "call_0")).toBe(
+      "run-1:write_file:call_0",
+    );
+    expect(toolEffectIdempotencyKey("run-1", "write_file", "call_0")).not.toBe(
+      toolEffectIdempotencyKey("run-2", "write_file", "call_0"),
+    );
+    expect(toolEffectIdempotencyKey("run-1", "write_file", "call_0")).not.toBe(
+      toolEffectIdempotencyKey("run-1", "shell", "call_0"),
+    );
+    expect(toolEffectIdempotencyKey("run-1", "write_file", "call_0")).not.toBe("call_0");
+  });
+
+  it("is stable for a true retry of the same effect", () => {
+    expect(toolEffectIdempotencyKey("run-1", "remember", "call_0")).toBe(
+      toolEffectIdempotencyKey("run-1", "remember", "call_0"),
+    );
+  });
+});
+

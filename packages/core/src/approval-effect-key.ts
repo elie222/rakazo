@@ -52,3 +52,13 @@ export function approvalEffectKey(
   const digest = createHash("sha256").update(stableJsonValue(args)).digest("hex");
   return `${runId}:${toolName}:${digest}`;
 }
+
+/** Scope provider tool-call ids (e.g. reused call_0) to a run and tool. */
+export function toolEffectIdempotencyKey(
+  runId: string,
+  toolName: string,
+  executionId: string,
+): string {
+  return `${runId}:${toolName}:${executionId}`;
+}
+
