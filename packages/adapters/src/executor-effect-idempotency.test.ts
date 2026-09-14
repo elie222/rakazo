@@ -370,4 +370,35 @@ describe("mutating tool effect idempotency keys", () => {
     expect(f.effects).toHaveLength(1);
     expect(f.results[0]).toEqual({ ok: true, legacy: true });
   });
+
+  it("does not reuse an incomplete legacy effect when the request differs", async () => {
+    const f = fixture("run-legacy-mismatch");
+    f.effects.push({
+      id: "legacy-open",
+      runId: "run-legacy-mismatch",
+      kind: "remember",
+      idempotencyKey: "call_0",
+      status: "intended",
+      request: { path: "MEMORY.md", content: "old fact" },
+    });
+    f.setCalls([
+      {
+        name: "remember",
+        args: { path: "MEMORY.md", content: "new fact" },
+        executionId: "call_0",
+      },
+    ]);
+
+    await f.run();
+
+    expect(f.memoryCommit).toHaveBeenCalledOnce();
+    expect(f.effects).toHaveLength(2);
+    expect(f.effects[1]?.idempotencyKey).toBe(
+      toolEffectIdempotencyKey("run-legacy-mismatch", "remember", "call_0", {
+        path: "MEMORY.md",
+        content: "new fact",
+      }),
+    );
+    expect(f.results[0]).toEqual({ ok: true });
+  });
 });

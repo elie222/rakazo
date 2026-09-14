@@ -4441,8 +4441,7 @@ async function recordEffect(
   }
 
   // Pre-fix rows used bare provider tool-call ids. Only reuse them for the same
-  // run and tool, and only when the prior request matches (true retry) or the
-  // prior effect never completed (in-flight across deploy).
+  // run, tool, and request so a reused provider id cannot attach to a different mutation.
   if (legacyIdempotencyKey && legacyIdempotencyKey !== idempotencyKey) {
     const legacy = await deps.prisma.externalEffect.findUnique({
       where: { idempotencyKey: legacyIdempotencyKey },
@@ -4451,8 +4450,7 @@ async function recordEffect(
       legacy &&
       legacy.runId === run.id &&
       legacy.kind === kind &&
-      (legacy.status !== "completed" ||
-        stableJsonValue(legacy.request) === stableJsonValue(request))
+      stableJsonValue(legacy.request) === stableJsonValue(request)
     ) {
       await deps.events.append({
         spaceId: run.spaceId,
