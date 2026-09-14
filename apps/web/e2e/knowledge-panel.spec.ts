@@ -169,7 +169,26 @@ test("memory and skills are readable and editable in the app", async ({ page }, 
       "Open with a warm greeting.",
     ].join("\n"),
   );
+  let releaseSkillRefresh!: () => void;
+  const skillRefreshGate = new Promise<void>((resolve) => {
+    releaseSkillRefresh = resolve;
+  });
+  await page.route(
+    "**/rpc/agentSkills/list",
+    async (route) => {
+      await skillRefreshGate;
+      await route.continue();
+    },
+    { times: 1 },
+  );
   await knowledge.getByRole("button", { name: "Save", exact: true }).click();
+  try {
+    await expect(editor).toBeHidden();
+    await expect(skillRow).toBeDisabled();
+    await captureScreenshot(page, testInfo, "85-skill-refresh-pending");
+  } finally {
+    releaseSkillRefresh();
+  }
   await skillRow.click();
   await expect(editor).toHaveValue(/warm greeting/);
   await knowledge.getByRole("button", { name: "Delete", exact: true }).click();
