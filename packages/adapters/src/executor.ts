@@ -82,6 +82,7 @@ import {
   findDefaultModelCredential,
   findModelCredential,
   InvalidSpaceNameError,
+  isTooManyDatabaseConnections,
   loadRunHistoryMessages,
   type McpServer,
   type Prisma,
@@ -4037,6 +4038,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         }
       } catch (setupError) {
         const computerBusy = setupError instanceof ComputerBusyError;
+        const retryForever = computerBusy || isTooManyDatabaseConnections(setupError);
         if (!computerBusy) {
           // undici collapses every network failure to "fetch failed"; the cause names the
           // host and errno, which is the only part worth paging over.
@@ -4058,7 +4060,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           where: { id: runId, status: "running", leaseOwner: workerId, leaseFence: fence },
           data: computerRunRequeueData(
             resumeCheckpoint,
-            computerBusy ? null : "Run setup failed; retrying",
+            retryForever ? null : "Run setup failed; retrying",
           ),
         });
         if (released.count === 1) {
@@ -4066,11 +4068,11 @@ export function createRunExecutor(deps: ExecutorDeps) {
             where: { id: attempt.id },
             data: {
               status: "setup_failed",
-              error: "Run setup failed; retrying",
+              error: retryForever ? null : "Run setup failed; retrying",
               finishedAt: new Date(),
             },
           });
-          if (computerBusy) {
+          if (retryForever) {
             await deps.jobs.enqueue({
               ...runContinueJob(runId),
               availableAt: new Date(Date.now() + computerRetryDelay(fence)),

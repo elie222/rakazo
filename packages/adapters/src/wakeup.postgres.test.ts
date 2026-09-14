@@ -1,10 +1,21 @@
 import type { BackgroundJobHandlers } from "@rakazo/adapter-kit";
-import { describe, expect, it, vi } from "vitest";
+import { Pool } from "pg";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { GraphileJobPublisher, GraphileJobWorkerHost } from "./wakeup.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 const describePostgres =
   process.env.VERIFY_DATABASE && databaseUrl ? describe.sequential : describe.skip;
+
+let pool: Pool | undefined;
+function testPool(): Pool {
+  pool ??= new Pool({ connectionString: databaseUrl, max: 4 });
+  return pool;
+}
+afterEach(async () => {
+  await pool?.end();
+  pool = undefined;
+});
 
 function handlers(overrides: Partial<BackgroundJobHandlers> = {}): BackgroundJobHandlers {
   return {
@@ -35,8 +46,8 @@ async function waitFor(assertion: () => void, timeoutMs = 10_000): Promise<void>
 
 describePostgres("Graphile background jobs (PostgreSQL contract)", () => {
   it("waits for an active handler during graceful shutdown", async () => {
-    const publisher = new GraphileJobPublisher(databaseUrl!);
-    const host = new GraphileJobWorkerHost(databaseUrl!, { concurrency: 1, pollInterval: 25 });
+    const publisher = new GraphileJobPublisher(testPool());
+    const host = new GraphileJobWorkerHost(testPool(), { concurrency: 1, pollInterval: 25 });
     const entered = deferred();
     const release = deferred();
     let completed = false;
@@ -71,8 +82,8 @@ describePostgres("Graphile background jobs (PostgreSQL contract)", () => {
   });
 
   it("replaces a keyed delayed job without running the old payload or schedule", async () => {
-    const publisher = new GraphileJobPublisher(databaseUrl!);
-    const host = new GraphileJobWorkerHost(databaseUrl!, { concurrency: 1, pollInterval: 25 });
+    const publisher = new GraphileJobPublisher(testPool());
+    const host = new GraphileJobWorkerHost(testPool(), { concurrency: 1, pollInterval: 25 });
     const received: string[] = [];
     const target = handlers({
       "computer.sleep": async ({ computerId }) => {
@@ -107,8 +118,8 @@ describePostgres("Graphile background jobs (PostgreSQL contract)", () => {
   });
 
   it("removes a keyed delayed job before a worker can run it", async () => {
-    const publisher = new GraphileJobPublisher(databaseUrl!);
-    const host = new GraphileJobWorkerHost(databaseUrl!, { concurrency: 1, pollInterval: 25 });
+    const publisher = new GraphileJobPublisher(testPool());
+    const host = new GraphileJobWorkerHost(testPool(), { concurrency: 1, pollInterval: 25 });
     const target = handlers();
     const key = `contract:cancellation:${Date.now()}`;
 
@@ -130,8 +141,8 @@ describePostgres("Graphile background jobs (PostgreSQL contract)", () => {
   });
 
   it("persists a handler failure and retries the job successfully", async () => {
-    const publisher = new GraphileJobPublisher(databaseUrl!);
-    const host = new GraphileJobWorkerHost(databaseUrl!, { concurrency: 1, pollInterval: 25 });
+    const publisher = new GraphileJobPublisher(testPool());
+    const host = new GraphileJobWorkerHost(testPool(), { concurrency: 1, pollInterval: 25 });
     let attempts = 0;
     const target = handlers({
       "run.continue": async () => {

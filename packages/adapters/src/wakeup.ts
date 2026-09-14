@@ -7,12 +7,17 @@ import {
 } from "@rakazo/adapter-kit";
 import { runCorrelatedJob, unwrapJobPayload, wrapJobPayload } from "@rakazo/logging";
 import { makeWorkerUtils, type Runner, run, type WorkerUtils } from "graphile-worker";
+import type { Pool } from "pg";
 
+// Share the caller's pg.Pool instead of opening a separate connectionString-based
+// pool per graphile-worker component: three independent pools per worker process
+// (Prisma + publisher + runner) triples the connection footprint against Postgres'
+// max_connections for no benefit, since they never need isolation from each other.
 export class GraphileJobPublisher implements JobPublisher {
   private utils: Promise<WorkerUtils> | undefined;
   private closed = false;
 
-  constructor(private readonly connectionString: string) {}
+  constructor(private readonly pgPool: Pool) {}
 
   async enqueue(job: BackgroundJob): Promise<void> {
     const utils = await this.getUtils();
@@ -37,7 +42,7 @@ export class GraphileJobPublisher implements JobPublisher {
 
   private getUtils(): Promise<WorkerUtils> {
     if (this.closed) throw new Error("Background job publisher is closed");
-    this.utils ??= makeWorkerUtils({ connectionString: this.connectionString });
+    this.utils ??= makeWorkerUtils({ pgPool: this.pgPool });
     return this.utils;
   }
 }
@@ -46,7 +51,7 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
   private runner: Runner | undefined;
 
   constructor(
-    private readonly connectionString: string,
+    private readonly pgPool: Pool,
     private readonly options: {
       concurrency?: number;
       pollInterval?: number;
@@ -71,7 +76,7 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
       ]),
     );
     this.runner = await run({
-      connectionString: this.connectionString,
+      pgPool: this.pgPool,
       concurrency: this.options.concurrency ?? 4,
       pollInterval: this.options.pollInterval ?? 500,
       noHandleSignals: this.options.noHandleSignals,

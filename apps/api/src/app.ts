@@ -67,6 +67,7 @@ import {
   createDb,
   createThreadEvents,
   type PrismaClient,
+  parsePositiveInteger,
   provisionMessagingIdentity,
   requireMembership,
 } from "@rakazo/db";
@@ -149,9 +150,11 @@ export async function createApp(
   installLogger(logger);
   const created = prismaOverride
     ? { prisma: prismaOverride, pool: undefined }
-    : createDb(env.databaseUrl);
+    : createDb(env.databaseUrl, {
+        poolMax: parsePositiveInteger(process.env.DB_POOL_MAX, 4),
+        applicationName: "rakazo-api",
+      });
   const { prisma } = created;
-  created.pool?.on("error", () => undefined);
   const realtime =
     realtimeOverride ??
     (created.pool
@@ -191,7 +194,7 @@ export async function createApp(
 
   const jobKind = env.wakeupDriver;
   const inMemoryJobs = jobKind === "memory" ? new InMemoryJobQueue() : undefined;
-  const jobs = inMemoryJobs ?? new GraphileJobPublisher(env.databaseUrl);
+  const jobs = inMemoryJobs ?? new GraphileJobPublisher(created.pool!);
   const sandbox: SandboxProvider =
     sandboxOverride ??
     createRunSandbox(env.sandboxProvider, {
