@@ -20,6 +20,7 @@ vi.mock("./auto-review.js", async (importOriginal) => ({
 
 type Effect = {
   id: string;
+  runId?: string;
   kind: string;
   idempotencyKey: string;
   status: string;
@@ -234,8 +235,13 @@ describe("mutating tool effect idempotency keys", () => {
     expect(f.memoryCommit).toHaveBeenCalledOnce();
     expect(f.scratchpadRows).toHaveLength(1);
     expect(f.effects.map((effect) => effect.idempotencyKey)).toEqual([
-      toolEffectIdempotencyKey("run-a", "remember", "call_0"),
-      toolEffectIdempotencyKey("run-a", "scratchpad_add", "call_0"),
+      toolEffectIdempotencyKey("run-a", "remember", "call_0", {
+        path: "MEMORY.md",
+        content: "team preference",
+      }),
+      toolEffectIdempotencyKey("run-a", "scratchpad_add", "call_0", {
+        title: "follow up with design",
+      }),
     ]);
     expect(f.effects.every((effect) => effect.status === "completed")).toBe(true);
     expect(f.results[0]).toEqual({ ok: true });
@@ -271,8 +277,14 @@ describe("mutating tool effect idempotency keys", () => {
 
     expect(second.memoryCommit).toHaveBeenCalledOnce();
     expect(second.effects.map((effect) => effect.idempotencyKey)).toEqual([
-      toolEffectIdempotencyKey("run-1", "remember", "call_0"),
-      toolEffectIdempotencyKey("run-2", "remember", "call_0"),
+      toolEffectIdempotencyKey("run-1", "remember", "call_0", {
+        path: "MEMORY.md",
+        content: "first bot note",
+      }),
+      toolEffectIdempotencyKey("run-2", "remember", "call_0", {
+        path: "MEMORY.md",
+        content: "second bot note",
+      }),
     ]);
     expect(second.results[0]).toEqual({ ok: true });
   });
@@ -302,8 +314,60 @@ describe("mutating tool effect idempotency keys", () => {
     expect(f.memoryCommit).toHaveBeenCalledOnce();
     expect(f.effects).toHaveLength(1);
     expect(f.effects[0]?.idempotencyKey).toBe(
-      toolEffectIdempotencyKey("run-retry", "remember", "call_0"),
+      toolEffectIdempotencyKey("run-retry", "remember", "call_0", {
+        path: "MEMORY.md",
+        content: "durable fact",
+      }),
     );
     expect(f.results[1]).toEqual({ ok: true });
+  });
+
+  it("executes the same tool twice in one run when args differ but the provider id is reused", async () => {
+    const f = fixture("run-args");
+    f.setCalls([
+      {
+        name: "remember",
+        args: { path: "MEMORY.md", content: "first fact" },
+        executionId: "call_0",
+      },
+      {
+        name: "remember",
+        args: { path: "MEMORY.md", content: "second fact" },
+        executionId: "call_0",
+      },
+    ]);
+
+    await f.run();
+
+    expect(f.memoryCommit).toHaveBeenCalledTimes(2);
+    expect(f.effects).toHaveLength(2);
+    expect(f.effects[0]?.idempotencyKey).not.toBe(f.effects[1]?.idempotencyKey);
+    expect(f.results).toEqual([{ ok: true }, { ok: true }]);
+  });
+
+  it("replays a legacy bare provider idempotency key for the same run and tool", async () => {
+    const f = fixture("run-legacy");
+    f.effects.push({
+      id: "legacy-1",
+      runId: "run-legacy",
+      kind: "remember",
+      idempotencyKey: "call_0",
+      status: "completed",
+      request: { path: "MEMORY.md", content: "legacy fact" },
+      result: { ok: true, legacy: true },
+    });
+    f.setCalls([
+      {
+        name: "remember",
+        args: { path: "MEMORY.md", content: "legacy fact" },
+        executionId: "call_0",
+      },
+    ]);
+
+    await f.run();
+
+    expect(f.memoryCommit).not.toHaveBeenCalled();
+    expect(f.effects).toHaveLength(1);
+    expect(f.results[0]).toEqual({ ok: true, legacy: true });
   });
 });
