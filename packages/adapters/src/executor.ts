@@ -73,10 +73,7 @@ import {
   unattendedTriggerToolRequiresApproval,
   userTurnBlocksForRun,
 } from "@rakazo/core";
-import {
-  approvalEffectKey,
-  toolEffectIdempotencyKey,
-} from "@rakazo/core/node/approval-effect-key";
+import { approvalEffectKey, toolEffectIdempotencyKey } from "@rakazo/core/node/approval-effect-key";
 import {
   appendEventInTransaction,
   createSpaceForMember,
