@@ -1,5 +1,6 @@
 import { PrismaPg } from "@prisma/adapter-pg";
-import { Pool, type PoolClient } from "pg";
+import { Pool } from "pg";
+import type { PoolClient } from "pg";
 import { PrismaClient } from "./generated/prisma/client.js";
 
 export type Db = PrismaClient;
@@ -12,10 +13,10 @@ export interface DbClientOptions {
 const DEFAULT_POOL_MAX = 4;
 const CONNECT_RETRY_ATTEMPTS = 8;
 
-export function createDb(
+export function createPool(
   connectionString: string,
   options: DbClientOptions = {},
-): { prisma: PrismaClient; pool: Pool } {
+): Pool {
   const pool = new Pool({
     connectionString,
     max: options.poolMax ?? DEFAULT_POOL_MAX,
@@ -36,6 +37,14 @@ export function createDb(
     client.on("error", () => undefined);
   });
   installConnectRetry(pool);
+  return pool;
+}
+
+export function createDb(
+  connectionString: string,
+  options: DbClientOptions = {},
+): { prisma: PrismaClient; pool: Pool } {
+  const pool = createPool(connectionString, options);
   const adapter = new PrismaPg(pool);
   const prisma = new PrismaClient({ adapter });
   return { prisma, pool };

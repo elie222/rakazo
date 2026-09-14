@@ -246,10 +246,11 @@ async function main() {
   // graphile-worker fires completeJob() without awaiting it. When pool.connect()
   // then hits Postgres 53300, that rejection is unhandled. Exiting here is the
   // crash loop: Docker restarts the process before Postgres has reaped the old
-  // backends, so the next boot cannot connect either. Stay up and retry.
+  // backends, so the next boot cannot connect either. Stay up on that rejection
+  // only — do not resume after uncaughtException (Node leaves the process in an
+  // undefined state).
   process.on("uncaughtException", (error) => {
     logger.error("uncaughtException", error);
-    if (isTooManyDatabaseConnections(error)) return;
     void stop().finally(() => process.exit(1));
   });
   process.on("unhandledRejection", (reason) => {

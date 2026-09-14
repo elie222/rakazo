@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createDb,
+  createPool,
   isTooManyDatabaseConnections,
   parsePositiveInteger,
   retryOnTooManyConnections,
@@ -93,5 +94,22 @@ describe("retryOnTooManyConnections", () => {
         throw error;
       }),
     ).rejects.toBe(error);
+  });
+});
+
+describe("createPool", () => {
+  it("builds a bounded pool with connect-retry and idle-error listeners", () => {
+    const pool = createPool("postgres://rakazo:rakazo@127.0.0.1:9/rakazo", {
+      poolMax: 2,
+      applicationName: "rakazo-pool-test",
+    });
+    pools.push(pool);
+    expect(pool.options.max).toBe(2);
+    expect(pool.options.connectionTimeoutMillis).toBe(10_000);
+    expect(pool.options.idleTimeoutMillis).toBe(0);
+    expect(pool.options.application_name).toBe("rakazo-pool-test");
+    expect(pool.listenerCount("error")).toBeGreaterThan(0);
+    expect(pool.listenerCount("connect")).toBeGreaterThan(0);
+    expect(() => pool.emit("error", new Error("idle client lost"))).not.toThrow();
   });
 });
