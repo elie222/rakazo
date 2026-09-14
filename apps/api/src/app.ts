@@ -63,12 +63,11 @@ import {
 } from "@rakazo/adapters";
 import { blockedAuthPaths, createAuth } from "@rakazo/auth";
 import { signupPolicyFromEnv } from "@rakazo/core";
+import type { Pool, PrismaClient } from "@rakazo/db";
 import {
   createDb,
   createPool,
   createThreadEvents,
-  type Pool,
-  type PrismaClient,
   parsePositiveInteger,
   provisionMessagingIdentity,
   requireMembership,
