@@ -49,7 +49,6 @@ import {
   createThreadEvents,
   isTooManyDatabaseConnections,
   parsePositiveInteger,
-  retryOnTooManyConnections,
 } from "@rakazo/db";
 import { SERVICE_NAMES } from "@rakazo/logging";
 import { createRootLogger } from "@rakazo/logging/axiom";
@@ -215,9 +214,23 @@ async function main() {
     cloudAgent,
   });
   // graphile-worker run() connects through the shared pool. createPool already
-  // retries connect() on 53300; wrap start so a saturated Postgres at boot gets
-  // the same backoff instead of failing main() on the first exhausted attempt.
-  await retryOnTooManyConnections(() => jobHost.start(jobHandlers));
+  // retries connect() on 53300 a finite number of times. Keep retrying start
+  // until Postgres has capacity: exhausting then returning from main().catch
+  // left a live process that held connections but never ran jobs or registered
+  // signal handlers, even after capacity returned. Do not exit(1) here; that
+  // crash-loops into the same saturated Postgres.
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await jobHost.start(jobHandlers);
+      break;
+    } catch (error) {
+      if (!isTooManyDatabaseConnections(error)) throw error;
+      logger.error("worker job host start waiting on database capacity", error);
+      await new Promise((resolve) =>
+        setTimeout(resolve, Math.min(30_000, 200 * 2 ** Math.min(attempt, 8))),
+      );
+    }
+  }
   const reconciler = createJobReconciler({
     prisma,
     jobs,
@@ -269,9 +282,7 @@ async function main() {
 main().catch(async (error) => {
   logger.error("worker startup failed", error);
   await logger.flush({ timeoutMs: 2_000 });
-  // Awaited startup failures (e.g. jobHost.start after connect retries exhaust)
-  // never hit unhandledRejection. Exiting on 53300 restarts into the same
-  // saturated Postgres; stay up and let backends drain.
-  if (isTooManyDatabaseConnections(error)) return;
+  // jobHost.start retries 53300 without bound above, so a saturated Postgres at
+  // that step does not reach here. Other startup failures still exit.
   process.exit(1);
 });
