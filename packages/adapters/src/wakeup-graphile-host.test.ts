@@ -72,7 +72,7 @@ describe("GraphileJobWorkerHost runner lifecycle", () => {
     run.mockReset();
   });
 
-  it("restarts the runner when runner.promise rejects with 53300", async () => {
+  it("backs off then restarts when runner.promise rejects with 53300", async () => {
     const first = mockRunner();
     const second = mockRunner();
     run.mockResolvedValueOnce(first.runner).mockResolvedValueOnce(second.runner);
@@ -88,13 +88,13 @@ describe("GraphileJobWorkerHost runner lifecycle", () => {
 
     first.rejectLife(tooMany);
     await vi.waitFor(() => expect(run).toHaveBeenCalledTimes(2));
-    expect(sleeps).toEqual([]);
+    expect(sleeps).toEqual([200]);
 
     await host.stop();
     expect(second.runner.stop).toHaveBeenCalled();
   });
 
-  it("retries launch with bounded backoff when restart start hits 53300", async () => {
+  it("retries launch with escalating backoff when restart start hits 53300", async () => {
     const first = mockRunner();
     const recovered = mockRunner();
     run
@@ -111,7 +111,7 @@ describe("GraphileJobWorkerHost runner lifecycle", () => {
     await host.start(handlers());
     first.rejectLife(tooMany);
     await vi.waitFor(() => expect(run).toHaveBeenCalledTimes(3));
-    expect(sleeps).toEqual([200]);
+    expect(sleeps).toEqual([200, 400]);
 
     await host.stop();
     expect(recovered.runner.stop).toHaveBeenCalled();
@@ -131,5 +131,23 @@ describe("GraphileJobWorkerHost runner lifecycle", () => {
     expect(run).toHaveBeenCalledTimes(1);
 
     await host.stop();
+  });
+
+  it("wakes a pending restart delay when stop is called", async () => {
+    const first = mockRunner();
+    run.mockResolvedValueOnce(first.runner);
+    const sleepStarted = deferred();
+    const host = new GraphileJobWorkerHost({} as Pool, {
+      sleep: () => {
+        sleepStarted.resolve();
+        return new Promise(() => undefined);
+      },
+    });
+    await host.start(handlers());
+    first.rejectLife(tooMany);
+    await sleepStarted.promise;
+
+    await host.stop();
+    expect(run).toHaveBeenCalledTimes(1);
   });
 });

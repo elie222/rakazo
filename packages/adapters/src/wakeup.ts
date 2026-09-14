@@ -58,6 +58,7 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
   private handlers: BackgroundJobHandlers | undefined;
   private stopping = false;
   private superviseTask: Promise<void> | undefined;
+  private wakeSleep: (() => void) | undefined;
 
   constructor(
     private readonly pgPool: Pool,
@@ -83,6 +84,7 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
 
   async stop(): Promise<void> {
     this.stopping = true;
+    this.wakeSleep?.();
     try {
       await this.runner?.stop();
     } finally {
@@ -124,9 +126,25 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
     this.runner = runner;
   }
 
-  private async supervise(): Promise<void> {
+  private delay(ms: number): Promise<void> {
+    if (this.stopping) return Promise.resolve();
     const sleep =
-      this.options.sleep ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));
+      this.options.sleep ??
+      ((wait: number) => new Promise<void>((resolve) => setTimeout(resolve, wait)));
+    return new Promise((resolve) => {
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        this.wakeSleep = undefined;
+        resolve();
+      };
+      this.wakeSleep = finish;
+      void Promise.resolve(sleep(ms)).then(finish, finish);
+    });
+  }
+
+  private async supervise(): Promise<void> {
     for (;;) {
       const runner = this.runner;
       if (!runner || this.stopping) return;
@@ -137,7 +155,12 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
         if (this.stopping) return;
         if (this.runner === runner) this.runner = undefined;
         if (!isTooManyDatabaseConnections(error)) throw error;
+        // Back off after every lifecycle 53300 (runner death or failed relaunch),
+        // not only when launchRunner rejects — otherwise a runner that starts then
+        // dies again under saturation reconnects with no delay.
         for (let attempt = 0; ; attempt += 1) {
+          if (this.stopping) return;
+          await this.delay(databaseCapacityBackoffMs(attempt));
           if (this.stopping) return;
           try {
             await this.launchRunner();
@@ -145,7 +168,6 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
             break;
           } catch (startError) {
             if (!isTooManyDatabaseConnections(startError)) throw startError;
-            await sleep(databaseCapacityBackoffMs(attempt));
           }
         }
       }
