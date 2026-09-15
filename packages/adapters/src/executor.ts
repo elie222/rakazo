@@ -449,6 +449,7 @@ function tokenizeProtectedShellCommand(command: string): string[] | "dynamic" {
         ) {
           // A leading file descriptor belongs to a redirect, not the command.
         } else if (/^(?:then|do|else)$/.test(word)) commandPosition = true;
+        else if (commandPosition && word === "coproc") return "dynamic";
         else if (
           commandPosition &&
           (/^(?:command|builtin|exec|time|if|elif|while|until|!|\{)$/.test(word) ||
