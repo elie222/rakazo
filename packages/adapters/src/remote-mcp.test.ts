@@ -265,6 +265,52 @@ describe("remote MCP URL policy", () => {
     }
   });
 
+  it("pins an injected fetch to the validated address so DNS cannot rebind", async () => {
+    const seen: { href?: string; host?: string | null; leakedDispatcher?: boolean } = {};
+    const injected: typeof globalThis.fetch = async (input, init) => {
+      seen.href = String(input);
+      seen.host = new Headers(init?.headers).get("host");
+      seen.leakedDispatcher = Boolean(init && "dispatcher" in init);
+      const hostname = new URL(String(input)).hostname.replace(/^\[|\]$/g, "");
+      if (hostname === "connectors.example.test" || hostname === "127.0.0.1") {
+        throw new Error(`injected fetch reached rebound host ${hostname}`);
+      }
+      return new Response(null, { status: 204 });
+    };
+    const safeFetch = createSafeRemoteFetch(injected, publicResolver);
+    try {
+      await expect(safeFetch("https://connectors.example.test/mcp")).resolves.toMatchObject({
+        status: 204,
+      });
+      expect(seen.leakedDispatcher).toBe(false);
+      expect(seen.href).toBe("https://203.0.113.10/mcp");
+      expect(seen.host).toBe("connectors.example.test");
+    } finally {
+      await safeFetch.close();
+    }
+  });
+
+  it("pins an injected fetch to a validated IPv6 address", async () => {
+    const seen: { href?: string; host?: string | null } = {};
+    const injected: typeof globalThis.fetch = async (input, init) => {
+      seen.href = String(input);
+      seen.host = new Headers(init?.headers).get("host");
+      return new Response(null, { status: 204 });
+    };
+    const safeFetch = createSafeRemoteFetch(injected, async () => [
+      { address: "2606:4700:4700::1111", family: 6 as const },
+    ]);
+    try {
+      await expect(safeFetch("https://connectors.example.test/mcp")).resolves.toMatchObject({
+        status: 204,
+      });
+      expect(seen.href).toBe("https://[2606:4700:4700::1111]/mcp");
+      expect(seen.host).toBe("connectors.example.test");
+    } finally {
+      await safeFetch.close();
+    }
+  });
+
   it("rejects Request inputs instead of silently dropping their method and body", async () => {
     const safeFetch = createSafeRemoteFetch(
       async () => new Response(null, { status: 204 }),

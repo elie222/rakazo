@@ -13,6 +13,15 @@ const TEST_NETWORK = {
   resolveHostname: async () => [{ address: "203.0.113.10", family: 4 }],
 };
 
+function logicalHref(input: string | URL | Request, init?: RequestInit): string {
+  const url = new URL(
+    typeof input === "string" || input instanceof URL ? String(input) : input.url,
+  );
+  const host = new Headers(input instanceof Request ? input.headers : init?.headers).get("host");
+  if (host) url.host = host;
+  return url.href;
+}
+
 function oauthSessionStore() {
   return {
     count: vi.fn().mockResolvedValue(0),
@@ -140,7 +149,7 @@ describe("MCP OAuth", () => {
         "fetch",
         vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
           const request = input instanceof Request ? input : new Request(input, init);
-          const url = new URL(request.url);
+          const url = new URL(logicalHref(input, init));
           requests.push(`${request.method} ${url.toString()}`);
 
           if (url.href === `${mcpOrigin}/mcp` && request.method === "POST") {
@@ -284,8 +293,9 @@ describe("MCP OAuth", () => {
       "fetch",
       vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
         const request = input instanceof Request ? input : new Request(input, init);
-        fetchCalls.push(`${request.method} ${request.url}`);
-        if (request.url === "http://insecure.example.test/mcp") {
+        const url = logicalHref(input, init);
+        fetchCalls.push(`${request.method} ${url}`);
+        if (url === "http://insecure.example.test/mcp") {
           return new Response(null, {
             status: 401,
             headers: {
@@ -294,7 +304,7 @@ describe("MCP OAuth", () => {
             },
           });
         }
-        throw new Error(`Unexpected request: ${request.method} ${request.url}`);
+        throw new Error(`Unexpected request: ${request.method} ${url}`);
       }),
     );
     const prisma = {
@@ -330,8 +340,9 @@ describe("MCP OAuth", () => {
       "fetch",
       vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
         const request = input instanceof Request ? input : new Request(input, init);
-        if (request.url !== "https://auth.example.test/token") {
-          throw new Error(`Unexpected request: ${request.method} ${request.url}`);
+        const url = logicalHref(input, init);
+        if (url !== "https://auth.example.test/token") {
+          throw new Error(`Unexpected request: ${request.method} ${url}`);
         }
         tokenRequestBody = await request.text();
         return Response.json({ access_token: "fresh", token_type: "bearer" });
@@ -555,8 +566,9 @@ describe("MCP OAuth", () => {
       "fetch",
       vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
         const request = input instanceof Request ? input : new Request(input, init);
-        requestedUrls.push(request.url);
-        if (request.url === "https://mcp.example.test/mcp") {
+        const url = logicalHref(input, init);
+        requestedUrls.push(url);
+        if (url === "https://mcp.example.test/mcp") {
           return new Response(null, {
             status: 401,
             headers: {
@@ -565,7 +577,7 @@ describe("MCP OAuth", () => {
             },
           });
         }
-        if (request.url.startsWith("https://mcp.example.test/.well-known/")) {
+        if (url.startsWith("https://mcp.example.test/.well-known/")) {
           return new Response(null, {
             status: 302,
             headers: {
@@ -573,7 +585,7 @@ describe("MCP OAuth", () => {
             },
           });
         }
-        throw new Error(`Unexpected request: ${request.method} ${request.url}`);
+        throw new Error(`Unexpected request: ${request.method} ${url}`);
       }),
     );
     const prisma = {
@@ -608,7 +620,7 @@ describe("MCP OAuth", () => {
       "fetch",
       vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
         const request = input instanceof Request ? input : new Request(input, init);
-        const url = new URL(request.url);
+        const url = new URL(logicalHref(input, init));
         requests.push(`${request.method} ${url.toString()}`);
 
         if (url.href === "https://mcp.example.test/mcp" && request.method === "POST") {
@@ -688,7 +700,7 @@ describe("MCP setup with an existing access token", () => {
     async (endpoint) => {
       const fetch = vi.fn<typeof globalThis.fetch>(async (input, init) => {
         const request = new Request(input, init);
-        expect(request.url).toBe(endpoint);
+        expect(logicalHref(input, init)).toBe(endpoint);
         expect(request.headers.get("authorization")).toBe("Bearer fake-executor-token");
         if (request.method !== "POST") return new Response(null, { status: 405 });
         const body = (await request.json()) as { id?: number; method: string };

@@ -18,6 +18,15 @@ const TEST_NETWORK = {
   resolveHostname: async () => [{ address: "203.0.113.10", family: 4 }],
 };
 
+function logicalHref(input: string | URL | Request, init?: RequestInit): string {
+  const url = new URL(
+    typeof input === "string" || input instanceof URL ? String(input) : input.url,
+  );
+  const host = new Headers(input instanceof Request ? input.headers : init?.headers).get("host");
+  if (host) url.host = host;
+  return url.href;
+}
+
 describe("MCP transport seam", () => {
   it("rejects unsafe URLs and oversized URLs before network access", () => {
     expect(() => validateUrl("http://remote.example/mcp")).toThrow("HTTPS");
@@ -221,13 +230,13 @@ describe("MCP transport seam", () => {
     try {
       await expect(
         (await safeFetch("https://mcp.example.test/mcp", { headers })).json(),
-      ).resolves.toEqual(headers);
+      ).resolves.toEqual({ ...headers, host: "mcp.example.test" });
       await expect(
         (await safeFetch("https://auth.example.test/discovery", { headers })).json(),
-      ).resolves.toEqual({});
+      ).resolves.toEqual({ host: "auth.example.test" });
       await expect(
         (await safeFetch("https://mcp.example.test:8443/discovery", { headers })).json(),
-      ).resolves.toEqual({});
+      ).resolves.toEqual({ host: "mcp.example.test:8443" });
     } finally {
       await safeFetch.close();
     }
@@ -240,7 +249,7 @@ describe("MCP transport seam", () => {
       "fetch",
       vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
         const request = input instanceof Request ? input : new Request(input, init);
-        const url = new URL(request.url);
+        const url = new URL(logicalHref(input, init));
         if (url.href === "https://auth.example.test/token") {
           return Response.json({
             access_token: "fresh-access",
@@ -325,16 +334,17 @@ describe("MCP transport seam", () => {
       "fetch",
       vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
         const request = input instanceof Request ? input : new Request(input, init);
-        if (request.url === "https://auth.example.test/token") {
+        const url = logicalHref(input, init);
+        if (url === "https://auth.example.test/token") {
           return Response.json(
             { error: "invalid_grant", error_description: "refresh token revoked" },
             { status: 400 },
           );
         }
-        if (request.url === "https://mcp.example.test/mcp") {
+        if (url === "https://mcp.example.test/mcp") {
           return new Response(null, { status: 401, headers: { "WWW-Authenticate": "Bearer" } });
         }
-        throw new Error(`Unexpected request: ${request.method} ${request.url}`);
+        throw new Error(`Unexpected request: ${request.method} ${url}`);
       }),
     );
     const provider = new StoredMcpOAuthProvider(

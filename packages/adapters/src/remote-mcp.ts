@@ -119,6 +119,13 @@ export async function assertSafeRemoteUrl(
   value: string,
   resolve: ResolveHostname = resolveHostname,
 ): Promise<URL> {
+  return (await inspectSafeRemoteUrl(value, resolve)).url;
+}
+
+async function inspectSafeRemoteUrl(
+  value: string,
+  resolve: ResolveHostname,
+): Promise<{ url: URL; addresses: ResolvedAddress[] }> {
   let url: URL;
   try {
     url = new URL(value);
@@ -130,17 +137,39 @@ export async function assertSafeRemoteUrl(
   if (url.hash) throw new Error("Connector URL must not contain a fragment");
   const hostname = url.hostname.replace(/^\[|\]$/g, "");
   if (isPrivateHostname(hostname)) throw new Error("Connector URL targets a private host");
-  assertPublicAddresses(await resolve(hostname), hostname);
-  return url;
+  const addresses = await resolve(hostname);
+  assertPublicAddresses(addresses, hostname);
+  return { url, addresses };
 }
 
 /** Drive the package `Agent` with that same undici's fetch. Node 22's
  * built-in fetch is an older undici major, so handing it a package Agent as
  * `dispatcher` throws `invalid onRequestStart` before any socket opens.
- * Captured Node fetch is paired the same way. Distinct injected fetches own
- * the transport and must not receive the package Agent. */
+ * Captured Node fetch is paired the same way. Injected fetches are not given
+ * that Agent; they are called at the validated address with the original Host. */
 const packageFetch = undiciFetch as unknown as typeof globalThis.fetch;
 const nodeFetch = globalThis.fetch;
+
+function urlAtPinnedAddress(url: URL, addresses: ResolvedAddress[]): URL {
+  const hostname = url.hostname.replace(/^\[|\]$/g, "");
+  if (isIP(hostname) !== 0) return url;
+  const selected = addresses[0];
+  if (!selected) throw new Error("Connector URL resolves to a private address");
+  const pinned = new URL(url);
+  const address = selected.address;
+  if (isIP(address) === 6) {
+    pinned.host = url.port ? `[${address}]:${url.port}` : `[${address}]`;
+  } else {
+    pinned.hostname = address;
+  }
+  return pinned;
+}
+
+function requestInitWithHost(url: URL, init: RequestInit): RequestInit {
+  const headers = new Headers(init.headers);
+  headers.set("host", url.host);
+  return { ...init, headers };
+}
 
 export function createSafeRemoteFetch(
   baseFetch?: typeof globalThis.fetch,
@@ -153,7 +182,7 @@ export function createSafeRemoteFetch(
     if (typeof input !== "string" && !(input instanceof URL)) {
       throw new Error("Connector fetch requires a URL, not a Request");
     }
-    const url = await assertSafeRemoteUrl(String(input), resolve);
+    const { url, addresses } = await inspectSafeRemoteUrl(String(input), resolve);
     let response: Response;
     try {
       const requestInit = { ...init, redirect: "manual" as const };
@@ -162,7 +191,10 @@ export function createSafeRemoteFetch(
             ...requestInit,
             dispatcher,
           } as RequestInit & { dispatcher: Agent })
-        : await baseFetch!(url, requestInit);
+        : await baseFetch!(
+            urlAtPinnedAddress(url, addresses),
+            requestInitWithHost(url, requestInit),
+          );
     } catch (error) {
       const detail = transportFailureDetail(error);
       throw new Error(`Could not reach ${url.host}${detail ? `: ${detail}` : ""}`, {

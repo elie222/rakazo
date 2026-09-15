@@ -30,6 +30,15 @@ const TEST_NETWORK = {
   resolveHostname: async () => [{ address: "203.0.113.10", family: 4 }],
 };
 
+function logicalHref(input: string | URL | Request, init?: RequestInit): string {
+  const url = new URL(
+    typeof input === "string" || input instanceof URL ? String(input) : input.url,
+  );
+  const host = new Headers(input instanceof Request ? input.headers : init?.headers).get("host");
+  if (host) url.host = host;
+  return url.href;
+}
+
 function mcpFetch(
   state: {
     failNext: boolean;
@@ -43,8 +52,8 @@ function mcpFetch(
   return vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
     const request = input instanceof Request ? input : new Request(input, init);
     state.headers?.push(Object.fromEntries(request.headers.entries()));
-    if (new URL(request.url).href !== expectedUrl)
-      throw new Error(`Unexpected request: ${request.url}`);
+    if (logicalHref(input, init) !== expectedUrl)
+      throw new Error(`Unexpected request: ${logicalHref(input, init)}`);
     if (request.method !== "POST") return new Response(null, { status: 405 });
     if (state.failNext) return new Response("boom", { status: 500 });
     const message = JSON.parse(await request.text()) as {
@@ -393,7 +402,7 @@ describe("MCP connector session cache", () => {
   it.each(["localhost", "127.0.0.1", "[::1]"])(
     "blocks OAuth rediscovery to HTTP %s after invalid_client from a public server",
     async (host) => {
-      const requests: Request[] = [];
+      const requests: Array<{ method: string; url: string }> = [];
       const metadataUrl = `http://${host}:8123/private-probe`;
       const provider = new StoredMcpOAuthProvider(
         "server-1",
@@ -432,14 +441,15 @@ describe("MCP connector session cache", () => {
             resolveHostname: async () => [{ address: "203.0.113.10", family: 4 }],
             fetch: vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
               const request = new Request(input, init);
-              requests.push(request);
-              if (request.url === SERVER.endpoint) {
+              const url = logicalHref(input, init);
+              requests.push({ method: request.method, url });
+              if (url === SERVER.endpoint) {
                 return new Response(null, {
                   status: 401,
                   headers: { "WWW-Authenticate": `Bearer resource_metadata="${metadataUrl}"` },
                 });
               }
-              if (request.url === "https://auth.example.test/token") {
+              if (url === "https://auth.example.test/token") {
                 return Response.json({ error: "invalid_client" }, { status: 400 });
               }
               return new Response(null, { status: 404 });
