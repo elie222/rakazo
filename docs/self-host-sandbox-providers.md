@@ -50,7 +50,7 @@ Set `SANDBOX_PROVIDER` to exactly one of:
 | Value | Credential | Notes |
 | --- | --- | --- |
 | `e2b` | `E2B_API_KEY` | Hosted sandboxes |
-| `daytona` | `DAYTONA_API_KEY` | Optional `DAYTONA_API_URL`, `DAYTONA_TARGET` |
+| `daytona` | `DAYTONA_API_KEY` | Optional `DAYTONA_API_URL`, `DAYTONA_TARGET`, `DAYTONA_SNAPSHOT` |
 | `box` | `BOX_API_KEY` | Optional `BOX_API_URL` (see `.env.example`) |
 
 Remote paths still need a working API/worker; they do not replace Postgres or

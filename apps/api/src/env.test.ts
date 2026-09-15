@@ -71,12 +71,14 @@ describe("loadEnv", () => {
       DAYTONA_API_KEY: "test-daytona-key",
       DAYTONA_API_URL: "https://daytona.test/api",
       DAYTONA_TARGET: "test-target",
+      DAYTONA_SNAPSHOT: "rakazo-computer",
     });
     expect(env).toMatchObject({
       sandboxProvider: "daytona",
       daytonaApiKey: "test-daytona-key",
       daytonaApiUrl: "https://daytona.test/api",
       daytonaTarget: "test-target",
+      daytonaSnapshot: "rakazo-computer",
     });
   });
 
