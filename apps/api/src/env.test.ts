@@ -204,4 +204,14 @@ describe("loadEnv", () => {
     ).toBe(false);
     expect(loadEnv({ ...base, NODE_ENV: "development" }).nodeEnv).toBe("development");
   });
+
+  it("defaults the remote MCP private-endpoint escape to off", () => {
+    expect(loadEnv(base).mcpAllowPrivateEndpoint).toBe(false);
+    expect(loadEnv({ ...base, MCP_ALLOW_PRIVATE_ENDPOINT: "true" }).mcpAllowPrivateEndpoint).toBe(
+      true,
+    );
+    expect(loadEnv({ ...base, MCP_ALLOW_PRIVATE_ENDPOINT: "1" }).mcpAllowPrivateEndpoint).toBe(
+      false,
+    );
+  });
 });

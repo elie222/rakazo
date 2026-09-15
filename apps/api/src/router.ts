@@ -32,6 +32,7 @@ import {
   acquireComputerExecutionLease,
   applyTeachingDesktopInput,
   archiveBot,
+  assertSafeRemoteUrl,
   buildMcpCredentialBlob,
   buildModelConnectPlaintext,
   ComputerBusyError,
@@ -392,6 +393,23 @@ function connectionContext(
   };
 }
 
+async function assertMcpRemoteEndpoint(
+  endpoint: string | null | undefined,
+  actor: Actor,
+  deps: Pick<RouterDeps, "remoteConnectors" | "env">,
+): Promise<void> {
+  if (!endpoint) return;
+  try {
+    await assertSafeRemoteUrl(endpoint, deps.remoteConnectors?.resolveHostname, {
+      allowPrivateEndpoint: actor.isDeploymentOwner || deps.env.mcpAllowPrivateEndpoint === true,
+    });
+  } catch (error) {
+    throw new ORPCError("BAD_REQUEST", {
+      message: error instanceof Error ? error.message : "MCP endpoint is invalid",
+    });
+  }
+}
+
 function mcpAssignmentDto(row: {
   id: string;
   botId: string;
@@ -451,6 +469,7 @@ export interface RouterDeps {
     updaterToken?: string;
     imageTag?: string;
     integrationsCatalogUrl?: string;
+    mcpAllowPrivateEndpoint?: boolean;
   };
 }
 
@@ -2879,6 +2898,11 @@ export function createRouter(deps: RouterDeps) {
           );
         }),
         create: authed.mcp.servers.create.handler(async ({ context, input }) => {
+          await assertMcpRemoteEndpoint(
+            "endpoint" in input ? input.endpoint : null,
+            context.actor,
+            deps,
+          );
           const secretPayload = buildMcpCredentialBlob(input);
           const stored = secretPayload
             ? await deps.secrets.put(
@@ -2973,6 +2997,9 @@ export function createRouter(deps: RouterDeps) {
               throw new ORPCError("BAD_REQUEST", { message: "A remote MCP server is required" });
             }
             const nextEndpoint = "endpoint" in config ? config.endpoint : null;
+            if (existing.endpoint !== nextEndpoint) {
+              await assertMcpRemoteEndpoint(nextEndpoint, context.actor, deps);
+            }
             const update = buildMcpUpdateMaterial(existingMaterial, config, {
               clearOAuth: existing.endpoint !== nextEndpoint,
             });

@@ -131,6 +131,8 @@ test("later bot waits before showing the focus card; sending cancels it", async 
   const composer = page.getByPlaceholder(/Message/);
   await composer.fill("I'll set this up myself");
   await page.keyboard.press("Enter");
+  // Send cancels the delayed card; wait for it before advancing the clock.
+  await expect(page.getByText("I'll set this up myself", { exact: true })).toBeVisible();
   await page.clock.fastForward(12_000);
   await expect(page.getByText("What do you want me on first?", { exact: true })).toHaveCount(0);
 });

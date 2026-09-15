@@ -43,9 +43,9 @@ describe("parseMcpServerToolArgs", () => {
       parseMcpServerToolArgs({
         name: "x",
         transport: "streamable_http",
-        endpoint: "http://x.test",
+        endpoint: "http://10.0.0.8/mcp",
       }),
-    ).toBeUndefined();
+    ).toMatchObject({ endpoint: "http://10.0.0.8/mcp" });
     expect(
       parseMcpServerToolArgs({
         name: "x",
