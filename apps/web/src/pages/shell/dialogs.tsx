@@ -227,7 +227,7 @@ export function RenameBotSectionDialog({
 
   return (
     <Dialog open onOpenChange={closeUnlessBusy(saving, onCancel)}>
-      <DialogContent showCloseButton={false}>
+      <DialogContent showCloseButton={false} aria-describedby={undefined}>
         <form
           className="contents"
           onSubmit={(event) => {
@@ -245,9 +245,6 @@ export function RenameBotSectionDialog({
             <DialogTitle>
               <Trans>Rename section</Trans>
             </DialogTitle>
-            <DialogDescription>
-              <Trans>Change the name of this section.</Trans>
-            </DialogDescription>
           </DialogHeader>
           <label htmlFor={nameId} className="block text-[13.5px] text-foreground/75">
             <Trans>Name</Trans>

@@ -583,6 +583,5 @@
   "Nothing is still running": "Hâlâ çalışan bir şey yok",
   "Credentials are encrypted and never sent to the model.": "Kimlik bilgileri şifrelenir ve modele asla gönderilmez.",
   "Rename section": "Bölümü yeniden adlandır",
-  "Change the name of this section.": "Bu bölümün adını değiştirin.",
   "Could not rename section": "Bölüm yeniden adlandırılamadı"
 }

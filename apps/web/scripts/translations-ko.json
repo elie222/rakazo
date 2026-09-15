@@ -586,6 +586,5 @@
   "Nothing is still running": "실행 중인 작업 없음",
   "Credentials are encrypted and never sent to the model.": "인증 정보는 암호화되며 모델에 전송되지 않습니다.",
   "Rename section": "섹션 이름 바꾸기",
-  "Change the name of this section.": "이 섹션의 이름을 변경하세요.",
   "Could not rename section": "섹션 이름을 바꿀 수 없습니다"
 }

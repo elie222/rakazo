@@ -17,11 +17,6 @@ msgstr ""
 msgid " (unread)"
 msgstr " (sin leer)"
 
-#. placeholder {0}: group.entries.length
-#: src/pages/shell/dialogs.tsx
-msgid "Change the name of this section."
-msgstr "Cambia el nombre de esta sección."
-
 #: src/pages/shell/dialogs.tsx
 msgid "Could not rename section"
 msgstr "No se pudo renombrar la sección"

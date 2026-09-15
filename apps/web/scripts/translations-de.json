@@ -586,6 +586,5 @@
   "Nothing is still running": "Nichts läuft mehr",
   "Credentials are encrypted and never sent to the model.": "Zugangsdaten werden verschlüsselt und dem Modell nie gesendet.",
   "Rename section": "Abschnitt umbenennen",
-  "Change the name of this section.": "Ändere den Namen dieses Abschnitts.",
   "Could not rename section": "Abschnitt konnte nicht umbenannt werden"
 }

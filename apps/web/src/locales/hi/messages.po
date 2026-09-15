@@ -17,11 +17,6 @@ msgstr ""
 msgid " (unread)"
 msgstr " (अपठित)"
 
-#. placeholder {0}: group.entries.length
-#: src/pages/shell/dialogs.tsx
-msgid "Change the name of this section."
-msgstr "इस अनुभाग का नाम बदलें।"
-
 #: src/pages/shell/dialogs.tsx
 msgid "Could not rename section"
 msgstr "अनुभाग का नाम नहीं बदला जा सका"

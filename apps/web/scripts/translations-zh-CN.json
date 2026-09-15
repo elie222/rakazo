@@ -735,6 +735,5 @@
   "Nothing is still running": "没有仍在运行的任务",
   "Credentials are encrypted and never sent to the model.": "凭据已加密，不会发送给模型。",
   "Rename section": "重命名分组",
-  "Change the name of this section.": "更改此分组的名称。",
   "Could not rename section": "无法重命名分组"
 }
