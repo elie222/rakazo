@@ -3,7 +3,7 @@ import { isIP, type LookupFunction } from "node:net";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { ConnectorTool } from "@rakazo/adapter-kit";
-import { Agent } from "undici";
+import { Agent, fetch as undiciFetch } from "undici";
 import { combineSignals } from "./connector-safety.js";
 import {
   createAddressCheckedLookup,
@@ -13,7 +13,6 @@ import {
   type ResolvedAddress,
   type ResolveHostname,
 } from "./network-address.js";
-import { dispatcherFetch } from "./undici-fetch.js";
 
 const MAX_MCP_TOOLS = 250;
 const MAX_MCP_PAGES = 20;
@@ -135,10 +134,16 @@ export async function assertSafeRemoteUrl(
   return url;
 }
 
+/** Drive the package `Agent` with that same undici's fetch. Node 22's
+ * built-in fetch is an older undici major, so handing it a package Agent as
+ * `dispatcher` throws `invalid onRequestStart` before any socket opens. */
+const packageFetch = undiciFetch as unknown as typeof globalThis.fetch;
+
 export function createSafeRemoteFetch(
-  baseFetch: typeof globalThis.fetch = dispatcherFetch,
+  baseFetch?: typeof globalThis.fetch,
   resolve: ResolveHostname = resolveHostname,
 ): SafeRemoteFetch {
+  const fetchImpl = !baseFetch || baseFetch === globalThis.fetch ? packageFetch : baseFetch;
   const dispatcher = new Agent({ connect: { lookup: createSafeLookup(resolve) } });
   const safeFetch = async (input: string | URL | Request, init?: RequestInit) => {
     if (typeof input !== "string" && !(input instanceof URL)) {
@@ -147,7 +152,7 @@ export function createSafeRemoteFetch(
     const url = await assertSafeRemoteUrl(String(input), resolve);
     let response: Response;
     try {
-      response = await baseFetch(url, {
+      response = await fetchImpl(url, {
         ...init,
         redirect: "manual",
         dispatcher,

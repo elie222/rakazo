@@ -1,3 +1,4 @@
+import { fetch as undiciFetch } from "undici";
 import { describe, expect, it } from "vitest";
 import {
   assertSafeRemoteUrl,
@@ -176,19 +177,27 @@ describe("remote MCP URL policy", () => {
   it("drives the guarded dispatcher with a fetch from the same undici", async () => {
     // A fetch from a different undici than the Agent fails at dispatch with
     // "invalid onRequestStart method" before the lookup runs. Failing inside
-    // the lookup proves the request reached the guarded Agent.
+    // the lookup proves the request reached the guarded Agent. Node's fetch
+    // is a different major, so the default and an injected builtin must both
+    // use the package fetch that matches the Agent.
+    expect(undiciFetch).not.toBe(globalThis.fetch);
+
     let resolutions = 0;
-    const safeFetch = createSafeRemoteFetch(undefined, async () => {
+    const resolve = async () => {
       resolutions += 1;
       if (resolutions > 1) throw new Error("lookup reached");
       return [{ address: "203.0.113.10", family: 4 as const }];
-    });
-    try {
-      await expect(safeFetch("https://connectors.example.test/mcp")).rejects.toThrow(
-        "Could not reach connectors.example.test: lookup reached",
-      );
-    } finally {
-      await safeFetch.close();
+    };
+    for (const injected of [undefined, globalThis.fetch] as const) {
+      resolutions = 0;
+      const safeFetch = createSafeRemoteFetch(injected, resolve);
+      try {
+        await expect(safeFetch("https://connectors.example.test/mcp")).rejects.toThrow(
+          "Could not reach connectors.example.test: lookup reached",
+        );
+      } finally {
+        await safeFetch.close();
+      }
     }
   });
 
