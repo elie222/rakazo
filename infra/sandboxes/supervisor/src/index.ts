@@ -836,7 +836,19 @@ async function ensureComputerImage() {
         await docker.getImage(COMPUTER_IMAGE).inspect();
         return;
       } catch {
-        // build below
+        // image missing in DinD graph (emptyDir loses data on pod recreate)
+      }
+      // Try pulling from registry first — fast path on k8s where the image
+      // is published to ghcr.io. Falls back to local build when offline.
+      try {
+        const pullStream = await docker.pull(COMPUTER_IMAGE);
+        await new Promise<void>((resolve, reject) => {
+          docker.modem.followProgress(pullStream, (err) => (err ? reject(err) : resolve()));
+        });
+        await docker.getImage(COMPUTER_IMAGE).inspect();
+        return;
+      } catch {
+        // pull failed (offline / private registry) — try building from local context
       }
       const dockerfile = path.join(computerContext, "Dockerfile");
       if (!existsSync(dockerfile)) {
