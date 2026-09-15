@@ -1,5 +1,3 @@
-import { AsyncLocalStorage } from "node:async_hooks";
-import dns from "node:dns";
 import { lookup } from "node:dns/promises";
 import { isIP, type LookupFunction } from "node:net";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -14,6 +12,7 @@ import {
   isTailscaleAddress,
   type ResolvedAddress,
   type ResolveHostname,
+  withPinnedDnsLookup,
 } from "./network-address.js";
 
 const MAX_MCP_TOOLS = 250;
@@ -148,76 +147,15 @@ async function inspectSafeRemoteUrl(
  * built-in fetch is an older undici major, so handing it a package Agent as
  * `dispatcher` throws `invalid onRequestStart` before any socket opens.
  * Captured Node fetch is paired the same way. Injected fetches are not given
- * that Agent: they keep the original hostname for TLS/SNI, and Node's
- * `dns.lookup` is pinned to the already-validated address for the call. */
+ * that Agent; they keep the original hostname for TLS/SNI and pin TCP to the
+ * already-validated address through `dns.lookup`. */
 const packageFetch = undiciFetch as unknown as typeof globalThis.fetch;
 const nodeFetch = globalThis.fetch;
-
-const pinnedLookups = new AsyncLocalStorage<{ hostname: string; lookup: LookupFunction }>();
-let lookupDepth = 0;
-let previousLookup: typeof dns.lookup | undefined;
-
-function normalizeLookupHost(hostname: string): string {
-  return hostname.replace(/^\[|\]$/g, "").toLowerCase();
-}
 
 function requestInitWithHost(url: URL, init: RequestInit): RequestInit {
   const headers = new Headers(init.headers);
   headers.set("host", url.host);
   return { ...init, headers };
-}
-
-function interceptDnsLookup(
-  hostname: string,
-  options?:
-    | number
-    | dns.LookupOptions
-    | ((err: NodeJS.ErrnoException | null, address: string, family: number) => void),
-  callback?: (
-    err: NodeJS.ErrnoException | null,
-    address: string | dns.LookupAddress[],
-    family?: number,
-  ) => void,
-): void {
-  const pin = pinnedLookups.getStore();
-  const cb = typeof options === "function" ? options : callback;
-  const raw = typeof options === "function" ? undefined : options;
-  const opts =
-    typeof raw === "number"
-      ? { family: raw, all: false as const }
-      : { all: false as const, ...raw };
-  if (pin && cb && normalizeLookupHost(hostname) === pin.hostname) {
-    pin.lookup(hostname, opts, cb as Parameters<LookupFunction>[2]);
-    return;
-  }
-  if (typeof options === "function") {
-    previousLookup?.(hostname, options);
-    return;
-  }
-  previousLookup?.(hostname, options as dns.LookupOneOptions, callback as never);
-}
-
-async function withPinnedLookup<T>(
-  url: URL,
-  addresses: ResolvedAddress[],
-  run: () => Promise<T>,
-): Promise<T> {
-  const hostname = normalizeLookupHost(url.hostname);
-  const lookupFn = createAddressCheckedLookup(async () => addresses, assertPublicAddresses);
-  if (lookupDepth === 0) {
-    previousLookup = dns.lookup;
-    dns.lookup = interceptDnsLookup as typeof dns.lookup;
-  }
-  lookupDepth += 1;
-  try {
-    return await pinnedLookups.run({ hostname, lookup: lookupFn }, run);
-  } finally {
-    lookupDepth -= 1;
-    if (lookupDepth === 0 && previousLookup) {
-      dns.lookup = previousLookup;
-      previousLookup = undefined;
-    }
-  }
 }
 
 export function createSafeRemoteFetch(
@@ -240,7 +178,7 @@ export function createSafeRemoteFetch(
             ...requestInit,
             dispatcher,
           } as RequestInit & { dispatcher: Agent })
-        : await withPinnedLookup(url, addresses, () =>
+        : await withPinnedDnsLookup(url.hostname, addresses, () =>
             baseFetch!(url, requestInitWithHost(url, requestInit)),
           );
     } catch (error) {

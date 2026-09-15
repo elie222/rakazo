@@ -1,5 +1,11 @@
+import dns from "node:dns";
 import { describe, expect, it } from "vitest";
-import { isCloudMetadataAddress, isLinkLocalAddress, isPrivateAddress } from "./network-address.js";
+import {
+  isCloudMetadataAddress,
+  isLinkLocalAddress,
+  isPrivateAddress,
+  withPinnedDnsLookup,
+} from "./network-address.js";
 
 describe("network address classification", () => {
   it.each([
@@ -71,4 +77,53 @@ describe("network address classification", () => {
       expect(isCloudMetadataAddress(address)).toBe(false);
     },
   );
+});
+
+describe("pinned dns lookup", () => {
+  it("returns the validated address for the pinned hostname", async () => {
+    await withPinnedDnsLookup(
+      "connectors.example.test",
+      [{ address: "203.0.113.10", family: 4 }],
+      async () => {
+        const result = await new Promise<{ address: string; family?: number }>(
+          (resolve, reject) => {
+            dns.lookup("connectors.example.test", (error, address, family) => {
+              if (error) reject(error);
+              else resolve({ address: String(address), family });
+            });
+          },
+        );
+        expect(result).toEqual({ address: "203.0.113.10", family: 4 });
+      },
+    );
+  });
+
+  it("does not pin lookups for other hostnames", async () => {
+    await withPinnedDnsLookup(
+      "connectors.example.test",
+      [{ address: "203.0.113.10", family: 4 }],
+      async () => {
+        const result = await new Promise<string>((resolve, reject) => {
+          dns.lookup("127.0.0.1", (error, address) => {
+            if (error) reject(error);
+            else resolve(String(address));
+          });
+        });
+        expect(result).toBe("127.0.0.1");
+      },
+    );
+  });
+
+  it("pins dns.promises.lookup for the same hostname", async () => {
+    await withPinnedDnsLookup(
+      "connectors.example.test",
+      [{ address: "203.0.113.10", family: 4 }],
+      async () => {
+        await expect(dns.promises.lookup("connectors.example.test")).resolves.toEqual({
+          address: "203.0.113.10",
+          family: 4,
+        });
+      },
+    );
+  });
 });
