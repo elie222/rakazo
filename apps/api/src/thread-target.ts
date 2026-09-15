@@ -58,9 +58,9 @@ export type ThreadTarget =
     };
 
 const THREAD_MESSAGE_PAGE_SIZE = 100;
-const RUNS_NEEDING_CONTINUE = new Set(["queued"]);
+const RUNS_NEEDING_CONTINUE = new Set(["queued", "waiting_takeover"]);
 
-const STEERABLE_RUN_STATUSES = new Set(["queued", "leased", "running"]);
+const STEERABLE_RUN_STATUSES = new Set(["queued", "leased", "running", "waiting_takeover"]);
 
 type MentionTargetInput = string | { kind: "bot" | "group" | "routine" | "connector"; id: string };
 

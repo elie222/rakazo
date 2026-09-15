@@ -933,13 +933,80 @@ description: Prepare standup notes
 
     expect(updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
+        where: expect.objectContaining({
+          id: "run-1",
+          status: "queued",
+          checkpoint: "takeover-skipped",
+        }),
         data: expect.objectContaining({ checkpoint: null }),
       }),
     );
   });
 
+  it("does not claim a waiting takeover after a concurrent release writes the checkpoint", async () => {
+    let row: { status: string; checkpoint: string | null } = {
+      status: "waiting_takeover",
+      checkpoint: null,
+    };
+    const matchesClaim = (
+      where: {
+        status?: string | { in: string[] };
+        checkpoint?: string | null;
+        OR?: Array<{ status?: string | { in: string[] } }>;
+      },
+      current: { status: string; checkpoint: string | null },
+    ): boolean => {
+      if (typeof where.status === "string" && where.status !== current.status) return false;
+      if (where.status && typeof where.status === "object" && "in" in where.status) {
+        if (!where.status.in.includes(current.status)) return false;
+      }
+      if ("checkpoint" in where && where.checkpoint !== current.checkpoint) return false;
+      if (where.OR) return where.OR.some((clause) => matchesClaim(clause, current));
+      return true;
+    };
+    const updateMany = vi.fn(async (args: { where: Parameters<typeof matchesClaim>[0] }) => {
+      row = { status: "queued", checkpoint: "takeover" };
+      return { count: matchesClaim(args.where, row) ? 1 : 0 };
+    });
+    const prisma = {
+      run: {
+        findUnique: vi.fn(async () => ({
+          id: "run-1",
+          botId: "bot-1",
+          status: "waiting_takeover",
+          checkpoint: null,
+          leaseFence: 0,
+        })),
+        updateMany,
+      },
+    } as unknown as PrismaClient;
+    const executor = createRunExecutor({ prisma } as Parameters<typeof createRunExecutor>[0]);
+
+    await executor.continueRun("run-1", "worker-1");
+
+    expect(updateMany).toHaveBeenCalledTimes(1);
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          status: "waiting_takeover",
+          checkpoint: null,
+        }),
+      }),
+    );
+    expect(row).toEqual({ status: "queued", checkpoint: "takeover" });
+  });
+
   it("restores a takeover checkpoint when a switching computer requeues the run", async () => {
-    const updateMany = vi.fn(async () => ({ count: 1 }));
+    const updateMany = vi.fn(
+      async (args: {
+        where: { checkpoint?: string | null | { in: string[] } };
+        data: { status?: string; checkpoint?: string | null };
+      }) => {
+        if (args.data.status === "leased" || args.data.status === "running") return { count: 1 };
+        if (args.where.checkpoint && typeof args.where.checkpoint === "object") return { count: 0 };
+        return { count: 1 };
+      },
+    );
     const enqueue = vi.fn(async () => undefined);
     const prisma = {
       run: {
@@ -968,9 +1035,126 @@ description: Prepare standup notes
 
     expect(updateMany).toHaveBeenLastCalledWith(
       expect.objectContaining({
+        where: expect.objectContaining({ checkpoint: null }),
         data: expect.objectContaining({
           status: "queued",
           checkpoint: "takeover-skipped",
+        }),
+      }),
+    );
+    expect(enqueue).toHaveBeenCalledOnce();
+  });
+
+  it("preserves a concurrent release checkpoint when a held continue requeues", async () => {
+    let checkpoint: string | null = null;
+    const updateMany = vi.fn(
+      async (args: {
+        where: { checkpoint?: string | null | { in: string[] } };
+        data: { status?: string; checkpoint?: string | null };
+      }) => {
+        if (args.data.status === "leased") {
+          checkpoint = null;
+          return { count: 1 };
+        }
+        if (args.data.status === "running") {
+          checkpoint = "takeover";
+          return { count: 1 };
+        }
+        if (args.where.checkpoint && typeof args.where.checkpoint === "object") {
+          return { count: args.where.checkpoint.in.includes(checkpoint ?? "") ? 1 : 0 };
+        }
+        return { count: args.where.checkpoint === null && checkpoint === null ? 1 : 0 };
+      },
+    );
+    const enqueue = vi.fn(async () => undefined);
+    const prisma = {
+      run: {
+        findUnique: vi.fn(async () => ({
+          id: "run-1",
+          botId: "bot-1",
+          status: "waiting_takeover",
+          checkpoint: null,
+          leaseFence: 0,
+        })),
+        findUniqueOrThrow: vi.fn(async () => ({ status: "leased", startedAt: null })),
+        updateMany,
+      },
+      bot: {
+        findUniqueOrThrow: vi.fn(async () => ({
+          computerId: "computer-1",
+          computerSwitching: true,
+        })),
+      },
+    } as unknown as PrismaClient;
+    const executor = createRunExecutor({ prisma, jobs: { enqueue } } as unknown as Parameters<
+      typeof createRunExecutor
+    >[0]);
+
+    await executor.continueRun("run-1", "worker-1");
+
+    expect(checkpoint).toBe("takeover");
+    expect(enqueue).toHaveBeenCalledOnce();
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          checkpoint: { in: ["takeover", "takeover-skipped"] },
+        }),
+        data: expect.objectContaining({ status: "queued" }),
+      }),
+    );
+    expect(updateMany.mock.calls.some((call) => call[0].data?.status === "waiting_takeover")).toBe(
+      false,
+    );
+    expect(
+      updateMany.mock.calls.some(
+        (call) => call[0].data?.status === "queued" && call[0].data?.checkpoint === null,
+      ),
+    ).toBe(false);
+  });
+
+  it("returns a held takeover to waiting_takeover when the computer is switching", async () => {
+    const updateMany = vi.fn(
+      async (args: {
+        where: { checkpoint?: string | null | { in: string[] } };
+        data: { status?: string; checkpoint?: string | null };
+      }) => {
+        if (args.data.status === "leased" || args.data.status === "running") return { count: 1 };
+        if (args.where.checkpoint && typeof args.where.checkpoint === "object") return { count: 0 };
+        return { count: 1 };
+      },
+    );
+    const enqueue = vi.fn(async () => undefined);
+    const prisma = {
+      run: {
+        findUnique: vi.fn(async () => ({
+          id: "run-1",
+          botId: "bot-1",
+          status: "waiting_takeover",
+          checkpoint: null,
+          leaseFence: 0,
+        })),
+        findUniqueOrThrow: vi.fn(async () => ({ status: "leased", startedAt: null })),
+        updateMany,
+      },
+      bot: {
+        findUniqueOrThrow: vi.fn(async () => ({
+          computerId: "computer-1",
+          computerSwitching: true,
+        })),
+      },
+    } as unknown as PrismaClient;
+    const executor = createRunExecutor({ prisma, jobs: { enqueue } } as unknown as Parameters<
+      typeof createRunExecutor
+    >[0]);
+
+    await executor.continueRun("run-1", "worker-1");
+
+    expect(updateMany).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ checkpoint: null }),
+        data: expect.objectContaining({
+          status: "waiting_takeover",
+          checkpoint: null,
         }),
       }),
     );

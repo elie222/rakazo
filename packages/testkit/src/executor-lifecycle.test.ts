@@ -527,6 +527,32 @@ describeIntegration("run executor lifecycle", () => {
     ).resolves.toMatchObject({ runId: seeded.run.id, claimedAt: null });
   });
 
+  it("turns a send during waiting takeover into steering", async () => {
+    const seeded = await seedRun("bot-steering-takeover", "keep working", {
+      status: "waiting_takeover",
+    });
+
+    const steeringInput = {
+      botId: seeded.bot.id,
+      text: "Skip that and tell me what you were going to check.",
+      clientNonce: `bot-steering-takeover-${stamp}`,
+    };
+    await rpc(seeded.cookie, "threads/send", steeringInput);
+    await rpc(seeded.cookie, "threads/send", steeringInput);
+
+    expect(await handles.prisma.run.count({ where: { threadId: seeded.thread.id } })).toBe(1);
+    expect(
+      await handles.prisma.message.count({
+        where: { threadId: seeded.thread.id, clientNonce: steeringInput.clientNonce },
+      }),
+    ).toBe(1);
+    await expect(
+      handles.prisma.steeringMessage.findFirstOrThrow({
+        where: { botId: seeded.bot.id, message: { threadId: seeded.thread.id } },
+      }),
+    ).resolves.toMatchObject({ runId: seeded.run.id });
+  });
+
   it("applies the same no-parallel-run rule to the targeted group member", async () => {
     const cookie = await signup(
       `executor-group-steering-${stamp}@rakazo.test`,

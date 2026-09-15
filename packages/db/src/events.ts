@@ -876,6 +876,8 @@ export async function finalizeComputerControlRelease(
     });
     if (cleared.count !== 1) return null;
 
+    const checkpoint =
+      input.reason === "skipped" || input.reason === "expired" ? "takeover-skipped" : "takeover";
     const resumed = input.runId
       ? await tx.run.updateMany({
           where: {
@@ -886,14 +888,25 @@ export async function finalizeComputerControlRelease(
           },
           data: {
             status: "queued",
-            checkpoint:
-              input.reason === "skipped" || input.reason === "expired"
-                ? "takeover-skipped"
-                : "takeover",
+            checkpoint,
           },
         })
       : { count: 0 };
-    const runId = resumed.count === 1 ? input.runId : null;
+    // A steered continue may already hold the run as leased/running. Stamp the
+    // checkpoint without stealing the lease so the worker can restore tools.
+    const stamped =
+      input.runId && resumed.count !== 1
+        ? await tx.run.updateMany({
+            where: {
+              id: input.runId,
+              spaceId: input.spaceId,
+              botId: input.botId,
+              status: { in: ["leased", "running"] },
+            },
+            data: { checkpoint },
+          })
+        : { count: 0 };
+    const runId = resumed.count === 1 || stamped.count === 1 ? input.runId : null;
 
     const bot = await tx.bot.findFirst({
       where: { id: input.botId, spaceId: input.spaceId },
