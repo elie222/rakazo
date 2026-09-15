@@ -1,3 +1,4 @@
+import dns from "node:dns";
 import { fetch as undiciFetch } from "undici";
 import { describe, expect, it } from "vitest";
 import {
@@ -230,8 +231,10 @@ describe("remote MCP URL policy", () => {
     // Wrappers are not === Node's fetch. Passing them the package Agent throws
     // invalid onRequestStart before lookup. Call them without dispatcher.
     let leakedDispatcher = false;
+    let href: string | undefined;
     const wrapped: typeof globalThis.fetch = (input, init) => {
       leakedDispatcher = Boolean(init && "dispatcher" in init);
+      href = String(input);
       return globalThis.fetch(input, init);
     };
     const previous = globalThis.fetch;
@@ -242,6 +245,7 @@ describe("remote MCP URL policy", () => {
     try {
       await expect(safeFetch("https://connectors.example.test/mcp")).rejects.toThrow("stub fetch");
       expect(leakedDispatcher).toBe(false);
+      expect(href).toBe("https://connectors.example.test/mcp");
     } finally {
       globalThis.fetch = previous;
       await safeFetch.close();
@@ -266,15 +270,26 @@ describe("remote MCP URL policy", () => {
   });
 
   it("pins an injected fetch to the validated address so DNS cannot rebind", async () => {
-    const seen: { href?: string; host?: string | null; leakedDispatcher?: boolean } = {};
+    const seen: {
+      href?: string;
+      host?: string | null;
+      leakedDispatcher?: boolean;
+      lookup?: { address: string; family?: number };
+    } = {};
     const injected: typeof globalThis.fetch = async (input, init) => {
       seen.href = String(input);
       seen.host = new Headers(init?.headers).get("host");
       seen.leakedDispatcher = Boolean(init && "dispatcher" in init);
       const hostname = new URL(String(input)).hostname.replace(/^\[|\]$/g, "");
-      if (hostname === "connectors.example.test" || hostname === "127.0.0.1") {
+      if (hostname === "127.0.0.1" || hostname === "203.0.113.10") {
         throw new Error(`injected fetch reached rebound host ${hostname}`);
       }
+      seen.lookup = await new Promise<{ address: string; family?: number }>((resolve, reject) => {
+        dns.lookup(hostname, { family: 4 }, (error, address, family) => {
+          if (error) reject(error);
+          else resolve({ address: String(address), family });
+        });
+      });
       return new Response(null, { status: 204 });
     };
     const safeFetch = createSafeRemoteFetch(injected, publicResolver);
@@ -283,18 +298,30 @@ describe("remote MCP URL policy", () => {
         status: 204,
       });
       expect(seen.leakedDispatcher).toBe(false);
-      expect(seen.href).toBe("https://203.0.113.10/mcp");
+      expect(seen.href).toBe("https://connectors.example.test/mcp");
       expect(seen.host).toBe("connectors.example.test");
+      expect(seen.lookup).toEqual({ address: "203.0.113.10", family: 4 });
     } finally {
       await safeFetch.close();
     }
   });
 
   it("pins an injected fetch to a validated IPv6 address", async () => {
-    const seen: { href?: string; host?: string | null } = {};
+    const seen: {
+      href?: string;
+      host?: string | null;
+      lookup?: { address: string; family?: number };
+    } = {};
     const injected: typeof globalThis.fetch = async (input, init) => {
       seen.href = String(input);
       seen.host = new Headers(init?.headers).get("host");
+      const hostname = new URL(String(input)).hostname.replace(/^\[|\]$/g, "");
+      seen.lookup = await new Promise<{ address: string; family?: number }>((resolve, reject) => {
+        dns.lookup(hostname, { family: 6 }, (error, address, family) => {
+          if (error) reject(error);
+          else resolve({ address: String(address), family });
+        });
+      });
       return new Response(null, { status: 204 });
     };
     const safeFetch = createSafeRemoteFetch(injected, async () => [
@@ -304,8 +331,9 @@ describe("remote MCP URL policy", () => {
       await expect(safeFetch("https://connectors.example.test/mcp")).resolves.toMatchObject({
         status: 204,
       });
-      expect(seen.href).toBe("https://[2606:4700:4700::1111]/mcp");
+      expect(seen.href).toBe("https://connectors.example.test/mcp");
       expect(seen.host).toBe("connectors.example.test");
+      expect(seen.lookup).toEqual({ address: "2606:4700:4700::1111", family: 6 });
     } finally {
       await safeFetch.close();
     }
