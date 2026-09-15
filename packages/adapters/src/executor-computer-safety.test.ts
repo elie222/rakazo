@@ -74,6 +74,8 @@ describe("computer lifecycle command guard", () => {
     "{ . /tmp/script.sh; }",
     "coproc . /tmp/script.sh",
     "coproc worker . /tmp/script.sh",
+    "function f { . /tmp/script.sh; }",
+    "function f { . /tmp/script.sh; }; f",
   ])("continues blocking executable sourcing and lifecycle operations: %s", (command) => {
     expect(isProtectedComputerLifecycleCommand(command)).toBe(true);
   });
