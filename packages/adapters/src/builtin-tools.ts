@@ -16,6 +16,78 @@ export const DELEGATION_TOOL_NAMES = new Set([
   "message_bot",
 ]);
 
+const scheduleCreateProperties = {
+  name: { type: "string", description: "Short label shown in Routines." },
+  prompt: {
+    type: "string",
+    description:
+      "Concrete steps for when the schedule fires: name the connected plugin tools to call (e.g. GITHUB_LIST_RELEASES for owner/repo), what to extract, and how to report. Prefer plugin tools over computer browser or web search for app data.",
+  },
+  timezone: { type: "string", description: "IANA timezone (default UTC)." },
+};
+
+/** Keep repeat and one-shot schedules mutually exclusive at the model boundary. */
+const scheduleCreateInputSchema = {
+  oneOf: [
+    {
+      type: "object",
+      properties: {
+        ...scheduleCreateProperties,
+        cron: { type: "string", description: "5-field cron for repeating schedules." },
+      },
+      required: ["name", "prompt", "cron"],
+      additionalProperties: false,
+    },
+    {
+      type: "object",
+      properties: {
+        ...scheduleCreateProperties,
+        every: { type: "number", description: "Repeat interval amount for repeating schedules." },
+        unit: {
+          type: "string",
+          enum: ["minutes", "hours", "days"],
+          description: "Unit for every (minimum 1 minute).",
+        },
+      },
+      required: ["name", "prompt", "every", "unit"],
+      additionalProperties: false,
+    },
+    {
+      type: "object",
+      properties: {
+        ...scheduleCreateProperties,
+        runAt: { type: "string", description: "ISO datetime for a one-shot schedule." },
+      },
+      required: ["name", "prompt", "runAt"],
+      additionalProperties: false,
+    },
+    {
+      type: "object",
+      properties: {
+        ...scheduleCreateProperties,
+        delayMinutes: {
+          type: "number",
+          description: "Minutes from now for a one-shot schedule.",
+        },
+      },
+      required: ["name", "prompt", "delayMinutes"],
+      additionalProperties: false,
+    },
+    {
+      type: "object",
+      properties: {
+        ...scheduleCreateProperties,
+        delaySeconds: {
+          type: "number",
+          description: "Seconds from now for a one-shot schedule (may be under one minute).",
+        },
+      },
+      required: ["name", "prompt", "delaySeconds"],
+      additionalProperties: false,
+    },
+  ],
+};
+
 export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "computer_observe",
@@ -524,6 +596,13 @@ export const builtinAgentTools: ConnectorTool[] = [
     },
   },
   {
+    name: "task_catalog",
+    description:
+      "Read-only inventory and source of truth for this bot's real open tasks, saved routines, taught skills, reusable skills, and currently exposed tools. Call it before claiming a task or skill exists. Use the returned ids and exact names; do not infer capabilities from memory or conversation text.",
+    inputSchema: { type: "object", properties: {} },
+    readOnly: true,
+  },
+  {
     name: "scratchpad_list",
     description:
       "List this bot's scratchpad / open-work items (todos and parked work). By default omits completed items.",
@@ -595,38 +674,7 @@ export const builtinAgentTools: ConnectorTool[] = [
     name: "schedule_create",
     description:
       'Create a reminder or recurring job for this bot. Use for "remind me in 10 minutes" or "every morning send a joke". Repeats: cron or every/unit (min 1 minute). One-shot: runAt, delayMinutes, or delaySeconds.',
-    inputSchema: {
-      type: "object",
-      properties: {
-        name: { type: "string", description: "Short label shown in Routines." },
-        prompt: {
-          type: "string",
-          description:
-            "Concrete steps for when the schedule fires: name the connected plugin tools to call (e.g. GITHUB_LIST_RELEASES for owner/repo), what to extract, and how to report. Prefer plugin tools over computer browser or web search for app data.",
-        },
-        cron: { type: "string", description: "5-field cron for repeating schedules." },
-        every: { type: "number", description: "Repeat interval amount for repeating schedules." },
-        unit: {
-          type: "string",
-          enum: ["minutes", "hours", "days"],
-          description: "Unit for every (minimum 1 minute).",
-        },
-        runAt: {
-          type: "string",
-          description: "ISO datetime for a one-shot schedule.",
-        },
-        delayMinutes: {
-          type: "number",
-          description: "Minutes from now for a one-shot schedule.",
-        },
-        delaySeconds: {
-          type: "number",
-          description: "Seconds from now for a one-shot schedule (may be under one minute).",
-        },
-        timezone: { type: "string", description: "IANA timezone (default UTC)." },
-      },
-      required: ["name", "prompt"],
-    },
+    inputSchema: scheduleCreateInputSchema,
   },
   {
     name: "schedule_list",

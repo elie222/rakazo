@@ -40,6 +40,23 @@ export type ResolvedSchedule =
   | { ok: true; cron: string; nextRunAt: Date; oneShot: boolean }
   | { ok: false; error: string };
 
+/**
+ * Providers sometimes serialize omitted optional tool fields as null or an empty
+ * string. Treat those values as absent, while preserving numeric zero so the
+ * normal validation can reject an invalid zero interval/delay with a useful
+ * error instead of reporting two schedule modes at once.
+ */
+export function isScheduleValueProvided(value: unknown): boolean {
+  if (value === undefined || value === null) return false;
+  return typeof value !== "string" || value.trim().length > 0;
+}
+
+export function compactScheduleInput(input: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(input).filter(([, value]) => isScheduleValueProvided(value)),
+  );
+}
+
 export function resolveScheduleTiming(
   input: {
     cron?: unknown;
@@ -52,11 +69,13 @@ export function resolveScheduleTiming(
   timezone = "UTC",
 ): ResolvedSchedule {
   const hasRepeat =
-    input.cron !== undefined || input.every !== undefined || input.unit !== undefined;
+    isScheduleValueProvided(input.cron) ||
+    isScheduleValueProvided(input.every) ||
+    isScheduleValueProvided(input.unit);
   const hasOneShot =
-    input.runAt !== undefined ||
-    input.delayMinutes !== undefined ||
-    input.delaySeconds !== undefined;
+    isScheduleValueProvided(input.runAt) ||
+    isScheduleValueProvided(input.delayMinutes) ||
+    isScheduleValueProvided(input.delaySeconds);
   if (hasRepeat && hasOneShot) {
     return {
       ok: false,
@@ -73,7 +92,7 @@ export function resolveScheduleTiming(
 
   if (hasOneShot) {
     const oneShotFields = [input.runAt, input.delayMinutes, input.delaySeconds].filter(
-      (value) => value !== undefined,
+      isScheduleValueProvided,
     );
     if (oneShotFields.length !== 1) {
       return {
@@ -83,13 +102,13 @@ export function resolveScheduleTiming(
       };
     }
     let nextRunAt: Date;
-    if (input.delaySeconds !== undefined) {
+    if (isScheduleValueProvided(input.delaySeconds)) {
       const delaySeconds = Number(input.delaySeconds);
       if (!Number.isFinite(delaySeconds) || delaySeconds < 0) {
         return { ok: false, error: "delaySeconds must be a non-negative number." };
       }
       nextRunAt = new Date(Date.now() + delaySeconds * 1_000);
-    } else if (input.delayMinutes !== undefined) {
+    } else if (isScheduleValueProvided(input.delayMinutes)) {
       const delayMinutes = Number(input.delayMinutes);
       if (!Number.isFinite(delayMinutes) || delayMinutes < 0) {
         return { ok: false, error: "delayMinutes must be a non-negative number." };
@@ -108,7 +127,7 @@ export function resolveScheduleTiming(
     return { ok: true, cron: ONCE_ROUTINE_CRON, nextRunAt, oneShot: true };
   }
 
-  if (input.cron !== undefined) {
+  if (isScheduleValueProvided(input.cron)) {
     const cron = String(input.cron).trim();
     if (!cron) return { ok: false, error: "cron must be a non-empty 5-field cron expression." };
     if (isOneShotRoutineCron(cron)) {
