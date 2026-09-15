@@ -117,8 +117,7 @@ export function OnboardingPage() {
   const [contextWindow, setContextWindow] = useState(String(DEFAULT_MODEL_CONTEXT_WINDOW));
   const [supportsImages, setSupportsImages] = useState(false);
   const [maxImagesPerPrompt, setMaxImagesPerPrompt] = useState("");
-  const [{ models: probeModels, baseUrl: probedBaseUrl, probing }, setProbe] =
-    useState(initialModelProbeState);
+  const [{ models: probeModels, probing }, setProbe] = useState(initialModelProbeState);
   const [modelProbe] = useState(() => createModelProbe(setProbe));
   const resetOpenAiCompatibleProbe = modelProbe.reset;
   const createStartedRef = useRef(false);
@@ -189,7 +188,6 @@ export function OnboardingPage() {
   const openAiCompatibleReady = openAiCompatibleConnectReady({
     baseUrl,
     modelId,
-    probedBaseUrl,
   });
   const canSaveModel = Boolean(
     selected &&

@@ -82,8 +82,7 @@ export default function Models() {
   const [showEndpointHelp, setShowEndpointHelp] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [showApiKey, setShowApiKey] = useState(false);
-  const [{ models: probeModels, baseUrl: probedBaseUrl, probing }, setProbe] =
-    useState(initialModelProbeState);
+  const [{ models: probeModels, probing }, setProbe] = useState(initialModelProbeState);
   const [modelProbe] = useState(() => createModelProbe(setProbe));
   const resetOpenAiCompatibleProbe = modelProbe.reset;
   const [oauth, setOauth] = useState<ModelOAuthBegin | null>(null);
@@ -209,8 +208,6 @@ export default function Models() {
   const openAiCompatibleReady = openAiCompatibleConnectReady({
     baseUrl: effectiveBaseUrl,
     modelId,
-    probedBaseUrl,
-    storedBaseUrl: credential?.baseUrl,
   });
 
   function updateBaseUrl(nextBaseUrl: string) {

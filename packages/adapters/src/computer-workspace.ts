@@ -14,8 +14,6 @@ import type { PrismaClient } from "@rakazo/db";
 import { normalizeWorkspacePath, teamBotWorkspaceDirectory } from "./computer-support.js";
 import { LocalAgentHomeStore } from "./home.js";
 
-export const PORTABLE_BROWSER_STOP_COMMAND =
-  "pkill -f '[g]oogle-chrome|[c]hromium|[f]irefox' || true";
 export const PORTABLE_TRANSFER_BATCH_BYTES = 8 * 1024 * 1024;
 
 const skippedBrowserProfileDirectories = new Set([

@@ -66,8 +66,7 @@ export function ModelSettingsOverlay({
   const [contextWindow, setContextWindow] = useState(String(DEFAULT_MODEL_CONTEXT_WINDOW));
   const [supportsImages, setSupportsImages] = useState(false);
   const [maxImagesPerPrompt, setMaxImagesPerPrompt] = useState("");
-  const [{ models: probeModels, baseUrl: probedBaseUrl, probing }, setProbe] =
-    useState(initialModelProbeState);
+  const [{ models: probeModels, probing }, setProbe] = useState(initialModelProbeState);
   const [modelProbe] = useState(() => createModelProbe(setProbe));
   const resetOpenAiCompatibleProbe = modelProbe.reset;
   const [loading, setLoading] = useState(true);
@@ -195,8 +194,6 @@ export function ModelSettingsOverlay({
   const openAiCompatibleReady = openAiCompatibleConnectReady({
     baseUrl: effectiveBaseUrl,
     modelId,
-    probedBaseUrl,
-    storedBaseUrl: credential?.baseUrl,
   });
 
   function updateBaseUrl(nextBaseUrl: string) {
