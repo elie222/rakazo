@@ -42,11 +42,15 @@ function selectLookupAddress(
   addresses: ResolvedAddress[],
   options: { all?: boolean; family?: number },
 ): { all: true; addresses: ResolvedAddress[] } | { all: false; address: string; family: number } {
-  if (options.all) return { all: true, addresses };
   const requestedFamily = typeof options.family === "number" ? options.family : 0;
-  const selected =
-    addresses.find((entry) => requestedFamily === 0 || entry.family === requestedFamily) ??
-    addresses[0];
+  const candidates = addresses.filter(
+    (entry) => requestedFamily === 0 || entry.family === requestedFamily,
+  );
+  if (options.all) {
+    if (candidates.length === 0) throw new Error("Endpoint did not resolve to an address");
+    return { all: true, addresses: candidates };
+  }
+  const selected = candidates[0];
   if (!selected) throw new Error("Endpoint did not resolve to an address");
   return { all: false, address: selected.address, family: selected.family };
 }
