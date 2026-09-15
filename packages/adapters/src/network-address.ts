@@ -1,6 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import dns from "node:dns";
-import { isIP, type LookupFunction } from "node:net";
+import type { LookupFunction } from "node:net";
+import { isIP } from "node:net";
 
 export type ResolvedAddress = { address: string; family: number };
 export type ResolveHostname = (hostname: string) => Promise<ResolvedAddress[]>;
