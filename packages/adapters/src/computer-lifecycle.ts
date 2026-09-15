@@ -182,6 +182,11 @@ export async function provisionComputer(
   const reclaimStamp = existing.state === "booting" ? existing.updatedAt : null;
   const bootClaimIsStale =
     reclaimStamp !== null && Date.now() - reclaimStamp.getTime() >= BOOT_CLAIM_STALE_MS;
+  // Idle stop does not refresh updatedAt while checkpointing or waiting on provider stop.
+  // A live suspend can therefore age across the TTL during the ready wait; only reclaim
+  // stamps that were already abandoned when we first saw them, matching booting reclaim.
+  const suspendStamp = existing.state === "suspending" ? existing.updatedAt : null;
+  const suspendClaimIsStale = suspendStamp !== null && isAbandonedLifecycleClaim(suspendStamp);
   // A fresh booting claim (or one whose run lease is still live) cannot be reclaimed after
   // the wait either, so do not block workers for the full boot-wait window. Shared Postgres
   // journeys previously hung createApp stop() while continueRun sat in that wait against a
@@ -199,10 +204,11 @@ export async function provisionComputer(
     existing = await waitForComputerReady(deps.prisma, computerId, context);
   }
   // A booting row whose holder is gone is reclaimable. A suspending row is too once
-  // its claim is older than an execution-lease TTL and no other run is still alive.
+  // its claim was already older than an execution-lease TTL when first observed and
+  // no other run is still alive.
   const staleSuspending =
     existing.state === "suspending" &&
-    isAbandonedLifecycleClaim(existing.updatedAt) &&
+    suspendClaimIsStale &&
     !(await hasLiveForeignRunLease(deps.prisma, computerId, context.runId));
   if (
     !staleSuspending &&
@@ -246,7 +252,7 @@ export async function provisionComputer(
     existing.state === "booting" || existing.state === "suspending"
       ? {
           state: existing.state,
-          updatedAt: existing.state === "booting" ? reclaimStamp! : existing.updatedAt,
+          updatedAt: existing.state === "booting" ? reclaimStamp! : suspendStamp!,
           ...(existing.state === "suspending" ? previousRef : {}),
           ...heldByNobodyElse(bootLease),
         }
@@ -259,7 +265,7 @@ export async function provisionComputer(
   // Advance past the observed stamp even when Date.now() equals it (same ms or clock skew);
   // otherwise a booting self-transition would leave the CAS token unchanged and a second
   // worker that observed the same stamp could also claim and provision.
-  const observedStamp = reclaimStamp ?? existing.updatedAt;
+  const observedStamp = reclaimStamp ?? suspendStamp ?? existing.updatedAt;
   const claimStamp = new Date(Math.max(Date.now(), observedStamp.getTime() + 1));
   const claimed = await deps.prisma.computer.updateMany({
     where: {

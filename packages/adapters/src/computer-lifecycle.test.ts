@@ -308,6 +308,59 @@ describe("computer provisioning", () => {
     }
   });
 
+  it("does not reclaim a suspending claim that ages past the TTL during the wait", async () => {
+    const nowMs = Date.parse("2024-06-01T12:00:00.000Z");
+    const ttlMs = 5 * 60_000;
+    const updateMany = vi.fn();
+    const prisma = {
+      computer: {
+        findUniqueOrThrow: vi.fn(async () => ({
+          id: "computer-1",
+          homeKey: "bot-1",
+          providerRef: null,
+          kind: "cloud",
+          scope: "dedicated",
+          state: "suspending",
+          controlLeaseId: null,
+          updatedAt: new Date(nowMs - ttlMs + 1),
+        })),
+        updateMany,
+      },
+      run: {
+        findFirst: vi.fn(async () => null),
+      },
+    } as unknown as PrismaClient;
+    // First Date.now() is the first-observation stale check (still live). Later calls sit
+    // past the TTL so a post-wait re-check would wrongly reclaim an in-flight suspend.
+    const now = vi
+      .spyOn(Date, "now")
+      .mockReturnValueOnce(nowMs)
+      .mockReturnValue(nowMs + 2);
+    const setTimeoutReal = globalThis.setTimeout;
+    vi.stubGlobal("setTimeout", ((fn: (...args: never[]) => void, _ms?: number, ...args: never[]) =>
+      setTimeoutReal(fn, 0, ...args)) as unknown as typeof setTimeout);
+
+    try {
+      await expect(
+        provisionComputer(
+          {
+            prisma,
+            sandbox: {} as SandboxProvider,
+            home: {} as AgentHomeStore,
+            jobs: {} as JobPublisher,
+            events: {} as ThreadEvents,
+          },
+          "computer-1",
+          context,
+        ),
+      ).rejects.toBeInstanceOf(ComputerBusyError);
+      expect(updateMany).not.toHaveBeenCalled();
+    } finally {
+      now.mockRestore();
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("does not reclaim a fresh suspending claim after waiting", async () => {
     const nowMs = Date.parse("2024-06-01T12:00:00.000Z");
     const updateMany = vi.fn();
