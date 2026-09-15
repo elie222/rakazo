@@ -12,7 +12,10 @@ export function warmWindowTtlMs(value: string | undefined) {
 function windowChrome(platform: NodeJS.Platform) {
   const mac = platform === "darwin";
   return {
-    backgroundColor: "#0D0D0E",
+    // Keep in sync with darkTokens.background from @rakazo/ui-tokens (asserted in tests).
+    // Do not import that package here: desktop packs compiled JS only and ui-tokens is a
+    // TypeScript source / devDependency.
+    backgroundColor: "#0B0C0E",
     show: true,
     autoHideMenuBar: true,
     frame: mac,

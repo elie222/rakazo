@@ -1,6 +1,15 @@
 import { expect, type Locator, type Page, type Route, test } from "@playwright/test";
 import { captureScreenshot, completeOnboarding, signup } from "./helpers";
 
+/** Submit from the Send control so an in-flight prior send cannot swallow Enter. */
+async function sendComposerMessage(page: Page, composer: Locator, text: string) {
+  await composer.fill(text);
+  const send = page.getByRole("button", { name: "Send", exact: true });
+  await expect(send).toBeEnabled();
+  await send.click();
+  await expect(composer).toHaveValue("");
+}
+
 async function revealHoverRail(row: Locator): Promise<Locator> {
   const rail = row.getByTestId("message-hover-rail");
   await expect
@@ -95,8 +104,7 @@ test("message hover shows beside-bubble actions; reply links to parent", async (
   const replyText = `hover-reply-${stamp}`;
   const composer = page.getByRole("combobox", { name: /^Message/ });
   await expect(composer).toBeVisible();
-  await composer.fill(parentText);
-  await composer.press("Enter");
+  await sendComposerMessage(page, composer, parentText);
 
   const parentRow = transcript.locator(`[data-message-id]`).filter({ hasText: parentText }).first();
   await expect(parentRow).toBeVisible({ timeout: 20_000 });
@@ -145,8 +153,7 @@ test("message hover shows beside-bubble actions; reply links to parent", async (
 
   // Long user bubble: rail stays ~6px beside the bubble edge, not the full row width.
   const longText = `hover-long-${stamp}-${"x".repeat(220)}`;
-  await composer.fill(longText);
-  await composer.press("Enter");
+  await sendComposerMessage(page, composer, longText);
   const longRow = transcript
     .locator(`[data-message-id]`)
     .filter({ hasText: longText.slice(0, 40) })
@@ -242,8 +249,7 @@ test("message hover shows beside-bubble actions; reply links to parent", async (
   await expect(replyChip).toBeVisible();
   await expect(replyChip).toContainText(/Replying to/);
 
-  await composer.fill(replyText);
-  await composer.press("Enter");
+  await sendComposerMessage(page, composer, replyText);
   await expect(replyChip).toHaveCount(0);
 
   const replyRow = transcript.locator(`[data-message-id]`).filter({ hasText: replyText }).first();
@@ -274,8 +280,7 @@ test("reply preview jumps to parent outside the loaded page", async ({ page }) =
   const replyText = `page-reply-${stamp}`;
   const composer = page.getByRole("combobox", { name: /^Message/ });
   await expect(composer).toBeVisible();
-  await composer.fill(parentText);
-  await composer.press("Enter");
+  await sendComposerMessage(page, composer, parentText);
 
   const transcript = page.getByTestId("transcript");
   const parentRow = transcript.locator(`[data-message-id]`).filter({ hasText: parentText }).first();
@@ -285,8 +290,7 @@ test("reply preview jumps to parent outside the loaded page", async ({ page }) =
 
   await parentRow.hover();
   await parentRow.getByRole("button", { name: "Reply" }).click();
-  await composer.fill(replyText);
-  await composer.press("Enter");
+  await sendComposerMessage(page, composer, replyText);
 
   const replyRow = transcript.locator(`[data-message-id]`).filter({ hasText: replyText }).first();
   await expect(replyRow).toBeVisible({ timeout: 20_000 });
