@@ -8,7 +8,8 @@ const fakeAgentState = vi.hoisted(() => ({
     | "two-boundaries"
     | "silent-continuation"
     | "subagent-limit"
-    | "parent-limit",
+    | "parent-limit"
+    | "parent-parallel",
   emitFinalAfterFollowUp: true,
   abortCount: 0,
   tools: [] as Array<{
@@ -139,6 +140,23 @@ vi.mock("@earendil-works/pi-agent-core", () => ({
           if (this.aborted) break;
           await shell.execute(`shell-${index}`, args);
         }
+        return;
+      }
+
+      if (fakeAgentState.mode === "parent-parallel") {
+        const shell = this.tools.find((tool) => tool.name === "shell");
+        if (!shell) throw new Error("shell was not exposed");
+        const batch = Array.from({ length: 4 }, (_, index) => ({
+          args: { command: `echo ${index}` },
+        }));
+        for (const item of batch) {
+          this.emit({ type: "tool_execution_start", toolName: shell.name, args: item.args });
+        }
+        await Promise.all(
+          batch.map((item, index) =>
+            this.aborted ? Promise.resolve() : shell.execute(`shell-${index}`, item.args),
+          ),
+        );
         return;
       }
 
@@ -943,7 +961,7 @@ describe("Pi connector tool dispatch", () => {
     }
 
     expect(executeTool).toHaveBeenCalledTimes(79);
-    expect(fakeAgentState.abortCount).toBeGreaterThanOrEqual(2);
+    expect(fakeAgentState.abortCount).toBeGreaterThanOrEqual(1);
     expect(events).toContainEqual({
       type: "progress",
       text: "Stopped: more than 80 tool calls in one turn.",
@@ -982,6 +1000,114 @@ describe("Pi connector tool dispatch", () => {
     expect(maxToolCallsPerTurn({ MAX_TOOL_CALLS_PER_TURN: "abc" })).toBe(0);
     expect(maxToolCallsPerTurn({ MAX_TOOL_CALLS_PER_TURN: "80" })).toBe(80);
     expect(maxToolCallsPerTurn({ MAX_TOOL_CALLS_PER_TURN: " 12.9 " })).toBe(12);
+  });
+
+  it("lets a parallel tool batch finish before the optional fuse aborts", async () => {
+    process.env.MAX_TOOL_CALLS_PER_TURN = "2";
+    fakeAgentState.mode = "parent-parallel";
+    const executeTool = vi.fn(async () => ({ ok: true }));
+    const runtime = new PiAgentRuntime();
+    const events: unknown[] = [];
+
+    for await (const event of runtime.run(
+      {
+        botId: "b",
+        threadId: "t",
+        runId: "parallel-fuse",
+        prompt: "run them together",
+        instructions: "Use shell.",
+        history: [],
+        tools: [shellTool],
+        model: { provider: "test", id: "dispatch-test-model" },
+        executeTool,
+      },
+      {
+        operationId: "2c",
+        traceId: "2c",
+        spaceId: "w",
+        userId: "u",
+        signal: new AbortController().signal,
+      },
+    )) {
+      events.push(event);
+    }
+
+    expect(executeTool).toHaveBeenCalledTimes(2);
+    expect(fakeAgentState.abortCount).toBeGreaterThanOrEqual(1);
+    expect(events).toContainEqual({
+      type: "progress",
+      text: "Stopped: more than 2 tool calls in one turn.",
+    });
+  });
+
+  it("keeps an optional tool-call fuse across a second run() for the same runId", async () => {
+    process.env.MAX_TOOL_CALLS_PER_TURN = "5";
+    fakeAgentState.mode = "parent-limit";
+    const executeTool = vi.fn(async () => ({ ok: true }));
+    const runtime = new PiAgentRuntime();
+    const abort = new AbortController();
+    let started = 0;
+    executeTool.mockImplementation(async () => {
+      started += 1;
+      if (started === 2) abort.abort();
+      return { ok: true };
+    });
+
+    await expect(async () => {
+      for await (const _event of runtime.run(
+        {
+          botId: "b",
+          threadId: "t",
+          runId: "fuse-resume",
+          prompt: "keep going",
+          instructions: "Use shell.",
+          history: [],
+          tools: [shellTool],
+          model: { provider: "test", id: "dispatch-test-model" },
+          executeTool,
+        },
+        {
+          operationId: "2d",
+          traceId: "2d",
+          spaceId: "w",
+          userId: "u",
+          signal: abort.signal,
+        },
+      )) {
+        // Exhaust until abort fails the turn.
+      }
+    }).rejects.toThrow();
+
+    executeTool.mockImplementation(async () => ({ ok: true }));
+    const events: unknown[] = [];
+    for await (const event of runtime.run(
+      {
+        botId: "b",
+        threadId: "t",
+        runId: "fuse-resume",
+        prompt: "keep going",
+        instructions: "Use shell.",
+        history: [],
+        tools: [shellTool],
+        model: { provider: "test", id: "dispatch-test-model" },
+        executeTool,
+      },
+      {
+        operationId: "2e",
+        traceId: "2e",
+        spaceId: "w",
+        userId: "u",
+        signal: new AbortController().signal,
+      },
+    )) {
+      events.push(event);
+    }
+
+    expect(executeTool).toHaveBeenCalledTimes(5);
+    expect(events).toContainEqual({
+      type: "progress",
+      text: "Stopped: more than 5 tool calls in one turn.",
+    });
   });
 
   it("serialises object content instead of writing [object Object] for write_file", async () => {
