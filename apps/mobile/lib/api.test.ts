@@ -1587,6 +1587,28 @@ describe("mobile thread event reduction", () => {
     expect(next?.cursor).toBe(4);
   });
 
+  it("appends a quoted reply carrying its excerpt", () => {
+    const initial = snapshot([mobileMessage("message-1", [{ kind: "text", text: "Done" }])]);
+
+    const next = applyMobileThreadEvent(initial, {
+      type: "thread.message.created",
+      seq: 4,
+      payload: {
+        messageId: "reply-1",
+        role: "user",
+        blocks: [{ kind: "text", text: "why this?" }],
+        replyToMessageId: "message-1",
+        replyQuote: "Done",
+      },
+    });
+
+    expect(next?.messages.find((message) => message.id === "reply-1")).toMatchObject({
+      role: "user",
+      replyToMessageId: "message-1",
+      replyQuote: "Done",
+    });
+  });
+
   it("prepends ordered history pages without duplicating the boundary message", () => {
     const initial = snapshot([mobileMessage("m-2", [], 2), mobileMessage("m-3", [], 3)], 2);
 

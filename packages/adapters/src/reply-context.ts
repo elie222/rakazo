@@ -1,10 +1,12 @@
 import type { MessageBlock } from "@rakazo/contracts";
+import { REPLY_QUOTE_MAX_LENGTH } from "@rakazo/contracts";
 import { blocksToAgentHistoryText, messageReaction } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 
 type QuotedMessage = { id: string; threadId: string; role: string; blocks: unknown };
 type ReplyMessage = QuotedMessage & {
   replyToMessageId?: string | null;
+  replyQuote?: string | null;
   replyTo?: QuotedMessage | null;
 };
 
@@ -16,12 +18,23 @@ function replyContext(source: ReplyMessage, threadId: string): string | undefine
   const target = source.replyTo;
   if (!target || target.threadId !== threadId) return undefined;
   const emoji = messageReaction({ ...source, blocks: messageBlocks(source) });
-  const content = blocksToAgentHistoryText(messageBlocks(target));
+  // A selected-text excerpt narrows the reply to just that span; reactions stay
+  // on the whole-message path because a reaction always targets the message.
+  const excerpt =
+    !emoji && typeof source.replyQuote === "string" ? source.replyQuote.trim() : undefined;
+  const targetPayload = excerpt
+    ? { quotedText: excerpt.slice(0, REPLY_QUOTE_MAX_LENGTH) }
+    : (() => {
+        const content = blocksToAgentHistoryText(messageBlocks(target));
+        return {
+          content: content.slice(0, 20_000),
+          ...(content.length > 20_000 ? { truncated: true } : {}),
+        };
+      })();
   const quote = JSON.stringify({
     messageId: target.id,
     role: target.role,
-    content: content.slice(0, 20_000),
-    ...(content.length > 20_000 ? { truncated: true } : {}),
+    ...targetPayload,
   })
     .replaceAll("<", "\\u003c")
     .replaceAll(">", "\\u003e");
@@ -46,7 +59,12 @@ export async function loadReplyContext(
   const selection = { id: true, threadId: true, role: true, blocks: true } as const;
   const source = await prisma.message.findFirst({
     where: { id: sourceMessageId, threadId },
-    select: { ...selection, replyToMessageId: true, replyTo: { select: selection } },
+    select: {
+      ...selection,
+      replyToMessageId: true,
+      replyQuote: true,
+      replyTo: { select: selection },
+    },
   });
   return source ? replyContext(source, threadId) : undefined;
 }

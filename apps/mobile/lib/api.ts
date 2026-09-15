@@ -738,6 +738,7 @@ export type MobileMessage = {
   role: "user" | "bot" | "system";
   botId?: string;
   replyToMessageId?: string;
+  replyQuote?: string;
   createdAt?: string;
   blocks: MessageBlock[];
 };
@@ -1102,6 +1103,7 @@ export function applyMobileThreadEvent(
       replyToMessageId: event.payload?.replyToMessageId
         ? String(event.payload.replyToMessageId)
         : undefined,
+      replyQuote: event.payload?.replyQuote ? String(event.payload.replyQuote) : undefined,
     };
     return {
       ...prev,

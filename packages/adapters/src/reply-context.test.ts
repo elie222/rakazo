@@ -1,14 +1,16 @@
+import { REPLY_QUOTE_MAX_LENGTH } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import { loadReplyContext, messageToAgentHistoryText } from "./reply-context.js";
 
-function harness(replyTo: unknown = null) {
+function harness(replyTo: unknown = null, replyQuote: string | null = null) {
   const findFirst = vi.fn().mockResolvedValue({
     id: "user-reply",
     threadId: "thread-1",
     role: "user",
     blocks: [{ kind: "text", text: "Which message?" }],
     replyToMessageId: "message-first",
+    replyQuote,
     replyTo,
   });
   return { prisma: { message: { findFirst } } as unknown as PrismaClient, findFirst };
@@ -121,5 +123,35 @@ describe("reply context", () => {
     const context = await loadReplyContext(prisma, "thread-1", "user-reply");
     expect(context).toContain('"truncated":true');
     expect(context!.length).toBeLessThan(21_000);
+  });
+
+  it("uses the selected excerpt instead of the whole target for quoted replies", async () => {
+    const { prisma } = harness(target, "just this span");
+    const context = await loadReplyContext(prisma, "thread-1", "user-reply");
+    expect(context).toContain('"quotedText":"just this span"');
+    expect(context).not.toContain("Test message 1/3: Hello!");
+    expect(context).toContain('"messageId":"message-first"');
+  });
+
+  it("caps a stored excerpt at the quote limit", async () => {
+    const { prisma } = harness(target, `${"a".repeat(REPLY_QUOTE_MAX_LENGTH + 500)}`);
+    const context = await loadReplyContext(prisma, "thread-1", "user-reply");
+    const quoted = JSON.parse(context!.split("\n")[2]!).quotedText as string;
+    expect(quoted).toHaveLength(REPLY_QUOTE_MAX_LENGTH);
+  });
+
+  it("reactions keep full target content even when a quote is stored", () => {
+    const text = messageToAgentHistoryText({
+      id: "reaction-1",
+      threadId: "thread-1",
+      role: "user",
+      blocks: [{ kind: "text", text: "❤️" }],
+      replyToMessageId: target.id,
+      replyQuote: "just this span",
+      replyTo: target,
+    });
+    expect(text).toContain("User reacted with ❤️ to");
+    expect(text).toContain("Test message 1/3: Hello!");
+    expect(text).not.toContain("quotedText");
   });
 });

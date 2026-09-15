@@ -488,6 +488,8 @@ export function reduceThreadSnapshot(
         typeof event.payload.replyToMessageId === "string"
           ? event.payload.replyToMessageId
           : undefined,
+      replyQuote:
+        typeof event.payload.replyQuote === "string" ? event.payload.replyQuote : undefined,
       createdAt: event.createdAt,
     };
     const replacedSubagentIds = new Set(

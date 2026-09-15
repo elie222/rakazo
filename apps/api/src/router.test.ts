@@ -1,6 +1,7 @@
 import { RPCHandler } from "@orpc/server/fetch";
 import { COMPUTER_SCREEN_UNAVAILABLE, ComputerScreenUnavailableError } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
+import { REPLY_QUOTE_MAX_LENGTH } from "@rakazo/contracts";
 import { openScreenCapability } from "@rakazo/core/node/screen-capability";
 import type { PrismaClient } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
@@ -236,6 +237,45 @@ describe("model setup gate", () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({
       json: expect.objectContaining({ needsModel: true }),
+    });
+  });
+
+  it("rejects a reply quote without a reply target", async () => {
+    const { actor, handler } = modelGateDeps({ agentRuntime: "scripted" });
+
+    const response = await call(handler, actor, "threads/send", {
+      botId: "bot-1",
+      text: "hello",
+      replyQuote: "just this span",
+    });
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      json: expect.objectContaining({
+        data: expect.objectContaining({
+          issues: expect.arrayContaining([expect.objectContaining({ path: ["replyQuote"] })]),
+        }),
+      }),
+    });
+  });
+
+  it("rejects an over-length reply quote", async () => {
+    const { actor, handler } = modelGateDeps({ agentRuntime: "scripted" });
+
+    const response = await call(handler, actor, "threads/send", {
+      botId: "bot-1",
+      text: "hello",
+      replyToMessageId: "parent-1",
+      replyQuote: "x".repeat(REPLY_QUOTE_MAX_LENGTH + 1),
+    });
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      json: expect.objectContaining({
+        data: expect.objectContaining({
+          issues: expect.arrayContaining([expect.objectContaining({ path: ["replyQuote"] })]),
+        }),
+      }),
     });
   });
 });

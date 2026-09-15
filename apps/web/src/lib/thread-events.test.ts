@@ -85,6 +85,31 @@ describe("thread event reduction", () => {
     expect(next?.cursor).toBe(4);
   });
 
+  it("appends a quoted reply carrying its excerpt", () => {
+    const initial = snapshot([message("message-1", [{ kind: "text", text: "Done" }], 1)]);
+
+    const next = reduceThreadSnapshot(
+      initial,
+      event({
+        type: "thread.message.created",
+        seq: 4,
+        payload: {
+          messageId: "reply-1",
+          role: "user",
+          blocks: [{ kind: "text", text: "why this?" }],
+          replyToMessageId: "message-1",
+          replyQuote: "Done",
+        },
+      }),
+    );
+
+    expect(next?.messages.find((message) => message.id === "reply-1")).toMatchObject({
+      role: "user",
+      replyToMessageId: "message-1",
+      replyQuote: "Done",
+    });
+  });
+
   it("prepends older pages in order, removes overlaps, and advances the history cursor", () => {
     const initial = snapshot([message("m-2", [], 2), message("m-3", [], 3)], 2);
 

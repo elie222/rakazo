@@ -47,6 +47,7 @@ import {
   ModelConnectInputSchema,
   ModelCredentialSchema,
   ModelOAuthBeginSchema,
+  REPLY_QUOTE_MAX_LENGTH,
   ReorderBotsInput,
   RoutineSchema,
   ScratchpadItemSchema,
@@ -120,6 +121,7 @@ const threadSendInput = threadTarget
       .max(64)
       .optional(),
     replyToMessageId: Id.optional(),
+    replyQuote: z.string().trim().min(1).max(REPLY_QUOTE_MAX_LENGTH).optional(),
     clientNonce: z.string().min(1).max(200).optional(),
   })
   .superRefine((input, ctx) => {
@@ -130,6 +132,13 @@ const threadSendInput = threadTarget
         code: "custom",
         message: "Provide text or at least one attachment",
         path: ["text"],
+      });
+    }
+    if (input.replyQuote && !input.replyToMessageId) {
+      ctx.addIssue({
+        code: "custom",
+        message: "replyQuote requires replyToMessageId",
+        path: ["replyQuote"],
       });
     }
   });

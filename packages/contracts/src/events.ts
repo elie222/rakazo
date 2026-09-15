@@ -290,6 +290,7 @@ export const ThreadMessageSchema = z.object({
   blocks: z.array(MessageBlock),
   botId: Id.optional(),
   replyToMessageId: Id.optional(),
+  replyQuote: z.string().optional(),
   runId: Id.optional(),
   createdAt: z.string(),
 });

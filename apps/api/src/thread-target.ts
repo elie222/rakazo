@@ -7,11 +7,13 @@ import {
   type GroupMember,
   type MessageBlock,
   type MessageReaction,
+  REPLY_QUOTE_MAX_LENGTH,
   type RunStatus,
   type ThreadSnapshot,
 } from "@rakazo/contracts";
 import {
   ACTIVE_RUN_STATUSES,
+  blocksToAgentHistoryText,
   isActive,
   projectMessages,
   resolveGroupTargetBotIds,
@@ -56,6 +58,47 @@ export type ThreadTarget =
       members: GroupMember[];
       memberBotIds: string[];
     };
+
+/**
+ * Flatten text for excerpt comparison. The parent blocks hold markdown
+ * source while the selection captures rendered text, so structural syntax
+ * is normalized away: table delimiters and alignment rows, list markers,
+ * heading and blockquote markers, link targets, emphasis characters.
+ * Semantic punctuation (: + - . ! #) stays on both sides — otherwise
+ * "C++ is fast" would accept a fabricated "C is fast".
+ */
+function flattenForQuoteMatch(text: string): string {
+  return text
+    .split("\n")
+    .filter((line) => !/^\s*\|?[\s:|-]+\|?\s*$/.test(line))
+    .map((line) =>
+      line
+        .replace(/^\s*(?:>\s*)+/, "")
+        .replace(/^\s*#{1,6}\s+/, "")
+        .replace(/^\s*[-*+•]\s+/, ""),
+    )
+    .join(" ")
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .toLowerCase()
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#0?39;|&apos;/g, "'")
+    .replace(/[‘’]/g, "'")
+    .replace(/[“”]/g, '"')
+    .replace(/[\\`*_~|[\]()•]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function quoteAppearsInBlocks(quote: string, blocks: MessageBlock[]): boolean {
+  const excerpt = flattenForQuoteMatch(quote);
+  if (!excerpt) return false;
+  return flattenForQuoteMatch(blocksToAgentHistoryText(blocks)).includes(excerpt);
+}
 
 const THREAD_MESSAGE_PAGE_SIZE = 100;
 const RUNS_NEEDING_CONTINUE = new Set(["queued", "waiting_takeover"]);
@@ -587,20 +630,39 @@ export async function sendThreadMessage(
     artifactIds?: string[];
     mentions?: MentionTargetInput[];
     replyToMessageId?: string;
+    replyQuote?: string;
     clientNonce?: string;
   },
 ) {
   const existing = await replayExistingSend(deps, target.threadId, input.clientNonce);
   if (existing) return existing;
+  // The excerpt is rendered text while blocks hold markdown source, so it
+  // can't be substring-verified verbatim — enforce the cap here, then check
+  // the flattened form against the parent inside the transaction.
+  let replyQuote = input.replyQuote?.trim().slice(0, REPLY_QUOTE_MAX_LENGTH) || undefined;
+  if (replyQuote && !input.replyToMessageId) {
+    throw new ORPCError("BAD_REQUEST", { message: "replyQuote requires replyToMessageId." });
+  }
 
   const commit = () =>
     deps.prisma.$transaction(async (tx) => {
       if (input.replyToMessageId) {
         const reply = await tx.message.findFirst({
           where: { id: input.replyToMessageId, threadId: target.threadId },
-          select: { id: true },
+          select: { id: true, blocks: true },
         });
         if (!reply) throw new IsolationError();
+        // Client-supplied excerpts are untrusted: drop a mismatch instead of
+        // failing the send — the reply still lands, just without the quote.
+        if (
+          replyQuote &&
+          !quoteAppearsInBlocks(
+            replyQuote,
+            Array.isArray(reply.blocks) ? (reply.blocks as MessageBlock[]) : [],
+          )
+        ) {
+          replyQuote = undefined;
+        }
       }
 
       if (target.kind === "bot") {
@@ -622,6 +684,7 @@ export async function sendThreadMessage(
           role: "user",
           blocks,
           replyToMessageId: input.replyToMessageId,
+          replyQuote,
           clientNonce: input.clientNonce,
         });
         const activeRuns = await tx.run.findMany({
@@ -659,6 +722,7 @@ export async function sendThreadMessage(
               role: "user",
               blocks,
               replyToMessageId: input.replyToMessageId,
+              replyQuote,
             },
           });
           return { message, runs: [active], eventSeq: event.seq };
@@ -704,6 +768,7 @@ export async function sendThreadMessage(
             blocks,
             runIds: [run.id],
             replyToMessageId: input.replyToMessageId,
+            replyQuote,
           },
         });
         return { message, runs: [run], eventSeq: event.seq };
@@ -735,6 +800,7 @@ export async function sendThreadMessage(
         role: "user",
         blocks,
         replyToMessageId: input.replyToMessageId,
+        replyQuote,
         clientNonce: input.clientNonce,
       });
       const activeRuns = await tx.run.findMany({
@@ -816,6 +882,7 @@ export async function sendThreadMessage(
           blocks,
           runIds: runs.map((run) => run.id),
           replyToMessageId: input.replyToMessageId,
+          replyQuote,
         },
       });
       return { message, runs, eventSeq: event.seq };

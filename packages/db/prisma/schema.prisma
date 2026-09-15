@@ -497,6 +497,7 @@ model Message {
   blocks           Json
   botId            String?
   replyToMessageId String?
+  replyQuote       String?
   replyTo          Message?  @relation("MessageReplies", fields: [replyToMessageId], references: [id], onDelete: SetNull)
   replies          Message[] @relation("MessageReplies")
   runId            String?

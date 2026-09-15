@@ -33,6 +33,7 @@ export function loadRunHistoryMessages(
       runId: true,
       blocks: true,
       replyToMessageId: true,
+      replyQuote: true,
       replyTo: { select: { id: true, threadId: true, role: true, blocks: true } },
     },
   });
@@ -44,6 +45,7 @@ export interface CreateThreadMessageInput {
   blocks: MessageBlock[];
   botId?: string;
   replyToMessageId?: string;
+  replyQuote?: string;
   runId?: string;
   clientNonce?: string;
   markUnread?: boolean;
@@ -76,6 +78,7 @@ export async function createThreadMessageInTransaction(
       blocks: input.blocks as Prisma.InputJsonValue,
       botId: input.botId,
       replyToMessageId: input.replyToMessageId,
+      replyQuote: input.replyQuote,
       runId: input.runId,
       clientNonce: input.clientNonce,
     },
