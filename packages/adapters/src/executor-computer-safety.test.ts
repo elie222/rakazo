@@ -49,6 +49,9 @@ describe("computer lifecycle command guard", () => {
     "git worktree add ../review-worktree origin/main",
     "find /tmp/. -maxdepth 1 -type d",
     "git diff -- .",
+    "printf '%s' 'pk\\\nill chromium'",
+    "printf '%s' 'pk\\\nill' chromium",
+    "printf '%s' 'line one\nline two'",
   ])("allows repository paths without treating dot arguments as sourcing: %s", (command) => {
     expect(isProtectedComputerLifecycleCommand(command)).toBe(false);
   });
@@ -66,6 +69,9 @@ describe("computer lifecycle command guard", () => {
     "if true; then . /tmp/script.sh; fi",
     "bash -c 'pwd\n. /tmp/script.sh'",
     "pk\\\nill chromium",
+    "! . /tmp/script.sh",
+    "if false; then :; elif . /tmp/script.sh; then :; fi",
+    "{ . /tmp/script.sh; }",
   ])("continues blocking executable sourcing and lifecycle operations: %s", (command) => {
     expect(isProtectedComputerLifecycleCommand(command)).toBe(true);
   });

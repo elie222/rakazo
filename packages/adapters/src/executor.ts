@@ -387,12 +387,38 @@ function shellCFlagProgram(words: string[], interpreterIndex: number): string | 
   return undefined;
 }
 
+function preserveShellCommandBoundaries(command: string): string {
+  let quote: "'" | '"' | undefined;
+  let result = "";
+  for (let index = 0; index < command.length; index += 1) {
+    const character = command[index];
+    const next = command[index + 1];
+    if (character === "\\" && quote !== "'") {
+      if (next === "\n") {
+        index += 1;
+        continue;
+      }
+      // Keep escaped characters intact; an escaped quote is not a boundary.
+      result += character;
+      if (next !== undefined) {
+        result += next;
+        index += 1;
+      }
+      continue;
+    }
+    if (character === quote) quote = undefined;
+    else if (!quote && (character === "'" || character === '"')) quote = character;
+    result += character === "\n" && !quote ? "\n;" : character;
+  }
+  return result;
+}
+
 function tokenizeProtectedShellCommand(command: string): string[] | "dynamic" {
   try {
     // shell-quote treats newlines as whitespace. Preserve command boundaries for
     // the dot builtin, after folding shell line continuations. Retaining the
     // newline also preserves comment handling (comments remain fail-closed).
-    const separated = command.replace(/\\\r?\n/g, "").replace(/\r?\n/g, "\n;");
+    const separated = preserveShellCommandBoundaries(command);
     const parsed = parseShellCommand<{ expansion: string }>(
       separated,
       (name) => STATIC_SHELL_EXPANSIONS[name] ?? { expansion: name },
@@ -425,7 +451,7 @@ function tokenizeProtectedShellCommand(command: string): string[] | "dynamic" {
         } else if (/^(?:then|do|else)$/.test(word)) commandPosition = true;
         else if (
           commandPosition &&
-          (/^(?:command|builtin|exec|time|if|while|until)$/.test(word) ||
+          (/^(?:command|builtin|exec|time|if|elif|while|until|!|\{)$/.test(word) ||
             word.startsWith("-") ||
             /^[a-z_][a-z0-9_]*=/.test(word))
         ) {
