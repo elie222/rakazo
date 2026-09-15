@@ -22,7 +22,15 @@ else if (args[0] === "pr" && args[1] === "view") {
     appendFileSync(process.env.CALLS, "POST\n");
     process.exit(1);
   } else if (endpoint.includes("/pulls/comments/")) print("1");
-  else if (endpoint.includes("/check-runs?")) print({ name: "tests", status: "completed", conclusion: "success", html_url: "" });
+  else if (endpoint.includes("/check-runs?")) print(fixture.check ?? { name: "tests", status: "completed", conclusion: "success", html_url: "" });
+  else if (endpoint.includes("/actions/jobs/")) {
+    const result = require("node:child_process").spawnSync("jq", ["-r", args[args.indexOf("--jq") + 1]], {
+      input: JSON.stringify({ steps: fixture.steps ?? [] }), encoding: "utf8"
+    });
+    process.stdout.write(result.stdout);
+    process.stderr.write(result.stderr);
+    process.exit(result.status);
+  }
   else if (endpoint.includes("/status?")) {}
   else if (endpoint.includes("/issues/")) print(fixture.conversation ?? []);
   else if (endpoint.includes("/reviews?")) print(fixture.reviews ?? []);
@@ -49,7 +57,13 @@ function comment({
 }
 
 function runDigest(
-  fixture: { conversation?: object[]; inline?: object[]; reviews?: object[] },
+  fixture: {
+    conversation?: object[];
+    inline?: object[];
+    reviews?: object[];
+    check?: object;
+    steps?: object[];
+  },
   ...args: string[]
 ) {
   const root = mkdtempSync(join(tmpdir(), "pr-digest-test-"));
@@ -82,6 +96,26 @@ const reply = (body: string) =>
   comment({ id: 13, body, user: "viewer", updated: "2026-01-02T00:00:00Z" });
 
 describe("pr-digest", () => {
+  it.each(["Run pnpm test:integration", "Install dependencies"])(
+    "does not infer whether tests ran from skipped steps after %s",
+    (name) => {
+      const result = runDigest({
+        check: {
+          name: "Postgres journeys",
+          status: "completed",
+          conclusion: "failure",
+          html_url: "https://github.com/example/project/actions/runs/1/job/2",
+        },
+        steps: [
+          { name, number: 1, conclusion: "failure" },
+          { name: "Upload report", number: 2, conclusion: "skipped" },
+        ],
+      });
+      expect(result.status).toBe(10);
+      expect(result.stdout).toContain(`step "${name}" failure (later steps skipped)`);
+      expect(result.stdout).not.toContain("tests did not run");
+    },
+  );
   it.each([
     [original.html_url, 0],
     [`[fixed](${original.html_url})`, 0],
