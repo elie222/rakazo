@@ -44,6 +44,7 @@ describe("computer lifecycle command guard", () => {
     "find . -maxdepth 2 -type d -name .git -print",
     "git -C . status --short",
     "git add .",
+    "git add then .",
     "ls . && git -C . worktree list --porcelain",
     "set -eu\npwd\nfind . -maxdepth 2 -type d -name .git -print",
     "git worktree add ../review-worktree origin/main",
