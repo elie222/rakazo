@@ -48,9 +48,13 @@ describe("remote MCP URL policy", () => {
       }),
     ).resolves.toEqual(new URL("http://192.168.1.20:3927/mcp"));
     await expect(
-      assertSafeRemoteUrl("http://host.docker.internal:3927/mcp", publicResolver, {
-        allowPrivateEndpoint: true,
-      }),
+      assertSafeRemoteUrl(
+        "http://host.docker.internal:3927/mcp",
+        async () => [{ address: "192.168.65.254", family: 4 as const }],
+        {
+          allowPrivateEndpoint: true,
+        },
+      ),
     ).resolves.toEqual(new URL("http://host.docker.internal:3927/mcp"));
   });
 
@@ -66,6 +70,14 @@ describe("remote MCP URL policy", () => {
     await expect(assertSafeRemoteUrl("http://127.0.0.1:3927/mcp", publicResolver)).resolves.toEqual(
       new URL("http://127.0.0.1:3927/mcp"),
     );
+  });
+
+  it("rejects HTTP when a private-suffix hostname resolves publicly", async () => {
+    await expect(
+      assertSafeRemoteUrl("http://mcp.internal/mcp", publicResolver, {
+        allowPrivateEndpoint: true,
+      }),
+    ).rejects.toThrow(/HTTPS/i);
   });
 
   it("rejects public HTTP even when the private-endpoint escape is enabled", async () => {

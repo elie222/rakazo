@@ -159,9 +159,9 @@ async function inspectSafeRemoteUrl(
   if (privateHost && !allowPrivate && !loopbackHttp) {
     throw new Error("Connector URL targets a private host");
   }
-  if (privateHost || loopbackHttp) {
-    return { url, addresses: literalAddresses(hostname) ?? [] };
-  }
+  const literal = literalAddresses(hostname);
+  if (loopbackHttp) return { url, addresses: literal ?? [] };
+  if (privateHost && literal) return { url, addresses: literal };
   const addresses = await resolve(hostname);
   assertAllowedAddresses(addresses, hostname, policy);
   if (url.protocol === "http:" && addresses.some((entry) => !isPrivateAddress(entry.address))) {
