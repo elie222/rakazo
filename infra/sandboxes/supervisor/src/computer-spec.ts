@@ -24,6 +24,19 @@ export function resolveTeamScreenLimit(value = process.env.SANDBOX_TEAM_SCREEN_L
   return Math.min(limit, MAX_DESKTOP_DISPLAY);
 }
 
+export function resolveSpaceComputerLimit(
+  value = process.env.SANDBOX_MAX_COMPUTERS_PER_SPACE,
+): number {
+  if (value === undefined || value.trim() === "" || isUnlimited(value)) return 0;
+  const limit = Number(value);
+  if (!Number.isSafeInteger(limit) || limit < 1) {
+    throw new Error(
+      "SANDBOX_MAX_COMPUTERS_PER_SPACE must be a positive integer, or 0 for no configured cap",
+    );
+  }
+  return limit;
+}
+
 /**
  * Resource ceilings for a bot computer.
  *

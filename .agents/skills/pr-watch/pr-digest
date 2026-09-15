@@ -121,8 +121,8 @@ digest() {
     else ([.[].conclusion // "pending"] | group_by(.) | map("\(length) \(.[0])") | join(" · ")) end)' <<<"$runs"
   jq -r '.[] | select(.state != "success") | "STATUS \(.context) \(.state)"' <<<"$statuses"
 
-  # Failing checks, annotated with the step that broke so infra cancellations
-  # are distinguishable from real test failures without another round trip.
+  # Report the failed step and skipped successors without inferring whether
+  # tests ran: a test assertion failure can also skip later report steps.
   if [ "$failed" -gt 0 ]; then
     while IFS=$'\t' read -r name conclusion url; do
       local job step_info=""
@@ -134,7 +134,7 @@ digest() {
           | if $bad == null then ""
             else " · step \"\($bad.name)\" \($bad.conclusion)"
                  + (if ([$s[] | select(.number > $bad.number and .conclusion == "skipped")] | length) > 0
-                    then " (later steps skipped, tests did not run)" else "" end)
+                    then " (later steps skipped)" else "" end)
             end' 2>/dev/null)
       fi
       echo "FAIL $name [$conclusion]$step_info"

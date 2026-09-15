@@ -16,12 +16,12 @@
     "@astrojs/sitemap": "3.7.4",
     "@rakazo/core": "workspace:*",
     "@rakazo/ui-web": "workspace:*",
-    "@vercel/functions": "3.9.5",
-    "astro": "7.3.1",
-    "posthog-js": "1.428.2",
+    "@vercel/functions": "3.9.7",
+    "astro": "7.3.2",
+    "posthog-js": "1.430.1",
     "react": "19.2.3",
     "react-dom": "19.2.3",
-    "zod": "4.5.4"
+    "zod": "4.6.2"
   },
   "devDependencies": {
     "@astrojs/check": "0.9.10",

@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { approvalEffectKey, stableJsonValue } from "./approval-effect-key.js";
+import {
+  approvalEffectKey,
+  stableJsonValue,
+  toolEffectIdempotencyKey,
+} from "./approval-effect-key.js";
 
 describe("stableJsonValue", () => {
   it("sorts object keys", () => {
@@ -31,5 +35,34 @@ describe("approvalEffectKey", () => {
 
     expect(key).toMatch(/^run-1:destination\.write:[a-f0-9]{64}$/);
     expect(key).not.toContain("private draft");
+  });
+});
+
+describe("toolEffectIdempotencyKey", () => {
+  it("scopes provider tool-call ids to run, tool, and args", () => {
+    const write = { path: "a.txt", content: "one" };
+    expect(toolEffectIdempotencyKey("run-1", "write_file", "call_0", write)).toMatch(
+      /^run-1:write_file:call_0:[a-f0-9]{64}$/,
+    );
+    expect(toolEffectIdempotencyKey("run-1", "write_file", "call_0", write)).not.toBe(
+      toolEffectIdempotencyKey("run-2", "write_file", "call_0", write),
+    );
+    expect(toolEffectIdempotencyKey("run-1", "write_file", "call_0", write)).not.toBe(
+      toolEffectIdempotencyKey("run-1", "shell", "call_0", write),
+    );
+    expect(toolEffectIdempotencyKey("run-1", "write_file", "call_0", write)).not.toBe(
+      toolEffectIdempotencyKey("run-1", "write_file", "call_0", {
+        path: "a.txt",
+        content: "two",
+      }),
+    );
+    expect(toolEffectIdempotencyKey("run-1", "write_file", "call_0", write)).not.toBe("call_0");
+  });
+
+  it("is stable for a true retry of the same effect", () => {
+    const args = { path: "MEMORY.md", content: "fact" };
+    expect(toolEffectIdempotencyKey("run-1", "remember", "call_0", args)).toBe(
+      toolEffectIdempotencyKey("run-1", "remember", "call_0", args),
+    );
   });
 });

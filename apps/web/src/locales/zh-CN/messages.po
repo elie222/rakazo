@@ -17,7 +17,16 @@ msgstr ""
 msgid " (unread)"
 msgstr "（未读）"
 
-#. placeholder {0}: group.entries.length
+#: src/pages/shell/dialogs.tsx
+msgid "Could not rename section"
+msgstr "无法重命名分组"
+
+#: src/pages/BotContextMenu.tsx
+#: src/pages/Shell.tsx
+#: src/pages/shell/dialogs.tsx
+msgid "Rename section"
+msgstr "重命名分组"
+
 #: src/pages/ModelSettingsOverlay.tsx:386
 msgid "{0, plural, one {# model} other {# models}}"
 msgstr "{0, plural, one {# 个模型} other {# 个模型}}"
@@ -3355,6 +3364,11 @@ msgstr "提交"
 msgid "Supports thinking"
 msgstr "支持思考"
 
+#: src/pages/ModelSettingsOverlay.tsx:508
+#: src/pages/Onboarding.tsx:425
+msgid "Supports images"
+msgstr "支持图片"
+
 #: src/pages/shell/command-palette.tsx:90
 msgid "Switch bot"
 msgstr ""
@@ -3755,3 +3769,36 @@ msgstr ""
 #: apps/web/src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Recall and write"
 msgstr ""
+
+#: src/pages/Onboarding.tsx:516
+msgid "Reasoning effort"
+msgstr "推理强度"
+
+#: src/pages/Onboarding.tsx:517
+msgid "Default"
+msgstr "默认"
+
+#: src/pages/Onboarding.tsx:520
+msgid "Maximum output tokens"
+msgstr "最大输出 token 数"
+
+#: src/pages/Onboarding.tsx:523
+msgid "Context limit"
+msgstr "上下文限制"
+
+#: src/pages/Onboarding.tsx:227
+msgid "Enter a whole number from 1 to {MAX_MODEL_MAX_TOKENS} for maximum output tokens."
+msgstr "请输入 1 到 {MAX_MODEL_MAX_TOKENS} 之间的整数作为最大输出 token 数。"
+
+#: src/pages/Onboarding.tsx:234
+msgid "Enter a whole number from 1 to {MAX_MODEL_CONTEXT_WINDOW} for the context limit."
+msgstr "请输入 1 到 {MAX_MODEL_CONTEXT_WINDOW} 之间的整数作为上下文限制。"
+
+#: src/pages/Onboarding.tsx:218
+msgid "Enter a whole number from 1 to 1000 for the image limit."
+msgstr "请输入 1 到 1000 之间的整数作为图像限制。"
+
+#: src/pages/Onboarding.tsx:529
+msgid "Maximum images per request"
+msgstr "每次请求的最大图像数"
+

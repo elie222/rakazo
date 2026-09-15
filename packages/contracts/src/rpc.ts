@@ -1,5 +1,6 @@
 import { eventIterator, oc } from "@orpc/contract";
 import * as z from "zod";
+import { AiConsentQuerySchema, AiConsentStatusSchema } from "./ai-consent.js";
 import { ATTACHMENT_MAX_BASE64_LENGTH, ATTACHMENT_MAX_COUNT } from "./attachments.js";
 import {
   ActionApprovalRuleSchema,
@@ -134,6 +135,19 @@ const threadSendInput = threadTarget
   });
 
 export const appContract = {
+  aiConsent: {
+    status: oc.input(AiConsentQuerySchema).output(AiConsentStatusSchema),
+    allow: oc
+      .input(
+        z.object({
+          scope: z.string(),
+          version: z.string(),
+          keys: z.array(z.string()).min(1).max(200),
+        }),
+      )
+      .output(AiConsentStatusSchema),
+    revoke: oc.input(z.object({ key: z.string().nullable() })).output(AiConsentStatusSchema),
+  },
   health: oc.output(z.object({ ok: z.literal(true), version: z.string() })),
   me: oc.output(MeSchema),
   preferences: {
@@ -247,6 +261,9 @@ export const appContract = {
     list: oc.output(z.array(BotSectionSchema)),
     create: oc
       .input(threadTarget.safeExtend({ name: z.string().trim().min(1).max(60) }))
+      .output(BotSectionSchema),
+    update: oc
+      .input(z.object({ sectionId: Id, name: z.string().trim().min(1).max(60) }))
       .output(BotSectionSchema),
   },
   threads: {

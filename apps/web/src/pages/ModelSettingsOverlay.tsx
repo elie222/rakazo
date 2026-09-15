@@ -1,9 +1,16 @@
 import { Plural, Trans, useLingui } from "@lingui/react/macro";
-import type { Me } from "@rakazo/contracts";
+import type { Me, ThinkingLevel } from "@rakazo/contracts";
 import {
+  DEFAULT_MODEL_CONTEXT_WINDOW,
+  DEFAULT_MODEL_MAX_TOKENS,
+  MAX_MODEL_CONTEXT_WINDOW,
+  MAX_MODEL_MAX_TOKENS,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   openAiCompatibleConnectReady,
   openAiCompatibleProbeSuccessMessage,
+  parseModelContextWindow,
+  parseModelMaxImagesPerPrompt,
+  parseModelMaxTokens,
 } from "@rakazo/contracts";
 import { createModelProbe, initialModelProbeState } from "@rakazo/core";
 import {
@@ -54,6 +61,11 @@ export function ModelSettingsOverlay({
   const [apiKey, setApiKey] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
   const [reasoning, setReasoning] = useState(false);
+  const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel | null>(null);
+  const [maxTokens, setMaxTokens] = useState(String(DEFAULT_MODEL_MAX_TOKENS));
+  const [contextWindow, setContextWindow] = useState(String(DEFAULT_MODEL_CONTEXT_WINDOW));
+  const [supportsImages, setSupportsImages] = useState(false);
+  const [maxImagesPerPrompt, setMaxImagesPerPrompt] = useState("");
   const [{ models: probeModels, baseUrl: probedBaseUrl, probing }, setProbe] =
     useState(initialModelProbeState);
   const [modelProbe] = useState(() => createModelProbe(setProbe));
@@ -121,6 +133,11 @@ export function ModelSettingsOverlay({
       if (nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID) {
         setBaseUrl(nextCredential?.baseUrl ?? "");
         setReasoning(nextCredential?.reasoning ?? false);
+        setThinkingLevel(nextCredential?.thinkingLevel ?? null);
+        setMaxTokens(String(nextCredential?.maxTokens ?? DEFAULT_MODEL_MAX_TOKENS));
+        setContextWindow(String(nextCredential?.contextWindow ?? DEFAULT_MODEL_CONTEXT_WINDOW));
+        setSupportsImages(nextCredential?.supportsImages ?? false);
+        setMaxImagesPerPrompt(String(nextCredential?.maxImagesPerPrompt ?? ""));
       }
     }
   }
@@ -200,6 +217,11 @@ export function ModelSettingsOverlay({
     const nextCredential = credentials.find((entry) => entry.provider === nextProvider);
     setProvider(nextProvider);
     setReasoning(nextCredential?.reasoning ?? false);
+    setThinkingLevel(nextCredential?.thinkingLevel ?? null);
+    setMaxTokens(String(nextCredential?.maxTokens ?? DEFAULT_MODEL_MAX_TOKENS));
+    setContextWindow(String(nextCredential?.contextWindow ?? DEFAULT_MODEL_CONTEXT_WINDOW));
+    setSupportsImages(nextCredential?.supportsImages ?? false);
+    setMaxImagesPerPrompt(String(nextCredential?.maxImagesPerPrompt ?? ""));
     setModelId(
       nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID
         ? (nextCredential?.modelId ?? "")
@@ -257,6 +279,31 @@ export function ModelSettingsOverlay({
     } else if (!apiKey.trim()) {
       return;
     }
+    const parsedMaxImagesPerPrompt = parseModelMaxImagesPerPrompt(
+      maxImagesPerPrompt,
+      supportsImages,
+    );
+    if (supportsImages && maxImagesPerPrompt.trim() && parsedMaxImagesPerPrompt === undefined) {
+      setError(t`Enter a whole number from 1 to 1000 for the image limit.`);
+      return;
+    }
+    const maxImagesPerPromptInput =
+      supportsImages && !maxImagesPerPrompt.trim() ? null : parsedMaxImagesPerPrompt;
+
+    const parsedMaxTokens = parseModelMaxTokens(maxTokens);
+    if (parsedMaxTokens === undefined) {
+      setError(
+        t`Enter a whole number from 1 to ${MAX_MODEL_MAX_TOKENS} for maximum output tokens.`,
+      );
+      return;
+    }
+    const parsedContextWindow = parseModelContextWindow(contextWindow);
+    if (parsedContextWindow === undefined) {
+      setError(
+        t`Enter a whole number from 1 to ${MAX_MODEL_CONTEXT_WINDOW} for the context limit.`,
+      );
+      return;
+    }
     setError(null);
     setNotice(null);
     setPending("connect");
@@ -268,6 +315,11 @@ export function ModelSettingsOverlay({
               baseUrl: effectiveBaseUrl,
               modelId: modelId.trim(),
               reasoning,
+              thinkingLevel: reasoning ? thinkingLevel : null,
+              maxTokens: parsedMaxTokens,
+              contextWindow: parsedContextWindow,
+              supportsImages,
+              maxImagesPerPrompt: maxImagesPerPromptInput,
               apiKey: apiKey.trim() || undefined,
               label: selected.providerName ?? selected.provider,
             }
@@ -500,11 +552,56 @@ export function ModelSettingsOverlay({
                       onReasoningChange={(value) => {
                         selectionRevisionRef.current += 1;
                         setReasoning(value);
+                        if (!value) setThinkingLevel(null);
                         setNotice(null);
                       }}
                       disabled={busy}
                       advancedLabel={t`Advanced`}
                       thinkingLabel={t`Supports thinking`}
+                      thinkingLevel={thinkingLevel}
+                      onThinkingLevelChange={(value) => {
+                        selectionRevisionRef.current += 1;
+                        setThinkingLevel(value as ThinkingLevel | null);
+                        setNotice(null);
+                      }}
+                      thinkingLevelOptions={[
+                        { value: "minimal", label: t`Minimal` },
+                        { value: "low", label: t`Low` },
+                        { value: "medium", label: t`Medium` },
+                        { value: "high", label: t`High` },
+                        { value: "xhigh", label: t`Extra high` },
+                        { value: "max", label: t`Max` },
+                      ]}
+                      thinkingLevelLabel={t`Reasoning effort`}
+                      thinkingLevelDefaultLabel={t`Default`}
+                      maxTokens={maxTokens}
+                      onMaxTokensChange={(value) => {
+                        selectionRevisionRef.current += 1;
+                        setMaxTokens(value);
+                        setNotice(null);
+                      }}
+                      maxTokensLabel={t`Maximum output tokens`}
+                      contextWindow={contextWindow}
+                      onContextWindowChange={(value) => {
+                        selectionRevisionRef.current += 1;
+                        setContextWindow(value);
+                        setNotice(null);
+                      }}
+                      contextWindowLabel={t`Context limit`}
+                      supportsImages={supportsImages}
+                      onSupportsImagesChange={(value) => {
+                        selectionRevisionRef.current += 1;
+                        setSupportsImages(value);
+                        setNotice(null);
+                      }}
+                      imagesLabel={t`Supports images`}
+                      maxImagesPerPrompt={maxImagesPerPrompt}
+                      onMaxImagesPerPromptChange={(value) => {
+                        selectionRevisionRef.current += 1;
+                        setMaxImagesPerPrompt(value);
+                        setNotice(null);
+                      }}
+                      maxImagesLabel={t`Maximum images per request`}
                     />
                   </>
                 ) : (

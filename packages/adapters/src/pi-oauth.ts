@@ -6,7 +6,14 @@ import type {
   OAuthCredential,
 } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
-import type { ModelOAuthBegin, ModelOAuthSignInMode } from "@rakazo/contracts";
+import {
+  MAX_MODEL_CONTEXT_WINDOW,
+  MAX_MODEL_MAX_TOKENS,
+  type ModelOAuthBegin,
+  type ModelOAuthSignInMode,
+  type ThinkingLevel,
+  ThinkingLevelSchema,
+} from "@rakazo/contracts";
 import { createManualAnthropicOAuthLogin } from "./pi-anthropic-oauth.js";
 
 export const CHATGPT_OAUTH_PROVIDER = "openai-codex";
@@ -52,7 +59,17 @@ const SIGN_IN_START_WAIT_MS = 30_000;
 export type StoredModelSecret =
   | { kind: "api_key"; key: string }
   | { kind: "oauth"; credential: OAuthCredential }
-  | { kind: "openai_compatible"; baseUrl: string; apiKey?: string; reasoning?: boolean };
+  | {
+      kind: "openai_compatible";
+      baseUrl: string;
+      apiKey?: string;
+      reasoning?: boolean;
+      thinkingLevel?: ThinkingLevel | null;
+      maxTokens?: number;
+      contextWindow?: number;
+      visionModelIds?: string[];
+      maxImagesPerPrompt?: number;
+    };
 
 export type PiOAuthConnected = {
   status: "connected";
@@ -120,11 +137,45 @@ export function parseModelSecret(plaintext: string): StoredModelSecret {
         parsed.baseUrl.trim()
       ) {
         const apiKey = typeof parsed.apiKey === "string" ? parsed.apiKey : undefined;
+        const parsedThinkingLevel = ThinkingLevelSchema.nullable().safeParse(parsed.thinkingLevel);
+        const thinkingLevel = parsedThinkingLevel.success ? parsedThinkingLevel.data : undefined;
+        const maxTokens =
+          typeof parsed.maxTokens === "number" &&
+          Number.isInteger(parsed.maxTokens) &&
+          parsed.maxTokens >= 1 &&
+          parsed.maxTokens <= MAX_MODEL_MAX_TOKENS
+            ? parsed.maxTokens
+            : undefined;
+        const contextWindow =
+          typeof parsed.contextWindow === "number" &&
+          Number.isInteger(parsed.contextWindow) &&
+          parsed.contextWindow >= 1 &&
+          parsed.contextWindow <= MAX_MODEL_CONTEXT_WINDOW
+            ? parsed.contextWindow
+            : undefined;
+        const visionModelIds = Array.isArray(parsed.visionModelIds)
+          ? parsed.visionModelIds.filter(
+              (modelId): modelId is string =>
+                typeof modelId === "string" && modelId.trim().length > 0,
+            )
+          : undefined;
+        const maxImagesPerPrompt =
+          typeof parsed.maxImagesPerPrompt === "number" &&
+          Number.isInteger(parsed.maxImagesPerPrompt) &&
+          parsed.maxImagesPerPrompt >= 1 &&
+          parsed.maxImagesPerPrompt <= 1000
+            ? parsed.maxImagesPerPrompt
+            : undefined;
         return {
           kind: "openai_compatible",
           baseUrl: parsed.baseUrl.trim(),
           ...(apiKey ? { apiKey } : {}),
           ...(typeof parsed.reasoning === "boolean" ? { reasoning: parsed.reasoning } : {}),
+          ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
+          ...(maxTokens !== undefined ? { maxTokens } : {}),
+          ...(contextWindow !== undefined ? { contextWindow } : {}),
+          ...(visionModelIds ? { visionModelIds } : {}),
+          ...(maxImagesPerPrompt !== undefined ? { maxImagesPerPrompt } : {}),
         };
       }
       if (
@@ -150,6 +201,13 @@ export function serializeModelSecret(secret: StoredModelSecret): string {
       baseUrl: secret.baseUrl,
       ...(secret.apiKey ? { apiKey: secret.apiKey } : {}),
       ...(secret.reasoning !== undefined ? { reasoning: secret.reasoning } : {}),
+      ...(secret.thinkingLevel !== undefined ? { thinkingLevel: secret.thinkingLevel } : {}),
+      ...(secret.maxTokens !== undefined ? { maxTokens: secret.maxTokens } : {}),
+      ...(secret.contextWindow !== undefined ? { contextWindow: secret.contextWindow } : {}),
+      ...(secret.visionModelIds !== undefined ? { visionModelIds: secret.visionModelIds } : {}),
+      ...(secret.maxImagesPerPrompt !== undefined
+        ? { maxImagesPerPrompt: secret.maxImagesPerPrompt }
+        : {}),
     });
   }
   return secret.key;

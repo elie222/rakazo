@@ -15,6 +15,7 @@ import {
   toolCompletionAuditPayload,
   toolCompletionFromResult,
 } from "./executor.js";
+import { serializeModelSecret } from "./pi-oauth.js";
 
 describe("tool completion audit", () => {
   it("records result metadata without persisting tool contents", () => {
@@ -935,13 +936,80 @@ description: Prepare standup notes
 
     expect(updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
+        where: expect.objectContaining({
+          id: "run-1",
+          status: "queued",
+          checkpoint: "takeover-skipped",
+        }),
         data: expect.objectContaining({ checkpoint: null }),
       }),
     );
   });
 
+  it("does not claim a waiting takeover after a concurrent release writes the checkpoint", async () => {
+    let row: { status: string; checkpoint: string | null } = {
+      status: "waiting_takeover",
+      checkpoint: null,
+    };
+    const matchesClaim = (
+      where: {
+        status?: string | { in: string[] };
+        checkpoint?: string | null;
+        OR?: Array<{ status?: string | { in: string[] } }>;
+      },
+      current: { status: string; checkpoint: string | null },
+    ): boolean => {
+      if (typeof where.status === "string" && where.status !== current.status) return false;
+      if (where.status && typeof where.status === "object" && "in" in where.status) {
+        if (!where.status.in.includes(current.status)) return false;
+      }
+      if ("checkpoint" in where && where.checkpoint !== current.checkpoint) return false;
+      if (where.OR) return where.OR.some((clause) => matchesClaim(clause, current));
+      return true;
+    };
+    const updateMany = vi.fn(async (args: { where: Parameters<typeof matchesClaim>[0] }) => {
+      row = { status: "queued", checkpoint: "takeover" };
+      return { count: matchesClaim(args.where, row) ? 1 : 0 };
+    });
+    const prisma = {
+      run: {
+        findUnique: vi.fn(async () => ({
+          id: "run-1",
+          botId: "bot-1",
+          status: "waiting_takeover",
+          checkpoint: null,
+          leaseFence: 0,
+        })),
+        updateMany,
+      },
+    } as unknown as PrismaClient;
+    const executor = createRunExecutor({ prisma } as Parameters<typeof createRunExecutor>[0]);
+
+    await executor.continueRun("run-1", "worker-1");
+
+    expect(updateMany).toHaveBeenCalledTimes(1);
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          status: "waiting_takeover",
+          checkpoint: null,
+        }),
+      }),
+    );
+    expect(row).toEqual({ status: "queued", checkpoint: "takeover" });
+  });
+
   it("restores a takeover checkpoint when a switching computer requeues the run", async () => {
-    const updateMany = vi.fn(async () => ({ count: 1 }));
+    const updateMany = vi.fn(
+      async (args: {
+        where: { checkpoint?: string | null | { in: string[] } };
+        data: { status?: string; checkpoint?: string | null };
+      }) => {
+        if (args.data.status === "leased" || args.data.status === "running") return { count: 1 };
+        if (args.where.checkpoint && typeof args.where.checkpoint === "object") return { count: 0 };
+        return { count: 1 };
+      },
+    );
     const enqueue = vi.fn(async () => undefined);
     const prisma = {
       run: {
@@ -970,9 +1038,126 @@ description: Prepare standup notes
 
     expect(updateMany).toHaveBeenLastCalledWith(
       expect.objectContaining({
+        where: expect.objectContaining({ checkpoint: null }),
         data: expect.objectContaining({
           status: "queued",
           checkpoint: "takeover-skipped",
+        }),
+      }),
+    );
+    expect(enqueue).toHaveBeenCalledOnce();
+  });
+
+  it("preserves a concurrent release checkpoint when a held continue requeues", async () => {
+    let checkpoint: string | null = null;
+    const updateMany = vi.fn(
+      async (args: {
+        where: { checkpoint?: string | null | { in: string[] } };
+        data: { status?: string; checkpoint?: string | null };
+      }) => {
+        if (args.data.status === "leased") {
+          checkpoint = null;
+          return { count: 1 };
+        }
+        if (args.data.status === "running") {
+          checkpoint = "takeover";
+          return { count: 1 };
+        }
+        if (args.where.checkpoint && typeof args.where.checkpoint === "object") {
+          return { count: args.where.checkpoint.in.includes(checkpoint ?? "") ? 1 : 0 };
+        }
+        return { count: args.where.checkpoint === null && checkpoint === null ? 1 : 0 };
+      },
+    );
+    const enqueue = vi.fn(async () => undefined);
+    const prisma = {
+      run: {
+        findUnique: vi.fn(async () => ({
+          id: "run-1",
+          botId: "bot-1",
+          status: "waiting_takeover",
+          checkpoint: null,
+          leaseFence: 0,
+        })),
+        findUniqueOrThrow: vi.fn(async () => ({ status: "leased", startedAt: null })),
+        updateMany,
+      },
+      bot: {
+        findUniqueOrThrow: vi.fn(async () => ({
+          computerId: "computer-1",
+          computerSwitching: true,
+        })),
+      },
+    } as unknown as PrismaClient;
+    const executor = createRunExecutor({ prisma, jobs: { enqueue } } as unknown as Parameters<
+      typeof createRunExecutor
+    >[0]);
+
+    await executor.continueRun("run-1", "worker-1");
+
+    expect(checkpoint).toBe("takeover");
+    expect(enqueue).toHaveBeenCalledOnce();
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          checkpoint: { in: ["takeover", "takeover-skipped"] },
+        }),
+        data: expect.objectContaining({ status: "queued" }),
+      }),
+    );
+    expect(updateMany.mock.calls.some((call) => call[0].data?.status === "waiting_takeover")).toBe(
+      false,
+    );
+    expect(
+      updateMany.mock.calls.some(
+        (call) => call[0].data?.status === "queued" && call[0].data?.checkpoint === null,
+      ),
+    ).toBe(false);
+  });
+
+  it("returns a held takeover to waiting_takeover when the computer is switching", async () => {
+    const updateMany = vi.fn(
+      async (args: {
+        where: { checkpoint?: string | null | { in: string[] } };
+        data: { status?: string; checkpoint?: string | null };
+      }) => {
+        if (args.data.status === "leased" || args.data.status === "running") return { count: 1 };
+        if (args.where.checkpoint && typeof args.where.checkpoint === "object") return { count: 0 };
+        return { count: 1 };
+      },
+    );
+    const enqueue = vi.fn(async () => undefined);
+    const prisma = {
+      run: {
+        findUnique: vi.fn(async () => ({
+          id: "run-1",
+          botId: "bot-1",
+          status: "waiting_takeover",
+          checkpoint: null,
+          leaseFence: 0,
+        })),
+        findUniqueOrThrow: vi.fn(async () => ({ status: "leased", startedAt: null })),
+        updateMany,
+      },
+      bot: {
+        findUniqueOrThrow: vi.fn(async () => ({
+          computerId: "computer-1",
+          computerSwitching: true,
+        })),
+      },
+    } as unknown as PrismaClient;
+    const executor = createRunExecutor({ prisma, jobs: { enqueue } } as unknown as Parameters<
+      typeof createRunExecutor
+    >[0]);
+
+    await executor.continueRun("run-1", "worker-1");
+
+    expect(updateMany).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ checkpoint: null }),
+        data: expect.objectContaining({
+          status: "waiting_takeover",
+          checkpoint: null,
         }),
       }),
     );
@@ -1210,6 +1395,73 @@ description: Prepare standup notes
         "private-model",
       ),
     ).rejects.toThrow("Unknown model for that provider");
+  });
+
+  it("keeps image support for a separately enabled bot model override", async () => {
+    const provider = "openai-compatible";
+    const findFirst = vi.fn(
+      async (args: { where: { credential?: { provider?: string }; isDefault?: boolean } }) => {
+        if (args.where.credential?.provider === provider || args.where.isDefault) {
+          return modelPreference({
+            provider,
+            secretId: "secret-openai-compatible",
+            modelId: "space-model",
+            isDefault: Boolean(args.where.isDefault),
+          });
+        }
+        return null;
+      },
+    );
+    const plaintext = serializeModelSecret({
+      kind: "openai_compatible",
+      baseUrl: "http://127.0.0.1:8000/v1",
+      visionModelIds: ["bot-vision-model"],
+      maxImagesPerPrompt: 1,
+      maxTokens: 8192,
+      contextWindow: 65536,
+    });
+    const bot = {
+      modelProvider: provider,
+      modelId: "bot-vision-model",
+      thinkingLevel: null,
+    };
+    const prisma = {
+      bot: { findFirst: vi.fn(async () => bot) },
+      spaceModelPreference: { findFirst },
+      userModelCredential: { findFirst: vi.fn(async () => null) },
+      deploymentSettings: { findUnique: vi.fn(async () => null) },
+      secret: {
+        findFirst: vi.fn(async () => ({
+          id: "secret-openai-compatible",
+          ciphertext: plaintext,
+        })),
+        findUnique: vi.fn(async () => null),
+      },
+    } as unknown as PrismaClient;
+    const executor = createRunExecutor({
+      prisma,
+      secretStore: { load: vi.fn(() => plaintext), put: vi.fn() },
+    } as unknown as Parameters<typeof createRunExecutor>[0]);
+
+    await expect(
+      executor.resolveModel({ userId: "user-1", spaceId: "ws-1", botId: "bot-1" }),
+    ).resolves.toMatchObject({
+      provider,
+      id: "bot-vision-model",
+      acceptsImages: true,
+      maxImagesPerPrompt: 1,
+      maxTokens: 8192,
+      contextWindow: 65536,
+    });
+
+    bot.modelId = "text-only-model";
+    await expect(
+      executor.resolveModel({ userId: "user-1", spaceId: "ws-1", botId: "bot-1" }),
+    ).resolves.toMatchObject({
+      provider,
+      id: "text-only-model",
+      acceptsImages: false,
+    });
   });
 
   it("falls back to the Space default when the override provider has no credential", async () => {

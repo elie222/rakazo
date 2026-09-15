@@ -7,7 +7,22 @@ datasource db {
   provider = "postgresql"
 }
 
+model AiDataConsent {
+  userId String
+  spaceId String
+  recipientKey String
+  version String
+  grantedAt DateTime @default(now())
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  space Space @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  spaceMember SpaceMember @relation(fields: [spaceId, userId], references: [spaceId, userId], onDelete: Cascade)
+
+  @@id([userId, spaceId, recipientKey])
+  @@map("ai_data_consents")
+}
+
 model User {
+  aiDataConsents AiDataConsent[]
   id                          String                       @id
   name                        String
   email                       String
@@ -146,6 +161,7 @@ model Member {
 }
 
 model Space {
+  aiDataConsents AiDataConsent[]
   id                          String                       @id
   organizationId              String
   organization                Organization                 @relation(fields: [organizationId], references: [id], onDelete: Cascade)
@@ -208,6 +224,7 @@ model SpaceMember {
   createdAt        DateTime
   modelPreferences SpaceModelPreference[]
   voicePreferences SpaceVoicePreference[]
+  aiDataConsents AiDataConsent[]
 
   @@unique([spaceId, userId])
   @@index([organizationId, userId])
@@ -255,6 +272,7 @@ model UserModelCredential {
   provider    String
   label       String
   secretId    String
+  supportsImages Boolean              @default(false)
   createdAt   DateTime               @default(now())
   updatedAt   DateTime               @updatedAt
   preferences SpaceModelPreference[]

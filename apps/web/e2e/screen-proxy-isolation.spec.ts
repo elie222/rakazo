@@ -57,6 +57,7 @@ for (const mode of ["development", "preview"] as const) {
     let stop: () => Promise<void>;
 
     let authorized = true;
+    let assetAttempts = 0;
     test.beforeAll(async () => {
       const root = await mkdtemp(path.join(tmpdir(), "rakazo-screen-test-"));
       await mkdir(path.join(root, "dist"));
@@ -68,6 +69,10 @@ for (const mode of ["development", "preview"] as const) {
         );
         res.setHeader("Set-Cookie", "app-session=attacker; Path=/");
         if (req.url === "/core/rfb.js") {
+          if (assetAttempts++ === 0) {
+            res.destroy();
+            return;
+          }
           res.setHeader("Content-Type", "text/javascript");
           res.end('export const loaded = "module loaded";');
         } else {
@@ -164,6 +169,7 @@ for (const mode of ["development", "preview"] as const) {
       await page.goto(`${origin}/app`);
       const response = await page.goto(screenUrl);
       await expect(page.locator("body")).toContainText('"socket":"ok"');
+      expect(assetAttempts).toBeGreaterThanOrEqual(2);
       const result = JSON.parse(await page.locator("body").innerText());
       expect(result).toMatchObject({
         asset: "module loaded",

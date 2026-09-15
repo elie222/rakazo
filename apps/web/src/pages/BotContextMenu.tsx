@@ -36,6 +36,7 @@ export function BotContextMenu({
   sections,
   onMoveToSection,
   onCreateSection,
+  onRenameSection,
   onToggleUnread,
   onEdit,
   onDuplicate,
@@ -50,6 +51,7 @@ export function BotContextMenu({
   sections: BotSection[];
   onMoveToSection: (sectionId: string | null) => void;
   onCreateSection: () => void;
+  onRenameSection?: (sectionId: string) => void;
   onToggleUnread: () => void;
   onEdit: () => void;
   onDuplicate: () => void;
@@ -111,6 +113,12 @@ export function BotContextMenu({
               <FolderPlus />
               {t`New section`}
             </DropdownMenuItem>
+            {bot.sectionId && onRenameSection ? (
+              <DropdownMenuItem onClick={() => onRenameSection(bot.sectionId!)}>
+                <Pencil />
+                {t`Rename section`}
+              </DropdownMenuItem>
+            ) : null}
           </DropdownMenuSubContent>
         </DropdownMenuSub>
         <DropdownMenuItem onClick={onToggleUnread}>

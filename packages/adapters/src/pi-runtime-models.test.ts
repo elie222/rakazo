@@ -47,6 +47,24 @@ describe("request model catalogs", () => {
       "http://127.0.0.1:8002/v1",
     );
   });
+
+  it("applies a connected model's image capability to the runtime model", () => {
+    const models = modelsForRequest(
+      {
+        model: {
+          provider: OPENAI_COMPATIBLE_PROVIDER_ID,
+          id: "vision-model",
+          baseUrl: "http://127.0.0.1:8000/v1",
+          acceptsImages: true,
+        },
+      },
+      OPENAI_COMPATIBLE_PROVIDER_ID,
+    );
+
+    expect(models.getModel(OPENAI_COMPATIBLE_PROVIDER_ID, "vision-model")?.input).toContain(
+      "image",
+    );
+  });
 });
 
 it.each([true, false, undefined])(

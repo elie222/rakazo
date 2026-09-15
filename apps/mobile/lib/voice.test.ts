@@ -8,6 +8,7 @@ import {
   VOICE_RESPONSE_TIMEOUT_MS,
 } from "./voice";
 
+vi.mock("./ai-consent", () => ({ promptAiConsent: vi.fn() }));
 vi.mock("expo-file-system", () => ({ File: class {}, Paths: {} }));
 vi.mock("./api", () => ({
   authHeaders: vi.fn(),
@@ -37,7 +38,8 @@ describe("mobile speech", () => {
         "x-rakazo-space-id": "space-support",
       },
     });
-    vi.mocked(rpc).mockImplementation(async () => {
+    vi.mocked(rpc).mockImplementation(async (proc) => {
+      if (proc === "aiConsent/status") return { version: "2026-09-14", recipients: [] } as never;
       vi.mocked(currentApiBase).mockReturnValue("https://finance.example");
       return { ready: true, utterances: ["First", "Second"] } as never;
     });

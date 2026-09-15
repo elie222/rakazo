@@ -247,6 +247,73 @@ describe("finalizeComputerControlRelease", () => {
     expect(publish).toHaveBeenCalledWith("thread:thread-1", JSON.stringify({ cursor: 7 }));
   });
 
+  it("stamps a takeover checkpoint on a steered running run without clearing its lease", async () => {
+    const tx = {
+      computer: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      bot: {
+        findFirst: vi.fn().mockResolvedValue({
+          computerId: "computer-1",
+          thread: { id: "thread-1" },
+        }),
+      },
+      run: {
+        findUnique: vi.fn().mockResolvedValue({ status: "running" }),
+        updateMany: vi.fn().mockResolvedValueOnce({ count: 0 }).mockResolvedValueOnce({ count: 1 }),
+      },
+      thread: { update: vi.fn().mockResolvedValue({ nextEventSeq: 8 }) },
+      event: {
+        create: vi.fn().mockResolvedValue({
+          ...event(7),
+          type: "computer.takeover.released",
+          payload: { holder: "bot", leaseId: "lease-1", reason: "released" },
+        }),
+      },
+    };
+    const prisma = {
+      message: { findUnique: vi.fn().mockResolvedValue(null) },
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+    } as unknown as PrismaClient;
+
+    await expect(
+      finalizeComputerControlRelease(prisma, {
+        spaceId: "workspace-1",
+        computerId: "computer-1",
+        botId: "bot-1",
+        runId: "run-1",
+        leaseId: "lease-1",
+        holder: "bot",
+        reason: "released",
+      }),
+    ).resolves.toEqual({ runId: "run-1" });
+
+    expect(tx.run.updateMany).toHaveBeenNthCalledWith(1, {
+      where: {
+        id: "run-1",
+        spaceId: "workspace-1",
+        botId: "bot-1",
+        status: "waiting_takeover",
+      },
+      data: { status: "queued", checkpoint: "takeover" },
+    });
+    expect(tx.run.updateMany).toHaveBeenNthCalledWith(2, {
+      where: {
+        id: "run-1",
+        spaceId: "workspace-1",
+        botId: "bot-1",
+        status: { in: ["leased", "running"] },
+      },
+      data: { checkpoint: "takeover" },
+    });
+    expect(tx.event.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          type: "computer.takeover.released",
+          runId: "run-1",
+        }),
+      }),
+    );
+  });
+
   it("clears the lease even if its controlling bot was deleted", async () => {
     const tx = {
       computer: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },

@@ -17,7 +17,16 @@ msgstr ""
 msgid " (unread)"
 msgstr " (непрочитано)"
 
-#. placeholder {0}: group.entries.length
+#: src/pages/shell/dialogs.tsx
+msgid "Could not rename section"
+msgstr "Не удалось переименовать раздел"
+
+#: src/pages/BotContextMenu.tsx
+#: src/pages/Shell.tsx
+#: src/pages/shell/dialogs.tsx
+msgid "Rename section"
+msgstr "Переименовать раздел"
+
 #: src/pages/ModelSettingsOverlay.tsx:386
 msgid "{0, plural, one {# model} other {# models}}"
 msgstr "{0, plural, one {# модель} few {# модели} many {# моделей} other {# модели}}"

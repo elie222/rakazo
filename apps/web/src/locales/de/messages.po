@@ -17,7 +17,16 @@ msgstr ""
 msgid " (unread)"
 msgstr " (ungelesen)"
 
-#. placeholder {0}: group.entries.length
+#: src/pages/shell/dialogs.tsx
+msgid "Could not rename section"
+msgstr "Abschnitt konnte nicht umbenannt werden"
+
+#: src/pages/BotContextMenu.tsx
+#: src/pages/Shell.tsx
+#: src/pages/shell/dialogs.tsx
+msgid "Rename section"
+msgstr "Abschnitt umbenennen"
+
 #: src/pages/ModelSettingsOverlay.tsx:386
 msgid "{0, plural, one {# model} other {# models}}"
 msgstr "{0, plural, one {# Modell} other {# Modelle}}"
@@ -3355,6 +3364,11 @@ msgstr "Absenden"
 msgid "Supports thinking"
 msgstr "Unterstützt Denkmodus"
 
+#: src/pages/ModelSettingsOverlay.tsx:508
+#: src/pages/Onboarding.tsx:425
+msgid "Supports images"
+msgstr "Unterstützt Bilder"
+
 #: src/pages/shell/command-palette.tsx:90
 msgid "Switch bot"
 msgstr ""
@@ -3755,3 +3769,36 @@ msgstr ""
 #: apps/web/src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Recall and write"
 msgstr ""
+
+#: src/pages/Onboarding.tsx:516
+msgid "Reasoning effort"
+msgstr "Denkaufwand"
+
+#: src/pages/Onboarding.tsx:517
+msgid "Default"
+msgstr "Standard"
+
+#: src/pages/Onboarding.tsx:520
+msgid "Maximum output tokens"
+msgstr "Maximale Ausgabetokens"
+
+#: src/pages/Onboarding.tsx:523
+msgid "Context limit"
+msgstr "Kontextlimit"
+
+#: src/pages/Onboarding.tsx:227
+msgid "Enter a whole number from 1 to {MAX_MODEL_MAX_TOKENS} for maximum output tokens."
+msgstr "Gib eine ganze Zahl von 1 bis {MAX_MODEL_MAX_TOKENS} für die maximalen Ausgabetokens ein."
+
+#: src/pages/Onboarding.tsx:234
+msgid "Enter a whole number from 1 to {MAX_MODEL_CONTEXT_WINDOW} for the context limit."
+msgstr "Gib eine ganze Zahl von 1 bis {MAX_MODEL_CONTEXT_WINDOW} für das Kontextlimit ein."
+
+#: src/pages/Onboarding.tsx:218
+msgid "Enter a whole number from 1 to 1000 for the image limit."
+msgstr "Gib eine ganze Zahl von 1 bis 1000 für das Bilderlimit ein."
+
+#: src/pages/Onboarding.tsx:529
+msgid "Maximum images per request"
+msgstr "Maximale Bilder pro Anfrage"
+

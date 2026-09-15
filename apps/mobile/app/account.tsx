@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Button,
   Platform,
   Pressable,
   ScrollView,
@@ -16,16 +17,16 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useAvatarStyle } from "../components/avatar-style";
 import { BotAvatar } from "../components/bot-avatar";
-import type { MobileBot } from "../lib/api";
+import type { MobileBot, MobileMe } from "../lib/api";
 import {
   currentApiBase,
   deleteAccount,
   loadSessionToken,
-  type MobileMe,
   rpc,
   selectedSpaceId,
   signOut,
 } from "../lib/api";
+import { formatUpdateLabel, getAppVersionInfo } from "../lib/app-version";
 import {
   getCachedAppearancePreference,
   mobileTokens,
@@ -34,22 +35,25 @@ import {
 import { explicitSignInRoute } from "../lib/auth-routing";
 import { confirmDeleteBot } from "../lib/bot-lifecycle";
 import { setUiLocale, useI18n } from "../lib/i18n";
+import type { LiveNotificationSettings } from "../lib/live-notifications";
 import {
   canPostPromotedNotifications,
   DEFAULT_LIVE_NOTIFICATION_SETTINGS,
   getLiveNotificationSettings,
-  type LiveNotificationSettings,
   openLiveNotificationSettings,
   openPromotedNotificationSettings,
   setLiveNotificationSettings,
 } from "../lib/live-notifications";
-import { native, useThemedStyles } from "../lib/native";
+import { presentMessageActionSheet } from "../lib/message-action-sheet";
+import { native, useResolvedAppearance, useThemedStyles } from "../lib/native";
 import { registerPushToken } from "../lib/push";
-import { UI_LOCALE_LABELS, UI_LOCALES, type UiLocale } from "../lib/ui-locale";
+import type { AccountUiLocale } from "../lib/ui-locale";
+import { ACCOUNT_UI_LOCALES, UI_LOCALE_LABELS } from "../lib/ui-locale";
 
 /** Render account settings, including the entry point for voice configuration. */
 export default function Account() {
   const { t, locale } = useI18n();
+  const colorScheme = useResolvedAppearance();
   const router = useRouter();
   const { focus } = useLocalSearchParams<{ focus?: string }>();
   const [me, setMe] = useState<MobileMe | null>(null);
@@ -75,6 +79,9 @@ export default function Account() {
   const { avatarStyle, updateAvatarStyle } = useAvatarStyle();
   const appearance = getCachedAppearancePreference();
   const styles = useThemedStyles(createAccountStyles);
+  const versionInfo = getAppVersionInfo();
+  const updateLabel = formatUpdateLabel(versionInfo.update, t);
+  const versionAccessibility = [versionInfo.nativeLabel, updateLabel].filter(Boolean).join(". ");
 
   useEffect(() => {
     void rpc<MobileMe>("me")
@@ -105,7 +112,6 @@ export default function Account() {
           })}
         </Text>
       ) : null}
-      <Text style={styles.settingsExplanation}>{t("Model spend uses your provider keys.")}</Text>
     </View>
   );
 
@@ -191,6 +197,31 @@ export default function Account() {
     );
   }
 
+  function applyLocale(code: AccountUiLocale) {
+    if (code === locale || localeSaving) return;
+    setLocaleSaving(true);
+    setLocaleError(null);
+    void setUiLocale(code)
+      .catch(() => {
+        setLocaleError(t("Could not change language"));
+      })
+      .finally(() => setLocaleSaving(false));
+  }
+
+  function openLanguagePicker() {
+    if (localeSaving) return;
+    presentMessageActionSheet({
+      title: t("Language"),
+      actions: ACCOUNT_UI_LOCALES.map((code) => ({
+        text: UI_LOCALE_LABELS[code],
+        onPress: () => applyLocale(code),
+      })),
+      colorScheme,
+      cancel: t("Cancel"),
+      more: t("More"),
+    });
+  }
+
   async function handleDeletion() {
     setPending(true);
     setError(null);
@@ -208,6 +239,11 @@ export default function Account() {
   return (
     <SafeAreaView edges={["bottom"]} style={styles.screen}>
       <ScrollView contentContainerStyle={styles.content}>
+        <Button
+          color={mobileTokens().primary}
+          title="AI data sharing"
+          onPress={() => router.push("/ai-data-sharing")}
+        />
         {focus === "usage" ? usageBlock : null}
         <View style={styles.profile}>
           <Text style={styles.name}>{me?.name || t("Your account")}</Text>
@@ -290,41 +326,26 @@ export default function Account() {
           {avatarError ? <Text style={styles.error}>{avatarError}</Text> : null}
         </View>
 
-        <View accessibilityLabel={t("Language")} style={styles.avatarSection}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={t("Language")}
+          accessibilityValue={{ text: UI_LOCALE_LABELS[locale] }}
+          accessibilityState={{ disabled: localeSaving }}
+          disabled={localeSaving}
+          onPress={openLanguagePicker}
+          style={({ pressed }) => [
+            styles.settingsButton,
+            pressed && styles.pressed,
+            localeSaving && { opacity: 0.6 },
+          ]}
+        >
           <Text style={styles.settingsTitle}>{t("Language")}</Text>
-          <View style={styles.localeOptions}>
-            {UI_LOCALES.map((code) => {
-              const selected = locale === code;
-              return (
-                <Pressable
-                  key={code}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected, disabled: localeSaving }}
-                  disabled={localeSaving}
-                  onPress={() => {
-                    if (code === locale || localeSaving) return;
-                    setLocaleSaving(true);
-                    setLocaleError(null);
-                    void setUiLocale(code as UiLocale)
-                      .catch(() => {
-                        setLocaleError(t("Could not change language"));
-                      })
-                      .finally(() => setLocaleSaving(false));
-                  }}
-                  style={({ pressed }) => [
-                    styles.localeOption,
-                    selected && styles.avatarOptionSelected,
-                    pressed && styles.pressed,
-                    localeSaving && { opacity: 0.6 },
-                  ]}
-                >
-                  <Text style={styles.avatarLabel}>{UI_LOCALE_LABELS[code]}</Text>
-                </Pressable>
-              );
-            })}
+          <View style={styles.settingsTrailing}>
+            <Text style={styles.settingsValue}>{UI_LOCALE_LABELS[locale]}</Text>
+            <Text style={styles.chevron}>›</Text>
           </View>
-          {localeError ? <Text style={styles.error}>{localeError}</Text> : null}
-        </View>
+        </Pressable>
+        {localeError ? <Text style={styles.error}>{localeError}</Text> : null}
 
         {Platform.OS === "android" ? (
           <View accessibilityLabel={t("Notifications")} style={styles.profile}>
@@ -389,12 +410,7 @@ export default function Account() {
           onPress={() => router.push("/models")}
           style={({ pressed }) => [styles.settingsButton, pressed && styles.pressed]}
         >
-          <View>
-            <Text style={styles.settingsTitle}>{t("Models")}</Text>
-            <Text style={styles.settingsExplanation}>
-              {t("Choose your provider and active model")}
-            </Text>
-          </View>
+          <Text style={styles.settingsTitle}>{t("Models")}</Text>
           <Text style={styles.chevron}>›</Text>
         </Pressable>
 
@@ -404,12 +420,7 @@ export default function Account() {
           onPress={() => router.push("/voice")}
           style={({ pressed }) => [styles.settingsButton, pressed && styles.pressed]}
         >
-          <View>
-            <Text style={styles.settingsTitle}>{t("Voice")}</Text>
-            <Text style={styles.settingsExplanation}>
-              {t("Speak replies aloud with ElevenLabs, OpenAI, Cartesia, or Fish Audio")}
-            </Text>
-          </View>
+          <Text style={styles.settingsTitle}>{t("Voice")}</Text>
           <Text style={styles.chevron}>›</Text>
         </Pressable>
 
@@ -419,10 +430,7 @@ export default function Account() {
           onPress={() => router.push("/integrations")}
           style={({ pressed }) => [styles.settingsButton, pressed && styles.pressed]}
         >
-          <View>
-            <Text style={styles.settingsTitle}>{t("Integrations")}</Text>
-            <Text style={styles.settingsExplanation}>{t("Connect apps.")}</Text>
-          </View>
+          <Text style={styles.settingsTitle}>{t("Integrations")}</Text>
           <Text style={styles.chevron}>›</Text>
         </Pressable>
 
@@ -471,13 +479,21 @@ export default function Account() {
           </View>
         ) : null}
 
+        {versionInfo.nativeLabel || updateLabel ? (
+          <View
+            accessibilityLabel={versionAccessibility}
+            accessibilityRole="summary"
+            style={styles.versionFooter}
+          >
+            {versionInfo.nativeLabel ? (
+              <Text style={styles.versionLine}>{versionInfo.nativeLabel}</Text>
+            ) : null}
+            {updateLabel ? <Text style={styles.versionLine}>{updateLabel}</Text> : null}
+          </View>
+        ) : null}
+
         <View style={styles.dangerZone}>
           <Text style={styles.dangerTitle}>{t("Delete account")}</Text>
-          <Text style={styles.explanation}>
-            {t(
-              "Enter your current password, then confirm permanent deletion of your account and all associated data.",
-            )}
-          </Text>
           <TextInput
             accessibilityLabel={t("Current password")}
             autoCapitalize="none"
@@ -661,17 +677,6 @@ function createAccountStyles() {
       fontSize: 14,
       fontWeight: "600",
     },
-    localeOptions: {
-      gap: 8,
-    },
-    localeOption: {
-      minHeight: 44,
-      borderRadius: 12,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: native.tertiaryLabel,
-      paddingHorizontal: 14,
-      justifyContent: "center",
-    },
     avatarOptions: {
       flexDirection: "row",
       gap: 12,
@@ -700,15 +705,30 @@ function createAccountStyles() {
       fontSize: 17,
       fontWeight: "600",
     },
-    settingsExplanation: {
+    settingsTrailing: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+      minWidth: 0,
+    },
+    settingsValue: {
       color: native.secondaryLabel,
-      fontSize: 13,
-      marginTop: 3,
+      fontSize: 15,
     },
     chevron: {
       color: native.secondaryLabel,
       fontSize: 28,
       fontWeight: "300",
+    },
+    versionFooter: {
+      marginTop: 4,
+      alignItems: "center",
+      gap: 2,
+    },
+    versionLine: {
+      color: native.tertiaryLabel,
+      fontSize: 12,
+      textAlign: "center",
     },
     dangerZone: {
       marginTop: 12,
@@ -721,12 +741,6 @@ function createAccountStyles() {
       color: tokens.destructive,
       fontSize: 17,
       fontWeight: "600",
-    },
-    explanation: {
-      color: native.secondaryLabel,
-      fontSize: 14,
-      lineHeight: 20,
-      marginTop: 8,
     },
     password: {
       height: 48,

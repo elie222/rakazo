@@ -115,30 +115,24 @@ tags:
 - extendedWaitUntil:
     visible: "The fixture workspace is ready."
     timeout: 10000
-- assertNotVisible: "Add thumbs-up"
-- assertNotVisible: "Remove thumbs-up"
 - assertNotVisible: "Reply"
+- assertNotVisible: "React"
+- assertNotVisible: "More"
 - takeScreenshot: "15-thread"
 - longPressOn: "The fixture workspace is ready."
-- assertVisible: "Add thumbs-up"
 - assertVisible: "Reply"
+- assertVisible: "React"
+- assertVisible: "More"
 - takeScreenshot: "15b-message-actions"
 - tapOn: "More"
 - assertVisible: "Speak message"
 - back
-- longPressOn: "The fixture workspace is ready."
-- tapOn: "Add thumbs-up"
-- extendedWaitUntil:
-    visible: "Remove thumbs-up"
-    timeout: 10000
-- assertNotVisible: "Reply"
-- takeScreenshot: "15c-message-reaction"
-- tapOn: "Remove thumbs-up"
-- extendedWaitUntil:
-    notVisible: "Remove thumbs-up"
-    timeout: 10000
+# User messages omit Speak, so Android fits Reply/React/Copy on one page (no More).
 - longPressOn: "Summarize the fixture launch checklist."
-- assertVisible: "Add thumbs-up"
+- assertVisible: "Reply"
+- assertVisible: "React"
+- assertVisible: "Copy"
+- assertNotVisible: "More"
 - assertNotVisible: "Speak message"
 - tapOn: "Reply"
 - assertVisible: "Replying to"
@@ -155,7 +149,8 @@ tags:
 - assertVisible: "Advanced"
 - tapOn: "Advanced"
 - assertVisible: "Model"
-- assertVisible: "Space default"
+# Label includes the resolved space model, e.g. "Space default (OpenAI: …)".
+- assertVisible: "Space default.*"
 - takeScreenshot: "17-bot-settings"
 
 - openLink: "rakazo:///computer?botId=${RAKAZO_SCREENSHOT_BOT_ID}&name=Researcher"
@@ -168,19 +163,15 @@ tags:
 - extendedWaitUntil:
     visible: "The fixture launch plan is ready."
     timeout: 10000
-- assertNotVisible: "Add thumbs-up"
 - assertNotVisible: "Reply"
+- assertNotVisible: "React"
+- assertNotVisible: "More"
 - takeScreenshot: "19-group-thread"
 - longPressOn: "The fixture launch plan is ready."
-- assertVisible: "Add thumbs-up"
-- tapOn: "Add thumbs-up"
-- extendedWaitUntil:
-    visible: "Remove thumbs-up"
-    timeout: 10000
-- tapOn: "Remove thumbs-up"
-- extendedWaitUntil:
-    notVisible: "Remove thumbs-up"
-    timeout: 10000
+- assertVisible: "Reply"
+- assertVisible: "React"
+- assertVisible: "More"
+- back
 
 - openLink: "rakazo:///group-settings?groupId=${RAKAZO_SCREENSHOT_GROUP_ID}"
 - extendedWaitUntil:
@@ -235,3 +226,14 @@ tags:
 - openLink: "rakazo:///thread?botId=${RAKAZO_SCREENSHOT_BOT_ID}&name=Researcher"
 - assertVisible: "The fixture workspace is ready."
 - takeScreenshot: "29-thread-light-restored"
+
+# Capture the reaction after theme comparisons. Reactions are append-only, so adding
+# 👍 earlier would leak into dark/light thread frames with no remove control.
+- longPressOn: "The fixture workspace is ready."
+- tapOn: "React"
+- tapOn: "👍"
+- extendedWaitUntil:
+    visible: "👍"
+    timeout: 10000
+- assertNotVisible: "Reply"
+- takeScreenshot: "15c-message-reaction"

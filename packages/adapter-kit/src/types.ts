@@ -353,6 +353,14 @@ export interface AgentRunModel {
   baseUrl?: string;
   /** Whether this custom connection accepts standard reasoning_effort. */
   reasoning?: boolean;
+  /** Whether this custom connection accepts image input. */
+  acceptsImages?: boolean;
+  /** Maximum number of image inputs the model connection accepts in one request. */
+  maxImagesPerPrompt?: number;
+  /** Maximum completion tokens sent to the model endpoint. */
+  maxTokens?: number;
+  /** Context-window limit used when sizing prompts and completions. */
+  contextWindow?: number;
   /** Preferred thinking effort for reasoning models; clamped to the model’s supported set. */
   thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null;
   /** In-process OAuth credential from the encrypted store for this run. */

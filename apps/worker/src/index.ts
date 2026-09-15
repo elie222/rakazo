@@ -16,6 +16,7 @@ import {
   createRunSandbox,
   createRunSecretWriter,
   createWebProvider,
+  databaseCapacityBackoffMs,
   EncryptedSecretStore,
   ExpoPushProvider,
   GraphileJobPublisher,
@@ -44,7 +45,12 @@ import {
   SpaceMemoryProviderResolver,
 } from "@rakazo/adapters";
 import { resolveEncryptionKey, resolveSupervisorToken } from "@rakazo/core";
-import { createDb, createThreadEvents } from "@rakazo/db";
+import {
+  createDb,
+  createThreadEvents,
+  isTooManyDatabaseConnections,
+  parsePositiveInteger,
+} from "@rakazo/db";
 import { SERVICE_NAMES } from "@rakazo/logging";
 import { createRootLogger } from "@rakazo/logging/axiom";
 import { MarkdownMemoryStore } from "@rakazo/memory";
@@ -54,7 +60,15 @@ const logger = createRootLogger(SERVICE_NAMES.worker);
 async function main() {
   const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) throw new Error("DATABASE_URL is required");
-  const { prisma, pool } = createDb(databaseUrl);
+  // Shared by Prisma, the reconciliation leadership lock, and both graphile-worker
+  // components (see GraphileJobPublisher/GraphileJobWorkerHost) — one pool instead
+  // of four separate ones. Keep this modest: graphile holds a LISTEN client and
+  // leadership holds an advisory-lock client for the process lifetime, and a
+  // larger max just competes for Postgres max_connections (53300).
+  const { prisma, pool } = createDb(databaseUrl, {
+    poolMax: parsePositiveInteger(process.env.DB_POOL_MAX, 8),
+    applicationName: "rakazo-worker",
+  });
   const realtime = new PostgresRealtimeFanout({
     connectionString: process.env.REALTIME_DATABASE_URL ?? databaseUrl,
     publisher: pool,
@@ -140,8 +154,12 @@ async function main() {
   const home = new LocalAgentHomeStore(dataDir);
   const artifacts = new LocalArtifactStore(dataDir);
   const inMemoryJobs = process.env.WAKEUP_DRIVER === "memory" ? new InMemoryJobQueue() : undefined;
-  const jobs: JobPublisher = inMemoryJobs ?? new GraphileJobPublisher(databaseUrl);
-  const jobHost: JobWorkerHost = inMemoryJobs ?? new GraphileJobWorkerHost(databaseUrl);
+  const jobs: JobPublisher = inMemoryJobs ?? new GraphileJobPublisher(pool);
+  const jobHost: JobWorkerHost =
+    inMemoryJobs ??
+    new GraphileJobWorkerHost(pool, {
+      concurrency: parsePositiveInteger(process.env.GRAPHILE_WORKER_CONCURRENCY, 4),
+    });
   // One provider instance so emulator launches and polls share the same Map.
   const cloudAgent = createCloudAgentConnection();
   const executor = createRunExecutor({
@@ -196,7 +214,25 @@ async function main() {
     messaging,
     cloudAgent,
   });
-  await jobHost.start(jobHandlers);
+  // graphile-worker run() connects through the shared pool. createPool already
+  // retries connect() on 53300 a finite number of times. Keep retrying start
+  // until Postgres has capacity: exhausting then returning from main().catch
+  // left a live process that held connections but never ran jobs or registered
+  // signal handlers, even after capacity returned. Do not exit(1) here; that
+  // crash-loops into the same saturated Postgres. GraphileJobWorkerHost also
+  // observes runner.promise after start and restarts with the same backoff if
+  // the runner dies later on 53300 (unhandledRejection still swallows that
+  // code so we do not Docker crash-loop on transient completeJob failures).
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await jobHost.start(jobHandlers);
+      break;
+    } catch (error) {
+      if (!isTooManyDatabaseConnections(error)) throw error;
+      logger.error("worker job host start waiting on database capacity", error);
+      await new Promise((resolve) => setTimeout(resolve, databaseCapacityBackoffMs(attempt)));
+    }
+  }
   const reconciler = createJobReconciler({
     prisma,
     jobs,
@@ -226,6 +262,21 @@ async function main() {
   };
   process.once("SIGTERM", () => void stop());
   process.once("SIGINT", () => void stop());
+  // graphile-worker fires completeJob() without awaiting it. When pool.connect()
+  // then hits Postgres 53300, that rejection is unhandled. Exiting here is the
+  // crash loop: Docker restarts the process before Postgres has reaped the old
+  // backends, so the next boot cannot connect either. Stay up on that rejection
+  // only — do not resume after uncaughtException (Node leaves the process in an
+  // undefined state).
+  process.on("uncaughtException", (error) => {
+    logger.error("uncaughtException", error);
+    void stop().finally(() => process.exit(1));
+  });
+  process.on("unhandledRejection", (reason) => {
+    logger.error("unhandledRejection", reason);
+    if (isTooManyDatabaseConnections(reason)) return;
+    void stop().finally(() => process.exit(1));
+  });
 
   logger.info("worker ready");
 }
@@ -233,5 +284,7 @@ async function main() {
 main().catch(async (error) => {
   logger.error("worker startup failed", error);
   await logger.flush({ timeoutMs: 2_000 });
+  // jobHost.start retries 53300 without bound above, so a saturated Postgres at
+  // that step does not reach here. Other startup failures still exit.
   process.exit(1);
 });

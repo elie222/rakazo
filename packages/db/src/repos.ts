@@ -10,7 +10,7 @@ import { userVisibleMessages } from "@rakazo/core";
 import type { PrismaClient } from "./client.js";
 import { type ComputerMode, ensureComputerRecord, parseComputerMode } from "./computers.js";
 import { createThreadMessageInTransaction } from "./messages.js";
-import { IsolationError } from "./scope.js";
+import { BotSectionNameConflictError, IsolationError } from "./scope.js";
 import { lockSpaceForContentCreation } from "./spaces.js";
 import { activeRunSelection, previewFromBlocks } from "./thread-listing.js";
 
@@ -240,6 +240,42 @@ export function createRepos(prisma: PrismaClient) {
           updatedAt: section.updatedAt.toISOString(),
         } satisfies BotSection;
       });
+    },
+
+    async updateBotSection(actor: Actor, input: { sectionId: string; name: string }) {
+      const existing = await prisma.botSection.findFirst({
+        where: {
+          id: input.sectionId,
+          spaceId: actor.spaceId,
+          userId: actor.userId,
+        },
+      });
+      if (!existing) throw new IsolationError();
+      if (existing.name === input.name) {
+        return {
+          id: existing.id,
+          name: existing.name,
+          position: existing.position,
+          createdAt: existing.createdAt.toISOString(),
+          updatedAt: existing.updatedAt.toISOString(),
+        } satisfies BotSection;
+      }
+      try {
+        const section = await prisma.botSection.update({
+          where: { id: existing.id },
+          data: { name: input.name },
+        });
+        return {
+          id: section.id,
+          name: section.name,
+          position: section.position,
+          createdAt: section.createdAt.toISOString(),
+          updatedAt: section.updatedAt.toISOString(),
+        } satisfies BotSection;
+      } catch (error) {
+        if (isUniqueViolation(error)) throw new BotSectionNameConflictError();
+        throw error;
+      }
     },
 
     async listBots(actor: Actor, options: { archived?: boolean } = {}): Promise<Bot[]> {

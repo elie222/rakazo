@@ -39,4 +39,45 @@ describe("computer lifecycle command guard", () => {
     expect(isProtectedComputerLifecycleCommand('rm -f "$WORKSPACE/tmp.txt"')).toBe(false);
     expect(isProtectedComputerLifecycleCommand("printf '%s\\n' *.txt && pwd")).toBe(false);
   });
+
+  it.each([
+    "find . -maxdepth 2 -type d -name .git -print",
+    "git -C . status --short",
+    "git add .",
+    "git add then .",
+    "ls . && git -C . worktree list --porcelain",
+    "set -eu\npwd\nfind . -maxdepth 2 -type d -name .git -print",
+    "git worktree add ../review-worktree origin/main",
+    "find /tmp/. -maxdepth 1 -type d",
+    "git diff -- .",
+    "printf '%s' 'pk\\\nill chromium'",
+    "printf '%s' 'pk\\\nill' chromium",
+    "printf '%s' 'line one\nline two'",
+  ])("allows repository paths without treating dot arguments as sourcing: %s", (command) => {
+    expect(isProtectedComputerLifecycleCommand(command)).toBe(false);
+  });
+
+  it.each([
+    ". /tmp/script.sh",
+    "pwd; . /tmp/script.sh",
+    "pwd\n. /tmp/script.sh",
+    "find . -maxdepth 1 && . /tmp/script.sh",
+    "command . /tmp/script.sh",
+    "builtin . /tmp/script.sh",
+    "command -p . /tmp/script.sh",
+    "true && > /tmp/output . /tmp/script.sh",
+    "2> /tmp/output . /tmp/script.sh",
+    "if true; then . /tmp/script.sh; fi",
+    "bash -c 'pwd\n. /tmp/script.sh'",
+    "pk\\\nill chromium",
+    "! . /tmp/script.sh",
+    "if false; then :; elif . /tmp/script.sh; then :; fi",
+    "{ . /tmp/script.sh; }",
+    "coproc . /tmp/script.sh",
+    "coproc worker . /tmp/script.sh",
+    "function f { . /tmp/script.sh; }",
+    "function f { . /tmp/script.sh; }; f",
+  ])("continues blocking executable sourcing and lifecycle operations: %s", (command) => {
+    expect(isProtectedComputerLifecycleCommand(command)).toBe(true);
+  });
 });

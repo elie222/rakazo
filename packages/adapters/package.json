@@ -17,8 +17,8 @@
     "@chat-adapter/telegram": "4.40.0",
     "@chat-adapter/whatsapp": "4.40.0",
     "@composio/core": "0.18.1",
-    "@daytona/sdk": "0.210.0",
-    "@e2b/desktop": "2.3.3",
+    "@daytona/sdk": "0.211.2",
+    "@e2b/desktop": "2.4.0",
     "@earendil-works/pi-agent-core": "0.85.1",
     "@earendil-works/pi-ai": "0.85.1",
     "@modelcontextprotocol/sdk": "1.30.0",
@@ -36,13 +36,13 @@
     "graphile-worker": "0.17.3",
     "jsdom": "30.0.1",
     "koffi": "3.2.1",
-    "nodemailer": "10.0.1",
+    "nodemailer": "10.0.3",
     "pg": "8.23.0",
     "sendblue": "3.16.1",
     "sharp": "0.35.4",
     "shell-quote": "1.10.0",
     "undici": "8.10.2",
-    "zod": "4.5.4"
+    "zod": "4.6.2"
   },
   "devDependencies": {
     "@chat-adapter/tests": "4.40.0",

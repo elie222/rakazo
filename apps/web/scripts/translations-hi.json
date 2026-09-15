@@ -587,5 +587,7 @@
   "Authorize this server so agents can use its tools. A popup opens.": "एजेंटों को इसके टूल का उपयोग करने देने के लिए इस सर्वर को ऑथराइज़ करें। एक पॉपअप खुलता है।",
   "Make sure nothing is still running on this computer.": "सुनिश्चित करें कि इस कंप्यूटर पर कुछ भी चल नहीं रहा है।",
   "Nothing is still running": "कुछ भी नहीं चल रहा",
-  "Credentials are encrypted and never sent to the model.": "क्रेडेंशियल एन्क्रिप्टेड होते हैं और मॉडल को कभी नहीं भेजे जाते।"
+  "Credentials are encrypted and never sent to the model.": "क्रेडेंशियल एन्क्रिप्टेड होते हैं और मॉडल को कभी नहीं भेजे जाते।",
+  "Rename section": "अनुभाग का नाम बदलें",
+  "Could not rename section": "अनुभाग का नाम नहीं बदला जा सका"
 }

@@ -1,9 +1,17 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import {
+  DEFAULT_MODEL_CONTEXT_WINDOW,
+  DEFAULT_MODEL_MAX_TOKENS,
   type IntegrationSetupState,
+  MAX_MODEL_CONTEXT_WINDOW,
+  MAX_MODEL_MAX_TOKENS,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   openAiCompatibleConnectReady,
   openAiCompatibleProbeSuccessMessage,
+  parseModelContextWindow,
+  parseModelMaxImagesPerPrompt,
+  parseModelMaxTokens,
+  type ThinkingLevel,
 } from "@rakazo/contracts";
 import { createModelProbe, initialModelProbeState } from "@rakazo/core";
 import {
@@ -104,6 +112,11 @@ export function OnboardingPage() {
   const [baseUrl, setBaseUrl] = useState("");
   const [reasoning, setReasoning] = useState(false);
   const [manualModelId, setManualModelId] = useState(false);
+  const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel | null>(null);
+  const [maxTokens, setMaxTokens] = useState(String(DEFAULT_MODEL_MAX_TOKENS));
+  const [contextWindow, setContextWindow] = useState(String(DEFAULT_MODEL_CONTEXT_WINDOW));
+  const [supportsImages, setSupportsImages] = useState(false);
+  const [maxImagesPerPrompt, setMaxImagesPerPrompt] = useState("");
   const [{ models: probeModels, baseUrl: probedBaseUrl, probing }, setProbe] =
     useState(initialModelProbeState);
   const [modelProbe] = useState(() => createModelProbe(setProbe));
@@ -227,7 +240,12 @@ export function OnboardingPage() {
     );
     setBaseUrl("");
     setReasoning(false);
+    setThinkingLevel(null);
     setManualModelId(false);
+    setSupportsImages(false);
+    setMaxTokens(String(DEFAULT_MODEL_MAX_TOKENS));
+    setContextWindow(String(DEFAULT_MODEL_CONTEXT_WINDOW));
+    setMaxImagesPerPrompt("");
     resetOpenAiCompatibleProbe();
     setError(null);
     setNotice(null);
@@ -264,11 +282,41 @@ export function OnboardingPage() {
     setError(null);
     try {
       if (isOpenAiCompatible) {
+        const parsedMaxImagesPerPrompt = parseModelMaxImagesPerPrompt(
+          maxImagesPerPrompt,
+          supportsImages,
+        );
+        if (supportsImages && maxImagesPerPrompt.trim() && parsedMaxImagesPerPrompt === undefined) {
+          setError(t`Enter a whole number from 1 to 1000 for the image limit.`);
+          return;
+        }
+        const maxImagesPerPromptInput =
+          supportsImages && !maxImagesPerPrompt.trim() ? null : parsedMaxImagesPerPrompt;
+
+        const parsedMaxTokens = parseModelMaxTokens(maxTokens);
+        if (parsedMaxTokens === undefined) {
+          setError(
+            t`Enter a whole number from 1 to ${MAX_MODEL_MAX_TOKENS} for maximum output tokens.`,
+          );
+          return;
+        }
+        const parsedContextWindow = parseModelContextWindow(contextWindow);
+        if (parsedContextWindow === undefined) {
+          setError(
+            t`Enter a whole number from 1 to ${MAX_MODEL_CONTEXT_WINDOW} for the context limit.`,
+          );
+          return;
+        }
         await rpc.models.connect({
           provider,
           baseUrl: baseUrl.trim(),
           modelId: modelId.trim(),
           reasoning,
+          thinkingLevel: reasoning ? thinkingLevel : null,
+          maxTokens: parsedMaxTokens,
+          contextWindow: parsedContextWindow,
+          supportsImages,
+          maxImagesPerPrompt: maxImagesPerPromptInput,
           apiKey: apiKey.trim() || undefined,
           label: selected?.providerName ?? provider,
         });
@@ -443,9 +491,38 @@ export function OnboardingPage() {
                   </div>
                   <ModelThinkingOptions
                     reasoning={reasoning}
-                    onReasoningChange={setReasoning}
+                    onReasoningChange={(value) => {
+                      setReasoning(value);
+                      if (!value) setThinkingLevel(null);
+                    }}
                     advancedLabel={t`Advanced`}
                     thinkingLabel={t`Supports thinking`}
+                    thinkingLevel={thinkingLevel}
+                    onThinkingLevelChange={(value) =>
+                      setThinkingLevel(value as ThinkingLevel | null)
+                    }
+                    thinkingLevelOptions={[
+                      { value: "minimal", label: t`Minimal` },
+                      { value: "low", label: t`Low` },
+                      { value: "medium", label: t`Medium` },
+                      { value: "high", label: t`High` },
+                      { value: "xhigh", label: t`Extra high` },
+                      { value: "max", label: t`Max` },
+                    ]}
+                    thinkingLevelLabel={t`Reasoning effort`}
+                    thinkingLevelDefaultLabel={t`Default`}
+                    maxTokens={maxTokens}
+                    onMaxTokensChange={setMaxTokens}
+                    maxTokensLabel={t`Maximum output tokens`}
+                    contextWindow={contextWindow}
+                    onContextWindowChange={setContextWindow}
+                    contextWindowLabel={t`Context limit`}
+                    supportsImages={supportsImages}
+                    onSupportsImagesChange={setSupportsImages}
+                    imagesLabel={t`Supports images`}
+                    maxImagesPerPrompt={maxImagesPerPrompt}
+                    onMaxImagesPerPromptChange={setMaxImagesPerPrompt}
+                    maxImagesLabel={t`Maximum images per request`}
                   />
                 </>
               ) : (

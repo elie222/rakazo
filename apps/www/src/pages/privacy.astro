@@ -16,7 +16,7 @@ const starsLabel = stars === null ? "Star" : formatStarCount(stars);
     <Header starsLabel={starsLabel} />
     <main id="main" class="privacy-copy">
       <h1>Privacy</h1>
-      <p><strong>Last updated: August 14, 2026</strong></p>
+      <p><strong>Last updated: September 14, 2026</strong></p>
       <p>
         This policy explains how Inbox Zero Inc. (“Inbox Zero,” “we,” or “us”) handles personal information
         when you use the Rakazo mobile app, a Rakazo service that we host, or rakazo.com. A third party that
@@ -52,11 +52,73 @@ const starsLabel = stars === null ? "Star" : formatStarCount(stars);
 
       <h2>Service providers and AI processing</h2>
       <p>
-        Rakazo sends information to services only as needed to perform the work you request. Depending on the
-        deployment and integrations you select, those services may host infrastructure, run sandboxes,
-        deliver push notifications, connect third-party apps, store data, or process prompts with an AI model.
-        Information sent to a model or connected app is also governed by that provider’s terms and privacy
-        policy. We do not sell personal information or use Rakazo content for third-party advertising.
+        Before submitting content or starting AI work, the Rakazo mobile app names configured
+        recipients, explains the data and purpose, and asks you to allow sharing. Choosing Not now
+        prevents the mobile action. Permission applies to the selected Space and recipient.
+        Account → AI data sharing lets you withdraw permission for new mobile actions.
+        Stop existing runs and disable routines separately; withdrawal cannot recall data already
+        sent. Web, desktop, and self-hosted server workflows use the connections you configure
+        without this mobile permission flow.
+      </p>
+      <ul>
+        <li>
+          <strong>Models and agents:</strong> messages, relevant conversation history, bot instructions,
+          memories, attachments and file content, screenshots, and content retrieved from connected
+          apps are used to generate responses and perform your tasks, including scheduled tasks.
+          Supported connections include OpenAI, Anthropic, Google, OpenRouter, Vercel AI Gateway, Cursor, and custom
+          model servers. The mobile permission screen identifies the services configured for your Space;
+          configuring a service does not by itself grant permission for new mobile actions.
+        </li>
+        <li>
+          <strong>AI gateways:</strong> OpenRouter and Vercel AI Gateway receive requests and forward
+          them to model providers according to the connection's routing settings. The mobile
+          disclosure names the configured gateway. Processing, retention, and routing depend on
+          the gateway account settings and applicable provider agreements. Rakazo's mobile
+          permission flow does not change those settings or promise zero retention.
+        </li>
+        <li>
+          <strong>Voice:</strong> recorded audio is sent to your selected transcription service;
+          text you choose to play, including bot responses, is sent for speech generation. Supported
+          voice services include OpenAI, ElevenLabs, Cartesia, and Fish Audio. Microphone access
+          and permission to share with an AI service are separate choices.
+        </li>
+        <li>
+          <strong>Memory:</strong> when Supermemory is configured, conversation summaries, saved
+          memories, search queries, and bot and Space identifiers are sent to store and retrieve context. Self-hosted memory
+          is processed by the server shown in your permission screen.
+        </li>
+      </ul>
+      <p>
+        We collect this content from what you enter, upload, record, or authorize your bots to access.
+        We store the recipient, Space, disclosure version, and time of your permission for the mobile app to remember
+        your choices. We do not sell personal information or use Rakazo content for third-party advertising.
+      </p>
+      <p>
+        Services we select to process personal information must provide protection equal to or
+        greater than the safeguards described in this policy, including limited processing purposes,
+        appropriate security, and retention and deletion protections. Before enabling a provider,
+        we review its terms and safeguards against these requirements. A self-hosted operator is
+        responsible for assessing the services it selects and its own agreements with those services.
+      </p>
+      <p>
+        Provider terms govern their processing and retention after receipt. You can review the
+        applicable provider policy from AI data sharing. Policies for supported services:
+        <a href="https://openai.com/policies/privacy-policy/">OpenAI</a>,
+        <a href="https://www.anthropic.com/legal/privacy">Anthropic</a>,
+        <a href="https://policies.google.com/privacy">Google</a>,
+        <a href="https://openrouter.ai/privacy">OpenRouter</a>,
+        <a href="https://vercel.com/legal/privacy-policy">Vercel</a>,
+        <a href="https://cursor.com/privacy">Cursor</a>,
+        <a href="https://elevenlabs.io/privacy-policy">ElevenLabs</a>,
+        <a href="https://cartesia.ai/legal/privacy">Cartesia</a>,
+        <a href="https://fish.audio/privacy/">Fish Audio</a>, and
+        <a href="https://supermemory.ai/privacy">Supermemory</a>.
+      </p>
+      <p>
+        Other services may host infrastructure, run sandboxes, deliver notifications, store data,
+        or connect apps as needed for the work you request. Connected apps receive the content
+        required for the actions you authorize. Their processing is governed by their applicable
+        terms and privacy policies.
       </p>
 
       <h2>Self-hosted deployments</h2>

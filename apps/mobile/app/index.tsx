@@ -678,6 +678,10 @@ export default function Home() {
             });
             await loadBots();
           }}
+          onRenameSection={async (sectionId, name) => {
+            await rpc("botSections/update", { sectionId, name });
+            await loadBots();
+          }}
         />
       ) : null}
     </View>

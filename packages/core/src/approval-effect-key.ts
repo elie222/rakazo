@@ -52,3 +52,17 @@ export function approvalEffectKey(
   const digest = createHash("sha256").update(stableJsonValue(args)).digest("hex");
   return `${runId}:${toolName}:${digest}`;
 }
+
+/**
+ * Scope provider tool-call ids (e.g. reused call_0) to a run, tool, and args.
+ * Retries with the same provider id and args stay idempotent; different args do not collide.
+ */
+export function toolEffectIdempotencyKey(
+  runId: string,
+  toolName: string,
+  executionId: string,
+  args: Record<string, unknown>,
+): string {
+  const digest = createHash("sha256").update(stableJsonValue(args)).digest("hex");
+  return `${runId}:${toolName}:${executionId}:${digest}`;
+}

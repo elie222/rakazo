@@ -2,7 +2,12 @@ import { describe, expect, it } from "vitest";
 
 import { builtinAgentTools } from "./builtin-tools.js";
 import { parseConnectorToolArgs } from "./lazy-tool-catalog.js";
-import { jsonField, jsonSchemaParameters, prepareRequestSecretArguments } from "./pi-runtime.js";
+import {
+  jsonField,
+  jsonSchemaParameters,
+  parametersFor,
+  prepareRequestSecretArguments,
+} from "./pi-runtime.js";
 
 /**
  * `pi-runtime` used to re-declare `request_secret`'s parameters by hand, and the
@@ -124,6 +129,21 @@ describe("request_secret parameters", () => {
     for (const variant of variants) {
       expect(variant.additionalProperties).toBe(false);
     }
+  });
+
+  it("exposes OpenAI-compatible parameters.type object for local servers", () => {
+    // LM Studio and similar validators reject tools[].function.parameters without
+    // type === "object" (and often without properties). request_secret is the
+    // builtin that previously serialized as a bare anyOf union.
+    const wire = JSON.parse(JSON.stringify(parametersFor(toolNamed("request_secret")))) as {
+      type?: unknown;
+      properties?: unknown;
+      anyOf?: unknown[];
+      oneOf?: unknown[];
+    };
+    expect(wire.type).toBe("object");
+    expect(wire.properties).toEqual({});
+    expect((wire.anyOf ?? wire.oneOf ?? []).length).toBe(2);
   });
 });
 

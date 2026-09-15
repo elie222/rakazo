@@ -80,7 +80,7 @@ function readWithAbort(
   });
 }
 
-function cancelResponseBody(response: Response): void {
+export function cancelResponseBody(response: Response): void {
   try {
     void Promise.resolve(response.body?.cancel()).catch(() => undefined);
   } catch {

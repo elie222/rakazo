@@ -1,12 +1,8 @@
-import { readBoundedResponseBytes } from "@rakazo/core";
+import { ensureAiDataConsent, readBoundedResponseBytes } from "@rakazo/core";
 import { File, Paths } from "expo-file-system";
-import {
-  type ApiRequestContext,
-  authHeaders,
-  captureApiRequestContext,
-  currentApiBase,
-  rpc,
-} from "./api";
+import { promptAiConsent } from "./ai-consent";
+import type { ApiRequestContext } from "./api";
+import { captureApiRequestContext, rpc } from "./api";
 import { t } from "./i18n";
 
 type SpeechOptions = { voiceId?: string; botId?: string };
@@ -23,7 +19,7 @@ export async function speakText(text: string, opts: SpeechOptions = {}): Promise
   );
   if (!prepared.ready) return false;
   for (const utterance of prepared.utterances) {
-    await playMpeg(await speakUtterance(utterance, { ...opts, requestContext }));
+    await playMpeg(await renderUtterance(utterance, opts, requestContext));
   }
   return true;
 }
@@ -32,15 +28,30 @@ export async function speakUtterance(
   text: string,
   opts: SpeechOptions & { requestContext?: ApiRequestContext } = {},
 ): Promise<Uint8Array> {
+  const requestContext = opts.requestContext ?? (await captureApiRequestContext());
+  await ensureAiDataConsent({
+    uses: ["voice"],
+    status: () => rpc("aiConsent/status", { uses: ["voice"] }, { requestContext }),
+    prompt: promptAiConsent,
+    allow: (input) => rpc("aiConsent/allow", input, { requestContext }),
+  });
+  return renderUtterance(text, opts, requestContext);
+}
+
+async function renderUtterance(
+  text: string,
+  opts: SpeechOptions,
+  requestContext: ApiRequestContext,
+): Promise<Uint8Array> {
   const deadline = requestDeadline(VOICE_RESPONSE_TIMEOUT_MS);
   try {
     const res = await withAbort(
-      fetch(`${opts.requestContext?.apiBase ?? currentApiBase()}/api/voice/speak`, {
+      fetch(`${requestContext.apiBase}/api/voice/speak`, {
         method: "POST",
         headers: {
           "content-type": "application/json",
           origin: "rakazo://",
-          ...(opts.requestContext?.headers ?? (await authHeaders())),
+          ...requestContext.headers,
         },
         body: JSON.stringify({ text, voiceId: opts.voiceId, botId: opts.botId }),
         signal: deadline.signal,

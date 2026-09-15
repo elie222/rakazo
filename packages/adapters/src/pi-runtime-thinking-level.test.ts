@@ -1,7 +1,9 @@
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const fakeAgentState = vi.hoisted(() => ({
   thinkingLevels: [] as string[],
+  transforms: [] as Array<(messages: AgentMessage[]) => Promise<AgentMessage[]>>,
   models: [] as Array<{
     id: string;
     provider: string;
@@ -28,6 +30,7 @@ vi.mock("@earendil-works/pi-agent-core", () => ({
 
     constructor(options: {
       sessionId?: string;
+      transformContext: (messages: AgentMessage[]) => Promise<AgentMessage[]>;
       initialState: {
         thinkingLevel: string;
         tools: FakeAgentTool[];
@@ -35,6 +38,7 @@ vi.mock("@earendil-works/pi-agent-core", () => ({
       };
     }) {
       this.tools = options.initialState.tools;
+      fakeAgentState.transforms.push(options.transformContext);
       fakeAgentState.sessionIds.push(options.sessionId);
       fakeAgentState.thinkingLevels.push(options.initialState.thinkingLevel);
       fakeAgentState.models.push(options.initialState.model);
@@ -109,8 +113,10 @@ async function runWithModel(
     provider: string;
     id: string;
     apiKey?: string;
+    maxImagesPerPrompt?: number;
     thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null;
   }>,
+  maxImagesPerPrompt?: number,
 ) {
   const runtime = new PiAgentRuntime();
   for await (const _event of runtime.run(
@@ -122,7 +128,7 @@ async function runWithModel(
       instructions: "",
       history: [],
       tools: [],
-      model: { provider, id: modelId, thinkingLevel },
+      model: { provider, id: modelId, thinkingLevel, maxImagesPerPrompt },
       executeTool: vi.fn(async () => ({ ok: true })),
       resolveModel,
     },
@@ -142,6 +148,7 @@ async function runWithModel(
 describe("Pi agent thinking level", () => {
   beforeEach(() => {
     fakeAgentState.thinkingLevels = [];
+    fakeAgentState.transforms = [];
     fakeAgentState.models = [];
     fakeAgentState.sessionIds = [];
     fakeAgentState.subagentArgs = { name: "helper", task: "help" };
@@ -198,6 +205,53 @@ describe("Pi agent thinking level", () => {
     ]);
     expect(levels).toEqual(["off", "high"]);
   });
+
+  it.each([
+    { parentLimit: 2, childLimit: 1, expected: 1 },
+    { parentLimit: 1, childLimit: 2, expected: 2 },
+    { parentLimit: 2, childLimit: 0, expected: 0 },
+    { parentLimit: 0, childLimit: undefined, expected: 2 },
+  ])(
+    "uses the selected subagent image budget: $parentLimit -> $childLimit",
+    async ({ parentLimit, childLimit, expected }) => {
+      fakeAgentState.subagentArgs = {
+        name: "helper",
+        task: "inspect screenshots",
+        model_provider: "test",
+        model_id: "plain-model",
+      };
+      await runWithModel(
+        "plain-model",
+        "test",
+        new AbortController().signal,
+        null,
+        async () => ({ provider: "test", id: "plain-model", maxImagesPerPrompt: childLimit }),
+        parentLimit,
+      );
+      const screenshots: AgentMessage[] = [0, 1].map((index) => ({
+        role: "toolResult",
+        toolCallId: `capture-${index}`,
+        toolName: "computer_observe",
+        content: [{ type: "image", data: "fake-image", mimeType: "image/png" }],
+        details: { frameId: `frame-${index}` },
+        isError: false,
+        timestamp: index,
+      }));
+      const countImages = (messages: AgentMessage[]) =>
+        messages.reduce(
+          (count, message) =>
+            count +
+            ("content" in message && Array.isArray(message.content)
+              ? message.content.filter((part) => part.type === "image").length
+              : 0),
+          0,
+        );
+      const [parentTransform, childTransform] = fakeAgentState.transforms;
+      if (!parentTransform || !childTransform) throw new Error("missing agent transforms");
+      expect(countImages(await parentTransform(screenshots))).toBe(parentLimit);
+      expect(countImages(await childTransform(screenshots))).toBe(expected);
+    },
+  );
 
   it("rejects an incomplete per-call subagent model pair", async () => {
     fakeAgentState.subagentArgs = {

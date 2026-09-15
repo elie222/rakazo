@@ -20,6 +20,7 @@ export interface AppEnv {
   authSecret: string;
   authUrl: string;
   webOrigin: string;
+  privacyPolicyUrl?: string;
   apiUrl: string;
   apiHost: string;
   signupsEnabled: string | undefined;
@@ -107,6 +108,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     authSecret,
     authUrl: source.BETTER_AUTH_URL ?? source.WEB_ORIGIN ?? "http://127.0.0.1:5173",
     webOrigin: source.WEB_ORIGIN ?? "http://127.0.0.1:5173",
+    privacyPolicyUrl: optional(source.PRIVACY_POLICY_URL),
     apiUrl: source.API_URL ?? "http://127.0.0.1:3100",
     apiHost: source.API_HOST ?? "127.0.0.1",
     signupsEnabled: source.SIGNUPS_ENABLED,

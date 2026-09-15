@@ -1,3 +1,5 @@
+import dns from "node:dns";
+import { fetch as undiciFetch } from "undici";
 import { describe, expect, it } from "vitest";
 import {
   assertSafeRemoteUrl,
@@ -176,17 +178,162 @@ describe("remote MCP URL policy", () => {
   it("drives the guarded dispatcher with a fetch from the same undici", async () => {
     // A fetch from a different undici than the Agent fails at dispatch with
     // "invalid onRequestStart method" before the lookup runs. Failing inside
-    // the lookup proves the request reached the guarded Agent.
+    // the lookup proves the request reached the guarded Agent. Node's fetch
+    // is a different major, so omit, builtin, and a captured builtin must
+    // all use the package fetch that matches the Agent.
+    expect(undiciFetch).not.toBe(globalThis.fetch);
+
+    const capturedNodeFetch = globalThis.fetch;
     let resolutions = 0;
-    const safeFetch = createSafeRemoteFetch(undefined, async () => {
+    const resolve = async () => {
       resolutions += 1;
       if (resolutions > 1) throw new Error("lookup reached");
       return [{ address: "203.0.113.10", family: 4 as const }];
-    });
+    };
+    for (const injected of [undefined, globalThis.fetch, capturedNodeFetch] as const) {
+      resolutions = 0;
+      const safeFetch = createSafeRemoteFetch(injected, resolve);
+      try {
+        await expect(safeFetch("https://connectors.example.test/mcp")).rejects.toThrow(
+          "Could not reach connectors.example.test: lookup reached",
+        );
+      } finally {
+        await safeFetch.close();
+      }
+    }
+  });
+
+  it("still pins lookup for a captured Node fetch after globalThis.fetch changes", async () => {
+    const captured = globalThis.fetch;
+    const previous = globalThis.fetch;
+    globalThis.fetch = (async () => new Response(null, { status: 204 })) as typeof globalThis.fetch;
+    let resolutions = 0;
+    const resolve = async () => {
+      resolutions += 1;
+      if (resolutions > 1) throw new Error("lookup reached");
+      return [{ address: "203.0.113.10", family: 4 as const }];
+    };
     try {
-      await expect(safeFetch("https://connectors.example.test/mcp")).rejects.toThrow(
-        "Could not reach connectors.example.test: lookup reached",
-      );
+      const safeFetch = createSafeRemoteFetch(captured, resolve);
+      try {
+        await expect(safeFetch("https://connectors.example.test/mcp")).rejects.toThrow(
+          "Could not reach connectors.example.test: lookup reached",
+        );
+      } finally {
+        await safeFetch.close();
+      }
+    } finally {
+      globalThis.fetch = previous;
+    }
+  });
+
+  it("does not pass the package Agent to a wrapper around Node's fetch", async () => {
+    // Wrappers are not === Node's fetch. Passing them the package Agent throws
+    // invalid onRequestStart before lookup. Call them without dispatcher.
+    let leakedDispatcher = false;
+    let href: string | undefined;
+    const wrapped: typeof globalThis.fetch = (input, init) => {
+      leakedDispatcher = Boolean(init && "dispatcher" in init);
+      href = String(input);
+      return globalThis.fetch(input, init);
+    };
+    const previous = globalThis.fetch;
+    globalThis.fetch = (async () => {
+      throw new Error("stub fetch");
+    }) as typeof globalThis.fetch;
+    const safeFetch = createSafeRemoteFetch(wrapped, publicResolver);
+    try {
+      await expect(safeFetch("https://connectors.example.test/mcp")).rejects.toThrow("stub fetch");
+      expect(leakedDispatcher).toBe(false);
+      expect(href).toBe("https://connectors.example.test/mcp");
+    } finally {
+      globalThis.fetch = previous;
+      await safeFetch.close();
+    }
+  });
+
+  it("does not pass the package Agent to a mock fetch", async () => {
+    let leakedDispatcher = false;
+    const mock: typeof globalThis.fetch = async (_input, init) => {
+      leakedDispatcher = Boolean(init && "dispatcher" in init);
+      return new Response(null, { status: 204 });
+    };
+    const safeFetch = createSafeRemoteFetch(mock, publicResolver);
+    try {
+      await expect(safeFetch("https://connectors.example.test/mcp")).resolves.toMatchObject({
+        status: 204,
+      });
+      expect(leakedDispatcher).toBe(false);
+    } finally {
+      await safeFetch.close();
+    }
+  });
+
+  it("pins an injected fetch to the validated address so DNS cannot rebind", async () => {
+    const seen: {
+      href?: string;
+      host?: string | null;
+      leakedDispatcher?: boolean;
+      lookup?: { address: string; family?: number };
+    } = {};
+    const injected: typeof globalThis.fetch = async (input, init) => {
+      seen.href = String(input);
+      seen.host = new Headers(init?.headers).get("host");
+      seen.leakedDispatcher = Boolean(init && "dispatcher" in init);
+      const hostname = new URL(String(input)).hostname.replace(/^\[|\]$/g, "");
+      if (hostname === "127.0.0.1" || hostname === "203.0.113.10") {
+        throw new Error(`injected fetch reached rebound host ${hostname}`);
+      }
+      seen.lookup = await new Promise<{ address: string; family?: number }>((resolve, reject) => {
+        dns.lookup(hostname, { family: 4 }, (error, address, family) => {
+          if (error) reject(error);
+          else resolve({ address: String(address), family });
+        });
+      });
+      return new Response(null, { status: 204 });
+    };
+    const safeFetch = createSafeRemoteFetch(injected, publicResolver);
+    try {
+      await expect(safeFetch("https://connectors.example.test/mcp")).resolves.toMatchObject({
+        status: 204,
+      });
+      expect(seen.leakedDispatcher).toBe(false);
+      expect(seen.href).toBe("https://connectors.example.test/mcp");
+      expect(seen.host).toBe("connectors.example.test");
+      expect(seen.lookup).toEqual({ address: "203.0.113.10", family: 4 });
+    } finally {
+      await safeFetch.close();
+    }
+  });
+
+  it("pins an injected fetch to a validated IPv6 address", async () => {
+    const seen: {
+      href?: string;
+      host?: string | null;
+      lookup?: { address: string; family?: number };
+    } = {};
+    const injected: typeof globalThis.fetch = async (input, init) => {
+      seen.href = String(input);
+      seen.host = new Headers(init?.headers).get("host");
+      const hostname = new URL(String(input)).hostname.replace(/^\[|\]$/g, "");
+      seen.lookup = await new Promise<{ address: string; family?: number }>((resolve, reject) => {
+        dns.lookup(hostname, { family: 6 }, (error, address, family) => {
+          if (error) reject(error);
+          else resolve({ address: String(address), family });
+        });
+      });
+      return new Response(null, { status: 204 });
+    };
+    const safeFetch = createSafeRemoteFetch(injected, async () => [
+      { address: "2606:4700:4700::1111", family: 6 as const },
+    ]);
+    try {
+      await expect(safeFetch("https://connectors.example.test/mcp")).resolves.toMatchObject({
+        status: 204,
+      });
+      expect(seen.href).toBe("https://connectors.example.test/mcp");
+      expect(seen.host).toBe("connectors.example.test");
+      expect(seen.lookup).toEqual({ address: "2606:4700:4700::1111", family: 6 });
     } finally {
       await safeFetch.close();
     }

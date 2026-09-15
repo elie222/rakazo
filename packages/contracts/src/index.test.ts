@@ -10,9 +10,13 @@ import {
   canReactToThreadMessage,
   McpServerConfigInput,
   MessageBlock,
+  ModelConnectInputSchema,
   ModelOAuthBeginSchema,
   normalizeCreateBotProfile,
   ProductEventType,
+  parseModelContextWindow,
+  parseModelMaxImagesPerPrompt,
+  parseModelMaxTokens,
   ReorderBotsInput,
   RunActivityRowSchema,
   RunSchema,
@@ -25,6 +29,54 @@ describe("contracts", () => {
     expect(MessageBlock.parse({ kind: "progress", text: "Using browser", activity: true })).toEqual(
       { kind: "progress", text: "Using browser", activity: true },
     );
+  });
+
+  it("parses bounded model image limits", () => {
+    expect(parseModelMaxImagesPerPrompt("1")).toBe(1);
+    expect(parseModelMaxImagesPerPrompt("1000")).toBe(1000);
+    expect(parseModelMaxImagesPerPrompt("0")).toBeUndefined();
+    expect(parseModelMaxImagesPerPrompt("1001")).toBeUndefined();
+    expect(parseModelMaxImagesPerPrompt("1.5")).toBeUndefined();
+    expect(parseModelMaxImagesPerPrompt("1", false)).toBeUndefined();
+  });
+
+  it("parses bounded model output-token limits", () => {
+    expect(parseModelMaxTokens("1")).toBe(1);
+    expect(parseModelMaxTokens("131072")).toBe(131072);
+    expect(parseModelMaxTokens("0")).toBeUndefined();
+    expect(parseModelMaxTokens("131073")).toBeUndefined();
+    expect(parseModelMaxTokens("1.5")).toBeUndefined();
+  });
+
+  it("parses bounded model context-window limits", () => {
+    expect(parseModelContextWindow("1")).toBe(1);
+    expect(parseModelContextWindow("1048576")).toBe(1048576);
+    expect(parseModelContextWindow("0")).toBeUndefined();
+    expect(parseModelContextWindow("1048577")).toBeUndefined();
+    expect(parseModelContextWindow("1.5")).toBeUndefined();
+  });
+
+  it("rejects maxTokens larger than contextWindow on model connect", () => {
+    const invalid = ModelConnectInputSchema.safeParse({
+      provider: "openai-compatible",
+      baseUrl: "http://localhost:8000/v1",
+      modelId: "arbitrary-model",
+      maxTokens: 131072,
+      contextWindow: 1,
+    });
+    expect(invalid.success).toBe(false);
+    if (!invalid.success) {
+      expect(invalid.error.issues.some((issue) => issue.path[0] === "maxTokens")).toBe(true);
+    }
+
+    const valid = ModelConnectInputSchema.safeParse({
+      provider: "openai-compatible",
+      baseUrl: "http://localhost:8000/v1",
+      modelId: "arbitrary-model",
+      maxTokens: 8192,
+      contextWindow: 32768,
+    });
+    expect(valid.success).toBe(true);
   });
 
   it("accepts optional persisted duration only on valid steps blocks", () => {
@@ -165,6 +217,7 @@ describe("contracts", () => {
     expect(appContract.spaces.remove).toBeTruthy();
     expect(appContract.botSections.list).toBeTruthy();
     expect(appContract.botSections.create).toBeTruthy();
+    expect(appContract.botSections.update).toBeTruthy();
     expect(appContract.threads.subscribe).toBeTruthy();
     expect(appContract.threads.clear).toBeTruthy();
     expect(appContract.voice.prepare).toBeTruthy();

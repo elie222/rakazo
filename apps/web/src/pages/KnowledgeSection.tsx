@@ -371,6 +371,7 @@ function AgentSkills({
               variant="ghost"
               key={entry.id}
               type="button"
+              disabled={busy}
               onClick={() => void openSkill(entry)}
               className={`${rowClass(false)} block`}
             >

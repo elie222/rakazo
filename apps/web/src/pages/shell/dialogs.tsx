@@ -1,5 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { Bot } from "@rakazo/contracts";
+import type { Bot, BotSection } from "@rakazo/contracts";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -200,6 +200,70 @@ export function NewBotSectionDialog({
             </Button>
             <Button type="submit" disabled={saving || !name.trim()}>
               {saving ? <Trans>Creating…</Trans> : <Trans>Create</Trans>}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+export function RenameBotSectionDialog({
+  section,
+  onCancel,
+  onConfirm,
+}: {
+  section: Pick<BotSection, "name">;
+  onCancel: () => void;
+  onConfirm: (name: string) => Promise<void>;
+}) {
+  const { t } = useLingui();
+  const nameId = useId();
+  const [name, setName] = useState(section.name);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const trimmed = name.trim();
+  const unchanged = trimmed === section.name;
+
+  return (
+    <Dialog open onOpenChange={closeUnlessBusy(saving, onCancel)}>
+      <DialogContent showCloseButton={false} aria-describedby={undefined}>
+        <form
+          className="contents"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (!trimmed || saving || unchanged) return;
+            setSaving(true);
+            setError(null);
+            void onConfirm(trimmed).catch((err: unknown) => {
+              setError(err instanceof Error ? err.message : t`Could not rename section`);
+              setSaving(false);
+            });
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>
+              <Trans>Rename section</Trans>
+            </DialogTitle>
+          </DialogHeader>
+          <label htmlFor={nameId} className="block text-[13.5px] text-foreground/75">
+            <Trans>Name</Trans>
+            <Input
+              id={nameId}
+              maxLength={60}
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              className="mt-2"
+              autoFocus
+            />
+          </label>
+          {error ? <p className="text-[13.5px] text-destructive">{error}</p> : null}
+          <DialogFooter>
+            <Button type="button" variant="outline" disabled={saving} onClick={onCancel}>
+              <Trans>Cancel</Trans>
+            </Button>
+            <Button type="submit" disabled={saving || !trimmed || unchanged}>
+              {saving ? <Trans>Saving…</Trans> : <Trans>Save</Trans>}
             </Button>
           </DialogFooter>
         </form>

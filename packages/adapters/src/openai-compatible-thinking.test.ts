@@ -23,6 +23,8 @@ type Payload = {
   stream: boolean;
   messages: Array<{ role: string }>;
   tools: Array<{ function: { name: string } }>;
+  max_tokens?: number;
+  max_completion_tokens?: number;
   chat_template_kwargs?: Record<string, unknown>;
   reasoning_effort?: string;
 };
@@ -63,6 +65,7 @@ describe("OpenAI-compatible standard thinking transport", () => {
   async function capture(
     reasoning?: "minimal" | "low" | "medium" | "high",
     supportsThinking = true,
+    maxTokens?: number,
   ) {
     let payload: Payload | undefined;
     const mockFetch = vi.fn<typeof fetch>(async (input, init) => {
@@ -75,6 +78,7 @@ describe("OpenAI-compatible standard thinking transport", () => {
       modelId,
       baseUrl,
       reasoning: supportsThinking,
+      maxTokens,
     });
     const model = models.getModel(provider, modelId) as Model<"openai-completions">;
     const stream = models.streamSimple(
@@ -108,6 +112,11 @@ describe("OpenAI-compatible standard thinking transport", () => {
       expect(payload.chat_template_kwargs).toBeUndefined();
     },
   );
+
+  it("sends the configured maximum output-token limit", async () => {
+    const { payload } = await capture("medium", true, 8192);
+    expect(payload.max_tokens ?? payload.max_completion_tokens).toBe(8192);
+  });
 
   it("sends none when thinking is off", async () => {
     const { payload } = await capture();

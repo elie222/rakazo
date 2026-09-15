@@ -52,7 +52,7 @@
     "croner": "10.0.1"
   },
   "devDependencies": {
-    "fast-check": "4.9.0",
+    "fast-check": "4.10.0",
     "typescript": "7.0.2",
     "vitest": "4.1.11",
     "@types/d3-dsv": "3.0.7"

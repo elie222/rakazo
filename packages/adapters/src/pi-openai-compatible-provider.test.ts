@@ -241,10 +241,14 @@ describe("openai-compatible provider", () => {
     const models = registerOpenAiCompatibleRuntime(builtinModels(), {
       modelId: "rapid-mlx",
       baseUrl: "http://127.0.0.1:8000/v1",
+      maxTokens: 8192,
+      contextWindow: 65536,
     });
     const model = models.getModel(OPENAI_COMPATIBLE_PROVIDER_ID, "rapid-mlx");
     expect(model?.baseUrl).toBe("http://127.0.0.1:8000/v1");
     expect(model?.api).toBe("openai-completions");
+    expect(model?.maxTokens).toBe(8192);
+    expect(model?.contextWindow).toBe(65536);
   });
 
   it("probes /v1/models with mocked fetch", async () => {

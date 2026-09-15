@@ -29,6 +29,7 @@ import {
   resolveComputerControlEndpoint,
   resolveScreenNetworkMode,
   resolveScreenPublishTarget,
+  resolveSpaceComputerLimit,
   resolveTeamScreenLimit,
   screenPorts,
   screenUrlFor,
@@ -50,6 +51,18 @@ describe("graphical computer spec", () => {
     expect(resolveTeamScreenLimit("4")).toBe(4);
     for (const value of ["-1", "1.5", "not-a-number"])
       expect(() => resolveTeamScreenLimit(value)).toThrow(/positive integer/);
+  });
+
+  it("validates space computer limit", () => {
+    expect(resolveSpaceComputerLimit(undefined)).toBe(0);
+    expect(resolveSpaceComputerLimit("")).toBe(0);
+    expect(resolveSpaceComputerLimit("0")).toBe(0);
+    expect(resolveSpaceComputerLimit("unlimited")).toBe(0);
+    expect(resolveSpaceComputerLimit("none")).toBe(0);
+    expect(resolveSpaceComputerLimit("10")).toBe(10);
+    expect(resolveSpaceComputerLimit("1")).toBe(1);
+    for (const value of ["-1", "1.5", "not-a-number"])
+      expect(() => resolveSpaceComputerLimit(value)).toThrow(/positive integer/);
   });
 
   it("creates a VNC desktop, not an alpine sleep fallback", () => {

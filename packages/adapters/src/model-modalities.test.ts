@@ -38,6 +38,15 @@ describe("operator-declared vision modalities", () => {
     });
   });
 
+  it("allows a connected model to declare image input without an environment variable", async () => {
+    await withEnv({ [VISION_ENV]: undefined }, async () => {
+      const { modelAcceptsImageInput } = await import("./model-vision.js");
+      expect(modelAcceptsImageInput(OPENAI_COMPATIBLE_PROVIDER_ID, "arbitrary-model", true)).toBe(
+        true,
+      );
+    });
+  });
+
   it("lets the vision gate see a declared openai-compatible vision model", async () => {
     await withEnv({ [VISION_ENV]: "gpt4o-vision, another-vision " }, async () => {
       const { modelAcceptsImageInput } = await import("./model-vision.js");

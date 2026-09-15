@@ -1,8 +1,15 @@
-import type { ModelOAuthBegin } from "@rakazo/contracts";
+import type { ModelOAuthBegin, ThinkingLevel } from "@rakazo/contracts";
 import {
+  DEFAULT_MODEL_CONTEXT_WINDOW,
+  DEFAULT_MODEL_MAX_TOKENS,
+  MAX_MODEL_CONTEXT_WINDOW,
+  MAX_MODEL_MAX_TOKENS,
   OPENAI_COMPATIBLE_BASE_URL_HINT,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   openAiCompatibleConnectReady,
+  parseModelContextWindow,
+  parseModelMaxImagesPerPrompt,
+  parseModelMaxTokens,
 } from "@rakazo/contracts";
 import { createModelProbe, featuredModelProviders, initialModelProbeState } from "@rakazo/core";
 import { useFocusEffect } from "expo-router";
@@ -22,12 +29,32 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { type MobileMe, type MobileModel, type MobileModelCredential, rpc } from "../lib/api";
 import { mobileTokens } from "../lib/appearance";
 import { useI18n } from "../lib/i18n";
+import { presentMessageActionSheet } from "../lib/message-action-sheet";
 import {
   cancelModelOAuthAttempt,
   finishModelOAuthAttempt,
   waitForModelOAuth,
 } from "../lib/model-auth";
-import { native, useThemedStyles } from "../lib/native";
+import { native, useResolvedAppearance, useThemedStyles } from "../lib/native";
+
+const THINKING_LEVEL_OPTIONS: ThinkingLevel[] = [
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+];
+
+function thinkingLevelLabel(level: ThinkingLevel, t: (message: string) => string): string {
+  if (level === "xhigh") return t("Extra high");
+  if (level === "low") return t("Low");
+  if (level === "medium") return t("Medium");
+  if (level === "high") return t("High");
+  if (level === "minimal") return t("Minimal");
+  if (level === "max") return t("Max");
+  return level;
+}
 
 type ModelSelection = {
   provider?: string;
@@ -37,6 +64,7 @@ type ModelSelection = {
 export default function Models() {
   const styles = useThemedStyles(createModelsStyles);
   const { t } = useI18n();
+  const colorScheme = useResolvedAppearance();
   const [catalog, setCatalog] = useState<MobileModel[]>([]);
   const [credentials, setCredentials] = useState<MobileModelCredential[]>([]);
   const [me, setMe] = useState<MobileMe | null>(null);
@@ -46,6 +74,11 @@ export default function Models() {
   const [apiKey, setApiKey] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
   const [reasoning, setReasoning] = useState(false);
+  const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel | null>(null);
+  const [maxTokens, setMaxTokens] = useState(String(DEFAULT_MODEL_MAX_TOKENS));
+  const [contextWindow, setContextWindow] = useState(String(DEFAULT_MODEL_CONTEXT_WINDOW));
+  const [supportsImages, setSupportsImages] = useState(false);
+  const [maxImagesPerPrompt, setMaxImagesPerPrompt] = useState("");
   const [showEndpointHelp, setShowEndpointHelp] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [showApiKey, setShowApiKey] = useState(false);
@@ -111,6 +144,11 @@ export default function Models() {
     if (nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID) {
       setBaseUrl(nextCredential?.baseUrl ?? "");
       setReasoning(nextCredential?.reasoning ?? false);
+      setThinkingLevel(nextCredential?.thinkingLevel ?? null);
+      setMaxTokens(String(nextCredential?.maxTokens ?? DEFAULT_MODEL_MAX_TOKENS));
+      setContextWindow(String(nextCredential?.contextWindow ?? DEFAULT_MODEL_CONTEXT_WINDOW));
+      setSupportsImages(nextCredential?.supportsImages ?? false);
+      setMaxImagesPerPrompt(String(nextCredential?.maxImagesPerPrompt ?? ""));
     }
   }, []);
 
@@ -192,6 +230,11 @@ export default function Models() {
     const nextCredential = credentials.find((entry) => entry.provider === nextProvider);
     setProvider(nextProvider);
     setReasoning(nextCredential?.reasoning ?? false);
+    setThinkingLevel(nextCredential?.thinkingLevel ?? null);
+    setMaxTokens(String(nextCredential?.maxTokens ?? DEFAULT_MODEL_MAX_TOKENS));
+    setContextWindow(String(nextCredential?.contextWindow ?? DEFAULT_MODEL_CONTEXT_WINDOW));
+    setSupportsImages(nextCredential?.supportsImages ?? false);
+    setMaxImagesPerPrompt(String(nextCredential?.maxImagesPerPrompt ?? ""));
     setModelId(
       nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID
         ? (nextCredential?.modelId ?? "")
@@ -258,6 +301,35 @@ export default function Models() {
     } else if (!apiKey.trim()) {
       return;
     }
+    const parsedMaxImagesPerPrompt = parseModelMaxImagesPerPrompt(
+      maxImagesPerPrompt,
+      supportsImages,
+    );
+    if (supportsImages && maxImagesPerPrompt.trim() && parsedMaxImagesPerPrompt === undefined) {
+      setError(t("Enter a whole number from 1 to 1000 for the image limit."));
+      return;
+    }
+    const maxImagesPerPromptInput =
+      supportsImages && !maxImagesPerPrompt.trim() ? null : parsedMaxImagesPerPrompt;
+
+    const parsedMaxTokens = parseModelMaxTokens(maxTokens);
+    if (parsedMaxTokens === undefined) {
+      setError(
+        t("Enter a whole number from 1 to {max} for maximum output tokens.", {
+          max: MAX_MODEL_MAX_TOKENS,
+        }),
+      );
+      return;
+    }
+    const parsedContextWindow = parseModelContextWindow(contextWindow);
+    if (parsedContextWindow === undefined) {
+      setError(
+        t("Enter a whole number from 1 to {max} for the context limit.", {
+          max: MAX_MODEL_CONTEXT_WINDOW,
+        }),
+      );
+      return;
+    }
     setError(null);
     setNotice(null);
     setPending("connect");
@@ -270,6 +342,11 @@ export default function Models() {
               baseUrl: effectiveBaseUrl,
               modelId: modelId.trim(),
               reasoning,
+              thinkingLevel: reasoning ? thinkingLevel : null,
+              maxTokens: parsedMaxTokens,
+              contextWindow: parsedContextWindow,
+              supportsImages,
+              maxImagesPerPrompt: maxImagesPerPromptInput,
               apiKey: apiKey.trim() || undefined,
               label: selected.providerName ?? selected.provider,
             }
@@ -565,8 +642,95 @@ export default function Models() {
                     <Switch
                       accessibilityLabel={t("Supports thinking")}
                       value={reasoning}
-                      onValueChange={setReasoning}
+                      onValueChange={(value) => {
+                        setReasoning(value);
+                        if (!value) setThinkingLevel(null);
+                      }}
                       disabled={busy}
+                    />
+                  </View>
+                ) : null}
+                {showAdvanced && reasoning ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={t("Reasoning effort")}
+                    disabled={busy}
+                    onPress={() => {
+                      presentMessageActionSheet({
+                        title: t("Reasoning effort"),
+                        cancel: t("Cancel"),
+                        more: t("More"),
+                        colorScheme,
+                        actions: [
+                          {
+                            text: t("Default"),
+                            onPress: () => setThinkingLevel(null),
+                          },
+                          ...THINKING_LEVEL_OPTIONS.map((level) => ({
+                            text: thinkingLevelLabel(level, t),
+                            onPress: () => setThinkingLevel(level),
+                          })),
+                        ],
+                      });
+                    }}
+                    style={styles.modelRow}
+                  >
+                    <Text style={styles.modelLabel}>{t("Reasoning effort")}</Text>
+                    <Text style={styles.helpLabel}>
+                      {thinkingLevel ? thinkingLevelLabel(thinkingLevel, t) : t("Default")}
+                    </Text>
+                  </Pressable>
+                ) : null}
+                {showAdvanced ? (
+                  <View style={styles.modelRow}>
+                    <Text style={styles.modelLabel}>{t("Context limit")}</Text>
+                    <TextInput
+                      accessibilityLabel={t("Context limit")}
+                      editable={!busy}
+                      keyboardType="number-pad"
+                      maxLength={7}
+                      onChangeText={setContextWindow}
+                      style={[styles.keyInput, styles.maxImagesInput]}
+                      value={contextWindow}
+                    />
+                  </View>
+                ) : null}
+                {showAdvanced ? (
+                  <View style={styles.modelRow}>
+                    <Text style={styles.modelLabel}>{t("Maximum output tokens")}</Text>
+                    <TextInput
+                      accessibilityLabel={t("Maximum output tokens")}
+                      editable={!busy}
+                      keyboardType="number-pad"
+                      maxLength={6}
+                      onChangeText={setMaxTokens}
+                      style={[styles.keyInput, styles.maxImagesInput]}
+                      value={maxTokens}
+                    />
+                  </View>
+                ) : null}
+                {showAdvanced ? (
+                  <View style={styles.modelRow}>
+                    <Text style={styles.modelLabel}>{t("Supports images")}</Text>
+                    <Switch
+                      accessibilityLabel={t("Supports images")}
+                      value={supportsImages}
+                      onValueChange={setSupportsImages}
+                      disabled={busy}
+                    />
+                  </View>
+                ) : null}
+                {showAdvanced && supportsImages ? (
+                  <View style={styles.modelRow}>
+                    <Text style={styles.modelLabel}>{t("Maximum images per request")}</Text>
+                    <TextInput
+                      accessibilityLabel={t("Maximum images per request")}
+                      editable={!busy}
+                      keyboardType="number-pad"
+                      maxLength={4}
+                      onChangeText={setMaxImagesPerPrompt}
+                      style={[styles.keyInput, styles.maxImagesInput]}
+                      value={maxImagesPerPrompt}
                     />
                   </View>
                 ) : null}
@@ -966,6 +1130,12 @@ function createModelsStyles() {
       paddingHorizontal: 14,
       marginTop: 4,
       fontSize: 16,
+    },
+    maxImagesInput: {
+      width: 72,
+      height: 40,
+      marginTop: 0,
+      textAlign: "center",
     },
     primaryButton: {
       minHeight: 48,

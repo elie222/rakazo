@@ -8,6 +8,7 @@ import {
   type ProviderStreams,
 } from "@earendil-works/pi-ai";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
+import { DEFAULT_MODEL_CONTEXT_WINDOW, DEFAULT_MODEL_MAX_TOKENS } from "@rakazo/contracts";
 import { Agent } from "undici";
 import { declaredVisionModelIds, inputModalities } from "./model-modalities.js";
 import {
@@ -39,8 +40,6 @@ export function openAiCompatibleVisionModelIds(): ReadonlySet<string> {
   return declaredVisionModelIds(OPENAI_COMPATIBLE_VISION_MODELS_ENV);
 }
 
-const DEFAULT_CONTEXT_WINDOW = 32_768;
-const DEFAULT_MAX_TOKENS = 4_096;
 const MAX_MODELS_RESPONSE_BYTES = 64 * 1024;
 const MAX_MODEL_IDS = 500;
 const MAX_MODEL_ID_LENGTH = 256;
@@ -54,6 +53,8 @@ export function openAiCompatibleModel(
   baseUrl: string,
   reasoning = false,
   acceptsImages = false,
+  maxTokens = DEFAULT_MODEL_MAX_TOKENS,
+  contextWindow = DEFAULT_MODEL_CONTEXT_WINDOW,
 ): Model<"openai-completions"> {
   return {
     id,
@@ -70,8 +71,8 @@ export function openAiCompatibleModel(
     thinkingLevelMap: { off: "none" },
     input: inputModalities(acceptsImages),
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    contextWindow: DEFAULT_CONTEXT_WINDOW,
-    maxTokens: DEFAULT_MAX_TOKENS,
+    contextWindow,
+    maxTokens,
   };
 }
 
@@ -280,14 +281,28 @@ export function registerOpenAiCompatibleCatalog(models: MutableModels): MutableM
 /** Register a concrete model + base URL for an agent run. */
 export function registerOpenAiCompatibleRuntime(
   models: MutableModels,
-  opts: { modelId: string; baseUrl: string; reasoning?: boolean },
+  opts: {
+    modelId: string;
+    baseUrl: string;
+    reasoning?: boolean;
+    acceptsImages?: boolean;
+    maxTokens?: number;
+    contextWindow?: number;
+  },
 ): MutableModels {
   const baseUrl = normalizeOpenAiCompatibleBaseUrl(opts.baseUrl);
   const modelId = opts.modelId.trim();
-  const acceptsImages = openAiCompatibleVisionModelIds().has(modelId);
+  const acceptsImages = opts.acceptsImages || openAiCompatibleVisionModelIds().has(modelId);
   models.setProvider(
     openAiCompatibleProvider([
-      openAiCompatibleModel(modelId, baseUrl, opts.reasoning, acceptsImages),
+      openAiCompatibleModel(
+        modelId,
+        baseUrl,
+        opts.reasoning,
+        acceptsImages,
+        opts.maxTokens,
+        opts.contextWindow,
+      ),
     ]),
   );
   return models;

@@ -92,6 +92,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["groups/remove", { groupId: "missing-group" }],
       ["botSections/list"],
       ["botSections/create", { botId: "missing-bot", name: "Planning" }],
+      ["botSections/update", { sectionId: "missing-section", name: "Planning" }],
       ["threads/get", { botId: "missing-bot" }],
       ["threads/get", { groupId: "missing-group" }],
       ["threads/messages", { botId: "missing-bot", before: 1 }],

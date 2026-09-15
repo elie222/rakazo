@@ -10,7 +10,12 @@ import type {
   Space,
   SpaceNavigation,
 } from "@rakazo/contracts";
+import type { ThreadHistory } from "@rakazo/core";
 import {
+  aiConsentTarget,
+  aiDataUsesForProcedure,
+  cancelResponseBody,
+  ensureAiDataConsent,
   isRunTerminalEvent,
   mergeThreadHistory,
   prependThreadHistoryPage,
@@ -19,13 +24,14 @@ import {
   reduceLiveMessageBlocks,
   runFailureError,
   signupRequiresEmailVerification,
-  type ThreadHistory,
   takeLiveMessage,
   updateCloudAgentMessages,
   upsertMessageById,
 } from "@rakazo/core";
 import * as SecureStore from "expo-secure-store";
-import { defaultApiBase, type EndpointResult, normalizeApiBase } from "./endpoint";
+import { promptAiConsent } from "./ai-consent";
+import type { EndpointResult } from "./endpoint";
+import { defaultApiBase, normalizeApiBase } from "./endpoint";
 import { t } from "./i18n";
 import { resumeLiveNotifications } from "./live-notifications";
 import {
@@ -556,6 +562,21 @@ export async function rpc<T>(
     skipSpaceAuthRecovery?: boolean;
   } = {},
 ): Promise<T> {
+  const requestSpaceGeneration = spaceSelectionGeneration;
+  const uses = aiDataUsesForProcedure(proc, body);
+  const consentContext =
+    options.requestContext ?? (uses.length ? await captureApiRequestContext() : undefined);
+  await ensureAiDataConsent({
+    uses,
+    status: () =>
+      rpc(
+        "aiConsent/status",
+        { uses, ...aiConsentTarget(body) },
+        { requestContext: consentContext },
+      ),
+    prompt: promptAiConsent,
+    allow: (input) => rpc("aiConsent/allow", input, { requestContext: consentContext }),
+  });
   const controller = new AbortController();
   const abort = () => controller.abort();
   if (options.signal?.aborted) abort();
@@ -565,11 +586,10 @@ export async function rpc<T>(
   // Bind recovery to the Space + selection epoch this request was sent with:
   // a 401 arriving after the user switched Spaces — including A → B → A —
   // belongs to a stale request and must not touch the current selection.
-  const requestSpaceGeneration = spaceSelectionGeneration;
-  const requestHeaders = options.requestContext?.headers ?? (await authHeaders());
+  const requestHeaders = consentContext?.headers ?? (await authHeaders());
   const requestSpaceId = requestHeaders["x-rakazo-space-id"];
   try {
-    const res = await fetch(`${options.requestContext?.apiBase ?? currentApiBase()}/rpc/${proc}`, {
+    const res = await fetch(`${consentContext?.apiBase ?? currentApiBase()}/rpc/${proc}`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -579,6 +599,10 @@ export async function rpc<T>(
       body: JSON.stringify({ json: body }),
       signal: controller.signal,
     });
+    if (proc === "aiConsent/status" && res.status === 404) {
+      cancelResponseBody(res);
+      throw new Error(t("Update your server to use AI data sharing in this mobile version."));
+    }
     const parsed = await readBoundedJsonResponse<{ json?: T; error?: { message?: string } }>(
       res,
       MAX_MOBILE_RPC_RESPONSE_BYTES,

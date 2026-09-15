@@ -43,6 +43,19 @@ test("pinned bots and sidebar sections persist", async ({ page }, testInfo) => {
   await page.getByRole("menuitem", { name: "Move to", exact: true }).hover();
   await page
     .getByRole("menu", { name: "Move to", exact: true })
+    .getByRole("menuitem", { name: "Rename section", exact: true })
+    .click();
+  const renameDialog = page.getByRole("dialog", { name: "Rename section" });
+  await renameDialog.getByLabel("Name").fill("Delivery");
+  await captureScreenshot(page, testInfo, "rename-bot-section");
+  await renameDialog.getByRole("button", { name: "Save" }).click();
+  await expect(projects).toContainText("Delivery");
+  await expect(projects).not.toContainText("Projects");
+
+  await bot.click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Move to", exact: true }).hover();
+  await page
+    .getByRole("menu", { name: "Move to", exact: true })
     .getByRole("menuitem", { name: "Unassigned", exact: true })
     .click();
   await expect(sidebar.locator('[data-sidebar-group="unassigned"]')).toContainText("Chief");

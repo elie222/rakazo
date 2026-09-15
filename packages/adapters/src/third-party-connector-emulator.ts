@@ -1,3 +1,4 @@
+import { isIP } from "node:net";
 import type { ResolveHostname } from "./remote-mcp.js";
 
 type EmulatorRecord =
@@ -31,7 +32,7 @@ export class ThirdPartyConnectorEmulator {
   private readonly pendingUsers = new Set<string>();
 
   readonly fetch: typeof globalThis.fetch = async (input, init) => {
-    const url = new URL(typeof input === "string" || input instanceof URL ? input : input.url);
+    const url = urlFromPinnedFetch(input, init);
     if (url.hostname === "api.pipedream.com") return this.pipedream(url, init);
     if (url.hostname === "remote.mcp.pipedream.net" || url.hostname === "treg.to") {
       return this.mcp(url, init);
@@ -337,6 +338,17 @@ export class ThirdPartyConnectorEmulator {
     });
     return Response.json({ data: { ok: true, path: url.pathname } });
   }
+}
+
+function urlFromPinnedFetch(input: string | URL | Request, init?: RequestInit): URL {
+  const url = new URL(typeof input === "string" || input instanceof URL ? input : input.url);
+  const hostname = url.hostname.replace(/^\[|\]$/g, "");
+  if (isIP(hostname) === 0) return url;
+  const host = new Headers(init?.headers).get("host");
+  if (!host) return url;
+  const routed = new URL(url);
+  routed.host = host;
+  return routed;
 }
 
 function parseBody(body: RequestInit["body"] | undefined): Record<string, unknown> {

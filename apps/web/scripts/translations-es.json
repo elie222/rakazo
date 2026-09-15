@@ -728,5 +728,7 @@
   "Authorize this server so agents can use its tools. A popup opens.": "Autoriza este servidor para que tus agentes usen sus herramientas. Se abre una ventana emergente.",
   "Make sure nothing is still running on this computer.": "Asegúrate de que no quede nada en ejecución en este ordenador.",
   "Nothing is still running": "No queda nada en ejecución",
-  "Credentials are encrypted and never sent to the model.": "Las credenciales se cifran y nunca se envían al modelo."
+  "Credentials are encrypted and never sent to the model.": "Las credenciales se cifran y nunca se envían al modelo.",
+  "Rename section": "Renombrar sección",
+  "Could not rename section": "No se pudo renombrar la sección"
 }
