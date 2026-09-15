@@ -54,10 +54,19 @@ export function approvalEffectKey(
 }
 
 /**
- * Scope provider tool-call ids (e.g. reused call_0) to a run, tool, and args.
- * Retries with the same provider id and args stay idempotent; different args do not collide.
+ * Stable mutating-tool key for a run, tool, and args.
+ * Model tool-call ids change on replay, so they must not be part of the key.
  */
 export function toolEffectIdempotencyKey(
+  runId: string,
+  toolName: string,
+  args: Record<string, unknown>,
+): string {
+  return approvalEffectKey(runId, toolName, args);
+}
+
+/** Pre-fix rows that included the ephemeral provider tool-call id. */
+export function legacyScopedToolEffectIdempotencyKey(
   runId: string,
   toolName: string,
   executionId: string,
