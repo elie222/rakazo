@@ -178,17 +178,18 @@ describe("remote MCP URL policy", () => {
     // A fetch from a different undici than the Agent fails at dispatch with
     // "invalid onRequestStart method" before the lookup runs. Failing inside
     // the lookup proves the request reached the guarded Agent. Node's fetch
-    // is a different major, so the default and an injected builtin must both
-    // use the package fetch that matches the Agent.
+    // is a different major, so omit, builtin, and a captured builtin must
+    // all use the package fetch that matches the Agent.
     expect(undiciFetch).not.toBe(globalThis.fetch);
 
+    const capturedNodeFetch = globalThis.fetch;
     let resolutions = 0;
     const resolve = async () => {
       resolutions += 1;
       if (resolutions > 1) throw new Error("lookup reached");
       return [{ address: "203.0.113.10", family: 4 as const }];
     };
-    for (const injected of [undefined, globalThis.fetch] as const) {
+    for (const injected of [undefined, globalThis.fetch, capturedNodeFetch] as const) {
       resolutions = 0;
       const safeFetch = createSafeRemoteFetch(injected, resolve);
       try {
@@ -198,6 +199,69 @@ describe("remote MCP URL policy", () => {
       } finally {
         await safeFetch.close();
       }
+    }
+  });
+
+  it("still pins lookup for a captured Node fetch after globalThis.fetch changes", async () => {
+    const captured = globalThis.fetch;
+    const previous = globalThis.fetch;
+    globalThis.fetch = (async () => new Response(null, { status: 204 })) as typeof globalThis.fetch;
+    let resolutions = 0;
+    const resolve = async () => {
+      resolutions += 1;
+      if (resolutions > 1) throw new Error("lookup reached");
+      return [{ address: "203.0.113.10", family: 4 as const }];
+    };
+    try {
+      const safeFetch = createSafeRemoteFetch(captured, resolve);
+      try {
+        await expect(safeFetch("https://connectors.example.test/mcp")).rejects.toThrow(
+          "Could not reach connectors.example.test: lookup reached",
+        );
+      } finally {
+        await safeFetch.close();
+      }
+    } finally {
+      globalThis.fetch = previous;
+    }
+  });
+
+  it("does not pass the package Agent to a wrapper around Node's fetch", async () => {
+    // Wrappers are not === Node's fetch. Passing them the package Agent throws
+    // invalid onRequestStart before lookup. Call them without dispatcher.
+    let leakedDispatcher = false;
+    const wrapped: typeof globalThis.fetch = (input, init) => {
+      leakedDispatcher = Boolean(init && "dispatcher" in init);
+      return globalThis.fetch(input, init);
+    };
+    const previous = globalThis.fetch;
+    globalThis.fetch = (async () => {
+      throw new Error("stub fetch");
+    }) as typeof globalThis.fetch;
+    const safeFetch = createSafeRemoteFetch(wrapped, publicResolver);
+    try {
+      await expect(safeFetch("https://connectors.example.test/mcp")).rejects.toThrow("stub fetch");
+      expect(leakedDispatcher).toBe(false);
+    } finally {
+      globalThis.fetch = previous;
+      await safeFetch.close();
+    }
+  });
+
+  it("does not pass the package Agent to a mock fetch", async () => {
+    let leakedDispatcher = false;
+    const mock: typeof globalThis.fetch = async (_input, init) => {
+      leakedDispatcher = Boolean(init && "dispatcher" in init);
+      return new Response(null, { status: 204 });
+    };
+    const safeFetch = createSafeRemoteFetch(mock, publicResolver);
+    try {
+      await expect(safeFetch("https://connectors.example.test/mcp")).resolves.toMatchObject({
+        status: 204,
+      });
+      expect(leakedDispatcher).toBe(false);
+    } finally {
+      await safeFetch.close();
     }
   });
 

@@ -136,15 +136,19 @@ export async function assertSafeRemoteUrl(
 
 /** Drive the package `Agent` with that same undici's fetch. Node 22's
  * built-in fetch is an older undici major, so handing it a package Agent as
- * `dispatcher` throws `invalid onRequestStart` before any socket opens. */
+ * `dispatcher` throws `invalid onRequestStart` before any socket opens.
+ * Captured Node fetch is paired the same way. Distinct injected fetches own
+ * the transport and must not receive the package Agent. */
 const packageFetch = undiciFetch as unknown as typeof globalThis.fetch;
+const nodeFetch = globalThis.fetch;
 
 export function createSafeRemoteFetch(
   baseFetch?: typeof globalThis.fetch,
   resolve: ResolveHostname = resolveHostname,
 ): SafeRemoteFetch {
-  const fetchImpl = !baseFetch || baseFetch === globalThis.fetch ? packageFetch : baseFetch;
   const dispatcher = new Agent({ connect: { lookup: createSafeLookup(resolve) } });
+  const usePackageFetch =
+    baseFetch == null || baseFetch === nodeFetch || baseFetch === packageFetch;
   const safeFetch = async (input: string | URL | Request, init?: RequestInit) => {
     if (typeof input !== "string" && !(input instanceof URL)) {
       throw new Error("Connector fetch requires a URL, not a Request");
@@ -152,11 +156,13 @@ export function createSafeRemoteFetch(
     const url = await assertSafeRemoteUrl(String(input), resolve);
     let response: Response;
     try {
-      response = await fetchImpl(url, {
-        ...init,
-        redirect: "manual",
-        dispatcher,
-      } as RequestInit & { dispatcher: Agent });
+      const requestInit = { ...init, redirect: "manual" as const };
+      response = usePackageFetch
+        ? await packageFetch(url, {
+            ...requestInit,
+            dispatcher,
+          } as RequestInit & { dispatcher: Agent })
+        : await baseFetch!(url, requestInit);
     } catch (error) {
       const detail = transportFailureDetail(error);
       throw new Error(`Could not reach ${url.host}${detail ? `: ${detail}` : ""}`, {
