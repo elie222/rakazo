@@ -21,7 +21,7 @@ import {
 } from "./computer-control.js";
 import { toComputerRef } from "./computer-support.js";
 import {
-  checkpointAndRecordComputerWorkspace,
+  checkpointComputerWorkspace,
   ensureComputerWorkspaceLayout,
   restoreComputerWorkspace,
 } from "./computer-workspace.js";
@@ -620,6 +620,11 @@ export async function replaceComputer(
   if (hasActiveComputerControl(existing)) {
     throw new ComputerBusyError();
   }
+  // Reset is the in-product recovery for a hung suspend. Recover and update still refuse
+  // so they cannot destroy a computer that is only stuck, not requested as a Reset.
+  if (existing.state === "suspending" && mode !== "reset") {
+    throw new ComputerBusyError();
+  }
   // Allow Reset on a stale "booting" or "suspending" row unless another bot still holds a live
   // lease. Dedicated computers never create an execution-lease row, so the foreign-lease check
   // alone cannot see an in-flight dedicated boot or idle stop. Refuse claim stamps younger than
@@ -645,6 +650,7 @@ export async function replaceComputer(
 
   const previousState = existing.state;
   const now = new Date();
+  const claimStamp = new Date(Math.max(now.getTime(), existing.updatedAt.getTime() + 1));
   const claimed = await deps.prisma.computer.updateMany({
     where: {
       id: computerId,
@@ -662,7 +668,7 @@ export async function replaceComputer(
         { controlLeaseExpiresAt: { lte: now } },
       ],
     },
-    data: { state: "suspending" },
+    data: { state: "suspending", updatedAt: claimStamp },
   });
   if (claimed.count !== 1) throw new ComputerBusyError();
   // Re-check after the claim in case a run started between the pre-check and CAS.
@@ -675,7 +681,7 @@ export async function replaceComputer(
   });
   if (activeRun) {
     await deps.prisma.computer.updateMany({
-      where: { id: computerId, state: "suspending" },
+      where: { id: computerId, state: "suspending", updatedAt: claimStamp },
       data: { state: previousState },
     });
     throw new ComputerBusyError();
@@ -687,9 +693,20 @@ export async function replaceComputer(
     if (oldRef && (mode === "update" || (existing.state === "running" && mode === "recover"))) {
       try {
         await onProgress?.("saving");
-        await checkpointAndRecordComputerWorkspace(deps, existing, oldRef, context);
+        const revision = await checkpointComputerWorkspace(
+          deps.home,
+          deps.sandbox,
+          existing.homeKey,
+          oldRef,
+          context,
+        );
+        const recorded = await deps.prisma.computer.updateMany({
+          where: { id: computerId, state: "suspending", updatedAt: claimStamp },
+          data: { homeRevision: revision, updatedAt: claimStamp },
+        });
+        if (recorded.count !== 1) throw new ComputerBusyError();
       } catch (error) {
-        if (mode !== "recover") throw error;
+        if (mode !== "recover" || error instanceof ComputerBusyError) throw error;
       }
     }
     await onProgress?.("recreating");
@@ -702,7 +719,12 @@ export async function replaceComputer(
       }
     }
     const stopped = await deps.prisma.computer.updateMany({
-      where: { id: computerId, state: "suspending", maintenanceId: existing.maintenanceId ?? null },
+      where: {
+        id: computerId,
+        state: "suspending",
+        updatedAt: claimStamp,
+        maintenanceId: existing.maintenanceId ?? null,
+      },
       data: {
         state: "stopped",
         providerRef: null,
@@ -711,6 +733,7 @@ export async function replaceComputer(
         controlLeaseExpiresAt: null,
         controlBotId: null,
         controlRunId: null,
+        updatedAt: claimStamp,
       },
     });
     if (stopped.count !== 1) throw new ComputerBusyError();
@@ -718,7 +741,11 @@ export async function replaceComputer(
   } catch (error) {
     await deps.prisma.computer
       .updateMany({
-        where: { id: computerId, maintenanceId: existing.maintenanceId ?? null },
+        where: {
+          id: computerId,
+          updatedAt: claimStamp,
+          maintenanceId: existing.maintenanceId ?? null,
+        },
         data: { state: "error" },
       })
       .catch(() => undefined);

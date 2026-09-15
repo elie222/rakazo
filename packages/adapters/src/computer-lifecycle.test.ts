@@ -1842,6 +1842,45 @@ describe("computer replacement", () => {
     ).rejects.toBeInstanceOf(ComputerBusyError);
   });
 
+  it("refuses Recover and Update on a stale suspending computer", async () => {
+    const updateMany = vi.fn().mockResolvedValue({ count: 1 });
+    const prisma = {
+      computer: {
+        findUniqueOrThrow: vi.fn().mockResolvedValue({
+          id: "computer-1",
+          homeKey: "bot-1",
+          providerRef: "provider-1",
+          kind: "fake",
+          scope: "team",
+          state: "suspending",
+          controlLeaseId: null,
+          updatedAt: new Date("2024-01-01T00:00:00.000Z"),
+        }),
+        updateMany,
+      },
+      computerExecutionLease: { findFirst: vi.fn().mockResolvedValue(null) },
+      run: { findFirst: vi.fn().mockResolvedValue(null) },
+    } as unknown as PrismaClient;
+
+    for (const mode of ["recover", "update"] as const) {
+      await expect(
+        replaceComputer(
+          {
+            prisma,
+            sandbox: new FakeSandboxProvider(),
+            home: {} as AgentHomeStore,
+            jobs: {} as JobPublisher,
+            events: {} as ThreadEvents,
+          },
+          "computer-1",
+          mode,
+          context,
+        ),
+      ).rejects.toBeInstanceOf(ComputerBusyError);
+    }
+    expect(updateMany).not.toHaveBeenCalled();
+  });
+
   it("resets a computer a crashed worker left suspending", async () => {
     // No live lease and the suspend stamp is older than an execution-lease TTL:
     // Reset must reach the claim instead of answering "Computer is busy" for good.
@@ -2432,13 +2471,13 @@ describe("computer replacement", () => {
       1,
       expect.objectContaining({
         where: expect.objectContaining({ id: "computer-1", state: "stopped" }),
-        data: { state: "suspending" },
+        data: { state: "suspending", updatedAt: expect.any(Date) },
       }),
     );
     expect(updateMany).toHaveBeenNthCalledWith(
       2,
       expect.objectContaining({
-        where: { id: "computer-1", state: "suspending" },
+        where: { id: "computer-1", state: "suspending", updatedAt: expect.any(Date) },
         data: { state: "stopped" },
       }),
     );
@@ -2485,13 +2524,13 @@ describe("computer replacement", () => {
       1,
       expect.objectContaining({
         where: expect.objectContaining({ id: "computer-1", state: "suspended" }),
-        data: { state: "suspending" },
+        data: { state: "suspending", updatedAt: expect.any(Date) },
       }),
     );
     expect(updateMany).toHaveBeenNthCalledWith(
       2,
       expect.objectContaining({
-        where: { id: "computer-1", state: "suspending" },
+        where: { id: "computer-1", state: "suspending", updatedAt: expect.any(Date) },
         data: { state: "suspended" },
       }),
     );
@@ -2551,7 +2590,7 @@ describe("computer replacement", () => {
         1,
         expect.objectContaining({
           where: expect.objectContaining({ id: "computer-1", state: "stopped" }),
-          data: { state: "suspending" },
+          data: { state: "suspending", updatedAt: expect.any(Date) },
         }),
       );
     } finally {
@@ -2702,7 +2741,7 @@ describe("computer replacement", () => {
       ).rejects.toThrow("ECONNRESET");
       expect(destroy).not.toHaveBeenCalled();
       expect(updateMany).toHaveBeenLastCalledWith({
-        where: { id: "computer-1", maintenanceId: null },
+        where: { id: "computer-1", maintenanceId: null, updatedAt: expect.any(Date) },
         data: { state: "error" },
       });
     } finally {
