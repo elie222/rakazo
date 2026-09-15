@@ -254,7 +254,7 @@ import {
   renderPlotSpecToSvg,
   searchChartCatalog,
 } from "./plot-tool.js";
-import type { RemoteTransportDependencies } from "./remote-mcp.js";
+import { assertSafeRemoteUrl, type RemoteTransportDependencies } from "./remote-mcp.js";
 import { loadReplyContext, messageToAgentHistoryText } from "./reply-context.js";
 import {
   commitConsumedRunSecret,
@@ -570,6 +570,8 @@ export interface ExecutorDeps {
   /** Page browser (DOM refs) on the bot computer. Defaults to the sandbox live browser when supported. */
   browser?: BrowserProvider;
   secretHttp?: RemoteTransportDependencies;
+  /** Allow RFC1918 / Docker-network MCP URLs when the deployment owner enabled the escape. */
+  mcpAllowPrivateEndpoint?: boolean;
   /** Remote cloud coding agents. Null/omit means tools stay uninjected. */
   cloudAgent?: CloudAgentConnection | null;
   /** Optional Auto Review verifier. When omitted, the factory selects from env (llm | jev | scripted). */
@@ -2828,6 +2830,22 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 error:
                   "Invalid MCP server details. Required: name, transport (streamable_http|sse|stdio); endpoint for remote transports; command for stdio.",
               });
+            }
+            if (parsed.endpoint) {
+              try {
+                const settings = await deps.prisma.deploymentSettings.findUnique({
+                  where: { id: "default" },
+                  select: { ownerUserId: true },
+                });
+                await assertSafeRemoteUrl(parsed.endpoint, deps.secretHttp?.resolveHostname, {
+                  allowPrivateEndpoint:
+                    deps.mcpAllowPrivateEndpoint === true || settings?.ownerUserId === run.userId,
+                });
+              } catch (error) {
+                return finish({
+                  error: error instanceof Error ? error.message : "Invalid MCP endpoint",
+                });
+              }
             }
             if (!deps.secretStore) {
               return finish({ error: "Secret storage is not available in this deployment." });

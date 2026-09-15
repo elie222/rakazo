@@ -21,12 +21,13 @@ export const McpRemoteEndpointSchema = z
       if (value.endsWith("#")) return false;
       const url = new URL(value);
       if (url.username || url.password || url.hash) return false;
-      if (url.protocol === "https:") return true;
-      return url.protocol === "http:" && isLocalMcpHost(url.hostname);
+      // Persist HTTP(S). Runtime SSRF still requires HTTPS for public hosts and
+      // blocks private LAN targets unless the deployment-owner escape is on.
+      return url.protocol === "https:" || url.protocol === "http:";
     } catch {
       return false;
     }
-  }, "MCP remote endpoint must be an HTTPS URL without credentials or a fragment (HTTP is allowed only for localhost)");
+  }, "MCP remote endpoint must be an HTTP(S) URL without credentials or a fragment");
 
 export const McpHeadersSchema = z
   .record(z.string().regex(/^[A-Za-z0-9-]+$/), z.string().max(4096))

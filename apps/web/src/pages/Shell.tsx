@@ -158,6 +158,7 @@ import {
   requestBrowserNotificationPermission,
   shouldNotifyBrowser,
 } from "../lib/browser-notifications";
+import { newClientId } from "../lib/client-id";
 import {
   embeddableScreenUrl,
   loadComputerScreen,
@@ -6221,11 +6222,7 @@ function computerLabel(mode: ComputerStatus["mode"] | undefined, botName: string
 }
 
 function newClientNonce(): string {
-  const webCrypto = globalThis.crypto;
-  if (webCrypto && typeof webCrypto.randomUUID === "function") {
-    return webCrypto.randomUUID();
-  }
-  return `m-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  return newClientId();
 }
 
 function readFileAsBase64(file: File): Promise<string> {

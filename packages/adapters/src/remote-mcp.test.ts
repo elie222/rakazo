@@ -18,6 +18,77 @@ describe("remote MCP URL policy", () => {
     ).resolves.toEqual(new URL("https://connectors.example.test/mcp"));
   });
 
+  it("accepts public HTTPS endpoints when the private-endpoint escape is on", async () => {
+    await expect(
+      assertSafeRemoteUrl("https://connectors.example.test/mcp", publicResolver, {
+        allowPrivateEndpoint: true,
+      }),
+    ).resolves.toEqual(new URL("https://connectors.example.test/mcp"));
+  });
+
+  it("blocks private hosts by default", async () => {
+    await expect(assertSafeRemoteUrl("https://10.0.0.8/mcp", publicResolver)).rejects.toThrow(
+      /private host/i,
+    );
+    await expect(
+      assertSafeRemoteUrl("http://192.168.1.20:3927/mcp", publicResolver),
+    ).rejects.toThrow(/HTTPS/i);
+    await expect(
+      assertSafeRemoteUrl("https://host.docker.internal/mcp", publicResolver),
+    ).rejects.toThrow(/private host/i);
+  });
+
+  it("allows private LAN hosts when the deployment-owner escape is enabled", async () => {
+    await expect(
+      assertSafeRemoteUrl("https://10.0.0.8/mcp", publicResolver, { allowPrivateEndpoint: true }),
+    ).resolves.toEqual(new URL("https://10.0.0.8/mcp"));
+    await expect(
+      assertSafeRemoteUrl("http://192.168.1.20:3927/mcp", publicResolver, {
+        allowPrivateEndpoint: true,
+      }),
+    ).resolves.toEqual(new URL("http://192.168.1.20:3927/mcp"));
+    await expect(
+      assertSafeRemoteUrl("http://host.docker.internal:3927/mcp", publicResolver, {
+        allowPrivateEndpoint: true,
+      }),
+    ).resolves.toEqual(new URL("http://host.docker.internal:3927/mcp"));
+  });
+
+  it("still blocks cloud metadata when the private-endpoint escape is enabled", async () => {
+    await expect(
+      assertSafeRemoteUrl("https://169.254.169.254/latest/meta-data", publicResolver, {
+        allowPrivateEndpoint: true,
+      }),
+    ).rejects.toThrow(/private host/i);
+  });
+
+  it("allows HTTP loopback without the private-endpoint escape", async () => {
+    await expect(assertSafeRemoteUrl("http://127.0.0.1:3927/mcp", publicResolver)).resolves.toEqual(
+      new URL("http://127.0.0.1:3927/mcp"),
+    );
+  });
+
+  it("rejects public HTTP even when the private-endpoint escape is enabled", async () => {
+    await expect(
+      assertSafeRemoteUrl("http://connectors.example.test/mcp", publicResolver, {
+        allowPrivateEndpoint: true,
+      }),
+    ).rejects.toThrow(/HTTPS/i);
+  });
+
+  it("allows a hostname that resolves privately only when the escape is enabled", async () => {
+    const lanResolver = async () => [{ address: "10.1.2.3", family: 4 as const }];
+    await expect(assertSafeRemoteUrl("https://mcp.lan.test/mcp", lanResolver)).rejects.toThrow(
+      "private address",
+    );
+    await expect(
+      assertSafeRemoteUrl("https://mcp.lan.test/mcp", lanResolver, { allowPrivateEndpoint: true }),
+    ).resolves.toEqual(new URL("https://mcp.lan.test/mcp"));
+    await expect(
+      assertSafeRemoteUrl("http://mcp.lan.test/mcp", lanResolver, { allowPrivateEndpoint: true }),
+    ).resolves.toEqual(new URL("http://mcp.lan.test/mcp"));
+  });
+
   it("accepts hosts that resolve to a public IPv6 address", async () => {
     await expect(
       assertSafeRemoteUrl("https://connectors.example.test/mcp", async () => [

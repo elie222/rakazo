@@ -225,6 +225,11 @@ screenshot computer tools stay available. Existing connections default to disabl
 managed endpoints, the deployment-wide fallback remains
 `RAKAZO_OPENAI_COMPATIBLE_VISION_MODELS=gpt4o-vision,llava`.
 
+Remote MCP defaults to public HTTPS. To attach a server on the same LAN or Docker network, set
+`MCP_ALLOW_PRIVATE_ENDPOINT=true` on the API and worker. Private IP literals also work for the
+deployment owner without that flag. Cloud metadata addresses stay blocked. Leave the flag unset
+on public installs.
+
 For servers that accept standard `reasoning_effort`, enable **Supports thinking** under
 **Advanced** when connecting. The setting is saved on the connection (no env var or restart).
 Existing connections default to disabled. Reconnect former Qwen-list or deployment-local models

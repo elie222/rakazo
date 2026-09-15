@@ -93,7 +93,8 @@ async function main() {
     dataDir,
     prisma,
   });
-  const mcpOAuth = new McpOAuthBroker(prisma, secrets);
+  const allowPrivateEndpoint = process.env.MCP_ALLOW_PRIVATE_ENDPOINT === "true";
+  const mcpOAuth = new McpOAuthBroker(prisma, secrets, {}, allowPrivateEndpoint);
   const mcp = new McpConnector(
     prisma,
     secrets,
@@ -104,6 +105,7 @@ async function main() {
         .map((v) => v.trim())
         .filter(Boolean),
       events,
+      allowPrivateEndpoint,
     },
     mcpOAuth,
   );
@@ -187,6 +189,7 @@ async function main() {
       process.env.TYPESAFE_API_KEY ?? "",
     ].filter(Boolean),
     secretStore: secrets,
+    mcpAllowPrivateEndpoint: process.env.MCP_ALLOW_PRIVATE_ENDPOINT === "true",
     deploymentModelKey,
     dataDir,
     notifications: new ExpoPushProvider(dataDir),
