@@ -12,8 +12,9 @@ import type {
 } from "@modelcontextprotocol/sdk/shared/auth.js";
 import { isLocalMcpHost } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
+import { actorMayUsePrivateRemoteMcp } from "./mcp-private-endpoint.js";
 import { secureFetch, validateUrl, withEndpointOriginFallback } from "./mcp-transport.js";
-import { isPrivateRemoteMcpHostname, type RemoteTransportDependencies } from "./remote-mcp.js";
+import type { RemoteTransportDependencies } from "./remote-mcp.js";
 import type { EncryptedSecretStore } from "./secrets.js";
 
 type OAuthState = {
@@ -349,7 +350,7 @@ function oauthFetch(
     {
       allowHttpLocalhost: localHttp,
       allowLocalHttpCredentials: localHttp,
-      allowPrivateEndpoint: allowPrivateEndpoint || isPrivateRemoteMcpHostname(url.hostname),
+      allowPrivateEndpoint,
     },
     { headers },
     network,
@@ -452,7 +453,7 @@ export class McpOAuthBroker {
       server.endpoint,
       this.network,
       loaded.material,
-      this.allowPrivateEndpoint,
+      await actorMayUsePrivateRemoteMcp(this.prisma, input.userId, this.allowPrivateEndpoint),
     );
     const transport = new StreamableHTTPClientTransport(endpoint, {
       requestInit: { headers: networkFetch.headers },
@@ -586,7 +587,12 @@ export class McpOAuthBroker {
     });
     if (consumed.count !== 1) throw new Error("MCP OAuth session is invalid or expired");
     const endpoint = new URL(pending.endpoint);
-    const networkFetch = oauthFetch(pending.endpoint, this.network, {}, this.allowPrivateEndpoint);
+    const networkFetch = oauthFetch(
+      pending.endpoint,
+      this.network,
+      {},
+      await actorMayUsePrivateRemoteMcp(this.prisma, pending.userId, this.allowPrivateEndpoint),
+    );
     const transport = new StreamableHTTPClientTransport(endpoint, {
       authProvider: pending.provider,
       fetch: networkFetch.fetch,

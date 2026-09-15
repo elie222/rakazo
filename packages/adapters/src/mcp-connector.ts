@@ -22,8 +22,9 @@ import {
 } from "./lazy-tool-catalog.js";
 import type { McpOAuthBroker, OAuthMaterial } from "./mcp-oauth.js";
 import { oauthMaterialSecrets } from "./mcp-oauth.js";
+import { actorMayUsePrivateRemoteMcp } from "./mcp-private-endpoint.js";
 import { McpSession } from "./mcp-transport.js";
-import { isPrivateRemoteMcpHostname, type RemoteTransportDependencies } from "./remote-mcp.js";
+import type { RemoteTransportDependencies } from "./remote-mcp.js";
 import type { EncryptedSecretStore } from "./secrets.js";
 
 type SessionEntry = { session: McpSession; revision: number; material: OAuthMaterial };
@@ -360,9 +361,11 @@ export class McpConnector implements ConnectorProvider {
         if (!server.endpoint) throw new Error("MCP endpoint is required");
         const endpoint = new URL(server.endpoint);
         const localHttp = endpoint.protocol === "http:" && isLocalMcpHost(endpoint.hostname);
-        const allowPrivateEndpoint =
-          this.options.allowPrivateEndpoint === true ||
-          isPrivateRemoteMcpHostname(endpoint.hostname);
+        const allowPrivateEndpoint = await actorMayUsePrivateRemoteMcp(
+          this.prisma,
+          context.userId,
+          this.options.allowPrivateEndpoint === true,
+        );
         const authProvider =
           !localHttp && this.oauth
             ? await this.oauth.providerFor(server, context, loaded)

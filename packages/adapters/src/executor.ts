@@ -254,7 +254,9 @@ import {
   renderPlotSpecToSvg,
   searchChartCatalog,
 } from "./plot-tool.js";
-import { assertSafeRemoteUrl, type RemoteTransportDependencies } from "./remote-mcp.js";
+import { actorMayUsePrivateRemoteMcp } from "./mcp-private-endpoint.js";
+import { assertSafeRemoteUrl } from "./remote-mcp.js";
+import type { RemoteTransportDependencies } from "./remote-mcp.js";
 import { loadReplyContext, messageToAgentHistoryText } from "./reply-context.js";
 import {
   commitConsumedRunSecret,
@@ -2833,13 +2835,12 @@ export function createRunExecutor(deps: ExecutorDeps) {
             }
             if (parsed.endpoint) {
               try {
-                const settings = await deps.prisma.deploymentSettings.findUnique({
-                  where: { id: "default" },
-                  select: { ownerUserId: true },
-                });
                 await assertSafeRemoteUrl(parsed.endpoint, deps.secretHttp?.resolveHostname, {
-                  allowPrivateEndpoint:
-                    deps.mcpAllowPrivateEndpoint === true || settings?.ownerUserId === run.userId,
+                  allowPrivateEndpoint: await actorMayUsePrivateRemoteMcp(
+                    deps.prisma,
+                    run.userId,
+                    deps.mcpAllowPrivateEndpoint === true,
+                  ),
                 });
               } catch (error) {
                 return finish({
