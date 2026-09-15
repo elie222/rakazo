@@ -78,6 +78,18 @@ describe("executionBlocksUserTakeover", () => {
     ).toBe(false);
   });
 
+  it("allows takeover while the waiting run continues for a chat message", () => {
+    expect(
+      executionBlocksUserTakeover({
+        hasLease: true,
+        leaseExpiresAt: new Date(now + 60_000),
+        runStatus: "running",
+        now,
+        takeoverRequested: true,
+      }),
+    ).toBe(false);
+  });
+
   it("blocks takeover for an active lease or active run", () => {
     expect(
       executionBlocksUserTakeover({

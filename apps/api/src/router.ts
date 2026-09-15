@@ -1901,12 +1901,15 @@ export function createRouter(deps: RouterDeps) {
             })
           : null;
         const waitingForTakeover =
-          executionRun?.botId === bot.id && executionRun.status === "waiting_takeover";
+          executionRun?.botId === bot.id &&
+          (executionRun.status === "waiting_takeover" ||
+            bot.computer.controlRunId === executionLease?.runId);
         if (
           executionBlocksUserTakeover({
             hasLease: Boolean(executionLease),
             leaseExpiresAt: executionLease?.expiresAt,
             runStatus: executionRun?.status,
+            takeoverRequested: waitingForTakeover,
           })
         ) {
           throw new ORPCError("CONFLICT", { message: "Stop the bot first" });
