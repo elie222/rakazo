@@ -2,6 +2,7 @@ import { DEFAULT_MODEL_MAX_TOKENS } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import {
   billedPromptTokens,
+  clipToolResultContent,
   clipToolResultText,
   resolveCompletionMaxTokens,
   TOOL_RESULT_TEXT_LIMIT,
@@ -60,5 +61,31 @@ describe("clipToolResultText", () => {
     const clipped = clipToolResultText(text);
     expect(clipped.endsWith("…")).toBe(true);
     expect(clipped.length).toBe(TOOL_RESULT_TEXT_LIMIT + 1);
+  });
+});
+
+describe("clipToolResultContent", () => {
+  it("shares one character budget across all text parts and leaves images", () => {
+    const first = "a".repeat(TOOL_RESULT_TEXT_LIMIT - 10);
+    const second = "b".repeat(40);
+    const image = { type: "image" as const, data: "iVBORw0KGgo=", mimeType: "image/png" as const };
+    const clipped = clipToolResultContent([
+      { type: "text" as const, text: first },
+      image,
+      { type: "text" as const, text: second },
+      { type: "text" as const, text: "later omitted" },
+    ]);
+    expect(clipped).toHaveLength(3);
+    expect(clipped[0]).toEqual({ type: "text", text: first });
+    expect(clipped[1]).toEqual(image);
+    const overflow = clipped[2] as { type: "text"; text: string };
+    expect(overflow.type).toBe("text");
+    expect(overflow.text.endsWith("…")).toBe(true);
+    expect(overflow.text.startsWith("b")).toBe(true);
+    expect(overflow.text.length).toBe(11);
+    const textChars = clipped
+      .filter((part) => part.type === "text")
+      .reduce((sum, part) => sum + part.text.replace(/…$/, "").length, 0);
+    expect(textChars).toBe(TOOL_RESULT_TEXT_LIMIT);
   });
 });

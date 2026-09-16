@@ -11,6 +11,40 @@ export function clipToolResultText(text: string, limit: number = TOOL_RESULT_TEX
   return text.length > limit ? `${text.slice(0, limit)}…` : text;
 }
 
+/**
+ * Share one remaining character budget across all text parts.
+ * Later text is omitted once the aggregate limit is exhausted; non-text parts stay.
+ */
+export function clipToolResultContent<T>(
+  content: T[],
+  limit: number = TOOL_RESULT_TEXT_LIMIT,
+): T[] {
+  let remaining = limit;
+  const clipped: T[] = [];
+  for (const part of content) {
+    if (
+      !part ||
+      typeof part !== "object" ||
+      !("type" in part) ||
+      (part as { type?: unknown }).type !== "text" ||
+      !("text" in part)
+    ) {
+      clipped.push(part);
+      continue;
+    }
+    if (remaining <= 0) continue;
+    const text = String((part as { text: unknown }).text);
+    if (text.length <= remaining) {
+      clipped.push(part);
+      remaining -= text.length;
+      continue;
+    }
+    clipped.push({ ...part, text: clipToolResultText(text, remaining) });
+    remaining = 0;
+  }
+  return clipped;
+}
+
 /** Prompt tokens providers bill, including cache read/write rather than the uncached remainder. */
 export function billedPromptTokens(usage: {
   input?: number;

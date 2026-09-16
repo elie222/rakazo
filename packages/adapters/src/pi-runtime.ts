@@ -42,6 +42,7 @@ import {
 } from "./pi-openai-compatible-provider.js";
 import {
   billedPromptTokens,
+  clipToolResultContent,
   clipToolResultText,
   MODEL_STREAM_MAX_RETRIES,
   MODEL_STREAM_TIMEOUT_MS,
@@ -61,6 +62,7 @@ interface ToolCallBudget {
   limit: number;
   inFlight: number;
 }
+// Optional fuse is process-local. continueRun on another worker starts at zero.
 const toolCallBudgetsByRun = new Map<string, ToolCallBudget>();
 // Built on first use, not at module load: entry points call loadRootEnv() after
 // their imports, and ESM hoists those imports, so module-level env reads here
@@ -173,6 +175,7 @@ export class PiAgentRuntime implements AgentRuntime {
 
     const work = (async () => {
       let trackedBudget: ToolCallBudget | undefined;
+      let resumeHost: ToolHost | undefined;
       try {
         const selectedModel = resolveRuntimeModel(request.model);
         if (!selectedModel.model) {
@@ -203,6 +206,7 @@ export class PiAgentRuntime implements AgentRuntime {
           depth: 0,
           pausePending: false,
         };
+        resumeHost = host;
         const tools = toAgentTools(toolDefs, host);
         const seenSteeringIds: string[] = [];
         const initialSteering = request.claimSteering ? await request.claimSteering([]) : [];
@@ -437,7 +441,9 @@ export class PiAgentRuntime implements AgentRuntime {
       } finally {
         queue.close();
         if (trackedBudget) {
-          releaseToolCallBudget(request.runId, signal.aborted && !trackedBudget.exceeded);
+          const keepForResume =
+            (signal.aborted || Boolean(resumeHost?.pausePending)) && !trackedBudget.exceeded;
+          releaseToolCallBudget(request.runId, keepForResume);
         }
       }
     })();
@@ -1428,11 +1434,7 @@ function boundAgentToolResult<T>(result: AgentToolResult<T>): AgentToolResult<T>
   if (!result || !Array.isArray(result.content)) return result;
   return {
     ...result,
-    content: result.content.map((part) =>
-      part && typeof part === "object" && "type" in part && part.type === "text" && "text" in part
-        ? { ...part, text: clipToolResultText(String(part.text)) }
-        : part,
-    ),
+    content: clipToolResultContent(result.content),
   };
 }
 

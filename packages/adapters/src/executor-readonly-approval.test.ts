@@ -1,6 +1,6 @@
 import type { AgentRunRequest, ConnectorCall, ConnectorTool } from "@rakazo/adapter-kit";
 import type { ActionApprovalRule } from "@rakazo/core";
-import { approvalEffectKey } from "@rakazo/core/node/approval-effect-key";
+import { approvalEffectKey, toolEffectIdempotencyKey } from "@rakazo/core/node/approval-effect-key";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { isApprovalPausedResult } from "./approval-effect.js";
 import type * as AutoReviewModule from "./auto-review.js";
@@ -30,6 +30,7 @@ type Effect = {
   request: unknown;
   result?: unknown;
   reviewDecision?: string;
+  runId?: string;
 };
 
 function fixture({
@@ -64,7 +65,20 @@ function fixture({
     leaseFence: 0,
   };
   const externalEffect = {
-    findMany: vi.fn(async () => effects.filter((effect) => effect.status === "approved")),
+    findMany: vi.fn(
+      async ({
+        where,
+      }: {
+        where?: { id?: string; runId?: string; status?: string; kind?: string };
+      } = {}) =>
+        effects.filter((effect) => {
+          if (where?.status && effect.status !== where.status) return false;
+          if (where?.kind && effect.kind !== where.kind) return false;
+          if (where?.runId && effect.runId && effect.runId !== where.runId) return false;
+          if (where?.id && effect.id !== where.id) return false;
+          return true;
+        }),
+    ),
     findUnique: vi.fn(
       async ({ where }: { where: { id?: string; idempotencyKey?: string } }) =>
         effects.find((effect) =>
@@ -319,6 +333,22 @@ describe("connector read-only metadata and approval enforcement", () => {
       expect(f.results).toEqual([{ item: "item-1" }, { item: "item-1" }]);
       expect(f.pauseRunForInput).not.toHaveBeenCalled();
       expect(runAutoReviewJudge).not.toHaveBeenCalled();
+    });
+
+    it("replays a non-approval connector effect when the tool-call id changes", async () => {
+      const f = fixture({ catalog });
+      f.setCalls([{ args: { id: "item-1" }, executionId: "call-1" }]);
+      await f.run();
+      expect(f.execute).toHaveBeenCalledOnce();
+      expect(f.effects[0]?.idempotencyKey).toBe(
+        toolEffectIdempotencyKey("run-1", "demo_get_item", { id: "item-1" }),
+      );
+
+      f.setCalls([{ args: { id: "item-1" }, executionId: "call-new" }]);
+      await f.run();
+      expect(f.execute).toHaveBeenCalledOnce();
+      expect(f.effects).toHaveLength(1);
+      expect(f.results.at(-1)).toEqual({ item: "item-1" });
     });
 
     it("keeps an explicit allow rule ahead of automatic review", async () => {

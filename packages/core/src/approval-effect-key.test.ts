@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   approvalEffectKey,
+  isToolEffectIdempotencyKey,
   legacyScopedToolEffectIdempotencyKey,
   stableJsonValue,
   toolEffectIdempotencyKey,
@@ -71,5 +72,23 @@ describe("toolEffectIdempotencyKey", () => {
     expect(legacyScopedToolEffectIdempotencyKey("run-1", "remember", "call_0", args)).not.toBe(
       toolEffectIdempotencyKey("run-1", "remember", args),
     );
+  });
+
+  it("distinguishes identical-args calls in one run via occurrence", () => {
+    const args = { actions: [{ kind: "click", x: 12, y: 40 }] };
+    const first = toolEffectIdempotencyKey("run-1", "computer_act", args);
+    const second = toolEffectIdempotencyKey("run-1", "computer_act", args, 1);
+    expect(first).toBe(approvalEffectKey("run-1", "computer_act", args));
+    expect(second).not.toBe(first);
+    expect(second).toBe(`${first}:1`);
+    expect(isToolEffectIdempotencyKey(first, "run-1", "computer_act")).toBe(true);
+    expect(isToolEffectIdempotencyKey(second, "run-1", "computer_act")).toBe(true);
+    expect(
+      isToolEffectIdempotencyKey(
+        legacyScopedToolEffectIdempotencyKey("run-1", "computer_act", "call_0", args),
+        "run-1",
+        "computer_act",
+      ),
+    ).toBe(false);
   });
 });
