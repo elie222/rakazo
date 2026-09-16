@@ -207,11 +207,12 @@ export function withEndpointOriginFallback(
     try {
       // Cap the first attempt: an unroutable host otherwise burns the full
       // connect timeout before the fallback gets a chance.
-      return await fetchImpl(
-        input,
-        init?.signal ? init : { ...init, signal: AbortSignal.timeout(4_000) },
-      );
+      return await fetchImpl(input, {
+        ...init,
+        signal: combineSignals(init?.signal ?? undefined, AbortSignal.timeout(4_000)),
+      });
     } catch {
+      init?.signal?.throwIfAborted();
       return fetchImpl(new URL(url.pathname + url.search, endpointOrigin), sanitizedInit(init));
     }
   };
