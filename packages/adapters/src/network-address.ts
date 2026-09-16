@@ -138,12 +138,14 @@ export async function withPinnedDnsLookup<T>(
 
 export function isLoopbackAddress(address: string): boolean {
   const value = address.toLowerCase().replace(/^\[|\]$/g, "");
-  const mapped = value.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/)?.[1];
-  const ipv4 = mapped ?? (isIP(value) === 4 ? value : undefined);
-  if (ipv4) {
-    return ipv4.split(".").map(Number)[0] === 127;
+  if (isIP(value) === 4) {
+    return value.split(".").map(Number)[0] === 127;
   }
-  return parseIpv6(value) === 1n;
+  const ipv6 = parseIpv6(value);
+  if (ipv6 === undefined) return false;
+  // ::ffff:0:0/96 IPv4-mapped, including hex form ::ffff:7f00:1.
+  if (ipv6 >> 32n === 0xffffn) return ((Number(ipv6 & 0xffffffffn) >>> 24) & 0xff) === 127;
+  return ipv6 === 1n;
 }
 
 export function isPrivateAddress(address: string): boolean {

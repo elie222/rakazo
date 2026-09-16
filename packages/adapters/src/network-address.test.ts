@@ -79,19 +79,24 @@ describe("network address classification", () => {
     },
   );
 
-  it.each(["127.0.0.1", "127.255.255.255", "::1", "::ffff:127.0.0.1"])(
+  it.each(["127.0.0.1", "127.255.255.255", "::1", "::ffff:127.0.0.1", "::ffff:7f00:1"])(
     "classifies %s as loopback",
     (address) => {
       expect(isLoopbackAddress(address)).toBe(true);
     },
   );
 
-  it.each(["10.1.2.3", "192.168.0.9", "169.254.169.254", "::", "fd00::1", "203.0.113.10"])(
-    "does not classify %s as loopback",
-    (address) => {
-      expect(isLoopbackAddress(address)).toBe(false);
-    },
-  );
+  it.each([
+    "10.1.2.3",
+    "192.168.0.9",
+    "169.254.169.254",
+    "::",
+    "fd00::1",
+    "203.0.113.10",
+    "::ffff:0a01:0203",
+  ])("does not classify %s as loopback", (address) => {
+    expect(isLoopbackAddress(address)).toBe(false);
+  });
 });
 
 describe("pinned dns lookup", () => {
