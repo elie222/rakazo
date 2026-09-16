@@ -303,9 +303,7 @@ describe("connector read-only metadata and approval enforcement", () => {
       await f.run();
       expect(f.execute).toHaveBeenCalledTimes(2);
       expect(f.effects).toHaveLength(2);
-      expect(f.effects[0]?.idempotencyKey).toBe(
-        approvalEffectKey("run-1", "demo_get_item", args),
-      );
+      expect(f.effects[0]?.idempotencyKey).toBe(approvalEffectKey("run-1", "demo_get_item", args));
       expect(f.effects[1]?.idempotencyKey).toBe(
         toolEffectIdempotencyKey("run-1", "demo_get_item", args, 1),
       );
