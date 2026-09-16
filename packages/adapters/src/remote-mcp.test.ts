@@ -214,6 +214,52 @@ describe("remote MCP URL policy", () => {
     expect(error).toMatchObject({ message: "Connector URL resolves to a private address" });
   });
 
+  it("permits verified loopback addresses for localhost HTTP through the guarded Agent lookup", async () => {
+    const loopbackResolver = async () => [{ address: "127.0.0.1", family: 4 as const }];
+    const safeLookup = createSafeLookup(loopbackResolver);
+    const result = await new Promise<{ address: string; family?: number }>((resolve, reject) => {
+      safeLookup("localhost", { family: 0, all: false }, (error, address, family) => {
+        if (error) reject(error);
+        else resolve({ address: String(address), family });
+      });
+    });
+    expect(result).toEqual({ address: "127.0.0.1", family: 4 });
+
+    const reboundLookup = createSafeLookup(async () => [{ address: "10.1.2.3", family: 4 }]);
+    const reboundError = await new Promise<Error | null>((resolve) => {
+      reboundLookup("localhost", { family: 0, all: false }, (lookupError) => {
+        resolve(lookupError);
+      });
+    });
+    expect(reboundError).toMatchObject({
+      message: "Connector URL resolves to a private address",
+    });
+
+    const publicLoopbackLookup = createSafeLookup(loopbackResolver);
+    const publicError = await new Promise<Error | null>((resolve) => {
+      publicLoopbackLookup("connectors.example.test", { family: 0, all: false }, (lookupError) => {
+        resolve(lookupError);
+      });
+    });
+    expect(publicError).toMatchObject({
+      message: "Connector URL resolves to a private address",
+    });
+
+    expect(undiciFetch).not.toBe(globalThis.fetch);
+    const safeFetch = createSafeRemoteFetch(undefined, loopbackResolver);
+    try {
+      const error = await safeFetch("http://localhost:59999/mcp").then(
+        () => null,
+        (caught: unknown) => caught,
+      );
+      expect(error).toBeInstanceOf(Error);
+      expect((error as Error).message).toMatch(/^Could not reach localhost:59999/);
+      expect((error as Error).message).not.toMatch(/private address/);
+    } finally {
+      await safeFetch.close();
+    }
+  });
+
   it("returns the validated address directly to the network connection", async () => {
     const safeLookup = createSafeLookup(publicResolver);
     const result = await new Promise<{ address: string; family?: number }>((resolve, reject) => {

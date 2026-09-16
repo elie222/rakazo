@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   isCloudMetadataAddress,
   isLinkLocalAddress,
+  isLoopbackAddress,
   isPrivateAddress,
   withPinnedDnsLookup,
 } from "./network-address.js";
@@ -75,6 +76,20 @@ describe("network address classification", () => {
     "does not classify %s as a cloud metadata address",
     (address) => {
       expect(isCloudMetadataAddress(address)).toBe(false);
+    },
+  );
+
+  it.each(["127.0.0.1", "127.255.255.255", "::1", "::ffff:127.0.0.1"])(
+    "classifies %s as loopback",
+    (address) => {
+      expect(isLoopbackAddress(address)).toBe(true);
+    },
+  );
+
+  it.each(["10.1.2.3", "192.168.0.9", "169.254.169.254", "::", "fd00::1", "203.0.113.10"])(
+    "does not classify %s as loopback",
+    (address) => {
+      expect(isLoopbackAddress(address)).toBe(false);
     },
   );
 });

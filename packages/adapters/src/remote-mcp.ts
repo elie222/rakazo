@@ -11,6 +11,7 @@ import {
   createAddressCheckedLookup,
   isCloudMetadataAddress,
   isLinkLocalAddress,
+  isLoopbackAddress,
   isPrivateAddress,
   isTailscaleAddress,
   type ResolvedAddress,
@@ -322,9 +323,13 @@ export function createSafeLookup(
   resolve: ResolveHostname = resolveHostname,
   policy: RemoteUrlPolicy = {},
 ): LookupFunction {
-  return createAddressCheckedLookup(resolve, (addresses, hostname) =>
-    assertAllowedAddresses(addresses, hostname, policy),
-  );
+  return createAddressCheckedLookup(resolve, (addresses, hostname) => {
+    if (isLocalMcpHost(hostname.replace(/^\[|\]$/g, ""))) {
+      assertLoopbackAddresses(addresses);
+      return;
+    }
+    assertAllowedAddresses(addresses, hostname, policy);
+  });
 }
 
 /** Tailscale MagicDNS names (*.ts.net) are public DNS names, not private IP literals. */
@@ -358,6 +363,12 @@ export function isPrivateRemoteMcpHostname(hostname: string): boolean {
     normalized === "metadata.google.internal" ||
     (isIP(normalized) !== 0 && isPrivateAddress(normalized))
   );
+}
+
+function assertLoopbackAddresses(addresses: ResolvedAddress[]): void {
+  if (addresses.length === 0 || addresses.some((entry) => !isLoopbackAddress(entry.address))) {
+    throw new Error("Connector URL resolves to a private address");
+  }
 }
 
 function assertAllowedAddresses(

@@ -136,6 +136,16 @@ export async function withPinnedDnsLookup<T>(
   return pinnedDns.run({ hostname, addresses }, run);
 }
 
+export function isLoopbackAddress(address: string): boolean {
+  const value = address.toLowerCase().replace(/^\[|\]$/g, "");
+  const mapped = value.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/)?.[1];
+  const ipv4 = mapped ?? (isIP(value) === 4 ? value : undefined);
+  if (ipv4) {
+    return ipv4.split(".").map(Number)[0] === 127;
+  }
+  return parseIpv6(value) === 1n;
+}
+
 export function isPrivateAddress(address: string): boolean {
   const value = address.toLowerCase().replace(/^\[|\]$/g, "");
   const mapped = value.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/)?.[1];
