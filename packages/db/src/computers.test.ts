@@ -5,6 +5,7 @@ import {
   ComputerLimitError,
   ensureComputerRecord,
   resolveMaxComputersPerUser,
+  restoreBotUnderComputerQuota,
 } from "./computers.js";
 
 function fakePrisma(count = 0, existing = false) {
@@ -149,6 +150,89 @@ function fakeSerializingPrisma(initialInUse = 0) {
   } as unknown as PrismaClient;
 
   return { prisma, state, refs };
+}
+
+/**
+ * Same per-user advisory lock as fakeSerializingPrisma, with archived vs live
+ * bot refs so overlapping restores can race the last quota slot.
+ */
+function fakeSerializingRestorePrisma(
+  computers: Array<{ id: string; liveBots?: string[]; archivedBots: string[] }>,
+) {
+  const live = new Map<string, Set<string>>();
+  const archived = new Map<string, Set<string>>();
+  for (const computer of computers) {
+    live.set(computer.id, new Set(computer.liveBots ?? []));
+    archived.set(computer.id, new Set(computer.archivedBots));
+  }
+
+  let locked = false;
+  const waiters: Array<() => void> = [];
+
+  async function acquireLock() {
+    if (!locked) {
+      locked = true;
+      return;
+    }
+    await new Promise<void>((resolve) => {
+      waiters.push(resolve);
+    });
+    locked = true;
+  }
+
+  function releaseLock() {
+    const next = waiters.shift();
+    if (next) {
+      next();
+      return;
+    }
+    locked = false;
+  }
+
+  function inUse() {
+    let used = 0;
+    for (const bots of live.values()) if (bots.size > 0) used += 1;
+    return used;
+  }
+
+  const prisma = {
+    $transaction: vi.fn(async (callback: (tx: unknown) => Promise<unknown>) => {
+      let held = false;
+      const tx = {
+        $queryRaw: vi.fn(async () => {
+          if (!held) {
+            await acquireLock();
+            held = true;
+          }
+          return [{ lock: "1" }];
+        }),
+        computer: {
+          count: vi.fn(async (args: { where: { id?: string } }) => {
+            if (args.where.id) return (live.get(args.where.id)?.size ?? 0) > 0 ? 1 : 0;
+            return inUse();
+          }),
+        },
+        bot: {
+          update: vi.fn(async (args: { where: { id: string } }) => {
+            for (const [computerId, bots] of archived) {
+              if (bots.delete(args.where.id)) {
+                live.get(computerId)!.add(args.where.id);
+                break;
+              }
+            }
+            return { id: args.where.id };
+          }),
+        },
+      };
+      try {
+        return await callback(tx);
+      } finally {
+        if (held) releaseLock();
+      }
+    }),
+  } as unknown as PrismaClient;
+
+  return { prisma, inUse };
 }
 
 const baseInput = {
@@ -325,5 +409,51 @@ describe("assertComputerQuotaForRestore", () => {
     await expect(
       assertComputerQuotaForRestore(prisma, { userId: "user-1", computerId: "computer-a" }),
     ).resolves.toBeUndefined();
+  });
+});
+
+describe("restoreBotUnderComputerQuota", () => {
+  it("serializes overlapping restores so only one can take the last quota slot", async () => {
+    process.env.SANDBOX_MAX_COMPUTERS_PER_USER = "1";
+    const { prisma, inUse } = fakeSerializingRestorePrisma([
+      { id: "computer-a", archivedBots: ["bot-a"] },
+      { id: "computer-b", archivedBots: ["bot-b"] },
+    ]);
+
+    const results = await Promise.allSettled([
+      restoreBotUnderComputerQuota(prisma, {
+        userId: "user-1",
+        botId: "bot-a",
+        computerId: "computer-a",
+      }),
+      restoreBotUnderComputerQuota(prisma, {
+        userId: "user-1",
+        botId: "bot-b",
+        computerId: "computer-b",
+      }),
+    ]);
+
+    const fulfilled = results.filter((result) => result.status === "fulfilled");
+    const rejected = results.filter((result) => result.status === "rejected");
+    expect(fulfilled).toHaveLength(1);
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0]?.status === "rejected" && rejected[0].reason).toBeInstanceOf(
+      ComputerLimitError,
+    );
+    expect(inUse()).toBe(1);
+    expect(prisma.$transaction).toHaveBeenCalledTimes(2);
+  });
+
+  it("unarchives under the lock when the user is below the cap", async () => {
+    process.env.SANDBOX_MAX_COMPUTERS_PER_USER = "1";
+    const { prisma, inUse } = fakeSerializingRestorePrisma([
+      { id: "computer-a", archivedBots: ["bot-a"] },
+    ]);
+    await restoreBotUnderComputerQuota(prisma, {
+      userId: "user-1",
+      botId: "bot-a",
+      computerId: "computer-a",
+    });
+    expect(inUse()).toBe(1);
   });
 });

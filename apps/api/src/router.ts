@@ -101,7 +101,6 @@ import {
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   appendEventInTransaction,
-  assertComputerQuotaForRestore,
   BotSectionNameConflictError,
   CannotDeleteDefaultSpaceError,
   CannotDeleteLastSpaceError,
@@ -130,6 +129,7 @@ import {
   parseComputerMode,
   releaseSpaceDeletionClaim,
   renewSpaceDeletionClaim,
+  restoreBotUnderComputerQuota,
   SPACE_DELETION_CLAIM_TIMEOUT_MS,
   SpaceDeletionInProgressError,
   SpaceLimitError,
@@ -1252,12 +1252,14 @@ export function createRouter(deps: RouterDeps) {
         if (!bot.archivedAt) return { ok: true as const };
         try {
           if (bot.computer) {
-            await assertComputerQuotaForRestore(deps.prisma, {
+            await restoreBotUnderComputerQuota(deps.prisma, {
               userId: context.actor.userId,
+              botId: bot.id,
               computerId: bot.computer.id,
             });
+          } else {
+            await deps.prisma.bot.update({ where: { id: bot.id }, data: { archivedAt: null } });
           }
-          await deps.prisma.bot.update({ where: { id: bot.id }, data: { archivedAt: null } });
         } catch (error) {
           throw mapSpaceLifecycleError(error);
         }

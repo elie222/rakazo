@@ -24,6 +24,8 @@ export function computerHomeKey(mode: ComputerMode, spaceId: string, botId?: str
 type ComputerDb = Pick<PrismaClient, "computer">;
 type ComputerTx = Pick<Prisma.TransactionClient, "computer" | "$queryRaw">;
 type ComputerClient = ComputerDb & Partial<Pick<PrismaClient, "$transaction" | "$queryRaw">>;
+type RestoreTx = ComputerTx & Pick<Prisma.TransactionClient, "bot">;
+type RestoreClient = ComputerClient & Pick<PrismaClient, "bot">;
 type ExecutionLeaseDb = Pick<PrismaClient, "computerExecutionLease">;
 
 /**
@@ -113,6 +115,40 @@ export async function assertComputerQuotaForRestore(
   if (alreadyLive > 0) return;
   const inUse = await countInUseComputersForUser(prisma, input.userId);
   if (inUse >= limit) throw new ComputerLimitError(limit);
+}
+
+/**
+ * Unarchive a bot while holding the same per-user quota lock as create.
+ *
+ * Concurrent restores of archived bots on distinct computers can both pass an
+ * unlocked count when one slot remains; the lock covers count + archivedAt
+ * clear so only one of those restores can consume the last slot.
+ */
+export async function restoreBotUnderComputerQuota(
+  prisma: RestoreClient,
+  input: { userId: string; botId: string; computerId: string },
+): Promise<void> {
+  const limit = resolveMaxComputersPerUser();
+
+  async function restore(tx: RestoreTx) {
+    if (limit > 0) {
+      await lockUserForComputerQuota(tx, input.userId);
+      await assertComputerQuotaForRestore(tx, input);
+    }
+    await tx.bot.update({ where: { id: input.botId }, data: { archivedAt: null } });
+  }
+
+  if (isTransactionClient(prisma)) {
+    return restore(prisma as RestoreTx);
+  }
+  if (limit <= 0) {
+    await prisma.bot.update({ where: { id: input.botId }, data: { archivedAt: null } });
+    return;
+  }
+  if (typeof prisma.$transaction === "function") {
+    return withTransactionRetry(() => prisma.$transaction!((tx) => restore(tx)));
+  }
+  throw new Error("Computer quota enforcement requires a Prisma transaction");
 }
 
 /** Expire leases as fencing tombstones so the next acquire increments fence. */

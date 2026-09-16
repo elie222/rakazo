@@ -1190,14 +1190,21 @@ describe("bot restore computer quota", () => {
           userId: "user-1",
         }
       : null;
+    const botApi = {
+      findFirst: vi.fn(async () => bot),
+      update: vi.fn(async () => ({})),
+    };
+    const computer = {
+      count: vi.fn(async (args: { where: { id?: string } }) => (args.where.id ? 0 : inUse)),
+    };
+    const $queryRaw = vi.fn(async () => [{ lock: "1" }]);
     const prisma = {
-      bot: {
-        findFirst: vi.fn(async () => bot),
-        update: vi.fn(async () => ({})),
-      },
-      computer: {
-        count: vi.fn(async (args: { where: { id?: string } }) => (args.where.id ? 0 : inUse)),
-      },
+      bot: botApi,
+      computer,
+      $queryRaw,
+      $transaction: vi.fn(async (callback: (tx: unknown) => Promise<unknown>) =>
+        callback({ $queryRaw, computer, bot: botApi }),
+      ),
     };
     const handler = new RPCHandler(
       createRouter({ prisma, env: { sandboxProvider: "fake" } } as unknown as RouterDeps),
