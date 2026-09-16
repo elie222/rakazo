@@ -10,7 +10,8 @@ const fakeAgentState = vi.hoisted(() => ({
     | "subagent-limit"
     | "parent-limit"
     | "parent-parallel"
-    | "ask-pause",
+    | "ask-pause"
+    | "nested-ask-pause",
   emitFinalAfterFollowUp: true,
   abortCount: 0,
   tools: [] as Array<{
@@ -162,7 +163,16 @@ vi.mock("@earendil-works/pi-agent-core", () => ({
         return;
       }
 
-      if (fakeAgentState.mode === "ask-pause") {
+      if (fakeAgentState.mode === "ask-pause" || fakeAgentState.mode === "nested-ask-pause") {
+        if (fakeAgentState.mode === "nested-ask-pause") {
+          const delegation = this.tools.find((tool) => tool.name === "run_subagent");
+          if (delegation) {
+            const args = { name: "helper", task: "ask the user" };
+            this.emit({ type: "tool_execution_start", toolName: delegation.name, args });
+            await delegation.execute("delegate-1", args);
+            return;
+          }
+        }
         const shell = this.tools.find((tool) => tool.name === "shell");
         const askUser = this.tools.find((tool) => tool.name === "ask_user");
         if (!shell) throw new Error("shell was not exposed");
@@ -1196,6 +1206,79 @@ describe("Pi connector tool dispatch", () => {
     }
 
     expect(executeTool).toHaveBeenCalledTimes(3);
+    expect(resumed).toContainEqual({
+      type: "progress",
+      text: "Stopped: more than 4 tool calls in one turn.",
+    });
+  });
+
+  it("keeps an optional tool-call fuse across nested ask_user pause and continueRun", async () => {
+    process.env.MAX_TOOL_CALLS_PER_TURN = "4";
+    fakeAgentState.mode = "nested-ask-pause";
+    const executeTool = vi.fn(async () => ({ ok: true }));
+    const runtime = new PiAgentRuntime();
+    const events: unknown[] = [];
+    const request = {
+      botId: "b",
+      threadId: "t",
+      runId: "fuse-nested-ask-pause",
+      prompt: "delegate then ask",
+      instructions: "Use a subagent.",
+      history: [],
+      tools: [
+        {
+          name: "run_subagent",
+          description: "Delegate work",
+          inputSchema: { type: "object", properties: {} },
+        },
+        shellTool,
+        {
+          name: "ask_user",
+          description: "Ask a short multiple-choice question",
+          inputSchema: { type: "object", properties: {} },
+        },
+      ],
+      model: { provider: "test", id: "dispatch-test-model" },
+      executeTool,
+    };
+
+    for await (const event of runtime.run(request, {
+      operationId: "2h",
+      traceId: "2h",
+      spaceId: "w",
+      userId: "u",
+      signal: new AbortController().signal,
+    })) {
+      events.push(event);
+    }
+
+    expect(executeTool).toHaveBeenCalledTimes(2);
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "ask",
+        text: "Which option?",
+      }),
+    );
+
+    fakeAgentState.mode = "parent-limit";
+    const resumed: unknown[] = [];
+    for await (const event of runtime.run(
+      {
+        ...request,
+        tools: [shellTool],
+      },
+      {
+        operationId: "2i",
+        traceId: "2i",
+        spaceId: "w",
+        userId: "u",
+        signal: new AbortController().signal,
+      },
+    )) {
+      resumed.push(event);
+    }
+
+    expect(executeTool).toHaveBeenCalledTimes(2);
     expect(resumed).toContainEqual({
       type: "progress",
       text: "Stopped: more than 4 tool calls in one turn.",

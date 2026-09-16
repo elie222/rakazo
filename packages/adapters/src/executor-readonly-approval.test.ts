@@ -270,10 +270,7 @@ describe("connector read-only metadata and approval enforcement", () => {
       await f.run();
       expect(f.effects).toHaveLength(1);
       f.effects[0]!.status = "approved";
-      f.setCalls([
-        { args: { id: "model-reconstructed" }, executionId: "call-2" },
-        { args: { id: "item-1" }, executionId: "call-3" },
-      ]);
+      f.setCalls([{ args: { id: "model-reconstructed" }, executionId: "call-2" }]);
       await f.run();
       expect(f.execute).toHaveBeenCalledOnce();
       expect(f.execute).toHaveBeenCalledWith(
@@ -285,6 +282,33 @@ describe("connector read-only metadata and approval enforcement", () => {
       );
       expect(f.effects).toHaveLength(1);
       expect(f.effects[0]!.status).toBe("completed");
+      expect(f.results.at(-1)).toEqual({ item: "item-1" });
+      expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+    });
+
+    it("executes a later identical-args call after an approved replay when approval is not required by default", async () => {
+      const args = { id: "item-1" };
+      const rules: ActionApprovalRule[] = [
+        { effect: "require_approval", matchKind: "tool", matchValue: "demo_get_item" },
+      ];
+      const f = fixture({ catalog, rules });
+      await f.run();
+      expect(f.effects).toHaveLength(1);
+      f.effects[0]!.status = "approved";
+      rules[0]!.effect = "always_allow";
+      f.setCalls([
+        { args, executionId: "call-2" },
+        { args, executionId: "call-3" },
+      ]);
+      await f.run();
+      expect(f.execute).toHaveBeenCalledTimes(2);
+      expect(f.effects).toHaveLength(2);
+      expect(f.effects[0]?.idempotencyKey).toBe(
+        approvalEffectKey("run-1", "demo_get_item", args),
+      );
+      expect(f.effects[1]?.idempotencyKey).toBe(
+        toolEffectIdempotencyKey("run-1", "demo_get_item", args, 1),
+      );
       expect(f.results.slice(1)).toEqual([{ item: "item-1" }, { item: "item-1" }]);
       expect(f.pauseRunForInput).toHaveBeenCalledOnce();
     });

@@ -1940,14 +1940,17 @@ export function createRunExecutor(deps: ExecutorDeps) {
             name === "request_secret" ||
             needsApprovalEarly ||
             requiresApprovalByDefault;
-          const effectKey = usesApprovalKey
-            ? approvalEffectKey(runId, replayEffectToolName, args)
-            : toolEffectIdempotencyKey(
-                runId,
-                replayEffectToolName,
-                args,
-                nextMutatingEffectOccurrence(replayEffectToolName, args),
-              );
+          // Count before choosing a key so an approved replay (occurrence 0 / base
+          // key) cannot collide with a later identical-args call in this attempt.
+          // request_secret stays single-use: retries must reuse the same card.
+          const occurrence =
+            name === "request_secret"
+              ? 0
+              : nextMutatingEffectOccurrence(replayEffectToolName, args);
+          const effectKey =
+            usesApprovalKey && occurrence === 0
+              ? approvalEffectKey(runId, replayEffectToolName, args)
+              : toolEffectIdempotencyKey(runId, replayEffectToolName, args, occurrence);
           // Connector read-only hints must not bypass approval, review, or replay decisions.
           const applied = READ_ONLY_AGENT_TOOLS.has(name)
             ? undefined

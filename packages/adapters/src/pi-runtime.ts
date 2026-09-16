@@ -1117,6 +1117,9 @@ async function executeSubagent(host: ToolHost, executionId: string, args: Record
         await nested.waitForIdle();
       } finally {
         host.signal.removeEventListener("abort", onAbort);
+        // nestedHost is a shallow copy; ask_user / request_takeover set pause
+        // only on the child. Copy it up before the parent releases the budget.
+        if (nestedHost.pausePending) host.pausePending = true;
       }
     }
     // Shared-budget abort leaves errorMessage on the nested agent; surface it as a
