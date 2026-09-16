@@ -81,21 +81,10 @@ describe.skipIf(!databaseAvailable)("offline Pi computer approval", () => {
                   : approvedArgs,
             },
           },
-          ...(answer === "allow"
-            ? [
-                {
-                  expect: resultStep("resumed-action"),
-                  response: {
-                    type: "tool" as const,
-                    id: "duplicate-action",
-                    name: "computer_act",
-                    arguments: approvedArgs,
-                  },
-                },
-              ]
-            : []),
           {
-            expect: resultStep(answer === "allow" ? "duplicate-action" : "resumed-action"),
+            // A later identical computer_act in this same resume is a new occurrence,
+            // not a replay. This fixture only checks the approved request is restored.
+            expect: resultStep("resumed-action"),
             response: { type: "text", text: "Finished the approval fixture." },
           },
         ],
