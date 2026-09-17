@@ -748,8 +748,16 @@ export function buildApprovalContinuation(
       const catalog = catalogApprovalDetails(effect.request, CATALOG_APPROVAL_TOOL);
       if (catalog) {
         const exposed = options?.exposedToolNames;
-        if (!exposed || exposed.has(catalog.toolName)) {
-          return `${catalog.toolName}: ${formatRequest(catalog.args)}`;
+        const renamedMcpWrapper = catalogExecuteToolName("mcp");
+        const wrapper =
+          exposed &&
+          catalog.toolName === "mcp_execute_tool" &&
+          !exposed.has(catalog.toolName) &&
+          exposed.has(renamedMcpWrapper)
+            ? renamedMcpWrapper
+            : catalog.toolName;
+        if (!exposed || exposed.has(wrapper)) {
+          return `${wrapper}: ${formatRequest(catalog.args)}`;
         }
         // Catalog shrank: wrapper is gone — resume as the matching direct tool.
         const innerArgs = catalogApprovalInnerArgs(catalog) ?? {};

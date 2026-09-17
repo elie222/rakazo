@@ -245,8 +245,13 @@ export function approvalReplayResourceError(
   return undefined;
 }
 
+/** Claude Code OAuth rejects tool names that start with `mcp_`; keep MCP wrappers on `connectors`. */
+export function catalogToolPrefix(connectorId: string): string {
+  return connectorId === "mcp" ? "connectors" : connectorId;
+}
+
 export function catalogExecuteToolName(connectorId: string): string {
-  return `${connectorId}_execute_tool`;
+  return `${catalogToolPrefix(connectorId)}_execute_tool`;
 }
 
 export function catalogIdForRoute(route: BoundApprovalRoute): string {
@@ -271,9 +276,10 @@ export function parseCatalogApprovalTarget(
 }
 
 export function catalogApprovalConnectorId(wrapperToolName: string): string {
-  return wrapperToolName.endsWith("_execute_tool")
+  const prefix = wrapperToolName.endsWith("_execute_tool")
     ? wrapperToolName.slice(0, -"_execute_tool".length)
     : wrapperToolName;
+  return prefix === "connectors" ? "mcp" : prefix;
 }
 
 export function catalogApprovalMatchesLiveRoute(

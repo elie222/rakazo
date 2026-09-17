@@ -168,6 +168,43 @@ describe("executor approval replay", () => {
     expect(afterGrowth).not.toContain("notes.write:");
   });
 
+  it("renders a catalog wrapper continuation when a bound MCP tool is no longer exposed", () => {
+    const request = boundDirectApprovalRequest(
+      { connectorId: "mcp", resourceId: "server-1", toolName: "send_message" },
+      { text: "approved exactly" },
+      "__rakazoCatalogTool",
+    );
+    const afterGrowth = buildApprovalContinuation(
+      [{ kind: "mcp__demo__send_message", request }],
+      JSON.stringify,
+      { exposedToolNames: new Set(["connectors_execute_tool"]) },
+    );
+
+    expect(afterGrowth).toContain(
+      'connectors_execute_tool: {"id":"server-1:send_message","arguments":{"text":"approved exactly"}}',
+    );
+    expect(afterGrowth).not.toContain("mcp__demo__send_message:");
+    expect(afterGrowth).not.toContain("mcp_execute_tool:");
+  });
+
+  it("resumes a legacy mcp_execute_tool envelope as connectors_execute_tool when that wrapper is exposed", () => {
+    const request = catalogApprovalRequest(
+      "mcp_execute_tool",
+      { id: "server-1:send_message", arguments: { text: "approved exactly" } },
+      "__rakazoCatalogTool",
+    );
+    const continuation = buildApprovalContinuation(
+      [{ kind: "mcp__demo__send_message", request }],
+      JSON.stringify,
+      { exposedToolNames: new Set(["connectors_execute_tool"]) },
+    );
+
+    expect(continuation).toContain(
+      'connectors_execute_tool: {"id":"server-1:send_message","arguments":{"text":"approved exactly"}}',
+    );
+    expect(continuation).not.toContain("mcp_execute_tool:");
+  });
+
   it("renders a uniquified direct name when collision renames the tool under the direct limit", () => {
     const request = boundDirectApprovalRequest(
       { connectorId: "installed", resourceId: "install-A", toolName: "delete_item" },

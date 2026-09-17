@@ -8,6 +8,7 @@ import type {
 import { isLocalMcpHost } from "@rakazo/contracts";
 import type { McpServer, PrismaClient } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { catalogToolPrefix } from "./approval-effect.js";
 import { redactConnectorPayload, sanitizeConnectorError } from "./connector-safety.js";
 import {
   CATALOG_EXECUTE,
@@ -96,7 +97,7 @@ export class McpConnector implements ConnectorProvider {
     // requests that carry a tool whose name starts with "mcp_" (single underscore) with a
     // misleading "You're out of extra usage" 400, on every model. Direct MCP tools are
     // `mcp__server__tool` (double underscore) and are accepted; keep the wrappers off "mcp_".
-    return lazyCatalogTools("connectors", "mcp", "MCP", catalogEntries(tools));
+    return lazyCatalogTools(catalogToolPrefix("mcp"), "mcp", "MCP", catalogEntries(tools));
   }
 
   async resolveCall(
