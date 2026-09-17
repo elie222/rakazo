@@ -111,6 +111,7 @@ export default function VoiceSettings() {
     setNotice(null);
     try {
       await rpc("voice/disconnect", { provider: credential.provider });
+      setApiKey("");
       await load(credential.provider);
     } catch (err) {
       setError(err instanceof Error ? err.message : t("Could not disconnect"));

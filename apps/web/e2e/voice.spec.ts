@@ -88,9 +88,11 @@ test("voice settings connect a key, speak a reply, and open a call", async ({ pa
 
   await openUserSettings(page, "voice");
   const settings = page.getByTestId("voice-settings");
+  await settings.getByPlaceholder(/Paste a replacement key/).fill("leftover-voice-key");
   await settings.getByRole("button", { name: "Disconnect", exact: true }).click();
   await expect(settings.getByRole("button", { name: "Disconnect", exact: true })).toHaveCount(0);
   await expect(settings.getByRole("button", { name: "Connect", exact: true })).toBeVisible();
+  await expect(settings.getByLabel("API key", { exact: true })).toHaveValue("");
   await expect(rpc<Array<{ provider: string }>>(page, "voice/credentials", {})).resolves.toEqual(
     [],
   );

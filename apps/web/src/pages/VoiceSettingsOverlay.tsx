@@ -118,6 +118,7 @@ export function VoiceSettingsOverlay({
     markPending("disconnect");
     try {
       await rpc.voice.disconnect({ provider: credential.provider });
+      setApiKey("");
       await refresh(credential.provider);
     } catch (err) {
       setError(err instanceof Error ? err.message : t`Could not disconnect this voice provider`);
