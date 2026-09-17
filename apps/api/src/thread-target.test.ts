@@ -1340,6 +1340,7 @@ describe("sendThreadMessage", () => {
   it.each([
     ["table cells", "| Name | Value |\n|:-----|------:|\n| Alice | 5 |", "Alice 5"],
     ["indented code", "    2. restart()", "2. restart()"],
+    ["fenced code", "```text\n2. restart()\n```", "2. restart()"],
     ["tab-indented code", "\t2. restart()", "2. restart()"],
     ["three-space lists", "   1. First\n   2. Second", "First\nSecond"],
     [

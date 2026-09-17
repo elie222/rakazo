@@ -98,7 +98,12 @@ function flattenForQuoteMatch(text: string, markdownSource = false): string {
 function quoteAppearsInBlocks(quote: string, blocks: MessageBlock[]): boolean {
   const excerpt = flattenForQuoteMatch(quote);
   if (!excerpt) return false;
-  return flattenForQuoteMatch(blocksToAgentHistoryText(blocks), true).includes(excerpt);
+  const parent = blocksToAgentHistoryText(blocks);
+  // Keep existing matches (including visible numbering in code) before removing list syntax.
+  return (
+    flattenForQuoteMatch(parent).includes(excerpt) ||
+    flattenForQuoteMatch(parent, true).includes(excerpt)
+  );
 }
 
 const THREAD_MESSAGE_PAGE_SIZE = 100;
