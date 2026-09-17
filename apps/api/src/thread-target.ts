@@ -67,16 +67,17 @@ export type ThreadTarget =
  * Semantic punctuation (: + - . ! #) stays on both sides — otherwise
  * "C++ is fast" would accept a fabricated "C is fast".
  */
-function flattenForQuoteMatch(text: string): string {
+function flattenForQuoteMatch(text: string, markdownSource = false): string {
   return text
     .split("\n")
     .filter((line) => !/^\s*\|?[\s:|-]+\|?\s*$/.test(line))
-    .map((line) =>
-      line
+    .map((line) => {
+      const normalized = line
         .replace(/^\s*(?:>\s*)+/, "")
         .replace(/^\s*#{1,6}\s+/, "")
-        .replace(/^\s*(?:[-*+•]|\d{1,9}[.)])\s+/, ""),
-    )
+        .replace(/^\s*[-*+•]\s+/, "");
+      return markdownSource ? normalized.replace(/^ {0,3}\d{1,9}[.)][ \t]+/, "") : normalized;
+    })
     .join(" ")
     .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
     .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
@@ -97,7 +98,7 @@ function flattenForQuoteMatch(text: string): string {
 function quoteAppearsInBlocks(quote: string, blocks: MessageBlock[]): boolean {
   const excerpt = flattenForQuoteMatch(quote);
   if (!excerpt) return false;
-  return flattenForQuoteMatch(blocksToAgentHistoryText(blocks)).includes(excerpt);
+  return flattenForQuoteMatch(blocksToAgentHistoryText(blocks), true).includes(excerpt);
 }
 
 const THREAD_MESSAGE_PAGE_SIZE = 100;

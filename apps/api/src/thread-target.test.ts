@@ -1339,6 +1339,9 @@ describe("sendThreadMessage", () => {
 
   it.each([
     ["table cells", "| Name | Value |\n|:-----|------:|\n| Alice | 5 |", "Alice 5"],
+    ["indented code", "    2. restart()", "2. restart()"],
+    ["tab-indented code", "\t2. restart()", "2. restart()"],
+    ["three-space lists", "   1. First\n   2. Second", "First\nSecond"],
     [
       "ordered list items",
       "1. Review the diff\n2. Run the tests",
@@ -1440,7 +1443,10 @@ describe("sendThreadMessage", () => {
         findFirst: vi.fn().mockResolvedValue({
           id: "parent",
           blocks: [
-            { kind: "text", text: "C++ is fast and key:value pairs; version 1.2 and 2. items" },
+            {
+              kind: "text",
+              text: "C++ is fast and key:value pairs; version 1.2 and 2. items\n    2. restart()",
+            },
           ],
         }),
         update: vi.fn(),
@@ -1475,7 +1481,15 @@ describe("sendThreadMessage", () => {
     const actor = { spaceId: "workspace-1", userId: "user-1" } as Actor;
     const target = { kind: "bot", botId: "bot-1", threadId: "thread-1" } as ThreadTarget;
 
-    for (const replyQuote of ["C is fast", "key value pairs", "version 12", "and items"]) {
+    for (const replyQuote of [
+      "C is fast",
+      "key value pairs",
+      "version 12",
+      "and items",
+      "3. restart()",
+      "    3. restart()",
+      "99. C++ is fast",
+    ]) {
       await sendThreadMessage(
         {
           prisma,
