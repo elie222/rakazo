@@ -37,7 +37,7 @@ export function VoiceSettingsOverlay({
   const [apiKey, setApiKey] = useState("");
   const [voiceId, setVoiceId] = useState("");
   const [loading, setLoading] = useState(true);
-  const [pending, setPending] = useState<"connect" | "voice" | "test" | null>(null);
+  const [pending, setPending] = useState<"connect" | "disconnect" | "voice" | "test" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -47,7 +47,7 @@ export function VoiceSettingsOverlay({
     return () => onBusyChange?.(false);
   }, [onBusyChange]);
 
-  function markPending(next: "connect" | "voice" | "test" | null) {
+  function markPending(next: "connect" | "disconnect" | "voice" | "test" | null) {
     setPending(next);
     onBusyChange?.(next !== null);
   }
@@ -106,6 +106,21 @@ export function VoiceSettingsOverlay({
       setNotice(t`Connected ${selected.name}.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : t`Could not connect this voice provider`);
+    } finally {
+      markPending(null);
+    }
+  }
+
+  async function disconnectProvider() {
+    if (!selected) return;
+    setError(null);
+    setNotice(null);
+    markPending("disconnect");
+    try {
+      await rpc.voice.disconnect({ provider: selected.id });
+      await refresh(selected.id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t`Could not disconnect this voice provider`);
     } finally {
       markPending(null);
     }
@@ -245,6 +260,22 @@ export function VoiceSettingsOverlay({
                   <Trans>Connect</Trans>
                 )}
               </Button>
+              {credential ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="mt-3"
+                  disabled={busy}
+                  onClick={() => void disconnectProvider()}
+                >
+                  {pending === "disconnect" ? (
+                    <Trans>Disconnecting…</Trans>
+                  ) : (
+                    <Trans>Disconnect</Trans>
+                  )}
+                </Button>
+              ) : null}
 
               {credential ? (
                 <>

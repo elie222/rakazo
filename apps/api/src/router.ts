@@ -188,6 +188,7 @@ import {
   threadSnapshot,
 } from "./thread-target.js";
 import {
+  disconnectVoiceCredential,
   listVoiceCatalog,
   loadDefaultVoiceCredential,
   loadVoiceCredential,
@@ -4607,6 +4608,9 @@ export function createRouter(deps: RouterDeps) {
           voiceId: input.voiceId,
           signal: context.signal,
         }),
+      ),
+      disconnect: authed.voice.disconnect.handler(async ({ context, input }) =>
+        disconnectVoiceCredential(deps, context.actor, { provider: input.provider }),
       ),
       setVoice: authed.voice.setVoice.handler(async ({ context, input }) => {
         const cred = await withSerializableRetry(() =>

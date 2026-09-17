@@ -1,7 +1,9 @@
 import type { Actor } from "@rakazo/contracts";
+import type { PrismaClient } from "@rakazo/db";
 import { Hono } from "hono";
 import { describe, expect, it, vi } from "vitest";
 import {
+  disconnectVoiceCredential,
   MAX_SPEAK_REQUEST_BYTES,
   MAX_TRANSCRIBE_REQUEST_BYTES,
   mountVoiceHttpRoutes,
@@ -109,5 +111,128 @@ describe("voice HTTP routes", () => {
 
     expect(response.status).toBe(413);
     expect(cancel).toHaveBeenCalledOnce();
+  });
+});
+
+const actor = { userId: "user-1", spaceId: "space-1" } as Actor;
+
+function makeDisconnectDeps(
+  overrides: {
+    existing?: { id: string; secretId: string; userId: string; provider: string } | null;
+    modelReferences?: number;
+    voiceReferences?: number;
+  } = {},
+) {
+  const findFirst = vi.fn().mockResolvedValue(overrides.existing ?? null);
+  const preferenceDeleteMany = vi.fn().mockResolvedValue({ count: overrides.existing ? 1 : 0 });
+  const credentialDeleteMany = vi.fn().mockResolvedValue({ count: overrides.existing ? 1 : 0 });
+  const modelCount = vi.fn().mockResolvedValue(overrides.modelReferences ?? 0);
+  const voiceCount = vi.fn().mockResolvedValue(overrides.voiceReferences ?? 0);
+  const secretDeleteMany = vi.fn().mockResolvedValue({ count: 1 });
+  const prisma = {
+    userVoiceCredential: {
+      findFirst,
+      deleteMany: credentialDeleteMany,
+      count: voiceCount,
+    },
+    spaceVoicePreference: { deleteMany: preferenceDeleteMany },
+    userModelCredential: { count: modelCount },
+    secret: { deleteMany: secretDeleteMany },
+    $transaction: vi.fn(),
+  };
+  prisma.$transaction.mockImplementation(async (callback: (tx: typeof prisma) => unknown) =>
+    callback(prisma),
+  );
+  const deps = {
+    prisma: prisma as unknown as PrismaClient,
+    secrets: { put: vi.fn(), load: vi.fn() },
+  } as unknown as VoiceDeps;
+  return {
+    deps,
+    findFirst,
+    preferenceDeleteMany,
+    credentialDeleteMany,
+    secretDeleteMany,
+    transaction: prisma.$transaction,
+  };
+}
+
+describe("disconnectVoiceCredential", () => {
+  it("removes the actor credential, clears its default, and deletes an unreferenced secret", async () => {
+    const existing = {
+      id: "cred-1",
+      secretId: "secret-1",
+      userId: actor.userId,
+      provider: "scripted",
+    };
+    const { deps, findFirst, preferenceDeleteMany, credentialDeleteMany, secretDeleteMany } =
+      makeDisconnectDeps({ existing });
+
+    await expect(disconnectVoiceCredential(deps, actor, { provider: "scripted" })).resolves.toEqual(
+      {
+        ok: true,
+      },
+    );
+
+    expect(findFirst).toHaveBeenCalledWith({
+      where: { userId: actor.userId, provider: "scripted" },
+      orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }, { id: "desc" }],
+    });
+    expect(preferenceDeleteMany).toHaveBeenCalledWith({
+      where: { userId: actor.userId, credentialId: "cred-1" },
+    });
+    expect(credentialDeleteMany).toHaveBeenCalledWith({
+      where: { id: "cred-1", userId: actor.userId },
+    });
+    expect(secretDeleteMany).toHaveBeenCalledWith({ where: { id: "secret-1" } });
+  });
+
+  it("keeps a secret while another credential still references it", async () => {
+    const { deps, credentialDeleteMany, secretDeleteMany } = makeDisconnectDeps({
+      existing: {
+        id: "cred-1",
+        secretId: "secret-shared",
+        userId: actor.userId,
+        provider: "scripted",
+      },
+      voiceReferences: 1,
+    });
+
+    await expect(disconnectVoiceCredential(deps, actor, { provider: "scripted" })).resolves.toEqual(
+      {
+        ok: true,
+      },
+    );
+
+    expect(credentialDeleteMany).toHaveBeenCalled();
+    expect(secretDeleteMany).not.toHaveBeenCalled();
+  });
+
+  it("does not delete another actor's credential", async () => {
+    const { deps, findFirst, preferenceDeleteMany, credentialDeleteMany, secretDeleteMany } =
+      makeDisconnectDeps();
+
+    await expect(
+      disconnectVoiceCredential(deps, { ...actor, userId: "intruder" }, { provider: "scripted" }),
+    ).resolves.toEqual({ ok: true });
+
+    expect(findFirst).toHaveBeenCalledWith({
+      where: { userId: "intruder", provider: "scripted" },
+      orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }, { id: "desc" }],
+    });
+    expect(preferenceDeleteMany).not.toHaveBeenCalled();
+    expect(credentialDeleteMany).not.toHaveBeenCalled();
+    expect(secretDeleteMany).not.toHaveBeenCalled();
+  });
+
+  it("rejects a blank provider before opening a transaction", async () => {
+    const { deps, transaction } = makeDisconnectDeps();
+
+    await expect(disconnectVoiceCredential(deps, actor, { provider: "   " })).rejects.toMatchObject(
+      {
+        code: "BAD_REQUEST",
+      },
+    );
+    expect(transaction).not.toHaveBeenCalled();
   });
 });

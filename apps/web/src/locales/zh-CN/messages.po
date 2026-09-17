@@ -1099,6 +1099,10 @@ msgstr "无法连接此提供方"
 msgid "Could not connect this voice provider"
 msgstr "无法连接此语音提供方"
 
+#: src/pages/VoiceSettingsOverlay.tsx:123
+msgid "Could not disconnect this voice provider"
+msgstr "无法断开此语音提供方"
+
 #: src/pages/Shell.tsx:919
 msgid "Could not connect to the computer screen"
 msgstr ""
@@ -1589,10 +1593,12 @@ msgstr ""
 
 #: src/pages/McpServersOverlay.tsx:493
 #: src/pages/MemorySettingsOverlay.tsx:211
+#: src/pages/VoiceSettingsOverlay.tsx:275
 msgid "Disconnect"
 msgstr "断开"
 
 #: src/pages/MemorySettingsOverlay.tsx:211
+#: src/pages/VoiceSettingsOverlay.tsx:273
 msgid "Disconnecting…"
 msgstr "正在断开…"
 

@@ -1099,6 +1099,10 @@ msgstr "No se pudo conectar este proveedor"
 msgid "Could not connect this voice provider"
 msgstr "No se pudo conectar este proveedor de voz"
 
+#: src/pages/VoiceSettingsOverlay.tsx:123
+msgid "Could not disconnect this voice provider"
+msgstr "No se pudo desconectar este proveedor de voz"
+
 #: src/pages/Shell.tsx:919
 msgid "Could not connect to the computer screen"
 msgstr "No se pudo conectar a la pantalla de la computadora"
@@ -1589,10 +1593,12 @@ msgstr ""
 
 #: src/pages/McpServersOverlay.tsx:493
 #: src/pages/MemorySettingsOverlay.tsx:211
+#: src/pages/VoiceSettingsOverlay.tsx:275
 msgid "Disconnect"
 msgstr "Desconectar"
 
 #: src/pages/MemorySettingsOverlay.tsx:211
+#: src/pages/VoiceSettingsOverlay.tsx:273
 msgid "Disconnecting…"
 msgstr "Desconectando…"
 

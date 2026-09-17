@@ -195,6 +195,41 @@ export async function persistVoiceCredential(
   return toVoiceCredential(cred);
 }
 
+export async function disconnectVoiceCredential(
+  deps: VoiceDeps,
+  actor: Actor,
+  input: { provider: string },
+): Promise<{ ok: true }> {
+  const provider = input.provider.trim();
+  if (!provider) {
+    throw new ORPCError("BAD_REQUEST", { message: "Unknown voice provider." });
+  }
+  await withSerializableRetry(() =>
+    deps.prisma.$transaction(
+      async (tx) => {
+        const existing = await tx.userVoiceCredential.findFirst({
+          where: { userId: actor.userId, provider },
+          orderBy: newestVoiceCredentialOrder,
+        });
+        if (!existing) return;
+        await tx.spaceVoicePreference.deleteMany({
+          where: { userId: actor.userId, credentialId: existing.id },
+        });
+        await tx.userVoiceCredential.deleteMany({
+          where: { id: existing.id, userId: actor.userId },
+        });
+        await deleteUnreferencedCredentialSecret(tx, {
+          credentialKind: "voice",
+          credentialId: existing.id,
+          secretId: existing.secretId,
+        });
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    ),
+  );
+  return { ok: true as const };
+}
+
 export async function prepareVoice(
   deps: VoiceDeps,
   actor: Actor,

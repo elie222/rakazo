@@ -1099,6 +1099,10 @@ msgstr "यह प्रोवाइडर कनेक्ट नहीं ह�
 msgid "Could not connect this voice provider"
 msgstr "यह आवाज़ प्रोवाइडर कनेक्ट नहीं हो सका"
 
+#: src/pages/VoiceSettingsOverlay.tsx:123
+msgid "Could not disconnect this voice provider"
+msgstr "यह आवाज़ प्रोवाइडर डिस्कनेक्ट नहीं हो सका"
+
 #: src/pages/Shell.tsx:919
 msgid "Could not connect to the computer screen"
 msgstr ""
@@ -1589,10 +1593,12 @@ msgstr ""
 
 #: src/pages/McpServersOverlay.tsx:493
 #: src/pages/MemorySettingsOverlay.tsx:211
+#: src/pages/VoiceSettingsOverlay.tsx:275
 msgid "Disconnect"
 msgstr "डिस्कनेक्ट करें"
 
 #: src/pages/MemorySettingsOverlay.tsx:211
+#: src/pages/VoiceSettingsOverlay.tsx:273
 msgid "Disconnecting…"
 msgstr "डिस्कनेक्ट हो रहा है…"
 

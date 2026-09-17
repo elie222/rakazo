@@ -180,6 +180,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["voice/status"],
       ["voice/credentials"],
       ["voice/connect", { provider: "elevenlabs", apiKey: "not-a-real-key" }],
+      ["voice/disconnect", { provider: "elevenlabs" }],
       ["voice/setVoice", { voiceId: "missing-voice" }],
       ["voice/voices", {}],
       ["voice/prepare", { text: "Nope" }],

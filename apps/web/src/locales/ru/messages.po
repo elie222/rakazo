@@ -1099,6 +1099,10 @@ msgstr "Не удалось подключить этого провайдера
 msgid "Could not connect this voice provider"
 msgstr "Не удалось подключить этого голосового провайдера."
 
+#: src/pages/VoiceSettingsOverlay.tsx:123
+msgid "Could not disconnect this voice provider"
+msgstr "Не удалось отключить этого голосового провайдера."
+
 #: src/pages/Shell.tsx:919
 msgid "Could not connect to the computer screen"
 msgstr "Не удалось подключиться к экрану компьютера"
@@ -1589,10 +1593,12 @@ msgstr "Прямой MCP"
 
 #: src/pages/McpServersOverlay.tsx:493
 #: src/pages/MemorySettingsOverlay.tsx:211
+#: src/pages/VoiceSettingsOverlay.tsx:275
 msgid "Disconnect"
 msgstr "Отключить"
 
 #: src/pages/MemorySettingsOverlay.tsx:211
+#: src/pages/VoiceSettingsOverlay.tsx:273
 msgid "Disconnecting…"
 msgstr "Отключение…"
 

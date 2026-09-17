@@ -761,6 +761,9 @@ export const appContract = {
         }),
       )
       .output(VoiceCredentialSchema),
+    disconnect: oc
+      .input(z.object({ provider: z.string().min(1) }))
+      .output(z.object({ ok: z.literal(true) })),
     setVoice: oc
       .input(z.object({ voiceId: z.string().min(1).max(120), provider: z.string().optional() }))
       .output(VoiceStatusSchema),

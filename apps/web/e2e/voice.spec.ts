@@ -37,6 +37,7 @@ test("voice settings connect a key, speak a reply, and open a call", async ({ pa
   await page.getByRole("button", { name: "Connect" }).click();
   await expect(page.getByText("Connected", { exact: true }).first()).toBeVisible();
   await expect(page.getByRole("button", { name: "Replace key" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Disconnect" })).toBeVisible();
 
   const spoken = page.waitForResponse(
     (response) => response.url().includes("/api/voice/speak") && response.ok(),
@@ -72,6 +73,7 @@ test("voice settings connect a key, speak a reply, and open a call", async ({ pa
 
   await openUserSettings(page, "voice");
   await expect(page.getByRole("button", { name: "Replace key" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Disconnect" })).toBeVisible();
   await page.getByRole("button", { name: "Close voice settings" }).click();
 
   await page
@@ -82,4 +84,12 @@ test("voice settings connect a key, speak a reply, and open a call", async ({ pa
   await expect(page.getByRole("button", { name: "Hang up" })).toBeVisible();
   await page.getByRole("button", { name: "Hang up" }).click();
   await expect(page.getByTestId("call-view")).toHaveCount(0);
+
+  await openUserSettings(page, "voice");
+  await page.getByRole("button", { name: "Disconnect" }).click();
+  await expect(page.getByRole("button", { name: "Connect" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Disconnect" })).toHaveCount(0);
+  await expect(rpc<Array<{ provider: string }>>(page, "voice/credentials", {})).resolves.toEqual(
+    [],
+  );
 });

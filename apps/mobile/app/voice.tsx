@@ -46,7 +46,7 @@ export default function VoiceSettings() {
   const [apiKey, setApiKey] = useState("");
   const [voiceId, setVoiceId] = useState("");
   const [loading, setLoading] = useState(true);
-  const [pending, setPending] = useState(false);
+  const [pending, setPending] = useState<"connect" | "disconnect" | "voice" | "test" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -86,7 +86,7 @@ export default function VoiceSettings() {
 
   async function connect() {
     if (!selected || apiKey.trim().length < 8) return;
-    setPending(true);
+    setPending("connect");
     setError(null);
     try {
       await rpc("voice/connect", {
@@ -100,25 +100,40 @@ export default function VoiceSettings() {
     } catch (err) {
       setError(err instanceof Error ? err.message : t("Could not connect"));
     } finally {
-      setPending(false);
+      setPending(null);
+    }
+  }
+
+  async function disconnect() {
+    if (!selected) return;
+    setPending("disconnect");
+    setError(null);
+    setNotice(null);
+    try {
+      await rpc("voice/disconnect", { provider: selected.id });
+      await load(selected.id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t("Could not disconnect"));
+    } finally {
+      setPending(null);
     }
   }
 
   async function chooseVoice(nextVoiceId: string) {
     setVoiceId(nextVoiceId);
-    setPending(true);
+    setPending("voice");
     try {
       await rpc("voice/setVoice", { voiceId: nextVoiceId, provider: selected?.id });
       await load(selected?.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : t("Could not save that voice"));
     } finally {
-      setPending(false);
+      setPending(null);
     }
   }
 
   async function testVoice() {
-    setPending(true);
+    setPending("test");
     setError(null);
     try {
       const ready = await speakText(t("Hi, this is how I'll sound when I read replies out loud."));
@@ -128,7 +143,7 @@ export default function VoiceSettings() {
     } catch (err) {
       setError(err instanceof Error ? err.message : t("Could not play a sample"));
     } finally {
-      setPending(false);
+      setPending(null);
     }
   }
 
@@ -177,12 +192,26 @@ export default function VoiceSettings() {
               textContentType="none"
             />
             <Pressable
-              disabled={pending || apiKey.trim().length < 8}
+              disabled={pending !== null || apiKey.trim().length < 8}
               onPress={() => void connect()}
-              style={[styles.button, (pending || apiKey.trim().length < 8) && styles.disabled]}
+              style={[
+                styles.button,
+                (pending !== null || apiKey.trim().length < 8) && styles.disabled,
+              ]}
             >
               <Text style={styles.buttonLabel}>{credential ? t("Replace key") : t("Connect")}</Text>
             </Pressable>
+            {credential ? (
+              <Pressable
+                disabled={pending !== null}
+                onPress={() => void disconnect()}
+                style={[styles.secondary, pending !== null && styles.disabled]}
+              >
+                <Text style={styles.secondaryLabel}>
+                  {pending === "disconnect" ? t("Disconnecting…") : t("Disconnect")}
+                </Text>
+              </Pressable>
+            ) : null}
             {voices.length ? (
               <View style={styles.voices}>
                 {voices.map((voice) => (
@@ -199,7 +228,7 @@ export default function VoiceSettings() {
             ) : null}
             {status?.ready ? (
               <Pressable
-                disabled={pending}
+                disabled={pending !== null}
                 onPress={() => void testVoice()}
                 style={styles.secondary}
               >
