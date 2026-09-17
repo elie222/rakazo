@@ -34,10 +34,10 @@ test("voice settings connect a key, speak a reply, and open a call", async ({ pa
   const apiKeyInput = page.getByPlaceholder(/Paste your API key/);
   await expect(apiKeyInput).toHaveAttribute("autocomplete", "new-password");
   await apiKeyInput.fill("fake-scripted-voice-key");
-  await page.getByRole("button", { name: "Connect" }).click();
+  await page.getByRole("button", { name: "Connect", exact: true }).click();
   await expect(page.getByText("Connected", { exact: true }).first()).toBeVisible();
   await expect(page.getByRole("button", { name: "Replace key" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Disconnect" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Disconnect", exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "voice-settings-connected");
 
   const spoken = page.waitForResponse(
@@ -74,7 +74,7 @@ test("voice settings connect a key, speak a reply, and open a call", async ({ pa
 
   await openUserSettings(page, "voice");
   await expect(page.getByRole("button", { name: "Replace key" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Disconnect" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Disconnect", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Close voice settings" }).click();
 
   await page
@@ -87,9 +87,10 @@ test("voice settings connect a key, speak a reply, and open a call", async ({ pa
   await expect(page.getByTestId("call-view")).toHaveCount(0);
 
   await openUserSettings(page, "voice");
-  await page.getByRole("button", { name: "Disconnect" }).click();
-  await expect(page.getByRole("button", { name: "Connect" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Disconnect" })).toHaveCount(0);
+  const settings = page.getByTestId("voice-settings");
+  await settings.getByRole("button", { name: "Disconnect", exact: true }).click();
+  await expect(settings.getByRole("button", { name: "Disconnect", exact: true })).toHaveCount(0);
+  await expect(settings.getByRole("button", { name: "Connect", exact: true })).toBeVisible();
   await expect(rpc<Array<{ provider: string }>>(page, "voice/credentials", {})).resolves.toEqual(
     [],
   );
