@@ -114,7 +114,10 @@ function flattenForQuoteMatch(text: string, markdownSource = false): string {
         fence = { marker, quoteDepth };
         return normalized;
       }
-      return normalized.replace(/^ {0,3}\d{1,9}[.)][ \t]+/, "");
+      // Test source syntax before stripping headings or other visible containers.
+      return /^ {0,3}\d{1,9}[.)][ \t]+/.test(source)
+        ? normalized.replace(/^ {0,3}\d{1,9}[.)][ \t]+/, "")
+        : normalized;
     })
     .join(" ")
     .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
