@@ -75,7 +75,7 @@ function flattenForQuoteMatch(text: string): string {
       line
         .replace(/^\s*(?:>\s*)+/, "")
         .replace(/^\s*#{1,6}\s+/, "")
-        .replace(/^\s*[-*+•]\s+/, ""),
+        .replace(/^\s*(?:[-*+•]|\d{1,9}[.)])\s+/, ""),
     )
     .join(" ")
     .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")

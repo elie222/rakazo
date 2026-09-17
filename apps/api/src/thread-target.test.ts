@@ -1337,7 +1337,24 @@ describe("sendThreadMessage", () => {
     });
   });
 
-  it("accepts a quote excerpt spanning rendered table cells", async () => {
+  it.each([
+    ["table cells", "| Name | Value |\n|:-----|------:|\n| Alice | 5 |", "Alice 5"],
+    [
+      "ordered list items",
+      "1. Review the diff\n2. Run the tests",
+      "Review the diff\nRun the tests",
+    ],
+    [
+      "parenthesized list items",
+      "1) Review the diff\n2) Run the tests",
+      "Review the diff\nRun the tests",
+    ],
+    [
+      "quoted list items",
+      "> 1. Review the diff\n> 2. Run the tests",
+      "Review the diff\nRun the tests",
+    ],
+  ])("accepts a quote excerpt spanning rendered %s", async (_name, parentText, replyQuote) => {
     let messageSeq = 0;
     let eventSeq = 0;
     const tx = {
@@ -1349,11 +1366,10 @@ describe("sendThreadMessage", () => {
       message: {
         findFirst: vi.fn().mockResolvedValue({
           id: "parent",
-          // Rendered table shows "Name Value Alice 5"; source keeps | and :.
           blocks: [
             {
               kind: "text",
-              text: "| Name | Value |\n|:-----|------:|\n| Alice | 5 |",
+              text: parentText,
             },
           ],
         }),
@@ -1366,7 +1382,7 @@ describe("sendThreadMessage", () => {
           blocks: [{ kind: "text", text: "why this?" }],
           botId: null,
           replyToMessageId: "parent",
-          replyQuote: "Alice 5",
+          replyQuote,
           runId: null,
           createdAt: new Date(),
         }),
@@ -1400,14 +1416,14 @@ describe("sendThreadMessage", () => {
       {
         text: "why this?",
         replyToMessageId: "parent",
-        replyQuote: "Alice 5",
+        replyQuote,
         clientNonce: "nonce-1",
       },
     );
 
     expect(result).toMatchObject({ runId: "run-1", taskId: "task-1" });
     expect(tx.message.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({ replyQuote: "Alice 5" }),
+      data: expect.objectContaining({ replyQuote }),
     });
   });
 
@@ -1423,7 +1439,9 @@ describe("sendThreadMessage", () => {
       message: {
         findFirst: vi.fn().mockResolvedValue({
           id: "parent",
-          blocks: [{ kind: "text", text: "C++ is fast and key:value pairs" }],
+          blocks: [
+            { kind: "text", text: "C++ is fast and key:value pairs; version 1.2 and 2. items" },
+          ],
         }),
         update: vi.fn(),
         create: vi.fn().mockResolvedValue({
@@ -1457,7 +1475,7 @@ describe("sendThreadMessage", () => {
     const actor = { spaceId: "workspace-1", userId: "user-1" } as Actor;
     const target = { kind: "bot", botId: "bot-1", threadId: "thread-1" } as ThreadTarget;
 
-    for (const replyQuote of ["C is fast", "key value pairs"]) {
+    for (const replyQuote of ["C is fast", "key value pairs", "version 12", "and items"]) {
       await sendThreadMessage(
         {
           prisma,
