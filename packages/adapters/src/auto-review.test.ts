@@ -202,6 +202,39 @@ describe("buildAutoReviewPrompt", () => {
   });
 });
 
+describe("runAutoReviewJudge instructions", () => {
+  it("anchors the present moment in the judge system instructions", async () => {
+    vi.resetModules();
+    const { runAutoReviewJudge } = await import("./auto-review.js");
+    let captured: { instructions?: string } | undefined;
+    const runtime = {
+      describe: () => ({ capabilities: { scripted: false } }),
+      run: (request: { instructions?: string }) => {
+        captured = request;
+        return (async function* () {
+          yield {
+            type: "done",
+            text: '{"decision":"pass","reason":"fits the task"}',
+          } as never;
+        })();
+      },
+      abort: async () => {},
+    };
+    await runAutoReviewJudge({
+      runtime: runtime as never,
+      checker: { provider: "openrouter", model: "x" },
+      prompt: "test",
+      runId: "run",
+      spaceId: "ws",
+      userId: "user",
+      botId: "bot",
+      threadId: "thread",
+    });
+    expect(captured?.instructions).toContain("Current date and time");
+    expect(captured?.instructions).toContain("fast safety checker");
+  });
+});
+
 describe("runAutoReviewJudge timeout", () => {
   it("maps aborted runs to error", async () => {
     vi.resetModules();
