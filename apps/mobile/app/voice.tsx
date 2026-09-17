@@ -158,11 +158,16 @@ export default function VoiceSettings() {
           return (
             <Pressable
               key={entry.id}
+              disabled={pending !== null}
               onPress={() => {
                 setProvider(entry.id);
                 void load(entry.id);
               }}
-              style={[styles.card, provider === entry.id && styles.cardActive]}
+              style={[
+                styles.card,
+                provider === entry.id && styles.cardActive,
+                pending !== null && styles.disabled,
+              ]}
             >
               <Text style={styles.cardTitle}>{entry.name}</Text>
               <Text style={styles.cardMeta}>

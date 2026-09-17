@@ -191,6 +191,7 @@ export function VoiceSettingsOverlay({
                 <button
                   key={entry.id}
                   type="button"
+                  disabled={busy}
                   onClick={() => {
                     setProvider(entry.id);
                     setApiKey("");
@@ -198,7 +199,7 @@ export function VoiceSettingsOverlay({
                     setNotice(null);
                     void refresh(entry.id);
                   }}
-                  className={`flex w-full items-center gap-3 border-b border-border px-3.5 py-3 text-start transition-colors last:border-0 ${
+                  className={`flex w-full items-center gap-3 border-b border-border px-3.5 py-3 text-start transition-colors last:border-0 disabled:pointer-events-none disabled:opacity-50 ${
                     entry.id === provider ? "bg-muted" : "hover:bg-accent"
                   }`}
                 >

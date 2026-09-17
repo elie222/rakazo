@@ -38,6 +38,7 @@ test("voice settings connect a key, speak a reply, and open a call", async ({ pa
   await expect(page.getByText("Connected", { exact: true }).first()).toBeVisible();
   await expect(page.getByRole("button", { name: "Replace key" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Disconnect" })).toBeVisible();
+  await captureScreenshot(page, testInfo, "voice-settings-connected");
 
   const spoken = page.waitForResponse(
     (response) => response.url().includes("/api/voice/speak") && response.ok(),
