@@ -198,7 +198,14 @@ export function VoiceSettingsOverlay({
                     setApiKey("");
                     setError(null);
                     setNotice(null);
-                    void refresh(entry.id);
+                    markPending("voice");
+                    void refresh(entry.id)
+                      .catch((err: unknown) =>
+                        setError(
+                          err instanceof Error ? err.message : t`Could not load voice settings`,
+                        ),
+                      )
+                      .finally(() => markPending(null));
                   }}
                   className={`flex w-full items-center gap-3 border-b border-border px-3.5 py-3 text-start transition-colors last:border-0 disabled:pointer-events-none disabled:opacity-50 ${
                     entry.id === provider ? "bg-muted" : "hover:bg-accent"

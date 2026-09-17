@@ -162,7 +162,14 @@ export default function VoiceSettings() {
               disabled={pending !== null}
               onPress={() => {
                 setProvider(entry.id);
-                void load(entry.id);
+                setPending("voice");
+                void load(entry.id)
+                  .catch((err: unknown) =>
+                    setError(
+                      err instanceof Error ? err.message : t("Could not load voice settings"),
+                    ),
+                  )
+                  .finally(() => setPending(null));
               }}
               style={[
                 styles.card,
