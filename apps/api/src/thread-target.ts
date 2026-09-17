@@ -68,7 +68,7 @@ export type ThreadTarget =
  * "C++ is fast" would accept a fabricated "C is fast".
  */
 function flattenForQuoteMatch(text: string, markdownSource = false): string {
-  let fence: string | undefined;
+  let fence: { marker: string; quoteDepth: number } | undefined;
   return text
     .split("\n")
     .filter((line) => !/^\s*\|?[\s:|-]+\|?\s*$/.test(line))
@@ -78,17 +78,40 @@ function flattenForQuoteMatch(text: string, markdownSource = false): string {
         .replace(/^\s*#{1,6}\s+/, "")
         .replace(/^\s*[-*+•]\s+/, "");
       if (!markdownSource) return normalized;
-      const match = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(normalized);
+      if (fence) {
+        let boundary = line;
+        const quoteDepth = fence.quoteDepth;
+        for (let depth = 0; depth < quoteDepth; depth++) {
+          const prefix = /^ {0,3}>[ \t]?/.exec(boundary)?.[0];
+          if (!prefix) {
+            fence = undefined;
+            break;
+          }
+          boundary = boundary.slice(prefix.length);
+        }
+        if (fence) {
+          const closing = /^ {0,3}(`{3,}|~{3,})[ \t]*$/.exec(boundary)?.[1];
+          if (closing && closing[0] === fence.marker[0] && closing.length >= fence.marker.length) {
+            fence = undefined;
+          }
+          return normalized;
+        }
+      }
+      let source = line;
+      let quoteDepth = 0;
+      for (
+        let prefix = /^ {0,3}>[ \t]?/.exec(source)?.[0];
+        prefix;
+        prefix = /^ {0,3}>[ \t]?/.exec(source)?.[0]
+      ) {
+        source = source.slice(prefix.length);
+        quoteDepth++;
+      }
+      const match = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(source);
       const marker = match?.[1];
       const suffix = match?.[2] ?? "";
-      if (fence) {
-        if (marker && marker[0] === fence[0] && marker.length >= fence.length && !suffix.trim()) {
-          fence = undefined;
-        }
-        return normalized;
-      }
       if (marker && (marker[0] !== "`" || !suffix.includes("`"))) {
-        fence = marker;
+        fence = { marker, quoteDepth };
         return normalized;
       }
       return normalized.replace(/^ {0,3}\d{1,9}[.)][ \t]+/, "");

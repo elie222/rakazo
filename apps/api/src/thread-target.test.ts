@@ -1447,7 +1447,7 @@ describe("sendThreadMessage", () => {
           blocks: [
             {
               kind: "text",
-              text: "C++ is fast and key:value pairs; version 1.2 and 2. items\n    2. restart()\n```text\n1. alpha\n2. beta\n```\n~~~text\n1. gamma\n2. delta\n~~~",
+              text: "C++ is fast and key:value pairs; version 1.2 and 2. items\n    2. restart()\n```text\n1. alpha\n2. beta\n```\n~~~text\n1. gamma\n2. delta\n~~~\n```text\n> ```\n1. epsilon\n2. zeta\n```\n> ```text\n> > ```\n> 1. eta\n> 2. theta\n> ```",
             },
           ],
         }),
@@ -1493,6 +1493,8 @@ describe("sendThreadMessage", () => {
       "99. C++ is fast",
       "alpha\nbeta",
       "gamma\ndelta",
+      "epsilon\nzeta",
+      "eta\ntheta",
     ]) {
       await sendThreadMessage(
         {
