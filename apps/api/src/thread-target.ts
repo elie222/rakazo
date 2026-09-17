@@ -68,6 +68,7 @@ export type ThreadTarget =
  * "C++ is fast" would accept a fabricated "C is fast".
  */
 function flattenForQuoteMatch(text: string, markdownSource = false): string {
+  let fence: string | undefined;
   return text
     .split("\n")
     .filter((line) => !/^\s*\|?[\s:|-]+\|?\s*$/.test(line))
@@ -76,7 +77,21 @@ function flattenForQuoteMatch(text: string, markdownSource = false): string {
         .replace(/^\s*(?:>\s*)+/, "")
         .replace(/^\s*#{1,6}\s+/, "")
         .replace(/^\s*[-*+•]\s+/, "");
-      return markdownSource ? normalized.replace(/^ {0,3}\d{1,9}[.)][ \t]+/, "") : normalized;
+      if (!markdownSource) return normalized;
+      const match = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(normalized);
+      const marker = match?.[1];
+      const suffix = match?.[2] ?? "";
+      if (fence) {
+        if (marker && marker[0] === fence[0] && marker.length >= fence.length && !suffix.trim()) {
+          fence = undefined;
+        }
+        return normalized;
+      }
+      if (marker && (marker[0] !== "`" || !suffix.includes("`"))) {
+        fence = marker;
+        return normalized;
+      }
+      return normalized.replace(/^ {0,3}\d{1,9}[.)][ \t]+/, "");
     })
     .join(" ")
     .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")

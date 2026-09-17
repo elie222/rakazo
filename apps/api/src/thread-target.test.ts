@@ -1341,6 +1341,7 @@ describe("sendThreadMessage", () => {
     ["table cells", "| Name | Value |\n|:-----|------:|\n| Alice | 5 |", "Alice 5"],
     ["indented code", "    2. restart()", "2. restart()"],
     ["fenced code", "```text\n2. restart()\n```", "2. restart()"],
+    ["lists after code fences", "```text\n1. code\n```\n1. First\n2. Second", "First\nSecond"],
     ["tab-indented code", "\t2. restart()", "2. restart()"],
     ["three-space lists", "   1. First\n   2. Second", "First\nSecond"],
     [
@@ -1446,7 +1447,7 @@ describe("sendThreadMessage", () => {
           blocks: [
             {
               kind: "text",
-              text: "C++ is fast and key:value pairs; version 1.2 and 2. items\n    2. restart()",
+              text: "C++ is fast and key:value pairs; version 1.2 and 2. items\n    2. restart()\n```text\n1. alpha\n2. beta\n```\n~~~text\n1. gamma\n2. delta\n~~~",
             },
           ],
         }),
@@ -1490,6 +1491,8 @@ describe("sendThreadMessage", () => {
       "3. restart()",
       "    3. restart()",
       "99. C++ is fast",
+      "alpha\nbeta",
+      "gamma\ndelta",
     ]) {
       await sendThreadMessage(
         {
