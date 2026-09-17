@@ -288,6 +288,7 @@ export function VoiceSettingsOverlay({
                       id={voiceSelectId}
                       className="w-full"
                       value={voiceId}
+                      disabled={busy}
                       onChange={(event) => void chooseVoice(event.target.value)}
                     >
                       {voiceOptions.map((voice) => (

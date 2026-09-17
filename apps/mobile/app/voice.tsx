@@ -222,8 +222,9 @@ export default function VoiceSettings() {
                 {voices.map((voice) => (
                   <Pressable
                     key={voice.id}
+                    disabled={pending !== null}
                     onPress={() => void chooseVoice(voice.id)}
-                    style={styles.voiceRow}
+                    style={[styles.voiceRow, pending !== null && styles.disabled]}
                   >
                     <Text style={styles.voiceLabel}>{voice.label}</Text>
                     {voiceId === voice.id ? <Text style={styles.check}>✓</Text> : null}
