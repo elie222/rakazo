@@ -76,7 +76,7 @@ describe("executor approval replay", () => {
         {
           kind: "mcp__demo__send_message",
           request: catalogApprovalRequest(
-            "mcp_execute_tool",
+            "connectors_execute_tool",
             { id: "server-1:send_message", arguments: { text: "approved exactly" } },
             "__rakazoCatalogTool",
           ),
@@ -86,7 +86,7 @@ describe("executor approval replay", () => {
     );
 
     expect(continuation).toContain(
-      'mcp_execute_tool: {"id":"server-1:send_message","arguments":{"text":"approved exactly"}}',
+      'connectors_execute_tool: {"id":"server-1:send_message","arguments":{"text":"approved exactly"}}',
     );
     expect(continuation).not.toContain("__rakazoCatalogTool");
   });

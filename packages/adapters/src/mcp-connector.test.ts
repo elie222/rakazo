@@ -130,10 +130,12 @@ describe("MCP connector session cache", () => {
 
     expect(tools).toHaveLength(3);
     expect(tools.map((tool) => tool.name)).toEqual([
-      "mcp_search_tools",
-      "mcp_load_tool",
-      "mcp_execute_tool",
+      "connectors_search_tools",
+      "connectors_load_tool",
+      "connectors_execute_tool",
     ]);
+    // Anthropic rejects Claude Code OAuth requests carrying any `mcp_`-prefixed tool name.
+    expect(tools.every((tool) => !tool.name.startsWith("mcp_"))).toBe(true);
     expect(JSON.stringify(tools)).not.toContain("schema-marker");
     await connector.close();
   });
@@ -171,9 +173,9 @@ describe("MCP connector session cache", () => {
         expect(tools[0]?.name).toMatch(/^mcp__demo__/);
       } else {
         expect(tools.map((tool) => tool.name)).toEqual([
-          "mcp_search_tools",
-          "mcp_load_tool",
-          "mcp_execute_tool",
+          "connectors_search_tools",
+          "connectors_load_tool",
+          "connectors_execute_tool",
         ]);
       }
       await connector.close();

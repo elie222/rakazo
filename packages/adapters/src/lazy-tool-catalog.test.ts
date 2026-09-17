@@ -100,28 +100,28 @@ describe("lazy tool catalog", () => {
   it("exposes tools directly at the limit and switches to lazy wrappers above it", () => {
     expect(tools(DIRECT_TOOL_LIMIT)).toHaveLength(20);
     expect(tools(DIRECT_TOOL_LIMIT + 1)).toHaveLength(21);
-    expect(lazyCatalogTools("mcp", "mcp", "MCP")).toHaveLength(3);
+    expect(lazyCatalogTools("connectors", "mcp", "MCP")).toHaveLength(3);
     expect(lazyCatalogTools("installed", "installed", "API").map((tool) => tool.name)).toEqual([
       "installed_search_tools",
       "installed_load_tool",
       "installed_execute_tool",
     ]);
-    expect(lazyCatalogTools("mcp", "mcp", "MCP").map((tool) => tool.name)).toEqual([
-      "mcp_search_tools",
-      "mcp_load_tool",
-      "mcp_execute_tool",
+    expect(lazyCatalogTools("connectors", "mcp", "MCP").map((tool) => tool.name)).toEqual([
+      "connectors_search_tools",
+      "connectors_load_tool",
+      "connectors_execute_tool",
     ]);
-    expect(lazyCatalogTools("mcp", "mcp", "MCP")[0]?.description).toContain(
+    expect(lazyCatalogTools("connectors", "mcp", "MCP")[0]?.description).toContain(
       "Empty query lists sources",
     );
-    expect(lazyCatalogTools("mcp", "mcp", "MCP")[0]?.inputSchema).not.toMatchObject({
+    expect(lazyCatalogTools("connectors", "mcp", "MCP")[0]?.inputSchema).not.toMatchObject({
       required: expect.arrayContaining(["query"]),
     });
   });
 
   it("embeds a compact name index in the search description when it fits", () => {
     const entries = catalogEntries(multiGroupTools());
-    const [search] = lazyCatalogTools("mcp", "mcp", "MCP", entries);
+    const [search] = lazyCatalogTools("connectors", "mcp", "MCP", entries);
     expect(search?.description).toContain("gmail:");
     expect(search?.description).toContain("list, read, send");
     expect(search?.description).toContain("hubspot:");
@@ -235,7 +235,7 @@ describe("lazy tool catalog", () => {
     expect("groups" in result && result.groups.every((item) => item.count > 0)).toBe(true);
     expect("index" in result).toBe(false);
     expect(JSON.stringify(result)).not.toContain("secretShape");
-    const [search] = lazyCatalogTools("mcp", "mcp", "MCP", entries);
+    const [search] = lazyCatalogTools("connectors", "mcp", "MCP", entries);
     expect(search?.description).toContain("Empty query lists sources");
     expect(search?.description).not.toContain("tool_0");
   });
