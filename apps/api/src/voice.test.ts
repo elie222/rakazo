@@ -118,20 +118,21 @@ const actor = { userId: "user-1", spaceId: "space-1" } as Actor;
 
 function makeDisconnectDeps(
   overrides: {
-    existing?: { id: string; secretId: string; userId: string; provider: string } | null;
+    existing?: Array<{ id: string; secretId: string; userId: string; provider: string }>;
     modelReferences?: number;
     voiceReferences?: number;
   } = {},
 ) {
-  const findFirst = vi.fn().mockResolvedValue(overrides.existing ?? null);
-  const preferenceDeleteMany = vi.fn().mockResolvedValue({ count: overrides.existing ? 1 : 0 });
-  const credentialDeleteMany = vi.fn().mockResolvedValue({ count: overrides.existing ? 1 : 0 });
+  const rows = overrides.existing ?? [];
+  const findMany = vi.fn().mockResolvedValue(rows);
+  const preferenceDeleteMany = vi.fn().mockResolvedValue({ count: rows.length });
+  const credentialDeleteMany = vi.fn().mockResolvedValue({ count: rows.length });
   const modelCount = vi.fn().mockResolvedValue(overrides.modelReferences ?? 0);
   const voiceCount = vi.fn().mockResolvedValue(overrides.voiceReferences ?? 0);
   const secretDeleteMany = vi.fn().mockResolvedValue({ count: 1 });
   const prisma = {
     userVoiceCredential: {
-      findFirst,
+      findMany,
       deleteMany: credentialDeleteMany,
       count: voiceCount,
     },
@@ -149,7 +150,7 @@ function makeDisconnectDeps(
   } as unknown as VoiceDeps;
   return {
     deps,
-    findFirst,
+    findMany,
     preferenceDeleteMany,
     credentialDeleteMany,
     secretDeleteMany,
@@ -165,8 +166,8 @@ describe("disconnectVoiceCredential", () => {
       userId: actor.userId,
       provider: "scripted",
     };
-    const { deps, findFirst, preferenceDeleteMany, credentialDeleteMany, secretDeleteMany } =
-      makeDisconnectDeps({ existing });
+    const { deps, findMany, preferenceDeleteMany, credentialDeleteMany, secretDeleteMany } =
+      makeDisconnectDeps({ existing: [existing] });
 
     await expect(disconnectVoiceCredential(deps, actor, { provider: "scripted" })).resolves.toEqual(
       {
@@ -174,27 +175,63 @@ describe("disconnectVoiceCredential", () => {
       },
     );
 
-    expect(findFirst).toHaveBeenCalledWith({
+    expect(findMany).toHaveBeenCalledWith({
       where: { userId: actor.userId, provider: "scripted" },
-      orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }, { id: "desc" }],
     });
     expect(preferenceDeleteMany).toHaveBeenCalledWith({
-      where: { userId: actor.userId, credentialId: "cred-1" },
+      where: { userId: actor.userId, credentialId: { in: ["cred-1"] } },
     });
     expect(credentialDeleteMany).toHaveBeenCalledWith({
-      where: { id: "cred-1", userId: actor.userId },
+      where: { userId: actor.userId, id: { in: ["cred-1"] } },
     });
     expect(secretDeleteMany).toHaveBeenCalledWith({ where: { id: "secret-1" } });
   });
 
+  it("removes every actor credential for that provider", async () => {
+    const { deps, preferenceDeleteMany, credentialDeleteMany, secretDeleteMany } =
+      makeDisconnectDeps({
+        existing: [
+          {
+            id: "cred-new",
+            secretId: "secret-new",
+            userId: actor.userId,
+            provider: "scripted",
+          },
+          {
+            id: "cred-old",
+            secretId: "secret-old",
+            userId: actor.userId,
+            provider: "scripted",
+          },
+        ],
+      });
+
+    await expect(disconnectVoiceCredential(deps, actor, { provider: "scripted" })).resolves.toEqual(
+      {
+        ok: true,
+      },
+    );
+
+    expect(preferenceDeleteMany).toHaveBeenCalledWith({
+      where: { userId: actor.userId, credentialId: { in: ["cred-new", "cred-old"] } },
+    });
+    expect(credentialDeleteMany).toHaveBeenCalledWith({
+      where: { userId: actor.userId, id: { in: ["cred-new", "cred-old"] } },
+    });
+    expect(secretDeleteMany).toHaveBeenCalledWith({ where: { id: "secret-new" } });
+    expect(secretDeleteMany).toHaveBeenCalledWith({ where: { id: "secret-old" } });
+  });
+
   it("keeps a secret while another credential still references it", async () => {
     const { deps, credentialDeleteMany, secretDeleteMany } = makeDisconnectDeps({
-      existing: {
-        id: "cred-1",
-        secretId: "secret-shared",
-        userId: actor.userId,
-        provider: "scripted",
-      },
+      existing: [
+        {
+          id: "cred-1",
+          secretId: "secret-shared",
+          userId: actor.userId,
+          provider: "scripted",
+        },
+      ],
       voiceReferences: 1,
     });
 
@@ -209,16 +246,15 @@ describe("disconnectVoiceCredential", () => {
   });
 
   it("does not delete another actor's credential", async () => {
-    const { deps, findFirst, preferenceDeleteMany, credentialDeleteMany, secretDeleteMany } =
+    const { deps, findMany, preferenceDeleteMany, credentialDeleteMany, secretDeleteMany } =
       makeDisconnectDeps();
 
     await expect(
       disconnectVoiceCredential(deps, { ...actor, userId: "intruder" }, { provider: "scripted" }),
     ).resolves.toEqual({ ok: true });
 
-    expect(findFirst).toHaveBeenCalledWith({
+    expect(findMany).toHaveBeenCalledWith({
       where: { userId: "intruder", provider: "scripted" },
-      orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }, { id: "desc" }],
     });
     expect(preferenceDeleteMany).not.toHaveBeenCalled();
     expect(credentialDeleteMany).not.toHaveBeenCalled();

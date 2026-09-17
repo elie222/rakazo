@@ -105,13 +105,13 @@ export default function VoiceSettings() {
   }
 
   async function disconnect() {
-    if (!selected) return;
+    if (!credential) return;
     setPending("disconnect");
     setError(null);
     setNotice(null);
     try {
-      await rpc("voice/disconnect", { provider: selected.id });
-      await load(selected.id);
+      await rpc("voice/disconnect", { provider: credential.provider });
+      await load(credential.provider);
     } catch (err) {
       setError(err instanceof Error ? err.message : t("Could not disconnect"));
     } finally {

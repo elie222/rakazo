@@ -112,13 +112,13 @@ export function VoiceSettingsOverlay({
   }
 
   async function disconnectProvider() {
-    if (!selected) return;
+    if (!credential) return;
     setError(null);
     setNotice(null);
     markPending("disconnect");
     try {
-      await rpc.voice.disconnect({ provider: selected.id });
-      await refresh(selected.id);
+      await rpc.voice.disconnect({ provider: credential.provider });
+      await refresh(credential.provider);
     } catch (err) {
       setError(err instanceof Error ? err.message : t`Could not disconnect this voice provider`);
     } finally {

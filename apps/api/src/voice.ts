@@ -207,22 +207,24 @@ export async function disconnectVoiceCredential(
   await withSerializableRetry(() =>
     deps.prisma.$transaction(
       async (tx) => {
-        const existing = await tx.userVoiceCredential.findFirst({
+        const existing = await tx.userVoiceCredential.findMany({
           where: { userId: actor.userId, provider },
-          orderBy: newestVoiceCredentialOrder,
         });
-        if (!existing) return;
+        if (existing.length === 0) return;
+        const ids = existing.map((row) => row.id);
         await tx.spaceVoicePreference.deleteMany({
-          where: { userId: actor.userId, credentialId: existing.id },
+          where: { userId: actor.userId, credentialId: { in: ids } },
         });
         await tx.userVoiceCredential.deleteMany({
-          where: { id: existing.id, userId: actor.userId },
+          where: { userId: actor.userId, id: { in: ids } },
         });
-        await deleteUnreferencedCredentialSecret(tx, {
-          credentialKind: "voice",
-          credentialId: existing.id,
-          secretId: existing.secretId,
-        });
+        for (const row of existing) {
+          await deleteUnreferencedCredentialSecret(tx, {
+            credentialKind: "voice",
+            credentialId: row.id,
+            secretId: row.secretId,
+          });
+        }
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     ),
