@@ -165,6 +165,10 @@ describe("mobile computer keyboard", () => {
       backspaces: 0,
       text: "a",
     });
+    expect(mobileInputChanges("___", "hi___", 2)).toEqual({
+      backspaces: 3,
+      text: "hi___",
+    });
     expect(mobileInputChanges("___a", "___", 3)).toEqual({
       backspaces: 1,
       text: "",

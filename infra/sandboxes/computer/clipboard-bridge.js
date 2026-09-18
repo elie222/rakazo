@@ -94,11 +94,24 @@ export async function readHostClipboardText(clipboard = globalThis.navigator?.cl
 }
 
 /**
+ * Focus a paste fallback during the tap and park the caret after any sentinel
+ * so OS paste cannot treat those characters as clipboard text.
+ * @param {{ focus?: () => void, value?: string, setSelectionRange?: (start: number, end: number) => void } | null | undefined} target
+ */
+function focusPasteTarget(target) {
+  if (!target || typeof target.focus !== "function") return;
+  target.focus();
+  if (typeof target.value !== "string") return;
+  const length = target.value.length;
+  target.setSelectionRange?.(length, length);
+}
+
+/**
  * Touch Paste control: one tap reads the host clipboard and pastes through the
  * RFB bridge. When the clipboard API is unavailable, focus a paste target so
  * the existing `paste` listener can fire without a modifier chord.
  * @param {{ viewOnly?: boolean, clipboardPasteFrom?: (text: string) => void, sendKey?: Function, _rfbConnectionState?: string }} rfb
- * @param {{ button?: HTMLElement | null, clipboard?: { readText?: () => Promise<string> }, fallbackFocus?: { focus?: () => void } | null }} [options]
+ * @param {{ button?: HTMLElement | null, clipboard?: { readText?: () => Promise<string> }, fallbackFocus?: { focus?: () => void, blur?: () => void, value?: string, setSelectionRange?: (start: number, end: number) => void } | null }} [options]
  * @returns {() => void} detach
  */
 export function attachMobilePaste(rfb, options = {}) {
@@ -107,12 +120,17 @@ export function attachMobilePaste(rfb, options = {}) {
   button.hidden = false;
   const onClick = async () => {
     const clipboard = options.clipboard ?? globalThis.navigator?.clipboard;
+    const fallback = options.fallbackFocus;
+    // Focus during the tap, before any await, so a denial still has a software
+    // keyboard and a caret parked after the sentinel.
+    focusPasteTarget(fallback);
     const text = await readHostClipboardText(clipboard);
     if (text) {
       pasteHostText(rfb, text);
+      fallback?.blur?.();
       return;
     }
-    if (text === null) options.fallbackFocus?.focus?.();
+    if (text === "") fallback?.blur?.();
   };
   button.addEventListener("click", onClick);
   return () => {

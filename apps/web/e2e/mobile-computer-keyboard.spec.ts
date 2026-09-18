@@ -143,12 +143,28 @@ test("touch users can paste clipboard text without a keyboard chord", async ({
   await expect
     .poll(() => page.evaluate(() => Reflect.get(globalThis, "__rfbClipboard")))
     .toEqual(["from-phone"]);
+  await expect(
+    page.getByRole("textbox", { name: "Remote computer keyboard input" }),
+  ).not.toBeFocused();
 });
 
 test("Paste focuses the keyboard when the clipboard API is denied", async ({ page }) => {
   await openComputerEmbed(page, { clipboardText: null });
   await page.getByRole("button", { name: "Paste" }).click();
-  await expect(page.getByRole("textbox", { name: "Remote computer keyboard input" })).toBeFocused();
+  const keyboardInput = page.getByRole("textbox", { name: "Remote computer keyboard input" });
+  await expect(keyboardInput).toBeFocused();
+  await expect
+    .poll(() =>
+      keyboardInput.evaluate((element) => {
+        const input = element as HTMLTextAreaElement;
+        return (
+          input.value.length > 0 &&
+          input.selectionStart === input.value.length &&
+          input.selectionEnd === input.value.length
+        );
+      }),
+    )
+    .toBe(true);
   await expect
     .poll(() => page.evaluate(() => Reflect.get(globalThis, "__rfbClipboard")))
     .toEqual([]);

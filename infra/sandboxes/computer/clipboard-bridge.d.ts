@@ -63,6 +63,13 @@ export function readHostClipboardText(
   } | null,
 ): Promise<string | null>;
 
+type PasteTargetLike = {
+  focus?: () => void;
+  blur?: () => void;
+  value?: string;
+  setSelectionRange?: (start: number, end: number) => void;
+};
+
 export function attachMobilePaste(
   rfb: {
     viewOnly?: boolean;
@@ -73,7 +80,7 @@ export function attachMobilePaste(
   options?: {
     button?: (EventTargetLike & { hidden?: boolean }) | null;
     clipboard?: { readText?: () => Promise<string> };
-    fallbackFocus?: { focus?: () => void } | null;
+    fallbackFocus?: PasteTargetLike | null;
   },
 ): () => void;
 
