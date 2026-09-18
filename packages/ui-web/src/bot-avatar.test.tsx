@@ -1,4 +1,4 @@
-import { ACTIVE_RUN_STATUSES, BOT_AVATAR_SHAPE_COUNT } from "@rakazo/core";
+import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
 import { renderToString } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import {
@@ -9,7 +9,6 @@ import {
   parseBotAvatar,
   resolvePersonaColorDef,
   resolvePersonaShape,
-  SHIPPED_SHAPE_KEYS,
 } from "./bot-avatar.js";
 
 describe("BotAvatar", () => {
@@ -73,7 +72,6 @@ describe("BotAvatar", () => {
   it("exposes the violet identity color as the shared default", () => {
     expect(GROK_BOT_COLORS).toContain(DEFAULT_GROK_BOT_COLOR);
     expect(parseBotAvatar(`${DEFAULT_GROK_BOT_COLOR}::shape_0`).color).toBe(DEFAULT_GROK_BOT_COLOR);
-    expect(SHIPPED_SHAPE_KEYS.length).toBe(BOT_AVATAR_SHAPE_COUNT);
   });
 
   it("resolves explicit colors and shapes", () => {

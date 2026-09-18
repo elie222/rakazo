@@ -1,10 +1,3 @@
-export {
-  BOT_AVATAR_SHAPE_COUNT,
-  BOT_AVATAR_VALUE_MAX_LENGTH,
-  isBotAvatarValue,
-  type ParsedBotAvatar,
-  parseBotAvatarValue,
-} from "@rakazo/contracts";
 export * from "./action-approval.js";
 export * from "./agent-skill.js";
 export * from "./ai-consent.js";

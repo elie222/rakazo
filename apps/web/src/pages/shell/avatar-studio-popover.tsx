@@ -168,7 +168,6 @@ export function AvatarStudioPopover({
                 type="button"
                 onClick={() => setActiveTab("upload")}
                 aria-pressed={activeTab === "upload"}
-                data-testid="avatar-studio-upload-tab"
                 className={`rounded-full px-3 py-1 font-medium transition-colors ${
                   activeTab === "upload"
                     ? "bg-card text-foreground shadow-sm"
@@ -251,14 +250,12 @@ export function AvatarStudioPopover({
                   ? "border-primary bg-primary/10"
                   : "border-border bg-muted hover:border-foreground/30"
               }`}
-              data-testid="avatar-studio-upload-dropzone"
             >
               <input
                 ref={fileInputRef}
                 type="file"
                 accept="image/*"
                 className="hidden"
-                data-testid="avatar-studio-file-input"
                 onChange={(event) => {
                   const file = event.target.files?.[0];
                   if (file) processImageFile(file);
