@@ -2444,7 +2444,8 @@ export function ShellPage() {
     const heartbeatBotId = computerBot?.id ?? active?.id;
     if ((panel !== "computer" && !computerOpen) || !heartbeatBotId || computer?.state !== "running")
       return;
-    const ping = () => void rpc.computer.heartbeat({ botId: heartbeatBotId }).catch(() => undefined);
+    const ping = () =>
+      void rpc.computer.heartbeat({ botId: heartbeatBotId }).catch(() => undefined);
     ping();
     const timer = window.setInterval(ping, 60_000);
     return () => window.clearInterval(timer);
