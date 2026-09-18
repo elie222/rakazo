@@ -51,7 +51,11 @@ export function approvedCatalogReplay(
   // Only the catalog execute wrapper may consume the wrapper envelope. After a catalog
   // shrink, matching direct tools resume via the FIFO path with inner arguments.
   if (!onCatalogExecuteRoute) return {};
-  if (pending.toolName !== toolName) {
+  // Persisted approvals can predate the MCP wrapper rename. The executor still
+  // checks the resolved resource/revision and uses only these approved arguments.
+  const renamedMcpWrapper =
+    pending.toolName === "mcp_execute_tool" && toolName === catalogExecuteToolName("mcp");
+  if (pending.toolName !== toolName && !renamedMcpWrapper) {
     return { error: `Approved request ${pending.toolName} must be replayed before ${toolName}.` };
   }
   return { args: pending.args };

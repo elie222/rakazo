@@ -2,6 +2,7 @@ import type { ConnectorTool } from "@rakazo/adapter-kit";
 import { approvalEffectKey } from "@rakazo/core/node/approval-effect-key";
 import { describe, expect, it } from "vitest";
 import {
+  approvalReplayResourceError,
   approvedCatalogReplay,
   approvedReplayArgs,
   boundDirectApprovalRequest,
@@ -188,10 +189,17 @@ describe("executor approval replay", () => {
   });
 
   it("resumes a legacy mcp_execute_tool envelope as connectors_execute_tool when that wrapper is exposed", () => {
+    const route = {
+      connectorId: "mcp",
+      resourceId: "server-1",
+      toolName: "send_message",
+      resourceRevision: 2,
+    };
     const request = catalogApprovalRequest(
       "mcp_execute_tool",
       { id: "server-1:send_message", arguments: { text: "approved exactly" } },
       "__rakazoCatalogTool",
+      route,
     );
     const continuation = buildApprovalContinuation(
       [{ kind: "mcp__demo__send_message", request }],
@@ -203,6 +211,85 @@ describe("executor approval replay", () => {
       'connectors_execute_tool: {"id":"server-1:send_message","arguments":{"text":"approved exactly"}}',
     );
     expect(continuation).not.toContain("mcp_execute_tool:");
+    const queue = createApprovedEffectReplayQueue([{ kind: "mcp__demo__send_message", request }]);
+    const replay = approvedCatalogReplay(
+      queue,
+      "connectors_execute_tool",
+      "__rakazoCatalogTool",
+      true,
+    );
+    expect(replay.error).toBeUndefined();
+    expect(replay.args).toEqual({
+      id: "server-1:send_message",
+      arguments: { text: "approved exactly" },
+    });
+    const resolved = resolveCatalogCall(
+      {
+        tool: "connectors_execute_tool",
+        args: replay.args!,
+        executionId: "approved",
+        route: { connectorId: "mcp", toolName: "__catalog_execute" },
+      },
+      catalogEntries([
+        {
+          name: "mcp__demo__send_message",
+          description: "Send a message",
+          inputSchema: {
+            type: "object",
+            properties: { text: { type: "string" } },
+            required: ["text"],
+          },
+          route,
+        },
+      ]),
+    );
+    expect(resolved.call.args).toEqual({ text: "approved exactly" });
+    expect(resolved.tool.route).toEqual(route);
+    expect(
+      approvalReplayResourceError(resolved.tool.name, true, request, route, "__rakazoCatalogTool"),
+    ).toBeUndefined();
+    expect(
+      approvalReplayResourceError(
+        resolved.tool.name,
+        true,
+        request,
+        { ...route, resourceRevision: 3 },
+        "__rakazoCatalogTool",
+      ),
+    ).toContain("different connector resource");
+    expect(
+      approvalReplayResourceError(
+        resolved.tool.name,
+        true,
+        request,
+        { ...route, resourceId: "server-2" },
+        "__rakazoCatalogTool",
+      ),
+    ).toContain("different connector resource");
+    expect(
+      approvedReplayArgs(queue.take(resolved.tool.name), resolved.call.args, "__rakazoCatalogTool"),
+    ).toEqual({ text: "approved exactly" });
+    expect(queue.assertDrained).not.toThrow();
+  });
+
+  it.each([
+    ["mcp_execute_tool", "installed_execute_tool"],
+    ["installed_execute_tool", "connectors_execute_tool"],
+    ["connectors_execute_tool", "mcp_execute_tool"],
+  ])("does not alias approval %s to unrelated wrapper %s", (stored, called) => {
+    const request = catalogApprovalRequest(
+      stored,
+      { id: "server-1:send_message", arguments: {} },
+      "__rakazoCatalogTool",
+    );
+    const queue = createApprovedEffectReplayQueue([{ kind: "mcp__demo__send_message", request }]);
+    expect(approvedCatalogReplay(queue, called, "__rakazoCatalogTool", true).error).toContain(
+      "must be replayed before",
+    );
+    expect(queue.nextRequest()).toBe(request);
+    expect(
+      approvedCatalogReplay(queue, "connectors_execute_tool", "__rakazoCatalogTool", false),
+    ).toEqual({});
   });
 
   it("renders a uniquified direct name when collision renames the tool under the direct limit", () => {
