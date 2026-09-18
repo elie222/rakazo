@@ -24,6 +24,7 @@
         display: flex;
         gap: 8px;
       }
+      #mobile-paste,
       #mobile-keyboard,
       #mobile-trackpad {
         box-sizing: border-box;
@@ -41,6 +42,7 @@
         outline: 3px solid Highlight;
         outline-offset: 1px;
       }
+      #mobile-paste svg,
       #mobile-keyboard svg,
       #mobile-trackpad svg {
         width: 100%;
@@ -65,7 +67,11 @@
       }
     </style>
     <script type="module">
-      import { attachHostClipboardPaste } from "./clipboard-bridge.js";
+      import {
+        attachHostClipboardPaste,
+        attachMobilePaste,
+        pasteHostText,
+      } from "./clipboard-bridge.js";
       import Keyboard from "./core/input/keyboard.js";
       import KeyTable from "./core/input/keysym.js";
       import keysyms from "./core/input/keysymdef.js";
@@ -94,12 +100,18 @@
       rfb.clipViewport = false;
       if (!rfb.viewOnly) attachHostClipboardPaste(rfb);
       if (!rfb.viewOnly && isTouchBrowser()) {
+        const keyboardInput = document.getElementById("mobile-keyboard-input");
+        attachMobilePaste(rfb, {
+          button: document.getElementById("mobile-paste"),
+          fallbackFocus: keyboardInput,
+        });
         attachMobileKeyboard(rfb, {
           button: document.getElementById("mobile-keyboard"),
-          input: document.getElementById("mobile-keyboard-input"),
+          input: keyboardInput,
           Keyboard,
           backspaceKeysym: KeyTable.XK_BackSpace,
           lookupKeysym: keysyms.lookup,
+          pasteText: (text) => pasteHostText(rfb, text),
         });
         attachMobileTrackpad(rfb, {
           button: document.getElementById("mobile-trackpad"),
@@ -111,6 +123,12 @@
   <body>
     <div id="screen"></div>
     <div id="mobile-controls">
+      <button id="mobile-paste" type="button" aria-label="Paste" title="Paste" hidden>
+        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="8" y="2" width="8" height="4" rx="1" />
+          <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
+        </svg>
+      </button>
       <button
         id="mobile-keyboard"
         type="button"

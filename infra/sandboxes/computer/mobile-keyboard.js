@@ -220,6 +220,7 @@ export function attachMobileKeyboard(
     Keyboard,
     backspaceKeysym,
     lookupKeysym,
+    pasteText,
     documentTarget = globalThis.document,
     windowTarget = documentTarget?.defaultView ?? globalThis,
   },
@@ -275,6 +276,15 @@ export function attachMobileKeyboard(
     if (!lastValue) resetInput();
     const newValue = event.target.value;
     const changes = mobileInputChanges(lastValue, newValue, event.target.selectionStart);
+    if (
+      typeof pasteText === "function" &&
+      event.inputType === "insertFromPaste" &&
+      changes.text &&
+      pasteText(changes.text)
+    ) {
+      resetInput();
+      return;
+    }
     for (let index = 0; index < changes.backspaces; index += 1) {
       rfb.sendKey(backspaceKeysym, "Backspace");
     }
@@ -292,8 +302,9 @@ export function attachMobileKeyboard(
   };
   const keepOpen = (event) => {
     if (documentTarget.activeElement !== input) return;
-    // Let the toggle control dismiss without preventDefault swallowing the tap.
+    // Let chrome controls (keyboard, paste, trackpad) receive the tap.
     if (event.target === button || button.contains?.(event.target)) return;
+    if (button.parentElement?.contains?.(event.target)) return;
     event.preventDefault();
   };
   // Touch/pointer first: blur can run before a synthesized mousedown on mobile.

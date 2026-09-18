@@ -34,6 +34,7 @@ export function attachMobileKeyboard(
     Keyboard: unknown;
     backspaceKeysym: number;
     lookupKeysym: (codePoint: number) => number;
+    pasteText?: (text: string) => boolean;
     documentTarget?: unknown;
     windowTarget?: unknown;
   },

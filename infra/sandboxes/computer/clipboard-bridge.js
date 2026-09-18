@@ -79,6 +79,48 @@ export function pasteHostText(rfb, text) {
 }
 
 /**
+ * Read plain text from the host clipboard API.
+ * Returns null when the API is missing or denied so callers can fall back to a
+ * focusable paste target. An empty clipboard is "".
+ * @param {{ readText?: () => Promise<string> } | null | undefined} [clipboard]
+ */
+export async function readHostClipboardText(clipboard = globalThis.navigator?.clipboard) {
+  if (!clipboard || typeof clipboard.readText !== "function") return null;
+  try {
+    return (await clipboard.readText()) || "";
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Touch Paste control: one tap reads the host clipboard and pastes through the
+ * RFB bridge. When the clipboard API is unavailable, focus a paste target so
+ * the existing `paste` listener can fire without a modifier chord.
+ * @param {{ viewOnly?: boolean, clipboardPasteFrom?: (text: string) => void, sendKey?: Function, _rfbConnectionState?: string }} rfb
+ * @param {{ button?: HTMLElement | null, clipboard?: { readText?: () => Promise<string> }, fallbackFocus?: { focus?: () => void } | null }} [options]
+ * @returns {() => void} detach
+ */
+export function attachMobilePaste(rfb, options = {}) {
+  const button = options.button;
+  if (!button || rfb.viewOnly) return () => {};
+  button.hidden = false;
+  const onClick = async () => {
+    const clipboard = options.clipboard ?? globalThis.navigator?.clipboard;
+    const text = await readHostClipboardText(clipboard);
+    if (text) {
+      pasteHostText(rfb, text);
+      return;
+    }
+    if (text === null) options.fallbackFocus?.focus?.();
+  };
+  button.addEventListener("click", onClick);
+  return () => {
+    button.removeEventListener("click", onClick);
+  };
+}
+
+/**
  * @param {{ viewOnly?: boolean, clipboardPasteFrom?: (text: string) => void, sendKey?: Function, _rfbConnectionState?: string }} rfb
  * @param {{ target?: EventTarget }} [options]
  * @returns {() => void} detach

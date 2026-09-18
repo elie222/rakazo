@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
+  attachMobileKeyboard,
   attachMobileTrackpad,
   isTouchBrowser,
   mobileInputChanges,
@@ -90,6 +91,74 @@ function trackpadFixture() {
   return { touch, mouseEvents, overlay, detach };
 }
 
+function preventableEvent(target: unknown) {
+  return {
+    target,
+    defaultPrevented: false,
+    preventDefault() {
+      this.defaultPrevented = true;
+    },
+  };
+}
+
+function keyboardFixture(overrides: { pasteText?: (text: string) => boolean } = {}) {
+  const inputListeners = new Map<string, (event: object) => void>();
+  const rootListeners = new Map<string, (event: ReturnType<typeof preventableEvent>) => void>();
+  const keys: Array<[number, string?]> = [];
+  const pasteButton = {};
+  const button = {
+    hidden: true,
+    parentElement: { contains: (target: unknown) => target === pasteButton },
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    setAttribute: () => {},
+    classList: { toggle: () => {} },
+    contains: () => false,
+  };
+  const input = {
+    value: "",
+    addEventListener: (type: string, listener: (event: object) => void) =>
+      inputListeners.set(type, listener),
+    removeEventListener: () => {},
+    focus: () => {},
+    blur: () => {},
+    setSelectionRange: () => {},
+  };
+  const documentTarget = {
+    activeElement: input as unknown,
+    documentElement: {
+      style: { setProperty: () => {}, removeProperty: () => {} },
+      classList: { toggle: () => {}, remove: () => {} },
+      addEventListener: (
+        type: string,
+        listener: (event: ReturnType<typeof preventableEvent>) => void,
+      ) => rootListeners.set(type, listener),
+      removeEventListener: () => {},
+    },
+  };
+  const rfb = {
+    viewOnly: false,
+    focusOnClick: true,
+    sendKey: (keysym: number, code?: string) => keys.push([keysym, code]),
+  };
+  class Keyboard {
+    onkeyevent = null;
+    grab() {}
+    ungrab() {}
+  }
+  const pasteText = overrides.pasteText;
+  attachMobileKeyboard(rfb, {
+    button,
+    input,
+    Keyboard,
+    backspaceKeysym: 0xff08,
+    lookupKeysym: (codePoint: number) => codePoint,
+    documentTarget,
+    pasteText,
+  });
+  return { input, inputListeners, keys, pasteText, rootListeners, pasteButton, documentTarget };
+}
+
 describe("mobile computer keyboard", () => {
   it("translates inserted and deleted text", () => {
     expect(mobileInputChanges("___", "___a", 4)).toEqual({
@@ -152,12 +221,40 @@ describe("mobile computer keyboard", () => {
     expect(dockerfile).toMatch(/mobile-keyboard\.js/);
     expect(embed).toMatch(/attachMobileKeyboard/);
     expect(embed).toMatch(/mobile-keyboard-input/);
+    expect(embed).toMatch(/attachMobilePaste/);
+    expect(embed).toMatch(/mobile-paste/);
     expect(embed).toMatch(/attachMobileTrackpad/);
     expect(embed).toMatch(/mobile-trackpad/);
     expect(embed).toMatch(/mobile-keyboard-open #screen/);
     expect(embed).toMatch(/--mobile-visual-height/);
     expect(start).toMatch(/mobile-keyboard\.js/);
     expect(supervisor).toMatch(/"mobile-keyboard\.js"/);
+  });
+
+  it("pastes host clipboard text instead of typing an insertFromPaste", () => {
+    const { input, inputListeners, keys, pasteText } = keyboardFixture({
+      pasteText: vi.fn(() => true),
+    });
+    const seed = input.value;
+    input.value = `${seed}from-phone`;
+    inputListeners.get("input")?.({
+      target: input,
+      inputType: "insertFromPaste",
+    });
+    expect(pasteText).toHaveBeenCalledWith("from-phone");
+    expect(keys).toEqual([]);
+    expect(input.value).toBe(seed);
+  });
+
+  it("lets sibling chrome controls receive taps while the keyboard is open", () => {
+    const { rootListeners, pasteButton, documentTarget, input } = keyboardFixture();
+    documentTarget.activeElement = input;
+    const pasteTap = preventableEvent(pasteButton);
+    rootListeners.get("pointerdown")?.(pasteTap);
+    expect(pasteTap.defaultPrevented).toBe(false);
+    const screenTap = preventableEvent({});
+    rootListeners.get("pointerdown")?.(screenTap);
+    expect(screenTap.defaultPrevented).toBe(true);
   });
 });
 
