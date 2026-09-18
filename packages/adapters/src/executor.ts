@@ -62,6 +62,7 @@ import {
   nextCronDateAcross,
   nextFence,
   planActionGate,
+  previewText,
   promptInvokesSkill,
   redactSecrets,
   renderBotDirectory,
@@ -4123,7 +4124,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             await notifyRun(deps, run, {
               kind: "completion",
               title: `${bot.name} finished`,
-              body: text.slice(0, 180),
+              body: previewText(text).slice(0, 180),
               botId: bot.id,
               threadId: thread.id,
             });
