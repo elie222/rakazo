@@ -779,6 +779,7 @@ export async function sendThreadMessage(
               messageId: message.id,
               role: "user",
               blocks,
+              runIds: answered.map((run) => run.id),
               replyToMessageId: input.replyToMessageId,
               replyQuote,
             },
@@ -902,7 +903,7 @@ export async function sendThreadMessage(
         select: { id: true, taskId: true, botId: true, status: true },
       });
       const activeByBotId = new Map<string, (typeof activeRuns)[number]>();
-      const answeredByBotId = new Map<string, (typeof activeRuns)[number]>();
+      const answeredByBotId = new Map<string, Array<(typeof activeRuns)[number]>>();
       for (const run of activeRuns) {
         if (run.status === "waiting_input") {
           const answerText = input.text?.trim();
@@ -923,9 +924,10 @@ export async function sendThreadMessage(
               message: "Answer the pending ask first.",
             });
           }
-          if (!answeredByBotId.has(run.botId)) {
-            answeredByBotId.set(run.botId, { ...run, status: "queued" });
-          }
+          const queuedRun = { ...run, status: "queued" };
+          const queuedForBot = answeredByBotId.get(run.botId);
+          if (queuedForBot) queuedForBot.push(queuedRun);
+          else answeredByBotId.set(run.botId, [queuedRun]);
           continue;
         }
         if (!STEERABLE_RUN_STATUSES.has(run.status)) {
@@ -939,7 +941,7 @@ export async function sendThreadMessage(
       for (const botId of targetBotIds) {
         const answered = answeredByBotId.get(botId);
         if (answered) {
-          runs.push(answered);
+          runs.push(...answered);
           continue;
         }
         const active = activeByBotId.get(botId);
