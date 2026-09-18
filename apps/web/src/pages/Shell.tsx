@@ -2957,17 +2957,12 @@ export function ShellPage() {
                                 <span
                                   dir="auto"
                                   data-roster-bot-name={item.kind === "bot" ? "" : undefined}
-                                  className={`truncate text-[14px] text-foreground ${
+                                  className={`min-w-0 truncate text-[14px] text-foreground ${
                                     item.chat.unread ? "font-semibold" : "font-medium"
                                   }`}
                                 >
                                   {item.chat.name}
                                 </span>
-                                {item.kind === "bot" && item.chat.title ? (
-                                  <span className="max-w-[130px] shrink-0 truncate rounded-md border border-border bg-muted px-2 py-0.5 text-[11px] font-normal text-muted-foreground">
-                                    {item.chat.title}
-                                  </span>
-                                ) : null}
                                 {item.chat.unread ? (
                                   <span className="sr-only">
                                     <Trans> (unread)</Trans>
@@ -2986,9 +2981,16 @@ export function ShellPage() {
                                 ) : null}
                               </div>
                             </div>
+                            {item.kind === "bot" && item.chat.title ? (
+                              <div className="mt-1 flex">
+                                <span className="max-w-full truncate rounded-md border border-border bg-muted px-2 py-0.5 text-[11px] font-normal text-muted-foreground">
+                                  {item.chat.title}
+                                </span>
+                              </div>
+                            ) : null}
                             <div
                               dir="auto"
-                              className={`mt-0.5 truncate text-[12.5px] ${
+                              className={`mt-1 line-clamp-2 text-[12.5px] break-words whitespace-normal ${
                                 item.chat.unread
                                   ? "font-medium text-foreground/75"
                                   : "text-muted-foreground/60"
