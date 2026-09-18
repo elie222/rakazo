@@ -68,23 +68,37 @@ describe("embeddableScreenUrl", () => {
 });
 
 describe("screen stream identity", () => {
-  const view = (token: string) =>
-    `https://app.example/novnc/session/view/1710000000000.${token}/embed.html?autoconnect=true&resize=scale&view_only=true&path=websockify`;
-  const control = (token: string) =>
-    `https://app.example/novnc/session/control/1710000000000.${token}/embed.html?autoconnect=true&resize=scale&view_only=false&path=websockify`;
+  const now = 1_710_000_000_000;
+  const view = (token: string, expiresAt = now + 60 * 60_000) =>
+    `https://app.example/novnc/session/view/${expiresAt}.${token}/embed.html?autoconnect=true&resize=scale&view_only=true&path=websockify`;
+  const control = (token: string, expiresAt = now + 60 * 60_000) =>
+    `https://app.example/novnc/session/control/${expiresAt}.${token}/embed.html?autoconnect=true&resize=scale&view_only=false&path=websockify`;
 
   it("treats rotating capability tokens as the same running view stream", () => {
     expect(screenStreamKey(view("aaaToken"))).toBe(screenStreamKey(view("bbbToken")));
-    expect(retainScreenSource(view("aaaToken"), view("bbbToken"))).toBe(view("aaaToken"));
+    expect(retainScreenSource(view("aaaToken"), view("bbbToken"), now)).toBe(view("aaaToken"));
+  });
+
+  it("adopts a same-stream URL once the held capability is in the renew window", () => {
+    const held = view("oldToken", now + 10 * 60_000);
+    const renewed = view("newToken", now + 60 * 60_000);
+    expect(screenStreamKey(held)).toBe(screenStreamKey(renewed));
+    expect(retainScreenSource(held, renewed, now)).toBe(renewed);
+    expect(retainScreenSource(view("oldToken"), view("newToken", now + 65 * 60_000), now)).toBe(
+      view("oldToken"),
+    );
   });
 
   it("reconnects when view vs control changes or the computer origin changes", () => {
     expect(screenStreamKey(view("aaaToken"))).not.toBe(screenStreamKey(control("aaaToken")));
-    expect(retainScreenSource(view("aaaToken"), control("cccToken"))).toBe(control("cccToken"));
+    expect(retainScreenSource(view("aaaToken"), control("cccToken"), now)).toBe(
+      control("cccToken"),
+    );
     expect(
       retainScreenSource(
         view("aaaToken"),
         "https://other.example/novnc/session/view/1710000000000.aaaToken/embed.html",
+        now,
       ),
     ).toBe("https://other.example/novnc/session/view/1710000000000.aaaToken/embed.html");
   });
@@ -94,8 +108,8 @@ describe("screen stream identity", () => {
     const rotated = "https://sandbox.example/stream?authKey=two&view_only=true";
     const takeover = "https://sandbox.example/stream?authKey=two&view_only=false";
     expect(screenStreamKey(held)).toBe(screenStreamKey(rotated));
-    expect(retainScreenSource(held, rotated)).toBe(held);
-    expect(retainScreenSource(held, takeover)).toBe(takeover);
+    expect(retainScreenSource(held, rotated, now)).toBe(held);
+    expect(retainScreenSource(held, takeover, now)).toBe(takeover);
   });
 });
 
@@ -210,7 +224,7 @@ describe("mobile computer screen", () => {
     expect(src).toContain("readScreenUrl");
     expect(src).toContain("SCREEN_URL_OPEN_ATTEMPTS");
     expect(src).toContain("retainScreenSource");
-    expect(src).toContain("screenStreamKey");
+    expect(src).toContain("key={sourceUrl.current}");
     expect(src).not.toContain("key={url}");
   });
 });

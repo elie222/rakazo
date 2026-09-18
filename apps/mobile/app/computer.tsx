@@ -23,7 +23,6 @@ import {
   readScreenUrl,
   retainScreenSource,
   SCREEN_URL_OPEN_ATTEMPTS,
-  screenStreamKey,
 } from "../lib/computer";
 import { createComputerRefresh } from "../lib/computer-refresh";
 import { useI18n } from "../lib/i18n";
@@ -517,7 +516,7 @@ function ScreenWebView({
   sourceUrl.current = retainScreenSource(sourceUrl.current, url);
   return (
     <WebView
-      key={screenStreamKey(sourceUrl.current)}
+      key={sourceUrl.current}
       source={{ uri: sourceUrl.current }}
       style={{ flex: 1, backgroundColor: tokens.background }}
       pointerEvents={interactive ? "auto" : "none"}

@@ -1,12 +1,15 @@
 import type { ComputerStatus } from "@rakazo/contracts";
+import { SCREEN_URL_RENEW_MS } from "./computer";
+
+export { SCREEN_URL_RENEW_MS };
 
 /**
- * Every `computer/screenUrl` call seals a fresh capability, and the viewer is keyed by that URL.
- * Re-reading it on each poll would remount the viewer every two seconds, so polls only read the
- * screen when the status that shapes it changed, when the held URL nears expiry, or after the
- * viewer reported the current URL unusable.
+ * Every `computer/screenUrl` call seals a fresh capability. Re-reading it on each poll would
+ * rotate the URL every two seconds, so polls only read the screen when the status that shapes
+ * it changed, when the held URL nears expiry, or after the viewer reported the current URL
+ * unusable. The viewer keeps the connected source across incidental token rotation and applies
+ * a URL fetched in the renew window so the live stream can outlive the original capability.
  */
-export const SCREEN_URL_RENEW_MS = 50 * 60_000;
 
 function screenKey(status: ComputerStatus) {
   return [
