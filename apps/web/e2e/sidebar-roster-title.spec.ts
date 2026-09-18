@@ -46,8 +46,20 @@ test("sidebar roster shows bot title pill below the name", async ({ page }, test
   const sidebar = page.locator("aside").first();
   const row = sidebar.locator(`[data-roster-bot-id="${bot.id}"]`);
   await expect(row).toBeVisible();
-  await expect(row.locator("[data-roster-bot-name]")).toHaveText("Long Research Assistant Name");
-  await expect(row.getByText("Research & outreach lead")).toBeVisible();
+
+  const name = row.locator("[data-roster-bot-name]");
+  const title = row.getByText("Research & outreach lead");
+  await expect(name).toHaveText("Long Research Assistant Name");
+  await expect(title).toBeVisible();
+
+  const nameBox = await name.boundingBox();
+  const titleBox = await title.boundingBox();
+  expect(nameBox).toBeTruthy();
+  expect(titleBox).toBeTruthy();
+  if (nameBox && titleBox) {
+    expect(titleBox.y).toBeGreaterThan(nameBox.y + nameBox.height - 2);
+    expect(nameBox.width).toBeGreaterThan(80);
+  }
 
   await captureSidebarRoster(page, testInfo, "sidebar-roster-title-pill");
 });
