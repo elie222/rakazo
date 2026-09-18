@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { latestAnswerableAskMessageId, selectedAskActionLabel } from "./answerable-ask.js";
+import {
+  latestAnswerableAskMessageId,
+  resolveAskChoice,
+  selectedAskActionLabel,
+} from "./answerable-ask.js";
 
 describe("latestAnswerableAskMessageId", () => {
   it("finds a waiting prompt even when a newer group run is active", () => {
@@ -49,5 +53,21 @@ describe("selectedAskActionLabel", () => {
 
   it("falls back to the answer when an action is unavailable", () => {
     expect(selectedAskActionLabel("custom", undefined)).toBe("custom");
+  });
+});
+
+describe("resolveAskChoice", () => {
+  const actions = [
+    { id: "choice-1", label: "Berlin" },
+    { id: "choice-2", label: "Seoul" },
+  ];
+
+  it("matches an offered choice by id or label", () => {
+    expect(resolveAskChoice("choice-2", actions)).toEqual({ id: "choice-2", label: "Seoul" });
+    expect(resolveAskChoice(" seoul ", actions)).toEqual({ id: "choice-2", label: "Seoul" });
+  });
+
+  it("leaves unmatched free-text as a custom answer", () => {
+    expect(resolveAskChoice("Toronto", actions)).toBeUndefined();
   });
 });

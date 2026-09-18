@@ -20,6 +20,7 @@ import {
   runFailureError,
 } from "@rakazo/core";
 import {
+  answerWaitingRunWithTextInTransaction,
   appendEventInTransaction,
   createGroupRepos,
   createRepos,
@@ -742,6 +743,48 @@ export async function sendThreadMessage(
           },
           select: { id: true, taskId: true, status: true },
         });
+        const waitingRuns = activeRuns.filter((run) => run.status === "waiting_input");
+        if (waitingRuns.length) {
+          const answerText = input.text?.trim();
+          if (!answerText) {
+            throw new ORPCError("CONFLICT", {
+              message: "Answer the pending ask first.",
+            });
+          }
+          for (const run of waitingRuns) {
+            const answered = await answerWaitingRunWithTextInTransaction(tx, {
+              spaceId: actor.spaceId,
+              threadId: target.threadId,
+              runId: run.id,
+              answeredByUserId: actor.userId,
+              answer: answerText,
+            });
+            if (!answered) {
+              throw new ORPCError("CONFLICT", {
+                message: "Answer the pending ask first.",
+              });
+            }
+          }
+          const answered = waitingRuns.map((run) => ({ ...run, status: "queued" }));
+          const primary = answered[0];
+          if (!primary) throw new IsolationError();
+          await tx.message.update({ where: { id: message.id }, data: { runId: primary.id } });
+          const event = await appendEventInTransaction(tx, {
+            spaceId: actor.spaceId,
+            threadId: target.threadId,
+            botId: target.botId,
+            type: "thread.message.created",
+            runId: primary.id,
+            payload: {
+              messageId: message.id,
+              role: "user",
+              blocks,
+              replyToMessageId: input.replyToMessageId,
+              replyQuote,
+            },
+          });
+          return { message, runs: answered, eventSeq: event.seq };
+        }
         if (activeRuns.some((run) => !STEERABLE_RUN_STATUSES.has(run.status))) {
           throw new ORPCError("CONFLICT", {
             message: "Answer the pending ask first.",
@@ -859,7 +902,32 @@ export async function sendThreadMessage(
         select: { id: true, taskId: true, botId: true, status: true },
       });
       const activeByBotId = new Map<string, (typeof activeRuns)[number]>();
+      const answeredByBotId = new Map<string, (typeof activeRuns)[number]>();
       for (const run of activeRuns) {
+        if (run.status === "waiting_input") {
+          const answerText = input.text?.trim();
+          if (!answerText) {
+            throw new ORPCError("CONFLICT", {
+              message: "Answer the pending ask first.",
+            });
+          }
+          const answered = await answerWaitingRunWithTextInTransaction(tx, {
+            spaceId: actor.spaceId,
+            threadId: target.threadId,
+            runId: run.id,
+            answeredByUserId: actor.userId,
+            answer: answerText,
+          });
+          if (!answered) {
+            throw new ORPCError("CONFLICT", {
+              message: "Answer the pending ask first.",
+            });
+          }
+          if (!answeredByBotId.has(run.botId)) {
+            answeredByBotId.set(run.botId, { ...run, status: "queued" });
+          }
+          continue;
+        }
         if (!STEERABLE_RUN_STATUSES.has(run.status)) {
           throw new ORPCError("CONFLICT", {
             message: "Answer the pending ask first.",
@@ -869,6 +937,11 @@ export async function sendThreadMessage(
       }
       const runs: Array<{ id: string; taskId: string; botId: string; status: string }> = [];
       for (const botId of targetBotIds) {
+        const answered = answeredByBotId.get(botId);
+        if (answered) {
+          runs.push(answered);
+          continue;
+        }
         const active = activeByBotId.get(botId);
         if (active) {
           await tx.steeringMessage.create({
@@ -907,7 +980,9 @@ export async function sendThreadMessage(
       if (!eventBotId) throw new IsolationError("Group send did not resolve a target");
       if (firstRun) {
         await tx.message.update({ where: { id: message.id }, data: { runId: firstRun.id } });
-        const createdRuns = runs.filter((run) => !activeByBotId.has(run.botId));
+        const createdRuns = runs.filter(
+          (run) => !activeByBotId.has(run.botId) && !answeredByBotId.has(run.botId),
+        );
         if (createdRuns.length) {
           await cancelSupersededQueuedRuns(tx, {
             threadId: target.threadId,

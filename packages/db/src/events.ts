@@ -10,6 +10,7 @@ import {
   isApprovalAskBlock,
   isSecretAskBlock,
   messagingChannelId,
+  resolveAskChoice,
   sanitizeJsonValue,
 } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
@@ -509,171 +510,222 @@ export async function claimSteering(
   });
 }
 
-export async function answerRunInput(
-  prisma: PrismaClient,
-  input: AnswerRunInput,
-  realtime?: RealtimeFanout,
-  runSecretWriter?: RunSecretWriter,
-): Promise<boolean> {
-  const committed = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-    // Thread row first, then run rows — the same order as clearThread and finalizeRun, so a
-    // concurrent clear cannot deadlock against this transaction.
-    await tx.$queryRaw`SELECT id FROM threads WHERE id = ${input.threadId} FOR UPDATE`;
-    const run = await tx.run.findFirst({
-      where: {
-        id: input.runId,
-        spaceId: input.spaceId,
-        threadId: input.threadId,
-        status: "waiting_input",
-      },
-      select: { botId: true, userId: true, checkpoint: true },
-    });
-    if (!run) return null;
-    const message = await tx.message.findFirst({
-      where: {
-        id: input.messageId,
-        threadId: input.threadId,
-        runId: input.runId,
-        role: "bot",
-      },
-    });
-    const parsed = MessageBlockSchema.array().safeParse(message?.blocks);
-    if (!message || !parsed.success) return null;
+async function findPendingAsk(
+  tx: Prisma.TransactionClient,
+  input: { threadId: string; runId: string },
+) {
+  const messages = await tx.message.findMany({
+    where: {
+      threadId: input.threadId,
+      runId: input.runId,
+      role: "bot",
+    },
+    orderBy: { seq: "desc" },
+    take: 50,
+    select: { id: true, blocks: true },
+  });
+  for (const message of messages) {
+    const parsed = MessageBlockSchema.array().safeParse(message.blocks);
+    if (!parsed.success) continue;
     const pendingAsk = parsed.data.find(
       (block) => block.kind === "ask" && block.status !== "answered",
     );
-    if (pendingAsk?.kind !== "ask") return null;
-    const approvalAsk = isApprovalAskBlock(pendingAsk);
-    const secretAsk = isSecretAskBlock(pendingAsk);
-    const choiceAsk = !approvalAsk && !secretAsk && Boolean(pendingAsk.actions?.length);
-    const selectedChoice = choiceAsk
-      ? pendingAsk.actions?.find((action) => action.id === input.answer)
-      : undefined;
-    if (choiceAsk && !selectedChoice) return null;
-    if (secretAsk && !runSecretWriter) return null;
-    if (secretAsk && pendingAsk.credential && run.userId !== input.answeredByUserId) return null;
-    let approvalEffect: { id: string; kind: string } | null = null;
-    let approvalUserId: string | null = null;
+    if (pendingAsk?.kind === "ask") return { messageId: message.id, pendingAsk };
+  }
+  return null;
+}
 
-    if (approvalAsk) {
-      if (!pendingAsk.actions?.some((action) => action.id === input.answer)) return null;
-      approvalEffect = await tx.externalEffect.findFirst({
-        where: {
-          id: pendingAsk.approvalEffectId,
-          spaceId: input.spaceId,
-          runId: input.runId,
-          status: "intended",
-        },
-      });
-      if (!approvalEffect) return null;
-      if (input.answer === "always") {
-        if (run.userId !== input.answeredByUserId) return null;
-        approvalUserId = input.answeredByUserId;
-      }
-    }
+async function commitAnswerRunInput(
+  tx: Prisma.TransactionClient,
+  input: AnswerRunInput,
+  runSecretWriter?: RunSecretWriter,
+): Promise<{ threadId: string; seq: number } | null> {
+  // Thread row first, then run rows — the same order as clearThread and finalizeRun, so a
+  // concurrent clear cannot deadlock against this transaction.
+  await tx.$queryRaw`SELECT id FROM threads WHERE id = ${input.threadId} FOR UPDATE`;
+  const run = await tx.run.findFirst({
+    where: {
+      id: input.runId,
+      spaceId: input.spaceId,
+      threadId: input.threadId,
+      status: "waiting_input",
+    },
+    select: { botId: true, userId: true, checkpoint: true },
+  });
+  if (!run) return null;
+  const message = await tx.message.findFirst({
+    where: {
+      id: input.messageId,
+      threadId: input.threadId,
+      runId: input.runId,
+      role: "bot",
+    },
+  });
+  const parsed = MessageBlockSchema.array().safeParse(message?.blocks);
+  if (!message || !parsed.success) return null;
+  const pendingAsk = parsed.data.find(
+    (block) => block.kind === "ask" && block.status !== "answered",
+  );
+  if (pendingAsk?.kind !== "ask") return null;
+  const approvalAsk = isApprovalAskBlock(pendingAsk);
+  const secretAsk = isSecretAskBlock(pendingAsk);
+  const choiceAsk = !approvalAsk && !secretAsk && Boolean(pendingAsk.actions?.length);
+  const selectedChoice = choiceAsk ? resolveAskChoice(input.answer, pendingAsk.actions) : undefined;
+  if (secretAsk && !runSecretWriter) return null;
+  if (secretAsk && pendingAsk.credential && run.userId !== input.answeredByUserId) return null;
+  let approvalEffect: { id: string; kind: string } | null = null;
+  let approvalUserId: string | null = null;
 
-    const queued = await tx.run.updateMany({
+  if (approvalAsk) {
+    if (!pendingAsk.actions?.some((action) => action.id === input.answer)) return null;
+    approvalEffect = await tx.externalEffect.findFirst({
       where: {
-        id: input.runId,
+        id: pendingAsk.approvalEffectId,
         spaceId: input.spaceId,
-        threadId: input.threadId,
-        status: "waiting_input",
-      },
-      data: {
-        status: "queued",
-        ...(choiceAsk ? { checkpoint: null } : {}),
+        runId: input.runId,
+        status: "intended",
       },
     });
-    if (queued.count !== 1) return null;
+    if (!approvalEffect) return null;
+    if (input.answer === "always") {
+      if (run.userId !== input.answeredByUserId) return null;
+      approvalUserId = input.answeredByUserId;
+    }
+  }
 
-    if (approvalAsk) {
-      const allowed = input.answer === "allow" || input.answer === "always";
-      await tx.externalEffect.update({
-        where: { id: approvalEffect!.id },
-        data: { status: allowed ? "approved" : "denied" },
-      });
-      if (input.answer === "always") {
-        await tx.actionApprovalRule.upsert({
-          where: {
-            spaceId_createdByUserId_effect_matchKind_matchValue: {
-              spaceId: input.spaceId,
-              createdByUserId: approvalUserId!,
-              effect: "always_allow",
-              matchKind: "tool",
-              matchValue: approvalEffect!.kind,
-            },
-          },
-          create: {
+  const queued = await tx.run.updateMany({
+    where: {
+      id: input.runId,
+      spaceId: input.spaceId,
+      threadId: input.threadId,
+      status: "waiting_input",
+    },
+    data: {
+      status: "queued",
+      ...(choiceAsk ? { checkpoint: null } : {}),
+    },
+  });
+  if (queued.count !== 1) return null;
+
+  const recordedAnswer = secretAsk ? "" : (selectedChoice?.id ?? input.answer);
+
+  if (approvalAsk) {
+    const allowed = input.answer === "allow" || input.answer === "always";
+    await tx.externalEffect.update({
+      where: { id: approvalEffect!.id },
+      data: { status: allowed ? "approved" : "denied" },
+    });
+    if (input.answer === "always") {
+      await tx.actionApprovalRule.upsert({
+        where: {
+          spaceId_createdByUserId_effect_matchKind_matchValue: {
             spaceId: input.spaceId,
             createdByUserId: approvalUserId!,
             effect: "always_allow",
             matchKind: "tool",
             matchValue: approvalEffect!.kind,
           },
-          update: {},
-        });
-      }
-    } else if (secretAsk) {
-      await runSecretWriter!.store({
-        botId: run.botId,
-        credential: pendingAsk.credential,
-        runId: input.runId,
-        userId: run.userId,
-        spaceId: input.spaceId,
-        plaintext: input.answer,
-        tx,
-      });
-      await tx.externalEffect.updateMany({
-        where: {
-          runId: input.runId,
+        },
+        create: {
           spaceId: input.spaceId,
-          kind: "request_secret",
-          status: "intended",
+          createdByUserId: approvalUserId!,
+          effect: "always_allow",
+          matchKind: "tool",
+          matchValue: approvalEffect!.kind,
         },
-        data: {
-          status: "approved",
-          ...(pendingAsk.credential ? { result: { credentialSaved: pendingAsk.credential } } : {}),
-        },
+        update: {},
       });
-    } else {
-      const resumeLabel = selectedChoice
-        ? resumeChoiceLabel(selectedChoice, run.checkpoint)
-        : undefined;
-      const task = await tx.task.updateMany({
-        where: { runs: { some: { id: input.runId } } },
-        data: {
-          prompt: selectedChoice
-            ? `Selected choice ${selectedChoice.id}: ${resumeLabel}`
-            : input.answer,
-        },
-      });
-      if (task.count !== 1) throw new Error("Run task was not available to answer");
     }
-
-    const blocks = parsed.data.map((block) =>
-      block === pendingAsk
-        ? {
-            ...block,
-            status: "answered" as const,
-            answer: secretAsk ? "" : input.answer,
-          }
-        : block,
-    );
-    await tx.message.update({ where: { id: message.id }, data: { blocks } });
-    const updated = await appendEventInTransaction(tx, {
-      spaceId: input.spaceId,
-      threadId: input.threadId,
+  } else if (secretAsk) {
+    await runSecretWriter!.store({
       botId: run.botId,
-      type: "thread.message.updated",
+      credential: pendingAsk.credential,
       runId: input.runId,
-      payload: { messageId: message.id, role: "bot", blocks },
+      userId: run.userId,
+      spaceId: input.spaceId,
+      plaintext: input.answer,
+      tx,
     });
-    return { threadId: updated.threadId, seq: updated.seq };
+    await tx.externalEffect.updateMany({
+      where: {
+        runId: input.runId,
+        spaceId: input.spaceId,
+        kind: "request_secret",
+        status: "intended",
+      },
+      data: {
+        status: "approved",
+        ...(pendingAsk.credential ? { result: { credentialSaved: pendingAsk.credential } } : {}),
+      },
+    });
+  } else {
+    const resumeLabel = selectedChoice
+      ? resumeChoiceLabel(selectedChoice, run.checkpoint)
+      : undefined;
+    const task = await tx.task.updateMany({
+      where: { runs: { some: { id: input.runId } } },
+      data: {
+        prompt: selectedChoice
+          ? `Selected choice ${selectedChoice.id}: ${resumeLabel}`
+          : input.answer,
+      },
+    });
+    if (task.count !== 1) throw new Error("Run task was not available to answer");
+  }
+
+  const blocks = parsed.data.map((block) =>
+    block === pendingAsk
+      ? {
+          ...block,
+          status: "answered" as const,
+          answer: recordedAnswer,
+        }
+      : block,
+  );
+  await tx.message.update({ where: { id: message.id }, data: { blocks } });
+  const updated = await appendEventInTransaction(tx, {
+    spaceId: input.spaceId,
+    threadId: input.threadId,
+    botId: run.botId,
+    type: "thread.message.updated",
+    runId: input.runId,
+    payload: { messageId: message.id, role: "bot", blocks },
   });
+  return { threadId: updated.threadId, seq: updated.seq };
+}
+
+export async function answerRunInput(
+  prisma: PrismaClient,
+  input: AnswerRunInput,
+  realtime?: RealtimeFanout,
+  runSecretWriter?: RunSecretWriter,
+): Promise<boolean> {
+  const committed = await prisma.$transaction(async (tx: Prisma.TransactionClient) =>
+    commitAnswerRunInput(tx, input, runSecretWriter),
+  );
 
   if (!committed) return false;
   await notifyRealtime(realtime, committed.threadId, committed.seq);
   return true;
+}
+
+/** Answer a waiting question ask with composer free-text. Approval and secret cards stay on the card path. */
+export async function answerWaitingRunWithTextInTransaction(
+  tx: Prisma.TransactionClient,
+  input: {
+    spaceId: string;
+    threadId: string;
+    runId: string;
+    answeredByUserId: string;
+    answer: string;
+  },
+): Promise<{ threadId: string; seq: number } | null> {
+  const answer = input.answer.trim();
+  if (!answer) return null;
+  const found = await findPendingAsk(tx, input);
+  if (!found) return null;
+  if (isApprovalAskBlock(found.pendingAsk) || isSecretAskBlock(found.pendingAsk)) return null;
+  return commitAnswerRunInput(tx, { ...input, messageId: found.messageId, answer });
 }
 
 export async function pauseRunForInput(

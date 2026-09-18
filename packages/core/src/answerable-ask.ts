@@ -29,5 +29,18 @@ export function selectedAskActionLabel(
   answer: string,
   actions?: readonly { id: string; label: string }[],
 ): string {
-  return actions?.find((action) => action.id === answer)?.label ?? answer;
+  return resolveAskChoice(answer, actions)?.label ?? answer;
+}
+
+export function resolveAskChoice(
+  answer: string,
+  actions?: readonly { id: string; label: string }[],
+): { id: string; label: string } | undefined {
+  if (!actions?.length) return undefined;
+  const trimmed = answer.trim();
+  if (!trimmed) return undefined;
+  const byId = actions.find((action) => action.id === trimmed);
+  if (byId) return byId;
+  const lower = trimmed.toLowerCase();
+  return actions.find((action) => action.label.trim().toLowerCase() === lower);
 }

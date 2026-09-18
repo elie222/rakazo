@@ -1728,6 +1728,57 @@ describeJourneys("required product journeys", () => {
     expect(file.content).not.toContain("nonce-dup");
   });
 
+  it("15b: a free-text chat message answers a waiting ask", async () => {
+    const cookie = await signup(app, `ask-freetext-j-${stamp}@rakazo.test`, "Ask Free");
+    const bot = await rpc<Bot>(app, cookie, "bots/create", {
+      name: "Chief",
+      title: "",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+
+    const asked = await rpc<{ runId: string }>(app, cookie, "threads/send", {
+      botId: bot.id,
+      text: "ask me which city to use",
+    });
+    const waiting = await waitFor(
+      app,
+      cookie,
+      bot.id,
+      (snap) => snap.run?.id === asked.runId && snap.run.status === "waiting_input",
+    );
+    expect(
+      waiting.messages.some((message) =>
+        message.blocks.some((block) => block.kind === "ask" && block.status !== "answered"),
+      ),
+    ).toBe(true);
+
+    await rpc(app, cookie, "threads/send", {
+      botId: bot.id,
+      text: "Paris",
+      clientNonce: `ask-freetext-${stamp}`,
+    });
+    const answered = await waitFor(app, cookie, bot.id, (snap) =>
+      snap.messages.some((message) =>
+        message.blocks.some(
+          (block) =>
+            block.kind === "ask" && block.status === "answered" && block.answer === "Paris",
+        ),
+      ),
+    );
+    expect(
+      answered.messages.flatMap((message) => message.blocks).find((block) => block.kind === "ask"),
+    ).toMatchObject({ status: "answered", answer: "Paris" });
+    await waitForDatabase(async () => {
+      const run = await prisma.run.findUnique({ where: { id: asked.runId } });
+      return run?.status === "completed";
+    });
+    expect((await prisma.run.findUniqueOrThrow({ where: { id: asked.runId } })).status).toBe(
+      "completed",
+    );
+  });
+
   it("16: routine test-run and plugin connect/revoke", async () => {
     const ada = await signup(app, `plug-j-${stamp}@rakazo.test`, "Plug Ada");
     const bob = await signup(app, `plug-bob-j-${stamp}@rakazo.test`, "Plug Bob");
@@ -2684,7 +2735,7 @@ type Snap = {
     id: string;
     seq: number;
     runId?: string | null;
-    blocks: Array<{ kind?: string; status?: string; actions?: unknown[] }>;
+    blocks: Array<{ kind?: string; status?: string; answer?: string; actions?: unknown[] }>;
   }>;
   run: { id: string; status: string } | null;
   activeRuns?: Array<{ id: string; status: string }>;
