@@ -70,6 +70,7 @@ import {
   type ToolCallStreak,
   toolRequiresApproval,
   toolRequiresExplicitApproval,
+  truncatedPlainText,
   unattendedTriggerToolRequiresApproval,
   userTurnBlocksForRun,
 } from "@rakazo/core";
@@ -4119,11 +4120,12 @@ export function createRunExecutor(deps: ExecutorDeps) {
               botMessageOutcome.intent,
             ).catch((error) => getLogger().error("bot message result return", error));
           }
-          if (text && !completed.continuationRunId) {
+          const notifyBody = completionNotificationPreview(text);
+          if (notifyBody && !completed.continuationRunId) {
             await notifyRun(deps, run, {
               kind: "completion",
               title: `${bot.name} finished`,
-              body: text.slice(0, 180),
+              body: notifyBody,
               botId: bot.id,
               threadId: thread.id,
             });
@@ -4435,6 +4437,13 @@ export function completionNotificationBody(assembled: string, blocks: MessageBlo
     .filter((block): block is Extract<MessageBlock, { kind: "text" }> => block.kind === "text")
     .map((block) => block.text)
     .join("");
+}
+
+const COMPLETION_NOTIFICATION_MAX_CHARS = 180;
+
+/** Push body: Markdown stripped, then truncated so a cut cannot land inside a marker. */
+export function completionNotificationPreview(text: string): string {
+  return truncatedPlainText(text, COMPLETION_NOTIFICATION_MAX_CHARS);
 }
 
 export function completionMarksUnread(trigger: string, text: string): boolean {
