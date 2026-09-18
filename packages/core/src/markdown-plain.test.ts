@@ -14,14 +14,47 @@ describe("plainTextFromMarkdown", () => {
     );
   });
 
+  it("keeps the label of a link whose destination contains parentheses", () => {
+    expect(plainTextFromMarkdown("See [docs](https://example.com/a_(b)) next")).toBe(
+      "See docs next",
+    );
+    expect(plainTextFromMarkdown("![plot](https://example.com/a_(b_(c)))")).toBe("plot");
+  });
+
+  it("keeps CommonMark autolink text", () => {
+    expect(plainTextFromMarkdown("<https://example.com>")).toBe("https://example.com");
+    expect(plainTextFromMarkdown("Open <https://example.com/a_(b)> now")).toBe(
+      "Open https://example.com/a_(b) now",
+    );
+    expect(plainTextFromMarkdown("<user@example.com>")).toBe("user@example.com");
+  });
+
   it("keeps inline code contents", () => {
     expect(plainTextFromMarkdown("Use `pnpm test` first")).toBe("Use pnpm test first");
+  });
+
+  it("does not strip Markdown that lives inside code", () => {
+    expect(plainTextFromMarkdown("Use `<tag>` here")).toBe("Use <tag> here");
+    expect(plainTextFromMarkdown("Keep `*x*` and `[label](url)`")).toBe(
+      "Keep *x* and [label](url)",
+    );
+    expect(plainTextFromMarkdown("```\nuse <https://example.com> and *y*\n```")).toBe(
+      "use <https://example.com> and *y*",
+    );
   });
 
   it("collapses a fenced block and surrounding prose to one line", () => {
     expect(plainTextFromMarkdown("Done.\n\n```ts\nconst x = 1;\n```\n\nShipped.")).toBe(
       "Done. const x = 1; Shipped.",
     );
+  });
+
+  it("closes a fence only on a matching run of the opener", () => {
+    expect(plainTextFromMarkdown("````\n```\nstill in the fence\n````")).toBe(
+      "``` still in the fence",
+    );
+    expect(plainTextFromMarkdown("```\na ``` b\n```")).toBe("a ``` b");
+    expect(plainTextFromMarkdown("~~~~\ncode with ~~~\nstill\n~~~~")).toBe("code with ~~~ still");
   });
 
   it("returns empty when only markers remain", () => {
