@@ -1,4 +1,4 @@
-import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
+import { ACTIVE_RUN_STATUSES, parseBotAvatarValue } from "@rakazo/core";
 import { memo, useId, useMemo } from "react";
 import { cn } from "./lib/utils.js";
 import "./styles.css";
@@ -245,19 +245,12 @@ export function parseBotAvatar(
   if (!rawColor) return { color: "#F97316", isImage: false };
   // Only data: image URLs are rendered. Arbitrary http(s)/blob values in `color`
   // must not become <img src> (SSRF / tracking when other members view the bot).
-  if (rawColor.startsWith("data:image/")) {
-    return { color: "#F97316", isImage: true, imageUrl: rawColor };
+  const parsed = parseBotAvatarValue(rawColor);
+  if (parsed.kind === "image") {
+    return { color: "#F97316", isImage: true, imageUrl: parsed.imageUrl };
   }
-  if (rawColor.includes("::shape_")) {
-    const parts = rawColor.split("::shape_");
-    const rawShapeIdx = parts[1] ?? "0";
-    const parsedShapeIdx = /^\d+$/.test(rawShapeIdx) ? Number(rawShapeIdx) : 0;
-    const shapeIdx = Number.isSafeInteger(parsedShapeIdx) ? parsedShapeIdx : 0;
-    return {
-      color: parts[0] || "#F97316",
-      shapeIndex: shapeIdx % SHIPPED_SHAPE_KEYS.length,
-      isImage: false,
-    };
+  if (parsed.kind === "shape") {
+    return { color: parsed.color, shapeIndex: parsed.shapeIndex, isImage: false };
   }
   return { color: rawColor, isImage: false };
 }

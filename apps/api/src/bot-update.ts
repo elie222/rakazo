@@ -59,6 +59,12 @@ export function botProfileLabelsChanged(input: {
   name?: unknown;
   title?: unknown;
   description?: unknown;
+  color?: unknown;
 }): boolean {
-  return input.name !== undefined || input.title !== undefined || input.description !== undefined;
+  return (
+    input.name !== undefined ||
+    input.title !== undefined ||
+    input.description !== undefined ||
+    input.color !== undefined
+  );
 }

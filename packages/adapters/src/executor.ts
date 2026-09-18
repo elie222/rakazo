@@ -146,6 +146,7 @@ import {
   resolveAutoReviewChecker,
   runAutoReviewJudge,
 } from "./auto-review.js";
+import { attachedImageArtifactIds, resolveUpdateBotAvatar } from "./bot-avatar.js";
 import { loadBotMessageContext, messageBot, returnBotMessageOutcome } from "./bot-messages.js";
 import {
   findBotSecret,
@@ -3213,13 +3214,49 @@ export function createRunExecutor(deps: ExecutorDeps) {
             return spawned;
           }
           if (name === "update_bot") {
-            const patch: { name?: string; title?: string; description?: string } = {};
+            const patch: { name?: string; title?: string; description?: string; color?: string } =
+              {};
             if (args.name !== undefined) patch.name = String(args.name);
             if (args.title !== undefined) patch.title = String(args.title);
             if (args.description !== undefined) patch.description = String(args.description);
+            const wantsImage = args.artifact_id !== undefined || args.use_attached_image === true;
+            let sourceImageArtifactIds: string[] = [];
+            if (wantsImage && run.sourceMessageId) {
+              const source = await deps.prisma.message.findUnique({
+                where: { id: run.sourceMessageId },
+                select: { blocks: true, threadId: true },
+              });
+              if (source?.threadId === thread.id) {
+                sourceImageArtifactIds = attachedImageArtifactIds(source.blocks as MessageBlock[]);
+              }
+            }
+            const avatar = await resolveUpdateBotAvatar({
+              color: args.color,
+              artifactId: args.artifact_id,
+              useAttachedImage: args.use_attached_image,
+              sourceImageArtifactIds,
+              loadArtifact: async (id) => {
+                if (!deps.artifacts) return null;
+                const row = await deps.prisma.artifact.findFirst({
+                  where: { id, spaceId: run.spaceId, userId: run.userId },
+                  select: { mimeType: true, storageKey: true },
+                });
+                if (!row || !isAttachmentImageMimeType(row.mimeType)) return null;
+                try {
+                  return await deps.artifacts.get(row.storageKey, context);
+                } catch {
+                  return null;
+                }
+              },
+            });
+            if ("error" in avatar && avatar.error !== "missing") {
+              return finish({ error: avatar.error });
+            }
+            if ("color" in avatar) patch.color = avatar.color;
             if (Object.keys(patch).length === 0) {
               return finish({
-                error: "Provide at least one of name, title, or description.",
+                error:
+                  "Provide at least one of name, title, description, color, artifact_id, or use_attached_image.",
               });
             }
             if (patch.name !== undefined) {
@@ -3260,7 +3297,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             const updated = await deps.prisma.bot.update({
               where: { id: bot.id },
               data: patch,
-              select: { id: true, name: true, title: true, description: true },
+              select: { id: true, name: true, title: true, description: true, color: true },
             });
             try {
               await deps.events.append({
@@ -3285,6 +3322,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               name: updated.name,
               title: updated.title,
               description: updated.description,
+              avatar: updated.color.startsWith("data:image/") ? "image" : updated.color,
             });
           }
           if (name === "message_user") {
@@ -3572,7 +3610,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 "A bot and a subagent are different. Never use both for the same request.",
                 "create_space proposes a new privacy boundary inside the current organization. Use it when the user asks to create a space or separate data between teams or projects. It always pauses for explicit user approval; never claim the space exists before the tool succeeds.",
                 "spawn_bot creates a lasting regular bot (own chat, computer, memory) that appears in the user's bot list. If the user asked to create a bot, call spawn_bot once and stop. Do not run_subagent to demo it.",
-                "update_bot updates this bot's own name (chat header / list label), title, and description. When the user asks you to rename yourself or change your title or description, call update_bot — do not claim you changed them without the tool.",
+                "update_bot updates this bot's own name (chat header / list label), title, description, and avatar. When the user asks you to rename yourself, change your title or description, or change your profile picture, call update_bot — do not claim you changed them without the tool. Pass color for a hex or encoded shape, artifact_id for an image in this space, or use_attached_image when they attached a picture on this message.",
                 "run_subagent is a short helper inside this turn only. It is not a bot, has no thread, and does not show in the list. Use it for parallel work you will summarize here.",
                 botDirectory,
                 "archive_bot safely archives a bot this bot created, and only that bot. Use it when the user asks to remove that bot or when it is finished and unused. The user can restore it or permanently delete it later. confirm_name must exactly match its name.",

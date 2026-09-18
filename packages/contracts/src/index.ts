@@ -1,5 +1,6 @@
 export * from "./ai-consent.js";
 export * from "./attachments.js";
+export * from "./bot-avatar.js";
 export * from "./bot-secrets.js";
 export * from "./desktop.js";
 export * from "./domain.js";

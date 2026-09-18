@@ -1,7 +1,8 @@
 import type { AvatarStyle } from "@rakazo/contracts";
+import { parseBotAvatarValue } from "@rakazo/contracts";
 import { ACTIVE_RUN_STATUSES, avatarIdentitySeed, organicAvatarPath } from "@rakazo/core";
 import { memo, useEffect } from "react";
-import { View } from "react-native";
+import { Image, View } from "react-native";
 import Animated, {
   cancelAnimation,
   Easing,
@@ -38,52 +39,67 @@ export const BotAvatar = memo(function BotAvatar({
   const { t } = useI18n();
   const isWorking = ACTIVE_RUN_STATUSES.some((activeStatus) => activeStatus === status);
   const { avatarStyle } = useAvatarStyle();
+  const parsed = parseBotAvatarValue(color);
+  const fillColor = parsed.kind === "shape" || parsed.kind === "color" ? parsed.color : color;
   const visorW = Math.round(size * 0.68);
   const visorH = Math.round(size * 0.44);
   const eyeW = Math.max(3, Math.round(size * 0.11));
   const eyeH = Math.max(4, Math.round(size * 0.17));
   const gap = Math.max(3, Math.round(size * 0.11));
-  return (
-    <View style={{ width: size, height: size }}>
-      {(variant ?? avatarStyle) === "organic" ? (
-        <OrganicAvatar color={color} identity={identity} size={size} isWorking={isWorking} />
-      ) : (
+  const picture =
+    parsed.kind === "image" && parsed.imageUrl ? (
+      <View
+        style={{
+          width: size,
+          height: size,
+          borderRadius: size / 2,
+          overflow: "hidden",
+        }}
+      >
+        <Image source={{ uri: parsed.imageUrl }} style={{ width: size, height: size }} />
+      </View>
+    ) : (variant ?? avatarStyle) === "organic" ? (
+      <OrganicAvatar color={fillColor} identity={identity} size={size} isWorking={isWorking} />
+    ) : (
+      <View
+        style={{
+          width: size,
+          height: size,
+          borderRadius: size / 2,
+          backgroundColor: fillColor,
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
         <View
           style={{
-            width: size,
-            height: size,
-            borderRadius: size / 2,
-            backgroundColor: color,
+            width: visorW,
+            height: visorH,
+            borderRadius: Math.round(visorH * 0.52),
+            backgroundColor: "#0C0C0E",
+            flexDirection: "row",
             alignItems: "center",
             justifyContent: "center",
+            gap,
           }}
         >
-          <View
-            style={{
-              width: visorW,
-              height: visorH,
-              borderRadius: Math.round(visorH * 0.52),
-              backgroundColor: "#0C0C0E",
-              flexDirection: "row",
-              alignItems: "center",
-              justifyContent: "center",
-              gap,
-            }}
-          >
-            {[0, 1].map((eye) => (
-              <View
-                key={eye}
-                style={{
-                  width: eyeW,
-                  height: eyeH,
-                  borderRadius: Math.max(2, Math.round(eyeW * 0.6)),
-                  backgroundColor: "#fff",
-                }}
-              />
-            ))}
-          </View>
+          {[0, 1].map((eye) => (
+            <View
+              key={eye}
+              style={{
+                width: eyeW,
+                height: eyeH,
+                borderRadius: Math.max(2, Math.round(eyeW * 0.6)),
+                backgroundColor: "#fff",
+              }}
+            />
+          ))}
         </View>
-      )}
+      </View>
+    );
+  return (
+    <View style={{ width: size, height: size }}>
+      {picture}
       {isWorking ? (
         <View
           accessibilityLabel={t("Working")}
