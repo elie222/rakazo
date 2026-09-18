@@ -1742,6 +1742,53 @@ describe("mobile thread event reduction", () => {
     ]);
   });
 
+  it("hides live token progress when streaming replies is off", () => {
+    const afterTokens = applyMobileThreadEvent(
+      snapshot(),
+      {
+        type: "thread.progress",
+        seq: 4,
+        runId: "run-1",
+        payload: { text: "Lis", streaming: true },
+      },
+      { streamResponses: false },
+    );
+    const afterDelta = applyMobileThreadEvent(
+      afterTokens,
+      {
+        type: "thread.progress",
+        seq: 5,
+        runId: "run-1",
+        payload: { delta: "bon", streaming: true },
+      },
+      { streamResponses: false },
+    );
+
+    expect(afterDelta?.cursor).toBe(5);
+    expect(afterDelta?.messages).toEqual([]);
+
+    const afterComplete = applyMobileThreadEvent(
+      afterDelta,
+      {
+        type: "thread.message.created",
+        seq: 6,
+        runId: "run-1",
+        payload: {
+          messageId: "m-final",
+          role: "bot",
+          blocks: [{ kind: "text", text: "Lisbon" }],
+        },
+      },
+      { streamResponses: false },
+    );
+    expect(afterComplete?.messages).toEqual([
+      expect.objectContaining({
+        id: "m-final",
+        blocks: [{ kind: "text", text: "Lisbon" }],
+      }),
+    ]);
+  });
+
   it("preserves progress from a legacy run-only snapshot", () => {
     const initial: MobileSnapshot = {
       ...snapshot([

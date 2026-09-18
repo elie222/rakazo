@@ -58,6 +58,7 @@ import {
   speechFromBlocks,
   truncateSlashDescription,
   userVisibleMessages,
+  withLiveStreamingProgress,
 } from "@rakazo/core";
 import {
   AvatarStyleProvider,
@@ -125,6 +126,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
@@ -170,6 +172,7 @@ import {
 } from "../lib/pending-attachments";
 import { markAfterPaint, markOnce } from "../lib/performance";
 import { quoteDraftForSelection } from "../lib/quote-selection";
+import { getResponseStreamingEnabled, subscribeResponseStreaming } from "../lib/response-streaming";
 import { clearSpaceSelection, rpc, selectedSpaceId, selectSpace } from "../lib/rpc";
 import { readSeenRunErrorIds, rememberSeenRunErrorId } from "../lib/run-error-storage";
 import { sharedInflight } from "../lib/shared-inflight";
@@ -354,6 +357,13 @@ export function ShellPage() {
   const [searchLoading, setSearchLoading] = useState(false);
   const [snapshot, setSnapshot] = useState<ThreadSnapshot | null>(null);
   const snapshotRef = useRef<ThreadSnapshot | null>(null);
+  const streamResponses = useSyncExternalStore(
+    subscribeResponseStreaming,
+    getResponseStreamingEnabled,
+    () => true,
+  );
+  const streamResponsesRef = useRef(streamResponses);
+  streamResponsesRef.current = streamResponses;
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
   const [replyTarget, setReplyTarget] = useState<ThreadMessage | null>(null);
   const [replyQuote, setReplyQuote] = useState<string | null>(null);
@@ -419,9 +429,19 @@ export function ShellPage() {
   }
 
   function commitSnapshot(next: ThreadSnapshot | null) {
-    snapshotRef.current = next;
-    setSnapshot(next);
+    const prepared = withLiveStreamingProgress(next, streamResponsesRef.current);
+    snapshotRef.current = prepared;
+    setSnapshot(prepared);
   }
+
+  useEffect(() => {
+    if (streamResponses) return;
+    const current = snapshotRef.current;
+    const prepared = withLiveStreamingProgress(current, false);
+    if (prepared === current) return;
+    snapshotRef.current = prepared;
+    setSnapshot(prepared);
+  }, [streamResponses]);
 
   function commitComputer(next: ComputerStatus | null) {
     computerRef.current = next;
@@ -1200,7 +1220,14 @@ export function ShellPage() {
         }
       },
       applyEvent: (event) =>
-        applyThreadEvent(event, commitSnapshot, commitComputer, snapshotRef, computerRef),
+        applyThreadEvent(
+          event,
+          commitSnapshot,
+          commitComputer,
+          snapshotRef,
+          computerRef,
+          streamResponsesRef.current,
+        ),
       onEvent: (event, initial) => {
         const currentBot = botsRef.current.find((bot) => bot.id === active.id);
         notifyBrowserForEvent(
@@ -1300,7 +1327,14 @@ export function ShellPage() {
       currentSnapshot: () => snapshotRef.current,
       subscribe: (cursor) => rpc.threads.subscribe({ groupId, cursor }, { signal: abort.signal }),
       applyEvent: (event) =>
-        applyThreadEvent(event, commitSnapshot, commitComputer, snapshotRef, computerRef),
+        applyThreadEvent(
+          event,
+          commitSnapshot,
+          commitComputer,
+          snapshotRef,
+          computerRef,
+          streamResponsesRef.current,
+        ),
       onEvent: (event, initial) => {
         const eventBot = botsRef.current.find((bot) => bot.id === event.botId);
         notifyBrowserForEvent(
@@ -5605,9 +5639,10 @@ function applyThreadEvent(
   commitComputer: (next: ComputerStatus | null) => void,
   snapshotRef: MutableRefObject<ThreadSnapshot | null>,
   computerRef: MutableRefObject<ComputerStatus | null>,
+  streamResponses: boolean,
 ) {
   if (isThreadSnapshotEvent(event)) {
-    const next = reduceThreadSnapshot(snapshotRef.current, event);
+    const next = reduceThreadSnapshot(snapshotRef.current, event, { streamResponses });
     commitSnapshot(next);
   }
   if (isComputerStatusEvent(event)) {

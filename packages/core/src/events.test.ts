@@ -8,13 +8,18 @@ import {
   endsSentence,
   humanizeToolName,
   isRunTerminalEvent,
+  normalizeResponseStreamingPreference,
   projectMessages,
   reduceLiveMessageBlocks,
+  responseStreamingEnabled,
   runFailureError,
   sanitizeJsonValue,
   sanitizeUtf16ForJson,
+  shouldApplyLiveStreamingProgress,
+  stripLiveStreamingProgress,
   trackToolCallStreak,
   trackToolNameStreak,
+  withLiveStreamingProgress,
 } from "./events.js";
 
 describe("containsSecret", () => {
@@ -34,6 +39,68 @@ describe("isRunTerminalEvent", () => {
     expect(isRunTerminalEvent({ type: "run.failed" })).toBe(true);
     expect(isRunTerminalEvent({ type: "run.cancelled" })).toBe(true);
     expect(isRunTerminalEvent({ type: "run.waiting_input" })).toBe(false);
+  });
+});
+
+describe("response streaming preference", () => {
+  it("treats only an explicit off value as disabled", () => {
+    expect(normalizeResponseStreamingPreference("off")).toBe("off");
+    expect(normalizeResponseStreamingPreference(" OFF ")).toBe("off");
+    expect(normalizeResponseStreamingPreference("on")).toBe("on");
+    expect(normalizeResponseStreamingPreference("")).toBe("on");
+    expect(normalizeResponseStreamingPreference(null)).toBe("on");
+    expect(responseStreamingEnabled("off")).toBe(false);
+    expect(responseStreamingEnabled("on")).toBe(true);
+  });
+
+  it("keeps activity progress when streaming replies is off", () => {
+    expect(shouldApplyLiveStreamingProgress({ text: "Lis", streaming: true }, false)).toBe(false);
+    expect(shouldApplyLiveStreamingProgress({ delta: "bon" }, false)).toBe(false);
+    expect(shouldApplyLiveStreamingProgress({ text: "Using browser", activity: true }, false)).toBe(
+      true,
+    );
+    expect(shouldApplyLiveStreamingProgress({ text: "Lis", streaming: true })).toBe(true);
+  });
+
+  it("strips live token bubbles and leaves tool activity", () => {
+    const messages = [
+      {
+        id: "m1",
+        blocks: [{ kind: "text" as const, text: "hi" }],
+      },
+      {
+        id: "progress:run-1",
+        blocks: [{ kind: "progress" as const, text: "Lisbon" }],
+      },
+      {
+        id: "progress:run-2",
+        blocks: [
+          { kind: "progress" as const, text: "partial" },
+          { kind: "steps" as const, steps: [{ label: "Shell", count: 1 }] },
+        ],
+      },
+      {
+        id: "progress:run-3",
+        blocks: [{ kind: "progress" as const, text: "Using browser", activity: true as const }],
+      },
+    ];
+    expect(stripLiveStreamingProgress(messages)).toEqual([
+      messages[0],
+      {
+        id: "progress:run-2",
+        blocks: [{ kind: "steps" as const, steps: [{ label: "Shell", count: 1 }] }],
+      },
+      messages[3],
+    ]);
+  });
+
+  it("returns the same snapshot when streaming is on or there is nothing to strip", () => {
+    const snapshot = {
+      messages: [{ id: "m1", blocks: [{ kind: "text" as const, text: "done" }] }],
+    };
+    expect(withLiveStreamingProgress(snapshot, true)).toBe(snapshot);
+    expect(withLiveStreamingProgress(snapshot, false)).toBe(snapshot);
+    expect(withLiveStreamingProgress(null, false)).toBeNull();
   });
 });
 

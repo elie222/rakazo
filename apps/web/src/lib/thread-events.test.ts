@@ -188,6 +188,71 @@ describe("thread event reduction", () => {
     ]);
   });
 
+  it("hides live token progress when streaming replies is off", () => {
+    const initial = snapshot([]);
+    const afterTokens = reduceThreadSnapshot(
+      initial,
+      event({
+        type: "thread.progress",
+        seq: 4,
+        runId: "run-1",
+        payload: { text: "Lis", streaming: true },
+      }),
+      { streamResponses: false },
+    );
+    const afterDelta = reduceThreadSnapshot(
+      afterTokens,
+      event({
+        type: "thread.progress",
+        seq: 5,
+        runId: "run-1",
+        payload: { delta: "bon", streaming: true },
+      }),
+      { streamResponses: false },
+    );
+
+    expect(afterDelta?.cursor).toBe(5);
+    expect(afterDelta?.messages).toEqual([]);
+
+    const afterActivity = reduceThreadSnapshot(
+      afterDelta,
+      event({
+        type: "thread.progress",
+        seq: 6,
+        runId: "run-1",
+        payload: { text: "Using browser", activity: true },
+      }),
+      { streamResponses: false },
+    );
+    expect(afterActivity?.messages).toEqual([
+      expect.objectContaining({
+        id: "progress:run-1",
+        blocks: [{ kind: "progress", text: "Using browser", activity: true }],
+      }),
+    ]);
+
+    const afterComplete = reduceThreadSnapshot(
+      afterActivity,
+      event({
+        type: "thread.message.created",
+        seq: 7,
+        runId: "run-1",
+        payload: {
+          messageId: "m-final",
+          role: "bot",
+          blocks: [{ kind: "text", text: "Lisbon" }],
+        },
+      }),
+      { streamResponses: false },
+    );
+    expect(afterComplete?.messages).toEqual([
+      expect.objectContaining({
+        id: "m-final",
+        blocks: [{ kind: "text", text: "Lisbon" }],
+      }),
+    ]);
+  });
+
   it("updates a live subagent in place while preserving streamed answer progress", () => {
     const activeRun = threadRun("run-1");
     const initial: ThreadSnapshot = {

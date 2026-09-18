@@ -30,11 +30,21 @@ import {
   serializeComposerPrompt,
   truncateSlashDescription,
   userVisibleMessages,
+  withLiveStreamingProgress,
 } from "@rakazo/core";
 import * as Clipboard from "expo-clipboard";
 import { useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import { useHeaderHeight } from "expo-router/react-navigation";
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import {
   ActionSheetIOS,
   ActivityIndicator,
@@ -110,6 +120,10 @@ import {
   takePhoto,
 } from "../lib/pick-attachments";
 import { threadRefreshDelayMs } from "../lib/refresh";
+import {
+  getCachedResponseStreamingEnabled,
+  subscribeResponseStreaming,
+} from "../lib/response-streaming";
 import {
   type ThreadScrollAction,
   ThreadScrollBehavior,
@@ -288,6 +302,17 @@ function Thread() {
       ? { botId }
       : undefined;
   const [snap, setSnap] = useState<MobileSnapshot | null>(null);
+  const streamResponses = useSyncExternalStore(
+    subscribeResponseStreaming,
+    getCachedResponseStreamingEnabled,
+    () => true,
+  );
+  const streamResponsesRef = useRef(streamResponses);
+  streamResponsesRef.current = streamResponses;
+  useEffect(() => {
+    if (streamResponses) return;
+    setSnap((prev) => withLiveStreamingProgress(prev, false));
+  }, [streamResponses]);
   const activeThreadId = useRef<string | undefined>(undefined);
   const [draft, setDraft] = useState("");
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
@@ -709,7 +734,10 @@ function Thread() {
     )
       return next;
     setSnap((prev) =>
-      mergeMobileSnapshot(prev, next, expandedHistoryThread.current === next.threadId),
+      withLiveStreamingProgress(
+        mergeMobileSnapshot(prev, next, expandedHistoryThread.current === next.threadId),
+        streamResponsesRef.current,
+      ),
     );
     return next;
   }
@@ -743,11 +771,16 @@ function Thread() {
         }
       : null;
     jumpScrollTarget.current = targetInPage ? target.messageId : null;
-    setSnap({
-      ...snap,
-      messages: targetInPage ? [...page.messages] : snap.messages,
-      olderCursor: targetInPage ? page.olderCursor : snap.olderCursor,
-    });
+    setSnap(
+      withLiveStreamingProgress(
+        {
+          ...snap,
+          messages: targetInPage ? [...page.messages] : snap.messages,
+          olderCursor: targetInPage ? page.olderCursor : snap.olderCursor,
+        },
+        streamResponsesRef.current,
+      ),
+    );
   }
 
   async function loadOlderMessages() {
@@ -904,7 +937,11 @@ function Thread() {
                   pinnedAroundRef.current = null;
                   historyEpoch.current += 1;
                 }
-                setSnap((prev) => applyMobileThreadEvent(prev, event));
+                setSnap((prev) =>
+                  applyMobileThreadEvent(prev, event, {
+                    streamResponses: streamResponsesRef.current,
+                  }),
+                );
               }
               if (event.type === "bot.updated") {
                 void refreshMentionBots();
