@@ -1,56 +1,18 @@
+import { execFileSync } from "node:child_process";
+import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { applySceneLifecycleToAppDelegate, applySceneManifest } from "./with-scene-lifecycle.js";
 
-// Matches expo@57.0.23's prebuilt AppDelegate template.
-const TEMPLATE = `internal import Expo
-import React
-import ReactAppDependencyProvider
-
-@main
-class AppDelegate: ExpoAppDelegate {
-  var window: UIWindow?
-
-  var reactNativeDelegate: ExpoReactNativeFactoryDelegate?
-  var reactNativeFactory: RCTReactNativeFactory?
-
-  public override func application(
-    _ application: UIApplication,
-    didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
-  ) -> Bool {
-    let delegate = ReactNativeDelegate()
-    let factory = ExpoReactNativeFactory(delegate: delegate)
-    delegate.dependencyProvider = RCTAppDependencyProvider()
-
-    reactNativeDelegate = delegate
-    reactNativeFactory = factory
-
-#if os(iOS) || os(tvOS)
-    window = UIWindow(frame: UIScreen.main.bounds)
-    factory.startReactNative(
-      withModuleName: "main",
-      in: window,
-      launchOptions: launchOptions)
-#endif
-
-    return super.application(application, didFinishLaunchingWithOptions: launchOptions)
-  }
-
-  // Linking API
-  public override func application(
-    _ app: UIApplication,
-    open url: URL,
-    options: [UIApplication.OpenURLOptionsKey: Any] = [:]
-  ) -> Bool {
-    return super.application(app, open: url, options: options) || RCTLinkingManager.application(app, open: url, options: options)
-  }
-}
-
-class ReactNativeDelegate: ExpoReactNativeFactoryDelegate {
-  override func bundleURL() -> URL? {
-    nil
-  }
-}
-`;
+const require = createRequire(import.meta.url);
+const expoTemplateTgz = join(dirname(require.resolve("expo/package.json")), "template.tgz");
+// The plugin matches exact Expo AppDelegate text. Read the pinned package's
+// prebuild template so a patch bump fails here instead of at iOS prebuild.
+const TEMPLATE = execFileSync(
+  "tar",
+  ["-xOf", expoTemplateTgz, "package/ios/HelloWorld/AppDelegate.swift"],
+  { encoding: "utf8" },
+);
 
 describe("applySceneLifecycleToAppDelegate", () => {
   it("hands window creation to Expo's scene delegate", () => {
