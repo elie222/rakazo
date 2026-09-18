@@ -540,6 +540,7 @@ export function ShellPage() {
   const [routineError, setRoutineError] = useState<string | null>(null);
   const [screenUrl, setScreenUrl] = useState<string | null>(null);
   const [computerOpen, setComputerOpen] = useState(false);
+  const openComputerRef = useRef<() => Promise<void>>(async () => {});
   const [computerViewport, setComputerViewport] = useState<{
     height: number;
     offsetTop: number;
@@ -2420,6 +2421,10 @@ export function ShellPage() {
       // computerError already set in bootComputer
     }
   }
+  openComputerRef.current = openComputer;
+  const onOpenComputer = useCallback(() => {
+    void openComputerRef.current();
+  }, []);
 
   const releaseComputer = useCallback(
     async (reason?: ComputerReleaseReason) => {
@@ -3247,6 +3252,7 @@ export function ShellPage() {
             voiceReady={Boolean(voiceStatus?.ready)}
             speakingMessageId={speakingMessageId}
             onSpeak={speakMessage}
+            onOpenComputer={onOpenComputer}
           />
         )}
         {recordingSkill ? (
@@ -4287,6 +4293,7 @@ const Transcript = memo(function Transcript({
   voiceReady,
   speakingMessageId,
   onSpeak,
+  onOpenComputer,
 }: {
   scrollRef: RefObject<HTMLDivElement | null>;
   artifactTarget: ArtifactTarget;
@@ -4312,6 +4319,7 @@ const Transcript = memo(function Transcript({
   voiceReady: boolean;
   speakingMessageId: string | null;
   onSpeak: (message: ThreadMessage) => void;
+  onOpenComputer: () => void;
 }) {
   const { t } = useLingui();
   const [atEnd, setAtEnd] = useState(true);
@@ -4590,6 +4598,7 @@ const Transcript = memo(function Transcript({
                     voiceReady={voiceReady}
                     speaking={speakingMessageId === message.id}
                     onSpeak={() => onSpeak(message)}
+                    onOpenComputer={onOpenComputer}
                   />
                 </div>
               </div>
@@ -5661,6 +5670,7 @@ const MessageView = memo(function MessageView({
   voiceReady,
   speaking,
   onSpeak,
+  onOpenComputer,
 }: {
   artifactTarget: ArtifactTarget;
   canAnswer: boolean;
@@ -5680,6 +5690,7 @@ const MessageView = memo(function MessageView({
   voiceReady: boolean;
   speaking: boolean;
   onSpeak: () => void;
+  onOpenComputer: () => void;
 }) {
   const { t } = useLingui();
   const isNarration =
@@ -6054,6 +6065,7 @@ const MessageView = memo(function MessageView({
           return (
             <div
               key={i}
+              data-testid="computer-card"
               className="w-[340px] rounded-[18px] border border-border bg-muted px-[18px] py-4"
             >
               <div className="flex items-center justify-between">
@@ -6073,6 +6085,14 @@ const MessageView = memo(function MessageView({
               <div className="my-2.5 text-[14.5px] leading-[1.5] text-foreground/75">
                 <ChatMarkdown>{block.text}</ChatMarkdown>
               </div>
+              <Button
+                type="button"
+                size="sm"
+                data-testid="computer-card-open"
+                onClick={onOpenComputer}
+              >
+                <Trans>Open</Trans>
+              </Button>
             </div>
           );
         }
