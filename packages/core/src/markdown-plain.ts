@@ -37,9 +37,17 @@ export function truncatedPlainText(markdown: string, maxChars: number): string {
 }
 
 function unusedMark(text: string): string {
-  let mark = PAYLOAD_MARK;
-  while (text.includes(mark)) mark += PAYLOAD_MARK;
-  return mark;
+  let longest = 0;
+  let run = 0;
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === PAYLOAD_MARK) {
+      run += 1;
+      if (run > longest) longest = run;
+    } else {
+      run = 0;
+    }
+  }
+  return PAYLOAD_MARK.repeat(longest + 1);
 }
 
 const OPEN_FENCE = /^ {0,3}(`{3,}|~{3,})(.*)$/;

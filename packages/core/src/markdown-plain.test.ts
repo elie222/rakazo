@@ -66,6 +66,8 @@ describe("plainTextFromMarkdown", () => {
 
   it("does not treat existing private-use characters as code placeholders", () => {
     expect(plainTextFromMarkdown("\uE0000\uE000 keep `*x*`")).toBe("\uE0000\uE000 keep *x*");
+    const noise = "\uE000".repeat(20_000);
+    expect(plainTextFromMarkdown(`${noise} keep \`*x*\``)).toBe(`${noise} keep *x*`);
   });
 
   it("returns empty when only markers remain", () => {
