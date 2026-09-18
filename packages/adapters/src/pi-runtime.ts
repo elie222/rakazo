@@ -731,16 +731,22 @@ function withoutSteeringMessages(
 /**
  * Normalize `request_secret` arguments.
  *
- * `credential` and `replace` must survive: the executor stores a submitted value
- * only when `credential` is present, and it validates the destination shape
- * itself. An earlier version of this function listed only label/purpose/
- * connectionId, so every credential the model supplied was dropped here and the
- * saved value had nowhere to go.
+ * Missing label/purpose must fail rather than filling Code/otp placeholders.
+ * `credential` and `replace` must survive: the executor stores a submitted
+ * value only when `credential` is present, and it validates the destination
+ * shape itself. An earlier version of this function listed only
+ * label/purpose/connectionId, so every credential the model supplied was
+ * dropped here and the saved value had nowhere to go.
  */
 export function prepareRequestSecretArguments(raw: Record<string, unknown>) {
+  const label = raw.label == null ? "" : String(raw.label);
+  const purpose = raw.purpose == null ? "" : String(raw.purpose);
+  if (!label.trim() || !purpose.trim()) {
+    throw new Error("request_secret requires a non-empty label and purpose");
+  }
   return {
-    label: String(raw.label ?? "Code"),
-    purpose: String(raw.purpose ?? "otp"),
+    label,
+    purpose,
     ...(raw.connectionId ? { connectionId: String(raw.connectionId) } : {}),
     ...(raw.credential ? { credential: raw.credential } : {}),
     ...(raw.replace === true ? { replace: true } : {}),

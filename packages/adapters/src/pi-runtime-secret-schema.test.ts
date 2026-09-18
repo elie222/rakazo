@@ -181,6 +181,31 @@ describe("prepareRequestSecretArguments", () => {
       purpose: "otp",
     });
   });
+
+  it("rejects empty or missing label and purpose instead of inventing placeholders", () => {
+    expect(() => prepareRequestSecretArguments({})).toThrow(
+      "request_secret requires a non-empty label and purpose",
+    );
+    expect(() => prepareRequestSecretArguments({ purpose: "otp" })).toThrow(
+      "request_secret requires a non-empty label and purpose",
+    );
+    expect(() => prepareRequestSecretArguments({ label: "c" })).toThrow(
+      "request_secret requires a non-empty label and purpose",
+    );
+    expect(() => prepareRequestSecretArguments({ label: "", purpose: "otp" })).toThrow(
+      "request_secret requires a non-empty label and purpose",
+    );
+    expect(() => prepareRequestSecretArguments({ label: "c", purpose: "  " })).toThrow(
+      "request_secret requires a non-empty label and purpose",
+    );
+    expect(() =>
+      prepareRequestSecretArguments({
+        label: "c",
+        purpose: "",
+        credential: sampleCredential,
+      }),
+    ).toThrow("request_secret requires a non-empty label and purpose");
+  });
 });
 
 describe("jsonField union handling", () => {
