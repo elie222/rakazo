@@ -130,11 +130,14 @@ describe("MCP connector session cache", () => {
 
     expect(tools).toHaveLength(3);
     expect(tools.map((tool) => tool.name)).toEqual([
-      "mcp_search_tools",
-      "mcp_load_tool",
-      "mcp_execute_tool",
+      "toolkit_search_tools",
+      "toolkit_load_tool",
+      "toolkit_execute_tool",
     ]);
     expect(JSON.stringify(tools)).not.toContain("schema-marker");
+    // Anthropic rejects a request carrying mcp_-prefixed wrapper names, reporting it as a
+    // billing error rather than a naming one, so the catalog wrappers must stay off that prefix.
+    for (const tool of tools) expect(tool.name.startsWith("mcp_")).toBe(false);
     await connector.close();
   });
 
@@ -171,9 +174,9 @@ describe("MCP connector session cache", () => {
         expect(tools[0]?.name).toMatch(/^mcp__demo__/);
       } else {
         expect(tools.map((tool) => tool.name)).toEqual([
-          "mcp_search_tools",
-          "mcp_load_tool",
-          "mcp_execute_tool",
+          "toolkit_search_tools",
+          "toolkit_load_tool",
+          "toolkit_execute_tool",
         ]);
       }
       await connector.close();

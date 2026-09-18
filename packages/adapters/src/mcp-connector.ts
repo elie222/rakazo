@@ -92,7 +92,11 @@ export class McpConnector implements ConnectorProvider {
   async discoverTools(context: AdapterContext): Promise<ConnectorTool[]> {
     const tools = await this.authorizedTools(context);
     if (tools.length <= DIRECT_TOOL_LIMIT) return tools;
-    return lazyCatalogTools("mcp", "mcp", "MCP", catalogEntries(tools));
+    // The wrappers must not be named mcp_*. Anthropic rejects a request whose tool list
+    // contains those names with a 400 invalid_request_error whose message is about billing
+    // ("You're out of extra usage"), not about the tool name, so the cause is invisible from
+    // the error alone. An otherwise byte-identical request succeeds once they are renamed.
+    return lazyCatalogTools("toolkit", "mcp", "MCP", catalogEntries(tools));
   }
 
   async resolveCall(
