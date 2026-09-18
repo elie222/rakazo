@@ -65,7 +65,12 @@ export const BotAvatar = memo(function BotAvatar({
         <Image source={{ uri: parsed.imageUrl }} style={{ width: size, height: size }} />
       </View>
     ) : parsed.kind === "shape" ? (
-      <ShippedShapeAvatar color={parsed.color} shapePath={parsed.shapePath} size={size} />
+      <ShippedShapeAvatar
+        color={parsed.color}
+        eyeColor={parsed.eyeColor}
+        shapePath={parsed.shapePath}
+        size={size}
+      />
     ) : (variant ?? avatarStyle) === "organic" ? (
       <OrganicAvatar color={fillColor} identity={identity} size={size} isWorking={isWorking} />
     ) : (
@@ -155,10 +160,12 @@ export const BotAvatar = memo(function BotAvatar({
 
 function ShippedShapeAvatar({
   color,
+  eyeColor,
   shapePath,
   size,
 }: {
   color: string;
+  eyeColor: string;
   shapePath: string;
   size: number;
 }) {
@@ -166,23 +173,12 @@ function ShippedShapeAvatar({
   return (
     <Svg width={size} height={size} viewBox={SHIPPED_BOT_AVATAR_VIEWBOX}>
       <Path d={shapePath} fill={color} />
-      <G fill={shapeEyeFill(color)}>
+      <G fill={eyeColor}>
         <Ellipse cx={center - 29} cy={center - 8} rx={10} ry={7} />
         <Ellipse cx={center + 29} cy={center - 8} rx={10} ry={7} />
       </G>
     </Svg>
   );
-}
-
-function shapeEyeFill(hex: string): string {
-  const raw = hex.replace("#", "");
-  const expanded =
-    raw.length === 3 ? `${raw[0]}${raw[0]}${raw[1]}${raw[1]}${raw[2]}${raw[2]}` : raw;
-  if (!/^[0-9a-fA-F]{6}$/.test(expanded)) return "#FFFFFF";
-  const r = Number.parseInt(expanded.slice(0, 2), 16);
-  const g = Number.parseInt(expanded.slice(2, 4), 16);
-  const b = Number.parseInt(expanded.slice(4, 6), 16);
-  return (r * 299 + g * 587 + b * 114) / 1000 > 180 ? "#141414" : "#FFFFFF";
 }
 
 function OrganicAvatar({
