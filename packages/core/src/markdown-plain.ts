@@ -12,6 +12,7 @@ export function plainTextFromMarkdown(markdown: string): string {
 
   let text = takeFencedCode(source, stash);
   text = takeInlineCode(text, stash);
+  text = takeEscapes(text, stash);
   text = takeLinks(text)
     .replace(/<([A-Za-z][A-Za-z0-9+.-]{1,31}:[^<>\s]*)>/g, "$1")
     .replace(/<([^<>\s]+@[^<>\s]+\.[^<>\s]+)>/g, "$1")
@@ -33,7 +34,17 @@ export function plainTextFromMarkdown(markdown: string): string {
 
 /** Strip Markdown first so truncation cannot land inside a marker. */
 export function truncatedPlainText(markdown: string, maxChars: number): string {
-  return plainTextFromMarkdown(markdown).slice(0, maxChars);
+  const text = plainTextFromMarkdown(markdown);
+  if (text.length <= maxChars) return text;
+  const end =
+    maxChars > 0 && (text.charCodeAt(maxChars - 1) & 0xfc00) === 0xd800 ? maxChars - 1 : maxChars;
+  return text.slice(0, end);
+}
+
+function takeEscapes(text: string, stash: (payload: string) => string): string {
+  return text.replace(/\\([!"#$%&'()*+,\-./:;<=>?@[\\\]^_`{|}~])/g, (_match, ch: string) =>
+    stash(ch),
+  );
 }
 
 function unusedMark(text: string): string {

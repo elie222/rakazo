@@ -70,6 +70,10 @@ describe("plainTextFromMarkdown", () => {
     expect(plainTextFromMarkdown(`${noise} keep \`*x*\``)).toBe(`${noise} keep *x*`);
   });
 
+  it("keeps backslash-escaped punctuation as literal text", () => {
+    expect(plainTextFromMarkdown("Use \\*literal\\*")).toBe("Use *literal*");
+  });
+
   it("returns empty when only markers remain", () => {
     expect(plainTextFromMarkdown("")).toBe("");
     expect(plainTextFromMarkdown("   **  **   ")).toBe("");
@@ -82,5 +86,11 @@ describe("truncatedPlainText", () => {
       "Created Projects-CoS as a Pr",
     );
     expect(truncatedPlainText("Created **Projects-CoS** as a **Project**", 28)).not.toContain("*");
+  });
+
+  it("does not split a supplementary character at the cut", () => {
+    const preview = truncatedPlainText(`${"a".repeat(179)}\u{1F600}b`, 180);
+    expect(preview).toBe("a".repeat(179));
+    expect(preview).not.toMatch(/[\uD800-\uDFFF]/);
   });
 });
