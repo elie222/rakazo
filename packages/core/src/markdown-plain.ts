@@ -3,12 +3,14 @@ const PAYLOAD_MARK = "\uE000";
 /** Markdown source → a single plain line for previews and notifications. */
 export function plainTextFromMarkdown(markdown: string): string {
   const payloads: string[] = [];
+  const source = markdown.replace(/\r\n/g, "\n");
+  const mark = unusedMark(source);
   const stash = (payload: string): string => {
     payloads.push(payload);
-    return `${PAYLOAD_MARK}${payloads.length - 1}${PAYLOAD_MARK}`;
+    return `${mark}${payloads.length - 1}${mark}`;
   };
 
-  let text = takeFencedCode(markdown.replace(/\r\n/g, "\n"), stash);
+  let text = takeFencedCode(source, stash);
   text = takeInlineCode(text, stash);
   text = takeLinks(text)
     .replace(/<([A-Za-z][A-Za-z0-9+.-]{1,31}:[^<>\s]*)>/g, "$1")
@@ -23,7 +25,7 @@ export function plainTextFromMarkdown(markdown: string): string {
     .replace(/~~(.*?)~~/g, "$1")
     .replace(/<[^>]+>/g, " ");
   text = text.replace(
-    new RegExp(`${PAYLOAD_MARK}(\\d+)${PAYLOAD_MARK}`, "g"),
+    new RegExp(`${mark}(\\d+)${mark}`, "g"),
     (_match, index: string) => payloads[Number(index)] ?? "",
   );
   return text.replace(/\s+/g, " ").trim();
@@ -32,6 +34,12 @@ export function plainTextFromMarkdown(markdown: string): string {
 /** Strip Markdown first so truncation cannot land inside a marker. */
 export function truncatedPlainText(markdown: string, maxChars: number): string {
   return plainTextFromMarkdown(markdown).slice(0, maxChars);
+}
+
+function unusedMark(text: string): string {
+  let mark = PAYLOAD_MARK;
+  while (text.includes(mark)) mark += PAYLOAD_MARK;
+  return mark;
 }
 
 const OPEN_FENCE = /^ {0,3}(`{3,}|~{3,})(.*)$/;
@@ -113,16 +121,18 @@ function findInlineCodeClose(text: string, from: number, n: number): number {
 }
 
 function takeLinks(text: string): string {
+  const closeBracket = closerAt(text, "[", "]");
+  const closeParen = closerAt(text, "(", ")");
   let out = "";
   let i = 0;
   while (i < text.length) {
     const image = text.startsWith("![", i);
     if (image || text[i] === "[") {
       const open = image ? i + 1 : i;
-      const labelEnd = matchBalanced(text, open, "[", "]");
-      if (labelEnd !== -1 && text[labelEnd + 1] === "(") {
-        const destEnd = matchBalanced(text, labelEnd + 1, "(", ")");
-        if (destEnd !== -1) {
+      const labelEnd = closeBracket[open];
+      if (labelEnd !== undefined && text[labelEnd + 1] === "(") {
+        const destEnd = closeParen[labelEnd + 1];
+        if (destEnd !== undefined) {
           out += text.slice(open + 1, labelEnd);
           i = destEnd + 1;
           continue;
@@ -135,18 +145,19 @@ function takeLinks(text: string): string {
   return out;
 }
 
-function matchBalanced(text: string, openIndex: number, open: string, close: string): number {
-  let depth = 0;
-  for (let i = openIndex; i < text.length; i++) {
+function closerAt(text: string, open: string, close: string): Array<number | undefined> {
+  const closeAt: Array<number | undefined> = Array.from({ length: text.length });
+  const stack: number[] = [];
+  for (let i = 0; i < text.length; i++) {
     if (text[i] === "\\") {
       i += 1;
       continue;
     }
-    if (text[i] === open) depth += 1;
+    if (text[i] === open) stack.push(i);
     else if (text[i] === close) {
-      depth -= 1;
-      if (depth === 0) return i;
+      const start = stack.pop();
+      if (start !== undefined) closeAt[start] = i;
     }
   }
-  return -1;
+  return closeAt;
 }

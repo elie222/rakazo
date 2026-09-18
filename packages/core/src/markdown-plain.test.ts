@@ -57,6 +57,17 @@ describe("plainTextFromMarkdown", () => {
     expect(plainTextFromMarkdown("~~~~\ncode with ~~~\nstill\n~~~~")).toBe("code with ~~~ still");
   });
 
+  it("still finds a later link after many unmatched brackets", () => {
+    const noise = "[".repeat(20_000);
+    expect(plainTextFromMarkdown(`${noise} see [docs](https://example.com/a_(b))`)).toBe(
+      `${noise} see docs`,
+    );
+  });
+
+  it("does not treat existing private-use characters as code placeholders", () => {
+    expect(plainTextFromMarkdown("\uE0000\uE000 keep `*x*`")).toBe("\uE0000\uE000 keep *x*");
+  });
+
   it("returns empty when only markers remain", () => {
     expect(plainTextFromMarkdown("")).toBe("");
     expect(plainTextFromMarkdown("   **  **   ")).toBe("");
