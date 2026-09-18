@@ -540,7 +540,10 @@ export function ShellPage() {
   const [routineError, setRoutineError] = useState<string | null>(null);
   const [screenUrl, setScreenUrl] = useState<string | null>(null);
   const [computerOpen, setComputerOpen] = useState(false);
-  const openComputerRef = useRef<() => Promise<void>>(async () => {});
+  const [computerBotId, setComputerBotId] = useState<string | undefined>();
+  const computerOpenRef = useRef(false);
+  const computerBotIdRef = useRef<string | undefined>(undefined);
+  const openComputerRef = useRef<(botId?: string) => Promise<void>>(async () => {});
   const [computerViewport, setComputerViewport] = useState<{
     height: number;
     offsetTop: number;
@@ -627,6 +630,10 @@ export function ShellPage() {
 
   const inGroup = Boolean(groupId);
   const active = inGroup ? undefined : (bots.find((b) => b.id === botId) ?? bots[0]);
+  const computerBot =
+    (computerBotId ? bots.find((bot) => bot.id === computerBotId) : undefined) ?? active;
+  computerOpenRef.current = computerOpen;
+  computerBotIdRef.current = computerBotId ?? active?.id;
   const activeGroup = groups.find((group) => group.id === groupId);
   const activePendingAttachments = useMemo(
     () => attachmentsForThread(pendingAttachments, inGroup ? groupId : active?.id),
@@ -853,7 +860,7 @@ export function ShellPage() {
       expandedHistoryThread.current === snap.threadId,
     );
     commitSnapshot(reconciled.snapshot);
-    commitComputer(null);
+    if (!computerOpenRef.current) commitComputer(null);
     setRoutines([]);
     setRoutinesBotId(null);
     // Keep the search-jump viewport; expandedHistoryThread merge still accepts live messages.
@@ -930,7 +937,9 @@ export function ShellPage() {
     return loadComputerScreen({
       load: () => rpc.computer.screenUrl({ botId: id }),
       isCurrent: () =>
-        request === screenRequest.current && activeBotId.current === id && computerVisible.current,
+        request === screenRequest.current &&
+        (activeBotId.current === id || computerBotIdRef.current === id) &&
+        computerVisible.current,
       commit: (screen) => {
         setScreenUrl(screen.url);
         setComputerError(screen.error);
@@ -2269,23 +2278,33 @@ export function ShellPage() {
   }
 
   async function bootComputer({
+    botId: targetBotId,
     takeControl,
     overlay,
     force = false,
   }: {
+    botId: string;
     takeControl: boolean;
     overlay: boolean;
     force?: boolean;
   }) {
-    if (!active) return;
-    const needsBoot = force || computer?.state !== "running" || !screenUrl;
+    const cached = computerCacheRef.current.get(targetBotId);
+    const targetComputer = computer?.botId === targetBotId ? computer : (cached?.computer ?? null);
+    const targetScreen = computer?.botId === targetBotId ? screenUrl : (cached?.screenUrl ?? null);
+    const needsBoot = force || targetComputer?.state !== "running" || !targetScreen;
     if (overlay && needsBoot) setBooting(true);
     setComputerError(null);
     setComputerErrorFromScreen(false);
     try {
-      if (needsBoot) await rpc.computer.boot({ botId: active.id });
-      if (takeControl) await rpc.computer.takeover({ botId: active.id });
-      await refreshThread(active.id);
+      if (needsBoot) {
+        const status = await rpc.computer.boot({ botId: targetBotId });
+        if (computerBotIdRef.current === targetBotId || activeBotId.current === targetBotId) {
+          commitComputer(status);
+          cacheComputerFor(targetBotId, { computer: status });
+        }
+      }
+      if (takeControl) await rpc.computer.takeover({ botId: targetBotId });
+      await refreshComputerFor(targetBotId);
     } catch (error) {
       setComputerError(error instanceof Error ? error.message : t`Could not take control`);
       setComputerErrorFromScreen(false);
@@ -2293,6 +2312,19 @@ export function ShellPage() {
     } finally {
       setBooting(false);
     }
+  }
+
+  async function refreshComputerFor(targetBotId: string) {
+    if (activeBotId.current === targetBotId) {
+      await refreshThread(targetBotId);
+      return;
+    }
+    if (computerBotIdRef.current !== targetBotId) return;
+    const status = await rpc.computer.status({ botId: targetBotId });
+    if (computerBotIdRef.current !== targetBotId) return;
+    commitComputer(status);
+    cacheComputerFor(targetBotId, { computer: status });
+    await refreshComputerScreen(targetBotId);
   }
 
   useEffect(() => {
@@ -2320,6 +2352,7 @@ export function ShellPage() {
       autoBooted.current = botId;
       if (!computerPanelAutoUsesBoot(action)) return;
       await bootComputer({
+        botId,
         takeControl: false,
         overlay: action === "boot",
         force: true,
@@ -2334,6 +2367,7 @@ export function ShellPage() {
     setComputerOpen(false);
     setComputerError(null);
     setComputerErrorFromScreen(false);
+    setComputerBotId(active?.id);
   }, [active?.id]);
 
   useEffect(() => {
@@ -2399,44 +2433,65 @@ export function ShellPage() {
   }, []);
 
   useEffect(() => {
-    if ((panel !== "computer" && !computerOpen) || !active || computer?.state !== "running") return;
-    const ping = () => void rpc.computer.heartbeat({ botId: active.id }).catch(() => undefined);
+    const heartbeatBotId = computerBot?.id ?? active?.id;
+    if ((panel !== "computer" && !computerOpen) || !heartbeatBotId || computer?.state !== "running")
+      return;
+    const ping = () => void rpc.computer.heartbeat({ botId: heartbeatBotId }).catch(() => undefined);
     ping();
     const timer = window.setInterval(ping, 60_000);
     return () => window.clearInterval(timer);
-  }, [panel, computerOpen, active?.id, computer?.state]);
+  }, [panel, computerOpen, computerBot?.id, active?.id, computer?.state]);
 
-  async function openComputer() {
-    if (!active) return;
-    const needsTakeover = !userHoldsComputerControl(computer, active.id);
-    const blocked = computerTakeoverBlocked(computer, snapshot?.run?.status);
+  async function openComputer(botId?: string) {
+    const id = botId ?? active?.id;
+    if (!id) return;
+    const bot = botsRef.current.find((candidate) => candidate.id === id);
+    if (!bot) return;
+    computerBotIdRef.current = id;
+    setComputerBotId(id);
+    const cached = computerCacheRef.current.get(id);
+    const targetComputer = computer?.botId === id ? computer : (cached?.computer ?? null);
+    const targetScreen = computer?.botId === id ? screenUrl : (cached?.screenUrl ?? null);
+    if (computer?.botId !== id) {
+      commitComputer(targetComputer);
+      setScreenUrl(targetScreen);
+    }
+    setComputerOpen(true);
+    computerVisible.current = true;
+    const needsTakeover = !userHoldsComputerControl(targetComputer, id);
+    const blocked = computerTakeoverBlocked(targetComputer, snapshot?.run?.status);
     try {
       await bootComputer({
+        botId: id,
         takeControl: needsTakeover && !blocked,
-        overlay: (needsTakeover && !blocked) || computer?.state !== "running",
-        force: computer?.state !== "running",
+        overlay: (needsTakeover && !blocked) || targetComputer?.state !== "running",
+        force: targetComputer?.state !== "running",
       });
-      setComputerOpen(true);
     } catch {
       // computerError already set in bootComputer
     }
   }
   openComputerRef.current = openComputer;
-  const onOpenComputer = useCallback(() => {
-    void openComputerRef.current();
+  const onOpenComputer = useCallback((botId?: string) => {
+    void openComputerRef.current(botId);
   }, []);
 
   const releaseComputer = useCallback(
     async (reason?: ComputerReleaseReason) => {
-      const botId = activeBotId.current;
+      const botId = computerBotIdRef.current ?? activeBotId.current;
       if (!botId) return;
       try {
         await rpc.computer.release({ botId, reason });
-        if (activeBotId.current !== botId) return;
+        if (computerBotIdRef.current !== botId && activeBotId.current !== botId) return;
         setComputerOpen(false);
-        await refreshThreadRef.current(botId).catch(() => undefined);
+        const groupId = activeGroupId.current;
+        if (groupId) {
+          await refreshGroupThreadRef.current(groupId).catch(() => undefined);
+        } else {
+          await refreshThreadRef.current(botId).catch(() => undefined);
+        }
       } catch {
-        if (activeBotId.current !== botId) return;
+        if (computerBotIdRef.current !== botId && activeBotId.current !== botId) return;
         setComputerError(t`Could not continue`);
         setComputerErrorFromScreen(false);
       }
@@ -2456,7 +2511,7 @@ export function ShellPage() {
   }
 
   const embeddedScreenUrl = embeddableScreenUrl(screenUrl);
-  const hasControl = userHoldsComputerControl(computer, active?.id);
+  const hasControl = userHoldsComputerControl(computer, computerBot?.id);
   const hideScreenLoadError = computerErrorFromScreen && Boolean(embeddedScreenUrl);
   const computerScreenError =
     computerError && !hideScreenLoadError ? (
@@ -2465,7 +2520,7 @@ export function ShellPage() {
         <Button
           variant="outline"
           size="sm"
-          onClick={() => active && void refreshComputerScreen(active.id)}
+          onClick={() => computerBot && void refreshComputerScreen(computerBot.id)}
         >
           <Trans>Retry screen</Trans>
         </Button>
@@ -4115,13 +4170,13 @@ export function ShellPage() {
       {booting ? (
         <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-[22px] bg-background/95">
           <div className="text-[19px] font-medium text-foreground">
-            <Trans>Booting up {active?.name}’s computer</Trans>
+            <Trans>Booting up {computerBot?.name ?? active?.name}’s computer</Trans>
           </div>
           <div className="h-[5px] w-[min(420px,70%)] overflow-hidden rounded-full bg-accent">
             <div className="h-full w-2/3 rounded-full bg-primary" />
           </div>
         </div>
-      ) : computerOpen && active ? (
+      ) : computerOpen && computerBot ? (
         <div className="fixed inset-0 z-30 bg-background">
           <div
             data-testid="computer-viewport"
@@ -4137,10 +4192,10 @@ export function ShellPage() {
             >
               <div className="flex min-w-0 flex-1 items-center gap-3">
                 <BotAvatar
-                  color={active.color}
-                  identity={active.id}
+                  color={computerBot.color}
+                  identity={computerBot.id}
                   size={28}
-                  status={active.status}
+                  status={computerBot.status}
                 />
                 {recordingSkill ? (
                   <TeachRecordingChrome
@@ -4151,7 +4206,7 @@ export function ShellPage() {
                   />
                 ) : (
                   <span className="truncate text-[15.5px] font-medium text-foreground" dir="auto">
-                    {computerLabel(computer?.mode, active.name)}
+                    {computerLabel(computer?.mode, computerBot.name)}
                   </span>
                 )}
                 {!recordingSkill && hasControl ? (
@@ -4188,21 +4243,21 @@ export function ShellPage() {
                     onRelease={releaseComputer}
                   />
                 ) : null}
-                {active && !recordingSkill ? (
+                {computerBot && !recordingSkill ? (
                   <TeachComputerOverlayControl
-                    key={active.id}
-                    botId={active.id}
+                    key={computerBot.id}
+                    botId={computerBot.id}
                     computer={computer}
                     busy={teachBusy}
                     onRefresh={refreshActiveTeaching}
                   />
                 ) : null}
-                {active && !recordingSkill ? (
+                {computerBot && !recordingSkill ? (
                   <ComputerMaintenanceActions
-                    botId={active.id}
+                    botId={computerBot.id}
                     computer={computer}
                     onChanged={async () => {
-                      await refreshThread(active.id);
+                      await refreshComputerFor(computerBot.id);
                     }}
                   />
                 ) : null}
@@ -4240,9 +4295,9 @@ export function ShellPage() {
                       pointerEvents: recordingSkill || !hasControl ? "none" : "auto",
                     }}
                   />
-                  {active ? (
+                  {computerBot ? (
                     <TeachCaptureOverlay
-                      botId={active.id}
+                      botId={computerBot.id}
                       skill={recordingSkill}
                       enabled={Boolean(recordingSkill)}
                       screenWidth={computer?.screenWidth}
@@ -4255,7 +4310,7 @@ export function ShellPage() {
                   {computerScreenError ??
                     (computer?.state === "suspended"
                       ? t`Computer is asleep`
-                      : computerLabel(computer?.mode, active.name))}
+                      : computerLabel(computer?.mode, computerBot.name))}
                 </div>
               )}
             </div>
@@ -4319,7 +4374,7 @@ const Transcript = memo(function Transcript({
   voiceReady: boolean;
   speakingMessageId: string | null;
   onSpeak: (message: ThreadMessage) => void;
-  onOpenComputer: () => void;
+  onOpenComputer: (botId?: string) => void;
 }) {
   const { t } = useLingui();
   const [atEnd, setAtEnd] = useState(true);
@@ -5690,7 +5745,7 @@ const MessageView = memo(function MessageView({
   voiceReady: boolean;
   speaking: boolean;
   onSpeak: () => void;
-  onOpenComputer: () => void;
+  onOpenComputer: (botId?: string) => void;
 }) {
   const { t } = useLingui();
   const isNarration =
@@ -6089,7 +6144,7 @@ const MessageView = memo(function MessageView({
                 type="button"
                 size="sm"
                 data-testid="computer-card-open"
-                onClick={onOpenComputer}
+                onClick={() => onOpenComputer(message.botId)}
               >
                 <Trans>Open</Trans>
               </Button>
