@@ -64,6 +64,28 @@ export function embeddableScreenUrl(url: string | null, apiBase: string): string
   }
 }
 
+/**
+ * Identity of a live screen stream, ignoring rotating capability tokens.
+ * View vs control stays in the key so takeover/release still reconnects.
+ */
+export function screenStreamKey(url: string): string {
+  try {
+    const parsed = new URL(url);
+    const match = parsed.pathname.match(/^\/novnc\/session\/(view|control)\/[^/]+(\/.*)?$/);
+    if (match) return `${parsed.origin}/novnc/session/${match[1]}${match[2] ?? ""}`;
+    const viewOnly = parsed.searchParams.get("view_only");
+    const policy = viewOnly == null ? "" : `?view_only=${viewOnly}`;
+    return `${parsed.origin}${parsed.pathname}${policy}`;
+  } catch {
+    return url;
+  }
+}
+
+/** Keep the connected screen URL while only the capability token rotated. */
+export function retainScreenSource(held: string, next: string): string {
+  return screenStreamKey(held) === screenStreamKey(next) ? held : next;
+}
+
 export function previewPlaceholder(
   state: string | undefined,
   booting: boolean,
