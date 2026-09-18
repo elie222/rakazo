@@ -1,4 +1,4 @@
-import type { Page } from "@playwright/test";
+import type { Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import {
   activeBotId,
@@ -151,33 +151,31 @@ async function mockMemberComputerRpcs(page: Page, botId: string) {
     canUpdate: false,
   };
   const computerJson = JSON.stringify({ json: status });
+  const fulfillForBot = async (route: Route, body: string) => {
+    expect(route.request().postDataJSON()).toMatchObject({ json: { botId } });
+    await route.fulfill({ contentType: "application/json", body });
+  };
   await page.route("**/rpc/computer/boot", async (route) => {
-    await route.fulfill({ contentType: "application/json", body: computerJson });
+    await fulfillForBot(route, computerJson);
   });
   await page.route("**/rpc/computer/status", async (route) => {
-    await route.fulfill({ contentType: "application/json", body: computerJson });
+    await fulfillForBot(route, computerJson);
   });
   await page.route("**/rpc/computer/takeover", async (route) => {
-    await route.fulfill({
-      contentType: "application/json",
-      body: JSON.stringify({
+    await fulfillForBot(
+      route,
+      JSON.stringify({
         json: {
           leaseId: "lease-needs-you",
           expiresAt: new Date(Date.now() + 60_000).toISOString(),
         },
       }),
-    });
+    );
   });
   await page.route("**/rpc/computer/screenUrl", async (route) => {
-    await route.fulfill({
-      contentType: "application/json",
-      body: JSON.stringify({ json: { url: null } }),
-    });
+    await fulfillForBot(route, JSON.stringify({ json: { url: null } }));
   });
   await page.route("**/rpc/computer/heartbeat", async (route) => {
-    await route.fulfill({
-      contentType: "application/json",
-      body: JSON.stringify({ json: { ok: true } }),
-    });
+    await fulfillForBot(route, JSON.stringify({ json: { ok: true } }));
   });
 }

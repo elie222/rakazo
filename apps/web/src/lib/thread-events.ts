@@ -563,6 +563,7 @@ export function reduceComputerStatus(
 ): ComputerStatus | null {
   if (!prev) return prev;
   if (!isComputerStatusEvent(event)) return prev;
+  if (event.botId !== prev.botId) return prev;
   if (event.type === "computer.takeover.requested") {
     const retainedControl = event.payload.retainedControl === true;
     const next = {

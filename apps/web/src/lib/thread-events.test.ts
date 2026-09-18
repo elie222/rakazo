@@ -1414,6 +1414,30 @@ describe("computer event reduction", () => {
     expect(computerTakeoverBlocked(computer({ busyBotName: "Writer" }), "completed")).toBe(false);
   });
 
+  it("ignores computer events that belong to a different bot", () => {
+    const prev = computer({ takeoverRequested: false, controlHolder: "bot" });
+    expect(
+      reduceComputerStatus(
+        prev,
+        event({
+          type: "computer.takeover.requested",
+          botId: "bot-peer",
+          payload: {},
+        }),
+      ),
+    ).toBe(prev);
+    expect(
+      reduceComputerStatus(
+        prev,
+        event({
+          type: "computer.status",
+          botId: "bot-peer",
+          payload: { status: "suspended" },
+        }),
+      ),
+    ).toBe(prev);
+  });
+
   it("marks takeover requested and clears control unless the lease was retained", () => {
     const busy = computer({ state: "running", busyBotName: "Writer", controlHolder: "bot" });
     expect(

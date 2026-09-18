@@ -1311,7 +1311,16 @@ export function ShellPage() {
       currentSnapshot: () => snapshotRef.current,
       subscribe: (cursor) => rpc.threads.subscribe({ groupId, cursor }, { signal: abort.signal }),
       applyEvent: (event) =>
-        applyThreadEvent(event, commitSnapshot, commitComputer, snapshotRef, computerRef),
+        applyThreadEvent(
+          event,
+          commitSnapshot,
+          (next) => {
+            if (isComputerStatusEvent(event) && event.botId !== computerBotIdRef.current) return;
+            commitComputer(next);
+          },
+          snapshotRef,
+          computerRef,
+        ),
       onEvent: (event, initial) => {
         const eventBot = botsRef.current.find((bot) => bot.id === event.botId);
         notifyBrowserForEvent(
