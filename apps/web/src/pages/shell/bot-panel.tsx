@@ -355,7 +355,8 @@ export function BotSettings({
         title: nextTitle,
         description: nextDescription,
         instructions: nextDescription,
-        color: nextColor,
+        // Unchanged color stays off the wire so a legacy named value cannot fail a name save.
+        ...(nextColor !== bot.color ? { color: nextColor } : {}),
         notifyOnFinish: nextNotify,
         computerMode,
         memoryScope,

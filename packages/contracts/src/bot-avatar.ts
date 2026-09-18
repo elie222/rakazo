@@ -1,6 +1,6 @@
 import * as z from "zod";
 
-/** Matches the eight shipped Grok mascot shapes in `@rakazo/ui-web`. */
+/** Matches the eight shipped mascot shapes in `@rakazo/core`. */
 export const BOT_AVATAR_SHAPE_COUNT = 8;
 
 /**

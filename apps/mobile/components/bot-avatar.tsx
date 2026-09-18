@@ -1,6 +1,11 @@
 import type { AvatarStyle } from "@rakazo/contracts";
-import { parseBotAvatarValue } from "@rakazo/contracts";
-import { ACTIVE_RUN_STATUSES, avatarIdentitySeed, organicAvatarPath } from "@rakazo/core";
+import {
+  ACTIVE_RUN_STATUSES,
+  avatarIdentitySeed,
+  organicAvatarPath,
+  SHIPPED_BOT_AVATAR_CENTER,
+  SHIPPED_BOT_AVATAR_VIEWBOX,
+} from "@rakazo/core";
 import { memo, useEffect } from "react";
 import { Image, View } from "react-native";
 import Animated, {
@@ -13,8 +18,9 @@ import Animated, {
   withRepeat,
   withTiming,
 } from "react-native-reanimated";
-import Svg, { G, Path, Rect } from "react-native-svg";
+import Svg, { Ellipse, G, Path, Rect } from "react-native-svg";
 import { workingAvatarDuration, workingAvatarFrame } from "../lib/avatar-motion";
+import { mobileBotAvatarPresentation } from "../lib/bot-avatar";
 import { useI18n } from "../lib/i18n";
 import { useAvatarStyle } from "./avatar-style";
 import { NativeSymbol } from "./native-symbol";
@@ -39,7 +45,7 @@ export const BotAvatar = memo(function BotAvatar({
   const { t } = useI18n();
   const isWorking = ACTIVE_RUN_STATUSES.some((activeStatus) => activeStatus === status);
   const { avatarStyle } = useAvatarStyle();
-  const parsed = parseBotAvatarValue(color);
+  const parsed = mobileBotAvatarPresentation(color);
   const fillColor = parsed.kind === "shape" || parsed.kind === "color" ? parsed.color : color;
   const visorW = Math.round(size * 0.68);
   const visorH = Math.round(size * 0.44);
@@ -58,6 +64,8 @@ export const BotAvatar = memo(function BotAvatar({
       >
         <Image source={{ uri: parsed.imageUrl }} style={{ width: size, height: size }} />
       </View>
+    ) : parsed.kind === "shape" ? (
+      <ShippedShapeAvatar color={parsed.color} shapePath={parsed.shapePath} size={size} />
     ) : (variant ?? avatarStyle) === "organic" ? (
       <OrganicAvatar color={fillColor} identity={identity} size={size} isWorking={isWorking} />
     ) : (
@@ -144,6 +152,38 @@ export const BotAvatar = memo(function BotAvatar({
     </View>
   );
 });
+
+function ShippedShapeAvatar({
+  color,
+  shapePath,
+  size,
+}: {
+  color: string;
+  shapePath: string;
+  size: number;
+}) {
+  const center = SHIPPED_BOT_AVATAR_CENTER;
+  return (
+    <Svg width={size} height={size} viewBox={SHIPPED_BOT_AVATAR_VIEWBOX}>
+      <Path d={shapePath} fill={color} />
+      <G fill={shapeEyeFill(color)}>
+        <Ellipse cx={center - 29} cy={center - 8} rx={10} ry={7} />
+        <Ellipse cx={center + 29} cy={center - 8} rx={10} ry={7} />
+      </G>
+    </Svg>
+  );
+}
+
+function shapeEyeFill(hex: string): string {
+  const raw = hex.replace("#", "");
+  const expanded =
+    raw.length === 3 ? `${raw[0]}${raw[0]}${raw[1]}${raw[1]}${raw[2]}${raw[2]}` : raw;
+  if (!/^[0-9a-fA-F]{6}$/.test(expanded)) return "#FFFFFF";
+  const r = Number.parseInt(expanded.slice(0, 2), 16);
+  const g = Number.parseInt(expanded.slice(2, 4), 16);
+  const b = Number.parseInt(expanded.slice(4, 6), 16);
+  return (r * 299 + g * 587 + b * 114) / 1000 > 180 ? "#141414" : "#FFFFFF";
+}
 
 function OrganicAvatar({
   color,

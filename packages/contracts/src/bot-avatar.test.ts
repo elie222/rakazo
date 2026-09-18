@@ -45,5 +45,7 @@ describe("bot avatar values", () => {
     expect(
       UpdateBotInput.safeParse({ botId: "bot-1", color: "https://evil.example/x.png" }).success,
     ).toBe(false);
+    expect(UpdateBotInput.safeParse({ botId: "bot-1", color: "gray" }).success).toBe(false);
+    expect(UpdateBotInput.safeParse({ botId: "bot-1", name: "Atlas" }).success).toBe(true);
   });
 });
