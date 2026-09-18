@@ -543,6 +543,7 @@ export function ShellPage() {
   const [computerBotId, setComputerBotId] = useState<string | undefined>();
   const computerOpenRef = useRef(false);
   const computerBotIdRef = useRef<string | undefined>(undefined);
+  const computerBootEpoch = useRef(0);
   const openComputerRef = useRef<(botId?: string) => Promise<void>>(async () => {});
   const [computerViewport, setComputerViewport] = useState<{
     height: number;
@@ -2288,6 +2289,10 @@ export function ShellPage() {
     overlay: boolean;
     force?: boolean;
   }) {
+    const epoch = ++computerBootEpoch.current;
+    const stillThisBoot = () => computerBootEpoch.current === epoch;
+    const stillThisBot = () =>
+      computerBotIdRef.current === targetBotId || activeBotId.current === targetBotId;
     const cached = computerCacheRef.current.get(targetBotId);
     const targetComputer = computer?.botId === targetBotId ? computer : (cached?.computer ?? null);
     const targetScreen = computer?.botId === targetBotId ? screenUrl : (cached?.screenUrl ?? null);
@@ -2298,19 +2303,22 @@ export function ShellPage() {
     try {
       if (needsBoot) {
         const status = await rpc.computer.boot({ botId: targetBotId });
-        if (computerBotIdRef.current === targetBotId || activeBotId.current === targetBotId) {
-          commitComputer(status);
-          cacheComputerFor(targetBotId, { computer: status });
-        }
+        if (!stillThisBoot() || !stillThisBot()) return;
+        commitComputer(status);
+        cacheComputerFor(targetBotId, { computer: status });
       }
-      if (takeControl) await rpc.computer.takeover({ botId: targetBotId });
+      if (takeControl) {
+        await rpc.computer.takeover({ botId: targetBotId });
+        if (!stillThisBoot() || !stillThisBot()) return;
+      }
       await refreshComputerFor(targetBotId);
     } catch (error) {
+      if (!stillThisBoot() || !stillThisBot()) return;
       setComputerError(error instanceof Error ? error.message : t`Could not take control`);
       setComputerErrorFromScreen(false);
       throw error;
     } finally {
-      setBooting(false);
+      if (stillThisBoot()) setBooting(false);
     }
   }
 

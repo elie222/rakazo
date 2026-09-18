@@ -161,7 +161,10 @@ async function mockMemberComputerRpcs(page: Page, botId: string) {
     await route.fulfill({
       contentType: "application/json",
       body: JSON.stringify({
-        json: { leaseId: "lease-needs-you", expiresAt: new Date(Date.now() + 60_000).toISOString() },
+        json: {
+          leaseId: "lease-needs-you",
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        },
       }),
     });
   });
