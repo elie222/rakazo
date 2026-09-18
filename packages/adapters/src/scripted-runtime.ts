@@ -336,6 +336,30 @@ export function inferScript(
       },
     ];
   }
+  if (
+    lower.includes("silence finish notifications") ||
+    lower.includes("turn off finish notifications")
+  ) {
+    return [
+      {
+        assistant: "silencing finish notifications.",
+        toolCalls: [{ name: "update_bot", args: { notifyOnFinish: false } }],
+        complete: true,
+      },
+    ];
+  }
+  if (
+    lower.includes("resume finish notifications") ||
+    lower.includes("turn on finish notifications")
+  ) {
+    return [
+      {
+        assistant: "enabling finish notifications.",
+        toolCalls: [{ name: "update_bot", args: { notifyOnFinish: true } }],
+        complete: true,
+      },
+    ];
+  }
   if (lower.includes("subagent") || lower.includes("delegate to a helper")) {
     return [
       {

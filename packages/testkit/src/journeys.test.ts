@@ -1585,6 +1585,29 @@ describeJourneys("required product journeys", () => {
     expect((await rpc<Bot[]>(app, cookie, "bots/list")).map((bot) => bot.name)).toEqual(["Nested"]);
   });
 
+  it("12b: a bot can silence and resume its own finish notifications", async () => {
+    const cookie = await signup(app, `notify-finish-j-${stamp}@rakazo.test`, "Notify");
+    const bot = await rpc<Bot>(app, cookie, "bots/create", {
+      name: "Chief",
+      title: "",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+    expect(bot.notifyOnFinish).toBe(true);
+
+    await sendAndWait(app, cookie, bot.id, "silence finish notifications");
+    const silenced = (await rpc<Bot[]>(app, cookie, "bots/list")).find((row) => row.id === bot.id);
+    expect(silenced?.notifyOnFinish).toBe(false);
+    expect((await rpc<Bot>(app, cookie, "bots/get", { botId: bot.id })).notifyOnFinish).toBe(false);
+
+    await sendAndWait(app, cookie, bot.id, "resume finish notifications");
+    expect(
+      (await rpc<Bot[]>(app, cookie, "bots/list")).find((row) => row.id === bot.id)?.notifyOnFinish,
+    ).toBe(true);
+    expect((await rpc<Bot>(app, cookie, "bots/get", { botId: bot.id })).notifyOnFinish).toBe(true);
+  });
+
   it("13: a subagent shows up in the parent thread without creating a bot", async () => {
     const cookie = await signup(app, `subagent-j-${stamp}@rakazo.test`, "Subagent");
     const bot = await rpc<Bot>(app, cookie, "bots/create", {

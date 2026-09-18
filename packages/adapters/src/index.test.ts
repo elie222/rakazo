@@ -177,6 +177,7 @@ describe("builtin tools", () => {
         "run_subagent",
         "create_space",
         "spawn_bot",
+        "update_bot",
         "archive_bot",
         "skill_read",
         "skill_create",
@@ -188,6 +189,20 @@ describe("builtin tools", () => {
         "browser_snapshot",
         "browser_act",
       ]),
+    );
+    const updateBot = builtinAgentTools.find((tool) => tool.name === "update_bot");
+    expect(updateBot?.inputSchema).toEqual(
+      expect.objectContaining({
+        properties: expect.objectContaining({
+          name: expect.any(Object),
+          title: expect.any(Object),
+          description: expect.any(Object),
+          color: expect.any(Object),
+          artifact_id: expect.any(Object),
+          use_attached_image: expect.any(Object),
+          notifyOnFinish: { type: "boolean", description: expect.any(String) },
+        }),
+      }),
     );
   });
 });

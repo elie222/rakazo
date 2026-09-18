@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { builtinAgentTools } from "./builtin-tools.js";
 import { parseConnectorToolArgs } from "./lazy-tool-catalog.js";
 import { jsonSchemaParameters, parametersFor } from "./pi-runtime.js";
 
@@ -104,5 +105,38 @@ describe("jsonSchemaParameters", () => {
         properties: { filter: { type: "object", enum: [{ kind: "all" }, ["x"]] } },
       }),
     ).not.toThrow();
+  });
+});
+
+describe("update_bot parameters", () => {
+  it("accepts notifyOnFinish as a boolean", () => {
+    const tool = builtinAgentTools.find((entry) => entry.name === "update_bot");
+    expect(tool).toBeTruthy();
+    const schema = JSON.parse(JSON.stringify(parametersFor(tool!))) as Record<string, unknown>;
+    expect(parseConnectorToolArgs(schema, { notifyOnFinish: false })).toEqual({
+      notifyOnFinish: false,
+    });
+    expect(parseConnectorToolArgs(schema, { notifyOnFinish: true, name: "Scout" })).toEqual({
+      notifyOnFinish: true,
+      name: "Scout",
+    });
+    expect(() => parseConnectorToolArgs(schema, { notifyOnFinish: "false" })).toThrow();
+  });
+
+  it("still accepts avatar fields from the calling bot", () => {
+    const tool = builtinAgentTools.find((entry) => entry.name === "update_bot");
+    expect(tool).toBeTruthy();
+    const schema = JSON.parse(JSON.stringify(parametersFor(tool!))) as Record<string, unknown>;
+    expect(
+      parseConnectorToolArgs(schema, {
+        color: "#8B5CF6",
+        artifact_id: "art-1",
+        use_attached_image: true,
+      }),
+    ).toEqual({
+      color: "#8B5CF6",
+      artifact_id: "art-1",
+      use_attached_image: true,
+    });
   });
 });

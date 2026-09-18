@@ -8,6 +8,7 @@ import {
   createRunWorkspaceCheckpoint,
   loadCurrentTurnImages,
   missingTurnImagesInstruction,
+  parseUpdateBotPatch,
   runNotificationsEnabled,
   selectBuiltinToolsForRun,
   settleSteeringAttachmentLoads,
@@ -420,6 +421,48 @@ function modelPreference({
     },
   };
 }
+
+describe("parseUpdateBotPatch", () => {
+  it("accepts notifyOnFinish on its own", () => {
+    expect(parseUpdateBotPatch({ notifyOnFinish: false }, "Chief")).toEqual({
+      patch: { notifyOnFinish: false },
+    });
+    expect(parseUpdateBotPatch({ notifyOnFinish: true }, "Chief")).toEqual({
+      patch: { notifyOnFinish: true },
+    });
+  });
+
+  it("accepts notify_on_finish as an alias", () => {
+    expect(parseUpdateBotPatch({ notify_on_finish: false }, "Chief")).toEqual({
+      patch: { notifyOnFinish: false },
+    });
+  });
+
+  it("keeps name patches and notifyOnFinish together", () => {
+    expect(parseUpdateBotPatch({ name: "Scout", notifyOnFinish: false }, "Chief")).toEqual({
+      patch: { name: "Scout", notifyOnFinish: false },
+    });
+  });
+
+  it("rejects a non-boolean notifyOnFinish", () => {
+    expect(parseUpdateBotPatch({ notifyOnFinish: "false" }, "Chief")).toEqual({
+      error: "notifyOnFinish must be true or false.",
+    });
+  });
+
+  it("requires at least one supported field", () => {
+    expect(parseUpdateBotPatch({}, "Chief")).toEqual({
+      error:
+        "Provide at least one of name, title, description, notifyOnFinish, color, artifact_id, or use_attached_image.",
+    });
+  });
+
+  it("leaves avatar-only args for the executor to resolve", () => {
+    expect(parseUpdateBotPatch({ color: "#8B5CF6" }, "Chief")).toEqual({ patch: {} });
+    expect(parseUpdateBotPatch({ artifact_id: "art-1" }, "Chief")).toEqual({ patch: {} });
+    expect(parseUpdateBotPatch({ use_attached_image: true }, "Chief")).toEqual({ patch: {} });
+  });
+});
 
 describe("run notification preference", () => {
   it("silences direct messages but leaves group notifications enabled", async () => {

@@ -834,6 +834,20 @@ function toAgentTool(tool: ConnectorTool, host: ToolHost, exposedName: string): 
           computer_mode: raw.computer_mode ? String(raw.computer_mode) : "",
         };
       }
+      if (tool.name === "update_bot") {
+        const notifyRaw = raw.notifyOnFinish ?? raw.notify_on_finish;
+        return {
+          ...(raw.name !== undefined ? { name: String(raw.name) } : {}),
+          ...(raw.title !== undefined ? { title: String(raw.title) } : {}),
+          ...(raw.description !== undefined ? { description: String(raw.description) } : {}),
+          ...(raw.color !== undefined ? { color: String(raw.color) } : {}),
+          ...(raw.artifact_id !== undefined ? { artifact_id: String(raw.artifact_id) } : {}),
+          ...(raw.use_attached_image !== undefined
+            ? { use_attached_image: raw.use_attached_image }
+            : {}),
+          ...(notifyRaw !== undefined ? { notifyOnFinish: notifyRaw } : {}),
+        };
+      }
       if (tool.name === "create_space") {
         return { name: String(raw.name ?? "") };
       }
@@ -1235,6 +1249,17 @@ function builtinParameters(tool: ConnectorTool) {
       instructions: Type.Optional(Type.String()),
       prompt: Type.Optional(Type.String()),
       computer_mode: Type.Optional(Type.Union([Type.Literal("team"), Type.Literal("dedicated")])),
+    });
+  }
+  if (tool.name === "update_bot") {
+    return Type.Object({
+      name: Type.Optional(Type.String()),
+      title: Type.Optional(Type.String()),
+      description: Type.Optional(Type.String()),
+      color: Type.Optional(Type.String()),
+      artifact_id: Type.Optional(Type.String()),
+      use_attached_image: Type.Optional(Type.Boolean()),
+      notifyOnFinish: Type.Optional(Type.Boolean()),
     });
   }
   if (tool.name === "create_space") {
