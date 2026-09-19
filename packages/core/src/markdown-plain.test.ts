@@ -40,7 +40,9 @@ describe("plainTextFromMarkdown", () => {
   );
 
   it("does not let HTML attribute underscores steal visible emphasis", () => {
-    expect(plainTextFromMarkdown('_Open <a href="/_draft">report</a> now_')).toBe("Open report now");
+    expect(plainTextFromMarkdown('_Open <a href="/_draft">report</a> now_')).toBe(
+      "Open report now",
+    );
   });
 
   it("drops emphasis markers", () => {
