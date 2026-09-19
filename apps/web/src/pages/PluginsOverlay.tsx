@@ -737,9 +737,9 @@ export function PluginsOverlay({
               {showFeatured ? (
                 <div className="mb-6" data-testid="featured-connectors">
                   {!loading && catalog.length === 0 ? (
-                      <p className="text-[13.5px] leading-6 text-muted-foreground/80">
-                        <Trans>Configure a plugin catalog on the server to connect apps.</Trans>
-                      </p>
+                    <p className="text-[13.5px] leading-6 text-muted-foreground/80">
+                      <Trans>Configure a plugin catalog on the server to connect apps.</Trans>
+                    </p>
                   ) : (
                     <div className="grid grid-cols-2 gap-2">
                       {featuredTiles.map((tile) => {
