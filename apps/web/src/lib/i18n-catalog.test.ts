@@ -241,8 +241,6 @@ describe("lingui catalogs", () => {
     expect(catalog).toContain(
       'msgid "{0} runs · {1} tokens"\nmsgstr "{0} exécutions · {1} jetons"',
     );
-    expect(catalog).toContain(
-      'msgstr "{0, plural, one {# modèle} other {# modèles}}"',
-    );
+    expect(catalog).toContain('msgstr "{0, plural, one {# modèle} other {# modèles}}"');
   });
 });
