@@ -15,6 +15,7 @@ import {
   threadContextForRun,
   toolCompletionAuditPayload,
   toolCompletionFromResult,
+  userTurnInstructions,
 } from "./executor.js";
 import { serializeModelSecret } from "./pi-oauth.js";
 
@@ -503,6 +504,54 @@ describe("run notification preference", () => {
         userId: "user-1",
       }),
     ).resolves.toBe(true);
+  });
+});
+
+describe("userTurnInstructions", () => {
+  const currentTimeInstruction = "Current time: 2026-09-19T00:00:00.000Z";
+  const base = {
+    botInstructions: "Bot instructions",
+    computerInstruction: "You have a persistent computer.",
+    pageBrowserAllowed: true,
+    workspaceInstruction: "This entire computer workspace is your private home.",
+    currentTimeInstruction,
+  };
+
+  it("keeps the timestamp last when every optional context is present", () => {
+    const instructions = userTurnInstructions({
+      ...base,
+      groupContext: "Group context",
+      messagingContext: "Messaging context",
+      redactedMemoryContext: "Memory context",
+      redactedScratchpadContext: "Scratchpad context",
+      hasHistoricalContext: true,
+      agentEnvironmentInstruction: "Agent environment",
+      botDirectory: "Bot directory",
+      pluginLine: "Connected plugins: none",
+      agentSkillsLine: "Agent skills",
+      taughtSkillsLine: "Taught skills",
+    }).filter(Boolean);
+
+    expect(instructions[0]).toBe("Bot instructions");
+    expect(instructions.at(-1)).toBe(currentTimeInstruction);
+  });
+
+  it("keeps the timestamp last when no optional context exists", () => {
+    const instructions = userTurnInstructions({
+      ...base,
+      groupContext: undefined,
+      messagingContext: undefined,
+      redactedMemoryContext: undefined,
+      redactedScratchpadContext: undefined,
+      hasHistoricalContext: false,
+      agentEnvironmentInstruction: undefined,
+      botDirectory: undefined,
+      pluginLine: undefined,
+      agentSkillsLine: undefined,
+      taughtSkillsLine: undefined,
+    }).filter(Boolean);
+
+    expect(instructions.at(-1)).toBe(currentTimeInstruction);
   });
 });
 
