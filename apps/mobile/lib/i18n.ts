@@ -1,5 +1,4 @@
 import { useSyncExternalStore } from "react";
-import { FR_MESSAGES } from "./locales/fr";
 import { RU_MESSAGES } from "./locales/ru";
 import { ZH_MESSAGES } from "./locales/zh";
 import {
@@ -12,7 +11,6 @@ import {
 const catalogs: Partial<Record<UiLocale, Record<string, string>>> = {
   "zh-CN": ZH_MESSAGES,
   ru: RU_MESSAGES,
-  fr: FR_MESSAGES,
 };
 
 let activeLocale: UiLocale = "en";
