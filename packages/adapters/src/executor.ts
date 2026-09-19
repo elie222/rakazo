@@ -216,6 +216,7 @@ import {
   CATALOG_EXECUTE,
   uniquifyInstalledToolName,
 } from "./lazy-tool-catalog.js";
+import { actorMayUsePrivateRemoteMcp } from "./mcp-private-endpoint.js";
 import {
   buildMcpCredentialBlob,
   needsOAuthProbe,
@@ -253,6 +254,7 @@ import {
   searchChartCatalog,
 } from "./plot-tool.js";
 import type { RemoteTransportDependencies } from "./remote-mcp.js";
+import { assertSafeRemoteUrl } from "./remote-mcp.js";
 import { loadReplyContext, messageToAgentHistoryText } from "./reply-context.js";
 import {
   commitConsumedRunSecret,
@@ -567,6 +569,8 @@ export interface ExecutorDeps {
   /** Page browser (DOM refs) on the bot computer. Defaults to the sandbox live browser when supported. */
   browser?: BrowserProvider;
   secretHttp?: RemoteTransportDependencies;
+  /** Allow RFC1918 / Docker-network MCP URLs when the deployment owner enabled the escape. */
+  mcpAllowPrivateEndpoint?: boolean;
   /** Remote cloud coding agents. Null/omit means tools stay uninjected. */
   cloudAgent?: CloudAgentConnection | null;
   /** Aborted when createApp stop() begins so in-flight continueRun boot waits exit promptly. */
@@ -2751,6 +2755,21 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 error:
                   "Invalid MCP server details. Required: name, transport (streamable_http|sse|stdio); endpoint for remote transports; command for stdio.",
               });
+            }
+            if (parsed.endpoint) {
+              try {
+                await assertSafeRemoteUrl(parsed.endpoint, deps.secretHttp?.resolveHostname, {
+                  allowPrivateEndpoint: await actorMayUsePrivateRemoteMcp(
+                    deps.prisma,
+                    run.userId,
+                    deps.mcpAllowPrivateEndpoint === true,
+                  ),
+                });
+              } catch (error) {
+                return finish({
+                  error: error instanceof Error ? error.message : "Invalid MCP endpoint",
+                });
+              }
             }
             if (!deps.secretStore) {
               return finish({ error: "Secret storage is not available in this deployment." });
