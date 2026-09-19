@@ -200,6 +200,38 @@ describe("CartesiaVoiceProvider", () => {
     expect(String(fetchMock.mock.calls[1]?.[0])).toContain("starting_after=a");
     // The walk stops on the page that reports no more, rather than requesting forever.
     expect(fetchMock).toHaveBeenCalledTimes(2);
+    const firstSignal = (fetchMock.mock.calls[0]?.[1] as { signal?: AbortSignal } | undefined)
+      ?.signal;
+    const secondSignal = (fetchMock.mock.calls[1]?.[1] as { signal?: AbortSignal } | undefined)
+      ?.signal;
+    expect(firstSignal).toBeInstanceOf(AbortSignal);
+    expect(secondSignal).toBe(firstSignal);
+  });
+
+  it("stops catalog walks at the page ceiling when has_more stays true", async () => {
+    const fetchMock = vi.fn().mockImplementation(async () => {
+      const page = fetchMock.mock.calls.length;
+      return new Response(
+        JSON.stringify({
+          data: [{ id: `v${page}`, name: `Voice ${page}` }],
+          has_more: true,
+          next_page: `v${page}`,
+        }),
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const voices = await new CartesiaVoiceProvider().listVoices("sk-test", ctx);
+
+    expect(fetchMock).toHaveBeenCalledTimes(20);
+    expect(voices.map((voice) => voice.id)).toEqual(
+      Array.from({ length: 20 }, (_, index) => `v${index + 1}`),
+    );
+    const signals = fetchMock.mock.calls.map(
+      (call) => (call[1] as { signal?: AbortSignal } | undefined)?.signal,
+    );
+    expect(signals[0]).toBeInstanceOf(AbortSignal);
+    expect(signals.every((signal) => signal === signals[0])).toBe(true);
   });
 
   it("keeps synthesis on the pinned API version", async () => {
