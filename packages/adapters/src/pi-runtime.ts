@@ -369,11 +369,18 @@ export class PiAgentRuntime implements AgentRuntime {
               queue.push({ type: "text", text });
             }
             if ("usage" in event.message && event.message.usage) {
+              const usage = billedPromptTokens(event.message.usage);
               queue.push({
                 type: "usage",
-                ...billedPromptTokens(event.message.usage),
+                ...usage,
                 provider: model.provider,
                 model: model.id,
+              });
+              getLogger().debug("model usage", {
+                runId: request.runId,
+                provider: model.provider,
+                model: model.id,
+                ...usage,
               });
             }
           }
