@@ -53,6 +53,12 @@ describe("loadEnv", () => {
     expect(
       loadEnv({
         ...base,
+        SANDBOX_PROVIDER: "createos",
+      }).sandboxProvider,
+    ).toBe("none");
+    expect(
+      loadEnv({
+        ...base,
         SANDBOX_PROVIDER: "none",
       }).sandboxProvider,
     ).toBe("none");

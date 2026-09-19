@@ -1278,6 +1278,73 @@ describe("computer provisioning", () => {
       }
     },
   );
+
+  it("restores the workspace and records the new reference when reconnect replaces the sandbox", async () => {
+    const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-reconnect-replacement-"));
+    const ref = {
+      id: "provider-2",
+      botId: "bot-1",
+      kind: "createos" as const,
+      providerRef: "provider-2",
+      fresh: true,
+    };
+    const updateMany = vi.fn().mockResolvedValue({ count: 1 });
+    const importWorkspace = vi.fn().mockResolvedValue(undefined);
+    const exportHome = vi.fn().mockReturnValue((async function* () {})());
+    const prisma = {
+      computer: {
+        findUniqueOrThrow: vi.fn().mockResolvedValue({
+          id: "computer-1",
+          homeKey: "bot-1",
+          providerRef: "provider-1",
+          kind: "createos",
+          scope: "dedicated",
+          state: "running",
+          controlLeaseId: null,
+          updatedAt: new Date("2024-01-01T00:00:00.000Z"),
+        }),
+        updateMany,
+        update: vi.fn(),
+      },
+    } as unknown as PrismaClient;
+    const sandbox = {
+      provision: vi.fn().mockResolvedValue(ref),
+      prepare: vi.fn().mockResolvedValue(undefined),
+      importWorkspace,
+      destroy: vi.fn(),
+      stop: vi.fn(),
+    } as unknown as SandboxProvider;
+
+    try {
+      await expect(
+        provisionComputer(
+          {
+            prisma,
+            sandbox,
+            home: { exportHome } as unknown as AgentHomeStore,
+            jobs: {} as JobPublisher,
+            events: {} as ThreadEvents,
+            dataDir,
+          },
+          "computer-1",
+          context,
+        ),
+      ).resolves.toEqual(ref);
+      expect(importWorkspace).toHaveBeenCalledTimes(1);
+      expect(updateMany).toHaveBeenCalledTimes(2);
+      expect(updateMany).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            state: "running",
+            providerRef: "provider-2",
+            kind: "createos",
+          }),
+        }),
+      );
+    } finally {
+      await rm(dataDir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("computer execution leases", () => {
