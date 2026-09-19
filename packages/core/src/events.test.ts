@@ -94,6 +94,28 @@ describe("response streaming preference", () => {
     ]);
   });
 
+  it("strips flushed narration text from synthetic progress messages", () => {
+    const durable = {
+      id: "m-final",
+      blocks: [{ kind: "text" as const, text: "Lisbon is the capital of Portugal." }],
+    };
+    const live = {
+      id: "progress:run-1",
+      blocks: [
+        { kind: "text" as const, text: "I'm checking that now." },
+        { kind: "steps" as const, steps: [{ label: "Browser", count: 1 }] },
+        { kind: "progress" as const, text: "Lisbon is the cap" },
+      ],
+    };
+    expect(stripLiveStreamingProgress([durable, live])).toEqual([
+      durable,
+      {
+        id: "progress:run-1",
+        blocks: [{ kind: "steps" as const, steps: [{ label: "Browser", count: 1 }] }],
+      },
+    ]);
+  });
+
   it("returns the same snapshot when streaming is on or there is nothing to strip", () => {
     const snapshot = {
       messages: [{ id: "m1", blocks: [{ kind: "text" as const, text: "done" }] }],

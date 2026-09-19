@@ -123,6 +123,7 @@ test("thread reducer hides live tokens when Stream replies is off", async ({ pag
   await openFixture(page, { view: "thread", stream: "off", phase: "live" });
   await expect(page.getByTestId("message-user-bubble")).toBeVisible();
   await expect(page.getByTestId("message-bot-bubble")).toHaveCount(0);
+  await expect(page.getByTestId("tool-activity")).toContainText("Browser");
   await expect(page.getByRole("status")).toBeVisible();
   await expect(page.locator(".rk-chat-markdown-cursor")).toHaveCount(0);
   await capture(page, testInfo, "thread-stream-off-live", { clip: true });

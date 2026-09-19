@@ -30,6 +30,15 @@ describe("response streaming preference", () => {
     ).toBe("on");
   });
 
+  it("treats an empty stored value as on, not as missing", () => {
+    expect(
+      resolveResponseStreamingPreference({
+        stored: "",
+        envDefault: "off",
+      }),
+    ).toBe("on");
+  });
+
   it("persists through storage helpers", () => {
     const store = new Map<string, string>();
     const storage = {

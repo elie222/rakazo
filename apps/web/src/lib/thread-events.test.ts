@@ -4,6 +4,7 @@ import type {
   ThreadMessage,
   ThreadSnapshot,
 } from "@rakazo/contracts";
+import { withLiveStreamingProgress } from "@rakazo/core";
 import { describe, expect, it } from "vitest";
 import {
   activeThreadRuns,
@@ -188,7 +189,7 @@ describe("thread event reduction", () => {
     ]);
   });
 
-  it("hides live token progress when streaming replies is off", () => {
+  it("keeps hidden token progress so re-enabling streaming stays continuous", () => {
     const initial = snapshot([]);
     const afterTokens = reduceThreadSnapshot(
       initial,
@@ -198,7 +199,6 @@ describe("thread event reduction", () => {
         runId: "run-1",
         payload: { text: "Lis", streaming: true },
       }),
-      { streamResponses: false },
     );
     const afterDelta = reduceThreadSnapshot(
       afterTokens,
@@ -208,11 +208,16 @@ describe("thread event reduction", () => {
         runId: "run-1",
         payload: { delta: "bon", streaming: true },
       }),
-      { streamResponses: false },
     );
 
     expect(afterDelta?.cursor).toBe(5);
-    expect(afterDelta?.messages).toEqual([]);
+    expect(afterDelta?.messages).toEqual([
+      expect.objectContaining({
+        id: "progress:run-1",
+        blocks: [{ kind: "progress", text: "Lisbon" }],
+      }),
+    ]);
+    expect(withLiveStreamingProgress(afterDelta, false)?.messages).toEqual([]);
 
     const afterActivity = reduceThreadSnapshot(
       afterDelta,
@@ -222,9 +227,8 @@ describe("thread event reduction", () => {
         runId: "run-1",
         payload: { text: "Using browser", activity: true },
       }),
-      { streamResponses: false },
     );
-    expect(afterActivity?.messages).toEqual([
+    expect(withLiveStreamingProgress(afterActivity, false)?.messages).toEqual([
       expect.objectContaining({
         id: "progress:run-1",
         blocks: [{ kind: "progress", text: "Using browser", activity: true }],
@@ -243,12 +247,41 @@ describe("thread event reduction", () => {
           blocks: [{ kind: "text", text: "Lisbon" }],
         },
       }),
-      { streamResponses: false },
     );
     expect(afterComplete?.messages).toEqual([
       expect.objectContaining({
         id: "m-final",
         blocks: [{ kind: "text", text: "Lisbon" }],
+      }),
+    ]);
+  });
+
+  it("resumes from retained tokens after streaming is turned back on mid-reply", () => {
+    const afterPrefix = reduceThreadSnapshot(
+      snapshot([]),
+      event({
+        type: "thread.progress",
+        seq: 4,
+        runId: "run-1",
+        payload: { text: "Lis", streaming: true },
+      }),
+    );
+    const hidden = withLiveStreamingProgress(afterPrefix, false);
+    expect(hidden?.messages).toEqual([]);
+
+    const afterResume = reduceThreadSnapshot(
+      afterPrefix,
+      event({
+        type: "thread.progress",
+        seq: 5,
+        runId: "run-1",
+        payload: { delta: "bon", streaming: true },
+      }),
+    );
+    expect(withLiveStreamingProgress(afterResume, true)?.messages).toEqual([
+      expect.objectContaining({
+        id: "progress:run-1",
+        blocks: [{ kind: "progress", text: "Lisbon" }],
       }),
     ]);
   });

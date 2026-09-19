@@ -429,18 +429,12 @@ export function ShellPage() {
   }
 
   function commitSnapshot(next: ThreadSnapshot | null) {
-    const prepared = withLiveStreamingProgress(next, streamResponsesRef.current);
-    snapshotRef.current = prepared;
-    setSnapshot(prepared);
+    snapshotRef.current = next;
+    setSnapshot(withLiveStreamingProgress(next, streamResponsesRef.current));
   }
 
   useEffect(() => {
-    if (streamResponses) return;
-    const current = snapshotRef.current;
-    const prepared = withLiveStreamingProgress(current, false);
-    if (prepared === current) return;
-    snapshotRef.current = prepared;
-    setSnapshot(prepared);
+    setSnapshot(withLiveStreamingProgress(snapshotRef.current, streamResponses));
   }, [streamResponses]);
 
   function commitComputer(next: ComputerStatus | null) {
@@ -1220,14 +1214,7 @@ export function ShellPage() {
         }
       },
       applyEvent: (event) =>
-        applyThreadEvent(
-          event,
-          commitSnapshot,
-          commitComputer,
-          snapshotRef,
-          computerRef,
-          streamResponsesRef.current,
-        ),
+        applyThreadEvent(event, commitSnapshot, commitComputer, snapshotRef, computerRef),
       onEvent: (event, initial) => {
         const currentBot = botsRef.current.find((bot) => bot.id === active.id);
         notifyBrowserForEvent(
@@ -1327,14 +1314,7 @@ export function ShellPage() {
       currentSnapshot: () => snapshotRef.current,
       subscribe: (cursor) => rpc.threads.subscribe({ groupId, cursor }, { signal: abort.signal }),
       applyEvent: (event) =>
-        applyThreadEvent(
-          event,
-          commitSnapshot,
-          commitComputer,
-          snapshotRef,
-          computerRef,
-          streamResponsesRef.current,
-        ),
+        applyThreadEvent(event, commitSnapshot, commitComputer, snapshotRef, computerRef),
       onEvent: (event, initial) => {
         const eventBot = botsRef.current.find((bot) => bot.id === event.botId);
         notifyBrowserForEvent(
@@ -5639,10 +5619,9 @@ function applyThreadEvent(
   commitComputer: (next: ComputerStatus | null) => void,
   snapshotRef: MutableRefObject<ThreadSnapshot | null>,
   computerRef: MutableRefObject<ComputerStatus | null>,
-  streamResponses: boolean,
 ) {
   if (isThreadSnapshotEvent(event)) {
-    const next = reduceThreadSnapshot(snapshotRef.current, event, { streamResponses });
+    const next = reduceThreadSnapshot(snapshotRef.current, event);
     commitSnapshot(next);
   }
   if (isComputerStatusEvent(event)) {

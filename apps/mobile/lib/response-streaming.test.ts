@@ -14,6 +14,7 @@ describe("mobile response streaming preference", () => {
   beforeEach(() => {
     store.clear();
     vi.resetModules();
+    vi.unstubAllEnvs();
   });
 
   it("defaults to streaming on", async () => {
@@ -35,5 +36,12 @@ describe("mobile response streaming preference", () => {
 
     await expect(loadResponseStreamingPreference()).resolves.toBe("off");
     expect(listener).toHaveBeenCalledOnce();
+  });
+
+  it("normalizes an empty stored value instead of treating it as absent", async () => {
+    vi.stubEnv("EXPO_PUBLIC_DEFAULT_RESPONSE_STREAMING", "off");
+    store.set(RESPONSE_STREAMING_STORAGE_KEY, "");
+    const { loadResponseStreamingPreference } = await import("./response-streaming");
+    await expect(loadResponseStreamingPreference()).resolves.toBe("on");
   });
 });

@@ -172,11 +172,6 @@ export function isRunTerminalEvent(event: { type: string }): boolean {
 export const RESPONSE_STREAMING_STORAGE_KEY = "rakazo.responseStreaming";
 export type ResponseStreamingPreference = "on" | "off";
 
-export type LiveStreamingOptions = {
-  /** When false, hide live assistant token progress. Default true. */
-  streamResponses?: boolean;
-};
-
 /** Saved choice wins; unknown or missing values keep streaming on. */
 export function normalizeResponseStreamingPreference(
   raw: string | null | undefined,
@@ -208,7 +203,7 @@ export function stripLiveStreamingProgress<
       continue;
     }
     const blocks = message.blocks.filter(
-      (block) => block.kind !== "progress" || block.activity === true,
+      (block) => block.kind !== "text" && (block.kind !== "progress" || block.activity === true),
     );
     if (blocks.length === message.blocks.length) {
       next.push(message);

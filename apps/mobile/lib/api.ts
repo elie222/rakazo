@@ -23,7 +23,6 @@ import {
   readBoundedJsonResponse,
   reduceLiveMessageBlocks,
   runFailureError,
-  shouldApplyLiveStreamingProgress,
   signupRequiresEmailVerification,
   takeLiveMessage,
   updateCloudAgentMessages,
@@ -947,7 +946,6 @@ export async function subscribeThread(
 export function applyMobileThreadEvent(
   prev: MobileSnapshot | null,
   event: ThreadEvent,
-  options: { streamResponses?: boolean } = {},
 ): MobileSnapshot | null {
   if (!prev) return prev;
   if (event.type === "thread.cleared") {
@@ -1039,9 +1037,6 @@ export function applyMobileThreadEvent(
     };
   }
   if (event.type === "thread.progress") {
-    if (!shouldApplyLiveStreamingProgress(event.payload, options.streamResponses ?? true)) {
-      return { ...prev, cursor: event.seq ?? prev.cursor };
-    }
     const progressId = progressMessageId(event);
     const { previous, remaining } = takeLiveMessage(prev.messages, progressId);
     const streaming: MobileMessage = {

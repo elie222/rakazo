@@ -7,7 +7,6 @@ import type {
   ThreadMessagePage,
   ThreadSnapshot,
 } from "@rakazo/contracts";
-import type { LiveStreamingOptions } from "@rakazo/core";
 import {
   isActive,
   isRunTerminalEvent,
@@ -16,7 +15,6 @@ import {
   progressMessageId,
   reduceLiveMessageBlocks,
   runFailureError,
-  shouldApplyLiveStreamingProgress,
   subagentBlockFromPayload,
   takeLiveMessage,
   updateCloudAgentMessages,
@@ -263,7 +261,6 @@ export function isThreadSnapshotEvent(event: ProductEvent): boolean {
 export function reduceThreadSnapshot(
   prev: ThreadSnapshot | null,
   event: ProductEvent,
-  options: LiveStreamingOptions = {},
 ): ThreadSnapshot | null {
   if (!prev) return prev;
   if (event.type === "thread.cleared") {
@@ -404,9 +401,6 @@ export function reduceThreadSnapshot(
     };
   }
   if (event.type === "thread.progress") {
-    if (!shouldApplyLiveStreamingProgress(event.payload, options.streamResponses ?? true)) {
-      return { ...prev, cursor: event.seq };
-    }
     const liveId = progressMessageId(event);
     const { previous, remaining } = takeLiveMessage(prev.messages, liveId);
     const blocks = reduceLiveMessageBlocks(previous?.blocks ?? [], {

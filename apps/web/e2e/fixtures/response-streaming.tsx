@@ -48,7 +48,6 @@ function emptySnapshot(): ThreadSnapshot {
 
 /** Same thread.progress / message.created path the chat shell uses. */
 function reduceComparableTurn(stream: boolean, turn: "live" | "done"): ThreadSnapshot {
-  const options = { streamResponses: stream };
   let snapshot = reduceThreadSnapshot(
     emptySnapshot(),
     productEvent(1, {
@@ -59,25 +58,29 @@ function reduceComparableTurn(stream: boolean, turn: "live" | "done"): ThreadSna
         blocks: [{ kind: "text", text: USER_TEXT }],
       },
     }),
-    options,
   );
   snapshot = reduceThreadSnapshot(
     snapshot,
     productEvent(2, { type: "run.started", payload: { trigger: "user" } }),
-    options,
   );
   snapshot = reduceThreadSnapshot(
     snapshot,
     productEvent(3, {
+      type: "agent.tool.called",
+      payload: { name: "browser" },
+    }),
+  );
+  snapshot = reduceThreadSnapshot(
+    snapshot,
+    productEvent(4, {
       type: "thread.progress",
       payload: { text: LIVE_TOKENS, streaming: true },
     }),
-    options,
   );
   if (turn === "done") {
     snapshot = reduceThreadSnapshot(
       snapshot,
-      productEvent(4, {
+      productEvent(5, {
         type: "thread.message.created",
         payload: {
           messageId: "bot-final",
@@ -85,9 +88,8 @@ function reduceComparableTurn(stream: boolean, turn: "live" | "done"): ThreadSna
           blocks: [{ kind: "text", text: COMPLETE_TEXT }],
         },
       }),
-      options,
     );
-    snapshot = reduceThreadSnapshot(snapshot, productEvent(5, { type: "run.completed" }), options);
+    snapshot = reduceThreadSnapshot(snapshot, productEvent(6, { type: "run.completed" }));
   }
   return withLiveStreamingProgress(snapshot, stream) ?? emptySnapshot();
 }
@@ -106,10 +108,12 @@ function fixtureNote(): string {
 }
 
 function MessageRow({ message }: { message: ThreadMessage }) {
-  const visible = message.blocks.filter((block) => !isToolActivityBlock(block));
-  if (visible.length === 0) return null;
+  const narration = message.blocks.filter(
+    (block) => (block.kind === "text" || block.kind === "progress") && !isToolActivityBlock(block),
+  );
+  const activity = message.blocks.filter((block) => isToolActivityBlock(block));
   if (message.role === "user") {
-    const text = visible
+    const text = narration
       .filter((block) => block.kind === "text")
       .map((block) => block.text)
       .join("");
@@ -125,22 +129,37 @@ function MessageRow({ message }: { message: ThreadMessage }) {
       </div>
     );
   }
+  if (narration.length === 0 && activity.length === 0) return null;
   return (
-    <div className="relative flex justify-start" data-message-id={message.id}>
-      <div
-        data-testid="message-bot-bubble"
-        className="max-w-full space-y-2.5 rounded-[20px] bg-muted px-[18px] py-3 text-[15.5px] leading-[1.5] text-foreground/90"
-        dir="auto"
-      >
-        {visible.map((block, i) => {
-          if (block.kind !== "text" && block.kind !== "progress") return null;
-          return (
+    <div className="relative flex flex-col items-start gap-2" data-message-id={message.id}>
+      {activity.map((block, i) => (
+        <div
+          key={`${message.id}-activity-${i}`}
+          data-testid="tool-activity"
+          className="text-[13px] text-muted-foreground"
+        >
+          {block.kind === "steps"
+            ? block.steps
+                .map((step) => `${step.label}${step.count > 1 ? ` ×${step.count}` : ""}`)
+                .join(" · ")
+            : block.kind === "progress"
+              ? block.text
+              : null}
+        </div>
+      ))}
+      {narration.length > 0 ? (
+        <div
+          data-testid="message-bot-bubble"
+          className="max-w-full space-y-2.5 rounded-[20px] bg-muted px-[18px] py-3 text-[15.5px] leading-[1.5] text-foreground/90"
+          dir="auto"
+        >
+          {narration.map((block, i) => (
             <div key={`${message.id}-${i}`}>
               <ChatMarkdown streaming={block.kind === "progress"}>{block.text}</ChatMarkdown>
             </div>
-          );
-        })}
-      </div>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }

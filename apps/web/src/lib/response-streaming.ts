@@ -55,7 +55,7 @@ export function resolveResponseStreamingPreference(
     options.stored !== undefined
       ? options.stored
       : readStored(options.storage ?? getLocalStorage());
-  if (stored) return normalizeResponseStreamingPreference(stored);
+  if (stored != null) return normalizeResponseStreamingPreference(stored);
 
   const envDefault =
     options.envDefault !== undefined

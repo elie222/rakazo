@@ -302,6 +302,7 @@ function Thread() {
       ? { botId }
       : undefined;
   const [snap, setSnap] = useState<MobileSnapshot | null>(null);
+  const snapRef = useRef<MobileSnapshot | null>(null);
   const streamResponses = useSyncExternalStore(
     subscribeResponseStreaming,
     getCachedResponseStreamingEnabled,
@@ -309,9 +310,14 @@ function Thread() {
   );
   const streamResponsesRef = useRef(streamResponses);
   streamResponsesRef.current = streamResponses;
+
+  function commitSnap(next: MobileSnapshot | null) {
+    snapRef.current = next;
+    setSnap(withLiveStreamingProgress(next, streamResponsesRef.current));
+  }
+
   useEffect(() => {
-    if (streamResponses) return;
-    setSnap((prev) => withLiveStreamingProgress(prev, false));
+    setSnap(withLiveStreamingProgress(snapRef.current, streamResponses));
   }, [streamResponses]);
   const activeThreadId = useRef<string | undefined>(undefined);
   const [draft, setDraft] = useState("");
@@ -633,8 +639,10 @@ function Thread() {
         expandedHistoryThread.current = null;
         pinnedAroundRef.current = null;
         historyEpoch.current += 1;
-        setSnap((current) =>
-          current ? { ...current, messages: [], olderCursor: null, run: null } : current,
+        commitSnap(
+          snapRef.current
+            ? { ...snapRef.current, messages: [], olderCursor: null, run: null }
+            : snapRef.current,
         );
       })
       .catch((err: unknown) =>
@@ -733,11 +741,8 @@ function Thread() {
       })
     )
       return next;
-    setSnap((prev) =>
-      withLiveStreamingProgress(
-        mergeMobileSnapshot(prev, next, expandedHistoryThread.current === next.threadId),
-        streamResponsesRef.current,
-      ),
+    commitSnap(
+      mergeMobileSnapshot(snapRef.current, next, expandedHistoryThread.current === next.threadId),
     );
     return next;
   }
@@ -771,16 +776,11 @@ function Thread() {
         }
       : null;
     jumpScrollTarget.current = targetInPage ? target.messageId : null;
-    setSnap(
-      withLiveStreamingProgress(
-        {
-          ...snap,
-          messages: targetInPage ? [...page.messages] : snap.messages,
-          olderCursor: targetInPage ? page.olderCursor : snap.olderCursor,
-        },
-        streamResponsesRef.current,
-      ),
-    );
+    commitSnap({
+      ...snap,
+      messages: targetInPage ? [...page.messages] : snap.messages,
+      olderCursor: targetInPage ? page.olderCursor : snap.olderCursor,
+    });
   }
 
   async function loadOlderMessages() {
@@ -799,7 +799,7 @@ function Thread() {
         return;
       }
       expandedHistoryThread.current = page.threadId;
-      setSnap((prev) => prependMobileMessagePage(prev, page));
+      commitSnap(prependMobileMessagePage(snapRef.current, page));
     } catch (err) {
       loadingOlderContent.current = false;
       setError(err instanceof Error ? err.message : t("Could not load earlier messages"));
@@ -937,11 +937,7 @@ function Thread() {
                   pinnedAroundRef.current = null;
                   historyEpoch.current += 1;
                 }
-                setSnap((prev) =>
-                  applyMobileThreadEvent(prev, event, {
-                    streamResponses: streamResponsesRef.current,
-                  }),
-                );
+                commitSnap(applyMobileThreadEvent(snapRef.current, event));
               }
               if (event.type === "bot.updated") {
                 void refreshMentionBots();
