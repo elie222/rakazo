@@ -388,6 +388,8 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Reset computer?": "要重置电脑吗？",
   "Resetting…": "正在重置…",
   Restore: "恢复",
+  Replies: "回复",
+  "Stream replies": "流式回复",
   "Restore the last saved workspace. Unsaved work on the computer is lost.":
     "恢复上次保存的工作区。电脑上未保存的工作将会丢失。",
   "Resume notifications": "恢复通知",

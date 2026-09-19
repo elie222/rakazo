@@ -1,6 +1,6 @@
 import type { AvatarStyle } from "@rakazo/contracts";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -47,6 +47,11 @@ import {
 import { presentMessageActionSheet } from "../lib/message-action-sheet";
 import { native, useResolvedAppearance, useThemedStyles } from "../lib/native";
 import { registerPushToken } from "../lib/push";
+import {
+  getCachedResponseStreamingEnabled,
+  setResponseStreamingPreference,
+  subscribeResponseStreaming,
+} from "../lib/response-streaming";
 import type { AccountUiLocale } from "../lib/ui-locale";
 import { ACCOUNT_UI_LOCALES, UI_LOCALE_LABELS } from "../lib/ui-locale";
 
@@ -78,6 +83,11 @@ export default function Account() {
   } | null>(null);
   const { avatarStyle, updateAvatarStyle } = useAvatarStyle();
   const appearance = getCachedAppearancePreference();
+  const streamReplies = useSyncExternalStore(
+    subscribeResponseStreaming,
+    getCachedResponseStreamingEnabled,
+    () => true,
+  );
   const styles = useThemedStyles(createAccountStyles);
   const versionInfo = getAppVersionInfo();
   const updateLabel = formatUpdateLabel(versionInfo.update, t);
@@ -289,6 +299,29 @@ export default function Account() {
                 </Pressable>
               );
             })}
+          </View>
+        </View>
+
+        <View accessibilityLabel={t("Replies")} style={styles.avatarSection}>
+          <Text style={styles.settingsTitle}>{t("Replies")}</Text>
+          <View
+            style={{
+              minHeight: 44,
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 12,
+            }}
+          >
+            <Text style={{ color: native.label, fontSize: 15, flex: 1 }}>
+              {t("Stream replies")}
+            </Text>
+            <Switch
+              accessibilityLabel={t("Stream replies")}
+              value={streamReplies}
+              onValueChange={(checked) =>
+                void setResponseStreamingPreference(checked ? "on" : "off")
+              }
+            />
           </View>
         </View>
 

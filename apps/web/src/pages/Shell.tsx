@@ -58,6 +58,7 @@ import {
   speechFromBlocks,
   truncateSlashDescription,
   userVisibleMessages,
+  withLiveStreamingProgress,
 } from "@rakazo/core";
 import {
   AvatarStyleProvider,
@@ -125,6 +126,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
@@ -170,6 +172,7 @@ import {
 } from "../lib/pending-attachments";
 import { markAfterPaint, markOnce } from "../lib/performance";
 import { quoteDraftForSelection } from "../lib/quote-selection";
+import { getResponseStreamingEnabled, subscribeResponseStreaming } from "../lib/response-streaming";
 import { clearSpaceSelection, rpc, selectedSpaceId, selectSpace } from "../lib/rpc";
 import { readSeenRunErrorIds, rememberSeenRunErrorId } from "../lib/run-error-storage";
 import { sharedInflight } from "../lib/shared-inflight";
@@ -354,6 +357,13 @@ export function ShellPage() {
   const [searchLoading, setSearchLoading] = useState(false);
   const [snapshot, setSnapshot] = useState<ThreadSnapshot | null>(null);
   const snapshotRef = useRef<ThreadSnapshot | null>(null);
+  const streamResponses = useSyncExternalStore(
+    subscribeResponseStreaming,
+    getResponseStreamingEnabled,
+    () => true,
+  );
+  const streamResponsesRef = useRef(streamResponses);
+  streamResponsesRef.current = streamResponses;
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
   const [replyTarget, setReplyTarget] = useState<ThreadMessage | null>(null);
   const [replyQuote, setReplyQuote] = useState<string | null>(null);
@@ -420,8 +430,12 @@ export function ShellPage() {
 
   function commitSnapshot(next: ThreadSnapshot | null) {
     snapshotRef.current = next;
-    setSnapshot(next);
+    setSnapshot(withLiveStreamingProgress(next, streamResponsesRef.current));
   }
+
+  useEffect(() => {
+    setSnapshot(withLiveStreamingProgress(snapshotRef.current, streamResponses));
+  }, [streamResponses]);
 
   function commitComputer(next: ComputerStatus | null) {
     computerRef.current = next;

@@ -433,6 +433,14 @@ msgstr "API key header"
 msgid "Appearance"
 msgstr "Appearance"
 
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Replies"
+msgstr "Replies"
+
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Stream replies"
+msgstr "Stream replies"
+
 #: src/components/teach/SkillDraftCard.tsx:126
 msgid "Approval boundaries"
 msgstr "Approval boundaries"

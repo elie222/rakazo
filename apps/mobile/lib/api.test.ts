@@ -1,5 +1,6 @@
 vi.mock("./ai-consent", () => ({ promptAiConsent: vi.fn() }));
 
+import { withLiveStreamingProgress } from "@rakazo/core";
 import * as SecureStore from "expo-secure-store";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { promptAiConsent } from "./ai-consent";
@@ -1738,6 +1739,74 @@ describe("mobile thread event reduction", () => {
         role: "bot",
         runId: "run-1",
         blocks: [{ kind: "progress", text: "Hello" }],
+      },
+    ]);
+  });
+
+  it("keeps hidden token progress so re-enabling streaming stays continuous", () => {
+    const afterTokens = applyMobileThreadEvent(snapshot(), {
+      type: "thread.progress",
+      seq: 4,
+      runId: "run-1",
+      payload: { text: "Lis", streaming: true },
+    });
+    const afterDelta = applyMobileThreadEvent(afterTokens, {
+      type: "thread.progress",
+      seq: 5,
+      runId: "run-1",
+      payload: { delta: "bon", streaming: true },
+    });
+
+    expect(afterDelta?.cursor).toBe(5);
+    expect(afterDelta?.messages).toEqual([
+      {
+        id: "progress:run-1",
+        role: "bot",
+        runId: "run-1",
+        blocks: [{ kind: "progress", text: "Lisbon" }],
+      },
+    ]);
+    expect(withLiveStreamingProgress(afterDelta, false)?.messages).toEqual([]);
+
+    const afterComplete = applyMobileThreadEvent(afterDelta, {
+      type: "thread.message.created",
+      seq: 6,
+      runId: "run-1",
+      payload: {
+        messageId: "m-final",
+        role: "bot",
+        blocks: [{ kind: "text", text: "Lisbon" }],
+      },
+    });
+    expect(afterComplete?.messages).toEqual([
+      expect.objectContaining({
+        id: "m-final",
+        blocks: [{ kind: "text", text: "Lisbon" }],
+      }),
+    ]);
+  });
+
+  it("resumes from retained tokens after streaming is turned back on mid-reply", () => {
+    const afterPrefix = applyMobileThreadEvent(snapshot(), {
+      type: "thread.progress",
+      seq: 4,
+      runId: "run-1",
+      payload: { text: "Lis", streaming: true },
+    });
+    expect(withLiveStreamingProgress(afterPrefix, false)?.messages).toEqual([]);
+
+    const afterResume = applyMobileThreadEvent(afterPrefix, {
+      type: "thread.progress",
+      seq: 5,
+      runId: "run-1",
+      payload: { delta: "bon", streaming: true },
+    });
+    expect(withLiveStreamingProgress(afterResume, true)?.messages).toEqual([
+      {
+        id: "progress:run-1",
+        role: "bot",
+        runId: "run-1",
+        blocks: [{ kind: "progress", text: "Lisbon" }],
       },
     ]);
   });
