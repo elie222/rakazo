@@ -39,6 +39,10 @@ describe("plainTextFromMarkdown", () => {
     (text) => expect(plainTextFromMarkdown(text)).toBe("onetwo"),
   );
 
+  it("does not let HTML attribute underscores steal visible emphasis", () => {
+    expect(plainTextFromMarkdown('_Open <a href="/_draft">report</a> now_')).toBe("Open report now");
+  });
+
   it("drops emphasis markers", () => {
     expect(plainTextFromMarkdown("Created **Projects-CoS** as a **Project**")).toBe(
       "Created Projects-CoS as a Project",

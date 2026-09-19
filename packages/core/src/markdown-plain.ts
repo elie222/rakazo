@@ -38,9 +38,22 @@ function stripUnderscoreEmphasis(text: string): string {
   const delimiters: Delimiter[] = [];
   const openers: Delimiter[] = [];
   let previousEnd = 0;
-  for (const match of text.matchAll(/_+/g)) {
-    const start = match.index;
-    const end = start + match[0].length;
+  let i = 0;
+  while (i < text.length) {
+    if (text[i] === "<") {
+      const close = text.indexOf(">", i + 1);
+      if (close !== -1) {
+        i = close + 1;
+        continue;
+      }
+    }
+    if (text[i] !== "_") {
+      i += 1;
+      continue;
+    }
+    const start = i;
+    while (text[i] === "_") i += 1;
+    const end = i;
     if (text.slice(previousEnd, start).includes("\n")) {
       openers.length = 0;
     }
