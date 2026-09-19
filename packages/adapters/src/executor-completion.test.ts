@@ -73,6 +73,11 @@ describe("completionNotificationBody", () => {
 });
 
 describe("completionNotificationPreview", () => {
+  it("preserves filenames in completion notifications", () => {
+    expect(completionNotificationPreview("Saved **monthly_sales_report.csv**")).toBe(
+      "Saved monthly_sales_report.csv",
+    );
+  });
   it("strips Markdown and truncates the plain text", () => {
     expect(completionNotificationPreview("Created **Projects-CoS** as a **Project**")).toBe(
       "Created Projects-CoS as a Project",

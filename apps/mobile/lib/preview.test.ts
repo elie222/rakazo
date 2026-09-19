@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import { previewSnippet } from "./preview.js";
 
 describe("previewSnippet", () => {
+  it("preserves identifiers in last-message previews", () => {
+    expect(previewSnippet("Updated **DATABASE_POOL_SIZE**")).toBe("Updated DATABASE_POOL_SIZE");
+  });
   it("keeps a short last message as a single plain line", () => {
     expect(previewSnippet("venue booked, contract sent")).toBe("venue booked, contract sent");
   });

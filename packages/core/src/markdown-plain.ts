@@ -21,8 +21,10 @@ export function plainTextFromMarkdown(markdown: string): string {
     .replace(/^\s*[-*+]\s+/gm, "")
     .replace(/^\s*\d+\.\s+/gm, "")
     .replace(/^\s*[-*_]{3,}\s*$/gm, "")
-    .replace(/(\*\*|__)(.*?)\1/g, "$2")
-    .replace(/(\*|_)([^*_\n]+)\1/g, "$2")
+    .replace(/(\*\*)(.*?)\1/g, "$2")
+    .replace(/(\*)([^*\n]+)\1/g, "$2")
+    // Underscores within words are literal, including filenames and Unicode identifiers.
+    .replace(/(^|[^\p{L}\p{N}\p{M}_])(_{1,3})(.*?)\2(?![\p{L}\p{N}\p{M}_])/gu, "$1$3")
     .replace(/~~(.*?)~~/g, "$1")
     .replace(/<[^>]+>/g, " ");
   text = text.replace(

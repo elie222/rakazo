@@ -2,6 +2,24 @@ import { describe, expect, it } from "vitest";
 import { plainTextFromMarkdown, truncatedPlainText } from "./markdown-plain.js";
 
 describe("plainTextFromMarkdown", () => {
+  it.each([
+    "Saved monthly_sales_report.csv",
+    "Set DATABASE_POOL_SIZE to 12",
+    "Keep foo__bar__baz unchanged",
+    "Open https://example.test/monthly_sales_report",
+    "Email first_middle_last@example.test",
+    "保留客户_月度_报告和équipe_nom_complet",
+    "Keep cafe\u0301_nom_ unchanged",
+  ])("preserves underscores inside words: %s", (text) => {
+    expect(plainTextFromMarkdown(text)).toBe(text);
+  });
+
+  it("still removes underscore emphasis around identifiers and punctuation", () => {
+    expect(
+      plainTextFromMarkdown("_one_ __two__ ___three___ (_four_) __monthly_sales_report__"),
+    ).toBe("one two three (four) monthly_sales_report");
+  });
+
   it("drops emphasis markers", () => {
     expect(plainTextFromMarkdown("Created **Projects-CoS** as a **Project**")).toBe(
       "Created Projects-CoS as a Project",
