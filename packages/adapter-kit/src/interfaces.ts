@@ -5,6 +5,9 @@ import type {
   AgentRuntimeCapabilities,
   AgentRuntimeEvent,
   ArtifactPut,
+  AutoReviewCapabilities,
+  AutoReviewRequest,
+  AutoReviewResult,
   BackgroundJob,
   BackgroundJobHandlers,
   BrowserActRequest,
@@ -430,4 +433,14 @@ export interface CloudAgentProvider {
     context: AdapterContext,
   ): Promise<CloudAgentHandle>;
   cancel(id: string, context: AdapterContext, runId?: string): Promise<CloudAgentSnapshot>;
+}
+
+/**
+ * Provider-neutral "is this tool call safe to auto-allow?" check. First used by
+ * Auto Review; swap vendors without changing approval UX (pass → run, ask → card).
+ * Core runs with none configured and falls back to the LLM adapter.
+ */
+export interface AutoReviewProvider {
+  describe(): AdapterDescriptor<AutoReviewCapabilities>;
+  review(request: AutoReviewRequest, context: AdapterContext): Promise<AutoReviewResult>;
 }

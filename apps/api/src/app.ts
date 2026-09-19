@@ -381,6 +381,7 @@ export async function createApp(
       env.deploymentModelKey ?? "",
       env.composioApiKey ?? "",
       env.cursorApiKey ?? "",
+      process.env.TYPESAFE_API_KEY ?? "",
     ].filter(Boolean),
     secretStore: secrets,
     secretHttp: remoteConnectors,

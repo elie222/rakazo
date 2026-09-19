@@ -806,3 +806,38 @@ export interface CloudAgentReplyRequest {
   images?: CloudAgentImage[];
   signal?: AbortSignal;
 }
+
+/**
+ * Optional auto-allow check for a consequential tool call. Core still runs when
+ * no hosted verifier is configured; the LLM judge is the default adapter.
+ */
+export interface AutoReviewCapabilities {
+  /** True when the adapter never leaves the process (tests / Playwright). */
+  offline?: boolean;
+  /** True when a hosted vendor key is not required. */
+  keyless?: boolean;
+}
+
+export type AutoReviewDecision = "pass" | "ask" | "error";
+
+export interface AutoReviewMatchingRule {
+  effect: string;
+  matchKind: string;
+  matchValue: string;
+}
+
+export interface AutoReviewRequest {
+  toolName: string;
+  connectorKind: string;
+  /** Caller must already redact secrets and sensitive keys. */
+  args: Record<string, unknown>;
+  userTask: string;
+  botDescription: string;
+  matchingRules: AutoReviewMatchingRule[];
+}
+
+export interface AutoReviewResult {
+  decision: AutoReviewDecision;
+  reason?: string;
+  model: string;
+}

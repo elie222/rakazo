@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  autoReviewMinConfidence,
   autoReviewTimeoutMs,
   buildAutoReviewPrompt,
   deploymentAutoReviewDefault,
@@ -7,6 +8,7 @@ import {
   parseAutoReviewJudgeText,
   redactToolArgsForReview,
   resolveAutoReviewChecker,
+  resolveAutoReviewProviderKind,
 } from "./auto-review.js";
 
 describe("resolveAutoReviewChecker", () => {
@@ -39,6 +41,56 @@ describe("resolveAutoReviewChecker", () => {
       }),
     ).toEqual({ provider: "openrouter", model: "deepseek/deepseek-v4-flash-0731" });
   });
+
+  it("selects Jev when the provider is jev and a TypeSafe key is present", () => {
+    expect(
+      resolveAutoReviewChecker({
+        RAKAZO_AUTO_REVIEW_PROVIDER: "jev",
+        TYPESAFE_API_KEY: "ts-key",
+        PI_DEFAULT_PROVIDER: "openrouter",
+        PI_DEFAULT_MODEL: "cheap/fast",
+      }),
+    ).toEqual({ provider: "jev", model: "jev-latest" });
+    expect(
+      resolveAutoReviewChecker({
+        RAKAZO_AUTO_REVIEW_PROVIDER: "jev",
+        RAKAZO_AUTO_REVIEW_MODEL: "jev-custom",
+        TYPESAFE_API_KEY: "ts-key",
+      }),
+    ).toEqual({ provider: "jev", model: "jev-custom" });
+  });
+
+  it("falls back to the LLM checker when Jev is selected without a key", () => {
+    expect(
+      resolveAutoReviewChecker({
+        RAKAZO_AUTO_REVIEW_PROVIDER: "jev",
+        PI_DEFAULT_PROVIDER: "openrouter",
+        PI_DEFAULT_MODEL: "cheap/fast",
+      }),
+    ).toEqual({ provider: "openrouter", model: "cheap/fast" });
+  });
+});
+
+describe("resolveAutoReviewProviderKind", () => {
+  it("uses Jev only when a TypeSafe key is present", () => {
+    expect(resolveAutoReviewProviderKind({ RAKAZO_AUTO_REVIEW_PROVIDER: "jev" })).toBe("llm");
+    expect(
+      resolveAutoReviewProviderKind({
+        RAKAZO_AUTO_REVIEW_PROVIDER: "jev",
+        TYPESAFE_API_KEY: "ts-key",
+      }),
+    ).toBe("jev");
+    expect(resolveAutoReviewProviderKind({ RAKAZO_AUTO_REVIEW_PROVIDER: "openrouter" })).toBe(
+      "llm",
+    );
+    expect(
+      resolveAutoReviewProviderKind({
+        RAKAZO_AUTO_REVIEW_PROVIDER: "scripted",
+        AGENT_RUNTIME: "scripted",
+      }),
+    ).toBe("scripted");
+    expect(resolveAutoReviewProviderKind({ RAKAZO_AUTO_REVIEW_PROVIDER: "scripted" })).toBe("llm");
+  });
 });
 
 describe("isAutoReviewCheckerConfigured", () => {
@@ -68,6 +120,30 @@ describe("isAutoReviewCheckerConfigured", () => {
         hasUserCredentialForProvider: (provider) => provider === "openrouter",
       }),
     ).toBe(true);
+    expect(
+      isAutoReviewCheckerConfigured({
+        env: { RAKAZO_AUTO_REVIEW_PROVIDER: "jev", TYPESAFE_API_KEY: "ts-key" },
+      }),
+    ).toBe(true);
+    expect(
+      isAutoReviewCheckerConfigured({
+        env: {
+          RAKAZO_AUTO_REVIEW_PROVIDER: "jev",
+          PI_DEFAULT_PROVIDER: "openrouter",
+          PI_DEFAULT_MODEL: "x",
+        },
+      }),
+    ).toBe(false);
+    expect(
+      isAutoReviewCheckerConfigured({
+        env: { RAKAZO_AUTO_REVIEW_PROVIDER: "scripted", AGENT_RUNTIME: "scripted" },
+      }),
+    ).toBe(true);
+    expect(
+      isAutoReviewCheckerConfigured({
+        env: { RAKAZO_AUTO_REVIEW_PROVIDER: "scripted" },
+      }),
+    ).toBe(false);
   });
 });
 
@@ -84,6 +160,15 @@ describe("autoReviewTimeoutMs", () => {
     expect(autoReviewTimeoutMs({})).toBe(1_500);
     expect(autoReviewTimeoutMs({ RAKAZO_AUTO_REVIEW_TIMEOUT_MS: "2000" })).toBe(2_000);
     expect(autoReviewTimeoutMs({ RAKAZO_AUTO_REVIEW_TIMEOUT_MS: "nope" })).toBe(1_500);
+  });
+});
+
+describe("autoReviewMinConfidence", () => {
+  it("defaults to 0.5 and clamps out of range", () => {
+    expect(autoReviewMinConfidence({})).toBe(0.5);
+    expect(autoReviewMinConfidence({ RAKAZO_AUTO_REVIEW_MIN_CONFIDENCE: "0.8" })).toBe(0.8);
+    expect(autoReviewMinConfidence({ RAKAZO_AUTO_REVIEW_MIN_CONFIDENCE: "2" })).toBe(0.5);
+    expect(autoReviewMinConfidence({ RAKAZO_AUTO_REVIEW_MIN_CONFIDENCE: "nope" })).toBe(0.5);
   });
 });
 
@@ -266,5 +351,53 @@ describe("runAutoReviewJudge timeout", () => {
         timeoutMs: 50,
       }),
     ).resolves.toMatchObject({ decision: "error" });
+  });
+
+  it("aborts the judge when the parent signal cancels", async () => {
+    vi.resetModules();
+    const { runAutoReviewJudge } = await import("./auto-review.js");
+    const parent = new AbortController();
+    let seen: AbortSignal | undefined;
+    const runtime = {
+      describe: () => ({ capabilities: { scripted: false } }),
+      run: (_request: unknown, context: { signal: AbortSignal }) => {
+        seen = context.signal;
+        return {
+          [Symbol.asyncIterator]() {
+            return {
+              async next() {
+                if (context.signal.aborted) {
+                  throw new DOMException("Aborted", "AbortError");
+                }
+                return {
+                  value: {
+                    type: "done",
+                    text: '{"decision":"pass","reason":"fits the task"}',
+                  },
+                  done: false,
+                };
+              },
+            };
+          },
+        } as AsyncIterable<never>;
+      },
+      abort: async () => {},
+    };
+    parent.abort();
+    await expect(
+      runAutoReviewJudge({
+        runtime: runtime as never,
+        checker: { provider: "openrouter", model: "x" },
+        prompt: "test",
+        runId: "run",
+        spaceId: "ws",
+        userId: "user",
+        botId: "bot",
+        threadId: "thread",
+        timeoutMs: 5_000,
+        signal: parent.signal,
+      }),
+    ).resolves.toMatchObject({ decision: "error" });
+    expect(seen?.aborted).toBe(true);
   });
 });

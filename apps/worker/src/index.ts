@@ -187,6 +187,7 @@ async function main() {
       deploymentModelKey ?? "",
       process.env.COMPOSIO_API_KEY ?? "",
       process.env.CURSOR_API_KEY ?? "",
+      process.env.TYPESAFE_API_KEY ?? "",
     ].filter(Boolean),
     secretStore: secrets,
     deploymentModelKey,

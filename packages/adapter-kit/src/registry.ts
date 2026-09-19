@@ -36,4 +36,5 @@ export const slots = {
   web: "web",
   browser: "browser",
   cloudAgent: "cloud-agent",
+  autoReview: "auto-review",
 } as const;
