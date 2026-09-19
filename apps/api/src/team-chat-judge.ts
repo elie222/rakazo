@@ -166,6 +166,8 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
               model: event.model,
               inputTokens: event.inputTokens,
               outputTokens: event.outputTokens,
+              cacheReadTokens: event.cacheReadTokens,
+              cacheWriteTokens: event.cacheWriteTokens,
             },
           });
         }
