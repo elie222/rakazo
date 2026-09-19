@@ -444,11 +444,8 @@ export function inferScript(
     const filePath =
       /(?:called|named)\s+([A-Za-z0-9._/-]+)/i.exec(prompt)?.[1] ?? "notes/result.txt";
     return [
-      { assistant: "writing that into my home now." },
-      {
-        toolCalls: [{ name: "write_file", args: { path: filePath, content } }],
-        complete: true,
-      },
+      { toolCalls: [{ name: "write_file", args: { path: filePath, content } }] },
+      { assistant: "writing that into my home now.", complete: true },
     ];
   }
   if (lower.includes("remember")) {

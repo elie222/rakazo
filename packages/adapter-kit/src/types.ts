@@ -386,8 +386,8 @@ export interface AgentRunRequest {
   resumeFromCheckpoint?: string;
   script?: ScriptedTurn[];
   /**
-   * Bot-message wakes may finish with no text and no tools (FYI silence).
-   * When set, skip synthetic empty-turn fallbacks.
+   * FYI bot-message wakes and scheduled routines may finish with no text.
+   * When set, skip synthetic empty-turn fallbacks (including after tools).
    */
   allowSilentEmpty?: boolean;
   /** Contextual fallback when a non-silent run produces no written response. */

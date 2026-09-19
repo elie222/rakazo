@@ -736,6 +736,51 @@ describe("Pi connector tool dispatch", () => {
     });
   });
 
+  it("allows a silent empty completion after tools when allowSilentEmpty is set", async () => {
+    fakeAgentState.mode = "silent-continuation";
+    fakeAgentState.emitFinalAfterFollowUp = false;
+    const runtime = new PiAgentRuntime();
+    const events: unknown[] = [];
+
+    for await (const event of runtime.run(
+      {
+        botId: "b",
+        threadId: "t",
+        runId: "routine-silent-tools",
+        prompt: "If nothing to report, produce no message.",
+        instructions: "Stay silent when the inbox is empty.",
+        history: [],
+        tools: [destinationTool],
+        model: { provider: "test", id: "dispatch-test-model" },
+        allowSilentEmpty: true,
+        executeTool: vi.fn(async () => ({ ok: true })),
+      },
+      {
+        operationId: "routine-silent-tools",
+        traceId: "routine-silent-tools",
+        spaceId: "w",
+        userId: "u",
+        signal: new AbortController().signal,
+      },
+    )) {
+      events.push(event);
+    }
+
+    const followUp = fakeAgentState.followUpMessages[0] as { role: string; content: string };
+    expect(followUp).toEqual(
+      expect.objectContaining({
+        role: "user",
+        content: expect.stringContaining("stay silent"),
+      }),
+    );
+    expect(followUp.content).not.toContain("NO_RESPONSE");
+    expect(events).not.toContainEqual({
+      type: "text",
+      text: "I completed the tool step but could not produce a final response. Please ask me to continue.",
+    });
+    expect(events.at(-1)).toEqual({ type: "done" });
+  });
+
   it("keeps FYI bot-message wakes silent when the model produces nothing", async () => {
     fakeAgentState.mode = "empty";
     const runtime = new PiAgentRuntime();

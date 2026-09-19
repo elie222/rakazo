@@ -79,6 +79,8 @@ const MAX_PARALLEL_SUBAGENTS = 4;
 const MAX_SILENT_TOOL_CONTINUATIONS = 3;
 const SILENT_TOOL_CONTINUATION_PROMPT =
   "Continue the original task from the latest tool result. Do not stop after a tool call; use any remaining tools needed, then give the user the final answer.";
+const SILENT_ALLOWED_TOOL_CONTINUATION_PROMPT =
+  "Continue the original task from the latest tool result. If you were instructed to stay silent when there is nothing to report, follow that instruction for the entire final assistant reply. Otherwise use any remaining tools needed, then give the user the final answer.";
 const TOOL_FINAL_RESPONSE_FALLBACK =
   "I completed the tool step but could not produce a final response. Please ask me to continue.";
 const DEFAULT_COMPUTER_SCREENSHOTS_TO_KEEP = 2;
@@ -356,7 +358,9 @@ export class PiAgentRuntime implements AgentRuntime {
                 silentToolContinuations += 1;
                 agent.followUp({
                   role: "user",
-                  content: SILENT_TOOL_CONTINUATION_PROMPT,
+                  content: request.allowSilentEmpty
+                    ? SILENT_ALLOWED_TOOL_CONTINUATION_PROMPT
+                    : SILENT_TOOL_CONTINUATION_PROMPT,
                   timestamp: Date.now(),
                 });
               }
@@ -414,10 +418,15 @@ export class PiAgentRuntime implements AgentRuntime {
             streamed = budgetMessage;
           }
         } else if (!host.pausePending && toolWorkPendingFinal) {
-          // Discard cumulative pre-tool narration from the terminal payload and make the
-          // missing final response visible to the user instead of silently completing.
-          streamed = TOOL_FINAL_RESPONSE_FALLBACK;
-          queue.push({ type: "text", text: streamed });
+          if (request.allowSilentEmpty) {
+            // Scheduled/FYI runs may finish after tools with no user-visible text.
+            streamed = "";
+          } else {
+            // Discard cumulative pre-tool narration from the terminal payload and make the
+            // missing final response visible to the user instead of silently completing.
+            streamed = TOOL_FINAL_RESPONSE_FALLBACK;
+            queue.push({ type: "text", text: streamed });
+          }
         } else if (!streamed.trim() && !host.pausePending) {
           streamed = "";
           const lastMessage = agent.state.messages.at(-1);
@@ -425,7 +434,7 @@ export class PiAgentRuntime implements AgentRuntime {
           if (fallback.trim()) {
             queue.push({ type: "text", text: fallback });
             streamed = fallback;
-          } else if (toolWorkPendingFinal) {
+          } else if (toolWorkPendingFinal && !request.allowSilentEmpty) {
             // A tool-bearing run must never finish with only a progress/narration message.
             streamed = TOOL_FINAL_RESPONSE_FALLBACK;
             queue.push({ type: "text", text: streamed });

@@ -31,7 +31,7 @@ export const CANCEL_COMPUTER_RUN_WORK = [
   '[ -n "$computerId" ] && [ -n "$runId" ] || exit 0',
   `prefix="${BACKGROUND_WORK_MARKER_PREFIX}$computerId-$runId-"`,
   // Match the timeout wrapper cmdline (still contains the launch tag after exec into the user command).
-  'pkill -TERM -f "rakazo-background-launch ${computerId} ${runId} " 2>/dev/null || true',
+  `pkill -TERM -f "rakazo-background-launch $computerId $runId " 2>/dev/null || true`,
   "if [ -d /proc ]; then",
   "  for fd in /proc/[0-9]*/fd/*; do",
   '    target="$(readlink "$fd" 2>/dev/null)" || continue',
@@ -54,7 +54,7 @@ export const CANCEL_COMPUTER_RUN_WORK = [
   "  done",
   "fi",
   "sleep 0.2",
-  'pkill -KILL -f "rakazo-background-launch ${computerId} ${runId} " 2>/dev/null || true',
+  `pkill -KILL -f "rakazo-background-launch $computerId $runId " 2>/dev/null || true`,
   "if [ -d /proc ]; then",
   "  for fd in /proc/[0-9]*/fd/*; do",
   '    target="$(readlink "$fd" 2>/dev/null)" || continue',
