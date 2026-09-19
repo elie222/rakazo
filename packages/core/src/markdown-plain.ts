@@ -90,8 +90,10 @@ export function truncatedPlainText(markdown: string, maxChars: number): string {
 /** Matching `>` for a tag at `<`, ignoring `>` inside quoted attributes. */
 function htmlTagClose(text: string, open: number): number {
   let quote: '"' | "'" | undefined;
+  let firstGt = -1;
   for (let i = open + 1; i < text.length; i++) {
     const ch = text[i];
+    if (firstGt === -1 && ch === ">") firstGt = i;
     if (quote) {
       if (ch === quote) quote = undefined;
       continue;
@@ -102,7 +104,8 @@ function htmlTagClose(text: string, open: number): number {
     }
     if (ch === ">") return i;
   }
-  return -1;
+  // Unclosed quote: fall back to the first `>` so malformed tags still strip.
+  return firstGt;
 }
 
 function stripHtmlTags(text: string): string {
