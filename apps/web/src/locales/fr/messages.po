@@ -96,7 +96,7 @@ msgstr "Écran de {0}"
 
 #: src/pages/Shell.tsx:5895
 msgid "{botName}’s computer"
-msgstr "{botName}’s computer"
+msgstr "Ordinateur de {botName}"
 
 #: src/pages/ActivityList.tsx:140
 msgid "{days}d ago"
@@ -2275,7 +2275,7 @@ msgstr "Message"
 #: src/pages/Shell.tsx:5082
 #: src/pages/Shell.tsx:5086
 msgid "Message {activeName}"
-msgstr "Message {activeName}"
+msgstr "Message à {activeName}"
 
 #: src/pages/Shell.tsx:4797
 msgid "Message composer"
@@ -2788,7 +2788,7 @@ msgstr "Fournisseurs"
 
 #: src/components/CloudAgentCard.tsx:44
 msgid "Pull request"
-msgstr "Pull request"
+msgstr "Demande de fusion"
 
 #: src/pages/ActivityList.tsx:147
 msgid "Queued"
@@ -2860,7 +2860,7 @@ msgstr "Récupérer l'ordinateur"
 #. placeholder {0}: update.name
 #: src/components/ComputerUpdateProgress.tsx:64
 msgid "Recovering {0}’s Computer"
-msgstr "Recovering {0}’s Computer"
+msgstr "Récupération de l'ordinateur de {0}"
 
 #: src/components/ComputerUpdateProgress.tsx:63
 msgid "Recovering Team Computer"
@@ -3686,7 +3686,7 @@ msgstr "Mises à jour"
 #. placeholder {0}: update.name
 #: src/components/ComputerUpdateProgress.tsx:67
 msgid "Updating {0}’s Computer"
-msgstr "Updating {0}’s Computer"
+msgstr "Mise à jour de l'ordinateur de {0}"
 
 #: src/components/ComputerUpdateProgress.tsx:66
 msgid "Updating Team Computer"

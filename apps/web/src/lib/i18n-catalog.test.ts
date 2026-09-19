@@ -228,4 +228,21 @@ describe("lingui catalogs", () => {
       'msgstr "{0, plural, one {# модель} few {# модели} many {# моделей} other {# модели}}"',
     );
   });
+
+  it("ships the French runtime catalog with translated chrome and French plurals", () => {
+    const catalog = readFileSync(
+      fileURLToPath(new URL("../locales/fr/messages.po", import.meta.url)),
+      "utf8",
+    );
+
+    expect(catalog).toContain('msgid "Settings"\nmsgstr "Paramètres"');
+    expect(catalog).toContain('msgid "Language"\nmsgstr "Langue"');
+    expect(catalog).toContain('msgid "Cancel"\nmsgstr "Annuler"');
+    expect(catalog).toContain(
+      'msgid "{0} runs · {1} tokens"\nmsgstr "{0} exécutions · {1} jetons"',
+    );
+    expect(catalog).toContain(
+      'msgstr "{0, plural, one {# modèle} other {# modèles}}"',
+    );
+  });
 });
