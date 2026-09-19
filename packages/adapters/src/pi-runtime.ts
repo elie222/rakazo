@@ -369,11 +369,18 @@ export class PiAgentRuntime implements AgentRuntime {
               queue.push({ type: "text", text });
             }
             if ("usage" in event.message && event.message.usage) {
+              const usage = billedPromptTokens(event.message.usage);
               queue.push({
                 type: "usage",
-                ...billedPromptTokens(event.message.usage),
+                ...usage,
                 provider: model.provider,
                 model: model.id,
+              });
+              getLogger().debug("model usage", {
+                runId: request.runId,
+                provider: model.provider,
+                model: model.id,
+                ...usage,
               });
             }
           }
@@ -1106,11 +1113,18 @@ async function executeSubagent(host: ToolHost, executionId: string, args: Record
       const text = assistantText(event.message);
       if (text && !streamed) streamed = text;
       if ("usage" in event.message && event.message.usage) {
+        const usage = billedPromptTokens(event.message.usage);
         host.queue.push({
           type: "usage",
-          ...billedPromptTokens(event.message.usage),
+          ...usage,
           provider: subagentModel.provider,
           model: subagentModel.id,
+        });
+        getLogger().debug("model usage", {
+          runId: host.request.runId,
+          provider: subagentModel.provider,
+          model: subagentModel.id,
+          ...usage,
         });
       }
     }
