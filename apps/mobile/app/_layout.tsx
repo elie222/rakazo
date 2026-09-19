@@ -1,4 +1,5 @@
 import { DarkTheme, Stack, ThemeProvider } from "expo-router";
+import * as ScreenOrientation from "expo-screen-orientation";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useMemo, useState } from "react";
 import { View } from "react-native";
@@ -18,6 +19,12 @@ import { native, useResolvedAppearance } from "../lib/native";
 configureForegroundNotifications();
 
 export default function Layout() {
+  useEffect(() => {
+    // The app is portrait-only; the computer screen unlocks rotation while it is open.
+    void ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(
+      () => undefined,
+    );
+  }, []);
   const { t } = useI18n();
   const [ready, setReady] = useState(false);
   const resolved = useResolvedAppearance();
