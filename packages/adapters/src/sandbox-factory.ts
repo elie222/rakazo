@@ -17,7 +17,6 @@ export interface SandboxProviderOptions {
   daytonaApiKey?: string;
   daytonaApiUrl?: string;
   daytonaTarget?: string;
-  daytonaSnapshot?: string;
   boxApiKey?: string;
   boxApiUrl?: string;
   dataDir?: string;
@@ -43,7 +42,6 @@ export function createSandboxProvider(kind: string, opts: SandboxProviderOptions
         apiKey: opts.daytonaApiKey,
         apiUrl: opts.daytonaApiUrl,
         target: opts.daytonaTarget,
-        snapshot: opts.daytonaSnapshot,
       });
     case "box":
       if (!opts.boxApiKey?.trim()) return missingRemoteKey("box", "BOX_API_KEY");
