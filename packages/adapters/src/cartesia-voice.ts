@@ -64,6 +64,7 @@ export class CartesiaVoiceProvider implements VoiceProvider {
   }
 
   async listVoices(apiKey: string, context: AdapterContext): Promise<VoiceInfo[]> {
+    const signal = voiceDeadline(context.signal, 20_000);
     const voices: Array<Record<string, unknown>> = [];
     let startingAfter: string | undefined;
     // `limit` is per page, so walk the cursor to keep voices past the first page in the picker
@@ -73,7 +74,7 @@ export class CartesiaVoiceProvider implements VoiceProvider {
       if (startingAfter) params.set("starting_after", startingAfter);
       const res = await fetch(`${API}/voices?${params}`, {
         headers: cartesiaHeaders(apiKey, VOICES_VERSION),
-        signal: voiceDeadline(context.signal, 20_000),
+        signal,
       });
       const body = await readVoiceJson(res, { requireValid: res.ok });
       if (!res.ok) throw new Error(voiceHttpError(res.status, "Cartesia", "listing voices", body));
