@@ -23,8 +23,8 @@ export function plainTextFromMarkdown(markdown: string): string {
     .replace(/^\s*[-*_]{3,}\s*$/gm, "")
     .replace(/(\*\*)(.*?)\1/g, "$2")
     .replace(/(\*)([^*\n]+)\1/g, "$2")
-    .replace(/~~(.*?)~~/g, "$1")
-    .replace(/<[^>]+>/g, " ");
+    .replace(/~~(.*?)~~/g, "$1");
+  text = stripHtmlTags(text);
   text = text.replace(
     new RegExp(`${mark}(\\d+)${mark}`, "g"),
     (_match, index: string) => payloads[Number(index)] ?? "",
@@ -41,7 +41,7 @@ function stripUnderscoreEmphasis(text: string): string {
   let i = 0;
   while (i < text.length) {
     if (text[i] === "<") {
-      const close = text.indexOf(">", i + 1);
+      const close = htmlTagClose(text, i);
       if (close !== -1) {
         i = close + 1;
         continue;
@@ -98,6 +98,42 @@ export function truncatedPlainText(markdown: string, maxChars: number): string {
   const end =
     maxChars > 0 && (text.charCodeAt(maxChars - 1) & 0xfc00) === 0xd800 ? maxChars - 1 : maxChars;
   return text.slice(0, end);
+}
+
+/** Matching `>` for a tag at `<`, ignoring `>` inside quoted attributes. */
+function htmlTagClose(text: string, open: number): number {
+  let quote: '"' | "'" | undefined;
+  for (let i = open + 1; i < text.length; i++) {
+    const ch = text[i];
+    if (quote) {
+      if (ch === quote) quote = undefined;
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      quote = ch;
+      continue;
+    }
+    if (ch === ">") return i;
+  }
+  return -1;
+}
+
+function stripHtmlTags(text: string): string {
+  let out = "";
+  let i = 0;
+  while (i < text.length) {
+    if (text[i] === "<") {
+      const close = htmlTagClose(text, i);
+      if (close !== -1) {
+        out += " ";
+        i = close + 1;
+        continue;
+      }
+    }
+    out += text[i];
+    i += 1;
+  }
+  return out;
 }
 
 function takeEscapes(text: string, stash: (payload: string) => string): string {

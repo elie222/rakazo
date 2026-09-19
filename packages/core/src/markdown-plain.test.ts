@@ -43,6 +43,9 @@ describe("plainTextFromMarkdown", () => {
     expect(plainTextFromMarkdown('_Open <a href="/_draft">report</a> now_')).toBe(
       "Open report now",
     );
+    expect(plainTextFromMarkdown('_Open <a title=">_draft">report</a> now_')).toBe(
+      "Open report now",
+    );
   });
 
   it("drops emphasis markers", () => {
