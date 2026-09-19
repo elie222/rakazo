@@ -11,11 +11,11 @@ test("sidebar preview preserves underscores in filenames", async ({ page }, test
     computerMode: "team",
   });
   // Keep the scripted assistant from replacing the short preview with its long default reply.
-  await rpc(page, "threads/send", {
-    botId: bot.id,
-    text: "Saved **monthly_sales_report.csv**; keep working",
-  });
   try {
+    await rpc(page, "threads/send", {
+      botId: bot.id,
+      text: "Saved **monthly_sales_report.csv**; keep working",
+    });
     await page.goto(`/app/${bot.id}`);
     const row = page.locator(`[data-roster-bot-id="${bot.id}"]`);
     await expect(row).toContainText("monthly_sales_report.csv");
