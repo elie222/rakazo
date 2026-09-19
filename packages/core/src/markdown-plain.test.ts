@@ -34,6 +34,11 @@ describe("plainTextFromMarkdown", () => {
     expect(plainTextFromMarkdown(text)).toBe(text);
   });
 
+  it.each(["_one_~~two~~", "~~one~~_two_", "_one_**two**", "**one**_two_"])(
+    "removes adjacent formatting without changing delimiter boundaries: %s",
+    (text) => expect(plainTextFromMarkdown(text)).toBe("onetwo"),
+  );
+
   it("drops emphasis markers", () => {
     expect(plainTextFromMarkdown("Created **Projects-CoS** as a **Project**")).toBe(
       "Created Projects-CoS as a Project",

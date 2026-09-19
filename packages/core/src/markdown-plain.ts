@@ -13,7 +13,7 @@ export function plainTextFromMarkdown(markdown: string): string {
   let text = takeFencedCode(source, stash);
   text = takeInlineCode(text, stash);
   text = takeEscapes(text, stash);
-  text = takeLinks(text)
+  text = stripUnderscoreEmphasis(takeLinks(text))
     .replace(/<([A-Za-z][A-Za-z0-9+.-]{1,31}:[^<>\s]*)>/g, "$1")
     .replace(/<([^<>\s]+@[^<>\s]+\.[^<>\s]+)>/g, "$1")
     .replace(/^#{1,6}\s+/gm, "")
@@ -25,7 +25,6 @@ export function plainTextFromMarkdown(markdown: string): string {
     .replace(/(\*)([^*\n]+)\1/g, "$2")
     .replace(/~~(.*?)~~/g, "$1")
     .replace(/<[^>]+>/g, " ");
-  text = stripUnderscoreEmphasis(text);
   text = text.replace(
     new RegExp(`${mark}(\\d+)${mark}`, "g"),
     (_match, index: string) => payloads[Number(index)] ?? "",
