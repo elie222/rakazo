@@ -1,9 +1,14 @@
-export const UI_LOCALES = ["en", "zh-CN", "ru"] as const;
+export const UI_LOCALES = ["en", "zh-CN", "ru", "fr"] as const;
 
 export type UiLocale = (typeof UI_LOCALES)[number];
 
 /** Locales offered on the mobile Account language picker. */
-export const ACCOUNT_UI_LOCALES = ["en", "zh-CN"] as const satisfies readonly UiLocale[];
+export const ACCOUNT_UI_LOCALES = [
+  "en",
+  "zh-CN",
+  "ru",
+  "fr",
+] as const satisfies readonly UiLocale[];
 
 export type AccountUiLocale = (typeof ACCOUNT_UI_LOCALES)[number];
 
@@ -13,6 +18,7 @@ export const UI_LOCALE_LABELS: Record<UiLocale, string> = {
   en: "English",
   "zh-CN": "简体中文",
   ru: "Русский",
+  fr: "Français",
 };
 
 /** Convert an internal locale identifier to the document language tag. */
@@ -22,7 +28,7 @@ export function htmlLangForLocale(locale: string): string {
 
 /** Return whether a value is one of the supported mobile UI locales. */
 export function isUiLocale(value: string | null | undefined): value is UiLocale {
-  return value === "en" || value === "zh-CN" || value === "ru";
+  return value === "en" || value === "zh-CN" || value === "ru" || value === "fr";
 }
 
 /** Normalize BCP-47 tags to a mobile UI locale, else `en`. */
@@ -41,6 +47,7 @@ export function normalizeUiLocale(raw: string | null | undefined): UiLocale {
     return "zh-CN";
   }
   if (normalized === "ru" || normalized.startsWith("ru-")) return "ru";
+  if (normalized === "fr" || normalized.startsWith("fr-")) return "fr";
   const primary = normalized.split("-")[0] ?? "";
   return isUiLocale(primary) ? primary : "en";
 }
