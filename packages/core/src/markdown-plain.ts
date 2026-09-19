@@ -23,15 +23,60 @@ export function plainTextFromMarkdown(markdown: string): string {
     .replace(/^\s*[-*_]{3,}\s*$/gm, "")
     .replace(/(\*\*)(.*?)\1/g, "$2")
     .replace(/(\*)([^*\n]+)\1/g, "$2")
-    // Underscores within words are literal, including filenames and Unicode identifiers.
-    .replace(/(^|[^\p{L}\p{N}\p{M}_])(_{1,3})(.*?)\2(?![\p{L}\p{N}\p{M}_])/gu, "$1$3")
     .replace(/~~(.*?)~~/g, "$1")
     .replace(/<[^>]+>/g, " ");
+  text = stripUnderscoreEmphasis(text);
   text = text.replace(
     new RegExp(`${mark}(\\d+)${mark}`, "g"),
     (_match, index: string) => payloads[Number(index)] ?? "",
   );
   return text.replace(/\s+/g, " ").trim();
+}
+
+/** Pair delimiter runs once, without rescanning unmatched suffixes. */
+function stripUnderscoreEmphasis(text: string): string {
+  type Delimiter = { start: number; end: number; removed: number };
+  const delimiters: Delimiter[] = [];
+  const openers: Delimiter[] = [];
+  let previousEnd = 0;
+  for (const match of text.matchAll(/_+/g)) {
+    const start = match.index;
+    const end = start + match[0].length;
+    if (text.slice(previousEnd, start).includes("\n")) {
+      openers.length = 0;
+    }
+    previousEnd = end;
+    const delimiter = { start, end, removed: 0 };
+    delimiters.push(delimiter);
+    // Two UTF-16 units preserve astral letters when checking each adjacent code point.
+    const before = text.slice(Math.max(0, start - 2), start);
+    const after = text.slice(end, end + 2);
+    const canClose = !/^[\p{L}\p{N}\p{M}]/u.test(after) && /\S$/u.test(before);
+    let remaining = end - start;
+    while (canClose && remaining > 0 && openers.length) {
+      const opener = openers[openers.length - 1];
+      if (!opener) break;
+      const available = opener.end - opener.start - opener.removed;
+      const paired = Math.min(available, remaining);
+      opener.removed += paired;
+      delimiter.removed += paired;
+      remaining -= paired;
+      if (paired === available) openers.pop();
+    }
+    if (remaining > 0 && !/[\p{L}\p{N}\p{M}]$/u.test(before) && /^\S/u.test(after)) {
+      openers.push(delimiter);
+    }
+  }
+  const parts: string[] = [];
+  let from = 0;
+  for (const delimiter of delimiters) {
+    if (!delimiter.removed) continue;
+    parts.push(text.slice(from, delimiter.start));
+    parts.push("_".repeat(delimiter.end - delimiter.start - delimiter.removed));
+    from = delimiter.end;
+  }
+  parts.push(text.slice(from));
+  return parts.join("");
 }
 
 /** Strip Markdown first so truncation cannot land inside a marker. */

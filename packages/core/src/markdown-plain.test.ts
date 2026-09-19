@@ -20,6 +20,20 @@ describe("plainTextFromMarkdown", () => {
     ).toBe("one two three (four) monthly_sales_report");
   });
 
+  it("removes nested underscore emphasis without changing identifiers", () => {
+    expect(plainTextFromMarkdown("__bold _italic_ bold__")).toBe("bold italic bold");
+    expect(plainTextFromMarkdown("__bold _italic___")).toBe("bold italic");
+    expect(plainTextFromMarkdown("___bold__ italic_")).toBe("bold italic");
+    expect(plainTextFromMarkdown("_italic __bold__ italic_ and __monthly_sales_report__")).toBe(
+      "italic bold italic and monthly_sales_report",
+    );
+  });
+
+  it("preserves a long sequence of unmatched underscore openers", () => {
+    const text = "_word ".repeat(100_000).trim();
+    expect(plainTextFromMarkdown(text)).toBe(text);
+  });
+
   it("drops emphasis markers", () => {
     expect(plainTextFromMarkdown("Created **Projects-CoS** as a **Project**")).toBe(
       "Created Projects-CoS as a Project",

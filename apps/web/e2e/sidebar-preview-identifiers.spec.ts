@@ -10,14 +10,8 @@ test("sidebar preview preserves underscores in filenames", async ({ page }, test
     description: "",
     computerMode: "team",
   });
+  await rpc(page, "threads/send", { botId: bot.id, text: "Saved **monthly_sales_report.csv**" });
   await page.goto(`/app/${bot.id}`);
-  const composer = page.getByPlaceholder("Message Reports");
-  await composer.fill("Saved **monthly_sales_report.csv**");
-  const sent = page.waitForResponse(
-    (response) => response.url().includes("/rpc/threads/send") && response.ok(),
-  );
-  await composer.press("Enter");
-  await sent;
   const row = page.locator(`[data-roster-bot-id="${bot.id}"]`);
   await expect(row).toContainText("monthly_sales_report.csv");
   await expect(row).not.toContainText("**");
