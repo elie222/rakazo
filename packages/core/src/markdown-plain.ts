@@ -13,9 +13,10 @@ export function plainTextFromMarkdown(markdown: string): string {
   let text = takeFencedCode(source, stash);
   text = takeInlineCode(text, stash);
   text = takeEscapes(text, stash);
-  text = stripUnderscoreEmphasis(takeLinks(text))
+  text = takeLinks(text)
     .replace(/<([A-Za-z][A-Za-z0-9+.-]{1,31}:[^<>\s]*)>/g, "$1")
-    .replace(/<([^<>\s]+@[^<>\s]+\.[^<>\s]+)>/g, "$1")
+    .replace(/<([^<>\s]+@[^<>\s]+\.[^<>\s]+)>/g, "$1");
+  text = stripUnderscoreEmphasis(stripHtmlTags(text))
     .replace(/^#{1,6}\s+/gm, "")
     .replace(/^>\s+/gm, "")
     .replace(/^\s*[-*+]\s+/gm, "")
@@ -24,7 +25,6 @@ export function plainTextFromMarkdown(markdown: string): string {
     .replace(/(\*\*)(.*?)\1/g, "$2")
     .replace(/(\*)([^*\n]+)\1/g, "$2")
     .replace(/~~(.*?)~~/g, "$1");
-  text = stripHtmlTags(text);
   text = text.replace(
     new RegExp(`${mark}(\\d+)${mark}`, "g"),
     (_match, index: string) => payloads[Number(index)] ?? "",
@@ -38,22 +38,9 @@ function stripUnderscoreEmphasis(text: string): string {
   const delimiters: Delimiter[] = [];
   const openers: Delimiter[] = [];
   let previousEnd = 0;
-  let i = 0;
-  while (i < text.length) {
-    if (text[i] === "<") {
-      const close = htmlTagClose(text, i);
-      if (close !== -1) {
-        i = close + 1;
-        continue;
-      }
-    }
-    if (text[i] !== "_") {
-      i += 1;
-      continue;
-    }
-    const start = i;
-    while (text[i] === "_") i += 1;
-    const end = i;
+  for (const match of text.matchAll(/_+/g)) {
+    const start = match.index;
+    const end = start + match[0].length;
     if (text.slice(previousEnd, start).includes("\n")) {
       openers.length = 0;
     }
