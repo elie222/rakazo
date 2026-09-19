@@ -20,6 +20,12 @@ import {
 const API = "https://api.cartesia.ai";
 const VERSION = "2024-06-10";
 const MODEL = "sonic-3";
+// `/voices` only honours `limit` from this API version on. Under VERSION it returns the entire
+// catalog as one array, which overruns the voice JSON read cap and fails the request outright.
+// Synthesis stays pinned to VERSION so its request and response contract is untouched.
+const VOICES_VERSION = "2026-08-14";
+const VOICE_PAGE_LIMIT = 100;
+const VERIFY_PAGE_LIMIT = 1;
 
 export class CartesiaVoiceProvider implements VoiceProvider {
   describe(): AdapterDescriptor<VoiceCapabilities> {
@@ -33,8 +39,8 @@ export class CartesiaVoiceProvider implements VoiceProvider {
 
   async verify(apiKey: string, context: AdapterContext): Promise<VoiceVerifyResult> {
     try {
-      const res = await fetch(`${API}/voices`, {
-        headers: cartesiaHeaders(apiKey),
+      const res = await fetch(`${API}/voices?limit=${VERIFY_PAGE_LIMIT}`, {
+        headers: cartesiaHeaders(apiKey, VOICES_VERSION),
         signal: voiceDeadline(context.signal, 20_000),
       });
       if (res.ok) return { ok: true };
@@ -56,8 +62,8 @@ export class CartesiaVoiceProvider implements VoiceProvider {
   }
 
   async listVoices(apiKey: string, context: AdapterContext): Promise<VoiceInfo[]> {
-    const res = await fetch(`${API}/voices`, {
-      headers: cartesiaHeaders(apiKey),
+    const res = await fetch(`${API}/voices?limit=${VOICE_PAGE_LIMIT}`, {
+      headers: cartesiaHeaders(apiKey, VOICES_VERSION),
       signal: voiceDeadline(context.signal, 20_000),
     });
     const body = await readVoiceJson(res, { requireValid: res.ok });
@@ -93,8 +99,8 @@ export class CartesiaVoiceProvider implements VoiceProvider {
   }
 }
 
-function cartesiaHeaders(apiKey: string): Record<string, string> {
-  return { "X-API-Key": apiKey, "Cartesia-Version": VERSION };
+function cartesiaHeaders(apiKey: string, version: string = VERSION): Record<string, string> {
+  return { "X-API-Key": apiKey, "Cartesia-Version": version };
 }
 
 function voicesFrom(body: unknown): Array<Record<string, unknown>> {

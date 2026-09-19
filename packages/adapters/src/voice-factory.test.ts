@@ -160,6 +160,27 @@ describe("CartesiaVoiceProvider", () => {
     expect(voices).toEqual([{ id: "sonic", label: "Katie", description: undefined }]);
   });
 
+  // An unbounded /voices request returns the whole catalog, overruns the voice JSON read cap
+  // and fails connecting the provider outright.
+  it("bounds the voices request so the catalog cannot overrun the read cap", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ data: [] })));
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = new CartesiaVoiceProvider();
+
+    await provider.verify("sk-test", ctx);
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain("limit=1");
+
+    await provider.listVoices("sk-test", ctx);
+    expect(String(fetchMock.mock.calls[1]?.[0])).toMatch(/\/voices\?limit=\d+$/);
+
+    // `limit` is ignored by the version synthesis is pinned to, so both reads must ask for a
+    // version that paginates, while /tts/bytes stays on the pinned one.
+    for (const call of fetchMock.mock.calls) {
+      const headers = (call[1] as { headers: Record<string, string> }).headers;
+      expect(headers["Cartesia-Version"]).toBe("2026-08-14");
+    }
+  });
+
   it("posts bytes to /tts/bytes", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
