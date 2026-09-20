@@ -104,8 +104,14 @@ export async function materializeCurrentTurnFiles(
     markWorkspaceDirty?: () => void;
   },
 ): Promise<MaterializedThreadFile[]> {
+  // "image" attachments (e.g. a photo pasted or uploaded in chat) are backed
+  // by a real artifact exactly like "file" ones — the model seeing them
+  // inline for vision (loadCurrentTurnImages) doesn't put them on disk, so
+  // they must be included here too or a bot can describe a photo it can't
+  // actually attach, forward, or hand to a tool that needs the file.
   const fileBlocks = blocks?.filter(
-    (block): block is Extract<MessageBlock, { kind: "file" }> => block.kind === "file",
+    (block): block is Extract<MessageBlock, { kind: "file" | "image" }> =>
+      block.kind === "file" || block.kind === "image",
   );
   if (!fileBlocks?.length) return [];
 

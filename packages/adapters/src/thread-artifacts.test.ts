@@ -120,13 +120,28 @@ describe("current-turn thread files", () => {
     expect(currentTurnFilesInstruction(files)).toContain('"attachments/artifact-1.pdf"');
   });
 
-  it("does not load images as computer files", async () => {
-    const findMany = vi.fn();
+  it("also materializes image attachments, not just files", async () => {
+    // A photo attached in chat is only handed to the model as inline vision
+    // content otherwise (loadCurrentTurnImages) — a bot that needs the actual
+    // bytes (to forward, re-attach, or hand to a shell tool) needs this too.
+    const findMany = vi.fn().mockResolvedValue([
+      {
+        id: "image-1",
+        spaceId: "workspace-1",
+        botId: "bot-1",
+        name: "photo.png",
+        mimeType: "image/png",
+        size: 4,
+        storageKey: "stored-image-1",
+      },
+    ]);
+    const get = vi.fn().mockResolvedValue(new Uint8Array([1, 2, 3, 4]));
+    const writeFile = vi.fn().mockResolvedValue(undefined);
     const files = await materializeCurrentTurnFiles(
       {
         prisma: { artifact: { findMany } } as unknown as PrismaClient,
-        artifacts: {} as ArtifactStore,
-        sandbox: {} as SandboxProvider,
+        artifacts: { get } as unknown as ArtifactStore,
+        sandbox: { writeFile } as unknown as SandboxProvider,
       },
       [
         {
@@ -155,7 +170,14 @@ describe("current-turn thread files", () => {
       },
     );
 
-    expect(files).toEqual([]);
-    expect(findMany).not.toHaveBeenCalled();
+    expect(get).toHaveBeenCalledWith("stored-image-1", expect.objectContaining({ botId: "bot-1" }));
+    expect(writeFile).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "computer-1" }),
+      { path: "bots/bot-1/attachments/image-1.png", content: new Uint8Array([1, 2, 3, 4]) },
+      expect.objectContaining({ botId: "bot-1" }),
+    );
+    expect(files).toEqual([
+      { name: "photo.png", mimeType: "image/png", size: 4, path: "attachments/image-1.png" },
+    ]);
   });
 });
