@@ -14,6 +14,7 @@ import {
 import {
   ACTIVE_RUN_STATUSES,
   isActive,
+  isConversationalRun,
   projectMessages,
   resolveGroupTargetBotIds,
   runFailureError,
@@ -65,14 +66,12 @@ const RUNS_NEEDING_CONTINUE = new Set(["queued", "waiting_takeover"]);
 
 const STEERABLE_RUN_STATUSES = new Set(["queued", "leased", "running", "waiting_takeover"]);
 /**
- * A routine's turn is the routine prompt, not the conversation. A user message that lands
- * while one is running must not be folded into it as steering: it gets its own run, which
- * waits behind the routine for the computer lease and then answers with the full thread.
+ * A routine's or webhook's turn is its own prompt, not the conversation. A user message that
+ * lands while one is active is stored as pending steering (no run): that run never claims it,
+ * and the continuation started when it finishes answers with the full thread.
  */
-const UNSTEERABLE_RUN_TRIGGERS = new Set(["routine"]);
-
-function steersUserMessage(run: { status: string; trigger?: string }) {
-  return STEERABLE_RUN_STATUSES.has(run.status) && !UNSTEERABLE_RUN_TRIGGERS.has(run.trigger ?? "");
+function steersUserMessage(run: { status: string; trigger?: string | null }) {
+  return STEERABLE_RUN_STATUSES.has(run.status) && isConversationalRun(run.trigger);
 }
 
 type MentionTargetInput = string | { kind: "bot" | "group" | "routine" | "connector"; id: string };
@@ -715,14 +714,14 @@ export async function sendThreadMessage(
             message: "Answer the pending ask first.",
           });
         }
-        const active = activeRuns.find(steersUserMessage);
+        const active = activeRuns.find(steersUserMessage) ?? activeRuns[0];
         if (active) {
           await tx.steeringMessage.create({
             data: {
               messageId: message.id,
               botId: target.botId,
               userId: actor.userId,
-              runId: active.id,
+              runId: steersUserMessage(active) ? active.id : null,
             },
           });
           await tx.message.update({ where: { id: message.id }, data: { runId: active.id } });
@@ -859,7 +858,8 @@ export async function sendThreadMessage(
             message: "Answer the pending ask first.",
           });
         }
-        if (steersUserMessage(run) && !activeByBotId.has(run.botId)) {
+        const current = activeByBotId.get(run.botId);
+        if (!current || (!steersUserMessage(current) && steersUserMessage(run))) {
           activeByBotId.set(run.botId, run);
         }
       }
@@ -873,7 +873,12 @@ export async function sendThreadMessage(
         const active = activeByBotId.get(botId);
         if (active) {
           await tx.steeringMessage.create({
-            data: { messageId: message.id, botId, userId: actor.userId, runId: active.id },
+            data: {
+              messageId: message.id,
+              botId,
+              userId: actor.userId,
+              runId: steersUserMessage(active) ? active.id : null,
+            },
           });
           runs.push(active);
           continue;

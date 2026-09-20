@@ -1561,7 +1561,7 @@ describe("sendThreadMessage", () => {
     expect(tx.task.create).not.toHaveBeenCalled();
     expect(enqueue).toHaveBeenCalledWith(expect.objectContaining({ name: "run.continue" }));
   });
-  it("queues a new run instead of steering into an active routine run", async () => {
+  it("keeps a message pending instead of steering into an active routine run", async () => {
     let messageSeq = 0;
     let eventSeq = 0;
     const tx = {
@@ -1626,20 +1626,25 @@ describe("sendThreadMessage", () => {
         target,
         { text: "what are the alternatives?", clientNonce: "nonce-routine" },
       ),
-    ).resolves.toMatchObject({ runId: "run-user", taskId: "task-user", runIds: ["run-user"] });
-    expect(tx.steeringMessage.create).not.toHaveBeenCalled();
-    expect(tx.run.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({ trigger: "user", sourceMessageId: "msg-1" }),
+    ).resolves.toMatchObject({
+      runId: "run-routine",
+      taskId: "task-routine",
+      runIds: ["run-routine"],
     });
+    // Pending steering (no run): the routine's turn never claims it, and the continuation
+    // that starts when the routine finishes answers with the full thread.
+    expect(tx.steeringMessage.create).toHaveBeenCalledWith({
+      data: { messageId: "msg-1", botId: "bot-1", userId: "user-1", runId: null },
+    });
+    expect(tx.task.create).not.toHaveBeenCalled();
+    expect(tx.run.create).not.toHaveBeenCalled();
     expect(tx.message.update).toHaveBeenCalledWith({
       where: { id: "msg-1" },
-      data: { runId: "run-user" },
+      data: { runId: "run-routine" },
     });
-    expect(enqueue).toHaveBeenCalledWith(
-      expect.objectContaining({ name: "run.continue", payload: { runId: "run-user" } }),
-    );
+    expect(enqueue).not.toHaveBeenCalled();
   });
-  it("starts a group member's own run instead of steering into its routine run", async () => {
+  it("keeps a group message pending instead of steering into a member's routine run", async () => {
     let messageSeq = 0;
     let eventSeq = 0;
     const tx = {
@@ -1722,12 +1727,11 @@ describe("sendThreadMessage", () => {
       { text: "status?", clientNonce: "nonce-group-routine" },
     );
 
-    expect(result).toMatchObject({ runId: "run-a", taskId: "task-a" });
-    expect(tx.steeringMessage.create).not.toHaveBeenCalled();
-    expect(tx.run.create).toHaveBeenCalledTimes(1);
-    expect(tx.run.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({ botId: "bot-a", trigger: "user" }),
+    expect(result).toMatchObject({ runId: "run-routine", taskId: "task-routine" });
+    expect(tx.steeringMessage.create).toHaveBeenCalledWith({
+      data: { messageId: "msg-1", botId: "bot-a", userId: "user-1", runId: null },
     });
+    expect(tx.run.create).not.toHaveBeenCalled();
   });
   it("rejects a quote excerpt without a reply target", async () => {
     const prisma = {

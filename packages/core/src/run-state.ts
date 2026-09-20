@@ -8,6 +8,12 @@ export const ACTIVE_RUN_STATUSES = [
   "waiting_takeover",
 ] as const satisfies readonly RunStatus[];
 const TERMINAL: RunStatus[] = ["completed", "failed", "cancelled"];
+/**
+ * Runs whose turn is not the thread's conversation: a scheduled routine or an inbound webhook.
+ * A user message never steers into one of these; it stays pending and gets its own turn, with the
+ * full thread, once the run has finished.
+ */
+const NON_CONVERSATIONAL_RUN_TRIGGERS = new Set(["routine", "webhook"]);
 
 const allowed: Record<RunStatus, RunStatus[]> = {
   queued: ["leased", "cancelled"],
@@ -36,6 +42,11 @@ export function isActive(status: RunStatus): boolean {
 
 export function isTerminal(status: RunStatus): boolean {
   return TERMINAL.includes(status);
+}
+
+/** Whether a run's turn is part of the thread's conversation and may take user steering. */
+export function isConversationalRun(trigger: string | null | undefined): boolean {
+  return !NON_CONVERSATIONAL_RUN_TRIGGERS.has(trigger ?? "");
 }
 
 export function nextFence(current: number): number {

@@ -8,6 +8,7 @@ import {
 import {
   blocksToAgentHistoryText,
   isApprovalAskBlock,
+  isConversationalRun,
   isSecretAskBlock,
   messagingChannelId,
   resolveAskChoice,
@@ -389,7 +390,7 @@ export async function sendUserMessage(
                 },
                 trigger: { not: "created" },
               },
-              select: { id: true, taskId: true },
+              select: { id: true, taskId: true, trigger: true },
             })
           : null;
       let task = null;
@@ -427,7 +428,8 @@ export async function sendUserMessage(
             messageId: message.id,
             botId: input.botId,
             userId: input.userId,
-            runId: busy.id,
+            // Pending (no run) while a routine or webhook turn is active; its continuation claims it.
+            runId: isConversationalRun(busy.trigger) ? busy.id : null,
           },
         });
         await tx.message.update({ where: { id: message.id }, data: { runId: busy.id } });
@@ -486,7 +488,11 @@ export async function claimSteering(
       where: {
         botId: input.botId,
         id: input.seenIds.length ? { notIn: input.seenIds } : undefined,
-        OR: [{ runId: null }, { runId: input.runId }],
+        // A routine or webhook turn only takes steering addressed to it; pending user messages
+        // wait for the conversational continuation that starts once it finishes.
+        OR: isConversationalRun(run.trigger)
+          ? [{ runId: null }, { runId: input.runId }]
+          : [{ runId: input.runId }],
         message: {
           threadId: input.threadId,
           // Private follow-ups remain unclaimed for the existing private continuation.
