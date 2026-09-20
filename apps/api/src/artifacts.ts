@@ -9,7 +9,7 @@ import {
   promptTextForAttachments,
   validateAttachmentMimeType,
 } from "@rakazo/core";
-import { IsolationError, type PrismaClient } from "@rakazo/db";
+import { IsolationError, type PrismaClient, resolveNextArtifactVersion } from "@rakazo/db";
 
 function adapterContext(actor: Actor, botId: string, operationId: string) {
   return {
@@ -32,6 +32,7 @@ export async function createOwnedArtifact(
     botId: string;
     groupId?: string;
     name: string;
+    description?: string;
     mimeType: string;
     contentBase64: string;
   },
@@ -39,6 +40,13 @@ export async function createOwnedArtifact(
   validateAttachmentMimeType(input.mimeType);
   const bytes = decodeAttachmentBase64(input.contentBase64);
   const context = adapterContext(actor, input.botId, `artifact-create:${input.botId}`);
+  const { rootArtifactId, version } = await resolveNextArtifactVersion(deps.prisma, {
+    spaceId: actor.spaceId,
+    userId: actor.userId,
+    botId: input.botId,
+    groupId: input.groupId,
+    name: input.name,
+  });
   const stored = await deps.artifacts.put(
     { name: input.name, mimeType: input.mimeType, bytes },
     context,
@@ -52,10 +60,13 @@ export async function createOwnedArtifact(
         botId: input.botId,
         groupId: input.groupId,
         name: input.name,
+        description: input.description?.trim() || null,
         mimeType: input.mimeType,
         size: bytes.byteLength,
         hash,
         storageKey: stored.id,
+        rootArtifactId,
+        version,
       },
     })
     .catch(async (error) => {
@@ -68,8 +79,10 @@ export async function createOwnedArtifact(
     groupId: row.groupId,
     runId: row.runId,
     name: row.name,
+    description: row.description,
     mimeType: row.mimeType,
     size: row.size,
+    version: row.version,
     createdAt: row.createdAt.toISOString(),
   };
 }
@@ -115,6 +128,31 @@ export async function getSpaceArtifact(
   return readArtifact(deps.artifacts, actor, row, input.contextBotId);
 }
 
+/**
+ * Opens an artifact from the space-wide Artifacts tab, where the caller only
+ * has the artifact's id (not the bot/group thread it was created in). Scoped
+ * to spaceId + userId like every other artifact read; the row's own botId is
+ * only used for the adapter's tracing context, not for authorization.
+ */
+export async function getSpaceArtifactById(
+  deps: {
+    prisma: PrismaClient;
+    artifacts: ArtifactStore;
+  },
+  actor: Actor,
+  input: { artifactId: string },
+) {
+  const row = await deps.prisma.artifact.findFirst({
+    where: {
+      id: input.artifactId,
+      spaceId: actor.spaceId,
+      userId: actor.userId,
+    },
+  });
+  if (!row) throw new IsolationError();
+  return readArtifact(deps.artifacts, actor, row, row.botId ?? row.groupId ?? row.id);
+}
+
 async function readArtifact(
   artifacts: ArtifactStore,
   actor: Actor,
@@ -125,8 +163,10 @@ async function readArtifact(
     runId: string | null;
     storageKey: string;
     name: string;
+    description: string | null;
     mimeType: string;
     size: number;
+    version: number;
     createdAt: Date;
   },
   contextBotId: string,
@@ -141,11 +181,139 @@ async function readArtifact(
     groupId: row.groupId,
     runId: row.runId,
     name: row.name,
+    description: row.description,
     mimeType: row.mimeType,
     size: row.size,
+    version: row.version,
     createdAt: row.createdAt.toISOString(),
     contentBase64: Buffer.from(bytes).toString("base64"),
   };
+}
+
+const FAMILY_RAW_FETCH_CAP = 500;
+
+export async function listSpaceArtifacts(
+  deps: { prisma: Pick<PrismaClient, "artifact"> },
+  actor: Actor,
+  input: { botId?: string; cursor?: string; limit?: number },
+) {
+  const take = Math.min(Math.max(input.limit ?? 30, 1), 60);
+  const where = {
+    spaceId: actor.spaceId,
+    userId: actor.userId,
+    groupId: null,
+    ...(input.botId ? { botId: input.botId } : {}),
+  };
+  // A family (an artifact and its versions) collapses to one row, showing
+  // the latest version's info — its `id` is the family's stable root id, not
+  // this specific row's id, so opening it always means "open the family."
+  // Every version shares its family's scoping fields, so collapsing happens
+  // in JS after one bounded fetch rather than needing a window-function
+  // query. FAMILY_RAW_FETCH_CAP bounds worst-case cost: a space with more
+  // artifact rows (versions included) than this paginates through in more
+  // pages rather than collapsing perfectly on the first one.
+  const rows = await deps.prisma.artifact.findMany({
+    where,
+    orderBy: { createdAt: "desc" },
+    take: FAMILY_RAW_FETCH_CAP,
+  });
+  const latestByFamily = new Map<string, (typeof rows)[number]>();
+  const versionCountByFamily = new Map<string, number>();
+  for (const row of rows) {
+    const familyId = row.rootArtifactId ?? row.id;
+    versionCountByFamily.set(familyId, (versionCountByFamily.get(familyId) ?? 0) + 1);
+    const current = latestByFamily.get(familyId);
+    if (!current || row.version > current.version) latestByFamily.set(familyId, row);
+  }
+  const families = [...latestByFamily.entries()]
+    .map(([familyId, row]) => ({ familyId, row }))
+    .sort((a, b) => b.row.createdAt.getTime() - a.row.createdAt.getTime());
+
+  const startIndex = input.cursor
+    ? Math.max(families.findIndex((family) => family.familyId === input.cursor) + 1, 0)
+    : 0;
+  const page = families.slice(startIndex, startIndex + take);
+  const hasMore = startIndex + take < families.length;
+
+  return {
+    items: page.map(({ familyId, row }) => ({
+      id: familyId,
+      botId: row.botId,
+      groupId: row.groupId,
+      runId: row.runId,
+      name: row.name,
+      description: row.description,
+      mimeType: row.mimeType,
+      size: row.size,
+      version: row.version,
+      versionCount: versionCountByFamily.get(familyId) ?? 1,
+      createdAt: row.createdAt.toISOString(),
+    })),
+    nextCursor: hasMore ? (page.at(-1)?.familyId ?? null) : null,
+  };
+}
+
+/** All versions of a family, latest first — for the version-switcher dropdown. */
+export async function listArtifactVersions(
+  deps: { prisma: Pick<PrismaClient, "artifact"> },
+  actor: Actor,
+  input: { familyId: string },
+) {
+  const anchor = await deps.prisma.artifact.findFirst({
+    where: { id: input.familyId, spaceId: actor.spaceId, userId: actor.userId },
+    select: { id: true, rootArtifactId: true },
+  });
+  if (!anchor) throw new IsolationError();
+  const rootId = anchor.rootArtifactId ?? anchor.id;
+  const rows = await deps.prisma.artifact.findMany({
+    where: {
+      spaceId: actor.spaceId,
+      userId: actor.userId,
+      OR: [{ id: rootId }, { rootArtifactId: rootId }],
+    },
+    orderBy: { version: "desc" },
+  });
+  return rows.map((row) => ({
+    id: row.id,
+    version: row.version,
+    name: row.name,
+    createdAt: row.createdAt.toISOString(),
+  }));
+}
+
+/** Deletes a whole family — the root row and every version — plus their storage blobs. */
+export async function deleteArtifactFamily(
+  deps: { prisma: PrismaClient; artifacts: ArtifactStore },
+  actor: Actor,
+  input: { familyId: string },
+) {
+  const anchor = await deps.prisma.artifact.findFirst({
+    where: { id: input.familyId, spaceId: actor.spaceId, userId: actor.userId },
+    select: { id: true, rootArtifactId: true, botId: true },
+  });
+  if (!anchor) throw new IsolationError();
+  const rootId = anchor.rootArtifactId ?? anchor.id;
+  const members = await deps.prisma.artifact.findMany({
+    where: {
+      spaceId: actor.spaceId,
+      userId: actor.userId,
+      OR: [{ id: rootId }, { rootArtifactId: rootId }],
+    },
+    select: { id: true, storageKey: true, botId: true },
+  });
+  await Promise.all(
+    members.map((member) =>
+      deps.artifacts
+        .remove(
+          member.storageKey,
+          adapterContext(actor, member.botId ?? member.id, `artifact-delete:${member.id}`),
+        )
+        .catch(() => undefined),
+    ),
+  );
+  // Deleting the root row cascades (onDelete: Cascade) to every version.
+  await deps.prisma.artifact.delete({ where: { id: rootId } });
+  return { ok: true as const };
 }
 
 type SendAttachmentRow = {

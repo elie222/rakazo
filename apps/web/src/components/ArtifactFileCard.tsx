@@ -3,7 +3,7 @@ import { t } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
 import { ChatMarkdown } from "@rakazo/chat-ui/web";
 import { Button, Dialog, DialogClose, DialogContent, DialogTitle } from "@rakazo/ui-web";
-import { Download, FileText, X } from "lucide-react";
+import { Code2, Download, FileText, X } from "lucide-react";
 import { type RefObject, useEffect, useRef, useState } from "react";
 import {
   type ArtifactTarget,
@@ -11,6 +11,8 @@ import {
   downloadArtifactBytes,
   fetchArtifactBytes,
 } from "../lib/artifact-open";
+import { PdfViewer } from "./PdfViewer";
+import { SandboxedHtmlViewer } from "./SandboxedHtmlViewer";
 
 type ArtifactFileCardProps = {
   target: ArtifactTarget;
@@ -20,9 +22,12 @@ type ArtifactFileCardProps = {
   size: number;
 };
 
+const PREVIEWABLE_MIME_TYPES = new Set(["text/markdown", "text/html", "application/pdf"]);
+const TEXT_MIME_TYPES = new Set(["text/markdown", "text/html"]);
+
 export function ArtifactFileCard(props: ArtifactFileCardProps) {
   const { t } = useLingui();
-  const markdown = props.mimeType === "text/markdown";
+  const previewable = PREVIEWABLE_MIME_TYPES.has(props.mimeType);
   const previewButton = useRef<HTMLButtonElement>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -37,7 +42,7 @@ export function ArtifactFileCard(props: ArtifactFileCardProps) {
     }
   }
 
-  if (!markdown) {
+  if (!previewable) {
     return (
       <div>
         <button
@@ -67,7 +72,11 @@ export function ArtifactFileCard(props: ArtifactFileCardProps) {
             className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3 text-left hover:bg-accent"
           >
             <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[10px] bg-muted text-foreground">
-              <FileText size={21} strokeWidth={1.8} />
+              {props.mimeType === "text/html" ? (
+                <Code2 size={21} strokeWidth={1.8} />
+              ) : (
+                <FileText size={21} strokeWidth={1.8} />
+              )}
             </span>
             <span className="min-w-0">
               <span className="block truncate text-[14px] font-medium">{props.name}</span>
@@ -95,14 +104,14 @@ export function ArtifactFileCard(props: ArtifactFileCardProps) {
           finalFocus={previewButton}
           className="flex h-[min(88vh,900px)] w-[min(960px,94vw)] flex-col gap-0 overflow-hidden p-0 sm:max-w-none"
         >
-          <MarkdownPreview {...props} closeButtonRef={closeButton} />
+          <FilePreview {...props} closeButtonRef={closeButton} />
         </DialogContent>
       </Dialog>
     </>
   );
 }
 
-function MarkdownPreview({
+function FilePreview({
   target,
   artifactId,
   name,
@@ -113,7 +122,7 @@ function MarkdownPreview({
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [state, setState] = useState<
     | { status: "loading" }
-    | { status: "ready"; bytes: Uint8Array; markdown: string }
+    | { status: "ready"; bytes: Uint8Array; text?: string }
     | { status: "error"; message: string }
   >({ status: "loading" });
   const targetBotId = "botId" in target ? target.botId : undefined;
@@ -126,11 +135,15 @@ function MarkdownPreview({
     void fetchArtifactBytes(artifactTarget, artifactId)
       .then((bytes) => {
         if (cancelled) return;
+        if (!TEXT_MIME_TYPES.has(mimeType)) {
+          setState({ status: "ready", bytes });
+          return;
+        }
         try {
-          const markdown = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-          setState({ status: "ready", bytes, markdown });
+          const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+          setState({ status: "ready", bytes, text });
         } catch {
-          setState({ status: "error", message: t`This file is not valid UTF-8 Markdown.` });
+          setState({ status: "error", message: t`This file is not valid UTF-8 text.` });
         }
       })
       .catch((error) => {
@@ -143,7 +156,7 @@ function MarkdownPreview({
     return () => {
       cancelled = true;
     };
-  }, [artifactId, targetBotId, targetGroupId, t]);
+  }, [artifactId, targetBotId, targetGroupId, mimeType, t]);
 
   return (
     <>
@@ -186,20 +199,24 @@ function MarkdownPreview({
           <DownloadError message={downloadError} />
         </div>
       ) : null}
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <article className="mx-auto w-full max-w-[760px] px-8 py-10 text-[16px] leading-7 text-foreground sm:px-12 sm:py-12">
-          {state.status === "loading" ? (
-            <div className="text-muted-foreground">
-              <Trans>Loading preview…</Trans>
-            </div>
-          ) : state.status === "error" ? (
-            <div className="rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-destructive">
-              {state.message}
-            </div>
-          ) : (
-            <ChatMarkdown>{state.markdown}</ChatMarkdown>
-          )}
-        </article>
+      <div className="relative min-h-0 flex-1 overflow-y-auto">
+        {state.status === "loading" ? (
+          <div className="p-8 text-muted-foreground">
+            <Trans>Loading preview…</Trans>
+          </div>
+        ) : state.status === "error" ? (
+          <div className="m-5 rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-destructive">
+            {state.message}
+          </div>
+        ) : mimeType === "text/html" && state.text !== undefined ? (
+          <SandboxedHtmlViewer html={state.text} title={name} />
+        ) : mimeType === "application/pdf" ? (
+          <PdfViewer bytes={state.bytes} title={name} />
+        ) : state.text !== undefined ? (
+          <article className="mx-auto w-full max-w-[760px] px-8 py-10 text-[16px] leading-7 text-foreground sm:px-12 sm:py-12">
+            <ChatMarkdown>{state.text}</ChatMarkdown>
+          </article>
+        ) : null}
       </div>
     </>
   );

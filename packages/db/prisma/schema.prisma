@@ -966,14 +966,26 @@ model Artifact {
   userId     String
   runId      String?
   name       String
+  description String?
   mimeType   String
   size       Int
   hash       String
   storageKey String
   createdAt  DateTime   @default(now())
 
+  // Versioning: every row is a version. The root of a family (its first
+  // version) has rootArtifactId = null; later versions point at it. A
+  // family's stable, URL-facing identity is always its root's id — the root
+  // never changes even as new versions are added. Deleting the root cascades
+  // to every version.
+  rootArtifactId String?
+  rootArtifact   Artifact?  @relation("ArtifactVersions", fields: [rootArtifactId], references: [id], onDelete: Cascade)
+  versions       Artifact[] @relation("ArtifactVersions")
+  version        Int        @default(1)
+
   @@index([spaceId, botId])
   @@index([groupId])
+  @@index([rootArtifactId])
   @@map("artifacts")
 }
 

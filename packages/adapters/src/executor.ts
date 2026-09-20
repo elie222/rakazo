@@ -2512,6 +2512,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
                   filePath,
                   bytes,
                   operationId: executionId,
+                  name: typeof args.name === "string" ? args.name : undefined,
+                  description: typeof args.description === "string" ? args.description : undefined,
                 },
               );
               await publishMessage(deps, run, "bot", [attached.block]);

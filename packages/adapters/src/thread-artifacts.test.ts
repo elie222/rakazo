@@ -22,7 +22,10 @@ describe("current-turn thread files", () => {
       attachWorkspaceFileToThread(
         {
           prisma: {
-            artifact: { create: vi.fn().mockRejectedValue(failure) },
+            artifact: {
+              findFirst: vi.fn().mockResolvedValue(null),
+              create: vi.fn().mockRejectedValue(failure),
+            },
           } as unknown as PrismaClient,
           artifacts: {
             put: vi.fn().mockResolvedValue({ id: "stored-1", hash: "hash" }),
