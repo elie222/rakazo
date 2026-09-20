@@ -78,6 +78,18 @@ describe("plainTextFromMarkdown", () => {
     expect(plainTextFromMarkdown("<user@example.com>")).toBe("user@example.com");
   });
 
+  it.each([
+    ["<https://example.test/_draft_>", "https://example.test/_draft_"],
+    ["<_ops_@example.test>", "_ops_@example.test"],
+    ["<https://example.test/*draft*/~~old~~>", "https://example.test/*draft*/~~old~~"],
+    ["**Contact** <_ops_@example.test> _today_", "Contact _ops_@example.test today"],
+    ["_<https://example.test/_draft_>_", "https://example.test/_draft_"],
+    ["<https://example.test/\\_draft\\_>", "https://example.test/_draft_"],
+    ["`<https://example.test/_draft_>`", "<https://example.test/_draft_>"],
+  ])("keeps autolink destinations literal: %s", (source, expected) => {
+    expect(plainTextFromMarkdown(source)).toBe(expected);
+  });
+
   it("keeps inline code contents", () => {
     expect(plainTextFromMarkdown("Use `pnpm test` first")).toBe("Use pnpm test first");
   });

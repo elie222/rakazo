@@ -2,6 +2,11 @@ import { describe, expect, it } from "vitest";
 import { previewFromBlocks } from "./thread-listing.js";
 
 describe("previewFromBlocks", () => {
+  it("preserves literal URL paths in autolinks", () => {
+    expect(previewFromBlocks([{ kind: "text", text: "Open <https://example.test/_draft_>" }])).toBe(
+      "Open https://example.test/_draft_",
+    );
+  });
   it("preserves filenames while removing surrounding Markdown", () => {
     expect(previewFromBlocks([{ kind: "text", text: "Saved **monthly_sales_report.csv**" }])).toBe(
       "Saved monthly_sales_report.csv",

@@ -23,6 +23,16 @@ test("sidebar preview preserves underscores in filenames", async ({ page }, test
     await expect(row).toContainText("monthly_sales_report.csv");
     await expect(row).not.toContainText("**");
     await captureScreenshot(page, testInfo, "sidebar-preview-literal-underscores");
+
+    await rpc(page, "threads/send", {
+      botId: bot.id,
+      text: "<_ops_@example.test>; keep working",
+    });
+    await rpc(page, "threads/stop", { botId: bot.id });
+    await page.reload();
+    await expect(row).toContainText("_ops_@example.test");
+    await expect(row).not.toContainText("<_ops_");
+    await captureScreenshot(page, testInfo, "sidebar-preview-literal-autolink");
   } finally {
     await rpc(page, "threads/stop", { botId: bot.id });
   }

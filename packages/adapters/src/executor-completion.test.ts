@@ -73,6 +73,11 @@ describe("completionNotificationBody", () => {
 });
 
 describe("completionNotificationPreview", () => {
+  it("preserves the actual address in an autolink notification", () => {
+    expect(completionNotificationPreview("Contact <_ops_@example.test> **today**")).toBe(
+      "Contact _ops_@example.test today",
+    );
+  });
   it("preserves filenames in completion notifications", () => {
     expect(completionNotificationPreview("Saved **monthly_sales_report.csv**")).toBe(
       "Saved monthly_sales_report.csv",
