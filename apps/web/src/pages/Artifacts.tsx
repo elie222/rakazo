@@ -1,11 +1,7 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import { ChatMarkdown } from "@rakazo/chat-ui/web";
-import {
-  type Artifact,
-  type ArtifactVersion,
-  type Bot,
-  isAttachmentImageMimeType,
-} from "@rakazo/contracts";
+import type { Artifact, ArtifactVersion, Bot } from "@rakazo/contracts";
+import { isAttachmentImageMimeType } from "@rakazo/contracts";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -92,6 +88,10 @@ export function ArtifactsPage() {
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const loadingMoreRef = useRef(false);
+  // Bumped whenever the active listing (bot filter) changes, so a loadMore()
+  // request started for the previous bot can recognize it's stale and skip
+  // applying its response instead of appending onto/overwriting the new one.
+  const listingGenerationRef = useRef(0);
   const [activeBotId, setActiveBotId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>(readViewMode);
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -108,6 +108,9 @@ export function ArtifactsPage() {
 
   useEffect(() => {
     let cancelled = false;
+    listingGenerationRef.current += 1;
+    loadingMoreRef.current = false;
+    setLoadingMore(false);
     setItems(null);
     setLoadError(null);
     setNextCursor(null);
@@ -130,6 +133,7 @@ export function ArtifactsPage() {
 
   async function loadMore() {
     if (!nextCursor || loadingMoreRef.current) return;
+    const generation = listingGenerationRef.current;
     loadingMoreRef.current = true;
     setLoadingMore(true);
     try {
@@ -138,14 +142,21 @@ export function ArtifactsPage() {
         cursor: nextCursor,
         limit: LIST_PAGE_SIZE,
       });
+      // The active listing changed while this request was in flight (e.g. the
+      // bot filter switched) — applying it now would append or point the
+      // cursor at the wrong listing. The generation that started it already
+      // reset loadingMore/loadingMoreRef, so just drop the stale response.
+      if (generation !== listingGenerationRef.current) return;
       setItems((current) => (current ?? []).concat(page.items));
       setNextCursor(page.nextCursor);
     } catch {
       // Leave the existing page visible; the "Load more" button just stays
       // clickable so the user can retry.
     } finally {
-      loadingMoreRef.current = false;
-      setLoadingMore(false);
+      if (generation === listingGenerationRef.current) {
+        loadingMoreRef.current = false;
+        setLoadingMore(false);
+      }
     }
   }
 
