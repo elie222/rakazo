@@ -33,7 +33,7 @@ import {
   Search,
   Trash2,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { AppRail } from "../components/AppRail";
 import { PdfViewer } from "../components/PdfViewer";
@@ -91,6 +91,7 @@ export function ArtifactsPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
+  const loadingMoreRef = useRef(false);
   const [activeBotId, setActiveBotId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>(readViewMode);
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -128,7 +129,8 @@ export function ArtifactsPage() {
   }, [activeBotId, t]);
 
   async function loadMore() {
-    if (!nextCursor || loadingMore) return;
+    if (!nextCursor || loadingMoreRef.current) return;
+    loadingMoreRef.current = true;
     setLoadingMore(true);
     try {
       const page = await rpc.artifacts.listSpace({
@@ -142,6 +144,7 @@ export function ArtifactsPage() {
       // Leave the existing page visible; the "Load more" button just stays
       // clickable so the user can retry.
     } finally {
+      loadingMoreRef.current = false;
       setLoadingMore(false);
     }
   }
@@ -165,6 +168,23 @@ export function ArtifactsPage() {
       );
     });
   }, [items, searchQuery, dateFilter]);
+
+  const clientFilterActive = searchQuery.trim().length > 0 || dateFilter !== "all";
+  const autoFetchedCursorRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    autoFetchedCursorRef.current = null;
+  }, [searchQuery, dateFilter, activeBotId]);
+
+  // Search/date filters are client-side over loaded pages. Keep fetching while
+  // the current snapshot has no matches so later pages stay reachable.
+  useEffect(() => {
+    if (!clientFilterActive || !nextCursor || loadingMore || items === null) return;
+    if (filteredItems && filteredItems.length > 0) return;
+    if (autoFetchedCursorRef.current === nextCursor) return;
+    autoFetchedCursorRef.current = nextCursor;
+    void loadMore();
+  }, [clientFilterActive, nextCursor, loadingMore, items, filteredItems]);
 
   function setMode(mode: ViewMode) {
     setViewMode(mode);
@@ -381,9 +401,12 @@ function BrowsingPane({
   }
   if (items.length === 0) {
     return (
-      <div className="grid flex-1 place-items-center text-sm text-muted-foreground/80">
-        <Trans>No artifacts found.</Trans>
-      </div>
+      <EmptyArtifacts
+        className="grid flex-1 place-items-center text-sm text-muted-foreground/80"
+        nextCursor={nextCursor}
+        loadingMore={loadingMore}
+        onLoadMore={onLoadMore}
+      />
     );
   }
   return (
@@ -426,6 +449,40 @@ function LoadMoreButton({ loading, onClick }: { loading: boolean; onClick: () =>
   );
 }
 
+function EmptyArtifacts({
+  className,
+  nextCursor,
+  loadingMore,
+  onLoadMore,
+}: {
+  className: string;
+  nextCursor: string | null;
+  loadingMore: boolean;
+  onLoadMore: () => void;
+}) {
+  if (!nextCursor) {
+    return (
+      <div className={className}>
+        <Trans>No artifacts found.</Trans>
+      </div>
+    );
+  }
+  return (
+    <div className={className}>
+      <div className="flex flex-col items-center gap-3">
+        <span>
+          {loadingMore ? (
+            <Trans>Loading…</Trans>
+          ) : (
+            <Trans>No matching artifacts on this page.</Trans>
+          )}
+        </span>
+        <LoadMoreButton loading={loadingMore} onClick={onLoadMore} />
+      </div>
+    </div>
+  );
+}
+
 function IndexPane({
   items,
   loadError,
@@ -452,9 +509,12 @@ function IndexPane({
           {loadError ?? <Trans>Loading…</Trans>}
         </div>
       ) : items.length === 0 ? (
-        <div className="grid flex-1 place-items-center p-6 text-center text-sm text-muted-foreground/80">
-          <Trans>No artifacts found.</Trans>
-        </div>
+        <EmptyArtifacts
+          className="grid flex-1 place-items-center p-6 text-center text-sm text-muted-foreground/80"
+          nextCursor={nextCursor}
+          loadingMore={loadingMore}
+          onLoadMore={onLoadMore}
+        />
       ) : (
         <div className="flex flex-col divide-y divide-border">
           {items.map((item) => (

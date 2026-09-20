@@ -244,7 +244,10 @@ test("create group from + and see two bots in one transcript", async ({ page }, 
 
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.getByRole("button", { name: "Open navigation" })).toBeVisible();
-  expect((await transcript.boundingBox())?.width).toBeGreaterThan(350);
+  await expect(page.getByTestId("app-rail")).toBeVisible();
+  // AppRail stays visible on mobile (w-14 ≈ 56px); chat should still fill the rest.
+  const railWidth = (await page.getByTestId("app-rail").boundingBox())?.width ?? 56;
+  expect((await transcript.boundingBox())?.width).toBeGreaterThan(390 - railWidth - 24);
   await page.getByRole("button", { name: "Open navigation" }).click();
   await expect(page.getByRole("button", { name: "Close navigation" })).toBeVisible();
   await page.getByRole("button", { name: "Close navigation" }).click();
