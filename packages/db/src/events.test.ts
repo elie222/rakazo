@@ -1707,7 +1707,7 @@ describe("sendUserMessage", () => {
       task: { create: vi.fn().mockResolvedValue({ id: "task-1" }) },
       run: {
         create: vi.fn().mockResolvedValue({ id: "run-1" }),
-        findFirst: vi.fn().mockResolvedValue(null),
+        findMany: vi.fn().mockResolvedValue([]),
         findUnique: vi.fn().mockResolvedValue({ status: "queued" }),
       },
       event: {
@@ -1777,7 +1777,7 @@ describe("sendUserMessage", () => {
       steeringMessage: { create: vi.fn() },
       task: { create: vi.fn() },
       run: {
-        findFirst: vi.fn().mockResolvedValue({ id: "run-0", taskId: "task-0" }),
+        findMany: vi.fn().mockResolvedValue([{ id: "run-0", taskId: "task-0", trigger: "user" }]),
         findUnique: vi.fn().mockResolvedValue({ status: "running" }),
         create: vi.fn(),
       },
@@ -1830,8 +1830,10 @@ describe("sendUserMessage", () => {
       steeringMessage: { create: vi.fn() },
       task: { create: vi.fn().mockResolvedValue({ id: "task-user" }) },
       run: {
-        findFirst: vi.fn(async (args: { where?: { trigger?: { not?: string } } }) =>
-          args.where?.trigger?.not === "created" ? null : { id: "intro-run", taskId: "intro-task" },
+        findMany: vi.fn(async (args: { where?: { trigger?: { not?: string } } }) =>
+          args.where?.trigger?.not === "created"
+            ? []
+            : [{ id: "intro-run", taskId: "intro-task" }],
         ),
         findUnique: vi.fn().mockResolvedValue({ status: "queued", startedAt: null }),
         create: vi.fn().mockResolvedValue({ id: "run-user" }),
@@ -1883,9 +1885,9 @@ describe("sendUserMessage", () => {
       steeringMessage: { create: vi.fn() },
       task: { create: vi.fn() },
       run: {
-        findFirst: vi
+        findMany: vi
           .fn()
-          .mockResolvedValue({ id: "run-routine", taskId: "task-routine", trigger: "routine" }),
+          .mockResolvedValue([{ id: "run-routine", taskId: "task-routine", trigger: "routine" }]),
         findUnique: vi.fn().mockResolvedValue({ status: "running" }),
         create: vi.fn(),
       },
@@ -1916,6 +1918,56 @@ describe("sendUserMessage", () => {
     // No run on the steering row: the routine never claims it; its continuation does.
     expect(tx.steeringMessage.create).toHaveBeenCalledWith({
       data: { messageId: "message-1", botId: "bot-1", userId: "user-1", runId: null },
+    });
+  });
+
+  it("steers the conversational run when a parallel webhook turn is also active", async () => {
+    const tx = {
+      thread: {
+        update: vi
+          .fn()
+          .mockResolvedValueOnce({ nextMessageSeq: 5 })
+          .mockResolvedValueOnce({ nextEventSeq: 9 }),
+      },
+      message: {
+        create: vi.fn().mockResolvedValue({ id: "message-1", seq: 4 }),
+        update: vi.fn().mockResolvedValue({ id: "message-1" }),
+      },
+      steeringMessage: { create: vi.fn() },
+      task: { create: vi.fn() },
+      run: {
+        findMany: vi.fn().mockResolvedValue([
+          { id: "run-webhook", taskId: "task-webhook", trigger: "webhook" },
+          { id: "run-user", taskId: "task-user", trigger: "user" },
+        ]),
+        findUnique: vi.fn().mockResolvedValue({ status: "running" }),
+        create: vi.fn(),
+      },
+      event: {
+        create: vi.fn(async ({ data }: { data: { seq: number; type: string } }) => ({
+          ...event(data.seq),
+          type: data.type,
+        })),
+      },
+    };
+    const prisma = {
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+    } as unknown as PrismaClient;
+
+    await expect(
+      sendUserMessage(prisma, {
+        spaceId: "workspace-1",
+        threadId: "thread-1",
+        botId: "bot-1",
+        userId: "user-1",
+        blocks: [{ kind: "text", text: "hello" }],
+        prompt: "hello",
+        trigger: "messaging",
+      }),
+    ).resolves.toEqual({ messageId: "message-1", seq: 4, taskId: null, runId: "run-user" });
+
+    expect(tx.steeringMessage.create).toHaveBeenCalledWith({
+      data: { messageId: "message-1", botId: "bot-1", userId: "user-1", runId: "run-user" },
     });
   });
 });

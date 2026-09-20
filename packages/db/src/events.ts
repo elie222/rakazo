@@ -379,9 +379,9 @@ export async function sendUserMessage(
       });
       const createRun = input.createRun !== false;
       // A creation intro must not absorb the message: that run has no tools.
-      const busy =
+      const activeRuns =
         createRun && !input.allowParallelRun
-          ? await tx.run.findFirst({
+          ? await tx.run.findMany({
               where: {
                 threadId: input.threadId,
                 botId: input.botId,
@@ -392,7 +392,10 @@ export async function sendUserMessage(
               },
               select: { id: true, taskId: true, trigger: true },
             })
-          : null;
+          : [];
+      // Steer a conversational run when there is one; a routine or webhook turn only holds the queue.
+      const busy =
+        activeRuns.find((run) => isConversationalRun(run.trigger)) ?? activeRuns[0] ?? null;
       let task = null;
       let run = null;
       if (createRun && !busy) {
