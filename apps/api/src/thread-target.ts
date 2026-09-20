@@ -64,6 +64,16 @@ const THREAD_MESSAGE_PAGE_SIZE = 100;
 const RUNS_NEEDING_CONTINUE = new Set(["queued", "waiting_takeover"]);
 
 const STEERABLE_RUN_STATUSES = new Set(["queued", "leased", "running", "waiting_takeover"]);
+/**
+ * A routine's turn is the routine prompt, not the conversation. A user message that lands
+ * while one is running must not be folded into it as steering: it gets its own run, which
+ * waits behind the routine for the computer lease and then answers with the full thread.
+ */
+const UNSTEERABLE_RUN_TRIGGERS = new Set(["routine"]);
+
+function steersUserMessage(run: { status: string; trigger?: string }) {
+  return STEERABLE_RUN_STATUSES.has(run.status) && !UNSTEERABLE_RUN_TRIGGERS.has(run.trigger ?? "");
+}
 
 type MentionTargetInput = string | { kind: "bot" | "group" | "routine" | "connector"; id: string };
 
@@ -655,7 +665,7 @@ export async function sendThreadMessage(
             status: { in: [...ACTIVE_RUN_STATUSES] },
             trigger: { not: "created" },
           },
-          select: { id: true, taskId: true, status: true },
+          select: { id: true, taskId: true, status: true, trigger: true },
         });
         const waitingRuns = activeRuns.filter((run) => run.status === "waiting_input");
         if (waitingRuns.length) {
@@ -705,7 +715,7 @@ export async function sendThreadMessage(
             message: "Answer the pending ask first.",
           });
         }
-        const active = activeRuns[0];
+        const active = activeRuns.find(steersUserMessage);
         if (active) {
           await tx.steeringMessage.create({
             data: {
@@ -814,7 +824,7 @@ export async function sendThreadMessage(
           botId: { in: targetBotIds },
           status: { in: [...ACTIVE_RUN_STATUSES] },
         },
-        select: { id: true, taskId: true, botId: true, status: true },
+        select: { id: true, taskId: true, botId: true, status: true, trigger: true },
       });
       const activeByBotId = new Map<string, (typeof activeRuns)[number]>();
       const answeredByBotId = new Map<string, Array<(typeof activeRuns)[number]>>();
@@ -849,7 +859,9 @@ export async function sendThreadMessage(
             message: "Answer the pending ask first.",
           });
         }
-        if (!activeByBotId.has(run.botId)) activeByBotId.set(run.botId, run);
+        if (steersUserMessage(run) && !activeByBotId.has(run.botId)) {
+          activeByBotId.set(run.botId, run);
+        }
       }
       const runs: Array<{ id: string; taskId: string; botId: string; status: string }> = [];
       for (const botId of targetBotIds) {
