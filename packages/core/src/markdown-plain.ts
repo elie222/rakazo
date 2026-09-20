@@ -5,24 +5,23 @@ export function plainTextFromMarkdown(markdown: string): string {
   const payloads: string[] = [];
   const source = markdown.replace(/\r\n/g, "\n");
   const mark = unusedMark(source);
+  const payloadPattern = new RegExp(`${mark}(\\d+)${mark}`, "g");
   const restore = (text: string): string =>
-    text.replace(
-      new RegExp(`${mark}(\\d+)${mark}`, "g"),
-      (_match, index: string) => payloads[Number(index)] ?? "",
-    );
+    text.replace(payloadPattern, (_match, index: string) => payloads[Number(index)] ?? "");
   const stash = (payload: string): string => {
-    // An autolink may already contain stashed escapes. Flatten those before
-    // storing it so the final restore never exposes an internal placeholder.
-    payloads.push(restore(payload));
+    payloads.push(payload);
     return `${mark}${payloads.length - 1}${mark}`;
   };
 
   let text = takeFencedCode(source, stash);
   text = takeInlineCode(text, stash);
   text = takeEscapes(text, stash);
+  // Autolinks may contain stashed escapes; flatten only those literal payloads.
   text = takeLinks(text)
-    .replace(/<([A-Za-z][A-Za-z0-9+.-]{1,31}:[^<>\s]*)>/g, (_match, url: string) => stash(url))
-    .replace(/<([^<>\s]+@[^<>\s]+\.[^<>\s]+)>/g, (_match, email: string) => stash(email));
+    .replace(/<([A-Za-z][A-Za-z0-9+.-]{1,31}:[^<>\s]*)>/g, (_match, url: string) =>
+      stash(restore(url)),
+    )
+    .replace(/<([^<>\s]+@[^<>\s]+\.[^<>\s]+)>/g, (_match, email: string) => stash(restore(email)));
   text = stripUnderscoreEmphasis(stripHtmlTags(text))
     .replace(/^#{1,6}\s+/gm, "")
     .replace(/^>\s+/gm, "")
