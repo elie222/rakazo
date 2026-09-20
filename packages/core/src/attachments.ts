@@ -185,21 +185,13 @@ export function attachmentsForBot<T extends { botId: string }>(
   return attachments.filter((attachment) => attachment.botId === botId);
 }
 
-export function userTurnBlocksForRun(
-  trigger: string,
-  runId: string,
-  messages: Array<{
-    id?: string;
-    role: string;
-    runId?: string | null;
-    blocks: MessageBlock[];
-  }>,
-  sourceMessageId?: string | null,
-): MessageBlock[] | undefined {
+export function userTurnMessageForRun<
+  T extends { id?: string; role: string; runId?: string | null; blocks: MessageBlock[] },
+>(trigger: string, runId: string, messages: T[], sourceMessageId?: string | null): T | undefined {
   if (trigger !== "user") return undefined;
   return messages.find(
     (message) =>
       message.role === "user" &&
       (sourceMessageId ? message.id === sourceMessageId : message.runId === runId),
-  )?.blocks;
+  );
 }

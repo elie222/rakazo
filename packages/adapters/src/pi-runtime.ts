@@ -694,11 +694,15 @@ function toHistory(
       : history.filter((_, index) => index !== duplicatePromptIndex);
   return prior
     .filter((m) => m.role === "user" || m.role === "assistant")
-    .map((m) =>
-      m.role === "assistant"
-        ? { role: "user" as const, content: `Assistant: ${m.content}`, timestamp: Date.now() }
-        : { role: "user" as const, content: m.content, timestamp: Date.now() },
-    );
+    .map((m) => {
+      const text = m.role === "assistant" ? `Assistant: ${m.content}` : m.content;
+      const images = m.role === "assistant" ? [] : toPiImages(m.images);
+      return {
+        role: "user" as const,
+        content: images.length ? [{ type: "text" as const, text }, ...images] : text,
+        timestamp: Date.now(),
+      };
+    });
 }
 
 function withoutSteeringMessages(

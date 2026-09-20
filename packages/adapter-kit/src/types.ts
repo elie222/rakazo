@@ -377,7 +377,13 @@ export interface AgentRunRequest {
   sourceMessageId?: string | null;
   prompt: string;
   instructions: string;
-  history: Array<{ id?: string; role: "user" | "assistant" | "system"; content: string }>;
+  history: Array<{
+    id?: string;
+    role: "user" | "assistant" | "system";
+    content: string;
+    /** Images attached to this message, hydrated only for recent user turns. */
+    images?: AgentInputImage[];
+  }>;
   currentTurnImages?: AgentInputImage[];
   tools: ConnectorTool[];
   model: AgentRunModel;

@@ -15,6 +15,7 @@ import {
   threadContextForRun,
   toolCompletionAuditPayload,
   toolCompletionFromResult,
+  withRecentTurnImages,
 } from "./executor.js";
 import { serializeModelSecret } from "./pi-oauth.js";
 
@@ -245,6 +246,76 @@ describe("run tool selection", () => {
     expect(toolNames("routine", "group-1")).toEqual(
       expect.arrayContaining(["schedule_list", "schedule_cancel"]),
     );
+  });
+});
+
+describe("recent turn images", () => {
+  const context = {
+    operationId: "run-1",
+    traceId: "run-1",
+    spaceId: "space-1",
+    userId: "user-1",
+    botId: "bot-1",
+    runId: "run-1",
+    signal: new AbortController().signal,
+  };
+  const imageBlock = (artifactId: string, name: string): MessageBlock => ({
+    kind: "image",
+    artifactId,
+    mimeType: "image/png",
+    name,
+  });
+  const depsWithImages = (byteLength = 1) =>
+    ({
+      artifacts: { get: vi.fn(async () => new Uint8Array(byteLength)) },
+      prisma: {
+        artifact: {
+          findMany: vi.fn(async ({ where }: { where: { id: { in: string[] } } }) =>
+            where.id.in.map((id) => ({ id, storageKey: `${id}.png` })),
+          ),
+        },
+      },
+    }) as never;
+  const history = [
+    { id: "m1", role: "user" as const, content: "[image: one.png]" },
+    { id: "m2", role: "assistant" as const, content: "Got it." },
+    { id: "m3", role: "user" as const, content: "[image: two.png]" },
+    { id: "m4", role: "user" as const, content: "[image: three.png]" },
+    { id: "m5", role: "user" as const, content: "what time is that flight?" },
+  ];
+  const messages = [
+    { id: "m1", blocks: [imageBlock("art-1", "one.png")] },
+    { id: "m3", blocks: [imageBlock("art-3", "two.png")] },
+    { id: "m4", blocks: [imageBlock("art-4", "three.png")] },
+    { id: "m5", blocks: [{ kind: "text" as const, text: "what time is that flight?" }] },
+  ];
+
+  it("hydrates recent user turns and leaves older ones as text", async () => {
+    const hydrated = await withRecentTurnImages(depsWithImages(), history, messages, context, {
+      maxTurns: 2,
+    });
+
+    expect(hydrated.map((entry) => entry.images?.length ?? 0)).toEqual([0, 0, 1, 1, 0]);
+    expect(hydrated[3]?.images?.[0]).toMatchObject({ name: "three.png", mimeType: "image/png" });
+    expect(hydrated[0]?.content).toBe("[image: one.png]");
+  });
+
+  it("skips the current turn and stops at the image budget", async () => {
+    const hydrated = await withRecentTurnImages(depsWithImages(), history, messages, context, {
+      skipMessageId: "m4",
+      maxImages: 1,
+    });
+
+    expect(hydrated.map((entry) => entry.images?.length ?? 0)).toEqual([0, 0, 1, 0, 0]);
+  });
+
+  it("hydrates nothing beyond the byte ceiling or without an artifact store", async () => {
+    await expect(
+      withRecentTurnImages(depsWithImages(2), history, messages, context, { maxBytes: 1 }),
+    ).resolves.toBe(history);
+    await expect(
+      withRecentTurnImages({ prisma: {} } as never, history, messages, context),
+    ).resolves.toBe(history);
   });
 });
 

@@ -6,7 +6,7 @@ import {
   decodeAttachmentBase64,
   inferAttachmentMimeType,
   promptTextForAttachments,
-  userTurnBlocksForRun,
+  userTurnMessageForRun,
   validateAttachmentMimeType,
 } from "./attachments.js";
 
@@ -93,11 +93,11 @@ describe("attachment helpers", () => {
         blocks: [{ kind: "text" as const, text: "routine time" }],
       },
     ];
-    expect(userTurnBlocksForRun("routine", "run-new", messages)).toBeUndefined();
-    expect(userTurnBlocksForRun("user", "run-old", messages)).toEqual(messages[0]?.blocks);
-    expect(userTurnBlocksForRun("user", "run-new", messages)).toEqual(messages[1]?.blocks);
-    expect(userTurnBlocksForRun("user", "run-fanout", messages, "message-old")).toEqual(
-      messages[0]?.blocks,
+    expect(userTurnMessageForRun("routine", "run-new", messages)).toBeUndefined();
+    expect(userTurnMessageForRun("user", "run-old", messages)).toEqual(messages[0]);
+    expect(userTurnMessageForRun("user", "run-new", messages)).toEqual(messages[1]);
+    expect(userTurnMessageForRun("user", "run-fanout", messages, "message-old")).toEqual(
+      messages[0],
     );
   });
 
