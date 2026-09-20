@@ -73,7 +73,7 @@ import {
   toolRequiresExplicitApproval,
   truncatedPlainText,
   unattendedTriggerToolRequiresApproval,
-  userTurnBlocksForRun,
+  userTurnMessageForRun,
 } from "@rakazo/core";
 import {
   approvalEffectKey,
@@ -1341,17 +1341,19 @@ export function createRunExecutor(deps: ExecutorDeps) {
           role,
           content,
         }));
-        const turnBlocks = userTurnBlocksForRun(
+        const historyMessages = messages.map((message) => ({
+          id: message.id,
+          role: message.role,
+          runId: message.runId,
+          blocks: message.blocks as MessageBlock[],
+        }));
+        const currentTurnMessage = userTurnMessageForRun(
           run.trigger,
           runId,
-          messages.map((message) => ({
-            id: message.id,
-            role: message.role,
-            runId: message.runId,
-            blocks: message.blocks as MessageBlock[],
-          })),
+          historyMessages,
           run.sourceMessageId,
         );
+        const turnBlocks = currentTurnMessage?.blocks;
         const allowSilentPeerMessage = botMessageAllowsSilence(
           peerMessage?.intent,
           peerMessage?.repliesToRequest,
@@ -3603,7 +3605,18 @@ export function createRunExecutor(deps: ExecutorDeps) {
             content: redactSecrets(recalledMemory, runSecrets),
           });
         }
-        const runtimeHistory = [...historicalContext, ...history];
+        const modelImageBudget =
+          resolved.maxImagesPerPrompt === undefined
+            ? undefined
+            : Math.max(0, resolved.maxImagesPerPrompt - (currentTurnImages?.length ?? 0));
+        const historyWithImages = await withRecentTurnImages(
+          deps,
+          history,
+          historyMessages,
+          context,
+          { skipMessageId: currentTurnMessage?.id, maxImages: modelImageBudget },
+        );
+        const runtimeHistory = [...historicalContext, ...historyWithImages];
         // Without a roster a bot only knows the bots it spawned itself.
         const botDirectory = thread.groupId
           ? undefined
@@ -5315,4 +5328,74 @@ export async function loadCurrentTurnImages(
   }
 
   return images.length ? images : undefined;
+}
+
+/** User turns whose attached images stay hydrated for the model. */
+export const RECENT_TURN_IMAGE_TURNS = 3;
+/** Total hydrated history image bytes, matching the per-attachment ceiling. */
+export const RECENT_TURN_IMAGE_BYTES = ATTACHMENT_MAX_BYTES;
+
+/**
+ * Hydrate the images of the most recent user turns in the run history.
+ *
+ * Only the current turn carried its pictures; earlier turns reached the model
+ * as an `[image: name]` marker, so a question asked one turn after the upload
+ * had nothing to look at. Bounds keep a long thread from growing the prompt
+ * without limit: at most `maxTurns` user turns, a total byte ceiling, and
+ * never more images than the model connection accepts. Bytes are read through
+ * the same artifact path and space/user scope as the current turn, and a
+ * compacted summary is never hydrated because its messages are no longer part
+ * of `history`.
+ */
+export async function withRecentTurnImages(
+  deps: ExecutorDeps,
+  history: AgentRunRequest["history"],
+  messages: Array<{ id: string; blocks: MessageBlock[] }>,
+  context: {
+    operationId: string;
+    traceId: string;
+    spaceId: string;
+    userId: string;
+    botId: string;
+    runId: string;
+    signal: AbortSignal;
+  },
+  options: {
+    skipMessageId?: string | null;
+    maxTurns?: number;
+    maxBytes?: number;
+    maxImages?: number;
+  } = {},
+): Promise<AgentRunRequest["history"]> {
+  if (!deps.artifacts) return history;
+  const maxTurns = options.maxTurns ?? RECENT_TURN_IMAGE_TURNS;
+  let remainingImages = options.maxImages ?? Number.POSITIVE_INFINITY;
+  let remainingBytes = options.maxBytes ?? RECENT_TURN_IMAGE_BYTES;
+  if (maxTurns <= 0 || remainingImages <= 0) return history;
+  const blocksByMessageId = new Map(messages.map((message) => [message.id, message.blocks]));
+  const hydrated = new Map<string, NonNullable<AgentRunRequest["currentTurnImages"]>>();
+  let turns = 0;
+
+  for (let index = history.length - 1; index >= 0 && turns < maxTurns; index -= 1) {
+    const entry = history[index];
+    if (!entry?.id || entry.role !== "user" || entry.id === options.skipMessageId) continue;
+    const blocks = blocksByMessageId.get(entry.id);
+    if (!blocks?.some((block) => block.kind === "image")) continue;
+    turns += 1;
+    const images = await loadCurrentTurnImages(deps, blocks, context);
+    if (!images?.length) continue;
+    const bytes = images.reduce((total, image) => total + image.data.byteLength, 0);
+    // Stop at the first turn that does not fit instead of skipping to an older
+    // one: a follow-up question is about the newest pictures.
+    if (images.length > remainingImages || bytes > remainingBytes) break;
+    remainingImages -= images.length;
+    remainingBytes -= bytes;
+    hydrated.set(entry.id, images);
+  }
+
+  if (hydrated.size === 0) return history;
+  return history.map((entry) => {
+    const images = entry.id ? hydrated.get(entry.id) : undefined;
+    return images ? { ...entry, images } : entry;
+  });
 }
