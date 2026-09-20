@@ -12,21 +12,13 @@ const SANDBOXED_CSP =
  */
 function withSandboxCsp(html: string): string {
   const meta = `<meta http-equiv="Content-Security-Policy" content="${SANDBOXED_CSP}">`;
-  const headMatch = /<head[^>]*>/i.exec(html);
-  const scriptOrStyleMatch = /<(script|style)[^>]*>/i.exec(html);
-  // Only trust a matched <head> if it isn't inside an earlier <script>/<style>
-  // block (e.g. a string literal like `"<head>"`) — otherwise the meta tag
-  // would land somewhere inert and the CSP would silently never apply.
-  const headIsReal =
-    headMatch && (!scriptOrStyleMatch || headMatch.index < scriptOrStyleMatch.index);
-  if (headIsReal) return html.replace(headMatch[0], (tag) => `${tag}${meta}`);
-  const htmlMatch = /<html[^>]*>/i.exec(html);
-  const htmlIsReal =
-    htmlMatch && (!scriptOrStyleMatch || htmlMatch.index < scriptOrStyleMatch.index);
-  if (htmlIsReal) {
-    return html.replace(htmlMatch[0], (tag) => `${tag}<head>${meta}</head>`);
-  }
-  return `<head>${meta}</head>${html}`;
+  // Deliberately not regex-matching <head>/<html> to splice the meta tag in
+  // "properly" — any such pattern is attacker-controlled surface (e.g. a
+  // comment like `<!-- <head> -->` fools a naive match and the CSP lands
+  // somewhere inert while srcDoc still runs scripts with no policy at all).
+  // A browser parses a leading <meta> before <!doctype>/<html> as part of the
+  // document's own head regardless, so prepending is both simpler and safer.
+  return `${meta}${html}`;
 }
 
 export function SandboxedHtmlViewer({ html, title }: { html: string; title: string }) {

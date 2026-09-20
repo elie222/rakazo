@@ -18,7 +18,7 @@ import {
   messageBlockForArtifact,
   validateAttachmentMimeType,
 } from "@rakazo/core";
-import { type PrismaClient, resolveNextArtifactVersion } from "@rakazo/db";
+import { type PrismaClient, withResolvedArtifactVersion } from "@rakazo/db";
 import { resolveBotWorkspacePath } from "./computer-support.js";
 
 export type MaterializedThreadFile = {
@@ -67,37 +67,39 @@ export async function attachWorkspaceFileToThread(
     botId: input.botId,
     signal: new AbortController().signal,
   };
-  const { rootArtifactId, version } = await resolveNextArtifactVersion(deps.prisma, {
-    spaceId: input.spaceId,
-    userId: input.userId,
-    botId: input.botId,
-    groupId: input.groupId,
-    name,
-  });
   const stored = await deps.artifacts.put({ name, mimeType, bytes: input.bytes }, context);
   const hash = createHash("sha256").update(input.bytes).digest("hex");
-  const row = await deps.prisma.artifact
-    .create({
-      data: {
-        spaceId: input.spaceId,
-        userId: input.userId,
-        botId: input.botId,
-        groupId: input.groupId,
-        runId: input.runId,
-        name,
-        description: input.description?.trim().slice(0, ARTIFACT_DESCRIPTION_MAX_LENGTH) || null,
-        mimeType,
-        size: input.bytes.byteLength,
-        hash,
-        storageKey: stored.id,
-        rootArtifactId,
-        version,
-      },
-    })
-    .catch(async (error) => {
-      await deps.artifacts.remove(stored.id, context).catch(() => undefined);
-      throw error;
-    });
+  const row = await withResolvedArtifactVersion(
+    deps.prisma,
+    {
+      spaceId: input.spaceId,
+      userId: input.userId,
+      botId: input.botId,
+      groupId: input.groupId,
+      name,
+    },
+    ({ rootArtifactId, version }) =>
+      deps.prisma.artifact.create({
+        data: {
+          spaceId: input.spaceId,
+          userId: input.userId,
+          botId: input.botId,
+          groupId: input.groupId,
+          runId: input.runId,
+          name,
+          description: input.description?.trim().slice(0, ARTIFACT_DESCRIPTION_MAX_LENGTH) || null,
+          mimeType,
+          size: input.bytes.byteLength,
+          hash,
+          storageKey: stored.id,
+          rootArtifactId,
+          version,
+        },
+      }),
+  ).catch(async (error) => {
+    await deps.artifacts.remove(stored.id, context).catch(() => undefined);
+    throw error;
+  });
   return {
     artifactId: row.id,
     block: messageBlockForArtifact({

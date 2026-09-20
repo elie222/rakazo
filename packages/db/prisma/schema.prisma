@@ -986,6 +986,10 @@ model Artifact {
   @@index([spaceId, botId])
   @@index([groupId])
   @@index([rootArtifactId])
+  // Also: a UNIQUE index on (COALESCE(rootArtifactId, id), version) — added
+  // via raw SQL in migrations/artifact_version_uniqueness, since Prisma's
+  // schema DSL has no expression-index syntax without the extendedIndexes
+  // preview feature. `prisma migrate diff`/drift checks will not see it.
   @@map("artifacts")
 }
 

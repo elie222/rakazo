@@ -9,7 +9,8 @@ import {
   promptTextForAttachments,
   validateAttachmentMimeType,
 } from "@rakazo/core";
-import { IsolationError, type PrismaClient, resolveNextArtifactVersion } from "@rakazo/db";
+import { IsolationError, Prisma, type PrismaClient, withResolvedArtifactVersion } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
 
 function adapterContext(actor: Actor, botId: string, operationId: string) {
   return {
@@ -40,39 +41,41 @@ export async function createOwnedArtifact(
   validateAttachmentMimeType(input.mimeType);
   const bytes = decodeAttachmentBase64(input.contentBase64);
   const context = adapterContext(actor, input.botId, `artifact-create:${input.botId}`);
-  const { rootArtifactId, version } = await resolveNextArtifactVersion(deps.prisma, {
-    spaceId: actor.spaceId,
-    userId: actor.userId,
-    botId: input.botId,
-    groupId: input.groupId,
-    name: input.name,
-  });
   const stored = await deps.artifacts.put(
     { name: input.name, mimeType: input.mimeType, bytes },
     context,
   );
   const hash = createHash("sha256").update(bytes).digest("hex");
-  const row = await deps.prisma.artifact
-    .create({
-      data: {
-        spaceId: actor.spaceId,
-        userId: actor.userId,
-        botId: input.botId,
-        groupId: input.groupId,
-        name: input.name,
-        description: input.description?.trim() || null,
-        mimeType: input.mimeType,
-        size: bytes.byteLength,
-        hash,
-        storageKey: stored.id,
-        rootArtifactId,
-        version,
-      },
-    })
-    .catch(async (error) => {
-      await deps.artifacts.remove(stored.id, context).catch(() => undefined);
-      throw error;
-    });
+  const row = await withResolvedArtifactVersion(
+    deps.prisma,
+    {
+      spaceId: actor.spaceId,
+      userId: actor.userId,
+      botId: input.botId,
+      groupId: input.groupId,
+      name: input.name,
+    },
+    ({ rootArtifactId, version }) =>
+      deps.prisma.artifact.create({
+        data: {
+          spaceId: actor.spaceId,
+          userId: actor.userId,
+          botId: input.botId,
+          groupId: input.groupId,
+          name: input.name,
+          description: input.description?.trim() || null,
+          mimeType: input.mimeType,
+          size: bytes.byteLength,
+          hash,
+          storageKey: stored.id,
+          rootArtifactId,
+          version,
+        },
+      }),
+  ).catch(async (error) => {
+    await deps.artifacts.remove(stored.id, context).catch(() => undefined);
+    throw error;
+  });
   return {
     id: row.id,
     botId: row.botId,
@@ -190,54 +193,85 @@ async function readArtifact(
   };
 }
 
-const FAMILY_RAW_FETCH_CAP = 500;
+type ListSpaceRow = {
+  id: string;
+  familyId: string;
+  botId: string | null;
+  groupId: string | null;
+  runId: string | null;
+  name: string;
+  description: string | null;
+  mimeType: string;
+  size: number;
+  version: number;
+  createdAt: Date;
+  versionCount: bigint | number;
+};
 
+/**
+ * One row per family (the latest version's info), collapsed and paginated in
+ * the database via a `DISTINCT ON` + keyset cursor — not a bounded raw fetch
+ * collapsed in JS, which can never page past its own snapshot. Group-owned
+ * artifacts are included: every artifact (bot- or group-owned) is scoped by
+ * spaceId/userId, same as the rest of this file's reads.
+ */
 export async function listSpaceArtifacts(
-  deps: { prisma: Pick<PrismaClient, "artifact"> },
+  deps: { prisma: Pick<PrismaClient, "artifact" | "$queryRaw"> },
   actor: Actor,
   input: { botId?: string; cursor?: string; limit?: number },
 ) {
   const take = Math.min(Math.max(input.limit ?? 30, 1), 60);
-  const where = {
-    spaceId: actor.spaceId,
-    userId: actor.userId,
-    groupId: null,
-    ...(input.botId ? { botId: input.botId } : {}),
-  };
-  // A family (an artifact and its versions) collapses to one row, showing
-  // the latest version's info — its `id` is the family's stable root id, not
-  // this specific row's id, so opening it always means "open the family."
-  // Every version shares its family's scoping fields, so collapsing happens
-  // in JS after one bounded fetch rather than needing a window-function
-  // query. FAMILY_RAW_FETCH_CAP bounds worst-case cost: a space with more
-  // artifact rows (versions included) than this paginates through in more
-  // pages rather than collapsing perfectly on the first one.
-  const rows = await deps.prisma.artifact.findMany({
-    where,
-    orderBy: { createdAt: "desc" },
-    take: FAMILY_RAW_FETCH_CAP,
-  });
-  const latestByFamily = new Map<string, (typeof rows)[number]>();
-  const versionCountByFamily = new Map<string, number>();
-  for (const row of rows) {
-    const familyId = row.rootArtifactId ?? row.id;
-    versionCountByFamily.set(familyId, (versionCountByFamily.get(familyId) ?? 0) + 1);
-    const current = latestByFamily.get(familyId);
-    if (!current || row.version > current.version) latestByFamily.set(familyId, row);
-  }
-  const families = [...latestByFamily.entries()]
-    .map(([familyId, row]) => ({ familyId, row }))
-    .sort((a, b) => b.row.createdAt.getTime() - a.row.createdAt.getTime());
+  const botFilter = input.botId ? Prisma.sql`AND "botId" = ${input.botId}` : Prisma.empty;
 
-  const startIndex = input.cursor
-    ? Math.max(families.findIndex((family) => family.familyId === input.cursor) + 1, 0)
-    : 0;
-  const page = families.slice(startIndex, startIndex + take);
-  const hasMore = startIndex + take < families.length;
+  let cursorFilter = Prisma.empty;
+  if (input.cursor) {
+    // A cursor that isn't one of the caller's own rows (foreign/stale) is
+    // ignored rather than erroring — same as returning the first page again.
+    const cursorRow = await deps.prisma.artifact.findFirst({
+      where: { id: input.cursor, spaceId: actor.spaceId, userId: actor.userId },
+      select: { createdAt: true },
+    });
+    if (cursorRow) {
+      cursorFilter = Prisma.sql`AND (latest."createdAt", latest.id) < (${cursorRow.createdAt}, ${input.cursor})`;
+    }
+  }
+
+  const rows = await deps.prisma.$queryRaw<ListSpaceRow[]>(Prisma.sql`
+    WITH scoped AS (
+      SELECT * FROM "artifacts"
+      WHERE "spaceId" = ${actor.spaceId} AND "userId" = ${actor.userId} ${botFilter}
+    ),
+    latest AS (
+      SELECT DISTINCT ON (COALESCE("rootArtifactId", id))
+        id, "botId", "groupId", "runId", name, description, "mimeType", size, version, "createdAt", "rootArtifactId"
+      FROM scoped
+      ORDER BY COALESCE("rootArtifactId", id), version DESC
+    ),
+    counts AS (
+      SELECT COALESCE("rootArtifactId", id) AS "familyId", COUNT(*)::int AS "versionCount"
+      FROM scoped
+      GROUP BY COALESCE("rootArtifactId", id)
+    )
+    SELECT latest.id, COALESCE(latest."rootArtifactId", latest.id) AS "familyId",
+           latest."botId", latest."groupId", latest."runId", latest.name,
+           latest.description, latest."mimeType", latest.size, latest.version, latest."createdAt",
+           counts."versionCount"
+    FROM latest
+    JOIN counts ON counts."familyId" = COALESCE(latest."rootArtifactId", latest.id)
+    WHERE true ${cursorFilter}
+    ORDER BY latest."createdAt" DESC, latest.id DESC
+    LIMIT ${take + 1}
+  `);
+
+  const hasMore = rows.length > take;
+  const page = hasMore ? rows.slice(0, take) : rows;
 
   return {
-    items: page.map(({ familyId, row }) => ({
-      id: familyId,
+    // `id` is the family's stable root id — never the version row that
+    // happens to be latest right now — so a card's URL never changes just
+    // because a new version was published.
+    items: page.map((row) => ({
+      id: row.familyId,
       botId: row.botId,
       groupId: row.groupId,
       runId: row.runId,
@@ -246,10 +280,10 @@ export async function listSpaceArtifacts(
       mimeType: row.mimeType,
       size: row.size,
       version: row.version,
-      versionCount: versionCountByFamily.get(familyId) ?? 1,
+      versionCount: Number(row.versionCount),
       createdAt: row.createdAt.toISOString(),
     })),
-    nextCursor: hasMore ? (page.at(-1)?.familyId ?? null) : null,
+    nextCursor: hasMore ? (page.at(-1)?.id ?? null) : null,
   };
 }
 
@@ -301,6 +335,15 @@ export async function deleteArtifactFamily(
     },
     select: { id: true, storageKey: true, botId: true },
   });
+  // Delete the DB rows first: that's the state the UI and the rest of the
+  // app treat as authoritative, so it must never survive a blob-removal
+  // failure (which would otherwise leave rows pointing at storage the app
+  // just told the user was gone). Deleting the root row cascades
+  // (onDelete: Cascade) to every version. Blob removal is best-effort
+  // cleanup after — a failure here is a storage leak, not a correctness
+  // problem, but it's logged rather than silently swallowed so it's
+  // discoverable.
+  await deps.prisma.artifact.delete({ where: { id: rootId } });
   await Promise.all(
     members.map((member) =>
       deps.artifacts
@@ -308,11 +351,14 @@ export async function deleteArtifactFamily(
           member.storageKey,
           adapterContext(actor, member.botId ?? member.id, `artifact-delete:${member.id}`),
         )
-        .catch(() => undefined),
+        .catch((error) => {
+          getLogger().error("artifact blob cleanup failed after delete", error, {
+            "artifact.id": member.id,
+            "artifact.storageKey": member.storageKey,
+          });
+        }),
     ),
   );
-  // Deleting the root row cascades (onDelete: Cascade) to every version.
-  await deps.prisma.artifact.delete({ where: { id: rootId } });
   return { ok: true as const };
 }
 

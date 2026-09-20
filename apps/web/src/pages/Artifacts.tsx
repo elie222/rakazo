@@ -68,12 +68,18 @@ function writeViewMode(mode: ViewMode): void {
   }
 }
 
+/** Calendar boundaries matching the filter labels ("This week"/"This month"), not rolling windows. */
 function matchesDateFilter(iso: string, filter: DateFilter, now: Date): boolean {
   if (filter === "all") return true;
   const date = new Date(iso);
   if (filter === "today") return date.toDateString() === now.toDateString();
-  const days = filter === "week" ? 7 : 30;
-  return now.getTime() - date.getTime() <= days * 86_400_000;
+  if (filter === "week") {
+    const startOfWeek = new Date(now);
+    startOfWeek.setHours(0, 0, 0, 0);
+    startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay());
+    return date >= startOfWeek;
+  }
+  return date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth();
 }
 
 export function ArtifactsPage() {
@@ -82,6 +88,9 @@ export function ArtifactsPage() {
   const { t } = useLingui();
   const [bots, setBots] = useState<Bot[]>([]);
   const [items, setItems] = useState<ArtifactSummary[] | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [activeBotId, setActiveBotId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>(readViewMode);
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -99,18 +108,43 @@ export function ArtifactsPage() {
   useEffect(() => {
     let cancelled = false;
     setItems(null);
+    setLoadError(null);
+    setNextCursor(null);
     void rpc.artifacts
       .listSpace({ botId: activeBotId ?? undefined, limit: LIST_PAGE_SIZE })
       .then((page) => {
-        if (!cancelled) setItems(page.items);
+        if (cancelled) return;
+        setItems(page.items);
+        setNextCursor(page.nextCursor);
       })
-      .catch(() => {
-        if (!cancelled) setItems([]);
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setLoadError(error instanceof Error ? error.message : t`Could not load artifacts.`);
+        }
       });
     return () => {
       cancelled = true;
     };
-  }, [activeBotId]);
+  }, [activeBotId, t]);
+
+  async function loadMore() {
+    if (!nextCursor || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const page = await rpc.artifacts.listSpace({
+        botId: activeBotId ?? undefined,
+        cursor: nextCursor,
+        limit: LIST_PAGE_SIZE,
+      });
+      setItems((current) => (current ?? []).concat(page.items));
+      setNextCursor(page.nextCursor);
+    } catch {
+      // Leave the existing page visible; the "Load more" button just stays
+      // clickable so the user can retry.
+    } finally {
+      setLoadingMore(false);
+    }
+  }
 
   useEffect(() => {
     setMaximized(false);
@@ -245,12 +279,17 @@ export function ArtifactsPage() {
               {!maximized ? (
                 <IndexPane
                   items={filteredItems}
+                  loadError={loadError}
                   botsById={botsById}
                   selectedId={artifactId}
                   onRequestDelete={setPendingDelete}
+                  nextCursor={nextCursor}
+                  loadingMore={loadingMore}
+                  onLoadMore={() => void loadMore()}
                 />
               ) : null}
               <PreviewPane
+                key={artifactId}
                 artifactId={artifactId}
                 maximized={maximized}
                 onToggleMaximize={() => setMaximized((value) => !value)}
@@ -259,9 +298,13 @@ export function ArtifactsPage() {
           ) : (
             <BrowsingPane
               items={filteredItems}
+              loadError={loadError}
               viewMode={viewMode}
               botsById={botsById}
               onRequestDelete={setPendingDelete}
+              nextCursor={nextCursor}
+              loadingMore={loadingMore}
+              onLoadMore={() => void loadMore()}
             />
           )}
         </div>
@@ -312,19 +355,27 @@ export function ArtifactsPage() {
 
 function BrowsingPane({
   items,
+  loadError,
   viewMode,
   botsById,
   onRequestDelete,
+  nextCursor,
+  loadingMore,
+  onLoadMore,
 }: {
   items: ArtifactSummary[] | null;
+  loadError: string | null;
   viewMode: ViewMode;
   botsById: Map<string, Bot>;
   onRequestDelete: (artifact: ArtifactSummary) => void;
+  nextCursor: string | null;
+  loadingMore: boolean;
+  onLoadMore: () => void;
 }) {
   if (items === null) {
     return (
       <div className="grid flex-1 place-items-center text-sm text-muted-foreground/80">
-        <Trans>Loading…</Trans>
+        {loadError ?? <Trans>Loading…</Trans>}
       </div>
     );
   }
@@ -360,26 +411,45 @@ function BrowsingPane({
           ))}
         </div>
       )}
+      {nextCursor ? <LoadMoreButton loading={loadingMore} onClick={onLoadMore} /> : null}
+    </div>
+  );
+}
+
+function LoadMoreButton({ loading, onClick }: { loading: boolean; onClick: () => void }) {
+  return (
+    <div className="mt-4 flex justify-center">
+      <Button variant="outline" size="sm" disabled={loading} onClick={onClick}>
+        {loading ? <Trans>Loading…</Trans> : <Trans>Load more</Trans>}
+      </Button>
     </div>
   );
 }
 
 function IndexPane({
   items,
+  loadError,
   botsById,
   selectedId,
   onRequestDelete,
+  nextCursor,
+  loadingMore,
+  onLoadMore,
 }: {
   items: ArtifactSummary[] | null;
+  loadError: string | null;
   botsById: Map<string, Bot>;
   selectedId: string;
   onRequestDelete: (artifact: ArtifactSummary) => void;
+  nextCursor: string | null;
+  loadingMore: boolean;
+  onLoadMore: () => void;
 }) {
   return (
     <aside className="flex w-[320px] shrink-0 flex-col overflow-y-auto border-e border-border">
       {items === null ? (
-        <div className="grid flex-1 place-items-center p-6 text-sm text-muted-foreground/80">
-          <Trans>Loading…</Trans>
+        <div className="grid flex-1 place-items-center p-6 text-center text-sm text-muted-foreground/80">
+          {loadError ?? <Trans>Loading…</Trans>}
         </div>
       ) : items.length === 0 ? (
         <div className="grid flex-1 place-items-center p-6 text-center text-sm text-muted-foreground/80">
@@ -396,6 +466,11 @@ function IndexPane({
               onRequestDelete={onRequestDelete}
             />
           ))}
+          {nextCursor ? (
+            <div className="p-3">
+              <LoadMoreButton loading={loadingMore} onClick={onLoadMore} />
+            </div>
+          ) : null}
         </div>
       )}
     </aside>

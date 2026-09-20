@@ -18,7 +18,7 @@ export function AppRail({ active }: AppRailProps) {
     <nav
       data-testid="app-rail"
       aria-label={t`Sections`}
-      className="hidden w-14 shrink-0 flex-col items-center gap-1 border-e border-sidebar-border bg-sidebar py-3 md:flex"
+      className="flex w-14 shrink-0 flex-col items-center gap-1 border-e border-sidebar-border bg-sidebar py-3"
     >
       <RailLink to="/app" label={t`Bots`} active={active === "bots"}>
         <Bot size={19} strokeWidth={1.75} />
