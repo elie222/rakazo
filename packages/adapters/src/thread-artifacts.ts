@@ -18,7 +18,8 @@ import {
   messageBlockForArtifact,
   validateAttachmentMimeType,
 } from "@rakazo/core";
-import { type PrismaClient, withResolvedArtifactVersion } from "@rakazo/db";
+import type { PrismaClient } from "@rakazo/db";
+import { withResolvedArtifactVersion } from "@rakazo/db";
 import { resolveBotWorkspacePath } from "./computer-support.js";
 
 export type MaterializedThreadFile = {

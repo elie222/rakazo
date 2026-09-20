@@ -9,7 +9,8 @@ import {
   promptTextForAttachments,
   validateAttachmentMimeType,
 } from "@rakazo/core";
-import { IsolationError, Prisma, type PrismaClient, withResolvedArtifactVersion } from "@rakazo/db";
+import type { PrismaClient } from "@rakazo/db";
+import { IsolationError, Prisma, withResolvedArtifactVersion } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 
 function adapterContext(actor: Actor, botId: string, operationId: string) {

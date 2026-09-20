@@ -1,4 +1,5 @@
-import { Prisma, type PrismaClient } from "./client.js";
+import type { PrismaClient } from "./client.js";
+import { Prisma } from "./client.js";
 
 /**
  * Shared by both artifact-authoring paths (the human-facing `create` RPC and

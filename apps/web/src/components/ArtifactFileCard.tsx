@@ -4,13 +4,10 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import { ChatMarkdown } from "@rakazo/chat-ui/web";
 import { Button, Dialog, DialogClose, DialogContent, DialogTitle } from "@rakazo/ui-web";
 import { Code2, Download, FileText, X } from "lucide-react";
-import { type RefObject, useEffect, useRef, useState } from "react";
-import {
-  type ArtifactTarget,
-  downloadArtifact,
-  downloadArtifactBytes,
-  fetchArtifactBytes,
-} from "../lib/artifact-open";
+import type { RefObject } from "react";
+import { useEffect, useRef, useState } from "react";
+import type { ArtifactTarget } from "../lib/artifact-open";
+import { downloadArtifact, downloadArtifactBytes, fetchArtifactBytes } from "../lib/artifact-open";
 import { PdfViewer } from "./PdfViewer";
 import { SandboxedHtmlViewer } from "./SandboxedHtmlViewer";
 
