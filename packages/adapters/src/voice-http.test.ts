@@ -86,9 +86,11 @@ describe("verifyVoiceHttpGet", () => {
   it("includes the provider detail when checking the key fails", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue(
-        new Response(JSON.stringify({ detail: "voice quota" }), { status: 500 }),
-      ),
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response(JSON.stringify({ detail: "voice quota" }), { status: 500 }),
+        ),
     );
 
     await expect(
