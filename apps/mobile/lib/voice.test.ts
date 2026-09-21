@@ -182,11 +182,35 @@ describe("on-device speech", () => {
     expect(Speech.speak).not.toHaveBeenCalled();
   });
 
-  it("resolves false when the OS engine reports an error", async () => {
+  it("rejects with the OS engine's own error instead of resolving false", async () => {
+    // A generic `false` here would be indistinguishable from "no hosted
+    // provider configured" to a caller, which needs no provider at all.
     vi.mocked(Speech.speak).mockImplementation((_text, options) =>
       options?.onError?.(new Error("synth failed")),
     );
 
-    await expect(speakWithDeviceVoice("Hello")).resolves.toBe(false);
+    await expect(speakWithDeviceVoice("Hello")).rejects.toThrow("synth failed");
+  });
+
+  it("strips markdown and splits a long reply into bounded utterances, in order", async () => {
+    const spoken: string[] = [];
+    vi.mocked(Speech.speak).mockImplementation((text, options) => {
+      spoken.push(text);
+      options?.onDone?.();
+    });
+    const longSentence = `${"word ".repeat(70).trim()}.`;
+    const text = `**Bold** intro. ${longSentence} A short close.`;
+
+    await expect(speakWithDeviceVoice(text)).resolves.toBe(true);
+
+    expect(spoken.length).toBeGreaterThan(1);
+    for (const utterance of spoken) {
+      // toUtterances glues short neighbours onto a ~320-char chunk, so a
+      // piece can run a little over — the bound that matters here is being
+      // nowhere near Android's TTS input ceiling (thousands of characters).
+      expect(utterance.length).toBeLessThan(500);
+      expect(utterance).not.toContain("**");
+    }
+    expect(spoken.join(" ")).toContain("Bold intro");
   });
 });

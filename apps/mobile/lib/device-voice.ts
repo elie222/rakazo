@@ -17,11 +17,20 @@ export async function loadDeviceVoiceEnabled(): Promise<boolean> {
   }
 }
 
-export async function saveDeviceVoiceEnabled(on: boolean): Promise<void> {
+/**
+ * Persists the preference and reports whether it actually landed. This
+ * controls whether speech text leaves the phone at all, so a caller that
+ * shows an optimistic toggle must roll it back on `false` — silently
+ * swallowing a write failure here would let the UI claim "on-device" while
+ * `speakText` still reads the old (unsaved) value and routes to a hosted
+ * provider.
+ */
+export async function saveDeviceVoiceEnabled(on: boolean): Promise<boolean> {
   try {
     if (on) await SecureStore.setItemAsync(DEVICE_VOICE_KEY, "1");
     else await SecureStore.deleteItemAsync(DEVICE_VOICE_KEY);
+    return true;
   } catch {
-    // SecureStore unavailable in some test / web hosts.
+    return false;
   }
 }

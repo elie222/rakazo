@@ -1,5 +1,5 @@
 import { useFocusEffect } from "expo-router";
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -51,6 +51,10 @@ export default function VoiceSettings() {
   const [pending, setPending] = useState<"connect" | "disconnect" | "voice" | "test" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // Bumped whenever the device-voice preference is loaded or manually
+  // toggled, so a load that was already in flight when the user tapped the
+  // toggle can recognize it's stale and skip overwriting the newer choice.
+  const deviceVoiceGeneration = useRef(0);
 
   const load = useCallback(async (nextProvider?: string) => {
     const [nextCatalog, nextCredentials, nextStatus] = await Promise.all([
@@ -75,7 +79,10 @@ export default function VoiceSettings() {
   useFocusEffect(
     useCallback(() => {
       setLoading(true);
-      void loadDeviceVoiceEnabled().then(setDeviceVoice);
+      const generation = ++deviceVoiceGeneration.current;
+      void loadDeviceVoiceEnabled().then((value) => {
+        if (deviceVoiceGeneration.current === generation) setDeviceVoice(value);
+      });
       void load()
         .catch((err: unknown) =>
           setError(err instanceof Error ? err.message : t("Could not load voice settings")),
@@ -85,9 +92,15 @@ export default function VoiceSettings() {
   );
 
   async function toggleDeviceVoice() {
+    // Invalidate any load still in flight: it read a value from before this
+    // tap and must not clobber the choice being made right now.
+    deviceVoiceGeneration.current += 1;
     const next = !deviceVoice;
     setDeviceVoice(next);
-    await saveDeviceVoiceEnabled(next);
+    if (!(await saveDeviceVoiceEnabled(next))) {
+      setDeviceVoice(!next);
+      setError(t("Could not save that preference"));
+    }
   }
 
   const selected = catalog.find((entry) => entry.id === provider);

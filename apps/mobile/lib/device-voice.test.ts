@@ -21,11 +21,19 @@ describe("device voice preference", () => {
     expect(await loadDeviceVoiceEnabled()).toBe(false);
   });
 
-  it("persists on and off", async () => {
+  it("persists on and off, reporting success", async () => {
     const { loadDeviceVoiceEnabled, saveDeviceVoiceEnabled } = await import("./device-voice");
-    await saveDeviceVoiceEnabled(true);
+    await expect(saveDeviceVoiceEnabled(true)).resolves.toBe(true);
     expect(await loadDeviceVoiceEnabled()).toBe(true);
-    await saveDeviceVoiceEnabled(false);
+    await expect(saveDeviceVoiceEnabled(false)).resolves.toBe(true);
     expect(await loadDeviceVoiceEnabled()).toBe(false);
+  });
+
+  it("reports failure instead of silently dropping a write", async () => {
+    const SecureStore = await import("expo-secure-store");
+    vi.mocked(SecureStore.setItemAsync).mockRejectedValueOnce(new Error("device locked"));
+    const { saveDeviceVoiceEnabled } = await import("./device-voice");
+
+    await expect(saveDeviceVoiceEnabled(true)).resolves.toBe(false);
   });
 });

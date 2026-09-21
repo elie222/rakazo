@@ -604,4 +604,5 @@ export const RU_MESSAGES: Record<string, string> = {
     "Встроенный голос телефона — бесплатно, без аккаунта",
   "Speaks with your phone's own text-to-speech instead of a connected provider.":
     "Озвучивает встроенным синтезом речи телефона вместо подключённого провайдера.",
+  "Could not save that preference": "Не удалось сохранить эту настройку",
 };

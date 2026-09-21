@@ -1,4 +1,4 @@
-import { ensureAiDataConsent, readBoundedResponseBytes } from "@rakazo/core";
+import { ensureAiDataConsent, readBoundedResponseBytes, toUtterances } from "@rakazo/core";
 import { File, Paths } from "expo-file-system";
 import { promptAiConsent } from "./ai-consent";
 import type { ApiRequestContext } from "./api";
@@ -30,17 +30,37 @@ export async function speakText(text: string, opts: SpeechOptions = {}): Promise
  * Speaks with the OS's own TextToSpeech engine — free, offline, no hosted
  * vendor, no per-request audio round trip. The text never leaves the device,
  * so this skips AI-data consent and the `/api/voice/speak` request entirely.
+ *
+ * Reuses the same markdown-stripping and utterance-bounding used for hosted
+ * speech (`toUtterances`, capped at 320 chars/utterance) instead of handing
+ * `Speech.speak` raw text: Android's TTS engine rejects anything longer than
+ * `Speech.maxSpeechInputLength` with a native exception the JS wrapper never
+ * awaits, which would otherwise leave this promise pending forever on a long
+ * reply — 320 chars is always comfortably under that limit.
+ *
+ * A failure rejects with the OS engine's own error instead of resolving
+ * `false`: `false` from this function is reserved for "nothing to speak",
+ * not "the phone's TTS failed" — callers that treat `false` as "no provider
+ * configured" would otherwise show a misleading "connect a provider"
+ * message for a feature that needs no provider at all.
  */
 export async function speakWithDeviceVoice(text: string): Promise<boolean> {
-  const trimmed = text.trim();
-  if (!trimmed) return false;
+  const utterances = toUtterances(text);
+  if (utterances.length === 0) return false;
   const Speech = await import("expo-speech");
   Speech.stop();
-  return new Promise<boolean>((resolve) => {
-    Speech.speak(trimmed, {
-      onDone: () => resolve(true),
-      onStopped: () => resolve(true),
-      onError: () => resolve(false),
+  for (const utterance of utterances) {
+    await speakOneUtterance(Speech, utterance);
+  }
+  return true;
+}
+
+function speakOneUtterance(Speech: typeof import("expo-speech"), text: string): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    Speech.speak(text, {
+      onDone: () => resolve(),
+      onStopped: () => resolve(),
+      onError: (error) => reject(error instanceof Error ? error : new Error(String(error))),
     });
   });
 }
