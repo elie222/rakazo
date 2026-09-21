@@ -602,7 +602,10 @@ function isFailedToolResult(value: unknown): value is { error: unknown } {
  */
 function toolResultError(result: unknown): unknown {
   const payload = (result as { details?: unknown } | null)?.details ?? result;
-  if (isFailedToolResult(payload)) return payload.error;
+  if (isFailedToolResult(payload)) {
+    const message = (payload.error as { message?: unknown })?.message;
+    return typeof message === "string" ? message : payload.error;
+  }
   if (!payload || typeof payload !== "object") return undefined;
   if ((payload as { isError?: unknown }).isError !== true) return undefined;
   const content = (payload as { content?: unknown }).content;

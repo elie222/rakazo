@@ -122,21 +122,50 @@ describe("tool completion audit", () => {
     });
   });
 
-  it.each(["destination rejected the record", { message: "request rejected" }, false, 0])(
-    "records a returned error inside a Pi result wrapper: %j",
-    (error) => {
-      const result = { content: [{ type: "text", text: "tool response" }], details: { error } };
-      const completion = {
-        name: "destination.write",
-        executionId: "call-1",
-        durationMs: 4,
-        result,
-      };
-      expect(toolCompletionAuditPayload(completion)).toMatchObject({ outcome: "error" });
-      expect(completion.result).toBe(result);
-      expect(result.details.error).toBe(error);
-    },
-  );
+  it.each([
+    ["destination rejected the record", "destination rejected the record"],
+    [{ message: "request rejected" }, "request rejected"],
+    [false, "false"],
+    [0, "0"],
+  ])("records a returned error inside a Pi result wrapper: %j", (error, message) => {
+    const result = { content: [{ type: "text", text: "tool response" }], details: { error } };
+    const completion = {
+      name: "destination.write",
+      executionId: "call-1",
+      durationMs: 4,
+      result,
+    };
+    expect(toolCompletionAuditPayload(completion)).toMatchObject({
+      outcome: "error",
+      error: message,
+    });
+    expect(completion.result).toBe(result);
+    expect(result.details.error).toBe(error);
+  });
+
+  it("sanitizes an object error's message without copying its other fields", () => {
+    const error = {
+      message: "Rejected fake-provider-key using Bearer fake-token",
+      request: { body: "private request body" },
+    };
+    expect(
+      toolCompletionAuditPayload(
+        {
+          name: "destination.write",
+          executionId: "call-1",
+          durationMs: 4,
+          result: { content: [], details: { error } },
+        },
+        ["fake-provider-key"],
+      ),
+    ).toEqual({
+      name: "destination.write",
+      executionId: "call-1",
+      durationMs: 4,
+      outcome: "error",
+      error: "Rejected [redacted] using Bearer [redacted]",
+    });
+  });
 
   it.each([{}, { error: null }, { error: undefined }, { data: { error: "a record field" } }])(
     "does not treat successful wrapped data as a tool failure: %j",
