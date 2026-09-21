@@ -213,4 +213,37 @@ describe("on-device speech", () => {
     }
     expect(spoken.join(" ")).toContain("Bold intro");
   });
+
+  it("stops queuing more chunks once a newer call interrupts it", async () => {
+    const calls: Array<{ text: string; options: Parameters<typeof Speech.speak>[1] }> = [];
+    vi.mocked(Speech.speak).mockImplementation((text, options) => {
+      calls.push({ text, options });
+    });
+
+    // speakWithDeviceVoice awaits a dynamic import before its first
+    // Speech.speak call; that resolution isn't purely a microtask under the
+    // mocked module loader, so yield a real macrotask turn too.
+    const flush = async () => {
+      for (let i = 0; i < 5; i++) await Promise.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    };
+
+    const first = speakWithDeviceVoice("First sentence. Second sentence.");
+    await flush();
+    expect(calls.map((c) => c.text)).toEqual(["First sentence."]);
+
+    // A newer call interrupts: its own Speech.stop() stops the first
+    // utterance above, which reports back as "stopped", not "done".
+    const second = speakWithDeviceVoice("Different message.");
+    calls[0]?.options?.onStopped?.();
+    await flush();
+
+    // The interrupted call must not go on to speak its remaining chunk.
+    expect(calls.map((c) => c.text)).not.toContain("Second sentence.");
+    await expect(first).resolves.toBe(true);
+
+    calls[1]?.options?.onDone?.();
+    await expect(second).resolves.toBe(true);
+    expect(calls.map((c) => c.text)).toEqual(["First sentence.", "Different message."]);
+  });
 });

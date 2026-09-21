@@ -48,7 +48,9 @@ export default function VoiceSettings() {
   const [voiceId, setVoiceId] = useState("");
   const [deviceVoice, setDeviceVoice] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [pending, setPending] = useState<"connect" | "disconnect" | "voice" | "test" | null>(null);
+  const [pending, setPending] = useState<
+    "connect" | "disconnect" | "voice" | "test" | "device-voice" | null
+  >(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   // Bumped whenever the device-voice preference is loaded or manually
@@ -92,14 +94,25 @@ export default function VoiceSettings() {
   );
 
   async function toggleDeviceVoice() {
+    // The toggle is disabled while `pending` is set (below), so this guards
+    // only a same-tick double-invoke; the disabled Pressable is what
+    // actually prevents a second tap from overlapping this save.
+    if (pending !== null) return;
     // Invalidate any load still in flight: it read a value from before this
     // tap and must not clobber the choice being made right now.
-    deviceVoiceGeneration.current += 1;
+    const generation = ++deviceVoiceGeneration.current;
     const next = !deviceVoice;
     setDeviceVoice(next);
-    if (!(await saveDeviceVoiceEnabled(next))) {
-      setDeviceVoice(!next);
-      setError(t("Could not save that preference"));
+    setPending("device-voice");
+    try {
+      const saved = await saveDeviceVoiceEnabled(next);
+      if (deviceVoiceGeneration.current !== generation) return;
+      if (!saved) {
+        setDeviceVoice(!next);
+        setError(t("Could not save that preference"));
+      }
+    } finally {
+      if (deviceVoiceGeneration.current === generation) setPending(null);
     }
   }
 

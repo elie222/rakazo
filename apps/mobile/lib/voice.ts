@@ -43,22 +43,42 @@ export async function speakText(text: string, opts: SpeechOptions = {}): Promise
  * not "the phone's TTS failed" — callers that treat `false` as "no provider
  * configured" would otherwise show a misleading "connect a provider"
  * message for a feature that needs no provider at all.
+ *
+ * `Speech.stop()` below interrupts whatever a *previous* call is currently
+ * speaking, which fires that older call's `onStopped` — a cancellation, not
+ * a "this utterance completed successfully" signal. Left unchecked, the
+ * older call's loop would treat `onStopped` the same as `onDone` and go on
+ * to speak its remaining chunks, overlapping with this newer call. A shared
+ * generation counter lets an interrupted call recognize it's been
+ * superseded and stop queuing more chunks instead of racing the new one.
+ * The generation is claimed synchronously, before the `import()` below —
+ * claiming it only after that await would leave a window where a call
+ * already mid-loop could pass its staleness check before a newer call's
+ * claim takes effect.
  */
+let deviceSpeechGeneration = 0;
+
 export async function speakWithDeviceVoice(text: string): Promise<boolean> {
   const utterances = toUtterances(text);
   if (utterances.length === 0) return false;
+  const generation = ++deviceSpeechGeneration;
   const Speech = await import("expo-speech");
+  if (generation !== deviceSpeechGeneration) return true;
   Speech.stop();
   for (const utterance of utterances) {
+    if (generation !== deviceSpeechGeneration) return true;
     await speakOneUtterance(Speech, utterance);
   }
-  return true;
+  return generation === deviceSpeechGeneration;
 }
 
 function speakOneUtterance(Speech: typeof import("expo-speech"), text: string): Promise<void> {
   return new Promise<void>((resolve, reject) => {
     Speech.speak(text, {
       onDone: () => resolve(),
+      // A stop is a cancellation, not a completion — resolve so the caller's
+      // loop unblocks, but the generation check above is what actually
+      // stops it from continuing to the next chunk.
       onStopped: () => resolve(),
       onError: (error) => reject(error instanceof Error ? error : new Error(String(error))),
     });
