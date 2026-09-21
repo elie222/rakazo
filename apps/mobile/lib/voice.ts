@@ -3,6 +3,7 @@ import { File, Paths } from "expo-file-system";
 import { promptAiConsent } from "./ai-consent";
 import type { ApiRequestContext } from "./api";
 import { captureApiRequestContext, rpc } from "./api";
+import { loadDeviceVoiceEnabled } from "./device-voice";
 import { t } from "./i18n";
 
 type SpeechOptions = { voiceId?: string; botId?: string };
@@ -11,6 +12,7 @@ export const MAX_VOICE_AUDIO_BYTES = 16 * 1024 * 1024;
 const MAX_VOICE_ERROR_BYTES = 64 * 1024;
 
 export async function speakText(text: string, opts: SpeechOptions = {}): Promise<boolean> {
+  if (await loadDeviceVoiceEnabled()) return speakWithDeviceVoice(text);
   const requestContext = await captureApiRequestContext();
   const prepared = await rpc<{ ready: boolean; utterances: string[] }>(
     "voice/prepare",
@@ -22,6 +24,25 @@ export async function speakText(text: string, opts: SpeechOptions = {}): Promise
     await playMpeg(await renderUtterance(utterance, opts, requestContext));
   }
   return true;
+}
+
+/**
+ * Speaks with the OS's own TextToSpeech engine — free, offline, no hosted
+ * vendor, no per-request audio round trip. The text never leaves the device,
+ * so this skips AI-data consent and the `/api/voice/speak` request entirely.
+ */
+export async function speakWithDeviceVoice(text: string): Promise<boolean> {
+  const trimmed = text.trim();
+  if (!trimmed) return false;
+  const Speech = await import("expo-speech");
+  Speech.stop();
+  return new Promise<boolean>((resolve) => {
+    Speech.speak(trimmed, {
+      onDone: () => resolve(true),
+      onStopped: () => resolve(true),
+      onError: () => resolve(false),
+    });
+  });
 }
 
 export async function speakUtterance(

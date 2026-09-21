@@ -1,3 +1,5 @@
+import * as SecureStore from "expo-secure-store";
+import * as Speech from "expo-speech";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { captureApiRequestContext, currentApiBase, rpc } from "./api";
 import {
@@ -5,11 +7,18 @@ import {
   playMpeg,
   speakText,
   speakUtterance,
+  speakWithDeviceVoice,
   VOICE_RESPONSE_TIMEOUT_MS,
 } from "./voice";
 
 vi.mock("./ai-consent", () => ({ promptAiConsent: vi.fn() }));
 vi.mock("expo-file-system", () => ({ File: class {}, Paths: {} }));
+vi.mock("expo-secure-store", () => ({
+  getItemAsync: vi.fn(),
+  setItemAsync: vi.fn(),
+  deleteItemAsync: vi.fn(),
+}));
+vi.mock("expo-speech", () => ({ speak: vi.fn(), stop: vi.fn() }));
 vi.mock("./api", () => ({
   authHeaders: vi.fn(),
   captureApiRequestContext: vi.fn(),
@@ -31,6 +40,7 @@ class FakeAudio {
 
 describe("mobile speech", () => {
   beforeEach(() => {
+    vi.mocked(SecureStore.getItemAsync).mockResolvedValue(null);
     vi.mocked(captureApiRequestContext).mockResolvedValue({
       apiBase: "https://support.example",
       headers: {
@@ -134,5 +144,49 @@ describe("mobile speech", () => {
     await vi.advanceTimersByTimeAsync(VOICE_RESPONSE_TIMEOUT_MS);
 
     await rejected;
+  });
+});
+
+describe("on-device speech", () => {
+  beforeEach(() => {
+    vi.mocked(Speech.speak).mockReset();
+    vi.mocked(Speech.stop).mockReset();
+    vi.mocked(rpc).mockReset();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => {
+        throw new Error("on-device speech must not touch the network");
+      }),
+    );
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it("speaks locally and never touches the network when the device voice is on", async () => {
+    vi.mocked(SecureStore.getItemAsync).mockResolvedValue("1");
+    vi.mocked(Speech.speak).mockImplementation((_text, options) => options?.onDone?.());
+
+    await expect(speakText("Read this")).resolves.toBe(true);
+
+    expect(Speech.stop).toHaveBeenCalledOnce();
+    expect(Speech.speak).toHaveBeenCalledWith("Read this", expect.any(Object));
+    expect(rpc).not.toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("resolves false on empty text without calling the OS engine", async () => {
+    await expect(speakWithDeviceVoice("   ")).resolves.toBe(false);
+    expect(Speech.speak).not.toHaveBeenCalled();
+  });
+
+  it("resolves false when the OS engine reports an error", async () => {
+    vi.mocked(Speech.speak).mockImplementation((_text, options) =>
+      options?.onError?.(new Error("synth failed")),
+    );
+
+    await expect(speakWithDeviceVoice("Hello")).resolves.toBe(false);
   });
 });

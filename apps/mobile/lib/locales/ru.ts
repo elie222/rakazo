@@ -597,4 +597,11 @@ export const RU_MESSAGES: Record<string, string> = {
   "{name} (permission denied)": "{name} (в разрешении отказано)",
   "{name} (unsupported type)": "{name} (неподдерживаемый тип)",
   "Saved {name} locally": "{name} сохранен локально.",
+
+  "This device": "Это устройство",
+  "On · Free, works offline": "Включено · Бесплатно, работает офлайн",
+  "Your phone's built-in voice — free, no account needed":
+    "Встроенный голос телефона — бесплатно, без аккаунта",
+  "Speaks with your phone's own text-to-speech instead of a connected provider.":
+    "Озвучивает встроенным синтезом речи телефона вместо подключённого провайдера.",
 };
