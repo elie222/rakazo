@@ -1,5 +1,6 @@
 import { ensureAiDataConsent, readBoundedResponseBytes, toUtterances } from "@rakazo/core";
 import { File, Paths } from "expo-file-system";
+import type * as ExpoSpeech from "expo-speech";
 import { promptAiConsent } from "./ai-consent";
 import type { ApiRequestContext } from "./api";
 import { captureApiRequestContext, rpc } from "./api";
@@ -69,10 +70,14 @@ export async function speakWithDeviceVoice(text: string): Promise<boolean> {
     if (generation !== deviceSpeechGeneration) return true;
     await speakOneUtterance(Speech, utterance);
   }
-  return generation === deviceSpeechGeneration;
+  // Reaching this point without throwing means every utterance settled with
+  // no error — including a last utterance that was itself stopped by a
+  // newer, interrupting call. That's the same "not an error" outcome as the
+  // mid-loop interruption checks above, not the false/no-provider case.
+  return true;
 }
 
-function speakOneUtterance(Speech: typeof import("expo-speech"), text: string): Promise<void> {
+function speakOneUtterance(Speech: typeof ExpoSpeech, text: string): Promise<void> {
   return new Promise<void>((resolve, reject) => {
     Speech.speak(text, {
       onDone: () => resolve(),

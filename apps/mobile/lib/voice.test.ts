@@ -246,4 +246,32 @@ describe("on-device speech", () => {
     await expect(second).resolves.toBe(true);
     expect(calls.map((c) => c.text)).toEqual(["First sentence.", "Different message."]);
   });
+
+  it("resolves true, not false, when interrupted on its final utterance", async () => {
+    const calls: Array<{ text: string; options: Parameters<typeof Speech.speak>[1] }> = [];
+    vi.mocked(Speech.speak).mockImplementation((text, options) => {
+      calls.push({ text, options });
+    });
+    const flush = async () => {
+      for (let i = 0; i < 5; i++) await Promise.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    };
+
+    const first = speakWithDeviceVoice("Only one sentence here.");
+    await flush();
+    expect(calls).toHaveLength(1);
+
+    // A newer call interrupts the FIRST call's only (and therefore last)
+    // utterance — falling off the end of the loop after that must not look
+    // like a failure, or callers show a misleading "connect a provider"
+    // message for a feature that needs none.
+    const second = speakWithDeviceVoice("Different message.");
+    calls[0]?.options?.onStopped?.();
+    await flush();
+
+    await expect(first).resolves.toBe(true);
+
+    calls[1]?.options?.onDone?.();
+    await expect(second).resolves.toBe(true);
+  });
 });
