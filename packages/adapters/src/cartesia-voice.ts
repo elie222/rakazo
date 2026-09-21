@@ -12,9 +12,9 @@ import {
   readVoiceAudio,
   readVoiceJson,
   requireOk,
+  verifyVoiceHttpGet,
   voiceDeadline,
   voiceHttpError,
-  voiceUnreachable,
 } from "./voice-http.js";
 
 const API = "https://api.cartesia.ai";
@@ -40,27 +40,12 @@ export class CartesiaVoiceProvider implements VoiceProvider {
   }
 
   async verify(apiKey: string, context: AdapterContext): Promise<VoiceVerifyResult> {
-    try {
-      const res = await fetch(`${API}/voices?limit=${VERIFY_PAGE_LIMIT}`, {
-        headers: cartesiaHeaders(apiKey, VOICES_VERSION),
-        signal: voiceDeadline(context.signal, 20_000),
-      });
-      if (res.ok) return { ok: true };
-      return {
-        ok: false,
-        message: voiceHttpError(
-          res.status,
-          "Cartesia",
-          "checking that key",
-          await readVoiceJson(res),
-        ),
-      };
-    } catch {
-      return {
-        ok: false,
-        message: voiceUnreachable("Cartesia"),
-      };
-    }
+    return verifyVoiceHttpGet({
+      url: `${API}/voices?limit=${VERIFY_PAGE_LIMIT}`,
+      headers: cartesiaHeaders(apiKey, VOICES_VERSION),
+      signal: context.signal,
+      provider: "Cartesia",
+    });
   }
 
   async listVoices(apiKey: string, context: AdapterContext): Promise<VoiceInfo[]> {

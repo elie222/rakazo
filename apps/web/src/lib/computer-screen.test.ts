@@ -1,5 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
-import { loadComputerScreen } from "./computer-screen";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { embeddableScreenUrl, loadComputerScreen, screenIframeSandbox } from "./computer-screen";
 
 describe("computer screen requests", () => {
   it("shows connection failures and lets a successful retry clear them", async () => {
@@ -77,5 +77,38 @@ describe("computer screen requests", () => {
       fallbackError: "Could not connect",
     });
     expect(commit).toHaveBeenCalledExactlyOnceWith({ url: null, error: "Could not connect" });
+  });
+});
+
+describe("embeddableScreenUrl", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("hides a local screen whose port does not match the page", () => {
+    vi.stubGlobal("window", { location: { href: "http://localhost:5173/" } });
+    expect(embeddableScreenUrl("http://127.0.0.1:6080/vnc.html")).toBeNull();
+    expect(embeddableScreenUrl("http://localhost:6080/vnc.html")).toBeNull();
+  });
+
+  it("keeps a non-local screen even when the port differs", () => {
+    vi.stubGlobal("window", { location: { href: "http://localhost:5173/" } });
+    expect(embeddableScreenUrl("https://screen.example:6080/vnc.html")).toBe(
+      "https://screen.example:6080/vnc.html",
+    );
+  });
+});
+
+describe("screenIframeSandbox", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("allows scripts and pointer lock only for /novnc/ paths", () => {
+    vi.stubGlobal("window", { location: { href: "http://localhost:5173/" } });
+    expect(screenIframeSandbox("http://127.0.0.1:5173/novnc/vnc.html")).toBe(
+      "allow-scripts allow-pointer-lock",
+    );
+    expect(screenIframeSandbox("http://127.0.0.1:5173/vnc.html")).toBeUndefined();
   });
 });

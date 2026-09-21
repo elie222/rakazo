@@ -14,9 +14,9 @@ import {
   readVoiceJson,
   requireOk,
   speechUploadName,
+  verifyVoiceHttpGet,
   voiceDeadline,
   voiceHttpError,
-  voiceUnreachable,
 } from "./voice-http.js";
 
 const API = "https://api.fish.audio";
@@ -41,27 +41,12 @@ export class FishAudioVoiceProvider implements VoiceProvider {
 
   /** Verify the user's Fish Audio API key against the model catalog endpoint. */
   async verify(apiKey: string, context: AdapterContext): Promise<VoiceVerifyResult> {
-    try {
-      const res = await fetch(`${API}/model?page_size=1&page_number=1`, {
-        headers: fishAudioHeaders(apiKey),
-        signal: voiceDeadline(context.signal, 20_000),
-      });
-      if (res.ok) return { ok: true };
-      return {
-        ok: false,
-        message: voiceHttpError(
-          res.status,
-          "Fish Audio",
-          "checking that key",
-          await readVoiceJson(res),
-        ),
-      };
-    } catch {
-      return {
-        ok: false,
-        message: voiceUnreachable("Fish Audio"),
-      };
-    }
+    return verifyVoiceHttpGet({
+      url: `${API}/model?page_size=1&page_number=1`,
+      headers: fishAudioHeaders(apiKey),
+      signal: context.signal,
+      provider: "Fish Audio",
+    });
   }
 
   /** Return user-owned then bounded public Fish Audio voices as Rakazo choices. */

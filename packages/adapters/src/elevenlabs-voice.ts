@@ -14,9 +14,9 @@ import {
   readVoiceJson,
   requireOk,
   speechUploadName,
+  verifyVoiceHttpGet,
   voiceDeadline,
   voiceHttpError,
-  voiceUnreachable,
 } from "./voice-http.js";
 
 const API = "https://api.elevenlabs.io/v1";
@@ -35,27 +35,12 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
   }
 
   async verify(apiKey: string, context: AdapterContext): Promise<VoiceVerifyResult> {
-    try {
-      const res = await fetch(`${API}/voices`, {
-        headers: { "xi-api-key": apiKey },
-        signal: voiceDeadline(context.signal, 20_000),
-      });
-      if (res.ok) return { ok: true };
-      return {
-        ok: false,
-        message: voiceHttpError(
-          res.status,
-          "ElevenLabs",
-          "checking that key",
-          await readVoiceJson(res),
-        ),
-      };
-    } catch {
-      return {
-        ok: false,
-        message: voiceUnreachable("ElevenLabs"),
-      };
-    }
+    return verifyVoiceHttpGet({
+      url: `${API}/voices`,
+      headers: { "xi-api-key": apiKey },
+      signal: context.signal,
+      provider: "ElevenLabs",
+    });
   }
 
   async listVoices(apiKey: string, context: AdapterContext): Promise<VoiceInfo[]> {

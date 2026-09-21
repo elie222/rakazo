@@ -1,8 +1,9 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   MAX_VOICE_JSON_BYTES,
   readVoiceJson,
   speechUploadName,
+  verifyVoiceHttpGet,
   voiceDeadline,
 } from "./voice-http.js";
 
@@ -39,6 +40,84 @@ describe("speechUploadName", () => {
 
   it("maps Firefox ogg capture to an ogg filename", () => {
     expect(speechUploadName("audio/ogg; codecs=opus")).toBe("speech.ogg");
+  });
+});
+
+describe("verifyVoiceHttpGet", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("returns ok when the provider accepts the key", async () => {
+    const fetch = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
+    vi.stubGlobal("fetch", fetch);
+
+    await expect(
+      verifyVoiceHttpGet({
+        url: "https://api.example/voices",
+        headers: { authorization: "Bearer key" },
+        signal: new AbortController().signal,
+        provider: "Example",
+      }),
+    ).resolves.toEqual({ ok: true });
+    expect(fetch).toHaveBeenCalledOnce();
+    const [, init] = fetch.mock.calls[0]!;
+    expect(init.method).toBeUndefined();
+    expect(init.headers).toEqual({ authorization: "Bearer key" });
+    expect(init.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it("returns the key-rejected message without throwing", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("{}", { status: 401 })));
+
+    await expect(
+      verifyVoiceHttpGet({
+        url: "https://api.example/voices",
+        headers: {},
+        signal: new AbortController().signal,
+        provider: "ElevenLabs",
+      }),
+    ).resolves.toEqual({
+      ok: false,
+      message: "ElevenLabs rejected that key. Check the key and that it has speech permissions.",
+    });
+  });
+
+  it("includes the provider detail when checking the key fails", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ detail: "voice quota" }), { status: 500 }),
+      ),
+    );
+
+    await expect(
+      verifyVoiceHttpGet({
+        url: "https://api.example/voices",
+        headers: {},
+        signal: new AbortController().signal,
+        provider: "OpenAI",
+      }),
+    ).resolves.toEqual({
+      ok: false,
+      message: "checking that key failed: voice quota",
+    });
+  });
+
+  it("returns the unreachable message when fetch fails", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("connect ECONNREFUSED")));
+
+    await expect(
+      verifyVoiceHttpGet({
+        url: "https://api.example/voices",
+        headers: {},
+        signal: new AbortController().signal,
+        provider: "Cartesia",
+      }),
+    ).resolves.toEqual({
+      ok: false,
+      message: "Couldn't reach Cartesia to check that key. Check your connection.",
+    });
   });
 });
 
