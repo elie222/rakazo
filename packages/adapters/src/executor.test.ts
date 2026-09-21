@@ -122,6 +122,63 @@ describe("tool completion audit", () => {
     });
   });
 
+  it.each(["destination rejected the record", { message: "request rejected" }, false, 0])(
+    "records a returned error inside a Pi result wrapper: %j",
+    (error) => {
+      const result = { content: [{ type: "text", text: "tool response" }], details: { error } };
+      const completion = {
+        name: "destination.write",
+        executionId: "call-1",
+        durationMs: 4,
+        result,
+      };
+      expect(toolCompletionAuditPayload(completion)).toMatchObject({ outcome: "error" });
+      expect(completion.result).toBe(result);
+      expect(result.details.error).toBe(error);
+    },
+  );
+
+  it.each([{}, { error: null }, { error: undefined }, { data: { error: "a record field" } }])(
+    "does not treat successful wrapped data as a tool failure: %j",
+    (details) => {
+      expect(
+        toolCompletionAuditPayload({
+          name: "destination.read",
+          executionId: "call-1",
+          durationMs: 4,
+          result: { content: [], details },
+        }),
+      ).toEqual({
+        name: "destination.read",
+        executionId: "call-1",
+        durationMs: 4,
+        outcome: "succeeded",
+      });
+    },
+  );
+
+  it("sanitizes wrapped errors and keeps an explicit exception authoritative", () => {
+    const completion = {
+      name: "destination.write",
+      executionId: "call-1",
+      durationMs: 4,
+      result: { content: [], details: { error: "Rejected fake-provider-key" } },
+    };
+    expect(toolCompletionAuditPayload(completion, ["fake-provider-key"])).toMatchObject({
+      outcome: "error",
+      error: "Rejected [redacted]",
+    });
+    expect(
+      toolCompletionAuditPayload({ ...completion, error: new Error("request failed") }),
+    ).toMatchObject({
+      outcome: "error",
+      error: "request failed",
+    });
+    expect(toolCompletionAuditPayload({ ...completion, paused: true })).toMatchObject({
+      outcome: "paused",
+    });
+  });
+
   it("keeps an MCP tool result without isError a success", () => {
     const payload = toolCompletionAuditPayload({
       name: "mcp__files__read_text_file",

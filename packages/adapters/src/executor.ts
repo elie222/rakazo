@@ -596,13 +596,13 @@ function isFailedToolResult(value: unknown): value is { error: unknown } {
 }
 
 /**
- * MCP tools report a failure as a result carrying `isError: true` rather than by throwing,
- * so nothing populates `completion.error` and the call is audited as a success. Read the
- * message out of the result instead. The result itself is untouched and still reaches the
- * model, which is what lets the agent react to the failure.
+ * Tools can return an `error` or MCP `isError: true` instead of throwing. Pi keeps that
+ * result in `details` without populating `completion.error`. Read the failure for auditing
+ * without changing the result that reaches the model and lets it react to the failure.
  */
-function toolResultErrorText(result: unknown): string | undefined {
+function toolResultError(result: unknown): unknown {
   const payload = (result as { details?: unknown } | null)?.details ?? result;
+  if (isFailedToolResult(payload)) return payload.error;
   if (!payload || typeof payload !== "object") return undefined;
   if ((payload as { isError?: unknown }).isError !== true) return undefined;
   const content = (payload as { content?: unknown }).content;
@@ -633,7 +633,7 @@ export function toolCompletionAuditPayload(
     ? Math.max(0, Math.round(completion.durationMs))
     : 0;
   const error =
-    completion.error === undefined ? toolResultErrorText(completion.result) : completion.error;
+    completion.error === undefined ? toolResultError(completion.result) : completion.error;
   const payload: Record<string, unknown> = {
     name: redactSecrets(completion.name, secrets),
     executionId: redactSecrets(completion.executionId, secrets),

@@ -1,4 +1,4 @@
-import type { ConnectorTool } from "@rakazo/adapter-kit";
+import type { AgentToolCompletion, ConnectorTool } from "@rakazo/adapter-kit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const fakeAgentState = vi.hoisted(() => ({
@@ -254,6 +254,7 @@ vi.mock("./pi-openai-compatible-provider.js", () => ({
   registerOpenAiCompatibleRuntime: (models: unknown) => models,
 }));
 
+import { toolCompletionAuditPayload } from "./executor.js";
 import { maxToolCallsPerTurn, PiAgentRuntime } from "./pi-runtime.js";
 import { TOOL_RESULT_TEXT_LIMIT } from "./pi-runtime-limits.js";
 
@@ -695,6 +696,40 @@ describe("Pi connector tool dispatch", () => {
       resolveAudit();
       await run;
     }
+  });
+
+  it("audits a returned connector error after Pi wraps it without changing the model result", async () => {
+    const result = { error: "destination rejected the record" };
+    const audits: Record<string, unknown>[] = [];
+    const onToolCompleted = vi.fn((completion: AgentToolCompletion) => {
+      audits.push(toolCompletionAuditPayload(completion));
+    });
+    for await (const _event of new PiAgentRuntime().run(
+      {
+        botId: "b",
+        threadId: "t",
+        runId: "returned-error",
+        prompt: "send the update",
+        instructions: "Use the destination tool.",
+        history: [],
+        tools: [destinationTool],
+        model: { provider: "test", id: "dispatch-test-model" },
+        executeTool: vi.fn(async () => result),
+        onToolCompleted,
+      },
+      { signal: new AbortController().signal },
+    )) {
+      // Exhaust the fake agent's runtime event stream; no provider or database is used.
+    }
+    expect(onToolCompleted).toHaveBeenCalledOnce();
+    expect(fakeAgentState.toolResult).toMatchObject({ details: result });
+    expect(audits).toEqual([
+      expect.objectContaining({
+        name: "destination.write",
+        outcome: "error",
+        error: result.error,
+      }),
+    ]);
   });
 
   it("makes an unfinished tool turn visible instead of completing silently", async () => {
