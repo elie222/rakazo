@@ -169,6 +169,7 @@ test("message hover shows beside-bubble actions; reply links to parent", async (
       return Math.abs(frameBox.x - (railBox.x + railBox.width));
     })
     .toBeLessThan(8);
+  await captureScreenshot(page, testInfo, "message-bubble-wide-desktop");
 
   // Time appears at the opposite row edge on hover, outside More.
   await revealHoverRail(parentRow);
