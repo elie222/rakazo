@@ -922,7 +922,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
       if (!provider || !id) {
         const runtimeFallback = runtimeFallbackModel(deps.runtime);
         provider ??= runtimeFallback?.provider;
-        id ??= runtimeFallback?.id;
+        id ??= runtimeFallback?.id ?? null;
       }
       if (!provider || !id) throw new Error(MISSING_MODEL_MESSAGE);
       // The key is resolved for the provider that won above, not before it is known.
