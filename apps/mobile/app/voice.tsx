@@ -211,11 +211,6 @@ export default function VoiceSettings() {
               : t("Your phone's built-in voice. Free, no account needed")}
           </Text>
         </Pressable>
-        {deviceVoice ? (
-          <Text style={styles.hint}>
-            {t("Speaks with your phone's own text-to-speech instead of a connected provider.")}
-          </Text>
-        ) : null}
         {catalog.map((entry) => {
           const connected = credentials.some((cred) => cred.provider === entry.id);
           return (
@@ -335,7 +330,6 @@ function createVoiceStyles() {
     cardActive: { borderColor: tokens.ring, backgroundColor: tokens.muted },
     cardTitle: { color: native.label, fontSize: 16 },
     cardMeta: { color: native.tertiaryLabel, marginTop: 4, fontSize: 12 },
-    hint: { color: native.tertiaryLabel, fontSize: 12, marginTop: -4, marginBottom: 4 },
     input: {
       marginTop: 8,
       borderRadius: 12,

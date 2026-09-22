@@ -602,7 +602,5 @@ export const RU_MESSAGES: Record<string, string> = {
   "On · Free, works offline": "Включено · Бесплатно, работает офлайн",
   "Your phone's built-in voice. Free, no account needed":
     "Встроенный голос телефона. Бесплатно, без аккаунта",
-  "Speaks with your phone's own text-to-speech instead of a connected provider.":
-    "Озвучивает встроенным синтезом речи телефона вместо подключённого провайдера.",
   "Could not save that preference": "Не удалось сохранить эту настройку",
 };
