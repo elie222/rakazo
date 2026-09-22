@@ -1,12 +1,12 @@
 import { RPCHandler } from "@orpc/server/fetch";
 import { COMPUTER_SCREEN_UNAVAILABLE, ComputerScreenUnavailableError } from "@rakazo/adapters";
-import type { Actor } from "@rakazo/contracts";
+import type { Actor, Bot } from "@rakazo/contracts";
 import { REPLY_QUOTE_MAX_LENGTH } from "@rakazo/contracts";
 import { openScreenCapability } from "@rakazo/core/node/screen-capability";
 import type { PrismaClient } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { describe, expect, it, vi } from "vitest";
-import { createRouter, type RouterDeps } from "./router.js";
+import { createRouter, enqueueBotIntroRun, type RouterDeps } from "./router.js";
 
 describe("account preferences", () => {
   function preferencesDeps(avatarStyle: string) {
@@ -1077,5 +1077,60 @@ describe("model credential persistence", () => {
         update: expect.objectContaining({ modelId: null }),
       }),
     );
+  });
+});
+
+describe("bot intro run", () => {
+  const actor = {
+    spaceId: "space-1",
+    userId: "user-1",
+    email: "user@rakazo.test",
+    isDeploymentOwner: true,
+  } satisfies Actor;
+  const bot = { id: "bot-1", threadId: "thread-1" } as unknown as Bot;
+
+  function introDeps() {
+    const create = vi.fn(({ data }: { data: { status: string } }) =>
+      Promise.resolve({ id: `${data.status}-id`, ...data }),
+    );
+    const enqueue = vi.fn().mockResolvedValue(undefined);
+    const deps = {
+      prisma: { task: { create }, run: { create } },
+      jobs: { enqueue },
+    } as unknown as RouterDeps;
+    return { create, enqueue, deps };
+  }
+
+  it("queues an invisible-prompt run so the bot states how it read its role", async () => {
+    const { create, enqueue, deps } = introDeps();
+
+    await enqueueBotIntroRun(deps, actor, bot);
+
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          spaceId: "space-1",
+          botId: "bot-1",
+          threadId: "thread-1",
+          userId: "user-1",
+          status: "queued",
+        }),
+      }),
+    );
+    const [taskCall, runCall] = create.mock.calls as Array<
+      [{ data: { prompt?: string; trigger?: string; taskId?: string } }]
+    >;
+    expect(taskCall?.[0].data.prompt).toMatch(/understood your role/i);
+    expect(runCall?.[0].data.trigger).toBe("created");
+    expect(enqueue).toHaveBeenCalledOnce();
+  });
+
+  it("does nothing when the bot has no thread", async () => {
+    const { create, enqueue, deps } = introDeps();
+
+    await enqueueBotIntroRun(deps, actor, { id: "bot-1", threadId: null } as unknown as Bot);
+
+    expect(create).not.toHaveBeenCalled();
+    expect(enqueue).not.toHaveBeenCalled();
   });
 });

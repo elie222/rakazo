@@ -32,6 +32,7 @@ const runTriggers = new Set<Run["trigger"]>([
   "webhook",
   "messaging",
   "cloud_agent",
+  "created",
 ]);
 
 function runFromStartedEvent(event: ProductEvent, previous: Run | undefined): Run {
