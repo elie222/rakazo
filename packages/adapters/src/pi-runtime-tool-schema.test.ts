@@ -4,6 +4,106 @@ import { parseConnectorToolArgs } from "./lazy-tool-catalog.js";
 import { jsonSchemaParameters, parametersFor } from "./pi-runtime.js";
 
 describe("jsonSchemaParameters", () => {
+  it("keeps root allOf fields and intersecting constraints through the Pi wire path", () => {
+    const tool = {
+      name: "catalog_page",
+      description: "Read a bounded catalog page",
+      inputSchema: {
+        allOf: [
+          {
+            type: "object",
+            properties: { limit: { type: "integer", minimum: 1 } },
+            required: ["limit"],
+          },
+          {
+            type: "object",
+            properties: { limit: { type: "integer", maximum: 10 } },
+          },
+        ],
+      },
+    };
+    const original = JSON.stringify(tool.inputSchema);
+    const wire = JSON.parse(JSON.stringify(parametersFor(tool)));
+    expect(wire).toEqual({
+      type: "object",
+      properties: {
+        limit: {
+          allOf: [
+            { type: "integer", minimum: 1 },
+            { type: "integer", maximum: 10 },
+          ],
+        },
+      },
+      required: ["limit"],
+    });
+    expect(parseConnectorToolArgs(wire, { limit: 5 })).toEqual(
+      parseConnectorToolArgs(tool.inputSchema, { limit: 5 }),
+    );
+    for (const args of [{}, { limit: 0 }, { limit: 11 }, { limit: 1.5 }]) {
+      expect(() => parseConnectorToolArgs(tool.inputSchema, args)).toThrow();
+      expect(() => parseConnectorToolArgs(wire, args)).toThrow();
+    }
+    expect(JSON.stringify(tool.inputSchema)).toBe(original);
+  });
+
+  it("keeps allOf branch fields alongside root properties and required fields", () => {
+    const wire = JSON.parse(
+      JSON.stringify(
+        parametersFor({
+          name: "catalog_search",
+          description: "Search a named catalog",
+          inputSchema: {
+            type: "object",
+            properties: { catalog: { type: "string" } },
+            required: ["catalog"],
+            allOf: [
+              {
+                type: "object",
+                properties: { query: { type: "string", minLength: 1 } },
+                required: ["query"],
+              },
+            ],
+          },
+        }),
+      ),
+    );
+    expect(wire).toEqual({
+      type: "object",
+      properties: { catalog: { type: "string" }, query: { type: "string", minLength: 1 } },
+      required: ["catalog", "query"],
+    });
+  });
+
+  it("preserves an allOf alternative before flattening an enclosing root union", () => {
+    const wire = JSON.parse(
+      JSON.stringify(
+        parametersFor({
+          name: "catalog_lookup",
+          description: "Look up a catalog entry",
+          inputSchema: {
+            anyOf: [
+              {
+                allOf: [
+                  { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
+                  {
+                    type: "object",
+                    properties: { region: { type: "string" } },
+                    required: ["region"],
+                  },
+                ],
+              },
+              { type: "object", properties: { query: { type: "string" } }, required: ["query"] },
+            ],
+          },
+        }),
+      ),
+    );
+    expect(wire).toEqual({
+      type: "object",
+      properties: { id: { type: "string" }, region: { type: "string" }, query: { type: "string" } },
+    });
+  });
+
   it("keeps model-facing nullable parameters compatible with connector validation", () => {
     const tool = {
       name: "catalog_lookup",

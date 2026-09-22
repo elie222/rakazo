@@ -1366,6 +1366,11 @@ function isAgentToolExecutionResult(result: unknown): result is AgentToolExecuti
 export function jsonSchemaParameters(
   schema: Record<string, unknown>,
 ): ReturnType<typeof Type.Object> {
+  // Keep intersections intact until parametersFor flattens root combinators.
+  // Rebuilding only properties here drops allOf-only fields and their constraints.
+  if (Array.isArray(schema.allOf)) {
+    return Type.Unsafe(schema) as unknown as ReturnType<typeof Type.Object>;
+  }
   // Top-level oneOf/anyOf (e.g. request_secret's credential XOR connectionId)
   // must stay a union. Falling through to properties would drop the exclusivity
   // and re-expose both destinations as optional siblings.
