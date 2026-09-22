@@ -1590,7 +1590,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
             .then((row) => row?.enabled ?? deploymentAutoReviewDefault());
           return autoReviewPreferencePromise;
         };
-        const tools = [...builtins, ...exposedConnectorTools];
+        // The intro turn confirms how a bot read its own role before anyone hands it
+        // real work — it must not be able to act on that reading (shell, computer,
+        // scheduling, spawning another bot, ...) before the user has assigned any task.
+        const tools = run.trigger === "created" ? [] : [...builtins, ...exposedConnectorTools];
         const approvedEffects = await deps.prisma.externalEffect.findMany({
           where: { runId, status: "approved" },
           orderBy: APPROVED_EFFECT_REPLAY_ORDER,

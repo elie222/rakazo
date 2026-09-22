@@ -483,30 +483,40 @@ const BOT_INTRO_PROMPT =
  * A freshly created bot otherwise sits silent until someone hands it real work,
  * so a misunderstood role goes unnoticed until it costs a run. Queue one
  * invisible-prompt turn (like a routine or skill test run) so its first
- * message states how it read its own instructions.
+ * message states how it read its own instructions. The executor gives the
+ * "created" trigger no tools (see executor.ts), so this turn can only speak.
  */
 export async function enqueueBotIntroRun(deps: RouterDeps, actor: Actor, bot: Bot): Promise<void> {
-  if (!bot.threadId) return;
-  const task = await deps.prisma.task.create({
-    data: {
-      spaceId: actor.spaceId,
-      botId: bot.id,
-      threadId: bot.threadId,
-      userId: actor.userId,
-      prompt: BOT_INTRO_PROMPT,
-      status: "queued",
-    },
-  });
-  const run = await deps.prisma.run.create({
-    data: {
-      spaceId: actor.spaceId,
-      botId: bot.id,
-      threadId: bot.threadId,
-      taskId: task.id,
-      userId: actor.userId,
-      status: "queued",
-      trigger: "created",
-    },
+  const threadId = bot.threadId;
+  if (!threadId) return;
+  // Scripted is the deterministic test/eval runtime, not a real deployment: an
+  // extra automatic run there competes with whatever response a test or eval
+  // harness queued next, for a bot it doesn't otherwise get to opt out of.
+  if (deps.env.agentRuntime === "scripted") return;
+  if ((await modelSetup(deps, actor)).needsModel) return;
+  const run = await deps.prisma.$transaction(async (tx) => {
+    const task = await tx.task.create({
+      data: {
+        spaceId: actor.spaceId,
+        botId: bot.id,
+        threadId,
+        userId: actor.userId,
+        prompt: BOT_INTRO_PROMPT,
+        status: "queued",
+      },
+    });
+    return tx.run.create({
+      data: {
+        spaceId: actor.spaceId,
+        botId: bot.id,
+        threadId,
+        taskId: task.id,
+        userId: actor.userId,
+        status: "queued",
+        trigger: "created",
+      },
+      select: { id: true },
+    });
   });
   await deps.jobs.enqueue(runContinueJob(run.id));
 }

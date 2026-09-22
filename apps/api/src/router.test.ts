@@ -1089,14 +1089,25 @@ describe("bot intro run", () => {
   } satisfies Actor;
   const bot = { id: "bot-1", threadId: "thread-1" } as unknown as Bot;
 
-  function introDeps() {
+  function introDeps(options: { agentRuntime?: string; hasCredential?: boolean } = {}) {
     const create = vi.fn(({ data }: { data: { status: string } }) =>
       Promise.resolve({ id: `${data.status}-id`, ...data }),
     );
     const enqueue = vi.fn().mockResolvedValue(undefined);
+    const tx = { task: { create }, run: { create } };
+    const preference =
+      (options.hasCredential ?? true)
+        ? { isDefault: true, modelId: "model-1", credential: { id: "cred-1", provider: "test" } }
+        : null;
+    const spaceModelPreference = { findFirst: vi.fn().mockResolvedValue(preference) };
     const deps = {
-      prisma: { task: { create }, run: { create } },
+      prisma: {
+        $transaction: vi.fn(async (fn: (client: typeof tx) => unknown) => fn(tx)),
+        spaceModelPreference,
+        deploymentSettings: { findUnique: vi.fn().mockResolvedValue(null) },
+      },
       jobs: { enqueue },
+      env: { agentRuntime: options.agentRuntime ?? "pi" },
     } as unknown as RouterDeps;
     return { create, enqueue, deps };
   }
@@ -1129,6 +1140,24 @@ describe("bot intro run", () => {
     const { create, enqueue, deps } = introDeps();
 
     await enqueueBotIntroRun(deps, actor, { id: "bot-1", threadId: null } as unknown as Bot);
+
+    expect(create).not.toHaveBeenCalled();
+    expect(enqueue).not.toHaveBeenCalled();
+  });
+
+  it("does nothing on the scripted test/eval runtime", async () => {
+    const { create, enqueue, deps } = introDeps({ agentRuntime: "scripted" });
+
+    await enqueueBotIntroRun(deps, actor, bot);
+
+    expect(create).not.toHaveBeenCalled();
+    expect(enqueue).not.toHaveBeenCalled();
+  });
+
+  it("does nothing when no model is configured yet", async () => {
+    const { create, enqueue, deps } = introDeps({ hasCredential: false });
+
+    await enqueueBotIntroRun(deps, actor, bot);
 
     expect(create).not.toHaveBeenCalled();
     expect(enqueue).not.toHaveBeenCalled();
