@@ -1,5 +1,5 @@
 import { useFocusEffect } from "expo-router";
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -12,6 +12,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { rpc } from "../lib/api";
 import { mobileTokens } from "../lib/appearance";
+import { loadDeviceVoiceEnabled, saveDeviceVoiceEnabled } from "../lib/device-voice";
 import { useI18n } from "../lib/i18n";
 import { native, useThemedStyles } from "../lib/native";
 import { speakText } from "../lib/voice";
@@ -45,10 +46,14 @@ export default function VoiceSettings() {
   const [provider, setProvider] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [voiceId, setVoiceId] = useState("");
+  const [deviceVoice, setDeviceVoice] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [pending, setPending] = useState<"connect" | "disconnect" | "voice" | "test" | null>(null);
+  const [pending, setPending] = useState<
+    "connect" | "disconnect" | "voice" | "test" | "device-voice" | null
+  >(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const deviceVoiceRevision = useRef(0);
 
   const load = useCallback(async (nextProvider?: string) => {
     const [nextCatalog, nextCredentials, nextStatus] = await Promise.all([
@@ -73,6 +78,10 @@ export default function VoiceSettings() {
   useFocusEffect(
     useCallback(() => {
       setLoading(true);
+      const revision = ++deviceVoiceRevision.current;
+      void loadDeviceVoiceEnabled().then((value) => {
+        if (deviceVoiceRevision.current === revision) setDeviceVoice(value);
+      });
       void load()
         .catch((err: unknown) =>
           setError(err instanceof Error ? err.message : t("Could not load voice settings")),
@@ -80,6 +89,24 @@ export default function VoiceSettings() {
         .finally(() => setLoading(false));
     }, [load]),
   );
+
+  async function toggleDeviceVoice() {
+    if (pending !== null) return;
+    const revision = ++deviceVoiceRevision.current;
+    const next = !deviceVoice;
+    setDeviceVoice(next);
+    setPending("device-voice");
+    setError(null);
+    try {
+      await saveDeviceVoiceEnabled(next);
+    } catch {
+      if (deviceVoiceRevision.current !== revision) return;
+      setDeviceVoice(!next);
+      setError(t("Could not save that preference"));
+    } finally {
+      if (deviceVoiceRevision.current === revision) setPending(null);
+    }
+  }
 
   const selected = catalog.find((entry) => entry.id === provider);
   const credential = credentials.find((entry) => entry.provider === provider);
@@ -154,6 +181,27 @@ export default function VoiceSettings() {
         {loading ? <ActivityIndicator color={native.secondaryLabel} /> : null}
         {error ? <Text style={styles.error}>{error}</Text> : null}
         {notice ? <Text style={styles.notice}>{notice}</Text> : null}
+        <Pressable
+          disabled={pending !== null}
+          onPress={() => void toggleDeviceVoice()}
+          style={[
+            styles.card,
+            deviceVoice && styles.cardActive,
+            pending !== null && styles.disabled,
+          ]}
+        >
+          <Text style={styles.cardTitle}>{t("This device")}</Text>
+          <Text style={styles.cardMeta}>
+            {deviceVoice
+              ? t("On · Free, works offline")
+              : t("Your phone's built-in voice. Free, no account needed")}
+          </Text>
+        </Pressable>
+        {deviceVoice ? (
+          <Text style={styles.hint}>
+            {t("Speaks with your phone's own text-to-speech instead of a connected provider.")}
+          </Text>
+        ) : null}
         {catalog.map((entry) => {
           const connected = credentials.some((cred) => cred.provider === entry.id);
           return (
@@ -240,7 +288,7 @@ export default function VoiceSettings() {
                 ))}
               </View>
             ) : null}
-            {status?.ready ? (
+            {deviceVoice || status?.ready ? (
               <Pressable
                 disabled={pending !== null}
                 onPress={() => void testVoice()}
@@ -273,6 +321,7 @@ function createVoiceStyles() {
     cardActive: { borderColor: tokens.ring, backgroundColor: tokens.muted },
     cardTitle: { color: native.label, fontSize: 16 },
     cardMeta: { color: native.tertiaryLabel, marginTop: 4, fontSize: 12 },
+    hint: { color: native.tertiaryLabel, fontSize: 12, marginTop: -4, marginBottom: 4 },
     input: {
       marginTop: 8,
       borderRadius: 12,

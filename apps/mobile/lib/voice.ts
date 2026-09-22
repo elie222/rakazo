@@ -1,8 +1,10 @@
-import { ensureAiDataConsent, readBoundedResponseBytes } from "@rakazo/core";
+import { ensureAiDataConsent, readBoundedResponseBytes, toUtterances } from "@rakazo/core";
 import { File, Paths } from "expo-file-system";
+import type * as ExpoSpeech from "expo-speech";
 import { promptAiConsent } from "./ai-consent";
 import type { ApiRequestContext } from "./api";
 import { captureApiRequestContext, rpc } from "./api";
+import { loadDeviceVoiceEnabled } from "./device-voice";
 import { t } from "./i18n";
 
 type SpeechOptions = { voiceId?: string; botId?: string };
@@ -11,6 +13,7 @@ export const MAX_VOICE_AUDIO_BYTES = 16 * 1024 * 1024;
 const MAX_VOICE_ERROR_BYTES = 64 * 1024;
 
 export async function speakText(text: string, opts: SpeechOptions = {}): Promise<boolean> {
+  if (await loadDeviceVoiceEnabled()) return speakWithDeviceVoice(text);
   const requestContext = await captureApiRequestContext();
   const prepared = await rpc<{ ready: boolean; utterances: string[] }>(
     "voice/prepare",
@@ -22,6 +25,56 @@ export async function speakText(text: string, opts: SpeechOptions = {}): Promise
     await playMpeg(await renderUtterance(utterance, opts, requestContext));
   }
   return true;
+}
+
+let deviceSpeechSession = 0;
+
+function startDeviceSpeechSession(): number {
+  return ++deviceSpeechSession;
+}
+
+function isCurrentDeviceSpeechSession(session: number): boolean {
+  return session === deviceSpeechSession;
+}
+
+export async function speakWithDeviceVoice(text: string): Promise<boolean> {
+  const utterances = toUtterances(text);
+  if (utterances.length === 0) return false;
+  // Claim the session before importing so a newer call cannot start during
+  // that await and then overlap this call's remaining chunks.
+  const session = startDeviceSpeechSession();
+  const Speech = await loadExpoSpeech();
+  if (!isCurrentDeviceSpeechSession(session)) return true;
+  Speech.stop();
+  for (const utterance of utterances) {
+    if (!isCurrentDeviceSpeechSession(session)) return true;
+    await speakOneUtterance(Speech, utterance);
+  }
+  return true;
+}
+
+async function loadExpoSpeech(): Promise<typeof ExpoSpeech> {
+  let Speech: Partial<typeof ExpoSpeech>;
+  try {
+    Speech = await import("expo-speech");
+  } catch (error) {
+    throw error instanceof Error ? error : new Error(t("Could not play that clip."));
+  }
+  if (typeof Speech.speak !== "function" || typeof Speech.stop !== "function") {
+    throw new Error(t("Could not play that clip."));
+  }
+  return Speech as typeof ExpoSpeech;
+}
+
+function speakOneUtterance(Speech: typeof ExpoSpeech, text: string): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    Speech.speak(text, {
+      onDone: () => resolve(),
+      // Speech.stop() reports onStopped, not onDone.
+      onStopped: () => resolve(),
+      onError: (error) => reject(error instanceof Error ? error : new Error(String(error))),
+    });
+  });
 }
 
 export async function speakUtterance(

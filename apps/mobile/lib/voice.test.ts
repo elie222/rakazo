@@ -1,3 +1,5 @@
+import * as SecureStore from "expo-secure-store";
+import * as Speech from "expo-speech";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { captureApiRequestContext, currentApiBase, rpc } from "./api";
 import {
@@ -5,11 +7,18 @@ import {
   playMpeg,
   speakText,
   speakUtterance,
+  speakWithDeviceVoice,
   VOICE_RESPONSE_TIMEOUT_MS,
 } from "./voice";
 
 vi.mock("./ai-consent", () => ({ promptAiConsent: vi.fn() }));
 vi.mock("expo-file-system", () => ({ File: class {}, Paths: {} }));
+vi.mock("expo-secure-store", () => ({
+  getItemAsync: vi.fn(),
+  setItemAsync: vi.fn(),
+  deleteItemAsync: vi.fn(),
+}));
+vi.mock("expo-speech", () => ({ speak: vi.fn(), stop: vi.fn() }));
 vi.mock("./api", () => ({
   authHeaders: vi.fn(),
   captureApiRequestContext: vi.fn(),
@@ -31,6 +40,7 @@ class FakeAudio {
 
 describe("mobile speech", () => {
   beforeEach(() => {
+    vi.mocked(SecureStore.getItemAsync).mockResolvedValue(null);
     vi.mocked(captureApiRequestContext).mockResolvedValue({
       apiBase: "https://support.example",
       headers: {
@@ -134,5 +144,127 @@ describe("mobile speech", () => {
     await vi.advanceTimersByTimeAsync(VOICE_RESPONSE_TIMEOUT_MS);
 
     await rejected;
+  });
+});
+
+async function flushDeviceSpeechImport() {
+  for (let i = 0; i < 5; i++) await Promise.resolve();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+describe("on-device speech", () => {
+  beforeEach(() => {
+    vi.mocked(Speech.speak).mockReset();
+    vi.mocked(Speech.stop).mockReset();
+    vi.mocked(rpc).mockReset();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => {
+        throw new Error("on-device speech must not touch the network");
+      }),
+    );
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it("speaks locally and never touches the network when the device voice is on", async () => {
+    vi.mocked(SecureStore.getItemAsync).mockResolvedValue("1");
+    vi.mocked(Speech.speak).mockImplementation((_text, options) => options?.onDone?.());
+
+    await expect(speakText("Read this")).resolves.toBe(true);
+
+    expect(Speech.stop).toHaveBeenCalledOnce();
+    expect(Speech.speak).toHaveBeenCalledWith("Read this", expect.any(Object));
+    expect(rpc).not.toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("resolves false on empty text without calling the OS engine", async () => {
+    await expect(speakWithDeviceVoice("   ")).resolves.toBe(false);
+    expect(Speech.speak).not.toHaveBeenCalled();
+  });
+
+  it("rejects with the OS engine's own error instead of resolving false", async () => {
+    vi.mocked(Speech.speak).mockImplementation((_text, options) =>
+      options?.onError?.(new Error("synth failed")),
+    );
+
+    await expect(speakWithDeviceVoice("Hello")).rejects.toThrow("synth failed");
+  });
+
+  it("rejects when expo-speech is not usable instead of calling hosted voice", async () => {
+    const originalSpeak = Speech.speak;
+    Object.defineProperty(Speech, "speak", { configurable: true, value: undefined });
+    try {
+      await expect(speakWithDeviceVoice("Hello")).rejects.toThrow("Could not play that clip.");
+      expect(rpc).not.toHaveBeenCalled();
+      expect(fetch).not.toHaveBeenCalled();
+    } finally {
+      Object.defineProperty(Speech, "speak", { configurable: true, value: originalSpeak });
+    }
+  });
+
+  it("strips markdown and splits a long reply into bounded utterances, in order", async () => {
+    const spoken: string[] = [];
+    vi.mocked(Speech.speak).mockImplementation((text, options) => {
+      spoken.push(text);
+      options?.onDone?.();
+    });
+    const longSentence = `${"word ".repeat(70).trim()}.`;
+    const text = `**Bold** intro. ${longSentence} A short close.`;
+
+    await expect(speakWithDeviceVoice(text)).resolves.toBe(true);
+
+    expect(spoken.length).toBeGreaterThan(1);
+    for (const utterance of spoken) {
+      expect(utterance.length).toBeLessThan(500);
+      expect(utterance).not.toContain("**");
+    }
+    expect(spoken.join(" ")).toContain("Bold intro");
+  });
+
+  it("stops queuing more chunks once a newer call interrupts it", async () => {
+    const calls: Array<{ text: string; options: Parameters<typeof Speech.speak>[1] }> = [];
+    vi.mocked(Speech.speak).mockImplementation((text, options) => {
+      calls.push({ text, options });
+    });
+
+    const first = speakWithDeviceVoice("First sentence. Second sentence.");
+    await flushDeviceSpeechImport();
+    expect(calls.map((c) => c.text)).toEqual(["First sentence."]);
+
+    const second = speakWithDeviceVoice("Different message.");
+    calls[0]?.options?.onStopped?.();
+    await flushDeviceSpeechImport();
+
+    expect(calls.map((c) => c.text)).not.toContain("Second sentence.");
+    await expect(first).resolves.toBe(true);
+
+    calls[1]?.options?.onDone?.();
+    await expect(second).resolves.toBe(true);
+    expect(calls.map((c) => c.text)).toEqual(["First sentence.", "Different message."]);
+  });
+
+  it("resolves true, not false, when interrupted on its final utterance", async () => {
+    const calls: Array<{ text: string; options: Parameters<typeof Speech.speak>[1] }> = [];
+    vi.mocked(Speech.speak).mockImplementation((text, options) => {
+      calls.push({ text, options });
+    });
+
+    const first = speakWithDeviceVoice("Only one sentence here.");
+    await flushDeviceSpeechImport();
+    expect(calls).toHaveLength(1);
+
+    const second = speakWithDeviceVoice("Different message.");
+    calls[0]?.options?.onStopped?.();
+    await flushDeviceSpeechImport();
+
+    await expect(first).resolves.toBe(true);
+
+    calls[1]?.options?.onDone?.();
+    await expect(second).resolves.toBe(true);
   });
 });
