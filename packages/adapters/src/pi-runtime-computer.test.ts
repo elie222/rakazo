@@ -153,16 +153,17 @@ describe("Pi computer tool dispatch", () => {
     expect(events.at(-1)?.type).toBe("done");
   });
 
+  const pageResult = (id: string, toolName: string, text = `page ${id} ${"x".repeat(1_200)}`) => ({
+    role: "toolResult" as const,
+    toolCallId: id,
+    toolName,
+    content: [{ type: "text" as const, text }],
+    details: { frameId: id },
+    isError: false,
+    timestamp: 1,
+  });
+
   it("trims page-state results older than the three most recent", () => {
-    const pageResult = (id: string, toolName: string) => ({
-      role: "toolResult" as const,
-      toolCallId: id,
-      toolName,
-      content: [{ type: "text" as const, text: `page ${id}` }],
-      details: { frameId: id },
-      isError: false,
-      timestamp: 1,
-    });
     const messages = [
       { role: "user" as const, content: "find the cheapest coffee", timestamp: 1 },
       pageResult("s1", "browser_snapshot"),
@@ -193,24 +194,37 @@ describe("Pi computer tool dispatch", () => {
       expect.stringContaining("trimmed to save context"),
       expect.stringContaining("trimmed to save context"),
       "tracker contents",
-      "page s3",
-      "page s4",
-      "page s5",
+      expect.stringContaining("page s3"),
+      expect.stringContaining("page s4"),
+      expect.stringContaining("page s5"),
     ]);
     // The original history is untouched, so the next request trims identically.
-    expect(messages[1]?.content).toEqual([{ type: "text", text: "page s1" }]);
+    expect(messages[1]?.content).toEqual([
+      { type: "text", text: expect.stringContaining("page s1") },
+    ]);
     expect(pruned[1]).toMatchObject({ toolCallId: "s1", toolName: "browser_snapshot" });
   });
 
+  it("neither trims nor counts small page-state results such as errors and receipts", () => {
+    const messages = [
+      pageResult("s1", "browser_snapshot"),
+      pageResult("nav", "browser_navigate", '{"url":"https://example.test","title":"Example"}'),
+      pageResult("err", "browser_act", 'Unknown element ref "e9". Call browser_snapshot.'),
+      pageResult("s2", "browser_snapshot"),
+      pageResult("s3", "browser_snapshot"),
+    ];
+
+    const pruned = pruneStalePageStateContext(messages);
+    expect(pruned).toBe(messages);
+    expect(pruneStalePageStateContext(messages, 2)[0]).toMatchObject({
+      toolCallId: "s1",
+      content: [{ type: "text", text: expect.stringContaining("trimmed to save context") }],
+    });
+    expect(pruneStalePageStateContext(messages, 2).slice(1, 3)).toEqual(messages.slice(1, 3));
+  });
+
   it("returns the same history when nothing is stale", () => {
-    const messages = ["s1", "s2", "s3"].map((id) => ({
-      role: "toolResult" as const,
-      toolCallId: id,
-      toolName: "browser_snapshot",
-      content: [{ type: "text" as const, text: `page ${id}` }],
-      isError: false,
-      timestamp: 1,
-    }));
+    const messages = ["s1", "s2", "s3"].map((id) => pageResult(id, "browser_snapshot"));
     expect(pruneStalePageStateContext(messages)).toBe(messages);
   });
 

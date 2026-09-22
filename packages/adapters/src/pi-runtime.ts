@@ -1294,13 +1294,19 @@ const PAGE_STATE_TOOL_NAMES = new Set([
   "computer_act",
 ]);
 const DEFAULT_PAGE_STATE_RESULTS_TO_KEEP = 3;
+/**
+ * Only results that actually carry a page (a snapshot tree, an observation) are worth trimming
+ * or counting. Navigation confirmations, action receipts and errors are a line or two: trimming
+ * them saves nothing, and counting them would push real page state out of the kept set.
+ */
+const STALE_PAGE_STATE_MIN_CHARS = 1_000;
 const STALE_PAGE_STATE_NOTE =
-  "[Earlier page state trimmed to save context. Take a fresh snapshot if you need this page again.]";
+  "[Earlier page state trimmed to save context. Facts you still need from that page should already be in your notes or tracker; otherwise take a fresh snapshot.]";
 
 /**
- * Replace all but the most recent page-state tool results with a short note. Runs on every
- * request from the untransformed agent history, so the same history always trims the same way
- * and the cached prompt prefix stays stable up to the newest trimmed result.
+ * Replace all but the most recent large page-state tool results with a short note. Runs on
+ * every request from the untransformed agent history, so the same history always trims the same
+ * way and the cached prompt prefix stays stable up to the newest trimmed result.
  */
 export function pruneStalePageStateContext(
   messages: AgentMessage[],
@@ -1311,6 +1317,7 @@ export function pruneStalePageStateContext(
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
     if (message?.role !== "toolResult" || !PAGE_STATE_TOOL_NAMES.has(message.toolName)) continue;
+    if (textLength(message) < STALE_PAGE_STATE_MIN_CHARS) continue;
     if (remaining > 0) {
       remaining -= 1;
       continue;
@@ -1322,6 +1329,14 @@ export function pruneStalePageStateContext(
     };
   }
   return transformed ?? messages;
+}
+
+function textLength(message: Extract<AgentMessage, { role: "toolResult" }>): number {
+  let total = 0;
+  for (const part of message.content) {
+    if (part.type === "text") total += part.text.length;
+  }
+  return total;
 }
 
 /** Keep recent visual state while respecting an optional model image budget. */
