@@ -102,6 +102,7 @@ export default function VoiceSettings() {
     if (pending !== null) return;
     const next = !deviceVoice;
     deviceVoiceSaveInFlight.current = true;
+    deviceVoiceRevision.current++;
     setDeviceVoice(next);
     setPending("device-voice");
     setError(null);
@@ -112,6 +113,7 @@ export default function VoiceSettings() {
       setError(t("Could not save that preference"));
     } finally {
       deviceVoiceSaveInFlight.current = false;
+      deviceVoiceRevision.current++;
       setPending(null);
     }
   }
