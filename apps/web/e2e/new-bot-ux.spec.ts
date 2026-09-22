@@ -137,7 +137,13 @@ test("later bot waits before showing the focus card; sending cancels it", async 
   );
   await page.keyboard.press("Enter");
   await sent;
-  await expect(page.getByTestId("transcript").getByText("I'll set this up myself")).toBeVisible();
+  // Scope to the user bubble: the assistant reply can echo this phrase as a substring.
+  await expect(
+    page
+      .getByTestId("transcript")
+      .getByTestId("message-user-bubble")
+      .getByText("I'll set this up myself", { exact: true }),
+  ).toBeVisible();
   await page.clock.fastForward(12_000);
   await expect(page.getByText("What do you want me on first?", { exact: true })).toHaveCount(0);
 });
