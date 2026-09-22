@@ -261,7 +261,10 @@ export class PiAgentRuntime implements AgentRuntime {
             models.streamSimple(m, ctx, reliableStreamOptions(m, options, request.model.maxTokens)),
           getApiKey: async () => apiKey,
           transformContext: async (messages) =>
-            pruneComputerScreenshotContext(messages, request.model.maxImagesPerPrompt),
+            pruneComputerScreenshotContext(
+              pruneStalePageStateContext(messages),
+              request.model.maxImagesPerPrompt,
+            ),
           prepareNextTurnWithContext: async () => {
             if (!request.claimSteering) return undefined;
             const steering = await request.claimSteering([...seenSteeringIds]);
@@ -1051,7 +1054,10 @@ async function executeSubagent(host: ToolHost, executionId: string, args: Record
       ),
     getApiKey: async () => selectedModel.apiKey,
     transformContext: async (messages) =>
-      pruneComputerScreenshotContext(messages, requestModel.maxImagesPerPrompt),
+      pruneComputerScreenshotContext(
+        pruneStalePageStateContext(messages),
+        requestModel.maxImagesPerPrompt,
+      ),
     initialState: {
       systemPrompt: [
         `You are a Rakazo subagent named "${name}".`,
@@ -1273,6 +1279,49 @@ function builtinParameters(tool: ConnectorTool) {
     });
   }
   return undefined;
+}
+
+/**
+ * Tools whose result is a view of the current page or screen. Each new result supersedes the
+ * earlier ones, so older results only cost context: a long browsing run otherwise re-sends every
+ * snapshot it ever took on every model call.
+ */
+const PAGE_STATE_TOOL_NAMES = new Set([
+  "browser_navigate",
+  "browser_snapshot",
+  "browser_act",
+  "computer_observe",
+  "computer_act",
+]);
+const DEFAULT_PAGE_STATE_RESULTS_TO_KEEP = 3;
+const STALE_PAGE_STATE_NOTE =
+  "[Earlier page state trimmed to save context. Take a fresh snapshot if you need this page again.]";
+
+/**
+ * Replace all but the most recent page-state tool results with a short note. Runs on every
+ * request from the untransformed agent history, so the same history always trims the same way
+ * and the cached prompt prefix stays stable up to the newest trimmed result.
+ */
+export function pruneStalePageStateContext(
+  messages: AgentMessage[],
+  keep = DEFAULT_PAGE_STATE_RESULTS_TO_KEEP,
+): AgentMessage[] {
+  let remaining = Math.max(0, Math.floor(keep));
+  let transformed: AgentMessage[] | undefined;
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message?.role !== "toolResult" || !PAGE_STATE_TOOL_NAMES.has(message.toolName)) continue;
+    if (remaining > 0) {
+      remaining -= 1;
+      continue;
+    }
+    transformed ??= [...messages];
+    transformed[index] = {
+      ...message,
+      content: [{ type: "text", text: STALE_PAGE_STATE_NOTE }],
+    };
+  }
+  return transformed ?? messages;
 }
 
 /** Keep recent visual state while respecting an optional model image budget. */

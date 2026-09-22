@@ -63,7 +63,11 @@ vi.mock("./pi-openai-compatible-provider.js", () => ({
 }));
 
 import { COMPUTER_SCREEN_UNAVAILABLE } from "./computer-screens.js";
-import { PiAgentRuntime, pruneComputerScreenshotContext } from "./pi-runtime.js";
+import {
+  PiAgentRuntime,
+  pruneComputerScreenshotContext,
+  pruneStalePageStateContext,
+} from "./pi-runtime.js";
 
 const computerObserve: ConnectorTool = {
   name: "computer_observe",
@@ -147,6 +151,67 @@ describe("Pi computer tool dispatch", () => {
     });
     expect(events.some((event) => event.text?.includes("I hit a problem"))).toBe(false);
     expect(events.at(-1)?.type).toBe("done");
+  });
+
+  it("trims page-state results older than the three most recent", () => {
+    const pageResult = (id: string, toolName: string) => ({
+      role: "toolResult" as const,
+      toolCallId: id,
+      toolName,
+      content: [{ type: "text" as const, text: `page ${id}` }],
+      details: { frameId: id },
+      isError: false,
+      timestamp: 1,
+    });
+    const messages = [
+      { role: "user" as const, content: "find the cheapest coffee", timestamp: 1 },
+      pageResult("s1", "browser_snapshot"),
+      pageResult("s2", "browser_act"),
+      {
+        role: "toolResult" as const,
+        toolCallId: "read-1",
+        toolName: "read_file",
+        content: [{ type: "text" as const, text: "tracker contents" }],
+        isError: false,
+        timestamp: 1,
+      },
+      pageResult("s3", "computer_observe"),
+      pageResult("s4", "browser_snapshot"),
+      pageResult("s5", "browser_navigate"),
+    ];
+
+    const pruned = pruneStalePageStateContext(messages);
+    const texts = pruned.map((message) => {
+      const content: unknown = "content" in message ? message.content : "";
+      if (typeof content === "string") return content;
+      return (content as Array<{ type: string; text?: string }>)
+        .map((part) => part.text ?? part.type)
+        .join("");
+    });
+    expect(texts).toEqual([
+      "find the cheapest coffee",
+      expect.stringContaining("trimmed to save context"),
+      expect.stringContaining("trimmed to save context"),
+      "tracker contents",
+      "page s3",
+      "page s4",
+      "page s5",
+    ]);
+    // The original history is untouched, so the next request trims identically.
+    expect(messages[1]?.content).toEqual([{ type: "text", text: "page s1" }]);
+    expect(pruned[1]).toMatchObject({ toolCallId: "s1", toolName: "browser_snapshot" });
+  });
+
+  it("returns the same history when nothing is stale", () => {
+    const messages = ["s1", "s2", "s3"].map((id) => ({
+      role: "toolResult" as const,
+      toolCallId: id,
+      toolName: "browser_snapshot",
+      content: [{ type: "text" as const, text: `page ${id}` }],
+      isError: false,
+      timestamp: 1,
+    }));
+    expect(pruneStalePageStateContext(messages)).toBe(messages);
   });
 
   it("keeps the two latest computer screenshots by default", () => {
