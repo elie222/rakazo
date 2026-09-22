@@ -1090,9 +1090,11 @@ describe("bot intro run", () => {
   const bot = { id: "bot-1", threadId: "thread-1" } as unknown as Bot;
 
   function introDeps(options: { agentRuntime?: string; hasCredential?: boolean } = {}) {
-    const create = vi.fn(({ data }: { data: { status: string } }) =>
-      Promise.resolve({ id: `${data.status}-id`, ...data }),
-    );
+    let calls = 0;
+    const create = vi.fn(({ data }: { data: object }) => {
+      calls += 1;
+      return Promise.resolve({ id: `record-${calls}`, ...data });
+    });
     const enqueue = vi.fn().mockResolvedValue(undefined);
     const tx = { task: { create }, run: { create } };
     const preference =
@@ -1133,7 +1135,12 @@ describe("bot intro run", () => {
     >;
     expect(taskCall?.[0].data.prompt).toMatch(/understood your role/i);
     expect(runCall?.[0].data.trigger).toBe("created");
-    expect(enqueue).toHaveBeenCalledOnce();
+    // The Run must reference the Task this same call created, not a stale or
+    // mismatched id, and the enqueued job must target that Run.
+    expect(runCall?.[0].data.taskId).toBe("record-1");
+    expect(enqueue).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ payload: { runId: "record-2" } }),
+    );
   });
 
   it("does nothing when the bot has no thread", async () => {
