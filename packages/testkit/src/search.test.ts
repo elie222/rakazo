@@ -3,7 +3,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { SearchHit, ThreadSnapshot } from "@rakazo/contracts";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { type BotIntroHarness, discardBotIntroFromCreate } from "./discard-bot-intro.js";
+import type { BotIntroHarness } from "./discard-bot-intro.js";
+import { discardBotIntroFromCreate } from "./discard-bot-intro.js";
 import { sessionCookieHeader } from "./index.js";
 
 type App = { request: (input: string, init?: RequestInit) => Promise<Response> };

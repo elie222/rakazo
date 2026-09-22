@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { type BotIntroHarness, discardBotIntroRun } from "./discard-bot-intro.js";
+import type { BotIntroHarness } from "./discard-bot-intro.js";
+import { discardBotIntroRun } from "./discard-bot-intro.js";
 
 describe("discardBotIntroRun", () => {
   it("stops the creation intro before a scripted model step is consumed", async () => {
