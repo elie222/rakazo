@@ -13,7 +13,15 @@ export const MAX_VOICE_AUDIO_BYTES = 16 * 1024 * 1024;
 const MAX_VOICE_ERROR_BYTES = 64 * 1024;
 
 export async function speakText(text: string, opts: SpeechOptions = {}): Promise<boolean> {
-  if (await loadDeviceVoiceEnabled()) return speakWithDeviceVoice(text);
+  let useDeviceVoice = false;
+  try {
+    useDeviceVoice = await loadDeviceVoiceEnabled();
+  } catch {
+    // A read failure must not be treated as "off": that would send reply text
+    // through hosted voice after the user opted for on-device only.
+    useDeviceVoice = true;
+  }
+  if (useDeviceVoice) return speakWithDeviceVoice(text);
   const requestContext = await captureApiRequestContext();
   const prepared = await rpc<{ ready: boolean; utterances: string[] }>(
     "voice/prepare",
@@ -45,7 +53,8 @@ export async function speakWithDeviceVoice(text: string): Promise<boolean> {
   const session = startDeviceSpeechSession();
   const Speech = await loadExpoSpeech();
   if (!isCurrentDeviceSpeechSession(session)) return true;
-  Speech.stop();
+  await Speech.stop();
+  if (!isCurrentDeviceSpeechSession(session)) return true;
   for (const utterance of utterances) {
     if (!isCurrentDeviceSpeechSession(session)) return true;
     await speakOneUtterance(Speech, utterance);

@@ -182,6 +182,17 @@ describe("on-device speech", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
+  it("uses on-device speech when the preference cannot be read, and never hosts the reply", async () => {
+    vi.mocked(SecureStore.getItemAsync).mockRejectedValue(new Error("device locked"));
+    vi.mocked(Speech.speak).mockImplementation((_text, options) => options?.onDone?.());
+
+    await expect(speakText("Read this")).resolves.toBe(true);
+
+    expect(Speech.speak).toHaveBeenCalledWith("Read this", expect.any(Object));
+    expect(rpc).not.toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it("resolves false on empty text without calling the OS engine", async () => {
     await expect(speakWithDeviceVoice("   ")).resolves.toBe(false);
     expect(Speech.speak).not.toHaveBeenCalled();
@@ -246,6 +257,29 @@ describe("on-device speech", () => {
     calls[1]?.options?.onDone?.();
     await expect(second).resolves.toBe(true);
     expect(calls.map((c) => c.text)).toEqual(["First sentence.", "Different message."]);
+  });
+
+  it("awaits Speech.stop before speaking and skips if a newer session started during stop", async () => {
+    let releaseStop: () => void = () => undefined;
+    const stopPending = new Promise<void>((resolve) => {
+      releaseStop = resolve;
+    });
+    vi.mocked(Speech.stop).mockReturnValue(stopPending);
+    vi.mocked(Speech.speak).mockImplementation((_text, options) => options?.onDone?.());
+
+    const first = speakWithDeviceVoice("Hello there.");
+    await flushDeviceSpeechImport();
+    expect(Speech.speak).not.toHaveBeenCalled();
+
+    const second = speakWithDeviceVoice("Different message.");
+    await flushDeviceSpeechImport();
+    releaseStop();
+    await flushDeviceSpeechImport();
+
+    await expect(first).resolves.toBe(true);
+    await expect(second).resolves.toBe(true);
+    expect(Speech.speak).toHaveBeenCalledOnce();
+    expect(Speech.speak).toHaveBeenCalledWith("Different message.", expect.any(Object));
   });
 
   it("resolves true, not false, when interrupted on its final utterance", async () => {

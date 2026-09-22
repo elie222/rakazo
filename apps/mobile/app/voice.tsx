@@ -54,6 +54,7 @@ export default function VoiceSettings() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const deviceVoiceRevision = useRef(0);
+  const deviceVoiceSaveInFlight = useRef(false);
 
   const load = useCallback(async (nextProvider?: string) => {
     const [nextCatalog, nextCredentials, nextStatus] = await Promise.all([
@@ -79,32 +80,39 @@ export default function VoiceSettings() {
     useCallback(() => {
       setLoading(true);
       const revision = ++deviceVoiceRevision.current;
-      void loadDeviceVoiceEnabled().then((value) => {
-        if (deviceVoiceRevision.current === revision) setDeviceVoice(value);
-      });
+      void loadDeviceVoiceEnabled()
+        .then((value) => {
+          if (deviceVoiceSaveInFlight.current) return;
+          if (deviceVoiceRevision.current === revision) setDeviceVoice(value);
+        })
+        .catch((err: unknown) => {
+          if (deviceVoiceSaveInFlight.current) return;
+          if (deviceVoiceRevision.current !== revision) return;
+          setError(err instanceof Error ? err.message : t("Could not load voice settings"));
+        });
       void load()
         .catch((err: unknown) =>
           setError(err instanceof Error ? err.message : t("Could not load voice settings")),
         )
         .finally(() => setLoading(false));
-    }, [load]),
+    }, [load, t]),
   );
 
   async function toggleDeviceVoice() {
     if (pending !== null) return;
-    const revision = ++deviceVoiceRevision.current;
     const next = !deviceVoice;
+    deviceVoiceSaveInFlight.current = true;
     setDeviceVoice(next);
     setPending("device-voice");
     setError(null);
     try {
       await saveDeviceVoiceEnabled(next);
     } catch {
-      if (deviceVoiceRevision.current !== revision) return;
       setDeviceVoice(!next);
       setError(t("Could not save that preference"));
     } finally {
-      if (deviceVoiceRevision.current === revision) setPending(null);
+      deviceVoiceSaveInFlight.current = false;
+      setPending(null);
     }
   }
 
@@ -288,16 +296,16 @@ export default function VoiceSettings() {
                 ))}
               </View>
             ) : null}
-            {deviceVoice || status?.ready ? (
-              <Pressable
-                disabled={pending !== null}
-                onPress={() => void testVoice()}
-                style={styles.secondary}
-              >
-                <Text style={styles.secondaryLabel}>{t("Hear a sample")}</Text>
-              </Pressable>
-            ) : null}
           </>
+        ) : null}
+        {deviceVoice || status?.ready ? (
+          <Pressable
+            disabled={pending !== null}
+            onPress={() => void testVoice()}
+            style={styles.secondary}
+          >
+            <Text style={styles.secondaryLabel}>{t("Hear a sample")}</Text>
+          </Pressable>
         ) : null}
       </ScrollView>
     </SafeAreaView>

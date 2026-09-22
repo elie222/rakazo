@@ -43,4 +43,11 @@ describe("device voice preference", () => {
     await expect(saveDeviceVoiceEnabled(true)).rejects.toThrow("device locked");
     expect(await loadDeviceVoiceEnabled()).toBe(false);
   });
+
+  it("rejects when SecureStore cannot read, instead of treating the preference as off", async () => {
+    vi.mocked(SecureStore.getItemAsync).mockRejectedValueOnce(new Error("device locked"));
+    const { loadDeviceVoiceEnabled } = await import("./device-voice");
+
+    await expect(loadDeviceVoiceEnabled()).rejects.toThrow("device locked");
+  });
 });

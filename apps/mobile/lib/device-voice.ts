@@ -3,11 +3,7 @@ import * as SecureStore from "expo-secure-store";
 export const DEVICE_VOICE_KEY = "rakazo.device-voice";
 
 export async function loadDeviceVoiceEnabled(): Promise<boolean> {
-  try {
-    return (await SecureStore.getItemAsync(DEVICE_VOICE_KEY)) === "1";
-  } catch {
-    return false;
-  }
+  return (await SecureStore.getItemAsync(DEVICE_VOICE_KEY)) === "1";
 }
 
 export async function saveDeviceVoiceEnabled(on: boolean): Promise<void> {
