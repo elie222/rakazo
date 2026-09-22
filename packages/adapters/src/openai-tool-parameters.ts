@@ -40,11 +40,25 @@ function rootUnionKey(schema: Record<string, unknown>) {
  * between variants is lost on the wire, so the executor must keep validating
  * arguments against the original schema.
  */
-function flattenRootUnion(schema: Record<string, unknown>): Record<string, unknown> {
+function flattenRootUnion(
+  schema: Record<string, unknown>,
+  root = schema,
+  references: ReadonlySet<string> = new Set(),
+): Record<string, unknown> {
+  const ref = schema.$ref;
+  if (typeof ref === "string" && !references.has(ref)) {
+    const target = localSchemaReference(root, ref);
+    if (isRecord(target)) {
+      const { $ref: _ref, ...siblings } = schema;
+      return flattenRootUnion({ allOf: [target, siblings] }, root, new Set([...references, ref]));
+    }
+  }
   const key = rootUnionKey(schema);
   if (!key) return schema;
   const { oneOf: _oneOf, anyOf: _anyOf, allOf: _allOf, ...rest } = schema;
-  const variants = (schema[key] as unknown[]).filter(isRecord).map(flattenRootUnion);
+  const variants = (schema[key] as unknown[])
+    .filter(isRecord)
+    .map((variant) => flattenRootUnion(variant, root, references));
 
   const specs = new Map<string, unknown[]>();
   for (const source of [rest, ...variants]) {
@@ -80,4 +94,23 @@ function flattenRootUnion(schema: Record<string, unknown>): Record<string, unkno
     ...(required.length > 0 ? { required } : {}),
     ...(closed ? { additionalProperties: false } : {}),
   };
+}
+
+/** Resolve only same-document JSON pointers; never fetch external schemas. */
+function localSchemaReference(root: Record<string, unknown>, ref: string): unknown {
+  if (ref === "#") return root;
+  if (!ref.startsWith("#/")) return undefined;
+  let pointer: string;
+  try {
+    pointer = decodeURIComponent(ref.slice(2));
+  } catch {
+    return undefined;
+  }
+  let value: unknown = root;
+  for (const token of pointer.split("/")) {
+    const key = token.replace(/~1/g, "/").replace(/~0/g, "~");
+    if (!value || typeof value !== "object" || !Object.hasOwn(value, key)) return undefined;
+    value = (value as Record<string, unknown>)[key];
+  }
+  return value;
 }

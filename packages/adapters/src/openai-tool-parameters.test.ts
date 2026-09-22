@@ -8,6 +8,65 @@ import {
 import { parametersFor } from "./pi-runtime.js";
 
 describe("normalizeOpenAiToolParameters", () => {
+  it("conjoins referenced fields with sibling constraints and follows local reference chains", () => {
+    const normalized = normalizeOpenAiToolParameters({
+      $defs: {
+        Alias: { $ref: "#/$defs/Base" },
+        Base: { properties: { limit: { type: "integer", minimum: 1 } }, required: ["limit"] },
+      },
+      allOf: [
+        {
+          $ref: "#/$defs/Alias",
+          properties: { limit: { type: "integer", maximum: 10 } },
+        },
+      ],
+    });
+    expect(normalized.properties).toEqual({
+      limit: {
+        allOf: [
+          { type: "integer", minimum: 1 },
+          { type: "integer", maximum: 10 },
+        ],
+      },
+    });
+    expect(normalized.required).toEqual(["limit"]);
+    expect(normalized).not.toHaveProperty("allOf");
+  });
+
+  it("stops cyclic local references while keeping their inline fields", () => {
+    const normalized = normalizeOpenAiToolParameters({
+      $defs: {
+        Base: {
+          allOf: [
+            { $ref: "#/$defs/Base" },
+            { properties: { query: { type: "string" } }, required: ["query"] },
+          ],
+        },
+      },
+      allOf: [{ $ref: "#/$defs/Base" }, { $ref: "#/$defs/Base" }],
+    });
+    expect(normalized.properties).toEqual({ query: { type: "string" } });
+    expect(normalized.required).toEqual(["query"]);
+  });
+
+  it.each(["#/$defs/missing", "#/%ZZ", "https://example.test/schema", "#/constructor"])(
+    "leaves unresolved or external references unfetched: %s",
+    (ref) => {
+      const normalized = normalizeOpenAiToolParameters({
+        allOf: [{ $ref: ref }, { properties: { query: { type: "string" } } }],
+      });
+      expect(normalized.properties).toEqual({ query: { type: "string" } });
+    },
+  );
+
+  it("resolves URI-encoded JSON pointers through arrays", () => {
+    const normalized = normalizeOpenAiToolParameters({
+      $defs: { "group name": { anyOf: [{ properties: { query: { type: "string" } } }] } },
+      allOf: [{ $ref: "#/$defs/group%20name/anyOf/0" }],
+    });
+    expect(normalized.properties).toEqual({ query: { type: "string" } });
+  });
+
   it("fills properties for a zero-argument object schema", () => {
     expect(normalizeOpenAiToolParameters({ type: "object" })).toEqual({
       type: "object",

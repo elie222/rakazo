@@ -4,6 +4,42 @@ import { parseConnectorToolArgs } from "./lazy-tool-catalog.js";
 import { jsonSchemaParameters, parametersFor } from "./pi-runtime.js";
 
 describe("jsonSchemaParameters", () => {
+  it("exposes fields from a locally referenced allOf branch", () => {
+    const tool = {
+      name: "catalog_search",
+      description: "Search a named catalog",
+      inputSchema: {
+        $defs: {
+          "Base/filter": {
+            type: "object",
+            properties: { catalog: { type: "string", minLength: 1 } },
+            required: ["catalog"],
+          },
+        },
+        allOf: [
+          { $ref: "#/$defs/Base~1filter" },
+          { type: "object", properties: { query: { type: "string" } }, required: ["query"] },
+        ],
+      },
+    };
+    const original = JSON.stringify(tool.inputSchema);
+    const wire = JSON.parse(JSON.stringify(parametersFor(tool)));
+    expect(wire.properties).toEqual({
+      catalog: { type: "string", minLength: 1 },
+      query: { type: "string" },
+    });
+    expect(wire.required).toEqual(["catalog", "query"]);
+    expect(wire).not.toHaveProperty("allOf");
+    for (const schema of [tool.inputSchema, wire]) {
+      expect(parseConnectorToolArgs(schema, { catalog: "books", query: "typescript" })).toEqual({
+        catalog: "books",
+        query: "typescript",
+      });
+      expect(() => parseConnectorToolArgs(schema, { query: "typescript" })).toThrow();
+    }
+    expect(JSON.stringify(tool.inputSchema)).toBe(original);
+  });
+
   it("keeps root allOf fields and intersecting constraints through the Pi wire path", () => {
     const tool = {
       name: "catalog_page",
