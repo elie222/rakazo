@@ -962,3 +962,120 @@ describe("interrupted computer reservation release", () => {
     expect(order).toEqual(["operation", "computer"]);
   });
 });
+
+describe("model credential persistence", () => {
+  const actor = {
+    spaceId: "workspace-1",
+    userId: "user-1",
+    email: "user@rakazo.test",
+    isDeploymentOwner: true,
+  } satisfies Actor;
+
+  function persistDeps(options?: { envDefaultModel?: string }) {
+    const upsert = vi.fn().mockResolvedValue({ id: "preference" });
+    const finish = vi.fn();
+    const tx = {
+      userModelCredential: {
+        findFirst: vi.fn().mockResolvedValue(null),
+        create: vi.fn().mockImplementation(async ({ data }: { data: { provider: string } }) => ({
+          id: "cred-1",
+          userId: actor.userId,
+          provider: data.provider,
+          label: data.provider,
+          secretId: "secret-1",
+          supportsImages: false,
+          createdAt: new Date(0),
+          updatedAt: new Date(0),
+        })),
+      },
+      secret: { create: vi.fn().mockResolvedValue({}) },
+      spaceModelPreference: {
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+        upsert,
+      },
+    };
+    const deps = {
+      prisma: { $transaction: vi.fn(async (fn: (client: typeof tx) => unknown) => fn(tx)) },
+      secrets: {
+        put: vi.fn().mockResolvedValue({ id: "secret-1", ciphertext: "cipher" }),
+      },
+      oauthLogins: {
+        finish,
+      },
+      env: {
+        defaultProvider: "openrouter",
+        defaultModel: options?.envDefaultModel ?? "openai/gpt-5.6-luna",
+        webOrigin: "http://127.0.0.1:5173",
+        screenProxySecret: "fake-test-secret",
+        sandboxProvider: "fake",
+        agentRuntime: "pi",
+      },
+    } as unknown as RouterDeps;
+    return { upsert, finish, deps, handler: new RPCHandler(createRouter(deps)) };
+  }
+
+  async function call(handler: RPCHandler<never>, path: string, body: unknown): Promise<Response> {
+    const { response } = await handler.handle(
+      new Request(`http://127.0.0.1/rpc/${path}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ json: body }),
+      }),
+      { prefix: "/rpc", context: { actor } },
+    );
+    return response;
+  }
+
+  it("does not persist a stringified null model id from subscription sign-in", async () => {
+    const { upsert, finish, handler } = persistDeps();
+    finish.mockImplementation(async (_loginId, _actor, persist) => ({
+      status: "connected" as const,
+      value: await persist({
+        status: "connected",
+        provider: "anthropic",
+        modelId: "null",
+        label: "Anthropic",
+        credential: {
+          type: "oauth",
+          access: "access-token",
+          refresh: "refresh-token",
+          expires: Date.now() + 60_000,
+        },
+        signal: new AbortController().signal,
+      }),
+    }));
+
+    const response = await call(handler, "models/finishOAuth", { loginId: "login-1" });
+    expect(response.status).toBe(200);
+    const persisted = upsert.mock.calls[0]?.[0] as {
+      create: { modelId: string | null };
+      update: { modelId: string | null };
+    };
+    expect(persisted.create.modelId).not.toBe("null");
+    expect(persisted.create.modelId).toBeTruthy();
+    expect(persisted.update.modelId).toBe(persisted.create.modelId);
+    await expect(response.json()).resolves.toEqual({
+      json: expect.objectContaining({
+        provider: "anthropic",
+        modelId: persisted.create.modelId,
+      }),
+    });
+  });
+
+  it("does not persist a missing model id as the string null", async () => {
+    const { upsert, handler } = persistDeps({ envDefaultModel: "null" });
+
+    const response = await call(handler, "models/connect", {
+      provider: "test-provider",
+      apiKey: "sk-test-key-123",
+      modelId: undefined,
+    });
+    expect(response.status).toBe(200);
+    expect(upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({ modelId: null }),
+        update: expect.objectContaining({ modelId: null }),
+      }),
+    );
+  });
+});

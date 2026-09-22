@@ -904,6 +904,17 @@ export function parseModelContextWindow(value: string): number | undefined {
     : undefined;
 }
 
+/**
+ * JS null/undefined stringifies to the literals "null" / "undefined". Those
+ * are not catalog ids; treat them (and blank values) as unset.
+ */
+export function usableModelId(value: string | null | undefined): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed || trimmed === "null" || trimmed === "undefined") return null;
+  return trimmed;
+}
+
 export const ModelCredentialSchema = z.object({
   id: Id,
   provider: z.string(),

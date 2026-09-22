@@ -41,6 +41,7 @@ import {
   computerSupportsUpdate,
   computerUpdateView,
   createVoiceProvider,
+  defaultCatalogModelId,
   deletePushToken,
   deploymentAutoReviewDefault,
   destroyBot,
@@ -86,6 +87,7 @@ import {
   appContract,
   IntegrationProviderIdSchema,
   OPENAI_COMPATIBLE_PROVIDER_ID,
+  usableModelId,
 } from "@rakazo/contracts";
 import {
   ACTIVE_RUN_STATUSES,
@@ -5163,7 +5165,10 @@ async function persistModelCredential(
               },
             });
         throwIfAborted(input.signal);
-        const defaultModel = input.modelId ?? deps.env.defaultModel;
+        const defaultModel =
+          usableModelId(input.modelId) ??
+          defaultCatalogModelId(input.provider) ??
+          usableModelId(deps.env.defaultModel);
         await selectSpaceModelPreference(tx, actor, credential.id, defaultModel);
         throwIfAborted(input.signal);
         if (existing) {

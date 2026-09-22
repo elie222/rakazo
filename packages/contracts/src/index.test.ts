@@ -22,6 +22,7 @@ import {
   RunSchema,
   UpdateBotInput,
   UpdateGroupInput,
+  usableModelId,
 } from "./index.js";
 
 describe("contracts", () => {
@@ -54,6 +55,17 @@ describe("contracts", () => {
     expect(parseModelContextWindow("0")).toBeUndefined();
     expect(parseModelContextWindow("1048577")).toBeUndefined();
     expect(parseModelContextWindow("1.5")).toBeUndefined();
+  });
+
+  it("treats null, undefined, and their string forms as an unset model id", () => {
+    expect(usableModelId(null)).toBeNull();
+    expect(usableModelId(undefined)).toBeNull();
+    expect(usableModelId("null")).toBeNull();
+    expect(usableModelId("undefined")).toBeNull();
+    expect(usableModelId("  null  ")).toBeNull();
+    expect(usableModelId("")).toBeNull();
+    expect(usableModelId("   ")).toBeNull();
+    expect(usableModelId("claude-opus-4-6")).toBe("claude-opus-4-6");
   });
 
   it("rejects maxTokens larger than contextWindow on model connect", () => {

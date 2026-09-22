@@ -6,7 +6,7 @@ import { modelAcceptsImageInput } from "./model-vision.js";
 import { listPiCatalog } from "./pi-models.js";
 import { resolveModelAuth } from "./pi-oauth.js";
 import { OPENAI_COMPATIBLE_PROVIDER_ID } from "./pi-openai-compatible-provider.js";
-import { modelsForRequest } from "./pi-runtime.js";
+import { modelsForRequest, resolveRuntimeModel } from "./pi-runtime.js";
 
 function requestModel(id: string, baseUrl: string): Pick<AgentRunRequest, "model"> {
   return { model: { provider: OPENAI_COMPATIBLE_PROVIDER_ID, id, baseUrl } };
@@ -105,3 +105,12 @@ it.each([true, false, undefined])(
     expect(credential.thinkingLevels).toEqual(getSupportedThinkingLevels(model));
   },
 );
+
+describe("resolveRuntimeModel", () => {
+  it("does not treat a stringified null as a catalog model", () => {
+    const resolved = resolveRuntimeModel({ provider: "anthropic", id: "null" });
+    expect(resolved.modelId).toBe("");
+    expect(resolved.model).toBeUndefined();
+    expect(resolved.provider).toBe("anthropic");
+  });
+});

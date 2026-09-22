@@ -1,5 +1,6 @@
 import type { AgentRunRequest } from "@rakazo/adapter-kit";
 import type { Actor } from "@rakazo/contracts";
+import { usableModelId } from "@rakazo/contracts";
 import {
   type findDefaultModelCredential,
   findModelCredential,
@@ -16,6 +17,10 @@ export function isCatalogModelChoice(provider: string, modelId: string) {
   );
 }
 
+export function defaultCatalogModelId(provider: string): string | null {
+  return usableModelId(listPiCatalog().find((item) => item.provider === provider)?.id);
+}
+
 export async function validateConnectedModelChoice(
   prisma: PrismaClient,
   actor: Pick<Actor, "userId" | "spaceId">,
@@ -24,6 +29,7 @@ export async function validateConnectedModelChoice(
 ) {
   const credential = await findModelCredential(prisma, actor, provider);
   if (!credential) return "Connect that model provider first";
+  if (!usableModelId(modelId)) return "Unknown model for that provider";
   if (isCatalogModelChoice(provider, modelId)) return undefined;
   // Free-form saved IDs only resolve at runtime for openai-compatible connections.
   if (provider !== OPENAI_COMPATIBLE_PROVIDER_ID) {
@@ -54,7 +60,7 @@ export function selectConfiguredModel(input: {
   deployment: { provider: string; model: string } | null;
 }) {
   const { bot, overrideCredential, defaultCredential, settings, deployment } = input;
-  const hasOverride = Boolean(bot?.modelProvider && bot.modelId);
+  const hasOverride = Boolean(bot?.modelProvider && usableModelId(bot.modelId));
   // The override provider, model and credential must win together.
   const useOverride = Boolean(hasOverride && overrideCredential);
   const credential = useOverride ? overrideCredential : defaultCredential;
@@ -65,10 +71,11 @@ export function selectConfiguredModel(input: {
       settings?.defaultModelProvider ??
       deployment?.provider,
     id:
-      (useOverride ? bot!.modelId : null) ??
-      credential?.defaultModel ??
-      settings?.defaultModelId ??
-      deployment?.model,
+      usableModelId(useOverride ? bot!.modelId : null) ??
+      usableModelId(credential?.defaultModel) ??
+      (credential ? defaultCatalogModelId(credential.provider) : null) ??
+      usableModelId(settings?.defaultModelId) ??
+      usableModelId(deployment?.model),
     credential,
     // Preserve bot thinking for the Space default; drop it for an unavailable override.
     thinkingLevel:

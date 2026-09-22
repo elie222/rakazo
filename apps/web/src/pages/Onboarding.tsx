@@ -333,10 +333,11 @@ export function OnboardingPage() {
   }
 
   function beginSelectedSubscriptionSignIn() {
+    if (!selected?.id) return;
     void startSubscriptionSignIn({
-      provider,
-      modelId,
-      label: selected?.providerName ?? provider,
+      provider: selected.provider,
+      modelId: selected.id,
+      label: selected.providerName ?? selected.provider,
     });
   }
 
@@ -389,7 +390,10 @@ export function OnboardingPage() {
               </span>
               <Select
                 value={provider}
-                onValueChange={(value) => selectProvider(String(value))}
+                onValueChange={(value) => {
+                  if (typeof value !== "string" || !value) return;
+                  selectProvider(value);
+                }}
                 items={providerItems}
               >
                 <SelectTrigger aria-label={t`Provider`} className="mt-2 w-full">
@@ -436,7 +440,8 @@ export function OnboardingPage() {
                       <Select
                         value={modelId}
                         onValueChange={(value) => {
-                          const next = String(value);
+                          if (typeof value !== "string") return;
+                          const next = value;
                           if (next === CUSTOM_MODEL_OPTION) {
                             setManualModelId(true);
                             setModelId("");
@@ -531,10 +536,10 @@ export function OnboardingPage() {
                   <Select
                     value={selected?.id ?? modelId}
                     onValueChange={(value) => {
-                      const next = String(value);
-                      if (next === modelId) return;
+                      if (typeof value !== "string" || !value) return;
+                      if (value === modelId) return;
                       cancelOAuthAttempt();
-                      setModelId(next);
+                      setModelId(value);
                     }}
                     items={modelItems}
                   >

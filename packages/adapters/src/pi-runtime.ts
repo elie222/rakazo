@@ -25,6 +25,7 @@ import type {
   AgentToolExecutionResult,
   ConnectorTool,
 } from "@rakazo/adapter-kit";
+import { usableModelId } from "@rakazo/contracts";
 import { getLogger } from "@rakazo/logging";
 import { isToolPauseResult } from "./approval-effect.js";
 import { builtinAgentTools, DELEGATION_TOOL_NAMES } from "./builtin-tools.js";
@@ -487,7 +488,7 @@ function configuredOpenRouterModel(id: string): Model<"openai-completions"> {
   };
 }
 
-function resolveRuntimeModel(modelConfig: AgentRunRequest["model"]): {
+export function resolveRuntimeModel(modelConfig: AgentRunRequest["model"]): {
   provider: string;
   modelId: string;
   models: Models;
@@ -497,10 +498,9 @@ function resolveRuntimeModel(modelConfig: AgentRunRequest["model"]): {
   const provider = modelConfig.provider === "scripted" ? "openrouter" : modelConfig.provider;
   const envDefaultModel = process.env.PI_DEFAULT_MODEL?.trim();
   const envDefaultProvider = process.env.PI_DEFAULT_PROVIDER?.trim() || "openrouter";
-  const modelId =
-    modelConfig.id === "scripted"
-      ? envDefaultModel || DEFAULT_OPENROUTER_MODEL_ID
-      : modelConfig.id.trim();
+  const requestedId =
+    modelConfig.id === "scripted" ? envDefaultModel || DEFAULT_OPENROUTER_MODEL_ID : modelConfig.id;
+  const modelId = usableModelId(requestedId) ?? "";
   const models = modelsForRequest({ model: modelConfig }, provider);
   let model = models.getModel(provider, modelId);
   if (!model && provider !== "openrouter" && provider !== OPENAI_COMPATIBLE_PROVIDER_ID) {

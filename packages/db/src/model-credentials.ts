@@ -1,3 +1,4 @@
+import { usableModelId } from "@rakazo/contracts";
 import type { PrismaClient } from "./client.js";
 
 export const newestCredentialOrder = [
@@ -14,8 +15,9 @@ export async function selectSpaceModelPreference(
   prisma: Pick<PrismaClient, "spaceModelPreference">,
   scope: ModelCredentialScope,
   credentialId: string,
-  modelId: string | null,
+  modelId: string | null | undefined,
 ) {
+  const persistedModelId = usableModelId(modelId);
   await prisma.spaceModelPreference.updateMany({
     where: {
       spaceId: scope.spaceId,
@@ -37,10 +39,10 @@ export async function selectSpaceModelPreference(
       spaceId: scope.spaceId,
       userId: scope.userId,
       credentialId,
-      modelId,
+      modelId: persistedModelId,
       isDefault: true,
     },
-    update: { modelId, isDefault: true },
+    update: { modelId: persistedModelId, isDefault: true },
   });
 }
 
@@ -62,7 +64,7 @@ function withModelPreference<
   return {
     ...preference.credential,
     isDefault: preference.isDefault,
-    defaultModel: preference.modelId,
+    defaultModel: usableModelId(preference.modelId),
   };
 }
 
@@ -95,14 +97,15 @@ export async function findModelCredential(
   provider: string,
   modelId?: string | null,
 ) {
+  const requestedModelId = usableModelId(modelId);
   // When a helper or bot selects a free-form model, prefer the preference that owns
   // that modelId so runtime uses the same credential the picker advertised.
-  if (modelId) {
+  if (requestedModelId) {
     const matching = await prisma.spaceModelPreference.findFirst({
       where: {
         spaceId: scope.spaceId,
         userId: scope.userId,
-        modelId,
+        modelId: requestedModelId,
         credential: { provider },
       },
       include: { credential: true },

@@ -1,7 +1,11 @@
 import type { Actor } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
-import { selectConfiguredModel, validateConnectedModelChoice } from "./model-selection.js";
+import {
+  defaultCatalogModelId,
+  selectConfiguredModel,
+  validateConnectedModelChoice,
+} from "./model-selection.js";
 
 type SelectionInput = Parameters<typeof selectConfiguredModel>[0];
 
@@ -101,9 +105,33 @@ describe("configured model selection", () => {
       input: { defaultCredential: null, settings: null, deployment: null },
       expected: {
         provider: undefined,
-        id: undefined,
+        id: null,
         credential: null,
         thinkingLevel: null,
+      },
+    },
+    {
+      name: "skips a literal null model id and uses the provider catalog instead",
+      input: {
+        defaultCredential: credential("anthropic", "null"),
+        settings: null,
+        deployment: null,
+      },
+      expected: {
+        provider: "anthropic",
+        id: defaultCatalogModelId("anthropic"),
+        credential: credential("anthropic", "null"),
+        thinkingLevel: null,
+      },
+    },
+    {
+      name: "does not treat a sentinel bot override as a selected model",
+      input: { bot: { ...bot, modelId: "null" }, overrideCredential },
+      expected: {
+        provider: "space-provider",
+        id: "space-model",
+        credential: spaceCredential,
+        thinkingLevel: "high",
       },
     },
   ])("$name", ({ input, expected }) => {
@@ -189,5 +217,12 @@ describe("connected model validation", () => {
     await expect(
       validateConnectedModelChoice(disconnectedPrisma, actor, "anthropic", "claude-opus-4-6"),
     ).resolves.toBe("Connect that model provider first");
+
+    await expect(validateConnectedModelChoice(catalogPrisma, actor, "xai", "null")).resolves.toBe(
+      "Unknown model for that provider",
+    );
+    await expect(
+      validateConnectedModelChoice(catalogPrisma, actor, "xai", "undefined"),
+    ).resolves.toBe("Unknown model for that provider");
   });
 });

@@ -20,6 +20,29 @@ describe("findDefaultModelCredential", () => {
       orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
     });
   });
+
+  it("treats a stored stringified null model id as unset", async () => {
+    const findFirst = vi.fn().mockResolvedValue({
+      credential: {
+        id: "credential",
+        userId: "user",
+        provider: "anthropic",
+        label: "Anthropic",
+        secretId: "secret",
+        createdAt: new Date(0),
+        updatedAt: new Date(0),
+      },
+      isDefault: true,
+      modelId: "null",
+    });
+    const prisma = { spaceModelPreference: { findFirst } } as unknown as PrismaClient;
+
+    await expect(
+      findDefaultModelCredential(prisma, { userId: "user", spaceId: "space" }),
+    ).resolves.toEqual(
+      expect.objectContaining({ id: "credential", provider: "anthropic", defaultModel: null }),
+    );
+  });
 });
 
 describe("findModelCredential", () => {
@@ -119,4 +142,27 @@ describe("selectSpaceModelPreference", () => {
       }),
     );
   });
+
+  it.each([null, undefined, "null", "undefined", "  null  ", ""])(
+    "does not persist %j as a model id",
+    async (modelId) => {
+      const updateMany = vi.fn().mockResolvedValue({ count: 0 });
+      const upsert = vi.fn().mockResolvedValue({ id: "preference" });
+      const prisma = { spaceModelPreference: { updateMany, upsert } } as unknown as PrismaClient;
+
+      await selectSpaceModelPreference(
+        prisma,
+        { userId: "user", spaceId: "space" },
+        "credential",
+        modelId,
+      );
+
+      expect(upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: expect.objectContaining({ modelId: null }),
+          update: { isDefault: true, modelId: null },
+        }),
+      );
+    },
+  );
 });
