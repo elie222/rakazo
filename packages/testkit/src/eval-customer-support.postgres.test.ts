@@ -103,6 +103,11 @@ describe.skipIf(!databaseAvailable)("offline Slack customer-support eval", () =>
       });
 
       model.assertComplete();
+      expect(
+        model.requests.some((request) =>
+          JSON.stringify(request.messages).includes("You were just created"),
+        ),
+      ).toBe(false);
       expect(result).toMatchObject({
         status: "passed",
         category: null,

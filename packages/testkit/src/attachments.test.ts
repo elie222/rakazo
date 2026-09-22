@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { ThreadSnapshot } from "@rakazo/contracts";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { type BotIntroHarness, discardBotIntroFromCreate } from "./discard-bot-intro.js";
 import { sessionCookieHeader } from "./index.js";
 
 type App = { request: (input: string, init?: RequestInit) => Promise<Response> };
@@ -13,6 +14,7 @@ process.env.AGENT_RUNTIME = "scripted";
 
 const hasDb = process.env.VERIFY_DATABASE === "1" && Boolean(process.env.DATABASE_URL);
 const describeAttachments = hasDb ? describe : describe.skip;
+let botIntroHarness: BotIntroHarness | undefined;
 
 describeAttachments("chat attachments", () => {
   let app: App;
@@ -34,6 +36,7 @@ describeAttachments("chat attachments", () => {
     });
     app = handles.app;
     stop = handles.stop;
+    botIntroHarness = handles;
   });
 
   afterAll(async () => {
@@ -155,7 +158,7 @@ async function rpc<T>(app: App, cookie: string, proc: string, body: unknown = {}
   if (res.status >= 400 || parsed.error) {
     throw new Error(`${proc} ${res.status}: ${parsed.error?.message ?? text}`);
   }
-  return parsed.json as T;
+  return discardBotIntroFromCreate(botIntroHarness, cookie, proc, parsed.json as T);
 }
 
 async function raw(app: App, cookie: string, proc: string, body: unknown) {

@@ -4,6 +4,7 @@ import { MessagingTeamChatEmulator } from "@rakazo/adapters";
 import type { ModelConnectInput, RunStatus } from "@rakazo/contracts";
 import { ACTIVE_RUN_STATUSES, isTerminal } from "@rakazo/core";
 import type { createDb } from "@rakazo/db";
+import { discardBotIntroRun } from "../discard-bot-intro.js";
 import { sessionCookieHeader } from "../index.js";
 import type { EvalCase, Evidence } from "./cases.js";
 import { emptyTrial, type FailureCategory, redact, type TrialResult } from "./report.js";
@@ -103,7 +104,8 @@ export async function runTrial(
   };
   try {
     handles = await options.createApp(services, messaging);
-    const { app, prisma } = handles;
+    const trial = handles;
+    const { app, prisma } = trial;
     const setupActor = async () => {
       const signup = await app.request("/api/auth/sign-up/email", {
         method: "POST",
@@ -131,6 +133,7 @@ export async function runTrial(
         notifyOnFinish: false,
       });
       botId = bot.id;
+      await discardBotIntroRun(trial, cookie, botId);
       const persistedBot = await prisma.bot.findUniqueOrThrow({
         where: { id: botId },
         select: { userId: true, spaceId: true },

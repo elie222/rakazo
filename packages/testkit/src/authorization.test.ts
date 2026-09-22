@@ -11,6 +11,7 @@ import {
 } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { createApp } from "../../../apps/api/src/app.ts";
+import { type BotIntroHarness, discardBotIntroFromCreate } from "./discard-bot-intro.js";
 import { sessionCookieHeader } from "./index.js";
 
 type App = { request: (input: string, init?: RequestInit) => Response | Promise<Response> };
@@ -30,6 +31,7 @@ process.env.AGENT_RUNTIME = "scripted";
 
 const hasDb = process.env.VERIFY_DATABASE === "1" && Boolean(process.env.DATABASE_URL);
 const describeWithDatabase = hasDb ? describe : describe.skip;
+let botIntroHarness: BotIntroHarness | undefined;
 
 describeWithDatabase("API authorization and resource isolation", () => {
   let handles: AppHandles;
@@ -49,6 +51,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       composio: new ComposioEmulator(),
     });
     app = handles.app;
+    botIntroHarness = handles;
   });
 
   afterAll(async () => {
@@ -1496,7 +1499,7 @@ async function rpc<T>(
   if (response.status >= 400 || payload.error) {
     throw new Error(`${procedure} ${response.status}: ${payload.error?.message ?? text}`);
   }
-  return payload.json as T;
+  return discardBotIntroFromCreate(botIntroHarness, cookie, procedure, payload.json as T);
 }
 
 async function expectDenied(

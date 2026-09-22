@@ -4,6 +4,7 @@ import path from "node:path";
 import { SCRIPTED_MPEG, SCRIPTED_TRANSCRIPT, SCRIPTED_VOICE_ID } from "@rakazo/adapters";
 import type { PrismaClient } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { type BotIntroHarness, discardBotIntroFromCreate } from "./discard-bot-intro.js";
 import { sessionCookieHeader } from "./index.js";
 
 type App = { request: (input: string, init?: RequestInit) => Promise<Response> };
@@ -14,6 +15,7 @@ process.env.AGENT_RUNTIME = "scripted";
 
 const hasDb = process.env.VERIFY_DATABASE === "1" && Boolean(process.env.DATABASE_URL);
 const describeVoice = hasDb ? describe : describe.skip;
+let botIntroHarness: BotIntroHarness | undefined;
 
 describeVoice("voice credentials and speech HTTP", () => {
   let app: App;
@@ -33,6 +35,7 @@ describeVoice("voice credentials and speech HTTP", () => {
     app = handles.app;
     prisma = handles.prisma;
     stop = handles.stop;
+    botIntroHarness = handles;
   });
 
   afterAll(async () => {
@@ -202,7 +205,7 @@ async function rpc<T>(app: App, cookie: string, proc: string, body: unknown = {}
   if (res.status >= 400 || parsed.error) {
     throw new Error(`${proc} ${res.status}: ${parsed.error?.message ?? text}`);
   }
-  return parsed.json as T;
+  return discardBotIntroFromCreate(botIntroHarness, cookie, proc, parsed.json as T);
 }
 
 async function raw(app: App, cookie: string, proc: string, body: unknown) {
