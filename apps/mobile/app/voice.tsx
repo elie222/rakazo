@@ -47,6 +47,7 @@ export default function VoiceSettings() {
   const [apiKey, setApiKey] = useState("");
   const [voiceId, setVoiceId] = useState("");
   const [deviceVoice, setDeviceVoice] = useState(false);
+  const [deviceVoiceReady, setDeviceVoiceReady] = useState(false);
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState<
     "connect" | "disconnect" | "voice" | "test" | "device-voice" | null
@@ -83,11 +84,14 @@ export default function VoiceSettings() {
       void loadDeviceVoiceEnabled()
         .then((value) => {
           if (deviceVoiceSaveInFlight.current) return;
-          if (deviceVoiceRevision.current === revision) setDeviceVoice(value);
+          if (deviceVoiceRevision.current !== revision) return;
+          setDeviceVoice(value);
+          setDeviceVoiceReady(true);
         })
         .catch((err: unknown) => {
           if (deviceVoiceSaveInFlight.current) return;
           if (deviceVoiceRevision.current !== revision) return;
+          setDeviceVoiceReady(true);
           setError(err instanceof Error ? err.message : t("Could not load voice settings"));
         });
       void load()
@@ -99,7 +103,7 @@ export default function VoiceSettings() {
   );
 
   async function toggleDeviceVoice() {
-    if (pending !== null) return;
+    if (pending !== null || !deviceVoiceReady) return;
     const next = !deviceVoice;
     deviceVoiceSaveInFlight.current = true;
     deviceVoiceRevision.current++;
@@ -192,12 +196,12 @@ export default function VoiceSettings() {
         {error ? <Text style={styles.error}>{error}</Text> : null}
         {notice ? <Text style={styles.notice}>{notice}</Text> : null}
         <Pressable
-          disabled={pending !== null}
+          disabled={pending !== null || !deviceVoiceReady}
           onPress={() => void toggleDeviceVoice()}
           style={[
             styles.card,
             deviceVoice && styles.cardActive,
-            pending !== null && styles.disabled,
+            (pending !== null || !deviceVoiceReady) && styles.disabled,
           ]}
         >
           <Text style={styles.cardTitle}>{t("This device")}</Text>
