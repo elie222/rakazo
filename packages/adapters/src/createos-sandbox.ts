@@ -160,7 +160,6 @@ export class CreateOSSandboxProvider implements SandboxProvider {
   private readonly rootfs: string;
   private readonly fetchImpl: typeof fetch;
   private readonly screenAssignments = new Map<string, Map<string, string>>();
-  private readonly lastBrowserUris = new Map<string, string>();
 
   constructor(private readonly options: CreateOSSandboxProviderOptions) {
     this.baseUrl = (options.baseUrl?.trim() || DEFAULT_CREATEOS_BASE_URL).replace(/\/+$/, "");
@@ -473,20 +472,16 @@ print(json.dumps(out))
     // Dirty state does not survive a process restart or a second provider
     // instance, and skipping the walk commits an empty checkpoint over the home.
     if (!(await this.hasExportableWorkspaceFiles(computer, "", context))) return;
-    const reopenUri =
-      (await this.currentBrowserUri(computer, context).catch(() => undefined)) ??
-      this.lastBrowserUris.get(computer.providerRef) ??
-      "about:blank";
-    await this.executeChecked(computer, ["bash", "-lc", stopAllDesktopBrowsersCommand()], context);
-    try {
-      yield* this.walkWorkspace(computer, "", context);
-    } finally {
-      if (context.operationId !== "stop" && context.operationId !== "computer.sleep") {
-        await this.launchBrowser(computer, reopenUri, context, { settleMs: 0 }).catch(
-          () => undefined,
-        );
-      }
+    // Run checkpoints and lifecycle updates share this export. Stopping the
+    // browser keeps a single tab URL, so only stop and sleep quiesce it.
+    if (context.operationId === "stop" || context.operationId === "computer.sleep") {
+      await this.executeChecked(
+        computer,
+        ["bash", "-lc", stopAllDesktopBrowsersCommand()],
+        context,
+      );
     }
+    yield* this.walkWorkspace(computer, "", context);
   }
 
   async importWorkspace(
@@ -522,12 +517,17 @@ print(json.dumps(out))
 
   async releaseScreen(computer: ComputerRef, context: AdapterContext): Promise<void> {
     const screenKey = screenSessionKey(context);
-    this.screenAssignments.get(computer.providerRef)?.delete(screenKey);
     const recorded = await this.readScreenMap(computer, context);
     const screenId = recorded[screenKey];
-    if (!screenId) return;
-    await this.runScreenMap(computer, "remove", screenKey, "", context);
+    if (!screenId) {
+      this.screenAssignments.get(computer.providerRef)?.delete(screenKey);
+      return;
+    }
+    // Keep the assignment until a non-primary screen is gone. Callers swallow
+    // DELETE failures, and a later release can retry only while the id remains.
     if (screenId !== "screen-0") await this.deleteScreen(computer, screenId, context);
+    await this.runScreenMap(computer, "remove", screenKey, "", context);
+    this.screenAssignments.get(computer.providerRef)?.delete(screenKey);
   }
 
   async stop(computer: ComputerRef, context: AdapterContext): Promise<void> {
@@ -551,7 +551,6 @@ print(json.dumps(out))
 
   private forget(id: string): void {
     this.screenAssignments.delete(id);
-    this.lastBrowserUris.delete(id);
   }
 
   private ref(id: string, botId: string, fresh: boolean): ComputerRef {
@@ -560,8 +559,8 @@ print(json.dumps(out))
 
   private async resolveScreen(computer: ComputerRef, context: AdapterContext): Promise<string> {
     const screenKey = screenSessionKey(context);
-    const cached = this.screenAssignments.get(computer.providerRef)?.get(screenKey);
-    if (cached) return cached;
+    // Another process can release and reassign this session. The shared map is
+    // the assignment; the process-local cache is only a copy of the last read.
     const recorded = await this.readScreenMap(computer, context);
     const existing = recorded[screenKey];
     if (existing) {
@@ -777,7 +776,6 @@ print(json.dumps(out))
     context: AdapterContext,
     options: { settleMs?: number } = {},
   ): Promise<void> {
-    this.lastBrowserUris.set(computer.providerRef, uri);
     if (await this.openBrowserTab(computer, uri, context)) {
       const settleMs = clampRounded(options.settleMs ?? 1_000, 0, 5_000);
       if (settleMs > 0) await delay(settleMs, undefined, { signal: context.signal });
@@ -880,31 +878,6 @@ raise SystemExit(1)
       3_000,
     );
     return (result.result?.exit_code ?? 1) === 0;
-  }
-
-  private async currentBrowserUri(
-    computer: ComputerRef,
-    context: AdapterContext,
-  ): Promise<string | undefined> {
-    const script = `
-import json, urllib.request
-with urllib.request.urlopen("http://127.0.0.1:9222/json", timeout=1) as response:
-    tabs = json.load(response)
-for tab in tabs:
-    url = tab.get("url", "")
-    if url.startswith(("http://", "https://", "about:")):
-        print(url)
-        break
-`;
-    const result = await this.runCommand(
-      computer,
-      { argv: ["python3", "-c", script] },
-      context,
-      3_000,
-    );
-    if ((result.result?.exit_code ?? 1) !== 0) return undefined;
-    const uri = result.result?.stdout?.trim();
-    return uri && /^(https?:\/\/|about:)/i.test(uri) ? uri : undefined;
   }
 
   private async putFile(computer: ComputerRef, file: PortableFile, context: AdapterContext) {
@@ -1272,7 +1245,9 @@ export function isAllowedCreateOSScreenUrl(resolved: URL, baseUrl: string): bool
   }
   if (!isAllowedCreateOSScreenHost(resolved.hostname, base.hostname)) return false;
   if (LOOPBACK_HOSTS.has(resolved.hostname)) return true;
-  return resolved.protocol === "https:" && (resolved.port === "" || resolved.port === "443");
+  if (resolved.protocol !== "https:") return false;
+  if (resolved.port === "" || resolved.port === "443") return true;
+  return resolved.hostname === base.hostname && resolved.port === base.port;
 }
 
 function isAllowedCreateOSScreenHost(hostname: string, baseHost: string): boolean {

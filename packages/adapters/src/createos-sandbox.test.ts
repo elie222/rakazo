@@ -48,7 +48,9 @@ function shellArgs(command: string): string[] {
 }
 
 /** Route-driven CreateOS control-plane double. Exec replies are keyed off the shell command. */
-function createosFixture(options: { statuses?: string[]; connectionUrl?: string } = {}) {
+function createosFixture(
+  options: { statuses?: string[]; connectionUrl?: string; failScreenDeletes?: number } = {},
+) {
   const statuses = [...(options.statuses ?? ["running"])];
   const calls: string[] = [];
   const execs: ExecCall[] = [];
@@ -57,6 +59,7 @@ function createosFixture(options: { statuses?: string[]; connectionUrl?: string 
     "screens.json",
   );
   let nextScreen = 1;
+  let screenDeleteFailures = options.failScreenDeletes ?? 0;
   const fetchImpl = (async (input: URL | RequestInfo, init?: RequestInit) => {
     const url = new URL(String(input));
     const method = init?.method ?? "GET";
@@ -104,6 +107,15 @@ function createosFixture(options: { statuses?: string[]; connectionUrl?: string 
       const screenId = `screen-${nextScreen}`;
       nextScreen += 1;
       return jsonResponse({ screen_id: screenId });
+    }
+    if (method === "DELETE" && /\/computer\/screens\/[^/]+$/.test(url.pathname)) {
+      if (screenDeleteFailures > 0) {
+        screenDeleteFailures -= 1;
+        return new Response(JSON.stringify({ status: "error", message: "unavailable" }), {
+          status: 500,
+          headers: { "content-type": "application/json" },
+        });
+      }
     }
     if (method === "GET" && url.pathname.endsWith("/connect")) {
       return jsonResponse(options.connectionUrl ? { url: options.connectionUrl, token: "t" } : {});
@@ -207,6 +219,35 @@ describe("CreateOSSandboxProvider", () => {
 
     expect(events.at(-1)).toEqual({ type: "exit", code: 124 });
     expect(events[0]).toMatchObject({ type: "stderr" });
+  });
+
+  it("exports a live checkpoint without stopping browsers", async () => {
+    const fixture = createosFixture();
+    const files: PortableFile[] = [];
+    for await (const file of provider(fixture).exportWorkspace(computer, {
+      ...context,
+      operationId: "run-1",
+    })) {
+      files.push(file);
+    }
+
+    expect(files.map((file) => file.path)).toEqual(["notes.txt"]);
+    expect(fixture.execs.some((exec) => exec.command.includes("chromium-bot-"))).toBe(false);
+    expect(fixture.execs.some((exec) => exec.command.includes("127.0.0.1:9222"))).toBe(false);
+  });
+
+  it.each(["stop", "computer.sleep"])("stops browsers when export is %s", async (operationId) => {
+    const fixture = createosFixture();
+    const files: PortableFile[] = [];
+    for await (const file of provider(fixture).exportWorkspace(computer, {
+      ...context,
+      operationId,
+    })) {
+      files.push(file);
+    }
+
+    expect(files.map((file) => file.path)).toEqual(["notes.txt"]);
+    expect(fixture.execs.some((exec) => exec.command.includes("chromium-bot-"))).toBe(true);
   });
 
   it("exports the workspace after a graphical action alone", async () => {
@@ -389,6 +430,17 @@ describe("CreateOSSandboxProvider", () => {
     ).rejects.toThrow(/host is not allowed/);
   });
 
+  it("accepts a relative screen path on the CreateOS base port", async () => {
+    const fixture = createosFixture({ connectionUrl: "/vnc.html" });
+    const session = await new CreateOSSandboxProvider({
+      apiKey: "test-key",
+      baseUrl: "https://sandbox.example.test:8443",
+      fetch: fixture.fetchImpl,
+    }).connectScreen(computer, { view: "stream" }, context);
+
+    expect(session.url?.startsWith("https://sandbox.example.test:8443/")).toBe(true);
+  });
+
   it("reuses one screen assignment across provider instances", async () => {
     const fixture = createosFixture({ connectionUrl: "/vnc.html" });
     const api = provider(fixture);
@@ -405,6 +457,49 @@ describe("CreateOSSandboxProvider", () => {
     expect(fixture.calls.filter((call) => call.endsWith("/computer/screens"))).toEqual([
       "POST /v1/sandboxes/sbx-1/computer/screens",
     ]);
+  });
+
+  it("does not reuse a released screen id from the process-local cache", async () => {
+    const fixture = createosFixture({ connectionUrl: "/vnc.html" });
+    const api = provider(fixture);
+    const worker = new CreateOSSandboxProvider({ apiKey: "test-key", fetch: fixture.fetchImpl });
+    const botA = { ...context, botId: "bot-a" };
+    const botB = { ...context, botId: "bot-b" };
+
+    await api.connectScreen(computer, { view: "stream" }, botA);
+    await worker.releaseScreen(computer, botA);
+    await worker.connectScreen(computer, { view: "stream" }, botB);
+    await api.connectScreen(computer, { view: "stream" }, botA);
+
+    expect(fixture.calls.filter((call) => call.endsWith("/computer/screens"))).toEqual([
+      "POST /v1/sandboxes/sbx-1/computer/screens",
+    ]);
+    expect(fixture.calls.at(-1)).toBe("GET /v1/sandboxes/sbx-1/computer/screens/screen-1/connect");
+  });
+
+  it("keeps a screen assignment when deletion fails so a later release can retry", async () => {
+    const fixture = createosFixture({ connectionUrl: "/vnc.html", failScreenDeletes: 1 });
+    const api = provider(fixture);
+    const worker = new CreateOSSandboxProvider({ apiKey: "test-key", fetch: fixture.fetchImpl });
+    const botA = { ...context, botId: "bot-a" };
+    const botB = { ...context, botId: "bot-b" };
+
+    await api.connectScreen(computer, { view: "stream" }, botA);
+    await api.connectScreen(computer, { view: "stream" }, botB);
+    await expect(api.releaseScreen(computer, botB)).rejects.toThrow(/unavailable/);
+
+    await worker.connectScreen(computer, { view: "stream" }, botB);
+    expect(
+      fixture.calls.filter((call) => call === "POST /v1/sandboxes/sbx-1/computer/screens"),
+    ).toHaveLength(1);
+    expect(fixture.calls.at(-1)).toBe("GET /v1/sandboxes/sbx-1/computer/screens/screen-1/connect");
+
+    await expect(worker.releaseScreen(computer, botB)).resolves.toBeUndefined();
+    expect(
+      fixture.calls.filter(
+        (call) => call === "DELETE /v1/sandboxes/sbx-1/computer/screens/screen-1",
+      ),
+    ).toHaveLength(2);
   });
 
   it("does not export the screen-assignment directory", async () => {
@@ -456,6 +551,25 @@ describe("CreateOS screen URL hosts", () => {
     "https://user:pass@sandbox.app.sb.createos.sh/vnc.html",
   ])("rejects %s", (value) => {
     expect(isAllowedCreateOSScreenUrl(new URL(value), base)).toBe(false);
+  });
+
+  it("allows the base URL hostname and port", () => {
+    const custom = "https://sandbox.example.test:8443";
+    expect(
+      isAllowedCreateOSScreenUrl(new URL("https://sandbox.example.test:8443/vnc.html"), custom),
+    ).toBe(true);
+    expect(
+      isAllowedCreateOSScreenUrl(new URL("https://sandbox.example.test/vnc.html"), custom),
+    ).toBe(true);
+    expect(
+      isAllowedCreateOSScreenUrl(
+        new URL("https://novnc.sandbox.example.test:8443/vnc.html"),
+        custom,
+      ),
+    ).toBe(false);
+    expect(
+      isAllowedCreateOSScreenUrl(new URL("https://sandbox.example.test:9443/vnc.html"), custom),
+    ).toBe(false);
   });
 
   it("keeps a custom base on that host and its subdomains", () => {
