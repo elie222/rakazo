@@ -74,6 +74,20 @@ function steersUserMessage(run: { status: string; trigger?: string | null }) {
   return STEERABLE_RUN_STATUSES.has(run.status) && isConversationalRun(run.trigger);
 }
 
+/** Free-text chat answers a conversational ask. A routine or webhook waiting for input is not one. */
+function answersWaitingInput(run: { status: string; trigger?: string | null }) {
+  return run.status === "waiting_input" && isConversationalRun(run.trigger);
+}
+
+/**
+ * Non-steerable active runs block the send so a pending ask is answered first. A routine or
+ * webhook `waiting_input` run is not that ask: it falls through to pending steering.
+ */
+function requiresAskAnswer(run: { status: string; trigger?: string | null }) {
+  if (STEERABLE_RUN_STATUSES.has(run.status)) return false;
+  return run.status !== "waiting_input" || isConversationalRun(run.trigger);
+}
+
 type MentionTargetInput = string | { kind: "bot" | "group" | "routine" | "connector"; id: string };
 
 function splitMentionTargets(mentions: MentionTargetInput[] | undefined) {
@@ -666,7 +680,7 @@ export async function sendThreadMessage(
           },
           select: { id: true, taskId: true, status: true, trigger: true },
         });
-        const waitingRuns = activeRuns.filter((run) => run.status === "waiting_input");
+        const waitingRuns = activeRuns.filter(answersWaitingInput);
         if (waitingRuns.length) {
           const answerText = input.text?.trim();
           if (!answerText) {
@@ -709,7 +723,7 @@ export async function sendThreadMessage(
           });
           return { message, runs: answered, eventSeq: event.seq };
         }
-        if (activeRuns.some((run) => !STEERABLE_RUN_STATUSES.has(run.status))) {
+        if (activeRuns.some(requiresAskAnswer)) {
           throw new ORPCError("CONFLICT", {
             message: "Answer the pending ask first.",
           });
@@ -828,7 +842,7 @@ export async function sendThreadMessage(
       const activeByBotId = new Map<string, (typeof activeRuns)[number]>();
       const answeredByBotId = new Map<string, Array<(typeof activeRuns)[number]>>();
       for (const run of activeRuns) {
-        if (run.status === "waiting_input") {
+        if (answersWaitingInput(run)) {
           const answerText = input.text?.trim();
           if (!answerText) {
             throw new ORPCError("CONFLICT", {
@@ -853,7 +867,7 @@ export async function sendThreadMessage(
           else answeredByBotId.set(run.botId, [queuedRun]);
           continue;
         }
-        if (!STEERABLE_RUN_STATUSES.has(run.status)) {
+        if (requiresAskAnswer(run)) {
           throw new ORPCError("CONFLICT", {
             message: "Answer the pending ask first.",
           });
