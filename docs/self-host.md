@@ -1,6 +1,6 @@
 # Self-hosting Rakazo
 
-The signed-in product is a long-running API, a Graphile Worker, Postgres, and a computer provider (Docker supervisor, E2B, Daytona, or Box). It is not a static site. The marketing site in `apps/www` can be hosted separately.
+The signed-in product is a long-running API, a Graphile Worker, Postgres, and a computer provider (Docker supervisor, E2B, Daytona, CreateOS, or Box). It is not a static site. The marketing site in `apps/www` can be hosted separately.
 
 ## Local (source checkout)
 
@@ -31,7 +31,7 @@ run `bash install-images.sh`. Flags may be combined in either order: `--prepare-
 `SANDBOX_PROVIDER` defaults to `docker`. The images Compose file runs a sandbox supervisor
 (from the app image, on the internal network only) and pulls `ghcr.io/elie222/rakazo/computer`.
 Signup and local Docker computers work without an E2B account. Optional remote providers: set
-`SANDBOX_PROVIDER` to `e2b`, `daytona`, or `box` and add the matching API key. The published-images
+`SANDBOX_PROVIDER` to `e2b`, `daytona`, `createos`, or `box` and add the matching API key. The published-images
 Compose stack requires `SANDBOX_SUPERVISOR_TOKEN` for every provider; leave it empty and `compose up` fails closed.
 
 Optional: set `OPENROUTER_API_KEY` or connect a model in the UI after signup.
@@ -181,7 +181,7 @@ Optional:
 ```env
 SIGNUPS_ENABLED=true
 SIGNUP_ALLOWLIST=you@example.com,@company.com
-SANDBOX_PROVIDER=docker   # or none, e2b, daytona, box. Keep fake only for pnpm test.
+SANDBOX_PROVIDER=docker   # or none, e2b, daytona, createos, box. Keep fake only for pnpm test.
 AGENT_RUNTIME=pi          # Keep scripted only for pnpm test.
 WAKEUP_DRIVER=graphile
 SANDBOX_IDLE_MS=600000    # pause the bot computer after 10 minutes idle
@@ -189,6 +189,7 @@ SANDBOX_COMMAND_TIMEOUT_MS=300000 # stop a shell command after 5 minutes
 MAX_TOOL_CALLS_PER_TURN=  # optional Pi turn tool-call fuse; unset/0 = unlimited
 E2B_API_KEY=              # when SANDBOX_PROVIDER=e2b
 DAYTONA_API_KEY=          # when SANDBOX_PROVIDER=daytona
+CREATEOS_SANDBOX_API_KEY= # when SANDBOX_PROVIDER=createos
 BOX_API_KEY=              # when SANDBOX_PROVIDER=box
 ```
 
@@ -245,7 +246,7 @@ The Electron desktop app is a client of the same API. Docker and E2B still apply
 
 - **Published images** (`docker-compose.images.yml`) default to `SANDBOX_PROVIDER=docker` with a
   local supervisor and published `ghcr.io/elie222/rakazo/computer` image. No E2B account required.
-  Optional: set `e2b`, `daytona`, or `box` plus the matching API key for remote computers.
+  Optional: set `e2b`, `daytona`, `createos`, or `box` plus the matching API key for remote computers.
 - **Docker** is the quick-start default for published images and for a source checkout / full local
   Compose stack. Workspace bots share a persistent Team Computer by default; Private computers are
   optional. Keep the supervisor private, as the included Compose files do.
@@ -254,6 +255,10 @@ The Electron desktop app is a client of the same API. Docker and E2B still apply
   `DATA_DIR`; the E2B disk is a runtime cache, not the durable source of truth.
 - **Daytona** provides the same remote-computer contract through Daytona sandboxes. Configure
   `DAYTONA_API_KEY` and optionally `DAYTONA_API_URL` / `DAYTONA_TARGET`.
+- **CreateOS** provides the same remote-computer contract through CreateOS desktop sandboxes.
+  Configure `CREATEOS_SANDBOX_API_KEY` and optionally `CREATEOS_SANDBOX_BASE_URL`,
+  `CREATEOS_SANDBOX_SHAPE`, or `CREATEOS_SANDBOX_ROOTFS`. Rakazo defaults to
+  `https://api.sb.createos.sh`, `s-2vcpu-2gb`, and `desktop:1`.
 - **Box by ASCII** provides a managed Linux desktop through `BOX_API_KEY` and optionally
   `BOX_API_URL`. Rakazo always creates or resumes boxes with `noEnv: true`, keeps the portable
   workspace under `/home/user/rakazo-home`, and refreshes a two-hour TTL. Box uses the shared Linux

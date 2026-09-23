@@ -43,6 +43,7 @@ import {
   resolveSandboxProvider,
   ScriptedAgentRuntime,
   SpaceMemoryProviderResolver,
+  sandboxProviderOptionsFromEnv,
 } from "@rakazo/adapters";
 import { resolveEncryptionKey, resolveSupervisorToken } from "@rakazo/core";
 import {
@@ -86,14 +87,9 @@ async function main() {
   const { key: deploymentModelKey } = resolveDeploymentModel();
   const sandboxProvider = resolveSandboxProvider(process.env);
   const sandbox = createRunSandbox(sandboxProvider, {
+    ...sandboxProviderOptionsFromEnv(process.env),
     supervisorUrl: process.env.SANDBOX_SUPERVISOR_URL ?? "http://127.0.0.1:7091",
     supervisorToken: sandboxProvider === "docker" ? resolveSupervisorToken(process.env) : undefined,
-    e2bApiKey: process.env.E2B_API_KEY,
-    daytonaApiKey: process.env.DAYTONA_API_KEY,
-    daytonaApiUrl: process.env.DAYTONA_API_URL,
-    daytonaTarget: process.env.DAYTONA_TARGET,
-    boxApiKey: process.env.BOX_API_KEY,
-    boxApiUrl: process.env.BOX_API_URL ?? process.env.BOX_BASE_URL,
     dataDir,
     prisma,
   });

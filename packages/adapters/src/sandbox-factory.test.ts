@@ -36,16 +36,23 @@ describe("createSandboxProvider", () => {
   it("boots without a remote key and keeps computers unavailable", async () => {
     expect(createSandboxProvider("e2b", {}).describe().id).toBe("none");
     expect(createSandboxProvider("daytona", {}).describe().id).toBe("none");
+    expect(createSandboxProvider("createos", {}).describe().id).toBe("none");
     expect(createSandboxProvider("box", {}).describe().id).toBe("none");
     await expect(
       createSandboxProvider("e2b", {}).provision({ botId: "b", homePath: "/tmp" }, ctx),
     ).rejects.toThrow(/E2B_API_KEY/);
+    await expect(
+      createSandboxProvider("createos", {}).provision({ botId: "b", homePath: "/tmp" }, ctx),
+    ).rejects.toThrow(/CREATEOS_SANDBOX_API_KEY/);
+    expect(
+      createSandboxProvider("createos", { createosApiKey: "test-createos-key" }).describe().id,
+    ).toBe("createos");
     expect(createSandboxProvider("box", { boxApiKey: "test-box-key" }).describe().id).toBe("box");
   });
 
   it("throws on unknown provider", () => {
     expect(() => createSandboxProvider("bogus", {})).toThrow(
-      'Unknown SANDBOX_PROVIDER "bogus". Use none | docker | e2b | daytona | box | e2b-emulator | daytona-emulator | box-emulator | desktop | fake.',
+      'Unknown SANDBOX_PROVIDER "bogus". Use none | docker | e2b | daytona | createos | box | e2b-emulator | daytona-emulator | box-emulator | desktop | fake.',
     );
   });
 });

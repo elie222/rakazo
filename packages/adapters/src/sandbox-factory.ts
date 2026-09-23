@@ -1,6 +1,7 @@
 import type { SandboxProvider } from "@rakazo/adapter-kit";
 import { BoxSandboxEmulator } from "./box-emulator.js";
 import { BoxSandboxProvider } from "./box-sandbox.js";
+import { CreateOSSandboxProvider } from "./createos-sandbox.js";
 import { DaytonaSandboxEmulator } from "./daytona-emulator.js";
 import { DaytonaSandboxProvider } from "./daytona-sandbox.js";
 import { DesktopSandboxProvider } from "./desktop-sandbox.js";
@@ -17,12 +18,19 @@ export interface SandboxProviderOptions {
   daytonaApiKey?: string;
   daytonaApiUrl?: string;
   daytonaTarget?: string;
+  createosApiKey?: string;
+  createosBaseUrl?: string;
+  createosShape?: string;
+  createosRootfs?: string;
   boxApiKey?: string;
   boxApiUrl?: string;
   dataDir?: string;
 }
 
-function missingRemoteKey(provider: "e2b" | "daytona" | "box", envName: string): SandboxProvider {
+function missingRemoteKey(
+  provider: "e2b" | "daytona" | "createos" | "box",
+  envName: string,
+): SandboxProvider {
   return new NoneSandboxProvider(
     `Computers unavailable: ${envName} is required for SANDBOX_PROVIDER=${provider}.`,
   );
@@ -42,6 +50,15 @@ export function createSandboxProvider(kind: string, opts: SandboxProviderOptions
         apiKey: opts.daytonaApiKey,
         apiUrl: opts.daytonaApiUrl,
         target: opts.daytonaTarget,
+      });
+    case "createos":
+      if (!opts.createosApiKey?.trim())
+        return missingRemoteKey("createos", "CREATEOS_SANDBOX_API_KEY");
+      return new CreateOSSandboxProvider({
+        apiKey: opts.createosApiKey,
+        baseUrl: opts.createosBaseUrl,
+        shape: opts.createosShape,
+        rootfs: opts.createosRootfs,
       });
     case "box":
       if (!opts.boxApiKey?.trim()) return missingRemoteKey("box", "BOX_API_KEY");
@@ -65,7 +82,7 @@ export function createSandboxProvider(kind: string, opts: SandboxProviderOptions
       return new FakeSandboxProvider();
     default:
       throw new Error(
-        `Unknown SANDBOX_PROVIDER "${kind}". Use none | docker | e2b | daytona | box | e2b-emulator | daytona-emulator | box-emulator | desktop | fake.`,
+        `Unknown SANDBOX_PROVIDER "${kind}". Use none | docker | e2b | daytona | createos | box | e2b-emulator | daytona-emulator | box-emulator | desktop | fake.`,
       );
   }
 }
