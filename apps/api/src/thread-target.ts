@@ -69,8 +69,9 @@ const STEERABLE_RUN_STATUSES = new Set(["queued", "leased", "running", "waiting_
  * A routine's or webhook's turn is its own prompt, not the conversation. A user message that
  * lands while one is busy (not `waiting_input`) is stored as pending steering (no run): that
  * run never claims it, and the continuation started when it finishes answers with the full
- * thread. A run already waiting for input is answered from the composer, including routine
- * and webhook asks, so that turn can resume.
+ * thread. Composer text answers a waiting ask, including a routine or webhook ask, only when
+ * no steerable conversational run is active. When one is, the text steers that run and the
+ * ask stays on its card.
  */
 function steersUserMessage(run: { status: string; trigger?: string | null }) {
   return STEERABLE_RUN_STATUSES.has(run.status) && isConversationalRun(run.trigger);
@@ -669,7 +670,7 @@ export async function sendThreadMessage(
           select: { id: true, taskId: true, status: true, trigger: true },
         });
         const waitingRuns = activeRuns.filter((run) => run.status === "waiting_input");
-        if (waitingRuns.length) {
+        if (waitingRuns.length && !activeRuns.some(steersUserMessage)) {
           const answerText = input.text?.trim();
           if (!answerText) {
             throw new ORPCError("CONFLICT", {
@@ -711,7 +712,11 @@ export async function sendThreadMessage(
           });
           return { message, runs: answered, eventSeq: event.seq };
         }
-        if (activeRuns.some((run) => !STEERABLE_RUN_STATUSES.has(run.status))) {
+        if (
+          activeRuns.some(
+            (run) => run.status !== "waiting_input" && !STEERABLE_RUN_STATUSES.has(run.status),
+          )
+        ) {
           throw new ORPCError("CONFLICT", {
             message: "Answer the pending ask first.",
           });
@@ -829,8 +834,12 @@ export async function sendThreadMessage(
       });
       const activeByBotId = new Map<string, (typeof activeRuns)[number]>();
       const answeredByBotId = new Map<string, Array<(typeof activeRuns)[number]>>();
+      const conversationalBotIds = new Set(
+        activeRuns.filter(steersUserMessage).map((run) => run.botId),
+      );
       for (const run of activeRuns) {
         if (run.status === "waiting_input") {
+          if (conversationalBotIds.has(run.botId)) continue;
           const answerText = input.text?.trim();
           if (!answerText) {
             throw new ORPCError("CONFLICT", {
