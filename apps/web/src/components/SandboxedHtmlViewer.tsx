@@ -1,5 +1,5 @@
 const SANDBOXED_CSP =
-  "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: https:; font-src data: https:;";
+  "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src data:;";
 
 /**
  * Wraps bot-authored HTML with a restrictive CSP before it's handed to an
@@ -8,7 +8,9 @@ const SANDBOXED_CSP =
  * gives the document an opaque origin that can't read this page's cookies or
  * storage or call back into Rakazo's API with credentials. The CSP is a
  * second layer on top: even within that opaque origin, block outbound
- * network requests a script might still attempt.
+ * network requests a script might still attempt. Images and fonts are
+ * limited to `data:` so opening a preview cannot fetch an author-controlled
+ * HTTPS URL (which would reveal the viewer's address to that server).
  */
 function withSandboxCsp(html: string): string {
   const meta = `<meta http-equiv="Content-Security-Policy" content="${SANDBOXED_CSP}">`;

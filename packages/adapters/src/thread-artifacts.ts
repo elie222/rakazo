@@ -79,8 +79,8 @@ export async function attachWorkspaceFileToThread(
       groupId: input.groupId,
       name,
     },
-    ({ rootArtifactId, version }) =>
-      deps.prisma.artifact.create({
+    (tx, { rootArtifactId, version }) =>
+      tx.artifact.create({
         data: {
           spaceId: input.spaceId,
           userId: input.userId,

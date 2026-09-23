@@ -40,18 +40,23 @@ export async function resolveNextArtifactVersion(
 
 const MAX_VERSION_ALLOCATION_ATTEMPTS = 5;
 
+type ArtifactVersionWrite = {
+  rootArtifactId: string | null;
+  version: number;
+};
+
 /**
- * `resolveNextArtifactVersion` reads then the caller writes — two concurrent
- * attachments (e.g. two overlapping `attach_file` calls, or a client retry)
- * can both resolve the same next version number. Rather than a lock held for
- * the whole read-modify-write (this spans storage I/O too, done inside
- * `create`), this relies on the DB's own uniqueness constraint on
- * (family, version) — see the artifact_version_uniqueness migration — as the
- * actual correctness guarantee, and retries on conflict: re-resolve (the
- * loser now sees the winner's row) and try again.
+ * `resolveNextArtifactVersion` reads then the caller writes. Two concurrent
+ * attachments can both observe "no previous row" and insert two version-1
+ * roots — the family/version unique index does not stop that, because each
+ * new root's family key is its own id. They can also both pick the same next
+ * version of an existing family. Storage I/O stays outside this function;
+ * the transaction only serializes the read and the insert, with a
+ * transaction-scoped advisory lock on the scope and name. The unique index
+ * remains the backstop for a same-family version clash, which is retried.
  */
 export async function withResolvedArtifactVersion<T>(
-  prisma: Pick<PrismaClient, "artifact">,
+  prisma: Pick<PrismaClient, "$transaction">,
   params: {
     spaceId: string;
     userId: string;
@@ -59,19 +64,44 @@ export async function withResolvedArtifactVersion<T>(
     groupId?: string | null;
     name: string;
   },
-  attempt: (version: { rootArtifactId: string | null; version: number }) => Promise<T>,
+  attempt: (
+    db: Pick<Prisma.TransactionClient, "artifact">,
+    version: ArtifactVersionWrite,
+  ) => Promise<T>,
 ): Promise<T> {
   let lastError: unknown;
   for (let i = 0; i < MAX_VERSION_ALLOCATION_ATTEMPTS; i++) {
-    const version = await resolveNextArtifactVersion(prisma, params);
     try {
-      return await attempt(version);
+      return await prisma.$transaction(async (tx) => {
+        await tx.$queryRaw(Prisma.sql`
+          SELECT pg_advisory_xact_lock(hashtextextended(${artifactVersionLockKey(params)}, 0))::text AS "lock"
+        `);
+        const version = await resolveNextArtifactVersion(tx, params);
+        return await attempt(tx, version);
+      });
     } catch (error) {
       if (!isArtifactVersionConflict(error)) throw error;
       lastError = error;
     }
   }
   throw lastError;
+}
+
+/** Same identity `resolveNextArtifactVersion` matches on, so concurrent publishes queue. */
+function artifactVersionLockKey(params: {
+  spaceId: string;
+  userId: string;
+  botId: string;
+  groupId?: string | null;
+  name: string;
+}): string {
+  return [
+    params.spaceId,
+    params.userId,
+    params.botId,
+    params.groupId ?? "",
+    params.name.toLowerCase(),
+  ].join("\u001f");
 }
 
 function isArtifactVersionConflict(error: unknown): boolean {

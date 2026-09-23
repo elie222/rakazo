@@ -11,7 +11,6 @@ import {
 } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { IsolationError, Prisma, withResolvedArtifactVersion } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
 
 function adapterContext(actor: Actor, botId: string, operationId: string) {
   return {
@@ -56,8 +55,8 @@ export async function createOwnedArtifact(
       groupId: input.groupId,
       name: input.name,
     },
-    ({ rootArtifactId, version }) =>
-      deps.prisma.artifact.create({
+    (tx, { rootArtifactId, version }) =>
+      tx.artifact.create({
         data: {
           spaceId: actor.spaceId,
           userId: actor.userId,
@@ -316,7 +315,14 @@ export async function listArtifactVersions(
   }));
 }
 
-/** Deletes a whole family — the root row and every version — plus their storage blobs. */
+/**
+ * Deletes a whole family — every version, then the root — and its storage
+ * blobs. Each blob is removed before its row so a storage failure still
+ * leaves the key in the database for a retry, and a returned success has
+ * neither an orphaned blob nor a row pointing at missing content. Versions
+ * go before the root: deleting the root cascades, which would drop version
+ * rows while their blobs were still stored.
+ */
 export async function deleteArtifactFamily(
   deps: { prisma: PrismaClient; artifacts: ArtifactStore },
   actor: Actor,
@@ -328,39 +334,70 @@ export async function deleteArtifactFamily(
   });
   if (!anchor) throw new IsolationError();
   const rootId = anchor.rootArtifactId ?? anchor.id;
-  const members = await deps.prisma.artifact.findMany({
-    where: {
-      spaceId: actor.spaceId,
-      userId: actor.userId,
-      OR: [{ id: rootId }, { rootArtifactId: rootId }],
-    },
-    select: { id: true, storageKey: true, botId: true },
+
+  // A version can be published while this is in progress. Re-read until the
+  // family is empty so that row is removed with its blob instead of being
+  // cascade-dropped when the root goes.
+  for (;;) {
+    const members = await deps.prisma.artifact.findMany({
+      where: {
+        spaceId: actor.spaceId,
+        userId: actor.userId,
+        OR: [{ id: rootId }, { rootArtifactId: rootId }],
+      },
+      select: { id: true, storageKey: true, botId: true },
+    });
+    if (members.length === 0) return { ok: true as const };
+    const member =
+      members.find((row) => row.id !== rootId) ?? members.find((row) => row.id === rootId);
+    if (!member) throw new IsolationError();
+    await deps.artifacts.remove(
+      member.storageKey,
+      adapterContext(actor, member.botId ?? member.id, `artifact-delete:${member.id}`),
+    );
+    if (member.id === rootId) {
+      const deferred = await deleteArtifactRootIfChildless(deps.prisma, rootId);
+      if (deferred) continue;
+    } else {
+      await deleteArtifactRowIfPresent(deps.prisma, member.id);
+    }
+  }
+}
+
+/** True when a new version appeared and the root row was left in place. */
+async function deleteArtifactRootIfChildless(
+  prisma: PrismaClient,
+  rootId: string,
+): Promise<boolean> {
+  let deferred = false;
+  await prisma.$transaction(async (tx) => {
+    const locked = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+      SELECT id FROM "artifacts" WHERE id = ${rootId} FOR UPDATE
+    `);
+    if (locked.length === 0) return;
+    const child = await tx.artifact.findFirst({
+      where: { rootArtifactId: rootId },
+      select: { id: true },
+    });
+    if (child) {
+      deferred = true;
+      return;
+    }
+    await tx.artifact.delete({ where: { id: rootId } });
   });
-  // Delete the DB rows first: that's the state the UI and the rest of the
-  // app treat as authoritative, so it must never survive a blob-removal
-  // failure (which would otherwise leave rows pointing at storage the app
-  // just told the user was gone). Deleting the root row cascades
-  // (onDelete: Cascade) to every version. Blob removal is best-effort
-  // cleanup after — a failure here is a storage leak, not a correctness
-  // problem, but it's logged rather than silently swallowed so it's
-  // discoverable.
-  await deps.prisma.artifact.delete({ where: { id: rootId } });
-  await Promise.all(
-    members.map((member) =>
-      deps.artifacts
-        .remove(
-          member.storageKey,
-          adapterContext(actor, member.botId ?? member.id, `artifact-delete:${member.id}`),
-        )
-        .catch((error) => {
-          getLogger().error("artifact blob cleanup failed after delete", error, {
-            "artifact.id": member.id,
-            "artifact.storageKey": member.storageKey,
-          });
-        }),
-    ),
-  );
-  return { ok: true as const };
+  return deferred;
+}
+
+async function deleteArtifactRowIfPresent(
+  prisma: Pick<PrismaClient, "artifact">,
+  id: string,
+): Promise<void> {
+  try {
+    await prisma.artifact.delete({ where: { id } });
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") return;
+    throw error;
+  }
 }
 
 type SendAttachmentRow = {

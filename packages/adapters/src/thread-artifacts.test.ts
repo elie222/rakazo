@@ -17,15 +17,18 @@ describe("current-turn thread files", () => {
   it("removes stored bytes when artifact metadata cannot be created", async () => {
     const remove = vi.fn().mockResolvedValue(undefined);
     const failure = new Error("database unavailable");
+    const artifact = {
+      findFirst: vi.fn().mockResolvedValue(null),
+      create: vi.fn().mockRejectedValue(failure),
+    };
+    const tx = { artifact, $queryRaw: vi.fn().mockResolvedValue([{ lock: "1" }]) };
 
     await expect(
       attachWorkspaceFileToThread(
         {
           prisma: {
-            artifact: {
-              findFirst: vi.fn().mockResolvedValue(null),
-              create: vi.fn().mockRejectedValue(failure),
-            },
+            artifact,
+            $transaction: async (run: (client: typeof tx) => Promise<unknown>) => run(tx),
           } as unknown as PrismaClient,
           artifacts: {
             put: vi.fn().mockResolvedValue({ id: "stored-1", hash: "hash" }),
