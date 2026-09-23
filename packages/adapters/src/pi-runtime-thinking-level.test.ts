@@ -306,8 +306,9 @@ describe("Pi agent thinking level", () => {
       provider: "openrouter",
       reasoning: true,
       contextWindow: 16_384,
-      // Marked as a reasoning model, so the ceiling has to cover thinking plus a reply.
-      maxTokens: REASONING_MODEL_MAX_TOKENS,
+      // Marked as a reasoning model, so the ceiling has to cover thinking plus a
+      // reply, and it can never outgrow the window this placeholder assumes.
+      maxTokens: Math.min(REASONING_MODEL_MAX_TOKENS, 16_384),
     });
     // Unknown OpenRouter PI_DEFAULT_MODEL must not force thinking off (#114).
     expect(levels).toEqual(["medium", "medium"]);

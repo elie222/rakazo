@@ -489,6 +489,8 @@ function configuredOpenRouterModel(id: string): Model<"openai-completions"> {
   // thinkingLevel "off" becomes effort "none" which those endpoints reject.
   // The output ceiling follows from that reasoning flag: a 4k placeholder would
   // clamp the reasoning budget back to a size the thinking alone can consume.
+  // It cannot outgrow the conservative window this placeholder also assumes.
+  const contextWindow = 16_384;
   return {
     id,
     name: id,
@@ -498,8 +500,8 @@ function configuredOpenRouterModel(id: string): Model<"openai-completions"> {
     reasoning: true,
     input: ["text"],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    contextWindow: 16_384,
-    maxTokens: REASONING_MODEL_MAX_TOKENS,
+    contextWindow,
+    maxTokens: Math.min(REASONING_MODEL_MAX_TOKENS, contextWindow),
   };
 }
 
