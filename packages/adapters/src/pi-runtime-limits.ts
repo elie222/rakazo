@@ -62,18 +62,30 @@ export function billedPromptTokens(usage: {
 }
 
 /**
+ * A reasoning model spends this same budget on its thinking, so the modest default
+ * can be consumed before the reply starts. Wide enough for thinking plus an answer,
+ * still far below a model card's 128k ceiling.
+ */
+export const REASONING_MODEL_MAX_TOKENS = 32_768;
+
+/**
  * Completions default to a modest output cap so OpenRouter-style providers do not
  * hold credit for a model card's 128k ceiling. A configured maxTokens is the escape.
+ * Reasoning models get the wider default because their thinking is billed against
+ * the same ceiling: at 4k a hard question can leave no room for the reply at all.
  */
 export function resolveCompletionMaxTokens(
   modelMaxTokens?: number,
   configuredMaxTokens?: number,
   optionsMaxTokens?: number,
+  reasoning?: boolean,
 ): number {
   const userCap =
     typeof configuredMaxTokens === "number" && configuredMaxTokens >= 1
       ? configuredMaxTokens
-      : DEFAULT_MODEL_MAX_TOKENS;
+      : reasoning
+        ? REASONING_MODEL_MAX_TOKENS
+        : DEFAULT_MODEL_MAX_TOKENS;
   const optionCap =
     typeof optionsMaxTokens === "number" && optionsMaxTokens >= 1
       ? Math.min(optionsMaxTokens, userCap)

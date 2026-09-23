@@ -4,6 +4,7 @@ import {
   billedPromptTokens,
   clipToolResultContent,
   clipToolResultText,
+  REASONING_MODEL_MAX_TOKENS,
   resolveCompletionMaxTokens,
   TOOL_RESULT_TEXT_LIMIT,
 } from "./pi-runtime-limits.js";
@@ -52,6 +53,21 @@ describe("resolveCompletionMaxTokens", () => {
   it("clamps an agent-supplied options maxTokens to the user cap", () => {
     expect(resolveCompletionMaxTokens(128_000, undefined, 128_000)).toBe(DEFAULT_MODEL_MAX_TOKENS);
     expect(resolveCompletionMaxTokens(128_000, 16_384, 128_000)).toBe(16_384);
+  });
+
+  it("gives a reasoning model room for thinking and a reply", () => {
+    expect(resolveCompletionMaxTokens(128_000, undefined, undefined, true)).toBe(
+      REASONING_MODEL_MAX_TOKENS,
+    );
+    // A smaller model ceiling still wins.
+    expect(resolveCompletionMaxTokens(8_192, undefined, undefined, true)).toBe(8_192);
+  });
+
+  it("keeps the configured cap and the non-reasoning default intact", () => {
+    expect(resolveCompletionMaxTokens(128_000, 8_192, undefined, true)).toBe(8_192);
+    expect(resolveCompletionMaxTokens(128_000, undefined, undefined, false)).toBe(
+      DEFAULT_MODEL_MAX_TOKENS,
+    );
   });
 });
 

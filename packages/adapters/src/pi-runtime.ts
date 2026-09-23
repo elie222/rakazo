@@ -1717,7 +1717,12 @@ function endToolCall(host: ToolHost) {
 }
 
 function modelForCompletion(model: Model<Api>, configuredMaxTokens?: number): Model<Api> {
-  const maxTokens = resolveCompletionMaxTokens(model.maxTokens, configuredMaxTokens);
+  const maxTokens = resolveCompletionMaxTokens(
+    model.maxTokens,
+    configuredMaxTokens,
+    undefined,
+    model.reasoning,
+  );
   if (maxTokens === model.maxTokens) return model;
   return { ...model, maxTokens };
 }
@@ -1777,7 +1782,7 @@ function createQueue(): EventQueue {
 }
 
 export function reliableStreamOptions(
-  model: Pick<Model<Api>, "api" | "provider" | "maxTokens">,
+  model: Pick<Model<Api>, "api" | "provider" | "maxTokens" | "reasoning">,
   options?: SimpleStreamOptions,
   configuredMaxTokens?: number,
 ): SimpleStreamOptions {
@@ -1785,7 +1790,12 @@ export function reliableStreamOptions(
     ...options,
     timeoutMs: options?.timeoutMs ?? MODEL_STREAM_TIMEOUT_MS,
     maxRetries: options?.maxRetries ?? MODEL_STREAM_MAX_RETRIES,
-    maxTokens: resolveCompletionMaxTokens(model.maxTokens, configuredMaxTokens, options?.maxTokens),
+    maxTokens: resolveCompletionMaxTokens(
+      model.maxTokens,
+      configuredMaxTokens,
+      options?.maxTokens,
+      model.reasoning,
+    ),
   };
 
   if (model.provider === "openai-codex" || model.api === "openai-codex-responses") {
