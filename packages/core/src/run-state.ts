@@ -10,8 +10,9 @@ export const ACTIVE_RUN_STATUSES = [
 const TERMINAL: RunStatus[] = ["completed", "failed", "cancelled"];
 /**
  * Runs whose turn is not the thread's conversation: a scheduled routine or an inbound webhook.
- * A user message never steers into one of these; it stays pending and gets its own turn, with the
- * full thread, once the run has finished.
+ * A user message never steers into one of these while it is busy; it stays pending and gets its
+ * own turn, with the full thread, once the run has finished. A `waiting_input` ask is answered
+ * from the composer instead, so the run can resume.
  */
 const NON_CONVERSATIONAL_RUN_TRIGGERS = new Set(["routine", "webhook"]);
 

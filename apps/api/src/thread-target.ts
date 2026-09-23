@@ -67,25 +67,13 @@ const RUNS_NEEDING_CONTINUE = new Set(["queued", "waiting_takeover"]);
 const STEERABLE_RUN_STATUSES = new Set(["queued", "leased", "running", "waiting_takeover"]);
 /**
  * A routine's or webhook's turn is its own prompt, not the conversation. A user message that
- * lands while one is active is stored as pending steering (no run): that run never claims it,
- * and the continuation started when it finishes answers with the full thread.
+ * lands while one is busy (not `waiting_input`) is stored as pending steering (no run): that
+ * run never claims it, and the continuation started when it finishes answers with the full
+ * thread. A run already waiting for input is answered from the composer, including routine
+ * and webhook asks, so that turn can resume.
  */
 function steersUserMessage(run: { status: string; trigger?: string | null }) {
   return STEERABLE_RUN_STATUSES.has(run.status) && isConversationalRun(run.trigger);
-}
-
-/** Free-text chat answers a conversational ask. A routine or webhook waiting for input is not one. */
-function answersWaitingInput(run: { status: string; trigger?: string | null }) {
-  return run.status === "waiting_input" && isConversationalRun(run.trigger);
-}
-
-/**
- * Non-steerable active runs block the send so a pending ask is answered first. A routine or
- * webhook `waiting_input` run is not that ask: it falls through to pending steering.
- */
-function requiresAskAnswer(run: { status: string; trigger?: string | null }) {
-  if (STEERABLE_RUN_STATUSES.has(run.status)) return false;
-  return run.status !== "waiting_input" || isConversationalRun(run.trigger);
 }
 
 type MentionTargetInput = string | { kind: "bot" | "group" | "routine" | "connector"; id: string };
@@ -680,7 +668,7 @@ export async function sendThreadMessage(
           },
           select: { id: true, taskId: true, status: true, trigger: true },
         });
-        const waitingRuns = activeRuns.filter(answersWaitingInput);
+        const waitingRuns = activeRuns.filter((run) => run.status === "waiting_input");
         if (waitingRuns.length) {
           const answerText = input.text?.trim();
           if (!answerText) {
@@ -723,7 +711,7 @@ export async function sendThreadMessage(
           });
           return { message, runs: answered, eventSeq: event.seq };
         }
-        if (activeRuns.some(requiresAskAnswer)) {
+        if (activeRuns.some((run) => !STEERABLE_RUN_STATUSES.has(run.status))) {
           throw new ORPCError("CONFLICT", {
             message: "Answer the pending ask first.",
           });
@@ -842,7 +830,7 @@ export async function sendThreadMessage(
       const activeByBotId = new Map<string, (typeof activeRuns)[number]>();
       const answeredByBotId = new Map<string, Array<(typeof activeRuns)[number]>>();
       for (const run of activeRuns) {
-        if (answersWaitingInput(run)) {
+        if (run.status === "waiting_input") {
           const answerText = input.text?.trim();
           if (!answerText) {
             throw new ORPCError("CONFLICT", {
@@ -867,7 +855,7 @@ export async function sendThreadMessage(
           else answeredByBotId.set(run.botId, [queuedRun]);
           continue;
         }
-        if (requiresAskAnswer(run)) {
+        if (!STEERABLE_RUN_STATUSES.has(run.status)) {
           throw new ORPCError("CONFLICT", {
             message: "Answer the pending ask first.",
           });
