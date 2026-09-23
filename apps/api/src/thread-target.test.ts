@@ -981,9 +981,11 @@ describe("sendThreadMessage", () => {
         update: vi.fn(),
       },
       run: {
-        findMany: vi.fn().mockResolvedValue([
-          { id: "run-waiting", taskId: "task-1", status: "waiting_input", trigger: "user" },
-        ]),
+        findMany: vi
+          .fn()
+          .mockResolvedValue([
+            { id: "run-waiting", taskId: "task-1", status: "waiting_input", trigger: "user" },
+          ]),
         findFirst: vi.fn().mockResolvedValue({ botId: "bot-1", userId: "user-1" }),
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
         findUnique: vi.fn().mockResolvedValue({ status: "queued" }),
