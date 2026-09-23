@@ -208,6 +208,54 @@ type ListSpaceRow = {
   versionCount: bigint | number;
 };
 
+export class ArtifactListCursorError extends Error {
+  constructor() {
+    super("Invalid artifact cursor");
+    this.name = "ArtifactListCursorError";
+  }
+}
+
+type ArtifactListCursor = {
+  createdAt: string;
+  id: string;
+  /** Bot filter the page was issued under. Null is the unfiltered space list. */
+  botId: string | null;
+};
+
+const ARTIFACT_LIST_CURSOR_PREFIX = "v1.";
+
+function encodeArtifactListCursor(cursor: ArtifactListCursor): string {
+  return (
+    ARTIFACT_LIST_CURSOR_PREFIX + Buffer.from(JSON.stringify(cursor), "utf8").toString("base64url")
+  );
+}
+
+function decodeArtifactListCursor(value: string): ArtifactListCursor {
+  if (!value.startsWith(ARTIFACT_LIST_CURSOR_PREFIX)) throw new ArtifactListCursorError();
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(
+      Buffer.from(value.slice(ARTIFACT_LIST_CURSOR_PREFIX.length), "base64url").toString("utf8"),
+    );
+  } catch {
+    throw new ArtifactListCursorError();
+  }
+  if (typeof parsed !== "object" || parsed === null) throw new ArtifactListCursorError();
+  const record = parsed as Record<string, unknown>;
+  if (typeof record.createdAt !== "string" || typeof record.id !== "string" || !record.id) {
+    throw new ArtifactListCursorError();
+  }
+  const botId = cursorBotId(record.botId);
+  const createdAt = new Date(record.createdAt);
+  if (Number.isNaN(createdAt.getTime())) throw new ArtifactListCursorError();
+  return { createdAt: createdAt.toISOString(), id: record.id, botId };
+}
+
+function cursorBotId(value: unknown): string | null {
+  if (value === null || typeof value === "string") return value;
+  throw new ArtifactListCursorError();
+}
+
 /**
  * One row per family (the latest version's info), collapsed and paginated in
  * the database via a `DISTINCT ON` + keyset cursor — not a bounded raw fetch
@@ -221,19 +269,16 @@ export async function listSpaceArtifacts(
   input: { botId?: string; cursor?: string; limit?: number },
 ) {
   const take = Math.min(Math.max(input.limit ?? 30, 1), 60);
-  const botFilter = input.botId ? Prisma.sql`AND "botId" = ${input.botId}` : Prisma.empty;
+  const scopeBotId = input.botId ?? null;
+  const botFilter = scopeBotId ? Prisma.sql`AND "botId" = ${scopeBotId}` : Prisma.empty;
 
   let cursorFilter = Prisma.empty;
   if (input.cursor) {
-    // A cursor that isn't one of the caller's own rows (foreign/stale) is
-    // ignored rather than erroring — same as returning the first page again.
-    const cursorRow = await deps.prisma.artifact.findFirst({
-      where: { id: input.cursor, spaceId: actor.spaceId, userId: actor.userId },
-      select: { createdAt: true },
-    });
-    if (cursorRow) {
-      cursorFilter = Prisma.sql`AND (latest."createdAt", latest.id) < (${cursorRow.createdAt}, ${input.cursor})`;
-    }
+    // The position is carried in the cursor. Looking the row up again would
+    // drop the filter when that version is deleted and replay the first page.
+    const cursor = decodeArtifactListCursor(input.cursor);
+    if (cursor.botId !== scopeBotId) throw new ArtifactListCursorError();
+    cursorFilter = Prisma.sql`AND (latest."createdAt", latest.id) < (${new Date(cursor.createdAt)}, ${cursor.id})`;
   }
 
   const rows = await deps.prisma.$queryRaw<ListSpaceRow[]>(Prisma.sql`
@@ -265,6 +310,7 @@ export async function listSpaceArtifacts(
 
   const hasMore = rows.length > take;
   const page = hasMore ? rows.slice(0, take) : rows;
+  const last = page.at(-1);
 
   return {
     // `id` is the family's stable root id — never the version row that
@@ -283,7 +329,14 @@ export async function listSpaceArtifacts(
       versionCount: Number(row.versionCount),
       createdAt: row.createdAt.toISOString(),
     })),
-    nextCursor: hasMore ? (page.at(-1)?.id ?? null) : null,
+    nextCursor:
+      hasMore && last
+        ? encodeArtifactListCursor({
+            createdAt: last.createdAt.toISOString(),
+            id: last.id,
+            botId: scopeBotId,
+          })
+        : null,
   };
 }
 
@@ -315,13 +368,20 @@ export async function listArtifactVersions(
   }));
 }
 
+type ArtifactMember = { id: string; storageKey: string; botId: string | null };
+
 /**
  * Deletes a whole family — every version, then the root — and its storage
  * blobs. Each blob is removed before its row so a storage failure still
- * leaves the key in the database for a retry, and a returned success has
- * neither an orphaned blob nor a row pointing at missing content. Versions
- * go before the root: deleting the root cascades, which would drop version
- * rows while their blobs were still stored.
+ * leaves the key in the database for a retry. A missing blob is success, so
+ * a retry after a crash between those two steps can finish. Versions go
+ * before the root: deleting the root cascades and would drop version rows
+ * while their blobs were still stored.
+ *
+ * The root blob is removed only while its row is locked and no child version
+ * exists. A publish inserts a child that references the root, which waits on
+ * that lock, so it cannot land in the gap between "no children" and the
+ * blob delete and leave the root row pointing at missing storage.
  */
 export async function deleteArtifactFamily(
   deps: { prisma: PrismaClient; artifacts: ArtifactStore },
@@ -335,9 +395,6 @@ export async function deleteArtifactFamily(
   if (!anchor) throw new IsolationError();
   const rootId = anchor.rootArtifactId ?? anchor.id;
 
-  // A version can be published while this is in progress. Re-read until the
-  // family is empty so that row is removed with its blob instead of being
-  // cascade-dropped when the root goes.
   for (;;) {
     const members = await deps.prisma.artifact.findMany({
       where: {
@@ -348,44 +405,88 @@ export async function deleteArtifactFamily(
       select: { id: true, storageKey: true, botId: true },
     });
     if (members.length === 0) return { ok: true as const };
-    const member =
-      members.find((row) => row.id !== rootId) ?? members.find((row) => row.id === rootId);
-    if (!member) throw new IsolationError();
-    await deps.artifacts.remove(
-      member.storageKey,
-      adapterContext(actor, member.botId ?? member.id, `artifact-delete:${member.id}`),
-    );
-    if (member.id === rootId) {
-      const deferred = await deleteArtifactRootIfChildless(deps.prisma, rootId);
-      if (deferred) continue;
-    } else {
-      await deleteArtifactRowIfPresent(deps.prisma, member.id);
+    const child = members.find((row) => row.id !== rootId);
+    if (child) {
+      await removeArtifactBlob(deps.artifacts, actor, child);
+      await deleteArtifactRowIfPresent(deps.prisma, child.id);
+      continue;
     }
+    const root = members.find((row) => row.id === rootId);
+    if (!root) throw new IsolationError();
+    const outcome = await deleteArtifactRootIfChildless(deps, actor, root);
+    if (outcome === "has-child") continue;
+    return { ok: true as const };
   }
 }
 
-/** True when a new version appeared and the root row was left in place. */
+/**
+ * Removes the root only when it still has no versions. `has-child` means a
+ * version appeared and the root blob was left untouched.
+ */
 async function deleteArtifactRootIfChildless(
-  prisma: PrismaClient,
-  rootId: string,
-): Promise<boolean> {
-  let deferred = false;
-  await prisma.$transaction(async (tx) => {
+  deps: { prisma: PrismaClient; artifacts: ArtifactStore },
+  actor: Actor,
+  root: ArtifactMember,
+): Promise<"deleted" | "gone" | "has-child"> {
+  let outcome: "deleted" | "gone" | "has-child" = "gone";
+  await deps.prisma.$transaction(async (tx) => {
     const locked = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
-      SELECT id FROM "artifacts" WHERE id = ${rootId} FOR UPDATE
+      SELECT id FROM "artifacts" WHERE id = ${root.id} FOR UPDATE
     `);
-    if (locked.length === 0) return;
+    if (locked.length === 0) {
+      outcome = "gone";
+      return;
+    }
     const child = await tx.artifact.findFirst({
-      where: { rootArtifactId: rootId },
+      where: { rootArtifactId: root.id },
       select: { id: true },
     });
     if (child) {
-      deferred = true;
+      outcome = "has-child";
       return;
     }
-    await tx.artifact.delete({ where: { id: rootId } });
+    await removeArtifactBlob(deps.artifacts, actor, root);
+    try {
+      await tx.artifact.delete({ where: { id: root.id } });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") {
+        outcome = "gone";
+        return;
+      }
+      throw error;
+    }
+    outcome = "deleted";
   });
-  return deferred;
+  return outcome;
+}
+
+async function removeArtifactBlob(
+  artifacts: ArtifactStore,
+  actor: Actor,
+  member: ArtifactMember,
+): Promise<void> {
+  try {
+    await artifacts.remove(
+      member.storageKey,
+      adapterContext(actor, member.botId ?? member.id, `artifact-delete:${member.id}`),
+    );
+  } catch (error) {
+    if (isAlreadyRemoved(error)) return;
+    throw error;
+  }
+}
+
+function isAlreadyRemoved(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  const code = "code" in error ? error.code : undefined;
+  const name = "name" in error ? error.name : undefined;
+  return (
+    code === "ENOENT" ||
+    code === "ENOTDIR" ||
+    code === "NoSuchKey" ||
+    name === "NotFound" ||
+    name === "NoSuchKey"
+  );
 }
 
 async function deleteArtifactRowIfPresent(

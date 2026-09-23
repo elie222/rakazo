@@ -142,6 +142,7 @@ import { deleteAgentSecret, listAgentSecrets, putAgentSecret } from "./agent-sec
 import { createAgentSkillsService } from "./agent-skills.js";
 import { aiConsentStatus, allowAiConsent } from "./ai-consent.js";
 import {
+  ArtifactListCursorError,
   createOwnedArtifact,
   deleteArtifactFamily,
   getOwnedArtifact,
@@ -4469,7 +4470,14 @@ export function createRouter(deps: RouterDeps) {
       }),
       listSpace: authed.artifacts.listSpace.handler(async ({ context, input }) => {
         if (input.botId) await repos.getBot(context.actor, input.botId);
-        return listSpaceArtifacts(deps, context.actor, input);
+        try {
+          return await listSpaceArtifacts(deps, context.actor, input);
+        } catch (error) {
+          if (error instanceof ArtifactListCursorError) {
+            throw new ORPCError("BAD_REQUEST", { message: error.message });
+          }
+          throw error;
+        }
       }),
       listVersions: authed.artifacts.listVersions.handler(async ({ context, input }) => {
         return listArtifactVersions(deps, context.actor, input);

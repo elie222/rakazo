@@ -2,7 +2,7 @@ import type { ArtifactStore } from "@rakazo/adapter-kit";
 import type { Actor } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
-import { deleteArtifactFamily, listSpaceArtifacts } from "./artifacts.js";
+import { ArtifactListCursorError, deleteArtifactFamily, listSpaceArtifacts } from "./artifacts.js";
 
 const actor: Actor = {
   userId: "user-1",
@@ -11,7 +11,7 @@ const actor: Actor = {
   isDeploymentOwner: false,
 };
 
-function listRow(id: string, familyId: string) {
+function listRow(id: string, familyId: string, createdAt = "2026-09-01T00:00:00.000Z") {
   return {
     id,
     familyId,
@@ -23,9 +23,13 @@ function listRow(id: string, familyId: string) {
     mimeType: "text/markdown",
     size: 12,
     version: 1,
-    createdAt: new Date("2026-09-01T00:00:00.000Z"),
+    createdAt: new Date(createdAt),
     versionCount: 1,
   };
+}
+
+function cursor(input: { createdAt: string; id: string; botId: string | null }) {
+  return `v1.${Buffer.from(JSON.stringify(input), "utf8").toString("base64url")}`;
 }
 
 describe("listSpaceArtifacts", () => {
@@ -55,12 +59,18 @@ describe("listSpaceArtifacts", () => {
     expect(text).not.toMatch(/\b500\b/);
     expect(sql.values).toContain(3);
     expect(page.items.map((item) => item.id)).toEqual(["family-a", "family-b"]);
-    expect(page.nextCursor).toBe("version-b");
+    expect(page.nextCursor).toBe(
+      cursor({ createdAt: "2026-09-01T00:00:00.000Z", id: "version-b", botId: null }),
+    );
   });
 
-  it("applies a keyset cursor from a caller-owned row", async () => {
-    const createdAt = new Date("2026-08-01T00:00:00.000Z");
-    const findFirst = vi.fn().mockResolvedValue({ createdAt });
+  it("keeps paging from a cursor whose row was deleted", async () => {
+    const pageCursor = cursor({
+      createdAt: "2026-08-01T00:00:00.000Z",
+      id: "version-b",
+      botId: null,
+    });
+    const findFirst = vi.fn();
     const queryRaw = vi.fn().mockResolvedValue([]);
     await listSpaceArtifacts(
       {
@@ -70,16 +80,63 @@ describe("listSpaceArtifacts", () => {
         >,
       },
       actor,
-      { cursor: "version-b", limit: 2 },
+      { cursor: pageCursor, limit: 2 },
     );
 
-    expect(findFirst).toHaveBeenCalledWith({
-      where: { id: "version-b", spaceId: "space-1", userId: "user-1" },
-      select: { createdAt: true },
-    });
+    expect(findFirst).not.toHaveBeenCalled();
     const sql = queryRaw.mock.calls[0]?.[0] as { strings: string[]; values: unknown[] };
     expect(sql.strings.join(" ")).toContain('latest."createdAt", latest.id');
-    expect(sql.values).toContain(createdAt);
+    expect(sql.values).toContainEqual(new Date("2026-08-01T00:00:00.000Z"));
+    expect(sql.values).toContain("version-b");
+  });
+
+  it("rejects a cursor from a different bot filter instead of replaying the first page", async () => {
+    const queryRaw = vi.fn();
+    await expect(
+      listSpaceArtifacts(
+        {
+          prisma: { artifact: { findFirst: vi.fn() }, $queryRaw: queryRaw } as unknown as Pick<
+            PrismaClient,
+            "artifact" | "$queryRaw"
+          >,
+        },
+        actor,
+        {
+          botId: "bot-2",
+          cursor: cursor({
+            createdAt: "2026-08-01T00:00:00.000Z",
+            id: "version-b",
+            botId: "bot-1",
+          }),
+        },
+      ),
+    ).rejects.toBeInstanceOf(ArtifactListCursorError);
+    expect(queryRaw).not.toHaveBeenCalled();
+  });
+
+  it("applies a bot-scoped cursor with that bot filter", async () => {
+    const queryRaw = vi.fn().mockResolvedValue([]);
+    const pageCursor = cursor({
+      createdAt: "2026-08-01T00:00:00.000Z",
+      id: "version-b",
+      botId: "bot-1",
+    });
+    await listSpaceArtifacts(
+      {
+        prisma: { artifact: { findFirst: vi.fn() }, $queryRaw: queryRaw } as unknown as Pick<
+          PrismaClient,
+          "artifact" | "$queryRaw"
+        >,
+      },
+      actor,
+      { botId: "bot-1", cursor: pageCursor, limit: 2 },
+    );
+
+    const sql = queryRaw.mock.calls[0]?.[0] as { strings: string[]; values: unknown[] };
+    const text = sql.strings.join(" ");
+    expect(text).toContain('"botId"');
+    expect(text).not.toContain('"botId" IS NULL');
+    expect(sql.values).toContain("bot-1");
     expect(sql.values).toContain("version-b");
   });
 });
@@ -171,7 +228,7 @@ describe("deleteArtifactFamily", () => {
     expect(client.calls).toEqual([]);
   });
 
-  it("does not drop a version published before the root row is deleted", async () => {
+  it("does not remove the root blob when a version appears before the root is deleted", async () => {
     const client = familyClient([
       [{ id: "root", storageKey: "blob-root", botId: "bot-1" }],
       [
@@ -196,11 +253,32 @@ describe("deleteArtifactFamily", () => {
     );
 
     expect(client.calls).toEqual([
-      "remove:blob-root",
       "remove:blob-v2",
       "delete:v2",
       "remove:blob-root",
       "delete:root",
     ]);
+  });
+
+  it("finishes a retry when the blob was already removed", async () => {
+    const client = familyClient([[{ id: "root", storageKey: "blob-root", botId: "bot-1" }]]);
+    const remove = vi.fn(async (id: string) => {
+      client.calls.push(`remove:${id}`);
+      const missing = new Error("missing");
+      Object.assign(missing, { code: "ENOENT" });
+      throw missing;
+    });
+
+    await expect(
+      deleteArtifactFamily(
+        {
+          prisma: client.prisma,
+          artifacts: { remove } as unknown as ArtifactStore,
+        },
+        actor,
+        { familyId: "root" },
+      ),
+    ).resolves.toEqual({ ok: true });
+    expect(client.calls).toEqual(["remove:blob-root", "delete:root"]);
   });
 });
