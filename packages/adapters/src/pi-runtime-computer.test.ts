@@ -228,6 +228,46 @@ describe("Pi computer tool dispatch", () => {
     expect(pruneStalePageStateContext(messages)).toBe(messages);
   });
 
+  it.each(["thrown", "returned"])("does not count a long %s error as a fresh page", (kind) => {
+    const failure = {
+      ...pageResult("error", "browser_act", `Action failed: ${"diagnostic ".repeat(150)}`),
+      isError: kind === "thrown",
+      details: kind === "returned" ? { error: "action failed" } : undefined,
+    };
+    const messages = [
+      pageResult("s1", "browser_snapshot"),
+      pageResult("s2", "computer_observe"),
+      pageResult("s3", "browser_snapshot"),
+      failure,
+    ];
+    expect(pruneStalePageStateContext(messages)).toBe(messages);
+  });
+
+  it.each(["thrown", "returned"])(
+    "keeps an old long %s error while trimming stale pages",
+    (kind) => {
+      const failure = {
+        ...pageResult("error", "computer_act", `Action failed: ${"diagnostic ".repeat(150)}`),
+        isError: kind === "thrown",
+        details: kind === "returned" ? { error: "action failed" } : undefined,
+      };
+      const messages = [
+        failure,
+        ...["s1", "s2", "s3", "s4"].map((id) => pageResult(id, "browser_snapshot")),
+      ];
+      const pruned = pruneStalePageStateContext(messages);
+      expect(pruned[0]).toBe(failure);
+      expect(pruned[1]).toMatchObject({
+        toolCallId: "s1",
+        content: [{ type: "text", text: expect.stringContaining("trimmed to save context") }],
+      });
+      expect(pruned.slice(2)).toEqual(messages.slice(2));
+      expect(messages[1]?.content).toEqual([
+        { type: "text", text: expect.stringContaining("page s1") },
+      ]);
+    },
+  );
+
   it("keeps the two latest computer screenshots by default", () => {
     const messages = ["frame-1", "frame-2", "frame-3"].map((frameId) => ({
       role: "toolResult" as const,

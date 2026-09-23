@@ -1317,6 +1317,9 @@ export function pruneStalePageStateContext(
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
     if (message?.role !== "toolResult" || !PAGE_STATE_TOOL_NAMES.has(message.toolName)) continue;
+    // Failures are diagnostics, not fresh page state, even when their text is large.
+    const returnedError = (message.details as { error?: unknown } | undefined)?.error;
+    if (message.isError || (returnedError !== undefined && returnedError !== null)) continue;
     if (textLength(message) < STALE_PAGE_STATE_MIN_CHARS) continue;
     if (remaining > 0) {
       remaining -= 1;
