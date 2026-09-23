@@ -17,6 +17,7 @@ import react from "@vitejs/plugin-react";
 import type { PreviewServer, ViteDevServer } from "vite";
 import { defineConfig, loadEnv } from "vite";
 import { resolveScreenProxySecret } from "../../packages/core/src/secrets-guard.ts";
+import { collectNovncHtml, MAX_NOVNC_HTML_BYTES } from "./src/novnc-html.js";
 import {
   resolveNovncTarget,
   safeProxyHeaders,
@@ -103,6 +104,18 @@ function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string,
       }
       return true;
     };
+    let downstreamFinished = false;
+    const finishUnavailable = () => {
+      if (downstreamFinished || res.destroyed || res.writableEnded) return;
+      downstreamFinished = true;
+      stopChecking();
+      if (res.headersSent) {
+        res.destroy();
+        return;
+      }
+      res.statusCode = 502;
+      res.end("Screen unavailable");
+    };
     function requestUpstream() {
       if (res.destroyed) return;
       upstream = transport.request(
@@ -120,14 +133,24 @@ function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string,
           }
           const responseHeaders = safeScreenProxyResponseHeaders(incoming.headers);
           if (shouldInjectNovncStorageShim(responseHeaders, target.hostname)) {
-            const chunks: Buffer[] = [];
-            incoming.on("data", (chunk: Buffer) => chunks.push(chunk));
-            incoming.on("end", () => {
-              const body = injectNovncStorageShim(Buffer.concat(chunks).toString("utf8"));
-              delete responseHeaders["content-length"];
-              res.writeHead(incoming.statusCode ?? 502, responseHeaders);
-              res.end(body);
-            });
+            const declaredLength = Number(incoming.headers["content-length"] ?? 0);
+            if (Number.isFinite(declaredLength) && declaredLength > MAX_NOVNC_HTML_BYTES) {
+              finishUnavailable();
+              incoming.destroy();
+              return;
+            }
+            void collectNovncHtml(incoming, MAX_NOVNC_HTML_BYTES)
+              .then((html) => {
+                if (downstreamFinished || res.destroyed || res.writableEnded) return;
+                downstreamFinished = true;
+                const body = injectNovncStorageShim(html);
+                delete responseHeaders["content-length"];
+                res.writeHead(incoming.statusCode ?? 502, responseHeaders);
+                res.end(body);
+              })
+              .catch(() => {
+                finishUnavailable();
+              });
             return;
           }
           res.writeHead(incoming.statusCode ?? 502, responseHeaders);
@@ -135,16 +158,16 @@ function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string,
         },
       );
       upstream.on("error", () => {
-        if (retryable && !res.headersSent && !res.destroyed && (retryPending || scheduleRetry())) {
+        if (
+          retryable &&
+          !downstreamFinished &&
+          !res.headersSent &&
+          !res.destroyed &&
+          (retryPending || scheduleRetry())
+        ) {
           return;
         }
-        stopChecking();
-        if (res.headersSent) {
-          res.destroy();
-          return;
-        }
-        res.statusCode = 502;
-        res.end("Screen unavailable");
+        finishUnavailable();
       });
       if (req.method === "GET" || req.readableEnded) upstream.end();
       else req.pipe(upstream);

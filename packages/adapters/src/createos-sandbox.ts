@@ -34,7 +34,11 @@ import {
 import { readBodyCapped } from "./web-ssrf.js";
 
 const CREATEOS_WORKSPACE = "/home/desktop/rakazo-home";
+const CREATEOS_SCREEN_MAP_PATH = `${CREATEOS_WORKSPACE}/.rakazo/screens.json`;
+export const CREATEOS_SCREEN_MAP_SENTINEL = "RAKAZO_SCREEN_MAP_V1";
+const CREATEOS_SCREEN_MAP_NEED_CREATE = "NEED_CREATE";
 const DEFAULT_CREATEOS_BASE_URL = "https://api.sb.createos.sh";
+const CREATEOS_INGRESS_ZONE = "sb.createos.sh";
 const DEFAULT_CREATEOS_SHAPE = "s-2vcpu-2gb";
 const DEFAULT_CREATEOS_ROOTFS = "desktop:1";
 export const MAX_CREATEOS_ERROR_RESPONSE_BYTES = 8 * 1024;
@@ -57,6 +61,53 @@ const BROWSER_PROFILE_CACHE_DIRS = new Set([
   "cache2",
 ]);
 const TRANSITIONAL_CREATEOS_STATUSES = new Set(["pausing", "resuming"]);
+/**
+ * Shared by the API and worker. Screen ids are claimed under a file lock so two
+ * processes cannot assign the same session to different displays.
+ */
+export const CREATEOS_SCREEN_MAP_SCRIPT = `
+import fcntl, json, os, sys
+
+def write_map(path, data):
+    temporary = path + ".tmp"
+    with open(temporary, "w", encoding="utf-8") as handle:
+        json.dump(data, handle)
+    os.replace(temporary, path)
+
+op, key, screen_id, path = sys.argv[2:6]
+os.makedirs(os.path.dirname(path), exist_ok=True)
+with open(path + ".lock", "a", encoding="utf-8") as lock:
+    fcntl.flock(lock, fcntl.LOCK_EX)
+    try:
+        with open(path, encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (OSError, ValueError):
+        data = {}
+    if not isinstance(data, dict):
+        data = {}
+    data = {
+        item_key: item_value
+        for item_key, item_value in data.items()
+        if isinstance(item_key, str) and isinstance(item_value, str) and item_value
+    }
+    if op == "remove":
+        data.pop(key, None)
+        write_map(path, data)
+        print("ok")
+    elif op == "put":
+        current = data.get(key)
+        if current:
+            print(current)
+        elif screen_id == "screen-0" and "screen-0" in data.values():
+            print("NEED_CREATE")
+        else:
+            data[key] = screen_id
+            write_map(path, data)
+            print(screen_id)
+    else:
+        print(json.dumps(data))
+`;
+
 const CHROME_CLEAN_EXIT_SCRIPT = `
 import json, os, sys
 profile = sys.argv[1]
@@ -110,7 +161,6 @@ export class CreateOSSandboxProvider implements SandboxProvider {
   private readonly fetchImpl: typeof fetch;
   private readonly screenAssignments = new Map<string, Map<string, string>>();
   private readonly lastBrowserUris = new Map<string, string>();
-  private readonly dirtyWorkspaces = new Set<string>();
 
   constructor(private readonly options: CreateOSSandboxProviderOptions) {
     this.baseUrl = (options.baseUrl?.trim() || DEFAULT_CREATEOS_BASE_URL).replace(/\/+$/, "");
@@ -176,7 +226,12 @@ export class CreateOSSandboxProvider implements SandboxProvider {
       context,
     );
     if (!created?.id) throw new Error("CreateOS did not return a sandbox id");
-    await this.waitUntilRunning(created.id, context);
+    try {
+      await this.waitUntilRunning(created.id, context);
+    } catch (error) {
+      await this.abandonCreatedSandbox(created.id);
+      throw error;
+    }
     return this.ref(created.id, request.botId, true);
   }
 
@@ -206,7 +261,6 @@ export class CreateOSSandboxProvider implements SandboxProvider {
     request: CommandRequest,
     context: AdapterContext,
   ): AsyncIterable<ProcessEvent> {
-    this.dirtyWorkspaces.add(computer.providerRef);
     const timeoutMs = boundedSandboxCommandTimeoutMs(request.timeoutMs);
     let result: CreateOSExecResponse;
     try {
@@ -245,6 +299,9 @@ export class CreateOSSandboxProvider implements SandboxProvider {
     const rawUrl = connection.url ?? connection.path;
     if (!rawUrl) return { url: null, mimeType: "text/html", close: async () => undefined };
     const url = new URL(rawUrl, this.baseUrl);
+    if (!isAllowedCreateOSScreenUrl(url, this.baseUrl)) {
+      throw new Error("CreateOS screen URL host is not allowed");
+    }
     url.searchParams.set("autoconnect", "true");
     url.searchParams.set("resize", "scale");
     if (connection.token && !url.searchParams.has("token")) {
@@ -264,12 +321,10 @@ export class CreateOSSandboxProvider implements SandboxProvider {
     _context: AdapterContext,
     controlToken?: string,
   ): Promise<void> {
-    if (!controlToken) {
-      if (interactive) throw new Error("interactive screen requires a control token");
-      return;
-    }
-    // A replacement /connect token does not drop an existing noVNC session, so
-    // CreateOS cannot revoke input the way a desktop control lease does.
+    // Release, expiry, and demotion pass the lease id. CreateOS cannot flip an
+    // existing noVNC socket; the screen proxy drops it once this lease is cleared.
+    if (!interactive) return;
+    if (!controlToken) throw new Error("interactive screen requires a control token");
     throw new Error("CreateOS screen control changes are unsupported");
   }
 
@@ -339,14 +394,21 @@ export class CreateOSSandboxProvider implements SandboxProvider {
 import json, os, stat, sys
 root = sys.argv[1]
 out = []
-if not os.path.isdir(root):
+try:
+    root_stat = os.lstat(root)
+except OSError:
+    print(json.dumps(out))
+    raise SystemExit(0)
+if not stat.S_ISDIR(root_stat.st_mode):
     print(json.dumps(out))
     raise SystemExit(0)
 for name in os.listdir(root):
     path = os.path.join(root, name)
     try:
-        st = os.stat(path)
-    except FileNotFoundError:
+        st = os.lstat(path)
+    except OSError:
+        continue
+    if stat.S_ISLNK(st.st_mode):
         continue
     out.append({"name": name, "kind": "dir" if stat.S_ISDIR(st.st_mode) else "file", "size": st.st_size, "executable": bool(st.st_mode & stat.S_IXUSR)})
 print(json.dumps(out))
@@ -401,7 +463,6 @@ print(json.dumps(out))
   }
 
   async writeFile(computer: ComputerRef, file: PortableFile, context: AdapterContext) {
-    this.dirtyWorkspaces.add(computer.providerRef);
     await this.putFile(computer, file, context);
   }
 
@@ -409,11 +470,9 @@ print(json.dumps(out))
     computer: ComputerRef,
     context: AdapterContext,
   ): AsyncIterable<PortableFile> {
-    if (!this.dirtyWorkspaces.has(computer.providerRef)) return;
-    if (!(await this.hasExportableWorkspaceFiles(computer, "", context))) {
-      this.dirtyWorkspaces.delete(computer.providerRef);
-      return;
-    }
+    // Dirty state does not survive a process restart or a second provider
+    // instance, and skipping the walk commits an empty checkpoint over the home.
+    if (!(await this.hasExportableWorkspaceFiles(computer, "", context))) return;
     const reopenUri =
       (await this.currentBrowserUri(computer, context).catch(() => undefined)) ??
       this.lastBrowserUris.get(computer.providerRef) ??
@@ -421,7 +480,6 @@ print(json.dumps(out))
     await this.executeChecked(computer, ["bash", "-lc", stopAllDesktopBrowsersCommand()], context);
     try {
       yield* this.walkWorkspace(computer, "", context);
-      this.dirtyWorkspaces.delete(computer.providerRef);
     } finally {
       if (context.operationId !== "stop" && context.operationId !== "computer.sleep") {
         await this.launchBrowser(computer, reopenUri, context, { settleMs: 0 }).catch(
@@ -436,7 +494,6 @@ print(json.dumps(out))
     files: AsyncIterable<PortableFile>,
     context: AdapterContext,
   ): Promise<void> {
-    this.dirtyWorkspaces.add(computer.providerRef);
     let batchBytes = 0;
     for await (const file of files) {
       if (batchBytes > PORTABLE_TRANSFER_BATCH_BYTES) batchBytes = 0;
@@ -450,25 +507,27 @@ print(json.dumps(out))
     return { id: observation.frameId, createdAt: observation.capturedAt };
   }
 
-  async keepAlive(computer: ComputerRef, context?: AdapterContext): Promise<void> {
-    if (!context) return;
-    await this.getSandbox(computer.providerRef, context).catch(() => undefined);
+  async keepAlive(computer: ComputerRef): Promise<void> {
+    // GET does not count as activity. An exec resets auto-pause, and callers do
+    // not pass an AdapterContext through HostAwareSandbox.
+    const context: AdapterContext = {
+      operationId: "computer.keepAlive",
+      traceId: "computer.keepAlive",
+      spaceId: "createos",
+      userId: "createos",
+      signal: AbortSignal.timeout(15_000),
+    };
+    await this.runCommand(computer, { argv: ["true"] }, context, 10_000).catch(() => undefined);
   }
 
   async releaseScreen(computer: ComputerRef, context: AdapterContext): Promise<void> {
     const screenKey = screenSessionKey(context);
-    const assignments = this.screenAssignments.get(computer.providerRef);
-    const screenId = assignments?.get(screenKey);
-    if (!assignments || !screenId) return;
-    if (screenId !== "screen-0") {
-      await this.request(
-        "DELETE",
-        `/v1/sandboxes/${encodeURIComponent(computer.providerRef)}/computer/screens/${encodeURIComponent(screenId)}`,
-        undefined,
-        context,
-      ).catch(ignoreMissingCreateOSResource);
-    }
-    assignments.delete(screenKey);
+    this.screenAssignments.get(computer.providerRef)?.delete(screenKey);
+    const recorded = await this.readScreenMap(computer, context);
+    const screenId = recorded[screenKey];
+    if (!screenId) return;
+    await this.runScreenMap(computer, "remove", screenKey, "", context);
+    if (screenId !== "screen-0") await this.deleteScreen(computer, screenId, context);
   }
 
   async stop(computer: ComputerRef, context: AdapterContext): Promise<void> {
@@ -493,7 +552,6 @@ print(json.dumps(out))
   private forget(id: string): void {
     this.screenAssignments.delete(id);
     this.lastBrowserUris.delete(id);
-    this.dirtyWorkspaces.delete(id);
   }
 
   private ref(id: string, botId: string, fresh: boolean): ComputerRef {
@@ -502,25 +560,133 @@ print(json.dumps(out))
 
   private async resolveScreen(computer: ComputerRef, context: AdapterContext): Promise<string> {
     const screenKey = screenSessionKey(context);
-    let assignments = this.screenAssignments.get(computer.providerRef);
+    const cached = this.screenAssignments.get(computer.providerRef)?.get(screenKey);
+    if (cached) return cached;
+    const recorded = await this.readScreenMap(computer, context);
+    const existing = recorded[screenKey];
+    if (existing) {
+      this.rememberScreen(computer.providerRef, screenKey, existing);
+      return existing;
+    }
+    const screenId = Object.values(recorded).includes("screen-0")
+      ? await this.createScreen(computer, context)
+      : "screen-0";
+    const stored = await this.claimScreen(computer, screenKey, screenId, context);
+    this.rememberScreen(computer.providerRef, screenKey, stored);
+    return stored;
+  }
+
+  private rememberScreen(providerRef: string, screenKey: string, screenId: string): void {
+    let assignments = this.screenAssignments.get(providerRef);
     if (!assignments) {
       assignments = new Map();
-      this.screenAssignments.set(computer.providerRef, assignments);
+      this.screenAssignments.set(providerRef, assignments);
     }
-    const existing = assignments.get(screenKey);
-    if (existing) return existing;
-    const screenId =
-      assignments.size === 0
-        ? "screen-0"
-        : (
-            await this.postJson<{ screen_id: string }>(
-              `/v1/sandboxes/${encodeURIComponent(computer.providerRef)}/computer/screens`,
-              { width: 1280, height: 800 },
-              context,
-            )
-          ).screen_id;
     assignments.set(screenKey, screenId);
-    return screenId;
+  }
+
+  private async claimScreen(
+    computer: ComputerRef,
+    screenKey: string,
+    screenId: string,
+    context: AdapterContext,
+  ): Promise<string> {
+    let stored = await this.runScreenMap(computer, "put", screenKey, screenId, context);
+    if (stored !== CREATEOS_SCREEN_MAP_NEED_CREATE) return stored;
+    const created = await this.createScreen(computer, context);
+    stored = await this.runScreenMap(computer, "put", screenKey, created, context);
+    if (stored !== created) await this.deleteScreen(computer, created, context);
+    if (stored === CREATEOS_SCREEN_MAP_NEED_CREATE) {
+      throw new Error("CreateOS screen assignment failed");
+    }
+    return stored;
+  }
+
+  private async createScreen(computer: ComputerRef, context: AdapterContext): Promise<string> {
+    const created = await this.postJson<{ screen_id?: string }>(
+      `/v1/sandboxes/${encodeURIComponent(computer.providerRef)}/computer/screens`,
+      { width: 1280, height: 800 },
+      context,
+    );
+    if (!created?.screen_id) throw new Error("CreateOS did not return a screen id");
+    return created.screen_id;
+  }
+
+  private async deleteScreen(
+    computer: ComputerRef,
+    screenId: string,
+    context: AdapterContext,
+  ): Promise<void> {
+    if (screenId === "screen-0") return;
+    await this.request(
+      "DELETE",
+      `/v1/sandboxes/${encodeURIComponent(computer.providerRef)}/computer/screens/${encodeURIComponent(screenId)}`,
+      undefined,
+      context,
+    ).catch(ignoreMissingCreateOSResource);
+  }
+
+  private async readScreenMap(
+    computer: ComputerRef,
+    context: AdapterContext,
+  ): Promise<Record<string, string>> {
+    const stdout = await this.runScreenMap(computer, "read", "", "", context);
+    if (!stdout) return {};
+    const parsed = JSON.parse(stdout) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    const entries: Record<string, string> = {};
+    for (const [key, value] of Object.entries(parsed)) {
+      if (typeof value === "string" && value) entries[key] = value;
+    }
+    return entries;
+  }
+
+  private async runScreenMap(
+    computer: ComputerRef,
+    op: "read" | "put" | "remove",
+    key: string,
+    screenId: string,
+    context: AdapterContext,
+  ): Promise<string> {
+    const result = await this.runCommand(
+      computer,
+      {
+        argv: [
+          "python3",
+          "-c",
+          CREATEOS_SCREEN_MAP_SCRIPT,
+          CREATEOS_SCREEN_MAP_SENTINEL,
+          op,
+          key,
+          screenId,
+          CREATEOS_SCREEN_MAP_PATH,
+        ],
+      },
+      context,
+      boundedSandboxCommandTimeoutMs(undefined),
+    );
+    if ((result.result?.exit_code ?? 1) !== 0) {
+      throw new Error(
+        result.result?.stderr || result.result?.error || "CreateOS screen map failed",
+      );
+    }
+    return (result.result?.stdout ?? "").trim();
+  }
+
+  private async abandonCreatedSandbox(id: string): Promise<void> {
+    const context: AdapterContext = {
+      operationId: "createos.abandon",
+      traceId: "createos.abandon",
+      spaceId: "createos",
+      userId: "createos",
+      signal: AbortSignal.timeout(10_000),
+    };
+    await this.request(
+      "DELETE",
+      `/v1/sandboxes/${encodeURIComponent(id)}`,
+      undefined,
+      context,
+    ).catch(() => undefined);
   }
 
   private async applyAction(
@@ -528,8 +694,6 @@ print(json.dumps(out))
     action: ComputerAction | ComputerInput,
     context: AdapterContext,
   ): Promise<void> {
-    // GUI actions change the workspace as much as commands do, so export must see them.
-    this.dirtyWorkspaces.add(computer.providerRef);
     const screenId = await this.resolveScreen(computer, context);
     const root = `/v1/sandboxes/${encodeURIComponent(computer.providerRef)}/computer`;
     const query = `screen_id=${encodeURIComponent(screenId)}`;
@@ -1081,6 +1245,7 @@ function isTransientCreateOSHttpStatus(status: number): boolean {
 }
 
 function shouldSkipCreateOSWorkspaceFile(relative: string): boolean {
+  if (relative === ".rakazo" || relative.startsWith(".rakazo/")) return true;
   if (
     relative.startsWith(`${BROWSER_PROFILE_DIR}/`) &&
     relative.split("/").some((segment) => BROWSER_PROFILE_CACHE_DIRS.has(segment))
@@ -1088,6 +1253,36 @@ function shouldSkipCreateOSWorkspaceFile(relative: string): boolean {
     return true;
   }
   return shouldSkipPortableWorkspaceFile(relative);
+}
+
+export function isAllowedCreateOSScreenUrl(resolved: URL, baseUrl: string): boolean {
+  let base: URL;
+  try {
+    base = new URL(baseUrl);
+  } catch {
+    return false;
+  }
+  if (resolved.username || resolved.password) return false;
+  if (resolved.protocol !== "https:" && resolved.protocol !== "http:") return false;
+  if (
+    resolved.protocol === "http:" &&
+    (!LOOPBACK_HOSTS.has(resolved.hostname) || !LOOPBACK_HOSTS.has(base.hostname))
+  ) {
+    return false;
+  }
+  if (!isAllowedCreateOSScreenHost(resolved.hostname, base.hostname)) return false;
+  if (LOOPBACK_HOSTS.has(resolved.hostname)) return true;
+  return resolved.protocol === "https:" && (resolved.port === "" || resolved.port === "443");
+}
+
+function isAllowedCreateOSScreenHost(hostname: string, baseHost: string): boolean {
+  const host = hostname.toLowerCase();
+  const base = baseHost.toLowerCase();
+  if (host === base || host.endsWith(`.${base}`)) return true;
+  if (base === "api.sb.createos.sh" || base.endsWith(`.${CREATEOS_INGRESS_ZONE}`)) {
+    return host === CREATEOS_INGRESS_ZONE || host.endsWith(`.${CREATEOS_INGRESS_ZONE}`);
+  }
+  return false;
 }
 
 function createosCwd(cwd: string | undefined): string {
