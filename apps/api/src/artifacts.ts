@@ -220,6 +220,8 @@ type ArtifactListCursor = {
   id: string;
   /** Bot filter the page was issued under. Null is the unfiltered space list. */
   botId: string | null;
+  /** Versions published after this instant are not part of this page sequence. */
+  asOf: string;
 };
 
 const ARTIFACT_LIST_CURSOR_PREFIX = "v1.";
@@ -242,13 +244,21 @@ function decodeArtifactListCursor(value: string): ArtifactListCursor {
   }
   if (typeof parsed !== "object" || parsed === null) throw new ArtifactListCursorError();
   const record = parsed as Record<string, unknown>;
-  if (typeof record.createdAt !== "string" || typeof record.id !== "string" || !record.id) {
+  if (
+    typeof record.createdAt !== "string" ||
+    typeof record.id !== "string" ||
+    !record.id ||
+    typeof record.asOf !== "string"
+  ) {
     throw new ArtifactListCursorError();
   }
   const botId = cursorBotId(record.botId);
   const createdAt = new Date(record.createdAt);
-  if (Number.isNaN(createdAt.getTime())) throw new ArtifactListCursorError();
-  return { createdAt: createdAt.toISOString(), id: record.id, botId };
+  const asOf = new Date(record.asOf);
+  if (Number.isNaN(createdAt.getTime()) || Number.isNaN(asOf.getTime())) {
+    throw new ArtifactListCursorError();
+  }
+  return { createdAt: createdAt.toISOString(), id: record.id, botId, asOf: asOf.toISOString() };
 }
 
 function cursorBotId(value: unknown): string | null {
@@ -259,9 +269,11 @@ function cursorBotId(value: unknown): string | null {
 /**
  * One row per family (the latest version's info), collapsed and paginated in
  * the database via a `DISTINCT ON` + keyset cursor — not a bounded raw fetch
- * collapsed in JS, which can never page past its own snapshot. Group-owned
- * artifacts are included: every artifact (bot- or group-owned) is scoped by
- * spaceId/userId, same as the rest of this file's reads.
+ * collapsed in JS, which can never page past its own snapshot. `asOf` freezes
+ * which versions exist for this page sequence: a version published after the
+ * first page cannot become an unseen family's latest row and jump above the
+ * cursor. Group-owned artifacts are included: every artifact (bot- or
+ * group-owned) is scoped by spaceId/userId, same as the rest of this file's reads.
  */
 export async function listSpaceArtifacts(
   deps: { prisma: Pick<PrismaClient, "artifact" | "$queryRaw"> },
@@ -272,12 +284,14 @@ export async function listSpaceArtifacts(
   const scopeBotId = input.botId ?? null;
   const botFilter = scopeBotId ? Prisma.sql`AND "botId" = ${scopeBotId}` : Prisma.empty;
 
+  let asOf = new Date();
   let cursorFilter = Prisma.empty;
   if (input.cursor) {
     // The position is carried in the cursor. Looking the row up again would
     // drop the filter when that version is deleted and replay the first page.
     const cursor = decodeArtifactListCursor(input.cursor);
     if (cursor.botId !== scopeBotId) throw new ArtifactListCursorError();
+    asOf = new Date(cursor.asOf);
     cursorFilter = Prisma.sql`AND (latest."createdAt", latest.id) < (${new Date(cursor.createdAt)}, ${cursor.id})`;
   }
 
@@ -285,6 +299,7 @@ export async function listSpaceArtifacts(
     WITH scoped AS (
       SELECT * FROM "artifacts"
       WHERE "spaceId" = ${actor.spaceId} AND "userId" = ${actor.userId} ${botFilter}
+        AND "createdAt" <= ${asOf}
     ),
     latest AS (
       SELECT DISTINCT ON (COALESCE("rootArtifactId", id))
@@ -335,6 +350,7 @@ export async function listSpaceArtifacts(
             createdAt: last.createdAt.toISOString(),
             id: last.id,
             botId: scopeBotId,
+            asOf: asOf.toISOString(),
           })
         : null,
   };

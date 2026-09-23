@@ -28,40 +28,131 @@ function listRow(id: string, familyId: string, createdAt = "2026-09-01T00:00:00.
   };
 }
 
-function cursor(input: { createdAt: string; id: string; botId: string | null }) {
-  return `v1.${Buffer.from(JSON.stringify(input), "utf8").toString("base64url")}`;
+function cursor(input: { createdAt: string; id: string; botId: string | null; asOf?: string }) {
+  return `v1.${Buffer.from(
+    JSON.stringify({
+      createdAt: input.createdAt,
+      id: input.id,
+      botId: input.botId,
+      asOf: input.asOf ?? "2026-09-20T00:00:00.000Z",
+    }),
+    "utf8",
+  ).toString("base64url")}`;
+}
+
+function statement(query: { strings: string[] }) {
+  return query.strings.join(" ");
+}
+
+function scopedClause(query: { strings: string[] }) {
+  const text = statement(query);
+  return text.slice(text.indexOf("WITH scoped"), text.indexOf("latest AS"));
 }
 
 describe("listSpaceArtifacts", () => {
   it("pages families in the database instead of slicing a fixed newest-row snapshot", async () => {
-    const queryRaw = vi
-      .fn()
-      .mockResolvedValue([
-        listRow("version-a", "family-a"),
-        listRow("version-b", "family-b"),
-        listRow("version-c", "family-c"),
-      ]);
-    const page = await listSpaceArtifacts(
-      {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-20T12:00:00.000Z"));
+    try {
+      const queryRaw = vi
+        .fn()
+        .mockResolvedValue([
+          listRow("version-a", "family-a"),
+          listRow("version-b", "family-b"),
+          listRow("version-c", "family-c"),
+        ]);
+      const page = await listSpaceArtifacts(
+        {
+          prisma: { artifact: { findFirst: vi.fn() }, $queryRaw: queryRaw } as unknown as Pick<
+            PrismaClient,
+            "artifact" | "$queryRaw"
+          >,
+        },
+        actor,
+        { limit: 2 },
+      );
+
+      const sql = queryRaw.mock.calls[0]?.[0] as { strings: string[]; values: unknown[] };
+      const text = statement(sql);
+      expect(text).toContain("DISTINCT ON");
+      expect(text).toContain("LIMIT");
+      expect(text).not.toMatch(/\b500\b/);
+      expect(scopedClause(sql)).toContain('"createdAt" <=');
+      expect(sql.values).toContain(3);
+      expect(sql.values).toContainEqual(new Date("2026-09-20T12:00:00.000Z"));
+      expect(page.items.map((item) => item.id)).toEqual(["family-a", "family-b"]);
+      expect(page.nextCursor).toBe(
+        cursor({
+          createdAt: "2026-09-01T00:00:00.000Z",
+          id: "version-b",
+          botId: null,
+          asOf: "2026-09-20T12:00:00.000Z",
+        }),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps an unseen family on a later page when it gains a version after page one", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-20T12:00:00.000Z"));
+    try {
+      const queryRaw = vi
+        .fn()
+        .mockResolvedValueOnce([
+          listRow("version-a", "family-a", "2026-09-03T00:00:00.000Z"),
+          listRow("version-b", "family-b", "2026-09-02T00:00:00.000Z"),
+          listRow("version-c", "family-c", "2026-09-01T00:00:00.000Z"),
+        ])
+        .mockResolvedValueOnce([listRow("version-c", "family-c", "2026-09-01T00:00:00.000Z")]);
+      const deps = {
         prisma: { artifact: { findFirst: vi.fn() }, $queryRaw: queryRaw } as unknown as Pick<
           PrismaClient,
           "artifact" | "$queryRaw"
         >,
-      },
-      actor,
-      { limit: 2 },
-    );
+      };
+      const first = await listSpaceArtifacts(deps, actor, { limit: 2 });
+      vi.setSystemTime(new Date("2026-09-21T12:00:00.000Z"));
+      const second = await listSpaceArtifacts(deps, actor, {
+        cursor: first.nextCursor ?? undefined,
+        limit: 2,
+      });
 
-    const sql = queryRaw.mock.calls[0]?.[0] as { strings: string[]; values: unknown[] };
-    const text = sql.strings.join(" ");
-    expect(text).toContain("DISTINCT ON");
-    expect(text).toContain("LIMIT");
-    expect(text).not.toMatch(/\b500\b/);
-    expect(sql.values).toContain(3);
-    expect(page.items.map((item) => item.id)).toEqual(["family-a", "family-b"]);
-    expect(page.nextCursor).toBe(
-      cursor({ createdAt: "2026-09-01T00:00:00.000Z", id: "version-b", botId: null }),
-    );
+      const continuation = queryRaw.mock.calls[1]?.[0] as { strings: string[]; values: unknown[] };
+      expect(scopedClause(continuation)).toContain('"createdAt" <=');
+      expect(continuation.values).toContainEqual(new Date("2026-09-20T12:00:00.000Z"));
+      expect(continuation.values).not.toContainEqual(new Date("2026-09-21T12:00:00.000Z"));
+      expect(continuation.values).toContain("version-b");
+      expect(second.items.map((item) => item.id)).toEqual(["family-c"]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("rejects a cursor that has no version snapshot", async () => {
+    const legacy = `v1.${Buffer.from(
+      JSON.stringify({
+        createdAt: "2026-08-01T00:00:00.000Z",
+        id: "version-b",
+        botId: null,
+      }),
+      "utf8",
+    ).toString("base64url")}`;
+    const queryRaw = vi.fn();
+    await expect(
+      listSpaceArtifacts(
+        {
+          prisma: { artifact: { findFirst: vi.fn() }, $queryRaw: queryRaw } as unknown as Pick<
+            PrismaClient,
+            "artifact" | "$queryRaw"
+          >,
+        },
+        actor,
+        { cursor: legacy, limit: 2 },
+      ),
+    ).rejects.toBeInstanceOf(ArtifactListCursorError);
+    expect(queryRaw).not.toHaveBeenCalled();
   });
 
   it("keeps paging from a cursor whose row was deleted", async () => {
@@ -85,8 +176,10 @@ describe("listSpaceArtifacts", () => {
 
     expect(findFirst).not.toHaveBeenCalled();
     const sql = queryRaw.mock.calls[0]?.[0] as { strings: string[]; values: unknown[] };
-    expect(sql.strings.join(" ")).toContain('latest."createdAt", latest.id');
+    expect(statement(sql)).toContain('latest."createdAt", latest.id');
+    expect(scopedClause(sql)).toContain('"createdAt" <=');
     expect(sql.values).toContainEqual(new Date("2026-08-01T00:00:00.000Z"));
+    expect(sql.values).toContainEqual(new Date("2026-09-20T00:00:00.000Z"));
     expect(sql.values).toContain("version-b");
   });
 

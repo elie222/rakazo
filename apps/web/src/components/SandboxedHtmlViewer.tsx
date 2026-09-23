@@ -5,12 +5,14 @@ const PREVIEW_CSP =
  * The shell's frame policy is what stops the preview from navigating itself.
  * `sandbox="allow-scripts"` does not block `location` or `<meta refresh>`, and
  * neither does the preview document's own CSP (`navigate-to` is not enforced).
- * Those navigations are nested-frame loads of this shell, so `frame-src 'none'`
- * rejects them before a request leaves the browser. Scripts in the inner frame
- * still run. Neither frame is `allow-same-origin`.
+ * Those navigations are nested-frame loads of this shell. `frame-src about:`
+ * allows the preview's `about:srcdoc` document and rejects http(s) navigations
+ * before a request leaves the browser. `child-src` stays `'none'` so workers
+ * do not fall open; frames follow `frame-src` when it is set. Scripts in the
+ * inner frame still run. Neither frame is `allow-same-origin`.
  */
 const SHELL_CSP =
-  "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; frame-src 'none'; child-src 'none'; form-action 'none'; base-uri 'none'";
+  "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; frame-src about:; child-src 'none'; form-action 'none'; base-uri 'none'";
 
 const PREVIEW_GUARD = `<script>
 document.addEventListener("click", (event) => {
