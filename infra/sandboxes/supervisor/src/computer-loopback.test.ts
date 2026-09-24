@@ -182,6 +182,42 @@ describe("computer loopback provision lifecycle", () => {
     expect(container.stop).toHaveBeenCalledOnce();
   });
 
+  it("quiesces browser profiles with Browser.close before stopping the container", async () => {
+    const { supervisorApp } = await import("./index.js");
+    const container = {
+      inspect: vi.fn(async () => ({
+        Config: {
+          Labels: { "rakazo.managed": "true", "rakazo.botId": "bot", "rakazo.spaceId": "space" },
+        },
+        State: { Running: true },
+      })),
+      exec: vi.fn(async (_options: { Cmd?: string[] }) => ({
+        start: async () => Readable.from([]),
+        inspect: async () => ({ ExitCode: 0 }),
+      })),
+      stop: vi.fn(async () => {}),
+    };
+    mocks.docker.getContainer.mockReturnValue(container);
+    const response = await supervisorApp.request("/computers/quiesce-before-stop/stop", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${resolveSupervisorToken(process.env)}`,
+        "x-rakazo-bot-id": "bot",
+        "x-rakazo-space-id": "space",
+      },
+    });
+    expect(response.status).toBe(200);
+    const command = String(container.exec.mock.calls[0]?.[0]?.Cmd?.[2] ?? "");
+    expect(command).toContain("Browser.close");
+    expect(command).toContain(".browser-profiles'/chromium ");
+    expect(command).toContain(".browser-profiles'/chromium-bot-");
+    expect(command).toContain(".browser-profiles'/chromium-screen-");
+    expect(container.exec).toHaveBeenCalledOnce();
+    expect(container.exec.mock.invocationCallOrder[0]).toBeLessThan(
+      container.stop.mock.invocationCallOrder[0] ?? 0,
+    );
+  });
+
   it.each([
     { enabled: true, hosts: [], resumed: false },
     { enabled: true, hosts: ["127.0.0.1"], resumed: true },

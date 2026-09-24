@@ -91,18 +91,33 @@ function browserPidPathForScreen(screenId: string) {
 }
 
 function browserRunningFunction(profile: string, pidFile: string) {
+  const flag = shellQuote(`--user-data-dir=${profile}`);
+  const profileQuoted = shellQuote(profile);
   return [
     "browser_running() {",
     `  tracked=$(cat ${pidFile} 2>/dev/null || true)`,
-    `  lock=$(readlink ${shellQuote(profile)}/SingletonLock 2>/dev/null || true)`,
+    `  lock=$(readlink ${profileQuoted}/SingletonLock 2>/dev/null || true)`,
+    "  browser_matches() {",
+    "    case \"$1\" in ''|0|*[!0-9]*) return 1 ;; esac",
+    '    kill -0 "$1" 2>/dev/null || return 1',
+    `    tr '\\0' '\\n' <"/proc/$1/cmdline" 2>/dev/null | grep -Fx -- ${flag} >/dev/null || return 1`,
+    `    mkdir -p "$(dirname ${pidFile})" 2>/dev/null || true`,
+    `    printf %s "$1" >${pidFile} 2>/dev/null || true`,
+    "    return 0",
+    "  }",
+    // Pid files and SingletonLock miss the browser after a supervisor restart or a wrapper
+    // whose lock does not point at the process that still has --user-data-dir.
     // biome-ignore lint/suspicious/noTemplateCurlyInString: shell parameter expansion
     '  for pid in "$tracked" "${lock##*-}"; do',
-    `    case "$pid" in ''|0|*[!0-9]*) continue ;; esac`,
-    `    kill -0 "$pid" 2>/dev/null || continue`,
-    `    tr '\\0' '\\n' <"/proc/$pid/cmdline" 2>/dev/null | grep -Fx -- ${shellQuote(`--user-data-dir=${profile}`)} >/dev/null || continue`,
-    `    printf %s "$pid" >${pidFile}`,
-    "    return 0",
+    '    if browser_matches "$pid"; then return 0; fi',
     "  done",
+    "  if [ -d /proc ]; then",
+    "    for proc_dir in /proc/[0-9]*; do",
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: shell parameter expansion
+    '      pid="${proc_dir#/proc/}"',
+    '      if browser_matches "$pid"; then return 0; fi',
+    "    done",
+    "  fi",
     "  return 1",
     "}",
   ];
@@ -177,8 +192,7 @@ export function stopBrowserProfileCommand(profile: string, pidFile: string) {
   ].join("\n");
 }
 
-/** Quiesce managed profiles before a full workspace export; orchestration excludes active peers. */
-export function stopAllDesktopBrowsersCommand(env = DEFAULT_DESKTOP_ENV) {
+function stopProfileDirectoriesCommand(profileList: string) {
   const placeholder = "RAKAZO_INTERNAL_PROFILE";
   const stop = stopBrowserProfileCommand(placeholder, '"$pid_file"')
     .replaceAll(shellQuote(`--user-data-dir=${placeholder}`), '"--user-data-dir=$profile"')
@@ -186,15 +200,36 @@ export function stopAllDesktopBrowsersCommand(env = DEFAULT_DESKTOP_ENV) {
   return [
     "set -eu",
     "failed=0",
-    `for profile in ${shellQuote(env.browserProfilesDir)}/chromium-bot-*; do`,
+    "mkdir -p /tmp/rakazo",
+    `for profile in ${profileList}; do`,
     '  [ -d "$profile" ] || continue',
+    '  case "$profile" in',
     // biome-ignore lint/suspicious/noTemplateCurlyInString: shell parameter expansion
-    "  hash=${profile##*chromium-bot-}",
+    "    */chromium-bot-*) hash=${profile##*chromium-bot-} ;;",
+    '    *) hash=$(basename -- "$profile") ;;',
+    "  esac",
     '  pid_file="/tmp/rakazo/browser-pid-$hash"',
     `  bash -eu -c ${shellQuote(`profile=$1; pid_file=$2;\n${stop}`)} desktop "$profile" "$pid_file" || failed=1`,
     "done",
     '[ "$failed" -eq 0 ] || exit 1',
   ].join("\n");
+}
+
+/** Quiesce managed profiles before a full workspace export; orchestration excludes active peers. */
+export function stopAllDesktopBrowsersCommand(env = DEFAULT_DESKTOP_ENV) {
+  return stopProfileDirectoriesCommand(`${shellQuote(env.browserProfilesDir)}/chromium-bot-*`);
+}
+
+/**
+ * Close every durable Chromium profile before Docker stops the container.
+ * Screen assignments live only in the supervisor process, and PID 1 exits as soon as Xvfb
+ * dies, so a stop that skips Browser.close SIGKILLs Chrome before cookie databases flush.
+ */
+export function quiesceBrowserProfilesCommand(env = DEFAULT_DESKTOP_ENV) {
+  const root = shellQuote(env.browserProfilesDir);
+  return stopProfileDirectoriesCommand(
+    `${root}/chromium ${root}/chromium-bot-* ${root}/chromium-screen-*`,
+  );
 }
 
 /** Reset discovered runtime processes after a supervisor restart; profiles remain durable. */

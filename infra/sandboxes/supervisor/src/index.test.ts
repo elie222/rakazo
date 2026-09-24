@@ -577,7 +577,7 @@ describe("sandbox supervisor input containment", () => {
     expect(command).not.toContain("/home/rakazo/.browser-profiles/chromium/.");
     expect(command).not.toContain(".rakazo-base-generation");
     expect(command).toContain("browser-pid-");
-    expect(command).toContain("tr '\\0' '\\n' <\"/proc/$pid/cmdline\"");
+    expect(command).toContain("tr '\\0' '\\n' <\"/proc/$1/cmdline\"");
     expect(browserProfilePathForScreen("../../writer")).toMatch(
       /^\/home\/rakazo\/\.browser-profiles\/chromium-bot-[0-9a-f]+$/,
     );

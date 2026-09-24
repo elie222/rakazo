@@ -4,6 +4,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readlinkSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -285,7 +286,8 @@ describe("graphical computer spec", () => {
         expect(updatedLocalState).not.toMatch(/"exited_cleanly"\s*:\s*false/);
 
         writeFileSync(prefsPath, '{\n  "profile": {\n    "exit_type": "Crashed"\n  }\n}\n');
-        symlinkSync("testhost-12345", path.join(profile, "SingletonLock"));
+        const liveLock = path.join(profile, "SingletonLock");
+        symlinkSync(`testhost-${process.pid}`, liveLock);
         const skipped = spawnSync("bash", [path.join(root, "rakazo-browser")], {
           env: {
             ...process.env,
@@ -298,6 +300,25 @@ describe("graphical computer spec", () => {
         });
         expect(skipped.status, skipped.error?.message ?? skipped.stderr).toBe(0);
         expect(readFileSync(prefsPath, "utf8")).toContain("Crashed");
+        expect(readlinkSync(liveLock)).toBe(`testhost-${process.pid}`);
+
+        const gone = spawnSync("/bin/sleep", ["0"]);
+        expect(gone.status).toBe(0);
+        expect(spawnSync("kill", ["-0", String(gone.pid)]).status).not.toBe(0);
+        rmSync(liveLock);
+        symlinkSync(`testhost-${gone.pid}`, liveLock);
+        const cleared = spawnSync("bash", [path.join(root, "rakazo-browser")], {
+          env: {
+            ...process.env,
+            DISPLAY: ":1",
+            HOME: home,
+            PATH: `${bin}${path.delimiter}${process.env.PATH ?? ""}`,
+            RAKAZO_TEST_ARGS: capture,
+          },
+          encoding: "utf8",
+        });
+        expect(cleared.status, cleared.error?.message ?? cleared.stderr).toBe(0);
+        expect(readFileSync(prefsPath, "utf8")).toContain('"exit_type":"Normal"');
       } finally {
         rmSync(temp, { recursive: true, force: true });
       }

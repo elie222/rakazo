@@ -50,7 +50,19 @@ clear_crash_state() {
     "$f" > "${f}.tmp" && mv "${f}.tmp" "$f"
 }
 
-if [ -d "$ACTUAL_PROFILE" ] && [ ! -e "$ACTUAL_PROFILE/SingletonLock" ] && [ ! -L "$ACTUAL_PROFILE/SingletonLock" ]; then
+# A stale SingletonLock is not a live browser. Leaving exit_type=Crashed makes Chrome
+# drop session cookies (account sign-in) on the next start while persistent cookies remain.
+profile_lock_is_live() {
+  lock=$(readlink "$1/SingletonLock" 2>/dev/null || true)
+  pid=${lock##*-}
+  case "$pid" in
+    ''|*[!0-9]*) return 1 ;;
+  esac
+  kill -0 "$pid" 2>/dev/null
+}
+
+if [ -d "$ACTUAL_PROFILE" ] && ! profile_lock_is_live "$ACTUAL_PROFILE"; then
+  rm -f "$ACTUAL_PROFILE/SingletonLock" "$ACTUAL_PROFILE/SingletonCookie" "$ACTUAL_PROFILE/SingletonSocket" 2>/dev/null || true
   find "$ACTUAL_PROFILE" \( -name Preferences -o -name 'Local State' \) -type f 2>/dev/null |
     while IFS= read -r f; do
       clear_crash_state "$f" 2>/dev/null || rm -f "${f}.tmp"

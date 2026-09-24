@@ -1,5 +1,13 @@
-import { spawnSync } from "node:child_process";
-import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { type ChildProcess, spawn, spawnSync } from "node:child_process";
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -11,6 +19,7 @@ import {
   interactiveScreenCommand,
   MAX_DESKTOP_DISPLAY,
   managedDesktopCommand,
+  quiesceBrowserProfilesCommand,
   releaseDesktopCommand,
   resetDesktopRuntimeCommand,
   screenPorts,
@@ -185,6 +194,89 @@ describe("shared Linux desktop lifecycle", () => {
       expect(() => screenPorts(index, env)).toThrow("invalid desktop index");
     }
   });
+
+  it.skipIf(process.platform === "win32")(
+    "quiesces Chromium profiles found only via /proc and keeps cookie databases",
+    () => {
+      const root = mkdtempSync(path.join(tmpdir(), "desktop-quiesce-"));
+      roots.push(root);
+      const home = path.join(root, "home");
+      const profiles = path.join(home, ".browser-profiles");
+      const bin = path.join(root, "bin");
+      const log = path.join(root, "closed");
+      mkdirSync(bin);
+      const sleeper = path.join(bin, "sleeper");
+      writeFileSync(sleeper, "#!/bin/sh\nsleep 120\n");
+      chmodSync(sleeper, 0o755);
+      writeFileSync(
+        path.join(bin, "python3"),
+        [
+          "#!/bin/sh",
+          'pid=""',
+          'for arg in "$@"; do',
+          '  case "$arg" in',
+          "    ''|*[!0-9]*) ;;",
+          "    *) pid=$arg ;;",
+          "  esac",
+          "done",
+          'if [ -n "$pid" ]; then',
+          '  printf "%s\\n" "$pid" >> "$QUIESCE_LOG"',
+          '  kill "$pid" 2>/dev/null || true',
+          "fi",
+          "exit 0",
+          "",
+        ].join("\n"),
+      );
+      chmodSync(path.join(bin, "python3"), 0o755);
+      const children: ChildProcess[] = [];
+      const start = (directory: string) => {
+        const cookies = path.join(directory, "Default", "Network", "Cookies");
+        mkdirSync(path.dirname(cookies), { recursive: true });
+        writeFileSync(cookies, "session=kept");
+        const child = spawn(sleeper, [`--user-data-dir=${directory}`], {
+          stdio: "ignore",
+          detached: true,
+        });
+        children.push(child);
+        return { child, cookies };
+      };
+      const bot = start(path.join(profiles, "chromium-bot-abc"));
+      const primary = start(path.join(profiles, "chromium"));
+      try {
+        const command = quiesceBrowserProfilesCommand({
+          ...DEFAULT_DESKTOP_ENV,
+          homeDir: home,
+          workspaceDir: home,
+          browserProfilesDir: profiles,
+        }).replaceAll("/tmp/rakazo", path.join(root, "runtime"));
+        const result = spawnSync("bash", ["-eu", "-c", command], {
+          encoding: "utf8",
+          timeout: 20_000,
+          env: {
+            ...process.env,
+            PATH: `${bin}${path.delimiter}${process.env.PATH ?? ""}`,
+            QUIESCE_LOG: log,
+          },
+        });
+        expect(result.status, result.stderr).toBe(0);
+        const closed = readFileSync(log, "utf8").trim().split("\n");
+        expect(closed).toEqual(
+          expect.arrayContaining([String(bot.child.pid), String(primary.child.pid)]),
+        );
+        expect(readFileSync(bot.cookies, "utf8")).toBe("session=kept");
+        expect(readFileSync(primary.cookies, "utf8")).toBe("session=kept");
+      } finally {
+        for (const child of children) {
+          if (!child.pid) continue;
+          try {
+            process.kill(-child.pid, "SIGKILL");
+          } catch {
+            child.kill("SIGKILL");
+          }
+        }
+      }
+    },
+  );
 
   it("keeps provider authentication while adding the per-lease websocket capability", () => {
     const url = new URL(

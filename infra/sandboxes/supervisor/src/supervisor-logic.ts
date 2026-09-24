@@ -12,6 +12,7 @@ export {
   ensureScreenCommand,
   interactiveScreenCommand,
   prepareBrowserProfileCommand,
+  quiesceBrowserProfilesCommand,
   stopBrowserCommand,
   stopExtraScreenCommand,
 } from "@rakazo/core/node/desktop-runtime";
