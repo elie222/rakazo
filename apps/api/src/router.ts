@@ -781,11 +781,10 @@ export function createRouter(deps: RouterDeps) {
           },
           orderBy: newestModelCredentialOrder,
         });
-        const compatibleRows = rows.filter((row) => row.provider === OPENAI_COMPATIBLE_PROVIDER_ID);
-        const secrets = compatibleRows.length
+        const secrets = rows.length
           ? await deps.prisma.secret.findMany({
               where: {
-                id: { in: compatibleRows.map((row) => row.secretId) },
+                id: { in: rows.map((row) => row.secretId) },
                 userId: context.actor.userId,
                 spaceId: null,
               },
@@ -814,26 +813,23 @@ export function createRouter(deps: RouterDeps) {
         try {
           let previousPlaintext: string | undefined;
           let omitVisionModelIds = false;
-          if (input.provider === OPENAI_COMPATIBLE_PROVIDER_ID) {
-            const credential = await findModelCredential(
-              deps.prisma,
-              context.actor,
-              input.provider,
-            );
-            if (credential) {
-              const secret = await deps.prisma.secret.findFirst({
-                where: { id: credential.secretId, userId: context.actor.userId, spaceId: null },
-                select: { ciphertext: true },
-              });
-              if (secret) {
-                try {
-                  previousPlaintext = deps.secrets.load(secret.ciphertext, credential.secretId);
-                } catch (error) {
-                  // Explicit key replacement must still succeed when the prior
-                  // ciphertext is unreadable. Omit visionModelIds so a partial
-                  // one-model list does not wipe other enabled models; DB
-                  // supportsImages + defaultModel remain the legacy fallback.
-                  if (input.apiKey === undefined) throw error;
+          const credential = await findModelCredential(deps.prisma, context.actor, input.provider);
+          if (credential) {
+            const secret = await deps.prisma.secret.findFirst({
+              where: { id: credential.secretId, userId: context.actor.userId, spaceId: null },
+              select: { ciphertext: true },
+            });
+            if (secret) {
+              try {
+                previousPlaintext = deps.secrets.load(secret.ciphertext, credential.secretId);
+              } catch (error) {
+                // Explicit key replacement must still succeed when the prior
+                // ciphertext is unreadable. For OpenAI-compatible connections,
+                // omit visionModelIds so a partial one-model list does not wipe
+                // other enabled models; DB supportsImages + defaultModel remain
+                // the legacy fallback.
+                if (input.apiKey === undefined) throw error;
+                if (input.provider === OPENAI_COMPATIBLE_PROVIDER_ID) {
                   omitVisionModelIds = true;
                 }
               }

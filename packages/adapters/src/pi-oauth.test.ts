@@ -7,6 +7,7 @@ import {
   PiOAuthLogins,
   parseModelSecret,
   resolveModelApiKey,
+  resolveModelAuth,
   secretValuesToRedact,
   serializeModelSecret,
   XAI_OAUTH_PROVIDER,
@@ -80,6 +81,14 @@ describe("model secrets", () => {
     expect(parseModelSecret("sk-or-v1-abc")).toEqual({ kind: "api_key", key: "sk-or-v1-abc" });
   });
 
+  it("round-trips an API key output limit", () => {
+    const parsed = parseModelSecret(
+      serializeModelSecret({ kind: "api_key", key: "sk-test-key", maxTokens: 8192 }),
+    );
+    expect(parsed).toEqual({ kind: "api_key", key: "sk-test-key", maxTokens: 8192 });
+    expect(secretValuesToRedact(parsed)).toEqual(["sk-test-key"]);
+  });
+
   it("round-trips OAuth credentials", () => {
     const credential = oauthCred({ expires: 42 });
     const parsed = parseModelSecret(serializeModelSecret({ kind: "oauth", credential }));
@@ -115,6 +124,32 @@ describe("model secrets", () => {
     });
     expect(apiKey).toBe("new");
     expect(JSON.parse(saved).access).toBe("new");
+  });
+
+  it("keeps a configured output limit when refreshing OAuth tokens", async () => {
+    const stored = serializeModelSecret({
+      kind: "oauth",
+      credential: oauthCred({ access: "old", expires: 1 }),
+      maxTokens: 16384,
+    });
+    let saved = "";
+    const resolved = await resolveModelAuth(stored, CHATGPT_OAUTH_PROVIDER, {
+      now: 10_000,
+      persist: async (next) => {
+        saved = next;
+      },
+      oauth: {
+        refresh: async () => oauthCred({ access: "new", expires: 99_999 }),
+        toAuth: async (current) => ({ apiKey: current.access }),
+      },
+    });
+    expect(resolved.apiKey).toBe("new");
+    expect(resolved.secret.maxTokens).toBe(16384);
+    expect(parseModelSecret(saved)).toMatchObject({
+      kind: "oauth",
+      maxTokens: 16384,
+      credential: expect.objectContaining({ access: "new" }),
+    });
   });
 });
 

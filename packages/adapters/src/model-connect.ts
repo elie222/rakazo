@@ -42,12 +42,10 @@ export function buildModelConnectPlaintext(
         : sameEndpoint
           ? previous.thinkingLevel
           : undefined;
-    const maxTokens =
-      input.maxTokens !== undefined
-        ? input.maxTokens
-        : sameEndpoint
-          ? previous.maxTokens
-          : undefined;
+    const maxTokens = connectMaxTokens(
+      input.maxTokens,
+      sameEndpoint ? previous.maxTokens : undefined,
+    );
     const contextWindow =
       input.contextWindow !== undefined
         ? input.contextWindow
@@ -75,11 +73,42 @@ export function buildModelConnectPlaintext(
     };
     return serializeModelSecret(secret);
   }
+  const previous = previousPlaintext ? parseModelSecret(previousPlaintext) : undefined;
+  const maxTokens = connectMaxTokens(input.maxTokens, previous?.maxTokens);
   const apiKey = input.apiKey?.trim();
-  if (!apiKey || apiKey.length < 8) {
-    throw new Error("API key must contain at least 8 characters");
+  if (apiKey) {
+    if (apiKey.length < 8) throw new Error("API key must contain at least 8 characters");
+    return serializeModelSecret({
+      kind: "api_key",
+      key: apiKey,
+      ...(maxTokens !== undefined ? { maxTokens } : {}),
+    });
   }
-  return apiKey;
+  if (previous?.kind === "api_key" && previous.key.trim().length >= 8) {
+    return serializeModelSecret({
+      kind: "api_key",
+      key: previous.key,
+      ...(maxTokens !== undefined ? { maxTokens } : {}),
+    });
+  }
+  if (previous?.kind === "oauth") {
+    return serializeModelSecret({
+      kind: "oauth",
+      credential: previous.credential,
+      ...(maxTokens !== undefined ? { maxTokens } : {}),
+    });
+  }
+  throw new Error("API key must contain at least 8 characters");
+}
+
+/** `null` clears a saved limit. Omitting it keeps the previous connection's limit. */
+function connectMaxTokens(
+  input: number | null | undefined,
+  previous: number | undefined,
+): number | undefined {
+  if (input === null) return undefined;
+  if (input !== undefined) return input;
+  return previous;
 }
 
 export function modelCredentialDto(
@@ -101,7 +130,13 @@ export function modelCredentialDto(
     isDefault: row.isDefault,
     ...(row.defaultModel ? { modelId: row.defaultModel } : {}),
   };
-  if (row.provider !== CONTRACT_OPENAI_COMPAT) return credential;
+  if (row.provider !== CONTRACT_OPENAI_COMPAT) {
+    if (!plaintext) return credential;
+    const parsed = parseModelSecret(plaintext);
+    return parsed.maxTokens !== undefined
+      ? { ...credential, maxTokens: parsed.maxTokens }
+      : credential;
+  }
   const compatibleCredential = {
     ...credential,
     supportsImages: row.supportsImages ?? false,

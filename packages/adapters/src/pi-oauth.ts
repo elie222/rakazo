@@ -57,8 +57,8 @@ const MIN_OAUTH_VALIDITY_MS = 5 * 60 * 1000;
 const SIGN_IN_START_WAIT_MS = 30_000;
 
 export type StoredModelSecret =
-  | { kind: "api_key"; key: string }
-  | { kind: "oauth"; credential: OAuthCredential }
+  | { kind: "api_key"; key: string; maxTokens?: number }
+  | { kind: "oauth"; credential: OAuthCredential; maxTokens?: number }
   | {
       kind: "openai_compatible";
       baseUrl: string;
@@ -126,6 +126,29 @@ function isOAuthCredential(value: Credential): value is OAuthCredential {
   return value.type === "oauth";
 }
 
+function readOAuthCredential(value: unknown): OAuthCredential | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const parsed = value as Record<string, unknown>;
+  if (
+    parsed.type === "oauth" &&
+    typeof parsed.access === "string" &&
+    typeof parsed.refresh === "string" &&
+    typeof parsed.expires === "number"
+  ) {
+    return parsed as OAuthCredential;
+  }
+  return undefined;
+}
+
+function parsedMaxTokens(value: unknown): number | undefined {
+  return typeof value === "number" &&
+    Number.isInteger(value) &&
+    value >= 1 &&
+    value <= MAX_MODEL_MAX_TOKENS
+    ? value
+    : undefined;
+}
+
 export function parseModelSecret(plaintext: string): StoredModelSecret {
   const trimmed = plaintext.trim();
   if (trimmed.startsWith("{")) {
@@ -139,13 +162,7 @@ export function parseModelSecret(plaintext: string): StoredModelSecret {
         const apiKey = typeof parsed.apiKey === "string" ? parsed.apiKey : undefined;
         const parsedThinkingLevel = ThinkingLevelSchema.nullable().safeParse(parsed.thinkingLevel);
         const thinkingLevel = parsedThinkingLevel.success ? parsedThinkingLevel.data : undefined;
-        const maxTokens =
-          typeof parsed.maxTokens === "number" &&
-          Number.isInteger(parsed.maxTokens) &&
-          parsed.maxTokens >= 1 &&
-          parsed.maxTokens <= MAX_MODEL_MAX_TOKENS
-            ? parsed.maxTokens
-            : undefined;
+        const maxTokens = parsedMaxTokens(parsed.maxTokens);
         const contextWindow =
           typeof parsed.contextWindow === "number" &&
           Number.isInteger(parsed.contextWindow) &&
@@ -178,14 +195,26 @@ export function parseModelSecret(plaintext: string): StoredModelSecret {
           ...(maxImagesPerPrompt !== undefined ? { maxImagesPerPrompt } : {}),
         };
       }
-      if (
-        parsed.type === "oauth" &&
-        typeof parsed.access === "string" &&
-        typeof parsed.refresh === "string" &&
-        typeof parsed.expires === "number"
-      ) {
-        return { kind: "oauth", credential: parsed as OAuthCredential };
+      if (parsed.kind === "api_key" && typeof parsed.key === "string" && parsed.key) {
+        const maxTokens = parsedMaxTokens(parsed.maxTokens);
+        return {
+          kind: "api_key",
+          key: parsed.key,
+          ...(maxTokens !== undefined ? { maxTokens } : {}),
+        };
       }
+      const wrappedOAuth =
+        parsed.kind === "oauth" ? readOAuthCredential(parsed.credential) : undefined;
+      if (wrappedOAuth) {
+        const maxTokens = parsedMaxTokens(parsed.maxTokens);
+        return {
+          kind: "oauth",
+          credential: wrappedOAuth,
+          ...(maxTokens !== undefined ? { maxTokens } : {}),
+        };
+      }
+      const legacyOAuth = readOAuthCredential(parsed);
+      if (legacyOAuth) return { kind: "oauth", credential: legacyOAuth };
     } catch {
       // Treat malformed JSON as a literal API key.
     }
@@ -194,7 +223,14 @@ export function parseModelSecret(plaintext: string): StoredModelSecret {
 }
 
 export function serializeModelSecret(secret: StoredModelSecret): string {
-  if (secret.kind === "oauth") return JSON.stringify(secret.credential);
+  if (secret.kind === "oauth") {
+    if (secret.maxTokens === undefined) return JSON.stringify(secret.credential);
+    return JSON.stringify({
+      kind: "oauth",
+      credential: secret.credential,
+      maxTokens: secret.maxTokens,
+    });
+  }
   if (secret.kind === "openai_compatible") {
     return JSON.stringify({
       kind: "openai_compatible",
@@ -210,7 +246,12 @@ export function serializeModelSecret(secret: StoredModelSecret): string {
         : {}),
     });
   }
-  return secret.key;
+  if (secret.maxTokens === undefined) return secret.key;
+  return JSON.stringify({
+    kind: "api_key",
+    key: secret.key,
+    maxTokens: secret.maxTokens,
+  });
 }
 
 export function secretValuesToRedact(secret: StoredModelSecret): string[] {
@@ -253,15 +294,25 @@ export async function resolveModelAuth(
   }
   const now = opts?.now ?? Date.now();
   let credential = parsed.credential;
+  const maxTokens = parsed.maxTokens;
   if (credential.expires - now < MIN_OAUTH_VALIDITY_MS) {
     credential = await oauth.refresh(credential, opts?.signal ?? new AbortController().signal);
-    await opts?.persist?.(serializeModelSecret({ kind: "oauth", credential }));
+    await opts?.persist?.(
+      serializeModelSecret({
+        kind: "oauth",
+        credential,
+        ...(maxTokens !== undefined ? { maxTokens } : {}),
+      }),
+    );
   }
   const auth = await oauth.toAuth(credential);
   if (!auth.apiKey) {
     throw new Error("Subscription sign-in did not produce a usable token. Sign in again.");
   }
-  return { secret: { kind: "oauth", credential }, apiKey: auth.apiKey };
+  return {
+    secret: { kind: "oauth", credential, ...(maxTokens !== undefined ? { maxTokens } : {}) },
+    apiKey: auth.apiKey,
+  };
 }
 
 export async function resolveModelApiKey(

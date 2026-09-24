@@ -1558,6 +1558,51 @@ description: Prepare standup notes
     ).rejects.toThrow("Unknown model for that provider");
   });
 
+  it("applies a built-in connection output-token limit", async () => {
+    const provider = "scripted";
+    const plaintext = serializeModelSecret({
+      kind: "api_key",
+      key: "sk-test-key-1234",
+      maxTokens: 16384,
+    });
+    const findFirst = vi.fn(async () =>
+      modelPreference({
+        provider,
+        secretId: "secret-scripted",
+        modelId: "scripted",
+        isDefault: true,
+      }),
+    );
+    const prisma = {
+      bot: {
+        findFirst: vi.fn(async () => ({
+          modelProvider: provider,
+          modelId: "scripted",
+          thinkingLevel: null,
+        })),
+      },
+      spaceModelPreference: { findFirst },
+      userModelCredential: { findFirst: vi.fn(async () => null) },
+      deploymentSettings: { findUnique: vi.fn(async () => null) },
+      secret: {
+        findFirst: vi.fn(async () => ({ id: "secret-scripted", ciphertext: plaintext })),
+        findUnique: vi.fn(async () => null),
+      },
+    } as unknown as PrismaClient;
+    const executor = createRunExecutor({
+      prisma,
+      secretStore: { load: vi.fn(() => plaintext), put: vi.fn() },
+    } as unknown as Parameters<typeof createRunExecutor>[0]);
+
+    await expect(
+      executor.resolveModel({ userId: "user-1", spaceId: "ws-1", botId: "bot-1" }),
+    ).resolves.toMatchObject({
+      provider,
+      id: "scripted",
+      maxTokens: 16384,
+    });
+  });
+
   it("keeps image support for a separately enabled bot model override", async () => {
     const provider = "openai-compatible";
     const findFirst = vi.fn(

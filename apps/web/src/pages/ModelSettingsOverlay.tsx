@@ -41,6 +41,13 @@ import type { ModelCatalogEntry, ModelCredential } from "../lib/model-auth";
 import { rpc } from "../lib/rpc";
 import { useModelOAuthSignIn } from "../lib/use-model-oauth-signin";
 
+function connectionMaxTokensField(providerId: string, stored: number | undefined): string {
+  if (providerId === OPENAI_COMPATIBLE_PROVIDER_ID) {
+    return String(stored ?? DEFAULT_MODEL_MAX_TOKENS);
+  }
+  return stored !== undefined ? String(stored) : "";
+}
+
 export function ModelSettingsOverlay({
   onClose,
   embedded = false,
@@ -133,11 +140,11 @@ export function ModelSettingsOverlay({
         setBaseUrl(nextCredential?.baseUrl ?? "");
         setReasoning(nextCredential?.reasoning ?? false);
         setThinkingLevel(nextCredential?.thinkingLevel ?? null);
-        setMaxTokens(String(nextCredential?.maxTokens ?? DEFAULT_MODEL_MAX_TOKENS));
         setContextWindow(String(nextCredential?.contextWindow ?? DEFAULT_MODEL_CONTEXT_WINDOW));
         setSupportsImages(nextCredential?.supportsImages ?? false);
         setMaxImagesPerPrompt(String(nextCredential?.maxImagesPerPrompt ?? ""));
       }
+      setMaxTokens(connectionMaxTokensField(nextProvider, nextCredential?.maxTokens));
     }
   }
 
@@ -195,6 +202,7 @@ export function ModelSettingsOverlay({
     baseUrl: effectiveBaseUrl,
     modelId,
   });
+  const builtinLimitSave = !isOpenAiCompatible && Boolean(credential) && apiKey.trim().length === 0;
 
   function updateBaseUrl(nextBaseUrl: string) {
     setBaseUrl(nextBaseUrl);
@@ -215,7 +223,7 @@ export function ModelSettingsOverlay({
     setProvider(nextProvider);
     setReasoning(nextCredential?.reasoning ?? false);
     setThinkingLevel(nextCredential?.thinkingLevel ?? null);
-    setMaxTokens(String(nextCredential?.maxTokens ?? DEFAULT_MODEL_MAX_TOKENS));
+    setMaxTokens(connectionMaxTokensField(nextProvider, nextCredential?.maxTokens));
     setContextWindow(String(nextCredential?.contextWindow ?? DEFAULT_MODEL_CONTEXT_WINDOW));
     setSupportsImages(nextCredential?.supportsImages ?? false);
     setMaxImagesPerPrompt(String(nextCredential?.maxImagesPerPrompt ?? ""));
@@ -271,36 +279,45 @@ export function ModelSettingsOverlay({
 
   async function connectKey() {
     if (!selected) return;
+    const savingLimitOnly = !isOpenAiCompatible && !apiKey.trim();
     if (isOpenAiCompatible) {
       if (!effectiveBaseUrl || !modelId.trim()) return;
-    } else if (!apiKey.trim()) {
+    } else if (savingLimitOnly) {
+      if (!credential) return;
+    } else if (apiKey.trim().length < 8) {
       return;
     }
-    const parsedMaxImagesPerPrompt = parseModelMaxImagesPerPrompt(
-      maxImagesPerPrompt,
-      supportsImages,
-    );
-    if (supportsImages && maxImagesPerPrompt.trim() && parsedMaxImagesPerPrompt === undefined) {
-      setError(t`Enter a whole number from 1 to 1000 for the image limit.`);
-      return;
-    }
-    const maxImagesPerPromptInput =
-      supportsImages && !maxImagesPerPrompt.trim() ? null : parsedMaxImagesPerPrompt;
-
-    const parsedMaxTokens = parseModelMaxTokens(maxTokens);
-    if (parsedMaxTokens === undefined) {
+    const parsedMaxTokens = maxTokens.trim() ? parseModelMaxTokens(maxTokens) : undefined;
+    if ((isOpenAiCompatible || maxTokens.trim()) && parsedMaxTokens === undefined) {
       setError(
         t`Enter a whole number from 1 to ${MAX_MODEL_MAX_TOKENS} for maximum output tokens.`,
       );
       return;
     }
-    const parsedContextWindow = parseModelContextWindow(contextWindow);
-    if (parsedContextWindow === undefined) {
+    const parsedMaxImagesPerPrompt = isOpenAiCompatible
+      ? parseModelMaxImagesPerPrompt(maxImagesPerPrompt, supportsImages)
+      : undefined;
+    if (
+      isOpenAiCompatible &&
+      supportsImages &&
+      maxImagesPerPrompt.trim() &&
+      parsedMaxImagesPerPrompt === undefined
+    ) {
+      setError(t`Enter a whole number from 1 to 1000 for the image limit.`);
+      return;
+    }
+    const maxImagesPerPromptInput =
+      supportsImages && !maxImagesPerPrompt.trim() ? null : parsedMaxImagesPerPrompt;
+    const parsedContextWindow = isOpenAiCompatible
+      ? parseModelContextWindow(contextWindow)
+      : undefined;
+    if (isOpenAiCompatible && parsedContextWindow === undefined) {
       setError(
         t`Enter a whole number from 1 to ${MAX_MODEL_CONTEXT_WINDOW} for the context limit.`,
       );
       return;
     }
+    if (isOpenAiCompatible && parsedMaxTokens === undefined) return;
     setError(null);
     setNotice(null);
     setPending("connect");
@@ -322,15 +339,20 @@ export function ModelSettingsOverlay({
             }
           : {
               provider: selected.provider,
-              apiKey: apiKey.trim(),
+              ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}),
               modelId: selected.id,
+              maxTokens: parsedMaxTokens ?? null,
               label: selected.providerName ?? selected.provider,
             },
       );
       setApiKey("");
       await refresh();
       detailScrollRef.current?.scrollTo({ top: 0 });
-      setNotice(isOpenAiCompatible ? t`Saved.` : t`Connected and using ${selected.label}.`);
+      setNotice(
+        isOpenAiCompatible || savingLimitOnly
+          ? t`Saved.`
+          : t`Connected and using ${selected.label}.`,
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : t`Could not connect this provider`);
     } finally {
@@ -617,6 +639,18 @@ export function ModelSettingsOverlay({
                         setNotice(null);
                       }}
                     />
+                    <ModelThinkingOptions
+                      showThinking={false}
+                      disabled={busy}
+                      advancedLabel={t`Advanced`}
+                      maxTokens={maxTokens}
+                      onMaxTokensChange={(value) => {
+                        selectionRevisionRef.current += 1;
+                        setMaxTokens(value);
+                        setNotice(null);
+                      }}
+                      maxTokensLabel={t`Maximum output tokens`}
+                    />
                   </>
                 )}
               </div>
@@ -734,9 +768,9 @@ export function ModelSettingsOverlay({
                 </div>
               ) : null}
 
-              {acceptsKey ? (
+              {acceptsKey || builtinLimitSave ? (
                 <div className="mt-5">
-                  {isOpenAiCompatible ? (
+                  {acceptsKey && isOpenAiCompatible ? (
                     <details className="text-[13.5px] text-muted-foreground">
                       <summary className="w-fit cursor-pointer select-none">
                         <Trans>API key</Trans>
@@ -751,7 +785,7 @@ export function ModelSettingsOverlay({
                         className="mt-2 h-10 text-foreground"
                       />
                     </details>
-                  ) : (
+                  ) : acceptsKey ? (
                     <label
                       className="block text-[13.5px] text-muted-foreground"
                       htmlFor="model-api-key"
@@ -773,7 +807,7 @@ export function ModelSettingsOverlay({
                         className="mt-2 h-10 text-foreground"
                       />
                     </label>
-                  )}
+                  ) : null}
                   <Button
                     type="button"
                     variant="secondary"
@@ -781,13 +815,15 @@ export function ModelSettingsOverlay({
                     size="sm"
                     disabled={
                       busy ||
-                      (isOpenAiCompatible ? !openAiCompatibleReady : apiKey.trim().length < 8)
+                      (isOpenAiCompatible
+                        ? !openAiCompatibleReady
+                        : !builtinLimitSave && apiKey.trim().length < 8)
                     }
                     onClick={() => void connectKey()}
                   >
                     {pending === "connect" ? (
                       <Trans>Saving…</Trans>
-                    ) : isOpenAiCompatible ? (
+                    ) : isOpenAiCompatible || builtinLimitSave ? (
                       <Trans>Save</Trans>
                     ) : credential ? (
                       <Trans>Replace API key</Trans>

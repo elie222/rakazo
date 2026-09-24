@@ -37,6 +37,13 @@ import {
 } from "../lib/model-auth";
 import { native, useResolvedAppearance, useThemedStyles } from "../lib/native";
 
+function connectionMaxTokensField(providerId: string, stored: number | undefined): string {
+  if (providerId === OPENAI_COMPATIBLE_PROVIDER_ID) {
+    return String(stored ?? DEFAULT_MODEL_MAX_TOKENS);
+  }
+  return stored !== undefined ? String(stored) : "";
+}
+
 const THINKING_LEVEL_OPTIONS: ThinkingLevel[] = [
   "minimal",
   "low",
@@ -144,11 +151,11 @@ export default function Models() {
       setBaseUrl(nextCredential?.baseUrl ?? "");
       setReasoning(nextCredential?.reasoning ?? false);
       setThinkingLevel(nextCredential?.thinkingLevel ?? null);
-      setMaxTokens(String(nextCredential?.maxTokens ?? DEFAULT_MODEL_MAX_TOKENS));
       setContextWindow(String(nextCredential?.contextWindow ?? DEFAULT_MODEL_CONTEXT_WINDOW));
       setSupportsImages(nextCredential?.supportsImages ?? false);
       setMaxImagesPerPrompt(String(nextCredential?.maxImagesPerPrompt ?? ""));
     }
+    setMaxTokens(connectionMaxTokensField(nextProvider, nextCredential?.maxTokens));
   }, []);
 
   useFocusEffect(
@@ -209,6 +216,7 @@ export default function Models() {
     baseUrl: effectiveBaseUrl,
     modelId,
   });
+  const builtinLimitSave = !isOpenAiCompatible && Boolean(credential) && apiKey.trim().length === 0;
 
   function updateBaseUrl(nextBaseUrl: string) {
     setBaseUrl(nextBaseUrl);
@@ -228,7 +236,7 @@ export default function Models() {
     setProvider(nextProvider);
     setReasoning(nextCredential?.reasoning ?? false);
     setThinkingLevel(nextCredential?.thinkingLevel ?? null);
-    setMaxTokens(String(nextCredential?.maxTokens ?? DEFAULT_MODEL_MAX_TOKENS));
+    setMaxTokens(connectionMaxTokensField(nextProvider, nextCredential?.maxTokens));
     setContextWindow(String(nextCredential?.contextWindow ?? DEFAULT_MODEL_CONTEXT_WINDOW));
     setSupportsImages(nextCredential?.supportsImages ?? false);
     setMaxImagesPerPrompt(String(nextCredential?.maxImagesPerPrompt ?? ""));
@@ -293,24 +301,16 @@ export default function Models() {
 
   async function connectKey() {
     if (!selected) return;
+    const savingLimitOnly = !isOpenAiCompatible && !apiKey.trim();
     if (isOpenAiCompatible) {
       if (!effectiveBaseUrl || !modelId.trim()) return;
-    } else if (!apiKey.trim()) {
+    } else if (savingLimitOnly) {
+      if (!credential) return;
+    } else if (apiKey.trim().length < 8) {
       return;
     }
-    const parsedMaxImagesPerPrompt = parseModelMaxImagesPerPrompt(
-      maxImagesPerPrompt,
-      supportsImages,
-    );
-    if (supportsImages && maxImagesPerPrompt.trim() && parsedMaxImagesPerPrompt === undefined) {
-      setError(t("Enter a whole number from 1 to 1000 for the image limit."));
-      return;
-    }
-    const maxImagesPerPromptInput =
-      supportsImages && !maxImagesPerPrompt.trim() ? null : parsedMaxImagesPerPrompt;
-
-    const parsedMaxTokens = parseModelMaxTokens(maxTokens);
-    if (parsedMaxTokens === undefined) {
+    const parsedMaxTokens = maxTokens.trim() ? parseModelMaxTokens(maxTokens) : undefined;
+    if ((isOpenAiCompatible || maxTokens.trim()) && parsedMaxTokens === undefined) {
       setError(
         t("Enter a whole number from 1 to {max} for maximum output tokens.", {
           max: MAX_MODEL_MAX_TOKENS,
@@ -318,8 +318,24 @@ export default function Models() {
       );
       return;
     }
-    const parsedContextWindow = parseModelContextWindow(contextWindow);
-    if (parsedContextWindow === undefined) {
+    const parsedMaxImagesPerPrompt = isOpenAiCompatible
+      ? parseModelMaxImagesPerPrompt(maxImagesPerPrompt, supportsImages)
+      : undefined;
+    if (
+      isOpenAiCompatible &&
+      supportsImages &&
+      maxImagesPerPrompt.trim() &&
+      parsedMaxImagesPerPrompt === undefined
+    ) {
+      setError(t("Enter a whole number from 1 to 1000 for the image limit."));
+      return;
+    }
+    const maxImagesPerPromptInput =
+      supportsImages && !maxImagesPerPrompt.trim() ? null : parsedMaxImagesPerPrompt;
+    const parsedContextWindow = isOpenAiCompatible
+      ? parseModelContextWindow(contextWindow)
+      : undefined;
+    if (isOpenAiCompatible && parsedContextWindow === undefined) {
       setError(
         t("Enter a whole number from 1 to {max} for the context limit.", {
           max: MAX_MODEL_CONTEXT_WINDOW,
@@ -327,6 +343,7 @@ export default function Models() {
       );
       return;
     }
+    if (isOpenAiCompatible && parsedMaxTokens === undefined) return;
     setError(null);
     setNotice(null);
     setPending("connect");
@@ -349,15 +366,16 @@ export default function Models() {
             }
           : {
               provider: selected.provider,
-              apiKey: apiKey.trim(),
+              ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}),
               modelId: selected.id,
+              maxTokens: parsedMaxTokens ?? null,
               label: selected.providerName ?? selected.provider,
             },
       );
       setApiKey("");
       await load({ provider, modelId });
       setNotice(
-        isOpenAiCompatible
+        isOpenAiCompatible || savingLimitOnly
           ? t("Saved.")
           : t("Connected and using {label}.", { label: selected.label }),
       );
@@ -759,6 +777,31 @@ export default function Models() {
                 ))}
               </View>
             )}
+            {!isOpenAiCompatible ? (
+              <>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityState={{ expanded: showAdvanced }}
+                  onPress={() => setShowAdvanced((visible) => !visible)}
+                >
+                  <Text style={styles.helpLabel}>{t("Advanced")}</Text>
+                </Pressable>
+                {showAdvanced ? (
+                  <View style={styles.modelRow}>
+                    <Text style={styles.modelLabel}>{t("Maximum output tokens")}</Text>
+                    <TextInput
+                      accessibilityLabel={t("Maximum output tokens")}
+                      editable={!busy}
+                      keyboardType="number-pad"
+                      maxLength={6}
+                      onChangeText={setMaxTokens}
+                      style={[styles.keyInput, styles.maxImagesInput]}
+                      value={maxTokens}
+                    />
+                  </View>
+                ) : null}
+              </>
+            ) : null}
             {!isOpenAiCompatible && selected.billing ? (
               <Text style={styles.billing}>{selected.billing}</Text>
             ) : null}
@@ -846,7 +889,7 @@ export default function Models() {
               )
             ) : null}
 
-            {acceptsKey ? (
+            {acceptsKey || builtinLimitSave ? (
               <View style={styles.keySection}>
                 {isOpenAiCompatible ? (
                   <>
@@ -875,7 +918,7 @@ export default function Models() {
                       />
                     ) : null}
                   </>
-                ) : (
+                ) : acceptsKey ? (
                   <>
                     <Text style={styles.sectionTitle}>
                       {credential
@@ -900,17 +943,22 @@ export default function Models() {
                       value={apiKey}
                     />
                   </>
-                )}
+                ) : null}
                 <Pressable
                   accessibilityRole="button"
                   disabled={
-                    busy || (isOpenAiCompatible ? !openAiCompatibleReady : apiKey.trim().length < 8)
+                    busy ||
+                    (isOpenAiCompatible
+                      ? !openAiCompatibleReady
+                      : !builtinLimitSave && apiKey.trim().length < 8)
                   }
                   onPress={() => void connectKey()}
                   style={({ pressed }) => [
                     styles.primaryButton,
                     (busy ||
-                      (isOpenAiCompatible ? !openAiCompatibleReady : apiKey.trim().length < 8)) &&
+                      (isOpenAiCompatible
+                        ? !openAiCompatibleReady
+                        : !builtinLimitSave && apiKey.trim().length < 8)) &&
                       styles.disabled,
                     pressed && styles.pressed,
                   ]}
@@ -918,7 +966,7 @@ export default function Models() {
                   <Text style={styles.primaryLabel}>
                     {pending === "connect"
                       ? t("Saving…")
-                      : isOpenAiCompatible
+                      : isOpenAiCompatible || builtinLimitSave
                         ? t("Save")
                         : credential
                           ? t("Replace API key")

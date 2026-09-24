@@ -5060,8 +5060,7 @@ async function resolveModelKey(
         baseUrl,
         reasoning:
           resolved.secret.kind === "openai_compatible" ? resolved.secret.reasoning : undefined,
-        maxTokens:
-          resolved.secret.kind === "openai_compatible" ? resolved.secret.maxTokens : undefined,
+        maxTokens: resolved.secret.maxTokens,
         contextWindow:
           resolved.secret.kind === "openai_compatible" ? resolved.secret.contextWindow : undefined,
         thinkingLevel:
@@ -5094,7 +5093,11 @@ async function resolveModelKey(
                   }
                 }
                 await persist(
-                  serializeModelSecret({ kind: "oauth", credential: toOAuthCredential(next) }),
+                  serializeModelSecret({
+                    kind: "oauth",
+                    credential: toOAuthCredential(next),
+                    ...(current.maxTokens !== undefined ? { maxTokens: current.maxTokens } : {}),
+                  }),
                 );
               });
             }

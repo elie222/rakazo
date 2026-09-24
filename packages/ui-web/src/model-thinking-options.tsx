@@ -4,7 +4,7 @@ import { Input } from "./components/ui/input.js";
 import { NativeSelect, NativeSelectOption } from "./components/ui/native-select.js";
 
 export function ModelThinkingOptions({
-  reasoning,
+  reasoning = false,
   onReasoningChange,
   supportsImages,
   onSupportsImagesChange,
@@ -13,6 +13,7 @@ export function ModelThinkingOptions({
   disabled,
   advancedLabel,
   thinkingLabel,
+  showThinking = true,
   thinkingLevel,
   onThinkingLevelChange,
   thinkingLevelOptions,
@@ -27,15 +28,16 @@ export function ModelThinkingOptions({
   imagesLabel,
   maxImagesLabel,
 }: {
-  reasoning: boolean;
-  onReasoningChange: (reasoning: boolean) => void;
+  reasoning?: boolean;
+  onReasoningChange?: (reasoning: boolean) => void;
   supportsImages?: boolean;
   onSupportsImagesChange?: (supportsImages: boolean) => void;
   maxImagesPerPrompt?: string;
   onMaxImagesPerPromptChange?: (maxImagesPerPrompt: string) => void;
   disabled?: boolean;
   advancedLabel: string;
-  thinkingLabel: string;
+  thinkingLabel?: string;
+  showThinking?: boolean;
   thinkingLevel?: string | null;
   onThinkingLevelChange?: (thinkingLevel: string | null) => void;
   thinkingLevelOptions?: ReadonlyArray<{ value: string; label: string }>;
@@ -59,16 +61,19 @@ export function ModelThinkingOptions({
   return (
     <details className="mt-4 text-sm text-muted-foreground">
       <summary className="cursor-pointer">{advancedLabel}</summary>
-      <label htmlFor={id} className="mt-3 flex items-center gap-2">
-        <Checkbox
-          id={id}
-          checked={reasoning}
-          onCheckedChange={(checked) => onReasoningChange(checked === true)}
-          disabled={disabled}
-        />
-        {thinkingLabel}
-      </label>
-      {reasoning &&
+      {showThinking && onReasoningChange && thinkingLabel ? (
+        <label htmlFor={id} className="mt-3 flex items-center gap-2">
+          <Checkbox
+            id={id}
+            checked={reasoning}
+            onCheckedChange={(checked) => onReasoningChange(checked === true)}
+            disabled={disabled}
+          />
+          {thinkingLabel}
+        </label>
+      ) : null}
+      {showThinking &&
+      reasoning &&
       onThinkingLevelChange &&
       thinkingLevelOptions &&
       thinkingLevelOptions.length > 0 ? (

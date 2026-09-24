@@ -91,6 +91,19 @@ describe("contracts", () => {
     expect(valid.success).toBe(true);
   });
 
+  it("lets a built-in connection update maxTokens without a new API key", () => {
+    expect(
+      ModelConnectInputSchema.safeParse({ provider: "anthropic", maxTokens: 8192 }).success,
+    ).toBe(true);
+    expect(
+      ModelConnectInputSchema.safeParse({ provider: "anthropic", maxTokens: null }).success,
+    ).toBe(true);
+    expect(ModelConnectInputSchema.safeParse({ provider: "anthropic" }).success).toBe(false);
+    expect(
+      ModelConnectInputSchema.safeParse({ provider: "anthropic", apiKey: "short" }).success,
+    ).toBe(false);
+  });
+
   it("accepts optional persisted duration only on valid steps blocks", () => {
     expect(
       MessageBlock.parse({

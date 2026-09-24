@@ -229,7 +229,9 @@ test("connects, lists, and uses an OpenAI-compatible endpoint", async ({ page },
   }
 });
 
-test("model settings connect, replace, and cancel provider authentication", async ({ page }) => {
+test("model settings connect, replace, and cancel provider authentication", async ({
+  page,
+}, testInfo) => {
   const stamp = Date.now();
   const userName = `Models ${stamp}`;
   await signup(page, `models-${stamp}@rakazo.test`, "password12", userName);
@@ -245,8 +247,31 @@ test("model settings connect, replace, and cancel provider authentication", asyn
   const apiKeyInput = page.getByLabel("API key");
   await expect(apiKeyInput).toHaveAttribute("autocomplete", "new-password");
   await apiKeyInput.fill("fake-scripted-key-one");
+  await page.getByText("Advanced", { exact: true }).click();
+  await page.getByLabel("Maximum output tokens").fill("8192");
+  await captureScreenshot(page, testInfo, "builtin-provider-max-tokens");
   await page.getByRole("button", { name: "Connect API key" }).click();
   await expect(page.getByText(/Connected and using Scripted runtime/)).toBeVisible();
+  const connected = await rpc<Array<{ provider: string; maxTokens?: number }>>(
+    page,
+    "models/credentials",
+    {},
+  );
+  expect(connected.find((entry) => entry.provider === "scripted")?.maxTokens).toBe(8192);
+  await page.getByLabel("Maximum output tokens").fill("16384");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.getByText("Saved.", { exact: true })).toBeVisible();
+  const updated = await rpc<Array<{ provider: string; maxTokens?: number }>>(
+    page,
+    "models/credentials",
+    {},
+  );
+  expect(updated.find((entry) => entry.provider === "scripted")?.maxTokens).toBe(16384);
+  await page.reload();
+  await openUserSettings(page, "models");
+  await expect(page.getByRole("combobox", { name: "Model" })).toHaveText(/Scripted runtime/);
+  await page.getByText("Advanced", { exact: true }).click();
+  await expect(page.getByLabel("Maximum output tokens")).toHaveValue("16384");
 
   await page.getByLabel("Replace API key").fill("fake-scripted-key-two");
   await page.getByRole("button", { name: "Replace API key" }).click();

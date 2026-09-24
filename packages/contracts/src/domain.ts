@@ -944,14 +944,14 @@ export const ModelConnectInputSchema = z
     modelId: z.string().optional(),
     reasoning: z.boolean().optional(),
     thinkingLevel: ThinkingLevelSchema.nullable().optional(),
-    maxTokens: z.number().int().min(1).max(MAX_MODEL_MAX_TOKENS).optional(),
+    maxTokens: z.number().int().min(1).max(MAX_MODEL_MAX_TOKENS).nullable().optional(),
     contextWindow: z.number().int().min(1).max(MAX_MODEL_CONTEXT_WINDOW).optional(),
     supportsImages: z.boolean().optional(),
     maxImagesPerPrompt: z.number().int().min(1).max(1000).nullable().optional(),
   })
   .superRefine((value, ctx) => {
     if (
-      value.maxTokens !== undefined &&
+      typeof value.maxTokens === "number" &&
       value.contextWindow !== undefined &&
       value.maxTokens > value.contextWindow
     ) {
@@ -978,7 +978,16 @@ export const ModelConnectInputSchema = z
       }
       return;
     }
-    if (!value.apiKey || value.apiKey.trim().length < 8) {
+    const apiKey = value.apiKey?.trim() ?? "";
+    if (apiKey.length > 0 && apiKey.length < 8) {
+      ctx.addIssue({
+        code: "custom",
+        message: "API key must contain at least 8 characters",
+        path: ["apiKey"],
+      });
+    }
+    // An existing connection can update its output limit without a new key.
+    if (!apiKey && value.maxTokens === undefined) {
       ctx.addIssue({
         code: "custom",
         message: "API key must contain at least 8 characters",
