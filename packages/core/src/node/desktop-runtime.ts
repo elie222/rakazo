@@ -161,7 +161,8 @@ export function stopBrowserCommand(screenId: string, env = DEFAULT_DESKTOP_ENV) 
   );
 }
 
-function stopBrowserProfileCommand(profile: string, pidFile: string) {
+/** Close one Chromium profile with Browser.close, then SIGTERM, before a checkpoint copies it. */
+export function stopBrowserProfileCommand(profile: string, pidFile: string) {
   return [
     ...browserRunningFunction(profile, pidFile),
     `if browser_running; then`,

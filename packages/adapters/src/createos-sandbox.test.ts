@@ -49,11 +49,22 @@ function shellArgs(command: string): string[] {
 
 /** Route-driven CreateOS control-plane double. Exec replies are keyed off the shell command. */
 function createosFixture(
-  options: { statuses?: string[]; connectionUrl?: string; failScreenDeletes?: number } = {},
+  options: {
+    statuses?: string[];
+    connectionUrl?: string;
+    failScreenDeletes?: number;
+    annotateScreen?: boolean;
+    failConnectScreenIds?: string[];
+    holdConnect?: { screenId: string; hit: number; gate: Promise<void>; onHold: () => void };
+  } = {},
 ) {
   const statuses = [...(options.statuses ?? ["running"])];
   const calls: string[] = [];
   const execs: ExecCall[] = [];
+  const events: string[] = [];
+  const failConnects = new Set(options.failConnectScreenIds ?? []);
+  const connectHits = new Map<string, number>();
+  let heldConnect = false;
   const screenMapPath = path.join(
     mkdtempSync(path.join(tmpdir(), "createos-screens-")),
     "screens.json",
@@ -109,6 +120,7 @@ function createosFixture(
       return jsonResponse({ screen_id: screenId });
     }
     if (method === "DELETE" && /\/computer\/screens\/[^/]+$/.test(url.pathname)) {
+      events.push(`delete:${url.pathname.split("/").at(-1) ?? ""}`);
       if (screenDeleteFailures > 0) {
         screenDeleteFailures -= 1;
         return new Response(JSON.stringify({ status: "error", message: "unavailable" }), {
@@ -118,7 +130,28 @@ function createosFixture(
       }
     }
     if (method === "GET" && url.pathname.endsWith("/connect")) {
-      return jsonResponse(options.connectionUrl ? { url: options.connectionUrl, token: "t" } : {});
+      const screenId = url.pathname.split("/").at(-2) ?? "";
+      const hit = (connectHits.get(screenId) ?? 0) + 1;
+      connectHits.set(screenId, hit);
+      const hold = options.holdConnect;
+      if (hold && !heldConnect && screenId === hold.screenId && hit === hold.hit) {
+        heldConnect = true;
+        hold.onHold();
+        await hold.gate;
+        events.push(`resume:${screenId}`);
+      }
+      if (failConnects.has(screenId)) {
+        failConnects.delete(screenId);
+        return new Response(JSON.stringify({ status: "error", message: "not found" }), {
+          status: 404,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (!options.connectionUrl) return jsonResponse({});
+      if (!options.annotateScreen) return jsonResponse({ url: options.connectionUrl, token: "t" });
+      const annotated = new URL(options.connectionUrl, "https://api.sb.createos.sh");
+      annotated.searchParams.set("screen", screenId);
+      return jsonResponse({ url: annotated.toString(), token: "t" });
     }
     if (method === "GET" && url.pathname.endsWith("/files")) {
       return new Response(new TextEncoder().encode("notes"));
@@ -126,7 +159,7 @@ function createosFixture(
     return jsonResponse({});
   }) as typeof fetch;
 
-  return { calls, execs, fetchImpl };
+  return { calls, execs, events, fetchImpl };
 }
 
 function provider(fixture: ReturnType<typeof createosFixture>) {
@@ -221,34 +254,31 @@ describe("CreateOSSandboxProvider", () => {
     expect(events[0]).toMatchObject({ type: "stderr" });
   });
 
-  it("exports a live checkpoint without stopping browsers", async () => {
-    const fixture = createosFixture();
-    const files: PortableFile[] = [];
-    for await (const file of provider(fixture).exportWorkspace(computer, {
-      ...context,
-      operationId: "run-1",
-    })) {
-      files.push(file);
-    }
+  it.each(["run-1", "stop", "computer.sleep"])(
+    "quiesces Chromium before exporting a %s checkpoint",
+    async (operationId) => {
+      const fixture = createosFixture();
+      const files: PortableFile[] = [];
+      for await (const file of provider(fixture).exportWorkspace(computer, {
+        ...context,
+        operationId,
+      })) {
+        files.push(file);
+      }
 
-    expect(files.map((file) => file.path)).toEqual(["notes.txt"]);
-    expect(fixture.execs.some((exec) => exec.command.includes("chromium-bot-"))).toBe(false);
-    expect(fixture.execs.some((exec) => exec.command.includes("127.0.0.1:9222"))).toBe(false);
-  });
-
-  it.each(["stop", "computer.sleep"])("stops browsers when export is %s", async (operationId) => {
-    const fixture = createosFixture();
-    const files: PortableFile[] = [];
-    for await (const file of provider(fixture).exportWorkspace(computer, {
-      ...context,
-      operationId,
-    })) {
-      files.push(file);
-    }
-
-    expect(files.map((file) => file.path)).toEqual(["notes.txt"]);
-    expect(fixture.execs.some((exec) => exec.command.includes("chromium-bot-"))).toBe(true);
-  });
+      expect(files.map((file) => file.path)).toEqual(["notes.txt"]);
+      const quiesceIndex = fixture.execs.findIndex(
+        (exec) =>
+          exec.command.includes("Browser.close") &&
+          exec.command.includes("/home/desktop/rakazo-home/.browser-profiles/chromium"),
+      );
+      const listings = fixture.execs.flatMap((exec, index) =>
+        exec.command.includes("os.listdir") ? [index] : [],
+      );
+      expect(quiesceIndex).toBeGreaterThan(listings[0] ?? -1);
+      expect(quiesceIndex).toBeLessThan(listings[1] ?? -1);
+    },
+  );
 
   it("exports the workspace after a graphical action alone", async () => {
     const fixture = createosFixture();
@@ -459,6 +489,64 @@ describe("CreateOSSandboxProvider", () => {
     ]);
   });
 
+  it("replaces a screen whose connection is already gone", async () => {
+    const fixture = createosFixture({
+      connectionUrl: "https://sandbox.app.sb.createos.sh/vnc.html",
+      annotateScreen: true,
+      failConnectScreenIds: ["screen-1"],
+    });
+    const target = provider(fixture);
+    const botA = { ...context, botId: "bot-a" };
+    const botB = { ...context, botId: "bot-b" };
+
+    await target.connectScreen(computer, { view: "stream" }, botA);
+    const session = await target.connectScreen(computer, { view: "stream" }, botB);
+
+    expect(new URL(session.url ?? "").searchParams.get("screen")).toBe("screen-2");
+    expect(
+      fixture.calls.filter((call) => call === "POST /v1/sandboxes/sbx-1/computer/screens"),
+    ).toHaveLength(2);
+  });
+
+  it("deletes a screen only after its in-flight connection finishes", async () => {
+    let openGate: () => void = () => undefined;
+    const connectGate = new Promise<void>((resolve) => {
+      openGate = resolve;
+    });
+    let markHeld: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      markHeld = resolve;
+    });
+    const fixture = createosFixture({
+      connectionUrl: "https://sandbox.app.sb.createos.sh/vnc.html",
+      annotateScreen: true,
+      holdConnect: { screenId: "screen-1", hit: 2, gate: connectGate, onHold: () => markHeld() },
+    });
+    const target = provider(fixture);
+    const botA = { ...context, botId: "bot-a" };
+    const botB = { ...context, botId: "bot-b" };
+
+    await target.connectScreen(computer, { view: "stream" }, botA);
+    await target.connectScreen(computer, { view: "stream" }, botB);
+    const reconnecting = target.connectScreen(computer, { view: "stream" }, botB);
+    await held;
+    const releasing = target.releaseScreen(computer, botB);
+    await vi.waitFor(() => {
+      expect(fixture.execs.some((exec) => exec.command.includes("begin-release"))).toBe(true);
+    });
+    expect(fixture.events.some((event) => event.startsWith("delete:"))).toBe(false);
+
+    openGate();
+    const session = await reconnecting;
+    await releasing;
+
+    expect(new URL(session.url ?? "").searchParams.get("screen")).toBe("screen-2");
+    const resumeAt = fixture.events.indexOf("resume:screen-1");
+    const deleteAt = fixture.events.indexOf("delete:screen-1");
+    expect(resumeAt).toBeGreaterThanOrEqual(0);
+    expect(deleteAt).toBeGreaterThan(resumeAt);
+  });
+
   it("does not reuse a released screen id from the process-local cache", async () => {
     const fixture = createosFixture({ connectionUrl: "/vnc.html" });
     const api = provider(fixture);
@@ -474,7 +562,9 @@ describe("CreateOSSandboxProvider", () => {
     expect(fixture.calls.filter((call) => call.endsWith("/computer/screens"))).toEqual([
       "POST /v1/sandboxes/sbx-1/computer/screens",
     ]);
-    expect(fixture.calls.at(-1)).toBe("GET /v1/sandboxes/sbx-1/computer/screens/screen-1/connect");
+    expect(fixture.calls.filter((call) => call.includes("/connect")).at(-1)).toBe(
+      "GET /v1/sandboxes/sbx-1/computer/screens/screen-1/connect",
+    );
   });
 
   it("keeps a screen assignment when deletion fails so a later release can retry", async () => {
@@ -492,7 +582,9 @@ describe("CreateOSSandboxProvider", () => {
     expect(
       fixture.calls.filter((call) => call === "POST /v1/sandboxes/sbx-1/computer/screens"),
     ).toHaveLength(1);
-    expect(fixture.calls.at(-1)).toBe("GET /v1/sandboxes/sbx-1/computer/screens/screen-1/connect");
+    expect(fixture.calls.filter((call) => call.includes("/connect")).at(-1)).toBe(
+      "GET /v1/sandboxes/sbx-1/computer/screens/screen-1/connect",
+    );
 
     await expect(worker.releaseScreen(computer, botB)).resolves.toBeUndefined();
     expect(
@@ -622,5 +714,23 @@ describe("CreateOS screen map", () => {
     expect([first, second].sort()).toEqual(["NEED_CREATE", "screen-0"]);
     const stored = JSON.parse(await mapOp(dir, "read", "", "")) as Record<string, string>;
     expect(Object.values(stored).filter((id) => id === "screen-0")).toHaveLength(1);
+  });
+
+  it("keeps a draining screen id for retry and lets a new claim replace it", async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "createos-map-"));
+    expect(await mapOp(dir, "put", "bot-b", "screen-1")).toBe("screen-1");
+    expect(await mapOp(dir, "begin-release", "bot-b", "")).toBe("screen-1");
+    const draining = JSON.parse(await mapOp(dir, "read", "", "")) as Record<string, string>;
+    expect(draining["bot-b"]).toBe("draining:screen-1");
+
+    expect(await mapOp(dir, "abort-release", "bot-b", "screen-1")).toBe("ok");
+    const restored = JSON.parse(await mapOp(dir, "read", "", "")) as Record<string, string>;
+    expect(restored["bot-b"]).toBe("screen-1");
+
+    expect(await mapOp(dir, "begin-release", "bot-b", "")).toBe("screen-1");
+    expect(await mapOp(dir, "put", "bot-b", "screen-2")).toBe("screen-2");
+    expect(await mapOp(dir, "commit-release", "bot-b", "screen-1")).toBe("ok");
+    const replaced = JSON.parse(await mapOp(dir, "read", "", "")) as Record<string, string>;
+    expect(replaced["bot-b"]).toBe("screen-2");
   });
 });

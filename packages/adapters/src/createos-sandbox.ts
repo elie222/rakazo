@@ -16,7 +16,7 @@ import type {
   ScreenSession,
 } from "@rakazo/adapter-kit";
 import { boundedSandboxCommandTimeoutMs } from "@rakazo/core";
-import { stopAllDesktopBrowsersCommand } from "@rakazo/core/node/desktop-runtime";
+import { stopBrowserProfileCommand } from "@rakazo/core/node/desktop-runtime";
 import { sandboxIdleMs } from "./computer-idle.js";
 import { screenSessionKey } from "./computer-screens.js";
 import {
@@ -34,6 +34,10 @@ import {
 import { readBodyCapped } from "./web-ssrf.js";
 
 const CREATEOS_WORKSPACE = "/home/desktop/rakazo-home";
+const CREATEOS_CHROMIUM_PROFILE = `${CREATEOS_WORKSPACE}/.browser-profiles/chromium`;
+const CREATEOS_FIREFOX_PROFILE = `${CREATEOS_WORKSPACE}/.browser-profiles/firefox`;
+const CREATEOS_CHROMIUM_PID = "/tmp/rakazo/createos-chromium.pid";
+const CREATEOS_DRAINING_SCREEN = "draining:";
 const CREATEOS_SCREEN_MAP_PATH = `${CREATEOS_WORKSPACE}/.rakazo/screens.json`;
 export const CREATEOS_SCREEN_MAP_SENTINEL = "RAKAZO_SCREEN_MAP_V1";
 const CREATEOS_SCREEN_MAP_NEED_CREATE = "NEED_CREATE";
@@ -91,12 +95,38 @@ with open(path + ".lock", "a", encoding="utf-8") as lock:
         if isinstance(item_key, str) and isinstance(item_value, str) and item_value
     }
     if op == "remove":
-        data.pop(key, None)
-        write_map(path, data)
+        current = data.get(key) or ""
+        if screen_id and current != screen_id:
+            print("mismatch")
+        else:
+            data.pop(key, None)
+            write_map(path, data)
+            print("ok")
+    elif op == "begin-release":
+        current = data.get(key) or ""
+        if current.startswith("draining:"):
+            print(current[len("draining:"):])
+        elif current:
+            data[key] = "draining:" + current
+            write_map(path, data)
+            print(current)
+        else:
+            print("")
+    elif op == "abort-release":
+        current = data.get(key) or ""
+        if screen_id and current == "draining:" + screen_id:
+            data[key] = screen_id
+            write_map(path, data)
+        print("ok")
+    elif op == "commit-release":
+        current = data.get(key) or ""
+        if screen_id and current == "draining:" + screen_id:
+            data.pop(key, None)
+            write_map(path, data)
         print("ok")
     elif op == "put":
-        current = data.get(key)
-        if current:
+        current = data.get(key) or ""
+        if current and not current.startswith("draining:"):
             print(current)
         elif screen_id == "screen-0" and "screen-0" in data.values():
             print("NEED_CREATE")
@@ -160,6 +190,12 @@ export class CreateOSSandboxProvider implements SandboxProvider {
   private readonly rootfs: string;
   private readonly fetchImpl: typeof fetch;
   private readonly screenAssignments = new Map<string, Map<string, string>>();
+  /** Serializes assignment changes with the connect decision for one session. */
+  private readonly screenGates = new Map<string, Promise<void>>();
+  /** Sessions whose remote screen is being torn down. Checked before a URL is returned. */
+  private readonly retiringSessions = new Set<string>();
+  /** Connect calls that already resolved a screen id and have not finished yet. */
+  private readonly activeScreenConnections = new Map<string, Set<Promise<void>>>();
 
   constructor(private readonly options: CreateOSSandboxProviderOptions) {
     this.baseUrl = (options.baseUrl?.trim() || DEFAULT_CREATEOS_BASE_URL).replace(/\/+$/, "");
@@ -241,13 +277,13 @@ export class CreateOSSandboxProvider implements SandboxProvider {
         "bash",
         "-lc",
         [
-          `mkdir -p ${shellQuote(CREATEOS_WORKSPACE)} ${shellQuote(`${CREATEOS_WORKSPACE}/.browser-profiles/chromium`)} ${shellQuote(`${CREATEOS_WORKSPACE}/.browser-profiles/firefox`)}`,
+          `mkdir -p ${shellQuote(CREATEOS_WORKSPACE)} ${shellQuote(CREATEOS_CHROMIUM_PROFILE)} ${shellQuote(CREATEOS_FIREFOX_PROFILE)}`,
           "mkdir -p /tmp/runtime-desktop",
           "chmod 700 /tmp/runtime-desktop",
           "mkdir -p /home/desktop/.config",
-          `ln -sfn ${shellQuote(`${CREATEOS_WORKSPACE}/.browser-profiles/chromium`)} /home/desktop/.config/google-chrome`,
-          `ln -sfn ${shellQuote(`${CREATEOS_WORKSPACE}/.browser-profiles/chromium`)} /home/desktop/.config/chromium`,
-          `ln -sfn ${shellQuote(`${CREATEOS_WORKSPACE}/.browser-profiles/firefox`)} /home/desktop/.mozilla`,
+          `ln -sfn ${shellQuote(CREATEOS_CHROMIUM_PROFILE)} /home/desktop/.config/google-chrome`,
+          `ln -sfn ${shellQuote(CREATEOS_CHROMIUM_PROFILE)} /home/desktop/.config/chromium`,
+          `ln -sfn ${shellQuote(CREATEOS_FIREFOX_PROFILE)} /home/desktop/.mozilla`,
           `chown -R desktop:desktop ${shellQuote(CREATEOS_WORKSPACE)} /home/desktop/.config /home/desktop/.mozilla /tmp/runtime-desktop`,
         ].join(" && "),
       ],
@@ -286,32 +322,7 @@ export class CreateOSSandboxProvider implements SandboxProvider {
     request: ScreenRequest,
     context: AdapterContext,
   ): Promise<ScreenSession> {
-    const screenId = await this.resolveScreen(computer, context);
-    const connection = await this.getJson<CreateOSScreenConnection>(
-      `/v1/sandboxes/${encodeURIComponent(computer.providerRef)}/computer/screens/${encodeURIComponent(screenId)}/connect`,
-      context,
-    ).catch((error) => {
-      if (isUnrecoverableCreateOSError(error)) return null;
-      throw error;
-    });
-    if (!connection) return { url: null, mimeType: "text/html", close: async () => undefined };
-    const rawUrl = connection.url ?? connection.path;
-    if (!rawUrl) return { url: null, mimeType: "text/html", close: async () => undefined };
-    const url = new URL(rawUrl, this.baseUrl);
-    if (!isAllowedCreateOSScreenUrl(url, this.baseUrl)) {
-      throw new Error("CreateOS screen URL host is not allowed");
-    }
-    url.searchParams.set("autoconnect", "true");
-    url.searchParams.set("resize", "scale");
-    if (connection.token && !url.searchParams.has("token")) {
-      url.searchParams.set("token", connection.token);
-    }
-    if (!request.interactive) url.searchParams.set("view_only", "true");
-    return {
-      url: url.toString(),
-      mimeType: "text/html",
-      close: async () => undefined,
-    };
+    return this.connectAssignedScreen(computer, request, context, 0);
   }
 
   async setScreenControl(
@@ -472,15 +483,13 @@ print(json.dumps(out))
     // Dirty state does not survive a process restart or a second provider
     // instance, and skipping the walk commits an empty checkpoint over the home.
     if (!(await this.hasExportableWorkspaceFiles(computer, "", context))) return;
-    // Run checkpoints and lifecycle updates share this export. Stopping the
-    // browser keeps a single tab URL, so only stop and sleep quiesce it.
-    if (context.operationId === "stop" || context.operationId === "computer.sleep") {
-      await this.executeChecked(
-        computer,
-        ["bash", "-lc", stopAllDesktopBrowsersCommand()],
-        context,
-      );
-    }
+    // Preferences and Local State stay in the export. Close Chromium first, the
+    // same way other desktop providers quiesce a profile before copying it.
+    await this.executeChecked(
+      computer,
+      ["bash", "-lc", stopBrowserProfileCommand(CREATEOS_CHROMIUM_PROFILE, CREATEOS_CHROMIUM_PID)],
+      context,
+    );
     yield* this.walkWorkspace(computer, "", context);
   }
 
@@ -517,17 +526,36 @@ print(json.dumps(out))
 
   async releaseScreen(computer: ComputerRef, context: AdapterContext): Promise<void> {
     const screenKey = screenSessionKey(context);
-    const recorded = await this.readScreenMap(computer, context);
-    const screenId = recorded[screenKey];
+    const gateKey = this.screenGateKey(computer.providerRef, screenKey);
+    const screenId = await this.withScreenGate(gateKey, async () => {
+      // Visible before the map update returns, so a connect does not hand back this screen.
+      this.retiringSessions.add(gateKey);
+      try {
+        return await this.runScreenMap(computer, "begin-release", screenKey, "", context);
+      } catch (error) {
+        this.retiringSessions.delete(gateKey);
+        throw error;
+      }
+    });
+    this.screenAssignments.get(computer.providerRef)?.delete(screenKey);
     if (!screenId) {
-      this.screenAssignments.get(computer.providerRef)?.delete(screenKey);
+      this.retiringSessions.delete(gateKey);
       return;
     }
-    // Keep the assignment until a non-primary screen is gone. Callers swallow
-    // DELETE failures, and a later release can retry only while the id remains.
-    if (screenId !== "screen-0") await this.deleteScreen(computer, screenId, context);
-    await this.runScreenMap(computer, "remove", screenKey, "", context);
-    this.screenAssignments.get(computer.providerRef)?.delete(screenKey);
+    try {
+      // The assignment is draining, so a new connect will not adopt this id.
+      // Wait until connects that already resolved it finish or rebind, then delete.
+      if (screenId !== "screen-0") {
+        await this.waitForScreenConnections(computer.providerRef, screenId);
+        await this.deleteScreen(computer, screenId, context);
+      }
+    } catch (error) {
+      await this.runScreenMap(computer, "abort-release", screenKey, screenId, context);
+      throw error;
+    } finally {
+      this.retiringSessions.delete(gateKey);
+    }
+    await this.runScreenMap(computer, "commit-release", screenKey, screenId, context);
   }
 
   async stop(computer: ComputerRef, context: AdapterContext): Promise<void> {
@@ -553,6 +581,146 @@ print(json.dumps(out))
     this.screenAssignments.delete(id);
   }
 
+  /**
+   * Bind a session to its current screen. A release marks that assignment draining
+   * before the remote screen disappears; this either returns a live connection or
+   * allocates a replacement instead of a null URL.
+   */
+  private async connectAssignedScreen(
+    computer: ComputerRef,
+    request: ScreenRequest,
+    context: AdapterContext,
+    attempt: number,
+  ): Promise<ScreenSession> {
+    const screenKey = screenSessionKey(context);
+    const gateKey = this.screenGateKey(computer.providerRef, screenKey);
+    const screenId = await this.resolveScreen(computer, context);
+    const endConnection = this.trackScreenConnection(computer.providerRef, screenId);
+    let outcome: "keep" | "retry" | "empty" = "empty";
+    let session: ScreenSession | undefined;
+    try {
+      let missed = false;
+      const connection = await this.getJson<CreateOSScreenConnection>(
+        `/v1/sandboxes/${encodeURIComponent(computer.providerRef)}/computer/screens/${encodeURIComponent(screenId)}/connect`,
+        context,
+      ).catch((error) => {
+        if (!isUnrecoverableCreateOSError(error)) throw error;
+        missed = true;
+        return null;
+      });
+      const rawUrl = connection?.url ?? connection?.path;
+      if (!missed && !rawUrl) {
+        outcome = "empty";
+      } else {
+        outcome = await this.withScreenGate(gateKey, async () => {
+          const recorded = await this.readScreenMap(computer, context);
+          const current = liveScreenId(recorded[screenKey]);
+          if (this.retiringSessions.has(gateKey) || missed || current !== screenId) {
+            if (missed && recorded[screenKey] === screenId) {
+              await this.runScreenMap(computer, "remove", screenKey, screenId, context);
+              this.screenAssignments.get(computer.providerRef)?.delete(screenKey);
+            }
+            return attempt < 1 ? "retry" : "empty";
+          }
+          return "keep";
+        });
+        if (outcome === "keep" && connection && rawUrl) {
+          // A release queued on this gate marks the session before its map update returns.
+          await Promise.resolve();
+          const current = liveScreenId((await this.readScreenMap(computer, context))[screenKey]);
+          if (this.retiringSessions.has(gateKey) || current !== screenId) {
+            outcome = attempt < 1 ? "retry" : "empty";
+          } else {
+            session = this.screenSession(rawUrl, connection.token, request);
+          }
+        }
+      }
+    } finally {
+      endConnection();
+    }
+    if (outcome === "keep" && session) return session;
+    if (outcome === "retry") {
+      try {
+        return await this.connectAssignedScreen(computer, request, context, attempt + 1);
+      } catch (error) {
+        if (isUnrecoverableCreateOSError(error)) return emptyScreenSession();
+        throw error;
+      }
+    }
+    return emptyScreenSession();
+  }
+
+  private screenSession(
+    rawUrl: string,
+    token: string | undefined,
+    request: ScreenRequest,
+  ): ScreenSession {
+    const url = new URL(rawUrl, this.baseUrl);
+    if (!isAllowedCreateOSScreenUrl(url, this.baseUrl)) {
+      throw new Error("CreateOS screen URL host is not allowed");
+    }
+    url.searchParams.set("autoconnect", "true");
+    url.searchParams.set("resize", "scale");
+    if (token && !url.searchParams.has("token")) url.searchParams.set("token", token);
+    if (!request.interactive) url.searchParams.set("view_only", "true");
+    return { url: url.toString(), mimeType: "text/html", close: async () => undefined };
+  }
+
+  private screenGateKey(providerRef: string, screenKey: string): string {
+    return `${providerRef}\0${screenKey}`;
+  }
+
+  private async withScreenGate<T>(key: string, run: () => Promise<T>): Promise<T> {
+    const previous = this.screenGates.get(key) ?? Promise.resolve();
+    let releaseCurrent!: () => void;
+    const current = new Promise<void>((resolve) => {
+      releaseCurrent = resolve;
+    });
+    const tail = previous.then(() => current);
+    this.screenGates.set(key, tail);
+    await previous;
+    try {
+      return await run();
+    } finally {
+      releaseCurrent();
+      if (this.screenGates.get(key) === tail) this.screenGates.delete(key);
+    }
+  }
+
+  private trackScreenConnection(providerRef: string, screenId: string): () => void {
+    const key = `${providerRef}\0${screenId}`;
+    let connections = this.activeScreenConnections.get(key);
+    if (!connections) {
+      connections = new Set();
+      this.activeScreenConnections.set(key, connections);
+    }
+    let finish!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const active = connections;
+    active.add(pending);
+    let ended = false;
+    return () => {
+      if (ended) return;
+      ended = true;
+      finish();
+      active.delete(pending);
+      if (active.size === 0 && this.activeScreenConnections.get(key) === active) {
+        this.activeScreenConnections.delete(key);
+      }
+    };
+  }
+
+  private async waitForScreenConnections(providerRef: string, screenId: string): Promise<void> {
+    const key = `${providerRef}\0${screenId}`;
+    for (;;) {
+      const pending = [...(this.activeScreenConnections.get(key) ?? [])];
+      if (pending.length === 0) return;
+      await Promise.all(pending);
+    }
+  }
+
   private ref(id: string, botId: string, fresh: boolean): ComputerRef {
     return { id, botId, kind: "createos", providerRef: id, fresh };
   }
@@ -562,7 +730,7 @@ print(json.dumps(out))
     // Another process can release and reassign this session. The shared map is
     // the assignment; the process-local cache is only a copy of the last read.
     const recorded = await this.readScreenMap(computer, context);
-    const existing = recorded[screenKey];
+    const existing = liveScreenId(recorded[screenKey]);
     if (existing) {
       this.rememberScreen(computer.providerRef, screenKey, existing);
       return existing;
@@ -642,7 +810,7 @@ print(json.dumps(out))
 
   private async runScreenMap(
     computer: ComputerRef,
-    op: "read" | "put" | "remove",
+    op: "read" | "put" | "remove" | "begin-release" | "abort-release" | "commit-release",
     key: string,
     screenId: string,
     context: AdapterContext,
@@ -781,7 +949,7 @@ print(json.dumps(out))
       if (settleMs > 0) await delay(settleMs, undefined, { signal: context.signal });
       return;
     }
-    const profile = `${CREATEOS_WORKSPACE}/.browser-profiles/chromium`;
+    const profile = CREATEOS_CHROMIUM_PROFILE;
     const settleMs = clampRounded(options.settleMs ?? 1_000, 0, 5_000);
     await this.executeChecked(
       computer,
@@ -1266,6 +1434,15 @@ function createosCwd(cwd: string | undefined): string {
   }
   if (cwd === CREATEOS_WORKSPACE || cwd.startsWith(`${CREATEOS_WORKSPACE}/`)) return cwd;
   return workspacePath(CREATEOS_WORKSPACE, cwd);
+}
+
+function emptyScreenSession(): ScreenSession {
+  return { url: null, mimeType: "text/html", close: async () => undefined };
+}
+
+function liveScreenId(value: string | undefined): string | undefined {
+  if (!value || value.startsWith(CREATEOS_DRAINING_SCREEN)) return undefined;
+  return value;
 }
 
 function isBrowserApplication(application: string): boolean {
