@@ -7,7 +7,7 @@ import type {
 import { historyCompactJob } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
-import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
+import { createLogger, createTestSink, installLogger, wrapJobPayload } from "@rakazo/logging";
 import { describe, expect, it, vi } from "vitest";
 import {
   compactHistory,
@@ -15,10 +15,16 @@ import {
   formatRecalledMemory,
   historyWindowSize,
   MAX_COMPACTED_SUMMARY_CHARS,
+  MAX_SUMMARIZE_PROMPT_CHARS,
   MAX_TRANSCRIPT_CHARS,
   nextCompactionBatchRange,
+  recordHistoryCompactAttemptsExhausted,
+  SUMMARIZE_TIMEOUT_BASE_CHARS,
+  SUMMARIZE_TIMEOUT_MAX_MS,
+  SUMMARIZE_TIMEOUT_MIN_MS,
   selectCompactedHistory,
   shouldEnqueueCompaction,
+  summarizeTimeoutMs,
 } from "./history-compaction.js";
 
 describe("shouldEnqueueCompaction", () => {
@@ -382,6 +388,86 @@ function compactionHarness(
     deps,
   };
 }
+
+describe("summarizeTimeoutMs", () => {
+  it("keeps the short timeout for a small prompt", () => {
+    expect(summarizeTimeoutMs(0)).toBe(SUMMARIZE_TIMEOUT_MIN_MS);
+    expect(summarizeTimeoutMs(SUMMARIZE_TIMEOUT_BASE_CHARS)).toBe(SUMMARIZE_TIMEOUT_MIN_MS);
+  });
+
+  it("reaches the cap once the transcript is as large as the batch budget", () => {
+    expect(summarizeTimeoutMs(MAX_TRANSCRIPT_CHARS)).toBe(SUMMARIZE_TIMEOUT_MAX_MS);
+    expect(summarizeTimeoutMs(MAX_SUMMARIZE_PROMPT_CHARS)).toBe(SUMMARIZE_TIMEOUT_MAX_MS);
+  });
+
+  it("scales between the short timeout and the cap", () => {
+    const midpoint = summarizeTimeoutMs(
+      SUMMARIZE_TIMEOUT_BASE_CHARS + (MAX_TRANSCRIPT_CHARS - SUMMARIZE_TIMEOUT_BASE_CHARS) / 2,
+    );
+    expect(midpoint).toBeGreaterThan(SUMMARIZE_TIMEOUT_MIN_MS);
+    expect(midpoint).toBeLessThan(SUMMARIZE_TIMEOUT_MAX_MS);
+    expect(midpoint).toBe((SUMMARIZE_TIMEOUT_MIN_MS + SUMMARIZE_TIMEOUT_MAX_MS) / 2);
+  });
+});
+
+function installCompactionLogger() {
+  const sink = createTestSink();
+  installLogger(createLogger({ service: "rakazo-worker", sinks: [sink] }));
+  return sink;
+}
+
+function silenceLogger() {
+  installLogger(createLogger({ service: "rakazo-worker", level: "off", sinks: [] }));
+}
+
+describe("recordHistoryCompactAttemptsExhausted", () => {
+  it("logs a permanent failure once retries are exhausted", () => {
+    const sink = installCompactionLogger();
+    try {
+      recordHistoryCompactAttemptsExhausted(
+        {
+          task_identifier: "history.compact",
+          payload: wrapJobPayload({ threadId: "thread-9" }),
+          attempts: 4,
+          max_attempts: 4,
+        },
+        new Error("The operation was aborted due to timeout"),
+      );
+    } finally {
+      silenceLogger();
+    }
+
+    expect(sink.events.at(-1)).toMatchObject({
+      level: "error",
+      message: "history.compact failed permanently",
+      "thread.id": "thread-9",
+      "history.compact.reason": "attempts_exhausted",
+      "history.compact.retryable": false,
+      "job.attempts": 4,
+      "job.max_attempts": 4,
+      error: expect.objectContaining({ message: "The operation was aborted due to timeout" }),
+    });
+  });
+
+  it("ignores jobs that are not history compaction", () => {
+    const sink = installCompactionLogger();
+    try {
+      recordHistoryCompactAttemptsExhausted(
+        {
+          task_identifier: "run.continue",
+          payload: wrapJobPayload({ runId: "run-1" }),
+          attempts: 25,
+          max_attempts: 25,
+        },
+        new Error("handler failed"),
+      );
+    } finally {
+      silenceLogger();
+    }
+
+    expect(sink.events).toHaveLength(0);
+  });
+});
 
 describe("compactHistory", () => {
   it("summarizes the next batch, saves it through the provider, and advances the cursor", async () => {
@@ -870,11 +956,25 @@ describe("compactHistory", () => {
     harness.runtime.run.mockImplementation(async function* () {
       yield { type: "done", text: "x".repeat(MAX_COMPACTED_SUMMARY_CHARS + 1) };
     });
+    const sink = installCompactionLogger();
 
-    await compactHistory(harness.deps, "thread-1");
+    try {
+      await compactHistory(harness.deps, "thread-1");
+    } finally {
+      silenceLogger();
+    }
 
     expect(harness.prisma.thread.updateMany).not.toHaveBeenCalled();
     expect(harness.thread.historyCompactedUpToSeq).toBeNull();
+    expect(sink.events).toContainEqual(
+      expect.objectContaining({
+        level: "error",
+        message: "history.compact failed permanently",
+        "thread.id": "thread-1",
+        "history.compact.reason": "summary_too_large",
+        "history.compact.retryable": false,
+      }),
+    );
   });
 
   it("re-enqueues itself while a full batch of backlog still remains", async () => {
@@ -942,13 +1042,135 @@ describe("compactHistory", () => {
       yield { type: "text", text: "partial" };
       throw new Error("summarizer unavailable");
     });
+    const sink = installCompactionLogger();
 
-    await expect(compactHistory(harness.deps, "thread-1")).rejects.toThrow(
-      "summarizer unavailable",
-    );
+    try {
+      await expect(compactHistory(harness.deps, "thread-1")).rejects.toThrow(
+        "summarizer unavailable",
+      );
+    } finally {
+      silenceLogger();
+    }
 
     expect(harness.saveMemory).not.toHaveBeenCalled();
     expect(harness.prisma.thread.updateMany).not.toHaveBeenCalled();
+    expect(
+      sink.events.some((event) => event.message === "history.compact failed permanently"),
+    ).toBe(false);
+  });
+
+  it("uses the short summarizer timeout for a small transcript", async () => {
+    const timeout = vi
+      .spyOn(AbortSignal, "timeout")
+      .mockImplementation(() => new AbortController().signal);
+    const harness = compactionHarness({ deploymentModelKey: "openrouter-key" });
+
+    try {
+      await compactHistory(harness.deps, "thread-1");
+      const [request, context] = harness.runtime.run.mock.calls[0]!;
+      expect(request.prompt.length).toBeLessThanOrEqual(SUMMARIZE_TIMEOUT_BASE_CHARS);
+      expect(timeout).toHaveBeenCalledWith(SUMMARIZE_TIMEOUT_MIN_MS);
+      expect(context?.signal).toBe(timeout.mock.results[0]?.value);
+    } finally {
+      timeout.mockRestore();
+    }
+  });
+
+  it("gives a large transcript a longer summarizer timeout, still within the cap", async () => {
+    const timeout = vi
+      .spyOn(AbortSignal, "timeout")
+      .mockImplementation(() => new AbortController().signal);
+    const filler = "x".repeat(1_000);
+    const harness = compactionHarness({
+      deploymentModelKey: "openrouter-key",
+      messages: Array.from({ length: 50 }, (_, i) => ({
+        seq: i,
+        role: "user",
+        blocks: [{ kind: "text", text: `marker-${i} ${filler}` }],
+      })),
+    });
+
+    try {
+      await compactHistory(harness.deps, "thread-1");
+      const prompt = harness.runtime.run.mock.calls[0]![0].prompt;
+      expect(prompt.length).toBeGreaterThan(SUMMARIZE_TIMEOUT_BASE_CHARS);
+      expect(prompt.length).toBeLessThanOrEqual(MAX_TRANSCRIPT_CHARS);
+      const expected = summarizeTimeoutMs(prompt.length);
+      expect(expected).toBeGreaterThan(SUMMARIZE_TIMEOUT_MIN_MS);
+      expect(expected).toBeLessThanOrEqual(SUMMARIZE_TIMEOUT_MAX_MS);
+      expect(timeout).toHaveBeenCalledWith(expected);
+    } finally {
+      timeout.mockRestore();
+    }
+  });
+
+  it("refuses a prompt that cannot finish inside the timeout cap without calling the model", async () => {
+    const harness = compactionHarness({
+      deploymentModelKey: "openrouter-key",
+      historyCompactedUpToSeq: 49,
+      historyCompactionSummary: "<".repeat(MAX_COMPACTED_SUMMARY_CHARS),
+      messages: Array.from({ length: 50 }, (_, i) => ({
+        seq: i + 50,
+        role: "user",
+        blocks: [{ kind: "text", text: `message ${i + 50}` }],
+      })),
+      nextMessageSeq: 100,
+    });
+    const sink = installCompactionLogger();
+
+    try {
+      await compactHistory(harness.deps, "thread-1");
+    } finally {
+      silenceLogger();
+    }
+
+    expect(harness.runtime.run).not.toHaveBeenCalled();
+    expect(harness.prisma.thread.updateMany).not.toHaveBeenCalled();
+    expect(harness.thread.historyCompactedUpToSeq).toBe(49);
+    expect(harness.thread.historyCompactionSummary).toBe("<".repeat(MAX_COMPACTED_SUMMARY_CHARS));
+    const failure = sink.events.find(
+      (event) => event.message === "history.compact failed permanently",
+    );
+    expect(failure).toMatchObject({
+      level: "error",
+      "thread.id": "thread-1",
+      "history.compact.reason": "prompt_exceeds_timeout_budget",
+      "history.compact.retryable": false,
+    });
+    expect(failure?.["history.compact.prompt_chars"]).toBeGreaterThan(MAX_SUMMARIZE_PROMPT_CHARS);
+  });
+
+  it("fails permanently when the next message cannot fit the transcript budget", async () => {
+    const harness = compactionHarness({
+      deploymentModelKey: "openrouter-key",
+      messages: [
+        {
+          seq: 0,
+          role: "user",
+          blocks: [{ kind: "text", text: "x".repeat(MAX_TRANSCRIPT_CHARS + 1) }],
+        },
+      ],
+    });
+    const sink = installCompactionLogger();
+
+    try {
+      await compactHistory(harness.deps, "thread-1");
+    } finally {
+      silenceLogger();
+    }
+
+    expect(harness.runtime.run).not.toHaveBeenCalled();
+    expect(harness.prisma.thread.updateMany).not.toHaveBeenCalled();
+    expect(harness.thread.historyCompactedUpToSeq).toBeNull();
+    expect(sink.events).toContainEqual(
+      expect.objectContaining({
+        level: "error",
+        message: "history.compact failed permanently",
+        "thread.id": "thread-1",
+        "history.compact.reason": "message_exceeds_transcript_budget",
+        "history.compact.retryable": false,
+      }),
+    );
   });
 
   it("keeps local compaction when the optional provider save fails", async () => {

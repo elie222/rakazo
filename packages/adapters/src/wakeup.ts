@@ -9,6 +9,7 @@ import { isTooManyDatabaseConnections } from "@rakazo/db";
 import { runCorrelatedJob, unwrapJobPayload, wrapJobPayload } from "@rakazo/logging";
 import { makeWorkerUtils, type Runner, run, type WorkerUtils } from "graphile-worker";
 import type { Pool } from "pg";
+import { recordHistoryCompactAttemptsExhausted } from "./history-compaction.js";
 
 // Share the caller's pg.Pool instead of opening a separate connectionString-based
 // pool per graphile-worker component: three independent pools per worker process
@@ -119,6 +120,9 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
       pollInterval: this.options.pollInterval ?? 500,
       noHandleSignals: this.options.noHandleSignals,
       taskList,
+    });
+    runner.events.on("job:failed", ({ job, error }) => {
+      recordHistoryCompactAttemptsExhausted(job, error);
     });
     if (this.stopping) {
       await runner.stop().catch(() => undefined);
