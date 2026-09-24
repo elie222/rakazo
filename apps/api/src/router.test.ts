@@ -974,28 +974,36 @@ describe("model credential persistence", () => {
   function persistDeps(options?: { envDefaultModel?: string }) {
     const upsert = vi.fn().mockResolvedValue({ id: "preference" });
     const finish = vi.fn();
+    // Connect loads any previous credential on the root client before the write transaction.
+    const userModelCredential = {
+      findFirst: vi.fn().mockResolvedValue(null),
+      create: vi.fn().mockImplementation(async ({ data }: { data: { provider: string } }) => ({
+        id: "cred-1",
+        userId: actor.userId,
+        provider: data.provider,
+        label: data.provider,
+        secretId: "secret-1",
+        supportsImages: false,
+        createdAt: new Date(0),
+        updatedAt: new Date(0),
+      })),
+    };
+    const spaceModelPreference = {
+      findFirst: vi.fn().mockResolvedValue(null),
+      updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+      upsert,
+    };
     const tx = {
-      userModelCredential: {
-        findFirst: vi.fn().mockResolvedValue(null),
-        create: vi.fn().mockImplementation(async ({ data }: { data: { provider: string } }) => ({
-          id: "cred-1",
-          userId: actor.userId,
-          provider: data.provider,
-          label: data.provider,
-          secretId: "secret-1",
-          supportsImages: false,
-          createdAt: new Date(0),
-          updatedAt: new Date(0),
-        })),
-      },
+      userModelCredential,
       secret: { create: vi.fn().mockResolvedValue({}) },
-      spaceModelPreference: {
-        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
-        upsert,
-      },
+      spaceModelPreference,
     };
     const deps = {
-      prisma: { $transaction: vi.fn(async (fn: (client: typeof tx) => unknown) => fn(tx)) },
+      prisma: {
+        userModelCredential,
+        spaceModelPreference,
+        $transaction: vi.fn(async (fn: (client: typeof tx) => unknown) => fn(tx)),
+      },
       secrets: {
         put: vi.fn().mockResolvedValue({ id: "secret-1", ciphertext: "cipher" }),
       },
