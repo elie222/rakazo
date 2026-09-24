@@ -38,8 +38,18 @@ import {
 } from "react";
 import { localizedProviderHint } from "../lib/localized-provider-hint";
 import type { ModelCatalogEntry, ModelCredential } from "../lib/model-auth";
+import {
+  classifyModelConnectionFailure,
+  modelPreflightSuccessMessage,
+  runModelConnectionPreflight,
+  type ModelPreflightFailure,
+} from "../lib/model-connection-preflight";
 import { rpc } from "../lib/rpc";
 import { useModelOAuthSignIn } from "../lib/use-model-oauth-signin";
+import {
+  ModelPreflightFeedback,
+  modelPreflightTestingLabel,
+} from "../components/ModelConnectionPreflightNotice";
 
 export function ModelSettingsOverlay({
   onClose,
@@ -73,6 +83,9 @@ export function ModelSettingsOverlay({
   const [pending, setPending] = useState<"connect" | "default" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [preflightTesting, setPreflightTesting] = useState(false);
+  const [preflightSuccess, setPreflightSuccess] = useState<string | null>(null);
+  const [preflightFailure, setPreflightFailure] = useState<ModelPreflightFailure | null>(null);
   const detailScrollRef = useRef<HTMLDivElement>(null);
   const refreshRevisionRef = useRef(0);
   const selectionRevisionRef = useRef(0);
@@ -196,9 +209,15 @@ export function ModelSettingsOverlay({
     modelId,
   });
 
+  function resetPreflightFeedback() {
+    setPreflightSuccess(null);
+    setPreflightFailure(null);
+  }
+
   function updateBaseUrl(nextBaseUrl: string) {
     setBaseUrl(nextBaseUrl);
     resetOpenAiCompatibleProbe();
+    resetPreflightFeedback();
     setError(null);
     setNotice(null);
   }
@@ -206,6 +225,7 @@ export function ModelSettingsOverlay({
   function updateApiKey(nextApiKey: string) {
     setApiKey(nextApiKey);
     resetOpenAiCompatibleProbe();
+    resetPreflightFeedback();
   }
 
   function chooseProvider(nextProvider: string) {
@@ -230,25 +250,76 @@ export function ModelSettingsOverlay({
     detailScrollRef.current?.scrollTo({ top: 0 });
     setApiKey("");
     resetOpenAiCompatibleProbe();
+    resetPreflightFeedback();
     setError(null);
     setNotice(null);
   }
 
-  async function probeServerModels() {
+  async function testOpenAiCompatibleConnection() {
     if (!baseUrl.trim()) return;
     setError(null);
     setNotice(null);
+    resetPreflightFeedback();
+    setPreflightTesting(true);
     await modelProbe.probe({
       baseUrl,
       apiKey,
       request: rpc.models.probeOpenAiCompatible,
       onSuccess: (models) => {
         setModelId((current) => current.trim() || models[0] || "");
+        const success = modelPreflightSuccessMessage(models.length);
+        setPreflightSuccess(success);
         setNotice(openAiCompatibleProbeSuccessMessage(models.length));
       },
-      onError: (err) =>
-        setError(err instanceof Error ? err.message : t`Could not reach this model server`),
+      onError: (err) => {
+        const failure = classifyModelConnectionFailure(err, { modelId });
+        setPreflightFailure(failure);
+        setError(failure.message);
+      },
     });
+    setPreflightTesting(false);
+  }
+
+  async function testApiKeyConnection() {
+    if (!selected) return;
+    resetPreflightFeedback();
+    setPreflightTesting(true);
+    setError(null);
+    setNotice(null);
+    const result = await runModelConnectionPreflight({
+      authKind: "api-key",
+      provider: selected.provider,
+      apiKey,
+      modelId: selected.id,
+      probe: rpc.models.probeOpenAiCompatible,
+    });
+    setPreflightTesting(false);
+    if (result.ok) {
+      setPreflightSuccess(modelPreflightSuccessMessage(result.discoveredModels.length));
+      return;
+    }
+    setPreflightFailure(result.failure);
+    setError(result.failure.message);
+  }
+
+  async function testOAuthConnection() {
+    if (!selected) return;
+    resetPreflightFeedback();
+    setPreflightTesting(true);
+    setError(null);
+    const result = await runModelConnectionPreflight({
+      authKind: "oauth",
+      provider: selected.provider,
+      oauthConnected: Boolean(credential),
+      probe: rpc.models.probeOpenAiCompatible,
+    });
+    setPreflightTesting(false);
+    if (result.ok) {
+      setPreflightSuccess(t`Connected. Subscription or OAuth credential is stored securely.`);
+      return;
+    }
+    setPreflightFailure(result.failure);
+    setError(result.failure.message);
   }
 
   async function setModelDefault() {
@@ -486,12 +557,15 @@ export function ModelSettingsOverlay({
                         type="button"
                         variant="outline"
                         size="sm"
-                        disabled={busy || probing || !effectiveBaseUrl}
-                        onClick={() => void probeServerModels()}
+                        disabled={busy || probing || preflightTesting || !effectiveBaseUrl}
+                        onClick={() => void testOpenAiCompatibleConnection()}
                       >
-                        {probing ? <Trans>Finding…</Trans> : <Trans>Find models</Trans>}
+                        {probing || preflightTesting
+                          ? modelPreflightTestingLabel(true)
+                          : modelPreflightTestingLabel(false)}
                       </Button>
                     </div>
+                    <ModelPreflightFeedback success={preflightSuccess} failure={preflightFailure} />
                     <div className="mt-4 block">
                       <span>
                         <Trans>Model</Trans>
@@ -731,6 +805,17 @@ export function ModelSettingsOverlay({
                       )}
                     </Button>
                   )}
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    className="mt-3 rounded-full"
+                    disabled={busy || preflightTesting}
+                    onClick={() => void testOAuthConnection()}
+                  >
+                    {modelPreflightTestingLabel(preflightTesting)}
+                  </Button>
+                  <ModelPreflightFeedback success={preflightSuccess} failure={preflightFailure} />
                 </div>
               ) : null}
 
@@ -774,6 +859,22 @@ export function ModelSettingsOverlay({
                       />
                     </label>
                   )}
+                  {!isOpenAiCompatible ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="mt-3 rounded-full"
+                      disabled={busy || preflightTesting || apiKey.trim().length < 8}
+                      onClick={() => void testApiKeyConnection()}
+                    >
+                      {modelPreflightTestingLabel(preflightTesting)}
+                    </Button>
+                  ) : null}
+                  <ModelPreflightFeedback
+                    success={isOpenAiCompatible ? null : preflightSuccess}
+                    failure={isOpenAiCompatible ? null : preflightFailure}
+                  />
                   <Button
                     type="button"
                     variant="secondary"
