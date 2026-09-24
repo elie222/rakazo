@@ -50,6 +50,17 @@ clear_crash_state() {
     "$f" > "${f}.tmp" && mv "${f}.tmp" "$f"
 }
 
+# Chromium setproctitle() stores one space-joined command. A line containing " --"
+# is split into tokens; NUL-separated arguments stay intact.
+proc_args() {
+  tr '\0' '\n' <"/proc/$1/cmdline" 2>/dev/null | while IFS= read -r line; do
+    case "$line" in
+      *" --"*) printf '%s\n' "$line" | tr ' ' '\n' ;;
+      *) printf '%s\n' "$line" ;;
+    esac
+  done || true
+}
+
 # A stale SingletonLock is not a live browser. Leaving exit_type=Crashed makes Chrome
 # drop session cookies (account sign-in) on the next start while persistent cookies remain.
 # kill -0 is not enough: the PID may have been reused by an unrelated process.
@@ -62,8 +73,9 @@ profile_lock_is_live() {
   esac
   kill -0 "$pid" 2>/dev/null || return 1
   [ -r "/proc/$pid/cmdline" ] || return 0
-  tr '\0' '\n' <"/proc/$pid/cmdline" 2>/dev/null | grep -Fx -- "--user-data-dir=$profile" >/dev/null || return 1
-  if tr '\0' '\n' <"/proc/$pid/cmdline" 2>/dev/null | grep -e '^--type=' >/dev/null; then
+  args=$(proc_args "$pid")
+  printf '%s\n' "$args" | grep -Fx -- "--user-data-dir=$profile" >/dev/null || return 1
+  if printf '%s\n' "$args" | grep -e '^--type=' >/dev/null; then
     return 1
   fi
   return 0

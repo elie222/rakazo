@@ -97,14 +97,25 @@ function browserRunningFunction(profile: string, pidFile: string) {
     "browser_running() {",
     `  tracked=$(cat ${pidFile} 2>/dev/null || true)`,
     `  lock=$(readlink ${profileQuoted}/SingletonLock 2>/dev/null || true)`,
+    // Chromium setproctitle() stores one space-joined command, so a line containing
+    // " --" is split into tokens. NUL-separated arguments stay intact.
+    "  proc_args() {",
+    "    tr '\\0' '\\n' <\"/proc/$1/cmdline\" 2>/dev/null | while IFS= read -r line; do",
+    '      case "$line" in',
+    "        *\" --\"*) printf '%s\\n' \"$line\" | tr ' ' '\\n' ;;",
+    "        *) printf '%s\\n' \"$line\" ;;",
+    "      esac",
+    "    done || true",
+    "  }",
     "  browser_matches() {",
     "    case \"$1\" in ''|0|*[!0-9]*) return 1 ;; esac",
     '    kill -0 "$1" 2>/dev/null || return 1',
-    `    tr '\\0' '\\n' <"/proc/$1/cmdline" 2>/dev/null | grep -Fx -- ${flag} >/dev/null || return 1`,
+    '    args=$(proc_args "$1")',
+    `    printf '%s\\n' "$args" | grep -Fx -- ${flag} >/dev/null || return 1`,
     // Browser.close reads --remote-debugging-port from this PID. Renderers inherit
     // --user-data-dir (and sometimes the port) but always carry --type=.
-    "    tr '\\0' '\\n' <\"/proc/$1/cmdline\" 2>/dev/null | grep -F -- '--remote-debugging-port=' >/dev/null || return 1",
-    "    if tr '\\0' '\\n' <\"/proc/$1/cmdline\" 2>/dev/null | grep -e '^--type=' >/dev/null; then return 1; fi",
+    "    printf '%s\\n' \"$args\" | grep -e '^--remote-debugging-port=' >/dev/null || return 1",
+    "    if printf '%s\\n' \"$args\" | grep -e '^--type=' >/dev/null; then return 1; fi",
     `    mkdir -p "$(dirname ${pidFile})" 2>/dev/null || true`,
     `    printf %s "$1" >${pidFile} 2>/dev/null || true`,
     "    return 0",
@@ -153,8 +164,18 @@ function browserLauncherCommand(
 // Browser.close flushes cookies and profile databases; SIGTERM alone can discard recent cookies.
 const CLOSE_BROWSER = `import base64, json, os, socket, sys, urllib.request
 pid = sys.argv[1]
-args = open('/proc/' + pid + '/cmdline', 'rb').read().split(b'\\0')
-port = next(int(arg.split(b'=')[1]) for arg in reversed(args) if arg.startswith(b'--remote-debugging-port='))
+args = []
+for part in open('/proc/' + pid + '/cmdline', 'rb').read().split(b'\\0'):
+    if not part:
+        continue
+    if b' --' in part:
+        args.extend(piece for piece in part.split(b' ') if piece)
+    else:
+        args.append(part)
+port = next(int(arg.split(b'=', 1)[1]) for arg in reversed(args) if arg.startswith(b'--remote-debugging-port='))
+if len(sys.argv) > 2 and sys.argv[2] == '--print-port':
+    print(port)
+    raise SystemExit(0)
 with urllib.request.urlopen('http://127.0.0.1:' + str(port) + '/json/version', timeout=2) as response:
     endpoint = json.load(response)['webSocketDebuggerUrl']
 path = '/' + endpoint.split('/', 3)[3]
@@ -172,6 +193,10 @@ with socket.create_connection(('127.0.0.1', port), timeout=2) as connection:
     connection.sendall(bytes([0x81, 0x80 | len(payload)]) + mask + bytes(value ^ mask[index % 4] for index, value in enumerate(payload)))
     connection.recv(4096)
 `;
+
+export function browserCloseProgram() {
+  return CLOSE_BROWSER;
+}
 
 export function stopBrowserCommand(screenId: string, env = DEFAULT_DESKTOP_ENV) {
   return stopBrowserProfileCommand(
