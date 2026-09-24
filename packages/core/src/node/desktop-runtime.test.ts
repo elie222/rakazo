@@ -1,4 +1,5 @@
-import { type ChildProcess, spawn, spawnSync } from "node:child_process";
+import type { ChildProcess } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import {
   chmodSync,
   mkdirSync,
@@ -195,8 +196,8 @@ describe("shared Linux desktop lifecycle", () => {
     }
   });
 
-  it.skipIf(process.platform === "win32")(
-    "quiesces Chromium profiles found only via /proc and keeps cookie databases",
+  it.skipIf(process.platform !== "linux")(
+    "quiesces the debugger-owning Chromium process and keeps cookie databases",
     () => {
       const root = mkdtempSync(path.join(tmpdir(), "desktop-quiesce-"));
       roots.push(root);
@@ -229,19 +230,30 @@ describe("shared Linux desktop lifecycle", () => {
       );
       chmodSync(path.join(bin, "python3"), 0o755);
       const children: ChildProcess[] = [];
-      const start = (directory: string) => {
+      const start = (directory: string, args: string[]) => {
         const cookies = path.join(directory, "Default", "Network", "Cookies");
         mkdirSync(path.dirname(cookies), { recursive: true });
         writeFileSync(cookies, "session=kept");
-        const child = spawn(sleeper, [`--user-data-dir=${directory}`], {
+        const child = spawn(sleeper, args, {
           stdio: "ignore",
           detached: true,
         });
         children.push(child);
         return { child, cookies };
       };
-      const bot = start(path.join(profiles, "chromium-bot-abc"));
-      const primary = start(path.join(profiles, "chromium"));
+      const botDir = path.join(profiles, "chromium-bot-abc");
+      const primaryDir = path.join(profiles, "chromium");
+      const bot = start(botDir, [`--user-data-dir=${botDir}`, "--remote-debugging-port=9333"]);
+      const botRenderer = start(botDir, [
+        "--type=renderer",
+        `--user-data-dir=${botDir}`,
+        "--remote-debugging-port=9333",
+      ]);
+      const botHelper = start(botDir, [`--user-data-dir=${botDir}`]);
+      const primary = start(primaryDir, [
+        `--user-data-dir=${primaryDir}`,
+        "--remote-debugging-port=9334",
+      ]);
       try {
         const command = quiesceBrowserProfilesCommand({
           ...DEFAULT_DESKTOP_ENV,
@@ -249,6 +261,7 @@ describe("shared Linux desktop lifecycle", () => {
           workspaceDir: home,
           browserProfilesDir: profiles,
         }).replaceAll("/tmp/rakazo", path.join(root, "runtime"));
+        expect(command).toContain("Browser.close");
         const result = spawnSync("bash", ["-eu", "-c", command], {
           encoding: "utf8",
           timeout: 20_000,
@@ -263,6 +276,10 @@ describe("shared Linux desktop lifecycle", () => {
         expect(closed).toEqual(
           expect.arrayContaining([String(bot.child.pid), String(primary.child.pid)]),
         );
+        expect(closed).not.toContain(String(botRenderer.child.pid));
+        expect(closed).not.toContain(String(botHelper.child.pid));
+        expect(spawnSync("kill", ["-0", String(botRenderer.child.pid)]).status).toBe(0);
+        expect(spawnSync("kill", ["-0", String(botHelper.child.pid)]).status).toBe(0);
         expect(readFileSync(bot.cookies, "utf8")).toBe("session=kept");
         expect(readFileSync(primary.cookies, "utf8")).toBe("session=kept");
       } finally {

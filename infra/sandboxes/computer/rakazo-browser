@@ -52,13 +52,21 @@ clear_crash_state() {
 
 # A stale SingletonLock is not a live browser. Leaving exit_type=Crashed makes Chrome
 # drop session cookies (account sign-in) on the next start while persistent cookies remain.
+# kill -0 is not enough: the PID may have been reused by an unrelated process.
 profile_lock_is_live() {
-  lock=$(readlink "$1/SingletonLock" 2>/dev/null || true)
+  profile="$1"
+  lock=$(readlink "$profile/SingletonLock" 2>/dev/null || true)
   pid=${lock##*-}
   case "$pid" in
     ''|*[!0-9]*) return 1 ;;
   esac
-  kill -0 "$pid" 2>/dev/null
+  kill -0 "$pid" 2>/dev/null || return 1
+  [ -r "/proc/$pid/cmdline" ] || return 0
+  tr '\0' '\n' <"/proc/$pid/cmdline" 2>/dev/null | grep -Fx -- "--user-data-dir=$profile" >/dev/null || return 1
+  if tr '\0' '\n' <"/proc/$pid/cmdline" 2>/dev/null | grep -e '^--type=' >/dev/null; then
+    return 1
+  fi
+  return 0
 }
 
 if [ -d "$ACTUAL_PROFILE" ] && ! profile_lock_is_live "$ACTUAL_PROFILE"; then

@@ -101,6 +101,10 @@ function browserRunningFunction(profile: string, pidFile: string) {
     "    case \"$1\" in ''|0|*[!0-9]*) return 1 ;; esac",
     '    kill -0 "$1" 2>/dev/null || return 1',
     `    tr '\\0' '\\n' <"/proc/$1/cmdline" 2>/dev/null | grep -Fx -- ${flag} >/dev/null || return 1`,
+    // Browser.close reads --remote-debugging-port from this PID. Renderers inherit
+    // --user-data-dir (and sometimes the port) but always carry --type=.
+    "    tr '\\0' '\\n' <\"/proc/$1/cmdline\" 2>/dev/null | grep -F -- '--remote-debugging-port=' >/dev/null || return 1",
+    "    if tr '\\0' '\\n' <\"/proc/$1/cmdline\" 2>/dev/null | grep -e '^--type=' >/dev/null; then return 1; fi",
     `    mkdir -p "$(dirname ${pidFile})" 2>/dev/null || true`,
     `    printf %s "$1" >${pidFile} 2>/dev/null || true`,
     "    return 0",
