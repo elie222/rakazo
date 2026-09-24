@@ -210,6 +210,7 @@ describe("graphical computer spec", () => {
 
       try {
         expect(run(":1")).toContain(`--user-data-dir=${home}/.browser-profiles/chromium`);
+        expect(run(":1")).toContain("--restore-last-session");
         expect(run(":1").some((arg) => arg.startsWith("--remote-debugging-port="))).toBe(true);
         expect(run(":2")).toContain(`--user-data-dir=${home}/.browser-profiles/chromium-screen-2`);
         expect(run(":2")).toContain("--remote-debugging-port=9223");
@@ -222,6 +223,7 @@ describe("graphical computer spec", () => {
         }
         const explicit = run(":3", [`--user-data-dir=${home}/custom-profile`]);
         expect(explicit).toContain(`--user-data-dir=${home}/custom-profile`);
+        expect(explicit).toContain("--restore-last-session");
         expect(explicit).not.toContain(
           `--user-data-dir=${home}/.browser-profiles/chromium-screen-3`,
         );
