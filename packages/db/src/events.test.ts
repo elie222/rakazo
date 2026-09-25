@@ -1831,9 +1831,7 @@ describe("sendUserMessage", () => {
       task: { create: vi.fn().mockResolvedValue({ id: "task-user" }) },
       run: {
         findMany: vi.fn(async (args: { where?: { trigger?: { not?: string } } }) =>
-          args.where?.trigger?.not === "created"
-            ? []
-            : [{ id: "intro-run", taskId: "intro-task" }],
+          args.where?.trigger?.not === "created" ? [] : [{ id: "intro-run", taskId: "intro-task" }],
         ),
         findUnique: vi.fn().mockResolvedValue({ status: "queued", startedAt: null }),
         create: vi.fn().mockResolvedValue({ id: "run-user" }),

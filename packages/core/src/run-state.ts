@@ -8,12 +8,7 @@ export const ACTIVE_RUN_STATUSES = [
   "waiting_takeover",
 ] as const satisfies readonly RunStatus[];
 const TERMINAL: RunStatus[] = ["completed", "failed", "cancelled"];
-/**
- * Runs whose turn is not the thread's conversation: a scheduled routine or an inbound webhook.
- * A user message never steers into one of these while it is busy; it stays pending and gets its
- * own turn, with the full thread, once the run has finished. A `waiting_input` ask is answered
- * from the composer instead, so the run can resume.
- */
+/** Routine and inbound-webhook turns carry their own prompt, so they do not take user steering. */
 const NON_CONVERSATIONAL_RUN_TRIGGERS = new Set(["routine", "webhook"]);
 
 const allowed: Record<RunStatus, RunStatus[]> = {
