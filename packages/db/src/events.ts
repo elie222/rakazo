@@ -490,6 +490,13 @@ export async function claimSteering(
       run.trigger === "messaging"
         ? messagingChannelId(run.sourceMessage?.blocks as MessageBlock[] | undefined)
         : undefined;
+    const directMessage = run.trigger === "messaging" && !channelId;
+    // Pending rows from another chat stay for their own continuation.
+    const pendingWhere = directMessage
+      ? { runId: null, originTrigger: "messaging" }
+      : channelId
+        ? { runId: null }
+        : { runId: null, originTrigger: null };
     const steering = await tx.steeringMessage.findMany({
       where: {
         botId: input.botId,
@@ -497,14 +504,16 @@ export async function claimSteering(
         // A routine or webhook turn only takes steering addressed to it; pending user messages
         // wait for the conversational continuation that starts once it finishes.
         OR: isConversationalRun(run.trigger)
-          ? [{ runId: null }, { runId: input.runId }]
+          ? [pendingWhere, { runId: input.runId }]
           : [{ runId: input.runId }],
         message: {
           threadId: input.threadId,
           // Private follow-ups remain unclaimed for the existing private continuation.
           ...(channelId
             ? { blocks: { array_contains: [{ kind: "channel_message", channelId }] } }
-            : {}),
+            : directMessage
+              ? { NOT: { blocks: { array_contains: [{ kind: "channel_message" }] } } }
+              : {}),
         },
       },
       include: { message: { select: { blocks: true, seq: true } } },
@@ -1187,16 +1196,16 @@ async function createSteeringContinuation(
     orderBy: [{ message: { seq: "asc" } }, { id: "asc" }],
   });
   if (pending.length === 0) return null;
-  const last = pending.at(-1)!;
-  // Resume as messaging so outbound delivery mirrors the reply to that app.
-  const messaging = pending.findLast((item) => item.originTrigger === "messaging");
-  const source = messaging ?? last;
+  // One origin per continuation so a group channel and a direct chat are not answered together.
+  const origin = steeringOrigin(pending[0]!);
+  const batch = pending.filter((item) => steeringOrigin(item) === origin);
+  const source = batch.at(-1)!;
   const task = await tx.task.create({
     data: {
       spaceId: input.spaceId,
       botId: input.botId,
       threadId: input.threadId,
-      userId: pending[0]!.userId,
+      userId: batch[0]!.userId,
       prompt: "Respond to the user's steering context.",
       status: "queued",
     },
@@ -1207,17 +1216,26 @@ async function createSteeringContinuation(
       botId: input.botId,
       threadId: input.threadId,
       taskId: task.id,
-      userId: pending[0]!.userId,
+      userId: batch[0]!.userId,
       status: "queued",
-      trigger: messaging ? "messaging" : "follow_up",
+      trigger: origin === "app" ? "follow_up" : "messaging",
       sourceMessageId: source.message.id,
     },
   });
   await tx.steeringMessage.updateMany({
-    where: { id: { in: pending.map((item) => item.id) }, runId: null },
+    where: { id: { in: batch.map((item) => item.id) }, runId: null },
     data: { runId: run.id, claimedAt: null },
   });
   return run.id;
+}
+
+function steeringOrigin(item: {
+  originTrigger: string | null;
+  message: { blocks: unknown };
+}): string {
+  if (item.originTrigger !== "messaging") return "app";
+  const channelId = messagingChannelId(item.message.blocks as MessageBlock[] | undefined);
+  return channelId ? `channel:${channelId}` : "dm";
 }
 
 export async function appendEventInTransaction(
