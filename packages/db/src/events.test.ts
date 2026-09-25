@@ -126,6 +126,71 @@ describe("finalizeRun", () => {
     expect(createEvent).toHaveBeenCalledOnce();
     expect(publish).toHaveBeenCalledOnce();
   });
+
+  it("resumes a held messaging inbound as a messaging run", async () => {
+    const tx = {
+      $queryRaw: vi.fn(async () => []),
+      run: {
+        findUnique: vi.fn(async () => ({ status: "running", startedAt: null })),
+        findUniqueOrThrow: vi.fn(async () => ({ sourceMessage: null })),
+        findFirst: vi.fn(async () => null),
+        updateMany: vi.fn(async () => ({ count: 1 })),
+        create: vi.fn(async () => ({ id: "run-reply" })),
+      },
+      attempt: { updateMany: vi.fn(async () => ({ count: 1 })) },
+      task: {
+        updateMany: vi.fn(async () => ({ count: 1 })),
+        create: vi.fn(async () => ({ id: "task-reply" })),
+      },
+      thread: { update: vi.fn(async () => ({ nextEventSeq: 1 })) },
+      event: {
+        create: vi.fn(async () => ({ threadId: "thread-1", seq: 0 })),
+        deleteMany: vi.fn(async () => ({ count: 0 })),
+      },
+      steeringMessage: {
+        findMany: vi.fn(async () => [
+          {
+            id: "steer-1",
+            userId: "user-1",
+            originTrigger: "messaging",
+            message: {
+              id: "message-slack",
+              seq: 4,
+              blocks: [{ kind: "text", text: "Check the inbox" }],
+            },
+          },
+        ]),
+        updateMany: vi.fn(async () => ({ count: 1 })),
+      },
+      bot: { update: vi.fn(async () => ({})) },
+    };
+    const prisma = {
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+    } as unknown as PrismaClient;
+
+    await expect(
+      finalizeRun(prisma, {
+        spaceId: "space-1",
+        threadId: "thread-1",
+        botId: "bot-1",
+        runId: "intro-run",
+        taskId: "intro-task",
+        attemptId: "attempt-1",
+        leaseOwner: "worker-1",
+        leaseFence: 1,
+        outcome: "failed",
+        error: "intro failed",
+      }),
+    ).resolves.toEqual({ continuationRunId: "run-reply" });
+
+    expect(tx.run.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        trigger: "messaging",
+        sourceMessageId: "message-slack",
+        status: "queued",
+      }),
+    });
+  });
 });
 
 describe("followThreadEvents", () => {
@@ -1867,6 +1932,64 @@ describe("sendUserMessage", () => {
     });
   });
 
+  it("keeps a messaging inbound's origin on the hold behind the creation intro", async () => {
+    const tx = {
+      thread: {
+        update: vi
+          .fn()
+          .mockResolvedValueOnce({ nextMessageSeq: 5 })
+          .mockResolvedValueOnce({ nextEventSeq: 9 }),
+      },
+      message: {
+        create: vi.fn().mockResolvedValue({ id: "message-1", seq: 4 }),
+        update: vi.fn(),
+      },
+      steeringMessage: { create: vi.fn() },
+      task: { create: vi.fn() },
+      run: {
+        findMany: vi
+          .fn()
+          .mockResolvedValue([{ id: "intro-run", taskId: "intro-task", trigger: "created" }]),
+        findUnique: vi.fn().mockResolvedValue({ status: "running", startedAt: new Date() }),
+        create: vi.fn(),
+      },
+      event: {
+        create: vi.fn(async ({ data }: { data: { seq: number; type: string } }) => ({
+          ...event(data.seq),
+          type: data.type,
+        })),
+      },
+    };
+    const prisma = {
+      message: { findUnique: vi.fn().mockResolvedValue(null) },
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+    } as unknown as PrismaClient;
+
+    await expect(
+      sendUserMessage(prisma, {
+        spaceId: "workspace-1",
+        threadId: "thread-1",
+        botId: "bot-1",
+        userId: "user-1",
+        blocks: [{ kind: "text", text: "Check the inbox" }],
+        prompt: "Check the inbox",
+        trigger: "messaging",
+        clientNonce: "messaging:slack:handle-1",
+      }),
+    ).resolves.toEqual({ messageId: "message-1", seq: 4, taskId: null, runId: "intro-run" });
+
+    expect(tx.run.create).not.toHaveBeenCalled();
+    expect(tx.steeringMessage.create).toHaveBeenCalledWith({
+      data: {
+        messageId: "message-1",
+        botId: "bot-1",
+        userId: "user-1",
+        runId: null,
+        originTrigger: "messaging",
+      },
+    });
+  });
+
   it("keeps the message pending when the busy run is a routine turn", async () => {
     const tx = {
       thread: {
@@ -1913,8 +2036,15 @@ describe("sendUserMessage", () => {
 
     expect(tx.run.create).not.toHaveBeenCalled();
     // No run on the steering row: the routine never claims it; its continuation does.
+    // The inbound stays messaging so that continuation is mirrored back to the app.
     expect(tx.steeringMessage.create).toHaveBeenCalledWith({
-      data: { messageId: "message-1", botId: "bot-1", userId: "user-1", runId: null },
+      data: {
+        messageId: "message-1",
+        botId: "bot-1",
+        userId: "user-1",
+        runId: null,
+        originTrigger: "messaging",
+      },
     });
   });
 

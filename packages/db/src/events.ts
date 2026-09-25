@@ -427,13 +427,15 @@ export async function sendUserMessage(
           await tx.message.update({ where: { id: message.id }, data: { runId: run.id } });
         }
       } else if (createRun && busy) {
+        const held = !isConversationalRun(busy.trigger);
         await tx.steeringMessage.create({
           data: {
             messageId: message.id,
             botId: input.botId,
             userId: input.userId,
-            // Pending (no run) while a routine, webhook, or creation intro is active; its continuation claims it.
-            runId: isConversationalRun(busy.trigger) ? busy.id : null,
+            // Keep messaging on the hold so the later run is mirrored back to that app.
+            runId: held ? null : busy.id,
+            ...(held && input.trigger === "messaging" ? { originTrigger: "messaging" } : {}),
           },
         });
         await tx.message.update({ where: { id: message.id }, data: { runId: busy.id } });
@@ -1186,6 +1188,9 @@ async function createSteeringContinuation(
   });
   if (pending.length === 0) return null;
   const last = pending.at(-1)!;
+  // Resume as messaging so outbound delivery mirrors the reply to that app.
+  const messaging = pending.findLast((item) => item.originTrigger === "messaging");
+  const source = messaging ?? last;
   const task = await tx.task.create({
     data: {
       spaceId: input.spaceId,
@@ -1204,8 +1209,8 @@ async function createSteeringContinuation(
       taskId: task.id,
       userId: pending[0]!.userId,
       status: "queued",
-      trigger: "follow_up",
-      sourceMessageId: last.message.id,
+      trigger: messaging ? "messaging" : "follow_up",
+      sourceMessageId: source.message.id,
     },
   });
   await tx.steeringMessage.updateMany({

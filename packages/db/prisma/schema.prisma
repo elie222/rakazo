@@ -613,6 +613,8 @@ model SteeringMessage {
   userId    String
   runId     String?
   run       Run?     @relation(fields: [runId], references: [id], onDelete: SetNull)
+  /// Set when a pending row must resume as this trigger so its reply can be delivered.
+  originTrigger String?
   claimedAt DateTime?
   createdAt DateTime @default(now())
 
