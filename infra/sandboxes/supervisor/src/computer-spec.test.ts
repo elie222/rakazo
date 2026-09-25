@@ -370,7 +370,7 @@ describe("graphical computer spec", () => {
               const python = spawnSync("python3", ["-c", "import sys; print(sys.executable)"], {
                 encoding: "utf8",
               }).stdout.trim();
-              const spacedHome = path.join(temp, "home -- dir");
+              const spacedHome = path.join(temp, "home --type=renderer dir");
               const spacedProfile = path.join(spacedHome, ".browser-profiles/chromium");
               const spacedPrefs = path.join(spacedProfile, "Default", "Preferences");
               mkdirSync(path.dirname(spacedPrefs), { recursive: true });

@@ -110,6 +110,12 @@ function browserRunningFunction(profile: string, pidFile: string) {
     "  }",
     "  has_prefix() {",
     '    text=$(cmdline_text "$1")',
+    "    if [ $# -ge 3 ]; then",
+    '      case "$text" in',
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: shell parameter expansion
+    '        *"$3"*) text="${text%%"$3"*}${text#*"$3"}" ;;',
+    "      esac",
+    "    fi",
     '    if printf \'%s\\n\' "$text" | grep -e "^$2" >/dev/null; then return 0; fi',
     '    if printf \' %s \' "$text" | grep -F -- " $2" >/dev/null; then return 0; fi',
     "    return 1",
@@ -120,8 +126,9 @@ function browserRunningFunction(profile: string, pidFile: string) {
     `    if ! has_arg "$1" ${flag}; then return 1; fi`,
     // Browser.close reads --remote-debugging-port from this PID. Renderers inherit
     // --user-data-dir (and sometimes the port) but always carry --type=.
-    "    if ! has_prefix \"$1\" '--remote-debugging-port='; then return 1; fi",
-    "    if has_prefix \"$1\" '--type='; then return 1; fi",
+    // Drop the profile flag first so "--type=" or a port inside that path is not a flag.
+    `    if ! has_prefix "$1" '--remote-debugging-port=' ${flag}; then return 1; fi`,
+    `    if has_prefix "$1" '--type=' ${flag}; then return 1; fi`,
     `    mkdir -p "$(dirname ${pidFile})" 2>/dev/null || true`,
     `    printf %s "$1" >${pidFile} 2>/dev/null || true`,
     "    return 0",
@@ -170,7 +177,16 @@ function browserLauncherCommand(
 // Browser.close flushes cookies and profile databases; SIGTERM alone can discard recent cookies.
 const CLOSE_BROWSER = `import base64, json, os, socket, sys, urllib.request
 pid = sys.argv[1]
+profile = ''
+print_port = False
+for arg in sys.argv[2:]:
+    if arg == '--print-port':
+        print_port = True
+    elif not profile:
+        profile = arg
 data = open('/proc/' + pid + '/cmdline', 'rb').read().replace(b'\\0', b' ')
+if profile:
+    data = data.replace(b'--user-data-dir=' + profile.encode(), b' ', 1)
 key = b'--remote-debugging-port='
 start = len(data)
 port = None
@@ -189,7 +205,7 @@ while True:
             break
 if port is None:
     raise SystemExit(1)
-if len(sys.argv) > 2 and sys.argv[2] == '--print-port':
+if print_port:
     print(port)
     raise SystemExit(0)
 with urllib.request.urlopen('http://127.0.0.1:' + str(port) + '/json/version', timeout=2) as response:
@@ -226,7 +242,7 @@ export function stopBrowserProfileCommand(profile: string, pidFile: string) {
   return [
     ...browserRunningFunction(profile, pidFile),
     `if browser_running; then`,
-    `  python3 -c ${shellQuote(CLOSE_BROWSER)} "$pid" >/dev/null 2>&1 || true`,
+    `  python3 -c ${shellQuote(CLOSE_BROWSER)} "$pid" ${shellQuote(profile)} >/dev/null 2>&1 || true`,
     `  for i in $(seq 1 40); do browser_running || break; sleep 0.25; done`,
     `  if browser_running; then kill "$pid" 2>/dev/null || true; for i in $(seq 1 40); do browser_running || break; sleep 0.25; done; fi`,
     `  browser_running && kill -KILL "$pid" 2>/dev/null || true`,

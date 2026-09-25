@@ -63,6 +63,11 @@ has_arg() {
 }
 has_prefix() {
   text=$(cmdline_text "$1")
+  if [ $# -ge 3 ]; then
+    case "$text" in
+      *"$3"*) text="${text%%"$3"*}${text#*"$3"}" ;;
+    esac
+  fi
   if printf '%s\n' "$text" | grep -e "^$2" >/dev/null; then return 0; fi
   if printf ' %s ' "$text" | grep -F -- " $2" >/dev/null; then return 0; fi
   return 1
@@ -81,7 +86,7 @@ profile_lock_is_live() {
   kill -0 "$pid" 2>/dev/null || return 1
   [ -r "/proc/$pid/cmdline" ] || return 0
   has_arg "$pid" "--user-data-dir=$profile" || return 1
-  if has_prefix "$pid" "--type="; then
+  if has_prefix "$pid" "--type=" "--user-data-dir=$profile"; then
     return 1
   fi
   return 0
