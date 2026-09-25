@@ -766,3 +766,54 @@ describe("space computer limit enforcement", () => {
     });
   });
 });
+
+describe("screen registry across run boundaries", () => {
+  it("does not reset the desktop when a screen is requested after the last one is released", async () => {
+    const { supervisorApp } = await import("./index.js");
+    const commands: string[] = [];
+    const container = {
+      inspect: vi.fn().mockResolvedValue({
+        Config: {
+          Labels: { "rakazo.managed": "true", "rakazo.botId": "bot", "rakazo.spaceId": "space" },
+        },
+        HostConfig: { NetworkMode: computerNetworkNameFor("bot") },
+        State: { Running: true },
+        NetworkSettings: {
+          Ports: { "6080/tcp": [{ HostIp: "127.0.0.1", HostPort: screenPort }] },
+        },
+      }),
+      exec: vi.fn(async ({ Cmd }: { Cmd: string[] }) => {
+        commands.push(Cmd.join(" "));
+        return { start: async () => Readable.from([]), inspect: async () => ({ ExitCode: 0 }) };
+      }),
+    };
+    mocks.docker.getContainer.mockReturnValue(container);
+    const headers = {
+      authorization: `Bearer ${resolveSupervisorToken(process.env)}`,
+      "content-type": "application/json",
+      "x-rakazo-bot-id": "bot",
+      "x-rakazo-space-id": "space",
+      "x-rakazo-screen-id": "writer",
+    };
+    const view = () =>
+      supervisorApp.request("/computers/registry/screen-mode", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ interactive: false, revokeControl: false }),
+      });
+    const resets = () =>
+      commands.filter((command) => command.includes("for marker in /tmp/rakazo/browser-profile-*"))
+        .length;
+
+    expect((await view()).status).toBe(200);
+    expect(resets()).toBe(1);
+    const released = await supervisorApp.request("/computers/registry/screen", {
+      method: "DELETE",
+      headers: { ...headers, "x-rakazo-screen-lease-id": "run-1:1" },
+    });
+    expect(released.status).toBe(200);
+    expect((await view()).status).toBe(200);
+    // The first request after a supervisor start resets; a released screen must not.
+    expect(resets()).toBe(1);
+  });
+});

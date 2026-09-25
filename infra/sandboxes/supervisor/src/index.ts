@@ -719,7 +719,8 @@ app.delete("/computers/:id/screen", async (c) => {
           throw new Error(result.stderr || "computer screen failed to stop");
         }
       }
-      if (assigned?.size === 0) computerScreens.delete(id);
+      // Keep an emptied registry. A missing one means the supervisor lost track of the
+      // container, and the next screen request then resets every desktop process in it.
     });
     return c.json({ ok: true });
   } catch (error) {
