@@ -1,5 +1,15 @@
-import { describe, expect, it } from "vitest";
-import { closeUnterminatedFence, sanitizeMarkdownUrl } from "./markdown";
+import { describe, expect, it, vi } from "vitest";
+import { closeUnterminatedFence, linkifyExplicitUrls, sanitizeMarkdownUrl } from "./markdown";
+
+describe("linkifyExplicitUrls", () => {
+  it("links bare URLs but not bare domains or file names", () => {
+    const parser = { set: vi.fn(), linkify: { set: vi.fn() } };
+
+    expect(linkifyExplicitUrls(parser)).toBe(parser);
+    expect(parser.set).toHaveBeenCalledWith({ linkify: true });
+    expect(parser.linkify.set).toHaveBeenCalledWith({ fuzzyLink: false });
+  });
+});
 
 describe("sanitizeMarkdownUrl", () => {
   it("allows normal external links and optionally allows local links", () => {

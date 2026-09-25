@@ -1,12 +1,16 @@
 import { type ColorTokens, darkTokens, type ResolvedAppearance } from "@rakazo/ui-tokens";
 import Markdown, {
+  createMarkdownIt,
   MarkdownStream,
   type RenderRules,
 } from "@ronradtke/react-native-markdown-display";
 import { memo, useMemo } from "react";
 import { Linking, StyleSheet, Text, View } from "react-native";
 import type { ChatMarkdownProps } from "./markdown";
-import { sanitizeMarkdownUrl } from "./markdown";
+import { linkifyExplicitUrls, sanitizeMarkdownUrl } from "./markdown";
+
+// One shared parser: the Markdown components memoize on its identity.
+const markdownParser = linkifyExplicitUrls(createMarkdownIt());
 
 function markdownStyles(palette: ColorTokens) {
   return StyleSheet.create({
@@ -134,6 +138,7 @@ export const ChatMarkdown = memo(function ChatMarkdown({
   const styles = useMemo(() => markdownStyles(palette), [palette]);
   const sharedProps = {
     colorScheme,
+    markdownit: markdownParser,
     style: styles,
     rules: renderRules,
     allowedImageHandlers: ["https://", "http://"],

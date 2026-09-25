@@ -3,6 +3,22 @@ export type ChatMarkdownProps = {
   streaming?: boolean;
 };
 
+type LinkifyParser = {
+  set(options: { linkify: boolean }): unknown;
+  linkify: { set(options: { fuzzyLink: boolean }): unknown };
+};
+
+/**
+ * Turn bare URLs such as https://example.com and email addresses into links, as the web
+ * renderer's GFM autolinks do. Bare domains stay text: fuzzy matching would also link file
+ * names like setup.py or notes.md.
+ */
+export function linkifyExplicitUrls<T extends LinkifyParser>(parser: T): T {
+  parser.set({ linkify: true });
+  parser.linkify.set({ fuzzyLink: false });
+  return parser;
+}
+
 const protocolPattern = /^([a-z][a-z\d+.-]*):/i;
 const safeProtocols = new Set(["http", "https", "mailto", "tel"]);
 
