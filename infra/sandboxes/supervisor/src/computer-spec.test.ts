@@ -370,7 +370,12 @@ describe("graphical computer spec", () => {
               const python = spawnSync("python3", ["-c", "import sys; print(sys.executable)"], {
                 encoding: "utf8",
               }).stdout.trim();
-              const joined = spawn(python, [joiner, `--user-data-dir=${profile}`], {
+              const spacedHome = path.join(temp, "home dir");
+              const spacedProfile = path.join(spacedHome, ".browser-profiles/chromium");
+              const spacedPrefs = path.join(spacedProfile, "Default", "Preferences");
+              mkdirSync(path.dirname(spacedPrefs), { recursive: true });
+              writeFileSync(spacedPrefs, '{\n  "profile": {\n    "exit_type": "Crashed"\n  }\n}\n');
+              const joined = spawn(python, [joiner, `--user-data-dir=${spacedProfile}`], {
                 stdio: "ignore",
                 detached: true,
                 env: { ...process.env, JOINED_READY: ready },
@@ -382,13 +387,21 @@ describe("graphical computer spec", () => {
                     throw new Error("space-joined command line was not published");
                   spawnSync("sleep", ["0.02"]);
                 }
-                writeFileSync(prefsPath, '{\n  "profile": {\n    "exit_type": "Crashed"\n  }\n}\n');
-                rmSync(liveLock, { force: true });
-                symlinkSync(`testhost-${joined.pid}`, liveLock);
-                const kept = launch();
+                const spacedLock = path.join(spacedProfile, "SingletonLock");
+                symlinkSync(`testhost-${joined.pid}`, spacedLock);
+                const kept = spawnSync("bash", [path.join(root, "rakazo-browser")], {
+                  env: {
+                    ...process.env,
+                    DISPLAY: ":1",
+                    HOME: spacedHome,
+                    PATH: `${bin}${path.delimiter}${process.env.PATH ?? ""}`,
+                    RAKAZO_TEST_ARGS: capture,
+                  },
+                  encoding: "utf8",
+                });
                 expect(kept.status, kept.error?.message ?? kept.stderr).toBe(0);
-                expect(readFileSync(prefsPath, "utf8")).toContain("Crashed");
-                expect(readlinkSync(liveLock)).toBe(`testhost-${joined.pid}`);
+                expect(readFileSync(spacedPrefs, "utf8")).toContain("Crashed");
+                expect(readlinkSync(spacedLock)).toBe(`testhost-${joined.pid}`);
               } finally {
                 if (joined.pid) {
                   try {

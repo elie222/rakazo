@@ -50,12 +50,23 @@ clear_crash_state() {
     "$f" > "${f}.tmp" && mv "${f}.tmp" "$f"
 }
 
-# Chromium setproctitle() stores one space-joined command. A line containing " --"
-# is split into tokens; NUL-separated arguments stay intact.
+# Chromium setproctitle() stores one space-joined command. Split only on " --"
+# so a profile path that contains spaces stays one --user-data-dir argument.
 proc_args() {
   tr '\0' '\n' <"/proc/$1/cmdline" 2>/dev/null | while IFS= read -r line; do
     case "$line" in
-      *" --"*) printf '%s\n' "$line" | tr ' ' '\n' ;;
+      *" --"*)
+        rest=$line
+        while :; do
+          case "$rest" in
+            *" --"*)
+              printf '%s\n' "${rest%% --*}"
+              rest="--${rest#* --}"
+              ;;
+            *) printf '%s\n' "$rest"; break ;;
+          esac
+        done
+        ;;
       *) printf '%s\n' "$line" ;;
     esac
   done || true

@@ -97,12 +97,25 @@ function browserRunningFunction(profile: string, pidFile: string) {
     "browser_running() {",
     `  tracked=$(cat ${pidFile} 2>/dev/null || true)`,
     `  lock=$(readlink ${profileQuoted}/SingletonLock 2>/dev/null || true)`,
-    // Chromium setproctitle() stores one space-joined command, so a line containing
-    // " --" is split into tokens. NUL-separated arguments stay intact.
+    // Chromium setproctitle() stores one space-joined command. Split only on " --"
+    // so a profile path that contains spaces stays one --user-data-dir argument.
     "  proc_args() {",
     "    tr '\\0' '\\n' <\"/proc/$1/cmdline\" 2>/dev/null | while IFS= read -r line; do",
     '      case "$line" in',
-    "        *\" --\"*) printf '%s\\n' \"$line\" | tr ' ' '\\n' ;;",
+    '        *" --"*)',
+    "          rest=$line",
+    "          while :; do",
+    '            case "$rest" in',
+    '              *" --"*)',
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: shell parameter expansion
+    "                printf '%s\\n' \"${rest%% --*}\"",
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: shell parameter expansion
+    '                rest="--${rest#* --}"',
+    "                ;;",
+    "              *) printf '%s\\n' \"$rest\"; break ;;",
+    "            esac",
+    "          done",
+    "          ;;",
     "        *) printf '%s\\n' \"$line\" ;;",
     "      esac",
     "    done || true",
@@ -169,7 +182,16 @@ for part in open('/proc/' + pid + '/cmdline', 'rb').read().split(b'\\0'):
     if not part:
         continue
     if b' --' in part:
-        args.extend(piece for piece in part.split(b' ') if piece)
+        rest = part
+        while True:
+            if b' --' not in rest:
+                if rest:
+                    args.append(rest)
+                break
+            head, tail = rest.split(b' --', 1)
+            if head:
+                args.append(head)
+            rest = b'--' + tail
     else:
         args.append(part)
 port = next(int(arg.split(b'=', 1)[1]) for arg in reversed(args) if arg.startswith(b'--remote-debugging-port='))

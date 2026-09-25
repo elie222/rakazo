@@ -242,7 +242,7 @@ describe("shared Linux desktop lifecycle", () => {
       const root = mkdtempSync(path.join(tmpdir(), "desktop-quiesce-"));
       roots.push(root);
       const home = path.join(root, "home");
-      const profiles = path.join(home, ".browser-profiles");
+      const profiles = path.join(home, "browser profiles");
       const bin = path.join(root, "bin");
       const log = path.join(root, "closed");
       mkdirSync(bin);
@@ -370,7 +370,7 @@ describe("shared Linux desktop lifecycle", () => {
       writeFileSync(joiner, JOINED_COMMAND);
       const child = spawn(
         python,
-        [joiner, "--user-data-dir=/tmp/profile", "--remote-debugging-port=9444"],
+        [joiner, "--user-data-dir=/tmp/my profile", "--remote-debugging-port=9444"],
         { stdio: "ignore", detached: true, env: { ...process.env, JOINED_READY: ready } },
       );
       try {
