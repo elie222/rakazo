@@ -1,5 +1,6 @@
 import type { ComputerMode, ComputerReleaseReason } from "@rakazo/contracts";
 import { useLocalSearchParams, useNavigation } from "expo-router";
+import * as ScreenOrientation from "expo-screen-orientation";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Modal, Pressable, Text, View } from "react-native";
 import {
@@ -132,6 +133,19 @@ export default function Computer() {
       force: true,
     }).catch(() => undefined);
   }, [readyBotId, botId, computer?.state, switching]);
+
+  useEffect(() => {
+    // Let the full-screen desktop rotate to landscape; the rest of the app stays portrait.
+    const lock = computerOpen
+      ? ScreenOrientation.OrientationLock.DEFAULT
+      : ScreenOrientation.OrientationLock.PORTRAIT_UP;
+    void ScreenOrientation.lockAsync(lock).catch(() => undefined);
+    return () => {
+      void ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(
+        () => undefined,
+      );
+    };
+  }, [computerOpen]);
 
   useEffect(() => {
     if (!botId || computer?.state !== "running") return;
@@ -296,6 +310,7 @@ export default function Computer() {
         visible={booting || computerOpen}
         animationType="fade"
         presentationStyle="fullScreen"
+        supportedOrientations={["portrait", "landscape-left", "landscape-right"]}
         onRequestClose={() => {
           if (!booting) setComputerOpen(false);
         }}
@@ -354,34 +369,46 @@ export default function Computer() {
                   gap: 12,
                   borderBottomWidth: 1,
                   borderBottomColor: tokens.border,
-                  paddingHorizontal: 18,
-                  paddingVertical: 14,
+                  paddingHorizontal: 14,
+                  paddingVertical: 4,
                 }}
               >
-                <View style={{ flex: 1, minWidth: 0, gap: 8 }}>
+                <View
+                  style={{
+                    flex: 1,
+                    minWidth: 0,
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 8,
+                  }}
+                >
                   <Text
                     numberOfLines={1}
-                    style={{ color: tokens.foreground, fontSize: 15.5, fontWeight: "500" }}
+                    style={{
+                      flexShrink: 1,
+                      color: tokens.foreground,
+                      fontSize: 15.5,
+                      fontWeight: "500",
+                    }}
                   >
                     {label}
                   </Text>
                   {hasControl ? (
                     <View
                       style={{
-                        alignSelf: "flex-start",
                         borderRadius: 999,
                         backgroundColor: tokens.muted,
-                        paddingHorizontal: 11,
-                        paddingVertical: 4,
+                        paddingHorizontal: 9,
+                        paddingVertical: 3,
                       }}
                     >
-                      <Text style={{ color: tokens.success, fontSize: 13 }}>
+                      <Text numberOfLines={1} style={{ color: tokens.success, fontSize: 12 }}>
                         {t("You have control")}
                       </Text>
                     </View>
                   ) : null}
                 </View>
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
                   {hasControl ? (
                     <ComputerReleaseActions
                       takeoverRequested={computer?.takeoverRequested ?? false}
@@ -399,9 +426,9 @@ export default function Computer() {
                         borderWidth: 1,
                         borderColor: tokens.border,
                         paddingHorizontal: 12,
-                        paddingVertical: 8,
+                        paddingVertical: 6,
                         borderRadius: 10,
-                        minHeight: 44,
+                        minHeight: 36,
                         justifyContent: "center",
                       }}
                     >
@@ -413,8 +440,8 @@ export default function Computer() {
                     hitSlop={8}
                     onPress={() => setComputerOpen(false)}
                     style={{
-                      minWidth: 44,
-                      minHeight: 44,
+                      minWidth: 36,
+                      minHeight: 36,
                       alignItems: "center",
                       justifyContent: "center",
                     }}
@@ -483,13 +510,13 @@ function ComputerReleaseActions({
           onPress={() => void onRelease(action.reason)}
           hitSlop={8}
           style={{
-            minHeight: 44,
+            minHeight: 36,
             justifyContent: "center",
             borderWidth: 1,
             borderColor: action.primary ? tokens.primary : tokens.border,
             backgroundColor: action.primary ? tokens.primary : tokens.muted,
             paddingHorizontal: 12,
-            paddingVertical: 8,
+            paddingVertical: 6,
             borderRadius: 10,
           }}
         >

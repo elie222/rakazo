@@ -1,6 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { AvatarStyle } from "@rakazo/contracts";
-import { BotAvatar, Button, Field, FieldLabel, Input, Toggle } from "@rakazo/ui-web";
+import { BotAvatar, Button, Field, FieldLabel, Input, Label, Switch, Toggle } from "@rakazo/ui-web";
 import { ChevronDown } from "lucide-react";
 import {
   type KeyboardEvent as ReactKeyboardEvent,
@@ -18,6 +18,10 @@ import { DesktopUpdateSection } from "../components/DesktopUpdates";
 import { SoftwareUpdateSection } from "../components/SoftwareUpdateSection";
 import { authClient } from "../lib/auth";
 import { getActiveUiLocale, setUiLocale } from "../lib/i18n";
+import {
+  getResponseStreamingPreference,
+  setResponseStreamingPreference,
+} from "../lib/response-streaming";
 import {
   type AppearancePreference,
   getUiAppearancePreference,
@@ -50,6 +54,10 @@ export function GeneralSettingsPanels({
   const [appearance, setAppearance] = useState<AppearancePreference>(() =>
     getUiAppearancePreference(),
   );
+  const [streamReplies, setStreamReplies] = useState(
+    () => getResponseStreamingPreference() === "on",
+  );
+  const streamRepliesId = useId();
   const [avatarPending, setAvatarPending] = useState(false);
   const [avatarError, setAvatarError] = useState<string | null>(null);
 
@@ -178,6 +186,21 @@ export function GeneralSettingsPanels({
           </span>
         </summary>
         <div className="border-t border-border px-4 pb-5">
+          <div className="flex items-start gap-3 pt-5">
+            <Switch
+              id={streamRepliesId}
+              data-testid="response-streaming-toggle"
+              className="mt-0.5"
+              checked={streamReplies}
+              onCheckedChange={(checked) => {
+                setStreamReplies(checked);
+                setResponseStreamingPreference(checked ? "on" : "off");
+              }}
+            />
+            <Label htmlFor={streamRepliesId} className="text-[14px] font-normal text-foreground/75">
+              <Trans>Stream replies</Trans>
+            </Label>
+          </div>
           <ApprovalRulesSettings />
         </div>
       </details>

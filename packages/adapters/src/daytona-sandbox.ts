@@ -83,7 +83,15 @@ export class DaytonaSandboxProvider implements SandboxProvider {
     Promise<{ url: string; token: string; expiresAt: number; viewPort: number }>
   >();
 
-  constructor(config: DaytonaConfig & { apiKey: string }, client?: DaytonaSandboxSdk) {
+  /** Optional Daytona snapshot name for new bot computers; unset = server default. */
+  private readonly snapshotName: string | undefined;
+
+  constructor(
+    config: DaytonaConfig & { apiKey: string; snapshot?: string },
+    client?: DaytonaSandboxSdk,
+  ) {
+    this.snapshotName =
+      config.snapshot?.trim() || process.env.DAYTONA_SNAPSHOT?.trim() || undefined;
     this.client =
       client ??
       new Daytona({
@@ -130,6 +138,7 @@ export class DaytonaSandboxProvider implements SandboxProvider {
 
     const sandbox = await this.client.create(
       {
+        ...(this.snapshotName ? { snapshot: this.snapshotName } : {}),
         labels: { botId: request.botId, rakazo: "computer" },
         envVars: { VNC_RESOLUTION: "1280x800" },
         autoStopInterval: 0,

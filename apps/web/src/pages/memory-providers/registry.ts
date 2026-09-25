@@ -33,7 +33,7 @@ export const MEMORY_PROVIDER_SETTINGS: readonly MemoryProviderSettingsRegistrati
   {
     id: "serenity",
     name: "Serenity",
-    description: "Self-hosted Serenity brain for durable memory.",
+    description: "Hosted or self-hosted Serenity brain for durable memory.",
     SettingsForm: SerenitySettingsForm,
     connectedLabel: (config) => {
       const label = config.settings.brainLabel?.trim();

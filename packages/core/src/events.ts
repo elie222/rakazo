@@ -169,6 +169,55 @@ export function isRunTerminalEvent(event: { type: string }): boolean {
   );
 }
 
+export const RESPONSE_STREAMING_STORAGE_KEY = "rakazo.responseStreaming";
+export type ResponseStreamingPreference = "on" | "off";
+
+/** Missing and unknown values stay off; only an explicit "on" enables streaming. */
+export function normalizeResponseStreamingPreference(
+  raw: string | null | undefined,
+): ResponseStreamingPreference {
+  return raw?.trim().toLowerCase() === "on" ? "on" : "off";
+}
+
+export function responseStreamingEnabled(preference: ResponseStreamingPreference = "off"): boolean {
+  return preference === "on";
+}
+
+/** Hide assistant token text on synthetic progress rows. Tool activity stays. */
+export function stripLiveStreamingProgress<
+  T extends { id: string; blocks: readonly MessageBlock[] },
+>(messages: readonly T[]): T[] {
+  let changed = false;
+  const next: T[] = [];
+  for (const message of messages) {
+    if (!message.id.startsWith("progress:")) {
+      next.push(message);
+      continue;
+    }
+    const blocks = message.blocks.filter(
+      (block) => block.kind !== "text" && (block.kind !== "progress" || block.activity === true),
+    );
+    if (blocks.length === message.blocks.length) {
+      next.push(message);
+      continue;
+    }
+    changed = true;
+    if (blocks.length === 0) continue;
+    next.push({ ...message, blocks });
+  }
+  return changed ? next : (messages as T[]);
+}
+
+export function withLiveStreamingProgress<
+  T extends { messages: readonly U[] },
+  U extends { id: string; blocks: readonly MessageBlock[] },
+>(snapshot: T | null, streamResponses: boolean): T | null {
+  if (!snapshot || streamResponses) return snapshot;
+  const messages = stripLiveStreamingProgress(snapshot.messages);
+  if (messages === snapshot.messages) return snapshot;
+  return { ...snapshot, messages };
+}
+
 const RUN_FAILURE_ERROR_MAX = 300;
 
 /** Reason a run failed, clamped for display, or null when there is no usable error to show. */

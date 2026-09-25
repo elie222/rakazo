@@ -1,46 +1,57 @@
 import { Trans } from "@lingui/react/macro";
-import { Button, Field, FieldLabel, Input, Toggle } from "@rakazo/ui-web";
+import { Button, Field, FieldError, FieldLabel, Input, Toggle } from "@rakazo/ui-web";
 import { useId, useState } from "react";
-import type { MemoryProviderConnectionDraft, MemoryProviderSettingsFormProps } from "./registry";
-
-const DEFAULT_ENDPOINT = "http://127.0.0.1:8787/mcp";
+import type { MemoryProviderSettingsFormProps } from "./registry";
+import type { SerenityEndpointFieldError } from "./serenity-settings";
+import { SERENITY_ENDPOINT_PLACEHOLDER, serenityConnectionDraft } from "./serenity-settings";
 
 export function SerenitySettingsForm({ busy, onConnect }: MemoryProviderSettingsFormProps) {
   const endpointId = useId();
+  const endpointErrorId = useId();
   const tokenId = useId();
   const brainLabelId = useId();
-  const [endpoint, setEndpoint] = useState(DEFAULT_ENDPOINT);
+  const [endpoint, setEndpoint] = useState("");
+  const [endpointError, setEndpointError] = useState<SerenityEndpointFieldError | null>(null);
   const [token, setToken] = useState("");
   const [brainLabel, setBrainLabel] = useState("");
   const [allowWrites, setAllowWrites] = useState(false);
 
   async function connect() {
-    if (!endpoint.trim() || !token.trim()) return;
-    const draft: MemoryProviderConnectionDraft = {
-      settings: {
-        endpoint: endpoint.trim(),
-        allowWrites: allowWrites ? "true" : "false",
-        ...(brainLabel.trim() ? { brainLabel: brainLabel.trim() } : {}),
-      },
-      credentials: { token: token.trim() },
-    };
-    if (await onConnect(draft)) setToken("");
+    const result = serenityConnectionDraft({ endpoint, token, brainLabel, allowWrites });
+    if (!result.ok) {
+      setEndpointError(result.error);
+      return;
+    }
+    if (token.trim().length < 8) return;
+    setEndpointError(null);
+    if (await onConnect(result.draft)) setToken("");
   }
 
   return (
     <>
-      <Field className="mt-1">
+      <Field className="mt-1" data-invalid={endpointError ? true : undefined}>
         <FieldLabel htmlFor={endpointId}>
           <Trans>MCP endpoint</Trans>
         </FieldLabel>
         <Input
           id={endpointId}
           value={endpoint}
+          required
           disabled={busy}
-          onChange={(event) => setEndpoint(event.target.value)}
-          placeholder={DEFAULT_ENDPOINT}
+          aria-invalid={endpointError ? true : undefined}
+          aria-describedby={endpointError ? endpointErrorId : undefined}
+          onChange={(event) => {
+            setEndpoint(event.target.value);
+            setEndpointError(null);
+          }}
+          placeholder={SERENITY_ENDPOINT_PLACEHOLDER}
           autoComplete="off"
         />
+        {endpointError === "required" ? (
+          <FieldError id={endpointErrorId}>
+            <Trans>Serenity endpoint is required.</Trans>
+          </FieldError>
+        ) : null}
       </Field>
 
       <Field className="mt-4">
@@ -52,7 +63,7 @@ export function SerenitySettingsForm({ busy, onConnect }: MemoryProviderSettings
           value={token}
           disabled={busy}
           onChange={(event) => setToken(event.target.value)}
-          placeholder="serenity…"
+          placeholder="sk_live_…"
           type="password"
           autoComplete="new-password"
         />
@@ -101,7 +112,7 @@ export function SerenitySettingsForm({ busy, onConnect }: MemoryProviderSettings
         variant="secondary"
         className="mt-5 rounded-full"
         size="sm"
-        disabled={busy || token.trim().length < 8 || !endpoint.trim()}
+        disabled={busy || token.trim().length < 8}
         onClick={() => void connect()}
       >
         {busy ? <Trans>Connecting…</Trans> : <Trans>Connect</Trans>}

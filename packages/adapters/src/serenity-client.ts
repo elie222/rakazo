@@ -20,7 +20,10 @@ import { dispatcherFetch } from "./undici-fetch.js";
 import { isBlockedHostname } from "./web-ssrf.js";
 
 const SERENITY_TIMEOUT_MS = 15_000;
+const SERENITY_TERMINATE_TIMEOUT_MS = 2_000;
 export const MAX_SERENITY_FACT_CHARS = 10_000;
+/** Hosted Serenity rejects larger facts; self-hosted brains share the same bound. */
+export const MAX_SERENITY_FACT_BYTES = 4096;
 export const MAX_SERENITY_PROVENANCE_CHARS = 500;
 
 export type SerenityNetworkDependencies = RemoteTransportDependencies;
@@ -54,8 +57,9 @@ export interface SerenityForgetResult {
   reason: string | null;
 }
 
-/** Endpoints are route prefixes: no credentials, query, or fragment. */
+/** Endpoints are route prefixes: no credentials, query, or fragment. There is no default URL. */
 export function parseSerenityEndpoint(endpoint: string): URL {
+  if (!endpoint.trim()) throw new Error("Serenity endpoint is required.");
   let url: URL;
   try {
     url = new URL(endpoint);
@@ -178,13 +182,34 @@ function toolCallIsError(result: unknown): boolean {
 
 function verbErrorMessage(payload: unknown, fallback: string): string {
   if (!payload || typeof payload !== "object") return fallback;
-  const row = payload as { error?: unknown; message?: unknown; suggestion?: unknown };
+  const row = payload as {
+    error?: unknown;
+    message?: unknown;
+    suggestion?: unknown;
+    reset_at?: unknown;
+  };
+  const message = typeof row.message === "string" ? row.message : null;
+  const code = typeof row.error === "string" && row.error !== message ? `(${row.error})` : null;
   const parts = [
-    typeof row.message === "string" ? row.message : null,
-    typeof row.error === "string" ? `(${row.error})` : null,
+    message,
+    code,
     typeof row.suggestion === "string" ? row.suggestion : null,
+    typeof row.reset_at === "string" ? `Resets at ${row.reset_at}.` : null,
   ].filter(Boolean);
   return parts.length > 0 ? parts.join(" ") : fallback;
+}
+
+/** Surface hosted gateway rate limits plainly instead of as an opaque transport error. */
+function assertNotRateLimited(response: Response): Response {
+  if (response.status !== 429) return response;
+  const retryAfter = response.headers.get("retry-after")?.trim();
+  // Retry-After is either delta-seconds or an HTTP date.
+  const when = !retryAfter ? null : /^\d+$/.test(retryAfter) ? `${retryAfter}s` : retryAfter;
+  throw new Error(
+    when
+      ? `Serenity rate limit reached; retry after ${when}.`
+      : "Serenity rate limit reached; retry shortly.",
+  );
 }
 
 /**
@@ -293,12 +318,12 @@ async function withSerenityClient<T>(
       signal: requestSignal,
     },
     fetch: async (input, init) => {
-      if (pinnedFetch) return pinnedFetch(input, init);
+      if (pinnedFetch) return assertNotRateLimited(await pinnedFetch(input, init));
       const response = await localFetch(input, { ...init, redirect: "manual" });
       if (response.status >= 300 && response.status < 400) {
         throw new Error("Serenity MCP redirects are not permitted; configure the final URL.");
       }
-      return response;
+      return assertNotRateLimited(response);
     },
   });
   const client = new Client({ name: "rakazo", version: "0.1.0" }, { capabilities: {} });
@@ -306,6 +331,18 @@ async function withSerenityClient<T>(
     await client.connect(transport, { signal: requestSignal, timeout: SERENITY_TIMEOUT_MS });
     return await run(client, requestSignal);
   } finally {
+    // Each verb opens its own MCP session; end it server-side instead of leaving it to expire.
+    // The SDK's DELETE ignores our request signal, so bound it before closing.
+    if (transport.sessionId) {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      await Promise.race([
+        transport.terminateSession().catch(() => undefined),
+        new Promise<void>((resolve) => {
+          timer = setTimeout(resolve, SERENITY_TERMINATE_TIMEOUT_MS);
+        }),
+      ]);
+      clearTimeout(timer);
+    }
     await client.close().catch(() => undefined);
     await pinnedFetch?.close().catch(() => undefined);
   }
@@ -398,13 +435,21 @@ export async function rememberSerenity(
   config: SerenityConnectionConfig,
   options: {
     entity?: string;
+    /** Serenity replays the same fact for a repeated key instead of writing a duplicate. */
+    operationKey?: string;
     signal?: AbortSignal;
     network?: SerenityNetworkDependencies;
   } = {},
 ): Promise<SerenityResult<SerenityRememberResult>> {
-  const trimmedFact = fact.trim().slice(0, MAX_SERENITY_FACT_CHARS);
+  const trimmedFact = fact.trim();
   const trimmedProvenance = provenance.trim().slice(0, MAX_SERENITY_PROVENANCE_CHARS);
   if (!trimmedFact) return { ok: false, error: "fact is required" };
+  if (Buffer.byteLength(trimmedFact, "utf8") > MAX_SERENITY_FACT_BYTES) {
+    return {
+      ok: false,
+      error: `fact exceeds ${MAX_SERENITY_FACT_BYTES} bytes; save a shorter fact`,
+    };
+  }
   if (!trimmedProvenance) return { ok: false, error: "provenance is required" };
   try {
     const payload = await withSerenityClient(
@@ -418,6 +463,7 @@ export async function rememberSerenity(
               fact: trimmedFact,
               provenance: trimmedProvenance,
               ...(options.entity ? { entity: options.entity } : {}),
+              ...(options.operationKey ? { operation_key: options.operationKey } : {}),
             },
           },
           undefined,

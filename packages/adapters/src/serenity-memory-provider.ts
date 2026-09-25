@@ -153,17 +153,19 @@ export function sanitizeSerenityBrainLabel(label: string): string {
   return `${slug.slice(0, 55)}-${digest}`;
 }
 
+// Serenity entity refs are exactly `type/slug`, so a label joins the slug rather than
+// adding a path segment.
 export function serenityBotEntity(botId: string, brainLabel = ""): string {
   const label = sanitizeSerenityBrainLabel(brainLabel);
-  return label ? `rakazo-bot/${label}/${botId}` : `rakazo-bot/${botId}`;
+  return label ? `rakazo-bot/${label}--${botId}` : `rakazo-bot/${botId}`;
 }
 
 export function serenitySpaceEntity(spaceId: string, brainLabel = ""): string {
   const label = sanitizeSerenityBrainLabel(brainLabel);
-  return label ? `rakazo-space/${label}/${spaceId}` : `rakazo-space/${spaceId}`;
+  return label ? `rakazo-space/${label}--${spaceId}` : `rakazo-space/${spaceId}`;
 }
 
-function durableEntities(
+function recallEntities(
   scope: DurableMemoryScope,
   botId: string,
   spaceId: string,
@@ -171,6 +173,27 @@ function durableEntities(
 ): string[] {
   const bot = serenityBotEntity(botId, brainLabel);
   return scope === "shared" ? [serenitySpaceEntity(spaceId, brainLabel), bot] : [bot];
+}
+
+// Shared facts are written once to the Space so each save costs one hosted write.
+function saveEntity(
+  scope: DurableMemoryScope,
+  botId: string,
+  spaceId: string,
+  brainLabel: string,
+): string {
+  return scope === "shared"
+    ? serenitySpaceEntity(spaceId, brainLabel)
+    : serenityBotEntity(botId, brainLabel);
+}
+
+/** Same run + entity + fact replays on retry instead of writing a duplicate fact. */
+function rememberOperationKey(runScope: string, entity: string, fact: string): string {
+  const digest = createHash("sha256")
+    .update(`${runScope}\n${entity}\n${fact.trim()}`)
+    .digest("hex")
+    .slice(0, 48);
+  return `rakazo:${digest}`;
 }
 
 export class SerenityMemoryProvider implements SemanticMemoryProvider {
@@ -200,7 +223,7 @@ export class SerenityMemoryProvider implements SemanticMemoryProvider {
     context: AdapterContext,
   ): Promise<SemanticMemoryResponse<SemanticMemoryResult[]>> {
     // History compaction stays in Rakazo; Serenity is the durable brain only.
-    const entities = durableEntities(
+    const entities = recallEntities(
       request.scope,
       request.botId,
       context.spaceId,
@@ -257,25 +280,23 @@ export class SerenityMemoryProvider implements SemanticMemoryProvider {
           "Serenity writes are disabled for this Space. Enable writing in Memory settings to save durable facts.",
       };
     }
-    const entities = durableEntities(
+    const entity = saveEntity(
       request.scope,
       request.botId,
       context.spaceId,
       this.connection.brainLabel,
     );
     const provenance = `rakazo space:${context.spaceId} bot:${request.botId}`;
-    const results = await Promise.all(
-      entities.map((entity) =>
-        rememberSerenity(request.content, provenance, this.connection, {
-          entity,
-          signal: context.signal,
-        }),
+    const result = await rememberSerenity(request.content, provenance, this.connection, {
+      entity,
+      operationKey: rememberOperationKey(
+        context.runId ?? context.operationId,
+        entity,
+        request.content,
       ),
-    );
-    const errors = results.filter((result) => !result.ok).map((result) => result.error);
-    return errors.length > 0
-      ? { ok: false, error: errors.join("; ") }
-      : { ok: true, value: undefined };
+      signal: context.signal,
+    });
+    return result.ok ? { ok: true, value: undefined } : { ok: false, error: result.error };
   }
 
   async purgeHistory(

@@ -18,13 +18,20 @@ describe("billedPromptTokens", () => {
         cacheRead: 8_000,
         cacheWrite: 200,
       }),
-    ).toEqual({ inputTokens: 8_212, outputTokens: 40 });
+    ).toEqual({
+      inputTokens: 8_212,
+      outputTokens: 40,
+      cacheReadTokens: 8_000,
+      cacheWriteTokens: 200,
+    });
   });
 
   it("keeps uncached-only usage unchanged when cache fields are absent", () => {
     expect(billedPromptTokens({ input: 100, output: 20 })).toEqual({
       inputTokens: 100,
       outputTokens: 20,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
     });
   });
 
@@ -36,7 +43,30 @@ describe("billedPromptTokens", () => {
         cacheRead: 12_500,
         cacheWrite: 0,
       }),
-    ).toEqual({ inputTokens: 12_500, outputTokens: 15 });
+    ).toEqual({
+      inputTokens: 12_500,
+      outputTokens: 15,
+      cacheReadTokens: 12_500,
+      cacheWriteTokens: 0,
+    });
+  });
+
+  it("reports the cache halves alongside the billed total", () => {
+    expect(billedPromptTokens({ input: 100, cacheRead: 40, cacheWrite: 10, output: 5 })).toEqual({
+      inputTokens: 150,
+      cacheReadTokens: 40,
+      cacheWriteTokens: 10,
+      outputTokens: 5,
+    });
+  });
+
+  it("floors missing or negative cache counts at zero", () => {
+    expect(billedPromptTokens({ input: 100, cacheRead: -40, output: 5 })).toEqual({
+      inputTokens: 100,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      outputTokens: 5,
+    });
   });
 });
 

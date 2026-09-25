@@ -32,6 +32,7 @@ import {
   acquireComputerExecutionLease,
   applyTeachingDesktopInput,
   archiveBot,
+  assertSafeRemoteUrl,
   buildMcpCredentialBlob,
   buildModelConnectPlaintext,
   ComputerBusyError,
@@ -105,6 +106,7 @@ import {
   CannotDeleteDefaultSpaceError,
   CannotDeleteLastSpaceError,
   CannotDeleteSpaceAsNonOwnerError,
+  ComputerLimitError,
   claimEmptySpaceDeletionForMember,
   createExternalConversationRepos,
   createGroupRepos,
@@ -128,6 +130,7 @@ import {
   parseComputerMode,
   releaseSpaceDeletionClaim,
   renewSpaceDeletionClaim,
+  restoreBotUnderComputerQuota,
   SPACE_DELETION_CLAIM_TIMEOUT_MS,
   SpaceDeletionInProgressError,
   SpaceLimitError,
@@ -405,6 +408,23 @@ function connectionContext(
   };
 }
 
+async function assertMcpRemoteEndpoint(
+  endpoint: string | null | undefined,
+  actor: Actor,
+  deps: Pick<RouterDeps, "remoteConnectors" | "env">,
+): Promise<void> {
+  if (!endpoint) return;
+  try {
+    await assertSafeRemoteUrl(endpoint, deps.remoteConnectors?.resolveHostname, {
+      allowPrivateEndpoint: actor.isDeploymentOwner || deps.env.mcpAllowPrivateEndpoint === true,
+    });
+  } catch (error) {
+    throw new ORPCError("BAD_REQUEST", {
+      message: error instanceof Error ? error.message : "MCP endpoint is invalid",
+    });
+  }
+}
+
 function mcpAssignmentDto(row: {
   id: string;
   botId: string;
@@ -464,6 +484,7 @@ export interface RouterDeps {
     updaterToken?: string;
     imageTag?: string;
     integrationsCatalogUrl?: string;
+    mcpAllowPrivateEndpoint?: boolean;
   };
 }
 
@@ -481,6 +502,9 @@ function spaceTeardownTimeoutMs(): number {
 function mapSpaceLifecycleError(error: unknown): unknown {
   if (error instanceof SpaceDeletionInProgressError) {
     return new ORPCError("CONFLICT", { message: error.message });
+  }
+  if (error instanceof ComputerLimitError) {
+    return new ORPCError("BAD_REQUEST", { message: error.message });
   }
   return error;
 }
@@ -1166,7 +1190,11 @@ export function createRouter(deps: RouterDeps) {
         if (!bot.computer) throw new IsolationError();
         const currentMode = bot.computer.scope === "dedicated" ? "dedicated" : "team";
         if (currentMode === input.mode) {
-          return repos.setBotComputer(context.actor, bot.id, input.mode);
+          try {
+            return await repos.setBotComputer(context.actor, bot.id, input.mode);
+          } catch (error) {
+            throw mapSpaceLifecycleError(error);
+          }
         }
         const claimed = await deps.prisma.$transaction(async (tx) => {
           await tx.$queryRaw`SELECT id FROM computers WHERE id = ${bot.computerId} FOR UPDATE`;
@@ -1213,6 +1241,8 @@ export function createRouter(deps: RouterDeps) {
             });
           }
           return await repos.setBotComputer(context.actor, bot.id, input.mode);
+        } catch (error) {
+          throw mapSpaceLifecycleError(error);
         } finally {
           await deps.prisma.bot.updateMany({
             where: { id: bot.id },
@@ -1239,7 +1269,19 @@ export function createRouter(deps: RouterDeps) {
       restore: authed.bots.restore.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId, { includeArchived: true });
         if (!bot.archivedAt) return { ok: true as const };
-        await deps.prisma.bot.update({ where: { id: bot.id }, data: { archivedAt: null } });
+        try {
+          if (bot.computer) {
+            await restoreBotUnderComputerQuota(deps.prisma, {
+              userId: context.actor.userId,
+              botId: bot.id,
+              computerId: bot.computer.id,
+            });
+          } else {
+            await deps.prisma.bot.update({ where: { id: bot.id }, data: { archivedAt: null } });
+          }
+        } catch (error) {
+          throw mapSpaceLifecycleError(error);
+        }
         return { ok: true as const };
       }),
       remove: authed.bots.remove.handler(async ({ context, input }) => {
@@ -2938,6 +2980,11 @@ export function createRouter(deps: RouterDeps) {
           );
         }),
         create: authed.mcp.servers.create.handler(async ({ context, input }) => {
+          await assertMcpRemoteEndpoint(
+            "endpoint" in input ? input.endpoint : null,
+            context.actor,
+            deps,
+          );
           const secretPayload = buildMcpCredentialBlob(input);
           const stored = secretPayload
             ? await deps.secrets.put(
@@ -3032,6 +3079,9 @@ export function createRouter(deps: RouterDeps) {
               throw new ORPCError("BAD_REQUEST", { message: "A remote MCP server is required" });
             }
             const nextEndpoint = "endpoint" in config ? config.endpoint : null;
+            if (existing.endpoint !== nextEndpoint) {
+              await assertMcpRemoteEndpoint(nextEndpoint, context.actor, deps);
+            }
             const update = buildMcpUpdateMaterial(existingMaterial, config, {
               clearOAuth: existing.endpoint !== nextEndpoint,
             });

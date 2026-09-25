@@ -1,8 +1,9 @@
 /**
  * Models have no clock. Without an explicit anchor they infer "now" from training data
  * or from timestamps that happen to appear in the conversation, and then reason about
- * deadlines, recency and scheduling from a stale date. Every run states the real present
- * moment in its system instructions so that never has to be guessed.
+ * deadlines, recency and scheduling from a stale date. Every turn states the real present
+ * moment on the user message so that never has to be guessed; it stays out of the system
+ * prompt so the cacheable prefix does not change every call.
  */
 export function formatCurrentTimeInstruction(now: Date = new Date()): string {
   const iso = now.toISOString().replace(/\.\d{3}Z$/, "Z");

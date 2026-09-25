@@ -450,6 +450,7 @@ export const DE_MESSAGES: Record<string, string> = {
   Robot: "Roboter",
   "Scheduled tasks": "Geplante Aufgaben",
   "Sign out": "Abmelden",
+  "Stream replies": "Antworten streamen",
   System: "System",
   "This permanently deletes your account, bots, conversations, memories, files, and saved connections. This cannot be undone.":
     "Das löscht dein Konto, deine Bots, Unterhaltungen, Erinnerungen, Dateien und gespeicherten Verbindungen endgültig. Das lässt sich nicht rückgängig machen.",

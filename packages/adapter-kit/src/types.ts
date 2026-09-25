@@ -430,7 +430,16 @@ export type AgentRuntimeEvent =
       actions?: Array<{ id: string; label: string }>;
     }
   | { type: "takeover"; reason: string }
-  | { type: "usage"; inputTokens: number; outputTokens: number; provider: string; model: string }
+  | {
+      type: "usage";
+      inputTokens: number;
+      outputTokens: number;
+      /** Cache hits and writes folded into inputTokens, kept apart so cost views can split them. */
+      cacheReadTokens: number;
+      cacheWriteTokens: number;
+      provider: string;
+      model: string;
+    }
   | { type: "checkpoint"; blob: string }
   | {
       type: "subagent";
