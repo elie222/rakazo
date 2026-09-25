@@ -44,6 +44,7 @@ import {
   appendToolCallSegment,
   applyJudgeDecision,
   assertTransition,
+  blocksToAgentHistoryText,
   botMessageAllowsSilence,
   connectorKindFromToolName,
   containsSecret,
@@ -5452,8 +5453,12 @@ async function loadTurnImagesWithinBudget(
   };
 }
 
-/** Rewrite history markers for pictures whose bytes could not be read. */
-function markUnavailableHistoryImages(
+function unavailableImageMarker(name: string): string {
+  return `[image: ${name} (unavailable)]`;
+}
+
+/** Replace image markers in attachment order, starting at `cursor`. */
+function rewriteImageMarkersInOrder(
   content: string,
   outcomes: readonly { name: string; unavailable: boolean }[],
 ): string {
@@ -5463,11 +5468,57 @@ function markUnavailableHistoryImages(
     const marker = `[image: ${outcome.name}]`;
     const at = content.indexOf(marker, cursor);
     if (at < 0) continue;
-    const replacement = outcome.unavailable ? `[image: ${outcome.name} (unavailable)]` : marker;
+    const replacement = outcome.unavailable ? unavailableImageMarker(outcome.name) : marker;
     next += content.slice(cursor, at) + replacement;
     cursor = at + marker.length;
   }
   return next + content.slice(cursor);
+}
+
+/**
+ * Replace image markers from the end, one per attachment.
+ * A leading quote of the same name is left alone.
+ */
+function rewriteImageMarkersFromEnd(
+  content: string,
+  outcomes: readonly { name: string; unavailable: boolean }[],
+): string {
+  let end = content.length;
+  const parts: string[] = [];
+  for (let index = outcomes.length - 1; index >= 0; index -= 1) {
+    const outcome = outcomes[index];
+    if (!outcome) continue;
+    const marker = `[image: ${outcome.name}]`;
+    const at = content.lastIndexOf(marker, Math.max(0, end - 1));
+    if (at < 0 || at + marker.length > end) continue;
+    const replacement = outcome.unavailable ? unavailableImageMarker(outcome.name) : marker;
+    parts.push(content.slice(at + marker.length, end), replacement);
+    end = at;
+  }
+  parts.push(content.slice(0, end));
+  return parts.reverse().join("");
+}
+
+/**
+ * Rewrite the markers attachment rendering appended for this message.
+ * A quoted `[image: name]` earlier in the text is not this message's attachment.
+ */
+function markUnavailableHistoryImages(
+  content: string,
+  blocks: MessageBlock[],
+  outcomes: readonly { name: string; unavailable: boolean }[],
+): string {
+  const rendered = blocksToAgentHistoryText(blocks);
+  const suffixAt = rendered.length > 0 ? content.lastIndexOf(rendered) : -1;
+  if (suffixAt >= 0) {
+    const suffixEnd = suffixAt + rendered.length;
+    return (
+      content.slice(0, suffixAt) +
+      rewriteImageMarkersInOrder(content.slice(suffixAt, suffixEnd), outcomes) +
+      content.slice(suffixEnd)
+    );
+  }
+  return rewriteImageMarkersFromEnd(content, outcomes);
 }
 
 /**
@@ -5479,7 +5530,8 @@ function markUnavailableHistoryImages(
  * without limit: at most `maxTurns` user turns, a total byte ceiling, and
  * never more images than the model connection accepts. Within a turn, pictures
  * that fit are kept newest first instead of dropping the whole turn. A picture
- * that cannot be read keeps an `[image: name (unavailable)]` marker. Once a
+ * that cannot be read keeps an `[image: name (unavailable)]` marker on that
+ * attachment, not on a quoted copy of the same name. Once a
  * newer picture is left out, older turns are not backfilled. Bytes are read
  * through the same artifact path and space/user scope as the current turn, and
  * a compacted summary is never hydrated because its messages are no longer part
@@ -5529,7 +5581,7 @@ export async function withRecentTurnImages(
       remainingImages,
     });
     const content = loaded.outcomes.some((outcome) => outcome.unavailable)
-      ? markUnavailableHistoryImages(entry.content, loaded.outcomes)
+      ? markUnavailableHistoryImages(entry.content, blocks, loaded.outcomes)
       : entry.content;
     if (loaded.images.length > 0 || content !== entry.content) {
       hydrated.set(entry.id, {
