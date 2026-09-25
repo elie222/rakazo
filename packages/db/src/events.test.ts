@@ -2062,6 +2062,61 @@ describe("appendEvent", () => {
     expect(publish).not.toHaveBeenCalled();
   });
 
+  it("retries a deadlocked transaction and publishes the event once", async () => {
+    const fanout = new TestFanout();
+    const publish = vi.spyOn(fanout, "publish");
+    const deadlock = Object.assign(new Error("write conflict or a deadlock"), { code: "P2034" });
+    const created = { ...event(4), type: "thread.progress", runId: "run-1" };
+    const tx = {
+      thread: { update: vi.fn().mockResolvedValue({ nextEventSeq: 5 }) },
+      run: { findUnique: vi.fn().mockResolvedValue({ status: "running" }) },
+      event: { create: vi.fn().mockResolvedValue(created) },
+    };
+    const transaction = vi
+      .fn()
+      .mockRejectedValueOnce(deadlock)
+      .mockImplementation(async (callback: (client: typeof tx) => unknown) => callback(tx));
+
+    await expect(
+      appendEvent(
+        { $transaction: transaction } as unknown as PrismaClient,
+        {
+          spaceId: "workspace-1",
+          threadId: "thread-1",
+          botId: "bot-1",
+          type: "thread.progress",
+          runId: "run-1",
+          payload: { text: "progress" },
+        },
+        fanout,
+      ),
+    ).resolves.toMatchObject({ type: "thread.progress", runId: "run-1" });
+    expect(transaction).toHaveBeenCalledTimes(2);
+    expect(tx.event.create).toHaveBeenCalledTimes(1);
+    expect(publish).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not retry a run that can no longer write history", async () => {
+    const tx = {
+      thread: { update: vi.fn().mockResolvedValue({ nextEventSeq: 5 }) },
+      run: { findUnique: vi.fn().mockResolvedValue({ status: "cancelled" }) },
+      event: { create: vi.fn() },
+    };
+    const transaction = vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx));
+
+    await expect(
+      appendEvent({ $transaction: transaction } as unknown as PrismaClient, {
+        spaceId: "workspace-1",
+        threadId: "thread-1",
+        botId: "bot-1",
+        type: "thread.progress",
+        runId: "run-1",
+        payload: { text: "stale" },
+      }),
+    ).rejects.toThrow(RunHistoryWriteError);
+    expect(transaction).toHaveBeenCalledTimes(1);
+  });
+
   it("lets a new active run write after the thread was cleared", async () => {
     const fanout = new TestFanout();
     const publish = vi.spyOn(fanout, "publish");

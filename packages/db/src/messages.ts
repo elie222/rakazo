@@ -1,5 +1,6 @@
 import type { MessageBlock } from "@rakazo/contracts";
 import type { Prisma, PrismaClient } from "./client.js";
+import { withTransactionRetry } from "./transaction-retry.js";
 
 /** Group turns use channel inputs and their own outputs, never private thread history. */
 export function loadRunHistoryMessages(
@@ -52,8 +53,10 @@ export interface CreateThreadMessageInput {
 }
 
 export async function createThreadMessage(prisma: PrismaClient, input: CreateThreadMessageInput) {
-  return prisma.$transaction((tx: Prisma.TransactionClient) =>
-    createThreadMessageInTransaction(tx, input),
+  return withTransactionRetry(() =>
+    prisma.$transaction((tx: Prisma.TransactionClient) =>
+      createThreadMessageInTransaction(tx, input),
+    ),
   );
 }
 

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import type { Prisma } from "./client.js";
-import { createThreadMessageInTransaction } from "./messages.js";
+import type { Prisma, PrismaClient } from "./client.js";
+import { createThreadMessage, createThreadMessageInTransaction } from "./messages.js";
 
 function transaction() {
   return {
@@ -32,5 +32,39 @@ describe("createThreadMessageInTransaction", () => {
     expect(visible.thread.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ unread: true }) }),
     );
+  });
+});
+
+describe("createThreadMessage", () => {
+  it("retries a deadlocked transaction and creates the message once", async () => {
+    const deadlock = Object.assign(new Error("write conflict or a deadlock"), { code: "P2034" });
+    const tx = transaction();
+    const run = vi
+      .fn()
+      .mockRejectedValueOnce(deadlock)
+      .mockImplementation(async (callback: (client: typeof tx) => unknown) => callback(tx));
+
+    await expect(
+      createThreadMessage({ $transaction: run } as unknown as PrismaClient, {
+        threadId: "thread-1",
+        role: "bot",
+        blocks: [{ kind: "text", text: "Done" }],
+      }),
+    ).resolves.toEqual({ id: "message-1" });
+    expect(run).toHaveBeenCalledTimes(2);
+    expect(tx.message.create).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not retry other errors", async () => {
+    const run = vi.fn().mockRejectedValue(new Error("unique constraint"));
+
+    await expect(
+      createThreadMessage({ $transaction: run } as unknown as PrismaClient, {
+        threadId: "thread-1",
+        role: "user",
+        blocks: [{ kind: "text", text: "hi" }],
+      }),
+    ).rejects.toThrow("unique constraint");
+    expect(run).toHaveBeenCalledTimes(1);
   });
 });

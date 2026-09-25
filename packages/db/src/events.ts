@@ -992,8 +992,9 @@ export async function appendEvent(
   input: AppendEventInput,
   realtime?: RealtimeFanout,
 ): Promise<ProductEvent> {
-  const event = await prisma.$transaction((tx: Prisma.TransactionClient) =>
-    appendEventInTransaction(tx, input),
+  // Concurrent writers in one thread (group members, bot messages) can deadlock on the thread row.
+  const event = await withTransactionRetry(() =>
+    prisma.$transaction((tx: Prisma.TransactionClient) => appendEventInTransaction(tx, input)),
   );
   const productEvent = mapProductEvent(event);
   await notifyRealtime(realtime, event.threadId, event.seq);
