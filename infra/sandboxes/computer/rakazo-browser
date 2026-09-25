@@ -50,26 +50,22 @@ clear_crash_state() {
     "$f" > "${f}.tmp" && mv "${f}.tmp" "$f"
 }
 
-# Chromium setproctitle() stores one space-joined command. Split only on " --"
-# so a profile path that contains spaces stays one --user-data-dir argument.
-proc_args() {
-  tr '\0' '\n' <"/proc/$1/cmdline" 2>/dev/null | while IFS= read -r line; do
-    case "$line" in
-      *" --"*)
-        rest=$line
-        while :; do
-          case "$rest" in
-            *" --"*)
-              printf '%s\n' "${rest%% --*}"
-              rest="--${rest#* --}"
-              ;;
-            *) printf '%s\n' "$rest"; break ;;
-          esac
-        done
-        ;;
-      *) printf '%s\n' "$line" ;;
-    esac
-  done || true
+# Match one argument in NUL-separated argv or in Chromium's space-joined title.
+# The whole flag is the search string, so spaces and " --" inside a profile path stay intact.
+cmdline_text() {
+  tr '\0' '\n' <"/proc/$1/cmdline" 2>/dev/null || true
+}
+has_arg() {
+  text=$(cmdline_text "$1")
+  if printf '%s\n' "$text" | grep -Fx -- "$2" >/dev/null; then return 0; fi
+  if printf ' %s ' "$text" | grep -F -- " $2 " >/dev/null; then return 0; fi
+  return 1
+}
+has_prefix() {
+  text=$(cmdline_text "$1")
+  if printf '%s\n' "$text" | grep -e "^$2" >/dev/null; then return 0; fi
+  if printf ' %s ' "$text" | grep -F -- " $2" >/dev/null; then return 0; fi
+  return 1
 }
 
 # A stale SingletonLock is not a live browser. Leaving exit_type=Crashed makes Chrome
@@ -84,9 +80,8 @@ profile_lock_is_live() {
   esac
   kill -0 "$pid" 2>/dev/null || return 1
   [ -r "/proc/$pid/cmdline" ] || return 0
-  args=$(proc_args "$pid")
-  printf '%s\n' "$args" | grep -Fx -- "--user-data-dir=$profile" >/dev/null || return 1
-  if printf '%s\n' "$args" | grep -e '^--type=' >/dev/null; then
+  has_arg "$pid" "--user-data-dir=$profile" || return 1
+  if has_prefix "$pid" "--type="; then
     return 1
   fi
   return 0

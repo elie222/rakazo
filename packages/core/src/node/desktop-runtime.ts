@@ -97,38 +97,31 @@ function browserRunningFunction(profile: string, pidFile: string) {
     "browser_running() {",
     `  tracked=$(cat ${pidFile} 2>/dev/null || true)`,
     `  lock=$(readlink ${profileQuoted}/SingletonLock 2>/dev/null || true)`,
-    // Chromium setproctitle() stores one space-joined command. Split only on " --"
-    // so a profile path that contains spaces stays one --user-data-dir argument.
-    "  proc_args() {",
-    "    tr '\\0' '\\n' <\"/proc/$1/cmdline\" 2>/dev/null | while IFS= read -r line; do",
-    '      case "$line" in',
-    '        *" --"*)',
-    "          rest=$line",
-    "          while :; do",
-    '            case "$rest" in',
-    '              *" --"*)',
-    // biome-ignore lint/suspicious/noTemplateCurlyInString: shell parameter expansion
-    "                printf '%s\\n' \"${rest%% --*}\"",
-    // biome-ignore lint/suspicious/noTemplateCurlyInString: shell parameter expansion
-    '                rest="--${rest#* --}"',
-    "                ;;",
-    "              *) printf '%s\\n' \"$rest\"; break ;;",
-    "            esac",
-    "          done",
-    "          ;;",
-    "        *) printf '%s\\n' \"$line\" ;;",
-    "      esac",
-    "    done || true",
+    // Match the configured flag in either NUL-separated argv or Chromium's one-line
+    // setproctitle. Searching for the whole flag keeps spaces and " --" inside the path.
+    "  cmdline_text() {",
+    "    tr '\\0' '\\n' <\"/proc/$1/cmdline\" 2>/dev/null || true",
+    "  }",
+    "  has_arg() {",
+    '    text=$(cmdline_text "$1")',
+    '    if printf \'%s\\n\' "$text" | grep -Fx -- "$2" >/dev/null; then return 0; fi',
+    '    if printf \' %s \' "$text" | grep -F -- " $2 " >/dev/null; then return 0; fi',
+    "    return 1",
+    "  }",
+    "  has_prefix() {",
+    '    text=$(cmdline_text "$1")',
+    '    if printf \'%s\\n\' "$text" | grep -e "^$2" >/dev/null; then return 0; fi',
+    '    if printf \' %s \' "$text" | grep -F -- " $2" >/dev/null; then return 0; fi',
+    "    return 1",
     "  }",
     "  browser_matches() {",
     "    case \"$1\" in ''|0|*[!0-9]*) return 1 ;; esac",
     '    kill -0 "$1" 2>/dev/null || return 1',
-    '    args=$(proc_args "$1")',
-    `    printf '%s\\n' "$args" | grep -Fx -- ${flag} >/dev/null || return 1`,
+    `    if ! has_arg "$1" ${flag}; then return 1; fi`,
     // Browser.close reads --remote-debugging-port from this PID. Renderers inherit
     // --user-data-dir (and sometimes the port) but always carry --type=.
-    "    printf '%s\\n' \"$args\" | grep -e '^--remote-debugging-port=' >/dev/null || return 1",
-    "    if printf '%s\\n' \"$args\" | grep -e '^--type=' >/dev/null; then return 1; fi",
+    "    if ! has_prefix \"$1\" '--remote-debugging-port='; then return 1; fi",
+    "    if has_prefix \"$1\" '--type='; then return 1; fi",
     `    mkdir -p "$(dirname ${pidFile})" 2>/dev/null || true`,
     `    printf %s "$1" >${pidFile} 2>/dev/null || true`,
     "    return 0",
@@ -177,24 +170,25 @@ function browserLauncherCommand(
 // Browser.close flushes cookies and profile databases; SIGTERM alone can discard recent cookies.
 const CLOSE_BROWSER = `import base64, json, os, socket, sys, urllib.request
 pid = sys.argv[1]
-args = []
-for part in open('/proc/' + pid + '/cmdline', 'rb').read().split(b'\\0'):
-    if not part:
-        continue
-    if b' --' in part:
-        rest = part
-        while True:
-            if b' --' not in rest:
-                if rest:
-                    args.append(rest)
-                break
-            head, tail = rest.split(b' --', 1)
-            if head:
-                args.append(head)
-            rest = b'--' + tail
-    else:
-        args.append(part)
-port = next(int(arg.split(b'=', 1)[1]) for arg in reversed(args) if arg.startswith(b'--remote-debugging-port='))
+data = open('/proc/' + pid + '/cmdline', 'rb').read().replace(b'\\0', b' ')
+key = b'--remote-debugging-port='
+start = len(data)
+port = None
+while True:
+    start = data.rfind(key, 0, start)
+    if start < 0:
+        break
+    if start == 0 or data[start - 1:start] == b' ':
+        digits = bytearray()
+        index = start + len(key)
+        while index < len(data) and 48 <= data[index] <= 57:
+            digits.append(data[index])
+            index += 1
+        if digits:
+            port = int(digits)
+            break
+if port is None:
+    raise SystemExit(1)
 if len(sys.argv) > 2 and sys.argv[2] == '--print-port':
     print(port)
     raise SystemExit(0)
