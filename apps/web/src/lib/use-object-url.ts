@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 
-/** Blob-URL lifecycle for in-memory bytes — revokes on unmount/change. */
 export function useObjectUrl(bytes: Uint8Array, mimeType: string): string | null {
   const [url, setUrl] = useState<string | null>(null);
 

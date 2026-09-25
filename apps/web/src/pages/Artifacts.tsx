@@ -45,7 +45,6 @@ type DateFilter = "all" | "today" | "week" | "month";
 const VIEW_MODE_STORAGE_KEY = "rakazo:artifacts-view-mode";
 const LIST_PAGE_SIZE = 60;
 
-/** listSpace's per-item shape: the latest version's info plus a version count. */
 type ArtifactSummary = Artifact & { versionCount: number };
 
 function readViewMode(): ViewMode {
@@ -60,12 +59,11 @@ function writeViewMode(mode: ViewMode): void {
   try {
     window.localStorage.setItem(VIEW_MODE_STORAGE_KEY, mode);
   } catch {
-    // Per-viewer convenience only — fine to drop silently.
+    // Preference only; ignore storage failures.
   }
 }
 
-/** Calendar boundaries matching the filter labels ("This week"/"This month"), not rolling windows. */
-function matchesDateFilter(iso: string, filter: DateFilter, now: Date): boolean {
+function matchesCalendarDateFilter(iso: string, filter: DateFilter, now: Date): boolean {
   if (filter === "all") return true;
   const date = new Date(iso);
   if (filter === "today") return date.toDateString() === now.toDateString();
@@ -88,9 +86,6 @@ export function ArtifactsPage() {
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const loadingMoreRef = useRef(false);
-  // Bumped whenever the active listing (bot filter) changes, so a loadMore()
-  // request started for the previous bot can recognize it's stale and skip
-  // applying its response instead of appending onto/overwriting the new one.
   const listingGenerationRef = useRef(0);
   const [activeBotId, setActiveBotId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>(readViewMode);
@@ -134,6 +129,7 @@ export function ArtifactsPage() {
   async function loadMore() {
     if (!nextCursor || loadingMoreRef.current) return;
     const generation = listingGenerationRef.current;
+    const listingChanged = () => generation !== listingGenerationRef.current;
     loadingMoreRef.current = true;
     setLoadingMore(true);
     try {
@@ -142,18 +138,13 @@ export function ArtifactsPage() {
         cursor: nextCursor,
         limit: LIST_PAGE_SIZE,
       });
-      // The active listing changed while this request was in flight (e.g. the
-      // bot filter switched) — applying it now would append or point the
-      // cursor at the wrong listing. The generation that started it already
-      // reset loadingMore/loadingMoreRef, so just drop the stale response.
-      if (generation !== listingGenerationRef.current) return;
+      if (listingChanged()) return;
       setItems((current) => (current ?? []).concat(page.items));
       setNextCursor(page.nextCursor);
     } catch {
-      // Leave the existing page visible; the "Load more" button just stays
-      // clickable so the user can retry.
+      // Keep the current page so Load more can be retried.
     } finally {
-      if (generation === listingGenerationRef.current) {
+      if (!listingChanged()) {
         loadingMoreRef.current = false;
         setLoadingMore(false);
       }
@@ -171,7 +162,7 @@ export function ArtifactsPage() {
     const now = new Date();
     const query = searchQuery.trim().toLowerCase();
     return items.filter((item) => {
-      if (!matchesDateFilter(item.createdAt, dateFilter, now)) return false;
+      if (!matchesCalendarDateFilter(item.createdAt, dateFilter, now)) return false;
       if (!query) return true;
       return (
         item.name.toLowerCase().includes(query) ||
@@ -187,8 +178,7 @@ export function ArtifactsPage() {
     autoFetchedCursorRef.current = null;
   }, [searchQuery, dateFilter, activeBotId]);
 
-  // Search/date filters are client-side over loaded pages. Keep fetching while
-  // the current snapshot has no matches so later pages stay reachable.
+  // Search and date filters only see loaded pages, so keep paging until something matches.
   useEffect(() => {
     if (!clientFilterActive || !nextCursor || loadingMore || items === null) return;
     if (filteredItems && filteredItems.length > 0) return;
@@ -572,7 +562,6 @@ function FilterChip({
   );
 }
 
-/** The same resolved color and shape BotAvatar itself renders with. */
 function useBotColorHex(bot: Bot): string {
   return useMemo(() => {
     const parsed = parseBotAvatar(bot.color, bot.id);
@@ -703,12 +692,6 @@ function ArtifactCard({
   );
 }
 
-/**
- * Compact row: used both for full-width "list view" browsing and for the
- * narrow index pane next to an open preview. Bot + timestamp share one line
- * ("moved closer together") and description wraps instead of truncating,
- * since a narrow column has more vertical room than horizontal.
- */
 function ArtifactRow({
   artifact,
   bot,
@@ -822,8 +805,6 @@ function PreviewPane({
     | { status: "error"; message: string }
   >({ status: "loading" });
 
-  // The family's version list — drives the switcher and picks the default
-  // (latest) version to open with.
   useEffect(() => {
     let cancelled = false;
     setVersions(null);
@@ -843,7 +824,6 @@ function PreviewPane({
     };
   }, [artifactId]);
 
-  // The selected version's content.
   useEffect(() => {
     if (!selectedVersionId) return;
     let cancelled = false;

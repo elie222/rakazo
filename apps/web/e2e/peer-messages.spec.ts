@@ -67,8 +67,7 @@ test("shows peer chips in transcript and opens view-only peer chat", async ({ pa
     expect(chipBox).not.toBeNull();
     // Transcript padding is 16px mobile / 28px desktop; centering must fail this assertion.
     expect(chipBox!.x - transcriptBox!.x).toBeLessThanOrEqual(32);
-    // Compact chip, not a full-width bar. Mobile transcript is ~334px beside AppRail,
-    // so a "Messaged Researcher" chip can exceed half of that remaining width.
+    // Stay under 75% of the transcript width so the chip cannot become a full-width bar.
     expect(chipBox!.width).toBeLessThan(transcriptBox!.width * 0.75);
   };
 

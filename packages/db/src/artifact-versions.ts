@@ -1,15 +1,6 @@
 import type { PrismaClient } from "./client.js";
 import { Prisma } from "./client.js";
 
-/**
- * Shared by both artifact-authoring paths (the human-facing `create` RPC and
- * the bot's `attach_file` tool): attaching something with the same name as
- * an existing artifact, for the same bot/group, becomes a new version of
- * that artifact instead of an unrelated duplicate. Matching is by the
- * *current* display name (case-insensitive) of the most recent version in
- * scope — a rename on a later version naturally becomes what the next
- * update matches against.
- */
 export async function resolveNextArtifactVersion(
   prisma: Pick<PrismaClient, "artifact">,
   params: {
@@ -45,16 +36,7 @@ type ArtifactVersionWrite = {
   version: number;
 };
 
-/**
- * `resolveNextArtifactVersion` reads then the caller writes. Two concurrent
- * attachments can both observe "no previous row" and insert two version-1
- * roots — the family/version unique index does not stop that, because each
- * new root's family key is its own id. They can also both pick the same next
- * version of an existing family. Storage I/O stays outside this function;
- * the transaction only serializes the read and the insert, with a
- * transaction-scoped advisory lock on the scope and name. The unique index
- * remains the backstop for a same-family version clash, which is retried.
- */
+// Advisory lock queues same-name publishes; retry a unique family-version clash.
 export async function withResolvedArtifactVersion<T>(
   prisma: Pick<PrismaClient, "$transaction">,
   params: {
@@ -87,7 +69,7 @@ export async function withResolvedArtifactVersion<T>(
   throw lastError;
 }
 
-/** Same identity `resolveNextArtifactVersion` matches on, so concurrent publishes queue. */
+// Same identity as the name lookup, so those publishes share one lock.
 function artifactVersionLockKey(params: {
   spaceId: string;
   userId: string;

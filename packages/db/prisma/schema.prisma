@@ -973,11 +973,7 @@ model Artifact {
   storageKey String
   createdAt  DateTime   @default(now())
 
-  // Versioning: every row is a version. The root of a family (its first
-  // version) has rootArtifactId = null; later versions point at it. A
-  // family's stable, URL-facing identity is always its root's id — the root
-  // never changes even as new versions are added. Deleting the root cascades
-  // to every version.
+  // Null on the first version; that row's id is the family's stable id.
   rootArtifactId String?
   rootArtifact   Artifact?  @relation("ArtifactVersions", fields: [rootArtifactId], references: [id], onDelete: Cascade)
   versions       Artifact[] @relation("ArtifactVersions")
@@ -986,10 +982,7 @@ model Artifact {
   @@index([spaceId, botId])
   @@index([groupId])
   @@index([rootArtifactId])
-  // Also: a UNIQUE index on (COALESCE(rootArtifactId, id), version) — added
-  // via raw SQL in migrations/artifact_version_uniqueness, since Prisma's
-  // schema DSL has no expression-index syntax without the extendedIndexes
-  // preview feature. `prisma migrate diff`/drift checks will not see it.
+  // artifacts_family_version_key is raw SQL: Prisma cannot express COALESCE indexes.
   @@map("artifacts")
 }
 

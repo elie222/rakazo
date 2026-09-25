@@ -85,7 +85,6 @@ function directiveSources(policy: string, name: string): string[] | undefined {
   return undefined;
 }
 
-/** CSP fallback: frame-src, then child-src, then default-src. */
 function operativeFrameSources(policy: string): string[] {
   return (
     directiveSources(policy, "frame-src") ??

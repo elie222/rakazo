@@ -43,9 +43,7 @@ export async function attachWorkspaceFileToThread(
     filePath: string;
     bytes: Uint8Array;
     operationId: string;
-    /** A friendlier display name than the raw filename, e.g. "Q3 Content Calendar". */
     name?: string;
-    /** A one-line summary shown on the Artifacts tab without opening the file. */
     description?: string;
   },
 ): Promise<{ artifactId: string; block: Extract<MessageBlock, { kind: "image" | "file" }> }> {

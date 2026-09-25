@@ -6,12 +6,6 @@ type AppRailProps = {
   active: "bots" | "artifacts";
 };
 
-/**
- * Persistent leftmost destination switcher. Unlike the bots sidebar (which
- * hides on mobile and can collapse), this never goes away — switching between
- * Bots and Artifacts is always a single click, so neither view needs its own
- * back button.
- */
 export function AppRail({ active }: AppRailProps) {
   const { t } = useLingui();
   return (

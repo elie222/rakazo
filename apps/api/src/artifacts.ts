@@ -131,12 +131,7 @@ export async function getSpaceArtifact(
   return readArtifact(deps.artifacts, actor, row, input.contextBotId);
 }
 
-/**
- * Opens an artifact from the space-wide Artifacts tab, where the caller only
- * has the artifact's id (not the bot/group thread it was created in). Scoped
- * to spaceId + userId like every other artifact read; the row's own botId is
- * only used for the adapter's tracing context, not for authorization.
- */
+// Trace with the row's own bot; space and user authorize the read.
 export async function getSpaceArtifactById(
   deps: {
     prisma: PrismaClient;
@@ -218,9 +213,8 @@ export class ArtifactListCursorError extends Error {
 type ArtifactListCursor = {
   createdAt: string;
   id: string;
-  /** Bot filter the page was issued under. Null is the unfiltered space list. */
   botId: string | null;
-  /** Versions published after this instant are not part of this page sequence. */
+  // Freezes the version set for this page sequence.
   asOf: string;
 };
 
@@ -266,15 +260,6 @@ function cursorBotId(value: unknown): string | null {
   throw new ArtifactListCursorError();
 }
 
-/**
- * One row per family (the latest version's info), collapsed and paginated in
- * the database via a `DISTINCT ON` + keyset cursor — not a bounded raw fetch
- * collapsed in JS, which can never page past its own snapshot. `asOf` freezes
- * which versions exist for this page sequence: a version published after the
- * first page cannot become an unseen family's latest row and jump above the
- * cursor. Group-owned artifacts are included: every artifact (bot- or
- * group-owned) is scoped by spaceId/userId, same as the rest of this file's reads.
- */
 export async function listSpaceArtifacts(
   deps: { prisma: Pick<PrismaClient, "artifact" | "$queryRaw"> },
   actor: Actor,
@@ -287,8 +272,7 @@ export async function listSpaceArtifacts(
   let asOf = new Date();
   let cursorFilter = Prisma.empty;
   if (input.cursor) {
-    // The position is carried in the cursor. Looking the row up again would
-    // drop the filter when that version is deleted and replay the first page.
+    // Position is stored on the cursor so a deleted row cannot replay the first page.
     const cursor = decodeArtifactListCursor(input.cursor);
     if (cursor.botId !== scopeBotId) throw new ArtifactListCursorError();
     asOf = new Date(cursor.asOf);
@@ -328,9 +312,7 @@ export async function listSpaceArtifacts(
   const last = page.at(-1);
 
   return {
-    // `id` is the family's stable root id — never the version row that
-    // happens to be latest right now — so a card's URL never changes just
-    // because a new version was published.
+    // id is the family root so the card URL stays stable across versions.
     items: page.map((row) => ({
       id: row.familyId,
       botId: row.botId,
@@ -356,7 +338,6 @@ export async function listSpaceArtifacts(
   };
 }
 
-/** All versions of a family, latest first — for the version-switcher dropdown. */
 export async function listArtifactVersions(
   deps: { prisma: Pick<PrismaClient, "artifact"> },
   actor: Actor,
@@ -386,19 +367,7 @@ export async function listArtifactVersions(
 
 type ArtifactMember = { id: string; storageKey: string; botId: string | null };
 
-/**
- * Deletes a whole family — every version, then the root — and its storage
- * blobs. Each blob is removed before its row so a storage failure still
- * leaves the key in the database for a retry. A missing blob is success, so
- * a retry after a crash between those two steps can finish. Versions go
- * before the root: deleting the root cascades and would drop version rows
- * while their blobs were still stored.
- *
- * The root blob is removed only while its row is locked and no child version
- * exists. A publish inserts a child that references the root, which waits on
- * that lock, so it cannot land in the gap between "no children" and the
- * blob delete and leave the root row pointing at missing storage.
- */
+// Delete each blob before its row, and the root only while it has no versions.
 export async function deleteArtifactFamily(
   deps: { prisma: PrismaClient; artifacts: ArtifactStore },
   actor: Actor,
@@ -435,10 +404,6 @@ export async function deleteArtifactFamily(
   }
 }
 
-/**
- * Removes the root only when it still has no versions. `has-child` means a
- * version appeared and the root blob was left untouched.
- */
 async function deleteArtifactRootIfChildless(
   deps: { prisma: PrismaClient; artifacts: ArtifactStore },
   actor: Actor,
@@ -586,8 +551,7 @@ export async function resolveGroupSendAttachments(
       userId: actor.userId,
       OR: [
         { groupId },
-        // Accept artifacts uploaded by a current member before group ownership
-        // was persisted. Removing that member revokes this legacy fallback.
+        // Uploads from before group ownership was stored, still tied to a current member.
         { groupId: null, botId: { in: memberBotIds } },
       ],
     },
