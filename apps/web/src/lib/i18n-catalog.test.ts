@@ -272,5 +272,8 @@ describe("lingui catalogs", () => {
       'msgid "{0} runs · {1} tokens"\nmsgstr "{0} exécutions · {1} jetons"',
     );
     expect(catalog).toContain('msgstr "{0, plural, one {# modèle} other {# modèles}}"');
+    expect(catalog).toContain(
+      'msgid "Configure a plugin catalog on the server to connect apps."\nmsgstr "Configurez un catalogue de plugins sur le serveur pour connecter des applications."',
+    );
   });
 });
