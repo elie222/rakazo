@@ -4,7 +4,7 @@ import { isIP } from "node:net";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { ConnectorTool } from "@rakazo/adapter-kit";
-import { isLocalMcpHost } from "@rakazo/contracts";
+import { isCloudMetadataHost, isLocalMcpHost, isPrivateNetworkHost } from "@rakazo/contracts";
 import { Agent, fetch as undiciFetch } from "undici";
 import { combineSignals } from "./connector-safety.js";
 import {
@@ -340,11 +340,9 @@ function isTailscaleMagicDnsHostname(hostname: string): boolean {
 
 function isBlockedRemoteHostname(hostname: string): boolean {
   const normalized = hostname.toLowerCase().replace(/\.$/, "");
-  return (
-    normalized === "metadata.google.internal" ||
-    normalized === "metadata.goog" ||
-    (isIP(normalized) !== 0 && isCloudMetadataAddress(normalized))
-  );
+  if (isCloudMetadataHost(normalized)) return true;
+  // Mapped and embedded forms, including IMDS IPv6.
+  return isIP(normalized) !== 0 && isCloudMetadataAddress(normalized);
 }
 
 /** Loopback, RFC1918/ULA literals, Docker Desktop, and typical LAN DNS suffixes. */
@@ -354,13 +352,11 @@ export function isPrivateRemoteMcpHostname(hostname: string): boolean {
     .replace(/^\[|\]$/g, "")
     .replace(/\.$/, "");
   if (isTailscaleMagicDnsHostname(normalized)) return false;
+  if (isPrivateNetworkHost(normalized)) return true;
   return (
-    normalized === "localhost" ||
     normalized === "host.docker.internal" ||
     normalized.endsWith(".localhost") ||
-    normalized.endsWith(".local") ||
     normalized.endsWith(".internal") ||
-    normalized === "metadata.google.internal" ||
     (isIP(normalized) !== 0 && isPrivateAddress(normalized))
   );
 }
@@ -387,7 +383,12 @@ function assertUnmixedAddresses(addresses: ResolvedAddress[]): void {
   if (addresses.length === 0) {
     throw new Error("Connector URL resolves to a private address");
   }
-  if (addresses.some((entry) => isCloudMetadataAddress(entry.address))) {
+  // Link-local stays blocked: that range holds cloud metadata, same as private credential fetches.
+  if (
+    addresses.some(
+      (entry) => isCloudMetadataAddress(entry.address) || isLinkLocalAddress(entry.address),
+    )
+  ) {
     throw new Error("Connector URL resolves to a private address");
   }
   const hasPrivate = addresses.some((entry) => isPrivateAddress(entry.address));
