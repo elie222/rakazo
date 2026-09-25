@@ -5,17 +5,23 @@ export type ChatMarkdownProps = {
 
 type LinkifyParser = {
   set(options: { linkify: boolean }): unknown;
-  linkify: { set(options: { fuzzyLink: boolean }): unknown };
+  linkify: {
+    set(options: { fuzzyLink: boolean }): unknown;
+    add(schema: string, definition: null): unknown;
+  };
 };
 
 /**
- * Turn bare URLs such as https://example.com and email addresses into links, as the web
- * renderer's GFM autolinks do. Bare domains stay text: fuzzy matching would also link file
- * names like setup.py or notes.md.
+ * Turn bare http(s) URLs and email addresses into links, as the web renderer's GFM autolinks
+ * do. Bare domains stay text: fuzzy matching would also link file names like setup.py or
+ * notes.md. ftp: and protocol-relative URLs stay text because sanitizeMarkdownUrl would not
+ * open them.
  */
 export function linkifyExplicitUrls<T extends LinkifyParser>(parser: T): T {
   parser.set({ linkify: true });
   parser.linkify.set({ fuzzyLink: false });
+  parser.linkify.add("ftp:", null);
+  parser.linkify.add("//", null);
   return parser;
 }
 

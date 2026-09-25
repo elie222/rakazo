@@ -1,13 +1,38 @@
-import { describe, expect, it, vi } from "vitest";
+import { createRequire } from "node:module";
+import { describe, expect, it } from "vitest";
 import { closeUnterminatedFence, linkifyExplicitUrls, sanitizeMarkdownUrl } from "./markdown";
 
-describe("linkifyExplicitUrls", () => {
-  it("links bare URLs but not bare domains or file names", () => {
-    const parser = { set: vi.fn(), linkify: { set: vi.fn() } };
+type Token = { type: string; attrGet(name: string): string | null; children: Token[] | null };
+type Parser = Parameters<typeof linkifyExplicitUrls>[0] & {
+  parseInline(source: string, env: object): Token[];
+};
 
-    expect(linkifyExplicitUrls(parser)).toBe(parser);
-    expect(parser.set).toHaveBeenCalledWith({ linkify: true });
-    expect(parser.linkify.set).toHaveBeenCalledWith({ fuzzyLink: false });
+// The markdown-it the native renderer ships; chat-ui has no direct dependency on it.
+const rendererRequire = createRequire(
+  createRequire(import.meta.url).resolve("@ronradtke/react-native-markdown-display/package.json"),
+);
+const markdownIt = rendererRequire("markdown-it") as (options: { typographer: boolean }) => Parser;
+
+function linkHrefs(text: string) {
+  const parser = linkifyExplicitUrls(markdownIt({ typographer: true }));
+  return (parser.parseInline(text, {})[0]?.children ?? [])
+    .filter((token) => token.type === "link_open")
+    .map((token) => token.attrGet("href"));
+}
+
+describe("linkifyExplicitUrls", () => {
+  it("links bare http(s) URLs and email addresses", () => {
+    expect(
+      linkHrefs("see http://example.test and https://example.com/a?b=1, or bob@example.com"),
+    ).toEqual(["http://example.test", "https://example.com/a?b=1", "mailto:bob@example.com"]);
+  });
+
+  it("leaves file names, bare domains and unopenable schemes as text", () => {
+    expect(
+      linkHrefs(
+        "setup.py notes.md example.com www.example.com ftp://example.com //example.com javascript:alert(1)",
+      ),
+    ).toEqual([]);
   });
 });
 
