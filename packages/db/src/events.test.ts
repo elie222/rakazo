@@ -1815,7 +1815,7 @@ describe("sendUserMessage", () => {
     });
   });
 
-  it("starts a tool-enabled run when the only active run is the creation intro", async () => {
+  it("keeps an inbound message pending while the creation intro is active", async () => {
     const tx = {
       thread: {
         update: vi
@@ -1828,13 +1828,13 @@ describe("sendUserMessage", () => {
         update: vi.fn(),
       },
       steeringMessage: { create: vi.fn() },
-      task: { create: vi.fn().mockResolvedValue({ id: "task-user" }) },
+      task: { create: vi.fn() },
       run: {
-        findMany: vi.fn(async (args: { where?: { trigger?: { not?: string } } }) =>
-          args.where?.trigger?.not === "created" ? [] : [{ id: "intro-run", taskId: "intro-task" }],
-        ),
-        findUnique: vi.fn().mockResolvedValue({ status: "queued", startedAt: null }),
-        create: vi.fn().mockResolvedValue({ id: "run-user" }),
+        findMany: vi
+          .fn()
+          .mockResolvedValue([{ id: "intro-run", taskId: "intro-task", trigger: "created" }]),
+        findUnique: vi.fn().mockResolvedValue({ status: "running", startedAt: new Date() }),
+        create: vi.fn(),
       },
       event: {
         create: vi.fn(async ({ data }: { data: { seq: number; type: string } }) => ({
@@ -1858,14 +1858,13 @@ describe("sendUserMessage", () => {
         prompt: "Check the inbox",
         trigger: "user",
       }),
-    ).resolves.toEqual({ messageId: "message-1", seq: 4, taskId: "task-user", runId: "run-user" });
+    ).resolves.toEqual({ messageId: "message-1", seq: 4, taskId: null, runId: "intro-run" });
 
-    expect(tx.steeringMessage.create).not.toHaveBeenCalled();
-    expect(tx.run.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({ trigger: "user", sourceMessageId: "message-1" }),
-      }),
-    );
+    expect(tx.run.create).not.toHaveBeenCalled();
+    expect(tx.task.create).not.toHaveBeenCalled();
+    expect(tx.steeringMessage.create).toHaveBeenCalledWith({
+      data: { messageId: "message-1", botId: "bot-1", userId: "user-1", runId: null },
+    });
   });
 
   it("keeps the message pending when the busy run is a routine turn", async () => {

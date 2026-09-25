@@ -8,8 +8,12 @@ export const ACTIVE_RUN_STATUSES = [
   "waiting_takeover",
 ] as const satisfies readonly RunStatus[];
 const TERMINAL: RunStatus[] = ["completed", "failed", "cancelled"];
-/** Routine and inbound-webhook turns carry their own prompt, so they do not take user steering. */
-const NON_CONVERSATIONAL_RUN_TRIGGERS = new Set(["routine", "webhook"]);
+/**
+ * These turns carry their own prompt and must not take a user message as steering.
+ * Routine and webhook runs are not the conversation. The creation intro has no tools;
+ * a message that lands during it waits, and the continuation after the intro finishes answers it.
+ */
+const NON_CONVERSATIONAL_RUN_TRIGGERS = new Set(["routine", "webhook", "created"]);
 
 const allowed: Record<RunStatus, RunStatus[]> = {
   queued: ["leased", "cancelled"],

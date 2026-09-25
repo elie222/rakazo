@@ -66,11 +66,13 @@ const RUNS_NEEDING_CONTINUE = new Set(["queued", "waiting_takeover"]);
 
 const STEERABLE_RUN_STATUSES = new Set(["queued", "leased", "running", "waiting_takeover"]);
 /**
- * A routine's or webhook's turn is its own prompt, not the conversation. A user message that
- * lands while one is busy (not `waiting_input`) is stored as pending steering (no run): that
- * run never claims it, and the continuation started when it finishes answers with the full
- * thread. Composer text answers a waiting ask, including a routine or webhook ask, only when
- * no steerable conversational run is active. When one is, the text steers that run and the
+ * A routine's, webhook's, or creation intro's turn is its own prompt, not the conversation.
+ * A user message that lands while one is busy (not `waiting_input`) is stored as pending
+ * steering (no run): that run never claims it, and the continuation started when it finishes
+ * answers with the full thread. Starting a second run beside the intro overlaps it on a
+ * dedicated computer, where there is no per-bot execution lease, and both can reply.
+ * Composer text answers a waiting ask, including a routine or webhook ask, only when no
+ * steerable conversational run is active. When one is, the text steers that run and the
  * ask stays on its card.
  */
 function steersUserMessage(run: { status: string; trigger?: string | null }) {
@@ -658,14 +660,11 @@ export async function sendThreadMessage(
           replyQuote,
           clientNonce: input.clientNonce,
         });
-        // The creation intro has no tools. A message sent while it is still
-        // active must start its own run, not steer into that turn.
         const activeRuns = await tx.run.findMany({
           where: {
             threadId: target.threadId,
             botId: target.botId,
             status: { in: [...ACTIVE_RUN_STATUSES] },
-            trigger: { not: "created" },
           },
           select: { id: true, taskId: true, status: true, trigger: true },
         });

@@ -378,7 +378,9 @@ export async function sendUserMessage(
         clientNonce: input.clientNonce,
       });
       const createRun = input.createRun !== false;
-      // A creation intro must not absorb the message: that run has no tools.
+      // Include the creation intro. It has no tools, so it must not absorb the message, and a
+      // second run would overlap it on a dedicated computer. Pending steering waits for the
+      // continuation that starts when the intro finishes.
       const activeRuns =
         createRun && !input.allowParallelRun
           ? await tx.run.findMany({
@@ -388,12 +390,11 @@ export async function sendUserMessage(
                 status: {
                   in: ["running", "queued", "leased", "waiting_input", "waiting_takeover"],
                 },
-                trigger: { not: "created" },
               },
               select: { id: true, taskId: true, trigger: true },
             })
           : [];
-      // Steer a conversational run when there is one; a routine or webhook turn only holds the queue.
+      // Steer a conversational run when there is one; a routine, webhook, or intro turn only holds the queue.
       const busy =
         activeRuns.find((run) => isConversationalRun(run.trigger)) ?? activeRuns[0] ?? null;
       let task = null;
@@ -431,7 +432,7 @@ export async function sendUserMessage(
             messageId: message.id,
             botId: input.botId,
             userId: input.userId,
-            // Pending (no run) while a routine or webhook turn is active; its continuation claims it.
+            // Pending (no run) while a routine, webhook, or creation intro is active; its continuation claims it.
             runId: isConversationalRun(busy.trigger) ? busy.id : null,
           },
         });

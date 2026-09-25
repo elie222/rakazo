@@ -4577,7 +4577,7 @@ export function threadContextForRun<T>(
   messagingChannelRun: boolean,
 ) {
   // Routine runs stay isolated from thread history. The creation intro does
-  // too: a user message that arrives during it belongs to its own run.
+  // too: a message that arrives during it waits and is answered afterward.
   if (trigger === "created" || trigger === "routine") {
     return {
       messages: [] as T[],
