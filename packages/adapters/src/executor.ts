@@ -5349,8 +5349,9 @@ function declaredArtifactBytes(size: unknown): number | undefined {
  *
  * Stored artifact sizes are checked before the read, so a picture that cannot
  * fit is not downloaded. A missing size is measured on the bytes just fetched,
- * and that picture is dropped before the next one is read. Images are returned
- * in attachment order.
+ * and that picture is dropped before the next one is read. A picture whose
+ * bytes cannot be read is reported as unavailable. Images are returned in
+ * attachment order.
  */
 async function loadTurnImagesWithinBudget(
   deps: ExecutorDeps,
@@ -5369,6 +5370,8 @@ async function loadTurnImagesWithinBudget(
   images: NonNullable<AgentRunRequest["currentTurnImages"]>;
   bytes: number;
   skippedForBudget: boolean;
+  /** Image blocks in attachment order. `unavailable` means the bytes could not be read. */
+  outcomes: Array<{ name: string; unavailable: boolean }>;
 }> {
   const imageBlocks = blocks.filter(
     (block): block is Extract<MessageBlock, { kind: "image" }> => block.kind === "image",
@@ -5377,6 +5380,7 @@ async function loadTurnImagesWithinBudget(
     images: [] as NonNullable<AgentRunRequest["currentTurnImages"]>,
     bytes: 0,
     skippedForBudget: false,
+    outcomes: imageBlocks.map((block) => ({ name: block.name, unavailable: false })),
   };
   if (!deps.artifacts || imageBlocks.length === 0) return empty;
   if (budget.remainingBytes <= 0 || budget.remainingImages <= 0) {
@@ -5393,6 +5397,7 @@ async function loadTurnImagesWithinBudget(
   });
   const byId = new Map(rows.map((row) => [row.id, row]));
   const newestFirst: NonNullable<AgentRunRequest["currentTurnImages"]> = [];
+  const unavailable = new Set<number>();
   let usedBytes = 0;
   let usedCount = 0;
   let skippedForBudget = false;
@@ -5401,7 +5406,10 @@ async function loadTurnImagesWithinBudget(
     const block = imageBlocks[index];
     if (!block || !isAttachmentImageMimeType(block.mimeType)) continue;
     const row = byId.get(block.artifactId);
-    if (!row) continue;
+    if (!row) {
+      unavailable.add(index);
+      continue;
+    }
     const roomBytes = budget.remainingBytes - usedBytes;
     if (usedCount >= budget.remainingImages || roomBytes <= 0) {
       skippedForBudget = true;
@@ -5417,6 +5425,7 @@ async function loadTurnImagesWithinBudget(
       bytes = await deps.artifacts.get(row.storageKey, context);
     } catch (error) {
       if (context.signal.aborted) throw error;
+      unavailable.add(index);
       continue;
     }
     if (bytes.byteLength > roomBytes) {
@@ -5432,7 +5441,33 @@ async function loadTurnImagesWithinBudget(
     usedCount += 1;
   }
 
-  return { images: [...newestFirst].reverse(), bytes: usedBytes, skippedForBudget };
+  return {
+    images: [...newestFirst].reverse(),
+    bytes: usedBytes,
+    skippedForBudget,
+    outcomes: imageBlocks.map((block, index) => ({
+      name: block.name,
+      unavailable: unavailable.has(index),
+    })),
+  };
+}
+
+/** Rewrite history markers for pictures whose bytes could not be read. */
+function markUnavailableHistoryImages(
+  content: string,
+  outcomes: readonly { name: string; unavailable: boolean }[],
+): string {
+  let cursor = 0;
+  let next = "";
+  for (const outcome of outcomes) {
+    const marker = `[image: ${outcome.name}]`;
+    const at = content.indexOf(marker, cursor);
+    if (at < 0) continue;
+    const replacement = outcome.unavailable ? `[image: ${outcome.name} (unavailable)]` : marker;
+    next += content.slice(cursor, at) + replacement;
+    cursor = at + marker.length;
+  }
+  return next + content.slice(cursor);
 }
 
 /**
@@ -5443,7 +5478,8 @@ async function loadTurnImagesWithinBudget(
  * had nothing to look at. Bounds keep a long thread from growing the prompt
  * without limit: at most `maxTurns` user turns, a total byte ceiling, and
  * never more images than the model connection accepts. Within a turn, pictures
- * that fit are kept newest first instead of dropping the whole turn. Once a
+ * that fit are kept newest first instead of dropping the whole turn. A picture
+ * that cannot be read keeps an `[image: name (unavailable)]` marker. Once a
  * newer picture is left out, older turns are not backfilled. Bytes are read
  * through the same artifact path and space/user scope as the current turn, and
  * a compacted summary is never hydrated because its messages are no longer part
@@ -5475,7 +5511,10 @@ export async function withRecentTurnImages(
   let remainingBytes = options.maxBytes ?? RECENT_TURN_IMAGE_BYTES;
   if (maxTurns <= 0 || remainingImages <= 0 || remainingBytes <= 0) return history;
   const blocksByMessageId = new Map(messages.map((message) => [message.id, message.blocks]));
-  const hydrated = new Map<string, NonNullable<AgentRunRequest["currentTurnImages"]>>();
+  const hydrated = new Map<
+    string,
+    { images?: NonNullable<AgentRunRequest["currentTurnImages"]>; content?: string }
+  >();
   let turns = 0;
 
   for (let index = history.length - 1; index >= 0 && turns < maxTurns; index -= 1) {
@@ -5489,13 +5528,21 @@ export async function withRecentTurnImages(
       remainingBytes,
       remainingImages,
     });
+    const content = loaded.outcomes.some((outcome) => outcome.unavailable)
+      ? markUnavailableHistoryImages(entry.content, loaded.outcomes)
+      : entry.content;
+    if (loaded.images.length > 0 || content !== entry.content) {
+      hydrated.set(entry.id, {
+        ...(loaded.images.length > 0 ? { images: loaded.images } : {}),
+        ...(content !== entry.content ? { content } : {}),
+      });
+    }
     if (loaded.images.length === 0) {
       if (loaded.skippedForBudget) break;
       continue;
     }
     remainingImages -= loaded.images.length;
     remainingBytes -= loaded.bytes;
-    hydrated.set(entry.id, loaded.images);
     // A follow-up is about the newest pictures, so leftover budget is not
     // spent on an older turn once a newer picture was left out.
     if (loaded.skippedForBudget) break;
@@ -5503,7 +5550,12 @@ export async function withRecentTurnImages(
 
   if (hydrated.size === 0) return history;
   return history.map((entry) => {
-    const images = entry.id ? hydrated.get(entry.id) : undefined;
-    return images ? { ...entry, images } : entry;
+    const update = entry.id ? hydrated.get(entry.id) : undefined;
+    if (!update) return entry;
+    return {
+      ...entry,
+      ...(update.content !== undefined ? { content: update.content } : {}),
+      ...(update.images ? { images: update.images } : {}),
+    };
   });
 }

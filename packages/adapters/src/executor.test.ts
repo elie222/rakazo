@@ -449,8 +449,75 @@ describe("recent turn images", () => {
     });
 
     expect(hydrated[0]?.images?.map((image) => image.name)).toEqual(["newer.png"]);
+    expect(hydrated[0]?.content).toBe("[image: older.png] [image: newer.png]");
     expect(get).toHaveBeenCalledTimes(1);
     expect(get).toHaveBeenCalledWith("art-new.png", context);
+  });
+
+  it("marks an earlier image unavailable when its bytes cannot be read", async () => {
+    const get = vi.fn(async (storageKey: string) => {
+      if (storageKey === "art-old.png") throw new Error("read failed");
+      return new Uint8Array([1]);
+    });
+    const deps = {
+      artifacts: { get },
+      prisma: {
+        artifact: {
+          findMany: vi.fn(async () => [
+            { id: "art-old", storageKey: "art-old.png", size: 1 },
+            { id: "art-new", storageKey: "art-new.png", size: 1 },
+          ]),
+        },
+      },
+    } as never;
+    const turn = [
+      {
+        id: "shot",
+        role: "user" as const,
+        content: "[image: older.png]\n[image: missing.png]\n[image: newer.png]",
+      },
+    ];
+    const turnMessages = [
+      {
+        id: "shot",
+        blocks: [
+          imageBlock("art-old", "older.png"),
+          imageBlock("art-missing", "missing.png"),
+          imageBlock("art-new", "newer.png"),
+        ],
+      },
+    ];
+
+    const hydrated = await withRecentTurnImages(deps, turn, turnMessages, context);
+
+    expect(hydrated[0]?.content).toBe(
+      "[image: older.png (unavailable)]\n[image: missing.png (unavailable)]\n[image: newer.png]",
+    );
+    expect(hydrated[0]?.images?.map((image) => image.name)).toEqual(["newer.png"]);
+  });
+
+  it("marks a history image unavailable when the turn cannot be read at all", async () => {
+    const historyEntry = [{ id: "m1", role: "user" as const, content: "[image: one.png]" }];
+    const hydrated = await withRecentTurnImages(
+      {
+        artifacts: {
+          get: vi.fn(async () => {
+            throw new Error("read failed");
+          }),
+        },
+        prisma: {
+          artifact: {
+            findMany: vi.fn(async () => [{ id: "art-1", storageKey: "art-1.png", size: 1 }]),
+          },
+        },
+      } as never,
+      historyEntry,
+      [{ id: "m1", blocks: [imageBlock("art-1", "one.png")] }],
+      context,
+    );
+
+    expect(hydrated[0]?.content).toBe("[image: one.png (unavailable)]");
+    expect(hydrated[0]?.images).toBeUndefined();
   });
 
   it("keeps a smaller older screenshot when the newest one alone exceeds the budget", async () => {
