@@ -45,19 +45,28 @@ export function clipToolResultContent<T>(
   return clipped;
 }
 
-/** Prompt tokens providers bill, including cache read/write rather than the uncached remainder. */
+/**
+ * Prompt tokens providers bill, including cache read/write rather than the uncached remainder.
+ * The cache halves are reported alongside so downstream views can show what a cache hit saved.
+ */
 export function billedPromptTokens(usage: {
   input?: number;
   output?: number;
   cacheRead?: number;
   cacheWrite?: number;
-}): { inputTokens: number; outputTokens: number } {
+}): {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+} {
+  const cacheReadTokens = nonNegativeCount(usage.cacheRead);
+  const cacheWriteTokens = nonNegativeCount(usage.cacheWrite);
   return {
-    inputTokens:
-      nonNegativeCount(usage.input) +
-      nonNegativeCount(usage.cacheRead) +
-      nonNegativeCount(usage.cacheWrite),
+    inputTokens: nonNegativeCount(usage.input) + cacheReadTokens + cacheWriteTokens,
     outputTokens: nonNegativeCount(usage.output),
+    cacheReadTokens,
+    cacheWriteTokens,
   };
 }
 

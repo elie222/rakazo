@@ -3,6 +3,7 @@ import type { IntegrationCatalogResult, IntegrationSetupState } from "@rakazo/co
 import { Button, Input } from "@rakazo/ui-web";
 import { Check } from "lucide-react";
 import { useEffect, useId, useState } from "react";
+import { newClientId } from "../../lib/client-id";
 import { connectMcpOauth } from "../../lib/mcp-connect";
 import { rpc } from "../../lib/rpc";
 
@@ -107,7 +108,7 @@ export function IntegrationSetup({
       const server =
         existing ??
         (await rpc.mcp.servers.create({
-          slug: `integration-${crypto.randomUUID().slice(0, 8)}`,
+          slug: `integration-${newClientId().slice(0, 8)}`,
           name,
           transport: "streamable_http",
           endpoint: url,

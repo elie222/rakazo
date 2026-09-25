@@ -987,9 +987,9 @@ model Artifact {
 }
 
 model UsageRecord {
-  id           String   @id @default(cuid())
-  spaceId      String
-  space        Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  id               String   @id @default(cuid())
+  spaceId          String
+  space            Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
   /// Which bot spent this. Deliberately NOT a relation: a usage row is spend that really
   /// happened, and no lifecycle event on the bot may delete it or blank its attribution.
   /// `Cascade` erased the row; `SetNull` would erase the attribution instead, and because
@@ -998,15 +998,17 @@ model UsageRecord {
   ///
   /// So the id outlives the bot and may dangle. Read it with a LEFT JOIN; `BotDeletion.id`
   /// IS the bot id, so a deleted bot's name is still reachable for display.
-  botId        String?
-  userId       String
-  runId        String?
-  run          Run?     @relation(fields: [runId], references: [id], onDelete: SetNull)
-  provider     String
-  model        String
-  inputTokens  Int
-  outputTokens Int
-  createdAt    DateTime @default(now())
+  botId            String?
+  userId           String
+  runId            String?
+  run              Run?     @relation(fields: [runId], references: [id], onDelete: SetNull)
+  provider         String
+  model            String
+  inputTokens      Int
+  outputTokens     Int
+  cacheReadTokens  Int      @default(0)
+  cacheWriteTokens Int      @default(0)
+  createdAt        DateTime @default(now())
 
   @@index([spaceId, userId, createdAt])
   @@map("usage_records")

@@ -353,7 +353,7 @@ describe("contracts", () => {
     ).toBe(false);
   });
 
-  it("allows localhost HTTP MCP endpoints and rejects other non-HTTPS URLs before storage", () => {
+  it("allows localhost HTTP MCP endpoints and other HTTP(S) URLs without credentials", () => {
     const base = {
       slug: "demo",
       name: "Demo",
@@ -368,15 +368,21 @@ describe("contracts", () => {
         .success,
     ).toBe(true);
     expect(
+      McpServerConfigInput.safeParse({ ...base, endpoint: "http://10.0.0.8:3927/mcp" }).success,
+    ).toBe(true);
+    expect(
       McpServerConfigInput.safeParse({ ...base, endpoint: "http://localhost:8123/api/mcp#" })
         .success,
     ).toBe(false);
     expect(
       McpServerConfigInput.safeParse({ ...base, endpoint: "http://example.test/mcp" }).success,
-    ).toBe(false);
+    ).toBe(true);
     expect(
       McpServerConfigInput.safeParse({ ...base, endpoint: "https://mcp.example.test/mcp" }).success,
     ).toBe(true);
+    expect(
+      McpServerConfigInput.safeParse({ ...base, endpoint: "ftp://mcp.example.test/mcp" }).success,
+    ).toBe(false);
   });
 
   it("rejects oversized chart data wherever it is embedded", () => {

@@ -33,6 +33,10 @@ describe("MCP transport seam", () => {
     expect(() => validateUrl("https://user:pass@example.com/mcp")).toThrow("credentials");
     expect(() => validateUrl(`https://example.com/${"x".repeat(2_100)}`)).toThrow("exceeds");
     expect(() => validateUrl("http://127.0.0.1:1234/mcp")).toThrow("HTTPS");
+    expect(() => validateUrl("http://10.0.0.8:3927/mcp")).toThrow("HTTPS");
+    expect(validateUrl("http://10.0.0.8:3927/mcp", { allowPrivateEndpoint: true }).hostname).toBe(
+      "10.0.0.8",
+    );
     expect(validateUrl("http://127.0.0.1:1234/mcp", { allowHttpLocalhost: true }).hostname).toBe(
       "127.0.0.1",
     );

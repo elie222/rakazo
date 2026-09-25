@@ -45,6 +45,7 @@ const UNATTENDED_SAFE_BUILTIN_TOOLS = new Set([
   "recall_memory",
   "request_takeover",
   "run_subagent",
+  "task_catalog",
   "schedule_list",
   "scratchpad_list",
   "skill_read",

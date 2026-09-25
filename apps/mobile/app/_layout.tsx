@@ -1,4 +1,5 @@
 import { DarkTheme, Stack, ThemeProvider } from "expo-router";
+import * as ScreenOrientation from "expo-screen-orientation";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useMemo, useState } from "react";
 import { View } from "react-native";
@@ -14,10 +15,17 @@ import {
   resumeLiveNotifications,
 } from "../lib/live-notifications";
 import { native, useResolvedAppearance } from "../lib/native";
+import { loadResponseStreamingPreference } from "../lib/response-streaming";
 
 configureForegroundNotifications();
 
 export default function Layout() {
+  useEffect(() => {
+    // The app is portrait-only; the computer screen unlocks rotation while it is open.
+    void ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(
+      () => undefined,
+    );
+  }, []);
   const { t } = useI18n();
   const [ready, setReady] = useState(false);
   const resolved = useResolvedAppearance();
@@ -40,7 +48,7 @@ export default function Layout() {
 
   useEffect(() => {
     void Promise.all([
-      Promise.all([loadApiBase(), loadAppearancePreference()])
+      Promise.all([loadApiBase(), loadAppearancePreference(), loadResponseStreamingPreference()])
         .then(async () =>
           resumeLiveNotifications(
             currentApiBase(),

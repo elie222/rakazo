@@ -5,7 +5,7 @@
     "owner": "inbox-zero",
     "scheme": "rakazo",
     "version": "1.0.3",
-    "orientation": "portrait",
+    "orientation": "default",
     "userInterfaceStyle": "dark",
     "icon": "./assets/icon.png",
     "plugins": [
