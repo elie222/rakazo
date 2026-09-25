@@ -1517,9 +1517,12 @@ export function createRunExecutor(deps: ExecutorDeps) {
         // Gate on the model this run will actually call — the pair written to the run row
         // above. Deriving it a second time here dropped the deployment fallback, so a
         // vision-capable default was gated as "scripted" and lost its screenshot tools.
-        const acceptsImages =
-          deps.runtime.describe().capabilities.scripted ||
-          modelAcceptsImageInput(runModelProvider, runModelId, resolved.acceptsImages);
+        const modelSeesImages = modelAcceptsImageInput(
+          runModelProvider,
+          runModelId,
+          resolved.acceptsImages,
+        );
+        const acceptsImages = deps.runtime.describe().capabilities.scripted || modelSeesImages;
         const groupContext = thread.groupId
           ? await loadGroupContext(deps.prisma, thread.groupId, { id: bot.id, name: bot.name })
           : undefined;
@@ -3609,13 +3612,14 @@ export function createRunExecutor(deps: ExecutorDeps) {
           resolved.maxImagesPerPrompt === undefined
             ? undefined
             : Math.max(0, resolved.maxImagesPerPrompt - (currentTurnImages?.length ?? 0));
-        const historyWithImages = await withRecentTurnImages(
-          deps,
-          history,
-          historyMessages,
-          context,
-          { skipMessageId: currentTurnMessage?.id, maxImages: modelImageBudget },
-        );
+        // A text-only model keeps the [image:] marker. Putting image parts in
+        // history makes the provider reject a follow-up that used to be text.
+        const historyWithImages = modelSeesImages
+          ? await withRecentTurnImages(deps, history, historyMessages, context, {
+              skipMessageId: currentTurnMessage?.id,
+              maxImages: modelImageBudget,
+            })
+          : history;
         const runtimeHistory = [...historicalContext, ...historyWithImages];
         // Without a roster a bot only knows the bots it spawned itself.
         const botDirectory = thread.groupId
@@ -5335,6 +5339,102 @@ export const RECENT_TURN_IMAGE_TURNS = 3;
 /** Total hydrated history image bytes, matching the per-attachment ceiling. */
 export const RECENT_TURN_IMAGE_BYTES = ATTACHMENT_MAX_BYTES;
 
+function declaredArtifactBytes(size: unknown): number | undefined {
+  if (typeof size !== "number" || !Number.isFinite(size) || size < 0) return undefined;
+  return size;
+}
+
+/**
+ * Load the images from one turn that fit the remaining budget, newest first.
+ *
+ * Stored artifact sizes are checked before the read, so a picture that cannot
+ * fit is not downloaded. A missing size is measured on the bytes just fetched,
+ * and that picture is dropped before the next one is read. Images are returned
+ * in attachment order.
+ */
+async function loadTurnImagesWithinBudget(
+  deps: ExecutorDeps,
+  blocks: MessageBlock[],
+  context: {
+    operationId: string;
+    traceId: string;
+    spaceId: string;
+    userId: string;
+    botId: string;
+    runId: string;
+    signal: AbortSignal;
+  },
+  budget: { remainingBytes: number; remainingImages: number },
+): Promise<{
+  images: NonNullable<AgentRunRequest["currentTurnImages"]>;
+  bytes: number;
+  skippedForBudget: boolean;
+}> {
+  const imageBlocks = blocks.filter(
+    (block): block is Extract<MessageBlock, { kind: "image" }> => block.kind === "image",
+  );
+  const empty = {
+    images: [] as NonNullable<AgentRunRequest["currentTurnImages"]>,
+    bytes: 0,
+    skippedForBudget: false,
+  };
+  if (!deps.artifacts || imageBlocks.length === 0) return empty;
+  if (budget.remainingBytes <= 0 || budget.remainingImages <= 0) {
+    return { ...empty, skippedForBudget: true };
+  }
+
+  const rows = await deps.prisma.artifact.findMany({
+    where: {
+      id: { in: imageBlocks.map((block) => block.artifactId) },
+      spaceId: context.spaceId,
+      userId: context.userId,
+    },
+    select: { id: true, storageKey: true, size: true },
+  });
+  const byId = new Map(rows.map((row) => [row.id, row]));
+  const newestFirst: NonNullable<AgentRunRequest["currentTurnImages"]> = [];
+  let usedBytes = 0;
+  let usedCount = 0;
+  let skippedForBudget = false;
+
+  for (let index = imageBlocks.length - 1; index >= 0; index -= 1) {
+    const block = imageBlocks[index];
+    if (!block || !isAttachmentImageMimeType(block.mimeType)) continue;
+    const row = byId.get(block.artifactId);
+    if (!row) continue;
+    const roomBytes = budget.remainingBytes - usedBytes;
+    if (usedCount >= budget.remainingImages || roomBytes <= 0) {
+      skippedForBudget = true;
+      break;
+    }
+    const declared = declaredArtifactBytes(row.size);
+    if (declared !== undefined && declared > roomBytes) {
+      skippedForBudget = true;
+      continue;
+    }
+    let bytes: Uint8Array;
+    try {
+      bytes = await deps.artifacts.get(row.storageKey, context);
+    } catch (error) {
+      if (context.signal.aborted) throw error;
+      continue;
+    }
+    if (bytes.byteLength > roomBytes) {
+      skippedForBudget = true;
+      continue;
+    }
+    newestFirst.push({
+      name: block.name,
+      mimeType: block.mimeType as "image/jpeg" | "image/png" | "image/webp" | "image/gif",
+      data: bytes,
+    });
+    usedBytes += bytes.byteLength;
+    usedCount += 1;
+  }
+
+  return { images: [...newestFirst].reverse(), bytes: usedBytes, skippedForBudget };
+}
+
 /**
  * Hydrate the images of the most recent user turns in the run history.
  *
@@ -5342,10 +5442,12 @@ export const RECENT_TURN_IMAGE_BYTES = ATTACHMENT_MAX_BYTES;
  * as an `[image: name]` marker, so a question asked one turn after the upload
  * had nothing to look at. Bounds keep a long thread from growing the prompt
  * without limit: at most `maxTurns` user turns, a total byte ceiling, and
- * never more images than the model connection accepts. Bytes are read through
- * the same artifact path and space/user scope as the current turn, and a
- * compacted summary is never hydrated because its messages are no longer part
- * of `history`.
+ * never more images than the model connection accepts. Within a turn, pictures
+ * that fit are kept newest first instead of dropping the whole turn. Once a
+ * newer picture is left out, older turns are not backfilled. Bytes are read
+ * through the same artifact path and space/user scope as the current turn, and
+ * a compacted summary is never hydrated because its messages are no longer part
+ * of `history`. Callers skip this for models that cannot accept images.
  */
 export async function withRecentTurnImages(
   deps: ExecutorDeps,
@@ -5371,7 +5473,7 @@ export async function withRecentTurnImages(
   const maxTurns = options.maxTurns ?? RECENT_TURN_IMAGE_TURNS;
   let remainingImages = options.maxImages ?? Number.POSITIVE_INFINITY;
   let remainingBytes = options.maxBytes ?? RECENT_TURN_IMAGE_BYTES;
-  if (maxTurns <= 0 || remainingImages <= 0) return history;
+  if (maxTurns <= 0 || remainingImages <= 0 || remainingBytes <= 0) return history;
   const blocksByMessageId = new Map(messages.map((message) => [message.id, message.blocks]));
   const hydrated = new Map<string, NonNullable<AgentRunRequest["currentTurnImages"]>>();
   let turns = 0;
@@ -5382,15 +5484,21 @@ export async function withRecentTurnImages(
     const blocks = blocksByMessageId.get(entry.id);
     if (!blocks?.some((block) => block.kind === "image")) continue;
     turns += 1;
-    const images = await loadCurrentTurnImages(deps, blocks, context);
-    if (!images?.length) continue;
-    const bytes = images.reduce((total, image) => total + image.data.byteLength, 0);
-    // Stop at the first turn that does not fit instead of skipping to an older
-    // one: a follow-up question is about the newest pictures.
-    if (images.length > remainingImages || bytes > remainingBytes) break;
-    remainingImages -= images.length;
-    remainingBytes -= bytes;
-    hydrated.set(entry.id, images);
+    if (remainingImages <= 0 || remainingBytes <= 0) break;
+    const loaded = await loadTurnImagesWithinBudget(deps, blocks, context, {
+      remainingBytes,
+      remainingImages,
+    });
+    if (loaded.images.length === 0) {
+      if (loaded.skippedForBudget) break;
+      continue;
+    }
+    remainingImages -= loaded.images.length;
+    remainingBytes -= loaded.bytes;
+    hydrated.set(entry.id, loaded.images);
+    // A follow-up is about the newest pictures, so leftover budget is not
+    // spent on an older turn once a newer picture was left out.
+    if (loaded.skippedForBudget) break;
   }
 
   if (hydrated.size === 0) return history;

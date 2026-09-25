@@ -404,6 +404,143 @@ describe("recent turn images", () => {
       withRecentTurnImages({ prisma: {} } as never, history, messages, context),
     ).resolves.toBe(history);
   });
+
+  const sizedImages = (
+    sizes: Record<string, number | undefined>,
+    actual?: Record<string, number>,
+  ) => {
+    const get = vi.fn(async (storageKey: string) => {
+      const id = storageKey.replace(/\.png$/, "");
+      return new Uint8Array(actual?.[id] ?? sizes[id] ?? 1);
+    });
+    return {
+      get,
+      deps: {
+        artifacts: { get },
+        prisma: {
+          artifact: {
+            findMany: vi.fn(async ({ where }: { where: { id: { in: string[] } } }) =>
+              where.id.in.map((id) => ({
+                id,
+                storageKey: `${id}.png`,
+                ...(sizes[id] === undefined ? {} : { size: sizes[id] }),
+              })),
+            ),
+          },
+        },
+      } as never,
+    };
+  };
+
+  it("keeps the newest images that fit when a turn exceeds the byte budget", async () => {
+    const turn = [
+      { id: "shot", role: "user" as const, content: "[image: older.png] [image: newer.png]" },
+    ];
+    const turnMessages = [
+      {
+        id: "shot",
+        blocks: [imageBlock("art-old", "older.png"), imageBlock("art-new", "newer.png")],
+      },
+    ];
+    const { deps, get } = sizedImages({ "art-old": 6, "art-new": 6 });
+
+    const hydrated = await withRecentTurnImages(deps, turn, turnMessages, context, {
+      maxBytes: 10,
+    });
+
+    expect(hydrated[0]?.images?.map((image) => image.name)).toEqual(["newer.png"]);
+    expect(get).toHaveBeenCalledTimes(1);
+    expect(get).toHaveBeenCalledWith("art-new.png", context);
+  });
+
+  it("keeps a smaller older screenshot when the newest one alone exceeds the budget", async () => {
+    const turn = [
+      { id: "shot", role: "user" as const, content: "[image: older.png] [image: newer.png]" },
+    ];
+    const turnMessages = [
+      {
+        id: "shot",
+        blocks: [imageBlock("art-old", "older.png"), imageBlock("art-new", "newer.png")],
+      },
+    ];
+    const { deps, get } = sizedImages({ "art-old": 4, "art-new": 12 });
+
+    const hydrated = await withRecentTurnImages(deps, turn, turnMessages, context, {
+      maxBytes: 10,
+    });
+
+    expect(hydrated[0]?.images?.map((image) => image.name)).toEqual(["older.png"]);
+    expect(get).toHaveBeenCalledTimes(1);
+    expect(get).toHaveBeenCalledWith("art-old.png", context);
+  });
+
+  it("does not backfill an older turn after a newer picture is left out", async () => {
+    const turns = [
+      { id: "previous", role: "user" as const, content: "[image: previous.png]" },
+      { id: "shot", role: "user" as const, content: "[image: older.png] [image: newer.png]" },
+    ];
+    const turnMessages = [
+      { id: "previous", blocks: [imageBlock("art-prev", "previous.png")] },
+      {
+        id: "shot",
+        blocks: [imageBlock("art-old", "older.png"), imageBlock("art-new", "newer.png")],
+      },
+    ];
+    const { deps, get } = sizedImages({ "art-prev": 1, "art-old": 6, "art-new": 6 });
+
+    const hydrated = await withRecentTurnImages(deps, turns, turnMessages, context, {
+      maxBytes: 10,
+    });
+
+    expect(hydrated.map((entry) => entry.images?.map((image) => image.name) ?? [])).toEqual([
+      [],
+      ["newer.png"],
+    ]);
+    expect(get.mock.calls.map((call) => call[0])).toEqual(["art-new.png"]);
+  });
+
+  it("measures an image with no stored size before reading the next one", async () => {
+    const turn = [
+      { id: "shot", role: "user" as const, content: "[image: older.png] [image: newer.png]" },
+    ];
+    const turnMessages = [
+      {
+        id: "shot",
+        blocks: [imageBlock("art-old", "older.png"), imageBlock("art-new", "newer.png")],
+      },
+    ];
+    const { deps, get } = sizedImages(
+      { "art-old": undefined, "art-new": undefined },
+      { "art-old": 4, "art-new": 12 },
+    );
+
+    const hydrated = await withRecentTurnImages(deps, turn, turnMessages, context, {
+      maxBytes: 10,
+    });
+
+    expect(hydrated[0]?.images?.map((image) => image.name)).toEqual(["older.png"]);
+    expect(get.mock.calls.map((call) => call[0])).toEqual(["art-new.png", "art-old.png"]);
+  });
+
+  it("stops fetching once the image count is spent, newest first", async () => {
+    const turn = [
+      { id: "shot", role: "user" as const, content: "[image: older.png] [image: newer.png]" },
+    ];
+    const turnMessages = [
+      {
+        id: "shot",
+        blocks: [imageBlock("art-old", "older.png"), imageBlock("art-new", "newer.png")],
+      },
+    ];
+    const { deps, get } = sizedImages({ "art-old": 1, "art-new": 1 });
+
+    const hydrated = await withRecentTurnImages(deps, turn, turnMessages, context, {
+      maxImages: 1,
+    });
+
+    expect(hydrated[0]?.images?.map((image) => image.name)).toEqual(["newer.png"]);
+    expect(get).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("steering attachment hydration", () => {
