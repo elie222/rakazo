@@ -318,10 +318,12 @@ describe("run tool selection", () => {
 
   it("withholds schedule creation only from routine-triggered runs", () => {
     expect(toolNames("routine")).not.toContain("schedule_create");
+    expect(toolNames("routine")).toContain("task_catalog");
     expect(toolNames("routine")).toEqual(
       expect.arrayContaining(["schedule_list", "schedule_cancel"]),
     );
     expect(toolNames("user")).toContain("schedule_create");
+    expect(toolNames("user")).toContain("task_catalog");
   });
 
   it("keeps schedule tools in group chats and still blocks create on routines", () => {
@@ -719,6 +721,33 @@ describe("userTurnInstructions", () => {
     // The timestamp rides on the per-turn prompt so the system prefix stays cacheable.
     expect(instructions.join("\n\n")).not.toContain("Current date and time:");
   });
+
+  it("inserts task catalog guidance after the computer line", () => {
+    const instructions = userTurnInstructions({
+      ...base,
+      groupContext: undefined,
+      messagingContext: undefined,
+      redactedMemoryContext: undefined,
+      redactedScratchpadContext: undefined,
+      hasHistoricalContext: false,
+      agentEnvironmentInstruction: undefined,
+      botDirectory: undefined,
+      pluginLine: undefined,
+      agentSkillsLine: undefined,
+      taughtSkillsLine: undefined,
+      taskCatalogInstruction: "Catalog guidance",
+    }).filter(Boolean);
+
+    expect(instructions).toEqual([
+      "Bot instructions",
+      computerLine,
+      "Catalog guidance",
+      "This entire computer workspace is your private home.",
+      ...stableMiddle,
+      archiveBot,
+      ...stableTail,
+    ]);
+  });
 });
 
 describe("createRunExecutor", () => {
@@ -750,6 +779,7 @@ describe("createRunExecutor", () => {
     expect(tools).not.toContain("recall_memory");
     expect(tools).not.toContain("remember");
     expect(tools).not.toContain("save_memory");
+    expect(tools).not.toContain("task_catalog");
     expect(tools.some((tool) => tool.startsWith("scratchpad_"))).toBe(false);
     expect(tools).toContain("web_fetch");
   });
