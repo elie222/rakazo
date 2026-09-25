@@ -2062,7 +2062,7 @@ describe("appendEvent", () => {
     expect(publish).not.toHaveBeenCalled();
   });
 
-  it("retries a deadlocked transaction and publishes the event once", async () => {
+  it("reruns the whole transaction after a mid-write deadlock and publishes once", async () => {
     const fanout = new TestFanout();
     const publish = vi.spyOn(fanout, "publish");
     const deadlock = Object.assign(new Error("write conflict or a deadlock"), { code: "P2034" });
@@ -2070,12 +2070,10 @@ describe("appendEvent", () => {
     const tx = {
       thread: { update: vi.fn().mockResolvedValue({ nextEventSeq: 5 }) },
       run: { findUnique: vi.fn().mockResolvedValue({ status: "running" }) },
-      event: { create: vi.fn().mockResolvedValue(created) },
+      // The sequence already advanced when the insert deadlocks; Postgres rolls both back.
+      event: { create: vi.fn().mockRejectedValueOnce(deadlock).mockResolvedValue(created) },
     };
-    const transaction = vi
-      .fn()
-      .mockRejectedValueOnce(deadlock)
-      .mockImplementation(async (callback: (client: typeof tx) => unknown) => callback(tx));
+    const transaction = vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx));
 
     await expect(
       appendEvent(
@@ -2092,7 +2090,8 @@ describe("appendEvent", () => {
       ),
     ).resolves.toMatchObject({ type: "thread.progress", runId: "run-1" });
     expect(transaction).toHaveBeenCalledTimes(2);
-    expect(tx.event.create).toHaveBeenCalledTimes(1);
+    expect(tx.thread.update).toHaveBeenCalledTimes(2);
+    expect(tx.event.create).toHaveBeenCalledTimes(2);
     expect(publish).toHaveBeenCalledTimes(1);
   });
 

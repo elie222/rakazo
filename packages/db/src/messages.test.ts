@@ -36,13 +36,12 @@ describe("createThreadMessageInTransaction", () => {
 });
 
 describe("createThreadMessage", () => {
-  it("retries a deadlocked transaction and creates the message once", async () => {
+  it("reruns the whole transaction after a mid-write deadlock", async () => {
     const deadlock = Object.assign(new Error("write conflict or a deadlock"), { code: "P2034" });
     const tx = transaction();
-    const run = vi
-      .fn()
-      .mockRejectedValueOnce(deadlock)
-      .mockImplementation(async (callback: (client: typeof tx) => unknown) => callback(tx));
+    // The sequence already advanced when the insert deadlocks; Postgres rolls both back.
+    tx.message.create.mockRejectedValueOnce(deadlock);
+    const run = vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx));
 
     await expect(
       createThreadMessage({ $transaction: run } as unknown as PrismaClient, {
@@ -52,7 +51,8 @@ describe("createThreadMessage", () => {
       }),
     ).resolves.toEqual({ id: "message-1" });
     expect(run).toHaveBeenCalledTimes(2);
-    expect(tx.message.create).toHaveBeenCalledTimes(1);
+    expect(tx.thread.update).toHaveBeenCalledTimes(2);
+    expect(tx.message.create).toHaveBeenCalledTimes(2);
   });
 
   it("does not retry other errors", async () => {
