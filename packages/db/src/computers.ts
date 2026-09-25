@@ -1,5 +1,6 @@
 import type { ComputerMode } from "@rakazo/contracts";
-import { Prisma, type PrismaClient } from "./client.js";
+import { Prisma } from "./client.js";
+import type { PrismaClient } from "./client.js";
 import { withTransactionRetry } from "./transaction-retry.js";
 
 export type { ComputerMode } from "@rakazo/contracts";
