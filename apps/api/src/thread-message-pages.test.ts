@@ -552,4 +552,40 @@ describe("thread message pages", () => {
     expect(messages.map((message) => message.seq)).toEqual([0, 1, 2, 3, 4]);
     expect(findMany.mock.calls.map(([query]) => query.where.seq?.lt)).toEqual([undefined, 3, 1]);
   });
+
+  it("derives callId from a call client nonce and leaves plain messages without one", async () => {
+    const findMany = vi.fn(async () => [
+      {
+        id: "message-call",
+        threadId: "thread-1",
+        seq: 2,
+        role: "user",
+        blocks: [{ kind: "text", text: "Hey" }],
+        botId: null,
+        replyToMessageId: null,
+        replyQuote: null,
+        runId: null,
+        clientNonce: "call:call-1:abc",
+        createdAt: new Date("2026-08-16T00:00:02.000Z"),
+      },
+      {
+        id: "message-plain",
+        threadId: "thread-1",
+        seq: 1,
+        role: "user",
+        blocks: [{ kind: "text", text: "Typed" }],
+        botId: null,
+        replyToMessageId: null,
+        replyQuote: null,
+        runId: null,
+        clientNonce: "plain-nonce",
+        createdAt: new Date("2026-08-16T00:00:01.000Z"),
+      },
+    ]);
+    const prisma = { message: { findMany } } as unknown as PrismaClient;
+
+    const page = await loadMessagePage(prisma, "thread-1", undefined, 2);
+
+    expect(page.messages.map((message) => message.callId)).toEqual([undefined, "call-1"]);
+  });
 });

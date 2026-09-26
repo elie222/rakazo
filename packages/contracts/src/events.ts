@@ -16,6 +16,7 @@ export const ProductEventType = z.enum([
   "thread.computer",
   "thread.subagent",
   "thread.cloud_agent",
+  "thread.call.ended",
   "run.started",
   "run.checkpointed",
   "run.waiting_input",
@@ -46,6 +47,8 @@ export const ProductEventType = z.enum([
   "group.created",
   "group.updated",
   "group.handoff",
+  /** Liveness only: never persisted, never applied to a snapshot, always seq 0. */
+  "heartbeat",
 ]);
 export type ProductEventType = z.infer<typeof ProductEventType>;
 
@@ -148,6 +151,14 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     kind: z.literal("computer"),
     state: z.string(),
     text: z.string(),
+  }),
+  z.object({
+    /** Transcript card left in the thread when the bot hangs up a voice call. */
+    kind: z.literal("voice_call"),
+    /** Absent when the call had no client nonce to derive an id from. */
+    callId: z.string().optional(),
+    title: z.string(),
+    farewell: z.string(),
   }),
   z.object({ kind: z.literal("meta"), text: z.string() }),
   z.object({
@@ -295,6 +306,8 @@ export const ThreadMessageSchema = z.object({
   replyToMessageId: Id.optional(),
   replyQuote: z.string().optional(),
   runId: Id.optional(),
+  /** Set when the message was sent from a live voice call; groups one call's transcript. */
+  callId: z.string().optional(),
   createdAt: z.string(),
 });
 export type ThreadMessage = z.infer<typeof ThreadMessageSchema>;

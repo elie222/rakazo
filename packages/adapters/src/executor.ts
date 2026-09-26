@@ -46,6 +46,8 @@ import {
   assertTransition,
   blocksToAgentHistoryText,
   botMessageAllowsSilence,
+  CALL_CLIENT_NONCE_PREFIX,
+  callIdFromClientNonce,
   connectorKindFromToolName,
   containsSecret,
   createStreamingRedactor,
@@ -55,6 +57,7 @@ import {
   formatSkillsCatalogInstruction,
   humanizeToolName,
   inferAttachmentMimeType,
+  isCallClientNonce,
   isMessagingChannelRun,
   isOneShotRoutineCrons,
   isTerminal,
@@ -347,6 +350,9 @@ const READ_ONLY_AGENT_TOOLS = new Set([
   "list_secrets",
   "cloud_agent_status",
 ]);
+/** Added to the turn prompt when the user spoke this message on a live voice call. */
+export const VOICE_CALL_INSTRUCTION =
+  "You are on a live voice call. Reply in one to three short spoken sentences. No markdown, lists, links, or option cards; do not use ask_user unless you truly cannot proceed. Answer directly from what you already know when you can; use tools or subagents only when the answer requires them. If the user asks to end the call or hang up, or the conversation is finished, call end_call with a short title and a one-sentence farewell instead of saying goodbye in text, then do any remaining work as a normal chat reply.";
 const MAX_MODEL_FILE_BYTES = 250_000;
 const TURN_ATTACHMENT_UNAVAILABLE =
   "An attachment in this message could not be loaded. Tell the user the attachment was unavailable and do not guess its contents.";
@@ -1570,6 +1576,20 @@ export function createRunExecutor(deps: ExecutorDeps) {
               ));
           }
         }
+        // Calls carry no schema flag: the sending client encodes them in the clientNonce.
+        const sourceClientNonce =
+          (run.trigger === "user" || run.trigger === "follow_up") && run.sourceMessageId
+            ? ((
+                await deps.prisma.message.findUnique({
+                  where: { id: run.sourceMessageId },
+                  select: { clientNonce: true },
+                })
+              )?.clientNonce ?? null)
+            : null;
+        // A hang-up run has no source message: its own nonce carries the call it closes.
+        const callEndRun = run.trigger === "call_end";
+        const callClientNonceForRun = callEndRun ? run.clientNonce : sourceClientNonce;
+        const voiceCall = callEndRun || isCallClientNonce(sourceClientNonce);
         const graphicalToolsAllowed = graphical && acceptsImages && !heldForTakeover;
         const pageBrowserAllowed =
           graphical && browser.describe().capabilities.page && !heldForTakeover;
@@ -1582,6 +1602,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             semanticMemoryEnabled,
             cloudAgentEnabled: cloudAgentsEnabled(cloudAgent, run.spaceId),
             messagingChannelRun,
+            voiceCall,
           }),
           // Cross-owner agent connections only exist for chat-linked bots.
           ...(hasMessagingIdentity ? agentConnectionTools : []),
@@ -2983,12 +3004,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               serverRow = created.server;
               approvalEventSeq = created.eventSeq;
             } catch (error) {
-              if (
-                typeof error === "object" &&
-                error !== null &&
-                "code" in error &&
-                (error as { code?: string }).code === "P2002"
-              ) {
+              if (isUniqueViolation(error)) {
                 return finish({
                   error: `An MCP server named "${parsed.name}" already exists. Ask the user to remove it first or pick another name.`,
                 });
@@ -3058,6 +3074,94 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 context,
               ),
             );
+          }
+          if (name === "end_call") {
+            const callId = callIdFromClientNonce(callClientNonceForRun);
+            const title = String(args.title ?? "")
+              .trim()
+              .slice(0, 40);
+            const farewell = String(args.farewell ?? "")
+              .trim()
+              .slice(0, 160);
+            // The client may have hung up first and already closed the card: title that
+            // marker instead of leaving a second one behind. The marker's deterministic
+            // nonce is the idempotency key, so a resumed run cannot double-publish.
+            const nonce = callId ? `${CALL_CLIENT_NONCE_PREFIX}${callId}:marker` : undefined;
+            const findMarker = async () =>
+              nonce
+                ? await deps.prisma.message.findUnique({
+                    where: { threadId_clientNonce: { threadId: thread.id, clientNonce: nonce } },
+                    select: { id: true, blocks: true },
+                  })
+                : null;
+            let existing = await findMarker();
+            let markerId = "";
+            let changed = true;
+            if (!existing) {
+              try {
+                const marker = await publishMessage(
+                  deps,
+                  run,
+                  "bot",
+                  [{ kind: "voice_call", ...(callId ? { callId } : {}), title, farewell }],
+                  undefined,
+                  nonce,
+                );
+                markerId = marker.id;
+              } catch (error) {
+                if (!isUniqueViolation(error)) throw error;
+                existing = await findMarker();
+              }
+            }
+            if (existing) {
+              const before = Array.isArray(existing.blocks)
+                ? (existing.blocks as MessageBlock[])
+                : [];
+              const blocks = before.map((block) =>
+                block.kind === "voice_call" && block.callId === callId
+                  ? { ...block, title, ...(farewell ? { farewell } : {}) }
+                  : block,
+              );
+              changed = JSON.stringify(blocks) !== JSON.stringify(before);
+              if (changed) {
+                await deps.prisma.message.update({
+                  where: { id: existing.id },
+                  data: { blocks: blocks as Prisma.InputJsonValue },
+                });
+                await deps.events.append({
+                  spaceId: run.spaceId,
+                  threadId: thread.id,
+                  botId: bot.id,
+                  runId: run.id,
+                  type: "thread.message.updated",
+                  payload: { messageId: existing.id, role: "bot", blocks, callId },
+                });
+              }
+              markerId = existing.id;
+            }
+            if (changed) {
+              await deps.events.append({
+                spaceId: run.spaceId,
+                threadId: thread.id,
+                botId: bot.id,
+                runId: run.id,
+                type: "thread.call.ended",
+                payload: {
+                  botId: bot.id,
+                  threadId: thread.id,
+                  runId: run.id,
+                  callId,
+                  title,
+                  farewell,
+                  messageId: markerId,
+                },
+              });
+            }
+            return finish({
+              ok: callEndRun
+                ? "The call is already closed and now carries your title. The user is reading, not listening: finish any remaining work as a normal chat reply with full formatting."
+                : "Call ended and your farewell was spoken. The user is now reading, not listening: finish any remaining work as a normal chat reply with full formatting.",
+            });
           }
           if (name === "list_secrets") return listBotSecrets(deps.prisma, run);
           if (name === "forget_secret") {
@@ -3662,6 +3766,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
           basePrompt,
           takeoverResume?.promptNote,
           approvalContinuation,
+          // A hang-up turn is read, not heard: no spoken-reply constraint.
+          voiceCall && !callEndRun ? VOICE_CALL_INSTRUCTION : undefined,
           // Per-turn, not in the system prompt: the timestamp changes every call and would break the cacheable prefix.
           formatCurrentTimeInstruction(),
         ]
@@ -4623,6 +4729,8 @@ export function selectBuiltinToolsForRun(options: {
   semanticMemoryEnabled: boolean;
   cloudAgentEnabled?: boolean;
   messagingChannelRun: boolean;
+  /** Hanging up is only offered to a turn the caller spoke on a live call. */
+  voiceCall?: boolean;
 }) {
   return selectCloudAgentTools(
     selectMemoryTools(
@@ -4641,11 +4749,12 @@ export function selectBuiltinToolsForRun(options: {
     Boolean(options.cloudAgentEnabled),
   ).filter(
     (tool) =>
-      !options.messagingChannelRun ||
-      (!["remember", "save_memory", "recall_memory", "forget_memory", "task_catalog"].includes(
-        tool.name,
-      ) &&
-        !tool.name.startsWith("scratchpad_")),
+      (options.voiceCall || tool.name !== "end_call") &&
+      (!options.messagingChannelRun ||
+        (!["remember", "save_memory", "recall_memory", "forget_memory", "task_catalog"].includes(
+          tool.name,
+        ) &&
+          !tool.name.startsWith("scratchpad_"))),
   );
 }
 
@@ -4972,6 +5081,10 @@ function redactBlocks(blocks: MessageBlock[], secrets: string[]): MessageBlock[]
   });
 }
 
+function isUniqueViolation(error: unknown): boolean {
+  return Boolean(error && typeof error === "object" && "code" in error && error.code === "P2002");
+}
+
 async function publishMessage(
   deps: ExecutorDeps,
   run: { id: string; spaceId: string; threadId: string; botId: string },
@@ -5012,7 +5125,12 @@ async function persistMessageInTransaction(
     botId: run.botId,
     type: "thread.message.created",
     runId: run.id,
-    payload: { messageId: message.id, role, blocks },
+    payload: {
+      messageId: message.id,
+      role,
+      blocks,
+      callId: callIdFromClientNonce(clientNonce),
+    },
   });
   return { message, eventSeq: event.seq };
 }

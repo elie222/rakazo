@@ -15,6 +15,7 @@ export const RunActivityRowSchema = z.object({
     "resume",
     "follow_up",
     "reaction",
+    "call_end",
     "spawn",
     "skill",
     "bot_message",

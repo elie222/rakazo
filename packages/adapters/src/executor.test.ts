@@ -327,6 +327,20 @@ describe("run tool selection", () => {
     expect(toolNames("user")).toContain("task_catalog");
   });
 
+  it("offers end_call on a hang-up run so it can title the call", () => {
+    const callEnd = selectBuiltinToolsForRun({
+      graphicalToolsAllowed: true,
+      groupId: null,
+      trigger: "call_end",
+      semanticMemoryEnabled: false,
+      messagingChannelRun: false,
+      voiceCall: true,
+    }).map((tool) => tool.name);
+    expect(callEnd).toContain("end_call");
+    expect(callEnd).toContain("schedule_create");
+    expect(toolNames("call_end")).not.toContain("end_call");
+  });
+
   it("keeps schedule tools in group chats and still blocks create on routines", () => {
     expect(toolNames("user", "group-1")).toEqual(
       expect.arrayContaining(["schedule_create", "schedule_list", "schedule_cancel"]),

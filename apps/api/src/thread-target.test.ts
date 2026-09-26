@@ -1,5 +1,6 @@
 import type { SandboxProvider } from "@rakazo/adapter-kit";
 import type { Actor } from "@rakazo/contracts";
+import { callClientNonce } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -2217,6 +2218,66 @@ describe("sendThreadMessage", () => {
     expect(tx.event.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         payload: expect.objectContaining({ replyQuote: "just this span" }),
+      }),
+    });
+  });
+
+  it("stamps the call id on the live event so the bubble joins the call card at once", async () => {
+    let messageSeq = 0;
+    let eventSeq = 0;
+    const clientNonce = callClientNonce("call-7");
+    const tx = {
+      thread: {
+        update: vi.fn(async ({ data }: { data: { nextMessageSeq?: unknown } }) =>
+          data.nextMessageSeq ? { nextMessageSeq: ++messageSeq } : { nextEventSeq: ++eventSeq },
+        ),
+      },
+      message: {
+        findFirst: vi.fn().mockResolvedValue(null),
+        update: vi.fn(),
+        create: vi.fn().mockResolvedValue({
+          id: "msg-1",
+          threadId: "thread-1",
+          seq: 1,
+          role: "user",
+          blocks: [{ kind: "text", text: "book the flight" }],
+          botId: null,
+          runId: null,
+          clientNonce,
+          createdAt: new Date(),
+        }),
+      },
+      run: {
+        findMany: vi.fn().mockResolvedValue([]),
+        findUnique: vi.fn().mockResolvedValue({ status: "queued", startedAt: null }),
+        create: vi.fn().mockResolvedValue({ id: "run-1", taskId: "task-1", status: "queued" }),
+      },
+      task: { create: vi.fn().mockResolvedValue({ id: "task-1" }) },
+      event: {
+        create: vi.fn().mockResolvedValue({ id: "event-1", seq: 1, createdAt: new Date() }),
+      },
+      steeringMessage: { create: vi.fn() },
+    };
+    const prisma = {
+      message: { findUnique: vi.fn().mockResolvedValue(null) },
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+    } as unknown as PrismaClient;
+
+    await sendThreadMessage(
+      {
+        prisma,
+        events: { notify: vi.fn().mockResolvedValue(undefined) } as never,
+        jobs: { enqueue: vi.fn().mockResolvedValue(undefined) } as never,
+      },
+      { spaceId: "workspace-1", userId: "user-1" } as Actor,
+      { kind: "bot", botId: "bot-1", threadId: "thread-1" } as ThreadTarget,
+      { text: "book the flight", clientNonce },
+    );
+
+    expect(tx.event.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        type: "thread.message.created",
+        payload: expect.objectContaining({ callId: "call-7" }),
       }),
     });
   });

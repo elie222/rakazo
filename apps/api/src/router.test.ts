@@ -1899,3 +1899,108 @@ describe("bot restore computer quota", () => {
 afterEach(() => {
   delete process.env.SANDBOX_MAX_COMPUTERS_PER_USER;
 });
+describe("threads.endCall", () => {
+  function fixture(duplicateMarker?: boolean) {
+    const created: { blocks?: unknown; clientNonce?: string }[] = [];
+    const events: { type: string; payload: Record<string, unknown> }[] = [];
+    const tx = {
+      thread: { update: vi.fn().mockResolvedValue({ nextMessageSeq: 3, nextEventSeq: 5 }) },
+      message: {
+        create: vi.fn(async ({ data }: { data: { blocks: unknown; clientNonce?: string } }) => {
+          if (duplicateMarker) throw Object.assign(new Error("unique"), { code: "P2002" });
+          created.push({ blocks: data.blocks, clientNonce: data.clientNonce });
+          return { id: "message-1" };
+        }),
+      },
+      event: vi.fn(),
+      task: { create: vi.fn().mockResolvedValue({ id: "task-1" }) },
+      run: {
+        create: vi.fn().mockResolvedValue({ id: "run-1" }),
+        findUnique: vi.fn().mockResolvedValue({ status: "queued", startedAt: null }),
+      },
+    };
+    tx.event = {
+      create: vi.fn(async ({ data }: { data: { type: string; payload: never } }) => {
+        events.push({ type: data.type, payload: data.payload });
+        return { seq: 4, threadId: "thread-1" };
+      }),
+    } as never;
+    const prisma = {
+      bot: {
+        findFirst: vi
+          .fn()
+          .mockResolvedValue({ id: "bot-1", thread: { id: "thread-1" }, computer: null }),
+      },
+      taughtSkill: { findFirst: vi.fn().mockResolvedValue(null) },
+      $transaction: vi.fn(async (run: (client: typeof tx) => unknown) => run(tx)),
+    } as unknown as PrismaClient;
+    const enqueue = vi.fn().mockResolvedValue(undefined);
+    const deps = {
+      prisma,
+      events: { notify: vi.fn().mockResolvedValue(undefined) },
+      jobs: { enqueue },
+      env: { sandboxProvider: "fake" },
+    } as unknown as RouterDeps;
+    const actor = {
+      spaceId: "space-1",
+      userId: "user-1",
+      email: "user@rakazo.test",
+      isDeploymentOwner: true,
+    } satisfies Actor;
+    const handler = new RPCHandler(createRouter(deps));
+    return {
+      tx,
+      created,
+      events,
+      enqueue,
+      call: () =>
+        handler.handle(
+          new Request("http://127.0.0.1/rpc/threads/endCall", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ json: { botId: "bot-1", callId: "call-1" } }),
+          }),
+          { prefix: "/rpc", context: { actor } },
+        ),
+    };
+  }
+
+  it("closes the card and queues a call_end run", async () => {
+    const { call, created, events, tx, enqueue } = fixture();
+    const { response } = await call();
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ json: { ok: true } });
+    expect(created[0]?.blocks).toEqual([
+      { kind: "voice_call", callId: "call-1", title: "", farewell: "" },
+    ]);
+    expect(created[0]?.clientNonce).toBe("call:call-1:marker");
+    expect(events.map((event) => event.type)).toEqual([
+      "thread.message.created",
+      "thread.call.ended",
+    ]);
+    expect(events[1]?.payload).toMatchObject({
+      callId: "call-1",
+      title: "",
+      messageId: "message-1",
+    });
+    expect(events[0]?.payload).toMatchObject({ callId: "call-1", messageId: "message-1" });
+    expect(tx.run.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ trigger: "call_end", taskId: "task-1" }),
+      }),
+    );
+    expect(String(tx.run.create.mock.calls[0]?.[0]?.data?.clientNonce)).toMatch(/^call:call-1:/);
+    expect(enqueue).toHaveBeenCalledOnce();
+  });
+
+  it("is a no-op when a concurrent hang-up already wrote the marker", async () => {
+    const { call, created, events, tx, enqueue } = fixture(true);
+    const { response } = await call();
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ json: { ok: true } });
+    expect(created).toEqual([]);
+    expect(events).toEqual([]);
+    expect(tx.run.create).not.toHaveBeenCalled();
+    expect(enqueue).not.toHaveBeenCalled();
+  });
+});

@@ -22,6 +22,7 @@ import {
   type PrismaClient,
   selectSpaceVoicePreference,
 } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
 import type { Context, Hono } from "hono";
 import { readBoundedBody } from "./http-body.js";
 import { withSerializableRetry } from "./serializable-retry.js";
@@ -392,5 +393,7 @@ function voiceHttpError(c: Context, error: unknown) {
     return c.json({ error: error.message }, status);
   }
   const message = error instanceof Error ? error.message : "Voice request failed.";
+  // Message only: request bodies, keys and audio never reach the log.
+  getLogger().warn("voice request failed", { route: c.req.path, reason: message });
   return c.json({ error: message }, 502);
 }

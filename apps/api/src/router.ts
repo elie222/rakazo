@@ -90,7 +90,15 @@ import {
   verifyMcpInstall,
 } from "@rakazo/adapters";
 import type { Auth } from "@rakazo/auth";
-import type { Actor, Bot, ComputerStatus, McpServer, Me, SpaceNavigation } from "@rakazo/contracts";
+import type {
+  Actor,
+  Bot,
+  ComputerStatus,
+  McpServer,
+  Me,
+  ProductEvent,
+  SpaceNavigation,
+} from "@rakazo/contracts";
 import {
   appContract,
   IntegrationProviderIdSchema,
@@ -100,6 +108,8 @@ import {
 import {
   ACTIVE_RUN_STATUSES,
   AttachmentValidationError,
+  CALL_CLIENT_NONCE_PREFIX,
+  callClientNonce,
   containsSecret,
   expandSkillReferencesInPrompt,
   hasMixedOneShotSchedule,
@@ -224,6 +234,8 @@ import {
 
 const MAX_COMPUTER_TEXT_FILE_BYTES = 2 * 1024 * 1024;
 const THREAD_MESSAGE_PAGE_SIZE = 100;
+/** Silence longer than this on a thread stream is indistinguishable from a dead socket. */
+export const HEARTBEAT_MS = 20_000;
 const EXPORT_MESSAGE_PAGE_SIZE = 500;
 
 async function reconcilePendingConnections(
@@ -500,6 +512,17 @@ export interface RouterDeps {
  * ignore the request abort signal, so without a deadline a hung destroy would
  * keep the deletion claim renewed forever and block stale-claim recovery. */
 const SPACE_TEARDOWN_TIMEOUT_MS = 120_000;
+
+/** The card is closed by a marker; the run that follows finishes whatever the call left open. */
+/** Deterministic nonce for a call's marker message. The unique (threadId, clientNonce)
+ * index makes it the hang-up idempotency key, and the "call:" prefix lets clients derive
+ * the marker's callId. User turns carry a uuid suffix, so they never collide. */
+export function callMarkerClientNonce(callId: string): string {
+  return `${CALL_CLIENT_NONCE_PREFIX}${callId}:marker`;
+}
+
+const HANG_UP_PROMPT =
+  "The voice call just ended because the user hung up. First call end_call with a short title for the call (leave farewell empty). Then, if anything the user asked for during the call is still unfinished, complete it now as a normal chat reply with full formatting. If nothing is pending, reply with one short sentence.";
 
 function spaceTeardownTimeoutMs(): number {
   const override = Number(process.env.SPACE_TEARDOWN_TIMEOUT_MS ?? "");
@@ -1595,15 +1618,45 @@ export function createRouter(deps: RouterDeps) {
       subscribe: authed.threads.subscribe.handler(async function* ({ context, input }) {
         const target = await resolveThreadTarget(deps.prisma, context.actor, input);
         const peerRunCache = new Map<string, Promise<boolean>>();
-        for await (const event of deps.events.follow(
-          target.threadId,
-          input.cursor,
-          context.signal,
-        )) {
-          if (await isPeerRun(deps.prisma, event.runId, peerRunCache)) {
-            if (!shouldForwardPeerThreadEvent(event)) continue;
+        const follow = deps.events.follow(target.threadId, input.cursor, context.signal);
+        // A half-open stream looks identical to an idle one, so punctuate silence:
+        // the client treats any frame as liveness and reconnects once they stop.
+        let pending: Promise<IteratorResult<ProductEvent>> | undefined;
+        try {
+          while (!context.signal?.aborted) {
+            pending ??= follow.next();
+            let timer: ReturnType<typeof setTimeout> | undefined;
+            const next = await Promise.race([
+              pending,
+              new Promise<"silent">((resolve) => {
+                timer = setTimeout(() => resolve("silent"), HEARTBEAT_MS);
+              }),
+            ]).finally(() => clearTimeout(timer));
+            if (next === "silent") {
+              // Keep `pending` so the in-flight read stays the next event in order.
+              yield {
+                id: "heartbeat",
+                spaceId: context.actor.spaceId,
+                threadId: target.threadId,
+                botId: target.threadId,
+                seq: 0,
+                type: "heartbeat",
+                createdAt: new Date().toISOString(),
+                payload: {},
+              };
+              continue;
+            }
+            pending = undefined;
+            if (next.done) return;
+            const event = next.value;
+            if (await isPeerRun(deps.prisma, event.runId, peerRunCache)) {
+              if (!shouldForwardPeerThreadEvent(event)) continue;
+            }
+            yield event;
           }
-          yield event;
+        } finally {
+          // Not awaited: closing can queue behind a read that the abort has not landed on yet.
+          void follow.return(undefined).catch(() => {});
         }
       }),
       send: authed.threads.send.handler(async ({ context, input }) => {
@@ -1692,6 +1745,7 @@ export function createRouter(deps: RouterDeps) {
             blocks: [{ kind: "text", text: input.text }],
             prompt: input.text,
             trigger: "follow_up",
+            clientNonce: input.clientNonce,
           });
           if (sent.taskId && sent.runId) {
             await deps.jobs.enqueue(runContinueJob(sent.runId)).catch((error) => {
@@ -1701,6 +1755,14 @@ export function createRouter(deps: RouterDeps) {
           return { ok: true as const };
         }
         const committed = await deps.prisma.$transaction(async (tx) => {
+          if (input.clientNonce) {
+            const existing = await tx.message.findUnique({
+              where: {
+                threadId_clientNonce: { threadId: target.threadId, clientNonce: input.clientNonce },
+              },
+            });
+            if (existing) return null;
+          }
           await lockOwnedGroup(tx, context.actor, target.groupId);
           const group = await tx.chatGroup.findFirst({
             where: {
@@ -1717,6 +1779,7 @@ export function createRouter(deps: RouterDeps) {
             threadId: target.threadId,
             role: "user",
             blocks,
+            clientNonce: input.clientNonce,
           });
           const active = await tx.run.findFirst({
             where: {
@@ -1774,14 +1837,96 @@ export function createRouter(deps: RouterDeps) {
           await touchGroupUpdatedAt(tx, target.groupId);
           return { runId: run?.id, eventSeq: event.seq };
         });
-        await deps.events.notify(target.threadId, committed.eventSeq).catch((error) => {
-          getLogger().error("group follow-up realtime notification", error);
-        });
-        if (committed.runId) {
-          await deps.jobs.enqueue(runContinueJob(committed.runId)).catch((error) => {
-            getLogger().error("group follow-up enqueue", error);
+        if (committed) {
+          await deps.events.notify(target.threadId, committed.eventSeq).catch((error) => {
+            getLogger().error("group follow-up realtime notification", error);
           });
+          if (committed.runId) {
+            await deps.jobs.enqueue(runContinueJob(committed.runId)).catch((error) => {
+              getLogger().error("group follow-up enqueue", error);
+            });
+          }
         }
+        return { ok: true as const };
+      }),
+      endCall: authed.threads.endCall.handler(async ({ context, input }) => {
+        const target = await resolveThreadTarget(deps.prisma, context.actor, input);
+        if (target.kind !== "bot") throw new IsolationError();
+        await assertTeachingSendAllowed(deps.prisma, context.actor.spaceId, target.botId);
+        const { botId, threadId } = target;
+        const blocks = [
+          { kind: "voice_call" as const, callId: input.callId, title: "", farewell: "" },
+        ];
+        const committed = await deps.prisma
+          .$transaction(async (tx) => {
+            // The marker's deterministic nonce is the idempotency key: the unique
+            // (threadId, clientNonce) index rejects a second hang-up, concurrent or not.
+            const message = await createThreadMessageInTransaction(tx, {
+              threadId,
+              role: "bot",
+              botId,
+              blocks,
+              clientNonce: callMarkerClientNonce(input.callId),
+            });
+            await appendEventInTransaction(tx, {
+              spaceId: context.actor.spaceId,
+              threadId,
+              botId,
+              type: "thread.message.created",
+              payload: { messageId: message.id, role: "bot", blocks, callId: input.callId },
+            });
+            const task = await tx.task.create({
+              data: {
+                spaceId: context.actor.spaceId,
+                botId,
+                threadId,
+                userId: context.actor.userId,
+                prompt: HANG_UP_PROMPT,
+                status: "queued",
+              },
+            });
+            const run = await tx.run.create({
+              data: {
+                spaceId: context.actor.spaceId,
+                botId,
+                threadId,
+                taskId: task.id,
+                userId: context.actor.userId,
+                status: "queued",
+                trigger: "call_end",
+                clientNonce: callClientNonce(input.callId),
+              },
+              select: { id: true },
+            });
+            const ended = await appendEventInTransaction(tx, {
+              spaceId: context.actor.spaceId,
+              threadId,
+              botId,
+              type: "thread.call.ended",
+              runId: run.id,
+              payload: {
+                botId,
+                threadId,
+                callId: input.callId,
+                title: "",
+                farewell: "",
+                messageId: message.id,
+              },
+            });
+            return { runId: run.id, eventSeq: ended.seq };
+          })
+          .catch((error) => {
+            if (!isUniqueViolation(error)) throw error;
+            return null;
+          });
+        if (!committed) return { ok: true as const };
+        await deps.events.notify(threadId, committed.eventSeq).catch((error) => {
+          getLogger().error("call end realtime notification", error);
+        });
+        // The queued run is durable; a missed wake is repaired by the reconciler.
+        await deps.jobs.enqueue(runContinueJob(committed.runId)).catch((error) => {
+          getLogger().error("call end enqueue", error);
+        });
         return { ok: true as const };
       }),
       answer: authed.threads.answer.handler(async ({ context, input }) => {

@@ -1,6 +1,6 @@
 import type { ProductEvent } from "@rakazo/contracts";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { runThreadSubscription } from "./thread-subscription.js";
+import { IDLE_TIMEOUT_MS, runThreadSubscription } from "./thread-subscription.js";
 
 const head = { threadId: "thread", cursor: 10 };
 function event(seq: number): ProductEvent {
@@ -14,6 +14,9 @@ function event(seq: number): ProductEvent {
     payload: {},
     createdAt: "2026-01-01T00:00:00Z",
   };
+}
+function heartbeat(): ProductEvent {
+  return { ...event(0), id: "heartbeat", type: "heartbeat" };
 }
 function stream() {
   let deliver: ((result: IteratorResult<ProductEvent>) => void) | undefined;
@@ -181,6 +184,59 @@ describe("thread subscription recovery", () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(callbacks.applyEvent).toHaveBeenCalledExactlyOnceWith(event(12));
     expect(callbacks.refresh).not.toHaveBeenCalled();
+    abort.abort();
+    channel.end();
+    await running;
+  });
+
+  it("swallows heartbeats without applying them or advancing the cursor", async () => {
+    vi.useFakeTimers();
+    const { abort, channel, callbacks } = setup();
+    const running = runThreadSubscription(callbacks);
+    await vi.advanceTimersByTimeAsync(0);
+    channel.send(heartbeat());
+    await vi.advanceTimersByTimeAsync(0);
+    expect(callbacks.applyEvent).not.toHaveBeenCalled();
+    expect(callbacks.onEvent).not.toHaveBeenCalled();
+    channel.send(event(11));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(callbacks.applyEvent).toHaveBeenCalledExactlyOnceWith(event(11));
+    abort.abort();
+    channel.end();
+    await running;
+  });
+
+  it("abandons a silent stream and resubscribes from the same cursor", async () => {
+    vi.useFakeTimers();
+    const { abort, channel, callbacks } = setup();
+    const running = runThreadSubscription(callbacks);
+    await vi.advanceTimersByTimeAsync(0);
+    channel.send(event(11));
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(IDLE_TIMEOUT_MS);
+    expect(abort.signal.aborted).toBe(false);
+    await vi.advanceTimersByTimeAsync(250);
+    expect(callbacks.subscribe.mock.calls.map(([cursor]) => cursor)).toEqual([10, 11]);
+    expect(callbacks.refresh).toHaveBeenCalledTimes(1);
+    channel.send(event(12));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(callbacks.applyEvent.mock.calls.map(([item]) => item.seq)).toEqual([11, 12]);
+    abort.abort();
+    channel.end();
+    await running;
+  });
+
+  it("keeps a heartbeat alive as liveness so the idle timer never fires", async () => {
+    vi.useFakeTimers();
+    const { abort, channel, callbacks } = setup();
+    const running = runThreadSubscription(callbacks);
+    await vi.advanceTimersByTimeAsync(0);
+    for (let beat = 0; beat < 3; beat += 1) {
+      await vi.advanceTimersByTimeAsync(IDLE_TIMEOUT_MS - 1_000);
+      channel.send(heartbeat());
+      await vi.advanceTimersByTimeAsync(0);
+    }
+    expect(callbacks.subscribe).toHaveBeenCalledTimes(1);
     abort.abort();
     channel.end();
     await running;

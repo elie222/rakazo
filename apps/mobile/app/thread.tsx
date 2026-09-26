@@ -11,12 +11,14 @@ import {
   MESSAGE_REACTIONS,
   type MessageReaction,
 } from "@rakazo/contracts";
+import type { ThreadItem } from "@rakazo/core";
 import {
   abortableDelay,
   attachmentsForThread,
   buildComposerMentionOptions,
   type ComposerMention,
   cloudAgentHttpsUrl,
+  groupVoiceChats,
   isApprovalAskBlock,
   isRunTerminalEvent,
   isSecretAskBlock,
@@ -76,6 +78,8 @@ import {
   type MarkdownArtifactPreviewTarget,
 } from "../components/markdown-artifact-preview";
 import { NativeSymbol } from "../components/native-symbol";
+import { VoiceChatCard } from "../components/VoiceChatCard";
+import { WorkingIndicator } from "../components/WorkingIndicator";
 import {
   applyMobileThreadEvent,
   blockText,
@@ -100,6 +104,8 @@ import { mobileTokens } from "../lib/appearance";
 import { type MobileArtifactTarget, openMobileArtifact } from "../lib/artifact-open";
 import { nextAutoSpeakAction } from "../lib/auto-speak";
 import { confirmDeleteBot } from "../lib/bot-lifecycle";
+import { startCall, useCallSession } from "../lib/call-session";
+import { available as dictationAvailable } from "../lib/dictation";
 import { cancelFocusPrompt, focusPromptThreadActive } from "../lib/focus-prompt";
 import { dateLocaleForUi, t, useI18n } from "../lib/i18n";
 import { saveLastBotId } from "../lib/last-bot";
@@ -259,7 +265,9 @@ function Thread() {
     messageId?: string;
   }>();
   const inGroup = Boolean(groupId);
-  const scroll = useRef<FlatList<MobileMessage>>(null);
+  const call = useCallSession();
+  const onCall = Boolean(botId) && call?.botId === botId;
+  const scroll = useRef<FlatList<ThreadItem<MobileMessage>>>(null);
   const pinnedScroll = useRef<ScrollView>(null);
   const scrollBehavior = useRef(new ThreadScrollBehavior());
   const userDragging = useRef(false);
@@ -1298,6 +1306,37 @@ function Thread() {
     [botId, snap?.members],
   );
 
+  async function startVoiceCall() {
+    if (!botId) return;
+    try {
+      const status = await rpc<{ ready: boolean; transcribe: boolean }>("voice/status");
+      if (!status.ready) {
+        router.push("/voice");
+        return;
+      }
+      // The device recognising speech itself is enough: a speak-only provider still calls.
+      if (!status.transcribe && !(await dictationAvailable())) {
+        Alert.alert(
+          t("Calls need transcription"),
+          t("Allow speech recognition in Settings, or connect ElevenLabs, OpenAI, or Fish Audio."),
+          [
+            { text: t("Not now"), style: "cancel" },
+            { text: t("Open Voice"), onPress: () => router.push("/voice") },
+          ],
+        );
+        return;
+      }
+      startCall({
+        botId,
+        botName: name ?? t("Bot"),
+        botColor: mentionBots.find((bot) => bot.id === botId)?.color,
+        transcribe: status.transcribe,
+      });
+    } catch {
+      router.push("/voice");
+    }
+  }
+
   function showAttachMenu() {
     Alert.alert(t("Attach"), undefined, [
       {
@@ -1340,7 +1379,8 @@ function Thread() {
 
   const answerableAskMessageId = latestAnswerableAskMessageId(snap);
   const runError = snap?.run?.status === "failed" ? (snap.run.error ?? null) : null;
-  const liveMessages = useMemo(() => [...visibleMessages].reverse(), [visibleMessages]);
+  // Group calls in reading order, then reverse for the inverted list.
+  const liveItems = useMemo(() => groupVoiceChats(visibleMessages).reverse(), [visibleMessages]);
   const messagesById = useMemo(
     () => new Map((snap?.messages ?? []).map((message) => [message.id, message])),
     [snap?.messages],
@@ -1407,7 +1447,8 @@ function Thread() {
             },
           ]
         : []),
-      ...(message.role === "bot" && blockText(message)
+      // The call already reads replies aloud; a second voice would talk over it.
+      ...(message.role === "bot" && !onCall && blockText(message)
         ? [{ name: "speak", text: t("Speak message"), onPress: () => void speak(message) }]
         : []),
       {
@@ -1563,6 +1604,7 @@ function Thread() {
         style={{
           flexDirection: "row",
           alignItems: "center",
+          gap: 8,
           minHeight: 40,
           marginTop: 12,
         }}
@@ -1573,6 +1615,7 @@ function Thread() {
           size={28}
           status={currentBotStatus}
         />
+        <WorkingIndicator />
       </View>
     ) : inGroup && workingGroupBots.length > 0 ? (
       <View
@@ -1602,6 +1645,7 @@ function Thread() {
             </View>
           ))}
         </View>
+        <WorkingIndicator />
       </View>
     ) : null;
 
@@ -1648,9 +1692,9 @@ function Thread() {
           <FlatList
             key={threadKey}
             ref={scroll}
-            data={liveMessages}
+            data={liveItems}
             inverted
-            keyExtractor={(message) => message.id}
+            keyExtractor={(item) => (item.kind === "voiceChat" ? item.key : item.message.id)}
             extraData={answerableAskMessageId}
             style={{ flex: 1, marginTop: 8 }}
             maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
@@ -1685,7 +1729,15 @@ function Thread() {
             }}
             ListFooterComponent={loadEarlierControl}
             ListHeaderComponent={workingFooter}
-            renderItem={({ item }) => renderMessageRow(item)}
+            renderItem={({ item }) =>
+              item.kind === "voiceChat" ? (
+                <View style={{ marginTop: 12, width: "100%" }}>
+                  <VoiceChatCard group={item} />
+                </View>
+              ) : (
+                renderMessageRow(item.message)
+              )
+            }
           />
         )}
         {!showPinnedPage && threadScrollState.detached ? (
@@ -2091,6 +2143,28 @@ function Thread() {
               }}
             />
           </View>
+          {botId && !onCall && draft.trim().length === 0 ? (
+            <Pressable
+              accessibilityLabel={t("Call")}
+              onPress={() => void startVoiceCall()}
+              style={{
+                width: 44,
+                height: 44,
+                borderRadius: 22,
+                borderWidth: 1,
+                borderColor: tokens.border,
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <NativeSymbol
+                ios="waveform"
+                android="pulse-outline"
+                size={18}
+                color={tokens.mutedForeground}
+              />
+            </Pressable>
+          ) : null}
           <Pressable
             accessibilityLabel={t("Send")}
             disabled={sending || !canSend}

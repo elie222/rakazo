@@ -326,7 +326,26 @@ export const appContract = {
       .output(z.object({ ok: z.literal(true) })),
     stop: oc.input(threadTarget).output(z.object({ ok: z.literal(true) })),
     followUp: oc
-      .input(threadTarget.safeExtend({ text: z.string().min(1) }))
+      .input(
+        threadTarget.safeExtend({
+          text: z.string().min(1),
+          /** Carries the call id, so a turn taken mid-run stays in the call's card. */
+          clientNonce: z.string().min(1).max(200).optional(),
+        }),
+      )
+      .output(z.object({ ok: z.literal(true) })),
+    /** The client hung up: close the call card and let the bot finish what was asked on it. */
+    endCall: oc
+      // ":" separates the call id from the nonce suffix, so it can never appear inside one.
+      .input(
+        botId.safeExtend({
+          callId: z
+            .string()
+            .min(1)
+            .max(200)
+            .regex(/^[^:]+$/),
+        }),
+      )
       .output(z.object({ ok: z.literal(true) })),
     clear: oc.input(threadTarget).output(z.object({ ok: z.literal(true) })),
     answer: oc

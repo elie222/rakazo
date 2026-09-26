@@ -12,6 +12,8 @@ export async function scheduleFocusPrompt(options: {
   immediate: boolean;
   signal: AbortSignal;
   prompt: () => Promise<void>;
+  /** True while a send is in flight so the delay cannot post over it. */
+  shouldSkip?: () => boolean;
 }): Promise<"prompted" | "cancelled"> {
   if (options.signal.aborted) return "cancelled";
   const delayMs = options.immediate ? 0 : FOCUS_PROMPT_DELAY_MS;
@@ -20,7 +22,7 @@ export async function scheduleFocusPrompt(options: {
   } catch {
     return "cancelled";
   }
-  if (options.signal.aborted) return "cancelled";
+  if (options.signal.aborted || options.shouldSkip?.()) return "cancelled";
   await options.prompt();
   return options.signal.aborted ? "cancelled" : "prompted";
 }

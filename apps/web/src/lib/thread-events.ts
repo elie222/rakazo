@@ -26,6 +26,8 @@ const runTriggers = new Set<Run["trigger"]>([
   "routine",
   "resume",
   "follow_up",
+  "reaction",
+  "call_end",
   "spawn",
   "skill",
   "bot_message",
@@ -477,14 +479,17 @@ export function reduceThreadSnapshot(
   if (event.type === "thread.message.created" || event.type === "thread.message.updated") {
     const role = (event.payload.role as ThreadMessage["role"]) ?? "bot";
     const blocks = (event.payload.blocks as ThreadMessage["blocks"]) ?? [];
+    const id = String(event.payload.messageId ?? event.id);
+    const known = prev.messages.find((message) => message.id === id);
     const next: ThreadMessage = {
-      id: String(event.payload.messageId ?? event.id),
+      id,
       threadId: event.threadId,
       seq: event.seq,
       role,
       blocks,
       botId: event.botId,
       runId: event.runId,
+      callId: typeof event.payload.callId === "string" ? event.payload.callId : known?.callId,
       replyToMessageId:
         typeof event.payload.replyToMessageId === "string"
           ? event.payload.replyToMessageId

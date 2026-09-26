@@ -4024,3 +4024,36 @@ msgstr "Votre nom"
 #: src/pages/Welcome.tsx:21
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "Votre équipe d'agents toujours actifs<0/>à qui vous pouvez confier de vrais travaux."
+
+#: src/components/call/VoiceChatCard.tsx:42
+msgid "Hide transcript"
+msgstr "Masquer la transcription"
+
+#: src/components/call/CallCard.tsx:98
+msgid "Mute"
+msgstr "Couper le micro"
+
+#. placeholder {0}: call.botName
+#: src/components/call/CallCard.tsx:40
+msgid "On a call with {0}"
+msgstr "En appel avec {0}"
+
+#: src/components/call/VoiceChatCard.tsx:42
+msgid "Show transcript"
+msgstr "Afficher la transcription"
+
+#: src/components/ArtifactFileCard.tsx:133
+msgid "This file is not valid UTF-8 Markdown."
+msgstr "Ce fichier n'est pas un Markdown UTF-8 valide."
+
+#: src/components/call/CallCard.tsx:88
+msgid "Transcript"
+msgstr "Transcription"
+
+#: src/components/call/CallCard.tsx:98
+msgid "Unmute"
+msgstr "Réactiver le micro"
+
+#: src/components/call/VoiceChatCard.tsx:32
+msgid "Voice chat"
+msgstr "Chat vocal"

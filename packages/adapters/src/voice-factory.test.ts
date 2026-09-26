@@ -262,6 +262,14 @@ describe("CartesiaVoiceProvider", () => {
     );
     expect([...clip.bytes]).toEqual([4, 5]);
     expect(String(fetchMock.mock.calls[0]?.[0])).toContain("/tts/bytes");
+    // mp3 takes bit_rate, not encoding: the documented shape is the only one Cartesia accepts.
+    const body = JSON.parse((fetchMock.mock.calls[0]?.[1] as { body: string })?.body ?? "{}");
+    expect(body.output_format).toEqual({
+      container: "mp3",
+      sample_rate: 44100,
+      bit_rate: 128000,
+    });
+    expect(body.model_id).toBe("sonic-3");
   });
 });
 

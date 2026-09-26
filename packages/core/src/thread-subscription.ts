@@ -3,6 +3,9 @@ import { abortableDelay } from "./async.js";
 
 type ThreadHead = { threadId: string; cursor: number };
 
+/** No frame at all for this long means the stream is half-open; the server beats far faster. */
+export const IDLE_TIMEOUT_MS = 45_000;
+
 /** Recover a durable event stream while its caller owns snapshot commits and UI effects. */
 export async function runThreadSubscription(options: {
   signal: AbortSignal;
@@ -57,17 +60,37 @@ export async function runThreadSubscription(options: {
   while (!signal.aborted) {
     try {
       const events = await options.subscribe(cursor);
-      for await (const event of events) {
-        if (signal.aborted) break;
-        cursor = Math.max(cursor, event.seq);
-        retryMs = 250;
-        options.beforeEvent?.(event);
-        if (snapshotReady && options.currentSnapshot()?.threadId === event.threadId) {
-          options.applyEvent(event);
-        } else if (!snapshotReady) {
-          pendingSnapshotEvents.push(event);
+      const iterator = events[Symbol.asyncIterator]();
+      try {
+        let pending: Promise<IteratorResult<ProductEvent>> | undefined;
+        while (!signal.aborted) {
+          pending ??= iterator.next();
+          let timer: ReturnType<typeof setTimeout> | undefined;
+          const next = await Promise.race([
+            pending,
+            new Promise<"idle">((resolve) => {
+              timer = setTimeout(() => resolve("idle"), IDLE_TIMEOUT_MS);
+            }),
+          ]).finally(() => clearTimeout(timer));
+          // Abandon the iterator, not the caller's signal, so the loop below re-subscribes.
+          if (next === "idle" || next.done) break;
+          pending = undefined;
+          const event = next.value;
+          retryMs = 250;
+          // Heartbeats only prove the socket is alive; they carry no state and no cursor.
+          if (event.type === "heartbeat") continue;
+          cursor = Math.max(cursor, event.seq);
+          options.beforeEvent?.(event);
+          if (snapshotReady && options.currentSnapshot()?.threadId === event.threadId) {
+            options.applyEvent(event);
+          } else if (!snapshotReady) {
+            pendingSnapshotEvents.push(event);
+          }
+          options.onEvent(event, head);
         }
-        options.onEvent(event, head);
+      } finally {
+        // Not awaited: a half-open iterator can take as long to close as it took to go quiet.
+        void iterator.return?.(undefined).catch(() => {});
       }
     } catch {
       // Reconnect from the last durable event after a transient transport failure.
