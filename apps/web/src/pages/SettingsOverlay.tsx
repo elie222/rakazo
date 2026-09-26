@@ -38,6 +38,7 @@ export function SettingsOverlay({
   onAvatarStyleChange,
   isDeploymentOwner = false,
   sandboxProvider,
+  onSandboxProviderChange,
   messagingEnabled = false,
   onOpenMessaging,
   memoryConfig,
@@ -53,6 +54,7 @@ export function SettingsOverlay({
   onAvatarStyleChange: (style: AvatarStyle) => Promise<void>;
   isDeploymentOwner?: boolean;
   sandboxProvider?: string | null;
+  onSandboxProviderChange?: (sandboxProvider: string) => void;
   messagingEnabled?: boolean;
   onOpenMessaging?: () => void;
   memoryConfig: SpaceMemoryConfig | null | undefined;
@@ -72,6 +74,10 @@ export function SettingsOverlay({
   useEffect(() => {
     setSection(initialSection);
   }, [initialSection]);
+
+  useEffect(() => {
+    if (!showComputer && section === "computer") setSection("general");
+  }, [showComputer, section]);
 
   useEffect(() => {
     if (section === "usage") {
@@ -210,7 +216,12 @@ export function SettingsOverlay({
               {section === "usage" ? (
                 <UsageSettingsPanel usage={usage} panelRef={usageRef} />
               ) : null}
-              {section === "computer" && showComputer ? <ComputerSettingsPanel /> : null}
+              {section === "computer" && showComputer ? (
+                <ComputerSettingsPanel
+                  sandboxProvider={sandboxProvider}
+                  onSandboxProviderChange={onSandboxProviderChange}
+                />
+              ) : null}
               {section === "updates" ? (
                 <UpdatesSettingsPanel isDeploymentOwner={isDeploymentOwner} />
               ) : null}

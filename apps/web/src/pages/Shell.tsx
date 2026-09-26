@@ -2671,7 +2671,11 @@ export function ShellPage() {
         }}
       />
       {bootstrapMe !== undefined ? (
-        <HostComputerPrompt initialMe={bootstrapMe ?? undefined} />
+        <HostComputerPrompt
+          initialMe={bootstrapMe ?? undefined}
+          onMeUpdated={setBootstrapMe}
+          onOpenComputerSettings={() => openSettings("computer")}
+        />
       ) : null}
       {mobileSidebarOpen ? (
         <button
@@ -3604,7 +3608,13 @@ export function ShellPage() {
                     <div className="grid h-full place-items-center px-6 text-center text-sm text-muted-foreground/80">
                       {computerScreenError ??
                         (computersAreUnavailable(bootstrapMe?.sandboxProvider) ? (
-                          <ComputersUnavailableHint />
+                          <ComputersUnavailableHint
+                            sandboxProvider={bootstrapMe?.sandboxProvider}
+                            onRecovered={(sandboxProvider) =>
+                              setBootstrapMe((prev) => (prev ? { ...prev, sandboxProvider } : prev))
+                            }
+                            onOpenComputerSettings={() => openSettings("computer")}
+                          />
                         ) : (
                           computerPlaceholder(
                             computer?.state,
@@ -4256,6 +4266,9 @@ export function ShellPage() {
             avatarStyle={bootstrapMe?.avatarStyle ?? "robot"}
             isDeploymentOwner={bootstrapMe?.isDeploymentOwner === true}
             sandboxProvider={bootstrapMe?.sandboxProvider}
+            onSandboxProviderChange={(sandboxProvider) =>
+              setBootstrapMe((prev) => (prev ? { ...prev, sandboxProvider } : prev))
+            }
             messagingEnabled={messagingSurfaceEnabled}
             onOpenMessaging={() => {
               setSettingsOpen(false);
