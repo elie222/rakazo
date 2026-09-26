@@ -90,7 +90,15 @@ import {
   verifyMcpInstall,
 } from "@rakazo/adapters";
 import type { Auth } from "@rakazo/auth";
-import type { Actor, Bot, ComputerStatus, McpServer, Me, SpaceNavigation } from "@rakazo/contracts";
+import type {
+  Actor,
+  Bot,
+  ComputerReleaseReason,
+  ComputerStatus,
+  McpServer,
+  Me,
+  SpaceNavigation,
+} from "@rakazo/contracts";
 import {
   appContract,
   IntegrationProviderIdSchema,
@@ -1935,6 +1943,7 @@ export function createRouter(deps: RouterDeps) {
       recover: authed.computer.recover.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
         if (!bot.computer) throw new IsolationError();
+        await releaseOwnTakeover(deps, context.actor, bot.id);
         try {
           return await queueComputerUpdate(deps, bot.computer.id, bot.id, "recover");
         } catch (error) {
@@ -1953,6 +1962,7 @@ export function createRouter(deps: RouterDeps) {
           throw new ORPCError("BAD_REQUEST", {
             message: "Computer update is not available on this device",
           });
+        await releaseOwnTakeover(deps, context.actor, bot.id);
         try {
           return await queueComputerUpdate(deps, bot.computer.id, bot.id);
         } catch (error) {
@@ -2178,55 +2188,7 @@ export function createRouter(deps: RouterDeps) {
         return { leaseId, expiresAt: expiresAt.toISOString() };
       }),
       release: authed.computer.release.handler(async ({ context, input }) => {
-        const bot = await repos.getBot(context.actor, input.botId);
-        if (!bot.computer) throw new IsolationError();
-        const controlBotId = bot.computer.controlBotId;
-        const controlLeaseId = bot.computer.controlLeaseId;
-        if (bot.computer.controlHolder !== "user" || !controlBotId || controlBotId !== bot.id) {
-          return { ok: true as const };
-        }
-        if (!hasActiveComputerControl(bot.computer) || !controlLeaseId) {
-          // Stale controlHolder=user. Prefer expiry (revokes provider control). If a lease id
-          // remains after a failed revoke, keep it so reconciliation can retry.
-          if (controlLeaseId) {
-            await expireComputerControl(deps, bot.computer.id, controlLeaseId).catch(
-              () => undefined,
-            );
-          } else {
-            await clearInactiveUserComputerControl(deps.prisma, bot.computer.id);
-          }
-          return { ok: true as const };
-        }
-        if (bot.computer.providerRef) {
-          await deps.sandbox.setScreenControl?.(
-            toComputerRef(bot.computer),
-            false,
-            computerContext(context.actor, controlBotId, "screen.release"),
-            controlLeaseId,
-          );
-        }
-
-        const released = await deps.events.finalizeComputerControlRelease({
-          spaceId: context.actor.spaceId,
-          computerId: bot.computer.id,
-          botId: controlBotId,
-          runId: bot.computer.controlRunId,
-          leaseId: controlLeaseId,
-          holder: "bot",
-          reason: input.reason ?? "released",
-        });
-        if (!released) return { ok: true as const };
-        // The lease-specific key makes this cancellation safe after a replacement takeover.
-        await deps.jobs
-          .cancel(computerControlExpireJobKey(bot.computer.id, controlLeaseId))
-          .catch((error) => {
-            // The expired job is harmless after the lease is cleared, so do not report a
-            // failed release after the transaction has committed.
-            getLogger().error("computer control expiry cancellation", error);
-          });
-
-        await enqueueTakeoverContinuation(deps.jobs, released.runId);
-        scheduleComputerSleep(deps.jobs, bot.computer.id);
+        await releaseComputerControl(deps, context.actor, input.botId, input.reason);
         return { ok: true as const };
       }),
       input: authed.computer.input.handler(async ({ context, input }) => {
@@ -5146,6 +5108,73 @@ async function computerStatus(
   return toComputerStatus(botId, bot.computer, busyBotName);
 }
 
+/** Hand the user's screen control for this bot back, continuing any run waiting on it. */
+async function releaseComputerControl(
+  deps: RouterDeps,
+  actor: Actor,
+  botId: string,
+  reason?: ComputerReleaseReason,
+): Promise<void> {
+  const bot = await createRepos(deps.prisma).getBot(actor, botId);
+  if (!bot.computer) throw new IsolationError();
+  const controlBotId = bot.computer.controlBotId;
+  const controlLeaseId = bot.computer.controlLeaseId;
+  if (bot.computer.controlHolder !== "user" || !controlBotId || controlBotId !== bot.id) return;
+  if (!hasActiveComputerControl(bot.computer) || !controlLeaseId) {
+    // Stale controlHolder=user. Prefer expiry (revokes provider control). If a lease id
+    // remains after a failed revoke, keep it so reconciliation can retry.
+    if (controlLeaseId) {
+      await expireComputerControl(deps, bot.computer.id, controlLeaseId).catch(() => undefined);
+    } else {
+      await clearInactiveUserComputerControl(deps.prisma, bot.computer.id);
+    }
+    return;
+  }
+  if (bot.computer.providerRef) {
+    await deps.sandbox.setScreenControl?.(
+      toComputerRef(bot.computer),
+      false,
+      computerContext(actor, controlBotId, "screen.release"),
+      controlLeaseId,
+    );
+  }
+
+  const released = await deps.events.finalizeComputerControlRelease({
+    spaceId: actor.spaceId,
+    computerId: bot.computer.id,
+    botId: controlBotId,
+    runId: bot.computer.controlRunId,
+    leaseId: controlLeaseId,
+    holder: "bot",
+    reason: reason ?? "released",
+  });
+  if (!released) return;
+  // The lease-specific key makes this cancellation safe after a replacement takeover.
+  await deps.jobs
+    .cancel(computerControlExpireJobKey(bot.computer.id, controlLeaseId))
+    .catch((error) => {
+      // The expired job is harmless after the lease is cleared, so do not report a
+      // failed release after the transaction has committed.
+      getLogger().error("computer control expiry cancellation", error);
+    });
+
+  await enqueueTakeoverContinuation(deps.jobs, released.runId);
+  scheduleComputerSleep(deps.jobs, bot.computer.id);
+}
+
+/**
+ * Maintenance needs the computer free. A takeover the user started themselves (for example
+ * to use the Shell tab) is handed back first; a run waiting on the takeover is left alone so
+ * maintenance never resumes it.
+ */
+async function releaseOwnTakeover(deps: RouterDeps, actor: Actor, botId: string) {
+  const bot = await createRepos(deps.prisma).getBot(actor, botId);
+  const computer = bot.computer;
+  if (computer?.controlHolder !== "user" || computer.controlBotId !== bot.id) return;
+  if (computer.controlRunId) return;
+  await releaseComputerControl(deps, actor, botId);
+}
+
 async function runComputerReplace(
   deps: RouterDeps,
   context: { actor: Actor },
@@ -5153,6 +5182,7 @@ async function runComputerReplace(
   mode: "recover" | "reset" | "update",
   operationId: string,
 ): Promise<ComputerStatus> {
+  await releaseOwnTakeover(deps, context.actor, botId);
   const repos = createRepos(deps.prisma);
   const bot = await repos.getBot(context.actor, botId);
   if (!bot.computer) throw new IsolationError();

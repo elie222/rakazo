@@ -231,6 +231,36 @@ describeJourneys("required product journeys", () => {
     }
   });
 
+  it("updating a computer the user has taken over hands control back first", async () => {
+    const cookie = await signup(app, `maintenance-control-${stamp}@rakazo.test`, "Maintenance");
+    const bot = await rpc<Bot>(app, cookie, "bots/create", {
+      name: "Shell user",
+      title: "Shell user",
+      description: "Uses the shell",
+      instructions: "Help.",
+    });
+    await waitForDatabase(
+      async () =>
+        (await prisma.run.count({
+          where: { botId: bot.id, status: { in: [...ACTIVE_RUN_STATUSES] } },
+        })) === 0,
+    );
+    await rpc(app, cookie, "computer/boot", { botId: bot.id });
+    // Opening the Shell tab holds a user takeover with no run waiting on it.
+    await rpc(app, cookie, "computer/takeover", { botId: bot.id });
+    const update = await rpc<{ id: string }>(app, cookie, "computer/update", { botId: bot.id });
+    await waitForDatabase(
+      async () =>
+        (await prisma.computerUpdate.findUniqueOrThrow({ where: { id: update.id } })).status ===
+        "completed",
+    );
+    const computer = await prisma.computer.findFirstOrThrow({
+      where: { bots: { some: { id: bot.id } } },
+    });
+    expect(computer.controlHolder).not.toBe("user");
+    expect(computer.controlLeaseId).toBeNull();
+  });
+
   it("1+2: users are isolated and workspace bots share the Team Computer", async () => {
     const ada = await signup(app, `ada-j-${stamp}@rakazo.test`, "Ada Journey");
     const bob = await signup(app, `bob-j-${stamp}@rakazo.test`, "Bob Journey");
