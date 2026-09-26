@@ -1404,7 +1404,8 @@ function Thread() {
           setReplyQuote(null);
         },
       },
-      ...(quotableMessageSegments(message.role, message.blocks).length > 0
+      ...(!message.id.startsWith("progress:") &&
+      quotableMessageSegments(message.role, message.blocks).length > 0
         ? [{ name: "quote", text: t("Quote"), onPress: () => setQuoteTarget(message) }]
         : []),
       ...(canReactToThreadMessage(message)
@@ -2297,6 +2298,7 @@ function QuoteSheet({
   onQuote: (excerpt: string) => void;
 }) {
   const tokens = useMobileTokens();
+  const insets = useSafeAreaInsets();
   const segments = useMemo(() => quotableMessageSegments(message.role, message.blocks), [message]);
   const [selection, setSelection] = useState<{
     segment: number;
@@ -2311,83 +2313,76 @@ function QuoteSheet({
     selectedText === undefined ? "" : truncateQuoteExcerpt(selectedText.slice(start, end).trim());
 
   return (
-    <Modal visible transparent animationType="fade" onRequestClose={onCancel}>
+    <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={onCancel}>
       <View
+        accessibilityViewIsModal
         style={{
           flex: 1,
-          justifyContent: "center",
-          padding: 24,
-          backgroundColor: tokens.overlay,
+          backgroundColor: tokens.background,
+          paddingTop: insets.top + 12,
+          paddingBottom: insets.bottom,
         }}
       >
-        <Pressable
-          accessibilityLabel={t("Cancel")}
-          onPress={onCancel}
-          style={{ position: "absolute", top: 0, right: 0, bottom: 0, left: 0 }}
-        />
         <View
-          accessibilityViewIsModal
-          style={{ backgroundColor: tokens.popover, borderRadius: 24, padding: 20 }}
+          style={{
+            flexDirection: "row",
+            justifyContent: "space-between",
+            alignItems: "center",
+            paddingHorizontal: 20,
+            paddingBottom: 12,
+          }}
         >
-          <ScrollView style={{ maxHeight: 360 }}>
-            {segments.map((text, index) => (
-              <TextInput
-                key={`${index}:${revision}`}
-                multiline
-                scrollEnabled={false}
-                showSoftInputOnFocus={false}
-                value={text}
-                // Any edit (paste, hardware keyboard, dictation) remounts the
-                // field with the source text — the excerpt slices the original,
-                // so the displayed text must never diverge from it.
-                onChangeText={() => setRevision((value) => value + 1)}
-                style={{
-                  color: tokens.popoverForeground,
-                  fontSize: 15.5,
-                  lineHeight: 23,
-                  padding: 0,
-                  marginTop: index === 0 ? 0 : 12,
-                  textAlignVertical: "top",
-                }}
-                onSelectionChange={(event) => {
-                  const range = event.nativeEvent.selection;
-                  // A collapsed caret (tap, focus change, the Quote press
-                  // itself) keeps the last real span armed.
-                  if (range.start === range.end) return;
-                  setSelection({ segment: index, ...range });
-                }}
-              />
-            ))}
-          </ScrollView>
-          <View
-            style={{
-              flexDirection: "row",
-              justifyContent: "flex-end",
-              gap: 24,
-              marginTop: 16,
-            }}
+          <Pressable accessibilityRole="button" onPress={onCancel} hitSlop={8}>
+            <Text style={{ color: tokens.mutedForeground, fontSize: 17 }}>{t("Cancel")}</Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityState={{ disabled: !excerpt }}
+            disabled={!excerpt}
+            onPress={() => onQuote(excerpt)}
+            hitSlop={8}
           >
-            <Pressable accessibilityRole="button" onPress={onCancel}>
-              <Text style={{ color: tokens.mutedForeground, fontSize: 15 }}>{t("Cancel")}</Text>
-            </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityState={{ disabled: !excerpt }}
-              disabled={!excerpt}
-              onPress={() => onQuote(excerpt)}
+            <Text
+              style={{
+                color: excerpt ? tokens.primary : tokens.mutedForeground,
+                fontSize: 17,
+                fontWeight: "600",
+              }}
             >
-              <Text
-                style={{
-                  color: excerpt ? tokens.primary : tokens.mutedForeground,
-                  fontSize: 15,
-                  fontWeight: "600",
-                }}
-              >
-                {t("Quote")}
-              </Text>
-            </Pressable>
-          </View>
+              {t("Quote")}
+            </Text>
+          </Pressable>
         </View>
+        <ScrollView style={{ flex: 1, paddingHorizontal: 20 }}>
+          {segments.map((text, index) => (
+            <TextInput
+              key={`${index}:${revision}`}
+              multiline
+              scrollEnabled={false}
+              showSoftInputOnFocus={false}
+              value={text}
+              // Any edit (paste, hardware keyboard, dictation) remounts the
+              // field with the source text — the excerpt slices the original,
+              // so the displayed text must never diverge from it.
+              onChangeText={() => setRevision((value) => value + 1)}
+              style={{
+                color: tokens.foreground,
+                fontSize: 15.5,
+                lineHeight: 23,
+                padding: 0,
+                marginTop: index === 0 ? 0 : 12,
+                textAlignVertical: "top",
+              }}
+              onSelectionChange={(event) => {
+                const range = event.nativeEvent.selection;
+                // A collapsed caret (tap, focus change, the Quote press
+                // itself) keeps the last real span armed.
+                if (range.start === range.end) return;
+                setSelection({ segment: index, ...range });
+              }}
+            />
+          ))}
+        </ScrollView>
       </View>
     </Modal>
   );
