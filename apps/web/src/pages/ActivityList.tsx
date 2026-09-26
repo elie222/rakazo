@@ -1,8 +1,16 @@
 import { i18n } from "@lingui/core";
 import { t } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { RunActivityRow } from "@rakazo/contracts";
-import { useEffect, useState } from "react";
+import type { RunActivityRow, RunStatus } from "@rakazo/contracts";
+import { Button, Input, Label } from "@rakazo/ui-web";
+import { type KeyboardEvent, useEffect, useId, useMemo, useState } from "react";
+import {
+  type ActivityListFilters,
+  activityFiltersActive,
+  clearActivityFilterField,
+  emptyActivityFilters,
+  filterActivityRuns,
+} from "../lib/activity-list-filters";
 import { rpc } from "../lib/rpc";
 
 function statusTone(status: RunActivityRow["status"]): string {
@@ -18,9 +26,16 @@ type ActivityListProps = {
 };
 
 export function ActivityList({ onOpenRun }: ActivityListProps) {
+  const { t } = useLingui();
+  const searchId = useId();
+  const statusId = useId();
+  const fromId = useId();
+  const toId = useId();
   const [activeRuns, setActiveRuns] = useState<RunActivityRow[]>([]);
   const [recentRuns, setRecentRuns] = useState<RunActivityRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [filters, setFilters] = useState<ActivityListFilters>(() => emptyActivityFilters());
 
   useEffect(() => {
     let cancelled = false;
@@ -35,13 +50,13 @@ export function ActivityList({ onOpenRun }: ActivityListProps) {
         if (cancelled) return;
         setActiveRuns(active.runs);
         setRecentRuns(recent.runs);
-      } catch {
-        // Keep the last good snapshot on transient RPC failures.
+        setError(null);
+      } catch (err) {
         if (cancelled) return;
+        setError(err instanceof Error ? err.message : t`Could not load activity`);
       } finally {
         if (!cancelled) {
           setLoading(false);
-          // Schedule the next poll after the previous settles — no overlap.
           timer = window.setTimeout(() => void tick(), 15_000);
         }
       }
@@ -52,41 +67,291 @@ export function ActivityList({ onOpenRun }: ActivityListProps) {
       cancelled = true;
       if (timer !== undefined) window.clearTimeout(timer);
     };
-  }, []);
+  }, [t]);
 
-  if (loading) {
+  const filteredActive = useMemo(
+    () => filterActivityRuns(activeRuns, filters),
+    [activeRuns, filters],
+  );
+  const filteredRecent = useMemo(
+    () => filterActivityRuns(recentRuns, filters),
+    [recentRuns, filters],
+  );
+
+  const filtersOn = activityFiltersActive(filters);
+  const hasAnyRuns = activeRuns.length > 0 || recentRuns.length > 0;
+  const hasVisibleRuns = filteredActive.length > 0 || filteredRecent.length > 0;
+
+  function handleSearchKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key === "Escape") {
+      setFilters((prev) => clearActivityFilterField(prev, "query"));
+    }
+  }
+
+  if (loading && !hasAnyRuns) {
     return (
-      <div className="px-2.5 py-2 text-[13px] text-muted-foreground/80">
+      <div className="px-2.5 py-2 text-[13px] text-muted-foreground/80" role="status">
         <Trans>Loading activity…</Trans>
       </div>
     );
   }
 
-  if (activeRuns.length === 0 && recentRuns.length === 0) return null;
+  if (error && !hasAnyRuns) {
+    return (
+      <div className="px-2.5 py-2" role="alert">
+        <p className="text-[13px] text-destructive">{error}</p>
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          className="mt-2 rounded-full"
+          onClick={() => {
+            setLoading(true);
+            setError(null);
+            void Promise.all([
+              rpc.runs.list({ filter: "active" }),
+              rpc.runs.list({ filter: "recent" }),
+            ])
+              .then(([active, recent]) => {
+                setActiveRuns(active.runs);
+                setRecentRuns(recent.runs);
+                setError(null);
+              })
+              .catch((err) => {
+                setError(err instanceof Error ? err.message : t`Could not load activity`);
+              })
+              .finally(() => setLoading(false));
+          }}
+        >
+          <Trans>Try again</Trans>
+        </Button>
+      </div>
+    );
+  }
+
+  if (!hasAnyRuns) return null;
 
   return (
-    <div className="mb-2 border-b border-border pb-2">
-      {activeRuns.length > 0 ? (
-        <section>
-          <div className="px-2.5 pb-1 pt-1 text-[12.5px] font-medium text-muted-foreground/80">
+    <div className="mb-2 border-b border-border pb-2" data-testid="activity-list">
+      <ActivityFilters
+        searchId={searchId}
+        statusId={statusId}
+        fromId={fromId}
+        toId={toId}
+        filters={filters}
+        onChange={setFilters}
+        onSearchKeyDown={handleSearchKeyDown}
+      />
+
+      {error ? (
+        <p role="alert" className="px-2.5 pb-2 text-[12.5px] text-destructive">
+          {error}
+        </p>
+      ) : null}
+
+      {filtersOn && !hasVisibleRuns ? (
+        <p className="px-2.5 py-2 text-[13px] text-muted-foreground/80" role="status">
+          <Trans>No runs match these filters.</Trans>
+        </p>
+      ) : null}
+
+      {filteredActive.length > 0 ? (
+        <section aria-labelledby="activity-now-heading">
+          <div
+            id="activity-now-heading"
+            className="px-2.5 pb-1 pt-1 text-[12.5px] font-medium text-muted-foreground/80"
+          >
             <Trans>Now</Trans>
           </div>
-          {activeRuns.map((run) => (
+          {filteredActive.map((run) => (
             <ActivityRow key={run.runId} run={run} onOpen={() => onOpenRun(run)} />
           ))}
         </section>
       ) : null}
-      {recentRuns.length > 0 ? (
-        <section className={activeRuns.length > 0 ? "mt-2" : undefined}>
-          <div className="px-2.5 pb-1 pt-1 text-[12.5px] font-medium text-muted-foreground/80">
+      {filteredRecent.length > 0 ? (
+        <section
+          className={filteredActive.length > 0 ? "mt-2" : undefined}
+          aria-labelledby="activity-recent-heading"
+        >
+          <div
+            id="activity-recent-heading"
+            className="px-2.5 pb-1 pt-1 text-[12.5px] font-medium text-muted-foreground/80"
+          >
             <Trans>Recent</Trans>
           </div>
-          {recentRuns.map((run) => (
+          {filteredRecent.map((run) => (
             <ActivityRow key={run.runId} run={run} onOpen={() => onOpenRun(run)} />
           ))}
         </section>
       ) : null}
     </div>
+  );
+}
+
+function ActivityFilters({
+  searchId,
+  statusId,
+  fromId,
+  toId,
+  filters,
+  onChange,
+  onSearchKeyDown,
+}: {
+  searchId: string;
+  statusId: string;
+  fromId: string;
+  toId: string;
+  filters: ActivityListFilters;
+  onChange: (next: ActivityListFilters) => void;
+  onSearchKeyDown: (event: KeyboardEvent<HTMLInputElement>) => void;
+}) {
+  const { t } = useLingui();
+  const filtersOn = activityFiltersActive(filters);
+
+  const statusOptions: Array<{ value: RunStatus | "all"; label: string }> = [
+    { value: "all", label: t`All statuses` },
+    { value: "running", label: t`Running` },
+    { value: "queued", label: t`Queued` },
+    { value: "leased", label: t`Starting` },
+    { value: "waiting_input", label: t`Needs input` },
+    { value: "waiting_takeover", label: t`Needs takeover` },
+    { value: "completed", label: t`Done` },
+    { value: "failed", label: t`Failed` },
+    { value: "cancelled", label: t`Cancelled` },
+  ];
+
+  return (
+    <div className="mb-2 space-y-2 px-2.5 pt-1">
+      <div>
+        <Label htmlFor={searchId} className="sr-only">
+          <Trans>Search activity</Trans>
+        </Label>
+        <Input
+          id={searchId}
+          data-testid="activity-search"
+          value={filters.query}
+          onChange={(event) => onChange({ ...filters, query: event.target.value })}
+          onKeyDown={onSearchKeyDown}
+          placeholder={t`Search runs`}
+          autoComplete="off"
+          className="h-9 rounded-xl bg-card text-[13px] dark:bg-input"
+        />
+      </div>
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+        <div>
+          <Label htmlFor={statusId} className="text-[11px] text-muted-foreground/80">
+            <Trans>Status</Trans>
+          </Label>
+          <select
+            id={statusId}
+            data-testid="activity-status-filter"
+            value={filters.status}
+            onChange={(event) =>
+              onChange({
+                ...filters,
+                status: event.target.value as ActivityListFilters["status"],
+              })
+            }
+            className="mt-1 h-9 w-full rounded-xl border border-border bg-card px-2 text-[13px] dark:bg-input"
+          >
+            {statusOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <Label htmlFor={fromId} className="text-[11px] text-muted-foreground/80">
+            <Trans>From</Trans>
+          </Label>
+          <Input
+            id={fromId}
+            data-testid="activity-date-from"
+            type="date"
+            value={filters.dateRange.from}
+            onChange={(event) =>
+              onChange({
+                ...filters,
+                dateRange: { ...filters.dateRange, from: event.target.value },
+              })
+            }
+            className="mt-1 h-9 rounded-xl bg-card text-[13px] dark:bg-input"
+          />
+        </div>
+        <div>
+          <Label htmlFor={toId} className="text-[11px] text-muted-foreground/80">
+            <Trans>To</Trans>
+          </Label>
+          <Input
+            id={toId}
+            data-testid="activity-date-to"
+            type="date"
+            value={filters.dateRange.to}
+            onChange={(event) =>
+              onChange({
+                ...filters,
+                dateRange: { ...filters.dateRange, to: event.target.value },
+              })
+            }
+            className="mt-1 h-9 rounded-xl bg-card text-[13px] dark:bg-input"
+          />
+        </div>
+      </div>
+      {filtersOn ? (
+        <div className="flex flex-wrap items-center gap-1.5">
+          {filters.query.trim() ? (
+            <FilterChip
+              label={t`Search: ${filters.query.trim()}`}
+              onClear={() => onChange(clearActivityFilterField(filters, "query"))}
+            />
+          ) : null}
+          {filters.status !== "all" ? (
+            <FilterChip
+              label={statusOptions.find((o) => o.value === filters.status)?.label ?? filters.status}
+              onClear={() => onChange(clearActivityFilterField(filters, "status"))}
+            />
+          ) : null}
+          {filters.dateRange.from ? (
+            <FilterChip
+              label={t`From ${filters.dateRange.from}`}
+              onClear={() => onChange(clearActivityFilterField(filters, "from"))}
+            />
+          ) : null}
+          {filters.dateRange.to ? (
+            <FilterChip
+              label={t`To ${filters.dateRange.to}`}
+              onClear={() => onChange(clearActivityFilterField(filters, "to"))}
+            />
+          ) : null}
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-7 rounded-full px-2 text-[12px]"
+            data-testid="activity-reset-filters"
+            onClick={() => onChange(emptyActivityFilters())}
+          >
+            <Trans>Reset all</Trans>
+          </Button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function FilterChip({ label, onClear }: { label: string; onClear: () => void }) {
+  const { t } = useLingui();
+  return (
+    <button
+      type="button"
+      className="inline-flex max-w-full items-center gap-1 rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[11.5px] text-foreground hover:bg-accent"
+      onClick={onClear}
+      aria-label={t`Clear filter ${label}`}
+    >
+      <span className="truncate">{label}</span>
+      <span aria-hidden>×</span>
+    </button>
   );
 }
 
