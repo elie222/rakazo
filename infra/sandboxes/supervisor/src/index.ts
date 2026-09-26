@@ -54,6 +54,7 @@ import {
   ComputerControlUnavailableError,
   clearComputerScreenRegistry,
   computerActionSchema,
+  computerCommandEnv,
   computerControlTimeoutMs,
   containerActionSteps,
   demuxDockerStream,
@@ -76,6 +77,7 @@ import {
   shouldReplayComputerActions,
   stopExtraScreenCommand,
   teardownReleasedScreen,
+  terminalCommand,
   toSandboxInput,
   withKeyedLock,
   workspaceTarget,
@@ -324,11 +326,7 @@ app.post("/computers/:id/exec", async (c) => {
       {
         workingDir: body.cwd ?? "/home/rakazo",
         env: [
-          `DISPLAY=${layout.display}`,
-          "HOME=/home/rakazo",
-          "PATH=/home/rakazo/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-          "NPM_CONFIG_PREFIX=/home/rakazo/.local",
-          "PIP_USER=1",
+          ...computerCommandEnv(layout),
           ...Object.entries(body.env ?? {}).map(([k, v]) => `${k}=${v}`),
         ],
         timeoutMs: boundedSandboxCommandTimeoutMs(body.timeoutMs),
@@ -660,6 +658,58 @@ app.post("/computers/:id/screen-mode", async (c) => {
     return c.json({ error: message }, 400);
   }
 });
+
+app.post("/computers/:id/terminal", async (c) => {
+  const body = z
+    .object({
+      controlToken: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/),
+      cwd: z.string().max(4096).default(""),
+    })
+    .parse(await c.req.json());
+  try {
+    const id = c.req.param("id");
+    const botId = c.req.header("x-rakazo-bot-id");
+    const { container, info } = await managedContainer(
+      id,
+      botId,
+      c.req.header("x-rakazo-space-id"),
+    );
+    const cwd = workspaceTarget(normalizeWorkspaceRelative(body.cwd));
+    const terminalToken = randomUUID();
+    const layout = await withComputerScreenLock(id, async () => {
+      const screen = await ensureManagedScreen(
+        id,
+        container,
+        info,
+        botId,
+        c.req.header("x-rakazo-screen-id"),
+        c.req.header("x-rakazo-screen-lease-id"),
+      );
+      const result = await runContainerCommand(
+        container,
+        [
+          "bash",
+          "-c",
+          terminalCommand(body.controlToken, terminalToken, cwd, undefined, screen.layout),
+        ],
+        { env: computerCommandEnv(screen.layout) },
+      );
+      if (result.code === 75) throw new TerminalControlReleasedError();
+      if (result.code !== 0) throw new Error(result.stderr || "terminal failed to start");
+      return screen.layout;
+    });
+    const screenUrl = await publishedScreenUrl(container, info, layout.controlPort);
+    return c.json({ terminalUrl: screenUrlWithToken(screenUrl, terminalToken) });
+  } catch (error) {
+    if (error instanceof TerminalControlReleasedError) {
+      return c.json({ error: "screen control is not active" }, 409);
+    }
+    const message = error instanceof Error ? error.message : String(error);
+    return c.json({ error: message }, 400);
+  }
+});
+
+class TerminalControlReleasedError extends Error {}
 
 app.post("/computers/:id/input", async (c) => {
   const id = c.req.param("id");

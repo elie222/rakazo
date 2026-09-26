@@ -819,7 +819,7 @@ describe("computer screen url", () => {
   });
 });
 
-describe("computer file transfer", () => {
+describe("computer terminal and file transfer", () => {
   const actor = {
     spaceId: "workspace-1",
     userId: "user-1",
@@ -835,6 +835,9 @@ describe("computer file transfer", () => {
 
   function setup(computer: Record<string, unknown> = {}) {
     const sandbox = {
+      connectTerminal: vi.fn().mockResolvedValue({
+        url: "https://screen.example/vnc.html?path=websockify%3Ftoken%3Dterminal-1",
+      }),
       readFile: vi.fn().mockResolvedValue(new TextEncoder().encode("hello")),
       writeFile: vi.fn().mockResolvedValue(undefined),
     };
@@ -870,6 +873,7 @@ describe("computer file transfer", () => {
       jobs: { enqueue: vi.fn().mockResolvedValue(undefined) },
       env: {
         webOrigin: "http://127.0.0.1:5173",
+        screenProxySecret: "fake-test-secret",
         sandboxProvider: "docker",
       },
       dataDir: "/tmp/rakazo-router-test",
@@ -888,6 +892,36 @@ describe("computer file transfer", () => {
     };
     return { sandbox, call };
   }
+
+  it("opens a terminal only for the user holding this bot's control lease", async () => {
+    const released = setup();
+    await expect(released.call("terminalUrl", {})).resolves.toMatchObject({ status: 403 });
+    expect(released.sandbox.connectTerminal).not.toHaveBeenCalled();
+
+    const { sandbox, call } = setup(controlled);
+    const { status, body } = await call("terminalUrl", {});
+    expect(status).toBe(200);
+    expect(sandbox.connectTerminal).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "sandbox-ref-1" }),
+      { controlToken: "lease-1", cwd: "bots/bot-1" },
+      expect.anything(),
+    );
+    const url = new URL(body.json.url);
+    expect(url.origin).toBe("http://127.0.0.1:5173");
+    expect(openScreenCapability(url.pathname, "fake-test-secret")).toMatchObject({
+      scope: { botId: "bot-1", controlLeaseId: "lease-1" },
+      target: { hostname: "screen.example", interactive: true },
+    });
+  });
+
+  it("offers no terminal on host computers", async () => {
+    const { sandbox, call } = setup({ ...controlled, kind: "desktop" });
+    await expect(call("terminalUrl", {})).resolves.toEqual({
+      status: 200,
+      body: { json: { url: null } },
+    });
+    expect(sandbox.connectTerminal).not.toHaveBeenCalled();
+  });
 
   it("uploads into the bot workspace only under control", async () => {
     const contentBase64 = Buffer.from("notes").toString("base64");

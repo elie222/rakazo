@@ -103,6 +103,13 @@ export interface ScreenRequest {
   controlToken?: string;
 }
 
+export interface TerminalRequest {
+  /** The active screen control token; a terminal exists only while the user holds control. */
+  controlToken: string;
+  /** Workspace-relative starting directory. */
+  cwd?: string;
+}
+
 export interface ScreenSession {
   url: string | null;
   mimeType: string;

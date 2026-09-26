@@ -65,6 +65,7 @@ import type {
   SemanticMemorySaveRequest,
   SnapshotRef,
   SpeechClip,
+  TerminalRequest,
   TransactionalEmail,
   VoiceCapabilities,
   VoiceInfo,
@@ -114,6 +115,12 @@ export interface SandboxProvider {
     request: ScreenRequest,
     context: AdapterContext,
   ): Promise<ScreenSession>;
+  /** Open a user shell bound to the current control lease; it closes when control is released. */
+  connectTerminal?(
+    computer: ComputerRef,
+    request: TerminalRequest,
+    context: AdapterContext,
+  ): Promise<{ url: string }>;
   setScreenControl?(
     computer: ComputerRef,
     interactive: boolean,

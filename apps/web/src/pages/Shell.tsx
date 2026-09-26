@@ -4454,6 +4454,13 @@ export function ShellPage() {
                 computer={computer}
                 hasControl={hasControl}
                 dock={!recordingSkill}
+                onTakeControl={
+                  computer?.state === "running" &&
+                  !hasControl &&
+                  !computerTakeoverBlocked(computer, snapshot?.run?.status)
+                    ? () => openComputer(computerBot.id)
+                    : undefined
+                }
               >
                 {computer?.kind === "desktop" ? (
                   <DesktopKindEmptyState className="grid h-full place-items-center px-8 text-center text-sm text-muted-foreground/80" />

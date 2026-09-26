@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import path from "node:path";
+import { TERMINAL_SERVER_PROGRAM } from "./terminal-server.js";
 // Each live Chrome needs a private debugger port. This is the TCP address-space
 // boundary, not a product limit on bots or saved browser profiles.
 export const MAX_DESKTOP_DISPLAY = 65535 - 9221;
@@ -333,7 +334,7 @@ export function resetDesktopRuntimeCommand(env = DEFAULT_DESKTOP_ENV) {
 const TARGETS = "/tmp/rakazo/desktop-targets";
 
 // Keep fixed mapping files present: TokenFile may be reading the directory concurrently.
-function revokeTargetCommand(kind: "view" | "control", display: number | string) {
+function revokeTargetCommand(kind: "view" | "control" | "terminal", display: number | string) {
   return `mkdir -p ${TARGETS}; : >/tmp/rakazo/${kind}-target-next-${display}; mv /tmp/rakazo/${kind}-target-next-${display} ${TARGETS}/${kind}-${display}`;
 }
 
@@ -346,6 +347,23 @@ function stopVncCommand(kind: "view" | "control", layout: ReturnType<typeof comm
     `pkill -KILL -f ${pattern} || true`,
     `for i in $(seq 1 10); do pgrep -f ${pattern} >/dev/null || break; sleep 0.1; done`,
     `if pgrep -f ${pattern} >/dev/null; then echo 'computer screen transport failed to stop' >&2; exit 1; fi`,
+    `rm -f ${socketPrefix}*`,
+  ].join("\n");
+}
+
+const TERMINAL_SERVER = "/tmp/rakazo/rakazo-terminal.py";
+
+function stopTerminalCommand(layout: ReturnType<typeof commandLayout>) {
+  const socketPrefix = `/tmp/rakazo/sockets/terminal-${layout.displayNumber}-`;
+  const pattern = quoteLayout(
+    `^([^ ]*/)?python[0-9.]* ${TERMINAL_SERVER} ${socketPrefix}[^ ]+( |$)`,
+  );
+  return [
+    revokeTargetCommand("terminal", layout.displayNumber),
+    // Killing the server closes every relayed connection; each shell then gets SIGHUP.
+    `pkill -f ${pattern} || true`,
+    `for i in $(seq 1 10); do pgrep -f ${pattern} >/dev/null || break; sleep 0.1; done`,
+    `pkill -KILL -f ${pattern} || true`,
     `rm -f ${socketPrefix}*`,
   ].join("\n");
 }
@@ -400,6 +418,7 @@ function renderStopScreenTransportsCommand(index: number | undefined, env = DEFA
     revokeTargetCommand("control", layout.displayNumber),
     stopVncCommand("view", layout),
     stopVncCommand("control", layout),
+    stopTerminalCommand(layout),
     `rm -f /tmp/rakazo/control-token-${layout.displayNumber}`,
   ].join("\n");
 }
@@ -526,6 +545,8 @@ export function interactiveScreenCommand(
   const stopProcesses = [
     revokeTargetCommand("control", layout.displayNumber),
     stopVncCommand("control", layout),
+    // The terminal belongs to the control lease and ends with it.
+    stopTerminalCommand(layout),
     `rm -f ${tokenFile}`,
   ].join("\n");
   if (!interactive) {
@@ -549,6 +570,32 @@ export function interactiveScreenCommand(
     `[ -S ${socket} ] || exit 1`,
     `printf '%s: unix_socket:%s\\n' ${shellQuote(controlToken)} ${socket} >/tmp/rakazo/control-target-next-${layout.displayNumber}`,
     `mv /tmp/rakazo/control-target-next-${layout.displayNumber} ${targetFile}`,
+    gatewayCommand(layout.controlPort),
+  ].join("\n");
+}
+
+/** Start a PTY server for the current control lease, replacing any earlier one on this display. */
+export function terminalCommand(
+  controlToken: string,
+  terminalToken: string,
+  cwd: string,
+  env = DEFAULT_DESKTOP_ENV,
+  layout: ReturnType<typeof commandLayout> = screenPorts(0),
+) {
+  if (!/^[A-Za-z0-9_-]{1,64}$/.test(terminalToken)) throw new Error("invalid terminal token");
+  const tokenFile = `/tmp/rakazo/control-token-${layout.displayNumber}`;
+  const socket = `/tmp/rakazo/sockets/terminal-${layout.displayNumber}-${browserKeyForScreen(terminalToken)}`;
+  return [
+    `[ -f ${tokenFile} ] && [ "$(cat ${tokenFile})" = ${shellQuote(controlToken)} ] || exit 75`,
+    stopTerminalCommand(layout),
+    `mkdir -p ${TARGETS} /tmp/rakazo/sockets`,
+    `printf %s ${shellQuote(TERMINAL_SERVER_PROGRAM)} >${TERMINAL_SERVER}`,
+    `HOME=${shellQuote(env.homeDir)} nohup python3 ${TERMINAL_SERVER} ${socket} ${shellQuote(cwd)} 8>&- 9>&- </dev/null >/tmp/rakazo/terminal-${layout.displayNumber}.log 2>&1 &`,
+    `for i in $(seq 1 50); do [ -S ${socket} ] && break; sleep 0.1; done`,
+    `[ -S ${socket} ] || exit 1`,
+    `printf '%s: unix_socket:%s\\n' ${shellQuote(terminalToken)} ${socket} >/tmp/rakazo/terminal-target-next-${layout.displayNumber}`,
+    `mv /tmp/rakazo/terminal-target-next-${layout.displayNumber} ${TARGETS}/terminal-${layout.displayNumber}`,
+    proxyEnvironmentCommand(),
     gatewayCommand(layout.controlPort),
   ].join("\n");
 }
@@ -665,6 +712,25 @@ export function desktopControlCommand(
     'index=$(sed -n "1p" "$slot")',
     "flock -u 9; exec 9>&-",
     `bash -eu -c ${shellQuote([...layoutVariables(undefined, env), interactiveScreenCommand(interactive, token, commandLayout(undefined, env))].join("\n"))} desktop "$index"`,
+  ].join("\n");
+}
+
+/** Open a terminal on this bot's assigned display; it requires the display's current control token. */
+export function desktopTerminalCommand(
+  screenId: string,
+  leaseId: string | undefined,
+  env: DesktopEnvironment,
+  controlToken: string,
+  terminalToken: string,
+  cwd: string,
+) {
+  return [
+    ...registryLockCommand(screenId),
+    '[ -f "$slot" ] || exit 75',
+    ...acceptLeaseCommand(leaseId),
+    'index=$(sed -n "1p" "$slot")',
+    "flock -u 9; exec 9>&-",
+    `bash -eu -c ${shellQuote([...layoutVariables(undefined, env), terminalCommand(controlToken, terminalToken, cwd, env, commandLayout(undefined, env))].join("\n"))} desktop "$index"`,
   ].join("\n");
 }
 

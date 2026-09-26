@@ -1,4 +1,4 @@
-import { computerSupportsUpdate } from "@rakazo/adapters";
+import { computerSupportsTerminal, computerSupportsUpdate } from "@rakazo/adapters";
 import type { ComputerStatus } from "@rakazo/contracts";
 import { ACTIVE_RUN_STATUSES, computerScreenSize } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
@@ -90,5 +90,6 @@ export function toComputerStatus(
     homeRevision: computer?.homeRevision ?? null,
     busyBotName,
     canUpdate: computerSupportsUpdate(kind),
+    terminalAvailable: computerSupportsTerminal(kind),
   };
 }

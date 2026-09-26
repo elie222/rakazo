@@ -11,6 +11,7 @@ import type {
   SandboxProvider,
   ScreenRequest,
   ScreenSession,
+  TerminalRequest,
 } from "@rakazo/adapter-kit";
 import { canReleaseScreenLease, canTakeScreenLease } from "@rakazo/core";
 import { ComputerScreenUnavailableError, screenSessionKey } from "./computer-screens.js";
@@ -19,7 +20,9 @@ import {
   boundedComputerActions,
   normalizeWorkspacePath,
   placeholderObservation,
+  workspacePath,
 } from "./computer-support.js";
+import { FakeTerminalGateway } from "./fake-terminal.js";
 
 export interface FakeBox {
   ref: ComputerRef;
@@ -31,6 +34,7 @@ export interface FakeBox {
 
 export class FakeSandboxProvider implements SandboxProvider {
   readonly boxes = new Map<string, FakeBox>();
+  private readonly terminals = new FakeTerminalGateway();
 
   describe() {
     return {
@@ -126,6 +130,12 @@ export class FakeSandboxProvider implements SandboxProvider {
       mimeType: "text/plain",
       close: async () => undefined,
     };
+  }
+
+  async connectTerminal(computer: ComputerRef, request: TerminalRequest, _context: AdapterContext) {
+    this.requiredBox(computer);
+    if (!request.controlToken) throw new Error("terminal requires screen control");
+    return { url: await this.terminals.open(workspacePath("/home/rakazo", request.cwd ?? "")) };
   }
 
   async sendInput(

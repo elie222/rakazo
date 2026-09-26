@@ -45,6 +45,7 @@ import {
   clearInactiveUserComputerControl,
   codexLiveCatalogsForSpace,
   codexLiveListsModel,
+  computerSupportsTerminal,
   computerSupportsUpdate,
   computerUpdateView,
   createVoiceProvider,
@@ -81,6 +82,7 @@ import {
   replaceComputer,
   resolveAutoReviewChecker,
   resolveBotUploadPath,
+  resolveBotWorkspaceCwd,
   resolveBotWorkspacePath,
   sanitizeComposioError,
   savePushToken,
@@ -2481,6 +2483,52 @@ export function createRouter(deps: RouterDeps) {
               : [];
           }),
         );
+      }),
+      terminalUrl: authed.computer.terminalUrl.handler(async ({ context, input }) => {
+        let bot = await repos.getBot(context.actor, input.botId);
+        if (await expireStaleComputerControl(deps, bot.computer)) {
+          bot = await repos.getBot(context.actor, input.botId);
+        }
+        const computer = bot.computer;
+        if (
+          !computer?.providerRef ||
+          computer.state !== "running" ||
+          !deps.sandbox.connectTerminal ||
+          !computerSupportsTerminal(computer.kind)
+        ) {
+          return { url: null };
+        }
+        // Same rule as the interactive screen: only the user holding this bot's control lease.
+        if (
+          !hasActiveComputerControl(computer) ||
+          computer.controlBotId !== bot.id ||
+          !computer.controlLeaseId
+        ) {
+          throw new ORPCError("FORBIDDEN", { message: "Take control first." });
+        }
+        const session = await deps.sandbox.connectTerminal(
+          toComputerRef(computer),
+          {
+            controlToken: computer.controlLeaseId,
+            cwd: resolveBotWorkspaceCwd(parseComputerMode(computer.scope), bot.id, undefined),
+          },
+          await computerScreenContext(deps.prisma, context.actor, computer.id, bot.id, "terminal"),
+        );
+        await keepComputerAwake(deps, computer.id);
+        return {
+          url: addScreenProxyCapability(
+            withViewOnly(session.url, false),
+            deps.env.screenProxySecret,
+            deps.env.webOrigin,
+            {
+              botId: bot.id,
+              computerId: computer.id,
+              botGeneration: bot.screenGeneration,
+              computerGeneration: computer.screenGeneration,
+              controlLeaseId: computer.controlLeaseId,
+            },
+          ),
+        };
       }),
       screenUrl: authed.computer.screenUrl.handler(async ({ context, input }) => {
         let bot = await repos.getBot(context.actor, input.botId);

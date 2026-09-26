@@ -361,6 +361,48 @@ describe("E2B computer backend", () => {
     );
   });
 
+  it("opens a terminal in the workspace root or the Team bot folder", async () => {
+    const respond = desktopCommandResponder();
+    const command = vi.fn(
+      async (value: string) => respond(value) ?? { stdout: "", stderr: "", exitCode: 0 },
+    );
+    const desktop = {
+      sandboxId: "e2b-terminal-box",
+      display: ":0",
+      commands: { run: command },
+      files: { makeDir: vi.fn(async () => undefined) },
+      getHost: (port: number) => `${port}-e2b-terminal-box.e2b.test`,
+    } as unknown as Sandbox;
+    const provider = new E2BSandboxProvider("test-key", {
+      create: vi.fn(async () => desktop),
+      connect: vi.fn(async () => desktop),
+      pause: vi.fn(async () => undefined),
+    });
+    const computer = await provider.provision(
+      { botId: "bot-1", homePath: "/unused", providerKind: "e2b" },
+      context,
+    );
+
+    const root = await provider.connectTerminal(computer, { controlToken: "lease-1" }, context);
+    expect(command).toHaveBeenLastCalledWith(
+      expect.stringContaining("/home/user/rakazo-home"),
+      expect.anything(),
+    );
+    const socket = new URL(root.url).searchParams.get("path");
+    expect(new URL(root.url).host).toBe("6100-e2b-terminal-box.e2b.test");
+    expect(socket).toMatch(/^websockify\?token=[0-9a-f-]{36}$/);
+
+    await provider.connectTerminal(
+      computer,
+      { controlToken: "lease-1", cwd: "bots/bot-1" },
+      context,
+    );
+    expect(command).toHaveBeenLastCalledWith(
+      expect.stringContaining("/home/user/rakazo-home/bots/bot-1"),
+      expect.anything(),
+    );
+  });
+
   it("controls the desktop and exposes a portable workspace", async () => {
     const files = new Map<string, Uint8Array>();
     const leftClick = vi.fn(async () => undefined);

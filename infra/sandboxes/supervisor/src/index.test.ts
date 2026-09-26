@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import http from "node:http";
 import net from "node:net";
 import { resolveSupervisorToken } from "@rakazo/core";
@@ -18,6 +19,7 @@ import {
   ComputerControlUnavailableError,
   clearComputerScreenRegistry,
   completeReleasedScreen,
+  computerCommandEnv,
   computerControlTimeoutMs,
   containerActionStep,
   containerActionSteps,
@@ -148,6 +150,7 @@ describe("sandbox supervisor HTTP boundary", () => {
       ["POST", "/computers/id/files"],
       ["GET", "/computers/id/screen"],
       ["POST", "/computers/id/screen-mode"],
+      ["POST", "/computers/id/terminal"],
       ["DELETE", "/computers/id/screen"],
       ["POST", "/computers/id/input"],
       ["POST", "/computers/id/stop"],
@@ -213,6 +216,18 @@ describe("sandbox supervisor HTTP boundary", () => {
     expect(supervisorRequestBodyLimit("POST", "/computers/id/files/extra")).toBe(
       MAX_SUPERVISOR_REQUEST_BYTES,
     );
+  });
+
+  it("rejects terminal requests without a well-formed control token before touching Docker", async () => {
+    for (const body of [{}, { controlToken: "bad token" }, { controlToken: "a".repeat(129) }]) {
+      const response = await supervisorApp.request("/computers/id/terminal", {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      expect(response.status, JSON.stringify(body)).toBeGreaterThanOrEqual(400);
+      expect(response.ok).toBe(false);
+    }
   });
 
   it("rejects a provision request whose identity headers do not match its body", async () => {
@@ -823,5 +838,30 @@ describe("docker exec stream demux", () => {
       stdout: padded.toString("utf8"),
       stderr: "",
     });
+  });
+});
+
+describe("computer command identity", () => {
+  it("runs the user's terminal as the same workspace user and environment as the bot's shell", () => {
+    expect(computerCommandEnv({ display: ":2" })).toEqual([
+      "DISPLAY=:2",
+      "HOME=/home/rakazo",
+      "PATH=/home/rakazo/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+      "NPM_CONFIG_PREFIX=/home/rakazo/.local",
+      "PIP_USER=1",
+    ]);
+    const source = readFileSync(new URL("./index.ts", import.meta.url), "utf8");
+    // Every exec, including file writes for uploads, inherits the container's non-root user
+    // (see containerCreateOptions).
+    const execs = source.match(/container\.exec\(\{[\s\S]*?\}\)/g) ?? [];
+    expect(execs.length).toBeGreaterThanOrEqual(2);
+    for (const exec of execs) expect(exec).not.toMatch(/\bUser\s*:/);
+    const route = (path: string) =>
+      source.slice(
+        source.indexOf(`app.post("${path}"`),
+        source.indexOf("app.", source.indexOf(`app.post("${path}"`) + 5),
+      );
+    expect(route("/computers/:id/exec")).toContain("computerCommandEnv(layout)");
+    expect(route("/computers/:id/terminal")).toContain("computerCommandEnv(screen.layout)");
   });
 });

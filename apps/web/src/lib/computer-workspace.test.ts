@@ -10,6 +10,7 @@ import {
   publishComputerCommand,
   sortEntries,
   subscribeComputerCommands,
+  terminalSocketUrl,
 } from "./computer-workspace";
 
 const command = (overrides: Partial<ComputerCommand> = {}): ComputerCommand => ({
@@ -126,6 +127,16 @@ describe("computer terminal feed", () => {
     unsubscribe();
     publishComputerCommand(event("computer.command", command()));
     expect(received).toEqual([["bot-1", command()]]);
+  });
+
+  it("derives the terminal socket from the sealed capability directory", () => {
+    expect(
+      terminalSocketUrl(
+        "/novnc/session/control/123.abc/vnc.html?path=novnc%2Fsession%2Fcontrol%2F123.abc%2Fwebsockify",
+        "https://rakazo.example/chat",
+      ),
+    ).toBe("wss://rakazo.example/novnc/session/control/123.abc/websockify");
+    expect(terminalSocketUrl("fake://terminal/computer-1", "http://localhost:5173/")).toBeNull();
   });
 });
 

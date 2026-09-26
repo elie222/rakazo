@@ -15,6 +15,7 @@ import type {
   SandboxProvider,
   ScreenRequest,
   ScreenSession,
+  TerminalRequest,
 } from "@rakazo/adapter-kit";
 import { boundedSandboxCommandTimeoutMs, resolveSupervisorToken } from "@rakazo/core";
 import { outgoingCorrelationHeaders } from "@rakazo/logging";
@@ -253,6 +254,21 @@ export class DockerSandboxProvider implements SandboxProvider {
       mimeType: "text/html",
       close: async () => undefined,
     };
+  }
+
+  async connectTerminal(computer: ComputerRef, request: TerminalRequest, context: AdapterContext) {
+    const res = await fetch(this.url(`/computers/${computer.id}/terminal`), {
+      method: "POST",
+      headers: { ...this.headers(context, computer.botId), "content-type": "application/json" },
+      body: JSON.stringify({ controlToken: request.controlToken, cwd: request.cwd ?? "" }),
+      signal: context.signal,
+    });
+    if (!res.ok) {
+      const detail = await safeBody(res, context.signal);
+      throw new Error(`sandbox terminal failed: ${res.status} ${detail}`.trim());
+    }
+    const body = await readSandboxJson<{ terminalUrl: string }>(res, context.signal);
+    return { url: body.terminalUrl };
   }
 
   async setScreenControl(
