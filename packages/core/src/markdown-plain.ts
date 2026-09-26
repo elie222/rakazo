@@ -27,12 +27,39 @@ export function plainTextFromMarkdown(markdown: string): string {
     .replace(/^>\s+/gm, "")
     .replace(/^\s*[-*+]\s+/gm, "")
     .replace(/^\s*\d+\.\s+/gm, "")
-    .replace(/^\s*[-*_]{3,}\s*$/gm, "")
+    .replace(/^\s*[-*_]{3,}\s*$/gm, "");
+  // Table rows keep only their cells; a separator row is pure syntax.
+  // Runs after the line-marker strips so cell text like "# h" stays literal,
+  // and before the emphasis strips so "| **a** |" still reads "a".
+  text = flattenTableRows(text)
     .replace(/(\*\*)(.*?)\1/g, "$2")
     .replace(/(\*)([^*\n]+)\1/g, "$2")
     .replace(/~~(.*?)~~/g, "$1");
   text = restore(text);
   return text.replace(/\s+/g, " ").trim();
+}
+
+const TABLE_SEPARATOR_ROW = /^\s*\|?[\s:-]*\|[\s|:-]*$/;
+const TABLE_ROW = /^\s*\|(.+)\|\s*$/;
+
+/** One line per table row ("a, b"); separator rows carry no text at all. */
+function flattenTableRows(text: string): string {
+  if (!text.includes("|")) return text;
+  return text
+    .split("\n")
+    .flatMap((line) => {
+      if (TABLE_SEPARATOR_ROW.test(line)) return [];
+      const row = line.match(TABLE_ROW);
+      if (!row) return [line];
+      return [
+        (row[1] ?? "")
+          .split("|")
+          .map((cell) => cell.trim())
+          .filter(Boolean)
+          .join(", "),
+      ];
+    })
+    .join("\n");
 }
 
 /** Pair delimiter runs once, without rescanning unmatched suffixes. */

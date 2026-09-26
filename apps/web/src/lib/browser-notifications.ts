@@ -1,4 +1,5 @@
 import type { ProductEvent } from "@rakazo/contracts";
+import { plainTextFromMarkdown } from "@rakazo/core";
 import { i18n } from "./i18n";
 
 export type BrowserNotificationPermission = "default" | "denied" | "granted";
@@ -74,7 +75,7 @@ export function browserNotificationMessage(
     const body = blocks
       .map((block) =>
         block && typeof block === "object" && "text" in block && typeof block.text === "string"
-          ? block.text
+          ? plainTextFromMarkdown(block.text)
           : "",
       )
       .filter(Boolean)

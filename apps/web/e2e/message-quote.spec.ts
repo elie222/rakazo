@@ -134,7 +134,7 @@ test("selecting a text span quotes it into a reply", async ({ page }, testInfo) 
   );
 });
 
-test("rendered markdown selections survive server quote derivation", async ({ page }) => {
+test("rendered markdown selections survive server quote derivation", async ({ page }, testInfo) => {
   const stamp = Date.now();
   await signup(page, `quote-markdown-${stamp}@rakazo.test`, "password12", "Quote Tester");
   await completeOnboarding(page);
@@ -176,6 +176,27 @@ test("rendered markdown selections survive server quote derivation", async ({ pa
   await expect(await quoteAndSend("code-a", "code-b", `reply-code-${stamp}`)).toContainText(
     "code-a --- code-b",
   );
+
+  // A quote-free reply falls back to the parent's preview — flattened, not raw Markdown.
+  const rail = sourceRow.getByTestId("message-hover-rail");
+  await expect
+    .poll(async () => {
+      await sourceRow.hover();
+      return rail.evaluate((element) => getComputedStyle(element).opacity);
+    })
+    .toBe("1");
+  await rail.getByRole("button", { name: "Reply" }).click();
+  await composer.fill(`reply-plain-${stamp}`);
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  const plainReply = transcript
+    .locator("[data-message-id]")
+    .filter({ has: page.getByTestId("message-user-bubble") })
+    .filter({ hasText: `reply-plain-${stamp}` })
+    .first();
+  const plainPreview = plainReply.getByTestId("reply-parent-preview");
+  await expect(plainPreview).toContainText("cell-a, cell-b");
+  await expect(plainPreview).not.toContainText("|");
+  await captureScreenshot(page, testInfo, "reply-preview-plain-text");
 });
 
 test("a selection spanning two messages offers no quote action", async ({ page }) => {

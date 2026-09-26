@@ -474,10 +474,49 @@ private fun latestReply(endpoint: String, token: String, spaceId: String, run: R
       if (block.optString("kind") == "handoff") return null
       block.optString("text").takeIf(String::isNotBlank)?.let(text::add)
     }
-    return text.joinToString("\n")
+    return markdownToPreview(text.joinToString("\n"))
   }
   return ""
 }
+
+private val TABLE_SEPARATOR_ROW = Regex("\\s*\\|?[\\s:-]*\\|[\\s|:-]*")
+private val TABLE_ROW = Regex("\\s*\\|(.+)\\|\\s*")
+
+/**
+ * Reply Markdown → a single notification line. A native port of
+ * `plainTextFromMarkdown` covering the leak-prone syntax (tables, emphasis,
+ * markers); intentionally lossy — the body is a preview, not the message.
+ */
+private fun markdownToPreview(markdown: String): String =
+  markdown
+    .replace("\r\n", "\n")
+    .lineSequence()
+    .map { line ->
+      if (TABLE_SEPARATOR_ROW.matches(line)) {
+        ""
+      } else {
+        TABLE_ROW.matchEntire(line)?.groupValues?.get(1)
+          ?.split("|")
+          ?.map(String::trim)
+          ?.filter(String::isNotEmpty)
+          ?.joinToString(", ")
+          ?: line
+      }
+    }
+    .joinToString("\n")
+    .replace(Regex("^\\s*(`{3,}|~{3,}).*$", RegexOption.MULTILINE), "")
+    .replace(Regex("^\\s{0,3}#{1,6}\\s+", RegexOption.MULTILINE), "")
+    .replace(Regex("^\\s*>\\s?", RegexOption.MULTILINE), "")
+    .replace(Regex("^\\s*[-*+]\\s+", RegexOption.MULTILINE), "")
+    .replace(Regex("^\\s*\\d+\\.\\s+", RegexOption.MULTILINE), "")
+    .replace(Regex("!\\[[^]]*]\\([^)]*\\)"), " ")
+    .replace(Regex("\\[([^]]+)]\\([^)]*\\)"), "$1")
+    .replace(Regex("\\*\\*(.*?)\\*\\*"), "$1")
+    .replace(Regex("\\*([^*\\n]+)\\*"), "$1")
+    .replace(Regex("~~(.*?)~~"), "$1")
+    .replace(Regex("`([^`\\n]+)`"), "$1")
+    .replace(Regex("\\s+"), " ")
+    .trim()
 
 private fun rpc(
   endpoint: String,

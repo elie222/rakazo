@@ -157,6 +157,27 @@ describe("plainTextFromMarkdown", () => {
     expect(plainTextFromMarkdown("Use \\*literal\\*")).toBe("Use *literal*");
   });
 
+  it("flattens table rows and drops separator rows", () => {
+    expect(plainTextFromMarkdown("| Name | Value |\n| --- | ---: |\n| Alice | 5 |")).toBe(
+      "Name, Value Alice, 5",
+    );
+  });
+
+  it("drops a bare separator row", () => {
+    expect(plainTextFromMarkdown("Totals\n\n| --- | --- |\n\nDone")).toBe("Totals Done");
+  });
+
+  it("flattens cell contents before stripping their formatting", () => {
+    expect(plainTextFromMarkdown("| **bold** | `x|y` | [docs](https://example.test) |")).toBe(
+      "bold, x|y, docs",
+    );
+  });
+
+  it("leaves mid-sentence pipes alone", () => {
+    expect(plainTextFromMarkdown("either a | b or c")).toBe("either a | b or c");
+    expect(plainTextFromMarkdown("a | b")).toBe("a | b");
+  });
+
   it("returns empty when only markers remain", () => {
     expect(plainTextFromMarkdown("")).toBe("");
     expect(plainTextFromMarkdown("   **  **   ")).toBe("");

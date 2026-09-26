@@ -47,6 +47,7 @@ import {
   latestAnswerableAskMessageId,
   mentionChipKey,
   nestRosterByParent,
+  plainTextFromMarkdown,
   projectMessageReactions,
   reorderBotTo,
   resolveComposerSendPlan,
@@ -5657,7 +5658,14 @@ function MentionChipIcon({ mention }: { mention: ComposerMention }) {
 
 function previewMessageText(message: ThreadMessage): string {
   const text = message.blocks
-    .map((block) => (block.kind === "text" || block.kind === "channel_message" ? block.text : ""))
+    .map((block) => {
+      if (block.kind === "channel_message") return block.text;
+      if (block.kind === "text") {
+        // Bot text is Markdown; user text is already plain.
+        return message.role === "bot" ? plainTextFromMarkdown(block.text) : block.text;
+      }
+      return "";
+    })
     .filter(Boolean)
     .join(" ")
     .trim();
