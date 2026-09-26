@@ -22,15 +22,12 @@ export function plainTextFromMarkdown(markdown: string): string {
       stash(restore(url)),
     )
     .replace(/<([^<>\s]+@[^<>\s]+\.[^<>\s]+)>/g, (_match, email: string) => stash(restore(email)));
-  text = stripUnderscoreEmphasis(stripHtmlTags(text))
-    .replace(/^#{1,6}\s+/gm, "")
-    .replace(/^>\s+/gm, "")
-    .replace(/^\s*[-*+]\s+/gm, "")
-    .replace(/^\s*\d+\.\s+/gm, "")
-    .replace(/^\s*[-*_]{3,}\s*$/gm, "");
+  text = stripUnderscoreEmphasis(stripHtmlTags(text));
   // Table rows keep only their cells; a separator row is pure syntax.
-  // Runs after the line-marker strips so cell text like "# h" stays literal,
-  // and before the emphasis strips so "| **a** |" still reads "a".
+  // flattenTableRows also strips heading/list/quote/break markers per line so
+  // it can see them: a marked line interrupts the table instead of becoming a
+  // phantom row, while its stripped text still previews. Runs before the
+  // emphasis strips so "| **a** |" still reads "a".
   text = flattenTableRows(text)
     .replace(/(\*\*)(.*?)\1/g, "$2")
     .replace(/(\*)([^*\n]+)\1/g, "$2")
@@ -39,8 +36,28 @@ export function plainTextFromMarkdown(markdown: string): string {
   return text.replace(/\s+/g, " ").trim();
 }
 
-const TABLE_SEPARATOR_ROW = /^\s*\|?[\s:-]*\|[\s|:-]*$/;
 const TABLE_ROW = /^\s*\|(.+)\|\s*$/;
+
+/** Every GFM delimiter cell needs at least one hyphen: `| : |` is content. */
+function isTableSeparator(line: string): boolean {
+  const trimmed = line.trim();
+  if (!trimmed.includes("-")) return false;
+  return trimmed
+    .replace(/^\|/, "")
+    .replace(/\|$/, "")
+    .split("|")
+    .every((cell) => /^:?-+:?$/.test(cell.trim()));
+}
+
+/** Heading, quote, list and break markers; the line's own text survives. */
+function stripLineMarker(line: string): string {
+  const stripped = line
+    .replace(/^#{1,6}\s+/, "")
+    .replace(/^\s*>\s+/, "")
+    .replace(/^\s*[-*+]\s+/, "")
+    .replace(/^\s*\d+\.\s+/, "");
+  return /^\s*[-*_]{3,}\s*$/.test(stripped) ? "" : stripped;
+}
 
 /** Row text → "a, b"; edge pipes only produce empty ends, which drop out. */
 function tableCells(line: string): string {
@@ -57,15 +74,24 @@ function tableCells(line: string): string {
  * lines after the separator are data rows even without them, until the first
  * no-pipe line ends the table. Only the first separator is syntax; later
  * dash-only rows are data. Pipe-wrapped lines still flatten leniently outside
- * tables so sloppy single rows preview cleanly.
+ * tables so sloppy single rows preview cleanly. Lines carrying a block
+ * marker (heading, quote, list, break) can never be table rows — they end the
+ * table — but a quoted stand-alone row like `> | a |` still flattens.
  */
 function flattenTableRows(text: string): string {
-  if (!text.includes("|")) return text;
   const out: string[] = [];
   let inTable = false;
   let prevHadPipe = false;
   let prevFlattened = false;
-  for (const line of text.split("\n")) {
+  for (const rawLine of text.split("\n")) {
+    const line = stripLineMarker(rawLine);
+    if (line !== rawLine) {
+      inTable = false;
+      prevHadPipe = false;
+      prevFlattened = false;
+      out.push(TABLE_ROW.test(line) ? tableCells(line) : line);
+      continue;
+    }
     if (!line.includes("|")) {
       inTable = false;
       prevHadPipe = false;
@@ -79,7 +105,7 @@ function flattenTableRows(text: string): string {
       prevFlattened = true;
       continue;
     }
-    if (TABLE_SEPARATOR_ROW.test(line)) {
+    if (isTableSeparator(line)) {
       if (prevHadPipe) {
         inTable = true;
         // A header written without outer pipes was emitted raw; flatten it now.

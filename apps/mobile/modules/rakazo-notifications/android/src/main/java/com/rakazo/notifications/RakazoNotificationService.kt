@@ -479,26 +479,85 @@ private fun latestReply(endpoint: String, token: String, spaceId: String, run: R
   return ""
 }
 
-private val TABLE_SEPARATOR_ROW = Regex("\\s*\\|?[\\s:-]*\\|[\\s|:-]*")
 private val TABLE_ROW = Regex("\\s*\\|(.+)\\|\\s*")
+private val BREAK_LINE = Regex("\\s*[-*_]{3,}\\s*")
+private val FENCE_OPEN = Regex("^ {0,3}(`{3,}|~{3,})(.*)$")
+private const val ESCAPABLE_PUNCT = "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"
 
-/** Split a row on pipes outside inline code; backticks stay for later stripping. */
+/** Every GFM delimiter cell needs at least one hyphen: `| : |` is content. */
+private fun isTableSeparator(line: String): Boolean {
+  val trimmed = line.trim()
+  if (!trimmed.contains("-")) return false
+  return trimmed.removePrefix("|").removeSuffix("|").split("|")
+    .all { it.trim().matches(Regex(":?-+:?")) }
+}
+
+/** Heading, quote, list and break markers; the line's own text survives. */
+private fun stripLineMarker(line: String): String {
+  val stripped = line
+    .replace(Regex("^\\s{0,3}#{1,6}\\s+"), "")
+    .replace(Regex("^\\s*>\\s?"), "")
+    .replace(Regex("^\\s*[-*+]\\s+"), "")
+    .replace(Regex("^\\s*\\d+\\.\\s+"), "")
+  return if (BREAK_LINE.matches(stripped)) "" else stripped
+}
+
+private fun findInlineCodeClose(line: String, from: Int, n: Int): Int {
+  var i = from
+  while (i < line.length) {
+    if (line[i] != '`') {
+      i++
+      continue
+    }
+    var m = 0
+    while (i + m < line.length && line[i + m] == '`') m++
+    if (m == n) return i
+    i += m
+  }
+  return -1
+}
+
+private fun hasFenceClose(lines: List<String>, open: Int, fenceChar: Char, fenceLen: Int): Boolean {
+  for (j in open + 1 until lines.size) {
+    val close = FENCE_OPEN.matchEntire(lines[j]) ?: continue
+    val marker = close.groupValues[1]
+    if (marker[0] == fenceChar && marker.length >= fenceLen && close.groupValues[2].isBlank()) {
+      return true
+    }
+  }
+  return false
+}
+
+/**
+ * Split a row on pipes outside escapes and inline code. A backtick run opens
+ * a span only when a matching close exists — unmatched runs are literal and
+ * never shield a pipe. Backticks stay for the later strip pass.
+ */
 private fun splitTableCells(line: String): String {
   val cells = mutableListOf<String>()
   val cell = StringBuilder()
-  var codeFence = 0
   var i = 0
   while (i < line.length) {
     val ch = line[i]
+    if (ch == '\\' && i + 1 < line.length && line[i + 1] in ESCAPABLE_PUNCT) {
+      cell.append(line[i + 1])
+      i += 2
+      continue
+    }
     if (ch == '`') {
       var run = 0
       while (i + run < line.length && line[i + run] == '`') run++
-      if (codeFence == 0) codeFence = run else if (run == codeFence) codeFence = 0
-      cell.append(line, i, i + run)
-      i += run
+      val close = findInlineCodeClose(line, i + run, run)
+      if (close == -1) {
+        cell.append(line, i, i + run)
+        i += run
+      } else {
+        cell.append(line, i, close + run)
+        i = close + run
+      }
       continue
     }
-    if (ch == '|' && codeFence == 0) {
+    if (ch == '|') {
       cells.add(cell.toString())
       cell.setLength(0)
     } else {
@@ -514,15 +573,56 @@ private fun splitTableCells(line: String): String {
  * One line per table row ("a, b"). A separator opens a table only after a
  * pipe-bearing header line; inside a table every pipe line is a data row —
  * including dash-only rows — until a no-pipe line ends it. Pipe-wrapped lines
- * still flatten leniently outside tables. Mirrors `flattenTableRows`.
+ * still flatten leniently outside tables. Fenced code and lines carrying a
+ * block marker are never table content; a quoted stand-alone row like
+ * `> | a |` still flattens. Mirrors `flattenTableRows`.
  */
 private fun flattenTableRows(text: String): String {
   if (!text.contains("|")) return text
+  val lines = text.split("\n")
   val out = mutableListOf<String>()
   var inTable = false
   var prevHadPipe = false
   var prevFlattened = false
-  for (line in text.split("\n")) {
+  var inFence = false
+  var fenceChar = '`'
+  var fenceLen = 0
+  for (index in lines.indices) {
+    val rawLine = lines[index]
+    val fence = FENCE_OPEN.matchEntire(rawLine)
+    if (inFence) {
+      out.add(rawLine)
+      if (fence != null && fence.groupValues[1][0] == fenceChar &&
+        fence.groupValues[1].length >= fenceLen && fence.groupValues[2].isBlank()
+      ) {
+        inFence = false
+      }
+      continue
+    }
+    if (fence != null) {
+      val marker = fence.groupValues[1]
+      // An unclosed fence is not a fence at all — its opener stays a line.
+      if (!(marker[0] == '`' && fence.groupValues[2].contains('`')) &&
+        hasFenceClose(lines, index, marker[0], marker.length)
+      ) {
+        inFence = true
+        fenceChar = marker[0]
+        fenceLen = marker.length
+        inTable = false
+        prevHadPipe = false
+        prevFlattened = false
+        out.add(rawLine)
+        continue
+      }
+    }
+    val line = stripLineMarker(rawLine)
+    if (line != rawLine) {
+      inTable = false
+      prevHadPipe = false
+      prevFlattened = false
+      out.add(if (TABLE_ROW.matches(line)) splitTableCells(line) else line)
+      continue
+    }
     if (!line.contains("|")) {
       inTable = false
       prevHadPipe = false
@@ -536,7 +636,7 @@ private fun flattenTableRows(text: String): String {
       prevFlattened = true
       continue
     }
-    if (TABLE_SEPARATOR_ROW.matches(line)) {
+    if (isTableSeparator(line)) {
       if (prevHadPipe) {
         inTable = true
         if (!prevFlattened && out.isNotEmpty()) out[out.size - 1] = splitTableCells(out.last())

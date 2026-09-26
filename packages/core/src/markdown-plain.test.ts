@@ -185,6 +185,31 @@ describe("plainTextFromMarkdown", () => {
     );
   });
 
+  it("does not treat a colon-only row as a delimiter", () => {
+    // `| : |` lacks the hyphen every GFM delimiter cell needs — it is content.
+    expect(plainTextFromMarkdown("a | b\n| : |")).toBe("a | b :");
+  });
+
+  it("ends the table at quote, list, and break lines instead of absorbing them", () => {
+    expect(plainTextFromMarkdown("| a |\n| - |\n> keep a | b")).toBe("a keep a | b");
+    expect(plainTextFromMarkdown("| a |\n| - |\n- x | y")).toBe("a x | y");
+    expect(plainTextFromMarkdown("| a |\n| - |\n---\nb | c")).toBe("a b | c");
+  });
+
+  it("still flattens a quoted stand-alone table row", () => {
+    expect(plainTextFromMarkdown("> | q | r |")).toBe("q, r");
+  });
+
+  it("keeps separator-shaped lines inside fenced code", () => {
+    expect(plainTextFromMarkdown("```\n|---|\n```")).toBe("|---|");
+    expect(plainTextFromMarkdown("| a |\n| - |\n```\nx | y\n```")).toBe("a x | y");
+  });
+
+  it("splits rows on real pipes around escapes and unmatched backticks", () => {
+    expect(plainTextFromMarkdown("| a\\|b | c |\n| - | - |")).toBe("a|b, c");
+    expect(plainTextFromMarkdown("| `a | b |")).toBe("`a, b");
+  });
+
   it("leaves mid-sentence pipes alone", () => {
     expect(plainTextFromMarkdown("either a | b or c")).toBe("either a | b or c");
     expect(plainTextFromMarkdown("a | b")).toBe("a | b");
