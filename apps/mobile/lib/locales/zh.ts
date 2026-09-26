@@ -370,6 +370,7 @@ export const ZH_MESSAGES: Record<string, string> = {
     "公共服务器需要 https://。HTTP 仅适用于本地网络。",
   "Questions, approvals, takeover": "提问、审批和接管",
   Queued: "排队中",
+  Quote: "引用",
   Recent: "最近",
   Recover: "恢复",
   "Recover computer": "恢复电脑",

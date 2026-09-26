@@ -547,6 +547,7 @@ export const DE_MESSAGES: Record<string, string> = {
   "Needs input": "Eingabe erforderlich",
   "Needs takeover": "Übernahme erforderlich",
   Queued: "In Warteschlange",
+  Quote: "Zitieren",
   Starting: "Startet",
   "just now": "gerade eben",
   "{count}d ago": "vor {count} T.",

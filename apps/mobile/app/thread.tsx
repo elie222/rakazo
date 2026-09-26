@@ -113,6 +113,8 @@ import {
   hasVisibleMessagePresentation,
   isCenteredAgentEvent,
   messagePresentationSegments,
+  quotableMessageSegments,
+  truncateQuoteExcerpt,
 } from "../lib/message-presentation";
 import { native, useMobileTokens, useResolvedAppearance } from "../lib/native";
 import {
@@ -343,6 +345,8 @@ function Thread() {
   const [selectedSkill, setSelectedSkill] = useState<AgentSkillCatalogEntry | null>(null);
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
   const [replyTarget, setReplyTarget] = useState<MobileMessage | null>(null);
+  const [replyQuote, setReplyQuote] = useState<string | null>(null);
+  const [quoteTarget, setQuoteTarget] = useState<MobileMessage | null>(null);
   const [attachmentNotice, setAttachmentNotice] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1046,6 +1050,8 @@ function Thread() {
     setSelectedSkill(null);
     setSelectedMentions([]);
     setReplyTarget(null);
+    setReplyQuote(null);
+    setQuoteTarget(null);
     setAttachmentNotice(null);
     setError(null);
   }, [threadKey]);
@@ -1156,6 +1162,7 @@ function Thread() {
         setSelectedSkill(null);
         setSelectedMentions([]);
         setReplyTarget(null);
+        setReplyQuote(null);
         setAttachmentNotice(null);
       };
       if (!plan.shouldSend) {
@@ -1197,6 +1204,7 @@ function Thread() {
               mentions: plan.mentionPayload.length ? plan.mentionPayload : undefined,
               artifactIds: artifactIds.length ? artifactIds : undefined,
               replyToMessageId: reroutedToGroup ? undefined : replyTarget?.id,
+              replyQuote: reroutedToGroup ? undefined : (replyQuote ?? undefined),
             }
           : {
               botId: botTarget!,
@@ -1205,6 +1213,7 @@ function Thread() {
               mentions: plan.mentionPayload.length ? plan.mentionPayload : undefined,
               artifactIds: artifactIds.length ? artifactIds : undefined,
               replyToMessageId: replyTarget?.id,
+              replyQuote: replyQuote ?? undefined,
             },
       );
       dropDelayedSetup();
@@ -1387,7 +1396,17 @@ function Thread() {
 
   function messageActionProps(message: MobileMessage): MessageActionProps {
     const actions = [
-      { name: "reply", text: t("Reply"), onPress: () => setReplyTarget(message) },
+      {
+        name: "reply",
+        text: t("Reply"),
+        onPress: () => {
+          setReplyTarget(message);
+          setReplyQuote(null);
+        },
+      },
+      ...(message.blocks.some((block) => block.kind === "text" && block.text)
+        ? [{ name: "quote", text: t("Quote"), onPress: () => setQuoteTarget(message) }]
+        : []),
       ...(canReactToThreadMessage(message)
         ? [
             {
@@ -1756,10 +1775,16 @@ function Thread() {
                 {t("Replying to")}
               </Text>
               <Text style={{ color: tokens.foreground, fontSize: 13 }} numberOfLines={1}>
-                {previewMessageText(replyTarget)}
+                {replyQuote ? `“${replyQuote}”` : previewMessageText(replyTarget)}
               </Text>
             </View>
-            <Pressable accessibilityLabel={t("Cancel reply")} onPress={() => setReplyTarget(null)}>
+            <Pressable
+              accessibilityLabel={t("Cancel reply")}
+              onPress={() => {
+                setReplyTarget(null);
+                setReplyQuote(null);
+              }}
+            >
               <Text style={{ color: tokens.mutedForeground }}>✕</Text>
             </Pressable>
           </View>
@@ -2186,6 +2211,17 @@ function Thread() {
           onClose={() => setMarkdownPreview(null)}
         />
       ) : null}
+      {quoteTarget ? (
+        <QuoteSheet
+          message={quoteTarget}
+          onCancel={() => setQuoteTarget(null)}
+          onQuote={(excerpt) => {
+            setReplyTarget(quoteTarget);
+            setReplyQuote(excerpt);
+            setQuoteTarget(null);
+          }}
+        />
+      ) : null}
     </KeyboardAvoidingView>
   );
 }
@@ -2248,6 +2284,107 @@ function MentionOptionIcon({ mention }: { mention: ComposerMention }) {
         backgroundColor: mention.color ?? tokens.mutedForeground,
       }}
     />
+  );
+}
+
+function QuoteSheet({
+  message,
+  onCancel,
+  onQuote,
+}: {
+  message: MobileMessage;
+  onCancel: () => void;
+  onQuote: (excerpt: string) => void;
+}) {
+  const tokens = useMobileTokens();
+  const segments = useMemo(() => quotableMessageSegments(message.role, message.blocks), [message]);
+  const [selection, setSelection] = useState<{
+    segment: number;
+    start: number;
+    end: number;
+  } | null>(null);
+  const selectedText = selection === null ? undefined : segments[selection.segment];
+  const start = selection ? Math.min(selection.start, selection.end) : 0;
+  const end = selection ? Math.max(selection.start, selection.end) : 0;
+  const excerpt =
+    selectedText === undefined ? "" : truncateQuoteExcerpt(selectedText.slice(start, end).trim());
+
+  return (
+    <Modal visible transparent animationType="fade" onRequestClose={onCancel}>
+      <View
+        style={{
+          flex: 1,
+          justifyContent: "center",
+          padding: 24,
+          backgroundColor: tokens.overlay,
+        }}
+      >
+        <Pressable
+          accessibilityLabel={t("Cancel")}
+          onPress={onCancel}
+          style={{ position: "absolute", top: 0, right: 0, bottom: 0, left: 0 }}
+        />
+        <View
+          accessibilityViewIsModal
+          style={{ backgroundColor: tokens.popover, borderRadius: 24, padding: 20 }}
+        >
+          <ScrollView style={{ maxHeight: 360 }}>
+            {segments.map((text, index) => (
+              <TextInput
+                key={index}
+                multiline
+                scrollEnabled={false}
+                showSoftInputOnFocus={false}
+                value={text}
+                style={{
+                  color: tokens.popoverForeground,
+                  fontSize: 15.5,
+                  lineHeight: 23,
+                  padding: 0,
+                  marginTop: index === 0 ? 0 : 12,
+                  textAlignVertical: "top",
+                }}
+                onSelectionChange={(event) => {
+                  const range = event.nativeEvent.selection;
+                  // A collapsed caret (tap, focus change, the Quote press
+                  // itself) keeps the last real span armed.
+                  if (range.start === range.end) return;
+                  setSelection({ segment: index, ...range });
+                }}
+              />
+            ))}
+          </ScrollView>
+          <View
+            style={{
+              flexDirection: "row",
+              justifyContent: "flex-end",
+              gap: 24,
+              marginTop: 16,
+            }}
+          >
+            <Pressable accessibilityRole="button" onPress={onCancel}>
+              <Text style={{ color: tokens.mutedForeground, fontSize: 15 }}>{t("Cancel")}</Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityState={{ disabled: !excerpt }}
+              disabled={!excerpt}
+              onPress={() => onQuote(excerpt)}
+            >
+              <Text
+                style={{
+                  color: excerpt ? tokens.primary : tokens.mutedForeground,
+                  fontSize: 15,
+                  fontWeight: "600",
+                }}
+              >
+                {t("Quote")}
+              </Text>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
