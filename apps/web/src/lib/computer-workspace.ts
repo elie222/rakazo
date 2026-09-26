@@ -63,7 +63,9 @@ export function formatComputerCommand(command: ComputerCommand, labels: Computer
     }
   } else {
     const size = command.bytes === undefined ? "" : ` \x1b[2m(${formatSize(command.bytes)})\x1b[0m`;
-    lines.push(`\x1b[2m${ACTION_GLYPHS[command.kind]}\x1b[0m ${labels[command.kind](target)}${size}`);
+    lines.push(
+      `\x1b[2m${ACTION_GLYPHS[command.kind]}\x1b[0m ${labels[command.kind](target)}${size}`,
+    );
     if (command.exitCode) lines.push(`\x1b[2m${output}\x1b[0m`);
   }
   return `${lines.join("\n").replace(/\r?\n/g, "\r\n")}\r\n`;

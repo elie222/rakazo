@@ -2402,7 +2402,7 @@ export function createRouter(deps: RouterDeps) {
         const bot = await repos.getBot(context.actor, input.botId);
         const events = await deps.prisma.event.findMany({
           where: { spaceId: context.actor.spaceId, botId: bot.id, type: "computer.command" },
-          orderBy: { createdAt: "desc" },
+          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
           take: COMPUTER_COMMAND_HISTORY_EVENTS,
           select: { payload: true, createdAt: true },
         });
