@@ -1,4 +1,5 @@
 import type { MessageBlock } from "@rakazo/contracts";
+import { REPLY_QUOTE_MAX_LENGTH } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import { deriveMessageQuote, visibleTextFromMarkdown } from "./message-quote.js";
 
@@ -20,29 +21,51 @@ describe("visibleTextFromMarkdown", () => {
 
 describe("deriveMessageQuote", () => {
   it.each([
-    ["formatted text", "we saw **42%** growth", "42% growth"],
-    ["ordered lists", "1. Review the diff\n2. Run the tests", "Review the diff\nRun the tests"],
+    ["formatted text", "we saw **42%** growth", "42% growth", "42% growth"],
+    [
+      "ordered lists",
+      "1. Review the diff\n2. Run the tests",
+      "Review the diff\nRun the tests",
+      "Review the diff\nRun the tests",
+    ],
     [
       "parenthesized lists",
       "1) Review the diff\n2) Run the tests",
       "Review the diff Run the tests",
+      "Review the diff\nRun the tests",
     ],
     [
       "blockquoted lists",
       "> 1. Review the diff\n> 2. Run the tests",
       "Review the diff Run the tests",
+      "Review the diff\nRun the tests",
     ],
-    ["tables", "| Name | Value |\n| --- | ---: |\n| Alice | 5 |", "Alice 5"],
-    ["inline code", "Run `pnpm test` now", "pnpm test"],
-    ["fenced code", "```text\n2. restart()\n```", "2. restart()"],
-    ["indented code", "    2. restart()", "2. restart()"],
-    ["escaped punctuation", String.raw`C\+\+ is useful`, "C++ is useful"],
-    ["nested link destinations", "See [docs](https://example.test/a_(b)) next", "docs next"],
-    ["reference links", "Read [the guide][g] next\n\n[g]: https://example.test", "the guide next"],
-    ["autolinks", "Open <https://example.test/a_(b)> now", "https://example.test/a_(b)"],
-    ["entities", "Copyright &copy; and &#x1F600;", "Copyright © and 😀"],
-  ])("derives quotes from rendered %s", (_name, markdown, hint) => {
-    expect(deriveMessageQuote(textBlock(markdown), hint, "markdown")).toBeTruthy();
+    ["tables", "| Name | Value |\n| --- | ---: |\n| Alice | 5 |", "Alice 5", "Alice 5"],
+    ["inline code", "Run `pnpm test` now", "pnpm test", "pnpm test"],
+    ["fenced code", "```text\n2. restart()\n```", "2. restart()", "2. restart()"],
+    ["indented code", "    2. restart()", "2. restart()", "2. restart()"],
+    ["escaped punctuation", String.raw`C\+\+ is useful`, "C++ is useful", "C++ is useful"],
+    [
+      "nested link destinations",
+      "See [docs](https://example.test/a_(b)) next",
+      "docs next",
+      "docs next",
+    ],
+    [
+      "reference links",
+      "Read [the guide][g] next\n\n[g]: https://example.test",
+      "the guide next",
+      "the guide next",
+    ],
+    [
+      "autolinks",
+      "Open <https://example.test/a_(b)> now",
+      "https://example.test/a_(b)",
+      "https://example.test/a_(b)",
+    ],
+    ["entities", "Copyright &copy; and &#x1F600;", "Copyright © and 😀", "Copyright © and 😀"],
+  ])("derives quotes from rendered %s", (_name, markdown, hint, expected) => {
+    expect(deriveMessageQuote(textBlock(markdown), hint, "markdown")).toBe(expected);
   });
 
   it.each([
@@ -95,5 +118,29 @@ describe("deriveMessageQuote", () => {
     expect(
       deriveMessageQuote(textBlock(`needle${"x".repeat(100_000)}`), "needle", "markdown"),
     ).toBeUndefined();
+  });
+
+  it("sees the same table-cell text the web renderer shows", () => {
+    // ChatMarkdown salvages <br> and <img alt> text inside cells; a selection of
+    // that rendered text must still match the canonical excerpt.
+    const blocks = textBlock("| A | B |\n| --- | --- |\n| one<br>two | <img src=x alt='chart'> |");
+    expect(deriveMessageQuote(blocks, "one two", "markdown")).toBe("one two");
+    expect(deriveMessageQuote(blocks, "chart", "markdown")).toBe("chart");
+  });
+
+  it("truncates a whitespace-heavy excerpt to the cap instead of dropping it", () => {
+    // 1000 single-char tokens survive the normalized hint, but their source
+    // slice keeps the blank lines and cleans to more than the cap.
+    const parent = Array.from({ length: 1200 }, () => "a").join("\n\n\n");
+    const hint = Array.from({ length: 1200 }, () => "a").join(" ");
+    const quote = deriveMessageQuote(textBlock(parent), hint, "markdown");
+    expect(quote).toBeDefined();
+    expect(quote?.length).toBe(REPLY_QUOTE_MAX_LENGTH);
+  });
+
+  it("does not split a surrogate pair when the hint hits the cap", () => {
+    const parent = "a".repeat(REPLY_QUOTE_MAX_LENGTH - 1);
+    const quote = deriveMessageQuote(textBlock(parent), `${parent}😀`, "markdown");
+    expect(quote).toBe(parent);
   });
 });

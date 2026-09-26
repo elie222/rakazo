@@ -1,11 +1,5 @@
 import type { ThreadMessage } from "@rakazo/contracts";
-import { REPLY_QUOTE_MAX_LENGTH } from "@rakazo/contracts";
-
-function truncateQuote(value: string): string {
-  const truncated = value.slice(0, REPLY_QUOTE_MAX_LENGTH);
-  const last = truncated.charCodeAt(truncated.length - 1);
-  return last >= 0xd800 && last <= 0xdbff ? truncated.slice(0, -1) : truncated;
-}
+import { truncateReplyQuote } from "@rakazo/contracts";
 
 /**
  * Resolves a text selection to the message it quotes. A quote stays scoped to
@@ -26,7 +20,7 @@ export function quoteDraftForSelection(
     startContent && startContent === endContent
       ? messageById.get(startContent.dataset.quoteMessageId ?? "")
       : undefined;
-  const text = truncateQuote(selection.text.trim());
+  const text = truncateReplyQuote(selection.text.trim());
   if (!message || !text) return null;
   return { message, text };
 }

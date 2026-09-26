@@ -4,10 +4,10 @@ import remarkGfm from "remark-gfm";
 import type { HastNode } from "./table-utils";
 import "./markdown.web.css";
 import "./markdown-table.css";
+import { droppedTableHtmlText } from "@rakazo/contracts";
 import { CheckIcon, CopyIcon } from "./icons";
 import { type ChatMarkdownProps, closeUnterminatedFence, sanitizeMarkdownUrl } from "./markdown";
 import { MarkdownTable } from "./markdown-table";
-import { droppedTableHtmlText } from "./table-utils";
 
 function preserveSkippedTableText() {
   return (tree: HastNode) => {

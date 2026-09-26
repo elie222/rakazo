@@ -629,16 +629,21 @@ export async function sendThreadMessage(
         if (reply) {
           replyToMessageId = input.replyToMessageId;
           // Persist only text derived from the authoritative parent. A
-          // mismatch still sends a plain reply so quote verification cannot
-          // lose a message.
+          // mismatch or a derivation failure still sends a plain reply so
+          // quote verification cannot lose a message.
           if (requestedReplyQuote) {
             const parsedBlocks = MessageBlockSchema.array().safeParse(reply.blocks);
             if (parsedBlocks.success) {
-              replyQuote = deriveMessageQuote(
-                parsedBlocks.data,
-                requestedReplyQuote,
-                reply.role === "user" ? "plain-text" : "markdown",
-              );
+              try {
+                replyQuote = deriveMessageQuote(
+                  parsedBlocks.data,
+                  requestedReplyQuote,
+                  reply.role === "user" ? "plain-text" : "markdown",
+                );
+              } catch (error) {
+                getLogger().error("thread send quote derivation", error);
+                replyQuote = undefined;
+              }
             }
           }
         }
