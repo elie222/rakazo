@@ -1,19 +1,36 @@
 const PAYLOAD_MARK = "\uE000";
+/**
+ * A preview collapses to one line. Cap the source so a huge reply cannot
+ * stall formatting — Android walks replies one at a time on its poll loop.
+ * Leading whitespace does not spend this budget; a pad must not hide the body.
+ */
+const MAX_PREVIEW_SOURCE = 4_096;
 
 /** Markdown source → a single plain line for previews and notifications. */
 export function plainTextFromMarkdown(markdown: string): string {
-  const payloads: string[] = [];
-  const source = markdown.replace(/\r\n/g, "\n");
-  const mark = unusedMark(source);
-  const payloadPattern = new RegExp(`${mark}(\\d+)${mark}`, "g");
+  // Fixed one-char tokens: literal mark characters are stashed first so tokens
+  // never collide, and token length stays constant regardless of input — an
+  // adversarial reply cannot inflate the intermediate string. Payload count
+  // is bounded by the input length, and each payload is a slice of it.
+  const payloads: string[] = [PAYLOAD_MARK];
+  const markToken = `${PAYLOAD_MARK}0${PAYLOAD_MARK}`;
+  const payloadPattern = new RegExp(`${PAYLOAD_MARK}(\\d+)${PAYLOAD_MARK}`, "g");
+  // Restored payload text is never rescanned — literal marks that come back
+  // out of a payload cannot form phantom tokens. Payloads only ever contain
+  // earlier tokens, so the recursion is bounded by the payload count.
   const restore = (text: string): string =>
-    text.replace(payloadPattern, (_match, index: string) => payloads[Number(index)] ?? "");
+    text.replace(payloadPattern, (_match, index: string) => restore(payloads[Number(index)] ?? ""));
+  // A payload's text must never carry a raw mark: one could sit next to
+  // digits and impersonate a token on restore (a payload could even refer to
+  // itself and recurse forever). Marks are rewritten as payload-0 tokens.
   const stash = (payload: string): string => {
-    payloads.push(payload);
-    return `${mark}${payloads.length - 1}${mark}`;
+    payloads.push(payload.replaceAll(PAYLOAD_MARK, markToken));
+    return `${PAYLOAD_MARK}${payloads.length - 1}${PAYLOAD_MARK}`;
   };
 
-  let text = takeFencedCode(source, stash);
+  const source = boundedPreviewSource(markdown);
+  let text = source.text.replaceAll(PAYLOAD_MARK, markToken);
+  text = takeFencedCode(text, stash, source.truncated);
   text = takeInlineCode(text, stash);
   text = takeEscapes(text, stash);
   // Autolinks may contain stashed escapes; flatten only those literal payloads.
@@ -22,17 +39,107 @@ export function plainTextFromMarkdown(markdown: string): string {
       stash(restore(url)),
     )
     .replace(/<([^<>\s]+@[^<>\s]+\.[^<>\s]+)>/g, (_match, email: string) => stash(restore(email)));
-  text = stripUnderscoreEmphasis(stripHtmlTags(text))
-    .replace(/^#{1,6}\s+/gm, "")
-    .replace(/^>\s+/gm, "")
-    .replace(/^\s*[-*+]\s+/gm, "")
-    .replace(/^\s*\d+\.\s+/gm, "")
-    .replace(/^\s*[-*_]{3,}\s*$/gm, "")
+  text = stripUnderscoreEmphasis(stripHtmlTags(text));
+  // Table rows keep only their cells; a separator row is pure syntax.
+  // flattenTableRows also strips heading/list/quote/break markers per line so
+  // it can see them: a marked line interrupts the table instead of becoming a
+  // phantom row, while its stripped text still previews. Runs before the
+  // emphasis strips so "| **a** |" still reads "a".
+  text = flattenTableRows(text)
     .replace(/(\*\*)(.*?)\1/g, "$2")
     .replace(/(\*)([^*\n]+)\1/g, "$2")
     .replace(/~~(.*?)~~/g, "$1");
-  text = restore(text);
-  return text.replace(/\s+/g, " ").trim();
+  return restore(text).replace(/\s+/g, " ").trim();
+}
+
+const TABLE_ROW = /^\s*\|(.+)\|\s*$/;
+
+/** Every GFM delimiter cell needs at least one hyphen: `| : |` is content. */
+function isTableSeparator(line: string): boolean {
+  const trimmed = line.trim();
+  if (!trimmed.includes("-")) return false;
+  return trimmed
+    .replace(/^\|/, "")
+    .replace(/\|$/, "")
+    .split("|")
+    .every((cell) => /^:?-+:?$/.test(cell.trim()));
+}
+
+/** Heading, quote, list and break markers; the line's own text survives.
+ *  Mirrors Android: headings allow ≤3 leading spaces, `>` needs no space. */
+function stripLineMarker(line: string): string {
+  const stripped = line
+    .replace(/^\s{0,3}#{1,6}\s+/, "")
+    .replace(/^\s*>\s?/, "")
+    .replace(/^\s*[-*+]\s+/, "")
+    .replace(/^\s*\d+\.\s+/, "");
+  return /^\s*[-*_]{3,}\s*$/.test(stripped) ? "" : stripped;
+}
+
+/** Row text → "a, b"; edge pipes only produce empty ends, which drop out. */
+function tableCells(line: string): string {
+  return line
+    .split("|")
+    .map((cell) => cell.trim())
+    .filter(Boolean)
+    .join(", ");
+}
+
+/**
+ * One line per table row ("a, b"). A separator line opens a table only when
+ * the line above it held a pipe — that header may omit the outer pipes, and
+ * lines after the separator are data rows even without them, until the first
+ * no-pipe line ends the table. Only the first separator is syntax; later
+ * dash-only rows are data. Pipe-wrapped lines still flatten leniently outside
+ * tables so sloppy single rows preview cleanly. Lines carrying a block
+ * marker (heading, quote, list, break) can never be table rows — they end the
+ * table — but a quoted stand-alone row like `> | a |` still flattens.
+ */
+function flattenTableRows(text: string): string {
+  const out: string[] = [];
+  let inTable = false;
+  let prevHadPipe = false;
+  let prevFlattened = false;
+  for (const rawLine of text.split("\n")) {
+    const line = stripLineMarker(rawLine);
+    if (line !== rawLine) {
+      inTable = false;
+      prevHadPipe = false;
+      prevFlattened = false;
+      out.push(TABLE_ROW.test(line) ? tableCells(line) : line);
+      continue;
+    }
+    if (!line.includes("|")) {
+      inTable = false;
+      prevHadPipe = false;
+      prevFlattened = false;
+      out.push(line);
+      continue;
+    }
+    if (inTable) {
+      out.push(tableCells(line));
+      prevHadPipe = true;
+      prevFlattened = true;
+      continue;
+    }
+    if (isTableSeparator(line)) {
+      if (prevHadPipe) {
+        inTable = true;
+        // A header written without outer pipes was emitted raw; flatten it now.
+        if (!prevFlattened) out[out.length - 1] = tableCells(out[out.length - 1] ?? "");
+      }
+      continue;
+    }
+    if (TABLE_ROW.test(line)) {
+      out.push(tableCells(line));
+      prevFlattened = true;
+    } else {
+      out.push(line);
+      prevFlattened = false;
+    }
+    prevHadPipe = true;
+  }
+  return out.join("\n");
 }
 
 /** Pair delimiter runs once, without rescanning unmatched suffixes. */
@@ -140,23 +247,29 @@ function takeEscapes(text: string, stash: (payload: string) => string): string {
   );
 }
 
-function unusedMark(text: string): string {
-  let longest = 0;
-  let run = 0;
-  for (let i = 0; i < text.length; i++) {
-    if (text[i] === PAYLOAD_MARK) {
-      run += 1;
-      if (run > longest) longest = run;
-    } else {
-      run = 0;
-    }
-  }
-  return PAYLOAD_MARK.repeat(longest + 1);
-}
-
 const OPEN_FENCE = /^ {0,3}(`{3,}|~{3,})(.*)$/;
 
-function takeFencedCode(text: string, stash: (payload: string) => string): string {
+/**
+ * Source window for a preview. Messages that already fit are returned whole
+ * so a normal reply is unchanged. Past the cap, leading whitespace is skipped
+ * first — otherwise a pad of spaces consumes the window and the body vanishes.
+ */
+function boundedPreviewSource(markdown: string): { text: string; truncated: boolean } {
+  const normalized = markdown.replace(/\r\n/g, "\n");
+  if (normalized.length <= MAX_PREVIEW_SOURCE) return { text: normalized, truncated: false };
+  const body = normalized.trimStart();
+  if (body.length <= MAX_PREVIEW_SOURCE) return { text: body, truncated: false };
+  let end = MAX_PREVIEW_SOURCE;
+  // Don't split a surrogate pair at the cut.
+  if ((body.charCodeAt(end - 1) & 0xfc00) === 0xd800) end -= 1;
+  return { text: body.slice(0, end), truncated: true };
+}
+
+function takeFencedCode(
+  text: string,
+  stash: (payload: string) => string,
+  truncated: boolean,
+): string {
   const lines = text.split("\n");
   const out: string[] = [];
   for (let i = 0; i < lines.length; i++) {
@@ -174,22 +287,34 @@ function takeFencedCode(text: string, stash: (payload: string) => string): strin
     }
     const body: string[] = [];
     let closed = false;
+    // Blank-info fence lines are the only closers. If this scan sees none,
+    // no later opener can close either, so the tail is not scanned again.
+    let sawCloser = false;
     let j = i + 1;
     for (; j < lines.length; j++) {
       const close = lines[j]?.match(OPEN_FENCE);
-      if (
-        close?.[1] &&
-        close[1][0] === fenceChar &&
-        close[1].length >= marker.length &&
-        (close[2] ?? "").trim() === ""
-      ) {
-        closed = true;
-        break;
+      const closeMarker = close?.[1];
+      if (closeMarker && (close?.[2] ?? "").trim() === "") {
+        sawCloser = true;
+        if (closeMarker[0] === fenceChar && closeMarker.length >= marker.length) {
+          closed = true;
+          break;
+        }
       }
       body.push(lines[j] ?? "");
     }
     if (!closed) {
+      // The cap removed the closing fence. Keep the body verbatim: the opener
+      // stays out of the preview, and later passes cannot strip the code.
+      if (truncated && j === lines.length) {
+        out.push(stash(body.join("\n")));
+        break;
+      }
       out.push(line);
+      if (!sawCloser) {
+        for (let k = i + 1; k < lines.length; k++) out.push(lines[k] ?? "");
+        break;
+      }
       continue;
     }
     out.push(stash(body.join("\n")));

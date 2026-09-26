@@ -93,6 +93,17 @@ describe("browser notifications", () => {
       title: "Chief",
       body: "The pool is balanced.",
     });
+    expect(
+      browserNotificationMessage(
+        event({
+          payload: {
+            role: "bot",
+            blocks: [{ kind: "text", text: "| Pool | Total |\n| --- | --- |\n| main | **42** |" }],
+          },
+        }),
+        "Chief",
+      ),
+    ).toEqual({ title: "Chief", body: "Pool, Total main, 42" });
     expect(browserNotificationMessage(event({ type: "run.failed" }), "Chief")).toEqual({
       title: "Chief failed",
       body: "Failed.",

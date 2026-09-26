@@ -52,7 +52,7 @@ describe("plainTextFromMarkdown", () => {
   });
 
   it("preserves a long sequence of unmatched underscore openers", () => {
-    const text = "_word ".repeat(100_000).trim();
+    const text = "_word ".repeat(600).trim();
     expect(plainTextFromMarkdown(text)).toBe(text);
   });
 
@@ -140,8 +140,48 @@ describe("plainTextFromMarkdown", () => {
     expect(plainTextFromMarkdown("~~~~\ncode with ~~~\nstill\n~~~~")).toBe("code with ~~~ still");
   });
 
+  it("keeps a short unclosed fence literal", () => {
+    expect(plainTextFromMarkdown("```\n*bold*")).toBe("``` bold");
+    // Not truncated, so the opener stays text and emphasis after it still strips.
+    expect(plainTextFromMarkdown("```x\nstill **bold**")).toBe("```x still bold");
+  });
+
+  it("still closes a fence that ends inside a long reply", () => {
+    const source = "```\nkeep *stars*\n```\n**after** " + "z".repeat(6_000);
+    const preview = plainTextFromMarkdown(source);
+    expect(preview.startsWith("keep *stars* after")).toBe(true);
+    expect(preview).not.toContain("```");
+    expect(preview).not.toContain("**");
+  });
+
+  it("preserves a code block when the preview cap cuts off its closing fence", () => {
+    const source =
+      "```ts\nkeep *stars* and <tag> and | a | b |\n" + "y".repeat(6_000) + "\n```\nAFTER";
+    const preview = plainTextFromMarkdown(source);
+    expect(preview.startsWith("keep *stars* and <tag> and | a | b |")).toBe(true);
+    expect(preview).not.toContain("```");
+    expect(preview).not.toContain("AFTER");
+    expect(preview).toContain("<tag>");
+    expect(preview).toContain("| a | b |");
+  });
+
+  it("does not spend the preview cap on leading whitespace", () => {
+    expect(plainTextFromMarkdown(`${" \n".repeat(8_000)}**hello**`)).toBe("hello");
+    expect(plainTextFromMarkdown(`${" ".repeat(8_000)}\`*x*\``)).toBe("*x*");
+  });
+
+  it("bounds work on a long run of unclosed fences", () => {
+    const source = `${"```x\n".repeat(20_000)}TAIL_MARKER`;
+    const started = Date.now();
+    const preview = plainTextFromMarkdown(source);
+    expect(Date.now() - started).toBeLessThan(1_000);
+    expect(preview).not.toContain("TAIL_MARKER");
+    expect(preview.length).toBeLessThan(4_096);
+    expect(preview.startsWith("```x")).toBe(true);
+  });
+
   it("still finds a later link after many unmatched brackets", () => {
-    const noise = "[".repeat(20_000);
+    const noise = "[".repeat(2_000);
     expect(plainTextFromMarkdown(`${noise} see [docs](https://example.com/a_(b))`)).toBe(
       `${noise} see docs`,
     );
@@ -149,12 +189,101 @@ describe("plainTextFromMarkdown", () => {
 
   it("does not treat existing private-use characters as code placeholders", () => {
     expect(plainTextFromMarkdown("\uE0000\uE000 keep `*x*`")).toBe("\uE0000\uE000 keep *x*");
-    const noise = "\uE000".repeat(20_000);
+    const noise = "\uE000".repeat(2_000);
     expect(plainTextFromMarkdown(`${noise} keep \`*x*\``)).toBe(`${noise} keep *x*`);
   });
 
   it("keeps backslash-escaped punctuation as literal text", () => {
     expect(plainTextFromMarkdown("Use \\*literal\\*")).toBe("Use *literal*");
+  });
+
+  it("keeps escaped punctuation literal inside code spans", () => {
+    expect(plainTextFromMarkdown("Run `\\*x\\*` verbatim")).toBe("Run \\*x\\* verbatim");
+    expect(plainTextFromMarkdown("| `a\\|b` | `\\*c` |\n| --- | --- |\n| 1 | 2 |")).toBe(
+      "a\\|b, \\*c 1, 2",
+    );
+  });
+
+  it("does not let a round-tripped autolink impersonate a payload token", () => {
+    // The URL restores literal mark characters; without re-tokenizing them the
+    // stashed payload would contain E02E0 — a reference to itself — and
+    // restoring it would recurse forever.
+    expect(plainTextFromMarkdown("\\* <https://x/2>")).toBe("* https://x/2");
+  });
+
+  it("protects escapes well past the old payload cap", () => {
+    const noise = "\\*".repeat(300);
+    expect(plainTextFromMarkdown(`${noise}\n| a\\|b | c |`)).toBe(`${"*".repeat(300)} a|b, c`);
+  });
+
+  it("flattens table rows and drops separator rows", () => {
+    expect(plainTextFromMarkdown("| Name | Value |\n| --- | ---: |\n| Alice | 5 |")).toBe(
+      "Name, Value Alice, 5",
+    );
+  });
+
+  it("drops a bare separator row", () => {
+    expect(plainTextFromMarkdown("Totals\n\n| --- | --- |\n\nDone")).toBe("Totals Done");
+  });
+
+  it("flattens cell contents before stripping their formatting", () => {
+    expect(plainTextFromMarkdown("| **bold** | `x|y` | [docs](https://example.test) |")).toBe(
+      "bold, x|y, docs",
+    );
+  });
+
+  it("flattens tables that omit outer pipes", () => {
+    expect(plainTextFromMarkdown("Name | Value\n--- | ---\nAlice | 5")).toBe(
+      "Name, Value Alice, 5",
+    );
+  });
+
+  it("keeps dash-only cells once the table has begun", () => {
+    expect(plainTextFromMarkdown("| a | b |\n| --- | --- |\n| - | - |\n| 1 | 2 |")).toBe(
+      "a, b -, - 1, 2",
+    );
+  });
+
+  it("does not treat a colon-only row as a delimiter", () => {
+    // `| : |` lacks the hyphen every GFM delimiter cell needs — it is content.
+    expect(plainTextFromMarkdown("a | b\n| : |")).toBe("a | b :");
+  });
+
+  it("ends the table at quote, list, and break lines instead of absorbing them", () => {
+    expect(plainTextFromMarkdown("| a |\n| - |\n> keep a | b")).toBe("a keep a | b");
+    expect(plainTextFromMarkdown("| a |\n| - |\n- x | y")).toBe("a x | y");
+    expect(plainTextFromMarkdown("| a |\n| - |\n---\nb | c")).toBe("a b | c");
+  });
+
+  it("still flattens a quoted stand-alone table row", () => {
+    expect(plainTextFromMarkdown("> | q | r |")).toBe("q, r");
+  });
+
+  it("keeps separator-shaped lines inside fenced code", () => {
+    expect(plainTextFromMarkdown("```\n|---|\n```")).toBe("|---|");
+    expect(plainTextFromMarkdown("| a |\n| - |\n```\nx | y\n```")).toBe("a x | y");
+  });
+
+  it("splits rows on real pipes around escapes and unmatched backticks", () => {
+    expect(plainTextFromMarkdown("| a\\|b | c |\n| - | - |")).toBe("a|b, c");
+    expect(plainTextFromMarkdown("| `a | b |")).toBe("`a, b");
+  });
+
+  it("keeps escaped asterisks literal inside table cells", () => {
+    // Android parity: \* must survive as "*" past the emphasis strips.
+    expect(plainTextFromMarkdown("| \\*x\\* | y |\n| - | - |")).toBe("*x*, y");
+  });
+
+  it("strips quote markers without a space and indented headings", () => {
+    // Android parity: `>x` is a quote and `  ## h` is a heading there.
+    expect(plainTextFromMarkdown(">hello")).toBe("hello");
+    expect(plainTextFromMarkdown("   ## Title")).toBe("Title");
+    expect(plainTextFromMarkdown("| a |\n| - |\n>b | c")).toBe("a b | c");
+  });
+
+  it("leaves mid-sentence pipes alone", () => {
+    expect(plainTextFromMarkdown("either a | b or c")).toBe("either a | b or c");
+    expect(plainTextFromMarkdown("a | b")).toBe("a | b");
   });
 
   it("returns empty when only markers remain", () => {
