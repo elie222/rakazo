@@ -140,6 +140,22 @@ describe("quotableMessageSegments", () => {
     ]);
     expect(segments).toEqual(["first", "second"]);
   });
+
+  it("yields no segments past the server's source bound", () => {
+    const segments = quotableMessageSegments("bot", [
+      { kind: "text", text: "x".repeat(90_000) } as MessageBlock,
+      { kind: "text", text: "y".repeat(90_000) } as MessageBlock,
+    ]);
+    expect(segments).toEqual([]);
+  });
+
+  it("memoizes segments so row chrome does not reparse markdown", () => {
+    const blocks = [{ kind: "text", text: "**bold** words" } as MessageBlock];
+    expect(quotableMessageSegments("bot", blocks)).toBe(quotableMessageSegments("bot", blocks));
+    expect(quotableMessageSegments("user", blocks)).not.toBe(
+      quotableMessageSegments("bot", blocks),
+    );
+  });
 });
 
 describe("truncateQuoteExcerpt", () => {
