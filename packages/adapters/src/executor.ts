@@ -27,7 +27,7 @@ import {
   routineWakeupJob,
   runContinueJob,
 } from "@rakazo/adapter-kit";
-import type { MessageBlock, RunStatus } from "@rakazo/contracts";
+import type { ComputerCommand, MessageBlock, RunStatus } from "@rakazo/contracts";
 import {
   ATTACHMENT_MAX_BYTES,
   BOT_DESCRIPTION_MAX_LENGTH,
@@ -35,6 +35,7 @@ import {
   BOT_TITLE_MAX_LENGTH,
   BotSecretName,
   botSecretSubmissionSchema,
+  COMPUTER_COMMAND_OUTPUT_MAX_CHARS,
   isAttachmentImageMimeType,
   OPENAI_COMPATIBLE_PROVIDER_ID,
 } from "@rakazo/contracts";
@@ -2330,6 +2331,34 @@ export function createRunExecutor(deps: ExecutorDeps) {
             runSecrets.push(...additions);
             progressRedactor = createStreamingRedactor(runSecrets);
           };
+          const appendComputerCommand = (payload: ComputerCommand) =>
+            deps.events
+              .append({
+                spaceId: run.spaceId,
+                threadId: thread.id,
+                botId: bot.id,
+                runId,
+                type: "computer.command",
+                payload,
+              })
+              // The Activity feed is a view; losing an entry must not fail the tool.
+              .catch((error: unknown) => getLogger().error("computer command event", error));
+          /** Record a finished file/app action for the terminal's Activity view. */
+          const recordComputerAction = (
+            kind: Exclude<ComputerCommand["kind"], "shell">,
+            target: string,
+            outcome: { error?: string; bytes?: number } = {},
+          ) =>
+            appendComputerCommand({
+              executionId,
+              kind,
+              command: redactSecrets(target, runSecrets),
+              cwd: ".",
+              status: "done",
+              exitCode: outcome.error ? 1 : 0,
+              output: outcome.error ? redactSecrets(outcome.error, runSecrets) : "",
+              ...(outcome.bytes === undefined ? {} : { bytes: outcome.bytes }),
+            });
           if (name === "computer_observe") {
             if (heldForTakeover) {
               return { error: DESKTOP_HELD_FOR_TAKEOVER_MESSAGE };
@@ -2423,16 +2452,21 @@ export function createRunExecutor(deps: ExecutorDeps) {
           }
           if (name === "write_file") {
             const filePath = String(args.path ?? "notes/result.txt");
-            const content = textContentArg(args.content, "");
+            const content = new TextEncoder().encode(textContentArg(args.content, ""));
             workspaceCheckpoint.markDirty();
-            await deps.sandbox.writeFile(
-              computer,
-              {
-                path: resolveBotWorkspacePath(computerMode, bot.id, filePath),
-                content: new TextEncoder().encode(content),
-              },
-              context,
-            );
+            try {
+              await deps.sandbox.writeFile(
+                computer,
+                { path: resolveBotWorkspacePath(computerMode, bot.id, filePath), content },
+                context,
+              );
+            } catch (error) {
+              await recordComputerAction("write_file", filePath, {
+                error: error instanceof Error ? error.message : "could not write file",
+              });
+              throw error;
+            }
+            await recordComputerAction("write_file", filePath, { bytes: content.byteLength });
             return finish({ ok: true, path: filePath });
           }
           if (name === "render_plot") {
@@ -2526,9 +2560,11 @@ export function createRunExecutor(deps: ExecutorDeps) {
           }
           if (name === "attach_file") {
             const filePath = String(args.path ?? "");
-            if (!deps.artifacts) {
-              return finish({ error: "artifact storage unavailable", path: filePath });
-            }
+            const failAttach = async (error: string) => {
+              await recordComputerAction("attach_file", filePath, { error });
+              return finish({ error, path: filePath });
+            };
+            if (!deps.artifacts) return failAttach("artifact storage unavailable");
             const storedPath = resolveBotWorkspacePath(computerMode, bot.id, filePath);
             let bytes: Uint8Array;
             try {
@@ -2536,12 +2572,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 maxBytes: ATTACHMENT_MAX_BYTES,
               });
             } catch {
-              return finish({ error: "file not found or unreadable", path: filePath });
+              return failAttach("file not found or unreadable");
             }
             const mimeType = inferAttachmentMimeType(filePath);
-            if (!mimeType) {
-              return finish({ error: "unsupported attachment type", path: filePath });
-            }
+            if (!mimeType) return failAttach("unsupported attachment type");
             try {
               const attached = await attachWorkspaceFileToThread(
                 { prisma: deps.prisma, artifacts: deps.artifacts },
@@ -2559,12 +2593,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 },
               );
               await publishMessage(deps, run, "bot", [attached.block]);
+              await recordComputerAction("attach_file", filePath);
               return finish({ ok: true, artifactId: attached.artifactId, path: filePath });
             } catch (error) {
-              return finish({
-                error: error instanceof Error ? error.message : "could not attach file",
-                path: filePath,
-              });
+              return failAttach(error instanceof Error ? error.message : "could not attach file");
             }
           }
           if (name === "shell") {
@@ -2581,6 +2613,18 @@ export function createRunExecutor(deps: ExecutorDeps) {
               args.cwd ? String(args.cwd) : undefined,
             );
             workspaceCheckpoint.markDirty();
+            const commandEvent = {
+              executionId,
+              kind: "shell" as const,
+              command: redactSecrets(command, runSecrets),
+              cwd: cwd ?? ".",
+            };
+            await appendComputerCommand({
+              ...commandEvent,
+              status: "running",
+              exitCode: null,
+              output: "",
+            });
             const result = await runSandboxCommand(
               deps.sandbox,
               computer,
@@ -2600,7 +2644,16 @@ export function createRunExecutor(deps: ExecutorDeps) {
               agentEnvironment,
               context,
             );
-            return finish(redactAgentCommandResult(result, runSecrets));
+            const redacted = redactAgentCommandResult(result, runSecrets);
+            await appendComputerCommand({
+              ...commandEvent,
+              status: "done",
+              exitCode: redacted.code,
+              output: `${redacted.stdout}${redacted.stderr}`.slice(
+                -COMPUTER_COMMAND_OUTPUT_MAX_CHARS,
+              ),
+            });
+            return finish(redacted);
           }
           if (name === "open_path") {
             if (heldForTakeover) {
@@ -2625,6 +2678,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 },
                 context,
               );
+              await recordComputerAction("open_path", requestedPath);
               return result.observation
                 ? formatObservation(result.observation, `opened ${requestedPath}`)
                 : { ok: true };
@@ -2652,6 +2706,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 },
                 context,
               );
+              await recordComputerAction("launch_app", application);
               return result.observation
                 ? formatObservation(result.observation, `launched ${application}`)
                 : { ok: true };

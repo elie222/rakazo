@@ -80,7 +80,7 @@ import {
   VoiceInfoSchema,
   VoiceStatusSchema,
 } from "./domain.js";
-import { ProductEventSchema } from "./events.js";
+import { ComputerCommandSchema, ProductEventSchema } from "./events.js";
 import { Id, IsoDate } from "./ids.js";
 import {
   IntegrationProviderConfigSchema,
@@ -381,6 +381,21 @@ export const appContract = {
     readFile: oc
       .input(z.object({ botId: Id, path: z.string() }))
       .output(z.object({ path: z.string(), content: z.string() })),
+    downloadFile: oc
+      .input(z.object({ botId: Id, path: z.string().min(1) }))
+      .output(z.object({ path: z.string(), contentBase64: z.string() })),
+    uploadFile: oc
+      .input(
+        z.object({
+          botId: Id,
+          path: z.string().min(1),
+          contentBase64: z.string().max(ATTACHMENT_MAX_BASE64_LENGTH),
+        }),
+      )
+      .output(z.object({ ok: z.literal(true) })),
+    commands: oc
+      .input(botId)
+      .output(z.array(ComputerCommandSchema.extend({ createdAt: z.string() }))),
     screenUrl: oc.input(botId).output(z.object({ url: z.string().nullable() })),
     heartbeat: oc.input(botId).output(z.object({ ok: z.literal(true) })),
   },

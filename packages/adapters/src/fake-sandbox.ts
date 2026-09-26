@@ -88,8 +88,13 @@ export class FakeSandboxProvider implements SandboxProvider {
       yield { type: "exit", code: 1 };
       return;
     }
-    const cmd = request.argv.join(" ");
-    if (request.argv[0] === "echo") {
+    // The shell tool wraps the model's command in a background-work launcher; answer the command.
+    const wrapped =
+      request.argv[3] === "rakazo-background-launch" ? request.argv.at(-1) : undefined;
+    const cmd = wrapped ?? request.argv.join(" ");
+    if (wrapped?.startsWith("echo ")) {
+      yield { type: "stdout", data: `${wrapped.slice(5)}\n` };
+    } else if (request.argv[0] === "echo") {
       yield { type: "stdout", data: `${request.argv.slice(1).join(" ")}\n` };
     } else if (cmd.startsWith("cat ")) {
       const file = normalizeWorkspacePath(request.argv[1] ?? "");

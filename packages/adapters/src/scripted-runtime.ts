@@ -152,6 +152,16 @@ export function inferScript(
     ];
   }
   // Before every content-based intent so payload text cannot steal the branch.
+  const shellCommand = /run the shell command\s+([\s\S]+)$/i.exec(prompt)?.[1]?.trim();
+  if (shellCommand) {
+    return [
+      {
+        assistant: "running it on my computer.",
+        toolCalls: [{ name: "shell", args: { command: shellCommand } }],
+        complete: true,
+      },
+    ];
+  }
   if (lower.includes("message the bot named") || lower.includes("message bot named")) {
     const name = namedBot(prompt) ?? "Peer";
     const message =
