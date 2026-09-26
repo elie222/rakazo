@@ -1404,7 +1404,7 @@ function Thread() {
           setReplyQuote(null);
         },
       },
-      ...(message.blocks.some((block) => block.kind === "text" && block.text)
+      ...(quotableMessageSegments(message.role, message.blocks).length > 0
         ? [{ name: "quote", text: t("Quote"), onPress: () => setQuoteTarget(message) }]
         : []),
       ...(canReactToThreadMessage(message)
@@ -2303,6 +2303,7 @@ function QuoteSheet({
     start: number;
     end: number;
   } | null>(null);
+  const [revision, setRevision] = useState(0);
   const selectedText = selection === null ? undefined : segments[selection.segment];
   const start = selection ? Math.min(selection.start, selection.end) : 0;
   const end = selection ? Math.max(selection.start, selection.end) : 0;
@@ -2331,11 +2332,15 @@ function QuoteSheet({
           <ScrollView style={{ maxHeight: 360 }}>
             {segments.map((text, index) => (
               <TextInput
-                key={index}
+                key={`${index}:${revision}`}
                 multiline
                 scrollEnabled={false}
                 showSoftInputOnFocus={false}
                 value={text}
+                // Any edit (paste, hardware keyboard, dictation) remounts the
+                // field with the source text — the excerpt slices the original,
+                // so the displayed text must never diverge from it.
+                onChangeText={() => setRevision((value) => value + 1)}
                 style={{
                   color: tokens.popoverForeground,
                   fontSize: 15.5,
