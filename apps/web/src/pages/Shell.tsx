@@ -4575,7 +4575,19 @@ const Transcript = memo(function Transcript({
       if (!draft) return null;
       // Repeat firings for an unchanged selection reuse the draft so the
       // transcript isn't re-rendered by every unrelated selection event.
-      if (prev && prev.message === draft.message && prev.text === draft.text) return prev;
+      // The same text can be selected at another spot in the message; the
+      // button anchors to these range boundaries.
+      if (
+        prev &&
+        prev.message === draft.message &&
+        prev.text === draft.text &&
+        prev.range.startContainer === range.startContainer &&
+        prev.range.startOffset === range.startOffset &&
+        prev.range.endContainer === range.endContainer &&
+        prev.range.endOffset === range.endOffset
+      ) {
+        return prev;
+      }
       return { ...draft, range };
     });
   }, [messageById]);
