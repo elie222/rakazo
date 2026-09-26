@@ -35,6 +35,23 @@ export function hasActiveComputerControl(
   );
 }
 
+/** User takeover of this bot with no run bound to it. Maintenance may claim it. */
+export function isIdleOwnComputerTakeover(
+  computer:
+    | {
+        controlHolder: string;
+        controlBotId: string | null;
+        controlRunId: string | null;
+      }
+    | null
+    | undefined,
+  botId: string,
+): boolean {
+  return Boolean(
+    computer?.controlHolder === "user" && computer.controlBotId === botId && !computer.controlRunId,
+  );
+}
+
 export function scheduleComputerControlExpiry(
   jobs: JobPublisher,
   computerId: string,

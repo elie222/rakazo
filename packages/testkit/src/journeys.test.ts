@@ -261,6 +261,109 @@ describeJourneys("required product journeys", () => {
     expect(computer.controlLeaseId).toBeNull();
   });
 
+  it("recovering a computer the user has taken over hands control back first", async () => {
+    const cookie = await signup(app, `maintenance-recover-${stamp}@rakazo.test`, "Maintenance");
+    const bot = await rpc<Bot>(app, cookie, "bots/create", {
+      name: "Shell user",
+      title: "Shell user",
+      description: "Uses the shell",
+      instructions: "Help.",
+    });
+    await waitForDatabase(
+      async () =>
+        (await prisma.run.count({
+          where: { botId: bot.id, status: { in: [...ACTIVE_RUN_STATUSES] } },
+        })) === 0,
+    );
+    await rpc(app, cookie, "computer/boot", { botId: bot.id });
+    await rpc(app, cookie, "computer/takeover", { botId: bot.id });
+    const update = await rpc<{ id: string }>(app, cookie, "computer/recover", { botId: bot.id });
+    await waitForDatabase(
+      async () =>
+        (await prisma.computerUpdate.findUniqueOrThrow({ where: { id: update.id } })).status ===
+        "completed",
+    );
+    const computer = await prisma.computer.findFirstOrThrow({
+      where: { bots: { some: { id: bot.id } } },
+    });
+    expect(computer.controlHolder).not.toBe("user");
+    expect(computer.controlLeaseId).toBeNull();
+  });
+
+  it("resetting a computer the user has taken over hands control back first", async () => {
+    const cookie = await signup(app, `maintenance-reset-${stamp}@rakazo.test`, "Maintenance");
+    const bot = await rpc<Bot>(app, cookie, "bots/create", {
+      name: "Shell user",
+      title: "Shell user",
+      description: "Uses the shell",
+      instructions: "Help.",
+    });
+    await waitForDatabase(
+      async () =>
+        (await prisma.run.count({
+          where: { botId: bot.id, status: { in: [...ACTIVE_RUN_STATUSES] } },
+        })) === 0,
+    );
+    await rpc(app, cookie, "computer/boot", { botId: bot.id });
+    await rpc(app, cookie, "computer/takeover", { botId: bot.id });
+    await rpc(app, cookie, "computer/reset", { botId: bot.id });
+    const computer = await prisma.computer.findFirstOrThrow({
+      where: { bots: { some: { id: bot.id } } },
+    });
+    expect(computer.controlHolder).not.toBe("user");
+    expect(computer.controlLeaseId).toBeNull();
+  });
+
+  it("maintenance leaves a run waiting on control", async () => {
+    const cookie = await signup(app, `maintenance-waiting-${stamp}@rakazo.test`, "Maintenance");
+    const bot = await rpc<Bot>(app, cookie, "bots/create", {
+      name: "Chief",
+      title: "",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+    await rpc(app, cookie, "threads/send", {
+      botId: bot.id,
+      text: "install the gsc cli and sign in",
+    });
+    const waiting = await waitFor(
+      app,
+      cookie,
+      bot.id,
+      (snap) => snap.run?.status === "waiting_takeover",
+    );
+    await rpc(app, cookie, "computer/boot", { botId: bot.id });
+    await rpc(app, cookie, "computer/takeover", { botId: bot.id });
+    const runId = waiting.run?.id;
+    if (!runId) throw new Error("waiting run missing");
+    await waitForDatabase(async () => {
+      const computer = await prisma.computer.findFirstOrThrow({
+        where: { bots: { some: { id: bot.id } } },
+      });
+      return computer.controlHolder === "user" && computer.controlRunId === runId;
+    });
+
+    for (const proc of ["computer/update", "computer/recover", "computer/reset"] as const) {
+      const response = await raw(app, cookie, proc, { botId: bot.id });
+      expect(response.status).toBe(409);
+    }
+
+    const run = await prisma.run.findUniqueOrThrow({ where: { id: runId } });
+    expect(run.status).toBe("waiting_takeover");
+    const computer = await prisma.computer.findFirstOrThrow({
+      where: { bots: { some: { id: bot.id } } },
+    });
+    expect(computer.controlHolder).toBe("user");
+    expect(computer.controlLeaseId).not.toBeNull();
+    expect(computer.controlRunId).toBe(runId);
+    expect(
+      await prisma.computerUpdate.count({
+        where: { botId: bot.id, status: { in: ["queued", "running", "completed"] } },
+      }),
+    ).toBe(0);
+  });
+
   it("1+2: users are isolated and workspace bots share the Team Computer", async () => {
     const ada = await signup(app, `ada-j-${stamp}@rakazo.test`, "Ada Journey");
     const bob = await signup(app, `bob-j-${stamp}@rakazo.test`, "Bob Journey");

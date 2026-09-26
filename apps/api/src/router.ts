@@ -1943,7 +1943,6 @@ export function createRouter(deps: RouterDeps) {
       recover: authed.computer.recover.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
         if (!bot.computer) throw new IsolationError();
-        await releaseOwnTakeover(deps, context.actor, bot.id);
         try {
           return await queueComputerUpdate(deps, bot.computer.id, bot.id, "recover");
         } catch (error) {
@@ -1962,7 +1961,6 @@ export function createRouter(deps: RouterDeps) {
           throw new ORPCError("BAD_REQUEST", {
             message: "Computer update is not available on this device",
           });
-        await releaseOwnTakeover(deps, context.actor, bot.id);
         try {
           return await queueComputerUpdate(deps, bot.computer.id, bot.id);
         } catch (error) {
@@ -5162,19 +5160,6 @@ async function releaseComputerControl(
   scheduleComputerSleep(deps.jobs, bot.computer.id);
 }
 
-/**
- * Maintenance needs the computer free. A takeover the user started themselves (for example
- * to use the Shell tab) is handed back first; a run waiting on the takeover is left alone so
- * maintenance never resumes it.
- */
-async function releaseOwnTakeover(deps: RouterDeps, actor: Actor, botId: string) {
-  const bot = await createRepos(deps.prisma).getBot(actor, botId);
-  const computer = bot.computer;
-  if (computer?.controlHolder !== "user" || computer.controlBotId !== bot.id) return;
-  if (computer.controlRunId) return;
-  await releaseComputerControl(deps, actor, botId);
-}
-
 async function runComputerReplace(
   deps: RouterDeps,
   context: { actor: Actor },
@@ -5182,7 +5167,6 @@ async function runComputerReplace(
   mode: "recover" | "reset" | "update",
   operationId: string,
 ): Promise<ComputerStatus> {
-  await releaseOwnTakeover(deps, context.actor, botId);
   const repos = createRepos(deps.prisma);
   const bot = await repos.getBot(context.actor, botId);
   if (!bot.computer) throw new IsolationError();
@@ -5206,10 +5190,18 @@ async function runComputerReplace(
     throw error;
   }
   try {
-    await replaceComputer(deps, bot.computer.id, mode, {
-      ...computerContext(context.actor, bot.id, operationId),
-      screenLeaseId: screenLeaseIdForRun(lease, manualRunId),
-    });
+    await replaceComputer(
+      deps,
+      bot.computer.id,
+      mode,
+      {
+        ...computerContext(context.actor, bot.id, operationId),
+        screenLeaseId: screenLeaseIdForRun(lease, manualRunId),
+      },
+      "none",
+      undefined,
+      { handBackIdleTakeover: true },
+    );
     scheduleComputerSleep(deps.jobs, bot.computer.id);
   } catch (error) {
     if (error instanceof ComputerBusyError) {

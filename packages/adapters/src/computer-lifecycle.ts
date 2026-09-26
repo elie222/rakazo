@@ -6,6 +6,7 @@ import type {
   JobPublisher,
   SandboxProvider,
 } from "@rakazo/adapter-kit";
+import { computerControlExpireJobKey } from "@rakazo/adapter-kit";
 import type { ComputerUpdate } from "@rakazo/contracts";
 import { ACTIVE_RUN_STATUSES, parseScreenLeaseId, screenLeaseId } from "@rakazo/core";
 import {
@@ -14,10 +15,12 @@ import {
   parseComputerMode,
   type ThreadEvents,
 } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
 import {
   clearInactiveUserComputerControl,
   expireComputerControl,
   hasActiveComputerControl,
+  isIdleOwnComputerTakeover,
 } from "./computer-control.js";
 import { toComputerRef } from "./computer-support.js";
 import {
@@ -591,11 +594,26 @@ export async function replaceComputer(
   context: AdapterContext,
   controlHolder: "bot" | "none" = "none",
   onProgress?: ComputerUpdateProgress,
+  options?: { handBackIdleTakeover?: boolean },
 ): Promise<ComputerRef> {
   let existing = await deps.prisma.computer.findUniqueOrThrow({ where: { id: computerId } });
   if (existing.maintenanceId && existing.maintenanceId !== context.operationId)
     throw new ComputerBusyError();
-  if (existing.controlLeaseId && !hasActiveComputerControl(existing)) {
+  const botId = context.botId;
+  if (!botId) throw new Error("computer replacement requires a bot id");
+  // Leave a takeover a run is waiting on. Expiry would resume that run.
+  if (
+    options?.handBackIdleTakeover &&
+    existing.controlHolder === "user" &&
+    existing.controlBotId === botId &&
+    existing.controlRunId
+  ) {
+    throw new ComputerBusyError();
+  }
+  const handBackIdleTakeover =
+    options?.handBackIdleTakeover === true && isIdleOwnComputerTakeover(existing, botId);
+  if (!handBackIdleTakeover && existing.controlLeaseId && !hasActiveComputerControl(existing)) {
+    if (options?.handBackIdleTakeover && existing.controlRunId) throw new ComputerBusyError();
     const expired = await expireComputerControl(deps, existing.id, existing.controlLeaseId);
     existing = await deps.prisma.computer.findUniqueOrThrow({ where: { id: computerId } });
     // Failed provider revoke keeps the lease for retry; do not wipe it and continue reset.
@@ -605,6 +623,7 @@ export async function replaceComputer(
   }
   // Orphaned controlHolder=user with no lease id can be cleared for reset/recover.
   if (
+    !handBackIdleTakeover &&
     existing.controlHolder === "user" &&
     !hasActiveComputerControl(existing) &&
     !existing.controlLeaseId
@@ -615,9 +634,7 @@ export async function replaceComputer(
       throw new Error("computer control revocation is still in progress");
     }
   }
-  const botId = context.botId;
-  if (!botId) throw new Error("computer replacement requires a bot id");
-  if (hasActiveComputerControl(existing)) {
+  if (hasActiveComputerControl(existing) && !handBackIdleTakeover) {
     throw new ComputerBusyError();
   }
   // Reset is the in-product recovery for a hung suspend. Recover and update still refuse
@@ -649,6 +666,15 @@ export async function replaceComputer(
   }
 
   const previousState = existing.state;
+  const previousControl = handBackIdleTakeover
+    ? {
+        controlHolder: "user" as const,
+        controlLeaseId: existing.controlLeaseId,
+        controlLeaseExpiresAt: existing.controlLeaseExpiresAt,
+        controlBotId: existing.controlBotId,
+        controlRunId: null,
+      }
+    : null;
   const now = new Date();
   const claimStamp = new Date(Math.max(now.getTime(), existing.updatedAt.getTime() + 1));
   const claimed = await deps.prisma.computer.updateMany({
@@ -661,16 +687,42 @@ export async function replaceComputer(
         ? { updatedAt: existing.updatedAt }
         : {}),
       executionLeases: { none: { botId: { not: botId }, expiresAt: { gt: now } } },
-      OR: [
-        { controlHolder: { not: "user" } },
-        { controlLeaseId: null },
-        { controlLeaseExpiresAt: null },
-        { controlLeaseExpiresAt: { lte: now } },
-      ],
+      ...(handBackIdleTakeover
+        ? {
+            controlHolder: "user" as const,
+            controlBotId: botId,
+            controlRunId: null,
+            controlLeaseId: existing.controlLeaseId,
+          }
+        : {
+            OR: [
+              { controlHolder: { not: "user" } },
+              { controlLeaseId: null },
+              { controlLeaseExpiresAt: null },
+              { controlLeaseExpiresAt: { lte: now } },
+            ],
+          }),
     },
-    data: { state: "suspending", updatedAt: claimStamp },
+    data: {
+      state: "suspending",
+      updatedAt: claimStamp,
+      ...(handBackIdleTakeover
+        ? {
+            controlHolder: "none" as const,
+            controlLeaseId: null,
+            controlLeaseExpiresAt: null,
+            controlBotId: null,
+            controlRunId: null,
+          }
+        : {}),
+    },
   });
   if (claimed.count !== 1) throw new ComputerBusyError();
+  const releaseClaim = () =>
+    deps.prisma.computer.updateMany({
+      where: { id: computerId, state: "suspending", updatedAt: claimStamp },
+      data: { state: previousState, ...previousControl },
+    });
   // Re-check after the claim in case a run started between the pre-check and CAS.
   const activeRun = await deps.prisma.run.findFirst({
     where: {
@@ -680,11 +732,51 @@ export async function replaceComputer(
     select: { id: true },
   });
   if (activeRun) {
-    await deps.prisma.computer.updateMany({
-      where: { id: computerId, state: "suspending", updatedAt: claimStamp },
-      data: { state: previousState },
-    });
+    await releaseClaim();
     throw new ComputerBusyError();
+  }
+
+  if (previousControl?.controlLeaseId && existing.providerRef) {
+    try {
+      await deps.sandbox.setScreenControl?.(
+        toComputerRef(existing),
+        false,
+        context,
+        previousControl.controlLeaseId,
+      );
+    } catch (error) {
+      getLogger().error("release own takeover before maintenance", error);
+      await releaseClaim();
+      throw new ComputerBusyError();
+    }
+    await deps.jobs
+      .cancel(computerControlExpireJobKey(computerId, previousControl.controlLeaseId))
+      .catch((error) => {
+        getLogger().error("computer control expiry cancellation", error);
+      });
+  }
+  if (previousControl) {
+    try {
+      const bot = await deps.prisma.bot.findFirst({
+        where: { id: botId },
+        select: { thread: { select: { id: true } } },
+      });
+      if (bot?.thread) {
+        await deps.events.append({
+          spaceId: context.spaceId,
+          threadId: bot.thread.id,
+          botId,
+          type: "computer.takeover.released",
+          payload: {
+            holder: "none",
+            leaseId: previousControl.controlLeaseId,
+            reason: "released",
+          },
+        });
+      }
+    } catch (error) {
+      getLogger().error("maintenance takeover release event", error);
+    }
   }
 
   const oldRef = existing.providerRef ? toComputerRef(existing) : null;

@@ -8,6 +8,7 @@ import {
   expireComputerControl,
   extendActiveComputerControl,
   hasActiveComputerControl,
+  isIdleOwnComputerTakeover,
   takeoverLeaseMs,
   teachingControlLeaseExpiresAt,
 } from "./computer-control.js";
@@ -39,6 +40,18 @@ describe("computer control leases", () => {
     expect(hasActiveComputerControl({ ...active, controlHolder: "none" }, now)).toBe(false);
     expect(hasActiveComputerControl({ ...active, controlLeaseId: null }, now)).toBe(false);
     expect(hasActiveComputerControl({ ...active, controlLeaseExpiresAt: now }, now)).toBe(false);
+  });
+
+  it("treats only this bot's unbound takeover as idle", () => {
+    const takeover = {
+      controlHolder: "user",
+      controlBotId: "bot-1",
+      controlRunId: null,
+    };
+    expect(isIdleOwnComputerTakeover(takeover, "bot-1")).toBe(true);
+    expect(isIdleOwnComputerTakeover({ ...takeover, controlRunId: "run-1" }, "bot-1")).toBe(false);
+    expect(isIdleOwnComputerTakeover({ ...takeover, controlBotId: "bot-2" }, "bot-1")).toBe(false);
+    expect(isIdleOwnComputerTakeover({ ...takeover, controlHolder: "none" }, "bot-1")).toBe(false);
   });
 
   it("reschedules an early delivery without revoking control", async () => {
