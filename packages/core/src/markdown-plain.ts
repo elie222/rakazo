@@ -42,24 +42,61 @@ export function plainTextFromMarkdown(markdown: string): string {
 const TABLE_SEPARATOR_ROW = /^\s*\|?[\s:-]*\|[\s|:-]*$/;
 const TABLE_ROW = /^\s*\|(.+)\|\s*$/;
 
-/** One line per table row ("a, b"); separator rows carry no text at all. */
+/** Row text → "a, b"; edge pipes only produce empty ends, which drop out. */
+function tableCells(line: string): string {
+  return line
+    .split("|")
+    .map((cell) => cell.trim())
+    .filter(Boolean)
+    .join(", ");
+}
+
+/**
+ * One line per table row ("a, b"). A separator line opens a table only when
+ * the line above it held a pipe — that header may omit the outer pipes, and
+ * lines after the separator are data rows even without them, until the first
+ * no-pipe line ends the table. Only the first separator is syntax; later
+ * dash-only rows are data. Pipe-wrapped lines still flatten leniently outside
+ * tables so sloppy single rows preview cleanly.
+ */
 function flattenTableRows(text: string): string {
   if (!text.includes("|")) return text;
-  return text
-    .split("\n")
-    .flatMap((line) => {
-      if (TABLE_SEPARATOR_ROW.test(line)) return [];
-      const row = line.match(TABLE_ROW);
-      if (!row) return [line];
-      return [
-        (row[1] ?? "")
-          .split("|")
-          .map((cell) => cell.trim())
-          .filter(Boolean)
-          .join(", "),
-      ];
-    })
-    .join("\n");
+  const out: string[] = [];
+  let inTable = false;
+  let prevHadPipe = false;
+  let prevFlattened = false;
+  for (const line of text.split("\n")) {
+    if (!line.includes("|")) {
+      inTable = false;
+      prevHadPipe = false;
+      prevFlattened = false;
+      out.push(line);
+      continue;
+    }
+    if (inTable) {
+      out.push(tableCells(line));
+      prevHadPipe = true;
+      prevFlattened = true;
+      continue;
+    }
+    if (TABLE_SEPARATOR_ROW.test(line)) {
+      if (prevHadPipe) {
+        inTable = true;
+        // A header written without outer pipes was emitted raw; flatten it now.
+        if (!prevFlattened) out[out.length - 1] = tableCells(out[out.length - 1] ?? "");
+      }
+      continue;
+    }
+    if (TABLE_ROW.test(line)) {
+      out.push(tableCells(line));
+      prevFlattened = true;
+    } else {
+      out.push(line);
+      prevFlattened = false;
+    }
+    prevHadPipe = true;
+  }
+  return out.join("\n");
 }
 
 /** Pair delimiter runs once, without rescanning unmatched suffixes. */

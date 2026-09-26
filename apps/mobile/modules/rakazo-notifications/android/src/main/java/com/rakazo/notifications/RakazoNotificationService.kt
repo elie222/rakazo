@@ -482,28 +482,86 @@ private fun latestReply(endpoint: String, token: String, spaceId: String, run: R
 private val TABLE_SEPARATOR_ROW = Regex("\\s*\\|?[\\s:-]*\\|[\\s|:-]*")
 private val TABLE_ROW = Regex("\\s*\\|(.+)\\|\\s*")
 
+/** Split a row on pipes outside inline code; backticks stay for later stripping. */
+private fun splitTableCells(line: String): String {
+  val cells = mutableListOf<String>()
+  val cell = StringBuilder()
+  var codeFence = 0
+  var i = 0
+  while (i < line.length) {
+    val ch = line[i]
+    if (ch == '`') {
+      var run = 0
+      while (i + run < line.length && line[i + run] == '`') run++
+      if (codeFence == 0) codeFence = run else if (run == codeFence) codeFence = 0
+      cell.append(line, i, i + run)
+      i += run
+      continue
+    }
+    if (ch == '|' && codeFence == 0) {
+      cells.add(cell.toString())
+      cell.setLength(0)
+    } else {
+      cell.append(ch)
+    }
+    i++
+  }
+  cells.add(cell.toString())
+  return cells.map(String::trim).filter(String::isNotEmpty).joinToString(", ")
+}
+
+/**
+ * One line per table row ("a, b"). A separator opens a table only after a
+ * pipe-bearing header line; inside a table every pipe line is a data row —
+ * including dash-only rows — until a no-pipe line ends it. Pipe-wrapped lines
+ * still flatten leniently outside tables. Mirrors `flattenTableRows`.
+ */
+private fun flattenTableRows(text: String): String {
+  if (!text.contains("|")) return text
+  val out = mutableListOf<String>()
+  var inTable = false
+  var prevHadPipe = false
+  var prevFlattened = false
+  for (line in text.split("\n")) {
+    if (!line.contains("|")) {
+      inTable = false
+      prevHadPipe = false
+      prevFlattened = false
+      out.add(line)
+      continue
+    }
+    if (inTable) {
+      out.add(splitTableCells(line))
+      prevHadPipe = true
+      prevFlattened = true
+      continue
+    }
+    if (TABLE_SEPARATOR_ROW.matches(line)) {
+      if (prevHadPipe) {
+        inTable = true
+        if (!prevFlattened && out.isNotEmpty()) out[out.size - 1] = splitTableCells(out.last())
+      }
+      continue
+    }
+    if (TABLE_ROW.matches(line)) {
+      out.add(splitTableCells(line))
+      prevFlattened = true
+    } else {
+      out.add(line)
+      prevFlattened = false
+    }
+    prevHadPipe = true
+  }
+  return out.joinToString("\n")
+}
+
 /**
  * Reply Markdown → a single notification line. A native port of
  * `plainTextFromMarkdown` covering the leak-prone syntax (tables, emphasis,
  * markers); intentionally lossy — the body is a preview, not the message.
  */
 private fun markdownToPreview(markdown: String): String =
-  markdown
-    .replace("\r\n", "\n")
-    .lineSequence()
-    .map { line ->
-      if (TABLE_SEPARATOR_ROW.matches(line)) {
-        ""
-      } else {
-        TABLE_ROW.matchEntire(line)?.groupValues?.get(1)
-          ?.split("|")
-          ?.map(String::trim)
-          ?.filter(String::isNotEmpty)
-          ?.joinToString(", ")
-          ?: line
-      }
-    }
-    .joinToString("\n")
+  flattenTableRows(markdown.replace("\r\n", "\n"))
     .replace(Regex("^\\s*(`{3,}|~{3,}).*$", RegexOption.MULTILINE), "")
     .replace(Regex("^\\s{0,3}#{1,6}\\s+", RegexOption.MULTILINE), "")
     .replace(Regex("^\\s*>\\s?", RegexOption.MULTILINE), "")

@@ -173,6 +173,18 @@ describe("plainTextFromMarkdown", () => {
     );
   });
 
+  it("flattens tables that omit outer pipes", () => {
+    expect(plainTextFromMarkdown("Name | Value\n--- | ---\nAlice | 5")).toBe(
+      "Name, Value Alice, 5",
+    );
+  });
+
+  it("keeps dash-only cells once the table has begun", () => {
+    expect(plainTextFromMarkdown("| a | b |\n| --- | --- |\n| - | - |\n| 1 | 2 |")).toBe(
+      "a, b -, - 1, 2",
+    );
+  });
+
   it("leaves mid-sentence pipes alone", () => {
     expect(plainTextFromMarkdown("either a | b or c")).toBe("either a | b or c");
     expect(plainTextFromMarkdown("a | b")).toBe("a | b");
