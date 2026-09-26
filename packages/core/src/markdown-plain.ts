@@ -49,11 +49,12 @@ function isTableSeparator(line: string): boolean {
     .every((cell) => /^:?-+:?$/.test(cell.trim()));
 }
 
-/** Heading, quote, list and break markers; the line's own text survives. */
+/** Heading, quote, list and break markers; the line's own text survives.
+ *  Mirrors Android: headings allow ≤3 leading spaces, `>` needs no space. */
 function stripLineMarker(line: string): string {
   const stripped = line
-    .replace(/^#{1,6}\s+/, "")
-    .replace(/^\s*>\s+/, "")
+    .replace(/^\s{0,3}#{1,6}\s+/, "")
+    .replace(/^\s*>\s?/, "")
     .replace(/^\s*[-*+]\s+/, "")
     .replace(/^\s*\d+\.\s+/, "");
   return /^\s*[-*_]{3,}\s*$/.test(stripped) ? "" : stripped;

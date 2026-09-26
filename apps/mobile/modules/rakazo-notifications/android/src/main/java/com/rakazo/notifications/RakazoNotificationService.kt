@@ -482,7 +482,32 @@ private fun latestReply(endpoint: String, token: String, spaceId: String, run: R
 private val TABLE_ROW = Regex("\\s*\\|(.+)\\|\\s*")
 private val BREAK_LINE = Regex("\\s*[-*_]{3,}\\s*")
 private val FENCE_OPEN = Regex("^ {0,3}(`{3,}|~{3,})(.*)$")
-private const val ESCAPABLE_PUNCT = "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"
+private const val PAYLOAD_MARK = ''
+private val ESCAPE_RE =
+    Regex("\\\\([!\"#$%&'()*+,\\-./:;<=>?@\\[\\\\\\]^_`{|}~])")
+
+/** A stash mark longer than any mark run already in the source. */
+private fun unusedMark(text: String): String {
+  var longest = 0
+  var run = 0
+  for (ch in text) {
+    if (ch == PAYLOAD_MARK) {
+      run++
+      if (run > longest) longest = run
+    } else {
+      run = 0
+    }
+  }
+  return PAYLOAD_MARK.toString().repeat(longest + 1)
+}
+
+/**
+ * Escaped punctuation (\\*, \\|, ...) becomes a private-use payload token so no
+ * later pass can eat it — including splitTableCells and the emphasis strips.
+ * Restored to the literal char at the very end. Mirrors takeEscapes.
+ */
+private fun takeEscapes(text: String, stash: (String) -> String): String =
+  ESCAPE_RE.replace(text) { m -> stash(m.groupValues[1]) }
 
 /** Every GFM delimiter cell needs at least one hyphen: `| : |` is content. */
 private fun isTableSeparator(line: String): Boolean {
@@ -529,9 +554,10 @@ private fun hasFenceClose(lines: List<String>, open: Int, fenceChar: Char, fence
 }
 
 /**
- * Split a row on pipes outside escapes and inline code. A backtick run opens
- * a span only when a matching close exists — unmatched runs are literal and
- * never shield a pipe. Backticks stay for the later strip pass.
+ * Split a row on pipes outside inline code. A backtick run opens a span only
+ * when a matching close exists — unmatched runs are literal and never shield
+ * a pipe. Backticks stay for the later strip pass; escapes arrive as payload
+ * tokens (see takeEscapes), so a `\|` can never reach this split.
  */
 private fun splitTableCells(line: String): String {
   val cells = mutableListOf<String>()
@@ -539,11 +565,6 @@ private fun splitTableCells(line: String): String {
   var i = 0
   while (i < line.length) {
     val ch = line[i]
-    if (ch == '\\' && i + 1 < line.length && line[i + 1] in ESCAPABLE_PUNCT) {
-      cell.append(line[i + 1])
-      i += 2
-      continue
-    }
     if (ch == '`') {
       var run = 0
       while (i + run < line.length && line[i + run] == '`') run++
@@ -660,21 +681,35 @@ private fun flattenTableRows(text: String): String {
  * `plainTextFromMarkdown` covering the leak-prone syntax (tables, emphasis,
  * markers); intentionally lossy — the body is a preview, not the message.
  */
-private fun markdownToPreview(markdown: String): String =
-  flattenTableRows(markdown.replace("\r\n", "\n"))
-    .replace(Regex("^\\s*(`{3,}|~{3,}).*$", RegexOption.MULTILINE), "")
-    .replace(Regex("^\\s{0,3}#{1,6}\\s+", RegexOption.MULTILINE), "")
-    .replace(Regex("^\\s*>\\s?", RegexOption.MULTILINE), "")
-    .replace(Regex("^\\s*[-*+]\\s+", RegexOption.MULTILINE), "")
-    .replace(Regex("^\\s*\\d+\\.\\s+", RegexOption.MULTILINE), "")
-    .replace(Regex("!\\[[^]]*]\\([^)]*\\)"), " ")
-    .replace(Regex("\\[([^]]+)]\\([^)]*\\)"), "$1")
-    .replace(Regex("\\*\\*(.*?)\\*\\*"), "$1")
-    .replace(Regex("\\*([^*\\n]+)\\*"), "$1")
-    .replace(Regex("~~(.*?)~~"), "$1")
-    .replace(Regex("`([^`\\n]+)`"), "$1")
+private fun markdownToPreview(markdown: String): String {
+  // Escapes are stashed before any structural pass — a cell `\*x\*` must keep
+  // its literal asterisks past the emphasis strips. Restored at the end.
+  val payloads = mutableListOf<String>()
+  val mark = unusedMark(markdown)
+  val stash = { payload: String ->
+    payloads.add(payload)
+    "$mark${payloads.size - 1}$mark"
+  }
+  val text =
+    flattenTableRows(takeEscapes(markdown.replace("\r\n", "\n"), stash))
+      .replace(Regex("^\\s*(`{3,}|~{3,}).*$", RegexOption.MULTILINE), "")
+      .replace(Regex("^\\s{0,3}#{1,6}\\s+", RegexOption.MULTILINE), "")
+      .replace(Regex("^\\s*>\\s?", RegexOption.MULTILINE), "")
+      .replace(Regex("^\\s*[-*+]\\s+", RegexOption.MULTILINE), "")
+      .replace(Regex("^\\s*\\d+\\.\\s+", RegexOption.MULTILINE), "")
+      .replace(Regex("!\\[[^]]*]\\([^)]*\\)"), " ")
+      .replace(Regex("\\[([^]]+)]\\([^)]*\\)"), "$1")
+      .replace(Regex("\\*\\*(.*?)\\*\\*"), "$1")
+      .replace(Regex("\\*([^*\\n]+)\\*"), "$1")
+      .replace(Regex("~~(.*?)~~"), "$1")
+      .replace(Regex("`([^`\\n]+)`"), "$1")
+  return text
+    .replace(Regex("$mark(\\d+)$mark")) { m ->
+      payloads.getOrElse(m.groupValues[1].toIntOrNull() ?: -1) { "" }
+    }
     .replace(Regex("\\s+"), " ")
     .trim()
+}
 
 private fun rpc(
   endpoint: String,

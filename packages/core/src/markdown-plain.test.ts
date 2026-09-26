@@ -210,6 +210,18 @@ describe("plainTextFromMarkdown", () => {
     expect(plainTextFromMarkdown("| `a | b |")).toBe("`a, b");
   });
 
+  it("keeps escaped asterisks literal inside table cells", () => {
+    // Android parity: \* must survive as "*" past the emphasis strips.
+    expect(plainTextFromMarkdown("| \\*x\\* | y |\n| - | - |")).toBe("*x*, y");
+  });
+
+  it("strips quote markers without a space and indented headings", () => {
+    // Android parity: `>x` is a quote and `  ## h` is a heading there.
+    expect(plainTextFromMarkdown(">hello")).toBe("hello");
+    expect(plainTextFromMarkdown("   ## Title")).toBe("Title");
+    expect(plainTextFromMarkdown("| a |\n| - |\n>b | c")).toBe("a b | c");
+  });
+
   it("leaves mid-sentence pipes alone", () => {
     expect(plainTextFromMarkdown("either a | b or c")).toBe("either a | b or c");
     expect(plainTextFromMarkdown("a | b")).toBe("a | b");
