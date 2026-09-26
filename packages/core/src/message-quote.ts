@@ -7,7 +7,8 @@ import remarkParse from "remark-parse";
 import { unified } from "unified";
 
 const markdownParser = unified().use(remarkParse).use(remarkGfm);
-const MAX_QUOTABLE_SOURCE_LENGTH = 100_000;
+/** Past this much source text in one message, quote derivation refuses to run. */
+export const MAX_QUOTABLE_SOURCE_LENGTH = 100_000;
 
 type NormalizedText = {
   text: string;
