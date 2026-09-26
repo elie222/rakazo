@@ -142,6 +142,7 @@ import {
   computersAreUnavailable,
 } from "../components/ComputersUnavailableHint";
 import { ComputerUpdateProgress } from "../components/ComputerUpdateProgress";
+import { ComputerWorkspace } from "../components/computer/ComputerWorkspace";
 import { MessageHoverMetadata } from "../components/MessageHoverMetadata";
 import { SkillDraftCard } from "../components/teach/SkillDraftCard";
 import { TeachCaptureOverlay } from "../components/teach/TeachCaptureOverlay";
@@ -167,6 +168,7 @@ import {
   loadComputerScreen,
   screenIframeSandbox,
 } from "../lib/computer-screen";
+import { publishComputerCommand } from "../lib/computer-workspace";
 import { desktopBridge } from "../lib/desktop";
 import { scheduleFocusPrompt } from "../lib/focus-prompt";
 import { localTimezone } from "../lib/local-timezone";
@@ -175,6 +177,7 @@ import { messageProviderLabel } from "../lib/messaging";
 import {
   isFileDrag,
   isFilePaste,
+  readFileAsBase64,
   revokePendingAttachmentPreviews,
 } from "../lib/pending-attachments";
 import { markAfterPaint, markOnce } from "../lib/performance";
@@ -4427,38 +4430,45 @@ export function ShellPage() {
               </div>
             ) : null}
             <div className="relative min-h-0 flex-1 bg-background">
-              {computer?.kind === "desktop" ? (
-                <DesktopKindEmptyState className="grid h-full place-items-center px-8 text-center text-sm text-muted-foreground/80" />
-              ) : computer?.state === "running" && embeddedScreenUrl && !computerScreenError ? (
-                <>
-                  <iframe
-                    title={t`Bot screen`}
-                    src={embeddedScreenUrl}
-                    sandbox={screenIframeSandbox(embeddedScreenUrl)}
-                    className="h-full w-full border-0 bg-black"
-                    allow="clipboard-read; clipboard-write; fullscreen"
-                    style={{
-                      pointerEvents: recordingSkill || !hasControl ? "none" : "auto",
-                    }}
-                  />
-                  {computerBot ? (
-                    <TeachCaptureOverlay
-                      botId={computerBot.id}
-                      skill={recordingSkill}
-                      enabled={Boolean(recordingSkill)}
-                      screenWidth={computer?.screenWidth}
-                      screenHeight={computer?.screenHeight}
+              <ComputerWorkspace
+                botId={computerBot.id}
+                computer={computer}
+                hasControl={hasControl}
+                dock={!recordingSkill}
+              >
+                {computer?.kind === "desktop" ? (
+                  <DesktopKindEmptyState className="grid h-full place-items-center px-8 text-center text-sm text-muted-foreground/80" />
+                ) : computer?.state === "running" && embeddedScreenUrl && !computerScreenError ? (
+                  <>
+                    <iframe
+                      title={t`Bot screen`}
+                      src={embeddedScreenUrl}
+                      sandbox={screenIframeSandbox(embeddedScreenUrl)}
+                      className="h-full w-full border-0 bg-black"
+                      allow="clipboard-read; clipboard-write; fullscreen"
+                      style={{
+                        pointerEvents: recordingSkill || !hasControl ? "none" : "auto",
+                      }}
                     />
-                  ) : null}
-                </>
-              ) : (
-                <div className="grid h-full place-items-center text-sm text-muted-foreground/80">
-                  {computerScreenError ??
-                    (computer?.state === "suspended"
-                      ? t`Computer is asleep`
-                      : computerLabel(computer?.mode, computerBot.name))}
-                </div>
-              )}
+                    {computerBot ? (
+                      <TeachCaptureOverlay
+                        botId={computerBot.id}
+                        skill={recordingSkill}
+                        enabled={Boolean(recordingSkill)}
+                        screenWidth={computer?.screenWidth}
+                        screenHeight={computer?.screenHeight}
+                      />
+                    ) : null}
+                  </>
+                ) : (
+                  <div className="grid h-full place-items-center text-sm text-muted-foreground/80">
+                    {computerScreenError ??
+                      (computer?.state === "suspended"
+                        ? t`Computer is asleep`
+                        : computerLabel(computer?.mode, computerBot.name))}
+                  </div>
+                )}
+              </ComputerWorkspace>
             </div>
           </div>
         </div>
@@ -5864,6 +5874,7 @@ function applyThreadEvent(
   snapshotRef: MutableRefObject<ThreadSnapshot | null>,
   computerRef: MutableRefObject<ComputerStatus | null>,
 ) {
+  publishComputerCommand(event);
   if (isThreadSnapshotEvent(event)) {
     const next = reduceThreadSnapshot(snapshotRef.current, event);
     commitSnapshot(next);
@@ -6394,17 +6405,4 @@ function computerLabel(mode: ComputerStatus["mode"] | undefined, botName: string
 
 function newClientNonce(): string {
   return newClientId();
-}
-
-function readFileAsBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = typeof reader.result === "string" ? reader.result : "";
-      const base64 = result.includes(",") ? (result.split(",")[1] ?? "") : result;
-      resolve(base64);
-    };
-    reader.onerror = () => reject(reader.error ?? new Error("Failed to read file"));
-    reader.readAsDataURL(file);
-  });
 }

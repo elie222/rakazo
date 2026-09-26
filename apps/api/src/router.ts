@@ -72,6 +72,7 @@ import {
   releaseComputerExecutionLease,
   replaceComputer,
   resolveAutoReviewChecker,
+  resolveBotUploadPath,
   resolveBotWorkspacePath,
   sanitizeComposioError,
   savePushToken,
@@ -92,7 +93,10 @@ import {
 import type { Auth } from "@rakazo/auth";
 import type { Actor, Bot, ComputerStatus, McpServer, Me, SpaceNavigation } from "@rakazo/contracts";
 import {
+  ATTACHMENT_MAX_BYTES,
   appContract,
+  ComputerCommandSchema,
+  foldComputerCommands,
   IntegrationProviderIdSchema,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   usableModelId,
@@ -223,6 +227,8 @@ import {
 } from "./voice.js";
 
 const MAX_COMPUTER_TEXT_FILE_BYTES = 2 * 1024 * 1024;
+/** Each command writes a running and a done event, so this keeps about 100 commands. */
+const COMPUTER_COMMAND_HISTORY_EVENTS = 200;
 const THREAD_MESSAGE_PAGE_SIZE = 100;
 const EXPORT_MESSAGE_PAGE_SIZE = 500;
 
@@ -2328,6 +2334,86 @@ export function createRouter(deps: RouterDeps) {
           }
         }
         return { path: input.path, content };
+      }),
+      downloadFile: authed.computer.downloadFile.handler(async ({ context, input }) => {
+        const bot = await repos.getBot(context.actor, input.botId);
+        const computer = bot.computer;
+        if (!computer) throw new IsolationError();
+        // The stopped-computer home store is text-only; binary transfer needs the live machine.
+        if (computer.state !== "running" || !computer.providerRef) {
+          throw new ORPCError("CONFLICT", { message: "Start the computer first." });
+        }
+        await keepComputerAwake(deps, computer.id);
+        const storedPath = resolveBotWorkspacePath(
+          parseComputerMode(computer.scope),
+          bot.id,
+          input.path,
+        );
+        const bytes = await deps.sandbox
+          .readFile(
+            toComputerRef(computer),
+            storedPath,
+            computerContext(context.actor, bot.id, "download"),
+            { maxBytes: ATTACHMENT_MAX_BYTES },
+          )
+          .catch((error: unknown) => {
+            if (error instanceof Error && /exceeds|too large/i.test(error.message)) {
+              throw new ORPCError("BAD_REQUEST", { message: "File is too large to download." });
+            }
+            throw error;
+          });
+        return { path: input.path, contentBase64: Buffer.from(bytes).toString("base64") };
+      }),
+      uploadFile: authed.computer.uploadFile.handler(async ({ context, input }) => {
+        let bot = await repos.getBot(context.actor, input.botId);
+        if (await expireStaleComputerControl(deps, bot.computer)) {
+          bot = await repos.getBot(context.actor, input.botId);
+        }
+        const computer = bot.computer;
+        if (!computer) throw new IsolationError();
+        if (computer.state !== "running" || !computer.providerRef) {
+          throw new ORPCError("CONFLICT", { message: "Start the computer first." });
+        }
+        if (!hasActiveComputerControl(computer) || computer.controlBotId !== bot.id) {
+          throw new ORPCError("FORBIDDEN", { message: "Take control first." });
+        }
+        const content = Buffer.from(input.contentBase64, "base64");
+        if (content.byteLength > ATTACHMENT_MAX_BYTES) {
+          throw new ORPCError("BAD_REQUEST", { message: "File is too large to upload." });
+        }
+        await keepComputerAwake(deps, computer.id);
+        let storedPath: string;
+        try {
+          storedPath = resolveBotUploadPath(parseComputerMode(computer.scope), bot.id, input.path);
+        } catch (error) {
+          if (error instanceof Error && /escapes/i.test(error.message)) {
+            throw new ORPCError("BAD_REQUEST", { message: error.message });
+          }
+          throw error;
+        }
+        await deps.sandbox.writeFile(
+          toComputerRef(computer),
+          { path: storedPath, content },
+          computerContext(context.actor, bot.id, "upload"),
+        );
+        return { ok: true as const };
+      }),
+      commands: authed.computer.commands.handler(async ({ context, input }) => {
+        const bot = await repos.getBot(context.actor, input.botId);
+        const events = await deps.prisma.event.findMany({
+          where: { spaceId: context.actor.spaceId, botId: bot.id, type: "computer.command" },
+          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+          take: COMPUTER_COMMAND_HISTORY_EVENTS,
+          select: { payload: true, createdAt: true },
+        });
+        return foldComputerCommands(
+          events.reverse().flatMap((event) => {
+            const parsed = ComputerCommandSchema.safeParse(event.payload);
+            return parsed.success
+              ? [{ ...parsed.data, createdAt: event.createdAt.toISOString() }]
+              : [];
+          }),
+        );
       }),
       screenUrl: authed.computer.screenUrl.handler(async ({ context, input }) => {
         let bot = await repos.getBot(context.actor, input.botId);
@@ -5460,6 +5546,14 @@ async function listRoutinesDto(deps: RouterDeps, actor: Actor, botId: string) {
     where: { botId, spaceId: actor.spaceId },
   });
   return rows.map(mapRoutine);
+}
+
+async function keepComputerAwake(deps: RouterDeps, computerId: string) {
+  await deps.prisma.computer.updateMany({
+    where: { id: computerId, state: "running" },
+    data: { updatedAt: new Date() },
+  });
+  scheduleComputerSleep(deps.jobs, computerId);
 }
 
 function withViewOnly(url: string, viewOnly: boolean) {

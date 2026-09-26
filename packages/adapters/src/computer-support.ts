@@ -102,6 +102,28 @@ export function resolveBotWorkspaceCwd(
   return resolveBotWorkspacePath(scope, botId, requestedCwd);
 }
 
+
+/** Paths a user may write while controlling this bot: its home, or shared/. */
+export function resolveBotUploadPath(
+  scope: ComputerMode,
+  botId: string,
+  requestedPath: string,
+): string {
+  const stored = resolveBotWorkspacePath(scope, botId, requestedPath);
+  if (scope !== "team") return normalizeWorkspacePath(stored);
+  const normalized = normalizeWorkspacePath(stored);
+  const botDirectory = teamBotWorkspaceDirectory(botId);
+  if (
+    normalized === botDirectory ||
+    normalized.startsWith(`${botDirectory}/`) ||
+    normalized === "shared" ||
+    normalized.startsWith("shared/")
+  ) {
+    return normalized;
+  }
+  throw new Error("Path escapes the bot workspace");
+}
+
 export function displayBotWorkspacePath(
   scope: ComputerMode,
   botId: string,

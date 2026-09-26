@@ -49,6 +49,18 @@ describe("inferScript message_bot", () => {
   });
 });
 
+describe("inferScript shell", () => {
+  it("runs the requested command verbatim, even when it mentions other intents", () => {
+    expect(inferScript("run the shell command echo sign in && ls -la")).toEqual([
+      {
+        assistant: "running it on my computer.",
+        toolCalls: [{ name: "shell", args: { command: "echo sign in && ls -la" } }],
+        complete: true,
+      },
+    ]);
+  });
+});
+
 describe("inferScript quote markdown fixture", () => {
   it("returns the markdown fixture including the caller marker", () => {
     expect(inferScript("quote markdown fixture md-stamp")[0]?.assistant).toContain(
