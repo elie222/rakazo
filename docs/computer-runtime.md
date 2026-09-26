@@ -39,6 +39,23 @@ Fake computers and explicit `BROWSER_PROVIDER=fake|emulator` use an in-process s
 
 Human input and agent input may coexist on distinct Team screens. “Take control” grants the user an exclusive control lease on that bot’s screen so the embedded viewer accepts input. For a Team bot, takeover is refused with HTTP 409 (“Stop the bot first”) while that bot holds a live computer execution lease or an active run, unless the run is `waiting_takeover` (the bot asked for protected input). Stop the bot first, then take control; after release, the agent may continue. `request_takeover` remains available when the model explicitly needs protected input or human judgment.
 
+## Terminal and files
+
+The web and desktop computer view opens a terminal and a file browser from a dock over the screen. The dock's browser button hides those windows, keeping their sessions, so the whole screen is visible again.
+
+**Terminal**
+- The terminal shows what the bot did on its computer, live and from history. Each action is recorded as a `computer.command` event:
+  - `shell` commands, with the redacted command and the tail of their output;
+  - `write_file`, `attach_file`, `open_path`, and `launch_app`, as one line each, with the size for writes and the error if they failed.
+
+  Read-only tools (`read_file`, `list_files`) are left out.
+
+**Files**
+- Browsing and text preview work on stopped computers through the stored workspace.
+- While the Files window is visible, the open folder refreshes every few seconds and after each bot command, so changes made by the bot appear without reopening.
+- Download needs a running computer.
+- Upload also needs control. Uploads land under the bot's workspace path and are capped at the attachment size limit.
+
 ## E2B backend
 
 The E2B adapter uses `@e2b/desktop` for machine lifecycle, shell commands, files, and port URLs. Every bot desktop uses the shared Linux runtime, including the first bot. Its X display, screenshots, input, and view/control transports follow the same lifecycle as the other managed providers.
