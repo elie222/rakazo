@@ -483,31 +483,92 @@ private val TABLE_ROW = Regex("\\s*\\|(.+)\\|\\s*")
 private val BREAK_LINE = Regex("\\s*[-*_]{3,}\\s*")
 private val FENCE_OPEN = Regex("^ {0,3}(`{3,}|~{3,})(.*)$")
 private const val PAYLOAD_MARK = ''
+private const val MAX_PREVIEW_SOURCE = 4_096
+private const val MAX_STASHED_PAYLOADS = 256
 private val ESCAPE_RE =
     Regex("\\\\([!\"#$%&'()*+,\\-./:;<=>?@\\[\\\\\\]^_`{|}~])")
 
-/** A stash mark longer than any mark run already in the source. */
-private fun unusedMark(text: String): String {
-  var longest = 0
-  var run = 0
-  for (ch in text) {
-    if (ch == PAYLOAD_MARK) {
-      run++
-      if (run > longest) longest = run
-    } else {
-      run = 0
-    }
-  }
-  return PAYLOAD_MARK.toString().repeat(longest + 1)
-}
-
 /**
- * Escaped punctuation (\\*, \\|, ...) becomes a private-use payload token so no
- * later pass can eat it — including splitTableCells and the emphasis strips.
+ * Escaped punctuation (\\*, \\|, ...) becomes a payload token so no later
+ * pass can eat it — including splitTableCells and the emphasis strips.
  * Restored to the literal char at the very end. Mirrors takeEscapes.
  */
 private fun takeEscapes(text: String, stash: (String) -> String): String =
   ESCAPE_RE.replace(text) { m -> stash(m.groupValues[1]) }
+
+/**
+ * Paired backtick spans stash their contents (delimiters dropped) so escapes,
+ * pipes, and markers inside code stay literal. Unmatched runs are literal.
+ * Mirrors takeInlineCode.
+ */
+private fun takeInlineCode(text: String, stash: (String) -> String): String {
+  val out = StringBuilder()
+  var i = 0
+  while (i < text.length) {
+    if (text[i] != '`') {
+      out.append(text[i])
+      i++
+      continue
+    }
+    var n = 0
+    while (i + n < text.length && text[i + n] == '`') n++
+    val close = findInlineCodeClose(text, i + n, n)
+    if (close == -1) {
+      out.append(text, i, i + n)
+      i += n
+    } else {
+      out.append(stash(text.substring(i + n, close)))
+      i = close + n
+    }
+  }
+  return out.toString()
+}
+
+/**
+ * Fenced blocks stash their body (open/close lines dropped) so interior text
+ * — separators, pipes, markers — survives untouched. Unclosed fences stay
+ * literal lines. Mirrors takeFencedCode.
+ */
+private fun takeFencedCode(text: String, stash: (String) -> String): String {
+  val lines = text.split("\n")
+  val out = mutableListOf<String>()
+  var i = 0
+  while (i < lines.size) {
+    val line = lines[i]
+    val open = FENCE_OPEN.matchEntire(line)
+    val marker = open?.groupValues?.get(1)
+    if (open == null || marker == null ||
+      (marker[0] == '`' && open.groupValues[2].contains('`'))
+    ) {
+      out.add(line)
+      i++
+      continue
+    }
+    val body = mutableListOf<String>()
+    var closed = false
+    var j = i + 1
+    while (j < lines.size) {
+      val close = FENCE_OPEN.matchEntire(lines[j])
+      val closeMarker = close?.groupValues?.get(1)
+      if (close != null && closeMarker != null && closeMarker[0] == marker[0] &&
+        closeMarker.length >= marker.length && close.groupValues[2].isBlank()
+      ) {
+        closed = true
+        break
+      }
+      body.add(lines[j])
+      j++
+    }
+    if (!closed) {
+      out.add(line)
+      i++
+      continue
+    }
+    out.add(stash(body.joinToString("\n")))
+    i = j + 1
+  }
+  return out.joinToString("\n")
+}
 
 /** Every GFM delimiter cell needs at least one hyphen: `| : |` is content. */
 private fun isTableSeparator(line: String): Boolean {
@@ -542,22 +603,9 @@ private fun findInlineCodeClose(line: String, from: Int, n: Int): Int {
   return -1
 }
 
-private fun hasFenceClose(lines: List<String>, open: Int, fenceChar: Char, fenceLen: Int): Boolean {
-  for (j in open + 1 until lines.size) {
-    val close = FENCE_OPEN.matchEntire(lines[j]) ?: continue
-    val marker = close.groupValues[1]
-    if (marker[0] == fenceChar && marker.length >= fenceLen && close.groupValues[2].isBlank()) {
-      return true
-    }
-  }
-  return false
-}
-
 /**
- * Split a row on pipes outside inline code. A backtick run opens a span only
- * when a matching close exists — unmatched runs are literal and never shield
- * a pipe. Backticks stay for the later strip pass; escapes arrive as payload
- * tokens (see takeEscapes), so a `\|` can never reach this split.
+ * Split a row on plain pipes. Code spans and escapes arrive as payload tokens
+ * (see takeInlineCode/takeEscapes), so no in-cell syntax can shield a pipe.
  */
 private fun splitTableCells(line: String): String {
   val cells = mutableListOf<String>()
@@ -565,19 +613,6 @@ private fun splitTableCells(line: String): String {
   var i = 0
   while (i < line.length) {
     val ch = line[i]
-    if (ch == '`') {
-      var run = 0
-      while (i + run < line.length && line[i + run] == '`') run++
-      val close = findInlineCodeClose(line, i + run, run)
-      if (close == -1) {
-        cell.append(line, i, i + run)
-        i += run
-      } else {
-        cell.append(line, i, close + run)
-        i = close + run
-      }
-      continue
-    }
     if (ch == '|') {
       cells.add(cell.toString())
       cell.setLength(0)
@@ -605,37 +640,8 @@ private fun flattenTableRows(text: String): String {
   var inTable = false
   var prevHadPipe = false
   var prevFlattened = false
-  var inFence = false
-  var fenceChar = '`'
-  var fenceLen = 0
-  for (index in lines.indices) {
-    val rawLine = lines[index]
-    val fence = FENCE_OPEN.matchEntire(rawLine)
-    if (inFence) {
-      out.add(rawLine)
-      if (fence != null && fence.groupValues[1][0] == fenceChar &&
-        fence.groupValues[1].length >= fenceLen && fence.groupValues[2].isBlank()
-      ) {
-        inFence = false
-      }
-      continue
-    }
-    if (fence != null) {
-      val marker = fence.groupValues[1]
-      // An unclosed fence is not a fence at all — its opener stays a line.
-      if (!(marker[0] == '`' && fence.groupValues[2].contains('`')) &&
-        hasFenceClose(lines, index, marker[0], marker.length)
-      ) {
-        inFence = true
-        fenceChar = marker[0]
-        fenceLen = marker.length
-        inTable = false
-        prevHadPipe = false
-        prevFlattened = false
-        out.add(rawLine)
-        continue
-      }
-    }
+  // Fenced blocks arrived stashed, so no fence lines can reach this loop.
+  for (rawLine in lines) {
     val line = stripLineMarker(rawLine)
     if (line != rawLine) {
       inTable = false
@@ -682,33 +688,48 @@ private fun flattenTableRows(text: String): String {
  * markers); intentionally lossy — the body is a preview, not the message.
  */
 private fun markdownToPreview(markdown: String): String {
-  // Escapes are stashed before any structural pass — a cell `\*x\*` must keep
-  // its literal asterisks past the emphasis strips. Restored at the end.
+  // Payloads use a fixed one-char token, not a mark sized to the input:
+  // literal mark characters in the source are stashed first so tokens can
+  // never collide, and token length stays constant regardless of input —
+  // an adversarial reply cannot inflate the intermediate string.
   val payloads = mutableListOf<String>()
-  val mark = unusedMark(markdown)
+  val mark = PAYLOAD_MARK.toString()
   val stash = { payload: String ->
-    payloads.add(payload)
-    "$mark${payloads.size - 1}$mark"
-  }
-  val text =
-    flattenTableRows(takeEscapes(markdown.replace("\r\n", "\n"), stash))
-      .replace(Regex("^\\s*(`{3,}|~{3,}).*$", RegexOption.MULTILINE), "")
-      .replace(Regex("^\\s{0,3}#{1,6}\\s+", RegexOption.MULTILINE), "")
-      .replace(Regex("^\\s*>\\s?", RegexOption.MULTILINE), "")
-      .replace(Regex("^\\s*[-*+]\\s+", RegexOption.MULTILINE), "")
-      .replace(Regex("^\\s*\\d+\\.\\s+", RegexOption.MULTILINE), "")
-      .replace(Regex("!\\[[^]]*]\\([^)]*\\)"), " ")
-      .replace(Regex("\\[([^]]+)]\\([^)]*\\)"), "$1")
-      .replace(Regex("\\*\\*(.*?)\\*\\*"), "$1")
-      .replace(Regex("\\*([^*\\n]+)\\*"), "$1")
-      .replace(Regex("~~(.*?)~~"), "$1")
-      .replace(Regex("`([^`\\n]+)`"), "$1")
-  return text
-    .replace(Regex("$mark(\\d+)$mark")) { m ->
-      payloads.getOrElse(m.groupValues[1].toIntOrNull() ?: -1) { "" }
+    if (payloads.size < MAX_STASHED_PAYLOADS) {
+      payloads.add(payload)
+      "$mark${payloads.size - 1}$mark"
+    } else {
+      payload
     }
-    .replace(Regex("\\s+"), " ")
-    .trim()
+  }
+  var text = markdown.replace("\r\n", "\n")
+  // A preview collapses to one line; bound the work before any pass.
+  if (text.length > MAX_PREVIEW_SOURCE) text = text.substring(0, MAX_PREVIEW_SOURCE)
+  // Literal mark chars in the source become payload 0 before anything else
+  // stashes, so every later token is unambiguous.
+  text = text.replace(mark, stash(mark))
+  text = takeFencedCode(text, stash)
+  text = takeInlineCode(text, stash)
+  text = takeEscapes(text, stash)
+  text = flattenTableRows(text)
+    .replace(Regex("^\\s*(`{3,}|~{3,}).*$", RegexOption.MULTILINE), "")
+    .replace(Regex("^\\s{0,3}#{1,6}\\s+", RegexOption.MULTILINE), "")
+    .replace(Regex("^\\s*>\\s?", RegexOption.MULTILINE), "")
+    .replace(Regex("^\\s*[-*+]\\s+", RegexOption.MULTILINE), "")
+    .replace(Regex("^\\s*\\d+\\.\\s+", RegexOption.MULTILINE), "")
+    .replace(Regex("!\\[[^]]*]\\([^)]*\\)"), " ")
+    .replace(Regex("\\[([^]]+)]\\([^)]*\\)"), "$1")
+    .replace(Regex("\\*\\*(.*?)\\*\\*"), "$1")
+    .replace(Regex("\\*([^*\\n]+)\\*"), "$1")
+    .replace(Regex("~~(.*?)~~"), "$1")
+    .replace(Regex("`([^`\\n]+)`"), "$1")
+  // Restored payload text is never rescanned — literal marks that come back
+  // out of a payload cannot form phantom tokens. Payloads only ever contain
+  // earlier tokens, so the recursion is bounded by the payload count.
+  val tokenRe = Regex("$mark(\\d+)$mark")
+  fun restore(s: String): String =
+    tokenRe.replace(s) { m -> restore(payloads.getOrElse(m.groupValues[1].toIntOrNull() ?: -1) { "" }) }
+  return restore(text).replace(Regex("\\s+"), " ").trim()
 }
 
 private fun rpc(

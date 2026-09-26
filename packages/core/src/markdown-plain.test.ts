@@ -52,7 +52,7 @@ describe("plainTextFromMarkdown", () => {
   });
 
   it("preserves a long sequence of unmatched underscore openers", () => {
-    const text = "_word ".repeat(100_000).trim();
+    const text = "_word ".repeat(600).trim();
     expect(plainTextFromMarkdown(text)).toBe(text);
   });
 
@@ -141,7 +141,7 @@ describe("plainTextFromMarkdown", () => {
   });
 
   it("still finds a later link after many unmatched brackets", () => {
-    const noise = "[".repeat(20_000);
+    const noise = "[".repeat(2_000);
     expect(plainTextFromMarkdown(`${noise} see [docs](https://example.com/a_(b))`)).toBe(
       `${noise} see docs`,
     );
@@ -149,12 +149,19 @@ describe("plainTextFromMarkdown", () => {
 
   it("does not treat existing private-use characters as code placeholders", () => {
     expect(plainTextFromMarkdown("\uE0000\uE000 keep `*x*`")).toBe("\uE0000\uE000 keep *x*");
-    const noise = "\uE000".repeat(20_000);
+    const noise = "\uE000".repeat(2_000);
     expect(plainTextFromMarkdown(`${noise} keep \`*x*\``)).toBe(`${noise} keep *x*`);
   });
 
   it("keeps backslash-escaped punctuation as literal text", () => {
     expect(plainTextFromMarkdown("Use \\*literal\\*")).toBe("Use *literal*");
+  });
+
+  it("keeps escaped punctuation literal inside code spans", () => {
+    expect(plainTextFromMarkdown("Run `\\*x\\*` verbatim")).toBe("Run \\*x\\* verbatim");
+    expect(plainTextFromMarkdown("| `a\\|b` | `\\*c` |\n| --- | --- |\n| 1 | 2 |")).toBe(
+      "a\\|b, \\*c 1, 2",
+    );
   });
 
   it("flattens table rows and drops separator rows", () => {

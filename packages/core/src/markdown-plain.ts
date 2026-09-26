@@ -1,19 +1,31 @@
 const PAYLOAD_MARK = "\uE000";
 
+/** A preview collapses to one line; bounding the input bounds stash tokens. */
+const MAX_PREVIEW_SOURCE = 4_096;
+/** Beyond the cap a payload degrades to its raw text instead of a token. */
+const MAX_STASHED_PAYLOADS = 256;
+
 /** Markdown source → a single plain line for previews and notifications. */
 export function plainTextFromMarkdown(markdown: string): string {
   const payloads: string[] = [];
-  const source = markdown.replace(/\r\n/g, "\n");
-  const mark = unusedMark(source);
-  const payloadPattern = new RegExp(`${mark}(\\d+)${mark}`, "g");
+  const source = markdown.replace(/\r\n/g, "\n").slice(0, MAX_PREVIEW_SOURCE);
+  const payloadPattern = new RegExp(`${PAYLOAD_MARK}(\\d+)${PAYLOAD_MARK}`, "g");
+  // Restored payload text is never rescanned — literal marks that come back
+  // out of a payload cannot form phantom tokens. Payloads only ever contain
+  // earlier tokens, so the recursion is bounded by the payload count.
   const restore = (text: string): string =>
-    text.replace(payloadPattern, (_match, index: string) => payloads[Number(index)] ?? "");
+    text.replace(payloadPattern, (_match, index: string) => restore(payloads[Number(index)] ?? ""));
+  // Fixed one-char tokens: literal mark characters are stashed first so tokens
+  // never collide, and token length stays constant regardless of input — an
+  // adversarial reply cannot inflate the intermediate string.
   const stash = (payload: string): string => {
+    if (payloads.length >= MAX_STASHED_PAYLOADS) return payload;
     payloads.push(payload);
-    return `${mark}${payloads.length - 1}${mark}`;
+    return `${PAYLOAD_MARK}${payloads.length - 1}${PAYLOAD_MARK}`;
   };
 
-  let text = takeFencedCode(source, stash);
+  let text = source.replaceAll(PAYLOAD_MARK, stash(PAYLOAD_MARK));
+  text = takeFencedCode(text, stash);
   text = takeInlineCode(text, stash);
   text = takeEscapes(text, stash);
   // Autolinks may contain stashed escapes; flatten only those literal payloads.
@@ -32,8 +44,7 @@ export function plainTextFromMarkdown(markdown: string): string {
     .replace(/(\*\*)(.*?)\1/g, "$2")
     .replace(/(\*)([^*\n]+)\1/g, "$2")
     .replace(/~~(.*?)~~/g, "$1");
-  text = restore(text);
-  return text.replace(/\s+/g, " ").trim();
+  return restore(text).replace(/\s+/g, " ").trim();
 }
 
 const TABLE_ROW = /^\s*\|(.+)\|\s*$/;
@@ -229,20 +240,6 @@ function takeEscapes(text: string, stash: (payload: string) => string): string {
   return text.replace(/\\([!"#$%&'()*+,\-./:;<=>?@[\\\]^_`{|}~])/g, (_match, ch: string) =>
     stash(ch),
   );
-}
-
-function unusedMark(text: string): string {
-  let longest = 0;
-  let run = 0;
-  for (let i = 0; i < text.length; i++) {
-    if (text[i] === PAYLOAD_MARK) {
-      run += 1;
-      if (run > longest) longest = run;
-    } else {
-      run = 0;
-    }
-  }
-  return PAYLOAD_MARK.repeat(longest + 1);
 }
 
 const OPEN_FENCE = /^ {0,3}(`{3,}|~{3,})(.*)$/;
