@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   displayBotWorkspacePath,
+  resolveBotUploadPath,
   resolveBotWorkspaceCwd,
   resolveBotWorkspacePath,
   teamBotWorkspaceDirectory,
@@ -50,6 +51,16 @@ describe("Team Computer bot folders", () => {
     expect(resolveBotWorkspaceCwd("dedicated", "bot-1", undefined)).toBeUndefined();
     expect(displayBotWorkspacePath("dedicated", "bot-1", "notes", "notes/result.txt")).toBe(
       "notes/result.txt",
+    );
+  });
+});
+
+describe("resolveBotUploadPath", () => {
+  it("keeps team uploads in the controlling bot home or shared", () => {
+    expect(resolveBotUploadPath("team", "bot-1", "notes.txt")).toBe("bots/bot-1/notes.txt");
+    expect(resolveBotUploadPath("team", "bot-1", "shared/brief.md")).toBe("shared/brief.md");
+    expect(() => resolveBotUploadPath("team", "bot-1", "bots/bot-2/secret.txt")).toThrow(
+      /escapes the bot workspace/,
     );
   });
 });

@@ -29,6 +29,15 @@ const labels = {
 };
 
 describe("computer terminal feed", () => {
+  it("strips control sequences from command text and output before rendering", () => {
+    expect(
+      formatComputerCommand(
+        command({ command: "echo \u001b[2Jhi", output: "ok\u001b]8;;https://evil\u0007\n" }),
+        labels,
+      ),
+    ).toBe("\x1b[1m$ echo [2Jhi\x1b[0m\r\nok]8;;https://evil\r\n");
+  });
+
   it("renders a prompt line, output, and only failing exit codes", () => {
     expect(formatComputerCommand(command(), labels)).toBe("\x1b[1m$ ls\x1b[0m\r\na\r\nb\r\n");
     expect(formatComputerCommand(command({ exitCode: 2, output: "" }), labels)).toBe(

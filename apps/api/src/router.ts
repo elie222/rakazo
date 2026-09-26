@@ -72,6 +72,7 @@ import {
   releaseComputerExecutionLease,
   replaceComputer,
   resolveAutoReviewChecker,
+  resolveBotUploadPath,
   resolveBotWorkspacePath,
   sanitizeComposioError,
   savePushToken,
@@ -2381,12 +2382,18 @@ export function createRouter(deps: RouterDeps) {
           throw new ORPCError("BAD_REQUEST", { message: "File is too large to upload." });
         }
         await keepComputerAwake(deps, computer.id);
+        let storedPath: string;
+        try {
+          storedPath = resolveBotUploadPath(parseComputerMode(computer.scope), bot.id, input.path);
+        } catch (error) {
+          if (error instanceof Error && /escapes/i.test(error.message)) {
+            throw new ORPCError("BAD_REQUEST", { message: error.message });
+          }
+          throw error;
+        }
         await deps.sandbox.writeFile(
           toComputerRef(computer),
-          {
-            path: resolveBotWorkspacePath(parseComputerMode(computer.scope), bot.id, input.path),
-            content,
-          },
+          { path: storedPath, content },
           computerContext(context.actor, bot.id, "upload"),
         );
         return { ok: true as const };

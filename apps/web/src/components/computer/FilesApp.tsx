@@ -1,4 +1,5 @@
 import { useLingui } from "@lingui/react/macro";
+import { ATTACHMENT_MAX_BYTES } from "@rakazo/contracts";
 import { Button } from "@rakazo/ui-web";
 import { ArrowLeft, Download, File, Folder, Upload } from "lucide-react";
 import { type DragEvent, useCallback, useEffect, useRef, useState } from "react";
@@ -20,7 +21,6 @@ type Preview =
   | { path: string; kind: "text"; content: string }
   | { path: string; kind: "image"; bytes: Uint8Array; mimeType: string };
 
-// A terminal session or the bot can change files at any time; the open folder follows along.
 const FILES_REFRESH_MS = 3_000;
 
 const IMAGE_TYPES: Record<string, string> = {
@@ -51,16 +51,20 @@ export function FilesApp({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const input = useRef<HTMLInputElement>(null);
+  const loadGeneration = useRef(0);
 
   const load = useCallback(
     async (target: string) => {
+      const generation = ++loadGeneration.current;
       setError(null);
       try {
         const listed = await rpc.computer.files({ botId, path: target });
+        if (generation !== loadGeneration.current) return;
         setEntries(sortEntries(listed));
         setPath(target);
         setPreview(null);
       } catch (cause) {
+        if (generation !== loadGeneration.current) return;
         setError(errorMessage(cause, t`Could not list files`));
       }
     },
@@ -68,6 +72,10 @@ export function FilesApp({
   );
 
   useEffect(() => {
+    setPath("");
+    setEntries(null);
+    setPreview(null);
+    setError(null);
     void load("");
   }, [load]);
 
@@ -76,8 +84,9 @@ export function FilesApp({
     let cancelled = false;
     const refresh = async () => {
       if (document.visibilityState !== "visible") return;
+      const generation = loadGeneration.current;
       const listed = await rpc.computer.files({ botId, path }).catch(() => null);
-      if (cancelled || !listed) return;
+      if (cancelled || !listed || generation !== loadGeneration.current) return;
       const next = sortEntries(listed);
       setEntries((current) => (JSON.stringify(current) === JSON.stringify(next) ? current : next));
     };
@@ -133,6 +142,9 @@ export function FilesApp({
     setError(null);
     try {
       for (const file of Array.from(files)) {
+        if (file.size > ATTACHMENT_MAX_BYTES) {
+          throw new Error(t`File is too large to upload.`);
+        }
         await rpc.computer.uploadFile({
           botId,
           path: path ? `${path}/${file.name}` : file.name,
@@ -148,7 +160,7 @@ export function FilesApp({
   }
 
   function onDrop(event: DragEvent) {
-    if (!canUpload || !isFileDrag(event.dataTransfer)) return;
+    if (!canUpload || !event.ctrlKey || !isFileDrag(event.dataTransfer)) return;
     event.preventDefault();
     void upload(event.dataTransfer.files);
   }
@@ -159,7 +171,7 @@ export function FilesApp({
       className="m-0 flex h-full min-h-0 min-w-0 flex-col border-0 bg-background p-0 text-[13px]"
       data-testid="computer-files"
       onDragOver={(event) => {
-        if (canUpload && isFileDrag(event.dataTransfer)) event.preventDefault();
+        if (canUpload && event.ctrlKey && isFileDrag(event.dataTransfer)) event.preventDefault();
       }}
       onDrop={onDrop}
     >

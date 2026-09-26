@@ -902,6 +902,15 @@ describe("computer file transfer", () => {
     );
   });
 
+  it("rejects team uploads into another bot workspace", async () => {
+    const contentBase64 = Buffer.from("x").toString("base64");
+    const { sandbox, call } = setup(controlled);
+    await expect(
+      call("uploadFile", { path: "bots/bot-2/secret.txt", contentBase64 }),
+    ).resolves.toMatchObject({ status: 400 });
+    expect(sandbox.writeFile).not.toHaveBeenCalled();
+  });
+
   it("downloads bytes from a running computer", async () => {
     const { sandbox, call } = setup();
     await expect(call("downloadFile", { path: "notes.txt" })).resolves.toEqual({

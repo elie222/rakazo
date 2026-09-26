@@ -2617,7 +2617,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               executionId,
               kind: "shell" as const,
               command: redactSecrets(command, runSecrets),
-              cwd: cwd ?? ".",
+              cwd: redactSecrets(cwd ?? ".", runSecrets),
             };
             await appendComputerCommand({
               ...commandEvent,
@@ -2625,35 +2625,48 @@ export function createRunExecutor(deps: ExecutorDeps) {
               exitCode: null,
               output: "",
             });
-            const result = await runSandboxCommand(
-              deps.sandbox,
-              computer,
-              [
-                "bash",
-                "-c",
-                BACKGROUND_WORK_LAUNCH,
-                "rakazo-background-launch",
-                // Marker id must match sleepComputerIfIdle's probe (DB id), not ComputerRef.id
-                // (providerRef via toComputerRef). Scope launches to this run for cancel teardown.
-                storedComputer.id,
-                runId,
-                randomUUID(),
-                command,
-              ],
-              cwd,
-              agentEnvironment,
-              context,
-            );
-            const redacted = redactAgentCommandResult(result, runSecrets);
-            await appendComputerCommand({
-              ...commandEvent,
-              status: "done",
-              exitCode: redacted.code,
-              output: `${redacted.stdout}${redacted.stderr}`.slice(
-                -COMPUTER_COMMAND_OUTPUT_MAX_CHARS,
-              ),
-            });
-            return finish(redacted);
+            try {
+              const result = await runSandboxCommand(
+                deps.sandbox,
+                computer,
+                [
+                  "bash",
+                  "-c",
+                  BACKGROUND_WORK_LAUNCH,
+                  "rakazo-background-launch",
+                  // Marker id must match sleepComputerIfIdle's probe (DB id), not ComputerRef.id
+                  // (providerRef via toComputerRef). Scope launches to this run for cancel teardown.
+                  storedComputer.id,
+                  runId,
+                  randomUUID(),
+                  command,
+                ],
+                cwd,
+                agentEnvironment,
+                context,
+              );
+              const redacted = redactAgentCommandResult(result, runSecrets);
+              await appendComputerCommand({
+                ...commandEvent,
+                status: "done",
+                exitCode: redacted.code,
+                output: `${redacted.stdout}${redacted.stderr}`.slice(
+                  -COMPUTER_COMMAND_OUTPUT_MAX_CHARS,
+                ),
+              });
+              return finish(redacted);
+            } catch (error) {
+              await appendComputerCommand({
+                ...commandEvent,
+                status: "done",
+                exitCode: 1,
+                output: redactSecrets(
+                  error instanceof Error ? error.message : "command failed",
+                  runSecrets,
+                ).slice(-COMPUTER_COMMAND_OUTPUT_MAX_CHARS),
+              });
+              throw error;
+            }
           }
           if (name === "open_path") {
             if (heldForTakeover) {
@@ -2662,26 +2675,33 @@ export function createRunExecutor(deps: ExecutorDeps) {
             const requestedPath = String(args.path ?? "");
             workspaceCheckpoint.markDirty();
             return computerScreenToolResult(async () => {
-              const result = await deps.sandbox.act(
-                computer,
-                {
-                  actions: [
-                    {
-                      kind: "open",
-                      path: /^https?:\/\//i.test(requestedPath)
-                        ? requestedPath
-                        : resolveBotWorkspacePath(computerMode, bot.id, requestedPath),
-                    },
-                  ],
-                  observe: true,
-                  settleMs: 600,
-                },
-                context,
-              );
-              await recordComputerAction("open_path", requestedPath);
-              return result.observation
-                ? formatObservation(result.observation, `opened ${requestedPath}`)
-                : { ok: true };
+              try {
+                const result = await deps.sandbox.act(
+                  computer,
+                  {
+                    actions: [
+                      {
+                        kind: "open",
+                        path: /^https?:\/\//i.test(requestedPath)
+                          ? requestedPath
+                          : resolveBotWorkspacePath(computerMode, bot.id, requestedPath),
+                      },
+                    ],
+                    observe: true,
+                    settleMs: 600,
+                  },
+                  context,
+                );
+                await recordComputerAction("open_path", requestedPath);
+                return result.observation
+                  ? formatObservation(result.observation, `opened ${requestedPath}`)
+                  : { ok: true };
+              } catch (error) {
+                await recordComputerAction("open_path", requestedPath, {
+                  error: error instanceof Error ? error.message : "could not open path",
+                });
+                throw error;
+              }
             }, finish);
           }
           if (name === "launch_app") {
@@ -2691,25 +2711,32 @@ export function createRunExecutor(deps: ExecutorDeps) {
             const application = String(args.application ?? "");
             workspaceCheckpoint.markDirty();
             return computerScreenToolResult(async () => {
-              const result = await deps.sandbox.act(
-                computer,
-                {
-                  actions: [
-                    {
-                      kind: "launch",
-                      application,
-                      uri: args.uri ? String(args.uri) : undefined,
-                    },
-                  ],
-                  observe: true,
-                  settleMs: 600,
-                },
-                context,
-              );
-              await recordComputerAction("launch_app", application);
-              return result.observation
-                ? formatObservation(result.observation, `launched ${application}`)
-                : { ok: true };
+              try {
+                const result = await deps.sandbox.act(
+                  computer,
+                  {
+                    actions: [
+                      {
+                        kind: "launch",
+                        application,
+                        uri: args.uri ? String(args.uri) : undefined,
+                      },
+                    ],
+                    observe: true,
+                    settleMs: 600,
+                  },
+                  context,
+                );
+                await recordComputerAction("launch_app", application);
+                return result.observation
+                  ? formatObservation(result.observation, `launched ${application}`)
+                  : { ok: true };
+              } catch (error) {
+                await recordComputerAction("launch_app", application, {
+                  error: error instanceof Error ? error.message : "could not launch app",
+                });
+                throw error;
+              }
             }, finish);
           }
           if (name === "remember") {

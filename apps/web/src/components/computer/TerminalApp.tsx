@@ -13,6 +13,8 @@ import {
 } from "../../lib/computer-workspace";
 import { rpc } from "../../lib/rpc";
 
+const COMMANDS_REFRESH_MS = 3_000;
+
 /** What the bot did on its computer: shell commands with their output, and file and app actions. */
 export default function TerminalApp({ botId }: { botId: string }) {
   const { t } = useLingui();
@@ -36,24 +38,33 @@ export default function TerminalApp({ botId }: { botId: string }) {
       terminal.write(
         `\x1bc${commands.map((command) => formatComputerCommand(command, labels)).join("")}`,
       );
+    const applyHistory = (history: ComputerCommand[]) => {
+      commands = foldComputerCommands([...history, ...commands]);
+      render();
+    };
     const unsubscribe = subscribeComputerCommands((eventBotId, command) => {
       if (eventBotId !== botId) return;
       commands = mergeComputerCommand(commands, command);
       render();
     });
-    rpc.computer
-      .commands({ botId })
-      .then((history) => {
-        if (cancelled) return;
-        // Keep live events that arrived while history loaded.
-        commands = foldComputerCommands([...history, ...commands]);
-        render();
-      })
-      .catch((cause: unknown) => {
-        if (!cancelled) setError(errorMessage(cause, t`Could not load commands`));
-      });
+    const refresh = () =>
+      rpc.computer
+        .commands({ botId })
+        .then((history) => {
+          if (!cancelled) applyHistory(history);
+        })
+        .catch((cause: unknown) => {
+          if (!cancelled && commands.length === 0) {
+            setError(errorMessage(cause, t`Could not load commands`));
+          }
+        });
+    void refresh();
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "visible") void refresh();
+    }, COMMANDS_REFRESH_MS);
     return () => {
       cancelled = true;
+      window.clearInterval(timer);
       unsubscribe();
     };
   }, [terminal, botId, t]);
