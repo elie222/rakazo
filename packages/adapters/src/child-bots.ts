@@ -1,4 +1,5 @@
-import { rm } from "node:fs/promises";
+import { lstat, realpath, rm, unlink } from "node:fs/promises";
+import path from "node:path";
 import type {
   AdapterContext,
   AgentHomeStore,
@@ -9,6 +10,7 @@ import type {
 import { routineJobKey, runContinueJob, runJobKey } from "@rakazo/adapter-kit";
 import { type Actor, type Bot, type ComputerMode, GROUP_MEMBER_MIN } from "@rakazo/contracts";
 import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
+import { browserProfilePathForScreen } from "@rakazo/core/node/desktop-runtime";
 import {
   cancelRunsInTransaction,
   computerScopeKey,
@@ -358,7 +360,9 @@ export async function destroyBot(
     ...activeRuns.map((run) => deps.jobs.cancel(runJobKey(run.id))),
     ...routines.map((routine) => deps.jobs.cancel(routineJobKey(routine.id))),
   ]);
-  await releaseTeamComputerScreen(deps, bot, dedicated?.id, context);
+  const sharedComputer = await releaseTeamComputerScreen(deps, bot, dedicated?.id, context, {
+    cancelRunWork: true,
+  });
   if (dedicated?.providerRef) {
     await deps.sandbox.destroy(toComputerRef(dedicated), context).catch(() => undefined);
   }
@@ -454,6 +458,7 @@ export async function destroyBot(
       force: true,
     }).catch(() => undefined);
   }
+  await removeTeamBrowserProfile(deps, bot.id, sharedComputer);
   const artifactStore = deps.artifacts;
   if (artifactStore) {
     await removeStoredArtifacts(artifactStore, deletion.artifactKeys, context);
@@ -582,9 +587,74 @@ async function releaseTeamComputerScreen(
   bot: LifecycleBot,
   dedicatedId: string | undefined,
   context: AdapterContext,
+  options?: { cancelRunWork?: boolean },
 ) {
-  if (!bot.computerId || bot.computerId === dedicatedId) return;
+  const computer = await sharedTeamComputer(deps, bot, dedicatedId);
+  if (!computer?.providerRef) return computer;
+  // archive_bot runs inside the parent bot, and hard delete can omit botId.
+  // Release this bot's screen; the caller's lease must not veto or redirect it.
+  await deps.sandbox
+    .releaseScreen?.(toComputerRef(computer), {
+      ...context,
+      botId: bot.id,
+      screenLeaseId: undefined,
+      ...(options?.cancelRunWork ? { cancelRunWork: true } : {}),
+    })
+    ?.catch(() => undefined);
+  return computer;
+}
+
+async function sharedTeamComputer(
+  deps: BotLifecycleDeps,
+  bot: LifecycleBot,
+  dedicatedId: string | undefined,
+) {
+  if (!bot.computerId || bot.computerId === dedicatedId) return null;
   const computer = await deps.prisma.computer.findUnique({ where: { id: bot.computerId } });
-  if (!computer?.providerRef) return;
-  await deps.sandbox.releaseScreen?.(toComputerRef(computer), context).catch(() => undefined);
+  if (computer?.scope !== "team") return null;
+  return computer;
+}
+
+async function removeTeamBrowserProfile(
+  deps: BotLifecycleDeps,
+  botId: string,
+  computer: { scope: string; homeKey: string } | null,
+) {
+  if (computer?.scope !== "team") return;
+  const homeDir = resolveAgentHomePath(deps.home, computer.homeKey, deps.dataDir ?? "./data");
+  const profile = browserProfileDirectory(homeDir, botId);
+  if (!profile) return;
+  await removeContainedDirectory(homeDir, profile).catch((error) => {
+    getLogger().error("team browser profile cleanup", error);
+  });
+}
+
+function browserProfileDirectory(homeDir: string, botId: string) {
+  const name = path.posix.basename(browserProfilePathForScreen(botId));
+  if (!/^chromium-bot-[0-9a-f]{32}$/.test(name)) return null;
+  return path.join(homeDir, ".browser-profiles", name);
+}
+
+/** Delete one profile directory. A symlink is unlinked and never followed. */
+async function removeContainedDirectory(root: string, target: string) {
+  const info = await lstat(target).catch((error: unknown) => {
+    if (isMissing(error)) return null;
+    throw error;
+  });
+  if (!info) return;
+  if (info.isSymbolicLink()) {
+    await unlink(target);
+    return;
+  }
+  const resolvedRoot = await realpath(root);
+  const resolvedTarget = await realpath(target);
+  const relative = path.relative(resolvedRoot, resolvedTarget);
+  if (relative === "" || relative.startsWith("..") || path.isAbsolute(relative)) {
+    throw new Error("browser profile escapes the team home");
+  }
+  await rm(resolvedTarget, { recursive: true, force: true });
+}
+
+function isMissing(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error && "code" in error && error.code === "ENOENT";
 }

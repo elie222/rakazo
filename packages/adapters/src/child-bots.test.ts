@@ -1,3 +1,6 @@
+import { access, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import type {
   AdapterContext,
   AgentHomeStore,
@@ -5,6 +8,7 @@ import type {
   JobPublisher,
   SandboxProvider,
 } from "@rakazo/adapter-kit";
+import { browserProfilePathForScreen } from "@rakazo/core/node/desktop-runtime";
 import type { createRepos, PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -14,6 +18,7 @@ import {
   destroyBot,
   spawnBot,
 } from "./child-bots.js";
+import { LocalAgentHomeStore } from "./home.js";
 
 const context = {
   operationId: "test",
@@ -521,6 +526,114 @@ describe("destroyBot", () => {
     ).rejects.toBe(finalError);
     expect(transaction).toHaveBeenCalledTimes(2);
   });
+
+  it("stops the deleted team bot's screen and removes only its browser profile", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "rakazo-team-delete-"));
+    try {
+      const home = new LocalAgentHomeStore(root);
+      const teamHome = home.pathFor("team-workspace-1");
+      const deletedProfile = path.join(teamHome, ".browser-profiles", profileDirectory("bot-1"));
+      const keptProfile = path.join(teamHome, ".browser-profiles", profileDirectory("bot-2"));
+      const keptNotes = path.join(teamHome, "bots", "bot-2", "notes.txt");
+      await mkdir(deletedProfile, { recursive: true });
+      await mkdir(path.dirname(keptNotes), { recursive: true });
+      await mkdir(keptProfile, { recursive: true });
+      await writeFile(path.join(deletedProfile, "Cookies"), "gone");
+      await writeFile(path.join(keptProfile, "Cookies"), "keep");
+      await writeFile(keptNotes, "keep");
+      const releaseScreen = vi.fn().mockResolvedValue(undefined);
+      const team = {
+        id: "team-computer",
+        homeKey: "team-workspace-1",
+        kind: "docker",
+        providerRef: "container-1",
+        scope: "team",
+      };
+      const prisma = deletionPrisma(team);
+
+      await destroyBot(
+        {
+          prisma,
+          sandbox: { releaseScreen } as unknown as SandboxProvider,
+          home,
+          jobs: { cancel: vi.fn() } as unknown as JobPublisher,
+        },
+        {
+          id: "bot-1",
+          spaceId: "workspace-1",
+          name: "Researcher",
+          archivedAt: null,
+          computerId: team.id,
+        },
+        { ...context, botId: "parent-1", screenLeaseId: "run-parent:4" },
+        { deleteMemories: true },
+      );
+
+      expect(releaseScreen).toHaveBeenCalledWith(
+        {
+          id: "container-1",
+          botId: "team-workspace-1",
+          kind: "docker",
+          providerRef: "container-1",
+        },
+        expect.objectContaining({ botId: "bot-1", cancelRunWork: true }),
+      );
+      const releaseContext = releaseScreen.mock.calls[0]?.[1] as AdapterContext;
+      expect(releaseContext.botId).toBe("bot-1");
+      expect(releaseContext.screenLeaseId).toBeUndefined();
+      await expect(access(deletedProfile)).rejects.toThrow();
+      await expect(readFile(path.join(keptProfile, "Cookies"), "utf8")).resolves.toBe("keep");
+      await expect(readFile(keptNotes, "utf8")).resolves.toBe("keep");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("unlinks a profile symlink instead of following it into another bot's profile", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "rakazo-team-symlink-"));
+    try {
+      const home = new LocalAgentHomeStore(root);
+      const teamHome = home.pathFor("team-workspace-1");
+      const linkedProfile = path.join(teamHome, ".browser-profiles", profileDirectory("bot-1"));
+      const keptProfile = path.join(teamHome, ".browser-profiles", profileDirectory("bot-2"));
+      await mkdir(keptProfile, { recursive: true });
+      await mkdir(path.dirname(linkedProfile), { recursive: true });
+      await writeFile(path.join(keptProfile, "Cookies"), "keep");
+      await symlink(keptProfile, linkedProfile);
+      const team = {
+        id: "team-computer",
+        homeKey: "team-workspace-1",
+        kind: "docker",
+        providerRef: "container-1",
+        scope: "team",
+      };
+
+      await destroyBot(
+        {
+          prisma: deletionPrisma(team),
+          sandbox: {
+            releaseScreen: vi.fn().mockResolvedValue(undefined),
+          } as unknown as SandboxProvider,
+          home,
+          jobs: { cancel: vi.fn() } as unknown as JobPublisher,
+        },
+        {
+          id: "bot-1",
+          spaceId: "workspace-1",
+          name: "Researcher",
+          archivedAt: null,
+          computerId: team.id,
+        },
+        context,
+        { deleteMemories: true },
+      );
+
+      await expect(access(linkedProfile)).rejects.toThrow();
+      await expect(readFile(path.join(keptProfile, "Cookies"), "utf8")).resolves.toBe("keep");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("archiveBot", () => {
@@ -692,4 +805,115 @@ describe("archiveBot", () => {
       data: { state: "stopped" },
     });
   });
+
+  it("releases the archived bot's screen and keeps its browser profile", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "rakazo-team-archive-"));
+    try {
+      const home = new LocalAgentHomeStore(root);
+      const teamHome = home.pathFor("team-workspace-1");
+      const profile = path.join(teamHome, ".browser-profiles", profileDirectory("child-1"));
+      await mkdir(profile, { recursive: true });
+      await writeFile(path.join(profile, "Cookies"), "stay");
+      const releaseScreen = vi.fn().mockResolvedValue(undefined);
+      const team = {
+        id: "team-computer",
+        homeKey: "team-workspace-1",
+        kind: "docker",
+        providerRef: "container-1",
+        scope: "team",
+      };
+      const transaction = vi.fn(async (callback: (tx: unknown) => Promise<void>) =>
+        callback({
+          ...noGroupMemberships(),
+          run: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
+          task: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
+          routine: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
+          computerExecutionLease: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
+          computer: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
+          bot: { update: vi.fn().mockResolvedValue({}) },
+        }),
+      );
+      const prisma = {
+        computer: {
+          findUnique: vi.fn(async (query: { where: { id?: string } }) =>
+            query.where.id === team.id ? team : null,
+          ),
+        },
+        run: { findMany: vi.fn().mockResolvedValue([]) },
+        routine: { findMany: vi.fn().mockResolvedValue([]) },
+        $transaction: transaction,
+      } as unknown as PrismaClient;
+
+      await archiveBot(
+        {
+          prisma,
+          sandbox: { releaseScreen } as unknown as SandboxProvider,
+          home,
+          jobs: { cancel: vi.fn() } as unknown as JobPublisher,
+        },
+        {
+          id: "child-1",
+          spaceId: "workspace-1",
+          name: "Scout",
+          archivedAt: null,
+          computerId: team.id,
+        },
+        { ...context, botId: "parent-1", screenLeaseId: "run-parent:4" },
+      );
+
+      expect(releaseScreen).toHaveBeenCalledWith(
+        {
+          id: "container-1",
+          botId: "team-workspace-1",
+          kind: "docker",
+          providerRef: "container-1",
+        },
+        expect.objectContaining({ botId: "child-1" }),
+      );
+      const releaseContext = releaseScreen.mock.calls[0]?.[1] as AdapterContext;
+      expect(releaseContext.botId).toBe("child-1");
+      expect(releaseContext.screenLeaseId).toBeUndefined();
+      expect(releaseContext.cancelRunWork).toBeUndefined();
+      await expect(readFile(path.join(profile, "Cookies"), "utf8")).resolves.toBe("stay");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
 });
+
+function profileDirectory(botId: string) {
+  return path.posix.basename(browserProfilePathForScreen(botId));
+}
+
+function deletionPrisma(team: { id: string }) {
+  const transaction = vi.fn(async (callback: (tx: unknown) => Promise<unknown>) =>
+    callback({
+      $queryRaw: vi.fn().mockResolvedValue([]),
+      chatGroup: {
+        findMany: vi.fn().mockResolvedValue([]),
+        deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+      },
+      artifact: {
+        findMany: vi.fn().mockResolvedValue([]),
+        deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+      },
+      computerExecutionLease: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+      computer: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
+      botDeletion: { create: vi.fn().mockResolvedValue({}) },
+      bot: { delete: vi.fn().mockResolvedValue({}) },
+    }),
+  );
+  return {
+    computer: {
+      findUnique: vi.fn(async (query: { where: { id?: string } }) =>
+        query.where.id === team.id ? team : null,
+      ),
+    },
+    run: {
+      findMany: vi.fn().mockResolvedValue([]),
+      updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+    },
+    routine: { findMany: vi.fn().mockResolvedValue([]) },
+    $transaction: transaction,
+  } as unknown as PrismaClient;
+}

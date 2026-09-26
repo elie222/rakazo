@@ -1387,6 +1387,7 @@ export function createRouter(deps: RouterDeps) {
             traceId: "destroy",
             spaceId: context.actor.spaceId,
             userId: context.actor.userId,
+            botId: bot.id,
             signal: new AbortController().signal,
           },
           { deleteMemories: input.deleteMemories },
