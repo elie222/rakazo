@@ -4559,15 +4559,35 @@ const Transcript = memo(function Transcript({
       (node instanceof Element ? node : node.parentElement)?.closest<HTMLElement>(
         "[data-quote-message-id]",
       ) ?? null;
+    const startContent = contentOf(range.startContainer);
+    const endContent = contentOf(range.endContainer);
+    // selection.toString() serializes the whole range (a Ctrl+A transcript is
+    // unbounded), so it only runs once both endpoints sit in one message.
     const draft = quoteDraftForSelection(
       {
-        startContent: contentOf(range.startContainer),
-        endContent: contentOf(range.endContainer),
-        text: selection.toString(),
+        startContent,
+        endContent,
+        text: startContent && startContent === endContent ? selection.toString() : "",
       },
       messageById,
     );
-    setQuoteDraft(draft ? { ...draft, range } : null);
+    setQuoteDraft((prev) => {
+      if (!draft) return null;
+      // Repeat firings for an unchanged selection reuse the draft so the
+      // transcript isn't re-rendered by every unrelated selection event. A
+      // moved selection (e.g. keyboard-selecting a second occurrence of the
+      // same text) must carry its new Range — the pill anchors to it.
+      if (
+        prev &&
+        prev.message === draft.message &&
+        prev.text === draft.text &&
+        prev.range.compareBoundaryPoints(Range.START_TO_START, range) === 0 &&
+        prev.range.compareBoundaryPoints(Range.END_TO_END, range) === 0
+      ) {
+        return prev;
+      }
+      return { ...draft, range };
+    });
   }, [messageById]);
 
   // Keyboard and assistive-tech selections never reach a mouseup, so the pill
@@ -4589,15 +4609,22 @@ const Transcript = memo(function Transcript({
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") setQuoteDraft(null);
     };
+    // A drag that ends outside the window never fires document mouseup; reset
+    // the flag on blur so keyboard selections keep working afterwards.
+    const onWindowBlur = () => {
+      selectingWithMouse.current = false;
+    };
     document.addEventListener("mousedown", onMouseDown, true);
     document.addEventListener("mouseup", onMouseUp, true);
     document.addEventListener("selectionchange", onSelectionChange);
     document.addEventListener("keydown", onKey);
+    window.addEventListener("blur", onWindowBlur);
     return () => {
       document.removeEventListener("mousedown", onMouseDown, true);
       document.removeEventListener("mouseup", onMouseUp, true);
       document.removeEventListener("selectionchange", onSelectionChange);
       document.removeEventListener("keydown", onKey);
+      window.removeEventListener("blur", onWindowBlur);
     };
   }, [evaluateSelection]);
   const snapToEnd = useCallback(() => {

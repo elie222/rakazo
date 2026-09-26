@@ -36,7 +36,7 @@ const simpleTable = () =>
 
 describe("extractTable", () => {
   it("reads columns and rows from a thead/tbody tree", () => {
-    expect(extractTable(simpleTable())).toEqual({
+    expect(extractTable(simpleTable())).toMatchObject({
       columns: ["Name", "Price"],
       aligns: [null, null],
       rows: [
@@ -52,7 +52,7 @@ describe("extractTable", () => {
       row(cell("th", "A"), cell("th", "B")),
       row(cell("td", "1"), cell("td", "2")),
     ]);
-    expect(extractTable(node)).toEqual({
+    expect(extractTable(node)).toMatchObject({
       columns: ["A", "B"],
       aligns: [null, null],
       rows: [["1", "2"]],
@@ -121,6 +121,58 @@ describe("extractTable", () => {
     expect(extractTable({})).toBeNull();
     expect(extractTable(table([]))).toBeNull();
     expect(extractTable(table([{ tagName: "caption" }]))).toBeNull();
+  });
+
+  it("produces identical signatures for identical content across re-parses", () => {
+    // A streaming re-parse yields fresh node objects; content signatures must
+    // still match so downstream work keyed on them can be skipped.
+    const first = extractTable(simpleTable());
+    const second = extractTable(simpleTable());
+    expect(first?.schemaKey).toBe(second?.schemaKey);
+    expect(first?.dataSignature).toBe(second?.dataSignature);
+  });
+
+  it("changes schemaKey only when columns or aligns change", () => {
+    const base = extractTable(simpleTable());
+    const sameSchemaExtraRow = extractTable(
+      table([
+        { tagName: "thead", children: [row(cell("th", "Name"), cell("th", "Price"))] },
+        {
+          tagName: "tbody",
+          children: [
+            row(cell("td", "Alpha"), cell("td", "3")),
+            row(cell("td", "Beta"), cell("td", "10")),
+            row(cell("td", "Gamma"), cell("td", "1")),
+            row(cell("td", "Delta"), cell("td", "4")),
+          ],
+        },
+      ]),
+    );
+    const renamed = extractTable(
+      table([
+        row(cell("th", "Title"), cell("th", "Price")),
+        row(cell("td", "Alpha"), cell("td", "3")),
+      ]),
+    );
+    expect(sameSchemaExtraRow?.schemaKey).toBe(base?.schemaKey);
+    expect(sameSchemaExtraRow?.dataSignature).not.toBe(base?.dataSignature);
+    expect(renamed?.schemaKey).not.toBe(base?.schemaKey);
+  });
+
+  it("derives numeric columns, min widths, and unique keys for duplicate rows", () => {
+    const extracted = extractTable(
+      table([
+        row(cell("th", "Name"), cell("th", "Qty")),
+        row(cell("td", "a"), cell("td", "1")),
+        row(cell("td", "a"), cell("td", "1")),
+        row(cell("td", "b"), cell("td", "2")),
+      ]),
+    );
+    expect(extracted?.numericColumns.has(1)).toBe(true);
+    expect(extracted?.numericColumns.has(0)).toBe(false);
+    expect(extracted?.minWidths[1]).toContain("ch");
+    const keys = extracted?.rows.map((row) => extracted?.rowKeys.get(row));
+    expect(new Set(keys).size).toBe(3);
   });
 });
 

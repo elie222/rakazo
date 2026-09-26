@@ -9,6 +9,8 @@ export interface HastNode {
   tagName?: string;
   value?: string;
   properties?: Record<string, unknown>;
+  /** Source offsets supplied by the markdown parser, when available. */
+  position?: { start?: { offset?: number }; end?: { offset?: number } };
   children?: HastNode[];
 }
 
@@ -18,6 +20,14 @@ export type ExtractedTable = {
   columns: string[];
   aligns: TableAlign[];
   rows: string[][];
+  /** Identity of columns+aligns; a schema change resets card interaction state. */
+  schemaKey: string;
+  /** Identity of all extracted content; anything derived keys on this, not refs. */
+  dataSignature: string;
+  numericColumns: ReadonlySet<number>;
+  minWidths: Record<number, string>;
+  /** Content-derived React keys; stable across re-parses and sort order. */
+  rowKeys: Map<string[], string>;
 };
 
 export type TableSortDirection = "asc" | "desc";
@@ -40,7 +50,31 @@ export function extractTable(node: HastNode | undefined): ExtractedTable | null 
     const source = cells.length > 0 ? cells : cellsOf(row, "th");
     return columns.map((_, i) => textOf(source[i]).trim());
   });
-  return { columns, aligns, rows };
+  // Everything downstream derives from the same walk: signatures let renders
+  // skip re-deriving identical content when a stream re-parses the tree.
+  const numericColumns = new Set<number>();
+  columns.forEach((_, i) => {
+    if (isNumericColumn(rows, i)) numericColumns.add(i);
+  });
+  const occurrences = new Map<string, number>();
+  const rowKeys = new Map(
+    rows.map((row) => {
+      const signature = JSON.stringify(row);
+      const occurrence = occurrences.get(signature) ?? 0;
+      occurrences.set(signature, occurrence + 1);
+      return [row, `${signature}:${occurrence}`] as const;
+    }),
+  );
+  return {
+    columns,
+    aligns,
+    rows,
+    schemaKey: JSON.stringify([columns, aligns]),
+    dataSignature: JSON.stringify([columns, rows]),
+    numericColumns,
+    minWidths: columnMinWidths(columns, rows),
+    rowKeys,
+  };
 }
 
 function collectRows(node: HastNode): HastNode[] {
