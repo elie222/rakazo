@@ -483,6 +483,8 @@ private val TABLE_ROW = Regex("\\s*\\|(.+)\\|\\s*")
 private val BREAK_LINE = Regex("\\s*[-*_]{3,}\\s*")
 private val FENCE_OPEN = Regex("^ {0,3}(`{3,}|~{3,})(.*)$")
 private const val PAYLOAD_MARK = ''
+/** A preview is one line. Cap the source so one huge reply cannot stall the poll loop. */
+private const val MAX_PREVIEW_SOURCE = 4_096
 private val ESCAPE_RE =
     Regex("\\\\([!\"#$%&'()*+,\\-./:;<=>?@\\[\\\\\\]^_`{|}~])")
 
@@ -523,11 +525,34 @@ private fun takeInlineCode(text: String, stash: (String) -> String): String {
 }
 
 /**
+ * Source window for a preview. Messages that already fit are returned whole.
+ * Past the cap, leading whitespace is skipped first so a pad cannot hide the body.
+ * Mirrors boundedPreviewSource.
+ */
+private data class PreviewSource(val text: String, val truncated: Boolean)
+
+private fun boundedPreviewSource(markdown: String): PreviewSource {
+  val normalized = markdown.replace("\r\n", "\n")
+  if (normalized.length <= MAX_PREVIEW_SOURCE) return PreviewSource(normalized, false)
+  val body = normalized.trimStart()
+  if (body.length <= MAX_PREVIEW_SOURCE) return PreviewSource(body, false)
+  var end = MAX_PREVIEW_SOURCE
+  if (body[end - 1].isHighSurrogate()) end -= 1
+  return PreviewSource(body.substring(0, end), true)
+}
+
+/**
  * Fenced blocks stash their body (open/close lines dropped) so interior text
  * — separators, pipes, markers — survives untouched. Unclosed fences stay
- * literal lines. Mirrors takeFencedCode.
+ * literal lines, except when the preview cap cut off the closer: that body
+ * is stashed so the opener and stripped code cannot leak into the preview.
+ * A scan that finds no closer line does not rescan the tail. Mirrors takeFencedCode.
  */
-private fun takeFencedCode(text: String, stash: (String) -> String): String {
+private fun takeFencedCode(
+  text: String,
+  stash: (String) -> String,
+  truncated: Boolean,
+): String {
   val lines = text.split("\n")
   val out = mutableListOf<String>()
   var i = 0
@@ -544,21 +569,31 @@ private fun takeFencedCode(text: String, stash: (String) -> String): String {
     }
     val body = mutableListOf<String>()
     var closed = false
+    var sawCloser = false
     var j = i + 1
     while (j < lines.size) {
       val close = FENCE_OPEN.matchEntire(lines[j])
       val closeMarker = close?.groupValues?.get(1)
-      if (close != null && closeMarker != null && closeMarker[0] == marker[0] &&
-        closeMarker.length >= marker.length && close.groupValues[2].isBlank()
-      ) {
-        closed = true
-        break
+      if (close != null && closeMarker != null && close.groupValues[2].isBlank()) {
+        sawCloser = true
+        if (closeMarker[0] == marker[0] && closeMarker.length >= marker.length) {
+          closed = true
+          break
+        }
       }
       body.add(lines[j])
       j++
     }
     if (!closed) {
+      if (truncated && j == lines.size) {
+        out.add(stash(body.joinToString("\n")))
+        break
+      }
       out.add(line)
+      if (!sawCloser) {
+        for (k in i + 1 until lines.size) out.add(lines[k])
+        break
+      }
       i++
       continue
     }
@@ -699,9 +734,9 @@ private fun markdownToPreview(markdown: String): String {
     payloads.add(payload.replace(mark, markToken))
     "$mark${payloads.size - 1}$mark"
   }
-  var text = markdown.replace("\r\n", "\n")
-  text = text.replace(mark, markToken)
-  text = takeFencedCode(text, stash)
+  val source = boundedPreviewSource(markdown)
+  var text = source.text.replace(mark, markToken)
+  text = takeFencedCode(text, stash, source.truncated)
   text = takeInlineCode(text, stash)
   text = takeEscapes(text, stash)
   text = flattenTableRows(text)

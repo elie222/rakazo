@@ -1,4 +1,10 @@
 const PAYLOAD_MARK = "\uE000";
+/**
+ * A preview collapses to one line. Cap the source so a huge reply cannot
+ * stall formatting — Android walks replies one at a time on its poll loop.
+ * Leading whitespace does not spend this budget; a pad must not hide the body.
+ */
+const MAX_PREVIEW_SOURCE = 4_096;
 
 /** Markdown source → a single plain line for previews and notifications. */
 export function plainTextFromMarkdown(markdown: string): string {
@@ -22,9 +28,9 @@ export function plainTextFromMarkdown(markdown: string): string {
     return `${PAYLOAD_MARK}${payloads.length - 1}${PAYLOAD_MARK}`;
   };
 
-  const source = markdown.replace(/\r\n/g, "\n");
-  let text = source.replaceAll(PAYLOAD_MARK, markToken);
-  text = takeFencedCode(text, stash);
+  const source = boundedPreviewSource(markdown);
+  let text = source.text.replaceAll(PAYLOAD_MARK, markToken);
+  text = takeFencedCode(text, stash, source.truncated);
   text = takeInlineCode(text, stash);
   text = takeEscapes(text, stash);
   // Autolinks may contain stashed escapes; flatten only those literal payloads.
@@ -243,7 +249,27 @@ function takeEscapes(text: string, stash: (payload: string) => string): string {
 
 const OPEN_FENCE = /^ {0,3}(`{3,}|~{3,})(.*)$/;
 
-function takeFencedCode(text: string, stash: (payload: string) => string): string {
+/**
+ * Source window for a preview. Messages that already fit are returned whole
+ * so a normal reply is unchanged. Past the cap, leading whitespace is skipped
+ * first — otherwise a pad of spaces consumes the window and the body vanishes.
+ */
+function boundedPreviewSource(markdown: string): { text: string; truncated: boolean } {
+  const normalized = markdown.replace(/\r\n/g, "\n");
+  if (normalized.length <= MAX_PREVIEW_SOURCE) return { text: normalized, truncated: false };
+  const body = normalized.trimStart();
+  if (body.length <= MAX_PREVIEW_SOURCE) return { text: body, truncated: false };
+  let end = MAX_PREVIEW_SOURCE;
+  // Don't split a surrogate pair at the cut.
+  if ((body.charCodeAt(end - 1) & 0xfc00) === 0xd800) end -= 1;
+  return { text: body.slice(0, end), truncated: true };
+}
+
+function takeFencedCode(
+  text: string,
+  stash: (payload: string) => string,
+  truncated: boolean,
+): string {
   const lines = text.split("\n");
   const out: string[] = [];
   for (let i = 0; i < lines.length; i++) {
@@ -261,22 +287,34 @@ function takeFencedCode(text: string, stash: (payload: string) => string): strin
     }
     const body: string[] = [];
     let closed = false;
+    // Blank-info fence lines are the only closers. If this scan sees none,
+    // no later opener can close either, so the tail is not scanned again.
+    let sawCloser = false;
     let j = i + 1;
     for (; j < lines.length; j++) {
       const close = lines[j]?.match(OPEN_FENCE);
-      if (
-        close?.[1] &&
-        close[1][0] === fenceChar &&
-        close[1].length >= marker.length &&
-        (close[2] ?? "").trim() === ""
-      ) {
-        closed = true;
-        break;
+      const closeMarker = close?.[1];
+      if (closeMarker && (close?.[2] ?? "").trim() === "") {
+        sawCloser = true;
+        if (closeMarker[0] === fenceChar && closeMarker.length >= marker.length) {
+          closed = true;
+          break;
+        }
       }
       body.push(lines[j] ?? "");
     }
     if (!closed) {
+      // The cap removed the closing fence. Keep the body verbatim: the opener
+      // stays out of the preview, and later passes cannot strip the code.
+      if (truncated && j === lines.length) {
+        out.push(stash(body.join("\n")));
+        break;
+      }
       out.push(line);
+      if (!sawCloser) {
+        for (let k = i + 1; k < lines.length; k++) out.push(lines[k] ?? "");
+        break;
+      }
       continue;
     }
     out.push(stash(body.join("\n")));

@@ -140,6 +140,46 @@ describe("plainTextFromMarkdown", () => {
     expect(plainTextFromMarkdown("~~~~\ncode with ~~~\nstill\n~~~~")).toBe("code with ~~~ still");
   });
 
+  it("keeps a short unclosed fence literal", () => {
+    expect(plainTextFromMarkdown("```\n*bold*")).toBe("``` bold");
+    // Not truncated, so the opener stays text and emphasis after it still strips.
+    expect(plainTextFromMarkdown("```x\nstill **bold**")).toBe("```x still bold");
+  });
+
+  it("still closes a fence that ends inside a long reply", () => {
+    const source = "```\nkeep *stars*\n```\n**after** " + "z".repeat(6_000);
+    const preview = plainTextFromMarkdown(source);
+    expect(preview.startsWith("keep *stars* after")).toBe(true);
+    expect(preview).not.toContain("```");
+    expect(preview).not.toContain("**");
+  });
+
+  it("preserves a code block when the preview cap cuts off its closing fence", () => {
+    const source =
+      "```ts\nkeep *stars* and <tag> and | a | b |\n" + "y".repeat(6_000) + "\n```\nAFTER";
+    const preview = plainTextFromMarkdown(source);
+    expect(preview.startsWith("keep *stars* and <tag> and | a | b |")).toBe(true);
+    expect(preview).not.toContain("```");
+    expect(preview).not.toContain("AFTER");
+    expect(preview).toContain("<tag>");
+    expect(preview).toContain("| a | b |");
+  });
+
+  it("does not spend the preview cap on leading whitespace", () => {
+    expect(plainTextFromMarkdown(`${" \n".repeat(8_000)}**hello**`)).toBe("hello");
+    expect(plainTextFromMarkdown(`${" ".repeat(8_000)}\`*x*\``)).toBe("*x*");
+  });
+
+  it("bounds work on a long run of unclosed fences", () => {
+    const source = `${"```x\n".repeat(20_000)}TAIL_MARKER`;
+    const started = Date.now();
+    const preview = plainTextFromMarkdown(source);
+    expect(Date.now() - started).toBeLessThan(1_000);
+    expect(preview).not.toContain("TAIL_MARKER");
+    expect(preview.length).toBeLessThan(4_096);
+    expect(preview.startsWith("```x")).toBe(true);
+  });
+
   it("still finds a later link after many unmatched brackets", () => {
     const noise = "[".repeat(2_000);
     expect(plainTextFromMarkdown(`${noise} see [docs](https://example.com/a_(b))`)).toBe(
