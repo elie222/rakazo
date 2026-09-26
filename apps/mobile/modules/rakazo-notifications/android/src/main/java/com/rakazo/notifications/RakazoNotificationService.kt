@@ -483,8 +483,6 @@ private val TABLE_ROW = Regex("\\s*\\|(.+)\\|\\s*")
 private val BREAK_LINE = Regex("\\s*[-*_]{3,}\\s*")
 private val FENCE_OPEN = Regex("^ {0,3}(`{3,}|~{3,})(.*)$")
 private const val PAYLOAD_MARK = ''
-private const val MAX_PREVIEW_SOURCE = 4_096
-private const val MAX_STASHED_PAYLOADS = 256
 private val ESCAPE_RE =
     Regex("\\\\([!\"#$%&'()*+,\\-./:;<=>?@\\[\\\\\\]^_`{|}~])")
 
@@ -688,26 +686,21 @@ private fun flattenTableRows(text: String): String {
  * markers); intentionally lossy — the body is a preview, not the message.
  */
 private fun markdownToPreview(markdown: String): String {
-  // Payloads use a fixed one-char token, not a mark sized to the input:
-  // literal mark characters in the source are stashed first so tokens can
-  // never collide, and token length stays constant regardless of input —
+  // Payloads use a fixed one-char token alphabet: literal mark characters in
+  // the source are stashed first so tokens can never collide, token length is
+  // constant regardless of input, and payload count is bounded by input size —
   // an adversarial reply cannot inflate the intermediate string.
-  val payloads = mutableListOf<String>()
   val mark = PAYLOAD_MARK.toString()
+  val markToken = "${mark}0$mark"
+  val payloads = mutableListOf(mark)
+  // A payload's text must never carry a raw mark: one could sit next to digits
+  // and impersonate a token on restore. Marks are rewritten as payload-0 tokens.
   val stash = { payload: String ->
-    if (payloads.size < MAX_STASHED_PAYLOADS) {
-      payloads.add(payload)
-      "$mark${payloads.size - 1}$mark"
-    } else {
-      payload
-    }
+    payloads.add(payload.replace(mark, markToken))
+    "$mark${payloads.size - 1}$mark"
   }
   var text = markdown.replace("\r\n", "\n")
-  // A preview collapses to one line; bound the work before any pass.
-  if (text.length > MAX_PREVIEW_SOURCE) text = text.substring(0, MAX_PREVIEW_SOURCE)
-  // Literal mark chars in the source become payload 0 before anything else
-  // stashes, so every later token is unambiguous.
-  text = text.replace(mark, stash(mark))
+  text = text.replace(mark, markToken)
   text = takeFencedCode(text, stash)
   text = takeInlineCode(text, stash)
   text = takeEscapes(text, stash)

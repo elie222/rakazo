@@ -1,30 +1,29 @@
 const PAYLOAD_MARK = "\uE000";
 
-/** A preview collapses to one line; bounding the input bounds stash tokens. */
-const MAX_PREVIEW_SOURCE = 4_096;
-/** Beyond the cap a payload degrades to its raw text instead of a token. */
-const MAX_STASHED_PAYLOADS = 256;
-
 /** Markdown source → a single plain line for previews and notifications. */
 export function plainTextFromMarkdown(markdown: string): string {
-  const payloads: string[] = [];
-  const source = markdown.replace(/\r\n/g, "\n").slice(0, MAX_PREVIEW_SOURCE);
+  // Fixed one-char tokens: literal mark characters are stashed first so tokens
+  // never collide, and token length stays constant regardless of input — an
+  // adversarial reply cannot inflate the intermediate string. Payload count
+  // is bounded by the input length, and each payload is a slice of it.
+  const payloads: string[] = [PAYLOAD_MARK];
+  const markToken = `${PAYLOAD_MARK}0${PAYLOAD_MARK}`;
   const payloadPattern = new RegExp(`${PAYLOAD_MARK}(\\d+)${PAYLOAD_MARK}`, "g");
   // Restored payload text is never rescanned — literal marks that come back
   // out of a payload cannot form phantom tokens. Payloads only ever contain
   // earlier tokens, so the recursion is bounded by the payload count.
   const restore = (text: string): string =>
     text.replace(payloadPattern, (_match, index: string) => restore(payloads[Number(index)] ?? ""));
-  // Fixed one-char tokens: literal mark characters are stashed first so tokens
-  // never collide, and token length stays constant regardless of input — an
-  // adversarial reply cannot inflate the intermediate string.
+  // A payload's text must never carry a raw mark: one could sit next to
+  // digits and impersonate a token on restore (a payload could even refer to
+  // itself and recurse forever). Marks are rewritten as payload-0 tokens.
   const stash = (payload: string): string => {
-    if (payloads.length >= MAX_STASHED_PAYLOADS) return payload;
-    payloads.push(payload);
+    payloads.push(payload.replaceAll(PAYLOAD_MARK, markToken));
     return `${PAYLOAD_MARK}${payloads.length - 1}${PAYLOAD_MARK}`;
   };
 
-  let text = source.replaceAll(PAYLOAD_MARK, stash(PAYLOAD_MARK));
+  const source = markdown.replace(/\r\n/g, "\n");
+  let text = source.replaceAll(PAYLOAD_MARK, markToken);
   text = takeFencedCode(text, stash);
   text = takeInlineCode(text, stash);
   text = takeEscapes(text, stash);

@@ -164,6 +164,18 @@ describe("plainTextFromMarkdown", () => {
     );
   });
 
+  it("does not let a round-tripped autolink impersonate a payload token", () => {
+    // The URL restores literal mark characters; without re-tokenizing them the
+    // stashed payload would contain E02E0 — a reference to itself — and
+    // restoring it would recurse forever.
+    expect(plainTextFromMarkdown("\\* <https://x/2>")).toBe("* https://x/2");
+  });
+
+  it("protects escapes well past the old payload cap", () => {
+    const noise = "\\*".repeat(300);
+    expect(plainTextFromMarkdown(`${noise}\n| a\\|b | c |`)).toBe(`${"*".repeat(300)} a|b, c`);
+  });
+
   it("flattens table rows and drops separator rows", () => {
     expect(plainTextFromMarkdown("| Name | Value |\n| --- | ---: |\n| Alice | 5 |")).toBe(
       "Name, Value Alice, 5",
