@@ -9,10 +9,18 @@ function hasPermissions(stat: Stats, uid: number, gid: number, required: number)
   return ((stat.mode >> shift) & required) === required;
 }
 
-/** Owner-owned regular files may be 0444 (git objects). Other-writable files are not exempt. */
+/**
+ * Owner-owned regular files may be 0444 (git objects) when the owner can read them.
+ * Other-writable files are not exempt.
+ */
 function regularFileIsUsable(stat: Stats, uid: number, gid: number): boolean {
   if (hasPermissions(stat, uid, gid, 0b010)) return true;
-  return stat.isFile() && stat.uid === uid && (stat.mode & constants.S_IWOTH) === 0;
+  return (
+    stat.isFile() &&
+    stat.uid === uid &&
+    hasPermissions(stat, uid, gid, 0b100) &&
+    (stat.mode & constants.S_IWOTH) === 0
+  );
 }
 
 function isMissingOrNotDirectory(error: unknown): boolean {

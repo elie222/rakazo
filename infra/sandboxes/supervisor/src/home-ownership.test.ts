@@ -114,6 +114,19 @@ describe("computer home ownership", () => {
     );
   });
 
+  it("rejects an owner-owned file the owner cannot read", async () => {
+    const parent = await mkdtemp(path.join(tmpdir(), "rakazo-home-unreadable-"));
+    roots.push(parent);
+    const home = path.join(parent, "home");
+    const file = path.join(home, "profile.json");
+    await mkdir(home);
+    await writeFile(file, "{}");
+    await chmod(file, 0o000);
+
+    const stat = await lstat(file);
+    await expect(assertComputerHomeWritable(home, stat.uid, stat.gid)).rejects.toThrow(/chown -R/);
+  });
+
   it("rejects an owner-owned world-writable file the owner cannot write", async () => {
     const parent = await mkdtemp(path.join(tmpdir(), "rakazo-home-world-writable-"));
     roots.push(parent);
