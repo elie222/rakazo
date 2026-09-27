@@ -124,16 +124,26 @@ describe("openai-codex API key guard", () => {
     );
   });
 
-  it("still carries a legacy stored API key forward without accepting new ones", () => {
+  it("rejects re-saving a legacy stored API key on a keyless connect", () => {
     const legacyKey = buildModelConnectPlaintext({
       provider: "anthropic",
       apiKey: "sk-legacy-key",
     });
+    expect(() =>
+      buildModelConnectPlaintext({ provider: "openai-codex", maxTokens: 8192 }, legacyKey),
+    ).toThrow(/ChatGPT subscription sign-in is required/);
+  });
+
+  it("carries a previous ChatGPT sign-in forward when only the output limit changes", () => {
     expect(
       parseModelSecret(
-        buildModelConnectPlaintext({ provider: "openai-codex", maxTokens: 8192 }, legacyKey),
+        buildModelConnectPlaintext({ provider: "openai-codex", maxTokens: 8192 }, codexOauth),
       ),
-    ).toEqual({ kind: "api_key", key: "sk-legacy-key", maxTokens: 8192 });
+    ).toEqual({
+      kind: "oauth",
+      credential: { type: "oauth", access: "access", refresh: "refresh", expires: 10 },
+      maxTokens: 8192,
+    });
   });
 
   it("keeps other providers' API keys working", () => {

@@ -97,6 +97,9 @@ export function buildModelConnectPlaintext(
     });
   }
   if (previous?.kind === "api_key" && previous.key.trim().length >= 8) {
+    if (input.provider === CHATGPT_OAUTH_PROVIDER) {
+      throw new Error(CHATGPT_SUBSCRIPTION_REQUIRED_MESSAGE);
+    }
     return serializeModelSecret({
       kind: "api_key",
       key: previous.key,
