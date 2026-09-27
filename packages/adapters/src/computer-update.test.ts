@@ -175,8 +175,9 @@ describe("background computer maintenance", () => {
       expect.objectContaining({
         where: expect.objectContaining({
           maintenanceId: "update-1",
-          controlLeaseId: "lease-1",
+          controlHolder: "none",
           controlRunId: null,
+          OR: [{ controlLeaseId: "lease-1" }, { controlLeaseId: null }],
         }),
         data: expect.objectContaining({ controlLeaseId: null, controlBotId: null }),
       }),
@@ -244,6 +245,61 @@ describe("background computer maintenance", () => {
     expect(harness.computerUpdate.create).not.toHaveBeenCalled();
   });
 
+  it("queues the handback when the takeover has no provider ref", async () => {
+    const harness = takeoverQueue({ providerRef: null });
+    harness.setScreenControl.mockRejectedValue(new Error("provider unavailable"));
+
+    await queueComputerUpdate(harness.deps, "computer-1", "bot-1");
+
+    expect(harness.setScreenControl).not.toHaveBeenCalled();
+    expect(harness.jobs.cancel).toHaveBeenCalledOnce();
+    expect(harness.jobs.enqueue).toHaveBeenCalledOnce();
+    expect(harness.computerUpdate.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it("does not roll back when screen release is not implemented", async () => {
+    const harness = takeoverQueue();
+    (harness.deps as { sandbox: { setScreenControl?: unknown } }).sandbox = {};
+
+    await queueComputerUpdate(harness.deps, "computer-1", "bot-1");
+
+    expect(harness.setScreenControl).not.toHaveBeenCalled();
+    expect(harness.jobs.enqueue).toHaveBeenCalledOnce();
+    expect(harness.computerUpdate.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it("restores the takeover when lease clear loses the reservation", async () => {
+    const harness = takeoverQueue();
+    harness.computer.updateMany
+      .mockResolvedValueOnce({ count: 1 })
+      .mockResolvedValueOnce({ count: 1 })
+      .mockResolvedValueOnce({ count: 0 });
+
+    await expect(queueComputerUpdate(harness.deps, "computer-1", "bot-1")).rejects.toThrow(
+      "Computer is busy",
+    );
+
+    expect(harness.jobs.enqueue).not.toHaveBeenCalled();
+    expect(harness.computer.updateMany).toHaveBeenLastCalledWith({
+      where: {
+        id: "computer-1",
+        maintenanceId: "update-1",
+        controlHolder: "none",
+        controlLeaseId: "lease-1",
+        controlRunId: null,
+      },
+      data: {
+        maintenanceId: null,
+        controlHolder: "user",
+        controlBotId: "bot-1",
+        controlRunId: null,
+      },
+    });
+    expect(harness.computerUpdate.deleteMany).toHaveBeenCalledWith({
+      where: { id: "update-1", status: "reserving" },
+    });
+  });
+
   it("refuses maintenance while a failed revoke still holds a lease", async () => {
     const harness = takeoverQueue({
       controlHolder: "none",
@@ -259,6 +315,39 @@ describe("background computer maintenance", () => {
     expect(harness.setScreenControl).not.toHaveBeenCalled();
     expect(harness.jobs.enqueue).not.toHaveBeenCalled();
   });
+
+  it("gives an idle takeover back when a reserving update goes stale before handback", async () => {
+    const { row, deps, computer } = fixture("reserving");
+
+    await reconcileComputerUpdates(deps);
+
+    expect(row.status).toBe("failed");
+    expect(computer.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: row.computerId,
+        maintenanceId: row.id,
+        controlHolder: "none",
+        controlBotId: row.botId,
+        controlRunId: null,
+        controlLeaseId: { not: null },
+      },
+      data: { maintenanceId: null, controlHolder: "user" },
+    });
+    expect(computer.updateMany).toHaveBeenCalledOnce();
+  });
+
+  it("clears a stale reservation once the lease was already released", async () => {
+    const { row, deps, computer } = fixture("reserving");
+    computer.updateMany.mockResolvedValueOnce({ count: 0 });
+
+    await reconcileComputerUpdates(deps);
+
+    expect(row.status).toBe("failed");
+    expect(computer.updateMany).toHaveBeenLastCalledWith({
+      where: { id: row.computerId, maintenanceId: row.id },
+      data: { maintenanceId: null },
+    });
+  });
 });
 
 function takeoverQueue(
@@ -266,6 +355,7 @@ function takeoverQueue(
     controlHolder?: string;
     controlBotId?: string | null;
     controlRunId?: string | null;
+    providerRef?: string | null;
   } = {},
 ) {
   const computerRow = {
@@ -275,7 +365,7 @@ function takeoverQueue(
     spaceId: "space",
     userId: "user",
     homeKey: "bot-1",
-    providerRef: "provider-1",
+    providerRef: "provider-1" as string | null,
     state: "running",
     maintenanceId: null,
     controlHolder: "user",

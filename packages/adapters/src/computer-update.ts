@@ -109,7 +109,8 @@ export async function queueComputerUpdate(
         computerId,
         botId,
         action,
-        // Hidden from the reconciler until provider control is actually released.
+        // Stay reserving until the lease is cleared. If this process dies first, reconciliation
+        // gives the takeover back instead of leaving screen control recorded as free.
         ...(revokeLeaseId ? { status: "reserving" } : {}),
       },
     });
@@ -147,26 +148,30 @@ export async function queueComputerUpdate(
     return { row, handback };
   });
 
-  if (prepared.handback?.leaseId && prepared.handback.providerRef) {
-    const context: AdapterContext = {
-      operationId: prepared.row.id,
-      traceId: prepared.row.id,
-      spaceId: prepared.handback.spaceId,
-      userId: prepared.handback.userId,
-      botId,
-      signal: new AbortController().signal,
-    };
-    try {
-      await deps.sandbox?.setScreenControl?.(
-        toComputerRef(prepared.handback),
-        false,
-        context,
-        prepared.handback.leaseId,
-      );
-    } catch (error) {
-      getLogger().error("release own takeover before maintenance", error);
-      await undoQueuedMaintenance(deps.prisma, computerId, prepared.row.id, prepared.handback);
-      throw new ComputerBusyError();
+  if (prepared.handback?.leaseId) {
+    // Provider release is optional. CreateOS ignores a non-interactive release, and a host
+    // whose provider has no release method resolves. Only a thrown release rolls the claim back.
+    if (prepared.handback.providerRef) {
+      const context: AdapterContext = {
+        operationId: prepared.row.id,
+        traceId: prepared.row.id,
+        spaceId: prepared.handback.spaceId,
+        userId: prepared.handback.userId,
+        botId,
+        signal: new AbortController().signal,
+      };
+      try {
+        await deps.sandbox?.setScreenControl?.(
+          toComputerRef(prepared.handback),
+          false,
+          context,
+          prepared.handback.leaseId,
+        );
+      } catch (error) {
+        getLogger().error("release own takeover before maintenance", error);
+        await undoQueuedMaintenance(deps.prisma, computerId, prepared.row.id, prepared.handback);
+        throw new ComputerBusyError();
+      }
     }
     await deps.jobs
       .cancel(computerControlExpireJobKey(computerId, prepared.handback.leaseId))
@@ -178,8 +183,10 @@ export async function queueComputerUpdate(
         id: computerId,
         maintenanceId: prepared.row.id,
         controlHolder: "none",
-        controlLeaseId: prepared.handback.leaseId,
         controlRunId: null,
+        // Takeover expiry can clear this lease after the reservation and before this write.
+        // Control is already free in that case; discarding the update would report busy.
+        OR: [{ controlLeaseId: prepared.handback.leaseId }, { controlLeaseId: null }],
       },
       data: {
         controlLeaseId: null,
@@ -189,7 +196,7 @@ export async function queueComputerUpdate(
       },
     });
     if (released.count !== 1) {
-      await dropMaintenanceReservation(deps.prisma, computerId, prepared.row.id);
+      await undoQueuedMaintenance(deps.prisma, computerId, prepared.row.id, prepared.handback);
       throw new ComputerBusyError();
     }
     const queued = await deps.prisma.computerUpdate.updateMany({
@@ -415,6 +422,19 @@ export async function reconcileComputerUpdates(deps: Pick<Deps, "prisma" | "jobs
           data: { status: "failed" },
         });
         if (stale.count !== 1) return;
+        // Handback never cleared the lease, so provider control can still belong to the user.
+        const restored = await tx.computer.updateMany({
+          where: {
+            id: update.computerId,
+            maintenanceId: update.id,
+            controlHolder: "none",
+            controlBotId: update.botId,
+            controlRunId: null,
+            controlLeaseId: { not: null },
+          },
+          data: { maintenanceId: null, controlHolder: "user" },
+        });
+        if (restored.count === 1) return;
         await tx.computer.updateMany({
           where: { id: update.computerId, maintenanceId: update.id },
           data: { maintenanceId: null },
