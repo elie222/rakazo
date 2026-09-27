@@ -53,19 +53,24 @@ export default function TerminalApp({ botId }: { botId: string }) {
       commands = capComputerCommands(mergeComputerCommand(commands, command));
       render();
     });
-    // A slow response must not replace a newer page or clear live commands.
-    let refreshGeneration = 0;
+    // One fetch at a time. A poll that is still running is not replaced, so a
+    // slow response is applied and cannot arrive after a newer page.
+    let refreshInFlight = false;
     const refresh = () => {
-      const generation = ++refreshGeneration;
-      return rpc.computer
+      if (refreshInFlight) return;
+      refreshInFlight = true;
+      void rpc.computer
         .commands({ botId })
         .then((history) => {
-          if (!cancelled && generation === refreshGeneration) applyHistory(history);
+          if (!cancelled) applyHistory(history);
         })
         .catch((cause: unknown) => {
-          if (!cancelled && generation === refreshGeneration && commands.length === 0) {
+          if (!cancelled && commands.length === 0) {
             setError(errorMessage(cause, t`Could not load commands`));
           }
+        })
+        .finally(() => {
+          refreshInFlight = false;
         });
     };
     void refresh();
