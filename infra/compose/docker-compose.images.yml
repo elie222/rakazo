@@ -34,7 +34,7 @@ services:
 
   # Pull-only stub so `compose up` fetches the published desktop image without a checkout.
   computer:
-    image: ${RAKAZO_COMPUTER_IMAGE:-ghcr.io/elie222/rakazo/computer}:${RAKAZO_COMPUTER_IMAGE_TAG:-edge}
+    image: ${RAKAZO_COMPUTER_IMAGE:-ghcr.io/konradmaniszewski-oss/rakazo/computer}:${RAKAZO_COMPUTER_IMAGE_TAG:-edge}
     command: ["true"]
     network_mode: none
     restart: "no"
@@ -51,7 +51,7 @@ services:
   # Runs from the app image. Not published as its own image and not exposed on the host:
   # access to the supervisor is equivalent to control of the Docker host.
   supervisor:
-    image: ${RAKAZO_IMAGE:-ghcr.io/elie222/rakazo/app}:${RAKAZO_IMAGE_TAG:-edge}
+    image: ${RAKAZO_IMAGE:-ghcr.io/konradmaniszewski-oss/rakazo/app}:${RAKAZO_IMAGE_TAG:-edge}
     restart: unless-stopped
     command: ["pnpm", "--filter", "@rakazo/sandbox-supervisor", "start"]
     init: true
@@ -66,7 +66,7 @@ services:
       SUPERVISOR_HOST: "0.0.0.0"
       SUPERVISOR_PORT: "7091"
       DOCKER_SOCKET: /var/run/docker.sock
-      RAKAZO_COMPUTER_IMAGE: ${RAKAZO_COMPUTER_IMAGE:-ghcr.io/elie222/rakazo/computer}:${RAKAZO_COMPUTER_IMAGE_TAG:-edge}
+      RAKAZO_COMPUTER_IMAGE: ${RAKAZO_COMPUTER_IMAGE:-ghcr.io/konradmaniszewski-oss/rakazo/computer}:${RAKAZO_COMPUTER_IMAGE_TAG:-edge}
       RAKAZO_COMPUTER_MEMORY: ${RAKAZO_COMPUTER_MEMORY:-2g}
       RAKAZO_COMPUTER_CPUS: ${RAKAZO_COMPUTER_CPUS:-2}
       RAKAZO_COMPUTER_PIDS_LIMIT: ${RAKAZO_COMPUTER_PIDS_LIMIT:-2048}
@@ -100,7 +100,7 @@ services:
       retries: 20
 
   api:
-    image: ${RAKAZO_IMAGE:-ghcr.io/elie222/rakazo/app}:${RAKAZO_IMAGE_TAG:-edge}
+    image: ${RAKAZO_IMAGE:-ghcr.io/konradmaniszewski-oss/rakazo/app}:${RAKAZO_IMAGE_TAG:-edge}
     restart: unless-stopped
     command:
       - bash
@@ -163,7 +163,7 @@ services:
       retries: 20
 
   worker:
-    image: ${RAKAZO_IMAGE:-ghcr.io/elie222/rakazo/app}:${RAKAZO_IMAGE_TAG:-edge}
+    image: ${RAKAZO_IMAGE:-ghcr.io/konradmaniszewski-oss/rakazo/app}:${RAKAZO_IMAGE_TAG:-edge}
     restart: unless-stopped
     command: ["pnpm", "--filter", "@rakazo/worker", "start"]
     init: true
@@ -211,7 +211,7 @@ services:
         condition: service_healthy
 
   web:
-    image: ${RAKAZO_IMAGE:-ghcr.io/elie222/rakazo/app}:${RAKAZO_IMAGE_TAG:-edge}
+    image: ${RAKAZO_IMAGE:-ghcr.io/konradmaniszewski-oss/rakazo/app}:${RAKAZO_IMAGE_TAG:-edge}
     restart: unless-stopped
     command: ["pnpm", "--filter", "@rakazo/web", "preview", "--host", "0.0.0.0", "--port", "5173"]
     init: true

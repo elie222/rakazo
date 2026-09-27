@@ -80,7 +80,7 @@
     "publish": [
       {
         "provider": "github",
-        "owner": "elie222",
+        "owner": "konradmaniszewski-oss",
         "repo": "rakazo"
       }
     ]

@@ -249,7 +249,7 @@ export function renderPlaywrightDashboard(history: PlaywrightRun[]): string {
       <div class="actions">
         <a class="button" href="#" id="latest-screenshots">Latest screenshots</a>
         <a class="button" href="#" id="latest-report">Latest report</a>
-        <a class="button" href="https://github.com/elie222/rakazo/actions">GitHub Actions</a>
+        <a class="button" href="https://github.com/konradmaniszewski-oss/rakazo/actions">GitHub Actions</a>
       </div>
     </header>
 

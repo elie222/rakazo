@@ -109,7 +109,7 @@ export async function fetchSafeWebText(
       resolve,
       dispatcher,
       maxBytes,
-      userAgent: options.userAgent ?? "Rakazo/0.1 (+https://github.com/elie222/rakazo)",
+      userAgent: options.userAgent ?? "Rakazo/0.1 (+https://github.com/konradmaniszewski-oss/rakazo)",
       headers: options.headers,
       signal,
       redirectsRemaining: MAX_REDIRECTS,

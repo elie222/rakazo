@@ -7,7 +7,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        For **security vulnerabilities**, email [security@rakazo.com](mailto:security@rakazo.com) — do not use this form. See [SECURITY.md](https://github.com/elie222/rakazo/blob/main/SECURITY.md).
+        For **security vulnerabilities**, email [security@rakazo.com](mailto:security@rakazo.com) — do not use this form. See [SECURITY.md](https://github.com/konradmaniszewski-oss/rakazo/blob/main/SECURITY.md).
 
   - type: checkboxes
     id: not-security

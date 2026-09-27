@@ -288,7 +288,7 @@ function githubReleaseTools(): ConnectorTool[] {
       inputSchema: {
         type: "object",
         properties: {
-          owner: { type: "string", description: "Repository owner, e.g. elie222" },
+          owner: { type: "string", description: "Repository owner, e.g. konradmaniszewski-oss" },
           repo: { type: "string", description: "Repository name, e.g. rakazo" },
         },
         required: ["owner", "repo"],
@@ -465,7 +465,7 @@ export class ComposioEmulator implements ComposioProvider {
   }
 
   private executeGithub(tool: string, args: Record<string, unknown>): Record<string, unknown> {
-    const owner = String(args.owner ?? args.owner_name ?? "elie222");
+    const owner = String(args.owner ?? args.owner_name ?? "konradmaniszewski-oss");
     const repo = String(args.repo ?? args.repository ?? "rakazo");
     const matched = this.githubReleases.filter(
       (release) =>

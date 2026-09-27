@@ -1,7 +1,7 @@
 blank_issues_enabled: false
 contact_links:
   - name: Security vulnerabilities
-    url: https://github.com/elie222/rakazo/blob/main/SECURITY.md
+    url: https://github.com/konradmaniszewski-oss/rakazo/blob/main/SECURITY.md
     about: Report security issues to security@rakazo.com — do not open a public issue.
   - name: User support
     url: mailto:support@rakazo.com

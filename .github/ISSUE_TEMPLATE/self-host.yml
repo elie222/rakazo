@@ -7,9 +7,9 @@ body:
   - type: markdown
     attributes:
       value: |
-        For **security vulnerabilities**, email [security@rakazo.com](mailto:security@rakazo.com). See [SECURITY.md](https://github.com/elie222/rakazo/blob/main/SECURITY.md).
+        For **security vulnerabilities**, email [security@rakazo.com](mailto:security@rakazo.com). See [SECURITY.md](https://github.com/konradmaniszewski-oss/rakazo/blob/main/SECURITY.md).
 
-        Setup steps are in [README.md](https://github.com/elie222/rakazo/blob/main/README.md). Do not paste `.env` contents or API keys.
+        Setup steps are in [README.md](https://github.com/konradmaniszewski-oss/rakazo/blob/main/README.md). Do not paste `.env` contents or API keys.
 
   - type: dropdown
     id: step

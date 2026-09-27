@@ -171,7 +171,7 @@ jobs:
           xcrun stapler validate "$app"
           spctl --assess --type execute --verbose=2 "$app"
           grep -Fqx "provider: github" "$app/Contents/Resources/app-update.yml"
-          grep -Fqx "owner: elie222" "$app/Contents/Resources/app-update.yml"
+          grep -Fqx "owner: konradmaniszewski-oss" "$app/Contents/Resources/app-update.yml"
           grep -Fqx "repo: rakazo" "$app/Contents/Resources/app-update.yml"
 
       - name: Require Windows signing credentials
@@ -213,7 +213,7 @@ jobs:
             throw "Windows update config is not bound to the signing publisher."
           }
           $feed = Get-Content -Raw $config
-          foreach ($expected in @("provider: github", "owner: elie222", "repo: rakazo")) {
+          foreach ($expected in @("provider: github", "owner: konradmaniszewski-oss", "repo: rakazo")) {
             if ($feed -notmatch "(?m)^$([regex]::Escape($expected))\r?$") {
               throw "Windows update config missing '$expected'."
             }
@@ -238,7 +238,7 @@ jobs:
           test -n "$config"
           test -f "$config"
           grep -Fqx "provider: github" "$config"
-          grep -Fqx "owner: elie222" "$config"
+          grep -Fqx "owner: konradmaniszewski-oss" "$config"
           grep -Fqx "repo: rakazo" "$config"
           test -f apps/desktop/out/latest-linux.yml
           grep -Fqx "version: $RELEASE_VERSION" apps/desktop/out/latest-linux.yml
