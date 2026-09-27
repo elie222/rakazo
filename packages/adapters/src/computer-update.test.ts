@@ -337,7 +337,7 @@ describe("background computer maintenance", () => {
       }),
     );
     expect(harness.computerUpdate.deleteMany).toHaveBeenCalledWith({
-      where: { id: "update-1", status: { in: ["reserving", "revoking"] } },
+      where: { id: "update-1", status: { in: ["reserving", "revoking", "revoked"] } },
     });
   });
 
@@ -377,8 +377,83 @@ describe("background computer maintenance", () => {
     expect(computer.updateMany).toHaveBeenCalledOnce();
   });
 
+  it("gives an idle takeover back when revoking goes stale before the provider release", async () => {
+    const { row, deps, computer } = fixture("revoking");
+
+    await reconcileComputerUpdates(deps);
+
+    expect(row.status).toBe("failed");
+    expect(computer.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: row.computerId,
+        maintenanceId: row.id,
+        controlHolder: "none",
+        controlBotId: row.botId,
+        controlRunId: null,
+        controlLeaseId: { not: null },
+      },
+      data: { maintenanceId: null, controlHolder: "user" },
+    });
+    expect(computer.updateMany).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ controlLeaseId: null }),
+      }),
+    );
+  });
+
+  it("gives an idle takeover back while provider release is still pending", async () => {
+    const harness = takeoverQueue();
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    harness.setScreenControl.mockImplementation(() => pending);
+    const work = queueComputerUpdate(harness.deps, "computer-1", "bot-1");
+    await vi.waitFor(() => expect(harness.setScreenControl).toHaveBeenCalledOnce());
+
+    await reconcileComputerUpdates(harness.deps);
+
+    expect(harness.computer.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: "computer-1",
+        maintenanceId: "update-1",
+        controlHolder: "none",
+        controlBotId: "bot-1",
+        controlRunId: null,
+        controlLeaseId: { not: null },
+      },
+      data: { maintenanceId: null, controlHolder: "user" },
+    });
+    expect(harness.computer.updateMany).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ controlLeaseId: null }),
+      }),
+    );
+
+    release();
+    await expect(work).rejects.toThrow("Computer is busy");
+    expect(harness.jobs.enqueue).not.toHaveBeenCalled();
+    expect(harness.computer.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: "computer-1",
+        controlLeaseId: "lease-1",
+        controlBotId: "bot-1",
+        controlRunId: null,
+        OR: [{ maintenanceId: "update-1" }, { maintenanceId: null, controlHolder: "user" }],
+      },
+      data: {
+        maintenanceId: null,
+        controlHolder: "none",
+        controlLeaseId: null,
+        controlLeaseExpiresAt: null,
+        controlBotId: null,
+        controlRunId: null,
+      },
+    });
+  });
+
   it("clears a revoked lease when handback stalls after the provider release", async () => {
-    const { row, deps, computer, computerUpdate } = fixture("revoking");
+    const { row, deps, computer, computerUpdate } = fixture("revoked");
 
     await reconcileComputerUpdates(deps);
 
@@ -386,7 +461,7 @@ describe("background computer maintenance", () => {
     expect(computerUpdate.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: {
-          OR: expect.arrayContaining([expect.objectContaining({ status: "revoking" })]),
+          OR: expect.arrayContaining([expect.objectContaining({ status: "revoked" })]),
         },
       }),
     );
@@ -414,18 +489,36 @@ describe("background computer maintenance", () => {
     );
   });
 
-  it("records revocation before the provider release", async () => {
+  it("records revocation before the provider release and confirms it after", async () => {
     const harness = takeoverQueue();
     harness.setScreenControl.mockImplementation(async () => {
       expect(harness.computerUpdate.updateMany).toHaveBeenCalledWith({
         where: { id: "update-1", status: "reserving" },
         data: { status: "revoking" },
       });
+      expect(harness.computerUpdate.updateMany).not.toHaveBeenCalledWith({
+        where: { id: "update-1", status: "revoking" },
+        data: { status: "revoked" },
+      });
     });
 
     await queueComputerUpdate(harness.deps, "computer-1", "bot-1");
 
-    expect(harness.setScreenControl).toHaveBeenCalledOnce();
+    const statusOrder = (status: string) => {
+      const index = harness.computerUpdate.updateMany.mock.calls.findIndex(
+        (call) => call[0].data?.status === status,
+      );
+      return harness.computerUpdate.updateMany.mock.invocationCallOrder[index];
+    };
+    const clearIndex = harness.computer.updateMany.mock.calls.findIndex(
+      (call) => call[0]?.data?.controlLeaseId === null,
+    );
+    const provider = harness.setScreenControl.mock.invocationCallOrder[0];
+    const clear = harness.computer.updateMany.mock.invocationCallOrder[clearIndex];
+    expect(statusOrder("revoking")).toBeLessThan(provider ?? 0);
+    expect(provider).toBeLessThan(statusOrder("revoked") ?? 0);
+    expect(statusOrder("revoked")).toBeLessThan(clear ?? 0);
+    expect(clear).toBeLessThan(statusOrder("queued") ?? 0);
   });
 
   it("clears a stale reservation once the lease was already released", async () => {
@@ -477,7 +570,9 @@ function takeoverQueue(
     computer: { ...computerRow, bots: [{ id: "bot-1", name: "Writer" }] },
   };
   const computer = {
-    updateMany: vi.fn(async () => ({ count: 1 })),
+    updateMany: vi.fn(async (_args?: { data?: { controlLeaseId?: string | null } }) => ({
+      count: 1,
+    })),
     findUniqueOrThrow: vi.fn(async () => computerRow),
   };
   const computerUpdate = {
@@ -493,6 +588,11 @@ function takeoverQueue(
         return { count: 1 };
       },
     ),
+    findMany: vi.fn(async (args?: { where?: { OR?: { status?: string }[] } }) => {
+      const statuses = args?.where?.OR?.flatMap((item) => (item.status ? [item.status] : []));
+      if (statuses && statuses.length > 0 && !statuses.includes(updateRow.status)) return [];
+      return [updateRow];
+    }),
     deleteMany: vi.fn(async () => ({ count: 1 })),
   };
   const prisma = {
