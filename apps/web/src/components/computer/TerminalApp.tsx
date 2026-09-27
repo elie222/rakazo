@@ -53,17 +53,21 @@ export default function TerminalApp({ botId }: { botId: string }) {
       commands = capComputerCommands(mergeComputerCommand(commands, command));
       render();
     });
-    const refresh = () =>
-      rpc.computer
+    // A slow response must not replace a newer page or clear live commands.
+    let refreshGeneration = 0;
+    const refresh = () => {
+      const generation = ++refreshGeneration;
+      return rpc.computer
         .commands({ botId })
         .then((history) => {
-          if (!cancelled) applyHistory(history);
+          if (!cancelled && generation === refreshGeneration) applyHistory(history);
         })
         .catch((cause: unknown) => {
-          if (!cancelled && commands.length === 0) {
+          if (!cancelled && generation === refreshGeneration && commands.length === 0) {
             setError(errorMessage(cause, t`Could not load commands`));
           }
         });
+    };
     void refresh();
     const timer = window.setInterval(() => {
       if (document.visibilityState === "visible") void refresh();
