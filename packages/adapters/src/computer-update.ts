@@ -109,8 +109,9 @@ export async function queueComputerUpdate(
         computerId,
         botId,
         action,
-        // Stay reserving until the lease is cleared. If this process dies first, reconciliation
-        // gives the takeover back instead of leaving screen control recorded as free.
+        // Stay reserving until revocation is recorded. If this process dies first, reconciliation
+        // gives the takeover back. A revoking row has committed to the provider release, so
+        // reconciliation clears that lease with the holder.
         ...(revokeLeaseId ? { status: "reserving" } : {}),
       },
     });
@@ -151,7 +152,22 @@ export async function queueComputerUpdate(
   if (prepared.handback?.leaseId) {
     // Provider release is optional. CreateOS ignores a non-interactive release, and a host
     // whose provider has no release method resolves. Only a thrown release rolls the claim back.
-    if (prepared.handback.providerRef) {
+    const releaseScreen = prepared.handback.providerRef
+      ? deps.sandbox?.setScreenControl
+      : undefined;
+    if (releaseScreen) {
+      // Persist revoking before the provider call. Reconciliation of that row clears the
+      // lease and holder together when the process stops after the provider returns and
+      // before the lease write.
+      const marked = await deps.prisma.computerUpdate.updateMany({
+        where: { id: prepared.row.id, status: "reserving" },
+        data: { status: "revoking" },
+      });
+      if (marked.count !== 1) {
+        await undoQueuedMaintenance(deps.prisma, computerId, prepared.row.id, prepared.handback);
+        throw new ComputerBusyError();
+      }
+      prepared.row.status = "revoking";
       const context: AdapterContext = {
         operationId: prepared.row.id,
         traceId: prepared.row.id,
@@ -161,7 +177,7 @@ export async function queueComputerUpdate(
         signal: new AbortController().signal,
       };
       try {
-        await deps.sandbox?.setScreenControl?.(
+        await releaseScreen(
           toComputerRef(prepared.handback),
           false,
           context,
@@ -196,11 +212,15 @@ export async function queueComputerUpdate(
       },
     });
     if (released.count !== 1) {
-      await undoQueuedMaintenance(deps.prisma, computerId, prepared.row.id, prepared.handback);
+      if (prepared.row.status === "revoking") {
+        await abandonRevokedHandback(deps.prisma, computerId, prepared.row.id, prepared.handback);
+      } else {
+        await undoQueuedMaintenance(deps.prisma, computerId, prepared.row.id, prepared.handback);
+      }
       throw new ComputerBusyError();
     }
     const queued = await deps.prisma.computerUpdate.updateMany({
-      where: { id: prepared.row.id, status: "reserving" },
+      where: { id: prepared.row.id, status: prepared.row.status },
       data: { status: "queued" },
     });
     if (queued.count !== 1) {
@@ -262,13 +282,15 @@ async function undoQueuedMaintenance(
           data: { maintenanceId: null },
         });
       }
-      await tx.computerUpdate.deleteMany({ where: { id: updateId, status: "reserving" } });
+      await tx.computerUpdate.deleteMany({
+        where: { id: updateId, status: { in: ["reserving", "revoking"] } },
+      });
     });
   } catch (error) {
     getLogger().error("undo maintenance takeover", error);
     await prisma.computerUpdate
       .updateMany({
-        where: { id: updateId, status: { in: ["queued", "reserving"] } },
+        where: { id: updateId, status: { in: ["queued", "reserving", "revoking"] } },
         data: { status: "dismissed" },
       })
       .catch(() => undefined);
@@ -291,7 +313,66 @@ async function dropMaintenanceReservation(
       where: { id: computerId, maintenanceId: updateId },
       data: { maintenanceId: null },
     });
-    await tx.computerUpdate.deleteMany({ where: { id: updateId, status: "reserving" } });
+    await tx.computerUpdate.deleteMany({
+      where: { id: updateId, status: { in: ["reserving", "revoking"] } },
+    });
+  });
+}
+
+async function abandonRevokedHandback(
+  prisma: PrismaClient,
+  computerId: string,
+  updateId: string,
+  handback: IdleTakeoverHandback,
+) {
+  try {
+    await prisma.$transaction(async (tx) => {
+      await clearRevokedTakeover(tx.computer, computerId, updateId, handback.botId);
+      await tx.computerUpdate.deleteMany({
+        where: { id: updateId, status: { in: ["reserving", "revoking"] } },
+      });
+    });
+  } catch (error) {
+    getLogger().error("abandon revoked takeover", error);
+    await prisma.computerUpdate
+      .updateMany({
+        where: { id: updateId, status: { in: ["reserving", "revoking"] } },
+        data: { status: "dismissed" },
+      })
+      .catch(() => undefined);
+    await clearRevokedTakeover(prisma.computer, computerId, updateId, handback.botId).catch(
+      () => undefined,
+    );
+  }
+}
+
+async function clearRevokedTakeover(
+  computer: PrismaClient["computer"],
+  computerId: string,
+  updateId: string,
+  botId: string,
+) {
+  const cleared = await computer.updateMany({
+    where: {
+      id: computerId,
+      maintenanceId: updateId,
+      controlHolder: "none",
+      controlBotId: botId,
+      controlRunId: null,
+    },
+    data: {
+      maintenanceId: null,
+      controlHolder: "none",
+      controlLeaseId: null,
+      controlLeaseExpiresAt: null,
+      controlBotId: null,
+      controlRunId: null,
+    },
+  });
+  if (cleared.count === 1) return;
+  await computer.updateMany({
+    where: { id: computerId, maintenanceId: updateId },
+    data: { maintenanceId: null },
   });
 }
 
@@ -403,6 +484,7 @@ export async function reconcileComputerUpdates(deps: Pick<Deps, "prisma" | "jobs
         { status: "queued" },
         { status: "running", updatedAt: { lt: new Date(Date.now() - STALE_MS) } },
         { status: "reserving", updatedAt: { lt: new Date(Date.now() - STALE_MS) } },
+        { status: "revoking", updatedAt: { lt: new Date(Date.now() - STALE_MS) } },
       ],
     },
     take: 100,
@@ -415,14 +497,21 @@ export async function reconcileComputerUpdates(deps: Pick<Deps, "prisma" | "jobs
         payload: { updateId: update.id },
         replaceKey: `computer.update:${update.id}`,
       });
-    } else if (update.status === "reserving") {
+    } else if (update.status === "reserving" || update.status === "revoking") {
+      const status = update.status;
       await deps.prisma.$transaction(async (tx) => {
         const stale = await tx.computerUpdate.updateMany({
-          where: { id: update.id, status: "reserving", updatedAt: update.updatedAt },
+          where: { id: update.id, status, updatedAt: update.updatedAt },
           data: { status: "failed" },
         });
         if (stale.count !== 1) return;
-        // Handback never cleared the lease, so provider control can still belong to the user.
+        if (status === "revoking") {
+          // The provider release was committed. Clear the lease with the holder so a later
+          // takeover grants a new lease.
+          await clearRevokedTakeover(tx.computer, update.computerId, update.id, update.botId);
+          return;
+        }
+        // Revocation has not started, so provider control can still belong to the user.
         const restored = await tx.computer.updateMany({
           where: {
             id: update.computerId,

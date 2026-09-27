@@ -216,7 +216,7 @@ describe("background computer maintenance", () => {
       },
     });
     expect(harness.computerUpdate.deleteMany).toHaveBeenCalledWith({
-      where: { id: "update-1", status: "reserving" },
+      where: { id: "update-1", status: { in: ["reserving", "revoking"] } },
     });
   });
 
@@ -268,8 +268,8 @@ describe("background computer maintenance", () => {
     expect(harness.computerUpdate.deleteMany).not.toHaveBeenCalled();
   });
 
-  it("restores the takeover when lease clear loses the reservation", async () => {
-    const harness = takeoverQueue();
+  it("restores the takeover when lease clear loses the reservation before revocation", async () => {
+    const harness = takeoverQueue({ providerRef: null });
     harness.computer.updateMany
       .mockResolvedValueOnce({ count: 1 })
       .mockResolvedValueOnce({ count: 1 })
@@ -279,6 +279,7 @@ describe("background computer maintenance", () => {
       "Computer is busy",
     );
 
+    expect(harness.setScreenControl).not.toHaveBeenCalled();
     expect(harness.jobs.enqueue).not.toHaveBeenCalled();
     expect(harness.computer.updateMany).toHaveBeenLastCalledWith({
       where: {
@@ -296,7 +297,47 @@ describe("background computer maintenance", () => {
       },
     });
     expect(harness.computerUpdate.deleteMany).toHaveBeenCalledWith({
-      where: { id: "update-1", status: "reserving" },
+      where: { id: "update-1", status: { in: ["reserving", "revoking"] } },
+    });
+  });
+
+  it("clears the lease when lease clear loses the reservation after revocation", async () => {
+    const harness = takeoverQueue();
+    harness.computer.updateMany
+      .mockResolvedValueOnce({ count: 1 })
+      .mockResolvedValueOnce({ count: 1 })
+      .mockResolvedValueOnce({ count: 0 });
+
+    await expect(queueComputerUpdate(harness.deps, "computer-1", "bot-1")).rejects.toThrow(
+      "Computer is busy",
+    );
+
+    expect(harness.setScreenControl).toHaveBeenCalledOnce();
+    expect(harness.jobs.enqueue).not.toHaveBeenCalled();
+    expect(harness.computer.updateMany).toHaveBeenLastCalledWith({
+      where: {
+        id: "computer-1",
+        maintenanceId: "update-1",
+        controlHolder: "none",
+        controlBotId: "bot-1",
+        controlRunId: null,
+      },
+      data: {
+        maintenanceId: null,
+        controlHolder: "none",
+        controlLeaseId: null,
+        controlLeaseExpiresAt: null,
+        controlBotId: null,
+        controlRunId: null,
+      },
+    });
+    expect(harness.computer.updateMany).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ controlHolder: "user" }),
+      }),
+    );
+    expect(harness.computerUpdate.deleteMany).toHaveBeenCalledWith({
+      where: { id: "update-1", status: { in: ["reserving", "revoking"] } },
     });
   });
 
@@ -334,6 +375,57 @@ describe("background computer maintenance", () => {
       data: { maintenanceId: null, controlHolder: "user" },
     });
     expect(computer.updateMany).toHaveBeenCalledOnce();
+  });
+
+  it("clears a revoked lease when handback stalls after the provider release", async () => {
+    const { row, deps, computer, computerUpdate } = fixture("revoking");
+
+    await reconcileComputerUpdates(deps);
+
+    expect(row.status).toBe("failed");
+    expect(computerUpdate.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          OR: expect.arrayContaining([expect.objectContaining({ status: "revoking" })]),
+        },
+      }),
+    );
+    expect(computer.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: row.computerId,
+        maintenanceId: row.id,
+        controlHolder: "none",
+        controlBotId: row.botId,
+        controlRunId: null,
+      },
+      data: {
+        maintenanceId: null,
+        controlHolder: "none",
+        controlLeaseId: null,
+        controlLeaseExpiresAt: null,
+        controlBotId: null,
+        controlRunId: null,
+      },
+    });
+    expect(computer.updateMany).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ controlHolder: "user" }),
+      }),
+    );
+  });
+
+  it("records revocation before the provider release", async () => {
+    const harness = takeoverQueue();
+    harness.setScreenControl.mockImplementation(async () => {
+      expect(harness.computerUpdate.updateMany).toHaveBeenCalledWith({
+        where: { id: "update-1", status: "reserving" },
+        data: { status: "revoking" },
+      });
+    });
+
+    await queueComputerUpdate(harness.deps, "computer-1", "bot-1");
+
+    expect(harness.setScreenControl).toHaveBeenCalledOnce();
   });
 
   it("clears a stale reservation once the lease was already released", async () => {
