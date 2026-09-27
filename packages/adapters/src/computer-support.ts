@@ -102,7 +102,6 @@ export function resolveBotWorkspaceCwd(
   return resolveBotWorkspacePath(scope, botId, requestedCwd);
 }
 
-
 /** Paths a user may write while controlling this bot: its home, or shared/. */
 export function resolveBotUploadPath(
   scope: ComputerMode,

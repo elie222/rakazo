@@ -1,6 +1,8 @@
 import type { ComputerCommand, ProductEvent } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import {
+  applyComputerCommandHistory,
+  COMPUTER_COMMAND_FEED_LIMIT,
   formatComputerCommand,
   formatSize,
   mergeComputerCommand,
@@ -65,6 +67,41 @@ describe("computer terminal feed", () => {
         labels,
       ),
     ).toBe("\x1b[2m↗\x1b[0m Launched firefox\r\n");
+  });
+
+  it("keeps the history page and live commands that are not in it yet", () => {
+    const history = [command({ executionId: "call-2" }), command({ executionId: "call-3" })];
+    const pending = [
+      command({ executionId: "call-4", status: "running", exitCode: null, output: "" }),
+    ];
+    expect(applyComputerCommandHistory(history, pending).map((entry) => entry.executionId)).toEqual(
+      ["call-2", "call-3", "call-4"],
+    );
+    expect(applyComputerCommandHistory(history, []).map((entry) => entry.executionId)).toEqual([
+      "call-2",
+      "call-3",
+    ]);
+  });
+
+  it("lets a live result replace the running command from the history page", () => {
+    expect(
+      applyComputerCommandHistory(
+        [command({ status: "running", exitCode: null, output: "" })],
+        [command()],
+      ).map((entry) => entry.status),
+    ).toEqual(["done"]);
+  });
+
+  it("caps the feed at the activity history window, keeping the newest commands", () => {
+    const history = Array.from({ length: COMPUTER_COMMAND_FEED_LIMIT + 5 }, (_, index) =>
+      command({ executionId: `call-${index}` }),
+    );
+    const merged = applyComputerCommandHistory(history, [
+      command({ executionId: "call-live", status: "running", exitCode: null, output: "" }),
+    ]);
+    expect(merged).toHaveLength(COMPUTER_COMMAND_FEED_LIMIT);
+    expect(merged.at(-1)?.executionId).toBe("call-live");
+    expect(merged[0]?.executionId).toBe("call-6");
   });
 
   it("replaces a running command with its result in place", () => {

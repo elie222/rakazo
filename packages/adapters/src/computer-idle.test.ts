@@ -428,6 +428,12 @@ describe("background work launch and probe", () => {
 });
 
 describe("CANCEL_PRIMARY_BROWSER_WORK", () => {
+  it("keeps shell parameter expansions literal", () => {
+    expect(CANCEL_COMPUTER_RUN_WORK).toContain(`pid="\${fd#/proc/}"; pid="\${pid%%/*}"`);
+    expect(CANCEL_PRIMARY_BROWSER_WORK).toContain(`kill -TERM "\${pid#/proc/}"`);
+    expect(CANCEL_PRIMARY_BROWSER_WORK).toContain(`kill -KILL "\${pid#/proc/}"`);
+  });
+
   it("targets the primary profile and matches browser argv0 only", () => {
     expect(CANCEL_PRIMARY_BROWSER_WORK).toContain(".browser-profiles/chromium");
     expect(CANCEL_PRIMARY_BROWSER_WORK).toContain("chromium-screen-");

@@ -1,12 +1,13 @@
 import "@xterm/xterm/css/xterm.css";
 import { useLingui } from "@lingui/react/macro";
 import type { ComputerCommand } from "@rakazo/contracts";
-import { foldComputerCommands } from "@rakazo/contracts";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import { type RefObject, useEffect, useRef, useState } from "react";
 import {
+  applyComputerCommandHistory,
   type ComputerActionLabels,
+  capComputerCommands,
   formatComputerCommand,
   mergeComputerCommand,
   subscribeComputerCommands,
@@ -25,6 +26,9 @@ export default function TerminalApp({ botId }: { botId: string }) {
   useEffect(() => {
     if (!terminal) return;
     let commands: ComputerCommand[] = [];
+    // Live commands since the last history page. The page replaces memory, so
+    // events the API has already dropped are not kept on the next refresh.
+    let pending: ComputerCommand[] = [];
     let cancelled = false;
     const labels: ComputerActionLabels = {
       write_file: (path) => t`Wrote ${path}`,
@@ -39,12 +43,14 @@ export default function TerminalApp({ botId }: { botId: string }) {
         `\x1bc${commands.map((command) => formatComputerCommand(command, labels)).join("")}`,
       );
     const applyHistory = (history: ComputerCommand[]) => {
-      commands = foldComputerCommands([...history, ...commands]);
+      commands = applyComputerCommandHistory(history, pending);
+      pending = [];
       render();
     };
     const unsubscribe = subscribeComputerCommands((eventBotId, command) => {
       if (eventBotId !== botId) return;
-      commands = mergeComputerCommand(commands, command);
+      pending = capComputerCommands(mergeComputerCommand(pending, command));
+      commands = capComputerCommands(mergeComputerCommand(commands, command));
       render();
     });
     const refresh = () =>

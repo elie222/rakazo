@@ -28,6 +28,30 @@ export function mergeComputerCommand(commands: ComputerCommand[], next: Computer
   return foldComputerCommands([...commands, next]);
 }
 
+/**
+ * `computer.commands` returns the latest 200 events. The open terminal keeps
+ * that many folded commands so a long session cannot grow without bound.
+ */
+export const COMPUTER_COMMAND_FEED_LIMIT = 200;
+
+export function capComputerCommands<T>(
+  commands: readonly T[],
+  limit = COMPUTER_COMMAND_FEED_LIMIT,
+): T[] {
+  return commands.length > limit ? commands.slice(commands.length - limit) : [...commands];
+}
+
+/**
+ * History is the server window. `pending` is what arrived live since the last
+ * refresh, so commands that fell out of the window are not copied forward.
+ */
+export function applyComputerCommandHistory(
+  history: readonly ComputerCommand[],
+  pending: readonly ComputerCommand[],
+): ComputerCommand[] {
+  return capComputerCommands(foldComputerCommands([...history, ...pending]));
+}
+
 /** Localized one-line descriptions of the bot's file and app actions. */
 export type ComputerActionLabels = Record<
   Exclude<ComputerCommand["kind"], "shell">,
