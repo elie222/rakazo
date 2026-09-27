@@ -15,6 +15,8 @@ import {
 import { rpc } from "../../lib/rpc";
 
 const COMMANDS_REFRESH_MS = 3_000;
+/** Longer than the poll, so a slow page still lands. A hung request cannot block the next one. */
+const COMMANDS_REFRESH_TIMEOUT_MS = 10_000;
 
 /** What the bot did on its computer: shell commands with their output, and file and app actions. */
 export default function TerminalApp({ botId }: { botId: string }) {
@@ -53,16 +55,23 @@ export default function TerminalApp({ botId }: { botId: string }) {
       commands = capComputerCommands(mergeComputerCommand(commands, command));
       render();
     });
-    // One fetch at a time. A poll that is still running is not replaced, so a
-    // slow response is applied and cannot arrive after a newer page.
+    // One fetch at a time. A slow response still lands. A request that does not
+    // settle is aborted so the next poll can run.
     let refreshInFlight = false;
+    const abort = new AbortController();
     const refresh = () => {
       if (refreshInFlight) return;
       refreshInFlight = true;
+      const signal = AbortSignal.any([
+        abort.signal,
+        AbortSignal.timeout(COMMANDS_REFRESH_TIMEOUT_MS),
+      ]);
       void rpc.computer
-        .commands({ botId })
+        .commands({ botId }, { signal })
         .then((history) => {
-          if (!cancelled) applyHistory(history);
+          if (cancelled) return;
+          setError(null);
+          applyHistory(history);
         })
         .catch((cause: unknown) => {
           if (!cancelled && commands.length === 0) {
@@ -79,6 +88,7 @@ export default function TerminalApp({ botId }: { botId: string }) {
     }, COMMANDS_REFRESH_MS);
     return () => {
       cancelled = true;
+      abort.abort();
       window.clearInterval(timer);
       unsubscribe();
     };
