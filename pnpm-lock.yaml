@@ -321,6 +321,9 @@ importers:
       '@lingui/conf':
         specifier: 6.6.0
         version: 6.6.0
+      '@lingui/format-po':
+        specifier: 6.6.0
+        version: 6.6.0
       '@lingui/vite-plugin':
         specifier: 6.6.0
         version: 6.6.0(@babel/core@7.29.7)(@lingui/babel-plugin-lingui-macro@6.6.0(@babel/core@7.29.7)(@babel/types@7.29.8))(@rolldown/plugin-babel@0.2.4(@babel/core@7.29.7)(@babel/plugin-transform-runtime@7.29.7(@babel/core@7.29.7))(@babel/runtime@7.29.7)(rolldown@1.2.8)(vite@8.3.0(@types/node@26.5.0)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0)))(esbuild@0.28.2)(rolldown@1.2.8)(vite@8.3.0(@types/node@26.5.0)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))

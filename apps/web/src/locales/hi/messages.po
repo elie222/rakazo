@@ -13,4106 +13,3941 @@ msgstr ""
 "Language-Team: \n"
 "Plural-Forms: \n"
 
-#: src/pages/Shell.tsx:3098
+#: src/pages/Shell.tsx
 msgid " (unread)"
 msgstr " (अपठित)"
 
 #. placeholder {0}: group.entries.length
-#: src/pages/ModelSettingsOverlay.tsx:457
+#: src/pages/ModelSettingsOverlay.tsx
 msgid "{0, plural, one {# model} other {# models}}"
 msgstr "{0, plural, one {# मॉडल} other {# मॉडल}}"
 
 #. placeholder {0}: file.name
-#: src/pages/Shell.tsx:1993
+#: src/pages/Shell.tsx
 msgid "{0} (max {ATTACHMENT_MAX_COUNT} attachments)"
 msgstr "{0} (अधिकतम {ATTACHMENT_MAX_COUNT} अटैचमेंट)"
 
 #. placeholder {0}: file.name
-#: src/pages/Shell.tsx:1997
+#: src/pages/Shell.tsx
 msgid "{0} (over 10 MiB)"
 msgstr "{0} (10 MiB से अधिक)"
 
 #. placeholder {0}: preset.n
-#: src/pages/RoutineSchedule.tsx:145
+#: src/pages/RoutineSchedule.tsx
 msgid "{0} {unitLabel}"
 msgstr "{0} {unitLabel}"
 
 #. placeholder {0}: block.name
-#: src/pages/shell/message-cards.tsx:203
+#: src/pages/shell/message-cards.tsx
 msgid "{0} connection"
 msgstr "{0} कनेक्शन"
 
 #. placeholder {0}: bot.name
-#: src/pages/ExternalConversationSettings.tsx:98
-#: src/pages/ExternalConversationSettings.tsx:141
+#: src/pages/ExternalConversationSettings.tsx
 msgid "{0} default"
 msgstr ""
 
 #. placeholder {0}: sender.name
-#: src/pages/ExternalConversationSettings.tsx:176
+#: src/pages/ExternalConversationSettings.tsx
 msgid "{0} handling"
 msgstr ""
 
 #. placeholder {0}: format(size / 1024)
-#: src/components/ArtifactFileCard.tsx:238
+#: src/components/ArtifactFileCard.tsx
 msgid "{0} KB"
 msgstr "{0} KB"
 
 #. placeholder {0}: format(size / (1024 * 1024))
-#: src/components/ArtifactFileCard.tsx:239
+#: src/components/ArtifactFileCard.tsx
 msgid "{0} MB"
 msgstr "{0} MB"
 
 #. placeholder {0}: sender.name
-#: src/pages/ExternalConversationSettings.tsx:198
+#: src/pages/ExternalConversationSettings.tsx
 msgid "{0} rollup hours"
 msgstr ""
 
 #. placeholder {0}: usage.runs
 #. placeholder {1}: usage.inputTokens + usage.outputTokens
-#: src/pages/AccountSettingsOverlay.tsx:230
+#: src/pages/AccountSettingsOverlay.tsx
 msgid "{0} runs · {1} tokens"
 msgstr "{0} रन · {1} टोकन"
 
 #. placeholder {0}: bot.name
-#: src/pages/ExternalConversationSettings.tsx:232
+#: src/pages/ExternalConversationSettings.tsx
 msgid "{0} will still respond to direct mentions."
 msgstr ""
 
 #. placeholder {0}: active.name
-#: src/pages/Shell.tsx:3665
+#: src/pages/Shell.tsx
 msgid "{0}'s screen"
 msgstr ""
 
-#: src/pages/Shell.tsx:6517
+#: src/pages/Shell.tsx
 msgid "{botName}’s computer"
 msgstr "{botName} का कंप्यूटर"
 
-#: src/lib/relative-time.ts:14
-#: src/pages/ActivityList.tsx:140
+#: src/lib/relative-time.ts
+#: src/pages/ActivityList.tsx
 msgid "{days}d ago"
 msgstr "{days} दिन पहले"
 
-#: src/lib/relative-time.ts:12
-#: src/pages/ActivityList.tsx:138
+#: src/lib/relative-time.ts
+#: src/pages/ActivityList.tsx
 msgid "{hours}h ago"
 msgstr "{hours} घंटे पहले"
 
-#: src/lib/relative-time.ts:10
-#: src/pages/ActivityList.tsx:136
+#: src/lib/relative-time.ts
+#: src/pages/ActivityList.tsx
 msgid "{minutes}m ago"
 msgstr "{minutes} मिनट पहले"
 
 #. js-lingui-explicit-id
-#: src/lib/browser-notifications.ts:88
+#: src/lib/browser-notifications.ts
 msgid "{name} failed"
 msgstr "{name} विफल रहा"
 
 #. js-lingui-explicit-id
-#: src/lib/browser-notifications.ts:99
+#: src/lib/browser-notifications.ts
 msgid "{name} finished"
 msgstr "{name} पूरा हुआ"
 
 #. js-lingui-explicit-id
-#: src/lib/browser-notifications.ts:94
+#: src/lib/browser-notifications.ts
 msgid "{name} stopped"
 msgstr "{name} रोक दिया गया"
 
-#: src/components/teach/TeachRecordingChrome.tsx:46
-#: src/components/teach/TeachRecordingChrome.tsx:64
+#: src/components/teach/TeachRecordingChrome.tsx
 msgid "{remaining} left · bot is watching, not acting"
 msgstr "{remaining} शेष · बॉट देख रहा है, कार्रवाई नहीं कर रहा"
 
-#: src/components/ArtifactFileCard.tsx:232
+#: src/components/ArtifactFileCard.tsx
 msgid "{size} B"
 msgstr "{size} B"
 
-#: src/pages/ActivityList.tsx:97
+#: src/pages/ActivityList.tsx
 msgid "{title}, {label}"
 msgstr "{title}, {label}"
 
-#: src/pages/PluginsOverlay.tsx:630
+#: src/pages/PluginsOverlay.tsx
 msgid "{toolCount, plural, one {# tool} other {# tools}}"
 msgstr ""
 
-#: src/pages/Shell.tsx:4573
+#: src/pages/Shell.tsx
 msgid "{workingBotName} is working"
 msgstr "{workingBotName} काम कर रहा है"
 
 #. placeholder {0}: mention.name
-#: src/pages/Shell.tsx:5514
+#: src/pages/Shell.tsx
 msgid "@{0}"
 msgstr "@{0}"
 
-#: src/pages/shell/message-cards.tsx:137
+#: src/pages/shell/message-cards.tsx
 msgid "A bit of everything"
 msgstr ""
 
-#: src/pages/shell/bot-picker.tsx:105
-#: src/pages/shell/bot-picker.tsx:106
+#: src/pages/shell/bot-picker.tsx
 msgid "About groups"
 msgstr ""
 
-#: src/pages/shell/bot-picker.tsx:133
-#: src/pages/shell/bot-picker.tsx:134
+#: src/pages/shell/bot-picker.tsx
 msgid "About spaces"
 msgstr ""
 
-#: src/components/integrations/IntegrationSetup.tsx:311
+#: src/components/integrations/IntegrationSetup.tsx
 msgid "Access token"
 msgstr ""
 
-#: src/pages/McpServersOverlay.tsx:354
+#: src/pages/McpServersOverlay.tsx
 msgid "Access token (optional)"
 msgstr "एक्सेस टोकन (वैकल्पिक)"
 
-#: src/pages/AccountSettingsOverlay.tsx:91
+#: src/pages/AccountSettingsOverlay.tsx
 msgid "Account"
 msgstr "खाता"
 
-#: src/pages/shell/bot-panel.tsx:589
+#: src/pages/shell/bot-panel.tsx
 msgid "Account default"
 msgstr "खाता डिफ़ॉल्ट"
 
-#: src/pages/PluginsOverlay.tsx:582
+#: src/pages/PluginsOverlay.tsx
 msgid "Account label"
 msgstr ""
 
-#: src/pages/PluginsOverlay.tsx:574
+#: src/pages/PluginsOverlay.tsx
 msgid "Accounts"
 msgstr ""
 
-#: src/components/ApprovalRulesSettings.tsx:112
+#: src/components/ApprovalRulesSettings.tsx
 msgid "Action confirmations"
 msgstr "कार्रवाई की पुष्टि"
 
 #. placeholder {0}: bot.name
 #. placeholder {0}: group.spaceName
 #. placeholder {0}: sectionMenu.section.name
-#: src/pages/BotContextMenu.tsx:84
-#: src/pages/Shell.tsx:2927
-#: src/pages/Shell.tsx:4171
+#: src/pages/BotContextMenu.tsx
+#: src/pages/Shell.tsx
 msgid "Actions for {0}"
 msgstr "{0} के लिए कार्रवाइयां"
 
-#: src/pages/Shell.tsx:4045
+#: src/pages/Shell.tsx
 msgid "Actions for space"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx:297
+#: src/pages/RoutineEditor.tsx
 msgid "Active"
 msgstr ""
 
-#: src/pages/ModelSettingsOverlay.tsx:412
+#: src/pages/ModelSettingsOverlay.tsx
 msgid "Active model"
 msgstr "सक्रिय मॉडल"
 
-#: src/pages/Shell.tsx:2720
-#: src/pages/Shell.tsx:2722
+#: src/pages/Shell.tsx
 msgid "Activity"
 msgstr "गतिविधि"
 
-#: src/pages/PluginsOverlay.tsx:466
-#: src/pages/PluginsOverlay.tsx:931
-#: src/pages/ScratchpadSection.tsx:196
+#: src/pages/PluginsOverlay.tsx
+#: src/pages/ScratchpadSection.tsx
 msgid "Add"
 msgstr "जोड़ें"
 
-#: src/components/ApprovalRulesSettings.tsx:151
+#: src/components/ApprovalRulesSettings.tsx
 msgid "Add a model in Settings to use this."
 msgstr ""
 
-#: src/pages/Shell.tsx:3827
+#: src/pages/Shell.tsx
 msgid "Add a run time for this one-shot."
 msgstr ""
 
-#: src/pages/Shell.tsx:3805
+#: src/pages/Shell.tsx
 msgid "Add a schedule, webhook, GitHub, or message trigger"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx:482
+#: src/pages/RoutineEditor.tsx
 msgid "Add a schedule, webhook, GitHub, or message trigger to run this routine."
 msgstr ""
 
-#: src/pages/McpServersOverlay.tsx:108
+#: src/pages/McpServersOverlay.tsx
 msgid "Add a server name."
 msgstr "सर्वर का नाम दर्ज करें।"
 
-#: src/pages/McpServersOverlay.tsx:116
+#: src/pages/McpServersOverlay.tsx
 msgid "Add a stdio command."
 msgstr "एक stdio कमांड दर्ज करें।"
 
-#: src/pages/McpServersOverlay.tsx:112
+#: src/pages/McpServersOverlay.tsx
 msgid "Add an HTTPS server URL."
 msgstr "एक HTTPS सर्वर URL दर्ज करें।"
 
-#: src/pages/PluginsOverlay.tsx:614
+#: src/pages/PluginsOverlay.tsx
 msgid "Add another"
 msgstr ""
 
-#: src/pages/PluginsOverlay.tsx:977
+#: src/pages/PluginsOverlay.tsx
 msgid "Add Executor"
 msgstr "Executor जोड़ें"
 
-#: src/pages/PluginsOverlay.tsx:968
+#: src/pages/PluginsOverlay.tsx
 msgid "Add GraphQL"
 msgstr "GraphQL जोड़ें"
 
-#: src/pages/PluginsOverlay.tsx:1003
+#: src/pages/PluginsOverlay.tsx
 msgid "Add GraphQL endpoint"
 msgstr "GraphQL एंडपॉइंट जोड़ें"
 
-#: src/pages/ScratchpadSection.tsx:185
+#: src/pages/ScratchpadSection.tsx
 msgid "Add item"
 msgstr "आइटम जोड़ें"
 
-#: src/components/integrations/IntegrationSetup.tsx:133
-#: src/pages/PluginsOverlay.tsx:950
+#: src/components/integrations/IntegrationSetup.tsx
+#: src/pages/PluginsOverlay.tsx
 msgid "Add MCP server"
 msgstr "MCP सर्वर जोड़ें"
 
-#: src/pages/PluginsOverlay.tsx:959
+#: src/pages/PluginsOverlay.tsx
 msgid "Add OpenAPI"
 msgstr "OpenAPI जोड़ें"
 
-#: src/pages/PluginsOverlay.tsx:1001
+#: src/pages/PluginsOverlay.tsx
 msgid "Add remote MCP server"
 msgstr "रिमोट MCP सर्वर जोड़ें"
 
-#: src/pages/McpServersOverlay.tsx:275
-#: src/pages/McpServersOverlay.tsx:415
+#: src/pages/McpServersOverlay.tsx
 msgid "Add server"
 msgstr "सर्वर जोड़ें"
 
-#: src/components/integrations/IntegrationSetup.tsx:279
+#: src/components/integrations/IntegrationSetup.tsx
 msgid "Add server URL"
 msgstr ""
 
-#: src/components/teach/SkillDraftCard.tsx:152
+#: src/components/teach/SkillDraftCard.tsx
 msgid "Add to routine"
 msgstr "रूटीन में जोड़ें"
 
-#: src/pages/PluginsOverlay.tsx:986
+#: src/pages/PluginsOverlay.tsx
 msgid "Add Treg"
 msgstr "Treg जोड़ें"
 
-#: src/pages/RoutineEditor.tsx:418
+#: src/pages/RoutineEditor.tsx
 msgid "Add trigger"
 msgstr ""
 
-#: src/pages/PluginsOverlay.tsx:450
+#: src/pages/PluginsOverlay.tsx
 msgid "Added"
 msgstr ""
 
-#: src/pages/McpServersOverlay.tsx:415
-#: src/pages/PluginsOverlay.tsx:450
-#: src/pages/PluginsOverlay.tsx:466
-#: src/pages/PluginsOverlay.tsx:614
+#: src/pages/McpServersOverlay.tsx
+#: src/pages/PluginsOverlay.tsx
 msgid "Adding…"
 msgstr "जोड़ा जा रहा है…"
 
-#: src/pages/AccountSettingsOverlay.tsx:178
-#: src/pages/McpServersOverlay.tsx:342
-#: src/pages/ModelSettingsOverlay.tsx:578
-#: src/pages/ModelSettingsOverlay.tsx:645
-#: src/pages/Onboarding.tsx:501
-#: src/pages/PluginsOverlay.tsx:835
-#: src/pages/RoutineSchedule.tsx:44
-#: src/pages/shell/bot-panel.tsx:480
+#: src/pages/AccountSettingsOverlay.tsx
+#: src/pages/McpServersOverlay.tsx
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/Onboarding.tsx
+#: src/pages/PluginsOverlay.tsx
+#: src/pages/RoutineSchedule.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Advanced"
 msgstr "उन्नत"
 
-#: src/pages/RoutineEditor.tsx:643
+#: src/pages/RoutineEditor.tsx
 msgid "Advanced..."
 msgstr ""
 
-#: src/pages/Shell.tsx:3420
+#: src/pages/Shell.tsx
 msgid "Agent computer"
 msgstr "एजेंट कंप्यूटर"
 
-#: src/pages/MessagingSettingsOverlay.tsx:261
+#: src/pages/MessagingSettingsOverlay.tsx
 msgid "Agent connections"
 msgstr ""
 
-#: src/pages/McpServersOverlay.tsx:385
-#: src/pages/McpServersOverlay.tsx:452
+#: src/pages/McpServersOverlay.tsx
 msgid "Agents:"
 msgstr "एजेंट:"
 
-#: src/pages/Artifacts.tsx:295
+#: src/pages/Artifacts.tsx
 msgid "All bots"
 msgstr ""
 
-#: src/pages/Artifacts.tsx:289
+#: src/pages/Artifacts.tsx
 msgid "All time"
 msgstr ""
 
 #. placeholder {0}: rule.matchValue
-#: src/components/ApprovalRulesSettings.tsx:21
+#: src/components/ApprovalRulesSettings.tsx
 msgid "Allow {0} actions without asking"
 msgstr "{0} कार्रवाइयों को बिना पूछे अनुमति दें"
 
 #. placeholder {0}: rule.matchValue
-#: src/components/ApprovalRulesSettings.tsx:23
+#: src/components/ApprovalRulesSettings.tsx
 msgid "Allow {0} connector without asking"
 msgstr "{0} कनेक्टर को बिना पूछे अनुमति दें"
 
 #. placeholder {0}: rule.matchValue
-#: src/components/ApprovalRulesSettings.tsx:24
+#: src/components/ApprovalRulesSettings.tsx
 msgid "Allow {0} without asking"
 msgstr "{0} को बिना पूछे अनुमति दें"
 
-#: src/components/ApprovalRulesSettings.tsx:19
+#: src/components/ApprovalRulesSettings.tsx
 msgid "Allow email actions without asking"
 msgstr "ईमेल कार्रवाइयों को बिना पूछे अनुमति दें"
 
-#: src/components/AskCard.tsx:36
+#: src/components/AskCard.tsx
 msgid "Allow once"
 msgstr "एक बार अनुमति दें"
 
-#: src/components/ApprovalRulesSettings.tsx:20
+#: src/components/ApprovalRulesSettings.tsx
 msgid "Allow purchase actions without asking"
 msgstr "खरीद कार्रवाइयों को बिना पूछे अनुमति दें"
 
-#: src/pages/memory-providers/SerenitySettingsForm.tsx:87
+#: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Allow writing"
 msgstr ""
 
-#: src/components/AskCard.tsx:23
+#: src/components/AskCard.tsx
 msgid "Allowed once"
 msgstr "एक बार अनुमति दी गई"
 
-#: src/pages/Auth.tsx:230
+#: src/pages/Auth.tsx
 msgid "Already have an account?"
 msgstr "पहले से खाता है?"
 
-#: src/pages/ExternalConversationSettings.tsx:60
+#: src/pages/ExternalConversationSettings.tsx
 msgid "Always act"
 msgstr ""
 
-#: src/components/AskCard.tsx:37
+#: src/components/AskCard.tsx
 msgid "Always allow this tool"
 msgstr "इस टूल को हमेशा अनुमति दें"
 
-#: src/components/AskCard.tsx:24
+#: src/components/AskCard.tsx
 msgid "Always allowed"
 msgstr "हमेशा अनुमत"
 
-#: src/components/AskCard.tsx:191
+#: src/components/AskCard.tsx
 msgid "Answer"
 msgstr "उत्तर"
 
-#: src/components/AskCard.tsx:19
+#: src/components/AskCard.tsx
 msgid "Answered"
 msgstr "उत्तर दिया गया"
 
 #. placeholder {0}: selectedAskActionLabel(answer, actions)
-#: src/components/AskCard.tsx:20
+#: src/components/AskCard.tsx
 msgid "Answered: {0}"
 msgstr "उत्तर दिया: {0}"
 
-#: src/components/AskCard.tsx:26
+#: src/components/AskCard.tsx
 msgid "Answered: {answer}"
 msgstr "उत्तर: {answer}"
 
-#: src/components/SoftwareUpdateSection.tsx:205
+#: src/components/SoftwareUpdateSection.tsx
 msgid "API is back, but the update did not finish. Check the host logs."
 msgstr ""
 
-#: src/components/AskCard.tsx:44
-#: src/components/integrations/IntegrationSetup.tsx:195
-#: src/lib/localized-provider-hint.ts:9
-#: src/pages/ModelSettingsOverlay.tsx:776
-#: src/pages/ModelSettingsOverlay.tsx:779
-#: src/pages/ModelSettingsOverlay.tsx:798
-#: src/pages/Onboarding.tsx:635
-#: src/pages/Onboarding.tsx:638
-#: src/pages/Onboarding.tsx:652
-#: src/pages/VoiceSettingsOverlay.tsx:247
+#: src/components/AskCard.tsx
+#: src/components/integrations/IntegrationSetup.tsx
+#: src/lib/localized-provider-hint.ts
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/Onboarding.tsx
+#: src/pages/VoiceSettingsOverlay.tsx
 msgid "API key"
 msgstr "API कुंजी"
 
-#: src/pages/PluginsOverlay.tsx:1043
+#: src/pages/PluginsOverlay.tsx
 msgid "API key header"
 msgstr "API कुंजी हेडर"
 
-#: src/pages/AccountSettingsOverlay.tsx:115
-#: src/pages/AccountSettingsOverlay.tsx:405
+#: src/pages/AccountSettingsOverlay.tsx
 msgid "Appearance"
 msgstr "रूप"
 
-#: src/components/teach/SkillDraftCard.tsx:126
+#: src/components/teach/SkillDraftCard.tsx
 msgid "Approval boundaries"
 msgstr "अनुमोदन सीमाएं"
 
-#: src/pages/MessagingSettingsOverlay.tsx:223
-#: src/pages/MessagingSettingsOverlay.tsx:296
-#: src/pages/shell/message-cards.tsx:427
+#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/shell/message-cards.tsx
 msgid "Approve"
 msgstr "अनुमोदित करें"
 
-#: src/pages/shell/message-cards.tsx:418
+#: src/pages/shell/message-cards.tsx
 msgid "Approve this server to let your agent use its tools."
 msgstr "अपने एजेंट को इसके टूल उपयोग करने देने के लिए इस सर्वर को अनुमोदित करें।"
 
-#: src/pages/BotContextMenu.tsx:144
+#: src/pages/BotContextMenu.tsx
 msgid "Archive"
 msgstr "आर्काइव करें"
 
-#: src/pages/Shell.tsx:6299
+#: src/pages/Shell.tsx
 msgid "archived"
 msgstr "आर्काइव किया गया"
 
-#: src/pages/Shell.tsx:3154
+#: src/pages/Shell.tsx
 msgid "Archived"
 msgstr "आर्काइव किया गया"
 
-#: src/pages/Shell.tsx:6310
+#: src/pages/Shell.tsx
 msgid "Archived. Chat, memory, and files kept."
 msgstr "आर्काइव किया गया। चैट, मेमोरी और फ़ाइलें सुरक्षित रखी गईं।"
 
-#: src/pages/McpServersOverlay.tsx:316
+#: src/pages/McpServersOverlay.tsx
 msgid "Arguments"
 msgstr "आर्ग्युमेंट"
 
-#: src/pages/Artifacts.tsx:229
-#: src/pages/Shell.tsx:3268
+#: src/pages/Artifacts.tsx
+#: src/pages/Shell.tsx
 msgid "Artifacts"
 msgstr ""
 
 #. placeholder {0}: rule.matchValue
-#: src/components/ApprovalRulesSettings.tsx:16
+#: src/components/ApprovalRulesSettings.tsx
 msgid "Ask before {0}"
 msgstr "{0} से पहले पूछें"
 
 #. placeholder {0}: rule.matchValue
-#: src/components/ApprovalRulesSettings.tsx:13
+#: src/components/ApprovalRulesSettings.tsx
 msgid "Ask before {0} actions"
 msgstr "{0} कार्रवाइयों से पहले पूछें"
 
 #. placeholder {0}: rule.matchValue
-#: src/components/ApprovalRulesSettings.tsx:15
+#: src/components/ApprovalRulesSettings.tsx
 msgid "Ask before {0} connector"
 msgstr "{0} कनेक्टर से पहले पूछें"
 
-#: src/components/ApprovalRulesSettings.tsx:11
+#: src/components/ApprovalRulesSettings.tsx
 msgid "Ask before email actions"
 msgstr "ईमेल कार्रवाइयों से पहले पूछें"
 
-#: src/components/ApprovalRulesSettings.tsx:12
+#: src/components/ApprovalRulesSettings.tsx
 msgid "Ask before purchase actions"
 msgstr "खरीद कार्रवाइयों से पहले पूछें"
 
-#: src/components/ApprovalRulesSettings.tsx:133
+#: src/components/ApprovalRulesSettings.tsx
 msgid "Ask before purchases"
 msgstr "खरीद से पहले पूछें"
 
-#: src/components/ApprovalRulesSettings.tsx:126
+#: src/components/ApprovalRulesSettings.tsx
 msgid "Ask before sending external email"
 msgstr "बाहरी ईमेल भेजने से पहले पूछें"
 
-#: src/components/integrations/IntegrationSetup.tsx:229
+#: src/components/integrations/IntegrationSetup.tsx
 msgid "Ask the server owner to configure this provider."
 msgstr ""
 
 #. placeholder {0}: preset.time
-#: src/pages/RoutineSchedule.tsx:155
-#: src/pages/RoutineSchedule.tsx:158
-#: src/pages/RoutineSchedule.tsx:163
+#: src/pages/RoutineSchedule.tsx
 msgid "at {0}"
 msgstr "{0} बजे"
 
-#: src/pages/RoutineSchedule.tsx:268
+#: src/pages/RoutineSchedule.tsx
 msgid "at {timeSelect}"
 msgstr "{timeSelect} बजे"
 
-#: src/pages/Shell.tsx:5594
+#: src/pages/Shell.tsx
 msgid "Attach file"
 msgstr "फ़ाइल संलग्न करें"
 
-#: src/components/computer/TerminalApp.tsx:37
+#: src/components/computer/TerminalApp.tsx
 msgid "Attached {path}"
 msgstr ""
 
-#: src/pages/Shell.tsx:5833
+#: src/pages/Shell.tsx
 msgid "Attachment"
 msgstr "अटैचमेंट"
 
-#: src/pages/ModelSettingsOverlay.tsx:709
-#: src/pages/Onboarding.tsx:584
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/Onboarding.tsx
 msgid "Authorization code or callback URL"
 msgstr "ऑथराइज़ेशन कोड या कॉलबैक URL"
 
-#: src/pages/shell/message-cards.tsx:188
+#: src/pages/shell/message-cards.tsx
 msgid "Authorization timed out. Please try again."
 msgstr "ऑथराइज़ेशन का समय समाप्त हो गया। कृपया पुनः प्रयास करें।"
 
-#: src/pages/shell/message-cards.tsx:233
-#: src/pages/shell/message-cards.tsx:427
+#: src/pages/shell/message-cards.tsx
 msgid "Authorize"
 msgstr "ऑथराइज़ करें"
 
-#: src/pages/shell/message-cards.tsx:417
+#: src/pages/shell/message-cards.tsx
 msgid "Authorize this server so agents can use its tools. A popup opens."
 msgstr "एजेंटों को इसके टूल का उपयोग करने देने के लिए इस सर्वर को ऑथराइज़ करें। एक पॉपअप खुलता है।"
 
-#: src/pages/ExternalConversationSettings.tsx:160
+#: src/pages/ExternalConversationSettings.tsx
 msgid "Automated senders"
 msgstr ""
 
-#: src/pages/ExternalConversationSettings.tsx:225
+#: src/pages/ExternalConversationSettings.tsx
 msgid "Automated senders will appear after they post here."
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx:557
+#: src/pages/RoutineEditor.tsx
 msgid "Available after the routine is saved"
 msgstr ""
 
-#: src/pages/shell/avatar-studio-popover.tsx:134
+#: src/pages/shell/avatar-studio-popover.tsx
 msgid "Avatar Studio"
 msgstr "अवतार स्टूडियो"
 
-#: src/pages/AccountSettingsOverlay.tsx:138
+#: src/pages/AccountSettingsOverlay.tsx
 msgid "Avatars"
 msgstr ""
 
-#: src/components/computer/FilesApp.tsx:182
-#: src/pages/PluginsOverlay.tsx:539
-#: src/pages/RoutineEditor.tsx:260
+#: src/components/computer/FilesApp.tsx
+#: src/pages/PluginsOverlay.tsx
+#: src/pages/RoutineEditor.tsx
 msgid "Back"
 msgstr ""
 
-#: src/pages/Auth.tsx:128
-#: src/pages/Auth.tsx:237
-#: src/pages/Auth.tsx:322
+#: src/pages/Auth.tsx
 msgid "Back to sign in"
 msgstr "साइन इन पर वापस जाएँ"
 
-#: src/pages/memory-providers/SupermemorySettingsForm.tsx:47
+#: src/pages/memory-providers/SupermemorySettingsForm.tsx
 msgid "Base URL"
 msgstr "बेस URL"
 
-#: src/pages/memory-providers/SerenitySettingsForm.tsx:59
-#: src/pages/PluginsOverlay.tsx:1040
+#: src/pages/memory-providers/SerenitySettingsForm.tsx
+#: src/pages/PluginsOverlay.tsx
 msgid "Bearer token"
 msgstr "बियरर टोकन"
 
-#: src/pages/Shell.tsx:6509
+#: src/pages/Shell.tsx
 msgid "Booting live desktop…"
 msgstr "लाइव डेस्कटॉप शुरू हो रहा है…"
 
 #. placeholder {0}: computerBot?.name ?? active?.name
-#: src/pages/Shell.tsx:4339
+#: src/pages/Shell.tsx
 msgid "Booting up {0}’s computer"
 msgstr "{0} का कंप्यूटर शुरू हो रहा है"
 
-#: src/pages/Shell.tsx:6171
-#: src/pages/Shell.tsx:6172
-#: src/pages/Shell.tsx:6303
+#: src/pages/Shell.tsx
 msgid "bot"
 msgstr "बॉट"
 
-#: src/pages/IntegrationSetup.tsx:51
-#: src/pages/Shell.tsx:1783
-#: src/pages/shell/avatar-studio-popover.tsx:165
+#: src/pages/IntegrationSetup.tsx
+#: src/pages/Shell.tsx
+#: src/pages/shell/avatar-studio-popover.tsx
 msgid "Bot"
 msgstr "बॉट"
 
 #. js-lingui-explicit-id
-#: src/lib/browser-notifications.ts:72
+#: src/lib/browser-notifications.ts
 msgid "Bot"
 msgstr "बॉट"
 
-#: src/pages/Shell.tsx:4461
+#: src/pages/Shell.tsx
 msgid "Bot screen"
 msgstr "बॉट स्क्रीन"
 
-#: src/pages/Shell.tsx:3628
+#: src/pages/Shell.tsx
 msgid "Bot screen preview"
 msgstr "बॉट स्क्रीन प्रीव्यू"
 
-#: src/pages/MessagingSettingsOverlay.tsx:151
+#: src/pages/MessagingSettingsOverlay.tsx
 msgid "Bot to link"
 msgstr ""
 
-#: src/pages/Artifacts.tsx:226
+#: src/pages/Artifacts.tsx
 msgid "Bots"
 msgstr ""
 
-#: src/components/ApprovalRulesSettings.tsx:115
+#: src/components/ApprovalRulesSettings.tsx
 msgid "Bots act without asking by default. Add an exception only when you want to review a type of action first."
 msgstr "बॉट डिफ़ॉल्ट रूप से बिना पूछे कार्रवाई करते हैं। अपवाद तभी जोड़ें जब आप किसी प्रकार की कार्रवाई की पहले समीक्षा करना चाहते हों।"
 
-#: src/pages/Shell.tsx:4574
+#: src/pages/Shell.tsx
 msgid "Bots are working"
 msgstr "बॉट काम कर रहे हैं"
 
-#: src/pages/memory-providers/SerenitySettingsForm.tsx:74
+#: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Brain label"
 msgstr ""
 
-#: src/pages/PluginsOverlay.tsx:708
+#: src/pages/PluginsOverlay.tsx
 msgid "Browse MCP servers"
 msgstr ""
 
-#: src/components/computer/ComputerWorkspace.tsx:103
+#: src/components/computer/ComputerWorkspace.tsx
 msgid "Browser"
 msgstr ""
 
-#: src/App.tsx:170
+#: src/App.tsx
 msgid "Can't reach the server."
 msgstr "सर्वर तक नहीं पहुंचा जा सका।"
 
-#: src/components/AskCard.tsx:35
-#: src/components/AskCard.tsx:208
-#: src/components/ComputerMaintenanceActions.tsx:97
-#: src/components/ComputerUpdateProgress.tsx:233
-#: src/components/teach/TeachComputerOverlay.tsx:254
-#: src/pages/Artifacts.tsx:371
-#: src/pages/KnowledgeSection.tsx:212
-#: src/pages/KnowledgeSection.tsx:438
-#: src/pages/PluginsOverlay.tsx:1101
-#: src/pages/shell/dialogs.tsx:88
-#: src/pages/shell/dialogs.tsx:199
-#: src/pages/shell/dialogs.tsx:263
-#: src/pages/shell/dialogs.tsx:305
-#: src/pages/shell/dialogs.tsx:395
-#: src/pages/shell/dialogs.tsx:448
+#: src/components/AskCard.tsx
+#: src/components/ComputerMaintenanceActions.tsx
+#: src/components/ComputerUpdateProgress.tsx
+#: src/components/teach/TeachComputerOverlay.tsx
+#: src/pages/Artifacts.tsx
+#: src/pages/KnowledgeSection.tsx
+#: src/pages/PluginsOverlay.tsx
+#: src/pages/shell/dialogs.tsx
 msgid "Cancel"
 msgstr "रद्द करें"
 
-#: src/pages/shell/bot-panel.tsx:123
+#: src/pages/shell/bot-panel.tsx
 msgid "Cancel new bot"
 msgstr "नया बॉट रद्द करें"
 
-#: src/pages/GroupPanel.tsx:106
+#: src/pages/GroupPanel.tsx
 msgid "Cancel new group"
 msgstr "नया समूह रद्द करें"
 
-#: src/pages/Shell.tsx:5442
+#: src/pages/Shell.tsx
 msgid "Cancel reply"
 msgstr "उत्तर रद्द करें"
 
-#: src/components/CloudAgentCard.tsx:36
+#: src/components/CloudAgentCard.tsx
 msgid "cancelled"
 msgstr "रद्द"
 
-#: src/components/AskCard.tsx:22
-#: src/pages/ActivityList.tsx:161
+#: src/components/AskCard.tsx
+#: src/pages/ActivityList.tsx
 msgid "Cancelled"
 msgstr "रद्द किया गया"
 
-#: src/pages/Artifacts.tsx:250
+#: src/pages/Artifacts.tsx
 msgid "Card view"
 msgstr ""
 
-#: src/pages/AccountSettingsOverlay.tsx:354
+#: src/pages/AccountSettingsOverlay.tsx
 msgid "Change password"
 msgstr "पासवर्ड बदलें"
 
-#: src/pages/AccountSettingsOverlay.tsx:354
+#: src/pages/AccountSettingsOverlay.tsx
 msgid "Changing…"
 msgstr "बदला जा रहा है…"
 
-#: src/pages/MessagingSettingsOverlay.tsx:190
+#: src/pages/MessagingSettingsOverlay.tsx
 msgid "Channels"
 msgstr ""
 
-#: src/pages/shell/message-cards.tsx:296
+#: src/pages/shell/message-cards.tsx
 msgid "Chart failed to render: {error}"
 msgstr "चार्ट रेंडर नहीं हो सका: {error}"
 
-#: src/pages/MessagingSettingsOverlay.tsx:112
+#: src/pages/MessagingSettingsOverlay.tsx
 msgid "Chat apps"
 msgstr ""
 
-#: src/pages/AccountSettingsOverlay.tsx:105
+#: src/pages/AccountSettingsOverlay.tsx
 msgid "Chat apps, group channels, and agent connections."
 msgstr ""
 
-#: src/pages/Shell.tsx:5769
+#: src/pages/Shell.tsx
 msgid "Chat Settings"
 msgstr "चैट सेटिंग्स"
 
-#: src/components/SoftwareUpdateSection.tsx:157
+#: src/components/SoftwareUpdateSection.tsx
 msgid "Check failed"
 msgstr ""
 
-#: src/components/DesktopUpdates.tsx:106
-#: src/components/DesktopUpdates.tsx:156
-#: src/components/SoftwareUpdateSection.tsx:77
+#: src/components/DesktopUpdates.tsx
+#: src/components/SoftwareUpdateSection.tsx
 msgid "Check for updates"
 msgstr ""
 
-#: src/pages/Shell.tsx:3840
-#: src/pages/Shell.tsx:3852
+#: src/pages/Shell.tsx
 msgid "Check in."
 msgstr "जांच करें।"
 
-#: src/pages/Auth.tsx:34
+#: src/pages/Auth.tsx
 msgid "Check your email"
 msgstr "अपना ईमेल देखें"
 
-#: src/components/DesktopUpdates.tsx:154
-#: src/components/SoftwareUpdateSection.tsx:77
+#: src/components/DesktopUpdates.tsx
+#: src/components/SoftwareUpdateSection.tsx
 msgid "Checking…"
 msgstr ""
 
-#: src/components/SoftwareUpdateSection.tsx:267
+#: src/components/SoftwareUpdateSection.tsx
 msgid "Checkout has local changes. Clean it before updating."
 msgstr ""
 
-#: src/pages/shell/avatar-studio-popover.tsx:137
+#: src/pages/shell/avatar-studio-popover.tsx
 msgid "Choose a bot shape, color, or upload an image"
 msgstr "बॉट का आकार और रंग चुनें, या छवि अपलोड करें"
 
-#: src/pages/MessagingSettingsOverlay.tsx:158
+#: src/pages/MessagingSettingsOverlay.tsx
 msgid "Choose a bot…"
 msgstr ""
 
-#: src/pages/Auth.tsx:283
+#: src/pages/Auth.tsx
 msgid "Choose a new password"
 msgstr "नया पासवर्ड चुनें"
 
-#: src/pages/shell/avatar-studio-popover.tsx:271
+#: src/pages/shell/avatar-studio-popover.tsx
 msgid "Choose file"
 msgstr "फ़ाइल चुनें"
 
-#: src/pages/ModelSettingsOverlay.tsx:383
+#: src/pages/ModelSettingsOverlay.tsx
 msgid "Choose which connected model Rakazo uses."
 msgstr "चुनें कि Rakazo किस कनेक्टेड मॉडल का उपयोग करे।"
 
-#: src/pages/shell/dialogs.tsx:319
+#: src/pages/shell/dialogs.tsx
 msgid "Clear"
 msgstr "साफ़ करें"
 
 #. placeholder {0}: bot.name
-#: src/pages/shell/dialogs.tsx:293
+#: src/pages/shell/dialogs.tsx
 msgid "Clear {0}’s conversation?"
 msgstr "{0} की बातचीत साफ़ करें?"
 
-#: src/pages/BotContextMenu.tsx:140
-#: src/pages/shell/bot-panel.tsx:624
+#: src/pages/BotContextMenu.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Clear conversation"
 msgstr "बातचीत साफ़ करें"
 
-#: src/pages/shell/dialogs.tsx:319
+#: src/pages/shell/dialogs.tsx
 msgid "Clearing…"
 msgstr "साफ़ किया जा रहा है…"
 
-#: src/components/integrations/IntegrationSetup.tsx:173
+#: src/components/integrations/IntegrationSetup.tsx
 msgid "Client ID"
 msgstr ""
 
-#: src/components/integrations/IntegrationSetup.tsx:195
+#: src/components/integrations/IntegrationSetup.tsx
 msgid "Client secret"
 msgstr ""
 
-#: src/pages/KnowledgeSection.tsx:438
-#: src/pages/MessagingSettingsOverlay.tsx:361
-#: src/pages/PeerMessagesOverlay.tsx:91
-#: src/pages/PeerMessagesOverlay.tsx:92
-#: src/pages/RoutineEditor.tsx:272
-#: src/pages/shell/avatar-studio-popover.tsx:143
-#: src/pages/WindowChrome.tsx:19
+#: src/pages/KnowledgeSection.tsx
+#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/PeerMessagesOverlay.tsx
+#: src/pages/RoutineEditor.tsx
+#: src/pages/shell/avatar-studio-popover.tsx
+#: src/pages/WindowChrome.tsx
 msgid "Close"
 msgstr "बंद करें"
 
-#: src/components/computer/ComputerWorkspace.tsx:205
+#: src/components/computer/ComputerWorkspace.tsx
 msgid "Close {title}"
 msgstr ""
 
-#: src/pages/shell/message-cards.tsx:500
+#: src/pages/shell/message-cards.tsx
 msgid "Close chart"
 msgstr "चार्ट बंद करें"
 
-#: src/pages/Shell.tsx:4434
+#: src/pages/Shell.tsx
 msgid "Close computer"
 msgstr "कंप्यूटर बंद करें"
 
-#: src/pages/shell/message-cards.tsx:603
+#: src/pages/shell/message-cards.tsx
 msgid "Close image preview"
 msgstr "छवि प्रीव्यू बंद करें"
 
-#: src/pages/PluginsOverlay.tsx:681
+#: src/pages/PluginsOverlay.tsx
 msgid "Close integrations"
 msgstr "इंटीग्रेशन बंद करें"
 
-#: src/pages/McpServersOverlay.tsx:258
+#: src/pages/McpServersOverlay.tsx
 msgid "Close MCP servers"
 msgstr "MCP सर्वर बंद करें"
 
-#: src/pages/MemorySettingsOverlay.tsx:168
-#: src/pages/SettingsOverlay.tsx:100
+#: src/pages/MemorySettingsOverlay.tsx
+#: src/pages/SettingsOverlay.tsx
 msgid "Close memory settings"
 msgstr "मेमोरी सेटिंग्स बंद करें"
 
-#: src/pages/MessagingSettingsOverlay.tsx:101
+#: src/pages/MessagingSettingsOverlay.tsx
 msgid "Close messaging settings"
 msgstr ""
 
-#: src/pages/ModelSettingsOverlay.tsx:399
-#: src/pages/SettingsOverlay.tsx:98
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/SettingsOverlay.tsx
 msgid "Close model settings"
 msgstr "मॉडल सेटिंग्स बंद करें"
 
-#: src/pages/Shell.tsx:2691
+#: src/pages/Shell.tsx
 msgid "Close navigation"
 msgstr "नेविगेशन बंद करें"
 
-#: src/pages/Shell.tsx:3606
+#: src/pages/Shell.tsx
 msgid "Close panel"
 msgstr "पैनल बंद करें"
 
-#: src/components/ArtifactFileCard.tsx:186
+#: src/components/ArtifactFileCard.tsx
 msgid "Close preview"
 msgstr "प्रीव्यू बंद करें"
 
-#: src/pages/SettingsOverlay.tsx:103
+#: src/pages/SettingsOverlay.tsx
 msgid "Close user settings"
 msgstr "उपयोगकर्ता सेटिंग्स बंद करें"
 
-#: src/pages/SettingsOverlay.tsx:102
-#: src/pages/VoiceSettingsOverlay.tsx:174
+#: src/pages/SettingsOverlay.tsx
+#: src/pages/VoiceSettingsOverlay.tsx
 msgid "Close voice settings"
 msgstr "आवाज़ सेटिंग्स बंद करें"
 
-#: src/pages/memory-providers/SupermemorySettingsForm.tsx:39
+#: src/pages/memory-providers/SupermemorySettingsForm.tsx
 msgid "Cloud"
 msgstr "क्लाउड"
 
-#: src/components/AskCard.tsx:45
+#: src/components/AskCard.tsx
 msgid "Code"
 msgstr "कोड"
 
 #. placeholder {0}: group.title
 #. placeholder {0}: item.chat.name
-#: src/pages/Shell.tsx:2901
-#: src/pages/Shell.tsx:2969
+#: src/pages/Shell.tsx
 msgid "Collapse {0}"
 msgstr ""
 
-#: src/pages/shell/avatar-studio-popover.tsx:211
+#: src/pages/shell/avatar-studio-popover.tsx
 msgid "Color"
 msgstr "रंग"
 
-#: src/pages/shell/avatar-studio-popover.tsx:222
+#: src/pages/shell/avatar-studio-popover.tsx
 msgid "Color {color}"
 msgstr "रंग {color}"
 
-#: src/pages/RoutineEditor.tsx:455
+#: src/pages/RoutineEditor.tsx
 msgid "Coming soon"
 msgstr ""
 
-#: src/pages/McpServersOverlay.tsx:305
+#: src/pages/McpServersOverlay.tsx
 msgid "Command"
 msgstr "कमांड"
 
-#: src/pages/ScratchpadSection.tsx:119
+#: src/pages/ScratchpadSection.tsx
 msgid "Complete"
 msgstr "पूर्ण"
 
-#: src/pages/SettingsOverlay.tsx:88
-#: src/pages/Shell.tsx:6462
-#: src/pages/shell/bot-panel.tsx:56
+#: src/pages/SettingsOverlay.tsx
+#: src/pages/Shell.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Computer"
 msgstr "कंप्यूटर"
 
-#: src/pages/Shell.tsx:6512
+#: src/pages/Shell.tsx
 msgid "Computer failed to boot"
 msgstr "कंप्यूटर शुरू नहीं हो सका"
 
-#: src/pages/Shell.tsx:4484
+#: src/pages/Shell.tsx
 msgid "Computer is asleep"
 msgstr "कंप्यूटर निष्क्रिय है"
 
-#: src/pages/Shell.tsx:6511
+#: src/pages/Shell.tsx
 msgid "Computer is asleep. Open it to wake."
 msgstr ""
 
-#: src/pages/Shell.tsx:6513
+#: src/pages/Shell.tsx
 msgid "Computer is stopped"
 msgstr "कंप्यूटर रुका हुआ है"
 
-#: src/pages/AccountSettingsOverlay.tsx:249
+#: src/pages/AccountSettingsOverlay.tsx
 msgid "Computers"
 msgstr "कंप्यूटर"
 
-#: src/components/ComputersUnavailableHint.tsx:7
+#: src/components/ComputersUnavailableHint.tsx
 msgid "Computers are off. Set SANDBOX_PROVIDER=docker with SANDBOX_SUPERVISOR_TOKEN, or set SANDBOX_PROVIDER to e2b, daytona, or box with its API key. Recreate the stack after changing .env."
 msgstr "कंप्यूटर बंद हैं। SANDBOX_PROVIDER=docker और SANDBOX_SUPERVISOR_TOKEN सेट करें, या SANDBOX_PROVIDER को e2b, daytona, या box पर सेट कर उसका API key दें। .env बदलने के बाद स्टैक फिर बनाएँ।"
 
-#: src/pages/PluginsOverlay.tsx:741
+#: src/pages/PluginsOverlay.tsx
 msgid "Configure a plugin catalog on the server to connect apps."
 msgstr ""
 
-#: src/pages/ModelSettingsOverlay.tsx:419
+#: src/pages/ModelSettingsOverlay.tsx
 msgid "Configured by deployment"
 msgstr "डिप्लॉयमेंट द्वारा कॉन्फ़िगर"
 
-#: src/pages/McpServersOverlay.tsx:421
+#: src/pages/McpServersOverlay.tsx
 msgid "Configured servers"
 msgstr "कॉन्फ़िगर किए गए सर्वर"
 
-#: src/pages/KnowledgeSection.tsx:450
-#: src/pages/McpServersOverlay.tsx:506
+#: src/pages/KnowledgeSection.tsx
+#: src/pages/McpServersOverlay.tsx
 msgid "Confirm delete"
 msgstr "डिलीट की पुष्टि करें"
 
-#: src/pages/AccountSettingsOverlay.tsx:337
-#: src/pages/Auth.tsx:303
+#: src/pages/AccountSettingsOverlay.tsx
+#: src/pages/Auth.tsx
 msgid "Confirm password"
 msgstr "पासवर्ड की पुष्टि करें"
 
-#: src/components/integrations/IntegrationSetup.tsx:223
-#: src/components/integrations/IntegrationSetup.tsx:268
-#: src/components/integrations/IntegrationSetup.tsx:292
-#: src/components/integrations/IntegrationSetup.tsx:325
-#: src/pages/memory-providers/SerenitySettingsForm.tsx:118
-#: src/pages/memory-providers/SupermemorySettingsForm.tsx:82
-#: src/pages/VoiceSettingsOverlay.tsx:269
+#: src/components/integrations/IntegrationSetup.tsx
+#: src/pages/memory-providers/SerenitySettingsForm.tsx
+#: src/pages/memory-providers/SupermemorySettingsForm.tsx
+#: src/pages/VoiceSettingsOverlay.tsx
 msgid "Connect"
 msgstr "कनेक्ट करें"
 
-#: src/pages/Onboarding.tsx:385
+#: src/pages/Onboarding.tsx
 msgid "Connect a model"
 msgstr "एक मॉडल कनेक्ट करें"
 
-#: src/pages/ModelSettingsOverlay.tsx:831
+#: src/pages/ModelSettingsOverlay.tsx
 msgid "Connect API key"
 msgstr "API कुंजी कनेक्ट करें"
 
-#: src/pages/PluginsOverlay.tsx:999
+#: src/pages/PluginsOverlay.tsx
 msgid "Connect Executor"
 msgstr "Executor कनेक्ट करें"
 
-#: src/pages/shell/message-cards.tsx:409
+#: src/pages/shell/message-cards.tsx
 msgid "Connect MCP server “{name}”"
 msgstr "MCP सर्वर “{name}” कनेक्ट करें"
 
-#: src/pages/McpServersOverlay.tsx:39
+#: src/pages/McpServersOverlay.tsx
 msgid "Connect OAuth"
 msgstr "OAuth कनेक्ट करें"
 
-#: src/pages/ModelSettingsOverlay.tsx:679
+#: src/pages/ModelSettingsOverlay.tsx
 msgid "Connect this provider to use it as your personal model."
 msgstr "इस प्रोवाइडर को अपने व्यक्तिगत मॉडल के रूप में उपयोग करने के लिए कनेक्ट करें।"
 
-#: src/pages/PluginsOverlay.tsx:997
+#: src/pages/PluginsOverlay.tsx
 msgid "Connect Treg"
 msgstr "Treg कनेक्ट करें"
 
-#: src/components/integrations/IntegrationSetup.tsx:165
-#: src/components/integrations/IntegrationSetup.tsx:268
-#: src/pages/McpOAuthCallback.tsx:54
-#: src/pages/MemorySettingsOverlay.tsx:191
-#: src/pages/ModelSettingsOverlay.tsx:464
-#: src/pages/shell/message-cards.tsx:225
-#: src/pages/VoiceSettingsOverlay.tsx:226
+#: src/components/integrations/IntegrationSetup.tsx
+#: src/pages/McpOAuthCallback.tsx
+#: src/pages/MemorySettingsOverlay.tsx
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/shell/message-cards.tsx
+#: src/pages/VoiceSettingsOverlay.tsx
 msgid "Connected"
 msgstr "कनेक्टेड"
 
 #. placeholder {0}: credential.label
-#: src/pages/ModelSettingsOverlay.tsx:670
+#: src/pages/ModelSettingsOverlay.tsx
 msgid "Connected · {0}"
 msgstr "कनेक्टेड · {0}"
 
 #. placeholder {0}: selected.name
-#: src/pages/VoiceSettingsOverlay.tsx:106
+#: src/pages/VoiceSettingsOverlay.tsx
 msgid "Connected {0}."
 msgstr "{0} कनेक्ट किया गया।"
 
 #. placeholder {0}: selected.label
 #. placeholder {0}: selectedLabelRef.current ?? "this model"
-#: src/pages/ModelSettingsOverlay.tsx:102
-#: src/pages/ModelSettingsOverlay.tsx:354
+#: src/pages/ModelSettingsOverlay.tsx
 msgid "Connected and using {0}."
 msgstr "{0} कनेक्ट किया गया और उपयोग में है।"
 
-#: src/pages/shell/message-cards.tsx:442
+#: src/pages/shell/message-cards.tsx
 msgid "Connected. Its tools are available from your next message."
 msgstr "कनेक्टेड। इसके टूल आपके अगले संदेश से उपलब्ध हैं।"
 
-#: src/components/integrations/IntegrationSetup.tsx:223
-#: src/components/integrations/IntegrationSetup.tsx:362
-#: src/pages/McpServersOverlay.tsx:38
-#: src/pages/memory-providers/SerenitySettingsForm.tsx:118
-#: src/pages/memory-providers/SupermemorySettingsForm.tsx:82
-#: src/pages/shell/message-cards.tsx:427
-#: src/pages/VoiceSettingsOverlay.tsx:265
+#: src/components/integrations/IntegrationSetup.tsx
+#: src/pages/McpServersOverlay.tsx
+#: src/pages/memory-providers/SerenitySettingsForm.tsx
+#: src/pages/memory-providers/SupermemorySettingsForm.tsx
+#: src/pages/shell/message-cards.tsx
+#: src/pages/VoiceSettingsOverlay.tsx
 msgid "Connecting…"
 msgstr "कनेक्ट हो रहा है…"
 
 #. placeholder {0}: item.name
-#: src/pages/PluginsOverlay.tsx:258
+#: src/pages/PluginsOverlay.tsx
 msgid "Connection to {0} is still pending. You can close this and check again."
 msgstr "{0} से कनेक्शन अभी लंबित है। आप इसे बंद करके बाद में जांच सकते हैं।"
 
-#: src/pages/ModelSettingsOverlay.tsx:609
-#: src/pages/Onboarding.tsx:522
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/Onboarding.tsx
 msgid "Context limit"
 msgstr "कॉन्टेक्स्ट सीमा"
 
-#: src/components/integrations/IntegrationSetup.tsx:362
-#: src/pages/Onboarding.tsx:669
+#: src/components/integrations/IntegrationSetup.tsx
+#: src/pages/Onboarding.tsx
 msgid "Continue"
 msgstr "जारी रखें"
 
-#: src/components/ComputerUpdateProgress.tsx:194
+#: src/components/ComputerUpdateProgress.tsx
 msgid "Continue in Background"
 msgstr ""
 
-#: src/pages/Auth.tsx:213
+#: src/pages/Auth.tsx
 msgid "Continue with email"
 msgstr "ईमेल से जारी रखें"
 
-#: src/pages/Shell.tsx:5965
+#: src/pages/Shell.tsx
 msgid "Copy"
 msgstr "कॉपी करें"
 
-#: src/pages/ScratchpadSection.tsx:56
+#: src/pages/ScratchpadSection.tsx
 msgid "Could not add"
 msgstr "जोड़ा नहीं जा सका"
 
-#: src/pages/McpServersOverlay.tsx:170
+#: src/pages/McpServersOverlay.tsx
 msgid "Could not add MCP server"
 msgstr "MCP सर्वर जोड़ा नहीं जा सका"
 
-#: src/pages/shell/message-cards.tsx:377
+#: src/pages/shell/message-cards.tsx
 msgid "Could not approve this server"
 msgstr "इस सर्वर को अनुमोदित नहीं किया जा सका"
 
-#: src/pages/shell/message-cards.tsx:191
+#: src/pages/shell/message-cards.tsx
 msgid "Could not authorize this app"
 msgstr "इस ऐप को ऑथराइज़ नहीं किया जा सका"
 
-#: src/pages/AccountSettingsOverlay.tsx:294
+#: src/pages/AccountSettingsOverlay.tsx
 msgid "Could not change password"
 msgstr "पासवर्ड बदला नहीं जा सका"
 
-#: src/pages/ModelSettingsOverlay.tsx:274
+#: src/pages/ModelSettingsOverlay.tsx
 msgid "Could not change the default model"
 msgstr "डिफ़ॉल्ट मॉडल बदला नहीं जा सका"
 
-#: src/components/teach/TeachComputerOverlay.tsx:85
+#: src/components/teach/TeachComputerOverlay.tsx
 msgid "Could not check teaching status. Refresh the view to continue."
 msgstr ""
 
-#: src/pages/shell/dialogs.tsx:314
+#: src/pages/shell/dialogs.tsx
 msgid "Could not clear conversation"
 msgstr "बातचीत साफ़ नहीं की जा सकी"
 
-#: src/components/ComputerUpdateProgress.tsx:174
+#: src/components/ComputerUpdateProgress.tsx
 msgid "Could not complete action"
 msgstr ""
 
-#: src/pages/McpOAuthCallback.tsx:43
+#: src/pages/McpOAuthCallback.tsx
 msgid "Could not complete OAuth"
 msgstr "OAuth पूरा नहीं हो सका"
 
-#: src/components/DesktopUpdates.tsx:70
+#: src/components/DesktopUpdates.tsx
 msgid "Could not complete the update. Try again."
 msgstr ""
 
-#: src/components/integrations/IntegrationSetup.tsx:80
-#: src/pages/PluginsOverlay.tsx:263
+#: src/components/integrations/IntegrationSetup.tsx
+#: src/pages/PluginsOverlay.tsx
 msgid "Could not connect"
 msgstr "कनेक्ट नहीं हो सका"
 
 #. placeholder {0}: registration.name
-#: src/pages/MemorySettingsOverlay.tsx:119
+#: src/pages/MemorySettingsOverlay.tsx
 msgid "Could not connect {0}"
 msgstr "{0} कनेक्ट नहीं हो सका"
 
-#: src/pages/ModelSettingsOverlay.tsx:357
+#: src/pages/ModelSettingsOverlay.tsx
 msgid "Could not connect this provider"
 msgstr "यह प्रोवाइडर कनेक्ट नहीं हो सका"
 
-#: src/pages/VoiceSettingsOverlay.tsx:108
+#: src/pages/VoiceSettingsOverlay.tsx
 msgid "Could not connect this voice provider"
 msgstr "यह आवाज़ प्रोवाइडर कनेक्ट नहीं हो सका"
 
-#: src/pages/Shell.tsx:1016
+#: src/pages/Shell.tsx
 msgid "Could not connect to the computer screen"
 msgstr ""
 
-#: src/pages/Auth.tsx:101
-#: src/pages/Shell.tsx:2590
+#: src/pages/Auth.tsx
+#: src/pages/Shell.tsx
 msgid "Could not continue"
 msgstr "जारी नहीं रखा जा सका"
 
-#: src/pages/shell/bot-panel.tsx:111
+#: src/pages/shell/bot-panel.tsx
 msgid "Could not create bot"
 msgstr "बॉट नहीं बनाया जा सका"
 
-#: src/pages/GroupPanel.tsx:91
+#: src/pages/GroupPanel.tsx
 msgid "Could not create group"
 msgstr "समूह नहीं बनाया जा सका"
 
-#: src/pages/shell/dialogs.tsx:173
+#: src/pages/shell/dialogs.tsx
 msgid "Could not create section"
 msgstr "सेक्शन नहीं बनाया जा सका"
 
-#: src/pages/shell/dialogs.tsx:52
+#: src/pages/shell/dialogs.tsx
 msgid "Could not create space"
 msgstr ""
 
-#: src/pages/Onboarding.tsx:365
+#: src/pages/Onboarding.tsx
 msgid "Could not create your bot"
 msgstr "आपका बॉट नहीं बनाया जा सका"
 
-#: src/pages/shell/dialogs.tsx:404
+#: src/pages/shell/dialogs.tsx
 msgid "Could not delete bot"
 msgstr "बॉट डिलीट नहीं किया जा सका"
 
-#: src/pages/shell/dialogs.tsx:461
+#: src/pages/shell/dialogs.tsx
 msgid "Could not delete group"
 msgstr ""
 
-#: src/pages/McpServersOverlay.tsx:225
+#: src/pages/McpServersOverlay.tsx
 msgid "Could not delete MCP server"
 msgstr "MCP सर्वर डिलीट नहीं किया जा सका"
 
-#: src/pages/shell/dialogs.tsx:464
+#: src/pages/shell/dialogs.tsx
 msgid "Could not delete routine"
 msgstr "रूटीन डिलीट नहीं किया जा सका"
 
-#: src/pages/KnowledgeSection.tsx:352
+#: src/pages/KnowledgeSection.tsx
 msgid "Could not delete skill"
 msgstr "स्किल हटाई नहीं जा सकी"
 
-#: src/pages/shell/dialogs.tsx:463
+#: src/pages/shell/dialogs.tsx
 msgid "Could not delete space"
 msgstr ""
 
-#: src/pages/Artifacts.tsx:207
+#: src/pages/Artifacts.tsx
 msgid "Could not delete this artifact."
 msgstr ""
 
-#: src/pages/MemorySettingsOverlay.tsx:133
+#: src/pages/MemorySettingsOverlay.tsx
 msgid "Could not disconnect memory provider"
 msgstr "मेमोरी प्रोवाइडर डिस्कनेक्ट नहीं हो सका"
 
-#: src/pages/McpServersOverlay.tsx:236
+#: src/pages/McpServersOverlay.tsx
 msgid "Could not disconnect OAuth"
 msgstr "OAuth डिस्कनेक्ट नहीं हो सका"
 
-#: src/pages/VoiceSettingsOverlay.tsx:124
+#: src/pages/VoiceSettingsOverlay.tsx
 msgid "Could not disconnect this voice provider"
 msgstr "यह आवाज़ प्रोवाइडर डिस्कनेक्ट नहीं हो सका"
 
-#: src/pages/shell/message-cards.tsx:48
+#: src/pages/shell/message-cards.tsx
 msgid "Could not dismiss"
 msgstr ""
 
-#: src/pages/shell/message-cards.tsx:395
+#: src/pages/shell/message-cards.tsx
 msgid "Could not dismiss this server"
 msgstr ""
 
 #. placeholder {0}: props.name
-#: src/components/ArtifactFileCard.tsx:38
+#: src/components/ArtifactFileCard.tsx
 msgid "Could not download {0}. Try again."
 msgstr "{0} डाउनलोड नहीं हो सका। पुनः प्रयास करें।"
 
-#: src/components/ArtifactFileCard.tsx:177
+#: src/components/ArtifactFileCard.tsx
 msgid "Could not download {name}. Try again."
 msgstr "{name} डाउनलोड नहीं हो सका। पुनः प्रयास करें।"
 
-#: src/components/computer/FilesApp.tsx:136
+#: src/components/computer/FilesApp.tsx
 msgid "Could not download file"
 msgstr ""
 
-#: src/pages/PluginsOverlay.tsx:414
+#: src/pages/PluginsOverlay.tsx
 msgid "Could not install connector"
 msgstr "कनेक्टर इंस्टॉल नहीं हो सका"
 
-#: src/components/computer/FilesApp.tsx:68
+#: src/components/computer/FilesApp.tsx
 msgid "Could not list files"
 msgstr ""
 
-#: src/pages/KnowledgeSection.tsx:110
-#: src/pages/KnowledgeSection.tsx:151
-#: src/pages/KnowledgeSection.tsx:280
-#: src/pages/KnowledgeSection.tsx:322
-#: src/pages/KnowledgeSection.tsx:349
+#: src/pages/KnowledgeSection.tsx
 msgid "Could not load"
 msgstr "लोड नहीं हो सका"
 
-#: src/components/ApprovalRulesSettings.tsx:48
+#: src/components/ApprovalRulesSettings.tsx
 msgid "Could not load approval rules"
 msgstr "अनुमोदन नियम लोड नहीं हो सके"
 
-#: src/pages/Artifacts.tsx:123
+#: src/pages/Artifacts.tsx
 msgid "Could not load artifacts."
 msgstr ""
 
-#: src/pages/IntegrationSetup.tsx:72
+#: src/pages/IntegrationSetup.tsx
 msgid "Could not load bots. Reload to try again."
 msgstr ""
 
-#: src/components/computer/TerminalApp.tsx:78
+#: src/components/computer/TerminalApp.tsx
 msgid "Could not load commands"
 msgstr ""
 
-#: src/components/integrations/IntegrationSetup.tsx:71
-#: src/pages/PluginsOverlay.tsx:142
-#: src/pages/PluginsOverlay.tsx:718
+#: src/components/integrations/IntegrationSetup.tsx
+#: src/pages/PluginsOverlay.tsx
 msgid "Could not load integrations"
 msgstr "इंटीग्रेशन लोड नहीं हो सके"
 
-#: src/pages/McpServersOverlay.tsx:82
+#: src/pages/McpServersOverlay.tsx
 msgid "Could not load MCP servers"
 msgstr "MCP सर्वर लोड नहीं हो सके"
 
-#: src/pages/ModelSettingsOverlay.tsx:154
+#: src/pages/ModelSettingsOverlay.tsx
 msgid "Could not load model settings"
 msgstr "मॉडल सेटिंग्स लोड नहीं हो सकीं"
 
-#: src/pages/KnowledgeSection.tsx:302
+#: src/pages/KnowledgeSection.tsx
 msgid "Could not load skill"
 msgstr "स्किल लोड नहीं हो सकी"
 
-#: src/pages/Artifacts.tsx:857
+#: src/pages/Artifacts.tsx
 msgid "Could not load this artifact."
 msgstr ""
 
-#: src/pages/PeerMessagesOverlay.tsx:103
+#: src/pages/PeerMessagesOverlay.tsx
 msgid "Could not load this chat."
 msgstr "यह चैट लोड नहीं हो सकी."
 
-#: src/components/ArtifactFileCard.tsx:150
+#: src/components/ArtifactFileCard.tsx
 msgid "Could not load this file."
 msgstr "यह फ़ाइल लोड नहीं हो सकी।"
 
-#: src/components/SoftwareUpdateSection.tsx:117
+#: src/components/SoftwareUpdateSection.tsx
 msgid "Could not load update status"
 msgstr ""
 
-#: src/pages/VoiceSettingsOverlay.tsx:81
-#: src/pages/VoiceSettingsOverlay.tsx:205
+#: src/pages/VoiceSettingsOverlay.tsx
 msgid "Could not load voice settings"
 msgstr "आवाज़ सेटिंग्स लोड नहीं हो सकीं"
 
-#: src/components/computer/FilesApp.tsx:122
+#: src/components/computer/FilesApp.tsx
 msgid "Could not open file"
 msgstr ""
 
-#: src/pages/LocalSettings.tsx:26
+#: src/pages/LocalSettings.tsx
 msgid "Could not open local settings. Start the local server and create its owner account, then try again."
 msgstr ""
 
-#: src/pages/VoiceSettingsOverlay.tsx:158
+#: src/pages/VoiceSettingsOverlay.tsx
 msgid "Could not play a test clip"
 msgstr "टेस्ट क्लिप नहीं चलाई जा सकी"
 
-#: src/pages/AccountSettingsOverlay.tsx:302
-#: src/pages/Auth.tsx:117
-#: src/pages/Auth.tsx:276
+#: src/pages/AccountSettingsOverlay.tsx
+#: src/pages/Auth.tsx
 msgid "Could not reach the server"
 msgstr "सर्वर से संपर्क नहीं हो सका"
 
-#: src/pages/ModelSettingsOverlay.tsx:258
-#: src/pages/Onboarding.tsx:274
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/Onboarding.tsx
 msgid "Could not reach this model server"
 msgstr "इस मॉडल सर्वर तक नहीं पहुंचा जा सका"
 
-#: src/pages/ScratchpadSection.tsx:97
+#: src/pages/ScratchpadSection.tsx
 msgid "Could not remove"
 msgstr "हटाया नहीं जा सका"
 
-#: src/pages/PluginsOverlay.tsx:427
+#: src/pages/PluginsOverlay.tsx
 msgid "Could not remove connector"
 msgstr "कनेक्टर हटाया नहीं जा सका"
 
-#: src/pages/GroupPanel.tsx:180
+#: src/pages/GroupPanel.tsx
 msgid "Could not remove group"
 msgstr "समूह हटाया नहीं जा सका"
 
-#: src/components/ApprovalRulesSettings.tsx:92
+#: src/components/ApprovalRulesSettings.tsx
 msgid "Could not remove rule"
 msgstr "नियम हटाया नहीं जा सका"
 
-#: src/pages/PluginsOverlay.tsx:328
+#: src/pages/PluginsOverlay.tsx
 msgid "Could not rename connection"
 msgstr ""
 
-#: src/pages/shell/dialogs.tsx:239
+#: src/pages/shell/dialogs.tsx
 msgid "Could not rename section"
 msgstr "अनुभाग का नाम नहीं बदला जा सका"
 
-#: src/pages/shell/message-cards.tsx:286
+#: src/pages/shell/message-cards.tsx
 msgid "Could not render chart"
 msgstr "चार्ट रेंडर नहीं हो सका"
 
-#: src/pages/Auth.tsx:271
+#: src/pages/Auth.tsx
 msgid "Could not reset password"
 msgstr "पासवर्ड रीसेट नहीं किया जा सका"
 
-#: src/pages/PluginsOverlay.tsx:284
-#: src/pages/PluginsOverlay.tsx:307
+#: src/pages/PluginsOverlay.tsx
 msgid "Could not revoke connection"
 msgstr "कनेक्शन रद्द नहीं किया जा सका"
 
-#: src/pages/Shell.tsx:3906
+#: src/pages/Shell.tsx
 msgid "Could not run routine"
 msgstr ""
 
-#: src/pages/ExternalConversationSettings.tsx:250
-#: src/pages/KnowledgeSection.tsx:132
-#: src/pages/shell/bot-panel.tsx:376
+#: src/pages/ExternalConversationSettings.tsx
+#: src/pages/KnowledgeSection.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Could not save"
 msgstr "सहेजा नहीं जा सका"
 
-#: src/components/ApprovalRulesSettings.tsx:103
+#: src/components/ApprovalRulesSettings.tsx
 msgid "Could not save Auto Review"
 msgstr ""
 
-#: src/pages/GroupPanel.tsx:179
+#: src/pages/GroupPanel.tsx
 msgid "Could not save group"
 msgstr "समूह सहेजा नहीं जा सका"
 
-#: src/pages/Onboarding.tsx:331
+#: src/pages/Onboarding.tsx
 msgid "Could not save model"
 msgstr "मॉडल सहेजा नहीं जा सका"
 
-#: src/pages/Shell.tsx:3877
+#: src/pages/Shell.tsx
 msgid "Could not save routine"
 msgstr "रूटीन सहेजा नहीं जा सका"
 
-#: src/components/ApprovalRulesSettings.tsx:80
+#: src/components/ApprovalRulesSettings.tsx
 msgid "Could not save rule"
 msgstr "नियम सहेजा नहीं जा सका"
 
-#: src/pages/KnowledgeSection.tsx:325
+#: src/pages/KnowledgeSection.tsx
 msgid "Could not save skill"
 msgstr "स्किल सहेजी नहीं जा सकी"
 
-#: src/pages/HostComputerPrompt.tsx:47
+#: src/pages/HostComputerPrompt.tsx
 msgid "Could not save that choice"
 msgstr "वह विकल्प सहेजा नहीं जा सका"
 
-#: src/pages/VoiceSettingsOverlay.tsx:139
+#: src/pages/VoiceSettingsOverlay.tsx
 msgid "Could not save that voice"
 msgstr "वह आवाज़ सहेजी नहीं जा सकी"
 
-#: src/pages/shell/message-cards.tsx:35
+#: src/pages/shell/message-cards.tsx
 msgid "Could not save this choice"
 msgstr "यह विकल्प सहेजा नहीं जा सका"
 
-#: src/pages/PluginsOverlay.tsx:355
+#: src/pages/PluginsOverlay.tsx
 msgid "Could not search catalog"
 msgstr ""
 
-#: src/pages/Auth.tsx:86
+#: src/pages/Auth.tsx
 msgid "Could not send reset email"
 msgstr "रीसेट ईमेल नहीं भेजा जा सका"
 
-#: src/lib/call-session.ts:379
+#: src/lib/call-session.ts
 msgid "Could not send that"
 msgstr "वह भेजा नहीं जा सका"
 
-#: src/pages/McpServersOverlay.tsx:194
+#: src/pages/McpServersOverlay.tsx
 msgid "Could not start OAuth"
 msgstr "OAuth शुरू नहीं हो सका"
 
-#: src/components/teach/TeachComputerOverlay.tsx:166
+#: src/components/teach/TeachComputerOverlay.tsx
 msgid "Could not start teaching"
 msgstr ""
 
-#: src/components/AskCard.tsx:86
+#: src/components/AskCard.tsx
 msgid "Could not submit this answer"
 msgstr "यह उत्तर सबमिट नहीं किया जा सका"
 
-#: src/pages/Shell.tsx:2403
+#: src/pages/Shell.tsx
 msgid "Could not take control"
 msgstr "नियंत्रण नहीं लिया जा सका"
 
-#: src/pages/ScratchpadSection.tsx:78
+#: src/pages/ScratchpadSection.tsx
 msgid "Could not update"
 msgstr "अपडेट नहीं हो सका"
 
-#: src/pages/McpServersOverlay.tsx:210
+#: src/pages/McpServersOverlay.tsx
 msgid "Could not update agent access"
 msgstr "एजेंट एक्सेस अपडेट नहीं हो सका"
 
-#: src/components/ComputerMaintenanceActions.tsx:64
+#: src/components/ComputerMaintenanceActions.tsx
 msgid "Could not update computer"
 msgstr "कंप्यूटर अपडेट नहीं हो सका"
 
-#: src/pages/Shell.tsx:1979
+#: src/pages/Shell.tsx
 msgid "Could not update reaction"
 msgstr ""
 
-#: src/pages/MemorySettingsOverlay.tsx:147
+#: src/pages/MemorySettingsOverlay.tsx
 msgid "Could not update the default memory scope"
 msgstr "डिफ़ॉल्ट मेमोरी स्कोप अपडेट नहीं हो सका"
 
-#: src/components/computer/FilesApp.tsx:156
+#: src/components/computer/FilesApp.tsx
 msgid "Could not upload file"
 msgstr ""
 
-#: src/pages/MessagingSettingsOverlay.tsx:53
+#: src/pages/MessagingSettingsOverlay.tsx
 msgid "Couldn't load messaging settings"
 msgstr ""
 
-#: src/pages/AccountSettingsOverlay.tsx:81
+#: src/pages/AccountSettingsOverlay.tsx
 msgid "Couldn't update avatars"
 msgstr ""
 
-#: src/pages/MessagingSettingsOverlay.tsx:66
+#: src/pages/MessagingSettingsOverlay.tsx
 msgid "Couldn't update messaging settings"
 msgstr ""
 
-#: src/pages/Shell.tsx:2751
-#: src/pages/shell/bot-panel.tsx:183
-#: src/pages/shell/dialogs.tsx:202
+#: src/pages/Shell.tsx
+#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/dialogs.tsx
 msgid "Create"
 msgstr "बनाएं"
 
 #. placeholder {0}: bot.name
-#: src/pages/shell/dialogs.tsx:183
+#: src/pages/shell/dialogs.tsx
 msgid "Create a section and move {0} into it."
 msgstr "एक सेक्शन बनाएं और {0} को उसमें ले जाएं।"
 
-#: src/pages/Auth.tsx:217
+#: src/pages/Auth.tsx
 msgid "Create account"
 msgstr "खाता बनाएं"
 
-#: src/pages/GroupPanel.tsx:144
+#: src/pages/GroupPanel.tsx
 msgid "Create group"
 msgstr "समूह बनाएं"
 
-#: src/pages/Shell.tsx:3441
-#: src/pages/shell/bot-picker.tsx:74
+#: src/pages/Shell.tsx
+#: src/pages/shell/bot-picker.tsx
 msgid "Create new Bot"
 msgstr "नया बॉट बनाएं"
 
-#: src/pages/shell/bot-picker.tsx:100
+#: src/pages/shell/bot-picker.tsx
 msgid "Create new Group"
 msgstr "नया समूह बनाएं"
 
-#: src/pages/shell/bot-picker.tsx:128
+#: src/pages/shell/bot-picker.tsx
 msgid "Create new Space"
 msgstr "नया स्पेस बनाएं"
 
-#: src/pages/RoutineEditor.tsx:122
-#: src/pages/RoutineEditor.tsx:123
+#: src/pages/RoutineEditor.tsx
 msgid "Create Routine"
 msgstr ""
 
-#: src/components/AskCard.tsx:34
-#: src/pages/shell/dialogs.tsx:91
+#: src/components/AskCard.tsx
+#: src/pages/shell/dialogs.tsx
 msgid "Create space"
 msgstr ""
 
-#: src/pages/Auth.tsx:38
+#: src/pages/Auth.tsx
 msgid "Create your Rakazo"
 msgstr "अपना Rakazo बनाएं"
 
-#: src/components/AskCard.tsx:21
+#: src/components/AskCard.tsx
 msgid "Created"
 msgstr ""
 
-#: src/pages/GroupPanel.tsx:144
-#: src/pages/shell/bot-panel.tsx:183
-#: src/pages/shell/dialogs.tsx:91
-#: src/pages/shell/dialogs.tsx:202
+#: src/pages/GroupPanel.tsx
+#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/dialogs.tsx
 msgid "Creating…"
 msgstr "बनाया जा रहा है…"
 
-#: src/pages/PluginsOverlay.tsx:1069
+#: src/pages/PluginsOverlay.tsx
 msgid "Credential"
 msgstr "क्रेडेंशियल"
 
-#: src/pages/McpServersOverlay.tsx:34
-#: src/pages/PluginsOverlay.tsx:1132
+#: src/pages/McpServersOverlay.tsx
+#: src/pages/PluginsOverlay.tsx
 msgid "credential saved"
 msgstr "क्रेडेंशियल सहेजा गया"
 
-#: src/pages/PluginsOverlay.tsx:1074
+#: src/pages/PluginsOverlay.tsx
 msgid "Credentials are encrypted and never sent to the model."
 msgstr "क्रेडेंशियल एन्क्रिप्टेड होते हैं और मॉडल को कभी नहीं भेजे जाते।"
 
-#: src/pages/RoutineSchedule.tsx:152
+#: src/pages/RoutineSchedule.tsx
 msgid "Cron"
 msgstr "Cron"
 
-#: src/pages/RoutineSchedule.tsx:273
+#: src/pages/RoutineSchedule.tsx
 msgid "Cron expression"
 msgstr "Cron एक्सप्रेशन"
 
-#: src/pages/AccountSettingsOverlay.tsx:325
+#: src/pages/AccountSettingsOverlay.tsx
 msgid "Current password"
 msgstr "वर्तमान पासवर्ड"
 
-#: src/pages/shell/dialogs.tsx:81
+#: src/pages/shell/dialogs.tsx
 msgid "Customer support"
 msgstr ""
 
-#: src/pages/shell/avatar-studio-popover.tsx:117
+#: src/pages/shell/avatar-studio-popover.tsx
 msgid "Customize bot avatar"
 msgstr "बॉट अवतार अनुकूलित करें"
 
-#: src/pages/AccountSettingsOverlay.tsx:400
+#: src/pages/AccountSettingsOverlay.tsx
 msgid "Dark"
 msgstr "डार्क"
 
-#: src/pages/RoutineSchedule.tsx:72
+#: src/pages/RoutineSchedule.tsx
 msgid "day"
 msgstr "दिन"
 
-#: src/pages/shell/message-cards.tsx:131
+#: src/pages/shell/message-cards.tsx
 msgid "Day-to-day work"
 msgstr ""
 
-#: src/pages/RoutineSchedule.tsx:58
+#: src/pages/RoutineSchedule.tsx
 msgid "days"
 msgstr "दिन"
 
-#: src/pages/MessagingSettingsOverlay.tsx:237
-#: src/pages/MessagingSettingsOverlay.tsx:310
+#: src/pages/MessagingSettingsOverlay.tsx
 msgid "Decline"
 msgstr ""
 
-#: src/pages/ModelSettingsOverlay.tsx:595
-#: src/pages/Onboarding.tsx:516
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/Onboarding.tsx
 msgid "Default"
 msgstr "डिफ़ॉल्ट"
 
 #. placeholder {0}: thinkingLevelLabel(defaultThinkingLevel)
-#: src/pages/shell/bot-panel.tsx:532
+#: src/pages/shell/bot-panel.tsx
 msgid "Default ({0})"
 msgstr "डिफ़ॉल्ट ({0})"
 
-#: src/pages/MemorySettingsOverlay.tsx:38
+#: src/pages/MemorySettingsOverlay.tsx
 msgid "Default scope"
 msgstr "डिफ़ॉल्ट स्कोप"
 
-#: src/pages/Artifacts.tsx:378
-#: src/pages/BotContextMenu.tsx:148
-#: src/pages/KnowledgeSection.tsx:450
-#: src/pages/McpServersOverlay.tsx:508
-#: src/pages/RoutineEditor.tsx:301
-#: src/pages/Shell.tsx:3190
-#: src/pages/Shell.tsx:3221
-#: src/pages/shell/dialogs.tsx:409
-#: src/pages/shell/dialogs.tsx:470
+#: src/pages/Artifacts.tsx
+#: src/pages/BotContextMenu.tsx
+#: src/pages/KnowledgeSection.tsx
+#: src/pages/McpServersOverlay.tsx
+#: src/pages/RoutineEditor.tsx
+#: src/pages/Shell.tsx
+#: src/pages/shell/dialogs.tsx
 msgid "Delete"
 msgstr "डिलीट करें"
 
 #. placeholder {0}: pendingDelete.name
-#: src/pages/Artifacts.tsx:355
+#: src/pages/Artifacts.tsx
 msgid "Delete \"{0}\"?"
 msgstr ""
 
 #. placeholder {0}: artifact.name
 #. placeholder {0}: bot.name
 #. placeholder {0}: group.name
-#: src/pages/Artifacts.tsx:691
-#: src/pages/Artifacts.tsx:692
-#: src/pages/Artifacts.tsx:750
-#: src/pages/Artifacts.tsx:751
-#: src/pages/Shell.tsx:3187
-#: src/pages/Shell.tsx:3218
+#: src/pages/Artifacts.tsx
+#: src/pages/Shell.tsx
 msgid "Delete {0}"
 msgstr "{0} डिलीट करें"
 
 #. placeholder {0}: bot.name
 #. placeholder {0}: item.name
-#: src/pages/shell/dialogs.tsx:346
-#: src/pages/shell/dialogs.tsx:439
+#: src/pages/shell/dialogs.tsx
 msgid "Delete {0}?"
 msgstr "{0} डिलीट करें?"
 
-#: src/pages/GroupPanel.tsx:244
+#: src/pages/GroupPanel.tsx
 msgid "Delete group"
 msgstr "समूह डिलीट करें"
 
-#: src/pages/shell/dialogs.tsx:384
+#: src/pages/shell/dialogs.tsx
 msgid "Delete memories too"
 msgstr "मेमोरी भी डिलीट करें"
 
-#: src/pages/Shell.tsx:4059
+#: src/pages/Shell.tsx
 msgid "Delete space"
 msgstr ""
 
-#: src/pages/Shell.tsx:6301
+#: src/pages/Shell.tsx
 msgid "deleted"
 msgstr "डिलीट किया गया"
 
-#: src/pages/Artifacts.tsx:378
-#: src/pages/GroupPanel.tsx:244
-#: src/pages/shell/dialogs.tsx:409
-#: src/pages/shell/dialogs.tsx:470
+#: src/pages/Artifacts.tsx
+#: src/pages/GroupPanel.tsx
+#: src/pages/shell/dialogs.tsx
 msgid "Deleting…"
 msgstr "डिलीट किया जा रहा है…"
 
-#: src/components/AskCard.tsx:25
+#: src/components/AskCard.tsx
 msgid "Denied"
 msgstr "अस्वीकृत"
 
-#: src/components/AskCard.tsx:38
+#: src/components/AskCard.tsx
 msgid "Deny"
 msgstr "अस्वीकार करें"
 
-#: src/pages/ModelSettingsOverlay.tsx:415
+#: src/pages/ModelSettingsOverlay.tsx
 msgid "Deployment default"
 msgstr "डिप्लॉयमेंट डिफ़ॉल्ट"
 
-#: src/pages/shell/bot-panel.tsx:154
+#: src/pages/shell/bot-panel.tsx
 msgid "Describe what this bot does"
 msgstr "बताएं कि यह बॉट क्या करता है"
 
-#: src/pages/shell/bot-panel.tsx:159
-#: src/pages/shell/bot-panel.tsx:437
+#: src/pages/shell/bot-panel.tsx
 msgid "Description"
 msgstr "विवरण"
 
-#: src/components/DesktopUpdates.tsx:140
+#: src/components/DesktopUpdates.tsx
 msgid "Desktop app"
 msgstr ""
 
-#: src/components/DesktopUpdates.tsx:94
+#: src/components/DesktopUpdates.tsx
 msgid "Desktop update"
 msgstr ""
 
-#: src/components/integrations/IntegrationSetup.tsx:44
+#: src/components/integrations/IntegrationSetup.tsx
 msgid "Direct MCP"
 msgstr ""
 
-#: src/pages/McpServersOverlay.tsx:493
-#: src/pages/MemorySettingsOverlay.tsx:211
-#: src/pages/VoiceSettingsOverlay.tsx:284
+#: src/pages/McpServersOverlay.tsx
+#: src/pages/MemorySettingsOverlay.tsx
+#: src/pages/VoiceSettingsOverlay.tsx
 msgid "Disconnect"
 msgstr "डिस्कनेक्ट करें"
 
-#: src/pages/MemorySettingsOverlay.tsx:211
-#: src/pages/VoiceSettingsOverlay.tsx:282
+#: src/pages/MemorySettingsOverlay.tsx
+#: src/pages/VoiceSettingsOverlay.tsx
 msgid "Disconnecting…"
 msgstr "डिस्कनेक्ट हो रहा है…"
 
-#: src/components/ComputerUpdateProgress.tsx:190
-#: src/components/teach/TeachComputerOverlay.tsx:274
-#: src/pages/shell/message-cards.tsx:62
+#: src/components/ComputerUpdateProgress.tsx
+#: src/components/teach/TeachComputerOverlay.tsx
+#: src/pages/shell/message-cards.tsx
 msgid "Dismiss"
 msgstr ""
 
-#: src/pages/Shell.tsx:5418
+#: src/pages/Shell.tsx
 msgid "Dismiss error"
 msgstr ""
 
-#: src/pages/shell/message-cards.tsx:447
+#: src/pages/shell/message-cards.tsx
 msgid "Dismissed. Reconnect anytime from MCP settings."
 msgstr "खारिज किया गया। MCP सेटिंग्स से कभी भी पुनः कनेक्ट करें।"
 
-#: src/pages/PluginsOverlay.tsx:1013
+#: src/pages/PluginsOverlay.tsx
 msgid "Display name"
 msgstr "प्रदर्शित नाम"
 
-#: src/components/teach/TeachRecordingChrome.tsx:49
-#: src/components/teach/TeachRecordingChrome.tsx:67
+#: src/components/teach/TeachRecordingChrome.tsx
 msgid "Do not type passwords into the demo. Use Take control for credentials."
 msgstr "डेमो में पासवर्ड टाइप न करें। क्रेडेंशियल्स के लिए 'टेक कंट्रोल' (Take control) का इस्तेमाल करें।"
 
-#: src/pages/HostComputerPrompt.tsx:84
+#: src/pages/HostComputerPrompt.tsx
 msgid "Docker"
 msgstr "Docker"
 
-#: src/pages/HostComputerPrompt.tsx:63
+#: src/pages/HostComputerPrompt.tsx
 msgid "Docker limits access to your computer for added security. Using {hostLabel} lets bots work with your local files and tools."
 msgstr "Docker अतिरिक्त सुरक्षा के लिए आपके कंप्यूटर तक पहुँच सीमित करता है। {hostLabel} चुनने पर बॉट्स आपकी स्थानीय फ़ाइलों और टूल्स के साथ काम कर सकते हैं।"
 
-#: src/pages/Auth.tsx:223
+#: src/pages/Auth.tsx
 msgid "Don’t have an account?"
 msgstr "खाता नहीं है?"
 
-#: src/pages/ActivityList.tsx:157
-#: src/pages/shell/avatar-studio-popover.tsx:283
+#: src/pages/ActivityList.tsx
+#: src/pages/shell/avatar-studio-popover.tsx
 msgid "Done"
 msgstr "पूर्ण"
 
-#: src/components/computer/FilesApp.tsx:195
-#: src/pages/Artifacts.tsx:903
+#: src/components/computer/FilesApp.tsx
+#: src/pages/Artifacts.tsx
 msgid "Download"
 msgstr ""
 
 #. placeholder {0}: basename(entry.path)
 #. placeholder {0}: props.name
-#: src/components/ArtifactFileCard.tsx:87
-#: src/components/ArtifactFileCard.tsx:88
-#: src/components/computer/FilesApp.tsx:261
+#: src/components/ArtifactFileCard.tsx
+#: src/components/computer/FilesApp.tsx
 msgid "Download {0}"
 msgstr "{0} डाउनलोड करें"
 
-#: src/components/ArtifactFileCard.tsx:168
-#: src/components/ArtifactFileCard.tsx:169
+#: src/components/ArtifactFileCard.tsx
 msgid "Download {name}"
 msgstr "{name} डाउनलोड करें"
 
-#: src/pages/KnowledgeSection.tsx:227
+#: src/pages/KnowledgeSection.tsx
 msgid "Download as markdown"
 msgstr "मार्कडाउन के रूप में डाउनलोड करें"
 
-#: src/components/integrations/IntegrationSetup.tsx:337
+#: src/components/integrations/IntegrationSetup.tsx
 msgid "Download Executor"
 msgstr ""
 
-#: src/components/DesktopUpdates.tsx:152
+#: src/components/DesktopUpdates.tsx
 msgid "Downloading…"
 msgstr ""
 
-#: src/components/teach/SkillDraftCard.tsx:76
+#: src/components/teach/SkillDraftCard.tsx
 msgid "Draft skill"
 msgstr "ड्राफ़्ट स्किल"
 
-#: src/pages/shell/avatar-studio-popover.tsx:268
+#: src/pages/shell/avatar-studio-popover.tsx
 msgid "Drag, drop, or paste an image"
 msgstr "छवि खींचें, छोड़ें या पेस्ट करें"
 
-#: src/pages/BotContextMenu.tsx:135
+#: src/pages/BotContextMenu.tsx
 msgid "Duplicate"
 msgstr "डुप्लिकेट"
 
-#: src/pages/shell/bot-panel.tsx:432
+#: src/pages/shell/bot-panel.tsx
 msgid "e.g. Hivenet Agent, Presales, Timesheets bot"
 msgstr "उदा. Hivenet Agent, Presales, टाइमशीट बॉट"
 
-#: src/pages/Shell.tsx:6121
+#: src/pages/Shell.tsx
 msgid "Earlier message"
 msgstr "पुराना संदेश"
 
-#: src/components/AskCard.tsx:218
+#: src/components/AskCard.tsx
 msgid "Edit first"
 msgstr "पहले संपादित करें"
 
-#: src/pages/BotContextMenu.tsx:131
+#: src/pages/BotContextMenu.tsx
 msgid "Edit Profile"
 msgstr "प्रोफ़ाइल संपादित करें"
 
-#: src/pages/Auth.tsx:151
+#: src/pages/Auth.tsx
 msgid "Email"
 msgstr "ईमेल"
 
-#: src/pages/ExternalConversationSettings.tsx:152
+#: src/pages/ExternalConversationSettings.tsx
 msgid "Engage when... Ignore..."
 msgstr ""
 
-#: src/pages/ModelSettingsOverlay.tsx:316
-#: src/pages/Onboarding.tsx:304
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/Onboarding.tsx
 msgid "Enter a whole number from 1 to {MAX_MODEL_CONTEXT_WINDOW} for the context limit."
 msgstr "कॉन्टेक्स्ट सीमा के लिए 1 से {MAX_MODEL_CONTEXT_WINDOW} के बीच कोई पूर्णांक दर्ज करें।"
 
-#: src/pages/ModelSettingsOverlay.tsx:293
-#: src/pages/Onboarding.tsx:297
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/Onboarding.tsx
 msgid "Enter a whole number from 1 to {MAX_MODEL_MAX_TOKENS} for maximum output tokens."
 msgstr "अधिकतम आउटपुट टोकन के लिए 1 से {MAX_MODEL_MAX_TOKENS} के बीच कोई पूर्णांक दर्ज करें।"
 
-#: src/pages/ModelSettingsOverlay.tsx:306
-#: src/pages/Onboarding.tsx:288
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/Onboarding.tsx
 msgid "Enter a whole number from 1 to 1000 for the image limit."
 msgstr "इमेज सीमा के लिए 1 से 1000 के बीच कोई पूर्णांक दर्ज करें।"
 
 #. placeholder {0}: oauth.verificationUri.replace(/^https:\/\//, "")
-#: src/pages/ModelSettingsOverlay.tsx:732
-#: src/pages/Onboarding.tsx:603
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/Onboarding.tsx
 msgid "Enter this code at <0>{0}</0>"
 msgstr "यह कोड <0>{0}</0> पर दर्ज करें"
 
-#: src/pages/ExternalConversationSettings.tsx:196
-#: src/pages/RoutineSchedule.tsx:144
+#: src/pages/ExternalConversationSettings.tsx
+#: src/pages/RoutineSchedule.tsx
 msgid "Every"
 msgstr "हर"
 
-#: src/pages/RoutineSchedule.tsx:263
+#: src/pages/RoutineSchedule.tsx
 msgid "every {intervalAmountSelect} {intervalUnitSelect}"
 msgstr "हर {intervalAmountSelect} {intervalUnitSelect}"
 
-#: src/pages/RoutineEditor.tsx:633
-#: src/pages/RoutineSchedule.tsx:34
-#: src/pages/RoutineSchedule.tsx:163
+#: src/pages/RoutineEditor.tsx
+#: src/pages/RoutineSchedule.tsx
 msgid "Every day"
 msgstr "हर दिन"
 
-#: src/pages/RoutineEditor.tsx:631
-#: src/pages/RoutineSchedule.tsx:32
-#: src/pages/RoutineSchedule.tsx:149
+#: src/pages/RoutineEditor.tsx
+#: src/pages/RoutineSchedule.tsx
 msgid "Every hour"
 msgstr "हर घंटे"
 
-#: src/pages/RoutineSchedule.tsx:158
+#: src/pages/RoutineSchedule.tsx
 msgid "Every Monday"
 msgstr "हर सोमवार"
 
-#: src/pages/RoutineEditor.tsx:639
-#: src/pages/RoutineSchedule.tsx:40
+#: src/pages/RoutineEditor.tsx
+#: src/pages/RoutineSchedule.tsx
 msgid "Every month"
 msgstr "हर महीने"
 
-#: src/pages/RoutineEditor.tsx:637
-#: src/pages/RoutineSchedule.tsx:38
+#: src/pages/RoutineEditor.tsx
+#: src/pages/RoutineSchedule.tsx
 msgid "Every week"
 msgstr "हर सप्ताह"
 
-#: src/pages/PluginsOverlay.tsx:1068
+#: src/pages/PluginsOverlay.tsx
 msgid "Executor token"
 msgstr "Executor टोकन"
 
-#: src/pages/shell/message-cards.tsx:487
+#: src/pages/shell/message-cards.tsx
 msgid "Expand"
 msgstr "विस्तृत करें"
 
 #. placeholder {0}: group.title
 #. placeholder {0}: item.chat.name
-#: src/pages/Shell.tsx:2900
-#: src/pages/Shell.tsx:2968
+#: src/pages/Shell.tsx
 msgid "Expand {0}"
 msgstr ""
 
-#: src/pages/shell/bot-panel.tsx:616
+#: src/pages/shell/bot-panel.tsx
 msgid "Export"
 msgstr "एक्सपोर्ट करें"
 
-#: src/components/teach/TeachComputerOverlay.tsx:235
+#: src/components/teach/TeachComputerOverlay.tsx
 msgid "Export this week's list from the CRM and drop it in the shared folder"
 msgstr "CRM से इस सप्ताह की सूची एक्सपोर्ट करें और उसे साझा फ़ोल्डर में डालें"
 
-#: src/pages/ExternalConversationSettings.tsx:84
-#: src/pages/MessagingSettingsOverlay.tsx:351
+#: src/pages/ExternalConversationSettings.tsx
+#: src/pages/MessagingSettingsOverlay.tsx
 msgid "External conversation"
 msgstr ""
 
-#: src/pages/ModelSettingsOverlay.tsx:591
-#: src/pages/Onboarding.tsx:512
-#: src/pages/shell/bot-panel.tsx:636
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/Onboarding.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Extra high"
 msgstr "अतिरिक्त उच्च"
 
-#: src/components/CloudAgentCard.tsx:38
+#: src/components/CloudAgentCard.tsx
 msgid "failed"
 msgstr "असफल"
 
-#: src/pages/ActivityList.tsx:159
+#: src/pages/ActivityList.tsx
 msgid "Failed"
 msgstr "विफल"
 
-#: src/pages/Shell.tsx:2155
-#: src/pages/Shell.tsx:2157
-#: src/pages/Shell.tsx:2159
+#: src/pages/Shell.tsx
 msgid "Failed to send message"
 msgstr "संदेश भेजने में विफल"
 
-#: src/pages/Shell.tsx:2190
-#: src/pages/Shell.tsx:2209
+#: src/pages/Shell.tsx
 msgid "Failed to stop"
 msgstr "रोकने में विफल"
 
 #. js-lingui-explicit-id
-#: src/lib/browser-notifications.ts:89
+#: src/lib/browser-notifications.ts
 msgid "Failed."
 msgstr "विफल।"
 
-#: src/components/teach/SkillDraftCard.tsx:133
+#: src/components/teach/SkillDraftCard.tsx
 msgid "Failure handling"
 msgstr "विफलता प्रबंधन"
 
-#: src/components/computer/FilesApp.tsx:146
+#: src/components/computer/FilesApp.tsx
 msgid "File is too large to upload."
 msgstr ""
 
-#: src/components/computer/ComputerWorkspace.tsx:44
+#: src/components/computer/ComputerWorkspace.tsx
 msgid "Files"
 msgstr ""
 
-#: src/pages/Artifacts.tsx:284
+#: src/pages/Artifacts.tsx
 msgid "Filter by date"
 msgstr ""
 
-#: src/pages/Artifacts.tsx:244
+#: src/pages/Artifacts.tsx
 msgid "Filters"
 msgstr ""
 
-#: src/pages/ModelSettingsOverlay.tsx:514
-#: src/pages/Onboarding.tsx:432
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/Onboarding.tsx
 msgid "Find models"
 msgstr "मॉडल खोजें"
 
-#: src/pages/ModelSettingsOverlay.tsx:514
-#: src/pages/Onboarding.tsx:432
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/Onboarding.tsx
 msgid "Finding…"
 msgstr "खोजा जा रहा है…"
 
 #. placeholder {0}: new URL(oauth.verificationUri).hostname
-#: src/pages/ModelSettingsOverlay.tsx:692
-#: src/pages/Onboarding.tsx:567
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/Onboarding.tsx
 msgid "Finish signing in at <0>{0}</0>. The final page may not load; paste its URL or code here."
 msgstr "<0>{0}</0> पर साइन इन पूरा करें। अंतिम पेज शायद लोड न हो; उसका URL या कोड यहां पेस्ट करें।"
 
-#: src/components/CloudAgentCard.tsx:34
+#: src/components/CloudAgentCard.tsx
 msgid "finished"
 msgstr "पूर्ण"
 
 #. js-lingui-explicit-id
-#: src/lib/browser-notifications.ts:100
+#: src/lib/browser-notifications.ts
 msgid "Finished."
 msgstr "पूरा हुआ।"
 
-#: src/pages/McpOAuthCallback.tsx:56
+#: src/pages/McpOAuthCallback.tsx
 msgid "Finishing MCP connection…"
 msgstr "MCP कनेक्शन पूरा हो रहा है…"
 
-#: src/components/ApprovalRulesSettings.tsx:147
+#: src/components/ApprovalRulesSettings.tsx
 msgid "Flag unexpected actions"
 msgstr ""
 
-#: src/pages/Auth.tsx:198
+#: src/pages/Auth.tsx
 msgid "Forgot password?"
 msgstr "पासवर्ड भूल गए?"
 
-#: src/pages/ModelSettingsOverlay.tsx:1205
+#: src/pages/ModelSettingsOverlay.tsx
 msgid "Free"
 msgstr ""
 
-#: src/pages/WindowChrome.tsx:31
+#: src/pages/WindowChrome.tsx
 msgid "Fullscreen"
 msgstr "फ़ुलस्क्रीन"
 
-#: src/pages/SettingsOverlay.tsx:83
-#: src/pages/SettingsOverlay.tsx:94
+#: src/pages/SettingsOverlay.tsx
 msgid "General"
 msgstr "सामान्य"
 
-#: src/components/integrations/IntegrationSetup.tsx:215
+#: src/components/integrations/IntegrationSetup.tsx
 msgid "Get credentials"
 msgstr ""
 
-#: src/pages/shell/bot-panel.tsx:457
+#: src/pages/shell/bot-panel.tsx
 msgid "Get notified when this Bot finishes or needs input"
 msgstr "जब यह बॉट समाप्त हो या इनपुट चाहिए तो सूचित हों"
 
-#: src/components/ComputerUpdateProgress.tsx:50
+#: src/components/ComputerUpdateProgress.tsx
 msgid "Getting ready"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx:103
-#: src/pages/RoutineEditor.tsx:470
-#: src/pages/RoutineEditor.tsx:586
+#: src/pages/RoutineEditor.tsx
 msgid "Git event"
 msgstr ""
 
-#: src/pages/MessagingSettingsOverlay.tsx:204
-#: src/pages/Shell.tsx:3410
-#: src/pages/Shell.tsx:3576
+#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/Shell.tsx
 msgid "Group"
 msgstr "समूह"
 
-#: src/pages/GroupPanel.tsx:203
+#: src/pages/GroupPanel.tsx
 msgid "Group settings"
 msgstr "समूह सेटिंग्स"
 
-#: src/pages/ExternalConversationSettings.tsx:59
+#: src/pages/ExternalConversationSettings.tsx
 msgid "Group updates"
 msgstr ""
 
-#: src/pages/shell/dialogs.tsx:131
+#: src/pages/shell/dialogs.tsx
 msgid "Groups"
 msgstr ""
 
-#: src/components/call/CallCard.tsx:108
+#: src/components/call/CallCard.tsx
 msgid "Hang up"
 msgstr "कॉल समाप्त करें"
 
-#: src/lib/call-session.ts:468
+#: src/lib/call-session.ts
 msgid "Hang up first, then enter the code on screen."
 msgstr ""
 
-#: src/lib/call-session.ts:341
+#: src/lib/call-session.ts
 msgid "Hang up, then enter the code on screen."
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx:610
+#: src/pages/RoutineEditor.tsx
 msgid "header"
 msgstr ""
 
-#: src/pages/McpServersOverlay.tsx:367
-#: src/pages/PluginsOverlay.tsx:1053
+#: src/pages/McpServersOverlay.tsx
+#: src/pages/PluginsOverlay.tsx
 msgid "Header name"
 msgstr "हेडर नाम"
 
-#: src/pages/McpServersOverlay.tsx:372
+#: src/pages/McpServersOverlay.tsx
 msgid "Header value"
 msgstr "हेडर मान"
 
-#: src/pages/VoiceSettingsOverlay.tsx:317
+#: src/pages/VoiceSettingsOverlay.tsx
 msgid "Hear a sample"
 msgstr "एक नमूना सुनें"
 
-#: src/pages/VoiceSettingsOverlay.tsx:151
+#: src/pages/VoiceSettingsOverlay.tsx
 msgid "Hi, this is how I'll sound when I read replies out loud."
 msgstr "नमस्ते, उत्तर पढ़कर सुनाते समय मेरी आवाज़ ऐसी होगी।"
 
-#: src/pages/Shell.tsx:3319
+#: src/pages/Shell.tsx
 msgid "Hide bots"
 msgstr ""
 
-#: src/pages/Auth.tsx:188
+#: src/pages/Auth.tsx
 msgid "Hide password"
 msgstr ""
 
-#: src/components/call/VoiceChatCard.tsx:49
+#: src/components/call/VoiceChatCard.tsx
 msgid "Hide transcript"
 msgstr "ट्रांसक्रिप्ट छिपाएँ"
 
-#: src/pages/ModelSettingsOverlay.tsx:590
-#: src/pages/Onboarding.tsx:511
-#: src/pages/shell/bot-panel.tsx:639
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/Onboarding.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "High"
 msgstr "उच्च"
 
-#: src/pages/RoutineSchedule.tsx:70
+#: src/pages/RoutineSchedule.tsx
 msgid "hour"
 msgstr "घंटा"
 
-#: src/pages/ExternalConversationSettings.tsx:216
-#: src/pages/RoutineSchedule.tsx:56
+#: src/pages/ExternalConversationSettings.tsx
+#: src/pages/RoutineSchedule.tsx
 msgid "hours"
 msgstr "घंटे"
 
-#: src/pages/RoutineSchedule.tsx:241
+#: src/pages/RoutineSchedule.tsx
 msgid "How often"
 msgstr "कितनी बार"
 
-#: src/components/teach/SkillDraftCard.tsx:112
+#: src/components/teach/SkillDraftCard.tsx
 msgid "How to check"
 msgstr "जांच कैसे करें"
 
-#: src/pages/Shell.tsx:6021
+#: src/pages/Shell.tsx
 msgid "I’m done"
 msgstr "मेरा काम हो गया"
 
-#: src/pages/VoiceSettingsOverlay.tsx:156
+#: src/pages/VoiceSettingsOverlay.tsx
 msgid "If you heard that, voice is ready."
 msgstr "अगर आपने वह सुना, तो आवाज़ तैयार है।"
 
-#: src/pages/ExternalConversationSettings.tsx:58
+#: src/pages/ExternalConversationSettings.tsx
 msgid "Ignore"
 msgstr ""
 
-#: src/pages/shell/avatar-studio-popover.tsx:239
+#: src/pages/shell/avatar-studio-popover.tsx
 msgid "Image upload area"
 msgstr "छवि अपलोड क्षेत्र"
 
-#: src/pages/PluginsOverlay.tsx:1005
+#: src/pages/PluginsOverlay.tsx
 msgid "Import OpenAPI JSON"
 msgstr "OpenAPI JSON इम्पोर्ट करें"
 
-#: src/pages/shell/message-cards.tsx:133
+#: src/pages/shell/message-cards.tsx
 msgid "Inbox & email"
 msgstr ""
 
-#: src/pages/shell/bot-panel.tsx:548
+#: src/pages/shell/bot-panel.tsx
 msgid "Inherit default"
 msgstr "डिफ़ॉल्ट का पालन करें"
 
-#: src/components/teach/SkillDraftCard.tsx:88
+#: src/components/teach/SkillDraftCard.tsx
 msgid "Inputs"
 msgstr "इनपुट"
 
-#: src/pages/memory-providers/SupermemorySettingsForm.tsx:61
+#: src/pages/memory-providers/SupermemorySettingsForm.tsx
 msgid "Instance API key"
 msgstr "इंस्टेंस API कुंजी"
 
-#: src/pages/RoutineEditor.tsx:321
+#: src/pages/RoutineEditor.tsx
 msgid "Instruction"
 msgstr "निर्देश"
 
-#: src/pages/PluginsOverlay.tsx:868
+#: src/pages/PluginsOverlay.tsx
 msgid "Integration domain"
 msgstr ""
 
-#: src/components/integrations/IntegrationSetup.tsx:137
+#: src/components/integrations/IntegrationSetup.tsx
 msgid "Integration options"
 msgstr ""
 
-#: src/pages/PluginsOverlay.tsx:678
-#: src/pages/Shell.tsx:3239
+#: src/pages/PluginsOverlay.tsx
+#: src/pages/Shell.tsx
 msgid "Integrations"
 msgstr "इंटीग्रेशन"
 
-#: src/pages/RoutineEditor.tsx:641
-#: src/pages/RoutineSchedule.tsx:42
+#: src/pages/RoutineEditor.tsx
+#: src/pages/RoutineSchedule.tsx
 msgid "Interval"
 msgstr "अंतराल"
 
-#: src/pages/RoutineSchedule.tsx:187
+#: src/pages/RoutineSchedule.tsx
 msgid "Interval amount"
 msgstr "अंतराल मात्रा"
 
-#: src/pages/RoutineSchedule.tsx:202
+#: src/pages/RoutineSchedule.tsx
 msgid "Interval unit"
 msgstr "अंतराल इकाई"
 
-#: src/pages/MemorySettingsOverlay.tsx:49
-#: src/pages/shell/bot-panel.tsx:549
+#: src/pages/MemorySettingsOverlay.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Isolated"
 msgstr "पृथक"
 
-#: src/pages/Artifacts.tsx:938
+#: src/pages/Artifacts.tsx
 msgid "Isolated preview — no access to your account"
 msgstr ""
 
-#: src/pages/shell/dialogs.tsx:349
+#: src/pages/shell/dialogs.tsx
 msgid "Its conversation, files, and routines will be permanently deleted. Bots it created stay in your list."
 msgstr "इसकी बातचीत, फ़ाइलें और रूटीन स्थायी रूप से डिलीट कर दिए जाएंगे। इसके बनाए बॉट आपकी सूची में बने रहेंगे।"
 
-#: src/pages/Shell.tsx:4956
+#: src/pages/Shell.tsx
 msgid "Jump to latest"
 msgstr "नवीनतम संदेश पर जाएँ"
 
-#: src/pages/Shell.tsx:6111
+#: src/pages/Shell.tsx
 msgid "Jump to replied message"
 msgstr "जिस संदेश का उत्तर दिया गया उस पर जाएं"
 
 #. placeholder {0}: accessibleReplyExcerpt(message.replyQuote)
-#: src/pages/Shell.tsx:6108
+#: src/pages/Shell.tsx
 msgid "Jump to replied message: “{0}”"
 msgstr ""
 
 #. placeholder {0}: accessibleReplyExcerpt(previewMessageText(replyPreview))
-#: src/pages/Shell.tsx:6110
+#: src/pages/Shell.tsx
 msgid "Jump to replied message: {0}"
 msgstr ""
 
-#: src/lib/relative-time.ts:8
-#: src/pages/ActivityList.tsx:134
+#: src/lib/relative-time.ts
+#: src/pages/ActivityList.tsx
 msgid "just now"
 msgstr "अभी-अभी"
 
-#: src/pages/shell/dialogs.tsx:368
+#: src/pages/shell/dialogs.tsx
 msgid "Keep memories"
 msgstr "मेमोरी रखें"
 
-#: src/pages/RoutineEditor.tsx:605
+#: src/pages/RoutineEditor.tsx
 msgid "key"
 msgstr ""
 
-#: src/pages/KnowledgeSection.tsx:37
+#: src/pages/KnowledgeSection.tsx
 msgid "Knowledge"
 msgstr "ज्ञान"
 
-#: src/pages/AccountSettingsOverlay.tsx:128
-#: src/pages/AccountSettingsOverlay.tsx:521
-#: src/pages/AccountSettingsOverlay.tsx:538
+#: src/pages/AccountSettingsOverlay.tsx
 msgid "Language"
 msgstr "भाषा"
 
-#: src/components/DesktopUpdates.tsx:114
+#: src/components/DesktopUpdates.tsx
 msgid "Later"
 msgstr ""
 
-#: src/components/computer/TerminalApp.tsx:39
+#: src/components/computer/TerminalApp.tsx
 msgid "Launched {app}"
 msgstr ""
 
-#: src/pages/MessagingSettingsOverlay.tsx:249
+#: src/pages/MessagingSettingsOverlay.tsx
 msgid "Leave"
 msgstr ""
 
-#: src/pages/AccountSettingsOverlay.tsx:399
+#: src/pages/AccountSettingsOverlay.tsx
 msgid "Light"
 msgstr "लाइट"
 
-#: src/pages/RoutineEditor.tsx:57
+#: src/pages/RoutineEditor.tsx
 msgid "Linear issue"
 msgstr ""
 
-#: src/pages/MessagingSettingsOverlay.tsx:175
+#: src/pages/MessagingSettingsOverlay.tsx
 msgid "Link a chat app"
 msgstr ""
 
-#: src/pages/Artifacts.tsx:257
+#: src/pages/Artifacts.tsx
 msgid "List view"
 msgstr ""
 
-#: src/pages/ExternalConversationSettings.tsx:99
+#: src/pages/ExternalConversationSettings.tsx
 msgid "Listen"
 msgstr ""
 
-#: src/pages/ExternalConversationSettings.tsx:93
+#: src/pages/ExternalConversationSettings.tsx
 msgid "Listening"
 msgstr ""
 
-#: src/pages/Shell.tsx:4811
+#: src/pages/Shell.tsx
 msgid "Load earlier messages"
 msgstr "पुराने संदेश लोड करें"
 
-#: src/pages/Artifacts.tsx:458
+#: src/pages/Artifacts.tsx
 msgid "Load more"
 msgstr ""
 
-#: src/pages/ActivityList.tsx:60
+#: src/pages/ActivityList.tsx
 msgid "Loading activity…"
 msgstr "गतिविधि लोड हो रही है…"
 
-#: src/pages/PluginsOverlay.tsx:733
+#: src/pages/PluginsOverlay.tsx
 msgid "Loading integrations…"
 msgstr "इंटीग्रेशन लोड हो रहे हैं…"
 
-#: src/pages/MemorySettingsOverlay.tsx:186
+#: src/pages/MemorySettingsOverlay.tsx
 msgid "Loading memory settings…"
 msgstr "मेमोरी सेटिंग्स लोड हो रही हैं…"
 
-#: src/pages/ModelSettingsOverlay.tsx:379
-#: src/pages/ModelSettingsOverlay.tsx:867
+#: src/pages/ModelSettingsOverlay.tsx
 msgid "Loading model catalog…"
 msgstr "मॉडल कैटलॉग लोड हो रहा है…"
 
-#: src/components/ArtifactFileCard.tsx:202
+#: src/components/ArtifactFileCard.tsx
 msgid "Loading preview…"
 msgstr "प्रीव्यू लोड हो रहा है…"
 
-#: src/components/ApprovalRulesSettings.tsx:159
+#: src/components/ApprovalRulesSettings.tsx
 msgid "Loading rules…"
 msgstr "नियम लोड हो रहे हैं…"
 
-#: src/pages/PluginsOverlay.tsx:643
+#: src/pages/PluginsOverlay.tsx
 msgid "Loading tools…"
 msgstr ""
 
-#: src/pages/VoiceSettingsOverlay.tsx:238
+#: src/pages/VoiceSettingsOverlay.tsx
 msgid "Loading voice providers…"
 msgstr "आवाज़ प्रोवाइडर्स लोड हो रहे हैं…"
 
-#: src/App.tsx:68
-#: src/pages/Artifacts.tsx:410
-#: src/pages/Artifacts.tsx:458
-#: src/pages/Artifacts.tsx:487
-#: src/pages/Artifacts.tsx:521
-#: src/pages/Artifacts.tsx:871
-#: src/pages/Artifacts.tsx:925
-#: src/pages/IntegrationSetup.tsx:72
-#: src/pages/Onboarding.tsx:379
-#: src/pages/PeerMessagesOverlay.tsx:98
-#: src/pages/Shell.tsx:4811
+#: src/App.tsx
+#: src/pages/Artifacts.tsx
+#: src/pages/IntegrationSetup.tsx
+#: src/pages/Onboarding.tsx
+#: src/pages/PeerMessagesOverlay.tsx
+#: src/pages/Shell.tsx
 msgid "Loading…"
 msgstr "लोड हो रहा है…"
 
-#: src/pages/memory-providers/SupermemorySettingsForm.tsx:39
+#: src/pages/memory-providers/SupermemorySettingsForm.tsx
 msgid "Local"
 msgstr "लोकल"
 
-#: src/pages/HostComputerPrompt.tsx:69
+#: src/pages/HostComputerPrompt.tsx
 msgid "Local access lets bots run commands without asking. Avoid it on shared or public servers."
 msgstr "स्थानीय पहुँच मिलने पर बॉट्स बिना पूछे कमांड चला सकते हैं। साझा या सार्वजनिक सर्वर पर इससे बचें।"
 
-#: src/pages/LocalSettings.tsx:22
+#: src/pages/LocalSettings.tsx
 msgid "Local Server Settings"
 msgstr ""
 
-#: src/pages/Shell.tsx:3309
+#: src/pages/Shell.tsx
 msgid "Log out"
 msgstr "लॉग आउट"
 
-#: src/pages/ModelSettingsOverlay.tsx:588
-#: src/pages/Onboarding.tsx:509
-#: src/pages/shell/bot-panel.tsx:637
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/Onboarding.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Low"
 msgstr "निम्न"
 
-#: src/components/ComputerUpdateProgress.tsx:228
+#: src/components/ComputerUpdateProgress.tsx
 msgid "Make sure nothing is still running on this computer."
 msgstr "सुनिश्चित करें कि इस कंप्यूटर पर कुछ भी चल नहीं रहा है।"
 
-#: src/pages/PluginsOverlay.tsx:1158
+#: src/pages/PluginsOverlay.tsx
 msgid "Manage MCP servers"
 msgstr "MCP सर्वर प्रबंधित करें"
 
-#: src/pages/AccountSettingsOverlay.tsx:108
+#: src/pages/AccountSettingsOverlay.tsx
 msgid "Manage messaging settings"
 msgstr ""
 
-#: src/pages/MemorySettingsOverlay.tsx:163
-#: src/pages/MemorySettingsOverlay.tsx:177
+#: src/pages/MemorySettingsOverlay.tsx
 msgid "Manage the Space semantic memory provider."
 msgstr "वर्कस्पेस के सिमेंटिक मेमोरी प्रोवाइडर को प्रबंधित करें।"
 
-#: src/pages/PluginsOverlay.tsx:931
+#: src/pages/PluginsOverlay.tsx
 msgid "Manual"
 msgstr ""
 
-#: src/pages/PluginsOverlay.tsx:928
+#: src/pages/PluginsOverlay.tsx
 msgid "Manual setup required"
 msgstr ""
 
-#: src/pages/BotContextMenu.tsx:126
+#: src/pages/BotContextMenu.tsx
 msgid "Mark as Read"
 msgstr "पढ़ा हुआ चिह्नित करें"
 
-#: src/pages/BotContextMenu.tsx:126
+#: src/pages/BotContextMenu.tsx
 msgid "Mark as Unread"
 msgstr "अपठित चिह्नित करें"
 
-#: src/pages/ModelSettingsOverlay.tsx:592
-#: src/pages/Onboarding.tsx:513
-#: src/pages/shell/bot-panel.tsx:641
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/Onboarding.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Max"
 msgstr "अधिकतम"
 
-#: src/pages/Artifacts.tsx:907
-#: src/pages/Artifacts.tsx:908
+#: src/pages/Artifacts.tsx
 msgid "Maximize"
 msgstr ""
 
-#: src/pages/ModelSettingsOverlay.tsx:623
-#: src/pages/Onboarding.tsx:528
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/Onboarding.tsx
 msgid "Maximum images per request"
 msgstr "प्रति अनुरोध अधिकतम इमेज"
 
-#: src/pages/ModelSettingsOverlay.tsx:602
-#: src/pages/ModelSettingsOverlay.tsx:652
-#: src/pages/Onboarding.tsx:519
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/Onboarding.tsx
 msgid "Maximum output tokens"
 msgstr "अधिकतम आउटपुट टोकन"
 
-#: src/pages/memory-providers/SerenitySettingsForm.tsx:34
+#: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "MCP endpoint"
 msgstr ""
 
-#: src/pages/McpServersOverlay.tsx:255
+#: src/pages/McpServersOverlay.tsx
 msgid "MCP servers"
 msgstr "MCP सर्वर"
 
-#: src/pages/ModelSettingsOverlay.tsx:589
-#: src/pages/Onboarding.tsx:510
-#: src/pages/shell/bot-panel.tsx:638
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/Onboarding.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Medium"
 msgstr "मध्यम"
 
-#: src/pages/GroupPanel.tsx:221
+#: src/pages/GroupPanel.tsx
 msgid "Members ({GROUP_MEMBER_MIN}–{GROUP_MEMBER_MAX})"
 msgstr "सदस्य ({GROUP_MEMBER_MIN}–{GROUP_MEMBER_MAX})"
 
-#: src/pages/GroupPanel.tsx:129
+#: src/pages/GroupPanel.tsx
 msgid "Members (pick {GROUP_MEMBER_MIN}–{GROUP_MEMBER_MAX})"
 msgstr "सदस्य ({GROUP_MEMBER_MIN}–{GROUP_MEMBER_MAX} चुनें)"
 
-#: src/pages/KnowledgeSection.tsx:39
-#: src/pages/MemorySettingsOverlay.tsx:159
-#: src/pages/SettingsOverlay.tsx:85
+#: src/pages/KnowledgeSection.tsx
+#: src/pages/MemorySettingsOverlay.tsx
+#: src/pages/SettingsOverlay.tsx
 msgid "Memory"
 msgstr "मेमोरी"
 
-#: src/pages/shell/bot-panel.tsx:544
+#: src/pages/shell/bot-panel.tsx
 msgid "Memory scope"
 msgstr "मेमोरी स्कोप"
 
-#: src/pages/Shell.tsx:5500
+#: src/pages/Shell.tsx
 msgid "Mentions"
 msgstr ""
 
-#: src/pages/ExternalConversationSettings.tsx:100
+#: src/pages/ExternalConversationSettings.tsx
 msgid "Mentions only"
 msgstr ""
 
-#: src/pages/Shell.tsx:5701
-#: src/pages/Shell.tsx:5835
+#: src/pages/Shell.tsx
 msgid "Message"
 msgstr "संदेश"
 
 #. js-lingui-explicit-id
-#: src/lib/browser-notifications.ts:84
+#: src/lib/browser-notifications.ts
 msgid "Message"
 msgstr "संदेश"
 
-#: src/pages/Shell.tsx:5697
-#: src/pages/Shell.tsx:5701
+#: src/pages/Shell.tsx
 msgid "Message {activeName}"
 msgstr "{activeName} को संदेश भेजें"
 
-#: src/pages/Shell.tsx:5395
+#: src/pages/Shell.tsx
 msgid "Message composer"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx:106
-#: src/pages/RoutineEditor.tsx:515
+#: src/pages/RoutineEditor.tsx
 msgid "Message event"
 msgstr ""
 
-#: src/pages/Shell.tsx:6189
+#: src/pages/Shell.tsx
 msgid "Message from {peer}"
 msgstr "{peer} का संदेश"
 
-#: src/pages/Shell.tsx:5698
+#: src/pages/Shell.tsx
 msgid "Message…"
 msgstr "संदेश…"
 
-#: src/pages/Shell.tsx:6189
+#: src/pages/Shell.tsx
 msgid "Messaged {peer}"
 msgstr "{peer} को संदेश भेजा"
 
-#: src/pages/AccountSettingsOverlay.tsx:102
-#: src/pages/MessagingSettingsOverlay.tsx:98
+#: src/pages/AccountSettingsOverlay.tsx
+#: src/pages/MessagingSettingsOverlay.tsx
 msgid "Messaging"
 msgstr ""
 
-#: src/lib/call-session.ts:310
+#: src/lib/call-session.ts
 msgid "Microphone failed"
 msgstr "माइक्रोफ़ोन विफल"
 
-#: src/pages/ModelSettingsOverlay.tsx:587
-#: src/pages/Onboarding.tsx:508
-#: src/pages/shell/bot-panel.tsx:640
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/Onboarding.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Minimal"
 msgstr "न्यूनतम"
 
-#: src/pages/WindowChrome.tsx:25
+#: src/pages/WindowChrome.tsx
 msgid "Minimize"
 msgstr "छोटा करें"
 
-#: src/pages/Shell.tsx:2741
-#: src/pages/Shell.tsx:2742
+#: src/pages/Shell.tsx
 msgid "Minimize bots"
 msgstr ""
 
-#: src/pages/RoutineSchedule.tsx:68
+#: src/pages/RoutineSchedule.tsx
 msgid "minute"
 msgstr "मिनट"
 
-#: src/pages/RoutineSchedule.tsx:54
+#: src/pages/RoutineSchedule.tsx
 msgid "minutes"
 msgstr "मिनट"
 
-#: src/pages/ModelSettingsOverlay.tsx:519
-#: src/pages/ModelSettingsOverlay.tsx:629
-#: src/pages/ModelSettingsOverlay.tsx:1093
-#: src/pages/Onboarding.tsx:437
-#: src/pages/Onboarding.tsx:534
-#: src/pages/Onboarding.tsx:546
-#: src/pages/shell/bot-panel.tsx:494
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/Onboarding.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Model"
 msgstr "मॉडल"
 
-#: src/pages/ModelSettingsOverlay.tsx:553
-#: src/pages/Onboarding.tsx:476
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/Onboarding.tsx
 msgid "Model id"
 msgstr "मॉडल आईडी"
 
-#: src/pages/ModelSettingsOverlay.tsx:1129
+#: src/pages/ModelSettingsOverlay.tsx
 msgid "Model options"
 msgstr "मॉडल विकल्प"
 
-#: src/pages/AccountSettingsOverlay.tsx:236
+#: src/pages/AccountSettingsOverlay.tsx
 msgid "Model spend uses your provider keys."
 msgstr "मॉडल का खर्च आपकी प्रोवाइडर कुंजियों से होता है।"
 
-#: src/pages/ModelSettingsOverlay.tsx:272
+#: src/pages/ModelSettingsOverlay.tsx
 msgid "Model updated."
 msgstr "मॉडल अपडेट किया गया।"
 
-#: src/pages/LocalSettings.tsx:36
-#: src/pages/ModelSettingsOverlay.tsx:392
-#: src/pages/SettingsOverlay.tsx:84
+#: src/pages/LocalSettings.tsx
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/SettingsOverlay.tsx
 msgid "Models"
 msgstr "मॉडल्स"
 
-#: src/pages/ModelSettingsOverlay.tsx:381
+#: src/pages/ModelSettingsOverlay.tsx
 msgid "Models for the server owner’s default space."
 msgstr ""
 
-#: src/pages/ModelSettingsOverlay.tsx:532
-#: src/pages/Onboarding.tsx:455
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/Onboarding.tsx
 msgid "Models from server"
 msgstr "सर्वर से मॉडल"
 
-#: src/pages/RoutineSchedule.tsx:161
+#: src/pages/RoutineSchedule.tsx
 msgid "Monthly"
 msgstr "मासिक"
 
-#: src/pages/Shell.tsx:5954
+#: src/pages/Shell.tsx
 msgid "More"
 msgstr ""
 
-#: src/components/ComputerMaintenanceActions.tsx:118
+#: src/components/ComputerMaintenanceActions.tsx
 msgid "More computer actions"
 msgstr ""
 
-#: src/pages/shell/dialogs.tsx:371
+#: src/pages/shell/dialogs.tsx
 msgid "Move them to your shared memory."
 msgstr "उन्हें अपनी साझा मेमोरी में ले जाएं।"
 
-#: src/pages/BotContextMenu.tsx:96
+#: src/pages/BotContextMenu.tsx
 msgid "Move to"
 msgstr "यहां ले जाएं"
 
-#: src/components/call/CallCard.tsx:98
+#: src/components/call/CallCard.tsx
 msgid "Mute"
 msgstr "म्यूट करें"
 
-#: src/components/teach/SkillDraftCard.tsx:79
-#: src/pages/Auth.tsx:136
-#: src/pages/GroupPanel.tsx:119
-#: src/pages/GroupPanel.tsx:212
-#: src/pages/RoutineEditor.tsx:310
-#: src/pages/shell/bot-panel.tsx:137
-#: src/pages/shell/bot-panel.tsx:414
-#: src/pages/shell/dialogs.tsx:72
-#: src/pages/shell/dialogs.tsx:187
-#: src/pages/shell/dialogs.tsx:250
+#: src/components/teach/SkillDraftCard.tsx
+#: src/pages/Auth.tsx
+#: src/pages/GroupPanel.tsx
+#: src/pages/RoutineEditor.tsx
+#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/dialogs.tsx
 msgid "Name"
 msgstr "नाम"
 
-#: src/pages/shell/bot-panel.tsx:143
+#: src/pages/shell/bot-panel.tsx
 msgid "Name this bot"
 msgstr "इस बॉट को नाम दें"
 
-#: src/pages/GroupPanel.tsx:124
+#: src/pages/GroupPanel.tsx
 msgid "Name this group"
 msgstr "इस समूह को नाम दें"
 
-#: src/pages/RoutineEditor.tsx:314
+#: src/pages/RoutineEditor.tsx
 msgid "Name this routine"
 msgstr ""
 
-#: src/pages/ActivityList.tsx:153
+#: src/pages/ActivityList.tsx
 msgid "Needs input"
 msgstr "इनपुट चाहिए"
 
-#: src/pages/ActivityList.tsx:155
+#: src/pages/ActivityList.tsx
 msgid "Needs takeover"
 msgstr "नियंत्रण लेना ज़रूरी"
 
-#: src/pages/Shell.tsx:4381
+#: src/pages/Shell.tsx
 msgid "Needs you"
 msgstr ""
 
-#: src/pages/shell/bot-panel.tsx:121
+#: src/pages/shell/bot-panel.tsx
 msgid "New bot"
 msgstr "नया बॉट"
 
-#: src/pages/GroupPanel.tsx:101
+#: src/pages/GroupPanel.tsx
 msgid "New group"
 msgstr "नया समूह"
 
-#: src/pages/ScratchpadSection.tsx:186
+#: src/pages/ScratchpadSection.tsx
 msgid "New open-work item"
 msgstr "नया खुला-कार्य आइटम"
 
-#: src/pages/AccountSettingsOverlay.tsx:331
-#: src/pages/Auth.tsx:297
+#: src/pages/AccountSettingsOverlay.tsx
+#: src/pages/Auth.tsx
 msgid "New password"
 msgstr "नया पासवर्ड"
 
-#: src/pages/BotContextMenu.tsx:114
-#: src/pages/shell/dialogs.tsx:180
+#: src/pages/BotContextMenu.tsx
+#: src/pages/shell/dialogs.tsx
 msgid "New section"
 msgstr "नया सेक्शन"
 
-#: src/pages/KnowledgeSection.tsx:470
+#: src/pages/KnowledgeSection.tsx
 msgid "New skill"
 msgstr "नई स्किल"
 
-#: src/pages/shell/dialogs.tsx:68
+#: src/pages/shell/dialogs.tsx
 msgid "New space"
 msgstr ""
 
-#: src/pages/MessagingSettingsOverlay.tsx:265
+#: src/pages/MessagingSettingsOverlay.tsx
 msgid "No agent connections yet."
 msgstr ""
 
-#: src/pages/PluginsOverlay.tsx:790
+#: src/pages/PluginsOverlay.tsx
 msgid "No apps match your search."
 msgstr "आपकी खोज से कोई ऐप मेल नहीं खाता।"
 
-#: src/pages/Artifacts.tsx:478
+#: src/pages/Artifacts.tsx
 msgid "No artifacts found."
 msgstr ""
 
-#: src/pages/PluginsOverlay.tsx:1134
+#: src/pages/PluginsOverlay.tsx
 msgid "no auth"
 msgstr "कोई प्रमाणीकरण नहीं"
 
-#: src/pages/PluginsOverlay.tsx:1037
+#: src/pages/PluginsOverlay.tsx
 msgid "No authentication"
 msgstr "कोई प्रमाणीकरण नहीं"
 
-#: src/pages/shell/command-palette.tsx:107
+#: src/pages/shell/command-palette.tsx
 msgid "No bots"
 msgstr ""
 
-#: src/pages/shell/bot-picker.tsx:63
+#: src/pages/shell/bot-picker.tsx
 msgid "No bots match"
 msgstr ""
 
-#: src/pages/MessagingSettingsOverlay.tsx:146
+#: src/pages/MessagingSettingsOverlay.tsx
 msgid "No chat apps linked yet."
 msgstr ""
 
-#: src/components/ApprovalRulesSettings.tsx:163
+#: src/components/ApprovalRulesSettings.tsx
 msgid "No exceptions. Actions run automatically."
 msgstr "कोई अपवाद नहीं। कार्रवाइयां स्वतः चलती हैं।"
 
-#: src/pages/MessagingSettingsOverlay.tsx:194
+#: src/pages/MessagingSettingsOverlay.tsx
 msgid "No group chats yet."
 msgstr ""
 
-#: src/components/AskCard.tsx:123
+#: src/components/AskCard.tsx
 msgid "No longer active"
 msgstr "अब सक्रिय नहीं"
 
-#: src/pages/PluginsOverlay.tsx:785
+#: src/pages/PluginsOverlay.tsx
 msgid "No managed app catalog is configured on this deployment."
 msgstr "इस डिप्लॉयमेंट पर कोई प्रबंधित ऐप कैटलॉग कॉन्फ़िगर नहीं है।"
 
-#: src/pages/Artifacts.tsx:489
+#: src/pages/Artifacts.tsx
 msgid "No matching artifacts on this page."
 msgstr ""
 
-#: src/pages/ModelSettingsOverlay.tsx:1157
+#: src/pages/ModelSettingsOverlay.tsx
 msgid "No matching models"
 msgstr ""
 
-#: src/pages/PluginsOverlay.tsx:1114
+#: src/pages/PluginsOverlay.tsx
 msgid "No MCP or API tool sources installed yet."
 msgstr "अभी तक कोई MCP या API टूल स्रोत इंस्टॉल नहीं है।"
 
-#: src/pages/McpServersOverlay.tsx:426
+#: src/pages/McpServersOverlay.tsx
 msgid "No MCP servers yet."
 msgstr "अभी तक कोई MCP सर्वर नहीं।"
 
-#: src/pages/PeerMessagesOverlay.tsx:115
+#: src/pages/PeerMessagesOverlay.tsx
 msgid "No messages with {peerBotName} yet."
 msgstr "{peerBotName} के साथ अभी कोई संदेश नहीं."
 
-#: src/pages/ModelSettingsOverlay.tsx:871
+#: src/pages/ModelSettingsOverlay.tsx
 msgid "No model catalog is available."
 msgstr "कोई मॉडल कैटलॉग उपलब्ध नहीं है।"
 
-#: src/pages/ModelSettingsOverlay.tsx:472
+#: src/pages/ModelSettingsOverlay.tsx
 msgid "No providers found."
 msgstr "कोई प्रोवाइडर नहीं मिला।"
 
-#: src/components/integrations/IntegrationSetup.tsx:274
+#: src/components/integrations/IntegrationSetup.tsx
 msgid "No remote MCP servers found"
 msgstr ""
 
-#: src/pages/PluginsOverlay.tsx:887
-#: src/pages/SpaceSearch.tsx:23
+#: src/pages/PluginsOverlay.tsx
+#: src/pages/SpaceSearch.tsx
 msgid "No results"
 msgstr "कोई परिणाम नहीं"
 
-#: src/pages/RoutineEditor.tsx:501
+#: src/pages/RoutineEditor.tsx
 msgid "No runs yet"
 msgstr ""
 
-#: src/pages/KnowledgeSection.tsx:365
+#: src/pages/KnowledgeSection.tsx
 msgid "No skills yet"
 msgstr "अभी तक कोई स्किल नहीं"
 
-#: src/pages/MessagingSettingsOverlay.tsx:340
+#: src/pages/MessagingSettingsOverlay.tsx
 msgid "No team conversations yet."
 msgstr ""
 
-#: src/pages/PluginsOverlay.tsx:647
+#: src/pages/PluginsOverlay.tsx
 msgid "No tools available."
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx:108
+#: src/pages/RoutineEditor.tsx
 msgid "No trigger"
 msgstr ""
 
-#: src/pages/ScratchpadSection.tsx:110
+#: src/pages/ScratchpadSection.tsx
 msgid "None yet"
 msgstr "अभी तक कोई नहीं"
 
-#: src/pages/ModelSettingsOverlay.tsx:672
+#: src/pages/ModelSettingsOverlay.tsx
 msgid "Not connected"
 msgstr "कनेक्टेड नहीं"
 
-#: src/pages/PluginsOverlay.tsx:771
+#: src/pages/PluginsOverlay.tsx
 msgid "Not in the plugin catalog"
 msgstr ""
 
-#: src/pages/shell/message-cards.tsx:435
+#: src/pages/shell/message-cards.tsx
 msgid "Not now"
 msgstr "अभी नहीं"
 
-#: src/components/ComputerUpdateProgress.tsx:251
+#: src/components/ComputerUpdateProgress.tsx
 msgid "Nothing is still running"
 msgstr "कुछ भी नहीं चल रहा"
 
-#: src/pages/KnowledgeSection.tsx:163
+#: src/pages/KnowledgeSection.tsx
 msgid "Nothing remembered yet"
 msgstr "अभी तक कुछ याद नहीं किया गया"
 
-#: src/pages/shell/bot-panel.tsx:454
+#: src/pages/shell/bot-panel.tsx
 msgid "Notifications"
 msgstr "सूचनाएं"
 
-#: src/pages/ActivityList.tsx:72
+#: src/pages/ActivityList.tsx
 msgid "Now"
 msgstr "अभी"
 
 #. placeholder {0}: selected.label
-#: src/pages/ModelSettingsOverlay.tsx:272
+#: src/pages/ModelSettingsOverlay.tsx
 msgid "Now using {0}."
 msgstr "अब {0} उपयोग में है।"
 
-#: src/pages/McpOAuthCallback.tsx:24
+#: src/pages/McpOAuthCallback.tsx
 msgid "OAuth authorization was cancelled."
 msgstr "OAuth ऑथराइज़ेशन रद्द कर दिया गया।"
 
-#: src/pages/McpServersOverlay.tsx:32
+#: src/pages/McpServersOverlay.tsx
 msgid "OAuth connected"
 msgstr "OAuth कनेक्टेड"
 
-#: src/pages/McpOAuthCallback.tsx:52
+#: src/pages/McpOAuthCallback.tsx
 msgid "OAuth connection failed"
 msgstr "OAuth कनेक्शन विफल"
 
-#: src/pages/McpServersOverlay.tsx:33
+#: src/pages/McpServersOverlay.tsx
 msgid "OAuth expired"
 msgstr ""
 
 #. placeholder {0}: call.botName
-#: src/components/call/CallCard.tsx:40
+#: src/components/call/CallCard.tsx
 msgid "On a call with {0}"
 msgstr "{0} के साथ कॉल पर"
 
-#: src/pages/RoutineEditor.tsx:424
+#: src/pages/RoutineEditor.tsx
 msgid "On a schedule"
 msgstr ""
 
 #. placeholder {0}: preset.time
-#: src/pages/RoutineSchedule.tsx:161
+#: src/pages/RoutineSchedule.tsx
 msgid "on the 1st at {0}"
 msgstr "1 तारीख को {0} बजे"
 
-#: src/pages/Shell.tsx:4097
+#: src/pages/Shell.tsx
 msgid "Only empty spaces can be deleted. Delete its bots and groups first."
 msgstr ""
 
-#: src/pages/ScratchpadSection.tsx:159
-#: src/pages/Shell.tsx:3654
-#: src/pages/Shell.tsx:3659
-#: src/pages/Shell.tsx:6483
+#: src/pages/ScratchpadSection.tsx
+#: src/pages/Shell.tsx
 msgid "Open"
 msgstr "खोलें"
 
 #. placeholder {0}: group.title
-#: src/pages/Shell.tsx:2898
+#: src/pages/Shell.tsx
 msgid "Open {0}"
 msgstr ""
 
-#: src/pages/Shell.tsx:3622
+#: src/pages/Shell.tsx
 msgid "Open in full window"
 msgstr "पूरी विंडो में खोलें"
 
-#: src/pages/Shell.tsx:3370
+#: src/pages/Shell.tsx
 msgid "Open navigation"
 msgstr "नेविगेशन खोलें"
 
-#: src/pages/ScratchpadSection.tsx:106
+#: src/pages/ScratchpadSection.tsx
 msgid "Open work"
 msgstr "खुला कार्य"
 
-#: src/pages/ModelSettingsOverlay.tsx:492
-#: src/pages/Onboarding.tsx:420
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/Onboarding.tsx
 msgid "OpenAI-compatible server URL"
 msgstr "OpenAI-संगत सर्वर URL"
 
-#: src/components/computer/TerminalApp.tsx:38
+#: src/components/computer/TerminalApp.tsx
 msgid "Opened {path}"
 msgstr ""
 
-#: src/pages/Shell.tsx:6312
+#: src/pages/Shell.tsx
 msgid "Opened its thread."
 msgstr "इसका थ्रेड खोला।"
 
-#: src/pages/Onboarding.tsx:695
+#: src/pages/Onboarding.tsx
 msgid "Opening chat…"
 msgstr "चैट खुल रही है…"
 
-#: src/App.tsx:213
+#: src/App.tsx
 msgid "Opening your Space…"
 msgstr "आपका वर्कस्पेस खुल रहा है…"
 
-#: src/pages/ModelSettingsOverlay.tsx:782
-#: src/pages/Onboarding.tsx:641
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/Onboarding.tsx
 msgid "Optional"
 msgstr "वैकल्पिक"
 
-#: src/pages/AccountSettingsOverlay.tsx:181
+#: src/pages/AccountSettingsOverlay.tsx
 msgid "Optional controls most people never need"
 msgstr "वैकल्पिक नियंत्रण जिनकी अधिकांश लोगों को कभी ज़रूरत नहीं होती"
 
-#: src/pages/McpServersOverlay.tsx:376
+#: src/pages/McpServersOverlay.tsx
 msgid "Optional header value"
 msgstr "वैकल्पिक हेडर मान"
 
-#: src/pages/ModelSettingsOverlay.tsx:796
+#: src/pages/ModelSettingsOverlay.tsx
 msgid "Or connect an API key"
 msgstr "या एक API कुंजी कनेक्ट करें"
 
-#: src/pages/Onboarding.tsx:652
+#: src/pages/Onboarding.tsx
 msgid "Or paste an API key"
 msgstr "या एक API कुंजी पेस्ट करें"
 
-#: src/pages/AccountSettingsOverlay.tsx:157
+#: src/pages/AccountSettingsOverlay.tsx
 msgid "Organic"
 msgstr ""
 
-#: src/pages/memory-providers/SupermemorySettingsForm.tsx:61
+#: src/pages/memory-providers/SupermemorySettingsForm.tsx
 msgid "Organization API key"
 msgstr "संगठन API कुंजी"
 
-#: src/pages/ModelSettingsOverlay.tsx:540
-#: src/pages/Onboarding.tsx:198
-#: src/pages/Onboarding.tsx:465
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/Onboarding.tsx
 msgid "Other model…"
 msgstr "अन्य मॉडल…"
 
-#: src/pages/RoutineEditor.tsx:59
+#: src/pages/RoutineEditor.tsx
 msgid "PagerDuty incident"
 msgstr ""
 
-#: src/pages/ScratchpadSection.tsx:143
-#: src/pages/ScratchpadSection.tsx:148
+#: src/pages/ScratchpadSection.tsx
 msgid "Park"
 msgstr "पार्क करें"
 
-#: src/components/AskCard.tsx:43
-#: src/components/AskCard.tsx:68
-#: src/pages/AccountSettingsOverlay.tsx:311
-#: src/pages/Auth.tsx:168
-#: src/pages/Auth.tsx:177
+#: src/components/AskCard.tsx
+#: src/pages/AccountSettingsOverlay.tsx
+#: src/pages/Auth.tsx
 msgid "Password"
 msgstr "पासवर्ड"
 
-#: src/pages/Auth.tsx:78
+#: src/pages/Auth.tsx
 msgid "Password recovery is not configured for this server"
 msgstr "इस सर्वर के लिए पासवर्ड पुनर्प्राप्ति कॉन्फ़िगर नहीं है"
 
-#: src/pages/AccountSettingsOverlay.tsx:356
-#: src/pages/Auth.tsx:287
+#: src/pages/AccountSettingsOverlay.tsx
+#: src/pages/Auth.tsx
 msgid "Password updated"
 msgstr "पासवर्ड अपडेट हो गया"
 
-#: src/pages/AccountSettingsOverlay.tsx:281
-#: src/pages/Auth.tsx:263
+#: src/pages/AccountSettingsOverlay.tsx
+#: src/pages/Auth.tsx
 msgid "Passwords do not match"
 msgstr "पासवर्ड मेल नहीं खाते"
 
-#: src/pages/VoiceSettingsOverlay.tsx:255
+#: src/pages/VoiceSettingsOverlay.tsx
 msgid "Paste a replacement key"
 msgstr "बदलने के लिए नई कुंजी पेस्ट करें"
 
-#: src/pages/ModelSettingsOverlay.tsx:503
+#: src/pages/ModelSettingsOverlay.tsx
 msgid "Paste the OpenAI-compatible address from your server. Rakazo adds /v1 if needed."
 msgstr "अपने सर्वर से OpenAI-संगत पता पेस्ट करें। ज़रूरत होने पर Rakazo /v1 जोड़ देता है।"
 
-#: src/pages/VoiceSettingsOverlay.tsx:255
+#: src/pages/VoiceSettingsOverlay.tsx
 msgid "Paste your API key"
 msgstr "अपनी API कुंजी पेस्ट करें"
 
-#: src/pages/RoutineEditor.tsx:100
+#: src/pages/RoutineEditor.tsx
 msgid "Paused"
 msgstr ""
 
-#: src/pages/ModelSettingsOverlay.tsx:666
+#: src/pages/ModelSettingsOverlay.tsx
 msgid "Personal credential"
 msgstr "व्यक्तिगत क्रेडेंशियल"
 
-#: src/pages/BotContextMenu.tsx:91
+#: src/pages/BotContextMenu.tsx
 msgid "Pin"
 msgstr "पिन करें"
 
-#: src/pages/VoiceSettingsOverlay.tsx:317
+#: src/pages/VoiceSettingsOverlay.tsx
 msgid "Playing…"
 msgstr "प्ले हो रहा है…"
 
-#: src/pages/RoutineEditor.tsx:600
+#: src/pages/RoutineEditor.tsx
 msgid "POST to"
 msgstr ""
 
 #. placeholder {0}: props.name
-#: src/components/ArtifactFileCard.tsx:67
+#: src/components/ArtifactFileCard.tsx
 msgid "Preview {0}"
 msgstr "{0} का प्रीव्यू"
 
-#: src/pages/Artifacts.tsx:972
+#: src/pages/Artifacts.tsx
 msgid "Preview isn't available for this file type — download it to view it."
 msgstr ""
 
-#: src/pages/shell/bot-panel.tsx:70
+#: src/pages/shell/bot-panel.tsx
 msgid "Private"
 msgstr "निजी"
 
-#: src/pages/shell/dialogs.tsx:137
+#: src/pages/shell/dialogs.tsx
 msgid "Private workspace with its own bots and groups."
 msgstr ""
 
-#: src/components/integrations/IntegrationSetup.tsx:183
+#: src/components/integrations/IntegrationSetup.tsx
 msgid "Project ID"
 msgstr ""
 
-#: src/pages/MemorySettingsOverlay.tsx:219
-#: src/pages/Onboarding.tsx:389
-#: src/pages/Onboarding.tsx:399
+#: src/pages/MemorySettingsOverlay.tsx
+#: src/pages/Onboarding.tsx
 msgid "Provider"
 msgstr "प्रोवाइडर"
 
-#: src/pages/ModelSettingsOverlay.tsx:427
-#: src/pages/VoiceSettingsOverlay.tsx:186
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/VoiceSettingsOverlay.tsx
 msgid "Providers"
 msgstr "प्रोवाइडर्स"
 
-#: src/components/CloudAgentCard.tsx:44
+#: src/components/CloudAgentCard.tsx
 msgid "Pull request"
 msgstr "पुल अनुरोध"
 
-#: src/pages/ActivityList.tsx:147
+#: src/pages/ActivityList.tsx
 msgid "Queued"
 msgstr "कतार में"
 
-#: src/pages/Shell.tsx:5038
+#: src/pages/Shell.tsx
 msgid "Quote"
 msgstr ""
 
-#: src/pages/Shell.tsx:5911
+#: src/pages/Shell.tsx
 msgid "React"
 msgstr "प्रतिक्रिया दें"
 
-#: src/pages/Shell.tsx:5922
+#: src/pages/Shell.tsx
 msgid "Reactions"
 msgstr "प्रतिक्रियाएँ"
 
-#: src/pages/shell/bot-panel.tsx:578
+#: src/pages/shell/bot-panel.tsx
 msgid "Read replies aloud"
 msgstr "उत्तर पढ़कर सुनाएं"
 
-#: src/pages/KnowledgeSection.tsx:384
+#: src/pages/KnowledgeSection.tsx
 msgid "read-only"
 msgstr "केवल पढ़ने योग्य"
 
-#: src/pages/ModelSettingsOverlay.tsx:594
-#: src/pages/Onboarding.tsx:515
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/Onboarding.tsx
 msgid "Reasoning effort"
 msgstr "रीज़निंग प्रयास"
 
-#: src/pages/memory-providers/SerenitySettingsForm.tsx:105
+#: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Recall and write"
 msgstr ""
 
-#: src/pages/memory-providers/SerenitySettingsForm.tsx:96
+#: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Recall only"
 msgstr ""
 
-#: src/pages/ActivityList.tsx:82
+#: src/pages/ActivityList.tsx
 msgid "Recent"
 msgstr "हाल के"
 
-#: src/pages/McpServersOverlay.tsx:39
+#: src/pages/McpServersOverlay.tsx
 msgid "Reconnect OAuth"
 msgstr "OAuth पुनः कनेक्ट करें"
 
-#: src/App.tsx:168
-#: src/components/ComputerUpdateProgress.tsx:54
+#: src/App.tsx
+#: src/components/ComputerUpdateProgress.tsx
 msgid "Reconnecting"
 msgstr "पुनः कनेक्ट हो रहा है"
 
-#: src/components/teach/TeachComputerOverlay.tsx:76
-#: src/components/teach/TeachComputerOverlay.tsx:127
-#: src/components/teach/TeachComputerOverlay.tsx:160
+#: src/components/teach/TeachComputerOverlay.tsx
 msgid "Recording may have started, but the view could not refresh"
 msgstr ""
 
-#: src/components/teach/TeachComputerOverlay.tsx:266
+#: src/components/teach/TeachComputerOverlay.tsx
 msgid "Recording started. Refresh the view to continue."
 msgstr ""
 
 #. placeholder {0}: recording.goal
-#: src/components/teach/TeachRecordingChrome.tsx:43
-#: src/components/teach/TeachRecordingChrome.tsx:61
+#: src/components/teach/TeachRecordingChrome.tsx
 msgid "Recording: {0}"
 msgstr "रिकॉर्डिंग: {0}"
 
-#: src/components/ComputerMaintenanceActions.tsx:135
-#: src/components/ComputerUpdateProgress.tsx:209
+#: src/components/ComputerMaintenanceActions.tsx
+#: src/components/ComputerUpdateProgress.tsx
 msgid "Recover computer"
 msgstr "कंप्यूटर रिकवर करें"
 
 #. placeholder {0}: update.name
-#: src/components/ComputerUpdateProgress.tsx:64
+#: src/components/ComputerUpdateProgress.tsx
 msgid "Recovering {0}’s Computer"
 msgstr ""
 
-#: src/components/ComputerUpdateProgress.tsx:63
+#: src/components/ComputerUpdateProgress.tsx
 msgid "Recovering Team Computer"
 msgstr ""
 
-#: src/components/ComputerMaintenanceActions.tsx:135
+#: src/components/ComputerMaintenanceActions.tsx
 msgid "Recovering…"
 msgstr "रिकवर हो रहा है…"
 
-#: src/components/ComputerUpdateProgress.tsx:59
+#: src/components/ComputerUpdateProgress.tsx
 msgid "Recovery failed"
 msgstr ""
 
-#: src/components/ComputerUpdateProgress.tsx:160
+#: src/components/ComputerUpdateProgress.tsx
 msgid "Recovery is unavailable until the previous operation has stopped."
 msgstr ""
 
-#: src/components/ComputerUpdateProgress.tsx:162
+#: src/components/ComputerUpdateProgress.tsx
 msgid "Recovery restores the last saved workspace. Unsaved work may be lost."
 msgstr ""
 
-#: src/components/ComputerUpdateProgress.tsx:52
+#: src/components/ComputerUpdateProgress.tsx
 msgid "Recreating the computer"
 msgstr ""
 
-#: src/components/teach/TeachComputerOverlay.tsx:271
+#: src/components/teach/TeachComputerOverlay.tsx
 msgid "Refresh view"
 msgstr ""
 
-#: src/components/teach/TeachComputerOverlay.tsx:271
+#: src/components/teach/TeachComputerOverlay.tsx
 msgid "Refreshing…"
 msgstr ""
 
-#: src/pages/Shell.tsx:6011
+#: src/pages/Shell.tsx
 msgid "Release"
 msgstr "नियंत्रण छोड़ें"
 
-#: src/components/ComputerUpdateProgress.tsx:180
+#: src/components/ComputerUpdateProgress.tsx
 msgid "Release computer"
 msgstr ""
 
-#: src/components/ComputerUpdateProgress.tsx:225
+#: src/components/ComputerUpdateProgress.tsx
 msgid "Release interrupted computer?"
 msgstr ""
 
-#: src/components/ApprovalRulesSettings.tsx:179
-#: src/pages/PluginsOverlay.tsx:602
-#: src/pages/PluginsOverlay.tsx:1146
-#: src/pages/ScratchpadSection.tsx:165
+#: src/components/ApprovalRulesSettings.tsx
+#: src/pages/PluginsOverlay.tsx
+#: src/pages/ScratchpadSection.tsx
 msgid "Remove"
 msgstr "हटाएं"
 
 #. placeholder {0}: attachment.file.name
-#: src/pages/Shell.tsx:5486
+#: src/pages/Shell.tsx
 msgid "Remove {0}"
 msgstr "{0} हटाएं"
 
-#: src/pages/RoutineEditor.tsx:591
+#: src/pages/RoutineEditor.tsx
 msgid "Remove Git event"
 msgstr ""
 
 #. placeholder {0}: mention.name
-#: src/pages/Shell.tsx:5634
+#: src/pages/Shell.tsx
 msgid "Remove mention {0}"
 msgstr "उल्लेख {0} हटाएं"
 
-#: src/pages/RoutineEditor.tsx:524
+#: src/pages/RoutineEditor.tsx
 msgid "Remove message trigger"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx:353
+#: src/pages/RoutineEditor.tsx
 msgid "Remove schedule"
 msgstr ""
 
 #. placeholder {0}: selectedSkill.name
-#: src/pages/Shell.tsx:5613
+#: src/pages/Shell.tsx
 msgid "Remove skill {0}"
 msgstr "स्किल {0} हटाएं"
 
-#: src/pages/RoutineEditor.tsx:591
+#: src/pages/RoutineEditor.tsx
 msgid "Remove webhook"
 msgstr ""
 
-#: src/pages/Shell.tsx:6311
+#: src/pages/Shell.tsx
 msgid "Removed with chat, computer, and memory."
 msgstr "चैट, कंप्यूटर और मेमोरी सहित हटाया गया।"
 
-#: src/pages/ScratchpadSection.tsx:94
+#: src/pages/ScratchpadSection.tsx
 msgid "Removed, but list refresh failed"
 msgstr "हटाया गया, लेकिन सूची रिफ़्रेश विफल रही"
 
-#: src/pages/PluginsOverlay.tsx:567
-#: src/pages/PluginsOverlay.tsx:602
-#: src/pages/PluginsOverlay.tsx:1146
+#: src/pages/PluginsOverlay.tsx
 msgid "Removing…"
 msgstr "हटाया जा रहा है…"
 
-#: src/pages/BotContextMenu.tsx:119
-#: src/pages/Shell.tsx:4186
-#: src/pages/shell/dialogs.tsx:246
+#: src/pages/BotContextMenu.tsx
+#: src/pages/Shell.tsx
+#: src/pages/shell/dialogs.tsx
 msgid "Rename section"
 msgstr "अनुभाग का नाम बदलें"
 
-#: src/pages/ScratchpadSection.tsx:119
-#: src/pages/ScratchpadSection.tsx:154
+#: src/pages/ScratchpadSection.tsx
 msgid "Reopen"
 msgstr "पुनः खोलें"
 
-#: src/pages/ModelSettingsOverlay.tsx:794
-#: src/pages/ModelSettingsOverlay.tsx:829
+#: src/pages/ModelSettingsOverlay.tsx
 msgid "Replace API key"
 msgstr "API कुंजी बदलें"
 
-#: src/pages/VoiceSettingsOverlay.tsx:267
+#: src/pages/VoiceSettingsOverlay.tsx
 msgid "Replace key"
 msgstr "कुंजी बदलें"
 
-#: src/pages/Shell.tsx:5943
+#: src/pages/Shell.tsx
 msgid "Reply"
 msgstr "उत्तर दें"
 
-#: src/pages/Shell.tsx:5450
+#: src/pages/Shell.tsx
 msgid "Reply cancelled"
 msgstr ""
 
 #. placeholder {0}: replyNameRef.current
-#: src/pages/Shell.tsx:5388
+#: src/pages/Shell.tsx
 msgid "Replying to {0}"
 msgstr ""
 
-#: src/pages/Shell.tsx:5438
+#: src/pages/Shell.tsx
 msgid "Replying to {replyName}"
 msgstr "{replyName} को उत्तर दे रहे हैं"
 
-#: src/pages/Shell.tsx:5437
+#: src/pages/Shell.tsx
 msgid "Replying to {replyName}: “{replyQuote}”"
 msgstr ""
 
-#: src/pages/shell/message-cards.tsx:135
+#: src/pages/shell/message-cards.tsx
 msgid "Research & writing"
 msgstr ""
 
-#: src/components/ComputerMaintenanceActions.tsx:100
-#: src/pages/shell/avatar-studio-popover.tsx:186
+#: src/components/ComputerMaintenanceActions.tsx
+#: src/pages/shell/avatar-studio-popover.tsx
 msgid "Reset"
 msgstr "रीसेट करें"
 
-#: src/components/ComputerMaintenanceActions.tsx:140
+#: src/components/ComputerMaintenanceActions.tsx
 msgid "Reset computer"
 msgstr "कंप्यूटर रीसेट करें"
 
-#: src/components/ComputerMaintenanceActions.tsx:88
+#: src/components/ComputerMaintenanceActions.tsx
 msgid "Reset computer?"
 msgstr "कंप्यूटर रीसेट करें?"
 
-#: src/pages/Auth.tsx:319
+#: src/pages/Auth.tsx
 msgid "Reset password"
 msgstr "पासवर्ड रीसेट करें"
 
-#: src/pages/Auth.tsx:40
+#: src/pages/Auth.tsx
 msgid "Reset your password"
 msgstr "अपना पासवर्ड रीसेट करें"
 
-#: src/components/ComputerMaintenanceActions.tsx:100
-#: src/components/ComputerMaintenanceActions.tsx:140
+#: src/components/ComputerMaintenanceActions.tsx
 msgid "Resetting…"
 msgstr "रीसेट हो रहा है…"
 
-#: src/components/DesktopUpdates.tsx:104
-#: src/components/DesktopUpdates.tsx:150
+#: src/components/DesktopUpdates.tsx
 msgid "Restart to update"
 msgstr ""
 
-#: src/pages/Shell.tsx:3181
-#: src/pages/Shell.tsx:3212
+#: src/pages/Shell.tsx
 msgid "Restore"
 msgstr "बहाल करें"
 
-#: src/components/ComputerMaintenanceActions.tsx:91
+#: src/components/ComputerMaintenanceActions.tsx
 msgid "Restore the last saved workspace. Unsaved work on the computer is lost."
 msgstr "अंतिम सहेजे गए वर्कस्पेस को बहाल करें। कंप्यूटर पर बिना सहेजा काम खो जाएगा।"
 
-#: src/components/ComputerUpdateProgress.tsx:53
+#: src/components/ComputerUpdateProgress.tsx
 msgid "Restoring your workspace"
 msgstr ""
 
-#: src/App.tsx:182
-#: src/pages/PeerMessagesOverlay.tsx:109
+#: src/App.tsx
+#: src/pages/PeerMessagesOverlay.tsx
 msgid "Retry now"
 msgstr "अभी पुनः प्रयास करें"
 
-#: src/pages/Shell.tsx:2620
+#: src/pages/Shell.tsx
 msgid "Retry screen"
 msgstr ""
 
-#: src/pages/McpOAuthCallback.tsx:62
+#: src/pages/McpOAuthCallback.tsx
 msgid "Return to Rakazo"
 msgstr "Rakazo पर लौटें"
 
 #. placeholder {0}: doc.revision
-#: src/pages/KnowledgeSection.tsx:180
+#: src/pages/KnowledgeSection.tsx
 msgid "rev {0}"
 msgstr "रिवीज़न {0}"
 
-#: src/pages/MessagingSettingsOverlay.tsx:324
+#: src/pages/MessagingSettingsOverlay.tsx
 msgid "Revoke"
 msgstr ""
 
-#: src/pages/AccountSettingsOverlay.tsx:157
+#: src/pages/AccountSettingsOverlay.tsx
 msgid "Robot"
 msgstr ""
 
-#: src/pages/ExternalConversationSettings.tsx:125
+#: src/pages/ExternalConversationSettings.tsx
 msgid "Room guidance"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx:620
+#: src/pages/RoutineEditor.tsx
 msgid "Rotate key"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx:265
-#: src/pages/Shell.tsx:3839
-#: src/pages/Shell.tsx:3851
+#: src/pages/RoutineEditor.tsx
+#: src/pages/Shell.tsx
 msgid "Routine"
 msgstr "रूटीन"
 
-#: src/pages/RoutineEditor.tsx:116
+#: src/pages/RoutineEditor.tsx
 msgid "Routines"
 msgstr "रूटीन्स"
 
-#: src/pages/RoutineEditor.tsx:400
-#: src/pages/RoutineEditor.tsx:406
+#: src/pages/RoutineEditor.tsx
 msgid "Run at"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx:499
+#: src/pages/RoutineEditor.tsx
 msgid "Run history"
 msgstr ""
 
-#: src/pages/Shell.tsx:3832
+#: src/pages/Shell.tsx
 msgid "Run time must be in the future."
 msgstr ""
 
-#: src/components/CloudAgentCard.tsx:32
+#: src/components/CloudAgentCard.tsx
 msgid "running"
 msgstr "चल रहा है"
 
-#: src/pages/ActivityList.tsx:151
+#: src/pages/ActivityList.tsx
 msgid "Running"
 msgstr "चल रहा है"
 
-#: src/pages/RoutineEditor.tsx:172
+#: src/pages/RoutineEditor.tsx
 msgid "Running · Stop"
 msgstr "चल रहा है · रोकें"
 
-#: src/pages/RoutineEditor.tsx:304
+#: src/pages/RoutineEditor.tsx
 msgid "Running…"
 msgstr "चल रहा है…"
 
-#: src/pages/RoutineEditor.tsx:532
+#: src/pages/RoutineEditor.tsx
 msgid "Runs when this bot receives a verified message from this provider."
 msgstr ""
 
-#: src/components/AskCard.tsx:179
-#: src/components/teach/SkillDraftCard.tsx:142
-#: src/pages/ExternalConversationSettings.tsx:255
-#: src/pages/GroupPanel.tsx:236
-#: src/pages/KnowledgeSection.tsx:203
-#: src/pages/KnowledgeSection.tsx:423
-#: src/pages/ModelSettingsOverlay.tsx:827
-#: src/pages/RoutineEditor.tsx:489
-#: src/pages/shell/bot-panel.tsx:613
-#: src/pages/shell/dialogs.tsx:266
+#: src/components/AskCard.tsx
+#: src/components/teach/SkillDraftCard.tsx
+#: src/pages/ExternalConversationSettings.tsx
+#: src/pages/GroupPanel.tsx
+#: src/pages/KnowledgeSection.tsx
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/RoutineEditor.tsx
+#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/dialogs.tsx
 msgid "Save"
 msgstr "सहेजें"
 
-#: src/components/AskCard.tsx:18
-#: src/components/teach/SkillDraftCard.tsx:142
-#: src/pages/ExternalConversationSettings.tsx:257
+#: src/components/AskCard.tsx
+#: src/components/teach/SkillDraftCard.tsx
+#: src/pages/ExternalConversationSettings.tsx
 msgid "Saved"
 msgstr "सहेजा गया"
 
-#: src/pages/ScratchpadSection.tsx:53
-#: src/pages/ScratchpadSection.tsx:75
+#: src/pages/ScratchpadSection.tsx
 msgid "Saved, but list refresh failed"
 msgstr "सहेजा गया, लेकिन सूची रिफ़्रेश विफल रही"
 
-#: src/pages/ModelSettingsOverlay.tsx:353
+#: src/pages/ModelSettingsOverlay.tsx
 msgid "Saved."
 msgstr "सहेजा गया।"
 
-#: src/pages/RoutineEditor.tsx:563
+#: src/pages/RoutineEditor.tsx
 msgid "Saved. Rotate to reveal."
 msgstr ""
 
-#: src/components/ComputerUpdateProgress.tsx:51
+#: src/components/ComputerUpdateProgress.tsx
 msgid "Saving your workspace"
 msgstr ""
 
-#: src/pages/ExternalConversationSettings.tsx:255
+#: src/pages/ExternalConversationSettings.tsx
 msgid "Saving..."
 msgstr ""
 
-#: src/components/AskCard.tsx:179
-#: src/components/teach/SkillDraftCard.tsx:142
-#: src/pages/GroupPanel.tsx:236
-#: src/pages/ModelSettingsOverlay.tsx:825
-#: src/pages/RoutineEditor.tsx:489
-#: src/pages/shell/dialogs.tsx:266
+#: src/components/AskCard.tsx
+#: src/components/teach/SkillDraftCard.tsx
+#: src/pages/GroupPanel.tsx
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/RoutineEditor.tsx
+#: src/pages/shell/dialogs.tsx
 msgid "Saving…"
 msgstr "सहेजा जा रहा है…"
 
-#: src/lib/call-session.ts:470
+#: src/lib/call-session.ts
 msgid "Say yes or no, or answer in a sentence."
 msgstr "हां या ना कहें, या एक वाक्य में उत्तर दें।"
 
-#: src/pages/ModelSettingsOverlay.tsx:1118
-#: src/pages/PluginsOverlay.tsx:877
-#: src/pages/Shell.tsx:2810
-#: src/pages/shell/bot-picker.tsx:55
-#: src/pages/shell/bot-picker.tsx:56
-#: src/pages/shell/command-palette.tsx:102
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/PluginsOverlay.tsx
+#: src/pages/Shell.tsx
+#: src/pages/shell/bot-picker.tsx
+#: src/pages/shell/command-palette.tsx
 msgid "Search"
 msgstr "खोजें"
 
-#: src/components/integrations/IntegrationSetup.tsx:251
-#: src/components/integrations/IntegrationSetup.tsx:252
-#: src/pages/PluginsOverlay.tsx:695
-#: src/pages/PluginsOverlay.tsx:696
+#: src/components/integrations/IntegrationSetup.tsx
+#: src/pages/PluginsOverlay.tsx
 msgid "Search apps"
 msgstr "ऐप खोजें"
 
-#: src/pages/Artifacts.tsx:279
+#: src/pages/Artifacts.tsx
 msgid "Search artifacts…"
 msgstr ""
 
-#: src/pages/shell/command-palette.tsx:91
+#: src/pages/shell/command-palette.tsx
 msgid "Search bots and switch conversations"
 msgstr ""
 
-#: src/pages/PluginsOverlay.tsx:847
+#: src/pages/PluginsOverlay.tsx
 msgid "Search by domain"
 msgstr ""
 
-#: src/components/integrations/IntegrationSetup.tsx:257
+#: src/components/integrations/IntegrationSetup.tsx
 msgid "Search integrations.sh"
 msgstr ""
 
-#: src/pages/ModelSettingsOverlay.tsx:1113
+#: src/pages/ModelSettingsOverlay.tsx
 msgid "Search models"
 msgstr ""
 
-#: src/pages/ModelSettingsOverlay.tsx:430
-#: src/pages/ModelSettingsOverlay.tsx:436
+#: src/pages/ModelSettingsOverlay.tsx
 msgid "Search providers"
 msgstr "प्रोवाइडर्स खोजें"
 
-#: src/pages/PluginsOverlay.tsx:877
-#: src/pages/SpaceSearch.tsx:16
+#: src/pages/PluginsOverlay.tsx
+#: src/pages/SpaceSearch.tsx
 msgid "Searching…"
 msgstr "खोजा जा रहा है…"
 
-#: src/pages/Shell.tsx:3411
+#: src/pages/Shell.tsx
 msgid "Select a bot"
 msgstr "एक बॉट चुनें"
 
-#: src/pages/Shell.tsx:5732
-#: src/pages/Shell.tsx:5753
+#: src/pages/Shell.tsx
 msgid "Send"
 msgstr "भेजें"
 
-#: src/pages/MessagingSettingsOverlay.tsx:180
+#: src/pages/MessagingSettingsOverlay.tsx
 msgid "Send <0>{linkCode}</0> to the line from your chat app within 10 minutes. You'll get a confirmation reply once linked."
 msgstr ""
 
-#: src/components/AskCard.tsx:198
+#: src/components/AskCard.tsx
 msgid "Send answer"
 msgstr "उत्तर भेजें"
 
-#: src/components/AskCard.tsx:215
+#: src/components/AskCard.tsx
 msgid "Send it"
 msgstr "इसे भेजें"
 
-#: src/pages/Auth.tsx:215
+#: src/pages/Auth.tsx
 msgid "Send reset link"
 msgstr "रीसेट लिंक भेजें"
 
-#: src/components/AskCard.tsx:136
-#: src/components/AskCard.tsx:198
-#: src/components/AskCard.tsx:215
+#: src/components/AskCard.tsx
 msgid "Sending…"
 msgstr "भेजा जा रहा है…"
 
-#: src/pages/RoutineEditor.tsx:58
+#: src/pages/RoutineEditor.tsx
 msgid "Sentry alert"
 msgstr ""
 
-#: src/pages/memory-providers/SerenitySettingsForm.tsx:52
+#: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Serenity endpoint is required."
 msgstr ""
 
-#: src/components/integrations/IntegrationSetup.tsx:133
-#: src/pages/AccountSettingsOverlay.tsx:170
-#: src/pages/LocalSettings.tsx:42
+#: src/components/integrations/IntegrationSetup.tsx
+#: src/pages/AccountSettingsOverlay.tsx
+#: src/pages/LocalSettings.tsx
 msgid "Server integrations"
 msgstr ""
 
-#: src/pages/McpServersOverlay.tsx:282
+#: src/pages/McpServersOverlay.tsx
 msgid "Server name"
 msgstr "सर्वर का नाम"
 
-#: src/components/integrations/IntegrationSetup.tsx:283
-#: src/components/integrations/IntegrationSetup.tsx:301
-#: src/pages/McpServersOverlay.tsx:329
-#: src/pages/ModelSettingsOverlay.tsx:487
-#: src/pages/Onboarding.tsx:415
+#: src/components/integrations/IntegrationSetup.tsx
+#: src/pages/McpServersOverlay.tsx
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/Onboarding.tsx
 msgid "Server URL"
 msgstr "सर्वर URL"
 
-#: src/components/call/CallCard.tsx:79
-#: src/pages/MessagingSettingsOverlay.tsx:361
-#: src/pages/SettingsOverlay.tsx:94
-#: src/pages/SettingsOverlay.tsx:149
-#: src/pages/Shell.tsx:3273
-#: src/pages/Shell.tsx:3280
-#: src/pages/Shell.tsx:3572
+#: src/components/call/CallCard.tsx
+#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/SettingsOverlay.tsx
+#: src/pages/Shell.tsx
 msgid "Settings"
 msgstr "सेटिंग्स"
 
-#: src/pages/Shell.tsx:5771
+#: src/pages/Shell.tsx
 msgid "Settings: General"
 msgstr "सेटिंग्स: सामान्य"
 
-#: src/pages/Shell.tsx:5773
+#: src/pages/Shell.tsx
 msgid "Settings: Usage"
 msgstr "सेटिंग्स: उपयोग"
 
-#: src/components/integrations/IntegrationSetup.tsx:329
-#: src/pages/ModelSettingsOverlay.tsx:500
+#: src/components/integrations/IntegrationSetup.tsx
+#: src/pages/ModelSettingsOverlay.tsx
 msgid "Setup help"
 msgstr "सेटअप सहायता"
 
-#: src/pages/shell/avatar-studio-popover.tsx:194
+#: src/pages/shell/avatar-studio-popover.tsx
 msgid "Shape"
 msgstr "आकार"
 
-#: src/pages/MemorySettingsOverlay.tsx:49
-#: src/pages/shell/bot-panel.tsx:550
+#: src/pages/MemorySettingsOverlay.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Shared"
 msgstr "साझा"
 
-#: src/pages/shell/dialogs.tsx:135
+#: src/pages/shell/dialogs.tsx
 msgid "Shared chat with 2-6 bots. They all reply in the same thread."
 msgstr ""
 
-#: src/pages/KnowledgeSection.tsx:66
+#: src/pages/KnowledgeSection.tsx
 msgid "Shared documents"
 msgstr "साझा दस्तावेज़"
 
-#: src/pages/Shell.tsx:3319
-#: src/pages/Shell.tsx:3380
-#: src/pages/Shell.tsx:3381
+#: src/pages/Shell.tsx
 msgid "Show bots"
 msgstr ""
 
-#: src/pages/Shell.tsx:3596
+#: src/pages/Shell.tsx
 msgid "Show computer"
 msgstr ""
 
-#: src/pages/Artifacts.tsx:907
-#: src/pages/Artifacts.tsx:908
+#: src/pages/Artifacts.tsx
 msgid "Show list"
 msgstr ""
 
-#: src/pages/PluginsOverlay.tsx:812
+#: src/pages/PluginsOverlay.tsx
 msgid "Show more"
 msgstr "और दिखाएँ"
 
-#: src/pages/Auth.tsx:188
+#: src/pages/Auth.tsx
 msgid "Show password"
 msgstr ""
 
-#: src/pages/Shell.tsx:3596
+#: src/pages/Shell.tsx
 msgid "Show settings"
 msgstr "सेटिंग्स दिखाएं"
 
-#: src/components/call/VoiceChatCard.tsx:49
+#: src/components/call/VoiceChatCard.tsx
 msgid "Show transcript"
 msgstr "ट्रांसक्रिप्ट दिखाएँ"
 
-#: src/lib/localized-provider-hint.ts:7
-#: src/pages/Auth.tsx:232
-#: src/pages/Auth.tsx:290
-#: src/pages/ModelSettingsOverlay.tsx:764
-#: src/pages/Onboarding.tsx:187
+#: src/lib/localized-provider-hint.ts
+#: src/pages/Auth.tsx
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/Onboarding.tsx
 msgid "Sign in"
 msgstr "साइन इन करें"
 
-#: src/pages/Auth.tsx:36
+#: src/pages/Auth.tsx
 msgid "Sign in to Rakazo"
 msgstr "Rakazo में साइन इन करें"
 
-#: src/pages/Auth.tsx:225
-#: src/pages/Welcome.tsx:32
+#: src/pages/Auth.tsx
+#: src/pages/Welcome.tsx
 msgid "Sign up"
 msgstr "साइन अप करें"
 
 #. placeholder {0}: skill.name
-#: src/pages/Shell.tsx:5547
+#: src/pages/Shell.tsx
 msgid "Skill {0}"
 msgstr "स्किल {0}"
 
-#: src/pages/KnowledgeSection.tsx:42
+#: src/pages/KnowledgeSection.tsx
 msgid "Skills"
 msgstr "स्किल्स"
 
-#: src/components/integrations/IntegrationSetup.tsx:365
-#: src/pages/Shell.tsx:6018
+#: src/components/integrations/IntegrationSetup.tsx
+#: src/pages/Shell.tsx
 msgid "Skip"
 msgstr "छोड़ें"
 
-#: src/lib/localized-provider-hint.ts:8
+#: src/lib/localized-provider-hint.ts
 msgid "Skip or deploy key"
 msgstr "छोड़ें या डिप्लॉय कुंजी दें"
 
 #. placeholder {0}: skipped.join(", ")
-#: src/pages/Shell.tsx:2013
+#: src/pages/Shell.tsx
 msgid "Skipped {0}"
 msgstr "{0} को छोड़ा गया"
 
-#: src/pages/RoutineEditor.tsx:104
-#: src/pages/RoutineEditor.tsx:442
-#: src/pages/RoutineEditor.tsx:512
+#: src/pages/RoutineEditor.tsx
 msgid "Slack message"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx:435
-#: src/pages/RoutineEditor.tsx:446
+#: src/pages/RoutineEditor.tsx
 msgid "Slack not enabled"
 msgstr ""
 
-#: src/components/SoftwareUpdateSection.tsx:140
-#: src/components/SoftwareUpdateSection.tsx:235
+#: src/components/SoftwareUpdateSection.tsx
 msgid "Software update"
 msgstr ""
 
-#: src/pages/shell/bot-panel.tsx:505
+#: src/pages/shell/bot-panel.tsx
 msgid "Space default"
 msgstr "स्पेस डिफ़ॉल्ट"
 
-#: src/pages/shell/dialogs.tsx:131
+#: src/pages/shell/dialogs.tsx
 msgid "Spaces"
 msgstr ""
 
-#: src/pages/Shell.tsx:6157
-#: src/pages/Shell.tsx:6412
+#: src/pages/Shell.tsx
 msgid "Speak"
 msgstr "बोलें"
 
-#: src/pages/VoiceSettingsOverlay.tsx:218
+#: src/pages/VoiceSettingsOverlay.tsx
 msgid "Speak + transcribe"
 msgstr "बोलें + लिप्यंतरण करें"
 
-#: src/pages/VoiceSettingsOverlay.tsx:220
+#: src/pages/VoiceSettingsOverlay.tsx
 msgid "Speak only"
 msgstr "केवल बोलें"
 
-#: src/pages/Shell.tsx:6153
-#: src/pages/Shell.tsx:6408
+#: src/pages/Shell.tsx
 msgid "Speak this reply"
 msgstr "यह उत्तर बोलकर सुनाएं"
 
-#: src/components/teach/TeachComputerOverlay.tsx:250
+#: src/components/teach/TeachComputerOverlay.tsx
 msgid "Start recording"
 msgstr "रिकॉर्डिंग शुरू करें"
 
-#: src/pages/ActivityList.tsx:149
+#: src/pages/ActivityList.tsx
 msgid "Starting"
 msgstr "शुरू हो रहा है"
 
-#: src/components/teach/TeachComputerOverlay.tsx:248
-#: src/pages/ModelSettingsOverlay.tsx:762
-#: src/pages/Onboarding.tsx:626
+#: src/components/teach/TeachComputerOverlay.tsx
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/Onboarding.tsx
 msgid "Starting…"
 msgstr "शुरू हो रहा है…"
 
-#: src/components/teach/SkillDraftCard.tsx:100
+#: src/components/teach/SkillDraftCard.tsx
 msgid "Steps"
 msgstr "चरण"
 
-#: src/pages/Shell.tsx:4396
-#: src/pages/Shell.tsx:4401
-#: src/pages/Shell.tsx:5742
-#: src/pages/Shell.tsx:6157
-#: src/pages/Shell.tsx:6412
+#: src/pages/Shell.tsx
 msgid "Stop"
 msgstr "रोकें"
 
-#: src/pages/Shell.tsx:6153
-#: src/pages/Shell.tsx:6408
+#: src/pages/Shell.tsx
 msgid "Stop speaking"
 msgstr "बोलना रोकें"
 
-#: src/components/teach/TeachRecordingChrome.tsx:78
-#: src/components/teach/TeachRecordingChrome.tsx:100
+#: src/components/teach/TeachRecordingChrome.tsx
 msgid "Stop teaching"
 msgstr "सिखाना रोकें"
 
 #. js-lingui-explicit-id
-#: src/lib/browser-notifications.ts:95
+#: src/lib/browser-notifications.ts
 msgid "Stopped."
 msgstr "रोक दिया गया।"
 
-#: src/pages/McpServersOverlay.tsx:361
+#: src/pages/McpServersOverlay.tsx
 msgid "Stored encrypted"
 msgstr "एन्क्रिप्टेड रूप में संग्रहीत"
 
-#: src/pages/ModelSettingsOverlay.tsx:677
+#: src/pages/ModelSettingsOverlay.tsx
 msgid "Stored securely. Never shown here."
 msgstr "सुरक्षित रूप से संग्रहीत। यहां कभी नहीं दिखाया जाता।"
 
-#: src/pages/AccountSettingsOverlay.tsx:201
+#: src/pages/AccountSettingsOverlay.tsx
 msgid "Stream replies"
 msgstr "जवाब स्ट्रीम करें"
 
-#: src/pages/Shell.tsx:6265
+#: src/pages/Shell.tsx
 msgid "subagent"
 msgstr "सबएजेंट"
 
-#: src/pages/ModelSettingsOverlay.tsx:722
-#: src/pages/Onboarding.tsx:593
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/Onboarding.tsx
 msgid "Submit"
 msgstr "सबमिट करें"
 
-#: src/pages/ModelSettingsOverlay.tsx:616
-#: src/pages/Onboarding.tsx:525
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/Onboarding.tsx
 msgid "Supports images"
 msgstr "छवियों का समर्थन"
 
-#: src/pages/ModelSettingsOverlay.tsx:579
-#: src/pages/Onboarding.tsx:502
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/Onboarding.tsx
 msgid "Supports thinking"
 msgstr "सोचने की क्षमता का समर्थन करता है"
 
-#: src/pages/shell/command-palette.tsx:90
+#: src/pages/shell/command-palette.tsx
 msgid "Switch bot"
 msgstr ""
 
-#: src/pages/ModelSettingsOverlay.tsx:857
+#: src/pages/ModelSettingsOverlay.tsx
 msgid "Switching…"
 msgstr "बदला जा रहा है…"
 
-#: src/pages/AccountSettingsOverlay.tsx:398
+#: src/pages/AccountSettingsOverlay.tsx
 msgid "System"
 msgstr "सिस्टम"
 
-#: src/components/teach/TeachComputerOverlay.tsx:205
-#: src/components/teach/TeachComputerOverlay.tsx:213
+#: src/components/teach/TeachComputerOverlay.tsx
 msgid "Teach a task"
 msgstr "कोई कार्य सिखाएं"
 
-#: src/pages/Shell.tsx:3486
+#: src/pages/Shell.tsx
 msgid "Teaching in progress. Stop teaching before sending a new message."
 msgstr "सिखाना जारी है। नया संदेश भेजने से पहले सिखाना रोकें।"
 
-#: src/pages/shell/bot-panel.tsx:70
+#: src/pages/shell/bot-panel.tsx
 msgid "Team"
 msgstr "टीम"
 
-#: src/pages/Shell.tsx:6517
+#: src/pages/Shell.tsx
 msgid "Team Computer"
 msgstr "टीम कंप्यूटर"
 
-#: src/pages/MessagingSettingsOverlay.tsx:336
+#: src/pages/MessagingSettingsOverlay.tsx
 msgid "Team conversations"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx:56
-#: src/pages/RoutineEditor.tsx:105
-#: src/pages/RoutineEditor.tsx:514
+#: src/pages/RoutineEditor.tsx
 msgid "Teams message"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx:455
+#: src/pages/RoutineEditor.tsx
 msgid "Teams not enabled"
 msgstr ""
 
-#: src/components/computer/ComputerWorkspace.tsx:43
+#: src/components/computer/ComputerWorkspace.tsx
 msgid "Terminal"
 msgstr ""
 
-#: src/components/teach/SkillDraftCard.tsx:145
+#: src/components/teach/SkillDraftCard.tsx
 msgid "Test"
 msgstr "टेस्ट करें"
 
-#: src/pages/RoutineEditor.tsx:304
+#: src/pages/RoutineEditor.tsx
 msgid "Test run"
 msgstr ""
 
-#: src/components/SoftwareUpdateSection.tsx:212
+#: src/components/SoftwareUpdateSection.tsx
 msgid "The API did not come back. Refresh this page."
 msgstr ""
 
-#: src/pages/MemorySettingsOverlay.tsx:245
+#: src/pages/MemorySettingsOverlay.tsx
 msgid "The selected memory provider is not available in this build."
 msgstr "चयनित मेमोरी प्रोवाइडर इस बिल्ड में उपलब्ध नहीं है।"
 
-#: src/pages/shell/bot-panel.tsx:524
+#: src/pages/shell/bot-panel.tsx
 msgid "Thinking"
 msgstr "सोच रहा है"
 
-#: src/pages/Shell.tsx:6497
+#: src/pages/Shell.tsx
 msgid "This bot runs on this computer, not a Linux desktop. Shell and files use your home folder."
 msgstr "यह बॉट इसी कंप्यूटर पर चलता है, किसी Linux डेस्कटॉप पर नहीं। शेल और फ़ाइलें आपके होम फ़ोल्डर का उपयोग करती हैं।"
 
-#: src/pages/Artifacts.tsx:364
+#: src/pages/Artifacts.tsx
 msgid "This can't be undone."
 msgstr ""
 
-#: src/pages/shell/dialogs.tsx:387
-#: src/pages/shell/dialogs.tsx:442
+#: src/pages/shell/dialogs.tsx
 msgid "This cannot be undone."
 msgstr "इसे पूर्ववत नहीं किया जा सकता।"
 
-#: src/pages/PeerMessagesOverlay.tsx:149
+#: src/pages/PeerMessagesOverlay.tsx
 msgid "This chat is view-only"
 msgstr "यह चैट केवल देखने के लिए है"
 
-#: src/pages/HostComputerPrompt.tsx:22
+#: src/pages/HostComputerPrompt.tsx
 msgid "this computer"
 msgstr "यह कंप्यूटर"
 
 #. placeholder {0}: pendingDelete.versionCount
-#: src/pages/Artifacts.tsx:359
+#: src/pages/Artifacts.tsx
 msgid "This deletes all {0} versions of this artifact. This can't be undone."
 msgstr ""
 
-#: src/components/ArtifactFileCard.tsx:143
+#: src/components/ArtifactFileCard.tsx
 msgid "This file is not valid UTF-8 text."
 msgstr ""
 
-#: src/pages/HostComputerPrompt.tsx:22
+#: src/pages/HostComputerPrompt.tsx
 msgid "this Mac"
 msgstr "यह Mac"
 
-#: src/pages/Artifacts.tsx:292
+#: src/pages/Artifacts.tsx
 msgid "This month"
 msgstr ""
 
-#: src/pages/shell/dialogs.tsx:296
+#: src/pages/shell/dialogs.tsx
 msgid "This permanently removes every message and stops current work. The chat remains available."
 msgstr ""
 
-#: src/pages/Auth.tsx:255
+#: src/pages/Auth.tsx
 msgid "This reset link is invalid or expired"
 msgstr "यह रीसेट लिंक अमान्य है या इसकी समय-सीमा समाप्त हो गई है"
 
-#: src/pages/shell/message-cards.tsx:360
+#: src/pages/shell/message-cards.tsx
 msgid "This server cannot be assigned without a bot."
 msgstr "बॉट के बिना यह सर्वर असाइन नहीं किया जा सकता।"
 
-#: src/pages/McpServersOverlay.tsx:189
+#: src/pages/McpServersOverlay.tsx
 msgid "This server did not request browser authorization."
 msgstr "इस सर्वर ने ब्राउज़र ऑथराइज़ेशन नहीं मांगा।"
 
-#: src/pages/McpServersOverlay.tsx:185
+#: src/pages/McpServersOverlay.tsx
 msgid "This server is already connected. Disconnect it first to authorize again."
 msgstr "यह सर्वर पहले से कनेक्टेड है। पुनः ऑथराइज़ करने के लिए पहले इसे डिस्कनेक्ट करें।"
 
-#: src/pages/ModelSettingsOverlay.tsx:839
+#: src/pages/ModelSettingsOverlay.tsx
 msgid "This subscription sign-in is not available in Rakazo yet. Use a deployment credential or choose another provider."
 msgstr "यह सब्सक्रिप्शन साइन-इन अभी Rakazo में उपलब्ध नहीं है। किसी डिप्लॉयमेंट क्रेडेंशियल का उपयोग करें या दूसरा प्रोवाइडर चुनें।"
 
-#: src/pages/Artifacts.tsx:291
+#: src/pages/Artifacts.tsx
 msgid "This week"
 msgstr ""
 
-#: src/pages/RoutineSchedule.tsx:217
+#: src/pages/RoutineSchedule.tsx
 msgid "Time of day"
 msgstr "दिन का समय"
 
-#: src/pages/shell/bot-panel.tsx:148
-#: src/pages/shell/bot-panel.tsx:425
+#: src/pages/shell/bot-panel.tsx
 msgid "Title"
 msgstr "शीर्षक"
 
-#: src/pages/shell/bot-picker.tsx:50
+#: src/pages/shell/bot-picker.tsx
 msgid "To:"
 msgstr "प्रति:"
 
-#: src/pages/Artifacts.tsx:290
+#: src/pages/Artifacts.tsx
 msgid "Today"
 msgstr ""
 
-#: src/pages/PluginsOverlay.tsx:1110
+#: src/pages/PluginsOverlay.tsx
 msgid "Tool sources"
 msgstr "टूल स्रोत"
 
-#: src/pages/PluginsOverlay.tsx:628
+#: src/pages/PluginsOverlay.tsx
 msgid "Tools"
 msgstr ""
 
-#: src/components/call/CallCard.tsx:88
+#: src/components/call/CallCard.tsx
 msgid "Transcript"
 msgstr "ट्रांसक्रिप्ट"
 
-#: src/pages/ExternalConversationSettings.tsx:61
+#: src/pages/ExternalConversationSettings.tsx
 msgid "Treat like a person"
 msgstr ""
 
-#: src/pages/PluginsOverlay.tsx:1066
+#: src/pages/PluginsOverlay.tsx
 msgid "Treg token"
 msgstr "Treg टोकन"
 
-#: src/pages/Onboarding.tsx:690
+#: src/pages/Onboarding.tsx
 msgid "Try again"
 msgstr "फिर से कोशिश करें"
 
-#: src/components/AskCard.tsx:194
+#: src/components/AskCard.tsx
 msgid "Type your answer"
 msgstr "अपना उत्तर लिखें"
 
-#: src/pages/BotContextMenu.tsx:108
+#: src/pages/BotContextMenu.tsx
 msgid "Unassigned"
 msgstr "असाइन नहीं किया गया"
 
-#: src/components/SoftwareUpdateSection.tsx:272
+#: src/components/SoftwareUpdateSection.tsx
 msgid "Unavailable"
 msgstr ""
 
-#: src/pages/PluginsOverlay.tsx:567
+#: src/pages/PluginsOverlay.tsx
 msgid "Uninstall"
 msgstr ""
 
-#: src/pages/MessagingSettingsOverlay.tsx:139
+#: src/pages/MessagingSettingsOverlay.tsx
 msgid "Unlink"
 msgstr ""
 
-#: src/components/call/CallCard.tsx:98
+#: src/components/call/CallCard.tsx
 msgid "Unmute"
 msgstr "अनम्यूट करें"
 
-#: src/pages/BotContextMenu.tsx:91
+#: src/pages/BotContextMenu.tsx
 msgid "Unpin"
 msgstr "पिन हटाएं"
 
 #. placeholder {0}: pending.file.name
-#: src/pages/Shell.tsx:2092
+#: src/pages/Shell.tsx
 msgid "Unsupported file type: {0}"
 msgstr "असमर्थित फ़ाइल प्रकार: {0}"
 
-#: src/components/DesktopUpdates.tsx:166
-#: src/components/SoftwareUpdateSection.tsx:253
+#: src/components/DesktopUpdates.tsx
+#: src/components/SoftwareUpdateSection.tsx
 msgid "Up to date"
 msgstr ""
 
-#: src/components/SoftwareUpdateSection.tsx:81
+#: src/components/SoftwareUpdateSection.tsx
 msgid "Update"
 msgstr ""
 
-#: src/components/SoftwareUpdateSection.tsx:260
+#: src/components/SoftwareUpdateSection.tsx
 msgid "Update available"
 msgstr ""
 
-#: src/components/ComputerMaintenanceActions.tsx:149
+#: src/components/ComputerMaintenanceActions.tsx
 msgid "Update computer"
 msgstr "कंप्यूटर अपडेट करें"
 
-#: src/components/ComputerUpdateProgress.tsx:60
-#: src/components/SoftwareUpdateSection.tsx:185
+#: src/components/ComputerUpdateProgress.tsx
+#: src/components/SoftwareUpdateSection.tsx
 msgid "Update failed"
 msgstr ""
 
-#: src/components/SoftwareUpdateSection.tsx:181
-#: src/components/SoftwareUpdateSection.tsx:201
+#: src/components/SoftwareUpdateSection.tsx
 msgid "Update finished with errors"
 msgstr ""
 
-#: src/components/ComputerUpdateProgress.tsx:118
+#: src/components/ComputerUpdateProgress.tsx
 msgid "Update progress"
 msgstr ""
 
-#: src/components/SoftwareUpdateSection.tsx:178
-#: src/components/SoftwareUpdateSection.tsx:195
+#: src/components/SoftwareUpdateSection.tsx
 msgid "Updated"
 msgstr ""
 
-#: src/pages/SettingsOverlay.tsx:89
+#: src/pages/SettingsOverlay.tsx
 msgid "Updates"
 msgstr "अपडेट"
 
 #. placeholder {0}: update.name
-#: src/components/ComputerUpdateProgress.tsx:67
+#: src/components/ComputerUpdateProgress.tsx
 msgid "Updating {0}’s Computer"
 msgstr ""
 
-#: src/components/ComputerUpdateProgress.tsx:66
+#: src/components/ComputerUpdateProgress.tsx
 msgid "Updating Team Computer"
 msgstr ""
 
-#: src/components/ComputerMaintenanceActions.tsx:149
-#: src/components/SoftwareUpdateSection.tsx:81
+#: src/components/ComputerMaintenanceActions.tsx
+#: src/components/SoftwareUpdateSection.tsx
 msgid "Updating…"
 msgstr "अपडेट हो रहा है…"
 
-#: src/components/computer/FilesApp.tsx:206
-#: src/pages/shell/avatar-studio-popover.tsx:177
+#: src/components/computer/FilesApp.tsx
+#: src/pages/shell/avatar-studio-popover.tsx
 msgid "Upload"
 msgstr "अपलोड"
 
-#: src/pages/AccountSettingsOverlay.tsx:226
-#: src/pages/SettingsOverlay.tsx:87
-#: src/pages/Shell.tsx:3285
-#: src/pages/Shell.tsx:3296
+#: src/pages/AccountSettingsOverlay.tsx
+#: src/pages/SettingsOverlay.tsx
+#: src/pages/Shell.tsx
 msgid "Usage"
 msgstr "उपयोग"
 
-#: src/pages/HostComputerPrompt.tsx:92
+#: src/pages/HostComputerPrompt.tsx
 msgid "Use {hostLabel}"
 msgstr "{hostLabel} का उपयोग करें"
 
-#: src/pages/ModelSettingsOverlay.tsx:565
-#: src/pages/Onboarding.tsx:491
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/Onboarding.tsx
 msgid "Use a found model"
 msgstr "मिला हुआ मॉडल उपयोग करें"
 
-#: src/pages/ExternalConversationSettings.tsx:129
-#: src/pages/ExternalConversationSettings.tsx:130
+#: src/pages/ExternalConversationSettings.tsx
 msgid "Use default guidance"
 msgstr ""
 
-#: src/pages/ModelSettingsOverlay.tsx:859
+#: src/pages/ModelSettingsOverlay.tsx
 msgid "Use this model"
 msgstr "यह मॉडल उपयोग करें"
 
-#: src/components/AskCard.tsx:155
-#: src/components/AskCard.tsx:161
+#: src/components/AskCard.tsx
 msgid "Username"
 msgstr ""
 
-#: src/pages/PluginsOverlay.tsx:1091
+#: src/pages/PluginsOverlay.tsx
 msgid "Verify and add"
 msgstr "पुष्टि करके जोड़ें"
 
-#: src/pages/PluginsOverlay.tsx:1089
+#: src/pages/PluginsOverlay.tsx
 msgid "Verifying…"
 msgstr "पुष्टि की जा रही है…"
 
-#: src/pages/Artifacts.tsx:881
+#: src/pages/Artifacts.tsx
 msgid "Version"
 msgstr ""
 
-#: src/pages/SettingsOverlay.tsx:86
-#: src/pages/Shell.tsx:5719
-#: src/pages/Shell.tsx:5720
-#: src/pages/shell/bot-panel.tsx:582
-#: src/pages/VoiceSettingsOverlay.tsx:170
-#: src/pages/VoiceSettingsOverlay.tsx:293
+#: src/pages/SettingsOverlay.tsx
+#: src/pages/Shell.tsx
+#: src/pages/shell/bot-panel.tsx
+#: src/pages/VoiceSettingsOverlay.tsx
 msgid "Voice"
 msgstr "आवाज़"
 
-#: src/components/call/VoiceChatCard.tsx:39
+#: src/components/call/VoiceChatCard.tsx
 msgid "Voice chat"
 msgstr "वॉइस चैट"
 
-#: src/pages/ModelSettingsOverlay.tsx:726
-#: src/pages/ModelSettingsOverlay.tsx:748
-#: src/pages/Onboarding.tsx:597
-#: src/pages/Onboarding.tsx:619
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/Onboarding.tsx
 msgid "Waiting for sign-in…"
 msgstr "साइन-इन की प्रतीक्षा…"
 
-#: src/components/SoftwareUpdateSection.tsx:188
+#: src/components/SoftwareUpdateSection.tsx
 msgid "Waiting for the API to come back…"
 msgstr ""
 
-#: src/pages/shell/message-cards.tsx:233
+#: src/pages/shell/message-cards.tsx
 msgid "Waiting…"
 msgstr "प्रतीक्षा…"
 
-#: src/pages/RoutineEditor.tsx:475
+#: src/pages/RoutineEditor.tsx
 msgid "Webhook"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx:635
-#: src/pages/RoutineSchedule.tsx:36
-#: src/pages/RoutineSchedule.tsx:155
+#: src/pages/RoutineEditor.tsx
+#: src/pages/RoutineSchedule.tsx
 msgid "Weekdays"
 msgstr "कार्यदिवस"
 
-#: src/pages/shell/dialogs.tsx:357
+#: src/pages/shell/dialogs.tsx
 msgid "What about its memories?"
 msgstr "इसकी मेमोरी का क्या करें?"
 
-#: src/pages/shell/message-cards.tsx:114
+#: src/pages/shell/message-cards.tsx
 msgid "What do you want me on first?"
 msgstr ""
 
-#: src/components/teach/TeachComputerOverlay.tsx:227
+#: src/components/teach/TeachComputerOverlay.tsx
 msgid "What result will you demonstrate?"
 msgstr "आप कौन-सा परिणाम दिखाकर बताएंगे?"
 
-#: src/pages/RoutineEditor.tsx:325
+#: src/pages/RoutineEditor.tsx
 msgid "What should this routine do each time it runs?"
 msgstr ""
 
-#: src/pages/shell/bot-panel.tsx:165
+#: src/pages/shell/bot-panel.tsx
 msgid "What this bot is for"
 msgstr "यह बॉट किस लिए है"
 
-#: src/components/teach/SkillDraftCard.tsx:119
+#: src/components/teach/SkillDraftCard.tsx
 msgid "What to return"
 msgstr "क्या लौटाना है"
 
-#: src/pages/RoutineEditor.tsx:102
-#: src/pages/RoutineEditor.tsx:586
+#: src/pages/RoutineEditor.tsx
 msgid "When a webhook fires"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx:334
+#: src/pages/RoutineEditor.tsx
 msgid "When to run"
 msgstr "कब चलाएं"
 
-#: src/components/teach/SkillDraftCard.tsx:81
+#: src/components/teach/SkillDraftCard.tsx
 msgid "When to use"
 msgstr "कब उपयोग करें"
 
-#: src/pages/HostComputerPrompt.tsx:59
+#: src/pages/HostComputerPrompt.tsx
 msgid "Where should bots run?"
 msgstr "बॉट कहां चलने चाहिए?"
 
-#: src/pages/Auth.tsx:211
-#: src/pages/Auth.tsx:319
+#: src/pages/Auth.tsx
 msgid "Working…"
 msgstr "काम चल रहा है…"
 
-#: src/components/computer/TerminalApp.tsx:36
+#: src/components/computer/TerminalApp.tsx
 msgid "Wrote {path}"
 msgstr ""
 
-#: src/pages/Shell.tsx:5867
+#: src/pages/Shell.tsx
 msgid "Yesterday"
 msgstr "कल"
 
-#: src/pages/Shell.tsx:1782
-#: src/pages/Shell.tsx:2625
+#: src/pages/Shell.tsx
 msgid "You"
 msgstr "आप"
 
-#: src/pages/McpOAuthCallback.tsx:69
+#: src/pages/McpOAuthCallback.tsx
 msgid "You can close this tab if it does not redirect automatically."
 msgstr "अगर यह अपने आप रीडायरेक्ट न हो तो आप यह टैब बंद कर सकते हैं।"
 
-#: src/pages/McpOAuthCallback.tsx:67
+#: src/pages/McpOAuthCallback.tsx
 msgid "You can close this window."
 msgstr "आप यह विंडो बंद कर सकते हैं।"
 
-#: src/pages/Shell.tsx:4385
+#: src/pages/Shell.tsx
 msgid "You have control"
 msgstr "नियंत्रण आपके पास है"
 
-#: src/pages/Auth.tsx:159
+#: src/pages/Auth.tsx
 msgid "Your email address"
 msgstr "आपका ईमेल पता"
 
-#: src/pages/Auth.tsx:144
+#: src/pages/Auth.tsx
 msgid "Your name"
 msgstr "आपका नाम"
 
-#: src/pages/Welcome.tsx:21
+#: src/pages/Welcome.tsx
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "हमेशा चालू रहने वाले एजेंटों की आपकी टीम<0/>जिन्हें आप असली काम सौंप सकते हैं।"
