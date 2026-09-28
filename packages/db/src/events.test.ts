@@ -2773,4 +2773,83 @@ describe("appendEvent", () => {
     expect(persisted.delta).not.toMatch(/[\uD800-\uDFFF]/);
     expect(() => JSON.stringify(persisted)).not.toThrow();
   });
+
+  it("persists run.cancelled for a run that is already cancelled", async () => {
+    const fanout = new TestFanout();
+    const publish = vi.spyOn(fanout, "publish");
+    const created = { ...event(7), type: "run.cancelled", runId: "run-1" };
+    const tx = {
+      thread: { update: vi.fn().mockResolvedValue({ nextEventSeq: 8 }) },
+      run: { findUnique: vi.fn().mockResolvedValue({ status: "cancelled" }) },
+      event: { create: vi.fn().mockResolvedValue(created) },
+    };
+    const prisma = {
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+    } as unknown as PrismaClient;
+
+    await expect(
+      appendEvent(
+        prisma,
+        {
+          spaceId: "workspace-1",
+          threadId: "thread-1",
+          botId: "bot-1",
+          type: "run.cancelled",
+          runId: "run-1",
+          payload: {},
+        },
+        fanout,
+      ),
+    ).resolves.toMatchObject({ type: "run.cancelled", runId: "run-1" });
+    expect(tx.event.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ type: "run.cancelled", runId: "run-1", seq: 7 }),
+    });
+    expect(publish).toHaveBeenCalledWith("thread:thread-1", JSON.stringify({ cursor: 7 }));
+  });
+
+  it("rejects run.cancelled while the run is not cancelled", async () => {
+    const tx = {
+      thread: { update: vi.fn().mockResolvedValue({ nextEventSeq: 8 }) },
+      run: { findUnique: vi.fn().mockResolvedValue({ status: "running" }) },
+      event: { create: vi.fn() },
+    };
+    const prisma = {
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+    } as unknown as PrismaClient;
+
+    await expect(
+      appendEvent(prisma, {
+        spaceId: "workspace-1",
+        threadId: "thread-1",
+        botId: "bot-1",
+        type: "run.cancelled",
+        runId: "run-1",
+        payload: {},
+      }),
+    ).rejects.toThrow(RunHistoryWriteError);
+    expect(tx.event.create).not.toHaveBeenCalled();
+  });
+
+  it("rejects run.cancelled without a run", async () => {
+    const tx = {
+      thread: { update: vi.fn().mockResolvedValue({ nextEventSeq: 8 }) },
+      run: { findUnique: vi.fn() },
+      event: { create: vi.fn() },
+    };
+    const prisma = {
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+    } as unknown as PrismaClient;
+
+    await expect(
+      appendEvent(prisma, {
+        spaceId: "workspace-1",
+        threadId: "thread-1",
+        botId: "bot-1",
+        type: "run.cancelled",
+        payload: {},
+      }),
+    ).rejects.toThrow(RunHistoryWriteError);
+    expect(tx.run.findUnique).not.toHaveBeenCalled();
+    expect(tx.event.create).not.toHaveBeenCalled();
+  });
 });

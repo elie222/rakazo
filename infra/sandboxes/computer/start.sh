@@ -4,6 +4,7 @@ export DISPLAY="${DISPLAY:-:1}"
 export HOME="${HOME:-/home/rakazo}"
 AGENT_HOME="$HOME"
 mkdir -p "$AGENT_HOME" "$AGENT_HOME/.local/bin" "$AGENT_HOME/.config" /tmp/rakazo /tmp/.X11-unix /tmp/fluxbox-home
+# Login shells re-apply ~/.local/bin from /etc/profile.d/rakazo-local-bin.sh.
 export PATH="$AGENT_HOME/.local/bin:/usr/local/bin:$PATH"
 export NPM_CONFIG_PREFIX="$AGENT_HOME/.local"
 export PIP_USER=1
@@ -52,6 +53,19 @@ fi
 
 if command -v dbus-launch >/dev/null 2>&1; then
   eval "$(dbus-launch --sh-syntax)"
+  # rakazo-browser is launched later without this session's environment; the
+  # file-chooser portals only work if the browser finds the same bus.
+  printf 'export DBUS_SESSION_BUS_ADDRESS=%s\n' "$DBUS_SESSION_BUS_ADDRESS" \
+    > /tmp/rakazo/dbus-session
+fi
+
+# Chromium's file chooser talks to xdg-desktop-portal over the session bus.
+# Without a running portal backend, the select-file dialog opens but the
+# chosen file never reaches the page — uploads silently do nothing. The
+# daemons install as flat files in /usr/libexec on Debian bookworm.
+if [ -x /usr/libexec/xdg-desktop-portal ] && [ -x /usr/libexec/xdg-desktop-portal-gtk ]; then
+  /usr/libexec/xdg-desktop-portal >/tmp/rakazo/portal.log 2>&1 &
+  /usr/libexec/xdg-desktop-portal-gtk >/tmp/rakazo/portal-gtk.log 2>&1 &
 fi
 
 xsetroot -solid "#111113" >/dev/null 2>&1 || true

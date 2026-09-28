@@ -1,5 +1,5 @@
 import type { MessageBlock } from "@rakazo/contracts";
-import { REPLY_QUOTE_MAX_LENGTH } from "@rakazo/contracts";
+import { truncateReplyQuote } from "@rakazo/contracts";
 import { blocksToAgentHistoryText, messageReaction } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 
@@ -23,7 +23,7 @@ function replyContext(source: ReplyMessage, threadId: string): string | undefine
   const excerpt =
     !emoji && typeof source.replyQuote === "string" ? source.replyQuote.trim() : undefined;
   const targetPayload = excerpt
-    ? { quotedText: excerpt.slice(0, REPLY_QUOTE_MAX_LENGTH) }
+    ? { quotedText: truncateReplyQuote(excerpt) }
     : (() => {
         const content = blocksToAgentHistoryText(messageBlocks(target));
         return {

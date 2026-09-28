@@ -2,7 +2,12 @@ import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import type { ModelConnectInput, ModelCredential, ThinkingLevel } from "@rakazo/contracts";
 import { OPENAI_COMPATIBLE_PROVIDER_ID as CONTRACT_OPENAI_COMPAT } from "@rakazo/contracts";
 import { modelIdSupportsImages, updateModelImageCapabilities } from "./model-vision.js";
-import { parseModelSecret, type StoredModelSecret, serializeModelSecret } from "./pi-oauth.js";
+import {
+  CHATGPT_OAUTH_PROVIDER,
+  parseModelSecret,
+  type StoredModelSecret,
+  serializeModelSecret,
+} from "./pi-oauth.js";
 import {
   OPENAI_COMPATIBLE_PROVIDER_ID,
   openAiCompatibleModel,
@@ -21,7 +26,7 @@ export function buildModelConnectPlaintext(
 ): string {
   if (input.provider === OPENAI_COMPATIBLE_PROVIDER_ID) {
     const prepared = prepareOpenAiCompatibleConnect(input);
-    const previous = previousPlaintext ? parseModelSecret(previousPlaintext) : undefined;
+    const previous = tryParseModelSecret(previousPlaintext);
     const sameEndpoint =
       previous?.kind === "openai_compatible" && previous.baseUrl === prepared.baseUrl;
     if (input.apiKey === undefined && sameEndpoint) {
@@ -73,9 +78,16 @@ export function buildModelConnectPlaintext(
     };
     return serializeModelSecret(secret);
   }
-  const previous = previousPlaintext ? parseModelSecret(previousPlaintext) : undefined;
-  const maxTokens = connectMaxTokens(input.maxTokens, previous?.maxTokens);
   const apiKey = input.apiKey?.trim();
+  // The Codex transport authenticates with the OAuth JWT from ChatGPT sign-in,
+  // which carries the chatgpt account id it requires. A plain API key can never
+  // work there, so reject it instead of persisting a credential that only fails
+  // at request time.
+  if (input.provider === CHATGPT_OAUTH_PROVIDER && apiKey) {
+    throw new Error(CHATGPT_SUBSCRIPTION_REQUIRED_MESSAGE);
+  }
+  const previous = tryParseModelSecret(previousPlaintext);
+  const maxTokens = connectMaxTokens(input.maxTokens, previous?.maxTokens);
   if (apiKey) {
     if (apiKey.length < 8) throw new Error("API key must contain at least 8 characters");
     return serializeModelSecret({
@@ -85,6 +97,9 @@ export function buildModelConnectPlaintext(
     });
   }
   if (previous?.kind === "api_key" && previous.key.trim().length >= 8) {
+    if (input.provider === CHATGPT_OAUTH_PROVIDER) {
+      throw new Error(CHATGPT_SUBSCRIPTION_REQUIRED_MESSAGE);
+    }
     return serializeModelSecret({
       kind: "api_key",
       key: previous.key,
@@ -98,7 +113,23 @@ export function buildModelConnectPlaintext(
       ...(maxTokens !== undefined ? { maxTokens } : {}),
     });
   }
+  if (input.provider === CHATGPT_OAUTH_PROVIDER) {
+    throw new Error(CHATGPT_SUBSCRIPTION_REQUIRED_MESSAGE);
+  }
   throw new Error("API key must contain at least 8 characters");
+}
+
+const CHATGPT_SUBSCRIPTION_REQUIRED_MESSAGE =
+  "ChatGPT subscription sign-in is required for this provider.";
+
+/** Inherited fields come from the previous secret; a corrupt one counts as absent. */
+function tryParseModelSecret(plaintext?: string): StoredModelSecret | undefined {
+  if (!plaintext) return undefined;
+  try {
+    return parseModelSecret(plaintext);
+  } catch {
+    return undefined;
+  }
 }
 
 /** `null` clears a saved limit. Omitting it keeps the previous connection's limit. */

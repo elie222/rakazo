@@ -377,7 +377,16 @@ test.describe("touch message actions", () => {
       .first();
     const rail = row.getByTestId("message-hover-rail");
     await expect(rail).toHaveCSS("opacity", "1");
-    await expect(rail.getByRole("button", { name: "Reply", exact: true })).toBeHidden();
+    await expect(rail.getByRole("button", { name: "Reply", exact: true })).toBeVisible();
+    // Touch puts the action row in-flow under the bubble, not beside it.
+    const botBubble = row.getByTestId("message-bot-bubble").first();
+    const bubbleBox = await botBubble.boundingBox();
+    const railBox = await rail.boundingBox();
+    expect(bubbleBox).not.toBeNull();
+    expect(railBox).not.toBeNull();
+    expect(railBox!.y).toBeGreaterThanOrEqual(bubbleBox!.y + bubbleBox!.height - 1);
+    expect(railBox!.x - bubbleBox!.x).toBeLessThan(8);
+    await captureScreenshot(page, testInfo, "message-actions-touch-row");
     await rail.getByRole("button", { name: "React", exact: true }).tap();
     await expect(page.getByRole("button", { name: "🎉", exact: true })).toBeVisible();
     await captureScreenshot(page, testInfo, "message-reaction-picker-touch");
@@ -392,7 +401,8 @@ test.describe("touch message actions", () => {
     await expect(row.getByTestId("message-hover-time")).toHaveText(/\d/);
     await expect(page.getByRole("menu").locator("time")).toHaveCount(0);
     await captureScreenshot(page, testInfo, "message-actions-touch-menu");
-    await page.getByRole("menuitem", { name: "Reply", exact: true }).tap();
+    await page.keyboard.press("Escape");
+    await rail.getByRole("button", { name: "Reply", exact: true }).tap();
     await expect(page.getByRole("button", { name: "Cancel reply" })).toBeVisible();
   });
 });

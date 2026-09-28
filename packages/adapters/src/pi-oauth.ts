@@ -14,7 +14,9 @@ import {
   type ThinkingLevel,
   ThinkingLevelSchema,
 } from "@rakazo/contracts";
+import type { PrismaClient } from "@rakazo/db";
 import { createManualAnthropicOAuthLogin } from "./pi-anthropic-oauth.js";
+import type { EncryptedSecretStore } from "./secrets.js";
 
 export const CHATGPT_OAUTH_PROVIDER = "openai-codex";
 export const COPILOT_OAUTH_PROVIDER = "github-copilot";
@@ -55,6 +57,10 @@ export const SUBSCRIPTION_SIGN_IN_PROVIDERS: Record<
 
 const MIN_OAUTH_VALIDITY_MS = 5 * 60 * 1000;
 const SIGN_IN_START_WAIT_MS = 30_000;
+/** Bound on a detached credential refresh so it cannot pin the shared lock. */
+const REFRESH_KICK_TIMEOUT_MS = 30_000;
+const CORRUPT_MODEL_SECRET_MESSAGE =
+  "Stored model credential is corrupt. Connect the provider again.";
 
 export type StoredModelSecret =
   | { kind: "api_key"; key: string; maxTokens?: number }
@@ -151,73 +157,79 @@ function parsedMaxTokens(value: unknown): number | undefined {
 
 export function parseModelSecret(plaintext: string): StoredModelSecret {
   const trimmed = plaintext.trim();
-  if (trimmed.startsWith("{")) {
-    try {
-      const parsed = JSON.parse(trimmed) as Record<string, unknown>;
-      if (
-        parsed.kind === "openai_compatible" &&
-        typeof parsed.baseUrl === "string" &&
-        parsed.baseUrl.trim()
-      ) {
-        const apiKey = typeof parsed.apiKey === "string" ? parsed.apiKey : undefined;
-        const parsedThinkingLevel = ThinkingLevelSchema.nullable().safeParse(parsed.thinkingLevel);
-        const thinkingLevel = parsedThinkingLevel.success ? parsedThinkingLevel.data : undefined;
-        const maxTokens = parsedMaxTokens(parsed.maxTokens);
-        const contextWindow =
-          typeof parsed.contextWindow === "number" &&
-          Number.isInteger(parsed.contextWindow) &&
-          parsed.contextWindow >= 1 &&
-          parsed.contextWindow <= MAX_MODEL_CONTEXT_WINDOW
-            ? parsed.contextWindow
-            : undefined;
-        const visionModelIds = Array.isArray(parsed.visionModelIds)
-          ? parsed.visionModelIds.filter(
-              (modelId): modelId is string =>
-                typeof modelId === "string" && modelId.trim().length > 0,
-            )
-          : undefined;
-        const maxImagesPerPrompt =
-          typeof parsed.maxImagesPerPrompt === "number" &&
-          Number.isInteger(parsed.maxImagesPerPrompt) &&
-          parsed.maxImagesPerPrompt >= 1 &&
-          parsed.maxImagesPerPrompt <= 1000
-            ? parsed.maxImagesPerPrompt
-            : undefined;
-        return {
-          kind: "openai_compatible",
-          baseUrl: parsed.baseUrl.trim(),
-          ...(apiKey ? { apiKey } : {}),
-          ...(typeof parsed.reasoning === "boolean" ? { reasoning: parsed.reasoning } : {}),
-          ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
-          ...(maxTokens !== undefined ? { maxTokens } : {}),
-          ...(contextWindow !== undefined ? { contextWindow } : {}),
-          ...(visionModelIds ? { visionModelIds } : {}),
-          ...(maxImagesPerPrompt !== undefined ? { maxImagesPerPrompt } : {}),
-        };
-      }
-      if (parsed.kind === "api_key" && typeof parsed.key === "string" && parsed.key) {
-        const maxTokens = parsedMaxTokens(parsed.maxTokens);
-        return {
-          kind: "api_key",
-          key: parsed.key,
-          ...(maxTokens !== undefined ? { maxTokens } : {}),
-        };
-      }
-      const wrappedOAuth =
-        parsed.kind === "oauth" ? readOAuthCredential(parsed.credential) : undefined;
-      if (wrappedOAuth) {
-        const maxTokens = parsedMaxTokens(parsed.maxTokens);
-        return {
-          kind: "oauth",
-          credential: wrappedOAuth,
-          ...(maxTokens !== undefined ? { maxTokens } : {}),
-        };
-      }
-      const legacyOAuth = readOAuthCredential(parsed);
-      if (legacyOAuth) return { kind: "oauth", credential: legacyOAuth };
-    } catch {
-      // Treat malformed JSON as a literal API key.
+  if (!trimmed.startsWith("{")) return { kind: "api_key", key: plaintext };
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(trimmed) as Record<string, unknown>;
+  } catch {
+    // Treat malformed JSON as a literal API key.
+    return { kind: "api_key", key: plaintext };
+  }
+  if (parsed.kind === "openai_compatible") {
+    if (typeof parsed.baseUrl !== "string" || !parsed.baseUrl.trim()) {
+      throw new Error(CORRUPT_MODEL_SECRET_MESSAGE);
     }
+    const apiKey = typeof parsed.apiKey === "string" ? parsed.apiKey : undefined;
+    const parsedThinkingLevel = ThinkingLevelSchema.nullable().safeParse(parsed.thinkingLevel);
+    const thinkingLevel = parsedThinkingLevel.success ? parsedThinkingLevel.data : undefined;
+    const maxTokens = parsedMaxTokens(parsed.maxTokens);
+    const contextWindow =
+      typeof parsed.contextWindow === "number" &&
+      Number.isInteger(parsed.contextWindow) &&
+      parsed.contextWindow >= 1 &&
+      parsed.contextWindow <= MAX_MODEL_CONTEXT_WINDOW
+        ? parsed.contextWindow
+        : undefined;
+    const visionModelIds = Array.isArray(parsed.visionModelIds)
+      ? parsed.visionModelIds.filter(
+          (modelId): modelId is string => typeof modelId === "string" && modelId.trim().length > 0,
+        )
+      : undefined;
+    const maxImagesPerPrompt =
+      typeof parsed.maxImagesPerPrompt === "number" &&
+      Number.isInteger(parsed.maxImagesPerPrompt) &&
+      parsed.maxImagesPerPrompt >= 1 &&
+      parsed.maxImagesPerPrompt <= 1000
+        ? parsed.maxImagesPerPrompt
+        : undefined;
+    return {
+      kind: "openai_compatible",
+      baseUrl: parsed.baseUrl.trim(),
+      ...(apiKey ? { apiKey } : {}),
+      ...(typeof parsed.reasoning === "boolean" ? { reasoning: parsed.reasoning } : {}),
+      ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
+      ...(maxTokens !== undefined ? { maxTokens } : {}),
+      ...(contextWindow !== undefined ? { contextWindow } : {}),
+      ...(visionModelIds ? { visionModelIds } : {}),
+      ...(maxImagesPerPrompt !== undefined ? { maxImagesPerPrompt } : {}),
+    };
+  }
+  if (parsed.kind === "api_key") {
+    if (typeof parsed.key !== "string" || !parsed.key) {
+      throw new Error(CORRUPT_MODEL_SECRET_MESSAGE);
+    }
+    const maxTokens = parsedMaxTokens(parsed.maxTokens);
+    return {
+      kind: "api_key",
+      key: parsed.key,
+      ...(maxTokens !== undefined ? { maxTokens } : {}),
+    };
+  }
+  if (parsed.kind === "oauth") {
+    const credential = readOAuthCredential(parsed.credential);
+    if (!credential) throw new Error(CORRUPT_MODEL_SECRET_MESSAGE);
+    const maxTokens = parsedMaxTokens(parsed.maxTokens);
+    return {
+      kind: "oauth",
+      credential,
+      ...(maxTokens !== undefined ? { maxTokens } : {}),
+    };
+  }
+  // Legacy secrets serialize the bare OAuth credential without a kind wrapper.
+  if (parsed.type === "oauth") {
+    const credential = readOAuthCredential(parsed);
+    if (!credential) throw new Error(CORRUPT_MODEL_SECRET_MESSAGE);
+    return { kind: "oauth", credential };
   }
   return { kind: "api_key", key: plaintext };
 }
@@ -258,6 +270,35 @@ export function secretValuesToRedact(secret: StoredModelSecret): string[] {
   if (secret.kind === "api_key") return secret.key ? [secret.key] : [];
   if (secret.kind === "openai_compatible") return secret.apiKey ? [secret.apiKey] : [];
   return [secret.credential.access, secret.credential.refresh].filter(Boolean);
+}
+
+const OPENAI_AUTH_CLAIMS_NAMESPACE = "https://api.openai.com/auth";
+
+/**
+ * Reads the Codex access token's compute-residency claim. The raw value is
+ * forwarded unvalidated so future regions work without a client update; it
+ * never throws — a malformed token fails later in pi's own claim extraction.
+ */
+export function codexComputeResidency(accessToken: string | undefined): string | undefined {
+  const parts = accessToken?.split(".") ?? [];
+  const payload = parts.length === 3 ? parts[1] : undefined;
+  if (!payload) return undefined;
+  try {
+    const claims: unknown = JSON.parse(Buffer.from(payload, "base64url").toString());
+    if (!claims || typeof claims !== "object") return undefined;
+    const record = claims as Record<string, unknown>;
+    const namespaced = record[OPENAI_AUTH_CLAIMS_NAMESPACE];
+    const claim =
+      (namespaced && typeof namespaced === "object"
+        ? (namespaced as Record<string, unknown>).chatgpt_compute_residency
+        : undefined) ?? record.chatgpt_compute_residency;
+    if (typeof claim !== "string" || claim === "" || claim === "no_constraint") {
+      return undefined;
+    }
+    return claim;
+  } catch {
+    return undefined;
+  }
 }
 
 export function loadProviderOAuth(providerId: string): OAuthAuth | undefined {
@@ -322,6 +363,129 @@ export async function resolveModelApiKey(
 ): Promise<string> {
   const resolved = await resolveModelAuth(plaintext, provider, opts);
   return resolved.apiKey;
+}
+
+const modelCredentialLocks = new Map<string, Promise<void>>();
+
+/**
+ * Serialize every load-resolve-persist cycle for one stored credential so
+ * concurrent runs — or a detached refresh kick — cannot double-refresh or
+ * clobber each other's token write.
+ */
+export async function withModelCredentialLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const previous = modelCredentialLocks.get(key) ?? Promise.resolve();
+  let release!: () => void;
+  const current = previous.then(
+    () =>
+      new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+  );
+  modelCredentialLocks.set(key, current);
+  await previous;
+  try {
+    return await fn();
+  } finally {
+    release();
+    if (modelCredentialLocks.get(key) === current) modelCredentialLocks.delete(key);
+  }
+}
+
+/**
+ * The persist half of `resolveModelAuth(plaintext, provider, { persist })` for a
+ * stored credential — encrypts through the secret store and updates the secret
+ * row. Shared by the run path and the detached refresh kick so every token
+ * write goes through the same code.
+ */
+export function persistStoredModelSecret(
+  prisma: Pick<PrismaClient, "secret">,
+  secretStore: Pick<EncryptedSecretStore, "put">,
+  scope: { userId: string; spaceId: string },
+  secretId: string,
+): (next: string) => Promise<void> {
+  return async (next) => {
+    const stored = await secretStore.put(
+      next,
+      {
+        operationId: "cred",
+        traceId: "cred-refresh",
+        spaceId: scope.spaceId,
+        userId: scope.userId,
+        signal: new AbortController().signal,
+      },
+      secretId,
+    );
+    await prisma.secret.update({
+      where: { id: secretId },
+      data: { ciphertext: stored.ciphertext },
+    });
+  };
+}
+
+/**
+ * Re-run the runtime's locked resolve-and-refresh for a stored credential whose
+ * bearer expired, e.g. when a detached catalog read finds no usable token.
+ * `resolveModelAuth` refreshes only a near-expiry credential, so a kick queued
+ * behind a run's own refresh degrades to a no-op once the stored token is fresh.
+ * The catalog itself never writes credentials — this is the run path's writer.
+ */
+export async function refreshExpiredModelCredential(
+  prisma: Pick<PrismaClient, "secret">,
+  secretStore: Pick<EncryptedSecretStore, "load" | "put">,
+  scope: { userId: string; spaceId: string },
+  secretId: string,
+  provider: string,
+  opts?: Pick<ResolveModelOpts, "oauth" | "signal" | "now">,
+): Promise<void> {
+  await withModelCredentialLock(secretId, async () => {
+    const row = await prisma.secret.findFirst({
+      where: { id: secretId, userId: scope.userId, spaceId: null },
+      select: { id: true, ciphertext: true },
+    });
+    if (!row) return;
+    let plaintext: string;
+    try {
+      plaintext = secretStore.load(row.ciphertext, row.id);
+      if (parseModelSecret(plaintext).kind !== "oauth") return;
+    } catch {
+      return;
+    }
+    await resolveModelAuth(plaintext, provider, {
+      ...opts,
+      persist: persistStoredModelSecret(prisma, secretStore, scope, row.id),
+    });
+  });
+}
+
+const credentialRefreshKicks = new Map<string, Promise<void>>();
+
+/**
+ * Fire-and-forget `refreshExpiredModelCredential` for callers that must not
+ * wait on a token refresh (catalog reads serve the static answer this round).
+ * Concurrent kicks for one credential collapse into a single refresh; a settled
+ * kick frees the slot so the next expired read can retry.
+ */
+export function kickModelCredentialRefresh(
+  prisma: Pick<PrismaClient, "secret">,
+  secretStore: Pick<EncryptedSecretStore, "load" | "put">,
+  scope: { userId: string; spaceId: string },
+  secretId: string,
+  provider: string,
+  opts?: Pick<ResolveModelOpts, "oauth" | "signal" | "now">,
+): void {
+  if (credentialRefreshKicks.has(secretId)) return;
+  const kick = refreshExpiredModelCredential(prisma, secretStore, scope, secretId, provider, {
+    signal: opts?.signal ?? AbortSignal.timeout(REFRESH_KICK_TIMEOUT_MS),
+    ...(opts?.oauth ? { oauth: opts.oauth } : {}),
+    ...(opts?.now !== undefined ? { now: opts.now } : {}),
+  })
+    .catch(() => undefined)
+    .finally(() => {
+      if (credentialRefreshKicks.get(secretId) === kick) {
+        credentialRefreshKicks.delete(secretId);
+      }
+    });
+  credentialRefreshKicks.set(secretId, kick);
 }
 
 export class PiOAuthLogins {

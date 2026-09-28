@@ -19,6 +19,7 @@ import {
   resolvePersonaColorDef,
 } from "@rakazo/ui-web";
 import {
+  ChevronLeft,
   Download,
   Filter,
   LayoutGrid,
@@ -31,14 +32,15 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { AppRail } from "../components/AppRail";
 import { PdfViewer } from "../components/PdfViewer";
 import { SandboxedHtmlViewer } from "../components/SandboxedHtmlViewer";
 import { decodeArtifactBase64, downloadArtifactBytes } from "../lib/artifact-open";
 import { takeInitialBootstrap } from "../lib/bootstrap";
+import { desktopBridge } from "../lib/desktop";
 import { formatRelativeTime } from "../lib/relative-time";
 import { rpc } from "../lib/rpc";
 import { useObjectUrl } from "../lib/use-object-url";
+import { WindowChrome } from "./WindowChrome";
 
 type ViewMode = "grid" | "list";
 type DateFilter = "all" | "today" | "week" | "month";
@@ -209,126 +211,135 @@ export function ArtifactsPage() {
   }
 
   return (
-    <div className="flex h-full min-w-0 bg-background text-foreground/90">
-      <AppRail active="artifacts" />
-      <div className="flex min-w-0 flex-1 flex-col">
-        <header className="border-b border-border px-6 py-4">
-          <div className="flex items-center justify-between gap-3">
+    <div className="flex h-full min-w-0 flex-col bg-background text-foreground/90">
+      <header className="app-drag border-b border-border px-4 py-4 md:px-6">
+        {/* Wraps so window controls and the way back stay on screen with Filters. */}
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+          <div className="flex items-center gap-2">
+            {/* This route is the window's leading edge, so Electron window controls sit in the header. */}
+            {desktopBridge() ? <WindowChrome /> : null}
+            <Link
+              to="/app"
+              className="app-no-drag flex shrink-0 items-center gap-0.5 rounded-lg py-1 pe-1.5 text-[13px] font-medium text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+            >
+              <ChevronLeft size={16} strokeWidth={1.9} aria-hidden="true" />
+              <Trans>Bots</Trans>
+            </Link>
             <h1 className="text-xl font-semibold">
               <Trans>Artifacts</Trans>
             </h1>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                aria-pressed={filtersOpen}
-                onClick={() => setFiltersOpen((open) => !open)}
-                className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[13px] font-medium transition-colors ${
-                  filtersOpen
-                    ? "border-transparent bg-primary text-primary-foreground"
-                    : "border-border text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-                }`}
-              >
-                <Filter size={14} strokeWidth={1.9} />
-                <Trans>Filters</Trans>
-              </button>
-              {!artifactId ? (
-                <div className="flex items-center gap-1 rounded-lg border border-border p-0.5">
-                  <ViewModeButton
-                    active={viewMode === "grid"}
-                    label={t`Card view`}
-                    onClick={() => setMode("grid")}
-                  >
-                    <LayoutGrid size={15} strokeWidth={1.9} />
-                  </ViewModeButton>
-                  <ViewModeButton
-                    active={viewMode === "list"}
-                    label={t`List view`}
-                    onClick={() => setMode("list")}
-                  >
-                    <List size={15} strokeWidth={1.9} />
-                  </ViewModeButton>
-                </div>
-              ) : null}
-            </div>
           </div>
-
-          {filtersOpen ? (
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              <div className="relative w-full max-w-[260px]">
-                <Search
-                  size={14}
-                  strokeWidth={1.9}
-                  className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-muted-foreground"
-                />
-                <input
-                  type="search"
-                  value={searchQuery}
-                  onChange={(event) => setSearchQuery(event.target.value)}
-                  placeholder={t`Search artifacts…`}
-                  className="w-full rounded-lg border border-border bg-background py-1.5 ps-8 pe-3 text-[13px] outline-none focus:border-ring"
-                />
+          <div className="app-no-drag flex shrink-0 items-center gap-2">
+            <button
+              type="button"
+              aria-pressed={filtersOpen}
+              onClick={() => setFiltersOpen((open) => !open)}
+              className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[13px] font-medium transition-colors ${
+                filtersOpen
+                  ? "border-transparent bg-primary text-primary-foreground"
+                  : "border-border text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+              }`}
+            >
+              <Filter size={14} strokeWidth={1.9} />
+              <Trans>Filters</Trans>
+            </button>
+            {!artifactId ? (
+              <div className="flex items-center gap-1 rounded-lg border border-border p-0.5">
+                <ViewModeButton
+                  active={viewMode === "grid"}
+                  label={t`Card view`}
+                  onClick={() => setMode("grid")}
+                >
+                  <LayoutGrid size={15} strokeWidth={1.9} />
+                </ViewModeButton>
+                <ViewModeButton
+                  active={viewMode === "list"}
+                  label={t`List view`}
+                  onClick={() => setMode("list")}
+                >
+                  <List size={15} strokeWidth={1.9} />
+                </ViewModeButton>
               </div>
-              <NativeSelect
-                aria-label={t`Filter by date`}
-                className="w-auto text-[13px]"
-                value={dateFilter}
-                onChange={(event) => setDateFilter(event.target.value as DateFilter)}
-              >
-                <NativeSelectOption value="all">{t`All time`}</NativeSelectOption>
-                <NativeSelectOption value="today">{t`Today`}</NativeSelectOption>
-                <NativeSelectOption value="week">{t`This week`}</NativeSelectOption>
-                <NativeSelectOption value="month">{t`This month`}</NativeSelectOption>
-              </NativeSelect>
-              <FilterChip active={activeBotId === null} onClick={() => setActiveBotId(null)}>
-                <Trans>All bots</Trans>
-              </FilterChip>
-              {bots.map((bot) => (
-                <BotFilterChip
-                  key={bot.id}
-                  bot={bot}
-                  active={activeBotId === bot.id}
-                  onClick={() => setActiveBotId(bot.id)}
-                />
-              ))}
-            </div>
-          ) : null}
-        </header>
-
-        <div className="flex min-h-0 flex-1 overflow-hidden">
-          {artifactId ? (
-            <>
-              {!maximized ? (
-                <IndexPane
-                  items={filteredItems}
-                  loadError={loadError}
-                  botsById={botsById}
-                  selectedId={artifactId}
-                  onRequestDelete={setPendingDelete}
-                  nextCursor={nextCursor}
-                  loadingMore={loadingMore}
-                  onLoadMore={() => void loadMore()}
-                />
-              ) : null}
-              <PreviewPane
-                key={artifactId}
-                artifactId={artifactId}
-                maximized={maximized}
-                onToggleMaximize={() => setMaximized((value) => !value)}
-              />
-            </>
-          ) : (
-            <BrowsingPane
-              items={filteredItems}
-              loadError={loadError}
-              viewMode={viewMode}
-              botsById={botsById}
-              onRequestDelete={setPendingDelete}
-              nextCursor={nextCursor}
-              loadingMore={loadingMore}
-              onLoadMore={() => void loadMore()}
-            />
-          )}
+            ) : null}
+          </div>
         </div>
+
+        {filtersOpen ? (
+          <div className="app-no-drag mt-3 flex flex-wrap items-center gap-2">
+            <div className="relative w-full max-w-[260px]">
+              <Search
+                size={14}
+                strokeWidth={1.9}
+                className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+              />
+              <input
+                type="search"
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder={t`Search artifacts…`}
+                className="w-full rounded-lg border border-border bg-background py-1.5 ps-8 pe-3 text-[13px] outline-none focus:border-ring"
+              />
+            </div>
+            <NativeSelect
+              aria-label={t`Filter by date`}
+              className="w-auto text-[13px]"
+              value={dateFilter}
+              onChange={(event) => setDateFilter(event.target.value as DateFilter)}
+            >
+              <NativeSelectOption value="all">{t`All time`}</NativeSelectOption>
+              <NativeSelectOption value="today">{t`Today`}</NativeSelectOption>
+              <NativeSelectOption value="week">{t`This week`}</NativeSelectOption>
+              <NativeSelectOption value="month">{t`This month`}</NativeSelectOption>
+            </NativeSelect>
+            <FilterChip active={activeBotId === null} onClick={() => setActiveBotId(null)}>
+              <Trans>All bots</Trans>
+            </FilterChip>
+            {bots.map((bot) => (
+              <BotFilterChip
+                key={bot.id}
+                bot={bot}
+                active={activeBotId === bot.id}
+                onClick={() => setActiveBotId(bot.id)}
+              />
+            ))}
+          </div>
+        ) : null}
+      </header>
+
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        {artifactId ? (
+          <>
+            {!maximized ? (
+              <IndexPane
+                items={filteredItems}
+                loadError={loadError}
+                botsById={botsById}
+                selectedId={artifactId}
+                onRequestDelete={setPendingDelete}
+                nextCursor={nextCursor}
+                loadingMore={loadingMore}
+                onLoadMore={() => void loadMore()}
+              />
+            ) : null}
+            <PreviewPane
+              key={artifactId}
+              artifactId={artifactId}
+              maximized={maximized}
+              onToggleMaximize={() => setMaximized((value) => !value)}
+            />
+          </>
+        ) : (
+          <BrowsingPane
+            items={filteredItems}
+            loadError={loadError}
+            viewMode={viewMode}
+            botsById={botsById}
+            onRequestDelete={setPendingDelete}
+            nextCursor={nextCursor}
+            loadingMore={loadingMore}
+            onLoadMore={() => void loadMore()}
+          />
+        )}
       </div>
 
       {pendingDelete ? (

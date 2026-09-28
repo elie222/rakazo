@@ -97,6 +97,62 @@ describe("built-in provider output limits", () => {
   });
 });
 
+describe("openai-codex API key guard", () => {
+  const codexOauth = serializeModelSecret({
+    kind: "oauth",
+    credential: { type: "oauth", access: "access", refresh: "refresh", expires: 10 },
+  });
+
+  it("rejects an API key because the Codex transport needs the sign-in JWT", () => {
+    expect(() =>
+      buildModelConnectPlaintext({ provider: "openai-codex", apiKey: "sk-test-key-123" }),
+    ).toThrow(/ChatGPT subscription sign-in is required/);
+  });
+
+  it("rejects replacing a ChatGPT sign-in with an API key", () => {
+    expect(() =>
+      buildModelConnectPlaintext(
+        { provider: "openai-codex", apiKey: "sk-test-key-123" },
+        codexOauth,
+      ),
+    ).toThrow(/ChatGPT subscription sign-in is required/);
+  });
+
+  it("points a keyless first connect at subscription sign-in instead of asking for a key", () => {
+    expect(() => buildModelConnectPlaintext({ provider: "openai-codex", maxTokens: 8192 })).toThrow(
+      /ChatGPT subscription sign-in is required/,
+    );
+  });
+
+  it("rejects re-saving a legacy stored API key on a keyless connect", () => {
+    const legacyKey = buildModelConnectPlaintext({
+      provider: "anthropic",
+      apiKey: "sk-legacy-key",
+    });
+    expect(() =>
+      buildModelConnectPlaintext({ provider: "openai-codex", maxTokens: 8192 }, legacyKey),
+    ).toThrow(/ChatGPT subscription sign-in is required/);
+  });
+
+  it("carries a previous ChatGPT sign-in forward when only the output limit changes", () => {
+    expect(
+      parseModelSecret(
+        buildModelConnectPlaintext({ provider: "openai-codex", maxTokens: 8192 }, codexOauth),
+      ),
+    ).toEqual({
+      kind: "oauth",
+      credential: { type: "oauth", access: "access", refresh: "refresh", expires: 10 },
+      maxTokens: 8192,
+    });
+  });
+
+  it("keeps other providers' API keys working", () => {
+    expect(buildModelConnectPlaintext({ provider: "anthropic", apiKey: "sk-test-key-123" })).toBe(
+      "sk-test-key-123",
+    );
+  });
+});
+
 describe("modelCredentialDto", () => {
   it("returns stored baseUrl and modelId for openai-compatible credentials", () => {
     const plaintext = serializeModelSecret({

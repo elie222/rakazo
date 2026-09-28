@@ -22,6 +22,7 @@ import type { Prisma, PrismaClient } from "./client.js";
 import { expireComputerExecutionLeases } from "./computers.js";
 import {
   assertRunCanWriteHistory,
+  assertRunIsCancelled,
   createThreadMessageInTransaction,
   RunHistoryWriteError,
 } from "./messages.js";
@@ -1258,7 +1259,13 @@ export async function appendEventInTransaction(
     data: { nextEventSeq: { increment: 1 } },
     select: { nextEventSeq: true },
   });
-  await assertRunCanWriteHistory(tx, input.runId);
+  // run.cancelled is appended after the run row already reads cancelled, so it
+  // asserts the terminal status where every other event needs a writable run.
+  if (input.type === "run.cancelled") {
+    await assertRunIsCancelled(tx, input.runId);
+  } else {
+    await assertRunCanWriteHistory(tx, input.runId);
+  }
   // Unpaired UTF-16 surrogates (e.g. a split emoji high half) are invalid JSON for Postgres.
   const payload = sanitizeJsonValue(input.payload);
   return tx.event.create({

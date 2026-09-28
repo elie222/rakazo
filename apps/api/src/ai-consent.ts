@@ -143,9 +143,14 @@ export async function aiConsentStatus(
         })
       : [];
     const baseUrls = new Map(
-      secrets.map((secret) => {
-        const parsed = parseModelSecret(deps.secrets.load(secret.ciphertext, secret.id));
-        return [secret.id, parsed.kind === "openai_compatible" ? parsed.baseUrl : undefined];
+      secrets.map((secret): [string, string | undefined] => {
+        try {
+          const parsed = parseModelSecret(deps.secrets.load(secret.ciphertext, secret.id));
+          return [secret.id, parsed.kind === "openai_compatible" ? parsed.baseUrl : undefined];
+        } catch {
+          // Unreadable credentials still disclose by provider; the base URL is unknown.
+          return [secret.id, undefined];
+        }
       }),
     );
     for (const model of models) {

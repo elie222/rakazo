@@ -160,8 +160,9 @@ export function mergeThreadSnapshot(
  *
  * A refresh that started earlier can still return running+busyBotName after the client
  * already applied waiting_takeover. Cursor comparisons only apply within the same thread.
- * Stop clears run/busy optimistically in the shell because it has no terminal event; an
- * older-cursor refresh must keep that cleared local state (see Shell stopRun).
+ * Stop clears run/busy optimistically in the shell so an in-flight refresh cannot revive
+ * the run before its run.cancelled event lands; an older-cursor refresh must keep that
+ * cleared local state (see Shell stopRun).
  */
 export function reconcileRefreshedThread(
   prev: ThreadSnapshot | null,

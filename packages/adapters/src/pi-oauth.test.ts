@@ -1,11 +1,14 @@
 import type { Credential, OAuthCredential } from "@earendil-works/pi-ai";
-import { describe, expect, it } from "vitest";
+import type { PrismaClient } from "@rakazo/db";
+import { describe, expect, it, vi } from "vitest";
 import {
   CHATGPT_OAUTH_PROVIDER,
   COPILOT_OAUTH_PROVIDER,
+  kickModelCredentialRefresh,
   type PiOAuthBegin,
   PiOAuthLogins,
   parseModelSecret,
+  refreshExpiredModelCredential,
   resolveModelApiKey,
   resolveModelAuth,
   secretValuesToRedact,
@@ -109,6 +112,37 @@ describe("model secrets", () => {
     });
   });
 
+  it("rejects credential JSON that declares a kind but misses its fields", () => {
+    expect(() => parseModelSecret(JSON.stringify({ kind: "oauth" }))).toThrow(/corrupt/);
+    expect(() =>
+      parseModelSecret(JSON.stringify({ kind: "oauth", credential: { type: "oauth" } })),
+    ).toThrow(/corrupt/);
+    expect(() => parseModelSecret(JSON.stringify({ kind: "api_key" }))).toThrow(/corrupt/);
+    expect(() => parseModelSecret(JSON.stringify({ kind: "api_key", key: "" }))).toThrow(/corrupt/);
+    expect(() => parseModelSecret(JSON.stringify({ kind: "openai_compatible" }))).toThrow(
+      /corrupt/,
+    );
+  });
+
+  it("rejects a broken legacy OAuth credential object", () => {
+    expect(() =>
+      parseModelSecret(JSON.stringify({ type: "oauth", access: "access-token" })),
+    ).toThrow(/corrupt/);
+  });
+
+  it("keeps JSON without a recognized credential kind as a literal API key", () => {
+    const unknownKind = JSON.stringify({ kind: "bearer", token: "abc" });
+    expect(parseModelSecret(unknownKind)).toEqual({ kind: "api_key", key: unknownKind });
+    const objectKey = JSON.stringify({ hello: "world" });
+    expect(parseModelSecret(objectKey)).toEqual({ kind: "api_key", key: objectKey });
+    expect(parseModelSecret("{broken-json")).toEqual({ kind: "api_key", key: "{broken-json" });
+  });
+
+  it("fails a corrupt stored credential instead of using it as an API key", async () => {
+    const corrupt = JSON.stringify({ kind: "oauth", credential: { type: "oauth" } });
+    await expect(resolveModelApiKey(corrupt, CHATGPT_OAUTH_PROVIDER)).rejects.toThrow(/corrupt/);
+  });
+
   it("refreshes expired OAuth tokens and persists them", async () => {
     const credential = oauthCred({ access: "old", expires: 1 });
     let saved = "";
@@ -150,6 +184,219 @@ describe("model secrets", () => {
       maxTokens: 16384,
       credential: expect.objectContaining({ access: "new" }),
     });
+  });
+});
+
+describe("refreshExpiredModelCredential", () => {
+  const scope = { userId: "user-1", spaceId: "ws-1" };
+
+  function secretRow(initial: string) {
+    let current = initial;
+    const prisma = {
+      secret: {
+        findFirst: vi.fn(async () => ({ id: "secret-1", ciphertext: "cipher" })),
+        update: vi.fn(async () => ({})),
+      },
+    } as unknown as PrismaClient;
+    const secretStore = {
+      load: vi.fn(() => current),
+      put: vi.fn(async (next: string) => {
+        current = next;
+        return { id: "secret-1", ciphertext: `cipher:${next.length}` };
+      }),
+    };
+    return {
+      prisma,
+      secretStore,
+      update: prisma.secret.update as unknown as ReturnType<typeof vi.fn>,
+    };
+  }
+
+  const stubOAuth = (refresh: (credential: OAuthCredential) => Promise<OAuthCredential>) => ({
+    refresh: vi.fn(refresh),
+    toAuth: vi.fn(async (credential: OAuthCredential) => ({ apiKey: credential.access })),
+  });
+
+  it("refreshes and persists an expired OAuth credential", async () => {
+    const { prisma, secretStore, update } = secretRow(
+      serializeModelSecret({
+        kind: "oauth",
+        credential: oauthCred({ access: "old", expires: 1 }),
+      }),
+    );
+    const oauth = stubOAuth(async () =>
+      oauthCred({ access: "new", expires: Date.now() + 3_600_000 }),
+    );
+
+    await refreshExpiredModelCredential(
+      prisma,
+      secretStore,
+      scope,
+      "secret-1",
+      CHATGPT_OAUTH_PROVIDER,
+      { oauth },
+    );
+
+    expect(oauth.refresh).toHaveBeenCalledTimes(1);
+    expect(secretStore.put).toHaveBeenCalledTimes(1);
+    expect(update).toHaveBeenCalledWith({
+      where: { id: "secret-1" },
+      data: { ciphertext: expect.any(String) },
+    });
+
+    // The stored credential is now fresh, so a queued second run is a no-op.
+    await refreshExpiredModelCredential(
+      prisma,
+      secretStore,
+      scope,
+      "secret-1",
+      CHATGPT_OAUTH_PROVIDER,
+      { oauth },
+    );
+    expect(oauth.refresh).toHaveBeenCalledTimes(1);
+    expect(secretStore.put).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves a still-valid bearer and non-OAuth secrets untouched", async () => {
+    const fresh = secretRow(
+      serializeModelSecret({
+        kind: "oauth",
+        credential: oauthCred({ access: "kept", expires: Date.now() + 3_600_000 }),
+      }),
+    );
+    const oauth = stubOAuth(async () => oauthCred({ access: "new" }));
+    await refreshExpiredModelCredential(
+      fresh.prisma,
+      fresh.secretStore,
+      scope,
+      "secret-1",
+      CHATGPT_OAUTH_PROVIDER,
+      { oauth },
+    );
+    expect(oauth.refresh).not.toHaveBeenCalled();
+    expect(fresh.secretStore.put).not.toHaveBeenCalled();
+
+    const apiKey = secretRow("sk-test-plain-key");
+    await refreshExpiredModelCredential(
+      apiKey.prisma,
+      apiKey.secretStore,
+      scope,
+      "secret-1",
+      CHATGPT_OAUTH_PROVIDER,
+      { oauth },
+    );
+    expect(oauth.refresh).not.toHaveBeenCalled();
+    expect(apiKey.secretStore.put).not.toHaveBeenCalled();
+  });
+
+  it("serializes on the credential lock so concurrent kicks refresh once", async () => {
+    const { prisma, secretStore } = secretRow(
+      serializeModelSecret({
+        kind: "oauth",
+        credential: oauthCred({ access: "old", expires: 1 }),
+      }),
+    );
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const oauth = stubOAuth(async () => {
+      await gate;
+      return oauthCred({ access: "new", expires: Date.now() + 3_600_000 });
+    });
+
+    const first = refreshExpiredModelCredential(
+      prisma,
+      secretStore,
+      scope,
+      "secret-1",
+      CHATGPT_OAUTH_PROVIDER,
+      { oauth },
+    );
+    const second = refreshExpiredModelCredential(
+      prisma,
+      secretStore,
+      scope,
+      "secret-1",
+      CHATGPT_OAUTH_PROVIDER,
+      { oauth },
+    );
+    await vi.waitFor(() => expect(oauth.refresh).toHaveBeenCalledTimes(1));
+    release();
+    await Promise.all([first, second]);
+
+    // The second call waited on the lock, then saw the already-fresh token.
+    expect(oauth.refresh).toHaveBeenCalledTimes(1);
+    expect(secretStore.put).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("kickModelCredentialRefresh", () => {
+  const scope = { userId: "user-1", spaceId: "ws-1" };
+
+  it("collapses concurrent kicks into one refresh and frees the slot after", async () => {
+    let current = serializeModelSecret({
+      kind: "oauth",
+      credential: oauthCred({ access: "old", expires: 1 }),
+    });
+    const prisma = {
+      secret: {
+        findFirst: vi.fn(async () => ({ id: "secret-1", ciphertext: "cipher" })),
+        update: vi.fn(async () => ({})),
+      },
+    } as unknown as PrismaClient;
+    const secretStore = {
+      load: vi.fn(() => current),
+      put: vi.fn(async (next: string) => {
+        current = next;
+        return { id: "secret-1", ciphertext: "next" };
+      }),
+    };
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const oauth = {
+      refresh: vi.fn(async () => {
+        await gate;
+        return oauthCred({ access: "new", expires: Date.now() + 3_600_000 });
+      }),
+      toAuth: vi.fn(async (credential: OAuthCredential) => ({ apiKey: credential.access })),
+    };
+    const opts = { oauth };
+
+    kickModelCredentialRefresh(
+      prisma,
+      secretStore,
+      scope,
+      "secret-1",
+      CHATGPT_OAUTH_PROVIDER,
+      opts,
+    );
+    kickModelCredentialRefresh(
+      prisma,
+      secretStore,
+      scope,
+      "secret-1",
+      CHATGPT_OAUTH_PROVIDER,
+      opts,
+    );
+    await vi.waitFor(() => expect(oauth.refresh).toHaveBeenCalledTimes(1));
+    release();
+    await vi.waitFor(() => expect(secretStore.put).toHaveBeenCalledTimes(1));
+    expect(oauth.refresh).toHaveBeenCalledTimes(1);
+
+    // Let the kick's finally settle so the in-flight slot frees before re-kicking.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    // Once the kick settles a later expired read may kick again — this one
+    // finds the fresh token and refreshes nothing.
+    kickModelCredentialRefresh(
+      prisma,
+      secretStore,
+      scope,
+      "secret-1",
+      CHATGPT_OAUTH_PROVIDER,
+      opts,
+    );
+    await vi.waitFor(() => expect(oauth.toAuth).toHaveBeenCalledTimes(2));
+    expect(oauth.refresh).toHaveBeenCalledTimes(1);
   });
 });
 

@@ -1,19 +1,31 @@
 import { Dialog, DialogClose, DialogContent, DialogTitle } from "@rakazo/ui-web";
 import type { ComponentPropsWithoutRef, ReactElement, ReactNode } from "react";
-import { Children, isValidElement, memo, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Children,
+  createContext,
+  isValidElement,
+  memo,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { CheckIcon, CopyIcon } from "./icons";
 import type { ExtractedTable, HastNode, TableAlign, TableSortDirection } from "./table-utils";
 import {
-  columnMinWidths,
   columnSortLabel,
   extractTable,
-  isNumericColumn,
   nextSort,
   sortRows,
   TABLE_PAGE_SIZE,
   tableToCsv,
   tableToTsv,
 } from "./table-utils";
+
+/** The markdown source a render was parsed from — lets a reparsed-but-
+    unchanged table reuse its extraction by content instead of node identity. */
+export const MarkdownTableSourceContext = createContext("");
 
 /**
  * Renders a GFM markdown table as an interactive data card. Extracted plain
@@ -30,7 +42,16 @@ export const MarkdownTable = memo(function MarkdownTable({
   tableProps?: ComponentPropsWithoutRef<"table">;
   children?: ReactNode;
 }) {
-  const extracted = useMemo(() => extractTable(node), [node]);
+  const source = useContext(MarkdownTableSourceContext);
+  const start = node?.position?.start?.offset;
+  const end = node?.position?.end?.offset;
+  const sourceKey =
+    typeof start === "number" && typeof end === "number" && start <= end && end <= source.length
+      ? source.slice(start, end)
+      : null;
+  // sourceKey pins the extraction to the source text; node identity is only
+  // the fallback when the parser supplies no position.
+  const extracted = useMemo(() => extractTable(node), [sourceKey ?? node]);
   const rendered = useMemo(() => extractRenderedCells(children), [children]);
   if (!extracted) return <table {...tableProps}>{children}</table>;
   return (
@@ -49,8 +70,8 @@ export const TableCard = memo(function TableCard({
   renderedHeaders?: ReactNode[];
   renderedRows?: ReactNode[][];
 }) {
-  const { columns, aligns, rows } = table;
-  const schemaKey = JSON.stringify([columns, aligns]);
+  const { columns, aligns, rows, schemaKey, dataSignature, numericColumns, minWidths, rowKeys } =
+    table;
   const [sort, setSort] = useState<SortState>(null);
   const [page, setPage] = useState(0);
   const [expanded, setExpanded] = useState(false);
@@ -61,29 +82,8 @@ export const TableCard = memo(function TableCard({
   const expandButtonRef = useRef<HTMLButtonElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
 
-  const dataSignature = JSON.stringify([columns, rows]);
   const copied = copiedSignature === dataSignature;
 
-  const numericColumns = useMemo(() => {
-    const numeric = new Set<number>();
-    columns.forEach((_, i) => {
-      if (isNumericColumn(rows, i)) numeric.add(i);
-    });
-    return numeric;
-  }, [columns, rows]);
-
-  const minWidths = useMemo(() => columnMinWidths(columns, rows), [columns, rows]);
-  const rowKeys = useMemo(() => {
-    const occurrences = new Map<string, number>();
-    return new Map(
-      rows.map((row) => {
-        const signature = JSON.stringify(row);
-        const occurrence = occurrences.get(signature) ?? 0;
-        occurrences.set(signature, occurrence + 1);
-        return [row, `${signature}:${occurrence}`] as const;
-      }),
-    );
-  }, [rows]);
   const renderedRowsBySource = useMemo(
     () => new Map(rows.map((row, index) => [row, renderedRows?.[index]])),
     [renderedRows, rows],
@@ -315,7 +315,7 @@ function TableView({
   aligns: TableAlign[];
   rows: string[][];
   rowOffset: number;
-  numericColumns: Set<number>;
+  numericColumns: ReadonlySet<number>;
   minWidths: Record<number, string>;
   renderedHeaders?: ReactNode[];
   renderedRows: Map<string[], ReactNode[] | undefined>;

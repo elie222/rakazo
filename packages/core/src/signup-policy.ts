@@ -42,3 +42,49 @@ export function signupPolicyFromEnv(input: {
     allowlist: parseAllowlist(input.signupAllowlist),
   };
 }
+
+/**
+ * Non-empty SIGNUP_ALLOWLIST replaces the stored list on each API start.
+ * A blank or unset value does not clear a stored list.
+ * Uninitialized rows are copied separately so an upgrade still seeds both flags once.
+ */
+export function signupAllowlistBootUpdate(
+  storedAllowlist: string,
+  envAllowlist: string | undefined,
+  policyInitialized: boolean,
+): string | null {
+  if (!policyInitialized) return null;
+  const next = parseAllowlist(envAllowlist).join(",");
+  if (!next) return null;
+  if (next === parseAllowlist(storedAllowlist).join(",")) return null;
+  return next;
+}
+
+/** How an allowlisted signup proceeds when delivery may be missing. */
+export function allowlistedSignupAdmission(input: {
+  allowlistSize: number;
+  hasEmailDelivery: boolean;
+  existingHumanCount: number;
+}): "open" | "verify" | "needs-delivery" {
+  if (input.allowlistSize === 0) return "open";
+  if (input.hasEmailDelivery) return "verify";
+  if (input.existingHumanCount === 0) return "open";
+  return "needs-delivery";
+}
+
+/**
+ * Decision after the deployment-settings row is locked. `claim` is the one
+ * update that may set the owner; a concurrent signup loses that update.
+ * Any other human account denies the exemption, verified or not, so an old
+ * unverified signup cannot take the seat when delivery is later removed.
+ */
+export function firstAccountClaimDecision(input: {
+  userId: string;
+  ownerUserId: string | null;
+  otherHuman: boolean;
+}): "deny" | "claim" | "renew" {
+  if (input.otherHuman) return "deny";
+  if (input.ownerUserId && input.ownerUserId !== input.userId) return "deny";
+  if (input.ownerUserId === input.userId) return "renew";
+  return "claim";
+}

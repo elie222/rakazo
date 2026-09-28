@@ -164,6 +164,85 @@ const groupTargetInclude = {
   },
 } as const;
 
+type RunTeardownTarget = {
+  id: string;
+  homeKey: string;
+  kind: string;
+  providerRef: string | null;
+  botId: string;
+  runId: string;
+  fence: number;
+};
+
+/** `expiresAfter` keeps leases newer than that instant. Resume passes the cleanup epoch. */
+async function snapshotRunTeardownTargets(
+  tx: Prisma.TransactionClient,
+  runIds: string[],
+  expiresAfter?: Date,
+  ignoreStaleLegacy = false,
+): Promise<{ leasedRunIds: string[]; targets: RunTeardownTarget[] }> {
+  if (runIds.length === 0) return { leasedRunIds: [], targets: [] };
+  const leases = await tx.computerExecutionLease.findMany({
+    where: {
+      runId: { in: runIds },
+      ...(expiresAfter ? { expiresAt: { gt: expiresAfter } } : {}),
+    },
+    select: { computerId: true, botId: true, runId: true, fence: true },
+  });
+  const leasedRunIds = [...new Set(leases.map((lease) => lease.runId))];
+  // Reclaim rewrites the lease runId. Resume must not follow a leftover executionRunId.
+  const legacyRunIds = ignoreStaleLegacy ? leasedRunIds : runIds;
+  if (legacyRunIds.length === 0) return { leasedRunIds, targets: [] };
+
+  const leaseComputerIds = [...new Set(leases.map((lease) => lease.computerId))];
+  const computers = await tx.computer.findMany({
+    where: leaseComputerIds.length
+      ? { OR: [{ id: { in: leaseComputerIds } }, { executionRunId: { in: legacyRunIds } }] }
+      : { executionRunId: { in: legacyRunIds } },
+    select: {
+      id: true,
+      homeKey: true,
+      kind: true,
+      providerRef: true,
+      executionBotId: true,
+      executionRunId: true,
+    },
+  });
+  const computerById = new Map(computers.map((computer) => [computer.id, computer]));
+  const targets: RunTeardownTarget[] = [];
+  const seen = new Set<string>();
+  const addTarget = (computerId: string, botId: string, runId: string, fence: number) => {
+    const computer = computerById.get(computerId);
+    if (!computer || seen.has(`${computerId}:${runId}`)) return;
+    seen.add(`${computerId}:${runId}`);
+    const { id, homeKey, kind, providerRef } = computer;
+    targets.push({ id, homeKey, kind, providerRef, botId, runId, fence });
+  };
+  for (const lease of leases) addTarget(lease.computerId, lease.botId, lease.runId, lease.fence);
+  for (const computer of computers) {
+    if (!computer.executionBotId || !computer.executionRunId) continue;
+    if (!legacyRunIds.includes(computer.executionRunId)) continue;
+    addTarget(computer.id, computer.executionBotId, computer.executionRunId, 0);
+  }
+  return { leasedRunIds, targets };
+}
+
+async function resumeArchivedGroupTeardown(tx: Prisma.TransactionClient, threadId: string) {
+  const cancelled = await tx.run.findMany({
+    where: { threadId, status: "cancelled" },
+    select: { id: true },
+  });
+  // Cleanup sets expiresAt to epoch and leaves runId. A TTL lapse is still after that.
+  const { leasedRunIds, targets } = await snapshotRunTeardownTargets(
+    tx,
+    cancelled.map((run) => run.id),
+    new Date(0),
+    true,
+  );
+  if (leasedRunIds.length === 0) throw new IsolationError();
+  return { cancelledRunIds: leasedRunIds, computers: targets };
+}
+
 export function createGroupRepos(prisma: PrismaClient) {
   async function listSpaceGroupsForSpaces(actor: Actor, spaceIds: string[]): Promise<SpaceGroup[]> {
     if (spaceIds.length === 0) return [];
@@ -375,11 +454,11 @@ export function createGroupRepos(prisma: PrismaClient) {
             id: groupId,
             spaceId: actor.spaceId,
             userId: actor.userId,
-            archivedAt: null,
           },
-          select: { thread: { select: { id: true } } },
+          select: { archivedAt: true, thread: { select: { id: true } } },
         });
         if (!current?.thread) throw new IsolationError();
+        if (current.archivedAt) return resumeArchivedGroupTeardown(tx, current.thread.id);
 
         const activeRuns = await tx.run.findMany({
           where: {
@@ -390,42 +469,12 @@ export function createGroupRepos(prisma: PrismaClient) {
         });
         const runIds = activeRuns.map((run) => run.id);
         const now = new Date();
-        const computers = runIds.length
-          ? await tx.computer.findMany({
-              where: { executionRunId: { in: runIds } },
-              select: {
-                id: true,
-                homeKey: true,
-                kind: true,
-                providerRef: true,
-                executionBotId: true,
-                executionRunId: true,
-              },
-            })
-          : [];
-        const leases = runIds.length
-          ? await tx.computerExecutionLease.findMany({
-              where: { runId: { in: runIds } },
-              select: { computerId: true, runId: true, fence: true },
-            })
-          : [];
-        const leaseByComputerId = new Map(leases.map((lease) => [lease.computerId, lease]));
-        const computersWithLease = computers.map((computer) => ({
-          ...computer,
-          executionFence: leaseByComputerId.get(computer.id)?.fence ?? 0,
-        }));
+        // Snapshot before cancellation commits. An expired lease that has not been
+        // reclaimed still names this run's screen.
+        const { targets } = await snapshotRunTeardownTargets(tx, runIds);
 
         if (runIds.length) {
           await cancelRunsInTransaction(tx, activeRuns, now);
-          await expireComputerExecutionLeases(tx, { runId: { in: runIds } });
-          await tx.computer.updateMany({
-            where: { executionRunId: { in: runIds } },
-            data: {
-              executionRunId: null,
-              executionBotId: null,
-              executionLeaseExpiresAt: null,
-            },
-          });
           await tx.event.deleteMany({
             where: { type: "thread.progress", runId: { in: runIds } },
           });
@@ -436,7 +485,21 @@ export function createGroupRepos(prisma: PrismaClient) {
           data: { archivedAt: now, pinned: false },
         });
 
-        return { cancelledRunIds: runIds, computers: computersWithLease };
+        return { cancelledRunIds: runIds, computers: targets };
+      });
+    },
+
+    /** After an archive's teardown: expire the cancelled runs' leases and legacy columns. */
+    async releaseArchivedRunLeases(runIds: string[]) {
+      if (runIds.length === 0) return;
+      await expireComputerExecutionLeases(prisma, { runId: { in: runIds } });
+      await prisma.computer.updateMany({
+        where: { executionRunId: { in: runIds } },
+        data: {
+          executionRunId: null,
+          executionBotId: null,
+          executionLeaseExpiresAt: null,
+        },
       });
     },
 

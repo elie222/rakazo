@@ -9,6 +9,20 @@ function hasPermissions(stat: Stats, uid: number, gid: number, required: number)
   return ((stat.mode >> shift) & required) === required;
 }
 
+/**
+ * Owner-owned regular files may be 0444 (git objects) when the owner can read them.
+ * Other-writable files are not exempt.
+ */
+function regularFileIsUsable(stat: Stats, uid: number, gid: number): boolean {
+  if (hasPermissions(stat, uid, gid, 0b010)) return true;
+  return (
+    stat.isFile() &&
+    stat.uid === uid &&
+    hasPermissions(stat, uid, gid, 0b100) &&
+    (stat.mode & constants.S_IWOTH) === 0
+  );
+}
+
 function isMissingOrNotDirectory(error: unknown): boolean {
   const code = (error as NodeJS.ErrnoException).code;
   return code === "ENOENT" || code === "ELOOP" || code === "ENOTDIR";
@@ -66,8 +80,10 @@ async function assertWritableEntry(
     throw new Error(`computer home ${root} must be a directory`);
   }
 
-  const required = stat.isDirectory() ? 0b111 : 0b010;
-  if (!hasPermissions(stat, uid, gid, required)) {
+  const usable = stat.isDirectory()
+    ? hasPermissions(stat, uid, gid, 0b111)
+    : regularFileIsUsable(stat, uid, gid);
+  if (!usable) {
     throw writabilityError(target, root, uid, gid);
   }
   if (!stat.isDirectory()) return;
@@ -123,7 +139,7 @@ async function assertWritableDirectory(
     if (childStat.isDirectory()) {
       throw new Error(`computer home ${root} changed during validation; retry the request`);
     }
-    if (!hasPermissions(childStat, uid, gid, 0b010)) {
+    if (!regularFileIsUsable(childStat, uid, gid)) {
       throw writabilityError(path.join(displayPath, entry.name), root, uid, gid);
     }
   }

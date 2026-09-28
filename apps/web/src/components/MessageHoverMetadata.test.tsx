@@ -37,6 +37,27 @@ describe("MessageHoverMetadata", () => {
     expect(html).not.toContain("<time");
   });
 
+  it("drops the rail in-flow below the bubble on touch", () => {
+    const bot = renderToStaticMarkup(
+      <MessageHoverMetadata side="end">
+        <div data-testid="message-actions" />
+      </MessageHoverMetadata>,
+    );
+    const user = renderToStaticMarkup(
+      <MessageHoverMetadata side="start">
+        <div data-testid="message-actions" />
+      </MessageHoverMetadata>,
+    );
+
+    for (const html of [bot, user]) {
+      expect(html).toContain("[@media(hover:none)]:static");
+      expect(html).toContain("[@media(hover:none)]:w-full");
+      expect(html).toContain("[@media(hover:none)]:translate-y-0");
+    }
+    expect(bot).toContain("[@media(hover:none)]:justify-start");
+    expect(user).toContain("[@media(hover:none)]:justify-end");
+  });
+
   it("pins the rail open while a nested menu is active", () => {
     const html = renderToStaticMarkup(
       <MessageHoverMetadata pinned side="end">

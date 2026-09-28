@@ -85,4 +85,9 @@ describe("openai-codex catalog availability", () => {
     expect(modelCredentialAuthKindFromPlaintext(oauth)).toBe("oauth");
     expect(modelCredentialAuthKindFromPlaintext("sk-test-api-key-12345678")).toBe("api_key");
   });
+
+  it("does not treat corrupt stored credential JSON as an API key", () => {
+    const corrupt = JSON.stringify({ kind: "oauth", credential: { type: "oauth" } });
+    expect(() => modelCredentialAuthKindFromPlaintext(corrupt)).toThrow(/corrupt/);
+  });
 });

@@ -474,9 +474,445 @@ private fun latestReply(endpoint: String, token: String, spaceId: String, run: R
       if (block.optString("kind") == "handoff") return null
       block.optString("text").takeIf(String::isNotBlank)?.let(text::add)
     }
-    return text.joinToString("\n")
+    return markdownToPreview(text.joinToString("\n"))
   }
   return ""
+}
+
+private val TABLE_ROW = Regex("\\s*\\|(.+)\\|\\s*")
+private val BREAK_LINE = Regex("\\s*[-*_]{3,}\\s*")
+private val FENCE_OPEN = Regex("^ {0,3}(`{3,}|~{3,})(.*)$")
+private const val PAYLOAD_MARK = ''
+/** A preview is one line. Cap the source so one huge reply cannot stall the poll loop. */
+private const val MAX_PREVIEW_SOURCE = 4_096
+private val ESCAPE_RE =
+    Regex("\\\\([!\"#$%&'()*+,\\-./:;<=>?@\\[\\\\\\]^_`{|}~])")
+private val AUTOLINK_URL = Regex("<([A-Za-z][A-Za-z0-9+.-]{1,31}:[^<>\\s]*)>")
+private val AUTOLINK_EMAIL = Regex("<([^<>\\s]+@[^<>\\s]+\\.[^<>\\s]+)>")
+private val UNDERSCORE_RUN = Regex("_+")
+private val WORD_CHAR_AT_START = Regex("^[\\p{L}\\p{N}\\p{M}]")
+// \z pins to the absolute end: Java `$` would also match before a trailing newline.
+private val WORD_CHAR_AT_END = Regex("[\\p{L}\\p{N}\\p{M}]\\z")
+private val NON_SPACE_AT_END = Regex("(?U)\\S\\z")
+private val NON_SPACE_AT_START = Regex("(?U)^\\S")
+
+/**
+ * Escaped punctuation (\\*, \\|, ...) becomes a payload token so no later
+ * pass can eat it — including splitTableCells and the emphasis strips.
+ * Restored to the literal char at the very end. Mirrors takeEscapes.
+ */
+private fun takeEscapes(text: String, stash: (String) -> String): String =
+  ESCAPE_RE.replace(text) { m -> stash(m.groupValues[1]) }
+
+/**
+ * Paired backtick spans stash their contents (delimiters dropped) so escapes,
+ * pipes, and markers inside code stay literal. Unmatched runs are literal.
+ * Mirrors takeInlineCode.
+ */
+private fun takeInlineCode(text: String, stash: (String) -> String): String {
+  val out = StringBuilder()
+  var i = 0
+  while (i < text.length) {
+    if (text[i] != '`') {
+      out.append(text[i])
+      i++
+      continue
+    }
+    var n = 0
+    while (i + n < text.length && text[i + n] == '`') n++
+    val close = findInlineCodeClose(text, i + n, n)
+    if (close == -1) {
+      out.append(text, i, i + n)
+      i += n
+    } else {
+      out.append(stash(text.substring(i + n, close)))
+      i = close + n
+    }
+  }
+  return out.toString()
+}
+
+/**
+ * `[label](dest)` keeps the label and `![alt](src)` keeps the alt. Bracket and
+ * destination matching are stack-based, so nested `[]` or `()` cannot end a
+ * link early; malformed candidates stay literal. Mirrors takeLinks.
+ */
+private fun takeLinks(text: String): String {
+  val closeBracket = closerAt(text, '[', ']')
+  val closeParen = closerAt(text, '(', ')')
+  val out = StringBuilder()
+  var i = 0
+  while (i < text.length) {
+    val image = text.startsWith("![", i)
+    if (image || text[i] == '[') {
+      val open = if (image) i + 1 else i
+      val labelEnd = closeBracket[open]
+      if (labelEnd != null && labelEnd + 1 < text.length && text[labelEnd + 1] == '(') {
+        val destEnd = closeParen[labelEnd + 1]
+        if (destEnd != null) {
+          out.append(text, open + 1, labelEnd)
+          i = destEnd + 1
+          continue
+        }
+      }
+    }
+    out.append(text[i])
+    i++
+  }
+  return out.toString()
+}
+
+/** Matching-close index for each opener; a backslash skips the next char. Mirrors closerAt. */
+private fun closerAt(text: String, open: Char, close: Char): Array<Int?> {
+  val closeAt = arrayOfNulls<Int>(text.length)
+  val stack = mutableListOf<Int>()
+  var i = 0
+  while (i < text.length) {
+    if (text[i] == '\\') {
+      i += 2
+      continue
+    }
+    if (text[i] == open) {
+      stack.add(i)
+    } else if (text[i] == close) {
+      val start = if (stack.isEmpty()) null else stack.removeAt(stack.lastIndex)
+      if (start != null) closeAt[start] = i
+    }
+    i++
+  }
+  return closeAt
+}
+
+/**
+ * Source window for a preview. Messages that already fit are returned whole.
+ * Past the cap, leading whitespace is skipped first so a pad cannot hide the body.
+ * Mirrors boundedPreviewSource.
+ */
+private data class PreviewSource(val text: String, val truncated: Boolean)
+
+private fun boundedPreviewSource(markdown: String): PreviewSource {
+  val normalized = markdown.replace("\r\n", "\n")
+  if (normalized.length <= MAX_PREVIEW_SOURCE) return PreviewSource(normalized, false)
+  val body = normalized.trimStart()
+  if (body.length <= MAX_PREVIEW_SOURCE) return PreviewSource(body, false)
+  var end = MAX_PREVIEW_SOURCE
+  if (body[end - 1].isHighSurrogate()) end -= 1
+  return PreviewSource(body.substring(0, end), true)
+}
+
+/**
+ * Fenced blocks stash their body (open/close lines dropped) so interior text
+ * — separators, pipes, markers — survives untouched. Unclosed fences stay
+ * literal lines, except when the preview cap cut off the closer: that body
+ * is stashed so the opener and stripped code cannot leak into the preview.
+ * A scan that finds no closer line does not rescan the tail. Mirrors takeFencedCode.
+ */
+private fun takeFencedCode(
+  text: String,
+  stash: (String) -> String,
+  truncated: Boolean,
+): String {
+  val lines = text.split("\n")
+  val out = mutableListOf<String>()
+  var i = 0
+  while (i < lines.size) {
+    val line = lines[i]
+    val open = FENCE_OPEN.matchEntire(line)
+    val marker = open?.groupValues?.get(1)
+    if (open == null || marker == null ||
+      (marker[0] == '`' && open.groupValues[2].contains('`'))
+    ) {
+      out.add(line)
+      i++
+      continue
+    }
+    val body = mutableListOf<String>()
+    var closed = false
+    var sawCloser = false
+    var j = i + 1
+    while (j < lines.size) {
+      val close = FENCE_OPEN.matchEntire(lines[j])
+      val closeMarker = close?.groupValues?.get(1)
+      if (close != null && closeMarker != null && close.groupValues[2].isBlank()) {
+        sawCloser = true
+        if (closeMarker[0] == marker[0] && closeMarker.length >= marker.length) {
+          closed = true
+          break
+        }
+      }
+      body.add(lines[j])
+      j++
+    }
+    if (!closed) {
+      if (truncated && j == lines.size) {
+        out.add(stash(body.joinToString("\n")))
+        break
+      }
+      out.add(line)
+      if (!sawCloser) {
+        for (k in i + 1 until lines.size) out.add(lines[k])
+        break
+      }
+      i++
+      continue
+    }
+    out.add(stash(body.joinToString("\n")))
+    i = j + 1
+  }
+  return out.joinToString("\n")
+}
+
+/** Matching `>` for a tag at `<`, ignoring `>` inside quoted attributes. Mirrors htmlTagClose. */
+private fun htmlTagClose(text: String, open: Int): Int {
+  var quote: Char? = null
+  var gtInOpenQuote = -1
+  for (i in open + 1 until text.length) {
+    val ch = text[i]
+    if (quote != null) {
+      if (ch == quote) {
+        quote = null
+        gtInOpenQuote = -1
+        continue
+      }
+      if (ch == '>' && gtInOpenQuote == -1) gtInOpenQuote = i
+      continue
+    }
+    if (ch == '"' || ch == '\'') {
+      quote = ch
+      continue
+    }
+    if (ch == '>') return i
+  }
+  if (gtInOpenQuote != -1) return gtInOpenQuote
+  // Unclosed quote with no `>`: consume the rest so attribute text cannot leak.
+  return if (quote != null && text.length > open + 1) text.length - 1 else -1
+}
+
+/** `<...>` spans drop to a single space. Mirrors stripHtmlTags. */
+private fun stripHtmlTags(text: String): String {
+  val out = StringBuilder()
+  var i = 0
+  while (i < text.length) {
+    if (text[i] == '<') {
+      val close = htmlTagClose(text, i)
+      if (close != -1) {
+        out.append(' ')
+        i = close + 1
+        continue
+      }
+    }
+    out.append(text[i])
+    i++
+  }
+  return out.toString()
+}
+
+private data class Delimiter(val start: Int, val end: Int, var removed: Int)
+
+/** Pair delimiter runs once, without rescanning unmatched suffixes. Mirrors stripUnderscoreEmphasis. */
+private fun stripUnderscoreEmphasis(text: String): String {
+  val delimiters = mutableListOf<Delimiter>()
+  val openers = mutableListOf<Delimiter>()
+  var previousEnd = 0
+  for (match in UNDERSCORE_RUN.findAll(text)) {
+    val start = match.range.first
+    val end = start + match.value.length
+    if (text.substring(previousEnd, start).contains("\n")) {
+      openers.clear()
+    }
+    previousEnd = end
+    val delimiter = Delimiter(start, end, 0)
+    delimiters.add(delimiter)
+    // Two UTF-16 units preserve astral letters when checking each adjacent code point.
+    val before = text.substring(maxOf(0, start - 2), start)
+    val after = text.substring(end, minOf(end + 2, text.length))
+    val canClose = !WORD_CHAR_AT_START.containsMatchIn(after) && NON_SPACE_AT_END.containsMatchIn(before)
+    var remaining = end - start
+    while (canClose && remaining > 0 && openers.isNotEmpty()) {
+      val opener = openers.last()
+      val available = opener.end - opener.start - opener.removed
+      val paired = minOf(available, remaining)
+      opener.removed += paired
+      delimiter.removed += paired
+      remaining -= paired
+      if (paired == available) openers.removeAt(openers.lastIndex)
+    }
+    if (remaining > 0 && !WORD_CHAR_AT_END.containsMatchIn(before) && NON_SPACE_AT_START.containsMatchIn(after)) {
+      openers.add(delimiter)
+    }
+  }
+  val out = StringBuilder()
+  var from = 0
+  for (delimiter in delimiters) {
+    if (delimiter.removed == 0) continue
+    out.append(text, from, delimiter.start)
+    out.append("_".repeat(delimiter.end - delimiter.start - delimiter.removed))
+    from = delimiter.end
+  }
+  out.append(text, from, text.length)
+  return out.toString()
+}
+
+/** Every GFM delimiter cell needs at least one hyphen: `| : |` is content. */
+private fun isTableSeparator(line: String): Boolean {
+  val trimmed = line.trim()
+  if (!trimmed.contains("-")) return false
+  return trimmed.removePrefix("|").removeSuffix("|").split("|")
+    .all { it.trim().matches(Regex(":?-+:?")) }
+}
+
+/** Heading, quote, list and break markers; the line's own text survives. */
+private fun stripLineMarker(line: String): String {
+  val stripped = line
+    .replace(Regex("^\\s{0,3}#{1,6}\\s+"), "")
+    .replace(Regex("^\\s*>\\s?"), "")
+    .replace(Regex("^\\s*[-*+]\\s+"), "")
+    .replace(Regex("^\\s*\\d+[.)]\\s+"), "")
+  return if (BREAK_LINE.matches(stripped)) "" else stripped
+}
+
+private fun findInlineCodeClose(line: String, from: Int, n: Int): Int {
+  var i = from
+  while (i < line.length) {
+    if (line[i] != '`') {
+      i++
+      continue
+    }
+    var m = 0
+    while (i + m < line.length && line[i + m] == '`') m++
+    if (m == n) return i
+    i += m
+  }
+  return -1
+}
+
+/**
+ * Split a row on plain pipes. Code spans and escapes arrive as payload tokens
+ * (see takeInlineCode/takeEscapes), so no in-cell syntax can shield a pipe.
+ */
+private fun splitTableCells(line: String): String {
+  val cells = mutableListOf<String>()
+  val cell = StringBuilder()
+  var i = 0
+  while (i < line.length) {
+    val ch = line[i]
+    if (ch == '|') {
+      cells.add(cell.toString())
+      cell.setLength(0)
+    } else {
+      cell.append(ch)
+    }
+    i++
+  }
+  cells.add(cell.toString())
+  return cells.map(String::trim).filter(String::isNotEmpty).joinToString(", ")
+}
+
+/**
+ * One line per table row ("a, b"). A separator opens a table only after a
+ * pipe-bearing header line; inside a table every pipe line is a data row —
+ * including dash-only rows — until a no-pipe line ends it. Pipe-wrapped lines
+ * still flatten leniently outside tables. Fenced code and lines carrying a
+ * block marker are never table content; a quoted stand-alone row like
+ * `> | a |` still flattens, while a marked separator row stays syntax.
+ * Mirrors `flattenTableRows`.
+ */
+private fun flattenTableRows(text: String): String {
+  val lines = text.split("\n")
+  val out = mutableListOf<String>()
+  var inTable = false
+  var prevHadPipe = false
+  var prevFlattened = false
+  // Fenced bodies arrived stashed; an unclosed fence line stays literal here.
+  for (rawLine in lines) {
+    val line = stripLineMarker(rawLine)
+    if (line != rawLine) {
+      inTable = false
+      prevHadPipe = false
+      prevFlattened = false
+      // A separator row stays syntax even behind a quote or list marker.
+      if (!isTableSeparator(line)) {
+        out.add(if (TABLE_ROW.matches(line)) splitTableCells(line) else line)
+      }
+      continue
+    }
+    if (!line.contains("|")) {
+      inTable = false
+      prevHadPipe = false
+      prevFlattened = false
+      out.add(line)
+      continue
+    }
+    if (inTable) {
+      out.add(splitTableCells(line))
+      prevHadPipe = true
+      prevFlattened = true
+      continue
+    }
+    if (isTableSeparator(line)) {
+      if (prevHadPipe) {
+        inTable = true
+        if (!prevFlattened && out.isNotEmpty()) out[out.size - 1] = splitTableCells(out.last())
+      }
+      continue
+    }
+    if (TABLE_ROW.matches(line)) {
+      out.add(splitTableCells(line))
+      prevFlattened = true
+    } else {
+      out.add(line)
+      prevFlattened = false
+    }
+    prevHadPipe = true
+  }
+  return out.joinToString("\n")
+}
+
+/**
+ * Reply Markdown → a single notification line. A native port of
+ * `plainTextFromMarkdown`; intentionally lossy — the body is a preview,
+ * not the message.
+ */
+private fun markdownToPreview(markdown: String): String {
+  // Payloads use a fixed one-char token alphabet: literal mark characters in
+  // the source are stashed first so tokens can never collide, token length is
+  // constant regardless of input, and payload count is bounded by input size —
+  // an adversarial reply cannot inflate the intermediate string.
+  val mark = PAYLOAD_MARK.toString()
+  val markToken = "${mark}0$mark"
+  val payloads = mutableListOf(mark)
+  // Restored payload text is never rescanned — literal marks that come back
+  // out of a payload cannot form phantom tokens. Payloads only ever contain
+  // earlier tokens, so the recursion is bounded by the payload count.
+  val tokenRe = Regex("$mark(\\d+)$mark")
+  fun restore(s: String): String =
+    tokenRe.replace(s) { m -> restore(payloads.getOrElse(m.groupValues[1].toIntOrNull() ?: -1) { "" }) }
+  // A payload's text must never carry a raw mark: one could sit next to digits
+  // and impersonate a token on restore. Marks are rewritten as payload-0 tokens.
+  val stash = { payload: String ->
+    payloads.add(payload.replace(mark, markToken))
+    "$mark${payloads.size - 1}$mark"
+  }
+  val source = boundedPreviewSource(markdown)
+  var text = source.text.replace(mark, markToken)
+  text = takeFencedCode(text, stash, source.truncated)
+  text = takeInlineCode(text, stash)
+  text = takeEscapes(text, stash)
+  text = takeLinks(text)
+  // Autolinks may contain stashed escapes; flatten only those literal payloads.
+  text = AUTOLINK_URL.replace(text) { m -> stash(restore(m.groupValues[1])) }
+  text = AUTOLINK_EMAIL.replace(text) { m -> stash(restore(m.groupValues[1])) }
+  text = stripUnderscoreEmphasis(stripHtmlTags(text))
+  // Table rows keep only their cells; a separator row is pure syntax.
+  // flattenTableRows also strips heading/list/quote/break markers per line so
+  // it can see them: a marked line interrupts the table instead of becoming a
+  // phantom row, while its stripped text still previews. Runs before the
+  // emphasis strips so "| **a** |" still reads "a".
+  text = flattenTableRows(text)
+    .replace(Regex("\\*\\*(.*?)\\*\\*"), "$1")
+    .replace(Regex("\\*([^*\\n]+)\\*"), "$1")
+    .replace(Regex("~~(.*?)~~"), "$1")
+  return restore(text).replace(Regex("\\s+"), " ").trim()
 }
 
 private fun rpc(

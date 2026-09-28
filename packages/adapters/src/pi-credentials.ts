@@ -28,6 +28,15 @@ export class PiRuntimeCredentialStore implements CredentialStore {
     this.credential = credential;
   }
 
+  /**
+   * The token a request resolves to right now. `modify` swaps the stored
+   * credential on refresh, so callers must read this per request rather than
+   * caching the credential they seeded the store with.
+   */
+  get accessToken(): string | undefined {
+    return this.credential?.type === "oauth" ? this.credential.access : undefined;
+  }
+
   async read(providerId: string, options?: AuthOperationOptions): Promise<Credential | undefined> {
     options?.signal?.throwIfAborted();
     return providerId === this.providerId ? this.credential : undefined;
