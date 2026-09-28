@@ -3167,9 +3167,12 @@ function MessageTextCard({
         </Text>
       ) : null}
       {message.role === "user" ? (
-        <Text style={{ color: tokens.secondaryForeground, fontSize: 15.5, lineHeight: 23 }}>
+        <ChatMarkdown
+          palette={{ ...tokens, foreground: tokens.secondaryForeground }}
+          colorScheme={colorScheme}
+        >
           {contentText}
-        </Text>
+        </ChatMarkdown>
       ) : (
         <ChatMarkdown
           palette={tokens}
