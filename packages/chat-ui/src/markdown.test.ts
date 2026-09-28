@@ -1,6 +1,11 @@
 import { createRequire } from "node:module";
 import { describe, expect, it } from "vitest";
-import { closeUnterminatedFence, linkifyExplicitUrls, sanitizeMarkdownUrl } from "./markdown";
+import {
+  closeUnterminatedFence,
+  linkifyExplicitUrls,
+  plainTextLinkParts,
+  sanitizeMarkdownUrl,
+} from "./markdown";
 
 type Token = { type: string; attrGet(name: string): string | null; children: Token[] | null };
 type Parser = Parameters<typeof linkifyExplicitUrls>[0] & {
@@ -33,6 +38,33 @@ describe("linkifyExplicitUrls", () => {
         "setup.py notes.md example.com www.example.com ftp://example.com //example.com javascript:alert(1)",
       ),
     ).toEqual([]);
+  });
+});
+
+describe("plainTextLinkParts", () => {
+  function visible(text: string) {
+    return plainTextLinkParts(text)
+      .map((part) => part.value)
+      .join("");
+  }
+
+  it("links explicit urls and email addresses without interpreting markdown", () => {
+    const text = "see http://example.test and https://example.com/a?b=1, or bob@example.com";
+    expect(
+      plainTextLinkParts(text).flatMap((part) => (part.type === "link" ? [part.href] : [])),
+    ).toEqual(["http://example.test", "https://example.com/a?b=1", "mailto:bob@example.com"]);
+    expect(visible("# Title **important**")).toBe("# Title **important**");
+    expect(plainTextLinkParts("# Title **important**").every((part) => part.type === "text")).toBe(
+      true,
+    );
+    expect(visible(text)).toBe(text);
+  });
+
+  it("leaves file names, bare domains, and unopenable schemes as text", () => {
+    const text =
+      "setup.py notes.md example.com www.example.com ftp://example.com //example.com javascript:alert(1)";
+    expect(plainTextLinkParts(text).some((part) => part.type === "link")).toBe(false);
+    expect(visible(text)).toBe(text);
   });
 });
 

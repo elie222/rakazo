@@ -1,6 +1,13 @@
+// @vitest-environment jsdom
+
 import type { ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
+
+const linking = vi.hoisted(() => ({
+  canOpenURL: vi.fn(async () => true),
+  openURL: vi.fn(async () => undefined),
+}));
 
 // react-native ships uncompiled Flow source that node cannot load, so tests mock
 // its component surface as marker elements that expose the layout props the
@@ -17,7 +24,14 @@ vi.mock("react-native", async () => {
 
   const mockComponent = (tag: string, dataKeys: string[] = []) =>
     function MockNativeComponent(props: Record<string, unknown>) {
-      const { children, style, ...rest } = props;
+      const {
+        children,
+        style,
+        onPress,
+        onLongPress: _onLongPress,
+        onAccessibilityAction: _onAccessibilityAction,
+        ...rest
+      } = props;
       const flattened = flattenStyle(style);
       const data: Record<string, unknown> = {};
       for (const key of dataKeys) {
@@ -26,7 +40,15 @@ vi.mock("react-native", async () => {
           data[`data-${kebab(key)}`] = value === true ? "true" : value;
         }
       }
-      return createElement(tag, { ...rest, ...data }, children as ReactNode);
+      return createElement(
+        tag,
+        {
+          ...rest,
+          ...data,
+          onClick: typeof onPress === "function" ? () => void (onPress as () => void)() : undefined,
+        },
+        children as ReactNode,
+      );
     };
 
   return {
@@ -57,14 +79,15 @@ vi.mock("react-native", async () => {
       select: (options: Record<string, unknown>) =>
         options.ios ?? options.default ?? options.android,
     },
-    Linking: {
-      canOpenURL: async () => true,
-      openURL: async () => undefined,
-    },
+    Linking: linking,
   };
 });
 
-import { ChatMarkdown } from "./markdown.native";
+import { darkTokens } from "@rakazo/ui-tokens";
+import { act } from "react";
+import { createRoot } from "react-dom/client";
+import { Pressable } from "react-native";
+import { ChatMarkdown, LinkifiedText } from "./markdown.native";
 
 const THREE_COLUMN_TABLE = `| Name | Status | Detail |
 | --- | --- | --- |
@@ -104,5 +127,51 @@ describe("native markdown tables", () => {
     const html = renderToStaticMarkup(<ChatMarkdown streaming>{SIX_COLUMN_TABLE}</ChatMarkdown>);
     expect(html).toContain("<rn-scroll-view");
     expect(html).toContain('data-min-width="576"');
+  });
+});
+
+describe("user message links", () => {
+  it("opens a link tapped inside a user message bubble's long-press pressables", async () => {
+    // The mobile thread wraps a user bubble in two long-press Pressables: the
+    // row, then the bubble. A tap on the address still opens it, and markdown
+    // markers stay literal characters.
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    linking.openURL.mockClear();
+    linking.canOpenURL.mockClear();
+    const longPress = vi.fn();
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(
+        <Pressable accessible={false} onLongPress={longPress}>
+          <Pressable onLongPress={longPress}>
+            <LinkifiedText color={darkTokens.foreground} linkColor={darkTokens.link}>
+              {"# Title **important** https://example.com/docs"}
+            </LinkifiedText>
+          </Pressable>
+        </Pressable>,
+      );
+    });
+
+    const link = container.querySelector<HTMLElement>(
+      "rn-pressable rn-pressable [data-accessibility-role='link']",
+    );
+    expect(link?.textContent).toBe("https://example.com/docs");
+    expect(container.textContent).toContain("# Title");
+    expect(container.textContent).toContain("**important**");
+
+    await act(async () => {
+      link?.click();
+    });
+    await vi.waitFor(() => {
+      expect(linking.openURL).toHaveBeenCalledWith("https://example.com/docs");
+    });
+    expect(longPress).not.toHaveBeenCalled();
+
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
   });
 });

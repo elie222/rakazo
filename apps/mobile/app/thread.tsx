@@ -1,4 +1,4 @@
-import { ChatMarkdown } from "@rakazo/chat-ui/native";
+import { ChatMarkdown, LinkifiedText } from "@rakazo/chat-ui/native";
 import type {
   AgentSkillCatalogEntry,
   Connection,
@@ -3166,22 +3166,24 @@ function MessageTextCard({
               : ""}
         </Text>
       ) : null}
-      {message.role === "user" ? (
-        <ChatMarkdown
-          palette={{ ...tokens, foreground: tokens.secondaryForeground }}
-          colorScheme={colorScheme}
-        >
-          {contentText}
-        </ChatMarkdown>
-      ) : (
-        <ChatMarkdown
-          palette={tokens}
-          colorScheme={colorScheme}
-          streaming={message.id.startsWith("progress:")}
-        >
-          {contentText}
-        </ChatMarkdown>
-      )}
+      {
+        // User bubbles stay literal text on web and mobile. Only explicit URLs
+        // and email addresses are links, so a sent address is tappable without
+        // formatting bold or headings.
+        message.role === "user" ? (
+          <LinkifiedText color={tokens.secondaryForeground} linkColor={tokens.link}>
+            {contentText}
+          </LinkifiedText>
+        ) : (
+          <ChatMarkdown
+            palette={tokens}
+            colorScheme={colorScheme}
+            streaming={message.id.startsWith("progress:")}
+          >
+            {contentText}
+          </ChatMarkdown>
+        )
+      }
     </Pressable>
   );
 }
