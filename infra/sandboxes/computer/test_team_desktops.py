@@ -102,6 +102,7 @@ def main():
         server = ThreadingHTTPServer(("127.0.0.1", port), Page)
         Thread(target=server.serve_forever, daemon=True).start()
     run(commands, "reset")
+    run(commands, "gh")
     run(commands, "ensurea")
     assert_file_chooser_portals()
     run(commands, "seed")

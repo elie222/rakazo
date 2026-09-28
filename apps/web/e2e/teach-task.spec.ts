@@ -49,6 +49,11 @@ test("teach a task records interaction and saves a draft", async ({ page }, test
   await page.getByRole("button", { name: "Start recording" }).click();
   await expect(page.getByTestId("teach-recording-overlay")).toBeVisible();
   await expect(page.getByTestId("teach-capture-overlay")).toBeVisible();
+  await expect(page.getByTestId("teach-protected-input")).toBeVisible();
+  await expect(
+    page.getByTestId("teach-capture-overlay").getByTestId("teach-protected-input"),
+  ).toHaveCount(0);
+  await captureScreenshot(page, testInfo, "teach-protected-input");
   await page.getByTestId("teach-capture-overlay").click({ position: { x: 200, y: 200 } });
   await page.keyboard.type("demo");
   await page.getByTestId("teach-stop-overlay").click();

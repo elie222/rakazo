@@ -4,14 +4,17 @@ import { type ComputerUpdate, ComputerUpdateSchema } from "@rakazo/contracts";
 import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
-import { enqueueTakeoverContinuation, isIdleOwnComputerTakeover } from "./computer-control.js";
+import {
+  enqueueTakeoverContinuation,
+  isIdleOwnComputerTakeover,
+  revokeScreenControl,
+} from "./computer-control.js";
 import { scheduleComputerSleep } from "./computer-idle.js";
 import {
   ComputerBusyError,
   computerSupportsUpdate,
   replaceComputer,
 } from "./computer-lifecycle.js";
-import { toComputerRef } from "./computer-support.js";
 
 type Deps = Parameters<typeof replaceComputer>[0];
 type QueueDeps = Pick<Deps, "prisma" | "jobs"> &
@@ -156,8 +159,9 @@ export async function queueComputerUpdate(
   if (prepared.handback?.leaseId) {
     // Provider release is optional. CreateOS ignores a non-interactive release, and a host
     // whose provider has no release method resolves. Only a thrown release rolls the claim back.
+    // Bound: provider methods use `this`, and a detached call throws before releasing.
     const releaseScreen = prepared.handback.providerRef
-      ? deps.sandbox?.setScreenControl
+      ? deps.sandbox?.setScreenControl?.bind(deps.sandbox)
       : undefined;
     if (releaseScreen) {
       // Persist revoking before the provider call so a crash is visible. That status is not
@@ -181,9 +185,9 @@ export async function queueComputerUpdate(
         signal: new AbortController().signal,
       };
       try {
-        await releaseScreen(
-          toComputerRef(prepared.handback),
-          false,
+        await revokeScreenControl(
+          { prisma: deps.prisma, sandbox: deps.sandbox },
+          { id: computerId, ...prepared.handback },
           context,
           prepared.handback.leaseId,
         );

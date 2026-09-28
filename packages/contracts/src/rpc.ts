@@ -412,6 +412,7 @@ export const appContract = {
         }),
       )
       .output(z.object({ ok: z.literal(true) })),
+    terminalUrl: oc.input(botId).output(z.object({ url: z.string().nullable() })),
     commands: oc
       .input(botId)
       .output(z.array(ComputerCommandSchema.extend({ createdAt: z.string() }))),

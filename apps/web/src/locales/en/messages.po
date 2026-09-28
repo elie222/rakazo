@@ -202,6 +202,7 @@ msgstr "Active"
 msgid "Active model"
 msgstr "Active model"
 
+#: src/components/computer/TerminalApp.tsx
 #: src/pages/Shell.tsx
 msgid "Activity"
 msgstr "Activity"
@@ -1253,6 +1254,10 @@ msgstr "Could not open file"
 msgid "Could not open local settings. Start the local server and create its owner account, then try again."
 msgstr "Could not open local settings. Start the local server and create its owner account, then try again."
 
+#: src/components/computer/TerminalApp.tsx
+msgid "Could not open terminal"
+msgstr "Could not open terminal"
+
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Could not play a test clip"
 msgstr "Could not play a test clip"
@@ -1650,10 +1655,6 @@ msgstr "Dismissed. Reconnect anytime from MCP settings."
 #: src/pages/PluginsOverlay.tsx
 msgid "Display name"
 msgstr "Display name"
-
-#: src/components/teach/TeachRecordingChrome.tsx
-msgid "Do not type passwords into the demo. Use Take control for credentials."
-msgstr "Do not type passwords into the demo. Use Take control for credentials."
 
 #: src/pages/HostComputerPrompt.tsx
 msgid "Docker"
@@ -2718,6 +2719,10 @@ msgstr "Open in full window"
 msgid "Open navigation"
 msgstr "Open navigation"
 
+#: src/components/computer/TerminalApp.tsx
+msgid "Open shell"
+msgstr "Open shell"
+
 #: src/pages/ScratchpadSection.tsx
 msgid "Open work"
 msgstr "Open work"
@@ -2858,6 +2863,10 @@ msgstr "Private workspace with its own bots and groups."
 #: src/components/integrations/IntegrationSetup.tsx
 msgid "Project ID"
 msgstr "Project ID"
+
+#: src/components/teach/TeachRecordingChrome.tsx
+msgid "Protected input"
+msgstr "Protected input"
 
 #: src/pages/MemorySettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
@@ -3381,6 +3390,10 @@ msgstr "Shared chat with 2-6 bots. They all reply in the same thread."
 msgid "Shared documents"
 msgstr "Shared documents"
 
+#: src/components/computer/TerminalApp.tsx
+msgid "Shell"
+msgstr "Shell"
+
 #: src/pages/Shell.tsx
 msgid "Show bots"
 msgstr "Show bots"
@@ -3723,6 +3736,10 @@ msgstr "Treg token"
 msgid "Try again"
 msgstr "Try again"
 
+#: src/components/teach/TeachRecordingChrome.tsx
+msgid "Type without recording"
+msgstr "Type without recording"
+
 #: src/components/AskCard.tsx
 msgid "Type your answer"
 msgstr "Type your answer"
@@ -3831,6 +3848,10 @@ msgstr "Use a found model"
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Use default guidance"
 msgstr "Use default guidance"
+
+#: src/components/teach/TeachRecordingChrome.tsx
+msgid "Use Protected input for passwords."
+msgstr "Use Protected input for passwords."
 
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Use this model"

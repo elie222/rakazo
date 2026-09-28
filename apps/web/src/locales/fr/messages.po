@@ -202,6 +202,7 @@ msgstr "Actif"
 msgid "Active model"
 msgstr "Modèle actif"
 
+#: src/components/computer/TerminalApp.tsx
 #: src/pages/Shell.tsx
 msgid "Activity"
 msgstr "Activité"
@@ -1253,6 +1254,10 @@ msgstr ""
 msgid "Could not open local settings. Start the local server and create its owner account, then try again."
 msgstr "Impossible d'ouvrir les paramètres locaux. Démarrez le serveur local et créez le compte du propriétaire, puis réessayez."
 
+#: src/components/computer/TerminalApp.tsx
+msgid "Could not open terminal"
+msgstr "Impossible d'ouvrir le terminal"
+
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Could not play a test clip"
 msgstr "Impossible de lire un extrait de test"
@@ -1650,10 +1655,6 @@ msgstr "Fermé. Reconnectez-vous à tout moment depuis les paramètres MCP."
 #: src/pages/PluginsOverlay.tsx
 msgid "Display name"
 msgstr "Nom d'affichage"
-
-#: src/components/teach/TeachRecordingChrome.tsx
-msgid "Do not type passwords into the demo. Use Take control for credentials."
-msgstr "Ne saisissez pas de mots de passe dans la démo. Utilisez Prendre le contrôle pour les identifiants."
 
 #: src/pages/HostComputerPrompt.tsx
 msgid "Docker"
@@ -2718,6 +2719,10 @@ msgstr "Ouvrir en fenêtre complète"
 msgid "Open navigation"
 msgstr "Ouvrir la navigation"
 
+#: src/components/computer/TerminalApp.tsx
+msgid "Open shell"
+msgstr "Ouvrir le shell"
+
 #: src/pages/ScratchpadSection.tsx
 msgid "Open work"
 msgstr "Travaux en cours"
@@ -2858,6 +2863,10 @@ msgstr "Espace de travail privé avec ses propres bots et groupes."
 #: src/components/integrations/IntegrationSetup.tsx
 msgid "Project ID"
 msgstr "ID du projet"
+
+#: src/components/teach/TeachRecordingChrome.tsx
+msgid "Protected input"
+msgstr ""
 
 #: src/pages/MemorySettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
@@ -3381,6 +3390,10 @@ msgstr "Conversation partagée avec 2 à 6 bots. Ils répondent tous dans le mê
 msgid "Shared documents"
 msgstr "Documents partagés"
 
+#: src/components/computer/TerminalApp.tsx
+msgid "Shell"
+msgstr "Shell"
+
 #: src/pages/Shell.tsx
 msgid "Show bots"
 msgstr "Afficher les bots"
@@ -3723,6 +3736,10 @@ msgstr "Jeton Treg"
 msgid "Try again"
 msgstr "Réessayer"
 
+#: src/components/teach/TeachRecordingChrome.tsx
+msgid "Type without recording"
+msgstr ""
+
 #: src/components/AskCard.tsx
 msgid "Type your answer"
 msgstr "Saisissez votre réponse"
@@ -3831,6 +3848,10 @@ msgstr "Utiliser un modèle trouvé"
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Use default guidance"
 msgstr "Utiliser les instructions par défaut"
+
+#: src/components/teach/TeachRecordingChrome.tsx
+msgid "Use Protected input for passwords."
+msgstr ""
 
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Use this model"

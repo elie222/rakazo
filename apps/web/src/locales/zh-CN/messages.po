@@ -202,6 +202,7 @@ msgstr "启用"
 msgid "Active model"
 msgstr "当前模型"
 
+#: src/components/computer/TerminalApp.tsx
 #: src/pages/Shell.tsx
 msgid "Activity"
 msgstr "动态"
@@ -1253,6 +1254,10 @@ msgstr ""
 msgid "Could not open local settings. Start the local server and create its owner account, then try again."
 msgstr ""
 
+#: src/components/computer/TerminalApp.tsx
+msgid "Could not open terminal"
+msgstr "无法打开终端"
+
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Could not play a test clip"
 msgstr "无法播放测试片段"
@@ -1650,10 +1655,6 @@ msgstr "已关闭，可随时在 MCP 设置中重新连接。"
 #: src/pages/PluginsOverlay.tsx
 msgid "Display name"
 msgstr "显示名称"
-
-#: src/components/teach/TeachRecordingChrome.tsx
-msgid "Do not type passwords into the demo. Use Take control for credentials."
-msgstr "不要在示范中输入密码。凭据请用「接管」。"
 
 #: src/pages/HostComputerPrompt.tsx
 msgid "Docker"
@@ -2718,6 +2719,10 @@ msgstr "在完整窗口中打开"
 msgid "Open navigation"
 msgstr "打开导航"
 
+#: src/components/computer/TerminalApp.tsx
+msgid "Open shell"
+msgstr "打开 Shell"
+
 #: src/pages/ScratchpadSection.tsx
 msgid "Open work"
 msgstr "待办"
@@ -2857,6 +2862,10 @@ msgstr ""
 
 #: src/components/integrations/IntegrationSetup.tsx
 msgid "Project ID"
+msgstr ""
+
+#: src/components/teach/TeachRecordingChrome.tsx
+msgid "Protected input"
 msgstr ""
 
 #: src/pages/MemorySettingsOverlay.tsx
@@ -3381,6 +3390,10 @@ msgstr ""
 msgid "Shared documents"
 msgstr "共享文档"
 
+#: src/components/computer/TerminalApp.tsx
+msgid "Shell"
+msgstr "Shell"
+
 #: src/pages/Shell.tsx
 msgid "Show bots"
 msgstr ""
@@ -3723,6 +3736,10 @@ msgstr "Treg token"
 msgid "Try again"
 msgstr "重试"
 
+#: src/components/teach/TeachRecordingChrome.tsx
+msgid "Type without recording"
+msgstr ""
+
 #: src/components/AskCard.tsx
 msgid "Type your answer"
 msgstr "输入你的回答"
@@ -3830,6 +3847,10 @@ msgstr "使用找到的模型"
 
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Use default guidance"
+msgstr ""
+
+#: src/components/teach/TeachRecordingChrome.tsx
+msgid "Use Protected input for passwords."
 msgstr ""
 
 #: src/pages/ModelSettingsOverlay.tsx

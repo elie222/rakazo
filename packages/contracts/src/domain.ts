@@ -460,6 +460,7 @@ export const TeachRecordingEventSchema = z.object({
   key: z.string().optional(),
   text: z.string().optional(),
   summary: z.string().optional(),
+  sensitive: z.boolean().optional(),
 });
 export type TeachRecordingEvent = z.infer<typeof TeachRecordingEventSchema>;
 
@@ -787,6 +788,7 @@ export const ComputerStatusSchema = z.object({
   homeRevision: z.string().nullable(),
   busyBotName: z.string().nullable(),
   canUpdate: z.boolean(),
+  terminalAvailable: z.boolean(),
 });
 export type ComputerStatus = z.infer<typeof ComputerStatusSchema>;
 

@@ -45,6 +45,7 @@ import {
   clearInactiveUserComputerControl,
   codexLiveCatalogsForSpace,
   codexLiveListsModel,
+  computerSupportsTerminal,
   computerSupportsUpdate,
   computerUpdateView,
   createVoiceProvider,
@@ -81,7 +82,9 @@ import {
   replaceComputer,
   resolveAutoReviewChecker,
   resolveBotUploadPath,
+  resolveBotWorkspaceCwd,
   resolveBotWorkspacePath,
+  revokeScreenControl,
   sanitizeComposioError,
   savePushToken,
   scheduleComputerControlExpiry,
@@ -2165,8 +2168,13 @@ export function createRouter(deps: RouterDeps) {
           if (bot.computer.providerRef) {
             const ctx = computerContext(context.actor, bot.id, "stop");
             const ref = toComputerRef(bot.computer);
-            await checkpointAndRecordComputerWorkspace(deps, bot.computer, ref, ctx);
-            await deps.sandbox.stop(ref, ctx);
+            try {
+              await checkpointAndRecordComputerWorkspace(deps, bot.computer, ref, ctx);
+              await deps.sandbox.stop(ref, ctx);
+            } catch (error) {
+              // The sandbox is already gone: nothing left to checkpoint or stop.
+              if (!isSandboxGoneError(error)) throw error;
+            }
           }
           await deps.prisma.computer.update({
             where: { id: bot.computer.id },
@@ -2315,9 +2323,9 @@ export function createRouter(deps: RouterDeps) {
         }
         if (hasActiveComputerControl(bot.computer) && bot.computer.controlBotId !== bot.id) {
           const previousBotId = bot.computer.controlBotId!;
-          await deps.sandbox.setScreenControl?.(
-            toComputerRef(bot.computer),
-            false,
+          await revokeScreenControl(
+            deps,
+            bot.computer,
             computerContext(context.actor, previousBotId, "screen.release"),
             bot.computer.controlLeaseId ?? undefined,
           );
@@ -2339,6 +2347,11 @@ export function createRouter(deps: RouterDeps) {
           bot = await repos.getBot(context.actor, input.botId);
         }
         if (!bot.computer) throw new IsolationError();
+        // Gone-sandbox revoke may have marked the row stopped; do not fall through to the
+        // running-state grant and return a confusing "control changed" conflict.
+        if (!bot.computer.providerRef || bot.computer.state !== "running") {
+          throw new ORPCError("BAD_REQUEST", { message: "computer must be running" });
+        }
 
         const executionLease = await deps.prisma.computerExecutionLease.findUnique({
           where: { computerId_botId: { computerId: bot.computer.id, botId: bot.id } },
@@ -2450,17 +2463,27 @@ export function createRouter(deps: RouterDeps) {
           throw new ORPCError("FORBIDDEN");
         }
         if (!computer.providerRef) return { ok: true as const };
-        const mapped =
-          input.kind === "key"
-            ? { kind: "key" as const, key: String(input.payload.key ?? "") }
+        const sensitive = input.payload.sensitive === true;
+        const skillId =
+          sensitive && typeof input.payload.skillId === "string" && input.payload.skillId
+            ? input.payload.skillId
+            : undefined;
+        const mapped = {
+          ...(input.kind === "key"
+            ? { kind: "key" as const, key: String(input.payload.key ?? ""), sensitive }
             : input.kind === "clipboard"
-              ? { kind: "clipboard" as const, text: String(input.payload.text ?? "") }
+              ? {
+                  kind: "clipboard" as const,
+                  text: String(input.payload.text ?? ""),
+                  sensitive,
+                }
               : input.kind === "scroll"
                 ? {
                     kind: "scroll" as const,
                     direction:
                       input.payload.direction === "up" ? ("up" as const) : ("down" as const),
                     amount: Number(input.payload.amount ?? 3),
+                    sensitive,
                   }
                 : {
                     kind: "pointer" as const,
@@ -2470,7 +2493,10 @@ export function createRouter(deps: RouterDeps) {
                     type:
                       (input.payload.type as "move" | "down" | "up" | "click" | undefined) ??
                       "click",
-                  };
+                    sensitive,
+                  }),
+          ...(skillId ? { skillId } : {}),
+        };
         const outcome = await taughtSkills.recordInput(context.actor, bot.id, mapped);
         if (outcome === "stale") return { ok: true as const };
         if (outcome !== "recorded") {
@@ -2622,6 +2648,61 @@ export function createRouter(deps: RouterDeps) {
           }),
         );
       }),
+      terminalUrl: authed.computer.terminalUrl.handler(async ({ context, input }) => {
+        let bot = await repos.getBot(context.actor, input.botId);
+        if (await expireStaleComputerControl(deps, bot.computer)) {
+          bot = await repos.getBot(context.actor, input.botId);
+        }
+        const computer = bot.computer;
+        if (
+          !computer?.providerRef ||
+          computer.state !== "running" ||
+          !deps.sandbox.connectTerminal ||
+          !computerSupportsTerminal(computer.kind)
+        ) {
+          return { url: null };
+        }
+        // Same rule as the interactive screen: only the user holding this bot's control lease.
+        if (
+          !hasActiveComputerControl(computer) ||
+          computer.controlBotId !== bot.id ||
+          !computer.controlLeaseId
+        ) {
+          throw new ORPCError("FORBIDDEN", { message: "Take control first." });
+        }
+        const session = await deps.sandbox
+          .connectTerminal(
+            toComputerRef(computer),
+            {
+              controlToken: computer.controlLeaseId,
+              cwd: resolveBotWorkspaceCwd(parseComputerMode(computer.scope), bot.id, undefined),
+            },
+            await computerScreenContext(
+              deps.prisma,
+              context.actor,
+              computer.id,
+              bot.id,
+              "terminal",
+            ),
+          )
+          .catch((error: unknown) => clearGoneSandbox(deps, computer, error));
+        if (!session) return { url: null };
+        await keepComputerAwake(deps, computer.id);
+        return {
+          url: addScreenProxyCapability(
+            withViewOnly(session.url, false),
+            deps.env.screenProxySecret,
+            deps.env.webOrigin,
+            {
+              botId: bot.id,
+              computerId: computer.id,
+              botGeneration: bot.screenGeneration,
+              computerGeneration: computer.screenGeneration,
+              controlLeaseId: computer.controlLeaseId,
+            },
+          ),
+        };
+      }),
       screenUrl: authed.computer.screenUrl.handler(async ({ context, input }) => {
         let bot = await repos.getBot(context.actor, input.botId);
         if (await expireStaleComputerControl(deps, bot.computer)) {
@@ -2651,20 +2732,7 @@ export function createRouter(deps: RouterDeps) {
             if (isComputerScreenUnavailable(error)) {
               throw new ORPCError("CONFLICT", { message: error.message });
             }
-            if (!isSandboxGoneError(error)) throw error;
-            // The provider killed this sandbox (idle timeout) while the row still says
-            // running. Clear the dead ref so the UI offers a boot instead of 500ing.
-            // Leave any active control lease alone — expireComputerControl owns that
-            // release (provider screen-control, events, takeover continuation).
-            getLogger().error(
-              `computer ${computer.id} sandbox ${computer.providerRef} is gone`,
-              error,
-            );
-            await deps.prisma.computer.updateMany({
-              where: { id: computer.id, providerRef: computer.providerRef },
-              data: { state: "stopped", providerRef: null },
-            });
-            return null;
+            return clearGoneSandbox(deps, computer, error);
           });
         if (!session?.url) return { url: null };
         scheduleComputerSleep(deps.jobs, bot.computer.id);
@@ -5523,14 +5591,12 @@ async function releaseComputerControl(
     }
     return;
   }
-  if (bot.computer.providerRef) {
-    await deps.sandbox.setScreenControl?.(
-      toComputerRef(bot.computer),
-      false,
-      computerContext(actor, controlBotId, "screen.release"),
-      controlLeaseId,
-    );
-  }
+  await revokeScreenControl(
+    deps,
+    bot.computer,
+    computerContext(actor, controlBotId, "screen.release"),
+    controlLeaseId,
+  );
 
   const released = await deps.events.finalizeComputerControlRelease({
     spaceId: actor.spaceId,
@@ -5620,7 +5686,17 @@ async function expireStaleComputerControl(
     | undefined,
 ): Promise<boolean> {
   if (!computer || hasActiveComputerControl(computer)) return false;
-  if (computer.controlHolder !== "user") return false;
+  if (computer.controlHolder !== "user") {
+    // Holder "none" with a surviving lease id is a revoke that failed mid-expiry;
+    // retry it so the row does not sit busy forever.
+    if (computer.controlLeaseId) {
+      await expireComputerControl(deps, computer.id, computer.controlLeaseId).catch(
+        () => undefined,
+      );
+      return true;
+    }
+    return false;
+  }
   const leaseId = computer.controlLeaseId;
   // Keep a failed revoke's lease id so reconciliation can retry provider shutdown.
   if (leaseId) {
@@ -5891,6 +5967,26 @@ async function listRoutinesDto(deps: RouterDeps, actor: Actor, botId: string) {
     where: { botId, spaceId: actor.spaceId },
   });
   return rows.map(mapRoutine);
+}
+
+/**
+ * The provider killed this sandbox (idle timeout) while the row still says running. Clear the
+ * dead ref so the UI offers a boot instead of 500ing, and rethrow anything else. Leave any
+ * active control lease alone: expireComputerControl owns that release (provider screen-control,
+ * events, takeover continuation).
+ */
+async function clearGoneSandbox(
+  deps: RouterDeps,
+  computer: { id: string; providerRef: string | null },
+  error: unknown,
+): Promise<null> {
+  if (!isSandboxGoneError(error)) throw error;
+  getLogger().error(`computer ${computer.id} sandbox ${computer.providerRef} is gone`, error);
+  await deps.prisma.computer.updateMany({
+    where: { id: computer.id, providerRef: computer.providerRef },
+    data: { state: "stopped", providerRef: null },
+  });
+  return null;
 }
 
 async function keepComputerAwake(deps: RouterDeps, computerId: string) {

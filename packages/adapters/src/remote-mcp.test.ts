@@ -85,10 +85,24 @@ describe("remote MCP URL policy", () => {
     ).rejects.toThrow("private address");
   });
 
-  it("allows HTTP loopback without the private-endpoint escape", async () => {
-    await expect(assertSafeRemoteUrl("http://127.0.0.1:3927/mcp", publicResolver)).resolves.toEqual(
-      new URL("http://127.0.0.1:3927/mcp"),
-    );
+  it.each([
+    "http://127.0.0.1:3100/api/auth/get-session",
+    "http://localhost:3100/mcp",
+    "http://[::1]:3100/mcp",
+    "https://localhost:3100/mcp",
+    "http://127.0.0.2:3100/mcp",
+  ])("rejects loopback %s without the private-endpoint escape", async (endpoint) => {
+    const resolve = vi.fn(async () => [{ address: "127.0.0.1", family: 4 as const }]);
+    await expect(assertSafeRemoteUrl(endpoint, resolve)).rejects.toThrow(/HTTPS|private/);
+    expect(resolve).not.toHaveBeenCalled();
+  });
+
+  it("allows HTTP loopback with the private-endpoint escape", async () => {
+    await expect(
+      assertSafeRemoteUrl("http://127.0.0.1:3927/mcp", publicResolver, {
+        allowPrivateEndpoint: true,
+      }),
+    ).resolves.toEqual(new URL("http://127.0.0.1:3927/mcp"));
   });
 
   it("rejects HTTP when a private-suffix hostname resolves publicly", async () => {
@@ -235,7 +249,8 @@ describe("remote MCP URL policy", () => {
 
   it("permits verified loopback addresses for localhost HTTP through the guarded Agent lookup", async () => {
     const loopbackResolver = async () => [{ address: "127.0.0.1", family: 4 as const }];
-    const safeLookup = createSafeLookup(loopbackResolver);
+    const ownerPolicy = { allowPrivateEndpoint: true };
+    const safeLookup = createSafeLookup(loopbackResolver, ownerPolicy);
     const result = await new Promise<{ address: string; family?: number }>((resolve, reject) => {
       safeLookup("localhost", { family: 0, all: false }, (error, address, family) => {
         if (error) reject(error);
@@ -244,7 +259,10 @@ describe("remote MCP URL policy", () => {
     });
     expect(result).toEqual({ address: "127.0.0.1", family: 4 });
 
-    const reboundLookup = createSafeLookup(async () => [{ address: "10.1.2.3", family: 4 }]);
+    const reboundLookup = createSafeLookup(
+      async () => [{ address: "10.1.2.3", family: 4 }],
+      ownerPolicy,
+    );
     const reboundError = await new Promise<Error | null>((resolve) => {
       reboundLookup("localhost", { family: 0, all: false }, (lookupError) => {
         resolve(lookupError);
@@ -264,8 +282,17 @@ describe("remote MCP URL policy", () => {
       message: "Connector URL resolves to a private address",
     });
 
+    const nonOwnerError = await new Promise<Error | null>((resolve) => {
+      publicLoopbackLookup("localhost", { family: 0, all: false }, (lookupError) => {
+        resolve(lookupError);
+      });
+    });
+    expect(nonOwnerError).toMatchObject({
+      message: "Connector URL resolves to a private address",
+    });
+
     expect(undiciFetch).not.toBe(globalThis.fetch);
-    const safeFetch = createSafeRemoteFetch(undefined, loopbackResolver);
+    const safeFetch = createSafeRemoteFetch(undefined, loopbackResolver, ownerPolicy);
     try {
       const error = await safeFetch("http://localhost:59999/mcp").then(
         () => null,

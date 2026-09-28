@@ -103,6 +103,13 @@ export interface ScreenRequest {
   controlToken?: string;
 }
 
+export interface TerminalRequest {
+  /** The active screen control token; a terminal exists only while the user holds control. */
+  controlToken: string;
+  /** Workspace-relative starting directory. */
+  cwd?: string;
+}
+
 export interface ScreenSession {
   url: string | null;
   mimeType: string;
@@ -202,6 +209,7 @@ export interface ConnectorTool {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
+  /** Declared effect. `false` forces approval; `true` never relaxes the name-based gate. */
   readOnly?: boolean;
   /** In-process routing metadata. It is never exposed to the model. */
   route?: ConnectorRoute;

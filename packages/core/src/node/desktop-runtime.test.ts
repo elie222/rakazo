@@ -16,6 +16,7 @@ import {
   browserCloseProgram,
   DEFAULT_DESKTOP_ENV,
   desktopControlCommand,
+  desktopTerminalCommand,
   desktopUrl,
   ensureScreenCommand,
   interactiveScreenCommand,
@@ -27,6 +28,7 @@ import {
   screenPorts,
   shellQuote,
   stopExtraScreenCommand,
+  terminalCommand,
 } from "./desktop-runtime.js";
 
 const JOINED_COMMAND = `import os, time
@@ -200,6 +202,21 @@ describe("shared Linux desktop lifecycle", () => {
     expect(readFileSync(path.join(f.root, slot), "utf8")).toContain("new:2");
   });
 
+  it("opens a terminal only on an assigned display under the current lease", () => {
+    const f = fixture();
+    expect(f.run(desktopTerminalCommand("missing", "run:1", env, "c", "t", ".")).status).toBe(75);
+    expect(f.ensure("a").status).toBe(0);
+    expect(f.run(desktopTerminalCommand("a", "old:0", env, "c", "t", ".")).status).toBe(75);
+    expect(f.run(desktopTerminalCommand("a", "run:1", env, "c", "t", ".")).status).toBe(0);
+    expect(() => terminalCommand("c", "bad token", ".")).toThrow("invalid terminal token");
+  });
+
+  it("stops the terminal with the control lease and the screen transports", () => {
+    expect(interactiveScreenCommand(false)).toMatch(/pkill -f .*rakazo-terminal\.py/);
+    expect(interactiveScreenCommand(false)).toContain("desktop-targets/terminal-1");
+    expect(stopExtraScreenCommand(1, "a")).toMatch(/pkill -f .*sockets\/terminal-2-/);
+  });
+
   it.each([DEFAULT_DESKTOP_ENV, env])(
     "generates valid shell for every lifecycle operation ($displayStart)",
     (environment) => {
@@ -209,6 +226,8 @@ describe("shared Linux desktop lifecycle", () => {
         managedDesktopCommand("bot's id", "run:1", environment, "token"),
         releaseDesktopCommand("bot's id", "run:1", environment),
         desktopControlCommand("bot's id", "run:1", environment, true, "token"),
+        desktopTerminalCommand("bot's id", "run:1", environment, "token", "terminal", "bots/a'b"),
+        terminalCommand("token", "terminal", "/work", environment, screenPorts(1, environment)),
         interactiveScreenCommand(false, "token", screenPorts(1, environment)),
         stopExtraScreenCommand(1, "bot's id", environment),
       ]) {

@@ -28,7 +28,11 @@ describe("validatePlaywrightScreenshotBudget", () => {
   it("rejects the first screenshot and byte beyond their limits", () => {
     expect(() =>
       validatePlaywrightScreenshotBudget(MAX_PLAYWRIGHT_SCREENSHOT_COUNT + 1, 0),
-    ).toThrow(/351 screenshots; maximum is 350/);
+    ).toThrow(
+      new RegExp(
+        `${MAX_PLAYWRIGHT_SCREENSHOT_COUNT + 1} screenshots; maximum is ${MAX_PLAYWRIGHT_SCREENSHOT_COUNT}`,
+      ),
+    );
     expect(() =>
       validatePlaywrightScreenshotBudget(1, MAX_PLAYWRIGHT_SCREENSHOT_BYTES + 1),
     ).toThrow(/maximum total size of 262144000 bytes/);

@@ -11,6 +11,7 @@ import {
   buildPlaybookFromRecording,
   computerInputForDomKey,
   type SkillPlaybook,
+  sanitizeTeachRecordingEvent,
   type TeachRecordingEvent,
   type TeachSnapshot,
 } from "@rakazo/core";
@@ -22,6 +23,7 @@ import {
   type PrismaClient,
   type ThreadEvents,
 } from "@rakazo/db";
+import { revokeScreenControl } from "./computer-control.js";
 import { scheduleComputerSleep } from "./computer-idle.js";
 import { toComputerRef } from "./computer-support.js";
 
@@ -48,9 +50,13 @@ type TeachRecording = {
   controlLeaseId?: string;
 };
 
-export type TeachComputerInput =
+export type TeachComputerInput = (
   | ComputerInput
-  | { kind: "scroll"; direction: "up" | "down"; amount?: number };
+  | { kind: "scroll"; direction: "up" | "down"; amount?: number }
+) & {
+  sensitive?: boolean;
+  skillId?: string;
+};
 
 export interface TeachingSessionDeps {
   prisma: PrismaClient;
@@ -254,11 +260,12 @@ export async function appendRecordingEvent(
     deps,
     skillId,
     (recording) => {
-      const key = recordingEventKey(event);
+      const stored = sanitizeTeachRecordingEvent(event);
+      const key = recordingEventKey(stored);
       if (recording.events.some((existing) => recordingEventKey(existing) === key)) {
         return { recording, changed: false };
       }
-      recording.events.push(event);
+      recording.events.push(stored);
       return { recording, changed: true };
     },
     options,
@@ -286,6 +293,8 @@ async function releaseTeachingComputerControl(
     id: string;
     computer: {
       id: string;
+      homeKey: string;
+      kind: string;
       providerRef: string | null;
       controlHolder: string;
       controlBotId: string | null;
@@ -305,14 +314,12 @@ async function releaseTeachingComputerControl(
   }
   if (!expectedLeaseId || computer.controlLeaseId !== expectedLeaseId) return;
   const leaseId = computer.controlLeaseId;
-  if (computer.providerRef) {
-    await deps.sandbox.setScreenControl?.(
-      toComputerRef(computer as never),
-      false,
-      computerContext(actor, bot.id, "skills.release"),
-      leaseId,
-    );
-  }
+  await revokeScreenControl(
+    deps,
+    computer,
+    computerContext(actor, bot.id, "skills.release"),
+    leaseId,
+  );
   await deps.jobs.cancel(computerControlExpireJobKey(computer.id, leaseId));
   await deps.events.finalizeComputerControlRelease({
     spaceId: actor.spaceId,
@@ -518,11 +525,19 @@ export async function applyTeachingDesktopInput(
     );
     return;
   }
+  const { skillId: _skillId, ...desktop } = mapped;
   const input: ComputerInput =
-    mapped.kind === "key" && mapped.key && !mapped.modifiers?.length
-      ? computerInputForDomKey(mapped.key)
-      : mapped;
+    desktop.kind === "key" && desktop.key && !desktop.modifiers?.length
+      ? computerInputForDomKey(desktop.key)
+      : desktop;
   await sandbox.sendInput(toComputerRef(computer), input, lease, context);
+}
+
+function protectedInputMissesRecording(
+  mapped: TeachComputerInput,
+  activeSkillId: string | undefined,
+): boolean {
+  return mapped.sensitive === true && Boolean(mapped.skillId) && activeSkillId !== mapped.skillId;
 }
 
 export async function recordTeachingInputEvent(
@@ -532,14 +547,17 @@ export async function recordTeachingInputEvent(
   mapped: TeachComputerInput,
 ): Promise<"recorded" | "idle" | "stale"> {
   const skill = await getActiveTeachingSession(deps.prisma, actor.spaceId, botId, actor.userId);
+  // Protected input names the recording it was queued for, so a later one cannot receive it.
+  if (protectedInputMissesRecording(mapped, skill?.id)) return "stale";
   if (!skill) return "idle";
   if (skill.expiresAt && skill.expiresAt.getTime() <= Date.now()) {
     await expireTaughtSkillTeaching(deps, skill.id);
     return "stale";
   }
-  const event: TeachRecordingEvent = {
+  const event = sanitizeTeachRecordingEvent({
     at: new Date().toISOString(),
     kind: mapped.kind === "scroll" ? "scroll" : mapped.kind,
+    ...(mapped.sensitive ? { sensitive: true as const } : {}),
     ...(mapped.kind === "key"
       ? { key: mapped.key }
       : mapped.kind === "clipboard"
@@ -552,7 +570,7 @@ export async function recordTeachingInputEvent(
               button: mapped.button,
               type: mapped.type,
             }),
-  };
+  });
   const prepared = await deps.prisma.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT id FROM taught_skills WHERE id = ${skill.id} FOR UPDATE`;
     const current = await tx.taughtSkill.findUniqueOrThrow({ where: { id: skill.id } });
@@ -572,6 +590,17 @@ export async function recordTeachingInputEvent(
   }
   if (prepared.kind === "stale") return "stale";
   if (prepared.computer?.providerRef) {
+    // The row lock above does not cover sandbox IO. Only protected input is
+    // bound to a recording, so ordinary events skip this extra read.
+    if (mapped.sensitive === true && mapped.skillId) {
+      const active = await getActiveTeachingSession(
+        deps.prisma,
+        actor.spaceId,
+        botId,
+        actor.userId,
+      );
+      if (protectedInputMissesRecording(mapped, active?.id)) return "stale";
+    }
     await applyTeachingDesktopInput(
       deps.sandbox,
       prepared.computer,

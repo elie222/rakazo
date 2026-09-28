@@ -29,12 +29,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     novnc \
     websockify \
     python3 \
+    libnss-wrapper \
     ca-certificates \
     procps \
     bash \
     chromium \
     fonts-liberation \
     fonts-dejavu-core \
+    fonts-noto-cjk \
+    locales \
     dbus-x11 \
     xdg-desktop-portal \
     xdg-desktop-portal-gtk \
@@ -44,6 +47,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     jq \
     openssh-client \
     unzip \
+    xclip \
+    xsel \
   && rm -rf /var/lib/apt/lists/* \
   && groupadd --gid 1000 rakazo \
   && useradd --uid 1000 --gid rakazo --create-home --shell /bin/bash rakazo \
@@ -66,8 +71,27 @@ RUN set -eux; \
   rm -f "$archive"; \
   uv --version; \
   uvx --version
+# Bookworm has no gh package; pin the upstream binary and verify sha256, same as uv.
+ARG GH_VERSION=2.100.0
+RUN set -eux; \
+  case "$TARGETARCH" in \
+    amd64) gh_arch=amd64; gh_sha256=e4d4bb4498e8d007abe545b6568926793ace1b6447da598294a610018cb164be ;; \
+    arm64) gh_arch=arm64; gh_sha256=ea4e7a581a32ccad6cc7923cb1576ac5859ba4b9a16ab22eb8f8a96e78e2e961 ;; \
+    *) echo "unsupported TARGETARCH: $TARGETARCH" >&2; exit 1 ;; \
+  esac; \
+  archive="$(mktemp)"; \
+  curl -fsSL "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_${gh_arch}.tar.gz" -o "$archive"; \
+  echo "$gh_sha256  $archive" | sha256sum -c -; \
+  tar -xzf "$archive" -C /usr/local/bin --strip-components=2 "gh_${GH_VERSION}_linux_${gh_arch}/bin/gh"; \
+  rm -f "$archive"; \
+  gh --version
 ENV DISPLAY=:1
 ENV HOME=/home/rakazo
+# Keep UTF-8 explicit (an empty LANG broke non-ASCII file handling in the
+# file chooser for CJK-market users) and generate zh_CN.UTF-8 so deployments
+# that override the computer environment can opt in to a Chinese locale.
+RUN sed -i 's/^# zh_CN.UTF-8 UTF-8/zh_CN.UTF-8 UTF-8/' /etc/locale.gen && locale-gen
+ENV LANG=C.UTF-8
 ENV UV_TOOL_DIR=/home/rakazo/.local/share/uv/tools \
     UV_TOOL_BIN_DIR=/home/rakazo/.local/bin \
     UV_PYTHON_INSTALL_DIR=/home/rakazo/.local/share/uv/python \

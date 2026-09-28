@@ -13,6 +13,7 @@ import type {
   SandboxProvider,
   ScreenRequest,
   ScreenSession,
+  TerminalRequest,
 } from "@rakazo/adapter-kit";
 import { boundedSandboxCommandTimeoutMs } from "@rakazo/core";
 import { sandboxIdleMs } from "./computer-idle.js";
@@ -230,6 +231,9 @@ export class E2BSandboxProvider implements SandboxProvider {
     context: AdapterContext,
   ): Promise<ScreenSession> {
     return this.desktops.connectScreen(computer, request, context);
+  }
+  async connectTerminal(computer: ComputerRef, request: TerminalRequest, context: AdapterContext) {
+    return this.desktops.connectTerminal(computer, request, context);
   }
   async setScreenControl(
     computer: ComputerRef,

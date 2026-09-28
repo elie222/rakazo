@@ -11,6 +11,7 @@ import type {
   SandboxProvider,
   ScreenRequest,
   ScreenSession,
+  TerminalRequest,
 } from "@rakazo/adapter-kit";
 import { canReleaseScreenLease, canTakeScreenLease } from "@rakazo/core";
 import { ComputerScreenUnavailableError, screenSessionKey } from "./computer-screens.js";
@@ -19,7 +20,9 @@ import {
   boundedComputerActions,
   normalizeWorkspacePath,
   placeholderObservation,
+  workspacePath,
 } from "./computer-support.js";
+import { FakeTerminalGateway } from "./fake-terminal.js";
 
 export interface FakeBox {
   ref: ComputerRef;
@@ -31,6 +34,7 @@ export interface FakeBox {
 
 export class FakeSandboxProvider implements SandboxProvider {
   readonly boxes = new Map<string, FakeBox>();
+  private readonly terminals = new FakeTerminalGateway();
 
   describe() {
     return {
@@ -126,6 +130,28 @@ export class FakeSandboxProvider implements SandboxProvider {
       mimeType: "text/plain",
       close: async () => undefined,
     };
+  }
+
+  async connectTerminal(computer: ComputerRef, request: TerminalRequest, _context: AdapterContext) {
+    this.requiredBox(computer);
+    if (!request.controlToken) throw new Error("terminal requires screen control");
+    return {
+      url: await this.terminals.open(
+        computer.id,
+        request.controlToken,
+        workspacePath("/home/rakazo", request.cwd ?? ""),
+      ),
+    };
+  }
+
+  /** Releasing control ends that lease's terminal, as on real computers. */
+  async setScreenControl(
+    computer: ComputerRef,
+    interactive: boolean,
+    _context: AdapterContext,
+    controlToken?: string,
+  ) {
+    if (!interactive) this.terminals.revoke(computer.id, controlToken);
   }
 
   async sendInput(
@@ -253,10 +279,12 @@ export class FakeSandboxProvider implements SandboxProvider {
   async stop(computer: ComputerRef, _context: AdapterContext): Promise<void> {
     const box = this.boxes.get(computer.id);
     if (box) box.running = false;
+    this.terminals.revoke(computer.id);
   }
 
   async destroy(computer: ComputerRef, _context: AdapterContext): Promise<void> {
     this.boxes.delete(computer.id);
+    this.terminals.revoke(computer.id);
   }
 
   private requiredBox(computer: ComputerRef): FakeBox {

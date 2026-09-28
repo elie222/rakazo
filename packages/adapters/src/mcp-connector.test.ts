@@ -237,6 +237,7 @@ describe("MCP connector session cache", () => {
       botMcpServer: { findMany: vi.fn().mockResolvedValue([localAssignment]) },
       secret: { findFirst: vi.fn().mockResolvedValue({ id: "secret-1", ciphertext: "encrypted" }) },
       run: { findUnique: vi.fn().mockResolvedValue({ threadId: "thread-1" }) },
+      deploymentSettings: { findUnique: vi.fn(async () => ({ ownerUserId: "u1" })) },
     };
     const connector = new McpConnector(
       prisma as never,
@@ -280,6 +281,7 @@ describe("MCP connector session cache", () => {
       },
       secret: { findFirst: vi.fn().mockResolvedValue({ id: "secret-1", ciphertext: "encrypted" }) },
       run: { findUnique: vi.fn().mockResolvedValue({ threadId: "thread-1" }) },
+      deploymentSettings: { findUnique: vi.fn(async () => ({ ownerUserId: "u1" })) },
     };
     const connector = new McpConnector(
       prisma as never,
@@ -681,6 +683,7 @@ describe("MCP connector session cache", () => {
     vi.stubGlobal("fetch", mcpFetch(state, "http://localhost:8123/api/mcp"));
     const prisma = {
       botMcpServer: { findMany: vi.fn().mockResolvedValue([localAssignment]) },
+      deploymentSettings: { findUnique: vi.fn(async () => ({ ownerUserId: "u1" })) },
     };
     const connector = new McpConnector(prisma as never, {} as never);
 
@@ -705,6 +708,7 @@ describe("MCP connector session cache", () => {
     const prisma = {
       botMcpServer: { findMany: vi.fn().mockResolvedValue([localAssignment]) },
       secret: { findFirst: vi.fn().mockResolvedValue({ id: "secret-1", ciphertext: "encrypted" }) },
+      deploymentSettings: { findUnique: vi.fn(async () => ({ ownerUserId: "u1" })) },
     };
     const connector = new McpConnector(
       prisma as never,
@@ -833,6 +837,35 @@ describe("MCP connector private endpoints", () => {
     expect(fetch).not.toHaveBeenCalled();
     await connector.close();
   });
+
+  it.each(["http://localhost:3100/api/auth/get-session", "https://127.0.0.1:3100/mcp"])(
+    "does not connect loopback %s for a non-owner",
+    async (endpoint) => {
+      const fetch = vi.fn();
+      vi.stubGlobal("fetch", fetch);
+      const connector = new McpConnector(
+        {
+          botMcpServer: {
+            findMany: vi
+              .fn()
+              .mockResolvedValue([{ ...ASSIGNMENT, server: { ...SERVER, endpoint } }]),
+          },
+          deploymentSettings: { findUnique: vi.fn(async () => ({ ownerUserId: "owner" })) },
+        } as never,
+        {} as never,
+        { network: { fetch, resolveHostname: async () => [{ address: "127.0.0.1", family: 4 }] } },
+      );
+      const tools = await connector.discoverTools({
+        spaceId: "w1",
+        userId: "u1",
+        botId: "bot-1",
+        signal: new AbortController().signal,
+      } as never);
+      expect(tools).toEqual([]);
+      expect(fetch).not.toHaveBeenCalled();
+      await connector.close();
+    },
+  );
 
   it("connects a private IP when the current user is the deployment owner", async () => {
     const state = { failNext: false, initializations: 0 };

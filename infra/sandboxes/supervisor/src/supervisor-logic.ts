@@ -15,6 +15,7 @@ export {
   quiesceBrowserProfilesCommand,
   stopBrowserCommand,
   stopExtraScreenCommand,
+  terminalCommand,
 } from "@rakazo/core/node/desktop-runtime";
 
 import { timingSafeEqual } from "node:crypto";
@@ -474,4 +475,18 @@ export function demuxDockerStream(buffer: Buffer): { stdout: string; stderr: str
     stdout: Buffer.concat(stdout).toString("utf8"),
     stderr: Buffer.concat(stderr).toString("utf8"),
   };
+}
+
+/**
+ * Environment for commands in a computer: the bot's shell tool and the user's terminal share
+ * it. Neither exec sets a Docker `User`, so both run as the container's workspace user.
+ */
+export function computerCommandEnv(layout: { display: string }) {
+  return [
+    `DISPLAY=${layout.display}`,
+    "HOME=/home/rakazo",
+    "PATH=/home/rakazo/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+    "NPM_CONFIG_PREFIX=/home/rakazo/.local",
+    "PIP_USER=1",
+  ];
 }

@@ -95,7 +95,7 @@ async function renderTerminal() {
   document.body.append(container);
   const root = createRoot(container);
   await act(async () => {
-    root.render(<TerminalApp botId="bot-1" />);
+    root.render(<TerminalApp botId="bot-1" canUseShell={false} />);
   });
   return {
     async cleanup() {

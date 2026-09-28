@@ -86,7 +86,43 @@ test("the computer workspace browses, uploads, and downloads files over the scre
   expect(await readFile((await saved.path())!, "utf8")).toBe("Quarterly numbers checked.\n");
 
   await page.getByRole("button", { name: "Terminal", exact: true }).click();
+  const terminalWindow = page.getByRole("region", { name: "Terminal" });
   await expect(page.getByTestId("computer-terminal")).toBeVisible();
+  // Holding control adds an interactive shell beside the bot's activity. The fake computer
+  // answers through the same capability, web proxy, websocket, and frame protocol.
+  await terminalWindow.getByRole("tab", { name: "Shell" }).click();
+  const shell = page.getByTestId("computer-shell");
+  await expect(page.getByTestId("computer-terminal")).toBeHidden();
+  await expect(shell).toContainText("$");
+  // Click near the pane's corner: the sidebar resize edge currently overlaps the overlay's middle.
+  await shell.click({ position: { x: 24, y: 24 } });
+  await page.keyboard.type("echo hallo-shell");
+  await page.keyboard.press("Enter");
+  await expect(shell).toContainText(/\$ echo hallo-shell\s*hallo-shell/);
+  await page.keyboard.type("stty size");
+  await page.keyboard.press("Enter");
+  // The window is narrower than a default 80-column terminal, so this proves resize frames arrive.
+  await expect
+    .poll(async () => {
+      const size = /\$ stty size\s*(\d+) (\d+)/.exec((await shell.textContent()) ?? "");
+      return size ? Number(size[2]) : null;
+    })
+    .toBeLessThan(80);
+  await captureScreenshot(page, testInfo, "computer-terminal-shell");
+
+  // The shell stays connected while the Activity tab is shown.
+  await terminalWindow.getByRole("tab", { name: "Activity" }).click();
+  await expect(page.getByTestId("computer-terminal")).toBeVisible();
+  await terminalWindow.getByRole("tab", { name: "Shell" }).click();
+  await expect(shell).toContainText("hallo-shell");
+  // A dropped connection gets a fresh shell instead of a dead pane.
+  await page.keyboard.type("exit");
+  await page.keyboard.press("Enter");
+  await expect(shell).toContainText(/\[closed\]\s*\$/);
+  await page.keyboard.type("echo wieder-da");
+  await page.keyboard.press("Enter");
+  await expect(shell).toContainText(/\$ echo wieder-da\s*wieder-da/);
+  await terminalWindow.getByRole("tab", { name: "Activity" }).click();
   await captureScreenshot(page, testInfo, "computer-workspace");
 
   // The browser button tucks the windows away without closing their sessions.
@@ -100,6 +136,19 @@ test("the computer workspace browses, uploads, and downloads files over the scre
 
   await page.getByRole("button", { name: "Close Files" }).click();
   await expect(files).toBeHidden();
+
+  // Control can end while the computer stays open (released, expired, or handed back for
+  // maintenance). "Open shell" then takes control again and goes straight to the shell.
+  await rpc(page, "computer/release", { botId });
+  await expect(page.getByText("You have control")).toBeHidden();
+  await expect(terminalWindow.getByRole("tab", { name: "Shell" })).toHaveCount(0);
+  await terminalWindow.getByRole("button", { name: "Open shell" }).click();
+  await expect(page.getByText("You have control")).toBeVisible();
+  await expect(terminalWindow.getByRole("tab", { name: "Shell" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await expect(page.getByTestId("computer-shell")).toContainText("$");
 });
 
 test("the terminal shows the bot's shell commands and file actions live and after reopening", async ({

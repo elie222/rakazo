@@ -220,6 +220,28 @@ describe("background computer maintenance", () => {
     });
   });
 
+  it("queues the handback when the takeover's sandbox is already gone", async () => {
+    const harness = takeoverQueue();
+    harness.setScreenControl.mockRejectedValue(
+      Object.assign(new Error("No such container"), { name: "SandboxNotFoundError" }),
+    );
+
+    await queueComputerUpdate(harness.deps, "computer-1", "bot-1");
+
+    // A dead sandbox holds no control to release: the stranded ref is dropped and
+    // the update proceeds instead of reporting busy forever.
+    expect(harness.computer.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: "computer-1",
+        providerRef: "provider-1",
+        state: { notIn: ["booting", "suspending"] },
+        controlLeaseId: expect.any(String),
+      },
+      data: { state: "stopped", providerRef: null },
+    });
+    expect(harness.jobs.enqueue).toHaveBeenCalledOnce();
+  });
+
   it("does not release a takeover a run is already waiting on", async () => {
     const harness = takeoverQueue({ controlRunId: "run-1" });
 

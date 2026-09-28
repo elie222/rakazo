@@ -95,6 +95,19 @@ export function formatComputerCommand(command: ComputerCommand, labels: Computer
   return `${lines.join("\n").replace(/\r?\n/g, "\r\n")}\r\n`;
 }
 
+/** The sealed capability page and its websocket share one directory on the web origin. */
+export function terminalSocketUrl(capabilityUrl: string, base: string): string | null {
+  try {
+    const url = new URL("websockify", new URL(capabilityUrl, base));
+    if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+    url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+    url.search = "";
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
 /**
  * The whole feed body. A bot that has never run a command would otherwise
  * render as a blank terminal, indistinguishable from a pane that failed to

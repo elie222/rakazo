@@ -22,11 +22,14 @@ export function ComputerWorkspace({
   computer,
   hasControl,
   dock,
+  onTakeControl,
   children,
 }: {
   botId: string;
   computer: ComputerStatus | null;
   hasControl: boolean;
+  /** Take control of the screen, resolving false on failure; absent while that is not possible. */
+  onTakeControl?: () => Promise<boolean>;
   /** Hidden while teaching so recording captures only the screen. */
   dock: boolean;
   children: ReactNode;
@@ -37,6 +40,7 @@ export function ComputerWorkspace({
   const [collapsed, setCollapsed] = useState(false);
   const [positions, setPositions] = useState<Partial<Record<App, Position>>>({});
   const running = computer?.state === "running";
+  const shellAvailable = running && Boolean(computer?.terminalAvailable);
   const hasScreen = computer?.kind !== "desktop";
   const screenVisible = collapsed || open.length === 0;
   const apps: Array<{ id: App; label: string; icon: ReactNode }> = [
@@ -82,7 +86,12 @@ export function ComputerWorkspace({
           >
             {app.id === "terminal" ? (
               <Suspense fallback={null}>
-                <TerminalApp key={botId} botId={botId} />
+                <TerminalApp
+                  key={botId}
+                  botId={botId}
+                  canUseShell={shellAvailable && hasControl}
+                  onTakeControl={shellAvailable ? onTakeControl : undefined}
+                />
               </Suspense>
             ) : (
               <FilesApp

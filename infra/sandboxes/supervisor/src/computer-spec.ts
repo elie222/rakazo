@@ -149,6 +149,48 @@ export function resolveScreenNetworkMode(value: string | undefined): ScreenNetwo
   throw new Error(`Unsupported SANDBOX_SCREEN_NETWORK value: ${value}`);
 }
 
+/**
+ * Egress policy for per-bot computer networks. `open` is today's behaviour: full
+ * outbound access, including the host's bridge addresses, the LAN, and link-local
+ * cloud metadata endpoints. `restricted` keeps public internet egress but lets the
+ * operator drop everything else with one host-side iptables rule set — the
+ * supervisor gives each computer network a deterministic bridge interface name so
+ * the rules match by interface (`-i rakazo-c+`) instead of ephemeral subnets.
+ * Enforcement lives on the Docker host (infra/compose/restrict-computer-egress.sh);
+ * the flag only marks the networks. Supervisor capabilities stay unchanged.
+ */
+export type ComputerEgressMode = "open" | "restricted";
+
+export function resolveComputerEgressMode(
+  value = process.env.SANDBOX_COMPUTER_EGRESS,
+): ComputerEgressMode {
+  if (value === undefined || value.trim() === "" || value === "open") return "open";
+  if (value === "restricted") return "restricted";
+  throw new Error(`Unsupported SANDBOX_COMPUTER_EGRESS value: ${value}`);
+}
+
+/**
+ * Host bridge interface name for a computer network. Linux caps interface names
+ * at 15 bytes (IFNAMSIZ), so "rakazo-c" gets a 7-hex-char suffix derived from the
+ * same digest as the network name — deterministic across recreate, unique per bot.
+ */
+export function computerBridgeNameFor(botId: string) {
+  const hash = createHash("sha256").update(botId).digest("hex").slice(0, 7);
+  return `rakazo-c${hash}`;
+}
+
+/** docker.createNetwork payload for a bot's computer network. */
+export function computerNetworkCreateOptions(botId: string, egress: ComputerEgressMode = "open") {
+  return {
+    Name: computerNetworkNameFor(botId),
+    Driver: "bridge",
+    CheckDuplicate: true,
+    ...(egress === "restricted"
+      ? { Options: { "com.docker.network.bridge.name": computerBridgeNameFor(botId) } }
+      : {}),
+  };
+}
+
 export function hostComputerUser(uid = process.getuid?.(), gid = process.getgid?.()): string {
   if (uid === undefined || gid === undefined || uid === 0) return COMPUTER_USER;
   return `${uid}:${gid}`;

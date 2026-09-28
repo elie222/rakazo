@@ -202,6 +202,7 @@ msgstr ""
 msgid "Active model"
 msgstr "Aktives Modell"
 
+#: src/components/computer/TerminalApp.tsx
 #: src/pages/Shell.tsx
 msgid "Activity"
 msgstr "Aktivität"
@@ -1253,6 +1254,10 @@ msgstr "Datei konnte nicht geöffnet werden"
 msgid "Could not open local settings. Start the local server and create its owner account, then try again."
 msgstr ""
 
+#: src/components/computer/TerminalApp.tsx
+msgid "Could not open terminal"
+msgstr "Terminal konnte nicht geöffnet werden"
+
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Could not play a test clip"
 msgstr "Testclip konnte nicht abgespielt werden"
@@ -1650,10 +1655,6 @@ msgstr "Verworfen. Du kannst die Verbindung jederzeit in den MCP-Einstellungen w
 #: src/pages/PluginsOverlay.tsx
 msgid "Display name"
 msgstr "Anzeigename"
-
-#: src/components/teach/TeachRecordingChrome.tsx
-msgid "Do not type passwords into the demo. Use Take control for credentials."
-msgstr "Gib keine Passwörter in die Demo ein. Verwende „Kontrolle übernehmen“ für Zugangsdaten."
 
 #: src/pages/HostComputerPrompt.tsx
 msgid "Docker"
@@ -2718,6 +2719,10 @@ msgstr "In vollständigem Fenster öffnen"
 msgid "Open navigation"
 msgstr "Navigation öffnen"
 
+#: src/components/computer/TerminalApp.tsx
+msgid "Open shell"
+msgstr "Shell öffnen"
+
 #: src/pages/ScratchpadSection.tsx
 msgid "Open work"
 msgstr "Offene Arbeit"
@@ -2857,6 +2862,10 @@ msgstr ""
 
 #: src/components/integrations/IntegrationSetup.tsx
 msgid "Project ID"
+msgstr ""
+
+#: src/components/teach/TeachRecordingChrome.tsx
+msgid "Protected input"
 msgstr ""
 
 #: src/pages/MemorySettingsOverlay.tsx
@@ -3381,6 +3390,10 @@ msgstr ""
 msgid "Shared documents"
 msgstr "Geteilte Dokumente"
 
+#: src/components/computer/TerminalApp.tsx
+msgid "Shell"
+msgstr "Shell"
+
 #: src/pages/Shell.tsx
 msgid "Show bots"
 msgstr ""
@@ -3723,6 +3736,10 @@ msgstr "Treg-Token"
 msgid "Try again"
 msgstr "Erneut versuchen"
 
+#: src/components/teach/TeachRecordingChrome.tsx
+msgid "Type without recording"
+msgstr ""
+
 #: src/components/AskCard.tsx
 msgid "Type your answer"
 msgstr "Gib deine Antwort ein"
@@ -3830,6 +3847,10 @@ msgstr "Gefundenes Modell verwenden"
 
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Use default guidance"
+msgstr ""
+
+#: src/components/teach/TeachRecordingChrome.tsx
+msgid "Use Protected input for passwords."
 msgstr ""
 
 #: src/pages/ModelSettingsOverlay.tsx

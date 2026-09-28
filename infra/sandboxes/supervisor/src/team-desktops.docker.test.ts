@@ -47,6 +47,7 @@ it.skipIf(process.env.VERIFY_DOCKER_TEAM_SCREENS !== "1").each([false, true])(
         closeall: stopAllDesktopBrowsersCommand(env),
         viewPort: screenPorts(0, env).viewPort,
         controlPort: screenPorts(0, env).controlPort,
+        gh: "gh --version",
       };
       for (const [bot, index] of [
         ["a", 0],

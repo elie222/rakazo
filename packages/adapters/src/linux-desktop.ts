@@ -7,6 +7,7 @@ import type {
   ComputerRef,
   ScreenRequest,
   ScreenSession,
+  TerminalRequest,
 } from "@rakazo/adapter-kit";
 import {
   BROWSER_APPLICATIONS,
@@ -14,6 +15,7 @@ import {
   browserProfilePathForScreen,
   type DesktopEnvironment,
   desktopControlCommand,
+  desktopTerminalCommand,
   desktopUrl,
   managedDesktopCommand,
   releaseDesktopCommand,
@@ -103,6 +105,25 @@ export class LinuxDesktop {
       context,
     );
     return { url: desktopUrl(url, token), mimeType: "text/html", close: async () => undefined };
+  }
+
+  async connectTerminal(computer: ComputerRef, request: TerminalRequest, context: AdapterContext) {
+    const screen = await this.ensure(computer, context);
+    const terminalToken = randomUUID();
+    await this.run(
+      computer,
+      desktopTerminalCommand(
+        screen.key,
+        context.screenLeaseId,
+        screen.env,
+        request.controlToken,
+        terminalToken,
+        workspacePath(screen.env.workspaceDir, request.cwd ?? ""),
+      ),
+      context,
+    );
+    const url = await this.host.screenUrl(computer, screen.layout.controlPort, context);
+    return { url: desktopUrl(url, terminalToken) };
   }
 
   async setScreenControl(

@@ -202,6 +202,7 @@ msgstr "Activo"
 msgid "Active model"
 msgstr "Modelo activo"
 
+#: src/components/computer/TerminalApp.tsx
 #: src/pages/Shell.tsx
 msgid "Activity"
 msgstr "Actividad"
@@ -1253,6 +1254,10 @@ msgstr ""
 msgid "Could not open local settings. Start the local server and create its owner account, then try again."
 msgstr ""
 
+#: src/components/computer/TerminalApp.tsx
+msgid "Could not open terminal"
+msgstr "No se pudo abrir la terminal"
+
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Could not play a test clip"
 msgstr "No se pudo reproducir un clip de prueba"
@@ -1650,10 +1655,6 @@ msgstr "Descartado: puedes volver a conectar cuando quieras desde la configuraci
 #: src/pages/PluginsOverlay.tsx
 msgid "Display name"
 msgstr "Nombre para mostrar"
-
-#: src/components/teach/TeachRecordingChrome.tsx
-msgid "Do not type passwords into the demo. Use Take control for credentials."
-msgstr "No escribas contraseñas en la demo. Usa Tomar control para las credenciales."
 
 #: src/pages/HostComputerPrompt.tsx
 msgid "Docker"
@@ -2718,6 +2719,10 @@ msgstr "Abrir en ventana completa"
 msgid "Open navigation"
 msgstr "Abrir navegación"
 
+#: src/components/computer/TerminalApp.tsx
+msgid "Open shell"
+msgstr "Abrir shell"
+
 #: src/pages/ScratchpadSection.tsx
 msgid "Open work"
 msgstr "Trabajo abierto"
@@ -2857,6 +2862,10 @@ msgstr ""
 
 #: src/components/integrations/IntegrationSetup.tsx
 msgid "Project ID"
+msgstr ""
+
+#: src/components/teach/TeachRecordingChrome.tsx
+msgid "Protected input"
 msgstr ""
 
 #: src/pages/MemorySettingsOverlay.tsx
@@ -3381,6 +3390,10 @@ msgstr ""
 msgid "Shared documents"
 msgstr "Documentos compartidos"
 
+#: src/components/computer/TerminalApp.tsx
+msgid "Shell"
+msgstr "Shell"
+
 #: src/pages/Shell.tsx
 msgid "Show bots"
 msgstr ""
@@ -3723,6 +3736,10 @@ msgstr "Token de Treg"
 msgid "Try again"
 msgstr "Intentarlo de nuevo"
 
+#: src/components/teach/TeachRecordingChrome.tsx
+msgid "Type without recording"
+msgstr ""
+
 #: src/components/AskCard.tsx
 msgid "Type your answer"
 msgstr "Escribe tu respuesta"
@@ -3830,6 +3847,10 @@ msgstr "Usar un modelo encontrado"
 
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Use default guidance"
+msgstr ""
+
+#: src/components/teach/TeachRecordingChrome.tsx
+msgid "Use Protected input for passwords."
 msgstr ""
 
 #: src/pages/ModelSettingsOverlay.tsx

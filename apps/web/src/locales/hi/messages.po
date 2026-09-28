@@ -202,6 +202,7 @@ msgstr ""
 msgid "Active model"
 msgstr "सक्रिय मॉडल"
 
+#: src/components/computer/TerminalApp.tsx
 #: src/pages/Shell.tsx
 msgid "Activity"
 msgstr "गतिविधि"
@@ -1253,6 +1254,10 @@ msgstr ""
 msgid "Could not open local settings. Start the local server and create its owner account, then try again."
 msgstr ""
 
+#: src/components/computer/TerminalApp.tsx
+msgid "Could not open terminal"
+msgstr "टर्मिनल नहीं खोला जा सका"
+
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Could not play a test clip"
 msgstr "टेस्ट क्लिप नहीं चलाई जा सकी"
@@ -1650,10 +1655,6 @@ msgstr "खारिज किया गया। MCP सेटिंग्स �
 #: src/pages/PluginsOverlay.tsx
 msgid "Display name"
 msgstr "प्रदर्शित नाम"
-
-#: src/components/teach/TeachRecordingChrome.tsx
-msgid "Do not type passwords into the demo. Use Take control for credentials."
-msgstr "डेमो में पासवर्ड टाइप न करें। क्रेडेंशियल्स के लिए 'टेक कंट्रोल' (Take control) का इस्तेमाल करें।"
 
 #: src/pages/HostComputerPrompt.tsx
 msgid "Docker"
@@ -2718,6 +2719,10 @@ msgstr "पूरी विंडो में खोलें"
 msgid "Open navigation"
 msgstr "नेविगेशन खोलें"
 
+#: src/components/computer/TerminalApp.tsx
+msgid "Open shell"
+msgstr "शेल खोलें"
+
 #: src/pages/ScratchpadSection.tsx
 msgid "Open work"
 msgstr "खुला कार्य"
@@ -2857,6 +2862,10 @@ msgstr ""
 
 #: src/components/integrations/IntegrationSetup.tsx
 msgid "Project ID"
+msgstr ""
+
+#: src/components/teach/TeachRecordingChrome.tsx
+msgid "Protected input"
 msgstr ""
 
 #: src/pages/MemorySettingsOverlay.tsx
@@ -3381,6 +3390,10 @@ msgstr ""
 msgid "Shared documents"
 msgstr "साझा दस्तावेज़"
 
+#: src/components/computer/TerminalApp.tsx
+msgid "Shell"
+msgstr "शेल"
+
 #: src/pages/Shell.tsx
 msgid "Show bots"
 msgstr ""
@@ -3723,6 +3736,10 @@ msgstr "Treg टोकन"
 msgid "Try again"
 msgstr "फिर से कोशिश करें"
 
+#: src/components/teach/TeachRecordingChrome.tsx
+msgid "Type without recording"
+msgstr ""
+
 #: src/components/AskCard.tsx
 msgid "Type your answer"
 msgstr "अपना उत्तर लिखें"
@@ -3830,6 +3847,10 @@ msgstr "मिला हुआ मॉडल उपयोग करें"
 
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Use default guidance"
+msgstr ""
+
+#: src/components/teach/TeachRecordingChrome.tsx
+msgid "Use Protected input for passwords."
 msgstr ""
 
 #: src/pages/ModelSettingsOverlay.tsx
