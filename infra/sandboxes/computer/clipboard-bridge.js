@@ -1,9 +1,12 @@
 /**
- * Host → sandbox paste for the chrome-less noVNC embed.
+ * Clipboard bridge for the chrome-less noVNC embed.
  *
- * Debian noVNC 1.3 only syncs clipboard from the full vnc.html panel.
- * Without this bridge, Ctrl/Cmd+V only forwarded keys: on macOS Cmd+V became
- * Super+V (no paste on Linux), and the remote CLIPBOARD stayed empty.
+ * Host → sandbox: Debian noVNC 1.3 only syncs clipboard from the full
+ * vnc.html panel. Without this bridge, Ctrl/Cmd+V only forwarded keys: on
+ * macOS Cmd+V became Super+V (no paste on Linux), and the remote CLIPBOARD
+ * stayed empty.
+ * Sandbox → host: noVNC reports remote CLIPBOARD changes as a "clipboard"
+ * event, but nothing writes them to the host clipboard without a listener.
  */
 
 export const KEYSYM = {
@@ -135,6 +138,34 @@ export function attachMobilePaste(rfb, options = {}) {
   button.addEventListener("click", onClick);
   return () => {
     button.removeEventListener("click", onClick);
+  };
+}
+
+/**
+ * Sandbox → host copy: Debian noVNC 1.3 dispatches a "clipboard" CustomEvent
+ * with detail.text when x11vnc reports a remote CLIPBOARD change
+ * (ServerCutText). navigator.clipboard.writeText needs a secure context and
+ * can be denied without a gesture, so failures are silent.
+ * @param {{ addEventListener?: (type: string, listener: (event: object) => void) => void, removeEventListener?: (type: string, listener: (event: object) => void) => void } | null | undefined} rfb
+ * @param {{ clipboard?: { writeText?: (text: string) => Promise<void> } | null }} [options]
+ * @returns {() => void} detach
+ */
+export function attachRemoteClipboardCopy(rfb, options = {}) {
+  const clipboard = options.clipboard ?? globalThis.navigator?.clipboard;
+  if (typeof rfb?.addEventListener !== "function") return () => {};
+  if (!clipboard || typeof clipboard.writeText !== "function") return () => {};
+  const onClipboard = async (event) => {
+    const text = event?.detail?.text;
+    if (typeof text !== "string") return;
+    try {
+      await clipboard.writeText(text);
+    } catch {
+      // Clipboard writes can be denied without a gesture; stay silent.
+    }
+  };
+  rfb.addEventListener("clipboard", onClipboard);
+  return () => {
+    rfb.removeEventListener?.("clipboard", onClipboard);
   };
 }
 

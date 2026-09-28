@@ -63,6 +63,7 @@ it.skipIf(process.env.VERIFY_DOCKER_TEAM_SCREENS !== "1").each([false, true])(
           ? releaseDesktopCommand(`bot-${bot}`, `run-${bot}:1`, env)
           : stopExtraScreenCommand(index, `bot-${bot}`, env);
         commands[`profile${bot}`] = browserProfilePathForScreen(`bot-${bot}`, env);
+        commands[`display${bot}`] = String(screenPorts(index, env).displayNumber);
         commands[`control${bot}`] = managed
           ? desktopControlCommand(`bot-${bot}`, `run-${bot}:1`, env, true, `control-${bot}`)
           : interactiveScreenCommand(true, `control-${bot}`, screenPorts(index, env));

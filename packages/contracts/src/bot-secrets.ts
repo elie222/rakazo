@@ -1,6 +1,9 @@
 import { z } from "zod";
 
-export const BotSecretName = z.string().regex(/^[a-z][a-z0-9_]{0,63}$/);
+// An opaque reference handle: matched exactly by secret_request/forget_secret,
+// displayed in list_secrets. Never interpolated into shells, env, or URLs, so
+// hyphens are safe.
+export const BotSecretName = z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/);
 
 const SecretHeaderName = z
   .string()

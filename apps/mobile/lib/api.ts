@@ -755,6 +755,8 @@ export type MobileMessage = {
   seq?: number;
   runId?: string;
   role: "user" | "bot" | "system";
+  /** Set when the message was sent from a live voice call; groups one call's transcript. */
+  callId?: string;
   botId?: string;
   replyToMessageId?: string;
   replyQuote?: string;
@@ -900,6 +902,9 @@ type ThreadEvent = {
   payload?: Record<string, unknown>;
 };
 
+/** No frame at all for this long means the stream is half-open; the server beats far faster. */
+export const IDLE_TIMEOUT_MS = 45_000;
+
 export async function subscribeThread(
   target: { botId: string } | { groupId: string },
   cursor: number,
@@ -922,7 +927,19 @@ export async function subscribeThread(
   const decoder = new TextDecoder();
   let buffer = "";
   while (!signal.aborted) {
-    const { done, value } = await reader.read();
+    // A half-open socket never reports done, so give up on silence and let the caller reconnect.
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const read = await Promise.race([
+      reader.read(),
+      new Promise<"idle">((resolve) => {
+        timer = setTimeout(() => resolve("idle"), IDLE_TIMEOUT_MS);
+      }),
+    ]).finally(() => clearTimeout(timer));
+    if (read === "idle") {
+      void reader.cancel().catch(() => undefined);
+      return;
+    }
+    const { done, value } = read;
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
     const chunks = buffer.split("\n\n");
@@ -936,7 +953,8 @@ export async function subscribeThread(
       if (!data || data === "[DONE]") continue;
       try {
         const parsed = JSON.parse(data) as { json?: ThreadEvent; error?: { message?: string } };
-        if (parsed.json?.type) onEvent(parsed.json);
+        // Heartbeats prove liveness only; forwarding one would advance the caller's cursor.
+        if (parsed.json?.type && parsed.json.type !== "heartbeat") onEvent(parsed.json);
       } catch {
         // ignore keepalives and partial frames
       }
@@ -948,7 +966,7 @@ export function applyMobileThreadEvent(
   prev: MobileSnapshot | null,
   event: ThreadEvent,
 ): MobileSnapshot | null {
-  if (!prev) return prev;
+  if (!prev || event.type === "heartbeat") return prev;
   if (event.type === "thread.cleared") {
     return {
       ...prev,
@@ -1113,10 +1131,17 @@ export function applyMobileThreadEvent(
   }
   if (event.type === "thread.message.created" || event.type === "thread.message.updated") {
     const { remaining } = takeLiveMessage(prev.messages, progressMessageId(event));
+    const id = String(event.payload?.messageId ?? event.id ?? `msg:${event.seq ?? 0}`);
     const next: MobileMessage = {
-      id: String(event.payload?.messageId ?? event.id ?? `msg:${event.seq ?? 0}`),
+      id,
       runId: event.runId ? String(event.runId) : undefined,
       role: (event.payload?.role as MobileMessage["role"]) ?? "bot",
+      // An update can leave the call id out — the `end_call` marker does — so keep the one
+      // the message already carries instead of dropping it out of its call.
+      callId:
+        typeof event.payload?.callId === "string"
+          ? event.payload.callId
+          : prev.messages.find((message) => message.id === id)?.callId,
       blocks: (event.payload?.blocks as MobileMessage["blocks"]) ?? [],
       botId: event.botId ?? (event.payload?.botId ? String(event.payload.botId) : undefined),
       replyToMessageId: event.payload?.replyToMessageId

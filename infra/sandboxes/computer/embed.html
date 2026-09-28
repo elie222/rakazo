@@ -70,6 +70,7 @@
       import {
         attachHostClipboardPaste,
         attachMobilePaste,
+        attachRemoteClipboardCopy,
         pasteHostText,
       } from "./clipboard-bridge.js";
       import Keyboard from "./core/input/keyboard.js";
@@ -98,6 +99,7 @@
       rfb.viewOnly = flag("view_only");
       rfb.scaleViewport = true;
       rfb.clipViewport = false;
+      attachRemoteClipboardCopy(rfb);
       if (!rfb.viewOnly) attachHostClipboardPaste(rfb);
       if (!rfb.viewOnly && isTouchBrowser()) {
         const keyboardInput = document.getElementById("mobile-keyboard-input");

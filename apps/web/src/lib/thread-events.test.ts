@@ -503,6 +503,19 @@ describe("thread event reduction", () => {
     expect(started?.run?.trigger).toBe("webhook");
   });
 
+  it("preserves call_end when event-sourcing the wrap-up run", () => {
+    const started = reduceThreadSnapshot(
+      snapshot([]),
+      event({
+        type: "run.started",
+        runId: "call-end-run-1",
+        payload: { trigger: "call_end" },
+      }),
+    );
+
+    expect(started?.run?.trigger).toBe("call_end");
+  });
+
   it("marks the run as waiting when computer takeover is requested", () => {
     const run = threadRun("run-1");
     const initial: ThreadSnapshot = {
@@ -1394,6 +1407,28 @@ describe("thread event reduction", () => {
 
     expect(next?.messages).toHaveLength(1);
     expect(next?.messages[0]?.blocks[0]).toMatchObject({ status: "answered", answer: "Paris" });
+  });
+
+  it("titles the call marker in place when the wrap-up run names it", () => {
+    const initial = snapshot([
+      { ...message("marker-1", [{ kind: "voice_call", title: "", farewell: "" }]), callId: "c-1" },
+    ]);
+    const next = reduceThreadSnapshot(
+      initial,
+      event({
+        type: "thread.message.updated",
+        seq: 8,
+        payload: {
+          messageId: "marker-1",
+          role: "bot",
+          blocks: [{ kind: "voice_call", title: "Flight booked", farewell: "Talk soon" }],
+        },
+      }),
+    );
+
+    expect(next?.messages).toHaveLength(1);
+    expect(next?.messages[0]?.blocks[0]).toMatchObject({ title: "Flight booked" });
+    expect(next?.messages[0]?.callId).toBe("c-1");
   });
 
   it("preserves botId on durable bot messages", () => {

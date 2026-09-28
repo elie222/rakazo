@@ -84,6 +84,13 @@ export function attachMobilePaste(
   },
 ): () => void;
 
+export function attachRemoteClipboardCopy(
+  rfb: EventTargetLike | null | undefined,
+  options?: {
+    clipboard?: { writeText?: (text: string) => Promise<void> } | null;
+  },
+): () => void;
+
 export function attachHostClipboardPaste(
   rfb: {
     viewOnly?: boolean;

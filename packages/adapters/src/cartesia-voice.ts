@@ -90,7 +90,8 @@ export class CartesiaVoiceProvider implements VoiceProvider {
         model_id: MODEL,
         transcript: request.text,
         voice: { mode: "id", id: request.voiceId },
-        output_format: { container: "mp3", encoding: "mp3", sample_rate: 44100 },
+        // Cartesia's mp3 container takes bit_rate, not encoding: an encoding key rejects the request.
+        output_format: { container: "mp3", sample_rate: 44100, bit_rate: 128000 },
       }),
       signal,
     });

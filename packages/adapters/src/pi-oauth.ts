@@ -170,6 +170,19 @@ export function terminalOAuthRefreshErrorMarker(error: unknown): string | undefi
 
 const OPENAI_AUTH_CLAIMS_NAMESPACE = "https://api.openai.com/auth";
 
+function decodeJwtPayload(token: string): Record<string, unknown> | undefined {
+  const parts = token.split(".");
+  if (parts.length !== 3) return undefined;
+  try {
+    const payload: unknown = JSON.parse(Buffer.from(parts[1] ?? "", "base64url").toString("utf8"));
+    return payload && typeof payload === "object"
+      ? (payload as Record<string, unknown>)
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * Readable failure surfaced when a refresh comes back for a different ChatGPT
  * account than the one that was connected.
@@ -177,33 +190,30 @@ const OPENAI_AUTH_CLAIMS_NAMESPACE = "https://api.openai.com/auth";
 export const OAUTH_ACCOUNT_CHANGED_ERROR =
   "The ChatGPT account changed during sign-in refresh. Connect the provider again.";
 
+/** A string with non-whitespace content, or `undefined` for every other value. */
+function nonBlankString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value : undefined;
+}
+
 /**
- * Account identity asserted by an OAuth credential: the provider-populated
- * `accountId` when present (pi's Codex refresh always sets it), else the
- * ChatGPT-namespaced `chatgpt_account_id` claim inside a JWT access token —
- * the same claim pi's `extractAccountId` reads. Never throws: an undecodable
- * token yields `undefined`, which conservatively disables the account-change
- * comparison instead of breaking refresh.
+ * Account identity asserted by an OAuth credential: a non-blank `accountId`
+ * (pi's Codex refresh always sets it), else `chatgpt_account_id` from the
+ * access JWT. The `https://api.openai.com/auth` claim is used only when it is
+ * a non-blank string; otherwise a non-blank top-level claim is used. Never
+ * throws: an undecodable token yields `undefined`, which conservatively
+ * disables the account-change comparison instead of breaking refresh.
  */
 export function oauthCredentialAccountId(credential: OAuthCredential): string | undefined {
-  if (typeof credential.accountId === "string" && credential.accountId) {
-    return credential.accountId;
-  }
-  const parts = credential.access.split(".");
-  const payload = parts.length === 3 ? parts[1] : undefined;
+  const direct = nonBlankString(credential.accountId);
+  if (direct) return direct;
+  const payload = decodeJwtPayload(credential.access);
   if (!payload) return undefined;
-  try {
-    const claims: unknown = JSON.parse(Buffer.from(payload, "base64url").toString());
-    if (!claims || typeof claims !== "object") return undefined;
-    const namespaced = (claims as Record<string, unknown>)[OPENAI_AUTH_CLAIMS_NAMESPACE];
-    const accountId =
-      namespaced && typeof namespaced === "object"
-        ? (namespaced as Record<string, unknown>).chatgpt_account_id
-        : undefined;
-    return typeof accountId === "string" && accountId ? accountId : undefined;
-  } catch {
-    return undefined;
-  }
+  const namespaced = payload[OPENAI_AUTH_CLAIMS_NAMESPACE];
+  const claims =
+    namespaced && typeof namespaced === "object"
+      ? (namespaced as Record<string, unknown>)
+      : undefined;
+  return nonBlankString(claims?.chatgpt_account_id) ?? nonBlankString(payload.chatgpt_account_id);
 }
 
 const retiredCredentialErrors = new WeakSet<object>();
@@ -478,25 +488,17 @@ export function matchesFailedOAuthSecret(
  * never throws — a malformed token fails later in pi's own claim extraction.
  */
 export function codexComputeResidency(accessToken: string | undefined): string | undefined {
-  const parts = accessToken?.split(".") ?? [];
-  const payload = parts.length === 3 ? parts[1] : undefined;
-  if (!payload) return undefined;
-  try {
-    const claims: unknown = JSON.parse(Buffer.from(payload, "base64url").toString());
-    if (!claims || typeof claims !== "object") return undefined;
-    const record = claims as Record<string, unknown>;
-    const namespaced = record[OPENAI_AUTH_CLAIMS_NAMESPACE];
-    const claim =
-      (namespaced && typeof namespaced === "object"
-        ? (namespaced as Record<string, unknown>).chatgpt_compute_residency
-        : undefined) ?? record.chatgpt_compute_residency;
-    if (typeof claim !== "string" || claim === "" || claim === "no_constraint") {
-      return undefined;
-    }
-    return claim;
-  } catch {
+  const record = accessToken ? decodeJwtPayload(accessToken) : undefined;
+  if (!record) return undefined;
+  const namespaced = record[OPENAI_AUTH_CLAIMS_NAMESPACE];
+  const claim =
+    (namespaced && typeof namespaced === "object"
+      ? (namespaced as Record<string, unknown>).chatgpt_compute_residency
+      : undefined) ?? record.chatgpt_compute_residency;
+  if (typeof claim !== "string" || claim === "" || claim === "no_constraint") {
     return undefined;
   }
+  return claim;
 }
 
 export function loadProviderOAuth(providerId: string): OAuthAuth | undefined {

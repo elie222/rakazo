@@ -279,6 +279,28 @@ describe("normalizeSecretDestination", () => {
       normalizeSecretDestination({ ...lanDestination, origin: "http://api.example.test" }),
     ).toThrow();
   });
+
+  it("names the failing field instead of a generic instruction", () => {
+    vi.stubEnv("RAKAZO_SECRETS_ALLOW_PRIVATE_HTTP", "1");
+    expect(() =>
+      normalizeSecretDestination({
+        name: "Feishu Creds",
+        origin: "http://192.168.2.10:8080",
+        auth: { type: "bearer" as const },
+      }),
+    ).toThrow(/name/);
+  });
+
+  it("reports login-over-plain-HTTP as an origin problem", () => {
+    vi.stubEnv("RAKAZO_SECRETS_ALLOW_PRIVATE_HTTP", "1");
+    expect(() =>
+      normalizeSecretDestination({
+        name: "feishu_app_credentials",
+        origin: "http://192.168.2.10:8080",
+        auth: { type: "login" as const },
+      }),
+    ).toThrow(/Website logins require an HTTPS origin/);
+  });
 });
 
 describe("saved website logins", () => {

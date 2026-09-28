@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   attachHostClipboardPaste,
   attachMobilePaste,
+  attachRemoteClipboardCopy,
   clipboardTextFromPaste,
   isPasteChord,
   pasteHostText,
@@ -207,6 +208,7 @@ describe("host clipboard paste bridge", () => {
     const supervisor = readFileSync(path.join(import.meta.dirname, "index.ts"), "utf8");
     expect(dockerfile).toMatch(/clipboard-bridge\.js/);
     expect(embed).toMatch(/attachHostClipboardPaste/);
+    expect(embed).toMatch(/attachRemoteClipboardCopy/);
     expect(embed).toMatch(/attachMobilePaste/);
     expect(embed).toMatch(/id="mobile-paste"/);
     expect(embed).toMatch(/clipboard-bridge\.js/);
@@ -325,5 +327,60 @@ describe("mobile paste control", () => {
     attachMobilePaste({ viewOnly: true }, { button });
     expect(button.hidden).toBe(true);
     expect(button.addEventListener).not.toHaveBeenCalled();
+  });
+});
+
+describe("remote clipboard copy", () => {
+  const rfbTarget = () => {
+    const listeners = new Map<string, (event: object) => void>();
+    const rfb = {
+      addEventListener: (type: string, listener: (event: object) => void) => {
+        listeners.set(type, listener);
+      },
+      removeEventListener: (type: string) => {
+        listeners.delete(type);
+      },
+    };
+    return { rfb, listeners };
+  };
+
+  it("writes remote cut text to the host clipboard", () => {
+    const { rfb, listeners } = rfbTarget();
+    const writeText = vi.fn(async (_text: string) => {});
+    const detach = attachRemoteClipboardCopy(rfb, { clipboard: { writeText } });
+    listeners.get("clipboard")?.({ detail: { text: "otp-482991" } });
+    expect(writeText).toHaveBeenCalledWith("otp-482991");
+    detach();
+    expect(listeners.size).toBe(0);
+  });
+
+  it("ignores events without text", () => {
+    const { rfb, listeners } = rfbTarget();
+    const writeText = vi.fn(async (_text: string) => {});
+    attachRemoteClipboardCopy(rfb, { clipboard: { writeText } });
+    listeners.get("clipboard")?.({});
+    listeners.get("clipboard")?.({ detail: {} });
+    expect(writeText).not.toHaveBeenCalled();
+  });
+
+  it("does not attach when the clipboard write API is missing", () => {
+    const { rfb, listeners } = rfbTarget();
+    const detach = attachRemoteClipboardCopy(rfb, { clipboard: {} });
+    expect(listeners.size).toBe(0);
+    expect(() => detach()).not.toThrow();
+    expect(() =>
+      attachRemoteClipboardCopy(null, { clipboard: { writeText: vi.fn() } }),
+    ).not.toThrow();
+  });
+
+  it("swallows clipboard write denials", async () => {
+    const { rfb, listeners } = rfbTarget();
+    const writeText = vi.fn(async (_text: string) => {
+      throw new Error("denied");
+    });
+    attachRemoteClipboardCopy(rfb, { clipboard: { writeText } });
+    listeners.get("clipboard")?.({ detail: { text: "secret" } });
+    // Let the rejection settle; it must not surface as unhandled.
+    await vi.waitFor(() => expect(writeText).toHaveBeenCalledWith("secret"));
   });
 });

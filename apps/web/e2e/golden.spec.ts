@@ -372,12 +372,13 @@ test("sign-in, spawn, and stop work in the shell", async ({ page }, testInfo) =>
   await expect(page.getByText(/^Steer /)).toHaveCount(0);
   await expect(composer).toHaveAttribute("placeholder", "Message Chief");
   await expect(page.getByRole("button", { name: "Send", exact: true })).toBeVisible();
+  const voiceButton = page
+    .getByTestId("composer-bar")
+    .getByRole("button", { name: "Voice", exact: true });
+  await expect(voiceButton).toBeVisible();
   await composer.fill("Use the newer report and keep the answer short.");
-  await page.keyboard.press("Tab");
-  await expect(
-    page.getByTestId("composer-bar").getByRole("button", { name: "Voice", exact: true }),
-  ).toBeFocused();
-  await page.keyboard.press("Tab");
+  await expect(voiceButton).toHaveCount(0);
+  await composer.press("Tab");
   await expect(page.getByRole("button", { name: "Send", exact: true })).toBeFocused();
   await page.keyboard.press("Enter");
   await expect(

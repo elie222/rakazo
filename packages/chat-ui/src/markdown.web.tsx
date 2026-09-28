@@ -6,7 +6,8 @@ import "./markdown.web.css";
 import "./markdown-table.css";
 import { droppedTableHtmlText } from "@rakazo/contracts";
 import { CheckIcon, CopyIcon } from "./icons";
-import { type ChatMarkdownProps, closeUnterminatedFence, sanitizeMarkdownUrl } from "./markdown";
+import type { ChatMarkdownProps } from "./markdown";
+import { closeUnterminatedFence, plainTextLinkParts, sanitizeMarkdownUrl } from "./markdown";
 import { MarkdownTable, MarkdownTableSourceContext } from "./markdown-table";
 
 function preserveSkippedTableText() {
@@ -78,6 +79,24 @@ const components: Components = {
     );
   },
 };
+
+export function LinkifiedText({ children }: { children: string }) {
+  return plainTextLinkParts(children).map((part, index) =>
+    part.type === "text" ? (
+      part.value
+    ) : (
+      <a
+        key={index}
+        href={part.href}
+        target="_blank"
+        rel="noreferrer noopener"
+        className="text-link underline"
+      >
+        {part.value}
+      </a>
+    ),
+  );
+}
 
 export const ChatMarkdown = memo(function ChatMarkdown({
   children,

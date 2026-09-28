@@ -52,6 +52,7 @@ describe("sealed screen capabilities", () => {
         },
         attachHostClipboardPaste: () => {},
         attachMobilePaste: () => {},
+        attachRemoteClipboardCopy: () => {},
         pasteHostText: () => false,
         // Embed imports are stripped for this smoke; stub the touch-keyboard
         // and trackpad bridges the same way as clipboard. Returning false

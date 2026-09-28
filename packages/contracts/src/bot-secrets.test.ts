@@ -25,6 +25,18 @@ describe("credential contracts", () => {
   ])("rejects non-origin destination %s", (origin) => {
     expect(BotSecretDestination.safeParse({ ...destination, origin }).success).toBe(false);
   });
+  it.each(["feishu-app-credentials", "my-creds-2", "team_a-bot"])(
+    "accepts hyphenated credential names like %s",
+    (name) => {
+      expect(BotSecretDestination.safeParse({ ...destination, name }).success).toBe(true);
+    },
+  );
+  it.each(["Feishu App", "-leading", "with space", ""])(
+    "rejects malformed credential names %s",
+    (name) => {
+      expect(BotSecretDestination.safeParse({ ...destination, name }).success).toBe(false);
+    },
+  );
   it.each([
     "Host",
     "Connection",

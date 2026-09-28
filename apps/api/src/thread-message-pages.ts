@@ -1,5 +1,5 @@
 import type { MessageBlock, ThreadMessage, ThreadMessagePage } from "@rakazo/contracts";
-import { isPeerReceiptBlocks } from "@rakazo/core";
+import { callIdFromClientNonce, isPeerReceiptBlocks } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 
 type MessageDb = PrismaClient | Prisma.TransactionClient;
@@ -177,6 +177,7 @@ function toThreadMessage(row: {
   replyToMessageId: string | null;
   replyQuote: string | null;
   runId: string | null;
+  clientNonce?: string | null;
   createdAt: Date;
 }): ThreadMessage {
   return {
@@ -189,6 +190,7 @@ function toThreadMessage(row: {
     replyToMessageId: row.replyToMessageId ?? undefined,
     replyQuote: row.replyQuote ?? undefined,
     runId: row.runId ?? undefined,
+    callId: callIdFromClientNonce(row.clientNonce),
     createdAt: row.createdAt.toISOString(),
   };
 }

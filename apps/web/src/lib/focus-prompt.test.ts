@@ -44,4 +44,20 @@ describe("scheduleFocusPrompt", () => {
     expect(prompt).not.toHaveBeenCalled();
     vi.useRealTimers();
   });
+
+  it("does not prompt when send is already in flight after the delay", async () => {
+    vi.useFakeTimers();
+    const prompt = vi.fn(async () => undefined);
+    const controller = new AbortController();
+    const pending = scheduleFocusPrompt({
+      immediate: false,
+      signal: controller.signal,
+      prompt,
+      shouldSkip: () => true,
+    });
+    await vi.advanceTimersByTimeAsync(FOCUS_PROMPT_DELAY_MS);
+    await expect(pending).resolves.toBe("cancelled");
+    expect(prompt).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
 });

@@ -24,7 +24,7 @@ function secretAskToolSurface() {
       allowPrivateHttpOrigins
         ? "HTTPS origin, or an HTTP origin on a private LAN host"
         : "HTTPS origin"
-    }, or connectionId for a one-use connector code. For a website login the user wants saved, use auth {type:"login"} with the sign-in page's HTTPS origin; the card asks for a username and password, and browser_act fill_secret types them. Existing named credentials are reused unless replace is true. For 2FA, CAPTCHA, passkeys, or anything else that needs the live desktop, call request_takeover instead.`,
+    }, or connectionId for a one-use connector code. Credential names must start with a lowercase letter and use only lowercase letters, digits, hyphens, or underscores (max 64 characters). For a website login the user wants saved, use auth {type:"login"} with the sign-in page's HTTPS origin; the card asks for a username and password, and browser_act fill_secret types them. Existing named credentials are reused unless replace is true. For 2FA, CAPTCHA, passkeys, or anything else that needs the live desktop, call request_takeover instead.`,
     inputSchema: {
       oneOf: [
         {
@@ -727,6 +727,25 @@ export const builtinAgentTools: ConnectorTool[] = [
         routineId: { type: "string" },
         name: { type: "string" },
       },
+    },
+  },
+  {
+    name: "end_call",
+    description:
+      "End the current voice call. Call this when the user asks to hang up or end the call, or the conversation is clearly finished. Your farewell is spoken as the call ends, so do not also say goodbye in text; finish any remaining work in chat afterwards.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        title: {
+          type: "string",
+          description: 'What the call was about, 2-5 words, e.g. "AI stack flow". Max 40 chars.',
+        },
+        farewell: {
+          type: "string",
+          description: "One short sentence spoken as you hang up. Max 160 chars.",
+        },
+      },
+      required: ["title", "farewell"],
     },
   },
   {

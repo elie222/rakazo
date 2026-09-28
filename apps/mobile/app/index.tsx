@@ -5,6 +5,7 @@ import {
   type SpaceBot,
   type SpaceGroup,
 } from "@rakazo/contracts";
+import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
 import { botColors } from "@rakazo/ui-tokens";
 import { Redirect, useFocusEffect, useRouter } from "expo-router";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -25,6 +26,7 @@ import { BotAvatar } from "../components/bot-avatar";
 import { BotOrganizeModal } from "../components/bot-organize-modal";
 import { GroupAvatar } from "../components/group-avatar";
 import { NativeSymbol } from "../components/native-symbol";
+import { WorkingIndicator } from "../components/WorkingIndicator";
 import {
   activityStatusLabel,
   fetchSpaceActivity,
@@ -46,6 +48,7 @@ import {
   selectSpace,
 } from "../lib/api";
 import { mobileTokens, resolveMobileAppearance } from "../lib/appearance";
+import { mobileBotAvatarPresentation } from "../lib/bot-avatar";
 import { allowFocusPrompt, scheduleFocusPrompt } from "../lib/focus-prompt";
 import { t, useI18n } from "../lib/i18n";
 import { botTag, filterBots, formatThreadTime, userInitials } from "../lib/inbox";
@@ -799,6 +802,7 @@ function ConversationRow({
   preview,
   time,
   avatar,
+  indicator,
   tag,
   unread,
   depth = 0,
@@ -814,6 +818,7 @@ function ConversationRow({
   preview: string;
   time: string;
   avatar: ReactNode;
+  indicator?: ReactNode;
   tag?: string | null;
   unread?: boolean;
   depth?: number;
@@ -882,6 +887,7 @@ function ConversationRow({
             ) : null}
           </View>
           <View style={styles.rowMeta}>
+            {indicator}
             {time ? <Text style={styles.time}>{time}</Text> : null}
             {unread ? <View accessibilityElementsHidden style={styles.unreadDot} /> : null}
           </View>
@@ -968,10 +974,16 @@ function BotRow({
   const preview = previewSnippet(bot.preview, 40) || bot.title || t("No messages yet");
   const time = bot.updatedAt ? formatThreadTime(bot.updatedAt) : "";
   const tag = botTag(bot.title, bot.name);
+  const working = ACTIVE_RUN_STATUSES.some((status) => status === bot.status);
+  // Only flat avatars carry a usable color; image avatars fall back to the muted dot.
+  const presentation = mobileBotAvatarPresentation(bot.color || FALLBACK_COLOR);
+  const tint =
+    presentation.kind === "shape" || presentation.kind === "color" ? presentation.color : undefined;
   // Spelled out because an explicit label replaces the one built from the row's children.
   const label = [
     bot.name,
     tag,
+    working ? t("Working…") : null,
     bot.notifyOnFinish ? null : t("notifications silenced"),
     bot.unread ? t("unread") : null,
     time,
@@ -996,6 +1008,7 @@ function BotRow({
       }
       onPress={onPress}
       onLongPress={onLongPress}
+      indicator={working ? <WorkingIndicator compact tint={tint} /> : null}
       avatar={
         <BotAvatar
           color={bot.color || FALLBACK_COLOR}

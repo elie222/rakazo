@@ -11,6 +11,11 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import {
+  DEFAULT_DESKTOP_ENV,
+  ensureScreenCommand,
+  TERMINAL_MENU_COMMAND,
+} from "@rakazo/core/node/desktop-runtime";
 import type Docker from "dockerode";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
@@ -180,6 +185,116 @@ describe("graphical computer spec", () => {
     expect(desktop).toMatch(/x-scheme-handler\/https/);
     expect(start).not.toMatch(/windowsize 1280 800/);
   });
+
+  it.skipIf(process.platform === "win32")(
+    "delivers desktop menu exec arguments intact through /bin/sh",
+    () => {
+      const root = path.resolve(import.meta.dirname, "../../computer");
+      const menu = readFileSync(path.join(root, "fluxbox.menu"), "utf8");
+      const temp = mkdtempSync(path.join(tmpdir(), "fluxbox-menu-"));
+      const bin = path.join(temp, "bin");
+      mkdirSync(bin);
+      try {
+        for (const name of ["xterm", "rakazo-browser"]) {
+          const stub = path.join(bin, name);
+          writeFileSync(stub, '#!/bin/sh\nprintf "%s\\n" "$@" > "$RAKAZO_TEST_ARGS"\n');
+          chmodSync(stub, 0o755);
+        }
+        const argvFor = (label: string) => {
+          const command = menu
+            .split("\n")
+            .map((entry) => entry.match(/\[exec\] \(([^)]*)\) \{([^}]*)\}/))
+            .find((match) => match?.[1] === label)?.[2];
+          expect(command, label).toBeTruthy();
+          const capture = path.join(temp, `${label}-args`);
+          const result = spawnSync("sh", ["-c", command!], {
+            env: {
+              ...process.env,
+              PATH: `${bin}${path.delimiter}${process.env.PATH ?? ""}`,
+              RAKAZO_TEST_ARGS: capture,
+            },
+            encoding: "utf8",
+          });
+          expect(result.status, result.stderr).toBe(0);
+          return readFileSync(capture, "utf8").trim().split("\n").filter(Boolean);
+        };
+        expect(argvFor("Terminal")).toEqual([
+          "-bg",
+          "rgb:11/11/13",
+          "-fg",
+          "rgb:e8/e8/ea",
+          "-cr",
+          "rgb:e8/e8/ea",
+          "-title",
+          "Terminal",
+          "-xrm",
+          "XTerm*selectToClipboard: true",
+        ]);
+        expect(argvFor("Browser")).toEqual([]);
+      } finally {
+        rmSync(temp, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it.skipIf(process.platform === "win32")(
+    "keeps the baked and generated desktop menus in sync",
+    () => {
+      const root = path.resolve(import.meta.dirname, "../../computer");
+      const baked = readFileSync(path.join(root, "fluxbox.menu"), "utf8");
+      const terminalLine = `[exec] (Terminal) {${TERMINAL_MENU_COMMAND}}`;
+      expect(baked.split("\n").map((line) => line.trim())).toContain(terminalLine);
+
+      const generated = ensureScreenCommand(0, "bot", "view-token", {
+        ...DEFAULT_DESKTOP_ENV,
+        preservePrimaryDisplay: false,
+      });
+      const temp = mkdtempSync(path.join(tmpdir(), "fluxbox-menu-"));
+      const fluxHome = path.join(temp, "fluxbox-home-1");
+      const menuPath = path.join(fluxHome, ".fluxbox", "menu");
+      const initPath = path.join(fluxHome, ".fluxbox", "init");
+      const init = "session.menuFile: kept\n";
+      try {
+        mkdirSync(path.dirname(menuPath), { recursive: true });
+        writeFileSync(
+          menuPath,
+          "[begin] (Desktop)\n[exec] (Browser) {/tmp/rakazo/browser-launch-1}\n[end]\n",
+        );
+        writeFileSync(initPath, init);
+        const lines = generated.replaceAll("/tmp/fluxbox-home-1", fluxHome).split("\n");
+        const start = lines.indexOf(`mkdir -p ${fluxHome}/.fluxbox`);
+        const end = lines.findIndex((line, index) => index > start && line === "fi");
+        expect(start).toBeGreaterThanOrEqual(0);
+        expect(end).toBeGreaterThan(start);
+        const fragment = [
+          "xdpyinfo() { return 0; }",
+          "Xvfb() { echo Xvfb; }",
+          "fluxbox() { echo fluxbox; }",
+          "nohup() { echo nohup; }",
+          lines.slice(start, end + 1).join("\n"),
+        ].join("\n");
+        for (let attempt = 0; attempt < 2; attempt++) {
+          const result = spawnSync("bash", ["-eu", "-c", fragment], { encoding: "utf8" });
+          expect(result.status, result.stderr).toBe(0);
+          expect(result.stdout).toBe("");
+        }
+        const written = readFileSync(menuPath, "utf8");
+        expect(written.split("\n").find((line) => line.includes("(Terminal)"))).toBe(terminalLine);
+        expect(written).toBe(
+          [
+            "[begin] (Desktop)",
+            "[exec] (Browser) {/tmp/rakazo/browser-launch-1}",
+            terminalLine,
+            "[end]",
+            "",
+          ].join("\n"),
+        );
+        expect(readFileSync(initPath, "utf8")).toBe(init);
+      } finally {
+        rmSync(temp, { recursive: true, force: true });
+      }
+    },
+  );
 
   it.skipIf(process.platform === "win32")(
     "selects a display-specific browser profile and preserves explicit profiles",

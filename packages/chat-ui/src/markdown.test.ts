@@ -1,6 +1,11 @@
 import { createRequire } from "node:module";
 import { describe, expect, it } from "vitest";
-import { closeUnterminatedFence, linkifyExplicitUrls, sanitizeMarkdownUrl } from "./markdown";
+import {
+  closeUnterminatedFence,
+  linkifyExplicitUrls,
+  plainTextLinkParts,
+  sanitizeMarkdownUrl,
+} from "./markdown";
 
 type Token = { type: string; attrGet(name: string): string | null; children: Token[] | null };
 type Parser = Parameters<typeof linkifyExplicitUrls>[0] & {
@@ -33,6 +38,71 @@ describe("linkifyExplicitUrls", () => {
         "setup.py notes.md example.com www.example.com ftp://example.com //example.com javascript:alert(1)",
       ),
     ).toEqual([]);
+  });
+});
+
+describe("plainTextLinkParts", () => {
+  function visible(text: string) {
+    return plainTextLinkParts(text)
+      .map((part) => part.value)
+      .join("");
+  }
+
+  it("links explicit urls and email addresses without interpreting markdown", () => {
+    const text = "see http://example.test and https://example.com/a?b=1, or bob@example.com";
+    expect(
+      plainTextLinkParts(text).flatMap((part) => (part.type === "link" ? [part.href] : [])),
+    ).toEqual(["http://example.test", "https://example.com/a?b=1", "mailto:bob@example.com"]);
+    expect(visible("# Title **important**")).toBe("# Title **important**");
+    expect(plainTextLinkParts("# Title **important**").every((part) => part.type === "text")).toBe(
+      true,
+    );
+    expect(visible(text)).toBe(text);
+  });
+
+  it("leaves file names, bare domains, and unopenable schemes as text", () => {
+    const text =
+      "setup.py notes.md example.com www.example.com ftp://example.com //example.com javascript:alert(1)";
+    expect(plainTextLinkParts(text).some((part) => part.type === "link")).toBe(false);
+    expect(visible(text)).toBe(text);
+  });
+
+  it("keeps balanced parentheses inside a url and drops a prose closer", () => {
+    const wiki = "https://en.wikipedia.org/wiki/Foo_(bar)";
+    expect(plainTextLinkParts(wiki)).toEqual([{ type: "link", value: wiki, href: wiki }]);
+
+    const wrapped = "(see https://example.com)";
+    expect(plainTextLinkParts(wrapped)).toEqual([
+      { type: "text", value: "(see " },
+      { type: "link", value: "https://example.com", href: "https://example.com" },
+      { type: "text", value: ")" },
+    ]);
+    expect(visible(wiki)).toBe(wiki);
+    expect(visible(wrapped)).toBe(wrapped);
+  });
+
+  it("matches bot autolinks when parentheses are nested or trailing", () => {
+    const samples = [
+      "https://en.wikipedia.org/wiki/Foo_(bar)",
+      "(see https://example.com)",
+      "https://example.com/foo_(bar))",
+      "https://example.com/Foo_(bar_(baz))",
+      "https://example.com/path_(a)_(b).",
+    ];
+    for (const text of samples) {
+      expect(
+        plainTextLinkParts(text).flatMap((part) => (part.type === "link" ? [part.href] : [])),
+      ).toEqual(linkHrefs(text));
+      expect(visible(text)).toBe(text);
+    }
+  });
+
+  it("scans a long alphanumeric run without an at-sign quickly", () => {
+    const text = "a".repeat(40_000);
+    const started = performance.now();
+    const parts = plainTextLinkParts(text);
+    expect(performance.now() - started).toBeLessThan(250);
+    expect(parts).toEqual([{ type: "text", value: text }]);
   });
 });
 

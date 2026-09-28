@@ -106,6 +106,8 @@ def main():
     assert_file_chooser_portals()
     run(commands, "seed")
     run(commands, "ensureb")
+    menu = Path(f"/tmp/fluxbox-home-{commands['displayb']}/.fluxbox/menu").read_text()
+    assert "(Terminal)" in menu, f"generated screen menu is missing its Terminal entry: {menu}"
     with ThreadPoolExecutor(2) as pool:
         list(pool.map(lambda step: run(commands, step), ["opena", "openb"]))
     for bot in "ab":

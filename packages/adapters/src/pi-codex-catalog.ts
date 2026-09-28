@@ -6,7 +6,7 @@ import type { ModelCredentialAuthKind } from "./pi-catalog-availability.js";
 import type { PiCatalogEntry } from "./pi-models.js";
 import { listPiCatalog } from "./pi-models.js";
 import type { StoredModelSecret } from "./pi-oauth.js";
-import { CHATGPT_OAUTH_PROVIDER, parseModelSecret } from "./pi-oauth.js";
+import { CHATGPT_OAUTH_PROVIDER, oauthCredentialAccountId, parseModelSecret } from "./pi-oauth.js";
 import type { EncryptedSecretStore } from "./secrets.js";
 
 /**
@@ -402,7 +402,7 @@ function codexAccountHandle(
   credential: OAuthCredential,
   onExpiredToken?: () => void,
 ): CodexCatalogAccount | null {
-  const accountId = codexAccountId(credential);
+  const accountId = oauthCredentialAccountId(credential);
   if (!accountId) return null;
   return {
     accountId,
@@ -494,33 +494,6 @@ function oauthCodexSecretIds(auth: CodexCatalogSpaceAuth): string[] {
     if (id) ids.add(id);
   }
   return [...ids];
-}
-
-/** `chatgpt-account-id` from the stored credential, else decoded from the access JWT. */
-function codexAccountId(credential: OAuthCredential): string | undefined {
-  const direct = credential.accountId;
-  if (typeof direct === "string" && direct.trim()) return direct;
-  const payload = decodeJwtPayload(credential.access);
-  const claims =
-    payload?.["https://api.openai.com/auth"] &&
-    typeof payload["https://api.openai.com/auth"] === "object"
-      ? (payload["https://api.openai.com/auth"] as Record<string, unknown>)
-      : undefined;
-  const accountId = claims?.chatgpt_account_id ?? payload?.chatgpt_account_id;
-  return typeof accountId === "string" && accountId ? accountId : undefined;
-}
-
-function decodeJwtPayload(token: string): Record<string, unknown> | undefined {
-  const parts = token.split(".");
-  if (parts.length !== 3) return undefined;
-  try {
-    const payload: unknown = JSON.parse(Buffer.from(parts[1] ?? "", "base64url").toString("utf8"));
-    return payload && typeof payload === "object"
-      ? (payload as Record<string, unknown>)
-      : undefined;
-  } catch {
-    return undefined;
-  }
 }
 
 /**

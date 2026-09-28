@@ -46,10 +46,19 @@ export function allowPrivateHttpSecretOrigins(): boolean {
 }
 
 export function normalizeSecretDestination(value: unknown): BotSecretDestination {
-  const destination = botSecretDestinationSchema({
+  const parsed = botSecretDestinationSchema({
     allowPrivateHttpOrigin: allowPrivateHttpSecretOrigins(),
-  }).parse(value);
-  return { ...destination, origin: new URL(destination.origin).origin };
+  }).safeParse(value);
+  if (!parsed.success) {
+    // Surface the actual failing field: models (and people) supply all three
+    // parts and still fail on a name character or an origin rule, and a
+    // generic "specify name, origin, auth" error sends them retrying blind.
+    const detail = parsed.error.issues
+      .map((issue) => `${issue.path.join(".") || "credential"}: ${issue.message}`)
+      .join("; ");
+    throw new Error(`Invalid credential destination — ${detail}`);
+  }
+  return { ...parsed.data, origin: new URL(parsed.data.origin).origin };
 }
 
 export function sameSecretDestination(

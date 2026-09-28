@@ -9,7 +9,7 @@ import { memo, useMemo, useState } from "react";
 import type { StyleProp, ViewStyle } from "react-native";
 import { Linking, ScrollView, StyleSheet, Text, View } from "react-native";
 import type { ChatMarkdownProps } from "./markdown";
-import { linkifyExplicitUrls, sanitizeMarkdownUrl } from "./markdown";
+import { linkifyExplicitUrls, plainTextLinkParts, sanitizeMarkdownUrl } from "./markdown";
 
 // One shared parser: the Markdown components memoize on its identity.
 const markdownParser = linkifyExplicitUrls(createMarkdownIt());
@@ -170,6 +170,39 @@ const renderRules: RenderRules = {
     </Text>
   ),
 };
+
+type LinkifiedTextProps = {
+  children: string;
+  color: string;
+  linkColor: string;
+};
+
+export const LinkifiedText = memo(function LinkifiedText({
+  children,
+  color,
+  linkColor,
+}: LinkifiedTextProps) {
+  return (
+    <Text style={{ color, fontSize: 15.5, lineHeight: 23 }}>
+      {plainTextLinkParts(children).map((part, index) =>
+        part.type === "text" ? (
+          part.value
+        ) : (
+          <Text
+            accessibilityRole="link"
+            key={index}
+            style={{ color: linkColor, textDecorationLine: "underline" }}
+            onPress={() => {
+              void openSafeLink(part.href);
+            }}
+          >
+            {part.value}
+          </Text>
+        ),
+      )}
+    </Text>
+  );
+});
 
 export const ChatMarkdown = memo(function ChatMarkdown({
   children,
