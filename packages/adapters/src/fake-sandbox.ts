@@ -136,13 +136,22 @@ export class FakeSandboxProvider implements SandboxProvider {
     this.requiredBox(computer);
     if (!request.controlToken) throw new Error("terminal requires screen control");
     return {
-      url: await this.terminals.open(computer.id, workspacePath("/home/rakazo", request.cwd ?? "")),
+      url: await this.terminals.open(
+        computer.id,
+        request.controlToken,
+        workspacePath("/home/rakazo", request.cwd ?? ""),
+      ),
     };
   }
 
-  /** Releasing control ends the terminal, as on real computers. */
-  async setScreenControl(computer: ComputerRef, interactive: boolean, _context: AdapterContext) {
-    if (!interactive) this.terminals.revoke(computer.id);
+  /** Releasing control ends that lease's terminal, as on real computers. */
+  async setScreenControl(
+    computer: ComputerRef,
+    interactive: boolean,
+    _context: AdapterContext,
+    controlToken?: string,
+  ) {
+    if (!interactive) this.terminals.revoke(computer.id, controlToken);
   }
 
   async sendInput(

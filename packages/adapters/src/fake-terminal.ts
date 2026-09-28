@@ -6,6 +6,8 @@ import { TERMINAL_INPUT, TERMINAL_RESIZE } from "@rakazo/contracts";
 
 const WEBSOCKET_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 
+type Session = { owner: string; lease: string; cwd: string };
+
 /**
  * Loopback stand-in for the computer's terminal gateway. It speaks the same websocket and
  * frame protocol as websockify plus the PTY server, but answers with an emulated shell so
@@ -15,25 +17,30 @@ const WEBSOCKET_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 export class FakeTerminalGateway {
   private server: http.Server | null = null;
   private listening: Promise<number> | null = null;
-  private readonly sessions = new Map<string, { owner: string; cwd: string }>();
-  private readonly connections = new Map<Duplex, string>();
+  private readonly sessions = new Map<string, Session>();
+  private readonly connections = new Map<Duplex, Session>();
 
-  /** Open a session for `owner` (a computer); `revoke(owner)` ends it. */
-  async open(owner: string, cwd: string): Promise<string> {
+  /** Open a session for `owner` (a computer) under a control lease; `revoke` ends it. */
+  async open(owner: string, lease: string, cwd: string): Promise<string> {
     const port = await this.start();
     const token = randomUUID();
-    this.sessions.set(token, { owner, cwd });
+    this.sessions.set(token, { owner, lease, cwd });
     const socketPath = `websockify?token=${token}`;
     return `http://127.0.0.1:${port}/vnc.html?path=${encodeURIComponent(socketPath)}`;
   }
 
-  /** Refuse the owner's tokens and disconnect its shells, like stopping the real server. */
-  revoke(owner: string) {
+  /**
+   * Refuse the owner's tokens and disconnect its shells, like stopping the real server. With a
+   * lease, only that lease's sessions end, as a real release checks the control token.
+   */
+  revoke(owner: string, lease?: string) {
+    const matches = (session: Session) =>
+      session.owner === owner && (lease === undefined || session.lease === lease);
     for (const [token, session] of this.sessions) {
-      if (session.owner === owner) this.sessions.delete(token);
+      if (matches(session)) this.sessions.delete(token);
     }
-    for (const [socket, connectionOwner] of this.connections) {
-      if (connectionOwner === owner) socket.destroy();
+    for (const [socket, session] of this.connections) {
+      if (matches(session)) socket.destroy();
     }
   }
 
@@ -87,7 +94,7 @@ export class FakeTerminalGateway {
         "",
       ].join("\r\n"),
     );
-    this.connections.set(socket, session.owner);
+    this.connections.set(socket, session);
     socket.on("close", () => this.connections.delete(socket));
     const shell = new FakeShell(
       session.cwd,

@@ -15,7 +15,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { encodeTerminalInput, encodeTerminalResize } from "@rakazo/contracts";
 import { afterEach, describe, expect, it } from "vitest";
-import { screenPorts, startTerminalCommand } from "./desktop-runtime.js";
+import { interactiveScreenCommand, screenPorts, startTerminalCommand } from "./desktop-runtime.js";
 import { TERMINAL_SERVER_PROGRAM } from "./terminal-server.js";
 
 const cleanup: Array<() => void> = [];
@@ -65,7 +65,8 @@ function connect(socket: string) {
     }
     throw new Error(`terminal output did not match ${pattern}: ${output}`);
   };
-  return { client, waitFor };
+  const closed = new Promise((resolve) => client.on("close", resolve));
+  return { client, waitFor, closed };
 }
 
 describe("terminal server", () => {
@@ -168,6 +169,22 @@ describe.skipIf(!canRunScript)("terminal start script", () => {
     expect(entries()[0]![0]).toBe("tab-3");
     expect(entries()[0]![1]).not.toBe(socket);
     expect(existsSync(socket)).toBe(false);
+
+    // Releasing control ends established shells, not only new connections. A release for
+    // another lease leaves them running.
+    const current = connect(entries()[0]![1]!);
+    current.client.write(encodeTerminalInput("echo current-$((40 + 4))\n"));
+    await current.waitFor(/current-44/);
+    const release = (lease: string) =>
+      spawnSync("bash", ["-eu", "-c", interactiveScreenCommand(false, lease, layout)], {
+        encoding: "utf8",
+      });
+    expect(release("lease-a").status).toBe(0);
+    current.client.write(encodeTerminalInput("echo alive-$((40 + 5))\n"));
+    await current.waitFor(/alive-45/);
+    expect(release("lease-b").stdout).toContain("RAKAZO_CONTROL_RELEASED");
+    await expect(current.closed).resolves.toBeDefined();
+    expect(readFileSync(target, "utf8")).toBe("");
 
     expect(start("lease-c", "tab-4", cwd).status).toBe(0);
     writeFileSync(`/tmp/rakazo/control-token-${display}`, "lease-d");

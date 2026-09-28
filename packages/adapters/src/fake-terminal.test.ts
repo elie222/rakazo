@@ -7,9 +7,13 @@ afterEach(() => {
   for (const gateway of gateways.splice(0)) gateway.close();
 });
 
-async function connect(cwd = "/home/rakazo/bots/bot-1", gateway = new FakeTerminalGateway()) {
-  gateways.push(gateway);
-  const page = new URL(await gateway.open("computer-1", cwd));
+async function connect(
+  cwd = "/home/rakazo/bots/bot-1",
+  gateway = new FakeTerminalGateway(),
+  lease = "lease-1",
+) {
+  if (!gateways.includes(gateway)) gateways.push(gateway);
+  const page = new URL(await gateway.open("computer-1", lease, cwd));
   const target = new URL(page.searchParams.get("path")!, page);
   target.protocol = "ws:";
   const socket = new WebSocket(target, ["binary"]);
@@ -79,6 +83,18 @@ describe("fake terminal gateway", () => {
     const target = new URL(page.searchParams.get("path")!, page);
     target.protocol = "ws:";
     await expect(refused(target.toString())).rejects.toThrow("refused");
+  });
+
+  it("ends only the released lease's shells", async () => {
+    const gateway = new FakeTerminalGateway();
+    const old = await connect(undefined, gateway, "lease-old");
+    const current = await connect(undefined, gateway, "lease-new");
+    // A delayed release of the earlier lease must not end the current shell.
+    gateway.revoke("computer-1", "lease-old");
+    await expect(old.closed).resolves.toBeDefined();
+    await current.waitFor(/^\$ $/);
+    current.socket.send(encodeTerminalInput("echo still-here\r"));
+    await expect(current.waitFor(/still-here\r\n\$ $/)).resolves.toContain("still-here");
   });
 
   it("ends open connections when the gateway closes", async () => {
