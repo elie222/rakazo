@@ -202,6 +202,7 @@ export interface ConnectorTool {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
+  /** Declared effect. `false` forces approval; `true` never relaxes the name-based gate. */
   readOnly?: boolean;
   /** In-process routing metadata. It is never exposed to the model. */
   route?: ConnectorRoute;

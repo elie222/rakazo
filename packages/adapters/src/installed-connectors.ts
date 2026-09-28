@@ -34,6 +34,7 @@ import {
   executeLazyCatalogControl,
   isLazyCatalogControlRoute,
   lazyCatalogTools,
+  MAX_DESCRIPTION_LENGTH,
   resolveCatalogCall,
 } from "./lazy-tool-catalog.js";
 import {
@@ -175,9 +176,13 @@ export class InstalledConnectorProvider implements ConnectorProvider {
         const config = ApiConfigSchema.parse(install.config);
         return config.operations.map((operation) => ({
           name: operation.name ?? operation.id,
-          description: operation.description ?? `${operation.method} ${operation.path}`,
+          description: operationDescription(
+            `${operation.method} ${operation.path}`,
+            operation.description,
+          ),
           inputSchema: operation.inputSchema,
-          readOnly: operation.readOnly,
+          // The stored method is authoritative: a read-only flag cannot make a write a read.
+          readOnly: operation.readOnly && operation.method === "GET",
           route: {
             connectorId: "installed",
             resourceId: install.id,
@@ -190,9 +195,12 @@ export class InstalledConnectorProvider implements ConnectorProvider {
         const config = GraphqlConfigSchema.parse(install.config);
         return config.operations.map((operation) => ({
           name: operation.name ?? operation.id,
-          description: operation.description ?? `${operation.operationType} ${operation.fieldName}`,
+          description: operationDescription(
+            `${operation.operationType} ${operation.fieldName}`,
+            operation.description,
+          ),
           inputSchema: operation.inputSchema,
-          readOnly: operation.readOnly,
+          readOnly: operation.readOnly && operation.operationType === "query",
           route: {
             connectorId: "installed",
             resourceId: install.id,
@@ -486,6 +494,12 @@ export function importOpenApiDocument(document: Record<string, unknown>): {
     throw new Error("OpenAPI document has no operations with operationId");
   }
   return { baseUrl, operations };
+}
+
+/** Lead with the validated route; the provider's prose is bounded and labeled as the provider's. */
+function operationDescription(route: string, provided: string | undefined): string {
+  const prose = provided?.trim().slice(0, MAX_DESCRIPTION_LENGTH);
+  return prose && prose !== route ? `${route}. Provider description: ${prose}` : route;
 }
 
 function connectorHeaders(

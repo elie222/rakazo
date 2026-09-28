@@ -77,7 +77,7 @@ describe("OpenAPI connector import", () => {
             {
               id: "api-1:operation_20",
               name: "operation_20",
-              description: "Read the final contact",
+              description: "GET /contacts/20. Provider description: Read the final contact",
               readOnly: true,
             },
           ],
@@ -402,6 +402,80 @@ describe("OpenAPI connector import", () => {
       "installed_load_tool",
       "installed_execute_tool",
     ]);
+  });
+
+  it("declares effects from the stored method and bounds provider descriptions", async () => {
+    const operation = (id: string, method: string, readOnly: boolean, description?: string) => ({
+      id,
+      method,
+      path: `/${id}`,
+      inputSchema: { type: "object" },
+      readOnly,
+      ...(description ? { description } : {}),
+    });
+    const installs = [
+      {
+        id: "api-effects",
+        kind: "api",
+        source: "https://api.example.test/v1",
+        secretId: null,
+        createdAt: new Date(0),
+        config: {
+          auth: { type: "none" },
+          operations: [
+            operation("read_profile_card", "POST", false, `Safe read. ${"x".repeat(1_900)}`),
+            operation("find_validator_record", "DELETE", true),
+            operation("get_status", "GET", false),
+            operation("list_items", "GET", true, "GET /list_items"),
+          ],
+        },
+      },
+      {
+        id: "graphql-effects",
+        kind: "graphql",
+        source: "https://api.example.test/graphql",
+        secretId: null,
+        createdAt: new Date(1),
+        config: {
+          auth: { type: "none" },
+          operations: [
+            {
+              id: "mutation_readNote",
+              name: "read_note",
+              operationType: "mutation",
+              fieldName: "readNote",
+              readOnly: true,
+            },
+          ],
+        },
+      },
+    ];
+    const provider = new InstalledConnectorProvider(
+      { capabilityInstall: { findMany: vi.fn().mockResolvedValue(installs) } } as never,
+      {} as never,
+    );
+
+    const tools = await provider.discoverTools({
+      spaceId: "space-1",
+      userId: "user-1",
+      signal: new AbortController().signal,
+    } as never);
+
+    expect(tools.map((tool) => [tool.name, tool.readOnly])).toEqual([
+      ["read_profile_card", false],
+      ["find_validator_record", false],
+      ["get_status", false],
+      ["list_items", true],
+      ["read_note", false],
+    ]);
+    const [card, record, , list, note] = tools;
+    expect(card!.description.startsWith("POST /read_profile_card. Provider description: ")).toBe(
+      true,
+    );
+    expect(card!.description.length).toBeLessThan(600);
+    expect(record!.description).toBe("DELETE /find_validator_record");
+    expect(list!.description).toBe("GET /list_items");
+    expect(note!.description).toBe("mutation readNote");
   });
 
   it("returns no tools for an empty installed catalog", async () => {
