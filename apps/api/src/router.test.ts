@@ -408,6 +408,116 @@ describe("MCP server deletion", () => {
   });
 });
 
+describe("MCP loopback endpoints", () => {
+  const LOOPBACK = "http://localhost:3100/api/auth/get-session";
+
+  function mcpDeps() {
+    const create = vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({
+      ...data,
+      id: "server-1",
+      secretId: null,
+      revision: 1,
+      createdAt: new Date(0),
+      updatedAt: new Date(0),
+    }));
+    const prisma = {
+      mcpServer: {
+        create,
+        findFirst: vi
+          .fn()
+          .mockResolvedValue({ id: "server-1", endpoint: LOOPBACK, secretId: null }),
+      },
+      mcpOAuthSession: {
+        count: vi.fn().mockResolvedValue(0),
+        deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+      },
+      secret: { findFirst: vi.fn() },
+      deploymentSettings: { findUnique: vi.fn().mockResolvedValue({ ownerUserId: "owner-1" }) },
+      $transaction: vi.fn(async (run: (tx: unknown) => Promise<unknown>) => run(prisma)),
+    } as unknown as PrismaClient;
+    const deps = {
+      prisma,
+      env: {
+        defaultProvider: "fake",
+        defaultModel: "fake-model",
+        webOrigin: "http://127.0.0.1:5173",
+        screenProxySecret: "fake-test-secret",
+        sandboxProvider: "fake",
+      },
+      dataDir: "/tmp/rakazo-router-test",
+    } as unknown as RouterDeps;
+    return { create, handler: new RPCHandler(createRouter(deps)) };
+  }
+
+  function actor(isDeploymentOwner: boolean): Actor {
+    return {
+      spaceId: "workspace-1",
+      userId: isDeploymentOwner ? "owner-1" : "member-1",
+      email: "user@rakazo.test",
+      isDeploymentOwner,
+    };
+  }
+
+  function rpc(path: string, json: unknown) {
+    return new Request(`http://127.0.0.1/rpc/${path}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ json }),
+    });
+  }
+
+  const createInput = {
+    transport: "streamable_http",
+    slug: "local",
+    name: "Local",
+    endpoint: LOOPBACK,
+  };
+
+  it("refuses a loopback endpoint from a user who is not the deployment owner", async () => {
+    const { create, handler } = mcpDeps();
+    const { response } = await handler.handle(rpc("mcp/servers/create", createInput), {
+      prefix: "/rpc",
+      context: { actor: actor(false) },
+    });
+
+    expect(response.status).toBe(400);
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("lets the deployment owner save a loopback endpoint", async () => {
+    const { create, handler } = mcpDeps();
+    const { response } = await handler.handle(rpc("mcp/servers/create", createInput), {
+      prefix: "/rpc",
+      context: { actor: actor(true) },
+    });
+
+    expect(response.status).toBe(200);
+    expect(create).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses to start OAuth against a stored loopback endpoint for a non-owner", async () => {
+    const fetch = vi.fn();
+    vi.stubGlobal("fetch", fetch);
+    try {
+      const { handler } = mcpDeps();
+      const { response } = await handler.handle(
+        rpc("mcp/oauth/begin", {
+          serverId: "server-1",
+          redirectUri: "http://127.0.0.1:5173/mcp/oauth/callback",
+        }),
+        { prefix: "/rpc", context: { actor: actor(false) } },
+      );
+
+      expect(response.status).toBe(400);
+      const body = (await response.json()) as { json: { message: string } };
+      expect(body.json.message).toMatch(/HTTPS/);
+      expect(fetch).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
 describe("connections.begin", () => {
   it("reuses a revoked row for the same provider instead of inserting a duplicate", async () => {
     const begin = vi.fn().mockResolvedValue({ state: "gmail-state", authorizationUrl: null });

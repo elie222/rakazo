@@ -228,8 +228,8 @@ screenshot computer tools stay available. Existing connections default to disabl
 managed endpoints, the deployment-wide fallback remains
 `RAKAZO_OPENAI_COMPATIBLE_VISION_MODELS=gpt4o-vision,llava`.
 
-Remote MCP defaults to public HTTPS. The deployment owner can attach a server on the same LAN
-or Docker network. Set `MCP_ALLOW_PRIVATE_ENDPOINT=true` on the API and worker to allow it for
+Remote MCP defaults to public HTTPS. The deployment owner can attach a server on localhost, the
+same LAN, or a Docker network. Set `MCP_ALLOW_PRIVATE_ENDPOINT=true` on the API and worker to allow it for
 every user. Cloud metadata addresses stay blocked. Leave the flag unset on public installs.
 
 For servers that accept standard `reasoning_effort`, enable **Supports thinking** under

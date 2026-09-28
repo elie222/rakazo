@@ -21,7 +21,8 @@ export type McpRemoteTransport = "streamable-http" | "sse";
 export interface McpUrlPolicy {
   /** Maximum URL length accepted before any network request. */
   maxUrlLength?: number;
-  /** Permit plain HTTP only on the configured loopback resource's exact origin. */
+  /** Permit plain HTTP only on the configured loopback resource's exact origin.
+   * Requests only honour it together with `allowPrivateEndpoint`: loopback is private. */
   allowHttpLocalhost?: boolean;
   /** Permit configured credentials on an explicitly local HTTP endpoint. */
   allowLocalHttpCredentials?: boolean;
@@ -87,7 +88,7 @@ function validateUrl(raw: string | URL, policy: McpUrlPolicy = {}): URL {
     !(url.protocol === "http:" && policy.allowHttpLocalhost === true && local) &&
     !(url.protocol === "http:" && policy.allowPrivateEndpoint === true)
   ) {
-    throw new Error("MCP remote URL must use HTTPS (HTTP is allowed only for localhost)");
+    throw new Error("MCP remote URL must use HTTPS");
   }
   if (policy.allowedHosts && !policy.allowedHosts.includes(url.hostname)) {
     throw new Error(`MCP host is not in the allowlist: ${url.hostname}`);
@@ -101,8 +102,11 @@ export function secureFetch(
   headerPolicy: McpHeaderPolicy = {},
   network: RemoteTransportDependencies = {},
 ): SafeRemoteFetch {
+  // A local hostname is not authorization: the unguarded loopback fetch below
+  // needs the deployment-owner private-endpoint escape as well.
   const localOrigin =
     urlPolicy.allowHttpLocalhost === true &&
+    urlPolicy.allowPrivateEndpoint === true &&
     resourceUrl.protocol === "http:" &&
     isLocalMcpHost(resourceUrl.hostname)
       ? resourceUrl.origin
