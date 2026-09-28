@@ -2,9 +2,9 @@ import type { AdapterContext } from "@rakazo/adapter-kit";
 import { computerControlExpireJobKey } from "@rakazo/adapter-kit";
 import { type ComputerUpdate, ComputerUpdateSchema } from "@rakazo/contracts";
 import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
-import type { PrismaClient, ThreadEvents } from "@rakazo/db";
+import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
-import { isIdleOwnComputerTakeover } from "./computer-control.js";
+import { enqueueTakeoverContinuation, isIdleOwnComputerTakeover } from "./computer-control.js";
 import { scheduleComputerSleep } from "./computer-idle.js";
 import {
   ComputerBusyError,
@@ -198,13 +198,25 @@ export async function queueComputerUpdate(
       });
       if (confirmed.count !== 1) {
         // Reconciliation handed the takeover back while this call was pending. The provider
-        // has now released, so clear that lease. The update was already failed; do not queue it.
-        await deps.jobs
-          .cancel(computerControlExpireJobKey(computerId, prepared.handback.leaseId))
-          .catch((error) => {
-            getLogger().error("computer control expiry cancellation", error);
-          });
-        await releaseConfirmedHandback(deps.prisma, computerId, prepared.row.id, prepared.handback);
+        // has now released. Clear that lease, including a run that bound to it, and resume
+        // the run. Leave the expiry job when the lease is still held. Do not queue the update.
+        const released = await releaseConfirmedHandback(
+          deps.prisma,
+          computerId,
+          prepared.row.id,
+          prepared.handback,
+        );
+        if (released.cleared) {
+          await deps.jobs
+            .cancel(computerControlExpireJobKey(computerId, prepared.handback.leaseId))
+            .catch((error) => {
+              getLogger().error("computer control expiry cancellation", error);
+            });
+          await enqueueTakeoverContinuation(deps.jobs, released.runId);
+          if (released.runId) {
+            await recordTakeoverHandback(deps, botId, prepared.handback, released.runId);
+          }
+        }
         throw new ComputerBusyError();
       }
       prepared.row.status = "revoked";
@@ -344,27 +356,79 @@ async function releaseConfirmedHandback(
   computerId: string,
   updateId: string,
   handback: IdleTakeoverHandback,
-) {
-  if (!handback.leaseId) return;
+): Promise<{ cleared: boolean; runId: string | null }> {
+  if (!handback.leaseId) return { cleared: false, runId: null };
   // The lease may still sit on the maintenance claim, or reconciliation may have given it
-  // back to the user. Skip a newer maintenance claim or a run that attached since.
-  await prisma.computer.updateMany({
+  // back to the user. A run can bind before this write. The screen is already released, so
+  // clear that lease and resume the run. Skip a newer maintenance claim.
+  try {
+    return await prisma.$transaction(async (tx) => {
+      const current = await tx.computer.findFirst({
+        where: {
+          id: computerId,
+          controlLeaseId: handback.leaseId,
+          controlBotId: handback.botId,
+          OR: [{ maintenanceId: updateId }, { maintenanceId: null, controlHolder: "user" }],
+        },
+        select: { controlRunId: true },
+      });
+      if (!current) return { cleared: false, runId: null };
+      const cleared = await tx.computer.updateMany({
+        where: {
+          id: computerId,
+          controlLeaseId: handback.leaseId,
+          controlBotId: handback.botId,
+          controlRunId: current.controlRunId,
+          OR: [{ maintenanceId: updateId }, { maintenanceId: null, controlHolder: "user" }],
+        },
+        data: {
+          maintenanceId: null,
+          controlHolder: "none",
+          controlLeaseId: null,
+          controlLeaseExpiresAt: null,
+          controlBotId: null,
+          controlRunId: null,
+        },
+      });
+      if (cleared.count !== 1) return { cleared: false, runId: null };
+      const runId = current.controlRunId
+        ? await resumeBoundTakeoverRun(tx, handback, current.controlRunId)
+        : null;
+      return { cleared: true, runId };
+    });
+  } catch (error) {
+    getLogger().error("release confirmed takeover", error);
+    return { cleared: false, runId: null };
+  }
+}
+
+async function resumeBoundTakeoverRun(
+  tx: Prisma.TransactionClient,
+  handback: IdleTakeoverHandback,
+  runId: string,
+): Promise<string | null> {
+  const resumed = await tx.run.updateMany({
     where: {
-      id: computerId,
-      controlLeaseId: handback.leaseId,
-      controlBotId: handback.botId,
-      controlRunId: null,
-      OR: [{ maintenanceId: updateId }, { maintenanceId: null, controlHolder: "user" }],
+      id: runId,
+      spaceId: handback.spaceId,
+      botId: handback.botId,
+      status: "waiting_takeover",
     },
-    data: {
-      maintenanceId: null,
-      controlHolder: "none",
-      controlLeaseId: null,
-      controlLeaseExpiresAt: null,
-      controlBotId: null,
-      controlRunId: null,
-    },
+    data: { status: "queued", checkpoint: "takeover" },
   });
+  const stamped =
+    resumed.count === 1
+      ? { count: 0 }
+      : await tx.run.updateMany({
+          where: {
+            id: runId,
+            spaceId: handback.spaceId,
+            botId: handback.botId,
+            status: { in: ["leased", "running"] },
+          },
+          data: { checkpoint: "takeover" },
+        });
+  return resumed.count === 1 || stamped.count === 1 ? runId : null;
 }
 
 async function abandonRevokedHandback(
@@ -428,6 +492,7 @@ async function recordTakeoverHandback(
   deps: QueueDeps,
   botId: string,
   handback: IdleTakeoverHandback,
+  runId?: string,
 ) {
   if (!deps.events || !deps.prisma.bot) return;
   try {
@@ -440,6 +505,7 @@ async function recordTakeoverHandback(
       spaceId: handback.spaceId,
       threadId: bot.thread.id,
       botId,
+      ...(runId ? { runId } : {}),
       type: "computer.takeover.released",
       payload: { holder: "none", leaseId: handback.leaseId, reason: "released" },
     });

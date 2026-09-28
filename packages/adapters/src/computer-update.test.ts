@@ -450,6 +450,90 @@ describe("background computer maintenance", () => {
         controlRunId: null,
       },
     });
+    expect(harness.jobs.cancel).toHaveBeenCalledOnce();
+    expect(harness.run.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("resumes a run that bound to a lease released after reconciliation", async () => {
+    const harness = takeoverQueue();
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    harness.setScreenControl.mockImplementation(() => pending);
+    const work = queueComputerUpdate(harness.deps, "computer-1", "bot-1");
+    await vi.waitFor(() => expect(harness.setScreenControl).toHaveBeenCalledOnce());
+    await reconcileComputerUpdates(harness.deps);
+    harness.computerRow.controlRunId = "run-1";
+
+    release();
+    await expect(work).rejects.toThrow("Computer is busy");
+
+    const clearOrder = harness.computer.updateMany.mock.invocationCallOrder.at(-1) ?? 0;
+    expect(harness.computer.updateMany).toHaveBeenLastCalledWith({
+      where: {
+        id: "computer-1",
+        controlLeaseId: "lease-1",
+        controlBotId: "bot-1",
+        controlRunId: "run-1",
+        OR: [{ maintenanceId: "update-1" }, { maintenanceId: null, controlHolder: "user" }],
+      },
+      data: {
+        maintenanceId: null,
+        controlHolder: "none",
+        controlLeaseId: null,
+        controlLeaseExpiresAt: null,
+        controlBotId: null,
+        controlRunId: null,
+      },
+    });
+    expect(harness.run.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: "run-1",
+        spaceId: "space",
+        botId: "bot-1",
+        status: "waiting_takeover",
+      },
+      data: { status: "queued", checkpoint: "takeover" },
+    });
+    expect(harness.jobs.cancel).toHaveBeenCalledOnce();
+    expect(harness.jobs.cancel.mock.invocationCallOrder[0] ?? 0).toBeGreaterThan(clearOrder);
+    expect(harness.jobs.enqueue).toHaveBeenCalledWith({
+      name: "run.continue",
+      payload: { runId: "run-1" },
+      replaceKey: "run:run-1",
+    });
+    expect(harness.jobs.enqueue).not.toHaveBeenCalledWith(
+      expect.objectContaining({ name: "computer.update" }),
+    );
+    expect(harness.events.append).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "computer.takeover.released",
+        runId: "run-1",
+        payload: { holder: "none", leaseId: "lease-1", reason: "released" },
+      }),
+    );
+  });
+
+  it("keeps takeover expiry when a late release cannot clear the lease", async () => {
+    const harness = takeoverQueue();
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    harness.setScreenControl.mockImplementation(() => pending);
+    const work = queueComputerUpdate(harness.deps, "computer-1", "bot-1");
+    await vi.waitFor(() => expect(harness.setScreenControl).toHaveBeenCalledOnce());
+    await reconcileComputerUpdates(harness.deps);
+    harness.computerRow.controlLeaseId = "lease-replaced";
+    harness.computerRow.controlRunId = "run-1";
+
+    release();
+    await expect(work).rejects.toThrow("Computer is busy");
+
+    expect(harness.jobs.cancel).not.toHaveBeenCalled();
+    expect(harness.run.updateMany).not.toHaveBeenCalled();
+    expect(harness.jobs.enqueue).not.toHaveBeenCalled();
   });
 
   it("clears a revoked lease when handback stalls after the provider release", async () => {
@@ -574,6 +658,14 @@ function takeoverQueue(
       count: 1,
     })),
     findUniqueOrThrow: vi.fn(async () => computerRow),
+    findFirst: vi.fn(async (args?: { where?: { controlLeaseId?: string | null } }) => {
+      const leaseId = args?.where?.controlLeaseId;
+      if (leaseId && leaseId !== computerRow.controlLeaseId) return null;
+      return { controlRunId: computerRow.controlRunId };
+    }),
+  };
+  const run = {
+    updateMany: vi.fn(async () => ({ count: 1 })),
   };
   const computerUpdate = {
     create: vi.fn(async ({ data }: { data?: { status?: string } }) => {
@@ -600,6 +692,7 @@ function takeoverQueue(
     $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(prisma)),
     computer,
     computerUpdate,
+    run,
     bot: { findFirst: vi.fn(async () => ({ thread: { id: "thread-1" } })) },
   };
   const jobs = { enqueue: vi.fn(async () => {}), cancel: vi.fn(async () => {}) };
@@ -608,5 +701,5 @@ function takeoverQueue(
   const deps = { prisma, jobs, sandbox: { setScreenControl }, events } as unknown as Parameters<
     typeof queueComputerUpdate
   >[0];
-  return { computer, computerRow, computerUpdate, deps, jobs, setScreenControl };
+  return { computer, computerRow, computerUpdate, deps, events, jobs, run, setScreenControl };
 }
