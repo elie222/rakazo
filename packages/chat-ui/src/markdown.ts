@@ -1,15 +1,36 @@
+/// <reference path="./linkify-it.d.ts" />
+import LinkifyIt from "linkify-it";
+
 export type ChatMarkdownProps = {
   children: string;
   streaming?: boolean;
 };
 
+type LinkifyRules = {
+  set(options: { fuzzyLink: boolean }): unknown;
+  add(schema: string, definition: null): unknown;
+};
+
 type LinkifyParser = {
   set(options: { linkify: boolean }): unknown;
-  linkify: {
-    set(options: { fuzzyLink: boolean }): unknown;
-    add(schema: string, definition: null): unknown;
-  };
+  linkify: LinkifyRules;
 };
+
+type ExplicitLinkMatch = {
+  index: number;
+  lastIndex: number;
+  url: string;
+};
+
+type ExplicitLinkify = LinkifyRules & {
+  match(text: string): ExplicitLinkMatch[] | null;
+};
+
+function applyExplicitLinkRules(linkify: LinkifyRules) {
+  linkify.set({ fuzzyLink: false });
+  linkify.add("ftp:", null);
+  linkify.add("//", null);
+}
 
 /**
  * Turn bare http(s) URLs and email addresses into links, as the web renderer's GFM autolinks
@@ -19,20 +40,15 @@ type LinkifyParser = {
  */
 export function linkifyExplicitUrls<T extends LinkifyParser>(parser: T): T {
   parser.set({ linkify: true });
-  parser.linkify.set({ fuzzyLink: false });
-  parser.linkify.add("ftp:", null);
-  parser.linkify.add("//", null);
+  applyExplicitLinkRules(parser.linkify);
   return parser;
 }
 
+const plainTextLinkify: ExplicitLinkify = new LinkifyIt();
+applyExplicitLinkRules(plainTextLinkify);
+
 const protocolPattern = /^([a-z][a-z\d+.-]*):/i;
 const safeProtocols = new Set(["http", "https", "mailto", "tel"]);
-
-const TRAILING_LINK_PUNCTUATION = /[.,;:!?)]+$/u;
-// Explicit addresses only. Bare domains and file names (setup.py, notes.md) stay
-// text, matching linkifyExplicitUrls.
-const PLAIN_TEXT_LINK =
-  /https?:\/\/[^\s<>"')\]]+|mailto:[^\s<>"')\]]+|[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/giu;
 
 export type PlainTextPart =
   | { type: "text"; value: string }
@@ -50,36 +66,29 @@ function appendPlainText(parts: PlainTextPart[], value: string) {
 
 /**
  * Split plain user-message text into literal runs and tappable links.
- * User bubbles stay plain text on web and mobile: bold, headings, and other
- * markdown remain characters. Only explicit http(s) URLs, mailto links, and
- * email addresses become links — the same autolinks bot messages already open —
- * so a sent address is tappable without the surfaces formatting differently.
+ * User bubbles stay plain text on web and mobile. Bold, headings, and other
+ * markdown remain characters. Links use the same explicit autolinker as bot
+ * messages, so a balanced parenthesis stays inside the URL and a closing
+ * parenthesis that only wraps the surrounding prose does not.
  */
 export function plainTextLinkParts(text: string): PlainTextPart[] {
+  const matches = plainTextLinkify.match(text);
+  if (!matches || matches.length === 0) return [{ type: "text", value: text }];
+
   const parts: PlainTextPart[] = [];
   let cursor = 0;
-  const pattern = new RegExp(PLAIN_TEXT_LINK.source, PLAIN_TEXT_LINK.flags);
-
-  for (const match of text.matchAll(pattern)) {
-    const start = match.index;
-    if (start === undefined || start < cursor) continue;
-    const matched = match[0];
-    const trailing = matched.match(TRAILING_LINK_PUNCTUATION)?.[0] ?? "";
-    const value = matched.slice(0, matched.length - trailing.length);
-    if (!value) continue;
-
-    const href =
-      value.includes("://") || value.toLowerCase().startsWith("mailto:")
-        ? sanitizeMarkdownUrl(value)
-        : sanitizeMarkdownUrl(`mailto:${value}`);
-    appendPlainText(parts, text.slice(cursor, start));
+  for (const match of matches) {
+    if (match.index < cursor || match.lastIndex <= match.index) continue;
+    const value = text.slice(match.index, match.lastIndex);
+    const href = sanitizeMarkdownUrl(match.url);
+    appendPlainText(parts, text.slice(cursor, match.index));
     if (!href) {
-      appendPlainText(parts, matched);
-      cursor = start + matched.length;
+      appendPlainText(parts, value);
+      cursor = match.lastIndex;
       continue;
     }
     parts.push({ type: "link", value, href });
-    cursor = start + value.length;
+    cursor = match.lastIndex;
   }
 
   appendPlainText(parts, text.slice(cursor));
