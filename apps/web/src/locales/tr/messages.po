@@ -1342,6 +1342,10 @@ msgid "Could not save that choice"
 msgstr "Bu seçim kaydedilemedi"
 
 #: src/pages/VoiceSettingsOverlay.tsx
+msgid "Could not save that speech model"
+msgstr "Bu konuşma modeli kaydedilemedi"
+
+#: src/pages/VoiceSettingsOverlay.tsx
 msgid "Could not save that voice"
 msgstr "Bu ses kaydedilemedi"
 
@@ -2737,6 +2741,7 @@ msgstr "Çalışma alanın açılıyor…"
 
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
+#: src/pages/VoiceSettingsOverlay.tsx
 msgid "Optional"
 msgstr "İsteğe bağlı"
 
@@ -3474,6 +3479,10 @@ msgstr "Yalnızca seslendir"
 #: src/pages/Shell.tsx
 msgid "Speak this reply"
 msgstr "Bu yanıtı seslendir"
+
+#: src/pages/VoiceSettingsOverlay.tsx
+msgid "Speech model"
+msgstr "Konuşma modeli"
 
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Start recording"

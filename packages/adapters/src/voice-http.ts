@@ -54,7 +54,7 @@ export function speechUploadName(mimeType?: string): string {
 
 export async function readVoiceJson(
   res: Response,
-  options: { requireValid?: boolean } = {},
+  options: { requireValid?: boolean; rawOnInvalid?: boolean } = {},
 ): Promise<unknown> {
   let bytes: Uint8Array;
   try {
@@ -64,11 +64,12 @@ export async function readVoiceJson(
     if (options.requireValid) throw new Error("Voice provider response could not be read.");
     return null;
   }
+  const text = new TextDecoder().decode(bytes);
   try {
-    return JSON.parse(new TextDecoder().decode(bytes));
+    return JSON.parse(text);
   } catch {
     if (options.requireValid) throw new Error("Voice provider returned invalid JSON.");
-    return null;
+    return options.rawOnInvalid ? text : null;
   }
 }
 

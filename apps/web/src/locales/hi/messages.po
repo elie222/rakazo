@@ -1342,6 +1342,10 @@ msgid "Could not save that choice"
 msgstr "वह विकल्प सहेजा नहीं जा सका"
 
 #: src/pages/VoiceSettingsOverlay.tsx
+msgid "Could not save that speech model"
+msgstr "वह वाक् मॉडल सहेजा नहीं जा सका"
+
+#: src/pages/VoiceSettingsOverlay.tsx
 msgid "Could not save that voice"
 msgstr "वह आवाज़ सहेजी नहीं जा सकी"
 
@@ -2737,6 +2741,7 @@ msgstr "आपका वर्कस्पेस खुल रहा है…"
 
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
+#: src/pages/VoiceSettingsOverlay.tsx
 msgid "Optional"
 msgstr "वैकल्पिक"
 
@@ -3474,6 +3479,10 @@ msgstr "केवल बोलें"
 #: src/pages/Shell.tsx
 msgid "Speak this reply"
 msgstr "यह उत्तर बोलकर सुनाएं"
+
+#: src/pages/VoiceSettingsOverlay.tsx
+msgid "Speech model"
+msgstr "वाक् मॉडल"
 
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Start recording"

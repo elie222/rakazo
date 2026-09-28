@@ -1342,6 +1342,10 @@ msgid "Could not save that choice"
 msgstr "无法保存该选择"
 
 #: src/pages/VoiceSettingsOverlay.tsx
+msgid "Could not save that speech model"
+msgstr "无法保存该语音模型"
+
+#: src/pages/VoiceSettingsOverlay.tsx
 msgid "Could not save that voice"
 msgstr "无法保存该语音"
 
@@ -2737,6 +2741,7 @@ msgstr "正在打开工作区…"
 
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
+#: src/pages/VoiceSettingsOverlay.tsx
 msgid "Optional"
 msgstr "可选"
 
@@ -3474,6 +3479,10 @@ msgstr "仅朗读"
 #: src/pages/Shell.tsx
 msgid "Speak this reply"
 msgstr "朗读这条回复"
+
+#: src/pages/VoiceSettingsOverlay.tsx
+msgid "Speech model"
+msgstr "语音模型"
 
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Start recording"

@@ -1342,6 +1342,10 @@ msgid "Could not save that choice"
 msgstr "선택 내용을 저장하지 못했습니다."
 
 #: src/pages/VoiceSettingsOverlay.tsx
+msgid "Could not save that speech model"
+msgstr "음성 모델을 저장하지 못했습니다."
+
+#: src/pages/VoiceSettingsOverlay.tsx
 msgid "Could not save that voice"
 msgstr "목소리를 저장하지 못했습니다."
 
@@ -2737,6 +2741,7 @@ msgstr "작업공간을 여는 중…"
 
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
+#: src/pages/VoiceSettingsOverlay.tsx
 msgid "Optional"
 msgstr "선택 사항"
 
@@ -3474,6 +3479,10 @@ msgstr "음성 출력만"
 #: src/pages/Shell.tsx
 msgid "Speak this reply"
 msgstr "이 답변 읽기"
+
+#: src/pages/VoiceSettingsOverlay.tsx
+msgid "Speech model"
+msgstr "음성 모델"
 
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Start recording"

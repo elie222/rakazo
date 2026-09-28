@@ -1342,6 +1342,10 @@ msgid "Could not save that choice"
 msgstr "Не удалось сохранить этот выбор"
 
 #: src/pages/VoiceSettingsOverlay.tsx
+msgid "Could not save that speech model"
+msgstr "Не удалось сохранить речевую модель"
+
+#: src/pages/VoiceSettingsOverlay.tsx
 msgid "Could not save that voice"
 msgstr "Не удалось сохранить этот голос"
 
@@ -2737,6 +2741,7 @@ msgstr "Открытие вашего пространства…"
 
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
+#: src/pages/VoiceSettingsOverlay.tsx
 msgid "Optional"
 msgstr "Необязательно"
 
@@ -3474,6 +3479,10 @@ msgstr "Только озвучить"
 #: src/pages/Shell.tsx
 msgid "Speak this reply"
 msgstr "Озвучить этот ответ"
+
+#: src/pages/VoiceSettingsOverlay.tsx
+msgid "Speech model"
+msgstr "Речевая модель"
 
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Start recording"

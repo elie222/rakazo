@@ -1342,6 +1342,10 @@ msgid "Could not save that choice"
 msgstr "Auswahl konnte nicht gespeichert werden"
 
 #: src/pages/VoiceSettingsOverlay.tsx
+msgid "Could not save that speech model"
+msgstr "Sprachmodell konnte nicht gespeichert werden"
+
+#: src/pages/VoiceSettingsOverlay.tsx
 msgid "Could not save that voice"
 msgstr "Stimme konnte nicht gespeichert werden"
 
@@ -2737,6 +2741,7 @@ msgstr "Dein Arbeitsbereich wird geöffnet…"
 
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
+#: src/pages/VoiceSettingsOverlay.tsx
 msgid "Optional"
 msgstr "Optional"
 
@@ -3474,6 +3479,10 @@ msgstr "Nur sprechen"
 #: src/pages/Shell.tsx
 msgid "Speak this reply"
 msgstr "Diese Antwort vorlesen"
+
+#: src/pages/VoiceSettingsOverlay.tsx
+msgid "Speech model"
+msgstr "Sprachmodell"
 
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Start recording"
