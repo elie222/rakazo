@@ -975,6 +975,39 @@ describeWithDatabase("API authorization and resource isolation", () => {
     await expect(handles.prisma.space.findUnique({ where: { id: shared.id } })).resolves.toBeNull();
   });
 
+  it("keeps the Better Auth organization routes closed to product sessions", async () => {
+    const cookie = await signup(app, `org-routes-${stamp}@rakazo.test`, "Org Routes");
+    const actor = await rpc<Actor>(app, cookie, "me");
+    const marker = await rpc<Space>(app, cookie, "spaces/create", { name: "Marker" });
+
+    for (const route of ["delete", "leave", "update", "list"]) {
+      const res = await app.request(`/api/auth/organization/${route}`, {
+        method: route === "list" ? "GET" : "POST",
+        headers: {
+          ...(route === "list" ? {} : { "content-type": "application/json" }),
+          cookie,
+          origin: "http://127.0.0.1:5173",
+        },
+        body:
+          route === "list"
+            ? undefined
+            : JSON.stringify({ organizationId: actor.spaceId, data: { name: "Renamed" } }),
+      });
+      expect(res.status, route).toBe(404);
+    }
+
+    await expect(
+      handles.prisma.space.findMany({
+        where: { id: { in: [actor.spaceId, marker.id] } },
+        select: { id: true },
+      }),
+    ).resolves.toHaveLength(2);
+    await expect(
+      handles.prisma.member.count({ where: { userId: actor.userId } }),
+    ).resolves.toBeGreaterThan(0);
+    expect((await raw(app, cookie, "me")).status).toBe(200);
+  });
+
   it("blocks bot creation after empty space deletion is claimed", async () => {
     const cookie = await signup(app, `space-race-${stamp}@rakazo.test`, "Space Race");
     const actor = await rpc<Actor>(app, cookie, "me");
