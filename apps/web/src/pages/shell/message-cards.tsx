@@ -326,52 +326,81 @@ function ChartCanvas({
 type McpApprovalState = "pending" | "connecting" | "connected" | "dismissed";
 
 /** Approval card for an agent-created MCP server: the user completes browser
- * OAuth (or confirms no authorization is needed) without leaving the chat. */
+ * OAuth (or confirms no authorization is needed) without leaving the chat.
+ * The decision persists on the block, so the card keeps showing it after the
+ * thread remounts. */
 export function McpApprovalCard({
   botId,
-  name,
-  serverId,
-  transport,
-  endpoint,
-  needsOAuth,
+  threadId,
+  block,
 }: {
   botId: string | undefined;
-  name: string;
-  serverId: string;
-  transport: string;
-  endpoint: string | null;
-  needsOAuth: boolean;
+  threadId: string | undefined;
+  block: Extract<MessageBlock, { kind: "mcp_approval" }>;
 }) {
   const { t } = useLingui();
-  const [state, setState] = useState<McpApprovalState>("pending");
+  const { name, serverId, transport, endpoint, needsOAuth, status: savedStatus } = block;
+  const [localStatus, setLocalStatus] = useState<McpApprovalState>("pending");
   const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  // A removal repaints the block to pending. Drop an in-session connected
+  // override so the card does not keep the old decision.
+  useEffect(() => {
+    if (savedStatus === "connected" || savedStatus === "dismissed") return;
+    setLocalStatus((current) =>
+      current === "connected" || current === "dismissed" ? "pending" : current,
+    );
+  }, [savedStatus]);
+  // Blocks saved before the status field existed have none and count as pending.
+  const state =
+    savedStatus === "connected" || savedStatus === "dismissed" ? savedStatus : localStatus;
 
   async function authorize() {
-    if (!botId) {
-      setError(t`This server cannot be assigned without a bot.`);
+    if (!botId || busy) {
+      if (!botId) setError(t`This server cannot be assigned without a bot.`);
       return;
     }
-    setState("connecting");
+    setBusy(true);
+    setLocalStatus("connecting");
     setError(null);
     try {
       if (needsOAuth) {
         const result = await connectMcpOauth(serverId);
         if (result === "cancelled") {
-          setState("pending");
+          setLocalStatus("pending");
           return;
         }
       }
-      await rpc.mcp.assignments.approve({ botId, serverId });
-      setState("connected");
+      await rpc.mcp.assignments.approve({ botId, serverId, threadId });
+      setLocalStatus("connected");
     } catch (err) {
       setError(err instanceof Error ? err.message : t`Could not approve this server`);
-      setState("pending");
+      setLocalStatus("pending");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function dismiss() {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      if (botId) {
+        await rpc.mcp.assignments.dismiss({ botId, serverId, threadId });
+      }
+      setLocalStatus("dismissed");
+    } catch (err) {
+      setLocalStatus("pending");
+      setError(err instanceof Error ? err.message : t`Could not dismiss this server`);
+    } finally {
+      setBusy(false);
     }
   }
 
   const summary = endpoint ?? `stdio · ${transport}`;
   return (
-    <BuiCard className="max-w-[74%] p-4">
+    <BuiCard data-testid="mcp-approval-card" className="max-w-[74%] p-4">
       <div className="flex items-center gap-2">
         <span className="grid h-7 w-7 place-items-center rounded-lg bg-muted text-xs text-foreground">
           M
@@ -392,7 +421,7 @@ export function McpApprovalCard({
           <div className="mt-3 flex gap-2">
             <Button
               className="rounded-full"
-              disabled={state === "connecting"}
+              disabled={state !== "pending" || busy}
               onClick={() => void authorize()}
             >
               {state === "connecting" ? t`Connecting…` : needsOAuth ? t`Authorize` : t`Approve`}
@@ -400,7 +429,8 @@ export function McpApprovalCard({
             <Button
               variant="secondary"
               className="rounded-full"
-              onClick={() => setState("dismissed")}
+              disabled={state !== "pending" || busy}
+              onClick={() => void dismiss()}
             >
               <Trans>Not now</Trans>
             </Button>

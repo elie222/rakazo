@@ -72,16 +72,82 @@ describe("computer home ownership", () => {
     );
   });
 
-  it("rejects an owner-owned file that is not writable by that owner", async () => {
-    const parent = await mkdtemp(path.join(tmpdir(), "rakazo-home-owner-mode-"));
+  it("accepts writable files owned by the sandbox user", async () => {
+    const parent = await mkdtemp(path.join(tmpdir(), "rakazo-home-writable-file-"));
     roots.push(parent);
     const home = path.join(parent, "home");
     const file = path.join(home, "profile.json");
     await mkdir(home);
     await writeFile(file, "{}");
-    await chmod(file, 0o400);
+    await chmod(file, 0o644);
 
     const stat = await lstat(file);
+    await expect(assertComputerHomeWritable(home, stat.uid, stat.gid)).resolves.toBeUndefined();
+  });
+
+  it("accepts sandbox-owned read-only git object files", async () => {
+    const parent = await mkdtemp(path.join(tmpdir(), "rakazo-home-git-object-"));
+    roots.push(parent);
+    const home = path.join(parent, "home");
+    const object = path.join(home, "repo", ".git", "objects", "ab", "cdef");
+    await mkdir(path.dirname(object), { recursive: true });
+    await writeFile(object, "blob");
+    await chmod(object, 0o444);
+
+    const stat = await lstat(object);
+    await expect(assertComputerHomeWritable(home, stat.uid, stat.gid)).resolves.toBeUndefined();
+  });
+
+  it("rejects a read-only file owned by someone else", async () => {
+    const parent = await mkdtemp(path.join(tmpdir(), "rakazo-home-foreign-readonly-"));
+    roots.push(parent);
+    const home = path.join(parent, "home");
+    const file = path.join(home, "object");
+    await mkdir(home);
+    await chmod(home, 0o777);
+    await writeFile(file, "blob");
+    await chmod(file, 0o444);
+
+    const stat = await lstat(file);
+    await expect(assertComputerHomeWritable(home, stat.uid + 1, stat.gid + 1)).rejects.toThrow(
+      /chown -R/,
+    );
+  });
+
+  it("rejects an owner-owned file the owner cannot read", async () => {
+    const parent = await mkdtemp(path.join(tmpdir(), "rakazo-home-unreadable-"));
+    roots.push(parent);
+    const home = path.join(parent, "home");
+    const file = path.join(home, "profile.json");
+    await mkdir(home);
+    await writeFile(file, "{}");
+    await chmod(file, 0o000);
+
+    const stat = await lstat(file);
+    await expect(assertComputerHomeWritable(home, stat.uid, stat.gid)).rejects.toThrow(/chown -R/);
+  });
+
+  it("rejects an owner-owned world-writable file the owner cannot write", async () => {
+    const parent = await mkdtemp(path.join(tmpdir(), "rakazo-home-world-writable-"));
+    roots.push(parent);
+    const home = path.join(parent, "home");
+    const file = path.join(home, "profile.json");
+    await mkdir(home);
+    await writeFile(file, "{}");
+    await chmod(file, 0o002);
+
+    const stat = await lstat(file);
+    await expect(assertComputerHomeWritable(home, stat.uid, stat.gid)).rejects.toThrow(/chown -R/);
+  });
+
+  it("rejects an owner-owned directory that is not writable", async () => {
+    const parent = await mkdtemp(path.join(tmpdir(), "rakazo-home-dir-mode-"));
+    roots.push(parent);
+    const home = path.join(parent, "home");
+    await mkdir(home);
+    await chmod(home, 0o555);
+
+    const stat = await lstat(home);
     await expect(assertComputerHomeWritable(home, stat.uid, stat.gid)).rejects.toThrow(/chown -R/);
   });
 

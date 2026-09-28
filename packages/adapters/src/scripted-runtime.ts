@@ -243,6 +243,24 @@ export function inferScript(
       },
     ];
   }
+  if (lower.includes("mcp approval card")) {
+    return [
+      {
+        assistant: "i will register that server for your approval.",
+        toolCalls: [
+          {
+            name: "add_mcp_server",
+            args: {
+              name: "Fixture MCP",
+              transport: "stdio",
+              command: "echo",
+              assignToSelf: true,
+            },
+          },
+        ],
+      },
+    ];
+  }
   if (lower.includes("quote markdown fixture")) {
     const marker = /quote markdown fixture\s+(\S+)/i.exec(prompt)?.[1] ?? "md-fixture";
     return [

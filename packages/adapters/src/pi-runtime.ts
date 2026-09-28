@@ -7,14 +7,19 @@ import {
 } from "@earendil-works/pi-agent-core";
 import {
   type Api,
+  type AssistantMessage,
+  type AssistantMessageEvent,
+  type Context,
   clampThinkingLevel,
   type Model,
   type Models,
+  type ModelsSimpleStreamOptions,
   type ModelThinkingLevel,
-  type SimpleStreamOptions,
+  type ProviderHeaders,
   Type,
 } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
+import { AssistantMessageEventStream } from "@earendil-works/pi-ai/utils/event-stream";
 import type {
   AdapterContext,
   AgentRunRequest,
@@ -36,6 +41,7 @@ import {
 } from "./openai-tool-parameters.js";
 import { PiRuntimeCredentialStore, toOAuthCredential } from "./pi-credentials.js";
 import { registerLocalProvider } from "./pi-local-provider.js";
+import { codexComputeResidency } from "./pi-oauth.js";
 import {
   OPENAI_COMPATIBLE_PROVIDER_ID,
   registerOpenAiCompatibleCatalog,
@@ -45,6 +51,7 @@ import {
   billedPromptTokens,
   clipToolResultContent,
   clipToolResultText,
+  MODEL_STREAM_IDLE_TIMEOUT_MS,
   MODEL_STREAM_MAX_RETRIES,
   MODEL_STREAM_TIMEOUT_MS,
   REASONING_MODEL_MAX_TOKENS,
@@ -261,7 +268,14 @@ export class PiAgentRuntime implements AgentRuntime {
           sessionId: conversationSessionId(request.threadId, request.botId),
           steeringMode: "all",
           streamFn: (m, ctx, options) =>
-            models.streamSimple(m, ctx, reliableStreamOptions(m, options, request.model.maxTokens)),
+            reliableModelStream(
+              models,
+              m,
+              ctx,
+              options,
+              request.model.maxTokens,
+              () => selectedModel.credentials?.accessToken ?? apiKey,
+            ),
           getApiKey: async () => apiKey,
           transformContext: async (messages) =>
             pruneComputerScreenshotContext(
@@ -518,6 +532,8 @@ export function resolveRuntimeModel(modelConfig: AgentRunRequest["model"]): {
   models: Models;
   model: Model<Api> | undefined;
   apiKey: string | undefined;
+  /** Live credential store; OAuth refreshes swap the credential mid-run. */
+  credentials: PiRuntimeCredentialStore | undefined;
 } {
   const provider = modelConfig.provider === "scripted" ? "openrouter" : modelConfig.provider;
   const envDefaultModel = process.env.PI_DEFAULT_MODEL?.trim();
@@ -525,7 +541,8 @@ export function resolveRuntimeModel(modelConfig: AgentRunRequest["model"]): {
   const requestedId =
     modelConfig.id === "scripted" ? envDefaultModel || DEFAULT_OPENROUTER_MODEL_ID : modelConfig.id;
   const modelId = usableModelId(requestedId) ?? "";
-  const models = modelsForRequest({ model: modelConfig }, provider);
+  const credentials = credentialStoreForRequest({ model: modelConfig }, provider);
+  const models = modelsForRequest({ model: modelConfig }, provider, credentials);
   let model = models.getModel(provider, modelId);
   if (!model && provider !== "openrouter" && provider !== OPENAI_COMPATIBLE_PROVIDER_ID) {
     model = models.getModel("openrouter", modelId);
@@ -546,26 +563,32 @@ export function resolveRuntimeModel(modelConfig: AgentRunRequest["model"]): {
         // another provider would ship our key to a vendor it was not issued for.
         (modelConfig.apiKey ??
         (provider === "openrouter" ? process.env.OPENROUTER_API_KEY : undefined));
-  return { provider, modelId, models, model, apiKey };
+  return { provider, modelId, models, model, apiKey, credentials };
+}
+
+function credentialStoreForRequest(
+  request: Pick<AgentRunRequest, "model">,
+  provider: string,
+): PiRuntimeCredentialStore | undefined {
+  const oauth = request.model.oauth;
+  if (!oauth) return undefined;
+  const persist = oauth.persist;
+  return new PiRuntimeCredentialStore(
+    provider,
+    toOAuthCredential(oauth.credential),
+    persist ? (next) => persist(next) : undefined,
+  );
 }
 
 export function modelsForRequest(
   request: Pick<AgentRunRequest, "model">,
   provider: string,
+  credentials?: PiRuntimeCredentialStore,
 ): Models {
-  const oauth = request.model.oauth;
-  if (oauth) {
-    const persist = oauth.persist;
+  const store = credentials ?? credentialStoreForRequest(request, provider);
+  if (store) {
     return registerOpenAiCompatibleCatalog(
-      registerLocalProvider(
-        builtinModels({
-          credentials: new PiRuntimeCredentialStore(
-            provider,
-            toOAuthCredential(oauth.credential),
-            persist ? (next) => persist(next) : undefined,
-          ),
-        }),
-      ),
+      registerLocalProvider(builtinModels({ credentials: store })),
     );
   }
   if (
@@ -1076,10 +1099,13 @@ async function executeSubagent(host: ToolHost, executionId: string, args: Record
   const nested = new Agent({
     sessionId: conversationSessionId(host.request.threadId, host.request.botId, agentId),
     streamFn: (m, ctx, options) =>
-      selectedModel.models.streamSimple(
+      reliableModelStream(
+        selectedModel.models,
         m,
         ctx,
-        reliableStreamOptions(m, options, requestModel.maxTokens),
+        options,
+        requestModel.maxTokens,
+        () => selectedModel.credentials?.accessToken ?? selectedModel.apiKey,
       ),
     getApiKey: async () => selectedModel.apiKey,
     transformContext: async (messages) =>
@@ -1808,12 +1834,235 @@ function createQueue(): EventQueue {
   };
 }
 
+export function isCodexModel(model: Pick<Model<Api>, "api" | "provider">): boolean {
+  return model.provider === "openai-codex" || model.api === "openai-codex-responses";
+}
+
+/** Abort reason recorded when a Codex stream goes silent past the idle bound. */
+export const CODEX_STREAM_IDLE_TIMEOUT_MESSAGE = "Codex stream idle timeout";
+
+export interface StreamIdleWatchdog {
+  /** Composed abort signal to hand to the provider request. */
+  signal: AbortSignal;
+  /** Re-arms the idle bound; invoke on response headers and each delivered event. */
+  ping(): void;
+  /** Wraps the provider stream so every delivered event re-arms the idle bound. */
+  wrap(stream: AssistantMessageEventStream): AssistantMessageEventStream;
+  /** Stops the timer and drops the caller-signal listener. */
+  dispose(): void;
+}
+
+/**
+ * `timeoutMs` bounds each attempt's time-to-headers. After headers arrive, pi
+ * reads the body until it ends or the request signal aborts, so silence can
+ * stall a run. The watchdog composes an AbortController into `options.signal`
+ * and re-arms on a 2xx `onResponse` — pi invokes it inside the retry loop when
+ * an attempt's headers land — and on every stream event the agent consumes.
+ * `idleTimeoutMs` of silence aborts the request.
+ *
+ * Arming only on a successful response — not at stream creation, and not on
+ * retryable error headers — keeps each attempt's time-to-headers inside its
+ * own `timeoutMs` budget and each retry backoff outside the idle bound. A
+ * non-2xx body is bounded separately by `boundRetryableErrorBody`: pi reads it
+ * with `response.text()` after the header timeout is gone, and failing that
+ * read lets the attempt retry, whereas aborting this signal would also cancel
+ * the backoff. pi reports any signal abort as a generic "Request was aborted",
+ * so when the watchdog fired the wrapper relabels the terminal error as an
+ * idle timeout rather than a caller abort.
+ */
+export function codexStreamIdleWatchdog(
+  upstream: AbortSignal | undefined,
+  idleTimeoutMs: number = MODEL_STREAM_IDLE_TIMEOUT_MS,
+): StreamIdleWatchdog {
+  const controller = new AbortController();
+  let timedOut = false;
+  let disposed = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+
+  const onUpstreamAbort = () => controller.abort(upstream?.reason);
+  if (upstream?.aborted) controller.abort(upstream.reason);
+  else upstream?.addEventListener("abort", onUpstreamAbort, { once: true });
+
+  const arm = () => {
+    if (disposed || controller.signal.aborted) return;
+    timer = setTimeout(() => {
+      timer = undefined;
+      if (controller.signal.aborted) return;
+      timedOut = true;
+      controller.abort(new Error(CODEX_STREAM_IDLE_TIMEOUT_MESSAGE));
+    }, idleTimeoutMs);
+    timer.unref?.();
+  };
+
+  const dispose = () => {
+    disposed = true;
+    if (timer !== undefined) clearTimeout(timer);
+    timer = undefined;
+    upstream?.removeEventListener("abort", onUpstreamAbort);
+  };
+
+  // Nothing arms the timer before a successful response's headers land: the
+  // pre-headers window is bounded per attempt by timeoutMs and retry backoff
+  // by maxRetryDelayMs, so idle budget must not burn there and a retry always
+  // starts from a fresh full budget.
+  const ping = () => {
+    if (timer !== undefined) clearTimeout(timer);
+    timer = undefined;
+    arm();
+  };
+
+  const describeTimeout = (message: AssistantMessage): AssistantMessage =>
+    timedOut && message.stopReason === "aborted"
+      ? { ...message, stopReason: "error", errorMessage: CODEX_STREAM_IDLE_TIMEOUT_MESSAGE }
+      : message;
+
+  const rewrite = (event: AssistantMessageEvent): AssistantMessageEvent => {
+    if (event.type !== "error") return event;
+    const error = describeTimeout(event.error);
+    return error === event.error ? event : { type: "error", reason: "error", error };
+  };
+
+  return {
+    signal: controller.signal,
+    ping,
+    dispose,
+    wrap(inner) {
+      class Watched extends AssistantMessageEventStream {
+        override async *[Symbol.asyncIterator](): AsyncGenerator<AssistantMessageEvent> {
+          try {
+            for await (const event of inner) {
+              ping();
+              yield rewrite(event);
+            }
+          } finally {
+            dispose();
+          }
+        }
+        override result(): Promise<AssistantMessage> {
+          return inner.result().then(describeTimeout).finally(dispose);
+        }
+      }
+      return new Watched();
+    },
+  };
+}
+
+/**
+ * Fails a non-2xx body that stays open. The shared idle watchdog stays
+ * unarmed: aborting it would skip pi's retry backoff, and a thrown read error
+ * is retried like any other transport failure.
+ */
+function boundRetryableErrorBody(response: Response, idleTimeoutMs: number): Response {
+  if (response.ok || response.body == null) return response;
+  const reader = response.body.getReader();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const clear = () => {
+    if (timer !== undefined) clearTimeout(timer);
+    timer = undefined;
+  };
+  const body = new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      const read = reader.read().then(
+        (chunk) => ({ kind: "chunk" as const, chunk }),
+        (error: unknown) => ({ kind: "error" as const, error }),
+      );
+      const timeout = new Promise<{ kind: "timeout" }>((resolve) => {
+        timer = setTimeout(() => resolve({ kind: "timeout" }), idleTimeoutMs);
+        timer.unref?.();
+      });
+      const outcome = await Promise.race([read, timeout]);
+      clear();
+      if (outcome.kind === "timeout") {
+        const error = new Error(CODEX_STREAM_IDLE_TIMEOUT_MESSAGE);
+        void reader.cancel(error).catch(() => undefined);
+        controller.error(error);
+        return;
+      }
+      if (outcome.kind === "error") {
+        controller.error(outcome.error);
+        return;
+      }
+      if (outcome.chunk.done) controller.close();
+      else controller.enqueue(outcome.chunk.value);
+    },
+    cancel(reason) {
+      clear();
+      return reader.cancel(reason);
+    },
+  });
+  const headers = new Headers(response.headers);
+  headers.delete("content-encoding");
+  headers.delete("content-length");
+  return new Response(body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
+function codexRequestFetch(
+  fetchImpl: ModelsSimpleStreamOptions["fetch"],
+  idleTimeoutMs: number,
+): NonNullable<ModelsSimpleStreamOptions["fetch"]> {
+  return async (input, init) => {
+    const response = fetchImpl ? await fetchImpl(input, init) : await globalThis.fetch(input, init);
+    return boundRetryableErrorBody(response, idleTimeoutMs);
+  };
+}
+
+export function reliableModelStream(
+  models: Models,
+  model: Model<Api>,
+  context: Context,
+  options: ModelsSimpleStreamOptions | undefined,
+  configuredMaxTokens: number | undefined,
+  accessToken?: string | (() => string | undefined),
+): AssistantMessageEventStream {
+  const watchdog = isCodexModel(model) ? codexStreamIdleWatchdog(options?.signal) : undefined;
+  try {
+    const stream = models.streamSimple(
+      model,
+      context,
+      reliableStreamOptions(
+        model,
+        watchdog
+          ? {
+              ...options,
+              signal: watchdog.signal,
+              fetch: codexRequestFetch(options?.fetch, MODEL_STREAM_IDLE_TIMEOUT_MS),
+              // Only a 2xx arms the shared watchdog. Error bodies are bounded by
+              // the fetch wrapper, and a caller-supplied hook still sees every status.
+              onResponse: (response, requestModel) => {
+                if (response.status >= 200 && response.status < 300) watchdog.ping();
+                return options?.onResponse?.(response, requestModel);
+              },
+            }
+          : options,
+        configuredMaxTokens,
+        accessToken,
+      ),
+    );
+    return watchdog ? watchdog.wrap(stream) : stream;
+  } catch (error) {
+    watchdog?.dispose();
+    throw error;
+  }
+}
+
+const CODEX_RESIDENCY_HEADER = "x-openai-internal-codex-residency";
+
+/** Header names are case-insensitive: any caller-set casing counts as explicit. */
+function hasHeader(headers: ProviderHeaders | undefined, name: string): boolean {
+  return Object.keys(headers ?? {}).some((key) => key.toLowerCase() === name);
+}
+
 export function reliableStreamOptions(
   model: Pick<Model<Api>, "api" | "provider" | "maxTokens" | "reasoning">,
-  options?: SimpleStreamOptions,
+  options?: ModelsSimpleStreamOptions,
   configuredMaxTokens?: number,
-): SimpleStreamOptions {
-  let next: SimpleStreamOptions = {
+  accessToken?: string | (() => string | undefined),
+): ModelsSimpleStreamOptions {
+  let next: ModelsSimpleStreamOptions = {
     ...options,
     timeoutMs: options?.timeoutMs ?? MODEL_STREAM_TIMEOUT_MS,
     maxRetries: options?.maxRetries ?? MODEL_STREAM_MAX_RETRIES,
@@ -1825,11 +2074,32 @@ export function reliableStreamOptions(
     ),
   };
 
-  if (model.provider === "openai-codex" || model.api === "openai-codex-responses") {
+  if (isCodexModel(model)) {
     // Pi cannot fall back after a WebSocket has emitted its start event. Long tool
     // runs then surface abnormal close 1006 as a terminal model error. SSE has
     // bounded network retries and no long-lived connection between tool turns.
     next = { ...next, transport: "sse" };
+    // Forward the account's compute residency so the Codex backend routes to the
+    // right region. Models.applyAuth resolves auth — including an OAuth refresh
+    // that swaps the stored credential — after these options are built, so the
+    // claim is derived in transformHeaders at request time from the credential
+    // the store holds then. Injection acts like a default header: an explicit
+    // value under any casing wins, and a caller-supplied transformHeaders keeps
+    // the final say.
+    const callerTransform = next.transformHeaders;
+    next = {
+      ...next,
+      transformHeaders: (headers) => {
+        const residency = codexComputeResidency(
+          typeof accessToken === "function" ? accessToken() : accessToken,
+        );
+        const merged =
+          residency && !hasHeader(headers, CODEX_RESIDENCY_HEADER)
+            ? { ...headers, [CODEX_RESIDENCY_HEADER]: residency }
+            : headers;
+        return callerTransform ? callerTransform(merged) : merged;
+      },
+    };
   }
 
   // OpenCode Go/Zen require a sticky x-opencode-session header (affinity + some

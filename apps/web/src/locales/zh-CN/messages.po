@@ -475,8 +475,8 @@ msgstr "已归档。对话、记忆和文件保留。"
 msgid "Arguments"
 msgstr "参数"
 
-#: src/components/AppRail.tsx:20
-#: src/pages/Artifacts.tsx:218
+#: src/pages/Artifacts.tsx:229
+#: src/pages/Shell.tsx:3263
 msgid "Artifacts"
 msgstr ""
 
@@ -630,7 +630,7 @@ msgstr "Bot 屏幕预览"
 msgid "Bot to link"
 msgstr "要关联的 Bot"
 
-#: src/components/AppRail.tsx:17
+#: src/pages/Artifacts.tsx:226
 msgid "Bots"
 msgstr ""
 
@@ -3331,10 +3331,6 @@ msgstr "搜索提供方"
 #: src/pages/SpaceSearch.tsx:16
 msgid "Searching…"
 msgstr "正在搜索…"
-
-#: src/components/AppRail.tsx:14
-msgid "Sections"
-msgstr ""
 
 #: src/pages/Shell.tsx:3288
 msgid "Select a bot"

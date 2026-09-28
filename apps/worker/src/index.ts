@@ -6,6 +6,7 @@ loadRootEnv();
 
 import {
   ChatSdkMessagingSurface,
+  CodexCatalogCache,
   createBackgroundJobHandlers,
   createCloudAgentConnection,
   createConnectorStack,
@@ -164,6 +165,8 @@ async function main() {
   const executor = createRunExecutor({
     prisma,
     runtime,
+    // Live per-account Codex catalog; never refreshes or writes credentials.
+    codexCatalog: new CodexCatalogCache(),
     sandbox,
     memory: new MarkdownMemoryStore(prisma),
     memoryProviders,

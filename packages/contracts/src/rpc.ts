@@ -579,7 +579,12 @@ export const appContract = {
     assignments: {
       list: oc.input(botId).output(z.array(BotMcpServerSchema)),
       all: oc.output(z.array(BotMcpServerSchema)),
-      approve: oc.input(z.object({ botId: Id, serverId: Id })).output(BotMcpServerSchema),
+      approve: oc
+        .input(z.object({ botId: Id, serverId: Id, threadId: Id.optional() }))
+        .output(BotMcpServerSchema),
+      dismiss: oc
+        .input(z.object({ botId: Id, serverId: Id, threadId: Id.optional() }))
+        .output(z.object({ ok: z.literal(true) })),
       replace: oc
         .input(
           z.object({

@@ -475,8 +475,8 @@ msgstr "Arquivado. Chat, memória e arquivos mantidos."
 msgid "Arguments"
 msgstr "Argumentos:"
 
-#: src/components/AppRail.tsx:20
-#: src/pages/Artifacts.tsx:218
+#: src/pages/Artifacts.tsx:229
+#: src/pages/Shell.tsx:3263
 msgid "Artifacts"
 msgstr ""
 
@@ -630,7 +630,7 @@ msgstr "Pré-visualização da tela"
 msgid "Bot to link"
 msgstr ""
 
-#: src/components/AppRail.tsx:17
+#: src/pages/Artifacts.tsx:226
 msgid "Bots"
 msgstr ""
 
@@ -3331,10 +3331,6 @@ msgstr "Pesquisar provedores"
 #: src/pages/SpaceSearch.tsx:16
 msgid "Searching…"
 msgstr "Pesquisando…"
-
-#: src/components/AppRail.tsx:14
-msgid "Sections"
-msgstr ""
 
 #: src/pages/Shell.tsx:3288
 msgid "Select a bot"

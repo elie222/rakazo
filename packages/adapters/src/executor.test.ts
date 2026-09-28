@@ -6,6 +6,7 @@ import {
   appendToolCompletionAudit,
   createRunExecutor,
   createRunWorkspaceCheckpoint,
+  dockerComputerPackageInstruction,
   loadCurrentTurnImages,
   missingTurnImagesInstruction,
   parseUpdateBotPatch,
@@ -1056,6 +1057,15 @@ describe("userTurnInstructions", () => {
   });
 });
 
+describe("dockerComputerPackageInstruction", () => {
+  it("documents rootless Python tool installation only for Docker images", () => {
+    expect(dockerComputerPackageInstruction("docker")).toContain("uv tool install <package>");
+    expect(dockerComputerPackageInstruction("docker")).toContain("without sudo");
+    expect(dockerComputerPackageInstruction("desktop")).toBeUndefined();
+    expect(dockerComputerPackageInstruction("e2b")).toBeUndefined();
+  });
+});
+
 describe("createRunExecutor", () => {
   it("excludes private summaries and memory tools from group messaging runs", () => {
     const messages = [{ role: "user", content: "Group request" }];
@@ -2044,6 +2054,116 @@ description: Prepare standup notes
     const executor = createRunExecutor({
       prisma,
       secretStore: { load: vi.fn(() => plaintext), put: vi.fn() },
+    } as unknown as Parameters<typeof createRunExecutor>[0]);
+
+    await expect(
+      executor.resolveModel({ userId: "user-1", spaceId: "ws-1", botId: "bot-1" }),
+    ).rejects.toThrow(/not available with your current sign-in/i);
+  });
+
+  it("resolves a saved Codex Spark model when the account's live catalog lists it", async () => {
+    const provider = "openai-codex";
+    const modelId = "gpt-5.3-codex-spark";
+    const plaintext = JSON.stringify({
+      type: "oauth",
+      access: "access-token",
+      refresh: "refresh-token",
+      expires: Date.now() + 3_600_000,
+      accountId: "acct-live",
+    });
+    const prisma = {
+      bot: {
+        findFirst: vi.fn(async () => ({
+          modelProvider: provider,
+          modelId,
+          thinkingLevel: null,
+        })),
+      },
+      spaceModelPreference: {
+        findFirst: vi.fn(async () =>
+          modelPreference({
+            provider,
+            secretId: "secret-codex",
+            modelId,
+            isDefault: true,
+          }),
+        ),
+      },
+      userModelCredential: { findFirst: vi.fn(async () => null) },
+      deploymentSettings: { findUnique: vi.fn(async () => null) },
+      secret: {
+        findFirst: vi.fn(async () => ({ id: "secret-codex", ciphertext: plaintext })),
+        findUnique: vi.fn(async () => null),
+      },
+    } as unknown as PrismaClient;
+    const read = vi.fn(async () => [
+      {
+        slug: modelId,
+        reasoningEfforts: ["low", "high"],
+        supportsImages: false,
+        supportsFastTier: true,
+      },
+    ]);
+    const executor = createRunExecutor({
+      prisma,
+      secretStore: { load: vi.fn(() => plaintext), put: vi.fn() },
+      codexCatalog: { read },
+    } as unknown as Parameters<typeof createRunExecutor>[0]);
+
+    const model = await executor.resolveModel({
+      userId: "user-1",
+      spaceId: "ws-1",
+      botId: "bot-1",
+    });
+
+    expect(model).toMatchObject({ provider, id: modelId });
+    expect(model?.oauth?.credential.access).toBe("access-token");
+    expect(read).toHaveBeenCalledWith(
+      "user-1",
+      expect.objectContaining({ accountId: "acct-live" }),
+      expect.objectContaining({ waitMs: expect.any(Number) }),
+    );
+  });
+
+  it("still rejects Codex Spark when the live catalog omits it", async () => {
+    const provider = "openai-codex";
+    const modelId = "gpt-5.3-codex-spark";
+    const plaintext = JSON.stringify({
+      type: "oauth",
+      access: "access-token",
+      refresh: "refresh-token",
+      expires: Date.now() + 3_600_000,
+      accountId: "acct-live",
+    });
+    const prisma = {
+      bot: {
+        findFirst: vi.fn(async () => ({
+          modelProvider: provider,
+          modelId,
+          thinkingLevel: null,
+        })),
+      },
+      spaceModelPreference: {
+        findFirst: vi.fn(async () =>
+          modelPreference({
+            provider,
+            secretId: "secret-codex",
+            modelId,
+            isDefault: true,
+          }),
+        ),
+      },
+      userModelCredential: { findFirst: vi.fn(async () => null) },
+      deploymentSettings: { findUnique: vi.fn(async () => null) },
+      secret: {
+        findFirst: vi.fn(async () => ({ id: "secret-codex", ciphertext: plaintext })),
+        findUnique: vi.fn(async () => null),
+      },
+    } as unknown as PrismaClient;
+    const executor = createRunExecutor({
+      prisma,
+      secretStore: { load: vi.fn(() => plaintext), put: vi.fn() },
+      codexCatalog: { read: vi.fn(async () => []) },
     } as unknown as Parameters<typeof createRunExecutor>[0]);
 
     await expect(

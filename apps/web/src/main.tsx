@@ -34,7 +34,12 @@ createRoot(document.getElementById("root")!).render(
     <PerformanceProbe />
     <AppearanceSync />
     <I18nBootstrap>
-      <BrowserRouter>
+      {/* Router state updates must not be transitions: under sustained urgent
+          updates (SSE churn while a run streams) a pending navigation is
+          preempted indefinitely — useSearchParams/useParams then keep serving
+          the stale location, so deep links (?m=) and thread switches never
+          land while the URL already moved. */}
+      <BrowserRouter useTransitions={false}>
         <DesktopUpdatesProvider>
           <App />
         </DesktopUpdatesProvider>

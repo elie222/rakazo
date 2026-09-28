@@ -475,8 +475,8 @@ msgstr "보관되었습니다. 대화, 기억, 파일은 유지됩니다."
 msgid "Arguments"
 msgstr "인자"
 
-#: src/components/AppRail.tsx:20
-#: src/pages/Artifacts.tsx:218
+#: src/pages/Artifacts.tsx:229
+#: src/pages/Shell.tsx:3263
 msgid "Artifacts"
 msgstr ""
 
@@ -630,7 +630,7 @@ msgstr "Bot 화면 미리보기"
 msgid "Bot to link"
 msgstr "연결할 Bot"
 
-#: src/components/AppRail.tsx:17
+#: src/pages/Artifacts.tsx:226
 msgid "Bots"
 msgstr ""
 
@@ -3331,10 +3331,6 @@ msgstr "AI 서비스 검색"
 #: src/pages/SpaceSearch.tsx:16
 msgid "Searching…"
 msgstr "검색 중…"
-
-#: src/components/AppRail.tsx:14
-msgid "Sections"
-msgstr ""
 
 #: src/pages/Shell.tsx:3288
 msgid "Select a bot"

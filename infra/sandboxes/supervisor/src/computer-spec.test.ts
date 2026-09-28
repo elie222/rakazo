@@ -212,6 +212,9 @@ describe("graphical computer spec", () => {
       try {
         expect(run(":1")).toContain(`--user-data-dir=${home}/.browser-profiles/chromium`);
         expect(run(":1")).toContain("--restore-last-session");
+        expect(run(":1")).toContain("--disable-gpu");
+        expect(run(":1")).toContain("--enable-unsafe-swiftshader");
+        expect(run(":1")).not.toContain("--disable-software-rasterizer");
         expect(run(":1").some((arg) => arg.startsWith("--remote-debugging-port="))).toBe(true);
         expect(run(":2")).toContain(`--user-data-dir=${home}/.browser-profiles/chromium-screen-2`);
         expect(run(":2")).toContain("--remote-debugging-port=9223");

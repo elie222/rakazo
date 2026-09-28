@@ -1,9 +1,12 @@
 import type { MessageBlock } from "@rakazo/contracts";
+import { REPLY_QUOTE_MAX_LENGTH } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import {
   hasVisibleMessagePresentation,
   isCenteredAgentEvent,
   messagePresentationSegments,
+  quotableMessageSegments,
+  truncateQuoteExcerpt,
 } from "./message-presentation";
 
 describe("mobile message presentation", () => {
@@ -100,5 +103,76 @@ describe("mobile message presentation", () => {
         { kind: "text", text: "Done." },
       ]),
     ).toEqual([{ kind: "content", blocks: [{ kind: "text", text: "Done." }] }]);
+  });
+});
+
+describe("quotableMessageSegments", () => {
+  it("exposes the server's visible text, not the typographer-rendered glyphs", () => {
+    // Bubbles render `—`, curly quotes, and `…`; the server validates against
+    // the raw visible text, so the sheet must offer the untransformed glyphs.
+    const segments = quotableMessageSegments("bot", [
+      {
+        kind: "text",
+        text: 'run `pnpm dev -- --watch` ... say "hi" -- soon...',
+      } as MessageBlock,
+    ]);
+    expect(segments).toEqual(['run pnpm dev -- --watch ... say "hi" -- soon...']);
+  });
+
+  it("keeps user text verbatim since replies validate it as plain text", () => {
+    const segments = quotableMessageSegments("user", [
+      { kind: "text", text: "look at **this** commit" } as MessageBlock,
+    ]);
+    expect(segments).toEqual(["look at **this** commit"]);
+  });
+
+  it("keeps text blocks as separate segments and drops non-text blocks", () => {
+    const segments = quotableMessageSegments("bot", [
+      { kind: "text", text: "first" } as MessageBlock,
+      {
+        kind: "image",
+        artifactId: "a1",
+        mimeType: "image/png",
+        name: "x.png",
+      } as MessageBlock,
+      { kind: "text", text: "   " } as MessageBlock,
+      { kind: "text", text: "second" } as MessageBlock,
+    ]);
+    expect(segments).toEqual(["first", "second"]);
+  });
+
+  it("yields no segments past the server's source bound", () => {
+    const segments = quotableMessageSegments("bot", [
+      { kind: "text", text: "x".repeat(90_000) } as MessageBlock,
+      { kind: "text", text: "y".repeat(90_000) } as MessageBlock,
+    ]);
+    expect(segments).toEqual([]);
+  });
+
+  it("memoizes segments so row chrome does not reparse markdown", () => {
+    const blocks = [{ kind: "text", text: "**bold** words" } as MessageBlock];
+    expect(quotableMessageSegments("bot", blocks)).toBe(quotableMessageSegments("bot", blocks));
+    expect(quotableMessageSegments("user", blocks)).not.toBe(
+      quotableMessageSegments("bot", blocks),
+    );
+  });
+});
+
+describe("truncateQuoteExcerpt", () => {
+  it("leaves short excerpts untouched", () => {
+    expect(truncateQuoteExcerpt("short")).toBe("short");
+  });
+
+  it("caps at the contract limit", () => {
+    expect(truncateQuoteExcerpt("x".repeat(REPLY_QUOTE_MAX_LENGTH + 50))).toHaveLength(
+      REPLY_QUOTE_MAX_LENGTH,
+    );
+  });
+
+  it("does not split a surrogate pair at the boundary", () => {
+    const excerpt = "x".repeat(REPLY_QUOTE_MAX_LENGTH - 1) + "😀";
+    const truncated = truncateQuoteExcerpt(excerpt + "tail");
+    expect(truncated).toHaveLength(REPLY_QUOTE_MAX_LENGTH - 1);
+    expect(truncated).toBe("x".repeat(REPLY_QUOTE_MAX_LENGTH - 1));
   });
 });

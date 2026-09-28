@@ -661,6 +661,9 @@ importers:
 
   packages/chat-ui:
     dependencies:
+      '@rakazo/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@rakazo/ui-tokens':
         specifier: workspace:*
         version: link:../ui-tokens

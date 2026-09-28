@@ -1,6 +1,11 @@
 #!/bin/sh
 set -eu
 RAKAZO_HOME="${HOME:-/home/rakazo}"
+# start.sh exports the session bus for the whole desktop; the supervisor may
+# launch this script with a minimal environment, so recover the bus address.
+if [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ] && [ -r /tmp/rakazo/dbus-session ]; then
+  . /tmp/rakazo/dbus-session
+fi
 # Page-browser tools and desktop launchers share the assigned display profile.
 DISPLAY_NUM="${DISPLAY:-:1}"
 DISPLAY_NUM="${DISPLAY_NUM#:}"
@@ -100,7 +105,10 @@ if [ -d "$ACTUAL_PROFILE" ] && ! profile_lock_is_live "$ACTUAL_PROFILE"; then
     done || true
 fi
 
-FLAGS="--test-type --no-sandbox --disable-dev-shm-usage --disable-gpu --disable-software-rasterizer --no-first-run --no-default-browser-check --disable-session-crashed-bubble --hide-crash-restore-bubble --password-store=basic --restore-last-session --start-maximized --remote-debugging-address=127.0.0.1 --remote-debugging-port=$DEBUG_PORT"
+# This container has no GPU. --disable-gpu keeps Chromium from probing one.
+# WebGL still needs SwiftShader: --disable-software-rasterizer blocks it, and
+# current Chromium allows that fallback only with --enable-unsafe-swiftshader.
+FLAGS="--test-type --no-sandbox --disable-dev-shm-usage --disable-gpu --enable-unsafe-swiftshader --no-first-run --no-default-browser-check --disable-session-crashed-bubble --hide-crash-restore-bubble --password-store=basic --restore-last-session --start-maximized --remote-debugging-address=127.0.0.1 --remote-debugging-port=$DEBUG_PORT"
 if [ "$USER_DATA_DIR_SET" -eq 0 ]; then
   exec "$BIN" $FLAGS --user-data-dir="$PROFILE" "$@"
 fi

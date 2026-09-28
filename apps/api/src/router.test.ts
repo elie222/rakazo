@@ -1,5 +1,10 @@
 import { RPCHandler } from "@orpc/server/fetch";
-import { COMPUTER_SCREEN_UNAVAILABLE, ComputerScreenUnavailableError } from "@rakazo/adapters";
+import {
+  COMPUTER_SCREEN_UNAVAILABLE,
+  CodexCatalogCache,
+  ComputerScreenUnavailableError,
+  screenLeaseIdForRun,
+} from "@rakazo/adapters";
 import type { Actor, Bot } from "@rakazo/contracts";
 import { REPLY_QUOTE_MAX_LENGTH } from "@rakazo/contracts";
 import { openScreenCapability } from "@rakazo/core/node/screen-capability";
@@ -358,7 +363,8 @@ describe("MCP server deletion", () => {
         delete: deleteServer,
       },
       secret: { deleteMany: deleteSecrets },
-      $transaction: vi.fn((operations: Promise<unknown>[]) => Promise.all(operations)),
+      message: { findMany: vi.fn().mockResolvedValue([]) },
+      $transaction: vi.fn(async (run: (tx: unknown) => Promise<unknown>) => run(prisma)),
     } as unknown as PrismaClient;
     const deps = {
       prisma,
@@ -1086,6 +1092,71 @@ describe("model credential persistence", () => {
       }),
     );
   });
+
+  it("rejects an API key for ChatGPT-subscription Codex before persisting", async () => {
+    const { upsert, deps, handler } = persistDeps();
+
+    const response = await call(handler, "models/connect", {
+      provider: "openai-codex",
+      apiKey: "sk-test-key-123",
+    });
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      json: expect.objectContaining({
+        code: "BAD_REQUEST",
+        message: expect.stringContaining("ChatGPT subscription sign-in is required"),
+      }),
+    });
+    expect(deps.secrets.put).not.toHaveBeenCalled();
+    expect(upsert).not.toHaveBeenCalled();
+  });
+
+  it("still accepts an API key for other providers", async () => {
+    const { deps, handler } = persistDeps();
+
+    const response = await call(handler, "models/connect", {
+      provider: "anthropic",
+      apiKey: "sk-test-key-123",
+    });
+
+    expect(response.status).toBe(200);
+    expect(deps.secrets.put).toHaveBeenCalledWith(
+      "sk-test-key-123",
+      expect.objectContaining({ userId: actor.userId }),
+    );
+  });
+
+  it.each([
+    ["github-copilot", "GitHub Copilot"],
+    ["openai-codex", "OpenAI Codex"],
+    ["anthropic", "Anthropic"],
+  ])("labels a %s subscription sign-in with its own provider name", async (provider, label) => {
+    const { finish, deps, handler } = persistDeps();
+    finish.mockImplementation(async (_loginId, _actor, persist) => ({
+      status: "connected" as const,
+      value: await persist({
+        status: "connected",
+        provider,
+        credential: {
+          type: "oauth",
+          access: "access-token",
+          refresh: "refresh-token",
+          expires: Date.now() + 60_000,
+        },
+        signal: new AbortController().signal,
+      }),
+    }));
+
+    const response = await call(handler, "models/finishOAuth", { loginId: "login-1" });
+
+    expect(response.status).toBe(200);
+    expect(deps.prisma.userModelCredential.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ provider, label }),
+      }),
+    );
+  });
 });
 
 describe("bot intro run", () => {
@@ -1264,6 +1335,505 @@ describe("codex catalog auth", () => {
     );
     expect(load).toHaveBeenCalledWith("cipher-oauth", "secret-oauth");
     expect(load).not.toHaveBeenCalledWith("cipher-api", "secret-api");
+  });
+});
+
+describe("codex live catalog", () => {
+  const actor = {
+    spaceId: "workspace-1",
+    userId: "user-1",
+    email: "user@rakazo.test",
+    isDeploymentOwner: true,
+  } satisfies Actor;
+  const spark = "gpt-5.3-codex-spark";
+  const luna = "gpt-6-luna";
+  const sol = "gpt-6-sol";
+  const oauth = (accountId?: string) =>
+    JSON.stringify({
+      type: "oauth",
+      access: "access-token",
+      refresh: "refresh-token",
+      expires: Date.now() + 60_000,
+      ...(accountId ? { accountId } : {}),
+    });
+  const apiKey = "sk-test-api-key-12345678";
+
+  function liveModel(slug: string) {
+    return {
+      slug,
+      reasoningEfforts: ["low", "medium", "high"],
+      contextWindow: 272_000,
+      supportsImages: false,
+      supportsFastTier: true,
+    };
+  }
+
+  async function call(handler: RPCHandler<never>, path: string, body: unknown) {
+    const { response } = await handler.handle(
+      new Request(`http://127.0.0.1/rpc/${path}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ json: body }),
+      }),
+      { prefix: "/rpc", context: { actor } },
+    );
+    return response;
+  }
+
+  async function listIds(handler: RPCHandler<never>): Promise<string[]> {
+    const response = await call(handler, "models/list", null);
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      json: Array<{ provider: string; id: string }>;
+    };
+    return body.json.filter((entry) => entry.provider === "openai-codex").map((entry) => entry.id);
+  }
+
+  function catalogDeps(opts: {
+    read: ReturnType<typeof vi.fn>;
+    oauthAccountId?: string | null;
+    apiKeyOnly?: boolean;
+    disconnected?: boolean;
+  }) {
+    const oauthPlaintext = oauth(
+      opts.oauthAccountId === null ? undefined : (opts.oauthAccountId ?? "acct-live-test"),
+    );
+    const load = vi.fn((ciphertext: string) =>
+      ciphertext === "cipher-oauth" ? oauthPlaintext : apiKey,
+    );
+    const prisma = opts.disconnected
+      ? {
+          userModelCredential: { findMany: vi.fn().mockResolvedValue([]) },
+          spaceModelPreference: { findMany: vi.fn().mockResolvedValue([]) },
+          secret: { findMany: vi.fn().mockResolvedValue([]) },
+        }
+      : opts.apiKeyOnly
+        ? {
+            userModelCredential: {
+              findMany: vi
+                .fn()
+                .mockResolvedValue([{ provider: "openai-codex", secretId: "secret-api" }]),
+            },
+            spaceModelPreference: { findMany: vi.fn().mockResolvedValue([]) },
+            secret: {
+              findMany: vi.fn().mockResolvedValue([{ id: "secret-api", ciphertext: "cipher-api" }]),
+            },
+          }
+        : {
+            userModelCredential: {
+              findMany: vi.fn().mockResolvedValue([
+                { provider: "openai-codex", secretId: "secret-api" },
+                { provider: "openai-codex", secretId: "secret-oauth" },
+              ]),
+            },
+            spaceModelPreference: {
+              findMany: vi
+                .fn()
+                .mockResolvedValue([
+                  { credential: { provider: "openai-codex", secretId: "secret-oauth" } },
+                ]),
+            },
+            secret: {
+              findMany: vi
+                .fn()
+                .mockResolvedValue([{ id: "secret-oauth", ciphertext: "cipher-oauth" }]),
+            },
+          };
+    const deps = {
+      prisma,
+      secrets: { load },
+      env: {
+        defaultProvider: "fake",
+        defaultModel: "fake-model",
+        webOrigin: "http://127.0.0.1:5173",
+        screenProxySecret: "fake-test-secret",
+        sandboxProvider: "fake",
+      },
+      codexCatalog: { read: opts.read },
+    } as unknown as RouterDeps;
+    return { handler: new RPCHandler(createRouter(deps)) };
+  }
+
+  it("unlocks Spark and bounds the codex list to the live account catalog", async () => {
+    const read = vi.fn().mockResolvedValue([liveModel(spark), liveModel(luna)]);
+    const { handler } = catalogDeps({ read });
+
+    const ids = await listIds(handler);
+
+    expect(ids).toContain(spark);
+    expect(ids).toContain(luna);
+    expect(ids).not.toContain(sol);
+    expect(read).toHaveBeenCalledWith(
+      actor.userId,
+      expect.objectContaining({ accountId: "acct-live-test" }),
+    );
+  });
+
+  it("keeps the static oauth catalog when the live read fails", async () => {
+    const read = vi.fn().mockResolvedValue(undefined);
+    const { handler } = catalogDeps({ read });
+
+    const ids = await listIds(handler);
+
+    expect(ids).not.toContain(spark);
+    expect(ids).toContain(luna);
+  });
+
+  it("ignores a live catalog that shares no known codex slug", async () => {
+    const read = vi.fn().mockResolvedValue([liveModel("gpt-unknown-from-backend")]);
+    const { handler } = catalogDeps({ read });
+
+    const ids = await listIds(handler);
+
+    expect(ids).not.toContain(spark);
+    expect(ids).toContain(luna);
+    expect(ids).not.toContain("gpt-unknown-from-backend");
+  });
+
+  it("never reads the catalog for an API-key credential and still lists Spark", async () => {
+    const read = vi.fn().mockResolvedValue([liveModel(spark)]);
+    const { handler } = catalogDeps({ read, apiKeyOnly: true });
+
+    const ids = await listIds(handler);
+
+    expect(ids).toContain(spark);
+    expect(read).not.toHaveBeenCalled();
+  });
+
+  it("never reads the catalog when no credential exists", async () => {
+    const read = vi.fn().mockResolvedValue([liveModel(spark)]);
+    const { handler } = catalogDeps({ read, disconnected: true });
+
+    const ids = await listIds(handler);
+
+    // Disconnected browsing still lists Codex models but keeps the Spark exclusion.
+    expect(ids).not.toContain(spark);
+    expect(ids).toContain(luna);
+    expect(read).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the static catalog when the oauth credential has no account id", async () => {
+    const read = vi.fn().mockResolvedValue([liveModel(spark)]);
+    const { handler } = catalogDeps({ read, oauthAccountId: null });
+
+    const ids = await listIds(handler);
+
+    expect(ids).not.toContain(spark);
+    expect(ids).toContain(luna);
+    expect(read).not.toHaveBeenCalled();
+  });
+
+  it("governs each codex model by the credential that owns it", async () => {
+    const stamp = new Date("2026-01-01T00:00:00.000Z");
+    const credentialA = {
+      id: "cred-a",
+      userId: actor.userId,
+      provider: "openai-codex",
+      label: "ChatGPT A",
+      secretId: "secret-a",
+      createdAt: stamp,
+      updatedAt: stamp,
+    };
+    const credentialB = { ...credentialA, id: "cred-b", secretId: "secret-b" };
+    const prisma = {
+      userModelCredential: { findMany: vi.fn().mockResolvedValue([credentialA, credentialB]) },
+      spaceModelPreference: {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            id: "pref-luna",
+            modelId: luna,
+            isDefault: true,
+            updatedAt: stamp,
+            credential: credentialA,
+          },
+          {
+            id: "pref-spark",
+            modelId: spark,
+            isDefault: false,
+            updatedAt: stamp,
+            credential: credentialB,
+          },
+        ]),
+      },
+      secret: {
+        findMany: vi.fn().mockResolvedValue([
+          { id: "secret-a", ciphertext: "cipher-a" },
+          { id: "secret-b", ciphertext: "cipher-b" },
+        ]),
+      },
+    };
+    const secrets = {
+      load: (ciphertext: string) => (ciphertext === "cipher-a" ? oauth("acct-a") : oauth("acct-b")),
+    };
+    const deps = {
+      prisma,
+      secrets,
+      env: {
+        defaultProvider: "fake",
+        defaultModel: "fake-model",
+        webOrigin: "http://127.0.0.1:5173",
+        screenProxySecret: "fake-test-secret",
+        sandboxProvider: "fake",
+      },
+    } as unknown as RouterDeps;
+
+    // Spark's preference points at account B: only B's catalog can unlock it.
+    const read = vi.fn(async (_userId: string, account: { accountId: string }) =>
+      account.accountId === "acct-b" ? [liveModel(spark)] : [liveModel(luna)],
+    );
+    deps.codexCatalog = { read };
+    const first = await listIds(new RPCHandler(createRouter(deps)));
+    expect(first).toContain(spark);
+    expect(first).toContain(luna);
+
+    // Account A listing Spark must not unlock it — B's catalog does not list it.
+    const swapped = vi.fn(async (_userId: string, account: { accountId: string }) =>
+      account.accountId === "acct-a" ? [liveModel(spark), liveModel(luna)] : [liveModel(luna)],
+    );
+    deps.codexCatalog = { read: swapped };
+    const second = await listIds(new RPCHandler(createRouter(deps)));
+    expect(second).not.toContain(spark);
+    expect(second).toContain(luna);
+  });
+
+  it("never fetches the catalog for an expired token and kicks a detached refresh", async () => {
+    const expiredOauth = JSON.stringify({
+      type: "oauth",
+      access: "access-token",
+      refresh: "refresh-token",
+      expires: Date.now() - 1_000,
+      accountId: "acct-live-test",
+    });
+    const prisma = {
+      userModelCredential: {
+        findMany: vi
+          .fn()
+          .mockResolvedValue([{ provider: "openai-codex", secretId: "secret-oauth" }]),
+      },
+      spaceModelPreference: { findMany: vi.fn().mockResolvedValue([]) },
+      secret: {
+        findMany: vi.fn().mockResolvedValue([{ id: "secret-oauth", ciphertext: "cipher-oauth" }]),
+      },
+    };
+    const fetchImpl = vi.fn<typeof fetch>(
+      async () =>
+        new Response(
+          JSON.stringify({ models: [{ slug: spark, visibility: "list", supported_in_api: true }] }),
+          { status: 200 },
+        ),
+    );
+    const refreshExpiredModelCredential = vi.fn();
+    const deps = {
+      prisma,
+      secrets: { load: vi.fn(() => expiredOauth), put: vi.fn() },
+      env: {
+        defaultProvider: "fake",
+        defaultModel: "fake-model",
+        webOrigin: "http://127.0.0.1:5173",
+        screenProxySecret: "fake-test-secret",
+        sandboxProvider: "fake",
+      },
+      codexCatalog: new CodexCatalogCache({ fetch: fetchImpl }),
+      refreshExpiredModelCredential,
+    } as unknown as RouterDeps;
+
+    const ids = await listIds(new RPCHandler(createRouter(deps)));
+
+    // Static exclusion stands this round; the credential's refresh is kicked so
+    // the next read can see the account's real catalog.
+    expect(ids).not.toContain(spark);
+    expect(ids).toContain(luna);
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(refreshExpiredModelCredential).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: actor.userId }),
+      "secret-oauth",
+      "openai-codex",
+    );
+  });
+
+  it("lets models.setDefault pick Spark when the account's live catalog lists it", async () => {
+    const stamp = new Date("2026-01-01T00:00:00.000Z");
+    const oauthCredential = {
+      id: "cred-oauth",
+      userId: actor.userId,
+      provider: "openai-codex",
+      label: "ChatGPT",
+      secretId: "secret-oauth",
+      createdAt: stamp,
+      updatedAt: stamp,
+    };
+    const upsert = vi.fn(async () => ({ id: "pref-spark" }));
+    const tx = {
+      userModelCredential: { findMany: vi.fn().mockResolvedValue([oauthCredential]) },
+      spaceModelPreference: {
+        findMany: vi.fn().mockResolvedValue([]),
+        updateMany: vi.fn(async () => ({ count: 0 })),
+        upsert,
+      },
+      secret: {
+        findFirst: vi.fn(async () => ({ id: "secret-oauth", ciphertext: "cipher-oauth" })),
+      },
+    };
+    const deps = {
+      prisma: { $transaction: vi.fn(async (fn: (client: typeof tx) => unknown) => fn(tx)) },
+      secrets: { load: vi.fn(() => oauth("acct-live-test")) },
+      env: {
+        defaultProvider: "fake",
+        defaultModel: "fake-model",
+        webOrigin: "http://127.0.0.1:5173",
+        screenProxySecret: "fake-test-secret",
+        sandboxProvider: "fake",
+      },
+      codexCatalog: { read: vi.fn(async () => [liveModel(spark)]) },
+    } as unknown as RouterDeps;
+    const handler = new RPCHandler(createRouter(deps));
+
+    const response = await call(handler, "models/setDefault", {
+      provider: "openai-codex",
+      modelId: spark,
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ json: { ok: true } });
+    expect(upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          spaceId_userId_credentialId: {
+            spaceId: actor.spaceId,
+            userId: actor.userId,
+            credentialId: "cred-oauth",
+          },
+        },
+      }),
+    );
+  });
+
+  it("still rejects models.setDefault for Spark when the live catalog omits it", async () => {
+    const stamp = new Date("2026-01-01T00:00:00.000Z");
+    const oauthCredential = {
+      id: "cred-oauth",
+      userId: actor.userId,
+      provider: "openai-codex",
+      label: "ChatGPT",
+      secretId: "secret-oauth",
+      createdAt: stamp,
+      updatedAt: stamp,
+    };
+    const tx = {
+      userModelCredential: { findMany: vi.fn().mockResolvedValue([oauthCredential]) },
+      spaceModelPreference: {
+        findMany: vi.fn().mockResolvedValue([]),
+        updateMany: vi.fn(async () => ({ count: 0 })),
+        upsert: vi.fn(async () => ({ id: "pref-spark" })),
+      },
+      secret: {
+        findFirst: vi.fn(async () => ({ id: "secret-oauth", ciphertext: "cipher-oauth" })),
+      },
+    };
+    const deps = {
+      prisma: { $transaction: vi.fn(async (fn: (client: typeof tx) => unknown) => fn(tx)) },
+      secrets: { load: vi.fn(() => oauth("acct-live-test")) },
+      env: {
+        defaultProvider: "fake",
+        defaultModel: "fake-model",
+        webOrigin: "http://127.0.0.1:5173",
+        screenProxySecret: "fake-test-secret",
+        sandboxProvider: "fake",
+      },
+      codexCatalog: { read: vi.fn(async () => [liveModel(luna)]) },
+    } as unknown as RouterDeps;
+    const handler = new RPCHandler(createRouter(deps));
+
+    const response = await call(handler, "models/setDefault", {
+      provider: "openai-codex",
+      modelId: spark,
+    });
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      json: expect.objectContaining({
+        code: "BAD_REQUEST",
+        message: expect.stringMatching(/not available with your current sign-in/i),
+      }),
+    });
+  });
+
+  it("warms the live catalog before setDefault's transaction and reads zero-wait inside it", async () => {
+    const stamp = new Date("2026-01-01T00:00:00.000Z");
+    const oauthCredential = {
+      id: "cred-oauth",
+      userId: actor.userId,
+      provider: "openai-codex",
+      label: "ChatGPT",
+      secretId: "secret-oauth",
+      createdAt: stamp,
+      updatedAt: stamp,
+    };
+    const upsert = vi.fn(async () => ({ id: "pref-spark" }));
+    const tx = {
+      userModelCredential: { findMany: vi.fn().mockResolvedValue([oauthCredential]) },
+      spaceModelPreference: {
+        findMany: vi.fn().mockResolvedValue([]),
+        updateMany: vi.fn(async () => ({ count: 0 })),
+        upsert,
+      },
+      secret: {
+        findFirst: vi.fn(async () => ({ id: "secret-oauth", ciphertext: "cipher-oauth" })),
+      },
+    };
+    const transaction = vi.fn(async (fn: (client: typeof tx) => unknown) => fn(tx));
+    // The same delegates serve the pre-transaction warm read on deps.prisma.
+    const prisma = {
+      $transaction: transaction,
+      userModelCredential: tx.userModelCredential,
+      spaceModelPreference: { findMany: tx.spaceModelPreference.findMany },
+      secret: tx.secret,
+    };
+    const read = vi.fn(
+      async (_userId: string, _account: { accountId: string }, _opts?: { waitMs?: number }) => [
+        liveModel(spark),
+      ],
+    );
+    const refreshExpiredModelCredential = vi.fn();
+    const deps = {
+      prisma,
+      secrets: { load: vi.fn(() => oauth("acct-live-test")), put: vi.fn() },
+      env: {
+        defaultProvider: "fake",
+        defaultModel: "fake-model",
+        webOrigin: "http://127.0.0.1:5173",
+        screenProxySecret: "fake-test-secret",
+        sandboxProvider: "fake",
+      },
+      codexCatalog: { read },
+      refreshExpiredModelCredential,
+    } as unknown as RouterDeps;
+    const handler = new RPCHandler(createRouter(deps));
+
+    const response = await call(handler, "models/setDefault", {
+      provider: "openai-codex",
+      modelId: spark,
+    });
+
+    expect(response.status).toBe(200);
+    const warmCall = read.mock.calls.find((call) => call[2]?.waitMs !== 0);
+    const txCall = read.mock.calls.find((call) => call[2]?.waitMs === 0);
+    expect(warmCall).toBeDefined();
+    expect(txCall).toBeDefined();
+    // The unbounded-wait read happens before the transaction opens; inside it
+    // the catalog is only consulted from settled cache state.
+    const txOpenedAt = transaction.mock.invocationCallOrder[0]!;
+    expect(read.mock.invocationCallOrder[read.mock.calls.indexOf(warmCall!)]!).toBeLessThan(
+      txOpenedAt,
+    );
+    // Every catalog read issued after the transaction opened is zero-wait — a
+    // cold cache can never stall the serializable transaction on the network.
+    const inTxCalls = read.mock.calls.filter(
+      (_, index) => read.mock.invocationCallOrder[index]! > txOpenedAt,
+    );
+    expect(inTxCalls.length).toBeGreaterThan(0);
+    for (const call of inTxCalls) expect(call[2]?.waitMs).toBe(0);
+    expect(upsert).toHaveBeenCalled();
   });
 });
 
@@ -1898,4 +2468,136 @@ describe("bot restore computer quota", () => {
 
 afterEach(() => {
   delete process.env.SANDBOX_MAX_COMPUTERS_PER_USER;
+});
+
+describe("groups.archive", () => {
+  async function archiveGroup(archivedAt: Date | null) {
+    const calls: string[] = [];
+    const groupUpdate = vi.fn();
+    // As in production: the run's computer is known only through its execution lease.
+    const tx = {
+      $queryRaw: vi.fn().mockResolvedValue([{ id: "group-1" }]),
+      chatGroup: {
+        findFirst: vi.fn().mockResolvedValue({
+          archivedAt,
+          thread: { id: "thread-1" },
+        }),
+        update: groupUpdate,
+      },
+      run: {
+        findMany: vi.fn().mockResolvedValue([{ id: "run-1", taskId: "task-1" }]),
+        updateMany: vi.fn(),
+      },
+      attempt: { updateMany: vi.fn() },
+      task: { updateMany: vi.fn() },
+      computerExecutionLease: {
+        findMany: vi
+          .fn()
+          .mockResolvedValue([
+            { computerId: "computer-1", botId: "bot-1", runId: "run-1", fence: 3 },
+          ]),
+        updateMany: vi.fn(async () => {
+          calls.push("expire lease");
+        }),
+      },
+      computer: {
+        findMany: vi.fn(async ({ where }: { where: { OR?: unknown } }) =>
+          where.OR
+            ? [
+                {
+                  id: "computer-1",
+                  homeKey: "home-1",
+                  kind: "docker",
+                  providerRef: "computer-1",
+                  executionBotId: null,
+                  executionRunId: null,
+                },
+              ]
+            : [],
+        ),
+        updateMany: vi.fn(),
+      },
+      event: { deleteMany: vi.fn() },
+    };
+    const prisma = {
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+      computerExecutionLease: {
+        updateMany: vi.fn(async () => {
+          calls.push("expire lease");
+        }),
+      },
+      computer: { updateMany: vi.fn() },
+    } as unknown as PrismaClient;
+    const releaseScreen = vi.fn(async () => {
+      calls.push("release screen");
+    });
+    const execute = vi.fn(() => {
+      calls.push("cancel run work");
+      return [];
+    });
+    const deps = {
+      prisma,
+      env: {
+        defaultProvider: "fake",
+        defaultModel: "fake-model",
+        webOrigin: "http://127.0.0.1:5173",
+        screenProxySecret: "fake-test-secret",
+        sandboxProvider: "fake",
+      },
+      dataDir: "/tmp/rakazo-router-test",
+      sandbox: { releaseScreen, execute },
+      jobs: { cancel: vi.fn().mockResolvedValue(undefined) },
+    } as unknown as RouterDeps;
+    const actor = {
+      spaceId: "workspace-1",
+      userId: "user-1",
+      email: "user@rakazo.test",
+      isDeploymentOwner: true,
+    } satisfies Actor;
+
+    const { response } = await new RPCHandler(createRouter(deps)).handle(
+      new Request("http://127.0.0.1/rpc/groups/archive", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ json: { groupId: "group-1" } }),
+      }),
+      { prefix: "/rpc", context: { actor } },
+    );
+    return { response, releaseScreen, calls, groupUpdate };
+  }
+
+  it("stops each member's run work and releases its screen before expiring the lease", async () => {
+    const { response, releaseScreen, calls } = await archiveGroup(null);
+
+    expect(response?.status).toBe(200);
+    expect(releaseScreen).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "computer-1" }),
+      expect.objectContaining({
+        botId: "bot-1",
+        runId: "run-1",
+        screenLeaseId: screenLeaseIdForRun({ runId: "run-1", fence: 3 }, "run-1"),
+        cancelRunWork: true,
+      }),
+    );
+    expect(calls).toEqual(["cancel run work", "release screen", "expire lease"]);
+  });
+
+  it("finishes teardown when the group is already archived and a lease is still live", async () => {
+    const { response, releaseScreen, calls, groupUpdate } = await archiveGroup(
+      new Date("2026-09-26T00:00:00.000Z"),
+    );
+
+    expect(response?.status).toBe(200);
+    expect(groupUpdate).not.toHaveBeenCalled();
+    expect(releaseScreen).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "computer-1" }),
+      expect.objectContaining({
+        botId: "bot-1",
+        runId: "run-1",
+        screenLeaseId: screenLeaseIdForRun({ runId: "run-1", fence: 3 }, "run-1"),
+        cancelRunWork: true,
+      }),
+    );
+    expect(calls).toEqual(["cancel run work", "release screen", "expire lease"]);
+  });
 });

@@ -1,5 +1,5 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
-import { captureScreenshot, completeOnboarding, signup } from "./helpers";
+import { activeBotId, captureScreenshot, completeOnboarding, rpc, signup } from "./helpers";
 
 /**
  * Build a real browser Selection over `startNeedle` … `endNeedle` inside `scope`
@@ -111,6 +111,9 @@ test("selecting a text span quotes it into a reply", async ({ page }, testInfo) 
   await composer.fill(replyText);
   await composer.press("Enter");
   await expect(replyChip).toHaveCount(0);
+  // Sending disarms the reply — the live region must not keep a stale
+  // "Replying to" that no longer describes anything after the chip is gone.
+  await expect(page.getByTestId("composer-announcement")).toHaveText("");
 
   // The sent message shows the excerpt and keeps jump-to-source.
   const replyRow = transcript
@@ -195,6 +198,156 @@ test("rendered markdown selections survive server quote derivation", async ({ pa
   await expect(await quoteAndSend("code-a", "code-b", `reply-code-${stamp}`)).toContainText(
     "code-a --- code-b",
   );
+
+  // A quote-free reply falls back to the parent's preview — flattened, not raw Markdown.
+  const rail = sourceRow.getByTestId("message-hover-rail");
+  await expect
+    .poll(async () => {
+      await sourceRow.hover();
+      return rail.evaluate((element) => getComputedStyle(element).opacity);
+    })
+    .toBe("1");
+  await rail.getByRole("button", { name: "Reply" }).click();
+  await composer.fill(`reply-plain-${stamp}`);
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  const plainReply = transcript
+    .locator("[data-message-id]")
+    .filter({ has: page.getByTestId("message-user-bubble") })
+    .filter({ hasText: `reply-plain-${stamp}` })
+    .first();
+  const plainPreview = plainReply.getByTestId("reply-parent-preview");
+  await expect(plainPreview).toContainText("cell-a, cell-b");
+  await expect(plainPreview).not.toContainText("|");
+  await captureScreenshot(page, testInfo, "reply-preview-plain-text");
+});
+
+test("selecting text inside a table cell quotes the rendered cell", async ({ page }, testInfo) => {
+  const stamp = Date.now();
+  await signup(page, `quote-cell-${stamp}@rakazo.test`, "password12", "Quote Tester");
+  await completeOnboarding(page);
+
+  const transcript = page.getByTestId("transcript");
+  const composer = page.getByRole("combobox", { name: /Message/ });
+  const cellText = `quarterly revenue ${stamp}`;
+  // The scripted bot echoes the prompt, so the reply carries a table card.
+  // Chrome (row numbers, toolbar, pager) is unselectable; cell text is not.
+  await composer.fill(
+    `show this table:\n\n| Metric | Value |\n| --- | --- |\n| ${cellText} | 42 |\n| cloud spend | 7 |`,
+  );
+  await composer.press("Enter");
+
+  const sourceRow = transcript
+    .locator("[data-message-id]")
+    .filter({ has: page.getByTestId("message-bot-bubble") })
+    .filter({ hasText: cellText })
+    .first();
+  await expect(sourceRow.getByTestId("table-card")).toBeVisible({ timeout: 20_000 });
+
+  // A selection contained in one cell offers Quote, and the armed chip shows
+  // the flattened cell text — never raw `| … |` Markdown or card chrome.
+  await selectAndRelease(page, sourceRow, cellText);
+  const quoteButton = page.getByTestId("quote-selection");
+  await expect(quoteButton).toBeVisible();
+  await captureScreenshot(page, testInfo, "quote-table-cell-selection");
+  await quoteButton.click();
+  const replyChip = page.getByTestId("reply-chip");
+  await expect(replyChip).toBeVisible();
+  // Exact match: an excerpt that picked up an adjacent cell or chrome would
+  // still satisfy a substring check.
+  await expect(replyChip).toHaveText(new RegExp(`^Replying to .+: “${cellText}”$`));
+  await expect(composer).toBeFocused();
+
+  // The sent reply persists the server-derived excerpt from the same cell.
+  const replyText = `quote-cell-${stamp} confirmed?`;
+  await composer.fill(replyText);
+  await composer.press("Enter");
+  const replyRow = transcript
+    .locator("[data-message-id]")
+    .filter({ has: page.getByTestId("message-user-bubble") })
+    .filter({ hasText: replyText })
+    .first();
+  await expect(replyRow).toBeVisible({ timeout: 20_000 });
+  const parentPreview = replyRow.getByTestId("reply-parent-preview");
+  await expect(parentPreview).toHaveText(`“${cellText}”`);
+});
+
+test("an armed reply survives the parent paging out of the transcript", async ({ page }) => {
+  const stamp = Date.now();
+  await signup(page, `quote-evict-${stamp}@rakazo.test`, "password12", "Quote Tester");
+  await completeOnboarding(page);
+
+  const transcript = page.getByTestId("transcript");
+  const composer = page.getByRole("combobox", { name: /Message/ });
+  const botId = activeBotId(page);
+  const userRow = (text: string) =>
+    transcript
+      .locator("[data-message-id]")
+      .filter({ has: page.getByTestId("message-user-bubble") })
+      .filter({ hasText: text })
+      .first();
+
+  const parentText = `quote-evict-parent-${stamp}`;
+  await composer.fill(parentText);
+  await composer.press("Enter");
+  const parentRow = userRow(parentText);
+  await expect(parentRow).toBeVisible({ timeout: 20_000 });
+
+  await selectAndRelease(page, parentRow, `evict-parent-${stamp}`);
+  await page.getByTestId("quote-selection").click();
+  const replyChip = page.getByTestId("reply-chip");
+  await expect(replyChip).toBeVisible();
+  await expect(replyChip).toContainText(`evict-parent-${stamp}`);
+
+  // Newer durable messages push the parent out of the latest page (window is
+  // 100). While the flood's runs are alive, refreshes race the event stream and
+  // get discarded as stale — so stop the thread to end the churn first.
+  for (let i = 0; i < 105; i++) {
+    await rpc(page, "threads/send", {
+      botId,
+      text: `quote-filler-${stamp}-${i}`,
+      clientNonce: `qf-${stamp}-${i}`,
+    });
+  }
+  const lastFiller = userRow(`quote-filler-${stamp}-104`);
+  await expect(lastFiller).toBeVisible({ timeout: 30_000 });
+  const lastFillerId = await lastFiller.getAttribute("data-message-id");
+  expect(lastFillerId).toBeTruthy();
+  await rpc(page, "threads/stop", { botId });
+  // stop deletes the cancelled runs' thread.progress events; if one of those
+  // was the last applied event, the live cursor outranks every later snapshot
+  // and refreshes are discarded as stale. A reaction writes one durable event
+  // past the wedge — no run, no new churn — so the next refresh can commit.
+  await rpc(page, "threads/react", {
+    botId,
+    messageId: lastFillerId,
+    reaction: "👍",
+    clientNonce: `qr-${stamp}`,
+  });
+  const computerButton = page.getByTitle("Agent computer");
+  await expect(async () => {
+    if ((await computerButton.getAttribute("data-active")) !== null) {
+      await computerButton.click();
+    }
+    await computerButton.click();
+    await expect(parentRow).toHaveCount(0, { timeout: 3_000 });
+  }).toPass({ timeout: 30_000 });
+  await expect(replyChip).toBeVisible();
+
+  const replyText = `quote-evict-reply-${stamp}`;
+  await composer.fill(replyText);
+  await composer.press("Enter");
+  const replyRow = userRow(replyText);
+  await expect(replyRow).toBeVisible({ timeout: 20_000 });
+  const parentPreview = replyRow.getByTestId("reply-parent-preview");
+  await expect(parentPreview).toBeVisible();
+  await expect(parentPreview).toContainText(`evict-parent-${stamp}`);
+
+  // The link still reaches the evicted parent via the around-page jump.
+  await parentPreview.click();
+  await expect(userRow(parentText)).toBeVisible({ timeout: 20_000 });
+
+  // Stop the reply's run so its continues cannot churn into the next test.
+  await rpc(page, "threads/stop", { botId });
 });
 
 test("a selection spanning two messages offers no quote action", async ({ page }) => {
@@ -277,4 +430,11 @@ test("quoting a second message retargets the armed reply", async ({ page }) => {
   await expect(replyChip).not.toContainText("switch-a");
   await expect(composer).toBeFocused();
   await expect(page.getByTestId("composer-announcement")).toHaveText(/Replying to/);
+
+  // Cancelling announces the cancel in the same event that disarms the reply —
+  // the send-disarm clear must not wipe it.
+  await page.getByRole("button", { name: "Cancel reply" }).click();
+  await expect(replyChip).toHaveCount(0);
+  await expect(composer).toBeFocused();
+  await expect(page.getByTestId("composer-announcement")).toHaveText(/Reply cancelled/);
 });

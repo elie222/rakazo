@@ -14,7 +14,10 @@ import {
   modelCredentialAuthKindFromPlaintext,
   UNAVAILABLE_MODEL_FOR_AUTH_MESSAGE,
 } from "./pi-catalog-availability.js";
+import type { CodexLiveCatalog, CodexLiveReadOptions } from "./pi-codex-catalog.js";
+import { codexLiveListsModel } from "./pi-codex-catalog.js";
 import { listPiCatalog, scriptedCatalogEntry } from "./pi-models.js";
+import { parseModelSecret } from "./pi-oauth.js";
 import { OPENAI_COMPATIBLE_PROVIDER_ID } from "./pi-openai-compatible-provider.js";
 import type { EncryptedSecretStore } from "./secrets.js";
 
@@ -52,6 +55,13 @@ export type SpaceCatalogAuth = {
   byModel: Partial<
     Record<string, Partial<Record<string, ModelCredentialAuthKind | "disconnected">>>
   >;
+  /**
+   * Secret id of the credential governing each provider/model slot, so
+   * per-account lookups (like the live Codex catalog) stay keyed to the
+   * credential that would actually serve the model.
+   */
+  secretIdByProvider: Partial<Record<string, string>>;
+  secretIdByModel: Partial<Record<string, Partial<Record<string, string>>>>;
 };
 
 /**
@@ -129,7 +139,12 @@ export async function modelCredentialAuthKindsForSpace(
         choice.preference.modelId === requestedModelId,
     });
   }
-  const empty: SpaceCatalogAuth = { byProvider: {}, byModel: {} };
+  const empty: SpaceCatalogAuth = {
+    byProvider: {},
+    byModel: {},
+    secretIdByProvider: {},
+    secretIdByModel: {},
+  };
   if (selections.length === 0) return empty;
 
   const secrets = await prisma.secret.findMany({
@@ -151,16 +166,25 @@ export async function modelCredentialAuthKindsForSpace(
     }
   };
 
-  const auth: SpaceCatalogAuth = { byProvider: {}, byModel: {} };
+  const auth: SpaceCatalogAuth = {
+    byProvider: {},
+    byModel: {},
+    secretIdByProvider: {},
+    secretIdByModel: {},
+  };
   for (const selection of selections) {
     const kind = readKind(selection.secretId);
     if (selection.modelSpecific) {
       const models = auth.byModel[selection.provider] ?? {};
       models[selection.modelId] = kind ?? "disconnected";
       auth.byModel[selection.provider] = models;
+      const secrets = auth.secretIdByModel[selection.provider] ?? {};
+      secrets[selection.modelId] = selection.secretId;
+      auth.secretIdByModel[selection.provider] = secrets;
       continue;
     }
     if (kind) auth.byProvider[selection.provider] = kind;
+    auth.secretIdByProvider[selection.provider] = selection.secretId;
   }
   return auth;
 }
@@ -217,7 +241,14 @@ export type StoredModelAuthRead =
   | { status: "unreadable" }
   | { status: "rejected"; message: string };
 
-/** Load a stored credential and check whether it can call this catalog model. */
+/**
+ * Load a stored credential and check whether it can call this catalog model.
+ * When `live` is given, the backend's per-account catalog can lift a static
+ * OAuth exclusion for the credential's own account (e.g. Codex Spark). Pass
+ * `liveOpts.waitMs: 0` where a catalog fetch must not block (inside a
+ * transaction) and `liveOpts.onExpiredToken` to kick a detached refresh when
+ * the stored bearer has expired.
+ */
 export async function readStoredModelAuth(
   prisma: Pick<PrismaClient, "secret">,
   secretStore: Pick<EncryptedSecretStore, "load">,
@@ -225,6 +256,8 @@ export async function readStoredModelAuth(
   secretId: string,
   provider: string,
   modelId: string,
+  live?: CodexLiveCatalog,
+  liveOpts?: CodexLiveReadOptions,
 ): Promise<StoredModelAuthRead> {
   const secret = await prisma.secret.findFirst({
     where: { id: secretId, userId, spaceId: null },
@@ -237,7 +270,20 @@ export async function readStoredModelAuth(
   } catch {
     return { status: "unreadable" };
   }
-  const message = validateModelAuthAvailability(provider, modelId, plaintext);
+  let message: string | undefined;
+  try {
+    message = validateModelAuthAvailability(provider, modelId, plaintext);
+  } catch {
+    // A secret that decrypts but does not parse is as unreadable as a corrupt one.
+    return { status: "unreadable" };
+  }
+  // validateModelAuthAvailability already parsed the secret without throwing.
+  if (
+    message &&
+    (await codexLiveListsModel(live, userId, parseModelSecret(plaintext), modelId, liveOpts))
+  ) {
+    return { status: "ready" };
+  }
   return message ? { status: "rejected", message } : { status: "ready" };
 }
 
@@ -249,8 +295,19 @@ export async function validateStoredModelAuth(
   secretId: string,
   provider: string,
   modelId: string,
+  live?: CodexLiveCatalog,
+  liveOpts?: CodexLiveReadOptions,
 ): Promise<string | undefined> {
-  const auth = await readStoredModelAuth(prisma, secretStore, userId, secretId, provider, modelId);
+  const auth = await readStoredModelAuth(
+    prisma,
+    secretStore,
+    userId,
+    secretId,
+    provider,
+    modelId,
+    live,
+    liveOpts,
+  );
   // Unreadable credentials fail when the run loads them, not as an auth mismatch.
   return auth.status === "rejected" ? auth.message : undefined;
 }

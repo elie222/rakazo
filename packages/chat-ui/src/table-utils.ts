@@ -1,3 +1,5 @@
+import { droppedTableHtmlText } from "@rakazo/contracts";
+
 /**
  * Pure helpers behind the markdown table card: hast extraction, type
  * inference, sorting, and copy/export serialization.
@@ -9,6 +11,8 @@ export interface HastNode {
   tagName?: string;
   value?: string;
   properties?: Record<string, unknown>;
+  /** Source offsets supplied by the markdown parser, when available. */
+  position?: { start?: { offset?: number }; end?: { offset?: number } };
   children?: HastNode[];
 }
 
@@ -18,6 +22,14 @@ export type ExtractedTable = {
   columns: string[];
   aligns: TableAlign[];
   rows: string[][];
+  /** Identity of columns+aligns; a schema change resets card interaction state. */
+  schemaKey: string;
+  /** Identity of all extracted content; anything derived keys on this, not refs. */
+  dataSignature: string;
+  numericColumns: ReadonlySet<number>;
+  minWidths: Record<number, string>;
+  /** Content-derived React keys; stable across re-parses and sort order. */
+  rowKeys: Map<string[], string>;
 };
 
 export type TableSortDirection = "asc" | "desc";
@@ -40,7 +52,31 @@ export function extractTable(node: HastNode | undefined): ExtractedTable | null 
     const source = cells.length > 0 ? cells : cellsOf(row, "th");
     return columns.map((_, i) => textOf(source[i]).trim());
   });
-  return { columns, aligns, rows };
+  // Everything downstream derives from the same walk: signatures let renders
+  // skip re-deriving identical content when a stream re-parses the tree.
+  const numericColumns = new Set<number>();
+  columns.forEach((_, i) => {
+    if (isNumericColumn(rows, i)) numericColumns.add(i);
+  });
+  const occurrences = new Map<string, number>();
+  const rowKeys = new Map(
+    rows.map((row) => {
+      const signature = JSON.stringify(row);
+      const occurrence = occurrences.get(signature) ?? 0;
+      occurrences.set(signature, occurrence + 1);
+      return [row, `${signature}:${occurrence}`] as const;
+    }),
+  );
+  return {
+    columns,
+    aligns,
+    rows,
+    schemaKey: JSON.stringify([columns, aligns]),
+    dataSignature: JSON.stringify([columns, rows]),
+    numericColumns,
+    minWidths: columnMinWidths(columns, rows),
+    rowKeys,
+  };
 }
 
 function collectRows(node: HastNode): HastNode[] {
@@ -76,36 +112,6 @@ function textOf(node: HastNode | undefined): string {
     return typeof alt === "string" ? alt : "";
   }
   return childrenOf(node).map(textOf).join("");
-}
-
-export function droppedTableHtmlText(html: string): string | null {
-  if (/^<br[\s/>]/i.test(html)) return " ";
-  const alt = html.match(/<img[^>]*\balt\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/i);
-  return alt ? decodeHtmlEntities(alt[1] ?? alt[2] ?? alt[3] ?? "") : null;
-}
-
-function decodeHtmlEntities(value: string): string {
-  const named: Record<string, string> = {
-    amp: "&",
-    apos: "'",
-    gt: ">",
-    lt: "<",
-    nbsp: "\u00a0",
-    quot: '"',
-  };
-  return value.replace(
-    /&(#(?:x[\da-f]+|\d+)|amp|apos|gt|lt|nbsp|quot);/gi,
-    (entity, code: string) => {
-      if (!code.startsWith("#")) return named[code.toLowerCase()] ?? entity;
-      const point = Number.parseInt(
-        code.slice(code[1]?.toLowerCase() === "x" ? 2 : 1),
-        code[1]?.toLowerCase() === "x" ? 16 : 10,
-      );
-      return Number.isInteger(point) && point > 0 && point <= 0x10ffff
-        ? String.fromCodePoint(point)
-        : entity;
-    },
-  );
 }
 
 function alignOf(cell: HastNode): TableAlign {

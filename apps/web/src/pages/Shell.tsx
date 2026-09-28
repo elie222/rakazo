@@ -47,6 +47,7 @@ import {
   latestAnswerableAskMessageId,
   mentionChipKey,
   nestRosterByParent,
+  plainTextFromMarkdown,
   projectMessageReactions,
   reorderBotTo,
   resolveComposerSendPlan,
@@ -88,6 +89,7 @@ import {
   ChevronDown,
   Clock,
   Copy,
+  FolderOpen,
   Gauge,
   LayoutGrid,
   Lock,
@@ -131,7 +133,6 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { AppRail } from "../components/AppRail";
 import { ArtifactFileCard } from "../components/ArtifactFileCard";
 import { AskCard } from "../components/AskCard";
 import { ActiveBotGlyph, CollaborationMarker } from "../components/ai/CollaborationMarker";
@@ -663,6 +664,11 @@ export function ShellPage() {
   const expandedHistoryThread = useRef<string | null>(null);
   const historyEpoch = useRef(0);
   const jumpGeneration = useRef(0);
+  const [scrollRequest, setScrollRequest] = useState<{
+    messageId: string;
+    nonce: number;
+  } | null>(null);
+  const clearScrollRequest = useCallback(() => setScrollRequest(null), []);
   const initiallyScrolledThread = useRef<string | null>(null);
   const messageScroll = useRef<HTMLDivElement>(null);
   const pinnedAroundRef = useRef<{
@@ -1654,20 +1660,20 @@ export function ShellPage() {
       setRoutines([]);
       setRoutinesBotId(null);
     }
-    window.requestAnimationFrame(() => {
-      if (epoch !== historyEpoch.current || jumpId !== jumpGeneration.current) return;
-      if (!targetInPage) {
+    if (targetInPage) {
+      // The transcript owns the scroll: it retries until the pinned row is
+      // mounted and unfollows the tail, so live commits cannot cancel it.
+      setScrollRequest({ messageId: target.messageId, nonce: jumpId });
+    } else {
+      window.requestAnimationFrame(() => {
+        if (epoch !== historyEpoch.current || jumpId !== jumpGeneration.current) return;
         const element = messageScroll.current;
         if (element) {
           element.scrollTop = element.scrollHeight;
           initiallyScrolledThread.current = page.threadId;
         }
-        return;
-      }
-      document
-        .querySelector(`[data-message-id="${target.messageId}"]`)
-        ?.scrollIntoView({ behavior: "smooth", block: "center" });
-    });
+      });
+    }
   }
 
   useEffect(() => {
@@ -1712,11 +1718,11 @@ export function ShellPage() {
     : snapshot?.botId === active?.id
       ? snapshot
       : null;
-  const activeReplyTarget =
-    replyTarget && activeSnapshot?.messages.some((message) => message.id === replyTarget.id)
-      ? replyTarget
-      : null;
-  const activeReplyQuote = activeReplyTarget ? replyQuote : null;
+  // Keep the armed reply even when its parent leaves the loaded page: the
+  // server resolves a paged-out target and degrades a deleted one to a plain
+  // reply instead of failing the send.
+  const activeReplyTarget = replyTarget;
+  const activeReplyQuote = replyTarget ? replyQuote : null;
   const clearReply = useCallback(() => {
     setReplyTarget(null);
     setReplyQuote(null);
@@ -1915,7 +1921,7 @@ export function ShellPage() {
     if (existing) {
       // Cancel any in-flight around-fetch so it cannot overwrite this scroll.
       jumpGeneration.current += 1;
-      existing.scrollIntoView({ behavior: "smooth", block: "center" });
+      setScrollRequest({ messageId, nonce: jumpGeneration.current });
       return;
     }
     const groupId = activeGroupId.current;
@@ -2181,7 +2187,7 @@ export function ShellPage() {
           }
           return;
         }
-        // Stop has no terminal event; clear run UI before refresh races with in-flight gets.
+        // Clear run UI ahead of the run.cancelled event so refresh races with in-flight gets.
         if (activeGroupId.current === groupTarget) {
           updateSnapshot((prev) =>
             prev && prev.groupId === groupTarget ? clearActiveThreadRuns(prev) : prev,
@@ -2200,7 +2206,7 @@ export function ShellPage() {
         }
         return;
       }
-      // Stop does not emit a terminal thread event. Clear local run/busy immediately so a
+      // Clear local run/busy immediately rather than waiting for run.cancelled so a
       // superseded in-flight refresh (older cursor) cannot leave Stop enabled / Take control
       // blocked while the API is already idle.
       if (activeBotId.current === botTarget) {
@@ -2688,7 +2694,6 @@ export function ShellPage() {
           className="absolute bottom-20 start-0 top-16 z-20 w-8 touch-none md:hidden"
         />
       ) : null}
-      <AppRail active="bots" />
       <aside
         data-testid="bots-sidebar"
         data-collapsed={botsSidebarCollapsed ? "true" : "false"}
@@ -3247,6 +3252,18 @@ export function ShellPage() {
               <Button
                 variant="ghost"
                 className="w-full justify-start font-normal"
+                onClick={() => {
+                  setMenuOpen(false);
+                  setMobileSidebarOpen(false);
+                  navigate("/app/artifacts");
+                }}
+              >
+                <FolderOpen className="text-muted-foreground" strokeWidth={1.75} />
+                <Trans>Artifacts</Trans>
+              </Button>
+              <Button
+                variant="ghost"
+                className="w-full justify-start font-normal"
                 aria-label={t`Settings`}
                 onClick={() => {
                   setMenuOpen(false);
@@ -3422,6 +3439,8 @@ export function ShellPage() {
           <Transcript
             key={activeSnapshot?.threadId}
             scrollRef={messageScroll}
+            scrollRequest={scrollRequest}
+            onScrollRequestHandled={clearScrollRequest}
             artifactTarget={transcriptArtifactTarget}
             messages={transcriptMessages}
             olderCursor={activeSnapshot?.olderCursor ?? null}
@@ -4473,6 +4492,8 @@ export function ShellPage() {
 
 const Transcript = memo(function Transcript({
   scrollRef,
+  scrollRequest,
+  onScrollRequestHandled,
   artifactTarget,
   messages,
   olderCursor,
@@ -4499,6 +4520,8 @@ const Transcript = memo(function Transcript({
   onOpenComputer,
 }: {
   scrollRef: RefObject<HTMLDivElement | null>;
+  scrollRequest: { messageId: string; nonce: number } | null;
+  onScrollRequestHandled: () => void;
   artifactTarget: ArtifactTarget;
   messages: ThreadMessage[];
   olderCursor: number | null;
@@ -4559,15 +4582,35 @@ const Transcript = memo(function Transcript({
       (node instanceof Element ? node : node.parentElement)?.closest<HTMLElement>(
         "[data-quote-message-id]",
       ) ?? null;
+    const startContent = contentOf(range.startContainer);
+    const endContent = contentOf(range.endContainer);
+    // selection.toString() serializes the whole range (a Ctrl+A transcript is
+    // unbounded), so it only runs once both endpoints sit in one message.
     const draft = quoteDraftForSelection(
       {
-        startContent: contentOf(range.startContainer),
-        endContent: contentOf(range.endContainer),
-        text: selection.toString(),
+        startContent,
+        endContent,
+        text: startContent && startContent === endContent ? selection.toString() : "",
       },
       messageById,
     );
-    setQuoteDraft(draft ? { ...draft, range } : null);
+    setQuoteDraft((prev) => {
+      if (!draft) return null;
+      // Repeat firings for an unchanged selection reuse the draft so the
+      // transcript isn't re-rendered by every unrelated selection event. A
+      // moved selection (e.g. keyboard-selecting a second occurrence of the
+      // same text) must carry its new Range — the pill anchors to it.
+      if (
+        prev &&
+        prev.message === draft.message &&
+        prev.text === draft.text &&
+        prev.range.compareBoundaryPoints(Range.START_TO_START, range) === 0 &&
+        prev.range.compareBoundaryPoints(Range.END_TO_END, range) === 0
+      ) {
+        return prev;
+      }
+      return { ...draft, range };
+    });
   }, [messageById]);
 
   // Keyboard and assistive-tech selections never reach a mouseup, so the pill
@@ -4589,15 +4632,22 @@ const Transcript = memo(function Transcript({
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") setQuoteDraft(null);
     };
+    // A drag that ends outside the window never fires document mouseup; reset
+    // the flag on blur so keyboard selections keep working afterwards.
+    const onWindowBlur = () => {
+      selectingWithMouse.current = false;
+    };
     document.addEventListener("mousedown", onMouseDown, true);
     document.addEventListener("mouseup", onMouseUp, true);
     document.addEventListener("selectionchange", onSelectionChange);
     document.addEventListener("keydown", onKey);
+    window.addEventListener("blur", onWindowBlur);
     return () => {
       document.removeEventListener("mousedown", onMouseDown, true);
       document.removeEventListener("mouseup", onMouseUp, true);
       document.removeEventListener("selectionchange", onSelectionChange);
       document.removeEventListener("keydown", onKey);
+      window.removeEventListener("blur", onWindowBlur);
     };
   }, [evaluateSelection]);
   const snapToEnd = useCallback(() => {
@@ -4630,6 +4680,38 @@ const Transcript = memo(function Transcript({
     );
   }, [scrollRef]);
 
+  const scrolledJump = useRef<number | null>(null);
+  const jumpScrolling = useRef(false);
+  const jumpScrollTimer = useRef<number | undefined>(undefined);
+  const endJumpScroll = useCallback(() => {
+    jumpScrolling.current = false;
+    window.clearTimeout(jumpScrollTimer.current);
+    scrollRef.current?.removeEventListener("scrollend", endJumpScroll);
+  }, [scrollRef]);
+  // A jump scroll must win over follow-the-tail: unfollow inside the commit
+  // that mounts the row so a live commit cannot cancel the animation, keep
+  // retrying while the pinned window is still rendering, and suppress the
+  // near-end follow re-arm only for the jump's own scroll events — scrollend
+  // (or user input interrupting it, which also fires scrollend) ends the
+  // suppression, with the timeout as fallback when no scroll happens.
+  useLayoutEffect(() => {
+    if (!scrollRequest || scrolledJump.current === scrollRequest.nonce) return;
+    const element = scrollRef.current;
+    const row = element?.querySelector(
+      `[data-message-id="${CSS.escape(scrollRequest.messageId)}"]`,
+    );
+    if (!element || !row) return;
+    scrolledJump.current = scrollRequest.nonce;
+    following.current = false;
+    autoScrolling.current = false;
+    jumpScrolling.current = true;
+    element.addEventListener("scrollend", endJumpScroll, { once: true });
+    window.clearTimeout(jumpScrollTimer.current);
+    jumpScrollTimer.current = window.setTimeout(endJumpScroll, 2_000);
+    row.scrollIntoView({ behavior: "smooth", block: "center" });
+    onScrollRequestHandled();
+  }, [messages, scrollRequest, scrollRef, endJumpScroll, onScrollRequestHandled]);
+
   useLayoutEffect(() => {
     if (following.current) snapToEnd();
   }, [messages, running, snapToEnd]);
@@ -4661,6 +4743,7 @@ const Transcript = memo(function Transcript({
   useEffect(
     () => () => {
       window.clearTimeout(autoScrollTimer.current);
+      window.clearTimeout(jumpScrollTimer.current);
     },
     [],
   );
@@ -4695,6 +4778,9 @@ const Transcript = memo(function Transcript({
           lastScrollTop.current = event.currentTarget.scrollTop;
           const nearEnd = transcriptIsNearEnd(event.currentTarget);
           setAtEnd(nearEnd);
+          // A jump scroll owns the viewport until its animation settles; its
+          // own near-end crossings must not re-arm tail-following.
+          if (jumpScrolling.current) return;
           if (nearEnd) {
             if (scrolledDown) following.current = true;
             if (autoScrolling.current) {
@@ -4756,19 +4842,11 @@ const Transcript = memo(function Transcript({
                       ? undefined
                       : `relative w-fit min-w-0 ${
                           message.role === "user"
-                            ? "max-w-[min(84%,calc(100%_-_6rem))]"
-                            : "max-w-[min(88%,calc(100%_-_6rem))]"
+                            ? "max-w-[min(84%,calc(100%_-_6rem))] [@media(hover:none)]:max-w-[84%]"
+                            : "max-w-[min(88%,calc(100%_-_6rem))] [@media(hover:none)]:max-w-[88%]"
                         }`
                   }
                 >
-                  {peerReceipt ? null : (
-                    <MessageHoverActions
-                      message={message}
-                      side={message.role === "user" ? "start" : "end"}
-                      onReply={onReply}
-                      onReact={onReact}
-                    />
-                  )}
                   <MessageView
                     artifactTarget={artifactTarget}
                     message={message}
@@ -4800,6 +4878,14 @@ const Transcript = memo(function Transcript({
                     onSpeak={() => onSpeak(message)}
                     onOpenComputer={onOpenComputer}
                   />
+                  {peerReceipt ? null : (
+                    <MessageHoverActions
+                      message={message}
+                      side={message.role === "user" ? "start" : "end"}
+                      onReply={onReply}
+                      onReact={onReact}
+                    />
+                  )}
                 </div>
               </div>
               {!peerReceipt && messageReactions ? (
@@ -4999,6 +5085,9 @@ const Composer = memo(function Composer({
   const [selectedMentions, setSelectedMentions] = useState<ComposerMention[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [replyAnnouncement, setReplyAnnouncement] = useState("");
+  // What the live region currently holds — a send disarming the reply clears
+  // "reply" text, while an explicit cancel must keep "Reply cancelled".
+  const replyAnnouncementKind = useRef<"reply" | "cancelled" | null>(null);
   const prevReplyTarget = useRef<ThreadMessage | null>(null);
   const runErrorRef = useRef<HTMLDivElement>(null);
   const presentedRunErrorIdRef = useRef<string | null>(null);
@@ -5260,6 +5349,13 @@ const Composer = memo(function Composer({
       // Cancel (or send) within the delay must not let a stale "Replying to"
       // overwrite the cancel announcement — kill the pending timer.
       window.clearTimeout(announceTimer.current);
+      // A send disarms the reply without touching the region — drop the stale
+      // "Replying to" so it cannot linger or re-announce. An explicit cancel
+      // sets "Reply cancelled" in the same event, so only clear "reply" text.
+      if (replyAnnouncementKind.current === "reply") {
+        replyAnnouncementKind.current = null;
+        setReplyAnnouncement("");
+      }
       return;
     }
     if (!prev || prev.id !== replyTarget.id) {
@@ -5267,11 +5363,12 @@ const Composer = memo(function Composer({
       // Clear-then-set so a switch between same-author targets re-announces —
       // identical live-region text would otherwise be a no-op.
       setReplyAnnouncement("");
+      replyAnnouncementKind.current = null;
       window.clearTimeout(announceTimer.current);
-      announceTimer.current = window.setTimeout(
-        () => setReplyAnnouncement(t`Replying to ${replyNameRef.current}`),
-        50,
-      );
+      announceTimer.current = window.setTimeout(() => {
+        replyAnnouncementKind.current = "reply";
+        setReplyAnnouncement(t`Replying to ${replyNameRef.current}`);
+      }, 50);
     }
   }, [replyTarget, replyName, t]);
 
@@ -5326,6 +5423,11 @@ const Composer = memo(function Composer({
             type="button"
             aria-label={t`Cancel reply`}
             onClick={() => {
+              replyAnnouncementKind.current = "cancelled";
+              // Kill a pending arm announce in this event — the effect's
+              // cleanup can lag the timer, and a late "Replying to" would
+              // then be cleared as stale, dropping the cancel announcement.
+              window.clearTimeout(announceTimer.current);
               onClearReply?.();
               setReplyAnnouncement(t`Reply cancelled`);
               // The chip unmounts with this button — keep focus in the composer.
@@ -5697,7 +5799,14 @@ function MentionChipIcon({ mention }: { mention: ComposerMention }) {
 
 function previewMessageText(message: ThreadMessage): string {
   const text = message.blocks
-    .map((block) => (block.kind === "text" || block.kind === "channel_message" ? block.text : ""))
+    .map((block) => {
+      if (block.kind === "channel_message") return block.text;
+      if (block.kind === "text") {
+        // Bot text is Markdown; user text is already plain.
+        return message.role === "bot" ? plainTextFromMarkdown(block.text) : block.text;
+      }
+      return "";
+    })
     .filter(Boolean)
     .join(" ")
     .trim();
@@ -5815,7 +5924,10 @@ function MessageHoverActions({
           type="button"
           aria-label={t`Reply`}
           onClick={() => onReply(message)}
-          className={`${iconButtonClass} hidden [@media(hover:hover)_and_(pointer:fine)]:grid`}
+          className={cn(
+            iconButtonClass,
+            "h-11 w-11 [@media(hover:hover)_and_(pointer:fine)]:h-7 [@media(hover:hover)_and_(pointer:fine)]:w-7",
+          )}
         >
           <Reply size={15} strokeWidth={1.7} />
         </button>
@@ -5830,13 +5942,6 @@ function MessageHoverActions({
             <MoreHorizontal size={15} strokeWidth={1.7} />
           </DropdownMenuTrigger>
           <DropdownMenuContent align={side === "end" ? "start" : "end"}>
-            <DropdownMenuItem
-              className="[@media(hover:hover)_and_(pointer:fine)]:hidden"
-              onClick={() => onReply(message)}
-            >
-              <Reply size={15} />
-              <Trans>Reply</Trans>
-            </DropdownMenuItem>
             <DropdownMenuItem onClick={copyMessage}>
               <Copy size={14} strokeWidth={1.7} />
               <Trans>Copy</Trans>
@@ -6004,7 +6109,7 @@ const MessageView = memo(function MessageView({
     return (
       <>
         {messageContext}
-        <div className="flex w-fit max-w-full justify-start">
+        <div className="flex w-fit max-w-full justify-start [@media(hover:none)]:w-full">
           <div
             data-testid="message-bot-bubble"
             className="max-w-full space-y-2.5 rounded-[20px] bg-muted px-[18px] py-3 text-[15.5px] leading-[1.5] text-foreground/90"
@@ -6100,7 +6205,10 @@ const MessageView = memo(function MessageView({
         }
         if (block.kind === "progress") {
           return (
-            <div key={i} className="flex w-fit max-w-full justify-start">
+            <div
+              key={i}
+              className="flex w-fit max-w-full justify-start [@media(hover:none)]:w-full"
+            >
               <div
                 data-testid="message-bot-bubble"
                 className="max-w-full rounded-[20px] bg-muted px-[18px] py-3 text-[15.5px] leading-[1.5] text-foreground/90"
@@ -6209,16 +6317,11 @@ const MessageView = memo(function MessageView({
           );
         }
         if (block.kind === "mcp_approval") {
+          const botId = "botId" in artifactTarget ? artifactTarget.botId : message.botId;
+          if (!botId) return null;
           return (
             <div key={i} className="flex justify-start">
-              <McpApprovalCard
-                botId={"botId" in artifactTarget ? artifactTarget.botId : message.botId}
-                name={block.name}
-                serverId={block.serverId}
-                transport={block.transport}
-                endpoint={block.endpoint}
-                needsOAuth={block.needsOAuth}
-              />
+              <McpApprovalCard botId={botId} threadId={message.threadId} block={block} />
             </div>
           );
         }
@@ -6254,7 +6357,7 @@ const MessageView = memo(function MessageView({
         }
         if (block.kind === "text" && message.role === "user") {
           return (
-            <div key={i} className="flex w-fit max-w-full justify-end">
+            <div key={i} className="flex w-fit max-w-full justify-end [@media(hover:none)]:w-full">
               <div
                 data-testid="message-user-bubble"
                 data-quote-message-id={quoteMessageId}
@@ -6268,7 +6371,10 @@ const MessageView = memo(function MessageView({
         }
         if (block.kind === "text") {
           return (
-            <div key={i} className="flex w-fit max-w-full justify-start">
+            <div
+              key={i}
+              className="flex w-fit max-w-full justify-start [@media(hover:none)]:w-full"
+            >
               <div
                 data-testid="message-bot-bubble"
                 className="max-w-full rounded-[20px] bg-muted px-[18px] py-3 text-[15.5px] leading-[1.5] text-foreground/90"

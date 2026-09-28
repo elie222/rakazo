@@ -63,6 +63,8 @@ Before exporting a remote workspace, remote backends quiesce desktop browsers so
 
 The disposable OS image is not a portable disk snapshot. System packages installed outside the workspace are lost when moving to another provider; durable machine customization should be represented by a reproducible image or setup recipe. This is what makes a future backend switch practical instead of trying to translate vendor-specific VM snapshots.
 
+Docker computers include `uv` for rootless Python CLI installs. Run `uv tool install <package>`; the tool environments, command shims, managed Python versions, and cache stay under the persistent home. This installs Python command-line tools, not system packages such as `apt` dependencies.
+
 ## Verification
 
 The [agent verification guide](agent-verification.md) also describes a deterministic

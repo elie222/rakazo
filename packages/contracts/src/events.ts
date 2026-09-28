@@ -208,13 +208,15 @@ export const MessageBlock = z.discriminatedUnion("kind", [
   ChartBlock,
   z.object({
     /** Approval card for an agent-created MCP server. The user completes the
-        OAuth popup (or confirms no authorization is needed) in the UI. */
+        OAuth popup (or confirms no authorization is needed) in the UI. The
+        status persists so the card renders its decision after a remount. */
     kind: z.literal("mcp_approval"),
     name: z.string(),
     serverId: Id,
     transport: McpTransportSchema,
     endpoint: z.string().nullable(),
     needsOAuth: z.boolean(),
+    status: z.enum(["pending", "connected", "dismissed"]).default("pending"),
   }),
   z.object({
     kind: z.literal("image"),

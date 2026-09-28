@@ -475,8 +475,8 @@ msgstr "В архиве. Чат, память и файлы сохраняютс
 msgid "Arguments"
 msgstr "Аргументы"
 
-#: src/components/AppRail.tsx:20
-#: src/pages/Artifacts.tsx:218
+#: src/pages/Artifacts.tsx:229
+#: src/pages/Shell.tsx:3263
 msgid "Artifacts"
 msgstr ""
 
@@ -630,7 +630,7 @@ msgstr "Предварительный просмотр экрана бота"
 msgid "Bot to link"
 msgstr "Бот для ссылки"
 
-#: src/components/AppRail.tsx:17
+#: src/pages/Artifacts.tsx:226
 msgid "Bots"
 msgstr ""
 
@@ -3331,10 +3331,6 @@ msgstr "Поиск поставщиков"
 #: src/pages/SpaceSearch.tsx:16
 msgid "Searching…"
 msgstr "Поиск…"
-
-#: src/components/AppRail.tsx:14
-msgid "Sections"
-msgstr ""
 
 #: src/pages/Shell.tsx:3288
 msgid "Select a bot"
