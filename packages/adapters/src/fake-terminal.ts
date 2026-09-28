@@ -15,17 +15,31 @@ const WEBSOCKET_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 export class FakeTerminalGateway {
   private server: http.Server | null = null;
   private listening: Promise<number> | null = null;
-  private readonly sessions = new Map<string, { cwd: string }>();
+  private readonly sessions = new Map<string, { owner: string; cwd: string }>();
+  private readonly connections = new Map<Duplex, string>();
 
-  async open(cwd: string): Promise<string> {
+  /** Open a session for `owner` (a computer); `revoke(owner)` ends it. */
+  async open(owner: string, cwd: string): Promise<string> {
     const port = await this.start();
     const token = randomUUID();
-    this.sessions.set(token, { cwd });
+    this.sessions.set(token, { owner, cwd });
     const socketPath = `websockify?token=${token}`;
     return `http://127.0.0.1:${port}/vnc.html?path=${encodeURIComponent(socketPath)}`;
   }
 
+  /** Refuse the owner's tokens and disconnect its shells, like stopping the real server. */
+  revoke(owner: string) {
+    for (const [token, session] of this.sessions) {
+      if (session.owner === owner) this.sessions.delete(token);
+    }
+    for (const [socket, connectionOwner] of this.connections) {
+      if (connectionOwner === owner) socket.destroy();
+    }
+  }
+
   close() {
+    // Upgraded sockets are no longer tracked by the HTTP server, so end them here.
+    for (const socket of this.connections.keys()) socket.destroy();
     this.server?.close();
     this.server = null;
     this.listening = null;
@@ -73,7 +87,13 @@ export class FakeTerminalGateway {
         "",
       ].join("\r\n"),
     );
-    const shell = new FakeShell(session.cwd, (text) => socket.write(encodeFrame(0x2, text)));
+    this.connections.set(socket, session.owner);
+    socket.on("close", () => this.connections.delete(socket));
+    const shell = new FakeShell(
+      session.cwd,
+      (text) => socket.write(encodeFrame(0x2, text)),
+      () => socket.end(encodeFrame(0x8, Buffer.alloc(0))),
+    );
     let pending = Buffer.alloc(0);
     socket.on("data", (chunk: Buffer) => {
       pending = Buffer.concat([pending, chunk]);
@@ -94,7 +114,7 @@ export class FakeTerminalGateway {
   }
 }
 
-/** A line-editing shell that understands `echo`, `pwd`, and `stty size`. */
+/** A line-editing shell that understands `echo`, `pwd`, `stty size`, and `exit`. */
 class FakeShell {
   private rows = 24;
   private cols = 80;
@@ -104,6 +124,7 @@ class FakeShell {
   constructor(
     private readonly cwd: string,
     private readonly write: (text: Buffer) => void,
+    private readonly exit: () => void,
   ) {}
 
   start() {
@@ -130,6 +151,10 @@ class FakeShell {
   private type(char: string) {
     if (char === "\r" || char === "\n") {
       this.print("\r\n");
+      if (this.line.trim() === "exit") {
+        this.exit();
+        return;
+      }
       const output = this.run(this.line.trim());
       if (output) this.print(`${output}\r\n`);
       this.line = "";

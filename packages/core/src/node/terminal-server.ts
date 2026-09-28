@@ -2,10 +2,11 @@
  * PTY server started inside the computer beside the screen gateway. Websockify relays each
  * websocket to one Unix socket connection, which gets its own login shell. Output is raw
  * bytes; input arrives as `[kind:u8][length:u32be][payload]` frames (see contracts/terminal).
+ * Per-session files live in the state directory, which is removed when the server stops.
  */
 export const TERMINAL_SERVER_PROGRAM = `import fcntl, glob, os, pty, pwd, select, signal, socket, struct, sys, tempfile, termios
 
-path, cwd = sys.argv[1], sys.argv[2]
+path, cwd, state = sys.argv[1], sys.argv[2], sys.argv[3]
 MAX_FRAME = 1 << 20
 
 def identity(env):
@@ -30,7 +31,7 @@ def identity(env):
         group += "rakazo:x:%d:\\n" % gid
     names = {}
     for kind, content in (("passwd", passwd), ("group", group)):
-        handle, name = tempfile.mkstemp(prefix="rakazo-terminal-" + kind + "-")
+        handle, name = tempfile.mkstemp(prefix=kind + "-", dir=state)
         with os.fdopen(handle, "w") as target:
             target.write(content)
         names[kind] = name
@@ -47,6 +48,8 @@ def write_all(fd, data):
 
 def serve(conn):
     signal.signal(signal.SIGCHLD, signal.SIG_DFL)
+    # Stopping the terminal signals every session; unwind so its files are removed.
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
     env, temporary = identity(dict(os.environ, TERM="xterm-256color"))
     pid, fd = pty.fork()
     if pid == 0:
@@ -107,6 +110,7 @@ try:
     os.unlink(path)
 except FileNotFoundError:
     pass
+os.makedirs(state, mode=0o700, exist_ok=True)
 server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
 previous = os.umask(0o077)
 server.bind(path)

@@ -353,18 +353,20 @@ function stopVncCommand(kind: "view" | "control", layout: ReturnType<typeof comm
 
 const TERMINAL_SERVER = "/tmp/rakazo/rakazo-terminal.py";
 
+function terminalServerPattern(socket: string) {
+  return `^([^ ]*/)?python[0-9.]* ${TERMINAL_SERVER} ${socket}( |$)`;
+}
+
 function stopTerminalCommand(layout: ReturnType<typeof commandLayout>) {
   const socketPrefix = `/tmp/rakazo/sockets/terminal-${layout.displayNumber}-`;
-  const pattern = quoteLayout(
-    `^([^ ]*/)?python[0-9.]* ${TERMINAL_SERVER} ${socketPrefix}[^ ]+( |$)`,
-  );
+  const pattern = quoteLayout(terminalServerPattern(`${socketPrefix}[^ ]+`));
   return [
     revokeTargetCommand("terminal", layout.displayNumber),
     // Killing the server closes every relayed connection; each shell then gets SIGHUP.
     `pkill -f ${pattern} || true`,
     `for i in $(seq 1 10); do pgrep -f ${pattern} >/dev/null || break; sleep 0.1; done`,
     `pkill -KILL -f ${pattern} || true`,
-    `rm -f ${socketPrefix}*`,
+    `rm -rf ${socketPrefix}* /tmp/rakazo/terminal-state-${layout.displayNumber}`,
   ].join("\n");
 }
 
@@ -574,7 +576,11 @@ export function interactiveScreenCommand(
   ].join("\n");
 }
 
-/** Start a PTY server for the current control lease, replacing any earlier one on this display. */
+/**
+ * Open a terminal session for the current control lease. The lease's PTY server is reused, so
+ * a second browser tab gets its own shell without ending the first; a server left from an
+ * earlier lease is replaced.
+ */
 export function terminalCommand(
   controlToken: string,
   terminalToken: string,
@@ -582,21 +588,44 @@ export function terminalCommand(
   env = DEFAULT_DESKTOP_ENV,
   layout: ReturnType<typeof commandLayout> = screenPorts(0),
 ) {
-  if (!/^[A-Za-z0-9_-]{1,64}$/.test(terminalToken)) throw new Error("invalid terminal token");
-  const tokenFile = `/tmp/rakazo/control-token-${layout.displayNumber}`;
-  const socket = `/tmp/rakazo/sockets/terminal-${layout.displayNumber}-${browserKeyForScreen(terminalToken)}`;
   return [
-    `[ -f ${tokenFile} ] && [ "$(cat ${tokenFile})" = ${shellQuote(controlToken)} ] || exit 75`,
-    stopTerminalCommand(layout),
-    `mkdir -p ${TARGETS} /tmp/rakazo/sockets`,
-    `printf %s ${shellQuote(TERMINAL_SERVER_PROGRAM)} >${TERMINAL_SERVER}`,
-    `HOME=${shellQuote(env.homeDir)} nohup python3 ${TERMINAL_SERVER} ${socket} ${shellQuote(cwd)} 8>&- 9>&- </dev/null >/tmp/rakazo/terminal-${layout.displayNumber}.log 2>&1 &`,
-    `for i in $(seq 1 50); do [ -S ${socket} ] && break; sleep 0.1; done`,
-    `[ -S ${socket} ] || exit 1`,
-    `printf '%s: unix_socket:%s\\n' ${shellQuote(terminalToken)} ${socket} >/tmp/rakazo/terminal-target-next-${layout.displayNumber}`,
-    `mv /tmp/rakazo/terminal-target-next-${layout.displayNumber} ${TARGETS}/terminal-${layout.displayNumber}`,
+    startTerminalCommand(controlToken, terminalToken, cwd, env, layout),
     proxyEnvironmentCommand(),
     gatewayCommand(layout.controlPort),
+  ].join("\n");
+}
+
+/** Everything in `terminalCommand` except the shared screen gateway. */
+export function startTerminalCommand(
+  controlToken: string,
+  terminalToken: string,
+  cwd: string,
+  env = DEFAULT_DESKTOP_ENV,
+  layout: ReturnType<typeof commandLayout> = screenPorts(0),
+) {
+  if (!/^[A-Za-z0-9_-]{1,64}$/.test(terminalToken)) throw new Error("invalid terminal token");
+  const display = layout.displayNumber;
+  const tokenFile = `/tmp/rakazo/control-token-${display}`;
+  const socket = `/tmp/rakazo/sockets/terminal-${display}-${browserKeyForScreen(controlToken)}`;
+  const target = `${TARGETS}/terminal-${display}`;
+  const next = `/tmp/rakazo/terminal-target-next-${display}`;
+  const entry = `printf '%s: unix_socket:%s\\n' ${shellQuote(terminalToken)} ${socket}`;
+  return [
+    `[ -f ${tokenFile} ] && [ "$(cat ${tokenFile})" = ${shellQuote(controlToken)} ] || exit 75`,
+    `if [ -S ${socket} ] && pgrep -f ${quoteLayout(terminalServerPattern(socket))} >/dev/null; then`,
+    `  { cat ${target} 2>/dev/null || true; ${entry}; } >${next}`,
+    "else",
+    stopTerminalCommand(layout),
+    `  mkdir -p ${TARGETS} /tmp/rakazo/sockets`,
+    // Displays share the program file; replace it whole so a starting server never reads half.
+    `  printf %s ${shellQuote(TERMINAL_SERVER_PROGRAM)} >${TERMINAL_SERVER}.$$`,
+    `  mv ${TERMINAL_SERVER}.$$ ${TERMINAL_SERVER}`,
+    `  HOME=${shellQuote(env.homeDir)} nohup python3 ${TERMINAL_SERVER} ${socket} ${shellQuote(cwd)} /tmp/rakazo/terminal-state-${display} 8>&- 9>&- </dev/null >/tmp/rakazo/terminal-${display}.log 2>&1 &`,
+    `  for i in $(seq 1 50); do [ -S ${socket} ] && break; sleep 0.1; done`,
+    `  [ -S ${socket} ] || exit 1`,
+    `  ${entry} >${next}`,
+    "fi",
+    `mv ${next} ${target}`,
   ].join("\n");
 }
 

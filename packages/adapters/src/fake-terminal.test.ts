@@ -7,10 +7,9 @@ afterEach(() => {
   for (const gateway of gateways.splice(0)) gateway.close();
 });
 
-async function connect(cwd = "/home/rakazo/bots/bot-1") {
-  const gateway = new FakeTerminalGateway();
+async function connect(cwd = "/home/rakazo/bots/bot-1", gateway = new FakeTerminalGateway()) {
   gateways.push(gateway);
-  const page = new URL(await gateway.open(cwd));
+  const page = new URL(await gateway.open("computer-1", cwd));
   const target = new URL(page.searchParams.get("path")!, page);
   target.protocol = "ws:";
   const socket = new WebSocket(target, ["binary"]);
@@ -30,7 +29,18 @@ async function connect(cwd = "/home/rakazo/bots/bot-1") {
     }
     throw new Error(`fake terminal output did not match ${pattern}: ${JSON.stringify(output)}`);
   };
-  return { socket, waitFor };
+  const closed = new Promise((resolve) =>
+    socket.addEventListener("close", resolve, { once: true }),
+  );
+  return { socket, waitFor, closed, page };
+}
+
+function refused(url: string) {
+  const socket = new WebSocket(url);
+  return new Promise((resolve, reject) => {
+    socket.addEventListener("open", resolve, { once: true });
+    socket.addEventListener("error", () => reject(new Error("refused")), { once: true });
+  });
 }
 
 describe("fake terminal gateway", () => {
@@ -50,15 +60,31 @@ describe("fake terminal gateway", () => {
   });
 
   it("rejects unknown tokens", async () => {
+    const { page } = await connect();
+    await expect(refused(`ws://${page.host}/websockify?token=guess`)).rejects.toThrow("refused");
+  });
+
+  it("closes the connection when the shell exits", async () => {
+    const { socket, waitFor, closed } = await connect();
+    await waitFor(/^\$ $/);
+    socket.send(encodeTerminalInput("exit\r"));
+    await expect(closed).resolves.toBeDefined();
+  });
+
+  it("ends a computer's shells and refuses its tokens once revoked", async () => {
     const gateway = new FakeTerminalGateway();
-    gateways.push(gateway);
-    const page = new URL(await gateway.open("/home/rakazo"));
-    const socket = new WebSocket(`ws://${page.host}/websockify?token=guess`);
-    await expect(
-      new Promise((resolve, reject) => {
-        socket.addEventListener("open", resolve, { once: true });
-        socket.addEventListener("error", () => reject(new Error("refused")), { once: true });
-      }),
-    ).rejects.toThrow("refused");
+    const { page, closed } = await connect(undefined, gateway);
+    gateway.revoke("computer-1");
+    await expect(closed).resolves.toBeDefined();
+    const target = new URL(page.searchParams.get("path")!, page);
+    target.protocol = "ws:";
+    await expect(refused(target.toString())).rejects.toThrow("refused");
+  });
+
+  it("ends open connections when the gateway closes", async () => {
+    const gateway = new FakeTerminalGateway();
+    const { closed } = await connect(undefined, gateway);
+    gateway.close();
+    await expect(closed).resolves.toBeDefined();
   });
 });

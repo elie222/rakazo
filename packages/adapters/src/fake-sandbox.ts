@@ -135,7 +135,9 @@ export class FakeSandboxProvider implements SandboxProvider {
   async connectTerminal(computer: ComputerRef, request: TerminalRequest, _context: AdapterContext) {
     this.requiredBox(computer);
     if (!request.controlToken) throw new Error("terminal requires screen control");
-    return { url: await this.terminals.open(workspacePath("/home/rakazo", request.cwd ?? "")) };
+    return {
+      url: await this.terminals.open(computer.id, workspacePath("/home/rakazo", request.cwd ?? "")),
+    };
   }
 
   async sendInput(
@@ -263,10 +265,12 @@ export class FakeSandboxProvider implements SandboxProvider {
   async stop(computer: ComputerRef, _context: AdapterContext): Promise<void> {
     const box = this.boxes.get(computer.id);
     if (box) box.running = false;
+    this.terminals.revoke(computer.id);
   }
 
   async destroy(computer: ComputerRef, _context: AdapterContext): Promise<void> {
     this.boxes.delete(computer.id);
+    this.terminals.revoke(computer.id);
   }
 
   private requiredBox(computer: ComputerRef): FakeBox {

@@ -50,10 +50,10 @@ The web and desktop computer view opens a terminal and a file browser from a doc
 
   Read-only tools (`read_file`, `list_files`) are left out. The bot can still run commands while the user holds control, so the feed never goes away.
 - Without control (for example after it was released or expired), an "Open shell" button takes control again and switches to the shell.
-- A user holding control also gets a Shell tab with an interactive shell. It starts on first use and stays connected across tab switches. `computer.terminalUrl` starts a small PTY server in the computer beside the screen gateway.
-  - It is bound to the display's control token and reached through the same sealed capability and gateway as the control screen.
+- A user holding control also gets a Shell tab with an interactive shell. It starts on first use, stays connected across tab switches, and reconnects to a fresh shell if the connection drops. `computer.terminalUrl` starts a small PTY server in the computer beside the screen gateway.
+  - It is bound to the display's control token and reached through the same sealed capability and gateway as the control screen. Later sessions under the same lease (another tab, a reopened window) join that server with their own shell, so open shells keep running.
   - It runs as the computer's workspace user (never root), with the same environment as the bot's `shell` tool. Docker execs inherit the container's non-root user; E2B, Daytona, and Box use the same command runner as `shell`. When the computer runs as a host uid without a passwd entry (Docker on macOS), the terminal names it `rakazo` through nss_wrapper for its own session, so prompts and `whoami` work; `/etc/passwd` stays unchanged.
-  - Releasing control, expiry, or screen teardown stops it and disconnects every shell.
+  - Releasing control, expiry, or screen teardown stops it, disconnects every shell, and removes its session files.
 - Providers opt in through `SandboxProvider.connectTerminal`. Docker, E2B, Daytona, and Box support it. Host (`desktop`) computers never expose a browser shell; other computers without it show only Activity.
 - The fake provider serves an emulated shell from a loopback websocket gateway that speaks the same frame protocol. Tests can then drive the browser terminal through the sealed capability and web proxy without exposing a host shell.
 

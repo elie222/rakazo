@@ -20,6 +20,10 @@ import { rpc } from "../../lib/rpc";
 const COMMANDS_REFRESH_MS = 3_000;
 /** Longer than the poll, so a slow page still lands. A hung request cannot block the next one. */
 const COMMANDS_REFRESH_TIMEOUT_MS = 10_000;
+const SHELL_RECONNECT_ATTEMPTS = 3;
+const SHELL_RECONNECT_DELAY_MS = 1_000;
+/** A shell connection that lasted this long counts as working again. */
+const SHELL_STABLE_MS = 10_000;
 
 type View = "activity" | "shell";
 
@@ -185,40 +189,56 @@ function ShellTerminal({ botId, hidden }: { botId: string; hidden: boolean }) {
     if (!terminal) return;
     let socket: WebSocket | null = null;
     let cancelled = false;
-    const disposers: Array<{ dispose(): void }> = [];
-    rpc.computer
-      .terminalUrl({ botId })
-      .then(({ url }) => {
-        if (cancelled || !url) return;
-        const target = terminalSocketUrl(url, window.location.href);
-        if (!target) return;
-        socket = new WebSocket(target, ["binary"]);
-        socket.binaryType = "arraybuffer";
-        const send = (frame: Uint8Array<ArrayBuffer>) => {
-          if (socket?.readyState === WebSocket.OPEN) socket.send(frame);
-        };
-        socket.onopen = () => {
-          send(encodeTerminalResize(terminal.cols, terminal.rows));
-          terminal.focus();
-        };
-        socket.onmessage = (message) => {
-          terminal.write(
-            typeof message.data === "string" ? message.data : new Uint8Array(message.data),
-          );
-        };
-        socket.onclose = () => {
-          if (!cancelled) terminal.write("\r\n\x1b[2m[closed]\x1b[0m\r\n");
-        };
-        disposers.push(
-          terminal.onData((data) => send(encodeTerminalInput(data))),
-          terminal.onResize(({ cols, rows }) => send(encodeTerminalResize(cols, rows))),
-        );
-      })
-      .catch((cause: unknown) => {
-        if (!cancelled) setError(errorMessage(cause, t`Could not open terminal`));
-      });
+    let retry: number | undefined;
+    // Consecutive drops; a connection that stayed up long enough resets the count.
+    let drops = 0;
+    const send = (frame: Uint8Array<ArrayBuffer>) => {
+      if (socket?.readyState === WebSocket.OPEN) socket.send(frame);
+    };
+    const disposers = [
+      terminal.onData((data) => send(encodeTerminalInput(data))),
+      terminal.onResize(({ cols, rows }) => send(encodeTerminalResize(cols, rows))),
+    ];
+    const connect = () => {
+      rpc.computer
+        .terminalUrl({ botId })
+        .then(({ url }) => {
+          if (cancelled || !url) return;
+          const target = terminalSocketUrl(url, window.location.href);
+          if (!target) return;
+          const current = new WebSocket(target, ["binary"]);
+          socket = current;
+          current.binaryType = "arraybuffer";
+          let openedAt = 0;
+          current.onopen = () => {
+            openedAt = Date.now();
+            send(encodeTerminalResize(terminal.cols, terminal.rows));
+            terminal.focus();
+          };
+          current.onmessage = (message) => {
+            terminal.write(
+              typeof message.data === "string" ? message.data : new Uint8Array(message.data),
+            );
+          };
+          current.onclose = () => {
+            if (cancelled || socket !== current) return;
+            terminal.write("\r\n\x1b[2m[closed]\x1b[0m\r\n");
+            drops = openedAt && Date.now() - openedAt > SHELL_STABLE_MS ? 1 : drops + 1;
+            // A dropped connection (network, proxy re-check) gets a fresh shell. Without
+            // control, terminalUrl refuses and the error explains why.
+            if (drops <= SHELL_RECONNECT_ATTEMPTS) {
+              retry = window.setTimeout(connect, SHELL_RECONNECT_DELAY_MS);
+            }
+          };
+        })
+        .catch((cause: unknown) => {
+          if (!cancelled) setError(errorMessage(cause, t`Could not open terminal`));
+        });
+    };
+    connect();
     return () => {
       cancelled = true;
+      window.clearTimeout(retry);
       for (const disposer of disposers) disposer.dispose();
       socket?.close();
     };

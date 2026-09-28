@@ -108,6 +108,13 @@ test("the computer workspace browses, uploads, and downloads files over the scre
   await expect(page.getByTestId("computer-terminal")).toBeVisible();
   await terminalWindow.getByRole("tab", { name: "Shell" }).click();
   await expect(shell).toContainText("hallo-shell");
+  // A dropped connection gets a fresh shell instead of a dead pane.
+  await page.keyboard.type("exit");
+  await page.keyboard.press("Enter");
+  await expect(shell).toContainText(/\[closed\]\s*\$/);
+  await page.keyboard.type("echo wieder-da");
+  await page.keyboard.press("Enter");
+  await expect(shell).toContainText(/\$ echo wieder-da\s*wieder-da/);
   await terminalWindow.getByRole("tab", { name: "Activity" }).click();
   await captureScreenshot(page, testInfo, "computer-workspace");
 
