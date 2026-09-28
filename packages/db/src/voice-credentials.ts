@@ -10,6 +10,7 @@ export async function selectSpaceVoicePreference(
   scope: VoiceCredentialScope,
   credentialId: string,
   voiceId: string,
+  speechModel?: string | null,
 ) {
   await prisma.spaceVoicePreference.updateMany({
     where: {
@@ -20,6 +21,7 @@ export async function selectSpaceVoicePreference(
     },
     data: { isDefault: false },
   });
+  const speechModelData = speechModel === undefined ? {} : { speechModel };
   return prisma.spaceVoicePreference.upsert({
     where: {
       spaceId_userId_credentialId: {
@@ -34,8 +36,9 @@ export async function selectSpaceVoicePreference(
       credentialId,
       voiceId,
       isDefault: true,
+      ...speechModelData,
     },
-    update: { voiceId, isDefault: true },
+    update: { voiceId, isDefault: true, ...speechModelData },
   });
 }
 
@@ -51,12 +54,14 @@ function withVoicePreference<
     };
     isDefault: boolean;
     voiceId: string;
+    speechModel: string | null;
   },
 >(preference: T) {
   return {
     ...preference.credential,
     isDefault: preference.isDefault,
     voiceId: preference.voiceId,
+    speechModel: preference.speechModel ?? "",
   };
 }
 
@@ -99,5 +104,5 @@ export async function findVoiceCredential(
   });
   if (preference) return withVoicePreference(preference);
   const credential = await findNewestUserVoiceCredential(prisma, scope.userId, provider);
-  return credential ? { ...credential, isDefault: false, voiceId: "" } : null;
+  return credential ? { ...credential, isDefault: false, voiceId: "", speechModel: "" } : null;
 }

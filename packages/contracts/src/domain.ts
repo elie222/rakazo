@@ -460,6 +460,7 @@ export const TeachRecordingEventSchema = z.object({
   key: z.string().optional(),
   text: z.string().optional(),
   summary: z.string().optional(),
+  sensitive: z.boolean().optional(),
 });
 export type TeachRecordingEvent = z.infer<typeof TeachRecordingEventSchema>;
 
@@ -1089,6 +1090,8 @@ export const VoiceCredentialSchema = z.object({
   hasKey: z.boolean(),
   isDefault: z.boolean(),
   voiceId: z.string(),
+  /** Fish speech-model override. Empty uses the deployment default. */
+  speechModel: z.string(),
   transcribe: z.boolean(),
 });
 export type VoiceCredential = z.infer<typeof VoiceCredentialSchema>;

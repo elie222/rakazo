@@ -161,6 +161,7 @@ async function copyProviderPreferences(
             userId: input.userId,
             credentialId: preference.credentialId,
             voiceId: preference.voiceId,
+            speechModel: preference.speechModel,
             isDefault: preference.isDefault,
             createdAt: input.createdAt,
             updatedAt: input.createdAt,

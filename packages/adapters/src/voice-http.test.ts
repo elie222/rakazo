@@ -143,4 +143,10 @@ describe("readVoiceJson", () => {
   it("keeps malformed error bodies optional", async () => {
     await expect(readVoiceJson(new Response("not json"))).resolves.toBeNull();
   });
+
+  it("returns malformed text when the caller wants the raw error", async () => {
+    await expect(
+      readVoiceJson(new Response("upstream down"), { rawOnInvalid: true }),
+    ).resolves.toBe("upstream down");
+  });
 });

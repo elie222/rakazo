@@ -151,17 +151,19 @@ async function inspectSafeRemoteUrl(
   if (url.hash) throw new Error("Connector URL must not contain a fragment");
   const hostname = url.hostname.replace(/^\[|\]$/g, "");
   if (isBlockedRemoteHostname(hostname)) throw new Error("Connector URL targets a private host");
+  // Loopback is a private endpoint too: only the private-endpoint escape reaches it.
   const allowPrivate = policy.allowPrivateEndpoint === true;
-  const loopbackHttp = url.protocol === "http:" && isLocalMcpHost(hostname);
   const privateHost = isPrivateRemoteMcpHostname(hostname);
-  if (url.protocol === "http:" && !loopbackHttp && !allowPrivate) {
+  if (url.protocol === "http:" && !allowPrivate) {
     throw new Error("Connector URL must use HTTPS");
   }
-  if (privateHost && !allowPrivate && !loopbackHttp) {
+  if (privateHost && !allowPrivate) {
     throw new Error("Connector URL targets a private host");
   }
   const literal = literalAddresses(hostname);
-  if (loopbackHttp) return { url, addresses: literal ?? [] };
+  if (url.protocol === "http:" && isLocalMcpHost(hostname)) {
+    return { url, addresses: literal ?? [] };
+  }
   if (privateHost && literal) return { url, addresses: literal };
   const addresses = await resolve(hostname);
   assertAllowedAddresses(addresses, hostname, policy);
@@ -324,7 +326,7 @@ export function createSafeLookup(
   policy: RemoteUrlPolicy = {},
 ): LookupFunction {
   return createAddressCheckedLookup(resolve, (addresses, hostname) => {
-    if (isLocalMcpHost(hostname.replace(/^\[|\]$/g, ""))) {
+    if (policy.allowPrivateEndpoint === true && isLocalMcpHost(hostname.replace(/^\[|\]$/g, ""))) {
       assertLoopbackAddresses(addresses);
       return;
     }

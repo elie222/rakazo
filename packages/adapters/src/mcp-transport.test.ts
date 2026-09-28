@@ -168,7 +168,7 @@ describe("MCP transport seam", () => {
       const resolveHostname = vi.fn();
       const safeFetch = secureFetch(
         new URL(`${origin}/mcp`),
-        { allowHttpLocalhost: true },
+        { allowHttpLocalhost: true, allowPrivateEndpoint: true },
         {},
         { fetch: fetchImpl, resolveHostname },
       );
@@ -181,6 +181,28 @@ describe("MCP transport seam", () => {
         ).resolves.toHaveProperty("ok", true);
         expect(fetchImpl).toHaveBeenCalledTimes(2);
         expect(resolveHostname).not.toHaveBeenCalled();
+      } finally {
+        await safeFetch.close();
+      }
+    },
+  );
+
+  it.each(["localhost", "127.0.0.1", "[::1]"])(
+    "refuses HTTP %s without the private-endpoint escape even when the hostname is local",
+    async (host) => {
+      const origin = `http://${host}:3100`;
+      const fetchImpl = vi.fn(async () => Response.json({ ok: true }));
+      const safeFetch = secureFetch(
+        new URL(`${origin}/api/auth/get-session`),
+        { allowHttpLocalhost: true, allowLocalHttpCredentials: true },
+        {},
+        { fetch: fetchImpl, resolveHostname: vi.fn() },
+      );
+      try {
+        await expect(
+          safeFetch(`${origin}/api/auth/get-session`, { method: "POST", body: "{}" }),
+        ).rejects.toThrow("HTTPS");
+        expect(fetchImpl).not.toHaveBeenCalled();
       } finally {
         await safeFetch.close();
       }
@@ -440,7 +462,7 @@ describe("MCP transport seam", () => {
           url: `http://127.0.0.1:${port}/mcp`,
           authProvider: provider,
           fallbackToSse: false,
-          urlPolicy: { allowHttpLocalhost: true },
+          urlPolicy: { allowHttpLocalhost: true, allowPrivateEndpoint: true },
         }),
       ).rejects.toThrow("Reconnect this server");
     } finally {
@@ -493,7 +515,7 @@ describe("MCP transport seam", () => {
     let seen: Record<string, string> = {};
     const safeFetch = secureFetch(
       new URL("http://localhost:8123/mcp"),
-      { allowHttpLocalhost: true },
+      { allowHttpLocalhost: true, allowPrivateEndpoint: true },
       {
         allowedHeaders: ["authorization", "x-api-key"],
         headers: { Authorization: "Bearer stored", "X-Api-Key": "stored-key" },

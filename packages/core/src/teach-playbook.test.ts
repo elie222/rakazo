@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { buildPlaybookFromRecording, promptInvokesSkill } from "./teach-playbook.js";
+import {
+  buildPlaybookFromRecording,
+  promptInvokesSkill,
+  sanitizeTeachRecordingEvent,
+} from "./teach-playbook.js";
 
 describe("promptInvokesSkill", () => {
   it("matches an explicit request to run the skill", () => {
@@ -78,6 +82,45 @@ describe("buildPlaybookFromRecording", () => {
     expect(playbook.steps).toEqual(['Type "hi there".']);
   });
 
+  it("collapses a run of protected keystrokes into one redacted step", () => {
+    const playbook = buildPlaybookFromRecording("Sign in", [
+      { at: "2026-01-01T00:00:00.000Z", kind: "key", key: "u" },
+      { at: "2026-01-01T00:00:00.100Z", kind: "key", key: "s" },
+      { at: "2026-01-01T00:00:00.200Z", kind: "key", key: "e" },
+      { at: "2026-01-01T00:00:00.300Z", kind: "key", key: "r" },
+      { at: "2026-01-01T00:00:00.400Z", kind: "key", sensitive: true },
+      { at: "2026-01-01T00:00:00.500Z", kind: "key", sensitive: true },
+      { at: "2026-01-01T00:00:00.600Z", kind: "key", sensitive: true },
+      { at: "2026-01-01T00:00:00.700Z", kind: "key", sensitive: true },
+      { at: "2026-01-01T00:00:00.800Z", kind: "key", key: "Enter" },
+    ]);
+    expect(playbook.steps).toEqual([
+      'Type "user".',
+      'Type "[redacted input]".',
+      "Press key: Enter.",
+    ]);
+  });
+
+  it("never renders the payload of a protected event", () => {
+    const playbook = buildPlaybookFromRecording("Sign in", [
+      { at: "2026-01-01T00:00:00.000Z", kind: "key", key: "x", sensitive: true },
+      { at: "2026-01-01T00:00:00.100Z", kind: "clipboard", text: "hunter2", sensitive: true },
+    ]);
+    expect(playbook.steps.join(" ")).toContain("[redacted input]");
+    expect(playbook.steps.join(" ")).not.toContain("hunter2");
+    expect(playbook.steps.join(" ")).not.toContain('"x"');
+  });
+
+  it("resumes ordinary typing after a protected run", () => {
+    const playbook = buildPlaybookFromRecording("Sign in", [
+      { at: "2026-01-01T00:00:00.000Z", kind: "key", sensitive: true },
+      { at: "2026-01-01T00:00:00.100Z", kind: "key", sensitive: true },
+      { at: "2026-01-01T00:00:00.200Z", kind: "key", key: "o" },
+      { at: "2026-01-01T00:00:00.300Z", kind: "key", key: "k" },
+    ]);
+    expect(playbook.steps).toEqual(['Type "[redacted input]".', 'Type "ok".']);
+  });
+
   it("redacts typed credentials the same way as clipboard input", () => {
     const playbook = buildPlaybookFromRecording("Sign in", [
       { at: "2026-01-01T00:00:00.000Z", kind: "key", key: "p" },
@@ -113,5 +156,35 @@ describe("buildPlaybookFromRecording", () => {
       { at: "2026-01-01T00:00:00.000Z", kind: "scroll", type: "down", text: "3" },
     ]);
     expect(playbook.steps).toEqual(["Scroll down 3 times."]);
+  });
+});
+
+describe("sanitizeTeachRecordingEvent", () => {
+  it("strips the captured value from a protected event", () => {
+    expect(
+      sanitizeTeachRecordingEvent({
+        at: "2026-01-01T00:00:00.000Z",
+        kind: "clipboard",
+        text: "hunter2",
+        sensitive: true,
+      }),
+    ).toEqual({ at: "2026-01-01T00:00:00.000Z", kind: "clipboard", sensitive: true });
+    expect(
+      sanitizeTeachRecordingEvent({
+        at: "2026-01-01T00:00:00.000Z",
+        kind: "key",
+        key: "x",
+        sensitive: true,
+      }),
+    ).toEqual({ at: "2026-01-01T00:00:00.000Z", kind: "key", sensitive: true });
+  });
+
+  it("leaves ordinary events untouched", () => {
+    const event = {
+      at: "2026-01-01T00:00:00.000Z",
+      kind: "clipboard" as const,
+      text: "weekly-export.csv",
+    };
+    expect(sanitizeTeachRecordingEvent(event)).toEqual(event);
   });
 });

@@ -276,4 +276,25 @@ describe("lingui catalogs", () => {
       'msgid "Configure a plugin catalog on the server to connect apps."\nmsgstr "Configurez un catalogue de plugins sur le serveur pour connecter des applications."',
     );
   });
+
+  it("translates the terminal empty state in every non-English catalog", () => {
+    const translations: Record<string, string> = {
+      de: "Noch keine Bot-Aktivität.",
+      es: "Aún no hay actividad del bot.",
+      fr: "Aucune activité du bot pour le moment.",
+      hi: "अभी तक कोई बॉट गतिविधि नहीं।",
+      ko: "아직 봇 활동이 없습니다.",
+      "pt-BR": "Ainda não há atividade do bot.",
+      ru: "Активности бота пока нет.",
+      tr: "Henüz bot etkinliği yok.",
+      "zh-CN": "还没有机器人活动。",
+    };
+    for (const [locale, msgstr] of Object.entries(translations)) {
+      const catalog = readFileSync(
+        fileURLToPath(new URL(`../locales/${locale}/messages.po`, import.meta.url)),
+        "utf8",
+      );
+      expect(catalog).toContain(`msgid "No bot activity yet."\nmsgstr "${msgstr}"`);
+    }
+  });
 });

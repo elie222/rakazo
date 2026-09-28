@@ -153,7 +153,8 @@ test("Executor reconnect saves a replacement token before authorization", async 
           slug: "existing-executor",
           name: "Executor",
           transport: "streamable_http",
-          endpoint: "http://localhost:8765/mcp",
+          // A public literal: loopback endpoints are owner-only and this user may not own the test deployment.
+          endpoint: "https://203.0.113.10/mcp",
           secret: "fake-old-token",
           headers: { "X-Test": "fake-header" },
         },
@@ -182,7 +183,7 @@ test("Executor reconnect saves a replacement token before authorization", async 
   await page.getByRole("button", { name: "Executor", exact: true }).click();
   await page
     .getByRole("textbox", { name: "Server URL", exact: true })
-    .fill("http://localhost:8765/mcp");
+    .fill("https://203.0.113.10/mcp");
   await page.getByLabel("Access token", { exact: true }).fill("fake-new-token");
   await page.getByRole("button", { name: "Connect", exact: true }).click();
   await expect.poll(() => saved).toBe(true);

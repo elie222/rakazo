@@ -27,6 +27,7 @@ type VoiceCredential = {
   id: string;
   provider: string;
   voiceId: string;
+  speechModel?: string;
 };
 type VoiceStatus = {
   configured: boolean;
@@ -46,11 +47,13 @@ export default function VoiceSettings() {
   const [provider, setProvider] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [voiceId, setVoiceId] = useState("");
+  const [speechModel, setSpeechModel] = useState("");
+  const speechModelSave = useRef<string | null>(null);
   const [deviceVoice, setDeviceVoice] = useState(false);
   const [deviceVoiceReady, setDeviceVoiceReady] = useState(false);
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState<
-    "connect" | "disconnect" | "voice" | "test" | "device-voice" | null
+    "connect" | "disconnect" | "voice" | "speech" | "test" | "device-voice" | null
   >(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -70,6 +73,7 @@ export default function VoiceSettings() {
     setProvider(selected);
     const cred = nextCredentials.find((entry) => entry.provider === selected);
     setVoiceId(cred?.voiceId ?? "");
+    setSpeechModel(cred?.speechModel ?? "");
     if (cred) {
       setVoices(await rpc<VoiceInfo[]>("voice/voices", { provider: selected }));
     } else {
@@ -134,6 +138,7 @@ export default function VoiceSettings() {
         provider: selected.id,
         apiKey: apiKey.trim(),
         voiceId: voiceId || undefined,
+        ...(selected.id === "fish-audio" ? { speechModel: speechModel.trim() } : {}),
       });
       setApiKey("");
       await load(selected.id);
@@ -157,6 +162,31 @@ export default function VoiceSettings() {
     } catch (err) {
       setError(err instanceof Error ? err.message : t("Could not disconnect"));
     } finally {
+      setPending(null);
+    }
+  }
+
+  async function saveSpeechModel() {
+    if (!credential || selected?.id !== "fish-audio" || pending !== null) return;
+    const next = speechModel.trim();
+    if (next === (credential.speechModel ?? "")) return;
+    if (speechModelSave.current === next) return;
+    speechModelSave.current = next;
+    setPending("speech");
+    setError(null);
+    try {
+      const saved = await rpc<VoiceCredential>("voice/setSpeechModel", {
+        provider: selected.id,
+        speechModel: next,
+      });
+      setSpeechModel(saved.speechModel ?? "");
+      setCredentials((current) =>
+        current.map((entry) => (entry.id === saved.id ? { ...entry, ...saved } : entry)),
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t("Could not save that speech model"));
+    } finally {
+      speechModelSave.current = null;
       setPending(null);
     }
   }
@@ -282,6 +312,24 @@ export default function VoiceSettings() {
                 </Text>
               </Pressable>
             ) : null}
+            {credential && selected.id === "fish-audio" ? (
+              <>
+                <Text style={styles.fieldLabel}>{t("Speech model")}</Text>
+                <TextInput
+                  accessibilityLabel={t("Speech model")}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  editable={pending === null}
+                  value={speechModel}
+                  onChangeText={setSpeechModel}
+                  onBlur={() => void saveSpeechModel()}
+                  onSubmitEditing={() => void saveSpeechModel()}
+                  placeholder={t("Optional")}
+                  placeholderTextColor={native.tertiaryLabel}
+                  style={styles.input}
+                />
+              </>
+            ) : null}
             {voices.length ? (
               <View style={styles.voices}>
                 {voices.map((voice) => (
@@ -330,6 +378,7 @@ function createVoiceStyles() {
     cardActive: { borderColor: tokens.ring, backgroundColor: tokens.muted },
     cardTitle: { color: native.label, fontSize: 16 },
     cardMeta: { color: native.tertiaryLabel, marginTop: 4, fontSize: 12 },
+    fieldLabel: { color: native.label, marginTop: 16 },
     input: {
       marginTop: 8,
       borderRadius: 12,

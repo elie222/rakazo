@@ -22,6 +22,10 @@ function logicalHref(input: string | URL | Request, init?: RequestInit): string 
   return url.href;
 }
 
+function deploymentOwner(ownerUserId: string) {
+  return { findUnique: vi.fn(async () => ({ ownerUserId })) };
+}
+
 function oauthSessionStore() {
   return {
     count: vi.fn().mockResolvedValue(0),
@@ -236,6 +240,7 @@ describe("MCP OAuth", () => {
           deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
         },
         mcpOAuthSession: oauthSessionStore(),
+        deploymentSettings: deploymentOwner("user-1"),
         $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
       };
       const broker = new McpOAuthBroker(prisma as never, { put } as never, TEST_NETWORK);
@@ -331,6 +336,69 @@ describe("MCP OAuth", () => {
       }),
     ).rejects.toThrow(/HTTPS/i);
     expect(fetchCalls).toEqual([]);
+  });
+
+  it.each([
+    ["http://localhost:3100/api/auth/get-session", /HTTPS/],
+    ["http://127.0.0.1:3100/mcp", /HTTPS/],
+    ["https://localhost:3100/mcp", /private/],
+  ])("refuses loopback %s for a user who is not the deployment owner", async (endpoint, reason) => {
+    const fetch = vi.fn(async () => new Response("internal handler body", { status: 405 }));
+    const prisma = {
+      mcpServer: {
+        findFirst: vi.fn().mockResolvedValue({ id: "server-1", endpoint, secretId: null }),
+      },
+      secret: { findFirst: vi.fn() },
+      mcpOAuthSession: oauthSessionStore(),
+      deploymentSettings: deploymentOwner("owner"),
+    };
+    const broker = new McpOAuthBroker(prisma as never, { put: vi.fn() } as never, {
+      fetch,
+      resolveHostname: async () => [{ address: "127.0.0.1", family: 4 }],
+    });
+
+    await expect(
+      broker.begin({
+        serverId: "server-1",
+        spaceId: "workspace-1",
+        userId: "user-1",
+        redirectUri: "http://127.0.0.1:5173/mcp/oauth/callback",
+      }),
+    ).rejects.toThrow(reason);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("does not reflect upstream response text when starting OAuth fails", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("UPSTREAM_BODY_MARKER internal detail", { status: 500 })),
+    );
+    const prisma = {
+      mcpServer: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "server-1",
+          endpoint: "https://mcp.example.test/mcp",
+          secretId: null,
+        }),
+      },
+      secret: { findFirst: vi.fn() },
+      mcpOAuthSession: oauthSessionStore(),
+    };
+    const broker = new McpOAuthBroker(prisma as never, { put: vi.fn() } as never, TEST_NETWORK);
+
+    const error = await broker
+      .begin({
+        serverId: "server-1",
+        spaceId: "workspace-1",
+        userId: "user-1",
+        redirectUri: "http://127.0.0.1:5173/mcp/oauth/callback",
+      })
+      .then(
+        () => null,
+        (caught: unknown) => caught,
+      );
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toBe("Could not start MCP OAuth");
   });
 
   it("completes a persisted OAuth session after the API process restarts", async () => {
@@ -722,6 +790,7 @@ describe("MCP setup with an existing access token", () => {
         },
         secret: { findFirst: vi.fn(async () => ({ id: "secret", ciphertext: "encrypted" })) },
         mcpOAuthSession: oauthSessionStore(),
+        deploymentSettings: deploymentOwner("user"),
       };
       const secrets = {
         load: vi.fn(() => JSON.stringify({ secret: "fake-executor-token" })),

@@ -4372,6 +4372,7 @@ export function ShellPage() {
                 {recordingSkill ? (
                   <TeachRecordingChrome
                     recording={recordingSkill}
+                    botId={computerBot.id}
                     busy={teachBusy}
                     onStop={stopTeaching}
                     variant="overlay"

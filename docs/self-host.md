@@ -81,6 +81,53 @@ Docker computer topology:
 Set any of them to `0`, `none` or `unlimited` to remove that ceiling. A malformed value fails the
 supervisor at startup naming the variable, rather than surfacing later as a failed bot.
 
+### Restricted computer egress
+
+Docker computers have full outbound access by default — the public internet plus the Docker
+host's own addresses, the LAN, and link-local cloud metadata endpoints such as
+`169.254.169.254`. On a cloud VM that last path is instance-credential theft for anything a
+bot runs. Restricted mode keeps public internet egress (browsing, DNS, apt, git over SSH)
+while dropping computer traffic to every non-public destination and to the host itself.
+
+It takes two parts, both opt-in:
+
+1. Set `SANDBOX_COMPUTER_EGRESS=restricted` in `.env` and recreate the supervisor. Each
+   computer network then gets a deterministic host bridge name (`rakazo-c…`) instead of a
+   generic `br-*`.
+2. Apply the host ruleset once per Docker host:
+
+   ```bash
+   sudo bash infra/compose/restrict-computer-egress.sh
+   ```
+
+   On a no-checkout install, download it first:
+   `curl -fsSLO https://raw.githubusercontent.com/elie222/rakazo/main/infra/compose/restrict-computer-egress.sh`.
+   The script drops forwarded traffic from `rakazo-c*` bridges to all non-public IPv4/IPv6
+   destinations via the `DOCKER-USER` chain, adds an `INPUT` drop so computers cannot open
+   connections to the host (established replies to host-initiated control and screen
+   connections still flow), and installs a systemd oneshot so the rules return after a
+   reboot. `--print` shows the exact rules without changing anything; `--remove` uninstalls.
+
+Screen streaming is unaffected: the supervisor and web proxy join each computer's bridge,
+and the ruleset exempts traffic whose in- and out-interface are both `rakazo-c*` before
+any drop (that exemption is load-bearing on hosts where `br_netfilter` feeds bridged
+frames through `FORWARD`). Rules match interface names rather than subnets, so computer
+create/delete cycles need no firewall maintenance; deleting a computer removes its
+traffic from the match and nothing else. A computer provisioned before the flag flips
+is replaced on its next provision — resuming it on an unnamed bridge would bypass the
+restriction.
+
+To disable restricted egress, set `SANDBOX_COMPUTER_EGRESS=open`, recreate the
+supervisor, and run `sudo bash infra/compose/restrict-computer-egress.sh --remove`.
+The flag alone does not uninstall the host rules, which keep matching the still-named
+`rakazo-c*` bridges until removed.
+
+Do not enable restricted egress if computers must reach LAN services, an internal proxy,
+or endpoints bound to the host. Requires Linux Docker Engine with the iptables backend —
+Docker Desktop, rootless Docker, and `firewall-backend: nftables` are unsupported. The
+`SANDBOX_SCREEN_NETWORK=internal` topology shares one network instead of per-bot bridges,
+so the mode does not apply there.
+
 ## Docker Compose (single machine)
 
 1. Copy `.env.example` to `.env` and set `POSTGRES_PASSWORD` (`openssl rand -hex 16`), plus `BETTER_AUTH_SECRET`, `ENCRYPTION_KEY`, and `SCREEN_PROXY_SECRET` to independent long random strings (32+ characters; 64 hex for `ENCRYPTION_KEY`). Docker sandboxes also need a dedicated `SANDBOX_SUPERVISOR_TOKEN`. Keep existing `ENCRYPTION_KEY` values so stored credentials stay decryptable.
@@ -228,8 +275,8 @@ screenshot computer tools stay available. Existing connections default to disabl
 managed endpoints, the deployment-wide fallback remains
 `RAKAZO_OPENAI_COMPATIBLE_VISION_MODELS=gpt4o-vision,llava`.
 
-Remote MCP defaults to public HTTPS. The deployment owner can attach a server on the same LAN
-or Docker network. Set `MCP_ALLOW_PRIVATE_ENDPOINT=true` on the API and worker to allow it for
+Remote MCP defaults to public HTTPS. The deployment owner can attach a server on localhost, the
+same LAN, or a Docker network. Set `MCP_ALLOW_PRIVATE_ENDPOINT=true` on the API and worker to allow it for
 every user. Cloud metadata addresses stay blocked. Leave the flag unset on public installs.
 
 For servers that accept standard `reasoning_effort`, enable **Supports thinking** under

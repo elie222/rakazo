@@ -84,6 +84,7 @@ import {
   resolveBotUploadPath,
   resolveBotWorkspaceCwd,
   resolveBotWorkspacePath,
+  revokeScreenControl,
   sanitizeComposioError,
   savePushToken,
   scheduleComputerControlExpiry,
@@ -249,6 +250,7 @@ import {
   prepareVoice,
   toVoiceCredential,
   toVoiceStatus,
+  updateVoiceSpeechModel,
   voiceContext,
 } from "./voice.js";
 
@@ -2166,8 +2168,13 @@ export function createRouter(deps: RouterDeps) {
           if (bot.computer.providerRef) {
             const ctx = computerContext(context.actor, bot.id, "stop");
             const ref = toComputerRef(bot.computer);
-            await checkpointAndRecordComputerWorkspace(deps, bot.computer, ref, ctx);
-            await deps.sandbox.stop(ref, ctx);
+            try {
+              await checkpointAndRecordComputerWorkspace(deps, bot.computer, ref, ctx);
+              await deps.sandbox.stop(ref, ctx);
+            } catch (error) {
+              // The sandbox is already gone: nothing left to checkpoint or stop.
+              if (!isSandboxGoneError(error)) throw error;
+            }
           }
           await deps.prisma.computer.update({
             where: { id: bot.computer.id },
@@ -2316,9 +2323,9 @@ export function createRouter(deps: RouterDeps) {
         }
         if (hasActiveComputerControl(bot.computer) && bot.computer.controlBotId !== bot.id) {
           const previousBotId = bot.computer.controlBotId!;
-          await deps.sandbox.setScreenControl?.(
-            toComputerRef(bot.computer),
-            false,
+          await revokeScreenControl(
+            deps,
+            bot.computer,
             computerContext(context.actor, previousBotId, "screen.release"),
             bot.computer.controlLeaseId ?? undefined,
           );
@@ -2340,6 +2347,11 @@ export function createRouter(deps: RouterDeps) {
           bot = await repos.getBot(context.actor, input.botId);
         }
         if (!bot.computer) throw new IsolationError();
+        // Gone-sandbox revoke may have marked the row stopped; do not fall through to the
+        // running-state grant and return a confusing "control changed" conflict.
+        if (!bot.computer.providerRef || bot.computer.state !== "running") {
+          throw new ORPCError("BAD_REQUEST", { message: "computer must be running" });
+        }
 
         const executionLease = await deps.prisma.computerExecutionLease.findUnique({
           where: { computerId_botId: { computerId: bot.computer.id, botId: bot.id } },
@@ -2451,17 +2463,27 @@ export function createRouter(deps: RouterDeps) {
           throw new ORPCError("FORBIDDEN");
         }
         if (!computer.providerRef) return { ok: true as const };
-        const mapped =
-          input.kind === "key"
-            ? { kind: "key" as const, key: String(input.payload.key ?? "") }
+        const sensitive = input.payload.sensitive === true;
+        const skillId =
+          sensitive && typeof input.payload.skillId === "string" && input.payload.skillId
+            ? input.payload.skillId
+            : undefined;
+        const mapped = {
+          ...(input.kind === "key"
+            ? { kind: "key" as const, key: String(input.payload.key ?? ""), sensitive }
             : input.kind === "clipboard"
-              ? { kind: "clipboard" as const, text: String(input.payload.text ?? "") }
+              ? {
+                  kind: "clipboard" as const,
+                  text: String(input.payload.text ?? ""),
+                  sensitive,
+                }
               : input.kind === "scroll"
                 ? {
                     kind: "scroll" as const,
                     direction:
                       input.payload.direction === "up" ? ("up" as const) : ("down" as const),
                     amount: Number(input.payload.amount ?? 3),
+                    sensitive,
                   }
                 : {
                     kind: "pointer" as const,
@@ -2471,7 +2493,10 @@ export function createRouter(deps: RouterDeps) {
                     type:
                       (input.payload.type as "move" | "down" | "up" | "click" | undefined) ??
                       "click",
-                  };
+                    sensitive,
+                  }),
+          ...(skillId ? { skillId } : {}),
+        };
         const outcome = await taughtSkills.recordInput(context.actor, bot.id, mapped);
         if (outcome === "stale") return { ok: true as const };
         if (outcome !== "recorded") {
@@ -5230,6 +5255,7 @@ export function createRouter(deps: RouterDeps) {
             ...row,
             isDefault: preference?.isDefault ?? false,
             voiceId: preference?.voiceId ?? "",
+            speechModel: preference?.speechModel ?? "",
           });
         });
       }),
@@ -5238,6 +5264,7 @@ export function createRouter(deps: RouterDeps) {
           provider: input.provider,
           plaintext: input.apiKey,
           voiceId: input.voiceId,
+          speechModel: input.speechModel,
           signal: context.signal,
         }),
       ),
@@ -5276,6 +5303,9 @@ export function createRouter(deps: RouterDeps) {
         );
         return toVoiceStatus(cred);
       }),
+      setSpeechModel: authed.voice.setSpeechModel.handler(async ({ context, input }) =>
+        updateVoiceSpeechModel(deps, context.actor, input),
+      ),
       voices: authed.voice.voices.handler(async ({ context, input }) => {
         const loaded = await loadDefaultVoiceCredential(deps, context.actor);
         if (!loaded) return [];
@@ -5561,14 +5591,12 @@ async function releaseComputerControl(
     }
     return;
   }
-  if (bot.computer.providerRef) {
-    await deps.sandbox.setScreenControl?.(
-      toComputerRef(bot.computer),
-      false,
-      computerContext(actor, controlBotId, "screen.release"),
-      controlLeaseId,
-    );
-  }
+  await revokeScreenControl(
+    deps,
+    bot.computer,
+    computerContext(actor, controlBotId, "screen.release"),
+    controlLeaseId,
+  );
 
   const released = await deps.events.finalizeComputerControlRelease({
     spaceId: actor.spaceId,
@@ -5658,7 +5686,17 @@ async function expireStaleComputerControl(
     | undefined,
 ): Promise<boolean> {
   if (!computer || hasActiveComputerControl(computer)) return false;
-  if (computer.controlHolder !== "user") return false;
+  if (computer.controlHolder !== "user") {
+    // Holder "none" with a surviving lease id is a revoke that failed mid-expiry;
+    // retry it so the row does not sit busy forever.
+    if (computer.controlLeaseId) {
+      await expireComputerControl(deps, computer.id, computer.controlLeaseId).catch(
+        () => undefined,
+      );
+      return true;
+    }
+    return false;
+  }
   const leaseId = computer.controlLeaseId;
   // Keep a failed revoke's lease id so reconciliation can retry provider shutdown.
   if (leaseId) {

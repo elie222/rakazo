@@ -9,10 +9,10 @@ import type {
   VoiceTranscribeRequest,
   VoiceVerifyResult,
 } from "@rakazo/adapter-kit";
+import { getLogger } from "@rakazo/logging";
 import {
   readVoiceAudio,
   readVoiceJson,
-  requireOk,
   speechUploadName,
   verifyVoiceHttpGet,
   voiceDeadline,
@@ -26,7 +26,11 @@ const PUBLIC_MODEL_PAGES = 5;
 /** User-owned libraries are smaller; still hard-capped. */
 const OWN_MODEL_PAGES = 20;
 const LIST_VOICES_DEADLINE_MS = 20_000;
-const TTS_MODEL = "s2.1-pro";
+const DEFAULT_TTS_MODEL = "s2.1-pro";
+/** Header-safe Fish model id. A connection override wins over `FISH_TTS_MODEL`. */
+const TTS_MODEL_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+const UPSTREAM_DETAIL_LIMIT = 500;
+let invalidTtsModelWarned = false;
 
 export class FishAudioVoiceProvider implements VoiceProvider {
   /** Advertise Fish Audio's model catalog, speech synthesis, and transcription support. */
@@ -68,13 +72,14 @@ export class FishAudioVoiceProvider implements VoiceProvider {
   /** Synthesize one Rakazo utterance as bounded MP3 audio. */
   async synthesize(request: VoiceSynthesizeRequest, context: AdapterContext): Promise<SpeechClip> {
     const signal = voiceDeadline(request.signal ?? context.signal, 60_000);
+    const model = resolveFishSpeechModel(request.model);
     const res = await fetch(`${API}/v1/tts`, {
       method: "POST",
       headers: {
         ...fishAudioHeaders(request.apiKey),
         "content-type": "application/json",
         accept: "audio/mpeg",
-        model: TTS_MODEL,
+        model,
       },
       body: JSON.stringify({
         text: request.text,
@@ -86,7 +91,9 @@ export class FishAudioVoiceProvider implements VoiceProvider {
       }),
       signal,
     });
-    await requireOk(res, "Fish Audio", "speaking");
+    if (!res.ok) {
+      rejectFish(res.status, "speaking", await readFishResponse(res), request.apiKey, model);
+    }
     return { bytes: await readVoiceAudio(res, signal), mimeType: "audio/mpeg" };
   }
 
@@ -108,8 +115,8 @@ export class FishAudioVoiceProvider implements VoiceProvider {
       body: form,
       signal: voiceDeadline(request.signal ?? context.signal, 60_000),
     });
-    const body = await readVoiceJson(res, { requireValid: res.ok });
-    if (!res.ok) throw new Error(voiceHttpError(res.status, "Fish Audio", "transcribing", body));
+    const body = await readFishResponse(res);
+    if (!res.ok) rejectFish(res.status, "transcribing", body, request.apiKey);
     return { text: String((body as { text?: unknown } | null)?.text ?? "").trim() };
   }
 }
@@ -133,8 +140,8 @@ async function fetchModels(
       headers: fishAudioHeaders(apiKey),
       signal: context.signal,
     });
-    const body = await readVoiceJson(res, { requireValid: res.ok });
-    if (!res.ok) throw new Error(voiceHttpError(res.status, "Fish Audio", "listing voices", body));
+    const body = await readFishResponse(res);
+    if (!res.ok) rejectFish(res.status, "listing voices", body, apiKey);
     const items = modelsFrom(body);
     models.push(...items);
     if (items.length === 0 || !modelPageHasMore(body, pageNumber, items.length)) break;
@@ -156,6 +163,114 @@ function modelPageHasMore(body: unknown, pageNumber: number, itemCount: number):
 /** Build the authorization header shared by Fish Audio requests. */
 function fishAudioHeaders(apiKey: string): Record<string, string> {
   return { authorization: `Bearer ${apiKey}` };
+}
+
+/** True when `value` can be sent as the Fish `model` header. */
+export function isFishSpeechModelId(value: string): boolean {
+  return TTS_MODEL_PATTERN.test(value);
+}
+
+/** Connection override, then `FISH_TTS_MODEL`, then s2.1-pro. */
+function resolveFishSpeechModel(override?: string | null): string {
+  const requested = override?.trim() ?? "";
+  if (requested && isFishSpeechModelId(requested)) return requested;
+  return deploymentFishSpeechModel();
+}
+
+/** `FISH_TTS_MODEL` when it is a single model id; otherwise s2.1-pro. */
+function deploymentFishSpeechModel(): string {
+  const configured = process.env.FISH_TTS_MODEL?.trim() ?? "";
+  if (!configured) return DEFAULT_TTS_MODEL;
+  if (isFishSpeechModelId(configured)) return configured;
+  if (!invalidTtsModelWarned) {
+    invalidTtsModelWarned = true;
+    getLogger().warn("Ignoring FISH_TTS_MODEL because it is not a model id", {
+      provider: "fish-audio",
+    });
+  }
+  return DEFAULT_TTS_MODEL;
+}
+
+/** Read a Fish body. Error responses still return a safe message when the read fails. */
+async function readFishResponse(res: Response): Promise<unknown> {
+  try {
+    return await readVoiceJson(res, { requireValid: res.ok, rawOnInvalid: !res.ok });
+  } catch (error) {
+    if (res.ok) throw error;
+    return fishUnreadBody(error);
+  }
+}
+
+function fishUnreadBody(error: unknown): { message: string } {
+  if (error instanceof Error && error.message === "Voice response is too large.") {
+    return { message: error.message };
+  }
+  return { message: "response body could not be read" };
+}
+
+/** Log the upstream Fish status and message, then raise the user-facing error. */
+function rejectFish(
+  status: number,
+  what: string,
+  body: unknown,
+  apiKey: string,
+  model?: string,
+): never {
+  const detail = fishErrorDetail(body, apiKey);
+  getLogger().error("Fish Audio request failed", {
+    provider: "fish-audio",
+    operation: what,
+    "http.status": status,
+    ...(model ? { "fish.model": model } : {}),
+    ...(detail ? { "error.detail": detail } : {}),
+  });
+  throw new Error(
+    voiceHttpError(
+      status,
+      "Fish Audio",
+      what,
+      typeof body === "string" || !detail ? null : { message: detail },
+    ),
+  );
+}
+
+/** Upstream message, or a short raw body when Fish did not return JSON. */
+function fishErrorDetail(body: unknown, apiKey: string): string {
+  const text = typeof body === "string" ? body : upstreamMessage(body) || jsonFallback(body);
+  return scrubSecret(text, apiKey).replace(/\s+/g, " ").trim().slice(0, UPSTREAM_DETAIL_LIMIT);
+}
+
+function upstreamMessage(body: unknown): string {
+  if (!body || typeof body !== "object") return "";
+  const record = body as Record<string, unknown>;
+  for (const key of ["detail", "message", "error"] as const) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+    if (
+      value &&
+      typeof value === "object" &&
+      typeof (value as { message?: unknown }).message === "string"
+    ) {
+      const message = (value as { message: string }).message.trim();
+      if (message) return message;
+    }
+  }
+  return "";
+}
+
+function jsonFallback(body: unknown): string {
+  if (!body || typeof body !== "object") return "";
+  try {
+    return JSON.stringify(body);
+  } catch {
+    return "";
+  }
+}
+
+function scrubSecret(text: string, apiKey: string): string {
+  const secret = apiKey.trim();
+  if (secret.length < 8) return text;
+  return text.split(secret).join("[Redacted]");
 }
 
 /** Extract object-shaped model entries from a Fish Audio list response. */

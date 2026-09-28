@@ -1,13 +1,17 @@
+import * as adapters from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { Hono } from "hono";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   disconnectVoiceCredential,
+  fishSpeechModelValue,
   MAX_SPEAK_REQUEST_BYTES,
   MAX_TRANSCRIBE_REQUEST_BYTES,
   mountVoiceHttpRoutes,
+  synthesizeVoice,
   toVoiceStatus,
+  updateVoiceSpeechModel,
   type VoiceDeps,
 } from "./voice.js";
 
@@ -270,5 +274,210 @@ describe("disconnectVoiceCredential", () => {
       },
     );
     expect(transaction).not.toHaveBeenCalled();
+  });
+});
+
+describe("fishSpeechModelValue", () => {
+  it("trims a Fish model id and treats blank as no override", () => {
+    expect(fishSpeechModelValue("  s1  ")).toBe("s1");
+    expect(fishSpeechModelValue(" ")).toBeNull();
+  });
+
+  it("rejects a model id that cannot be a Fish header", () => {
+    expect(() => fishSpeechModelValue("s1\ninjected")).toThrow(
+      "That speech model id is not valid.",
+    );
+  });
+});
+
+describe("updateVoiceSpeechModel", () => {
+  function speechDeps(preference: { id: string; voiceId: string; isDefault: boolean } | null) {
+    const credential = {
+      id: "cred-1",
+      userId: actor.userId,
+      provider: "fish-audio",
+      secretId: "secret-1",
+    };
+    const update = vi
+      .fn()
+      .mockImplementation(async ({ data }: { data: { speechModel: string | null } }) => ({
+        speechModel: data.speechModel,
+      }));
+    const create = vi.fn();
+    const prisma = {
+      userVoiceCredential: { findFirst: vi.fn().mockResolvedValue(credential) },
+      spaceVoicePreference: {
+        findUnique: vi.fn().mockResolvedValue(preference),
+        create,
+        update,
+        updateMany: vi.fn(),
+        upsert: vi.fn(),
+      },
+      $transaction: vi.fn(),
+    };
+    prisma.$transaction.mockImplementation(async (callback: (tx: typeof prisma) => unknown) =>
+      callback(prisma),
+    );
+    return {
+      deps: { prisma, secrets: { put: vi.fn(), load: vi.fn() } } as unknown as VoiceDeps,
+      create,
+      update,
+      updateMany: prisma.spaceVoicePreference.updateMany,
+    };
+  }
+
+  it("stores the override without changing the selected voice", async () => {
+    const { deps, update, updateMany } = speechDeps({
+      id: "pref-1",
+      voiceId: "voice-1",
+      isDefault: false,
+    });
+
+    await expect(
+      updateVoiceSpeechModel(deps, actor, { provider: "fish-audio", speechModel: " s1 " }),
+    ).resolves.toMatchObject({
+      provider: "fish-audio",
+      voiceId: "voice-1",
+      speechModel: "s1",
+      isDefault: false,
+    });
+    expect(update).toHaveBeenCalledWith({
+      where: { id: "pref-1" },
+      data: { speechModel: "s1" },
+    });
+    expect(updateMany).not.toHaveBeenCalled();
+  });
+
+  it("clears the override when the model is blank", async () => {
+    const { deps, update } = speechDeps({ id: "pref-1", voiceId: "voice-1", isDefault: true });
+
+    await expect(
+      updateVoiceSpeechModel(deps, actor, { provider: "fish-audio", speechModel: " " }),
+    ).resolves.toMatchObject({ speechModel: "" });
+    expect(update).toHaveBeenCalledWith({
+      where: { id: "pref-1" },
+      data: { speechModel: null },
+    });
+  });
+
+  it("stores a model before a voice is chosen without replacing the default", async () => {
+    const { deps, create, update, updateMany } = speechDeps(null);
+    create.mockResolvedValue({
+      isDefault: false,
+      voiceId: "",
+      speechModel: "s1",
+    });
+
+    await expect(
+      updateVoiceSpeechModel(deps, actor, { provider: "fish-audio", speechModel: "s1" }),
+    ).resolves.toMatchObject({
+      provider: "fish-audio",
+      voiceId: "",
+      speechModel: "s1",
+      isDefault: false,
+    });
+    expect(create).toHaveBeenCalledWith({
+      data: {
+        spaceId: actor.spaceId,
+        userId: actor.userId,
+        credentialId: "cred-1",
+        speechModel: "s1",
+      },
+    });
+    expect(update).not.toHaveBeenCalled();
+    expect(updateMany).not.toHaveBeenCalled();
+  });
+
+  it("rejects speech models for other providers before writing", async () => {
+    const { deps, update } = speechDeps({ id: "pref-1", voiceId: "voice-1", isDefault: true });
+
+    await expect(
+      updateVoiceSpeechModel(deps, actor, { provider: "elevenlabs", speechModel: "s1" }),
+    ).rejects.toThrow("Speech model applies to Fish Audio.");
+    expect(update).not.toHaveBeenCalled();
+  });
+});
+
+describe("synthesizeVoice", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("sends the speech model stored on that connection", async () => {
+    const synthesize = vi
+      .fn()
+      .mockResolvedValue({ bytes: new Uint8Array(), mimeType: "audio/mpeg" });
+    vi.spyOn(adapters, "createVoiceProvider").mockReturnValue({ synthesize } as never);
+    const prisma = {
+      spaceVoicePreference: {
+        findFirst: vi.fn().mockResolvedValue({
+          isDefault: true,
+          voiceId: "voice-1",
+          speechModel: "s1",
+          credential: {
+            id: "cred-1",
+            userId: actor.userId,
+            provider: "fish-audio",
+            secretId: "secret-1",
+            createdAt: new Date(0),
+            updatedAt: new Date(0),
+          },
+        }),
+      },
+      secret: {
+        findFirst: vi.fn().mockResolvedValue({ id: "secret-1", ciphertext: "cipher" }),
+      },
+    };
+    const deps = {
+      prisma,
+      secrets: { load: vi.fn().mockReturnValue("fish-key"), put: vi.fn() },
+    } as unknown as VoiceDeps;
+
+    await synthesizeVoice(deps, actor, { text: "Hello" });
+
+    expect(synthesize).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: "Hello",
+        voiceId: "voice-1",
+        apiKey: "fish-key",
+        model: "s1",
+      }),
+      expect.anything(),
+    );
+  });
+
+  it("omits the model when the connection has no override", async () => {
+    const synthesize = vi
+      .fn()
+      .mockResolvedValue({ bytes: new Uint8Array(), mimeType: "audio/mpeg" });
+    vi.spyOn(adapters, "createVoiceProvider").mockReturnValue({ synthesize } as never);
+    const prisma = {
+      spaceVoicePreference: {
+        findFirst: vi.fn().mockResolvedValue({
+          isDefault: true,
+          voiceId: "voice-1",
+          speechModel: null,
+          credential: {
+            id: "cred-1",
+            userId: actor.userId,
+            provider: "fish-audio",
+            secretId: "secret-1",
+            createdAt: new Date(0),
+            updatedAt: new Date(0),
+          },
+        }),
+      },
+      secret: {
+        findFirst: vi.fn().mockResolvedValue({ id: "secret-1", ciphertext: "cipher" }),
+      },
+    };
+    const deps = {
+      prisma,
+      secrets: { load: vi.fn().mockReturnValue("fish-key"), put: vi.fn() },
+    } as unknown as VoiceDeps;
+
+    await synthesizeVoice(deps, actor, { text: "Hello" });
+
+    expect(synthesize.mock.calls[0]?.[0]).toMatchObject({ model: undefined });
   });
 });

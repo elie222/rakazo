@@ -21,6 +21,7 @@ import {
   expireComputerControl,
   hasActiveComputerControl,
   isIdleOwnComputerTakeover,
+  revokeScreenControl,
 } from "./computer-control.js";
 import { toComputerRef } from "./computer-support.js";
 import {
@@ -28,6 +29,7 @@ import {
   ensureComputerWorkspaceLayout,
   restoreComputerWorkspace,
 } from "./computer-workspace.js";
+import { isSandboxGoneError } from "./e2b-sandbox.js";
 import { resolveAgentHomePath } from "./home.js";
 
 type ComputerUpdateProgress = (
@@ -745,11 +747,14 @@ export async function replaceComputer(
 
   if (previousControl?.controlLeaseId && existing.providerRef) {
     try {
-      await deps.sandbox.setScreenControl?.(
-        toComputerRef(existing),
-        false,
+      await revokeScreenControl(
+        deps,
+        existing,
         context,
         previousControl.controlLeaseId,
+        // The activation compare still names this providerRef; the replacement
+        // overwrites it. Clearing it here would strand the in-flight claim.
+        { clearGoneRef: false },
       );
     } catch (error) {
       getLogger().error("release own takeover before maintenance", error);
@@ -805,7 +810,13 @@ export async function replaceComputer(
         });
         if (recorded.count !== 1) throw new ComputerBusyError();
       } catch (error) {
-        if (mode !== "recover" || error instanceof ComputerBusyError) throw error;
+        // A gone sandbox has nothing left to checkpoint; the replacement restores
+        // the last recorded revision instead of failing the whole replacement.
+        if (
+          !isSandboxGoneError(error) &&
+          (mode !== "recover" || error instanceof ComputerBusyError)
+        )
+          throw error;
       }
     }
     await onProgress?.("recreating");
@@ -814,7 +825,7 @@ export async function replaceComputer(
       try {
         await deps.sandbox.destroy(oldRef, context);
       } catch (error) {
-        if (mode !== "recover") throw error;
+        if (mode !== "recover" && !isSandboxGoneError(error)) throw error;
       }
     }
     const stopped = await deps.prisma.computer.updateMany({

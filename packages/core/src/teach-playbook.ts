@@ -8,7 +8,16 @@ export type TeachRecordingEvent = {
   key?: string;
   text?: string;
   summary?: string;
+  sensitive?: boolean;
 };
+
+export function sanitizeTeachRecordingEvent(event: TeachRecordingEvent): TeachRecordingEvent {
+  if (!event.sensitive) return event;
+  const sanitized = { ...event };
+  delete sanitized.key;
+  delete sanitized.text;
+  return sanitized;
+}
 
 export type TeachSnapshot = {
   at: string;
@@ -54,9 +63,11 @@ function describeScroll(event: TeachRecordingEvent): string {
     : `Scroll ${direction}.`;
 }
 
+const REDACTED_INPUT = "[redacted input]";
+
 function redactSensitiveText(text: string): string {
   const trimmed = text.trim();
-  if (/password|secret|token|api[_-]?key/i.test(trimmed)) return "[redacted input]";
+  if (/password|secret|token|api[_-]?key/i.test(trimmed)) return REDACTED_INPUT;
   return trimmed;
 }
 
@@ -71,6 +82,7 @@ export function buildPlaybookFromRecording(
 ): SkillPlaybook {
   const steps: string[] = [];
   let typed = "";
+  let typedSensitive = false;
   let drag: { button: string; fromX: number; fromY: number; toX: number; toY: number } | null =
     null;
 
@@ -79,6 +91,17 @@ export function buildPlaybookFromRecording(
     const text = redactSensitiveText(typed);
     if (text) steps.push(`Type ${JSON.stringify(text)}.`);
     typed = "";
+  }
+
+  function flushSensitiveTyped() {
+    if (!typedSensitive) return;
+    steps.push(`Type ${JSON.stringify(REDACTED_INPUT)}.`);
+    typedSensitive = false;
+  }
+
+  function flushPendingInput() {
+    flushTyped();
+    flushSensitiveTyped();
   }
 
   function flushDrag() {
@@ -94,18 +117,25 @@ export function buildPlaybookFromRecording(
 
   for (const event of events) {
     if (event.kind === "key") {
+      if (event.sensitive) {
+        flushDrag();
+        flushTyped();
+        typedSensitive = true;
+        continue;
+      }
       const key = event.key;
       if (!key) continue;
       flushDrag();
       if (isTypedCharacter(key)) {
+        flushSensitiveTyped();
         typed += key;
         continue;
       }
-      flushTyped();
+      flushPendingInput();
       steps.push(`Press key: ${key}.`);
       continue;
     }
-    flushTyped();
+    flushPendingInput();
     if (event.kind === "pointer") {
       const action = event.type ?? "click";
       const button = event.button ?? "left";
@@ -135,7 +165,11 @@ export function buildPlaybookFromRecording(
       steps.push(describePointer(event));
     } else if (event.kind === "clipboard") {
       flushDrag();
-      const text = event.text ? redactSensitiveText(event.text) : "";
+      const text = event.sensitive
+        ? REDACTED_INPUT
+        : event.text
+          ? redactSensitiveText(event.text)
+          : "";
       if (text) steps.push(`Paste or type: ${text}.`);
     } else if (event.kind === "scroll") {
       flushDrag();
@@ -144,7 +178,7 @@ export function buildPlaybookFromRecording(
       flushDrag();
     }
   }
-  flushTyped();
+  flushPendingInput();
   flushDrag();
 
   if (steps.length === 0) {

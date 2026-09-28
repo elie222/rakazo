@@ -824,6 +824,7 @@ export const appContract = {
           provider: z.string(),
           apiKey: z.string().min(8),
           voiceId: z.string().max(120).optional(),
+          speechModel: z.string().max(64).optional(),
         }),
       )
       .output(VoiceCredentialSchema),
@@ -833,6 +834,9 @@ export const appContract = {
     setVoice: oc
       .input(z.object({ voiceId: z.string().min(1).max(120), provider: z.string().optional() }))
       .output(VoiceStatusSchema),
+    setSpeechModel: oc
+      .input(z.object({ provider: z.string().min(1), speechModel: z.string().max(64) }))
+      .output(VoiceCredentialSchema),
     voices: oc
       .input(z.object({ provider: z.string().optional() }))
       .output(z.array(VoiceInfoSchema)),

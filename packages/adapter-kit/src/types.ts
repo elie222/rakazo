@@ -209,6 +209,7 @@ export interface ConnectorTool {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
+  /** Declared effect. `false` forces approval; `true` never relaxes the name-based gate. */
   readOnly?: boolean;
   /** In-process routing metadata. It is never exposed to the model. */
   route?: ConnectorRoute;
@@ -524,6 +525,8 @@ export interface VoiceSynthesizeRequest {
   text: string;
   voiceId: string;
   apiKey: string;
+  /** Connection speech model. Fish uses this, then `FISH_TTS_MODEL`, then s2.1-pro. */
+  model?: string;
   signal?: AbortSignal;
 }
 

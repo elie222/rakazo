@@ -4,7 +4,13 @@ import path from "node:path";
 import { Readable } from "node:stream";
 import { resolveSupervisorToken } from "@rakazo/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { COMPUTER_IMAGE, computerNetworkNameFor, hostComputerUser } from "./computer-spec.js";
+import {
+  COMPUTER_IMAGE,
+  computerBridgeNameFor,
+  computerNetworkNameFor,
+  containerNameFor,
+  hostComputerUser,
+} from "./computer-spec.js";
 
 const mocks = vi.hoisted(() => ({
   docker: {
@@ -14,6 +20,7 @@ const mocks = vi.hoisted(() => ({
     listContainers: vi.fn(),
     createContainer: vi.fn(),
     createNetwork: vi.fn(),
+    getNetwork: vi.fn(),
   },
   assertHomeWritable: vi.fn(),
 }));
@@ -25,6 +32,7 @@ vi.mock("dockerode", () => ({
     listContainers = mocks.docker.listContainers;
     createContainer = mocks.docker.createContainer;
     createNetwork = mocks.docker.createNetwork;
+    getNetwork = mocks.docker.getNetwork;
   },
 }));
 vi.mock("./home-ownership.js", () => ({ assertComputerHomeWritable: mocks.assertHomeWritable }));
@@ -240,7 +248,10 @@ describe("computer loopback provision lifecycle", () => {
         PortBindings: { "7070/tcp": hosts.map((HostIp) => ({ HostIp, HostPort: "0" })) },
       },
       State: { Running: false },
-      NetworkSettings: { Ports: { "6080/tcp": [{ HostIp: "127.0.0.1", HostPort: screenPort }] } },
+      NetworkSettings: {
+        Ports: { "6080/tcp": [{ HostIp: "127.0.0.1", HostPort: screenPort }] },
+        Networks: { [computerNetworkNameFor("bot")]: {} },
+      },
     };
     const existing = {
       id: "existing",
@@ -474,6 +485,182 @@ describe("provisioning network rollback", () => {
   });
 });
 
+describe("restricted egress rekeying", () => {
+  function setupExisting(botNet: string) {
+    const homePath = path.join(process.env.DATA_DIR!, "homes", "bot");
+    const info = {
+      Image: "test-image-id",
+      Config: {
+        User: hostComputerUser(),
+        Labels: { "rakazo.managed": "true", "rakazo.botId": "bot", "rakazo.spaceId": "space" },
+      },
+      HostConfig: { NetworkMode: botNet, PortBindings: {} },
+      State: { Running: false },
+      NetworkSettings: {
+        Ports: { "6080/tcp": [{ HostIp: "127.0.0.1", HostPort: screenPort }] },
+        Networks: { [botNet]: {} },
+      },
+    };
+    const existing = {
+      id: "existing",
+      inspect: vi.fn().mockResolvedValue(info),
+      start: vi.fn().mockResolvedValue(undefined),
+      remove: vi.fn().mockResolvedValue(undefined),
+    };
+    const replacement = {
+      id: "replacement",
+      inspect: vi.fn().mockResolvedValue(info),
+      start: vi.fn().mockResolvedValue(undefined),
+      remove: vi.fn().mockResolvedValue(undefined),
+    };
+    mocks.docker.getImage.mockReturnValue({
+      inspect: vi.fn().mockResolvedValue({ Id: info.Image }),
+    });
+    mocks.docker.getContainer.mockReturnValue(existing);
+    mocks.docker.listContainers.mockResolvedValue([{ Id: existing.id }]);
+    mocks.docker.createContainer.mockResolvedValue(replacement);
+    return { homePath, existing, replacement };
+  }
+
+  async function provision() {
+    const { supervisorApp } = await import("./index.js");
+    const homePath = path.join(process.env.DATA_DIR!, "homes", "bot");
+    return supervisorApp.request("/computers", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${resolveSupervisorToken(process.env)}`,
+        "content-type": "application/json",
+        "x-rakazo-bot-id": "bot",
+        "x-rakazo-space-id": "space",
+      },
+      body: JSON.stringify({ botId: "bot", spaceId: "space", homePath }),
+    });
+  }
+
+  it("replaces a computer whose network lacks the named bridge", async () => {
+    vi.stubEnv("SANDBOX_COMPUTER_EGRESS", "restricted");
+    const botNet = computerNetworkNameFor("bot");
+    const { existing } = setupExisting(botNet);
+    const network = {
+      inspect: vi.fn().mockResolvedValue({ Options: {} }),
+      disconnect: vi.fn().mockResolvedValue(undefined),
+      connect: vi.fn().mockResolvedValue(undefined),
+      remove: vi.fn().mockResolvedValue(undefined),
+    };
+    mocks.docker.getNetwork.mockReturnValue(network);
+    mocks.docker.createNetwork.mockResolvedValue({});
+
+    const response = await provision();
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ resumed: false, id: "replacement" });
+    expect(existing.remove).toHaveBeenCalledWith({ force: true });
+    expect(existing.start).not.toHaveBeenCalled();
+  });
+
+  it("resumes a computer whose network has the named bridge", async () => {
+    vi.stubEnv("SANDBOX_COMPUTER_EGRESS", "restricted");
+    const botNet = computerNetworkNameFor("bot");
+    const { existing } = setupExisting(botNet);
+    const network = {
+      inspect: vi.fn().mockResolvedValue({
+        Options: { "com.docker.network.bridge.name": computerBridgeNameFor("bot") },
+      }),
+      disconnect: vi.fn().mockResolvedValue(undefined),
+      connect: vi.fn().mockResolvedValue(undefined),
+      remove: vi.fn().mockResolvedValue(undefined),
+    };
+    mocks.docker.getNetwork.mockReturnValue(network);
+    mocks.docker.createNetwork.mockResolvedValue({});
+
+    const response = await provision();
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ resumed: true, id: "existing" });
+    expect(existing.start).toHaveBeenCalledOnce();
+    expect(mocks.docker.createContainer).not.toHaveBeenCalled();
+    expect(mocks.docker.createNetwork).not.toHaveBeenCalled();
+  });
+
+  it("stops the computer instead of restoring unrestricted egress when rekey removal fails", async () => {
+    vi.stubEnv("SANDBOX_COMPUTER_EGRESS", "restricted");
+    const botNet = computerNetworkNameFor("bot");
+    const { existing } = setupExisting(botNet);
+    const stop = vi.fn().mockResolvedValue(undefined);
+    const kill = vi.fn().mockResolvedValue(undefined);
+    Object.assign(existing, { stop, kill });
+    const peer = {
+      inspect: vi.fn().mockResolvedValue({ Config: { Labels: { "rakazo.botId": "other" } } }),
+      stop: vi.fn().mockResolvedValue(undefined),
+      kill: vi.fn().mockResolvedValue(undefined),
+    };
+    mocks.docker.getContainer.mockImplementation((id: string) => (id === "peer" ? peer : existing));
+    const network = {
+      inspect: vi.fn().mockResolvedValue({
+        Options: {},
+        Containers: { existing: {}, peer: {} },
+      }),
+      disconnect: vi.fn().mockResolvedValue(undefined),
+      connect: vi.fn().mockResolvedValue(undefined),
+      remove: vi.fn().mockRejectedValue(new Error("network has active endpoints")),
+    };
+    mocks.docker.getNetwork.mockReturnValue(network);
+    mocks.docker.createNetwork.mockRejectedValue(new Error("network already exists"));
+
+    const response = await provision();
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({
+      error: expect.stringContaining("failed to replace unrestricted network"),
+    });
+    for (const id of ["existing", "peer"]) {
+      expect(network.disconnect).toHaveBeenCalledWith({ Container: id, Force: true });
+    }
+    expect(network.connect).not.toHaveBeenCalled();
+    expect(stop).toHaveBeenCalledWith({ t: 1 });
+    expect(peer.stop).not.toHaveBeenCalled();
+    expect(existing.remove).not.toHaveBeenCalled();
+    expect(existing.start).not.toHaveBeenCalled();
+  });
+
+  it("stops the named computer when endpoint inspection fails during rekey", async () => {
+    vi.stubEnv("SANDBOX_COMPUTER_EGRESS", "restricted");
+    const botNet = computerNetworkNameFor("bot");
+    const { existing } = setupExisting(botNet);
+    const info = await existing.inspect();
+    let seen = 0;
+    existing.inspect.mockImplementation(async () => {
+      seen += 1;
+      if (seen > 2) throw new Error("inspect failed");
+      return info;
+    });
+    const stop = vi.fn().mockResolvedValue(undefined);
+    const kill = vi.fn().mockResolvedValue(undefined);
+    Object.assign(existing, { stop, kill });
+    const peer = {
+      inspect: vi.fn().mockResolvedValue({ Config: { Labels: { "rakazo.botId": "other" } } }),
+      stop: vi.fn().mockResolvedValue(undefined),
+      kill: vi.fn().mockResolvedValue(undefined),
+    };
+    mocks.docker.getContainer.mockImplementation((id: string) => (id === "peer" ? peer : existing));
+    const network = {
+      inspect: vi.fn().mockResolvedValue({
+        Options: {},
+        Containers: { existing: {}, peer: {} },
+      }),
+      disconnect: vi.fn().mockResolvedValue(undefined),
+      connect: vi.fn().mockResolvedValue(undefined),
+      remove: vi.fn().mockRejectedValue(new Error("network has active endpoints")),
+    };
+    mocks.docker.getNetwork.mockReturnValue(network);
+    mocks.docker.createNetwork.mockRejectedValue(new Error("network already exists"));
+
+    const response = await provision();
+    expect(response.status).toBe(500);
+    expect(network.connect).not.toHaveBeenCalled();
+    expect(mocks.docker.getContainer).toHaveBeenCalledWith(containerNameFor("bot"));
+    expect(stop).toHaveBeenCalledWith({ t: 1 });
+    expect(peer.stop).not.toHaveBeenCalled();
+  });
+});
+
 describe("space computer limit enforcement", () => {
   function setupContainerFixture() {
     const network = { remove: vi.fn().mockResolvedValue(undefined) };
@@ -581,6 +768,7 @@ describe("space computer limit enforcement", () => {
           PortBindings: {},
           Mounts: [],
         },
+        NetworkSettings: { Networks: { [computerNetworkNameFor("bot-existing")]: {} } },
       }),
       start: vi.fn().mockResolvedValue(undefined),
     };
@@ -614,6 +802,67 @@ describe("space computer limit enforcement", () => {
       resumed: true,
     });
     expect(mocks.docker.createContainer).not.toHaveBeenCalled();
+  });
+
+  it("replaces a running container that lost its network attachment", async () => {
+    setupContainerFixture();
+
+    // A named network deleted out from under a container (e.g. a failed rekey)
+    // leaves HostConfig.NetworkMode set while NetworkSettings has no endpoint —
+    // resuming it would report success with zero connectivity, so it must be
+    // replaced instead.
+    const existing = {
+      id: "detached-container",
+      inspect: vi.fn().mockResolvedValue({
+        Image: "image",
+        Config: {
+          User: hostComputerUser(process.getuid?.(), process.getgid?.()),
+          Labels: {
+            "rakazo.managed": "true",
+            "rakazo.botId": "bot-detached",
+            "rakazo.spaceId": "space-1",
+          },
+        },
+        State: { Running: true },
+        HostConfig: {
+          NetworkMode: computerNetworkNameFor("bot-detached"),
+          PortBindings: {},
+          Mounts: [],
+        },
+        NetworkSettings: { Networks: {} },
+      }),
+      start: vi.fn().mockResolvedValue(undefined),
+      remove: vi.fn().mockResolvedValue(undefined),
+    };
+
+    mocks.docker.getContainer.mockReturnValue(existing);
+    mocks.docker.listContainers.mockImplementation(
+      async (opts?: { filters?: { label?: string[] } }) => {
+        const labels = opts?.filters?.label ?? [];
+        if (labels.some((l: string) => l === "rakazo.botId=bot-detached")) {
+          return [
+            {
+              Id: existing.id,
+              Labels: {
+                "rakazo.managed": "true",
+                "rakazo.botId": "bot-detached",
+                "rakazo.spaceId": "space-1",
+              },
+            },
+          ];
+        }
+        return [];
+      },
+    );
+
+    const response = await provisionBot("bot-detached", "space-1");
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      id: "new-container-id",
+      resumed: false,
+    });
+    expect(existing.remove).toHaveBeenCalledWith({ force: true });
+    expect(mocks.docker.createContainer).toHaveBeenCalled();
   });
 
   it("counts legacy workspaceId COMPUTER_IMAGE containers toward the limit", async () => {

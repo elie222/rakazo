@@ -1,4 +1,9 @@
-import type { BackgroundJob, JobPublisher, SandboxProvider } from "@rakazo/adapter-kit";
+import type {
+  AdapterContext,
+  BackgroundJob,
+  JobPublisher,
+  SandboxProvider,
+} from "@rakazo/adapter-kit";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { describe, expect, it, vi } from "vitest";
@@ -9,6 +14,7 @@ import {
   extendActiveComputerControl,
   hasActiveComputerControl,
   isIdleOwnComputerTakeover,
+  revokeScreenControl,
   takeoverLeaseMs,
   teachingControlLeaseExpiresAt,
 } from "./computer-control.js";
@@ -161,6 +167,47 @@ describe("computer control leases", () => {
     expect(harness.events.finalizeComputerControlRelease).not.toHaveBeenCalled();
   });
 
+  it("releases the lease and drops the dead ref when the sandbox is already gone", async () => {
+    const harness = controlHarness({
+      revokeError: Object.assign(new Error("No such container"), {
+        name: "SandboxNotFoundError",
+      }),
+    });
+
+    await expect(expireComputerControl(harness.deps, "computer-id", "lease-1")).resolves.toBe(true);
+
+    expect(harness.prisma.computer.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: "computer-id",
+        providerRef: "computer",
+        state: { notIn: ["booting", "suspending"] },
+        controlLeaseId: "lease-1",
+      },
+      data: { state: "stopped", providerRef: null },
+    });
+    expect(harness.events.finalizeComputerControlRelease).toHaveBeenCalledWith(
+      expect.objectContaining({ leaseId: "lease-1", reason: "expired" }),
+    );
+  });
+
+  it("clears an orphaned lease instead of rescheduling when the sandbox is gone", async () => {
+    const harness = controlHarness({
+      controlBotId: null,
+      revokeError: Object.assign(new Error("No such container"), {
+        name: "SandboxNotFoundError",
+      }),
+    });
+
+    await expect(expireComputerControl(harness.deps, "computer-id", "lease-1")).resolves.toBe(true);
+
+    expect(harness.prisma.computer.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ controlLeaseId: null, controlHolder: "none" }),
+      }),
+    );
+    expect(harness.enqueue).not.toHaveBeenCalled();
+  });
+
   it("retries atomic lease cleanup when release-event persistence fails", async () => {
     const harness = controlHarness({ finalizeError: new Error("event unavailable") });
 
@@ -179,6 +226,104 @@ describe("computer control leases", () => {
     );
     expect(harness.setScreenControl).not.toHaveBeenCalled();
     expect(harness.prisma.computer.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("revokes screen control, counting a gone sandbox as released", async () => {
+    const updateMany = vi.fn().mockResolvedValue({ count: 1 });
+    const prisma = { computer: { updateMany } } as unknown as PrismaClient;
+    const setScreenControl = vi
+      .fn()
+      .mockRejectedValue(
+        Object.assign(new Error("No such container"), { name: "SandboxNotFoundError" }),
+      );
+    const sandbox = { setScreenControl } as unknown as SandboxProvider;
+    const computer = {
+      id: "computer-1",
+      homeKey: "bot-1",
+      kind: "docker",
+      providerRef: "provider-1",
+    };
+    const context = {
+      operationId: "op",
+      traceId: "op",
+      spaceId: "workspace",
+      userId: "user",
+      signal: new AbortController().signal,
+    };
+
+    await revokeScreenControl({ prisma, sandbox }, computer, context, "lease-1");
+
+    expect(setScreenControl).toHaveBeenCalledWith(
+      expect.objectContaining({ providerRef: "provider-1" }),
+      false,
+      context,
+      "lease-1",
+    );
+    expect(updateMany).toHaveBeenCalledWith({
+      where: {
+        id: "computer-1",
+        providerRef: "provider-1",
+        state: { notIn: ["booting", "suspending"] },
+        controlLeaseId: "lease-1",
+      },
+      data: { state: "stopped", providerRef: null },
+    });
+  });
+
+  it("rethrows a live-sandbox revoke failure and leaves the ref alone", async () => {
+    const updateMany = vi.fn().mockResolvedValue({ count: 1 });
+    const prisma = { computer: { updateMany } } as unknown as PrismaClient;
+    const setScreenControl = vi.fn().mockRejectedValue(new Error("provider unavailable"));
+    const sandbox = { setScreenControl } as unknown as SandboxProvider;
+    const computer = {
+      id: "computer-1",
+      homeKey: "bot-1",
+      kind: "docker",
+      providerRef: "provider-1",
+    };
+
+    await expect(
+      revokeScreenControl({ prisma, sandbox }, computer, contextStub(), "lease-1"),
+    ).rejects.toThrow("provider unavailable");
+    expect(updateMany).not.toHaveBeenCalled();
+  });
+
+  it("keeps the dead ref for a mid-replacement revoke on a gone sandbox", async () => {
+    const updateMany = vi.fn().mockResolvedValue({ count: 1 });
+    const prisma = { computer: { updateMany } } as unknown as PrismaClient;
+    const setScreenControl = vi
+      .fn()
+      .mockRejectedValue(
+        Object.assign(new Error("No such container"), { name: "SandboxNotFoundError" }),
+      );
+    const sandbox = { setScreenControl } as unknown as SandboxProvider;
+    const computer = {
+      id: "computer-1",
+      homeKey: "bot-1",
+      kind: "docker",
+      providerRef: "provider-1",
+    };
+
+    await revokeScreenControl({ prisma, sandbox }, computer, contextStub(), "lease-1", {
+      clearGoneRef: false,
+    });
+
+    expect(updateMany).not.toHaveBeenCalled();
+  });
+
+  it("skips the provider entirely when the computer has no ref", async () => {
+    const prisma = { computer: { updateMany: vi.fn() } } as unknown as PrismaClient;
+    const setScreenControl = vi.fn();
+    const sandbox = { setScreenControl } as unknown as SandboxProvider;
+
+    await revokeScreenControl(
+      { prisma, sandbox },
+      { id: "computer-1", homeKey: "bot-1", kind: "docker", providerRef: null },
+      contextStub(),
+      "lease-1",
+    );
+
+    expect(setScreenControl).not.toHaveBeenCalled();
   });
 
   it("clears stale user control when the lease is empty or expired", async () => {
@@ -309,6 +454,16 @@ describe("teaching control lease extension", () => {
     expect(harness.enqueue).toHaveBeenCalled();
   });
 });
+
+function contextStub(): AdapterContext {
+  return {
+    operationId: "op",
+    traceId: "op",
+    spaceId: "workspace",
+    userId: "user",
+    signal: new AbortController().signal,
+  };
+}
 
 function controlHarness(
   options: {

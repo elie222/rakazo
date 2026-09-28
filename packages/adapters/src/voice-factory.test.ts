@@ -1,3 +1,4 @@
+import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CartesiaVoiceProvider } from "./cartesia-voice.js";
 import { ElevenLabsVoiceProvider } from "./elevenlabs-voice.js";
@@ -15,7 +16,7 @@ import {
   listVoiceCatalog,
   VOICE_CATALOG,
 } from "./voice-factory.js";
-import { MAX_SYNTHESIZED_AUDIO_BYTES } from "./voice-http.js";
+import { MAX_SYNTHESIZED_AUDIO_BYTES, MAX_VOICE_JSON_BYTES } from "./voice-http.js";
 
 const ctx = {
   operationId: "voice",
@@ -32,6 +33,7 @@ afterEach(() => {
   vi.unstubAllEnvs();
   if (previousRuntime === undefined) delete process.env.AGENT_RUNTIME;
   else process.env.AGENT_RUNTIME = previousRuntime;
+  installLogger(createLogger({ service: "rakazo", level: "off", sinks: [] }));
 });
 
 describe("createVoiceProvider", () => {
@@ -430,6 +432,186 @@ describe("FishAudioVoiceProvider", () => {
       reference_id: "voice-id",
       format: "mp3",
     });
+  });
+
+  it("sends FISH_TTS_MODEL when the key cannot use s2.1-pro", async () => {
+    vi.stubEnv("FISH_TTS_MODEL", "s1");
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      arrayBuffer: async () => new Uint8Array([1]).buffer,
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await new FishAudioVoiceProvider().synthesize(
+      { text: "Hi", voiceId: "voice-id", apiKey: "sk-test" },
+      ctx,
+    );
+
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    expect((init.headers as Record<string, string>).model).toBe("s1");
+  });
+
+  it("uses the connection speech model instead of FISH_TTS_MODEL", async () => {
+    vi.stubEnv("FISH_TTS_MODEL", "s1");
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      arrayBuffer: async () => new Uint8Array([1]).buffer,
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await new FishAudioVoiceProvider().synthesize(
+      { text: "Hi", voiceId: "voice-id", apiKey: "sk-test", model: "s2-pro" },
+      ctx,
+    );
+    await new FishAudioVoiceProvider().synthesize(
+      { text: "Hi", voiceId: "voice-id", apiKey: "sk-other", model: "s1" },
+      ctx,
+    );
+
+    const headers = (call: number) => {
+      const init = fetchMock.mock.calls[call]?.[1] as RequestInit | undefined;
+      return (init?.headers ?? {}) as Record<string, string>;
+    };
+    expect(headers(0).model).toBe("s2-pro");
+    expect(headers(1).model).toBe("s1");
+  });
+
+  it("ignores a connection speech model that is not a model id", async () => {
+    vi.stubEnv("FISH_TTS_MODEL", "s1");
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      arrayBuffer: async () => new Uint8Array([1]).buffer,
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await new FishAudioVoiceProvider().synthesize(
+      { text: "Hi", voiceId: "voice-id", apiKey: "sk-test", model: "s2\ninjected" },
+      ctx,
+    );
+
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    expect((init.headers as Record<string, string>).model).toBe("s1");
+  });
+
+  it("keeps s2.1-pro when FISH_TTS_MODEL is not a model id", async () => {
+    vi.stubEnv("FISH_TTS_MODEL", "s1\ninjected");
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      arrayBuffer: async () => new Uint8Array([1]).buffer,
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await new FishAudioVoiceProvider().synthesize(
+      { text: "Hi", voiceId: "voice-id", apiKey: "sk-test" },
+      ctx,
+    );
+
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    expect((init.headers as Record<string, string>).model).toBe("s2.1-pro");
+  });
+
+  it("logs the upstream Fish status and message without the API key", async () => {
+    const apiKey = "sk-fishaudiokey12345";
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
+    vi.stubEnv("FISH_TTS_MODEL", "s1");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            message: `model s1 is not enabled for ${apiKey}`,
+            status: 502,
+          }),
+          { status: 502, headers: { "content-type": "application/json" } },
+        ),
+      ),
+    );
+
+    const error = await new FishAudioVoiceProvider()
+      .synthesize({ text: "Hi", voiceId: "voice-id", apiKey }, ctx)
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toBe(
+      "speaking failed: model s1 is not enabled for [Redacted]",
+    );
+    expect((error as Error).message).not.toContain(apiKey);
+
+    const event = sink.events.find((entry) => entry.message === "Fish Audio request failed");
+    expect(event).toMatchObject({
+      provider: "fish-audio",
+      operation: "speaking",
+      "http.status": 502,
+      "fish.model": "s1",
+      "error.detail": "model s1 is not enabled for [Redacted]",
+    });
+    expect(JSON.stringify(event)).not.toContain(apiKey);
+  });
+
+  it.each([
+    [
+      "speaking",
+      (provider: FishAudioVoiceProvider) =>
+        provider.synthesize({ text: "Hi", voiceId: "voice-id", apiKey: "sk-test" }, ctx),
+    ],
+    [
+      "transcribing",
+      (provider: FishAudioVoiceProvider) =>
+        provider.transcribe!(
+          { audio: new Uint8Array([1]), mimeType: "audio/webm", apiKey: "sk-test" },
+          ctx,
+        ),
+    ],
+    ["listing voices", (provider: FishAudioVoiceProvider) => provider.listVoices("sk-test", ctx)],
+  ])("logs Fish %s status when the error body cannot be read", async (operation, call) => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
+    const cancel = vi.fn(() => new Promise<void>(() => undefined));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(
+        () =>
+          new Response(new ReadableStream({ cancel }), {
+            status: 502,
+            headers: { "content-length": String(MAX_VOICE_JSON_BYTES + 1) },
+          }),
+      ),
+    );
+
+    await expect(call(new FishAudioVoiceProvider())).rejects.toThrow(
+      `${operation} failed: Voice response is too large.`,
+    );
+
+    const event = sink.events.find((entry) => entry.message === "Fish Audio request failed");
+    expect(event).toMatchObject({
+      operation,
+      "http.status": 502,
+      "error.detail": "Voice response is too large.",
+    });
+    expect(cancel).toHaveBeenCalled();
+  });
+
+  it("logs a non-JSON Fish body when speaking fails", async () => {
+    const apiKey = "sk-fishaudiokey12345";
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response(`gateway down ${apiKey}`, { status: 502 })),
+    );
+
+    await expect(
+      new FishAudioVoiceProvider().synthesize({ text: "Hi", voiceId: "voice-id", apiKey }, ctx),
+    ).rejects.toThrow("speaking failed (502)");
+
+    const event = sink.events.find((entry) => entry.message === "Fish Audio request failed");
+    expect(event).toMatchObject({
+      "http.status": 502,
+      "error.detail": "gateway down [Redacted]",
+      "fish.model": "s2.1-pro",
+    });
+    expect(JSON.stringify(event)).not.toContain(apiKey);
   });
 
   it("transcribes through Fish Audio ASR", async () => {
