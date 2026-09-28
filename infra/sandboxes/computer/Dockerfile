@@ -49,8 +49,27 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   && printf '%s\n' '#!/bin/sh' 'exec xsetroot -solid "#111113" "$@"' > /usr/bin/fbsetbg \
   && chmod +x /usr/bin/fbsetbg \
   && ln -sfn /bin/true /usr/bin/xmessage
+ARG TARGETARCH
+ARG UV_VERSION=0.12.19
+RUN set -eux; \
+  case "$TARGETARCH" in \
+    amd64) uv_arch=x86_64; uv_sha256=23bf5552d220e0842b65c862097b2ebaeba0064b74eda5e565e77fd25969d8c8 ;; \
+    arm64) uv_arch=aarch64; uv_sha256=0804e9b164c64b6914182d5920c08551958a095986f10a3731056df701126436 ;; \
+    *) echo "unsupported TARGETARCH: $TARGETARCH" >&2; exit 1 ;; \
+  esac; \
+  archive="$(mktemp)"; \
+  curl -fsSL "https://releases.astral.sh/github/uv/releases/download/${UV_VERSION}/uv-${uv_arch}-unknown-linux-gnu.tar.gz" -o "$archive"; \
+  echo "$uv_sha256  $archive" | sha256sum -c -; \
+  tar -xzf "$archive" -C /usr/local/bin --strip-components=1 "uv-${uv_arch}-unknown-linux-gnu/uv" "uv-${uv_arch}-unknown-linux-gnu/uvx"; \
+  rm -f "$archive"; \
+  uv --version; \
+  uvx --version
 ENV DISPLAY=:1
 ENV HOME=/home/rakazo
+ENV UV_TOOL_DIR=/home/rakazo/.local/share/uv/tools \
+    UV_TOOL_BIN_DIR=/home/rakazo/.local/bin \
+    UV_PYTHON_INSTALL_DIR=/home/rakazo/.local/share/uv/python \
+    UV_CACHE_DIR=/home/rakazo/.cache/uv
 WORKDIR /home/rakazo
 # --chmod normalizes modes: a restrictive host umask (e.g. 077 on hardened hosts) would
 # otherwise leave these files unreadable to USER 1000 at runtime.

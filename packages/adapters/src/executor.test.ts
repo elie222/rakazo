@@ -6,6 +6,7 @@ import {
   appendToolCompletionAudit,
   createRunExecutor,
   createRunWorkspaceCheckpoint,
+  dockerComputerPackageInstruction,
   loadCurrentTurnImages,
   missingTurnImagesInstruction,
   parseUpdateBotPatch,
@@ -1053,6 +1054,14 @@ describe("userTurnInstructions", () => {
       archiveBot,
       ...stableTail,
     ]);
+  });
+});
+
+describe("dockerComputerPackageInstruction", () => {
+  it("documents rootless Python tool installation only for Docker computers", () => {
+    expect(dockerComputerPackageInstruction("docker")).toContain("uv tool install <package>");
+    expect(dockerComputerPackageInstruction("docker")).toContain("without sudo");
+    expect(dockerComputerPackageInstruction("e2b")).toBeUndefined();
   });
 });
 
