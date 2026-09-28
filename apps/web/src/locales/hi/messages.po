@@ -2540,6 +2540,10 @@ msgstr "कोई प्रमाणीकरण नहीं"
 msgid "No authentication"
 msgstr "कोई प्रमाणीकरण नहीं"
 
+#: src/components/computer/TerminalApp.tsx
+msgid "No bot activity yet."
+msgstr "अभी तक कोई बॉट गतिविधि नहीं।"
+
 #: src/pages/shell/command-palette.tsx
 msgid "No bots"
 msgstr ""

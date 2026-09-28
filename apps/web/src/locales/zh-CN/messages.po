@@ -2540,6 +2540,10 @@ msgstr "无认证"
 msgid "No authentication"
 msgstr "无认证"
 
+#: src/components/computer/TerminalApp.tsx
+msgid "No bot activity yet."
+msgstr "还没有机器人活动。"
+
 #: src/pages/shell/command-palette.tsx
 msgid "No bots"
 msgstr ""

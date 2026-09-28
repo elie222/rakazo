@@ -1,6 +1,13 @@
 import { readFile } from "node:fs/promises";
 import { expect, type Page, test } from "@playwright/test";
-import { activeBotId, captureScreenshot, completeOnboarding, rpc, signup } from "./helpers";
+import {
+  activeBotId,
+  captureScreenshot,
+  completeOnboarding,
+  realSandboxTimeout,
+  rpc,
+  signup,
+} from "./helpers";
 
 async function openComputer(page: Page) {
   const screenUrl = "https://screen.example/vnc.html";
@@ -127,6 +134,16 @@ test("the terminal shows the bot's shell commands and file actions live and afte
   await expect
     .poll(async () => ((await terminal.textContent()) ?? "").split("$ echo").length - 1)
     .toBe(1);
+  // The shell line is live before that run finishes. Sending now would queue
+  // steering, and the scripted continuation would not run the file request.
+  await expect
+    .poll(
+      async () =>
+        (await rpc<{ run: { status: string } | null }>(page, "threads/get", { botId })).run
+          ?.status ?? "idle",
+      { timeout: realSandboxTimeout(90_000, 30_000) },
+    )
+    .toBe("idle");
   // File tools show up too, not only shell commands.
   await expect
     .poll(

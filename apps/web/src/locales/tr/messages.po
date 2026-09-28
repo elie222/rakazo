@@ -2540,6 +2540,10 @@ msgstr "kimlik doğrulamasız"
 msgid "No authentication"
 msgstr "Kimlik doğrulaması yok"
 
+#: src/components/computer/TerminalApp.tsx
+msgid "No bot activity yet."
+msgstr "Henüz bot etkinliği yok."
+
 #: src/pages/shell/command-palette.tsx
 msgid "No bots"
 msgstr ""

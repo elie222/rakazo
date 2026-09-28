@@ -4,6 +4,7 @@ import {
   applyComputerCommandHistory,
   COMPUTER_COMMAND_FEED_LIMIT,
   formatComputerCommand,
+  formatComputerCommandFeed,
   formatSize,
   mergeComputerCommand,
   parentPath,
@@ -67,6 +68,15 @@ describe("computer terminal feed", () => {
         labels,
       ),
     ).toBe("\x1b[2m↗\x1b[0m Launched firefox\r\n");
+  });
+
+  it("renders a dim placeholder instead of a blank terminal when the feed is empty", () => {
+    expect(formatComputerCommandFeed([], labels, "No bot activity yet.")).toBe(
+      "\x1b[2mNo bot activity yet.\x1b[0m\r\n",
+    );
+    expect(formatComputerCommandFeed([command()], labels, "No bot activity yet.")).toBe(
+      "\x1b[1m$ ls\x1b[0m\r\na\r\nb\r\n",
+    );
   });
 
   it("keeps the history page and live commands that are not in it yet", () => {

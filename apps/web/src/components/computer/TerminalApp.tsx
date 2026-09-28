@@ -8,7 +8,7 @@ import {
   applyComputerCommandHistory,
   type ComputerActionLabels,
   capComputerCommands,
-  formatComputerCommand,
+  formatComputerCommandFeed,
   mergeComputerCommand,
   subscribeComputerCommands,
 } from "../../lib/computer-workspace";
@@ -31,6 +31,9 @@ export default function TerminalApp({ botId }: { botId: string }) {
     // Live commands since the last history page. The page replaces memory, so
     // events the API has already dropped are not kept on the next refresh.
     let pending: ComputerCommand[] = [];
+    // The first history fetch has not landed yet, so an empty feed still means
+    // loading rather than a bot that never ran a command.
+    let loaded = false;
     let cancelled = false;
     const labels: ComputerActionLabels = {
       write_file: (path) => t`Wrote ${path}`,
@@ -40,13 +43,16 @@ export default function TerminalApp({ botId }: { botId: string }) {
     };
     // Writes are queued, so clear in-band (ESC c) rather than with reset(), which runs
     // immediately and would let an earlier queued render land after it.
-    const render = () =>
+    const render = () => {
+      if (commands.length === 0 && !loaded) return;
       terminal.write(
-        `\x1bc${commands.map((command) => formatComputerCommand(command, labels)).join("")}`,
+        `\x1bc${formatComputerCommandFeed(commands, labels, t`No bot activity yet.`)}`,
       );
+    };
     const applyHistory = (history: ComputerCommand[]) => {
       commands = applyComputerCommandHistory(history, pending);
       pending = [];
+      loaded = true;
       render();
     };
     const unsubscribe = subscribeComputerCommands((eventBotId, command) => {

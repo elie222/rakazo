@@ -2540,6 +2540,10 @@ msgstr "인증 없음"
 msgid "No authentication"
 msgstr "인증 없음"
 
+#: src/components/computer/TerminalApp.tsx
+msgid "No bot activity yet."
+msgstr "아직 봇 활동이 없습니다."
+
 #: src/pages/shell/command-palette.tsx
 msgid "No bots"
 msgstr ""

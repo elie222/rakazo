@@ -95,6 +95,20 @@ export function formatComputerCommand(command: ComputerCommand, labels: Computer
   return `${lines.join("\n").replace(/\r?\n/g, "\r\n")}\r\n`;
 }
 
+/**
+ * The whole feed body. A bot that has never run a command would otherwise
+ * render as a blank terminal, indistinguishable from a pane that failed to
+ * load — show the settled empty state instead.
+ */
+export function formatComputerCommandFeed(
+  commands: readonly ComputerCommand[],
+  labels: ComputerActionLabels,
+  emptyFeed: string,
+) {
+  if (commands.length === 0) return `\x1b[2m${sanitizeTerminalText(emptyFeed)}\x1b[0m\r\n`;
+  return commands.map((command) => formatComputerCommand(command, labels)).join("");
+}
+
 export type ComputerFileEntry = { path: string; kind: "file" | "dir"; size: number };
 
 export function sortEntries(entries: ComputerFileEntry[]) {

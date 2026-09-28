@@ -2540,6 +2540,10 @@ msgstr "no auth"
 msgid "No authentication"
 msgstr "No authentication"
 
+#: src/components/computer/TerminalApp.tsx
+msgid "No bot activity yet."
+msgstr "No bot activity yet."
+
 #: src/pages/shell/command-palette.tsx
 msgid "No bots"
 msgstr "No bots"
