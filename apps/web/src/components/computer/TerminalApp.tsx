@@ -39,7 +39,7 @@ export default function TerminalApp({
 }: {
   botId: string;
   canUseShell: boolean;
-  onTakeControl?: () => Promise<void>;
+  onTakeControl?: () => Promise<boolean>;
 }) {
   const { t } = useLingui();
   const [view, setView] = useState<View>("activity");
@@ -82,7 +82,8 @@ export default function TerminalApp({
               setShellRequested(true);
               setTakingControl(true);
               try {
-                await onTakeControl();
+                // Forget the request if control never arrives, so the shell does not open later.
+                if (!(await onTakeControl())) setShellRequested(false);
               } finally {
                 setTakingControl(false);
               }
@@ -212,6 +213,7 @@ function ShellTerminal({ botId, hidden }: { botId: string; hidden: boolean }) {
           let openedAt = 0;
           current.onopen = () => {
             openedAt = Date.now();
+            setError(null);
             send(encodeTerminalResize(terminal.cols, terminal.rows));
             terminal.focus();
           };

@@ -1308,7 +1308,7 @@ msgstr ""
 
 #: src/components/computer/TerminalApp.tsx:218
 msgid "Could not open terminal"
-msgstr ""
+msgstr "Terminal açılamadı"
 
 #: src/pages/VoiceSettingsOverlay.tsx:158
 msgid "Could not play a test clip"
@@ -2817,7 +2817,7 @@ msgstr "Gezinmeyi aç"
 
 #: src/components/computer/TerminalApp.tsx:87
 msgid "Open shell"
-msgstr ""
+msgstr "Kabuğu aç"
 
 #: src/pages/ScratchpadSection.tsx:106
 msgid "Open work"
@@ -3518,7 +3518,7 @@ msgstr "Paylaşılan belgeler"
 
 #: src/components/computer/TerminalApp.tsx:68
 msgid "Shell"
-msgstr ""
+msgstr "Kabuk"
 
 #: src/pages/Shell.tsx:3316
 #: src/pages/Shell.tsx:3377

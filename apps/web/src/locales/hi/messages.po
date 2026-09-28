@@ -1308,7 +1308,7 @@ msgstr ""
 
 #: src/components/computer/TerminalApp.tsx:218
 msgid "Could not open terminal"
-msgstr ""
+msgstr "टर्मिनल नहीं खोला जा सका"
 
 #: src/pages/VoiceSettingsOverlay.tsx:158
 msgid "Could not play a test clip"
@@ -2817,7 +2817,7 @@ msgstr "नेविगेशन खोलें"
 
 #: src/components/computer/TerminalApp.tsx:87
 msgid "Open shell"
-msgstr ""
+msgstr "शेल खोलें"
 
 #: src/pages/ScratchpadSection.tsx:106
 msgid "Open work"
@@ -3518,7 +3518,7 @@ msgstr "साझा दस्तावेज़"
 
 #: src/components/computer/TerminalApp.tsx:68
 msgid "Shell"
-msgstr ""
+msgstr "शेल"
 
 #: src/pages/Shell.tsx:3316
 #: src/pages/Shell.tsx:3377

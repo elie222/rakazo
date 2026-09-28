@@ -28,8 +28,8 @@ export function ComputerWorkspace({
   botId: string;
   computer: ComputerStatus | null;
   hasControl: boolean;
-  /** Take control of the screen; absent while that is not possible (e.g. the bot is busy). */
-  onTakeControl?: () => Promise<void>;
+  /** Take control of the screen, resolving false on failure; absent while that is not possible. */
+  onTakeControl?: () => Promise<boolean>;
   /** Hidden while teaching so recording captures only the screen. */
   dock: boolean;
   children: ReactNode;

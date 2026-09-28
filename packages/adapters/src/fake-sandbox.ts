@@ -140,6 +140,11 @@ export class FakeSandboxProvider implements SandboxProvider {
     };
   }
 
+  /** Releasing control ends the terminal, as on real computers. */
+  async setScreenControl(computer: ComputerRef, interactive: boolean, _context: AdapterContext) {
+    if (!interactive) this.terminals.revoke(computer.id);
+  }
+
   async sendInput(
     computer: ComputerRef,
     input: ComputerInput,

@@ -1308,7 +1308,7 @@ msgstr ""
 
 #: src/components/computer/TerminalApp.tsx:218
 msgid "Could not open terminal"
-msgstr ""
+msgstr "无法打开终端"
 
 #: src/pages/VoiceSettingsOverlay.tsx:158
 msgid "Could not play a test clip"
@@ -2817,7 +2817,7 @@ msgstr "打开导航"
 
 #: src/components/computer/TerminalApp.tsx:87
 msgid "Open shell"
-msgstr ""
+msgstr "打开 Shell"
 
 #: src/pages/ScratchpadSection.tsx:106
 msgid "Open work"
@@ -3518,7 +3518,7 @@ msgstr "共享文档"
 
 #: src/components/computer/TerminalApp.tsx:68
 msgid "Shell"
-msgstr ""
+msgstr "Shell"
 
 #: src/pages/Shell.tsx:3316
 #: src/pages/Shell.tsx:3377

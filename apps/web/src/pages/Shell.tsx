@@ -601,7 +601,7 @@ export function ShellPage() {
   const computerOpenRef = useRef(false);
   const computerBotIdRef = useRef<string | undefined>(undefined);
   const computerBootEpoch = useRef(0);
-  const openComputerRef = useRef<(botId?: string) => Promise<void>>(async () => {});
+  const openComputerRef = useRef<(botId?: string) => Promise<boolean>>(async () => false);
   const [computerViewport, setComputerViewport] = useState<{
     height: number;
     offsetTop: number;
@@ -2534,11 +2534,12 @@ export function ShellPage() {
     return () => window.clearInterval(timer);
   }, [panel, computerOpen, computerBot?.id, active?.id, computer?.state]);
 
+  /** Open the computer view, taking control when possible. Resolves false if booting failed. */
   async function openComputer(botId?: string) {
     const id = botId ?? active?.id;
-    if (!id) return;
+    if (!id) return false;
     const bot = botsRef.current.find((candidate) => candidate.id === id);
-    if (!bot) return;
+    if (!bot) return false;
     computerBotIdRef.current = id;
     setComputerBotId(id);
     const cached = computerCacheRef.current.get(id);
@@ -2559,8 +2560,10 @@ export function ShellPage() {
         overlay: (needsTakeover && !blocked) || targetComputer?.state !== "running",
         force: targetComputer?.state !== "running",
       });
+      return true;
     } catch {
       // computerError already set in bootComputer
+      return false;
     }
   }
   openComputerRef.current = openComputer;
