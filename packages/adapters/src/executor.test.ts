@@ -1058,9 +1058,10 @@ describe("userTurnInstructions", () => {
 });
 
 describe("dockerComputerPackageInstruction", () => {
-  it("documents rootless Python tool installation only for Docker computers", () => {
+  it("documents rootless Python tool installation only for Docker images", () => {
     expect(dockerComputerPackageInstruction("docker")).toContain("uv tool install <package>");
     expect(dockerComputerPackageInstruction("docker")).toContain("without sudo");
+    expect(dockerComputerPackageInstruction("desktop")).toBeUndefined();
     expect(dockerComputerPackageInstruction("e2b")).toBeUndefined();
   });
 });

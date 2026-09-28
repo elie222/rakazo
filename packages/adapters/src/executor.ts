@@ -1642,9 +1642,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             : graphical
               ? `You have a persistent computer filesystem and shell. ${MODEL_CANNOT_SEE_MESSAGE} Desktop observe and act tools are unavailable until a vision-capable model is selected. Use the file tools and shell.`
               : "You have a persistent sandbox filesystem and shell. This backend does not provide model-visible graphical control, so use the file tools and shell.";
-        const dockerPackageInstruction = dockerComputerPackageInstruction(
-          deps.sandbox.describe().id,
-        );
+        const dockerPackageInstruction = dockerComputerPackageInstruction(computer.kind);
         const computerInstruction = dockerPackageInstruction
           ? `${baseComputerInstruction} ${dockerPackageInstruction}`
           : baseComputerInstruction;
@@ -4670,8 +4668,8 @@ export function filterPageBrowserTools<T extends { name: string }>(
   return tools.filter((tool) => !PAGE_BROWSER_TOOL_NAMES.has(tool.name));
 }
 
-export function dockerComputerPackageInstruction(providerId: string): string | undefined {
-  if (providerId !== "docker") return undefined;
+export function dockerComputerPackageInstruction(computerKind: string): string | undefined {
+  if (computerKind !== "docker") return undefined;
   return "For Python CLI tools, use `uv tool install <package>`; it installs without sudo and keeps tools under this computer's persistent home.";
 }
 
