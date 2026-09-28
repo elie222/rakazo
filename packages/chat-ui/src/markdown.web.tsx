@@ -6,12 +6,8 @@ import "./markdown.web.css";
 import "./markdown-table.css";
 import { droppedTableHtmlText } from "@rakazo/contracts";
 import { CheckIcon, CopyIcon } from "./icons";
-import {
-  type ChatMarkdownProps,
-  closeUnterminatedFence,
-  plainTextLinkParts,
-  sanitizeMarkdownUrl,
-} from "./markdown";
+import type { ChatMarkdownProps } from "./markdown";
+import { closeUnterminatedFence, plainTextLinkParts, sanitizeMarkdownUrl } from "./markdown";
 import { MarkdownTable, MarkdownTableSourceContext } from "./markdown-table";
 
 function preserveSkippedTableText() {
