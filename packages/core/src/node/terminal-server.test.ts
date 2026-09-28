@@ -123,8 +123,9 @@ describe.skipIf(!canRunScript)("terminal start script", () => {
   const stop = () => {
     spawnSync("pkill", ["-KILL", "-f", `/tmp/rakazo/sockets/terminal-${display}-`]);
     rmSync(`/tmp/rakazo/control-token-${display}`, { force: true });
-    rmSync(target, { force: true });
+    rmSync(target, { recursive: true, force: true });
     rmSync(`/tmp/rakazo/terminal-state-${display}`, { recursive: true, force: true });
+    rmSync(`/tmp/rakazo/terminal-target-next-${display}`, { recursive: true, force: true });
   };
   afterEach(stop);
 
@@ -143,6 +144,21 @@ describe.skipIf(!canRunScript)("terminal start script", () => {
       .trim()
       .split("\n")
       .map((line) => line.split(": unix_socket:"));
+
+  it("stops before the gateway when the token cannot be published", () => {
+    stop();
+    mkdirSync("/tmp/rakazo", { recursive: true });
+    const cwd = mkdtempSync(path.join(tmpdir(), "terminal-cwd-"));
+    cleanup.push(() => rmSync(cwd, { recursive: true, force: true }));
+    writeFileSync(`/tmp/rakazo/control-token-${display}`, "lease-a");
+    // A directory where the target file is staged makes publishing fail.
+    mkdirSync(`/tmp/rakazo/terminal-target-next-${display}`);
+    // The Docker supervisor runs the script with plain `bash -c`, without -e.
+    const script = `${startTerminalCommand("lease-a", "tab-1", cwd, undefined, layout)}\necho reached-gateway`;
+    const result = spawnSync("bash", ["-c", script], { encoding: "utf8" });
+    expect(result.status).not.toBe(0);
+    expect(result.stdout).not.toContain("reached-gateway");
+  });
 
   it("keeps open shells when another tab joins, and replaces the server for a new lease", async () => {
     stop();

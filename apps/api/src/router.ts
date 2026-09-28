@@ -2645,14 +2645,23 @@ export function createRouter(deps: RouterDeps) {
         ) {
           throw new ORPCError("FORBIDDEN", { message: "Take control first." });
         }
-        const session = await deps.sandbox.connectTerminal(
-          toComputerRef(computer),
-          {
-            controlToken: computer.controlLeaseId,
-            cwd: resolveBotWorkspaceCwd(parseComputerMode(computer.scope), bot.id, undefined),
-          },
-          await computerScreenContext(deps.prisma, context.actor, computer.id, bot.id, "terminal"),
-        );
+        const session = await deps.sandbox
+          .connectTerminal(
+            toComputerRef(computer),
+            {
+              controlToken: computer.controlLeaseId,
+              cwd: resolveBotWorkspaceCwd(parseComputerMode(computer.scope), bot.id, undefined),
+            },
+            await computerScreenContext(
+              deps.prisma,
+              context.actor,
+              computer.id,
+              bot.id,
+              "terminal",
+            ),
+          )
+          .catch((error: unknown) => clearGoneSandbox(deps, computer, error));
+        if (!session) return { url: null };
         await keepComputerAwake(deps, computer.id);
         return {
           url: addScreenProxyCapability(
@@ -2698,20 +2707,7 @@ export function createRouter(deps: RouterDeps) {
             if (isComputerScreenUnavailable(error)) {
               throw new ORPCError("CONFLICT", { message: error.message });
             }
-            if (!isSandboxGoneError(error)) throw error;
-            // The provider killed this sandbox (idle timeout) while the row still says
-            // running. Clear the dead ref so the UI offers a boot instead of 500ing.
-            // Leave any active control lease alone — expireComputerControl owns that
-            // release (provider screen-control, events, takeover continuation).
-            getLogger().error(
-              `computer ${computer.id} sandbox ${computer.providerRef} is gone`,
-              error,
-            );
-            await deps.prisma.computer.updateMany({
-              where: { id: computer.id, providerRef: computer.providerRef },
-              data: { state: "stopped", providerRef: null },
-            });
-            return null;
+            return clearGoneSandbox(deps, computer, error);
           });
         if (!session?.url) return { url: null };
         scheduleComputerSleep(deps.jobs, bot.computer.id);
@@ -5933,6 +5929,26 @@ async function listRoutinesDto(deps: RouterDeps, actor: Actor, botId: string) {
     where: { botId, spaceId: actor.spaceId },
   });
   return rows.map(mapRoutine);
+}
+
+/**
+ * The provider killed this sandbox (idle timeout) while the row still says running. Clear the
+ * dead ref so the UI offers a boot instead of 500ing, and rethrow anything else. Leave any
+ * active control lease alone: expireComputerControl owns that release (provider screen-control,
+ * events, takeover continuation).
+ */
+async function clearGoneSandbox(
+  deps: RouterDeps,
+  computer: { id: string; providerRef: string | null },
+  error: unknown,
+): Promise<null> {
+  if (!isSandboxGoneError(error)) throw error;
+  getLogger().error(`computer ${computer.id} sandbox ${computer.providerRef} is gone`, error);
+  await deps.prisma.computer.updateMany({
+    where: { id: computer.id, providerRef: computer.providerRef },
+    data: { state: "stopped", providerRef: null },
+  });
+  return null;
 }
 
 async function keepComputerAwake(deps: RouterDeps, computerId: string) {

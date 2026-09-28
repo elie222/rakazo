@@ -621,6 +621,9 @@ export function startTerminalCommand(
   const next = `/tmp/rakazo/terminal-target-next-${display}`;
   const entry = `printf '%s: unix_socket:%s\\n' ${shellQuote(terminalToken)} ${socket}`;
   return [
+    // Callers differ (the Docker supervisor runs plain `bash -c`); an unpublished token must
+    // fail here, not hand out a URL the gateway refuses.
+    "set -e",
     `[ -f ${tokenFile} ] && [ "$(cat ${tokenFile})" = ${shellQuote(controlToken)} ] || exit 75`,
     `if [ -S ${socket} ] && pgrep -f ${quoteLayout(terminalServerPattern(socket))} >/dev/null; then`,
     `  { cat ${target} 2>/dev/null || true; ${entry}; } >${next}`,

@@ -890,7 +890,7 @@ describe("computer terminal and file transfer", () => {
       );
       return { status: response.status, body: await response.json() };
     };
-    return { sandbox, call };
+    return { sandbox, prisma, call };
   }
 
   it("opens a terminal only for the user holding this bot's control lease", async () => {
@@ -912,6 +912,30 @@ describe("computer terminal and file transfer", () => {
       scope: { botId: "bot-1", controlLeaseId: "lease-1" },
       target: { hostname: "screen.example", interactive: true },
     });
+  });
+
+  it("clears the row when the provider reclaimed the sandbox before the terminal opened", async () => {
+    const gone = setup(controlled);
+    gone.sandbox.connectTerminal.mockRejectedValueOnce(
+      Object.assign(new Error("Sandbox is probably not running anymore"), {
+        name: "SandboxNotFoundError",
+      }),
+    );
+    await expect(gone.call("terminalUrl", {})).resolves.toEqual({
+      status: 200,
+      body: { json: { url: null } },
+    });
+    expect(gone.prisma.computer.updateMany).toHaveBeenCalledWith({
+      where: { id: "computer-1", providerRef: "sandbox-ref-1" },
+      data: { state: "stopped", providerRef: null },
+    });
+
+    const blip = setup(controlled);
+    blip.sandbox.connectTerminal.mockRejectedValueOnce(new Error("fetch failed"));
+    await expect(blip.call("terminalUrl", {})).resolves.toMatchObject({ status: 500 });
+    expect(blip.prisma.computer.updateMany).not.toHaveBeenCalledWith(
+      expect.objectContaining({ data: { state: "stopped", providerRef: null } }),
+    );
   });
 
   it("offers no terminal on host computers", async () => {
