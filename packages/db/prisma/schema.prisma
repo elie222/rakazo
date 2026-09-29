@@ -99,6 +99,16 @@ model Verification {
   @@map("verification")
 }
 
+/// Better Auth credential rate limits. `lastRequest` is epoch milliseconds.
+model RateLimit {
+  id          String @id
+  key         String @unique
+  count       Int
+  lastRequest BigInt
+
+  @@map("rateLimit")
+}
+
 model Organization {
   id          String       @id
   name        String

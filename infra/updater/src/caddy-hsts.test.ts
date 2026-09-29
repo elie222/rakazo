@@ -17,4 +17,18 @@ describe.each(caddyfiles)("%s HSTS", (filename) => {
   it("never pins HTTPS onto localhost", () => {
     expect(httpsSite).toContain("@hsts not host localhost 127.0.0.1");
   });
+
+  it("stops other sites framing the app and sniffing responses", () => {
+    expect(httpsSite).toContain("X-Content-Type-Options nosniff");
+    expect(httpsSite).toContain("X-Frame-Options SAMEORIGIN");
+    expect(httpsSite).not.toContain("frame-ancestors 'none'");
+  });
+
+  it("replaces the client-supplied forwarding header on API requests", () => {
+    expect(httpsSite).toContain(
+      filename.startsWith("Caddyfile.cloudflare")
+        ? "header_up X-Forwarded-For {http.request.header.CF-Connecting-IP}"
+        : "header_up X-Forwarded-For {remote_host}",
+    );
+  });
 });

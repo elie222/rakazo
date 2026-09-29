@@ -9,6 +9,11 @@
 	# A localhost trial must not pin HTTPS onto every local dev server.
 	@hsts not host localhost 127.0.0.1
 	header @hsts Strict-Transport-Security "max-age=31536000"
+	# SAMEORIGIN still lets the app frame its own /novnc/ screen.
+	header {
+		X-Content-Type-Options nosniff
+		X-Frame-Options SAMEORIGIN
+	}
 
 	handle /health {
 		reverse_proxy api:3100 {
@@ -19,6 +24,7 @@
 	handle /api/* {
 		reverse_proxy api:3100 {
 			import deploy_retry
+			header_up X-Forwarded-For {remote_host}
 		}
 	}
 
