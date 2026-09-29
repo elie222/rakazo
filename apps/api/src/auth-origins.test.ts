@@ -38,6 +38,16 @@ describe("CORS origins", () => {
     }
   });
 
+  it("accepts the configured site when env values keep a trailing slash", () => {
+    const envWithSlash = {
+      webOrigin: "http://127.0.0.1:5173/",
+      apiUrl: "http://127.0.0.1:3100/",
+      authUrl: "http://127.0.0.1:5173/",
+    };
+    expect(isTrustedOrigin("http://127.0.0.1:5173", envWithSlash)).toBe(true);
+    expect(isTrustedOrigin("http://localhost:5173", envWithSlash)).toBe(true);
+  });
+
   it("rejects any other loopback port and any public origin", () => {
     for (const origin of [
       "http://127.0.0.1:9",

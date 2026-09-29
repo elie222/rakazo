@@ -925,6 +925,9 @@ function originVariants(origin: string): string[] {
   const variants = [origin, ...loopbackTwinOrigins(origin)];
   try {
     const url = new URL(origin);
+    if (url.protocol === "http:" || url.protocol === "https:") {
+      variants.push(url.origin);
+    }
     if (url.hostname === "localhost" || url.hostname === "127.0.0.1") {
       const v6 = new URL(origin);
       v6.hostname = "[::1]";
