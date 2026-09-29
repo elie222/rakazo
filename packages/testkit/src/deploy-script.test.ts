@@ -119,9 +119,35 @@ describe("production deploy script", () => {
 
   it("only checks health when production is already current", () => {
     const deploy = fixture();
+    write(path.join(deploy.checkout, ".last-deployed-revision"), `${deploy.first}\n`);
     const result = deploy.run();
     expect(result.status).toBe(0);
     expect(deploy.commands()).toEqual(["curl https://app.example.test/health"]);
+  });
+
+  it("deploys when the checkout matches but that revision was never recorded", () => {
+    const deploy = fixture();
+    const result = deploy.run();
+    expect(result.status).toBe(0);
+    expect(result.stdout).not.toContain("already at");
+    expect(deploy.head()).toBe(deploy.first);
+    expect(deploy.deployed()).toBe(deploy.first);
+    const docker = deploy.commands().filter((line) => line.startsWith("docker"));
+    expect(docker.map((line) => line.split(" @ ")[0])).toEqual([
+      "docker compose --env-file .env -f infra/compose/docker-compose.prod.yml config --quiet",
+      "docker compose --env-file .env -f infra/compose/docker-compose.prod.yml build",
+      "docker compose --env-file .env -f infra/compose/docker-compose.prod.yml up -d --remove-orphans",
+    ]);
+  });
+
+  it("deploys when the recorded revision is not the checkout", () => {
+    const deploy = fixture();
+    write(path.join(deploy.checkout, ".last-deployed-revision"), "outdated\n");
+    const result = deploy.run();
+    expect(result.status).toBe(0);
+    expect(result.stdout).not.toContain("already at");
+    expect(deploy.deployed()).toBe(deploy.first);
+    expect(deploy.commands().some((line) => line.includes(" up -d --remove-orphans"))).toBe(true);
   });
 
   it("builds, starts, and records the new revision under time limits", () => {
