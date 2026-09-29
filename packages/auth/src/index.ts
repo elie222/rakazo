@@ -204,11 +204,7 @@ async function claimUnverifiedFirstAccount(prisma: PrismaClient, userId: string)
   });
 }
 
-const CREDENTIAL_PATHS = [
-  "/sign-in/email",
-  "/sign-up/email",
-  "/request-password-reset",
-] as const;
+const CREDENTIAL_PATHS = ["/sign-in/email", "/sign-up/email", "/request-password-reset"] as const;
 
 /** Shared across API processes. Off outside production so tests can sign in freely. */
 export function authRateLimitOptions(nodeEnv = process.env.NODE_ENV) {
