@@ -452,6 +452,15 @@ set the same `COMPOSE_PROJECT_NAME` in that file. For a manual run, export these
 When updating an existing backup installation, reinstall both the script and service unit,
 then run `systemctl daemon-reload`.
 
+To deploy from CI, install `infra/compose/deploy-main.sh` as `/usr/local/sbin/rakazo-deploy-main`
+and give CI a key restricted to it in the deploy user's `authorized_keys`
+(`restrict,command="/usr/local/sbin/rakazo-deploy-main" ssh-ed25519 …`). It builds `origin/main`,
+restarts the stack, waits for `https://$RAKAZO_HOST/health`, and rolls back on failure. Build and
+start are time-limited so a stuck build fails the deploy instead of holding its lock; a deploy that
+finds the lock held exits non-zero. For a checkout outside `/srv/rakazo`, put
+`RAKAZO_DEPLOY_DIR=/absolute/path` in a root-owned `/etc/rakazo/deploy.env` readable by the
+deploy user.
+
 ### Docker computers on the production stack
 
 Layer `infra/compose/docker-compose.prod.docker.yml` after the base file in every Compose
