@@ -31,14 +31,14 @@ function notify() {
   for (const listener of listeners) listener();
 }
 
-/** Missing, unknown and unreadable storage all leave the card on; only "off" hides it. */
+/** Only a saved "on" shows tool cards. Missing or unreadable storage stays off so chats stay clean. */
 export function normalizeToolActivityPreference(
   raw: string | null | undefined,
 ): ToolActivityPreference {
-  return raw?.trim().toLowerCase() === "off" ? "off" : "on";
+  return raw?.trim().toLowerCase() === "on" ? "on" : "off";
 }
 
-export function toolActivityEnabled(preference: ToolActivityPreference = "on"): boolean {
+export function toolActivityEnabled(preference: ToolActivityPreference = "off"): boolean {
   return preference === "on";
 }
 

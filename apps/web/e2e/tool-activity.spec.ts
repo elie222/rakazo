@@ -16,6 +16,13 @@ async function openThread(page: Page, phase: "live" | "done") {
   await expect(page.getByTestId("message-user-bubble")).toBeVisible();
 }
 
+/** Cards stay hidden until this browser saved "on". Seed only when a test needs them visible. */
+async function seedToolActivityOn(page: Page) {
+  await page.addInitScript((key) => {
+    if (localStorage.getItem(key) == null) localStorage.setItem(key, "on");
+  }, STORAGE_KEY);
+}
+
 async function setToggle(page: Page, on: boolean) {
   await page.goto(`${fixture}?view=settings`);
   const settings = page.getByTestId("user-settings");
@@ -35,7 +42,10 @@ async function setToggle(page: Page, on: boolean) {
   await toggle.scrollIntoViewIfNeeded();
 }
 
-test("tool activity shows by default for live and finished runs", async ({ page }, testInfo) => {
+test("tool activity shows for live and finished runs when the user turned it on", async ({
+  page,
+}, testInfo) => {
+  await seedToolActivityOn(page);
   for (const viewport of viewports) {
     await page.setViewportSize(viewport);
 
@@ -76,7 +86,18 @@ test("tool activity shows by default for live and finished runs", async ({ page 
 test("the settings toggle hides and restores tool activity", async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 1440, height: 900 });
 
-  await setToggle(page, false);
+  // Nothing saved leaves the switch off and the cards hidden.
+  await page.goto(`${fixture}?view=settings`);
+  const settings = page.getByTestId("user-settings");
+  await expect(settings).toBeVisible();
+  await settings.getByTestId("advanced-settings").locator("summary").click();
+  const initialToggle = settings.getByTestId("tool-activity-toggle");
+  await expect(initialToggle).toBeVisible();
+  await expect(initialToggle).not.toBeChecked();
+  await expect
+    .poll(() => page.evaluate((key) => localStorage.getItem(key), STORAGE_KEY))
+    .toBeNull();
+  await initialToggle.scrollIntoViewIfNeeded();
   await captureScreenshot(page, testInfo, "settings-tool-activity-off");
 
   await openThread(page, "done");
@@ -102,10 +123,11 @@ test("the settings toggle hides and restores tool activity", async ({ page }, te
   await captureScreenshot(page, testInfo, "on-again-done");
 });
 
-test("the chat transcript shows tool activity by default and hides it when turned off", async ({
+test("the chat transcript shows tool activity when turned on and hides it when turned off", async ({
   page,
 }, testInfo) => {
   await page.setViewportSize({ width: 1440, height: 900 });
+  await seedToolActivityOn(page);
   const stamp = Date.now();
   await signup(page, `tool-activity-${stamp}@rakazo.test`, "password12", "Tool Activity");
   await completeOnboarding(page);

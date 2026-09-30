@@ -111,12 +111,6 @@ export function ApprovalRulesSettings() {
       <h3 className="text-[15px] font-medium text-foreground">
         <Trans>Action confirmations</Trans>
       </h3>
-      <p className="mt-2 text-[13.5px] leading-[1.5] text-muted-foreground">
-        <Trans>
-          Bots act without asking by default. Add an exception only when you want to review a type
-          of action first.
-        </Trans>
-      </p>
       <div className="mt-4 flex flex-col items-start gap-2">
         <Button
           variant="outline"
@@ -158,11 +152,7 @@ export function ApprovalRulesSettings() {
         <p className="mt-4 text-[13px] text-muted-foreground">
           <Trans>Loading rules…</Trans>
         </p>
-      ) : rules.length === 0 ? (
-        <p className="mt-4 text-[13px] text-muted-foreground">
-          <Trans>No exceptions. Actions run automatically.</Trans>
-        </p>
-      ) : (
+      ) : rules.length > 0 ? (
         <ul className="mt-4 space-y-2">
           {rules.map((rule) => (
             <li
@@ -181,7 +171,7 @@ export function ApprovalRulesSettings() {
             </li>
           ))}
         </ul>
-      )}
+      ) : null}
     </div>
   );
 }

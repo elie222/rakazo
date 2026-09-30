@@ -105,6 +105,13 @@ it("flips the stored tool activity preference from the settings toggle", async (
       '[data-testid="tool-activity-toggle"]',
     );
     if (!toggle) throw new Error("Missing tool activity toggle");
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
+
+    await act(async () => {
+      toggle.click();
+    });
+
+    expect(localStorage.getItem(TOOL_ACTIVITY_STORAGE_KEY)).toBe("on");
     expect(toggle.getAttribute("aria-checked")).toBe("true");
 
     await act(async () => {
@@ -113,12 +120,6 @@ it("flips the stored tool activity preference from the settings toggle", async (
 
     expect(localStorage.getItem(TOOL_ACTIVITY_STORAGE_KEY)).toBe("off");
     expect(toggle.getAttribute("aria-checked")).toBe("false");
-
-    await act(async () => {
-      toggle.click();
-    });
-
-    expect(localStorage.getItem(TOOL_ACTIVITY_STORAGE_KEY)).toBe("on");
   } finally {
     await act(async () => root.unmount());
     container.remove();

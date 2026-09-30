@@ -627,10 +627,6 @@ msgstr ""
 msgid "Bots"
 msgstr ""
 
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Bots act without asking by default. Add an exception only when you want to review a type of action first."
-msgstr "बॉट डिफ़ॉल्ट रूप से बिना पूछे कार्रवाई करते हैं। अपवाद तभी जोड़ें जब आप किसी प्रकार की कार्रवाई की पहले समीक्षा करना चाहते हों।"
-
 #: src/pages/Shell.tsx
 msgid "Bots are working"
 msgstr "बॉट काम कर रहे हैं"
@@ -2569,10 +2565,6 @@ msgstr ""
 msgid "No chat apps linked yet."
 msgstr ""
 
-#: src/components/ApprovalRulesSettings.tsx
-msgid "No exceptions. Actions run automatically."
-msgstr "कोई अपवाद नहीं। कार्रवाइयां स्वतः चलती हैं।"
-
 #: src/pages/MessagingSettingsOverlay.tsx
 msgid "No group chats yet."
 msgstr ""
@@ -2765,10 +2757,6 @@ msgstr "आपका वर्कस्पेस खुल रहा है…"
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Optional"
 msgstr "वैकल्पिक"
-
-#: src/pages/AccountSettingsOverlay.tsx
-msgid "Optional controls most people never need"
-msgstr "वैकल्पिक नियंत्रण जिनकी अधिकांश लोगों को कभी ज़रूरत नहीं होती"
 
 #: src/pages/McpServersOverlay.tsx
 msgid "Optional header value"

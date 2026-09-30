@@ -8,21 +8,22 @@ import {
 } from "./tool-activity-preference";
 
 describe("tool activity preference", () => {
-  it("defaults on unless a saved choice turns it off", () => {
+  it("stays off unless a saved choice turns it on", () => {
     expect(normalizeToolActivityPreference("on")).toBe("on");
+    expect(normalizeToolActivityPreference("ON")).toBe("on");
+    expect(normalizeToolActivityPreference(" on ")).toBe("on");
     expect(normalizeToolActivityPreference("off")).toBe("off");
     expect(normalizeToolActivityPreference("OFF")).toBe("off");
-    expect(normalizeToolActivityPreference(" off ")).toBe("off");
-    expect(normalizeToolActivityPreference(null)).toBe("on");
-    expect(normalizeToolActivityPreference(undefined)).toBe("on");
-    expect(normalizeToolActivityPreference("")).toBe("on");
-    expect(normalizeToolActivityPreference("nonsense")).toBe("on");
+    expect(normalizeToolActivityPreference(null)).toBe("off");
+    expect(normalizeToolActivityPreference(undefined)).toBe("off");
+    expect(normalizeToolActivityPreference("")).toBe("off");
+    expect(normalizeToolActivityPreference("nonsense")).toBe("off");
   });
 
   it("resolves from an explicit stored value", () => {
     expect(resolveToolActivityPreference({ stored: "off" })).toBe("off");
     expect(resolveToolActivityPreference({ stored: "on" })).toBe("on");
-    expect(resolveToolActivityPreference({ stored: null })).toBe("on");
+    expect(resolveToolActivityPreference({ stored: null })).toBe("off");
   });
 
   it("persists through storage helpers and reads it back", () => {
@@ -40,7 +41,7 @@ describe("tool activity preference", () => {
     expect(resolveToolActivityPreference({ storage })).toBe("on");
   });
 
-  it("stays on when storage is unreadable or throws", () => {
+  it("stays off when storage is unreadable or throws", () => {
     const throwing = {
       getItem: () => {
         throw new Error("blocked");
@@ -49,12 +50,12 @@ describe("tool activity preference", () => {
         throw new Error("blocked");
       },
     };
-    expect(resolveToolActivityPreference({ storage: throwing })).toBe("on");
-    expect(resolveToolActivityPreference({ storage: null })).toBe("on");
+    expect(resolveToolActivityPreference({ storage: throwing })).toBe("off");
+    expect(resolveToolActivityPreference({ storage: null })).toBe("off");
     expect(() => persistToolActivityPreference("off", throwing)).not.toThrow();
   });
 
-  it("maps an on preference to enabled", () => {
-    expect(getToolActivityEnabled()).toBe(true);
+  it("stays disabled until a saved choice turns it on", () => {
+    expect(getToolActivityEnabled()).toBe(false);
   });
 });

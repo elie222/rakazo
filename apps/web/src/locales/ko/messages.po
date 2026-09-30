@@ -627,10 +627,6 @@ msgstr "연결할 Bot"
 msgid "Bots"
 msgstr ""
 
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Bots act without asking by default. Add an exception only when you want to review a type of action first."
-msgstr "Bot은 기본적으로 묻지 않고 작업합니다. 먼저 확인하고 싶은 작업만 예외로 추가하세요."
-
 #: src/pages/Shell.tsx
 msgid "Bots are working"
 msgstr "봇 작업 중"
@@ -2569,10 +2565,6 @@ msgstr ""
 msgid "No chat apps linked yet."
 msgstr "아직 연결된 채팅 앱이 없습니다."
 
-#: src/components/ApprovalRulesSettings.tsx
-msgid "No exceptions. Actions run automatically."
-msgstr "별도 확인 규칙이 없습니다. 작업이 자동으로 실행됩니다."
-
 #: src/pages/MessagingSettingsOverlay.tsx
 msgid "No group chats yet."
 msgstr "아직 그룹 채팅이 없습니다."
@@ -2765,10 +2757,6 @@ msgstr "작업공간을 여는 중…"
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Optional"
 msgstr "선택 사항"
-
-#: src/pages/AccountSettingsOverlay.tsx
-msgid "Optional controls most people never need"
-msgstr "필요할 때만 쓰는 세부 설정"
 
 #: src/pages/McpServersOverlay.tsx
 msgid "Optional header value"
