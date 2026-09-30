@@ -43,6 +43,7 @@ export function ToolSteps({
               className={`min-w-0 flex-1 truncate text-[13px] ${
                 isCurrent ? "text-foreground" : "text-muted-foreground"
               }`}
+              title={step.label}
             >
               {step.label}
               {step.count > 1 ? ` ×${step.count}` : ""}

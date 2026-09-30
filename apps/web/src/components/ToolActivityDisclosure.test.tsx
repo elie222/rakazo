@@ -154,6 +154,12 @@ describe("ToolSteps", () => {
     expect(html).toContain("+1 earlier step<");
   });
 
+  it("exposes the full label as the title of a truncated step", () => {
+    const label = "Read apps/web/src/components/ToolActivityDisclosure.tsx";
+    const html = renderToStaticMarkup(<ToolSteps steps={[{ label, count: 2 }]} />);
+    expect(html).toContain(`title="${label}"`);
+  });
+
   it("lists every step when not limited or when the list fits", () => {
     const all = renderToStaticMarkup(<ToolSteps steps={stepsOf(9)} />);
     const fits = renderToStaticMarkup(
