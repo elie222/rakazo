@@ -216,13 +216,16 @@ describe("jsonSchemaParameters", () => {
     });
   });
 
-  it("keeps primitive enums as literal unions", () => {
+  it("keeps a string enum's allowed values, in order, as a plain enum", () => {
+    // A literal union serialises as anyOf/const, which some gateways flatten to {} so the
+    // model never sees the allowed values; {type: "string", enum} survives them.
     const schema = jsonSchemaParameters({
       type: "object",
       properties: { mode: { type: "string", enum: ["fast", "slow"] } },
       required: ["mode"],
-    }) as unknown as { properties: { mode: { anyOf: { const: unknown }[] } } };
-    expect(schema.properties.mode.anyOf.map((member) => member.const)).toEqual(["fast", "slow"]);
+    }) as unknown as { properties: { mode: Record<string, unknown> } };
+    const mode = JSON.parse(JSON.stringify(schema.properties.mode));
+    expect(mode).toEqual({ type: "string", enum: ["fast", "slow"] });
   });
 
   it("accepts a nullable enum without throwing", () => {

@@ -1249,7 +1249,10 @@ async function executeSubagent(host: ToolHost, executionId: string, args: Record
 
 /** Build AgentTool.parameters for a connector tool, including OpenAI wire fidelity. */
 export function parametersFor(tool: ConnectorTool) {
-  const schema = builtinParameters(tool) ?? safeJsonSchemaParameters(tool);
+  const builtin = builtinParameters(tool);
+  const schema = builtin
+    ? withDeclaredDescriptions(builtin, tool.inputSchema)
+    : safeJsonSchemaParameters(tool);
   // Type.Union (top-level oneOf/anyOf) serializes without type/properties, and
   // Anthropic rejects a root union, so it is flattened into one object schema.
   // Re-wrap only when needed so Type.Object schemas keep TypeBox Kind metadata.
@@ -1257,6 +1260,30 @@ export function parametersFor(tool: ConnectorTool) {
   return Type.Unsafe(
     normalizeOpenAiToolParameters(JSON.parse(JSON.stringify(schema))),
   ) as unknown as ReturnType<typeof Type.Object>;
+}
+
+/** builtinParameters hand-builds stricter schemas for some tools, and those carried none of
+ * the parameter descriptions the tool declares. Copy each declared description onto the
+ * matching top-level field. The schema is built fresh per call, so this mutates no shared
+ * node. */
+function withDeclaredDescriptions<T>(schema: T, declared: unknown): T {
+  const fields = (schema as { properties?: Record<string, Record<string, unknown>> }).properties;
+  const source = (
+    declared as { properties?: Record<string, { description?: unknown }> } | undefined
+  )?.properties;
+  if (!fields || !source) return schema;
+  for (const [key, spec] of Object.entries(source)) {
+    const field = fields[key];
+    if (
+      field &&
+      field.description === undefined &&
+      typeof spec?.description === "string" &&
+      spec.description
+    ) {
+      field.description = spec.description;
+    }
+  }
+  return schema;
 }
 
 /** A remote MCP server controls its own schemas, so a shape TypeBox cannot express must
@@ -1318,7 +1345,7 @@ function builtinParameters(tool: ConnectorTool) {
       title: Type.Optional(Type.String()),
       instructions: Type.Optional(Type.String()),
       prompt: Type.Optional(Type.String()),
-      computer_mode: Type.Optional(Type.Union([Type.Literal("team"), Type.Literal("dedicated")])),
+      computer_mode: Type.Optional(stringEnum(["team", "dedicated"], {})),
     });
   }
   if (tool.name === "update_bot") {
@@ -1495,11 +1522,12 @@ function isAgentToolExecutionResult(result: unknown): result is AgentToolExecuti
 
 export function jsonSchemaParameters(
   schema: Record<string, unknown>,
+  options: FieldOptions = {},
 ): ReturnType<typeof Type.Object> {
   // Keep intersections intact until parametersFor flattens root combinators.
   // Rebuilding only properties here drops allOf-only fields and their constraints.
   if (Array.isArray(schema.allOf)) {
-    return Type.Unsafe(schema) as unknown as ReturnType<typeof Type.Object>;
+    return Type.Unsafe({ ...schema, ...options }) as unknown as ReturnType<typeof Type.Object>;
   }
   // Top-level oneOf/anyOf (e.g. request_secret's credential XOR connectionId)
   // must stay a union. Falling through to properties would drop the exclusivity
@@ -1512,6 +1540,7 @@ export function jsonSchemaParameters(
   if (alternatives && alternatives.length > 0 && schema.properties == null) {
     return Type.Union(
       alternatives.map((variant) => jsonSchemaParameters(variant as Record<string, unknown>)),
+      options,
     ) as unknown as ReturnType<typeof Type.Object>;
   }
   const properties = (schema.properties ?? {}) as Record<string, unknown>;
@@ -1527,13 +1556,27 @@ export function jsonSchemaParameters(
   // Type.Object defaults to open, which would let connectionId+replace match both
   // anyOf variants after conversion.
   return schema.additionalProperties === false
-    ? Type.Object(fields, { additionalProperties: false })
-    : Type.Object(fields);
+    ? Type.Object(fields, { ...options, additionalProperties: false })
+    : Type.Object(fields, options);
+}
+
+type FieldOptions = { description?: string };
+
+/** Carry the parameter description when rebuilding its TypeBox node. */
+function fieldOptions(definition: Record<string, unknown>): FieldOptions {
+  return typeof definition.description === "string" && definition.description
+    ? { description: definition.description }
+    : {};
+}
+
+/** Use a plain string enum: some gateways discard the allowed values from anyOf/const unions. */
+function stringEnum(values: readonly string[], options: FieldOptions) {
+  return Type.Unsafe<string>({ type: "string", enum: [...values], ...options });
 }
 
 /** TypeBox only builds literals from primitives; anything else throws while the tool list is
  * being assembled, which would take down the whole turn. */
-function enumUnion(values: readonly unknown[]) {
+function enumUnion(values: readonly unknown[], options: FieldOptions = {}) {
   const members = values.map((value) =>
     value === null
       ? Type.Null()
@@ -1541,20 +1584,34 @@ function enumUnion(values: readonly unknown[]) {
         ? Type.Literal(value)
         : undefined,
   );
-  return members.every((member) => member !== undefined) ? Type.Union(members) : undefined;
+  return members.every((member) => member !== undefined) ? Type.Union(members, options) : undefined;
 }
 
 export function jsonField(spec: unknown): ReturnType<typeof Type.String> {
   const definition = spec && typeof spec === "object" ? (spec as Record<string, unknown>) : {};
+  const options = fieldOptions(definition);
   if (Array.isArray(definition.enum) && definition.enum.length > 0) {
-    const union = enumUnion(definition.enum);
+    if (definition.enum.every((value) => typeof value === "string")) {
+      return stringEnum(definition.enum as string[], options) as never;
+    }
+    const union = enumUnion(definition.enum, options);
     if (union) return union as never;
   }
   // A `const` names the only accepted value. Without this it degraded to a bare
   // string, so a discriminator like {type: {const: "bearer"}} told the model
   // nothing about which value to send -- and it guessed, twice.
   if ("const" in definition) {
-    const literal = enumUnion([definition.const]);
+    // Keep `const` (discriminators such as request_secret's auth.type depend on it) and
+    // add the equivalent one-value `enum`, which survives converters that drop `const`.
+    if (typeof definition.const === "string") {
+      return Type.Unsafe<string>({
+        type: "string",
+        const: definition.const,
+        enum: [definition.const],
+        ...options,
+      }) as never;
+    }
+    const literal = enumUnion([definition.const], options);
     if (literal) return literal as never;
   }
   // A discriminated union arrives as oneOf/anyOf with no sibling `type`. Without
@@ -1566,28 +1623,36 @@ export function jsonField(spec: unknown): ReturnType<typeof Type.String> {
       ? definition.anyOf
       : undefined;
   if (variants && variants.length > 0) {
-    return Type.Union(variants.map((variant) => jsonField(variant))) as never;
+    return Type.Union(
+      variants.map((variant) => jsonField(variant)),
+      options,
+    ) as never;
   }
   if (Array.isArray(definition.type) && definition.type.length > 0) {
-    return Type.Union(definition.type.map((type) => jsonField({ ...definition, type }))) as never;
+    // The description belongs on the union, not repeated on every member.
+    const { description: _description, ...member } = definition;
+    return Type.Union(
+      definition.type.map((type) => jsonField({ ...member, type })),
+      options,
+    ) as never;
   }
   const type = "type" in definition ? String(definition.type) : "string";
-  if (type === "null") return Type.Null() as never;
-  if (type === "number" || type === "integer") return Type.Number() as never;
-  if (type === "boolean") return Type.Boolean() as never;
+  if (type === "null") return Type.Null(options) as never;
+  if (type === "number" || type === "integer") return Type.Number(options) as never;
+  if (type === "boolean") return Type.Boolean(options) as never;
   if (type === "array") {
-    const options: {
+    const arrayOptions: FieldOptions & {
       minItems?: number;
       maxItems?: number;
       uniqueItems?: boolean;
-    } = {};
-    if (typeof definition.minItems === "number") options.minItems = definition.minItems;
-    if (typeof definition.maxItems === "number") options.maxItems = definition.maxItems;
-    if (definition.uniqueItems === true) options.uniqueItems = true;
-    return Type.Array(jsonField(definition.items), options) as never;
+    } = { ...options };
+    if (typeof definition.minItems === "number") arrayOptions.minItems = definition.minItems;
+    if (typeof definition.maxItems === "number") arrayOptions.maxItems = definition.maxItems;
+    if (definition.uniqueItems === true) arrayOptions.uniqueItems = true;
+    return Type.Array(jsonField(definition.items), arrayOptions) as never;
   }
-  if (type === "object") return jsonSchemaParameters(definition) as never;
-  return Type.String();
+  if (type === "object") return jsonSchemaParameters(definition, options) as never;
+  return Type.String(options);
 }
 
 function summarizeToolResult(result: unknown) {
