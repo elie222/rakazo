@@ -1,0 +1,148 @@
+import type { Page } from "@playwright/test";
+import { expect, test } from "@playwright/test";
+import { captureScreenshot, completeOnboarding, openUserSettings, signup } from "./helpers";
+
+const fixture = "/e2e/fixtures/tool-activity.html";
+const REPLY_TEXT = "Tuesday at 2 pm is free.";
+const STORAGE_KEY = "rakazo.showToolActivity";
+
+const viewports = [
+  { name: "desktop-1440x900", width: 1440, height: 900 },
+  { name: "mobile-390x844", width: 390, height: 844 },
+];
+
+async function openThread(page: Page, phase: "live" | "done") {
+  await page.goto(`${fixture}?view=thread&phase=${phase}`);
+  await expect(page.getByTestId("message-user-bubble")).toBeVisible();
+}
+
+async function setToggle(page: Page, on: boolean) {
+  await page.goto(`${fixture}?view=settings`);
+  const settings = page.getByTestId("user-settings");
+  await expect(settings).toBeVisible();
+  await settings.getByTestId("advanced-settings").locator("summary").click();
+  const toggle = settings.getByTestId("tool-activity-toggle");
+  await expect(toggle).toBeVisible();
+  await expect(settings.getByText("Show tool activity", { exact: true })).toBeVisible();
+  if (on) await expect(toggle).not.toBeChecked();
+  else await expect(toggle).toBeChecked();
+  await toggle.click();
+  if (on) await expect(toggle).toBeChecked();
+  else await expect(toggle).not.toBeChecked();
+  await expect
+    .poll(() => page.evaluate((key) => localStorage.getItem(key), STORAGE_KEY))
+    .toBe(on ? "on" : "off");
+  await toggle.scrollIntoViewIfNeeded();
+}
+
+test("tool activity shows by default for live and finished runs", async ({ page }, testInfo) => {
+  for (const viewport of viewports) {
+    await page.setViewportSize(viewport);
+
+    await openThread(page, "live");
+    const liveLine = page.getByTestId("tool-activity-line");
+    await expect(liveLine).toHaveCount(1);
+    await expect(page.getByTestId("message-bot-bubble")).toHaveCount(0);
+    const liveCard = page.getByTestId("tool-activity");
+    await expect(liveCard).toHaveJSProperty("open", true);
+    await expect(liveCard.locator("summary")).toContainText("Working… · 8 tools");
+    await expect(page.getByTestId("tool-rows-hidden")).toHaveText("+2 earlier steps");
+    await expect(page.getByTestId("tool-rows")).not.toContainText("Open calendar");
+    await expect(page.getByTestId("tool-rows")).toContainText("Check conflicts");
+    await expect(page.locator("body")).toHaveJSProperty("scrollWidth", viewport.width);
+    await captureScreenshot(page, testInfo, `default-live-${viewport.name}`);
+
+    await liveCard.locator("summary").click();
+    await expect(liveCard).toHaveJSProperty("open", false);
+
+    await openThread(page, "done");
+    await expect(page.getByTestId("message-bot-bubble")).toHaveText(REPLY_TEXT);
+    const doneCard = page.getByTestId("tool-activity");
+    await expect(doneCard).toHaveCount(1);
+    await expect(doneCard).toHaveJSProperty("open", false);
+    await expect(doneCard.locator("summary")).toContainText("Done · 8 tools · 12s");
+    await captureScreenshot(page, testInfo, `default-done-collapsed-${viewport.name}`);
+
+    await doneCard.locator("summary").click();
+    await expect(doneCard).toHaveJSProperty("open", true);
+    await expect(page.getByTestId("tool-rows-hidden")).toHaveCount(0);
+    await expect(page.getByTestId("tool-rows")).toContainText("Open calendar");
+    await expect(page.getByTestId("tool-rows")).toContainText("Check conflicts");
+    await expect(page.locator("body")).toHaveJSProperty("scrollWidth", viewport.width);
+    await captureScreenshot(page, testInfo, `default-done-expanded-${viewport.name}`);
+  }
+});
+
+test("the settings toggle hides and restores tool activity", async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+
+  await setToggle(page, false);
+  await captureScreenshot(page, testInfo, "settings-tool-activity-off");
+
+  await openThread(page, "done");
+  await expect(page.getByTestId("message-bot-bubble")).toHaveText(REPLY_TEXT);
+  await expect(page.getByTestId("tool-activity")).toHaveCount(0);
+  await expect(page.getByText("Done · 8 tools", { exact: false })).toHaveCount(0);
+  await captureScreenshot(page, testInfo, "off-done");
+
+  await openThread(page, "live");
+  await expect(page.getByTestId("tool-activity")).toHaveCount(0);
+  await expect(page.getByTestId("tool-activity-line")).toHaveCount(0);
+  await expect(page.getByTestId("message-bot-bubble")).toHaveCount(0);
+  await captureScreenshot(page, testInfo, "off-live");
+
+  await setToggle(page, true);
+  await captureScreenshot(page, testInfo, "settings-tool-activity-on");
+
+  await openThread(page, "done");
+  await expect(page.getByTestId("tool-activity")).toHaveCount(1);
+  await expect(page.getByTestId("tool-activity").locator("summary")).toContainText(
+    "Done · 8 tools",
+  );
+  await captureScreenshot(page, testInfo, "on-again-done");
+});
+
+test("the chat transcript shows tool activity by default and hides it when turned off", async ({
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const stamp = Date.now();
+  await signup(page, `tool-activity-${stamp}@rakazo.test`, "password12", "Tool Activity");
+  await completeOnboarding(page);
+
+  // The scripted runtime answers this with one write_file call, then a short reply.
+  await page
+    .getByPlaceholder(/^Message /)
+    .fill("write a note called notes/tool-activity.txt that says fake e2e note");
+  await page.getByRole("button", { name: "Send" }).click();
+
+  const transcript = page.getByTestId("transcript");
+  await expect(transcript.getByText("writing that into my home now.")).toBeVisible({
+    timeout: 30_000,
+  });
+  const card = transcript.getByTestId("tool-activity");
+  await expect(card.first()).toBeVisible();
+  await expect(card.first().locator("summary")).toContainText(/Done · \d+ tools?/);
+  await expect(card.first()).toHaveJSProperty("open", false);
+  await card.first().locator("summary").click();
+  await expect(transcript.getByTestId("tool-rows").first()).toBeVisible();
+  await captureScreenshot(page, testInfo, "shell-tool-activity-on");
+
+  const settings = await openUserSettings(page);
+  await settings.getByTestId("advanced-settings").locator("summary").click();
+  const toggle = settings.getByTestId("tool-activity-toggle");
+  await expect(toggle).toBeChecked();
+  await toggle.click();
+  await expect(toggle).not.toBeChecked();
+  await page.keyboard.press("Escape");
+  await expect(settings).toBeHidden();
+
+  await expect(transcript.getByText("writing that into my home now.")).toBeVisible();
+  await expect(transcript.getByTestId("tool-activity")).toHaveCount(0);
+  await captureScreenshot(page, testInfo, "shell-tool-activity-off");
+
+  await page.reload();
+  await expect(page.getByTestId("shell-root")).toHaveAttribute("data-ready", "true");
+  await expect(transcript.getByText("writing that into my home now.")).toBeVisible();
+  await expect(transcript.getByTestId("tool-activity")).toHaveCount(0);
+});

@@ -92,6 +92,10 @@ msgstr "Ordinateur de {botName}"
 msgid "{days}d ago"
 msgstr "il y a {days} j"
 
+#: src/components/ToolActivityDisclosure.tsx
+msgid "{hidden, plural, one {+# earlier step} other {+# earlier steps}}"
+msgstr ""
+
 #: src/lib/relative-time.ts
 #: src/pages/ActivityList.tsx
 msgid "{hours}h ago"
@@ -124,6 +128,14 @@ msgstr "{remaining} restant · le bot observe, il n'agit pas"
 #: src/components/ArtifactFileCard.tsx
 msgid "{size} B"
 msgstr "{size} o"
+
+#: src/components/ToolActivityDisclosure.tsx
+msgid "{stepCount, plural, one {Done · # tool} other {Done · # tools}}"
+msgstr ""
+
+#: src/components/ToolActivityDisclosure.tsx
+msgid "{stepCount, plural, one {Working… · # tool} other {Working… · # tools}}"
+msgstr ""
 
 #: src/pages/ActivityList.tsx
 msgid "{title}, {label}"
@@ -3417,6 +3429,10 @@ msgstr "Afficher le mot de passe"
 #: src/pages/Shell.tsx
 msgid "Show settings"
 msgstr "Afficher les paramètres"
+
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Show tool activity"
+msgstr ""
 
 #: src/components/call/VoiceChatCard.tsx
 msgid "Show transcript"

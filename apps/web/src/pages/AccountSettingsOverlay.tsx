@@ -23,6 +23,10 @@ import {
   setResponseStreamingPreference,
 } from "../lib/response-streaming";
 import {
+  getToolActivityPreference,
+  setToolActivityPreference,
+} from "../lib/tool-activity-preference";
+import {
   type AppearancePreference,
   getUiAppearancePreference,
   setUiAppearance,
@@ -58,6 +62,10 @@ export function GeneralSettingsPanels({
     () => getResponseStreamingPreference() === "on",
   );
   const streamRepliesId = useId();
+  const [showToolActivity, setShowToolActivity] = useState(
+    () => getToolActivityPreference() === "on",
+  );
+  const showToolActivityId = useId();
   const [avatarPending, setAvatarPending] = useState(false);
   const [avatarError, setAvatarError] = useState<string | null>(null);
 
@@ -199,6 +207,24 @@ export function GeneralSettingsPanels({
             />
             <Label htmlFor={streamRepliesId} className="text-[14px] font-normal text-foreground/75">
               <Trans>Stream replies</Trans>
+            </Label>
+          </div>
+          <div className="flex items-start gap-3 pt-4">
+            <Switch
+              id={showToolActivityId}
+              data-testid="tool-activity-toggle"
+              className="mt-0.5"
+              checked={showToolActivity}
+              onCheckedChange={(checked) => {
+                setShowToolActivity(checked);
+                setToolActivityPreference(checked ? "on" : "off");
+              }}
+            />
+            <Label
+              htmlFor={showToolActivityId}
+              className="text-[14px] font-normal text-foreground/75"
+            >
+              <Trans>Show tool activity</Trans>
             </Label>
           </div>
           <ApprovalRulesSettings />
