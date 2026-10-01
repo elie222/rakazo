@@ -136,15 +136,12 @@ export class DesktopSandboxProvider implements SandboxProvider {
     }
     await mkdir(cwd, { recursive: true });
     const argv = request.argv.length ? request.argv : ["echo", "ready"];
-    const result = await runCommand(
+    yield* streamLocalCommand(
       argv,
       cwd,
       boundedSandboxCommandTimeoutMs(request.timeoutMs),
       context.signal,
     );
-    if (result.stdout) yield { type: "stdout", data: result.stdout };
-    if (result.stderr) yield { type: "stderr", data: result.stderr };
-    yield { type: "exit", code: result.code };
   }
 
   async connectScreen(
@@ -688,59 +685,100 @@ function resolveExecuteCwd(requestCwd: string | undefined, home: string) {
   return path.resolve(home, requestCwd);
 }
 
-function runCommand(
+async function* streamLocalCommand(
   argv: string[],
   cwd: string,
   timeoutMs: number,
   signal: AbortSignal,
-): Promise<{ stdout: string; stderr: string; code: number }> {
-  return new Promise((resolve) => {
-    const child = spawn(argv[0]!, argv.slice(1), {
-      cwd,
-      env: process.env,
-      detached: process.platform !== "win32",
-    });
-    let stdout = "";
-    let stderr = "";
-    let settled = false;
-    const finish = (result: { stdout: string; stderr: string; code: number }) => {
-      if (settled) return;
-      settled = true;
+): AsyncIterable<ProcessEvent> {
+  const child = spawn(argv[0]!, argv.slice(1), {
+    cwd,
+    env: process.env,
+    detached: process.platform !== "win32",
+  });
+  const queue: ProcessEvent[] = [];
+  let ended = false;
+  let settled = false;
+  let wake: (() => void) | undefined;
+  const push = (event: ProcessEvent) => {
+    queue.push(event);
+    const notify = wake;
+    wake = undefined;
+    notify?.();
+  };
+  const finish = (code: number, stderrLine?: string) => {
+    if (settled) return;
+    settled = true;
+    clearTimeout(timeout);
+    signal.removeEventListener("abort", abort);
+    if (stderrLine) push({ type: "stderr", data: appendLine("", stderrLine) });
+    push({ type: "exit", code });
+    ended = true;
+    const notify = wake;
+    wake = undefined;
+    notify?.();
+  };
+  const terminate = (message: string, code: number) => {
+    killProcessTree(child.pid);
+    child.stdout?.destroy();
+    child.stderr?.destroy();
+    finish(code, message);
+  };
+  const abort = () => terminate("command aborted", 130);
+  const timeout = setTimeout(
+    () => terminate(`command timed out after ${timeoutMs} ms`, 124),
+    timeoutMs,
+  );
+  timeout.unref?.();
+  signal.addEventListener("abort", abort, { once: true });
+  child.stdout?.on("data", (chunk: Buffer) => {
+    if (settled) return;
+    push({ type: "stdout", data: chunk.toString("utf8") });
+  });
+  child.stderr?.on("data", (chunk: Buffer) => {
+    if (settled) return;
+    push({ type: "stderr", data: chunk.toString("utf8") });
+  });
+  child.on("error", (error) => {
+    if (settled) return;
+    settled = true;
+    clearTimeout(timeout);
+    signal.removeEventListener("abort", abort);
+    if (argv[0] === "echo") {
+      push({ type: "stdout", data: `${argv.slice(1).join(" ")}\n` });
+    } else {
+      push({ type: "stderr", data: error.message });
+    }
+    push({ type: "exit", code: argv[0] === "echo" ? 0 : 1 });
+    ended = true;
+    const notify = wake;
+    wake = undefined;
+    notify?.();
+  });
+  child.on("close", (code) => {
+    finish(code ?? 0);
+  });
+  if (signal.aborted) abort();
+  try {
+    while (!ended || queue.length > 0) {
+      if (queue.length === 0) {
+        await new Promise<void>((resolve) => {
+          wake = resolve;
+        });
+        continue;
+      }
+      const event = queue.shift();
+      if (event) yield event;
+    }
+  } finally {
+    if (!settled) {
       clearTimeout(timeout);
       signal.removeEventListener("abort", abort);
-      resolve(result);
-    };
-    const terminate = (message: string, code: number) => {
       killProcessTree(child.pid);
-      child.stdout?.destroy();
-      child.stderr?.destroy();
-      finish({ stdout, stderr: appendLine(stderr, message), code });
-    };
-    const abort = () => terminate("command aborted", 130);
-    const timeout = setTimeout(
-      () => terminate(`command timed out after ${timeoutMs} ms`, 124),
-      timeoutMs,
-    );
-    timeout.unref?.();
-    signal.addEventListener("abort", abort, { once: true });
-    child.stdout?.on("data", (chunk: Buffer) => {
-      stdout += chunk.toString("utf8");
-    });
-    child.stderr?.on("data", (chunk: Buffer) => {
-      stderr += chunk.toString("utf8");
-    });
-    child.on("error", (error) => {
-      if (argv[0] === "echo") {
-        finish({ stdout: `${argv.slice(1).join(" ")}\n`, stderr: "", code: 0 });
-        return;
-      }
-      finish({ stdout: "", stderr: error.message, code: 1 });
-    });
-    child.on("close", (code) => {
-      finish({ stdout, stderr, code: code ?? 0 });
-    });
-    if (signal.aborted) abort();
-  });
+      settled = true;
+      ended = true;
+    }
+  }
 }
 
 function killProcessTree(pid: number | undefined) {

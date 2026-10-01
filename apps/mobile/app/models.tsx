@@ -12,16 +12,21 @@ import {
   parseModelMaxTokens,
 } from "@rakazo/contracts";
 import {
+  COMPATIBLE_THINKING_LEVELS,
+  clampCatalogThinkingLevel,
   createModelProbe,
   featuredModelProviders,
   filterModelCatalog,
   initialModelProbeState,
+  pickCatalogModelId,
 } from "@rakazo/core";
+import * as Clipboard from "expo-clipboard";
 import { useFocusEffect } from "expo-router";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AccessibilityInfo,
   ActivityIndicator,
+  Alert,
   Keyboard,
   Linking,
   Pressable,
@@ -106,13 +111,25 @@ export default function Models() {
   const [oauth, setOauth] = useState<ModelOAuthBegin | null>(null);
   const [pasteCode, setPasteCode] = useState("");
   const [loading, setLoading] = useState(true);
-  const [pending, setPending] = useState<"connect" | "default" | null>(null);
+  const [pending, setPending] = useState<"connect" | "default" | "disconnect" | null>(null);
   const [oauthPending, setOauthPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const oauthAbortRef = useRef<AbortController | null>(null);
   const oauthLoginIdRef = useRef<string | null>(null);
   const oauthCodeSubmittingRef = useRef(false);
+  const [codeCopied, setCodeCopied] = useState(false);
+  const codeCopiedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const copyOAuthCode = useCallback((code: string) => {
+    void Clipboard.setStringAsync(code)
+      .then(() => {
+        setCodeCopied(true);
+        if (codeCopiedTimerRef.current) clearTimeout(codeCopiedTimerRef.current);
+        codeCopiedTimerRef.current = setTimeout(() => setCodeCopied(false), 1600);
+      })
+      .catch(() => undefined);
+  }, []);
 
   const cancelOAuth = useCallback(() => {
     const loginId = oauthLoginIdRef.current;
@@ -144,14 +161,11 @@ export default function Models() {
           nextCredential?.modelId ||
           (nextMe.defaultProvider === OPENAI_COMPATIBLE_PROVIDER_ID ? nextMe.defaultModel : "") ||
           ""
-        : (nextCatalog.find(
-            (entry) => entry.provider === nextProvider && entry.id === preferred.modelId,
-          )?.id ??
-          nextCatalog.find(
-            (entry) => entry.provider === nextProvider && entry.id === nextMe.defaultModel,
-          )?.id ??
-          nextCatalog.find((entry) => entry.provider === nextProvider)?.id ??
-          "");
+        : pickCatalogModelId(
+            nextCatalog,
+            nextProvider,
+            preferred.modelId || nextCredential?.modelId || nextMe.defaultModel,
+          );
     setMe(nextMe);
     setCatalog(nextCatalog);
     setCredentials(nextCredentials);
@@ -164,10 +178,26 @@ export default function Models() {
     if (nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID) {
       setBaseUrl(nextCredential?.baseUrl ?? "");
       setReasoning(nextCredential?.reasoning ?? false);
-      setThinkingLevel(nextCredential?.thinkingLevel ?? null);
+      setThinkingLevel(
+        clampCatalogThinkingLevel(
+          nextCredential?.modelId === nextModel ? nextCredential?.thinkingLevel : null,
+          nextCredential?.reasoning ? COMPATIBLE_THINKING_LEVELS : [],
+        ) as ThinkingLevel | null,
+      );
       setContextWindow(String(nextCredential?.contextWindow ?? DEFAULT_MODEL_CONTEXT_WINDOW));
       setSupportsImages(nextCredential?.supportsImages ?? false);
       setMaxImagesPerPrompt(String(nextCredential?.maxImagesPerPrompt ?? ""));
+    } else {
+      // A credential's stored effort is bound to its saved model choice.
+      const nextEntry = nextCatalog.find(
+        (entry) => entry.provider === nextProvider && entry.id === nextModel,
+      );
+      setThinkingLevel(
+        clampCatalogThinkingLevel(
+          nextCredential?.modelId === nextModel ? nextCredential.thinkingLevel : null,
+          nextEntry?.thinkingLevels,
+        ) as ThinkingLevel | null,
+      );
     }
     setMaxTokens(connectionMaxTokensField(nextProvider, nextCredential?.maxTokens));
   }, []);
@@ -207,20 +237,48 @@ export default function Models() {
       ),
     [groups, provider],
   );
-  const visibleGroups = useMemo(() => {
-    if (showAllProviders) return groups;
-    const byId = new Map(groups.map((group) => [group.id, group]));
-    return featuredProviders.map((entry) => byId.get(entry.provider)!);
-  }, [groups, featuredProviders, showAllProviders]);
+  const connectedProviderIds = useMemo(
+    () => new Set(credentials.map((entry) => entry.provider)),
+    [credentials],
+  );
+  const credentialByProvider = useMemo(
+    () => new Map(credentials.map((entry) => [entry.provider, entry])),
+    [credentials],
+  );
+  // Connected providers always get their own top section; the rest follow the
+  // curated order (featured first, everything behind "Show more").
+  const connectedGroups = useMemo(
+    () => groups.filter((group) => connectedProviderIds.has(group.id)),
+    [groups, connectedProviderIds],
+  );
+  const otherGroups = useMemo(() => {
+    const list = showAllProviders
+      ? groups
+      : (() => {
+          const byId = new Map(groups.map((group) => [group.id, group]));
+          return featuredProviders
+            .map((entry) => byId.get(entry.provider))
+            .filter((group): group is (typeof groups)[number] => group !== undefined);
+        })();
+    return list.filter((group) => !connectedProviderIds.has(group.id));
+  }, [groups, featuredProviders, showAllProviders, connectedProviderIds]);
   const modelsForProvider = catalog.filter((entry) => entry.provider === provider);
   const selected = modelsForProvider.find((entry) => entry.id === modelId) ?? modelsForProvider[0];
   const showModelSearch = modelsForProvider.length > MODEL_SEARCH_THRESHOLD;
   // Hide a query typed for another provider until load()/chooseProvider clears it.
   const modelQuery = modelSearch.provider === provider ? modelSearch.query : "";
-  const visibleModels = showModelSearch
+  const matchedModels = showModelSearch
     ? filterModelCatalog(modelsForProvider, modelQuery)
     : modelsForProvider;
-  const noModelMatches = showModelSearch && visibleModels.length === 0;
+  // Use and Save still apply to the staged model, so its radio stays visible.
+  const stagedModelHidden =
+    showModelSearch &&
+    selected !== undefined &&
+    modelQuery.trim().length > 0 &&
+    !matchedModels.some((entry) => entry.id === selected.id);
+  const visibleModels =
+    stagedModelHidden && selected ? [selected, ...matchedModels] : matchedModels;
+  const noModelMatches = showModelSearch && matchedModels.length === 0;
 
   // The search field keeps focus, so tell screen readers once when the results run out.
   useEffect(() => {
@@ -231,11 +289,32 @@ export default function Models() {
   const currentEntry = catalog.find(
     (entry) => entry.provider === me?.defaultProvider && entry.id === me?.defaultModel,
   );
+  const activeCredential = credentials.find(
+    (entry) => entry.provider === me?.defaultProvider && entry.modelId === me?.defaultModel,
+  );
+  // The banner shows the effective effort — stored level or the runtime
+  // default — only when the active model can actually think.
+  const activeThinkingLabel =
+    (currentEntry?.thinkingLevels ?? []).some((level) => level !== "off") ||
+    activeCredential?.reasoning
+      ? thinkingLevelLabel(activeCredential?.thinkingLevel ?? "medium", t)
+      : null;
   const isActive =
     me?.defaultProvider === selected?.provider &&
     me?.defaultModel === (isOpenAiCompatible ? modelId.trim() : selected?.id);
   const acceptsKey = selected?.auth !== "oauth";
   const subscriptionSignIn = selected?.signIn !== undefined;
+  // Effort levels for the staged catalog model — "off" stays out, matching the
+  // model settings and per-bot Thinking pickers.
+  const catalogThinkingLevels =
+    !isOpenAiCompatible && selected
+      ? (selected.thinkingLevels ?? []).filter((level) => level !== "off")
+      : [];
+  const selectedStoredLevel =
+    !isOpenAiCompatible && credential?.modelId === selected?.id
+      ? (credential?.thinkingLevel ?? null)
+      : null;
+  const thinkingDirty = !isOpenAiCompatible && (thinkingLevel ?? null) !== selectedStoredLevel;
   const busy = pending !== null || oauthPending;
   const effectiveBaseUrl = baseUrl.trim();
   const openAiCompatibleReady = openAiCompatibleConnectReady({
@@ -259,20 +338,32 @@ export default function Models() {
   function chooseProvider(nextProvider: string) {
     cancelOAuth();
     const nextCredential = credentials.find((entry) => entry.provider === nextProvider);
+    const nextModelId =
+      nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID
+        ? (nextCredential?.modelId ?? "")
+        : pickCatalogModelId(catalog, nextProvider, nextCredential?.modelId ?? me?.defaultModel);
     Keyboard.dismiss();
     setProvider(nextProvider);
     setModelSearch({ provider: nextProvider, query: "" });
     setReasoning(nextCredential?.reasoning ?? false);
-    setThinkingLevel(nextCredential?.thinkingLevel ?? null);
+    const nextEntry = catalog.find(
+      (entry) => entry.provider === nextProvider && entry.id === nextModelId,
+    );
+    setThinkingLevel(
+      clampCatalogThinkingLevel(
+        nextCredential?.modelId === nextModelId ? nextCredential.thinkingLevel : null,
+        nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID
+          ? nextCredential?.reasoning
+            ? COMPATIBLE_THINKING_LEVELS
+            : []
+          : nextEntry?.thinkingLevels,
+      ) as ThinkingLevel | null,
+    );
     setMaxTokens(connectionMaxTokensField(nextProvider, nextCredential?.maxTokens));
     setContextWindow(String(nextCredential?.contextWindow ?? DEFAULT_MODEL_CONTEXT_WINDOW));
     setSupportsImages(nextCredential?.supportsImages ?? false);
     setMaxImagesPerPrompt(String(nextCredential?.maxImagesPerPrompt ?? ""));
-    setModelId(
-      nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID
-        ? (nextCredential?.modelId ?? "")
-        : (catalog.find((entry) => entry.provider === nextProvider)?.id ?? ""),
-    );
+    setModelId(nextModelId);
     setBaseUrl(
       nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID ? (nextCredential?.baseUrl ?? "") : "",
     );
@@ -291,7 +382,9 @@ export default function Models() {
       apiKey,
       request: (input) => rpc<{ models: string[] }>("models/probeOpenAiCompatible", input),
       onSuccess: (models) => {
-        setModelId((current) => current.trim() || models[0] || "");
+        const next = modelId.trim() || models[0] || "";
+        if (next !== modelId) stageCompatibleModelId(next);
+        else setModelId(next);
         setNotice(
           models.length === 0
             ? t("Server found. Enter a model name.")
@@ -313,7 +406,20 @@ export default function Models() {
     setNotice(null);
     setPending("default");
     try {
-      await rpc("models/setDefault", { provider: selected.provider, modelId: activeModelId });
+      await rpc("models/setDefault", {
+        provider: selected.provider,
+        modelId: activeModelId,
+        // Catalog connections keep the space default effort on the preference;
+        // openai-compatible still owns its level inside the stored endpoint config.
+        ...(!isOpenAiCompatible
+          ? {
+              thinkingLevel: clampCatalogThinkingLevel(
+                thinkingLevel,
+                selected.thinkingLevels,
+              ) as ThinkingLevel | null,
+            }
+          : {}),
+      });
       await load({ provider, modelId: activeModelId });
       setNotice(
         isOpenAiCompatible
@@ -327,9 +433,51 @@ export default function Models() {
     }
   }
 
+  async function disconnectCredential() {
+    if (!selected || !credential) return;
+    cancelOAuth();
+    setError(null);
+    setNotice(null);
+    setPending("disconnect");
+    try {
+      await rpc("models/disconnect", { provider: selected.provider });
+      setApiKey("");
+      setThinkingLevel(null);
+      await load({ provider });
+      setNotice(
+        t("Disconnected {provider}.", { provider: selected.providerName ?? selected.provider }),
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t("Could not disconnect this provider"));
+    } finally {
+      setPending(null);
+    }
+  }
+
+  function stageCompatibleModelId(nextModelId: string) {
+    setModelId(nextModelId);
+    setThinkingLevel(
+      clampCatalogThinkingLevel(
+        credential?.modelId === nextModelId ? credential.thinkingLevel : null,
+        reasoning ? COMPATIBLE_THINKING_LEVELS : [],
+      ) as ThinkingLevel | null,
+    );
+  }
+
   async function connectKey() {
     if (!selected) return;
     const savingLimitOnly = !isOpenAiCompatible && !apiKey.trim();
+    const activeModelId = isOpenAiCompatible ? modelId.trim() : selected.id;
+    const supportedThinking = isOpenAiCompatible
+      ? reasoning
+        ? COMPATIBLE_THINKING_LEVELS
+        : []
+      : selected.thinkingLevels;
+    const stagedThinking = clampCatalogThinkingLevel(
+      thinkingLevel,
+      supportedThinking,
+    ) as ThinkingLevel | null;
+    const modelChanged = (credential?.modelId ?? null) !== (activeModelId || null);
     if (isOpenAiCompatible) {
       if (!effectiveBaseUrl || !modelId.trim()) return;
     } else if (savingLimitOnly) {
@@ -384,7 +532,7 @@ export default function Models() {
               baseUrl: effectiveBaseUrl,
               modelId: modelId.trim(),
               reasoning,
-              thinkingLevel: reasoning ? thinkingLevel : null,
+              thinkingLevel: stagedThinking,
               maxTokens: parsedMaxTokens,
               contextWindow: parsedContextWindow,
               supportsImages,
@@ -396,6 +544,10 @@ export default function Models() {
               provider: selected.provider,
               ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}),
               modelId: selected.id,
+              // A limits-only save leaves the stored effort alone while the model
+              // stays put. Changing the model sends the clamped level, including
+              // null, so the previous model's effort is not reused.
+              ...(!savingLimitOnly || modelChanged ? { thinkingLevel: stagedThinking } : {}),
               maxTokens: parsedMaxTokens ?? null,
               label: selected.providerName ?? selected.provider,
             },
@@ -440,6 +592,10 @@ export default function Models() {
         {
           provider: selected.provider,
           modelId: selected.id,
+          thinkingLevel: clampCatalogThinkingLevel(
+            thinkingLevel,
+            selected.thinkingLevels,
+          ) as ThinkingLevel | null,
           label: selected.providerName ?? selected.provider,
         },
         { signal: controller.signal },
@@ -504,6 +660,602 @@ export default function Models() {
     }
   }
 
+  const compatConfig = isOpenAiCompatible ? (
+    <>
+      <Text style={styles.sectionTitle}>{t("Server URL")}</Text>
+      <TextInput
+        accessibilityLabel={t("OpenAI-compatible server URL")}
+        autoCapitalize="none"
+        autoCorrect={false}
+        editable={!busy}
+        onChangeText={updateBaseUrl}
+        placeholder={t("http://127.0.0.1:8000/v1")}
+        placeholderTextColor={native.tertiaryLabel}
+        style={styles.keyInput}
+        value={baseUrl}
+      />
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={{ expanded: showEndpointHelp }}
+        onPress={() => setShowEndpointHelp((visible) => !visible)}
+      >
+        <Text style={styles.helpLabel}>{t("Setup help")}</Text>
+      </Pressable>
+      {showEndpointHelp ? (
+        <Text style={styles.hint}>{t(OPENAI_COMPATIBLE_BASE_URL_HINT)}</Text>
+      ) : null}
+      <Pressable
+        accessibilityRole="button"
+        disabled={busy || probing || !effectiveBaseUrl}
+        onPress={() => void probeServerModels()}
+        style={({ pressed }) => [
+          styles.outlineButton,
+          (busy || probing || !effectiveBaseUrl) && styles.disabled,
+          pressed && styles.pressed,
+        ]}
+      >
+        <Text style={styles.outlineLabel}>{probing ? t("Finding…") : t("Find models")}</Text>
+      </Pressable>
+      <Text style={[styles.sectionTitle, { marginTop: 12 }]}>{t("Model")}</Text>
+      {probeModels.length && probeModels.includes(modelId) ? (
+        <View style={styles.card}>
+          {probeModels.map((entry) => (
+            <Pressable
+              key={entry}
+              accessibilityRole="radio"
+              accessibilityState={{ selected: entry === modelId }}
+              disabled={probing}
+              onPress={() => stageCompatibleModelId(entry)}
+              style={({ pressed }) => [
+                styles.modelRow,
+                entry === modelId && styles.selectedRow,
+                probing && styles.disabled,
+                pressed && styles.pressed,
+              ]}
+            >
+              <View style={styles.radio}>
+                {entry === modelId ? <View style={styles.radioDot} /> : null}
+              </View>
+              <Text style={styles.modelLabel}>{entry}</Text>
+            </Pressable>
+          ))}
+          <Pressable
+            accessibilityRole="radio"
+            accessibilityState={{ selected: false }}
+            disabled={probing}
+            onPress={() => stageCompatibleModelId("")}
+            style={({ pressed }) => [
+              styles.modelRow,
+              probing && styles.disabled,
+              pressed && styles.pressed,
+            ]}
+          >
+            <View style={styles.radio} />
+            <Text style={styles.modelLabel}>{t("Other model…")}</Text>
+          </Pressable>
+        </View>
+      ) : (
+        <>
+          <TextInput
+            accessibilityLabel={t("Model id")}
+            autoCapitalize="none"
+            autoCorrect={false}
+            editable={!busy && !probing}
+            onChangeText={stageCompatibleModelId}
+            placeholder={t("exact-model-id")}
+            placeholderTextColor={native.tertiaryLabel}
+            style={styles.keyInput}
+            value={modelId}
+          />
+          {probeModels.length ? (
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => stageCompatibleModelId(probeModels[0] ?? "")}
+            >
+              <Text style={styles.helpLabel}>{t("Use a found model")}</Text>
+            </Pressable>
+          ) : null}
+        </>
+      )}
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={{ expanded: showAdvanced }}
+        onPress={() => setShowAdvanced((visible) => !visible)}
+      >
+        <Text style={styles.helpLabel}>{t("Advanced")}</Text>
+      </Pressable>
+      {showAdvanced ? (
+        <View style={styles.modelRow}>
+          <Text style={styles.modelLabel}>{t("Supports thinking")}</Text>
+          <Switch
+            accessibilityLabel={t("Supports thinking")}
+            value={reasoning}
+            onValueChange={(value) => {
+              setReasoning(value);
+              if (!value) setThinkingLevel(null);
+            }}
+            disabled={busy}
+          />
+        </View>
+      ) : null}
+      {showAdvanced && reasoning ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={t("Reasoning effort")}
+          disabled={busy}
+          onPress={() => {
+            presentMessageActionSheet({
+              title: t("Reasoning effort"),
+              cancel: t("Cancel"),
+              more: t("More"),
+              colorScheme,
+              actions: [
+                {
+                  text: t("Default"),
+                  onPress: () => setThinkingLevel(null),
+                },
+                ...THINKING_LEVEL_OPTIONS.map((level) => ({
+                  text: thinkingLevelLabel(level, t),
+                  onPress: () => setThinkingLevel(level),
+                })),
+              ],
+            });
+          }}
+          style={styles.modelRow}
+        >
+          <Text style={styles.modelLabel}>{t("Reasoning effort")}</Text>
+          <Text style={styles.helpLabel}>
+            {thinkingLevel ? thinkingLevelLabel(thinkingLevel, t) : t("Default")}
+          </Text>
+        </Pressable>
+      ) : null}
+      {showAdvanced ? (
+        <View style={styles.modelRow}>
+          <Text style={styles.modelLabel}>{t("Context limit")}</Text>
+          <TextInput
+            accessibilityLabel={t("Context limit")}
+            editable={!busy}
+            keyboardType="number-pad"
+            maxLength={7}
+            onChangeText={setContextWindow}
+            style={[styles.keyInput, styles.maxImagesInput]}
+            value={contextWindow}
+          />
+        </View>
+      ) : null}
+      {showAdvanced ? (
+        <View style={styles.modelRow}>
+          <Text style={styles.modelLabel}>{t("Maximum output tokens")}</Text>
+          <TextInput
+            accessibilityLabel={t("Maximum output tokens")}
+            editable={!busy}
+            keyboardType="number-pad"
+            maxLength={6}
+            onChangeText={setMaxTokens}
+            style={[styles.keyInput, styles.maxImagesInput]}
+            value={maxTokens}
+          />
+        </View>
+      ) : null}
+      {showAdvanced ? (
+        <View style={styles.modelRow}>
+          <Text style={styles.modelLabel}>{t("Supports images")}</Text>
+          <Switch
+            accessibilityLabel={t("Supports images")}
+            value={supportsImages}
+            onValueChange={setSupportsImages}
+            disabled={busy}
+          />
+        </View>
+      ) : null}
+      {showAdvanced && supportsImages ? (
+        <View style={styles.modelRow}>
+          <Text style={styles.modelLabel}>{t("Maximum images per request")}</Text>
+          <TextInput
+            accessibilityLabel={t("Maximum images per request")}
+            editable={!busy}
+            keyboardType="number-pad"
+            maxLength={4}
+            onChangeText={setMaxImagesPerPrompt}
+            style={[styles.keyInput, styles.maxImagesInput]}
+            value={maxImagesPerPrompt}
+          />
+        </View>
+      ) : null}
+    </>
+  ) : null;
+
+  const compatKeySection =
+    isOpenAiCompatible && acceptsKey ? (
+      <View style={styles.keySection}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityState={{ expanded: showApiKey }}
+          onPress={() => setShowApiKey((visible) => !visible)}
+        >
+          <Text style={styles.helpLabel}>{t("API key")}</Text>
+        </Pressable>
+        {showApiKey ? (
+          <TextInput
+            accessibilityLabel={t("API key")}
+            autoCapitalize="none"
+            autoCorrect={false}
+            autoComplete="off"
+            editable={!busy}
+            importantForAutofill="no"
+            onChangeText={updateApiKey}
+            placeholder={t("Optional")}
+            placeholderTextColor={native.tertiaryLabel}
+            secureTextEntry
+            style={styles.keyInput}
+            textContentType="none"
+            value={apiKey}
+          />
+        ) : null}
+
+        <Pressable
+          accessibilityRole="button"
+          disabled={
+            busy || (isOpenAiCompatible ? !openAiCompatibleReady : apiKey.trim().length < 8)
+          }
+          onPress={() => void connectKey()}
+          style={({ pressed }) => [
+            styles.primaryButton,
+            (busy || (isOpenAiCompatible ? !openAiCompatibleReady : apiKey.trim().length < 8)) &&
+              styles.disabled,
+            pressed && styles.pressed,
+          ]}
+        >
+          <Text style={styles.primaryLabel}>
+            {pending === "connect"
+              ? t("Saving…")
+              : isOpenAiCompatible
+                ? t("Save")
+                : credential
+                  ? t("Replace API key")
+                  : t("Connect API key")}
+          </Text>
+        </Pressable>
+      </View>
+    ) : null;
+
+  const catalogModelCard =
+    !isOpenAiCompatible && selected ? (
+      <>
+        {showModelSearch ? (
+          <TextInput
+            accessibilityLabel={t("Search models")}
+            autoCapitalize="none"
+            autoCorrect={false}
+            onChangeText={(query) => setModelSearch({ provider, query })}
+            placeholder={t("Search")}
+            placeholderTextColor={native.tertiaryLabel}
+            returnKeyType="search"
+            style={styles.keyInput}
+            value={modelQuery}
+          />
+        ) : null}
+        <View style={styles.card}>
+          {visibleModels.map((entry, index) => (
+            <Fragment key={`${entry.provider}:${entry.id}`}>
+              <Pressable
+                accessibilityRole="radio"
+                accessibilityState={{ selected: entry.id === selected.id }}
+                onPress={() => {
+                  Keyboard.dismiss();
+                  cancelOAuth();
+                  setModelId(entry.id);
+                  setThinkingLevel(
+                    clampCatalogThinkingLevel(
+                      entry.id === credential?.modelId ? credential?.thinkingLevel : null,
+                      entry.thinkingLevels,
+                    ) as ThinkingLevel | null,
+                  );
+                  setError(null);
+                  setNotice(null);
+                }}
+                style={({ pressed }) => [
+                  styles.modelRow,
+                  entry.id === selected.id && styles.selectedRow,
+                  pressed && styles.pressed,
+                ]}
+              >
+                <View style={styles.radio}>
+                  {entry.id === selected.id ? <View style={styles.radioDot} /> : null}
+                </View>
+                <Text style={styles.modelLabel}>{entry.label}</Text>
+              </Pressable>
+              {stagedModelHidden && noModelMatches && index === 0 ? (
+                <View style={styles.modelRow}>
+                  <Text style={[styles.modelLabel, styles.mutedLabel]}>
+                    {t("No matching models")}
+                  </Text>
+                </View>
+              ) : null}
+            </Fragment>
+          ))}
+          {!stagedModelHidden && noModelMatches ? (
+            <View style={styles.modelRow}>
+              <Text style={[styles.modelLabel, styles.mutedLabel]}>{t("No matching models")}</Text>
+            </View>
+          ) : null}
+        </View>
+        {catalogThinkingLevels.length ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t("Thinking")}
+            disabled={busy}
+            onPress={() => {
+              presentMessageActionSheet({
+                title: t("Thinking"),
+                cancel: t("Cancel"),
+                more: t("More"),
+                colorScheme,
+                actions: [
+                  {
+                    text: t("Default ({level})", {
+                      level: thinkingLevelLabel("medium", t),
+                    }),
+                    onPress: () => {
+                      setThinkingLevel(null);
+                      setNotice(null);
+                    },
+                  },
+                  ...catalogThinkingLevels.map((level) => ({
+                    text: thinkingLevelLabel(level, t),
+                    onPress: () => {
+                      setThinkingLevel(level);
+                      setNotice(null);
+                    },
+                  })),
+                ],
+              });
+            }}
+            style={styles.modelRow}
+          >
+            <Text style={styles.modelLabel}>{t("Thinking")}</Text>
+            <Text style={styles.helpLabel}>
+              {thinkingLevel
+                ? thinkingLevelLabel(thinkingLevel, t)
+                : t("Default ({level})", { level: thinkingLevelLabel("medium", t) })}
+            </Text>
+          </Pressable>
+        ) : null}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityState={{ expanded: showAdvanced }}
+          onPress={() => setShowAdvanced((visible) => !visible)}
+        >
+          <Text style={styles.helpLabel}>{t("Advanced")}</Text>
+        </Pressable>
+        {showAdvanced ? (
+          <View style={styles.modelRow}>
+            <Text style={styles.modelLabel}>{t("Maximum output tokens")}</Text>
+            <TextInput
+              accessibilityLabel={t("Maximum output tokens")}
+              editable={!busy}
+              keyboardType="number-pad"
+              maxLength={6}
+              onChangeText={setMaxTokens}
+              style={[styles.keyInput, styles.maxImagesInput]}
+              value={maxTokens}
+            />
+          </View>
+        ) : null}
+        {!isOpenAiCompatible && selected.billing ? (
+          <Text style={styles.billing}>{selected.billing}</Text>
+        ) : null}
+      </>
+    ) : null;
+
+  const catalogConnectionControls =
+    !isOpenAiCompatible && selected ? (
+      <>
+        {subscriptionSignIn ? (
+          oauth ? (
+            <View style={styles.oauthCard}>
+              {oauth.mode === "auth-url" ? (
+                <>
+                  <Text style={styles.secondary}>{t("Finish signing in in your browser:")}</Text>
+                  <Pressable onPress={() => void Linking.openURL(oauth.verificationUri)}>
+                    <Text style={styles.link}>{oauth.verificationUri}</Text>
+                  </Pressable>
+                  <Text style={styles.secondary}>
+                    {t("The final page may not load. Paste its URL or code here.")}
+                  </Text>
+                  <TextInput
+                    accessibilityLabel={t("Authorization code")}
+                    value={pasteCode}
+                    onChangeText={setPasteCode}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    placeholder={t("http://localhost:53692/callback?code=…")}
+                    placeholderTextColor={native.secondaryLabel}
+                    style={styles.keyInput}
+                  />
+                  <Pressable
+                    accessibilityRole="button"
+                    disabled={!pasteCode.trim()}
+                    onPress={() => void submitOAuthCode()}
+                    style={({ pressed }) => [
+                      styles.outlineButton,
+                      pressed && styles.pressed,
+                      !pasteCode.trim() && styles.disabled,
+                    ]}
+                  >
+                    <Text style={styles.outlineLabel}>{t("Submit")}</Text>
+                  </Pressable>
+                  <Text style={styles.secondary}>
+                    {t("Waiting for sign-in — the link expires in about {minutes} minutes.", {
+                      minutes: Math.ceil(oauth.expiresInSeconds / 60),
+                    })}
+                  </Text>
+                </>
+              ) : (
+                <>
+                  <Text style={styles.secondary}>
+                    {t("A sign-in page opened — enter this code there:")}
+                  </Text>
+                  <Pressable onPress={() => void Linking.openURL(oauth.verificationUri)}>
+                    <Text style={styles.link}>{oauth.verificationUri}</Text>
+                  </Pressable>
+                  <Text style={styles.code}>{oauth.userCode}</Text>
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={() => copyOAuthCode(oauth.userCode)}
+                    style={({ pressed }) => [styles.outlineButton, pressed && styles.pressed]}
+                  >
+                    <Text style={styles.outlineLabel}>{codeCopied ? t("Copied") : t("Copy")}</Text>
+                  </Pressable>
+                  <Text style={styles.secondary}>
+                    {t("Waiting for sign-in — the code expires in about {minutes} minutes.", {
+                      minutes: Math.ceil(oauth.expiresInSeconds / 60),
+                    })}
+                  </Text>
+                </>
+              )}
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => cancelOAuth()}
+                style={({ pressed }) => [styles.outlineButton, pressed && styles.pressed]}
+              >
+                <Text style={styles.outlineLabel}>{t("Cancel")}</Text>
+              </Pressable>
+            </View>
+          ) : (
+            <Pressable
+              accessibilityRole="button"
+              disabled={busy}
+              onPress={() => void startSubscriptionSignIn()}
+              style={({ pressed }) => [
+                styles.outlineButton,
+                pressed && styles.pressed,
+                busy && styles.disabled,
+              ]}
+            >
+              <Text style={styles.outlineLabel}>
+                {oauthPending
+                  ? t("Starting…")
+                  : credential
+                    ? t("Sign in again")
+                    : (selected.oauthLabel ?? t("Sign in"))}
+              </Text>
+            </Pressable>
+          )
+        ) : null}
+        {acceptsKey || builtinLimitSave ? (
+          <View style={styles.keySection}>
+            {acceptsKey ? (
+              <>
+                <Text style={styles.sectionTitle}>
+                  {credential
+                    ? t("Replace API key")
+                    : subscriptionSignIn
+                      ? t("Or connect an API key")
+                      : t("API key")}
+                </Text>
+                <TextInput
+                  accessibilityLabel={t("API key")}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  autoComplete="off"
+                  editable={!busy}
+                  importantForAutofill="no"
+                  onChangeText={updateApiKey}
+                  placeholder={t("sk-…")}
+                  placeholderTextColor={native.tertiaryLabel}
+                  secureTextEntry
+                  style={styles.keyInput}
+                  textContentType="none"
+                  value={apiKey}
+                />
+              </>
+            ) : null}
+
+            <Pressable
+              accessibilityRole="button"
+              disabled={busy || (!builtinLimitSave && apiKey.trim().length < 8)}
+              onPress={() => void connectKey()}
+              style={({ pressed }) => [
+                styles.primaryButton,
+                (busy || (!builtinLimitSave && apiKey.trim().length < 8)) && styles.disabled,
+                pressed && styles.pressed,
+              ]}
+            >
+              <Text style={styles.primaryLabel}>
+                {pending === "connect"
+                  ? t("Saving…")
+                  : builtinLimitSave
+                    ? t("Save limits")
+                    : credential
+                      ? t("Replace API key")
+                      : t("Connect API key")}
+              </Text>
+            </Pressable>
+          </View>
+        ) : null}
+        {selected.auth === "oauth" && !subscriptionSignIn ? (
+          <Text style={styles.secondary}>
+            {t(
+              "This subscription sign-in is not available in Rakazo yet. Use a deployment credential or choose another provider.",
+            )}
+          </Text>
+        ) : null}
+      </>
+    ) : null;
+
+  const saveRow =
+    credential && (!isActive || thinkingDirty) ? (
+      <Pressable
+        accessibilityRole="button"
+        disabled={busy || (isOpenAiCompatible && !modelId.trim())}
+        onPress={() => void setModelDefault()}
+        style={({ pressed }) => [
+          styles.primaryButton,
+          busy && styles.disabled,
+          pressed && styles.pressed,
+        ]}
+      >
+        <Text style={styles.primaryLabel}>
+          {pending === "default" ? t("Switching…") : isActive ? t("Save") : t("Use this model")}
+        </Text>
+      </Pressable>
+    ) : null;
+
+  const connectedStatusRow = credential ? (
+    <View style={styles.statusRow}>
+      <View style={styles.providerCopy}>
+        <Text style={styles.providerName}>
+          {t("Connected · {label}", { label: credential.label })}
+        </Text>
+        <Text style={styles.secondary}>{t("Stored securely. Never shown here.")}</Text>
+      </View>
+      <Pressable
+        accessibilityRole="button"
+        disabled={busy}
+        onPress={() => {
+          const name = selected?.providerName ?? selected?.provider ?? "";
+          Alert.alert(
+            t("Disconnect {name}?", { name }),
+            t("This removes the connection from every space."),
+            [
+              { text: t("Cancel"), style: "cancel" },
+              {
+                text: t("Disconnect"),
+                style: "destructive",
+                onPress: () => void disconnectCredential(),
+              },
+            ],
+          );
+        }}
+        style={({ pressed }) => [pressed && styles.pressed, busy && styles.disabled]}
+      >
+        <Text style={styles.disconnectLabel}>
+          {pending === "disconnect" ? t("Disconnecting…") : t("Disconnect")}
+        </Text>
+      </Pressable>
+    </View>
+  ) : null;
   if (loading && catalog.length === 0) {
     return (
       <SafeAreaView edges={["bottom"]} style={[styles.screen, styles.centered]}>
@@ -526,6 +1278,9 @@ export default function Models() {
           </Text>
           <Text style={styles.secondary}>
             {currentEntry?.providerName ?? me?.defaultProvider ?? t("Configured by deployment")}
+            {activeThinkingLabel
+              ? ` · ${t("Thinking: {level}", { level: activeThinkingLabel })}`
+              : ""}
           </Text>
         </View>
 
@@ -534,32 +1289,66 @@ export default function Models() {
 
         <Text style={styles.sectionTitle}>{t("Providers")}</Text>
         <View style={styles.card}>
-          {visibleGroups.map((group) => {
-            const connected = credentials.some((entry) => entry.provider === group.id);
-            return (
-              <Pressable
-                key={group.id}
-                accessibilityRole="button"
-                accessibilityState={{ selected: group.id === provider }}
-                onPress={() => chooseProvider(group.id)}
-                style={({ pressed }) => [
-                  styles.providerRow,
-                  group.id === provider && styles.selectedRow,
-                  pressed && styles.pressed,
-                ]}
-              >
-                <View style={styles.providerCopy}>
-                  <Text style={styles.providerName}>{group.name}</Text>
-                  <Text style={styles.secondary}>
-                    {t(group.entries.length === 1 ? "{count} model" : "{count} models", {
-                      count: group.entries.length,
-                    })}
-                  </Text>
-                </View>
-                {connected ? <Text style={styles.connected}>{t("Connected")}</Text> : null}
-              </Pressable>
-            );
-          })}
+          {connectedGroups.length ? (
+            <>
+              <Text style={styles.groupLabel}>{t("Connected")}</Text>
+              {connectedGroups.map((group) => {
+                const groupCredential = credentialByProvider.get(group.id);
+                const savedModelLabel = groupCredential?.modelId
+                  ? (group.entries.find((entry) => entry.id === groupCredential.modelId)?.label ??
+                    groupCredential.modelId)
+                  : null;
+                return (
+                  <Pressable
+                    key={group.id}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: group.id === provider }}
+                    onPress={() => chooseProvider(group.id)}
+                    style={({ pressed }) => [
+                      styles.providerRow,
+                      group.id === provider && styles.selectedRow,
+                      pressed && styles.pressed,
+                    ]}
+                  >
+                    <View style={styles.providerCopy}>
+                      <Text style={styles.providerName}>{group.name}</Text>
+                      <Text style={styles.secondary}>
+                        {savedModelLabel ??
+                          t(group.entries.length === 1 ? "{count} model" : "{count} models", {
+                            count: group.entries.length,
+                          })}
+                      </Text>
+                    </View>
+                  </Pressable>
+                );
+              })}
+              {otherGroups.length ? (
+                <Text style={styles.groupLabel}>{t("All providers")}</Text>
+              ) : null}
+            </>
+          ) : null}
+          {otherGroups.map((group) => (
+            <Pressable
+              key={group.id}
+              accessibilityRole="button"
+              accessibilityState={{ selected: group.id === provider }}
+              onPress={() => chooseProvider(group.id)}
+              style={({ pressed }) => [
+                styles.providerRow,
+                group.id === provider && styles.selectedRow,
+                pressed && styles.pressed,
+              ]}
+            >
+              <View style={styles.providerCopy}>
+                <Text style={styles.providerName}>{group.name}</Text>
+                <Text style={styles.secondary}>
+                  {t(group.entries.length === 1 ? "{count} model" : "{count} models", {
+                    count: group.entries.length,
+                  })}
+                </Text>
+              </View>
+            </Pressable>
+          ))}
           {groups.length > featuredProviders.length ? (
             <Pressable
               accessibilityRole="button"
@@ -575,487 +1364,30 @@ export default function Models() {
         </View>
 
         {selected ? (
-          <>
-            {!isOpenAiCompatible ? <Text style={styles.sectionTitle}>{t("Model")}</Text> : null}
-            {isOpenAiCompatible ? (
-              <>
-                <Text style={styles.sectionTitle}>{t("Server URL")}</Text>
-                <TextInput
-                  accessibilityLabel={t("OpenAI-compatible server URL")}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  editable={!busy}
-                  onChangeText={updateBaseUrl}
-                  placeholder={t("http://127.0.0.1:8000/v1")}
-                  placeholderTextColor={native.tertiaryLabel}
-                  style={styles.keyInput}
-                  value={baseUrl}
-                />
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityState={{ expanded: showEndpointHelp }}
-                  onPress={() => setShowEndpointHelp((visible) => !visible)}
-                >
-                  <Text style={styles.helpLabel}>{t("Setup help")}</Text>
-                </Pressable>
-                {showEndpointHelp ? (
-                  <Text style={styles.hint}>{t(OPENAI_COMPATIBLE_BASE_URL_HINT)}</Text>
-                ) : null}
-                <Pressable
-                  accessibilityRole="button"
-                  disabled={busy || probing || !effectiveBaseUrl}
-                  onPress={() => void probeServerModels()}
-                  style={({ pressed }) => [
-                    styles.outlineButton,
-                    (busy || probing || !effectiveBaseUrl) && styles.disabled,
-                    pressed && styles.pressed,
-                  ]}
-                >
-                  <Text style={styles.outlineLabel}>
-                    {probing ? t("Finding…") : t("Find models")}
-                  </Text>
-                </Pressable>
-                <Text style={[styles.sectionTitle, { marginTop: 12 }]}>{t("Model")}</Text>
-                {probeModels.length && probeModels.includes(modelId) ? (
-                  <View style={styles.card}>
-                    {probeModels.map((entry) => (
-                      <Pressable
-                        key={entry}
-                        accessibilityRole="radio"
-                        accessibilityState={{ selected: entry === modelId }}
-                        disabled={probing}
-                        onPress={() => setModelId(entry)}
-                        style={({ pressed }) => [
-                          styles.modelRow,
-                          entry === modelId && styles.selectedRow,
-                          probing && styles.disabled,
-                          pressed && styles.pressed,
-                        ]}
-                      >
-                        <View style={styles.radio}>
-                          {entry === modelId ? <View style={styles.radioDot} /> : null}
-                        </View>
-                        <Text style={styles.modelLabel}>{entry}</Text>
-                      </Pressable>
-                    ))}
-                    <Pressable
-                      accessibilityRole="radio"
-                      accessibilityState={{ selected: false }}
-                      disabled={probing}
-                      onPress={() => setModelId("")}
-                      style={({ pressed }) => [
-                        styles.modelRow,
-                        probing && styles.disabled,
-                        pressed && styles.pressed,
-                      ]}
-                    >
-                      <View style={styles.radio} />
-                      <Text style={styles.modelLabel}>{t("Other model…")}</Text>
-                    </Pressable>
-                  </View>
-                ) : (
-                  <>
-                    <TextInput
-                      accessibilityLabel={t("Model id")}
-                      autoCapitalize="none"
-                      autoCorrect={false}
-                      editable={!busy && !probing}
-                      onChangeText={setModelId}
-                      placeholder={t("exact-model-id")}
-                      placeholderTextColor={native.tertiaryLabel}
-                      style={styles.keyInput}
-                      value={modelId}
-                    />
-                    {probeModels.length ? (
-                      <Pressable
-                        accessibilityRole="button"
-                        onPress={() => setModelId(probeModels[0] ?? "")}
-                      >
-                        <Text style={styles.helpLabel}>{t("Use a found model")}</Text>
-                      </Pressable>
-                    ) : null}
-                  </>
-                )}
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityState={{ expanded: showAdvanced }}
-                  onPress={() => setShowAdvanced((visible) => !visible)}
-                >
-                  <Text style={styles.helpLabel}>{t("Advanced")}</Text>
-                </Pressable>
-                {showAdvanced ? (
-                  <View style={styles.modelRow}>
-                    <Text style={styles.modelLabel}>{t("Supports thinking")}</Text>
-                    <Switch
-                      accessibilityLabel={t("Supports thinking")}
-                      value={reasoning}
-                      onValueChange={(value) => {
-                        setReasoning(value);
-                        if (!value) setThinkingLevel(null);
-                      }}
-                      disabled={busy}
-                    />
-                  </View>
-                ) : null}
-                {showAdvanced && reasoning ? (
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel={t("Reasoning effort")}
-                    disabled={busy}
-                    onPress={() => {
-                      presentMessageActionSheet({
-                        title: t("Reasoning effort"),
-                        cancel: t("Cancel"),
-                        more: t("More"),
-                        colorScheme,
-                        actions: [
-                          {
-                            text: t("Default"),
-                            onPress: () => setThinkingLevel(null),
-                          },
-                          ...THINKING_LEVEL_OPTIONS.map((level) => ({
-                            text: thinkingLevelLabel(level, t),
-                            onPress: () => setThinkingLevel(level),
-                          })),
-                        ],
-                      });
-                    }}
-                    style={styles.modelRow}
-                  >
-                    <Text style={styles.modelLabel}>{t("Reasoning effort")}</Text>
-                    <Text style={styles.helpLabel}>
-                      {thinkingLevel ? thinkingLevelLabel(thinkingLevel, t) : t("Default")}
-                    </Text>
-                  </Pressable>
-                ) : null}
-                {showAdvanced ? (
-                  <View style={styles.modelRow}>
-                    <Text style={styles.modelLabel}>{t("Context limit")}</Text>
-                    <TextInput
-                      accessibilityLabel={t("Context limit")}
-                      editable={!busy}
-                      keyboardType="number-pad"
-                      maxLength={7}
-                      onChangeText={setContextWindow}
-                      style={[styles.keyInput, styles.maxImagesInput]}
-                      value={contextWindow}
-                    />
-                  </View>
-                ) : null}
-                {showAdvanced ? (
-                  <View style={styles.modelRow}>
-                    <Text style={styles.modelLabel}>{t("Maximum output tokens")}</Text>
-                    <TextInput
-                      accessibilityLabel={t("Maximum output tokens")}
-                      editable={!busy}
-                      keyboardType="number-pad"
-                      maxLength={6}
-                      onChangeText={setMaxTokens}
-                      style={[styles.keyInput, styles.maxImagesInput]}
-                      value={maxTokens}
-                    />
-                  </View>
-                ) : null}
-                {showAdvanced ? (
-                  <View style={styles.modelRow}>
-                    <Text style={styles.modelLabel}>{t("Supports images")}</Text>
-                    <Switch
-                      accessibilityLabel={t("Supports images")}
-                      value={supportsImages}
-                      onValueChange={setSupportsImages}
-                      disabled={busy}
-                    />
-                  </View>
-                ) : null}
-                {showAdvanced && supportsImages ? (
-                  <View style={styles.modelRow}>
-                    <Text style={styles.modelLabel}>{t("Maximum images per request")}</Text>
-                    <TextInput
-                      accessibilityLabel={t("Maximum images per request")}
-                      editable={!busy}
-                      keyboardType="number-pad"
-                      maxLength={4}
-                      onChangeText={setMaxImagesPerPrompt}
-                      style={[styles.keyInput, styles.maxImagesInput]}
-                      value={maxImagesPerPrompt}
-                    />
-                  </View>
-                ) : null}
-              </>
-            ) : (
-              <>
-                {showModelSearch ? (
-                  <TextInput
-                    accessibilityLabel={t("Search models")}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    onChangeText={(query) => setModelSearch({ provider, query })}
-                    placeholder={t("Search")}
-                    placeholderTextColor={native.tertiaryLabel}
-                    returnKeyType="search"
-                    style={styles.keyInput}
-                    value={modelQuery}
-                  />
-                ) : null}
-                <View style={styles.card}>
-                  {noModelMatches ? (
-                    <View style={styles.modelRow}>
-                      <Text style={[styles.modelLabel, styles.mutedLabel]}>
-                        {t("No matching models")}
-                      </Text>
-                    </View>
-                  ) : null}
-                  {visibleModels.map((entry) => (
-                    <Pressable
-                      key={`${entry.provider}:${entry.id}`}
-                      accessibilityRole="radio"
-                      accessibilityState={{ selected: entry.id === selected.id }}
-                      onPress={() => {
-                        Keyboard.dismiss();
-                        cancelOAuth();
-                        setModelId(entry.id);
-                        setError(null);
-                        setNotice(null);
-                      }}
-                      style={({ pressed }) => [
-                        styles.modelRow,
-                        entry.id === selected.id && styles.selectedRow,
-                        pressed && styles.pressed,
-                      ]}
-                    >
-                      <View style={styles.radio}>
-                        {entry.id === selected.id ? <View style={styles.radioDot} /> : null}
-                      </View>
-                      <Text style={styles.modelLabel}>{entry.label}</Text>
-                    </Pressable>
-                  ))}
-                </View>
-              </>
-            )}
-            {!isOpenAiCompatible ? (
-              <>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityState={{ expanded: showAdvanced }}
-                  onPress={() => setShowAdvanced((visible) => !visible)}
-                >
-                  <Text style={styles.helpLabel}>{t("Advanced")}</Text>
-                </Pressable>
-                {showAdvanced ? (
-                  <View style={styles.modelRow}>
-                    <Text style={styles.modelLabel}>{t("Maximum output tokens")}</Text>
-                    <TextInput
-                      accessibilityLabel={t("Maximum output tokens")}
-                      editable={!busy}
-                      keyboardType="number-pad"
-                      maxLength={6}
-                      onChangeText={setMaxTokens}
-                      style={[styles.keyInput, styles.maxImagesInput]}
-                      value={maxTokens}
-                    />
-                  </View>
-                ) : null}
-              </>
-            ) : null}
-            {!isOpenAiCompatible && selected.billing ? (
-              <Text style={styles.billing}>{selected.billing}</Text>
-            ) : null}
-
-            {!isOpenAiCompatible ? (
-              <View style={styles.credentialCard}>
-                <Text style={styles.eyebrow}>{t("Personal credential")}</Text>
-                <Text style={styles.credentialTitle}>
-                  {credential
-                    ? t("Connected · {label}", { label: credential.label })
-                    : t("Not connected")}
-                </Text>
-                <Text style={styles.secondary}>
-                  {credential
-                    ? t("Stored securely. Never shown here.")
-                    : t("Connect this provider to use it as your personal model.")}
-                </Text>
-              </View>
-            ) : null}
-
-            {subscriptionSignIn ? (
-              oauth ? (
-                <View style={styles.oauthCard}>
-                  {oauth.mode === "auth-url" ? (
-                    <>
-                      <Text style={styles.secondary}>
-                        {t("Finish signing in in your browser:")}
-                      </Text>
-                      <Pressable onPress={() => void Linking.openURL(oauth.verificationUri)}>
-                        <Text style={styles.link}>{oauth.verificationUri}</Text>
-                      </Pressable>
-                      <Text style={styles.secondary}>
-                        {t("The final page may not load. Paste its URL or code here.")}
-                      </Text>
-                      <TextInput
-                        accessibilityLabel={t("Authorization code")}
-                        value={pasteCode}
-                        onChangeText={setPasteCode}
-                        autoCapitalize="none"
-                        autoCorrect={false}
-                        placeholder={t("http://localhost:53692/callback?code=…")}
-                        placeholderTextColor={native.secondaryLabel}
-                        style={styles.keyInput}
-                      />
-                      <Pressable
-                        accessibilityRole="button"
-                        disabled={!pasteCode.trim()}
-                        onPress={() => void submitOAuthCode()}
-                        style={({ pressed }) => [
-                          styles.outlineButton,
-                          pressed && styles.pressed,
-                          !pasteCode.trim() && styles.disabled,
-                        ]}
-                      >
-                        <Text style={styles.outlineLabel}>{t("Submit")}</Text>
-                      </Pressable>
-                      <Text style={styles.secondary}>{t("Waiting for sign-in…")}</Text>
-                    </>
-                  ) : (
-                    <>
-                      <Text style={styles.secondary}>{t("Enter this code in your browser:")}</Text>
-                      <Pressable onPress={() => void Linking.openURL(oauth.verificationUri)}>
-                        <Text style={styles.link}>{oauth.verificationUri}</Text>
-                      </Pressable>
-                      <Text style={styles.code}>{oauth.userCode}</Text>
-                      <Text style={styles.secondary}>{t("Waiting for sign-in…")}</Text>
-                    </>
-                  )}
-                </View>
-              ) : (
-                <Pressable
-                  accessibilityRole="button"
-                  disabled={busy}
-                  onPress={() => void startSubscriptionSignIn()}
-                  style={({ pressed }) => [
-                    styles.outlineButton,
-                    pressed && styles.pressed,
-                    busy && styles.disabled,
-                  ]}
-                >
-                  <Text style={styles.outlineLabel}>
-                    {oauthPending ? t("Starting…") : (selected.oauthLabel ?? t("Sign in"))}
-                  </Text>
-                </Pressable>
-              )
-            ) : null}
-
-            {acceptsKey || builtinLimitSave ? (
-              <View style={styles.keySection}>
-                {isOpenAiCompatible ? (
-                  <>
-                    <Pressable
-                      accessibilityRole="button"
-                      accessibilityState={{ expanded: showApiKey }}
-                      onPress={() => setShowApiKey((visible) => !visible)}
-                    >
-                      <Text style={styles.helpLabel}>{t("API key")}</Text>
-                    </Pressable>
-                    {showApiKey ? (
-                      <TextInput
-                        accessibilityLabel={t("API key")}
-                        autoCapitalize="none"
-                        autoCorrect={false}
-                        autoComplete="off"
-                        editable={!busy}
-                        importantForAutofill="no"
-                        onChangeText={updateApiKey}
-                        placeholder={t("Optional")}
-                        placeholderTextColor={native.tertiaryLabel}
-                        secureTextEntry
-                        style={styles.keyInput}
-                        textContentType="none"
-                        value={apiKey}
-                      />
-                    ) : null}
-                  </>
-                ) : acceptsKey ? (
-                  <>
-                    <Text style={styles.sectionTitle}>
-                      {credential
-                        ? t("Replace API key")
-                        : subscriptionSignIn
-                          ? t("Or connect an API key")
-                          : t("API key")}
-                    </Text>
-                    <TextInput
-                      accessibilityLabel={t("API key")}
-                      autoCapitalize="none"
-                      autoCorrect={false}
-                      autoComplete="off"
-                      editable={!busy}
-                      importantForAutofill="no"
-                      onChangeText={updateApiKey}
-                      placeholder={t("sk-…")}
-                      placeholderTextColor={native.tertiaryLabel}
-                      secureTextEntry
-                      style={styles.keyInput}
-                      textContentType="none"
-                      value={apiKey}
-                    />
-                  </>
-                ) : null}
-                <Pressable
-                  accessibilityRole="button"
-                  disabled={
-                    busy ||
-                    (isOpenAiCompatible
-                      ? !openAiCompatibleReady
-                      : !builtinLimitSave && apiKey.trim().length < 8)
-                  }
-                  onPress={() => void connectKey()}
-                  style={({ pressed }) => [
-                    styles.primaryButton,
-                    (busy ||
-                      (isOpenAiCompatible
-                        ? !openAiCompatibleReady
-                        : !builtinLimitSave && apiKey.trim().length < 8)) &&
-                      styles.disabled,
-                    pressed && styles.pressed,
-                  ]}
-                >
-                  <Text style={styles.primaryLabel}>
-                    {pending === "connect"
-                      ? t("Saving…")
-                      : isOpenAiCompatible || builtinLimitSave
-                        ? t("Save")
-                        : credential
-                          ? t("Replace API key")
-                          : t("Connect API key")}
-                  </Text>
-                </Pressable>
-              </View>
-            ) : null}
-
-            {selected.auth === "oauth" && !subscriptionSignIn ? (
+          isOpenAiCompatible ? (
+            <>
+              {compatConfig}
+              {compatKeySection}
+              {saveRow}
+            </>
+          ) : credential ? (
+            <>
+              {connectedStatusRow}
+              <Text style={styles.sectionTitle}>{t("Model")}</Text>
+              {catalogModelCard}
+              {saveRow}
+              <View style={styles.maintenanceSection}>{catalogConnectionControls}</View>
+            </>
+          ) : (
+            <>
               <Text style={styles.secondary}>
-                {t(
-                  "This subscription sign-in is not available in Rakazo yet. Use a deployment credential or choose another provider.",
-                )}
+                {t("Connect this provider to use it as your personal model.")}
               </Text>
-            ) : null}
-
-            {credential && !isActive ? (
-              <Pressable
-                accessibilityRole="button"
-                disabled={busy || (isOpenAiCompatible && !modelId.trim())}
-                onPress={() => void setModelDefault()}
-                style={({ pressed }) => [
-                  styles.primaryButton,
-                  busy && styles.disabled,
-                  pressed && styles.pressed,
-                ]}
-              >
-                <Text style={styles.primaryLabel}>
-                  {pending === "default" ? t("Switching…") : t("Use this model")}
-                </Text>
-              </Pressable>
-            ) : null}
-          </>
+              {catalogConnectionControls}
+              <Text style={styles.sectionTitle}>{t("Model")}</Text>
+              {catalogModelCard}
+            </>
+          )
         ) : null}
       </ScrollView>
     </SafeAreaView>
@@ -1131,9 +1463,30 @@ function createModelsStyles() {
       fontSize: 16,
       fontWeight: "600",
     },
-    connected: {
-      color: tokens.success,
-      fontSize: 13,
+    groupLabel: {
+      color: native.tertiaryLabel,
+      fontSize: 12,
+      textTransform: "uppercase",
+      letterSpacing: 1,
+      paddingHorizontal: 16,
+      paddingTop: 14,
+      paddingBottom: 8,
+    },
+    statusRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 12,
+      marginTop: 8,
+    },
+    disconnectLabel: {
+      color: native.secondaryLabel,
+      fontSize: 15,
+    },
+    maintenanceSection: {
+      marginTop: 16,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: native.fillPressed,
+      paddingTop: 8,
     },
     modelRow: {
       minHeight: 54,
@@ -1188,18 +1541,6 @@ function createModelsStyles() {
       fontSize: 13,
       marginTop: 8,
       textDecorationLine: "underline",
-    },
-    credentialCard: {
-      borderRadius: 14,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: native.fillPressed,
-      padding: 16,
-      marginTop: 8,
-    },
-    credentialTitle: {
-      color: native.label,
-      fontSize: 16,
-      marginTop: 6,
     },
     oauthCard: {
       borderRadius: 14,

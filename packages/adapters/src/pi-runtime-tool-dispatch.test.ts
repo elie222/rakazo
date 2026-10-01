@@ -523,7 +523,13 @@ describe("Pi connector tool dispatch", () => {
         // Exercise Pi argument preparation and execution, not just path helpers.
       }
       expect(executeTool.mock.calls).toStrictEqual([
-        ["shell", cwd ? { command, cwd } : { command }, "call-1"],
+        [
+          "shell",
+          cwd ? { command, cwd } : { command },
+          "call-1",
+          undefined,
+          { onShellStillRunning: expect.any(Function) },
+        ],
       ]);
     },
   );
@@ -561,6 +567,7 @@ describe("Pi connector tool dispatch", () => {
       { collection: "notes", title: "Result", body: "Done" },
       "call-1",
       { connectorId: "destination", toolName: "destination.write" },
+      { onShellStillRunning: expect.any(Function) },
     );
   });
 
@@ -1454,6 +1461,8 @@ describe("Pi connector tool dispatch", () => {
         content: '{\n  "last_run": 1787648953\n}',
       },
       "call-1",
+      undefined,
+      { onShellStillRunning: expect.any(Function) },
     );
   });
 });

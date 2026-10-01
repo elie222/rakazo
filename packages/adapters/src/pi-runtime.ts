@@ -62,6 +62,8 @@ import {
   type PiSessionHandle,
   type PiSessionRecorder,
 } from "./pi-session.js";
+import type { FinishedShellCommand } from "./shell-command-stream.js";
+import { deliverFinishedShells } from "./shell-command-stream.js";
 import { textContentArg } from "./tool-text.js";
 
 const running = new Map<string, { controller: AbortController; work: Promise<void> }>();
@@ -216,6 +218,7 @@ export class PiAgentRuntime implements AgentRuntime {
           signal,
           depth: 0,
           pausePending: false,
+          pendingShells: [],
         };
         resumeHost = host;
         const tools = toAgentTools(toolDefs, host);
@@ -282,6 +285,16 @@ export class PiAgentRuntime implements AgentRuntime {
               pruneStalePageStateContext(messages),
               request.model.maxImagesPerPrompt,
             ),
+          finishTurn: async (turn, turnSignal) => {
+            await deliverFinishedShells(
+              (text) => {
+                agent.followUp({ role: "user", content: text, timestamp: Date.now() });
+              },
+              host.pendingShells,
+              turn,
+              turnSignal,
+            );
+          },
           prepareNextTurnWithContext: async () => {
             if (!request.claimSteering) return undefined;
             const steering = await request.claimSteering([...seenSteeringIds]);
@@ -998,9 +1011,17 @@ function toAgentTool(tool: ConnectorTool, host: ToolHost, exposedName: string): 
             };
           }
           if (host.request.executeTool) {
-            const result = tool.route
-              ? await host.request.executeTool(tool.name, args, executionId, tool.route)
-              : await host.request.executeTool(tool.name, args, executionId);
+            const result = await host.request.executeTool(
+              tool.name,
+              args,
+              executionId,
+              tool.route,
+              {
+                onShellStillRunning: (completion) => {
+                  host.pendingShells.push(completion);
+                },
+              },
+            );
             if (isAgentToolExecutionResult(result)) {
               if (isToolPauseResult(result)) host.pausePending = true;
               return boundAgentToolResult(result);
@@ -1096,8 +1117,20 @@ async function executeSubagent(host: ToolHost, executionId: string, args: Record
     model: subagentModel,
     apiKey: selectedModel.apiKey,
     depth: 1,
+    pendingShells: [],
   };
-  const nested = new Agent({
+  let nested!: Agent;
+  nested = new Agent({
+    finishTurn: async (turn, turnSignal) => {
+      await deliverFinishedShells(
+        (text) => {
+          nested.followUp({ role: "user", content: text, timestamp: Date.now() });
+        },
+        nestedHost.pendingShells,
+        turn,
+        turnSignal,
+      );
+    },
     sessionId: conversationSessionId(host.request.threadId, host.request.botId, agentId),
     streamFn: (m, ctx, options) =>
       reliableModelStream(
@@ -1771,6 +1804,8 @@ interface ToolHost {
   signal: AbortSignal;
   depth: number;
   pausePending: boolean;
+  /** Shell commands that returned output and are still running. */
+  pendingShells: Array<Promise<FinishedShellCommand>>;
 }
 
 function toolCallBudgetExceededMessage(limit: number) {

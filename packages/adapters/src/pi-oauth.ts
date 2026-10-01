@@ -261,6 +261,7 @@ export type PiOAuthConnected = {
   credential: OAuthCredential;
   provider: string;
   modelId?: string;
+  thinkingLevel?: string | null;
   label?: string;
   signal: AbortSignal;
 };
@@ -295,6 +296,7 @@ type Session = {
   spaceId: string;
   provider: string;
   modelId?: string;
+  thinkingLevel?: string | null;
   label?: string;
   abort: AbortController;
   state: SessionState;
@@ -758,6 +760,7 @@ export class PiOAuthLogins {
     spaceId: string;
     provider: string;
     modelId?: string;
+    thinkingLevel?: string | null;
     label?: string;
     signal?: AbortSignal;
   }): Promise<PiOAuthBegin> {
@@ -771,7 +774,8 @@ export class PiOAuthLogins {
     }
 
     const scope = oauthScopeKey(input.userId, input.spaceId, input.provider);
-    const prepared = await this.withReplacementLock(scope, input.signal, async () => {
+    const lockKey = oauthProviderKey(input.userId, input.provider);
+    const prepared = await this.withReplacementLock(lockKey, input.signal, async () => {
       await this.retireActiveSession(scope, input.signal);
       throwIfAborted(input.signal);
 
@@ -785,6 +789,7 @@ export class PiOAuthLogins {
         spaceId: input.spaceId,
         provider: input.provider,
         modelId: input.modelId,
+        thinkingLevel: input.thinkingLevel,
         label: input.label,
         abort,
         state: "pending",
@@ -947,6 +952,7 @@ export class PiOAuthLogins {
         credential: session.credential,
         provider: session.provider,
         modelId: session.modelId,
+        thinkingLevel: session.thinkingLevel,
         label: session.label,
         signal: session.abort.signal,
       };
@@ -1058,6 +1064,30 @@ export class PiOAuthLogins {
     }
   }
 
+  /** Retire every sign-in this user started for one provider, in any space —
+   *  disconnect removes the account credential, so no space's session may
+   *  finish afterward. The shared provider lock orders this against begin. */
+  async cancelProvider(input: { userId: string; provider: string }): Promise<void> {
+    await this.withReplacementLock(
+      oauthProviderKey(input.userId, input.provider),
+      undefined,
+      async () => {
+        const scopes = [
+          ...new Set(
+            [...this.pending.values()]
+              .filter(
+                (session) => session.userId === input.userId && session.provider === input.provider,
+              )
+              .map((session) => session.scope),
+          ),
+        ];
+        for (const scope of scopes) {
+          await this.retireActiveSession(scope, undefined);
+        }
+      },
+    );
+  }
+
   private removeSession(session: Session): void {
     if (session.expiresTimer) clearTimeout(session.expiresTimer);
     session.expiresTimer = undefined;
@@ -1104,6 +1134,12 @@ function sleep(ms: number): Promise<void> {
 
 function oauthScopeKey(userId: string, spaceId: string, provider: string): string {
   return JSON.stringify([userId, spaceId, provider]);
+}
+
+// Begins and disconnect cancellation share one lock per user+provider so a
+// mid-flight begin cannot install a session after disconnect retires them.
+function oauthProviderKey(userId: string, provider: string): string {
+  return JSON.stringify([userId, provider]);
 }
 
 function httpsAuthorizationUrl(input: string): string {

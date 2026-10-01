@@ -280,7 +280,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "shell",
     description:
-      "Run a command inside this bot's computer. cwd defaults to the bot's folder on a Team Computer and the workspace root on a Private Computer.",
+      "Run a command inside this bot's computer. cwd defaults to the bot's folder on a Team Computer and the workspace root on a Private Computer. Output can arrive while the command is still running; tell the user any one-time code or sign-in URL in that output.",
     inputSchema: {
       type: "object",
       properties: {

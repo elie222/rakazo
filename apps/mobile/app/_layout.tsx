@@ -1,5 +1,6 @@
 import { DarkTheme, Stack, ThemeProvider } from "expo-router";
 import * as ScreenOrientation from "expo-screen-orientation";
+import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useMemo, useState } from "react";
 import { View } from "react-native";
@@ -19,6 +20,8 @@ import { native, useResolvedAppearance } from "../lib/native";
 import { loadResponseStreamingPreference } from "../lib/response-streaming";
 
 configureForegroundNotifications();
+// Keep the splash up until the saved appearance applies, so the first frame isn't in the OS scheme.
+void SplashScreen.preventAutoHideAsync().catch(() => undefined);
 
 export default function Layout() {
   useEffect(() => {
@@ -29,6 +32,7 @@ export default function Layout() {
   }, []);
   const { t } = useI18n();
   const [ready, setReady] = useState(false);
+  const [appearanceReady, setAppearanceReady] = useState(false);
   const resolved = useResolvedAppearance();
   const navigationTheme = useMemo(() => {
     const tokens = mobileTokens();
@@ -48,8 +52,16 @@ export default function Layout() {
   }, [resolved]);
 
   useEffect(() => {
+    if (appearanceReady && ready) void SplashScreen.hideAsync().catch(() => undefined);
+  }, [appearanceReady, ready]);
+
+  useEffect(() => {
     void Promise.all([
-      Promise.all([loadApiBase(), loadAppearancePreference(), loadResponseStreamingPreference()])
+      Promise.all([
+        loadApiBase(),
+        loadAppearancePreference().finally(() => setAppearanceReady(true)),
+        loadResponseStreamingPreference(),
+      ])
         .then(async () =>
           resumeLiveNotifications(
             currentApiBase(),

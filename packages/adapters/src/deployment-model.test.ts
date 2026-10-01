@@ -6,7 +6,7 @@ describe("resolveDeploymentModel", () => {
     const both = { OPENROUTER_API_KEY: "or-key", ANTHROPIC_API_KEY: "sk-ant-key" };
     expect(resolveDeploymentModel(both)).toEqual({
       provider: "openrouter",
-      model: "openai/gpt-5.6-luna",
+      model: "openai/gpt-6-luna",
       key: "or-key",
     });
     // The whole point: switching the provider switches the key with it.

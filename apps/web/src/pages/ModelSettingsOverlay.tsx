@@ -1,3 +1,4 @@
+import { i18n } from "@lingui/core";
 import { Plural, Trans, useLingui } from "@lingui/react/macro";
 import type { Me, ThinkingLevel } from "@rakazo/contracts";
 import {
@@ -12,8 +13,23 @@ import {
   parseModelMaxImagesPerPrompt,
   parseModelMaxTokens,
 } from "@rakazo/contracts";
-import { createModelProbe, filterModelCatalog, initialModelProbeState } from "@rakazo/core";
 import {
+  COMPATIBLE_THINKING_LEVELS,
+  clampCatalogThinkingLevel,
+  createModelProbe,
+  filterModelCatalog,
+  initialModelProbeState,
+  pickCatalogModelId,
+} from "@rakazo/core";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
   Button,
   Dialog,
   DialogClose,
@@ -26,7 +42,7 @@ import {
   NativeSelect,
   NativeSelectOption,
 } from "@rakazo/ui-web";
-import { ChevronDown, X } from "lucide-react";
+import { Check, ChevronDown, Copy, X } from "lucide-react";
 import {
   type KeyboardEvent as ReactKeyboardEvent,
   type RefObject,
@@ -36,8 +52,10 @@ import {
   useRef,
   useState,
 } from "react";
+import { useCopyText } from "../lib/copy-text";
 import { localizedProviderHint } from "../lib/localized-provider-hint";
 import type { ModelCatalogEntry, ModelCredential } from "../lib/model-auth";
+import { thinkingLevelLabel } from "../lib/model-catalog";
 import { rpc } from "../lib/rpc";
 import { useModelOAuthSignIn } from "../lib/use-model-oauth-signin";
 
@@ -76,8 +94,10 @@ export function ModelSettingsOverlay({
   const [{ models: probeModels, probing }, setProbe] = useState(initialModelProbeState);
   const [modelProbe] = useState(() => createModelProbe(setProbe));
   const resetOpenAiCompatibleProbe = modelProbe.reset;
+  const [codeCopied, copyOAuthCode] = useCopyText();
   const [loading, setLoading] = useState(true);
-  const [pending, setPending] = useState<"connect" | "default" | null>(null);
+  const [pending, setPending] = useState<"connect" | "default" | "disconnect" | null>(null);
+  const [confirmDisconnect, setConfirmDisconnect] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const detailScrollRef = useRef<HTMLDivElement>(null);
@@ -90,6 +110,7 @@ export function ModelSettingsOverlay({
     pasteCode,
     setPasteCode,
     oauthPending,
+    popupBlocked,
     cancelOAuthAttempt,
     startSubscriptionSignIn,
     submitOAuthCode,
@@ -124,11 +145,11 @@ export function ModelSettingsOverlay({
           "")
         : (nextCatalog.find((entry) => entry.provider === nextProvider && entry.id === modelId)
             ?.id ??
-          nextCatalog.find(
-            (entry) => entry.provider === nextProvider && entry.id === nextMe.defaultModel,
-          )?.id ??
-          nextCatalog.find((entry) => entry.provider === nextProvider)?.id ??
-          "");
+          pickCatalogModelId(
+            nextCatalog,
+            nextProvider,
+            nextCredential?.modelId ?? nextMe.defaultModel,
+          ));
     setCatalog(nextCatalog);
     setCredentials(nextCredentials);
     setMe(nextMe);
@@ -139,10 +160,26 @@ export function ModelSettingsOverlay({
       if (nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID) {
         setBaseUrl(nextCredential?.baseUrl ?? "");
         setReasoning(nextCredential?.reasoning ?? false);
-        setThinkingLevel(nextCredential?.thinkingLevel ?? null);
+        setThinkingLevel(
+          clampCatalogThinkingLevel(
+            nextCredential?.modelId === nextModel ? nextCredential?.thinkingLevel : null,
+            nextCredential?.reasoning ? COMPATIBLE_THINKING_LEVELS : [],
+          ) as ThinkingLevel | null,
+        );
         setContextWindow(String(nextCredential?.contextWindow ?? DEFAULT_MODEL_CONTEXT_WINDOW));
         setSupportsImages(nextCredential?.supportsImages ?? false);
         setMaxImagesPerPrompt(String(nextCredential?.maxImagesPerPrompt ?? ""));
+      } else {
+        // A credential's stored effort is bound to its saved model choice.
+        const nextEntry = nextCatalog.find(
+          (entry) => entry.provider === nextProvider && entry.id === nextModel,
+        );
+        setThinkingLevel(
+          clampCatalogThinkingLevel(
+            nextCredential?.modelId === nextModel ? nextCredential.thinkingLevel : null,
+            nextEntry?.thinkingLevels,
+          ) as ThinkingLevel | null,
+        );
       }
       setMaxTokens(connectionMaxTokensField(nextProvider, nextCredential?.maxTokens));
     }
@@ -173,29 +210,89 @@ export function ModelSettingsOverlay({
       entries,
     }));
   }, [catalog]);
+  const credentialByProvider = useMemo(
+    () => new Map(credentials.map((entry) => [entry.provider, entry])),
+    [credentials],
+  );
+  const connectedProviderIds = useMemo(
+    () => new Set(credentials.map((entry) => entry.provider)),
+    [credentials],
+  );
+  const searching = providerQuery.trim() !== "";
   const filteredGroups = useMemo(() => {
     const query = providerQuery.trim().toLowerCase();
-    if (!query) return groups;
-    return groups.filter((group) =>
-      [group.id, group.name, ...group.entries.flatMap((entry) => [entry.id, entry.label])]
-        .join(" ")
-        .toLowerCase()
-        .includes(query),
+    const matched = query
+      ? groups.filter((group) =>
+          [group.id, group.name, ...group.entries.flatMap((entry) => [entry.id, entry.label])]
+            .join(" ")
+            .toLowerCase()
+            .includes(query),
+        )
+      : groups;
+    // Rank exact/prefix provider-name hits above incidental substring matches,
+    // then float connected providers so they are reachable without scrolling.
+    const score = (group: (typeof groups)[number]) =>
+      query
+        ? group.id.toLowerCase().startsWith(query) || group.name.toLowerCase().startsWith(query)
+          ? 0
+          : group.name.toLowerCase().includes(query) || group.id.toLowerCase().includes(query)
+            ? 1
+            : 2
+        : 0;
+    return [...matched].sort(
+      (a, b) =>
+        score(a) - score(b) ||
+        Number(connectedProviderIds.has(b.id)) - Number(connectedProviderIds.has(a.id)),
     );
-  }, [groups, providerQuery]);
+  }, [groups, providerQuery, connectedProviderIds]);
+  // Browsing separates connected providers into their own section; searching
+  // flattens back into one ranked list.
+  const connectedGroups = useMemo(
+    () => (searching ? [] : filteredGroups.filter((group) => connectedProviderIds.has(group.id))),
+    [searching, filteredGroups, connectedProviderIds],
+  );
+  const otherGroups = useMemo(
+    () =>
+      searching
+        ? filteredGroups
+        : filteredGroups.filter((group) => !connectedProviderIds.has(group.id)),
+    [searching, filteredGroups, connectedProviderIds],
+  );
   const modelsForProvider = catalog.filter((entry) => entry.provider === provider);
   const selected = modelsForProvider.find((entry) => entry.id === modelId) ?? modelsForProvider[0];
   selectedLabelRef.current = selected?.label;
+  const disconnectName = selected?.providerName ?? selected?.provider ?? "";
   const isOpenAiCompatible = provider === OPENAI_COMPATIBLE_PROVIDER_ID;
   const credential = credentials.find((entry) => entry.provider === provider);
   const currentEntry = catalog.find(
     (entry) => entry.provider === me?.defaultProvider && entry.id === me?.defaultModel,
   );
+  const activeCredential = credentials.find(
+    (entry) => entry.provider === me?.defaultProvider && entry.modelId === me?.defaultModel,
+  );
+  // The banner shows the effective effort — stored level or the runtime
+  // default — only when the active model can actually think.
+  const activeThinkingLabel =
+    (currentEntry?.thinkingLevels ?? []).some((level) => level !== "off") ||
+    activeCredential?.reasoning
+      ? thinkingLevelLabel(activeCredential?.thinkingLevel ?? "medium")
+      : null;
   const isActive =
     me?.defaultProvider === selected?.provider &&
     me?.defaultModel === (isOpenAiCompatible ? modelId.trim() : selected?.id);
   const acceptsKey = selected?.auth !== "oauth";
   const subscriptionSignIn = selected?.signIn !== undefined;
+  // Effort levels for the staged catalog model — "off" stays out, matching the
+  // per-bot Thinking picker.
+  const catalogThinkingLevels =
+    !isOpenAiCompatible && selected
+      ? (selected.thinkingLevels ?? []).filter((level) => level !== "off")
+      : [];
+  const selectedStoredLevel =
+    !isOpenAiCompatible && credential?.modelId === selected?.id
+      ? (credential?.thinkingLevel ?? null)
+      : null;
+  const thinkingDirty = !isOpenAiCompatible && (thinkingLevel ?? null) !== selectedStoredLevel;
   const busy = pending !== null || oauthPending;
   const effectiveBaseUrl = baseUrl.trim();
   const openAiCompatibleReady = openAiCompatibleConnectReady({
@@ -216,22 +313,44 @@ export function ModelSettingsOverlay({
     resetOpenAiCompatibleProbe();
   }
 
+  function stageCompatibleModelId(nextModelId: string) {
+    setModelId(nextModelId);
+    setThinkingLevel(
+      clampCatalogThinkingLevel(
+        credential?.modelId === nextModelId ? credential.thinkingLevel : null,
+        reasoning ? COMPATIBLE_THINKING_LEVELS : [],
+      ) as ThinkingLevel | null,
+    );
+  }
+
   function chooseProvider(nextProvider: string) {
     cancelOAuthAttempt();
     selectionRevisionRef.current += 1;
     const nextCredential = credentials.find((entry) => entry.provider === nextProvider);
+    const nextModelId =
+      nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID
+        ? (nextCredential?.modelId ?? "")
+        : pickCatalogModelId(catalog, nextProvider, nextCredential?.modelId ?? me?.defaultModel);
     setProvider(nextProvider);
     setReasoning(nextCredential?.reasoning ?? false);
-    setThinkingLevel(nextCredential?.thinkingLevel ?? null);
+    const nextEntry = catalog.find(
+      (entry) => entry.provider === nextProvider && entry.id === nextModelId,
+    );
+    setThinkingLevel(
+      clampCatalogThinkingLevel(
+        nextCredential?.modelId === nextModelId ? nextCredential.thinkingLevel : null,
+        nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID
+          ? nextCredential?.reasoning
+            ? COMPATIBLE_THINKING_LEVELS
+            : []
+          : nextEntry?.thinkingLevels,
+      ) as ThinkingLevel | null,
+    );
     setMaxTokens(connectionMaxTokensField(nextProvider, nextCredential?.maxTokens));
     setContextWindow(String(nextCredential?.contextWindow ?? DEFAULT_MODEL_CONTEXT_WINDOW));
     setSupportsImages(nextCredential?.supportsImages ?? false);
     setMaxImagesPerPrompt(String(nextCredential?.maxImagesPerPrompt ?? ""));
-    setModelId(
-      nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID
-        ? (nextCredential?.modelId ?? "")
-        : (catalog.find((entry) => entry.provider === nextProvider)?.id ?? ""),
-    );
+    setModelId(nextModelId);
     setBaseUrl(
       nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID ? (nextCredential?.baseUrl ?? "") : "",
     );
@@ -251,7 +370,9 @@ export function ModelSettingsOverlay({
       apiKey,
       request: rpc.models.probeOpenAiCompatible,
       onSuccess: (models) => {
-        setModelId((current) => current.trim() || models[0] || "");
+        const next = modelId.trim() || models[0] || "";
+        if (next !== modelId) stageCompatibleModelId(next);
+        else setModelId(next);
         setNotice(openAiCompatibleProbeSuccessMessage(models.length));
       },
       onError: (err) =>
@@ -267,7 +388,20 @@ export function ModelSettingsOverlay({
     setNotice(null);
     setPending("default");
     try {
-      await rpc.models.setDefault({ provider: selected.provider, modelId: activeModelId });
+      await rpc.models.setDefault({
+        provider: selected.provider,
+        modelId: activeModelId,
+        // Catalog connections keep the space default effort on the preference;
+        // openai-compatible still owns its level inside the stored endpoint config.
+        ...(!isOpenAiCompatible
+          ? {
+              thinkingLevel: clampCatalogThinkingLevel(
+                thinkingLevel,
+                selected.thinkingLevels,
+              ) as ThinkingLevel | null,
+            }
+          : {}),
+      });
       await refresh();
       setNotice(isOpenAiCompatible ? t`Model updated.` : t`Now using ${selected.label}.`);
     } catch (err) {
@@ -280,6 +414,19 @@ export function ModelSettingsOverlay({
   async function connectKey() {
     if (!selected) return;
     const savingLimitOnly = !isOpenAiCompatible && !apiKey.trim();
+    const activeModelId = isOpenAiCompatible ? modelId.trim() : selected.id;
+    const supportedThinking = isOpenAiCompatible
+      ? reasoning
+        ? COMPATIBLE_THINKING_LEVELS
+        : []
+      : selected.thinkingLevels;
+    // The staged effort belongs to the model on screen. Clamp it before connect
+    // or a limit save so a previous model's level cannot stick.
+    const stagedThinking = clampCatalogThinkingLevel(
+      thinkingLevel,
+      supportedThinking,
+    ) as ThinkingLevel | null;
+    const modelChanged = (credential?.modelId ?? null) !== (activeModelId || null);
     if (isOpenAiCompatible) {
       if (!effectiveBaseUrl || !modelId.trim()) return;
     } else if (savingLimitOnly) {
@@ -329,7 +476,7 @@ export function ModelSettingsOverlay({
               baseUrl: effectiveBaseUrl,
               modelId: modelId.trim(),
               reasoning,
-              thinkingLevel: reasoning ? thinkingLevel : null,
+              thinkingLevel: stagedThinking,
               maxTokens: parsedMaxTokens,
               contextWindow: parsedContextWindow,
               supportsImages,
@@ -341,6 +488,10 @@ export function ModelSettingsOverlay({
               provider: selected.provider,
               ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}),
               modelId: selected.id,
+              // A limits-only save leaves the stored effort alone while the model
+              // stays put. Changing the model sends the clamped level, including
+              // null, so the previous model's effort is not reused.
+              ...(!savingLimitOnly || modelChanged ? { thinkingLevel: stagedThinking } : {}),
               maxTokens: parsedMaxTokens ?? null,
               label: selected.providerName ?? selected.provider,
             },
@@ -360,6 +511,26 @@ export function ModelSettingsOverlay({
     }
   }
 
+  async function disconnectCredential() {
+    if (!selected || !credential) return;
+    cancelOAuthAttempt();
+    setError(null);
+    setNotice(null);
+    setPending("disconnect");
+    try {
+      await rpc.models.disconnect({ provider: selected.provider });
+      setApiKey("");
+      setThinkingLevel(null);
+      await refresh();
+      detailScrollRef.current?.scrollTo({ top: 0 });
+      setNotice(t`Disconnected ${selected.providerName ?? selected.provider}.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t`Could not disconnect this provider`);
+    } finally {
+      setPending(null);
+    }
+  }
+
   function handleClose() {
     cancelOAuthAttempt(false);
     onClose();
@@ -371,9 +542,390 @@ export function ModelSettingsOverlay({
     void startSubscriptionSignIn({
       provider: selected.provider,
       modelId: selected.id,
+      thinkingLevel: clampCatalogThinkingLevel(
+        thinkingLevel,
+        selected.thinkingLevels,
+      ) as ThinkingLevel | null,
       label: selected.providerName ?? selected.provider,
     });
   }
+
+  function renderProviderRow(group: (typeof groups)[number], connectedSection: boolean) {
+    const rowCredential = credentialByProvider.get(group.id);
+    const savedModelLabel = rowCredential?.modelId
+      ? (group.entries.find((entry) => entry.id === rowCredential.modelId)?.label ??
+        rowCredential.modelId)
+      : null;
+    return (
+      <button
+        key={group.id}
+        type="button"
+        aria-current={group.id === provider ? "true" : undefined}
+        onClick={() => chooseProvider(group.id)}
+        className={`flex w-full items-center gap-3 border-b border-border px-3.5 py-3 text-start last:border-0 ${
+          group.id === provider ? "bg-accent text-accent-foreground" : "hover:bg-accent/50"
+        }`}
+      >
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-[15px] text-foreground">{group.name}</span>
+          <span className="mt-0.5 block truncate text-[12px] text-muted-foreground/80">
+            {connectedSection && savedModelLabel ? (
+              savedModelLabel
+            ) : (
+              <>
+                <Plural value={group.entries.length} one="# model" other="# models" />
+                {" · "}
+                {localizedProviderHint(group.entries[0]!)}
+              </>
+            )}
+          </span>
+        </span>
+        {!connectedSection && rowCredential ? (
+          <span className="text-[12px] text-success">
+            <Trans>Connected</Trans>
+          </span>
+        ) : null}
+      </button>
+    );
+  }
+
+  // The staged model's own configuration block: picker, effort, billing note.
+  const catalogModelConfig =
+    !isOpenAiCompatible && selected ? (
+      <>
+        <div className="block text-[13.5px] text-muted-foreground">
+          <span>
+            <Trans>Model</Trans>
+          </span>
+          <ModelPicker
+            options={modelsForProvider}
+            value={selected.id}
+            onChange={(nextModelId) => {
+              cancelOAuthAttempt();
+              selectionRevisionRef.current += 1;
+              setModelId(nextModelId);
+              const nextEntry = modelsForProvider.find((entry) => entry.id === nextModelId);
+              setThinkingLevel(
+                clampCatalogThinkingLevel(
+                  nextModelId === credential?.modelId ? credential?.thinkingLevel : null,
+                  nextEntry?.thinkingLevels,
+                ) as ThinkingLevel | null,
+              );
+              setError(null);
+              setNotice(null);
+            }}
+          />
+          <ModelThinkingOptions
+            showThinking={false}
+            disabled={busy}
+            advancedLabel={t`Advanced`}
+            maxTokens={maxTokens}
+            onMaxTokensChange={(value) => {
+              selectionRevisionRef.current += 1;
+              setMaxTokens(value);
+              setNotice(null);
+            }}
+            maxTokensLabel={t`Maximum output tokens`}
+          />
+        </div>
+        {catalogThinkingLevels.length ? (
+          <label
+            className="mt-4 block text-[13.5px] text-muted-foreground"
+            htmlFor="model-thinking-level"
+          >
+            <Trans>Thinking</Trans>
+            <NativeSelect
+              id="model-thinking-level"
+              className="mt-2 w-full text-foreground"
+              value={thinkingLevel ?? ""}
+              disabled={busy}
+              onChange={(event) => {
+                selectionRevisionRef.current += 1;
+                setThinkingLevel((event.target.value || null) as ThinkingLevel | null);
+                setNotice(null);
+              }}
+            >
+              <NativeSelectOption value="">
+                {i18n._({
+                  id: "Default ({0})",
+                  message: "Default ({0})",
+                  values: { "0": thinkingLevelLabel("medium") },
+                })}
+              </NativeSelectOption>
+              {catalogThinkingLevels.map((level) => (
+                <NativeSelectOption key={level} value={level}>
+                  {thinkingLevelLabel(level)}
+                </NativeSelectOption>
+              ))}
+            </NativeSelect>
+          </label>
+        ) : null}
+        {selected.billing ? (
+          <p className="mt-2 text-[13px] leading-[1.5] text-muted-foreground">{selected.billing}</p>
+        ) : null}
+      </>
+    ) : null;
+
+  // Sign-in/key controls shared between the unconnected connect flow and the
+  // connected maintenance area.
+  const connectionControls = !isOpenAiCompatible ? (
+    <>
+      {subscriptionSignIn ? (
+        <div className="mt-5 first:mt-0">
+          {oauth ? (
+            <div className="rounded-xl border border-border px-4 py-3">
+              {oauth.mode === "auth-url" ? (
+                <>
+                  <p className="text-sm leading-[1.5] text-muted-foreground">
+                    {popupBlocked ? (
+                      <Trans>
+                        Open{" "}
+                        <a
+                          href={oauth.verificationUri}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-foreground underline"
+                        >
+                          {new URL(oauth.verificationUri).hostname}
+                        </a>{" "}
+                        to finish signing in.
+                      </Trans>
+                    ) : (
+                      <Trans>
+                        Finish signing in at{" "}
+                        <a
+                          href={oauth.verificationUri}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-foreground underline"
+                        >
+                          {new URL(oauth.verificationUri).hostname}
+                        </a>
+                        . The final page may not load; paste its URL or code here.
+                      </Trans>
+                    )}
+                  </p>
+                  <div className="mt-3 flex items-center gap-2">
+                    <Input
+                      value={pasteCode}
+                      onChange={(e) => setPasteCode(e.target.value)}
+                      aria-label={t`Authorization code or callback URL`}
+                      autoComplete="off"
+                      spellCheck={false}
+                      placeholder="http://localhost:53692/callback?code=…"
+                      className="text-foreground md:text-[13px]"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={!pasteCode.trim()}
+                      onClick={() => void submitOAuthCode()}
+                    >
+                      <Trans>Submit</Trans>
+                    </Button>
+                  </div>
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    <Plural
+                      value={Math.ceil(oauth.expiresInSeconds / 60)}
+                      one="Waiting for sign-in — the link expires in about # minute."
+                      other="Waiting for sign-in — the link expires in about # minutes."
+                    />
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm leading-[1.5] text-muted-foreground">
+                    {popupBlocked ? (
+                      <Trans>
+                        Open{" "}
+                        <a
+                          href={oauth.verificationUri}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-foreground underline"
+                        >
+                          {oauth.verificationUri.replace(/^https:\/\//, "")}
+                        </a>{" "}
+                        and enter this code:
+                      </Trans>
+                    ) : (
+                      <Trans>
+                        A sign-in tab opened at{" "}
+                        <a
+                          href={oauth.verificationUri}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-foreground underline"
+                        >
+                          {oauth.verificationUri.replace(/^https:\/\//, "")}
+                        </a>
+                        . Enter this code there — this window keeps waiting:
+                      </Trans>
+                    )}
+                  </p>
+                  <div className="mt-2 flex items-center gap-3">
+                    <p className="font-mono text-[22px] tracking-[0.2em] text-foreground">
+                      {oauth.userCode}
+                    </p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => copyOAuthCode(oauth.userCode)}
+                    >
+                      {codeCopied ? (
+                        <Check size={14} strokeWidth={1.8} aria-hidden="true" />
+                      ) : (
+                        <Copy size={14} strokeWidth={1.8} aria-hidden="true" />
+                      )}
+                      {codeCopied ? <Trans>Copied</Trans> : <Trans>Copy</Trans>}
+                    </Button>
+                  </div>
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    <Plural
+                      value={Math.ceil(oauth.expiresInSeconds / 60)}
+                      one="Waiting for sign-in — the code expires in about # minute."
+                      other="Waiting for sign-in — the code expires in about # minutes."
+                    />
+                  </p>
+                </>
+              )}
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="mt-2 -ml-2 text-muted-foreground"
+                onClick={() => cancelOAuthAttempt()}
+              >
+                <Trans>Cancel</Trans>
+              </Button>
+            </div>
+          ) : (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={busy}
+              onClick={() => beginSelectedSubscriptionSignIn()}
+            >
+              {oauthPending ? (
+                <Trans>Starting…</Trans>
+              ) : credential ? (
+                <Trans>Sign in again</Trans>
+              ) : (
+                (selected.oauthLabel ?? t`Sign in`)
+              )}
+            </Button>
+          )}
+        </div>
+      ) : null}
+
+      {acceptsKey || builtinLimitSave ? (
+        <div className="mt-5 first:mt-0">
+          {acceptsKey ? (
+            <label className="block text-[13.5px] text-muted-foreground" htmlFor="model-api-key">
+              {credential ? (
+                <Trans>Replace API key</Trans>
+              ) : subscriptionSignIn ? (
+                <Trans>Or connect an API key</Trans>
+              ) : (
+                <Trans>API key</Trans>
+              )}
+              <Input
+                id="model-api-key"
+                value={apiKey}
+                onChange={(event) => updateApiKey(event.target.value)}
+                placeholder="sk-…"
+                type="password"
+                autoComplete="new-password"
+                className="mt-2 h-10 text-foreground"
+              />
+            </label>
+          ) : null}
+          <Button
+            type="button"
+            variant="secondary"
+            className="mt-3 rounded-full"
+            size="sm"
+            disabled={busy || (!builtinLimitSave && apiKey.trim().length < 8)}
+            onClick={() => void connectKey()}
+          >
+            {pending === "connect" ? (
+              <Trans>Saving…</Trans>
+            ) : builtinLimitSave ? (
+              <Trans>Save limits</Trans>
+            ) : credential ? (
+              <Trans>Replace API key</Trans>
+            ) : (
+              <Trans>Connect API key</Trans>
+            )}
+          </Button>
+        </div>
+      ) : null}
+
+      {selected?.auth === "oauth" && !subscriptionSignIn ? (
+        <p className="mt-5 text-sm leading-[1.5] text-muted-foreground first:mt-0">
+          <Trans>
+            This subscription sign-in is not available in Rakazo yet. Use a deployment credential or
+            choose another provider.
+          </Trans>
+        </p>
+      ) : null}
+    </>
+  ) : null;
+
+  // OpenAI-compatible connections keep an optional key behind a disclosure.
+  const compatKeyBlock = isOpenAiCompatible ? (
+    <div className="mt-5">
+      <details className="text-[13.5px] text-muted-foreground">
+        <summary className="w-fit cursor-pointer select-none">
+          <Trans>API key</Trans>
+        </summary>
+        <Input
+          aria-label={t`API key`}
+          value={apiKey}
+          onChange={(event) => updateApiKey(event.target.value)}
+          placeholder={t`Optional`}
+          type="password"
+          autoComplete="new-password"
+          className="mt-2 h-10 text-foreground"
+        />
+      </details>
+      <Button
+        type="button"
+        variant="secondary"
+        className="mt-3 rounded-full"
+        size="sm"
+        disabled={busy || !openAiCompatibleReady}
+        onClick={() => void connectKey()}
+      >
+        {pending === "connect" ? <Trans>Saving…</Trans> : <Trans>Save</Trans>}
+      </Button>
+    </div>
+  ) : null;
+
+  const saveButton =
+    credential && (!isActive || thinkingDirty) ? (
+      <div className="mt-6">
+        <Button
+          type="button"
+          variant="secondary"
+          className="rounded-full"
+          size="sm"
+          disabled={busy || (isOpenAiCompatible && !modelId.trim())}
+          onClick={() => void setModelDefault()}
+        >
+          {pending === "default" ? (
+            <Trans>Switching…</Trans>
+          ) : isActive ? (
+            <Trans>Save</Trans>
+          ) : (
+            <Trans>Use this model</Trans>
+          )}
+        </Button>
+      </div>
+    ) : null;
 
   const description = loading ? (
     <Trans>Loading model catalog…</Trans>
@@ -405,19 +957,24 @@ export function ModelSettingsOverlay({
         <p className="px-6 pt-1 text-[13.5px] text-muted-foreground/70 sm:px-8">{description}</p>
       )}
 
-      <div
-        className={`mx-6 rounded-xl border border-border px-4 py-3 sm:mx-8 ${embedded ? "mt-4" : "mt-5"}`}
-      >
-        <div className="text-[12.5px] uppercase tracking-[0.08em] text-muted-foreground/80">
-          <Trans>Active model</Trans>
-        </div>
-        <div className="mt-1 text-[16px] text-foreground">
-          {currentEntry?.label ?? me?.defaultModel ?? t`Deployment default`}
-        </div>
-        <div className="mt-1 text-[13px] text-muted-foreground">
-          {currentEntry?.providerName ?? me?.defaultProvider ?? (
-            <Trans>Configured by deployment</Trans>
-          )}
+      <div className={`mx-6 sm:mx-8 ${embedded ? "mt-4" : "mt-5"}`}>
+        <div className="flex items-baseline gap-3">
+          <span className="shrink-0 text-[12.5px] uppercase tracking-[0.08em] text-muted-foreground/80">
+            <Trans>Active model</Trans>
+          </span>
+          <span className="truncate text-[15px] text-foreground">
+            {currentEntry?.label ?? me?.defaultModel ?? t`Deployment default`}
+          </span>
+          <span className="truncate text-[13px] text-muted-foreground">
+            {currentEntry?.providerName ?? me?.defaultProvider ?? (
+              <Trans>Configured by deployment</Trans>
+            )}
+          </span>
+          {activeThinkingLabel ? (
+            <span className="shrink-0 text-[13px] text-muted-foreground">
+              <Trans>Thinking: {activeThinkingLabel}</Trans>
+            </span>
+          ) : null}
         </div>
       </div>
 
@@ -438,35 +995,22 @@ export function ModelSettingsOverlay({
           />
           <div className="rk-scroll mt-3 max-h-[240px] overflow-y-auto rounded-xl border border-border md:min-h-0 md:max-h-none md:flex-1">
             {filteredGroups.length ? (
-              filteredGroups.map((group) => {
-                const connected = credentials.some((entry) => entry.provider === group.id);
-                return (
-                  <button
-                    key={group.id}
-                    type="button"
-                    onClick={() => chooseProvider(group.id)}
-                    className={`flex w-full items-center gap-3 border-b border-border px-3.5 py-3 text-start last:border-0 ${
-                      group.id === provider ? "bg-muted" : "hover:bg-accent"
-                    }`}
-                  >
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[15px] text-foreground">
-                        {group.name}
-                      </span>
-                      <span className="mt-0.5 block text-[12px] text-muted-foreground/80">
-                        <Plural value={group.entries.length} one="# model" other="# models" />
-                        {" · "}
-                        {localizedProviderHint(group.entries[0]!)}
-                      </span>
-                    </span>
-                    {connected ? (
-                      <span className="text-[12px] text-success">
-                        <Trans>Connected</Trans>
-                      </span>
+              <>
+                {connectedGroups.length ? (
+                  <>
+                    <p className="border-b border-border px-3.5 pb-1.5 pt-3 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground/80">
+                      <Trans>Connected</Trans>
+                    </p>
+                    {connectedGroups.map((group) => renderProviderRow(group, true))}
+                    {otherGroups.length ? (
+                      <p className="border-b border-border px-3.5 pb-1.5 pt-3 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground/80">
+                        <Trans>All providers</Trans>
+                      </p>
                     ) : null}
-                  </button>
-                );
-              })
+                  </>
+                ) : null}
+                {otherGroups.map((group) => renderProviderRow(group, false))}
+              </>
             ) : (
               <p className="px-3.5 py-4 text-[13px] text-muted-foreground">
                 <Trans>No providers found.</Trans>
@@ -476,391 +1020,205 @@ export function ModelSettingsOverlay({
         </div>
 
         <div ref={detailScrollRef} className="rk-scroll min-h-0 min-w-0 flex-1 overflow-y-auto">
-          {error ? <p className="mb-4 text-sm text-destructive">{error}</p> : null}
-          {notice ? <p className="mb-4 text-sm text-success">{notice}</p> : null}
+          {error ? (
+            <p className="mb-4 text-sm text-destructive" role="alert">
+              {error}
+            </p>
+          ) : null}
+          {notice ? (
+            <p className="mb-4 text-sm text-success" role="status">
+              {notice}
+            </p>
+          ) : null}
           {selected ? (
             <>
-              <div className="block text-[13.5px] text-muted-foreground">
-                {isOpenAiCompatible ? (
-                  <>
-                    <label className="block" htmlFor="model-base-url">
-                      <Trans>Server URL</Trans>
-                      <Input
-                        id="model-base-url"
-                        value={baseUrl}
-                        onChange={(event) => updateBaseUrl(event.target.value)}
-                        aria-label={t`OpenAI-compatible server URL`}
-                        placeholder="http://127.0.0.1:8000/v1"
-                        autoComplete="off"
-                        className="mt-2 h-10 text-foreground"
-                      />
-                    </label>
-                    <details className="mt-2 text-[13px] leading-[1.5] text-muted-foreground">
-                      <summary className="w-fit cursor-pointer select-none">
-                        <Trans>Setup help</Trans>
-                      </summary>
-                      <p className="mt-1">
-                        {t`Paste the OpenAI-compatible address from your server. Rakazo adds /v1 if needed.`}
-                      </p>
-                    </details>
-                    <div className="mt-3 flex items-center gap-2">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        disabled={busy || probing || !effectiveBaseUrl}
-                        onClick={() => void probeServerModels()}
-                      >
-                        {probing ? <Trans>Finding…</Trans> : <Trans>Find models</Trans>}
-                      </Button>
-                    </div>
-                    <div className="mt-4 block">
-                      <span>
-                        <Trans>Model</Trans>
-                      </span>
-                      {probeModels.length && probeModels.includes(modelId) ? (
-                        <NativeSelect
-                          className="mt-2 w-full text-foreground"
-                          value={modelId}
-                          onChange={(event) => {
-                            cancelOAuthAttempt();
-                            selectionRevisionRef.current += 1;
-                            setModelId(event.target.value);
-                            setError(null);
-                            setNotice(null);
-                          }}
-                          aria-label={t`Models from server`}
-                        >
-                          {probeModels.map((id) => (
-                            <NativeSelectOption key={id} value={id}>
-                              {id}
-                            </NativeSelectOption>
-                          ))}
-                          <NativeSelectOption value="">
-                            <Trans>Other model…</Trans>
-                          </NativeSelectOption>
-                        </NativeSelect>
-                      ) : (
-                        <Input
-                          value={modelId}
-                          onChange={(event) => {
-                            cancelOAuthAttempt();
-                            selectionRevisionRef.current += 1;
-                            setModelId(event.target.value);
-                            setError(null);
-                            setNotice(null);
-                          }}
-                          aria-label={t`Model id`}
-                          placeholder="exact-model-id"
-                          className="mt-2 h-10 text-foreground"
-                        />
-                      )}
-                      {probeModels.length && !probeModels.includes(modelId) ? (
-                        <Button
-                          type="button"
-                          variant="link"
-                          className="mt-2 h-auto px-0 text-[13px] text-muted-foreground underline"
-                          onClick={() => setModelId(probeModels[0] ?? "")}
-                        >
-                          <Trans>Use a found model</Trans>
-                        </Button>
-                      ) : null}
-                    </div>
-                    <ModelThinkingOptions
-                      reasoning={reasoning}
-                      onReasoningChange={(value) => {
-                        selectionRevisionRef.current += 1;
-                        setReasoning(value);
-                        if (!value) setThinkingLevel(null);
-                        setNotice(null);
-                      }}
-                      disabled={busy}
-                      advancedLabel={t`Advanced`}
-                      thinkingLabel={t`Supports thinking`}
-                      thinkingLevel={thinkingLevel}
-                      onThinkingLevelChange={(value) => {
-                        selectionRevisionRef.current += 1;
-                        setThinkingLevel(value as ThinkingLevel | null);
-                        setNotice(null);
-                      }}
-                      thinkingLevelOptions={[
-                        { value: "minimal", label: t`Minimal` },
-                        { value: "low", label: t`Low` },
-                        { value: "medium", label: t`Medium` },
-                        { value: "high", label: t`High` },
-                        { value: "xhigh", label: t`Extra high` },
-                        { value: "max", label: t`Max` },
-                      ]}
-                      thinkingLevelLabel={t`Reasoning effort`}
-                      thinkingLevelDefaultLabel={t`Default`}
-                      maxTokens={maxTokens}
-                      onMaxTokensChange={(value) => {
-                        selectionRevisionRef.current += 1;
-                        setMaxTokens(value);
-                        setNotice(null);
-                      }}
-                      maxTokensLabel={t`Maximum output tokens`}
-                      contextWindow={contextWindow}
-                      onContextWindowChange={(value) => {
-                        selectionRevisionRef.current += 1;
-                        setContextWindow(value);
-                        setNotice(null);
-                      }}
-                      contextWindowLabel={t`Context limit`}
-                      supportsImages={supportsImages}
-                      onSupportsImagesChange={(value) => {
-                        selectionRevisionRef.current += 1;
-                        setSupportsImages(value);
-                        setNotice(null);
-                      }}
-                      imagesLabel={t`Supports images`}
-                      maxImagesPerPrompt={maxImagesPerPrompt}
-                      onMaxImagesPerPromptChange={(value) => {
-                        selectionRevisionRef.current += 1;
-                        setMaxImagesPerPrompt(value);
-                        setNotice(null);
-                      }}
-                      maxImagesLabel={t`Maximum images per request`}
+              {isOpenAiCompatible ? (
+                <div className="block text-[13.5px] text-muted-foreground">
+                  <label className="block" htmlFor="model-base-url">
+                    <Trans>Server URL</Trans>
+                    <Input
+                      id="model-base-url"
+                      value={baseUrl}
+                      onChange={(event) => updateBaseUrl(event.target.value)}
+                      aria-label={t`OpenAI-compatible server URL`}
+                      placeholder="http://127.0.0.1:8000/v1"
+                      autoComplete="off"
+                      className="mt-2 h-10 text-foreground"
                     />
-                  </>
-                ) : (
-                  <>
-                    <span>
-                      <Trans>Model</Trans>
-                    </span>
-                    <ModelPicker
-                      options={modelsForProvider}
-                      value={selected.id}
-                      onChange={(nextModelId) => {
-                        cancelOAuthAttempt();
-                        selectionRevisionRef.current += 1;
-                        setModelId(nextModelId);
-                        setError(null);
-                        setNotice(null);
-                      }}
-                    />
-                    <ModelThinkingOptions
-                      showThinking={false}
-                      disabled={busy}
-                      advancedLabel={t`Advanced`}
-                      maxTokens={maxTokens}
-                      onMaxTokensChange={(value) => {
-                        selectionRevisionRef.current += 1;
-                        setMaxTokens(value);
-                        setNotice(null);
-                      }}
-                      maxTokensLabel={t`Maximum output tokens`}
-                    />
-                  </>
-                )}
-              </div>
-              {!isOpenAiCompatible && selected.billing ? (
-                <p className="mt-2 text-[13px] leading-[1.5] text-muted-foreground">
-                  {selected.billing}
-                </p>
-              ) : null}
-
-              {!isOpenAiCompatible ? (
-                <div className="mt-5 rounded-xl border border-border px-4 py-3">
-                  <div className="text-[12.5px] uppercase tracking-[0.08em] text-muted-foreground/80">
-                    <Trans>Personal credential</Trans>
-                  </div>
-                  <div className="mt-1 text-[15px] text-foreground">
-                    {credential ? (
-                      <Trans>Connected · {credential.label}</Trans>
-                    ) : (
-                      <Trans>Not connected</Trans>
-                    )}
-                  </div>
-                  <div className="mt-1 text-[13px] text-muted-foreground">
-                    {credential ? (
-                      <Trans>Stored securely. Never shown here.</Trans>
-                    ) : (
-                      <Trans>Connect this provider to use it as your personal model.</Trans>
-                    )}
-                  </div>
-                </div>
-              ) : null}
-
-              {subscriptionSignIn ? (
-                <div className="mt-5">
-                  {oauth ? (
-                    <div className="rounded-xl border border-border px-4 py-3">
-                      {oauth.mode === "auth-url" ? (
-                        <>
-                          <p className="text-sm leading-[1.5] text-muted-foreground">
-                            <Trans>
-                              Finish signing in at{" "}
-                              <a
-                                href={oauth.verificationUri}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="text-foreground underline"
-                              >
-                                {new URL(oauth.verificationUri).hostname}
-                              </a>
-                              . The final page may not load; paste its URL or code here.
-                            </Trans>
-                          </p>
-                          <div className="mt-3 flex items-center gap-2">
-                            <Input
-                              value={pasteCode}
-                              onChange={(e) => setPasteCode(e.target.value)}
-                              aria-label={t`Authorization code or callback URL`}
-                              autoComplete="off"
-                              spellCheck={false}
-                              placeholder="http://localhost:53692/callback?code=…"
-                              className="text-foreground md:text-[13px]"
-                            />
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              disabled={!pasteCode.trim()}
-                              onClick={() => void submitOAuthCode()}
-                            >
-                              <Trans>Submit</Trans>
-                            </Button>
-                          </div>
-                          <p className="mt-2 text-sm text-muted-foreground">
-                            <Trans>Waiting for sign-in…</Trans>
-                          </p>
-                        </>
-                      ) : (
-                        <>
-                          <p className="text-sm leading-[1.5] text-muted-foreground">
-                            <Trans>
-                              Enter this code at{" "}
-                              <a
-                                href={oauth.verificationUri}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="text-foreground underline"
-                              >
-                                {oauth.verificationUri.replace(/^https:\/\//, "")}
-                              </a>
-                            </Trans>
-                          </p>
-                          <p className="mt-2 font-mono text-[22px] tracking-[0.2em] text-foreground">
-                            {oauth.userCode}
-                          </p>
-                          <p className="mt-2 text-sm text-muted-foreground">
-                            <Trans>Waiting for sign-in…</Trans>
-                          </p>
-                        </>
-                      )}
-                    </div>
-                  ) : (
+                  </label>
+                  <details className="mt-2 text-[13px] leading-[1.5] text-muted-foreground">
+                    <summary className="w-fit cursor-pointer select-none">
+                      <Trans>Setup help</Trans>
+                    </summary>
+                    <p className="mt-1">
+                      {t`Paste the OpenAI-compatible address from your server. Rakazo adds /v1 if needed.`}
+                    </p>
+                  </details>
+                  <div className="mt-3 flex items-center gap-2">
                     <Button
                       type="button"
                       variant="outline"
                       size="sm"
-                      disabled={busy}
-                      onClick={() => beginSelectedSubscriptionSignIn()}
+                      disabled={busy || probing || !effectiveBaseUrl}
+                      onClick={() => void probeServerModels()}
                     >
-                      {oauthPending ? (
-                        <Trans>Starting…</Trans>
+                      {probing ? <Trans>Finding…</Trans> : <Trans>Find models</Trans>}
+                    </Button>
+                  </div>
+                  <div className="mt-4 block">
+                    <span>
+                      <Trans>Model</Trans>
+                    </span>
+                    {probeModels.length && probeModels.includes(modelId) ? (
+                      <NativeSelect
+                        className="mt-2 w-full text-foreground"
+                        value={modelId}
+                        onChange={(event) => {
+                          cancelOAuthAttempt();
+                          selectionRevisionRef.current += 1;
+                          stageCompatibleModelId(event.target.value);
+                          setError(null);
+                          setNotice(null);
+                        }}
+                        aria-label={t`Models from server`}
+                      >
+                        {probeModels.map((id) => (
+                          <NativeSelectOption key={id} value={id}>
+                            {id}
+                          </NativeSelectOption>
+                        ))}
+                        <NativeSelectOption value="">
+                          <Trans>Other model…</Trans>
+                        </NativeSelectOption>
+                      </NativeSelect>
+                    ) : (
+                      <Input
+                        value={modelId}
+                        onChange={(event) => {
+                          cancelOAuthAttempt();
+                          selectionRevisionRef.current += 1;
+                          stageCompatibleModelId(event.target.value);
+                          setError(null);
+                          setNotice(null);
+                        }}
+                        aria-label={t`Model id`}
+                        placeholder="exact-model-id"
+                        className="mt-2 h-10 text-foreground"
+                      />
+                    )}
+                    {probeModels.length && !probeModels.includes(modelId) ? (
+                      <Button
+                        type="button"
+                        variant="link"
+                        className="mt-2 h-auto px-0 text-[13px] text-muted-foreground underline"
+                        onClick={() => stageCompatibleModelId(probeModels[0] ?? "")}
+                      >
+                        <Trans>Use a found model</Trans>
+                      </Button>
+                    ) : null}
+                  </div>
+                  <ModelThinkingOptions
+                    reasoning={reasoning}
+                    onReasoningChange={(value) => {
+                      selectionRevisionRef.current += 1;
+                      setReasoning(value);
+                      if (!value) setThinkingLevel(null);
+                      setNotice(null);
+                    }}
+                    disabled={busy}
+                    advancedLabel={t`Advanced`}
+                    thinkingLabel={t`Supports thinking`}
+                    thinkingLevel={thinkingLevel}
+                    onThinkingLevelChange={(value) => {
+                      selectionRevisionRef.current += 1;
+                      setThinkingLevel(value as ThinkingLevel | null);
+                      setNotice(null);
+                    }}
+                    thinkingLevelOptions={[
+                      { value: "minimal", label: t`Minimal` },
+                      { value: "low", label: t`Low` },
+                      { value: "medium", label: t`Medium` },
+                      { value: "high", label: t`High` },
+                      { value: "xhigh", label: t`Extra high` },
+                      { value: "max", label: t`Max` },
+                    ]}
+                    thinkingLevelLabel={t`Reasoning effort`}
+                    thinkingLevelDefaultLabel={t`Default`}
+                    maxTokens={maxTokens}
+                    onMaxTokensChange={(value) => {
+                      selectionRevisionRef.current += 1;
+                      setMaxTokens(value);
+                      setNotice(null);
+                    }}
+                    maxTokensLabel={t`Maximum output tokens`}
+                    contextWindow={contextWindow}
+                    onContextWindowChange={(value) => {
+                      selectionRevisionRef.current += 1;
+                      setContextWindow(value);
+                      setNotice(null);
+                    }}
+                    contextWindowLabel={t`Context limit`}
+                    supportsImages={supportsImages}
+                    onSupportsImagesChange={(value) => {
+                      selectionRevisionRef.current += 1;
+                      setSupportsImages(value);
+                      setNotice(null);
+                    }}
+                    imagesLabel={t`Supports images`}
+                    maxImagesPerPrompt={maxImagesPerPrompt}
+                    onMaxImagesPerPromptChange={(value) => {
+                      selectionRevisionRef.current += 1;
+                      setMaxImagesPerPrompt(value);
+                      setNotice(null);
+                    }}
+                    maxImagesLabel={t`Maximum images per request`}
+                  />
+                </div>
+              ) : null}
+              {isOpenAiCompatible ? (
+                <>
+                  {compatKeyBlock}
+                  {saveButton}
+                </>
+              ) : credential ? (
+                <>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-[15px] text-foreground">
+                        <Trans>Connected · {credential.label}</Trans>
+                      </div>
+                      <div className="mt-0.5 text-[13px] text-muted-foreground">
+                        <Trans>Stored securely. Never shown here.</Trans>
+                      </div>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="-mr-2 shrink-0 text-muted-foreground"
+                      disabled={busy}
+                      onClick={() => setConfirmDisconnect(true)}
+                    >
+                      {pending === "disconnect" ? (
+                        <Trans>Disconnecting…</Trans>
                       ) : (
-                        (selected.oauthLabel ?? t`Sign in`)
+                        <Trans>Disconnect</Trans>
                       )}
                     </Button>
-                  )}
-                </div>
-              ) : null}
-
-              {acceptsKey || builtinLimitSave ? (
-                <div className="mt-5">
-                  {acceptsKey && isOpenAiCompatible ? (
-                    <details className="text-[13.5px] text-muted-foreground">
-                      <summary className="w-fit cursor-pointer select-none">
-                        <Trans>API key</Trans>
-                      </summary>
-                      <Input
-                        aria-label={t`API key`}
-                        value={apiKey}
-                        onChange={(event) => updateApiKey(event.target.value)}
-                        placeholder={t`Optional`}
-                        type="password"
-                        autoComplete="new-password"
-                        className="mt-2 h-10 text-foreground"
-                      />
-                    </details>
-                  ) : acceptsKey ? (
-                    <label
-                      className="block text-[13.5px] text-muted-foreground"
-                      htmlFor="model-api-key"
-                    >
-                      {credential ? (
-                        <Trans>Replace API key</Trans>
-                      ) : subscriptionSignIn ? (
-                        <Trans>Or connect an API key</Trans>
-                      ) : (
-                        <Trans>API key</Trans>
-                      )}
-                      <Input
-                        id="model-api-key"
-                        value={apiKey}
-                        onChange={(event) => updateApiKey(event.target.value)}
-                        placeholder="sk-…"
-                        type="password"
-                        autoComplete="new-password"
-                        className="mt-2 h-10 text-foreground"
-                      />
-                    </label>
-                  ) : null}
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    className="mt-3 rounded-full"
-                    size="sm"
-                    disabled={
-                      busy ||
-                      (isOpenAiCompatible
-                        ? !openAiCompatibleReady
-                        : !builtinLimitSave && apiKey.trim().length < 8)
-                    }
-                    onClick={() => void connectKey()}
-                  >
-                    {pending === "connect" ? (
-                      <Trans>Saving…</Trans>
-                    ) : isOpenAiCompatible || builtinLimitSave ? (
-                      <Trans>Save</Trans>
-                    ) : credential ? (
-                      <Trans>Replace API key</Trans>
-                    ) : (
-                      <Trans>Connect API key</Trans>
-                    )}
-                  </Button>
-                </div>
-              ) : null}
-
-              {selected.auth === "oauth" && !subscriptionSignIn ? (
-                <p className="mt-5 text-sm leading-[1.5] text-muted-foreground">
-                  <Trans>
-                    This subscription sign-in is not available in Rakazo yet. Use a deployment
-                    credential or choose another provider.
-                  </Trans>
-                </p>
-              ) : null}
-
-              {credential && !isActive ? (
-                <div className="mt-6">
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    className="rounded-full"
-                    size="sm"
-                    disabled={busy || (isOpenAiCompatible && !modelId.trim())}
-                    onClick={() => void setModelDefault()}
-                  >
-                    {pending === "default" ? (
-                      <Trans>Switching…</Trans>
-                    ) : (
-                      <Trans>Use this model</Trans>
-                    )}
-                  </Button>
-                </div>
-              ) : null}
+                  </div>
+                  <div className="mt-5">{catalogModelConfig}</div>
+                  {saveButton}
+                  <div className="mt-6 border-t border-border pt-5">{connectionControls}</div>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm leading-[1.5] text-muted-foreground">
+                    <Trans>Connect this provider to use it as your personal model.</Trans>
+                  </p>
+                  {connectionControls}
+                  <div className="mt-6">{catalogModelConfig}</div>
+                </>
+              )}
             </>
           ) : loading ? (
             <p className="text-muted-foreground">
@@ -873,6 +1231,33 @@ export function ModelSettingsOverlay({
           )}
         </div>
       </div>
+      <AlertDialog open={confirmDisconnect} onOpenChange={setConfirmDisconnect}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              <Trans>Disconnect {disconnectName}?</Trans>
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              <Trans>This removes the connection from every space.</Trans>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>
+              <Trans>Cancel</Trans>
+            </AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              disabled={pending === "disconnect"}
+              onClick={() => {
+                setConfirmDisconnect(false);
+                void disconnectCredential();
+              }}
+            >
+              <Trans>Disconnect</Trans>
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 
@@ -1119,9 +1504,11 @@ function ModelPicker({
           >
             {groupRanges.map((group) => (
               <div key={group.name}>
-                <p className="px-3 pb-1 pt-2 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground/80">
-                  {group.name}
-                </p>
+                {groupRanges.length > 1 ? (
+                  <p className="px-3 pb-1 pt-2 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground/80">
+                    {group.name}
+                  </p>
+                ) : null}
                 {group.entries.map((option, groupIndex) => {
                   const index = group.start + groupIndex;
                   return (
@@ -1183,15 +1570,18 @@ function ModelOption({
       aria-selected={option.id === value}
       tabIndex={highlighted ? 0 : -1}
       className={`flex w-full items-center justify-between gap-3 px-3 py-2 text-start text-[13.5px] text-foreground outline-none hover:bg-accent focus-visible:bg-accent ${
-        highlighted || option.id === value ? "bg-accent" : ""
+        highlighted ? "bg-accent" : ""
       }`}
       onClick={() => choose(index)}
       onKeyDown={(event) => onOptionKeyDown(event, index)}
     >
       <span className="min-w-0 truncate">{option.label}</span>
-      {option.billing.toLowerCase().includes("free") ? (
-        <span className="shrink-0 text-[12px] text-muted-foreground">{t`Free`}</span>
-      ) : null}
+      <span className="flex shrink-0 items-center gap-2 text-[12px] text-muted-foreground">
+        {option.billing.toLowerCase().includes("free") ? t`Free` : null}
+        {option.id === value ? (
+          <Check size={14} strokeWidth={2} className="text-foreground" aria-hidden="true" />
+        ) : null}
+      </span>
     </button>
   );
 }

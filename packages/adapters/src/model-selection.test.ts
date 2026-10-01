@@ -14,7 +14,11 @@ import { listAvailablePiCatalog } from "./pi-catalog-availability.js";
 
 type SelectionInput = Parameters<typeof selectConfiguredModel>[0];
 
-function credential(provider: string, defaultModel: string | null) {
+function credential(
+  provider: string,
+  defaultModel: string | null,
+  thinkingLevel: string | null = null,
+) {
   return {
     id: `credential-${provider}`,
     userId: "user-1",
@@ -25,6 +29,7 @@ function credential(provider: string, defaultModel: string | null) {
     updatedAt: new Date(0),
     isDefault: false,
     defaultModel,
+    thinkingLevel,
   };
 }
 
@@ -130,6 +135,42 @@ describe("configured model selection", () => {
       },
     },
     {
+      name: "applies the preference thinking level to the space default model",
+      input: { defaultCredential: credential("space-provider", "space-model", "low") },
+      expected: {
+        provider: "space-provider",
+        id: "space-model",
+        credential: credential("space-provider", "space-model", "low"),
+        thinkingLevel: "low",
+      },
+    },
+    {
+      name: "bot override thinking beats the preference level",
+      input: {
+        bot: { modelProvider: null, modelId: null, thinkingLevel: "high" },
+        defaultCredential: credential("space-provider", "space-model", "low"),
+      },
+      expected: {
+        provider: "space-provider",
+        id: "space-model",
+        credential: credential("space-provider", "space-model", "low"),
+        thinkingLevel: "high",
+      },
+    },
+    {
+      name: "does not leak a preference level onto a different override model",
+      input: {
+        bot: { modelProvider: "bot-provider", modelId: "other-model", thinkingLevel: null },
+        overrideCredential: credential("bot-provider", "stored-model", "xhigh"),
+      },
+      expected: {
+        provider: "bot-provider",
+        id: "other-model",
+        credential: credential("bot-provider", "stored-model", "xhigh"),
+        thinkingLevel: null,
+      },
+    },
+    {
       name: "does not treat a sentinel bot override as a selected model",
       input: { bot: { ...bot, modelId: "null" }, overrideCredential },
       expected: {
@@ -137,6 +178,19 @@ describe("configured model selection", () => {
         id: "space-model",
         credential: spaceCredential,
         thinkingLevel: "high",
+      },
+    },
+    {
+      name: "inherits the preference level when the override names its model",
+      input: {
+        bot: { modelProvider: "bot-provider", modelId: "stored-model", thinkingLevel: null },
+        overrideCredential: credential("bot-provider", "stored-model", "xhigh"),
+      },
+      expected: {
+        provider: "bot-provider",
+        id: "stored-model",
+        credential: credential("bot-provider", "stored-model", "xhigh"),
+        thinkingLevel: "xhigh",
       },
     },
   ])("$name", ({ input, expected }) => {
@@ -855,6 +909,7 @@ describe("connected model validation", () => {
             credential: credential("openai-compatible", "newest-model"),
             isDefault: true,
             modelId: "newest-model",
+            thinkingLevel: null,
           };
         }
         return null;

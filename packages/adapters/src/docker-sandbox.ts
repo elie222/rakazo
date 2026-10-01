@@ -181,19 +181,31 @@ export class DockerSandboxProvider implements SandboxProvider {
     request: CommandRequest,
     context: AdapterContext,
   ): AsyncIterable<ProcessEvent> {
+    const timeoutMs = boundedSandboxCommandTimeoutMs(request.timeoutMs);
     const res = await fetch(this.url(`/computers/${computer.id}/exec`), {
       method: "POST",
       headers: { ...this.headers(context, computer.botId), "content-type": "application/json" },
       body: JSON.stringify({
         ...request,
         cwd: dockerCwd(request.cwd),
-        timeoutMs: boundedSandboxCommandTimeoutMs(request.timeoutMs),
+        timeoutMs,
       }),
       signal: context.signal,
     });
     if (!res.ok) {
       yield { type: "stderr", data: `exec failed: ${res.status}` };
       yield { type: "exit", code: 1 };
+      return;
+    }
+    const contentType = res.headers.get("content-type") ?? "";
+    if (contentType.includes("ndjson")) {
+      // The command may keep running after the first bytes (device-code logins).
+      // Don't apply the short JSON body timeout; the server enforces timeoutMs.
+      const streamSignal = AbortSignal.any([
+        context.signal,
+        AbortSignal.timeout(timeoutMs + 15_000),
+      ]);
+      yield* readNdjsonProcessEvents(res, streamSignal);
       return;
     }
     const body = await readSandboxJson<{ stdout: string; stderr: string; code: number }>(
@@ -556,6 +568,88 @@ export class DockerSandboxProvider implements SandboxProvider {
       for (const file of batch) yield file;
     }
   }
+}
+
+async function* readNdjsonProcessEvents(
+  res: Response,
+  signal: AbortSignal,
+): AsyncIterable<ProcessEvent> {
+  const reader = res.body?.getReader();
+  if (!reader) {
+    yield { type: "stderr", data: "exec failed: empty response\n" };
+    yield { type: "exit", code: 1 };
+    return;
+  }
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let bytes = 0;
+  let sawExit = false;
+  try {
+    while (!sawExit) {
+      if (signal.aborted) throw signal.reason ?? new Error("command aborted");
+      const { done, value } = await reader.read();
+      if (done) break;
+      bytes += value.byteLength;
+      if (bytes > MAX_SANDBOX_SUCCESS_RESPONSE_BYTES) {
+        yield { type: "stderr", data: "exec failed: response too large\n" };
+        yield { type: "exit", code: 1 };
+        await reader.cancel().catch(() => undefined);
+        return;
+      }
+      buffer += decoder.decode(value, { stream: true });
+      const parsed = takeProcessLines(buffer);
+      buffer = parsed.rest;
+      for (const event of parsed.events) {
+        if (event.type === "exit") sawExit = true;
+        yield event;
+      }
+    }
+    buffer += decoder.decode();
+    if (!sawExit && buffer.trim()) {
+      const parsed = takeProcessLines(`${buffer}\n`);
+      for (const event of parsed.events) {
+        if (event.type === "exit") sawExit = true;
+        yield event;
+      }
+    }
+    if (!sawExit) yield { type: "exit", code: 1 };
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+function takeProcessLines(buffer: string): { events: ProcessEvent[]; rest: string } {
+  const lines = buffer.split("\n");
+  const rest = lines.pop() ?? "";
+  const events: ProcessEvent[] = [];
+  for (const line of lines) {
+    const event = parseProcessLine(line);
+    if (event) events.push(event);
+  }
+  return { events, rest };
+}
+
+function parseProcessLine(line: string): ProcessEvent | undefined {
+  const trimmed = line.trim();
+  if (!trimmed) return undefined;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    return { type: "stderr", data: `${trimmed}\n` };
+  }
+  if (!parsed || typeof parsed !== "object") return undefined;
+  const record = parsed as { type?: unknown; data?: unknown; code?: unknown };
+  if (record.type === "stdout" && typeof record.data === "string") {
+    return { type: "stdout", data: record.data };
+  }
+  if (record.type === "stderr" && typeof record.data === "string") {
+    return { type: "stderr", data: record.data };
+  }
+  if (record.type === "exit" && typeof record.code === "number" && Number.isFinite(record.code)) {
+    return { type: "exit", code: record.code };
+  }
+  return undefined;
 }
 
 function requestDeadline(timeoutMs: number, message: string) {

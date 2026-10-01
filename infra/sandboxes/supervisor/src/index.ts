@@ -60,6 +60,7 @@ import {
   computerCommandEnv,
   computerControlTimeoutMs,
   containerActionSteps,
+  createDockerStreamDemuxer,
   demuxDockerStream,
   ensureScreenCommand,
   hasComputerIdentity,
@@ -346,32 +347,88 @@ app.post("/computers/:id/exec", async (c) => {
       timeoutMs: z.number().int().positive().optional(),
     })
     .parse(await c.req.json());
+  const timeoutMs = boundedSandboxCommandTimeoutMs(body.timeoutMs);
+  let container: Docker.Container;
+  let layout: ReturnType<typeof screenPorts>;
   try {
-    const { container } = await managedContainer(
+    const managed = await managedContainer(
       id,
       c.req.header("x-rakazo-bot-id"),
       c.req.header("x-rakazo-space-id"),
     );
+    container = managed.container;
     const screenId = c.req.header("x-rakazo-screen-id") || c.req.header("x-rakazo-bot-id") || id;
     const screenIndex = computerScreens.get(id)?.get(screenId)?.index ?? 0;
-    const layout = screenPorts(screenIndex);
-    const result = await runContainerCommand(
-      container,
-      body.argv.length ? body.argv : ["/bin/echo", "ready"],
-      {
-        workingDir: body.cwd ?? "/home/rakazo",
-        env: [
-          ...computerCommandEnv(layout),
-          ...Object.entries(body.env ?? {}).map(([k, v]) => `${k}=${v}`),
-        ],
-        timeoutMs: boundedSandboxCommandTimeoutMs(body.timeoutMs),
-      },
-    );
-    return c.json(result);
+    layout = screenPorts(screenIndex);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return c.json({ stdout: "", stderr: message, code: 1 }, 200);
   }
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream({
+    async start(controller) {
+      let closed = false;
+      const send = (event: {
+        type: "stdout" | "stderr" | "exit";
+        data?: string;
+        code?: number;
+      }) => {
+        if (closed) return;
+        try {
+          controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
+        } catch {
+          closed = true;
+        }
+      };
+      try {
+        let streamedStderr = "";
+        const result = await runContainerCommand(
+          container,
+          body.argv.length ? body.argv : ["/bin/echo", "ready"],
+          {
+            workingDir: body.cwd ?? "/home/rakazo",
+            env: [
+              ...computerCommandEnv(layout),
+              ...Object.entries(body.env ?? {}).map(([k, v]) => `${k}=${v}`),
+            ],
+            timeoutMs,
+            onOutput: (chunk) => {
+              if (!chunk.data) return;
+              if (chunk.stream === "stderr") streamedStderr += chunk.data;
+              send({ type: chunk.stream, data: chunk.data });
+            },
+          },
+        );
+        const timeoutNote = `command timed out after ${timeoutMs} ms\n`;
+        if (result.stderr.startsWith(streamedStderr)) {
+          const extra = result.stderr.slice(streamedStderr.length);
+          if (extra) send({ type: "stderr", data: extra });
+        } else if (result.stderr.endsWith(timeoutNote) && !streamedStderr.endsWith(timeoutNote)) {
+          send({ type: "stderr", data: timeoutNote });
+        }
+        send({ type: "exit", code: result.code });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        send({ type: "stderr", data: message });
+        send({ type: "exit", code: 1 });
+      } finally {
+        closed = true;
+        try {
+          controller.close();
+        } catch {
+          // The client already went away.
+        }
+      }
+    },
+  });
+  return new Response(stream, {
+    status: 200,
+    headers: {
+      "content-type": "application/x-ndjson; charset=utf-8",
+      "cache-control": "no-cache, no-transform",
+      "x-accel-buffering": "no",
+    },
+  });
 });
 
 app.post("/computers/:id/browser", async (c) => {
@@ -1486,6 +1543,8 @@ async function runContainerCommand(
     signal?: AbortSignal;
     /** Written to stdin without closing it; requires `signal`, whose abort closes stdin. */
     stdin?: string;
+    /** Live stdout/stderr. The returned buffers are still the full demuxed result. */
+    onOutput?: (chunk: { stream: "stdout" | "stderr"; data: string }) => void;
   } = {},
 ): Promise<{ stdout: string; stderr: string; code: number }> {
   if (options.stdin !== undefined && !options.signal) throw new Error("stdin requires a signal");
@@ -1510,10 +1569,19 @@ async function runContainerCommand(
   const stream = await exec.start({ hijack: true, stdin: Boolean(options.signal) });
   if (options.stdin !== undefined) stream.write(options.stdin);
   const chunks: Buffer[] = [];
+  const demuxer = options.onOutput ? createDockerStreamDemuxer() : undefined;
+  const emitOutput = (chunk: Buffer | string) => {
+    const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    chunks.push(bytes);
+    if (!demuxer || !options.onOutput) return;
+    for (const piece of demuxer.push(bytes)) {
+      if (piece.data) options.onOutput(piece);
+    }
+  };
   let onAbort: (() => void) | undefined;
   try {
     await new Promise<void>((resolve, reject) => {
-      stream.on("data", (data: Buffer) => chunks.push(data));
+      stream.on("data", (data: Buffer | string) => emitOutput(data));
       stream.on("end", resolve);
       stream.on("error", reject);
       onAbort = () => {
@@ -1526,6 +1594,11 @@ async function runContainerCommand(
     });
   } finally {
     if (onAbort) options.signal?.removeEventListener("abort", onAbort);
+  }
+  if (demuxer && options.onOutput) {
+    for (const piece of demuxer.finish()) {
+      if (piece.data) options.onOutput(piece);
+    }
   }
   const inspect = await exec.inspect();
   const code = inspect.ExitCode ?? 0;

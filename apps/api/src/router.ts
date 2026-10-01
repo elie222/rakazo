@@ -133,6 +133,7 @@ import {
   AttachmentValidationError,
   CALL_CLIENT_NONCE_PREFIX,
   callClientNonce,
+  clampCatalogThinkingLevel,
   containsSecret,
   expandSkillReferencesInPrompt,
   hasMixedOneShotSchedule,
@@ -1010,10 +1011,10 @@ export function createRouter(deps: RouterDeps) {
               refreshExpiredCredential(context.actor, secretId, CHATGPT_OAUTH_PROVIDER),
           },
         );
-        return [
-          ...(live.size > 0 ? applyCodexLiveCatalog(available, auth, live) : available),
-          scriptedCatalogEntry,
-        ];
+        const catalog = live.size > 0 ? applyCodexLiveCatalog(available, auth, live) : available;
+        // The scripted fixture only exists to drive the scripted runtime; a real
+        // runtime cannot execute it, so it stays out of the user-facing catalog.
+        return deps.env.agentRuntime === "scripted" ? [...catalog, scriptedCatalogEntry] : catalog;
       }),
       credentials: authed.models.credentials.handler(async ({ context }) => {
         const rows = await deps.prisma.userModelCredential.findMany({
@@ -1042,6 +1043,7 @@ export function createRouter(deps: RouterDeps) {
             ...row,
             isDefault: preference?.isDefault ?? false,
             defaultModel: preference?.modelId ?? null,
+            thinkingLevel: preference?.thinkingLevel ?? null,
           };
           const ciphertext = ciphertextById.get(row.secretId);
           if (!ciphertext) return modelCredentialDto(selected);
@@ -1095,6 +1097,10 @@ export function createRouter(deps: RouterDeps) {
             plaintext,
             label: input.label,
             modelId: input.modelId,
+            // openai-compatible keeps its effort inside the stored endpoint
+            // secret; catalog providers store it on the space preference.
+            thinkingLevel:
+              input.provider === OPENAI_COMPATIBLE_PROVIDER_ID ? undefined : input.thinkingLevel,
             supportsImages: input.supportsImages,
             signal: context.signal,
           },
@@ -1119,6 +1125,7 @@ export function createRouter(deps: RouterDeps) {
           spaceId: context.actor.spaceId,
           provider: input.provider,
           modelId: input.modelId,
+          thinkingLevel: input.thinkingLevel,
           label: input.label,
           signal: context.signal,
         });
@@ -1149,6 +1156,7 @@ export function createRouter(deps: RouterDeps) {
                   login.label ??
                   listPiCatalog().find((entry) => entry.provider === login.provider)?.providerName,
                 modelId: login.modelId,
+                thinkingLevel: login.thinkingLevel,
                 signal: login.signal,
               },
               codexCatalog,
@@ -1268,11 +1276,76 @@ export function createRouter(deps: RouterDeps) {
                   message: authFailure ?? UNAVAILABLE_MODEL_FOR_AUTH_MESSAGE,
                 });
               }
-              await selectSpaceModelPreference(tx, context.actor, credentialId, input.modelId);
+              let thinkingLevel: string | null | undefined = input.thinkingLevel;
+              if (thinkingLevel === undefined) {
+                // The level belongs to the preference's modelId — keep it only when the
+                // stored choice already names this model.
+                const existing = preferences.find(
+                  (preference) => preference.credential.id === credentialId,
+                );
+                thinkingLevel =
+                  existing?.modelId === usableModelId(input.modelId)
+                    ? existing.thinkingLevel
+                    : null;
+              }
+              if (thinkingLevel) {
+                const allowed = await allowedThinkingLevels(
+                  deps,
+                  context.actor,
+                  input.provider,
+                  input.modelId,
+                );
+                thinkingLevel = clampCatalogThinkingLevel(thinkingLevel, allowed);
+              }
+              await selectSpaceModelPreference(
+                tx,
+                context.actor,
+                credentialId,
+                input.modelId,
+                thinkingLevel,
+              );
             },
             { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
           );
         });
+        return { ok: true as const };
+      }),
+      disconnect: authed.models.disconnect.handler(async ({ context, input }) => {
+        // Retire pending sign-ins in every space first — the credentials are
+        // account-wide, so a finishing OAuth session anywhere could otherwise
+        // re-persist a credential the delete below just removed.
+        await deps.oauthLogins.cancelProvider({
+          userId: context.actor.userId,
+          provider: input.provider,
+        });
+        await withSerializableRetry(() =>
+          deps.prisma.$transaction(
+            async (tx) => {
+              const existing = await tx.userModelCredential.findMany({
+                where: { userId: context.actor.userId, provider: input.provider },
+              });
+              if (existing.length === 0) return;
+              const ids = existing.map((row) => row.id);
+              // Credentials belong to the account, not the space — disconnecting
+              // removes them everywhere, matching voice.disconnect. Linked
+              // preferences in other spaces go with their credential.
+              await tx.spaceModelPreference.deleteMany({
+                where: { userId: context.actor.userId, credentialId: { in: ids } },
+              });
+              await tx.userModelCredential.deleteMany({
+                where: { userId: context.actor.userId, id: { in: ids } },
+              });
+              for (const row of existing) {
+                await deleteUnreferencedCredentialSecret(tx, {
+                  credentialKind: "model",
+                  credentialId: row.id,
+                  secretId: row.secretId,
+                });
+              }
+            },
+            { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+          ),
+        );
         return { ok: true as const };
       }),
     },
@@ -5667,6 +5740,41 @@ async function modelSetup(deps: RouterDeps, actor: Actor) {
   };
 }
 
+/**
+ * Thinking levels a caller may set for a provider/model. Catalog models answer from
+ * `thinkingLevels`; unknown catalog ids return undefined (no check). OpenAI-compatible
+ * connections only advertise levels when the stored endpoint's saved model matches.
+ */
+async function allowedThinkingLevels(
+  deps: RouterDeps,
+  actor: Actor,
+  provider: string,
+  modelId: string,
+): Promise<string[] | undefined> {
+  if (provider !== OPENAI_COMPATIBLE_PROVIDER_ID) {
+    return listPiCatalog().find((item) => item.provider === provider && item.id === modelId)
+      ?.thinkingLevels;
+  }
+  let allowed: string[] | undefined = ["off"];
+  const credential = await findModelCredential(deps.prisma, actor, provider);
+  if (credential && credential.defaultModel === modelId) {
+    const secret = await deps.prisma.secret.findFirst({
+      where: { id: credential.secretId, userId: actor.userId, spaceId: null },
+      select: { ciphertext: true },
+    });
+    if (secret) {
+      try {
+        allowed =
+          modelCredentialDto(credential, deps.secrets.load(secret.ciphertext, credential.secretId))
+            .thinkingLevels ?? allowed;
+      } catch {
+        // Unreadable connections must not advertise reasoning support.
+      }
+    }
+  }
+  return allowed;
+}
+
 async function computerStatus(
   deps: RouterDeps,
   actor: Actor,
@@ -5935,6 +6043,7 @@ async function persistModelCredential(
     plaintext: string;
     label?: string;
     modelId?: string;
+    thinkingLevel?: string | null;
     supportsImages?: boolean;
     signal?: AbortSignal;
   },
@@ -5959,6 +6068,13 @@ async function persistModelCredential(
   ) {
     throw new ORPCError("BAD_REQUEST", { message: authError });
   }
+  const defaultModel =
+    requestedModelId ??
+    defaultCatalogModelId(input.provider, input.plaintext) ??
+    usableModelId(deps.env.defaultModel);
+  const allowedThinking = defaultModel
+    ? await allowedThinkingLevels(deps, actor, input.provider, defaultModel)
+    : undefined;
   const stored = await deps.secrets.put(input.plaintext, {
     operationId: "cred",
     traceId: "cred",
@@ -6007,11 +6123,26 @@ async function persistModelCredential(
               },
             });
         throwIfAborted(input.signal);
-        const defaultModel =
-          requestedModelId ??
-          defaultCatalogModelId(input.provider, input.plaintext) ??
-          usableModelId(deps.env.defaultModel);
-        await selectSpaceModelPreference(tx, actor, credential.id, defaultModel);
+        let thinkingLevel = input.thinkingLevel;
+        if (thinkingLevel === undefined) {
+          // A stored effort only carries over while it still names this model.
+          const previous = await tx.spaceModelPreference.findFirst({
+            where: {
+              spaceId: actor.spaceId,
+              userId: actor.userId,
+              credentialId: credential.id,
+            },
+            select: { modelId: true, thinkingLevel: true },
+          });
+          thinkingLevel =
+            previous?.modelId === usableModelId(defaultModel) ? previous.thinkingLevel : null;
+        }
+        // Connect and limit saves can still carry an effort chosen for the previous
+        // model. Keep it only when this model supports it; otherwise clamp or clear.
+        thinkingLevel = defaultModel
+          ? clampCatalogThinkingLevel(thinkingLevel, allowedThinking)
+          : null;
+        await selectSpaceModelPreference(tx, actor, credential.id, defaultModel, thinkingLevel);
         throwIfAborted(input.signal);
         if (existing) {
           await deleteUnreferencedCredentialSecret(tx, {

@@ -23,6 +23,7 @@ import {
   computerControlTimeoutMs,
   containerActionStep,
   containerActionSteps,
+  createDockerStreamDemuxer,
   DOCKER_BROWSER_ALIASES,
   demuxDockerStream,
   ensureScreenCommand,
@@ -828,6 +829,30 @@ describe("docker exec stream demux", () => {
     expect(demuxDockerStream(raw02)).toEqual({
       stdout: raw02.toString("utf8"),
       stderr: "",
+    });
+  });
+
+  it("emits complete frames before the stream ends", () => {
+    const stream = Buffer.concat([
+      frame(1, "code: ABCD-1234\n"),
+      frame(2, "waiting\n"),
+      frame(1, "done\n"),
+    ]);
+    const demuxer = createDockerStreamDemuxer();
+    const live: Array<{ stream: string; data: string }> = [];
+    const splitAt = 8 + Buffer.byteLength("code: ABCD-1234\n") + 3;
+    live.push(...demuxer.push(stream.subarray(0, splitAt)));
+    expect(live).toEqual([{ stream: "stdout", data: "code: ABCD-1234\n" }]);
+    live.push(...demuxer.push(stream.subarray(splitAt)));
+    live.push(...demuxer.finish());
+    expect(live).toEqual([
+      { stream: "stdout", data: "code: ABCD-1234\n" },
+      { stream: "stderr", data: "waiting\n" },
+      { stream: "stdout", data: "done\n" },
+    ]);
+    expect(demuxDockerStream(stream)).toEqual({
+      stdout: "code: ABCD-1234\ndone\n",
+      stderr: "waiting\n",
     });
   });
 

@@ -31,7 +31,7 @@ describe("model vision gating for computer tools", () => {
     vi.stubEnv("PI_DEFAULT_MODEL", "");
     expect(resolveModelRefForVisionCheck("scripted", "scripted")).toEqual({
       provider: "openrouter",
-      id: "openai/gpt-5.6-luna",
+      id: "openai/gpt-6-luna",
     });
     expect(modelAcceptsImageInput("scripted", "scripted")).toBe(true);
 

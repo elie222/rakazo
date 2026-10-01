@@ -96,8 +96,11 @@ function buildPiCatalog(): PiCatalogEntry[] {
   return entries;
 }
 
-/** Trailing upstream "latest" marker: "Claude Opus 4.5 (latest)", "Gemini Flash Latest", "foo-latest". */
-const LATEST_MARKER = /[\s(/-]*\blatest\b\s*\)?\s*$/i;
+/**
+ * Trailing upstream "latest" marker: "Claude Opus 4.5 (latest)", "Gemini Flash Latest",
+ * "foo-latest", or an alias parenthetical like "Qwen Max Latest (Qwen3.8 Max)".
+ */
+const LATEST_MARKER = /[\s(/-]*\blatest\b\s*\)?\s*(\([^)]*\)\s*)?$/i;
 
 /**
  * Upstream marks auto-updating alias ids with a trailing "latest". That is an alias marker, not a

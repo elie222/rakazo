@@ -23,8 +23,9 @@ test("model dropdown search and provider group headers", async ({ page }, testIn
   await expect(modelSearch).toBeVisible();
   await expect(modelSearch).toHaveAttribute("placeholder", "Search");
   await expect(modelOptions).toBeVisible();
-  // Provider section header inside the model listbox (not the provider button).
-  await expect(modelOptions.getByText("OpenRouter", { exact: true })).toBeVisible();
+  // A single provider group repeats the provider name already shown by the
+  // picker, so the redundant section header stays hidden.
+  await expect(modelOptions.getByText("OpenRouter", { exact: true })).toBeHidden();
 
   await captureScreenshot(page, testInfo, "model-picker-dropdown-groups");
 

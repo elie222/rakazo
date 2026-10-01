@@ -305,6 +305,7 @@ model SpaceModelPreference {
   credentialId String
   credential   UserModelCredential @relation(fields: [credentialId, userId], references: [id, userId], onDelete: Cascade)
   modelId      String?
+  thinkingLevel String?
   isDefault    Boolean             @default(false)
   createdAt    DateTime            @default(now())
   updatedAt    DateTime            @updatedAt

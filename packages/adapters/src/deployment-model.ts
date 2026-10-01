@@ -1,4 +1,4 @@
-export const DEFAULT_OPENROUTER_MODEL_ID = "openai/gpt-5.6-luna";
+export const DEFAULT_OPENROUTER_MODEL_ID = "openai/gpt-6-luna";
 
 /**
  * The deployment-wide model default: which provider a run falls back to when no user

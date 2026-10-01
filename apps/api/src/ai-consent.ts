@@ -105,6 +105,7 @@ export async function aiConsentStatus(
           ...preference.credential,
           isDefault: preference.isDefault,
           defaultModel: preference.modelId,
+          thinkingLevel: preference.thinkingLevel,
         },
         thinkingLevel: null,
       });

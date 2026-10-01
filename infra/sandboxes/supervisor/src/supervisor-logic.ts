@@ -451,6 +451,81 @@ function isCompleteDockerMultiplexedStream(buffer: Buffer): boolean {
   return offset === buffer.length;
 }
 
+export interface DockerStreamChunk {
+  stream: "stdout" | "stderr";
+  data: string;
+}
+
+/**
+ * Split docker exec frames as they arrive. A complete multiplexed stream matches
+ * demuxDockerStream; an unfinished frame is held until its payload arrives.
+ */
+export function createDockerStreamDemuxer() {
+  let mode: "pending" | "raw" | "multiplex" = "pending";
+  let buffer = Buffer.alloc(0);
+
+  const consume = (final: boolean): DockerStreamChunk[] => {
+    const events: DockerStreamChunk[] = [];
+    if (mode === "raw") {
+      if (buffer.length === 0) return events;
+      events.push({ stream: "stdout", data: buffer.toString("utf8") });
+      buffer = Buffer.alloc(0);
+      return events;
+    }
+    if (mode === "pending") {
+      if (buffer.length === 0) return events;
+      if (!final && buffer.length < 8) return events;
+      const headerReady = buffer.length >= 8 && isDockerFrameHeader(buffer, 0);
+      const frameReady = headerReady && firstDockerFrameComplete(buffer);
+      if (!frameReady) {
+        if (!final && headerReady) return events;
+        mode = "raw";
+        events.push({ stream: "stdout", data: buffer.toString("utf8") });
+        buffer = Buffer.alloc(0);
+        return events;
+      }
+      mode = "multiplex";
+    }
+    let offset = 0;
+    while (offset + 8 <= buffer.length && isDockerFrameHeader(buffer, offset)) {
+      const size = buffer.readUInt32BE(offset + 4);
+      if (offset + 8 + size > buffer.length) break;
+      const payload = Buffer.from(buffer.subarray(offset + 8, offset + 8 + size));
+      events.push({
+        stream: buffer[offset] === 2 ? "stderr" : "stdout",
+        data: payload.toString("utf8"),
+      });
+      offset += 8 + size;
+    }
+    buffer = Buffer.from(buffer.subarray(offset));
+    if (final && buffer.length > 0 && mode === "multiplex") buffer = Buffer.alloc(0);
+    return events;
+  };
+
+  return {
+    push(chunk: Buffer) {
+      if (chunk.length > 0) buffer = Buffer.concat([buffer, chunk]);
+      return consume(false);
+    },
+    finish() {
+      return consume(true);
+    },
+  };
+}
+
+function isDockerFrameHeader(buffer: Buffer, offset: number): boolean {
+  if (offset + 8 > buffer.length) return false;
+  const type = buffer[offset];
+  if (type !== 0 && type !== 1 && type !== 2) return false;
+  return buffer[offset + 1] === 0 && buffer[offset + 2] === 0 && buffer[offset + 3] === 0;
+}
+
+function firstDockerFrameComplete(buffer: Buffer): boolean {
+  if (!isDockerFrameHeader(buffer, 0)) return false;
+  const size = buffer.readUInt32BE(4);
+  return buffer.length >= 8 + size;
+}
+
 /**
  * Split a Docker exec stream into stdout and stderr. Without a TTY the stream is
  * multiplexed: each frame is an 8-byte header (type byte, 3 reserved bytes, big-endian

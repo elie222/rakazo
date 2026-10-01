@@ -1,8 +1,10 @@
 import type { ModelCatalogEntry } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import {
+  clampCatalogThinkingLevel,
   featuredModelProviders,
   filterModelCatalog,
+  pickCatalogModelId,
   selectedProviderOutsideSearchResults,
 } from "./model-providers.js";
 
@@ -76,6 +78,44 @@ describe("featuredModelProviders", () => {
   });
 });
 
+describe("pickCatalogModelId", () => {
+  const catalog = [
+    { provider: "openrouter", id: "openai/gpt-6-luna" },
+    { provider: "openrouter", id: "anthropic/claude-fable-5" },
+    { provider: "openai-codex", id: "gpt-5.3-codex-spark" },
+    { provider: "openai-codex", id: "gpt-6-luna" },
+  ];
+
+  it("returns the provider's first entry without a preferred id", () => {
+    expect(pickCatalogModelId(catalog, "openai-codex", null)).toBe("gpt-5.3-codex-spark");
+    expect(pickCatalogModelId(catalog, "openai-codex")).toBe("gpt-5.3-codex-spark");
+  });
+
+  it("prefers an exact preferred id within the provider", () => {
+    expect(pickCatalogModelId(catalog, "openai-codex", "gpt-6-luna")).toBe("gpt-6-luna");
+    expect(pickCatalogModelId(catalog, "openrouter", "openai/gpt-6-luna")).toBe(
+      "openai/gpt-6-luna",
+    );
+  });
+
+  it("matches the preferred id's basename across vendor prefixes", () => {
+    expect(pickCatalogModelId(catalog, "openai-codex", "openai/gpt-6-luna")).toBe("gpt-6-luna");
+  });
+
+  it("ignores a preferred id that belongs to another provider only", () => {
+    expect(pickCatalogModelId(catalog, "openai-codex", "openai/gpt-6-astra")).toBe(
+      "gpt-5.3-codex-spark",
+    );
+    expect(pickCatalogModelId(catalog, "openai-codex", "anthropic/claude-fable-5")).toBe(
+      "gpt-5.3-codex-spark",
+    );
+  });
+
+  it("returns an empty string for an unknown provider", () => {
+    expect(pickCatalogModelId(catalog, "nope", "openai/gpt-6-luna")).toBe("");
+  });
+});
+
 describe("selectedProviderOutsideSearchResults", () => {
   it("returns the active provider separately from unrelated search results", () => {
     const providers = [provider("openrouter"), provider("anthropic"), provider("bedrock")];
@@ -91,6 +131,28 @@ describe("selectedProviderOutsideSearchResults", () => {
     expect(
       selectedProviderOutsideSearchResults(providers, providers, "openrouter"),
     ).toBeUndefined();
+  });
+});
+
+describe("clampCatalogThinkingLevel", () => {
+  it("keeps a level the model supports and drops the default", () => {
+    expect(clampCatalogThinkingLevel("high", ["low", "medium", "high"])).toBe("high");
+    expect(clampCatalogThinkingLevel(null, ["high"])).toBeNull();
+    expect(clampCatalogThinkingLevel("off", ["off", "high"])).toBeNull();
+  });
+
+  it("clamps an unsupported level to the nearest supported effort", () => {
+    expect(clampCatalogThinkingLevel("xhigh", ["minimal", "low", "medium", "high"])).toBe("high");
+    expect(clampCatalogThinkingLevel("minimal", ["high", "xhigh"])).toBe("high");
+  });
+
+  it("resets when the model cannot think", () => {
+    expect(clampCatalogThinkingLevel("high", ["off"])).toBeNull();
+    expect(clampCatalogThinkingLevel("high", [])).toBeNull();
+  });
+
+  it("keeps a concrete level when the model is outside the catalog", () => {
+    expect(clampCatalogThinkingLevel("high", undefined)).toBe("high");
   });
 });
 

@@ -161,6 +161,39 @@ describe("sandbox conformance", () => {
     rmSync(root, { recursive: true, force: true });
   });
 
+  it("desktop executor yields stdout before a command that keeps running exits", async () => {
+    const root = mkdtempSync(path.join(tmpdir(), "rakazo-desktop-stream-"));
+    const desktop = new DesktopSandboxProvider({ root });
+    const computer = await desktop.provision({ botId: "stream", homePath: "/unused" }, ctx);
+    const controller = new AbortController();
+    const startedAt = Date.now();
+    const iterator = desktop
+      .execute(
+        computer,
+        {
+          argv: [
+            "node",
+            "-e",
+            "process.stdout.write('code: ABCD-1234\\n'); setTimeout(() => {}, 30000)",
+          ],
+          timeoutMs: 5_000,
+        },
+        { ...ctx, signal: controller.signal },
+      )
+      [Symbol.asyncIterator]();
+
+    const first = await iterator.next();
+    expect(Date.now() - startedAt).toBeLessThan(2_000);
+    expect(first.value).toEqual({ type: "stdout", data: "code: ABCD-1234\n" });
+    controller.abort();
+    const rest: ProcessEvent[] = [];
+    for await (const event of { [Symbol.asyncIterator]: () => iterator }) rest.push(event);
+    expect(rest).toContainEqual({ type: "exit", code: 130 });
+
+    await desktop.destroy(computer, ctx);
+    rmSync(root, { recursive: true, force: true });
+  });
+
   it("desktop executor aborts and kills a running command", async () => {
     const root = mkdtempSync(path.join(tmpdir(), "rakazo-desktop-abort-"));
     const desktop = new DesktopSandboxProvider({ root });

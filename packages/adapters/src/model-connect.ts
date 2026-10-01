@@ -149,6 +149,7 @@ export function modelCredentialDto(
     label: string;
     isDefault: boolean;
     defaultModel?: string | null;
+    thinkingLevel?: string | null;
     supportsImages?: boolean;
   },
   plaintext?: string,
@@ -160,6 +161,9 @@ export function modelCredentialDto(
     hasKey: true,
     isDefault: row.isDefault,
     ...(row.defaultModel ? { modelId: row.defaultModel } : {}),
+    // Space-scoped effort stored beside the preference's modelId; the
+    // openai-compatible secret may still contribute below when unset.
+    ...(row.thinkingLevel ? { thinkingLevel: row.thinkingLevel as ThinkingLevel } : {}),
   };
   if (row.provider !== CONTRACT_OPENAI_COMPAT) {
     if (!plaintext) return credential;
@@ -183,7 +187,9 @@ export function modelCredentialDto(
         : compatibleCredential.supportsImages,
     baseUrl: parsed.baseUrl,
     reasoning: parsed.reasoning ?? false,
-    ...(parsed.thinkingLevel !== undefined ? { thinkingLevel: parsed.thinkingLevel } : {}),
+    ...(credential.thinkingLevel !== undefined || parsed.thinkingLevel !== undefined
+      ? { thinkingLevel: credential.thinkingLevel ?? parsed.thinkingLevel }
+      : {}),
     ...(parsed.maxTokens !== undefined ? { maxTokens: parsed.maxTokens } : {}),
     ...(parsed.contextWindow !== undefined ? { contextWindow: parsed.contextWindow } : {}),
     ...(parsed.maxImagesPerPrompt !== undefined

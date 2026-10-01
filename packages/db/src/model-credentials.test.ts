@@ -136,6 +136,7 @@ describe("findModelCredential", () => {
     const sparkPreference = {
       id: "pref-spark",
       modelId: "gpt-5.3-codex-spark",
+      thinkingLevel: null,
       isDefault: false,
       updatedAt: new Date("2026-02-03T00:00:00.000Z"),
       credential: older,
@@ -143,6 +144,7 @@ describe("findModelCredential", () => {
     const defaultPreference = {
       id: "pref-default",
       modelId: "gpt-6-luna",
+      thinkingLevel: null,
       isDefault: true,
       updatedAt: new Date("2026-03-01T00:00:00.000Z"),
       credential: newer,
@@ -165,6 +167,7 @@ describe("findModelCredential", () => {
       ...older,
       isDefault: false,
       defaultModel: "gpt-5.3-codex-spark",
+      thinkingLevel: null,
     });
     await expect(
       findModelCredential(
@@ -177,6 +180,7 @@ describe("findModelCredential", () => {
       ...newer,
       isDefault: true,
       defaultModel: "gpt-6-luna",
+      thinkingLevel: null,
     });
   });
 });
@@ -203,6 +207,7 @@ describe("chooseModelCredential", () => {
         {
           id: "pref-default",
           modelId: "gpt-6-luna",
+          thinkingLevel: null,
           isDefault: true,
           updatedAt: new Date("2026-03-02T00:00:00.000Z"),
           credential: oauth,
@@ -210,6 +215,7 @@ describe("chooseModelCredential", () => {
         {
           id: "pref-spark",
           modelId: "gpt-5.3-codex-spark",
+          thinkingLevel: null,
           isDefault: false,
           updatedAt: new Date("2026-02-01T00:00:00.000Z"),
           credential: apiKey,
@@ -233,6 +239,7 @@ describe("chooseModelCredential", () => {
         {
           id: "pref-older",
           modelId: "gpt-5.4",
+          thinkingLevel: null,
           isDefault: true,
           updatedAt: new Date("2026-01-02T00:00:00.000Z"),
           credential: older,
@@ -253,6 +260,7 @@ describe("chooseModelCredential", () => {
         {
           id: "pref-spark",
           modelId: "gpt-5.3-codex-spark",
+          thinkingLevel: null,
           isDefault: false,
           updatedAt: new Date("2026-02-01T00:00:00.000Z"),
           credential: apiKey,
@@ -260,6 +268,7 @@ describe("chooseModelCredential", () => {
         {
           id: "pref-luna",
           modelId: "gpt-6-luna",
+          thinkingLevel: null,
           isDefault: true,
           updatedAt: new Date("2026-03-02T00:00:00.000Z"),
           credential: oauth,
@@ -280,6 +289,7 @@ describe("chooseModelCredential", () => {
         {
           id: "pref-spark",
           modelId: "gpt-5.3-codex-spark",
+          thinkingLevel: null,
           isDefault: true,
           updatedAt: new Date("2026-02-01T00:00:00.000Z"),
           credential: apiKey,
@@ -287,6 +297,7 @@ describe("chooseModelCredential", () => {
         {
           id: "pref-other",
           modelId: "gpt-5.4",
+          thinkingLevel: null,
           isDefault: false,
           updatedAt: new Date("2026-03-02T00:00:00.000Z"),
           credential: oauth,
@@ -306,6 +317,7 @@ describe("chooseModelCredential", () => {
         {
           id: "pref-spark",
           modelId: "gpt-5.3-codex-spark",
+          thinkingLevel: null,
           isDefault: true,
           updatedAt: apiKey.updatedAt,
           credential: apiKey,
@@ -355,7 +367,7 @@ describe("selectSpaceModelPreference", () => {
     expect(upsert).toHaveBeenCalledWith(
       expect.objectContaining({
         create: expect.objectContaining({ isDefault: true, modelId: "model" }),
-        update: { isDefault: true, modelId: "model" },
+        update: { isDefault: true, modelId: "model", thinkingLevel: null },
       }),
     );
   });
@@ -377,7 +389,7 @@ describe("selectSpaceModelPreference", () => {
       expect(upsert).toHaveBeenCalledWith(
         expect.objectContaining({
           create: expect.objectContaining({ modelId: null }),
-          update: { isDefault: true, modelId: null },
+          update: { isDefault: true, modelId: null, thinkingLevel: null },
         }),
       );
     },

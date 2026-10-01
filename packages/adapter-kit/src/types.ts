@@ -174,6 +174,17 @@ export interface AgentToolExecutionResult {
   details: unknown;
 }
 
+/** Hooks for a tool call that can report output before it returns. */
+export interface AgentToolExecutionObserver {
+  /**
+   * A shell command has already produced output and is still running.
+   * Resolves with the final redacted result when the process exits.
+   */
+  onShellStillRunning?: (
+    completion: Promise<{ stdout: string; stderr: string; code: number }>,
+  ) => void;
+}
+
 /** Ephemeral completion data for audit hooks; result contents must be redacted before persistence. */
 export interface AgentToolCompletion {
   name: string;
@@ -437,6 +448,7 @@ export interface AgentRunRequest {
     args: Record<string, unknown>,
     executionId: string,
     route?: ConnectorRoute,
+    observer?: AgentToolExecutionObserver,
   ) => Promise<unknown>;
   /** Called after a tool returns; implementations must not persist raw result contents. */
   onToolCompleted?: (completion: AgentToolCompletion) => Promise<void> | void;

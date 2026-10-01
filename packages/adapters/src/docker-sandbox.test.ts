@@ -64,6 +64,57 @@ describe("Docker sandbox", () => {
     });
   });
 
+  it("yields stdout from a streaming exec before the command exits", async () => {
+    let releaseExit: () => void = () => undefined;
+    const exitGate = new Promise<void>((resolve) => {
+      releaseExit = resolve;
+    });
+    const encoder = new TextEncoder();
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          new ReadableStream({
+            async start(controller) {
+              controller.enqueue(
+                encoder.encode(
+                  `${JSON.stringify({ type: "stdout", data: "code: ABCD-1234\nhttps://github.com/login/device\n" })}\n`,
+                ),
+              );
+              await exitGate;
+              controller.enqueue(encoder.encode(`${JSON.stringify({ type: "exit", code: 0 })}\n`));
+              controller.close();
+            },
+          }),
+          { headers: { "content-type": "application/x-ndjson" } },
+        ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
+    const iterator = provider
+      .execute(
+        { id: "computer", botId: "bot", kind: "docker", providerRef: "computer" },
+        { argv: ["gh", "auth", "login", "--web"], timeoutMs: 5_000 },
+        context,
+      )
+      [Symbol.asyncIterator]();
+
+    const first = await iterator.next();
+    expect(first.value).toEqual({
+      type: "stdout",
+      data: "code: ABCD-1234\nhttps://github.com/login/device\n",
+    });
+    let exitSeen = false;
+    const rest = (async () => {
+      const next = await iterator.next();
+      exitSeen = true;
+      return next;
+    })();
+    await Promise.resolve();
+    expect(exitSeen).toBe(false);
+    releaseExit();
+    await expect(rest).resolves.toEqual({ value: { type: "exit", code: 0 }, done: false });
+  });
+
   it("rejects a declared oversized success response without buffering it", async () => {
     const cancel = vi.fn();
     vi.stubGlobal(
