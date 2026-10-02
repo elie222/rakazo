@@ -1,4 +1,5 @@
 import type { BackgroundJob, JobPublisher } from "@rakazo/adapter-kit";
+import { stuckWorkStatusMessages } from "@rakazo/core";
 import type { Pool, PrismaClient, ThreadEvents } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import { returnBotMessageOutcome } from "./bot-messages.js";
@@ -87,6 +88,7 @@ describe("createJobReconciler", () => {
   it("restores a completed messaging run that was not durably mirrored", async () => {
     const prisma = fakePrisma();
     vi.mocked(prisma.run.findMany)
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([{ id: "run-unmirrored" }] as never);
     const { jobs, enqueue } = publisher();
@@ -279,9 +281,12 @@ describe("createJobReconciler", () => {
     }));
     const runPages = [runs.slice(0, 2), runs.slice(2, 4), runs.slice(4)];
     let runPage = 0;
-    const runFindMany = vi.fn(async (args: { where?: Record<string, unknown> } = {}) =>
-      args.where?.messagingMirroredAt === null ? [] : (runPages[runPage++] ?? []),
-    );
+    const runFindMany = vi.fn(async (args: { where?: Record<string, unknown> } = {}) => {
+      if (args.where?.messagingMirroredAt === null) return [];
+      const status = args.where?.status as { in?: string[] } | undefined;
+      if (status?.in?.includes("waiting_takeover")) return [];
+      return runPages[runPage++] ?? [];
+    });
     const routineFindMany = vi
       .fn()
       .mockResolvedValueOnce(routines.slice(0, 2))
@@ -313,7 +318,7 @@ describe("createJobReconciler", () => {
       "run:run-5",
       "routine:routine-5",
     ]);
-    expect(runFindMany.mock.calls[2]?.[0]).toMatchObject({
+    expect(runFindMany.mock.calls[4]?.[0]).toMatchObject({
       orderBy: [{ updatedAt: "asc" }, { id: "asc" }],
       where: {
         AND: [
@@ -406,13 +411,16 @@ describe("createJobReconciler", () => {
     await reconciler.reconcileOnce();
 
     expect(runFindMany).toHaveBeenNthCalledWith(
-      3,
+      4,
       expect.objectContaining({
         orderBy: [{ updatedAt: "asc" }, { id: "asc" }],
         where: {
           trigger: "bot_message",
-          status: { in: ["completed", "failed"] },
           botOutcomeReturnedAt: null,
+          OR: [
+            { status: { in: ["completed", "failed"] } },
+            { status: "cancelled", error: { in: [...stuckWorkStatusMessages()] } },
+          ],
         },
       }),
     );
@@ -579,6 +587,46 @@ describe("createJobReconciler", () => {
       "Checking calendars…",
       "status",
     );
+  });
+
+  it("returns a stuck cancellation to the delegating bot as status", async () => {
+    const terminalRun = {
+      id: "run-stuck",
+      spaceId: "workspace-1",
+      threadId: "thread-1",
+      botId: "bot-1",
+      userId: "user-1",
+      sourceMessageId: "message-1",
+      status: "cancelled",
+      error: stuckWorkStatusMessages()[0],
+      bot: { name: "Researcher" },
+    };
+    const runFindMany = vi.fn(async (args: { where?: Record<string, unknown> } = {}) => {
+      if (args.where?.messagingMirroredAt === null) return [];
+      if (args.where?.trigger === "bot_message") return [terminalRun];
+      return [];
+    });
+    const prisma = {
+      run: { findMany: runFindMany, updateMany: vi.fn(async () => ({ count: 1 })) },
+      routine: { findMany: vi.fn(async () => []) },
+      computer: { findMany: vi.fn(async () => []) },
+      messagingOutbound: { findFirst: vi.fn(async () => null) },
+      message: { findMany: vi.fn(async () => []) },
+    } as unknown as PrismaClient;
+    const { jobs } = publisher();
+    const events = { notify: vi.fn() } as unknown as ThreadEvents;
+    vi.mocked(returnBotMessageOutcome).mockResolvedValue(true);
+
+    await createJobReconciler({ prisma, jobs, events }).reconcileOnce();
+
+    expect(returnBotMessageOutcome).toHaveBeenCalledWith(
+      { prisma, jobs, events },
+      terminalRun,
+      { id: "bot-1", name: "Researcher" },
+      stuckWorkStatusMessages()[0],
+      "status",
+    );
+    expect(prisma.message.findMany).not.toHaveBeenCalled();
   });
 });
 

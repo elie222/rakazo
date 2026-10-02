@@ -1,9 +1,12 @@
 import * as SecureStore from "expo-secure-store";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { AVATAR_STYLE_KEY, getCachedAvatarStyle, saveAvatarStyle } from "./avatar-style.js";
 import {
   clearSessionToken,
+  currentSessionGeneration,
   loadSessionToken,
   restoreSessionToken,
+  saveAvatarStyleIfCurrent,
   saveSessionToken,
   snapshotSessionToken,
   tokenFromAuthResponse,
@@ -32,6 +35,84 @@ describe("mobile session storage", () => {
 
     expect(SecureStore.setItemAsync).toHaveBeenCalledWith("rakazo.session_token", "secret-token");
     expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith("rakazo.session_token");
+  });
+
+  it("forgets the cached avatar style on sign-out", async () => {
+    await saveAvatarStyle("organic");
+    await clearSessionToken();
+
+    expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith(AVATAR_STYLE_KEY);
+    expect(getCachedAvatarStyle()).toBe("robot");
+  });
+
+  it("ignores an avatar style response from a session that was cleared", async () => {
+    const generation = currentSessionGeneration();
+    await clearSessionToken();
+    vi.mocked(SecureStore.setItemAsync).mockClear();
+
+    await expect(saveAvatarStyleIfCurrent(generation, "organic")).resolves.toBe(false);
+    expect(SecureStore.setItemAsync).not.toHaveBeenCalledWith(AVATAR_STYLE_KEY, "organic");
+    expect(getCachedAvatarStyle()).toBe("robot");
+  });
+
+  it("does not let an in-flight style write land after sign-out", async () => {
+    const disk = new Map<string, string>();
+    let releaseWrite: () => void = () => undefined;
+    const write = new Promise<void>((resolve) => {
+      releaseWrite = resolve;
+    });
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+      if (key === AVATAR_STYLE_KEY) await write;
+      disk.set(key, value);
+    });
+    vi.mocked(SecureStore.deleteItemAsync).mockImplementation(async (key) => {
+      disk.delete(key);
+    });
+
+    try {
+      const generation = currentSessionGeneration();
+      const saving = saveAvatarStyleIfCurrent(generation, "organic");
+      await Promise.resolve();
+      const clearing = clearSessionToken();
+      releaseWrite();
+      await saving;
+      await clearing;
+
+      expect(disk.has(AVATAR_STYLE_KEY)).toBe(false);
+      expect(getCachedAvatarStyle()).toBe("robot");
+    } finally {
+      releaseWrite();
+      vi.mocked(SecureStore.setItemAsync).mockReset();
+      vi.mocked(SecureStore.deleteItemAsync).mockReset();
+    }
+  });
+
+  it("still clears the session when the avatar style cannot be wiped", async () => {
+    const disk = new Map<string, string>();
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+      disk.set(key, value);
+    });
+    vi.mocked(SecureStore.deleteItemAsync).mockImplementation(async (key) => {
+      disk.delete(key);
+    });
+    await saveAvatarStyle("organic");
+    vi.mocked(SecureStore.deleteItemAsync).mockImplementation(async (key) => {
+      if (key === AVATAR_STYLE_KEY) throw new Error("device locked");
+      disk.delete(key);
+    });
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+      if (key === AVATAR_STYLE_KEY) throw new Error("device locked");
+      disk.set(key, value);
+    });
+
+    try {
+      await expect(clearSessionToken()).resolves.toBe(true);
+      expect(disk.has("rakazo.session_token")).toBe(false);
+      expect(disk.get(AVATAR_STYLE_KEY)).toBe("organic");
+    } finally {
+      vi.mocked(SecureStore.setItemAsync).mockReset();
+      vi.mocked(SecureStore.deleteItemAsync).mockReset();
+    }
   });
 
   it("overwrites the token when SecureStore delete fails", async () => {

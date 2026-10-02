@@ -1,5 +1,15 @@
 import { useState } from "react";
-import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import {
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 import type { MobileBot, MobileBotSection } from "../lib/api";
 import { useI18n } from "../lib/i18n";
 import { native, useThemedStyles } from "../lib/native";
@@ -63,7 +73,10 @@ export function BotOrganizeModal({
 
   return (
     <Modal transparent animationType="fade" onRequestClose={onClose}>
-      <View style={styles.overlay}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        style={styles.overlay}
+      >
         <Pressable
           accessibilityLabel={t("Close chat organization")}
           style={StyleSheet.absoluteFill}
@@ -184,7 +197,7 @@ export function BotOrganizeModal({
             <Text style={styles.cancelLabel}>{t("Cancel")}</Text>
           </Pressable>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -227,6 +240,7 @@ function createBotOrganizeStyles() {
     },
     sheet: {
       maxHeight: "82%",
+      flexShrink: 1,
       borderTopLeftRadius: 22,
       borderTopRightRadius: 22,
       backgroundColor: native.fillPressed,
@@ -267,6 +281,7 @@ function createBotOrganizeStyles() {
     },
     sectionOptions: {
       maxHeight: 230,
+      flexShrink: 1,
     },
     sectionOption: {
       minHeight: 44,

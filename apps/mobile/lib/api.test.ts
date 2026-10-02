@@ -33,6 +33,12 @@ import {
   signUp,
   subscribeThread,
 } from "./api.js";
+import {
+  AVATAR_STYLE_KEY,
+  clearAvatarStyle,
+  getCachedAvatarStyle,
+  saveAvatarStyle,
+} from "./avatar-style.js";
 import { resumeLiveNotifications } from "./live-notifications.js";
 import {
   clearSessionToken,
@@ -870,6 +876,36 @@ describe("mobile API authentication", () => {
       "session-token",
       "space-support",
     );
+  });
+
+  it("restores the avatar style when an endpoint switch rolls the session back", async () => {
+    await saveAvatarStyle("organic");
+    vi.mocked(SecureStore.getItemAsync).mockImplementation(async (key) => {
+      if (key === "rakazo.session_token") return "session-token";
+      return null;
+    });
+    await selectSpace("space-support");
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key) => {
+      if (key === "rakazo.api_base") throw new Error("device locked");
+    });
+
+    try {
+      await expect(saveApiBase("https://second-server.example")).resolves.toEqual({
+        ok: false,
+        error: "Could not save the server URL",
+      });
+      expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith(AVATAR_STYLE_KEY);
+      expect(SecureStore.setItemAsync).toHaveBeenCalledWith(AVATAR_STYLE_KEY, "organic");
+      expect(getCachedAvatarStyle()).toBe("organic");
+      await expect(authHeaders()).resolves.toEqual({
+        authorization: "Bearer session-token",
+        "x-rakazo-space-id": "space-support",
+      });
+    } finally {
+      vi.mocked(SecureStore.setItemAsync).mockReset();
+      vi.mocked(SecureStore.deleteItemAsync).mockReset();
+      await clearAvatarStyle();
+    }
   });
 
   it("restores credentials when the new endpoint cannot be persisted", async () => {

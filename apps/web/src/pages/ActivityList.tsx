@@ -2,14 +2,16 @@ import { i18n } from "@lingui/core";
 import { t } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { RunActivityRow } from "@rakazo/contracts";
+import { isAgedStuckWork } from "@rakazo/core";
 import { useEffect, useState } from "react";
 import { rpc } from "../lib/rpc";
 
-export function statusTone(status: RunActivityRow["status"]): string {
+export function statusTone(status: RunActivityRow["status"], updatedAt?: string): string {
   if (status === "failed") return "text-destructive";
   if (status === "cancelled") return "text-muted-foreground";
   if (status === "completed") return "text-success";
   if (status === "waiting_input" || status === "waiting_takeover") return "text-warning";
+  if (updatedAt && isAgedStuckWork(status, updatedAt)) return "text-warning";
   return "text-foreground";
 }
 
@@ -95,7 +97,7 @@ function ActivityRow({ run, onOpen }: { run: RunActivityRow; onOpen: () => void 
   const title = run.groupName ? `${run.botName} · ${run.groupName}` : run.botName;
   const label = statusLabel(run.status);
   const activityLabel = t`${title}, ${label}`;
-  const tone = statusTone(run.status);
+  const tone = statusTone(run.status, run.updatedAt);
   return (
     <button
       type="button"

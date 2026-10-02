@@ -439,7 +439,7 @@ export default function Home() {
       });
       void refreshBots().catch(() => undefined);
       allowFocusPrompt(bot.id);
-      router.replace({ pathname: "/thread", params: { botId: bot.id, name: bot.name } });
+      router.push({ pathname: "/thread", params: { botId: bot.id, name: bot.name } });
       void (async () => {
         const started = await rpc("onboarding/start", { botId: bot.id })
           .then(() => true)

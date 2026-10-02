@@ -11,6 +11,7 @@ import { CallCard } from "../components/CallCard";
 import { ComputerUpdateProgress } from "../components/computer-update-progress";
 import { currentApiBase, loadApiBase, loadSessionToken, selectedSpaceId } from "../lib/api";
 import { loadAppearancePreference, mobileTokens } from "../lib/appearance";
+import { loadAvatarStyle } from "../lib/avatar-style";
 import { bootstrapI18n, useI18n } from "../lib/i18n";
 import {
   configureForegroundNotifications,
@@ -61,6 +62,7 @@ export default function Layout() {
         loadApiBase(),
         loadAppearancePreference().finally(() => setAppearanceReady(true)),
         loadResponseStreamingPreference(),
+        loadAvatarStyle(),
       ])
         .then(async () =>
           resumeLiveNotifications(

@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Prisma, PrismaClient } from "./client.js";
-import { createThreadMessage, createThreadMessageInTransaction } from "./messages.js";
+import {
+  createThreadMessage,
+  createThreadMessageInTransaction,
+  RunHistoryWriteError,
+} from "./messages.js";
 
 function transaction() {
   return {
@@ -32,6 +36,25 @@ describe("createThreadMessageInTransaction", () => {
     expect(visible.thread.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ unread: true }) }),
     );
+  });
+
+  it("rejects a cancelled run unless the terminal echo opts in", async () => {
+    const tx = transaction();
+    tx.run.findUnique.mockResolvedValue({ status: "cancelled", startedAt: new Date() });
+    const input = {
+      threadId: "thread-1",
+      role: "bot" as const,
+      blocks: [{ kind: "text" as const, text: "Stopped. This stayed queued without starting." }],
+      runId: "run-1",
+    };
+    await expect(
+      createThreadMessageInTransaction(tx as unknown as Prisma.TransactionClient, input),
+    ).rejects.toBeInstanceOf(RunHistoryWriteError);
+    await createThreadMessageInTransaction(tx as unknown as Prisma.TransactionClient, {
+      ...input,
+      allowCancelledRun: true,
+    });
+    expect(tx.message.create).toHaveBeenCalledOnce();
   });
 });
 

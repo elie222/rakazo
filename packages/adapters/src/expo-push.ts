@@ -99,6 +99,10 @@ export class ExpoPushProvider implements NotificationProvider {
     };
   }
 
+  async hasPushRecipient(userId: string): Promise<boolean> {
+    return Boolean(await loadPushToken(this.dataDir, userId));
+  }
+
   async send(message: NotificationMessage, context: AdapterContext): Promise<void> {
     const token = await loadPushToken(this.dataDir, context.userId);
     if (!token) return;

@@ -40,6 +40,8 @@ export interface AppendEventInput {
   type: ProductEvent["type"];
   payload: Record<string, unknown>;
   runId?: string;
+  /** Terminal echo after the run is already cancelled. Every other event stays rejected. */
+  allowCancelledRun?: boolean;
 }
 
 export interface ThreadEvents {
@@ -1208,15 +1210,16 @@ async function finalizeRunOnce(
         data: { runId: null },
       });
     }
-    const continuationRunId = await createSteeringContinuation(tx, input);
+    const continuationRunId = await createPendingSteeringRun(tx, input);
     await tx.bot.update({ where: { id: input.botId }, data: { updatedAt: now } });
     return { threadId: lastEvent.threadId, seq: lastEvent.seq, continuationRunId };
   });
 }
 
-async function createSteeringContinuation(
+/** Queue one follow-up when this bot still has unclaimed steering and no live run. */
+export async function createPendingSteeringRun(
   tx: Prisma.TransactionClient,
-  input: FinalizeRunBase,
+  input: { spaceId: string; threadId: string; botId: string },
 ): Promise<string | null> {
   const active = await tx.run.findFirst({
     where: {
@@ -1319,7 +1322,7 @@ export async function appendEventInTransaction(
   if (input.type === "run.cancelled") {
     await assertRunIsCancelled(tx, input.runId);
   } else {
-    await assertRunCanWriteHistory(tx, input.runId);
+    await assertRunCanWriteHistory(tx, input.runId, { allowCancelled: input.allowCancelledRun });
   }
   // Unpaired UTF-16 surrogates (e.g. a split emoji high half) are invalid JSON for Postgres.
   const payload = sanitizeJsonValue(input.payload);

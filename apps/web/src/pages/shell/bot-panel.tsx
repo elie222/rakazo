@@ -25,6 +25,7 @@ import {
 } from "@rakazo/ui-web";
 import { X } from "lucide-react";
 import { lazy, Suspense, useEffect, useId, useRef, useState } from "react";
+import { botProfilePatch } from "../../lib/bot-profile-patch";
 import {
   catalogLabel,
   connectedModelOptions,
@@ -228,6 +229,11 @@ export function BotSettings({
   const [name, setName] = useState(bot.name);
   const [title, setTitle] = useState(bot.title);
   const [description, setDescription] = useState(bot.description);
+  // A roster refresh can skip replacing bots while a reorder is in flight, so
+  // this prop keeps the description from when the panel opened. Later saves
+  // compare against the description last saved here; otherwise a model or
+  // voice change treats that stale text as an edit and overwrites instructions.
+  const savedDescriptionRef = useRef(bot.description ?? "");
   const [color, setColor] = useState(bot.color);
   const [notifyOnFinish, setNotifyOnFinish] = useState(bot.notifyOnFinish ?? true);
   const [computerMode, setComputerMode] = useState(bot.computerMode);
@@ -323,8 +329,10 @@ export function BotSettings({
       await onSave({
         name: nextName || bot.name,
         title: nextTitle,
-        description: nextDescription,
-        instructions: nextDescription,
+        // One field feeds both, so it only goes on the wire when it changed: a
+        // model, thinking or voice save must not overwrite longer instructions,
+        // nor fail on a description that is already above its own limit.
+        ...botProfilePatch(savedDescriptionRef.current, nextDescription),
         // Unchanged color stays off the wire so a legacy named value cannot fail a name save.
         ...(nextColor !== bot.color ? { color: nextColor } : {}),
         notifyOnFinish: nextNotify,
@@ -342,6 +350,7 @@ export function BotSettings({
             }
           : {}),
       });
+      savedDescriptionRef.current = nextDescription;
     } catch (err) {
       setError(err instanceof Error ? err.message : t`Could not save`);
     } finally {

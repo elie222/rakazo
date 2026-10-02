@@ -181,7 +181,9 @@ export async function messageBot(
             threadId: run.threadId,
             botId: run.botId,
             userId: run.userId,
-            status: options?.allowTerminalSource ? { in: ["completed", "failed"] } : "running",
+            status: options?.allowTerminalSource
+              ? { in: ["completed", "failed", "cancelled"] }
+              : "running",
           },
           select: { id: true },
         });
@@ -210,6 +212,7 @@ export async function messageBot(
           blocks: [outboundBlock],
           botId: run.botId,
           runId: run.id,
+          allowCancelledRun: options?.allowTerminalSource === true,
         });
         const inboundBlock: MessageBlock = {
           kind: "bot_message_received",
@@ -270,6 +273,7 @@ export async function messageBot(
           botId: run.botId,
           type: "thread.message.created",
           runId: run.id,
+          allowCancelledRun: options?.allowTerminalSource === true,
           payload: { messageId: outbound.id, role: "bot", blocks: [outboundBlock] },
         });
         return {
@@ -379,7 +383,7 @@ async function markBotOutcomeReturned(prisma: PrismaClient, runId: string) {
   await prisma.run.updateMany({
     where: {
       id: runId,
-      status: { in: ["completed", "failed"] },
+      status: { in: ["completed", "failed", "cancelled"] },
       botOutcomeReturnedAt: null,
     },
     data: { botOutcomeReturnedAt: new Date() },

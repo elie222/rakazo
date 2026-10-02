@@ -557,14 +557,16 @@ describe("automatic outcome return", () => {
     );
     expect(harness.tx.run.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({ status: { in: ["completed", "failed"] } }),
+        where: expect.objectContaining({
+          status: { in: ["completed", "failed", "cancelled"] },
+        }),
       }),
     );
     expect(harness.enqueue).toHaveBeenCalledOnce();
     expect(harness.deps.prisma.run.updateMany).toHaveBeenCalledWith({
       where: {
         id: run.id,
-        status: { in: ["completed", "failed"] },
+        status: { in: ["completed", "failed", "cancelled"] },
         botOutcomeReturnedAt: null,
       },
       data: { botOutcomeReturnedAt: expect.any(Date) },

@@ -103,6 +103,7 @@ describe("expo push", () => {
       },
     );
     expect(fetchMock).not.toHaveBeenCalled();
+    await expect(push.hasPushRecipient("missing")).resolves.toBe(false);
   });
 
   it("posts to Expo when a token is registered", async () => {
