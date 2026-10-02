@@ -31,7 +31,7 @@ export async function aiConsentStatus(
       ? [target.botId]
       : target.memberBotIds
     : undefined;
-  const [preferences, defaultCredential, bots, voices, memory, settings, consents] =
+  const [preferences, defaultCredential, bots, routines, voices, memory, settings, consents] =
     await Promise.all([
       modelsEnabled
         ? deps.prisma.spaceModelPreference.findMany({
@@ -47,6 +47,20 @@ export async function aiConsentStatus(
               spaceId: actor.spaceId,
               archivedAt: null,
               ...(botIds ? { id: { in: botIds } } : {}),
+            },
+            select: { modelProvider: true, modelId: true, thinkingLevel: true },
+          })
+        : [],
+      // A routine with its own model sends that bot's work to a second recipient.
+      modelsEnabled
+        ? deps.prisma.routine.findMany({
+            where: {
+              userId: actor.userId,
+              spaceId: actor.spaceId,
+              modelProvider: { not: null },
+              modelId: { not: null },
+              bot: { archivedAt: null },
+              ...(botIds ? { botId: { in: botIds } } : {}),
             },
             select: { modelProvider: true, modelId: true, thinkingLevel: true },
           })
@@ -82,13 +96,18 @@ export async function aiConsentStatus(
       ? { provider: deps.env.defaultProvider, model: deps.env.defaultModel }
       : null;
     const selected = await Promise.all(
-      (target ? bots : [null, ...bots]).map(async (bot) => {
+      (target ? [...bots, ...routines] : [null, ...bots, ...routines]).map(async (override) => {
         const overrideCredential =
-          bot?.modelProvider && bot.modelId
-            ? await findModelCredential(deps.prisma, actor, bot.modelProvider, bot.modelId)
+          override?.modelProvider && override.modelId
+            ? await findModelCredential(
+                deps.prisma,
+                actor,
+                override.modelProvider,
+                override.modelId,
+              )
             : null;
         return selectConfiguredModel({
-          bot,
+          override,
           overrideCredential,
           defaultCredential,
           settings,

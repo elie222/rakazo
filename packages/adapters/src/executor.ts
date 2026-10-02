@@ -245,6 +245,8 @@ import type { MemoryProviderResolver } from "./memory-provider-factory.js";
 import { selectMemoryTools } from "./memory-tools.js";
 import {
   isCatalogModelChoice,
+  routineRunModelPin,
+  runModelChoice,
   selectConfiguredModel,
   UnavailableModelForAuthError,
   validateConnectedModelChoice,
@@ -966,7 +968,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         deps.prisma.deploymentSettings.findUnique({ where: { id: "default" } }),
       ]);
       const selected = selectConfiguredModel({
-        bot: override,
+        override,
         overrideCredential,
         defaultCredential,
         settings,
@@ -1100,6 +1102,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             status: "queued",
             trigger: "routine",
             routineId: routine.id,
+            ...routineRunModelPin(routine),
           },
         });
       });
@@ -1320,10 +1323,18 @@ export function createRunExecutor(deps: ExecutorDeps) {
         const agentEnvironment = decryptAgentEnvironment(agentSecretRows, deps.secretStore);
         runSecrets.push(...Object.values(agentEnvironment));
         const agentEnvironmentInstruction = formatAgentEnvironmentInstruction(agentEnvironment);
-        const hasModelOverride = Boolean(bot.modelProvider && bot.modelId);
+        // A routine turn runs on the model pinned when the run was created, so a routine
+        // edited or deleted while its run waits cannot move that run to another model.
+        const modelChoice = runModelChoice(run, bot);
+        const hasModelOverride = Boolean(modelChoice.modelProvider && modelChoice.modelId);
         const overrideCredential =
-          hasModelOverride && bot.modelProvider
-            ? await findModelCredential(deps.prisma, run, bot.modelProvider, bot.modelId)
+          hasModelOverride && modelChoice.modelProvider
+            ? await findModelCredential(
+                deps.prisma,
+                run,
+                modelChoice.modelProvider,
+                modelChoice.modelId,
+              )
             : null;
         runAbortController = new AbortController();
         if (!leaseValid) runAbortController.abort();
@@ -1492,7 +1503,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         const runDeployment = deps.deploymentModelKey ? resolveDeploymentModel() : null;
         const runtimeFallback = runtimeFallbackModel(deps.runtime);
         const selected = selectConfiguredModel({
-          bot,
+          override: modelChoice,
           overrideCredential,
           defaultCredential,
           settings,

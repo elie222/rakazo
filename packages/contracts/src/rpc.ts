@@ -56,6 +56,7 @@ import {
   ModelOAuthBeginSchema,
   REPLY_QUOTE_MAX_LENGTH,
   ReorderBotsInput,
+  routineModelIssues,
   RoutineSchema,
   ScratchpadItemSchema,
   ScratchpadItemStatusSchema,
@@ -481,10 +482,17 @@ export const appContract = {
               .regex(/^[a-z0-9._-]+$/i)
               .nullable()
               .optional(),
+            /** Null clears the routine's own model and runs it on the bot's. */
+            modelProvider: z.string().trim().min(1).max(80).nullable().optional(),
+            modelId: z.string().trim().min(1).max(200).nullable().optional(),
+            thinkingLevel: ThinkingLevelSchema.nullable().optional(),
             /** ISO datetime to arm a never-run one-shot. */
             runAt: IsoDate.optional(),
           })
           .superRefine((value, ctx) => {
+            if (value.modelProvider !== undefined || value.modelId !== undefined) {
+              routineModelIssues(value, ctx);
+            }
             if (
               value.crons &&
               value.crons.length === 0 &&

@@ -346,19 +346,59 @@ export async function validateConnectedModelChoice(
   return savedChoice ? undefined : "Unknown model for that provider";
 }
 
+export type ModelChoice = {
+  modelProvider: string | null;
+  modelId: string | null;
+  thinkingLevel: string | null;
+};
+
+/**
+ * The model a queued run will use. A routine run carries the choice its routine had
+ * when the run was created, so editing or deleting that routine afterwards cannot
+ * move a waiting run to another model; every other run follows its bot.
+ */
+export function runModelChoice(
+  run: ModelChoice & { routineId: string | null },
+  bot: ModelChoice,
+): ModelChoice {
+  if (run.routineId && run.modelProvider && usableModelId(run.modelId)) {
+    return {
+      modelProvider: run.modelProvider,
+      modelId: run.modelId,
+      thinkingLevel: run.thinkingLevel,
+    };
+  }
+  return {
+    modelProvider: bot.modelProvider,
+    modelId: bot.modelId,
+    thinkingLevel: bot.thinkingLevel,
+  };
+}
+
+/** The model columns a routine's run starts with; empty when it follows the bot. */
+export function routineRunModelPin(routine: ModelChoice): {
+  modelProvider?: string;
+  modelId?: string;
+  thinkingLevel?: string | null;
+} {
+  if (!routine.modelProvider || !routine.modelId) return {};
+  return {
+    modelProvider: routine.modelProvider,
+    modelId: routine.modelId,
+    thinkingLevel: routine.thinkingLevel,
+  };
+}
+
 /** Select configuration without loading secrets or applying a runtime-specific fallback. */
 export function selectConfiguredModel(input: {
-  bot: {
-    modelProvider: string | null;
-    modelId: string | null;
-    thinkingLevel: string | null;
-  } | null;
+  /** The bot's or the run's own model; null follows the space default. */
+  override: ModelChoice | null;
   overrideCredential: ModelCredential;
   defaultCredential: ModelCredential;
   settings: { defaultModelProvider: string | null; defaultModelId: string | null } | null;
   deployment: { provider: string; model: string } | null;
 }) {
-  const { bot, overrideCredential, defaultCredential, settings, deployment } = input;
+  const { override: bot, overrideCredential, defaultCredential, settings, deployment } = input;
   const hasOverride = Boolean(bot?.modelProvider && usableModelId(bot.modelId));
   // The override provider, model and credential must win together.
   const useOverride = Boolean(hasOverride && overrideCredential);

@@ -737,6 +737,10 @@ msgstr "Bot screen preview"
 msgid "Bot to link"
 msgstr "Bot to link"
 
+#: src/pages/RoutineEditor.tsx
+msgid "Bot's model"
+msgstr "Bot's model"
+
 #: src/pages/Artifacts.tsx
 msgid "Bots"
 msgstr "Bots"
@@ -3442,6 +3446,10 @@ msgstr "Saving…"
 #: src/lib/call-session.ts
 msgid "Say yes or no, or answer in a sentence."
 msgstr "Say yes or no, or answer in a sentence."
+
+#: src/pages/RoutineEditor.tsx
+msgid "Schedules use this model; inbound triggers keep the bot's model."
+msgstr "Schedules use this model; inbound triggers keep the bot's model."
 
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/PluginsOverlay.tsx

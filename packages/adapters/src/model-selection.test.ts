@@ -5,6 +5,8 @@ import {
   defaultCatalogModelId,
   modelCredentialAuthKindsForSpace,
   readStoredModelAuth,
+  routineRunModelPin,
+  runModelChoice,
   selectConfiguredModel,
   selectDefaultCredentialId,
   validateConnectedModelChoice,
@@ -37,7 +39,7 @@ const spaceCredential = credential("space-provider", "space-model");
 const overrideCredential = credential("bot-provider", "stored-model");
 const bot = { modelProvider: "bot-provider", modelId: "bot-model", thinkingLevel: "high" };
 const defaults: SelectionInput = {
-  bot: null,
+  override: null,
   overrideCredential: null,
   defaultCredential: spaceCredential,
   settings: { defaultModelProvider: "settings-provider", defaultModelId: "settings-model" },
@@ -52,7 +54,7 @@ describe("configured model selection", () => {
   }>([
     {
       name: "uses the bot's model with its own credential",
-      input: { bot, overrideCredential },
+      input: { override: bot, overrideCredential },
       expected: {
         provider: "bot-provider",
         id: "bot-model",
@@ -62,7 +64,7 @@ describe("configured model selection", () => {
     },
     {
       name: "drops override thinking when its provider has no credential",
-      input: { bot },
+      input: { override: bot },
       expected: {
         provider: "space-provider",
         id: "space-model",
@@ -72,7 +74,7 @@ describe("configured model selection", () => {
     },
     {
       name: "keeps bot thinking with the Space default",
-      input: { bot: { modelProvider: null, modelId: null, thinkingLevel: "high" } },
+      input: { override: { modelProvider: null, modelId: null, thinkingLevel: "high" } },
       expected: {
         provider: "space-provider",
         id: "space-model",
@@ -82,7 +84,7 @@ describe("configured model selection", () => {
     },
     {
       name: "does not select an incomplete bot override",
-      input: { bot: { ...bot, modelId: null }, overrideCredential },
+      input: { override: { ...bot, modelId: null }, overrideCredential },
       expected: {
         provider: "space-provider",
         id: "space-model",
@@ -147,7 +149,7 @@ describe("configured model selection", () => {
     {
       name: "bot override thinking beats the preference level",
       input: {
-        bot: { modelProvider: null, modelId: null, thinkingLevel: "high" },
+        override: { modelProvider: null, modelId: null, thinkingLevel: "high" },
         defaultCredential: credential("space-provider", "space-model", "low"),
       },
       expected: {
@@ -160,7 +162,7 @@ describe("configured model selection", () => {
     {
       name: "does not leak a preference level onto a different override model",
       input: {
-        bot: { modelProvider: "bot-provider", modelId: "other-model", thinkingLevel: null },
+        override: { modelProvider: "bot-provider", modelId: "other-model", thinkingLevel: null },
         overrideCredential: credential("bot-provider", "stored-model", "xhigh"),
       },
       expected: {
@@ -172,7 +174,7 @@ describe("configured model selection", () => {
     },
     {
       name: "does not treat a sentinel bot override as a selected model",
-      input: { bot: { ...bot, modelId: "null" }, overrideCredential },
+      input: { override: { ...bot, modelId: "null" }, overrideCredential },
       expected: {
         provider: "space-provider",
         id: "space-model",
@@ -183,7 +185,7 @@ describe("configured model selection", () => {
     {
       name: "inherits the preference level when the override names its model",
       input: {
-        bot: { modelProvider: "bot-provider", modelId: "stored-model", thinkingLevel: null },
+        override: { modelProvider: "bot-provider", modelId: "stored-model", thinkingLevel: null },
         overrideCredential: credential("bot-provider", "stored-model", "xhigh"),
       },
       expected: {
@@ -195,6 +197,62 @@ describe("configured model selection", () => {
     },
   ])("$name", ({ input, expected }) => {
     expect(selectConfiguredModel({ ...defaults, ...input })).toEqual(expected);
+  });
+});
+
+describe("routine model pin", () => {
+  const routine = {
+    modelProvider: "routine-provider",
+    modelId: "routine-model",
+    thinkingLevel: "low",
+  };
+
+  it("pins the routine's own model onto its run", () => {
+    expect(routineRunModelPin(routine)).toEqual({
+      modelProvider: "routine-provider",
+      modelId: "routine-model",
+      thinkingLevel: "low",
+    });
+  });
+
+  it("pins nothing when the routine follows the bot", () => {
+    expect(routineRunModelPin({ modelProvider: null, modelId: null, thinkingLevel: null })).toEqual(
+      {},
+    );
+    expect(
+      routineRunModelPin({ modelProvider: "routine-provider", modelId: null, thinkingLevel: null }),
+    ).toEqual({});
+  });
+
+  it("runs a routine turn on the model pinned to its run", () => {
+    const choice = runModelChoice({ routineId: "routine-1", ...routine }, bot);
+    expect(choice).toEqual(routine);
+    expect(
+      selectConfiguredModel({
+        ...defaults,
+        override: choice,
+        overrideCredential: credential("routine-provider", "stored-model"),
+      }),
+    ).toMatchObject({ provider: "routine-provider", id: "routine-model", thinkingLevel: "low" });
+  });
+
+  it("keeps a pinned run on its model after the routine is edited or deleted", () => {
+    // The routine row is gone or changed; the run still carries what it fired with.
+    expect(runModelChoice({ routineId: "routine-1", ...routine }, bot)).toEqual(routine);
+  });
+
+  it("falls back to the bot for a routine run without a pinned model", () => {
+    expect(
+      runModelChoice(
+        { routineId: "routine-1", modelProvider: null, modelId: null, thinkingLevel: null },
+        bot,
+      ),
+    ).toEqual(bot);
+  });
+
+  it("ignores run model columns that belong to an ordinary run", () => {
+    // Ordinary runs record the model they used; that record is not an override.
+    expect(runModelChoice({ routineId: null, ...routine }, bot)).toEqual(bot);
   });
 });
 

@@ -1244,6 +1244,85 @@ describe("createRunExecutor", () => {
     );
   });
 
+  it("pins the routine's own model onto the run it fires", async () => {
+    const scheduledAt = new Date(Date.now() - 1_000);
+    const taskCreate = vi.fn(async () => ({ id: "task-1" }));
+    const runCreate = vi.fn(async () => ({ id: "run-1" }));
+    function fixture(model: {
+      modelProvider: string | null;
+      modelId: string | null;
+      thinkingLevel: string | null;
+    }) {
+      return {
+        routine: {
+          findUnique: vi.fn(async () => ({
+            id: "routine-1",
+            spaceId: "ws-1",
+            botId: "bot-1",
+            userId: "user-1",
+            prompt: "say hi",
+            crons: [ONCE_ROUTINE_CRON],
+            timezone: "UTC",
+            active: true,
+            nextRunAt: scheduledAt,
+            threadId: null,
+            ...model,
+          })),
+        },
+        bot: {
+          findUnique: vi.fn(async () => ({ id: "bot-1", thread: { id: "thread-1" } })),
+        },
+        agentSkill: { findMany: vi.fn(async () => []) },
+        $transaction: vi.fn(async (callback: (tx: unknown) => Promise<unknown>) =>
+          callback({
+            routine: { updateMany: vi.fn(async () => ({ count: 1 })) },
+            task: { create: taskCreate },
+            run: { create: runCreate },
+          }),
+        ),
+      } as unknown as PrismaClient;
+    }
+    function executorFor(prisma: PrismaClient) {
+      return createRunExecutor({
+        prisma,
+        jobs: {
+          enqueue: vi.fn(async () => undefined),
+          cancel: vi.fn(async () => undefined),
+          close: vi.fn(async () => undefined),
+        },
+        events: { append: vi.fn(async () => undefined) },
+      } as unknown as Parameters<typeof createRunExecutor>[0]);
+    }
+
+    await executorFor(
+      fixture({
+        modelProvider: "routine-provider",
+        modelId: "routine-model",
+        thinkingLevel: "low",
+      }),
+    ).wakeRoutine("routine-1", scheduledAt.toISOString());
+    expect(runCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          routineId: "routine-1",
+          modelProvider: "routine-provider",
+          modelId: "routine-model",
+          thinkingLevel: "low",
+        }),
+      }),
+    );
+
+    runCreate.mockClear();
+    await executorFor(
+      fixture({ modelProvider: null, modelId: null, thinkingLevel: null }),
+    ).wakeRoutine("routine-1", scheduledAt.toISOString());
+    const [pinned] = runCreate.mock.calls.at(0) as unknown as [
+      { data: Record<string, unknown> },
+    ];
+    expect(pinned.data).not.toHaveProperty("modelProvider");
+    expect(pinned.data).not.toHaveProperty("modelId");
+  });
+
   it("re-pauses a due routine whose bot is archived instead of queueing a run", async () => {
     const scheduledAt = new Date(Date.now() - 1_000);
     const enqueue = vi.fn(async () => undefined);
