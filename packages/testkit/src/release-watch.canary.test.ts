@@ -12,7 +12,7 @@ import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 import { afterAll, describe, expect, it } from "vitest";
 import { sessionCookieHeader } from "./index.js";
 
-if (process.env.VERIFY_PROVIDERS) loadRootEnv();
+if (process.env.VERIFY_PROVIDERS) loadRootEnv({ allowInTests: true });
 
 const live = Boolean(
   process.env.VERIFY_PROVIDERS && process.env.OPENROUTER_API_KEY && process.env.DATABASE_URL,

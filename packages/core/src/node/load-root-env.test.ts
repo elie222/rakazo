@@ -39,4 +39,10 @@ describe("root environment loading", () => {
     loadRootEnv();
     expect(process.env.RAKAZO_TEST_ENV_SENTINEL).toBe("caller");
   });
+
+  it("loads configuration when a live verification explicitly opts in", () => {
+    vi.stubEnv("NODE_ENV", "test");
+    loadRootEnv({ allowInTests: true });
+    expect(process.env.RAKAZO_TEST_ENV_SENTINEL).toBe("fixture");
+  });
 });

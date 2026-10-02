@@ -31,11 +31,7 @@ describe.skipIf(process.env.RUN_COMPUTER_REPLAY_DOCKER !== "1")(
               "/tmp:mode=1777",
               "--tmpfs",
               `/home/rakazo:uid=${uid},gid=${gid},mode=700`,
-              "--entrypoint",
-              "bash",
               process.env.RAKAZO_COMPUTER_IMAGE ?? "rakazo/computer:local",
-              "-euc",
-              "source /usr/local/lib/rakazo-user-env.sh; touch /tmp/user-ready; exec sleep 60",
             ],
             { stdio: "pipe", timeout: 30_000 },
           );
@@ -46,7 +42,8 @@ describe.skipIf(process.env.RUN_COMPUTER_REPLAY_DOCKER !== "1")(
               name,
               "bash",
               "-euc",
-              "for i in $(seq 1 100); do [ -f /tmp/user-ready ] && break; sleep 0.05; done; " +
+              "for i in $(seq 1 200); do [ -s /tmp/rakazo/dbus-session ] && xdpyinfo -display :1 >/dev/null 2>&1 && break; sleep 0.05; done; " +
+                "test -s /tmp/rakazo/dbus-session; xdpyinfo -display :1 >/dev/null; " +
                 'getent passwd "$(id -u)"; getent group "$(id -g)"; ' +
                 'eval "$(dbus-launch --sh-syntax)"; test -n "$DBUS_SESSION_BUS_ADDRESS"; ' +
                 'kill "$DBUS_SESSION_BUS_PID"',
