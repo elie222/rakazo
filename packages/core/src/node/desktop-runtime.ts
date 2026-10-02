@@ -124,6 +124,7 @@ function browserRunningFunction(profile: string, pidFile: string) {
     "  browser_matches() {",
     "    case \"$1\" in ''|0|*[!0-9]*) return 1 ;; esac",
     '    kill -0 "$1" 2>/dev/null || return 1',
+    '    case "$(readlink "/proc/$1/exe" 2>/dev/null)" in */bash|*/dash|*/sh|*/timeout) return 1 ;; esac',
     `    if ! has_arg "$1" ${flag}; then return 1; fi`,
     // Browser.close reads --remote-debugging-port from this PID. Renderers inherit
     // --user-data-dir (and sometimes the port) but always carry --type=.
@@ -169,7 +170,7 @@ function browserLauncherCommand(
       ? // biome-ignore lint/suspicious/noTemplateCurlyInString: generated shell parameter expansion
         ['desktop_display="${0##*-}"', "desktop_debug=$((9221 + desktop_display))"]
       : []),
-    "browser=$(command -v chromium || command -v chromium-browser || command -v google-chrome || command -v google-chrome-stable || command -v rakazo-browser)",
+    "browser=$(command -v rakazo-browser || command -v google-chrome || command -v google-chrome-stable || command -v chromium || command -v chromium-browser)",
     `export DISPLAY=${layout.display} HOME=${shellQuote(env.homeDir)}`,
     // Docker exec does not inherit the session bus exported by container startup.
     // biome-ignore lint/suspicious/noTemplateCurlyInString: generated shell parameter expansion

@@ -324,7 +324,7 @@ describe("shared Linux desktop lifecycle", () => {
       const log = path.join(root, "closed");
       mkdirSync(bin);
       const sleeper = path.join(bin, "sleeper");
-      writeFileSync(sleeper, "#!/bin/sh\nsleep 120\n");
+      writeFileSync(sleeper, "#!/usr/bin/env python3\nimport time\ntime.sleep(120)\n");
       chmodSync(sleeper, 0o755);
       writeFileSync(
         path.join(bin, "python3"),
@@ -376,6 +376,18 @@ describe("shared Linux desktop lifecycle", () => {
         { stdio: "ignore", detached: true, env: { ...process.env, JOINED_READY: joinedReady } },
       );
       children.push(joined);
+      const launcher = spawn(
+        "/bin/sh",
+        [
+          "-c",
+          "sleep 120",
+          "launcher",
+          `--user-data-dir=${botDir}`,
+          "--remote-debugging-port=9333",
+        ],
+        { stdio: "ignore", detached: true },
+      );
+      children.push(launcher);
       const bot = start(botDir, [`--user-data-dir=${botDir}`, "--remote-debugging-port=9333"]);
       const botRenderer = start(botDir, [
         "--type=renderer",
@@ -416,6 +428,7 @@ describe("shared Linux desktop lifecycle", () => {
         );
         expect(closed).not.toContain(String(botRenderer.child.pid));
         expect(closed).not.toContain(String(botHelper.child.pid));
+        expect(closed).not.toContain(String(launcher.pid));
         expect(spawnSync("kill", ["-0", String(botRenderer.child.pid)]).status).toBe(0);
         expect(spawnSync("kill", ["-0", String(botHelper.child.pid)]).status).toBe(0);
         expect(readFileSync(bot.cookies, "utf8")).toBe("session=kept");
