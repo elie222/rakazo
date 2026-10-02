@@ -553,9 +553,6 @@ export function RoutineEditor({
             </NativeSelectOption>
           ))}
         </NativeSelect>
-        <p className="mt-2 text-xs text-muted-foreground/70">
-          <Trans>Schedules use this model; inbound triggers keep the bot's model.</Trans>
-        </p>
       </label>
 
       {thinkingOptions.length ? (

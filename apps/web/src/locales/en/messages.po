@@ -3447,10 +3447,6 @@ msgstr "Saving…"
 msgid "Say yes or no, or answer in a sentence."
 msgstr "Say yes or no, or answer in a sentence."
 
-#: src/pages/RoutineEditor.tsx
-msgid "Schedules use this model; inbound triggers keep the bot's model."
-msgstr "Schedules use this model; inbound triggers keep the bot's model."
-
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/Shell.tsx

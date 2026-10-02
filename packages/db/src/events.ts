@@ -456,6 +456,13 @@ export async function sendUserMessage(
             // Keep messaging on the hold so the later run is mirrored back to that app.
             runId: held ? null : busy.id,
             ...(held && input.trigger === "messaging" ? { originTrigger: "messaging" } : {}),
+            ...(input.modelPin
+              ? {
+                  modelProvider: input.modelPin.modelProvider,
+                  modelId: input.modelPin.modelId,
+                  thinkingLevel: input.modelPin.thinkingLevel,
+                }
+              : {}),
           },
         });
         await tx.message.update({ where: { id: message.id }, data: { runId: busy.id } });
@@ -1234,6 +1241,7 @@ async function createSteeringContinuation(
   const origin = steeringOrigin(pending[0]!);
   const batch = pending.filter((item) => steeringOrigin(item) === origin);
   const source = batch.at(-1)!;
+  const modelPin = continuationModelPin(batch);
   const task = await tx.task.create({
     data: {
       spaceId: input.spaceId,
@@ -1254,6 +1262,7 @@ async function createSteeringContinuation(
       status: "queued",
       trigger: origin === "app" ? "follow_up" : "messaging",
       sourceMessageId: source.message.id,
+      ...(modelPin ?? {}),
     },
   });
   await tx.steeringMessage.updateMany({
@@ -1261,6 +1270,30 @@ async function createSteeringContinuation(
     data: { runId: run.id, claimedAt: null },
   });
   return run.id;
+}
+
+function continuationModelPin(
+  batch: ReadonlyArray<{
+    modelProvider?: string | null;
+    modelId?: string | null;
+    thinkingLevel?: string | null;
+  }>,
+) {
+  const first = batch[0];
+  if (!first?.modelProvider || !first.modelId) return null;
+  const agreed = batch.every(
+    (item) =>
+      item.modelProvider === first.modelProvider &&
+      item.modelId === first.modelId &&
+      (item.thinkingLevel ?? null) === (first.thinkingLevel ?? null),
+  );
+  if (!agreed) return null;
+  return {
+    modelProvider: first.modelProvider,
+    modelId: first.modelId,
+    thinkingLevel: first.thinkingLevel ?? null,
+    modelPinned: true,
+  };
 }
 
 function steeringOrigin(item: {
