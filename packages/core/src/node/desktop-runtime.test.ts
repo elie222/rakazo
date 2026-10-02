@@ -214,6 +214,20 @@ describe("shared Linux desktop lifecycle", () => {
     expect(() => terminalCommand("c", "bad token", ".")).toThrow("invalid terminal token");
   });
 
+  it("drops libnss_wrapper before the screen browser exec", () => {
+    const command = ensureScreenCommand(0, "bot", "token");
+    expect(command).toContain("*libnss_wrapper.so");
+    expect(command).toContain("unset LD_PRELOAD");
+    expect(command).toContain(
+      "browser=$(command -v rakazo-browser || command -v google-chrome || command -v google-chrome-stable || command -v chromium || command -v chromium-browser)",
+    );
+    const lines = command.split("\n");
+    const unsetAt = lines.findIndex((line) => line.includes("unset LD_PRELOAD"));
+    const execAt = lines.findIndex((line) => line.startsWith("exec "));
+    expect(unsetAt).toBeGreaterThan(-1);
+    expect(execAt).toBeGreaterThan(unsetAt);
+  });
+
   it("stops the terminal with the control lease and the screen transports", () => {
     expect(interactiveScreenCommand(false)).toMatch(/pkill -f .*rakazo-terminal\.py/);
     expect(interactiveScreenCommand(false)).toContain("desktop-targets/terminal-1");

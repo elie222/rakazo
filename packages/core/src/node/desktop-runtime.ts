@@ -175,6 +175,28 @@ function browserLauncherCommand(
     // Docker exec does not inherit the session bus exported by container startup.
     // biome-ignore lint/suspicious/noTemplateCurlyInString: generated shell parameter expansion
     'if [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ] && [ -r /tmp/rakazo/dbus-session ]; then . /tmp/rakazo/dbus-session; fi',
+    // The image preloads libnss_wrapper so arbitrary UIDs resolve. Chromium's
+    // process stays up with these flags while that library is loaded, and the
+    // debugging port never opens. Drop only that entry for this exec.
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: generated shell parameter expansion
+    'if [ -n "${LD_PRELOAD:-}" ]; then',
+    '  _kept=""',
+    '  _rest="$LD_PRELOAD"',
+    '  while [ -n "$_rest" ]; do',
+    '    case "$_rest" in',
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: generated shell parameter expansion
+    '      *:*) _entry="${_rest%%:*}"; _rest="${_rest#*:}" ;;',
+    '      *) _entry="$_rest"; _rest="" ;;',
+    "    esac",
+    '    case "$_entry" in',
+    '      *libnss_wrapper.so|"") ;;',
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: generated shell parameter expansion
+    '      *) _kept="${_kept:+$_kept:}$_entry" ;;',
+    "    esac",
+    "  done",
+    '  if [ -n "$_kept" ]; then export LD_PRELOAD="$_kept"; else unset LD_PRELOAD; fi',
+    "  unset _kept _rest _entry",
+    "fi",
     `exec "$browser" --test-type --no-sandbox --disable-dev-shm-usage --disable-gpu --enable-unsafe-swiftshader --no-first-run --no-default-browser-check --disable-session-crashed-bubble --hide-crash-restore-bubble --password-store=basic --start-maximized --remote-debugging-address=127.0.0.1 --remote-debugging-port=${layout.debugPort} --user-data-dir=${shellQuote(browserProfilePathForScreen(screenId, env))} "$@"`,
   ].join("\n");
 }
