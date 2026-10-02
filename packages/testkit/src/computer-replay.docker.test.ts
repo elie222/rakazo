@@ -138,7 +138,18 @@ describe.skipIf(process.env.RUN_COMPUTER_REPLAY_DOCKER !== "1")(
             new ComputerBrowserProvider({ sandbox }),
             computer,
             context,
-          );
+          ).catch((error: unknown) => {
+            // This offline fixture contains only fake contacts. A read-only
+            // snapshot distinguishes browser failures from command transport failures.
+            const diagnostic = execFileSync(
+              "docker",
+              ["exec", computer!.id, "/usr/local/bin/rakazo-page-browser", "snapshot"],
+              { encoding: "utf8", timeout: 40_000 },
+            );
+            throw new Error(`Computer replay failed; direct browser snapshot: ${diagnostic}`, {
+              cause: error,
+            });
+          });
           expect(result.modelRequests).toBe(9);
           // These reads are independent of the agent's reply and tool-result assertions.
           expect(await waitForReplayFile(sandbox, computer, context, CONTACTS_PATH)).toBe(
