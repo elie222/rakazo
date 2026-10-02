@@ -77,6 +77,7 @@ it("resolves the owned display and refuses an older fence before running the hel
       "DISPLAY=:2",
       "RAKAZO_CDP_PORT=9223",
       "HOME=/home/rakazo",
+      "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
       "RAKAZO_BROWSER_WATCH_STDIN=1",
       "RAKAZO_BROWSER_ARGS_STDIN=1",
     ],

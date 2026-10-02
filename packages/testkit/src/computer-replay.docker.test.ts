@@ -154,8 +154,17 @@ describe.skipIf(process.env.RUN_COMPUTER_REPLAY_DOCKER !== "1")(
                 ],
                 { encoding: "utf8", timeout: 40_000 },
               );
-            } catch {
-              // Diagnostics are best-effort; preserve the replay failure below.
+            } catch (diagnosticError: unknown) {
+              // Diagnostics are best-effort; keep any snapshot stdout and the replay cause.
+              if (
+                diagnosticError &&
+                typeof diagnosticError === "object" &&
+                "stdout" in diagnosticError &&
+                typeof (diagnosticError as { stdout: unknown }).stdout === "string" &&
+                (diagnosticError as { stdout: string }).stdout.trim()
+              ) {
+                diagnostic = (diagnosticError as { stdout: string }).stdout;
+              }
             }
             throw new Error(`Computer replay failed; direct browser snapshot: ${diagnostic}`, {
               cause: error,
