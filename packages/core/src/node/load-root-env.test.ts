@@ -11,6 +11,7 @@ beforeEach(() => {
   vi.spyOn(process, "cwd").mockReturnValue(root);
   vi.stubEnv("RAKAZO_TEST_ENV_SENTINEL", undefined);
   vi.stubEnv("DATA_DIR", undefined);
+  vi.stubEnv("VERIFY_PROVIDERS", undefined);
 });
 afterEach(() => {
   vi.restoreAllMocks();
