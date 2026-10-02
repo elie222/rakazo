@@ -13,6 +13,9 @@ type ProfilePatch = { description?: string; instructions?: string };
  * The panel trims the field before saving, so the stored value is compared
  * trimmed as well: stray whitespace around a stored description is not an
  * edit and must not drag the instructions along.
+ *
+ * `stored` is the description last saved from this panel, not a bot prop that
+ * may still be stale when a roster refresh skips replacing the list.
  */
 export function botProfilePatch(stored: string, next: string): ProfilePatch {
   if (next === stored.trim()) return {};
