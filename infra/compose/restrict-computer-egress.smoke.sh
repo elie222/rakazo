@@ -9,7 +9,13 @@ fail() { echo "FAIL: $*" >&2; exit 1; }
 
 bash -n "$script"
 
-printed="$(bash "$script" --print)"
+print_bin="$scratch/print-bin"
+mkdir -p "$print_bin"
+for tool in iptables ip6tables; do
+  printf '#!/usr/bin/env bash\nexit 99\n' >"$print_bin/$tool"
+  chmod +x "$print_bin/$tool"
+done
+printed="$(PATH="$print_bin:$PATH" bash "$script" --print)"
 [[ -n "$printed" ]] || fail "--print produced no rules"
 
 # --print emits execution order (each rule inserts at the top of its chain), so
