@@ -1,7 +1,9 @@
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import http from "node:http";
 import net from "node:net";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { resolveSupervisorToken } from "@rakazo/core";
 import { describe, expect, it } from "vitest";
 import {
@@ -122,6 +124,25 @@ describe("computer screen readiness", () => {
 });
 
 describe("sandbox supervisor Docker endpoint", () => {
+  it("discovers the unprivileged Docker Desktop socket on macOS", () => {
+    const home = mkdtempSync(path.join(tmpdir(), "rakazo-docker-home-"));
+    try {
+      expect(resolveDockerSocketPath({ HOME: home }, "darwin")).toBe("/var/run/docker.sock");
+      const socket = path.join(home, ".docker", "run", "docker.sock");
+      mkdirSync(path.dirname(socket), { recursive: true });
+      writeFileSync(socket, "");
+      expect(resolveDockerSocketPath({ HOME: home }, "darwin")).toBe(socket);
+      expect(
+        resolveDockerSocketPath({ HOME: home, DOCKER_SOCKET: "/tmp/override.sock" }, "darwin"),
+      ).toBe("/tmp/override.sock");
+      expect(
+        resolveDockerSocketPath({ HOME: home, DOCKER_HOST: "tcp://docker.test:2375" }, "darwin"),
+      ).toBeUndefined();
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
   it("respects Docker host and socket overrides before platform defaults", () => {
     expect(resolveDockerSocketPath({ DOCKER_HOST: "tcp://docker.test:2375" }, "win32")).toBe(
       undefined,

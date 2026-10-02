@@ -98,6 +98,10 @@ independent long random values. Docker sandboxes also need a dedicated
 `SANDBOX_SUPERVISOR_TOKEN`. You can also set `OPENROUTER_API_KEY`, or connect a supported
 model provider during onboarding.
 
+For host-side development with Docker Desktop, set `SANDBOX_CONTROL_VIA_LOOPBACK=true`
+in `.env`. The supervisor discovers Docker Desktop's user socket automatically;
+`DOCKER_HOST` or `DOCKER_SOCKET` can override it for another Docker runtime.
+
 Managed app catalogs are optional. Set `COMPOSIO_API_KEY` for Composio, or the
 `PIPEDREAM_CLIENT_ID`, `PIPEDREAM_CLIENT_SECRET`, and `PIPEDREAM_PROJECT_ID` trio for Pipedream
 Connect. Users can add an HTTPS MCP server, Treg endpoint, or OpenAPI JSON document from
@@ -122,6 +126,7 @@ pnpm dev
 
 Postgres stays network-internal in the default Compose file (same as published images). The
 `postgres-host` overlay publishes loopback `127.0.0.1:5433` for host-side `pnpm` and DB tools.
+If that port is occupied, change `POSTGRES_HOST_PORT` and the port in `DATABASE_URL` in `.env`.
 Without the overlay, open a shell with
 `docker compose --env-file .env -f infra/compose/docker-compose.yml exec postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"'`.
 Use a URI-safe `POSTGRES_PASSWORD` (`openssl rand -hex 16`). An existing `pgdata` volume keeps the

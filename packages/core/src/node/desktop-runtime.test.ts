@@ -168,9 +168,12 @@ describe("shared Linux desktop lifecycle", () => {
       [
         "-eu",
         "-c",
-        ["bash() { return 0; }", "rm() { echo 'slot remove failed' >&2; return 1; }", script].join(
-          "\n",
-        ),
+        [
+          "flock() { :; }",
+          "bash() { return 0; }",
+          "rm() { echo 'slot remove failed' >&2; return 1; }",
+          script,
+        ].join("\n"),
       ],
       { encoding: "utf8", timeout: 5000 },
     );

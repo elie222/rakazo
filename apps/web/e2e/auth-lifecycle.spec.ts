@@ -133,6 +133,9 @@ test("logout protects bot deep links and sign-in restores the session", async ({
 
   const message = "Fake composer regression check.";
   await composer.fill(message);
+  // The transcript is optimistic; wait for the previous send to finish before
+  // testing Enter again, just as the enabled Send control requires.
+  await expect(page.getByRole("button", { name: "Send", exact: true })).toBeEnabled();
   await captureScreenshot(page, testInfo, "40-restored-auth-session");
   await composer.press("Enter");
   await expect(composer).toHaveValue("");

@@ -60,6 +60,8 @@ describe("source-checkout compose postgres hardening", () => {
 
   it("publishes loopback postgres only via the optional host overlay", () => {
     const overlay = loadCompose("infra/compose/docker-compose.postgres-host.yml");
-    expect(overlay.services.postgres?.ports).toEqual(["127.0.0.1:5433:5432"]);
+    expect(overlay.services.postgres?.ports).toEqual([
+      `127.0.0.1:\${POSTGRES_HOST_PORT:-5433}:5432`,
+    ]);
   });
 });

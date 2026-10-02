@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -uo pipefail
+source /usr/local/lib/rakazo-user-env.sh
 export DISPLAY="${DISPLAY:-:1}"
 export HOME="${HOME:-/home/rakazo}"
 AGENT_HOME="$HOME"

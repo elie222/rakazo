@@ -80,6 +80,7 @@ async function main() {
           "--root",
           root,
           "packages/testkit/src/computer-replay.docker.test.ts",
+          "packages/testkit/src/computer-user.docker.test.ts",
         ],
         {
           env,

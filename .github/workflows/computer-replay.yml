@@ -1,0 +1,43 @@
+name: Computer runtime
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/computer-replay.yml
+      - infra/sandboxes/computer/**
+      - infra/sandboxes/supervisor/**
+      - packages/core/src/node/**
+      - packages/adapters/src/docker-sandbox.ts
+      - packages/adapters/src/computer-browser.ts
+      - packages/testkit/src/computer-*.ts
+      - packages/testkit/src/cli/computer-replay.ts
+      - pnpm-lock.yaml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: computer-runtime-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  replay:
+    name: Docker computer replay
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm db:generate
+        env:
+          DATABASE_URL: postgres://rakazo:rakazo@127.0.0.1:5433/rakazo
+      - run: pnpm sandbox:build
+      - run: pnpm test:computer-replay

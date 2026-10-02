@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import http from "node:http";
+import { homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
@@ -135,9 +136,12 @@ export function resolveDockerSocketPath(
   platform: NodeJS.Platform = process.platform,
 ) {
   if (env.DOCKER_HOST) return undefined;
-  return (
-    env.DOCKER_SOCKET ?? (platform === "win32" ? "//./pipe/docker_engine" : "/var/run/docker.sock")
-  );
+  if (env.DOCKER_SOCKET) return env.DOCKER_SOCKET;
+  if (platform === "darwin") {
+    const userSocket = path.join(env.HOME ?? homedir(), ".docker", "run", "docker.sock");
+    if (existsSync(userSocket)) return userSocket;
+  }
+  return platform === "win32" ? "//./pipe/docker_engine" : "/var/run/docker.sock";
 }
 
 app.get("/health", (c) => c.json({ ok: true, image: COMPUTER_IMAGE }));

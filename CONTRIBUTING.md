@@ -25,6 +25,9 @@ required secrets, and startup commands.
 
 CI runs `pnpm lint`, `pnpm check`, production builds (including Electron preload smoke), `pnpm test`, `pnpm test:integration`, and `pnpm test:e2e` on every PR.
 
+Test processes (`NODE_ENV=test`) do not load the checkout's `.env`. Verification CLIs
+load any needed configuration before starting their isolated test processes.
+
 ## Adding a UI language
 
 The web and Electron-hosted UI use Lingui catalogs. To add a locale, register it in
