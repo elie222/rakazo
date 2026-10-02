@@ -291,6 +291,7 @@ host_has_ipv6() {
 # output verbatim reproduces the intended chain.
 print_family() {
   local cmd="$1" rules=() line i
+  command -v "$cmd" >/dev/null 2>&1 || return 0
   while IFS= read -r line; do rules+=("$line"); done < <("$2")
   for ((i = ${#rules[@]} - 1; i >= 0; i--)); do
     line="${rules[i]}"
