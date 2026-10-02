@@ -280,7 +280,6 @@ function Thread() {
   const historyEpoch = useRef(0);
   const jumpGeneration = useRef(0);
   const refreshGeneration = useRef(0);
-  const refreshAppliedGeneration = useRef(0);
   const pinnedAroundRef = useRef<{
     botId?: string;
     groupId?: string;
@@ -780,10 +779,11 @@ function Thread() {
       "threads/get",
       targetGroupId ? { groupId: targetGroupId } : { botId: targetBotId! },
     );
-    // Apply any successful response that is still the newest applied so far.
-    // A later failed refresh must not discard an earlier success.
+    // Only the newest started refresh may commit. Threads also receive live SSE
+    // updates; an older snapshot must not overwrite those if a newer refresh is
+    // already in flight (even if that newer request later fails — poll/SSE recover).
     if (
-      generation < refreshAppliedGeneration.current ||
+      generation !== refreshGeneration.current ||
       !shouldApplyMobileThreadRefresh({
         requestEpoch: epoch,
         currentEpoch: historyEpoch.current,
@@ -794,7 +794,6 @@ function Thread() {
       })
     )
       return next;
-    refreshAppliedGeneration.current = generation;
     commitSnap(
       mergeMobileSnapshot(snapRef.current, next, expandedHistoryThread.current === next.threadId),
     );
