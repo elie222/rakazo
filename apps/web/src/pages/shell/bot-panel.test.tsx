@@ -104,7 +104,9 @@ function bot(description = "Billing"): Bot {
 
 let container: HTMLDivElement;
 let root: Root;
-const onSave = vi.fn(async () => undefined);
+const onSave = vi.fn(
+  async (_patch: Parameters<ComponentProps<typeof BotSettings>["onSave"]>[0]) => undefined,
+);
 
 async function render(description = "Billing") {
   await act(async () => {
