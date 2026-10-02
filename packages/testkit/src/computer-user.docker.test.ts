@@ -1,12 +1,13 @@
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { ensureScreenCommand } from "@rakazo/core/node/desktop-runtime";
 import { describe, expect, it } from "vitest";
 
 describe.skipIf(process.env.RUN_COMPUTER_REPLAY_DOCKER !== "1")(
   "computer image user identity",
   () => {
     it.each(["1000:1000", "23456:23457"])(
-      "resolves %s for startup and Docker exec without root",
+      "starts Chrome and resolves %s for startup and Docker exec without root",
       (user) => {
         const name = `rakazo-user-test-${randomUUID()}`;
         const [uid, gid] = user.split(":");
@@ -28,7 +29,7 @@ describe.skipIf(process.env.RUN_COMPUTER_REPLAY_DOCKER !== "1")(
               "--security-opt",
               "no-new-privileges=true",
               "--tmpfs",
-              "/tmp:mode=1777",
+              "/tmp:mode=1777,exec",
               "--tmpfs",
               `/home/rakazo:uid=${uid},gid=${gid},mode=700`,
               process.env.RAKAZO_COMPUTER_IMAGE ?? "rakazo/computer:local",
@@ -52,11 +53,34 @@ describe.skipIf(process.env.RUN_COMPUTER_REPLAY_DOCKER !== "1")(
           );
           expect(result).toContain(`:x:${uid}:${gid}:`);
           expect(result).toContain(`:x:${gid}:`);
+          execFileSync(
+            "docker",
+            [
+              "exec",
+              name,
+              "bash",
+              "-euc",
+              ensureScreenCommand(0, "identity-fixture", "fixture-view"),
+            ],
+            { stdio: "pipe", timeout: 60_000 },
+          );
+          const browser = execFileSync(
+            "docker",
+            [
+              "exec",
+              name,
+              "python3",
+              "-c",
+              'import json, urllib.request; version = json.load(urllib.request.urlopen("http://127.0.0.1:9222/json/version", timeout=5)); assert version["webSocketDebuggerUrl"].startswith("ws://127.0.0.1:9222/"); print(version["Browser"])',
+            ],
+            { encoding: "utf8", timeout: 10_000 },
+          );
+          expect(browser).toMatch(/Chrome|Chromium/);
         } finally {
           execFileSync("docker", ["rm", "--force", name], { stdio: "pipe", timeout: 30_000 });
         }
       },
-      60_000,
+      120_000,
     );
   },
 );
