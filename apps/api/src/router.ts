@@ -3244,6 +3244,11 @@ export function createRouter(deps: RouterDeps) {
                 status: "queued",
               },
             });
+            const currentModel = await tx.routine.findUnique({
+              where: { id: routine.id },
+              select: { modelProvider: true, modelId: true, thinkingLevel: true },
+            });
+            if (!currentModel) throw new IsolationError();
             return tx.run.create({
               data: {
                 spaceId: context.actor.spaceId,
@@ -3254,7 +3259,7 @@ export function createRouter(deps: RouterDeps) {
                 status: "queued",
                 trigger: "routine",
                 routineId: routine.id,
-                ...routineRunModelPin(routine),
+                ...routineRunModelPin(currentModel),
                 clientNonce: nonce,
               },
               select: { id: true },

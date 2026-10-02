@@ -3,7 +3,9 @@ import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import {
   defaultCatalogModelId,
+  inboundRoutineModelPin,
   modelCredentialAuthKindsForSpace,
+  pinnedModelCredentialError,
   readStoredModelAuth,
   routineRunModelPin,
   runModelChoice,
@@ -212,6 +214,7 @@ describe("routine model pin", () => {
       modelProvider: "routine-provider",
       modelId: "routine-model",
       thinkingLevel: "low",
+      modelPinned: true,
     });
   });
 
@@ -225,7 +228,7 @@ describe("routine model pin", () => {
   });
 
   it("runs a routine turn on the model pinned to its run", () => {
-    const choice = runModelChoice({ routineId: "routine-1", ...routine }, bot);
+    const choice = runModelChoice({ modelPinned: true, ...routine }, bot);
     expect(choice).toEqual(routine);
     expect(
       selectConfiguredModel({
@@ -238,21 +241,58 @@ describe("routine model pin", () => {
 
   it("keeps a pinned run on its model after the routine is edited or deleted", () => {
     // The routine row is gone or changed; the run still carries what it fired with.
-    expect(runModelChoice({ routineId: "routine-1", ...routine }, bot)).toEqual(routine);
+    expect(runModelChoice({ modelPinned: true, ...routine }, bot)).toEqual(routine);
   });
 
   it("falls back to the bot for a routine run without a pinned model", () => {
     expect(
       runModelChoice(
-        { routineId: "routine-1", modelProvider: null, modelId: null, thinkingLevel: null },
+        { modelPinned: false, modelProvider: null, modelId: null, thinkingLevel: null },
         bot,
       ),
     ).toEqual(bot);
   });
 
+  it("follows the bot when a routine run only recorded the model an attempt used", () => {
+    expect(runModelChoice({ modelPinned: false, ...routine }, bot)).toEqual(bot);
+  });
+
   it("ignores run model columns that belong to an ordinary run", () => {
     // Ordinary runs record the model they used; that record is not an override.
-    expect(runModelChoice({ routineId: null, ...routine }, bot)).toEqual(bot);
+    expect(runModelChoice(routine, bot)).toEqual(bot);
+  });
+
+  it("pins an inbound delivery only when every routine chose the same model", () => {
+    expect(inboundRoutineModelPin([routine, routine])).toEqual({
+      ...routine,
+      modelPinned: true,
+    });
+    expect(
+      inboundRoutineModelPin([
+        routine,
+        { modelProvider: null, modelId: null, thinkingLevel: null },
+      ]),
+    ).toEqual({});
+    expect(
+      inboundRoutineModelPin([
+        routine,
+        { modelProvider: "other", modelId: "other-model", thinkingLevel: null },
+      ]),
+    ).toEqual({});
+  });
+
+  it("rejects a pinned model whose credential is missing or belongs to another free-form model", () => {
+    expect(pinnedModelCredentialError(routine, null)).toBe("Connect that model provider first");
+    expect(pinnedModelCredentialError(routine, { defaultModel: "other-model" })).toBe(
+      "Unknown model for that provider",
+    );
+    expect(pinnedModelCredentialError(routine, { defaultModel: routine.modelId })).toBeUndefined();
+    expect(
+      pinnedModelCredentialError(
+        { modelProvider: "xai", modelId: "grok-4.6", thinkingLevel: null },
+        { defaultModel: "other-model" },
+      ),
+    ).toBeUndefined();
   });
 });
 

@@ -245,6 +245,7 @@ import type { MemoryProviderResolver } from "./memory-provider-factory.js";
 import { selectMemoryTools } from "./memory-tools.js";
 import {
   isCatalogModelChoice,
+  pinnedModelCredentialError,
   routineRunModelPin,
   runModelChoice,
   selectConfiguredModel,
@@ -1082,6 +1083,12 @@ export function createRunExecutor(deps: ExecutorDeps) {
           },
         });
         if (updated.count !== 1) return null;
+        // The claim locks the row, so this is the model that was committed when it fired.
+        const currentModel = await tx.routine.findUnique({
+          where: { id: routine.id },
+          select: { modelProvider: true, modelId: true, thinkingLevel: true },
+        });
+        if (!currentModel) return null;
         const task = await tx.task.create({
           data: {
             spaceId: routine.spaceId,
@@ -1102,7 +1109,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             status: "queued",
             trigger: "routine",
             routineId: routine.id,
-            ...routineRunModelPin(routine),
+            ...routineRunModelPin(currentModel),
           },
         });
       });
@@ -1323,8 +1330,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
         const agentEnvironment = decryptAgentEnvironment(agentSecretRows, deps.secretStore);
         runSecrets.push(...Object.values(agentEnvironment));
         const agentEnvironmentInstruction = formatAgentEnvironmentInstruction(agentEnvironment);
-        // A routine turn runs on the model pinned when the run was created, so a routine
-        // edited or deleted while its run waits cannot move that run to another model.
+        // modelPinned is the choice captured at creation. Columns filled in later only
+        // record the attempt, so a follow-bot routine still follows the bot on resume.
         const modelChoice = runModelChoice(run, bot);
         const hasModelOverride = Boolean(modelChoice.modelProvider && modelChoice.modelId);
         const overrideCredential =
@@ -1502,6 +1509,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
         }
         const runDeployment = deps.deploymentModelKey ? resolveDeploymentModel() : null;
         const runtimeFallback = runtimeFallbackModel(deps.runtime);
+        const pinError = run.modelPinned
+          ? pinnedModelCredentialError(modelChoice, overrideCredential)
+          : undefined;
         const selected = selectConfiguredModel({
           override: modelChoice,
           overrideCredential,
@@ -1550,6 +1560,17 @@ export function createRunExecutor(deps: ExecutorDeps) {
             });
           }
         };
+        if (pinError) {
+          await failRunBeforeModel(pinError);
+          return;
+        }
+        if (
+          run.modelPinned &&
+          (selected.provider !== modelChoice.modelProvider || selected.id !== modelChoice.modelId)
+        ) {
+          await failRunBeforeModel("Connect that model provider first");
+          return;
+        }
         if (!runModelProvider || !runModelId) {
           await failRunBeforeModel(MISSING_MODEL_MESSAGE);
           return;
@@ -1582,10 +1603,14 @@ export function createRunExecutor(deps: ExecutorDeps) {
           return;
         }
         runSecrets.push(...resolved.redact);
-        await deps.prisma.run.updateMany({
-          where: { id: runId, status: "running", leaseOwner: workerId, leaseFence: fence },
-          data: { modelProvider: runModelProvider, modelId: runModelId },
-        });
+        // A pin stays as it was created. Unpinned runs still record the model they
+        // used; modelPinned is what keeps that record from becoming the next choice.
+        if (!run.modelPinned) {
+          await deps.prisma.run.updateMany({
+            where: { id: runId, status: "running", leaseOwner: workerId, leaseFence: fence },
+            data: { modelProvider: runModelProvider, modelId: runModelId },
+          });
+        }
         if (!bot.computer) throw new Error("Bot has no computer");
         const storedComputer = bot.computer;
         const computerMode = parseComputerMode(storedComputer.scope);

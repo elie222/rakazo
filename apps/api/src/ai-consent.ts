@@ -51,7 +51,9 @@ export async function aiConsentStatus(
             select: { modelProvider: true, modelId: true, thinkingLevel: true },
           })
         : [],
-      // A routine with its own model sends that bot's work to a second recipient.
+      // An active routine with its own model is another recipient for this bot.
+      // A paused routine is included only when this check is for that routine,
+      // so it does not block an ordinary chat message.
       modelsEnabled
         ? deps.prisma.routine.findMany({
             where: {
@@ -61,6 +63,9 @@ export async function aiConsentStatus(
               modelId: { not: null },
               bot: { archivedAt: null },
               ...(botIds ? { botId: { in: botIds } } : {}),
+              OR: query.routineId
+                ? [{ active: true }, { id: query.routineId }]
+                : [{ active: true }],
             },
             select: { modelProvider: true, modelId: true, thinkingLevel: true },
           })

@@ -353,15 +353,15 @@ export type ModelChoice = {
 };
 
 /**
- * The model a queued run will use. A routine run carries the choice its routine had
- * when the run was created, so editing or deleting that routine afterwards cannot
- * move a waiting run to another model; every other run follows its bot.
+ * The model a queued run will use. `modelPinned` is the choice captured when the
+ * run was created. Model columns written later only record the attempt, so a
+ * routine that follows its bot still follows the bot after a resume.
  */
 export function runModelChoice(
-  run: ModelChoice & { routineId: string | null },
+  run: ModelChoice & { modelPinned?: boolean },
   bot: ModelChoice,
 ): ModelChoice {
-  if (run.routineId && run.modelProvider && usableModelId(run.modelId)) {
+  if (run.modelPinned && run.modelProvider && usableModelId(run.modelId)) {
     return {
       modelProvider: run.modelProvider,
       modelId: run.modelId,
@@ -380,13 +380,51 @@ export function routineRunModelPin(routine: ModelChoice): {
   modelProvider?: string;
   modelId?: string;
   thinkingLevel?: string | null;
+  modelPinned?: true;
 } {
   if (!routine.modelProvider || !routine.modelId) return {};
   return {
     modelProvider: routine.modelProvider,
     modelId: routine.modelId,
     thinkingLevel: routine.thinkingLevel,
+    modelPinned: true,
   };
+}
+
+/**
+ * One inbound delivery is one turn. Pin a model only when every routine in that
+ * delivery chose the same one; mixed choices stay on the bot's model.
+ */
+export function inboundRoutineModelPin(routines: readonly ModelChoice[]) {
+  const pins = routines.map((routine) => routineRunModelPin(routine));
+  const first = pins[0];
+  if (!first) return {};
+  const agreed = pins.every(
+    (pin) =>
+      pin.modelPinned === first.modelPinned &&
+      pin.modelProvider === first.modelProvider &&
+      pin.modelId === first.modelId &&
+      (pin.thinkingLevel ?? null) === (first.thinkingLevel ?? null),
+  );
+  return agreed ? first : {};
+}
+
+/** Why a pinned model cannot run on the credential that was found for it. */
+export function pinnedModelCredentialError(
+  choice: ModelChoice,
+  credential: { defaultModel: string | null } | null,
+): string | undefined {
+  if (!choice.modelProvider || !usableModelId(choice.modelId)) return undefined;
+  if (!credential) return "Connect that model provider first";
+  const modelId = usableModelId(choice.modelId);
+  if (
+    modelId &&
+    !isCatalogModelChoice(choice.modelProvider, modelId) &&
+    credential.defaultModel !== modelId
+  ) {
+    return "Unknown model for that provider";
+  }
+  return undefined;
 }
 
 /** Select configuration without loading secrets or applying a runtime-specific fallback. */
