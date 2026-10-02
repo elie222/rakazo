@@ -141,11 +141,22 @@ describe.skipIf(process.env.RUN_COMPUTER_REPLAY_DOCKER !== "1")(
           ).catch((error: unknown) => {
             // This offline fixture contains only fake contacts. A read-only
             // snapshot distinguishes browser failures from command transport failures.
-            const diagnostic = execFileSync(
-              "docker",
-              ["exec", computer!.id, "/usr/local/bin/rakazo-page-browser", "snapshot"],
-              { encoding: "utf8", timeout: 40_000 },
-            );
+            let diagnostic = "unavailable";
+            try {
+              diagnostic = execFileSync(
+                "docker",
+                [
+                  "exec",
+                  computer!.id,
+                  "bash",
+                  "-c",
+                  "/usr/local/bin/rakazo-page-browser snapshot; tail -40 /tmp/rakazo/screen-1-browser.log",
+                ],
+                { encoding: "utf8", timeout: 40_000 },
+              );
+            } catch {
+              // Diagnostics are best-effort; preserve the replay failure below.
+            }
             throw new Error(`Computer replay failed; direct browser snapshot: ${diagnostic}`, {
               cause: error,
             });
