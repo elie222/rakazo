@@ -48,16 +48,24 @@ describe.each([undefined, profile])(
       { kind: "launch" as const, application: "chromium", uri: "https://example.com" },
       { kind: "launch" as const, application: "chromium" },
       { kind: "launch" as const, application: "xterm" },
-    ])("accepts generated $kind argv and identifies a long-lived process", (action) => {
+      { kind: "focus" as const, application: "chromium", uri: "https://example.com" },
+      { kind: "focus" as const, application: "chromium" },
+      { kind: "focus" as const, application: "xterm" },
+    ])("accepts generated $kind argv and does not treat focus as a long-lived app", (action) => {
       const step = containerActionStep(action, display, browserProfile);
       if (!("argv" in step)) throw new Error("expected command");
       if (
         browserProfile &&
-        (action.kind === "open" || (action.kind === "launch" && action.application === "chromium"))
+        (action.kind === "open" ||
+          ((action.kind === "launch" || action.kind === "focus") &&
+            action.application === "chromium"))
       ) {
         expect(step.argv[2]).toBe(`RAKAZO_BROWSER_PROFILE=${browserProfile}`);
       }
-      expect(check(step.argv)).toEqual({ allowed: true, longLived: true });
+      expect(check(step.argv)).toEqual({
+        allowed: true,
+        longLived: action.kind !== "focus",
+      });
     });
 
     it("accepts generated keyboard input without treating it as a long-lived process", () => {
@@ -98,6 +106,19 @@ describe("controller argv restrictions", () => {
     ],
     ["env", "DISPLAY=:8", `RAKAZO_BROWSER_PROFILE=${profile}`, "rakazo-browser"],
     ["env", "DISPLAY=:8", "xdg-open", "https://example.com"],
+    ["env", `DISPLAY=${display}`, "rakazo-focus-or-launch"],
+    ["env", `DISPLAY=${display}`, "rakazo-focus-or-launch", "sh"],
+    ["env", `DISPLAY=${display}`, "rakazo-focus-or-launch", "rakazo-focus-or-launch"],
+    ["env", `DISPLAY=${display}`, "rakazo-focus-or-launch", "/usr/bin/xterm"],
+    ["env", `DISPLAY=${display}`, "rakazo-focus-or-launch", "xterm", "one", "two"],
+    [
+      "env",
+      `DISPLAY=${display}`,
+      `RAKAZO_BROWSER_PROFILE=${profile}`,
+      "rakazo-focus-or-launch",
+      "xterm",
+    ],
+    ["env", "DISPLAY=:8", "rakazo-focus-or-launch", "xterm"],
     ["env", `DISPLAY=${display}`, "LD_PRELOAD=/tmp/unsafe", "xdg-open", "https://example.com"],
     ["env", `DISPLAY=${display}`, "RAKAZO_BROWSER_PROFILE=/tmp/unsafe", "rakazo-browser"],
     ["env", `DISPLAY=${display}`, `RAKAZO_BROWSER_PROFILE=${profile}/../other`, "rakazo-browser"],

@@ -226,6 +226,8 @@ describe("graphical computer spec", () => {
     expect(desktop).toMatch(/x-scheme-handler\/http/);
     expect(desktop).toMatch(/x-scheme-handler\/https/);
     expect(start).not.toMatch(/windowsize 1280 800/);
+    expect(dockerfile).toMatch(/wmctrl/);
+    expect(dockerfile).toMatch(/rakazo-focus-or-launch/);
   });
 
   it("ships a sha256-pinned gh CLI", () => {

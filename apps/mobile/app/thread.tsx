@@ -106,7 +106,8 @@ import { mobileTokens } from "../lib/appearance";
 import { type MobileArtifactTarget, openMobileArtifact } from "../lib/artifact-open";
 import { nextAutoSpeakAction } from "../lib/auto-speak";
 import { confirmDeleteBot } from "../lib/bot-lifecycle";
-import { startCall, useCallSession } from "../lib/call-session";
+import { setCallProviderTranscribe, startCall, useCallSession } from "../lib/call-session";
+import { loadDeviceVoiceEnabled } from "../lib/device-voice";
 import { available as dictationAvailable } from "../lib/dictation";
 import { cancelFocusPrompt, focusPromptThreadActive } from "../lib/focus-prompt";
 import { dateLocaleForUi, t, useI18n } from "../lib/i18n";
@@ -142,6 +143,7 @@ import {
   type ThreadScrollState,
 } from "../lib/thread-scroll";
 import { speakText } from "../lib/voice";
+import { probeProviderTranscribe, resolveVoiceCallPlan } from "../lib/voice-call-entry";
 
 type PendingAttachment = PickedAttachment & { threadKey: string };
 type AskAction = NonNullable<Extract<MessageBlock, { kind: "ask" }>["actions"]>[number];
@@ -271,6 +273,7 @@ function Thread() {
   const inGroup = Boolean(groupId);
   const call = useCallSession();
   const onCall = Boolean(botId) && call?.botId === botId;
+  const voiceCallStarting = useRef(false);
   const scroll = useRef<FlatList<ThreadItem<MobileMessage>>>(null);
   const pinnedScroll = useRef<ScrollView>(null);
   const scrollBehavior = useRef(new ThreadScrollBehavior());
@@ -1318,15 +1321,22 @@ function Thread() {
   );
 
   async function startVoiceCall() {
-    if (!botId) return;
+    const targetBotId = botId;
+    if (!targetBotId || voiceCallStarting.current) return;
+    voiceCallStarting.current = true;
+    const loadVoiceStatus = () => rpc<{ ready: boolean; transcribe: boolean }>("voice/status");
     try {
-      const status = await rpc<{ ready: boolean; transcribe: boolean }>("voice/status");
-      if (!status.ready) {
+      const plan = await resolveVoiceCallPlan({
+        loadDeviceVoiceEnabled,
+        dictationAvailable,
+        loadVoiceStatus,
+      });
+      if (activeBotId.current !== targetBotId) return;
+      if (plan.kind === "settings") {
         router.push("/voice");
         return;
       }
-      // The device recognising speech itself is enough: a speak-only provider still calls.
-      if (!status.transcribe && !(await dictationAvailable())) {
+      if (plan.kind === "dictation") {
         Alert.alert(
           t("Calls need transcription"),
           t("Allow speech recognition in Settings, or connect ElevenLabs, OpenAI, or Fish Audio."),
@@ -1337,14 +1347,23 @@ function Thread() {
         );
         return;
       }
-      startCall({
-        botId,
+      const startedCallId = startCall({
+        botId: targetBotId,
         botName: displayName ?? t("Bot"),
-        botColor: mentionBots.find((bot) => bot.id === botId)?.color,
-        transcribe: status.transcribe,
+        botColor: mentionBots.find((bot) => bot.id === targetBotId)?.color,
+        transcribe: plan.transcribe,
       });
+      if (plan.kind === "device") {
+        void probeProviderTranscribe(loadVoiceStatus)
+          .then((enabled) => {
+            if (enabled) setCallProviderTranscribe(true, startedCallId);
+          })
+          .catch(() => undefined);
+      }
     } catch {
-      router.push("/voice");
+      if (activeBotId.current === targetBotId) router.push("/voice");
+    } finally {
+      voiceCallStarting.current = false;
     }
   }
 

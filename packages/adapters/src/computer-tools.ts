@@ -68,6 +68,17 @@ export function parseComputerActions(value: unknown): ComputerAction[] {
     if (kind === "wait") {
       return [{ kind: "wait", ms: boundedNumber(action.ms, 0, 5_000, 350) }];
     }
+    if (kind === "focus") {
+      const application = String(action.application ?? "").trim();
+      if (!application) throw new Error("computer action focus requires an application");
+      return [
+        {
+          kind: "focus",
+          application,
+          ...(action.uri === undefined ? {} : { uri: String(action.uri) }),
+        },
+      ];
+    }
     throw new Error(`unsupported computer action ${kind || "(missing)"}`);
   });
   if (actions.length > 24) {

@@ -15,7 +15,9 @@ describe.each(caddyfiles)("%s deployment retry", (filename) => {
   });
 
   it("applies the retry policy to every API and web upstream", () => {
-    expect(config.match(/reverse_proxy api:3100 \{\s*import deploy_retry\s*\}/g)).toHaveLength(3);
+    expect(
+      config.match(/reverse_proxy api:3100 \{[\s\S]*?import deploy_retry[\s\S]*?\}/g),
+    ).toHaveLength(3);
     expect(config.match(/reverse_proxy web:5173 \{\s*import deploy_retry\s*\}/g)).toHaveLength(1);
   });
 });

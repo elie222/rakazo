@@ -150,7 +150,7 @@ export function startCall(
   // provider is fine as long as the device recognises speech itself.
   call: { botId: string; botName: string; botColor?: string; transcribe?: boolean },
   overrides: Partial<CallDeps> = {},
-): void {
+): string {
   endCall();
   deps = { ...productionDeps(), ...overrides };
   callId = randomId();
@@ -174,6 +174,15 @@ export function startCall(
   unwatch = deps.watch(call.botId, onReply, onCallEnded);
   emit();
   void listen();
+  return callId;
+}
+
+/** A background voice/status result can enable provider fallback after the call has started. */
+export function setCallProviderTranscribe(enabled: boolean, forCallId?: string): void {
+  if (!state || (forCallId !== undefined && forCallId !== callId)) return;
+  canTranscribe = enabled;
+  // Dictation can fail before the probe returns, which leaves the mic closed.
+  if (enabled && state.phase === "listening" && !micOpen && !state.muted) void listen();
 }
 
 export function endCall(): void {

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  authRateLimitOptions,
   buildTrustedOrigins,
   createAuth,
   isBlockedAuthPath,
@@ -59,6 +60,24 @@ describe("auth policy", () => {
 
     expect(res.status).toBe(404);
     expect(await res.json()).toMatchObject({ code: "ORGANIZATION_DELETION_DISABLED" });
+  });
+});
+
+describe("authRateLimitOptions", () => {
+  it("caps credential routes at 10 attempts per 15 minutes in a shared table", () => {
+    expect(authRateLimitOptions("production")).toEqual({
+      enabled: true,
+      storage: "database",
+      customRules: {
+        "/sign-in/email": { window: 15 * 60, max: 10 },
+        "/sign-up/email": { window: 15 * 60, max: 10 },
+        "/request-password-reset": { window: 15 * 60, max: 10 },
+      },
+    });
+  });
+
+  it("stays off outside production so the test suite can sign in", () => {
+    expect(authRateLimitOptions("test").enabled).toBe(false);
   });
 });
 

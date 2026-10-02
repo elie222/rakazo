@@ -227,6 +227,13 @@ function browserActionCommand(
   layout: Parameters<typeof extraDisplayActionCommand>[0],
   env: DesktopEnvironment,
 ) {
+  if (action.kind === "focus") {
+    const command = focusOrLaunchActionCommand(action, layout);
+    // The browser launcher is absolute. Other apps and URIs are workspace-relative,
+    // same as the launch path below.
+    if (isChromiumBrowser(action.application)) return command;
+    return `cd ${shellQuote(env.workspaceDir)}\n${command}`;
+  }
   const browser =
     action.kind === "open" && /^https?:\/\//i.test(action.path)
       ? action.path
@@ -240,12 +247,105 @@ function browserActionCommand(
   return `cd ${shellQuote(workspace)}\n${extraDisplayActionCommand(layout, action.kind === "open" ? { ...action, path: workspacePath(workspace, action.path) } : action)}`;
 }
 
+// Chrome-family WM_CLASS components. Matched whole, so "xterm" does not raise "uxterm".
+const CHROME_WM_CLASSES = "chromium|chromium-browser|google-chrome|google-chrome-stable|chrome";
+
+// Launch maps every BROWSER_APPLICATIONS name, including firefox, onto the
+// Chromium launcher. Focus must use that same set or it cannot raise the window launch opened.
+function isChromiumBrowser(application: string) {
+  return BROWSER_APPLICATIONS.has(application.toLowerCase());
+}
+
+// Same 0.2s quick-failure window as rakazo-focus-or-launch. A GUI that stays
+// up is success; an immediate non-zero exit fails the focus before the old
+// window is raised.
+const FOCUS_URI_PROBE = [
+  "import subprocess,sys",
+  "try:",
+  " code=subprocess.Popen(sys.argv[1:],start_new_session=True,stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL).wait(timeout=0.2)",
+  "except subprocess.TimeoutExpired:",
+  " raise SystemExit(0)",
+  "raise SystemExit(code)",
+].join("\n");
+
+/**
+ * Raise an app's existing window by WM_CLASS, else spawn it — the focus primitive
+ * rakazo-focus-or-launch provides inside the computer image, inline for provider desktops.
+ * A URI still starts the launcher (Chrome forwards URLs into its live window) without
+ * waiting for that process to exit before the match is raised.
+ */
+function focusOrLaunchActionCommand(
+  action: Extract<ComputerAction, { kind: "focus" }>,
+  layout: Parameters<typeof extraDisplayActionCommand>[0],
+) {
+  const browser = isChromiumBrowser(action.application);
+  const binary = (action.application.split("/").pop() ?? "").replaceAll(/[^A-Za-z0-9_-]/g, "");
+  const quotedApp = shellQuote(action.application);
+  const quotedArg = action.uri === undefined ? "" : ` ${shellQuote(action.uri)}`;
+  const foreground = browser
+    ? `nohup ${browserLauncherPath(layout.displayNumber)} ${shellQuote(action.uri ?? "about:blank")} </dev/null >/tmp/rakazo/browser-open-${layout.displayNumber}.log 2>&1 &`
+    : `DISPLAY=${layout.display} ${quotedApp}${quotedArg}`;
+  // A GUI that stays in the foreground must not delay wmctrl -ia. A non-browser
+  // URI still has to surface a launcher that exits immediately.
+  const background = browser
+    ? foreground
+    : `DISPLAY=${layout.display} python3 -c ${shellQuote(FOCUS_URI_PROBE)} ${quotedApp}${quotedArg} || exit $?`;
+  if (!browser && !binary) return foreground;
+  const classCase = browser ? CHROME_WM_CLASSES : binary.toLowerCase();
+  return [
+    "wid=",
+    "fallback=",
+    "saw_profile=0",
+    "while read -r id desktop pid class _; do",
+    '  [ -n "$id" ] || continue',
+    "  class_lc=$(printf '%s' \"$class\" | tr '[:upper:]' '[:lower:]')",
+    "  old_ifs=$IFS",
+    "  IFS=.",
+    "  set -f",
+    "  matched=0",
+    "  for part in $class_lc; do",
+    `    case "$part" in ${classCase}) matched=1 ;; esac`,
+    "  done",
+    "  set +f",
+    "  IFS=$old_ifs",
+    '  [ "$matched" -eq 1 ] || continue',
+    '  [ -z "$fallback" ] && fallback=$id',
+    // Several Chrome profiles can share a display. Prefer the screen profile when
+    // a window advertises --user-data-dir; otherwise keep the first class match.
+    ...(browser
+      ? [
+          '  if [ -n "$CHROME_USER_DATA_DIR" ]; then',
+          '    case "$pid" in',
+          "      ''|*[!0-9]*) owner=\"\" ;;",
+          "      *) owner=$(tr '\\0' '\\n' <\"/proc/$pid/cmdline\" 2>/dev/null | awk 'prev == \"--user-data-dir\" { print; exit } index($0, \"--user-data-dir=\") == 1 { print substr($0, 17); exit } { prev = $0 }') ;;",
+          "    esac",
+          '    if [ -n "$owner" ]; then',
+          "      saw_profile=1",
+          '      if [ "$owner" = "$CHROME_USER_DATA_DIR" ]; then wid=$id; break; fi',
+          "      continue",
+          "    fi",
+          "  fi",
+        ]
+      : ["  wid=$id", "  break"]),
+    "done <<RAKAZO_WINDOWS",
+    `$(DISPLAY=${layout.display} wmctrl -lxp 2>/dev/null || true)`,
+    "RAKAZO_WINDOWS",
+    'if [ -z "$wid" ] && [ "$saw_profile" -eq 0 ]; then wid=$fallback; fi',
+    'if [ -n "$wid" ]; then',
+    ...(action.uri !== undefined ? [`  ${background}`] : []),
+    `  DISPLAY=${layout.display} wmctrl -ia "$wid"`,
+    "else",
+    `  ${foreground}`,
+    "fi",
+  ].join("\n");
+}
+
 /** Install the same X11 tools in minimal Ubuntu sandboxes, only if their image lacks them. */
 export const PREPARE_LINUX_DESKTOP = [
   "set -eu",
   'missing=""',
   // biome-ignore lint/suspicious/noTemplateCurlyInString: shell parameter expansion
-  'for pair in python3:python3 flock:util-linux Xvfb:xvfb xdpyinfo:x11-utils x11vnc:x11vnc fluxbox:fluxbox xdotool:xdotool scrot:scrot xterm:xterm; do command -v "${pair%%:*}" >/dev/null 2>&1 || missing="$missing ${pair#*:}"; done',
+  'for pair in python3:python3 flock:util-linux Xvfb:xvfb xdpyinfo:x11-utils x11vnc:x11vnc fluxbox:fluxbox xdotool:xdotool wmctrl:wmctrl scrot:scrot xterm:xterm; do command -v "${pair%%:*}" >/dev/null 2>&1 || missing="$missing ${pair#*:}"; done',
   'if ! command -v websockify >/dev/null 2>&1 && [ ! -x /opt/noVNC/utils/websockify/run ]; then missing="$missing websockify"; fi',
   'if [ ! -d /usr/share/novnc ] && [ ! -d /opt/noVNC ]; then missing="$missing novnc"; fi',
   'if [ -n "$missing" ]; then',

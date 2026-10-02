@@ -3690,6 +3690,7 @@ msgid "Starting"
 msgstr "正在开始"
 
 #: src/components/teach/TeachComputerOverlay.tsx
+#: src/lib/roster-status.ts
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 msgid "Starting…"
@@ -4078,6 +4079,10 @@ msgstr "语音聊天"
 msgid "Waiting for the API to come back…"
 msgstr "正在等待 API 恢复…"
 
+#: src/lib/roster-status.ts
+msgid "Waiting in line…"
+msgstr "排队等候…"
+
 #: src/pages/shell/message-cards.tsx
 msgid "Waiting…"
 msgstr "等待中…"
@@ -4131,6 +4136,7 @@ msgstr "何时使用"
 msgid "Where should bots run?"
 msgstr "Bot 应在哪里运行？"
 
+#: src/lib/roster-status.ts
 #: src/pages/Auth.tsx
 msgid "Working…"
 msgstr "处理中…"

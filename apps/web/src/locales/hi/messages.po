@@ -3690,6 +3690,7 @@ msgid "Starting"
 msgstr "शुरू हो रहा है"
 
 #: src/components/teach/TeachComputerOverlay.tsx
+#: src/lib/roster-status.ts
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 msgid "Starting…"
@@ -4078,6 +4079,10 @@ msgstr "वॉइस चैट"
 msgid "Waiting for the API to come back…"
 msgstr ""
 
+#: src/lib/roster-status.ts
+msgid "Waiting in line…"
+msgstr "कतार में प्रतीक्षा…"
+
 #: src/pages/shell/message-cards.tsx
 msgid "Waiting…"
 msgstr "प्रतीक्षा…"
@@ -4131,6 +4136,7 @@ msgstr "कब उपयोग करें"
 msgid "Where should bots run?"
 msgstr "बॉट कहां चलने चाहिए?"
 
+#: src/lib/roster-status.ts
 #: src/pages/Auth.tsx
 msgid "Working…"
 msgstr "काम चल रहा है…"

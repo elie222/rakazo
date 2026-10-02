@@ -48,7 +48,7 @@
         {
           "photosPermission": "Rakazo uses your photo library so you can attach images to a bot message.",
           "cameraPermission": "Rakazo uses the camera so you can attach photos to a bot message.",
-          "microphonePermission": false
+          "microphonePermission": "Rakazo uses the microphone for voice calls with your bots."
         }
       ],
       "expo-sharing",

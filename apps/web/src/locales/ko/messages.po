@@ -3690,6 +3690,7 @@ msgid "Starting"
 msgstr "시작 중"
 
 #: src/components/teach/TeachComputerOverlay.tsx
+#: src/lib/roster-status.ts
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 msgid "Starting…"
@@ -4078,6 +4079,10 @@ msgstr "음성 대화"
 msgid "Waiting for the API to come back…"
 msgstr "API가 다시 작동하기를 기다리는 중…"
 
+#: src/lib/roster-status.ts
+msgid "Waiting in line…"
+msgstr "줄에서 기다리는 중…"
+
 #: src/pages/shell/message-cards.tsx
 msgid "Waiting…"
 msgstr "기다리는 중…"
@@ -4131,6 +4136,7 @@ msgstr "언제 사용할지"
 msgid "Where should bots run?"
 msgstr "Bot을 어디에서 실행할까요?"
 
+#: src/lib/roster-status.ts
 #: src/pages/Auth.tsx
 msgid "Working…"
 msgstr "처리 중…"

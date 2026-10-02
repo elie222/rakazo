@@ -42,6 +42,7 @@ export const computerActionSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("wait"), ms: z.number() }),
   z.object({ kind: z.literal("open"), path: z.string() }),
   z.object({ kind: z.literal("launch"), application: z.string(), uri: z.string().optional() }),
+  z.object({ kind: z.literal("focus"), application: z.string(), uri: z.string().optional() }),
 ]);
 
 export { BROWSER_APPLICATIONS as DOCKER_BROWSER_ALIASES } from "@rakazo/core/node/desktop-runtime";
@@ -146,20 +147,32 @@ export function shouldReplayComputerActions(attempt: ComputerControlAttempt<unkn
 }
 
 const CONTROL_BASE_TIMEOUT_MS = 15_000;
-const CONTROL_MAX_TIMEOUT_MS = 60_000;
+const MAX_CONTROL_ACTIONS = 24;
+const MAX_MAPPED_WAIT_MS = 5_000;
+// control.py waits this long for one focus wrapper (FOCUS_COMPLETION_SEC).
+const FOCUS_ACTION_BUDGET_MS = 13_400;
+// One control request already accepts 24 actions. Focus is the slow step, so the
+// HTTP ceiling covers a full batch of them plus settle. Each focus step stays 13.4s.
+const CONTROL_MAX_TIMEOUT_MS =
+  CONTROL_BASE_TIMEOUT_MS + MAX_CONTROL_ACTIONS * FOCUS_ACTION_BUDGET_MS + MAX_MAPPED_WAIT_MS;
 
-/** Bound the HTTP control deadline by mapped waits and settle time. */
+/** Bound the HTTP control deadline by focus steps, mapped waits, and settle time. */
 export function computerControlTimeoutMs(
   actions: Array<z.infer<typeof computerActionSchema>>,
   settleMs = 0,
 ) {
   let waits = 0;
+  let focusSteps = 0;
   for (const action of actions) {
-    if (action.kind === "wait") waits += Math.min(Math.max(action.ms, 0), 5_000);
+    if (action.kind === "wait") waits += Math.min(Math.max(action.ms, 0), MAX_MAPPED_WAIT_MS);
+    else if (action.kind === "focus") focusSteps += 1;
   }
   return Math.min(
     CONTROL_MAX_TIMEOUT_MS,
-    CONTROL_BASE_TIMEOUT_MS + waits + Math.min(Math.max(settleMs, 0), 5_000),
+    CONTROL_BASE_TIMEOUT_MS +
+      waits +
+      focusSteps * FOCUS_ACTION_BUDGET_MS +
+      Math.min(Math.max(settleMs, 0), MAX_MAPPED_WAIT_MS),
   );
 }
 
@@ -363,6 +376,9 @@ export function containerActionStep(
       "env",
       `DISPLAY=${display}`,
       ...(browser && browserProfile ? [`RAKAZO_BROWSER_PROFILE=${browserProfile}`] : []),
+      // focus routes through the image wrapper, which raises a matching window
+      // by WM_CLASS or execs the allowlisted launcher to spawn one.
+      ...(action.kind === "focus" ? ["rakazo-focus-or-launch"] : []),
       browser ? "rakazo-browser" : action.application,
       ...(action.uri ? [action.uri] : []),
     ];

@@ -49,6 +49,7 @@ export function applyPlaceholderAction(box: { screen: string }, action: Computer
   if (action.kind === "clipboard") box.screen = action.text;
   else if (action.kind === "open") box.screen = `opened ${action.path}`;
   else if (action.kind === "launch") box.screen = `launched ${action.application}`;
+  else if (action.kind === "focus") box.screen = `focused ${action.application}`;
   else box.screen = action.kind;
 }
 

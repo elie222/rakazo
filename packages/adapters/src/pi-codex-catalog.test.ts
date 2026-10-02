@@ -74,7 +74,7 @@ describe("fetchCodexCatalog", () => {
     expect(result.status).toBe("ok");
     expect(fetchImpl).toHaveBeenCalledTimes(1);
     const [url, init] = fetchImpl.mock.calls[0]!;
-    expect(String(url)).toBe(`${CODEX_MODELS_ENDPOINT}?client_version=0.157.0`);
+    expect(String(url)).toBe(`${CODEX_MODELS_ENDPOINT}?client_version=0.159.3`);
     const headers = new Headers(init?.headers);
     expect(headers.get("authorization")).toBe(`Bearer ${ACCESS_TOKEN}`);
     expect(headers.get("chatgpt-account-id")).toBe(ACCOUNT_ID);

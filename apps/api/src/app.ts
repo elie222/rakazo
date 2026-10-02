@@ -65,7 +65,7 @@ import {
   sandboxProviderOptionsFromEnv,
   toTeamChatInbound,
 } from "@rakazo/adapters";
-import { createAuth, isBlockedAuthPath } from "@rakazo/auth";
+import { createAuth, isBlockedAuthPath, loopbackTwinOrigins } from "@rakazo/auth";
 import { signupAllowlistBootUpdate, signupPolicyFromEnv } from "@rakazo/core";
 import type { Pool, PrismaClient } from "@rakazo/db";
 import {
@@ -904,20 +904,39 @@ export async function createApp(
   };
 }
 
-function isTrustedOrigin(origin: string, env: AppEnv) {
+export function isTrustedOrigin(
+  origin: string,
+  env: Pick<AppEnv, "webOrigin" | "apiUrl" | "authUrl">,
+) {
   if (!origin) return true;
-  if (origin === env.webOrigin || origin === env.apiUrl || origin === env.authUrl) return true;
   if (origin.startsWith("rakazo://")) return true;
-  try {
-    const host = new URL(origin).hostname;
-    return isLoopbackHost(host);
-  } catch {
-    return false;
-  }
+  const allowed = new Set(
+    [env.webOrigin, env.apiUrl, env.authUrl, ...MOBILE_AUTH_ORIGINS].flatMap(originVariants),
+  );
+  return allowed.has(origin);
 }
 
 function isLoopbackHost(host: string): boolean {
   return host === "localhost" || host === "127.0.0.1" || host === "::1" || host === "[::1]";
+}
+
+function originVariants(origin: string): string[] {
+  if (!origin || origin === "rakazo://") return [];
+  const variants = [origin, ...loopbackTwinOrigins(origin)];
+  try {
+    const url = new URL(origin);
+    if (url.protocol === "http:" || url.protocol === "https:") {
+      variants.push(url.origin);
+    }
+    if (url.hostname === "localhost" || url.hostname === "127.0.0.1") {
+      const v6 = new URL(origin);
+      v6.hostname = "[::1]";
+      variants.push(v6.origin);
+    }
+  } catch {
+    return variants;
+  }
+  return variants;
 }
 
 function sessionHeaders(request: Request) {

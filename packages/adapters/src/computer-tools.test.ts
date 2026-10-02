@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { builtinAgentTools } from "./builtin-tools.js";
 import { computerObservation } from "./computer-support.js";
 import type { UnchangedVisualStreak } from "./computer-tools.js";
 import {
@@ -19,12 +20,52 @@ describe("computer tool bridge", () => {
         { kind: "click", x: 20.4, y: 30.6 },
         { kind: "type", text: "hello" },
         { kind: "scroll", direction: "up", amount: 999 },
+        { kind: "focus", application: "xterm" },
       ]),
     ).toEqual([
       { kind: "pointer", x: 20, y: 31, type: "click", button: "left" },
       { kind: "clipboard", text: "hello" },
       { kind: "scroll", direction: "up", amount: 20 },
+      { kind: "focus", application: "xterm" },
     ]);
+  });
+
+  it("keeps an optional URI on focus actions and rejects a missing application", () => {
+    expect(
+      parseComputerActions([
+        { kind: "focus", application: "chromium", uri: "https://example.test" },
+      ]),
+    ).toEqual([{ kind: "focus", application: "chromium", uri: "https://example.test" }]);
+    expect(() => parseComputerActions([{ kind: "focus" }])).toThrow(/application/);
+    expect(() => parseComputerActions([{ kind: "focus", application: "   " }])).toThrow(
+      /application/,
+    );
+  });
+
+  it("requires a non-blank application on the focus tool variant", () => {
+    const tool = builtinAgentTools.find((entry) => entry.name === "computer_act");
+    const schema = tool?.inputSchema as {
+      properties?: {
+        actions?: {
+          items?: {
+            oneOf?: Array<{
+              required?: string[];
+              properties?: {
+                kind?: { enum?: string[] };
+                application?: { minLength?: number; pattern?: string };
+              };
+            }>;
+          };
+        };
+      };
+    };
+    const items = schema?.properties?.actions?.items ?? {};
+    const focus = items.oneOf?.find((branch) => branch.properties?.kind?.enum?.includes("focus"));
+    const other = items.oneOf?.find((branch) => branch !== focus);
+    expect(focus?.required).toEqual(["kind", "application"]);
+    expect(focus?.properties?.application).toMatchObject({ minLength: 1, pattern: "\\S" });
+    expect(other?.required).toEqual(["kind"]);
+    expect(other?.properties?.kind?.enum).not.toContain("focus");
   });
 
   it("rejects batches whose expanded double-click actions exceed the limit", () => {

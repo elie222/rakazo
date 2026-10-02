@@ -95,10 +95,16 @@ describe("sandbox conformance", () => {
       ]);
       const acted = await provider.act(
         computer,
-        { actions: [{ kind: "clipboard", text: "visible" }], observe: true },
+        {
+          actions: [
+            { kind: "clipboard", text: "visible" },
+            { kind: "focus", application: "xterm" },
+          ],
+          observe: true,
+        },
         ctx,
       );
-      expect(acted.completed).toBe(1);
+      expect(acted.completed).toBe(2);
       expect(acted.observation?.image.byteLength).toBeGreaterThan(0);
       const exported = [];
       for await (const file of provider.exportWorkspace(computer, ctx)) exported.push(file);

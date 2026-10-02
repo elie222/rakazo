@@ -342,6 +342,40 @@ describe("sandbox supervisor input containment", () => {
     });
   });
 
+  it("routes focus actions through the focus-or-launch wrapper", () => {
+    expect(containerActionStep({ kind: "focus", application: "xterm" }, ":3")).toEqual({
+      argv: ["env", "DISPLAY=:3", "rakazo-focus-or-launch", "xterm"],
+    });
+    expect(
+      containerActionStep(
+        { kind: "focus", application: "chromium", uri: "https://example.com" },
+        ":2",
+      ),
+    ).toEqual({
+      argv: [
+        "env",
+        "DISPLAY=:2",
+        "rakazo-focus-or-launch",
+        "rakazo-browser",
+        "https://example.com",
+      ],
+    });
+    const profile = browserProfilePathForScreen("writer");
+    expect(containerActionStep({ kind: "focus", application: "chromium" }, ":2", profile)).toEqual({
+      argv: [
+        "env",
+        "DISPLAY=:2",
+        `RAKAZO_BROWSER_PROFILE=${profile}`,
+        "rakazo-focus-or-launch",
+        "rakazo-browser",
+      ],
+    });
+    // A non-browser application never receives the per-screen browser profile.
+    expect(containerActionStep({ kind: "focus", application: "xterm" }, ":2", profile)).toEqual({
+      argv: ["env", "DISPLAY=:2", "rakazo-focus-or-launch", "xterm"],
+    });
+  });
+
   it("routes mixed-case Docker browser aliases through the safe wrapper", () => {
     for (const application of ["Chrome", "Firefox", "Chromium", "Google-Chrome"]) {
       expect(
@@ -485,26 +519,30 @@ describe("sandbox supervisor input containment", () => {
     expect(shouldReplayComputerActions(reset)).toBe(false);
   });
 
-  it("extends the computer control deadline for mapped waits", () => {
+  it("extends the computer control deadline for mapped waits and focus steps", () => {
     expect(computerControlTimeoutMs([])).toBe(15_000);
     expect(computerControlTimeoutMs([{ kind: "wait", ms: 5_000 }], 5_000)).toBe(25_000);
+    const focus = { kind: "focus" as const, application: "xterm" };
+    expect(computerControlTimeoutMs([focus])).toBe(15_000 + 13_400);
+    expect(computerControlTimeoutMs([focus, { kind: "wait", ms: 1_000 }], 500)).toBe(
+      15_000 + 13_400 + 1_000 + 500,
+    );
+    // Five focus steps need 15s + 67s. The deadline is that sum, not the old 60s clip.
+    expect(computerControlTimeoutMs(Array.from({ length: 5 }, () => focus))).toBe(
+      15_000 + 5 * 13_400,
+    );
     expect(
       computerControlTimeoutMs(
-        [
-          { kind: "wait", ms: 5_000 },
-          { kind: "wait", ms: 5_000 },
-          { kind: "wait", ms: 5_000 },
-          { kind: "wait", ms: 5_000 },
-          { kind: "wait", ms: 5_000 },
-          { kind: "wait", ms: 5_000 },
-          { kind: "wait", ms: 5_000 },
-          { kind: "wait", ms: 5_000 },
-          { kind: "wait", ms: 5_000 },
-          { kind: "wait", ms: 5_000 },
-        ],
+        Array.from({ length: 24 }, () => focus),
         5_000,
       ),
-    ).toBe(60_000);
+    ).toBe(15_000 + 24 * 13_400 + 5_000);
+    expect(
+      computerControlTimeoutMs(
+        Array.from({ length: 10 }, () => ({ kind: "wait" as const, ms: 5_000 })),
+        5_000,
+      ),
+    ).toBe(15_000 + 10 * 5_000 + 5_000);
   });
 
   it("wraps sandbox commands in a process-tree timeout", () => {

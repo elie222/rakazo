@@ -204,12 +204,25 @@ async function claimUnverifiedFirstAccount(prisma: PrismaClient, userId: string)
   });
 }
 
+const CREDENTIAL_PATHS = ["/sign-in/email", "/sign-up/email", "/request-password-reset"] as const;
+
+/** Shared across API processes. Off outside production so tests can sign in freely. */
+export function authRateLimitOptions(nodeEnv = process.env.NODE_ENV) {
+  const rule = { window: 15 * 60, max: 10 };
+  return {
+    enabled: nodeEnv === "production",
+    storage: "database" as const,
+    customRules: Object.fromEntries(CREDENTIAL_PATHS.map((path) => [path, rule])),
+  };
+}
+
 export function createAuth(prisma: PrismaClient, env: AuthEnv) {
   return betterAuth({
     appName: "Rakazo",
     secret: env.secret,
     baseURL: env.baseURL,
     trustedOrigins: buildTrustedOrigins(env),
+    rateLimit: authRateLimitOptions(),
     database: prismaAdapter(prisma, { provider: "postgresql" }),
     emailAndPassword: {
       enabled: true,
@@ -509,7 +522,7 @@ function isLoopbackHost(host: string): boolean {
 }
 
 /** Same-scheme/port localhost and 127.0.0.1 variants when `origin` is loopback. */
-function loopbackTwinOrigins(origin: string): string[] {
+export function loopbackTwinOrigins(origin: string): string[] {
   try {
     const url = new URL(origin);
     if (!isLoopbackHost(url.hostname)) return [];

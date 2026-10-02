@@ -5,6 +5,7 @@ import {
   endCall,
   getSnapshot,
   INTERIM_BARGE_IN_MS,
+  setCallProviderTranscribe,
   startCall,
   subscribe,
   toggleMute,
@@ -366,6 +367,81 @@ describe("mobile call session", () => {
       { role: "user", text: "status please" },
       { role: "bot", text: "It is green." },
     ]);
+  });
+
+  it("does not enable provider transcription when no call is active", async () => {
+    setCallProviderTranscribe(true);
+    const fake = fakes();
+    startCall({ botId: "bot-1", botName: "Ada", transcribe: false }, fake.deps);
+    await flush();
+    expect(fake.recordings).toHaveLength(0);
+  });
+
+  it("uses provider transcription after it is enabled during an active call", async () => {
+    const gate = deferred<void>();
+    const fake = fakes();
+    const startedCallId = startCall(
+      { botId: "bot-1", botName: "Ada", transcribe: false },
+      {
+        ...fake.deps,
+        dictate: async () => {
+          await gate.promise;
+          return false;
+        },
+      },
+    );
+    await flush();
+    expect(fake.recordings).toHaveLength(0);
+
+    setCallProviderTranscribe(true, startedCallId);
+    gate.resolve();
+    await flush();
+    expect(fake.recordings).toHaveLength(1);
+  });
+
+  it("ignores a transcribe probe for another call and resumes listening for this one", async () => {
+    const fake = fakes();
+    const startedCallId = startCall(
+      { botId: "bot-1", botName: "Ada", transcribe: false },
+      fake.deps,
+    );
+    await flush();
+    expect(fake.recordings).toHaveLength(0);
+
+    setCallProviderTranscribe(true, "other-call");
+    // Unmute listens again, so a probe that flipped this call would record.
+    toggleMute();
+    toggleMute();
+    await flush();
+    expect(fake.recordings).toHaveLength(0);
+
+    setCallProviderTranscribe(true, startedCallId);
+    await flush();
+    expect(fake.recordings).toHaveLength(1);
+  });
+
+  it("does not apply a finished probe to a later speak-only call", async () => {
+    const fake = fakes();
+    const firstCallId = startCall({ botId: "bot-1", botName: "Ada", transcribe: false }, fake.deps);
+    await flush();
+    const secondCallId = startCall(
+      { botId: "bot-1", botName: "Ada", transcribe: false },
+      fake.deps,
+    );
+    await flush();
+    expect(secondCallId).not.toBe(firstCallId);
+    expect(fake.recordings).toHaveLength(0);
+
+    setCallProviderTranscribe(true, firstCallId);
+    // Unmute listens again, so a probe that flipped this call would record.
+    toggleMute();
+    toggleMute();
+    await flush();
+    expect(fake.recordings).toHaveLength(0);
+
+    setCallProviderTranscribe(true, secondCallId);
+    await flush();
+    expect(fake.recordings).toHaveLength(1);
   });
 
   it("speaks each reply once", async () => {
