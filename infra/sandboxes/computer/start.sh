@@ -10,6 +10,37 @@ export NPM_CONFIG_PREFIX="$AGENT_HOME/.local"
 export PIP_USER=1
 cd "$AGENT_HOME"
 
+# Docker Desktop runs bind-mounted computers as the host uid so their home stays writable.
+# That uid (for example 501 on macOS) is not present in the image's /etc/passwd. D-Bus and
+# other desktop services refuse to start for an unnamed uid, so provide a process-local NSS
+# view without mutating the read-only image identity files.
+if ! getent passwd "$(id -u)" >/dev/null 2>&1; then
+  NSS_WRAPPER_LIBRARY=""
+  for candidate in /usr/lib/*/libnss_wrapper.so /usr/lib/libnss_wrapper.so; do
+    if [[ -f "$candidate" ]]; then
+      NSS_WRAPPER_LIBRARY="$candidate"
+      break
+    fi
+  done
+  if [[ -z "$NSS_WRAPPER_LIBRARY" ]]; then
+    echo "computer image is missing libnss-wrapper for the runtime uid" >&2
+    exit 1
+  fi
+
+  NSS_WRAPPER_PASSWD=/tmp/rakazo/passwd
+  NSS_WRAPPER_GROUP=/tmp/rakazo/group
+  cat /etc/passwd > "$NSS_WRAPPER_PASSWD"
+  printf 'rakazo:x:%s:%s:Rakazo:%s:/bin/bash\n' "$(id -u)" "$(id -g)" "$AGENT_HOME" \
+    >> "$NSS_WRAPPER_PASSWD"
+  cat /etc/group > "$NSS_WRAPPER_GROUP"
+  if ! getent group "$(id -g)" >/dev/null 2>&1; then
+    printf 'rakazo-host:x:%s:\n' "$(id -g)" >> "$NSS_WRAPPER_GROUP"
+  fi
+  export NSS_WRAPPER_LIBRARY NSS_WRAPPER_PASSWD NSS_WRAPPER_GROUP
+  export LD_PRELOAD="$NSS_WRAPPER_LIBRARY"
+  export USER=rakazo LOGNAME=rakazo
+fi
+
 # This script is PID 1. Without a handler, PID 1 ignores SIGTERM and `docker stop` waits its
 # full grace period before killing the container, so every stop, sleep and computer switch
 # took ten seconds. Install the handler before any child starts so a stop during startup is

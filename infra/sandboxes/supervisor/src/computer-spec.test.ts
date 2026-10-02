@@ -203,6 +203,12 @@ describe("graphical computer spec", () => {
     expect(dockerfile).toMatch(/rakazo-browser\.desktop/);
     expect(dockerfile).toMatch(/control.py/);
     expect(dockerfile).toMatch(/USER 1000:1000/);
+    expect(dockerfile).toMatch(/libnss-wrapper/);
+    expect(start).toMatch(/NSS_WRAPPER_PASSWD=\/tmp\/rakazo\/passwd/);
+    expect(start).toMatch(/export LD_PRELOAD="\$NSS_WRAPPER_LIBRARY"/);
+    expect(start.indexOf("NSS_WRAPPER_PASSWD=/tmp/rakazo/passwd")).toBeLessThan(
+      start.indexOf("dbus-launch --sh-syntax"),
+    );
     expect(start).toMatch(/rakazo-computer-control/);
     expect(start).toMatch(/rakazo-browser/);
     expect(start).not.toMatch(/browser\.log/);
