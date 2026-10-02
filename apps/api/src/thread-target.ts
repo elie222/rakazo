@@ -414,7 +414,7 @@ export async function threadSnapshot(
               })
             : [];
         return { messagePage, last, run: currentRun, liveEvents };
-      }),
+      }, { timeout: 15_000, maxWait: 5_000 }),
     ]);
     return {
       botId: target.botId,
@@ -485,7 +485,7 @@ export async function threadSnapshot(
       terminalRun: pickLatestTerminalRun(recentTerminals),
       liveEvents,
     };
-  });
+  }, { timeout: 15_000, maxWait: 5_000 });
   const primaryActiveRun = pickPrimaryActiveRun(core.activeRuns);
   return {
     groupId: target.groupId,

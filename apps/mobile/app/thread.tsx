@@ -1242,7 +1242,7 @@ function Thread() {
         return;
       }
       if (isCurrentTarget(botTarget, groupTarget)) {
-        await refresh();
+        void refresh().catch(() => undefined);
       }
     } catch (err) {
       if (reroutedToGroup && groupTarget) {
