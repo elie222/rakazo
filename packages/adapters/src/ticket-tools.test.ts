@@ -151,6 +151,41 @@ describe("ticket tools", () => {
     });
   });
 
+  it("rejects an archived bot as owner", async () => {
+    const findFirst = vi.fn(async () => null);
+    const prisma = {
+      ...boardSpace(),
+      bot: { findFirst },
+    };
+    const created = await createTicket({ prisma } as never, {
+      spaceId: "ws",
+      botId: "bot-1",
+      title: "Ship it",
+      ownerBotId: "bot-archived",
+    });
+    expect(findFirst).toHaveBeenCalledWith({
+      where: { id: "bot-archived", spaceId: "ws", archivedAt: null },
+      select: { id: true },
+    });
+    expect(created).toEqual({ error: "ownerBotId must be a bot in this space." });
+
+    const assigned = await assignTicket(
+      {
+        prisma: {
+          ...boardSpace(),
+          bot: { findFirst },
+          ticket: { findFirst: vi.fn(async () => ticket({ id: "t1" })) },
+        },
+      } as never,
+      { spaceId: "ws", id: "t1", botId: "bot-1", ownerBotId: "bot-archived" },
+    );
+    expect(assigned).toEqual({ error: "ownerBotId must be a bot in this space." });
+    expect(findFirst).toHaveBeenLastCalledWith({
+      where: { id: "bot-archived", spaceId: "ws", archivedAt: null },
+      select: { id: true },
+    });
+  });
+
   it("rejects an owner that is not a bot in the space", async () => {
     const prisma = {
       ...boardSpace(),

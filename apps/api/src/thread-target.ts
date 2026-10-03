@@ -353,13 +353,12 @@ export async function threadSnapshot(
               orderBy: { seq: "desc" },
               select: { seq: true },
             }),
-            // Waiting asks win over a concurrent busy run (including peer bot_message).
+            // Waiting asks win over a concurrent busy run, including peer bot_message
+            // and ticket runs. Busy ticket work stays off the transcript below.
             tx.run.findFirst({
               where: {
                 botId: target.botId,
                 threadId: target.threadId,
-                // Background ticket work stays off the transcript; peer waits still surface.
-                trigger: { notIn: [...BACKGROUND_RUN_TRIGGERS] },
                 status: { in: ["waiting_input", "waiting_takeover"] },
               },
               orderBy: [{ createdAt: "desc" }, { id: "desc" }],
@@ -447,14 +446,11 @@ export async function threadSnapshot(
           where: {
             threadId: target.threadId,
             status: { in: [...ACTIVE_RUN_STATUSES] },
-            // Include waiting peer runs so their ask cards stay answerable; background
-            // ticket runs never surface in the transcript.
+            // Waiting peer and ticket asks stay answerable. Busy ticket runs stay off
+            // the transcript; only their waiting_input / waiting_takeover states surface.
             OR: [
               { trigger: { notIn: ["bot_message", ...BACKGROUND_RUN_TRIGGERS] } },
-              {
-                trigger: { notIn: [...BACKGROUND_RUN_TRIGGERS] },
-                status: { in: ["waiting_input", "waiting_takeover"] },
-              },
+              { status: { in: ["waiting_input", "waiting_takeover"] } },
             ],
           },
           orderBy: { createdAt: "desc" },

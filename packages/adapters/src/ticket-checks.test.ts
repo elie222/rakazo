@@ -1,7 +1,10 @@
 import type { JobPublisher } from "@rakazo/adapter-kit";
+import { ACTIONABLE_TICKET_STATUSES } from "@rakazo/contracts";
+import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
-import { runTicketChecks, type TicketCheckDeps } from "./ticket-checks.js";
+import type { TicketCheckDeps } from "./ticket-checks.js";
+import { runTicketChecks } from "./ticket-checks.js";
 
 const NOW = new Date("2026-06-01T12:00:00.000Z");
 const hoursAgo = (hours: number) => new Date(NOW.getTime() - hours * 60 * 60 * 1000);
@@ -38,6 +41,8 @@ function depsFor(options: {
   tickets?: unknown[];
   activeBotIds?: string[];
   claimCount?: number;
+  claimActiveRun?: boolean;
+  priorWakeAt?: Date | null;
 }) {
   const enqueue = vi.fn(async () => undefined);
   const taskCreate = vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({
@@ -49,10 +54,17 @@ function depsFor(options: {
     ...data,
   }));
   const txBotUpdateMany = vi.fn(async () => ({ count: options.claimCount ?? 1 }));
+  const txBotUpdate = vi.fn(async () => ({ id: "bot-1" }));
+  const txRunFindFirst = vi.fn(async () => (options.claimActiveRun ? { id: "run-active" } : null));
+  const commentFindMany = vi.fn(async () => []);
   const tx = {
-    bot: { updateMany: txBotUpdateMany },
+    bot: {
+      updateMany: txBotUpdateMany,
+      update: txBotUpdate,
+      findUnique: vi.fn(async () => ({ ticketsWakeAt: options.priorWakeAt ?? null })),
+    },
     task: { create: taskCreate },
-    run: { create: runCreate },
+    run: { create: runCreate, findFirst: txRunFindFirst },
   };
   const botUpdateMany = vi.fn(async () => ({ count: 1 }));
   const prisma = {
@@ -61,7 +73,7 @@ function depsFor(options: {
       updateMany: botUpdateMany,
     },
     ticket: { findMany: vi.fn(async () => options.tickets ?? [ticketRow()]) },
-    ticketComment: { findMany: vi.fn(async () => []) },
+    ticketComment: { findMany: commentFindMany },
     run: {
       findMany: vi.fn(async () => (options.activeBotIds ?? []).map((botId) => ({ botId }))),
     },
@@ -81,14 +93,30 @@ function depsFor(options: {
     runCreate,
     botUpdateMany,
     txBotUpdateMany,
+    txBotUpdate,
+    txRunFindFirst,
+    commentFindMany,
     boardNotify,
   };
 }
 
 describe("runTicketChecks", () => {
   it("starts one run and wakes the owner once for changed tickets", async () => {
-    const { deps, enqueue, taskCreate, runCreate, botUpdateMany, boardNotify } = depsFor({});
+    const { deps, enqueue, taskCreate, runCreate, botUpdateMany, boardNotify, commentFindMany } =
+      depsFor({});
     await runTicketChecks(deps, { trigger: "periodic", now: NOW });
+
+    expect(commentFindMany).toHaveBeenCalledWith({
+      where: {
+        ticket: {
+          assigneeBotId: { in: ["bot-1"] },
+          status: { in: [...ACTIONABLE_TICKET_STATUSES] },
+        },
+      },
+      orderBy: [{ ticketId: "asc" }, { createdAt: "desc" }, { id: "desc" }],
+      distinct: ["ticketId"],
+      select: { ticketId: true, body: true },
+    });
 
     expect(boardNotify).toHaveBeenCalledWith("space-1", { boardId: "board-1" });
 
@@ -109,26 +137,43 @@ describe("runTicketChecks", () => {
   });
 
   it("does nothing while the bot already has an active run", async () => {
-    const { deps, enqueue, taskCreate } = depsFor({ activeBotIds: ["bot-1"] });
+    const { deps, enqueue, taskCreate, botUpdateMany } = depsFor({ activeBotIds: ["bot-1"] });
     await runTicketChecks(deps, { trigger: "periodic", now: NOW });
     expect(taskCreate).not.toHaveBeenCalled();
     expect(enqueue).not.toHaveBeenCalled();
+    expect(botUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it("does not advance ticketsCheckedAt when the wake is debounced", async () => {
+    const bot = botRow({ ticketsWakeAt: new Date(NOW.getTime() - 60_000) });
+    const { deps, taskCreate, botUpdateMany } = depsFor({ bots: [bot] });
+    await runTicketChecks(deps, { trigger: "periodic", now: NOW });
+    expect(taskCreate).not.toHaveBeenCalled();
+    expect(botUpdateMany).not.toHaveBeenCalled();
   });
 
   it("skips a bot with no actionable tickets", async () => {
-    const { deps, taskCreate } = depsFor({ tickets: [] });
+    const { deps, taskCreate, botUpdateMany } = depsFor({ tickets: [] });
     await runTicketChecks(deps, { trigger: "periodic", now: NOW });
     expect(taskCreate).not.toHaveBeenCalled();
+    expect(botUpdateMany).toHaveBeenCalledWith({
+      where: { id: { in: ["bot-1"] } },
+      data: { ticketsCheckedAt: NOW },
+    });
   });
 
   it("stays quiet when nothing changed and the ticket is fresh", async () => {
     const bot = botRow({ ticketsCheckedAt: hoursAgo(0.5) });
-    const { deps, taskCreate } = depsFor({
+    const { deps, taskCreate, botUpdateMany } = depsFor({
       bots: [bot],
       tickets: [ticketRow({ updatedAt: hoursAgo(1) })],
     });
     await runTicketChecks(deps, { trigger: "periodic", now: NOW });
     expect(taskCreate).not.toHaveBeenCalled();
+    expect(botUpdateMany).toHaveBeenCalledWith({
+      where: { id: { in: ["bot-1"] } },
+      data: { ticketsCheckedAt: NOW },
+    });
   });
 
   it("reminds on a stale ticket even without a change", async () => {
@@ -142,9 +187,34 @@ describe("runTicketChecks", () => {
   });
 
   it("skips the wake when the debounce fence rejects the claim", async () => {
-    const { deps, enqueue, taskCreate } = depsFor({ claimCount: 0 });
+    const { deps, enqueue, taskCreate, txBotUpdateMany } = depsFor({ claimCount: 0 });
     await runTicketChecks(deps, { trigger: "event", botId: "bot-1", now: NOW });
     expect(taskCreate).not.toHaveBeenCalled();
     expect(enqueue).not.toHaveBeenCalled();
+    expect(txBotUpdateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          OR: [{ ticketsWakeAt: null }, { ticketsWakeAt: { lt: expect.any(Date) } }],
+        }),
+      }),
+    );
+  });
+
+  it("aborts the claim when a run appears before the ticket run is created", async () => {
+    const { deps, enqueue, taskCreate, runCreate, botUpdateMany, txBotUpdate, txRunFindFirst } =
+      depsFor({ claimActiveRun: true, priorWakeAt: hoursAgo(1) });
+    await runTicketChecks(deps, { trigger: "periodic", now: NOW });
+    expect(taskCreate).not.toHaveBeenCalled();
+    expect(runCreate).not.toHaveBeenCalled();
+    expect(enqueue).not.toHaveBeenCalled();
+    expect(txRunFindFirst).toHaveBeenCalledWith({
+      where: { botId: "bot-1", status: { in: [...ACTIVE_RUN_STATUSES] } },
+      select: { id: true },
+    });
+    expect(txBotUpdate).toHaveBeenCalledWith({
+      where: { id: "bot-1" },
+      data: { ticketsWakeAt: hoursAgo(1) },
+    });
+    expect(botUpdateMany).not.toHaveBeenCalled();
   });
 });

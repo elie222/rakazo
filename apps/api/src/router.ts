@@ -3363,13 +3363,22 @@ export function createRouter(deps: RouterDeps) {
       }),
       rename: authed.boards.rename.handler(async ({ context, input }) => {
         const board = await ensureBoard(deps.prisma, context.actor.spaceId);
+        const nextPrefix = input.ticketPrefix?.toUpperCase();
+        if (nextPrefix !== undefined && nextPrefix !== board.ticketPrefix) {
+          const tickets = await deps.prisma.ticket.count({
+            where: { boardId: board.id, spaceId: context.actor.spaceId },
+          });
+          if (tickets > 0) {
+            throw new ORPCError("BAD_REQUEST", {
+              message: "Cannot change the ticket prefix once tickets exist.",
+            });
+          }
+        }
         const row = await deps.prisma.board.update({
           where: { id: board.id },
           data: {
             ...(input.name !== undefined ? { name: input.name } : {}),
-            ...(input.ticketPrefix !== undefined
-              ? { ticketPrefix: input.ticketPrefix.toUpperCase() }
-              : {}),
+            ...(nextPrefix !== undefined ? { ticketPrefix: nextPrefix } : {}),
           },
         });
         return toBoardDto(row);

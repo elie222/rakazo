@@ -134,6 +134,12 @@ export function BoardPage() {
     const refresh = () => {
       if (disposed || !activeBoardId || document.visibilityState === "hidden") return;
       void loadTickets(activeBoardId);
+      void rpc.boards
+        .list()
+        .then((next) => {
+          if (!disposed) setBoards(next);
+        })
+        .catch(() => undefined);
       // Bump the token so the open detail reloads its comments too.
       setBoardVersion((version) => version + 1);
     };

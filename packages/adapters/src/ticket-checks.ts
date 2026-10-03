@@ -2,20 +2,15 @@ import type { JobPublisher } from "@rakazo/adapter-kit";
 import { runContinueJob, ticketsCheckJob } from "@rakazo/adapter-kit";
 import { ACTIONABLE_TICKET_STATUSES } from "@rakazo/contracts";
 import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
-import {
-  type BoardEvents,
-  coerceTicketPriority,
-  coerceTicketStatus,
-  type PrismaClient,
-} from "@rakazo/db";
+import type { BoardEvents, PrismaClient } from "@rakazo/db";
+import { coerceTicketPriority, coerceTicketStatus } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import type { TicketWakeDecision, TicketWakeTicket, TicketWakeTrigger } from "./ticket-wake.js";
 import {
   decideTicketWake,
   renderTicketWakePrompt,
   TICKET_CHECK_INTERVAL_MS,
   TICKET_WAKE_DEBOUNCE_MS,
-  type TicketWakeTicket,
-  type TicketWakeTrigger,
 } from "./ticket-wake.js";
 
 export type TicketCheckDeps = {
@@ -79,8 +74,14 @@ export async function runTicketChecks(
       },
     }),
     deps.prisma.ticketComment.findMany({
-      where: { ticket: { assigneeBotId: { in: botIds } } },
-      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      where: {
+        ticket: {
+          assigneeBotId: { in: botIds },
+          status: { in: [...ACTIONABLE_TICKET_STATUSES] },
+        },
+      },
+      orderBy: [{ ticketId: "asc" }, { createdAt: "desc" }, { id: "desc" }],
+      distinct: ["ticketId"],
       select: { ticketId: true, body: true },
     }),
     deps.prisma.run.findMany({
@@ -111,6 +112,7 @@ export async function runTicketChecks(
       lastWakeAt: bot.ticketsWakeAt,
       hasActiveRun: activeBotIds.has(bot.id),
     });
+    let advanceCheck = !decision.wake && keepsCheckedCursor(decision);
     if (decision.wake) {
       const board = botTickets[0]?.boardId
         ? await deps.prisma.board.findUnique({
@@ -127,15 +129,18 @@ export async function runTicketChecks(
         updatedAt: ticket.updatedAt,
         lastComment: lastCommentByTicket.get(ticket.id)?.trim() || null,
       }));
-      await startTicketWake(deps, {
+      const outcome = await startTicketWake(deps, {
         now,
         bot,
         boardId: botTickets[0]?.boardId ?? null,
         tickets: wakeTickets,
         reason: decision.reason,
       });
+      // A busy claim leaves the change unhandled, so the cursor stays put.
+      // A started wake, or a wake another worker already claimed, can move it.
+      advanceCheck = outcome === "started" || outcome === "fenced";
     }
-    if (options.trigger === "periodic") checkedBotIds.push(bot.id);
+    if (options.trigger === "periodic" && advanceCheck) checkedBotIds.push(bot.id);
   }
 
   if (checkedBotIds.length > 0) {
@@ -145,6 +150,13 @@ export async function runTicketChecks(
     });
   }
 }
+
+/** Cursor moves only when nothing actionable is still waiting on this bot. */
+function keepsCheckedCursor(decision: TicketWakeDecision): boolean {
+  return decision.reason === "no-tickets" || decision.reason === "unchanged";
+}
+
+type TicketWakeStart = "started" | "fenced" | "busy" | "skipped";
 
 async function startTicketWake(
   deps: TicketCheckDeps,
@@ -161,9 +173,9 @@ async function startTicketWake(
     tickets: TicketWakeTicket[];
     reason: "changed" | "reminder" | "assigned";
   },
-): Promise<void> {
+): Promise<TicketWakeStart> {
   const threadId = input.bot.thread?.id;
-  if (!threadId) return;
+  if (!threadId) return "skipped";
 
   const prompt = renderTicketWakePrompt({
     botName: input.bot.name,
@@ -171,7 +183,11 @@ async function startTicketWake(
     reason: input.reason,
   });
   const fence = new Date(input.now.getTime() - TICKET_WAKE_DEBOUNCE_MS);
-  const runId = await deps.prisma.$transaction(async (tx) => {
+  const outcome = await deps.prisma.$transaction(async (tx) => {
+    const prior = await tx.bot.findUnique({
+      where: { id: input.bot.id },
+      select: { ticketsWakeAt: true },
+    });
     const claimed = await tx.bot.updateMany({
       where: {
         id: input.bot.id,
@@ -180,7 +196,20 @@ async function startTicketWake(
       },
       data: { ticketsWakeAt: input.now },
     });
-    if (claimed.count === 0) return null;
+    if (claimed.count === 0) return { kind: "fenced" as const };
+    // A conversational run can land after the pre-check and before this claim.
+    // Abort instead of queueing a second run, and put the fence back.
+    const active = await tx.run.findFirst({
+      where: { botId: input.bot.id, status: { in: [...ACTIVE_RUN_STATUSES] } },
+      select: { id: true },
+    });
+    if (active) {
+      await tx.bot.update({
+        where: { id: input.bot.id },
+        data: { ticketsWakeAt: prior?.ticketsWakeAt ?? null },
+      });
+      return { kind: "busy" as const };
+    }
     const task = await tx.task.create({
       data: {
         spaceId: input.bot.spaceId,
@@ -202,15 +231,16 @@ async function startTicketWake(
         trigger: "tickets",
       },
     });
-    return run.id;
+    return { kind: "started" as const, runId: run.id };
   });
-  if (!runId) return;
+  if (outcome.kind !== "started") return outcome.kind;
   await deps.boardEvents
     ?.notify(input.bot.spaceId, input.boardId ? { boardId: input.boardId } : undefined)
     .catch(() => undefined);
-  await deps.jobs.enqueue(runContinueJob(runId)).catch((error) => {
+  await deps.jobs.enqueue(runContinueJob(outcome.runId)).catch((error) => {
     getLogger().warn("ticket wake deferred to reconciliation", error);
   });
+  return "started";
 }
 
 /**

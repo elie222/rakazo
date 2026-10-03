@@ -117,12 +117,15 @@ function ticket(
   };
 }
 
-async function renderBoard() {
+async function renderBoard(subscribe?: AsyncIterable<unknown>) {
   window.localStorage.clear();
-  // The live stream never yields in tests; the board renders from the initial list.
-  api.boards.subscribe.mockResolvedValue({
-    [Symbol.asyncIterator]: () => ({ next: () => new Promise(() => {}) }),
-  });
+  // The live stream never yields in tests unless a case supplies one event.
+  api.boards.subscribe.mockReset();
+  api.boards.subscribe.mockResolvedValue(
+    subscribe ?? {
+      [Symbol.asyncIterator]: () => ({ next: () => new Promise(() => {}) }),
+    },
+  );
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
@@ -298,6 +301,38 @@ it("expands the closed column and remembers the choice", async () => {
     const expanded = page.container.querySelector("[data-testid='board-column-closed']");
     expect(expanded?.getAttribute("data-collapsed")).toBeNull();
     expect(window.localStorage.getItem("rakazo:board-closed-collapsed")).toBe("open");
+  } finally {
+    await page.cleanup();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("reloads the board name when a live update arrives", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  api.boards.list
+    .mockResolvedValueOnce([boardStub()])
+    .mockResolvedValue([{ ...boardStub(), name: "Launch" }]);
+  api.bots.list.mockResolvedValue([bot("bot-1", "Helper")]);
+  api.tickets.list.mockResolvedValue({ tickets: [], workingBotIds: [] });
+  const page = await renderBoard({
+    [Symbol.asyncIterator]() {
+      let sent = false;
+      return {
+        async next() {
+          if (!sent) {
+            sent = true;
+            return { value: { spaceId: "space-1" }, done: false as const };
+          }
+          return new Promise<IteratorResult<unknown>>(() => {});
+        },
+      };
+    },
+  });
+  try {
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(page.container.textContent).toContain("Launch");
   } finally {
     await page.cleanup();
     vi.unstubAllGlobals();

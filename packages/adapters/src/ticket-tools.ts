@@ -1,9 +1,9 @@
+import type { TicketStatus } from "@rakazo/contracts";
 import {
   isTicketCompletedStatus,
   TICKET_COMMENT_MAX_LENGTH,
   TICKET_DESCRIPTION_MAX_LENGTH,
   TICKET_TITLE_MAX_LENGTH,
-  type TicketStatus,
   TicketStatusSchema,
 } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
@@ -34,7 +34,7 @@ function coerceInputStatus(value: string | undefined): TicketStatus | undefined 
 
 async function botInSpace(deps: TicketToolDeps, spaceId: string, botId: string): Promise<boolean> {
   const bot = await deps.prisma.bot.findFirst({
-    where: { id: botId, spaceId },
+    where: { id: botId, spaceId, archivedAt: null },
     select: { id: true },
   });
   return Boolean(bot);

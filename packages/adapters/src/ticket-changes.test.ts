@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { createTicketChangeNotifier, type TicketChange } from "./ticket-changes.js";
+import type { TicketChange } from "./ticket-changes.js";
+import { createTicketChangeNotifier } from "./ticket-changes.js";
 
 function notifier() {
   const notify = vi.fn(async () => undefined);

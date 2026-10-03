@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
+import type { TicketWakeTicket } from "./ticket-wake.js";
 import {
   decideTicketWake,
   renderTicketWakePrompt,
   TICKET_REMINDER_MS,
   TICKET_WAKE_DEBOUNCE_MS,
-  type TicketWakeTicket,
 } from "./ticket-wake.js";
 
 const NOW = new Date("2026-06-01T12:00:00.000Z");
