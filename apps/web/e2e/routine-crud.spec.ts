@@ -128,6 +128,33 @@ test("routine editing updates in place, preserves timezone, and deletion persist
   await expect(updatedButton).toHaveCount(0);
 });
 
+test("a routine runs on the bot's model until another is picked", async ({ page }, testInfo) => {
+  const stamp = Date.now();
+  await signup(page, `routine-model-${stamp}@rakazo.test`, "password12", "Routine Model");
+  await completeOnboarding(page);
+  const botId = activeBotId(page);
+
+  await page.getByTitle("Agent computer").click();
+  await page.getByRole("button", { name: "Create Routine" }).click();
+  await page.locator("label:has-text('Name') input").fill("Model check");
+  await page.locator("label:has-text('Instruction') textarea").fill("Check the inbox");
+  await addScheduleTrigger(page, "Every day");
+
+  const modelSelect = page.locator("label:has-text('Model') select");
+  await expect(modelSelect).toHaveValue("");
+  await expect(modelSelect).toContainText("Bot's model");
+  await captureScreenshot(page, testInfo, "routine-model-picker");
+
+  await saveAndReturn(page, "routines/create");
+  const [routine] = await rpc<Routine[]>(page, "routines/list", { botId });
+  expect(routine).toMatchObject({
+    name: "Model check",
+    modelProvider: null,
+    modelId: null,
+    thinkingLevel: null,
+  });
+});
+
 test("invalid advanced cron is rejected without creating a routine", async ({ page }, testInfo) => {
   const stamp = Date.now();
   await signup(page, `routine-invalid-${stamp}@rakazo.test`, "password12", "Invalid Routine");

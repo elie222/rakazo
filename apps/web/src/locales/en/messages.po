@@ -737,6 +737,10 @@ msgstr "Bot screen preview"
 msgid "Bot to link"
 msgstr "Bot to link"
 
+#: src/pages/RoutineEditor.tsx
+msgid "Bot's model"
+msgstr "Bot's model"
+
 #: src/pages/Artifacts.tsx
 msgid "Bots"
 msgstr "Bots"

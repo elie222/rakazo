@@ -193,6 +193,75 @@ describe("finalizeRun", () => {
     });
   });
 
+  it("pins the continuation when every waited message chose the same model", async () => {
+    const tx = {
+      $queryRaw: vi.fn(async () => []),
+      run: {
+        findUnique: vi.fn(async () => ({ status: "running", startedAt: null })),
+        findUniqueOrThrow: vi.fn(async () => ({ sourceMessage: null })),
+        findFirst: vi.fn(async () => null),
+        updateMany: vi.fn(async () => ({ count: 1 })),
+        create: vi.fn(async () => ({ id: "run-reply" })),
+      },
+      attempt: { updateMany: vi.fn(async () => ({ count: 1 })) },
+      task: {
+        updateMany: vi.fn(async () => ({ count: 1 })),
+        create: vi.fn(async () => ({ id: "task-reply" })),
+      },
+      thread: { update: vi.fn(async () => ({ nextEventSeq: 1 })) },
+      event: {
+        create: vi.fn(async () => ({ threadId: "thread-1", seq: 0 })),
+        deleteMany: vi.fn(async () => ({ count: 0 })),
+      },
+      steeringMessage: {
+        findMany: vi.fn(async () => [
+          {
+            id: "steer-1",
+            userId: "user-1",
+            originTrigger: null,
+            modelProvider: "openai-compatible",
+            modelId: "private-model",
+            thinkingLevel: "low",
+            message: {
+              id: "message-hook",
+              seq: 4,
+              blocks: [{ kind: "text", text: "Run the routine" }],
+            },
+          },
+        ]),
+        updateMany: vi.fn(async () => ({ count: 1 })),
+      },
+      bot: { update: vi.fn(async () => ({})) },
+    };
+    const prisma = {
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+    } as unknown as PrismaClient;
+
+    await finalizeRun(prisma, {
+      spaceId: "space-1",
+      threadId: "thread-1",
+      botId: "bot-1",
+      runId: "routine-run",
+      taskId: "routine-task",
+      attemptId: "attempt-1",
+      leaseOwner: "worker-1",
+      leaseFence: 1,
+      outcome: "failed",
+      error: "stopped",
+    });
+
+    expect(tx.run.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        trigger: "follow_up",
+        sourceMessageId: "message-hook",
+        modelProvider: "openai-compatible",
+        modelId: "private-model",
+        thinkingLevel: "low",
+        modelPinned: true,
+      }),
+    });
+  });
+
   it("resumes a held group-channel message without taking a later direct message", async () => {
     const channel = {
       kind: "channel_message" as const,
@@ -2023,6 +2092,65 @@ describe("sendUserMessage", () => {
     expect(publish).toHaveBeenCalledWith("thread:thread-1", JSON.stringify({ cursor: 8 }));
   });
 
+  it("pins an agreed inbound model onto the run it creates", async () => {
+    const tx = {
+      thread: {
+        update: vi
+          .fn()
+          .mockResolvedValueOnce({ nextMessageSeq: 5 })
+          .mockResolvedValueOnce({ nextEventSeq: 9 }),
+      },
+      message: {
+        create: vi.fn().mockResolvedValue({ id: "message-1", seq: 4 }),
+        update: vi.fn(),
+      },
+      task: { create: vi.fn().mockResolvedValue({ id: "task-1" }) },
+      run: {
+        create: vi.fn().mockResolvedValue({ id: "run-1" }),
+        findMany: vi.fn().mockResolvedValue([]),
+        findUnique: vi.fn().mockResolvedValue({ status: "queued" }),
+      },
+      event: {
+        create: vi.fn(async ({ data }: { data: { seq: number; type: string } }) => ({
+          ...event(data.seq),
+          type: data.type,
+          runId: "run-1",
+        })),
+      },
+    };
+    const prisma = {
+      message: { findUnique: vi.fn().mockResolvedValue(null) },
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+    } as unknown as PrismaClient;
+
+    await sendUserMessage(prisma, {
+      spaceId: "workspace-1",
+      threadId: "thread-1",
+      botId: "bot-1",
+      userId: "user-1",
+      blocks: [{ kind: "text", text: "ping" }],
+      prompt: "ping",
+      trigger: "webhook",
+      modelPin: {
+        modelProvider: "openai-compatible",
+        modelId: "private-model",
+        thinkingLevel: "low",
+      },
+    });
+
+    expect(tx.run.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          trigger: "webhook",
+          modelProvider: "openai-compatible",
+          modelId: "private-model",
+          thinkingLevel: "low",
+          modelPinned: true,
+        }),
+      }),
+    );
+  });
+
   it("persists steering instead of starting a parallel run when the bot is busy", async () => {
     const tx = {
       thread: {
@@ -2073,6 +2201,67 @@ describe("sendUserMessage", () => {
     });
     expect(tx.steeringMessage.create).toHaveBeenCalledWith({
       data: { messageId: "message-1", botId: "bot-1", userId: "user-1", runId: "run-0" },
+    });
+  });
+
+  it("keeps an agreed inbound model on steering while a routine run is busy", async () => {
+    const tx = {
+      thread: {
+        update: vi
+          .fn()
+          .mockResolvedValueOnce({ nextMessageSeq: 5 })
+          .mockResolvedValueOnce({ nextEventSeq: 9 }),
+      },
+      message: {
+        create: vi.fn().mockResolvedValue({ id: "message-1", seq: 4 }),
+        update: vi.fn().mockResolvedValue({ id: "message-1" }),
+      },
+      steeringMessage: { create: vi.fn() },
+      task: { create: vi.fn() },
+      run: {
+        findMany: vi
+          .fn()
+          .mockResolvedValue([{ id: "run-routine", taskId: "task-routine", trigger: "routine" }]),
+        findUnique: vi.fn().mockResolvedValue({ status: "running" }),
+        create: vi.fn(),
+      },
+      event: {
+        create: vi.fn(async ({ data }: { data: { seq: number; type: string } }) => ({
+          ...event(data.seq),
+          type: data.type,
+        })),
+      },
+    };
+    const prisma = {
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+    } as unknown as PrismaClient;
+
+    await sendUserMessage(prisma, {
+      spaceId: "workspace-1",
+      threadId: "thread-1",
+      botId: "bot-1",
+      userId: "user-1",
+      blocks: [{ kind: "text", text: "ping" }],
+      prompt: "ping",
+      trigger: "webhook",
+      modelPin: {
+        modelProvider: "openai-compatible",
+        modelId: "private-model",
+        thinkingLevel: "low",
+      },
+    });
+
+    expect(tx.run.create).not.toHaveBeenCalled();
+    expect(tx.steeringMessage.create).toHaveBeenCalledWith({
+      data: {
+        messageId: "message-1",
+        botId: "bot-1",
+        userId: "user-1",
+        runId: null,
+        modelProvider: "openai-compatible",
+        modelId: "private-model",
+        thinkingLevel: "low",
+      },
     });
   });
 

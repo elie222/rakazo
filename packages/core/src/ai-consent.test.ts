@@ -1,7 +1,12 @@
 import type { AiConsentStatus } from "@rakazo/contracts";
 import { AI_DISCLOSURE_VERSION } from "@rakazo/contracts";
 import { describe, expect, it, vi } from "vitest";
-import { AiConsentBlocked, aiDataUsesForProcedure, ensureAiDataConsent } from "./ai-consent.js";
+import {
+  AiConsentBlocked,
+  aiConsentTarget,
+  aiDataUsesForProcedure,
+  ensureAiDataConsent,
+} from "./ai-consent.js";
 
 const status: AiConsentStatus = {
   scope: "account-space",
@@ -92,6 +97,8 @@ describe("foreground AI consent", () => {
     expect(
       aiDataUsesForProcedure("routines/update", { routineId: "routine", active: true }),
     ).toEqual(["model", "memory"]);
+    expect(aiConsentTarget({ routineId: "routine-1" })).toEqual({ routineId: "routine-1" });
+    expect(aiConsentTarget({ botId: "bot", text: "hello" })).toEqual({ botId: "bot" });
   });
   it("coalesces concurrent prompts and grants for one account-space recipient", async () => {
     let decide!: (allowed: boolean) => void;

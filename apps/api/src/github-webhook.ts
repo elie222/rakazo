@@ -189,7 +189,14 @@ export function mountGithubWebhookRoute(app: Hono, deps: WebhookDeps) {
         active: true,
         githubEnabled: true,
       },
-      select: { id: true, name: true, prompt: true },
+      select: {
+        id: true,
+        name: true,
+        prompt: true,
+        modelProvider: true,
+        modelId: true,
+        thinkingLevel: true,
+      },
       orderBy: { updatedAt: "desc" },
       take: 5,
     });
