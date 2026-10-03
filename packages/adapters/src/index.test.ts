@@ -163,7 +163,11 @@ describe("scripted runtime", () => {
 
 describe("builtin tools", () => {
   it("exposes the tools the executor actually applies", async () => {
-    const { builtinAgentTools } = await import("./builtin-tools.js");
+    const { BUILTIN_TOOL_NAMES } = await import("@rakazo/contracts");
+    const { agentConnectionTools, builtinAgentTools } = await import("./builtin-tools.js");
+    expect([...BUILTIN_TOOL_NAMES].sort()).toEqual(
+      [...builtinAgentTools, ...agentConnectionTools].map((tool) => tool.name).sort(),
+    );
     expect(builtinAgentTools.map((t) => t.name)).toEqual(
       expect.arrayContaining([
         "write_file",
