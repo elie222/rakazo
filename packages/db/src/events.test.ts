@@ -174,6 +174,13 @@ describe("finalizeRun", () => {
 
     expect(publish).toHaveBeenCalledWith("thread:thread-1", expect.any(String));
     expect(publish).toHaveBeenCalledWith("board:space-1", expect.any(String));
+    expect(tx.bot.update).toHaveBeenCalledWith({
+      where: { id: "bot-1" },
+      data: {
+        updatedAt: expect.any(Date),
+        ticketsCheckedAt: expect.any(Date),
+      },
+    });
   });
 
   it("resumes a held messaging inbound as a messaging run", async () => {

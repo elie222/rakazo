@@ -71,11 +71,25 @@ describe("thread message pages", () => {
     expect(
       shouldForwardBackgroundThreadEvent({
         type: "thread.message.created",
+        payload: { blocks: [{ kind: "computer", text: "Needs you" }] },
+      }),
+    ).toBe(true);
+    expect(
+      shouldForwardBackgroundThreadEvent({
+        type: "thread.message.created",
         payload: { blocks: [{ kind: "text", text: "Ticket summary" }] },
       }),
     ).toBe(false);
     expect(shouldForwardBackgroundThreadEvent({ type: "run.started", payload: {} })).toBe(false);
-    expect(shouldForwardBackgroundThreadEvent({ type: "run.completed", payload: {} })).toBe(false);
+    expect(shouldForwardBackgroundThreadEvent({ type: "run.waiting_input", payload: {} })).toBe(
+      true,
+    );
+    expect(
+      shouldForwardBackgroundThreadEvent({ type: "computer.takeover.requested", payload: {} }),
+    ).toBe(true);
+    expect(shouldForwardBackgroundThreadEvent({ type: "run.completed", payload: {} })).toBe(true);
+    expect(shouldForwardBackgroundThreadEvent({ type: "run.failed", payload: {} })).toBe(true);
+    expect(shouldForwardBackgroundThreadEvent({ type: "run.cancelled", payload: {} })).toBe(true);
     expect(shouldForwardBackgroundThreadEvent({ type: "thread.progress", payload: {} })).toBe(
       false,
     );
@@ -83,6 +97,18 @@ describe("thread message pages", () => {
 
   it("hides ticket-run output from the transcript but keeps message_user updates", async () => {
     const findMany = vi.fn(async () => [
+      {
+        id: "message-computer",
+        threadId: "thread-1",
+        seq: 5,
+        role: "bot",
+        blocks: [{ kind: "computer", state: "Needs you", text: "Sign in" }],
+        botId: "bot-1",
+        replyToMessageId: null,
+        runId: "run-ticket",
+        clientNonce: null,
+        createdAt: new Date("2026-08-16T00:00:05.000Z"),
+      },
       {
         id: "message-final",
         threadId: "thread-1",
@@ -137,11 +163,12 @@ describe("thread message pages", () => {
       run: { findMany: vi.fn(async () => [{ id: "run-ticket", trigger: "tickets" }]) },
     } as unknown as PrismaClient;
 
-    const page = await loadMessagePage(prisma, "thread-1", undefined, 4);
+    const page = await loadMessagePage(prisma, "thread-1", undefined, 5);
 
     expect(page.messages.map((message) => message.id)).toEqual([
       "message-user",
       "message-progress",
+      "message-computer",
     ]);
   });
 

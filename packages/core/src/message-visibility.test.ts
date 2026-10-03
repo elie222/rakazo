@@ -91,12 +91,15 @@ describe("user-visible messages", () => {
         ...message("progress", "run-ticket", [{ kind: "text", text: "Working on it" }]),
         clientNonce: "user-progress:run-ticket:0",
       },
+      message("computer", "run-ticket", [
+        { kind: "computer", state: "Needs you", text: "Sign in" },
+      ]),
       message("final", "run-ticket", [{ kind: "text", text: "Done, closed the ticket." }]),
       message("user", "run-user", [{ kind: "text", text: "Visible answer" }]),
     ];
 
     expect(
       userVisibleMessages(background, { backgroundRunIds: ["run-ticket"] }).map((m) => m.id),
-    ).toEqual(["progress", "user"]);
+    ).toEqual(["progress", "computer", "user"]);
   });
 });

@@ -3502,10 +3502,12 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 spaceId: run.spaceId,
                 botId: bot.id,
               }),
-          loadAgentTicketContext(deps, {
-            spaceId: run.spaceId,
-            text: task.prompt,
-          }),
+          messagingChannelRun
+            ? Promise.resolve(undefined)
+            : loadAgentTicketContext(deps, {
+                spaceId: run.spaceId,
+                text: task.prompt,
+              }),
           recallPromise,
         ]);
         const semanticMemoryEnabled = Boolean(semanticMemory) && !messagingChannelRun;
@@ -7160,8 +7162,10 @@ export function selectBuiltinToolsForRun(options: {
           "recall_memory",
           "forget_memory",
           "task_catalog",
+          "board_tickets",
         ].includes(tool.name) &&
-          !tool.name.startsWith("scratchpad_"))),
+          !tool.name.startsWith("scratchpad_") &&
+          !tool.name.startsWith("ticket_"))),
   );
 }
 

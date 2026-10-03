@@ -1208,7 +1208,15 @@ async function finalizeRunOnce(
       });
     }
     const continuationRunId = await createPendingSteeringRun(tx, input);
-    await tx.bot.update({ where: { id: input.botId }, data: { updatedAt: now } });
+    // In-run ticket edits bump updatedAt. Stamp the check cursor when a background
+    // run finishes so the next sweep does not treat the run's own comments as new.
+    await tx.bot.update({
+      where: { id: input.botId },
+      data: {
+        updatedAt: now,
+        ...(isBackgroundRunTrigger(writableRun?.trigger) ? { ticketsCheckedAt: now } : {}),
+      },
+    });
     return {
       threadId: lastEvent.threadId,
       seq: lastEvent.seq,

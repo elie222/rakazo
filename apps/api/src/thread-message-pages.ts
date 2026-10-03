@@ -125,10 +125,11 @@ async function withoutPeerRunMessages<
     if (!row.runId) return true;
     const blocks = row.blocks as MessageBlock[];
     if (backgroundRunIds.has(row.runId)) {
-      // Ticket work stays off the transcript; only an explicit `message_user` update
-      // or an ask card is the bot deliberately reaching the user.
+      // Ticket work stays off the transcript. An explicit `message_user` update,
+      // an ask card, or a computer block is the bot deliberately reaching the user.
       return (
-        isUserProgressClientNonce(row.clientNonce) || blocks.some((block) => block.kind === "ask")
+        isUserProgressClientNonce(row.clientNonce) ||
+        blocks.some((block) => block.kind === "ask" || block.kind === "computer")
       );
     }
     if (!peerRunIds.has(row.runId)) return true;
@@ -209,15 +210,24 @@ export function shouldForwardPeerThreadEvent(event: {
 }
 
 /**
- * A background run's SSE events must stay off the transcript: no starts, progress,
- * steps, terminals, or final text. The only frames that reach an open thread are the
- * bot's explicit `message_user` updates and ask cards, so a needed human decision is
- * still answerable.
+ * A background run's chatter stays off the transcript: no starts, progress, steps,
+ * or final text. An open thread still receives the state it needs to answer without
+ * a reload — waiting input, computer takeover, and terminal run events — plus the
+ * bot's explicit `message_user` updates, ask cards, and computer blocks.
  */
 export function shouldForwardBackgroundThreadEvent(event: {
   type: string;
   payload: { blocks?: unknown; userProgress?: unknown };
 }): boolean {
+  if (
+    event.type === "run.completed" ||
+    event.type === "run.failed" ||
+    event.type === "run.cancelled" ||
+    event.type === "run.waiting_input" ||
+    event.type === "computer.takeover.requested"
+  ) {
+    return true;
+  }
   if (event.type !== "thread.message.created" && event.type !== "thread.message.updated") {
     return false;
   }
@@ -226,7 +236,11 @@ export function shouldForwardBackgroundThreadEvent(event: {
   return (
     Array.isArray(blocks) &&
     blocks.some(
-      (block) => !!block && typeof block === "object" && "kind" in block && block.kind === "ask",
+      (block) =>
+        !!block &&
+        typeof block === "object" &&
+        "kind" in block &&
+        (block.kind === "ask" || block.kind === "computer"),
     )
   );
 }

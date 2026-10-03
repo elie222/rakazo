@@ -187,10 +187,13 @@ describe("runTicketChecks", () => {
   });
 
   it("skips the wake when the debounce fence rejects the claim", async () => {
-    const { deps, enqueue, taskCreate, txBotUpdateMany } = depsFor({ claimCount: 0 });
+    const { deps, enqueue, taskCreate, botUpdateMany, txBotUpdateMany } = depsFor({
+      claimCount: 0,
+    });
     await runTicketChecks(deps, { trigger: "event", botId: "bot-1", now: NOW });
     expect(taskCreate).not.toHaveBeenCalled();
     expect(enqueue).not.toHaveBeenCalled();
+    expect(botUpdateMany).not.toHaveBeenCalled();
     expect(txBotUpdateMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
@@ -215,6 +218,33 @@ describe("runTicketChecks", () => {
       where: { id: "bot-1" },
       data: { ticketsWakeAt: hoursAgo(1) },
     });
+    expect(botUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it("advances ticketsCheckedAt after an event wake this process started", async () => {
+    const { deps, taskCreate, botUpdateMany } = depsFor({});
+    await runTicketChecks(deps, { trigger: "event", botId: "bot-1", now: NOW });
+    expect(taskCreate).toHaveBeenCalledTimes(1);
+    expect(botUpdateMany).toHaveBeenCalledWith({
+      where: { id: { in: ["bot-1"] } },
+      data: { ticketsCheckedAt: NOW },
+    });
+  });
+
+  it("advances ticketsCheckedAt on an event sweep with no tickets", async () => {
+    const { deps, taskCreate, botUpdateMany } = depsFor({ tickets: [] });
+    await runTicketChecks(deps, { trigger: "event", botId: "bot-1", now: NOW });
+    expect(taskCreate).not.toHaveBeenCalled();
+    expect(botUpdateMany).toHaveBeenCalledWith({
+      where: { id: { in: ["bot-1"] } },
+      data: { ticketsCheckedAt: NOW },
+    });
+  });
+
+  it("does not advance ticketsCheckedAt when another checker claimed the wake", async () => {
+    const { deps, taskCreate, botUpdateMany } = depsFor({ claimCount: 0 });
+    await runTicketChecks(deps, { trigger: "periodic", now: NOW });
+    expect(taskCreate).not.toHaveBeenCalled();
     expect(botUpdateMany).not.toHaveBeenCalled();
   });
 });

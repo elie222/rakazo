@@ -136,11 +136,11 @@ export async function runTicketChecks(
         tickets: wakeTickets,
         reason: decision.reason,
       });
-      // A busy claim leaves the change unhandled, so the cursor stays put.
-      // A started wake, or a wake another worker already claimed, can move it.
-      advanceCheck = outcome === "started" || outcome === "fenced";
+      // Only a wake this process started moves the cursor. A lost claim, a busy
+      // abort, or a skipped bot leaves it so the change is still visible later.
+      advanceCheck = outcome === "started";
     }
-    if (options.trigger === "periodic" && advanceCheck) checkedBotIds.push(bot.id);
+    if (advanceCheck) checkedBotIds.push(bot.id);
   }
 
   if (checkedBotIds.length > 0) {

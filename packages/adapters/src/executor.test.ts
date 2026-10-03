@@ -1128,6 +1128,8 @@ describe("createRunExecutor", () => {
     expect(tools).not.toContain("save_shared_memory");
     expect(tools).not.toContain("task_catalog");
     expect(tools.some((tool) => tool.startsWith("scratchpad_"))).toBe(false);
+    expect(tools).not.toContain("board_tickets");
+    expect(tools.some((tool) => tool.startsWith("ticket_"))).toBe(false);
     expect(tools).toContain("web_fetch");
   });
 
