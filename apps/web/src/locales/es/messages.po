@@ -1557,6 +1557,10 @@ msgstr "No se pudo cargar la configuración de mensajería"
 msgid "Couldn't update avatars"
 msgstr "No se pudieron actualizar los avatares"
 
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Couldn't update unread preferences"
+msgstr "No se pudieron actualizar las preferencias de mensajes no leídos"
+
 #: src/pages/MessagingSettingsOverlay.tsx
 msgid "Couldn't update messaging settings"
 msgstr "No se pudo actualizar la configuración de mensajería"
@@ -2432,6 +2436,11 @@ msgstr ""
 #: src/pages/PluginsOverlay.tsx
 msgid "Manual setup required"
 msgstr ""
+
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Mark agent-to-agent messages as unread"
+msgstr "Marcar los mensajes entre agentes como no leídos"
+
 
 #: src/pages/BotContextMenu.tsx
 msgid "Mark as Read"

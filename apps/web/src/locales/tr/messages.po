@@ -1557,6 +1557,10 @@ msgstr ""
 msgid "Couldn't update avatars"
 msgstr ""
 
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Couldn't update unread preferences"
+msgstr "Okunmamış mesaj tercihleri güncellenemedi"
+
 #: src/pages/MessagingSettingsOverlay.tsx
 msgid "Couldn't update messaging settings"
 msgstr ""
@@ -2432,6 +2436,11 @@ msgstr ""
 #: src/pages/PluginsOverlay.tsx
 msgid "Manual setup required"
 msgstr ""
+
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Mark agent-to-agent messages as unread"
+msgstr "Ajanlar arası mesajları okunmamış olarak işaretle"
+
 
 #: src/pages/BotContextMenu.tsx
 msgid "Mark as Read"

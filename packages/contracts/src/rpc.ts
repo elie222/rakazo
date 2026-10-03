@@ -168,7 +168,22 @@ export const appContract = {
   health: oc.output(z.object({ ok: z.literal(true), version: z.string() })),
   me: oc.output(MeSchema),
   preferences: {
-    update: oc.input(z.object({ avatarStyle: AvatarStyleSchema })).output(MeSchema),
+    update: oc
+      .input(
+        z
+          .object({
+            avatarStyle: AvatarStyleSchema.optional(),
+            markAgentMessagesUnread: z.boolean().optional(),
+          })
+          .refine(
+            (input) =>
+              input.avatarStyle !== undefined || input.markAgentMessagesUnread !== undefined,
+            {
+              message: "Provide at least one preference to update",
+            },
+          ),
+      )
+      .output(MeSchema),
   },
   spaces: {
     list: oc.output(SpaceNavigationSchema),

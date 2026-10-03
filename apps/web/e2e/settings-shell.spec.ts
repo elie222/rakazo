@@ -40,17 +40,40 @@ test("settings shell is two-pane and deep-links Models Memory Voice Usage", asyn
     .poll(() => page.evaluate(() => window.localStorage.getItem("rakazo.responseStreaming")))
     .toBe("on");
 
-  await settings.getByTestId("settings-nav-models").click();
-  await expect(settings).toHaveAttribute("data-settings-section", "models");
-  await expect(settings.getByRole("heading", { name: "Models", exact: true })).toBeVisible();
-  await expect(settings.getByTestId("model-settings")).toBeVisible();
+  const agentMessagesUnread = settings.getByTestId("agent-messages-unread-toggle");
+  await expect(agentMessagesUnread).not.toBeChecked();
+  await expect(
+    settings.getByText("Mark agent-to-agent messages as unread", { exact: true }),
+  ).toBeVisible();
+  const unreadPreferenceSaved = page.waitForResponse(
+    (response) => response.url().includes("/rpc/preferences/update") && response.ok(),
+  );
+  await agentMessagesUnread.click();
+  await expect(agentMessagesUnread).toBeChecked();
+  await unreadPreferenceSaved;
+
+  await page.reload();
+  const refreshedSettings = await openUserSettings(page);
+  await refreshedSettings.getByTestId("advanced-settings").locator("summary").click();
+  await expect(refreshedSettings.getByTestId("agent-messages-unread-toggle")).toBeChecked();
+  await refreshedSettings.getByTestId("agent-messages-unread-toggle").scrollIntoViewIfNeeded();
+  await captureScreenshot(page, testInfo, "settings-shell-agent-unread");
+
+  await refreshedSettings.getByTestId("settings-nav-models").click();
+  await expect(refreshedSettings).toHaveAttribute("data-settings-section", "models");
+  await expect(
+    refreshedSettings.getByRole("heading", { name: "Models", exact: true }),
+  ).toBeVisible();
+  await expect(refreshedSettings.getByTestId("model-settings")).toBeVisible();
   await captureScreenshot(page, testInfo, "settings-shell-models");
 
-  await settings.getByTestId("settings-nav-memory").click();
-  await expect(settings).toHaveAttribute("data-settings-section", "memory");
-  await expect(settings.getByRole("heading", { name: "Memory", exact: true })).toBeVisible();
-  await expect(settings.getByTestId("memory-settings")).toBeVisible();
-  const memory = settings.getByTestId("memory-settings");
+  await refreshedSettings.getByTestId("settings-nav-memory").click();
+  await expect(refreshedSettings).toHaveAttribute("data-settings-section", "memory");
+  await expect(
+    refreshedSettings.getByRole("heading", { name: "Memory", exact: true }),
+  ).toBeVisible();
+  await expect(refreshedSettings.getByTestId("memory-settings")).toBeVisible();
+  const memory = refreshedSettings.getByTestId("memory-settings");
   await expect(memory.getByLabel("Provider")).toBeVisible();
   await memory.getByLabel("Provider").selectOption("serenity");
   await expect(memory.getByLabel("MCP endpoint")).toBeVisible();
@@ -58,10 +81,12 @@ test("settings shell is two-pane and deep-links Models Memory Voice Usage", asyn
   await expect(memory.getByRole("button", { name: "Recall only" })).toBeVisible();
   await captureScreenshot(page, testInfo, "settings-shell-memory-serenity");
 
-  await settings.getByTestId("settings-nav-voice").click();
-  await expect(settings).toHaveAttribute("data-settings-section", "voice");
-  await expect(settings.getByRole("heading", { name: "Voice", exact: true })).toBeVisible();
-  await expect(settings.getByTestId("voice-settings")).toBeVisible();
+  await refreshedSettings.getByTestId("settings-nav-voice").click();
+  await expect(refreshedSettings).toHaveAttribute("data-settings-section", "voice");
+  await expect(
+    refreshedSettings.getByRole("heading", { name: "Voice", exact: true }),
+  ).toBeVisible();
+  await expect(refreshedSettings.getByTestId("voice-settings")).toBeVisible();
   await captureScreenshot(page, testInfo, "settings-shell-voice");
 
   await page.getByRole("button", { name: "Close voice settings" }).click();

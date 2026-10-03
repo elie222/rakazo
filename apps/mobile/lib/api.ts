@@ -814,6 +814,7 @@ export type MobileMe = Pick<
   | "defaultModel"
   | "needsModel"
   | "avatarStyle"
+  | "markAgentMessagesUnread"
   | "isDeploymentOwner"
 >;
 

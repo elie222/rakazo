@@ -409,6 +409,8 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Resetting…": "正在重置…",
   Restore: "恢复",
   "Stream replies": "流式回复",
+  "Mark agent-to-agent messages as unread": "将 Agent 之间的消息标记为未读",
+  "Couldn't update unread preferences": "无法更新未读设置",
   "Restore the last saved workspace. Unsaved work on the computer is lost.":
     "恢复上次保存的工作区。电脑上未保存的工作将会丢失。",
   "Resume notifications": "恢复通知",

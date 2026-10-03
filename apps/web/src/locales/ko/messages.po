@@ -1557,6 +1557,10 @@ msgstr "메시징 설정을 불러올 수 없습니다"
 msgid "Couldn't update avatars"
 msgstr "아바타를 업데이트할 수 없습니다"
 
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Couldn't update unread preferences"
+msgstr "읽지 않은 메시지 설정을 업데이트할 수 없습니다"
+
 #: src/pages/MessagingSettingsOverlay.tsx
 msgid "Couldn't update messaging settings"
 msgstr "메시징 설정을 업데이트할 수 없습니다"
@@ -2432,6 +2436,11 @@ msgstr ""
 #: src/pages/PluginsOverlay.tsx
 msgid "Manual setup required"
 msgstr ""
+
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Mark agent-to-agent messages as unread"
+msgstr "에이전트 간 메시지를 읽지 않음으로 표시"
+
 
 #: src/pages/BotContextMenu.tsx
 msgid "Mark as Read"

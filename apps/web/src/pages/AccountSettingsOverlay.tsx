@@ -38,6 +38,8 @@ export type SettingsGeneralProps = {
   name: string;
   avatarStyle: AvatarStyle;
   onAvatarStyleChange: (style: AvatarStyle) => Promise<void>;
+  markAgentMessagesUnread?: boolean;
+  onMarkAgentMessagesUnreadChange?: (value: boolean) => Promise<void>;
   messagingEnabled?: boolean;
   onOpenMessaging?: () => void;
   isDeploymentOwner?: boolean;
@@ -48,6 +50,8 @@ export function GeneralSettingsPanels({
   name,
   avatarStyle,
   onAvatarStyleChange,
+  markAgentMessagesUnread = false,
+  onMarkAgentMessagesUnreadChange = async () => undefined,
   messagingEnabled = false,
   onOpenMessaging,
   isDeploymentOwner = false,
@@ -66,6 +70,10 @@ export function GeneralSettingsPanels({
     () => getToolActivityPreference() === "on",
   );
   const showToolActivityId = useId();
+  const agentMessagesUnreadId = useId();
+  const [agentMessagesUnread, setAgentMessagesUnread] = useState(markAgentMessagesUnread);
+  const [agentMessagesUnreadPending, setAgentMessagesUnreadPending] = useState(false);
+  const [agentMessagesUnreadError, setAgentMessagesUnreadError] = useState<string | null>(null);
   const [avatarPending, setAvatarPending] = useState(false);
   const [avatarError, setAvatarError] = useState<string | null>(null);
 
@@ -77,6 +85,26 @@ export function GeneralSettingsPanels({
       if (requestId !== localeRequestRef.current) return;
       setLocale(activated);
     });
+  }
+
+  useEffect(() => {
+    setAgentMessagesUnread(markAgentMessagesUnread);
+  }, [markAgentMessagesUnread]);
+
+  async function chooseAgentMessagesUnread(next: boolean) {
+    if (agentMessagesUnreadPending || next === agentMessagesUnread) return;
+    const previous = agentMessagesUnread;
+    setAgentMessagesUnread(next);
+    setAgentMessagesUnreadPending(true);
+    setAgentMessagesUnreadError(null);
+    try {
+      await onMarkAgentMessagesUnreadChange(next);
+    } catch {
+      setAgentMessagesUnread(previous);
+      setAgentMessagesUnreadError(t`Couldn't update unread preferences`);
+    } finally {
+      setAgentMessagesUnreadPending(false);
+    }
   }
 
   async function chooseAvatarStyle(next: AvatarStyle) {
@@ -222,6 +250,27 @@ export function GeneralSettingsPanels({
               <Trans>Show tool activity</Trans>
             </Label>
           </div>
+          <div className="flex items-start gap-3 pt-4">
+            <Switch
+              id={agentMessagesUnreadId}
+              data-testid="agent-messages-unread-toggle"
+              className="mt-0.5"
+              checked={agentMessagesUnread}
+              disabled={agentMessagesUnreadPending}
+              onCheckedChange={(checked) => void chooseAgentMessagesUnread(checked)}
+            />
+            <Label
+              htmlFor={agentMessagesUnreadId}
+              className="text-[14px] font-normal text-foreground/75"
+            >
+              <Trans>Mark agent-to-agent messages as unread</Trans>
+            </Label>
+          </div>
+          {agentMessagesUnreadError ? (
+            <p role="alert" className="mt-3 text-[12.5px] text-destructive">
+              {agentMessagesUnreadError}
+            </p>
+          ) : null}
           <ApprovalRulesSettings />
         </div>
       </details>

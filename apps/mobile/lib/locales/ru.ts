@@ -430,6 +430,8 @@ export const RU_MESSAGES: Record<string, string> = {
   "Resetting…": "Сброс…",
   Restore: "Восстановить",
   "Stream replies": "Потоковые ответы",
+  "Mark agent-to-agent messages as unread": "Помечать сообщения между агентами как непрочитанные",
+  "Couldn't update unread preferences": "Не удалось обновить настройки непрочитанных сообщений",
   "Restore the last saved workspace. Unsaved work on the computer is lost.":
     "Восстановить последнее сохранённое рабочее пространство. Несохранённые данные на компьютере будут потеряны.",
   "Resume notifications": "Возобновить уведомления",

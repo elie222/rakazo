@@ -8,6 +8,7 @@ import {
   LONG_WORK_PROGRESS_GUIDANCE,
   mayOpenModelStream,
   NO_RESPONSE,
+  peerRunActivityMarksUnread,
   ROUTINE_SILENT_REPLY_GUIDANCE,
   runAllowsSilentEmpty,
   runIdentityInstruction,
@@ -114,6 +115,12 @@ describe("completionMarksUnread", () => {
     expect(completionMarksUnread("user", "")).toBe(true);
   });
 
+  it("follows the per-account preference for peer-run completions", () => {
+    expect(completionMarksUnread("bot_message", "The result", false)).toBe(false);
+    expect(completionMarksUnread("bot_message", "The result", true)).toBe(true);
+    expect(completionMarksUnread("bot_message", "The result", false, true)).toBe(true);
+  });
+
   it("keeps empty-run done. fallback unread and notifying", () => {
     const segments = completionMessageSegments([]);
     const text = completionNotificationBody("", segments);
@@ -165,6 +172,15 @@ describe("completionMarksUnread", () => {
     expect(segments).toEqual(steps);
     expect(blocks).toEqual([]);
     expect(completionMarksUnread("routine", completionNotificationBody("", blocks))).toBe(false);
+  });
+});
+
+describe("peerRunActivityMarksUnread", () => {
+  it("quiets internal peer artifacts only when the preference is off", () => {
+    expect(peerRunActivityMarksUnread("bot_message", false)).toBe(false);
+    expect(peerRunActivityMarksUnread("bot_message", true)).toBe(true);
+    expect(peerRunActivityMarksUnread("bot_message", false, true)).toBe(true);
+    expect(peerRunActivityMarksUnread("user", false)).toBeUndefined();
   });
 });
 
@@ -284,5 +300,8 @@ describe("subagentMarksUnread", () => {
     expect(subagentMarksUnread("routine", "completed")).toBe(false);
     expect(subagentMarksUnread("routine", "failed")).toBe(true);
     expect(subagentMarksUnread("user", "completed")).toBe(true);
+    expect(subagentMarksUnread("bot_message", "completed", false)).toBe(false);
+    expect(subagentMarksUnread("bot_message", "failed", false)).toBe(true);
+    expect(subagentMarksUnread("bot_message", "completed", false, true)).toBe(true);
   });
 });

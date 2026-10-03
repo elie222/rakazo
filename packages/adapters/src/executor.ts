@@ -93,6 +93,7 @@ import {
   toolEffectIdempotencyKey,
 } from "@rakazo/core/node/approval-effect-key";
 import {
+  agentMessagesMarkUnread,
   appendEventInTransaction,
   createSpaceForMember,
   createThreadMessageInTransaction,
@@ -3281,6 +3282,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           thread,
           messages,
           peerMessage,
+          agentMessagesUnread,
           task,
           storedConnections,
           defaultCredential,
@@ -3299,6 +3301,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
           run.trigger === "bot_message"
             ? loadBotMessageContext(deps.prisma, run.sourceMessageId)
             : Promise.resolve(undefined),
+          run.trigger === "bot_message"
+            ? agentMessagesMarkUnread(deps.prisma, { spaceId: run.spaceId, userId: run.userId })
+            : Promise.resolve(true),
           deps.prisma.task.findUniqueOrThrow({ where: { id: run.taskId } }),
           deps.prisma.connection.findMany({
             where: { userId: run.userId, spaceId: run.spaceId },
@@ -3329,6 +3334,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
             },
           }),
         ]);
+        // Peer-run artifacts stay in history without raising the thread badge when the
+        // account preference is off. Explicit human-facing activity opts back in below.
+        const peerRunActivityUnread = peerRunActivityMarksUnread(run.trigger, agentMessagesUnread);
         const agentEnvironment = decryptAgentEnvironment(agentSecretRows, deps.secretStore);
         runSecrets.push(...Object.values(agentEnvironment));
         const agentEnvironmentInstruction = formatAgentEnvironmentInstruction(agentEnvironment);
@@ -3539,6 +3547,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               { id: bot.id, name: bot.name },
               `Could not complete the delegated request: ${message}`,
               "status",
+              { forceUnread: true },
             ).catch((error) => getLogger().error("bot message failure return", error));
           }
           if (!failed.continuationRunId) {
@@ -3842,7 +3851,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             run,
             "bot",
             [{ kind: "text", text: narration }],
-            undefined,
+            peerRunActivityUnread,
             userProgressClientNonce(run.id, midTurnProgressCount++),
           );
           midTurnUserTexts.push(narration);
@@ -4656,14 +4665,20 @@ export function createRunExecutor(deps: ExecutorDeps) {
               if (args.attach !== false && chartFits) {
                 // Live inline chart: the client re-renders the validated spec
                 // and the PNG stays on disk as the exportable copy.
-                await publishMessage(deps, run, "bot", [
-                  {
-                    kind: "chart",
-                    name: chartName,
-                    spec: chartSpec,
-                    data: chartRows,
-                  },
-                ]);
+                await publishMessage(
+                  deps,
+                  run,
+                  "bot",
+                  [
+                    {
+                      kind: "chart",
+                      name: chartName,
+                      spec: chartSpec,
+                      data: chartRows,
+                    },
+                  ],
+                  peerRunActivityUnread,
+                );
                 attached = true;
               } else if (args.attach !== false && deps.artifacts) {
                 const result = await attachWorkspaceFileToThread(
@@ -4678,7 +4693,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                     operationId: executionId,
                   },
                 );
-                await publishMessage(deps, run, "bot", [result.block]);
+                await publishMessage(deps, run, "bot", [result.block], peerRunActivityUnread);
                 attached = true;
               }
               return finish({ ok: true, path: outPath, attached });
@@ -4725,7 +4740,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                   description: typeof args.description === "string" ? args.description : undefined,
                 },
               );
-              await publishMessage(deps, run, "bot", [attached.block]);
+              await publishMessage(deps, run, "bot", [attached.block], peerRunActivityUnread);
               await recordComputerAction("attach_file", filePath);
               return finish({ ok: true, artifactId: attached.artifactId, path: filePath });
             } catch (error) {
@@ -5386,7 +5401,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                   run,
                   "bot",
                   [{ kind: "voice_call", ...(callId ? { callId } : {}), title, farewell }],
-                  undefined,
+                  peerRunActivityMarksUnread(run.trigger, agentMessagesUnread, true),
                   nonce,
                 );
                 markerId = marker.id;
@@ -5741,15 +5756,21 @@ export function createRunExecutor(deps: ExecutorDeps) {
             if ("error" in spawned) return finish(spawned);
             if (!(await persistEffectResult(spawned))) return uncertainEffectResult(name);
             try {
-              await publishMessage(deps, run, "bot", [
-                {
-                  kind: "child_bot",
-                  botId: spawned.botId,
-                  name: spawned.name,
-                  title: spawned.title,
-                  status: "created",
-                },
-              ]);
+              await publishMessage(
+                deps,
+                run,
+                "bot",
+                [
+                  {
+                    kind: "child_bot",
+                    botId: spawned.botId,
+                    name: spawned.name,
+                    title: spawned.title,
+                    status: "created",
+                  },
+                ],
+                peerRunActivityUnread,
+              );
               await deps.events.append({
                 spaceId: run.spaceId,
                 threadId: thread.id,
@@ -5858,7 +5879,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               run,
               "bot",
               [{ kind: "text", text }],
-              undefined,
+              peerRunActivityMarksUnread(run.trigger, agentMessagesUnread, true),
               userProgressClientNonce(run.id, midTurnProgressCount++),
             );
             midTurnUserTexts.push(text);
@@ -5958,14 +5979,20 @@ export function createRunExecutor(deps: ExecutorDeps) {
             if ("error" in archived) return finish(archived);
             if (!(await persistEffectResult(archived))) return uncertainEffectResult(name);
             try {
-              await publishMessage(deps, run, "bot", [
-                {
-                  kind: "child_bot",
-                  botId: archived.botId,
-                  name: archived.name,
-                  status: "archived",
-                },
-              ]);
+              await publishMessage(
+                deps,
+                run,
+                "bot",
+                [
+                  {
+                    kind: "child_bot",
+                    botId: archived.botId,
+                    name: archived.name,
+                    status: "archived",
+                  },
+                ],
+                peerRunActivityUnread,
+              );
               await deps.events.append({
                 spaceId: run.spaceId,
                 threadId: thread.id,
@@ -6399,7 +6426,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                     run,
                     "bot",
                     [{ kind: "text", text: narration }],
-                    undefined,
+                    peerRunActivityUnread,
                     userProgressClientNonce(run.id, midTurnProgressCount++),
                   );
                   midTurnUserTexts.push(narration);
@@ -6411,9 +6438,13 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 hasStreamedText = false;
                 pendingProgress = "";
               }
-              await publishMessage(deps, run, "bot", [
-                { kind: "computer", state: "Needs you", text: safeReason },
-              ]);
+              await publishMessage(
+                deps,
+                run,
+                "bot",
+                [{ kind: "computer", state: "Needs you", text: safeReason }],
+                peerRunActivityMarksUnread(run.trigger, agentMessagesUnread, true),
+              );
               await workspaceCheckpoint.flush();
               if (!(await holdComputerExecutionLeaseForTakeover(deps.prisma, computerLease))) {
                 throw new Error("Computer lease expired before takeover");
@@ -6465,7 +6496,13 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 flushPendingTools();
                 if (!(await renewRunLease(deps, runId, workerId, fence))) return;
                 if (messageSegments.length > 0) {
-                  await publishMessage(deps, run, "bot", redactBlocks(messageSegments, runSecrets));
+                  await publishMessage(
+                    deps,
+                    run,
+                    "bot",
+                    redactBlocks(messageSegments, runSecrets),
+                    peerRunActivityUnread,
+                  );
                 }
                 await workspaceCheckpoint.flush();
                 terminalCheckpointComplete = true;
@@ -6494,6 +6531,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
                     { ...run, sourceMessageId: run.sourceMessageId },
                     { id: bot.id, name: bot.name },
                     stuckText,
+                    "result",
+                    { forceUnread: true },
                   ).catch((error) => getLogger().error("bot message loop-guard return", error));
                 }
                 runAbortController?.abort();
@@ -6564,7 +6603,12 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 },
               });
               if (event.status === "completed" || event.status === "failed") {
-                publishedTerminalSubagent ||= !subagentMarksUnread(run.trigger, event.status);
+                publishedTerminalSubagent ||= !subagentMarksUnread(
+                  run.trigger,
+                  event.status,
+                  agentMessagesUnread,
+                  peerMessage?.repliesToRequest === true,
+                );
                 await publishMessage(
                   deps,
                   run,
@@ -6580,7 +6624,12 @@ export function createRunExecutor(deps: ExecutorDeps) {
                       result: safeResult,
                     },
                   ],
-                  subagentMarksUnread(run.trigger, event.status),
+                  subagentMarksUnread(
+                    run.trigger,
+                    event.status,
+                    agentMessagesUnread,
+                    peerMessage?.repliesToRequest === true,
+                  ),
                 );
               }
             } else if (event.type === "usage") {
@@ -6703,7 +6752,12 @@ export function createRunExecutor(deps: ExecutorDeps) {
             leaseFence: fence,
             outcome: "completed",
             blocks,
-            markUnread: completionMarksUnread(run.trigger, text),
+            markUnread: completionMarksUnread(
+              run.trigger,
+              text,
+              agentMessagesUnread,
+              peerMessage?.repliesToRequest === true,
+            ),
           });
           if (!completed) return;
           if (completed.continuationRunId) {
@@ -6795,6 +6849,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               { id: bot.id, name: bot.name },
               `Could not complete the delegated request: ${message}`,
               "status",
+              { forceUnread: true },
             ).catch((returnError) => getLogger().error("bot message failure return", returnError));
           }
           if (runSendsFinishNotification(run.trigger) && !failed.continuationRunId) {
@@ -7241,8 +7296,24 @@ export function completionNotificationPreview(text: string): string {
   return truncatedPlainText(text, COMPLETION_NOTIFICATION_MAX_CHARS);
 }
 
-export function completionMarksUnread(trigger: string, text: string): boolean {
+export function completionMarksUnread(
+  trigger: string,
+  text: string,
+  agentMessagesUnread = true,
+  userFacingPeerReply = false,
+): boolean {
+  if (trigger === "bot_message") return userFacingPeerReply || agentMessagesUnread;
   return trigger !== "routine" || Boolean(text);
+}
+
+/** Decide whether a durable artifact from a peer-triggered run raises unread state. */
+export function peerRunActivityMarksUnread(
+  trigger: string,
+  agentMessagesUnread: boolean,
+  humanFacing = false,
+): boolean | undefined {
+  if (trigger !== "bot_message") return undefined;
+  return agentMessagesUnread || humanFacing;
 }
 
 export function missingTurnImagesInstruction(
@@ -7283,8 +7354,17 @@ export async function settleSteeringAttachmentLoads<TImage, TFile>(
   };
 }
 
-export function subagentMarksUnread(trigger: string, status: "running" | "completed" | "failed") {
-  return status === "failed" || trigger !== "routine";
+export function subagentMarksUnread(
+  trigger: string,
+  status: "running" | "completed" | "failed",
+  agentMessagesUnread = true,
+  userFacingPeerReply = false,
+) {
+  return (
+    status === "failed" ||
+    (trigger === "bot_message" && userFacingPeerReply) ||
+    (trigger !== "routine" && agentMessagesUnread)
+  );
 }
 
 function computerRunRequeueData(

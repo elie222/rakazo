@@ -3,7 +3,7 @@
 import type { ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 vi.mock("@lingui/react/macro", () => ({
   useLingui: () => ({ t: (strings: TemplateStringsArray) => strings.join("") }),
@@ -81,8 +81,23 @@ vi.mock("react-router-dom", () => ({ Link: ({ children }: { children?: ReactNode
 import { TOOL_ACTIVITY_STORAGE_KEY } from "../lib/tool-activity-preference";
 import { GeneralSettingsPanels } from "./AccountSettingsOverlay";
 
+const browserStorage = new Map<string, string>();
+const localStorageShim = {
+  getItem: (key: string) => browserStorage.get(key) ?? null,
+  setItem: (key: string, value: string) => {
+    browserStorage.set(key, value);
+  },
+};
+
+beforeEach(() => {
+  // Node exposes an unbacked global localStorage; use a deterministic browser
+  // storage shim for this browser-facing test.
+  browserStorage.clear();
+  vi.stubGlobal("localStorage", localStorageShim);
+});
+
 afterEach(() => {
-  localStorage.clear();
+  browserStorage.clear();
 });
 
 it("flips the stored tool activity preference from the settings toggle", async () => {
@@ -111,15 +126,53 @@ it("flips the stored tool activity preference from the settings toggle", async (
       toggle.click();
     });
 
-    expect(localStorage.getItem(TOOL_ACTIVITY_STORAGE_KEY)).toBe("on");
+    expect(browserStorage.get(TOOL_ACTIVITY_STORAGE_KEY)).toBe("on");
     expect(toggle.getAttribute("aria-checked")).toBe("true");
 
     await act(async () => {
       toggle.click();
     });
 
-    expect(localStorage.getItem(TOOL_ACTIVITY_STORAGE_KEY)).toBe("off");
+    expect(browserStorage.get(TOOL_ACTIVITY_STORAGE_KEY)).toBe("off");
     expect(toggle.getAttribute("aria-checked")).toBe("false");
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("persists the agent-message unread preference through the settings toggle", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const onChange = vi.fn().mockResolvedValue(undefined);
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await act(async () => {
+      root.render(
+        <GeneralSettingsPanels
+          name="Jamie"
+          avatarStyle="robot"
+          onAvatarStyleChange={async () => undefined}
+          markAgentMessagesUnread={false}
+          onMarkAgentMessagesUnreadChange={onChange}
+        />,
+      );
+    });
+
+    const toggle = container.querySelector<HTMLButtonElement>(
+      '[data-testid="agent-messages-unread-toggle"]',
+    );
+    if (!toggle) throw new Error("Missing agent-message unread toggle");
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
+
+    await act(async () => {
+      toggle.click();
+    });
+
+    expect(onChange).toHaveBeenCalledWith(true);
+    expect(toggle.getAttribute("aria-checked")).toBe("true");
   } finally {
     await act(async () => root.unmount());
     container.remove();

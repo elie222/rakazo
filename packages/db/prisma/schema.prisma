@@ -1030,13 +1030,14 @@ model UsageRecord {
 }
 
 model NotificationPreference {
-  id       String  @id @default(cuid())
-  spaceId  String
-  space    Space   @relation(fields: [spaceId], references: [id], onDelete: Cascade)
-  userId   String
-  finish   Boolean @default(true)
-  help     Boolean @default(true)
-  takeover Boolean @default(true)
+  id                       String  @id @default(cuid())
+  spaceId                  String
+  space                    Space   @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  userId                   String
+  finish                   Boolean @default(true)
+  help                     Boolean @default(true)
+  takeover                 Boolean @default(true)
+  markAgentMessagesUnread  Boolean @default(false)
 
   @@unique([spaceId, userId])
   @@map("notification_preferences")

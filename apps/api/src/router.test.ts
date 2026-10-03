@@ -14,8 +14,18 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createRouter, enqueueBotIntroRun, type RouterDeps } from "./router.js";
 
 describe("account preferences", () => {
-  function preferencesDeps(avatarStyle: string) {
+  function preferencesDeps(avatarStyle: string, markAgentMessagesUnread = false) {
     const update = vi.fn().mockResolvedValue({});
+    let storedAgentPreference = markAgentMessagesUnread;
+    const findPreference = vi.fn(async () => ({
+      markAgentMessagesUnread: storedAgentPreference,
+    }));
+    const upsertPreference = vi.fn(
+      async (input: { create: { markAgentMessagesUnread: boolean } }) => {
+        storedAgentPreference = input.create.markAgentMessagesUnread;
+        return { markAgentMessagesUnread: storedAgentPreference };
+      },
+    );
     const prisma = {
       user: {
         update,
@@ -24,6 +34,10 @@ describe("account preferences", () => {
           name: "Test User",
           avatarStyle,
         }),
+      },
+      notificationPreference: {
+        findUnique: findPreference,
+        upsert: upsertPreference,
       },
       spaceModelPreference: { findFirst: vi.fn().mockResolvedValue(null) },
       deploymentSettings: { findUnique: vi.fn().mockResolvedValue(null) },
@@ -45,7 +59,14 @@ describe("account preferences", () => {
       email: "user@rakazo.test",
       isDeploymentOwner: true,
     } satisfies Actor;
-    return { update, deps, actor, handler: new RPCHandler(createRouter(deps)) };
+    return {
+      update,
+      findPreference,
+      upsertPreference,
+      deps,
+      actor,
+      handler: new RPCHandler(createRouter(deps)),
+    };
   }
 
   it("keeps an unconfigured catalog offline unless explicitly requested", async () => {
@@ -109,6 +130,53 @@ describe("account preferences", () => {
 
     expect(response.status).toBeGreaterThanOrEqual(400);
     expect(update).not.toHaveBeenCalled();
+  });
+
+  it("persists agent-message unread independently inside the current user and Space", async () => {
+    const { actor, handler, upsertPreference, findPreference } = preferencesDeps("robot");
+
+    const { response } = await handler.handle(
+      new Request("http://127.0.0.1/rpc/preferences/update", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ json: { markAgentMessagesUnread: true } }),
+      }),
+      { prefix: "/rpc", context: { actor } },
+    );
+
+    expect(response.status).toBe(200);
+    expect(upsertPreference).toHaveBeenCalledWith({
+      where: { spaceId_userId: { spaceId: "workspace-1", userId: "user-1" } },
+      create: {
+        spaceId: "workspace-1",
+        userId: "user-1",
+        markAgentMessagesUnread: true,
+      },
+      update: { markAgentMessagesUnread: true },
+    });
+    await expect(response.json()).resolves.toEqual({
+      json: expect.objectContaining({ markAgentMessagesUnread: true }),
+    });
+    expect(findPreference).toHaveBeenCalledWith({
+      where: { spaceId_userId: { spaceId: "workspace-1", userId: "user-1" } },
+      select: { markAgentMessagesUnread: true },
+    });
+  });
+
+  it("rejects a non-boolean agent-message unread setting", async () => {
+    const { actor, handler, upsertPreference } = preferencesDeps("robot");
+
+    const { response } = await handler.handle(
+      new Request("http://127.0.0.1/rpc/preferences/update", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ json: { markAgentMessagesUnread: "yes" } }),
+      }),
+      { prefix: "/rpc", context: { actor } },
+    );
+
+    expect(response.status).toBeGreaterThanOrEqual(400);
+    expect(upsertPreference).not.toHaveBeenCalled();
   });
 
   it("coerces unknown stored avatar styles to robot on me", async () => {

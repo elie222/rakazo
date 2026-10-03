@@ -1230,6 +1230,7 @@ export const MeSchema = z.object({
   canChooseHostComputer: z.boolean(),
   sandboxProvider: z.string(),
   avatarStyle: AvatarStyleSchema,
+  markAgentMessagesUnread: z.boolean(),
 });
 export type Me = z.infer<typeof MeSchema>;
 

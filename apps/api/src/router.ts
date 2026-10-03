@@ -142,6 +142,7 @@ import {
 } from "@rakazo/core";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
+  agentMessagesMarkUnread,
   appendEventInTransaction,
   BotSectionNameConflictError,
   CannotDeleteDefaultSpaceError,
@@ -742,10 +743,28 @@ export function createRouter(deps: RouterDeps) {
     me: authed.me.handler(async ({ context }): Promise<Me> => meDto(deps, context.actor)),
     preferences: {
       update: authed.preferences.update.handler(async ({ context, input }): Promise<Me> => {
-        await deps.prisma.user.update({
-          where: { id: context.actor.userId },
-          data: { avatarStyle: input.avatarStyle },
-        });
+        if (input.avatarStyle !== undefined) {
+          await deps.prisma.user.update({
+            where: { id: context.actor.userId },
+            data: { avatarStyle: input.avatarStyle },
+          });
+        }
+        if (input.markAgentMessagesUnread !== undefined) {
+          await deps.prisma.notificationPreference.upsert({
+            where: {
+              spaceId_userId: {
+                spaceId: context.actor.spaceId,
+                userId: context.actor.userId,
+              },
+            },
+            create: {
+              spaceId: context.actor.spaceId,
+              userId: context.actor.userId,
+              markAgentMessagesUnread: input.markAgentMessagesUnread,
+            },
+            update: { markAgentMessagesUnread: input.markAgentMessagesUnread },
+          });
+        }
         return meDto(deps, context.actor);
       }),
     },
@@ -5707,9 +5726,13 @@ async function loadAutoReviewSettings(deps: RouterDeps, actor: Actor) {
 }
 
 async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
-  const [user, setup] = await Promise.all([
+  const [user, setup, preference] = await Promise.all([
     deps.prisma.user.findUniqueOrThrow({ where: { id: actor.userId } }),
     modelSetup(deps, actor),
+    agentMessagesMarkUnread(deps.prisma, {
+      spaceId: actor.spaceId,
+      userId: actor.userId,
+    }),
   ]);
   return {
     userId: actor.userId,
@@ -5728,6 +5751,7 @@ async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
     canChooseHostComputer: actor.isDeploymentOwner && deps.env.sandboxProvider === "docker",
     sandboxProvider: deps.env.sandboxProvider,
     avatarStyle: user.avatarStyle === "organic" ? "organic" : "robot",
+    markAgentMessagesUnread: preference,
   };
 }
 

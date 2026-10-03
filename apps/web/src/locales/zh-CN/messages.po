@@ -1557,6 +1557,10 @@ msgstr "无法加载消息设置"
 msgid "Couldn't update avatars"
 msgstr "无法更新头像"
 
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Couldn't update unread preferences"
+msgstr "无法更新未读设置"
+
 #: src/pages/MessagingSettingsOverlay.tsx
 msgid "Couldn't update messaging settings"
 msgstr "无法更新消息设置"
@@ -2432,6 +2436,11 @@ msgstr ""
 #: src/pages/PluginsOverlay.tsx
 msgid "Manual setup required"
 msgstr ""
+
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Mark agent-to-agent messages as unread"
+msgstr "将 Agent 之间的消息标记为未读"
+
 
 #: src/pages/BotContextMenu.tsx
 msgid "Mark as Read"

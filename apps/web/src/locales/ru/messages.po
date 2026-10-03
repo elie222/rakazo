@@ -1557,6 +1557,10 @@ msgstr "Не удалось загрузить настройки обмена �
 msgid "Couldn't update avatars"
 msgstr "Не удалось обновить аватары"
 
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Couldn't update unread preferences"
+msgstr "Не удалось обновить настройки непрочитанных сообщений"
+
 #: src/pages/MessagingSettingsOverlay.tsx
 msgid "Couldn't update messaging settings"
 msgstr "Не удалось обновить настройки обмена сообщениями."
@@ -2432,6 +2436,11 @@ msgstr "Вручную"
 #: src/pages/PluginsOverlay.tsx
 msgid "Manual setup required"
 msgstr "Требуется ручная настройка"
+
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Mark agent-to-agent messages as unread"
+msgstr "Помечать сообщения между агентами как непрочитанные"
+
 
 #: src/pages/BotContextMenu.tsx
 msgid "Mark as Read"

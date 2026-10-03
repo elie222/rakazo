@@ -4409,6 +4409,7 @@ export function ShellPage() {
             usage={usage}
             initialSection={settingsSection}
             avatarStyle={bootstrapMe?.avatarStyle ?? "robot"}
+            markAgentMessagesUnread={bootstrapMe?.markAgentMessagesUnread ?? false}
             isDeploymentOwner={bootstrapMe?.isDeploymentOwner === true}
             sandboxProvider={bootstrapMe?.sandboxProvider}
             messagingEnabled={messagingSurfaceEnabled}
@@ -4418,6 +4419,10 @@ export function ShellPage() {
             }}
             onAvatarStyleChange={async (avatarStyle) => {
               const nextMe = await rpc.preferences.update({ avatarStyle });
+              setBootstrapMe(nextMe);
+            }}
+            onMarkAgentMessagesUnreadChange={async (markAgentMessagesUnread) => {
+              const nextMe = await rpc.preferences.update({ markAgentMessagesUnread });
               setBootstrapMe(nextMe);
             }}
             memoryConfig={memoryProviderConfig}
