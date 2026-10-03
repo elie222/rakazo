@@ -282,6 +282,9 @@ function Thread() {
   const expandedHistoryThread = useRef<string | null>(null);
   const historyEpoch = useRef(0);
   const jumpGeneration = useRef(0);
+  const refreshGeneration = useRef(0);
+  const liveSubscribed = useRef(false);
+  const liveSubscriptionGeneration = useRef(0);
   const pinnedAroundRef = useRef<{
     botId?: string;
     groupId?: string;
@@ -776,11 +779,16 @@ function Thread() {
     const targetBotId = botId;
     const targetGroupId = groupId;
     const epoch = historyEpoch.current;
+    const generation = ++refreshGeneration.current;
     const next = await rpc<MobileSnapshot>(
       "threads/get",
       targetGroupId ? { groupId: targetGroupId } : { botId: targetBotId! },
     );
+    // Only the newest started refresh may commit. Threads also receive live
+    // events; an older snapshot must not overwrite those while a newer refresh
+    // is already in flight.
     if (
+      generation !== refreshGeneration.current ||
       !shouldApplyMobileThreadRefresh({
         requestEpoch: epoch,
         currentEpoch: historyEpoch.current,
@@ -945,6 +953,8 @@ function Thread() {
     expandedHistoryThread.current = null;
     historyEpoch.current += 1;
     const abort = new AbortController();
+    const subscriptionGeneration = ++liveSubscriptionGeneration.current;
+    liveSubscribed.current = false;
     void (async () => {
       // Pending search jumps load the around-page separately; avoid replacing it with latest.
       const next = messageId
@@ -963,6 +973,7 @@ function Thread() {
       let retryMs = 250;
       while (!abort.signal.aborted) {
         try {
+          liveSubscribed.current = true;
           await subscribeThread(
             groupId ? { groupId } : { botId: botId! },
             cursor,
@@ -1008,6 +1019,10 @@ function Thread() {
           );
         } catch {
           // A full refresh reconciles visible state; the event cursor still resumes without gaps.
+        } finally {
+          if (liveSubscriptionGeneration.current === subscriptionGeneration) {
+            liveSubscribed.current = false;
+          }
         }
         if (abort.signal.aborted) break;
         if (!jumpScrollTarget.current && !expandedHistoryThread.current) {
@@ -1026,6 +1041,8 @@ function Thread() {
     if (!botId && !groupId) return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    const refreshDelay = () =>
+      threadRefreshDelayMs(snap?.run?.status, { liveSubscribed: liveSubscribed.current });
     const tick = async () => {
       if (
         AppState.currentState === "active" &&
@@ -1036,10 +1053,10 @@ function Thread() {
         await refresh().catch(() => undefined);
       }
       if (!cancelled) {
-        timer = setTimeout(() => void tick(), threadRefreshDelayMs(snap?.run?.status));
+        timer = setTimeout(() => void tick(), refreshDelay());
       }
     };
-    timer = setTimeout(() => void tick(), threadRefreshDelayMs(snap?.run?.status));
+    timer = setTimeout(() => void tick(), refreshDelay());
     return () => {
       cancelled = true;
       if (timer !== undefined) clearTimeout(timer);
@@ -1245,7 +1262,7 @@ function Thread() {
         return;
       }
       if (isCurrentTarget(botTarget, groupTarget)) {
-        await refresh();
+        void refresh().catch(() => undefined);
       }
     } catch (err) {
       if (reroutedToGroup && groupTarget) {

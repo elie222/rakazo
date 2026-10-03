@@ -2203,8 +2203,8 @@ export function ShellPage() {
         }
         if (groupTarget && activeGroupId.current === groupTarget) setAttachmentNotice(null);
         if (botTarget && activeBotId.current === botTarget) setAttachmentNotice(null);
-        if (groupTarget) await refreshGroupThreadRef.current(groupTarget);
-        else if (botTarget) await refreshThreadRef.current(botTarget);
+        if (groupTarget) void refreshGroupThreadRef.current(groupTarget).catch(() => undefined);
+        else if (botTarget) void refreshThreadRef.current(botTarget).catch(() => undefined);
       } catch (error) {
         if (reroutedToGroup && groupTarget) {
           setSendError(error instanceof Error ? error.message : t`Failed to send message`);
