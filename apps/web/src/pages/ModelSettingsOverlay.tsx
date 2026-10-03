@@ -52,10 +52,22 @@ import {
   useRef,
   useState,
 } from "react";
+import {
+  ModelPreflightFeedback,
+  modelPreflightTestingLabel,
+} from "../components/ModelConnectionPreflightNotice";
 import { useCopyText } from "../lib/copy-text";
 import { localizedProviderHint } from "../lib/localized-provider-hint";
 import type { ModelCatalogEntry, ModelCredential } from "../lib/model-auth";
 import { thinkingLevelLabel } from "../lib/model-catalog";
+import type { ModelPreflightFailure } from "../lib/model-connection-preflight";
+import {
+  classifyModelConnectionFailure,
+  loadStoredModelAuth,
+  modelPreflightSuccessMessage,
+  runModelConnectionPreflight,
+  unavailableSelectedModel,
+} from "../lib/model-connection-preflight";
 import { rpc } from "../lib/rpc";
 import { useModelOAuthSignIn } from "../lib/use-model-oauth-signin";
 
@@ -83,6 +95,8 @@ export function ModelSettingsOverlay({
   const [provider, setProvider] = useState("");
   const [providerQuery, setProviderQuery] = useState("");
   const [modelId, setModelId] = useState("");
+  const modelIdRef = useRef(modelId);
+  modelIdRef.current = modelId;
   const [apiKey, setApiKey] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
   const [reasoning, setReasoning] = useState(false);
@@ -100,6 +114,13 @@ export function ModelSettingsOverlay({
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [preflightTesting, setPreflightTesting] = useState(false);
+  const [preflightTarget, setPreflightTarget] = useState<
+    "api-key" | "sign-in" | "compatible" | null
+  >(null);
+  const [preflightSuccess, setPreflightSuccess] = useState<string | null>(null);
+  const [preflightFailure, setPreflightFailure] = useState<ModelPreflightFailure | null>(null);
+  const preflightRevisionRef = useRef(0);
   const detailScrollRef = useRef<HTMLDivElement>(null);
   const refreshRevisionRef = useRef(0);
   const selectionRevisionRef = useRef(0);
@@ -154,6 +175,7 @@ export function ModelSettingsOverlay({
     setCredentials(nextCredentials);
     setMe(nextMe);
     if (selectionRevision === selectionRevisionRef.current) {
+      invalidatePreflight();
       resetOpenAiCompatibleProbe();
       setProvider(nextProvider);
       setModelId(nextModel);
@@ -301,9 +323,22 @@ export function ModelSettingsOverlay({
   });
   const builtinLimitSave = !isOpenAiCompatible && Boolean(credential) && apiKey.trim().length === 0;
 
+  function invalidatePreflight() {
+    preflightRevisionRef.current += 1;
+    setPreflightTesting(false);
+    setPreflightTarget(null);
+    setPreflightSuccess(null);
+    setPreflightFailure(null);
+  }
+
+  function preflightStillCurrent(revision: number): boolean {
+    return revision === preflightRevisionRef.current;
+  }
+
   function updateBaseUrl(nextBaseUrl: string) {
     setBaseUrl(nextBaseUrl);
     resetOpenAiCompatibleProbe();
+    invalidatePreflight();
     setError(null);
     setNotice(null);
   }
@@ -311,6 +346,7 @@ export function ModelSettingsOverlay({
   function updateApiKey(nextApiKey: string) {
     setApiKey(nextApiKey);
     resetOpenAiCompatibleProbe();
+    invalidatePreflight();
   }
 
   function stageCompatibleModelId(nextModelId: string) {
@@ -357,27 +393,100 @@ export function ModelSettingsOverlay({
     detailScrollRef.current?.scrollTo({ top: 0 });
     setApiKey("");
     resetOpenAiCompatibleProbe();
+    invalidatePreflight();
     setError(null);
     setNotice(null);
   }
 
   async function probeServerModels() {
     if (!baseUrl.trim()) return;
+    const revision = preflightRevisionRef.current;
     setError(null);
     setNotice(null);
+    setPreflightSuccess(null);
+    setPreflightFailure(null);
+    setPreflightTarget("compatible");
     await modelProbe.probe({
       baseUrl,
       apiKey,
       request: rpc.models.probeOpenAiCompatible,
       onSuccess: (models) => {
-        const next = modelId.trim() || models[0] || "";
-        if (next !== modelId) stageCompatibleModelId(next);
+        if (!preflightStillCurrent(revision)) return;
+        const current = modelIdRef.current;
+        const next = current.trim() || models[0] || "";
+        if (next !== current) stageCompatibleModelId(next);
         else setModelId(next);
+        const unavailable = unavailableSelectedModel(current, models);
+        if (unavailable) {
+          setPreflightFailure(unavailable);
+          setNotice(null);
+          return;
+        }
+        setPreflightTarget(null);
+        setPreflightFailure(null);
         setNotice(openAiCompatibleProbeSuccessMessage(models.length));
       },
-      onError: (err) =>
-        setError(err instanceof Error ? err.message : t`Could not reach this model server`),
+      onError: (err) => {
+        if (!preflightStillCurrent(revision)) return;
+        setPreflightFailure(classifyModelConnectionFailure(err, { modelId }));
+        setNotice(null);
+      },
     });
+  }
+
+  async function testApiKeyConnection() {
+    if (!selected?.catalogProbe) return;
+    const revision = preflightRevisionRef.current;
+    setPreflightTarget("api-key");
+    setPreflightTesting(true);
+    setPreflightSuccess(null);
+    setPreflightFailure(null);
+    setError(null);
+    setNotice(null);
+    const result = await runModelConnectionPreflight({
+      authKind: "api-key",
+      provider: selected.provider,
+      apiKey,
+      modelId: selected.id,
+      catalogProbe: true,
+      probeCatalog: rpc.models.probeCatalog,
+    });
+    if (!preflightStillCurrent(revision)) return;
+    setPreflightTesting(false);
+    if (result.ok) {
+      setPreflightSuccess(modelPreflightSuccessMessage(result.discoveredModels.length));
+      return;
+    }
+    setPreflightFailure(result.failure);
+  }
+
+  async function testOAuthConnection() {
+    if (!selected) return;
+    const revision = preflightRevisionRef.current;
+    setPreflightTarget("sign-in");
+    setPreflightTesting(true);
+    setPreflightSuccess(null);
+    setPreflightFailure(null);
+    setError(null);
+    setNotice(null);
+    const stored = await loadStoredModelAuth(
+      selected.provider,
+      () => rpc.models.credentials(),
+      selected.id,
+    );
+    if (!preflightStillCurrent(revision)) return;
+    const result = await runModelConnectionPreflight({
+      authKind: "oauth",
+      provider: selected.provider,
+      ...stored,
+    });
+    if (!preflightStillCurrent(revision)) return;
+    setPreflightTesting(false);
+    if (result.ok) {
+      setPreflightSuccess(t`A subscription credential is stored securely.`);
+      return;
+    }
+    setPreflightFailure(result.failure);
   }
 
   async function setModelDefault() {
@@ -603,6 +712,7 @@ export function ModelSettingsOverlay({
             onChange={(nextModelId) => {
               cancelOAuthAttempt();
               selectionRevisionRef.current += 1;
+              invalidatePreflight();
               setModelId(nextModelId);
               const nextEntry = modelsForProvider.find((entry) => entry.id === nextModelId);
               setThinkingLevel(
@@ -811,13 +921,29 @@ export function ModelSettingsOverlay({
             >
               {oauthPending ? (
                 <Trans>Starting…</Trans>
-              ) : credential ? (
+              ) : credential?.authKind === "oauth" ? (
                 <Trans>Sign in again</Trans>
               ) : (
                 (selected.oauthLabel ?? t`Sign in`)
               )}
             </Button>
           )}
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="mt-3"
+            disabled={busy || preflightTesting}
+            onClick={() => void testOAuthConnection()}
+          >
+            {modelPreflightTestingLabel(
+              preflightTesting && preflightTarget === "sign-in",
+              "sign-in",
+            )}
+          </Button>
+          {preflightTarget === "sign-in" ? (
+            <ModelPreflightFeedback success={preflightSuccess} failure={preflightFailure} />
+          ) : null}
         </div>
       ) : null}
 
@@ -842,6 +968,26 @@ export function ModelSettingsOverlay({
                 className="mt-2 h-10 text-foreground"
               />
             </label>
+          ) : null}
+          {acceptsKey && selected?.catalogProbe ? (
+            <>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="mt-3 rounded-full"
+                disabled={busy || preflightTesting || apiKey.trim().length < 8}
+                onClick={() => void testApiKeyConnection()}
+              >
+                {modelPreflightTestingLabel(
+                  preflightTesting && preflightTarget === "api-key",
+                  "api-key",
+                )}
+              </Button>
+              {preflightTarget === "api-key" ? (
+                <ModelPreflightFeedback success={preflightSuccess} failure={preflightFailure} />
+              ) : null}
+            </>
           ) : null}
           <Button
             type="button"
@@ -1065,6 +1211,9 @@ export function ModelSettingsOverlay({
                       {probing ? <Trans>Finding…</Trans> : <Trans>Find models</Trans>}
                     </Button>
                   </div>
+                  {preflightTarget === "compatible" ? (
+                    <ModelPreflightFeedback success={null} failure={preflightFailure} />
+                  ) : null}
                   <div className="mt-4 block">
                     <span>
                       <Trans>Model</Trans>
@@ -1076,6 +1225,7 @@ export function ModelSettingsOverlay({
                         onChange={(event) => {
                           cancelOAuthAttempt();
                           selectionRevisionRef.current += 1;
+                          invalidatePreflight();
                           stageCompatibleModelId(event.target.value);
                           setError(null);
                           setNotice(null);
@@ -1097,6 +1247,7 @@ export function ModelSettingsOverlay({
                         onChange={(event) => {
                           cancelOAuthAttempt();
                           selectionRevisionRef.current += 1;
+                          invalidatePreflight();
                           stageCompatibleModelId(event.target.value);
                           setError(null);
                           setNotice(null);
@@ -1111,7 +1262,10 @@ export function ModelSettingsOverlay({
                         type="button"
                         variant="link"
                         className="mt-2 h-auto px-0 text-[13px] text-muted-foreground underline"
-                        onClick={() => stageCompatibleModelId(probeModels[0] ?? "")}
+                        onClick={() => {
+                          invalidatePreflight();
+                          stageCompatibleModelId(probeModels[0] ?? "");
+                        }}
                       >
                         <Trans>Use a found model</Trans>
                       </Button>

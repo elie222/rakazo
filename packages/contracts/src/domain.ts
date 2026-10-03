@@ -954,6 +954,8 @@ export const ModelCredentialSchema = z.object({
   supportsImages: z.boolean().optional(),
   maxImagesPerPrompt: z.number().int().min(1).max(1000).optional(),
   thinkingLevels: z.array(ThinkingLevelSchema).optional(),
+  /** Stored secret kind. Absent when the secret could not be read. */
+  authKind: z.enum(["api_key", "oauth", "openai_compatible"]).optional(),
 });
 export type ModelCredential = z.infer<typeof ModelCredentialSchema>;
 
@@ -1066,6 +1068,8 @@ export const ModelCatalogEntrySchema = z.object({
   thinkingLevels: z.array(ThinkingLevelSchema).optional(),
   /** Catalog stand-in so a provider appears before the user enters a real model id. */
   placeholder: z.boolean().optional(),
+  /** Models share one pinned HTTPS models-list URL that can be probed. */
+  catalogProbe: z.boolean().optional(),
 });
 export type ModelCatalogEntry = z.infer<typeof ModelCatalogEntrySchema>;
 

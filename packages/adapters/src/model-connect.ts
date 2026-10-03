@@ -2,6 +2,7 @@ import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import type { ModelConnectInput, ModelCredential, ThinkingLevel } from "@rakazo/contracts";
 import { OPENAI_COMPATIBLE_PROVIDER_ID as CONTRACT_OPENAI_COMPAT } from "@rakazo/contracts";
 import { modelIdSupportsImages, updateModelImageCapabilities } from "./model-vision.js";
+import { modelCredentialAuthKind } from "./pi-catalog-availability.js";
 import {
   CHATGPT_OAUTH_PROVIDER,
   parseModelSecret,
@@ -168,9 +169,11 @@ export function modelCredentialDto(
   if (row.provider !== CONTRACT_OPENAI_COMPAT) {
     if (!plaintext) return credential;
     const parsed = parseModelSecret(plaintext);
-    return parsed.maxTokens !== undefined
-      ? { ...credential, maxTokens: parsed.maxTokens }
-      : credential;
+    return {
+      ...credential,
+      authKind: modelCredentialAuthKind(parsed),
+      ...(parsed.maxTokens !== undefined ? { maxTokens: parsed.maxTokens } : {}),
+    };
   }
   const compatibleCredential = {
     ...credential,
@@ -178,9 +181,12 @@ export function modelCredentialDto(
   };
   if (!plaintext) return compatibleCredential;
   const parsed = parseModelSecret(plaintext);
-  if (parsed.kind !== "openai_compatible") return compatibleCredential;
+  if (parsed.kind !== "openai_compatible") {
+    return { ...compatibleCredential, authKind: modelCredentialAuthKind(parsed) };
+  }
   return {
     ...compatibleCredential,
+    authKind: "openai_compatible",
     supportsImages:
       parsed.visionModelIds !== undefined
         ? modelIdSupportsImages(parsed.visionModelIds, row.defaultModel)

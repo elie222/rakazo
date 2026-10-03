@@ -212,6 +212,14 @@ export const appContract = {
         }),
       )
       .output(z.object({ models: z.array(z.string()) })),
+    probeCatalog: oc
+      .input(
+        z.object({
+          provider: z.string().trim().min(1),
+          apiKey: z.string().trim().min(8),
+        }),
+      )
+      .output(z.object({ models: z.array(z.string()) })),
     beginOAuth: oc
       .input(
         z.object({

@@ -297,6 +297,7 @@ test("model settings connect, replace, and cancel provider authentication", asyn
     hasKey: false,
     isDefault: false,
     modelId: "gpt-6-luna",
+    authKind: "oauth",
   };
   let oauthReady = false;
   let oauthFinished = false;
