@@ -87,6 +87,7 @@ export function selectableTextFromMarkdown(markdown: string): string {
     // A backtick fence's info string cannot contain a backtick.
     if (marker && !(marker[0] === "`" && (open?.[2] ?? "").includes("`"))) {
       fence = { char: marker[0] ?? "`", length: marker.length };
+      inTable = false;
       previousBlank = false;
       previousCode = true;
       continue;
@@ -102,6 +103,7 @@ export function selectableTextFromMarkdown(markdown: string): string {
 
     if (INDENTED.test(line) && !inList && (previousBlank || previousCode)) {
       lines.push({ text: line.replace(INDENTED, ""), code: true });
+      inTable = false;
       previousBlank = false;
       previousCode = true;
       continue;

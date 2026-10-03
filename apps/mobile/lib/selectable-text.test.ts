@@ -65,6 +65,11 @@ describe("selectableTextFromMarkdown", () => {
     expect(text).toContain("X");
   });
 
+  it("starts a new table after a code block", () => {
+    const source = "| a | b |\n| --- | --- |\n```\ncode\n```\n| c | d |\n| --- | --- |";
+    expect(selectableTextFromMarkdown(source)).toBe("a | b\ncode\nc | d");
+  });
+
   it("drops horizontal rules but keeps a lone hyphen", () => {
     expect(selectableTextFromMarkdown("a\n\n---\n\nb")).toBe("a\n\nb");
     expect(selectableTextFromMarkdown("a\n-\nb")).toBe("a\n-\nb");
