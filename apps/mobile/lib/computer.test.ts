@@ -9,6 +9,8 @@ import {
   previewPlaceholder,
   readScreenUrl,
   retainScreenSource,
+  SCREEN_URL_RENEW_MS,
+  screenRenewReadAt,
   screenStreamKey,
 } from "./computer.js";
 
@@ -102,6 +104,22 @@ describe("screen stream identity", () => {
         now,
       ),
     ).toBe("https://other.example/novnc/session/view/1710000000000.aaaToken/embed.html");
+  });
+
+  it("renews a reused seal before its original expiry", () => {
+    const issuedAt = now;
+    const readAt = issuedAt + 20 * 60_000;
+    const expiresAt = issuedAt + 60 * 60_000;
+    const reused = view("reused", expiresAt);
+    const renewAt = screenRenewReadAt(reused, readAt) + SCREEN_URL_RENEW_MS;
+    expect(screenRenewReadAt(reused, readAt)).toBe(issuedAt);
+    expect(renewAt).toBe(expiresAt - 10 * 60_000);
+    expect(renewAt).toBeLessThan(expiresAt);
+    expect(readAt + SCREEN_URL_RENEW_MS).toBeGreaterThan(expiresAt);
+    const fresh = view("fresh", readAt + 60 * 60_000);
+    expect(screenRenewReadAt(fresh, readAt)).toBe(readAt);
+    expect(screenRenewReadAt("https://sandbox.example/stream?authKey=one", readAt)).toBe(readAt);
+    expect(screenRenewReadAt(null, readAt)).toBe(readAt);
   });
 
   it("keeps view vs control for provider URLs whose query token rotates", () => {
