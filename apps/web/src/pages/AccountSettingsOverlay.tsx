@@ -260,7 +260,15 @@ export function UsageSettingsPanel({
   );
 }
 
-export function ComputerSettingsPanel() {
+export function ComputerSettingsPanel({
+  sandboxProvider,
+  onSandboxProviderChange,
+  onRecoveryDismissed,
+}: {
+  sandboxProvider?: string | null;
+  onSandboxProviderChange?: (sandboxProvider: string) => void;
+  onRecoveryDismissed?: () => void;
+}) {
   return (
     <div
       data-testid="computers-setup-settings"
@@ -269,7 +277,12 @@ export function ComputerSettingsPanel() {
       <h3 className="text-[15px] font-medium text-foreground">
         <Trans>Computers</Trans>
       </h3>
-      <ComputersUnavailableHint className="mt-3 text-[13px] leading-relaxed text-muted-foreground" />
+      <ComputersUnavailableHint
+        className="mt-3 text-[13px] leading-relaxed text-muted-foreground"
+        sandboxProvider={sandboxProvider}
+        onRecovered={onSandboxProviderChange}
+        onRecoveryDismissed={onRecoveryDismissed}
+      />
     </div>
   );
 }
