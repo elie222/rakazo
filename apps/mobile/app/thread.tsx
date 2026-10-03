@@ -2314,9 +2314,19 @@ function Thread() {
       <Modal
         visible={selectableText !== null}
         animationType="slide"
+        presentationStyle="pageSheet"
         onRequestClose={() => setSelectableText(null)}
       >
-        <View style={{ flex: 1, backgroundColor: tokens.background }}>
+        <View
+          accessibilityViewIsModal
+          style={{
+            flex: 1,
+            backgroundColor: tokens.background,
+            // Page sheets clear the notch on iOS; Android modals are full-screen.
+            paddingTop: Platform.OS === "ios" ? 12 : insets.top + 12,
+            paddingBottom: insets.bottom,
+          }}
+        >
           <View style={{ flexDirection: "row", justifyContent: "flex-end", padding: 16 }}>
             <Pressable
               accessibilityRole="button"
