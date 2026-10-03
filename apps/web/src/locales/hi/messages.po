@@ -333,6 +333,7 @@ msgid "Adding…"
 msgstr "जोड़ा जा रहा है…"
 
 #: src/pages/AccountSettingsOverlay.tsx
+#: src/pages/ComputerSleepSettings.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
@@ -4193,6 +4194,26 @@ msgstr "आपका नाम"
 #: src/pages/Welcome.tsx
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "हमेशा चालू रहने वाले एजेंटों की आपकी टीम<0/>जिन्हें आप असली काम सौंप सकते हैं।"
+
+#: src/pages/ComputerSleepSettings.tsx
+msgid "Keep awake"
+msgstr "सक्रिय रखें"
+
+#: src/pages/ComputerSleepSettings.tsx
+msgid "While viewing"
+msgstr "देखते समय"
+
+#: src/pages/ComputerSleepSettings.tsx
+msgid "While app is open"
+msgstr "ऐप खुला रहने तक"
+
+#: src/pages/ComputerSleepSettings.tsx
+msgid "Always"
+msgstr "हमेशा"
+
+#: src/pages/ComputerSleepSettings.tsx
+msgid "Could not save sleep setting"
+msgstr "स्लीप सेटिंग सहेजी नहीं जा सकी"
 
 #: src/pages/ResizableSidePanel.tsx
 msgid "Resize panel"

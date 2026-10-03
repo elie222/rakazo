@@ -260,7 +260,9 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await expect(page.getByPlaceholder("https://example.com/mcp")).toHaveValue(
     "https://mcp.example.test/mcp",
   );
-  await expect(page.locator("select")).toHaveValue("bearer");
+  await expect(
+    page.locator("select").filter({ has: page.locator('option[value="bearer"]') }),
+  ).toHaveValue("bearer");
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
 
   await page.getByRole("button", { name: "Add Treg", exact: true }).click();
@@ -279,7 +281,10 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await page
     .getByPlaceholder("https://example.com/openapi.json")
     .fill("https://api.example.test/openapi.json");
-  await page.locator("select").selectOption("bearer");
+  await page
+    .locator("select")
+    .filter({ has: page.locator('option[value="bearer"]') })
+    .selectOption("bearer");
   await page.getByPlaceholder("Credential").fill("fake-openapi-browser-credential");
   await page.getByRole("button", { name: "Verify and add", exact: true }).click();
   await expect(

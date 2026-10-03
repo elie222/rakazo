@@ -919,6 +919,8 @@ model ComputerUpdate {
 }
 
 model Computer {
+  sleepPolicy             String                   @default("automatic")
+  keepAwakeUntil          DateTime?
   screenGeneration Int @default(0)
   id                      String                   @id @default(cuid())
   spaceId                 String

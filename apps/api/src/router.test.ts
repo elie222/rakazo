@@ -3177,3 +3177,47 @@ describe("groups.archive", () => {
     expect(calls).toEqual(["cancel run work", "release screen", "expire lease"]);
   });
 });
+
+describe("computer sleep-policy suspension race", () => {
+  it("rejects a save after the idle worker claims suspension", async () => {
+    const computer = { id: "computer-1", state: "running", sleepPolicy: "automatic" };
+    const updateMany = vi.fn(async ({ where, data }) => {
+      // The worker claimed suspension after getBot read its running snapshot.
+      const currentState = "suspending";
+      if (where.state?.not === currentState) return { count: 0 };
+      Object.assign(computer, data);
+      return { count: 1 };
+    });
+    const enqueue = vi.fn();
+    const deps = {
+      prisma: {
+        bot: { findFirst: vi.fn().mockResolvedValue({ id: "bot-1", computer }) },
+        computer: { updateMany },
+      },
+      jobs: { enqueue },
+      env: { defaultProvider: "fake", defaultModel: "fake-model" },
+    } as unknown as RouterDeps;
+    const handler = new RPCHandler(createRouter(deps));
+    const { response } = await handler.handle(
+      new Request("http://127.0.0.1/rpc/computer/setSleepPolicy", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ json: { botId: "bot-1", policy: "always" } }),
+      }),
+      {
+        prefix: "/rpc",
+        context: {
+          actor: {
+            spaceId: "workspace-1",
+            userId: "user-1",
+            email: "user@rakazo.test",
+            isDeploymentOwner: true,
+          },
+        },
+      },
+    );
+    expect(response.status).toBe(409);
+    expect(computer.sleepPolicy).toBe("automatic");
+    expect(enqueue).not.toHaveBeenCalled();
+  });
+});

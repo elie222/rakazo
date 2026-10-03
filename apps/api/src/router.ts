@@ -693,6 +693,8 @@ export async function enqueueBotIntroRun(deps: RouterDeps, actor: Actor, bot: Bo
   await deps.jobs.enqueue(runContinueJob(run.id));
 }
 
+const KEEP_AWAKE_LEASE_MS = 120_000;
+
 export function createRouter(deps: RouterDeps) {
   const os = implement(appContract).$context<{ actor: Actor | null; signal?: AbortSignal }>();
   const repos = createRepos(deps.prisma);
@@ -2225,6 +2227,52 @@ export function createRouter(deps: RouterDeps) {
       }),
     },
     computer: {
+      setSleepPolicy: authed.computer.setSleepPolicy.handler(async ({ context, input }) => {
+        const bot = await repos.getBot(context.actor, input.botId);
+        if (!bot.computer) throw new IsolationError();
+        // Team computers keep the creator's userId; authz is getBot + spaceId.
+        const updated = await deps.prisma.computer.updateMany({
+          where: {
+            id: bot.computer.id,
+            spaceId: context.actor.spaceId,
+            state: { not: "suspending" },
+          },
+          data: {
+            sleepPolicy: input.policy,
+            keepAwakeUntil:
+              input.policy === "app_open" ? new Date(Date.now() + KEEP_AWAKE_LEASE_MS) : null,
+          },
+        });
+        if (!updated.count) throw new ORPCError("CONFLICT", { message: "Computer is busy" });
+        if (bot.computer.state === "running") scheduleComputerSleep(deps.jobs, bot.computer.id);
+        return computerStatus(deps, context.actor, input.botId);
+      }),
+      appHeartbeat: authed.computer.appHeartbeat.handler(async ({ context }) => {
+        const computers = await deps.prisma.computer.findMany({
+          where: {
+            spaceId: context.actor.spaceId,
+            state: "running",
+            sleepPolicy: "app_open",
+            providerRef: { not: null },
+            bots: { some: { userId: context.actor.userId, archivedAt: null } },
+          },
+          select: { id: true, homeKey: true, providerRef: true, kind: true },
+        });
+        await Promise.all(
+          computers.map(async (computer) => {
+            const updated = await deps.prisma.computer.updateMany({
+              where: { id: computer.id, state: "running", sleepPolicy: "app_open" },
+              data: { keepAwakeUntil: new Date(Date.now() + KEEP_AWAKE_LEASE_MS) },
+            });
+            if (updated.count && computer.providerRef)
+              await touchRunningComputer(
+                { sandbox: deps.sandbox, jobs: deps.jobs },
+                { ...computer, providerRef: computer.providerRef },
+              ).catch(() => undefined);
+          }),
+        );
+        return { ok: true as const };
+      }),
       status: authed.computer.status.handler(async ({ context, input }) =>
         computerStatus(deps, context.actor, input.botId),
       ),

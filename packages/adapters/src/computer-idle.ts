@@ -195,6 +195,17 @@ export async function sleepComputerIfIdle(
   let computer = await loadComputer(deps.prisma, computerId);
   if (!computer?.providerRef || computer.state !== "running") return;
 
+  if (
+    computer.sleepPolicy === "always" ||
+    (computer.sleepPolicy === "app_open" &&
+      computer.keepAwakeUntil &&
+      computer.keepAwakeUntil.getTime() > Date.now())
+  ) {
+    await deps.sandbox.keepAlive?.(toComputerRef(computer));
+    scheduleComputerSleep(deps.jobs, computerId);
+    return;
+  }
+
   if (computer.controlBotId && computer.controlLeaseId && !hasActiveComputerControl(computer)) {
     await expireComputerControl(deps, computer.id, computer.controlLeaseId);
     computer = await loadComputer(deps.prisma, computerId);
@@ -347,6 +358,8 @@ function loadComputer(prisma: PrismaClient, computerId: string) {
   return prisma.computer.findUnique({
     where: { id: computerId },
     select: {
+      sleepPolicy: true,
+      keepAwakeUntil: true,
       id: true,
       homeKey: true,
       providerRef: true,

@@ -49,6 +49,28 @@ describe("sandbox idle", () => {
     expect(harness.jobs.enqueue).toHaveBeenCalledOnce();
   });
 
+  it.each(["always", "app_open"])("keeps an opted-in computer awake for %s", async (policy) => {
+    const harness = idleHarness();
+    Object.assign(harness.computer, {
+      sleepPolicy: policy,
+      keepAwakeUntil: new Date(Date.now() + 60_000),
+    });
+    await sleepComputerIfIdle(harness.deps, harness.computer.id);
+    expect(harness.sandbox.stop).not.toHaveBeenCalled();
+    expect(harness.sandbox.keepAlive).toHaveBeenCalledOnce();
+    expect(harness.jobs.enqueue).toHaveBeenCalledOnce();
+  });
+
+  it("allows normal idle sleep after the app heartbeat expires", async () => {
+    const harness = idleHarness();
+    Object.assign(harness.computer, {
+      sleepPolicy: "app_open",
+      keepAwakeUntil: new Date(Date.now() - 1),
+    });
+    await sleepComputerIfIdle(harness.deps, harness.computer.id);
+    expect(harness.sandbox.stop).toHaveBeenCalledOnce();
+  });
+
   it("probes background work with the database computer id, not providerRef", async () => {
     const harness = idleHarness({ backgroundWorkProbeCode: 0 });
 

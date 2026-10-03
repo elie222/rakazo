@@ -26,6 +26,7 @@ import {
   CapabilityInstallSchema,
   ComputerModeSchema,
   ComputerReleaseReasonSchema,
+  ComputerSleepPolicySchema,
   ComputerStatusSchema,
   ComputerUpdateSchema,
   ConnectionCatalogItemSchema,
@@ -375,6 +376,10 @@ export const appContract = {
     markUnread: oc.input(threadTarget).output(z.object({ ok: z.literal(true) })),
   },
   computer: {
+    setSleepPolicy: oc
+      .input(z.object({ botId: Id, policy: ComputerSleepPolicySchema }))
+      .output(ComputerStatusSchema),
+    appHeartbeat: oc.output(z.object({ ok: z.literal(true) })),
     status: oc.input(botId).output(ComputerStatusSchema),
     boot: oc.input(botId).output(ComputerStatusSchema),
     stop: oc.input(botId).output(ComputerStatusSchema),

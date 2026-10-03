@@ -333,6 +333,7 @@ msgid "Adding…"
 msgstr "추가 중…"
 
 #: src/pages/AccountSettingsOverlay.tsx
+#: src/pages/ComputerSleepSettings.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
@@ -4193,6 +4194,26 @@ msgstr "이름"
 #: src/pages/Welcome.tsx
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "언제든 실제 작업을 맡길 수 있는<0/>나만의 Agent 팀"
+
+#: src/pages/ComputerSleepSettings.tsx
+msgid "Keep awake"
+msgstr "절전 방지"
+
+#: src/pages/ComputerSleepSettings.tsx
+msgid "While viewing"
+msgstr "보고 있는 동안"
+
+#: src/pages/ComputerSleepSettings.tsx
+msgid "While app is open"
+msgstr "앱이 열려 있는 동안"
+
+#: src/pages/ComputerSleepSettings.tsx
+msgid "Always"
+msgstr "항상"
+
+#: src/pages/ComputerSleepSettings.tsx
+msgid "Could not save sleep setting"
+msgstr "절전 설정을 저장하지 못했습니다"
 
 #: src/pages/ResizableSidePanel.tsx
 msgid "Resize panel"

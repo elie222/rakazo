@@ -60,6 +60,7 @@ export function toComputerStatus(
     controlRunId?: string | null;
     homeRevision: string;
     maintenanceId?: string | null;
+    sleepPolicy?: string;
   } | null,
   busyBotName: string | null = null,
 ): ComputerStatus {
@@ -78,6 +79,10 @@ export function toComputerStatus(
   const kind = (computer?.kind ?? "fake") as ComputerStatus["kind"];
   return {
     botId,
+    sleepPolicy:
+      computer?.sleepPolicy === "always" || computer?.sleepPolicy === "app_open"
+        ? computer.sleepPolicy
+        : "automatic",
     mode: computer?.scope === "dedicated" ? "dedicated" : "team",
     kind,
     state,

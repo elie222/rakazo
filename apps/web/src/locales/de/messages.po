@@ -333,6 +333,7 @@ msgid "Adding…"
 msgstr "Wird hinzugefügt…"
 
 #: src/pages/AccountSettingsOverlay.tsx
+#: src/pages/ComputerSleepSettings.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
@@ -4193,6 +4194,26 @@ msgstr "Dein Name"
 #: src/pages/Welcome.tsx
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "Dein Team aus jederzeit verfügbaren Agents<0/>für echte Aufgaben."
+
+#: src/pages/ComputerSleepSettings.tsx
+msgid "Keep awake"
+msgstr "Wach halten"
+
+#: src/pages/ComputerSleepSettings.tsx
+msgid "While viewing"
+msgstr "Während der Anzeige"
+
+#: src/pages/ComputerSleepSettings.tsx
+msgid "While app is open"
+msgstr "Solange die App geöffnet ist"
+
+#: src/pages/ComputerSleepSettings.tsx
+msgid "Always"
+msgstr "Immer"
+
+#: src/pages/ComputerSleepSettings.tsx
+msgid "Could not save sleep setting"
+msgstr "Ruhezustand-Einstellung konnte nicht gespeichert werden"
 
 #: src/pages/ResizableSidePanel.tsx
 msgid "Resize panel"

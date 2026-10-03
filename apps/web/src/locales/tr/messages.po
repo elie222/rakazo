@@ -333,6 +333,7 @@ msgid "Adding…"
 msgstr "Ekleniyor…"
 
 #: src/pages/AccountSettingsOverlay.tsx
+#: src/pages/ComputerSleepSettings.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
@@ -4193,6 +4194,26 @@ msgstr "Adın"
 #: src/pages/Welcome.tsx
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "Gerçek işler verebileceğin,<0/>her zaman açık agent takımın."
+
+#: src/pages/ComputerSleepSettings.tsx
+msgid "Keep awake"
+msgstr "Uyanık tut"
+
+#: src/pages/ComputerSleepSettings.tsx
+msgid "While viewing"
+msgstr "Görüntülerken"
+
+#: src/pages/ComputerSleepSettings.tsx
+msgid "While app is open"
+msgstr "Uygulama açıkken"
+
+#: src/pages/ComputerSleepSettings.tsx
+msgid "Always"
+msgstr "Her zaman"
+
+#: src/pages/ComputerSleepSettings.tsx
+msgid "Could not save sleep setting"
+msgstr "Uyku ayarı kaydedilemedi"
 
 #: src/pages/ResizableSidePanel.tsx
 msgid "Resize panel"
