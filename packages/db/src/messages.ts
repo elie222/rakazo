@@ -101,11 +101,11 @@ export async function assertRunCanWriteHistory(
   tx: Prisma.TransactionClient,
   runId?: string,
   options?: { allowCancelled?: boolean },
-): Promise<{ status: string; startedAt: Date | null } | undefined> {
+): Promise<{ status: string; startedAt: Date | null; trigger: string } | undefined> {
   if (!runId) return;
   const run = await tx.run.findUnique({
     where: { id: runId },
-    select: { status: true, startedAt: true },
+    select: { status: true, startedAt: true, trigger: true },
   });
   if (!run || (run.status === "cancelled" && !options?.allowCancelled)) {
     throw new RunHistoryWriteError();

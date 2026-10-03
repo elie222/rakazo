@@ -7,7 +7,7 @@ import type {
   SandboxProvider,
 } from "@rakazo/adapter-kit";
 import { messagingDeliverJob } from "@rakazo/adapter-kit";
-import type { PrismaClient, ThreadEvents } from "@rakazo/db";
+import type { BoardEvents, PrismaClient, ThreadEvents } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { CloudAgentConnection } from "./cloud-agent-factory.js";
 import { pollCloudAgent } from "./cloud-agent-poll.js";
@@ -20,6 +20,7 @@ import type { MemoryProviderResolver } from "./memory-provider-factory.js";
 import { deliverMessagingOutbound, mirrorMessagingOutbound } from "./messaging-delivery.js";
 import type { EncryptedSecretStore } from "./secrets.js";
 import { expireTaughtSkillTeaching } from "./teaching-session.js";
+import { runTicketChecks } from "./ticket-checks.js";
 
 export function createBackgroundJobHandlers(deps: {
   executor: ReturnType<typeof createRunExecutor>;
@@ -35,6 +36,7 @@ export function createBackgroundJobHandlers(deps: {
   deploymentModelKey?: string;
   messaging?: MessagingSurface;
   cloudAgent?: CloudAgentConnection | null;
+  boardEvents?: BoardEvents;
 }): BackgroundJobHandlers {
   const deliverMessaging = async (runId?: string) => {
     if (!deps.messaging) return;
@@ -96,6 +98,16 @@ export function createBackgroundJobHandlers(deps: {
           cloudAgent: deps.cloudAgent,
         },
         payload,
+      );
+    },
+    "tickets.check": async (payload) => {
+      await runTicketChecks(
+        {
+          prisma: deps.prisma,
+          jobs: deps.jobs,
+          ...(deps.boardEvents ? { boardEvents: deps.boardEvents } : {}),
+        },
+        payload.botId ? { trigger: "event", botId: payload.botId } : { trigger: "periodic" },
       );
     },
     "history.compact": async (payload) => {

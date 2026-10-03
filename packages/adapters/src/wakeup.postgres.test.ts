@@ -28,6 +28,7 @@ function handlers(overrides: Partial<BackgroundJobHandlers> = {}): BackgroundJob
     "history.compact": vi.fn(async () => undefined),
     "messaging.deliver": vi.fn(async () => undefined),
     "cloud_agent.poll": vi.fn(async () => undefined),
+    "tickets.check": vi.fn(async () => undefined),
     ...overrides,
   };
 }

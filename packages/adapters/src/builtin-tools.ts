@@ -4,6 +4,8 @@ import {
   botSecretDestinationSchema,
   SecretAskPurpose,
   SecretHttpRequest,
+  TICKET_PRIORITIES,
+  TICKET_STATUSES,
 } from "@rakazo/contracts";
 import { z } from "zod";
 import { allowPrivateHttpSecretOrigins } from "./bot-secrets.js";
@@ -733,6 +735,119 @@ export const builtinAgentTools: ConnectorTool[] = [
         itemId: { type: "string" },
       },
       required: ["itemId"],
+    },
+  },
+  {
+    name: "board_tickets",
+    description:
+      "List tickets on this space's board, optionally filtered by status or owner bot. Check here before claiming work is already tracked.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        status: { type: "string", enum: TICKET_STATUSES, description: "Filter by status." },
+        ownerBotId: { type: "string", description: "Filter by owner bot id." },
+      },
+    },
+    readOnly: true,
+  },
+  {
+    name: "ticket_get",
+    description:
+      "Read one ticket by its reference (e.g. RAK-42) or id, including status, assignee, and recent comments.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        ref: { type: "string", description: "Ticket reference such as RAK-42, or the ticket id." },
+      },
+      required: ["ref"],
+    },
+    readOnly: true,
+  },
+  {
+    name: "ticket_create",
+    description:
+      "Create a ticket for documented, plannable work. The owner defaults to you; pass ownerBotId to hand it to another bot in this space. Returns the reference (e.g. RAK-42) to share with other bots.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        title: { type: "string", description: "Short ticket title." },
+        description: { type: "string", description: "Optional detail." },
+        priority: {
+          type: "string",
+          enum: TICKET_PRIORITIES,
+          description: "Priority. Defaults to normal.",
+        },
+        ownerBotId: {
+          type: "string",
+          description: "Bot in this space to own it. Defaults to you.",
+        },
+      },
+      required: ["title"],
+    },
+  },
+  {
+    name: "ticket_move",
+    description: "Move a ticket to any status.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "Ticket id from board_tickets or ticket_get." },
+        status: { type: "string", enum: TICKET_STATUSES },
+      },
+      required: ["id", "status"],
+    },
+  },
+  {
+    name: "ticket_close",
+    description:
+      "Close a ticket by setting it closed, optionally adding a closing comment in the same step. Use done instead to mark it ready for review but still open.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "Ticket id." },
+        comment: { type: "string", description: "Optional closing comment." },
+      },
+      required: ["id"],
+    },
+  },
+  {
+    name: "ticket_update",
+    description: "Update a ticket's title, description, or priority.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "Ticket id." },
+        title: { type: "string" },
+        description: { type: "string" },
+        priority: { type: "string", enum: TICKET_PRIORITIES },
+      },
+      required: ["id"],
+    },
+  },
+  {
+    name: "ticket_comment",
+    description:
+      "Add a comment to a ticket. Record progress or hand off context that other bots can read by reference (e.g. RAK-42).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "Ticket id." },
+        body: { type: "string", description: "Comment text." },
+      },
+      required: ["id", "body"],
+    },
+  },
+  {
+    name: "ticket_assign",
+    description:
+      "Give a ticket to a bot in this space. A ticket always has an owner, so pass a bot id, never null.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "Ticket id." },
+        ownerBotId: { type: "string", description: "Bot in this space to own it." },
+      },
+      required: ["id", "ownerBotId"],
     },
   },
   {

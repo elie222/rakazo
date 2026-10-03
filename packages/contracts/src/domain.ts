@@ -3,6 +3,7 @@ import { BotAvatarValueSchema } from "./bot-avatar.js";
 import { ThreadMessageSchema } from "./events.js";
 import { Id, MemoryScope, RunStatus, SandboxKind } from "./ids.js";
 import { McpHeadersSchema, McpRemoteEndpointSchema, McpTransportSchema } from "./mcp.js";
+import { RunTriggerSchema } from "./runs.js";
 
 export const ComputerModeSchema = z.enum(["team", "dedicated"]);
 export type ComputerMode = z.infer<typeof ComputerModeSchema>;
@@ -844,21 +845,7 @@ export const RunSchema = z.object({
   threadId: Id,
   taskId: Id,
   status: RunStatus,
-  trigger: z.enum([
-    "user",
-    "routine",
-    "resume",
-    "follow_up",
-    "reaction",
-    "call_end",
-    "spawn",
-    "skill",
-    "bot_message",
-    "webhook",
-    "messaging",
-    "cloud_agent",
-    "created",
-  ]),
+  trigger: RunTriggerSchema,
   routineId: Id.nullable(),
   modelProvider: z.string().nullable(),
   modelId: z.string().nullable(),

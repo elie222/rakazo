@@ -290,7 +290,7 @@ describe("threadSnapshot", () => {
         where: expect.objectContaining({
           botId: "bot-1",
           threadId: "thread-1",
-          trigger: { not: "bot_message" },
+          trigger: { notIn: ["bot_message", "tickets"] },
           status: {
             in: ["queued", "leased", "running", "waiting_input", "waiting_takeover", "failed"],
           },
@@ -302,6 +302,7 @@ describe("threadSnapshot", () => {
         where: {
           botId: "bot-1",
           threadId: "thread-1",
+          trigger: { notIn: ["tickets"] },
           status: { in: ["waiting_input", "waiting_takeover"] },
         },
       }),
@@ -428,7 +429,7 @@ describe("threadSnapshot", () => {
     expect(findFirstRun).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
-          trigger: { not: "bot_message" },
+          trigger: { notIn: ["bot_message", "tickets"] },
           status: { in: ["failed", "completed", "cancelled"] },
         }),
         orderBy: [{ createdAt: "desc" }, { id: "desc" }],
@@ -496,7 +497,7 @@ describe("threadSnapshot", () => {
       expect.objectContaining({
         where: {
           threadId: "thread-1",
-          trigger: { not: "bot_message" },
+          trigger: { notIn: ["bot_message", "tickets"] },
           status: { in: ["failed", "completed", "cancelled"] },
         },
         orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
@@ -509,8 +510,11 @@ describe("threadSnapshot", () => {
           threadId: "thread-1",
           status: { in: ["queued", "leased", "running", "waiting_input", "waiting_takeover"] },
           OR: [
-            { trigger: { not: "bot_message" } },
-            { status: { in: ["waiting_input", "waiting_takeover"] } },
+            { trigger: { notIn: ["bot_message", "tickets"] } },
+            {
+              trigger: { notIn: ["tickets"] },
+              status: { in: ["waiting_input", "waiting_takeover"] },
+            },
           ],
         },
       }),
@@ -566,8 +570,11 @@ describe("threadSnapshot", () => {
       expect.objectContaining({
         where: expect.objectContaining({
           OR: [
-            { trigger: { not: "bot_message" } },
-            { status: { in: ["waiting_input", "waiting_takeover"] } },
+            { trigger: { notIn: ["bot_message", "tickets"] } },
+            {
+              trigger: { notIn: ["tickets"] },
+              status: { in: ["waiting_input", "waiting_takeover"] },
+            },
           ],
           status: { in: ["queued", "leased", "running", "waiting_input", "waiting_takeover"] },
         }),
@@ -576,7 +583,7 @@ describe("threadSnapshot", () => {
     expect(findManyRuns).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
-          trigger: { not: "bot_message" },
+          trigger: { notIn: ["bot_message", "tickets"] },
           status: { in: ["failed", "completed", "cancelled"] },
         }),
       }),
@@ -882,21 +889,32 @@ function isTerminalRunQuery(where: { status?: { in?: string[] } } | undefined) {
   return Array.isArray(statuses) && statuses.includes("failed") && statuses.includes("completed");
 }
 
+type TriggerFilter = { not?: string; notIn?: string[] };
+
+function matchesTriggerFilter(trigger: string | undefined, filter: TriggerFilter | undefined) {
+  if (!filter) return true;
+  if (filter.not !== undefined && trigger === filter.not) return false;
+  if (filter.notIn !== undefined && trigger !== undefined && filter.notIn.includes(trigger)) {
+    return false;
+  }
+  return true;
+}
+
 function matchesPeerActiveFilter(
   row: { trigger?: string; status?: string },
   where:
     | {
-        trigger?: { not?: string };
-        OR?: Array<{ trigger?: { not?: string }; status?: { in?: string[] } }>;
+        trigger?: TriggerFilter;
+        OR?: Array<{ trigger?: TriggerFilter; status?: { in?: string[] } }>;
       }
     | undefined,
 ) {
-  if (where?.trigger?.not === "bot_message") return row.trigger !== "bot_message";
+  if (where?.trigger) return matchesTriggerFilter(row.trigger, where.trigger);
   if (!where?.OR) return true;
   return where.OR.some((clause) => {
-    if (clause.trigger?.not === "bot_message") return row.trigger !== "bot_message";
+    if (!matchesTriggerFilter(row.trigger, clause.trigger)) return false;
     if (clause.status?.in) return clause.status.in.includes(row.status ?? "");
-    return false;
+    return true;
   });
 }
 
@@ -912,16 +930,14 @@ function botRunFindFirst(
     async (args: {
       where?: {
         status?: { in?: string[] };
-        trigger?: { not?: string };
+        trigger?: TriggerFilter;
       };
       select?: { id?: boolean };
     }) => {
       const statuses = args.where?.status?.in;
       const matched = rows
         .filter((row) => !statuses || statuses.includes(row.status))
-        .filter((row) =>
-          args.where?.trigger?.not === "bot_message" ? row.trigger !== "bot_message" : true,
-        )
+        .filter((row) => matchesTriggerFilter(row.trigger, args.where?.trigger))
         .sort((a, b) => {
           const byCreated = (b.createdAt?.getTime() ?? 0) - (a.createdAt?.getTime() ?? 0);
           return byCreated !== 0 ? byCreated : b.id.localeCompare(a.id);

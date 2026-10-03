@@ -1,6 +1,11 @@
 import * as fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import { assertTransition, canTransition, isConversationalRun } from "./run-state.js";
+import {
+  assertTransition,
+  canTransition,
+  isBackgroundRunTrigger,
+  isConversationalRun,
+} from "./run-state.js";
 
 describe("run state machine", () => {
   it("allows takeover resume onto a lease", () => {
@@ -15,6 +20,14 @@ describe("run state machine", () => {
     expect(isConversationalRun("routine")).toBe(false);
     expect(isConversationalRun("webhook")).toBe(false);
     expect(isConversationalRun("created")).toBe(false);
+    expect(isConversationalRun("tickets")).toBe(false);
+  });
+
+  it("marks ticket runs as background work that stays out of the chat", () => {
+    expect(isBackgroundRunTrigger("tickets")).toBe(true);
+    expect(isBackgroundRunTrigger("user")).toBe(false);
+    expect(isBackgroundRunTrigger("routine")).toBe(false);
+    expect(isBackgroundRunTrigger(null)).toBe(false);
   });
 
   it("rejects rewriting a completed run", () => {

@@ -477,6 +477,22 @@ describe("thread event reduction", () => {
     expect(progressed?.cursor).toBe(4);
   });
 
+  it("keeps background ticket runs out of the transcript while advancing the cursor", () => {
+    const started = reduceThreadSnapshot(
+      snapshot([]),
+      event({
+        type: "run.started",
+        seq: 7,
+        runId: "ticket-run-1",
+        payload: { trigger: "tickets" },
+      }),
+    );
+
+    expect(started?.run).toBeNull();
+    expect(started?.activeRuns ?? []).toEqual([]);
+    expect(started?.cursor).toBe(7);
+  });
+
   it("preserves bot_message when event-sourcing a peer run", () => {
     const started = reduceThreadSnapshot(
       snapshot([]),

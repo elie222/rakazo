@@ -111,6 +111,7 @@ import {
   Settings,
   Smile,
   Square,
+  SquareKanban,
   TextQuote,
   Trash2,
   X,
@@ -3337,6 +3338,21 @@ export function ShellPage() {
             </div>
           ) : null}
         </div>
+        <button
+          type="button"
+          onClick={() => {
+            setMobileSidebarOpen(false);
+            navigate("/app/board");
+          }}
+          className="mx-3 mb-1 flex items-center gap-3 rounded-xl px-2.5 py-2 hover:bg-sidebar-accent"
+        >
+          <span className="grid h-[30px] w-[30px] place-items-center rounded-lg bg-accent text-foreground/80">
+            <SquareKanban size={15} strokeWidth={1.8} />
+          </span>
+          <span className="text-[14px] font-medium text-foreground/90">
+            <Trans>Boards</Trans>
+          </span>
+        </button>
         <button
           type="button"
           onClick={() => setPluginsOpen(true)}

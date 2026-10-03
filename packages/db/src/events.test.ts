@@ -128,6 +128,54 @@ describe("finalizeRun", () => {
     expect(publish).toHaveBeenCalledOnce();
   });
 
+  it("signals the board when a background ticket run finishes", async () => {
+    const tx = {
+      $queryRaw: vi.fn(async () => []),
+      run: {
+        findUnique: vi.fn(async () => ({ status: "running", startedAt: null, trigger: "tickets" })),
+        findUniqueOrThrow: vi.fn(async () => ({ sourceMessage: null })),
+        findFirst: vi.fn(async () => null),
+        updateMany: vi.fn(async () => ({ count: 1 })),
+      },
+      attempt: { updateMany: vi.fn(async () => ({ count: 1 })) },
+      task: { updateMany: vi.fn(async () => ({ count: 1 })) },
+      thread: { update: vi.fn(async () => ({ nextEventSeq: 1 })) },
+      event: {
+        create: vi.fn(async () => ({ threadId: "thread-1", seq: 0 })),
+        deleteMany: vi.fn(async () => ({ count: 0 })),
+      },
+      steeringMessage: {
+        findMany: vi.fn(async () => []),
+        updateMany: vi.fn(async () => ({ count: 0 })),
+        deleteMany: vi.fn(async () => ({ count: 0 })),
+      },
+      bot: { update: vi.fn(async () => ({})) },
+    };
+    const publish = vi.fn(async () => undefined);
+
+    await finalizeRun(
+      {
+        $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+      } as unknown as PrismaClient,
+      {
+        spaceId: "space-1",
+        threadId: "thread-1",
+        botId: "bot-1",
+        runId: "run-1",
+        taskId: "task-1",
+        attemptId: "attempt-1",
+        leaseOwner: "worker-1",
+        leaseFence: 1,
+        outcome: "completed",
+        blocks: [],
+      },
+      { publish } as never,
+    );
+
+    expect(publish).toHaveBeenCalledWith("thread:thread-1", expect.any(String));
+    expect(publish).toHaveBeenCalledWith("board:space-1", expect.any(String));
+  });
+
   it("resumes a held messaging inbound as a messaging run", async () => {
     const tx = {
       $queryRaw: vi.fn(async () => []),

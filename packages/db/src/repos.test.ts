@@ -81,8 +81,8 @@ describe("createRepos.listBots", () => {
 
     expect(bots.map((bot) => bot.preview)).toEqual(["Answer one", "Answer two"]);
     expect(prisma.run.findMany).toHaveBeenCalledExactlyOnceWith({
-      where: { id: { in: ["run-one", "run-two"] }, trigger: "bot_message" },
-      select: { id: true },
+      where: { id: { in: ["run-one", "run-two"] }, trigger: { in: ["bot_message", "tickets"] } },
+      select: { id: true, trigger: true },
     });
   });
 
@@ -126,8 +126,11 @@ describe("createRepos.listBots", () => {
     expect(bots[0]?.preview).toBe("Visible answer");
     expect(prisma.run.findMany).toHaveBeenCalledTimes(2);
     expect(prisma.run.findMany).toHaveBeenNthCalledWith(2, {
-      where: { id: { in: ["peer-old", "user-old"] }, trigger: "bot_message" },
-      select: { id: true },
+      where: {
+        id: { in: ["peer-old", "user-old"] },
+        trigger: { in: ["bot_message", "tickets"] },
+      },
+      select: { id: true, trigger: true },
     });
     expect(prisma.message.findMany).toHaveBeenCalledTimes(2);
   });

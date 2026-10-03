@@ -1,5 +1,11 @@
 import type { MessageBlock, ThreadMessage, ThreadMessagePage } from "@rakazo/contracts";
-import { callIdFromClientNonce, isPeerReceiptBlocks } from "@rakazo/core";
+import {
+  BACKGROUND_RUN_TRIGGERS,
+  callIdFromClientNonce,
+  isBackgroundRunTrigger,
+  isPeerReceiptBlocks,
+  isUserProgressClientNonce,
+} from "@rakazo/core";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 
 type MessageDb = PrismaClient | Prisma.TransactionClient;
@@ -93,21 +99,40 @@ export async function loadAllMessages(
   return pages.reverse().flat();
 }
 
-async function withoutPeerRunMessages<T extends { runId: string | null; blocks: Prisma.JsonValue }>(
-  prisma: MessageDb,
-  rows: T[],
-): Promise<T[]> {
+async function withoutPeerRunMessages<
+  T extends {
+    runId: string | null;
+    blocks: Prisma.JsonValue;
+    clientNonce?: string | null;
+  },
+>(prisma: MessageDb, rows: T[]): Promise<T[]> {
   const runIds = [...new Set(rows.flatMap((row) => (row.runId ? [row.runId] : [])))];
   if (runIds.length === 0) return rows;
-  const peerRuns = await prisma.run.findMany({
-    where: { id: { in: runIds }, trigger: "bot_message" },
-    select: { id: true },
+  const runs = await prisma.run.findMany({
+    where: {
+      id: { in: runIds },
+      trigger: { in: ["bot_message", ...BACKGROUND_RUN_TRIGGERS] },
+    },
+    select: { id: true, trigger: true },
   });
-  const peerRunIds = new Set(peerRuns.map((run) => run.id));
+  const backgroundRunIds = new Set(
+    runs.filter((run) => isBackgroundRunTrigger(run.trigger)).map((r) => r.id),
+  );
+  const peerRunIds = new Set(
+    runs.filter((run) => !backgroundRunIds.has(run.id)).map((run) => run.id),
+  );
   return rows.filter((row) => {
-    if (!row.runId || !peerRunIds.has(row.runId)) return true;
-    // Keep peer receipts (chips), ask cards, and the bot's own text reply.
+    if (!row.runId) return true;
     const blocks = row.blocks as MessageBlock[];
+    if (backgroundRunIds.has(row.runId)) {
+      // Ticket work stays off the transcript; only an explicit `message_user` update
+      // or an ask card is the bot deliberately reaching the user.
+      return (
+        isUserProgressClientNonce(row.clientNonce) || blocks.some((block) => block.kind === "ask")
+      );
+    }
+    if (!peerRunIds.has(row.runId)) return true;
+    // Keep peer receipts (chips), ask cards, and the bot's own text reply.
     return blocks.some(
       (block) =>
         block.kind === "bot_message_sent" ||
@@ -132,6 +157,22 @@ export async function isPeerRun(
     cache.set(runId, peerRun);
   }
   return peerRun;
+}
+
+export async function isBackgroundRun(
+  prisma: MessageDb,
+  runId: string | undefined,
+  cache: Map<string, Promise<boolean>>,
+): Promise<boolean> {
+  if (!runId) return false;
+  let backgroundRun = cache.get(runId);
+  if (!backgroundRun) {
+    backgroundRun = prisma.run
+      .findUnique({ where: { id: runId }, select: { trigger: true } })
+      .then((run) => isBackgroundRunTrigger(run?.trigger));
+    cache.set(runId, backgroundRun);
+  }
+  return backgroundRun;
 }
 
 /** Peer-run SSE events that must still reach an open thread (terminals, waits, receipts, asks, text). */
@@ -163,6 +204,29 @@ export function shouldForwardPeerThreadEvent(event: {
           block.kind === "bot_message_sent" ||
           block.kind === "ask" ||
           block.kind === "text"),
+    )
+  );
+}
+
+/**
+ * A background run's SSE events must stay off the transcript: no starts, progress,
+ * steps, terminals, or final text. The only frames that reach an open thread are the
+ * bot's explicit `message_user` updates and ask cards, so a needed human decision is
+ * still answerable.
+ */
+export function shouldForwardBackgroundThreadEvent(event: {
+  type: string;
+  payload: { blocks?: unknown; userProgress?: unknown };
+}): boolean {
+  if (event.type !== "thread.message.created" && event.type !== "thread.message.updated") {
+    return false;
+  }
+  if (event.payload.userProgress === true) return true;
+  const blocks = event.payload.blocks;
+  return (
+    Array.isArray(blocks) &&
+    blocks.some(
+      (block) => !!block && typeof block === "object" && "kind" in block && block.kind === "ask",
     )
   );
 }

@@ -1,7 +1,15 @@
 import type { MessageBlock } from "@rakazo/contracts";
 
+/** clientNonce prefix for durable mid-turn `message_user` progress messages. */
+export const USER_PROGRESS_CLIENT_NONCE_PREFIX = "user-progress:";
+
+export function isUserProgressClientNonce(clientNonce: string | null | undefined): boolean {
+  return Boolean(clientNonce?.startsWith(USER_PROGRESS_CLIENT_NONCE_PREFIX));
+}
+
 type PresentableMessage = {
   runId?: string;
+  clientNonce?: string | null;
   blocks: readonly MessageBlock[];
 };
 
@@ -13,6 +21,12 @@ export type UserVisibleMessagesOptions = {
   includePeerReceipts?: boolean;
   /** Peer-run ids from `run.trigger === "bot_message"` when receipts may be out of window. */
   knownPeerRunIds?: Iterable<string>;
+  /**
+   * Run ids for background triggers (e.g. `tickets`). Their messages are hidden
+   * except an explicit `message_user` progress update or an `ask` card, which are
+   * the bot's deliberate ways to reach the user.
+   */
+  backgroundRunIds?: Iterable<string>;
   /**
    * Surface a peer-run's own `text` reply (e.g. a delegating bot's summary to the user)
    * alongside `ask` cards. Defaults to true for chat-thread rendering; set false for
@@ -39,9 +53,18 @@ export function userVisibleMessages<T extends PresentableMessage>(
       .flatMap((message) => (message.runId ? [message.runId] : [])),
   ]);
   const includePeerReceipts = options.includePeerReceipts === true;
+  const backgroundRunIds = new Set(options.backgroundRunIds ?? []);
 
   return messages.filter((message) => {
     if (isPeerReceiptBlocks(message.blocks)) return includePeerReceipts;
+    if (message.runId && backgroundRunIds.has(message.runId)) {
+      // Background work stays out of the transcript; the bot's own `message_user`
+      // progress update and an ask card are the deliberate exceptions.
+      return (
+        isUserProgressClientNonce(message.clientNonce) ||
+        message.blocks.some((block) => block.kind === "ask")
+      );
+    }
     if (!message.runId || !peerRunIds.has(message.runId)) return true;
     // Keep peer-run ask cards, and (unless the caller opts out) the bot's own text reply.
     const includeText = options.includeDelegatedReplyText !== false;

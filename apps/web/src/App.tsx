@@ -32,6 +32,9 @@ const WelcomePage = lazy(() =>
 const ArtifactsPage = lazy(() =>
   import("./pages/Artifacts").then((module) => ({ default: module.ArtifactsPage })),
 );
+const BoardPage = lazy(() =>
+  import("./pages/Board").then((module) => ({ default: module.BoardPage })),
+);
 
 export function App() {
   if (window.location.pathname === LOCAL_SETTINGS_PAGE) return <LocalSettingsPage />;
@@ -123,6 +126,14 @@ function SessionApp() {
           <Route
             path="/app/artifacts/:artifactId"
             element={user ? <ArtifactsPage /> : <Navigate to="/sign-in" replace />}
+          />
+          <Route
+            path="/app/board"
+            element={user ? <BoardPage /> : <Navigate to="/sign-in" replace />}
+          />
+          <Route
+            path="/app/boards"
+            element={user ? <BoardPage /> : <Navigate to="/sign-in" replace />}
           />
           <Route
             path="/app/:botId"

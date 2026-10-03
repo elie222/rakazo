@@ -28,6 +28,7 @@ import type {
   MemoryProviderResolver,
   PiOAuthLogins,
   RemoteConnectorDependencies,
+  TicketChangeNotifier,
 } from "@rakazo/adapters";
 import {
   acquireComputerExecutionLease,
@@ -109,6 +110,7 @@ import {
 import type { Auth } from "@rakazo/auth";
 import type {
   Actor,
+  BoardEvent,
   Bot,
   BotSecretMetadata,
   ComputerReleaseReason,
@@ -125,7 +127,10 @@ import {
   ComputerCommandSchema,
   foldComputerCommands,
   IntegrationProviderIdSchema,
+  isTicketCompletedStatus,
   OPENAI_COMPATIBLE_PROVIDER_ID,
+  parseTicketRef,
+  TICKET_RUN_ACTIVITY_STALE_MS,
   usableModelId,
 } from "@rakazo/contracts";
 import {
@@ -140,7 +145,7 @@ import {
   isOneShotRoutineCrons,
   nextCronDateAcrossStrict,
 } from "@rakazo/core";
-import type { PrismaClient, ThreadEvents } from "@rakazo/db";
+import type { BoardEvents, BoardRow, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   appendEventInTransaction,
   BotSectionNameConflictError,
@@ -196,6 +201,16 @@ import {
   listArtifactVersions,
   listSpaceArtifacts,
 } from "./artifacts.js";
+import {
+  allocateTicketNumber,
+  ensureBoard,
+  findTicket,
+  listBoards,
+  listTicketComments,
+  toBoardDto,
+  toTicketCommentDto,
+  toTicketDto,
+} from "./board.js";
 import { botProfileLabelsChanged, commitBotUpdate } from "./bot-update.js";
 import {
   executionBlocksUserTakeover,
@@ -236,9 +251,11 @@ import {
 } from "./server-update.js";
 import { assertTeachingSendAllowed, createTaughtSkillsService } from "./taught-skills.js";
 import {
+  isBackgroundRun,
   isPeerRun,
   loadAllMessages,
   loadMessagePage,
+  shouldForwardBackgroundThreadEvent,
   shouldForwardPeerThreadEvent,
 } from "./thread-message-pages.js";
 import {
@@ -509,6 +526,8 @@ export interface RouterDeps {
   cloudAgent?: CloudAgentConnection | null;
   prisma: PrismaClient;
   events: ThreadEvents;
+  boardEvents: BoardEvents;
+  ticketChanges: TicketChangeNotifier;
   auth: Auth;
   jobs: JobPublisher;
   sandbox: SandboxProvider;
@@ -691,6 +710,19 @@ export async function enqueueBotIntroRun(deps: RouterDeps, actor: Actor, bot: Bo
     });
   });
   await deps.jobs.enqueue(runContinueJob(run.id));
+}
+
+/** Resolve a ticket's board, defaulting to the space board and rejecting foreign ids. */
+async function resolveSpaceBoard(
+  prisma: PrismaClient,
+  spaceId: string,
+  boardId?: string,
+): Promise<BoardRow> {
+  const board = await ensureBoard(prisma, spaceId);
+  if (boardId === undefined || boardId === board.id) return board;
+  const found = await prisma.board.findFirst({ where: { id: boardId, spaceId } });
+  if (!found) throw new ORPCError("BAD_REQUEST", { message: "Unknown board." });
+  return found;
 }
 
 export function createRouter(deps: RouterDeps) {
@@ -1879,6 +1911,7 @@ export function createRouter(deps: RouterDeps) {
       subscribe: authed.threads.subscribe.handler(async function* ({ context, input }) {
         const target = await resolveThreadTarget(deps.prisma, context.actor, input);
         const peerRunCache = new Map<string, Promise<boolean>>();
+        const backgroundRunCache = new Map<string, Promise<boolean>>();
         const follow = deps.events.follow(target.threadId, input.cursor, context.signal);
         // A half-open stream looks identical to an idle one, so punctuate silence:
         // the client treats any frame as liveness and reconnects once they stop.
@@ -1913,6 +1946,8 @@ export function createRouter(deps: RouterDeps) {
             const event = next.value;
             if (await isPeerRun(deps.prisma, event.runId, peerRunCache)) {
               if (!shouldForwardPeerThreadEvent(event)) continue;
+            } else if (await isBackgroundRun(deps.prisma, event.runId, backgroundRunCache)) {
+              if (!shouldForwardBackgroundThreadEvent(event)) continue;
             }
             yield event;
           }
@@ -3314,6 +3349,239 @@ export function createRouter(deps: RouterDeps) {
         if (!existing) throw new IsolationError();
         await deps.prisma.scratchpadItem.delete({ where: { id: existing.id } });
         return { ok: true as const };
+      }),
+    },
+    boards: {
+      list: authed.boards.list.handler(async ({ context }) => {
+        await ensureBoard(deps.prisma, context.actor.spaceId);
+        const rows = await listBoards(deps.prisma, context.actor.spaceId);
+        return rows.map(toBoardDto);
+      }),
+      get: authed.boards.get.handler(async ({ context }) => {
+        const board = await ensureBoard(deps.prisma, context.actor.spaceId);
+        return toBoardDto(board);
+      }),
+      rename: authed.boards.rename.handler(async ({ context, input }) => {
+        const board = await ensureBoard(deps.prisma, context.actor.spaceId);
+        const row = await deps.prisma.board.update({
+          where: { id: board.id },
+          data: {
+            ...(input.name !== undefined ? { name: input.name } : {}),
+            ...(input.ticketPrefix !== undefined
+              ? { ticketPrefix: input.ticketPrefix.toUpperCase() }
+              : {}),
+          },
+        });
+        return toBoardDto(row);
+      }),
+      subscribe: authed.boards.subscribe.handler(async function* ({ context }) {
+        const spaceId = context.actor.spaceId;
+        const follow = deps.boardEvents.follow(spaceId, context.signal);
+        // Board signals are transient, so a heartbeat stands in for liveness and
+        // gives the client a periodic catch-up reload if a push was missed.
+        let pending: Promise<IteratorResult<BoardEvent>> | undefined;
+        try {
+          while (!context.signal?.aborted) {
+            pending ??= follow.next();
+            let timer: ReturnType<typeof setTimeout> | undefined;
+            const next = await Promise.race([
+              pending,
+              new Promise<"silent">((resolve) => {
+                timer = setTimeout(() => resolve("silent"), HEARTBEAT_MS);
+              }),
+            ]).finally(() => clearTimeout(timer));
+            if (next === "silent") {
+              yield { spaceId, createdAt: new Date().toISOString() };
+              continue;
+            }
+            pending = undefined;
+            if (next.done) return;
+            yield next.value;
+          }
+        } finally {
+          void follow.return(undefined).catch(() => {});
+        }
+      }),
+    },
+    tickets: {
+      list: authed.tickets.list.handler(async ({ context, input }) => {
+        const board = await resolveSpaceBoard(deps.prisma, context.actor.spaceId, input.boardId);
+        const q = input.q?.trim();
+        const where: Prisma.TicketWhereInput = {
+          spaceId: context.actor.spaceId,
+          boardId: board.id,
+          ...(input.status ? { status: input.status } : {}),
+          ...(input.assigneeBotId ? { assigneeBotId: input.assigneeBotId } : {}),
+          ...(q
+            ? {
+                OR: [
+                  { title: { contains: q, mode: "insensitive" } },
+                  { description: { contains: q, mode: "insensitive" } },
+                ],
+              }
+            : {}),
+        };
+        const rows = await deps.prisma.ticket.findMany({
+          where,
+          orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
+        });
+        const assigneeBotIds = [
+          ...new Set(rows.flatMap((row) => (row.assigneeBotId ? [row.assigneeBotId] : []))),
+        ];
+        // A bot is "working" only while its ticket wake is active and fresh; a run
+        // stranded by a crashed worker ages out instead of leaving the card spinning.
+        const workingRuns = assigneeBotIds.length
+          ? await deps.prisma.run.findMany({
+              where: {
+                spaceId: context.actor.spaceId,
+                trigger: "tickets",
+                status: { in: [...ACTIVE_RUN_STATUSES] },
+                botId: { in: assigneeBotIds },
+                updatedAt: { gte: new Date(Date.now() - TICKET_RUN_ACTIVITY_STALE_MS) },
+              },
+              select: { botId: true },
+            })
+          : [];
+        return {
+          tickets: rows.map((row) => toTicketDto(row, board.ticketPrefix)),
+          workingBotIds: [...new Set(workingRuns.map((run) => run.botId))],
+        };
+      }),
+      get: authed.tickets.get.handler(async ({ context, input }) => {
+        const board = await ensureBoard(deps.prisma, context.actor.spaceId);
+        const row = await findTicket(deps.prisma, context.actor.spaceId, board, input);
+        if (!row) {
+          if (input.ref && !parseTicketRef(input.ref, board.ticketPrefix)) {
+            throw new ORPCError("BAD_REQUEST", { message: "Invalid ticket reference." });
+          }
+          throw new IsolationError();
+        }
+        return toTicketDto(row, board.ticketPrefix);
+      }),
+      create: authed.tickets.create.handler(async ({ context, input }) => {
+        const board = await resolveSpaceBoard(deps.prisma, context.actor.spaceId, input.boardId);
+        await repos.getBot(context.actor, input.assigneeBotId);
+        const row = await deps.prisma.$transaction(async (tx) => {
+          const number = await allocateTicketNumber(tx, board.id);
+          return tx.ticket.create({
+            data: {
+              boardId: board.id,
+              spaceId: context.actor.spaceId,
+              number,
+              title: input.title,
+              description: input.description ?? null,
+              priority: input.priority,
+              status: "todo",
+              assigneeBotId: input.assigneeBotId,
+              createdByUserId: context.actor.userId,
+              completedAt: null,
+            },
+          });
+        });
+        await deps.ticketChanges({
+          spaceId: context.actor.spaceId,
+          boardId: board.id,
+          ticketId: row.id,
+          assigneeBotId: row.assigneeBotId,
+          actorBotId: null,
+          wakeAssignee: true,
+        });
+        return toTicketDto(row, board.ticketPrefix);
+      }),
+      update: authed.tickets.update.handler(async ({ context, input }) => {
+        const board = await ensureBoard(deps.prisma, context.actor.spaceId);
+        const existing = await deps.prisma.ticket.findFirst({
+          where: { id: input.id, spaceId: context.actor.spaceId, boardId: board.id },
+        });
+        if (!existing) throw new IsolationError();
+        if (input.assigneeBotId !== undefined) {
+          await repos.getBot(context.actor, input.assigneeBotId);
+        }
+        const data: Prisma.TicketUncheckedUpdateInput = {
+          ...(input.title !== undefined ? { title: input.title } : {}),
+          ...(input.description !== undefined ? { description: input.description } : {}),
+          ...(input.priority !== undefined ? { priority: input.priority ?? "normal" } : {}),
+          ...(input.assigneeBotId !== undefined ? { assigneeBotId: input.assigneeBotId } : {}),
+        };
+        if (input.status !== undefined) {
+          data.status = input.status;
+          data.completedAt = isTicketCompletedStatus(input.status)
+            ? (existing.completedAt ?? new Date())
+            : null;
+        }
+        const row = await deps.prisma.ticket.update({ where: { id: existing.id }, data });
+        await deps.ticketChanges({
+          spaceId: context.actor.spaceId,
+          boardId: board.id,
+          ticketId: row.id,
+          assigneeBotId: row.assigneeBotId,
+          actorBotId: null,
+          wakeAssignee:
+            input.assigneeBotId !== undefined && input.assigneeBotId !== existing.assigneeBotId,
+        });
+        return toTicketDto(row, board.ticketPrefix);
+      }),
+      move: authed.tickets.move.handler(async ({ context, input }) => {
+        const board = await ensureBoard(deps.prisma, context.actor.spaceId);
+        const existing = await deps.prisma.ticket.findFirst({
+          where: { id: input.id, spaceId: context.actor.spaceId, boardId: board.id },
+        });
+        if (!existing) throw new IsolationError();
+        const row = await deps.prisma.ticket.update({
+          where: { id: existing.id },
+          data: {
+            status: input.status,
+            completedAt: isTicketCompletedStatus(input.status)
+              ? (existing.completedAt ?? new Date())
+              : null,
+          },
+        });
+        await deps.ticketChanges({
+          spaceId: context.actor.spaceId,
+          boardId: board.id,
+          ticketId: row.id,
+          assigneeBotId: row.assigneeBotId,
+          actorBotId: null,
+          wakeAssignee: false,
+        });
+        return toTicketDto(row, board.ticketPrefix);
+      }),
+      comment: authed.tickets.comment.handler(async ({ context, input }) => {
+        const board = await ensureBoard(deps.prisma, context.actor.spaceId);
+        const ticket = await deps.prisma.ticket.findFirst({
+          where: { id: input.ticketId, spaceId: context.actor.spaceId, boardId: board.id },
+        });
+        if (!ticket) throw new IsolationError();
+        const row = await deps.prisma.$transaction(async (tx) => {
+          const comment = await tx.ticketComment.create({
+            data: {
+              ticketId: ticket.id,
+              spaceId: context.actor.spaceId,
+              authorUserId: context.actor.userId,
+              body: input.body,
+            },
+          });
+          await tx.ticket.update({ where: { id: ticket.id }, data: { updatedAt: new Date() } });
+          return comment;
+        });
+        await deps.ticketChanges({
+          spaceId: context.actor.spaceId,
+          boardId: board.id,
+          ticketId: ticket.id,
+          assigneeBotId: ticket.assigneeBotId,
+          actorBotId: null,
+          wakeAssignee: false,
+        });
+        return toTicketCommentDto(row);
+      }),
+      comments: authed.tickets.comments.handler(async ({ context, input }) => {
+        const board = await ensureBoard(deps.prisma, context.actor.spaceId);
+        const ticket = await deps.prisma.ticket.findFirst({
+          where: { id: input.ticketId, spaceId: context.actor.spaceId, boardId: board.id },
+        });
+        if (!ticket) throw new IsolationError();
+        const rows = await listTicketComments(deps.prisma, context.actor.spaceId, ticket.id);
+        return rows.map(toTicketCommentDto);
       }),
     },
     skills: {

@@ -1,5 +1,5 @@
 import { type Actor, MessageBlock, type RunActivityRow } from "@rakazo/contracts";
-import { ACTIVE_RUN_STATUSES, botMessageContext } from "@rakazo/core";
+import { ACTIVE_RUN_STATUSES, BACKGROUND_RUN_TRIGGERS, botMessageContext } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 
 const RECENT_LIMIT = 20;
@@ -44,6 +44,8 @@ export async function listSpaceRuns(
       spaceId: actor.spaceId,
       userId: actor.userId,
       bot: { archivedAt: null },
+      // Background ticket work belongs on the board, not in the activity list.
+      trigger: { notIn: [...BACKGROUND_RUN_TRIGGERS] },
       ...(filter === "active"
         ? { status: { in: [...ACTIVE_RUN_STATUSES] } }
         : { status: { in: [...TERMINAL_STATUSES] } }),

@@ -1,9 +1,11 @@
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import {
+  isBackgroundRun,
   isPeerRun,
   loadAllMessages,
   loadMessagePage,
+  shouldForwardBackgroundThreadEvent,
   shouldForwardPeerThreadEvent,
 } from "./thread-message-pages.js";
 
@@ -41,6 +43,106 @@ describe("thread message pages", () => {
         payload: {},
       }),
     ).toBe(false);
+  });
+
+  it("caches background-run classification for live events", async () => {
+    const findUnique = vi.fn(async () => ({ trigger: "tickets" }));
+    const prisma = { run: { findUnique } } as unknown as PrismaClient;
+    const cache = new Map<string, Promise<boolean>>();
+
+    await expect(isBackgroundRun(prisma, "run-ticket", cache)).resolves.toBe(true);
+    await expect(isBackgroundRun(prisma, "run-ticket", cache)).resolves.toBe(true);
+    expect(findUnique).toHaveBeenCalledTimes(1);
+  });
+
+  it("forwards only explicit user contact from a background run", () => {
+    expect(
+      shouldForwardBackgroundThreadEvent({
+        type: "thread.message.created",
+        payload: { userProgress: true },
+      }),
+    ).toBe(true);
+    expect(
+      shouldForwardBackgroundThreadEvent({
+        type: "thread.message.created",
+        payload: { blocks: [{ kind: "ask", text: "Pick one" }] },
+      }),
+    ).toBe(true);
+    expect(
+      shouldForwardBackgroundThreadEvent({
+        type: "thread.message.created",
+        payload: { blocks: [{ kind: "text", text: "Ticket summary" }] },
+      }),
+    ).toBe(false);
+    expect(shouldForwardBackgroundThreadEvent({ type: "run.started", payload: {} })).toBe(false);
+    expect(shouldForwardBackgroundThreadEvent({ type: "run.completed", payload: {} })).toBe(false);
+    expect(shouldForwardBackgroundThreadEvent({ type: "thread.progress", payload: {} })).toBe(
+      false,
+    );
+  });
+
+  it("hides ticket-run output from the transcript but keeps message_user updates", async () => {
+    const findMany = vi.fn(async () => [
+      {
+        id: "message-final",
+        threadId: "thread-1",
+        seq: 4,
+        role: "bot",
+        blocks: [{ kind: "text", text: "Closed the ticket." }],
+        botId: "bot-1",
+        replyToMessageId: null,
+        runId: "run-ticket",
+        clientNonce: null,
+        createdAt: new Date("2026-08-16T00:00:04.000Z"),
+      },
+      {
+        id: "message-progress",
+        threadId: "thread-1",
+        seq: 3,
+        role: "bot",
+        blocks: [{ kind: "text", text: "Working on the ticket." }],
+        botId: "bot-1",
+        replyToMessageId: null,
+        runId: "run-ticket",
+        clientNonce: "user-progress:run-ticket:0",
+        createdAt: new Date("2026-08-16T00:00:03.000Z"),
+      },
+      {
+        id: "message-steps",
+        threadId: "thread-1",
+        seq: 2,
+        role: "bot",
+        blocks: [{ kind: "steps", steps: [{ label: "Ticket comment", count: 1 }] }],
+        botId: "bot-1",
+        replyToMessageId: null,
+        runId: "run-ticket",
+        clientNonce: null,
+        createdAt: new Date("2026-08-16T00:00:02.000Z"),
+      },
+      {
+        id: "message-user",
+        threadId: "thread-1",
+        seq: 1,
+        role: "bot",
+        blocks: [{ kind: "text", text: "Visible answer" }],
+        botId: "bot-1",
+        replyToMessageId: null,
+        runId: "run-user",
+        clientNonce: null,
+        createdAt: new Date("2026-08-16T00:00:01.000Z"),
+      },
+    ]);
+    const prisma = {
+      message: { findMany },
+      run: { findMany: vi.fn(async () => [{ id: "run-ticket", trigger: "tickets" }]) },
+    } as unknown as PrismaClient;
+
+    const page = await loadMessagePage(prisma, "thread-1", undefined, 4);
+
+    expect(page.messages.map((message) => message.id)).toEqual([
+      "message-user",
+      "message-progress",
+    ]);
   });
 
   it("keeps peer receipt rows when filtering peer-run output from pages", async () => {

@@ -1,5 +1,11 @@
 import type { MessageBlock } from "@rakazo/contracts";
-import { isToolActivityBlock } from "@rakazo/core";
+import {
+  isToolActivityBlock,
+  isUserProgressClientNonce,
+  USER_PROGRESS_CLIENT_NONCE_PREFIX,
+} from "@rakazo/core";
+
+export { isUserProgressClientNonce, USER_PROGRESS_CLIENT_NONCE_PREFIX };
 
 /** Keep mid-turn progress beats short; prefer a few high-signal updates. */
 export const USER_PROGRESS_MESSAGE_MAX_LENGTH = 500;
@@ -26,17 +32,10 @@ export function isProgressMessageTruncated(text: string): boolean {
  * as a durable mid-turn message. Tool/step blocks stay for the final publish.
  */
 
-/** clientNonce prefix for mid-turn progress messages (reconciler uses this). */
-export const USER_PROGRESS_CLIENT_NONCE_PREFIX = "user-progress:";
-
 export function userProgressClientNonce(runId: string, index = 0): string {
   // Include entropy so a resumed executor turn cannot reuse an earlier nonce
   // (threadId + clientNonce is unique).
   return `${USER_PROGRESS_CLIENT_NONCE_PREFIX}${runId}:${index}:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 10)}`;
-}
-
-export function isUserProgressClientNonce(clientNonce: string | null | undefined): boolean {
-  return Boolean(clientNonce?.startsWith(USER_PROGRESS_CLIENT_NONCE_PREFIX));
 }
 
 export function extractNarrationText(

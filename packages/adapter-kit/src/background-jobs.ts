@@ -22,6 +22,7 @@ const payloadSchemas = {
   "history.compact": z.object({ threadId: z.string().min(1) }),
   "messaging.deliver": z.object({ runId: z.string().min(1).optional() }),
   "cloud_agent.poll": z.object({ agentId: z.string().min(1) }),
+  "tickets.check": z.object({ botId: z.string().min(1).optional() }),
 } satisfies { [Name in BackgroundJobName]: z.ZodType<BackgroundJobPayloads[Name]> };
 
 export function parseBackgroundJob(name: string, payload: unknown): BackgroundJob {
@@ -154,5 +155,18 @@ export function cloudAgentPollJob(
     payload,
     replaceKey: cloudAgentPollJobKey(payload.agentId),
     ...(availableAt ? { availableAt } : {}),
+  };
+}
+
+export function ticketsCheckJobKey(botId?: string): string {
+  return botId ? `tickets.check:${botId}` : "tickets.check";
+}
+
+/** Periodic sweep when `botId` is omitted; a debounced single-bot wake otherwise. */
+export function ticketsCheckJob(botId?: string): BackgroundJob {
+  return {
+    name: "tickets.check",
+    payload: botId ? { botId } : {},
+    replaceKey: ticketsCheckJobKey(botId),
   };
 }

@@ -16,6 +16,7 @@ import {
   runSendsFinishNotification,
   stripNoResponseReply,
   subagentMarksUnread,
+  TICKET_SILENT_REPLY_GUIDANCE,
 } from "./executor.js";
 import { finalBlocksAfterMidTurnProgress } from "./user-progress.js";
 
@@ -165,6 +166,31 @@ describe("completionMarksUnread", () => {
     expect(segments).toEqual(steps);
     expect(blocks).toEqual([]);
     expect(completionMarksUnread("routine", completionNotificationBody("", blocks))).toBe(false);
+  });
+});
+
+describe("background ticket runs", () => {
+  it("stay silent, drop mid-turn narration, and never mark unread or notify", () => {
+    expect(runAllowsSilentEmpty("tickets")).toBe(true);
+    expect(runPromotesMidTurnNarration("tickets")).toBe(false);
+    const segments = completionMessageSegments([], {
+      allowSilentEmpty: runAllowsSilentEmpty("tickets"),
+    });
+    expect(segments).toEqual([]);
+    expect(completionMarksUnread("tickets", "")).toBe(false);
+    expect(completionMarksUnread("tickets", "Closed the ticket.")).toBe(false);
+    expect(subagentMarksUnread("tickets", "completed")).toBe(false);
+    expect(subagentMarksUnread("tickets", "failed")).toBe(false);
+    expect(runSendsFinishNotification("tickets")).toBe(false);
+    expect(runSendsFinishNotification("user")).toBe(true);
+    expect(runReplyGuidance("tickets")).toBe(TICKET_SILENT_REPLY_GUIDANCE);
+    expect(runReplyGuidance("tickets")).toContain("ticket_comment");
+  });
+
+  it("drops a tool-only ticket final so the transcript gets no bubble", () => {
+    const steps = [{ kind: "steps" as const, steps: [{ label: "Ticket comment", count: 1 }] }];
+    const blocks = finalBlocksAfterMidTurnProgress(steps, runAllowsSilentEmpty("tickets"));
+    expect(blocks).toEqual([]);
   });
 });
 

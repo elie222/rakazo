@@ -1,0 +1,150 @@
+import type { JobPublisher } from "@rakazo/adapter-kit";
+import type { PrismaClient } from "@rakazo/db";
+import { describe, expect, it, vi } from "vitest";
+import { runTicketChecks, type TicketCheckDeps } from "./ticket-checks.js";
+
+const NOW = new Date("2026-06-01T12:00:00.000Z");
+const hoursAgo = (hours: number) => new Date(NOW.getTime() - hours * 60 * 60 * 1000);
+
+function botRow(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "bot-1",
+    spaceId: "space-1",
+    userId: "user-1",
+    name: "Helper",
+    ticketsCheckedAt: null,
+    ticketsWakeAt: null,
+    thread: { id: "thread-1" },
+    ...overrides,
+  };
+}
+
+function ticketRow(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "ticket-1",
+    boardId: "board-1",
+    number: 1,
+    title: "Fix the thing",
+    status: "todo",
+    priority: "high",
+    assigneeBotId: "bot-1",
+    updatedAt: hoursAgo(1),
+    ...overrides,
+  };
+}
+
+function depsFor(options: {
+  bots?: unknown[];
+  tickets?: unknown[];
+  activeBotIds?: string[];
+  claimCount?: number;
+}) {
+  const enqueue = vi.fn(async () => undefined);
+  const taskCreate = vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({
+    id: "task-1",
+    ...data,
+  }));
+  const runCreate = vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({
+    id: "run-1",
+    ...data,
+  }));
+  const txBotUpdateMany = vi.fn(async () => ({ count: options.claimCount ?? 1 }));
+  const tx = {
+    bot: { updateMany: txBotUpdateMany },
+    task: { create: taskCreate },
+    run: { create: runCreate },
+  };
+  const botUpdateMany = vi.fn(async () => ({ count: 1 }));
+  const prisma = {
+    bot: {
+      findMany: vi.fn(async () => options.bots ?? [botRow()]),
+      updateMany: botUpdateMany,
+    },
+    ticket: { findMany: vi.fn(async () => options.tickets ?? [ticketRow()]) },
+    ticketComment: { findMany: vi.fn(async () => []) },
+    run: {
+      findMany: vi.fn(async () => (options.activeBotIds ?? []).map((botId) => ({ botId }))),
+    },
+    board: { findUnique: vi.fn(async () => ({ ticketPrefix: "RAK" })) },
+    $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(tx)),
+  };
+  const boardNotify = vi.fn(async () => undefined);
+  const deps: TicketCheckDeps = {
+    prisma: prisma as unknown as PrismaClient,
+    jobs: { enqueue } as unknown as JobPublisher,
+    boardEvents: { notify: boardNotify },
+  };
+  return {
+    deps,
+    enqueue,
+    taskCreate,
+    runCreate,
+    botUpdateMany,
+    txBotUpdateMany,
+    boardNotify,
+  };
+}
+
+describe("runTicketChecks", () => {
+  it("starts one run and wakes the owner once for changed tickets", async () => {
+    const { deps, enqueue, taskCreate, runCreate, botUpdateMany, boardNotify } = depsFor({});
+    await runTicketChecks(deps, { trigger: "periodic", now: NOW });
+
+    expect(boardNotify).toHaveBeenCalledWith("space-1", { boardId: "board-1" });
+
+    expect(taskCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({ botId: "bot-1", threadId: "thread-1", status: "queued" }),
+    });
+    expect(taskCreate.mock.calls[0]?.[0].data.prompt).toContain("RAK-1");
+    expect(runCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({ botId: "bot-1", status: "queued", trigger: "tickets" }),
+    });
+    expect(enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "run.continue", payload: { runId: "run-1" } }),
+    );
+    expect(botUpdateMany).toHaveBeenCalledWith({
+      where: { id: { in: ["bot-1"] } },
+      data: { ticketsCheckedAt: NOW },
+    });
+  });
+
+  it("does nothing while the bot already has an active run", async () => {
+    const { deps, enqueue, taskCreate } = depsFor({ activeBotIds: ["bot-1"] });
+    await runTicketChecks(deps, { trigger: "periodic", now: NOW });
+    expect(taskCreate).not.toHaveBeenCalled();
+    expect(enqueue).not.toHaveBeenCalled();
+  });
+
+  it("skips a bot with no actionable tickets", async () => {
+    const { deps, taskCreate } = depsFor({ tickets: [] });
+    await runTicketChecks(deps, { trigger: "periodic", now: NOW });
+    expect(taskCreate).not.toHaveBeenCalled();
+  });
+
+  it("stays quiet when nothing changed and the ticket is fresh", async () => {
+    const bot = botRow({ ticketsCheckedAt: hoursAgo(0.5) });
+    const { deps, taskCreate } = depsFor({
+      bots: [bot],
+      tickets: [ticketRow({ updatedAt: hoursAgo(1) })],
+    });
+    await runTicketChecks(deps, { trigger: "periodic", now: NOW });
+    expect(taskCreate).not.toHaveBeenCalled();
+  });
+
+  it("reminds on a stale ticket even without a change", async () => {
+    const bot = botRow({ ticketsCheckedAt: hoursAgo(0.5) });
+    const { deps, taskCreate } = depsFor({
+      bots: [bot],
+      tickets: [ticketRow({ updatedAt: hoursAgo(5) })],
+    });
+    await runTicketChecks(deps, { trigger: "periodic", now: NOW });
+    expect(taskCreate).toHaveBeenCalledTimes(1);
+  });
+
+  it("skips the wake when the debounce fence rejects the claim", async () => {
+    const { deps, enqueue, taskCreate } = depsFor({ claimCount: 0 });
+    await runTicketChecks(deps, { trigger: "event", botId: "bot-1", now: NOW });
+    expect(taskCreate).not.toHaveBeenCalled();
+    expect(enqueue).not.toHaveBeenCalled();
+  });
+});

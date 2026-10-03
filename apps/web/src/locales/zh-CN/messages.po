@@ -4197,3 +4197,94 @@ msgstr "你的一支随时在线的 Agent 团队<0/>可以交给它们真正的�
 #: src/pages/ResizableSidePanel.tsx
 msgid "Resize panel"
 msgstr "调整面板大小"
+
+#. placeholder {0}: assignee.name
+#. placeholder {0}: owner.name
+#: src/pages/Board.tsx
+msgid "{0} is working"
+msgstr ""
+
+#: src/pages/Board.tsx
+msgid "Add a comment"
+msgstr ""
+
+#: src/lib/ticket-status.ts
+msgid "Blocked"
+msgstr ""
+
+#: src/pages/Board.tsx
+msgid "Board"
+msgstr ""
+
+#: src/pages/Board.tsx
+#: src/pages/Shell.tsx
+msgid "Boards"
+msgstr ""
+
+#: src/lib/ticket-status.ts
+msgid "Closed"
+msgstr ""
+
+#: src/pages/Board.tsx
+msgid "Comment"
+msgstr ""
+
+#: src/pages/Board.tsx
+msgid "Could not create the ticket."
+msgstr ""
+
+#: src/pages/Board.tsx
+msgid "Could not load comments."
+msgstr ""
+
+#: src/pages/Board.tsx
+msgid "Could not load the board."
+msgstr ""
+
+#: src/pages/Board.tsx
+msgid "Edit"
+msgstr ""
+
+#: src/lib/ticket-status.ts
+msgid "In progress"
+msgstr ""
+
+#: src/lib/ticket-status.ts
+msgid "In review"
+msgstr ""
+
+#: src/pages/Board.tsx
+msgid "Move ticket"
+msgstr ""
+
+#: src/pages/Board.tsx
+msgid "New ticket"
+msgstr ""
+
+#: src/lib/ticket-priority.ts
+msgid "Normal"
+msgstr ""
+
+#: src/pages/Board.tsx
+msgid "Owner"
+msgstr ""
+
+#: src/pages/Board.tsx
+msgid "Priority"
+msgstr ""
+
+#: src/pages/Board.tsx
+msgid "Something went wrong."
+msgstr ""
+
+#: src/pages/Board.tsx
+msgid "Status"
+msgstr ""
+
+#: src/lib/ticket-status.ts
+msgid "To do"
+msgstr ""
+
+#: src/lib/ticket-priority.ts
+msgid "Urgent"
+msgstr ""

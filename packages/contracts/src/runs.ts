@@ -1,6 +1,31 @@
 import * as z from "zod";
 import { Id, IsoDate, RunStatus } from "./ids.js";
 
+/**
+ * The single source of truth for run triggers. Schemas, adapters, and clients
+ * must derive their lists from here so a new trigger cannot be added in one
+ * place and rejected in another (Phase 9: `tickets` was missing from the output
+ * schemas, which made `/rpc/*` fail output validation during ticket runs).
+ */
+export const RUN_TRIGGERS = [
+  "user",
+  "routine",
+  "resume",
+  "follow_up",
+  "reaction",
+  "call_end",
+  "spawn",
+  "skill",
+  "bot_message",
+  "webhook",
+  "messaging",
+  "cloud_agent",
+  "created",
+  "tickets",
+] as const;
+export const RunTriggerSchema = z.enum(RUN_TRIGGERS);
+export type RunTrigger = z.infer<typeof RunTriggerSchema>;
+
 export const RoutineRunSchema = z.object({
   id: Id,
   botId: Id,
@@ -29,21 +54,7 @@ export const RunActivityRowSchema = z.object({
   groupName: z.string().nullable(),
   threadId: Id,
   status: RunStatus,
-  trigger: z.enum([
-    "user",
-    "routine",
-    "resume",
-    "follow_up",
-    "reaction",
-    "call_end",
-    "spawn",
-    "skill",
-    "bot_message",
-    "webhook",
-    "messaging",
-    "cloud_agent",
-    "created",
-  ]),
+  trigger: RunTriggerSchema,
   notificationsEnabled: z.boolean(),
   promptSnippet: z.string(),
   updatedAt: z.string(),

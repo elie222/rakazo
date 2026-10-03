@@ -4197,3 +4197,94 @@ msgstr "Dein Team aus jederzeit verfügbaren Agents<0/>für echte Aufgaben."
 #: src/pages/ResizableSidePanel.tsx
 msgid "Resize panel"
 msgstr "Panelgröße ändern"
+
+#. placeholder {0}: assignee.name
+#. placeholder {0}: owner.name
+#: src/pages/Board.tsx
+msgid "{0} is working"
+msgstr "{0} arbeitet"
+
+#: src/pages/Board.tsx
+msgid "Add a comment"
+msgstr "Kommentar hinzufügen"
+
+#: src/lib/ticket-status.ts
+msgid "Blocked"
+msgstr "Blockiert"
+
+#: src/pages/Board.tsx
+msgid "Board"
+msgstr "Board"
+
+#: src/pages/Board.tsx
+#: src/pages/Shell.tsx
+msgid "Boards"
+msgstr "Boards"
+
+#: src/lib/ticket-status.ts
+msgid "Closed"
+msgstr "Geschlossen"
+
+#: src/pages/Board.tsx
+msgid "Comment"
+msgstr "Kommentieren"
+
+#: src/pages/Board.tsx
+msgid "Could not create the ticket."
+msgstr "Ticket konnte nicht erstellt werden."
+
+#: src/pages/Board.tsx
+msgid "Could not load comments."
+msgstr "Kommentare konnten nicht geladen werden."
+
+#: src/pages/Board.tsx
+msgid "Could not load the board."
+msgstr "Board konnte nicht geladen werden."
+
+#: src/pages/Board.tsx
+msgid "Edit"
+msgstr "Bearbeiten"
+
+#: src/lib/ticket-status.ts
+msgid "In progress"
+msgstr "In Arbeit"
+
+#: src/lib/ticket-status.ts
+msgid "In review"
+msgstr "In Prüfung"
+
+#: src/pages/Board.tsx
+msgid "Move ticket"
+msgstr "Ticket verschieben"
+
+#: src/pages/Board.tsx
+msgid "New ticket"
+msgstr "Neues Ticket"
+
+#: src/lib/ticket-priority.ts
+msgid "Normal"
+msgstr "Normal"
+
+#: src/pages/Board.tsx
+msgid "Owner"
+msgstr "Verantwortlich"
+
+#: src/pages/Board.tsx
+msgid "Priority"
+msgstr "Priorität"
+
+#: src/pages/Board.tsx
+msgid "Something went wrong."
+msgstr "Etwas ist schiefgelaufen."
+
+#: src/pages/Board.tsx
+msgid "Status"
+msgstr "Status"
+
+#: src/lib/ticket-status.ts
+msgid "To do"
+msgstr "Zu erledigen"
+
+#: src/lib/ticket-priority.ts
+msgid "Urgent"
+msgstr "Dringend"

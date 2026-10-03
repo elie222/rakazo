@@ -1,0 +1,401 @@
+import { describe, expect, it, vi } from "vitest";
+import {
+  assignTicket,
+  closeTicket,
+  commentTicket,
+  createTicket,
+  getTicket,
+  listBoardTickets,
+  moveTicket,
+  updateTicket,
+} from "./ticket-tools.js";
+
+const NOW = new Date("2026-01-01T00:00:00.000Z");
+
+function board(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "board-1",
+    spaceId: "ws",
+    name: "Board",
+    ticketPrefix: "RAK",
+    nextNumber: 1,
+    createdAt: NOW,
+    updatedAt: NOW,
+    ...overrides,
+  };
+}
+
+/** `ensureBoard` reads the space name to replace the placeholder board name. */
+function boardSpace() {
+  const row = board();
+  return {
+    board: {
+      findUnique: vi.fn(async () => row),
+      upsert: vi.fn(async () => row),
+      update: vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({ ...row, ...data })),
+    },
+    space: { findUnique: vi.fn(async () => ({ name: "Personal" })) },
+  };
+}
+
+function ticket(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "t1",
+    boardId: "board-1",
+    spaceId: "ws",
+    number: 1,
+    title: "Ticket",
+    description: null,
+    status: "todo",
+    priority: null,
+    assigneeBotId: "bot-1",
+    assigneeUserId: null,
+    createdByBotId: null,
+    createdByUserId: null,
+    createdAt: NOW,
+    updatedAt: NOW,
+    completedAt: null,
+    ...overrides,
+  };
+}
+
+describe("ticket tools", () => {
+  it("lists tickets strictly within the space and board", async () => {
+    const findMany = vi.fn(async () => [ticket({ number: 1, status: "doing" })]);
+    const prisma = {
+      ...boardSpace(),
+      ticket: { findMany },
+    };
+
+    const result = await listBoardTickets({ prisma } as never, {
+      spaceId: "ws",
+      status: "doing",
+    });
+
+    expect(findMany).toHaveBeenCalledWith({
+      where: { spaceId: "ws", boardId: "board-1", status: "doing" },
+      orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
+    });
+    expect(result).toEqual({ tickets: [expect.objectContaining({ ref: "RAK-1" })] });
+  });
+
+  it("rejects an unknown status filter", async () => {
+    const result = await listBoardTickets(
+      { prisma: { board: { upsert: vi.fn() } } as never },
+      { spaceId: "ws", status: "archived" },
+    );
+    expect(result).toEqual({ error: expect.stringContaining("status must be one of") });
+  });
+
+  it("allocates a race-safe number and defaults the owner to the calling bot", async () => {
+    const update = vi.fn(async () => ({ nextNumber: 2 }));
+    const create = vi.fn(async ({ data }: { data: Record<string, unknown> }) =>
+      ticket({
+        number: data.number,
+        title: data.title,
+        status: data.status,
+        createdByBotId: data.createdByBotId,
+        createdByUserId: data.createdByUserId,
+        assigneeBotId: data.assigneeBotId,
+      }),
+    );
+    const prisma = {
+      ...boardSpace(),
+      bot: { findFirst: vi.fn(async () => ({ id: "bot-1" })) },
+      $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) =>
+        fn({ board: { update }, ticket: { create } }),
+      ),
+    };
+
+    const result = await createTicket({ prisma } as never, {
+      spaceId: "ws",
+      botId: "bot-1",
+      userId: "user-1",
+      title: "  Ship it  ",
+    });
+
+    expect(create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        number: 1,
+        title: "Ship it",
+        createdByBotId: "bot-1",
+        createdByUserId: "user-1",
+        assigneeBotId: "bot-1",
+      }),
+    });
+    expect(result).toEqual({ ticket: expect.objectContaining({ ref: "RAK-1" }) });
+  });
+
+  it("creates with an explicit owner in the space", async () => {
+    const update = vi.fn(async () => ({ nextNumber: 2 }));
+    const create = vi.fn(async ({ data }: { data: Record<string, unknown> }) =>
+      ticket({ number: data.number, assigneeBotId: data.assigneeBotId }),
+    );
+    const prisma = {
+      ...boardSpace(),
+      bot: { findFirst: vi.fn(async () => ({ id: "bot-2" })) },
+      $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) =>
+        fn({ board: { update }, ticket: { create } }),
+      ),
+    };
+
+    await createTicket({ prisma } as never, {
+      spaceId: "ws",
+      botId: "bot-1",
+      title: "Ship it",
+      ownerBotId: "bot-2",
+    });
+
+    expect(create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ assigneeBotId: "bot-2" }),
+    });
+  });
+
+  it("rejects an owner that is not a bot in the space", async () => {
+    const prisma = {
+      ...boardSpace(),
+      bot: { findFirst: vi.fn(async () => null) },
+    };
+    const result = await createTicket({ prisma } as never, {
+      spaceId: "ws",
+      botId: "bot-1",
+      title: "Ship it",
+      ownerBotId: "foreign",
+    });
+    expect(result).toEqual({ error: "ownerBotId must be a bot in this space." });
+  });
+
+  it("resolves a ticket by reference and includes its comments", async () => {
+    const findFirst = vi.fn(async ({ where }: { where: { number?: number } }) =>
+      where.number === 5 ? ticket({ id: "t5", number: 5 }) : null,
+    );
+    const commentFindMany = vi.fn(async () => [
+      {
+        id: "c1",
+        ticketId: "t5",
+        body: "first",
+        authorBotId: "bot-1",
+        authorUserId: null,
+        createdAt: NOW,
+        updatedAt: NOW,
+      },
+    ]);
+    const prisma = {
+      ...boardSpace(),
+      ticket: { findFirst },
+      ticketComment: { findMany: commentFindMany },
+    };
+
+    const found = await getTicket({ prisma } as never, { spaceId: "ws", ref: "RAK-5" });
+    expect(findFirst).toHaveBeenCalledWith({
+      where: { number: 5, spaceId: "ws", boardId: "board-1" },
+    });
+    expect(found).toEqual({
+      ticket: expect.objectContaining({ ref: "RAK-5" }),
+      comments: [expect.objectContaining({ body: "first" })],
+    });
+    expect(commentFindMany).toHaveBeenCalledWith({
+      where: { ticketId: "t5", spaceId: "ws" },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    });
+
+    const missing = await getTicket({ prisma } as never, { spaceId: "ws", ref: "RAK-9" });
+    expect(missing).toEqual({ error: "Ticket RAK-9 not found." });
+  });
+
+  it("moves a ticket only when it is inside the space", async () => {
+    const findFirst = vi.fn(async () => ticket({ id: "t5" }));
+    const update = vi.fn(async ({ data }: { data: Record<string, unknown> }) =>
+      ticket({ id: "t5", status: data.status, completedAt: data.completedAt }),
+    );
+    const prisma = {
+      ...boardSpace(),
+      ticket: { findFirst, update },
+    };
+
+    const result = await moveTicket({ prisma } as never, {
+      spaceId: "ws",
+      id: "t5",
+      status: "done",
+    });
+
+    expect(findFirst).toHaveBeenCalledWith({
+      where: { id: "t5", spaceId: "ws", boardId: "board-1" },
+    });
+    expect(update.mock.calls[0]?.[0]).toEqual({
+      where: { id: "t5" },
+      data: { status: "done", completedAt: expect.any(Date) },
+    });
+    expect(result).toEqual({ ticket: expect.objectContaining({ status: "done" }) });
+  });
+
+  it("reports a move on a ticket outside the space", async () => {
+    const prisma = {
+      ...boardSpace(),
+      ticket: { findFirst: vi.fn(async () => null) },
+    };
+    const result = await moveTicket({ prisma } as never, {
+      spaceId: "ws",
+      id: "missing",
+      status: "doing",
+    });
+    expect(result).toEqual({ error: "Ticket missing not found." });
+  });
+
+  it("updates title, description, and priority only within the space", async () => {
+    const findFirst = vi.fn(async () => ticket({ id: "t5" }));
+    const update = vi.fn(async ({ data }: { data: Record<string, unknown> }) =>
+      ticket({ id: "t5", ...data }),
+    );
+    const prisma = {
+      ...boardSpace(),
+      ticket: { findFirst, update },
+    };
+
+    const result = await updateTicket({ prisma } as never, {
+      spaceId: "ws",
+      id: "t5",
+      title: "  New title  ",
+      priority: "  high  ",
+    });
+
+    expect(update).toHaveBeenCalledWith({
+      where: { id: "t5" },
+      data: { title: "New title", priority: "high" },
+    });
+    expect(result).toEqual({ ticket: expect.objectContaining({ title: "New title" }) });
+  });
+
+  it("rejects an update with no fields and a ticket outside the space", async () => {
+    const empty = await updateTicket(
+      { prisma: { board: { upsert: vi.fn() } } as never },
+      { spaceId: "ws", id: "t5" },
+    );
+    expect(empty).toEqual({ error: "Provide title, description, or priority." });
+
+    const missing = await updateTicket(
+      {
+        prisma: {
+          ...boardSpace(),
+          ticket: { findFirst: vi.fn(async () => null) },
+        },
+      } as never,
+      { spaceId: "ws", id: "missing", title: "x" },
+    );
+    expect(missing).toEqual({ error: "Ticket missing not found." });
+  });
+
+  it("closes a ticket and records the closing comment in one transaction", async () => {
+    const update = vi.fn(async ({ data }: { data: Record<string, unknown> }) =>
+      ticket({ id: "t5", status: data.status, completedAt: data.completedAt }),
+    );
+    const commentCreate = vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({
+      id: "c1",
+      ticketId: data.ticketId,
+      body: data.body,
+      authorBotId: data.authorBotId,
+      authorUserId: data.authorUserId,
+      createdAt: NOW,
+      updatedAt: NOW,
+    }));
+    const prisma = {
+      ...boardSpace(),
+      ticket: { findFirst: vi.fn(async () => ticket({ id: "t5" })) },
+      $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) =>
+        fn({ ticket: { update }, ticketComment: { create: commentCreate } }),
+      ),
+    };
+
+    const result = await closeTicket({ prisma } as never, {
+      spaceId: "ws",
+      botId: "bot-1",
+      userId: "user-1",
+      id: "t5",
+      comment: "  done  ",
+    });
+
+    expect(update).toHaveBeenCalledWith({
+      where: { id: "t5" },
+      data: { status: "closed", completedAt: expect.any(Date) },
+    });
+    expect(commentCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({ ticketId: "t5", authorBotId: "bot-1", body: "done" }),
+    });
+    expect(result).toEqual({
+      ticket: expect.objectContaining({ status: "closed" }),
+      comment: expect.objectContaining({ body: "done" }),
+    });
+  });
+
+  it("comments on a ticket as the writing bot", async () => {
+    const ticketComment = {
+      create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({
+        id: "c1",
+        ticketId: data.ticketId,
+        body: data.body,
+        authorBotId: data.authorBotId,
+        authorUserId: data.authorUserId,
+        createdAt: NOW,
+        updatedAt: NOW,
+      })),
+    };
+    const txTicket = { update: vi.fn(async () => ({})) };
+    const prisma = {
+      ...boardSpace(),
+      ticket: { findFirst: vi.fn(async () => ticket({ id: "t7" })) },
+      $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) =>
+        fn({ ticketComment, ticket: txTicket }),
+      ),
+    };
+
+    const result = await commentTicket({ prisma } as never, {
+      spaceId: "ws",
+      botId: "bot-1",
+      userId: "user-1",
+      id: "t7",
+      body: "  progress  ",
+    });
+
+    expect(txTicket.update).toHaveBeenCalledWith({
+      where: { id: "t7" },
+      data: { updatedAt: expect.any(Date) },
+    });
+    expect(result).toEqual({
+      comment: expect.objectContaining({ authorBotId: "bot-1", body: "progress" }),
+    });
+  });
+
+  it("reassigns the owner only to a bot in the space", async () => {
+    const findFirstTicket = vi.fn(async () => ticket({ id: "t1" }));
+    const update = vi.fn(async ({ data }: { data: Record<string, unknown> }) =>
+      ticket({ id: "t1", assigneeBotId: data.assigneeBotId, assigneeUserId: data.assigneeUserId }),
+    );
+    const botFindFirst = vi.fn(async (): Promise<{ id: string } | null> => ({ id: "bot-2" }));
+    const prisma = {
+      ...boardSpace(),
+      bot: { findFirst: botFindFirst },
+      ticket: { findFirst: findFirstTicket, update },
+    };
+
+    const assigned = await assignTicket({ prisma } as never, {
+      spaceId: "ws",
+      id: "t1",
+      botId: "bot-1",
+      ownerBotId: "bot-2",
+    });
+    expect(assigned).toEqual({ ticket: expect.objectContaining({ assigneeBotId: "bot-2" }) });
+    expect(update).toHaveBeenCalledWith({
+      where: { id: "t1" },
+      data: { assigneeBotId: "bot-2", assigneeUserId: null },
+    });
+
+    botFindFirst.mockResolvedValueOnce(null);
+    const foreign = await assignTicket({ prisma } as never, {
+      spaceId: "ws",
+      id: "t1",
+      botId: "bot-1",
+      ownerBotId: "foreign",
+    });
+    expect(foreign).toEqual({ error: "ownerBotId must be a bot in this space." });
+  });
+});

@@ -80,4 +80,23 @@ describe("user-visible messages", () => {
       userVisibleMessages(messages, { knownPeerRunIds: ["run-peer"] }).map((item) => item.id),
     ).toEqual(["ask", "reply", "answer"]);
   });
+
+  it("hides background ticket-run output except an explicit message_user update", () => {
+    const background = [
+      message("wake", "run-ticket", [{ kind: "text", text: "Ticket check prompt" }]),
+      message("steps", "run-ticket", [
+        { kind: "steps", steps: [{ label: "Ticket comment", count: 2 }] },
+      ]),
+      {
+        ...message("progress", "run-ticket", [{ kind: "text", text: "Working on it" }]),
+        clientNonce: "user-progress:run-ticket:0",
+      },
+      message("final", "run-ticket", [{ kind: "text", text: "Done, closed the ticket." }]),
+      message("user", "run-user", [{ kind: "text", text: "Visible answer" }]),
+    ];
+
+    expect(
+      userVisibleMessages(background, { backgroundRunIds: ["run-ticket"] }).map((m) => m.id),
+    ).toEqual(["progress", "user"]);
+  });
 });

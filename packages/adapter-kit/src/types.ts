@@ -567,6 +567,8 @@ export interface BackgroundJobPayloads {
   "messaging.deliver": { runId?: string };
   /** Reconcile durable remote-agent intent; scope is loaded from the database. */
   "cloud_agent.poll": { agentId: string };
+  /** Sweep every bot's board, or wake one bot when the ticket change named it. */
+  "tickets.check": { botId?: string };
 }
 
 export type BackgroundJobName = keyof BackgroundJobPayloads;

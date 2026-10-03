@@ -1,4 +1,6 @@
 export * from "./artifact-versions.js";
+export * from "./board.js";
+export * from "./board-events.js";
 export * from "./bootstrap-user.js";
 export * from "./cancel-runs.js";
 export * from "./client.js";

@@ -4197,3 +4197,94 @@ msgstr "Your team of always-on agents<0/>that you can give real work to."
 #: src/pages/ResizableSidePanel.tsx
 msgid "Resize panel"
 msgstr "Resize panel"
+
+#. placeholder {0}: assignee.name
+#. placeholder {0}: owner.name
+#: src/pages/Board.tsx
+msgid "{0} is working"
+msgstr "{0} is working"
+
+#: src/pages/Board.tsx
+msgid "Add a comment"
+msgstr "Add a comment"
+
+#: src/lib/ticket-status.ts
+msgid "Blocked"
+msgstr "Blocked"
+
+#: src/pages/Board.tsx
+msgid "Board"
+msgstr "Board"
+
+#: src/pages/Board.tsx
+#: src/pages/Shell.tsx
+msgid "Boards"
+msgstr "Boards"
+
+#: src/lib/ticket-status.ts
+msgid "Closed"
+msgstr "Closed"
+
+#: src/pages/Board.tsx
+msgid "Comment"
+msgstr "Comment"
+
+#: src/pages/Board.tsx
+msgid "Could not create the ticket."
+msgstr "Could not create the ticket."
+
+#: src/pages/Board.tsx
+msgid "Could not load comments."
+msgstr "Could not load comments."
+
+#: src/pages/Board.tsx
+msgid "Could not load the board."
+msgstr "Could not load the board."
+
+#: src/pages/Board.tsx
+msgid "Edit"
+msgstr "Edit"
+
+#: src/lib/ticket-status.ts
+msgid "In progress"
+msgstr "In progress"
+
+#: src/lib/ticket-status.ts
+msgid "In review"
+msgstr "In review"
+
+#: src/pages/Board.tsx
+msgid "Move ticket"
+msgstr "Move ticket"
+
+#: src/pages/Board.tsx
+msgid "New ticket"
+msgstr "New ticket"
+
+#: src/lib/ticket-priority.ts
+msgid "Normal"
+msgstr "Normal"
+
+#: src/pages/Board.tsx
+msgid "Owner"
+msgstr "Owner"
+
+#: src/pages/Board.tsx
+msgid "Priority"
+msgstr "Priority"
+
+#: src/pages/Board.tsx
+msgid "Something went wrong."
+msgstr "Something went wrong."
+
+#: src/pages/Board.tsx
+msgid "Status"
+msgstr "Status"
+
+#: src/lib/ticket-status.ts
+msgid "To do"
+msgstr "To do"
+
+#: src/lib/ticket-priority.ts
+msgid "Urgent"
+msgstr "Urgent"
