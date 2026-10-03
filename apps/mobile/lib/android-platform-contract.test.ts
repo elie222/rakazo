@@ -26,7 +26,7 @@ describe("Android mobile platform contract", () => {
     expect(thread).toContain("KeyboardAvoidingView");
     expect(thread).toContain('behavior="height"');
     expect(thread).toContain("useHeaderHeight");
-    expect(thread).toContain("keyboardVerticalOffset={headerHeight}");
+    expect(thread).toContain("keyboardVerticalOffset={0}");
     expect(thread).not.toContain("automaticOffset");
     expect(thread).not.toContain("KeyboardStickyView");
     expect(thread).toContain("useSafeAreaInsets");
