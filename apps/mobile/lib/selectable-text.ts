@@ -7,11 +7,45 @@ const OPEN_FENCE = /^ {0,3}(`{3,}|~{3,})(.*)$/;
 const BULLET = /^(\s*)[-*+]\s+(.*)$/;
 const NUMBERED = /^(\s*\d+[.)])\s+(.*)$/;
 const RULE = /^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$/;
-const DELIMITER_ROW = /^\s*\|?\s*:?-+:?\s*(?:\|\s*:?-+:?\s*)*\|?\s*$/;
-const TABLE_ROW = /^\s*\|(.+)\|\s*$/;
+const DELIMITER_CELL = /^:?-+:?$/;
 const INDENTED = /^(?: {4}|\t)/;
 
 type Line = { text: string; code: boolean };
+
+/** Table cells, split on pipes that are neither escaped nor inside an inline code span. */
+function tableCells(line: string): string[] | null {
+  const trimmed = line.trim();
+  if (trimmed.length < 3 || !trimmed.startsWith("|") || !trimmed.endsWith("|")) return null;
+  const cells: string[] = [];
+  let cell = "";
+  let fence = 0;
+  const body = trimmed.slice(1, -1);
+  for (let i = 0; i < body.length; i++) {
+    const char = body[i] ?? "";
+    if (char === "\\" && i + 1 < body.length) {
+      cell += char + body[++i];
+    } else if (char === "`") {
+      let run = 1;
+      while (body[i + run] === "`") run++;
+      cell += "`".repeat(run);
+      i += run - 1;
+      fence = fence === 0 ? run : fence === run ? 0 : fence;
+    } else if (char === "|" && fence === 0) {
+      cells.push(cell);
+      cell = "";
+    } else {
+      cell += char;
+    }
+  }
+  cells.push(cell);
+  return cells;
+}
+
+/** `| --- | :-: |`: every cell is hyphens with optional colons. Linear in the line. */
+function isDelimiterRow(line: string): boolean {
+  const cells = tableCells(line);
+  return cells !== null && cells.every((cell) => DELIMITER_CELL.test(cell.trim()));
+}
 
 function convert(line: string): string {
   return line.length > LINE_LIMIT ? line : plainTextFromMarkdown(line, { maxSource: LINE_LIMIT });
@@ -31,6 +65,7 @@ export function selectableTextFromMarkdown(markdown: string): string {
   let previousBlank = true;
   let previousCode = false;
   let tableDelimiterAt = -1;
+  let inTable = false;
 
   for (let i = 0; i < source.length; i++) {
     const line = source[i] ?? "";
@@ -61,6 +96,7 @@ export function selectableTextFromMarkdown(markdown: string): string {
     if (blank) {
       lines.push({ text: "", code: previousCode && INDENTED.test(source[i + 1] ?? "") });
       previousBlank = true;
+      inTable = false;
       continue;
     }
 
@@ -83,8 +119,13 @@ export function selectableTextFromMarkdown(markdown: string): string {
       previousBlank = true;
       continue;
     }
-    // A table separator only follows a header row; `| - | - |` elsewhere is data.
-    if (line.includes("|") && DELIMITER_ROW.test(source[i + 1] ?? "")) tableDelimiterAt = i + 1;
+    // A table separator only follows a table's header row; `| - | - |` later in
+    // the table, or anywhere else, is data.
+    if (tableCells(line) === null) inTable = false;
+    else if (!inTable && isDelimiterRow(source[i + 1] ?? "")) {
+      tableDelimiterAt = i + 1;
+      inTable = true;
+    }
 
     previousBlank = false;
     if (bullet) {
@@ -94,7 +135,7 @@ export function selectableTextFromMarkdown(markdown: string): string {
     } else {
       // Cells are converted one by one: the preview helper reads a lone
       // `| - | - |` row as a separator and would drop it.
-      const cells = line.match(TABLE_ROW)?.[1]?.split("|");
+      const cells = tableCells(line);
       lines.push({
         text: cells ? cells.map((cell) => convert(cell.trim())).join(" | ") : convert(line),
         code: false,

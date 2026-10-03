@@ -44,6 +44,27 @@ describe("selectableTextFromMarkdown", () => {
     expect(selectableTextFromMarkdown("| a | b |\n| --- | --- |\n| - | - |")).toBe("a | b\n- | -");
   });
 
+  it("keeps escaped pipes and pipes inside code spans within their cell", () => {
+    expect(selectableTextFromMarkdown("| a\\|b | c |")).toBe("a|b | c");
+    expect(selectableTextFromMarkdown("| `x|y` | c |")).toBe("x|y | c");
+  });
+
+  it("drops a separator only after a table's header row", () => {
+    expect(selectableTextFromMarkdown("| a | b |\n| --- | --- |\n| - | - |\n| - | - |")).toBe(
+      "a | b\n- | -\n- | -",
+    );
+    // Two dash-only rows in a row are a header and its separator, per GFM.
+    expect(selectableTextFromMarkdown("| - | - |\n| - | - |")).toBe("- | -");
+    expect(selectableTextFromMarkdown("| a | b |\n| - | - |")).toBe("a | b");
+  });
+
+  it("stays fast on a long line that almost looks like a table separator", () => {
+    const start = performance.now();
+    const text = selectableTextFromMarkdown(`| a |\n| - ${" ".repeat(99_000)}X`);
+    expect(performance.now() - start).toBeLessThan(500);
+    expect(text).toContain("X");
+  });
+
   it("drops horizontal rules but keeps a lone hyphen", () => {
     expect(selectableTextFromMarkdown("a\n\n---\n\nb")).toBe("a\n\nb");
     expect(selectableTextFromMarkdown("a\n-\nb")).toBe("a\n-\nb");

@@ -98,6 +98,7 @@ import {
   messagingProviderLabel,
   prependMobileMessagePage,
   rpc,
+  selectableMobileMessageText,
   selectedSpaceId,
   selectSpace,
   shouldApplyMobileThreadRefresh,
@@ -1459,7 +1460,7 @@ function Thread() {
   }
 
   function messageActionProps(message: MobileMessage): MessageActionProps {
-    const messageText = copyableMobileMessageText(message);
+    const messageText = selectableMobileMessageText(message);
     const actions = [
       {
         name: "reply",
@@ -1496,7 +1497,7 @@ function Thread() {
       ...(message.role === "bot" && !onCall && blockText(message)
         ? [{ name: "speak", text: t("Speak message"), onPress: () => void speak(message) }]
         : []),
-      ...(messageText
+      ...(messageText.trim()
         ? [
             {
               name: "select",
