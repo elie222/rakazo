@@ -159,6 +159,8 @@ export const DE_MESSAGES: Record<string, string> = {
   "Skill {name}": "Skill {name}",
   "Skipped {items}": "{items} übersprungen",
   "Speak message": "Nachricht vorlesen",
+  Play: "Abspielen",
+  Pause: "Pause",
   Stop: "Stoppen",
   "This removes every message and stops current work. The bot, computer, memory, and routines are kept.":
     "Das entfernt alle Nachrichten und stoppt die laufende Arbeit. Bot, Computer, Erinnerungen und Routinen bleiben erhalten.",

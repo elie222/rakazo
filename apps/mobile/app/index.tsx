@@ -541,6 +541,7 @@ export default function Home() {
       ) : null}
 
       <FlatList<InboxItem>
+        style={{ flex: 1 }}
         data={listData}
         keyExtractor={(item) => {
           if (item.type === "heading") return `heading-${item.key}`;
