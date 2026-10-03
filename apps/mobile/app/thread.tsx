@@ -137,6 +137,7 @@ import {
   getCachedResponseStreamingEnabled,
   subscribeResponseStreaming,
 } from "../lib/response-streaming";
+import { selectableTextFromMarkdown } from "../lib/selectable-text";
 import {
   type ThreadScrollAction,
   ThreadScrollBehavior,
@@ -364,6 +365,7 @@ function Thread() {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loadingOlder, setLoadingOlder] = useState(false);
+  const [selectableText, setSelectableText] = useState<string | null>(null);
   const [markdownPreview, setMarkdownPreview] = useState<MarkdownArtifactPreviewTarget | null>(
     null,
   );
@@ -1493,6 +1495,15 @@ function Thread() {
         ? [{ name: "speak", text: t("Speak message"), onPress: () => void speak(message) }]
         : []),
       {
+        name: "select",
+        text: t("Select text"),
+        onPress: () => {
+          const text = copyableMobileMessageText(message);
+          if (text)
+            setSelectableText(message.role === "user" ? text : selectableTextFromMarkdown(text));
+        },
+      },
+      {
         name: "copy",
         text: t("Copy"),
         onPress: () => {
@@ -2298,6 +2309,31 @@ function Thread() {
               </Pressable>
             ))}
           </View>
+        </View>
+      </Modal>
+      <Modal
+        visible={selectableText !== null}
+        animationType="slide"
+        onRequestClose={() => setSelectableText(null)}
+      >
+        <View style={{ flex: 1, backgroundColor: tokens.background }}>
+          <View style={{ flexDirection: "row", justifyContent: "flex-end", padding: 16 }}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={t("Done")}
+              hitSlop={8}
+              onPress={() => setSelectableText(null)}
+            >
+              <Text style={{ color: tokens.foreground, fontSize: 17, fontWeight: "600" }}>
+                {t("Done")}
+              </Text>
+            </Pressable>
+          </View>
+          <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 40 }}>
+            <Text selectable style={{ color: tokens.foreground, fontSize: 16, lineHeight: 24 }}>
+              {selectableText}
+            </Text>
+          </ScrollView>
         </View>
       </Modal>
       {markdownPreview && artifactTarget ? (
