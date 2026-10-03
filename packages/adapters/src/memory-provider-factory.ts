@@ -12,6 +12,7 @@ import {
 export { MemoryProviderDeploymentOwnerRequiredError } from "./serenity-memory-provider.js";
 
 import {
+  assertSupermemoryLocalBaseUrl,
   createSupermemoryProvider,
   decodeLegacySupermemoryCredentials,
   prepareSupermemoryConnection,
@@ -169,6 +170,13 @@ export class SpaceMemoryProviderResolver implements MemoryProviderResolver {
       });
       // Also disable pre-existing local configurations authored outside the deployment boundary.
       if (!deployment?.ownerUserId || deployment.ownerUserId !== config.userId) return null;
+    }
+    if (
+      config.provider === SUPERMEMORY_PROVIDER_ID &&
+      settings.mode === "local" &&
+      settings.baseUrl
+    ) {
+      await assertSupermemoryLocalBaseUrl(settings.baseUrl, { allowPrivateEndpoint: true });
     }
     const credentials = decodeCredentials(
       config.provider,

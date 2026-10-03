@@ -135,24 +135,26 @@ describe("persistMemoryProviderConfig", () => {
     },
   );
 
-  it.each(["http://127.0.0.1:8123/internal-action#", "http://localhost:6767"])(
-    "rejects ordinary Space owners before any local probe or write: %s",
-    async (baseUrl) => {
-      const fetchMock = vi.fn().mockResolvedValue(new Response("[]"));
-      vi.stubGlobal("fetch", fetchMock);
-      const { deps, transaction } = makeDeps();
-      try {
-        await expect(
-          persistMemoryProviderConfig(deps, actor, connectionInput("local", baseUrl)),
-        ).rejects.toMatchObject({ code: "FORBIDDEN" });
-        expect(fetchMock).not.toHaveBeenCalled();
-        expect(deps.secrets.put).not.toHaveBeenCalled();
-        expect(transaction).not.toHaveBeenCalled();
-      } finally {
-        vi.unstubAllGlobals();
-      }
-    },
-  );
+  it.each([
+    "http://127.0.0.1:8123/internal-action#",
+    "http://localhost:6767",
+    "http://10.0.0.8:6767",
+    "http://supermemory:6767",
+  ])("rejects ordinary Space owners before any local probe or write: %s", async (baseUrl) => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response("[]"));
+    vi.stubGlobal("fetch", fetchMock);
+    const { deps, transaction } = makeDeps();
+    try {
+      await expect(
+        persistMemoryProviderConfig(deps, actor, connectionInput("local", baseUrl)),
+      ).rejects.toMatchObject({ code: "FORBIDDEN" });
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(deps.secrets.put).not.toHaveBeenCalled();
+      expect(transaction).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
 
   it("still requires Space ownership for a deployment owner", async () => {
     const fetchMock = vi.fn();
@@ -195,7 +197,7 @@ describe("persistMemoryProviderConfig", () => {
     expect(upsert).not.toHaveBeenCalled();
   });
 
-  it("rejects a non-loopback baseUrl in local mode without probing or touching the database", async () => {
+  it("rejects a metadata baseUrl in local mode without probing or touching the database", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
     const { deps, upsert } = makeDeps();
@@ -205,9 +207,47 @@ describe("persistMemoryProviderConfig", () => {
         deploymentOwner,
         connectionInput("local", "http://169.254.169.254/latest/meta-data/"),
       ),
-    ).rejects.toThrow(/loopback/);
+    ).rejects.toThrow(/blocked address/);
     expect(fetchMock).not.toHaveBeenCalled();
     expect(upsert).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+
+  it("rejects a public HTTP base URL in local mode without probing", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const { deps, upsert } = makeDeps();
+    await expect(
+      persistMemoryProviderConfig(
+        deps,
+        deploymentOwner,
+        connectionInput("local", "http://203.0.113.10:6767"),
+      ),
+    ).rejects.toThrow(/private-network/);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(upsert).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+
+  it("accepts a private-network base URL in local mode for the deployment owner", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response("[]", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const { deps, upsert } = makeDeps();
+
+    await persistMemoryProviderConfig(
+      deps,
+      deploymentOwner,
+      connectionInput("local", "http://10.0.0.8:6767"),
+    );
+
+    expect(fetchMock.mock.calls[0]![0]).toBe("http://10.0.0.8:6767/v3/container-tags/list");
+    expect(upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({
+          settings: { mode: "local", baseUrl: "http://10.0.0.8:6767" },
+        }),
+      }),
+    );
     vi.unstubAllGlobals();
   });
 
