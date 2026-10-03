@@ -44,7 +44,7 @@ function tableCells(line: string): string[] | null {
 /** `| --- | :-: |`: every cell is hyphens with optional colons. Linear in the line. */
 function isDelimiterRow(line: string): boolean {
   const cells = tableCells(line);
-  return cells !== null && cells.every((cell) => DELIMITER_CELL.test(cell.trim()));
+  return cells?.every((cell) => DELIMITER_CELL.test(cell.trim())) ?? false;
 }
 
 function convert(line: string): string {
