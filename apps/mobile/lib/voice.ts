@@ -8,7 +8,14 @@ import { aiConsentCoalesceKey, captureApiRequestContext, rpc } from "./api";
 import { loadDeviceVoiceEnabled } from "./device-voice";
 import { t } from "./i18n";
 
-type SpeechOptions = { voiceId?: string; botId?: string; messageId?: string };
+/** Who is speaking, for the dock: it is mounted outside any one thread's bot list. */
+export type PlaybackSpeaker = { name?: string; color?: string };
+type SpeechOptions = {
+  voiceId?: string;
+  botId?: string;
+  messageId?: string;
+  speaker?: PlaybackSpeaker;
+};
 export const VOICE_RESPONSE_TIMEOUT_MS = 70_000;
 export const MAX_VOICE_AUDIO_BYTES = 16 * 1024 * 1024;
 const MAX_VOICE_ERROR_BYTES = 64 * 1024;
@@ -24,6 +31,7 @@ export type VoicePlaybackState = {
   messageId?: string;
   /** False when the active engine (Android on-device voice) can only stop, not pause. */
   canPause: boolean;
+  speaker?: PlaybackSpeaker;
 };
 type VoiceControl = { pause(): void; resume(): void; stop(): void };
 
@@ -32,8 +40,15 @@ let playback: VoicePlaybackState = IDLE_PLAYBACK;
 let activeControl: VoiceControl | null = null;
 const playbackListeners = new Set<() => void>();
 
+// The speaker is remembered per bot rather than threaded through every state
+// change below: pause, resume and the device-voice path all rebuild the state.
+let announcedSpeaker: { botId: string; speaker: PlaybackSpeaker } | undefined;
+
 function setPlayback(next: VoicePlaybackState, control: VoiceControl | null) {
-  playback = next;
+  playback =
+    next.botId && announcedSpeaker?.botId === next.botId
+      ? { ...next, speaker: announcedSpeaker.speaker }
+      : next;
   activeControl = control;
   for (const listener of playbackListeners) listener();
 }
@@ -127,6 +142,8 @@ export async function speakText(text: string, opts: SpeechOptions = {}): Promise
 
 async function speakPrepared(text: string, opts: SpeechOptions, epoch: number): Promise<boolean> {
   if (!isCurrentSpeech(epoch)) return false;
+  announcedSpeaker =
+    opts.botId && opts.speaker ? { botId: opts.botId, speaker: opts.speaker } : undefined;
   // Stop has to work before a player exists. Pause stays hidden until one does.
   const prepareControl: VoiceControl = {
     pause() {},

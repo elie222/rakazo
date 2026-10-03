@@ -233,6 +233,30 @@ describe("hosted voice playback controls", () => {
     expect(() => resumeVoicePlayback()).not.toThrow();
   });
 
+  it("carries who is speaking through pause and resume, and not to another bot", async () => {
+    const speaker = { name: "Ada", color: "#123456" };
+    const spoken = speakText("Read this", { botId: "bot-1", speaker });
+    await waitFor(() => ControllableAudio.instances.length > 0);
+    const audio = ControllableAudio.instances[0]!;
+    await waitFor(() => audio.paused === false);
+    expect(getVoicePlaybackState().speaker).toEqual(speaker);
+
+    pauseVoicePlayback();
+    expect(getVoicePlaybackState()).toMatchObject({ status: "paused", speaker });
+    resumeVoicePlayback();
+    await waitFor(() => audio.paused === false);
+    expect(getVoicePlaybackState()).toMatchObject({ status: "playing", speaker });
+
+    stopVoicePlayback();
+    await expect(spoken).resolves.toBe(true);
+
+    const other = speakText("Read that", { botId: "bot-2" });
+    await waitFor(() => ControllableAudio.instances.length > 1);
+    expect(getVoicePlaybackState().speaker).toBeUndefined();
+    stopVoicePlayback();
+    await other;
+  });
+
   it("pauses and resumes the current clip through the shared control", async () => {
     const spoken = speakText("Read this", { botId: "bot-1" });
     await waitFor(() => ControllableAudio.instances.length > 0);
