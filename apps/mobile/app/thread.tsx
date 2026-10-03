@@ -1347,11 +1347,16 @@ function Thread() {
         if (candidate.role !== "bot") return [];
         const text = speakableMessageText(candidate);
         if (!text) return [];
+        const speakerBotId = candidate.botId ?? botId ?? snap?.members?.[0]?.botId ?? "";
         return [
           {
             text,
-            botId: candidate.botId ?? botId ?? snap?.members?.[0]?.botId ?? "",
+            botId: speakerBotId,
             messageId: candidate.id,
+            speaker: {
+              name: memberName(snap?.members, speakerBotId) ?? displayName,
+              color: speakerColorFor(mentionBots, snap?.members, speakerBotId),
+            },
           },
         ];
       });
@@ -1365,7 +1370,7 @@ function Thread() {
           Alert.alert(t("Could not speak"), err instanceof Error ? err.message : t("Try again.")),
         );
     },
-    [botId, snap?.members, visibleMessages],
+    [botId, displayName, mentionBots, snap?.members, visibleMessages],
   );
 
   async function startVoiceCall() {
@@ -3218,6 +3223,9 @@ const MessageBubble = memo(function MessageBubble({
             </Pressable>
           ),
         )}
+        {message.role === "bot" && onPlay && speakableMessageText(message) ? (
+          <MessageSpeakButton messageId={message.id} onPlay={onPlay} />
+        ) : null}
         {appConnectBlocks.map((block, index) => (
           <AppConnectCard
             key={`${block.provider}-${index}`}
@@ -3290,9 +3298,6 @@ function MessageTextCard({
 }) {
   const colorScheme = useResolvedAppearance();
   const tokens = mobileTokens();
-  const { t } = useI18n();
-  const playback = useSyncExternalStore(subscribeVoicePlayback, getVoicePlaybackState);
-  const isSpeakingThis = playback.messageId === message.id && playback.status !== "idle";
   const contentText = blockText(message);
   if (!contentText) return null;
   return (
@@ -3353,33 +3358,41 @@ function MessageTextCard({
           </ChatMarkdown>
         )
       }
-      {onPlay ? (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={t("Play")}
-          accessibilityState={{ disabled: isSpeakingThis }}
-          disabled={isSpeakingThis}
-          onPress={onPlay}
-          hitSlop={6}
-          style={{
-            alignSelf: "flex-end",
-            marginTop: 6,
-            width: 26,
-            height: 26,
-            borderRadius: 13,
-            alignItems: "center",
-            justifyContent: "center",
-            opacity: isSpeakingThis ? 0.4 : 1,
-          }}
-        >
-          <NativeSymbol
-            ios={isSpeakingThis ? "waveform" : "play.fill"}
-            android={isSpeakingThis ? "pulse-outline" : "play"}
-            size={13}
-            color={tokens.mutedForeground}
-          />
-        </Pressable>
-      ) : null}
+      {onPlay ? <MessageSpeakButton messageId={message.id} onPlay={onPlay} /> : null}
+    </Pressable>
+  );
+}
+
+function MessageSpeakButton({ messageId, onPlay }: { messageId: string; onPlay: () => void }) {
+  const tokens = mobileTokens();
+  const { t } = useI18n();
+  const playback = useSyncExternalStore(subscribeVoicePlayback, getVoicePlaybackState);
+  const isSpeakingThis = playback.messageId === messageId && playback.status !== "idle";
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={t("Play")}
+      accessibilityState={{ disabled: isSpeakingThis }}
+      disabled={isSpeakingThis}
+      onPress={onPlay}
+      hitSlop={6}
+      style={{
+        alignSelf: "flex-end",
+        marginTop: 6,
+        width: 26,
+        height: 26,
+        borderRadius: 13,
+        alignItems: "center",
+        justifyContent: "center",
+        opacity: isSpeakingThis ? 0.4 : 1,
+      }}
+    >
+      <NativeSymbol
+        ios={isSpeakingThis ? "waveform" : "play.fill"}
+        android={isSpeakingThis ? "pulse-outline" : "play"}
+        size={13}
+        color={tokens.mutedForeground}
+      />
     </Pressable>
   );
 }
