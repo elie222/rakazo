@@ -366,6 +366,10 @@ msgstr "All bots"
 msgid "All providers"
 msgstr "All providers"
 
+#: src/pages/ActivityList.tsx
+msgid "All statuses"
+msgstr "All statuses"
+
 #: src/pages/Artifacts.tsx
 msgid "All time"
 msgstr "All time"
@@ -887,6 +891,10 @@ msgstr "Clear {0}’s conversation?"
 msgid "Clear conversation"
 msgstr "Clear conversation"
 
+#: src/pages/ActivityList.tsx
+msgid "Clear filter {label}"
+msgstr "Clear filter {label}"
+
 #: src/pages/shell/dialogs.tsx
 msgid "Clearing…"
 msgstr "Clearing…"
@@ -1327,6 +1335,10 @@ msgstr "Could not list files"
 #: src/pages/KnowledgeSection.tsx
 msgid "Could not load"
 msgstr "Could not load"
+
+#: src/pages/ActivityList.tsx
+msgid "Could not load activity"
+msgstr "Could not load activity"
 
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Could not load approval rules"
@@ -2062,6 +2074,15 @@ msgstr "Forgot password?"
 msgid "Free"
 msgstr "Free"
 
+#: src/pages/ActivityList.tsx
+msgid "From"
+msgstr "From"
+
+#. placeholder {0}: filters.dateRange.from
+#: src/pages/ActivityList.tsx
+msgid "From {0}"
+msgstr "From {0}"
+
 #: src/pages/WindowChrome.tsx
 msgid "Fullscreen"
 msgstr "Fullscreen"
@@ -2787,6 +2808,10 @@ msgstr "No remote MCP servers found"
 msgid "No results"
 msgstr "No results"
 
+#: src/pages/ActivityList.tsx
+msgid "No runs match these filters."
+msgstr "No runs match these filters."
+
 #: src/pages/RoutineRunHistory.tsx
 msgid "No runs yet"
 msgstr "No runs yet"
@@ -3277,6 +3302,10 @@ msgstr "Research & writing"
 msgid "Reset"
 msgstr "Reset"
 
+#: src/pages/ActivityList.tsx
+msgid "Reset all"
+msgstr "Reset all"
+
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "Reset computer"
 msgstr "Reset computer"
@@ -3451,6 +3480,10 @@ msgstr "Say yes or no, or answer in a sentence."
 msgid "Search"
 msgstr "Search"
 
+#: src/pages/ActivityList.tsx
+msgid "Search activity"
+msgstr "Search activity"
+
 #: src/components/integrations/IntegrationSetup.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Search apps"
@@ -3479,6 +3512,15 @@ msgstr "Search models"
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Search providers"
 msgstr "Search providers"
+
+#: src/pages/ActivityList.tsx
+msgid "Search runs"
+msgstr "Search runs"
+
+#. placeholder {0}: filters.query.trim()
+#: src/pages/ActivityList.tsx
+msgid "Search: {0}"
+msgstr "Search: {0}"
 
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/SpaceSearch.tsx
@@ -3709,6 +3751,10 @@ msgstr "Starting"
 msgid "Starting…"
 msgstr "Starting…"
 
+#: src/pages/ActivityList.tsx
+msgid "Status"
+msgstr "Status"
+
 #: src/components/teach/SkillDraftCard.tsx
 msgid "Steps"
 msgstr "Steps"
@@ -3907,6 +3953,15 @@ msgstr "Time of day"
 #: src/pages/shell/bot-panel.tsx
 msgid "Title"
 msgstr "Title"
+
+#: src/pages/ActivityList.tsx
+msgid "To"
+msgstr "To"
+
+#. placeholder {0}: filters.dateRange.to
+#: src/pages/ActivityList.tsx
+msgid "To {0}"
+msgstr "To {0}"
 
 #: src/pages/shell/bot-picker.tsx
 msgid "To:"
