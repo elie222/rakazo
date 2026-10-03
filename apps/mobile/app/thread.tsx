@@ -80,6 +80,7 @@ import {
   type MarkdownArtifactPreviewTarget,
 } from "../components/markdown-artifact-preview";
 import { NativeSymbol } from "../components/native-symbol";
+import { SelectTextSheet } from "../components/select-text-sheet";
 import { VoiceChatCard } from "../components/VoiceChatCard";
 import { WorkingIndicator } from "../components/WorkingIndicator";
 import {
@@ -1458,6 +1459,7 @@ function Thread() {
   }
 
   function messageActionProps(message: MobileMessage): MessageActionProps {
+    const messageText = copyableMobileMessageText(message);
     const actions = [
       {
         name: "reply",
@@ -1494,15 +1496,18 @@ function Thread() {
       ...(message.role === "bot" && !onCall && blockText(message)
         ? [{ name: "speak", text: t("Speak message"), onPress: () => void speak(message) }]
         : []),
-      {
-        name: "select",
-        text: t("Select text"),
-        onPress: () => {
-          const text = copyableMobileMessageText(message);
-          if (text)
-            setSelectableText(message.role === "user" ? text : selectableTextFromMarkdown(text));
-        },
-      },
+      ...(messageText
+        ? [
+            {
+              name: "select",
+              text: t("Select text"),
+              onPress: () =>
+                setSelectableText(
+                  message.role === "user" ? messageText : selectableTextFromMarkdown(messageText),
+                ),
+            },
+          ]
+        : []),
       {
         name: "copy",
         text: t("Copy"),
@@ -2311,41 +2316,7 @@ function Thread() {
           </View>
         </View>
       </Modal>
-      <Modal
-        visible={selectableText !== null}
-        animationType="slide"
-        presentationStyle="pageSheet"
-        onRequestClose={() => setSelectableText(null)}
-      >
-        <View
-          accessibilityViewIsModal
-          style={{
-            flex: 1,
-            backgroundColor: tokens.background,
-            // Page sheets clear the notch on iOS; Android modals are full-screen.
-            paddingTop: Platform.OS === "ios" ? 12 : insets.top + 12,
-            paddingBottom: insets.bottom,
-          }}
-        >
-          <View style={{ flexDirection: "row", justifyContent: "flex-end", padding: 16 }}>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={t("Done")}
-              hitSlop={8}
-              onPress={() => setSelectableText(null)}
-            >
-              <Text style={{ color: tokens.foreground, fontSize: 17, fontWeight: "600" }}>
-                {t("Done")}
-              </Text>
-            </Pressable>
-          </View>
-          <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 40 }}>
-            <Text selectable style={{ color: tokens.foreground, fontSize: 16, lineHeight: 24 }}>
-              {selectableText}
-            </Text>
-          </ScrollView>
-        </View>
-      </Modal>
+      <SelectTextSheet text={selectableText} onClose={() => setSelectableText(null)} />
       {markdownPreview && artifactTarget ? (
         <MarkdownArtifactPreview
           threadTarget={artifactTarget}

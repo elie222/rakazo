@@ -10,19 +10,57 @@ describe("selectableTextFromMarkdown", () => {
     );
   });
 
-  it("keeps fenced code verbatim, including indentation and markup characters", () => {
-    expect(selectableTextFromMarkdown("Run:\n\n```sh\n  echo **x**\n```\n\nDone.")).toBe(
-      "Run:\n\n  echo **x**\n\nDone.",
-    );
+  it("indents nested list items", () => {
+    expect(selectableTextFromMarkdown("- a\n  - b")).toBe("• a\n  • b");
   });
 
-  it("drops table separator rows and horizontal rules", () => {
+  it("keeps fenced code verbatim, including indentation, markup and blank lines", () => {
+    expect(
+      selectableTextFromMarkdown("Run:\n\n```sh\n  echo **x**\n\n\n  echo y\n```\n\nDone."),
+    ).toBe("Run:\n\n  echo **x**\n\n\n  echo y\n\nDone.");
+  });
+
+  it("closes a fence only on a matching, long-enough marker", () => {
+    const source = "````md\n```\n**kept**\n````\n\nafter **bold**";
+    expect(selectableTextFromMarkdown(source)).toBe("```\n**kept**\n\nafter bold");
+    expect(selectableTextFromMarkdown("```\n~~~\n**kept**\n```")).toBe("~~~\n**kept**");
+  });
+
+  it("keeps an unterminated fence's remaining lines as code", () => {
+    expect(selectableTextFromMarkdown("```\n  a **b**")).toBe("  a **b**");
+  });
+
+  it("keeps indented code blocks verbatim, minus the code indent", () => {
+    expect(
+      selectableTextFromMarkdown("Example:\n\n    def f():\n        return **1**\n\nDone"),
+    ).toBe("Example:\n\ndef f():\n    return **1**\n\nDone");
+  });
+
+  it("does not treat an indented list continuation as code", () => {
+    expect(selectableTextFromMarkdown("- item\n\n    more **text**")).toBe("• item\n\nmore text");
+  });
+
+  it("drops the separator after a table header but keeps later dash-only rows", () => {
+    expect(selectableTextFromMarkdown("| a | b |\n| --- | --- |\n| - | - |")).toBe("a | b\n- | -");
+  });
+
+  it("drops horizontal rules but keeps a lone hyphen", () => {
     expect(selectableTextFromMarkdown("a\n\n---\n\nb")).toBe("a\n\nb");
-    expect(selectableTextFromMarkdown("| a | b |\n| --- | --- |")).not.toContain("---");
+    expect(selectableTextFromMarkdown("a\n-\nb")).toBe("a\n-\nb");
+    expect(selectableTextFromMarkdown("a\n--\nb")).toBe("a\n--\nb");
+  });
+
+  it("does not truncate a very long line", () => {
+    const longLine = `${"word ".repeat(5_000)}the end`;
+    expect(selectableTextFromMarkdown(`${longLine}\n\nsecond`)).toContain("the end\n\nsecond");
   });
 
   it("does not truncate long replies", () => {
     const long = Array.from({ length: 400 }, (_, i) => `Line ${i} with some words.`).join("\n\n");
     expect(selectableTextFromMarkdown(long)).toContain("Line 399 with some words.");
+  });
+
+  it("collapses blank lines outside code only", () => {
+    expect(selectableTextFromMarkdown("a\n\n\n\nb")).toBe("a\n\nb");
   });
 });
