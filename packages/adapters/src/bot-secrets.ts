@@ -1,7 +1,10 @@
 import { randomBytes } from "node:crypto";
 import type { BotSecretDestination } from "@rakazo/contracts";
 import {
+  BotSecretAuth,
   botSecretDestinationSchema,
+  commandVariableName,
+  commandVariableProblem,
   decodeLoginSecret,
   isPrivateNetworkHost,
   SecretHttpRequest,
@@ -20,8 +23,36 @@ function scopeFields({ userId, spaceId, botId }: BotSecretScope): BotSecretScope
 
 const metadata = { name: true, origin: true, auth: true } as const;
 
+const UNUSABLE_CREDENTIAL = "Credential cannot be used with this authentication method";
+
+/** `encodeURIComponent` throws on an unpaired surrogate. */
+function percentEncoded(value: string): string | undefined {
+  try {
+    return encodeURIComponent(value);
+  } catch {
+    return undefined;
+  }
+}
+
+function commandRedactionForms(value: string): string[] {
+  const forms = [value];
+  try {
+    forms.push(Buffer.from(value).toString("base64"));
+  } catch {
+    // The plaintext form is still registered when the bytes cannot be encoded.
+  }
+  const encoded = percentEncoded(value);
+  if (encoded !== undefined) forms.push(encoded);
+  return forms;
+}
+
+export function commandCredentialRedactions(environment: Record<string, string>): string[] {
+  return [...new Set(Object.values(environment).flatMap(commandRedactionForms))];
+}
+
 function credentialHeader(destination: BotSecretDestination, plaintext: string) {
-  if (destination.auth.type === "login") {
+  // A login is only typed into its site, and a command variable only reaches shell commands.
+  if (destination.auth.type === "login" || destination.auth.type === "command") {
     throw new Error("Credential cannot be used with this authentication method");
   }
   const name = destination.auth.type === "header" ? destination.auth.name : "Authorization";
@@ -58,7 +89,109 @@ export function normalizeSecretDestination(value: unknown): BotSecretDestination
       .join("; ");
     throw new Error(`Invalid credential destination — ${detail}`);
   }
+  if (parsed.data.auth.type === "command") return parsed.data;
   return { ...parsed.data, origin: new URL(parsed.data.origin).origin };
+}
+
+function commandCredentialName(auth: unknown, name: string): string | undefined {
+  const parsed = BotSecretAuth.safeParse(auth);
+  return parsed.success && parsed.data.type === "command" ? name : undefined;
+}
+
+/**
+ * What the bot's tools show for a saved credential. A command variable has no site, so it is
+ * listed with the environment variable its shell commands read instead.
+ */
+export function botSecretToolView(row: { name: string; origin: string; auth: unknown }) {
+  if (commandCredentialName(row.auth, row.name) === undefined) return row;
+  const variable = commandVariableName(row.name);
+  const problem = commandVariableProblem(variable);
+  if (problem === undefined) return { name: row.name, auth: row.auth, variable };
+  const reason =
+    problem === "reserved"
+      ? `$${variable} is reserved and is not exported.`
+      : `$${variable} is not a valid environment variable name and is not exported.`;
+  return {
+    name: row.name,
+    auth: row.auth,
+    error: `${reason} Remove it and save it under another name.`,
+  };
+}
+
+/**
+ * Decrypt this bot's command variables for one shell command. Loaded per command so an added,
+ * replaced, or removed value applies to the next command. The values must never be logged or
+ * returned; callers register them for redaction before the command runs.
+ */
+export async function loadBotCommandEnvironment(
+  prisma: PrismaClient,
+  secretStore: Pick<EncryptedSecretStore, "load">,
+  scope: BotSecretScope,
+): Promise<Record<string, string>> {
+  const rows = await prisma.botSecret.findMany({
+    where: scopeFields(scope),
+    select: { id: true, name: true, auth: true, ciphertext: true },
+    orderBy: { name: "asc" },
+    take: 100,
+  });
+  const environment: Record<string, string> = {};
+  for (const row of rows) {
+    if (commandCredentialName(row.auth, row.name) === undefined) continue;
+    const variable = commandVariableName(row.name);
+    if (commandVariableProblem(variable)) continue;
+    let value: string;
+    try {
+      value = secretStore.load(row.ciphertext, row.id);
+    } catch {
+      // One unreadable value must not stop every shell command; the variable is left unset.
+      continue;
+    }
+    if (value && !value.includes("\0")) environment[variable] = value;
+  }
+  return environment;
+}
+
+/**
+ * The environment for one shell command: the space variables, with this bot's command variables
+ * loaded fresh over them (the bot's own value wins a name clash). The bot's values are handed to
+ * `registerRedactions` before this returns, so the command's output is redacted.
+ */
+export async function shellCommandEnvironment(input: {
+  prisma: PrismaClient;
+  secretStore: Pick<EncryptedSecretStore, "load">;
+  scope: BotSecretScope;
+  spaceEnvironment: Record<string, string>;
+  registerRedactions: (values: string[]) => void;
+}): Promise<Record<string, string>> {
+  const botEnvironment = await loadBotCommandEnvironment(
+    input.prisma,
+    input.secretStore,
+    input.scope,
+  );
+  // Encoded forms too, as secret_request does, so an accidental `base64` or URL-encoding of a
+  // value is still redacted from command output.
+  input.registerRedactions(commandCredentialRedactions(botEnvironment));
+  return { ...input.spaceEnvironment, ...botEnvironment };
+}
+
+/** Another command credential of this bot that is exported as the same variable. */
+export async function findCommandVariableConflict(
+  client: PrismaClient | Prisma.TransactionClient,
+  scope: BotSecretScope,
+  destination: BotSecretDestination,
+): Promise<string | undefined> {
+  if (destination.auth.type !== "command") return undefined;
+  const variable = commandVariableName(destination.name);
+  const rows = await client.botSecret.findMany({
+    where: { ...scopeFields(scope), name: { not: destination.name } },
+    select: { name: true, auth: true },
+    take: 100,
+  });
+  return rows.find(
+    (row) =>
+      commandCredentialName(row.auth, row.name) !== undefined &&
+      commandVariableName(row.name) === variable,
+  )?.name;
 }
 
 export function sameSecretDestination(
@@ -91,7 +224,13 @@ export async function storeBotSecret(input: {
   if (!plaintext || plaintext.length > 16_384) throw new Error("Invalid credential length");
   const destination = normalizeSecretDestination(input.destination);
   if (destination.auth.type === "login") decodeLoginSecret(plaintext);
-  else credentialHeader(destination, plaintext);
+  else if (destination.auth.type === "command") {
+    // NUL cannot be an environment value. An unpaired surrogate cannot be percent-encoded
+    // later, and that throw would abort every subsequent shell command for this bot.
+    if (plaintext.includes("\0") || percentEncoded(plaintext) === undefined) {
+      throw new Error(UNUSABLE_CREDENTIAL);
+    }
+  } else credentialHeader(destination, plaintext);
   // Serialize credential updates and deletions for a bot, including concurrent first saves.
   await tx.$queryRaw`SELECT id FROM bots WHERE id = ${scope.botId} FOR UPDATE`;
   const existing = await tx.botSecret.findFirst({
@@ -99,6 +238,12 @@ export async function storeBotSecret(input: {
   });
   if (existing && !sameSecretDestination(normalizeSecretDestination(existing), destination)) {
     throw new Error("Remove the existing credential before changing its destination");
+  }
+  const conflict = await findCommandVariableConflict(tx, scope, destination);
+  if (conflict) {
+    throw new Error(
+      `Invalid credential destination — name: ${conflict} is already exported as $${commandVariableName(destination.name)}`,
+    );
   }
   if (!existing && (await tx.botSecret.count({ where: scopeFields(scope) })) >= 100) {
     throw new Error("Credential limit reached");
@@ -124,13 +269,14 @@ export async function storeBotSecret(input: {
   }
 }
 
-export function listBotSecrets(prisma: PrismaClient, scope: BotSecretScope) {
-  return prisma.botSecret.findMany({
+export async function listBotSecrets(prisma: PrismaClient, scope: BotSecretScope) {
+  const rows = await prisma.botSecret.findMany({
     where: scopeFields(scope),
     select: metadata,
     orderBy: { name: "asc" },
     take: 100,
   });
+  return rows.map(botSecretToolView);
 }
 
 // Owner-facing view: destination and timestamps only, never the row id or ciphertext.
@@ -182,6 +328,11 @@ export async function requestWithBotSecret(input: {
   const destination = normalizeSecretDestination(row);
   if (destination.auth.type === "login") {
     return { error: "Website logins can only be filled into their site with browser_act." };
+  }
+  if (destination.auth.type === "command") {
+    return {
+      error: `${UNUSABLE_CREDENTIAL}. Command variables are only available to shell commands, as $${commandVariableName(destination.name)}.`,
+    };
   }
   const url = new URL(request.url);
   if (url.origin !== destination.origin || url.username || url.password || url.hash) {
@@ -268,6 +419,11 @@ export async function resolveLoginFill(input: {
     where: { ...scopeFields(input.scope), name: input.name },
   });
   if (!row) return { error: "Login is unavailable. Use request_secret to save it first." };
+  if (commandCredentialName(row.auth, row.name) !== undefined) {
+    return {
+      error: `${UNUSABLE_CREDENTIAL}. Command variables are only available to shell commands.`,
+    };
+  }
   // Checked on the stored origin itself, so the private-LAN HTTP allowance cannot widen a login.
   let storedOrigin: URL;
   try {

@@ -141,6 +141,7 @@ export class DesktopSandboxProvider implements SandboxProvider {
       cwd,
       boundedSandboxCommandTimeoutMs(request.timeoutMs),
       context.signal,
+      request.env,
     );
   }
 
@@ -690,10 +691,12 @@ async function* streamLocalCommand(
   cwd: string,
   timeoutMs: number,
   signal: AbortSignal,
+  requestEnv?: Record<string, string>,
 ): AsyncIterable<ProcessEvent> {
   const child = spawn(argv[0]!, argv.slice(1), {
     cwd,
-    env: process.env,
+    // Overlay the request env (space variables and this bot's command variables) on the host env.
+    env: { ...process.env, ...(requestEnv ?? {}) },
     detached: process.platform !== "win32",
   });
   const queue: ProcessEvent[] = [];

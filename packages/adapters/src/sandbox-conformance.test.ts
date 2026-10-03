@@ -117,6 +117,34 @@ describe("sandbox conformance", () => {
     }
   });
 
+  it("desktop executor passes request env to the command", async () => {
+    const root = mkdtempSync(path.join(tmpdir(), "rakazo-desktop-env-"));
+    const desktop = new DesktopSandboxProvider({ root });
+    const computer = await desktop.provision({ botId: "env", homePath: "/unused" }, ctx);
+    const sentinel = "rakazo-desktop-request-env-sentinel";
+    let stdout = "";
+    let code = 1;
+    for await (const event of desktop.execute(
+      computer,
+      {
+        argv: [
+          process.execPath,
+          "-e",
+          "process.stdout.write(process.env.RAKAZO_DESKTOP_ENV_SENTINEL ?? '')",
+        ],
+        env: { RAKAZO_DESKTOP_ENV_SENTINEL: sentinel },
+      },
+      ctx,
+    )) {
+      if (event.type === "stdout") stdout += event.data;
+      if (event.type === "exit") code = event.code;
+    }
+    expect(code).toBe(0);
+    expect(stdout).toContain(sentinel);
+    await desktop.destroy(computer, ctx);
+    rmSync(root, { recursive: true, force: true });
+  });
+
   it("desktop executor refuses paths outside the computer home", async () => {
     const desktop = new DesktopSandboxProvider();
     const computer = await desktop.provision({ botId: "grant", homePath: "/tmp/grant" }, ctx);

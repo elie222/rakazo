@@ -107,6 +107,7 @@ export const DE_MESSAGES: Record<string, string> = {
   "Clear conversation?": "Unterhaltung leeren?",
   "Cloud agent": "Cloud-Agent",
   Code: "Code",
+  "Command variable": "Befehlsvariable",
   Completed: "Abgeschlossen",
   Copy: "Kopieren",
   "Could not archive bot": "Bot konnte nicht archiviert werden",

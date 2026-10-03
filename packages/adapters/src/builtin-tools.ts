@@ -24,7 +24,7 @@ function secretAskToolSurface() {
       allowPrivateHttpOrigins
         ? "HTTPS origin, or an HTTP origin on a private LAN host"
         : "HTTPS origin"
-    }, or connectionId for a one-use connector code. Credential names must start with a lowercase letter and use only lowercase letters, digits, hyphens, or underscores (max 64 characters). For a website login the user wants saved, use auth {type:"login"} with the sign-in page's HTTPS origin; the card asks for a username and password, and browser_act fill_secret types them. Existing named credentials are reused unless replace is true. For 2FA, CAPTCHA, passkeys, or anything else that needs the live desktop, call request_takeover instead.`,
+    }, or connectionId for a one-use connector code. Credential names must start with a lowercase letter and use only lowercase letters, digits, hyphens, or underscores (max 64 characters). For a website login the user wants saved, use auth {type:"login"} with the sign-in page's HTTPS origin; the card asks for a username and password, and browser_act fill_secret types them. For a value this bot's shell commands need, use auth {type:"command"} with no origin; it is exported to them as an environment variable named after the credential in upper case with hyphens as underscores (netbird-setup-key becomes $NETBIRD_SETUP_KEY). Existing named credentials are reused unless replace is true. For 2FA, CAPTCHA, passkeys, or anything else that needs the live desktop, call request_takeover instead.`,
     inputSchema: {
       oneOf: [
         {
@@ -32,8 +32,10 @@ function secretAskToolSurface() {
           properties: {
             label: { type: "string" },
             purpose: { type: "string", enum: SecretAskPurpose.options },
+            // Input shape, so origin stays optional for a command variable.
             credential: z.toJSONSchema(
               botSecretDestinationSchema({ allowPrivateHttpOrigin: allowPrivateHttpOrigins }),
+              { io: "input" },
             ),
             replace: {
               type: "boolean",
@@ -388,7 +390,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "list_secrets",
     description:
-      "List saved credential names and destinations available to this bot and user. Values are never returned.",
+      "List saved credential names and destinations available to this bot and user, and the environment variable of each command variable. Values are never returned.",
     inputSchema: { type: "object", properties: {} },
   },
   {

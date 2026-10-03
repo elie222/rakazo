@@ -23,6 +23,20 @@ def load_module(name, filename):
 helper = load_module("focus_or_launch", "rakazo-focus-or-launch")
 control = load_module("control", "control.py")
 
+
+def wait_for_cmdline(pid):
+    """/proc cmdline can be empty for a moment after exec, even once Popen returns."""
+    deadline = time.monotonic() + 2
+    while time.monotonic() < deadline:
+        try:
+            with open(f"/proc/{pid}/cmdline", "rb") as handle:
+                if handle.read().strip(b"\0"):
+                    return
+        except OSError:
+            pass
+        time.sleep(0.01)
+    raise AssertionError(f"cmdline for {pid} stayed empty")
+
 LISTING = """\
 0x01800003  0 99999991 chromium.Chromium   box  Example page - Chromium
 0x04000003  0 99999992 xterm.XTerm         box  Terminal
@@ -280,6 +294,8 @@ class ScriptTest(unittest.TestCase):
             ]
         )
         try:
+            wait_for_cmdline(equals.pid)
+            wait_for_cmdline(separate.pid)
             self.assertEqual(helper.window_profile(str(equals.pid)), "/profiles/mine")
             self.assertEqual(helper.window_profile(str(separate.pid)), "/profiles/other")
             self.assertIsNone(helper.window_profile("99999999"))
@@ -302,6 +318,8 @@ class ScriptTest(unittest.TestCase):
                 ["python3", "-c", "import time; time.sleep(30)", "--user-data-dir=/profiles/mine"]
             )
             try:
+                wait_for_cmdline(other.pid)
+                wait_for_cmdline(mine.pid)
                 windows.write_text(
                     f"0x111 0 {other.pid} chromium.Chromium host Other\n"
                     f"0x222 0 {mine.pid} chromium.Chromium host Mine\n"
