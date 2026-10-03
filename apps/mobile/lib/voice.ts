@@ -1,26 +1,96 @@
 import { ensureAiDataConsent, readBoundedResponseBytes, toUtterances } from "@rakazo/core";
 import { File, Paths } from "expo-file-system";
 import type * as ExpoSpeech from "expo-speech";
+import { Platform } from "react-native";
 import { promptAiConsent } from "./ai-consent";
 import type { ApiRequestContext } from "./api";
 import { aiConsentCoalesceKey, captureApiRequestContext, rpc } from "./api";
 import { loadDeviceVoiceEnabled } from "./device-voice";
-import { t } from "./i18n";
+import { dateLocaleForUi, t } from "./i18n";
 
-type SpeechOptions = { voiceId?: string; botId?: string };
+type SpeechOptions = { voiceId?: string; botId?: string; messageId?: string };
 export const VOICE_RESPONSE_TIMEOUT_MS = 70_000;
 export const MAX_VOICE_AUDIO_BYTES = 16 * 1024 * 1024;
 const MAX_VOICE_ERROR_BYTES = 64 * 1024;
 
-/** Bumped by every new reply and by stopSpeaking, so an old one drops its queued clips. */
-let speechGeneration = 0;
-/** Ends the clip playing right now, if any. */
-let stopPlayback: (() => void) | null = null;
+// --- Playback status: lets a persistent mini-player show what's speaking and
+// control it, without every screen re-deriving state from the speak calls below.
+
+export type VoicePlaybackStatus = "idle" | "playing" | "paused";
+export type VoicePlaybackState = {
+  status: VoicePlaybackStatus;
+  botId?: string;
+  /** Set when this clip came from a specific message, so its own Play button can react. */
+  messageId?: string;
+  /** False when the active engine (Android on-device voice) can only stop, not pause. */
+  canPause: boolean;
+};
+type VoiceControl = { pause(): void; resume(): void; stop(): void };
+
+const IDLE_PLAYBACK: VoicePlaybackState = { status: "idle", canPause: false };
+let playback: VoicePlaybackState = IDLE_PLAYBACK;
+let activeControl: VoiceControl | null = null;
+const playbackListeners = new Set<() => void>();
+
+function setPlayback(next: VoicePlaybackState, control: VoiceControl | null) {
+  playback = next;
+  activeControl = control;
+  for (const listener of playbackListeners) listener();
+}
+
+export function getVoicePlaybackState(): VoicePlaybackState {
+  return playback;
+}
+
+export function subscribeVoicePlayback(listener: () => void): () => void {
+  playbackListeners.add(listener);
+  return () => playbackListeners.delete(listener);
+}
+
+export function pauseVoicePlayback(): void {
+  activeControl?.pause();
+}
+
+export function resumeVoicePlayback(): void {
+  activeControl?.resume();
+}
+
+export function stopVoicePlayback(): void {
+  speechQueue = [];
+  activeControl?.stop();
+}
 
 /** Cuts the reply off mid-sentence, for a caller who talked over it. */
 export function stopSpeaking(): void {
-  speechGeneration += 1;
-  stopPlayback?.();
+  stopVoicePlayback();
+}
+
+// --- Sequential playback across several messages: "Play" on a message plays
+// it, then keeps going through the rest of the queue until Stop is pressed or
+// the last one finishes. Built on top of speakText, one call at a time, so a
+// single Stop (above) always reaches whatever is actually playing right now.
+
+export type SpeechQueueItem = SpeechOptions & { text: string };
+
+let speechQueue: SpeechQueueItem[] = [];
+
+/**
+ * Speaks each item in order; stops early if stopVoicePlayback() clears the
+ * queue. Resolves to whether the first item was spoken, so a caller can tell
+ * the user when no voice is set up.
+ */
+export async function speakQueue(items: SpeechQueueItem[]): Promise<boolean> {
+  speechQueue = items;
+  return advanceSpeechQueue();
+}
+
+async function advanceSpeechQueue(): Promise<boolean> {
+  const next = speechQueue.shift();
+  if (!next) return false;
+  const { text, ...opts } = next;
+  const spoken = await speakText(text, opts);
+  if (spoken && speechQueue.length > 0) await advanceSpeechQueue();
+  return spoken;
 }
 
 export async function speakText(text: string, opts: SpeechOptions = {}): Promise<boolean> {
@@ -32,7 +102,7 @@ export async function speakText(text: string, opts: SpeechOptions = {}): Promise
     // through hosted voice after the user opted for on-device only.
     useDeviceVoice = true;
   }
-  if (useDeviceVoice) return speakWithDeviceVoice(text);
+  if (useDeviceVoice) return speakWithDeviceVoice(text, opts.botId, opts.messageId);
   const requestContext = await captureApiRequestContext();
   const prepared = await rpc<{ ready: boolean; utterances: string[] }>(
     "voice/prepare",
@@ -40,11 +110,40 @@ export async function speakText(text: string, opts: SpeechOptions = {}): Promise
     { requestContext },
   );
   if (!prepared.ready) return false;
-  speechGeneration += 1;
-  const mine = speechGeneration;
-  for (const utterance of prepared.utterances) {
-    if (speechGeneration !== mine) break;
-    await playMpeg(await renderUtterance(utterance, opts, requestContext));
+
+  const generation = startHostedSpeechSession();
+  const session = new HostedSession(generation);
+  const control: VoiceControl = {
+    pause: () => {
+      session.pause();
+      setPlayback(
+        { status: "paused", botId: opts.botId, messageId: opts.messageId, canPause: true },
+        control,
+      );
+    },
+    resume: () => {
+      session.resume();
+      setPlayback(
+        { status: "playing", botId: opts.botId, messageId: opts.messageId, canPause: true },
+        control,
+      );
+    },
+    stop: () => {
+      session.stop();
+      setPlayback(IDLE_PLAYBACK, null);
+    },
+  };
+  setPlayback(
+    { status: "playing", botId: opts.botId, messageId: opts.messageId, canPause: true },
+    control,
+  );
+  try {
+    for (const utterance of prepared.utterances) {
+      if (session.isStopped) break;
+      await playMpeg(await renderUtterance(utterance, opts, requestContext), session);
+    }
+  } finally {
+    if (isCurrentHostedSpeechSession(generation)) setPlayback(IDLE_PLAYBACK, null);
   }
   return true;
 }
@@ -59,7 +158,11 @@ function isCurrentDeviceSpeechSession(session: number): boolean {
   return session === deviceSpeechSession;
 }
 
-export async function speakWithDeviceVoice(text: string): Promise<boolean> {
+export async function speakWithDeviceVoice(
+  text: string,
+  botId?: string,
+  messageId?: string,
+): Promise<boolean> {
   const utterances = toUtterances(text);
   if (utterances.length === 0) return false;
   // Claim the session before importing so a newer call cannot start during
@@ -69,11 +172,78 @@ export async function speakWithDeviceVoice(text: string): Promise<boolean> {
   if (!isCurrentDeviceSpeechSession(session)) return true;
   await Speech.stop();
   if (!isCurrentDeviceSpeechSession(session)) return true;
-  for (const utterance of utterances) {
-    if (!isCurrentDeviceSpeechSession(session)) return true;
-    await speakOneUtterance(Speech, utterance);
+
+  // Android's TextToSpeech engine has no pause/resume, only stop; iOS's does.
+  // Feature-detect rather than trust the platform alone: support has moved
+  // across expo-speech versions, and a missing method must not throw here.
+  const pausable = Speech as unknown as {
+    pause?: () => void | Promise<void>;
+    resume?: () => void | Promise<void>;
+  };
+  const canPause =
+    Platform.OS === "ios" &&
+    typeof pausable.pause === "function" &&
+    typeof pausable.resume === "function";
+  const language = dateLocaleForUi();
+  const voice = await pickBestVoiceIdentifier(Speech, language);
+  const control: VoiceControl = {
+    pause: () => {
+      if (!canPause) return;
+      void pausable.pause?.();
+      setPlayback({ status: "paused", botId, messageId, canPause }, control);
+    },
+    resume: () => {
+      if (!canPause) return;
+      void pausable.resume?.();
+      setPlayback({ status: "playing", botId, messageId, canPause }, control);
+    },
+    stop: () => {
+      deviceSpeechSession += 1;
+      void Speech.stop();
+      setPlayback(IDLE_PLAYBACK, null);
+    },
+  };
+  setPlayback({ status: "playing", botId, messageId, canPause }, control);
+  try {
+    for (const utterance of utterances) {
+      if (!isCurrentDeviceSpeechSession(session)) return true;
+      await speakOneUtterance(Speech, utterance, { language, voice });
+    }
+    return true;
+  } finally {
+    if (isCurrentDeviceSpeechSession(session)) setPlayback(IDLE_PLAYBACK, null);
   }
-  return true;
+}
+
+let cachedVoice: { language: string; identifier: string | undefined } | null = null;
+
+/**
+ * Android ships both a small on-device voice model and, on many devices, a
+ * higher-quality "network" one per language; the OS default isn't always the
+ * better one. Prefer it when installed. iOS's built-in voices don't have this
+ * gap, so this only runs on Android, and any lookup failure just falls back
+ * to the platform default (undefined = "don't override").
+ */
+async function pickBestVoiceIdentifier(
+  Speech: typeof ExpoSpeech,
+  language: string,
+): Promise<string | undefined> {
+  if (Platform.OS !== "android") return undefined;
+  if (cachedVoice?.language === language) return cachedVoice.identifier;
+  let identifier: string | undefined;
+  try {
+    const voices: Array<{ identifier?: string; name?: string; language?: string }> =
+      await Speech.getAvailableVoicesAsync();
+    const base = language.split("-")[0]?.toLowerCase() ?? language.toLowerCase();
+    const matching = voices.filter((voice) => voice.language?.toLowerCase().startsWith(base));
+    identifier =
+      matching.find((voice) => /network/i.test(voice.identifier ?? ""))?.identifier ??
+      matching.find((voice) => /network/i.test(voice.name ?? ""))?.identifier;
+  } catch {
+    identifier = undefined;
+  }
+  cachedVoice = { language, identifier };
+  return identifier;
 }
 
 async function loadExpoSpeech(): Promise<typeof ExpoSpeech> {
@@ -89,9 +259,15 @@ async function loadExpoSpeech(): Promise<typeof ExpoSpeech> {
   return Speech as typeof ExpoSpeech;
 }
 
-function speakOneUtterance(Speech: typeof ExpoSpeech, text: string): Promise<void> {
+function speakOneUtterance(
+  Speech: typeof ExpoSpeech,
+  text: string,
+  options: { language?: string; voice?: string } = {},
+): Promise<void> {
   return new Promise<void>((resolve, reject) => {
     Speech.speak(text, {
+      language: options.language,
+      voice: options.voice,
       onDone: () => resolve(),
       // Speech.stop() reports onStopped, not onDone.
       onStopped: () => resolve(),
@@ -145,16 +321,72 @@ async function renderUtterance(
   }
 }
 
-export async function playMpeg(bytes: Uint8Array): Promise<void> {
-  const AudioCtor = (globalThis as { Audio?: typeof Audio }).Audio;
-  if (typeof AudioCtor === "function") {
-    await playWithHtmlAudio(AudioCtor, bytes);
-    return;
-  }
-  await playWithNativeAudio(bytes);
+// --- Hosted (MP3) playback: one HostedSession per speakText call, shared across
+// its utterances, so Pause/Resume/Stop keep working across the gap between them.
+
+let hostedSpeechSession = 0;
+
+function startHostedSpeechSession(): number {
+  return ++hostedSpeechSession;
 }
 
-async function playWithHtmlAudio(AudioCtor: typeof Audio, bytes: Uint8Array): Promise<void> {
+function isCurrentHostedSpeechSession(session: number): boolean {
+  return session === hostedSpeechSession;
+}
+
+type HostedPlayerHandle = { pause(): void; resume(): void; stopNow(): void };
+
+class HostedSession {
+  private paused = false;
+  private stopped = false;
+  private player: HostedPlayerHandle | null = null;
+
+  constructor(private readonly generation: number) {}
+
+  get isStopped(): boolean {
+    return this.stopped || !isCurrentHostedSpeechSession(this.generation);
+  }
+
+  get isPaused(): boolean {
+    return this.paused;
+  }
+
+  setPlayer(player: HostedPlayerHandle | null): void {
+    this.player = player;
+    if (player && this.paused) player.pause();
+  }
+
+  pause(): void {
+    this.paused = true;
+    this.player?.pause();
+  }
+
+  resume(): void {
+    this.paused = false;
+    this.player?.resume();
+  }
+
+  stop(): void {
+    this.stopped = true;
+    this.player?.stopNow();
+  }
+}
+
+export async function playMpeg(bytes: Uint8Array, session?: HostedSession): Promise<void> {
+  const AudioCtor = (globalThis as { Audio?: typeof Audio }).Audio;
+  if (typeof AudioCtor === "function") {
+    await playWithHtmlAudio(AudioCtor, bytes, session);
+    return;
+  }
+  await playWithNativeAudio(bytes, session);
+}
+
+async function playWithHtmlAudio(
+  AudioCtor: typeof Audio,
+  bytes: Uint8Array,
+  session?: HostedSession,
+): Promise<void> {
+  if (session?.isStopped) return;
   const blob = new Blob([new Uint8Array(bytes)], { type: "audio/mpeg" });
   const url = URL.createObjectURL(blob);
   try {
@@ -166,15 +398,25 @@ async function playWithHtmlAudio(AudioCtor: typeof Audio, bytes: Uint8Array): Pr
         settled = true;
         audio.onended = null;
         audio.onerror = null;
+        session?.setPlayer(null);
         if (error) reject(error);
         else resolve();
       };
       audio.onended = () => finish();
       audio.onerror = () => finish(new Error(t("Could not play that clip.")));
-      stopPlayback = () => {
-        audio.pause();
+      session?.setPlayer({
+        pause: () => audio.pause(),
+        resume: () => void audio.play().catch(() => undefined),
+        stopNow: () => {
+          audio.pause();
+          finish();
+        },
+      });
+      if (session?.isStopped) {
         finish();
-      };
+        return;
+      }
+      if (session?.isPaused) return;
       try {
         void audio
           .play()
@@ -186,12 +428,12 @@ async function playWithHtmlAudio(AudioCtor: typeof Audio, bytes: Uint8Array): Pr
       }
     });
   } finally {
-    stopPlayback = null;
     URL.revokeObjectURL(url);
   }
 }
 
-async function playWithNativeAudio(bytes: Uint8Array): Promise<void> {
+async function playWithNativeAudio(bytes: Uint8Array, session?: HostedSession): Promise<void> {
+  if (session?.isStopped) return;
   const { createAudioPlayer, setAudioModeAsync } = await import("expo-audio");
   await setAudioModeAsync({
     playsInSilentMode: true,
@@ -205,15 +447,18 @@ async function playWithNativeAudio(bytes: Uint8Array): Promise<void> {
   try {
     await new Promise<void>((resolve, reject) => {
       let settled = false;
-      let timer = setTimeout(() => finish(new Error(t("Could not play that clip."))), 15_000);
+      let timer: ReturnType<typeof setTimeout> | undefined;
       const finish = (error?: Error) => {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
-        stopPlayback = null;
         sub.remove();
+        session?.setPlayer(null);
         if (error) reject(error);
         else resolve();
+      };
+      const armStartupWatchdog = () => {
+        timer = setTimeout(() => finish(new Error(t("Could not play that clip."))), 15_000);
       };
       const sub = player.addListener("playbackStatusUpdate", (status) => {
         if (status.error) {
@@ -236,14 +481,23 @@ async function playWithNativeAudio(bytes: Uint8Array): Promise<void> {
           );
         }
       });
-      stopPlayback = () => {
-        try {
+      session?.setPlayer({
+        pause: () => player.pause(),
+        resume: () => {
+          player.play();
+          if (!timer) armStartupWatchdog();
+        },
+        stopNow: () => {
           player.pause();
-        } catch {
-          // already stopped
-        }
+          finish();
+        },
+      });
+      if (session?.isStopped) {
         finish();
-      };
+        return;
+      }
+      if (session?.isPaused) return;
+      armStartupWatchdog();
       try {
         player.play();
       } catch (error) {
@@ -251,7 +505,6 @@ async function playWithNativeAudio(bytes: Uint8Array): Promise<void> {
       }
     });
   } finally {
-    stopPlayback = null;
     player.release();
     try {
       file.delete();

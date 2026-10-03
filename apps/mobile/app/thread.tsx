@@ -27,6 +27,7 @@ import {
   plainTextFromMarkdown,
   projectMessageReactions,
   resolveComposerSendPlan,
+  resolvePersonaColorDef,
   SLASH_ACTIONS,
   type SlashActionId,
   selectedAskActionLabel,
@@ -81,6 +82,7 @@ import {
 } from "../components/markdown-artifact-preview";
 import { NativeSymbol } from "../components/native-symbol";
 import { VoiceChatCard } from "../components/VoiceChatCard";
+import { VoicePlayerBar } from "../components/voice-player-bar";
 import { WorkingIndicator } from "../components/WorkingIndicator";
 import {
   applyMobileThreadEvent,
@@ -142,7 +144,7 @@ import {
   ThreadScrollBehavior,
   type ThreadScrollState,
 } from "../lib/thread-scroll";
-import { speakText } from "../lib/voice";
+import { getVoicePlaybackState, speakQueue, speakText, subscribeVoicePlayback } from "../lib/voice";
 import { probeProviderTranscribe, resolveVoiceCallPlan } from "../lib/voice-call-entry";
 
 type PendingAttachment = PickedAttachment & { threadKey: string };
@@ -1312,12 +1314,28 @@ function Thread() {
   );
 
   const speak = useCallback(
-    (message: MobileMessage) =>
-      void speakMessage(message.botId ?? botId ?? snap?.members?.[0]?.botId ?? "", message).catch(
-        (err) =>
+    (message: MobileMessage) => {
+      const messages = snap?.messages ?? [];
+      const startIndex = messages.findIndex((candidate) => candidate.id === message.id);
+      const fromHere = startIndex === -1 ? [message] : messages.slice(startIndex);
+      const items = fromHere
+        .filter((candidate) => candidate.role === "bot" && blockText(candidate).trim())
+        .map((candidate) => ({
+          text: blockText(candidate),
+          botId: candidate.botId ?? botId ?? snap?.members?.[0]?.botId ?? "",
+          messageId: candidate.id,
+        }));
+      if (items.length === 0) return;
+      void speakQueue(items)
+        .then((spoken) => {
+          if (!spoken)
+            Alert.alert(t("Could not speak"), t("Add a voice provider in Voice settings."));
+        })
+        .catch((err: unknown) =>
           Alert.alert(t("Could not speak"), err instanceof Error ? err.message : t("Try again.")),
-      ),
-    [botId, snap?.members],
+        );
+    },
+    [botId, snap?.members, snap?.messages],
   );
 
   async function startVoiceCall() {
@@ -1599,6 +1617,7 @@ function Thread() {
               onAnswer={answerMessage}
               onOpenBot={openBot}
               onPreviewMarkdown={setMarkdownPreview}
+              onPlay={() => speak(message)}
               actionProps={actionProps}
             />
           </Pressable>
@@ -1828,6 +1847,11 @@ function Thread() {
           </Pressable>
         ) : null}
       </View>
+      <VoicePlayerBar
+        bots={mentionBots}
+        members={snap?.members}
+        style={{ marginTop: 8, marginBottom: 8, marginHorizontal: 0 }}
+      />
       <View style={{ paddingBottom: keyboardVisible ? 12 : Math.max(insets.bottom + 12, 24) }}>
         {replyTarget ? (
           <View
@@ -2562,12 +2586,17 @@ function memberName(
   return members.find((member) => member.botId === botId)?.name;
 }
 
-async function speakMessage(botId: string, message: MobileMessage) {
-  const text = blockText(message);
-  if (!text.trim()) return;
-  if (!(await speakText(text, { botId }))) {
-    throw new Error(t("Add a voice provider in Voice settings."));
-  }
+/** Each bot keeps one identity color across web and mobile — same lookup as the avatar. */
+function speakerColorFor(
+  bots: MobileBot[],
+  members: MobileSnapshot["members"] | undefined,
+  botId: string | undefined,
+): string | undefined {
+  if (!botId) return undefined;
+  const raw =
+    bots.find((bot) => bot.id === botId)?.color ??
+    members?.find((member) => member.botId === botId)?.color;
+  return resolvePersonaColorDef(botId, raw).light;
 }
 
 type MessageActionProps = Pick<
@@ -2587,6 +2616,7 @@ const MessageBubble = memo(function MessageBubble({
   onAnswer,
   onOpenBot,
   onPreviewMarkdown,
+  onPlay,
   actionProps,
 }: {
   botId: string;
@@ -2600,6 +2630,7 @@ const MessageBubble = memo(function MessageBubble({
   onAnswer: (message: MobileMessage, answer: string, username?: string) => Promise<void>;
   onOpenBot: (botId: string, name: string) => void;
   onPreviewMarkdown: (target: MarkdownArtifactPreviewTarget) => void;
+  onPlay: () => void;
   actionProps: MessageActionProps;
 }) {
   const colorScheme = useResolvedAppearance();
@@ -3032,6 +3063,8 @@ const MessageBubble = memo(function MessageBubble({
   if (attachments.length > 0) {
     const speaker =
       message.role === "bot" ? (memberName(members, message.botId) ?? botName) : undefined;
+    const speakerColor =
+      message.role === "bot" ? speakerColorFor(bots, members, message.botId) : undefined;
     return (
       <View
         style={{
@@ -3046,7 +3079,13 @@ const MessageBubble = memo(function MessageBubble({
         }}
       >
         {speaker ? (
-          <Text style={{ color: tokens.mutedForeground, fontSize: 12.5, fontWeight: "600" }}>
+          <Text
+            style={{
+              color: speakerColor ?? tokens.mutedForeground,
+              fontSize: 12.5,
+              fontWeight: "600",
+            }}
+          >
             {speaker}
           </Text>
         ) : null}
@@ -3179,7 +3218,10 @@ const MessageBubble = memo(function MessageBubble({
   const segments = messagePresentationSegments(message.blocks);
   const speaker =
     message.role === "bot" ? (memberName(members, message.botId) ?? botName) : undefined;
+  const speakerColor =
+    message.role === "bot" ? speakerColorFor(bots, members, message.botId) : undefined;
   const firstContent = segments.findIndex((segment) => segment.kind === "content");
+  const lastContent = segments.map((segment) => segment.kind).lastIndexOf("content");
   return (
     <View style={{ gap: 8, width: "100%" }}>
       {segments.map((segment, index) => (
@@ -3187,7 +3229,9 @@ const MessageBubble = memo(function MessageBubble({
           key={`${message.id}-content-${index}`}
           message={{ ...message, blocks: segment.blocks }}
           speaker={index === firstContent ? speaker : undefined}
+          speakerColor={index === firstContent ? speakerColor : undefined}
           replyPreview={index === firstContent ? replyPreview : undefined}
+          onPlay={message.role === "bot" && index === lastContent ? onPlay : undefined}
           actionProps={actionProps}
         />
       ))}
@@ -3207,16 +3251,23 @@ const MessageBubble = memo(function MessageBubble({
 function MessageTextCard({
   message,
   speaker,
+  speakerColor,
   replyPreview,
+  onPlay,
   actionProps,
 }: {
   message: MobileMessage;
   speaker?: string;
+  speakerColor?: string;
   replyPreview?: MobileMessage;
+  onPlay?: () => void;
   actionProps: MessageActionProps;
 }) {
   const colorScheme = useResolvedAppearance();
   const tokens = mobileTokens();
+  const { t } = useI18n();
+  const playback = useSyncExternalStore(subscribeVoicePlayback, getVoicePlaybackState);
+  const isSpeakingThis = playback.messageId === message.id && playback.status !== "idle";
   const contentText = blockText(message);
   if (!contentText) return null;
   return (
@@ -3234,7 +3285,7 @@ function MessageTextCard({
       {speaker ? (
         <Text
           style={{
-            color: tokens.mutedForeground,
+            color: speakerColor ?? tokens.mutedForeground,
             fontSize: 12.5,
             fontWeight: "600",
             marginBottom: 4,
@@ -3277,6 +3328,33 @@ function MessageTextCard({
           </ChatMarkdown>
         )
       }
+      {onPlay ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={t("Play")}
+          accessibilityState={{ disabled: isSpeakingThis }}
+          disabled={isSpeakingThis}
+          onPress={onPlay}
+          hitSlop={6}
+          style={{
+            alignSelf: "flex-end",
+            marginTop: 6,
+            width: 26,
+            height: 26,
+            borderRadius: 13,
+            alignItems: "center",
+            justifyContent: "center",
+            opacity: isSpeakingThis ? 0.4 : 1,
+          }}
+        >
+          <NativeSymbol
+            ios={isSpeakingThis ? "waveform" : "play.fill"}
+            android={isSpeakingThis ? "pulse-outline" : "play"}
+            size={13}
+            color={tokens.mutedForeground}
+          />
+        </Pressable>
+      ) : null}
     </Pressable>
   );
 }

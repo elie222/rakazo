@@ -459,6 +459,8 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Read replies aloud": "朗读回复",
   "Speak + transcribe": "朗读并转写",
   "Speak message": "朗读消息",
+  Play: "播放",
+  Pause: "暂停",
   Speak: "朗读",
   "Speak only": "仅朗读",
   "Speech model": "语音模型",
