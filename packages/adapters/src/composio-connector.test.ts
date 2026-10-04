@@ -25,6 +25,7 @@ const composioSdkState = vi.hoisted(() => ({
   created: [] as Array<{ userId: string; config: Record<string, unknown> }>,
   directoryFails: false,
   executions: [] as Array<{ tool: string; args: Record<string, unknown> }>,
+  executeResult: null as null | { data: Record<string, unknown>; error: string | null },
   connectedAccounts: {
     list: async (_query?: Record<string, unknown>) => ({ items: [] as Array<{ id: string }> }),
     waitForConnection: async (id: string, _timeout?: number) => ({ id: `resolved-${id}` }),
@@ -51,7 +52,7 @@ const composioSdkState = vi.hoisted(() => ({
         args: Record<string, unknown>,
       ) => Promise<{
         data: Record<string, unknown>;
-        error: null;
+        error: string | null;
         logId: string;
       }>;
     }
@@ -119,7 +120,10 @@ vi.mock("@composio/core", () => ({
             : [],
         execute: async (tool: string, args: Record<string, unknown>) => {
           composioSdkState.executions.push({ tool, args });
-          return { data: { ok: true }, error: null, logId: "log-github" };
+          return {
+            ...(composioSdkState.executeResult ?? { data: { ok: true }, error: null }),
+            logId: "log-github",
+          };
         },
       };
       composioSdkState.sessions.set(session.sessionId, session);
@@ -231,6 +235,8 @@ describe("composio tool mapping", () => {
           response: { successful: false, data: { status_code: 404 } },
         },
         { tool_slug: "TOOL_NESTED", response: { successful: false, error: "Query failed." } },
+        null,
+        "not-an-object",
       ],
     };
     expect(composioResultError("2 out of 3 tools failed", data)).toBe(
@@ -577,6 +583,60 @@ describe("composio tool mapping", () => {
     ]);
     await expect(connector.connectionReady(context, "github")).resolves.toBe(true);
     await expect(connector.connectedAccountId("user-1", "github")).resolves.toBe("ca-github");
+  });
+
+  it("emits each failed tool's error from a failed batch", async () => {
+    composioSdkState.created.length = 0;
+    composioSdkState.executions.length = 0;
+    composioSdkState.sessions.clear();
+    composioToolkitDirectory.invalidate();
+    composioSdkState.executeResult = {
+      data: {
+        results: [
+          {
+            tool_slug: "GITHUB_GET_REPOS",
+            error: "Repository not found.",
+            response: { successful: false },
+          },
+        ],
+      },
+      error: "1 out of 1 tools failed",
+    };
+
+    const connector = new ComposioConnector();
+    const context: AdapterContext = {
+      operationId: "composio-batch-failure",
+      traceId: "composio-batch-failure",
+      spaceId: "workspace",
+      userId: "user-1",
+      signal: new AbortController().signal,
+      connectedConnections: [
+        {
+          id: "connection-github",
+          connectorId: "composio",
+          externalId: "github",
+          displayName: "GitHub",
+        },
+      ],
+    };
+
+    const events: ConnectorEvent[] = [];
+    try {
+      for await (const event of connector.execute(
+        { tool: "COMPOSIO_MULTI_EXECUTE_TOOL", args: {}, executionId: "composio-batch-failure" },
+        context,
+      )) {
+        events.push(event);
+      }
+    } finally {
+      composioSdkState.executeResult = null;
+    }
+    expect(events).toEqual([
+      {
+        type: "error",
+        message: "1 out of 1 tools failed: GITHUB_GET_REPOS: Repository not found.",
+      },
+    ]);
   });
 
   it("resolves connection-request ids to connected-account ids and skips sibling refs", async () => {

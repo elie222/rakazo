@@ -781,16 +781,18 @@ export function composioResultError(summary: string, data: unknown): string {
   const results = (data as { results?: unknown } | null | undefined)?.results;
   if (!Array.isArray(results)) return summary;
   const details = results.flatMap((entry) => {
+    if (!entry || typeof entry !== "object") return [];
     const item = entry as {
       tool_slug?: unknown;
       error?: unknown;
-      response?: { successful?: unknown; error?: unknown };
+      response?: { error?: unknown } | null;
     };
     const error = item.error ?? item.response?.error;
     if (typeof error !== "string" || !error) return [];
     return [typeof item.tool_slug === "string" ? `${item.tool_slug}: ${error}` : error];
   });
-  return details.length > 0 ? `${summary}: ${details.join("; ")}` : summary;
+  if (details.length === 0) return summary;
+  return `${summary}: ${details.join("; ")}`.slice(0, 2_000);
 }
 
 export function sanitizeComposioError(error: unknown): string {
