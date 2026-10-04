@@ -1,4 +1,4 @@
-import type { TicketPriority, TicketStatus } from "@rakazo/contracts";
+import type { TicketCriterion, TicketPriority, TicketStatus } from "@rakazo/contracts";
 
 /** Wake a bot when the oldest actionable ticket has sat untouched this long. */
 export const TICKET_REMINDER_MS = 4 * 60 * 60 * 1000;
@@ -17,6 +17,7 @@ export type TicketWakeTicket = {
   priority: TicketPriority;
   updatedAt: Date;
   lastComment: string | null;
+  criteria?: readonly TicketCriterion[];
 };
 
 export type TicketWakeReason = "changed" | "reminder" | "assigned";
@@ -111,6 +112,14 @@ export function renderTicketWakePrompt(input: TicketWakePromptInput): string {
       )}`,
       `  priority: ${escapePromptData(ticket.priority)}`,
     ];
+    if (ticket.criteria && ticket.criteria.length > 0) {
+      parts.push("  acceptance criteria:");
+      ticket.criteria.forEach((item, index) => {
+        parts.push(
+          `    ${index + 1}. [${item.done ? "x" : " "}] ${escapePromptData(truncate(item.text))}`,
+        );
+      });
+    }
     if (ticket.lastComment) {
       parts.push(`  last comment: ${escapePromptData(truncate(ticket.lastComment))}`);
     }
@@ -121,7 +130,7 @@ export function renderTicketWakePrompt(input: TicketWakePromptInput): string {
     "<your_tickets>",
     ...lines,
     "</your_tickets>",
-    "Work your actionable tickets now. Keep progress on the ticket with ticket_comment, keep its status current with ticket_move or ticket_close, mark blockers blocked with a comment, and hand off with ticket_assign when another bot should take it. Use the ticket tools; do not only describe what you would do.",
+    "Work your actionable tickets now. Check acceptance criteria off with ticket_criterion as you verify them; a ticket cannot move to done with open criteria unless ticket_move is given a reason. Keep progress on the ticket with ticket_comment, keep its status current with ticket_move or ticket_close, mark blockers blocked with ticket_move and a reason, and hand off with ticket_assign when another bot should take it. Use the ticket tools; do not only describe what you would do.",
     "Only message the user when a decision or input is genuinely needed. Otherwise stay terse and do the work.",
   ].join("\n");
 }

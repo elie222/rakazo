@@ -18,6 +18,7 @@ import {
   MoveTicketInput,
   RenameBoardInput,
   TicketCommentSchema,
+  TicketEventSchema,
   TicketSchema,
   UpdateTicketInput,
 } from "./board.js";
@@ -562,6 +563,7 @@ export const appContract = {
     move: oc.input(MoveTicketInput).output(TicketSchema),
     comment: oc.input(CommentTicketInput).output(TicketCommentSchema),
     comments: oc.input(z.object({ ticketId: Id })).output(z.array(TicketCommentSchema)),
+    events: oc.input(z.object({ ticketId: Id })).output(z.array(TicketEventSchema)),
   },
   skills: {
     list: oc.input(botId).output(z.array(TaughtSkillSchema)),

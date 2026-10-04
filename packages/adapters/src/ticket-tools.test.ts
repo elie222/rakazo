@@ -7,10 +7,25 @@ import {
   getTicket,
   listBoardTickets,
   moveTicket,
+  setTicketCriterion,
   updateTicket,
 } from "./ticket-tools.js";
 
 const NOW = new Date("2026-01-01T00:00:00.000Z");
+
+/** Adds the history table and a self-referencing transaction to a mocked client. */
+function withTransaction<T extends object>(prisma: T) {
+  const client = {
+    ticketEvent: { createMany: vi.fn(async () => ({ count: 0 })) },
+    ticketComment: { create: vi.fn(async () => ({})) },
+    ...prisma,
+    $transaction: vi.fn(),
+  };
+  client.$transaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) =>
+    fn(client),
+  );
+  return client;
+}
 
 function board(overrides: Record<string, unknown> = {}) {
   return {
@@ -46,6 +61,8 @@ function ticket(overrides: Record<string, unknown> = {}) {
     number: 1,
     title: "Ticket",
     description: null,
+    acceptanceCriteria: [],
+    statusChangedAt: NOW,
     status: "todo",
     priority: null,
     assigneeBotId: "bot-1",
@@ -201,7 +218,7 @@ describe("ticket tools", () => {
       ...boardSpace(),
       bot: { findFirst: vi.fn(async () => ({ id: "bot-1" })) },
       $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) =>
-        fn({ board: { update }, ticket: { create } }),
+        fn({ board: { update }, ticket: { create }, ticketEvent: { createMany: vi.fn() } }),
       ),
     };
 
@@ -233,7 +250,7 @@ describe("ticket tools", () => {
       ...boardSpace(),
       bot: { findFirst: vi.fn(async () => ({ id: "bot-2" })) },
       $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) =>
-        fn({ board: { update }, ticket: { create } }),
+        fn({ board: { update }, ticket: { create }, ticketEvent: { createMany: vi.fn() } }),
       ),
     };
 
@@ -341,10 +358,10 @@ describe("ticket tools", () => {
     const update = vi.fn(async ({ data }: { data: Record<string, unknown> }) =>
       ticket({ id: "t5", status: data.status, completedAt: data.completedAt }),
     );
-    const prisma = {
+    const prisma = withTransaction({
       ...boardSpace(),
       ticket: { findFirst, update },
-    };
+    });
 
     const result = await moveTicket({ prisma } as never, {
       spaceId: "ws",
@@ -358,7 +375,12 @@ describe("ticket tools", () => {
     });
     expect(update.mock.calls[0]?.[0]).toEqual({
       where: { id: "t5" },
-      data: { status: "done", updatedByBotId: "bot-1", completedAt: expect.any(Date) },
+      data: {
+        status: "done",
+        statusChangedAt: expect.any(Date),
+        updatedByBotId: "bot-1",
+        completedAt: expect.any(Date),
+      },
     });
     expect(result).toEqual({ ticket: expect.objectContaining({ status: "done" }) });
   });
@@ -382,10 +404,10 @@ describe("ticket tools", () => {
     const update = vi.fn(async ({ data }: { data: Record<string, unknown> }) =>
       ticket({ id: "t5", ...data }),
     );
-    const prisma = {
+    const prisma = withTransaction({
       ...boardSpace(),
       ticket: { findFirst, update },
-    };
+    });
 
     const result = await updateTicket({ prisma } as never, {
       spaceId: "ws",
@@ -423,7 +445,9 @@ describe("ticket tools", () => {
       { prisma: { board: { upsert: vi.fn() } } as never },
       { spaceId: "ws", botId: "bot-1", id: "t5" },
     );
-    expect(empty).toEqual({ error: "Provide title, description, or priority." });
+    expect(empty).toEqual({
+      error: "Provide title, description, acceptanceCriteria, or priority.",
+    });
 
     const missing = await updateTicket(
       {
@@ -454,7 +478,11 @@ describe("ticket tools", () => {
       ...boardSpace(),
       ticket: { findFirst: vi.fn(async () => ticket({ id: "t5" })) },
       $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) =>
-        fn({ ticket: { update }, ticketComment: { create: commentCreate } }),
+        fn({
+          ticket: { update },
+          ticketComment: { create: commentCreate },
+          ticketEvent: { createMany: vi.fn() },
+        }),
       ),
     };
 
@@ -468,7 +496,12 @@ describe("ticket tools", () => {
 
     expect(update).toHaveBeenCalledWith({
       where: { id: "t5" },
-      data: { status: "closed", completedAt: expect.any(Date), updatedByBotId: "bot-1" },
+      data: {
+        status: "closed",
+        statusChangedAt: expect.any(Date),
+        completedAt: expect.any(Date),
+        updatedByBotId: "bot-1",
+      },
     });
     expect(commentCreate).toHaveBeenCalledWith({
       data: expect.objectContaining({ ticketId: "t5", authorBotId: "bot-1", body: "done" }),
@@ -496,7 +529,7 @@ describe("ticket tools", () => {
       ...boardSpace(),
       ticket: { findFirst: vi.fn(async () => ticket({ id: "t7" })) },
       $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) =>
-        fn({ ticketComment, ticket: txTicket }),
+        fn({ ticketComment, ticket: txTicket, ticketEvent: { createMany: vi.fn() } }),
       ),
     };
 
@@ -523,11 +556,11 @@ describe("ticket tools", () => {
       ticket({ id: "t1", assigneeBotId: data.assigneeBotId, assigneeUserId: data.assigneeUserId }),
     );
     const botFindFirst = vi.fn(async (): Promise<{ id: string } | null> => ({ id: "bot-2" }));
-    const prisma = {
+    const prisma = withTransaction({
       ...boardSpace(),
       bot: { findFirst: botFindFirst },
       ticket: { findFirst: findFirstTicket, update },
-    };
+    });
 
     const assigned = await assignTicket({ prisma } as never, {
       spaceId: "ws",
@@ -554,5 +587,79 @@ describe("ticket tools", () => {
       ownerBotId: "foreign",
     });
     expect(foreign).toEqual({ error: "ownerBotId must be a bot in this space." });
+  });
+
+  it("refuses to hand off with open criteria unless given a reason", async () => {
+    const findFirst = vi.fn(async () =>
+      ticket({
+        id: "t5",
+        status: "doing",
+        acceptanceCriteria: [
+          { text: "A", done: true },
+          { text: "B", done: false },
+        ],
+      }),
+    );
+    const update = vi.fn(async ({ data }: { data: Record<string, unknown> }) =>
+      ticket({ id: "t5", status: data.status }),
+    );
+    const prisma = withTransaction({ ...boardSpace(), ticket: { findFirst, update } });
+    const input = { spaceId: "ws", botId: "bot-1", id: "t5", status: "review" };
+
+    const refused = await moveTicket({ prisma } as never, input);
+    expect(refused).toEqual({ error: expect.stringMatching(/not checked/) });
+    expect(update).not.toHaveBeenCalled();
+
+    const allowed = await moveTicket({ prisma } as never, { ...input, reason: "B is N/A" });
+    expect(allowed).toEqual({ ticket: expect.objectContaining({ status: "review" }) });
+    expect(prisma.ticketComment.create).toHaveBeenCalled();
+  });
+
+  it("requires a reason for blocked and for won't do", async () => {
+    const findFirst = vi.fn(async () => ticket({ id: "t5", status: "doing" }));
+    const prisma = withTransaction({
+      ...boardSpace(),
+      ticket: { findFirst, update: vi.fn(async () => ticket({ id: "t5" })) },
+    });
+    const blocked = await moveTicket({ prisma } as never, {
+      spaceId: "ws",
+      botId: "bot-1",
+      id: "t5",
+      status: "blocked",
+    });
+    expect(blocked).toEqual({ error: expect.stringMatching(/blocked on/) });
+    const closed = await closeTicket({ prisma } as never, {
+      spaceId: "ws",
+      botId: "bot-1",
+      id: "t5",
+    });
+    expect(closed).toEqual({ error: expect.stringMatching(/will not be done/) });
+  });
+
+  it("checks a criterion by position and rejects a bad index", async () => {
+    const findFirst = vi.fn(async () =>
+      ticket({
+        id: "t5",
+        acceptanceCriteria: [
+          { text: "A", done: false },
+          { text: "B", done: false },
+        ],
+      }),
+    );
+    const update = vi.fn(async ({ data }: { data: Record<string, unknown> }) =>
+      ticket({ id: "t5", ...data }),
+    );
+    const prisma = withTransaction({ ...boardSpace(), ticket: { findFirst, update } });
+    const base = { spaceId: "ws", botId: "bot-1", id: "t5" };
+
+    const result = await setTicketCriterion({ prisma } as never, { ...base, index: 2, done: true });
+    expect(update.mock.calls[0]?.[0].data.acceptanceCriteria).toEqual([
+      { text: "A", done: false },
+      { text: "B", done: true },
+    ]);
+    expect(result).toEqual({ ticket: expect.anything() });
+
+    const bad = await setTicketCriterion({ prisma } as never, { ...base, index: 3, done: true });
+    expect(bad).toEqual({ error: expect.stringMatching(/between 1 and 2/) });
   });
 });

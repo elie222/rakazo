@@ -12,7 +12,7 @@ export function useTicketStatusLabels(): Record<TicketStatus, string> {
       review: t`In review`,
       blocked: t`Blocked`,
       done: t`Done`,
-      closed: t`Closed`,
+      closed: t`Won't do`,
     }),
     [t],
   );

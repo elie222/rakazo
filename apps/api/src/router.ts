@@ -121,15 +121,19 @@ import type {
   SpaceNavigation,
 } from "@rakazo/contracts";
 import {
+  ACTIONABLE_TICKET_STATUSES,
   ATTACHMENT_MAX_BYTES,
   appContract,
   BotSecretAuth,
   ComputerCommandSchema,
+  checkTicketTransition,
   foldComputerCommands,
   IntegrationProviderIdSchema,
   isTicketCompletedStatus,
   OPENAI_COMPATIBLE_PROVIDER_ID,
+  parseCriteria,
   parseTicketRef,
+  resolveCriteria,
   TICKET_RUN_ACTIVITY_STALE_MS,
   usableModelId,
 } from "@rakazo/contracts";
@@ -203,14 +207,21 @@ import {
 } from "./artifacts.js";
 import {
   allocateTicketNumber,
+  coerceTicketStatus,
   ensureBoard,
   findTicket,
   listBoards,
   listTicketComments,
+  listTicketEvents,
+  recordTicketEvents,
+  recordTransitionReason,
+  statusChangeData,
+  ticketChangeEvents,
   ticketEditorStamp,
   toBoardDto,
   toTicketCommentDto,
   toTicketDto,
+  toTicketEventDto,
 } from "./board.js";
 import { botProfileLabelsChanged, commitBotUpdate } from "./bot-update.js";
 import {
@@ -3438,23 +3449,90 @@ export function createRouter(deps: RouterDeps) {
         const assigneeBotIds = [
           ...new Set(rows.flatMap((row) => (row.assigneeBotId ? [row.assigneeBotId] : []))),
         ];
-        // A bot is "working" only while its ticket wake is active and fresh; a run
-        // stranded by a crashed worker ages out instead of leaving the card spinning.
+        // Working is per ticket: a ticket wake records the tickets it covers and the one
+        // the bot touched last. Runs parked on a human (waiting_*) are not doing work, and
+        // a run that stopped renewing ages out so a crashed worker cannot leave a card spinning.
         const workingRuns = assigneeBotIds.length
           ? await deps.prisma.run.findMany({
               where: {
                 spaceId: context.actor.spaceId,
                 trigger: "tickets",
-                status: { in: [...ACTIVE_RUN_STATUSES] },
+                status: { in: ["queued", "leased", "running"] },
                 botId: { in: assigneeBotIds },
                 updatedAt: { gte: new Date(Date.now() - TICKET_RUN_ACTIVITY_STALE_MS) },
               },
-              select: { botId: true },
+              select: { botId: true, ticketIds: true, currentTicketId: true },
             })
           : [];
+        const actionable = new Set<string>(ACTIONABLE_TICKET_STATUSES);
+        const workable = new Map(
+          rows
+            .filter((row) => actionable.has(row.status) && row.assigneeBotId)
+            .map((row) => [row.id, row.assigneeBotId]),
+        );
+        const workingTicketIds = new Set<string>();
+        for (const run of workingRuns) {
+          const focus =
+            run.currentTicketId && workable.get(run.currentTicketId) === run.botId
+              ? [run.currentTicketId]
+              : run.ticketIds;
+          for (const id of focus) {
+            if (workable.get(id) === run.botId) workingTicketIds.add(id);
+          }
+        }
+        // Surface a wake that failed or keeps failing to start (e.g. the sandbox image is
+        // missing) so a silently stuck bot is visible on its cards.
+        const latestRuns = assigneeBotIds.length
+          ? await deps.prisma.run.findMany({
+              where: {
+                spaceId: context.actor.spaceId,
+                trigger: "tickets",
+                botId: { in: assigneeBotIds },
+              },
+              orderBy: [{ botId: "asc" }, { createdAt: "desc" }],
+              distinct: ["botId"],
+              select: {
+                botId: true,
+                status: true,
+                error: true,
+                updatedAt: true,
+                attempts: {
+                  orderBy: { startedAt: "desc" },
+                  take: 1,
+                  select: { status: true, error: true },
+                },
+              },
+            })
+          : [];
+        const botIssues = latestRuns.flatMap((run) => {
+          const attempt = run.attempts[0];
+          if (run.status === "failed") {
+            return [
+              {
+                botId: run.botId,
+                message: run.error?.trim() || "The last ticket run failed.",
+                at: run.updatedAt.toISOString(),
+              },
+            ];
+          }
+          if (
+            (run.status === "queued" || run.status === "leased") &&
+            attempt?.status === "setup_failed"
+          ) {
+            return [
+              {
+                botId: run.botId,
+                message: attempt.error?.trim() || "The bot's computer keeps failing to start.",
+                at: run.updatedAt.toISOString(),
+              },
+            ];
+          }
+          return [];
+        });
         return {
           tickets: rows.map((row) => toTicketDto(row, board.ticketPrefix)),
-          workingBotIds: [...new Set(workingRuns.map((run) => run.botId))],
+          workingTicketIds: [...workingTicketIds],
+          botIssues,
         };
       }),
       get: authed.tickets.get.handler(async ({ context, input }) => {
@@ -3473,13 +3551,14 @@ export function createRouter(deps: RouterDeps) {
         await repos.getBot(context.actor, input.assigneeBotId);
         const row = await deps.prisma.$transaction(async (tx) => {
           const number = await allocateTicketNumber(tx, board.id);
-          return tx.ticket.create({
+          const created = await tx.ticket.create({
             data: {
               boardId: board.id,
               spaceId: context.actor.spaceId,
               number,
               title: input.title,
               description: input.description ?? null,
+              acceptanceCriteria: resolveCriteria(input.acceptanceCriteria ?? [], []),
               priority: input.priority,
               status: "todo",
               assigneeBotId: input.assigneeBotId,
@@ -3488,6 +3567,13 @@ export function createRouter(deps: RouterDeps) {
               ...ticketEditorStamp(null, input.assigneeBotId),
             },
           });
+          await recordTicketEvents(tx, {
+            ticketId: created.id,
+            spaceId: context.actor.spaceId,
+            actor: { userId: context.actor.userId },
+            events: [{ type: "created", data: { assigneeBotId: input.assigneeBotId } }],
+          });
+          return created;
         });
         await deps.ticketChanges({
           spaceId: context.actor.spaceId,
@@ -3508,24 +3594,62 @@ export function createRouter(deps: RouterDeps) {
         if (input.assigneeBotId !== undefined) {
           await repos.getBot(context.actor, input.assigneeBotId);
         }
+        const existingCriteria = parseCriteria(existing.acceptanceCriteria);
+        const nextCriteria =
+          input.acceptanceCriteria !== undefined
+            ? resolveCriteria(input.acceptanceCriteria, existingCriteria)
+            : existingCriteria;
+        const nextAssignee = input.assigneeBotId ?? existing.assigneeBotId;
+        if (input.status !== undefined) {
+          const blocked = checkTicketTransition({
+            from: coerceTicketStatus(existing.status),
+            to: input.status,
+            criteria: nextCriteria,
+            hasAssignee: nextAssignee !== null,
+            reason: input.reason,
+          });
+          if (blocked) throw new ORPCError("BAD_REQUEST", { message: blocked });
+        }
         const data: Prisma.TicketUncheckedUpdateInput = {
           ...(input.title !== undefined ? { title: input.title } : {}),
           ...(input.description !== undefined ? { description: input.description } : {}),
+          ...(input.acceptanceCriteria !== undefined ? { acceptanceCriteria: nextCriteria } : {}),
           ...(input.priority !== undefined ? { priority: input.priority ?? "normal" } : {}),
           ...(input.assigneeBotId !== undefined ? { assigneeBotId: input.assigneeBotId } : {}),
         };
         if (input.status !== undefined) {
           data.status = input.status;
+          Object.assign(data, statusChangeData(existing.status, input.status));
           data.completedAt = isTicketCompletedStatus(input.status)
             ? (existing.completedAt ?? new Date())
             : null;
         }
-        const row = await deps.prisma.ticket.update({
-          where: { id: existing.id },
-          data: {
-            ...data,
-            ...ticketEditorStamp(null, input.assigneeBotId ?? existing.assigneeBotId),
-          },
+        const actor = { userId: context.actor.userId };
+        const row = await deps.prisma.$transaction(async (tx) => {
+          const updated = await tx.ticket.update({
+            where: { id: existing.id },
+            data: {
+              ...data,
+              ...ticketEditorStamp(null, input.assigneeBotId ?? existing.assigneeBotId),
+            },
+          });
+          await recordTicketEvents(tx, {
+            ticketId: existing.id,
+            spaceId: context.actor.spaceId,
+            actor,
+            events: ticketChangeEvents(existing, updated),
+          });
+          if (input.status !== undefined) {
+            await recordTransitionReason(tx, {
+              ticketId: existing.id,
+              spaceId: context.actor.spaceId,
+              actor,
+              to: input.status,
+              reason: input.reason,
+              criteria: nextCriteria,
+            });
+          }
+          return updated;
         });
         await deps.ticketChanges({
           spaceId: context.actor.spaceId,
@@ -3544,15 +3668,43 @@ export function createRouter(deps: RouterDeps) {
           where: { id: input.id, spaceId: context.actor.spaceId, boardId: board.id },
         });
         if (!existing) throw new IsolationError();
-        const row = await deps.prisma.ticket.update({
-          where: { id: existing.id },
-          data: {
-            status: input.status,
-            ...ticketEditorStamp(null, existing.assigneeBotId),
-            completedAt: isTicketCompletedStatus(input.status)
-              ? (existing.completedAt ?? new Date())
-              : null,
-          },
+        const criteria = parseCriteria(existing.acceptanceCriteria);
+        const blocked = checkTicketTransition({
+          from: coerceTicketStatus(existing.status),
+          to: input.status,
+          criteria,
+          hasAssignee: existing.assigneeBotId !== null,
+          reason: input.reason,
+        });
+        if (blocked) throw new ORPCError("BAD_REQUEST", { message: blocked });
+        const actor = { userId: context.actor.userId };
+        const row = await deps.prisma.$transaction(async (tx) => {
+          const updated = await tx.ticket.update({
+            where: { id: existing.id },
+            data: {
+              status: input.status,
+              ...statusChangeData(existing.status, input.status),
+              ...ticketEditorStamp(null, existing.assigneeBotId),
+              completedAt: isTicketCompletedStatus(input.status)
+                ? (existing.completedAt ?? new Date())
+                : null,
+            },
+          });
+          await recordTicketEvents(tx, {
+            ticketId: existing.id,
+            spaceId: context.actor.spaceId,
+            actor,
+            events: ticketChangeEvents(existing, updated),
+          });
+          await recordTransitionReason(tx, {
+            ticketId: existing.id,
+            spaceId: context.actor.spaceId,
+            actor,
+            to: input.status,
+            reason: input.reason,
+            criteria,
+          });
+          return updated;
         });
         await deps.ticketChanges({
           spaceId: context.actor.spaceId,
@@ -3583,6 +3735,12 @@ export function createRouter(deps: RouterDeps) {
             where: { id: ticket.id },
             data: { updatedAt: new Date(), ...ticketEditorStamp(null, ticket.assigneeBotId) },
           });
+          await recordTicketEvents(tx, {
+            ticketId: ticket.id,
+            spaceId: context.actor.spaceId,
+            actor: { userId: context.actor.userId },
+            events: [{ type: "commented", data: {} }],
+          });
           return comment;
         });
         await deps.ticketChanges({
@@ -3603,6 +3761,15 @@ export function createRouter(deps: RouterDeps) {
         if (!ticket) throw new IsolationError();
         const rows = await listTicketComments(deps.prisma, context.actor.spaceId, ticket.id);
         return rows.map(toTicketCommentDto);
+      }),
+      events: authed.tickets.events.handler(async ({ context, input }) => {
+        const board = await ensureBoard(deps.prisma, context.actor.spaceId);
+        const ticket = await deps.prisma.ticket.findFirst({
+          where: { id: input.ticketId, spaceId: context.actor.spaceId, boardId: board.id },
+        });
+        if (!ticket) throw new IsolationError();
+        const rows = await listTicketEvents(deps.prisma, context.actor.spaceId, ticket.id);
+        return rows.map(toTicketEventDto);
       }),
     },
     skills: {

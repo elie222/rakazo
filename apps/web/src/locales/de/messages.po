@@ -64,6 +64,17 @@ msgstr ""
 msgid "{0} handling"
 msgstr ""
 
+#. placeholder {0}: assignee.name
+#: src/pages/Board.tsx
+msgid "{0} has more than {TICKET_WIP_LIMIT} tickets in progress"
+msgstr ""
+
+#. placeholder {0}: assignee.name
+#. placeholder {0}: owner.name
+#: src/pages/Board.tsx
+msgid "{0} is working"
+msgstr "{0} arbeitet"
+
 #. placeholder {0}: format(size / 1024)
 #: src/components/ArtifactFileCard.tsx
 msgid "{0} KB"
@@ -95,9 +106,57 @@ msgstr ""
 msgid "{0}'s screen"
 msgstr "{0}s Bildschirm"
 
+#: src/pages/Board.tsx
+msgid "{actor} changed priority from {fromLabel} to {toLabel}"
+msgstr ""
+
+#: src/pages/Board.tsx
+msgid "{actor} checked \"{text}\""
+msgstr ""
+
+#: src/pages/Board.tsx
+msgid "{actor} commented"
+msgstr ""
+
+#: src/pages/Board.tsx
+msgid "{actor} created the ticket"
+msgstr ""
+
+#: src/pages/Board.tsx
+msgid "{actor} edited the acceptance criteria"
+msgstr ""
+
+#: src/pages/Board.tsx
+msgid "{actor} edited the description"
+msgstr ""
+
+#: src/pages/Board.tsx
+msgid "{actor} moved it from {fromLabel} to {toLabel}"
+msgstr ""
+
+#: src/pages/Board.tsx
+msgid "{actor} overrode the open criteria: {reason}"
+msgstr ""
+
+#: src/pages/Board.tsx
+msgid "{actor} reassigned it from {fromChip} to {toChip}"
+msgstr ""
+
+#: src/pages/Board.tsx
+msgid "{actor} renamed it to \"{title}\""
+msgstr ""
+
+#: src/pages/Board.tsx
+msgid "{actor} unchecked \"{text}\""
+msgstr ""
+
 #: src/pages/Shell.tsx
 msgid "{botName}’s computer"
 msgstr "Computer von {botName}"
+
+#: src/pages/Board.tsx
+msgid "{columnDays}d"
+msgstr ""
 
 #: src/lib/relative-time.ts
 #: src/pages/ActivityList.tsx
@@ -170,6 +229,10 @@ msgstr "@{0}"
 msgid "A bit of everything"
 msgstr ""
 
+#: src/pages/Board.tsx
+msgid "A bot"
+msgstr ""
+
 #. placeholder {0}: oauth.verificationUri.replace(/^https:\/\//, "")
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
@@ -182,6 +245,14 @@ msgstr ""
 
 #: src/pages/shell/bot-picker.tsx
 msgid "About spaces"
+msgstr ""
+
+#: src/pages/Board.tsx
+msgid "Acceptance criteria"
+msgstr ""
+
+#: src/pages/Board.tsx
+msgid "Acceptance criteria (one per line, Markdown supported)"
 msgstr ""
 
 #: src/components/integrations/IntegrationSetup.tsx
@@ -242,6 +313,10 @@ msgstr "Aktivität"
 msgid "Add"
 msgstr "Hinzufügen"
 
+#: src/pages/Board.tsx
+msgid "Add a comment"
+msgstr "Kommentar hinzufügen"
+
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Add a model in Settings to use this."
 msgstr ""
@@ -272,6 +347,10 @@ msgstr "Gib eine HTTPS-Server-URL ein."
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Add another"
+msgstr ""
+
+#: src/pages/shell/bot-credentials.tsx
+msgid "Add credential"
 msgstr ""
 
 #: src/pages/PluginsOverlay.tsx
@@ -327,6 +406,7 @@ msgstr ""
 msgid "Added"
 msgstr ""
 
+#: src/pages/Board.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Adding…"
@@ -428,98 +508,6 @@ msgstr "Antwort"
 #: src/components/AskCard.tsx
 msgid "Answered"
 msgstr "Beantwortet"
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Add credential"
-msgstr ""
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Basic auth"
-msgstr ""
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Basic auth ({username})"
-msgstr ""
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Could not load credentials."
-msgstr ""
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Could not remove the credential"
-msgstr ""
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Could not save the credential"
-msgstr ""
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Credentials"
-msgstr ""
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Custom header"
-msgstr ""
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Enter a username and password"
-msgstr ""
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Header \"{header}\""
-msgstr ""
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Keys and passwords this bot can use, each for one site only. Values are encrypted and never shown again."
-msgstr ""
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Lowercase letters, numbers, hyphens and underscores, starting with a letter."
-msgstr ""
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "No credentials saved for this bot."
-msgstr ""
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Remove {secretName}? This bot will no longer be able to use it."
-msgstr ""
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Replace value"
-msgstr ""
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Save credential"
-msgstr ""
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Save new value"
-msgstr ""
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Site"
-msgstr ""
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "These saved settings can't be read. Remove it and add it again."
-msgstr ""
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Type"
-msgstr ""
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Updated {updated}"
-msgstr ""
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Value"
-msgstr ""
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Website login"
-msgstr ""
 
 #. placeholder {0}: selectedAskActionLabel(answer, actions)
 #: src/components/AskCard.tsx
@@ -696,10 +684,32 @@ msgstr "Zurück zur Anmeldung"
 msgid "Base URL"
 msgstr "Basis-URL"
 
+#: src/pages/shell/bot-credentials.tsx
+msgid "Basic auth"
+msgstr ""
+
+#: src/pages/shell/bot-credentials.tsx
+msgid "Basic auth ({username})"
+msgstr ""
+
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 #: src/pages/PluginsOverlay.tsx
+#: src/pages/shell/bot-credentials.tsx
 msgid "Bearer token"
 msgstr "Bearer-Token"
+
+#: src/lib/ticket-status.ts
+msgid "Blocked"
+msgstr "Blockiert"
+
+#: src/pages/Board.tsx
+msgid "Board"
+msgstr "Board"
+
+#: src/pages/Board.tsx
+#: src/pages/Shell.tsx
+msgid "Boards"
+msgstr "Boards"
 
 #: src/pages/Shell.tsx
 msgid "Booting live desktop…"
@@ -714,6 +724,7 @@ msgstr "Computer von {0} wird gestartet"
 msgid "bot"
 msgstr "Bot"
 
+#: src/pages/Board.tsx
 #: src/pages/IntegrationSetup.tsx
 #: src/pages/Shell.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
@@ -738,6 +749,7 @@ msgid "Bot to link"
 msgstr ""
 
 #: src/pages/Artifacts.tsx
+#: src/pages/Board.tsx
 msgid "Bots"
 msgstr ""
 
@@ -766,10 +778,12 @@ msgstr "Server nicht erreichbar."
 #: src/components/ComputerUpdateProgress.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
 #: src/pages/Artifacts.tsx
+#: src/pages/Board.tsx
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/PluginsOverlay.tsx
+#: src/pages/shell/bot-credentials.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Cancel"
 msgstr "Abbrechen"
@@ -996,6 +1010,14 @@ msgstr ""
 #: src/pages/McpServersOverlay.tsx
 msgid "Command"
 msgstr "Befehl"
+
+#: src/pages/Board.tsx
+msgid "Comment"
+msgstr "Kommentieren"
+
+#: src/pages/Board.tsx
+msgid "Comments"
+msgstr ""
 
 #: src/pages/ScratchpadSection.tsx
 msgid "Complete"
@@ -1247,6 +1269,10 @@ msgstr "Abschnitt konnte nicht erstellt werden"
 msgid "Could not create space"
 msgstr ""
 
+#: src/pages/Board.tsx
+msgid "Could not create the ticket."
+msgstr "Ticket konnte nicht erstellt werden."
+
 #: src/pages/Onboarding.tsx
 msgid "Could not create your bot"
 msgstr "Dein Bot konnte nicht erstellt werden"
@@ -1344,6 +1370,14 @@ msgstr ""
 msgid "Could not load commands"
 msgstr "Befehle konnten nicht geladen werden"
 
+#: src/pages/Board.tsx
+msgid "Could not load comments."
+msgstr "Kommentare konnten nicht geladen werden."
+
+#: src/pages/shell/bot-credentials.tsx
+msgid "Could not load credentials."
+msgstr ""
+
 #: src/components/integrations/IntegrationSetup.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not load integrations"
@@ -1365,6 +1399,10 @@ msgstr "Ausführungsverlauf konnte nicht geladen werden"
 msgid "Could not load skill"
 msgstr "Skill konnte nicht geladen werden"
 
+#: src/pages/Board.tsx
+msgid "Could not load the board."
+msgstr "Board konnte nicht geladen werden."
+
 #: src/pages/Artifacts.tsx
 msgid "Could not load this artifact."
 msgstr ""
@@ -1384,6 +1422,10 @@ msgstr ""
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Could not load voice settings"
 msgstr "Stimmeinstellungen konnten nicht geladen werden"
+
+#: src/pages/Board.tsx
+msgid "Could not move the ticket."
+msgstr "Ticket konnte nicht verschoben werden."
 
 #: src/components/computer/FilesApp.tsx
 msgid "Could not open file"
@@ -1426,6 +1468,10 @@ msgstr "Gruppe konnte nicht entfernt werden"
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Could not remove rule"
 msgstr "Regel konnte nicht entfernt werden"
+
+#: src/pages/shell/bot-credentials.tsx
+msgid "Could not remove the credential"
+msgstr ""
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not rename connection"
@@ -1492,6 +1538,10 @@ msgstr "Sprachmodell konnte nicht gespeichert werden"
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Could not save that voice"
 msgstr "Stimme konnte nicht gespeichert werden"
+
+#: src/pages/shell/bot-credentials.tsx
+msgid "Could not save the credential"
+msgstr ""
 
 #: src/pages/shell/message-cards.tsx
 msgid "Could not save this choice"
@@ -1561,6 +1611,7 @@ msgstr ""
 msgid "Couldn't update messaging settings"
 msgstr ""
 
+#: src/pages/Board.tsx
 #: src/pages/Shell.tsx
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/shell/dialogs.tsx
@@ -1610,6 +1661,7 @@ msgstr "Dein Rakazo erstellen"
 msgid "Created"
 msgstr ""
 
+#: src/pages/Board.tsx
 #: src/pages/GroupPanel.tsx
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/shell/dialogs.tsx
@@ -1624,6 +1676,10 @@ msgstr "Zugangsdaten"
 #: src/pages/PluginsOverlay.tsx
 msgid "credential saved"
 msgstr "Zugangsdaten gespeichert"
+
+#: src/pages/shell/bot-credentials.tsx
+msgid "Credentials"
+msgstr ""
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Credentials are encrypted and never sent to the model."
@@ -1640,6 +1696,10 @@ msgstr "Cron-Ausdruck"
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Current password"
 msgstr "Aktuelles Passwort"
+
+#: src/pages/shell/bot-credentials.tsx
+msgid "Custom header"
+msgstr ""
 
 #: src/pages/shell/dialogs.tsx
 msgid "Customer support"
@@ -1758,9 +1818,14 @@ msgstr "Bereitstellungsstandard"
 msgid "Describe what this bot does"
 msgstr "Beschreibe, was dieser Bot macht"
 
+#: src/pages/Board.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Description"
 msgstr "Beschreibung"
+
+#: src/pages/Board.tsx
+msgid "Description (Markdown supported)"
+msgstr ""
 
 #: src/components/DesktopUpdates.tsx
 msgid "Desktop app"
@@ -1826,6 +1891,7 @@ msgstr "Docker begrenzt für mehr Sicherheit den Zugriff auf deinen Computer. We
 msgid "Don’t have an account?"
 msgstr "Du hast noch kein Konto?"
 
+#: src/lib/ticket-status.ts
 #: src/pages/ActivityList.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Done"
@@ -1879,6 +1945,10 @@ msgstr "z. B. Hivenet Agent, Presales, Zeiterfassungs-Bot"
 msgid "Earlier message"
 msgstr "Frühere Nachricht"
 
+#: src/pages/Board.tsx
+msgid "Edit"
+msgstr "Bearbeiten"
+
 #: src/components/AskCard.tsx
 msgid "Edit first"
 msgstr "Zuerst bearbeiten"
@@ -1893,6 +1963,10 @@ msgstr "E-Mail"
 
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Engage when... Ignore..."
+msgstr ""
+
+#: src/pages/shell/bot-credentials.tsx
+msgid "Enter a username and password"
 msgstr ""
 
 #: src/pages/ModelSettingsOverlay.tsx
@@ -1970,15 +2044,15 @@ msgstr "Exportiere die Liste dieser Woche aus dem CRM und lege sie im freigegebe
 msgid "External conversation"
 msgstr ""
 
-#. js-lingui-explicit-id
-#: src/lib/model-catalog.ts
-msgid "Extra high"
-msgstr ""
-
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 msgid "Extra high"
 msgstr "Sehr hoch"
+
+#. js-lingui-explicit-id
+#: src/lib/model-catalog.ts
+msgid "Extra high"
+msgstr ""
 
 #: src/components/CloudAgentCard.tsx
 msgid "failed"
@@ -2119,8 +2193,13 @@ msgstr ""
 msgid "header"
 msgstr ""
 
+#: src/pages/shell/bot-credentials.tsx
+msgid "Header \"{header}\""
+msgstr ""
+
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
+#: src/pages/shell/bot-credentials.tsx
 msgid "Header name"
 msgstr "Header-Name"
 
@@ -2148,15 +2227,20 @@ msgstr ""
 msgid "Hide transcript"
 msgstr "Transkript ausblenden"
 
+#: src/lib/ticket-priority.ts
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/Onboarding.tsx
+msgid "High"
+msgstr "Hoch"
+
 #. js-lingui-explicit-id
 #: src/lib/model-catalog.ts
 msgid "High"
 msgstr ""
 
-#: src/pages/ModelSettingsOverlay.tsx
-#: src/pages/Onboarding.tsx
-msgid "High"
-msgstr "Hoch"
+#: src/pages/Board.tsx
+msgid "History"
+msgstr ""
 
 #: src/pages/RoutineSchedule.tsx
 msgid "hour"
@@ -2194,6 +2278,18 @@ msgstr "Bild-Upload-Bereich"
 #: src/pages/PluginsOverlay.tsx
 msgid "Import OpenAPI JSON"
 msgstr "OpenAPI-JSON importieren"
+
+#: src/lib/ticket-status.ts
+msgid "In progress"
+msgstr "In Arbeit"
+
+#: src/lib/ticket-status.ts
+msgid "In review"
+msgstr "In Prüfung"
+
+#: src/pages/Board.tsx
+msgid "In this column for {columnDays} days"
+msgstr ""
 
 #: src/pages/shell/message-cards.tsx
 msgid "Inbox & email"
@@ -2283,6 +2379,10 @@ msgstr "Erinnerungen behalten"
 
 #: src/pages/RoutineEditor.tsx
 msgid "key"
+msgstr ""
+
+#: src/pages/shell/bot-credentials.tsx
+msgid "Keys and passwords this bot can use, each for one site only. Values are encrypted and never shown again."
 msgstr ""
 
 #: src/pages/KnowledgeSection.tsx
@@ -2375,6 +2475,7 @@ msgstr "Stimmanbieter werden geladen…"
 
 #: src/App.tsx
 #: src/pages/Artifacts.tsx
+#: src/pages/Board.tsx
 #: src/pages/IntegrationSetup.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/PeerMessagesOverlay.tsx
@@ -2399,15 +2500,20 @@ msgstr ""
 msgid "Log out"
 msgstr "Abmelden"
 
+#: src/lib/ticket-priority.ts
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/Onboarding.tsx
+msgid "Low"
+msgstr "Niedrig"
+
 #. js-lingui-explicit-id
 #: src/lib/model-catalog.ts
 msgid "Low"
 msgstr ""
 
-#: src/pages/ModelSettingsOverlay.tsx
-#: src/pages/Onboarding.tsx
-msgid "Low"
-msgstr "Niedrig"
+#: src/pages/shell/bot-credentials.tsx
+msgid "Lowercase letters, numbers, hyphens and underscores, starting with a letter."
+msgstr ""
 
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Make sure nothing is still running on this computer."
@@ -2441,15 +2547,15 @@ msgstr "Als gelesen markieren"
 msgid "Mark as Unread"
 msgstr "Als ungelesen markieren"
 
-#. js-lingui-explicit-id
-#: src/lib/model-catalog.ts
-msgid "Max"
-msgstr ""
-
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 msgid "Max"
 msgstr "Max."
+
+#. js-lingui-explicit-id
+#: src/lib/model-catalog.ts
+msgid "Max"
+msgstr ""
 
 #: src/pages/Artifacts.tsx
 msgid "Maximize"
@@ -2473,15 +2579,15 @@ msgstr ""
 msgid "MCP servers"
 msgstr "MCP-Server"
 
-#. js-lingui-explicit-id
-#: src/lib/model-catalog.ts
-msgid "Medium"
-msgstr ""
-
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 msgid "Medium"
 msgstr "Mittel"
+
+#. js-lingui-explicit-id
+#: src/lib/model-catalog.ts
+msgid "Medium"
+msgstr ""
 
 #: src/pages/GroupPanel.tsx
 msgid "Members ({GROUP_MEMBER_MIN}–{GROUP_MEMBER_MAX})"
@@ -2551,15 +2657,15 @@ msgstr ""
 msgid "Microphone failed"
 msgstr "Mikrofonfehler"
 
-#. js-lingui-explicit-id
-#: src/lib/model-catalog.ts
-msgid "Minimal"
-msgstr ""
-
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 msgid "Minimal"
 msgstr "Minimal"
+
+#. js-lingui-explicit-id
+#: src/lib/model-catalog.ts
+msgid "Minimal"
+msgstr ""
 
 #: src/pages/WindowChrome.tsx
 msgid "Minimize"
@@ -2627,13 +2733,26 @@ msgstr ""
 msgid "More computer actions"
 msgstr ""
 
+#: src/pages/Board.tsx
+msgid "Move"
+msgstr ""
+
 #: src/pages/shell/dialogs.tsx
 msgid "Move them to your shared memory."
 msgstr "Verschiebe sie in deine geteilten Erinnerungen."
 
+#: src/pages/Board.tsx
+msgid "Move ticket"
+msgstr "Ticket verschieben"
+
 #: src/pages/BotContextMenu.tsx
 msgid "Move to"
 msgstr "Verschieben nach"
+
+#. placeholder {0}: labels[pending.status]
+#: src/pages/Board.tsx
+msgid "Move to {0}"
+msgstr ""
 
 #: src/components/call/CallCard.tsx
 msgid "Mute"
@@ -2643,6 +2762,7 @@ msgstr "Stummschalten"
 #: src/pages/Auth.tsx
 #: src/pages/GroupPanel.tsx
 #: src/pages/RoutineEditor.tsx
+#: src/pages/shell/bot-credentials.tsx
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Name"
@@ -2702,6 +2822,10 @@ msgstr "Neuer Skill"
 msgid "New space"
 msgstr ""
 
+#: src/pages/Board.tsx
+msgid "New ticket"
+msgstr "Neues Ticket"
+
 #: src/pages/MessagingSettingsOverlay.tsx
 msgid "No agent connections yet."
 msgstr ""
@@ -2738,8 +2862,16 @@ msgstr ""
 msgid "No chat apps linked yet."
 msgstr ""
 
+#: src/pages/shell/bot-credentials.tsx
+msgid "No credentials saved for this bot."
+msgstr ""
+
 #: src/pages/MessagingSettingsOverlay.tsx
 msgid "No group chats yet."
+msgstr ""
+
+#: src/pages/Board.tsx
+msgid "No history yet"
 msgstr ""
 
 #: src/components/AskCard.tsx
@@ -2807,9 +2939,18 @@ msgstr ""
 msgid "No trigger"
 msgstr ""
 
+#: src/pages/Board.tsx
+msgid "nobody"
+msgstr ""
+
+#: src/pages/Board.tsx
 #: src/pages/ScratchpadSection.tsx
 msgid "None yet"
 msgstr "Noch keine"
+
+#: src/lib/ticket-priority.ts
+msgid "Normal"
+msgstr "Normal"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Not in the plugin catalog"
@@ -2869,6 +3010,10 @@ msgstr ""
 #: src/pages/RoutineSchedule.tsx
 msgid "on the 1st at {0}"
 msgstr "am 1. um {0}"
+
+#: src/pages/Board.tsx
+msgid "One criterion per line (Markdown supported)"
+msgstr ""
 
 #: src/pages/Shell.tsx
 msgid "Only empty spaces can be deleted. Delete its bots and groups first."
@@ -2964,6 +3109,14 @@ msgstr "Organisations-API-Schlüssel"
 msgid "Other model…"
 msgstr "Anderes Modell…"
 
+#: src/pages/Board.tsx
+msgid "over limit"
+msgstr ""
+
+#: src/pages/Board.tsx
+msgid "Owner"
+msgstr "Verantwortlich"
+
 #: src/pages/RoutineEditor.tsx
 msgid "PagerDuty incident"
 msgstr ""
@@ -2975,6 +3128,7 @@ msgstr "Zurückstellen"
 #: src/components/AskCard.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Auth.tsx
+#: src/pages/shell/bot-credentials.tsx
 msgid "Password"
 msgstr "Passwort"
 
@@ -3029,6 +3183,10 @@ msgstr "Vorschau von {0}"
 msgid "Preview isn't available for this file type — download it to view it."
 msgstr ""
 
+#: src/pages/Board.tsx
+msgid "Priority"
+msgstr "Priorität"
+
 #: src/pages/shell/bot-panel.tsx
 msgid "Private"
 msgstr "Privat"
@@ -3082,6 +3240,10 @@ msgstr "Antworten vorlesen"
 #: src/pages/KnowledgeSection.tsx
 msgid "read-only"
 msgstr "schreibgeschützt"
+
+#: src/pages/Board.tsx
+msgid "Reason"
+msgstr ""
 
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
@@ -3183,6 +3345,7 @@ msgstr ""
 #: src/components/ApprovalRulesSettings.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/ScratchpadSection.tsx
+#: src/pages/shell/bot-credentials.tsx
 msgid "Remove"
 msgstr "Entfernen"
 
@@ -3190,6 +3353,10 @@ msgstr "Entfernen"
 #: src/pages/Shell.tsx
 msgid "Remove {0}"
 msgstr "{0} entfernen"
+
+#: src/pages/shell/bot-credentials.tsx
+msgid "Remove {secretName}? This bot will no longer be able to use it."
+msgstr ""
 
 #: src/pages/RoutineEditor.tsx
 msgid "Remove Git event"
@@ -3247,6 +3414,10 @@ msgstr "API-Schlüssel ersetzen"
 msgid "Replace key"
 msgstr "Schlüssel ersetzen"
 
+#: src/pages/shell/bot-credentials.tsx
+msgid "Replace value"
+msgstr ""
+
 #: src/pages/Shell.tsx
 msgid "Reply"
 msgstr "Antworten"
@@ -3296,6 +3467,10 @@ msgstr "Setze dein Passwort zurück"
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "Resetting…"
 msgstr ""
+
+#: src/pages/ResizableSidePanel.tsx
+msgid "Resize panel"
+msgstr "Panelgröße ändern"
 
 #: src/components/DesktopUpdates.tsx
 msgid "Restart to update"
@@ -3390,6 +3565,7 @@ msgstr ""
 
 #: src/components/AskCard.tsx
 #: src/components/teach/SkillDraftCard.tsx
+#: src/pages/Board.tsx
 #: src/pages/ExternalConversationSettings.tsx
 #: src/pages/GroupPanel.tsx
 #: src/pages/KnowledgeSection.tsx
@@ -3400,8 +3576,16 @@ msgstr ""
 msgid "Save"
 msgstr "Speichern"
 
+#: src/pages/shell/bot-credentials.tsx
+msgid "Save credential"
+msgstr ""
+
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Save limits"
+msgstr ""
+
+#: src/pages/shell/bot-credentials.tsx
+msgid "Save new value"
 msgstr ""
 
 #: src/components/AskCard.tsx
@@ -3435,6 +3619,7 @@ msgstr ""
 #: src/pages/GroupPanel.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
+#: src/pages/shell/bot-credentials.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Saving…"
 msgstr "Wird gespeichert…"
@@ -3631,6 +3816,10 @@ msgstr "Bei Rakazo anmelden"
 msgid "Sign up"
 msgstr "Registrieren"
 
+#: src/pages/shell/bot-credentials.tsx
+msgid "Site"
+msgstr ""
+
 #. placeholder {0}: skill.name
 #: src/pages/Shell.tsx
 msgid "Skill {0}"
@@ -3665,6 +3854,10 @@ msgstr ""
 #: src/components/SoftwareUpdateSection.tsx
 msgid "Software update"
 msgstr ""
+
+#: src/pages/Board.tsx
+msgid "Something went wrong."
+msgstr "Etwas ist schiefgelaufen."
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Space default"
@@ -3708,6 +3901,10 @@ msgstr "Startet"
 #: src/pages/Onboarding.tsx
 msgid "Starting…"
 msgstr "Wird gestartet…"
+
+#: src/pages/Board.tsx
+msgid "Status"
+msgstr "Status"
 
 #: src/components/teach/SkillDraftCard.tsx
 msgid "Steps"
@@ -3770,6 +3967,7 @@ msgid "Switching…"
 msgstr "Wird gewechselt…"
 
 #: src/pages/AccountSettingsOverlay.tsx
+#: src/pages/Board.tsx
 msgid "System"
 msgstr "System"
 
@@ -3820,6 +4018,10 @@ msgstr ""
 #: src/pages/MemorySettingsOverlay.tsx
 msgid "The selected memory provider is not available in this build."
 msgstr "Der ausgewählte Erinnerungsanbieter ist in diesem Build nicht verfügbar."
+
+#: src/pages/shell/bot-credentials.tsx
+msgid "These saved settings can't be read. Remove it and add it again."
+msgstr ""
 
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
@@ -3904,9 +4106,14 @@ msgstr ""
 msgid "Time of day"
 msgstr "Uhrzeit"
 
+#: src/pages/Board.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Title"
 msgstr "Titel"
+
+#: src/lib/ticket-status.ts
+msgid "To do"
+msgstr "Zu erledigen"
 
 #: src/pages/shell/bot-picker.tsx
 msgid "To:"
@@ -3940,6 +4147,10 @@ msgstr "Treg-Token"
 msgid "Try again"
 msgstr "Erneut versuchen"
 
+#: src/pages/shell/bot-credentials.tsx
+msgid "Type"
+msgstr ""
+
 #: src/components/teach/TeachRecordingChrome.tsx
 msgid "Type without recording"
 msgstr ""
@@ -3948,6 +4159,7 @@ msgstr ""
 msgid "Type your answer"
 msgstr "Gib deine Antwort ein"
 
+#: src/pages/Board.tsx
 #: src/pages/BotContextMenu.tsx
 msgid "Unassigned"
 msgstr "Nicht zugewiesen"
@@ -4011,6 +4223,10 @@ msgstr ""
 msgid "Updated"
 msgstr ""
 
+#: src/pages/shell/bot-credentials.tsx
+msgid "Updated {updated}"
+msgstr ""
+
 #: src/pages/SettingsOverlay.tsx
 msgid "Updates"
 msgstr "Updates"
@@ -4033,6 +4249,10 @@ msgstr ""
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Upload"
 msgstr "Hochladen"
+
+#: src/lib/ticket-priority.ts
+msgid "Urgent"
+msgstr "Dringend"
 
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/SettingsOverlay.tsx
@@ -4062,7 +4282,12 @@ msgid "Use this model"
 msgstr "Dieses Modell verwenden"
 
 #: src/components/AskCard.tsx
+#: src/pages/shell/bot-credentials.tsx
 msgid "Username"
+msgstr ""
+
+#: src/pages/shell/bot-credentials.tsx
+msgid "Value"
 msgstr ""
 
 #: src/pages/PluginsOverlay.tsx
@@ -4106,6 +4331,10 @@ msgstr "Warten…"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Webhook"
+msgstr ""
+
+#: src/pages/shell/bot-credentials.tsx
+msgid "Website login"
 msgstr ""
 
 #: src/pages/RoutineEditor.tsx
@@ -4153,6 +4382,10 @@ msgstr "Einsatzzeitpunkt"
 msgid "Where should bots run?"
 msgstr "Wo sollen Bots ausgeführt werden?"
 
+#: src/lib/ticket-status.ts
+msgid "Won't do"
+msgstr ""
+
 #: src/lib/roster-status.ts
 #: src/pages/Auth.tsx
 msgid "Working…"
@@ -4166,6 +4399,7 @@ msgstr "{path} geschrieben"
 msgid "Yesterday"
 msgstr "Gestern"
 
+#: src/pages/Board.tsx
 #: src/pages/Shell.tsx
 msgid "You"
 msgstr "Du"
@@ -4193,102 +4427,3 @@ msgstr "Dein Name"
 #: src/pages/Welcome.tsx
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "Dein Team aus jederzeit verfügbaren Agents<0/>für echte Aufgaben."
-
-#: src/pages/ResizableSidePanel.tsx
-msgid "Resize panel"
-msgstr "Panelgröße ändern"
-
-#. placeholder {0}: assignee.name
-#. placeholder {0}: owner.name
-#: src/pages/Board.tsx
-msgid "{0} is working"
-msgstr "{0} arbeitet"
-
-#: src/pages/Board.tsx
-msgid "Add a comment"
-msgstr "Kommentar hinzufügen"
-
-#: src/lib/ticket-status.ts
-msgid "Blocked"
-msgstr "Blockiert"
-
-#: src/pages/Board.tsx
-msgid "Board"
-msgstr "Board"
-
-#: src/pages/Board.tsx
-#: src/pages/Shell.tsx
-msgid "Boards"
-msgstr "Boards"
-
-#: src/lib/ticket-status.ts
-msgid "Closed"
-msgstr "Geschlossen"
-
-#: src/pages/Board.tsx
-msgid "Comment"
-msgstr "Kommentieren"
-
-#: src/pages/Board.tsx
-msgid "Could not create the ticket."
-msgstr "Ticket konnte nicht erstellt werden."
-
-#: src/pages/Board.tsx
-msgid "Could not load comments."
-msgstr "Kommentare konnten nicht geladen werden."
-
-#: src/pages/Board.tsx
-msgid "Could not load the board."
-msgstr "Board konnte nicht geladen werden."
-
-#: src/pages/Board.tsx
-msgid "Edit"
-msgstr "Bearbeiten"
-
-#: src/lib/ticket-status.ts
-msgid "In progress"
-msgstr "In Arbeit"
-
-#: src/lib/ticket-status.ts
-msgid "In review"
-msgstr "In Prüfung"
-
-#: src/pages/Board.tsx
-msgid "Move ticket"
-msgstr "Ticket verschieben"
-
-#: src/pages/Board.tsx
-msgid "New ticket"
-msgstr "Neues Ticket"
-
-#: src/lib/ticket-priority.ts
-msgid "Normal"
-msgstr "Normal"
-
-#: src/pages/Board.tsx
-msgid "Owner"
-msgstr "Verantwortlich"
-
-#: src/pages/Board.tsx
-msgid "Priority"
-msgstr "Priorität"
-
-#: src/pages/Board.tsx
-msgid "Something went wrong."
-msgstr "Etwas ist schiefgelaufen."
-
-#: src/pages/Board.tsx
-msgid "Status"
-msgstr "Status"
-
-#: src/lib/ticket-status.ts
-msgid "To do"
-msgstr "Zu erledigen"
-
-#: src/lib/ticket-priority.ts
-msgid "Urgent"
-msgstr "Dringend"
-
-#: src/pages/Board.tsx
-msgid "Could not move the ticket."
-msgstr "Ticket konnte nicht verschoben werden."

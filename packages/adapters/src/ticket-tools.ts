@@ -1,7 +1,12 @@
-import type { TicketStatus } from "@rakazo/contracts";
+import type { AcceptanceCriteriaInput, TicketStatus } from "@rakazo/contracts";
 import {
+  checkTicketTransition,
   isTicketCompletedStatus,
+  parseCriteria,
+  resolveCriteria,
   TICKET_COMMENT_MAX_LENGTH,
+  TICKET_CRITERIA_MAX_ITEMS,
+  TICKET_CRITERION_MAX_LENGTH,
   TICKET_DESCRIPTION_MAX_LENGTH,
   TICKET_TITLE_MAX_LENGTH,
   TicketStatusSchema,
@@ -10,9 +15,14 @@ import type { PrismaClient } from "@rakazo/db";
 import {
   allocateTicketNumber,
   coerceTicketPriority,
+  coerceTicketStatus,
   ensureBoard,
   findTicket,
   listTicketComments,
+  recordTicketEvents,
+  recordTransitionReason,
+  statusChangeData,
+  ticketChangeEvents,
   ticketEditorStamp,
   toTicketCommentDto,
   toTicketDto,
@@ -58,6 +68,39 @@ function normalizeDescription(value: string): { description: string | null } | {
     };
   }
   return { description: trimmed || null };
+}
+
+function normalizeCriteria(
+  value: unknown,
+): { criteria: AcceptanceCriteriaInput } | { error: string } {
+  if (!Array.isArray(value)) return { error: "acceptanceCriteria must be a list." };
+  const criteria: AcceptanceCriteriaInput = [];
+  for (const item of value) {
+    if (typeof item === "string") {
+      if (item.trim()) criteria.push(item.trim());
+    } else if (
+      item &&
+      typeof item === "object" &&
+      typeof (item as { text?: unknown }).text === "string"
+    ) {
+      const text = (item as { text: string }).text.trim();
+      if (text) criteria.push({ text, done: (item as { done?: unknown }).done === true });
+    } else {
+      return { error: "Each acceptance criterion must be a string or { text, done }." };
+    }
+  }
+  if (criteria.length > TICKET_CRITERIA_MAX_ITEMS) {
+    return { error: `acceptanceCriteria can have at most ${TICKET_CRITERIA_MAX_ITEMS} items.` };
+  }
+  const tooLong = criteria.some(
+    (item) => (typeof item === "string" ? item : item.text).length > TICKET_CRITERION_MAX_LENGTH,
+  );
+  if (tooLong) {
+    return {
+      error: `Each acceptance criterion must be at most ${TICKET_CRITERION_MAX_LENGTH} characters.`,
+    };
+  }
+  return { criteria };
 }
 
 /** Unknown or legacy priority strings fall back to `normal`, like the DTO mapper. */
@@ -187,6 +230,7 @@ export async function createTicket(
     userId?: string;
     title: string;
     description?: string;
+    acceptanceCriteria?: unknown;
     priority?: string;
     ownerBotId?: string;
   },
@@ -202,6 +246,13 @@ export async function createTicket(
     description = result.description;
   }
 
+  let acceptanceCriteria: AcceptanceCriteriaInput = [];
+  if (input.acceptanceCriteria !== undefined) {
+    const result = normalizeCriteria(input.acceptanceCriteria);
+    if ("error" in result) return result;
+    acceptanceCriteria = result.criteria;
+  }
+
   const priority = input.priority !== undefined ? normalizePriority(input.priority) : "normal";
 
   const ownerBotId = input.ownerBotId ?? input.botId;
@@ -212,13 +263,14 @@ export async function createTicket(
   const board = await ensureBoard(deps.prisma, input.spaceId);
   const row = await deps.prisma.$transaction(async (tx) => {
     const number = await allocateTicketNumber(tx, board.id);
-    return tx.ticket.create({
+    const created = await tx.ticket.create({
       data: {
         boardId: board.id,
         spaceId: input.spaceId,
         number,
         title,
         description,
+        acceptanceCriteria: resolveCriteria(acceptanceCriteria, []),
         priority,
         status: "todo",
         assigneeBotId: ownerBotId,
@@ -228,6 +280,13 @@ export async function createTicket(
         completedAt: null,
       },
     });
+    await recordTicketEvents(tx, {
+      ticketId: created.id,
+      spaceId: input.spaceId,
+      actor: { botId: input.botId },
+      events: [{ type: "created", data: { assigneeBotId: ownerBotId } }],
+    });
+    return created;
   });
   await deps.onTicketChange?.({
     spaceId: input.spaceId,
@@ -240,23 +299,59 @@ export async function createTicket(
   return { ticket: toTicketDto(row, board.ticketPrefix) };
 }
 
-/** Move a ticket to another status; a completed status also stamps `completedAt`. */
+/**
+ * Move a ticket to another status; a completed status also stamps `completedAt`.
+ * Board rules apply: blocked needs a reason, and done/closed with unchecked
+ * acceptance criteria needs a reason that overrides the open checklist.
+ */
 export async function moveTicket(
   deps: TicketToolDeps,
-  input: { spaceId: string; botId: string; id: string; status: string },
+  input: { spaceId: string; botId: string; id: string; status: string; reason?: string },
 ) {
   const status = coerceInputStatus(input.status);
   if (!status) return { error: STATUS_ERROR };
   const board = await ensureBoard(deps.prisma, input.spaceId);
   const existing = await findTicket(deps.prisma, input.spaceId, board, { id: input.id });
   if (!existing) return { error: `Ticket ${input.id} not found.` };
-  const row = await deps.prisma.ticket.update({
-    where: { id: existing.id },
-    data: {
-      status,
-      ...ticketEditorStamp(input.botId, existing.assigneeBotId),
-      completedAt: isTicketCompletedStatus(status) ? (existing.completedAt ?? new Date()) : null,
-    },
+  const criteria = parseCriteria(existing.acceptanceCriteria);
+  const reason = input.reason?.trim() || undefined;
+  if (reason && reason.length > TICKET_COMMENT_MAX_LENGTH) {
+    return { error: `reason must be at most ${TICKET_COMMENT_MAX_LENGTH} characters.` };
+  }
+  const blocked = checkTicketTransition({
+    from: coerceTicketStatus(existing.status),
+    to: status,
+    criteria,
+    hasAssignee: existing.assigneeBotId !== null,
+    reason,
+  });
+  if (blocked) return { error: blocked };
+  const actor = { botId: input.botId };
+  const row = await deps.prisma.$transaction(async (tx) => {
+    const updated = await tx.ticket.update({
+      where: { id: existing.id },
+      data: {
+        status,
+        ...statusChangeData(existing.status, status),
+        ...ticketEditorStamp(input.botId, existing.assigneeBotId),
+        completedAt: isTicketCompletedStatus(status) ? (existing.completedAt ?? new Date()) : null,
+      },
+    });
+    await recordTicketEvents(tx, {
+      ticketId: existing.id,
+      spaceId: input.spaceId,
+      actor,
+      events: ticketChangeEvents(existing, updated),
+    });
+    await recordTransitionReason(tx, {
+      ticketId: existing.id,
+      spaceId: input.spaceId,
+      actor,
+      to: status,
+      reason,
+      criteria,
+    });
+    return updated;
   });
   await deps.onTicketChange?.({
     spaceId: input.spaceId,
@@ -277,15 +372,17 @@ export async function updateTicket(
     id: string;
     title?: string;
     description?: string;
+    acceptanceCriteria?: unknown;
     priority?: string;
   },
 ) {
   if (
     input.title === undefined &&
     input.description === undefined &&
+    input.acceptanceCriteria === undefined &&
     input.priority === undefined
   ) {
-    return { error: "Provide title, description, or priority." };
+    return { error: "Provide title, description, acceptanceCriteria, or priority." };
   }
   const board = await ensureBoard(deps.prisma, input.spaceId);
   const existing = await findTicket(deps.prisma, input.spaceId, board, { id: input.id });
@@ -294,6 +391,7 @@ export async function updateTicket(
   const data: {
     title?: string;
     description?: string | null;
+    acceptanceCriteria?: ReturnType<typeof resolveCriteria>;
     priority?: string;
     updatedByBotId: string | null;
     externalUpdatedAt?: Date;
@@ -308,10 +406,27 @@ export async function updateTicket(
     if ("error" in result) return result;
     data.description = result.description;
   }
+  if (input.acceptanceCriteria !== undefined) {
+    const result = normalizeCriteria(input.acceptanceCriteria);
+    if ("error" in result) return result;
+    data.acceptanceCriteria = resolveCriteria(
+      result.criteria,
+      parseCriteria(existing.acceptanceCriteria),
+    );
+  }
   if (input.priority !== undefined) {
     data.priority = normalizePriority(input.priority);
   }
-  const row = await deps.prisma.ticket.update({ where: { id: existing.id }, data });
+  const row = await deps.prisma.$transaction(async (tx) => {
+    const updated = await tx.ticket.update({ where: { id: existing.id }, data });
+    await recordTicketEvents(tx, {
+      ticketId: existing.id,
+      spaceId: input.spaceId,
+      actor: { botId: input.botId },
+      events: ticketChangeEvents(existing, updated),
+    });
+    return updated;
+  });
   await deps.onTicketChange?.({
     spaceId: input.spaceId,
     boardId: row.boardId,
@@ -345,14 +460,30 @@ export async function closeTicket(
   const board = await ensureBoard(deps.prisma, input.spaceId);
   const existing = await findTicket(deps.prisma, input.spaceId, board, { id: input.id });
   if (!existing) return { error: `Ticket ${input.id} not found.` };
+  // Won't do always needs a reason; the closing comment is that reason.
+  const blocked = checkTicketTransition({
+    from: coerceTicketStatus(existing.status),
+    to: "closed",
+    criteria: parseCriteria(existing.acceptanceCriteria),
+    hasAssignee: existing.assigneeBotId !== null,
+    reason: comment,
+  });
+  if (blocked) return { error: blocked };
   const result = await deps.prisma.$transaction(async (tx) => {
     const ticket = await tx.ticket.update({
       where: { id: existing.id },
       data: {
         status: "closed",
+        ...statusChangeData(existing.status, "closed"),
         completedAt: existing.completedAt ?? new Date(),
         ...ticketEditorStamp(input.botId, existing.assigneeBotId),
       },
+    });
+    await recordTicketEvents(tx, {
+      ticketId: existing.id,
+      spaceId: input.spaceId,
+      actor: { botId: input.botId },
+      events: ticketChangeEvents(existing, ticket),
     });
     const created = comment
       ? await tx.ticketComment.create({
@@ -416,6 +547,12 @@ export async function commentTicket(
         ...ticketEditorStamp(input.botId, ticket.assigneeBotId),
       },
     });
+    await recordTicketEvents(tx, {
+      ticketId: ticket.id,
+      spaceId: input.spaceId,
+      actor: { botId: input.botId },
+      events: [{ type: "commented", data: {} }],
+    });
     return created;
   });
   await deps.onTicketChange?.({
@@ -439,13 +576,22 @@ export async function assignTicket(
   if (!(await botInSpace(deps, input.spaceId, input.ownerBotId))) {
     return { error: "ownerBotId must be a bot in this space." };
   }
-  const row = await deps.prisma.ticket.update({
-    where: { id: existing.id },
-    data: {
-      assigneeBotId: input.ownerBotId,
-      assigneeUserId: null,
-      ...ticketEditorStamp(input.botId, input.ownerBotId),
-    },
+  const row = await deps.prisma.$transaction(async (tx) => {
+    const updated = await tx.ticket.update({
+      where: { id: existing.id },
+      data: {
+        assigneeBotId: input.ownerBotId,
+        assigneeUserId: null,
+        ...ticketEditorStamp(input.botId, input.ownerBotId),
+      },
+    });
+    await recordTicketEvents(tx, {
+      ticketId: existing.id,
+      spaceId: input.spaceId,
+      actor: { botId: input.botId },
+      events: ticketChangeEvents(existing, updated),
+    });
+    return updated;
   });
   await deps.onTicketChange?.({
     spaceId: input.spaceId,
@@ -454,6 +600,51 @@ export async function assignTicket(
     assigneeBotId: row.assigneeBotId,
     actorBotId: input.botId,
     wakeAssignee: true,
+  });
+  return { ticket: toTicketDto(row, board.ticketPrefix) };
+}
+
+/** Check or uncheck one acceptance criterion, addressed by its 1-based position. */
+export async function setTicketCriterion(
+  deps: TicketToolDeps,
+  input: { spaceId: string; botId: string; id: string; index: number; done: boolean },
+) {
+  const board = await ensureBoard(deps.prisma, input.spaceId);
+  const existing = await findTicket(deps.prisma, input.spaceId, board, { id: input.id });
+  if (!existing) return { error: `Ticket ${input.id} not found.` };
+  const criteria = parseCriteria(existing.acceptanceCriteria);
+  const position = Math.trunc(input.index);
+  const target = criteria[position - 1];
+  if (!Number.isFinite(position) || !target) {
+    return {
+      error: `index must be between 1 and ${criteria.length} (this ticket has ${criteria.length} acceptance criteria).`,
+    };
+  }
+  const next = criteria.map((item, i) =>
+    i === position - 1 ? { ...item, done: input.done } : item,
+  );
+  const row = await deps.prisma.$transaction(async (tx) => {
+    const updated = await tx.ticket.update({
+      where: { id: existing.id },
+      data: {
+        acceptanceCriteria: next,
+        ...ticketEditorStamp(input.botId, existing.assigneeBotId),
+      },
+    });
+    await recordTicketEvents(tx, {
+      ticketId: existing.id,
+      spaceId: input.spaceId,
+      actor: { botId: input.botId },
+      events: ticketChangeEvents(existing, updated),
+    });
+    return updated;
+  });
+  await deps.onTicketChange?.({
+    spaceId: input.spaceId,
+    boardId: row.boardId,
+    ticketId: row.id,
+    assigneeBotId: row.assigneeBotId,
+    wakeAssignee: false,
   });
   return { ticket: toTicketDto(row, board.ticketPrefix) };
 }

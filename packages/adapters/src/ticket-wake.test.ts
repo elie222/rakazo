@@ -172,3 +172,30 @@ describe("renderTicketWakePrompt", () => {
     expect(prompt).toContain("&lt;script&gt;");
   });
 });
+
+describe("renderTicketWakePrompt criteria", () => {
+  it("lists acceptance criteria with their checked state", () => {
+    const prompt = renderTicketWakePrompt({
+      botName: "Ops",
+      reason: "changed",
+      tickets: [
+        {
+          id: "t1",
+          ref: "RAK-1",
+          title: "Fix",
+          status: "doing",
+          priority: "normal",
+          updatedAt: new Date(),
+          lastComment: null,
+          criteria: [
+            { text: "Deployed", done: true },
+            { text: "Verified <ok>", done: false },
+          ],
+        },
+      ],
+    });
+    expect(prompt).toContain("1. [x] Deployed");
+    expect(prompt).toContain("2. [ ] Verified &lt;ok&gt;");
+    expect(prompt).toContain("ticket_criterion");
+  });
+});

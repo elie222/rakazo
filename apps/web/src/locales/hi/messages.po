@@ -64,6 +64,17 @@ msgstr ""
 msgid "{0} handling"
 msgstr ""
 
+#. placeholder {0}: assignee.name
+#: src/pages/Board.tsx
+msgid "{0} has more than {TICKET_WIP_LIMIT} tickets in progress"
+msgstr ""
+
+#. placeholder {0}: assignee.name
+#. placeholder {0}: owner.name
+#: src/pages/Board.tsx
+msgid "{0} is working"
+msgstr "{0} काम कर रहा है"
+
 #. placeholder {0}: format(size / 1024)
 #: src/components/ArtifactFileCard.tsx
 msgid "{0} KB"
@@ -95,9 +106,57 @@ msgstr ""
 msgid "{0}'s screen"
 msgstr ""
 
+#: src/pages/Board.tsx
+msgid "{actor} changed priority from {fromLabel} to {toLabel}"
+msgstr ""
+
+#: src/pages/Board.tsx
+msgid "{actor} checked \"{text}\""
+msgstr ""
+
+#: src/pages/Board.tsx
+msgid "{actor} commented"
+msgstr ""
+
+#: src/pages/Board.tsx
+msgid "{actor} created the ticket"
+msgstr ""
+
+#: src/pages/Board.tsx
+msgid "{actor} edited the acceptance criteria"
+msgstr ""
+
+#: src/pages/Board.tsx
+msgid "{actor} edited the description"
+msgstr ""
+
+#: src/pages/Board.tsx
+msgid "{actor} moved it from {fromLabel} to {toLabel}"
+msgstr ""
+
+#: src/pages/Board.tsx
+msgid "{actor} overrode the open criteria: {reason}"
+msgstr ""
+
+#: src/pages/Board.tsx
+msgid "{actor} reassigned it from {fromChip} to {toChip}"
+msgstr ""
+
+#: src/pages/Board.tsx
+msgid "{actor} renamed it to \"{title}\""
+msgstr ""
+
+#: src/pages/Board.tsx
+msgid "{actor} unchecked \"{text}\""
+msgstr ""
+
 #: src/pages/Shell.tsx
 msgid "{botName}’s computer"
 msgstr "{botName} का कंप्यूटर"
+
+#: src/pages/Board.tsx
+msgid "{columnDays}d"
+msgstr ""
 
 #: src/lib/relative-time.ts
 #: src/pages/ActivityList.tsx
@@ -170,6 +229,10 @@ msgstr "@{0}"
 msgid "A bit of everything"
 msgstr ""
 
+#: src/pages/Board.tsx
+msgid "A bot"
+msgstr ""
+
 #. placeholder {0}: oauth.verificationUri.replace(/^https:\/\//, "")
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
@@ -182,6 +245,14 @@ msgstr ""
 
 #: src/pages/shell/bot-picker.tsx
 msgid "About spaces"
+msgstr ""
+
+#: src/pages/Board.tsx
+msgid "Acceptance criteria"
+msgstr ""
+
+#: src/pages/Board.tsx
+msgid "Acceptance criteria (one per line, Markdown supported)"
 msgstr ""
 
 #: src/components/integrations/IntegrationSetup.tsx
@@ -242,6 +313,10 @@ msgstr "गतिविधि"
 msgid "Add"
 msgstr "जोड़ें"
 
+#: src/pages/Board.tsx
+msgid "Add a comment"
+msgstr "टिप्पणी जोड़ें"
+
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Add a model in Settings to use this."
 msgstr ""
@@ -272,6 +347,10 @@ msgstr "एक HTTPS सर्वर URL दर्ज करें।"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Add another"
+msgstr ""
+
+#: src/pages/shell/bot-credentials.tsx
+msgid "Add credential"
 msgstr ""
 
 #: src/pages/PluginsOverlay.tsx
@@ -327,6 +406,7 @@ msgstr ""
 msgid "Added"
 msgstr ""
 
+#: src/pages/Board.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Adding…"
@@ -428,98 +508,6 @@ msgstr "उत्तर"
 #: src/components/AskCard.tsx
 msgid "Answered"
 msgstr "उत्तर दिया गया"
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Add credential"
-msgstr ""
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Basic auth"
-msgstr ""
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Basic auth ({username})"
-msgstr ""
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Could not load credentials."
-msgstr ""
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Could not remove the credential"
-msgstr ""
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Could not save the credential"
-msgstr ""
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Credentials"
-msgstr ""
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Custom header"
-msgstr ""
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Enter a username and password"
-msgstr ""
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Header \"{header}\""
-msgstr ""
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Keys and passwords this bot can use, each for one site only. Values are encrypted and never shown again."
-msgstr ""
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Lowercase letters, numbers, hyphens and underscores, starting with a letter."
-msgstr ""
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "No credentials saved for this bot."
-msgstr ""
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Remove {secretName}? This bot will no longer be able to use it."
-msgstr ""
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Replace value"
-msgstr ""
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Save credential"
-msgstr ""
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Save new value"
-msgstr ""
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Site"
-msgstr ""
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "These saved settings can't be read. Remove it and add it again."
-msgstr ""
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Type"
-msgstr ""
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Updated {updated}"
-msgstr ""
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Value"
-msgstr ""
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Website login"
-msgstr ""
 
 #. placeholder {0}: selectedAskActionLabel(answer, actions)
 #: src/components/AskCard.tsx
@@ -696,10 +684,32 @@ msgstr "साइन इन पर वापस जाएँ"
 msgid "Base URL"
 msgstr "बेस URL"
 
+#: src/pages/shell/bot-credentials.tsx
+msgid "Basic auth"
+msgstr ""
+
+#: src/pages/shell/bot-credentials.tsx
+msgid "Basic auth ({username})"
+msgstr ""
+
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 #: src/pages/PluginsOverlay.tsx
+#: src/pages/shell/bot-credentials.tsx
 msgid "Bearer token"
 msgstr "बियरर टोकन"
+
+#: src/lib/ticket-status.ts
+msgid "Blocked"
+msgstr "अवरुद्ध"
+
+#: src/pages/Board.tsx
+msgid "Board"
+msgstr "बोर्ड"
+
+#: src/pages/Board.tsx
+#: src/pages/Shell.tsx
+msgid "Boards"
+msgstr "बोर्ड"
 
 #: src/pages/Shell.tsx
 msgid "Booting live desktop…"
@@ -714,6 +724,7 @@ msgstr "{0} का कंप्यूटर शुरू हो रहा है
 msgid "bot"
 msgstr "बॉट"
 
+#: src/pages/Board.tsx
 #: src/pages/IntegrationSetup.tsx
 #: src/pages/Shell.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
@@ -738,6 +749,7 @@ msgid "Bot to link"
 msgstr ""
 
 #: src/pages/Artifacts.tsx
+#: src/pages/Board.tsx
 msgid "Bots"
 msgstr ""
 
@@ -766,10 +778,12 @@ msgstr "सर्वर तक नहीं पहुंचा जा सका�
 #: src/components/ComputerUpdateProgress.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
 #: src/pages/Artifacts.tsx
+#: src/pages/Board.tsx
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/PluginsOverlay.tsx
+#: src/pages/shell/bot-credentials.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Cancel"
 msgstr "रद्द करें"
@@ -996,6 +1010,14 @@ msgstr ""
 #: src/pages/McpServersOverlay.tsx
 msgid "Command"
 msgstr "कमांड"
+
+#: src/pages/Board.tsx
+msgid "Comment"
+msgstr "टिप्पणी करें"
+
+#: src/pages/Board.tsx
+msgid "Comments"
+msgstr ""
 
 #: src/pages/ScratchpadSection.tsx
 msgid "Complete"
@@ -1247,6 +1269,10 @@ msgstr "सेक्शन नहीं बनाया जा सका"
 msgid "Could not create space"
 msgstr ""
 
+#: src/pages/Board.tsx
+msgid "Could not create the ticket."
+msgstr "टिकट नहीं बन सका।"
+
 #: src/pages/Onboarding.tsx
 msgid "Could not create your bot"
 msgstr "आपका बॉट नहीं बनाया जा सका"
@@ -1344,6 +1370,14 @@ msgstr ""
 msgid "Could not load commands"
 msgstr ""
 
+#: src/pages/Board.tsx
+msgid "Could not load comments."
+msgstr "टिप्पणियाँ लोड नहीं हो सकीं।"
+
+#: src/pages/shell/bot-credentials.tsx
+msgid "Could not load credentials."
+msgstr ""
+
 #: src/components/integrations/IntegrationSetup.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not load integrations"
@@ -1365,6 +1399,10 @@ msgstr "रन का इतिहास लोड नहीं हो सका
 msgid "Could not load skill"
 msgstr "स्किल लोड नहीं हो सकी"
 
+#: src/pages/Board.tsx
+msgid "Could not load the board."
+msgstr "बोर्ड लोड नहीं हो सका।"
+
 #: src/pages/Artifacts.tsx
 msgid "Could not load this artifact."
 msgstr ""
@@ -1384,6 +1422,10 @@ msgstr ""
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Could not load voice settings"
 msgstr "आवाज़ सेटिंग्स लोड नहीं हो सकीं"
+
+#: src/pages/Board.tsx
+msgid "Could not move the ticket."
+msgstr "टिकट नहीं ले जाया जा सका।"
 
 #: src/components/computer/FilesApp.tsx
 msgid "Could not open file"
@@ -1426,6 +1468,10 @@ msgstr "समूह हटाया नहीं जा सका"
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Could not remove rule"
 msgstr "नियम हटाया नहीं जा सका"
+
+#: src/pages/shell/bot-credentials.tsx
+msgid "Could not remove the credential"
+msgstr ""
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not rename connection"
@@ -1492,6 +1538,10 @@ msgstr "वह वाक् मॉडल सहेजा नहीं जा स
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Could not save that voice"
 msgstr "वह आवाज़ सहेजी नहीं जा सकी"
+
+#: src/pages/shell/bot-credentials.tsx
+msgid "Could not save the credential"
+msgstr ""
 
 #: src/pages/shell/message-cards.tsx
 msgid "Could not save this choice"
@@ -1561,6 +1611,7 @@ msgstr ""
 msgid "Couldn't update messaging settings"
 msgstr ""
 
+#: src/pages/Board.tsx
 #: src/pages/Shell.tsx
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/shell/dialogs.tsx
@@ -1610,6 +1661,7 @@ msgstr "अपना Rakazo बनाएं"
 msgid "Created"
 msgstr ""
 
+#: src/pages/Board.tsx
 #: src/pages/GroupPanel.tsx
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/shell/dialogs.tsx
@@ -1624,6 +1676,10 @@ msgstr "क्रेडेंशियल"
 #: src/pages/PluginsOverlay.tsx
 msgid "credential saved"
 msgstr "क्रेडेंशियल सहेजा गया"
+
+#: src/pages/shell/bot-credentials.tsx
+msgid "Credentials"
+msgstr ""
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Credentials are encrypted and never sent to the model."
@@ -1640,6 +1696,10 @@ msgstr "Cron एक्सप्रेशन"
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Current password"
 msgstr "वर्तमान पासवर्ड"
+
+#: src/pages/shell/bot-credentials.tsx
+msgid "Custom header"
+msgstr ""
 
 #: src/pages/shell/dialogs.tsx
 msgid "Customer support"
@@ -1758,9 +1818,14 @@ msgstr "डिप्लॉयमेंट डिफ़ॉल्ट"
 msgid "Describe what this bot does"
 msgstr "बताएं कि यह बॉट क्या करता है"
 
+#: src/pages/Board.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Description"
 msgstr "विवरण"
+
+#: src/pages/Board.tsx
+msgid "Description (Markdown supported)"
+msgstr ""
 
 #: src/components/DesktopUpdates.tsx
 msgid "Desktop app"
@@ -1826,6 +1891,7 @@ msgstr "Docker अतिरिक्त सुरक्षा के लिए �
 msgid "Don’t have an account?"
 msgstr "खाता नहीं है?"
 
+#: src/lib/ticket-status.ts
 #: src/pages/ActivityList.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Done"
@@ -1879,6 +1945,10 @@ msgstr "उदा. Hivenet Agent, Presales, टाइमशीट बॉट"
 msgid "Earlier message"
 msgstr "पुराना संदेश"
 
+#: src/pages/Board.tsx
+msgid "Edit"
+msgstr "संपादित करें"
+
 #: src/components/AskCard.tsx
 msgid "Edit first"
 msgstr "पहले संपादित करें"
@@ -1893,6 +1963,10 @@ msgstr "ईमेल"
 
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Engage when... Ignore..."
+msgstr ""
+
+#: src/pages/shell/bot-credentials.tsx
+msgid "Enter a username and password"
 msgstr ""
 
 #: src/pages/ModelSettingsOverlay.tsx
@@ -1970,15 +2044,15 @@ msgstr "CRM से इस सप्ताह की सूची एक्सप
 msgid "External conversation"
 msgstr ""
 
-#. js-lingui-explicit-id
-#: src/lib/model-catalog.ts
-msgid "Extra high"
-msgstr ""
-
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 msgid "Extra high"
 msgstr "अतिरिक्त उच्च"
+
+#. js-lingui-explicit-id
+#: src/lib/model-catalog.ts
+msgid "Extra high"
+msgstr ""
 
 #: src/components/CloudAgentCard.tsx
 msgid "failed"
@@ -2119,8 +2193,13 @@ msgstr ""
 msgid "header"
 msgstr ""
 
+#: src/pages/shell/bot-credentials.tsx
+msgid "Header \"{header}\""
+msgstr ""
+
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
+#: src/pages/shell/bot-credentials.tsx
 msgid "Header name"
 msgstr "हेडर नाम"
 
@@ -2148,15 +2227,20 @@ msgstr ""
 msgid "Hide transcript"
 msgstr "ट्रांसक्रिप्ट छिपाएँ"
 
+#: src/lib/ticket-priority.ts
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/Onboarding.tsx
+msgid "High"
+msgstr "उच्च"
+
 #. js-lingui-explicit-id
 #: src/lib/model-catalog.ts
 msgid "High"
 msgstr ""
 
-#: src/pages/ModelSettingsOverlay.tsx
-#: src/pages/Onboarding.tsx
-msgid "High"
-msgstr "उच्च"
+#: src/pages/Board.tsx
+msgid "History"
+msgstr ""
 
 #: src/pages/RoutineSchedule.tsx
 msgid "hour"
@@ -2194,6 +2278,18 @@ msgstr "छवि अपलोड क्षेत्र"
 #: src/pages/PluginsOverlay.tsx
 msgid "Import OpenAPI JSON"
 msgstr "OpenAPI JSON इम्पोर्ट करें"
+
+#: src/lib/ticket-status.ts
+msgid "In progress"
+msgstr "प्रगति पर"
+
+#: src/lib/ticket-status.ts
+msgid "In review"
+msgstr "समीक्षा में"
+
+#: src/pages/Board.tsx
+msgid "In this column for {columnDays} days"
+msgstr ""
 
 #: src/pages/shell/message-cards.tsx
 msgid "Inbox & email"
@@ -2283,6 +2379,10 @@ msgstr "मेमोरी रखें"
 
 #: src/pages/RoutineEditor.tsx
 msgid "key"
+msgstr ""
+
+#: src/pages/shell/bot-credentials.tsx
+msgid "Keys and passwords this bot can use, each for one site only. Values are encrypted and never shown again."
 msgstr ""
 
 #: src/pages/KnowledgeSection.tsx
@@ -2375,6 +2475,7 @@ msgstr "आवाज़ प्रोवाइडर्स लोड हो र�
 
 #: src/App.tsx
 #: src/pages/Artifacts.tsx
+#: src/pages/Board.tsx
 #: src/pages/IntegrationSetup.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/PeerMessagesOverlay.tsx
@@ -2399,15 +2500,20 @@ msgstr ""
 msgid "Log out"
 msgstr "लॉग आउट"
 
+#: src/lib/ticket-priority.ts
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/Onboarding.tsx
+msgid "Low"
+msgstr "निम्न"
+
 #. js-lingui-explicit-id
 #: src/lib/model-catalog.ts
 msgid "Low"
 msgstr ""
 
-#: src/pages/ModelSettingsOverlay.tsx
-#: src/pages/Onboarding.tsx
-msgid "Low"
-msgstr "निम्न"
+#: src/pages/shell/bot-credentials.tsx
+msgid "Lowercase letters, numbers, hyphens and underscores, starting with a letter."
+msgstr ""
 
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Make sure nothing is still running on this computer."
@@ -2441,15 +2547,15 @@ msgstr "पढ़ा हुआ चिह्नित करें"
 msgid "Mark as Unread"
 msgstr "अपठित चिह्नित करें"
 
-#. js-lingui-explicit-id
-#: src/lib/model-catalog.ts
-msgid "Max"
-msgstr ""
-
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 msgid "Max"
 msgstr "अधिकतम"
+
+#. js-lingui-explicit-id
+#: src/lib/model-catalog.ts
+msgid "Max"
+msgstr ""
 
 #: src/pages/Artifacts.tsx
 msgid "Maximize"
@@ -2473,15 +2579,15 @@ msgstr ""
 msgid "MCP servers"
 msgstr "MCP सर्वर"
 
-#. js-lingui-explicit-id
-#: src/lib/model-catalog.ts
-msgid "Medium"
-msgstr ""
-
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 msgid "Medium"
 msgstr "मध्यम"
+
+#. js-lingui-explicit-id
+#: src/lib/model-catalog.ts
+msgid "Medium"
+msgstr ""
 
 #: src/pages/GroupPanel.tsx
 msgid "Members ({GROUP_MEMBER_MIN}–{GROUP_MEMBER_MAX})"
@@ -2551,15 +2657,15 @@ msgstr ""
 msgid "Microphone failed"
 msgstr "माइक्रोफ़ोन विफल"
 
-#. js-lingui-explicit-id
-#: src/lib/model-catalog.ts
-msgid "Minimal"
-msgstr ""
-
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 msgid "Minimal"
 msgstr "न्यूनतम"
+
+#. js-lingui-explicit-id
+#: src/lib/model-catalog.ts
+msgid "Minimal"
+msgstr ""
 
 #: src/pages/WindowChrome.tsx
 msgid "Minimize"
@@ -2627,13 +2733,26 @@ msgstr ""
 msgid "More computer actions"
 msgstr ""
 
+#: src/pages/Board.tsx
+msgid "Move"
+msgstr ""
+
 #: src/pages/shell/dialogs.tsx
 msgid "Move them to your shared memory."
 msgstr "उन्हें अपनी साझा मेमोरी में ले जाएं।"
 
+#: src/pages/Board.tsx
+msgid "Move ticket"
+msgstr "टिकट ले जाएँ"
+
 #: src/pages/BotContextMenu.tsx
 msgid "Move to"
 msgstr "यहां ले जाएं"
+
+#. placeholder {0}: labels[pending.status]
+#: src/pages/Board.tsx
+msgid "Move to {0}"
+msgstr ""
 
 #: src/components/call/CallCard.tsx
 msgid "Mute"
@@ -2643,6 +2762,7 @@ msgstr "म्यूट करें"
 #: src/pages/Auth.tsx
 #: src/pages/GroupPanel.tsx
 #: src/pages/RoutineEditor.tsx
+#: src/pages/shell/bot-credentials.tsx
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Name"
@@ -2702,6 +2822,10 @@ msgstr "नई स्किल"
 msgid "New space"
 msgstr ""
 
+#: src/pages/Board.tsx
+msgid "New ticket"
+msgstr "नया टिकट"
+
 #: src/pages/MessagingSettingsOverlay.tsx
 msgid "No agent connections yet."
 msgstr ""
@@ -2738,8 +2862,16 @@ msgstr ""
 msgid "No chat apps linked yet."
 msgstr ""
 
+#: src/pages/shell/bot-credentials.tsx
+msgid "No credentials saved for this bot."
+msgstr ""
+
 #: src/pages/MessagingSettingsOverlay.tsx
 msgid "No group chats yet."
+msgstr ""
+
+#: src/pages/Board.tsx
+msgid "No history yet"
 msgstr ""
 
 #: src/components/AskCard.tsx
@@ -2807,9 +2939,18 @@ msgstr ""
 msgid "No trigger"
 msgstr ""
 
+#: src/pages/Board.tsx
+msgid "nobody"
+msgstr ""
+
+#: src/pages/Board.tsx
 #: src/pages/ScratchpadSection.tsx
 msgid "None yet"
 msgstr "अभी तक कोई नहीं"
+
+#: src/lib/ticket-priority.ts
+msgid "Normal"
+msgstr "सामान्य"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Not in the plugin catalog"
@@ -2869,6 +3010,10 @@ msgstr ""
 #: src/pages/RoutineSchedule.tsx
 msgid "on the 1st at {0}"
 msgstr "1 तारीख को {0} बजे"
+
+#: src/pages/Board.tsx
+msgid "One criterion per line (Markdown supported)"
+msgstr ""
 
 #: src/pages/Shell.tsx
 msgid "Only empty spaces can be deleted. Delete its bots and groups first."
@@ -2964,6 +3109,14 @@ msgstr "संगठन API कुंजी"
 msgid "Other model…"
 msgstr "अन्य मॉडल…"
 
+#: src/pages/Board.tsx
+msgid "over limit"
+msgstr ""
+
+#: src/pages/Board.tsx
+msgid "Owner"
+msgstr "स्वामी"
+
 #: src/pages/RoutineEditor.tsx
 msgid "PagerDuty incident"
 msgstr ""
@@ -2975,6 +3128,7 @@ msgstr "पार्क करें"
 #: src/components/AskCard.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Auth.tsx
+#: src/pages/shell/bot-credentials.tsx
 msgid "Password"
 msgstr "पासवर्ड"
 
@@ -3029,6 +3183,10 @@ msgstr "{0} का प्रीव्यू"
 msgid "Preview isn't available for this file type — download it to view it."
 msgstr ""
 
+#: src/pages/Board.tsx
+msgid "Priority"
+msgstr "प्राथमिकता"
+
 #: src/pages/shell/bot-panel.tsx
 msgid "Private"
 msgstr "निजी"
@@ -3082,6 +3240,10 @@ msgstr "उत्तर पढ़कर सुनाएं"
 #: src/pages/KnowledgeSection.tsx
 msgid "read-only"
 msgstr "केवल पढ़ने योग्य"
+
+#: src/pages/Board.tsx
+msgid "Reason"
+msgstr ""
 
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
@@ -3183,6 +3345,7 @@ msgstr ""
 #: src/components/ApprovalRulesSettings.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/ScratchpadSection.tsx
+#: src/pages/shell/bot-credentials.tsx
 msgid "Remove"
 msgstr "हटाएं"
 
@@ -3190,6 +3353,10 @@ msgstr "हटाएं"
 #: src/pages/Shell.tsx
 msgid "Remove {0}"
 msgstr "{0} हटाएं"
+
+#: src/pages/shell/bot-credentials.tsx
+msgid "Remove {secretName}? This bot will no longer be able to use it."
+msgstr ""
 
 #: src/pages/RoutineEditor.tsx
 msgid "Remove Git event"
@@ -3247,6 +3414,10 @@ msgstr "API कुंजी बदलें"
 msgid "Replace key"
 msgstr "कुंजी बदलें"
 
+#: src/pages/shell/bot-credentials.tsx
+msgid "Replace value"
+msgstr ""
+
 #: src/pages/Shell.tsx
 msgid "Reply"
 msgstr "उत्तर दें"
@@ -3296,6 +3467,10 @@ msgstr "अपना पासवर्ड रीसेट करें"
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "Resetting…"
 msgstr "रीसेट हो रहा है…"
+
+#: src/pages/ResizableSidePanel.tsx
+msgid "Resize panel"
+msgstr "पैनल का आकार बदलें"
 
 #: src/components/DesktopUpdates.tsx
 msgid "Restart to update"
@@ -3390,6 +3565,7 @@ msgstr ""
 
 #: src/components/AskCard.tsx
 #: src/components/teach/SkillDraftCard.tsx
+#: src/pages/Board.tsx
 #: src/pages/ExternalConversationSettings.tsx
 #: src/pages/GroupPanel.tsx
 #: src/pages/KnowledgeSection.tsx
@@ -3400,8 +3576,16 @@ msgstr ""
 msgid "Save"
 msgstr "सहेजें"
 
+#: src/pages/shell/bot-credentials.tsx
+msgid "Save credential"
+msgstr ""
+
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Save limits"
+msgstr ""
+
+#: src/pages/shell/bot-credentials.tsx
+msgid "Save new value"
 msgstr ""
 
 #: src/components/AskCard.tsx
@@ -3435,6 +3619,7 @@ msgstr ""
 #: src/pages/GroupPanel.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
+#: src/pages/shell/bot-credentials.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Saving…"
 msgstr "सहेजा जा रहा है…"
@@ -3631,6 +3816,10 @@ msgstr "Rakazo में साइन इन करें"
 msgid "Sign up"
 msgstr "साइन अप करें"
 
+#: src/pages/shell/bot-credentials.tsx
+msgid "Site"
+msgstr ""
+
 #. placeholder {0}: skill.name
 #: src/pages/Shell.tsx
 msgid "Skill {0}"
@@ -3665,6 +3854,10 @@ msgstr ""
 #: src/components/SoftwareUpdateSection.tsx
 msgid "Software update"
 msgstr ""
+
+#: src/pages/Board.tsx
+msgid "Something went wrong."
+msgstr "कुछ गलत हो गया।"
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Space default"
@@ -3708,6 +3901,10 @@ msgstr "शुरू हो रहा है"
 #: src/pages/Onboarding.tsx
 msgid "Starting…"
 msgstr "शुरू हो रहा है…"
+
+#: src/pages/Board.tsx
+msgid "Status"
+msgstr "स्थिति"
 
 #: src/components/teach/SkillDraftCard.tsx
 msgid "Steps"
@@ -3770,6 +3967,7 @@ msgid "Switching…"
 msgstr "बदला जा रहा है…"
 
 #: src/pages/AccountSettingsOverlay.tsx
+#: src/pages/Board.tsx
 msgid "System"
 msgstr "सिस्टम"
 
@@ -3820,6 +4018,10 @@ msgstr ""
 #: src/pages/MemorySettingsOverlay.tsx
 msgid "The selected memory provider is not available in this build."
 msgstr "चयनित मेमोरी प्रोवाइडर इस बिल्ड में उपलब्ध नहीं है।"
+
+#: src/pages/shell/bot-credentials.tsx
+msgid "These saved settings can't be read. Remove it and add it again."
+msgstr ""
 
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
@@ -3904,9 +4106,14 @@ msgstr ""
 msgid "Time of day"
 msgstr "दिन का समय"
 
+#: src/pages/Board.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Title"
 msgstr "शीर्षक"
+
+#: src/lib/ticket-status.ts
+msgid "To do"
+msgstr "करना है"
 
 #: src/pages/shell/bot-picker.tsx
 msgid "To:"
@@ -3940,6 +4147,10 @@ msgstr "Treg टोकन"
 msgid "Try again"
 msgstr "फिर से कोशिश करें"
 
+#: src/pages/shell/bot-credentials.tsx
+msgid "Type"
+msgstr ""
+
 #: src/components/teach/TeachRecordingChrome.tsx
 msgid "Type without recording"
 msgstr ""
@@ -3948,6 +4159,7 @@ msgstr ""
 msgid "Type your answer"
 msgstr "अपना उत्तर लिखें"
 
+#: src/pages/Board.tsx
 #: src/pages/BotContextMenu.tsx
 msgid "Unassigned"
 msgstr "असाइन नहीं किया गया"
@@ -4011,6 +4223,10 @@ msgstr ""
 msgid "Updated"
 msgstr ""
 
+#: src/pages/shell/bot-credentials.tsx
+msgid "Updated {updated}"
+msgstr ""
+
 #: src/pages/SettingsOverlay.tsx
 msgid "Updates"
 msgstr "अपडेट"
@@ -4033,6 +4249,10 @@ msgstr "अपडेट हो रहा है…"
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Upload"
 msgstr "अपलोड"
+
+#: src/lib/ticket-priority.ts
+msgid "Urgent"
+msgstr "अत्यावश्यक"
 
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/SettingsOverlay.tsx
@@ -4062,7 +4282,12 @@ msgid "Use this model"
 msgstr "यह मॉडल उपयोग करें"
 
 #: src/components/AskCard.tsx
+#: src/pages/shell/bot-credentials.tsx
 msgid "Username"
+msgstr ""
+
+#: src/pages/shell/bot-credentials.tsx
+msgid "Value"
 msgstr ""
 
 #: src/pages/PluginsOverlay.tsx
@@ -4106,6 +4331,10 @@ msgstr "प्रतीक्षा…"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Webhook"
+msgstr ""
+
+#: src/pages/shell/bot-credentials.tsx
+msgid "Website login"
 msgstr ""
 
 #: src/pages/RoutineEditor.tsx
@@ -4153,6 +4382,10 @@ msgstr "कब उपयोग करें"
 msgid "Where should bots run?"
 msgstr "बॉट कहां चलने चाहिए?"
 
+#: src/lib/ticket-status.ts
+msgid "Won't do"
+msgstr ""
+
 #: src/lib/roster-status.ts
 #: src/pages/Auth.tsx
 msgid "Working…"
@@ -4166,6 +4399,7 @@ msgstr ""
 msgid "Yesterday"
 msgstr "कल"
 
+#: src/pages/Board.tsx
 #: src/pages/Shell.tsx
 msgid "You"
 msgstr "आप"
@@ -4193,102 +4427,3 @@ msgstr "आपका नाम"
 #: src/pages/Welcome.tsx
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "हमेशा चालू रहने वाले एजेंटों की आपकी टीम<0/>जिन्हें आप असली काम सौंप सकते हैं।"
-
-#: src/pages/ResizableSidePanel.tsx
-msgid "Resize panel"
-msgstr "पैनल का आकार बदलें"
-
-#. placeholder {0}: assignee.name
-#. placeholder {0}: owner.name
-#: src/pages/Board.tsx
-msgid "{0} is working"
-msgstr "{0} काम कर रहा है"
-
-#: src/pages/Board.tsx
-msgid "Add a comment"
-msgstr "टिप्पणी जोड़ें"
-
-#: src/lib/ticket-status.ts
-msgid "Blocked"
-msgstr "अवरुद्ध"
-
-#: src/pages/Board.tsx
-msgid "Board"
-msgstr "बोर्ड"
-
-#: src/pages/Board.tsx
-#: src/pages/Shell.tsx
-msgid "Boards"
-msgstr "बोर्ड"
-
-#: src/lib/ticket-status.ts
-msgid "Closed"
-msgstr "बंद"
-
-#: src/pages/Board.tsx
-msgid "Comment"
-msgstr "टिप्पणी करें"
-
-#: src/pages/Board.tsx
-msgid "Could not create the ticket."
-msgstr "टिकट नहीं बन सका।"
-
-#: src/pages/Board.tsx
-msgid "Could not load comments."
-msgstr "टिप्पणियाँ लोड नहीं हो सकीं।"
-
-#: src/pages/Board.tsx
-msgid "Could not load the board."
-msgstr "बोर्ड लोड नहीं हो सका।"
-
-#: src/pages/Board.tsx
-msgid "Edit"
-msgstr "संपादित करें"
-
-#: src/lib/ticket-status.ts
-msgid "In progress"
-msgstr "प्रगति पर"
-
-#: src/lib/ticket-status.ts
-msgid "In review"
-msgstr "समीक्षा में"
-
-#: src/pages/Board.tsx
-msgid "Move ticket"
-msgstr "टिकट ले जाएँ"
-
-#: src/pages/Board.tsx
-msgid "New ticket"
-msgstr "नया टिकट"
-
-#: src/lib/ticket-priority.ts
-msgid "Normal"
-msgstr "सामान्य"
-
-#: src/pages/Board.tsx
-msgid "Owner"
-msgstr "स्वामी"
-
-#: src/pages/Board.tsx
-msgid "Priority"
-msgstr "प्राथमिकता"
-
-#: src/pages/Board.tsx
-msgid "Something went wrong."
-msgstr "कुछ गलत हो गया।"
-
-#: src/pages/Board.tsx
-msgid "Status"
-msgstr "स्थिति"
-
-#: src/lib/ticket-status.ts
-msgid "To do"
-msgstr "करना है"
-
-#: src/lib/ticket-priority.ts
-msgid "Urgent"
-msgstr "अत्यावश्यक"
-
-#: src/pages/Board.tsx
-msgid "Could not move the ticket."
-msgstr "टिकट नहीं ले जाया जा सका।"

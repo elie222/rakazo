@@ -352,6 +352,7 @@ import {
   getTicket,
   listBoardTickets,
   moveTicket,
+  setTicketCriterion,
   updateTicket,
 } from "./ticket-tools.js";
 import { advanceToolCallLoopGuard } from "./tool-loop.js";
@@ -5120,6 +5121,15 @@ export function createRunExecutor(deps: ExecutorDeps) {
             });
             return finish(removed);
           }
+          if (name.startsWith("ticket_") && typeof args.id === "string" && args.id) {
+            // Remember which ticket the bot is on so the board spins only that card.
+            await deps.prisma.run
+              .updateMany({
+                where: { id: run.id, spaceId: run.spaceId },
+                data: { currentTicketId: args.id },
+              })
+              .catch(() => undefined);
+          }
           if (name === "board_tickets") {
             return finish(
               await listBoardTickets(deps, {
@@ -5146,6 +5156,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 userId: run.userId,
                 title: String(args.title ?? ""),
                 description: args.description !== undefined ? String(args.description) : undefined,
+                acceptanceCriteria: args.acceptanceCriteria,
                 priority: args.priority !== undefined ? String(args.priority) : undefined,
                 ownerBotId: args.ownerBotId !== undefined ? String(args.ownerBotId) : undefined,
               }),
@@ -5158,6 +5169,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 botId: bot.id,
                 id: String(args.id ?? ""),
                 status: String(args.status ?? ""),
+                reason: args.reason !== undefined ? String(args.reason) : undefined,
               }),
             );
           }
@@ -5180,7 +5192,19 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 id: String(args.id ?? ""),
                 title: args.title !== undefined ? String(args.title) : undefined,
                 description: args.description !== undefined ? String(args.description) : undefined,
+                acceptanceCriteria: args.acceptanceCriteria,
                 priority: args.priority !== undefined ? String(args.priority) : undefined,
+              }),
+            );
+          }
+          if (name === "ticket_criterion") {
+            return finish(
+              await setTicketCriterion(deps, {
+                spaceId: run.spaceId,
+                botId: bot.id,
+                id: String(args.id ?? ""),
+                index: Number(args.index),
+                done: args.done !== false,
               }),
             );
           }

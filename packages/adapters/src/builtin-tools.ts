@@ -776,6 +776,11 @@ export const builtinAgentTools: ConnectorTool[] = [
       properties: {
         title: { type: "string", description: "Short ticket title." },
         description: { type: "string", description: "Optional detail." },
+        acceptanceCriteria: {
+          type: "array",
+          items: { type: "string" },
+          description: "Checklist of conditions that make the ticket done, one per item.",
+        },
         priority: {
           type: "string",
           enum: TICKET_PRIORITIES,
@@ -791,12 +796,17 @@ export const builtinAgentTools: ConnectorTool[] = [
   },
   {
     name: "ticket_move",
-    description: "Move a ticket to any status.",
+    description:
+      "Move a ticket to any status. Moving to blocked requires a reason; moving to done or closed with unchecked acceptance criteria requires a reason that overrides them. The reason is saved as a ticket comment.",
     inputSchema: {
       type: "object",
       properties: {
         id: { type: "string", description: "Ticket id from board_tickets or ticket_get." },
         status: { type: "string", enum: TICKET_STATUSES },
+        reason: {
+          type: "string",
+          description: "What the ticket is blocked on, or why it is done despite open criteria.",
+        },
       },
       required: ["id", "status"],
     },
@@ -804,28 +814,47 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "ticket_close",
     description:
-      "Close a ticket by setting it closed, optionally adding a closing comment in the same step. Use done instead to mark it ready for review but still open.",
+      "Mark a ticket as won't do (status closed): work that is abandoned or cancelled, not finished work. A comment saying why is required. For finished work, check off its acceptance criteria and move it to review (or done) with ticket_move instead.",
     inputSchema: {
       type: "object",
       properties: {
         id: { type: "string", description: "Ticket id." },
-        comment: { type: "string", description: "Optional closing comment." },
+        comment: { type: "string", description: "Why this will not be done." },
       },
-      required: ["id"],
+      required: ["id", "comment"],
     },
   },
   {
     name: "ticket_update",
-    description: "Update a ticket's title, description, or priority.",
+    description: "Update a ticket's title, description, acceptance criteria, or priority.",
     inputSchema: {
       type: "object",
       properties: {
         id: { type: "string", description: "Ticket id." },
         title: { type: "string" },
         description: { type: "string" },
+        acceptanceCriteria: {
+          type: "array",
+          items: { type: "string" },
+          description: "Checklist of conditions that make the ticket done, one per item.",
+        },
         priority: { type: "string", enum: TICKET_PRIORITIES },
       },
       required: ["id"],
+    },
+  },
+  {
+    name: "ticket_criterion",
+    description:
+      "Check or uncheck one acceptance criterion of a ticket by its 1-based position. Check criteria off as you verify them; a ticket cannot move to done with open criteria unless you give a reason.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "Ticket id." },
+        index: { type: "number", description: "1-based position of the criterion." },
+        done: { type: "boolean", description: "true to check it (default), false to uncheck." },
+      },
+      required: ["id", "index"],
     },
   },
   {

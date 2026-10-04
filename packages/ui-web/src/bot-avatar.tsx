@@ -1,6 +1,5 @@
 import type { GrokColorDef } from "@rakazo/core";
 import {
-  ACTIVE_RUN_STATUSES,
   avatarIdentitySeed,
   DEFAULT_GROK_BOT_COLOR,
   GROK_BOT_COLORS,
@@ -78,6 +77,12 @@ export function parseBotAvatar(
   return { color: rawColor, isImage: false };
 }
 
+/**
+ * Statuses where the bot is actually executing. Runs parked on a person
+ * (`waiting_input`, `waiting_takeover`) are active but idle, so they must not animate.
+ */
+const EXECUTING_RUN_STATUSES: ReadonlySet<string> = new Set(["queued", "leased", "running"]);
+
 export interface BotAvatarProps {
   color: string;
   size?: number;
@@ -96,7 +101,7 @@ export const BotAvatar = memo(function BotAvatar({
   variant,
 }: BotAvatarProps) {
   const id = useId().replace(/[^a-zA-Z0-9-_]/g, "");
-  const isWorking = ACTIVE_RUN_STATUSES.some((s) => s === status);
+  const isWorking = status !== undefined && EXECUTING_RUN_STATUSES.has(status);
   const preferredVariant = useAvatarStyle();
 
   const parsed = useMemo(() => parseBotAvatar(color, identity), [color, identity]);

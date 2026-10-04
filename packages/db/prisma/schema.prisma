@@ -592,6 +592,9 @@ model Run {
   userId               String
   status               String
   trigger              String
+  /// Tickets a ticket wake was started for, and the one the bot touched last.
+  ticketIds            String[]         @default([])
+  currentTicketId      String?
   modelProvider        String?
   modelId              String?
   error                String?
@@ -1380,6 +1383,10 @@ model Ticket {
   number          Int
   title           String
   description     String?
+  /// Ordered checklist of conditions that make the ticket done.
+  acceptanceCriteria Json    @default("[]")
+  /// When the ticket last entered its current status; drives column aging.
+  statusChangedAt DateTime @default(now())
   status          String    @default("todo")
   priority        String?
   assigneeBotId   String?
@@ -1398,11 +1405,28 @@ model Ticket {
   externalUpdatedAt DateTime?
   completedAt       DateTime?
   comments        TicketComment[]
+  events          TicketEvent[]
 
   @@unique([boardId, number])
   @@index([spaceId, status])
   @@index([boardId, status])
   @@map("tickets")
+}
+
+/// Append-only audit trail: who changed what on a ticket, and when.
+model TicketEvent {
+  id          String   @id @default(cuid())
+  ticketId    String
+  ticket      Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  spaceId     String
+  actorBotId  String?
+  actorUserId String?
+  type        String
+  data        Json     @default("{}")
+  createdAt   DateTime @default(now())
+
+  @@index([ticketId, createdAt])
+  @@map("ticket_events")
 }
 
 model TicketComment {

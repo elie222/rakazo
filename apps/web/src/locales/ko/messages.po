@@ -64,6 +64,17 @@ msgstr ""
 msgid "{0} handling"
 msgstr ""
 
+#. placeholder {0}: assignee.name
+#: src/pages/Board.tsx
+msgid "{0} has more than {TICKET_WIP_LIMIT} tickets in progress"
+msgstr ""
+
+#. placeholder {0}: assignee.name
+#. placeholder {0}: owner.name
+#: src/pages/Board.tsx
+msgid "{0} is working"
+msgstr "{0}님이 작업 중"
+
 #. placeholder {0}: format(size / 1024)
 #: src/components/ArtifactFileCard.tsx
 msgid "{0} KB"
@@ -95,9 +106,57 @@ msgstr ""
 msgid "{0}'s screen"
 msgstr "{0}의 화면"
 
+#: src/pages/Board.tsx
+msgid "{actor} changed priority from {fromLabel} to {toLabel}"
+msgstr ""
+
+#: src/pages/Board.tsx
+msgid "{actor} checked \"{text}\""
+msgstr ""
+
+#: src/pages/Board.tsx
+msgid "{actor} commented"
+msgstr ""
+
+#: src/pages/Board.tsx
+msgid "{actor} created the ticket"
+msgstr ""
+
+#: src/pages/Board.tsx
+msgid "{actor} edited the acceptance criteria"
+msgstr ""
+
+#: src/pages/Board.tsx
+msgid "{actor} edited the description"
+msgstr ""
+
+#: src/pages/Board.tsx
+msgid "{actor} moved it from {fromLabel} to {toLabel}"
+msgstr ""
+
+#: src/pages/Board.tsx
+msgid "{actor} overrode the open criteria: {reason}"
+msgstr ""
+
+#: src/pages/Board.tsx
+msgid "{actor} reassigned it from {fromChip} to {toChip}"
+msgstr ""
+
+#: src/pages/Board.tsx
+msgid "{actor} renamed it to \"{title}\""
+msgstr ""
+
+#: src/pages/Board.tsx
+msgid "{actor} unchecked \"{text}\""
+msgstr ""
+
 #: src/pages/Shell.tsx
 msgid "{botName}’s computer"
 msgstr "{botName}의 컴퓨터"
+
+#: src/pages/Board.tsx
+msgid "{columnDays}d"
+msgstr ""
 
 #: src/lib/relative-time.ts
 #: src/pages/ActivityList.tsx
@@ -170,6 +229,10 @@ msgstr "@{0}"
 msgid "A bit of everything"
 msgstr ""
 
+#: src/pages/Board.tsx
+msgid "A bot"
+msgstr ""
+
 #. placeholder {0}: oauth.verificationUri.replace(/^https:\/\//, "")
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
@@ -182,6 +245,14 @@ msgstr ""
 
 #: src/pages/shell/bot-picker.tsx
 msgid "About spaces"
+msgstr ""
+
+#: src/pages/Board.tsx
+msgid "Acceptance criteria"
+msgstr ""
+
+#: src/pages/Board.tsx
+msgid "Acceptance criteria (one per line, Markdown supported)"
 msgstr ""
 
 #: src/components/integrations/IntegrationSetup.tsx
@@ -242,6 +313,10 @@ msgstr "활동"
 msgid "Add"
 msgstr "추가"
 
+#: src/pages/Board.tsx
+msgid "Add a comment"
+msgstr "댓글 추가"
+
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Add a model in Settings to use this."
 msgstr "이 기능을 사용하려면 설정에서 모델을 추가하세요."
@@ -272,6 +347,10 @@ msgstr "HTTPS 서버 URL을 입력하세요."
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Add another"
+msgstr ""
+
+#: src/pages/shell/bot-credentials.tsx
+msgid "Add credential"
 msgstr ""
 
 #: src/pages/PluginsOverlay.tsx
@@ -327,6 +406,7 @@ msgstr "트리거 추가"
 msgid "Added"
 msgstr ""
 
+#: src/pages/Board.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Adding…"
@@ -428,98 +508,6 @@ msgstr "답변"
 #: src/components/AskCard.tsx
 msgid "Answered"
 msgstr "응답함"
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Add credential"
-msgstr ""
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Basic auth"
-msgstr ""
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Basic auth ({username})"
-msgstr ""
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Could not load credentials."
-msgstr ""
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Could not remove the credential"
-msgstr ""
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Could not save the credential"
-msgstr ""
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Credentials"
-msgstr ""
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Custom header"
-msgstr ""
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Enter a username and password"
-msgstr ""
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Header \"{header}\""
-msgstr ""
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Keys and passwords this bot can use, each for one site only. Values are encrypted and never shown again."
-msgstr ""
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Lowercase letters, numbers, hyphens and underscores, starting with a letter."
-msgstr ""
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "No credentials saved for this bot."
-msgstr ""
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Remove {secretName}? This bot will no longer be able to use it."
-msgstr ""
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Replace value"
-msgstr ""
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Save credential"
-msgstr ""
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Save new value"
-msgstr ""
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Site"
-msgstr ""
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "These saved settings can't be read. Remove it and add it again."
-msgstr ""
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Type"
-msgstr ""
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Updated {updated}"
-msgstr ""
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Value"
-msgstr ""
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Website login"
-msgstr ""
 
 #. placeholder {0}: selectedAskActionLabel(answer, actions)
 #: src/components/AskCard.tsx
@@ -696,10 +684,32 @@ msgstr "로그인으로 돌아가기"
 msgid "Base URL"
 msgstr "서버 주소"
 
+#: src/pages/shell/bot-credentials.tsx
+msgid "Basic auth"
+msgstr ""
+
+#: src/pages/shell/bot-credentials.tsx
+msgid "Basic auth ({username})"
+msgstr ""
+
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 #: src/pages/PluginsOverlay.tsx
+#: src/pages/shell/bot-credentials.tsx
 msgid "Bearer token"
 msgstr "Bearer 토큰"
+
+#: src/lib/ticket-status.ts
+msgid "Blocked"
+msgstr "차단됨"
+
+#: src/pages/Board.tsx
+msgid "Board"
+msgstr "보드"
+
+#: src/pages/Board.tsx
+#: src/pages/Shell.tsx
+msgid "Boards"
+msgstr "보드"
 
 #: src/pages/Shell.tsx
 msgid "Booting live desktop…"
@@ -714,6 +724,7 @@ msgstr "{0}의 컴퓨터를 켜는 중"
 msgid "bot"
 msgstr "Bot"
 
+#: src/pages/Board.tsx
 #: src/pages/IntegrationSetup.tsx
 #: src/pages/Shell.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
@@ -738,6 +749,7 @@ msgid "Bot to link"
 msgstr "연결할 Bot"
 
 #: src/pages/Artifacts.tsx
+#: src/pages/Board.tsx
 msgid "Bots"
 msgstr ""
 
@@ -766,10 +778,12 @@ msgstr "서버에 연결할 수 없습니다."
 #: src/components/ComputerUpdateProgress.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
 #: src/pages/Artifacts.tsx
+#: src/pages/Board.tsx
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/PluginsOverlay.tsx
+#: src/pages/shell/bot-credentials.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Cancel"
 msgstr "취소"
@@ -996,6 +1010,14 @@ msgstr "준비 중"
 #: src/pages/McpServersOverlay.tsx
 msgid "Command"
 msgstr "실행 명령"
+
+#: src/pages/Board.tsx
+msgid "Comment"
+msgstr "댓글 남기기"
+
+#: src/pages/Board.tsx
+msgid "Comments"
+msgstr ""
 
 #: src/pages/ScratchpadSection.tsx
 msgid "Complete"
@@ -1247,6 +1269,10 @@ msgstr "섹션을 만들지 못했습니다."
 msgid "Could not create space"
 msgstr "스페이스를 만들 수 없습니다"
 
+#: src/pages/Board.tsx
+msgid "Could not create the ticket."
+msgstr "티켓을 만들지 못했습니다."
+
 #: src/pages/Onboarding.tsx
 msgid "Could not create your bot"
 msgstr "Bot을 만들지 못했습니다."
@@ -1344,6 +1370,14 @@ msgstr ""
 msgid "Could not load commands"
 msgstr ""
 
+#: src/pages/Board.tsx
+msgid "Could not load comments."
+msgstr "댓글을 불러오지 못했습니다."
+
+#: src/pages/shell/bot-credentials.tsx
+msgid "Could not load credentials."
+msgstr ""
+
 #: src/components/integrations/IntegrationSetup.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not load integrations"
@@ -1365,6 +1399,10 @@ msgstr "실행 기록을 불러오지 못했습니다"
 msgid "Could not load skill"
 msgstr "스킬을 불러오지 못했습니다"
 
+#: src/pages/Board.tsx
+msgid "Could not load the board."
+msgstr "보드를 불러오지 못했습니다."
+
 #: src/pages/Artifacts.tsx
 msgid "Could not load this artifact."
 msgstr ""
@@ -1384,6 +1422,10 @@ msgstr "업데이트 상태를 불러올 수 없습니다"
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Could not load voice settings"
 msgstr "음성 설정을 불러오지 못했습니다."
+
+#: src/pages/Board.tsx
+msgid "Could not move the ticket."
+msgstr "티켓을 옮기지 못했습니다."
 
 #: src/components/computer/FilesApp.tsx
 msgid "Could not open file"
@@ -1426,6 +1468,10 @@ msgstr "그룹을 삭제하지 못했습니다."
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Could not remove rule"
 msgstr "확인 규칙을 삭제하지 못했습니다."
+
+#: src/pages/shell/bot-credentials.tsx
+msgid "Could not remove the credential"
+msgstr ""
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not rename connection"
@@ -1492,6 +1538,10 @@ msgstr "음성 모델을 저장하지 못했습니다."
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Could not save that voice"
 msgstr "목소리를 저장하지 못했습니다."
+
+#: src/pages/shell/bot-credentials.tsx
+msgid "Could not save the credential"
+msgstr ""
 
 #: src/pages/shell/message-cards.tsx
 msgid "Could not save this choice"
@@ -1561,6 +1611,7 @@ msgstr "아바타를 업데이트할 수 없습니다"
 msgid "Couldn't update messaging settings"
 msgstr "메시징 설정을 업데이트할 수 없습니다"
 
+#: src/pages/Board.tsx
 #: src/pages/Shell.tsx
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/shell/dialogs.tsx
@@ -1610,6 +1661,7 @@ msgstr "Rakazo 계정 만들기"
 msgid "Created"
 msgstr "생성됨"
 
+#: src/pages/Board.tsx
 #: src/pages/GroupPanel.tsx
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/shell/dialogs.tsx
@@ -1624,6 +1676,10 @@ msgstr "인증 정보"
 #: src/pages/PluginsOverlay.tsx
 msgid "credential saved"
 msgstr "인증 정보 저장됨"
+
+#: src/pages/shell/bot-credentials.tsx
+msgid "Credentials"
+msgstr ""
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Credentials are encrypted and never sent to the model."
@@ -1640,6 +1696,10 @@ msgstr "Cron 표현식"
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Current password"
 msgstr "현재 비밀번호"
+
+#: src/pages/shell/bot-credentials.tsx
+msgid "Custom header"
+msgstr ""
 
 #: src/pages/shell/dialogs.tsx
 msgid "Customer support"
@@ -1758,9 +1818,14 @@ msgstr "서버 기본값"
 msgid "Describe what this bot does"
 msgstr "이 Bot이 하는 일을 짧게 설명하세요"
 
+#: src/pages/Board.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Description"
 msgstr "설명"
+
+#: src/pages/Board.tsx
+msgid "Description (Markdown supported)"
+msgstr ""
 
 #: src/components/DesktopUpdates.tsx
 msgid "Desktop app"
@@ -1826,6 +1891,7 @@ msgstr "Docker는 보안을 위해 컴퓨터 접근을 제한합니다. {hostLab
 msgid "Don’t have an account?"
 msgstr "계정이 없나요?"
 
+#: src/lib/ticket-status.ts
 #: src/pages/ActivityList.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Done"
@@ -1879,6 +1945,10 @@ msgstr "예: Hivenet Agent, Presales, 근무표 봇"
 msgid "Earlier message"
 msgstr "이전 메시지"
 
+#: src/pages/Board.tsx
+msgid "Edit"
+msgstr "편집"
+
 #: src/components/AskCard.tsx
 msgid "Edit first"
 msgstr "수정 후 보내기"
@@ -1893,6 +1963,10 @@ msgstr "이메일"
 
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Engage when... Ignore..."
+msgstr ""
+
+#: src/pages/shell/bot-credentials.tsx
+msgid "Enter a username and password"
 msgstr ""
 
 #: src/pages/ModelSettingsOverlay.tsx
@@ -1970,15 +2044,15 @@ msgstr "CRM에서 이번 주 목록을 내려받아 공유 폴더에 넣기"
 msgid "External conversation"
 msgstr ""
 
-#. js-lingui-explicit-id
-#: src/lib/model-catalog.ts
-msgid "Extra high"
-msgstr ""
-
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 msgid "Extra high"
 msgstr "매우 높음"
+
+#. js-lingui-explicit-id
+#: src/lib/model-catalog.ts
+msgid "Extra high"
+msgstr ""
 
 #: src/components/CloudAgentCard.tsx
 msgid "failed"
@@ -2119,8 +2193,13 @@ msgstr "전화를 끊은 다음 화면에 표시된 코드를 입력하세요."
 msgid "header"
 msgstr "header"
 
+#: src/pages/shell/bot-credentials.tsx
+msgid "Header \"{header}\""
+msgstr ""
+
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
+#: src/pages/shell/bot-credentials.tsx
 msgid "Header name"
 msgstr "헤더 이름"
 
@@ -2148,15 +2227,20 @@ msgstr "비밀번호 숨기기"
 msgid "Hide transcript"
 msgstr "대화 기록 숨기기"
 
+#: src/lib/ticket-priority.ts
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/Onboarding.tsx
+msgid "High"
+msgstr "높음"
+
 #. js-lingui-explicit-id
 #: src/lib/model-catalog.ts
 msgid "High"
 msgstr ""
 
-#: src/pages/ModelSettingsOverlay.tsx
-#: src/pages/Onboarding.tsx
-msgid "High"
-msgstr "높음"
+#: src/pages/Board.tsx
+msgid "History"
+msgstr ""
 
 #: src/pages/RoutineSchedule.tsx
 msgid "hour"
@@ -2194,6 +2278,18 @@ msgstr "이미지 업로드 영역"
 #: src/pages/PluginsOverlay.tsx
 msgid "Import OpenAPI JSON"
 msgstr "OpenAPI JSON 가져오기"
+
+#: src/lib/ticket-status.ts
+msgid "In progress"
+msgstr "진행 중"
+
+#: src/lib/ticket-status.ts
+msgid "In review"
+msgstr "검토 중"
+
+#: src/pages/Board.tsx
+msgid "In this column for {columnDays} days"
+msgstr ""
 
 #: src/pages/shell/message-cards.tsx
 msgid "Inbox & email"
@@ -2285,6 +2381,10 @@ msgstr "기억은 유지"
 msgid "key"
 msgstr "key"
 
+#: src/pages/shell/bot-credentials.tsx
+msgid "Keys and passwords this bot can use, each for one site only. Values are encrypted and never shown again."
+msgstr ""
+
 #: src/pages/KnowledgeSection.tsx
 msgid "Knowledge"
 msgstr "지식"
@@ -2375,6 +2475,7 @@ msgstr "음성 서비스를 불러오는 중…"
 
 #: src/App.tsx
 #: src/pages/Artifacts.tsx
+#: src/pages/Board.tsx
 #: src/pages/IntegrationSetup.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/PeerMessagesOverlay.tsx
@@ -2399,15 +2500,20 @@ msgstr ""
 msgid "Log out"
 msgstr "로그아웃"
 
+#: src/lib/ticket-priority.ts
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/Onboarding.tsx
+msgid "Low"
+msgstr "낮음"
+
 #. js-lingui-explicit-id
 #: src/lib/model-catalog.ts
 msgid "Low"
 msgstr ""
 
-#: src/pages/ModelSettingsOverlay.tsx
-#: src/pages/Onboarding.tsx
-msgid "Low"
-msgstr "낮음"
+#: src/pages/shell/bot-credentials.tsx
+msgid "Lowercase letters, numbers, hyphens and underscores, starting with a letter."
+msgstr ""
 
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Make sure nothing is still running on this computer."
@@ -2441,15 +2547,15 @@ msgstr "읽음으로 표시"
 msgid "Mark as Unread"
 msgstr "읽지 않음으로 표시"
 
-#. js-lingui-explicit-id
-#: src/lib/model-catalog.ts
-msgid "Max"
-msgstr ""
-
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 msgid "Max"
 msgstr "최대"
+
+#. js-lingui-explicit-id
+#: src/lib/model-catalog.ts
+msgid "Max"
+msgstr ""
 
 #: src/pages/Artifacts.tsx
 msgid "Maximize"
@@ -2473,15 +2579,15 @@ msgstr ""
 msgid "MCP servers"
 msgstr "MCP 서버"
 
-#. js-lingui-explicit-id
-#: src/lib/model-catalog.ts
-msgid "Medium"
-msgstr ""
-
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 msgid "Medium"
 msgstr "보통"
+
+#. js-lingui-explicit-id
+#: src/lib/model-catalog.ts
+msgid "Medium"
+msgstr ""
 
 #: src/pages/GroupPanel.tsx
 msgid "Members ({GROUP_MEMBER_MIN}–{GROUP_MEMBER_MAX})"
@@ -2551,15 +2657,15 @@ msgstr "메시징"
 msgid "Microphone failed"
 msgstr "마이크를 사용할 수 없습니다."
 
-#. js-lingui-explicit-id
-#: src/lib/model-catalog.ts
-msgid "Minimal"
-msgstr ""
-
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 msgid "Minimal"
 msgstr "최소"
+
+#. js-lingui-explicit-id
+#: src/lib/model-catalog.ts
+msgid "Minimal"
+msgstr ""
 
 #: src/pages/WindowChrome.tsx
 msgid "Minimize"
@@ -2627,13 +2733,26 @@ msgstr ""
 msgid "More computer actions"
 msgstr "컴퓨터 작업 더보기"
 
+#: src/pages/Board.tsx
+msgid "Move"
+msgstr ""
+
 #: src/pages/shell/dialogs.tsx
 msgid "Move them to your shared memory."
 msgstr "공용 기억으로 옮깁니다."
 
+#: src/pages/Board.tsx
+msgid "Move ticket"
+msgstr "티켓 이동"
+
 #: src/pages/BotContextMenu.tsx
 msgid "Move to"
 msgstr "섹션으로 이동"
+
+#. placeholder {0}: labels[pending.status]
+#: src/pages/Board.tsx
+msgid "Move to {0}"
+msgstr ""
 
 #: src/components/call/CallCard.tsx
 msgid "Mute"
@@ -2643,6 +2762,7 @@ msgstr "음소거"
 #: src/pages/Auth.tsx
 #: src/pages/GroupPanel.tsx
 #: src/pages/RoutineEditor.tsx
+#: src/pages/shell/bot-credentials.tsx
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Name"
@@ -2702,6 +2822,10 @@ msgstr "새 스킬"
 msgid "New space"
 msgstr "새 스페이스"
 
+#: src/pages/Board.tsx
+msgid "New ticket"
+msgstr "새 티켓"
+
 #: src/pages/MessagingSettingsOverlay.tsx
 msgid "No agent connections yet."
 msgstr "아직 Agent 연결이 없습니다."
@@ -2738,9 +2862,17 @@ msgstr ""
 msgid "No chat apps linked yet."
 msgstr "아직 연결된 채팅 앱이 없습니다."
 
+#: src/pages/shell/bot-credentials.tsx
+msgid "No credentials saved for this bot."
+msgstr ""
+
 #: src/pages/MessagingSettingsOverlay.tsx
 msgid "No group chats yet."
 msgstr "아직 그룹 채팅이 없습니다."
+
+#: src/pages/Board.tsx
+msgid "No history yet"
+msgstr ""
 
 #: src/components/AskCard.tsx
 msgid "No longer active"
@@ -2807,9 +2939,18 @@ msgstr ""
 msgid "No trigger"
 msgstr "트리거 없음"
 
+#: src/pages/Board.tsx
+msgid "nobody"
+msgstr ""
+
+#: src/pages/Board.tsx
 #: src/pages/ScratchpadSection.tsx
 msgid "None yet"
 msgstr "아직 없음"
+
+#: src/lib/ticket-priority.ts
+msgid "Normal"
+msgstr "보통"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Not in the plugin catalog"
@@ -2869,6 +3010,10 @@ msgstr "일정에 따라"
 #: src/pages/RoutineSchedule.tsx
 msgid "on the 1st at {0}"
 msgstr "매월 1일 {0}에"
+
+#: src/pages/Board.tsx
+msgid "One criterion per line (Markdown supported)"
+msgstr ""
 
 #: src/pages/Shell.tsx
 msgid "Only empty spaces can be deleted. Delete its bots and groups first."
@@ -2964,6 +3109,14 @@ msgstr "조직 API 키"
 msgid "Other model…"
 msgstr "다른 모델 직접 입력…"
 
+#: src/pages/Board.tsx
+msgid "over limit"
+msgstr ""
+
+#: src/pages/Board.tsx
+msgid "Owner"
+msgstr "담당"
+
 #: src/pages/RoutineEditor.tsx
 msgid "PagerDuty incident"
 msgstr "PagerDuty 인시던트"
@@ -2975,6 +3128,7 @@ msgstr "보류"
 #: src/components/AskCard.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Auth.tsx
+#: src/pages/shell/bot-credentials.tsx
 msgid "Password"
 msgstr "비밀번호"
 
@@ -3029,6 +3183,10 @@ msgstr "{0} 미리보기"
 msgid "Preview isn't available for this file type — download it to view it."
 msgstr ""
 
+#: src/pages/Board.tsx
+msgid "Priority"
+msgstr "우선순위"
+
 #: src/pages/shell/bot-panel.tsx
 msgid "Private"
 msgstr "Bot 전용"
@@ -3082,6 +3240,10 @@ msgstr "답변을 자동으로 읽기"
 #: src/pages/KnowledgeSection.tsx
 msgid "read-only"
 msgstr "읽기 전용"
+
+#: src/pages/Board.tsx
+msgid "Reason"
+msgstr ""
 
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
@@ -3183,6 +3345,7 @@ msgstr ""
 #: src/components/ApprovalRulesSettings.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/ScratchpadSection.tsx
+#: src/pages/shell/bot-credentials.tsx
 msgid "Remove"
 msgstr "삭제"
 
@@ -3190,6 +3353,10 @@ msgstr "삭제"
 #: src/pages/Shell.tsx
 msgid "Remove {0}"
 msgstr "{0} 삭제"
+
+#: src/pages/shell/bot-credentials.tsx
+msgid "Remove {secretName}? This bot will no longer be able to use it."
+msgstr ""
 
 #: src/pages/RoutineEditor.tsx
 msgid "Remove Git event"
@@ -3247,6 +3414,10 @@ msgstr "API 키 교체"
 msgid "Replace key"
 msgstr "키 교체"
 
+#: src/pages/shell/bot-credentials.tsx
+msgid "Replace value"
+msgstr ""
+
 #: src/pages/Shell.tsx
 msgid "Reply"
 msgstr "답장"
@@ -3296,6 +3467,10 @@ msgstr "비밀번호를 재설정하세요"
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "Resetting…"
 msgstr "재설정 중…"
+
+#: src/pages/ResizableSidePanel.tsx
+msgid "Resize panel"
+msgstr "패널 크기 조절"
 
 #: src/components/DesktopUpdates.tsx
 msgid "Restart to update"
@@ -3390,6 +3565,7 @@ msgstr ""
 
 #: src/components/AskCard.tsx
 #: src/components/teach/SkillDraftCard.tsx
+#: src/pages/Board.tsx
 #: src/pages/ExternalConversationSettings.tsx
 #: src/pages/GroupPanel.tsx
 #: src/pages/KnowledgeSection.tsx
@@ -3400,8 +3576,16 @@ msgstr ""
 msgid "Save"
 msgstr "저장"
 
+#: src/pages/shell/bot-credentials.tsx
+msgid "Save credential"
+msgstr ""
+
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Save limits"
+msgstr ""
+
+#: src/pages/shell/bot-credentials.tsx
+msgid "Save new value"
 msgstr ""
 
 #: src/components/AskCard.tsx
@@ -3435,6 +3619,7 @@ msgstr ""
 #: src/pages/GroupPanel.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
+#: src/pages/shell/bot-credentials.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Saving…"
 msgstr "저장 중…"
@@ -3631,6 +3816,10 @@ msgstr "Rakazo 로그인"
 msgid "Sign up"
 msgstr "가입하기"
 
+#: src/pages/shell/bot-credentials.tsx
+msgid "Site"
+msgstr ""
+
 #. placeholder {0}: skill.name
 #: src/pages/Shell.tsx
 msgid "Skill {0}"
@@ -3665,6 +3854,10 @@ msgstr ""
 #: src/components/SoftwareUpdateSection.tsx
 msgid "Software update"
 msgstr "소프트웨어 업데이트"
+
+#: src/pages/Board.tsx
+msgid "Something went wrong."
+msgstr "문제가 발생했습니다."
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Space default"
@@ -3708,6 +3901,10 @@ msgstr "시작 중"
 #: src/pages/Onboarding.tsx
 msgid "Starting…"
 msgstr "시작하는 중…"
+
+#: src/pages/Board.tsx
+msgid "Status"
+msgstr "상태"
 
 #: src/components/teach/SkillDraftCard.tsx
 msgid "Steps"
@@ -3770,6 +3967,7 @@ msgid "Switching…"
 msgstr "전환 중…"
 
 #: src/pages/AccountSettingsOverlay.tsx
+#: src/pages/Board.tsx
 msgid "System"
 msgstr "시스템"
 
@@ -3820,6 +4018,10 @@ msgstr "API가 다시 작동하지 않습니다. 이 페이지를 새로 고침�
 #: src/pages/MemorySettingsOverlay.tsx
 msgid "The selected memory provider is not available in this build."
 msgstr "선택한 기억 서비스는 현재 빌드에서 사용할 수 없습니다."
+
+#: src/pages/shell/bot-credentials.tsx
+msgid "These saved settings can't be read. Remove it and add it again."
+msgstr ""
 
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
@@ -3904,9 +4106,14 @@ msgstr ""
 msgid "Time of day"
 msgstr "실행 시각"
 
+#: src/pages/Board.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Title"
 msgstr "역할"
+
+#: src/lib/ticket-status.ts
+msgid "To do"
+msgstr "할 일"
 
 #: src/pages/shell/bot-picker.tsx
 msgid "To:"
@@ -3940,6 +4147,10 @@ msgstr "Treg 토큰"
 msgid "Try again"
 msgstr "다시 시도"
 
+#: src/pages/shell/bot-credentials.tsx
+msgid "Type"
+msgstr ""
+
 #: src/components/teach/TeachRecordingChrome.tsx
 msgid "Type without recording"
 msgstr ""
@@ -3948,6 +4159,7 @@ msgstr ""
 msgid "Type your answer"
 msgstr "답변을 입력하세요"
 
+#: src/pages/Board.tsx
 #: src/pages/BotContextMenu.tsx
 msgid "Unassigned"
 msgstr "섹션 없음"
@@ -4011,6 +4223,10 @@ msgstr ""
 msgid "Updated"
 msgstr "업데이트됨"
 
+#: src/pages/shell/bot-credentials.tsx
+msgid "Updated {updated}"
+msgstr ""
+
 #: src/pages/SettingsOverlay.tsx
 msgid "Updates"
 msgstr "업데이트"
@@ -4033,6 +4249,10 @@ msgstr "업데이트 중…"
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Upload"
 msgstr "업로드"
+
+#: src/lib/ticket-priority.ts
+msgid "Urgent"
+msgstr "긴급"
 
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/SettingsOverlay.tsx
@@ -4062,7 +4282,12 @@ msgid "Use this model"
 msgstr "이 모델 사용"
 
 #: src/components/AskCard.tsx
+#: src/pages/shell/bot-credentials.tsx
 msgid "Username"
+msgstr ""
+
+#: src/pages/shell/bot-credentials.tsx
+msgid "Value"
 msgstr ""
 
 #: src/pages/PluginsOverlay.tsx
@@ -4107,6 +4332,10 @@ msgstr "기다리는 중…"
 #: src/pages/RoutineEditor.tsx
 msgid "Webhook"
 msgstr "웹훅"
+
+#: src/pages/shell/bot-credentials.tsx
+msgid "Website login"
+msgstr ""
 
 #: src/pages/RoutineEditor.tsx
 #: src/pages/RoutineSchedule.tsx
@@ -4153,6 +4382,10 @@ msgstr "언제 사용할지"
 msgid "Where should bots run?"
 msgstr "Bot을 어디에서 실행할까요?"
 
+#: src/lib/ticket-status.ts
+msgid "Won't do"
+msgstr ""
+
 #: src/lib/roster-status.ts
 #: src/pages/Auth.tsx
 msgid "Working…"
@@ -4166,6 +4399,7 @@ msgstr ""
 msgid "Yesterday"
 msgstr "어제"
 
+#: src/pages/Board.tsx
 #: src/pages/Shell.tsx
 msgid "You"
 msgstr "나"
@@ -4193,102 +4427,3 @@ msgstr "이름"
 #: src/pages/Welcome.tsx
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "언제든 실제 작업을 맡길 수 있는<0/>나만의 Agent 팀"
-
-#: src/pages/ResizableSidePanel.tsx
-msgid "Resize panel"
-msgstr "패널 크기 조절"
-
-#. placeholder {0}: assignee.name
-#. placeholder {0}: owner.name
-#: src/pages/Board.tsx
-msgid "{0} is working"
-msgstr "{0}님이 작업 중"
-
-#: src/pages/Board.tsx
-msgid "Add a comment"
-msgstr "댓글 추가"
-
-#: src/lib/ticket-status.ts
-msgid "Blocked"
-msgstr "차단됨"
-
-#: src/pages/Board.tsx
-msgid "Board"
-msgstr "보드"
-
-#: src/pages/Board.tsx
-#: src/pages/Shell.tsx
-msgid "Boards"
-msgstr "보드"
-
-#: src/lib/ticket-status.ts
-msgid "Closed"
-msgstr "닫힘"
-
-#: src/pages/Board.tsx
-msgid "Comment"
-msgstr "댓글 남기기"
-
-#: src/pages/Board.tsx
-msgid "Could not create the ticket."
-msgstr "티켓을 만들지 못했습니다."
-
-#: src/pages/Board.tsx
-msgid "Could not load comments."
-msgstr "댓글을 불러오지 못했습니다."
-
-#: src/pages/Board.tsx
-msgid "Could not load the board."
-msgstr "보드를 불러오지 못했습니다."
-
-#: src/pages/Board.tsx
-msgid "Edit"
-msgstr "편집"
-
-#: src/lib/ticket-status.ts
-msgid "In progress"
-msgstr "진행 중"
-
-#: src/lib/ticket-status.ts
-msgid "In review"
-msgstr "검토 중"
-
-#: src/pages/Board.tsx
-msgid "Move ticket"
-msgstr "티켓 이동"
-
-#: src/pages/Board.tsx
-msgid "New ticket"
-msgstr "새 티켓"
-
-#: src/lib/ticket-priority.ts
-msgid "Normal"
-msgstr "보통"
-
-#: src/pages/Board.tsx
-msgid "Owner"
-msgstr "담당"
-
-#: src/pages/Board.tsx
-msgid "Priority"
-msgstr "우선순위"
-
-#: src/pages/Board.tsx
-msgid "Something went wrong."
-msgstr "문제가 발생했습니다."
-
-#: src/pages/Board.tsx
-msgid "Status"
-msgstr "상태"
-
-#: src/lib/ticket-status.ts
-msgid "To do"
-msgstr "할 일"
-
-#: src/lib/ticket-priority.ts
-msgid "Urgent"
-msgstr "긴급"
-
-#: src/pages/Board.tsx
-msgid "Could not move the ticket."
-msgstr "티켓을 옮기지 못했습니다."

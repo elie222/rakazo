@@ -15,12 +15,14 @@ const api = vi.hoisted(() => ({
     create: vi.fn(),
     comment: vi.fn(),
     comments: vi.fn(),
+    events: vi.fn(),
   },
 }));
 vi.mock("../lib/rpc", () => ({ rpc: api }));
 vi.mock("../lib/relative-time", () => ({ formatRelativeTime: () => "just now" }));
 vi.mock("@lingui/react/macro", () => {
-  const t = (parts: TemplateStringsArray) => parts.join("");
+  const t = (parts: TemplateStringsArray, ...values: unknown[]) =>
+    parts.reduce((text, part, index) => text + part + String(values[index] ?? ""), "");
   return { useLingui: () => ({ t }), Trans: ({ children }: { children: ReactNode }) => children };
 });
 vi.mock("@rakazo/chat-ui/web", () => ({
@@ -32,7 +34,9 @@ vi.mock("@rakazo/ui-web", () => {
   const Container = ({ children }: { children?: ReactNode }) => <div>{children}</div>;
   return {
     Badge: Container,
-    BotAvatar: () => <span />,
+    BotAvatar: ({ status }: { status?: string }) => (
+      <span data-testid="bot-avatar" data-status={status} />
+    ),
     Button: (props: ComponentProps<"button">) => <button {...props} />,
     Dialog: Container,
     DialogContent: Container,
@@ -110,6 +114,8 @@ function ticket(
     ref,
     title,
     description,
+    acceptanceCriteria: [] as { text: string; done: boolean }[],
+    statusChangedAt: new Date().toISOString(),
     status,
     priority: null,
     assigneeBotId,
@@ -160,13 +166,14 @@ function boardStub() {
   };
 }
 
-it("renders readable status columns with tickets and a collapsed closed column", async () => {
+it("renders readable status columns with tickets and collapsed done and won't-do columns", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   api.boards.list.mockResolvedValue([boardStub()]);
   api.bots.list.mockResolvedValue([bot("bot-1", "Helper")]);
   api.tickets.list.mockResolvedValue({
     tickets: [ticket("Fix the thing", "ticket-1", "todo", "RAK-1", "bot-1")],
-    workingBotIds: [],
+    workingTicketIds: [],
+    botIssues: [],
   });
   const page = await renderBoard();
   try {
@@ -181,14 +188,19 @@ it("renders readable status columns with tickets and a collapsed closed column",
 
     const closed = page.container.querySelector("[data-testid='board-column-closed']");
     expect(closed?.getAttribute("data-collapsed")).toBe("true");
-    expect(closed?.textContent).toContain("Closed");
+    expect(closed?.textContent).toContain("Won't do");
+    expect(
+      page.container
+        .querySelector("[data-testid='board-column-done']")
+        ?.getAttribute("data-collapsed"),
+    ).toBe("true");
   } finally {
     await page.cleanup();
     vi.unstubAllGlobals();
   }
 });
 
-it("shows a work indicator on cards owned by a bot running a ticket wake", async () => {
+it("shows the work indicator only on the ticket the bot is working on", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   api.boards.list.mockResolvedValue([boardStub()]);
   api.bots.list.mockResolvedValue([bot("bot-1", "Helper"), bot("bot-2", "Idle")]);
@@ -196,8 +208,11 @@ it("shows a work indicator on cards owned by a bot running a ticket wake", async
     tickets: [
       ticket("Working thing", "ticket-1", "todo", "RAK-1", "bot-1"),
       ticket("Waiting thing", "ticket-2", "todo", "RAK-2", "bot-2"),
+      // Same bot, but not the ticket it is on: must not spin.
+      ticket("Queued thing", "ticket-3", "todo", "RAK-3", "bot-1"),
     ],
-    workingBotIds: ["bot-1"],
+    workingTicketIds: ["ticket-1"],
+    botIssues: [],
   });
   const page = await renderBoard();
   try {
@@ -205,6 +220,16 @@ it("shows a work indicator on cards owned by a bot running a ticket wake", async
     const workingCards = page.container.querySelectorAll("[data-testid='ticket-working']");
     expect(cards.length).toBe(1);
     expect(workingCards.length).toBe(1);
+    // The avatar's own spinner follows the bot's status for any active run (even one
+    // parked on a person), so the board must not feed it or every card would spin.
+    for (const avatar of page.container.querySelectorAll("[data-testid='bot-avatar']")) {
+      expect(avatar.getAttribute("data-status")).toBeNull();
+    }
+    expect(
+      page.container
+        .querySelector("[data-testid='board-card-ticket-1']")
+        ?.querySelector("[data-testid='ticket-working']"),
+    ).toBeTruthy();
     expect(workingCards[0]?.getAttribute("aria-label")).toContain("is working");
   } finally {
     await page.cleanup();
@@ -219,7 +244,8 @@ it("renders the ticket description and comments as markdown and toggles editing"
   api.bots.list.mockResolvedValue([bot("bot-1", "Helper")]);
   api.tickets.list.mockResolvedValue({
     tickets: [ticket("Fix the thing", "ticket-1", "todo", "RAK-1", "bot-1", description)],
-    workingBotIds: [],
+    workingTicketIds: [],
+    botIssues: [],
   });
   api.tickets.comments.mockResolvedValue([
     {
@@ -271,7 +297,8 @@ it("drops the status field from the new-ticket form and flags urgent tickets", a
       { ...ticket("Urgent thing", "ticket-1", "todo", "RAK-1", "bot-1"), priority: "urgent" },
       { ...ticket("Plain thing", "ticket-2", "todo", "RAK-2", "bot-1"), priority: "normal" },
     ],
-    workingBotIds: [],
+    workingTicketIds: [],
+    botIssues: [],
   });
   const page = await renderBoard();
   try {
@@ -294,7 +321,7 @@ it("expands the closed column and remembers the choice", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   api.boards.list.mockResolvedValue([boardStub()]);
   api.bots.list.mockResolvedValue([bot("bot-1", "Helper")]);
-  api.tickets.list.mockResolvedValue({ tickets: [], workingBotIds: [] });
+  api.tickets.list.mockResolvedValue({ tickets: [], workingTicketIds: [], botIssues: [] });
   const page = await renderBoard();
   try {
     const collapsed = page.container.querySelector<HTMLButtonElement>(
@@ -317,7 +344,7 @@ it("reloads the board name when a live update arrives", async () => {
     .mockResolvedValueOnce([boardStub()])
     .mockResolvedValue([{ ...boardStub(), name: "Launch" }]);
   api.bots.list.mockResolvedValue([bot("bot-1", "Helper")]);
-  api.tickets.list.mockResolvedValue({ tickets: [], workingBotIds: [] });
+  api.tickets.list.mockResolvedValue({ tickets: [], workingTicketIds: [], botIssues: [] });
   const page = await renderBoard({
     [Symbol.asyncIterator]() {
       let sent = false;
@@ -359,7 +386,7 @@ it("keeps the newer board name when an older reload finishes last", async () => 
       }),
   );
   api.bots.list.mockResolvedValue([bot("bot-1", "Helper")]);
-  api.tickets.list.mockResolvedValue({ tickets: [], workingBotIds: [] });
+  api.tickets.list.mockResolvedValue({ tickets: [], workingTicketIds: [], botIssues: [] });
   const page = await renderBoard({
     [Symbol.asyncIterator]() {
       const events = [{ spaceId: "space-1" }, { spaceId: "space-1" }];
@@ -398,7 +425,8 @@ it("shows an error instead of failing silently when moving a ticket is rejected"
   api.bots.list.mockResolvedValue([bot("bot-1", "Helper")]);
   api.tickets.list.mockResolvedValue({
     tickets: [ticket("Fix the thing", "ticket-1", "todo", "RAK-1", "bot-1")],
-    workingBotIds: [],
+    workingTicketIds: [],
+    botIssues: [],
   });
   api.tickets.update.mockRejectedValue(new Error("Ticket is locked"));
   const page = await renderBoard();
@@ -412,6 +440,225 @@ it("shows an error instead of failing silently when moving a ticket is rejected"
     expect(page.container.querySelector("[role='alert']")?.textContent).toBe("Ticket is locked");
     // The board stays visible; the error does not replace it.
     expect(page.container.textContent).toContain("Fix the thing");
+  } finally {
+    await page.cleanup();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("remembers expanding the done column separately", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  api.boards.list.mockResolvedValue([boardStub()]);
+  api.bots.list.mockResolvedValue([bot("bot-1", "Helper")]);
+  api.tickets.list.mockResolvedValue({ tickets: [], workingTicketIds: [], botIssues: [] });
+  const page = await renderBoard();
+  try {
+    await act(async () =>
+      page.container.querySelector<HTMLButtonElement>("[data-testid='board-column-done']")?.click(),
+    );
+    expect(window.localStorage.getItem("rakazo:board-done-collapsed")).toBe("open");
+    expect(window.localStorage.getItem("rakazo:board-closed-collapsed")).toBeNull();
+    expect(
+      page.container
+        .querySelector("[data-testid='board-column-closed']")
+        ?.getAttribute("data-collapsed"),
+    ).toBe("true");
+  } finally {
+    await page.cleanup();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("shows criteria progress, a failing-bot marker and an over-limit warning", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  api.boards.list.mockResolvedValue([boardStub()]);
+  api.bots.list.mockResolvedValue([bot("bot-1", "Helper")]);
+  const withCriteria = {
+    ...ticket("Checklist", "ticket-1", "todo", "RAK-1", "bot-1"),
+    acceptanceCriteria: [
+      { text: "A", done: true },
+      { text: "B", done: false },
+    ],
+  };
+  api.tickets.list.mockResolvedValue({
+    tickets: [
+      withCriteria,
+      ...[2, 3, 4, 5].map((n) => ticket(`Doing ${n}`, `ticket-${n}`, "doing", `RAK-${n}`, "bot-1")),
+    ],
+    workingTicketIds: [],
+    botIssues: [
+      { botId: "bot-1", message: "Computer image missing", at: new Date().toISOString() },
+    ],
+  });
+  const page = await renderBoard();
+  try {
+    const card = page.container.querySelector("[data-testid='board-card-ticket-1']");
+    expect(card?.querySelector("[data-testid='ticket-criteria-progress']")?.textContent).toContain(
+      "1/2",
+    );
+    expect(card?.querySelector("[data-testid='ticket-bot-issue']")?.getAttribute("title")).toBe(
+      "Computer image missing",
+    );
+    expect(page.container.querySelectorAll("[data-testid='ticket-wip-warning']").length).toBe(4);
+  } finally {
+    await page.cleanup();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("asks for a reason before moving to blocked, and sends it", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  api.boards.list.mockResolvedValue([boardStub()]);
+  api.bots.list.mockResolvedValue([bot("bot-1", "Helper")]);
+  api.tickets.list.mockResolvedValue({
+    tickets: [ticket("Fix the thing", "ticket-1", "doing", "RAK-1", "bot-1")],
+    workingTicketIds: [],
+    botIssues: [],
+  });
+  api.tickets.update.mockReset();
+  api.tickets.update.mockResolvedValue(undefined);
+  const page = await renderBoard();
+  try {
+    const item = [...page.container.querySelectorAll<HTMLElement>("[role='menuitem']")].find((el) =>
+      el.textContent?.includes("Blocked"),
+    );
+    await act(async () => item?.click());
+    expect(api.tickets.update).not.toHaveBeenCalled();
+    const input = page.container.querySelector<HTMLTextAreaElement>(
+      "[data-testid='move-reason-input']",
+    );
+    expect(input).toBeTruthy();
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set;
+      setter?.call(input, "Waiting on API");
+      input?.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => input?.closest("form")?.requestSubmit());
+    expect(api.tickets.update).toHaveBeenCalledWith({
+      id: "ticket-1",
+      status: "blocked",
+      reason: "Waiting on API",
+    });
+  } finally {
+    await page.cleanup();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("lists checkable criteria and the ticket history in the detail", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  api.boards.list.mockResolvedValue([boardStub()]);
+  api.bots.list.mockResolvedValue([bot("bot-1", "Helper")]);
+  api.tickets.list.mockResolvedValue({
+    tickets: [
+      {
+        ...ticket("Fix the thing", "ticket-1", "doing", "RAK-1", "bot-1"),
+        acceptanceCriteria: [{ text: "Deployed", done: false }],
+      },
+    ],
+    workingTicketIds: [],
+    botIssues: [],
+  });
+  api.tickets.comments.mockResolvedValue([]);
+  api.tickets.events.mockResolvedValue([
+    {
+      id: "e1",
+      ticketId: "ticket-1",
+      type: "status_changed",
+      actorBotId: "bot-1",
+      actorUserId: null,
+      data: { from: "todo", to: "doing" },
+      createdAt: new Date().toISOString(),
+    },
+  ]);
+  api.tickets.update.mockReset();
+  api.tickets.update.mockResolvedValue(undefined);
+  const page = await renderBoard();
+  try {
+    await act(async () =>
+      page.container
+        .querySelector<HTMLButtonElement>("[data-testid='board-card-ticket-1']")
+        ?.click(),
+    );
+    await act(async () =>
+      page.container
+        .querySelector<HTMLButtonElement>("[data-testid='ticket-criterion-0']")
+        ?.click(),
+    );
+    expect(api.tickets.update).toHaveBeenCalledWith({
+      id: "ticket-1",
+      acceptanceCriteria: [{ text: "Deployed", done: true }],
+    });
+    await act(async () =>
+      page.container
+        .querySelector<HTMLButtonElement>("[data-testid='ticket-tab-history']")
+        ?.click(),
+    );
+    expect(page.container.querySelector("[data-testid='ticket-history']")?.textContent).toContain(
+      "Helper moved it from To do to In progress",
+    );
+  } finally {
+    await page.cleanup();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("edits description and criteria as markdown and renders them after saving", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  api.boards.list.mockResolvedValue([boardStub()]);
+  api.bots.list.mockResolvedValue([bot("bot-1", "Helper")]);
+  api.tickets.list.mockResolvedValue({
+    tickets: [
+      {
+        ...ticket("Fix the thing", "ticket-1", "todo", "RAK-1", "bot-1", "**bold** text"),
+        acceptanceCriteria: [{ text: "Has `code`", done: false }],
+      },
+    ],
+    workingTicketIds: [],
+    botIssues: [],
+  });
+  api.tickets.comments.mockResolvedValue([]);
+  api.tickets.events.mockResolvedValue([]);
+  api.tickets.update.mockReset();
+  api.tickets.update.mockResolvedValue(undefined);
+  const page = await renderBoard();
+  try {
+    await act(async () =>
+      page.container
+        .querySelector<HTMLButtonElement>("[data-testid='board-card-ticket-1']")
+        ?.click(),
+    );
+    // Viewing: both fields go through the markdown renderer.
+    expect(page.container.querySelector("[data-testid='ticket-criteria']")?.innerHTML).toContain(
+      "chat-markdown",
+    );
+    await act(async () =>
+      page.container
+        .querySelector<HTMLButtonElement>("[data-testid='ticket-description-edit']")
+        ?.click(),
+    );
+    // Editing: raw markdown source, not rendered.
+    const input = page.container.querySelector<HTMLTextAreaElement>(
+      "[data-testid='ticket-description-input']",
+    );
+    expect(input?.value).toBe("**bold** text");
+    expect(
+      page.container.querySelector<HTMLTextAreaElement>("[data-testid='ticket-criteria-input']")
+        ?.value,
+    ).toBe("Has `code`");
+    await act(async () =>
+      page.container
+        .querySelector<HTMLButtonElement>("[data-testid='ticket-description-save']")
+        ?.click(),
+    );
+    expect(api.tickets.update).toHaveBeenCalledWith({
+      id: "ticket-1",
+      title: "Fix the thing",
+      description: "**bold** text",
+      acceptanceCriteria: ["Has `code`"],
+    });
+    expect(page.container.querySelector("[data-testid='ticket-description-input']")).toBeNull();
+    expect(page.container.querySelector("[data-testid='ticket-description']")).toBeTruthy();
   } finally {
     await page.cleanup();
     vi.unstubAllGlobals();

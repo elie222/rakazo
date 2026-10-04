@@ -64,6 +64,17 @@ msgstr "{0} default"
 msgid "{0} handling"
 msgstr "{0} handling"
 
+#. placeholder {0}: assignee.name
+#: src/pages/Board.tsx
+msgid "{0} has more than {TICKET_WIP_LIMIT} tickets in progress"
+msgstr "{0} has more than {TICKET_WIP_LIMIT} tickets in progress"
+
+#. placeholder {0}: assignee.name
+#. placeholder {0}: owner.name
+#: src/pages/Board.tsx
+msgid "{0} is working"
+msgstr "{0} is working"
+
 #. placeholder {0}: format(size / 1024)
 #: src/components/ArtifactFileCard.tsx
 msgid "{0} KB"
@@ -95,9 +106,57 @@ msgstr "{0} will still respond to direct mentions."
 msgid "{0}'s screen"
 msgstr "{0}'s screen"
 
+#: src/pages/Board.tsx
+msgid "{actor} changed priority from {fromLabel} to {toLabel}"
+msgstr "{actor} changed priority from {fromLabel} to {toLabel}"
+
+#: src/pages/Board.tsx
+msgid "{actor} checked \"{text}\""
+msgstr "{actor} checked \"{text}\""
+
+#: src/pages/Board.tsx
+msgid "{actor} commented"
+msgstr "{actor} commented"
+
+#: src/pages/Board.tsx
+msgid "{actor} created the ticket"
+msgstr "{actor} created the ticket"
+
+#: src/pages/Board.tsx
+msgid "{actor} edited the acceptance criteria"
+msgstr "{actor} edited the acceptance criteria"
+
+#: src/pages/Board.tsx
+msgid "{actor} edited the description"
+msgstr "{actor} edited the description"
+
+#: src/pages/Board.tsx
+msgid "{actor} moved it from {fromLabel} to {toLabel}"
+msgstr "{actor} moved it from {fromLabel} to {toLabel}"
+
+#: src/pages/Board.tsx
+msgid "{actor} overrode the open criteria: {reason}"
+msgstr "{actor} overrode the open criteria: {reason}"
+
+#: src/pages/Board.tsx
+msgid "{actor} reassigned it from {fromChip} to {toChip}"
+msgstr "{actor} reassigned it from {fromChip} to {toChip}"
+
+#: src/pages/Board.tsx
+msgid "{actor} renamed it to \"{title}\""
+msgstr "{actor} renamed it to \"{title}\""
+
+#: src/pages/Board.tsx
+msgid "{actor} unchecked \"{text}\""
+msgstr "{actor} unchecked \"{text}\""
+
 #: src/pages/Shell.tsx
 msgid "{botName}’s computer"
 msgstr "{botName}’s computer"
+
+#: src/pages/Board.tsx
+msgid "{columnDays}d"
+msgstr "{columnDays}d"
 
 #: src/lib/relative-time.ts
 #: src/pages/ActivityList.tsx
@@ -170,6 +229,10 @@ msgstr "@{0}"
 msgid "A bit of everything"
 msgstr "A bit of everything"
 
+#: src/pages/Board.tsx
+msgid "A bot"
+msgstr "A bot"
+
 #. placeholder {0}: oauth.verificationUri.replace(/^https:\/\//, "")
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
@@ -183,6 +246,14 @@ msgstr "About groups"
 #: src/pages/shell/bot-picker.tsx
 msgid "About spaces"
 msgstr "About spaces"
+
+#: src/pages/Board.tsx
+msgid "Acceptance criteria"
+msgstr "Acceptance criteria"
+
+#: src/pages/Board.tsx
+msgid "Acceptance criteria (one per line, Markdown supported)"
+msgstr "Acceptance criteria (one per line, Markdown supported)"
 
 #: src/components/integrations/IntegrationSetup.tsx
 msgid "Access token"
@@ -242,6 +313,10 @@ msgstr "Activity"
 msgid "Add"
 msgstr "Add"
 
+#: src/pages/Board.tsx
+msgid "Add a comment"
+msgstr "Add a comment"
+
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Add a model in Settings to use this."
 msgstr "Add a model in Settings to use this."
@@ -273,6 +348,10 @@ msgstr "Add an HTTPS server URL."
 #: src/pages/PluginsOverlay.tsx
 msgid "Add another"
 msgstr "Add another"
+
+#: src/pages/shell/bot-credentials.tsx
+msgid "Add credential"
+msgstr "Add credential"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Add Executor"
@@ -327,6 +406,7 @@ msgstr "Add trigger"
 msgid "Added"
 msgstr "Added"
 
+#: src/pages/Board.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Adding…"
@@ -428,98 +508,6 @@ msgstr "Answer"
 #: src/components/AskCard.tsx
 msgid "Answered"
 msgstr "Answered"
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Add credential"
-msgstr "Add credential"
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Basic auth"
-msgstr "Basic auth"
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Basic auth ({username})"
-msgstr "Basic auth ({username})"
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Could not load credentials."
-msgstr "Could not load credentials."
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Could not remove the credential"
-msgstr "Could not remove the credential"
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Could not save the credential"
-msgstr "Could not save the credential"
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Credentials"
-msgstr "Credentials"
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Custom header"
-msgstr "Custom header"
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Enter a username and password"
-msgstr "Enter a username and password"
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Header \"{header}\""
-msgstr "Header \"{header}\""
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Keys and passwords this bot can use, each for one site only. Values are encrypted and never shown again."
-msgstr "Keys and passwords this bot can use, each for one site only. Values are encrypted and never shown again."
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Lowercase letters, numbers, hyphens and underscores, starting with a letter."
-msgstr "Lowercase letters, numbers, hyphens and underscores, starting with a letter."
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "No credentials saved for this bot."
-msgstr "No credentials saved for this bot."
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Remove {secretName}? This bot will no longer be able to use it."
-msgstr "Remove {secretName}? This bot will no longer be able to use it."
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Replace value"
-msgstr "Replace value"
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Save credential"
-msgstr "Save credential"
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Save new value"
-msgstr "Save new value"
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Site"
-msgstr "Site"
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "These saved settings can't be read. Remove it and add it again."
-msgstr "These saved settings can't be read. Remove it and add it again."
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Type"
-msgstr "Type"
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Updated {updated}"
-msgstr "Updated {updated}"
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Value"
-msgstr "Value"
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Website login"
-msgstr "Website login"
 
 #. placeholder {0}: selectedAskActionLabel(answer, actions)
 #: src/components/AskCard.tsx
@@ -696,10 +684,32 @@ msgstr "Back to sign in"
 msgid "Base URL"
 msgstr "Base URL"
 
+#: src/pages/shell/bot-credentials.tsx
+msgid "Basic auth"
+msgstr "Basic auth"
+
+#: src/pages/shell/bot-credentials.tsx
+msgid "Basic auth ({username})"
+msgstr "Basic auth ({username})"
+
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 #: src/pages/PluginsOverlay.tsx
+#: src/pages/shell/bot-credentials.tsx
 msgid "Bearer token"
 msgstr "Bearer token"
+
+#: src/lib/ticket-status.ts
+msgid "Blocked"
+msgstr "Blocked"
+
+#: src/pages/Board.tsx
+msgid "Board"
+msgstr "Board"
+
+#: src/pages/Board.tsx
+#: src/pages/Shell.tsx
+msgid "Boards"
+msgstr "Boards"
 
 #: src/pages/Shell.tsx
 msgid "Booting live desktop…"
@@ -714,6 +724,7 @@ msgstr "Booting up {0}’s computer"
 msgid "bot"
 msgstr "bot"
 
+#: src/pages/Board.tsx
 #: src/pages/IntegrationSetup.tsx
 #: src/pages/Shell.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
@@ -738,6 +749,7 @@ msgid "Bot to link"
 msgstr "Bot to link"
 
 #: src/pages/Artifacts.tsx
+#: src/pages/Board.tsx
 msgid "Bots"
 msgstr "Bots"
 
@@ -766,10 +778,12 @@ msgstr "Can't reach the server."
 #: src/components/ComputerUpdateProgress.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
 #: src/pages/Artifacts.tsx
+#: src/pages/Board.tsx
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/PluginsOverlay.tsx
+#: src/pages/shell/bot-credentials.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Cancel"
 msgstr "Cancel"
@@ -996,6 +1010,14 @@ msgstr "Coming soon"
 #: src/pages/McpServersOverlay.tsx
 msgid "Command"
 msgstr "Command"
+
+#: src/pages/Board.tsx
+msgid "Comment"
+msgstr "Comment"
+
+#: src/pages/Board.tsx
+msgid "Comments"
+msgstr "Comments"
 
 #: src/pages/ScratchpadSection.tsx
 msgid "Complete"
@@ -1247,6 +1269,10 @@ msgstr "Could not create section"
 msgid "Could not create space"
 msgstr "Could not create space"
 
+#: src/pages/Board.tsx
+msgid "Could not create the ticket."
+msgstr "Could not create the ticket."
+
 #: src/pages/Onboarding.tsx
 msgid "Could not create your bot"
 msgstr "Could not create your bot"
@@ -1344,6 +1370,14 @@ msgstr "Could not load bots. Reload to try again."
 msgid "Could not load commands"
 msgstr "Could not load commands"
 
+#: src/pages/Board.tsx
+msgid "Could not load comments."
+msgstr "Could not load comments."
+
+#: src/pages/shell/bot-credentials.tsx
+msgid "Could not load credentials."
+msgstr "Could not load credentials."
+
 #: src/components/integrations/IntegrationSetup.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not load integrations"
@@ -1365,6 +1399,10 @@ msgstr "Could not load run history"
 msgid "Could not load skill"
 msgstr "Could not load skill"
 
+#: src/pages/Board.tsx
+msgid "Could not load the board."
+msgstr "Could not load the board."
+
 #: src/pages/Artifacts.tsx
 msgid "Could not load this artifact."
 msgstr "Could not load this artifact."
@@ -1384,6 +1422,10 @@ msgstr "Could not load update status"
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Could not load voice settings"
 msgstr "Could not load voice settings"
+
+#: src/pages/Board.tsx
+msgid "Could not move the ticket."
+msgstr "Could not move the ticket."
 
 #: src/components/computer/FilesApp.tsx
 msgid "Could not open file"
@@ -1426,6 +1468,10 @@ msgstr "Could not remove group"
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Could not remove rule"
 msgstr "Could not remove rule"
+
+#: src/pages/shell/bot-credentials.tsx
+msgid "Could not remove the credential"
+msgstr "Could not remove the credential"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not rename connection"
@@ -1492,6 +1538,10 @@ msgstr "Could not save that speech model"
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Could not save that voice"
 msgstr "Could not save that voice"
+
+#: src/pages/shell/bot-credentials.tsx
+msgid "Could not save the credential"
+msgstr "Could not save the credential"
 
 #: src/pages/shell/message-cards.tsx
 msgid "Could not save this choice"
@@ -1561,6 +1611,7 @@ msgstr "Couldn't update avatars"
 msgid "Couldn't update messaging settings"
 msgstr "Couldn't update messaging settings"
 
+#: src/pages/Board.tsx
 #: src/pages/Shell.tsx
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/shell/dialogs.tsx
@@ -1610,6 +1661,7 @@ msgstr "Create your Rakazo"
 msgid "Created"
 msgstr "Created"
 
+#: src/pages/Board.tsx
 #: src/pages/GroupPanel.tsx
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/shell/dialogs.tsx
@@ -1624,6 +1676,10 @@ msgstr "Credential"
 #: src/pages/PluginsOverlay.tsx
 msgid "credential saved"
 msgstr "credential saved"
+
+#: src/pages/shell/bot-credentials.tsx
+msgid "Credentials"
+msgstr "Credentials"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Credentials are encrypted and never sent to the model."
@@ -1640,6 +1696,10 @@ msgstr "Cron expression"
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Current password"
 msgstr "Current password"
+
+#: src/pages/shell/bot-credentials.tsx
+msgid "Custom header"
+msgstr "Custom header"
 
 #: src/pages/shell/dialogs.tsx
 msgid "Customer support"
@@ -1758,9 +1818,14 @@ msgstr "Deployment default"
 msgid "Describe what this bot does"
 msgstr "Describe what this bot does"
 
+#: src/pages/Board.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Description"
 msgstr "Description"
+
+#: src/pages/Board.tsx
+msgid "Description (Markdown supported)"
+msgstr "Description (Markdown supported)"
 
 #: src/components/DesktopUpdates.tsx
 msgid "Desktop app"
@@ -1826,6 +1891,7 @@ msgstr "Docker limits access to your computer for added security. Using {hostLab
 msgid "Don’t have an account?"
 msgstr "Don’t have an account?"
 
+#: src/lib/ticket-status.ts
 #: src/pages/ActivityList.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Done"
@@ -1879,6 +1945,10 @@ msgstr "e.g. Hivenet Agent, Presales, Timesheets bot"
 msgid "Earlier message"
 msgstr "Earlier message"
 
+#: src/pages/Board.tsx
+msgid "Edit"
+msgstr "Edit"
+
 #: src/components/AskCard.tsx
 msgid "Edit first"
 msgstr "Edit first"
@@ -1894,6 +1964,10 @@ msgstr "Email"
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Engage when... Ignore..."
 msgstr "Engage when... Ignore..."
+
+#: src/pages/shell/bot-credentials.tsx
+msgid "Enter a username and password"
+msgstr "Enter a username and password"
 
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
@@ -1970,13 +2044,13 @@ msgstr "Export this week's list from the CRM and drop it in the shared folder"
 msgid "External conversation"
 msgstr "External conversation"
 
-#. js-lingui-explicit-id
-#: src/lib/model-catalog.ts
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/Onboarding.tsx
 msgid "Extra high"
 msgstr "Extra high"
 
-#: src/pages/ModelSettingsOverlay.tsx
-#: src/pages/Onboarding.tsx
+#. js-lingui-explicit-id
+#: src/lib/model-catalog.ts
 msgid "Extra high"
 msgstr "Extra high"
 
@@ -2119,8 +2193,13 @@ msgstr "Hang up, then enter the code on screen."
 msgid "header"
 msgstr "header"
 
+#: src/pages/shell/bot-credentials.tsx
+msgid "Header \"{header}\""
+msgstr "Header \"{header}\""
+
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
+#: src/pages/shell/bot-credentials.tsx
 msgid "Header name"
 msgstr "Header name"
 
@@ -2148,15 +2227,20 @@ msgstr "Hide password"
 msgid "Hide transcript"
 msgstr "Hide transcript"
 
+#: src/lib/ticket-priority.ts
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/Onboarding.tsx
+msgid "High"
+msgstr "High"
+
 #. js-lingui-explicit-id
 #: src/lib/model-catalog.ts
 msgid "High"
 msgstr "High"
 
-#: src/pages/ModelSettingsOverlay.tsx
-#: src/pages/Onboarding.tsx
-msgid "High"
-msgstr "High"
+#: src/pages/Board.tsx
+msgid "History"
+msgstr "History"
 
 #: src/pages/RoutineSchedule.tsx
 msgid "hour"
@@ -2194,6 +2278,18 @@ msgstr "Image upload area"
 #: src/pages/PluginsOverlay.tsx
 msgid "Import OpenAPI JSON"
 msgstr "Import OpenAPI JSON"
+
+#: src/lib/ticket-status.ts
+msgid "In progress"
+msgstr "In progress"
+
+#: src/lib/ticket-status.ts
+msgid "In review"
+msgstr "In review"
+
+#: src/pages/Board.tsx
+msgid "In this column for {columnDays} days"
+msgstr "In this column for {columnDays} days"
 
 #: src/pages/shell/message-cards.tsx
 msgid "Inbox & email"
@@ -2285,6 +2381,10 @@ msgstr "Keep memories"
 msgid "key"
 msgstr "key"
 
+#: src/pages/shell/bot-credentials.tsx
+msgid "Keys and passwords this bot can use, each for one site only. Values are encrypted and never shown again."
+msgstr "Keys and passwords this bot can use, each for one site only. Values are encrypted and never shown again."
+
 #: src/pages/KnowledgeSection.tsx
 msgid "Knowledge"
 msgstr "Knowledge"
@@ -2375,6 +2475,7 @@ msgstr "Loading voice providers…"
 
 #: src/App.tsx
 #: src/pages/Artifacts.tsx
+#: src/pages/Board.tsx
 #: src/pages/IntegrationSetup.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/PeerMessagesOverlay.tsx
@@ -2399,15 +2500,20 @@ msgstr "Local Server Settings"
 msgid "Log out"
 msgstr "Log out"
 
+#: src/lib/ticket-priority.ts
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/Onboarding.tsx
+msgid "Low"
+msgstr "Low"
+
 #. js-lingui-explicit-id
 #: src/lib/model-catalog.ts
 msgid "Low"
 msgstr "Low"
 
-#: src/pages/ModelSettingsOverlay.tsx
-#: src/pages/Onboarding.tsx
-msgid "Low"
-msgstr "Low"
+#: src/pages/shell/bot-credentials.tsx
+msgid "Lowercase letters, numbers, hyphens and underscores, starting with a letter."
+msgstr "Lowercase letters, numbers, hyphens and underscores, starting with a letter."
 
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Make sure nothing is still running on this computer."
@@ -2441,13 +2547,13 @@ msgstr "Mark as Read"
 msgid "Mark as Unread"
 msgstr "Mark as Unread"
 
-#. js-lingui-explicit-id
-#: src/lib/model-catalog.ts
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/Onboarding.tsx
 msgid "Max"
 msgstr "Max"
 
-#: src/pages/ModelSettingsOverlay.tsx
-#: src/pages/Onboarding.tsx
+#. js-lingui-explicit-id
+#: src/lib/model-catalog.ts
 msgid "Max"
 msgstr "Max"
 
@@ -2473,13 +2579,13 @@ msgstr "MCP endpoint"
 msgid "MCP servers"
 msgstr "MCP servers"
 
-#. js-lingui-explicit-id
-#: src/lib/model-catalog.ts
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/Onboarding.tsx
 msgid "Medium"
 msgstr "Medium"
 
-#: src/pages/ModelSettingsOverlay.tsx
-#: src/pages/Onboarding.tsx
+#. js-lingui-explicit-id
+#: src/lib/model-catalog.ts
 msgid "Medium"
 msgstr "Medium"
 
@@ -2551,13 +2657,13 @@ msgstr "Messaging"
 msgid "Microphone failed"
 msgstr "Microphone failed"
 
-#. js-lingui-explicit-id
-#: src/lib/model-catalog.ts
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/Onboarding.tsx
 msgid "Minimal"
 msgstr "Minimal"
 
-#: src/pages/ModelSettingsOverlay.tsx
-#: src/pages/Onboarding.tsx
+#. js-lingui-explicit-id
+#: src/lib/model-catalog.ts
 msgid "Minimal"
 msgstr "Minimal"
 
@@ -2627,13 +2733,26 @@ msgstr "More"
 msgid "More computer actions"
 msgstr "More computer actions"
 
+#: src/pages/Board.tsx
+msgid "Move"
+msgstr "Move"
+
 #: src/pages/shell/dialogs.tsx
 msgid "Move them to your shared memory."
 msgstr "Move them to your shared memory."
 
+#: src/pages/Board.tsx
+msgid "Move ticket"
+msgstr "Move ticket"
+
 #: src/pages/BotContextMenu.tsx
 msgid "Move to"
 msgstr "Move to"
+
+#. placeholder {0}: labels[pending.status]
+#: src/pages/Board.tsx
+msgid "Move to {0}"
+msgstr "Move to {0}"
 
 #: src/components/call/CallCard.tsx
 msgid "Mute"
@@ -2643,6 +2762,7 @@ msgstr "Mute"
 #: src/pages/Auth.tsx
 #: src/pages/GroupPanel.tsx
 #: src/pages/RoutineEditor.tsx
+#: src/pages/shell/bot-credentials.tsx
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Name"
@@ -2702,6 +2822,10 @@ msgstr "New skill"
 msgid "New space"
 msgstr "New space"
 
+#: src/pages/Board.tsx
+msgid "New ticket"
+msgstr "New ticket"
+
 #: src/pages/MessagingSettingsOverlay.tsx
 msgid "No agent connections yet."
 msgstr "No agent connections yet."
@@ -2738,9 +2862,17 @@ msgstr "No bots match"
 msgid "No chat apps linked yet."
 msgstr "No chat apps linked yet."
 
+#: src/pages/shell/bot-credentials.tsx
+msgid "No credentials saved for this bot."
+msgstr "No credentials saved for this bot."
+
 #: src/pages/MessagingSettingsOverlay.tsx
 msgid "No group chats yet."
 msgstr "No group chats yet."
+
+#: src/pages/Board.tsx
+msgid "No history yet"
+msgstr "No history yet"
 
 #: src/components/AskCard.tsx
 msgid "No longer active"
@@ -2807,9 +2939,18 @@ msgstr "No tools available."
 msgid "No trigger"
 msgstr "No trigger"
 
+#: src/pages/Board.tsx
+msgid "nobody"
+msgstr "nobody"
+
+#: src/pages/Board.tsx
 #: src/pages/ScratchpadSection.tsx
 msgid "None yet"
 msgstr "None yet"
+
+#: src/lib/ticket-priority.ts
+msgid "Normal"
+msgstr "Normal"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Not in the plugin catalog"
@@ -2869,6 +3010,10 @@ msgstr "On a schedule"
 #: src/pages/RoutineSchedule.tsx
 msgid "on the 1st at {0}"
 msgstr "on the 1st at {0}"
+
+#: src/pages/Board.tsx
+msgid "One criterion per line (Markdown supported)"
+msgstr "One criterion per line (Markdown supported)"
 
 #: src/pages/Shell.tsx
 msgid "Only empty spaces can be deleted. Delete its bots and groups first."
@@ -2964,6 +3109,14 @@ msgstr "Organization API key"
 msgid "Other model…"
 msgstr "Other model…"
 
+#: src/pages/Board.tsx
+msgid "over limit"
+msgstr "over limit"
+
+#: src/pages/Board.tsx
+msgid "Owner"
+msgstr "Owner"
+
 #: src/pages/RoutineEditor.tsx
 msgid "PagerDuty incident"
 msgstr "PagerDuty incident"
@@ -2975,6 +3128,7 @@ msgstr "Park"
 #: src/components/AskCard.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Auth.tsx
+#: src/pages/shell/bot-credentials.tsx
 msgid "Password"
 msgstr "Password"
 
@@ -3029,6 +3183,10 @@ msgstr "Preview {0}"
 msgid "Preview isn't available for this file type — download it to view it."
 msgstr "Preview isn't available for this file type — download it to view it."
 
+#: src/pages/Board.tsx
+msgid "Priority"
+msgstr "Priority"
+
 #: src/pages/shell/bot-panel.tsx
 msgid "Private"
 msgstr "Private"
@@ -3082,6 +3240,10 @@ msgstr "Read replies aloud"
 #: src/pages/KnowledgeSection.tsx
 msgid "read-only"
 msgstr "read-only"
+
+#: src/pages/Board.tsx
+msgid "Reason"
+msgstr "Reason"
 
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
@@ -3183,6 +3345,7 @@ msgstr "Release interrupted computer?"
 #: src/components/ApprovalRulesSettings.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/ScratchpadSection.tsx
+#: src/pages/shell/bot-credentials.tsx
 msgid "Remove"
 msgstr "Remove"
 
@@ -3190,6 +3353,10 @@ msgstr "Remove"
 #: src/pages/Shell.tsx
 msgid "Remove {0}"
 msgstr "Remove {0}"
+
+#: src/pages/shell/bot-credentials.tsx
+msgid "Remove {secretName}? This bot will no longer be able to use it."
+msgstr "Remove {secretName}? This bot will no longer be able to use it."
 
 #: src/pages/RoutineEditor.tsx
 msgid "Remove Git event"
@@ -3247,6 +3414,10 @@ msgstr "Replace API key"
 msgid "Replace key"
 msgstr "Replace key"
 
+#: src/pages/shell/bot-credentials.tsx
+msgid "Replace value"
+msgstr "Replace value"
+
 #: src/pages/Shell.tsx
 msgid "Reply"
 msgstr "Reply"
@@ -3296,6 +3467,10 @@ msgstr "Reset your password"
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "Resetting…"
 msgstr "Resetting…"
+
+#: src/pages/ResizableSidePanel.tsx
+msgid "Resize panel"
+msgstr "Resize panel"
 
 #: src/components/DesktopUpdates.tsx
 msgid "Restart to update"
@@ -3390,6 +3565,7 @@ msgstr "Runs when this bot receives a verified message from this provider."
 
 #: src/components/AskCard.tsx
 #: src/components/teach/SkillDraftCard.tsx
+#: src/pages/Board.tsx
 #: src/pages/ExternalConversationSettings.tsx
 #: src/pages/GroupPanel.tsx
 #: src/pages/KnowledgeSection.tsx
@@ -3400,9 +3576,17 @@ msgstr "Runs when this bot receives a verified message from this provider."
 msgid "Save"
 msgstr "Save"
 
+#: src/pages/shell/bot-credentials.tsx
+msgid "Save credential"
+msgstr "Save credential"
+
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Save limits"
 msgstr "Save limits"
+
+#: src/pages/shell/bot-credentials.tsx
+msgid "Save new value"
+msgstr "Save new value"
 
 #: src/components/AskCard.tsx
 #: src/components/teach/SkillDraftCard.tsx
@@ -3435,6 +3619,7 @@ msgstr "Saving..."
 #: src/pages/GroupPanel.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
+#: src/pages/shell/bot-credentials.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Saving…"
 msgstr "Saving…"
@@ -3631,6 +3816,10 @@ msgstr "Sign in to Rakazo"
 msgid "Sign up"
 msgstr "Sign up"
 
+#: src/pages/shell/bot-credentials.tsx
+msgid "Site"
+msgstr "Site"
+
 #. placeholder {0}: skill.name
 #: src/pages/Shell.tsx
 msgid "Skill {0}"
@@ -3665,6 +3854,10 @@ msgstr "Slack not enabled"
 #: src/components/SoftwareUpdateSection.tsx
 msgid "Software update"
 msgstr "Software update"
+
+#: src/pages/Board.tsx
+msgid "Something went wrong."
+msgstr "Something went wrong."
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Space default"
@@ -3708,6 +3901,10 @@ msgstr "Starting"
 #: src/pages/Onboarding.tsx
 msgid "Starting…"
 msgstr "Starting…"
+
+#: src/pages/Board.tsx
+msgid "Status"
+msgstr "Status"
 
 #: src/components/teach/SkillDraftCard.tsx
 msgid "Steps"
@@ -3770,6 +3967,7 @@ msgid "Switching…"
 msgstr "Switching…"
 
 #: src/pages/AccountSettingsOverlay.tsx
+#: src/pages/Board.tsx
 msgid "System"
 msgstr "System"
 
@@ -3820,6 +4018,10 @@ msgstr "The API did not come back. Refresh this page."
 #: src/pages/MemorySettingsOverlay.tsx
 msgid "The selected memory provider is not available in this build."
 msgstr "The selected memory provider is not available in this build."
+
+#: src/pages/shell/bot-credentials.tsx
+msgid "These saved settings can't be read. Remove it and add it again."
+msgstr "These saved settings can't be read. Remove it and add it again."
 
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
@@ -3904,9 +4106,14 @@ msgstr "This week"
 msgid "Time of day"
 msgstr "Time of day"
 
+#: src/pages/Board.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Title"
 msgstr "Title"
+
+#: src/lib/ticket-status.ts
+msgid "To do"
+msgstr "To do"
 
 #: src/pages/shell/bot-picker.tsx
 msgid "To:"
@@ -3940,6 +4147,10 @@ msgstr "Treg token"
 msgid "Try again"
 msgstr "Try again"
 
+#: src/pages/shell/bot-credentials.tsx
+msgid "Type"
+msgstr "Type"
+
 #: src/components/teach/TeachRecordingChrome.tsx
 msgid "Type without recording"
 msgstr "Type without recording"
@@ -3948,6 +4159,7 @@ msgstr "Type without recording"
 msgid "Type your answer"
 msgstr "Type your answer"
 
+#: src/pages/Board.tsx
 #: src/pages/BotContextMenu.tsx
 msgid "Unassigned"
 msgstr "Unassigned"
@@ -4011,6 +4223,10 @@ msgstr "Update progress"
 msgid "Updated"
 msgstr "Updated"
 
+#: src/pages/shell/bot-credentials.tsx
+msgid "Updated {updated}"
+msgstr "Updated {updated}"
+
 #: src/pages/SettingsOverlay.tsx
 msgid "Updates"
 msgstr "Updates"
@@ -4033,6 +4249,10 @@ msgstr "Updating…"
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Upload"
 msgstr "Upload"
+
+#: src/lib/ticket-priority.ts
+msgid "Urgent"
+msgstr "Urgent"
 
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/SettingsOverlay.tsx
@@ -4062,8 +4282,13 @@ msgid "Use this model"
 msgstr "Use this model"
 
 #: src/components/AskCard.tsx
+#: src/pages/shell/bot-credentials.tsx
 msgid "Username"
 msgstr "Username"
+
+#: src/pages/shell/bot-credentials.tsx
+msgid "Value"
+msgstr "Value"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Verify and add"
@@ -4107,6 +4332,10 @@ msgstr "Waiting…"
 #: src/pages/RoutineEditor.tsx
 msgid "Webhook"
 msgstr "Webhook"
+
+#: src/pages/shell/bot-credentials.tsx
+msgid "Website login"
+msgstr "Website login"
 
 #: src/pages/RoutineEditor.tsx
 #: src/pages/RoutineSchedule.tsx
@@ -4153,6 +4382,10 @@ msgstr "When to use"
 msgid "Where should bots run?"
 msgstr "Where should bots run?"
 
+#: src/lib/ticket-status.ts
+msgid "Won't do"
+msgstr "Won't do"
+
 #: src/lib/roster-status.ts
 #: src/pages/Auth.tsx
 msgid "Working…"
@@ -4166,6 +4399,7 @@ msgstr "Wrote {path}"
 msgid "Yesterday"
 msgstr "Yesterday"
 
+#: src/pages/Board.tsx
 #: src/pages/Shell.tsx
 msgid "You"
 msgstr "You"
@@ -4193,102 +4427,3 @@ msgstr "Your name"
 #: src/pages/Welcome.tsx
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "Your team of always-on agents<0/>that you can give real work to."
-
-#: src/pages/ResizableSidePanel.tsx
-msgid "Resize panel"
-msgstr "Resize panel"
-
-#. placeholder {0}: assignee.name
-#. placeholder {0}: owner.name
-#: src/pages/Board.tsx
-msgid "{0} is working"
-msgstr "{0} is working"
-
-#: src/pages/Board.tsx
-msgid "Add a comment"
-msgstr "Add a comment"
-
-#: src/lib/ticket-status.ts
-msgid "Blocked"
-msgstr "Blocked"
-
-#: src/pages/Board.tsx
-msgid "Board"
-msgstr "Board"
-
-#: src/pages/Board.tsx
-#: src/pages/Shell.tsx
-msgid "Boards"
-msgstr "Boards"
-
-#: src/lib/ticket-status.ts
-msgid "Closed"
-msgstr "Closed"
-
-#: src/pages/Board.tsx
-msgid "Comment"
-msgstr "Comment"
-
-#: src/pages/Board.tsx
-msgid "Could not create the ticket."
-msgstr "Could not create the ticket."
-
-#: src/pages/Board.tsx
-msgid "Could not load comments."
-msgstr "Could not load comments."
-
-#: src/pages/Board.tsx
-msgid "Could not load the board."
-msgstr "Could not load the board."
-
-#: src/pages/Board.tsx
-msgid "Edit"
-msgstr "Edit"
-
-#: src/lib/ticket-status.ts
-msgid "In progress"
-msgstr "In progress"
-
-#: src/lib/ticket-status.ts
-msgid "In review"
-msgstr "In review"
-
-#: src/pages/Board.tsx
-msgid "Move ticket"
-msgstr "Move ticket"
-
-#: src/pages/Board.tsx
-msgid "New ticket"
-msgstr "New ticket"
-
-#: src/lib/ticket-priority.ts
-msgid "Normal"
-msgstr "Normal"
-
-#: src/pages/Board.tsx
-msgid "Owner"
-msgstr "Owner"
-
-#: src/pages/Board.tsx
-msgid "Priority"
-msgstr "Priority"
-
-#: src/pages/Board.tsx
-msgid "Something went wrong."
-msgstr "Something went wrong."
-
-#: src/pages/Board.tsx
-msgid "Status"
-msgstr "Status"
-
-#: src/lib/ticket-status.ts
-msgid "To do"
-msgstr "To do"
-
-#: src/lib/ticket-priority.ts
-msgid "Urgent"
-msgstr "Urgent"
-
-#: src/pages/Board.tsx
-msgid "Could not move the ticket."
-msgstr "Could not move the ticket."

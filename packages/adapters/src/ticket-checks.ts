@@ -1,6 +1,6 @@
 import type { JobPublisher } from "@rakazo/adapter-kit";
 import { runContinueJob, ticketsCheckJob } from "@rakazo/adapter-kit";
-import { ACTIONABLE_TICKET_STATUSES } from "@rakazo/contracts";
+import { ACTIONABLE_TICKET_STATUSES, parseCriteria } from "@rakazo/contracts";
 import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
 import type { BoardEvents, PrismaClient } from "@rakazo/db";
 import { coerceTicketPriority, coerceTicketStatus } from "@rakazo/db";
@@ -73,6 +73,7 @@ export async function runTicketChecks(
         updatedAt: true,
         updatedByBotId: true,
         externalUpdatedAt: true,
+        acceptanceCriteria: true,
       },
     }),
     deps.prisma.ticketComment.findMany({
@@ -134,6 +135,7 @@ export async function runTicketChecks(
         priority: coerceTicketPriority(ticket.priority),
         updatedAt: ticket.updatedAt,
         lastComment: lastCommentByTicket.get(ticket.id)?.trim() || null,
+        criteria: parseCriteria(ticket.acceptanceCriteria),
       }));
       const outcome = await startTicketWake(deps, {
         now,
@@ -236,6 +238,7 @@ async function startTicketWake(
         taskId: task.id,
         status: "queued",
         trigger: "tickets",
+        ticketIds: input.tickets.map((ticket) => ticket.id),
       },
     });
     return { kind: "started" as const, runId: run.id };

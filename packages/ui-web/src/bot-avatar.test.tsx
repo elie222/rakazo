@@ -30,11 +30,22 @@ describe("BotAvatar", () => {
     }
   });
 
-  it.each([...ACTIVE_RUN_STATUSES])("marks active run status %s as working", (status) => {
-    const html = renderToString(<BotAvatar color="#3B82F6" status={status} />);
-    expect(html).toContain("<svg");
-    expect(html).toContain('data-working="true"');
-  });
+  it.each(ACTIVE_RUN_STATUSES.filter((status) => !status.startsWith("waiting_")))(
+    "marks executing run status %s as working",
+    (status) => {
+      const html = renderToString(<BotAvatar color="#3B82F6" status={status} />);
+      expect(html).toContain("<svg");
+      expect(html).toContain('data-working="true"');
+    },
+  );
+
+  it.each(["waiting_input", "waiting_takeover"])(
+    "does not animate for %s, a run parked on a person",
+    (status) => {
+      const html = renderToString(<BotAvatar color="#3B82F6" status={status} />);
+      expect(html).toContain('data-working="false"');
+    },
+  );
 
   it("keeps working attribute false when idle", () => {
     const html = renderToString(<BotAvatar color="#F59E0B" status="idle" />);
