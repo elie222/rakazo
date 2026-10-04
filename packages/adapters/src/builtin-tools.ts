@@ -740,7 +740,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "board_tickets",
     description:
-      "List one page of tickets on this space's board, most recently updated first, optionally filtered by status or owner bot. When the result includes nextCursor, call again with that cursor to list older matches. Check here before claiming work is already tracked.",
+      "List one page of tickets on this space's board, newest first, optionally filtered by status or owner bot. Each ticket shows when it last changed. When the result includes nextCursor, call again with that cursor to list older matches. The order is stable, so a ticket that changes while you page is not skipped. Check here before claiming work is already tracked.",
     inputSchema: {
       type: "object",
       properties: {

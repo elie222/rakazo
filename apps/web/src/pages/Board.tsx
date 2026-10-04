@@ -64,6 +64,10 @@ function writeClosedCollapsed(collapsed: boolean): void {
   }
 }
 
+/**
+ * The board screen: one column per status, live reload on board events, a create
+ * dialog, and a ticket detail with the description and comments.
+ */
 export function BoardPage() {
   const { t } = useLingui();
   const [boards, setBoards] = useState<Board[] | null>(null);

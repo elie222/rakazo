@@ -68,13 +68,19 @@ function normalizePriority(value: string) {
 const LIST_TICKETS_LIMIT = 50;
 const LIST_DESCRIPTION_CHARS = 200;
 
-function encodeTicketListCursor(row: { updatedAt: Date; id: string }): string {
-  return Buffer.from(`${row.updatedAt.toISOString()}|${row.id}`, "utf8").toString("base64url");
+/**
+ * The page key is the ticket's `createdAt` with `id` as the tiebreaker, because
+ * both never change. A key on `updatedAt` would move a ticket that is edited
+ * while a bot pages the board: the ticket would end up above the saved cursor
+ * and no later page could return it. A stable key keeps the scan complete.
+ */
+function encodeTicketListCursor(row: { createdAt: Date; id: string }): string {
+  return Buffer.from(`${row.createdAt.toISOString()}|${row.id}`, "utf8").toString("base64url");
 }
 
 function decodeTicketListCursor(
   cursor: string,
-): { updatedAt: Date; id: string } | { error: string } {
+): { createdAt: Date; id: string } | { error: string } {
   let raw: string;
   try {
     raw = Buffer.from(cursor, "base64url").toString("utf8");
@@ -83,10 +89,10 @@ function decodeTicketListCursor(
   }
   const split = raw.indexOf("|");
   if (split <= 0) return { error: "cursor is invalid." };
-  const updatedAt = new Date(raw.slice(0, split));
+  const createdAt = new Date(raw.slice(0, split));
   const id = raw.slice(split + 1);
-  if (Number.isNaN(updatedAt.getTime()) || !id) return { error: "cursor is invalid." };
-  return { updatedAt, id };
+  if (Number.isNaN(createdAt.getTime()) || !id) return { error: "cursor is invalid." };
+  return { createdAt, id };
 }
 
 function truncateDescription(value: string | null | undefined) {
@@ -94,6 +100,10 @@ function truncateDescription(value: string | null | undefined) {
   return `${value.slice(0, LIST_DESCRIPTION_CHARS - 1)}…`;
 }
 
+/**
+ * List one page of the space's tickets, newest first, with a cursor for the next
+ * page. Each ticket carries its own `updatedAt`, so callers can sort by recency.
+ */
 export async function listBoardTickets(
   deps: TicketToolDeps,
   input: {
@@ -109,7 +119,7 @@ export async function listBoardTickets(
     if (!status) return { error: STATUS_ERROR };
   }
   const cursor = input.cursor?.trim();
-  let pageCursor: { updatedAt: Date; id: string } | undefined;
+  let pageCursor: { createdAt: Date; id: string } | undefined;
   if (cursor) {
     const decoded = decodeTicketListCursor(cursor);
     if ("error" in decoded) return decoded;
@@ -123,16 +133,18 @@ export async function listBoardTickets(
       // Closed tickets are history; they only show up when asked for by status.
       ...(status ? { status } : { status: { not: "closed" } }),
       ...(input.assigneeBotId ? { assigneeBotId: input.assigneeBotId } : {}),
+      // A stable order: an edit changes `updatedAt`, not the page key, so no
+      // ticket can slip past the cursor of a scan that is already in flight.
       ...(pageCursor
         ? {
             OR: [
-              { updatedAt: { lt: pageCursor.updatedAt } },
-              { updatedAt: pageCursor.updatedAt, id: { lt: pageCursor.id } },
+              { createdAt: { lt: pageCursor.createdAt } },
+              { createdAt: pageCursor.createdAt, id: { lt: pageCursor.id } },
             ],
           }
         : {}),
     },
-    orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     take: LIST_TICKETS_LIMIT + 1,
   });
   const page = rows.slice(0, LIST_TICKETS_LIMIT);
@@ -147,6 +159,7 @@ export async function listBoardTickets(
   };
 }
 
+/** Read one ticket with its comments, by database id or by reference such as `RAK-42`. */
 export async function getTicket(deps: TicketToolDeps, input: { spaceId: string; ref: string }) {
   const ref = input.ref.trim();
   if (!ref) return { error: "ref is required." };
@@ -162,6 +175,10 @@ export async function getTicket(deps: TicketToolDeps, input: { spaceId: string; 
   };
 }
 
+/**
+ * Create a ticket in `todo`, allocate its number, and wake the owner. The owner
+ * defaults to the calling bot and must be a bot of the same space.
+ */
 export async function createTicket(
   deps: TicketToolDeps,
   input: {
@@ -223,6 +240,7 @@ export async function createTicket(
   return { ticket: toTicketDto(row, board.ticketPrefix) };
 }
 
+/** Move a ticket to another status; a completed status also stamps `completedAt`. */
 export async function moveTicket(
   deps: TicketToolDeps,
   input: { spaceId: string; botId: string; id: string; status: string },
@@ -250,6 +268,7 @@ export async function moveTicket(
   return { ticket: toTicketDto(row, board.ticketPrefix) };
 }
 
+/** Change a ticket's title, description or priority. At least one field is required. */
 export async function updateTicket(
   deps: TicketToolDeps,
   input: {
@@ -303,6 +322,7 @@ export async function updateTicket(
   return { ticket: toTicketDto(row, board.ticketPrefix) };
 }
 
+/** Close a ticket and add the optional closing comment in the same transaction. */
 export async function closeTicket(
   deps: TicketToolDeps,
   input: {
@@ -360,6 +380,7 @@ export async function closeTicket(
   };
 }
 
+/** Add a comment and record the ticket as changed by the commenting bot. */
 export async function commentTicket(
   deps: TicketToolDeps,
   input: {
@@ -407,6 +428,7 @@ export async function commentTicket(
   return { comment: toTicketCommentDto(row) };
 }
 
+/** Hand a ticket to another bot of the same space and wake the new owner. */
 export async function assignTicket(
   deps: TicketToolDeps,
   input: { spaceId: string; botId: string; id: string; ownerBotId: string },

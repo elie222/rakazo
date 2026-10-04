@@ -117,6 +117,7 @@ export async function findTicket(
   });
 }
 
+/** Map a board row to its API shape, with ISO timestamps. */
 export function toBoardDto(row: BoardRow): Board {
   return {
     id: row.id,
@@ -128,6 +129,7 @@ export function toBoardDto(row: BoardRow): Board {
   };
 }
 
+/** Unknown or legacy status strings fall back to `todo`, so an old row still renders. */
 export function coerceTicketStatus(value: string): TicketStatus {
   const parsed = TicketStatusSchema.safeParse(value);
   return parsed.success ? parsed.data : "todo";
@@ -139,6 +141,10 @@ export function coerceTicketPriority(value: string | null | undefined): TicketPr
   return parsed.success ? parsed.data : "normal";
 }
 
+/**
+ * Map a ticket row to its API shape: the human reference, the coerced status and
+ * priority, and ISO timestamps.
+ */
 export function toTicketDto(row: TicketRow, ticketPrefix: string): Ticket {
   return {
     id: row.id,
@@ -187,6 +193,7 @@ export async function listTicketComments(
   });
 }
 
+/** Map a comment row to its API shape, with ISO timestamps. */
 export function toTicketCommentDto(row: TicketCommentRow): TicketComment {
   return {
     id: row.id,

@@ -77,6 +77,11 @@ export function renderTicketContext(
   return `${frame}${lines.join("")}\n${closing}`;
 }
 
+/**
+ * Resolve references such as `RAK-42` in a run's text into a short ticket block
+ * for the prompt. Returns undefined when no reference resolves, and caps the
+ * block at `maxBytes`.
+ */
 export async function loadAgentTicketContext(
   deps: { prisma: PrismaClient },
   input: { spaceId: string; text: string },

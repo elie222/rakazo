@@ -74,7 +74,7 @@ describe("ticket tools", () => {
 
     expect(findMany).toHaveBeenCalledWith({
       where: { spaceId: "ws", boardId: "board-1", status: "doing" },
-      orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       take: 51,
     });
     expect(result).toEqual({ tickets: [expect.objectContaining({ ref: "RAK-1" })] });
@@ -102,7 +102,7 @@ describe("ticket tools", () => {
       ticket({
         id: `t${String(index).padStart(2, "0")}`,
         number: index + 1,
-        updatedAt: new Date(NOW.getTime() - index * 1000),
+        createdAt: new Date(NOW.getTime() - index * 1000),
       }),
     );
     const findMany = vi.fn(async (_query: unknown) => rows);
@@ -124,11 +124,11 @@ describe("ticket tools", () => {
         boardId: "board-1",
         status: { not: "closed" },
         OR: [
-          { updatedAt: { lt: rows[49]!.updatedAt } },
-          { updatedAt: rows[49]!.updatedAt, id: { lt: "t49" } },
+          { createdAt: { lt: rows[49]!.createdAt } },
+          { createdAt: rows[49]!.createdAt, id: { lt: "t49" } },
         ],
       },
-      orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       take: 51,
     });
 
@@ -137,6 +137,44 @@ describe("ticket tools", () => {
       cursor: "not-a-cursor",
     });
     expect(invalid).toEqual({ error: "cursor is invalid." });
+  });
+
+  it("keys the cursor on an immutable column, so a later edit cannot hide a ticket", async () => {
+    const created = (index: number) => new Date(NOW.getTime() - index * 1000);
+    const rows = Array.from({ length: 51 }, (_, index) =>
+      ticket({
+        id: `t${String(index).padStart(2, "0")}`,
+        number: index + 1,
+        createdAt: created(index),
+      }),
+    );
+    const findMany = vi.fn(async (_query: unknown) => rows);
+    const prisma = { ...boardSpace(), ticket: { findMany } };
+
+    const first = await listBoardTickets({ prisma } as never, { spaceId: "ws" });
+    const cursor = (first as { nextCursor: string }).nextCursor;
+
+    // The last ticket sits below the first page and is edited between the two
+    // calls. Its `updatedAt` is now the newest on the board, which is the case
+    // that used to move it above the cursor and out of the scan.
+    rows[50]!.updatedAt = new Date(NOW.getTime() + 60_000);
+
+    await listBoardTickets({ prisma } as never, { spaceId: "ws", cursor });
+
+    expect(findMany.mock.calls[1]?.[0]).toEqual({
+      where: {
+        spaceId: "ws",
+        boardId: "board-1",
+        status: { not: "closed" },
+        OR: [{ createdAt: { lt: created(49) } }, { createdAt: created(49), id: { lt: "t49" } }],
+      },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      take: 51,
+    });
+    // The page key is the immutable `createdAt`, so the edited ticket stays ahead.
+    const decoded = Buffer.from(cursor, "base64url").toString("utf8");
+    expect(decoded).toBe(`${created(49).toISOString()}|t49`);
+    expect(decoded).not.toContain(rows[50]!.updatedAt.toISOString());
   });
 
   it("rejects an unknown status filter", async () => {
