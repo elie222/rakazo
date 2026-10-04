@@ -794,7 +794,10 @@ export function composioResultError(summary: string, data: unknown): string {
     const detail = error.length > 500 ? `${error.slice(0, 500)}…` : error;
     return [typeof item.tool_slug === "string" ? `${item.tool_slug}: ${detail}` : detail];
   });
-  return details.length > 0 ? `${summary}: ${details.join("; ")}` : summary;
+  if (details.length === 0) return summary;
+  const shown = details.slice(0, 5);
+  const more = details.length - shown.length;
+  return `${summary}: ${shown.join("; ")}${more > 0 ? `; +${more} more` : ""}`;
 }
 
 export function sanitizeComposioError(error: unknown): string {

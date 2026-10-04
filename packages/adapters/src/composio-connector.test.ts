@@ -258,6 +258,14 @@ describe("composio tool mapping", () => {
     });
     expect(long).toContain(`TOOL_LONG: ${"x".repeat(500)}…`);
     expect(long).toContain("TOOL_LATER: Still reported.");
+    const many = composioResultError("7 out of 7 tools failed", {
+      results: Array.from({ length: 7 }, (_, index) => ({
+        tool_slug: `TOOL_${index}`,
+        error: "Failed.",
+      })),
+    });
+    expect(many).toContain("TOOL_4: Failed.; +2 more");
+    expect(many).not.toContain("TOOL_5");
   });
 
   it("paginates until the cursor ends", async () => {
