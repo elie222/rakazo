@@ -45,6 +45,24 @@ describe("decideTicketWake", () => {
     ).toEqual({ wake: false, reason: "unchanged" });
   });
 
+  it("wakes when someone else's edit is hidden by the bot's later edit", () => {
+    expect(
+      decision({
+        lastCheckAt: hoursAgo(3),
+        tickets: [{ updatedAt: hoursAgo(1), updatedByBot: true, externalUpdatedAt: hoursAgo(2) }],
+      }),
+    ).toEqual({ wake: true, reason: "changed" });
+  });
+
+  it("ignores an external edit the last check already covered", () => {
+    expect(
+      decision({
+        lastCheckAt: hoursAgo(3),
+        tickets: [{ updatedAt: hoursAgo(1), updatedByBot: true, externalUpdatedAt: hoursAgo(4) }],
+      }),
+    ).toEqual({ wake: false, reason: "unchanged" });
+  });
+
   it("still wakes for someone else's change next to the bot's own", () => {
     expect(
       decision({

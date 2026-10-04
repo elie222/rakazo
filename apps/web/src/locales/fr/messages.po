@@ -4202,93 +4202,93 @@ msgstr "Redimensionner le panneau"
 #. placeholder {0}: owner.name
 #: src/pages/Board.tsx
 msgid "{0} is working"
-msgstr ""
+msgstr "{0} travaille"
 
 #: src/pages/Board.tsx
 msgid "Add a comment"
-msgstr ""
+msgstr "Ajouter un commentaire"
 
 #: src/lib/ticket-status.ts
 msgid "Blocked"
-msgstr ""
+msgstr "Bloqué"
 
 #: src/pages/Board.tsx
 msgid "Board"
-msgstr ""
+msgstr "Tableau"
 
 #: src/pages/Board.tsx
 #: src/pages/Shell.tsx
 msgid "Boards"
-msgstr ""
+msgstr "Tableaux"
 
 #: src/lib/ticket-status.ts
 msgid "Closed"
-msgstr ""
+msgstr "Fermé"
 
 #: src/pages/Board.tsx
 msgid "Comment"
-msgstr ""
+msgstr "Commenter"
 
 #: src/pages/Board.tsx
 msgid "Could not create the ticket."
-msgstr ""
+msgstr "Impossible de créer le ticket."
 
 #: src/pages/Board.tsx
 msgid "Could not load comments."
-msgstr ""
+msgstr "Impossible de charger les commentaires."
 
 #: src/pages/Board.tsx
 msgid "Could not load the board."
-msgstr ""
+msgstr "Impossible de charger le tableau."
 
 #: src/pages/Board.tsx
 msgid "Edit"
-msgstr ""
+msgstr "Modifier"
 
 #: src/lib/ticket-status.ts
 msgid "In progress"
-msgstr ""
+msgstr "En cours"
 
 #: src/lib/ticket-status.ts
 msgid "In review"
-msgstr ""
+msgstr "En revue"
 
 #: src/pages/Board.tsx
 msgid "Move ticket"
-msgstr ""
+msgstr "Déplacer le ticket"
 
 #: src/pages/Board.tsx
 msgid "New ticket"
-msgstr ""
+msgstr "Nouveau ticket"
 
 #: src/lib/ticket-priority.ts
 msgid "Normal"
-msgstr ""
+msgstr "Normale"
 
 #: src/pages/Board.tsx
 msgid "Owner"
-msgstr ""
+msgstr "Responsable"
 
 #: src/pages/Board.tsx
 msgid "Priority"
-msgstr ""
+msgstr "Priorité"
 
 #: src/pages/Board.tsx
 msgid "Something went wrong."
-msgstr ""
+msgstr "Une erreur s'est produite."
 
 #: src/pages/Board.tsx
 msgid "Status"
-msgstr ""
+msgstr "Statut"
 
 #: src/lib/ticket-status.ts
 msgid "To do"
-msgstr ""
+msgstr "À faire"
 
 #: src/lib/ticket-priority.ts
 msgid "Urgent"
-msgstr ""
+msgstr "Urgent"
 
 #: src/pages/Board.tsx
 msgid "Could not move the ticket."
-msgstr ""
+msgstr "Impossible de déplacer le ticket."

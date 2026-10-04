@@ -4202,93 +4202,93 @@ msgstr "Cambiar tamaño del panel"
 #. placeholder {0}: owner.name
 #: src/pages/Board.tsx
 msgid "{0} is working"
-msgstr ""
+msgstr "{0} está trabajando"
 
 #: src/pages/Board.tsx
 msgid "Add a comment"
-msgstr ""
+msgstr "Añadir un comentario"
 
 #: src/lib/ticket-status.ts
 msgid "Blocked"
-msgstr ""
+msgstr "Bloqueado"
 
 #: src/pages/Board.tsx
 msgid "Board"
-msgstr ""
+msgstr "Tablero"
 
 #: src/pages/Board.tsx
 #: src/pages/Shell.tsx
 msgid "Boards"
-msgstr ""
+msgstr "Tableros"
 
 #: src/lib/ticket-status.ts
 msgid "Closed"
-msgstr ""
+msgstr "Cerrado"
 
 #: src/pages/Board.tsx
 msgid "Comment"
-msgstr ""
+msgstr "Comentar"
 
 #: src/pages/Board.tsx
 msgid "Could not create the ticket."
-msgstr ""
+msgstr "No se pudo crear el ticket."
 
 #: src/pages/Board.tsx
 msgid "Could not load comments."
-msgstr ""
+msgstr "No se pudieron cargar los comentarios."
 
 #: src/pages/Board.tsx
 msgid "Could not load the board."
-msgstr ""
+msgstr "No se pudo cargar el tablero."
 
 #: src/pages/Board.tsx
 msgid "Edit"
-msgstr ""
+msgstr "Editar"
 
 #: src/lib/ticket-status.ts
 msgid "In progress"
-msgstr ""
+msgstr "En curso"
 
 #: src/lib/ticket-status.ts
 msgid "In review"
-msgstr ""
+msgstr "En revisión"
 
 #: src/pages/Board.tsx
 msgid "Move ticket"
-msgstr ""
+msgstr "Mover ticket"
 
 #: src/pages/Board.tsx
 msgid "New ticket"
-msgstr ""
+msgstr "Nuevo ticket"
 
 #: src/lib/ticket-priority.ts
 msgid "Normal"
-msgstr ""
+msgstr "Normal"
 
 #: src/pages/Board.tsx
 msgid "Owner"
-msgstr ""
+msgstr "Responsable"
 
 #: src/pages/Board.tsx
 msgid "Priority"
-msgstr ""
+msgstr "Prioridad"
 
 #: src/pages/Board.tsx
 msgid "Something went wrong."
-msgstr ""
+msgstr "Algo salió mal."
 
 #: src/pages/Board.tsx
 msgid "Status"
-msgstr ""
+msgstr "Estado"
 
 #: src/lib/ticket-status.ts
 msgid "To do"
-msgstr ""
+msgstr "Por hacer"
 
 #: src/lib/ticket-priority.ts
 msgid "Urgent"
-msgstr ""
+msgstr "Urgente"
 
 #: src/pages/Board.tsx
 msgid "Could not move the ticket."
-msgstr ""
+msgstr "No se pudo mover el ticket."

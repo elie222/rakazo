@@ -4202,93 +4202,93 @@ msgstr "调整面板大小"
 #. placeholder {0}: owner.name
 #: src/pages/Board.tsx
 msgid "{0} is working"
-msgstr ""
+msgstr "{0} 正在工作"
 
 #: src/pages/Board.tsx
 msgid "Add a comment"
-msgstr ""
+msgstr "添加评论"
 
 #: src/lib/ticket-status.ts
 msgid "Blocked"
-msgstr ""
+msgstr "已阻塞"
 
 #: src/pages/Board.tsx
 msgid "Board"
-msgstr ""
+msgstr "看板"
 
 #: src/pages/Board.tsx
 #: src/pages/Shell.tsx
 msgid "Boards"
-msgstr ""
+msgstr "看板"
 
 #: src/lib/ticket-status.ts
 msgid "Closed"
-msgstr ""
+msgstr "已关闭"
 
 #: src/pages/Board.tsx
 msgid "Comment"
-msgstr ""
+msgstr "评论"
 
 #: src/pages/Board.tsx
 msgid "Could not create the ticket."
-msgstr ""
+msgstr "无法创建工单。"
 
 #: src/pages/Board.tsx
 msgid "Could not load comments."
-msgstr ""
+msgstr "无法加载评论。"
 
 #: src/pages/Board.tsx
 msgid "Could not load the board."
-msgstr ""
+msgstr "无法加载看板。"
 
 #: src/pages/Board.tsx
 msgid "Edit"
-msgstr ""
+msgstr "编辑"
 
 #: src/lib/ticket-status.ts
 msgid "In progress"
-msgstr ""
+msgstr "进行中"
 
 #: src/lib/ticket-status.ts
 msgid "In review"
-msgstr ""
+msgstr "审核中"
 
 #: src/pages/Board.tsx
 msgid "Move ticket"
-msgstr ""
+msgstr "移动工单"
 
 #: src/pages/Board.tsx
 msgid "New ticket"
-msgstr ""
+msgstr "新建工单"
 
 #: src/lib/ticket-priority.ts
 msgid "Normal"
-msgstr ""
+msgstr "普通"
 
 #: src/pages/Board.tsx
 msgid "Owner"
-msgstr ""
+msgstr "负责人"
 
 #: src/pages/Board.tsx
 msgid "Priority"
-msgstr ""
+msgstr "优先级"
 
 #: src/pages/Board.tsx
 msgid "Something went wrong."
-msgstr ""
+msgstr "出了点问题。"
 
 #: src/pages/Board.tsx
 msgid "Status"
-msgstr ""
+msgstr "状态"
 
 #: src/lib/ticket-status.ts
 msgid "To do"
-msgstr ""
+msgstr "待办"
 
 #: src/lib/ticket-priority.ts
 msgid "Urgent"
-msgstr ""
+msgstr "紧急"
 
 #: src/pages/Board.tsx
 msgid "Could not move the ticket."
-msgstr ""
+msgstr "无法移动工单。"

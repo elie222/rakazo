@@ -4202,93 +4202,93 @@ msgstr "패널 크기 조절"
 #. placeholder {0}: owner.name
 #: src/pages/Board.tsx
 msgid "{0} is working"
-msgstr ""
+msgstr "{0}님이 작업 중"
 
 #: src/pages/Board.tsx
 msgid "Add a comment"
-msgstr ""
+msgstr "댓글 추가"
 
 #: src/lib/ticket-status.ts
 msgid "Blocked"
-msgstr ""
+msgstr "차단됨"
 
 #: src/pages/Board.tsx
 msgid "Board"
-msgstr ""
+msgstr "보드"
 
 #: src/pages/Board.tsx
 #: src/pages/Shell.tsx
 msgid "Boards"
-msgstr ""
+msgstr "보드"
 
 #: src/lib/ticket-status.ts
 msgid "Closed"
-msgstr ""
+msgstr "닫힘"
 
 #: src/pages/Board.tsx
 msgid "Comment"
-msgstr ""
+msgstr "댓글 남기기"
 
 #: src/pages/Board.tsx
 msgid "Could not create the ticket."
-msgstr ""
+msgstr "티켓을 만들지 못했습니다."
 
 #: src/pages/Board.tsx
 msgid "Could not load comments."
-msgstr ""
+msgstr "댓글을 불러오지 못했습니다."
 
 #: src/pages/Board.tsx
 msgid "Could not load the board."
-msgstr ""
+msgstr "보드를 불러오지 못했습니다."
 
 #: src/pages/Board.tsx
 msgid "Edit"
-msgstr ""
+msgstr "편집"
 
 #: src/lib/ticket-status.ts
 msgid "In progress"
-msgstr ""
+msgstr "진행 중"
 
 #: src/lib/ticket-status.ts
 msgid "In review"
-msgstr ""
+msgstr "검토 중"
 
 #: src/pages/Board.tsx
 msgid "Move ticket"
-msgstr ""
+msgstr "티켓 이동"
 
 #: src/pages/Board.tsx
 msgid "New ticket"
-msgstr ""
+msgstr "새 티켓"
 
 #: src/lib/ticket-priority.ts
 msgid "Normal"
-msgstr ""
+msgstr "보통"
 
 #: src/pages/Board.tsx
 msgid "Owner"
-msgstr ""
+msgstr "담당"
 
 #: src/pages/Board.tsx
 msgid "Priority"
-msgstr ""
+msgstr "우선순위"
 
 #: src/pages/Board.tsx
 msgid "Something went wrong."
-msgstr ""
+msgstr "문제가 발생했습니다."
 
 #: src/pages/Board.tsx
 msgid "Status"
-msgstr ""
+msgstr "상태"
 
 #: src/lib/ticket-status.ts
 msgid "To do"
-msgstr ""
+msgstr "할 일"
 
 #: src/lib/ticket-priority.ts
 msgid "Urgent"
-msgstr ""
+msgstr "긴급"
 
 #: src/pages/Board.tsx
 msgid "Could not move the ticket."
-msgstr ""
+msgstr "티켓을 옮기지 못했습니다."

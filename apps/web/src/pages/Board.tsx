@@ -78,6 +78,7 @@ export function BoardPage() {
   const [closedCollapsed, setClosedCollapsed] = useState(readClosedCollapsed);
   const [boardVersion, setBoardVersion] = useState(0);
   const generation = useRef(0);
+  const boardsGeneration = useRef(0);
 
   const activeBoardId = selectedBoardId ?? boards?.[0]?.id ?? null;
   const board = boards?.find((item) => item.id === activeBoardId) ?? null;
@@ -100,13 +101,16 @@ export function BoardPage() {
   );
 
   useEffect(() => {
+    const current = ++boardsGeneration.current;
     void (async () => {
       try {
         const next = await rpc.boards.list();
+        if (current !== boardsGeneration.current) return;
         setBoards(next);
         setSelectedBoardId((previous) => previous ?? next[0]?.id ?? null);
         setLoadError(null);
       } catch (error) {
+        if (current !== boardsGeneration.current) return;
         setLoadError(error instanceof Error ? error.message : t`Could not load the board.`);
       }
     })();
@@ -135,10 +139,12 @@ export function BoardPage() {
     const refresh = () => {
       if (disposed || !activeBoardId || document.visibilityState === "hidden") return;
       void loadTickets(activeBoardId);
+      const boardsLoad = ++boardsGeneration.current;
       void rpc.boards
         .list()
         .then((next) => {
-          if (!disposed) setBoards(next);
+          if (disposed || boardsLoad !== boardsGeneration.current) return;
+          setBoards(next);
         })
         .catch(() => undefined);
       // Bump the token so the open detail reloads its comments too.

@@ -343,6 +343,55 @@ it("reloads the board name when a live update arrives", async () => {
   }
 });
 
+it("keeps the newer board name when an older reload finishes last", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const pending: Array<(boards: ReturnType<typeof boardStub>[]) => void> = [];
+  let calls = 0;
+  api.boards.list.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        calls += 1;
+        if (calls === 1) {
+          resolve([boardStub()]);
+          return;
+        }
+        pending.push(resolve);
+      }),
+  );
+  api.bots.list.mockResolvedValue([bot("bot-1", "Helper")]);
+  api.tickets.list.mockResolvedValue({ tickets: [], workingBotIds: [] });
+  const page = await renderBoard({
+    [Symbol.asyncIterator]() {
+      const events = [{ spaceId: "space-1" }, { spaceId: "space-1" }];
+      return {
+        async next() {
+          const event = events.shift();
+          if (event) return { value: event, done: false as const };
+          return new Promise<IteratorResult<unknown>>(() => {});
+        },
+      };
+    },
+  });
+  try {
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(pending).toHaveLength(2);
+    await act(async () => {
+      pending[1]?.([{ ...boardStub(), name: "Launch" }]);
+    });
+    expect(page.container.textContent).toContain("Launch");
+    await act(async () => {
+      pending[0]?.([{ ...boardStub(), name: "Stale" }]);
+    });
+    expect(page.container.textContent).toContain("Launch");
+    expect(page.container.textContent).not.toContain("Stale");
+  } finally {
+    await page.cleanup();
+    vi.unstubAllGlobals();
+  }
+});
+
 it("shows an error instead of failing silently when moving a ticket is rejected", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   api.boards.list.mockResolvedValue([boardStub()]);

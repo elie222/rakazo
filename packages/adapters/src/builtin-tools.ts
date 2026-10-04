@@ -740,12 +740,16 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "board_tickets",
     description:
-      "List tickets on this space's board, optionally filtered by status or owner bot. Check here before claiming work is already tracked.",
+      "List one page of tickets on this space's board, most recently updated first, optionally filtered by status or owner bot. When the result includes nextCursor, call again with that cursor to list older matches. Check here before claiming work is already tracked.",
     inputSchema: {
       type: "object",
       properties: {
         status: { type: "string", enum: TICKET_STATUSES, description: "Filter by status." },
         ownerBotId: { type: "string", description: "Filter by owner bot id." },
+        cursor: {
+          type: "string",
+          description: "nextCursor from the previous page. Omit for the first page.",
+        },
       },
     },
     readOnly: true,

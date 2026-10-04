@@ -4202,93 +4202,93 @@ msgstr "Paneli yeniden boyutlandır"
 #. placeholder {0}: owner.name
 #: src/pages/Board.tsx
 msgid "{0} is working"
-msgstr ""
+msgstr "{0} çalışıyor"
 
 #: src/pages/Board.tsx
 msgid "Add a comment"
-msgstr ""
+msgstr "Yorum ekle"
 
 #: src/lib/ticket-status.ts
 msgid "Blocked"
-msgstr ""
+msgstr "Engellendi"
 
 #: src/pages/Board.tsx
 msgid "Board"
-msgstr ""
+msgstr "Pano"
 
 #: src/pages/Board.tsx
 #: src/pages/Shell.tsx
 msgid "Boards"
-msgstr ""
+msgstr "Panolar"
 
 #: src/lib/ticket-status.ts
 msgid "Closed"
-msgstr ""
+msgstr "Kapalı"
 
 #: src/pages/Board.tsx
 msgid "Comment"
-msgstr ""
+msgstr "Yorumla"
 
 #: src/pages/Board.tsx
 msgid "Could not create the ticket."
-msgstr ""
+msgstr "Ticket oluşturulamadı."
 
 #: src/pages/Board.tsx
 msgid "Could not load comments."
-msgstr ""
+msgstr "Yorumlar yüklenemedi."
 
 #: src/pages/Board.tsx
 msgid "Could not load the board."
-msgstr ""
+msgstr "Pano yüklenemedi."
 
 #: src/pages/Board.tsx
 msgid "Edit"
-msgstr ""
+msgstr "Düzenle"
 
 #: src/lib/ticket-status.ts
 msgid "In progress"
-msgstr ""
+msgstr "Devam ediyor"
 
 #: src/lib/ticket-status.ts
 msgid "In review"
-msgstr ""
+msgstr "İncelemede"
 
 #: src/pages/Board.tsx
 msgid "Move ticket"
-msgstr ""
+msgstr "Ticket taşı"
 
 #: src/pages/Board.tsx
 msgid "New ticket"
-msgstr ""
+msgstr "Yeni ticket"
 
 #: src/lib/ticket-priority.ts
 msgid "Normal"
-msgstr ""
+msgstr "Normal"
 
 #: src/pages/Board.tsx
 msgid "Owner"
-msgstr ""
+msgstr "Sahip"
 
 #: src/pages/Board.tsx
 msgid "Priority"
-msgstr ""
+msgstr "Öncelik"
 
 #: src/pages/Board.tsx
 msgid "Something went wrong."
-msgstr ""
+msgstr "Bir şeyler ters gitti."
 
 #: src/pages/Board.tsx
 msgid "Status"
-msgstr ""
+msgstr "Durum"
 
 #: src/lib/ticket-status.ts
 msgid "To do"
-msgstr ""
+msgstr "Yapılacak"
 
 #: src/lib/ticket-priority.ts
 msgid "Urgent"
-msgstr ""
+msgstr "Acil"
 
 #: src/pages/Board.tsx
 msgid "Could not move the ticket."
-msgstr ""
+msgstr "Ticket taşınamadı."

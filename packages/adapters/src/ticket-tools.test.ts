@@ -75,7 +75,7 @@ describe("ticket tools", () => {
     expect(findMany).toHaveBeenCalledWith({
       where: { spaceId: "ws", boardId: "board-1", status: "doing" },
       orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
-      take: 50,
+      take: 51,
     });
     expect(result).toEqual({ tickets: [expect.objectContaining({ ref: "RAK-1" })] });
   });
@@ -89,12 +89,54 @@ describe("ticket tools", () => {
     expect(findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { spaceId: "ws", boardId: "board-1", status: { not: "closed" } },
-        take: 50,
+        take: 51,
       }),
     );
     const listed = (result as { tickets: { description: string }[] }).tickets[0]!;
     expect(listed.description).toHaveLength(200);
     expect(listed.description.endsWith("…")).toBe(true);
+  });
+
+  it("pages older tickets with a cursor and rejects a bad one", async () => {
+    const rows = Array.from({ length: 51 }, (_, index) =>
+      ticket({
+        id: `t${String(index).padStart(2, "0")}`,
+        number: index + 1,
+        updatedAt: new Date(NOW.getTime() - index * 1000),
+      }),
+    );
+    const findMany = vi.fn(async (_query: unknown) => rows);
+    const prisma = { ...boardSpace(), ticket: { findMany } };
+
+    const first = await listBoardTickets({ prisma } as never, { spaceId: "ws" });
+    expect(first).toEqual({
+      tickets: expect.any(Array),
+      nextCursor: expect.any(String),
+    });
+    const page = first as { tickets: { id: string }[]; nextCursor: string };
+    expect(page.tickets).toHaveLength(50);
+    expect(page.tickets[49]?.id).toBe("t49");
+
+    await listBoardTickets({ prisma } as never, { spaceId: "ws", cursor: page.nextCursor });
+    expect(findMany.mock.calls[1]?.[0]).toEqual({
+      where: {
+        spaceId: "ws",
+        boardId: "board-1",
+        status: { not: "closed" },
+        OR: [
+          { updatedAt: { lt: rows[49]!.updatedAt } },
+          { updatedAt: rows[49]!.updatedAt, id: { lt: "t49" } },
+        ],
+      },
+      orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
+      take: 51,
+    });
+
+    const invalid = await listBoardTickets({ prisma } as never, {
+      spaceId: "ws",
+      cursor: "not-a-cursor",
+    });
+    expect(invalid).toEqual({ error: "cursor is invalid." });
   });
 
   it("rejects an unknown status filter", async () => {
@@ -319,6 +361,22 @@ describe("ticket tools", () => {
       where: { id: "t5" },
       data: { title: "New title", priority: "high", updatedByBotId: "bot-1" },
     });
+
+    update.mockClear();
+    await updateTicket({ prisma } as never, {
+      spaceId: "ws",
+      botId: "bot-2",
+      id: "t5",
+      title: "From elsewhere",
+    });
+    expect(update).toHaveBeenCalledWith({
+      where: { id: "t5" },
+      data: {
+        title: "From elsewhere",
+        updatedByBotId: "bot-2",
+        externalUpdatedAt: expect.any(Date),
+      },
+    });
     expect(result).toEqual({ ticket: expect.objectContaining({ title: "New title" }) });
   });
 
@@ -442,7 +500,12 @@ describe("ticket tools", () => {
     expect(assigned).toEqual({ ticket: expect.objectContaining({ assigneeBotId: "bot-2" }) });
     expect(update).toHaveBeenCalledWith({
       where: { id: "t1" },
-      data: { assigneeBotId: "bot-2", assigneeUserId: null, updatedByBotId: "bot-1" },
+      data: {
+        assigneeBotId: "bot-2",
+        assigneeUserId: null,
+        updatedByBotId: "bot-1",
+        externalUpdatedAt: expect.any(Date),
+      },
     });
 
     botFindFirst.mockResolvedValueOnce(null);

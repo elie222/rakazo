@@ -4202,93 +4202,93 @@ msgstr "पैनल का आकार बदलें"
 #. placeholder {0}: owner.name
 #: src/pages/Board.tsx
 msgid "{0} is working"
-msgstr ""
+msgstr "{0} काम कर रहा है"
 
 #: src/pages/Board.tsx
 msgid "Add a comment"
-msgstr ""
+msgstr "टिप्पणी जोड़ें"
 
 #: src/lib/ticket-status.ts
 msgid "Blocked"
-msgstr ""
+msgstr "अवरुद्ध"
 
 #: src/pages/Board.tsx
 msgid "Board"
-msgstr ""
+msgstr "बोर्ड"
 
 #: src/pages/Board.tsx
 #: src/pages/Shell.tsx
 msgid "Boards"
-msgstr ""
+msgstr "बोर्ड"
 
 #: src/lib/ticket-status.ts
 msgid "Closed"
-msgstr ""
+msgstr "बंद"
 
 #: src/pages/Board.tsx
 msgid "Comment"
-msgstr ""
+msgstr "टिप्पणी करें"
 
 #: src/pages/Board.tsx
 msgid "Could not create the ticket."
-msgstr ""
+msgstr "टिकट नहीं बन सका।"
 
 #: src/pages/Board.tsx
 msgid "Could not load comments."
-msgstr ""
+msgstr "टिप्पणियाँ लोड नहीं हो सकीं।"
 
 #: src/pages/Board.tsx
 msgid "Could not load the board."
-msgstr ""
+msgstr "बोर्ड लोड नहीं हो सका।"
 
 #: src/pages/Board.tsx
 msgid "Edit"
-msgstr ""
+msgstr "संपादित करें"
 
 #: src/lib/ticket-status.ts
 msgid "In progress"
-msgstr ""
+msgstr "प्रगति पर"
 
 #: src/lib/ticket-status.ts
 msgid "In review"
-msgstr ""
+msgstr "समीक्षा में"
 
 #: src/pages/Board.tsx
 msgid "Move ticket"
-msgstr ""
+msgstr "टिकट ले जाएँ"
 
 #: src/pages/Board.tsx
 msgid "New ticket"
-msgstr ""
+msgstr "नया टिकट"
 
 #: src/lib/ticket-priority.ts
 msgid "Normal"
-msgstr ""
+msgstr "सामान्य"
 
 #: src/pages/Board.tsx
 msgid "Owner"
-msgstr ""
+msgstr "स्वामी"
 
 #: src/pages/Board.tsx
 msgid "Priority"
-msgstr ""
+msgstr "प्राथमिकता"
 
 #: src/pages/Board.tsx
 msgid "Something went wrong."
-msgstr ""
+msgstr "कुछ गलत हो गया।"
 
 #: src/pages/Board.tsx
 msgid "Status"
-msgstr ""
+msgstr "स्थिति"
 
 #: src/lib/ticket-status.ts
 msgid "To do"
-msgstr ""
+msgstr "करना है"
 
 #: src/lib/ticket-priority.ts
 msgid "Urgent"
-msgstr ""
+msgstr "अत्यावश्यक"
 
 #: src/pages/Board.tsx
 msgid "Could not move the ticket."
-msgstr ""
+msgstr "टिकट नहीं ले जाया जा सका।"

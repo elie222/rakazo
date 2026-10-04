@@ -186,6 +186,22 @@ describe("runTicketChecks", () => {
     expect(taskCreate).not.toHaveBeenCalled();
   });
 
+  it("wakes when an external edit remains after the bot's own later edit", async () => {
+    const bot = botRow({ ticketsCheckedAt: hoursAgo(3) });
+    const { deps, taskCreate } = depsFor({
+      bots: [bot],
+      tickets: [
+        ticketRow({
+          updatedAt: hoursAgo(1),
+          updatedByBotId: "bot-1",
+          externalUpdatedAt: hoursAgo(2),
+        }),
+      ],
+    });
+    await runTicketChecks(deps, { trigger: "periodic", now: NOW });
+    expect(taskCreate).toHaveBeenCalledTimes(1);
+  });
+
   it("wakes for an edit someone else made after the last check", async () => {
     const bot = botRow({ ticketsCheckedAt: hoursAgo(3) });
     const { deps, taskCreate } = depsFor({
@@ -287,6 +303,7 @@ describe("reconcileTicketChecks", () => {
       expect.objectContaining({
         where: expect.objectContaining({
           archivedAt: null,
+          runs: { none: { status: { in: [...ACTIVE_RUN_STATUSES] } } },
           OR: [{ ticketsCheckedAt: null }, { ticketsCheckedAt: { lt: expect.any(Date) } }],
         }),
       }),

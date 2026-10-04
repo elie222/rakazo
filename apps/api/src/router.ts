@@ -207,6 +207,7 @@ import {
   findTicket,
   listBoards,
   listTicketComments,
+  ticketEditorStamp,
   toBoardDto,
   toTicketCommentDto,
   toTicketDto,
@@ -3484,6 +3485,7 @@ export function createRouter(deps: RouterDeps) {
               assigneeBotId: input.assigneeBotId,
               createdByUserId: context.actor.userId,
               completedAt: null,
+              ...ticketEditorStamp(null, input.assigneeBotId),
             },
           });
         });
@@ -3520,7 +3522,10 @@ export function createRouter(deps: RouterDeps) {
         }
         const row = await deps.prisma.ticket.update({
           where: { id: existing.id },
-          data: { ...data, updatedByBotId: null },
+          data: {
+            ...data,
+            ...ticketEditorStamp(null, input.assigneeBotId ?? existing.assigneeBotId),
+          },
         });
         await deps.ticketChanges({
           spaceId: context.actor.spaceId,
@@ -3543,7 +3548,7 @@ export function createRouter(deps: RouterDeps) {
           where: { id: existing.id },
           data: {
             status: input.status,
-            updatedByBotId: null,
+            ...ticketEditorStamp(null, existing.assigneeBotId),
             completedAt: isTicketCompletedStatus(input.status)
               ? (existing.completedAt ?? new Date())
               : null,
@@ -3576,7 +3581,7 @@ export function createRouter(deps: RouterDeps) {
           });
           await tx.ticket.update({
             where: { id: ticket.id },
-            data: { updatedAt: new Date(), updatedByBotId: null },
+            data: { updatedAt: new Date(), ...ticketEditorStamp(null, ticket.assigneeBotId) },
           });
           return comment;
         });

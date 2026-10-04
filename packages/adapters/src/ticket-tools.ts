@@ -13,6 +13,7 @@ import {
   ensureBoard,
   findTicket,
   listTicketComments,
+  ticketEditorStamp,
   toTicketCommentDto,
   toTicketDto,
 } from "@rakazo/db";
@@ -67,6 +68,27 @@ function normalizePriority(value: string) {
 const LIST_TICKETS_LIMIT = 50;
 const LIST_DESCRIPTION_CHARS = 200;
 
+function encodeTicketListCursor(row: { updatedAt: Date; id: string }): string {
+  return Buffer.from(`${row.updatedAt.toISOString()}|${row.id}`, "utf8").toString("base64url");
+}
+
+function decodeTicketListCursor(
+  cursor: string,
+): { updatedAt: Date; id: string } | { error: string } {
+  let raw: string;
+  try {
+    raw = Buffer.from(cursor, "base64url").toString("utf8");
+  } catch {
+    return { error: "cursor is invalid." };
+  }
+  const split = raw.indexOf("|");
+  if (split <= 0) return { error: "cursor is invalid." };
+  const updatedAt = new Date(raw.slice(0, split));
+  const id = raw.slice(split + 1);
+  if (Number.isNaN(updatedAt.getTime()) || !id) return { error: "cursor is invalid." };
+  return { updatedAt, id };
+}
+
 function truncateDescription(value: string | null | undefined) {
   if (!value || value.length <= LIST_DESCRIPTION_CHARS) return value;
   return `${value.slice(0, LIST_DESCRIPTION_CHARS - 1)}…`;
@@ -78,12 +100,20 @@ export async function listBoardTickets(
     spaceId: string;
     status?: string;
     assigneeBotId?: string;
+    cursor?: string;
   },
 ) {
   let status: TicketStatus | undefined;
   if (input.status !== undefined) {
     status = coerceInputStatus(input.status);
     if (!status) return { error: STATUS_ERROR };
+  }
+  const cursor = input.cursor?.trim();
+  let pageCursor: { updatedAt: Date; id: string } | undefined;
+  if (cursor) {
+    const decoded = decodeTicketListCursor(cursor);
+    if ("error" in decoded) return decoded;
+    pageCursor = decoded;
   }
   const board = await ensureBoard(deps.prisma, input.spaceId);
   const rows = await deps.prisma.ticket.findMany({
@@ -93,16 +123,27 @@ export async function listBoardTickets(
       // Closed tickets are history; they only show up when asked for by status.
       ...(status ? { status } : { status: { not: "closed" } }),
       ...(input.assigneeBotId ? { assigneeBotId: input.assigneeBotId } : {}),
+      ...(pageCursor
+        ? {
+            OR: [
+              { updatedAt: { lt: pageCursor.updatedAt } },
+              { updatedAt: pageCursor.updatedAt, id: { lt: pageCursor.id } },
+            ],
+          }
+        : {}),
     },
     orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
-    take: LIST_TICKETS_LIMIT,
+    take: LIST_TICKETS_LIMIT + 1,
   });
+  const page = rows.slice(0, LIST_TICKETS_LIMIT);
+  const next = rows.length > LIST_TICKETS_LIMIT ? page.at(-1) : undefined;
   // A list is for scanning; ticket_get returns the full description.
   return {
-    tickets: rows.map((row) => {
+    tickets: page.map((row) => {
       const dto = toTicketDto(row, board.ticketPrefix);
       return { ...dto, description: truncateDescription(dto.description) };
     }),
+    ...(next ? { nextCursor: encodeTicketListCursor(next) } : {}),
   };
 }
 
@@ -163,8 +204,8 @@ export async function createTicket(
         description,
         priority,
         status: "todo",
-        updatedByBotId: input.botId,
         assigneeBotId: ownerBotId,
+        ...ticketEditorStamp(input.botId, ownerBotId),
         createdByBotId: input.botId,
         createdByUserId: input.userId ?? null,
         completedAt: null,
@@ -195,7 +236,7 @@ export async function moveTicket(
     where: { id: existing.id },
     data: {
       status,
-      updatedByBotId: input.botId,
+      ...ticketEditorStamp(input.botId, existing.assigneeBotId),
       completedAt: isTicketCompletedStatus(status) ? (existing.completedAt ?? new Date()) : null,
     },
   });
@@ -235,8 +276,9 @@ export async function updateTicket(
     title?: string;
     description?: string | null;
     priority?: string;
-    updatedByBotId: string;
-  } = { updatedByBotId: input.botId };
+    updatedByBotId: string | null;
+    externalUpdatedAt?: Date;
+  } = { ...ticketEditorStamp(input.botId, existing.assigneeBotId) };
   if (input.title !== undefined) {
     const result = normalizeTitle(input.title);
     if ("error" in result) return result;
@@ -289,7 +331,7 @@ export async function closeTicket(
       data: {
         status: "closed",
         completedAt: existing.completedAt ?? new Date(),
-        updatedByBotId: input.botId,
+        ...ticketEditorStamp(input.botId, existing.assigneeBotId),
       },
     });
     const created = comment
@@ -348,7 +390,10 @@ export async function commentTicket(
     });
     await tx.ticket.update({
       where: { id: ticket.id },
-      data: { updatedAt: new Date(), updatedByBotId: input.botId },
+      data: {
+        updatedAt: new Date(),
+        ...ticketEditorStamp(input.botId, ticket.assigneeBotId),
+      },
     });
     return created;
   });
@@ -374,7 +419,11 @@ export async function assignTicket(
   }
   const row = await deps.prisma.ticket.update({
     where: { id: existing.id },
-    data: { assigneeBotId: input.ownerBotId, assigneeUserId: null, updatedByBotId: input.botId },
+    data: {
+      assigneeBotId: input.ownerBotId,
+      assigneeUserId: null,
+      ...ticketEditorStamp(input.botId, input.ownerBotId),
+    },
   });
   await deps.onTicketChange?.({
     spaceId: input.spaceId,

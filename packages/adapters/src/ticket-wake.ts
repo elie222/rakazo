@@ -31,8 +31,14 @@ export type TicketWakeDecisionInput = {
   /**
    * Actionable tickets assigned to the bot, any order. `updatedByBot` marks a
    * latest change made by this bot itself, which is not news to the bot.
+   * `externalUpdatedAt` is a change by someone else that a later self-edit
+   * does not clear.
    */
-  tickets: readonly { updatedAt: Date; updatedByBot?: boolean }[];
+  tickets: readonly {
+    updatedAt: Date;
+    updatedByBot?: boolean;
+    externalUpdatedAt?: Date | null;
+  }[];
   lastCheckAt: Date | null;
   lastWakeAt: Date | null;
   hasActiveRun: boolean;
@@ -60,7 +66,10 @@ export function decideTicketWake(input: TicketWakeDecisionInput): TicketWakeDeci
   const lastCheckAt = input.lastCheckAt;
   const changed = lastCheckAt
     ? input.tickets.some(
-        (ticket) => !ticket.updatedByBot && ticket.updatedAt.getTime() > lastCheckAt.getTime(),
+        (ticket) =>
+          (ticket.externalUpdatedAt != null &&
+            ticket.externalUpdatedAt.getTime() > lastCheckAt.getTime()) ||
+          (!ticket.updatedByBot && ticket.updatedAt.getTime() > lastCheckAt.getTime()),
       )
     : true;
   if (changed) return { wake: true, reason: "changed" };

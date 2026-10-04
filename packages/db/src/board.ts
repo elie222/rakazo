@@ -159,6 +159,22 @@ export function toTicketDto(row: TicketRow, ticketPrefix: string): Ticket {
   };
 }
 
+/**
+ * Stamp who last changed a ticket. A change by someone other than the assignee
+ * also records `externalUpdatedAt`, which the assignee's own later edits do not
+ * clear, so a self-edit cannot hide an unseen external update.
+ */
+export function ticketEditorStamp(
+  actorBotId: string | null,
+  assigneeBotId: string | null,
+  now = new Date(),
+): { updatedByBotId: string | null; externalUpdatedAt?: Date } {
+  if (actorBotId !== null && actorBotId === assigneeBotId) {
+    return { updatedByBotId: actorBotId };
+  }
+  return { updatedByBotId: actorBotId, externalUpdatedAt: now };
+}
+
 /** Comments for a ticket, oldest first, scoped to the space. */
 export async function listTicketComments(
   prisma: Pick<PrismaClient, "ticketComment">,

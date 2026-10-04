@@ -5126,6 +5126,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 spaceId: run.spaceId,
                 status: args.status !== undefined ? String(args.status) : undefined,
                 assigneeBotId: args.ownerBotId !== undefined ? String(args.ownerBotId) : undefined,
+                cursor: args.cursor !== undefined ? String(args.cursor) : undefined,
               }),
             );
           }

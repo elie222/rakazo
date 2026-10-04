@@ -4202,93 +4202,93 @@ msgstr "Redimensionar painel"
 #. placeholder {0}: owner.name
 #: src/pages/Board.tsx
 msgid "{0} is working"
-msgstr ""
+msgstr "{0} está trabalhando"
 
 #: src/pages/Board.tsx
 msgid "Add a comment"
-msgstr ""
+msgstr "Adicionar um comentário"
 
 #: src/lib/ticket-status.ts
 msgid "Blocked"
-msgstr ""
+msgstr "Bloqueado"
 
 #: src/pages/Board.tsx
 msgid "Board"
-msgstr ""
+msgstr "Quadro"
 
 #: src/pages/Board.tsx
 #: src/pages/Shell.tsx
 msgid "Boards"
-msgstr ""
+msgstr "Quadros"
 
 #: src/lib/ticket-status.ts
 msgid "Closed"
-msgstr ""
+msgstr "Fechado"
 
 #: src/pages/Board.tsx
 msgid "Comment"
-msgstr ""
+msgstr "Comentar"
 
 #: src/pages/Board.tsx
 msgid "Could not create the ticket."
-msgstr ""
+msgstr "Não foi possível criar o ticket."
 
 #: src/pages/Board.tsx
 msgid "Could not load comments."
-msgstr ""
+msgstr "Não foi possível carregar os comentários."
 
 #: src/pages/Board.tsx
 msgid "Could not load the board."
-msgstr ""
+msgstr "Não foi possível carregar o quadro."
 
 #: src/pages/Board.tsx
 msgid "Edit"
-msgstr ""
+msgstr "Editar"
 
 #: src/lib/ticket-status.ts
 msgid "In progress"
-msgstr ""
+msgstr "Em andamento"
 
 #: src/lib/ticket-status.ts
 msgid "In review"
-msgstr ""
+msgstr "Em revisão"
 
 #: src/pages/Board.tsx
 msgid "Move ticket"
-msgstr ""
+msgstr "Mover ticket"
 
 #: src/pages/Board.tsx
 msgid "New ticket"
-msgstr ""
+msgstr "Novo ticket"
 
 #: src/lib/ticket-priority.ts
 msgid "Normal"
-msgstr ""
+msgstr "Normal"
 
 #: src/pages/Board.tsx
 msgid "Owner"
-msgstr ""
+msgstr "Responsável"
 
 #: src/pages/Board.tsx
 msgid "Priority"
-msgstr ""
+msgstr "Prioridade"
 
 #: src/pages/Board.tsx
 msgid "Something went wrong."
-msgstr ""
+msgstr "Algo deu errado."
 
 #: src/pages/Board.tsx
 msgid "Status"
-msgstr ""
+msgstr "Status"
 
 #: src/lib/ticket-status.ts
 msgid "To do"
-msgstr ""
+msgstr "A fazer"
 
 #: src/lib/ticket-priority.ts
 msgid "Urgent"
-msgstr ""
+msgstr "Urgente"
 
 #: src/pages/Board.tsx
 msgid "Could not move the ticket."
-msgstr ""
+msgstr "Não foi possível mover o ticket."

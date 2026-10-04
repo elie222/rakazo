@@ -72,6 +72,7 @@ export async function runTicketChecks(
         assigneeBotId: true,
         updatedAt: true,
         updatedByBotId: true,
+        externalUpdatedAt: true,
       },
     }),
     deps.prisma.ticketComment.findMany({
@@ -111,6 +112,7 @@ export async function runTicketChecks(
       tickets: botTickets.map((ticket) => ({
         updatedAt: ticket.updatedAt,
         updatedByBot: ticket.updatedByBotId === bot.id,
+        externalUpdatedAt: ticket.externalUpdatedAt,
       })),
       lastCheckAt: bot.ticketsCheckedAt,
       lastWakeAt: bot.ticketsWakeAt,
@@ -258,6 +260,9 @@ export async function reconcileTicketChecks(deps: TicketCheckDeps): Promise<void
   const overdue = await deps.prisma.bot.findFirst({
     where: {
       archivedAt: null,
+      // A running bot cannot be woken. Leaving its cursor stale would schedule
+      // another full sweep on every reconciler pass until that run ends.
+      runs: { none: { status: { in: [...ACTIVE_RUN_STATUSES] } } },
       OR: [
         { ticketsCheckedAt: null },
         { ticketsCheckedAt: { lt: new Date(Date.now() - TICKET_CHECK_INTERVAL_MS) } },

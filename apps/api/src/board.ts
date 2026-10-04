@@ -6,6 +6,7 @@ export {
   findTicket,
   listBoards,
   listTicketComments,
+  ticketEditorStamp,
   toBoardDto,
   toTicketCommentDto,
   toTicketDto,
