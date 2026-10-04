@@ -383,7 +383,10 @@ export class ComposioConnector implements ComposioProvider {
       );
       const result = await session.execute(call.tool, call.args ?? {});
       if (result.error) {
-        yield { type: "error", message: sanitizeComposioError(result.error) };
+        yield {
+          type: "error",
+          message: sanitizeComposioError(composioResultError(result.error, result.data)),
+        };
         return;
       }
       const logId = collectLogIds(result)[0] ?? "";
@@ -767,6 +770,27 @@ export function isNoAuthToolkitError(error: unknown): boolean {
   return (
     message.includes("ToolkitsIsNoAuth") || message.includes("does not require authentication")
   );
+}
+
+/**
+ * COMPOSIO_MULTI_EXECUTE_TOOL reports a failed batch as "N out of M tools
+ * failed" and puts each tool's real error in `data.results`. Keep those, or the
+ * model cannot tell "message not found" apart from a broken integration.
+ */
+export function composioResultError(summary: string, data: unknown): string {
+  const results = (data as { results?: unknown } | null | undefined)?.results;
+  if (!Array.isArray(results)) return summary;
+  const details = results.flatMap((entry) => {
+    const item = entry as {
+      tool_slug?: unknown;
+      error?: unknown;
+      response?: { successful?: unknown; error?: unknown };
+    };
+    const error = item.error ?? item.response?.error;
+    if (typeof error !== "string" || !error) return [];
+    return [typeof item.tool_slug === "string" ? `${item.tool_slug}: ${error}` : error];
+  });
+  return details.length > 0 ? `${summary}: ${details.join("; ")}` : summary;
 }
 
 export function sanitizeComposioError(error: unknown): string {

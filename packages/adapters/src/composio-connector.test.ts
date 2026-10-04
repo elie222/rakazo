@@ -8,6 +8,7 @@ import {
   CompositeConnector,
   collectLogIds,
   collectPages,
+  composioResultError,
   executeSessionKey,
   filterCatalog,
   isComposioEnabled,
@@ -218,6 +219,27 @@ describe("composio tool mapping", () => {
     expect(sanitizeComposioError("COMPOSIO_API_KEY=ak_shouldnotleak")).not.toContain(
       "ak_shouldnotleak",
     );
+  });
+
+  it("keeps each tool's error when a multi-execute batch fails", () => {
+    const data = {
+      results: [
+        { tool_slug: "TOOL_OK", response: { successful: true, data: {} } },
+        {
+          tool_slug: "TOOL_MISSING",
+          error: "The requested message was not found.",
+          response: { successful: false, data: { status_code: 404 } },
+        },
+        { tool_slug: "TOOL_NESTED", response: { successful: false, error: "Query failed." } },
+      ],
+    };
+    expect(composioResultError("2 out of 3 tools failed", data)).toBe(
+      "2 out of 3 tools failed: TOOL_MISSING: The requested message was not found.; TOOL_NESTED: Query failed.",
+    );
+    expect(composioResultError("1 out of 1 tools failed", { results: [] })).toBe(
+      "1 out of 1 tools failed",
+    );
+    expect(composioResultError("Session expired", null)).toBe("Session expired");
   });
 
   it("paginates until the cursor ends", async () => {
