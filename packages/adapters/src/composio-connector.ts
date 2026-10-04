@@ -787,12 +787,14 @@ export function composioResultError(summary: string, data: unknown): string {
       error?: unknown;
       response?: { error?: unknown } | null;
     };
-    const error = item.error ?? item.response?.error;
-    if (typeof error !== "string" || !error) return [];
-    return [typeof item.tool_slug === "string" ? `${item.tool_slug}: ${error}` : error];
+    const error = [item.error, item.response?.error].find(
+      (value): value is string => typeof value === "string" && value.length > 0,
+    );
+    if (!error) return [];
+    const detail = error.length > 500 ? `${error.slice(0, 500)}…` : error;
+    return [typeof item.tool_slug === "string" ? `${item.tool_slug}: ${detail}` : detail];
   });
-  if (details.length === 0) return summary;
-  return `${summary}: ${details.join("; ")}`.slice(0, 2_000);
+  return details.length > 0 ? `${summary}: ${details.join("; ")}` : summary;
 }
 
 export function sanitizeComposioError(error: unknown): string {

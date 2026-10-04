@@ -234,7 +234,11 @@ describe("composio tool mapping", () => {
           error: "The requested message was not found.",
           response: { successful: false, data: { status_code: 404 } },
         },
-        { tool_slug: "TOOL_NESTED", response: { successful: false, error: "Query failed." } },
+        {
+          tool_slug: "TOOL_NESTED",
+          error: "",
+          response: { successful: false, error: "Query failed." },
+        },
         null,
         "not-an-object",
       ],
@@ -246,6 +250,14 @@ describe("composio tool mapping", () => {
       "1 out of 1 tools failed",
     );
     expect(composioResultError("Session expired", null)).toBe("Session expired");
+    const long = composioResultError("2 out of 2 tools failed", {
+      results: [
+        { tool_slug: "TOOL_LONG", error: "x".repeat(800) },
+        { tool_slug: "TOOL_LATER", error: "Still reported." },
+      ],
+    });
+    expect(long).toContain(`TOOL_LONG: ${"x".repeat(500)}…`);
+    expect(long).toContain("TOOL_LATER: Still reported.");
   });
 
   it("paginates until the cursor ends", async () => {
