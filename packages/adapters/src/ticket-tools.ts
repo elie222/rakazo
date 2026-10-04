@@ -64,6 +64,14 @@ function normalizePriority(value: string) {
   return coerceTicketPriority(value);
 }
 
+const LIST_TICKETS_LIMIT = 50;
+const LIST_DESCRIPTION_CHARS = 200;
+
+function truncateDescription(value: string | null | undefined) {
+  if (!value || value.length <= LIST_DESCRIPTION_CHARS) return value;
+  return `${value.slice(0, LIST_DESCRIPTION_CHARS - 1)}…`;
+}
+
 export async function listBoardTickets(
   deps: TicketToolDeps,
   input: {
@@ -82,12 +90,20 @@ export async function listBoardTickets(
     where: {
       spaceId: input.spaceId,
       boardId: board.id,
-      ...(status ? { status } : {}),
+      // Closed tickets are history; they only show up when asked for by status.
+      ...(status ? { status } : { status: { not: "closed" } }),
       ...(input.assigneeBotId ? { assigneeBotId: input.assigneeBotId } : {}),
     },
     orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
+    take: LIST_TICKETS_LIMIT,
   });
-  return { tickets: rows.map((row) => toTicketDto(row, board.ticketPrefix)) };
+  // A list is for scanning; ticket_get returns the full description.
+  return {
+    tickets: rows.map((row) => {
+      const dto = toTicketDto(row, board.ticketPrefix);
+      return { ...dto, description: truncateDescription(dto.description) };
+    }),
+  };
 }
 
 export async function getTicket(deps: TicketToolDeps, input: { spaceId: string; ref: string }) {
@@ -147,6 +163,7 @@ export async function createTicket(
         description,
         priority,
         status: "todo",
+        updatedByBotId: input.botId,
         assigneeBotId: ownerBotId,
         createdByBotId: input.botId,
         createdByUserId: input.userId ?? null,
@@ -167,7 +184,7 @@ export async function createTicket(
 
 export async function moveTicket(
   deps: TicketToolDeps,
-  input: { spaceId: string; id: string; status: string },
+  input: { spaceId: string; botId: string; id: string; status: string },
 ) {
   const status = coerceInputStatus(input.status);
   if (!status) return { error: STATUS_ERROR };
@@ -178,6 +195,7 @@ export async function moveTicket(
     where: { id: existing.id },
     data: {
       status,
+      updatedByBotId: input.botId,
       completedAt: isTicketCompletedStatus(status) ? (existing.completedAt ?? new Date()) : null,
     },
   });
@@ -195,6 +213,7 @@ export async function updateTicket(
   deps: TicketToolDeps,
   input: {
     spaceId: string;
+    botId: string;
     id: string;
     title?: string;
     description?: string;
@@ -212,7 +231,12 @@ export async function updateTicket(
   const existing = await findTicket(deps.prisma, input.spaceId, board, { id: input.id });
   if (!existing) return { error: `Ticket ${input.id} not found.` };
 
-  const data: { title?: string; description?: string | null; priority?: string } = {};
+  const data: {
+    title?: string;
+    description?: string | null;
+    priority?: string;
+    updatedByBotId: string;
+  } = { updatedByBotId: input.botId };
   if (input.title !== undefined) {
     const result = normalizeTitle(input.title);
     if ("error" in result) return result;
@@ -262,7 +286,11 @@ export async function closeTicket(
   const result = await deps.prisma.$transaction(async (tx) => {
     const ticket = await tx.ticket.update({
       where: { id: existing.id },
-      data: { status: "closed", completedAt: existing.completedAt ?? new Date() },
+      data: {
+        status: "closed",
+        completedAt: existing.completedAt ?? new Date(),
+        updatedByBotId: input.botId,
+      },
     });
     const created = comment
       ? await tx.ticketComment.create({
@@ -318,7 +346,10 @@ export async function commentTicket(
         body,
       },
     });
-    await tx.ticket.update({ where: { id: ticket.id }, data: { updatedAt: new Date() } });
+    await tx.ticket.update({
+      where: { id: ticket.id },
+      data: { updatedAt: new Date(), updatedByBotId: input.botId },
+    });
     return created;
   });
   await deps.onTicketChange?.({
@@ -343,7 +374,7 @@ export async function assignTicket(
   }
   const row = await deps.prisma.ticket.update({
     where: { id: existing.id },
-    data: { assigneeBotId: input.ownerBotId, assigneeUserId: null },
+    data: { assigneeBotId: input.ownerBotId, assigneeUserId: null, updatedByBotId: input.botId },
   });
   await deps.onTicketChange?.({
     spaceId: input.spaceId,

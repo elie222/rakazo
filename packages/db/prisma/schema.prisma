@@ -1392,6 +1392,8 @@ model Ticket {
   createdByUser   User?     @relation("TicketCreatorUser", fields: [createdByUserId], references: [id], onDelete: SetNull)
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
+  /// Bot behind the latest change; null when a person made it. Lets a bot ignore its own edits.
+  updatedByBotId  String?
   completedAt     DateTime?
   comments        TicketComment[]
 

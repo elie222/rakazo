@@ -72,6 +72,7 @@ export function BoardPage() {
   const [workingBotIds, setWorkingBotIds] = useState<ReadonlySet<string>>(new Set());
   const [bots, setBots] = useState<Bot[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [moveError, setMoveError] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [closedCollapsed, setClosedCollapsed] = useState(readClosedCollapsed);
@@ -232,6 +233,12 @@ export function BoardPage() {
         </div>
       </header>
 
+      {moveError ? (
+        <div role="alert" className="px-6 py-2 text-sm text-destructive">
+          {moveError}
+        </div>
+      ) : null}
+
       <div className="min-h-0 flex-1 overflow-hidden">
         {loadError ? (
           <div className="grid h-full place-items-center px-6 text-sm text-destructive">
@@ -250,8 +257,13 @@ export function BoardPage() {
             onToggleClosed={toggleClosed}
             onOpen={(id) => setSelectedId(id)}
             onMove={async (id, status) => {
+              setMoveError(null);
               try {
                 await rpc.tickets.update({ id, status });
+              } catch (error) {
+                setMoveError(
+                  error instanceof Error ? error.message : t`Could not move the ticket.`,
+                );
               } finally {
                 reload();
               }

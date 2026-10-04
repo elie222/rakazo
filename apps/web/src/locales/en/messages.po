@@ -4288,3 +4288,7 @@ msgstr "To do"
 #: src/lib/ticket-priority.ts
 msgid "Urgent"
 msgstr "Urgent"
+
+#: src/pages/Board.tsx
+msgid "Could not move the ticket."
+msgstr "Could not move the ticket."

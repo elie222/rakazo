@@ -71,6 +71,7 @@ export async function runTicketChecks(
         priority: true,
         assigneeBotId: true,
         updatedAt: true,
+        updatedByBotId: true,
       },
     }),
     deps.prisma.ticketComment.findMany({
@@ -107,7 +108,10 @@ export async function runTicketChecks(
     const decision = decideTicketWake({
       now,
       trigger: options.trigger,
-      tickets: botTickets,
+      tickets: botTickets.map((ticket) => ({
+        updatedAt: ticket.updatedAt,
+        updatedByBot: ticket.updatedByBotId === bot.id,
+      })),
       lastCheckAt: bot.ticketsCheckedAt,
       lastWakeAt: bot.ticketsWakeAt,
       hasActiveRun: activeBotIds.has(bot.id),
@@ -136,9 +140,10 @@ export async function runTicketChecks(
         tickets: wakeTickets,
         reason: decision.reason,
       });
-      // Only a wake this process started moves the cursor. A lost claim, a busy
-      // abort, or a skipped bot leaves it so the change is still visible later.
-      advanceCheck = outcome === "started";
+      // Only a wake this process started moves the cursor (a bot without a thread
+      // can never wake, so it moves too). A lost claim or a busy abort leaves it so
+      // the change is still visible later.
+      advanceCheck = outcome === "started" || outcome === "skipped";
     }
     if (advanceCheck) checkedBotIds.push(bot.id);
   }
@@ -244,18 +249,22 @@ async function startTicketWake(
 }
 
 /**
- * Durable backstop for the periodic sweep: re-enqueue the sweep job when no bot
- * has been checked inside the interval. The reconciler runs on one leader, so
- * this does not stampede.
+ * Durable backstop for the periodic sweep: re-enqueue the sweep job when any
+ * bot is overdue for a check. Judging by the stalest bot, not the freshest,
+ * keeps frequent activity in one space from postponing everyone else's sweep.
+ * The job is keyed, so repeated enqueues collapse into one.
  */
 export async function reconcileTicketChecks(deps: TicketCheckDeps): Promise<void> {
-  const bots = await deps.prisma.bot.count({ where: { archivedAt: null } });
-  if (bots === 0) return;
-  const latest = await deps.prisma.bot.aggregate({
-    where: { archivedAt: null },
-    _max: { ticketsCheckedAt: true },
+  const overdue = await deps.prisma.bot.findFirst({
+    where: {
+      archivedAt: null,
+      OR: [
+        { ticketsCheckedAt: null },
+        { ticketsCheckedAt: { lt: new Date(Date.now() - TICKET_CHECK_INTERVAL_MS) } },
+      ],
+    },
+    select: { id: true },
   });
-  const last = latest._max.ticketsCheckedAt;
-  if (last && Date.now() - last.getTime() < TICKET_CHECK_INTERVAL_MS) return;
+  if (!overdue) return;
   await deps.jobs.enqueue(ticketsCheckJob());
 }

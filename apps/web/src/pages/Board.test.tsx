@@ -40,7 +40,11 @@ vi.mock("@rakazo/ui-web", () => {
     DialogTitle: Container,
     DropdownMenu: Container,
     DropdownMenuContent: Container,
-    DropdownMenuItem: Container,
+    DropdownMenuItem: ({ children, onClick, disabled }: ComponentProps<"button">) => (
+      <button type="button" role="menuitem" onClick={onClick} disabled={disabled}>
+        {children}
+      </button>
+    ),
     DropdownMenuTrigger: Container,
     Input: (props: ComponentProps<"input">) => <input {...props} />,
     NativeSelect: (props: ComponentProps<"select">) => <select {...props} />,
@@ -333,6 +337,32 @@ it("reloads the board name when a live update arrives", async () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
     expect(page.container.textContent).toContain("Launch");
+  } finally {
+    await page.cleanup();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("shows an error instead of failing silently when moving a ticket is rejected", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  api.boards.list.mockResolvedValue([boardStub()]);
+  api.bots.list.mockResolvedValue([bot("bot-1", "Helper")]);
+  api.tickets.list.mockResolvedValue({
+    tickets: [ticket("Fix the thing", "ticket-1", "todo", "RAK-1", "bot-1")],
+    workingBotIds: [],
+  });
+  api.tickets.update.mockRejectedValue(new Error("Ticket is locked"));
+  const page = await renderBoard();
+  try {
+    const item = [...page.container.querySelectorAll<HTMLElement>("[role='menuitem']")].find((el) =>
+      el.textContent?.includes("In progress"),
+    );
+    expect(item).toBeTruthy();
+    await act(async () => item?.click());
+    expect(api.tickets.update).toHaveBeenCalledWith({ id: "ticket-1", status: "doing" });
+    expect(page.container.querySelector("[role='alert']")?.textContent).toBe("Ticket is locked");
+    // The board stays visible; the error does not replace it.
+    expect(page.container.textContent).toContain("Fix the thing");
   } finally {
     await page.cleanup();
     vi.unstubAllGlobals();

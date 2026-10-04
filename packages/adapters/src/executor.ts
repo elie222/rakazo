@@ -5154,6 +5154,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             return finish(
               await moveTicket(deps, {
                 spaceId: run.spaceId,
+                botId: bot.id,
                 id: String(args.id ?? ""),
                 status: String(args.status ?? ""),
               }),
@@ -5174,6 +5175,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             return finish(
               await updateTicket(deps, {
                 spaceId: run.spaceId,
+                botId: bot.id,
                 id: String(args.id ?? ""),
                 title: args.title !== undefined ? String(args.title) : undefined,
                 description: args.description !== undefined ? String(args.description) : undefined,

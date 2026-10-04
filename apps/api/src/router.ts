@@ -3518,7 +3518,10 @@ export function createRouter(deps: RouterDeps) {
             ? (existing.completedAt ?? new Date())
             : null;
         }
-        const row = await deps.prisma.ticket.update({ where: { id: existing.id }, data });
+        const row = await deps.prisma.ticket.update({
+          where: { id: existing.id },
+          data: { ...data, updatedByBotId: null },
+        });
         await deps.ticketChanges({
           spaceId: context.actor.spaceId,
           boardId: board.id,
@@ -3540,6 +3543,7 @@ export function createRouter(deps: RouterDeps) {
           where: { id: existing.id },
           data: {
             status: input.status,
+            updatedByBotId: null,
             completedAt: isTicketCompletedStatus(input.status)
               ? (existing.completedAt ?? new Date())
               : null,
@@ -3570,7 +3574,10 @@ export function createRouter(deps: RouterDeps) {
               body: input.body,
             },
           });
-          await tx.ticket.update({ where: { id: ticket.id }, data: { updatedAt: new Date() } });
+          await tx.ticket.update({
+            where: { id: ticket.id },
+            data: { updatedAt: new Date(), updatedByBotId: null },
+          });
           return comment;
         });
         await deps.ticketChanges({

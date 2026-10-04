@@ -4,7 +4,7 @@ import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import type { TicketCheckDeps } from "./ticket-checks.js";
-import { runTicketChecks } from "./ticket-checks.js";
+import { reconcileTicketChecks, runTicketChecks } from "./ticket-checks.js";
 
 const NOW = new Date("2026-06-01T12:00:00.000Z");
 const hoursAgo = (hours: number) => new Date(NOW.getTime() - hours * 60 * 60 * 1000);
@@ -176,6 +176,26 @@ describe("runTicketChecks", () => {
     });
   });
 
+  it("does not treat the bot's own ticket edit as a change", async () => {
+    const bot = botRow({ ticketsCheckedAt: hoursAgo(3) });
+    const { deps, taskCreate } = depsFor({
+      bots: [bot],
+      tickets: [ticketRow({ updatedAt: hoursAgo(1), updatedByBotId: "bot-1" })],
+    });
+    await runTicketChecks(deps, { trigger: "periodic", now: NOW });
+    expect(taskCreate).not.toHaveBeenCalled();
+  });
+
+  it("wakes for an edit someone else made after the last check", async () => {
+    const bot = botRow({ ticketsCheckedAt: hoursAgo(3) });
+    const { deps, taskCreate } = depsFor({
+      bots: [bot],
+      tickets: [ticketRow({ updatedAt: hoursAgo(1), updatedByBotId: null })],
+    });
+    await runTicketChecks(deps, { trigger: "periodic", now: NOW });
+    expect(taskCreate).toHaveBeenCalledTimes(1);
+  });
+
   it("reminds on a stale ticket even without a change", async () => {
     const bot = botRow({ ticketsCheckedAt: hoursAgo(0.5) });
     const { deps, taskCreate } = depsFor({
@@ -246,5 +266,37 @@ describe("runTicketChecks", () => {
     await runTicketChecks(deps, { trigger: "periodic", now: NOW });
     expect(taskCreate).not.toHaveBeenCalled();
     expect(botUpdateMany).not.toHaveBeenCalled();
+  });
+});
+
+describe("reconcileTicketChecks", () => {
+  function reconcileDeps(overdue: boolean) {
+    const findFirst = vi.fn(async () => (overdue ? { id: "bot-2" } : null));
+    const enqueue = vi.fn(async () => undefined);
+    const deps = {
+      prisma: { bot: { findFirst } } as unknown as PrismaClient,
+      jobs: { enqueue } as unknown as JobPublisher,
+    } satisfies TicketCheckDeps;
+    return { deps, findFirst, enqueue };
+  }
+
+  it("re-enqueues the sweep when any bot is overdue, however fresh the others are", async () => {
+    const { deps, findFirst, enqueue } = reconcileDeps(true);
+    await reconcileTicketChecks(deps);
+    expect(findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          archivedAt: null,
+          OR: [{ ticketsCheckedAt: null }, { ticketsCheckedAt: { lt: expect.any(Date) } }],
+        }),
+      }),
+    );
+    expect(enqueue).toHaveBeenCalledTimes(1);
+  });
+
+  it("does nothing while every bot was checked inside the interval", async () => {
+    const { deps, enqueue } = reconcileDeps(false);
+    await reconcileTicketChecks(deps);
+    expect(enqueue).not.toHaveBeenCalled();
   });
 });

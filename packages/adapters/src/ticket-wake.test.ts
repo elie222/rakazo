@@ -36,6 +36,27 @@ describe("decideTicketWake", () => {
     expect(decision({ lastCheckAt: hoursAgo(3) })).toEqual({ wake: true, reason: "changed" });
   });
 
+  it("ignores a change the bot made itself", () => {
+    expect(
+      decision({
+        lastCheckAt: hoursAgo(3),
+        tickets: [{ updatedAt: hoursAgo(1), updatedByBot: true }],
+      }),
+    ).toEqual({ wake: false, reason: "unchanged" });
+  });
+
+  it("still wakes for someone else's change next to the bot's own", () => {
+    expect(
+      decision({
+        lastCheckAt: hoursAgo(3),
+        tickets: [
+          { updatedAt: hoursAgo(1), updatedByBot: true },
+          { updatedAt: hoursAgo(2), updatedByBot: false },
+        ],
+      }),
+    ).toEqual({ wake: true, reason: "changed" });
+  });
+
   it("stays quiet when nothing changed and the oldest ticket is fresh", () => {
     expect(
       decision({ lastCheckAt: minutesAgo(10), tickets: [{ updatedAt: hoursAgo(1) }] }),

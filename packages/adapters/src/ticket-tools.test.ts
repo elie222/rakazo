@@ -75,8 +75,26 @@ describe("ticket tools", () => {
     expect(findMany).toHaveBeenCalledWith({
       where: { spaceId: "ws", boardId: "board-1", status: "doing" },
       orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
+      take: 50,
     });
     expect(result).toEqual({ tickets: [expect.objectContaining({ ref: "RAK-1" })] });
+  });
+
+  it("leaves closed tickets out of an unfiltered list and shortens descriptions", async () => {
+    const findMany = vi.fn(async () => [ticket({ number: 2, description: "x".repeat(500) })]);
+    const prisma = { ...boardSpace(), ticket: { findMany } };
+
+    const result = await listBoardTickets({ prisma } as never, { spaceId: "ws" });
+
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { spaceId: "ws", boardId: "board-1", status: { not: "closed" } },
+        take: 50,
+      }),
+    );
+    const listed = (result as { tickets: { description: string }[] }).tickets[0]!;
+    expect(listed.description).toHaveLength(200);
+    expect(listed.description.endsWith("…")).toBe(true);
   });
 
   it("rejects an unknown status filter", async () => {
@@ -250,6 +268,7 @@ describe("ticket tools", () => {
 
     const result = await moveTicket({ prisma } as never, {
       spaceId: "ws",
+      botId: "bot-1",
       id: "t5",
       status: "done",
     });
@@ -259,7 +278,7 @@ describe("ticket tools", () => {
     });
     expect(update.mock.calls[0]?.[0]).toEqual({
       where: { id: "t5" },
-      data: { status: "done", completedAt: expect.any(Date) },
+      data: { status: "done", updatedByBotId: "bot-1", completedAt: expect.any(Date) },
     });
     expect(result).toEqual({ ticket: expect.objectContaining({ status: "done" }) });
   });
@@ -271,6 +290,7 @@ describe("ticket tools", () => {
     };
     const result = await moveTicket({ prisma } as never, {
       spaceId: "ws",
+      botId: "bot-1",
       id: "missing",
       status: "doing",
     });
@@ -289,6 +309,7 @@ describe("ticket tools", () => {
 
     const result = await updateTicket({ prisma } as never, {
       spaceId: "ws",
+      botId: "bot-1",
       id: "t5",
       title: "  New title  ",
       priority: "  high  ",
@@ -296,7 +317,7 @@ describe("ticket tools", () => {
 
     expect(update).toHaveBeenCalledWith({
       where: { id: "t5" },
-      data: { title: "New title", priority: "high" },
+      data: { title: "New title", priority: "high", updatedByBotId: "bot-1" },
     });
     expect(result).toEqual({ ticket: expect.objectContaining({ title: "New title" }) });
   });
@@ -304,7 +325,7 @@ describe("ticket tools", () => {
   it("rejects an update with no fields and a ticket outside the space", async () => {
     const empty = await updateTicket(
       { prisma: { board: { upsert: vi.fn() } } as never },
-      { spaceId: "ws", id: "t5" },
+      { spaceId: "ws", botId: "bot-1", id: "t5" },
     );
     expect(empty).toEqual({ error: "Provide title, description, or priority." });
 
@@ -315,7 +336,7 @@ describe("ticket tools", () => {
           ticket: { findFirst: vi.fn(async () => null) },
         },
       } as never,
-      { spaceId: "ws", id: "missing", title: "x" },
+      { spaceId: "ws", botId: "bot-1", id: "missing", title: "x" },
     );
     expect(missing).toEqual({ error: "Ticket missing not found." });
   });
@@ -351,7 +372,7 @@ describe("ticket tools", () => {
 
     expect(update).toHaveBeenCalledWith({
       where: { id: "t5" },
-      data: { status: "closed", completedAt: expect.any(Date) },
+      data: { status: "closed", completedAt: expect.any(Date), updatedByBotId: "bot-1" },
     });
     expect(commentCreate).toHaveBeenCalledWith({
       data: expect.objectContaining({ ticketId: "t5", authorBotId: "bot-1", body: "done" }),
@@ -393,7 +414,7 @@ describe("ticket tools", () => {
 
     expect(txTicket.update).toHaveBeenCalledWith({
       where: { id: "t7" },
-      data: { updatedAt: expect.any(Date) },
+      data: { updatedAt: expect.any(Date), updatedByBotId: "bot-1" },
     });
     expect(result).toEqual({
       comment: expect.objectContaining({ authorBotId: "bot-1", body: "progress" }),
@@ -421,7 +442,7 @@ describe("ticket tools", () => {
     expect(assigned).toEqual({ ticket: expect.objectContaining({ assigneeBotId: "bot-2" }) });
     expect(update).toHaveBeenCalledWith({
       where: { id: "t1" },
-      data: { assigneeBotId: "bot-2", assigneeUserId: null },
+      data: { assigneeBotId: "bot-2", assigneeUserId: null, updatedByBotId: "bot-1" },
     });
 
     botFindFirst.mockResolvedValueOnce(null);

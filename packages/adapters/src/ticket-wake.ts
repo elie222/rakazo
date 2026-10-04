@@ -28,8 +28,11 @@ export type TicketWakeDecision =
 export type TicketWakeDecisionInput = {
   now: Date;
   trigger: TicketWakeTrigger;
-  /** Actionable tickets assigned to the bot, any order. */
-  tickets: readonly { updatedAt: Date }[];
+  /**
+   * Actionable tickets assigned to the bot, any order. `updatedByBot` marks a
+   * latest change made by this bot itself, which is not news to the bot.
+   */
+  tickets: readonly { updatedAt: Date; updatedByBot?: boolean }[];
   lastCheckAt: Date | null;
   lastWakeAt: Date | null;
   hasActiveRun: boolean;
@@ -56,7 +59,9 @@ export function decideTicketWake(input: TicketWakeDecisionInput): TicketWakeDeci
   const reminderMs = input.reminderMs ?? TICKET_REMINDER_MS;
   const lastCheckAt = input.lastCheckAt;
   const changed = lastCheckAt
-    ? input.tickets.some((ticket) => ticket.updatedAt.getTime() > lastCheckAt.getTime())
+    ? input.tickets.some(
+        (ticket) => !ticket.updatedByBot && ticket.updatedAt.getTime() > lastCheckAt.getTime(),
+      )
     : true;
   if (changed) return { wake: true, reason: "changed" };
 

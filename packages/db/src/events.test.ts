@@ -176,10 +176,7 @@ describe("finalizeRun", () => {
     expect(publish).toHaveBeenCalledWith("board:space-1", expect.any(String));
     expect(tx.bot.update).toHaveBeenCalledWith({
       where: { id: "bot-1" },
-      data: {
-        updatedAt: expect.any(Date),
-        ticketsCheckedAt: expect.any(Date),
-      },
+      data: { updatedAt: expect.any(Date) },
     });
   });
 
