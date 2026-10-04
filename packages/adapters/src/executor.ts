@@ -166,6 +166,7 @@ import {
   normalizeSecretDestination,
   requestWithBotSecret,
   resolveLoginFill,
+  resolveRequestSecretDestination,
   sameSecretDestination,
 } from "./bot-secrets.js";
 import { createBrowserProvider } from "./browser-provider-factory.js";
@@ -5606,25 +5607,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
             }
           }
           if (name === "request_secret") {
-            let destination: ReturnType<typeof normalizeSecretDestination> | undefined;
-            if (args.credential) {
-              try {
-                destination = normalizeSecretDestination(args.credential);
-              } catch (error) {
-                return finish({
-                  error:
-                    error instanceof Error &&
-                    error.message.startsWith("Invalid credential destination")
-                      ? error.message
-                      : "Specify a credential name, HTTPS origin, and auth method.",
-                });
-              }
-            }
-            if (Boolean(destination) === Boolean(args.connectionId)) {
-              return finish({
-                error: "Provide either a reusable credential destination or a connectionId.",
-              });
-            }
+            const resolvedSecret = resolveRequestSecretDestination(args);
+            if (resolvedSecret.error) return finish({ error: resolvedSecret.error });
+            const destination = resolvedSecret.destination;
+            const connectionId = resolvedSecret.connectionId;
             if (destination) {
               const existing = await findBotSecret(deps.prisma, run, destination.name);
               if (existing && !sameSecretDestination(existing, destination)) {
@@ -5674,7 +5660,6 @@ export function createRunExecutor(deps: ExecutorDeps) {
               // Keep the tail the old redactor still holds; a fresh instance drops it.
               pendingProgress += progressRedactor.finish();
               progressRedactor = createStreamingRedactor(runSecrets);
-              const connectionId = args.connectionId ? String(args.connectionId) : undefined;
               const purpose = String(args.purpose ?? "otp");
               if (applied && !claimedEffect) {
                 if (applied.effect.status === "intended") {
@@ -5744,7 +5729,6 @@ export function createRunExecutor(deps: ExecutorDeps) {
             const recordedForAsk = await recordEffect(deps, run, name, effectKey, args);
             const missingSecretAction = resolveMissingRunSecretAction(recordedForAsk.effect);
             if (missingSecretAction.action === "return") return missingSecretAction.result;
-            const connectionId = args.connectionId ? String(args.connectionId) : undefined;
             if (connectionId) {
               const connectionStatus = await reconcileManagedConnection(
                 deps.prisma,

@@ -27,6 +27,11 @@ describe("model vision gating for computer tools", () => {
     );
   });
 
+  it("sees models the runtime adds to the bundled catalog", () => {
+    expect(modelAcceptsImageInput("anthropic", "claude-sonnet-5-5")).toBe(true);
+    expect(modelAcceptsImageInput("openai-codex", "gpt-6.1-sol")).toBe(true);
+  });
+
   it("resolves the scripted placeholder like Pi before checking vision", () => {
     vi.stubEnv("PI_DEFAULT_MODEL", "");
     expect(resolveModelRefForVisionCheck("scripted", "scripted")).toEqual({
