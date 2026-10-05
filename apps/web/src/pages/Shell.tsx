@@ -316,12 +316,13 @@ const THREAD_SNAPSHOT_TIMEOUT_MS = 2_000;
 /** Bound Settings leave so a hung voice status refresh cannot block dismissal. */
 const VOICE_STATUS_REFRESH_TIMEOUT_MS = 10_000;
 const MOBILE_SIDEBAR_SWIPE_EDGE_PX = 32;
-/** One 24px line plus the textarea's 4px padding; anything taller has wrapped. */
-const COMPOSER_SINGLE_LINE_MAX_PX = 36;
-/** The one-line composer's `gap-x-3.5` between the text and each control. */
-const COMPOSER_ONE_LINE_GAP_PX = 14;
-const COMPOSER_COLLAPSE_SLACK_PX = 16;
 const MOBILE_SIDEBAR_SWIPE_DISTANCE_PX = 56;
+/** Above one line (~28px); two lines clear this. */
+const COMPOSER_SINGLE_LINE_MAX_PX = 36;
+/** One-line `gap-x-3.5`, subtracted on each side of the text. */
+const COMPOSER_ONE_LINE_GAP_PX = 14;
+/** Narrower than the expand check so a draft at the edge cannot flip. */
+const COMPOSER_COLLAPSE_SLACK_PX = 16;
 
 function threadSnapshotSignal(parent: AbortSignal): AbortSignal {
   return AbortSignal.any([parent, AbortSignal.timeout(THREAD_SNAPSHOT_TIMEOUT_MS)]);
@@ -5256,6 +5257,8 @@ const Composer = memo(function Composer({
   const composerBarRef = useRef<HTMLDivElement>(null);
   const composerFieldRef = useRef<HTMLDivElement>(null);
   const composerLayoutRef = useRef<ComposerLayout | null>(null);
+  const previousExpandedRef = useRef(false);
+  const composerAnimationsRef = useRef<Animation[]>([]);
   const [replyAnnouncement, setReplyAnnouncement] = useState("");
   // What the live region currently holds — a send disarming the reply clears
   // "reply" text, while an explicit cancel must keep "Reply cancelled".
@@ -5313,15 +5316,14 @@ const Composer = memo(function Composer({
     function syncHeight() {
       const textarea = textareaRef.current;
       if (!textarea) return;
-      // What is on screen now, before this resize, is where a layout switch animates from.
-      composerLayoutRef.current = readComposerLayout(
-        composerBarRef.current,
-        composerFieldRef.current,
-      );
+      const bar = composerBarRef.current;
+      // A chip can switch the grid in this commit; keep the previous box as the animation start.
+      if ((bar?.dataset.expanded === "true") === previousExpandedRef.current) {
+        const layout = readComposerLayout(bar, composerFieldRef.current);
+        if (layout) composerLayoutRef.current = layout;
+      }
       const contentHeight = measureTextareaHeight(textarea);
       textarea.style.height = `${contentHeight}px`;
-      // Text moves above the actions once it wraps beside them, and back once it fits there
-      // again with some slack, so a draft right at the edge cannot flip between layouts.
       if (draft.length === 0) {
         setComposerExpanded(false);
         return;
@@ -5533,7 +5535,6 @@ const Composer = memo(function Composer({
   const showComposerPlaceholder =
     draft.length === 0 && selectedSkill === null && selectedMentions.length === 0;
   const expanded = composerExpanded || selectedSkill !== null || selectedMentions.length > 0;
-  const previousExpandedRef = useRef(expanded);
 
   useLayoutEffect(() => {
     if (previousExpandedRef.current === expanded) return;
@@ -5542,32 +5543,45 @@ const Composer = memo(function Composer({
     const field = composerFieldRef.current;
     const textarea = textareaRef.current;
     const start = composerLayoutRef.current;
-    if (!bar || !field || !textarea || !start) return;
+    if (!bar || !field || !textarea) return;
     textarea.style.height = `${measureTextareaHeight(textarea)}px`;
-    // A send or a cleared draft snaps back; there is no text left to follow.
-    if (textarea.value === "" || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    const resting = readComposerLayout(bar, field);
+    // A send or a cleared draft snaps back; nothing is left to follow.
+    if (
+      !start ||
+      textarea.value === "" ||
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    ) {
+      if (resting) composerLayoutRef.current = resting;
       return;
     }
-    const end = readComposerLayout(bar, field);
-    if (!end) return;
-    composerLayoutRef.current = end;
-    // The box resizes from its fixed bottom edge, so the controls stay put while the text
-    // travels with it to its new cell.
+    if (!resting) return;
+    composerLayoutRef.current = resting;
+    // Grow from the fixed bottom edge so the controls stay put.
     const timing = { duration: 120, easing: "cubic-bezier(0.2, 0, 0, 1)" };
-    bar.animate(
-      [
-        { height: `${start.barHeight}px`, overflow: "hidden" },
-        { height: `${end.barHeight}px`, overflow: "hidden" },
-      ],
-      timing,
-    );
-    field.animate(
-      [
-        { transform: `translate(${start.fieldX - end.fieldX}px, ${start.fieldY - end.fieldY}px)` },
-        { transform: "none" },
-      ],
-      timing,
-    );
+    composerAnimationsRef.current = [
+      bar.animate(
+        [
+          { height: `${start.barHeight}px`, overflow: "hidden" },
+          { height: `${resting.barHeight}px`, overflow: "hidden" },
+        ],
+        timing,
+      ),
+      field.animate(
+        [
+          {
+            transform: `translate(${start.fieldX - resting.fieldX}px, ${start.fieldY - resting.fieldY}px)`,
+          },
+          { transform: "none" },
+        ],
+        timing,
+      ),
+    ];
+    return () => {
+      // A send during the transition must snap, not finish the old height.
+      for (const animation of composerAnimationsRef.current) animation.cancel();
+      composerAnimationsRef.current = [];
+    };
   }, [expanded]);
   const replyName = replyTarget ? (replyTargetName ?? previewMessageText(replyTarget)) : "";
   const replyNameRef = useRef(replyName);
@@ -6003,7 +6017,7 @@ const Composer = memo(function Composer({
 
 type ComposerLayout = { barHeight: number; fieldX: number; fieldY: number };
 
-/** Screen, not bar, coordinates: the composer grows upward from the bottom edge. */
+/** Screen coordinates; the bar grows upward from its bottom edge. */
 function readComposerLayout(
   bar: HTMLElement | null,
   field: HTMLElement | null,
@@ -6017,12 +6031,7 @@ function readComposerLayout(
   };
 }
 
-/**
- * The height `textarea`'s text needs, at its current width or at `width` px. The browser's own
- * wrapping answers both, so the two composer layouts agree on what fits on one line. Hiding the
- * scrollbar keeps it from narrowing the text while the field is collapsed to measure. Leaves the
- * height at 0 for the caller to set.
- */
+/** Hides the scrollbar while measuring and leaves the height at 0. */
 function measureTextareaHeight(textarea: HTMLTextAreaElement, width?: number) {
   const { style } = textarea;
   style.overflowY = "hidden";
