@@ -5578,8 +5578,13 @@ const Composer = memo(function Composer({
       ),
     ];
     return () => {
-      // A send during the transition must snap, not finish the old height.
-      for (const animation of composerAnimationsRef.current) animation.cancel();
+      const animations = composerAnimationsRef.current;
+      // A chip removed mid-transition must shrink from the box on screen, not the finished target.
+      if (animations.some((animation) => animation.playState === "running")) {
+        const onScreen = readComposerLayout(composerBarRef.current, composerFieldRef.current);
+        if (onScreen) composerLayoutRef.current = onScreen;
+      }
+      for (const animation of animations) animation.cancel();
       composerAnimationsRef.current = [];
     };
   }, [expanded]);
