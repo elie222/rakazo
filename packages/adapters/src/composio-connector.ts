@@ -806,7 +806,7 @@ export function sanitizeComposioError(error: unknown): string {
 }
 
 const CREDENTIAL_FIELD_NAME =
-  "access[_-]?token|refresh[_-]?token|id[_-]?token|session[_-]?token|client[_-]?secret|api[_-]?key|password|passwd|secret";
+  "composio[_-]?api[_-]?key|access[_-]?token|refresh[_-]?token|id[_-]?token|session[_-]?token|client[_-]?secret|api[_-]?key|password|passwd|secret";
 
 const CREDENTIAL_FIELD_KEY = new RegExp(`^(?:${CREDENTIAL_FIELD_NAME})$`, "i");
 
@@ -816,8 +816,6 @@ const CREDENTIAL_ASSIGNMENT = new RegExp(
   "gi",
 );
 
-const COMPOSIO_API_KEY_FIELD = /^composio[_-]?api[_-]?key$/i;
-
 function sanitizePayload(data: unknown): unknown {
   return redactConnectorData(data);
 }
@@ -826,24 +824,27 @@ function redactConnectorData(data: unknown): unknown {
   if (typeof data === "string") return redactConnectorText(data);
   if (Array.isArray(data)) return data.map((item) => redactConnectorData(item));
   if (!data || typeof data !== "object") return data;
+  const seen = new Map<string, number>();
   return Object.fromEntries(
     Object.entries(data).map(([key, value]) => [
-      redactSecretLiterals(key),
+      distinctRedactedKey(redactSecretLiterals(key), seen),
       isCredentialField(key) ? "[redacted]" : redactConnectorData(value),
     ]),
   );
 }
 
+function distinctRedactedKey(key: string, seen: Map<string, number>): string {
+  const count = (seen.get(key) ?? 0) + 1;
+  seen.set(key, count);
+  return count === 1 ? key : `${key}~${count}`;
+}
+
 function isCredentialField(key: string): boolean {
-  return CREDENTIAL_FIELD_KEY.test(key) || COMPOSIO_API_KEY_FIELD.test(key);
+  return CREDENTIAL_FIELD_KEY.test(key);
 }
 
 function redactConnectorText(value: string): string {
-  return redactSecretLiterals(
-    value
-      .replace(/COMPOSIO_API_KEY[=:]?\s*\S+/gi, "COMPOSIO_API_KEY=[redacted]")
-      .replace(CREDENTIAL_ASSIGNMENT, '$1"[redacted]"'),
-  );
+  return redactSecretLiterals(value.replace(CREDENTIAL_ASSIGNMENT, '$1"[redacted]"'));
 }
 
 function redactSecretLiterals(value: string): string {
