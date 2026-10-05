@@ -2,9 +2,11 @@ import type { ModelCatalogEntry } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import {
   clampCatalogThinkingLevel,
+  connectedModelChoices,
   featuredModelProviders,
   filterModelCatalog,
   pickCatalogModelId,
+  resolveSelectableModelId,
   selectedProviderOutsideSearchResults,
 } from "./model-providers.js";
 
@@ -153,6 +155,88 @@ describe("clampCatalogThinkingLevel", () => {
 
   it("keeps a concrete level when the model is outside the catalog", () => {
     expect(clampCatalogThinkingLevel("high", undefined)).toBe("high");
+  });
+});
+
+describe("connected model choices", () => {
+  const deepseek = [
+    {
+      provider: "deepseek",
+      providerName: "DeepSeek",
+      id: "deepseek-flash",
+      label: "DeepSeek V4.1 Flash",
+    },
+    {
+      provider: "deepseek",
+      providerName: "DeepSeek",
+      id: "deepseek-v4-pro",
+      label: "DeepSeek V4 Pro",
+    },
+  ];
+
+  it("submits API model ids and keeps display labels out of the value", () => {
+    const choices = connectedModelChoices(
+      [{ provider: "deepseek", label: "DeepSeek", modelId: "DeepSeek-V4.1-Flash" }],
+      deepseek,
+    );
+    expect(choices.map((choice) => choice.modelId)).toEqual(["deepseek-flash", "deepseek-v4-pro"]);
+    expect(choices.map((choice) => choice.key)).toEqual([
+      "deepseek::deepseek-flash",
+      "deepseek::deepseek-v4-pro",
+    ]);
+    for (const choice of choices) {
+      expect(choice.modelId).not.toBe(choice.label);
+      expect(choice.modelId).not.toMatch(/DeepSeek/);
+    }
+    expect(choices.map((choice) => choice.label)).toEqual([
+      "DeepSeek · DeepSeek V4.1 Flash",
+      "DeepSeek · DeepSeek V4 Pro",
+    ]);
+  });
+
+  it("rewrites a catalog id that is only a display label", () => {
+    const choices = connectedModelChoices(
+      [{ provider: "deepseek", label: "DeepSeek", modelId: "deepseek-flash" }],
+      [
+        {
+          provider: "deepseek",
+          providerName: "DeepSeek",
+          id: "DeepSeek-V4.1-Flash",
+          label: "DeepSeek V4.1 Flash",
+        },
+        ...deepseek.slice(1),
+      ],
+    );
+    expect(choices.map((choice) => choice.modelId)).toEqual(["deepseek-flash", "deepseek-v4-pro"]);
+  });
+
+  it("keeps a custom model id that is not a catalog label", () => {
+    expect(
+      connectedModelChoices(
+        [{ provider: "deepseek", label: "DeepSeek", modelId: "my-finetune" }],
+        deepseek,
+      ),
+    ).toEqual([
+      {
+        key: "deepseek::my-finetune",
+        provider: "deepseek",
+        modelId: "my-finetune",
+        label: "DeepSeek · my-finetune",
+      },
+    ]);
+  });
+
+  it("resolves a saved display label to the API id used on save", () => {
+    expect(resolveSelectableModelId(deepseek, "deepseek", "DeepSeek-V4.1-Flash")).toBe(
+      "deepseek-flash",
+    );
+    expect(resolveSelectableModelId(deepseek, "deepseek", "DeepSeek-V4-Pro")).toBe(
+      "deepseek-v4-pro",
+    );
+    expect(resolveSelectableModelId(deepseek, "deepseek", "deepseek-v4-pro")).toBe(
+      "deepseek-v4-pro",
+    );
+    expect(resolveSelectableModelId(deepseek, "deepseek", "my-finetune")).toBe("my-finetune");
   });
 });
 

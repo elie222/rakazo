@@ -111,9 +111,10 @@ test("memory and skills are readable and editable in the app", async ({ page }, 
   await expect(botDocEditor).toHaveValue(new RegExp(botMarker));
   await botMemory.getByRole("button", { name: "Cancel", exact: true }).click();
 
-  // Skills: create one through the editor, reopen it, edit, then delete it.
-  // Builtin catalog is currently empty; user skills still cover create/edit/delete.
-  await knowledge.getByRole("tab", { name: "Skills", exact: true }).click();
+  await knowledge.getByRole("tab", { name: "Shared skills", exact: true }).click();
+  const builtinSkill = knowledge.getByRole("button", { name: /Interrogate/ });
+  await expect(builtinSkill).toBeVisible();
+  await expect(builtinSkill.getByText("Built-in", { exact: true })).toBeVisible();
   await knowledge.getByRole("button", { name: "New skill", exact: true }).click();
   const editor = knowledge.locator("textarea");
   await editor.fill(
@@ -131,7 +132,13 @@ test("memory and skills are readable and editable in the app", async ({ page }, 
   const skillRow = knowledge.getByRole("button", { name: /greet-politely/ });
   await expect(skillRow).toBeVisible();
   await expect(knowledge.getByText("Say hello before anything else.")).toBeVisible();
-  await captureScreenshot(page, testInfo, "82-knowledge-skill-listed");
+  await expect(builtinSkill.getByText("Built-in", { exact: true })).toBeVisible();
+  const listedShot = testInfo.outputPath("82-knowledge-skill-listed.png");
+  await knowledge.screenshot({ animations: "disabled", caret: "hide", path: listedShot });
+  await testInfo.attach("82-knowledge-skill-listed", {
+    contentType: "image/png",
+    path: listedShot,
+  });
   const composer = page.getByRole("combobox", { name: /^Message/ });
   await composer.fill("/");
   await expect(
@@ -154,6 +161,7 @@ test("memory and skills are readable and editable in the app", async ({ page }, 
   );
   await skillRow.click();
   await expect(editor).toHaveAttribute("readonly", "");
+  await expect(knowledge.getByText("Plugin", { exact: true })).toBeVisible();
   await expect(knowledge.getByRole("button", { name: "Save", exact: true })).toHaveCount(0);
   await expect(knowledge.getByRole("button", { name: "Delete", exact: true })).toHaveCount(0);
   await knowledge.getByRole("button", { name: "Close", exact: true }).click();

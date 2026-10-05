@@ -836,7 +836,7 @@ export function ModelSettingsOverlay({
                 id="model-api-key"
                 value={apiKey}
                 onChange={(event) => updateApiKey(event.target.value)}
-                placeholder="sk-…"
+                placeholder={credential?.hasKey ? t`Paste a replacement key` : "sk-…"}
                 type="password"
                 autoComplete="new-password"
                 className="mt-2 h-10 text-foreground"
@@ -886,7 +886,7 @@ export function ModelSettingsOverlay({
           aria-label={t`API key`}
           value={apiKey}
           onChange={(event) => updateApiKey(event.target.value)}
-          placeholder={t`Optional`}
+          placeholder={credential?.hasKey ? t`Paste a replacement key` : t`Optional`}
           type="password"
           autoComplete="new-password"
           className="mt-2 h-10 text-foreground"

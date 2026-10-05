@@ -2,9 +2,9 @@ import { timingSafeEqual } from "node:crypto";
 import { hasActiveComputerControl } from "@rakazo/adapters";
 import type { ScreenCapabilityScope } from "@rakazo/core/node/screen-capability";
 import {
+  issueScreenCapability,
   openScreenCapability,
   SCREEN_TARGET_ENDPOINT,
-  sealScreenCapability,
 } from "@rakazo/core/node/screen-capability";
 import type { PrismaClient } from "@rakazo/db";
 import type { Hono } from "hono";
@@ -21,7 +21,7 @@ export function addScreenProxyCapability(
   // traverse the web proxy, so seal only http(s) upstream URLs.
   const protocol = new URL(url).protocol;
   if (protocol !== "http:" && protocol !== "https:") return url;
-  return sealScreenCapability(url, secret, origin, scope, now);
+  return issueScreenCapability(url, secret, origin, scope, now);
 }
 
 export function mountScreenTarget(app: Hono, prisma: PrismaClient, secret: string) {

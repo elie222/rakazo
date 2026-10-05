@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import type { AgentSkillCatalogEntry } from "@rakazo/contracts";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -26,6 +27,7 @@ vi.mock("@rakazo/ui-web", () => {
     TabsList: Container,
     TabsTrigger: Container,
     TabsContent: Container,
+    Badge: ({ children }: { children?: ReactNode }) => <span>{children}</span>,
   };
 });
 
@@ -76,6 +78,70 @@ it("disables skill rows while a completed save is refreshing the catalog", async
       finishRefresh([skill]);
       root.unmount();
     });
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("labels the skills tab as shared and badges built-in and plugin skills", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const catalog: AgentSkillCatalogEntry[] = [
+    {
+      id: "builtin:interrogate",
+      name: "Interrogate",
+      description: "Review a change",
+      source: "builtin",
+      readOnly: true,
+    },
+    {
+      id: "plugin:mail",
+      name: "Triage mail",
+      description: "Sort the inbox",
+      source: "plugin",
+      readOnly: true,
+    },
+    {
+      id: "user-1",
+      name: "greeting",
+      description: "Greet politely",
+      source: "user",
+      readOnly: false,
+    },
+  ];
+  api.list.mockReset();
+  api.get.mockReset();
+  api.list.mockResolvedValueOnce(catalog);
+  api.get.mockImplementation(async ({ skillId }: { skillId: string }) => {
+    const entry = catalog.find((skill) => skill.id === skillId);
+    if (!entry) throw new Error(`Missing skill: ${skillId}`);
+    return { ...entry, content: "Steps", createdAt: "", updatedAt: "" };
+  });
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const button = (text: string) => {
+    const found = [...container.querySelectorAll("button")].find((entry) =>
+      entry.textContent?.includes(text),
+    );
+    if (!found) throw new Error(`Missing button: ${text}`);
+    return found;
+  };
+  try {
+    await act(async () =>
+      root.render(<KnowledgeSection botId="bot-fixture" onSkillsChange={() => undefined} />),
+    );
+    expect(container.textContent).toContain("Shared skills");
+    expect(button("Interrogate").textContent).toContain("Built-in");
+    expect(button("Triage mail").textContent).toContain("Plugin");
+    expect(button("greeting").textContent).not.toContain("Built-in");
+    expect(button("greeting").textContent).not.toContain("Plugin");
+    await act(async () => button("Interrogate").click());
+    expect(container.querySelector("textarea")?.readOnly).toBe(true);
+    expect(container.textContent).toContain("Built-in");
+    expect(button("Close")).toBeTruthy();
+    expect(container.textContent).not.toContain("Delete");
+  } finally {
+    await act(async () => root.unmount());
     container.remove();
     vi.unstubAllGlobals();
   }

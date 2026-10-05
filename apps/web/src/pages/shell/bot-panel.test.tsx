@@ -64,6 +64,7 @@ vi.mock("./bot-credentials", () => ({ BotCredentialsSection: () => null }));
 vi.mock("../ScratchpadSection", () => ({ ScratchpadSection: () => null }));
 vi.mock("../KnowledgeSection", () => ({ KnowledgeSection: () => null }));
 
+import { rpc } from "../../lib/rpc";
 import { BotSettings } from "./bot-panel";
 
 const longInstructions = "I".repeat(4_000);
@@ -172,6 +173,48 @@ afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();
   vi.unstubAllGlobals();
+});
+
+describe("BotSettings model choices", () => {
+  it("submits DeepSeek API ids and does not offer a display label", async () => {
+    vi.mocked(rpc.models.credentials).mockResolvedValueOnce([
+      {
+        id: "cred-deepseek",
+        provider: "deepseek",
+        label: "DeepSeek",
+        hasKey: true,
+        isDefault: true,
+        modelId: "DeepSeek-V4.1-Flash",
+      },
+    ]);
+    vi.mocked(rpc.models.list).mockResolvedValueOnce([
+      {
+        provider: "deepseek",
+        providerName: "DeepSeek",
+        id: "deepseek-flash",
+        label: "DeepSeek V4.1 Flash",
+        billing: "",
+      },
+      {
+        provider: "deepseek",
+        providerName: "DeepSeek",
+        id: "deepseek-v4-pro",
+        label: "DeepSeek V4 Pro",
+        billing: "",
+      },
+    ]);
+    await render();
+    await act(async () => {
+      await Promise.resolve();
+    });
+    const model = container.querySelector("select");
+    if (!(model instanceof HTMLSelectElement)) throw new Error("Missing model select");
+    const values = [...model.options].map((option) => option.value);
+    expect(values).toContain("deepseek::deepseek-flash");
+    expect(values).toContain("deepseek::deepseek-v4-pro");
+    expect(values).not.toContain("deepseek::DeepSeek-V4.1-Flash");
+    expect(values.some((value) => value.includes("DeepSeek"))).toBe(false);
+  });
 });
 
 describe("BotSettings description saves", () => {

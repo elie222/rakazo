@@ -38,6 +38,7 @@ import {
   type ComposerMention,
   clampMentionHighlightIndex,
   cronFromPreset,
+  formatMessageTime,
   groupBotsForSidebar,
   groupVoiceChats,
   inferAttachmentMimeType,
@@ -4980,21 +4981,6 @@ const Transcript = memo(function Transcript({
               data-message-id={message.id}
               className={peerReceipt ? "relative py-0.5" : "group/message relative hover:z-20"}
             >
-              {!peerReceipt && !message.id.startsWith("progress:") ? (
-                <time
-                  dateTime={message.createdAt}
-                  data-testid="message-hover-time"
-                  className={cn(
-                    "pointer-events-none absolute top-1 z-10 text-xs tabular-nums text-muted-foreground opacity-0 transition-opacity group-hover/message:opacity-100 group-focus-within/message:opacity-100 group-has-[[aria-expanded=true]]/message:opacity-100",
-                    message.role === "user" ? "start-0" : "end-0",
-                  )}
-                >
-                  {new Date(message.createdAt).toLocaleTimeString(i18n.locale || "en", {
-                    hour: "numeric",
-                    minute: "2-digit",
-                  })}
-                </time>
-              ) : null}
               <div
                 className={
                   peerReceipt
@@ -5009,8 +4995,8 @@ const Transcript = memo(function Transcript({
                       ? undefined
                       : `relative w-fit min-w-0 ${
                           message.role === "user"
-                            ? "max-w-[min(84%,calc(100%_-_6rem))] [@media(hover:none)]:max-w-[84%]"
-                            : "max-w-[min(88%,calc(100%_-_6rem))] [@media(hover:none)]:max-w-[88%]"
+                            ? "max-w-[min(84%,calc(100%_-_8rem))] [@media(hover:none)]:max-w-[84%]"
+                            : "max-w-[min(88%,calc(100%_-_8rem))] [@media(hover:none)]:max-w-[88%]"
                         }`
                   }
                 >
@@ -5056,6 +5042,29 @@ const Transcript = memo(function Transcript({
                   )}
                 </div>
               </div>
+              {!peerReceipt && !message.id.startsWith("progress:") ? (
+                <time
+                  dateTime={message.createdAt}
+                  data-testid="message-hover-time"
+                  className={cn(
+                    "pointer-events-none absolute top-1 z-10 text-xs tabular-nums text-muted-foreground opacity-0 transition-opacity group-hover/message:opacity-100 group-focus-within/message:opacity-100 group-has-[[aria-expanded=true]]/message:opacity-100 [@media(hover:none)]:transition-none",
+                    // Hover keeps the date in the side margin. Touch leaves that margin for the bubble and drops the revealed time under it.
+                    message.role === "user"
+                      ? "start-0 max-w-[max(8rem,16%)] text-start"
+                      : "end-0 max-w-[max(8rem,12%)] text-end",
+                    "[@media(hover:none)]:group-hover/message:static [@media(hover:none)]:group-focus-within/message:static [@media(hover:none)]:group-has-[[aria-expanded=true]]/message:static",
+                    "[@media(hover:none)]:group-hover/message:block [@media(hover:none)]:group-focus-within/message:block [@media(hover:none)]:group-has-[[aria-expanded=true]]/message:block",
+                    "[@media(hover:none)]:group-hover/message:mt-1 [@media(hover:none)]:group-focus-within/message:mt-1 [@media(hover:none)]:group-has-[[aria-expanded=true]]/message:mt-1",
+                    "[@media(hover:none)]:group-hover/message:w-full [@media(hover:none)]:group-focus-within/message:w-full [@media(hover:none)]:group-has-[[aria-expanded=true]]/message:w-full",
+                    "[@media(hover:none)]:group-hover/message:max-w-none [@media(hover:none)]:group-focus-within/message:max-w-none [@media(hover:none)]:group-has-[[aria-expanded=true]]/message:max-w-none",
+                    message.role === "user"
+                      ? "[@media(hover:none)]:group-hover/message:text-end [@media(hover:none)]:group-focus-within/message:text-end [@media(hover:none)]:group-has-[[aria-expanded=true]]/message:text-end"
+                      : "[@media(hover:none)]:group-hover/message:text-start [@media(hover:none)]:group-focus-within/message:text-start [@media(hover:none)]:group-has-[[aria-expanded=true]]/message:text-start",
+                  )}
+                >
+                  {formatMessageTime(message.createdAt, i18n.locale || "en")}
+                </time>
+              ) : null}
               {!peerReceipt && messageReactions ? (
                 <div
                   data-testid="message-reactions"

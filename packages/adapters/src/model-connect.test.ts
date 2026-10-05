@@ -174,7 +174,7 @@ describe("modelCredentialDto", () => {
       id: "cred-1",
       provider: "openai-compatible",
       label: "Local MLX",
-      hasKey: true,
+      hasKey: false,
       isDefault: true,
       supportsImages: false,
       baseUrl: "https://example.invalid/v1",
@@ -271,6 +271,50 @@ describe("modelCredentialDto", () => {
     ).toMatchObject({ contextWindow: 65536 });
   });
 
+  it("reports a stored API key without returning the secret", () => {
+    const deepseek = buildModelConnectPlaintext({
+      provider: "deepseek",
+      apiKey: "sk-deepseek-test",
+    });
+    const row = {
+      id: "cred-deepseek",
+      provider: "deepseek",
+      label: "DeepSeek",
+      isDefault: true,
+      defaultModel: "deepseek-chat",
+    };
+    expect(modelCredentialDto(row, deepseek)).toMatchObject({ hasKey: true });
+    expect(JSON.stringify(modelCredentialDto(row, deepseek))).not.toContain("sk-deepseek-test");
+
+    const compatible = serializeModelSecret({
+      kind: "openai_compatible",
+      baseUrl: "https://api.deepseek.com/v1",
+      apiKey: "sk-deepseek-test",
+    });
+    const compatibleDto = modelCredentialDto({ ...row, provider: "openai-compatible" }, compatible);
+    expect(compatibleDto.hasKey).toBe(true);
+    expect(JSON.stringify(compatibleDto)).not.toContain("sk-deepseek-test");
+
+    const keyless = buildModelConnectPlaintext({
+      provider: "openai-compatible",
+      baseUrl: "http://127.0.0.1:8000/v1",
+      modelId: "local-model",
+    });
+    expect(
+      modelCredentialDto(
+        { ...row, provider: "openai-compatible", defaultModel: "local-model" },
+        keyless,
+      ).hasKey,
+    ).toBe(false);
+
+    const oauth = serializeModelSecret({
+      kind: "oauth",
+      credential: { type: "oauth", access: "access-token", refresh: "refresh-token", expires: 10 },
+    });
+    expect(modelCredentialDto({ ...row, provider: "openai-codex" }, oauth).hasKey).toBe(false);
+    expect(modelCredentialDto(row).hasKey).toBe(false);
+  });
+
   it("exposes defaultModel as modelId for provider credentials", () => {
     expect(
       modelCredentialDto({
@@ -284,7 +328,7 @@ describe("modelCredentialDto", () => {
       id: "cred-2",
       provider: "xai",
       label: "xAI",
-      hasKey: true,
+      hasKey: false,
       isDefault: false,
       modelId: "grok-4.6",
     });

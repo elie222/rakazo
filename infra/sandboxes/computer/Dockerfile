@@ -50,7 +50,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     unzip \
     xclip \
     xsel \
+    poppler-utils \
+    pandoc \
+    python3-openpyxl \
   && rm -rf /var/lib/apt/lists/* \
+  && pdftotext -v \
+  && pdfinfo -v \
+  && pandoc --version \
+  && python3 -c 'import openpyxl; print(openpyxl.__version__)' \
   && groupadd --gid 1000 rakazo \
   && useradd --uid 1000 --gid rakazo --create-home --shell /bin/bash rakazo \
   && mkdir -p /etc/rakazo/fluxbox \
