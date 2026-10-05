@@ -18,6 +18,7 @@ import {
   resumeLiveNotifications,
 } from "../lib/live-notifications";
 import { native, useResolvedAppearance } from "../lib/native";
+import { useNotificationResponses } from "../lib/open-notification";
 import { loadResponseStreamingPreference } from "../lib/response-streaming";
 
 configureForegroundNotifications();
@@ -33,6 +34,7 @@ export default function Layout() {
   }, []);
   const { t } = useI18n();
   const [ready, setReady] = useState(false);
+  useNotificationResponses(ready);
   const [appearanceReady, setAppearanceReady] = useState(false);
   const resolved = useResolvedAppearance();
   const navigationTheme = useMemo(() => {

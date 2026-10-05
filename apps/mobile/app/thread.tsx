@@ -36,7 +36,13 @@ import {
   withLiveStreamingProgress,
 } from "@rakazo/core";
 import * as Clipboard from "expo-clipboard";
-import { useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
+import {
+  useFocusEffect,
+  useIsFocused,
+  useLocalSearchParams,
+  useNavigation,
+  useRouter,
+} from "expo-router";
 import { useHeaderHeight } from "expo-router/react-navigation";
 import {
   memo,
@@ -127,6 +133,11 @@ import {
 } from "../lib/message-presentation";
 import { native, useMobileTokens, useResolvedAppearance } from "../lib/native";
 import {
+  threadRouteSpaceOnFocus,
+  threadSpaceRequest,
+  threadSpaceSwitchResult,
+} from "../lib/notification-open";
+import {
   type PickedAttachment,
   pickDocuments,
   pickFromLibrary,
@@ -194,46 +205,58 @@ function isWorkingStatus(status: string | undefined): boolean {
   );
 }
 
-type NotificationRouteState = "loading" | "ready" | "failed";
-
 export default function ThreadRoute() {
   const tokens = useMobileTokens();
   const { t } = useI18n();
   const router = useRouter();
+  const focused = useIsFocused();
   const { spaceId } = useLocalSearchParams<{ spaceId?: string | string[] }>();
-  const requestedSpaceId = typeof spaceId === "string" && spaceId ? spaceId : null;
-  const invalidSpaceId = spaceId !== undefined && requestedSpaceId === null;
-  const routeMatchesSelectedSpace =
-    requestedSpaceId === null || selectedSpaceId() === requestedSpaceId;
-  const [routeState, setRouteState] = useState<NotificationRouteState>(() => {
-    if (invalidSpaceId) return "failed";
-    return routeMatchesSelectedSpace ? "ready" : "loading";
+  const [activeSpaceId, setActiveSpaceId] = useState<string | null>(() => selectedSpaceId());
+  const [switchFailed, setSwitchFailed] = useState(false);
+  const [appliedFocus, setAppliedFocus] = useState(focused);
+  // Before paint, so a stacked route cannot render its thread against a space
+  // a newer notification selected.
+  const focusSync = threadRouteSpaceOnFocus({
+    focused,
+    appliedFocus,
+    activeSpaceId,
+    liveSpaceId: selectedSpaceId(),
+    switchFailed,
   });
+  if (focusSync.appliedFocus !== appliedFocus) setAppliedFocus(focusSync.appliedFocus);
+  if (focusSync.activeSpaceId !== activeSpaceId) setActiveSpaceId(focusSync.activeSpaceId);
+  if (focusSync.switchFailed !== switchFailed) setSwitchFailed(focusSync.switchFailed);
+  const request = threadSpaceRequest(spaceId, focusSync.activeSpaceId);
 
   useEffect(() => {
+    if (!focused) return;
+    const next = threadSpaceRequest(spaceId, activeSpaceId);
+    if (next.action === "show") {
+      setSwitchFailed(false);
+      return;
+    }
+    if (next.action === "unavailable") {
+      setSwitchFailed(true);
+      return;
+    }
     let cancelled = false;
-    if (invalidSpaceId) {
-      setRouteState("failed");
-      return () => {
-        cancelled = true;
-      };
-    }
-    if (!requestedSpaceId || selectedSpaceId() === requestedSpaceId) {
-      setRouteState("ready");
-      return () => {
-        cancelled = true;
-      };
-    }
-    setRouteState("loading");
-    void selectSpace(requestedSpaceId).then((selected) => {
-      if (!cancelled) setRouteState(selected ? "ready" : "failed");
+    setSwitchFailed(false);
+    const requestedSpaceId = next.spaceId;
+    void selectSpace(requestedSpaceId).then((switched) => {
+      if (cancelled) return;
+      // selectSpace commits the id before it resolves; a failed write rolls it back.
+      if (threadSpaceSwitchResult(requestedSpaceId, switched, selectedSpaceId()) === "ready") {
+        setActiveSpaceId(requestedSpaceId);
+        return;
+      }
+      setSwitchFailed(true);
     });
     return () => {
       cancelled = true;
     };
-  }, [invalidSpaceId, requestedSpaceId]);
+  }, [activeSpaceId, focused, spaceId]);
 
-  if (routeState === "ready" && !invalidSpaceId && routeMatchesSelectedSpace) return <Thread />;
+  if (request.action === "show" && !focusSync.switchFailed) return <Thread />;
   return (
     <View
       style={{
@@ -243,12 +266,17 @@ export default function ThreadRoute() {
         backgroundColor: tokens.background,
       }}
     >
-      {routeState === "loading" ? (
+      {request.action === "switch" && !focusSync.switchFailed ? (
         <ActivityIndicator color={tokens.foreground} />
       ) : (
-        <Pressable accessibilityRole="button" onPress={() => router.replace("/")}>
-          <Text style={{ color: tokens.foreground, fontSize: 16 }}>{t("Return to inbox")}</Text>
-        </Pressable>
+        <View style={{ alignItems: "center", gap: 12 }}>
+          <Text style={{ color: tokens.foreground, fontSize: 16 }}>
+            {t("Could not switch spaces")}
+          </Text>
+          <Pressable accessibilityRole="button" onPress={() => router.replace("/")}>
+            <Text style={{ color: tokens.foreground, fontSize: 16 }}>{t("Return to inbox")}</Text>
+          </Pressable>
+        </View>
       )}
     </View>
   );
@@ -264,12 +292,14 @@ function Thread() {
   const headerHeight = useHeaderHeight();
   const insets = useSafeAreaInsets();
   const keyboardVisible = useKeyboardState((state) => state.isVisible);
-  const { botId, groupId, name, messageId } = useLocalSearchParams<{
+  const { botId, groupId, name, messageId, threadId } = useLocalSearchParams<{
     botId?: string;
     groupId?: string;
     name?: string;
     messageId?: string;
+    threadId?: string;
   }>();
+  const requestedThreadId = typeof threadId === "string" && threadId ? threadId : undefined;
   const inGroup = Boolean(groupId);
   const call = useCallSession();
   const onCall = Boolean(botId) && call?.botId === botId;
@@ -441,7 +471,7 @@ function Thread() {
       : [];
   const currentBot = botId ? mentionBots.find((bot) => bot.id === botId) : undefined;
   const displayName = currentBot?.name ?? name;
-  const notificationThreadId = snap?.threadId ?? currentBot?.threadId;
+  const notificationThreadId = snap?.threadId ?? requestedThreadId ?? currentBot?.threadId;
   activeThreadId.current = notificationThreadId;
   const currentBotStatus = snap ? snap.run?.status : currentBot?.status;
   const hasLiveProgress = visibleMessages.some((message) => message.id.startsWith("progress:"));
