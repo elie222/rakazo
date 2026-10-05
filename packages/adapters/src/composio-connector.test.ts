@@ -615,7 +615,8 @@ describe("composio tool mapping", () => {
         results: [
           {
             tool_slug: "GITHUB_GET_REPOS",
-            error: "Repository not found.",
+            error:
+              'Repository not found. access_token="opaque-access-value" client_secret: "opaque-client-secret" api_key=opaque-api-key password=opaque-password',
             response: { successful: false },
           },
         ],
@@ -654,7 +655,8 @@ describe("composio tool mapping", () => {
     expect(events).toEqual([
       {
         type: "error",
-        message: "1 out of 1 tools failed: GITHUB_GET_REPOS: Repository not found.",
+        message:
+          '1 out of 1 tools failed: GITHUB_GET_REPOS: Repository not found. access_token="[redacted]" client_secret: "[redacted]" api_key="[redacted]" password="[redacted]"',
       },
     ]);
   });

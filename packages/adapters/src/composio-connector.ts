@@ -816,6 +816,10 @@ function sanitizePayload(data: unknown): unknown {
 function redactConnectorText(value: string): string {
   return value
     .replace(/COMPOSIO_API_KEY[=:]?\s*\S+/gi, "COMPOSIO_API_KEY=[redacted]")
+    .replace(
+      /(["']?(?:access[_-]?token|refresh[_-]?token|id[_-]?token|session[_-]?token|client[_-]?secret|api[_-]?key|password|passwd|secret)["']?\s*[=:]\s*)(?:"[^"]*"|'[^']*'|[^\s,;&}]+)/gi,
+      '$1"[redacted]"',
+    )
     .replace(/ak_[A-Za-z0-9]+/g, "[redacted]")
     .replace(/ck_[A-Za-z0-9]+/g, "[redacted]")
     .replace(/sk-or-v1-[A-Za-z0-9]+/g, "[redacted]")
