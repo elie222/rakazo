@@ -53,11 +53,14 @@ export function resolveCriteria(
   existing: readonly TicketCriterion[],
 ): TicketCriterion[] {
   const doneByText = new Map(existing.map((item) => [item.text, item.done]));
-  return input.map((item) =>
-    typeof item === "string"
-      ? { text: item, done: doneByText.get(item) ?? false }
-      : { text: item.text, done: item.done },
-  );
+  return input.map((item, index) => {
+    if (typeof item !== "string") return { text: item.text, done: item.done };
+    // A checklist may hold the same text twice. Prefer the entry that sits at
+    // this position, so a plain-text item never borrows the state of its twin.
+    const samePosition = existing[index];
+    if (samePosition && samePosition.text === item) return { text: item, done: samePosition.done };
+    return { text: item, done: doneByText.get(item) ?? false };
+  });
 }
 
 /** Tolerant reader for stored JSON: accepts legacy plain strings and drops malformed items. */

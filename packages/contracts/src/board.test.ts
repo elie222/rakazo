@@ -177,6 +177,37 @@ describe("acceptance criteria helpers", () => {
     ]);
   });
 
+  it("keeps the state of a repeated text apart by position", () => {
+    // The second box of a repeated text is checked. The first box keeps its own
+    // state instead of borrowing the one of its twin.
+    expect(
+      resolveCriteria(
+        ["Deploy", { text: "Deploy", done: true }],
+        [
+          { text: "Deploy", done: true },
+          { text: "Deploy", done: false },
+        ],
+      ),
+    ).toEqual([
+      { text: "Deploy", done: true },
+      { text: "Deploy", done: true },
+    ]);
+    // The first box of a repeated text is unchecked. The second one stays as it
+    // was, and the row above it does not turn checked.
+    expect(
+      resolveCriteria(
+        ["Deploy", { text: "Deploy", done: false }],
+        [
+          { text: "Deploy", done: false },
+          { text: "Deploy", done: true },
+        ],
+      ),
+    ).toEqual([
+      { text: "Deploy", done: false },
+      { text: "Deploy", done: false },
+    ]);
+  });
+
   it("reads legacy strings and drops malformed stored items", () => {
     expect(parseCriteria(["  A ", { text: "B", done: true }, 4, { text: " " }, null])).toEqual([
       { text: "A", done: false },
