@@ -229,6 +229,9 @@ describe("composio tool mapping", () => {
     expect(sanitizeComposioError("COMPOSIO_API_KEY plain-secret-value")).toBe(
       "COMPOSIO_API_KEY=[redacted]",
     );
+    expect(sanitizeComposioError('COMPOSIO_API_KEY "alpha beta"')).toBe(
+      "COMPOSIO_API_KEY=[redacted]",
+    );
     expect(sanitizeComposioError("denied password=p@ss;word")).toBe('denied password="[redacted]"');
     expect(sanitizeComposioError("denied password=bad;status=failed")).toBe(
       'denied password="[redacted]";status=failed',
@@ -259,6 +262,12 @@ describe("composio tool mapping", () => {
     expect(composioResultError("2 out of 3 tools failed", data)).toBe(
       "2 out of 3 tools failed: TOOL_MISSING: The requested message was not found.; TOOL_NESTED: Query failed.",
     );
+    const longSecret = `${"p".repeat(470)} password="alpha beta-secret-tail" done ${"q".repeat(80)}`;
+    const longMessage = composioResultError("1 out of 1 tools failed", {
+      results: [{ tool_slug: "TOOL", error: longSecret }],
+    });
+    expect(longMessage).toContain("[redacted]");
+    expect(longMessage).not.toContain("beta-secret");
     expect(composioResultError("1 out of 1 tools failed", { results: [] })).toBe(
       "1 out of 1 tools failed",
     );

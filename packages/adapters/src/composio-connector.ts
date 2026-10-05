@@ -791,7 +791,8 @@ export function composioResultError(summary: string, data: unknown): string {
       (value): value is string => typeof value === "string" && value.length > 0,
     );
     if (!error) return [];
-    const detail = error.length > 500 ? `${error.slice(0, 500)}…` : error;
+    const redacted = redactConnectorText(error);
+    const detail = redacted.length > 500 ? `${redacted.slice(0, 500)}…` : redacted;
     return [typeof item.tool_slug === "string" ? `${item.tool_slug}: ${detail}` : detail];
   });
   if (details.length === 0) return summary;
@@ -847,7 +848,10 @@ function redactConnectorText(value: string): string {
   return redactSecretLiterals(
     value
       .replace(CREDENTIAL_ASSIGNMENT, '$1"[redacted]"')
-      .replace(/COMPOSIO_API_KEY(?!\s*[=:])\s+\S+/gi, "COMPOSIO_API_KEY=[redacted]"),
+      .replace(
+        /COMPOSIO_API_KEY(?!\s*[=:])\s+(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|\S+)/gi,
+        "COMPOSIO_API_KEY=[redacted]",
+      ),
   );
 }
 
