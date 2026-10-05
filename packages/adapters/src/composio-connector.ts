@@ -811,7 +811,8 @@ const CREDENTIAL_FIELD_NAME =
 const CREDENTIAL_FIELD_KEY = new RegExp(`^(?:${CREDENTIAL_FIELD_NAME})$`, "i");
 
 const CREDENTIAL_ASSIGNMENT = new RegExp(
-  `(["']?\\b(?:${CREDENTIAL_FIELD_NAME})\\b["']?\\s*[=:]\\s*)(?:"[^"]*"|'[^']*'|[^\\s,;&}]+)`,
+  `(["']?\\b(?:${CREDENTIAL_FIELD_NAME})\\b["']?\\s*[=:]\\s*)` +
+    `(?:"(?:\\\\.|[^"\\\\])*"|'(?:\\\\.|[^'\\\\])*'|[^\\s,&}]+)`,
   "gi",
 );
 

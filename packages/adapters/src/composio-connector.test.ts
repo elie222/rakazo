@@ -223,6 +223,10 @@ describe("composio tool mapping", () => {
     expect(sanitizeComposioError("COMPOSIO_API_KEY=ak_shouldnotleak")).not.toContain(
       "ak_shouldnotleak",
     );
+    expect(sanitizeComposioError("denied password=p@ss;word")).toBe('denied password="[redacted]"');
+    expect(sanitizeComposioError('denied password="p\\"secret"')).toBe(
+      'denied password="[redacted]"',
+    );
   });
 
   it("keeps each tool's error when a multi-execute batch fails", () => {
@@ -673,6 +677,8 @@ describe("composio tool mapping", () => {
         secret: { a: 1 },
         has_password: true,
         flag: "has_password: true",
+        joined: "password=p@ss;word",
+        escaped: 'note password="p\\"secret" tail',
         meta: { name: "ada", api_key: "live-key-value" },
         id: 1,
       },
@@ -718,6 +724,8 @@ describe("composio tool mapping", () => {
             secret: "[redacted]",
             has_password: true,
             flag: "has_password: true",
+            joined: 'password="[redacted]"',
+            escaped: 'note password="[redacted]" tail',
             meta: { name: "ada", api_key: "[redacted]" },
             id: 1,
           },
