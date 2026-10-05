@@ -644,4 +644,27 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Voice chat": "语音通话",
   "Show transcript": "显示字幕",
   "Hide transcript": "隐藏字幕",
+
+  Artifact: "制品",
+  Artifacts: "制品",
+  "All bots": "所有 Bot",
+  "Search artifacts…": "搜索制品…",
+  "No artifacts yet": "暂无制品",
+  "No matching artifacts": "没有匹配的制品",
+  "Long press to delete": "长按以删除",
+  "Could not load artifacts.": "无法加载制品。",
+  "Could not load this artifact.": "无法加载此制品。",
+  "Could not delete this artifact": "无法删除此制品",
+  "Could not share this artifact": "无法分享此制品",
+  'Delete "{name}"?': "要删除“{name}”吗？",
+  "This can't be undone.": "此操作无法撤销。",
+  "This deletes all {count} versions of this artifact. This can't be undone.":
+    "这将删除此制品的全部 {count} 个版本，且无法撤销。",
+  Versions: "版本",
+  "Preview isn't available for this file — share it to view it.":
+    "此文件不支持预览 — 请分享后查看。",
+
+  "Your phone's built-in voice — free, no account needed": "手机自带的语音 — 免费，无需账户",
+  "Speaks with your phone's own text-to-speech instead of a connected provider.":
+    "使用手机自带的语音朗读，而不是已连接的语音服务。",
 };

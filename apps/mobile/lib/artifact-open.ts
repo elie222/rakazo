@@ -7,6 +7,18 @@ import { createKeyedPromiseCache } from "./inline-image";
 
 export type MobileArtifactTarget = { botId: string } | { groupId: string };
 
+/** Writes an artifact's bytes to its cache file; no network call. */
+export function writeArtifactCacheFile(
+  artifactId: string,
+  mimeType: string,
+  contentBase64: string,
+): File {
+  const file = new File(Paths.cache, artifactCacheFileName(artifactId, mimeType));
+  file.create({ overwrite: true });
+  file.write(contentBase64, { encoding: "base64" });
+  return file;
+}
+
 async function cacheMobileArtifact(
   target: MobileArtifactTarget,
   artifactId: string,
@@ -16,10 +28,7 @@ async function cacheMobileArtifact(
     ...target,
     artifactId,
   });
-  const file = new File(Paths.cache, artifactCacheFileName(artifactId, mimeType));
-  file.create({ overwrite: true });
-  file.write(artifact.contentBase64, { encoding: "base64" });
-  return file;
+  return writeArtifactCacheFile(artifactId, mimeType, artifact.contentBase64);
 }
 
 export async function readMobileArtifactText(
