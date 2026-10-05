@@ -844,7 +844,11 @@ function isCredentialField(key: string): boolean {
 }
 
 function redactConnectorText(value: string): string {
-  return redactSecretLiterals(value.replace(CREDENTIAL_ASSIGNMENT, '$1"[redacted]"'));
+  return redactSecretLiterals(
+    value
+      .replace(CREDENTIAL_ASSIGNMENT, '$1"[redacted]"')
+      .replace(/COMPOSIO_API_KEY(?!\s*[=:])\s+\S+/gi, "COMPOSIO_API_KEY=[redacted]"),
+  );
 }
 
 function redactSecretLiterals(value: string): string {

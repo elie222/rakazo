@@ -226,6 +226,9 @@ describe("composio tool mapping", () => {
     expect(sanitizeComposioError('COMPOSIO_API_KEY="alpha beta"')).toBe(
       'COMPOSIO_API_KEY="[redacted]"',
     );
+    expect(sanitizeComposioError("COMPOSIO_API_KEY plain-secret-value")).toBe(
+      "COMPOSIO_API_KEY=[redacted]",
+    );
     expect(sanitizeComposioError("denied password=p@ss;word")).toBe('denied password="[redacted]"');
     expect(sanitizeComposioError("denied password=bad;status=failed")).toBe(
       'denied password="[redacted]";status=failed',
