@@ -5752,7 +5752,8 @@ const Composer = memo(function Composer({
                 aria-label={t`@${mention.name}`}
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={() => insertMention(mention)}
-                onMouseEnter={() => setMentionHighlightIndex(index)}
+                // Opening the list under a stationary pointer must not steal the keyboard highlight.
+                onMouseMove={() => setMentionHighlightIndex(index)}
                 className={`flex w-full items-start gap-3 px-4 py-2.5 text-start hover:bg-accent ${
                   highlighted ? "bg-accent" : ""
                 }`}
