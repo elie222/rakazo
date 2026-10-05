@@ -612,33 +612,43 @@ export async function setTicketCriterion(
   const board = await ensureBoard(deps.prisma, input.spaceId);
   const existing = await findTicket(deps.prisma, input.spaceId, board, { id: input.id });
   if (!existing) return { error: `Ticket ${input.id} not found.` };
-  const criteria = parseCriteria(existing.acceptanceCriteria);
   const position = Math.trunc(input.index);
-  const target = criteria[position - 1];
-  if (!Number.isFinite(position) || !target) {
-    return {
-      error: `index must be between 1 and ${criteria.length} (this ticket has ${criteria.length} acceptance criteria).`,
-    };
-  }
-  const next = criteria.map((item, i) =>
-    i === position - 1 ? { ...item, done: input.done } : item,
-  );
-  const row = await deps.prisma.$transaction(async (tx) => {
+  // Lock the row and read the checklist inside the same transaction. Two
+  // checkers (a person and a bot) then queue behind each other; otherwise the
+  // later write drops the earlier check, because it was built from a stale list.
+  const result = await deps.prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM tickets WHERE id = ${existing.id} FOR UPDATE`;
+    const current = await tx.ticket.findFirst({
+      where: { id: existing.id, spaceId: input.spaceId, boardId: board.id },
+    });
+    if (!current) return { error: `Ticket ${input.id} not found.` } as const;
+    const criteria = parseCriteria(current.acceptanceCriteria);
+    const target = criteria[position - 1];
+    if (!Number.isFinite(position) || !target) {
+      return {
+        error: `index must be between 1 and ${criteria.length} (this ticket has ${criteria.length} acceptance criteria).`,
+      } as const;
+    }
+    const next = criteria.map((item, i) =>
+      i === position - 1 ? { ...item, done: input.done } : item,
+    );
     const updated = await tx.ticket.update({
-      where: { id: existing.id },
+      where: { id: current.id },
       data: {
         acceptanceCriteria: next,
-        ...ticketEditorStamp(input.botId, existing.assigneeBotId),
+        ...ticketEditorStamp(input.botId, current.assigneeBotId),
       },
     });
     await recordTicketEvents(tx, {
-      ticketId: existing.id,
+      ticketId: current.id,
       spaceId: input.spaceId,
       actor: { botId: input.botId },
-      events: ticketChangeEvents(existing, updated),
+      events: ticketChangeEvents(current, updated),
     });
-    return updated;
+    return { row: updated } as const;
   });
+  if ("error" in result) return result;
+  const row = result.row;
   await deps.onTicketChange?.({
     spaceId: input.spaceId,
     boardId: row.boardId,

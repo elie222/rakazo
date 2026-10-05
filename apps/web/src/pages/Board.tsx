@@ -1057,6 +1057,10 @@ function TicketDetail({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const commentsRef = useRef<HTMLDivElement>(null);
+  // Overlapping reloads can finish out of order; only the newest one may
+  // write state, so an older response cannot replace a newer one.
+  const commentsGeneration = useRef(0);
+  const eventsGeneration = useRef(0);
   const [panel, setPanel] = useState<"comments" | "history">("comments");
   const [events, setEvents] = useState<TicketEvent[] | null>(null);
   const describeEvent = useTicketEventDescriber(botsById);
@@ -1069,10 +1073,13 @@ function TicketDetail({
   }, [ticket.id, ticket.title, ticket.description, ticket.acceptanceCriteria]);
 
   const loadComments = useCallback(async () => {
+    const current = ++commentsGeneration.current;
     try {
       const list = await rpc.tickets.comments({ ticketId: ticket.id });
+      if (current !== commentsGeneration.current) return;
       setComments(list);
     } catch (commentsError) {
+      if (current !== commentsGeneration.current) return;
       setError(
         commentsError instanceof Error ? commentsError.message : t`Could not load comments.`,
       );
@@ -1080,8 +1087,11 @@ function TicketDetail({
   }, [ticket.id, t]);
 
   const loadEvents = useCallback(async () => {
+    const current = ++eventsGeneration.current;
     try {
-      setEvents(await rpc.tickets.events({ ticketId: ticket.id }));
+      const list = await rpc.tickets.events({ ticketId: ticket.id });
+      if (current !== eventsGeneration.current) return;
+      setEvents(list);
     } catch {
       // History is secondary; keep whatever was loaded.
     }
@@ -1284,8 +1294,14 @@ function TicketDetail({
                         void run(() =>
                           rpc.tickets.update({
                             id: ticket.id,
+                            // Only the toggled criterion carries an explicit
+                            // `done`; the rest stay plain text. The server keeps
+                            // its stored state for those, so a check that the
+                            // agent made meanwhile is not undone by this write.
                             acceptanceCriteria: ticket.acceptanceCriteria.map((item, i) =>
-                              i === index ? { ...item, done: event.target.checked } : item,
+                              i === index
+                                ? { text: item.text, done: event.target.checked }
+                                : item.text,
                             ),
                           }),
                         )

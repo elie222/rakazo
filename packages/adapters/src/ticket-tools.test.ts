@@ -18,6 +18,8 @@ function withTransaction<T extends object>(prisma: T) {
   const client = {
     ticketEvent: { createMany: vi.fn(async () => ({ count: 0 })) },
     ticketComment: { create: vi.fn(async () => ({})) },
+    // The row lock a criteria write takes before it reads the checklist.
+    $queryRaw: vi.fn(async () => []),
     ...prisma,
     $transaction: vi.fn(),
   };

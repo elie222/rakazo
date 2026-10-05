@@ -3594,54 +3594,65 @@ export function createRouter(deps: RouterDeps) {
         if (input.assigneeBotId !== undefined) {
           await repos.getBot(context.actor, input.assigneeBotId);
         }
-        const existingCriteria = parseCriteria(existing.acceptanceCriteria);
-        const nextCriteria =
-          input.acceptanceCriteria !== undefined
-            ? resolveCriteria(input.acceptanceCriteria, existingCriteria)
-            : existingCriteria;
-        const nextAssignee = input.assigneeBotId ?? existing.assigneeBotId;
-        if (input.status !== undefined) {
-          const blocked = checkTicketTransition({
-            from: coerceTicketStatus(existing.status),
-            to: input.status,
-            criteria: nextCriteria,
-            hasAssignee: nextAssignee !== null,
-            reason: input.reason,
-          });
-          if (blocked) throw new ORPCError("BAD_REQUEST", { message: blocked });
-        }
-        const data: Prisma.TicketUncheckedUpdateInput = {
-          ...(input.title !== undefined ? { title: input.title } : {}),
-          ...(input.description !== undefined ? { description: input.description } : {}),
-          ...(input.acceptanceCriteria !== undefined ? { acceptanceCriteria: nextCriteria } : {}),
-          ...(input.priority !== undefined ? { priority: input.priority ?? "normal" } : {}),
-          ...(input.assigneeBotId !== undefined ? { assigneeBotId: input.assigneeBotId } : {}),
-        };
-        if (input.status !== undefined) {
-          data.status = input.status;
-          Object.assign(data, statusChangeData(existing.status, input.status));
-          data.completedAt = isTicketCompletedStatus(input.status)
-            ? (existing.completedAt ?? new Date())
-            : null;
-        }
         const actor = { userId: context.actor.userId };
         const row = await deps.prisma.$transaction(async (tx) => {
+          // Lock the row before the checklist is read. The transition gate and
+          // the write must both see the checklist that this update replaces:
+          // without the lock an uncheck can land in between, and the ticket can
+          // move to review or done with an open criterion and no reason.
+          await tx.$queryRaw`SELECT id FROM tickets WHERE id = ${existing.id} FOR UPDATE`;
+          const current = await tx.ticket.findFirst({
+            where: { id: existing.id, spaceId: context.actor.spaceId, boardId: board.id },
+          });
+          if (!current) throw new IsolationError();
+          // A criterion that arrives as plain text keeps its stored state, so a
+          // write that flips one box cannot drop a check made meanwhile.
+          const existingCriteria = parseCriteria(current.acceptanceCriteria);
+          const nextCriteria =
+            input.acceptanceCriteria !== undefined
+              ? resolveCriteria(input.acceptanceCriteria, existingCriteria)
+              : existingCriteria;
+          const nextAssignee = input.assigneeBotId ?? current.assigneeBotId;
+          if (input.status !== undefined) {
+            const blocked = checkTicketTransition({
+              from: coerceTicketStatus(current.status),
+              to: input.status,
+              criteria: nextCriteria,
+              hasAssignee: nextAssignee !== null,
+              reason: input.reason,
+            });
+            if (blocked) throw new ORPCError("BAD_REQUEST", { message: blocked });
+          }
+          const data: Prisma.TicketUncheckedUpdateInput = {
+            ...(input.title !== undefined ? { title: input.title } : {}),
+            ...(input.description !== undefined ? { description: input.description } : {}),
+            ...(input.acceptanceCriteria !== undefined ? { acceptanceCriteria: nextCriteria } : {}),
+            ...(input.priority !== undefined ? { priority: input.priority ?? "normal" } : {}),
+            ...(input.assigneeBotId !== undefined ? { assigneeBotId: input.assigneeBotId } : {}),
+          };
+          if (input.status !== undefined) {
+            data.status = input.status;
+            Object.assign(data, statusChangeData(current.status, input.status));
+            data.completedAt = isTicketCompletedStatus(input.status)
+              ? (current.completedAt ?? new Date())
+              : null;
+          }
           const updated = await tx.ticket.update({
-            where: { id: existing.id },
+            where: { id: current.id },
             data: {
               ...data,
-              ...ticketEditorStamp(null, input.assigneeBotId ?? existing.assigneeBotId),
+              ...ticketEditorStamp(null, input.assigneeBotId ?? current.assigneeBotId),
             },
           });
           await recordTicketEvents(tx, {
-            ticketId: existing.id,
+            ticketId: current.id,
             spaceId: context.actor.spaceId,
             actor,
-            events: ticketChangeEvents(existing, updated),
+            events: ticketChangeEvents(current, updated),
           });
           if (input.status !== undefined) {
             await recordTransitionReason(tx, {
-              ticketId: existing.id,
+              ticketId: current.id,
               spaceId: context.actor.spaceId,
               actor,
               to: input.status,
@@ -3668,36 +3679,45 @@ export function createRouter(deps: RouterDeps) {
           where: { id: input.id, spaceId: context.actor.spaceId, boardId: board.id },
         });
         if (!existing) throw new IsolationError();
-        const criteria = parseCriteria(existing.acceptanceCriteria);
-        const blocked = checkTicketTransition({
-          from: coerceTicketStatus(existing.status),
-          to: input.status,
-          criteria,
-          hasAssignee: existing.assigneeBotId !== null,
-          reason: input.reason,
-        });
-        if (blocked) throw new ORPCError("BAD_REQUEST", { message: blocked });
         const actor = { userId: context.actor.userId };
         const row = await deps.prisma.$transaction(async (tx) => {
+          // Lock the row before the checklist is read. The transition gate and
+          // the write must see the same criteria: without the lock an uncheck
+          // can land in between, and the move can finish in review or done with
+          // an open criterion and no reason.
+          await tx.$queryRaw`SELECT id FROM tickets WHERE id = ${existing.id} FOR UPDATE`;
+          const current = await tx.ticket.findFirst({
+            where: { id: existing.id, spaceId: context.actor.spaceId, boardId: board.id },
+          });
+          if (!current) throw new IsolationError();
+          const criteria = parseCriteria(current.acceptanceCriteria);
+          const blocked = checkTicketTransition({
+            from: coerceTicketStatus(current.status),
+            to: input.status,
+            criteria,
+            hasAssignee: current.assigneeBotId !== null,
+            reason: input.reason,
+          });
+          if (blocked) throw new ORPCError("BAD_REQUEST", { message: blocked });
           const updated = await tx.ticket.update({
-            where: { id: existing.id },
+            where: { id: current.id },
             data: {
               status: input.status,
-              ...statusChangeData(existing.status, input.status),
-              ...ticketEditorStamp(null, existing.assigneeBotId),
+              ...statusChangeData(current.status, input.status),
+              ...ticketEditorStamp(null, current.assigneeBotId),
               completedAt: isTicketCompletedStatus(input.status)
-                ? (existing.completedAt ?? new Date())
+                ? (current.completedAt ?? new Date())
                 : null,
             },
           });
           await recordTicketEvents(tx, {
-            ticketId: existing.id,
+            ticketId: current.id,
             spaceId: context.actor.spaceId,
             actor,
-            events: ticketChangeEvents(existing, updated),
+            events: ticketChangeEvents(current, updated),
           });
           await recordTransitionReason(tx, {
-            ticketId: existing.id,
+            ticketId: current.id,
             spaceId: context.actor.spaceId,
             actor,
             to: input.status,

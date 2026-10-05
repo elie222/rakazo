@@ -603,6 +603,51 @@ it("lists checkable criteria and the ticket history in the detail", async () => 
   }
 });
 
+it("sends only the toggled criterion with an explicit value", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  api.boards.list.mockResolvedValue([boardStub()]);
+  api.bots.list.mockResolvedValue([bot("bot-1", "Helper")]);
+  api.tickets.list.mockResolvedValue({
+    tickets: [
+      {
+        ...ticket("Fix the thing", "ticket-1", "doing", "RAK-1", "bot-1"),
+        acceptanceCriteria: [
+          { text: "Deployed", done: false },
+          { text: "Documented", done: false },
+        ],
+      },
+    ],
+    workingTicketIds: [],
+    botIssues: [],
+  });
+  api.tickets.comments.mockResolvedValue([]);
+  api.tickets.events.mockResolvedValue([]);
+  api.tickets.update.mockReset();
+  api.tickets.update.mockResolvedValue(undefined);
+  const page = await renderBoard();
+  try {
+    await act(async () =>
+      page.container
+        .querySelector<HTMLButtonElement>("[data-testid='board-card-ticket-1']")
+        ?.click(),
+    );
+    await act(async () =>
+      page.container
+        .querySelector<HTMLButtonElement>("[data-testid='ticket-criterion-1']")
+        ?.click(),
+    );
+    // The untouched entry goes as plain text, so the server keeps whatever it
+    // holds for it instead of writing back this page's older copy.
+    expect(api.tickets.update).toHaveBeenCalledWith({
+      id: "ticket-1",
+      acceptanceCriteria: ["Deployed", { text: "Documented", done: true }],
+    });
+  } finally {
+    await page.cleanup();
+    vi.unstubAllGlobals();
+  }
+});
+
 it("edits description and criteria as markdown and renders them after saving", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   api.boards.list.mockResolvedValue([boardStub()]);
