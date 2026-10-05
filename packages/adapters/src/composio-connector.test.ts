@@ -661,6 +661,72 @@ describe("composio tool mapping", () => {
     ]);
   });
 
+  it("redacts credential values in successful tool results without dropping the payload", async () => {
+    composioSdkState.created.length = 0;
+    composioSdkState.executions.length = 0;
+    composioSdkState.sessions.clear();
+    composioToolkitDirectory.invalidate();
+    composioSdkState.executeResult = {
+      data: {
+        body: "Reset your password: hunter2 today",
+        quoted: 'cfg password="x"',
+        secret: { a: 1 },
+        has_password: true,
+        flag: "has_password: true",
+        meta: { name: "ada", api_key: "live-key-value" },
+        id: 1,
+      },
+      error: null,
+    };
+
+    const connector = new ComposioConnector();
+    const context: AdapterContext = {
+      operationId: "composio-payload-redaction",
+      traceId: "composio-payload-redaction",
+      spaceId: "workspace",
+      userId: "user-1",
+      signal: new AbortController().signal,
+      connectedConnections: [
+        {
+          id: "connection-github",
+          connectorId: "composio",
+          externalId: "github",
+          displayName: "GitHub",
+        },
+      ],
+    };
+
+    const events: ConnectorEvent[] = [];
+    try {
+      for await (const event of connector.execute(
+        { tool: "GITHUB_GET_REPOS", args: {}, executionId: "composio-payload-redaction" },
+        context,
+      )) {
+        events.push(event);
+      }
+    } finally {
+      composioSdkState.executeResult = null;
+    }
+
+    expect(events).toEqual([
+      {
+        type: "result",
+        data: {
+          data: {
+            body: 'Reset your password: "[redacted]" today',
+            quoted: 'cfg password="[redacted]"',
+            secret: "[redacted]",
+            has_password: true,
+            flag: "has_password: true",
+            meta: { name: "ada", api_key: "[redacted]" },
+            id: 1,
+          },
+          logId: "log-github",
+        },
+      },
+    ]);
+  });
+
   it("resolves connection-request ids to connected-account ids and skips sibling refs", async () => {
     composioSdkState.created.length = 0;
     composioSdkState.sessions.clear();
