@@ -812,9 +812,11 @@ const CREDENTIAL_FIELD_KEY = new RegExp(`^(?:${CREDENTIAL_FIELD_NAME})$`, "i");
 
 const CREDENTIAL_ASSIGNMENT = new RegExp(
   `(["']?\\b(?:${CREDENTIAL_FIELD_NAME})\\b["']?\\s*[=:]\\s*)` +
-    `(?:"(?:\\\\.|[^"\\\\])*"|'(?:\\\\.|[^'\\\\])*'|[^\\s,&}]+)`,
+    `(?:"(?:\\\\.|[^"\\\\])*"|'(?:\\\\.|[^'\\\\])*'|[^\\s,&;}]+(?:;(?![A-Za-z0-9_]+[=:])[^\\s,&;}]+)*)`,
   "gi",
 );
+
+const COMPOSIO_API_KEY_FIELD = /^composio[_-]?api[_-]?key$/i;
 
 function sanitizePayload(data: unknown): unknown {
   return redactConnectorData(data);
@@ -826,20 +828,26 @@ function redactConnectorData(data: unknown): unknown {
   if (!data || typeof data !== "object") return data;
   return Object.fromEntries(
     Object.entries(data).map(([key, value]) => [
-      key,
+      redactSecretLiterals(key),
       isCredentialField(key) ? "[redacted]" : redactConnectorData(value),
     ]),
   );
 }
 
 function isCredentialField(key: string): boolean {
-  return CREDENTIAL_FIELD_KEY.test(key);
+  return CREDENTIAL_FIELD_KEY.test(key) || COMPOSIO_API_KEY_FIELD.test(key);
 }
 
 function redactConnectorText(value: string): string {
+  return redactSecretLiterals(
+    value
+      .replace(/COMPOSIO_API_KEY[=:]?\s*\S+/gi, "COMPOSIO_API_KEY=[redacted]")
+      .replace(CREDENTIAL_ASSIGNMENT, '$1"[redacted]"'),
+  );
+}
+
+function redactSecretLiterals(value: string): string {
   return value
-    .replace(/COMPOSIO_API_KEY[=:]?\s*\S+/gi, "COMPOSIO_API_KEY=[redacted]")
-    .replace(CREDENTIAL_ASSIGNMENT, '$1"[redacted]"')
     .replace(/ak_[A-Za-z0-9]+/g, "[redacted]")
     .replace(/ck_[A-Za-z0-9]+/g, "[redacted]")
     .replace(/sk-or-v1-[A-Za-z0-9]+/g, "[redacted]")

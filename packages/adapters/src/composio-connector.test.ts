@@ -224,6 +224,9 @@ describe("composio tool mapping", () => {
       "ak_shouldnotleak",
     );
     expect(sanitizeComposioError("denied password=p@ss;word")).toBe('denied password="[redacted]"');
+    expect(sanitizeComposioError("denied password=bad;status=failed")).toBe(
+      'denied password="[redacted]";status=failed',
+    );
     expect(sanitizeComposioError('denied password="p\\"secret"')).toBe(
       'denied password="[redacted]"',
     );
@@ -680,6 +683,8 @@ describe("composio tool mapping", () => {
         joined: "password=p@ss;word",
         escaped: 'note password="p\\"secret" tail',
         meta: { name: "ada", api_key: "live-key-value" },
+        lookup_ak_ABC123: "kept",
+        COMPOSIO_API_KEY: "plain-secret-value",
         id: 1,
       },
       error: null,
@@ -727,6 +732,8 @@ describe("composio tool mapping", () => {
             joined: 'password="[redacted]"',
             escaped: 'note password="[redacted]" tail',
             meta: { name: "ada", api_key: "[redacted]" },
+            "lookup_[redacted]": "kept",
+            COMPOSIO_API_KEY: "[redacted]",
             id: 1,
           },
           logId: "log-github",
