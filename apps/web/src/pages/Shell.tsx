@@ -316,6 +316,11 @@ const THREAD_SNAPSHOT_TIMEOUT_MS = 2_000;
 /** Bound Settings leave so a hung voice status refresh cannot block dismissal. */
 const VOICE_STATUS_REFRESH_TIMEOUT_MS = 10_000;
 const MOBILE_SIDEBAR_SWIPE_EDGE_PX = 32;
+/** One 24px line plus the textarea's 4px padding; anything taller has wrapped. */
+const COMPOSER_SINGLE_LINE_MAX_PX = 36;
+/** The one-line composer's `gap-x-3.5` between the text and each control. */
+const COMPOSER_ONE_LINE_GAP_PX = 14;
+const COMPOSER_COLLAPSE_SLACK_PX = 16;
 const MOBILE_SIDEBAR_SWIPE_DISTANCE_PX = 56;
 
 function threadSnapshotSignal(parent: AbortSignal): AbortSignal {
@@ -5245,6 +5250,12 @@ const Composer = memo(function Composer({
   const [selectedSkill, setSelectedSkill] = useState<AgentSkillCatalogEntry | null>(null);
   const [selectedMentions, setSelectedMentions] = useState<ComposerMention[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [composerExpanded, setComposerExpanded] = useState(false);
+  const attachButtonRef = useRef<HTMLButtonElement>(null);
+  const composerActionsRef = useRef<HTMLDivElement>(null);
+  const composerBarRef = useRef<HTMLDivElement>(null);
+  const composerFieldRef = useRef<HTMLDivElement>(null);
+  const composerLayoutRef = useRef<ComposerLayout | null>(null);
   const [replyAnnouncement, setReplyAnnouncement] = useState("");
   // What the live region currently holds — a send disarming the reply clears
   // "reply" text, while an explicit cancel must keep "Reply cancelled".
@@ -5302,8 +5313,36 @@ const Composer = memo(function Composer({
     function syncHeight() {
       const textarea = textareaRef.current;
       if (!textarea) return;
-      textarea.style.height = "0px";
-      textarea.style.height = `${textarea.scrollHeight}px`;
+      // What is on screen now, before this resize, is where a layout switch animates from.
+      composerLayoutRef.current = readComposerLayout(
+        composerBarRef.current,
+        composerFieldRef.current,
+      );
+      const contentHeight = measureTextareaHeight(textarea);
+      textarea.style.height = `${contentHeight}px`;
+      // Text moves above the actions once it wraps beside them, and back once it fits there
+      // again with some slack, so a draft right at the edge cannot flip between layouts.
+      if (draft.length === 0) {
+        setComposerExpanded(false);
+        return;
+      }
+      if (contentHeight > COMPOSER_SINGLE_LINE_MAX_PX) {
+        setComposerExpanded(true);
+        return;
+      }
+      const attach = attachButtonRef.current;
+      const actions = composerActionsRef.current;
+      if (!attach || !actions) return;
+      const besideControls =
+        actions.getBoundingClientRect().left -
+        attach.getBoundingClientRect().right -
+        2 * COMPOSER_ONE_LINE_GAP_PX;
+      const heightBeside = measureTextareaHeight(
+        textarea,
+        besideControls - COMPOSER_COLLAPSE_SLACK_PX,
+      );
+      textarea.style.height = `${contentHeight}px`;
+      if (heightBeside <= COMPOSER_SINGLE_LINE_MAX_PX) setComposerExpanded(false);
     }
 
     syncHeight();
@@ -5493,6 +5532,43 @@ const Composer = memo(function Composer({
 
   const showComposerPlaceholder =
     draft.length === 0 && selectedSkill === null && selectedMentions.length === 0;
+  const expanded = composerExpanded || selectedSkill !== null || selectedMentions.length > 0;
+  const previousExpandedRef = useRef(expanded);
+
+  useLayoutEffect(() => {
+    if (previousExpandedRef.current === expanded) return;
+    previousExpandedRef.current = expanded;
+    const bar = composerBarRef.current;
+    const field = composerFieldRef.current;
+    const textarea = textareaRef.current;
+    const start = composerLayoutRef.current;
+    if (!bar || !field || !textarea || !start) return;
+    textarea.style.height = `${measureTextareaHeight(textarea)}px`;
+    // A send or a cleared draft snaps back; there is no text left to follow.
+    if (textarea.value === "" || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      return;
+    }
+    const end = readComposerLayout(bar, field);
+    if (!end) return;
+    composerLayoutRef.current = end;
+    // The box resizes from its fixed bottom edge, so the controls stay put while the text
+    // travels with it to its new cell.
+    const timing = { duration: 120, easing: "cubic-bezier(0.2, 0, 0, 1)" };
+    bar.animate(
+      [
+        { height: `${start.barHeight}px`, overflow: "hidden" },
+        { height: `${end.barHeight}px`, overflow: "hidden" },
+      ],
+      timing,
+    );
+    field.animate(
+      [
+        { transform: `translate(${start.fieldX - end.fieldX}px, ${start.fieldY - end.fieldY}px)` },
+        { transform: "none" },
+      ],
+      timing,
+    );
+  }, [expanded]);
   const replyName = replyTarget ? (replyTargetName ?? previewMessageText(replyTarget)) : "";
   const replyNameRef = useRef(replyName);
   replyNameRef.current = replyName;
@@ -5720,8 +5796,12 @@ const Composer = memo(function Composer({
         </div>
       ) : null}
       <div
+        ref={composerBarRef}
         data-testid="composer-bar"
-        className="flex items-center gap-3.5 rounded-full border border-border bg-background py-[9px] pe-2.5 ps-3 transition-colors focus-within:border-ring"
+        data-expanded={expanded}
+        className={`grid grid-cols-[auto_minmax(0,1fr)_auto] content-end items-center rounded-[26px] border border-border bg-background pe-2.5 ps-3 transition-colors focus-within:border-ring ${
+          expanded ? "gap-x-2 gap-y-2 pb-[9px] pt-3" : "gap-x-3.5 py-[9px]"
+        }`}
       >
         <input
           ref={fileInputRef}
@@ -5732,16 +5812,24 @@ const Composer = memo(function Composer({
           onChange={(event) => void onAttachmentPick(event.target.files)}
         />
         <Button
+          ref={attachButtonRef}
           variant="ghost"
           size="icon"
           aria-label={t`Attach file`}
           disabled={disabled}
           onClick={() => fileInputRef.current?.click()}
-          className="size-8 shrink-0 rounded-full border border-border bg-muted text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          className={`col-start-1 size-8 shrink-0 rounded-full border border-border bg-muted text-muted-foreground transition-colors hover:bg-accent hover:text-foreground ${
+            expanded ? "row-start-2" : ""
+          }`}
         >
           <Plus size={16} strokeWidth={2} />
         </Button>
-        <div className="flex min-w-0 flex-1 flex-wrap items-end gap-1.5">
+        <div
+          ref={composerFieldRef}
+          className={`flex min-w-0 flex-wrap items-end gap-1.5 ${
+            expanded ? "col-span-3 row-start-1 px-1.5" : "col-start-2"
+          }`}
+        >
           {selectedSkill ? (
             <span
               data-testid="skill-chip"
@@ -5852,59 +5940,103 @@ const Composer = memo(function Composer({
             autoComplete="off"
             dir="auto"
             rows={1}
-            className="max-h-32 min-h-[24px] min-w-[8rem] flex-1 resize-none overflow-y-auto bg-transparent py-0.5 text-[15.5px] leading-6 text-foreground outline-none placeholder:text-muted-foreground disabled:opacity-40"
+            className="rk-scroll max-h-25 min-h-[24px] min-w-[8rem] flex-1 resize-none overflow-y-auto bg-transparent py-0.5 text-[15.5px] leading-6 text-foreground outline-none placeholder:text-muted-foreground disabled:opacity-40"
           />
         </div>
-        {onVoice && draft.trim().length === 0 ? (
-          <Button
-            variant="outline"
-            size="icon"
-            aria-label={t`Voice`}
-            title={t`Voice`}
-            disabled={disabled}
-            onClick={onVoice}
-            className="size-8 shrink-0 rounded-full text-foreground/75"
-          >
-            <Mic size={16} strokeWidth={1.8} />
-          </Button>
-        ) : null}
-        {running ? (
-          <div className="flex items-center gap-1.5 shrink-0">
+        <div
+          ref={composerActionsRef}
+          className={`col-start-3 flex shrink-0 items-center gap-2 justify-self-end ${
+            expanded ? "row-start-2" : ""
+          }`}
+        >
+          {onVoice && draft.trim().length === 0 ? (
+            <Button
+              variant="outline"
+              size="icon"
+              aria-label={t`Voice`}
+              title={t`Voice`}
+              disabled={disabled}
+              onClick={onVoice}
+              className="size-8 shrink-0 rounded-full text-foreground/75"
+            >
+              <Mic size={16} strokeWidth={1.8} />
+            </Button>
+          ) : null}
+          {running ? (
+            <>
+              <Button
+                size="icon"
+                aria-label={t`Send`}
+                disabled={sending || !canSend || disabled}
+                onClick={send}
+                className="size-8 rounded-full bg-white text-black hover:bg-white/90 shadow-sm transition-transform active:scale-95"
+              >
+                <ArrowUp size={16} strokeWidth={2.2} />
+              </Button>
+              <Button
+                variant="outline"
+                size="icon"
+                aria-label={t`Stop`}
+                disabled={sending}
+                onClick={() => void onStop()}
+                className="size-8 rounded-full border border-border bg-muted text-foreground/80 shadow-sm transition-colors hover:bg-accent hover:text-foreground"
+              >
+                <Square size={11} strokeWidth={0} fill="currentColor" />
+              </Button>
+            </>
+          ) : (
             <Button
               size="icon"
               aria-label={t`Send`}
               disabled={sending || !canSend || disabled}
               onClick={send}
-              className="size-8 rounded-full bg-white text-black hover:bg-white/90 shadow-sm transition-transform active:scale-95"
+              className="size-8 shrink-0 rounded-full bg-white text-black hover:bg-white/90 shadow-sm transition-transform active:scale-95 disabled:bg-white/10 disabled:text-muted-foreground/30 disabled:shadow-none"
             >
               <ArrowUp size={16} strokeWidth={2.2} />
             </Button>
-            <Button
-              variant="outline"
-              size="icon"
-              aria-label={t`Stop`}
-              disabled={sending}
-              onClick={() => void onStop()}
-              className="size-8 rounded-full border border-border bg-muted text-foreground/80 shadow-sm transition-colors hover:bg-accent hover:text-foreground"
-            >
-              <Square size={11} strokeWidth={0} fill="currentColor" />
-            </Button>
-          </div>
-        ) : (
-          <Button
-            size="icon"
-            aria-label={t`Send`}
-            disabled={sending || !canSend || disabled}
-            onClick={send}
-            className="size-8 shrink-0 rounded-full bg-white text-black hover:bg-white/90 shadow-sm transition-transform active:scale-95 disabled:bg-white/10 disabled:text-muted-foreground/30 disabled:shadow-none"
-          >
-            <ArrowUp size={16} strokeWidth={2.2} />
-          </Button>
-        )}
+          )}
+        </div>
       </div>
     </fieldset>
   );
 });
+
+type ComposerLayout = { barHeight: number; fieldX: number; fieldY: number };
+
+/** Screen, not bar, coordinates: the composer grows upward from the bottom edge. */
+function readComposerLayout(
+  bar: HTMLElement | null,
+  field: HTMLElement | null,
+): ComposerLayout | null {
+  if (!bar || !field) return null;
+  const fieldBox = field.getBoundingClientRect();
+  return {
+    barHeight: bar.getBoundingClientRect().height,
+    fieldX: fieldBox.left,
+    fieldY: fieldBox.top,
+  };
+}
+
+/**
+ * The height `textarea`'s text needs, at its current width or at `width` px. The browser's own
+ * wrapping answers both, so the two composer layouts agree on what fits on one line. Hiding the
+ * scrollbar keeps it from narrowing the text while the field is collapsed to measure. Leaves the
+ * height at 0 for the caller to set.
+ */
+function measureTextareaHeight(textarea: HTMLTextAreaElement, width?: number) {
+  const { style } = textarea;
+  style.overflowY = "hidden";
+  if (width !== undefined) {
+    style.flex = "none";
+    style.width = `${width}px`;
+  }
+  style.height = "0px";
+  const height = textarea.scrollHeight;
+  style.overflowY = "";
+  style.flex = "";
+  style.width = "";
+  return height;
+}
 
 function slashActionLabel(id: SlashActionId) {
   switch (id) {
