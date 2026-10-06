@@ -202,6 +202,19 @@ test("chat composer controls are vertically centered", async ({ page }, testInfo
     "This draft is long enough to wrap onto its own row above the controls. ".repeat(16);
   await composer.fill(wrappedDraft);
   await expect(bar).toHaveAttribute("data-expanded", "true");
+  // The field moves up from the one-line slot; its box overlaps the controls until that finishes.
+  await expect
+    .poll(() =>
+      bar.evaluate((composerBar) => {
+        const field = composerBar.querySelector("textarea")?.parentElement ?? null;
+        return [composerBar, field].every(
+          (element) =>
+            element?.getAnimations().every((animation) => animation.playState !== "running") ??
+            true,
+        );
+      }),
+    )
+    .toBe(true);
   const fieldBox = await composer.evaluate((element) => ({
     clientHeight: element.clientHeight,
     scrollHeight: element.scrollHeight,
