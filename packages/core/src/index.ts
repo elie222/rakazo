@@ -24,6 +24,7 @@ export * from "./echo.js";
 export * from "./events.js";
 export * from "./farewell.js";
 export * from "./featured-connectors.js";
+export * from "./format-file-size.js";
 export * from "./group-mentions.js";
 export * from "./http-response.js";
 export * from "./markdown-plain.js";

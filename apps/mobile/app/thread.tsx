@@ -18,6 +18,7 @@ import {
   buildComposerMentionOptions,
   type ComposerMention,
   cloudAgentHttpsUrl,
+  formatFileSize,
   formatMessageTime,
   groupVoiceChats,
   isApprovalAskBlock,
@@ -138,7 +139,7 @@ import {
   quotableMessageSegments,
   truncateQuoteExcerpt,
 } from "../lib/message-presentation";
-import { native, useMobileTokens, useResolvedAppearance } from "../lib/native";
+import { native, useMobileTokens, useResolvedAppearance, useThemedStyles } from "../lib/native";
 import {
   threadRouteSpaceOnFocus,
   threadSpaceRequest,
@@ -300,9 +301,41 @@ export default function ThreadRoute() {
   );
 }
 
+function createThreadHeaderStyles() {
+  const tokens = mobileTokens();
+  return StyleSheet.create({
+    titleCapsule: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 10,
+      maxWidth: 220,
+      paddingVertical: 4,
+      paddingStart: 6,
+      paddingEnd: 14,
+      borderRadius: 999,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: tokens.border,
+      backgroundColor: tokens.card,
+    },
+    title: {
+      color: tokens.foreground,
+      fontSize: 18,
+      fontWeight: "600",
+    },
+    headerFade: {
+      position: "absolute",
+      top: 0,
+      left: 0,
+      right: 0,
+      experimental_backgroundImage: `linear-gradient(to bottom, ${tokens.background} 0%, ${tokens.background} 58%, ${tokens.background}00 100%)`,
+    },
+  });
+}
+
 function Thread() {
   const colorScheme = useResolvedAppearance();
   const tokens = mobileTokens();
+  const styles = useThemedStyles(createThreadHeaderStyles);
   const [botActionsOpen, setBotActionsOpen] = useState(false);
   const { t } = useI18n();
   const navigation = useNavigation();
@@ -657,6 +690,11 @@ function Thread() {
   useLayoutEffect(() => {
     navigation.setOptions({
       title: displayName || t("Thread"),
+      // Messages scroll under the bar. The list is inverted, so iOS would draw the header's scroll
+      // edge effect at its flipped top, above the composer.
+      headerTransparent: true,
+      headerStyle: { backgroundColor: "transparent" },
+      scrollEdgeEffects: { top: "hidden" },
       headerTitle: () => (
         <Pressable
           accessibilityRole="button"
@@ -666,26 +704,18 @@ function Thread() {
             if (!botId || inGroup) return;
             router.push({ pathname: "/bot-settings", params: { botId } });
           }}
-          style={{
-            flexDirection: "row",
-            alignItems: "center",
-            gap: 10,
-            maxWidth: 220,
-          }}
+          style={styles.titleCapsule}
         >
           {!inGroup && currentBot ? (
             <BotAvatar
               color={currentBot.color}
               identity={currentBot.id}
-              size={34}
+              size={28}
               status={currentBotStatus}
               muted={!currentBot.notifyOnFinish}
             />
           ) : null}
-          <Text
-            numberOfLines={1}
-            style={{ color: tokens.foreground, fontSize: 18, fontWeight: "600" }}
-          >
+          <Text numberOfLines={1} style={styles.title}>
             {displayName || t("Thread")}
           </Text>
         </Pressable>
@@ -693,6 +723,7 @@ function Thread() {
       headerRight: () =>
         inGroup ? (
           <Pressable
+            accessibilityRole="button"
             accessibilityLabel={t("Group settings")}
             hitSlop={8}
             onPress={() =>
@@ -710,7 +741,12 @@ function Thread() {
             />
           </Pressable>
         ) : (
-          <Pressable accessibilityLabel={t("Bot actions")} hitSlop={8} onPress={showBotActions}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t("Bot actions")}
+            hitSlop={8}
+            onPress={showBotActions}
+          >
             <NativeSymbol
               ios="ellipsis"
               android="ellipsis-horizontal"
@@ -732,6 +768,7 @@ function Thread() {
     t,
     tokens,
     colorScheme,
+    styles,
   ]);
 
   function leaveBot() {
@@ -1654,7 +1691,8 @@ function Thread() {
           options?.enableJump
             ? (event) => {
                 if (jumpScrollTarget.current !== message.id) return;
-                const y = Math.max(0, event.nativeEvent.layout.y - 24);
+                // Opaque header used to own this space; clear the transparent bar + fade.
+                const y = Math.max(0, event.nativeEvent.layout.y - (headerHeight + 24));
                 requestAnimationFrame(() => {
                   if (jumpScrollTarget.current !== message.id) return;
                   pinnedScroll.current?.scrollTo({ y, animated: true });
@@ -1827,19 +1865,24 @@ function Thread() {
   return (
     <KeyboardAvoidingView
       behavior="height"
-      keyboardVerticalOffset={headerHeight}
+      keyboardVerticalOffset={0}
       style={{ flex: 1, backgroundColor: tokens.background, paddingHorizontal: 20 }}
     >
-      {error ? <Text style={{ color: tokens.mutedForeground, marginTop: 12 }}>{error}</Text> : null}
+      {error ? (
+        <Text style={{ color: tokens.mutedForeground, marginTop: headerHeight + 28 }}>{error}</Text>
+      ) : null}
       {runError ? (
-        <Text style={{ color: tokens.destructive, marginTop: 12 }}>{runError}</Text>
+        <Text style={{ color: tokens.destructive, marginTop: error ? 12 : headerHeight + 28 }}>
+          {runError}
+        </Text>
       ) : null}
       <View style={{ flex: 1, position: "relative" }}>
         {showPinnedPage ? (
           <ScrollView
             key={jumpScrollTarget.current ?? pinnedTarget?.messageId ?? threadKey}
             ref={pinnedScroll}
-            style={{ flex: 1, marginTop: 8 }}
+            style={{ flex: 1 }}
+            contentContainerStyle={{ paddingTop: headerHeight + 8 }}
             maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
           >
             {loadEarlierControl}
@@ -1854,7 +1897,9 @@ function Thread() {
             inverted
             keyExtractor={(item) => (item.kind === "voiceChat" ? item.key : item.message.id)}
             extraData={answerableAskMessageId}
-            style={{ flex: 1, marginTop: 8 }}
+            style={{ flex: 1 }}
+            // Inverted, so the bottom padding is the visual top, clear of the transparent header.
+            contentContainerStyle={{ paddingBottom: headerHeight + 8 }}
             maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
             scrollEventThrottle={16}
             onScrollBeginDrag={() => {
@@ -1945,6 +1990,8 @@ function Thread() {
           </Pressable>
         ) : null}
       </View>
+      {/* Fades messages out under the transparent header; the alpha stop keeps the page hue. */}
+      <View pointerEvents="none" style={[styles.headerFade, { height: headerHeight + 24 }]} />
       <View style={{ paddingBottom: keyboardVisible ? 12 : Math.max(insets.bottom + 12, 24) }}>
         {replyTarget ? (
           <View
@@ -3295,16 +3342,15 @@ const MessageBubble = memo(function MessageBubble({
               >
                 📎 {attachment.name ?? t("File")}
               </Text>
-              {attachment.size ? (
+              {formatFileSize(attachment.size) ? (
                 <Text
                   style={{
-                    color:
-                      message.role === "user" ? tokens.secondaryForeground : tokens.mutedForeground,
+                    color: tokens.mutedForeground,
                     marginTop: 4,
                     fontSize: 13,
                   }}
                 >
-                  {attachment.mimeType ?? "file"} · {attachment.size} bytes
+                  {formatFileSize(attachment.size)}
                 </Text>
               ) : null}
             </Pressable>
