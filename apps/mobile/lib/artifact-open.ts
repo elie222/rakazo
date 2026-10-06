@@ -1,4 +1,4 @@
-import { File, Paths } from "expo-file-system";
+import { Directory, File, Paths } from "expo-file-system";
 import * as Sharing from "expo-sharing";
 import { rpc } from "./api";
 import { artifactCacheFileName, artifactShareFileName } from "./artifact-file";
@@ -89,9 +89,10 @@ export async function shareLocalFile(uri: string, mimeType: string, name: string
 }
 
 async function shareNamedFile(source: File, mimeType: string, name: string): Promise<void> {
-  const fileName = artifactShareFileName(name, mimeType);
-  const shared = source.name === fileName ? source : new File(Paths.cache, fileName);
-  if (shared.uri !== source.uri) source.copySync(shared, { overwrite: true });
+  const dir = new Directory(Paths.cache, "artifact-shares");
+  if (!dir.exists) dir.create();
+  const shared = new File(dir, artifactShareFileName(name, mimeType));
+  source.copySync(shared, { overwrite: true });
   if (await Sharing.isAvailableAsync()) {
     await Sharing.shareAsync(shared.uri, { mimeType });
     return;

@@ -26,6 +26,14 @@ describe("withSandboxedArtifactCsp", () => {
     expect(SANDBOXED_ARTIFACT_CSP).not.toContain("https:");
   });
 
+  it("does not insert the CSP tag inside a quoted doctype", () => {
+    const html = '<!DOCTYPE html SYSTEM "x>y"><script>evil()</script>';
+    const wrapped = withSandboxedArtifactCsp(html);
+    expect(wrapped.startsWith("<!DOCTYPE html><meta")).toBe(true);
+    expect(wrapped.endsWith(html)).toBe(true);
+    expect(wrapped).not.toContain("x<meta");
+  });
+
   it("does not splice the meta tag into a comment that looks like <head>", () => {
     const html = "<!-- <head> --><script>evil()</script>";
     const wrapped = withSandboxedArtifactCsp(html);

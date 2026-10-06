@@ -1,13 +1,6 @@
 import { useFocusEffect, useNavigation, useRouter } from "expo-router";
-import {
-  type ReactNode,
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import type { ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -24,11 +17,12 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { BotAvatar } from "../components/bot-avatar";
 import { NativeSymbol } from "../components/native-symbol";
 import { formatActivityRelativeTime } from "../lib/activity";
-import { type MobileBot, rpc } from "../lib/api";
+import type { MobileBot } from "../lib/api";
+import { rpc } from "../lib/api";
 import { mobileTokens } from "../lib/appearance";
+import type { MobileArtifactSummary } from "../lib/artifacts";
 import {
   listSpaceArtifacts,
-  type MobileArtifactSummary,
   matchesArtifactQuery,
   mimeBadgeLabel,
   removeArtifact,
@@ -55,6 +49,7 @@ export default function ArtifactsScreen() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [searching, setSearching] = useState(false);
   const [query, setQuery] = useState("");
+  const [searchPageFailed, setSearchPageFailed] = useState(false);
   const loadingMoreRef = useRef(false);
   const generationRef = useRef(0);
   const autoFetchedCursorRef = useRef<string | null>(null);
@@ -98,6 +93,7 @@ export default function ArtifactsScreen() {
       loadingMoreRef.current = false;
       setLoadingMore(false);
       autoFetchedCursorRef.current = null;
+      setSearchPageFailed(false);
       setLoadError(null);
       if (mode === "replace") {
         setItems(null);
@@ -142,8 +138,9 @@ export default function ArtifactsScreen() {
       if (generation !== generationRef.current) return;
       setItems((current) => (current ?? []).concat(page.items));
       setNextCursor(page.nextCursor);
+      setSearchPageFailed(false);
     } catch {
-      // Keep the existing page visible; onEndReached will retry on the next scroll.
+      if (generation === generationRef.current) setSearchPageFailed(true);
     } finally {
       if (generation === generationRef.current) {
         loadingMoreRef.current = false;
@@ -203,12 +200,12 @@ export default function ArtifactsScreen() {
   }, [query, activeBotId]);
 
   useEffect(() => {
-    if (!queryActive || !nextCursor || loadingMore || items === null) return;
+    if (searchPageFailed || !queryActive || !nextCursor || loadingMore || items === null) return;
     if (filtered && filtered.length > 0) return;
     if (autoFetchedCursorRef.current === nextCursor) return;
     autoFetchedCursorRef.current = nextCursor;
     void loadMore();
-  }, [filtered, items, loadMore, loadingMore, nextCursor, queryActive]);
+  }, [filtered, items, loadMore, loadingMore, nextCursor, queryActive, searchPageFailed]);
 
   useEffect(() => {
     void load(activeBotId, "replace");
@@ -276,6 +273,18 @@ export default function ArtifactsScreen() {
                 <ActivityIndicator color={native.secondaryLabel} />
               )}
             </View>
+          ) : queryActive && filtered?.length === 0 && nextCursor && searchPageFailed ? (
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => {
+                autoFetchedCursorRef.current = null;
+                setSearchPageFailed(false);
+              }}
+              style={styles.centered}
+            >
+              <Text style={styles.empty}>{t("Could not load artifacts.")}</Text>
+              <Text style={styles.empty}>{t("Try again.")}</Text>
+            </Pressable>
           ) : queryActive &&
             filtered?.length === 0 &&
             nextCursor &&

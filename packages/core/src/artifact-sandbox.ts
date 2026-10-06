@@ -3,7 +3,7 @@
 export const SANDBOXED_ARTIFACT_CSP =
   "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src data:; form-action 'none'; base-uri 'none'";
 
-const LEADING_HTML_DOCTYPE = /^\s*<!doctype\s+html\b[^>]*>/i;
+const PLAIN_HTML_DOCTYPE = /^\s*<!doctype\s+html\s*>/i;
 
 /**
  * Wraps bot-authored HTML with a restrictive CSP before it's handed to a
@@ -17,7 +17,7 @@ const LEADING_HTML_DOCTYPE = /^\s*<!doctype\s+html\b[^>]*>/i;
  */
 export function withSandboxedArtifactCsp(html: string): string {
   const meta = `<meta http-equiv="Content-Security-Policy" content="${SANDBOXED_ARTIFACT_CSP}">`;
-  const leadingDoctype = html.match(LEADING_HTML_DOCTYPE);
+  const leadingDoctype = html.match(PLAIN_HTML_DOCTYPE);
   if (!leadingDoctype) return `<!DOCTYPE html>${meta}${html}`;
   const end = leadingDoctype[0].length;
   return `${html.slice(0, end)}${meta}${html.slice(end)}`;

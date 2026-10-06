@@ -14,7 +14,7 @@ export function artifactShareFileName(name: string, mimeType: string): string {
       ? trimmed.slice(0, -ext.length)
       : trimmed;
   const stem = stemSource
-    .replace(/[^A-Za-z0-9._-]+/g, "_")
+    .replace(/[^\p{L}\p{N}._-]+/gu, "_")
     .replace(/^\.+/, "")
     .replace(/^_+|_+$/g, "")
     .slice(0, 80);

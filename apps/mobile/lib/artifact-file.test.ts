@@ -18,4 +18,9 @@ describe("artifactShareFileName", () => {
     expect(artifactShareFileName("../weekly-brief.md", "text/markdown")).toBe("weekly-brief.md");
     expect(artifactShareFileName("..", "text/markdown")).toBe("attachment.md");
   });
+
+  it("keeps unicode letters in the display name", () => {
+    expect(artifactShareFileName("会议记录.md", "text/markdown")).toBe("会议记录.md");
+    expect(artifactShareFileName("报告.pdf", "application/pdf")).toBe("报告.pdf");
+  });
 });
