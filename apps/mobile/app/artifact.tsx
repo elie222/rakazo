@@ -3,7 +3,7 @@ import type { ArtifactVersion } from "@rakazo/contracts";
 import { isAttachmentImageMimeType } from "@rakazo/contracts";
 import type { File } from "expo-file-system";
 import { useLocalSearchParams, useNavigation, useRouter } from "expo-router";
-import { useEffect, useLayoutEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -102,9 +102,10 @@ export default function ArtifactDetailScreen() {
     };
   }, [selectedVersionId, t]);
 
-  function confirmDelete() {
+  const confirmDelete = useCallback(() => {
+    if (content.status !== "ready") return;
+    const name = content.artifact.name;
     const versionCount = versions?.length ?? 1;
-    const name = content.status === "ready" ? content.artifact.name : "";
     Alert.alert(
       t('Delete "{name}"?', { name }),
       versionCount > 1
@@ -129,7 +130,7 @@ export default function ArtifactDetailScreen() {
         },
       ],
     );
-  }
+  }, [artifactId, content, router, t, versions]);
 
   // The full-screen viewer fetches through the thread the artifact belongs to.
   const imageTarget = content.status === "ready" ? artifactThreadTarget(content.artifact) : null;
@@ -161,7 +162,7 @@ export default function ArtifactDetailScreen() {
     });
   }
 
-  async function share() {
+  const share = useCallback(async () => {
     if (content.status !== "ready") return;
     try {
       await shareLocalFile(content.file.uri, content.artifact.mimeType, content.artifact.name);
@@ -171,34 +172,39 @@ export default function ArtifactDetailScreen() {
         error instanceof Error ? error.message : t("Try again."),
       );
     }
-  }
+  }, [content, t]);
 
   useLayoutEffect(() => {
     navigation.setOptions({
       title: content.status === "ready" ? content.artifact.name : t("Loading…"),
-      headerRight: () => (
-        <View style={styles.headerActions}>
-          <Pressable
-            accessibilityLabel={t("Share")}
-            hitSlop={8}
-            onPress={() => void share()}
-            style={styles.headerButton}
-          >
-            <NativeSymbol ios="square.and.arrow.up" android="share-social-outline" size={19} />
-          </Pressable>
-          <Pressable
-            accessibilityLabel={t("More")}
-            hitSlop={8}
-            onPress={confirmDelete}
-            style={styles.headerButton}
-          >
-            <NativeSymbol ios="ellipsis" android="ellipsis-horizontal" size={19} />
-          </Pressable>
-        </View>
-      ),
+      headerRight: () =>
+        content.status === "ready" ? (
+          <View style={styles.headerActions}>
+            <Pressable
+              accessibilityLabel={t("Share")}
+              hitSlop={8}
+              onPress={() => void share()}
+              style={styles.headerButton}
+            >
+              <NativeSymbol ios="square.and.arrow.up" android="share-social-outline" size={19} />
+            </Pressable>
+            <Pressable
+              accessibilityLabel={t("Delete")}
+              hitSlop={8}
+              onPress={confirmDelete}
+              style={styles.headerButton}
+            >
+              <NativeSymbol
+                ios="trash"
+                android="trash-outline"
+                size={19}
+                color={mobileTokens().destructive}
+              />
+            </Pressable>
+          </View>
+        ) : null,
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [content, navigation, t]);
+  }, [confirmDelete, content, navigation, share, styles, t]);
 
   return (
     <View style={styles.screen}>
@@ -282,9 +288,7 @@ function ArtifactPreview({
   }
   return (
     <View style={styles.centered}>
-      <Text style={styles.errorText}>
-        {t("Preview isn't available for this file — share it to view it.")}
-      </Text>
+      <Text style={styles.errorText}>{t("No preview for this file type.")}</Text>
     </View>
   );
 }

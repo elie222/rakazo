@@ -681,8 +681,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "This deletes all {count} versions of this artifact. This can't be undone.":
     "Будут удалены все версии этого артефакта ({count}). Это действие нельзя отменить.",
   Versions: "Версии",
-  "Preview isn't available for this file — share it to view it.":
-    "Предпросмотр этого файла недоступен — поделитесь им, чтобы посмотреть.",
+  "No preview for this file type.": "Для этого типа файла нет предпросмотра.",
 
   "Your phone's built-in voice — free, no account needed":
     "Встроенный голос телефона — бесплатно, без аккаунта",

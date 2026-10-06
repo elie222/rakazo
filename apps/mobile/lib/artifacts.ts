@@ -27,12 +27,12 @@ export function removeArtifact(artifactId: string): Promise<{ ok: true }> {
   return rpc<{ ok: true }>("artifacts/remove", { artifactId });
 }
 
-/** Where the thread-scoped artifact helpers can reach this artifact, if it belongs to a thread. */
+/** Group scope wins: a bot-scoped read drops rows that also have a group id. */
 export function artifactThreadTarget(
   artifact: Pick<Artifact, "botId" | "groupId">,
 ): MobileArtifactTarget | null {
-  if (artifact.botId) return { botId: artifact.botId };
   if (artifact.groupId) return { groupId: artifact.groupId };
+  if (artifact.botId) return { botId: artifact.botId };
   return null;
 }
 

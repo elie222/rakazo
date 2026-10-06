@@ -45,9 +45,9 @@ describe("artifactThreadTarget", () => {
     });
   });
 
-  it("prefers the bot when both are set, and has no target when neither is", () => {
+  it("prefers the group when both are set, and has no target when neither is", () => {
     expect(artifactThreadTarget({ botId: "bot-1", groupId: "group-1" })).toEqual({
-      botId: "bot-1",
+      groupId: "group-1",
     });
     expect(artifactThreadTarget({ botId: null, groupId: null })).toBeNull();
   });

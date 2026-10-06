@@ -175,10 +175,10 @@ export const DE_MESSAGES: Record<string, string> = {
   "Long press to delete": "Zum Löschen gedrückt halten",
   "No artifacts yet": "Noch keine Artefakte",
   "No matching artifacts": "Keine passenden Artefakte",
-  "Preview isn't available for this file — share it to view it.":
-    "Für diese Datei ist keine Vorschau verfügbar – teile sie, um sie anzusehen.",
+  "No preview for this file type.": "Keine Vorschau für diesen Dateityp.",
   "Search artifacts…": "Artefakte suchen…",
   Share: "Teilen",
+  'Delete "{name}"?': "„{name}“ löschen?",
   "This can't be undone.": "Das lässt sich nicht rückgängig machen.",
   "This deletes all {count} versions of this artifact. This can't be undone.":
     "Das löscht alle {count} Versionen dieses Artefakts. Das lässt sich nicht rückgängig machen.",

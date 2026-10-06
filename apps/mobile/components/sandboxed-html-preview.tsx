@@ -1,5 +1,4 @@
 import { withSandboxedArtifactCsp } from "@rakazo/core";
-import { useRef } from "react";
 import { StyleSheet, View } from "react-native";
 import { WebView } from "react-native-webview";
 
@@ -7,14 +6,14 @@ import { WebView } from "react-native-webview";
  * Renders bot-authored HTML in a WebView that cannot reach the app's session:
  * a fresh `source.html` load has no cookies/local storage from the rest of
  * the app, `domStorageEnabled`/file access/shared cookies are explicitly off,
- * and `onShouldStartLoadWithRequest` allows only the very first navigation
- * (the initial load) and blocks anything the content tries to navigate to
- * afterward. The CSP meta tag (the same policy as the web viewer) is a
- * second layer on top, blocking outbound network requests from a script.
+ * and navigation is limited to the preview document itself. The CSP meta tag
+ * (the same policy as the web viewer) blocks outbound network requests.
  */
-export function SandboxedHtmlPreview({ html }: { html: string }) {
-  const allowedFirstLoad = useRef(false);
+function isPreviewDocument(url: string): boolean {
+  return url === "about:blank" || url === "about:blank/";
+}
 
+export function SandboxedHtmlPreview({ html }: { html: string }) {
   return (
     <View style={styles.container}>
       <WebView
@@ -30,13 +29,7 @@ export function SandboxedHtmlPreview({ html }: { html: string }) {
         sharedCookiesEnabled={false}
         mixedContentMode="never"
         cacheEnabled={false}
-        onShouldStartLoadWithRequest={() => {
-          if (!allowedFirstLoad.current) {
-            allowedFirstLoad.current = true;
-            return true;
-          }
-          return false;
-        }}
+        onShouldStartLoadWithRequest={({ url }) => isPreviewDocument(url)}
       />
     </View>
   );

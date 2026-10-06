@@ -1,5 +1,13 @@
 import { useFocusEffect, useNavigation, useRouter } from "expo-router";
-import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -49,6 +57,10 @@ export default function ArtifactsScreen() {
   const [query, setQuery] = useState("");
   const loadingMoreRef = useRef(false);
   const generationRef = useRef(0);
+  const autoFetchedCursorRef = useRef<string | null>(null);
+  const activeBotIdRef = useRef(activeBotId);
+  const didFocusRef = useRef(false);
+  activeBotIdRef.current = activeBotId;
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -80,26 +92,40 @@ export default function ArtifactsScreen() {
     }, []),
   );
 
-  const load = useCallback(async (botId: string | null) => {
-    const generation = ++generationRef.current;
-    setLoadError(null);
-    setItems(null);
-    setNextCursor(null);
-    try {
-      const page = await listSpaceArtifacts({ botId: botId ?? undefined, limit: PAGE_SIZE });
-      if (generation !== generationRef.current) return;
-      setItems(page.items);
-      setNextCursor(page.nextCursor);
-    } catch (error) {
-      if (generation !== generationRef.current) return;
-      setLoadError(error instanceof Error ? error.message : t("Could not load artifacts."));
-    }
-  }, []);
+  const load = useCallback(
+    async (botId: string | null, mode: "replace" | "refresh") => {
+      const generation = ++generationRef.current;
+      loadingMoreRef.current = false;
+      setLoadingMore(false);
+      autoFetchedCursorRef.current = null;
+      setLoadError(null);
+      if (mode === "replace") {
+        setItems(null);
+        setNextCursor(null);
+      }
+      try {
+        const page = await listSpaceArtifacts({ botId: botId ?? undefined, limit: PAGE_SIZE });
+        if (generation !== generationRef.current) return;
+        setItems(page.items);
+        setNextCursor(page.nextCursor);
+      } catch (error) {
+        if (generation !== generationRef.current) return;
+        if (mode === "replace") {
+          setLoadError(error instanceof Error ? error.message : t("Could not load artifacts."));
+        }
+      }
+    },
+    [t],
+  );
 
   useFocusEffect(
     useCallback(() => {
-      void load(activeBotId);
-    }, [activeBotId, load]),
+      if (!didFocusRef.current) {
+        didFocusRef.current = true;
+        return;
+      }
+      void load(activeBotIdRef.current, "refresh");
+    }, [load]),
   );
 
   const loadMore = useCallback(async () => {
@@ -129,7 +155,7 @@ export default function ArtifactsScreen() {
   async function refresh() {
     setRefreshing(true);
     try {
-      await load(activeBotId);
+      await load(activeBotId, "refresh");
     } finally {
       setRefreshing(false);
     }
@@ -164,11 +190,29 @@ export default function ArtifactsScreen() {
     );
   }
 
+  const queryActive = searching && query.trim().length > 0;
   const filtered = useMemo(() => {
     if (!items) return null;
-    if (!searching || !query.trim()) return items;
+    if (!queryActive) return items;
     return items.filter((item) => matchesArtifactQuery(item, query));
-  }, [items, searching, query]);
+  }, [items, query, queryActive]);
+  const botsById = useMemo(() => new Map(bots.map((bot) => [bot.id, bot])), [bots]);
+
+  useEffect(() => {
+    autoFetchedCursorRef.current = null;
+  }, [query, activeBotId]);
+
+  useEffect(() => {
+    if (!queryActive || !nextCursor || loadingMore || items === null) return;
+    if (filtered && filtered.length > 0) return;
+    if (autoFetchedCursorRef.current === nextCursor) return;
+    autoFetchedCursorRef.current = nextCursor;
+    void loadMore();
+  }, [filtered, items, loadMore, loadingMore, nextCursor, queryActive]);
+
+  useEffect(() => {
+    void load(activeBotId, "replace");
+  }, [activeBotId, load]);
 
   return (
     <View style={[styles.screen, { paddingBottom: insets.bottom }]}>
@@ -189,6 +233,7 @@ export default function ArtifactsScreen() {
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
+        style={styles.chipsScroll}
         contentContainerStyle={styles.chipsRow}
       >
         <Chip
@@ -208,6 +253,7 @@ export default function ArtifactsScreen() {
       </ScrollView>
 
       <FlatList<MobileArtifactSummary>
+        style={styles.listView}
         data={filtered ?? []}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.list}
@@ -230,9 +276,16 @@ export default function ArtifactsScreen() {
                 <ActivityIndicator color={native.secondaryLabel} />
               )}
             </View>
+          ) : queryActive &&
+            filtered?.length === 0 &&
+            nextCursor &&
+            (loadingMore || autoFetchedCursorRef.current !== nextCursor) ? (
+            <View style={styles.centered}>
+              <ActivityIndicator color={native.secondaryLabel} />
+            </View>
           ) : (
             <Text style={styles.empty}>
-              {searching && query.trim() ? t("No matching artifacts") : t("No artifacts yet")}
+              {queryActive ? t("No matching artifacts") : t("No artifacts yet")}
             </Text>
           )
         }
@@ -246,6 +299,7 @@ export default function ArtifactsScreen() {
         renderItem={({ item }) => (
           <ArtifactRow
             item={item}
+            bot={activeBotId === null && item.botId ? botsById.get(item.botId) : undefined}
             onPress={() => router.push({ pathname: "/artifact", params: { artifactId: item.id } })}
             onLongPress={() => confirmDelete(item)}
           />
@@ -264,7 +318,7 @@ function Chip({
   label: string;
   active: boolean;
   onPress: () => void;
-  avatar?: React.ReactNode;
+  avatar?: ReactNode;
 }) {
   const styles = useThemedStyles(createStyles);
   return (
@@ -284,10 +338,12 @@ function Chip({
 
 function ArtifactRow({
   item,
+  bot,
   onPress,
   onLongPress,
 }: {
   item: MobileArtifactSummary;
+  bot?: MobileBot;
   onPress: () => void;
   onLongPress: () => void;
 }) {
@@ -297,7 +353,7 @@ function ArtifactRow({
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={item.name}
+      accessibilityLabel={bot ? `${item.name}, ${bot.name}` : item.name}
       accessibilityHint={t("Long press to delete")}
       onPress={onPress}
       onLongPress={onLongPress}
@@ -323,7 +379,17 @@ function ArtifactRow({
             {item.description}
           </Text>
         ) : null}
-        <Text style={styles.rowMeta}>{formatActivityRelativeTime(item.createdAt)}</Text>
+        <View style={styles.rowFooter}>
+          {bot ? (
+            <>
+              <BotAvatar color={bot.color} identity={bot.id} size={14} />
+              <Text style={styles.rowBotName} numberOfLines={1}>
+                {bot.name}
+              </Text>
+            </>
+          ) : null}
+          <Text style={styles.rowMeta}>{formatActivityRelativeTime(item.createdAt)}</Text>
+        </View>
       </View>
     </Pressable>
   );
@@ -345,8 +411,11 @@ function createStyles() {
       color: native.label,
       fontSize: 16,
     },
+    chipsScroll: { flexGrow: 0, flexShrink: 0 },
     chipsRow: {
       flexDirection: "row",
+      alignItems: "center",
+      flexGrow: 0,
       gap: 8,
       paddingHorizontal: 16,
       paddingVertical: 10,
@@ -354,6 +423,8 @@ function createStyles() {
     chip: {
       flexDirection: "row",
       alignItems: "center",
+      flexGrow: 0,
+      flexShrink: 0,
       gap: 6,
       paddingVertical: 6,
       paddingHorizontal: 12,
@@ -363,6 +434,7 @@ function createStyles() {
     chipActive: { backgroundColor: tokens.primary },
     chipLabel: { color: native.label, fontSize: 13, fontWeight: "600" },
     chipLabelActive: { color: tokens.primaryForeground },
+    listView: { flex: 1 },
     list: { paddingBottom: 32 },
     empty: {
       color: native.secondaryLabel,
@@ -396,6 +468,8 @@ function createStyles() {
       overflow: "hidden",
     },
     rowDescription: { color: native.secondaryLabel, fontSize: 12.5 },
+    rowFooter: { flexDirection: "row", alignItems: "center", gap: 6 },
+    rowBotName: { flexShrink: 1, color: native.secondaryLabel, fontSize: 11.5 },
     rowMeta: { color: native.secondaryLabel, fontSize: 11.5 },
   });
 }

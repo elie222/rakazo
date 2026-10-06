@@ -661,8 +661,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   "This deletes all {count} versions of this artifact. This can't be undone.":
     "这将删除此制品的全部 {count} 个版本，且无法撤销。",
   Versions: "版本",
-  "Preview isn't available for this file — share it to view it.":
-    "此文件不支持预览 — 请分享后查看。",
+  "No preview for this file type.": "此文件类型无法预览。",
 
   "Your phone's built-in voice — free, no account needed": "手机自带的语音 — 免费，无需账户",
   "Speaks with your phone's own text-to-speech instead of a connected provider.":

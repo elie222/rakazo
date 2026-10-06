@@ -1,7 +1,7 @@
 import { File, Paths } from "expo-file-system";
 import * as Sharing from "expo-sharing";
 import { rpc } from "./api";
-import { artifactCacheFileName } from "./artifact-file";
+import { artifactCacheFileName, artifactShareFileName } from "./artifact-file";
 import { t } from "./i18n";
 import { createKeyedPromiseCache } from "./inline-image";
 
@@ -47,11 +47,7 @@ export async function openMobileArtifact(
   mimeType: string,
 ): Promise<void> {
   const file = await cacheMobileArtifact(target, artifactId, mimeType);
-  if (await Sharing.isAvailableAsync()) {
-    await Sharing.shareAsync(file.uri, { mimeType });
-    return;
-  }
-  throw new Error(t("Saved {name} locally", { name }));
+  await shareNamedFile(file, mimeType, name);
 }
 
 const imageArtifactUris = createKeyedPromiseCache<string>(async (key) => {
@@ -89,8 +85,15 @@ export async function imageArtifactUri(
 
 /** Share a file already on disk (for example an image the viewer is showing) without downloading it again. */
 export async function shareLocalFile(uri: string, mimeType: string, name: string): Promise<void> {
+  await shareNamedFile(new File(uri), mimeType, name);
+}
+
+async function shareNamedFile(source: File, mimeType: string, name: string): Promise<void> {
+  const fileName = artifactShareFileName(name, mimeType);
+  const shared = source.name === fileName ? source : new File(Paths.cache, fileName);
+  if (shared.uri !== source.uri) source.copySync(shared, { overwrite: true });
   if (await Sharing.isAvailableAsync()) {
-    await Sharing.shareAsync(uri, { mimeType });
+    await Sharing.shareAsync(shared.uri, { mimeType });
     return;
   }
   throw new Error(t("Saved {name} locally", { name }));
