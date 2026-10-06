@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createMemoryProvider, SpaceMemoryProviderResolver } from "./memory-provider-factory.js";
+import { assertSupermemoryLocalBaseUrl } from "./supermemory-memory-provider.js";
 
 function resolverFor(
   plaintext: string,
@@ -103,13 +104,34 @@ describe("SpaceMemoryProviderResolver", () => {
   });
 
   it("revalidates persisted provider endpoints before using decrypted credentials", async () => {
+    const { resolver, secrets } = resolverFor("sm_fake_key", {
+      mode: "local",
+      baseUrl: "http://203.0.113.10:6767",
+      ownerUserId: "config-author",
+    });
+    await expect(resolver.resolve("workspace-1")).rejects.toThrow(/private-network/);
+    expect(secrets.load).not.toHaveBeenCalled();
+
+    await expect(
+      assertSupermemoryLocalBaseUrl("https://memory.example.com", {
+        allowPrivateEndpoint: true,
+        resolveHostname: async () => [{ address: "203.0.113.10", family: 4 as const }],
+      }),
+    ).rejects.toThrow(/private-network/);
+    await expect(
+      assertSupermemoryLocalBaseUrl("http://example.com:6767", {
+        allowPrivateEndpoint: true,
+        resolveHostname: async () => [{ address: "203.0.113.10", family: 4 as const }],
+      }),
+    ).rejects.toThrow(/private-network/);
+
     expect(() =>
       createMemoryProvider(
         "supermemory",
-        { mode: "local", baseUrl: "https://memory.example.com" },
+        { mode: "local", baseUrl: "http://203.0.113.10:6767" },
         { apiKey: "sm_test_key" },
       ),
-    ).toThrow(/loopback/);
+    ).toThrow(/private-network/);
 
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ results: [] }), {
