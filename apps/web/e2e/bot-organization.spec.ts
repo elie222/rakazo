@@ -176,14 +176,16 @@ test("bots can be reordered by drag or keyboard and keep that order", async ({ p
   await expect.poll(order).toEqual([beta.id, alpha.id, chiefId]);
 });
 
-test("chat composer controls are vertically centered", async ({ page }) => {
+test("chat composer controls are vertically centered", async ({ page }, testInfo) => {
   const stamp = Date.now();
   await signup(page, `composer-layout-${stamp}@rakazo.test`, "password12", "Composer Layout");
   await completeOnboarding(page);
 
-  const centers = await page.getByTestId("composer-bar").evaluate((composer) =>
+  const bar = page.getByTestId("composer-bar");
+  const composer = page.getByRole("combobox", { name: "Message Chief" });
+  const centers = await bar.evaluate((composerBar) =>
     ["Attach file", "Message Chief", "Voice", "Send"].map((label) => {
-      const element = composer.querySelector<HTMLElement>(`[aria-label="${label}"]`);
+      const element = composerBar.querySelector<HTMLElement>(`[aria-label="${label}"]`);
       if (!element) throw new Error(`Missing composer control: ${label}`);
       const box = element.getBoundingClientRect();
       return box.top + box.height / 2;
@@ -191,6 +193,58 @@ test("chat composer controls are vertically centered", async ({ page }) => {
   );
 
   expect(Math.max(...centers) - Math.min(...centers)).toBeLessThanOrEqual(1);
+
+  await composer.fill("Short note");
+  await expect(bar).toHaveAttribute("data-expanded", "false");
+  await captureScreenshot(page, testInfo, "composer-one-line");
+
+  const wrappedDraft =
+    "This draft is long enough to wrap onto its own row above the controls. ".repeat(16);
+  await composer.fill(wrappedDraft);
+  await expect(bar).toHaveAttribute("data-expanded", "true");
+  // The field moves up from the one-line slot; its box overlaps the controls until that finishes.
+  await expect
+    .poll(() =>
+      bar.evaluate((composerBar) => {
+        const field = composerBar.querySelector("textarea")?.parentElement ?? null;
+        return [composerBar, field].every(
+          (element) =>
+            element?.getAnimations().every((animation) => animation.playState !== "running") ??
+            true,
+        );
+      }),
+    )
+    .toBe(true);
+  const fieldBox = await composer.evaluate((element) => ({
+    clientHeight: element.clientHeight,
+    scrollHeight: element.scrollHeight,
+    bottom: element.getBoundingClientRect().bottom,
+  }));
+  const sendTop = await bar
+    .getByRole("button", { name: "Send", exact: true })
+    .evaluate((element) => element.getBoundingClientRect().top);
+  expect(fieldBox.scrollHeight).toBeGreaterThan(fieldBox.clientHeight);
+  expect(fieldBox.clientHeight).toBeLessThanOrEqual(104);
+  // Round both edges; a fractional bottom can sit just under a pixel past the slack.
+  expect(Math.round(fieldBox.bottom)).toBeLessThanOrEqual(Math.round(sendTop) + 2);
+  await captureScreenshot(page, testInfo, "composer-wrapped");
+  await page.evaluate(
+    () =>
+      new Promise((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(resolve));
+      }),
+  );
+  await expect(bar).toHaveAttribute("data-expanded", "true");
+
+  await composer.fill("");
+  await expect(composer).toHaveValue("");
+  await expect(bar).toHaveAttribute("data-expanded", "false");
+
+  await composer.fill(wrappedDraft);
+  await expect(bar).toHaveAttribute("data-expanded", "true");
+  await composer.press("Enter");
+  await expect(composer).toHaveValue("");
+  await expect(bar).toHaveAttribute("data-expanded", "false");
 });
 
 test("group chats share every context-menu action", async ({ page }, testInfo) => {

@@ -1,10 +1,9 @@
-import { AiConsentBlocked, callIdFromClientNonce } from "@rakazo/core";
+import { AiConsentBlocked, callIdFromClientNonce, INTERIM_BARGE_IN_MS } from "@rakazo/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CallClip, CallDeps, CallEnded, DictationHandlers } from "./call-session";
 import {
   endCall,
   getSnapshot,
-  INTERIM_BARGE_IN_MS,
   setCallProviderTranscribe,
   startCall,
   subscribe,

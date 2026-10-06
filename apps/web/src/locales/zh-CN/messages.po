@@ -1671,6 +1671,7 @@ msgstr "拒绝"
 
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
+#: src/pages/shell/avatar-studio-popover.tsx
 msgid "Default"
 msgstr "默认"
 
@@ -3080,8 +3081,12 @@ msgid "Read replies aloud"
 msgstr "朗读回复"
 
 #: src/pages/KnowledgeSection.tsx
-msgid "read-only"
-msgstr "只读"
+msgid "Built-in"
+msgstr "内置"
+
+#: src/pages/KnowledgeSection.tsx
+msgid "Plugin"
+msgstr "插件"
 
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
@@ -3637,8 +3642,8 @@ msgid "Skill {0}"
 msgstr "技能 {0}"
 
 #: src/pages/KnowledgeSection.tsx
-msgid "Skills"
-msgstr "技能"
+msgid "Shared skills"
+msgstr "共享技能"
 
 #: src/components/integrations/IntegrationSetup.tsx
 #: src/pages/Shell.tsx

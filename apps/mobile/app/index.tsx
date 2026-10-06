@@ -496,6 +496,12 @@ export default function Home() {
             <NativeSymbol ios="magnifyingglass" android="search" size={17} />
           </CircleButton>
           <CircleButton
+            accessibilityLabel={t("Artifacts")}
+            onPress={() => router.push("/artifacts")}
+          >
+            <NativeSymbol ios="square.stack.3d.up" android="layers-outline" size={17} />
+          </CircleButton>
+          <CircleButton
             accessibilityLabel={t("Create")}
             onPress={() => {
               if (spaceActionRef.current.busy || spaceActionRef.current.recoveryId) return;

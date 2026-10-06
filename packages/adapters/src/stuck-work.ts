@@ -358,11 +358,12 @@ async function sendStuckNotice(
     botId: run.botId,
     signal: new AbortController().signal,
   };
+  const notice = run.thread.groupId ? { ...message, groupId: run.thread.groupId } : message;
   try {
     if (notifications instanceof ExpoPushProvider) {
-      return await notifications.deliver(message, context);
+      return await notifications.deliver(notice, context);
     }
-    await notifications.send(message, context);
+    await notifications.send(notice, context);
     return "delivered";
   } catch (error) {
     getLogger().error("stuck work notification", error);

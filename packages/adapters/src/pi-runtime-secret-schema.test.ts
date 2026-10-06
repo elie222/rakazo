@@ -177,6 +177,100 @@ describe("prepareRequestSecretArguments", () => {
     expect(out).toEqual({ label: "c", purpose: "otp", connectionId: "abc" });
   });
 
+  it("folds a top-level credential object and a JSON string into credential", () => {
+    expect(
+      prepareRequestSecretArguments({
+        label: "API key",
+        purpose: "api_key",
+        name: sampleCredential.name,
+        origin: sampleCredential.origin,
+        auth: sampleCredential.auth,
+      }),
+    ).toEqual({ label: "API key", purpose: "api_key", credential: sampleCredential });
+    expect(
+      prepareRequestSecretArguments({
+        label: "API key",
+        purpose: "api_key",
+        credential: JSON.stringify(sampleCredential),
+        connectionId: "  ",
+      }),
+    ).toEqual({ label: "API key", purpose: "api_key", credential: sampleCredential });
+  });
+
+  it("drops planted secret fields before they reach prepared args", () => {
+    const planted = "planted-secret-value";
+    const fromObject = prepareRequestSecretArguments({
+      label: "API key",
+      purpose: "api_key",
+      credential: { ...sampleCredential, value: planted, secret: planted },
+    });
+    expect(fromObject).toEqual({
+      label: "API key",
+      purpose: "api_key",
+      credential: sampleCredential,
+    });
+    expect(JSON.stringify(fromObject)).not.toContain(planted);
+
+    const fromString = prepareRequestSecretArguments({
+      label: "API key",
+      purpose: "api_key",
+      credential: JSON.stringify({
+        ...sampleCredential,
+        value: planted,
+        secret: planted,
+        password: planted,
+      }),
+    });
+    expect(fromString).toEqual({
+      label: "API key",
+      purpose: "api_key",
+      credential: sampleCredential,
+    });
+    expect(JSON.stringify(fromString)).not.toContain(planted);
+  });
+
+  it("drops secrets nested in auth before they reach prepared args", () => {
+    const planted = "planted-auth-secret";
+    const auth = { type: "bearer" as const, token: planted, password: planted };
+    const fromObject = prepareRequestSecretArguments({
+      label: "API key",
+      purpose: "api_key",
+      credential: { ...sampleCredential, auth, value: planted },
+    });
+    expect(fromObject).toEqual({
+      label: "API key",
+      purpose: "api_key",
+      credential: sampleCredential,
+    });
+    expect(JSON.stringify(fromObject)).not.toContain(planted);
+    auth.token = "changed-after-copy";
+    expect(fromObject).toEqual({
+      label: "API key",
+      purpose: "api_key",
+      credential: sampleCredential,
+    });
+
+    const fromString = prepareRequestSecretArguments({
+      label: "Login",
+      purpose: "password",
+      credential: JSON.stringify({
+        name: "example_login",
+        origin: `https://user:${planted}@login.example.test`,
+        auth: { type: "login", password: planted },
+      }),
+    });
+    expect(fromString).toEqual({
+      label: "Login",
+      purpose: "password",
+      credential: {
+        name: "example_login",
+        origin: "https://login.example.test",
+        auth: { type: "login" },
+      },
+    });
+    expect(JSON.stringify(fromString)).not.toContain(planted);
+  });
+
   it("omits credential and connectionId when absent rather than sending empties", () => {
     // The executor rejects a call that carries both, so neither may be faked in.
     expect(prepareRequestSecretArguments({ label: "c", purpose: "otp" })).toEqual({

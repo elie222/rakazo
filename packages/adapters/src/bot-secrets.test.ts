@@ -3,9 +3,11 @@ import { encodeLoginSecret } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  credentialArgument,
   normalizeSecretDestination,
   requestWithBotSecret,
   resolveLoginFill,
+  resolveRequestSecretDestination,
 } from "./bot-secrets.js";
 import { EncryptedSecretStore } from "./secrets.js";
 
@@ -251,6 +253,365 @@ describe("authenticated secret requests", () => {
       error: expect.stringContaining("Authenticated request failed"),
     });
     expect(fetch).not.toHaveBeenCalled();
+  });
+});
+
+describe("resolveRequestSecretDestination", () => {
+  const documented = {
+    label: "API key",
+    purpose: "api_key",
+    credential: destination,
+  };
+  const plantedSecret = "not-a-real-secret-value";
+
+  it("accepts the documented credential shape", () => {
+    expect(resolveRequestSecretDestination(documented)).toEqual({ destination });
+  });
+
+  it("accepts a valid credential object supplied beside connectionId", () => {
+    // The flattened tool schema allows both fields, and the executor used to
+    // reject that pair before it ever checked that the credential was valid.
+    const resolved = resolveRequestSecretDestination({
+      ...documented,
+      connectionId: "conn_1",
+      credential: { ...destination, value: plantedSecret },
+    });
+    expect(resolved).toEqual({ destination });
+    expect(resolved.connectionId).toBeUndefined();
+    expect(JSON.stringify(resolved)).not.toContain(plantedSecret);
+    expect(resolved.error).toBeUndefined();
+  });
+
+  it("accepts a credential object supplied as top-level name, origin, and auth", () => {
+    expect(
+      resolveRequestSecretDestination({
+        label: "API key",
+        purpose: "api_key",
+        name: destination.name,
+        origin: destination.origin,
+        auth: destination.auth,
+        secret: plantedSecret,
+      }),
+    ).toEqual({ destination });
+  });
+
+  it("accepts a credential object supplied as a JSON string", () => {
+    expect(
+      resolveRequestSecretDestination({
+        label: "API key",
+        purpose: "api_key",
+        credential: JSON.stringify({ ...destination, value: plantedSecret }),
+      }),
+    ).toEqual({ destination });
+  });
+
+  it("accepts the documented website login shape", () => {
+    const login = {
+      name: "example_login",
+      origin: "https://login.example.test",
+      auth: { type: "login" as const },
+    };
+    expect(
+      resolveRequestSecretDestination({
+        label: "Example sign-in",
+        purpose: "password",
+        credential: login,
+      }),
+    ).toEqual({ destination: login });
+  });
+
+  it("keeps the connector path when only connectionId is supplied", () => {
+    expect(
+      resolveRequestSecretDestination({
+        label: "Code",
+        purpose: "otp",
+        connectionId: " conn_1 ",
+      }),
+    ).toEqual({ connectionId: "conn_1" });
+  });
+
+  it("does not treat a blank connectionId as a second destination", () => {
+    expect(resolveRequestSecretDestination({ ...documented, connectionId: "  " })).toEqual({
+      destination,
+    });
+    expect(
+      resolveRequestSecretDestination({ label: "Code", purpose: "otp", connectionId: "null" }),
+    ).toEqual({
+      error: "Provide either a reusable credential destination or a connectionId.",
+    });
+  });
+
+  it("names the failing credential field instead of asking for a destination again", () => {
+    const resolved = resolveRequestSecretDestination({
+      label: "API key",
+      purpose: "api_key",
+      credential: { ...destination, name: "Bad Name" },
+      connectionId: "conn_1",
+    });
+    expect(resolved.destination).toBeUndefined();
+    expect(resolved.connectionId).toBeUndefined();
+    expect(resolved.error).toMatch(/Invalid credential destination — name:/);
+    expect(resolved.error).not.toMatch(/reusable credential destination/);
+    expect(resolved.error).not.toBe("Specify a credential name, HTTPS origin, and auth method.");
+  });
+
+  it("rejects a partial top-level credential instead of using connectionId", () => {
+    const withConnection = resolveRequestSecretDestination({
+      label: "API key",
+      purpose: "api_key",
+      name: destination.name,
+      origin: destination.origin,
+      connectionId: "conn_1",
+    });
+    const withoutConnection = resolveRequestSecretDestination({
+      label: "API key",
+      purpose: "api_key",
+      name: destination.name,
+      origin: destination.origin,
+    });
+    expect(withConnection.connectionId).toBeUndefined();
+    expect(withConnection.destination).toBeUndefined();
+    expect(withConnection.error).toMatch(/Invalid credential destination — auth:/);
+    expect(withoutConnection).toEqual({ error: withConnection.error });
+  });
+
+  it("keeps a complete top-level credential ahead of connectionId", () => {
+    expect(
+      resolveRequestSecretDestination({
+        name: destination.name,
+        origin: destination.origin,
+        auth: destination.auth,
+        connectionId: "conn_1",
+        secret: plantedSecret,
+      }),
+    ).toEqual({ destination });
+  });
+
+  it("prefers a nested credential over connectionId and a partial top-level destination", () => {
+    expect(
+      resolveRequestSecretDestination({
+        credential: destination,
+        name: destination.name,
+        origin: destination.origin,
+        connectionId: "conn_1",
+      }),
+    ).toEqual({ destination });
+    expect(
+      resolveRequestSecretDestination({
+        credential: JSON.stringify(destination),
+        name: "only_name",
+        connectionId: "conn_1",
+      }),
+    ).toEqual({ destination });
+  });
+});
+
+describe("credentialArgument", () => {
+  const plantedSecret = "planted-secret-value";
+
+  it("drops planted secret fields from an object credential", () => {
+    const credential = credentialArgument({
+      credential: { ...destination, value: plantedSecret, secret: plantedSecret },
+    });
+    expect(credential).toEqual(destination);
+    expect(JSON.stringify(credential)).not.toContain(plantedSecret);
+  });
+
+  it("drops planted secret fields from a JSON-string credential", () => {
+    const credential = credentialArgument({
+      credential: JSON.stringify({
+        ...destination,
+        value: plantedSecret,
+        secret: plantedSecret,
+        password: plantedSecret,
+        plaintext: plantedSecret,
+      }),
+    });
+    expect(credential).toEqual(destination);
+    expect(JSON.stringify(credential)).not.toContain(plantedSecret);
+  });
+
+  it("returns a partial top-level destination so the missing field can be named", () => {
+    expect(
+      credentialArgument({
+        name: destination.name,
+        origin: destination.origin,
+        connectionId: "conn_1",
+        secret: plantedSecret,
+      }),
+    ).toEqual({ name: destination.name, origin: destination.origin });
+  });
+
+  it("drops secret fields nested in auth instead of keeping the original object", () => {
+    const auth = {
+      type: "bearer" as const,
+      token: plantedSecret,
+      value: plantedSecret,
+      headers: { Authorization: plantedSecret },
+    };
+    const credential = credentialArgument({
+      credential: { ...destination, auth, secret: plantedSecret },
+    });
+    expect(credential).toEqual(destination);
+    expect(JSON.stringify(credential)).not.toContain(plantedSecret);
+    auth.token = "changed-after-copy";
+    expect(credential).toEqual(destination);
+
+    expect(
+      credentialArgument({
+        name: destination.name,
+        origin: destination.origin,
+        auth: { type: "header", name: "X-Api-Key", value: plantedSecret },
+      }),
+    ).toEqual({
+      ...destination,
+      auth: { type: "header", name: "X-Api-Key" },
+    });
+    expect(
+      credentialArgument({
+        credential: {
+          name: "example_basic",
+          origin: destination.origin,
+          auth: { type: "basic", username: "bot", password: plantedSecret },
+        },
+      }),
+    ).toEqual({
+      name: "example_basic",
+      origin: destination.origin,
+      auth: { type: "basic", username: "bot" },
+    });
+    expect(
+      credentialArgument({
+        credential: JSON.stringify({
+          name: "example_login",
+          origin: "https://login.example.test",
+          auth: { type: "login", username: plantedSecret, password: plantedSecret },
+        }),
+      }),
+    ).toEqual({
+      name: "example_login",
+      origin: "https://login.example.test",
+      auth: { type: "login" },
+    });
+  });
+
+  it("omits auth that does not parse, and other values that are not destination metadata", () => {
+    expect(
+      credentialArgument({
+        credential: {
+          name: destination.name,
+          origin: destination.origin,
+          auth: { token: plantedSecret },
+        },
+      }),
+    ).toEqual({
+      name: destination.name,
+      origin: destination.origin,
+      auth: { type: "invalid" },
+    });
+    const invalidMethod = credentialArgument({
+      credential: { ...destination, auth: { type: "cookie", token: plantedSecret } },
+    });
+    expect(invalidMethod).toEqual({ ...destination, auth: { type: "invalid" } });
+    expect(JSON.stringify(invalidMethod)).not.toContain(plantedSecret);
+    expect(
+      resolveRequestSecretDestination({
+        credential: { ...destination, auth: { type: "cookie", token: plantedSecret } },
+      }).error,
+    ).toMatch(/auth\.type:/);
+    expect(
+      credentialArgument({
+        credential: {
+          ...destination,
+          auth: { type: "header", name: "Cookie", value: plantedSecret },
+        },
+      }),
+    ).toEqual({ ...destination, auth: { type: "header", name: "Cookie" } });
+    expect(
+      resolveRequestSecretDestination({
+        credential: {
+          ...destination,
+          auth: { type: "header", name: "Cookie", value: plantedSecret },
+        },
+      }).error,
+    ).toMatch(/Unsupported credential header/);
+
+    expect(
+      credentialArgument({
+        credential: {
+          name: { value: plantedSecret },
+          origin: { href: `https://user:${plantedSecret}@api.example.test` },
+          auth: destination.auth,
+        },
+      }),
+    ).toEqual({ auth: destination.auth });
+
+    expect(credentialArgument({ credential: plantedSecret })).toEqual({});
+    expect(credentialArgument({ credential: `{not-json ${plantedSecret}}` })).toEqual({});
+    expect(credentialArgument({ credential: [plantedSecret] })).toEqual({});
+    expect(JSON.stringify(credentialArgument({ credential: plantedSecret }))).not.toContain(
+      plantedSecret,
+    );
+  });
+
+  it("removes credentials embedded in an origin before they can be recorded", () => {
+    const credential = credentialArgument({
+      credential: {
+        ...destination,
+        origin: `https://user:${plantedSecret}@api.example.test/v1?token=${plantedSecret}#${plantedSecret}`,
+      },
+    });
+    expect(credential).toEqual({
+      ...destination,
+      origin: "https://api.example.test/path",
+    });
+    expect(JSON.stringify(credential)).not.toContain(plantedSecret);
+
+    const secretName = "Planted.Secret";
+    const replaced = credentialArgument({
+      credential: { ...destination, name: secretName, origin: secretName },
+    });
+    expect(replaced).toEqual({
+      name: "Invalid Name",
+      origin: "invalid-origin",
+      auth: destination.auth,
+    });
+    expect(JSON.stringify(replaced)).not.toContain(secretName);
+    expect(
+      resolveRequestSecretDestination({
+        label: "API key",
+        purpose: "api_key",
+        credential: { ...destination, name: secretName },
+      }).error,
+    ).toMatch(/Invalid credential destination — name:/);
+    expect(
+      resolveRequestSecretDestination({
+        label: "API key",
+        purpose: "api_key",
+        credential: { ...destination, origin: `https://api.example.test/${secretName}` },
+      }).error,
+    ).toMatch(/Invalid credential destination — origin:/);
+
+    expect(
+      resolveRequestSecretDestination({
+        label: "API key",
+        purpose: "api_key",
+        credential: {
+          ...destination,
+          origin: `https://user:${plantedSecret}@api.example.test?token=${plantedSecret}`,
+          auth: { ...destination.auth, token: plantedSecret },
+        },
+      }),
+    ).toEqual({ destination });
+
+    for (const origin of [
+      `https://api.example.test/${plantedSecret}/..`,
+      `https://api.example.test/${plantedSecret}/%2e%2e`,
+    ]) {
+      const collapsed = credentialArgument({ credential: { ...destination, origin } });
+      expect(collapsed).toEqual(destination);
+      expect(JSON.stringify(collapsed)).not.toContain(plantedSecret);
+    }
   });
 });
 

@@ -15,6 +15,12 @@ import {
   BOT_TITLE_MAX_LENGTH,
 } from "@rakazo/contracts";
 import {
+  connectedModelChoices,
+  modelOptionKey,
+  parseModelOptionKey,
+  resolveSelectableModelId,
+} from "@rakazo/core";
+import {
   Button,
   Input,
   NativeSelect,
@@ -272,55 +278,26 @@ export function BotSettings({
       .catch(() => undefined);
   }, []);
 
-  const connectedOptions: Array<{
-    key: string;
-    provider: string;
-    modelId: string;
-    label: string;
-  }> = [];
-  const seenOptions = new Set<string>();
-  for (const credential of credentials) {
-    const providerModels = catalog.filter(
-      (entry) => entry.provider === credential.provider && !entry.placeholder,
-    );
-    const credentialInCatalog = Boolean(
-      credential.modelId && providerModels.some((entry) => entry.id === credential.modelId),
-    );
-    // Catalog providers expand to every model for that connection. Free-form
-    // credentials (model id not in the catalog) stay a single connected pair.
-    const options =
-      credential.modelId && !credentialInCatalog
-        ? [
-            {
-              key: modelOptionKey(credential.provider, credential.modelId),
-              provider: credential.provider,
-              modelId: credential.modelId,
-              label: `${credential.label} · ${credential.modelId}`,
-            },
-          ]
-        : providerModels.map((entry) => ({
-            key: modelOptionKey(entry.provider, entry.id),
-            provider: entry.provider,
-            modelId: entry.id,
-            label: `${entry.providerName ?? entry.provider} · ${entry.label}`,
-          }));
-    for (const option of options) {
-      if (seenOptions.has(option.key)) continue;
-      seenOptions.add(option.key);
-      connectedOptions.push(option);
-    }
-  }
+  const connectedOptions = connectedModelChoices(credentials, catalog);
+  const storedModel = modelKey ? parseModelOptionKey(modelKey) : null;
+  const selectedModel = storedModel
+    ? {
+        provider: storedModel.provider,
+        modelId: resolveSelectableModelId(catalog, storedModel.provider, storedModel.modelId),
+      }
+    : null;
+  const selectedModelKey = selectedModel
+    ? modelOptionKey(selectedModel.provider, selectedModel.modelId)
+    : "";
 
-  const effectiveProvider = modelKey
-    ? parseModelOptionKey(modelKey)?.provider
-    : (me?.defaultProvider ?? null);
-  const effectiveModelId = modelKey
-    ? parseModelOptionKey(modelKey)?.modelId
-    : (me?.defaultModel ?? null);
+  const effectiveProvider = selectedModel?.provider ?? me?.defaultProvider ?? null;
+  const effectiveModelId = selectedModel?.modelId ?? me?.defaultModel ?? null;
   const effectiveEntry =
     effectiveProvider && effectiveModelId
       ? catalog.find(
-          (entry) => entry.provider === effectiveProvider && entry.id === effectiveModelId,
+          (entry) =>
+            entry.provider === effectiveProvider &&
+            resolveSelectableModelId(catalog, entry.provider, entry.id) === effectiveModelId,
         )
       : undefined;
   const effectiveCredential = credentials.find(
@@ -340,7 +317,7 @@ export function BotSettings({
     color?: string;
     notifyOnFinish?: boolean;
   }) {
-    const selected = modelKey ? parseModelOptionKey(modelKey) : null;
+    const selected = selectedModel;
     const nextName = (patchOverrides?.name !== undefined ? patchOverrides.name : name).trim();
     const nextTitle = (patchOverrides?.title !== undefined ? patchOverrides.title : title).trim();
     const nextDescription = (
@@ -505,7 +482,7 @@ export function BotSettings({
           <NativeSelect
             id={`${ids}-model`}
             className="mt-2 w-full"
-            value={modelKey}
+            value={selectedModelKey}
             onChange={(event) => {
               setModelKey(event.target.value);
               setThinkingLevel("");
@@ -517,9 +494,10 @@ export function BotSettings({
                 ? ` (${catalogLabel(catalog, me.defaultProvider, me.defaultModel) ?? me.defaultModel})`
                 : ""}
             </NativeSelectOption>
-            {modelKey && !connectedOptions.some((option) => option.key === modelKey) ? (
-              <NativeSelectOption value={modelKey}>
-                {parseModelOptionKey(modelKey)?.modelId ?? modelKey}
+            {selectedModelKey &&
+            !connectedOptions.some((option) => option.key === selectedModelKey) ? (
+              <NativeSelectOption value={selectedModelKey}>
+                {selectedModel?.modelId ?? selectedModelKey}
               </NativeSelectOption>
             ) : null}
             {connectedOptions.map((option) => (
@@ -637,16 +615,6 @@ export function BotSettings({
       </div>
     </div>
   );
-}
-
-function modelOptionKey(provider: string, modelId: string) {
-  return `${provider}::${modelId}`;
-}
-
-function parseModelOptionKey(key: string) {
-  const separator = key.indexOf("::");
-  if (separator <= 0) return null;
-  return { provider: key.slice(0, separator), modelId: key.slice(separator + 2) };
 }
 
 function catalogLabel(

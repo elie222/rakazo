@@ -2,7 +2,10 @@ import { t } from "@lingui/core/macro";
 import type { ThreadMessage, ThreadSnapshot } from "@rakazo/contracts";
 import {
   callClientNonce,
+  INTERIM_BARGE_IN_MS,
+  isCallBargeIn,
   isFarewell,
+  isInterimCallBargeIn,
   isSecretAskBlock,
   runThreadSubscription,
   speechFromBlocks,
@@ -40,17 +43,6 @@ const FAREWELL_TIMEOUT = 20_000;
  * if a measured tail actually outruns it.
  */
 export const ECHO_GUARD_MS = 600;
-/** While audio plays, most of what the mic hears is the speaker: match on fewer words. */
-const PLAYBACK_ECHO_RATIO = 0.4;
-/** The only one-word turns worth cutting a reply short for. */
-const INTERRUPT_WORDS = new Set(["stop", "wait", "hold on", "pause", "no"]);
-/**
- * How long a phrase must stand mid-playback before it cuts the reply off. The silence
- * window that ends an utterance is far longer than a reply, so waiting for the final
- * transcript means the barge-in lands after the bot already finished talking.
- */
-export const INTERIM_BARGE_IN_MS = 300;
-
 let state: CallState | null = null;
 /** Shared by every message this call sends, so the thread can group one call's exchange. */
 let callId = "";
@@ -320,7 +312,7 @@ async function handleTranscript(text: string) {
     return;
   }
   if (state.phase === "speaking") {
-    if (!isBargeIn(text)) {
+    if (!isCallBargeIn(text)) {
       set({ heard: "" });
       void openMic();
       return;
@@ -382,32 +374,6 @@ async function handleTranscript(text: string) {
 }
 
 /**
- * True when a transcript heard during playback is the caller cutting in rather than
- * the reply leaking back into the mic: a real sentence, or a short interruption word.
- */
-function isBargeIn(text: string): boolean {
-  if (spokenMemory.isEcho(text, PLAYBACK_ECHO_RATIO)) return false;
-  const cleaned = cleanWords(text);
-  return cleaned.includes(" ") || INTERRUPT_WORDS.has(cleaned);
-}
-
-function cleanWords(text: string): string {
-  return text
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}\s]+/gu, " ")
-    .trim()
-    .replace(/\s+/g, " ");
-}
-
-/**
- * An interim is a guess Chrome revises word by word, so a single stray word is never
- * enough: only a phrase that is not the reply leaking back cuts playback short.
- */
-function isInterimBargeIn(text: string): boolean {
-  return cleanWords(text).includes(" ") && !spokenMemory.isEcho(text, PLAYBACK_ECHO_RATIO);
-}
-
-/**
  * Interim results are the only signal that arrives while the caller is still talking.
  * A qualifying phrase that stands for INTERIM_BARGE_IN_MS stops the audio at once; the
  * dictation session keeps running, so its silence window finishes the utterance and
@@ -415,7 +381,7 @@ function isInterimBargeIn(text: string): boolean {
  */
 function watchInterim(text: string) {
   if (state?.phase !== "speaking") return;
-  if (!isInterimBargeIn(text)) {
+  if (!isInterimCallBargeIn(text)) {
     clearInterim();
     return;
   }

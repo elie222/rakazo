@@ -1,14 +1,12 @@
 import type { ProductEvent, ThreadMessage, ThreadSnapshot } from "@rakazo/contracts";
-import { callIdFromClientNonce, groupVoiceChats, runThreadSubscription } from "@rakazo/core";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  ECHO_GUARD_MS,
-  endCall,
-  getSnapshot,
+  callIdFromClientNonce,
+  groupVoiceChats,
   INTERIM_BARGE_IN_MS,
-  startCall,
-  toggleMute,
-} from "./call-session";
+  runThreadSubscription,
+} from "@rakazo/core";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ECHO_GUARD_MS, endCall, getSnapshot, startCall, toggleMute } from "./call-session";
 import { dictation } from "./dictation.js";
 import { rpc } from "./rpc.js";
 import { reduceThreadSnapshot } from "./thread-events.js";

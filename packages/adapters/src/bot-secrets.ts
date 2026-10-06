@@ -1,6 +1,8 @@
 import { randomBytes } from "node:crypto";
 import type { BotSecretDestination } from "@rakazo/contracts";
 import {
+  BotSecretAuth,
+  BotSecretName,
   botSecretDestinationSchema,
   decodeLoginSecret,
   isPrivateNetworkHost,
@@ -59,6 +61,158 @@ export function normalizeSecretDestination(value: unknown): BotSecretDestination
     throw new Error(`Invalid credential destination — ${detail}`);
   }
   return { ...parsed.data, origin: new URL(parsed.data.origin).origin };
+}
+
+export type RequestSecretDestinationResult = {
+  /** Metadata only. The protected value is never part of this result. */
+  destination?: BotSecretDestination;
+  connectionId?: string;
+  error?: string;
+};
+
+/**
+ * The model-facing schema is one object, so a credential often arrives beside
+ * `connectionId`, as a JSON string, or as top-level `name` / `origin` / `auth`
+ * instead of a nested `credential`. A destination that normalizes is the masked
+ * reusable path. `connectionId` applies only when no credential was supplied.
+ */
+export function resolveRequestSecretDestination(
+  args: Record<string, unknown>,
+): RequestSecretDestinationResult {
+  const credential = credentialArgument(args);
+  if (credential !== undefined) {
+    try {
+      return { destination: normalizeSecretDestination(credential) };
+    } catch (error) {
+      return {
+        error:
+          error instanceof Error && error.message.startsWith("Invalid credential destination")
+            ? error.message
+            : "Specify a credential name, HTTPS origin, and auth method.",
+      };
+    }
+  }
+  const connectionId = connectionIdArgument(args.connectionId);
+  if (connectionId) return { connectionId };
+  return { error: "Provide either a reusable credential destination or a connectionId." };
+}
+
+const destinationFields = ["name", "origin", "auth"] as const;
+
+/**
+ * Credential object from `credential`, a JSON string of that object, or top-level fields.
+ * Only destination metadata is returned. A partial `name` / `origin` / `auth` set is still
+ * a credential attempt so it cannot fall through to `connectionId`.
+ */
+export function credentialArgument(args: Record<string, unknown>): unknown {
+  if (Object.hasOwn(args, "credential") && args.credential != null && args.credential !== "") {
+    return parsedCredentialObject(args.credential);
+  }
+  if (destinationFields.some((key) => Object.hasOwn(args, key))) {
+    return destinationMetadata(args);
+  }
+  return undefined;
+}
+
+export function connectionIdArgument(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  if (!trimmed || trimmed === "null" || trimmed === "undefined") return undefined;
+  return trimmed;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+/**
+ * `{ name, origin, auth }` only. Secret fields must not survive, including ones nested in
+ * `auth` or carried in an origin string. The effect request is this object, and destination
+ * parsing strips extras only from its own copy.
+ */
+function destinationMetadata(record: Record<string, unknown>): Record<string, unknown> {
+  const metadata: Record<string, unknown> = {};
+  for (const key of destinationFields) {
+    if (!Object.hasOwn(record, key)) continue;
+    if (key === "auth") {
+      const auth = authMetadata(record.auth);
+      if (auth !== undefined) metadata.auth = auth;
+      continue;
+    }
+    if (key === "origin") {
+      const origin = originMetadata(record.origin);
+      if (origin !== undefined) metadata.origin = origin;
+      continue;
+    }
+    if (typeof record.name === "string") {
+      // Keep a real name. Anything else is replaced so a secret in that string is not recorded,
+      // while destination validation still reports the name pattern.
+      metadata.name = BotSecretName.safeParse(record.name).success ? record.name : "Invalid Name";
+    }
+  }
+  return metadata;
+}
+
+/**
+ * Parsed auth, or a stand-in that fails the same way. The stand-in does not copy the
+ * original fields: an invalid method or header can still carry a secret, and the effect
+ * row is written before destination validation.
+ */
+function authMetadata(value: unknown): unknown {
+  const parsed = BotSecretAuth.safeParse(value);
+  if (parsed.success) return parsed.data;
+  if (!isPlainObject(value)) return undefined;
+  if (value.type === "header") {
+    if (typeof value.name !== "string") return { type: "header" };
+    const header = BotSecretAuth.safeParse({ type: "header", name: value.name });
+    const unsupported =
+      !header.success &&
+      header.error.issues.some((issue) => issue.message === "Unsupported credential header");
+    return { type: "header", name: unsupported ? "Cookie" : "bad header" };
+  }
+  if (value.type === "basic") {
+    if (typeof value.username !== "string") return { type: "basic" };
+    return { type: "basic", username: ":" };
+  }
+  return { type: "invalid" };
+}
+
+/**
+ * Keep a bare origin. Never return the raw string: `new URL` resolves `..`, so the raw
+ * path can still hold a secret while the parsed path is `/`. Userinfo, query, fragment,
+ * and a real path are removed. A placeholder keeps the origin error when no bare origin remains.
+ */
+function originMetadata(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return "invalid-origin";
+  }
+  const bare = !url.username && !url.password && !url.search && !url.hash && url.pathname === "/";
+  if (bare) return url.origin;
+  url.username = "";
+  url.password = "";
+  url.search = "";
+  url.hash = "";
+  return url.pathname === "/" ? url.origin : `${url.origin}/path`;
+}
+
+function parsedCredentialObject(value: unknown): unknown {
+  if (typeof value !== "string") {
+    // Not metadata. Keep the attempt, but do not forward the raw value into the effect.
+    return isPlainObject(value) ? destinationMetadata(value) : {};
+  }
+  const trimmed = value.trim();
+  if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) return {};
+  try {
+    const parsed = JSON.parse(trimmed) as unknown;
+    if (isPlainObject(parsed)) return destinationMetadata(parsed);
+  } catch {
+    return {};
+  }
+  return {};
 }
 
 export function sameSecretDestination(

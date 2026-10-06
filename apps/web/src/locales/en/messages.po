@@ -1671,6 +1671,7 @@ msgstr "Decline"
 
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
+#: src/pages/shell/avatar-studio-popover.tsx
 msgid "Default"
 msgstr "Default"
 
@@ -3080,8 +3081,12 @@ msgid "Read replies aloud"
 msgstr "Read replies aloud"
 
 #: src/pages/KnowledgeSection.tsx
-msgid "read-only"
-msgstr "read-only"
+msgid "Built-in"
+msgstr "Built-in"
+
+#: src/pages/KnowledgeSection.tsx
+msgid "Plugin"
+msgstr "Plugin"
 
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
@@ -3637,8 +3642,8 @@ msgid "Skill {0}"
 msgstr "Skill {0}"
 
 #: src/pages/KnowledgeSection.tsx
-msgid "Skills"
-msgstr "Skills"
+msgid "Shared skills"
+msgstr "Shared skills"
 
 #: src/components/integrations/IntegrationSetup.tsx
 #: src/pages/Shell.tsx

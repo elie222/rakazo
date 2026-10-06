@@ -603,6 +603,8 @@ export interface NotificationMessage {
   body: string;
   botId: string;
   threadId: string;
+  /** Group chat that owns threadId, so a tap does not open the bot's direct thread. */
+  groupId?: string;
 }
 
 /** A product-authored transactional email, independent of its delivery vendor. */

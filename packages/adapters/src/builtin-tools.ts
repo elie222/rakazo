@@ -379,8 +379,9 @@ export const builtinAgentTools: ConnectorTool[] = [
     get description() {
       return secretAskToolSurface().description;
     },
-    // Exactly one destination: credential XOR connectionId. Sibling optionals
-    // looked schema-valid to models but the executor rejects both and neither.
+    // The original schema is credential XOR connectionId. The wire schema is one
+    // object, so a valid credential may also carry connectionId; the executor
+    // keeps that credential and uses connectionId only when no credential was sent.
     get inputSchema() {
       return secretAskToolSurface().inputSchema;
     },

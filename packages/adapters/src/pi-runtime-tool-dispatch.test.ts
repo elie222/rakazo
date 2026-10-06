@@ -13,6 +13,10 @@ const fakeAgentState = vi.hoisted(() => ({
     | "ask-pause"
     | "nested-ask-pause",
   emitFinalAfterFollowUp: true,
+  /** Deliver the post-tool answer only on the completed message, with no text deltas. */
+  emitFinalOnCompletedMessage: false,
+  /** Stream the post-tool answer, but leave the completed turn's message text empty. */
+  emitFinalDeltaOnly: false,
   abortCount: 0,
   tools: [] as Array<{
     name: string;
@@ -117,17 +121,20 @@ vi.mock("@earendil-works/pi-agent-core", () => ({
         });
         if (fakeAgentState.followUpMessages.length > 0 && fakeAgentState.emitFinalAfterFollowUp) {
           const text = "The final answer.";
-          this.emit({
-            type: "message_update",
-            assistantMessageEvent: { type: "text_delta", delta: text },
-          });
+          if (!fakeAgentState.emitFinalOnCompletedMessage) {
+            this.emit({
+              type: "message_update",
+              assistantMessageEvent: { type: "text_delta", delta: text },
+            });
+          }
+          const content = fakeAgentState.emitFinalDeltaOnly ? [] : [{ type: "text", text }];
           this.emit({
             type: "message_end",
-            message: { role: "assistant", content: [{ type: "text", text }] },
+            message: { role: "assistant", content },
           });
           this.emit({
             type: "turn_end",
-            message: { role: "assistant", content: [{ type: "text", text }] },
+            message: { role: "assistant", content },
             toolResults: [],
           });
         }
@@ -259,7 +266,11 @@ vi.mock("./pi-openai-compatible-provider.js", () => ({
 }));
 
 import { toolCompletionAuditPayload } from "./executor.js";
-import { maxToolCallsPerTurn, PiAgentRuntime } from "./pi-runtime.js";
+import {
+  MISSING_TOOL_FINAL_RESPONSE_ERROR,
+  maxToolCallsPerTurn,
+  PiAgentRuntime,
+} from "./pi-runtime.js";
 import { TOOL_RESULT_TEXT_LIMIT } from "./pi-runtime-limits.js";
 
 const destinationTool: ConnectorTool = {
@@ -305,6 +316,8 @@ describe("Pi connector tool dispatch", () => {
     fakeAgentState.steeredMessages = [];
     fakeAgentState.followUpMessages = [];
     fakeAgentState.emitFinalAfterFollowUp = true;
+    fakeAgentState.emitFinalOnCompletedMessage = false;
+    fakeAgentState.emitFinalDeltaOnly = false;
     fakeAgentState.initialMessages = [];
     fakeAgentState.promptInputs = [];
     fakeAgentState.promptImages = [];
@@ -743,9 +756,95 @@ describe("Pi connector tool dispatch", () => {
     ]);
   });
 
-  it("makes an unfinished tool turn visible instead of completing silently", async () => {
+  it("fails a tool turn that never writes a final answer instead of asking to continue", async () => {
     fakeAgentState.mode = "silent-continuation";
     fakeAgentState.emitFinalAfterFollowUp = false;
+    const runtime = new PiAgentRuntime();
+    const events: unknown[] = [];
+    const consume = async () => {
+      for await (const event of runtime.run(
+        {
+          botId: "b",
+          threadId: "t",
+          runId: "silent-fallback",
+          prompt: "send the update and report back",
+          instructions: "Use the destination tool, then tell the user what happened.",
+          history: [],
+          tools: [destinationTool],
+          model: { provider: "test", id: "dispatch-test-model" },
+          executeTool: vi.fn(async () => ({ ok: true })),
+        },
+        {
+          operationId: "silent-fallback",
+          traceId: "silent-fallback",
+          spaceId: "w",
+          userId: "u",
+          signal: new AbortController().signal,
+        },
+      )) {
+        events.push(event);
+      }
+    };
+
+    await expect(consume()).rejects.toThrow(MISSING_TOOL_FINAL_RESPONSE_ERROR);
+    expect(MISSING_TOOL_FINAL_RESPONSE_ERROR.toLowerCase()).not.toContain("continue");
+    expect(events).not.toContainEqual(
+      expect.objectContaining({
+        text: expect.stringMatching(/ask me to continue/i),
+      }),
+    );
+    expect(events.some((event) => (event as { type?: string }).type === "done")).toBe(false);
+  });
+
+  it("does not replay a continue prompt into another ask-to-continue reply", async () => {
+    fakeAgentState.mode = "silent-continuation";
+    fakeAgentState.emitFinalAfterFollowUp = false;
+    const runtime = new PiAgentRuntime();
+    const events: unknown[] = [];
+    const consume = async () => {
+      for await (const event of runtime.run(
+        {
+          botId: "b",
+          threadId: "t",
+          runId: "continue-loop",
+          prompt: "continue",
+          instructions: "Use the destination tool, then tell the user what happened.",
+          history: [
+            { role: "user", content: "send the update and report back" },
+            {
+              role: "assistant",
+              content:
+                "I completed the tool step but could not produce a final response. Please ask me to continue.",
+            },
+          ],
+          tools: [destinationTool],
+          model: { provider: "test", id: "dispatch-test-model" },
+          executeTool: vi.fn(async () => ({ ok: true })),
+        },
+        {
+          operationId: "continue-loop",
+          traceId: "continue-loop",
+          spaceId: "w",
+          userId: "u",
+          signal: new AbortController().signal,
+        },
+      )) {
+        events.push(event);
+      }
+    };
+
+    await expect(consume()).rejects.toThrow(MISSING_TOOL_FINAL_RESPONSE_ERROR);
+    expect(events).not.toContainEqual(
+      expect.objectContaining({
+        text: expect.stringMatching(/ask me to continue/i),
+      }),
+    );
+    expect(events.some((event) => (event as { type?: string }).type === "done")).toBe(false);
+  });
+
+  it("emits a final answer that arrives only on the completed message after tools", async () => {
+    fakeAgentState.mode = "silent-continuation";
+    fakeAgentState.emitFinalOnCompletedMessage = true;
     const runtime = new PiAgentRuntime();
     const events: unknown[] = [];
 
@@ -753,7 +852,7 @@ describe("Pi connector tool dispatch", () => {
       {
         botId: "b",
         threadId: "t",
-        runId: "silent-fallback",
+        runId: "completed-message-final",
         prompt: "send the update and report back",
         instructions: "Use the destination tool, then tell the user what happened.",
         history: [],
@@ -762,8 +861,8 @@ describe("Pi connector tool dispatch", () => {
         executeTool: vi.fn(async () => ({ ok: true })),
       },
       {
-        operationId: "silent-fallback",
-        traceId: "silent-fallback",
+        operationId: "completed-message-final",
+        traceId: "completed-message-final",
         spaceId: "w",
         userId: "u",
         signal: new AbortController().signal,
@@ -772,13 +871,46 @@ describe("Pi connector tool dispatch", () => {
       events.push(event);
     }
 
-    expect(events).toContainEqual({
-      type: "text",
-      text: "I completed the tool step but could not produce a final response. Please ask me to continue.",
-    });
+    expect(events).toContainEqual({ type: "text", text: "The final answer." });
     expect(events.at(-1)).toEqual({
       type: "done",
-      text: "I completed the tool step but could not produce a final response. Please ask me to continue.",
+      text: "I will check the destination first.The final answer.",
+    });
+  });
+
+  it("keeps a streamed final answer when the completed tool-follow-up message is empty", async () => {
+    fakeAgentState.mode = "silent-continuation";
+    fakeAgentState.emitFinalDeltaOnly = true;
+    const runtime = new PiAgentRuntime();
+    const events: unknown[] = [];
+
+    for await (const event of runtime.run(
+      {
+        botId: "b",
+        threadId: "t",
+        runId: "delta-only-final",
+        prompt: "send the update and report back",
+        instructions: "Use the destination tool, then tell the user what happened.",
+        history: [],
+        tools: [destinationTool],
+        model: { provider: "test", id: "dispatch-test-model" },
+        executeTool: vi.fn(async () => ({ ok: true })),
+      },
+      {
+        operationId: "delta-only-final",
+        traceId: "delta-only-final",
+        spaceId: "w",
+        userId: "u",
+        signal: new AbortController().signal,
+      },
+    )) {
+      events.push(event);
+    }
+
+    expect(events).toContainEqual({ type: "text", text: "The final answer." });
+    expect(events.at(-1)).toEqual({
+      type: "done",
+      text: "I will check the destination first.The final answer.",
     });
   });
 
@@ -822,7 +954,7 @@ describe("Pi connector tool dispatch", () => {
     expect(followUp.content).not.toContain("NO_RESPONSE");
     expect(events).not.toContainEqual({
       type: "text",
-      text: "I completed the tool step but could not produce a final response. Please ask me to continue.",
+      text: MISSING_TOOL_FINAL_RESPONSE_ERROR,
     });
     expect(events.at(-1)).toEqual({ type: "done" });
   });

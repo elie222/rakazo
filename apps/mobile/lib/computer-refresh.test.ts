@@ -338,6 +338,24 @@ describe("screen URL reuse", () => {
     fixture.controller.dispose();
   });
 
+  it("renews a reused seal before the original expiry", async () => {
+    vi.useFakeTimers();
+    const readAt = Date.now();
+    const expiresAt = readAt + 40 * 60_000;
+    const reused = `https://app.example/novnc/session/view/${expiresAt}.tok/embed.html`;
+    const renewed = `https://app.example/novnc/session/view/${readAt + 90 * 60_000}.next/embed.html`;
+    const fixture = setup();
+    fixture.readScreen.mockResolvedValueOnce(reused).mockResolvedValue(renewed);
+    fixture.controller.start();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fixture.readScreen).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(30 * 60_000 - 2_000);
+    expect(fixture.readScreen).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(4_000);
+    expect(fixture.readScreen).toHaveBeenCalledTimes(2);
+    fixture.controller.dispose();
+  });
+
   it("always reads the screen on an explicit refresh", async () => {
     vi.useFakeTimers();
     const fixture = setup();

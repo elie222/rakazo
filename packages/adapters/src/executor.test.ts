@@ -1094,6 +1094,12 @@ describe("dockerComputerToolInstruction", () => {
     expect(instruction).not.toMatch(/no token ever/i);
     expect(instruction).not.toMatch(/sign (?:this computer's |the )?(?:desktop )?browser into/i);
   });
+
+  it("documents installed document text extractors", () => {
+    const instruction = dockerComputerToolInstruction("docker");
+    expect(instruction).toContain("`pdftotext`, `pandoc`, and `openpyxl` are available");
+    expect(instruction).toContain("PDFs, documents, and spreadsheets");
+  });
 });
 
 describe("createRunExecutor", () => {

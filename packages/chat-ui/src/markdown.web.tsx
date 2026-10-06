@@ -1,4 +1,4 @@
-import { memo, useCallback, useRef, useState } from "react";
+import { createContext, memo, useCallback, useContext, useRef, useState } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { HastNode } from "./table-utils";
@@ -7,7 +7,13 @@ import "./markdown-table.css";
 import { droppedTableHtmlText } from "@rakazo/contracts";
 import { CheckIcon, CopyIcon } from "./icons";
 import type { ChatMarkdownProps } from "./markdown";
-import { closeUnterminatedFence, plainTextLinkParts, sanitizeMarkdownUrl } from "./markdown";
+import {
+  closeUnterminatedFence,
+  inlineMarkdownImageSrc,
+  plainTextLinkParts,
+  sanitizeMarkdownImageUrl,
+  sanitizeMarkdownUrl,
+} from "./markdown";
 import { MarkdownTable, MarkdownTableSourceContext } from "./markdown-table";
 
 function preserveSkippedTableText() {
@@ -61,12 +67,38 @@ function CodeBlock(props: React.ComponentPropsWithoutRef<"pre">) {
   );
 }
 
+const InsideLinkContext = createContext(false);
+
+function MarkdownImage({ src = "", alt, title }: { src?: string; alt?: string; title?: string }) {
+  const insideLink = useContext(InsideLinkContext);
+  if (inlineMarkdownImageSrc(src)) {
+    return <img src={src} alt={alt ?? ""} title={title} loading="lazy" />;
+  }
+  const label = alt || src;
+  const href = sanitizeMarkdownImageUrl(src);
+  // Inside a link the label joins the link text, so a badge still opens its link target.
+  if (!href || insideLink) return label;
+  return (
+    <a href={href} title={title} target="_blank" rel="noreferrer noopener">
+      {label}
+    </a>
+  );
+}
+
 const components: Components = {
   a({ node: _node, ...props }) {
-    return <a {...props} target="_blank" rel="noreferrer noopener" />;
+    // urlTransform blanks unsafe URLs. Keep their text without a link that opens the app again.
+    const link = props.href ? (
+      <a {...props} target="_blank" rel="noreferrer noopener" />
+    ) : (
+      <span>{props.children}</span>
+    );
+    return <InsideLinkContext.Provider value={true}>{link}</InsideLinkContext.Provider>;
   },
-  img({ node: _node, ...props }) {
-    return <img {...props} alt={props.alt ?? ""} loading="lazy" />;
+  img({ node: _node, src, alt, title }) {
+    return (
+      <MarkdownImage src={typeof src === "string" ? src : undefined} alt={alt} title={title} />
+    );
   },
   pre({ node: _node, ...props }) {
     return <CodeBlock {...props} />;
@@ -112,7 +144,10 @@ export const ChatMarkdown = memo(function ChatMarkdown({
           remarkPlugins={[remarkGfm]}
           rehypePlugins={[preserveSkippedTableText]}
           skipHtml
-          urlTransform={(url) => sanitizeMarkdownUrl(url, true) ?? ""}
+          // MarkdownImage decides what an image source may do, so it receives the source as written.
+          urlTransform={(url, key) =>
+            key === "src" ? url : (sanitizeMarkdownUrl(url, true) ?? "")
+          }
         >
           {source}
         </ReactMarkdown>

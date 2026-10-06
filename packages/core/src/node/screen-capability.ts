@@ -3,6 +3,12 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:
 export const SCREEN_PROXY_TTL_MS = 60 * 60_000;
 export const SCREEN_TARGET_ENDPOINT = "/api/internal/screen-target";
 export const SCREEN_RECHECK_MS = 1_000;
+/**
+ * Remote seals are reused until this much life remains. A public hop (E2B) can
+ * still be presenting the capability it started with; minting a new one on
+ * every poll aborts that handshake. The reused seal keeps its original expiry.
+ */
+export const REMOTE_SCREEN_CAPABILITY_MIN_REMAINING_MS = 10 * 60_000;
 
 export interface ScreenCapabilityScope {
   botId: string;
@@ -74,6 +80,63 @@ export function sealScreenCapability(
     path: target.pathname === "/embed.html" ? "websockify" : `${prefix.slice(1)}/websockify`,
   }).toString();
   return result.toString();
+}
+
+const remoteScreenSeals = new Map<string, { sealed: string; expiresAt: number }>();
+
+export function isLoopbackScreenTarget(url: string) {
+  const hostname = new URL(url).hostname;
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+}
+
+/** Drop cached remote seals. Tests use this so issuance order cannot leak between cases. */
+export function resetRemoteScreenCapabilityReuse() {
+  remoteScreenSeals.clear();
+}
+
+/**
+ * Issue a screen capability. Loopback targets stay a fresh seal per call.
+ * Remote targets reuse a still-valid seal for the same upstream URL and scope
+ * so an in-flight viewer is not raced by token rotation. Revocation is unchanged:
+ * the seal still expires, and a new scope or upstream URL misses the cache.
+ */
+export function issueScreenCapability(
+  url: string,
+  secret: string,
+  origin: string,
+  scope: ScreenCapabilityScope,
+  now = Date.now(),
+) {
+  if (isLoopbackScreenTarget(url)) return sealScreenCapability(url, secret, origin, scope, now);
+  const key = remoteScreenSealKey(url, secret, origin, scope);
+  const cached = remoteScreenSeals.get(key);
+  if (cached && cached.expiresAt - now > REMOTE_SCREEN_CAPABILITY_MIN_REMAINING_MS) {
+    return cached.sealed;
+  }
+  const sealed = sealScreenCapability(url, secret, origin, scope, now);
+  for (const [cachedKey, entry] of remoteScreenSeals) {
+    if (entry.expiresAt <= now) remoteScreenSeals.delete(cachedKey);
+  }
+  remoteScreenSeals.set(key, { sealed, expiresAt: now + SCREEN_PROXY_TTL_MS });
+  return sealed;
+}
+
+function remoteScreenSealKey(
+  url: string,
+  secret: string,
+  origin: string,
+  scope: ScreenCapabilityScope,
+) {
+  return [
+    createHash("sha256").update(secret).digest("base64url"),
+    new URL(origin).origin,
+    url,
+    scope.botId,
+    scope.computerId,
+    String(scope.botGeneration),
+    String(scope.computerGeneration),
+    scope.controlLeaseId ?? "",
+  ].join("\0");
 }
 
 export function openScreenCapability(

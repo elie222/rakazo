@@ -1671,6 +1671,7 @@ msgstr "Rechazar"
 
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
+#: src/pages/shell/avatar-studio-popover.tsx
 msgid "Default"
 msgstr "Predeterminado"
 
@@ -3080,8 +3081,12 @@ msgid "Read replies aloud"
 msgstr "Leer respuestas en voz alta"
 
 #: src/pages/KnowledgeSection.tsx
-msgid "read-only"
-msgstr "Solo lectura"
+msgid "Built-in"
+msgstr "Integrado"
+
+#: src/pages/KnowledgeSection.tsx
+msgid "Plugin"
+msgstr "Plugin"
 
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
@@ -3637,8 +3642,8 @@ msgid "Skill {0}"
 msgstr "Habilidad {0}"
 
 #: src/pages/KnowledgeSection.tsx
-msgid "Skills"
-msgstr "Habilidades"
+msgid "Shared skills"
+msgstr "Habilidades compartidas"
 
 #: src/components/integrations/IntegrationSetup.tsx
 #: src/pages/Shell.tsx
