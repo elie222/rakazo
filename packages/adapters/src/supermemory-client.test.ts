@@ -15,6 +15,20 @@ import {
 
 const config = { baseUrl: "http://localhost:6767", apiKey: "sm_test_key" };
 
+// These tests stub the global fetch. Since #1135 the private-network transport
+// swaps the current global fetch for undici's package fetch, which would skip
+// the stub and open a real socket. Treat a stubbed fetch as an injected transport.
+vi.mock("./undici-fetch.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./undici-fetch.js")>();
+  return {
+    ...actual,
+    fetchPairedWithDispatcher: (baseFetch?: typeof globalThis.fetch) =>
+      baseFetch && vi.isMockFunction(baseFetch)
+        ? baseFetch
+        : actual.fetchPairedWithDispatcher(baseFetch),
+  };
+});
+
 afterEach(() => vi.unstubAllGlobals());
 
 describe("Supermemory request URLs", () => {
