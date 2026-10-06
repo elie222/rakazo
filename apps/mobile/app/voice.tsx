@@ -106,9 +106,7 @@ export default function VoiceSettings() {
     }, [load, t]),
   );
 
-  async function toggleDeviceVoice() {
-    if (pending !== null || !deviceVoiceReady) return;
-    const next = !deviceVoice;
+  async function saveDeviceVoice(next: boolean): Promise<boolean> {
     deviceVoiceSaveInFlight.current = true;
     deviceVoiceRevision.current++;
     setDeviceVoice(next);
@@ -116,12 +114,34 @@ export default function VoiceSettings() {
     setError(null);
     try {
       await saveDeviceVoiceEnabled(next);
+      return true;
     } catch {
       setDeviceVoice(!next);
       setError(t("Could not save that preference"));
+      return false;
     } finally {
       deviceVoiceSaveInFlight.current = false;
       deviceVoiceRevision.current++;
+      setPending(null);
+    }
+  }
+
+  async function toggleDeviceVoice() {
+    if (pending !== null || !deviceVoiceReady) return;
+    await saveDeviceVoice(!deviceVoice);
+  }
+
+  // The device voice and a hosted provider are one choice: picking a provider turns the device voice off.
+  async function chooseProvider(nextProvider: string) {
+    if (pending !== null) return;
+    if (deviceVoice && !(deviceVoiceReady && (await saveDeviceVoice(false)))) return;
+    setProvider(nextProvider);
+    setPending("voice");
+    try {
+      await load(nextProvider);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t("Could not load voice settings"));
+    } finally {
       setPending(null);
     }
   }
@@ -247,20 +267,10 @@ export default function VoiceSettings() {
             <Pressable
               key={entry.id}
               disabled={pending !== null}
-              onPress={() => {
-                setProvider(entry.id);
-                setPending("voice");
-                void load(entry.id)
-                  .catch((err: unknown) =>
-                    setError(
-                      err instanceof Error ? err.message : t("Could not load voice settings"),
-                    ),
-                  )
-                  .finally(() => setPending(null));
-              }}
+              onPress={() => void chooseProvider(entry.id)}
               style={[
                 styles.card,
-                provider === entry.id && styles.cardActive,
+                !deviceVoice && provider === entry.id && styles.cardActive,
                 pending !== null && styles.disabled,
               ]}
             >
@@ -275,7 +285,7 @@ export default function VoiceSettings() {
             </Pressable>
           );
         })}
-        {selected ? (
+        {selected && !deviceVoice ? (
           <>
             <TextInput
               accessibilityLabel={t("API key")}
