@@ -89,7 +89,9 @@ export async function shareLocalFile(uri: string, mimeType: string, name: string
 }
 
 async function shareNamedFile(source: File, mimeType: string, name: string): Promise<void> {
-  const dir = new Directory(Paths.cache, "artifact-shares");
+  const root = new Directory(Paths.cache, "artifact-shares");
+  if (!root.exists) root.create();
+  const dir = new Directory(root, source.name || "attachment");
   if (!dir.exists) dir.create();
   const shared = new File(dir, artifactShareFileName(name, mimeType));
   source.copySync(shared, { overwrite: true });

@@ -197,6 +197,7 @@ export default function ArtifactsScreen() {
 
   useEffect(() => {
     autoFetchedCursorRef.current = null;
+    setSearchPageFailed(false);
   }, [query, activeBotId]);
 
   useEffect(() => {
