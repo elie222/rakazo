@@ -271,6 +271,10 @@ test("model settings connect, replace, and cancel provider authentication", asyn
   await page.reload();
   await openUserSettings(page, "models");
   await expect(page.getByRole("combobox", { name: "Model" })).toHaveText(/Scripted runtime/);
+  const storedKey = page.getByLabel("Replace API key");
+  await expect(storedKey).toHaveValue("");
+  await expect(storedKey).toHaveAttribute("placeholder", "Paste a replacement key");
+  await captureScreenshot(page, testInfo, "stored-provider-api-key");
   await page.getByText("Advanced", { exact: true }).click();
   await expect(page.getByLabel("Maximum output tokens")).toHaveValue("16384");
 

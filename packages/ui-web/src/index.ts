@@ -2,6 +2,7 @@ export { type AvatarStyle, AvatarStyleProvider, useAvatarStyle } from "./avatar-
 export {
   BotAvatar,
   DEFAULT_GROK_BOT_COLOR,
+  defaultBotAvatarValue,
   GROK_BOT_COLORS,
   GROK_MASCOT_SHAPES,
   GrokShapePreview,

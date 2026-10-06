@@ -1,14 +1,15 @@
 import type { ComputerStatus } from "@rakazo/contracts";
-import { SCREEN_URL_RENEW_MS } from "./computer";
+import { SCREEN_URL_RENEW_MS, screenRenewReadAt } from "./computer";
 
 export { SCREEN_URL_RENEW_MS };
 
 /**
- * Every `computer/screenUrl` call seals a fresh capability. Re-reading it on each poll would
- * rotate the URL every two seconds, so polls only read the screen when the status that shapes
- * it changed, when the held URL nears expiry, or after the viewer reported the current URL
- * unusable. The viewer keeps the connected source across incidental token rotation and applies
- * a URL fetched in the renew window so the live stream can outlive the original capability.
+ * Re-reading `computer/screenUrl` on each poll would rotate the URL every two seconds, so polls
+ * only read the screen when the status that shapes it changed, when the held URL nears expiry,
+ * or after the viewer reported the current URL unusable. Renewal is measured from the seal's
+ * own expiry, so a reused capability is refreshed before it expires. The viewer keeps the
+ * connected source across incidental token rotation and applies a URL fetched in the renew
+ * window so the live stream can outlive the original capability.
  */
 
 function screenKey(status: ComputerStatus) {
@@ -82,7 +83,7 @@ export function createComputerRefresh(options: {
           if (!current()) return;
           screenLoaded = true;
           screenStatus = screenKey(status);
-          screenReadAt = Date.now();
+          screenReadAt = screenRenewReadAt(url, Date.now());
           options.onScreen(url);
         } catch {
           // Keep the last URL after a failed read; a successful null clears it.

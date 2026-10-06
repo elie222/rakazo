@@ -18,6 +18,7 @@ import {
   buildComposerMentionOptions,
   type ComposerMention,
   cloudAgentHttpsUrl,
+  formatMessageTime,
   groupVoiceChats,
   isApprovalAskBlock,
   isRunTerminalEvent,
@@ -37,7 +38,13 @@ import {
   withLiveStreamingProgress,
 } from "@rakazo/core";
 import * as Clipboard from "expo-clipboard";
-import { useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
+import {
+  useFocusEffect,
+  useIsFocused,
+  useLocalSearchParams,
+  useNavigation,
+  useRouter,
+} from "expo-router";
 import { useHeaderHeight } from "expo-router/react-navigation";
 import {
   memo,
@@ -75,6 +82,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppConnectCard } from "../components/AppConnectCard";
 import { AskActions } from "../components/AskActions";
 import { BotAvatar } from "../components/bot-avatar";
+import type { ImageArtifactPreviewTarget } from "../components/image-artifact-viewer";
+import { InlineImageAttachment } from "../components/inline-image-attachment";
 import { McpApprovalCard } from "../components/McpApprovalCard";
 import {
   MarkdownArtifactPreview,
@@ -96,11 +105,11 @@ import {
   type MobileSnapshot,
   mergeMobileSnapshot,
   messagingProviderLabel,
+  mobileThreadRefreshResult,
   prependMobileMessagePage,
   rpc,
   selectedSpaceId,
   selectSpace,
-  shouldApplyMobileThreadRefresh,
   subscribeThread,
 } from "../lib/api";
 import { mobileTokens } from "../lib/appearance";
@@ -112,6 +121,7 @@ import { loadDeviceVoiceEnabled } from "../lib/device-voice";
 import { available as dictationAvailable } from "../lib/dictation";
 import { cancelFocusPrompt, focusPromptThreadActive } from "../lib/focus-prompt";
 import { dateLocaleForUi, t, useI18n } from "../lib/i18n";
+import { isInlineImageMimeType } from "../lib/inline-image";
 import { saveLastBotId } from "../lib/last-bot";
 import {
   dismissThreadNotifications,
@@ -127,6 +137,11 @@ import {
   truncateQuoteExcerpt,
 } from "../lib/message-presentation";
 import { native, useMobileTokens, useResolvedAppearance } from "../lib/native";
+import {
+  threadRouteSpaceOnFocus,
+  threadSpaceRequest,
+  threadSpaceSwitchResult,
+} from "../lib/notification-open";
 import {
   type PickedAttachment,
   pickDocuments,
@@ -205,46 +220,58 @@ function speakableMessageText(message: MobileMessage): string {
     .join("\n");
 }
 
-type NotificationRouteState = "loading" | "ready" | "failed";
-
 export default function ThreadRoute() {
   const tokens = useMobileTokens();
   const { t } = useI18n();
   const router = useRouter();
+  const focused = useIsFocused();
   const { spaceId } = useLocalSearchParams<{ spaceId?: string | string[] }>();
-  const requestedSpaceId = typeof spaceId === "string" && spaceId ? spaceId : null;
-  const invalidSpaceId = spaceId !== undefined && requestedSpaceId === null;
-  const routeMatchesSelectedSpace =
-    requestedSpaceId === null || selectedSpaceId() === requestedSpaceId;
-  const [routeState, setRouteState] = useState<NotificationRouteState>(() => {
-    if (invalidSpaceId) return "failed";
-    return routeMatchesSelectedSpace ? "ready" : "loading";
+  const [activeSpaceId, setActiveSpaceId] = useState<string | null>(() => selectedSpaceId());
+  const [switchFailed, setSwitchFailed] = useState(false);
+  const [appliedFocus, setAppliedFocus] = useState(focused);
+  // Before paint, so a stacked route cannot render its thread against a space
+  // a newer notification selected.
+  const focusSync = threadRouteSpaceOnFocus({
+    focused,
+    appliedFocus,
+    activeSpaceId,
+    liveSpaceId: selectedSpaceId(),
+    switchFailed,
   });
+  if (focusSync.appliedFocus !== appliedFocus) setAppliedFocus(focusSync.appliedFocus);
+  if (focusSync.activeSpaceId !== activeSpaceId) setActiveSpaceId(focusSync.activeSpaceId);
+  if (focusSync.switchFailed !== switchFailed) setSwitchFailed(focusSync.switchFailed);
+  const request = threadSpaceRequest(spaceId, focusSync.activeSpaceId);
 
   useEffect(() => {
+    if (!focused) return;
+    const next = threadSpaceRequest(spaceId, activeSpaceId);
+    if (next.action === "show") {
+      setSwitchFailed(false);
+      return;
+    }
+    if (next.action === "unavailable") {
+      setSwitchFailed(true);
+      return;
+    }
     let cancelled = false;
-    if (invalidSpaceId) {
-      setRouteState("failed");
-      return () => {
-        cancelled = true;
-      };
-    }
-    if (!requestedSpaceId || selectedSpaceId() === requestedSpaceId) {
-      setRouteState("ready");
-      return () => {
-        cancelled = true;
-      };
-    }
-    setRouteState("loading");
-    void selectSpace(requestedSpaceId).then((selected) => {
-      if (!cancelled) setRouteState(selected ? "ready" : "failed");
+    setSwitchFailed(false);
+    const requestedSpaceId = next.spaceId;
+    void selectSpace(requestedSpaceId).then((switched) => {
+      if (cancelled) return;
+      // selectSpace commits the id before it resolves; a failed write rolls it back.
+      if (threadSpaceSwitchResult(requestedSpaceId, switched, selectedSpaceId()) === "ready") {
+        setActiveSpaceId(requestedSpaceId);
+        return;
+      }
+      setSwitchFailed(true);
     });
     return () => {
       cancelled = true;
     };
-  }, [invalidSpaceId, requestedSpaceId]);
+  }, [activeSpaceId, focused, spaceId]);
 
-  if (routeState === "ready" && !invalidSpaceId && routeMatchesSelectedSpace) return <Thread />;
+  if (request.action === "show" && !focusSync.switchFailed) return <Thread />;
   return (
     <View
       style={{
@@ -254,12 +281,17 @@ export default function ThreadRoute() {
         backgroundColor: tokens.background,
       }}
     >
-      {routeState === "loading" ? (
+      {request.action === "switch" && !focusSync.switchFailed ? (
         <ActivityIndicator color={tokens.foreground} />
       ) : (
-        <Pressable accessibilityRole="button" onPress={() => router.replace("/")}>
-          <Text style={{ color: tokens.foreground, fontSize: 16 }}>{t("Return to inbox")}</Text>
-        </Pressable>
+        <View style={{ alignItems: "center", gap: 12 }}>
+          <Text style={{ color: tokens.foreground, fontSize: 16 }}>
+            {t("Could not switch spaces")}
+          </Text>
+          <Pressable accessibilityRole="button" onPress={() => router.replace("/")}>
+            <Text style={{ color: tokens.foreground, fontSize: 16 }}>{t("Return to inbox")}</Text>
+          </Pressable>
+        </View>
       )}
     </View>
   );
@@ -275,12 +307,14 @@ function Thread() {
   const headerHeight = useHeaderHeight();
   const insets = useSafeAreaInsets();
   const keyboardVisible = useKeyboardState((state) => state.isVisible);
-  const { botId, groupId, name, messageId } = useLocalSearchParams<{
+  const { botId, groupId, name, messageId, threadId } = useLocalSearchParams<{
     botId?: string;
     groupId?: string;
     name?: string;
     messageId?: string;
+    threadId?: string;
   }>();
+  const requestedThreadId = typeof threadId === "string" && threadId ? threadId : undefined;
   const inGroup = Boolean(groupId);
   const call = useCallSession();
   const onCall = Boolean(botId) && call?.botId === botId;
@@ -452,7 +486,7 @@ function Thread() {
       : [];
   const currentBot = botId ? mentionBots.find((bot) => bot.id === botId) : undefined;
   const displayName = currentBot?.name ?? name;
-  const notificationThreadId = snap?.threadId ?? currentBot?.threadId;
+  const notificationThreadId = snap?.threadId ?? requestedThreadId ?? currentBot?.threadId;
   activeThreadId.current = notificationThreadId;
   const currentBotStatus = snap ? snap.run?.status : currentBot?.status;
   const hasLiveProgress = visibleMessages.some((message) => message.id.startsWith("progress:"));
@@ -803,23 +837,26 @@ function Thread() {
     );
     // Only the newest started refresh may commit. Threads also receive live
     // events; an older snapshot must not overwrite those while a newer refresh
-    // is already in flight.
-    if (
-      generation !== refreshGeneration.current ||
-      !shouldApplyMobileThreadRefresh({
-        requestEpoch: epoch,
-        currentEpoch: historyEpoch.current,
-        targetBotId,
-        targetGroupId,
-        activeBotId: activeBotId.current,
-        activeGroupId: activeGroupId.current,
-      })
-    )
-      return next;
-    commitSnap(
-      mergeMobileSnapshot(snapRef.current, next, expandedHistoryThread.current === next.threadId),
-    );
-    return next;
+    // is already in flight. The subscription starts from the snapshot returned
+    // here, so a discarded fetch must not supply its cursor.
+    const result = mobileThreadRefreshResult({
+      fetched: next,
+      onScreen: snapRef.current,
+      requestGeneration: generation,
+      currentGeneration: refreshGeneration.current,
+      requestEpoch: epoch,
+      currentEpoch: historyEpoch.current,
+      targetBotId,
+      targetGroupId,
+      activeBotId: activeBotId.current,
+      activeGroupId: activeGroupId.current,
+    });
+    if (result.commit) {
+      commitSnap(
+        mergeMobileSnapshot(snapRef.current, next, expandedHistoryThread.current === next.threadId),
+      );
+    }
+    return result.snapshot ?? undefined;
   }
 
   async function applyMessageJump(target: { botId?: string; groupId?: string; messageId: string }) {
@@ -1565,10 +1602,7 @@ function Thread() {
         presentMessageActionSheet({
           actions,
           title: message.createdAt
-            ? new Date(message.createdAt).toLocaleTimeString(dateLocaleForUi(), {
-                hour: "numeric",
-                minute: "2-digit",
-              })
+            ? formatMessageTime(message.createdAt, dateLocaleForUi())
             : undefined,
           cancel: t("Cancel"),
           more: t("More"),
@@ -1659,6 +1693,12 @@ function Thread() {
               onOpenBot={openBot}
               onPreviewMarkdown={setMarkdownPreview}
               onPlay={onCall ? undefined : () => speak(message)}
+              onPreviewImage={(target) =>
+                router.push({
+                  pathname: "/image",
+                  params: { ...target, ...(groupId ? { groupId } : { botId }) },
+                })
+              }
               actionProps={actionProps}
             />
           </Pressable>
@@ -2653,6 +2693,7 @@ const MessageBubble = memo(function MessageBubble({
   onOpenBot,
   onPreviewMarkdown,
   onPlay,
+  onPreviewImage,
   actionProps,
 }: {
   botId: string;
@@ -2667,6 +2708,7 @@ const MessageBubble = memo(function MessageBubble({
   onOpenBot: (botId: string, name: string) => void;
   onPreviewMarkdown: (target: MarkdownArtifactPreviewTarget) => void;
   onPlay?: () => void;
+  onPreviewImage: (target: ImageArtifactPreviewTarget) => void;
   actionProps: MessageActionProps;
 }) {
   const colorScheme = useResolvedAppearance();
@@ -3152,34 +3194,55 @@ const MessageBubble = memo(function MessageBubble({
         ) : null}
         {attachments.map((attachment, index) =>
           attachment.kind === "image" ? (
-            <Pressable
-              {...actionProps}
-              key={`${attachment.artifactId ?? attachment.name ?? "image"}-${index}`}
-              onPress={() =>
-                attachment.artifactId
-                  ? void openMobileArtifact(
-                      artifactTarget,
-                      attachment.artifactId,
-                      attachment.name ?? t("Image"),
-                      attachment.mimeType ?? "image/png",
-                    ).catch((err) =>
-                      Alert.alert(
-                        t("Could not open image"),
-                        err instanceof Error ? err.message : t("Try again."),
-                      ),
-                    )
-                  : undefined
-              }
-            >
-              <Text
-                style={{
-                  color: message.role === "user" ? tokens.secondaryForeground : tokens.foreground,
-                  fontSize: 15,
-                }}
+            attachment.artifactId && isInlineImageMimeType(attachment.mimeType) ? (
+              <InlineImageAttachment
+                key={`${attachment.artifactId}-${index}`}
+                threadTarget={artifactTarget}
+                artifactId={attachment.artifactId}
+                name={attachment.name ?? t("Image")}
+                mimeType={attachment.mimeType ?? "image/png"}
+                labelColor={
+                  message.role === "user" ? tokens.secondaryForeground : tokens.foreground
+                }
+                pressableProps={actionProps}
+                onOpen={() =>
+                  onPreviewImage({
+                    artifactId: attachment.artifactId!,
+                    name: attachment.name ?? t("Image"),
+                    mimeType: attachment.mimeType ?? "image/png",
+                  })
+                }
+              />
+            ) : (
+              <Pressable
+                {...actionProps}
+                key={`${attachment.artifactId ?? attachment.name ?? "image"}-${index}`}
+                onPress={() =>
+                  attachment.artifactId
+                    ? void openMobileArtifact(
+                        artifactTarget,
+                        attachment.artifactId,
+                        attachment.name ?? t("Image"),
+                        attachment.mimeType ?? "image/png",
+                      ).catch((err) =>
+                        Alert.alert(
+                          t("Could not open image"),
+                          err instanceof Error ? err.message : t("Try again."),
+                        ),
+                      )
+                    : undefined
+                }
               >
-                🖼 {attachment.name ?? t("Image")}
-              </Text>
-            </Pressable>
+                <Text
+                  style={{
+                    color: message.role === "user" ? tokens.secondaryForeground : tokens.foreground,
+                    fontSize: 15,
+                  }}
+                >
+                  🖼 {attachment.name ?? t("Image")}
+                </Text>
+              </Pressable>
+            )
           ) : (
             <Pressable
               {...actionProps}

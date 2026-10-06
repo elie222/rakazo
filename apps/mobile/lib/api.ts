@@ -61,6 +61,9 @@ let cachedSpaceId = "";
 /** Bumped on every in-memory Space selection change so a delayed response
  * cannot treat a later reselection of the same Space id as its own. */
 let spaceSelectionGeneration = 0;
+/** Counts selectSpace attempts so one still cleaning up a rollback record
+ * cannot claim the selection after a newer attempt has started. */
+let spaceSelectionRequestGeneration = 0;
 
 function bumpSpaceSelectionGeneration(): void {
   spaceSelectionGeneration += 1;
@@ -106,7 +109,11 @@ export async function loadApiBase() {
 }
 
 export async function selectSpace(id: string) {
+  const requestGeneration = ++spaceSelectionRequestGeneration;
   if (!(await clearStoredValue(SPACE_ROLLBACK_KEY))) return false;
+  // Rollback cleanup is the first await. A newer selection may have claimed
+  // the live space while this call was still deleting the rollback record.
+  if (requestGeneration !== spaceSelectionRequestGeneration) return false;
   // Claim memory before persisting: recovery paths reconcile against the
   // in-memory selection, so a durable write must never precede its owner.
   const previousSpaceId = cachedSpaceId;
@@ -886,6 +893,27 @@ export function shouldApplyMobileThreadRefresh(input: {
     input.targetBotId === input.activeBotId &&
     input.targetGroupId === input.activeGroupId
   );
+}
+
+/**
+ * What a refresh may hand the live subscription. The server replays events
+ * after this snapshot's cursor, so an uncommitted fetch must not supply it.
+ */
+export function mobileThreadRefreshResult(input: {
+  fetched: MobileSnapshot;
+  onScreen: MobileSnapshot | null;
+  requestGeneration: number;
+  currentGeneration: number;
+  requestEpoch: number;
+  currentEpoch: number;
+  targetBotId: string | undefined;
+  targetGroupId: string | undefined;
+  activeBotId: string | undefined;
+  activeGroupId: string | undefined;
+}): { commit: boolean; snapshot: MobileSnapshot | null } {
+  const commit =
+    input.requestGeneration === input.currentGeneration && shouldApplyMobileThreadRefresh(input);
+  return { commit, snapshot: commit ? input.fetched : input.onScreen };
 }
 
 export type MobileMessagePage = ThreadHistory<MobileMessage>;

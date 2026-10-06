@@ -38,6 +38,7 @@ import {
   type ComposerMention,
   clampMentionHighlightIndex,
   cronFromPreset,
+  formatMessageTime,
   groupBotsForSidebar,
   groupVoiceChats,
   inferAttachmentMimeType,
@@ -316,6 +317,12 @@ const THREAD_SNAPSHOT_TIMEOUT_MS = 2_000;
 const VOICE_STATUS_REFRESH_TIMEOUT_MS = 10_000;
 const MOBILE_SIDEBAR_SWIPE_EDGE_PX = 32;
 const MOBILE_SIDEBAR_SWIPE_DISTANCE_PX = 56;
+/** Above one line (~28px); two lines clear this. */
+const COMPOSER_SINGLE_LINE_MAX_PX = 36;
+/** One-line `gap-x-3.5`, subtracted on each side of the text. */
+const COMPOSER_ONE_LINE_GAP_PX = 14;
+/** Narrower than the expand check so a draft at the edge cannot flip. */
+const COMPOSER_COLLAPSE_SLACK_PX = 16;
 
 function threadSnapshotSignal(parent: AbortSignal): AbortSignal {
   return AbortSignal.any([parent, AbortSignal.timeout(THREAD_SNAPSHOT_TIMEOUT_MS)]);
@@ -632,6 +639,27 @@ export function ShellPage() {
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [initialBotsLoaded, setInitialBotsLoaded] = useState(false);
   const [bootstrapMe, setBootstrapMe] = useState<Me | null>();
+  const [keepComputerRecovery, setKeepComputerRecovery] = useState(false);
+  const recoveryHoldTimer = useRef<number | undefined>(undefined);
+  const showComputerRecoveryHint =
+    computersAreUnavailable(bootstrapMe?.sandboxProvider) || keepComputerRecovery;
+  const releaseComputerRecovery = useCallback(() => {
+    window.clearTimeout(recoveryHoldTimer.current);
+    recoveryHoldTimer.current = undefined;
+    setKeepComputerRecovery(false);
+  }, []);
+  const holdComputerRecovery = useCallback(() => {
+    setKeepComputerRecovery(true);
+    window.clearTimeout(recoveryHoldTimer.current);
+    recoveryHoldTimer.current = window.setTimeout(() => {
+      recoveryHoldTimer.current = undefined;
+      setKeepComputerRecovery(false);
+    }, 4000);
+  }, []);
+  useEffect(() => {
+    if (panel !== "computer") releaseComputerRecovery();
+  }, [panel, releaseComputerRecovery]);
+  useEffect(() => () => window.clearTimeout(recoveryHoldTimer.current), []);
   const [routineDraft, setRoutineDraft] = useState<RoutineDraftState>(emptyRoutineDraft());
   const [routineWebhookSecret, setRoutineWebhookSecret] = useState<string | null>(null);
   const [editingRoutine, setEditingRoutine] = useState<Routine | null>(null);
@@ -2726,6 +2754,18 @@ export function ShellPage() {
         </Button>
       </div>
     ) : null;
+  const computerPreviewScreen =
+    !computerOpen &&
+    computer?.kind !== "desktop" &&
+    computer?.state === "running" &&
+    Boolean(embeddedScreenUrl) &&
+    !computerScreenError;
+  const showingRecoveryHint =
+    !computerOpen &&
+    computer?.kind !== "desktop" &&
+    !computerPreviewScreen &&
+    !computerScreenError &&
+    showComputerRecoveryHint;
 
   const userName = session.data?.user.name ?? t`You`;
   const initials = userName
@@ -2788,7 +2828,7 @@ export function ShellPage() {
         }}
       />
       {bootstrapMe !== undefined ? (
-        <HostComputerPrompt initialMe={bootstrapMe ?? undefined} />
+        <HostComputerPrompt initialMe={bootstrapMe ?? undefined} onMeUpdated={setBootstrapMe} />
       ) : null}
       {mobileSidebarOpen ? (
         <button
@@ -3725,7 +3765,9 @@ export function ShellPage() {
               <div>
                 <div
                   data-testid="computer-preview"
-                  className="group relative aspect-[16/10] overflow-hidden rounded-[14px] bg-background"
+                  className={`group relative rounded-[14px] bg-background ${
+                    showingRecoveryHint ? "" : "aspect-[16/10] overflow-hidden"
+                  }`}
                 >
                   {computerOpen ? (
                     <div className="grid h-full place-items-center text-sm text-muted-foreground/80">
@@ -3745,8 +3787,22 @@ export function ShellPage() {
                   ) : (
                     <div className="grid h-full place-items-center px-6 text-center text-sm text-muted-foreground/80">
                       {computerScreenError ??
-                        (computersAreUnavailable(bootstrapMe?.sandboxProvider) ? (
-                          <ComputersUnavailableHint />
+                        (showComputerRecoveryHint ? (
+                          <ComputersUnavailableHint
+                            sandboxProvider={bootstrapMe?.sandboxProvider}
+                            onRecovered={(sandboxProvider) => {
+                              setBootstrapMe((prev) =>
+                                prev ? { ...prev, sandboxProvider } : prev,
+                              );
+                              holdComputerRecovery();
+                            }}
+                            onRecoveryDismissed={releaseComputerRecovery}
+                            onOpenComputerSettings={
+                              bootstrapMe?.isDeploymentOwner === true
+                                ? () => openSettings("computer")
+                                : undefined
+                            }
+                          />
                         ) : (
                           computerPlaceholder(
                             computer?.state,
@@ -3756,7 +3812,7 @@ export function ShellPage() {
                         ))}
                     </div>
                   )}
-                  {!computerScreenError ? (
+                  {!computerScreenError && !showingRecoveryHint ? (
                     <button
                       type="button"
                       data-testid="computer-preview-open"
@@ -4411,6 +4467,9 @@ export function ShellPage() {
             avatarStyle={bootstrapMe?.avatarStyle ?? "robot"}
             isDeploymentOwner={bootstrapMe?.isDeploymentOwner === true}
             sandboxProvider={bootstrapMe?.sandboxProvider}
+            onSandboxProviderChange={(sandboxProvider) =>
+              setBootstrapMe((prev) => (prev ? { ...prev, sandboxProvider } : prev))
+            }
             messagingEnabled={messagingSurfaceEnabled}
             onOpenMessaging={() => {
               setSettingsOpen(false);
@@ -4964,21 +5023,6 @@ const Transcript = memo(function Transcript({
               data-message-id={message.id}
               className={peerReceipt ? "relative py-0.5" : "group/message relative hover:z-20"}
             >
-              {!peerReceipt && !message.id.startsWith("progress:") ? (
-                <time
-                  dateTime={message.createdAt}
-                  data-testid="message-hover-time"
-                  className={cn(
-                    "pointer-events-none absolute top-1 z-10 text-xs tabular-nums text-muted-foreground opacity-0 transition-opacity group-hover/message:opacity-100 group-focus-within/message:opacity-100 group-has-[[aria-expanded=true]]/message:opacity-100",
-                    message.role === "user" ? "start-0" : "end-0",
-                  )}
-                >
-                  {new Date(message.createdAt).toLocaleTimeString(i18n.locale || "en", {
-                    hour: "numeric",
-                    minute: "2-digit",
-                  })}
-                </time>
-              ) : null}
               <div
                 className={
                   peerReceipt
@@ -4993,8 +5037,8 @@ const Transcript = memo(function Transcript({
                       ? undefined
                       : `relative w-fit min-w-0 ${
                           message.role === "user"
-                            ? "max-w-[min(84%,calc(100%_-_6rem))] [@media(hover:none)]:max-w-[84%]"
-                            : "max-w-[min(88%,calc(100%_-_6rem))] [@media(hover:none)]:max-w-[88%]"
+                            ? "max-w-[min(84%,calc(100%_-_8rem))] [@media(hover:none)]:max-w-[84%]"
+                            : "max-w-[min(88%,calc(100%_-_8rem))] [@media(hover:none)]:max-w-[88%]"
                         }`
                   }
                 >
@@ -5040,6 +5084,29 @@ const Transcript = memo(function Transcript({
                   )}
                 </div>
               </div>
+              {!peerReceipt && !message.id.startsWith("progress:") ? (
+                <time
+                  dateTime={message.createdAt}
+                  data-testid="message-hover-time"
+                  className={cn(
+                    "pointer-events-none absolute top-1 z-10 text-xs tabular-nums text-muted-foreground opacity-0 transition-opacity group-hover/message:opacity-100 group-focus-within/message:opacity-100 group-has-[[aria-expanded=true]]/message:opacity-100 [@media(hover:none)]:transition-none",
+                    // Hover keeps the date in the side margin. Touch leaves that margin for the bubble and drops the revealed time under it.
+                    message.role === "user"
+                      ? "start-0 max-w-[max(8rem,16%)] text-start"
+                      : "end-0 max-w-[max(8rem,12%)] text-end",
+                    "[@media(hover:none)]:group-hover/message:static [@media(hover:none)]:group-focus-within/message:static [@media(hover:none)]:group-has-[[aria-expanded=true]]/message:static",
+                    "[@media(hover:none)]:group-hover/message:block [@media(hover:none)]:group-focus-within/message:block [@media(hover:none)]:group-has-[[aria-expanded=true]]/message:block",
+                    "[@media(hover:none)]:group-hover/message:mt-1 [@media(hover:none)]:group-focus-within/message:mt-1 [@media(hover:none)]:group-has-[[aria-expanded=true]]/message:mt-1",
+                    "[@media(hover:none)]:group-hover/message:w-full [@media(hover:none)]:group-focus-within/message:w-full [@media(hover:none)]:group-has-[[aria-expanded=true]]/message:w-full",
+                    "[@media(hover:none)]:group-hover/message:max-w-none [@media(hover:none)]:group-focus-within/message:max-w-none [@media(hover:none)]:group-has-[[aria-expanded=true]]/message:max-w-none",
+                    message.role === "user"
+                      ? "[@media(hover:none)]:group-hover/message:text-end [@media(hover:none)]:group-focus-within/message:text-end [@media(hover:none)]:group-has-[[aria-expanded=true]]/message:text-end"
+                      : "[@media(hover:none)]:group-hover/message:text-start [@media(hover:none)]:group-focus-within/message:text-start [@media(hover:none)]:group-has-[[aria-expanded=true]]/message:text-start",
+                  )}
+                >
+                  {formatMessageTime(message.createdAt, i18n.locale || "en")}
+                </time>
+              ) : null}
               {!peerReceipt && messageReactions ? (
                 <div
                   data-testid="message-reactions"
@@ -5236,6 +5303,14 @@ const Composer = memo(function Composer({
   const [selectedSkill, setSelectedSkill] = useState<AgentSkillCatalogEntry | null>(null);
   const [selectedMentions, setSelectedMentions] = useState<ComposerMention[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [composerExpanded, setComposerExpanded] = useState(false);
+  const attachButtonRef = useRef<HTMLButtonElement>(null);
+  const composerActionsRef = useRef<HTMLDivElement>(null);
+  const composerBarRef = useRef<HTMLDivElement>(null);
+  const composerFieldRef = useRef<HTMLDivElement>(null);
+  const composerLayoutRef = useRef<ComposerLayout | null>(null);
+  const previousExpandedRef = useRef(false);
+  const composerAnimationsRef = useRef<Animation[]>([]);
   const [replyAnnouncement, setReplyAnnouncement] = useState("");
   // What the live region currently holds — a send disarming the reply clears
   // "reply" text, while an explicit cancel must keep "Reply cancelled".
@@ -5293,8 +5368,35 @@ const Composer = memo(function Composer({
     function syncHeight() {
       const textarea = textareaRef.current;
       if (!textarea) return;
-      textarea.style.height = "0px";
-      textarea.style.height = `${textarea.scrollHeight}px`;
+      const bar = composerBarRef.current;
+      // A chip can switch the grid in this commit; keep the previous box as the animation start.
+      if ((bar?.dataset.expanded === "true") === previousExpandedRef.current) {
+        const layout = readComposerLayout(bar, composerFieldRef.current);
+        if (layout) composerLayoutRef.current = layout;
+      }
+      const contentHeight = measureTextareaHeight(textarea);
+      textarea.style.height = `${contentHeight}px`;
+      if (draft.length === 0) {
+        setComposerExpanded(false);
+        return;
+      }
+      if (contentHeight > COMPOSER_SINGLE_LINE_MAX_PX) {
+        setComposerExpanded(true);
+        return;
+      }
+      const attach = attachButtonRef.current;
+      const actions = composerActionsRef.current;
+      if (!attach || !actions) return;
+      const besideControls =
+        actions.getBoundingClientRect().left -
+        attach.getBoundingClientRect().right -
+        2 * COMPOSER_ONE_LINE_GAP_PX;
+      const heightBeside = measureTextareaHeight(
+        textarea,
+        besideControls - COMPOSER_COLLAPSE_SLACK_PX,
+      );
+      textarea.style.height = `${contentHeight}px`;
+      if (heightBeside <= COMPOSER_SINGLE_LINE_MAX_PX) setComposerExpanded(false);
     }
 
     syncHeight();
@@ -5484,6 +5586,60 @@ const Composer = memo(function Composer({
 
   const showComposerPlaceholder =
     draft.length === 0 && selectedSkill === null && selectedMentions.length === 0;
+  const expanded = composerExpanded || selectedSkill !== null || selectedMentions.length > 0;
+
+  useLayoutEffect(() => {
+    if (previousExpandedRef.current === expanded) return;
+    previousExpandedRef.current = expanded;
+    const bar = composerBarRef.current;
+    const field = composerFieldRef.current;
+    const textarea = textareaRef.current;
+    const start = composerLayoutRef.current;
+    if (!bar || !field || !textarea) return;
+    textarea.style.height = `${measureTextareaHeight(textarea)}px`;
+    const resting = readComposerLayout(bar, field);
+    // A send or a cleared draft snaps back; nothing is left to follow.
+    if (
+      !start ||
+      textarea.value === "" ||
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    ) {
+      if (resting) composerLayoutRef.current = resting;
+      return;
+    }
+    if (!resting) return;
+    composerLayoutRef.current = resting;
+    // Grow from the fixed bottom edge so the controls stay put.
+    const timing = { duration: 120, easing: "cubic-bezier(0.2, 0, 0, 1)" };
+    composerAnimationsRef.current = [
+      bar.animate(
+        [
+          { height: `${start.barHeight}px`, overflow: "hidden" },
+          { height: `${resting.barHeight}px`, overflow: "hidden" },
+        ],
+        timing,
+      ),
+      field.animate(
+        [
+          {
+            transform: `translate(${start.fieldX - resting.fieldX}px, ${start.fieldY - resting.fieldY}px)`,
+          },
+          { transform: "none" },
+        ],
+        timing,
+      ),
+    ];
+    return () => {
+      const animations = composerAnimationsRef.current;
+      // A chip removed mid-transition must shrink from the box on screen, not the finished target.
+      if (animations.some((animation) => animation.playState === "running")) {
+        const onScreen = readComposerLayout(composerBarRef.current, composerFieldRef.current);
+        if (onScreen) composerLayoutRef.current = onScreen;
+      }
+      for (const animation of animations) animation.cancel();
+      composerAnimationsRef.current = [];
+    };
+  }, [expanded]);
   const replyName = replyTarget ? (replyTargetName ?? previewMessageText(replyTarget)) : "";
   const replyNameRef = useRef(replyName);
   replyNameRef.current = replyName;
@@ -5648,7 +5804,8 @@ const Composer = memo(function Composer({
                 aria-label={t`@${mention.name}`}
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={() => insertMention(mention)}
-                onMouseEnter={() => setMentionHighlightIndex(index)}
+                // Opening the list under a stationary pointer must not steal the keyboard highlight.
+                onMouseMove={() => setMentionHighlightIndex(index)}
                 className={`flex w-full items-start gap-3 px-4 py-2.5 text-start hover:bg-accent ${
                   highlighted ? "bg-accent" : ""
                 }`}
@@ -5711,8 +5868,12 @@ const Composer = memo(function Composer({
         </div>
       ) : null}
       <div
+        ref={composerBarRef}
         data-testid="composer-bar"
-        className="flex items-center gap-3.5 rounded-full border border-border bg-background py-[9px] pe-2.5 ps-3 transition-colors focus-within:border-ring"
+        data-expanded={expanded}
+        className={`grid grid-cols-[auto_minmax(0,1fr)_auto] content-end items-center rounded-[26px] border border-border bg-background pe-2.5 ps-3 transition-colors focus-within:border-ring ${
+          expanded ? "gap-x-2 gap-y-2 pb-[9px] pt-3" : "gap-x-3.5 py-[9px]"
+        }`}
       >
         <input
           ref={fileInputRef}
@@ -5723,16 +5884,24 @@ const Composer = memo(function Composer({
           onChange={(event) => void onAttachmentPick(event.target.files)}
         />
         <Button
+          ref={attachButtonRef}
           variant="ghost"
           size="icon"
           aria-label={t`Attach file`}
           disabled={disabled}
           onClick={() => fileInputRef.current?.click()}
-          className="size-8 shrink-0 rounded-full border border-border bg-muted text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          className={`col-start-1 size-8 shrink-0 rounded-full border border-border bg-muted text-muted-foreground transition-colors hover:bg-accent hover:text-foreground ${
+            expanded ? "row-start-2" : ""
+          }`}
         >
           <Plus size={16} strokeWidth={2} />
         </Button>
-        <div className="flex min-w-0 flex-1 flex-wrap items-end gap-1.5">
+        <div
+          ref={composerFieldRef}
+          className={`flex min-w-0 flex-wrap items-end gap-1.5 ${
+            expanded ? "col-span-3 row-start-1 px-1.5" : "col-start-2"
+          }`}
+        >
           {selectedSkill ? (
             <span
               data-testid="skill-chip"
@@ -5843,59 +6012,98 @@ const Composer = memo(function Composer({
             autoComplete="off"
             dir="auto"
             rows={1}
-            className="max-h-32 min-h-[24px] min-w-[8rem] flex-1 resize-none overflow-y-auto bg-transparent py-0.5 text-[15.5px] leading-6 text-foreground outline-none placeholder:text-muted-foreground disabled:opacity-40"
+            className="rk-scroll max-h-25 min-h-[24px] min-w-[8rem] flex-1 resize-none overflow-y-auto bg-transparent py-0.5 text-[15.5px] leading-6 text-foreground outline-none placeholder:text-muted-foreground disabled:opacity-40"
           />
         </div>
-        {onVoice && draft.trim().length === 0 ? (
-          <Button
-            variant="outline"
-            size="icon"
-            aria-label={t`Voice`}
-            title={t`Voice`}
-            disabled={disabled}
-            onClick={onVoice}
-            className="size-8 shrink-0 rounded-full text-foreground/75"
-          >
-            <Mic size={16} strokeWidth={1.8} />
-          </Button>
-        ) : null}
-        {running ? (
-          <div className="flex items-center gap-1.5 shrink-0">
+        <div
+          ref={composerActionsRef}
+          className={`col-start-3 flex shrink-0 items-center gap-2 justify-self-end ${
+            expanded ? "row-start-2" : ""
+          }`}
+        >
+          {onVoice && draft.trim().length === 0 ? (
+            <Button
+              variant="outline"
+              size="icon"
+              aria-label={t`Voice`}
+              title={t`Voice`}
+              disabled={disabled}
+              onClick={onVoice}
+              className="size-8 shrink-0 rounded-full text-foreground/75"
+            >
+              <Mic size={16} strokeWidth={1.8} />
+            </Button>
+          ) : null}
+          {running ? (
+            <>
+              <Button
+                size="icon"
+                aria-label={t`Send`}
+                disabled={sending || !canSend || disabled}
+                onClick={send}
+                className="size-8 rounded-full bg-white text-black hover:bg-white/90 shadow-sm transition-transform active:scale-95"
+              >
+                <ArrowUp size={16} strokeWidth={2.2} />
+              </Button>
+              <Button
+                variant="outline"
+                size="icon"
+                aria-label={t`Stop`}
+                disabled={sending}
+                onClick={() => void onStop()}
+                className="size-8 rounded-full border border-border bg-muted text-foreground/80 shadow-sm transition-colors hover:bg-accent hover:text-foreground"
+              >
+                <Square size={11} strokeWidth={0} fill="currentColor" />
+              </Button>
+            </>
+          ) : (
             <Button
               size="icon"
               aria-label={t`Send`}
               disabled={sending || !canSend || disabled}
               onClick={send}
-              className="size-8 rounded-full bg-white text-black hover:bg-white/90 shadow-sm transition-transform active:scale-95"
+              className="size-8 shrink-0 rounded-full bg-white text-black hover:bg-white/90 shadow-sm transition-transform active:scale-95 disabled:bg-white/10 disabled:text-muted-foreground/30 disabled:shadow-none"
             >
               <ArrowUp size={16} strokeWidth={2.2} />
             </Button>
-            <Button
-              variant="outline"
-              size="icon"
-              aria-label={t`Stop`}
-              disabled={sending}
-              onClick={() => void onStop()}
-              className="size-8 rounded-full border border-border bg-muted text-foreground/80 shadow-sm transition-colors hover:bg-accent hover:text-foreground"
-            >
-              <Square size={11} strokeWidth={0} fill="currentColor" />
-            </Button>
-          </div>
-        ) : (
-          <Button
-            size="icon"
-            aria-label={t`Send`}
-            disabled={sending || !canSend || disabled}
-            onClick={send}
-            className="size-8 shrink-0 rounded-full bg-white text-black hover:bg-white/90 shadow-sm transition-transform active:scale-95 disabled:bg-white/10 disabled:text-muted-foreground/30 disabled:shadow-none"
-          >
-            <ArrowUp size={16} strokeWidth={2.2} />
-          </Button>
-        )}
+          )}
+        </div>
       </div>
     </fieldset>
   );
 });
+
+type ComposerLayout = { barHeight: number; fieldX: number; fieldY: number };
+
+/** Screen coordinates; the bar grows upward from its bottom edge. */
+function readComposerLayout(
+  bar: HTMLElement | null,
+  field: HTMLElement | null,
+): ComposerLayout | null {
+  if (!bar || !field) return null;
+  const fieldBox = field.getBoundingClientRect();
+  return {
+    barHeight: bar.getBoundingClientRect().height,
+    fieldX: fieldBox.left,
+    fieldY: fieldBox.top,
+  };
+}
+
+/** Hides the scrollbar while measuring and leaves the height at 0. */
+function measureTextareaHeight(textarea: HTMLTextAreaElement, width?: number) {
+  const { style } = textarea;
+  style.overflowY = "hidden";
+  if (width !== undefined) {
+    style.flex = "none";
+    style.width = `${width}px`;
+  }
+  style.height = "0px";
+  const height = textarea.scrollHeight;
+  style.overflowY = "";
+  style.flex = "";
+  style.width = "";
+  return height;
+}
 
 function slashActionLabel(id: SlashActionId) {
   switch (id) {

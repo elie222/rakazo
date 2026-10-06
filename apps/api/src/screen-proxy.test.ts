@@ -1,4 +1,7 @@
-import { SCREEN_TARGET_ENDPOINT } from "@rakazo/core/node/screen-capability";
+import {
+  resetRemoteScreenCapabilityReuse,
+  SCREEN_TARGET_ENDPOINT,
+} from "@rakazo/core/node/screen-capability";
 import type { PrismaClient } from "@rakazo/db";
 import { Hono } from "hono";
 import { describe, expect, it, vi } from "vitest";
@@ -12,7 +15,10 @@ const scope = {
   computerGeneration: 0,
   controlLeaseId: "lease",
 };
-function fixture(interactive = false) {
+function fixture(
+  interactive = false,
+  upstream = `http://127.0.0.1:49152/embed.html?view_only=${!interactive}`,
+) {
   const computer = {
     screenGeneration: 0,
     providerRef: "fake-provider",
@@ -36,12 +42,7 @@ function fixture(interactive = false) {
   );
   const app = new Hono();
   mountScreenTarget(app, { bot: { findFirst } } as unknown as PrismaClient, secret);
-  const url = addScreenProxyCapability(
-    `http://127.0.0.1:49152/embed.html?view_only=${!interactive}`,
-    secret,
-    "https://app.example",
-    scope,
-  );
+  const url = addScreenProxyCapability(upstream, secret, "https://app.example", scope);
   const path = new URL(url).pathname;
   const request = (value = path, credential = secret) =>
     app.request(SCREEN_TARGET_ENDPOINT, {
@@ -106,6 +107,25 @@ describe("screen capability lifecycle authorization", () => {
       (await fixture().request("/novnc/MTI3LjAuMC4x/49152/view/9999999999999.fake/embed.html"))
         .status,
     ).toBe(403);
+  });
+  it("reuses one remote capability across polls and still revokes it", async () => {
+    resetRemoteScreenCapabilityReuse();
+    const upstream =
+      "https://6100-sandbox.example/vnc.html?autoconnect=true&resize=scale&path=websockify%3Ftoken%3Dview-1&view_only=true";
+    const { path, request, computer } = fixture(false, upstream);
+    const again = new URL(addScreenProxyCapability(upstream, secret, "https://app.example", scope))
+      .pathname;
+    expect(again).toBe(path);
+    expect((await request()).status).toBe(200);
+    expect((await request(again.replace("/vnc.html", "/websockify"))).status).toBe(200);
+    computer.screenGeneration++;
+    expect((await request()).status).toBe(403);
+  });
+  it("keeps minting a new capability for loopback screens", () => {
+    const upstream = "http://127.0.0.1:49152/embed.html?view_only=true";
+    const first = addScreenProxyCapability(upstream, secret, "https://app.example", scope);
+    const second = addScreenProxyCapability(upstream, secret, "https://app.example", scope);
+    expect(new URL(first).pathname).not.toBe(new URL(second).pathname);
   });
   it("passes desktop and other non-http screen URLs through unsealed", () => {
     expect(

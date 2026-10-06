@@ -101,4 +101,13 @@ describe("task catalog", () => {
     ]);
     expect(result.guidance).toBe(TASK_CATALOG_GUIDANCE);
   });
+
+  it("treats a retry as the same tool call with the same arguments", () => {
+    expect(TASK_CATALOG_GUIDANCE).toContain(
+      "Correct the specific field once as a separate attempt; if that attempt fails, stop and explain the blocker",
+    );
+    expect(TASK_CATALOG_GUIDANCE).not.toContain("after a second failure of the same call");
+    expect(TASK_CATALOG_GUIDANCE).toContain("A different command is not a retry.");
+    expect(TASK_CATALOG_GUIDANCE).not.toContain("after a second failure, stop");
+  });
 });

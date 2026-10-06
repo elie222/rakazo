@@ -2,8 +2,10 @@ import { createRequire } from "node:module";
 import { describe, expect, it } from "vitest";
 import {
   closeUnterminatedFence,
+  inlineMarkdownImageSrc,
   linkifyExplicitUrls,
   plainTextLinkParts,
+  sanitizeMarkdownImageUrl,
   sanitizeMarkdownUrl,
 } from "./markdown";
 
@@ -118,6 +120,45 @@ describe("sanitizeMarkdownUrl", () => {
     expect(sanitizeMarkdownUrl("javascript:alert(1)", true)).toBeUndefined();
     expect(sanitizeMarkdownUrl("data:text/html,<script>alert(1)</script>", true)).toBeUndefined();
     expect(sanitizeMarkdownUrl("/docs")).toBeUndefined();
+  });
+});
+
+describe("sanitizeMarkdownImageUrl", () => {
+  it("allows absolute http(s) image sources", () => {
+    expect(sanitizeMarkdownImageUrl(" https://example.test/a.png ")).toBe(
+      "https://example.test/a.png",
+    );
+    expect(sanitizeMarkdownImageUrl("HTTP://example.test/a.png")).toBe("HTTP://example.test/a.png");
+  });
+
+  it("rejects schemes a browser link would open outside http(s)", () => {
+    expect(sanitizeMarkdownImageUrl("mailto:user@example.test")).toBeUndefined();
+    expect(sanitizeMarkdownImageUrl("tel:+15551212")).toBeUndefined();
+    expect(sanitizeMarkdownImageUrl("javascript:alert(1)")).toBeUndefined();
+    expect(sanitizeMarkdownImageUrl("data:text/html,hi")).toBeUndefined();
+    expect(sanitizeMarkdownImageUrl("/api/v1/p.gif")).toBeUndefined();
+  });
+});
+
+describe("inlineMarkdownImageSrc", () => {
+  it("keeps embedded raster image data", () => {
+    expect(inlineMarkdownImageSrc(" data:image/png;base64,iVBORw0KGgo= ")).toBe(
+      "data:image/png;base64,iVBORw0KGgo=",
+    );
+    expect(inlineMarkdownImageSrc("data:image/jpeg;base64,/9j/4AAQ")).toBe(
+      "data:image/jpeg;base64,/9j/4AAQ",
+    );
+  });
+
+  it("rejects anything that would fetch, run, or exceed the size cap", () => {
+    expect(inlineMarkdownImageSrc("https://attacker.example.test/p.gif?d=secret")).toBeUndefined();
+    expect(inlineMarkdownImageSrc("/api/v1/p.gif")).toBeUndefined();
+    expect(inlineMarkdownImageSrc("//attacker.example.test/p.gif")).toBeUndefined();
+    expect(inlineMarkdownImageSrc("data:image/svg+xml;base64,PHN2Zz4=")).toBeUndefined();
+    expect(inlineMarkdownImageSrc("data:text/html;base64,PHNjcmlwdD4=")).toBeUndefined();
+    expect(
+      inlineMarkdownImageSrc(`data:image/png;base64,${"A".repeat(1024 * 1024)}`),
+    ).toBeUndefined();
   });
 });
 

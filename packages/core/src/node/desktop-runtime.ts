@@ -542,8 +542,13 @@ function renderEnsureScreenCommand(
     "fi",
     `for i in $(seq 1 50); do [ -S ${socket} ] && break; sleep 0.1; done`,
     `[ -S ${socket} ] || exit 1`,
-    `printf '%s: unix_socket:%s\\n' "$desktop_view_token" ${socket} >/tmp/rakazo/view-target-next-${layout.displayNumber}`,
-    `mv /tmp/rakazo/view-target-next-${layout.displayNumber} ${targetFile}`,
+    // Leave an unchanged mapping in place. Replacing it on every ensure races
+    // TokenFile, which reloads the directory on each handshake.
+    `desired=$(printf '%s: unix_socket:%s\\n' "$desktop_view_token" ${socket})`,
+    `if [ ! -f ${targetFile} ] || [ "$(cat ${targetFile})" != "$desired" ]; then`,
+    `  printf '%s\\n' "$desired" >/tmp/rakazo/view-target-next-${layout.displayNumber}`,
+    `  mv /tmp/rakazo/view-target-next-${layout.displayNumber} ${targetFile}`,
+    "fi",
     gatewayCommand(layout.viewPort),
   ];
   return [

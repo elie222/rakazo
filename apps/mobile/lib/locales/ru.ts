@@ -218,6 +218,12 @@ export const RU_MESSAGES: Record<string, string> = {
   "Could not open computer": "Не удалось открыть компьютер",
   "Could not open file": "Не удалось открыть файл",
   "Could not open image": "Не удалось открыть изображение",
+  "Close image": "Закрыть изображение",
+  "Could not load image": "Не удалось загрузить изображение",
+  "Could not share image": "Не удалось поделиться изображением",
+  "Loading image…": "Загрузка изображения…",
+  "Open image {name}": "Открыть изображение {name}",
+  "Tap to open": "Нажмите, чтобы открыть",
   "Could not open message": "Не удалось открыть сообщение",
   "Could not play a sample": "Не удалось воспроизвести сэмпл",
   "Could not play that clip.": "Не удалось воспроизвести этот клип.",
@@ -660,4 +666,27 @@ export const RU_MESSAGES: Record<string, string> = {
   "Voice chat": "Голосовой чат",
   "Show transcript": "Показать расшифровку",
   "Hide transcript": "Скрыть расшифровку",
+
+  Artifact: "Артефакт",
+  Artifacts: "Артефакты",
+  "All bots": "Все боты",
+  "Search artifacts…": "Поиск артефактов…",
+  "No artifacts yet": "Пока нет артефактов",
+  "No matching artifacts": "Нет подходящих артефактов",
+  "Long press to delete": "Нажмите и удерживайте, чтобы удалить",
+  "Could not load artifacts.": "Не удалось загрузить артефакты.",
+  "Could not load this artifact.": "Не удалось загрузить этот артефакт.",
+  "Could not delete this artifact": "Не удалось удалить этот артефакт",
+  "Could not share this artifact": "Не удалось поделиться этим артефактом",
+  'Delete "{name}"?': "Удалить «{name}»?",
+  "This can't be undone.": "Это действие нельзя отменить.",
+  "This deletes all {count} versions of this artifact. This can't be undone.":
+    "Будут удалены все версии этого артефакта ({count}). Это действие нельзя отменить.",
+  Versions: "Версии",
+  "No preview for this file type.": "Для этого типа файла нет предпросмотра.",
+
+  "Your phone's built-in voice — free, no account needed":
+    "Встроенный голос телефона — бесплатно, без аккаунта",
+  "Speaks with your phone's own text-to-speech instead of a connected provider.":
+    "Озвучивает встроенным синтезом речи телефона вместо подключённого провайдера.",
 };

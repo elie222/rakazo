@@ -78,6 +78,14 @@ export function parseBotAvatar(
   return { color: rawColor, isImage: false };
 }
 
+const AVATAR_HEX = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
+
+export function defaultBotAvatarValue(rawColor: string): string {
+  const parsed = parseBotAvatar(rawColor);
+  if (rawColor && !parsed.isImage && AVATAR_HEX.test(parsed.color)) return parsed.color;
+  return DEFAULT_GROK_BOT_COLOR;
+}
+
 export interface BotAvatarProps {
   color: string;
   size?: number;
@@ -170,6 +178,19 @@ export const BotAvatar = memo(function BotAvatar({
     );
   }
 
+  if (parsed.shapeIndex === undefined) {
+    return (
+      <RobotAvatar
+        colorDef={colorDef}
+        size={size}
+        isWorking={isWorking}
+        className={className}
+        identity={effectiveId}
+        gradientId={id}
+      />
+    );
+  }
+
   return (
     <div
       className={cn(
@@ -246,6 +267,146 @@ export const BotAvatar = memo(function BotAvatar({
     </div>
   );
 });
+
+const VISOR_BORDER_PX = 1;
+
+function robotFaceLayout(size: number) {
+  const visorW = Math.round(size * 0.68);
+  const visorH = Math.round(size * 0.44);
+  const visorInnerW = Math.max(0, visorW - VISOR_BORDER_PX * 2);
+  const visorInnerH = Math.max(0, visorH - VISOR_BORDER_PX * 2);
+  const preferredEyeW = Math.max(4, Math.round(size * 0.14));
+  const preferredEyeH = Math.max(7, Math.round(size * 0.22));
+  const preferredEyeGap = Math.max(3, Math.round(size * 0.1));
+  const preferredSpan = preferredEyeW * 2 + preferredEyeGap;
+  const scale = Math.min(1, visorInnerW / preferredSpan, visorInnerH / preferredEyeH);
+  const eyeW = Math.floor(preferredEyeW * scale);
+  const eyeH = Math.floor(preferredEyeH * scale);
+  const eyeGap = Math.floor(preferredEyeGap * scale);
+  const eyeRadius = Math.max(2, Math.round(eyeW * 0.5));
+  return { visorW, visorH, eyeW, eyeH, eyeGap, eyeRadius };
+}
+
+function RobotAvatar({
+  colorDef,
+  size,
+  isWorking,
+  className,
+  identity,
+  gradientId,
+}: {
+  colorDef: GrokColorDef;
+  size: number;
+  isWorking: boolean;
+  className?: string;
+  identity: string;
+  gradientId: string;
+}) {
+  const seed = avatarIdentitySeed(identity || colorDef.hex);
+  const eyeVariant = seed % 4;
+  const idleDuration = (4.2 + ((seed * 7) % 28) / 10).toFixed(2);
+  const idleDelay = (-(((seed * 13) % 45) / 10)).toFixed(2);
+  const { visorW, visorH, eyeW, eyeH, eyeGap, eyeRadius } = robotFaceLayout(size);
+  const eyeGlow = `0 0 4px #fff, 0 0 8px #fff, 0 0 14px ${colorDef.light}`;
+  const idleEyeAnimation = {
+    "--rakazo-eye-animation-name": `rakazo-eyes-idle-${eyeVariant}`,
+    "--rakazo-eye-animation-duration": `${idleDuration}s`,
+    "--rakazo-eye-animation-easing": "cubic-bezier(0.4, 0, 0.2, 1)",
+    "--rakazo-eye-animation-delay": `${idleDelay}s`,
+  } as CSSProperties;
+  const workingEyeAnimation = {
+    "--rakazo-eye-animation-name": "rakazo-eyes-working",
+    "--rakazo-eye-animation-duration": "1.4s",
+    "--rakazo-eye-animation-easing": "ease-in-out",
+    "--rakazo-eye-animation-delay": "0s",
+  } as CSSProperties;
+
+  return (
+    <div
+      className={cn(
+        "rakazo-bot-avatar relative inline-flex shrink-0 items-center justify-center rounded-full select-none",
+        className,
+      )}
+      data-working={isWorking}
+      style={{
+        width: size,
+        height: size,
+        background: `radial-gradient(circle at 35% 26%, ${colorDef.light}, ${colorDef.hex} 55%, ${colorDef.dark} 100%)`,
+        boxShadow: isWorking
+          ? `0 0 0 2px rgba(255,255,255,0.25), 0 0 ${Math.round(size * 0.45)}px ${colorDef.hex}`
+          : `0 2px ${Math.max(4, Math.round(size * 0.15))}px rgba(0,0,0,0.4)`,
+      }}
+    >
+      <svg
+        className="rakazo-bot-avatar-ring pointer-events-none absolute"
+        style={{
+          inset: -4,
+          width: size + 8,
+          height: size + 8,
+          filter: `drop-shadow(0 0 6px ${colorDef.light}) drop-shadow(0 0 10px #ffffff)`,
+        }}
+        viewBox="0 0 48 48"
+        fill="none"
+        aria-hidden="true"
+      >
+        <circle
+          cx="24"
+          cy="24"
+          r="22"
+          stroke={`url(#${gradientId}-ring)`}
+          strokeWidth="3.2"
+          strokeLinecap="round"
+          strokeDasharray="45 80"
+        />
+        <circle cx="43" cy="24" r="2.8" fill="#ffffff" />
+        <defs>
+          <linearGradient id={`${gradientId}-ring`} x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="#ffffff" stopOpacity="1" />
+            <stop offset="60%" stopColor={colorDef.light} stopOpacity="0.9" />
+            <stop offset="100%" stopColor={colorDef.light} stopOpacity="0" />
+          </linearGradient>
+        </defs>
+      </svg>
+      <div
+        className="rakazo-bot-avatar-visor relative flex items-center justify-center overflow-hidden"
+        style={{
+          width: visorW,
+          height: visorH,
+          boxSizing: "border-box",
+          borderRadius: Math.round(visorH * 0.52),
+          background: "linear-gradient(180deg, #101014 0%, #030305 100%)",
+          boxShadow: "inset 0 1.5px 3px rgba(0,0,0,0.95), 0 1px 1px rgba(255,255,255,0.18)",
+          border: "1px solid rgba(255,255,255,0.14)",
+        }}
+      >
+        {(["idle", "working"] as const).map((mode) => (
+          <div
+            key={mode}
+            className={`rakazo-bot-avatar-eyes rakazo-bot-avatar-eyes-${mode} absolute inset-0 z-10 flex items-center justify-center`}
+            style={{
+              gap: eyeGap,
+              ...(mode === "idle" ? idleEyeAnimation : workingEyeAnimation),
+            }}
+          >
+            {[0, 1].map((eye) => (
+              <span
+                key={eye}
+                className="block"
+                style={{
+                  width: eyeW,
+                  height: eyeH,
+                  borderRadius: eyeRadius,
+                  backgroundColor: "#fff",
+                  boxShadow: eyeGlow,
+                }}
+              />
+            ))}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 function OrganicAvatar({
   color,

@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   deletePushToken,
   ExpoPushProvider,
+  expoPushData,
   expoPushErrorMessage,
   loadPushToken,
   MAX_EXPO_PUSH_RESPONSE_BYTES,
@@ -125,7 +126,9 @@ describe("expo push", () => {
     await savePushToken(dataDir, "user-1", "ExponentPushToken[test]");
     const fetchMock = vi
       .fn()
-      .mockResolvedValue(jsonResponse({ data: { status: "ok", id: "ticket" } }));
+      .mockImplementation(() =>
+        Promise.resolve(jsonResponse({ data: { status: "ok", id: "ticket" } })),
+      );
     vi.stubGlobal("fetch", fetchMock);
     const push = new ExpoPushProvider(dataDir);
     await push.send(
@@ -140,13 +143,64 @@ describe("expo push", () => {
       title: string;
       collapseId: string;
       tag: string;
-      data: { kind: string };
+      data: { kind: string; deliveryId: string };
     };
     expect(body.to).toBe("ExponentPushToken[test]");
     expect(body.title).toBe("Need you");
     expect(body.collapseId).toBe("th-1");
     expect(body.tag).toBe("th-1");
-    expect(body.data.kind).toBe("takeover");
+    expect(body.data).toEqual({
+      kind: "takeover",
+      botId: "bot-1",
+      threadId: "th-1",
+      spaceId: "w",
+      deliveryId: expect.any(String),
+    });
+    expect(body.data.deliveryId.length).toBeGreaterThan(0);
+
+    await push.send(
+      { kind: "takeover", title: "Need you", body: "on screen", botId: "bot-1", threadId: "th-1" },
+      notifyContext,
+    );
+    const secondInit = (fetchMock.mock.calls[1] as [string, RequestInit])[1];
+    const secondBody = JSON.parse(String(secondInit.body)) as { data: { deliveryId: string } };
+    expect(secondBody.data.deliveryId).not.toBe(body.data.deliveryId);
+  });
+
+  it("puts the space and group on the payload a tap opens", () => {
+    expect(
+      expoPushData(
+        {
+          kind: "completion",
+          title: "done",
+          body: "ok",
+          botId: "bot-1",
+          threadId: "thread-1",
+          groupId: "group-1",
+        },
+        "space-1",
+        "delivery-1",
+      ),
+    ).toEqual({
+      kind: "completion",
+      botId: "bot-1",
+      threadId: "thread-1",
+      spaceId: "space-1",
+      groupId: "group-1",
+      deliveryId: "delivery-1",
+    });
+    expect(
+      expoPushData(
+        { kind: "completion", title: "done", body: "ok", botId: "bot-1", threadId: "thread-1" },
+        "",
+        "delivery-2",
+      ),
+    ).toEqual({
+      kind: "completion",
+      botId: "bot-1",
+      threadId: "thread-1",
+      deliveryId: "delivery-2",
+    });
   });
 
   it("throws when Expo rejects the request", async () => {

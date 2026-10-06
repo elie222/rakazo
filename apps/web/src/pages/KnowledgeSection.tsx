@@ -1,6 +1,7 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { AgentSkill, AgentSkillCatalogEntry, MemoryDocument } from "@rakazo/contracts";
 import {
+  Badge,
   Button,
   Skeleton,
   Tabs,
@@ -39,7 +40,7 @@ export function KnowledgeSection({
             <Trans>Memory</Trans>
           </TabsTrigger>
           <TabsTrigger value="skills">
-            <Trans>Skills</Trans>
+            <Trans>Shared skills</Trans>
           </TabsTrigger>
         </TabsList>
         <TabsContent value="memory">
@@ -231,6 +232,18 @@ function MemoryDocumentList({
   );
 }
 
+function SkillSourceBadge({ source }: { source: AgentSkillCatalogEntry["source"] }) {
+  if (source !== "builtin" && source !== "plugin") return null;
+  return (
+    <Badge
+      variant="secondary"
+      className="rounded-full px-1.5 py-0 text-[11px] font-normal text-muted-foreground"
+    >
+      {source === "builtin" ? <Trans>Built-in</Trans> : <Trans>Plugin</Trans>}
+    </Badge>
+  );
+}
+
 const NEW_SKILL_TEMPLATE = `---
 name: my-skill
 description: What this skill does and when the agent should use it.
@@ -375,15 +388,11 @@ function AgentSkills({
               onClick={() => void openSkill(entry)}
               className={`${rowClass(false)} block`}
             >
-              <span className="flex w-full items-baseline justify-between gap-3">
+              <span className="flex w-full items-center justify-between gap-3">
                 <span className="min-w-0 truncate text-[14px] text-foreground" dir="auto">
                   {entry.name}
                 </span>
-                {entry.readOnly ? (
-                  <span className="shrink-0 text-[12px] text-muted-foreground">
-                    <Trans>read-only</Trans>
-                  </span>
-                ) : null}
+                <SkillSourceBadge source={entry.source} />
               </span>
               <span
                 className="mt-0.5 block truncate text-[12.5px] text-muted-foreground"
@@ -397,8 +406,11 @@ function AgentSkills({
       {editorOpen ? (
         <div className="px-2.5 pb-2">
           {open ? (
-            <div className="pb-1 text-[14px] text-foreground" dir="auto">
-              {open.name}
+            <div className="flex items-center gap-2 pb-1">
+              <div className="min-w-0 truncate text-[14px] text-foreground" dir="auto">
+                {open.name}
+              </div>
+              <SkillSourceBadge source={open.source} />
             </div>
           ) : null}
           <Textarea
