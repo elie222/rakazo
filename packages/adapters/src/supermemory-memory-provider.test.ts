@@ -175,13 +175,12 @@ describe("Supermemory local base URL", () => {
 
   it("accepts a Compose service name that resolves to a private address", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response("[]", { status: 200 }));
-    vi.stubGlobal("fetch", fetchMock);
     const resolveHostname = vi.fn(privateResolver);
 
     const prepared = await prepareSupermemoryConnection(
       { mode: "local", baseUrl: "http://supermemory:6767" },
       credentials,
-      { allowPrivateEndpoint: true, resolveHostname },
+      { allowPrivateEndpoint: true, resolveHostname, fetch: fetchMock },
     );
 
     expect(prepared.settings).toEqual({ mode: "local", baseUrl: "http://supermemory:6767" });
@@ -193,7 +192,6 @@ describe("Supermemory local base URL", () => {
 
   it("accepts Docker Desktop and private-suffix hosts that resolve privately", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response("[]", { status: 200 }));
-    vi.stubGlobal("fetch", fetchMock);
 
     await prepareSupermemoryConnection(
       { mode: "local", baseUrl: "http://host.docker.internal:6767" },
@@ -201,6 +199,7 @@ describe("Supermemory local base URL", () => {
       {
         allowPrivateEndpoint: true,
         resolveHostname: async () => [{ address: "192.168.65.254", family: 4 as const }],
+        fetch: fetchMock,
       },
     );
 
@@ -289,11 +288,12 @@ describe("Supermemory local base URL", () => {
 });
 
 describe("Supermemory private host reuse", () => {
-  function privateProvider(resolveHostname: ResolveHostname) {
+  function privateProvider(resolveHostname: ResolveHostname, fetchImpl: typeof globalThis.fetch) {
     return new SupermemoryMemoryProvider({
       baseUrl: "http://supermemory:6767",
       apiKey: "sm_test_key",
       resolveHostname,
+      fetch: fetchImpl,
     });
   }
 
@@ -305,9 +305,8 @@ describe("Supermemory private host reuse", () => {
           headers: { "content-type": "application/json" },
         }),
     );
-    vi.stubGlobal("fetch", fetchMock);
     const resolveHostname = vi.fn(privateResolver);
-    const memory = privateProvider(resolveHostname);
+    const memory = privateProvider(resolveHostname, fetchMock);
 
     await expect(
       memory.recall({ query: "project", scope: "shared", botId: "bot-1", limit: 5 }, context),
@@ -340,12 +339,11 @@ describe("Supermemory private host reuse", () => {
         headers: { "content-type": "application/json" },
       }),
     );
-    vi.stubGlobal("fetch", fetchMock);
     const resolveHostname = vi
       .fn()
       .mockRejectedValueOnce(new Error("eai_again"))
       .mockResolvedValue([{ address: "172.18.0.4", family: 4 as const }]);
-    const memory = privateProvider(resolveHostname);
+    const memory = privateProvider(resolveHostname, fetchMock);
 
     await expect(
       memory.recall({ query: "project", scope: "isolated", botId: "bot-1", limit: 1 }, context),
