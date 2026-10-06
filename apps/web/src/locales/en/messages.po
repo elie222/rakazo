@@ -200,6 +200,11 @@ msgstr "Account"
 msgid "Account default"
 msgstr "Account default"
 
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/Onboarding.tsx
+msgid "Account ID"
+msgstr "Account ID"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Account label"
 msgstr "Account label"
@@ -2066,6 +2071,11 @@ msgstr "Free"
 #: src/pages/WindowChrome.tsx
 msgid "Fullscreen"
 msgstr "Fullscreen"
+
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/Onboarding.tsx
+msgid "Gateway ID"
+msgstr "Gateway ID"
 
 #: src/pages/SettingsOverlay.tsx
 msgid "General"

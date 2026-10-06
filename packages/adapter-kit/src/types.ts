@@ -247,7 +247,7 @@ export interface ConnectorCall {
 export type ConnectorEvent =
   | { type: "log"; message: string }
   | { type: "result"; data: unknown }
-  | { type: "error"; message: string };
+  | { type: "error"; message: string; logIds?: string[] };
 
 export interface ConnectorCapabilities {
   discover: boolean;
@@ -396,6 +396,10 @@ export interface AgentRunModel {
   provider: string;
   id: string;
   apiKey?: string;
+  /** Cloudflare account id stored with a gateway BYOK credential. */
+  accountId?: string;
+  /** Cloudflare AI Gateway id stored with a gateway BYOK credential. */
+  gatewayId?: string;
   baseUrl?: string;
   /** Whether this custom connection accepts standard reasoning_effort. */
   reasoning?: boolean;

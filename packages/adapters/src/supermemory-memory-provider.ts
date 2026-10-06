@@ -144,7 +144,11 @@ function parseSupermemoryConnection(
 export async function prepareSupermemoryConnection(
   settings: Record<string, string>,
   credentials: Record<string, string>,
-  options?: { allowPrivateEndpoint?: boolean; resolveHostname?: ResolveHostname },
+  options?: {
+    allowPrivateEndpoint?: boolean;
+    resolveHostname?: ResolveHostname;
+    fetch?: typeof globalThis.fetch;
+  },
 ): Promise<{ settings: Record<string, string>; credentials: Record<string, string> }> {
   const { mode, baseUrl, apiKey } = parseSupermemoryConnection(settings, credentials);
   const pinnedAddresses =
@@ -153,6 +157,7 @@ export async function prepareSupermemoryConnection(
     baseUrl,
     apiKey,
     resolveHostname: options?.resolveHostname,
+    fetch: options?.fetch,
     ...(pinnedAddresses ? { pinnedAddresses } : {}),
   });
   if (!probe.ok) throw new Error(probe.error);

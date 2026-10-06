@@ -40,6 +40,8 @@ export interface SupermemoryConnectionConfig {
    * again at request time and does not resolve the name.
    */
   pinnedAddresses?: ResolvedAddress[];
+  /** Test seam. Production uses the runtime fetch paired with the private-host dispatcher. */
+  fetch?: typeof globalThis.fetch;
 }
 
 /** Base URLs are route prefixes, never credentials or request query/fragment state. */
@@ -95,13 +97,18 @@ function pinsPrivateDns(baseUrl: string): boolean {
   return !isLocalMcpHost(host) && isIP(host) === 0;
 }
 
+function transportFor(config: SupermemoryConnectionConfig): typeof globalThis.fetch {
+  return config.fetch ?? fetch;
+}
+
 async function fetchSupermemory(
   config: SupermemoryConnectionConfig,
   url: string,
   init: RequestInit,
 ): Promise<Response> {
-  if (!pinsPrivateDns(config.baseUrl)) return fetch(url, init);
-  const safe = createPrivateNetworkFetch(fetch, resolverFor(config));
+  const transport = transportFor(config);
+  if (!pinsPrivateDns(config.baseUrl)) return transport(url, init);
+  const safe = createPrivateNetworkFetch(transport, resolverFor(config));
   try {
     const response = await safe(url, init);
     // Closing the pinned dispatcher waits until its response body settles.

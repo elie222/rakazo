@@ -1,6 +1,11 @@
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import type { ModelConnectInput, ModelCredential, ThinkingLevel } from "@rakazo/contracts";
-import { OPENAI_COMPATIBLE_PROVIDER_ID as CONTRACT_OPENAI_COMPAT } from "@rakazo/contracts";
+import {
+  CLOUDFLARE_AI_GATEWAY_CONFIG_MESSAGE,
+  OPENAI_COMPATIBLE_PROVIDER_ID as CONTRACT_OPENAI_COMPAT,
+  cloudflareGatewayRouting,
+  isCloudflareAiGatewayProvider,
+} from "@rakazo/contracts";
 import { modelIdSupportsImages, updateModelImageCapabilities } from "./model-vision.js";
 import {
   CHATGPT_OAUTH_PROVIDER,
@@ -88,12 +93,14 @@ export function buildModelConnectPlaintext(
   }
   const previous = tryParseModelSecret(previousPlaintext);
   const maxTokens = connectMaxTokens(input.maxTokens, previous?.maxTokens);
+  const routing = cloudflareRoutingForConnect(input, previous);
   if (apiKey) {
     if (apiKey.length < 8) throw new Error("API key must contain at least 8 characters");
     return serializeModelSecret({
       kind: "api_key",
       key: apiKey,
       ...(maxTokens !== undefined ? { maxTokens } : {}),
+      ...routing,
     });
   }
   if (previous?.kind === "api_key" && previous.key.trim().length >= 8) {
@@ -104,6 +111,7 @@ export function buildModelConnectPlaintext(
       kind: "api_key",
       key: previous.key,
       ...(maxTokens !== undefined ? { maxTokens } : {}),
+      ...routing,
     });
   }
   if (previous?.kind === "oauth") {
@@ -130,6 +138,32 @@ function tryParseModelSecret(plaintext?: string): StoredModelSecret | undefined 
   } catch {
     return undefined;
   }
+}
+
+/**
+ * Cloudflare AI Gateway routing is part of the saved key. Omitted fields keep
+ * the previous connection's ids; a blank or unsafe value is rejected.
+ */
+function cloudflareRoutingForConnect(
+  input: ModelConnectInput,
+  previous: ReturnType<typeof tryParseModelSecret>,
+): { accountId: string; gatewayId: string } | undefined {
+  if (!isCloudflareAiGatewayProvider(input.provider)) return undefined;
+  const accountId =
+    input.accountId !== undefined
+      ? input.accountId
+      : previous?.kind === "api_key"
+        ? previous.accountId
+        : undefined;
+  const gatewayId =
+    input.gatewayId !== undefined
+      ? input.gatewayId
+      : previous?.kind === "api_key"
+        ? previous.gatewayId
+        : undefined;
+  const routing = cloudflareGatewayRouting({ accountId, gatewayId });
+  if (!routing) throw new Error(CLOUDFLARE_AI_GATEWAY_CONFIG_MESSAGE);
+  return routing;
 }
 
 /**
@@ -181,9 +215,12 @@ export function modelCredentialDto(
   if (row.provider !== CONTRACT_OPENAI_COMPAT) {
     if (!plaintext) return credential;
     const parsed = parseModelSecret(plaintext);
-    return parsed.maxTokens !== undefined
-      ? { ...credential, maxTokens: parsed.maxTokens }
-      : credential;
+    return {
+      ...credential,
+      ...(parsed.maxTokens !== undefined ? { maxTokens: parsed.maxTokens } : {}),
+      ...(parsed.kind === "api_key" && parsed.accountId ? { accountId: parsed.accountId } : {}),
+      ...(parsed.kind === "api_key" && parsed.gatewayId ? { gatewayId: parsed.gatewayId } : {}),
+    };
   }
   const compatibleCredential = {
     ...credential,

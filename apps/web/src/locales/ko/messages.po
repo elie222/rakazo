@@ -200,6 +200,11 @@ msgstr "계정"
 msgid "Account default"
 msgstr "계정 기본값"
 
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/Onboarding.tsx
+msgid "Account ID"
+msgstr "계정 ID"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Account label"
 msgstr ""
@@ -2066,6 +2071,11 @@ msgstr "무료"
 #: src/pages/WindowChrome.tsx
 msgid "Fullscreen"
 msgstr "전체 화면"
+
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/Onboarding.tsx
+msgid "Gateway ID"
+msgstr "게이트웨이 ID"
 
 #: src/pages/SettingsOverlay.tsx
 msgid "General"

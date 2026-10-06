@@ -948,7 +948,8 @@ export function messagingProviderLabel(provider: string, transport?: string): st
   return MESSAGING_PROVIDER_LABELS[provider] ?? provider;
 }
 
-export function copyableMobileMessageText(message: MobileMessage): string {
+/** The message's text exactly as written, for a view that selects part of it. */
+export function selectableMobileMessageText(message: MobileMessage): string {
   return message.blocks
     .map((block) => {
       if (block.kind === "channel_message") {
@@ -959,8 +960,11 @@ export function copyableMobileMessageText(message: MobileMessage): string {
       return "";
     })
     .filter(Boolean)
-    .join("\n")
-    .trim();
+    .join("\n");
+}
+
+export function copyableMobileMessageText(message: MobileMessage): string {
+  return selectableMobileMessageText(message).trim();
 }
 
 export function blockText(message: MobileMessage) {

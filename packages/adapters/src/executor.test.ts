@@ -1,4 +1,5 @@
 import type { MessageBlock } from "@rakazo/contracts";
+import { CLOUDFLARE_AI_GATEWAY_CONFIG_MESSAGE } from "@rakazo/contracts";
 import { ONCE_ROUTINE_CRON } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
@@ -7,6 +8,7 @@ import {
   createRunExecutor,
   createRunWorkspaceCheckpoint,
   dockerComputerToolInstruction,
+  isTerminalModelSetupError,
   loadCurrentTurnImages,
   missingTurnImagesInstruction,
   parseUpdateBotPatch,
@@ -19,7 +21,8 @@ import {
   userTurnInstructions,
   withRecentTurnImages,
 } from "./executor.js";
-import { serializeModelSecret } from "./pi-oauth.js";
+import { UnavailableModelForAuthError } from "./model-selection.js";
+import { RetiredModelCredentialError, serializeModelSecret } from "./pi-oauth.js";
 
 describe("tool completion audit", () => {
   it("records result metadata without persisting tool contents", () => {
@@ -2490,5 +2493,14 @@ description: Prepare standup notes
       id: "deepseek/deepseek-v4-flash-0731",
       thinkingLevel: "high",
     });
+  });
+});
+
+describe("terminal model setup errors", () => {
+  it("fails an unroutable Cloudflare credential instead of retrying setup", () => {
+    expect(isTerminalModelSetupError(new Error(CLOUDFLARE_AI_GATEWAY_CONFIG_MESSAGE))).toBe(true);
+    expect(isTerminalModelSetupError(new UnavailableModelForAuthError())).toBe(true);
+    expect(isTerminalModelSetupError(new RetiredModelCredentialError("signed out"))).toBe(true);
+    expect(isTerminalModelSetupError(new Error("socket hang up"))).toBe(false);
   });
 });

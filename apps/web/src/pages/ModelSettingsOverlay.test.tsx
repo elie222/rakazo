@@ -271,6 +271,59 @@ it("leaves the key field empty until a key is saved", async () => {
   }
 });
 
+it("shows Cloudflare account and gateway fields for a new and a saved connection", async () => {
+  const entry = {
+    provider: "cloudflare-ai-gateway",
+    providerName: "Cloudflare AI Gateway",
+    id: "workers-ai/@cf/meta/llama-3.1-8b-instruct",
+    label: "Llama",
+    billing: "API key",
+    auth: "api-key" as const,
+    authHint: "API key",
+  };
+  vi.mocked(rpc.me).mockResolvedValue(account(entry.provider, entry.id));
+  models.list.mockResolvedValue([entry]);
+  models.credentials.mockResolvedValue([]);
+
+  const fresh = await renderSettings();
+  try {
+    const accountId = fresh.container.querySelector("#cloudflare-account-id");
+    const gatewayId = fresh.container.querySelector("#cloudflare-gateway-id");
+    expect(accountId).toBeInstanceOf(HTMLInputElement);
+    expect(gatewayId).toBeInstanceOf(HTMLInputElement);
+    expect((accountId as HTMLInputElement).value).toBe("");
+    expect((gatewayId as HTMLInputElement).value).toBe("");
+    expect(fresh.container.textContent).toContain("Account ID");
+    expect(fresh.container.textContent).toContain("Gateway ID");
+  } finally {
+    await fresh.unmount();
+  }
+
+  models.credentials.mockResolvedValue([
+    {
+      id: "cred-cf",
+      provider: entry.provider,
+      label: "Cloudflare AI Gateway",
+      hasKey: true,
+      isDefault: true,
+      accountId: "acct1234",
+      gatewayId: "gateway-1",
+      modelId: entry.id,
+    },
+  ]);
+  const saved = await renderSettings();
+  try {
+    expect(
+      (saved.container.querySelector("#cloudflare-account-id") as HTMLInputElement).value,
+    ).toBe("acct1234");
+    expect(
+      (saved.container.querySelector("#cloudflare-gateway-id") as HTMLInputElement).value,
+    ).toBe("gateway-1");
+  } finally {
+    await saved.unmount();
+  }
+});
+
 it("shows a stored OpenAI-compatible key and stays empty when none is saved", async () => {
   vi.mocked(rpc.me).mockResolvedValue(account("openai-compatible", "deepseek-chat"));
   models.list.mockResolvedValue([compatibleEntry]);

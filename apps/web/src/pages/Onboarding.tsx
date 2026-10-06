@@ -1,5 +1,7 @@
 import { Plural, Trans, useLingui } from "@lingui/react/macro";
 import {
+  CLOUDFLARE_AI_GATEWAY_PROVIDER_ID,
+  cloudflareGatewayRouting,
   DEFAULT_MODEL_CONTEXT_WINDOW,
   DEFAULT_MODEL_MAX_TOKENS,
   type IntegrationSetupState,
@@ -119,6 +121,8 @@ export function OnboardingPage() {
   const [provider, setProvider] = useState("openrouter");
   const [modelId, setModelId] = useState("");
   const [apiKey, setApiKey] = useState("");
+  const [accountId, setAccountId] = useState("");
+  const [gatewayId, setGatewayId] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
   const [reasoning, setReasoning] = useState(false);
   const [manualModelId, setManualModelId] = useState(false);
@@ -209,6 +213,9 @@ export function OnboardingPage() {
 
   const selected = modelsForProvider.find((entry) => entry.id === modelId) ?? modelsForProvider[0];
   const isOpenAiCompatible = provider === OPENAI_COMPATIBLE_PROVIDER_ID;
+  const isCloudflareGateway = provider === CLOUDFLARE_AI_GATEWAY_PROVIDER_ID;
+  const cloudflareRoutingReady =
+    !isCloudflareGateway || cloudflareGatewayRouting({ accountId, gatewayId }) !== undefined;
   // Effort levels for the staged catalog model — "off" stays out, matching the
   // model settings and per-bot Thinking pickers.
   const catalogThinkingLevels =
@@ -226,6 +233,7 @@ export function OnboardingPage() {
     selected &&
       modelId.trim() &&
       !oauthPending &&
+      cloudflareRoutingReady &&
       (isOpenAiCompatible ? openAiCompatibleReady : acceptsKey && apiKey.trim()),
   );
   const otherModelLabel = t`Other model…`;
@@ -274,6 +282,8 @@ export function OnboardingPage() {
     cancelOAuthAttempt();
     setProvider(nextProvider);
     setApiKey("");
+    setAccountId("");
+    setGatewayId("");
     setModelId(
       nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID
         ? ""
@@ -373,6 +383,9 @@ export function OnboardingPage() {
         await rpc.models.connect({
           provider,
           apiKey,
+          ...(isCloudflareGateway
+            ? { accountId: accountId.trim(), gatewayId: gatewayId.trim() }
+            : {}),
           modelId,
           thinkingLevel: stagedThinkingLevel(),
           label: selected?.providerName ?? provider,
@@ -781,6 +794,38 @@ export function OnboardingPage() {
                     {oauthPending ? <Trans>Starting…</Trans> : signInLabel}
                   </Button>
                 )}
+              </div>
+            ) : null}
+            {isCloudflareGateway && acceptsKey ? (
+              <div className="mt-4 grid gap-4">
+                <label
+                  htmlFor={`${fieldId}-account-id`}
+                  className="block text-sm font-medium text-foreground"
+                >
+                  <Trans>Account ID</Trans>
+                  <Input
+                    id={`${fieldId}-account-id`}
+                    value={accountId}
+                    onChange={(event) => setAccountId(event.target.value)}
+                    autoComplete="off"
+                    spellCheck={false}
+                    className="mt-2"
+                  />
+                </label>
+                <label
+                  htmlFor={`${fieldId}-gateway-id`}
+                  className="block text-sm font-medium text-foreground"
+                >
+                  <Trans>Gateway ID</Trans>
+                  <Input
+                    id={`${fieldId}-gateway-id`}
+                    value={gatewayId}
+                    onChange={(event) => setGatewayId(event.target.value)}
+                    autoComplete="off"
+                    spellCheck={false}
+                    className="mt-2"
+                  />
+                </label>
               </div>
             ) : null}
             {acceptsKey ? (

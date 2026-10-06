@@ -1,5 +1,7 @@
 import type { ModelOAuthBegin, ThinkingLevel } from "@rakazo/contracts";
 import {
+  CLOUDFLARE_AI_GATEWAY_PROVIDER_ID,
+  cloudflareGatewayRouting,
   DEFAULT_MODEL_CONTEXT_WINDOW,
   DEFAULT_MODEL_MAX_TOKENS,
   MAX_MODEL_CONTEXT_WINDOW,
@@ -95,6 +97,8 @@ export default function Models() {
   const [modelId, setModelId] = useState("");
   const [modelSearch, setModelSearch] = useState({ provider: "", query: "" });
   const [apiKey, setApiKey] = useState("");
+  const [accountId, setAccountId] = useState("");
+  const [gatewayId, setGatewayId] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
   const [reasoning, setReasoning] = useState(false);
   const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel | null>(null);
@@ -200,6 +204,8 @@ export default function Models() {
       );
     }
     setMaxTokens(connectionMaxTokensField(nextProvider, nextCredential?.maxTokens));
+    setAccountId(nextCredential?.accountId ?? "");
+    setGatewayId(nextCredential?.gatewayId ?? "");
   }, []);
 
   useFocusEffect(
@@ -285,6 +291,9 @@ export default function Models() {
     if (noModelMatches) AccessibilityInfo.announceForAccessibility(t("No matching models"));
   }, [noModelMatches, t]);
   const isOpenAiCompatible = provider === OPENAI_COMPATIBLE_PROVIDER_ID;
+  const isCloudflareGateway = provider === CLOUDFLARE_AI_GATEWAY_PROVIDER_ID;
+  const cloudflareRoutingReady =
+    !isCloudflareGateway || cloudflareGatewayRouting({ accountId, gatewayId }) !== undefined;
   const credential = credentials.find((entry) => entry.provider === provider);
   const currentEntry = catalog.find(
     (entry) => entry.provider === me?.defaultProvider && entry.id === me?.defaultModel,
@@ -368,6 +377,8 @@ export default function Models() {
       nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID ? (nextCredential?.baseUrl ?? "") : "",
     );
     setApiKey("");
+    setAccountId(nextCredential?.accountId ?? "");
+    setGatewayId(nextCredential?.gatewayId ?? "");
     resetOpenAiCompatibleProbe();
     setError(null);
     setNotice(null);
@@ -543,6 +554,9 @@ export default function Models() {
           : {
               provider: selected.provider,
               ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}),
+              ...(provider === CLOUDFLARE_AI_GATEWAY_PROVIDER_ID
+                ? { accountId: accountId.trim(), gatewayId: gatewayId.trim() }
+                : {}),
               modelId: selected.id,
               // A limits-only save leaves the stored effort alone while the model
               // stays put. Changing the model sends the clamped level, including
@@ -1145,6 +1159,32 @@ export default function Models() {
         ) : null}
         {acceptsKey || builtinLimitSave ? (
           <View style={styles.keySection}>
+            {isCloudflareGateway ? (
+              <>
+                <Text style={styles.sectionTitle}>{t("Account ID")}</Text>
+                <TextInput
+                  accessibilityLabel={t("Account ID")}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  autoComplete="off"
+                  editable={!busy}
+                  onChangeText={setAccountId}
+                  style={styles.keyInput}
+                  value={accountId}
+                />
+                <Text style={styles.sectionTitle}>{t("Gateway ID")}</Text>
+                <TextInput
+                  accessibilityLabel={t("Gateway ID")}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  autoComplete="off"
+                  editable={!busy}
+                  onChangeText={setGatewayId}
+                  style={styles.keyInput}
+                  value={gatewayId}
+                />
+              </>
+            ) : null}
             {acceptsKey ? (
               <>
                 <Text style={styles.sectionTitle}>
@@ -1174,11 +1214,16 @@ export default function Models() {
 
             <Pressable
               accessibilityRole="button"
-              disabled={busy || (!builtinLimitSave && apiKey.trim().length < 8)}
+              disabled={
+                busy || !cloudflareRoutingReady || (!builtinLimitSave && apiKey.trim().length < 8)
+              }
               onPress={() => void connectKey()}
               style={({ pressed }) => [
                 styles.primaryButton,
-                (busy || (!builtinLimitSave && apiKey.trim().length < 8)) && styles.disabled,
+                (busy ||
+                  !cloudflareRoutingReady ||
+                  (!builtinLimitSave && apiKey.trim().length < 8)) &&
+                  styles.disabled,
                 pressed && styles.pressed,
               ]}
             >

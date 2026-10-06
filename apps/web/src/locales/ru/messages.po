@@ -200,6 +200,11 @@ msgstr "Аккаунт"
 msgid "Account default"
 msgstr "Учетная запись по умолчанию"
 
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/Onboarding.tsx
+msgid "Account ID"
+msgstr "ID аккаунта"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Account label"
 msgstr "Ярлык аккаунта"
@@ -2066,6 +2071,11 @@ msgstr "Бесплатно"
 #: src/pages/WindowChrome.tsx
 msgid "Fullscreen"
 msgstr "Полноэкранный"
+
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/Onboarding.tsx
+msgid "Gateway ID"
+msgstr "ID шлюза"
 
 #: src/pages/SettingsOverlay.tsx
 msgid "General"

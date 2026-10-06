@@ -355,7 +355,6 @@ describe("private-host transport", () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValue(new Response(JSON.stringify({ results: [] }), { status: 200 }));
-    vi.stubGlobal("fetch", fetchMock);
     const resolveHostname = vi.fn();
 
     const result = await searchSupermemory("query", "fake:tag", {
@@ -363,6 +362,7 @@ describe("private-host transport", () => {
       apiKey: "sm_test_key",
       resolveHostname,
       pinnedAddresses: pinned,
+      fetch: fetchMock,
     });
 
     expect(result).toEqual({ ok: true, results: [] });
@@ -372,7 +372,6 @@ describe("private-host transport", () => {
 
   it("rejects a pinned public address before the request", async () => {
     const fetchMock = vi.fn();
-    vi.stubGlobal("fetch", fetchMock);
     const resolveHostname = vi.fn();
 
     const result = await searchSupermemory("query", "fake:tag", {
@@ -380,6 +379,7 @@ describe("private-host transport", () => {
       apiKey: "sm_test_key",
       resolveHostname,
       pinnedAddresses: [{ address: "203.0.113.10", family: 4 }],
+      fetch: fetchMock,
     });
 
     expect(result.ok).toBe(false);

@@ -2746,4 +2746,15 @@ describe("mobile clipboard text", () => {
       }),
     ).toBe("Hello\nSMS · Sender: Reply");
   });
+
+  it("keeps leading whitespace for selection while copying trims it", async () => {
+    const { copyableMobileMessageText, selectableMobileMessageText } = await import("./api");
+    const message: MobileMessage = {
+      id: "message",
+      role: "user",
+      blocks: [{ kind: "text", text: "    indented\nnext  " }],
+    };
+    expect(selectableMobileMessageText(message)).toBe("    indented\nnext  ");
+    expect(copyableMobileMessageText(message)).toBe("indented\nnext");
+  });
 });
