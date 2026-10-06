@@ -413,6 +413,11 @@ export interface AgentRunModel {
   contextWindow?: number;
   /** Preferred thinking effort for reasoning models; clamped to the model’s supported set. */
   thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null;
+  /**
+   * Sampling temperature. Undefined means the provider default.
+   * POTOO patrol flights use 0.2, escalation flights 0.3.
+   */
+  temperature?: number;
   /** In-process OAuth credential from the encrypted store for this run. */
   oauth?: {
     credential: AgentModelOAuthCredential;
@@ -571,6 +576,8 @@ export interface BackgroundJobPayloads {
   "messaging.deliver": { runId?: string };
   /** Reconcile durable remote-agent intent; scope is loaded from the database. */
   "cloud_agent.poll": { agentId: string };
+  /** Verify a bloody patrol filing: payload stays small, report and transcript load from the database. */
+  "potoo.escalate": { patrolRunId: string };
 }
 
 export type BackgroundJobName = keyof BackgroundJobPayloads;

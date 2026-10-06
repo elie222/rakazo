@@ -112,6 +112,7 @@ import {
   type ThreadEvents,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { detectPotooFlight, isPotooRepair, PATROL_TEMPERATURE } from "@rakazo/potoo";
 import { parse as parseShellCommand } from "shell-quote";
 import {
   connectAgent,
@@ -282,6 +283,8 @@ import {
   renderPlotSpecToSvg,
   searchChartCatalog,
 } from "./plot-tool.js";
+import { maybeEscalatePatrolRun } from "./potoo-escalation.js";
+import { maybeRepairCopy } from "./potoo-repair.js";
 import { actorMayUsePrivateEndpoint } from "./private-endpoint.js";
 import type { RemoteTransportDependencies } from "./remote-mcp.js";
 import { assertSafeRemoteUrl } from "./remote-mcp.js";
@@ -6151,6 +6154,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
           return;
         }
 
+        // POTOO night flights carry the newsroom frame plus the output
+        // contract in system instructions and pin sampling temperature.
+        const potooFlight = detectPotooFlight(prompt);
         try {
           const runtimeEvents = deps.runtime.run(
             {
@@ -6159,28 +6165,31 @@ export function createRunExecutor(deps: ExecutorDeps) {
               runId,
               sourceMessageId: run.sourceMessageId,
               prompt,
-              instructions: userTurnInstructions({
-                botInstructions: runIdentityInstruction(bot, run.trigger),
-                groupContext,
-                messagingContext,
-                redactedMemoryContext: memoryContext
-                  ? redactSecrets(memoryContext, runSecrets)
-                  : undefined,
-                redactedScratchpadContext: scratchpadContext
-                  ? redactSecrets(scratchpadContext, runSecrets)
-                  : undefined,
-                hasHistoricalContext: historicalContext.length > 0,
-                computerInstruction,
-                pageBrowserAllowed,
-                taskCatalogInstruction,
-                workspaceInstruction,
-                agentEnvironmentInstruction,
-                botDirectory,
-                pluginLine,
-                agentSkillsLine,
-                taughtSkillsLine,
-                replyGuidance: runReplyGuidance(run.trigger),
-              })
+              instructions: [
+                potooFlight?.systemPrefix,
+                ...userTurnInstructions({
+                  botInstructions: runIdentityInstruction(bot, run.trigger),
+                  groupContext,
+                  messagingContext,
+                  redactedMemoryContext: memoryContext
+                    ? redactSecrets(memoryContext, runSecrets)
+                    : undefined,
+                  redactedScratchpadContext: scratchpadContext
+                    ? redactSecrets(scratchpadContext, runSecrets)
+                    : undefined,
+                  hasHistoricalContext: historicalContext.length > 0,
+                  computerInstruction,
+                  pageBrowserAllowed,
+                  taskCatalogInstruction,
+                  workspaceInstruction,
+                  agentEnvironmentInstruction,
+                  botDirectory,
+                  pluginLine,
+                  agentSkillsLine,
+                  taughtSkillsLine,
+                  replyGuidance: runReplyGuidance(run.trigger),
+                }),
+              ]
                 .filter((instruction): instruction is string => Boolean(instruction))
                 .join("\n\n"),
               history: runtimeHistory,
@@ -6198,6 +6207,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 acceptsImages: resolved.acceptsImages,
                 maxImagesPerPrompt: resolved.maxImagesPerPrompt,
                 thinkingLevel: thinkingLevel ?? resolved.thinkingLevel ?? null,
+                temperature: potooFlight?.temperature,
                 oauth: resolved.oauth
                   ? {
                       credential: resolved.oauth,
@@ -6777,6 +6787,29 @@ export function createRunExecutor(deps: ExecutorDeps) {
             }
           } catch (error) {
             getLogger().error("history.compact enqueue failed", error);
+          }
+          // POTOO: a bloody patrol flight goes to the senior correspondent.
+          // Patrol-temperature runs only, so escalations never re-escalate.
+          // Never fatal: the gate parses and enqueues inside its own try/catch.
+          if (potooFlight?.temperature === PATROL_TEMPERATURE && run.trigger === "routine") {
+            await maybeEscalatePatrolRun({ prisma: deps.prisma, jobs: deps.jobs }, runId, text);
+          }
+          // POTOO copy repair (P4): one logged re-file when the copy missed
+          // its json block. Repair runs carry the marker, so they never
+          // repair again. Never fatal: handled inside its own try/catch.
+          if (potooFlight && run.trigger === "routine" && !isPotooRepair(prompt)) {
+            await maybeRepairCopy(
+              { prisma: deps.prisma, jobs: deps.jobs },
+              {
+                id: runId,
+                spaceId: run.spaceId,
+                botId: bot.id,
+                threadId: thread.id,
+                userId: run.userId,
+              },
+              potooFlight,
+              text,
+            );
           }
         } catch (error) {
           if (!terminalCheckpointComplete) {

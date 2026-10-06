@@ -286,6 +286,7 @@ export class PiAgentRuntime implements AgentRuntime {
               withCloudflareGatewayAuth(request.model, options),
               request.model.maxTokens,
               () => selectedModel.credentials?.accessToken ?? apiKey,
+              request.model.temperature,
             ),
           getApiKey: async () => apiKey,
           transformContext: async (messages) =>
@@ -1201,6 +1202,7 @@ async function executeSubagent(host: ToolHost, executionId: string, args: Record
         withCloudflareGatewayAuth(requestModel, options),
         requestModel.maxTokens,
         () => selectedModel.credentials?.accessToken ?? selectedModel.apiKey,
+        requestModel.temperature,
       ),
     getApiKey: async () => selectedModel.apiKey,
     transformContext: async (messages) =>
@@ -2216,6 +2218,7 @@ export function reliableModelStream(
   options: ModelsSimpleStreamOptions | undefined,
   configuredMaxTokens: number | undefined,
   accessToken?: string | (() => string | undefined),
+  configuredTemperature?: number,
 ): AssistantMessageEventStream {
   const watchdog = isCodexModel(model) ? codexStreamIdleWatchdog(options?.signal) : undefined;
   try {
@@ -2239,6 +2242,7 @@ export function reliableModelStream(
           : options,
         configuredMaxTokens,
         accessToken,
+        configuredTemperature,
       ),
     );
     return watchdog ? watchdog.wrap(stream) : stream;
@@ -2260,6 +2264,7 @@ export function reliableStreamOptions(
   options?: ModelsSimpleStreamOptions,
   configuredMaxTokens?: number,
   accessToken?: string | (() => string | undefined),
+  configuredTemperature?: number,
 ): ModelsSimpleStreamOptions {
   let next: ModelsSimpleStreamOptions = {
     ...options,
@@ -2272,6 +2277,9 @@ export function reliableStreamOptions(
       model.reasoning,
     ),
   };
+  if (configuredTemperature !== undefined) {
+    next = { ...next, temperature: configuredTemperature };
+  }
 
   if (isCodexModel(model)) {
     // Pi cannot fall back after a WebSocket has emitted its start event. Long tool

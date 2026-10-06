@@ -22,6 +22,7 @@ const payloadSchemas = {
   "history.compact": z.object({ threadId: z.string().min(1) }),
   "messaging.deliver": z.object({ runId: z.string().min(1).optional() }),
   "cloud_agent.poll": z.object({ agentId: z.string().min(1) }),
+  "potoo.escalate": z.object({ patrolRunId: z.string().min(1) }),
 } satisfies { [Name in BackgroundJobName]: z.ZodType<BackgroundJobPayloads[Name]> };
 
 export function parseBackgroundJob(name: string, payload: unknown): BackgroundJob {
@@ -145,6 +146,17 @@ export function cloudAgentPollJobKey(agentId: string): string {
   return `cloud_agent.poll:${agentId}`;
 }
 
+export function potooEscalateJobKey(patrolRunId: string): string {
+  return `potoo.escalate:${patrolRunId}`;
+}
+
+export function potooEscalateJob(patrolRunId: string): BackgroundJob {
+  return {
+    name: "potoo.escalate",
+    payload: { patrolRunId },
+    replaceKey: potooEscalateJobKey(patrolRunId),
+  };
+}
 export function cloudAgentPollJob(
   payload: BackgroundJobPayloads["cloud_agent.poll"],
   availableAt?: Date,

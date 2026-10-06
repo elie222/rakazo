@@ -18,6 +18,7 @@ import type { createRunExecutor } from "./executor.js";
 import { compactHistory } from "./history-compaction.js";
 import type { MemoryProviderResolver } from "./memory-provider-factory.js";
 import { deliverMessagingOutbound, mirrorMessagingOutbound } from "./messaging-delivery.js";
+import { escalatePatrolRun } from "./potoo-escalation.js";
 import type { EncryptedSecretStore } from "./secrets.js";
 import { expireTaughtSkillTeaching } from "./teaching-session.js";
 
@@ -110,6 +111,9 @@ export function createBackgroundJobHandlers(deps: {
         },
         payload.threadId,
       );
+    },
+    "potoo.escalate": async (payload) => {
+      await escalatePatrolRun({ prisma: deps.prisma, jobs: deps.jobs }, payload.patrolRunId);
     },
   };
 }
