@@ -727,6 +727,27 @@ describe("on-device speech", () => {
     expect(spoken.map((s) => s.text)).toEqual(["First sentence."]);
   });
 
+  it("does not continue a reply after playback is stopped for a voice sample", async () => {
+    Platform.OS = "ios";
+    vi.mocked(SecureStore.getItemAsync).mockResolvedValue("1");
+    const spoken: Array<{ text: string; options: Parameters<typeof Speech.speak>[1] }> = [];
+    vi.mocked(Speech.speak).mockImplementation((text, options) => {
+      spoken.push({ text, options });
+    });
+    vi.mocked(Speech.stop).mockResolvedValue(undefined);
+
+    const call = speakWithDeviceVoice("First sentence. Second sentence.", "bot-1");
+    await flushDeviceSpeechImport();
+    expect(spoken.map((s) => s.text)).toEqual(["First sentence."]);
+
+    stopVoicePlayback();
+    await Speech.stop();
+    Speech.speak("Hi, this is how I'll sound.", { voice: "sample" });
+    spoken[0]?.options?.onStopped?.();
+    await expect(call).resolves.toBe(true);
+    expect(spoken.map((s) => s.text)).toEqual(["First sentence.", "Hi, this is how I'll sound."]);
+  });
+
   it("speaks locally and never touches the network when the device voice is on", async () => {
     vi.mocked(SecureStore.getItemAsync).mockResolvedValue("1");
     vi.mocked(Speech.speak).mockImplementation((_text, options) => options?.onDone?.());

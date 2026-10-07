@@ -673,7 +673,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Speaks with your phone's own text-to-speech instead of a connected provider.":
     "使用手机自带的语音朗读，而不是已连接的语音服务。",
   "Device voice": "设备语音",
+  "Could not load voices": "无法加载语音",
   "Hi, I'm {name}.": "你好，我是 {name}。",
   "Hi, this is how I'll sound.": "你好，这是我的声音。",
-  "Could not load voices": "无法加载语音",
 };

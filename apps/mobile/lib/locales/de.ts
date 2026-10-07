@@ -688,7 +688,7 @@ export const DE_MESSAGES: Record<string, string> = {
   Unmute: "Stummschaltung aufheben",
   "Voice chat": "Sprachchat",
   "Device voice": "Gerätestimme",
+  "Could not load voices": "Stimmen konnten nicht geladen werden",
   "Hi, I'm {name}.": "Hallo, ich bin {name}.",
   "Hi, this is how I'll sound.": "Hallo, so klinge ich.",
-  "Could not load voices": "Stimmen konnten nicht geladen werden",
 };

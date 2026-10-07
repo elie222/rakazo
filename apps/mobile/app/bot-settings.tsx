@@ -66,7 +66,7 @@ export default function BotSettingsScreen() {
   const [error, setError] = useState<string | null>(null);
   const [voices, setVoices] = useState<Voice[]>([]);
   const [voiceId, setVoiceId] = useState<string | undefined>();
-  const [voicesFailed, setVoicesFailed] = useState(false);
+  const [voiceError, setVoiceError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
   useEffect(() => {
@@ -183,26 +183,38 @@ export default function BotSettingsScreen() {
     setThinkingLevel("");
   }
 
-  async function loadVoices(): Promise<Voice[] | null> {
-    if (!botId) return null;
-    try {
-      const [available, assigned] = await Promise.all([deviceVoices(), voiceForBot(botId)]);
-      setVoices(available);
-      setVoiceId(assigned);
-      setVoicesFailed(false);
-      return available;
-    } catch {
-      setVoicesFailed(true);
-      return null;
-    }
+  function applyVoices(available: Voice[], assigned: string | undefined) {
+    setVoices(available);
+    setVoiceId(assigned);
+    setVoiceError(null);
+  }
+
+  function failVoices() {
+    setVoices([]);
+    setVoiceError(t("Could not load voices"));
   }
 
   useEffect(() => {
-    void loadVoices();
+    if (!botId) return;
+    let current = true;
+    void Promise.all([deviceVoices(), voiceForBot(botId)])
+      .then(([available, assigned]) => {
+        if (!current) return;
+        applyVoices(available, assigned);
+      })
+      .catch(() => {
+        if (!current) return;
+        failVoices();
+      });
+    return () => {
+      current = false;
+    };
   }, [botId]);
 
   async function chooseVoice(voice: Voice) {
     if (!botId) return;
+    // Picking a voice cuts off a reply in progress before the sample starts.
+    stopVoicePlayback();
     const previous = voiceId;
     setVoiceId(voice.identifier);
     setError(null);
@@ -213,26 +225,25 @@ export default function BotSettingsScreen() {
       setError(t("Could not save that voice"));
       return;
     }
-    // A sample, not a reply: stop whatever this app is reading first so the two never overlap.
-    stopVoicePlayback();
-    const Speech = await import("expo-speech");
-    await Speech.stop();
-    const sampleName = name.trim();
-    Speech.speak(
-      sampleName ? t("Hi, I'm {name}.", { name: sampleName }) : t("Hi, this is how I'll sound."),
-      { voice: voice.identifier },
-    );
+    try {
+      const Speech = await import("expo-speech");
+      await Speech.stop();
+      const sampleName = name.trim();
+      Speech.speak(
+        sampleName ? t("Hi, I'm {name}.", { name: sampleName }) : t("Hi, this is how I'll sound."),
+        { voice: voice.identifier },
+      );
+    } catch {
+      // The choice is already saved. A sample that cannot play is not a failed save.
+    }
   }
 
   const currentVoice = voices.find((voice) => voice.identifier === voiceId) ?? voices[0];
 
-  async function openVoicePicker() {
-    // After a failed load, tapping the row is the retry.
-    const choices = voicesFailed ? await loadVoices() : voices;
-    if (!choices || choices.length < 2) return;
+  function openVoicePicker(available: Voice[]) {
     presentMessageActionSheet({
       title: t("Device voice"),
-      actions: choices.map((voice) => ({
+      actions: available.map((voice) => ({
         text: voiceLabel(voice),
         onPress: () => void chooseVoice(voice),
       })),
@@ -240,6 +251,22 @@ export default function BotSettingsScreen() {
       cancel: t("Cancel"),
       more: t("More"),
     });
+  }
+
+  async function openDeviceVoice() {
+    if (!botId) return;
+    if (!voiceError && voices.length > 1) {
+      openVoicePicker(voices);
+      return;
+    }
+    if (!voiceError) return;
+    try {
+      const [available, assigned] = await Promise.all([deviceVoices(), voiceForBot(botId)]);
+      applyVoices(available, assigned);
+      if (available.length > 1) openVoicePicker(available);
+    } catch {
+      failVoices();
+    }
   }
 
   function openModelPicker() {
@@ -441,11 +468,8 @@ export default function BotSettingsScreen() {
             onValueChange={setAutoSpeak}
           />
         </View>
-        {voices.length > 1 || voicesFailed ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={t("Device voice")}
-            onPress={() => void openVoicePicker()}
+        {voices.length === 1 && !voiceError ? (
+          <View
             style={{
               minHeight: 44,
               flexDirection: "row",
@@ -456,13 +480,34 @@ export default function BotSettingsScreen() {
           >
             <Text style={{ color: tokens.mutedForeground, fontSize: 14 }}>{t("Device voice")}</Text>
             <Text
-              style={{ color: voicesFailed ? tokens.destructive : tokens.foreground, fontSize: 14 }}
+              style={{ color: tokens.foreground, fontSize: 14, flexShrink: 1, textAlign: "right" }}
             >
-              {voicesFailed
-                ? t("Could not load voices")
-                : currentVoice
-                  ? voiceLabel(currentVoice)
-                  : ""}
+              {currentVoice ? voiceLabel(currentVoice) : ""}
+            </Text>
+          </View>
+        ) : voices.length > 1 || voiceError ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t("Device voice")}
+            onPress={() => void openDeviceVoice()}
+            style={{
+              minHeight: 44,
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 12,
+            }}
+          >
+            <Text style={{ color: tokens.mutedForeground, fontSize: 14 }}>{t("Device voice")}</Text>
+            <Text
+              style={{
+                color: voiceError ? tokens.destructive : tokens.foreground,
+                fontSize: 14,
+                flexShrink: 1,
+                textAlign: "right",
+              }}
+            >
+              {voiceError ?? (currentVoice ? voiceLabel(currentVoice) : "")}
             </Text>
           </Pressable>
         ) : null}

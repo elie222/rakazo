@@ -36,14 +36,74 @@ function serialized<T>(work: () => Promise<T>): Promise<T> {
   return run;
 }
 
+let speechModule: Promise<typeof import("expo-speech")> | undefined;
+function loadSpeech() {
+  speechModule ??= import("expo-speech").catch((error: unknown) => {
+    speechModule = undefined;
+    throw error;
+  });
+  return speechModule;
+}
+
+type ListedVoice = Voice & { localService?: boolean; requiresNetwork?: boolean };
+
+/**
+ * Network voices upload the text they speak. Android marks that with
+ * `requiresNetwork` (see the expo-speech patch); the web engine uses `localService`;
+ * older engines only encode it in the id. Any one of those keeps the voice off the list.
+ */
+function isNetworkVoice(voice: ListedVoice): boolean {
+  if (voice.requiresNetwork === true) return true;
+  if (voice.localService === false) return true;
+  return /network/i.test(voice.identifier) || /network/i.test(voice.name ?? "");
+}
+
+/**
+ * iOS novelty voices (Bubbles, Zarvox, and the rest of that set). A person can still
+ * pick one; auto-assignment never does.
+ */
+const NOVELTY_VOICE_NAMES = new Set([
+  "albert",
+  "badnews",
+  "bahh",
+  "bells",
+  "boing",
+  "bubbles",
+  "cellos",
+  "deranged",
+  "goodnews",
+  "hysterical",
+  "jester",
+  "junior",
+  "organ",
+  "princess",
+  "ralph",
+  "superstar",
+  "trinoids",
+  "whisper",
+  "wobble",
+  "zarvox",
+]);
+
+function noveltyKey(voice: { identifier: string; name?: string }): string {
+  const named = voice.name?.trim();
+  const source = named && named !== voice.identifier ? named : voice.identifier;
+  const leaf = source.split(/[./]/).pop() ?? source;
+  return leaf.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+export function isNoveltyVoice(voice: { identifier: string; name?: string }): boolean {
+  return NOVELTY_VOICE_NAMES.has(noveltyKey(voice));
+}
+
 /**
  * The engine's offline voices, in the app's language when it has some. Network voices
- * upload the text they speak, so they are never offered, even when nothing else is left.
+ * are removed before that choice, and nothing puts them back.
  */
 export async function deviceVoices(): Promise<Voice[]> {
-  const Speech = await import("expo-speech");
-  const offline = (await Speech.getAvailableVoicesAsync()).filter(
-    (voice) => !/network/i.test(voice.identifier),
+  const Speech = await loadSpeech();
+  const offline = ((await Speech.getAvailableVoicesAsync()) as ListedVoice[]).filter(
+    (voice) => !isNetworkVoice(voice),
   );
   const language = getActiveUiLocale().split("-")[0]?.toLowerCase() ?? "en";
   const sameLanguage = offline.filter((voice) =>
@@ -64,17 +124,22 @@ export function voiceLabel(voice: Voice): string {
 /** The voice a bot speaks with, handing it one no other bot has yet if it has none. */
 export function voiceForBot(botId: string): Promise<string | undefined> {
   return serialized(async () => {
-    const voices = (await deviceVoices()).map((voice) => voice.identifier);
+    const available = await deviceVoices();
+    const voices = available.map((voice) => voice.identifier);
     if (voices.length === 0) return undefined;
     const assignments = await loadAssignments();
     const current = assignments[botId];
     if (current && voices.includes(current)) return current;
+    const assignable = available
+      .filter((voice) => !isNoveltyVoice(voice))
+      .map((voice) => voice.identifier);
+    if (assignable.length === 0) return undefined;
     const taken = new Set(
       Object.entries(assignments)
         .filter(([id]) => id !== botId)
         .map(([, voice]) => voice),
     );
-    const picked = pickUnusedVoice(voices, taken, botId);
+    const picked = pickUnusedVoice(assignable, taken, botId);
     saveAssignments({ ...assignments, [botId]: picked });
     return picked;
   });
