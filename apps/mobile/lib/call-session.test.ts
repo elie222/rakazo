@@ -275,7 +275,72 @@ describe("mobile call session", () => {
     fake.speeches[0]?.reject(new AiConsentBlocked("consent denied"));
     await flush();
     expect(ring).not.toHaveBeenCalled();
+    expect(fake.closeCall).not.toHaveBeenCalled();
     expect(getSnapshot()).toMatchObject({ muted: true, caption: "consent denied" });
+  });
+
+  it("does not ring the other bot when the caller hangs up before the hand-over is spoken", async () => {
+    const endCue = deferred<void>();
+    const fake = fakes();
+    const ring = vi.fn();
+    startCall(
+      { botId: "bot-1", botName: "Ada", switchBot: () => ({ name: "Max", ring }) },
+      {
+        ...fake.deps,
+        cue: async (cue) => {
+          fake.cues.push(cue);
+          if (cue === "end") await endCue.promise;
+        },
+      },
+    );
+    await flush();
+    fake.say("switch to Max");
+    await flush();
+    endCall();
+    endCue.resolve();
+    await flush();
+    expect(fake.spoken).toEqual([]);
+    expect(ring).not.toHaveBeenCalled();
+  });
+
+  it("does not let an earlier closing cue start the waiting sound for a later turn", async () => {
+    const fake = fakes({ onDevice: true });
+    const endCues: Array<Deferred<void>> = [];
+    startCall(
+      { botId: "bot-1", botName: "Ada", transcribe: false },
+      {
+        ...fake.deps,
+        cue: async (cue) => {
+          fake.cues.push(cue);
+          if (cue !== "end") return;
+          const pending = deferred<void>();
+          endCues.push(pending);
+          await pending.promise;
+        },
+      },
+    );
+    await flush();
+    fake.hear("status please");
+    await flush();
+    expect(fake.waits).toEqual(["preload"]);
+
+    fake.replyWith("message-1", "It is green.");
+    expect(fake.waits).toEqual(["preload", "stop"]);
+    fake.speeches[0]?.resolve();
+    await flush();
+
+    fake.hear("and the tests");
+    await flush();
+    expect(getSnapshot()?.phase).toBe("thinking");
+    expect(endCues).toHaveLength(2);
+
+    endCues[0]?.resolve();
+    await flush();
+    expect(fake.waits).toEqual(["preload", "stop"]);
+
+    endCues[1]?.resolve();
+    await flush();
+    expect(fake.waits).toEqual(["preload", "stop", "start"]);
   });
 
   it("plays the closing cue once the caller's turn is heard", async () => {

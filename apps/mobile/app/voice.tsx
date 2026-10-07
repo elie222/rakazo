@@ -60,7 +60,8 @@ export default function VoiceSettings() {
   const [deviceVoiceReady, setDeviceVoiceReady] = useState(false);
   const [callSounds, setCallSounds] = useState<boolean | null>(null);
   const [waitSound, setWaitSound] = useState<boolean | null>(null);
-  // Bumped by every sound-switch tap, so a load that started earlier never overwrites it.
+  // Bumped when a sound-switch save starts and when it finishes, so a load from
+  // either side of that write cannot overwrite the switch.
   const soundPrefsRevision = useRef(0);
   const soundPrefSaving = useRef(false);
   const [loading, setLoading] = useState(true);
@@ -115,7 +116,8 @@ export default function VoiceSettings() {
         loadCallSoundsEnabled().catch(() => true),
         loadWaitSoundEnabled().catch(() => true),
       ]).then(([calls, waiting]) => {
-        if (soundPrefsRevision.current !== soundRevision) return;
+        // A save started after this read, or is still writing: keep the switch the tap set.
+        if (soundPrefSaving.current || soundPrefsRevision.current !== soundRevision) return;
         setCallSounds(calls);
         setWaitSound(waiting);
       });
@@ -146,6 +148,7 @@ export default function VoiceSettings() {
       return false;
     } finally {
       soundPrefSaving.current = false;
+      soundPrefsRevision.current += 1;
     }
   }
 
