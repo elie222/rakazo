@@ -378,6 +378,21 @@ export default function BotSettingsScreen() {
         </View>
         <Pressable
           accessibilityRole="button"
+          onPress={() =>
+            router.push({ pathname: "/bot-voice", params: { botId, name: name.trim() } })
+          }
+          style={{
+            minHeight: 44,
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "space-between",
+          }}
+        >
+          <Text style={{ color: tokens.mutedForeground, fontSize: 14 }}>{t("Device voice")}</Text>
+          <Text style={{ color: tokens.mutedForeground, fontSize: 18 }}>›</Text>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
           accessibilityLabel={t("Advanced")}
           accessibilityState={{ expanded: advancedOpen }}
           onPress={() => setAdvancedOpen((open) => !open)}

@@ -693,4 +693,9 @@ export const RU_MESSAGES: Record<string, string> = {
     "Встроенный голос телефона — бесплатно, без аккаунта",
   "Speaks with your phone's own text-to-speech instead of a connected provider.":
     "Озвучивает встроенным синтезом речи телефона вместо подключённого провайдера.",
+  "Device voice": "Голос устройства",
+  "Could not load voices": "Не удалось загрузить голоса",
+  "Hi, I'm {name}.": "Привет, я {name}.",
+  "Hi, this is how I'll sound.": "Привет, вот так я звучу.",
+  "This speech engine has one voice.": "У этого синтезатора речи только один голос.",
 };
