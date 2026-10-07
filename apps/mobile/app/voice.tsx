@@ -135,6 +135,7 @@ export default function VoiceSettings() {
   async function chooseProvider(nextProvider: string) {
     if (pending !== null) return;
     if (deviceVoice && !(deviceVoiceReady && (await saveDeviceVoice(false)))) return;
+    const previousProvider = provider;
     setProvider(nextProvider);
     setPending("voice");
     try {
@@ -145,6 +146,8 @@ export default function VoiceSettings() {
       }
       await load(nextProvider);
     } catch (err) {
+      // Keep the card in step with the voices still on screen.
+      setProvider(previousProvider);
       setError(err instanceof Error ? err.message : t("Could not load voice settings"));
     } finally {
       setPending(null);
