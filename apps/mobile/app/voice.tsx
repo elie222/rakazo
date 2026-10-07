@@ -138,6 +138,11 @@ export default function VoiceSettings() {
     setProvider(nextProvider);
     setPending("voice");
     try {
+      // Picking a connected provider makes it the one that speaks.
+      const cred = credentials.find((entry) => entry.provider === nextProvider);
+      if (cred?.voiceId && status?.provider !== nextProvider) {
+        await rpc("voice/setVoice", { voiceId: cred.voiceId, provider: nextProvider });
+      }
       await load(nextProvider);
     } catch (err) {
       setError(err instanceof Error ? err.message : t("Could not load voice settings"));
