@@ -134,7 +134,8 @@ export default function VoiceSettings() {
   // The device voice and a hosted provider are one choice: picking a provider turns the device voice off.
   async function chooseProvider(nextProvider: string) {
     if (pending !== null) return;
-    if (deviceVoice && !(deviceVoiceReady && (await saveDeviceVoice(false)))) return;
+    const wasDeviceVoice = deviceVoice;
+    if (wasDeviceVoice && !(deviceVoiceReady && (await saveDeviceVoice(false)))) return;
     const previousProvider = provider;
     setProvider(nextProvider);
     setPending("voice");
@@ -143,10 +144,19 @@ export default function VoiceSettings() {
       const cred = credentials.find((entry) => entry.provider === nextProvider);
       if (cred?.voiceId && status?.provider !== nextProvider) {
         try {
-          await rpc("voice/setVoice", { voiceId: cred.voiceId, provider: nextProvider });
+          const saved = await rpc<VoiceStatus>("voice/setVoice", {
+            voiceId: cred.voiceId,
+            provider: nextProvider,
+          });
+          // The server now speaks with this provider: track that even if the refresh fails.
+          setStatus(saved);
+          setVoiceId(cred.voiceId);
+          setSpeechModel(cred.speechModel ?? "");
         } catch (err) {
-          // Nothing changed on the server: keep the card in step with the voices still on screen.
+          // Nothing changed on the server: put back what was chosen before this tap.
           setProvider(previousProvider);
+          // A failed rollback shows its own error, which matters more than this one.
+          if (wasDeviceVoice && !(await saveDeviceVoice(true))) return;
           setError(err instanceof Error ? err.message : t("Could not save that voice"));
           return;
         }
