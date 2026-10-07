@@ -38,6 +38,15 @@ export class ThreadJumpAnchor {
     return this.align(headerClearance);
   }
 
+  /**
+   * Hold paging only while the matched row will be drawn and has no offset yet.
+   * A hit that never renders (a dismissed card, for example) must not block
+   * newer pages.
+   */
+  blocksPaging(targetDrawn: boolean, headerClearance: number): boolean {
+    return this.holds() && this.align(headerClearance) == null && targetDrawn;
+  }
+
   /** Offset for the current measurement, using the latest header clearance. */
   align(headerClearance: number): number | null {
     if (this.targetId == null || this.layoutY == null) return null;

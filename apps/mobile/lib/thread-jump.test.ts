@@ -30,6 +30,17 @@ describe("ThreadJumpAnchor", () => {
     expect(anchor.onMessageLayout("message-4", 800, 3, 120)).toBeNull();
   });
 
+  it("blocks paging only while a drawn match has no offset", () => {
+    const anchor = new ThreadJumpAnchor();
+    anchor.begin("message-4");
+
+    expect(anchor.blocksPaging(true, 120)).toBe(true);
+    expect(anchor.blocksPaging(false, 120)).toBe(false);
+
+    anchor.onMessageLayout("message-4", 640, 3, 120);
+    expect(anchor.blocksPaging(true, 120)).toBe(false);
+  });
+
   it("does not hold a thread opened with no message", () => {
     const anchor = new ThreadJumpAnchor();
     anchor.begin(null);

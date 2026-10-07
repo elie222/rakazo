@@ -1748,7 +1748,20 @@ function Thread() {
   function loadNewerNearEnd() {
     // Wait until the matched row has a real offset. Prefetching from the top
     // of the page changes the content size and lands back on an older reply.
-    if (jumpAnchor.current.holds() && jumpAnchor.current.align(headerHeight + 24) == null) return;
+    // A hit that is not drawn (filtered out of the transcript) must not hold
+    // that wait, or newer pages never load.
+    const targetId = jumpScrollTarget.current ?? pinnedAroundRef.current?.messageId;
+    const targetDrawn =
+      targetId != null &&
+      threadWindowMessages(visibleMessages, pinnedNewerCursor).some(
+        (message) => message.id === targetId,
+      );
+    if (jumpAnchor.current.holds() && !targetDrawn) {
+      jumpAnchor.current.release();
+      jumpScrollTarget.current = null;
+    } else if (jumpAnchor.current.blocksPaging(targetDrawn, headerHeight + 24)) {
+      return;
+    }
     const { offset, viewport, content } = pinnedScrollMetrics.current;
     // Fetch the next page while a screen of this one is still left to read; a page shorter
     // than the screen never scrolls, so layout and content changes check too.

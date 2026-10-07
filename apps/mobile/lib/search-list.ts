@@ -28,7 +28,8 @@ export function dedupeSearchHits(hits: readonly SearchHit[]): SearchHit[] {
   return unique;
 }
 
-const DATA_URI = /data:[a-z0-9][a-z0-9+.-]*[^\s)]*/gi;
+// data:[<mediatype>][;base64],<data> — the mediatype may be omitted.
+const DATA_URI = /(?<![\w])data:(?:[a-z0-9][a-z0-9+./-]*|[;,])[^\s)]*/gi;
 
 /** One plain line for a search row: no markdown syntax, no data: URI text. */
 export function searchHitPreview(snippet: string): string {
