@@ -142,13 +142,23 @@ export default function VoiceSettings() {
       // Picking a connected provider makes it the one that speaks.
       const cred = credentials.find((entry) => entry.provider === nextProvider);
       if (cred?.voiceId && status?.provider !== nextProvider) {
-        await rpc("voice/setVoice", { voiceId: cred.voiceId, provider: nextProvider });
+        try {
+          await rpc("voice/setVoice", { voiceId: cred.voiceId, provider: nextProvider });
+        } catch (err) {
+          // Nothing changed on the server: keep the card in step with the voices still on screen.
+          setProvider(previousProvider);
+          setError(err instanceof Error ? err.message : t("Could not save that voice"));
+          return;
+        }
       }
-      await load(nextProvider);
-    } catch (err) {
-      // Keep the card in step with the voices still on screen.
-      setProvider(previousProvider);
-      setError(err instanceof Error ? err.message : t("Could not load voice settings"));
+      try {
+        await load(nextProvider);
+      } catch (err) {
+        // The new provider is the one that speaks now; drop the old provider's voices so none
+        // of them can be saved against it.
+        setVoices([]);
+        setError(err instanceof Error ? err.message : t("Could not load voice settings"));
+      }
     } finally {
       setPending(null);
     }
