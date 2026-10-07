@@ -34,6 +34,11 @@ export function canDeleteInboxSpace(
   return !space.isDefault && !space.hasContent && space.canDelete === true;
 }
 
+/** A brand-new space renders only its heading until it has a bot or group. */
+export function inboxNeedsCreateHint(items: readonly { type: string }[]): boolean {
+  return items.length > 0 && items.every((item) => item.type === "heading");
+}
+
 export function spaceInboxItems(
   spaces: InboxSpace[],
   collapsedParentIds: ReadonlySet<string> = new Set(),

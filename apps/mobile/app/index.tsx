@@ -57,6 +57,7 @@ import {
   canDeleteInboxSpace,
   type InboxSpace,
   type InboxSpaceItem,
+  inboxNeedsCreateHint,
   removeInboxSpace,
   retryInboxSpaceFallback,
   selectInboxSpace,
@@ -68,6 +69,7 @@ import { previewSnippet } from "../lib/preview";
 import { registerPushToken } from "../lib/push";
 import { querySpaceSearch } from "../lib/search";
 import { mobileSearchDestination } from "../lib/search-destination";
+import { dedupeSearchHits, searchHitListKey, searchHitRowPreview } from "../lib/search-list";
 
 const FALLBACK_COLOR = botColors[3];
 
@@ -279,7 +281,7 @@ export default function Home() {
   }, [groups, query]);
   const listData = useMemo((): InboxItem[] => {
     if (query.trim() && searching) {
-      return searchHits.map((hit) => ({ type: "search", hit }));
+      return dedupeSearchHits(searchHits).map((hit) => ({ type: "search" as const, hit }));
     }
     const sidebarSpaces =
       spaces.length > 0
@@ -559,8 +561,7 @@ export default function Home() {
           if (item.type === "heading") return `heading-${item.key}`;
           if (item.type === "bot") return item.bot.id;
           if (item.type === "group") return `group-${item.group.id}`;
-          const hit = item.hit;
-          return `${hit.kind}-${hit.botId ?? hit.groupId}-${hit.messageId ?? hit.artifactId ?? hit.routineId ?? hit.url}`;
+          return searchHitListKey(item.hit);
         }}
         keyboardDismissMode="interactive"
         keyboardShouldPersistTaps="handled"
@@ -598,6 +599,11 @@ export default function Home() {
                   ? t("Search conversations, files, and routines")
                   : t("Tap + to create a bot")}
           </Text>
+        }
+        ListFooterComponent={
+          inboxNeedsCreateHint(listData) ? (
+            <Text style={styles.empty}>{t("Tap + to create a bot")}</Text>
+          ) : null
         }
         renderItem={({ item }) =>
           item.type === "search" ? (
@@ -963,7 +969,7 @@ function SearchRow({ hit, onPress }: { hit: SearchHit; onPress: () => void }) {
           <Text style={styles.time}>{hit.kind}</Text>
         </View>
         <Text style={styles.preview} numberOfLines={2}>
-          {hit.groupName ?? hit.botName} · {hit.snippet}
+          {searchHitRowPreview(hit)}
         </Text>
       </View>
     </Pressable>
